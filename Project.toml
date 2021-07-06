@@ -1,0 +1,11 @@
+name = "Himalaya"
+uuid = "c5c84187-0f9f-481b-afdc-282fe863df0d"
+authors = ["Jonathan Chen <jwhc@ucla.edu>"]
+version = "0.1.0"
+
+[deps]
+Images = "916415d5-f1e6-5110-898d-aaa5f9f070e0"
+Lazy = "50d2b5c4-7a5e-59d5-8109-a42b560f39c0"
+Peaks = "18e31ff7-3703-566c-8e60-38913d67486b"
+Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
+TiffImages = "731e570b-9d59-4bfa-96dc-6df516fadf69"
