@@ -1,4 +1,3 @@
-using Images, TiffImages
 
 
 function load_image(image_dir, fname)
