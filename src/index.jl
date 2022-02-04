@@ -67,7 +67,7 @@ function indexpeaks(peaks; tol=0.005, all=false)
 
     if !all
         filter!(indices) do index
-            all(!ismissing.(index.peaks[1:minpeaks[idx.phase]]))
+            all(.!ismissing.(index.peaks[1:minpeaks[idx.phase]]))
         end
     end
 
