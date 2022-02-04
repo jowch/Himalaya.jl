@@ -54,19 +54,21 @@ function predictpeaks(index::Index)
     expected_ratios .* index.basis
 end
 
-function indexpeaks(peaks, n_offset=0; tol=0.005, all=false)
+function indexpeaks(peaks; tol=0.005, all=false)
     indices = []
 
     for (i, basis) in enumerate(peaks)
         for phase in keys(PHASES)
             index = Index(phase, basis, [basis])
-            indexpeaks!(index, peaks[i+1:end])
+            indexpeaks!(index, peaks[i+1:end], tol=tol)
             push!(indices, index)
         end
     end
 
     if !all
-        filter!(idx -> count(!ismissing, idx.peaks) >= minpeaks[idx.phase], indices)
+        filter!(indices) do index
+            all(!ismissing.(index.peaks[1:minpeaks[idx.phase]]))
+        end
     end
 
     indices
