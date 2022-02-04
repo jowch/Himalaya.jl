@@ -12,11 +12,11 @@ PHASES = Dict(
 
 minpeaks = Dict(
 	:Ia3d		=> 3,
-	:Pn3m		=> 3,
+	:Pn3m		=> 4,
 	:Im3m		=> 3,
-	:Lamellar	=> 2,
-	:Hexagonal  => 2,
-	:Fd3m		=> 2
+	:Lamellar	=> 2, 
+	:Hexagonal  => 3,
+	:Fd3m		=> 3 
 )
 
 struct Index{T}
@@ -48,7 +48,7 @@ end
 
 function predictpeaks(index::Index)
     expected_ratios = PHASES[index.phase]
-    expected_ratios .* index.basis
+    expected_ratios ./ first(expected_ratios) .* index.basis
 end
 
 function indexpeaks(peaks; tol=0.005, nofilter=false)
