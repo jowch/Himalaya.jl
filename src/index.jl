@@ -28,16 +28,13 @@ struct Index{T}
         if phase ∉ keys(PHASES)
             throw(ArgumentError("Invalid phase $phase"))
         end
-        new{typeof(basis)}(Symbol(phase), basis, peaks)
+        
+        new{typeof(basis)}(
+            Symbol(phase),
+            basis,
+            convert(Array{Union{Missing, typeof(basis)}}, peaks)
+        )
     end
-end
-
-function Index(phase, basis, peaks)
-    Index(
-        phase,
-        basis,
-        convert(Array{Union{Missing, typeof(basis)}}, peaks),
-    )
 end
 
 function ==(a::Index, b::Index)
@@ -54,20 +51,26 @@ function predictpeaks(index::Index)
     expected_ratios .* index.basis
 end
 
-function indexpeaks(peaks; tol=0.005, all=false)
+function indexpeaks(peaks; tol=0.005, nofilter=false)
     indices = []
 
     for (i, basis) in enumerate(peaks)
         for phase in keys(PHASES)
             index = Index(phase, basis, [basis])
-            indexpeaks!(index, peaks[i+1:end], tol=tol)
+            indexpeaks!(index, peaks[i+1:end], tol)
             push!(indices, index)
         end
     end
 
-    if !all
+    if !nofilter
         filter!(indices) do index
-            all(.!ismissing.(index.peaks[1:minpeaks[idx.phase]]))
+            number_required = minpeaks[index.phase]
+
+            # ensure that you have at least the required number of peaks and
+            # that all of the first `number_required` peaks are missing.
+            # ie. require that the first `number_required` are present
+            (npeak(index) >= number_required
+                && !any(ismissing.(index.peaks[1:number_required])))
         end
     end
 
@@ -78,7 +81,7 @@ end
 At any given step of the search process, there are two options, either the next
 peak is missing, or that 
 """
-function indexpeaks!(index::Index{T}, peaks; tol=0.005) where T
+function indexpeaks!(index::Index{T}, peaks, tol) where T
     if isempty(peaks)
         return index
     end
@@ -103,7 +106,7 @@ function indexpeaks!(index::Index{T}, peaks; tol=0.005) where T
         push!(index.peaks, selected_peak)
     end
 
-    indexpeaks!(index, remaining_peaks)
+    indexpeaks!(index, remaining_peaks, tol)
 end
 
 
