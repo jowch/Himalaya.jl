@@ -4,10 +4,12 @@ using Peaks
 using Statistics
 using Images, TiffImages
 
+import Base: ==
+
 export 
 
 # indexing
-Index, indexpeaks, score, fit, npeak,
+Index, indexpeaks, score, fit, npeak, ==,
 
 # peaks
 findpeaks,

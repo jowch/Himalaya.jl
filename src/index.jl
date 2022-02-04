@@ -40,6 +40,10 @@ function Index(phase, basis, peaks)
     )
 end
 
+function ==(a::Index, b::Index)
+    a.phase == b.phase && a.basis == b.basis
+end
+
 function npeak(index::Index)
     observed_idx = findall(!ismissing, index.peaks)
     length(index.peaks[observed_idx])
