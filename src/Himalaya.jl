@@ -7,16 +7,16 @@ using Images, TiffImages
 export 
 
 # indexing
-Index, index_peaks, score, fit,
+Index, indexpeaks, score, fit, npeak,
 
 # peaks
-find_peaks,
+findpeaks,
 
 # images
 load_image
 
 
-include("util.jl")
+# include("util.jl")
 include("peakfinding.jl")
 include("index.jl")
 include("image.jl")
