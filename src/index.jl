@@ -51,7 +51,7 @@ function predictpeaks(index::Index)
     expected_ratios ./ first(expected_ratios) .* index.basis
 end
 
-function indexpeaks(peaks; tol=0.005, nofilter=false)
+function indexpeaks(peaks; tol=0.0025, nofilter=false)
     indices = []
 
     for (i, basis) in enumerate(peaks)
