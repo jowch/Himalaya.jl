@@ -3,6 +3,7 @@ module Himalaya
 using Peaks
 using Statistics
 using Images, TiffImages
+using DelimitedFiles
 
 import Base: ==
 
@@ -15,12 +16,15 @@ Index, indexpeaks, score, fit, npeak, ==,
 findpeaks,
 
 # images
-load_image
+load_image,
 
+# traces
+load_trace
 
 # include("util.jl")
 include("peakfinding.jl")
 include("index.jl")
 include("image.jl")
+include("trace.jl")
 
 end # module
