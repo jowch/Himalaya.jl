@@ -109,7 +109,6 @@ function indexpeaks!(index::Index{T}, peaks, tol) where T
     indexpeaks!(index, remaining_peaks, tol)
 end
 
-
 function score(index::Index)
     # find indices of non-missing peaks
     nonmissing_idx = findall(!ismissing, index.peaks)
