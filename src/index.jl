@@ -1,7 +1,7 @@
 using Statistics
 
 
-PHASES = Dict(
+const PHASES = Dict(
 	:Ia3d		=> [√6, √8, √14, √16, √20, √22, √24, √26],
 	:Pn3m		=> [√2, √3, √4, √6, √8, √9, √10, √11],
 	:Im3m		=> [√2, √4, √6, √8, √10, √12, √14, √16, √18],
@@ -10,7 +10,7 @@ PHASES = Dict(
 	:Fd3m		=> [√3, √8, √11, √12, √16, √19, √24, √27, √32, √35, √36]
 )
 
-minpeaks = Dict(
+const MINPEAKS = Dict(
 	:Ia3d		=> 3,
 	:Pn3m		=> 4,
 	:Im3m		=> 3,
@@ -41,36 +41,91 @@ function ==(a::Index, b::Index)
     a.phase == b.phase && a.basis == b.basis
 end
 
+"""
+    npeak(index::Index)
+
+Returns the number of non-missing peaks for a given `index`
+"""
 function npeak(index::Index)
-    observed_idx = findall(!ismissing, index.peaks)
-    length(index.peaks[observed_idx])
+    count(!ismissing, index.peaks)
 end
 
+"""
+    predictpeaks(phase, basis)
+
+Predicts the expected peaks for a given `phase` and `basis` peak
+"""
+function predictpeaks(phase::Symbol, basis::T) where T
+    expected_ratios = PHASES[phase]
+    expected_ratios ./ first(expected_ratios) .* basis
+end
+
+"""
+    predictpeaks(index::Index)
+
+Predicts the expected peaks for a given `index` using its phase and basis
+"""
 function predictpeaks(index::Index)
-    expected_ratios = PHASES[index.phase]
-    expected_ratios ./ first(expected_ratios) .* index.basis
+    predictpeaks(index.phase, index.basis)
 end
 
-function indexpeaks(peaks; tol=0.0025, nofilter=false)
+"""
+    indexpeaks(peaks)
+
+Compute valid indexings for a collection of `peaks` by considering each phase
+in `PHASES` and each choice of basis peak.
+
+Given a collection of peaks, we can select each peak as a basis for an
+indexing and then evaluate different phases with this choice of basis. This is
+done by computing the expected peak positions based on the phase and basis.
+For each expected peak, we use `isapprox` to look for observed `peaks` no more
+than `tol` away. If not found, that peak is marked as `missing` in the resulting
+indexing.
+
+An indexing is only considered to be valid if it meets the required number of
+peaks for its phase.
+"""
+function indexpeaks(peaks; tol=0.0025)
     indices = []
 
-    for (i, basis) in enumerate(peaks)
+    for basis in peaks
         for phase in keys(PHASES)
-            index = Index(phase, basis, [basis])
-            indexpeaks!(index, peaks[i+1:end], tol)
-            push!(indices, index)
-        end
-    end
+            valid_peaks = view(peaks, peaks .> basis)
 
-    if !nofilter
-        filter!(indices) do index
-            number_required = minpeaks[index.phase]
+            if length(valid_peaks) < MINPEAKS[phase]
+                continue
+            end
 
-            # ensure that you have at least the required number of peaks and
-            # that all of the first `number_required` peaks are missing.
+            expected_peaks = filter(predictpeaks(phase, basis)) do expected_peak
+                basis < expected_peak <= maximum(valid_peaks)
+            end
+
+            if length(expected_peaks) < MINPEAKS[phase]
+                continue
+            end
+
+            index_peaks = Array{Union{Missing, typeof(basis)}}(missing, 1 + length(expected_peaks))
+            index_peaks[1] = basis
+
+            for (j, expected_peak) in enumerate(expected_peaks)
+                candidates = view(
+                    valid_peaks,
+                    isapprox(expected_peak; atol = tol).(valid_peaks)
+                )
+
+                if isempty(candidates)
+                    valid_peaks = view(peaks, peaks .> expected_peak)
+                else
+                    index_peaks[j + 1] = candidates[argmin(candidates .- expected_peak)]                  
+                    valid_peaks = view(peaks, peaks .> last(candidates))
+                end
+            end
+
+            # ensure that none of the first `minpeaks` number of peaks are missing.
             # ie. require that the first `number_required` are present
-            (npeak(index) >= number_required
-                && !any(ismissing.(index.peaks[1:number_required])))
+            if all(.!ismissing.(index_peaks[1:MINPEAKS[phase]]))
+                push!(indices, Index(phase, basis, index_peaks))
+            end
         end
     end
 
@@ -78,55 +133,24 @@ function indexpeaks(peaks; tol=0.0025, nofilter=false)
 end
 
 """
-At any given step of the search process, there are two options, either the next
-peak is missing, or that 
+    R²(ŷ, y)
+
+Compute the coefficient of determination (R²) given some predicted values `ŷ`
+and the target values `y`.
 """
-function indexpeaks!(index::Index{T}, peaks, tol) where T
-    if isempty(peaks)
-        return index
-    end
+function R²(ŷ, y)
+    RSS = sum((y .- ŷ).^2)
+    TSS = sum((y .- mean(y)).^2)
 
-    predicted_peaks = predictpeaks(index)
-
-    if length(index.peaks) >= length(predicted_peaks)
-        return index
-    end
-
-    expected_peak = predicted_peaks[length(index.peaks) + 1]
-    candidates = peaks[isapprox(expected_peak; atol=tol).(peaks)]
-
-    if isempty(candidates)
-        remaining_peaks = peaks[peaks .> expected_peak]
-
-        push!(index.peaks, missing)
-    else
-        selected_peak = candidates[argmin(candidates .- expected_peak)]
-        remaining_peaks = peaks[(peaks .> expected_peak) .& (peaks .> last(candidates))]
-
-        push!(index.peaks, selected_peak)
-    end
-
-    indexpeaks!(index, remaining_peaks, tol)
+    1 - (RSS / TSS)
 end
 
-function score(index::Index)
-    # find indices of non-missing peaks
-    nonmissing_idx = findall(!ismissing, index.peaks)
-    nonmissing_peaks = index.peaks[nonmissing_idx]
-    expected_ratios = PHASES[index.phase][nonmissing_idx]
+"""
+    fit(index::Index)
 
-    # use least squares fit to compute lattice parameter
-    m = (expected_ratios' * expected_ratios) \ (expected_ratios' * nonmissing_peaks)
-
-    # compute R² value for fit
-    RSS = sum((nonmissing_peaks .- (m * expected_ratios)).^2)
-    TSS = sum((nonmissing_peaks .- mean(nonmissing_peaks)).^2)
-
-    R² = 1 - (RSS/TSS)
-
-    R² * npeak(index)
-end
-
+Fit and return the lattice constant for a given `index` along with the
+associated R² for the fit.
+"""
 function fit(index::Index)
     # find indices of non-missing peaks
     nonmissing_idx = findall(!ismissing, index.peaks)
@@ -134,13 +158,7 @@ function fit(index::Index)
     expected_ratios = PHASES[index.phase][nonmissing_idx]
 
     # use least squares fit to compute lattice parameter
-    m = (expected_ratios' * expected_ratios) \ (expected_ratios' * nonmissing_peaks)
-
-    # compute R² value for fit
-    RSS = sum((nonmissing_peaks .- (m * expected_ratios)).^2)
-    TSS = sum((nonmissing_peaks .- mean(nonmissing_peaks)).^2)
-
-    R² = 1 - (RSS/TSS)
+    d = (expected_ratios' * expected_ratios) \ (expected_ratios' * nonmissing_peaks)
 
     if index.phase == "hexagonal"
         λ = 2 / √3
@@ -148,6 +166,16 @@ function fit(index::Index)
         λ = 1
     end
     
-    # a = 2pi / m
-    2π * λ / m, R²
+    # a = 2pi / d
+    2π * λ / d, R²(d * expected_ratios, nonmissing_peaks)
+end
+
+"""
+    score(index::Index)
+
+Score the validity of a given `index`. This is simply the percentage of
+reasonably expected peaks actually found.
+"""
+function score(index::Index)
+    count(!ismissing, index.peaks) / length(index.peaks)
 end

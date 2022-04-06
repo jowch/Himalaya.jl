@@ -32,7 +32,7 @@ function savitzky_golay(m, n, y; nd = 0)
 	J = zeros(2m + 1, n + 1)
 
 	for i = 0:n
-		J[:, i+1] .= z .^ i
+		@inbounds J[:, i+1] .= z .^ i
 	end
 
 	# The convolution term matrix 
@@ -40,7 +40,7 @@ function savitzky_golay(m, n, y; nd = 0)
 
 	Y = zeros(num_y, length(nd))
 
-	@inbounds for i in 1:num_y
+	for i in 1:num_y
 		if i <= m
 			window_indices = abs.(z .+ i) .+ 1
 		elseif i > num_y - m
@@ -49,8 +49,8 @@ function savitzky_golay(m, n, y; nd = 0)
 			window_indices = z .+ i
 		end
 
-		@inbounds for j in eachindex(nd)
-			Y[i, j] = C[:, j]' * y[window_indices]
+		for j in eachindex(nd)
+			@inbounds Y[i, j] = C[:, j]' * y[window_indices]
 		end
 	end
 

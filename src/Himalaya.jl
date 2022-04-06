@@ -8,7 +8,7 @@ import Base: ==
 export 
 
 # indexing
-Index, indexpeaks, score, fit, npeak, ==,
+Index, indexpeaks, predictpeaks, score, fit, npeak, ==,
 
 # peaks
 findpeaks
