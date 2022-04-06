@@ -1,16 +1,21 @@
-using Lazy
+using DelimitedFiles
+using Images, TiffImages
 
-function int2miller(n)
-    bits = bitstring(n)
-    first_nonzero = findfirst(!x -> x == '0', bits)
-    padding = 3 - ((length(bits) - first_nonzero + 1) % 3)
-
-    minimal_leading = bits[(first_nonzero - padding):end]
-
-    triples = [parse.(Int8, split(minimal_leading[i:i+2], ""))
-               for i in 1:3:length(minimal_leading)]
-
-    reduce((a, b) -> a .+ b, triples)
+function load_image(path; nbins = 256, kwargs...)
+    img = reinterpret(Gray{N0f32}, TiffImages.load(path))
+    
+    # take log of intensities
+    a = log.(Array{Float32}(img) .+ eps())
+    # normalize log intensities to 0-1 range
+    a_unit = (a .- minimum(a)) ./ (maximum(a) - minimum(a))
+    # improve contrast and make visualization easier to understand
+    # a_eq = adjust_histogram(a_unit, Images.Equalization())
+    a_eq = clahe(a_unit, nbins; kwargs...)
+    
+    # clamp noisy float digits and return
+    Gray.(convert.(N0f32, clamp.(a_eq, 0, 1)))
 end
 
-miller_indices = @lazy distinct(map(x -> int2miller(x), Lazy.range()));
+function load_trace(path)
+    readdlm(path, ' ', Float64, '\n')
+end
