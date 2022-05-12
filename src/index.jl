@@ -1,135 +1,129 @@
 using Statistics
 
+"""
+    Index{::Phase}
 
-const PHASES = Dict(
-	:Ia3d		=> [√6, √8, √14, √16, √20, √22, √24, √26],
-	:Pn3m		=> [√2, √3, √4, √6, √8, √9, √10, √11],
-	:Im3m		=> [√2, √4, √6, √8, √10, √12, √14, √16, √18],
-	:Lamellar	=> [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-	:Hexagonal  => [1, √3, √4, √7, √9, √11, √12],
-	:Fd3m		=> [√3, √8, √11, √12, √16, √19, √24, √27, √32, √35, √36]
-)
-
-const MINPEAKS = Dict(
-	:Ia3d		=> 3,
-	:Pn3m		=> 4,
-	:Im3m		=> 3,
-	:Lamellar	=> 2, 
-	:Hexagonal  => 3,
-	:Fd3m		=> 3 
-)
-
-struct Index{T}
-    phase::Symbol
-    basis::T
-    peaks::Vector{Union{Missing, T}}
-
-    Index(phase, basis, peaks) = begin
-        if phase ∉ keys(PHASES)
-            throw(ArgumentError("Invalid phase $phase"))
-        end
-        
-        new{typeof(basis)}(
-            Symbol(phase),
-            basis,
-            convert(Array{Union{Missing, typeof(basis)}}, peaks)
-        )
-    end
+Represents an index assignment. Stores the `basis` and the observed `peaks`.
+"""
+struct Index{P<:Phase}
+    basis::Real
+    peaks::Vector{<:Real}
+    observed::BitVector
 end
 
-function ==(a::Index, b::Index)
-    a.phase == b.phase && a.basis == b.basis
+# getters
+phase(::Index{P}) where P = P
+basis(index::Index) = index.basis
+peaks(index::Index) = index.peaks
+numpeaks(index::Index) = length(index.peaks)
+
+"""
+    predictpeaks(index)
+
+Predicts the expected peaks for the given `index`.
+"""
+function predictpeaks(index::Index{P}) where P
+    phaseratios(P) * basis(index)
 end
 
 """
-    npeak(index::Index)
+    missingpeaks(index)
 
-Returns the number of non-missing peaks for a given `index`
+Computes the unobserved, yet expected peaks for the given `index`.
 """
-function npeak(index::Index)
-    count(!ismissing, index.peaks)
+function missingpeaks(index::Index)
+    predictpeaks(index)[.!index.observed]
 end
 
-"""
-    predictpeaks(phase, basis)
-
-Predicts the expected peaks for a given `phase` and `basis` peak
-"""
-function predictpeaks(phase::Symbol, basis::T) where T
-    expected_ratios = PHASES[phase]
-    expected_ratios ./ first(expected_ratios) .* basis
-end
+# operations
+==(a::Index{P}, b::Index{Q}) where {P,Q} = P <: Q && basis(a) == basis(b)
+issubset(a::Index, b::Index) = basis(a) == basis(b) && issubset(peaks(a), peaks(b))
 
 """
-    predictpeaks(index::Index)
-
-Predicts the expected peaks for a given `index` using its phase and basis
-"""
-function predictpeaks(index::Index)
-    predictpeaks(index.phase, index.basis)
-end
-
-"""
-    indexpeaks(peaks)
+    indexpeaks(domain, peaks; tol = 0.005)
 
 Compute valid indexings for a collection of `peaks` by considering each phase
-in `PHASES` and each choice of basis peak.
+in `PHASES` and all bases in `domain`.
 
-Given a collection of peaks, we can select each peak as a basis for an
-indexing and then evaluate different phases with this choice of basis. This is
-done by computing the expected peak positions based on the phase and basis.
-For each expected peak, we use `isapprox` to look for observed `peaks` no more
-than `tol` away. If not found, that peak is marked as `missing` in the resulting
-indexing.
+A `Phase`'s peaks positions are determined by its basis peak position and its
+ratios. Given a `Phase` and `domain` of possible basis values, we can evaluate
+each phase and basis to see whether the expected peak positions are present in
+the provided observed `peaks`.
 
-An indexing is only considered to be valid if it meets the required number of
-peaks for its phase.
+More specifically, we can divide each observed peak value by a given basis to
+find their hypothetical ratios and then compare these ratios to the defining
+ratios for a `Phase`. Only the "correct" choices of phase and basis will match
+the hypothetical ratios. We can set a tolerance `tol` to be the maximum
+acceptable deviation of hypothetical ratios from the expected ratios. The peaks
+that result in residuals within tolerance are `candidates` for an `Index` of
+this phase and basis.
+
+Furthermore, each `Phase` has a minimum number of candidates to be considered
+reasonable.
+
+See also `Phase`, `minpeaks`.
 """
-function indexpeaks(peaks; tol=0.0025)
-    indices = []
+function indexpeaks(domain, peaks; tol = 0.005)
+    [index for phase in (Lamellar, Hexagonal, Pn3m, Im3m, Ia3d, Fd3m)
+           for index in indexpeaks(phase, domain, peaks, tol)]
+end
 
-    for basis in peaks
-        for phase in keys(PHASES)
-            valid_peaks = view(peaks, peaks .> basis)
+function indexpeaks(::Type{P}, domain, peaks, tol) where P
+    observed_ratios = let
+        # consider all elements in `domain` as a potential basis value
+        B = reshape(domain, length(domain), 1)
+        X = reshape(peaks, 1, length(peaks))
 
-            if length(valid_peaks) < MINPEAKS[phase]
-                continue
-            end
+        # compute the ratios of observed peaks given each candidate basis
+        1 ./ B * X
+    end
+    ratios = phaseratios(P)
+    min_peaks = minpeaks(P)
 
-            expected_peaks = filter(predictpeaks(phase, basis)) do expected_peak
-                basis < expected_peak <= maximum(valid_peaks)
-            end
-
-            if length(expected_peaks) < MINPEAKS[phase]
-                continue
-            end
-
-            index_peaks = Array{Union{Missing, typeof(basis)}}(missing, 1 + length(expected_peaks))
-            index_peaks[1] = basis
-
-            for (j, expected_peak) in enumerate(expected_peaks)
-                candidates = view(
-                    valid_peaks,
-                    isapprox(expected_peak; atol = tol).(valid_peaks)
-                )
-
-                if isempty(candidates)
-                    valid_peaks = view(peaks, peaks .> expected_peak)
-                else
-                    index_peaks[j + 1] = candidates[argmin(candidates .- expected_peak)]                  
-                    valid_peaks = view(peaks, peaks .> last(candidates))
-                end
-            end
-
-            # ensure that none of the first `minpeaks` number of peaks are missing.
-            # ie. require that the first `number_required` are present
-            if all(.!ismissing.(index_peaks[1:MINPEAKS[phase]]))
-                push!(indices, Index(phase, basis, index_peaks))
-            end
-        end
+    # find subset of rows that are valid
+    valid_idx = let
+        criteria = 1 .<= observed_ratios .<= maximum(ratios)
+        vec(any(criteria; dims = 2) .&& count(criteria; dims = 2) .>= min_peaks)
     end
 
-    indices
+    if !any(valid_idx)
+        return []
+    end
+
+    observed_ratios = view(observed_ratios, valid_idx, :)
+
+    # compute the residuals between each observed ratio and phase ratio
+    residuals, matched_ratios = let
+        d = zeros(size(observed_ratios)..., length(ratios))
+
+        for (i, ratio) in enumerate(ratios)
+            @inbounds d[:,:,i] = abs.(observed_ratios .- ratio)
+        end
+
+        d[argmin(abs.(d); dims = 3)], getindex.(argmin(abs.(d); dims = 3), 3)
+    end
+
+    # candidate peaks for each basis need to have residuals within tolerance `tol`
+    candidate_idx = any(residuals .<= tol; dims = 3)
+    num_candidates = count(candidate_idx, dims = 2)
+
+    # only keep bases with the minimum number of candidates
+    valid_bases = (num_candidates .>= min_peaks) |> vec
+
+    if !any(valid_bases)
+        return []
+    end
+
+    residuals = view(residuals, valid_bases, :)
+    matched_ratios = view(matched_ratios .* candidate_idx, valid_bases, :)
+
+    # compute the total error for each basis; optimal bases will minimize error
+    basis_error = sum(abs, residuals, dims = 2) |> vec
+
+    [Index{P}(domain[valid_idx][valid_bases][idx],
+              peaks[candidate_idx[valid_bases, :][idx, :]],
+              BitVector(i ∈ matched_ratios[idx, :] for i in 1:length(ratios)))
+     for idx in sortperm(basis_error)]
 end
 
 """
@@ -146,36 +140,58 @@ function R²(ŷ, y)
 end
 
 """
-    fit(index::Index)
+    fit(index)
 
 Fit and return the lattice constant for a given `index` along with the
 associated R² for the fit.
 """
-function fit(index::Index)
-    # find indices of non-missing peaks
-    nonmissing_idx = findall(!ismissing, index.peaks)
-    nonmissing_peaks = index.peaks[nonmissing_idx]
-    expected_ratios = PHASES[index.phase][nonmissing_idx]
+function fit(index::Index{P}) where P
+    observed_ratios = phaseratios(P)[index.observed]
+    observed_peaks = peaks(index)
 
     # use least squares fit to compute lattice parameter
-    d = (expected_ratios' * expected_ratios) \ (expected_ratios' * nonmissing_peaks)
+    d = (observed_ratios' * observed_ratios) \ (observed_ratios' * observed_peaks)
 
-    if index.phase == "hexagonal"
+    if P <: Hexagonal
         λ = 2 / √3
     else
         λ = 1
     end
     
     # a = 2pi / d
-    2π * λ / d, R²(d * expected_ratios, nonmissing_peaks)
+    2π * λ / d, R²(d * observed_ratios, observed_peaks)
 end
 
 """
     score(index::Index)
 
-Score the validity of a given `index`. This is simply the percentage of
-reasonably expected peaks actually found.
+Score the validity of a given `index`. This is simply the number of peaks
+indexed times the quality of the index's `fit`.
 """
 function score(index::Index)
-    count(!ismissing, index.peaks) / length(index.peaks)
+    _, rsquared = fit(index)
+    numpeaks(index) * rsquared
+end
+
+"""
+    remove_subsets(indices::Vector{Index})
+
+Removes any indices that are strict subsets of another index. This is the case
+when two indices share the same basis but the first has a subset of the second's
+peaks.
+
+See also `issubset`.
+"""
+function remove_subsets(indices::Vector{Index})
+    subsets = falses(length(indices), length(indices))
+
+    for i = 1:length(indices)
+        for j = i:length(indices)
+            if i != j
+                @inbounds subsets[i, j] = issubset(indices[i], indices[j])
+            end
+        end
+    end
+
+    indices[.!any(subsets; dims = 2) |> vec]
 end
