@@ -80,49 +80,68 @@ function indexpeaks(::Type{P}, domain, peaks, tol) where P
     ratios = phaseratios(P)
     min_peaks = minpeaks(P)
 
-    # find subset of rows that are valid
-    valid_idx = let
+    # find subset of rows that have hypothetical ratios comparable to phase ratios
+    valid_idx, comparable_mask, comparable_ratios = let
         criteria = 1 .<= observed_ratios .<= maximum(ratios)
-        vec(any(criteria; dims = 2) .&& count(criteria; dims = 2) .>= min_peaks)
+        valid = vec(count(criteria; dims = 2) .>= min_peaks)
+
+        valid, criteria[valid, :], view(observed_ratios, valid, :)
     end
 
     if !any(valid_idx)
         return []
     end
 
-    observed_ratios = view(observed_ratios, valid_idx, :)
-
     # compute the residuals between each observed ratio and phase ratio
     residuals, matched_ratios = let
-        d = zeros(size(observed_ratios)..., length(ratios))
+        d = zeros(size(comparable_mask)..., length(ratios))
 
         for (i, ratio) in enumerate(ratios)
-            @inbounds d[:,:,i] = abs.(observed_ratios .- ratio)
+            @inbounds d[:,:,i] = abs.(comparable_ratios .- ratio)
         end
 
-        d[argmin(abs.(d); dims = 3)], getindex.(argmin(abs.(d); dims = 3), 3)
+        argminima = dropdims(argmin(abs.(d); dims = 3); dims = 3)
+
+        d[argminima, 1], getindex.(argminima, 3) .* comparable_mask 
     end
 
     # candidate peaks for each basis need to have residuals within tolerance `tol`
-    candidate_idx = any(residuals .<= tol; dims = 3)
-    num_candidates = count(candidate_idx, dims = 2)
+    candidate_idx = any(residuals .<= tol; dims = 3) .&& comparable_mask 
+    matches = matched_ratios .* candidate_idx
+
+    for i = 1:size(matches, 1)
+        ms = view(matches, i, :)
+        rs = view(residuals, i, :)
+        idxs = unique(ms[ms .!= 0])
+
+        for idx in idxs
+            target_idx = ms .== idx
+            num_idx = count(target_idx)
+
+            if num_idx .> 1
+                suppressed = zeros(Int64, num_idx)
+                suppressed[argmin(rs[target_idx])] = idx
+
+                @inbounds matches[i, target_idx] .= suppressed
+                @inbounds candidate_idx[i, target_idx] .= suppressed .> 0
+            end
+        end
+    end
 
     # only keep bases with the minimum number of candidates
-    valid_bases = (num_candidates .>= min_peaks) |> vec
+    num_candidates = count(candidate_idx, dims = 2)
+    valid_bases = vec(num_candidates .>= min_peaks)
 
     if !any(valid_bases)
         return []
     end
 
-    residuals = view(residuals, valid_bases, :)
-    matched_ratios = view(matched_ratios .* candidate_idx, valid_bases, :)
-
     # compute the total error for each basis; optimal bases will minimize error
-    basis_error = sum(abs, residuals, dims = 2) |> vec
+    basis_error = sum(abs, residuals[valid_bases, :], dims = 2) |> vec
 
     [Index{P}(domain[valid_idx][valid_bases][idx],
               peaks[candidate_idx[valid_bases, :][idx, :]],
-              BitVector(i ∈ matched_ratios[idx, :] for i in 1:length(ratios)))
+              BitVector(i ∈ matches[valid_bases, :][idx, :] for i in 1:length(ratios)))
      for idx in sortperm(basis_error)]
 end
 
@@ -170,13 +189,16 @@ indexed times the quality of the index's `fit`.
 """
 function score(index::Index)
     _, rsquared = fit(index)
-    numpeaks(index) * rsquared
+    missing_first = first(index.observed) == 0
+    has_gaps = any(index.observed[findfirst(index.observed):findlast(index.observed)] .== 0)
+
+    numpeaks(index) * rsquared - missing_first - has_gaps
 end
 
 """
-    remove_subsets(indices::Vector{Index})
+    remove_duplicates(indices::Vector{Index})
 
-Removes any indices that are strict subsets of another index. This is the case
+Remove any indices that are strict subsets of another index. This is the case
 when two indices share the same basis but the first has a subset of the second's
 peaks.
 
