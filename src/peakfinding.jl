@@ -2,8 +2,15 @@
 	findpeaks(trace, m, n)
 
 Identifies peaks in the trace using the second derivative of the Savitzky-Golay.
+Most of the peaks identified in this way will come from noise in the data and
+will have near-zero prominence. Real peaks will have prominences much higher
+than those of the noisy peaks. We can look for when the percentile prominences
+start to increase dramatically to identify the cutoff prominence between real
+and noisy peaks.
+
+See `Peaks.peakproms`
 """
-function findpeaks(trace; m = 5, n = 3, top = 15)
+function findpeaks(trace; m = 5, n = 3)
 	# estimate the second derivative of the function using Savitzky-Golay filter
 	d2y = let
 		d2y = savitzky_golay(m, n, trace; nd = 2)
@@ -11,11 +18,15 @@ function findpeaks(trace; m = 5, n = 3, top = 15)
 		d2y
 	end
 
-	# peaks in trace
+	# find peaks by looking at the second derivative of the trace
 	idx, proms = peakproms(argmaxima(-d2y), -d2y)
-	top_k = sortperm(proms; rev = true)[1:top]	
 
-	idx[top_k], proms[top_k]
+	# find a threshold
+	qs = [quantile(proms, p) for p = 0.7:0.01:1]
+	prom_d3y = savitzky_golay(m, n, qs; nd = 3)
+	θ = qs[argmax(prom_d3y)]
+
+	idx[proms .> θ]
 end
 
 """
