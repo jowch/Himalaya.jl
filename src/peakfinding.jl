@@ -4,23 +4,21 @@ using LinearAlgebra
 """
 	findpeaks(trace, m, n)
 
-Identifies peaks in the trace using the second derivative of the Savitzky-Golay
+Identifies peaks in the trace using the second derivative of the Savitzky-Golay.
 """
-function findpeaks(trace, m, n; minprom = 1, downsample = 1)
+function findpeaks(trace; m = 5, n = 3, top = 15)
 	# estimate the second derivative of the function using Savitzky-Golay filter
-	downsample_indices = 1:downsample:length(trace)
-	nd2y = let 
-		d2y = savitzky_golay(m, n, trace[downsample_indices]; nd = 2)
-		nd2y = zeros(size(d2y))
-		nd2y[findall(d2y .< 0)] .= d2y[findall(d2y .< 0)]
-
-		nd2y
+	d2y = let
+		d2y = savitzky_golay(m, n, trace; nd = 2)
+		d2y[d2y .>= 0] .= 0
+		d2y
 	end
 
 	# peaks in trace
-	best_indices, proms = peakproms(argminima(nd2y), nd2y; minprom = minprom)
-	
-	downsample_indices[best_indices], proms, nd2y, best_indices
+	idx, proms = peakproms(argmaxima(-d2y), -d2y)
+	top_k = sortperm(proms; rev = true)[1:top]	
+
+	idx[top_k], proms[top_k]
 end
 
 """
@@ -37,7 +35,6 @@ function savitzky_golay(m, n, y; nd = 0)
 
 	# The convolution term matrix 
 	C = J' \ I(n .+ 1)[:, nd .+ 1] # = inv(J' * J) * J' = pinv(J)
-
 	Y = zeros(num_y, length(nd))
 
 	for i in 1:num_y
