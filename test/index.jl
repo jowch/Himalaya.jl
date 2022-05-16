@@ -3,7 +3,7 @@
     @test all(hasfield.(Index, [:basis, :peaks])) 
 
     test_peaks = [1, √3, 2]
-    indices = indexpeaks(0:0.1:2, test_peaks)
+    indices = indexpeaks(test_peaks, 0:0.1:2; gaps = false)
     @test length(indices) == 1
 
     index = only(indices)
@@ -21,7 +21,7 @@
     @test score(index) == 3
 
     test_peaks = 1:5
-    indices = indexpeaks(0:0.1:2, test_peaks)
+    indices = indexpeaks(test_peaks)
     @test length(indices) == 2
 
     a, b = indices

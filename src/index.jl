@@ -203,15 +203,6 @@ peaks.
 See also `issubset`.
 """
 function remove_subsets(indices::Vector{Index})
-    subsets = falses(length(indices), length(indices))
-
-    for i = 1:length(indices)
-        for j = 1:length(indices)
-            if i != j
-                @inbounds subsets[i, j] = issubset(indices[i], indices[j])
-            end
-        end
-    end
-
+    subsets = [a != b && issubset(a, b) for a = indices, b = indices]
     indices[.!any(subsets; dims = 2) |> vec]
 end
