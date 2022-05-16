@@ -11,9 +11,9 @@ end
 function show(io::IO, index::Index{P}) where P
     idx, xs = findnz(index.peaks)
     peak_str = fill("⋅", length(index.peaks))
-    peak_str[idx] = string.(xs)
+    peak_str[idx] = string.(round.(xs; digits = 5))
 
-    print(io, "Index(::$P, $(basis(index)), [$(join(peak_str, ' ')...)]")
+    print(io, "Index(::$P, $(round(basis(index); digits = 5)), [$(join(peak_str, ' ')...)]")
 end
 
 # getters
