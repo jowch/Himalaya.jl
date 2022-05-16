@@ -3,7 +3,7 @@ module Himalaya
 using Peaks
 using Statistics
 
-import Base: ==, issubset
+import Base: ==, issubset, show
 
 export 
 
@@ -11,8 +11,8 @@ export
 Phase, Lamellar, Hexagonal, Pn3m, Im3m, Ia3d, Fd3m, phaseratios,
 
 # indexing
-Index, phase, basis, peaks, numpeaks, predictpeaks, missingpeaks, ==, issubset,
-indexpeaks, remove_subsets, fit, score,
+Index, phase, basis, peaks, numpeaks, predictpeaks, ==, issubset, show,
+indexpeaks, fit, score,
 
 # peaks
 findpeaks

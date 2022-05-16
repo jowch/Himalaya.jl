@@ -1,3 +1,4 @@
+using SparseArrays
 using Statistics
 
 """
@@ -7,33 +8,23 @@ Represents an index assignment. Stores the `basis` and the observed `peaks`.
 """
 struct Index{P<:Phase}
     basis::Real
-    peaks::Vector{<:Real}
-    observed::BitVector
+    peaks::SparseVector{<:Real}
 end
+
+show(io::IO, index::Index{P}) where P = print(io, "Index(::$P, $(basis(index)), $(peaks(index)))")
 
 # getters
 phase(::Index{P}) where P = P
 basis(index::Index) = index.basis
-peaks(index::Index) = index.peaks
-numpeaks(index::Index) = length(index.peaks)
+peaks(index::Index) = nonzeros(index.peaks)
+numpeaks(index::Index) = nnz(index.peaks)
 
 """
     predictpeaks(index)
 
 Predicts the expected peaks for the given `index`.
 """
-function predictpeaks(index::Index{P}) where P
-    phaseratios(P) * basis(index)
-end
-
-"""
-    missingpeaks(index)
-
-Computes the unobserved, yet expected peaks for the given `index`.
-"""
-function missingpeaks(index::Index)
-    predictpeaks(index)[.!index.observed]
-end
+predictpeaks(index::Index{P}) where P = basis(index) * phaseratios(P)
 
 # operations
 ==(a::Index{P}, b::Index{Q}) where {P,Q} = P <: Q && basis(a) == basis(b)
@@ -61,14 +52,36 @@ this phase and basis.
 Furthermore, each `Phase` has a minimum number of candidates to be considered
 reasonable.
 
+If `basis`, then require that indices have observed bases (first peak is
+observed). If `gaps`, then allow gaps between observed peaks.
+
 See also `Phase`, `minpeaks`.
 """
-function indexpeaks(domain, peaks; tol = 0.005)
-    [index for phase in (Lamellar, Hexagonal, Pn3m, Im3m, Ia3d, Fd3m)
-           for index in indexpeaks(phase, domain, peaks, tol)]
+function indexpeaks(domain, peaks; tol = 0.005, basis = true, gaps = true)
+    if basis
+        # don't bother trying bases that are less than the smallest peak
+        domain = view(domain, minimum(peaks) .<= domain)
+    end
+
+    indices = remove_subsets([
+        index for phase in (Lamellar, Hexagonal, Pn3m, Im3m, Ia3d, Fd3m)
+              for index in indexpeaks(phase, domain, peaks, tol)
+    ])
+
+    # apply filter
+    if !gaps
+        filter!(indices) do index
+            peak_idx, _ = findnz(index.peaks)
+            !any(==(0), view(index.peaks, first(peak_idx):last(peak_idx)))
+        end
+    end
+
+    indices
 end
 
-function indexpeaks(::Type{P}, domain, peaks, tol) where P
+function indexpeaks(::Type{P}, domain, peaks, tol) where {P<:Phase}
+    indices = Index[]
+    ratios = phaseratios(P)
     observed_ratios = let
         # consider all elements in `domain` as a potential basis value
         B = reshape(domain, length(domain), 1)
@@ -77,72 +90,61 @@ function indexpeaks(::Type{P}, domain, peaks, tol) where P
         # compute the ratios of observed peaks given each candidate basis
         1 ./ B * X
     end
-    ratios = phaseratios(P)
-    min_peaks = minpeaks(P)
+    candidate_mask = 1 .<= observed_ratios .<= maximum(ratios)
 
-    # find subset of rows that have hypothetical ratios comparable to phase ratios
-    valid_idx, comparable_mask, comparable_ratios = let
-        criteria = 1 .<= observed_ratios .<= maximum(ratios)
-        valid = vec(count(criteria; dims = 2) .>= min_peaks)
-
-        valid, criteria[valid, :], view(observed_ratios, valid, :)
+    if !any(candidate_mask)
+        return indices
     end
 
-    if !any(valid_idx)
-        return []
-    end
-
-    # compute the residuals between each observed ratio and phase ratio
-    residuals, matched_ratios = let
-        d = zeros(size(comparable_mask)..., length(ratios))
+    # match the observed ratios to phase ratios by computing residuals and
+    # finding pairs within tolerance
+    matched_ratios = let
+        comparable_ratios = view(observed_ratios, candidate_mask)
+        residuals = zeros(length(comparable_ratios), length(ratios))
 
         for (i, ratio) in enumerate(ratios)
-            @inbounds d[:,:,i] = abs.(comparable_ratios .- ratio)
+            @inbounds residuals[:, i] = abs.(comparable_ratios .- ratio)
         end
 
-        argminima = dropdims(argmin(abs.(d); dims = 3); dims = 3)
+        # find argminima residuals
+        argmin_index = vec(argmin(residuals; dims = 2))
+        within_tol = residuals[argmin_index] .< tol
 
-        d[argminima, 1], getindex.(argminima, 3) .* comparable_mask 
-    end
+        # update mask with positions that are within tolerance
+        candidate_mask[candidate_mask, :] .&= within_tol
 
-    # candidate peaks for each basis need to have residuals within tolerance `tol`
-    candidate_idx = any(residuals .<= tol; dims = 3) .&& comparable_mask 
-    matches = matched_ratios .* candidate_idx
+        # pull out ratio indices that are within tolerance
+        matched_ratios = spzeros(UInt8, size(candidate_mask)...)
+        matched_ratios[candidate_mask] .= getindex.(argmin_index[within_tol], 2)
 
-    for i = 1:size(matches, 1)
-        ms = view(matches, i, :)
-        rs = view(residuals, i, :)
-        idxs = unique(ms[ms .!= 0])
-
-        for idx in idxs
-            target_idx = ms .== idx
-            num_idx = count(target_idx)
-
-            if num_idx .> 1
-                suppressed = zeros(Int64, num_idx)
-                suppressed[argmin(rs[target_idx])] = idx
-
-                @inbounds matches[i, target_idx] .= suppressed
-                @inbounds candidate_idx[i, target_idx] .= suppressed .> 0
-            end
-        end
+        matched_ratios
     end
 
     # only keep bases with the minimum number of candidates
-    num_candidates = count(candidate_idx, dims = 2)
-    valid_bases = vec(num_candidates .>= min_peaks)
+    num_candidates = count(candidate_mask, dims = 2)
+    candidate_mask[vec(num_candidates .< minpeaks(P)), :] .= 0
 
-    if !any(valid_bases)
-        return []
+    if !any(candidate_mask)
+        return indices
     end
 
-    # compute the total error for each basis; optimal bases will minimize error
-    basis_error = sum(abs, residuals[valid_bases, :], dims = 2) |> vec
+    candidate_bases = getindex.(findall(any(candidate_mask; dims = 2)), 1)
 
-    [Index{P}(domain[valid_idx][valid_bases][idx],
-              peaks[candidate_idx[valid_bases, :][idx, :]],
-              BitVector(i ∈ matches[valid_bases, :][idx, :] for i in 1:length(ratios)))
-     for idx in sortperm(basis_error)]
+    for i in candidate_bases
+        peak_idx, ratio_idx = findnz(matched_ratios[i, :])
+
+        push!(
+            indices,
+            Index{P}(
+                domain[i],
+                SparseVector{eltype(peaks),UInt8}(
+                    length(ratios), ratio_idx, peaks[peak_idx]
+                )
+            )
+        )
+    end
+
+    indices
 end
 
 """
@@ -165,8 +167,8 @@ Fit and return the lattice constant for a given `index` along with the
 associated R² for the fit.
 """
 function fit(index::Index{P}) where P
-    observed_ratios = phaseratios(P)[index.observed]
-    observed_peaks = peaks(index)
+    observed_idx, observed_peaks = findnz(index.peaks)
+    observed_ratios = phaseratios(P)[observed_idx]
 
     # use least squares fit to compute lattice parameter
     d = (observed_ratios' * observed_ratios) \ (observed_ratios' * observed_peaks)
@@ -189,8 +191,10 @@ indexed times the quality of the index's `fit`.
 """
 function score(index::Index)
     _, rsquared = fit(index)
-    missing_first = first(index.observed) == 0
-    has_gaps = any(index.observed[findfirst(index.observed):findlast(index.observed)] .== 0)
+    missing_first = ismissing(first(index.peaks))
+    has_gaps = any(ismissing, index.peaks[
+        findfirst(!ismissing, index.peaks):findlast(!ismissing, index.peaks)
+    ])
 
     numpeaks(index) * rsquared - missing_first - has_gaps
 end
@@ -208,7 +212,7 @@ function remove_subsets(indices::Vector{Index})
     subsets = falses(length(indices), length(indices))
 
     for i = 1:length(indices)
-        for j = i:length(indices)
+        for j = 1:length(indices)
             if i != j
                 @inbounds subsets[i, j] = issubset(indices[i], indices[j])
             end
