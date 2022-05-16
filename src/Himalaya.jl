@@ -1,6 +1,8 @@
 module Himalaya
 
+using LinearAlgebra
 using Peaks
+using SparseArrays
 using Statistics
 
 import Base: ==, issubset, show

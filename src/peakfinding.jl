@@ -1,6 +1,3 @@
-using Peaks
-using LinearAlgebra
-
 """
 	findpeaks(trace, m, n)
 

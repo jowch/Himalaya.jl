@@ -1,6 +1,3 @@
-using SparseArrays
-using Statistics
-
 """
     Index{::Phase}
 
