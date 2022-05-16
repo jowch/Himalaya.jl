@@ -49,9 +49,10 @@ More specifically, we can divide each observed peak value by a given basis to
 find their hypothetical ratios and then compare these ratios to the defining
 ratios for a `Phase`. Only the "correct" choices of phase and basis will match
 the hypothetical ratios. We can set a tolerance `tol` to be the maximum
-acceptable deviation of hypothetical ratios from the expected ratios. The peaks
-that result in residuals within tolerance are `candidates` for an `Index` of
-this phase and basis.
+acceptable deviation of candidate peaks from observed peaks. Since the algorithm
+looks at hypothetical ratios, we need to convert `tol` to ratios by dividing it
+with each bases. The peaks that result in residuals within tolerance are
+`candidates` for an `Index` of this phase and basis.
 
 Furthermore, each `Phase` has a minimum number of candidates to be considered
 reasonable.
@@ -82,13 +83,14 @@ indexpeaks(peaks; kwargs...) = indexpeaks(peaks, peaks; kwargs...)
 function indexpeaks(::Type{P}, peaks, domain, tol) where {P<:Phase}
     indices = Index[]
     ratios = phaseratios(P)
-    observed_ratios = let
+    observed_ratios, tols = let
         # consider all elements in `domain` as a potential basis value
         B = reshape(domain, length(domain), 1)
         X = reshape(peaks, 1, length(peaks))
 
         # compute the ratios of observed peaks given each candidate basis
-        1 ./ B * X
+        # also compute the adjusted tolerable peak error as ρ = (x + ε) / b
+        1 ./ B * X, tol ./ B
     end
     candidate_mask = 1 .<= observed_ratios .<= maximum(ratios)
 
@@ -108,7 +110,7 @@ function indexpeaks(::Type{P}, peaks, domain, tol) where {P<:Phase}
 
         # find argminima residuals
         argmin_index = vec(argmin(residuals; dims = 2))
-        within_tol = residuals[argmin_index] .< tol
+        within_tol = residuals[argmin_index] .< tols[getindex.(findall(candidate_mask), 1)]
 
         # update mask with positions that are within tolerance
         candidate_mask[candidate_mask, :] .&= within_tol
