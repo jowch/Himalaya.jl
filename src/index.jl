@@ -60,10 +60,10 @@ If `gaps`, then allow gaps between observed peaks.
 
 See also `Phase`, `minpeaks`.
 """
-function indexpeaks(domain, peaks; tol = 0.005, gaps = true)
+function indexpeaks(peaks, domain; tol = 0.005, gaps = true)
     indices = remove_subsets([
         index for phase in (Lamellar, Hexagonal, Pn3m, Im3m, Ia3d, Fd3m)
-              for index in indexpeaks(phase, domain, peaks, tol)
+              for index in indexpeaks(phase, peaks, domain, tol)
     ])
 
     # apply filter
@@ -79,7 +79,7 @@ end
 
 indexpeaks(peaks; kwargs...) = indexpeaks(peaks, peaks; kwargs...)
 
-function indexpeaks(::Type{P}, domain, peaks, tol) where {P<:Phase}
+function indexpeaks(::Type{P}, peaks, domain, tol) where {P<:Phase}
     indices = Index[]
     ratios = phaseratios(P)
     observed_ratios = let
@@ -191,10 +191,11 @@ indexed times the quality of the index's `fit`.
 """
 function score(index::Index)
     _, rsquared = fit(index)
-    missing_first = ismissing(first(index.peaks))
-    has_gaps = any(ismissing, index.peaks[
-        findfirst(!ismissing, index.peaks):findlast(!ismissing, index.peaks)
-    ])
+    missing_first = first(index.peaks) == 0
+    has_gaps = let
+        peak_idx, _ = findnz(index.peaks)
+        any(==(0), view(index.peaks, first(peak_idx):last(peak_idx)))
+    end
 
     numpeaks(index) * rsquared - missing_first - has_gaps
 end
@@ -208,7 +209,7 @@ peaks.
 
 See also `issubset`.
 """
-function remove_subsets(indices::Vector{Index})
+function remove_subsets(indices::Vector{<:Index})
     subsets = [a != b && issubset(a, b) for a = indices, b = indices]
     indices[.!any(subsets; dims = 2) |> vec]
 end
