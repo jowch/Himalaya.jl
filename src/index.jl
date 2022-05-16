@@ -8,7 +8,13 @@ struct Index{P<:Phase}
     peaks::SparseVector{<:Real}
 end
 
-show(io::IO, index::Index{P}) where P = print(io, "Index(::$P, $(basis(index)), $(peaks(index)))")
+function show(io::IO, index::Index{P}) where P
+    idx, xs = findnz(index.peaks)
+    peak_str = fill("⋅", length(index.peaks))
+    peak_str[idx] = string.(xs)
+
+    print(io, "Index(::$P, $(basis(index)), [$(join(peak_str, ' ')...)]")
+end
 
 # getters
 phase(::Index{P}) where P = P
@@ -54,10 +60,10 @@ If `gaps`, then allow gaps between observed peaks.
 
 See also `Phase`, `minpeaks`.
 """
-function indexpeaks(peaks, domain; tol = 0.005, gaps = true)
+function indexpeaks(domain, peaks; tol = 0.005, gaps = true)
     indices = remove_subsets([
         index for phase in (Lamellar, Hexagonal, Pn3m, Im3m, Ia3d, Fd3m)
-              for index in indexpeaks(phase, peaks, domain, tol)
+              for index in indexpeaks(phase, domain, peaks, tol)
     ])
 
     # apply filter
@@ -73,7 +79,7 @@ end
 
 indexpeaks(peaks; kwargs...) = indexpeaks(peaks, peaks; kwargs...)
 
-function indexpeaks(::Type{P}, peaks, domain, tol) where {P<:Phase}
+function indexpeaks(::Type{P}, domain, peaks, tol) where {P<:Phase}
     indices = Index[]
     ratios = phaseratios(P)
     observed_ratios = let
