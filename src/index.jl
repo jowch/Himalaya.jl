@@ -61,11 +61,14 @@ If `gaps`, then allow gaps between observed peaks.
 
 See also `Phase`, `minpeaks`.
 """
-function indexpeaks(peaks, domain; tol = 0.005, gaps = true)
-    indices = remove_subsets([
-        index for phase in (Lamellar, Hexagonal, Pn3m, Im3m, Ia3d, Fd3m)
-              for index in indexpeaks(phase, peaks, domain, tol)
-    ])
+function indexpeaks(peaks, domain; tol = 0.0005, gaps = true)
+    indices = Index[]
+
+    for phase in (Lamellar, Hexagonal, Pn3m, Im3m, Ia3d, Fd3m)
+        push!(indices, indexpeaks(phase, peaks, domain, tol)...)
+    end
+
+    indices = remove_subsets(indices)
 
     # apply filter
     if !gaps
