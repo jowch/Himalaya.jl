@@ -28,10 +28,11 @@ predictpeaks(index::Index{P}) where P = basis(index) * phaseratios(P)
 issubset(a::Index, b::Index) = basis(a) == basis(b) && issubset(peaks(a), peaks(b))
 
 """
-    indexpeaks(domain, peaks; tol = 0.005)
+    indexpeaks(peaks, [domain]; tol = 0.005)
 
 Compute valid indexings for a collection of `peaks` by considering each phase
-in `PHASES` and all bases in `domain`.
+in `PHASES` and all bases in `domain`. If domain is not provided, then `peaks`
+will be used as the domain (equivalent to requiring an observed basis).
 
 A `Phase`'s peaks positions are determined by its basis peak position and its
 ratios. Given a `Phase` and `domain` of possible basis values, we can evaluate
@@ -49,20 +50,14 @@ this phase and basis.
 Furthermore, each `Phase` has a minimum number of candidates to be considered
 reasonable.
 
-If `basis`, then require that indices have observed bases (first peak is
-observed). If `gaps`, then allow gaps between observed peaks.
+If `gaps`, then allow gaps between observed peaks.
 
 See also `Phase`, `minpeaks`.
 """
-function indexpeaks(domain, peaks; tol = 0.005, basis = true, gaps = true)
-    if basis
-        # don't bother trying bases that are less than the smallest peak
-        domain = view(domain, minimum(peaks) .<= domain)
-    end
-
+function indexpeaks(peaks, domain; tol = 0.005, gaps = true)
     indices = remove_subsets([
         index for phase in (Lamellar, Hexagonal, Pn3m, Im3m, Ia3d, Fd3m)
-              for index in indexpeaks(phase, domain, peaks, tol)
+              for index in indexpeaks(phase, peaks, domain, tol)
     ])
 
     # apply filter
@@ -76,7 +71,9 @@ function indexpeaks(domain, peaks; tol = 0.005, basis = true, gaps = true)
     indices
 end
 
-function indexpeaks(::Type{P}, domain, peaks, tol) where {P<:Phase}
+indexpeaks(peaks; kwargs...) = indexpeaks(peaks, peaks; kwargs...)
+
+function indexpeaks(::Type{P}, peaks, domain, tol) where {P<:Phase}
     indices = Index[]
     ratios = phaseratios(P)
     observed_ratios = let
