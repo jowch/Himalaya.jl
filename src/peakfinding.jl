@@ -32,6 +32,12 @@ function findpeaks(y; m = 5, n = 3)
 
 	# find a prominence threshold
 	qs = [quantile(proms .* ys[idx], p) for p = 0.7:0.01:1]
+
+	# sanity check
+	if maximum(qs) < 10 * median(qs)
+		return []
+	end
+
 	d3q = let
 		d3q = savitzky_golay(5, 3, log10.(qs); nd = 3)
 		d3q[d3q .> 0]
