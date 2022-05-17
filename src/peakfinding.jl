@@ -36,8 +36,9 @@ function findpeaks(y; m = 5, n = 3)
 		d3q = savitzky_golay(5, 3, log10.(qs); nd = 3)
 		d3q[d3q .> 0]
 	end
+
 	# the q''' can have multiple peaks, take the one with the lowest percentile
-	θ = qs[first(argmaxima(qd3y))]
+	θ = qs[first(argmaxima(d3q))]
 
 	idx[proms .>= θ]
 end
