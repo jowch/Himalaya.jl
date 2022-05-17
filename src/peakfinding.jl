@@ -1,33 +1,45 @@
 """
-	findpeaks(trace, m, n)
+	findpeaks(y, m, n)
 
-Identifies peaks in the trace using the second derivative of the Savitzky-Golay.
+Identifies peaks in curve `y` using the Savitzky-Golay second derivative.
+
 Most of the peaks identified in this way will come from noise in the data and
-will have near-zero prominence. Real peaks will have prominences much higher
-than those of the noisy peaks. We can look for when the percentile prominences
-start to increase dramatically to identify the cutoff prominence between real
-and noisy peaks. As an addition heuristic, we require that the maximum
-prominence be at least one order of magnitude more than the threshold value.
+will have near-zero prominence. Real peaks will have prominences higher than
+those of the noisy peaks.
 
-See `Peaks.peakproms`
+We can compute a threshold prominence value `θ`, where peaks with prominence
+greater than `θ` are considered real. This threshold can be found by looking at
+the precentile-prominence curve, which will have "jumps" at higher percentiles
+as real peaks have higher prominence than noise. The method for computing this
+threshold is a heuristic and was developed by studying percentile-prominence
+curves from many traces.
+
+See also `Peaks.peakproms`.
 """
-function findpeaks(trace; m = 5, n = 3)
+function findpeaks(y; m = 5, n = 3)
+	# smooth y to reduce noise
+	ys = savitzky_golay(3, 3, y; nd = 0)
+	
 	# estimate the second derivative of the function using Savitzky-Golay filter
 	d2y = let
-		d2y = savitzky_golay(m, n, trace; nd = 2)
+		d2y = savitzky_golay(m, n, ys; nd = 2)
 		d2y[d2y .>= 0] .= 0
 		d2y
 	end
 
-	# find peaks by looking at the second derivative of the trace
+	# find peaks by looking at the second derivative of the y
 	idx, proms = peakproms(argmaxima(-d2y), -d2y)
 
-	# find a threshold
-	qs = [quantile(proms, p) for p = 0.7:0.01:1]
-	prom_d3y = savitzky_golay(m, n, qs; nd = 3)
-	θ = qs[argmax(prom_d3y)]
+	# find a prominence threshold
+	qs = [quantile(proms .* ys[idx], p) for p = 0.7:0.01:1]
+	d3q = let
+		d3q = savitzky_golay(5, 3, log10.(qs); nd = 3)
+		d3q[d3q .> 0]
+	end
+	# the q''' can have multiple peaks, take the one with the lowest percentile
+	θ = qs[first(argmaxima(qd3y))]
 
-	maximum(proms[proms .>= θ]) > 10θ ? idx[proms .>= θ] : []
+	idx[proms .>= θ]
 end
 
 """
