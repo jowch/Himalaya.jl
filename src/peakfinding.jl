@@ -6,7 +6,8 @@ Most of the peaks identified in this way will come from noise in the data and
 will have near-zero prominence. Real peaks will have prominences much higher
 than those of the noisy peaks. We can look for when the percentile prominences
 start to increase dramatically to identify the cutoff prominence between real
-and noisy peaks.
+and noisy peaks. As an addition heuristic, we require that the maximum
+prominence be at least one order of magnitude more than the threshold value.
 
 See `Peaks.peakproms`
 """
@@ -26,7 +27,7 @@ function findpeaks(trace; m = 5, n = 3)
 	prom_d3y = savitzky_golay(m, n, qs; nd = 3)
 	θ = qs[argmax(prom_d3y)]
 
-	idx[proms .> θ]
+	maximum(proms[proms .>= θ]) > 10θ ? idx[proms .>= θ] : []
 end
 
 """
