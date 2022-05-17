@@ -61,7 +61,7 @@ If `gaps`, then allow gaps between observed peaks.
 
 See also `Phase`, `minpeaks`.
 """
-function indexpeaks(peaks, domain; tol = 0.0005, gaps = true)
+function indexpeaks(peaks, domain; tol = 0.0025, gaps = true)
     indices = Index[]
 
     for phase in (Lamellar, Hexagonal, Pn3m, Im3m, Ia3d, Fd3m)
