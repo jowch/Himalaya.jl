@@ -9,7 +9,7 @@ of a diffraction pattern.
 using Himalaya
 
 # `integration` contains the values in a tot_file
-qs, logIs, errors = integration[:, 1], log10.(integration[:, 2])
+qs, logIs = integration[:, 1], log10.(integration[:, 2])
 
 # indices of peaks in the integration array
 peak_locations = findpeaks(logIs)
