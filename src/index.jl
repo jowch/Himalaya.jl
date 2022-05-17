@@ -29,6 +29,17 @@ Predicts the expected peaks for the given `index`.
 """
 predictpeaks(index::Index{P}) where P = basis(index) * phaseratios(P)
 
+"""
+    missingpeaks(index)
+
+Computes the predicted, missing peaks for a given `index`.
+"""
+function missingpeaks(index::Index{P}) where P
+    peak_idx, _ = findnz(index.peaks)
+    missing_idx = setdiff(1:length(phaseratios(P)), peak_idx)
+    predictpeaks(index)[missing_idx]
+end
+
 # operations
 ==(a::Index{P}, b::Index{Q}) where {P,Q} = P <: Q && basis(a) == basis(b)
 issubset(a::Index, b::Index) = basis(a) == basis(b) && issubset(peaks(a), peaks(b))
