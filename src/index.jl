@@ -197,12 +197,14 @@ indexed times the quality of the index's `fit`.
 function score(index::Index)
     _, rsquared = fit(index)
     missing_first = first(index.peaks) == 0
-    has_gaps = let
+
+    # number of peaks that are missing between observed peaks
+    num_gaps = let
         peak_idx, _ = findnz(index.peaks)
-        any(==(0), view(index.peaks, first(peak_idx):last(peak_idx)))
+        count(==(0), view(index.peaks, first(peak_idx):last(peak_idx)))
     end
 
-    numpeaks(index) * rsquared - missing_first - has_gaps
+    numpeaks(index) * rsquared - missing_first - 0.5 * num_gaps
 end
 
 """
