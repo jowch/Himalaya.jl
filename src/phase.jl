@@ -73,4 +73,4 @@ minpeaks(::Type{Hexagonal}) = 3
 minpeaks(::Type{Pn3m}) = 4
 minpeaks(::Type{Im3m}) = 4
 minpeaks(::Type{Ia3d}) = 4
-minpeaks(::Type{Fd3m}) = 4
+minpeaks(::Type{Fd3m}) = 6
