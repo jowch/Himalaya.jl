@@ -16,13 +16,12 @@ curves from many traces.
 
 See also `Peaks.peakproms`.
 """
-function findpeaks(y; m = 5, n = 3)
-	# smooth y to reduce noise
-	ys = savitzky_golay(3, 3, y; nd = 0)
+function findpeaks(y, m = 5, n = 3)
+	u = y .* rescale(y)
 	
 	# estimate the second derivative of the function using Savitzky-Golay filter
 	d2y = let
-		d2y = savitzky_golay(m, n, ys; nd = 2)
+		d2y = savitzky_golay(m, n, u; nd = 2)
 		d2y[d2y .>= 0] .= 0
 		d2y
 	end
@@ -31,21 +30,20 @@ function findpeaks(y; m = 5, n = 3)
 	idx, proms = peakproms(argmaxima(-d2y), -d2y)
 
 	# find a prominence threshold
-	qs = [quantile(proms .* ys[idx], p) for p = 0.7:0.01:1]
+	qs = [quantile(proms, p) for p = 0.75:0.01:1]
 
 	# sanity check
 	if maximum(qs) < 10 * median(qs)
 		return []
 	end
 
-	d3q = let
-		d3q = savitzky_golay(5, 3, log10.(qs); nd = 3)
-		d3q[d3q .> 0]
+	d2q = let
+		d2q = savitzky_golay(5, 3, log10.(qs); nd = 2)
+		d2q[d2q .< 0] .= 0
+		d2q
 	end
 
-	# the q''' can have multiple peaks, take the one with the lowest percentile
-	θ = qs[first(argmaxima(d3q))]
-
+	θ = qs[argmax(d2q)]
 	idx[proms .>= θ]
 end
 

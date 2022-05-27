@@ -19,7 +19,7 @@ indexpeaks, fit, score,
 # peaks
 findpeaks
 
-# include("util.jl")
+include("util.jl")
 include("phase.jl")
 include("peakfinding.jl")
 include("index.jl")
