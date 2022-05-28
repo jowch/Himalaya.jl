@@ -6,6 +6,7 @@ Represents an index assignment. Stores the `basis` and the observed `peaks`.
 struct Index{P<:Phase}
     basis::Real
     peaks::SparseVector{<:Real}
+    prom::Real
 end
 
 function show(io::IO, index::Index{P}) where P
@@ -13,7 +14,7 @@ function show(io::IO, index::Index{P}) where P
     peak_str = fill("⋅", length(index.peaks))
     peak_str[idx] = string.(round.(xs; digits = 5))
 
-    print(io, "Index(::$P, $(round(basis(index); digits = 5)), [$(join(peak_str, ' ')...)]")
+    print(io, "Index(::$P, $(round(basis(index); digits = 5)), [$(join(peak_str, ' ')...)])")
 end
 
 # getters
@@ -21,6 +22,13 @@ phase(::Index{P}) where P = P
 basis(index::Index) = index.basis
 peaks(index::Index) = nonzeros(index.peaks)
 numpeaks(index::Index) = nnz(index.peaks)
+
+"""
+    totalprom(index)
+
+The total prominence of an index is the sum of the prominences of its peaks.
+"""
+totalprom(index::Index) = index.prom
 
 """
     predictpeaks(index)
@@ -41,11 +49,24 @@ function missingpeaks(index::Index{P}) where P
 end
 
 # operations
+"""
+    ==(a::Index, b::Index)
+
+An index `a` is equals (`==`) to an index `b` iff they have the same phase and
+the same basis.
+"""
 ==(a::Index{P}, b::Index{Q}) where {P,Q} = P <: Q && basis(a) == basis(b)
+
+"""
+    issubset(a::Index, b::Index)
+
+An index `a` is a subset of index `b` iff they have the same basis and the peaks
+of `a` are a subset of the peaks of `b`.
+"""
 issubset(a::Index, b::Index) = basis(a) == basis(b) && issubset(peaks(a), peaks(b))
 
 """
-    indexpeaks(peaks, [domain]; tol = 0.005)
+    indexpeaks(peaks, [proms], [domain]; tol = 0.005)
 
 Compute valid indexings for a collection of `peaks` by considering each phase
 in `PHASES` and all bases in `domain`. If domain is not provided, then `peaks`
@@ -72,11 +93,11 @@ If `gaps`, then allow gaps between observed peaks.
 
 See also `Phase`, `minpeaks`.
 """
-function indexpeaks(peaks, domain; tol = 0.0025, gaps = true)
+function indexpeaks(peaks, proms, domain; tol = 0.0025, gaps = true)
     indices = Index[]
 
     for phase in (Lamellar, Hexagonal, Pn3m, Im3m, Ia3d, Fd3m)
-        push!(indices, indexpeaks(phase, peaks, domain, tol)...)
+        push!(indices, indexpeaks(phase, peaks, proms, domain, tol)...)
     end
 
     indices = remove_subsets(indices)
@@ -92,9 +113,10 @@ function indexpeaks(peaks, domain; tol = 0.0025, gaps = true)
     indices
 end
 
-indexpeaks(peaks; kwargs...) = indexpeaks(peaks, peaks; kwargs...)
+indexpeaks(peaks; kwargs...) = indexpeaks(peaks, ones(length(peaks)), peaks; kwargs...)
+indexpeaks(peaks, proms; kwargs...) = indexpeaks(peaks, proms, peaks; kwargs...)
 
-function indexpeaks(::Type{P}, peaks, domain, tol) where {P<:Phase}
+function indexpeaks(::Type{P}, peaks, proms, domain, tol) where {P<:Phase}
     indices = Index[]
     ratios = phaseratios(P)
     observed_ratios, tols = let
@@ -106,7 +128,7 @@ function indexpeaks(::Type{P}, peaks, domain, tol) where {P<:Phase}
         # also compute the adjusted tolerable peak error as ρ = (x + ε) / b
         1 ./ B * X, tol ./ B
     end
-    candidate_mask = 1 .<= observed_ratios .<= maximum(ratios)
+    candidate_mask = 1 - eps() .<= observed_ratios .<= maximum(ratios)
 
     if !any(candidate_mask)
         return indices
@@ -155,7 +177,8 @@ function indexpeaks(::Type{P}, peaks, domain, tol) where {P<:Phase}
                 domain[i],
                 SparseVector{eltype(peaks),UInt8}(
                     length(ratios), ratio_idx, peaks[peak_idx]
-                )
+                ),
+                sum(proms[peak_idx])
             )
         )
     end
@@ -202,20 +225,14 @@ end
 """
     score(index::Index)
 
-Score the validity of a given `index`. This is simply the number of peaks
-indexed times the quality of the index's `fit`.
+Score the validity of a given `index`. This is simply the total prominence of
+the indexed times the quality of the index's `fit`.
+
+See also `fit` and `totalprom`.
 """
 function score(index::Index)
     _, rsquared = fit(index)
-    missing_first = first(index.peaks) == 0
-
-    # number of peaks that are missing between observed peaks
-    num_gaps = let
-        peak_idx, _ = findnz(index.peaks)
-        count(==(0), view(index.peaks, first(peak_idx):last(peak_idx)))
-    end
-
-    numpeaks(index) * rsquared - missing_first - 0.5 * num_gaps
+    totalprom(index) * rsquared
 end
 
 """
@@ -225,9 +242,12 @@ Remove any indices that are strict subsets of another index. This is the case
 when two indices share the same basis but the first has a subset of the second's
 peaks.
 
-See also `issubset`.
+See also `issubset` and `score`.
 """
 function remove_subsets(indices::Vector{<:Index})
-    subsets = [a != b && issubset(a, b) for a = indices, b = indices]
+    subsets = [
+        a != b && issubset(a, b) && score(a) < score(b)
+        for a = indices, b = indices
+    ]
     indices[.!any(subsets; dims = 2) |> vec]
 end
