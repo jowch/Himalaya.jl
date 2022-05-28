@@ -18,7 +18,7 @@
     @test round(d; digits = 3) == 7.255
     @test R² == 1
     
-    @test score(index) == 3
+    @test isapprox(score(index), 3; atol = 1e10)
 
     test_peaks = 1:5
     indices = indexpeaks(test_peaks)
