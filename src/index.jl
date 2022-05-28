@@ -232,7 +232,11 @@ See also `fit` and `totalprom`.
 """
 function score(index::Index)
     _, rsquared = fit(index)
-    totalprom(index) * rsquared
+    num_gaps = let
+        peak_idx, _ = findnz(index.peaks)
+        count(==(0), view(index.peaks, first(peak_idx):last(peak_idx)))
+    end
+    (numpeaks(index) + totalprom(index)) * (1 - 0.25 * num_gaps) * rsquared
 end
 
 """
