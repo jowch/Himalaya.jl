@@ -225,8 +225,10 @@ end
 """
     score(index::Index)
 
-Score the validity of a given `index`. This is simply the total prominence of
-the indexed times the quality of the index's `fit`.
+Score the validity of a given `index`. This score attempts to quantify the
+likeliness of a given `index`, where higher values are better. It captures the
+number of peaks, the prominence of those peaks, the fit of the index, and the
+number of missing peaks.
 
 See also `fit` and `totalprom`.
 """
