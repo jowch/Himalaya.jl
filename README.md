@@ -1,6 +1,22 @@
 # Himalaya.jl
 SAXS diffraction pattern indexing the easy way.
 
+## Installation
+Once you have started Julia, enter [Pkg mode](https://docs.julialang.org/en/v1/stdlib/REPL/#Pkg-mode) by typing `]` and run `add Himalaya` command. You will see something like this
+```julia-repl
+               _
+   _       _ _(_)_     |  Documentation: https://docs.julialang.org
+  (_)     | (_) (_)    |
+   _ _   _| |_  __ _   |  Type "?" for help, "]?" for Pkg help.
+  | | | | | | |/ _` |  |
+  | | |_| | | | (_| |  |  Version 1.8.0-beta3 (2022-03-29)
+ _/ |\__'_|_|_|\__'_|  |  Official https://julialang.org/ release
+|__/                   |
+
+(@v1.8) pkg> add Himalaya
+```
+And that's it!
+
 ## Usage
 The following code is an example of how to use Himalaya to index the integration
 of a diffraction pattern.
