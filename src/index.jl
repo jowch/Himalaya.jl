@@ -93,14 +93,18 @@ If `gaps`, then allow gaps between observed peaks.
 
 See also `Phase`, `minpeaks`.
 """
-function indexpeaks(peaks, proms, domain; tol = 0.0025, gaps = true)
+function indexpeaks(peaks, proms, domain; kwargs...)
     indices = Index[]
 
     for phase in (Lamellar, Hexagonal, Pn3m, Im3m, Ia3d, Fd3m)
-        push!(indices, indexpeaks(phase, peaks, proms, domain, tol)...)
+        push!(indices, indexpeaks(phase, peaks, proms, domain; kwargs...)...)
     end
 
-    indices = remove_subsets(indices)
+    remove_subsets(indices)
+end
+
+function indexpeaks(::Type{P}, peaks, proms, domain; gaps = true, tol = 0.0025) where {P<:Phase}
+    indices = indexpeaks(P, peaks, proms, domain, tol)
 
     # apply filter
     if !gaps
@@ -115,6 +119,8 @@ end
 
 indexpeaks(peaks; kwargs...) = indexpeaks(peaks, ones(length(peaks)), peaks; kwargs...)
 indexpeaks(peaks, proms; kwargs...) = indexpeaks(peaks, proms, peaks; kwargs...)
+indexpeaks(phase::Type{<:Phase}, peaks; kwargs...) = indexpeaks(phase, peaks, ones(length(peaks)), peaks; kwargs...)
+indexpeaks(phase::Type{<:Phase}, peaks, proms; kwargs...) = indexpeaks(phase, peaks, proms, peaks; kwargs...)
 
 function indexpeaks(::Type{P}, peaks, proms, domain, tol) where {P<:Phase}
     indices = Index[]
