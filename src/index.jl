@@ -35,7 +35,7 @@ totalprom(index::Index) = index.prom
 
 Predicts the expected peaks for the given `index`.
 """
-predictpeaks(index::Index{P}) where P = basis(index) * phaseratios(P)
+predictpeaks(index::Index{P}) where P = basis(index) * phaseratios(P) ./ first(phaseratios(P))
 
 """
     missingpeaks(index)
