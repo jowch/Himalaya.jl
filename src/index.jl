@@ -66,7 +66,7 @@ of `a` are a subset of the peaks of `b`.
 issubset(a::Index, b::Index) = basis(a) == basis(b) && issubset(peaks(a), peaks(b))
 
 """
-    indexpeaks(peaks, [proms], [domain]; tol = 0.005)
+    indexpeaks([phase], peaks, [proms], [domain]; tol = 0.005, gaps = true, req_min = false)
 
 Compute valid indexings for a collection of `peaks` by considering each phase
 in `PHASES` and all bases in `domain`. If domain is not provided, then `peaks`
@@ -103,8 +103,8 @@ function indexpeaks(peaks, proms, domain; kwargs...)
     remove_subsets(indices)
 end
 
-function indexpeaks(::Type{P}, peaks, proms, domain; gaps = true, tol = 0.0025) where {P<:Phase}
-    indices = indexpeaks(P, peaks, proms, domain, tol)
+function indexpeaks(::Type{P}, peaks, proms, domain; gaps = true, tol = 0.0025, req_min = true) where {P<:Phase}
+    indices = indexpeaks(P, peaks, proms, domain, tol, req_min)
 
     # apply filter
     if !gaps
@@ -122,7 +122,7 @@ indexpeaks(peaks, proms; kwargs...) = indexpeaks(peaks, proms, peaks; kwargs...)
 indexpeaks(phase::Type{<:Phase}, peaks; kwargs...) = indexpeaks(phase, peaks, ones(length(peaks)), peaks; kwargs...)
 indexpeaks(phase::Type{<:Phase}, peaks, proms; kwargs...) = indexpeaks(phase, peaks, proms, peaks; kwargs...)
 
-function indexpeaks(::Type{P}, peaks, proms, domain, tol) where {P<:Phase}
+function indexpeaks(::Type{P}, peaks, proms, domain, tol, req_min) where {P<:Phase}
     indices = Index[]
     ratios = let ρ = phaseratios(P)
         ρ ./ first(ρ)
@@ -168,7 +168,10 @@ function indexpeaks(::Type{P}, peaks, proms, domain, tol) where {P<:Phase}
 
     # only keep bases with the minimum number of candidates
     num_candidates = count(candidate_mask, dims = 2)
-    candidate_mask[vec(num_candidates .< minpeaks(P)), :] .= 0
+
+    if req_min
+        candidate_mask[vec(num_candidates .< minpeaks(P)), :] .= 0
+    end
 
     if !any(candidate_mask)
         return indices
@@ -241,7 +244,12 @@ number of missing peaks.
 See also `fit` and `totalprom`.
 """
 function score(index::Index)
-    _, rsquared = fit(index)
+    if numpeaks(index) > 1
+        _, rsquared = fit(index)
+    else
+        rsquared = 1
+    end
+
     num_gaps = let
         peak_idx, _ = findnz(index.peaks)
         count(==(0), view(index.peaks, first(peak_idx):last(peak_idx)))

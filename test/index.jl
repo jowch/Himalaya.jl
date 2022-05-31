@@ -3,7 +3,7 @@
     @test all(hasfield.(Index, [:basis, :peaks])) 
 
     test_peaks = [1, √3, 2]
-    indices = indexpeaks(test_peaks, 0:0.1:2; gaps = false)
+    indices = indexpeaks(test_peaks, ones(length(test_peaks)), 0:0.1:2; gaps = false)
     @test length(indices) == 1
 
     index = only(indices)
@@ -28,4 +28,11 @@
     @test a != b
     @test issubset(a, a)
     @test !issubset(a, b)
+
+
+    test_peaks = [√2, √3]
+    indices = indexpeaks(test_peaks, ones(length(test_peaks)), test_peaks)
+    @test isempty(indices)
+    indices = indexpeaks(test_peaks, ones(length(test_peaks)), test_peaks; req_min = false)
+    @test !isempty(indices)
 end
