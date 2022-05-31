@@ -124,7 +124,9 @@ indexpeaks(phase::Type{<:Phase}, peaks, proms; kwargs...) = indexpeaks(phase, pe
 
 function indexpeaks(::Type{P}, peaks, proms, domain, tol) where {P<:Phase}
     indices = Index[]
-    ratios = phaseratios(P)
+    ratios = let ρ = phaseratios(P)
+        ρ ./ first(ρ)
+    end
     observed_ratios, tols = let
         # consider all elements in `domain` as a potential basis value
         B = reshape(domain, length(domain), 1)
@@ -223,7 +225,7 @@ function fit(index::Index{P}) where P
     else
         λ = 1
     end
-    
+
     # a = 2pi / d
     2π * λ / d, R²(d * observed_ratios, observed_peaks)
 end

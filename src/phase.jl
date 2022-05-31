@@ -52,10 +52,10 @@ end
 
 phaseratios(::Type{Lamellar}) = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
 phaseratios(::Type{Hexagonal}) = [1, √3, √4, √7, √9, √11, √12]
-phaseratios(::Type{Pn3m}) = [√2, √3, √4, √6, √8, √9, √10, √11] ./ √2
-phaseratios(::Type{Im3m}) = [√2, √4, √6, √8, √10, √12, √14, √16, √18] ./ √2
-phaseratios(::Type{Ia3d}) = [√6, √8, √14, √16, √20, √22, √24, √26] ./ √6
-phaseratios(::Type{Fd3m}) = [√3, √8, √11, √12, √16, √19, √24, √27, √32, √35, √36] ./ √3
+phaseratios(::Type{Pn3m}) = [√2, √3, √4, √6, √8, √9, √10, √11]
+phaseratios(::Type{Im3m}) = [√2, √4, √6, √8, √10, √12, √14, √16, √18]
+phaseratios(::Type{Ia3d}) = [√6, √8, √14, √16, √20, √22, √24, √26]
+phaseratios(::Type{Fd3m}) = [√3, √8, √11, √12, √16, √19, √24, √27, √32, √35, √36]
 
 """
     minpeaks(::Phase)

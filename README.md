@@ -32,7 +32,7 @@ integration = load_integration("my-high-impact-sample_tot.dat")
 qs, logIs = integration[:, 1], log10.(integration[:, 2])
 
 # indices of peaks in the integration array
-peak_locations, peam_proms = findpeaks(logIs)
+peak_locations, peak_proms = findpeaks(logIs)
 peak_qs = qs[peak_locations]
 
 # compute phases matching identified peaks
