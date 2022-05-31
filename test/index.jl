@@ -33,6 +33,6 @@
     test_peaks = [√2, √3]
     indices = indexpeaks(test_peaks, ones(length(test_peaks)), test_peaks)
     @test isempty(indices)
-    indices = indexpeaks(test_peaks, ones(length(test_peaks)), test_peaks; req_min = false)
+    indices = indexpeaks(test_peaks, ones(length(test_peaks)), test_peaks; requiremin = false)
     @test !isempty(indices)
 end

@@ -35,7 +35,7 @@ totalprom(index::Index) = index.prom
 
 Predicts the expected peaks for the given `index`.
 """
-predictpeaks(index::Index{P}) where P = basis(index) * phaseratios(P) ./ first(phaseratios(P))
+predictpeaks(index::Index{P}) where P = basis(index) * phaseratios(P; normalize = true)
 
 """
     missingpeaks(index)
@@ -66,30 +66,34 @@ of `a` are a subset of the peaks of `b`.
 issubset(a::Index, b::Index) = basis(a) == basis(b) && issubset(peaks(a), peaks(b))
 
 """
-    indexpeaks([phase], peaks, [proms], [domain]; tol = 0.005, gaps = true, req_min = false)
+    indexpeaks([phase], peaks, [proms], [domain];
+               tol = 0.0025, gaps = true, requiremin = true)
 
-Compute valid indexings for a collection of `peaks` by considering each phase
-in `PHASES` and all bases in `domain`. If domain is not provided, then `peaks`
-will be used as the domain (equivalent to requiring an observed basis).
+Compute possible index assingments for a collection of `peaks` by considering
+a specific `phase` or all available phases and all bases in `domain`. If a
+`domain` is not provided, then `peaks` will be used as the domain, which is
+equivalent to requiring bases to be observed peaks.
 
 A `Phase`'s peaks positions are determined by its basis peak position and its
-ratios. Given a `Phase` and `domain` of possible basis values, we can evaluate
-each phase and basis to see whether the expected peak positions are present in
-the provided observed `peaks`.
+ratios. This is computed by multiplying the phase's normalized ratios (first
+ratio is 1) by the basis. Thus, given a `Phase` and `domain` of possible basis
+values, we can evaluate each phase and basis to see whether the expected peak
+positions are present in the provided observed `peaks`.
 
 More specifically, we can divide each observed peak value by a given basis to
 find their hypothetical ratios and then compare these ratios to the defining
 ratios for a `Phase`. Only the "correct" choices of phase and basis will match
-the hypothetical ratios. We can set a tolerance `tol` to be the maximum
-acceptable deviation of candidate peaks from observed peaks. Since the algorithm
-looks at hypothetical ratios, we need to convert `tol` to ratios by dividing it
-with each bases. The peaks that result in residuals within tolerance are
-`candidates` for an `Index` of this phase and basis.
+the hypothetical ratios. 
 
-Furthermore, each `Phase` has a minimum number of candidates to be considered
-reasonable.
+Tolerance `tol` is the maximum acceptable deviation of candidate peaks from
+observed peaks. The peaks that result in residuals (deviation) within this
+tolerance are candidates for an `Index` of this phase and basis.
 
-If `gaps`, then allow gaps between observed peaks.
+If `gaps`, peaks are allowed to be missing between the first and last observed
+peaks.
+
+If `requiremin`, require the minimum number of peaks for each phase as defined
+by `minpeaks`.
 
 See also `Phase`, `minpeaks`.
 """
@@ -103,8 +107,8 @@ function indexpeaks(peaks, proms, domain; kwargs...)
     remove_subsets(indices)
 end
 
-function indexpeaks(::Type{P}, peaks, proms, domain; gaps = true, tol = 0.0025, req_min = true) where {P<:Phase}
-    indices = indexpeaks(P, peaks, proms, domain, tol, req_min)
+function indexpeaks(::Type{P}, peaks, proms, domain; gaps = true, tol = 0.0025, requiremin = true) where {P<:Phase}
+    indices = indexpeaks(P, peaks, proms, domain, tol, requiremin)
 
     # apply filter
     if !gaps
@@ -122,11 +126,9 @@ indexpeaks(peaks, proms; kwargs...) = indexpeaks(peaks, proms, peaks; kwargs...)
 indexpeaks(phase::Type{<:Phase}, peaks; kwargs...) = indexpeaks(phase, peaks, ones(length(peaks)), peaks; kwargs...)
 indexpeaks(phase::Type{<:Phase}, peaks, proms; kwargs...) = indexpeaks(phase, peaks, proms, peaks; kwargs...)
 
-function indexpeaks(::Type{P}, peaks, proms, domain, tol, req_min) where {P<:Phase}
+function indexpeaks(::Type{P}, peaks, proms, domain, tol, requiremin) where {P<:Phase}
     indices = Index[]
-    ratios = let ρ = phaseratios(P)
-        ρ ./ first(ρ)
-    end
+    ratios = phaseratios(P; normalize = true)
     observed_ratios, tols = let
         # consider all elements in `domain` as a potential basis value
         B = reshape(domain, length(domain), 1)
@@ -169,7 +171,7 @@ function indexpeaks(::Type{P}, peaks, proms, domain, tol, req_min) where {P<:Pha
     # only keep bases with the minimum number of candidates
     num_candidates = count(candidate_mask, dims = 2)
 
-    if req_min
+    if requiremin
         candidate_mask[vec(num_candidates .< minpeaks(P)), :] .= 0
     end
 

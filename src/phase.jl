@@ -42,11 +42,17 @@ abstract type Ia3d <: Phase end
 abstract type Fd3m <: Phase end
 
 """
-    phaseratios(::Phase)
+    phaseratios(::Phase; normalize = false)
 
-Returns the expected peak ratios for the given `Phase`.
+Returns the expected peak ratios for the given `Phase`. If `normalize`, then
+return the ratios divided by the first ratio so that the first ratio is 1.
 """
-function phaseratios(::Type{P}) where {P<:Phase}
+function phaseratios(::Type{P}; normalize = false) where {P<:Phase}
+    if normalize
+        ratios = phaseratios(P)
+        return ratios ./ first(ratios)
+    end
+
     phaseratios(P)
 end
 
