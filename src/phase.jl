@@ -34,12 +34,13 @@ described by a set of ratios of the pattern's peaks divided by the first peak
     Fd3m
 """
 abstract type Phase end
+abstract type Cubic <: Phase end
 abstract type Lamellar <: Phase end
 abstract type Hexagonal <: Phase end
-abstract type Pn3m <: Phase end
-abstract type Im3m <: Phase end
-abstract type Ia3d <: Phase end
-abstract type Fd3m <: Phase end
+abstract type Pn3m <: Cubic end
+abstract type Im3m <: Cubic end
+abstract type Ia3d <: Cubic end
+abstract type Fd3m <: Cubic end
 
 """
     phaseratios(::Phase; normalize = false)
@@ -58,8 +59,9 @@ end
 
 phaseratios(::Type{Lamellar}) = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
 phaseratios(::Type{Hexagonal}) = [1, √3, √4, √7, √9, √11, √12]
-phaseratios(::Type{Pn3m}) = [√2, √3, √4, √6, √8, √9, √10, √11]
-phaseratios(::Type{Im3m}) = [√2, √4, √6, √8, √10, √12, √14, √16, √18]
+phaseratios(::Type{Pn3m}) = [√2, √3, √4, √6, √8, √9, √10, √11, √12, √14, √16,
+                             √17, √18, √19, √20, √21] #, √22, √24, √26]
+phaseratios(::Type{Im3m}) = [√2, √4, √6, √8, √10, √12, √14, √16, √18, √20] #, √22, √24, √26]
 phaseratios(::Type{Ia3d}) = [√6, √8, √14, √16, √20, √22, √24, √26]
 phaseratios(::Type{Fd3m}) = [√3, √8, √11, √12, √16, √19, √24, √27, √32, √35, √36]
 
