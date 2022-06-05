@@ -1,7 +1,7 @@
 name = "Himalaya"
 uuid = "c5c84187-0f9f-481b-afdc-282fe863df0d"
 authors = ["Jonathan Chen <jwhc@ucla.edu>"]
-version = "0.3.5"
+version = "0.3.6"
 
 [deps]
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"

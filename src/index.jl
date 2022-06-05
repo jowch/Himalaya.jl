@@ -161,9 +161,24 @@ function indexpeaks(::Type{P}, peaks, proms, domain, tol, requiremin) where {P<:
         # update mask with positions that are within tolerance
         candidate_mask[candidate_mask, :] .&= within_tol
 
+        matched_residuals = spzeros(Float64, size(candidate_mask)...)
+        matched_residuals[candidate_mask] .= residuals[findall(within_tol)]
+
         # pull out ratio indices that are within tolerance
         matched_ratios = spzeros(UInt8, size(candidate_mask)...)
         matched_ratios[candidate_mask] .= getindex.(argmin_index[within_tol], 2)
+
+        # suppress non-minima matches for a given ratio
+        for idx in unique(matched_ratios)
+            for (i, row) in enumerate(eachrow(matched_ratios.nzval))
+                dup_idx = idx .== row
+                if count(dup_idx) > 1
+                    best_idx = argmin(matched_residuals[i, dup_idx])
+                    dup_idx[best_idx] = 0
+                    matched_ratios[i, dup_idx] .= 0x00
+                end
+            end
+        end
 
         matched_ratios
     end
