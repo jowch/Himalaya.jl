@@ -107,8 +107,8 @@ function indexpeaks(peaks, proms, domain; kwargs...)
     remove_subsets(indices)
 end
 
-function indexpeaks(::Type{P}, peaks, proms, domain; gaps = true, tol = 0.0025, requiremin = true) where {P<:Phase}
-    indices = indexpeaks(P, peaks, proms, domain, tol, requiremin)
+function indexpeaks(::Type{P}, peaks, proms, domain; gaps = true, tol = 0.0025) where {P<:Phase}
+    indices = indexpeaks(P, peaks, proms, domain, tol)
 
     # apply filter
     if !gaps
@@ -126,78 +126,74 @@ indexpeaks(peaks, proms; kwargs...) = indexpeaks(peaks, proms, peaks; kwargs...)
 indexpeaks(phase::Type{<:Phase}, peaks; kwargs...) = indexpeaks(phase, peaks, ones(length(peaks)), peaks; kwargs...)
 indexpeaks(phase::Type{<:Phase}, peaks, proms; kwargs...) = indexpeaks(phase, peaks, proms, peaks; kwargs...)
 
-function indexpeaks(::Type{P}, peaks, proms, domain, tol, requiremin) where {P<:Phase}
+function indexpeaks(::Type{P}, peaks, proms, domain, tol) where {P<:Phase}
     indices = Index[]
     ratios = phaseratios(P; normalize = true)
+
+    # compute the ratios of observed peaks given each candidate basis
+    # also compute the adjusted tolerable peak error as ρ = (x + ε) / b
     observed_ratios, tols = let
         # consider all elements in `domain` as a potential basis value
-        B = reshape(domain, length(domain), 1)
-        X = reshape(peaks, 1, length(peaks))
+        B = reshape(domain, 1, length(domain))
+        X = reshape(peaks, length(peaks), 1)
 
-        # compute the ratios of observed peaks given each candidate basis
-        # also compute the adjusted tolerable peak error as ρ = (x + ε) / b
-        1 ./ B * X, tol ./ B
+        observed_ratios = X * (1 ./ B)
+
+        # compute mask of valid ratios
+        # TODO: work out addition tol on max side
+        mask = 1 - tol .<= observed_ratios .<= maximum(ratios)
+        
+        # these are (# peaks X # domain)
+        sparse(observed_ratios .* mask), tol ./ domain
     end
-    candidate_mask = 1 - eps() .<= observed_ratios .<= maximum(ratios)
 
-    if !any(candidate_mask)
+    if nnz(observed_ratios) == 0
         return indices
     end
 
-    # match the observed ratios to phase ratios by computing residuals and
-    # finding pairs within tolerance
-    matched_ratios = let
-        comparable_ratios = view(observed_ratios, candidate_mask)
-        residuals = zeros(length(comparable_ratios), length(ratios))
+    assignments = spzeros(UInt8, size(observed_ratios))
 
-        for (i, ratio) in enumerate(ratios)
-            @inbounds residuals[:, i] = abs.(comparable_ratios .- ratio)
-        end
+    for (i, θ) in enumerate(tols)
+        # for each basis
+        residuals = spzeros(length(ratios), length(peaks))
+        nz, vals = findnz(observed_ratios[:, i])
 
-        # find argminima residuals
-        argmin_index = vec(argmin(residuals; dims = 2))
-        within_tol = residuals[argmin_index] .< tols[getindex.(findall(candidate_mask), 1)]
-
-        # update mask with positions that are within tolerance
-        candidate_mask[candidate_mask, :] .&= within_tol
-
-        matched_residuals = spzeros(Float64, size(candidate_mask)...)
-        matched_residuals[candidate_mask] .= residuals[findall(within_tol)]
-
-        # pull out ratio indices that are within tolerance
-        matched_ratios = spzeros(UInt8, size(candidate_mask)...)
-        matched_ratios[candidate_mask] .= getindex.(argmin_index[within_tol], 2)
-
-        # suppress non-minima matches for a given ratio
-        for idx in unique(matched_ratios)
-            for (i, row) in enumerate(eachrow(matched_ratios.nzval))
-                dup_idx = idx .== row
-                if count(dup_idx) > 1
-                    best_idx = argmin(matched_residuals[i, dup_idx])
-                    dup_idx[best_idx] = 0
-                    matched_ratios[i, dup_idx] .= 0x00
+        for (j, ratio) in enumerate(ratios)
+            for (k, δ) in zip(nz, abs.(vals .- ratio))
+                if δ < θ
+                    @inbounds residuals[j, k] = δ + eps()
                 end
             end
         end
 
-        matched_ratios
+        rs, ps, δs = findnz(residuals)
+        used_ratios = Set()
+        assign = view(assignments, :, i)
+
+        # go through matches in order of increasing error
+        # only do assignment if ratio and peak haven't already been assigned
+        for j = sortperm(δs)
+            r, p = rs[j], ps[j]
+            if r ∉ used_ratios && assign[p] == 0
+                @inbounds assign[p] = r
+                push!(used_ratios, r)
+            end
+        end
     end
 
     # only keep bases with the minimum number of candidates
-    num_candidates = count(candidate_mask, dims = 2)
+    num_candidates = count(>(0), assignments; dims = 1)
+    candidate_idx = vec(num_candidates .>= minpeaks(P))
+    # zero-out non-candidates
+    assignments[:, .!candidate_idx] .= 0
+    dropzeros!(assignments)
 
-    if requiremin
-        candidate_mask[vec(num_candidates .< minpeaks(P)), :] .= 0
-    end
-
-    if !any(candidate_mask)
+    if nnz(observed_ratios) == 0
         return indices
     end
 
-    candidate_bases = getindex.(findall(any(candidate_mask; dims = 2)), 1)
-
-    for i in candidate_bases
-        peak_idx, ratio_idx = findnz(matched_ratios[i, :])
+    for i in findall(candidate_idx)
+        peak_idx, ratio_idx = findnz(assignments[:, i])
 
         push!(
             indices,
