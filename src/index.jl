@@ -234,7 +234,7 @@ function fit(index::Index{P}) where P
     observed_ratios = phaseratios(P)[observed_idx]
 
     # use least squares fit to compute lattice parameter
-    d = (observed_ratios' * observed_ratios) \ (observed_ratios' * observed_peaks)
+    d = observed_ratios \ observed_peaks
 
     if P <: Hexagonal
         λ = 2 / √3
