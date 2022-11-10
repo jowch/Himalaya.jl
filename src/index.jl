@@ -100,7 +100,7 @@ See also `Phase`, `minpeaks`.
 function indexpeaks(peaks, proms, domain; kwargs...)
     indices = Index[]
 
-    for phase in (Lamellar, Hexagonal, Pn3m, Im3m, Ia3d, Fd3m)
+    for phase in (Lamellar, Hexagonal, Square, Pn3m, Im3m, Ia3d, Fd3m)
         push!(indices, indexpeaks(phase, peaks, proms, domain; kwargs...)...)
     end
 
@@ -285,4 +285,27 @@ function remove_subsets(indices::Vector{<:Index})
         for a = indices, b = indices
     ]
     indices[.!any(subsets; dims = 2) |> vec]
+end
+
+function ngc()
+    # % Negative Gaussian Curvature for Cubics only, generate text
+    # switch phase
+    #     case 'Cubic Ia3d'
+    #         chi = -8;
+    #         A0 = 3.091;
+    #     case 'Cubic Pn3m'
+    #         chi = -2;
+    #         A0 = 1.919;
+    #     case 'Cubic Im3m'
+    #         chi = -4;
+    #         A0 = 2.345;
+    # end
+
+    # switch phase
+    #     case {'Cubic Pn3m', 'Cubic Im3m', 'Cubic Ia3d'}
+    #         NGC = -2 * pi * (chi/A0) * (10/a)^2;  % in 1/nm^2
+    #         text_ngc = sprintf('<k> = %.4f 1/nm^2', NGC);
+    #     otherwise
+    #         text_ngc = '';
+    # end
 end
