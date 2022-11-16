@@ -5,7 +5,7 @@ Represents an index assignment. Stores the `basis` and the observed `peaks`.
 """
 struct Index{P<:Phase}
     basis::Real
-    peaks::SparseVector{<:Real}
+    peaks::SparseVector{<:Real, <:Integer}
     prom::Real
 end
 
@@ -107,8 +107,8 @@ function indexpeaks(peaks, proms, domain; kwargs...)
     remove_subsets(indices)
 end
 
-function indexpeaks(::Type{P}, peaks, proms, domain; gaps = true, tol = 0.0025) where {P<:Phase}
-    indices = indexpeaks(P, peaks, proms, domain, tol)
+function indexpeaks(::Type{P}, peaks, proms, domain; gaps = true, tol = 0.0025, requiremin = true) where {P<:Phase}
+    indices = indexpeaks(P, peaks, proms, domain, tol, requiremin)
 
     # apply filter
     if !gaps
@@ -126,7 +126,7 @@ indexpeaks(peaks, proms; kwargs...) = indexpeaks(peaks, proms, peaks; kwargs...)
 indexpeaks(phase::Type{<:Phase}, peaks; kwargs...) = indexpeaks(phase, peaks, ones(length(peaks)), peaks; kwargs...)
 indexpeaks(phase::Type{<:Phase}, peaks, proms; kwargs...) = indexpeaks(phase, peaks, proms, peaks; kwargs...)
 
-function indexpeaks(::Type{P}, peaks, proms, domain, tol) where {P<:Phase}
+function indexpeaks(::Type{P}, peaks, proms, domain, tol, requiremin) where {P<:Phase}
     indices = Index[]
     ratios = phaseratios(P; normalize = true)
 
@@ -183,7 +183,8 @@ function indexpeaks(::Type{P}, peaks, proms, domain, tol) where {P<:Phase}
 
     # only keep bases with the minimum number of candidates
     num_candidates = count(>(0), assignments; dims = 1)
-    candidate_idx = vec(num_candidates .>= minpeaks(P))
+    candidate_idx = requiremin ? vec(num_candidates .>= minpeaks(P)) : vec(num_candidates .> 1)
+
     # zero-out non-candidates
     assignments[:, .!candidate_idx] .= 0
     dropzeros!(assignments)
@@ -287,7 +288,19 @@ function remove_subsets(indices::Vector{<:Index})
     indices[.!any(subsets; dims = 2) |> vec]
 end
 
-function ngc()
+function ngc(index::Index{P}) where {P<:Cubic}
+    if P <: Ia3d
+        χ, A₀ = -8, 3.091
+    elseif P <: Pn3m
+        χ, A₀ = -2, 1.919
+    elseif P <: Im3m
+        χ, A₀ = -4, 2.345
+    end
+
+    a, _ = fit(index)
+
+    -2π * (χ/A₀) * (10 / a)^2
+
     # % Negative Gaussian Curvature for Cubics only, generate text
     # switch phase
     #     case 'Cubic Ia3d'
