@@ -1,3 +1,6 @@
+using Distributions
+using DSP: conv
+
 """
 	findpeaks(y; θ, m, n)
 
@@ -21,26 +24,53 @@ percentile-prominence curves from many traces.
 
 See also `Peaks.peakproms`.
 """
-function findpeaks(y; θ = 0, m = 5, n = 3)
-	u = y .* rescale(y)
+function findpeaks(y; θ = 0, m = 5, remove_drop = true)
+	# peakidx, proms = peakproms(argmaxima(y), y)
 	
-	# estimate the second derivative of the function using Savitzky-Golay filter
-	d²u = let
-		d²u = savitzky_golay(m, n, u; nd = 2)
-		d²u[d²u .>= 0] .= 0
-		d²u
+	# smooth things out
+	# k = Distributions.pdf.(Normal(0, m / 2), -(m ÷ 2):(m ÷ 2))
+	# u = conv(k, y)[2:end-1]
+
+	# ignore the initial 
+	# valid_idx = remove_drop ? withoutbeamstop(u) : (1:length(u))
+
+	u = rescale(y)
+
+	# approximate derivatives of y
+	du = savitzky_golay(m, 4, u[valid_idx]; order = [2, 3, 4])
+
+	# find minima in second derivative
+	peakidx = let
+		# find zero-crossings in third derivative	
+		crossings = falses(length(valid_idx))
+		crossings[1:end-1] .= diff(sign.(du[:, 2])) .!= 0
+
+		# check if minima or maxima with fourth derivative
+		valid_idx.start .+ findall(crossings .& (du[:, 3] .> 0)) .- 1
 	end
 
-	# find indices of the maximum second derivative values
-	d²_idx, d²_proms = peakproms(argmaxima(-d²u), -d²u)
+	proms = let
+		_, ps = peakproms(peakidx, u)
+		_, qs = peakproms(peakidx .+ 1, u)
+		vec(maximum(hcat(ps, qs); dims = 2))
+	end
+
+	# # estimate the second derivative of the function using Savitzky-Golay filter
+	# d²u = savitzky_golay(m, n, u; order = 2)
+
+	# # find indices of the maximum second derivative values
+	# d²_idx, d²_proms = peakproms(argmaxima(-d²u), -d²u)
 
 	if θ == 0
 		# compute a θ value using the prominences of the d²u peaks
-		θ = findtheta(d²_proms)
+		θ = findtheta(proms)
 	end
 
 	# compute the peak prominences of peaks on the `u` scale
-	peakproms(d²_idx[d²_proms .>= θ], u)
+	θ_idx = proms .> θ
+	peakidx[θ_idx], proms[θ_idx]
+
+	# peakidx, proms
 end
 
 function findtheta(proms)
@@ -52,19 +82,41 @@ function findtheta(proms)
 		return Inf
 	end
 
-	d²q = let
-		d²q = savitzky_golay(5, 3, log10.(qs); nd = 2)
-		d²q[d²q .< 0] .= 0
-		d²q
+	# approximate derivatives
+	dq = savitzky_golay(5, 4, qs; order = [2, 3, 4])
+
+	inflection_idx = let
+		# find zero-crossings in third derivative	
+		crossings = falses(length(qs))
+		crossings[1:end-1] .= diff(sign.(dq[:, 2])) .!= 0
+
+		# check if minima or maxima with fourth derivative
+		candidates = findall(crossings .& (dq[:, 3] .> 0)) .- 1
+
+		candidates[argmax(dq[candidates, 1])]
 	end
 
-	qs[argmax(d²q)]
+	qs[inflection_idx]
 end
 
+function withoutbeamstop(y, dy)
+	findfirst(diff(sign.(dy)) .> 0):length(y)
+end
+
+function withoutbeamstop(y)
+	withoutbeamstop(y, savitzky_golay(5, 1, y; order = 1))
+end
+
+
 """
+	savitzky_golay(m, n, y; order = 0)
+	savitzky_golay(m, n, y; order = [1, 2, 3])
+
 Computes the Savitzky-Golay filtering of `y`.
 """
-function savitzky_golay(m, n, y; nd = 0)
+function savitzky_golay(m, n, y; order = 0)
+	# @assert n >= order "`n` must be at least `order`"
+
 	num_y = length(y)
 	z = -m:m
 	J = zeros(2m + 1, n + 1)
@@ -74,8 +126,8 @@ function savitzky_golay(m, n, y; nd = 0)
 	end
 
 	# The convolution term matrix 
-	C = J' \ I(n .+ 1)[:, nd .+ 1] # = inv(J' * J) * J' = pinv(J)
-	Y = zeros(num_y, length(nd))
+	C = J' \ I(n .+ 1)[:, order .+ 1] # = inv(J' * J) * J' = pinv(J)
+	Y = zeros(num_y, length(order))
 
 	for i in 1:num_y
 		if i <= m
@@ -86,13 +138,11 @@ function savitzky_golay(m, n, y; nd = 0)
 			window_indices = z .+ i
 		end
 
-		for j in eachindex(nd)
+		for j in eachindex(order)
 			@inbounds Y[i, j] = C[:, j]' * y[window_indices]
 		end
 	end
 
-	length(nd) == 1 ? Y[:, 1] : Y
+	length(order) == 1 ? Y[:, 1] : Y
 end
-
-
 

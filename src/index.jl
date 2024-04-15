@@ -244,7 +244,7 @@ function fit(index::Index{P}) where P
     end
 
     # a = 2pi / d
-    2π * λ / d, R²(d * observed_ratios, observed_peaks)
+    (; d = 2π * λ / d, R² = R²(d * observed_ratios, observed_peaks))
 end
 
 """
@@ -268,6 +268,7 @@ function score(index::Index)
         peak_idx, _ = findnz(index.peaks)
         count(==(0), view(index.peaks, first(peak_idx):last(peak_idx)))
     end
+    
     (numpeaks(index) + totalprom(index)) * (1 - 0.25 * num_gaps) * rsquared
 end
 
@@ -288,37 +289,42 @@ function remove_subsets(indices::Vector{<:Index})
     indices[.!any(subsets; dims = 2) |> vec]
 end
 
-function ngc(index::Index{P}) where {P<:Cubic}
-    if P <: Ia3d
-        χ, A₀ = -8, 3.091
-    elseif P <: Pn3m
-        χ, A₀ = -2, 1.919
-    elseif P <: Im3m
-        χ, A₀ = -4, 2.345
-    end
+ngc(χ, A₀, a) = -2π * (χ/A₀) * (10 / a)^2
+ngc(index::Index{Ia3d}) = ngc(-8, 3.091, fit(index).a)
+ngc(index::Index{Pn3m}) = ngc(-2, 1.919, fit(index).a)
+ngc(index::Index{Im3m}) = ngc(-4, 2.345, fit(index).a)
 
-    a, _ = fit(index)
+# function ngc(index::Index{P}) where {P<:Cubic}
+#     if P <: Ia3d
+#         χ, A₀ = -8, 3.091
+#     elseif P <: Pn3m
+#         χ, A₀ = -2, 1.919
+#     elseif P <: Im3m
+#         χ, A₀ = -4, 2.345
+#     end
 
-    -2π * (χ/A₀) * (10 / a)^2
+#     a, _ = fit(index)
 
-    # % Negative Gaussian Curvature for Cubics only, generate text
-    # switch phase
-    #     case 'Cubic Ia3d'
-    #         chi = -8;
-    #         A0 = 3.091;
-    #     case 'Cubic Pn3m'
-    #         chi = -2;
-    #         A0 = 1.919;
-    #     case 'Cubic Im3m'
-    #         chi = -4;
-    #         A0 = 2.345;
-    # end
+#     ngc(χ, A₀, a)
 
-    # switch phase
-    #     case {'Cubic Pn3m', 'Cubic Im3m', 'Cubic Ia3d'}
-    #         NGC = -2 * pi * (chi/A0) * (10/a)^2;  % in 1/nm^2
-    #         text_ngc = sprintf('<k> = %.4f 1/nm^2', NGC);
-    #     otherwise
-    #         text_ngc = '';
-    # end
-end
+#     # % Negative Gaussian Curvature for Cubics only, generate text
+#     # switch phase
+#     #     case 'Cubic Ia3d'
+#     #         chi = -8;
+#     #         A0 = 3.091;
+#     #     case 'Cubic Pn3m'
+#     #         chi = -2;
+#     #         A0 = 1.919;
+#     #     case 'Cubic Im3m'
+#     #         chi = -4;
+#     #         A0 = 2.345;
+#     # end
+
+#     # switch phase
+#     #     case {'Cubic Pn3m', 'Cubic Im3m', 'Cubic Ia3d'}
+#     #         NGC = -2 * pi * (chi/A0) * (10/a)^2;  % in 1/nm^2
+#     #         text_ngc = sprintf('<k> = %.4f 1/nm^2', NGC);
+#     #     otherwise
+#     #         text_ngc = '';
+#     # end
+# end

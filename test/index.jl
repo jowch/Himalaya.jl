@@ -14,7 +14,7 @@
 
     @test predictpeaks(index) == phaseratios(Hexagonal)
 
-    d, R² = fit(index)
+    (; d, R²) = fit(index)
     @test round(d; digits = 3) == 7.255
     @test R² == 1
     
