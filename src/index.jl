@@ -97,14 +97,18 @@ by `minpeaks`.
 
 See also `Phase`, `minpeaks`.
 """
-function indexpeaks(peaks, proms, domain; kwargs...)
+function indexpeaks(peaks, proms, domain; removesubsets = true, kwargs...)
     indices = Index[]
 
     for phase in (Lamellar, Hexagonal, Square, Pn3m, Im3m, Ia3d, Fd3m)
         push!(indices, indexpeaks(phase, peaks, proms, domain; kwargs...)...)
     end
 
-    remove_subsets(indices)
+    if removesubsets
+        remove_subsets(indices)
+    else
+        indices
+    end
 end
 
 function indexpeaks(::Type{P}, peaks, proms, domain; gaps = true, tol = 0.0025, requiremin = true) where {P<:Phase}
