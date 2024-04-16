@@ -37,12 +37,12 @@ function findpeaks(y; θ = 0, m = 5)
 	u = rescale(y)
 
 	# approximate derivatives of y
-	du = savitzky_golay(m, 4, u[valid_idx]; order = [2, 3, 4])
+	du = savitzky_golay(m, 4, u; order = [2, 3, 4])
 
 	# find minima in second derivative
 	peakidx = let
 		# find zero-crossings in third derivative	
-		crossings = falses(length(valid_idx))
+		crossings = falses(length(u))
 		crossings[1:end-1] .= diff(sign.(du[:, 2])) .!= 0
 
 		# check if minima or maxima with fourth derivative
