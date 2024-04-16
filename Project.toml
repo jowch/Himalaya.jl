@@ -1,10 +1,9 @@
 name = "Himalaya"
 uuid = "c5c84187-0f9f-481b-afdc-282fe863df0d"
 authors = ["Jonathan Chen <jwhc@ucla.edu>"]
-version = "0.4.1"
+version = "0.4.2"
 
 [deps]
-DSP = "717857b8-e6f2-59f4-9121-6e50c889abd2"
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 Peaks = "18e31ff7-3703-566c-8e60-38913d67486b"

@@ -1,5 +1,5 @@
 using Distributions
-using DSP: conv
+# using DSP: conv
 
 """
 	findpeaks(y; θ, m, n)
@@ -24,7 +24,7 @@ percentile-prominence curves from many traces.
 
 See also `Peaks.peakproms`.
 """
-function findpeaks(y; θ = 0, m = 5, remove_drop = true)
+function findpeaks(y; θ = 0, m = 5)
 	# peakidx, proms = peakproms(argmaxima(y), y)
 	
 	# smooth things out
@@ -46,7 +46,8 @@ function findpeaks(y; θ = 0, m = 5, remove_drop = true)
 		crossings[1:end-1] .= diff(sign.(du[:, 2])) .!= 0
 
 		# check if minima or maxima with fourth derivative
-		valid_idx.start .+ findall(crossings .& (du[:, 3] .> 0)) .- 1
+		# valid_idx.start .+ 
+		findall(crossings .& (du[:, 3] .> 0)) .- 1
 	end
 
 	proms = let
