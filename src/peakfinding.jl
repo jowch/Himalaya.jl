@@ -25,89 +25,53 @@ percentile-prominence curves from many traces.
 See also `Peaks.peakproms`.
 """
 function findpeaks(y; θ = 0, m = 5)
-	# peakidx, proms = peakproms(argmaxima(y), y)
-	
-	# smooth things out
-	# k = Distributions.pdf.(Normal(0, m / 2), -(m ÷ 2):(m ÷ 2))
-	# u = conv(k, y)[2:end-1]
+	# rescale the y values
+	u = y ./ maximum(y)
 
-	# ignore the initial 
-	# valid_idx = remove_drop ? withoutbeamstop(u) : (1:length(u))
+	# find maxima in the rescaled curve
+	peaks = Himalaya.Peaks.findmaxima(u)
+	peaks = Himalaya.Peaks.peakproms(peaks)
 
-	u = rescale(y)
+	# approximate 2nd derivative of y
+	d2u = savitzky_golay(m, 4, u; order = 2)
+	d2u ./= maximum(abs.(d2u))
 
-	# approximate derivatives of y
-	du = savitzky_golay(m, 4, u; order = [2, 3, 4])
+	# find minima in the 2nd derivative
+	d2peaks = let
+		(; indices, heights) = Himalaya.Peaks.findminima(d2u)
+		valid_idx = heights .<= -0.005
 
-	# find minima in second derivative
-	peakidx = let
-		# find zero-crossings in third derivative	
-		crossings = falses(length(u))
-		crossings[1:end-1] .= diff(sign.(du[:, 2])) .!= 0
+		(; indices = indices[valid_idx], proms = heights[valid_idx])
+	end
+	d2peaks = Himalaya.Peaks.peakproms(d2peaks)
 
-		# check if minima or maxima with fourth derivative
-		# valid_idx.start .+ 
-		findall(crossings .& (du[:, 3] .> 0)) .- 1
+	# find indices of d2peaks that are the same or one away from a peak in peaks
+	index_distances = abs.(peaks.indices .- d2peaks.indices')
+	overlapping_indices = Tuple.(findall(index_distances .<= 1))
+
+	# use the peaks of the original trace for the overlapping peaks
+	overlapping_peaks = peaks.indices[first.(overlapping_indices)]
+	# use the larger prominence for the overlapping peaks
+	overlapping_proms = map(overlapping_indices) do (i, j)
+		max(peaks.proms[i], -d2peaks.proms[j])
 	end
 
-	proms = let
-		_, ps = peakproms(peakidx, u)
-		_, qs = peakproms(peakidx .+ 1, u)
-		vec(maximum(hcat(ps, qs); dims = 2))
-	end
+	peaks, proms = let upeaks = peaks
+		peak_idx = setdiff(1:length(upeaks.indices), first.(overlapping_indices))
+		d2peak_idx = setdiff(1:length(d2peaks.indices), last.(overlapping_indices))
 
-	# # estimate the second derivative of the function using Savitzky-Golay filter
-	# d²u = savitzky_golay(m, n, u; order = 2)
+		peaks = vcat(upeaks.indices[peak_idx], d2peaks.indices[d2peak_idx], overlapping_peaks)
+		proms = vcat(upeaks.proms[peak_idx], -d2peaks.proms[d2peak_idx], overlapping_proms)
+		
+		sort_idx = sortperm(peaks)
 
-	# # find indices of the maximum second derivative values
-	# d²_idx, d²_proms = peakproms(argmaxima(-d²u), -d²u)
-
-	if θ == 0
-		# compute a θ value using the prominences of the d²u peaks
-		θ = findtheta(proms)
+		peaks[sort_idx], proms[sort_idx]
 	end
 
 	# compute the peak prominences of peaks on the `u` scale
-	θ_idx = proms .> θ
-	peakidx[θ_idx], proms[θ_idx]
-
-	# peakidx, proms
+	θ_idx = proms .≥ θ
+	peaks[θ_idx], proms[θ_idx]
 end
-
-function findtheta(proms)
-	# find a prominence threshold
-	qs = [quantile(proms, p) for p = 0.75:0.01:1]
-
-	# sanity check
-	if maximum(qs) < 10 * median(qs)
-		return Inf
-	end
-
-	# approximate derivatives
-	dq = savitzky_golay(5, 4, qs; order = [2, 3, 4])
-
-	inflection_idx = let
-		# find zero-crossings in third derivative	
-		crossings = falses(length(qs))
-		crossings[1:end-1] .= diff(sign.(dq[:, 2])) .!= 0
-
-		# check if minima or maxima with fourth derivative
-		candidates = findall(crossings .& (dq[:, 3] .> 0)) .- 1
-
-		candidates[argmax(dq[candidates, 1])]
-	end
-
-	qs[inflection_idx]
-end
-
-function withoutbeamstop(y, dy)
-	findfirst(diff(sign.(dy)) .> 0):length(y)
-end
-
-function withoutbeamstop(y)
-	withoutbeamstop(y, savitzky_golay(5, 1, y; order = 1))
-end
-
 
 """
 	savitzky_golay(m, n, y; order = 0)
