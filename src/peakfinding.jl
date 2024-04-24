@@ -24,13 +24,13 @@ percentile-prominence curves from many traces.
 
 See also `Peaks.peakproms`.
 """
-function findpeaks(y; θ = 0, m = 5)
+function findpeaks(y; θ = 0, m = 5, max_d2 = -0.005)
 	# rescale the y values
 	u = y ./ maximum(y)
 
 	# find maxima in the rescaled curve
-	peaks = Himalaya.Peaks.findmaxima(u)
-	peaks = Himalaya.Peaks.peakproms(peaks)
+	peaks = findmaxima(u)
+	peaks = peakproms(peaks)
 
 	# approximate 2nd derivative of y
 	d2u = savitzky_golay(m, 4, u; order = 2)
@@ -38,12 +38,12 @@ function findpeaks(y; θ = 0, m = 5)
 
 	# find minima in the 2nd derivative
 	d2peaks = let
-		(; indices, heights) = Himalaya.Peaks.findminima(d2u)
-		valid_idx = heights .<= -0.005
+		(; indices, heights) = findminima(d2u)
+		valid_idx = heights .<= max_d2
 
 		(; indices = indices[valid_idx], proms = heights[valid_idx])
 	end
-	d2peaks = Himalaya.Peaks.peakproms(d2peaks)
+	d2peaks = peakproms(d2peaks)
 
 	# find indices of d2peaks that are the same or one away from a peak in peaks
 	index_distances = abs.(peaks.indices .- d2peaks.indices')

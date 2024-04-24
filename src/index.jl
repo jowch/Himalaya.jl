@@ -294,9 +294,9 @@ function remove_subsets(indices::Vector{<:Index})
 end
 
 ngc(χ, A₀, a) = -2π * (χ/A₀) * (10 / a)^2
-ngc(index::Index{Ia3d}) = ngc(-8, 3.091, fit(index).a)
-ngc(index::Index{Pn3m}) = ngc(-2, 1.919, fit(index).a)
-ngc(index::Index{Im3m}) = ngc(-4, 2.345, fit(index).a)
+ngc(index::Index{Ia3d}) = ngc(-8, 3.091, fit(index).d)
+ngc(index::Index{Pn3m}) = ngc(-2, 1.919, fit(index).d)
+ngc(index::Index{Im3m}) = ngc(-4, 2.345, fit(index).d)
 
 # function ngc(index::Index{P}) where {P<:Cubic}
 #     if P <: Ia3d
