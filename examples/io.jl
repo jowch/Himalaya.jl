@@ -1,3 +1,12 @@
+# Example utilities for loading SAXS detector images and integration files.
+#
+# These helpers are NOT part of the Himalaya package — they require extra
+# dependencies that are not in Himalaya's Project.toml:
+#   - DelimitedFiles  (stdlib, free)
+#   - Images, TiffImages
+#
+# To use, install those packages in your own environment and `include` this file.
+
 using DelimitedFiles
 using Images, TiffImages
 

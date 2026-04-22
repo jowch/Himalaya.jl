@@ -1,113 +1,58 @@
-using Distributions
-# using DSP: conv
-
 """
-	findpeaks(y; θ, m, n)
+    findpeaks(q, I, σ; normalize_by_σ = false,
+                        sharpness_method = :savgol,
+                        prom_floor  = nothing,
+                        sharp_floor = nothing) -> NamedTuple
+    findpeaks(q, I;    kwargs...) -> NamedTuple
 
-Identifies peaks in curve `y` using the Savitzky-Golay second derivative.
+Detect peaks in a 1D signal using topological prominence (criterion A) and
+curvature/sharpness (criterion B), each adaptively thresholded via the
+kneedle elbow finder. Shape-agnostic; no per-trace tuning.
 
-The values of `y` are first weighted by the relative magnitude of their values.
-This is to emphasize the higher value peaks and to minimize the lower ones as
-these are more likely to be from noise. The second derivative of this weighted
-curve 
+# Arguments
+- `q`, `I`, `σ`: equal-length vectors. `σ` is per-point intensity
+  uncertainty (e.g., the third column of a SAXS `_tot.dat` file).
+- `normalize_by_σ`: if `true`, work on `I ./ σ` so prominence is in
+  noise-relative units. Default `false`. For Poisson-dominated SAXS data
+  where σ ≈ √I, normalising by σ compresses the very dynamic range we
+  are trying to detect — peaks lose their prominence advantage over
+  noise. The kwarg is kept for data with approximately homoscedastic
+  noise (e.g., detector electronic noise dominating).
+- `sharpness_method`: `:savgol` (default, single-scale 2nd derivative) or
+  `:cwt` (multi-scale Ricker max response).
+- `prom_floor`, `sharp_floor`: optional manual thresholds. When `nothing`
+  (default), the kneedle algorithm chooses each from the data's own
+  distribution.
 
-Most of the peaks identified in this way will come from noise in the data and
-will have near-zero prominence. Real peaks will have prominences higher than
-those of the noisy peaks.
-
-We can compute a threshold prominence value ``θ``, where peaks with prominence
-greater than ``θ`` are considered real. This threshold can be found by looking
-at the precentile-prominence curve, which will have "jumps" at higher
-percentiles as real peaks have higher prominence than noise. The method for
-computing this threshold is a heuristic and was developed by studying
-percentile-prominence curves from many traces.
-
-See also `Peaks.peakproms`.
+# Returns
+`(; indices, q, prominence, sharpness)` — four equal-length vectors,
+sorted by ascending q.
 """
-function findpeaks(y; θ = 0, m = 5, max_d2 = -0.005)
-	# rescale the y values
-	u = y ./ maximum(y)
+function findpeaks(q, I, σ; normalize_by_σ    = false,
+                              sharpness_method = :savgol,
+                              prom_floor       = nothing,
+                              sharp_floor      = nothing)
+    @assert length(q) == length(I) == length(σ) "q, I, σ must be equal length"
 
-	# find maxima in the rescaled curve
-	peaks = findmaxima(u)
-	peaks = peakproms(peaks)
+    y = normalize_by_σ ? I ./ σ : I
 
-	# approximate 2nd derivative of y
-	d2u = savitzky_golay(m, 4, u; order = 2)
-	d2u ./= maximum(abs.(d2u))
+    cands           = persistence(y)
+    sharps_full     = sharpness(y; method = sharpness_method)
+    sharps_at_peaks = sharps_full[cands.indices]
 
-	# find minima in the 2nd derivative
-	d2peaks = let
-		(; indices, heights) = findminima(d2u)
-		valid_idx = heights .<= max_d2
+    pf = something(prom_floor,  knee(sort(cands.prominence; rev = true)))
+    sf = something(sharp_floor, knee(sort(sharps_at_peaks;  rev = true)))
 
-		(; indices = indices[valid_idx], proms = heights[valid_idx])
-	end
-	d2peaks = peakproms(d2peaks)
+    keep = (cands.prominence .>= pf) .& (sharps_at_peaks .>= sf)
 
-	# find indices of d2peaks that are the same or one away from a peak in peaks
-	index_distances = abs.(peaks.indices .- d2peaks.indices')
-	overlapping_indices = Tuple.(findall(index_distances .<= 1))
+    # Sort surviving candidates by ascending q (== ascending index).
+    idx  = cands.indices[keep]
+    perm = sortperm(idx)
 
-	# use the peaks of the original trace for the overlapping peaks
-	overlapping_peaks = peaks.indices[first.(overlapping_indices)]
-	# use the larger prominence for the overlapping peaks
-	overlapping_proms = map(overlapping_indices) do (i, j)
-		max(peaks.proms[i], -d2peaks.proms[j])
-	end
-
-	peaks, proms = let upeaks = peaks
-		peak_idx = setdiff(1:length(upeaks.indices), first.(overlapping_indices))
-		d2peak_idx = setdiff(1:length(d2peaks.indices), last.(overlapping_indices))
-
-		peaks = vcat(upeaks.indices[peak_idx], d2peaks.indices[d2peak_idx], overlapping_peaks)
-		proms = vcat(upeaks.proms[peak_idx], -d2peaks.proms[d2peak_idx], overlapping_proms)
-		
-		sort_idx = sortperm(peaks)
-
-		peaks[sort_idx], proms[sort_idx]
-	end
-
-	# compute the peak prominences of peaks on the `u` scale
-	θ_idx = proms .≥ θ
-	peaks[θ_idx], proms[θ_idx]
+    (indices    = idx[perm],
+     q          = q[idx[perm]],
+     prominence = cands.prominence[keep][perm],
+     sharpness  = sharps_at_peaks[keep][perm])
 end
 
-"""
-	savitzky_golay(m, n, y; order = 0)
-	savitzky_golay(m, n, y; order = [1, 2, 3])
-
-Computes the Savitzky-Golay filtering of `y`.
-"""
-function savitzky_golay(m, n, y; order = 0)
-	# @assert n >= order "`n` must be at least `order`"
-
-	num_y = length(y)
-	z = -m:m
-	J = zeros(2m + 1, n + 1)
-
-	for i = 0:n
-		@inbounds J[:, i+1] .= z .^ i
-	end
-
-	# The convolution term matrix 
-	C = J' \ I(n .+ 1)[:, order .+ 1] # = inv(J' * J) * J' = pinv(J)
-	Y = zeros(num_y, length(order))
-
-	for i in 1:num_y
-		if i <= m
-			window_indices = abs.(z .+ i) .+ 1
-		elseif i > num_y - m
-			window_indices = -abs.(z .+ i .- num_y) .+ num_y
-		else
-			window_indices = z .+ i
-		end
-
-		for j in eachindex(order)
-			@inbounds Y[i, j] = C[:, j]' * y[window_indices]
-		end
-	end
-
-	length(order) == 1 ? Y[:, 1] : Y
-end
-
+findpeaks(q, I; kwargs...) = findpeaks(q, I, ones(length(I)); kwargs...)

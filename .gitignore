@@ -26,3 +26,10 @@ Manifest.toml
 # MacOS files
 .DS_Store
 
+# Editor / IDE
+.vscode/
+
+# Local scratch & exploratory scripts (not part of the package)
+scratch/
+
+.superpowers/
