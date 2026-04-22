@@ -26,6 +26,7 @@ function register_routes!()
     register_samples_routes!()
     register_exposures_routes!()
     register_peaks_routes!()
+    register_analysis_routes!()
 end
 
 function serve(db::SQLite.DB; host::String = "127.0.0.1", port::Int = 8080)
