@@ -14,4 +14,5 @@ using Test
     include("test_routes_exposures.jl")
     include("test_routes_peaks.jl")
     include("test_routes_analysis.jl")
+    include("test_routes_export.jl")
 end

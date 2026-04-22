@@ -13,6 +13,7 @@ include("routes_samples.jl")
 include("routes_exposures.jl")
 include("routes_peaks.jl")
 include("routes_analysis.jl")
+include("routes_export.jl")
 include("server.jl")
 
 export main
