@@ -5,4 +5,5 @@ using Test
     include("index.jl")
     include("threshold.jl")
     include("persistence.jl")
+    include("sharpness.jl")
 end

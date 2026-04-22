@@ -23,6 +23,7 @@ include("util.jl")
 include("phase.jl")
 include("threshold.jl")
 include("persistence.jl")
+include("sharpness.jl")
 include("peakfinding.jl")
 include("index.jl")
 
