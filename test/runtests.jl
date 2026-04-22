@@ -4,4 +4,5 @@ using Test
 @testset "Himalaya" begin
     include("index.jl")
     include("peakfinding.jl")
+    include("peakfinding_real.jl")
 end
