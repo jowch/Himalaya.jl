@@ -1,9 +1,9 @@
 """
-    findpeaks(q, I, σ; normalize_by_σ = true,
+    findpeaks(q, I, σ; normalize_by_σ = false,
                         sharpness_method = :savgol,
                         prom_floor  = nothing,
                         sharp_floor = nothing) -> NamedTuple
-    findpeaks(q, I;    normalize_by_σ = false, kwargs...) -> NamedTuple
+    findpeaks(q, I;    kwargs...) -> NamedTuple
 
 Detect peaks in a 1D signal using topological prominence (criterion A) and
 curvature/sharpness (criterion B), each adaptively thresholded via the
@@ -12,8 +12,12 @@ kneedle elbow finder. Shape-agnostic; no per-trace tuning.
 # Arguments
 - `q`, `I`, `σ`: equal-length vectors. `σ` is per-point intensity
   uncertainty (e.g., the third column of a SAXS `_tot.dat` file).
-- `normalize_by_σ`: if `true`, internally work on `I ./ σ` so prominence
-  is in noise-relative units. Defaults to `true` when σ is given.
+- `normalize_by_σ`: if `true`, work on `I ./ σ` so prominence is in
+  noise-relative units. Default `false`. For Poisson-dominated SAXS data
+  where σ ≈ √I, normalising by σ compresses the very dynamic range we
+  are trying to detect — peaks lose their prominence advantage over
+  noise. The kwarg is kept for data with approximately homoscedastic
+  noise (e.g., detector electronic noise dominating).
 - `sharpness_method`: `:savgol` (default, single-scale 2nd derivative) or
   `:cwt` (multi-scale Ricker max response).
 - `prom_floor`, `sharp_floor`: optional manual thresholds. When `nothing`
@@ -24,7 +28,7 @@ kneedle elbow finder. Shape-agnostic; no per-trace tuning.
 `(; indices, q, prominence, sharpness)` — four equal-length vectors,
 sorted by ascending q.
 """
-function findpeaks(q, I, σ; normalize_by_σ    = true,
+function findpeaks(q, I, σ; normalize_by_σ    = false,
                               sharpness_method = :savgol,
                               prom_floor       = nothing,
                               sharp_floor      = nothing)
@@ -51,5 +55,4 @@ function findpeaks(q, I, σ; normalize_by_σ    = true,
      sharpness  = sharps_at_peaks[keep][perm])
 end
 
-findpeaks(q, I; normalize_by_σ = false, kwargs...) =
-    findpeaks(q, I, ones(length(I)); normalize_by_σ = normalize_by_σ, kwargs...)
+findpeaks(q, I; kwargs...) = findpeaks(q, I, ones(length(I)); kwargs...)
