@@ -6,4 +6,5 @@ using Test
     include("threshold.jl")
     include("persistence.jl")
     include("sharpness.jl")
+    include("peakfinding.jl")
 end
