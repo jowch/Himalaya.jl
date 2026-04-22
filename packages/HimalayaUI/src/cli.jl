@@ -135,6 +135,27 @@ function cli_show(args)
     end
 end
 
+function cli_serve(args)
+    s = ArgParseSettings(prog = "himalaya serve")
+    @add_arg_table! s begin
+        "experiment_path"
+            required = true
+        "--port"
+            arg_type = Int
+            default  = 8080
+        "--host"
+            default  = "127.0.0.1"
+    end
+    p = parse_args(args, s; as_symbols = true)
+
+    db_path = joinpath(p[:experiment_path], "himalaya.db")
+    isfile(db_path) || error("no himalaya.db at $db_path — run `himalaya init` first")
+
+    db = open_db(p[:experiment_path])
+    println("HimalayaUI serving $(p[:experiment_path]) on http://$(p[:host]):$(p[:port])")
+    serve(db; host = p[:host], port = p[:port])
+end
+
 function main(args = copy(ARGS))
     isempty(args) && (println("Usage: himalaya <command> [args]"); return)
     cmd = popfirst!(args)
@@ -145,7 +166,9 @@ function main(args = copy(ARGS))
         cli_analyze(args)
     elseif cmd == "show"
         cli_show(args)
+    elseif cmd == "serve"
+        cli_serve(args)
     else
-        println("Unknown command: $cmd. Available: init, analyze, show")
+        println("Unknown command: $cmd. Available: init, analyze, show, serve")
     end
 end

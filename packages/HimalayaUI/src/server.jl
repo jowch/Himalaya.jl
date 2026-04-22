@@ -18,6 +18,12 @@ function bind_db!(db::SQLite.DB)
 end
 
 function register_routes!()
+    # Static frontend assets — only mounted if dist directory exists with content
+    dist_dir = joinpath(pkgdir(HimalayaUI), "frontend", "dist")
+    if isdir(dist_dir)
+        Oxygen.dynamicfiles(dist_dir, "/")
+    end
+
     @get "/api/health" function(req::HTTP.Request)
         Dict("status" => "ok")
     end
