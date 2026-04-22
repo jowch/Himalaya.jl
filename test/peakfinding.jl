@@ -30,3 +30,17 @@ end
     best_scale_idx = argmax(centre_row)
     @test scales[best_scale_idx] == 4.0
 end
+
+@testset "local_maxima" begin
+    # A vector with two clear peaks at indices 3 and 7
+    v = [0.0, 1.0, 3.0, 1.0, 0.0, 2.0, 5.0, 2.0, 0.0]
+    @test Himalaya.local_maxima(v) == [3, 7]
+
+    # Negative values should not produce maxima (the CWT filtering wants positives only)
+    v2 = [-1.0, -0.5, -1.0, 0.0, 1.0, 0.0]
+    @test Himalaya.local_maxima(v2) == [5]
+
+    # Endpoints don't count
+    v3 = [3.0, 1.0, 2.0, 1.0, 3.0]
+    @test Himalaya.local_maxima(v3) == [3]
+end

@@ -49,3 +49,13 @@ function cwt(y, scales)
     end
     coeffs
 end
+
+"""
+    local_maxima(v)
+
+Return indices `i` where `v[i] > v[i-1]` and `v[i] > v[i+1]` and `v[i] > 0`.
+Endpoints are never returned.
+"""
+function local_maxima(v)
+    [i for i in 2:(length(v) - 1) if v[i] > 0 && v[i] > v[i-1] && v[i] > v[i+1]]
+end
