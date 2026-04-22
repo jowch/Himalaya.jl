@@ -246,6 +246,11 @@ Detect Bragg peaks in a SAXS integration trace.
 - `shape`: peak shape model used in Stage 2 fit, `:lorentzian` (default) or
   `:gaussian`. Lipid mesophase Bragg peaks are typically Lorentzian; use
   `:gaussian` for samples dominated by strain or instrumental broadening.
+- `reject_edge_ridges`: when `true` (default), reject candidates whose CWT
+  ridge matches best at the largest scale (a sign the feature is wider than
+  the searched range — typically broad form-factor background, not a Bragg
+  peak). A summary `@warn` is emitted listing how many were rejected so the
+  signal isn't silent. Set `false` to keep edge-matched ridges.
 
 # Returns
 A NamedTuple `(; indices, q, snr, width)` of equal-length vectors:
@@ -258,7 +263,7 @@ Peaks are returned sorted by ascending `q`.
 """
 function findpeaks(q, I, σ;
                    nσ = 5, scales = nothing, min_ridge_length = 3,
-                   shape = :lorentzian)
+                   shape = :lorentzian, reject_edge_ridges = true)
     @assert length(q) == length(I) == length(σ) "q, I, σ must be the same length"
     sc = scales === nothing ? DEFAULT_SCALES : collect(float.(scales))
 
@@ -272,8 +277,18 @@ function findpeaks(q, I, σ;
     qs = Float64[]
     snrs = Float64[]
     widths = Float64[]
+    n_edge_rejected = 0
 
     for r in ridges
+        # Scale-edge rejection: a ridge that matches best at the largest
+        # available scale has likely "railed the meter" — its natural width
+        # exceeds what we searched for, so it's a broad background feature,
+        # not a Bragg peak.
+        if reject_edge_ridges && r.scale == sc[end]
+            n_edge_rejected += 1
+            continue
+        end
+
         width_pts = r.scale
         fit = fit_peak(q, I, σ, r.index, width_pts; shape = shape)
         fit === nothing && continue
@@ -285,6 +300,10 @@ function findpeaks(q, I, σ;
         push!(qs, fit.q0)
         push!(snrs, fit.snr)
         push!(widths, fit.fwhm)
+    end
+
+    if n_edge_rejected > 0
+        @warn "findpeaks: rejected $n_edge_rejected candidate(s) at the largest CWT scale ($(sc[end]) pts) — likely broad background features. Extend `scales` upward or pass `reject_edge_ridges = false` if these are genuine peaks."
     end
 
     # Sort by q

@@ -161,3 +161,92 @@ end
     @test abs(pk.q[1] - q0) < step(range(0.005, 0.4; length = n))
     @test pk.snr[1] > 10
 end
+
+@testset "findpeaks: 3 peaks at Pn3m ratios on power-law background" begin
+    n = 922
+    q = collect(range(0.005, 0.4; length = n))
+    # Pn3m first three normalized ratios: √2, √3, √4 → divide by √2 → 1, √(3/2), √2
+    base_q = 0.05
+    peak_qs = base_q .* [1.0, sqrt(3/2), sqrt(2)]
+    γ = 0.003
+    background = 1000.0 .* (q ./ q[1]).^(-2)   # power law
+    I = copy(background)
+    for q0 in peak_qs
+        I .+= 100.0 ./ (1 .+ ((q .- q0) ./ γ).^2)
+    end
+    σ_arr = fill(10.0, n)   # A/σ ≈ 10 at peak
+
+    pk = findpeaks(q, I, σ_arr)
+    @test length(pk.q) == 3
+    for q0 in peak_qs
+        @test any(abs.(pk.q .- q0) .< step(range(0.005, 0.4; length = n)))
+    end
+end
+
+@testset "findpeaks: below-threshold peak rejected" begin
+    n = 922
+    q = collect(range(0.005, 0.4; length = n))
+    γ = 0.003
+    σ_arr = fill(50.0, n)
+    I = 100.0 .+ 100.0 ./ (1 .+ ((q .- 0.2) ./ γ).^2)   # A/σ ≈ 2
+
+    pk = findpeaks(q, I, σ_arr; nσ = 5)
+    @test isempty(pk.q)
+end
+
+@testset "findpeaks: just-above-threshold peak detected" begin
+    n = 922
+    q = collect(range(0.005, 0.4; length = n))
+    γ = 0.003
+    σ_arr = fill(15.0, n)
+    I = 100.0 .+ 100.0 ./ (1 .+ ((q .- 0.2) ./ γ).^2)   # A/σ ≈ 6
+
+    pk = findpeaks(q, I, σ_arr; nσ = 5)
+    @test length(pk.q) == 1
+end
+
+@testset "findpeaks: smooth Lorentzian background produces no peaks" begin
+    n = 922
+    q = collect(range(0.005, 0.4; length = n))
+    # Wide Lorentzian (width ~100 points in q-units)
+    width_q = 100 * step(range(0.005, 0.4; length = n))
+    background = 1.0 ./ (1 .+ ((q .- 0.2) ./ width_q).^2)
+    I = 1000.0 .* background
+    σ_arr = sqrt.(I)   # roughly Poisson-scaled
+
+    pk = findpeaks(q, I, σ_arr)
+    @test isempty(pk.q)
+end
+
+@testset "findpeaks: single-pixel spikes do not trigger" begin
+    using Random
+    Random.seed!(0)
+    n = 922
+    q = collect(range(0.005, 0.4; length = n))
+    I = fill(1000.0, n)
+    σ_arr = fill(30.0, n)
+    # Three single-pixel outliers, each ~10σ above baseline
+    for idx in (200, 500, 800)
+        I[idx] = 1300.0
+    end
+
+    pk = findpeaks(q, I, σ_arr)
+    @test isempty(pk.q)
+end
+
+@testset "findpeaks: two close-but-resolved peaks" begin
+    n = 922
+    q = collect(range(0.005, 0.4; length = n))
+    γ = 0.003
+    # Lorentzian peaks need ≳2-3 HWHM separation to be resolved (heavier tails
+    # than Gaussian fill the dip between close peaks). γ=0.003 ≈ 7 q-grid points,
+    # so 20 grid points apart is ~3 HWHM — clearly resolvable.
+    Δ = 20 * step(range(0.005, 0.4; length = n))
+    q01, q02 = 0.2 - Δ/2, 0.2 + Δ/2
+    σ_arr = fill(10.0, n)
+    I = 100.0 .+ 100.0 ./ (1 .+ ((q .- q01) ./ γ).^2) .+
+                  100.0 ./ (1 .+ ((q .- q02) ./ γ).^2)
+
+    pk = findpeaks(q, I, σ_arr)
+    @test length(pk.q) == 2
+end
