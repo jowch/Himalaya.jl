@@ -287,9 +287,11 @@ peak position is modeled as DELETE + POST.
 ## 5. Frontend
 
 ### Tech stack
-- **TypeScript** compiled by **Vite** (dev + build)
+- **React 18 + TypeScript** compiled by **Vite** (dev + build)
+- **Zustand** (with `persist` middleware) for app state — thin, proven, replaces hand-rolled store + localStorage glue
 - **Observable Plot** for all charts (log-log traces, Miller-index scatter)
-- Vanilla TypeScript for UI components — no framework
+- Function components, no class components; no additional state library beyond Zustand
+- Vitest + **React Testing Library** for unit tests; **Playwright** for E2E
 - Served from `frontend/dist/` by Oxygen.jl in production
 
 ### Design language
