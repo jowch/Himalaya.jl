@@ -262,9 +262,22 @@ DELETE /api/peaks/:id                      remove peak; marks affected indices s
 
 ### Indices
 ```
-GET    /api/exposures/:id/indices          all candidate indices with status
-PATCH  /api/indices/:id                    set status: confirmed | excluded | candidate
+GET    /api/exposures/:id/indices          all candidate indices with scores
 ```
+
+### Groups
+```
+GET    /api/exposures/:id/groups           all groups (active + alternatives) with members
+POST   /api/groups/:id/members             add index to custom group; creates and
+                                           activates custom group on first call
+DELETE /api/groups/:id/members/:index_id   remove index from custom group
+```
+
+On first `POST /api/groups/:id/members` or first `DELETE`, the server creates
+a custom group cloned from the current auto group, promotes it to active
+(`active = TRUE`), and demotes the auto group (`active = FALSE`). Subsequent
+calls modify the existing custom group. No endpoint exists to swap the active
+group — custom always leads once created.
 
 **No PATCH on peaks** — a peak is fully defined by its q position. Changing a
 peak position is modeled as DELETE + POST.
@@ -364,21 +377,24 @@ Customization controls deferred to a future iteration.
 ### Phase panel (right column, bottom)
 Three sections, top to bottom:
 
-**Active group** — the current assignment (auto or custom). Each index shows
-phase name, lattice parameter, R², and a **−** button to remove it from the
-group (creating/updating the custom group).
+**Active group** — the one leading assignment for this exposure. Initially the
+auto group; becomes the custom group after any user modification. Each index
+shows phase name, lattice parameter, R², and a **−** button to remove it.
 
-**Candidates** — all other non-excluded indices, ranked by score. Each shows
-a **+** button to add to the active group. Hovering triggers the trace
-preview described above.
+**Alternatives** — the demoted auto group (once superseded) and any individual
+candidate indices not in the active group, ranked by score. Each shows a **+**
+button to add to the active group. Hovering any alternative triggers the trace
+preview described above — its predicted positions are drawn speculatively and
+fade when hover ends.
 
 **Recent** — the last few user actions on this exposure (add/remove index,
-add/remove peak), in reverse chronological order. Acts as a lightweight undo
-reference; not interactive in v1.
+add/remove peak), in reverse chronological order. Lightweight undo reference;
+not interactive in v1.
 
-When the user first modifies the auto group (via + or −), a custom group is
-created and becomes active. The auto group is preserved and visible as a
-collapsible "Auto suggestion" reference. One custom group per exposure for v1.
+Group lifecycle: one auto group exists after analysis. First + or − creates a
+custom group (cloned from auto, then modified) which immediately becomes active.
+Auto group is demoted to alternative — always preserved for reference and hover
+preview. No group swapping in v1; one custom group per exposure maximum.
 
 ### User identification
 - Modal on first visit: dropdown of existing usernames from `GET /api/users`,
@@ -467,3 +483,7 @@ Section header rows (where `#` is non-numeric or empty) are skipped. Filename
 ranges like `JC001-004` and `JC013-JC016` are expanded to individual filenames.
 Tags extracted from the manifest are stored with `source = 'manifest'` so
 manual additions are not clobbered on re-import.
+
+**`.dat` file format** (from `test/data/` examples): no header rows, three
+whitespace-separated columns in scientific notation — `q  I  σ`. Parsed with
+Julia's `readdlm`. Files contain ~900 rows typically.
