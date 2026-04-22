@@ -465,7 +465,32 @@ Additional beamline profiles can be added as TOML files. Selected at
 
 ---
 
-## 9. Manifest Parsing
+## 9. Testing Strategy
+
+Each layer uses the standard tooling for its ecosystem.
+
+**Himalaya.jl core** — no change. `Test.jl`, TDD, as established in CLAUDE.md.
+
+**HimalayaUI Julia backend** — `Test.jl` throughout, two levels:
+- *Unit:* manifest parser, `.dat` parser, pipeline logic, DB query helpers.
+  Fast, no server process needed.
+- *Integration:* API routes tested via `HTTP.jl` against a live Oxygen.jl
+  instance on a random port, backed by a temp SQLite DB created fresh per
+  test run. No DB mocking — consistent with CLAUDE.md's no-mock policy.
+
+**Frontend** — two tools:
+- *Vitest* — natural Vite companion, zero extra config. Unit tests for
+  `api.ts`, `state.ts`, and pure utility functions.
+- *Playwright* — end-to-end tests for critical user interactions: click-to-add
+  peak, hover preview on alternative indices, group +/−, localStorage state
+  restoration across page reload.
+
+Observable Plot SVG output is not unit-testable in a meaningful way — test
+*behavior* (state transitions, API calls dispatched) rather than rendered output.
+
+---
+
+## 10. Manifest Parsing
 
 Input: CSV exported from Google Sheets (or equivalent). Expected columns:
 
