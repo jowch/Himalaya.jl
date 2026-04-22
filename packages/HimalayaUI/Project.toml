@@ -10,6 +10,7 @@ DelimitedFiles = "8bb1440f-4735-579b-a4ab-409b98df4dab"
 Himalaya = "c5c84187-0f9f-481b-afdc-282fe863df0d"
 JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
 SQLite = "0aa819cd-b072-5ff4-a722-6bc24af294d9"
+SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 Tables = "bd369af6-aec1-5ad0-b16a-f7cc5008161c"
 
 [extras]
