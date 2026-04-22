@@ -225,3 +225,69 @@ function fit_peak(q, I, σ, centre_idx, width_pts; shape = :lorentzian)
     fwhm = shape === :gaussian ? 2.355 * w_fit : 2 * w_fit
     (A = A_fit, q0 = q0_fit, fwhm = fwhm, snr = A_fit / σ_A)
 end
+
+const DEFAULT_SCALES = [2.0, 2.6, 3.5, 4.5, 6.0, 8.0, 10.0, 13.0, 17.0, 22.0, 28.0, 35.0]
+
+"""
+    findpeaks(q, I, σ; nσ = 5, scales = nothing, min_ridge_length = 3, shape = :lorentzian)
+
+Detect Bragg peaks in a SAXS integration trace.
+
+# Arguments
+- `q`, `I`, `σ`: equal-length vectors from a `_tot.dat` file. `σ` is the
+  per-point intensity uncertainty (third column).
+- `nσ`: SNR threshold in sigmas. A candidate is accepted iff `A / σ_A ≥ nσ`,
+  where `A` is the fitted peak amplitude and `σ_A` its standard error.
+  Default 5.
+- `scales`: vector of CWT widths in *points*. `nothing` ⇒ a default
+  geometric series from 2 to 35 points covering typical Bragg widths.
+- `min_ridge_length`: a CWT ridge must persist across this many adjacent
+  scales to be considered. Default 3.
+- `shape`: peak shape model used in Stage 2 fit, `:lorentzian` (default) or
+  `:gaussian`. Lipid mesophase Bragg peaks are typically Lorentzian; use
+  `:gaussian` for samples dominated by strain or instrumental broadening.
+
+# Returns
+A NamedTuple `(; indices, q, snr, width)` of equal-length vectors:
+- `indices`: nearest grid indices into the input arrays
+- `q`: sub-pixel peak positions from the local fit
+- `snr`: physical SNR (`A / σ_A`)
+- `width`: fitted FWHM in q-units
+
+Peaks are returned sorted by ascending `q`.
+"""
+function findpeaks(q, I, σ;
+                   nσ = 5, scales = nothing, min_ridge_length = 3,
+                   shape = :lorentzian)
+    @assert length(q) == length(I) == length(σ) "q, I, σ must be the same length"
+    sc = scales === nothing ? DEFAULT_SCALES : collect(float.(scales))
+
+    # Stage 1: CWT on log10(I) (compress dynamic range so high-q peaks register)
+    y = log10.(max.(I, eps()))
+    coeffs = cwt(y, sc)
+    ridges = find_ridges(coeffs, sc; min_ridge_length = min_ridge_length)
+
+    # Stage 2: local fit + σ-based SNR validation
+    indices = Int[]
+    qs = Float64[]
+    snrs = Float64[]
+    widths = Float64[]
+
+    for r in ridges
+        width_pts = r.scale
+        fit = fit_peak(q, I, σ, r.index, width_pts; shape = shape)
+        fit === nothing && continue
+        fit.snr < nσ && continue
+
+        # Snap fitted q0 back to nearest grid index
+        idx = argmin(abs.(q .- fit.q0))
+        push!(indices, idx)
+        push!(qs, fit.q0)
+        push!(snrs, fit.snr)
+        push!(widths, fit.fwhm)
+    end
+
+    # Sort by q
+    perm = sortperm(qs)
+    (indices = indices[perm], q = qs[perm], snr = snrs[perm], width = widths[perm])
+end

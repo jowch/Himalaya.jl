@@ -145,3 +145,19 @@ end
     fit = Himalaya.fit_peak(q, I, σ_arr, 30, 5.0)
     @test fit === nothing || fit.snr < 1
 end
+
+@testset "findpeaks: single isolated peak" begin
+    n = 922
+    q = collect(range(0.005, 0.4; length = n))
+    A = 100.0
+    q0 = 0.2
+    γ = 0.003
+    σ_arr = fill(5.0, n)   # ⇒ A/σ = 20 at the peak
+    # Use a Lorentzian since that's the new default shape
+    I = 50.0 .+ A ./ (1 .+ ((q .- q0) ./ γ).^2)
+
+    pk = findpeaks(q, I, σ_arr)
+    @test length(pk.q) == 1
+    @test abs(pk.q[1] - q0) < step(range(0.005, 0.4; length = n))
+    @test pk.snr[1] > 10
+end
