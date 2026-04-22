@@ -7,7 +7,7 @@ using Statistics
 
 import Base: ==, issubset, show
 
-export 
+export
 
 # phases
 Phase, Lamellar, Hexagonal, Square, Pn3m, Im3m, Ia3d, Fm3m, Fd3m, phaseratios,
@@ -17,11 +17,12 @@ Index, phase, basis, peaks, numpeaks, totalprom, predictpeaks, missingpeaks,
 ==, issubset, show, indexpeaks, fit, score,
 
 # peaks
-findpeaks
+findpeaks, persistence, knee
 
 include("util.jl")
 include("phase.jl")
 include("threshold.jl")
+include("persistence.jl")
 include("peakfinding.jl")
 include("index.jl")
 
