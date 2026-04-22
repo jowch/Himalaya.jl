@@ -10,6 +10,7 @@ include("actions.jl")
 include("routes_users.jl")
 include("routes_experiments.jl")
 include("routes_samples.jl")
+include("routes_exposures.jl")
 include("server.jl")
 
 export main

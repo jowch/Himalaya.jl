@@ -11,4 +11,5 @@ using Test
     include("test_routes_users.jl")
     include("test_routes_experiments.jl")
     include("test_routes_samples.jl")
+    include("test_routes_exposures.jl")
 end
