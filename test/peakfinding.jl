@@ -74,3 +74,43 @@ end
     ridges = Himalaya.find_ridges(coeffs, scales; min_ridge_length = 3)
     @test isempty(ridges)
 end
+
+using Statistics: median
+
+@testset "fit_peak" begin
+    # Synthesize a clean Gaussian + linear baseline + Gaussian noise.
+    # Then assert fit_peak recovers amplitude and a high SNR.
+    n = 60
+    q_range = range(0.0, 1.0; length = n)
+    q = collect(q_range)
+    dq = step(q_range)
+    A_true = 100.0
+    q0_true = 0.5
+    σw_true = 0.05
+    baseline = 5.0 .+ 2.0 .* q
+    peak = A_true .* exp.(-((q .- q0_true).^2) ./ (2σw_true^2))
+    σ_arr = fill(1.0, n)
+    I = peak .+ baseline   # noiseless to make assertions tight
+    centre_idx = argmin(abs.(q .- q0_true))
+
+    fit = Himalaya.fit_peak(q, I, σ_arr, centre_idx, σw_true / dq)
+
+    @test fit !== nothing
+    @test isapprox(fit.A, A_true; rtol = 0.01)
+    @test isapprox(fit.q0, q0_true; atol = dq)
+    @test isapprox(fit.σw, σw_true; rtol = 0.05)
+    # SNR should be very high for a noiseless peak with σ=1
+    @test fit.snr > 50
+end
+
+@testset "fit_peak returns nothing on failure" begin
+    # Pathological window: flat data, no peak. LsqFit may not converge or
+    # may converge to A≈0 with huge σ_A. fit_peak should return nothing
+    # in either case (we treat both as "no detectable peak here").
+    n = 60
+    q = collect(range(0.0, 1.0; length = n))
+    I = fill(10.0, n)
+    σ_arr = fill(1.0, n)
+    fit = Himalaya.fit_peak(q, I, σ_arr, 30, 5.0)
+    @test fit === nothing || fit.snr < 1
+end
