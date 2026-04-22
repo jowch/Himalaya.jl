@@ -25,29 +25,19 @@ of a diffraction pattern.
 using DelimitedFiles
 using Himalaya
 
-load_integration(path) = readdlm(path, ' ', Float64, '\n')
+# `_tot.dat` files are space-separated `q  I(q)  σ(q)` (third column is the
+# per-point intensity uncertainty from azimuthal integration).
+A = readdlm("my-high-impact-sample_tot.dat", ' ', Float64, '\n')
+qs, Is, σs = A[:, 1], A[:, 2], A[:, 3]
 
-# `integration` contains the values in a tot_file
-integration = load_integration("my-high-impact-sample_tot.dat")
-qs, logIs = integration[:, 1], log10.(integration[:, 2])
+# Detect peaks using topological prominence + curvature, with adaptive
+# (kneedle) thresholds on both. Shape-agnostic; no per-trace tuning.
+pk = findpeaks(qs, Is, σs)        # NamedTuple: (indices, q, prominence, sharpness)
+peak_qs    = pk.q
+peak_proms = pk.prominence
 
-# indices of peaks in the integration array
-peak_locations, peak_proms = findpeaks(logIs)
-peak_qs = qs[peak_locations]
-
-# compute phases matching identified peaks
+# Index the detected peaks against known phases.
 indices = indexpeaks(peak_qs, peak_proms)
-
-# Example `indices`
-# 3-element Vector{Index}:
-#  Index(::Pn3m, 0.05344, [0.05344 0.06556 0.07508 0.09239 0.10668 0.11317 ⋅ 0.12486]
-#  Index(::Im3m, 0.05344, [0.05344 0.07508 0.09239 0.10668 ⋅ 0.13049 ⋅ ⋅ ⋅]
-#  Index(::Pn3m, 0.07508, [0.07508 0.09239 0.10668 0.13049 ⋅ ⋅ ⋅ ⋅]
-
-index = first(indices)
-
-score(index) # => 6.4996...
-d, R² = fit(index) # => d = 117.8585...Å; R² = 0.9999...
 ```
 
 You can also get `Index`s for a specific phase as follows

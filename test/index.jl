@@ -29,4 +29,15 @@
     @test issubset(a, a)
     @test !issubset(a, b)
 
+    # End-to-end: load a real trace, run findpeaks (v2), run indexpeaks,
+    # assert the top-scoring index is in the supported phase set.
+    A = readdlm(joinpath(@__DIR__, "data", "example_tot.dat"))
+    q, I, σ = A[:, 1], A[:, 2], A[:, 3]
+    pk = findpeaks(q, I, σ)
+    @test !isempty(pk.q)
+    indices = indexpeaks(pk.q, pk.prominence)
+    @test !isempty(indices)
+    top = first(sort(indices; by = score, rev = true))
+    @test phase(top) in (Pn3m, Im3m, Ia3d, Lamellar, Hexagonal, Square, Fm3m, Fd3m)
+
 end
