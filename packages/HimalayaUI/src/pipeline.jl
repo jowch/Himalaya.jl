@@ -121,3 +121,35 @@ function get_groups_for_exposure(db::SQLite.DB, exposure_id::Int)
     Tables.rowtable(DBInterface.execute(db,
         "SELECT * FROM index_groups WHERE exposure_id = ? ORDER BY id", [exposure_id]))
 end
+
+"""
+    init_experiment!(db; kwargs...) -> experiment_id
+
+Create the experiment row. Thin wrapper over `create_experiment!`.
+"""
+function init_experiment!(db::SQLite.DB; kwargs...)
+    create_experiment!(db; kwargs...)
+end
+
+"""
+    analyze_exposure!(db, exposure_id, analysis_dir)
+
+Load the .dat file for `exposure_id`, run findpeaks + indexpeaks,
+auto-group results, and persist everything to the DB.
+The .dat filename is taken from `exposures.filename` with `.dat` appended.
+"""
+function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String)
+    rows = Tables.rowtable(DBInterface.execute(db,
+        "SELECT filename FROM exposures WHERE id = ?", [exposure_id]))
+    isempty(rows) && error("exposure $exposure_id not found")
+    filename = rows[1].filename
+    dat_path = joinpath(analysis_dir, filename * ".dat")
+    isfile(dat_path) || error("dat file not found: $dat_path")
+
+    q, I, σ      = load_dat(dat_path)
+    peaks_result = Himalaya.findpeaks(q, I, σ)
+    candidates   = Himalaya.indexpeaks(peaks_result.q, peaks_result.prominence)
+    group        = auto_group(candidates)
+
+    persist_analysis!(db, exposure_id, q, I, peaks_result, candidates, group)
+end

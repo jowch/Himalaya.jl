@@ -53,3 +53,46 @@ using SQLite
     @test stored_groups[1].kind   == "auto"
     @test stored_groups[1].active == 1
 end
+
+using HimalayaUI: init_experiment!, analyze_exposure!, open_db, get_experiment
+
+@testset "init_experiment!" begin
+    tmp = mktempdir()
+    data_dir     = joinpath(tmp, "data")
+    analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
+    mkpath(data_dir)
+    mkpath(analysis_dir)
+
+    db = open_db(tmp)
+    exp_id = init_experiment!(db;
+        name         = "TestExp",
+        path         = tmp,
+        data_dir     = data_dir,
+        analysis_dir = analysis_dir)
+
+    @test exp_id == 1
+    exp = get_experiment(db, exp_id)
+    @test exp.name == "TestExp"
+end
+
+@testset "analyze_exposure! integration" begin
+    tmp          = mktempdir()
+    analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
+    mkpath(analysis_dir)
+
+    src = joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat")
+    cp(src, joinpath(analysis_dir, "example_tot.dat"))
+
+    db     = open_db(tmp)
+    exp_id = init_experiment!(db; path=tmp,
+                                   data_dir=joinpath(tmp, "data"),
+                                   analysis_dir=analysis_dir)
+    s_id   = create_sample!(db; experiment_id=exp_id, label="D1", name="UX1")
+    e_id   = create_exposure!(db; sample_id=s_id, filename="example_tot")
+
+    analyze_exposure!(db, e_id, analysis_dir)
+
+    @test length(get_peaks_for_exposure(db, e_id))   > 0
+    @test length(get_indices_for_exposure(db, e_id)) > 0
+    @test length(get_groups_for_exposure(db, e_id))  == 1
+end
