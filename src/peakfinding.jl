@@ -15,3 +15,37 @@ function ricker(t, a)
     norm_const = 2 / (sqrt(3a) * pi^0.25)
     norm_const * (1 - (t/a)^2) * exp(-(t^2) / (2a^2))
 end
+
+"""
+    cwt(y, scales)
+
+Continuous wavelet transform of `y` using Ricker wavelets at each width in
+`scales`. Returns a `length(y) × length(scales)` matrix of coefficients.
+
+Convolution is direct (no FFT). At array edges, the signal is reflected.
+"""
+function cwt(y, scales)
+    n = length(y)
+    coeffs = zeros(n, length(scales))
+    for (j, a) in enumerate(scales)
+        # truncate the kernel beyond ±5a (wavelet ≈ 0)
+        m = ceil(Int, 5a)
+        kernel = [ricker(t, a) for t in -m:m]
+        for i in 1:n
+            s = 0.0
+            for (k, w) in enumerate(kernel)
+                idx = i + (k - m - 1)
+                # reflect at edges
+                if idx < 1
+                    idx = 2 - idx
+                elseif idx > n
+                    idx = 2n - idx
+                end
+                s += w * y[idx]
+            end
+            # normalise by scale so coefficients are comparable across scales
+            coeffs[i, j] = s / a
+        end
+    end
+    coeffs
+end

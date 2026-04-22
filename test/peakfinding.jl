@@ -12,3 +12,21 @@
     ts = -10a:0.01:10a
     @test abs(sum(Himalaya.ricker.(ts, a)) * 0.01) < 1e-6
 end
+
+@testset "cwt" begin
+    # A pure Gaussian peak should produce its largest CWT response at the
+    # scale matching its width.
+    n = 300
+    σ_true = 4.0          # Gaussian std in points
+    centre = 150
+    y = [exp(-((i - centre)^2) / (2σ_true^2)) for i in 1:n]
+
+    scales = [1.5, 2.5, 4.0, 6.5, 10.5]
+    coeffs = Himalaya.cwt(y, scales)
+
+    @test size(coeffs) == (n, length(scales))
+    # the row at the peak centre should peak in the column nearest σ_true
+    centre_row = coeffs[centre, :]
+    best_scale_idx = argmax(centre_row)
+    @test scales[best_scale_idx] == 4.0
+end
