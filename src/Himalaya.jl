@@ -21,6 +21,7 @@ findpeaks
 
 include("util.jl")
 include("phase.jl")
+include("threshold.jl")
 include("peakfinding.jl")
 include("index.jl")
 
