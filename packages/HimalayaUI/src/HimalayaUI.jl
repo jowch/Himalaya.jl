@@ -9,6 +9,7 @@ include("json.jl")
 include("actions.jl")
 include("routes_users.jl")
 include("routes_experiments.jl")
+include("routes_samples.jl")
 include("server.jl")
 
 export main
