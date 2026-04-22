@@ -25,27 +25,30 @@ selection. See `docs/future-feature-ideas.md`.
 Three layers communicating through well-defined interfaces:
 
 ```
-Himalaya.jl (existing library — minimal changes)
+Himalaya.jl/                   (git root)
+├── Himalaya.jl                (existing core library — minimal changes)
 │   peakfinding.jl, index.jl, phase.jl, ...
 │
-├── server/                    (new — Julia, Oxygen.jl)
-│   ├── server.jl              entry point + route definitions
-│   ├── db.jl                  SQLite schema, migrations, query helpers
-│   ├── manifest.jl            CSV parser → samples + exposures
-│   ├── pipeline.jl            batch analysis orchestration
-│   └── export.jl              CSV / JSON export
-│
-└── frontend/                  (new — TypeScript, Vite, Observable Plot)
-    ├── src/
-    │   ├── api.ts             typed fetch wrappers for all endpoints
-    │   ├── state.ts           client-side state management
-    │   └── views/
-    │       ├── SampleList.ts
-    │       ├── TraceViewer.ts
-    │       ├── PropertiesPanel.ts
-    │       ├── MillerPlot.ts
-    │       └── PhasePanel.ts
-    └── dist/                  Vite build output, served by Oxygen.jl
+└── packages/
+    └── HimalayaUI/            (new sub-package — Julia, Oxygen.jl)
+        ├── Project.toml       deps: Himalaya, Oxygen, SQLite, CSV, TOML
+        ├── src/
+        │   ├── HimalayaUI.jl  entry point + route definitions
+        │   ├── db.jl          SQLite schema, migrations, query helpers
+        │   ├── manifest.jl    CSV parser → samples + exposures
+        │   ├── pipeline.jl    batch analysis orchestration
+        │   └── export.jl      CSV / JSON export
+        └── frontend/          (TypeScript, Vite, Observable Plot)
+            ├── src/
+            │   ├── api.ts     typed fetch wrappers for all endpoints
+            │   ├── state.ts   client-side state management
+            │   └── views/
+            │       ├── SampleList.ts
+            │       ├── TraceViewer.ts
+            │       ├── PropertiesPanel.ts
+            │       ├── MillerPlot.ts
+            │       └── PhasePanel.ts
+            └── dist/          Vite build output, served by Oxygen.jl
 ```
 
 **Deployment:** single Julia process per server, started with one experiment
@@ -59,7 +62,7 @@ forward-compatibility but is effectively fixed at 1 in v1.
 **Development workflow:**
 ```bash
 # Terminal 1 — Julia backend
-julia --project=. server/server.jl        # Oxygen.jl on :8080
+julia --project=packages/HimalayaUI -e 'using HimalayaUI; serve()'  # Oxygen.jl on :8080
 
 # Terminal 2 — frontend dev server  
 cd frontend && npx vite                   # Vite on :5173, proxies /api → :8080
@@ -68,7 +71,7 @@ cd frontend && npx vite                   # Vite on :5173, proxies /api → :808
 **Build for deployment:**
 ```bash
 cd frontend && npx vite build             # outputs to frontend/dist/
-julia --project=. server/server.jl        # serves dist/ + API from :8080
+julia --project=packages/HimalayaUI -e 'using HimalayaUI; serve()'  # serves dist/ + API from :8080
 ```
 
 ---
@@ -327,7 +330,7 @@ stacked comparison) deferred to future iterations.
 
 ## 6. CLI
 
-Entry point: `himalaya` (or `julia --project=. -e 'using Himalaya; CLI.main()'`)
+Entry point: `himalaya` (or `julia --project=packages/HimalayaUI -e 'using HimalayaUI; CLI.main()'`)
 
 ```bash
 himalaya init <experiment_path> --manifest <path>   # create DB, parse manifest
