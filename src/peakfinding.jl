@@ -59,3 +59,85 @@ Endpoints are never returned.
 function local_maxima(v)
     [i for i in 2:(length(v) - 1) if v[i] > 0 && v[i] > v[i-1] && v[i] > v[i+1]]
 end
+
+"""
+    find_ridges(coeffs, scales; min_ridge_length = 3, max_gap = 1)
+
+Greedy ridge linking across scales. Walks from largest scale to smallest,
+extending a ridge if the next-smaller scale has a local maximum within
+`±max(1, scale/4)` points of the current ridge head. Allows up to `max_gap`
+missing scales before terminating a ridge.
+
+Returns a vector of NamedTuples `(; index, scale, length, max_coeff)`:
+- `index`: position of the ridge at the scale where its CWT coefficient is
+  maximal (the "best-matched scale")
+- `scale`: that best-matched scale value
+- `length`: number of scales the ridge spans
+- `max_coeff`: maximum CWT coefficient along the ridge
+
+Ridges shorter than `min_ridge_length` scales are discarded.
+"""
+function find_ridges(coeffs, scales; min_ridge_length = 3, max_gap = 1)
+    nscales = length(scales)
+    # Per-scale local maxima
+    maxima = [local_maxima(coeffs[:, j]) for j in 1:nscales]
+
+    # Each ridge: vector of (scale_idx, position, coeff). Walk largest → smallest.
+    ridges = Vector{Vector{Tuple{Int,Int,Float64}}}()
+    # Track which maxima at each scale have been consumed
+    consumed = [falses(length(maxima[j])) for j in 1:nscales]
+
+    # Seed ridges at the largest scale
+    for (k, p) in enumerate(maxima[nscales])
+        push!(ridges, [(nscales, p, coeffs[p, nscales])])
+        consumed[nscales][k] = true
+    end
+
+    # Extend each ridge downward through scales
+    for j in (nscales - 1):-1:1
+        tol = max(1, ceil(Int, scales[j] / 4))
+        for ridge in ridges
+            head_scale_idx, head_pos, _ = ridge[end]
+            gap = head_scale_idx - j - 1
+            if gap > max_gap
+                continue   # ridge already terminated
+            end
+            # find an unconsumed maximum at scale j within tolerance
+            best_k = 0
+            best_dist = tol + 1
+            for (k, p) in enumerate(maxima[j])
+                if consumed[j][k]; continue; end
+                d = abs(p - head_pos)
+                if d <= tol && d < best_dist
+                    best_dist = d
+                    best_k = k
+                end
+            end
+            if best_k > 0
+                p = maxima[j][best_k]
+                push!(ridge, (j, p, coeffs[p, j]))
+                consumed[j][best_k] = true
+            end
+        end
+        # Any unconsumed maxima at scale j start new ridges
+        for (k, p) in enumerate(maxima[j])
+            if !consumed[j][k]
+                push!(ridges, [(j, p, coeffs[p, j])])
+                consumed[j][k] = true
+            end
+        end
+    end
+
+    # Filter and summarize
+    out = NamedTuple{(:index, :scale, :length, :max_coeff),
+                     Tuple{Int,Float64,Int,Float64}}[]
+    for ridge in ridges
+        if length(ridge) < min_ridge_length; continue; end
+        # Best-matched scale = where coeff is maximal
+        _, idx_in_ridge = findmax(map(t -> t[3], ridge))
+        scale_idx, pos, coeff = ridge[idx_in_ridge]
+        push!(out, (index = pos, scale = scales[scale_idx],
+                    length = length(ridge), max_coeff = coeff))
+    end
+    out
+end

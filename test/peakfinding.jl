@@ -44,3 +44,33 @@ end
     v3 = [3.0, 1.0, 2.0, 1.0, 3.0]
     @test Himalaya.local_maxima(v3) == [3]
 end
+
+@testset "find_ridges" begin
+    # Synthesize a CWT coefficient matrix where one Gaussian peak at
+    # column-position 50 produces ridges across scales.
+    n = 100
+    scales = [1.5, 2.5, 4.0, 6.5, 10.5]
+    σ_true = 4.0
+    y = [exp(-((i - 50)^2) / (2σ_true^2)) for i in 1:n]
+    coeffs = Himalaya.cwt(y, scales)
+
+    ridges = Himalaya.find_ridges(coeffs, scales; min_ridge_length = 3)
+
+    # Exactly one ridge survives, centred near i=50
+    @test length(ridges) == 1
+    r = ridges[1]
+    @test abs(r.index - 50) <= 1
+    @test r.scale == 4.0     # best-matched scale
+    @test r.length >= 3
+end
+
+@testset "find_ridges rejects single-scale noise" begin
+    # A noisy CWT with maxima only at the smallest scale should produce no ridges.
+    n = 100
+    scales = [1.5, 2.5, 4.0, 6.5, 10.5]
+    coeffs = zeros(n, length(scales))
+    coeffs[20, 1] = 1.0   # one isolated max at smallest scale only
+    coeffs[60, 1] = 1.0   # another isolated max
+    ridges = Himalaya.find_ridges(coeffs, scales; min_ridge_length = 3)
+    @test isempty(ridges)
+end
