@@ -32,3 +32,4 @@ Manifest.toml
 # Local scratch & exploratory scripts (not part of the package)
 scratch/
 
+.superpowers/
