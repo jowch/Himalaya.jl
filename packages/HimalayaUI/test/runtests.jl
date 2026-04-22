@@ -8,4 +8,5 @@ using Test
     include("test_json.jl")
     include("test_http.jl")
     include("test_routes_health.jl")
+    include("test_routes_users.jl")
 end

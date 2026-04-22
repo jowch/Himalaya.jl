@@ -21,6 +21,7 @@ function register_routes!()
     @get "/api/health" function(req::HTTP.Request)
         Dict("status" => "ok")
     end
+    register_users_routes!()
 end
 
 function serve(db::SQLite.DB; host::String = "127.0.0.1", port::Int = 8080)
