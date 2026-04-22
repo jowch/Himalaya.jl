@@ -22,6 +22,7 @@ function register_routes!()
         Dict("status" => "ok")
     end
     register_users_routes!()
+    register_experiments_routes!()
 end
 
 function serve(db::SQLite.DB; host::String = "127.0.0.1", port::Int = 8080)

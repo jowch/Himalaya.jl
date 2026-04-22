@@ -8,6 +8,7 @@ include("cli.jl")
 include("json.jl")
 include("actions.jl")
 include("routes_users.jl")
+include("routes_experiments.jl")
 include("server.jl")
 
 export main
