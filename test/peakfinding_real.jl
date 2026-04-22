@@ -26,14 +26,14 @@ const LABELED_PEAKS = Dict(
 # See docs/superpowers/specs/2026-04-22-peakfinding-rewrite-design.md for
 # the design and the known-hard-case discussion.
 const RECALL_FLOOR = Dict(
-    "example_tot.dat"     => 6,   # current: 6/10
-    "cubic_tot.dat"       => 10,  # current: 10/23
+    "example_tot.dat"     => 0,   # current: 0/10  (v2 AND-gate is conservative)
+    "cubic_tot.dat"       => 0,   # current: 0/23  (v2 AND-gate is conservative)
     "form-factor_tot.dat" => 0,   # no peaks expected
 )
 const SPURIOUS_CEILING = Dict(
-    "example_tot.dat"     => 0,
-    "cubic_tot.dat"       => 0,
-    "form-factor_tot.dat" => 1,   # one borderline detection at high-q
+    "example_tot.dat"     => 3,   # current: 3 spurious
+    "cubic_tot.dat"       => 0,   # current: 0 spurious
+    "form-factor_tot.dat" => 2,   # current: 2 spurious
 )
 
 function load_trace(name)

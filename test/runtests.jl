@@ -7,4 +7,5 @@ using Test
     include("persistence.jl")
     include("sharpness.jl")
     include("peakfinding.jl")
+    include("peakfinding_real.jl")
 end
