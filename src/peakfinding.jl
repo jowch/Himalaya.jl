@@ -171,10 +171,13 @@ function fit_peak(q, I, σ, centre_idx, width_pts; shape = :lorentzian)
     end
 
     n = length(q)
-    half = max(5, ceil(Int, 2.5 * width_pts))
+    # Min window of ±10 points: needed to give the linear baseline term enough
+    # leverage to separate from the Lorentzian peak when the background is
+    # steeply varying (low-q, near beam stop).
+    half = max(10, ceil(Int, 2.5 * width_pts))
     lo = max(1, centre_idx - half)
     hi = min(n, centre_idx + half)
-    if hi - lo < 8
+    if hi - lo < 12
         return nothing
     end
 
@@ -183,20 +186,68 @@ function fit_peak(q, I, σ, centre_idx, width_pts; shape = :lorentzian)
     σw_arr = σ[lo:hi]
 
     Δq = q[2] - q[1]
-    A0 = I[centre_idx] - median(Iw)
     q0_init = q[centre_idx]
-    w_init = if shape === :gaussian
+    b0 = (Iw[1] + Iw[end]) / 2
+    m0 = (Iw[end] - Iw[1]) / (qw[end] - qw[1])
+
+    # A0: median-subtracted amplitude. The median is robust to curved
+    # backgrounds (e.g. steep power-law at low-q) where a linear baseline
+    # estimate from the window endpoints would badly overestimate the
+    # background at the peak centre and produce a near-zero or negative A0.
+    A0 = max(I[centre_idx] - median(Iw), 0.0)
+
+    # Data-driven width estimate: subtract a linear baseline, then find the
+    # FWHM of the residual peak by walking out from centre until intensity
+    # drops below half the peak height. This is far more reliable than the
+    # CWT-matched scale (which is biased low by the /a normalization in cwt).
+    baseline_est = b0 .+ m0 .* qw
+    residual = Iw .- baseline_est
+    centre_local = centre_idx - lo + 1   # 1-based index of centre within window
+    peak_h = residual[centre_local]
+
+    fwhm_data = let
+        if peak_h <= 0
+            NaN
+        else
+            half = peak_h / 2
+            left = centre_local
+            while left > 1 && residual[left] > half
+                left -= 1
+            end
+            right = centre_local
+            while right < length(qw) && residual[right] > half
+                right += 1
+            end
+            qw[right] - qw[left]
+        end
+    end
+
+    # CWT-scale-based fallback (biased low but always valid as a lower bound)
+    w_scale = if shape === :gaussian
         max(width_pts * Δq / 2.355, Δq)
     else
         max(width_pts * Δq / 2, Δq)
     end
-    b0 = (Iw[1] + Iw[end]) / 2
-    m0 = (Iw[end] - Iw[1]) / (qw[end] - qw[1])
+
+    w_init = if isfinite(fwhm_data) && fwhm_data > Δq && fwhm_data < 8 * w_scale
+        # Data-driven estimate: convert FWHM to the shape's parametric width.
+        # The upper bound (8× scale estimate) guards against inflated FWHM when
+        # the linear baseline overestimates the residual peak on a curved
+        # background (e.g. steep power-law at low-q), which would give a
+        # wildly too-large w_init and cause LM to diverge.
+        shape === :gaussian ? fwhm_data / 2.355 : fwhm_data / 2
+    else
+        # Fallback to the CWT-scale-based estimate
+        w_scale
+    end
 
     model = if shape === :gaussian
         (x, p) -> p[1] .* exp.(-((x .- p[2]).^2) ./ (2 * p[3]^2)) .+ p[4] .+ p[5] .* x
     else
-        (x, p) -> p[1] ./ (1 .+ ((x .- p[2]) ./ p[3]).^2) .+ p[4] .+ p[5] .* x
+        # abs(p[3]) breaks the sign symmetry of the Lorentzian model — without
+        # it the optimizer can converge to negative w, which the w_fit ≤ 0
+        # guard then rejects. Affected narrow peaks.
+        (x, p) -> p[1] ./ (1 .+ ((x .- p[2]) ./ abs(p[3])).^2) .+ p[4] .+ p[5] .* x
     end
     p0 = [A0, q0_init, w_init, b0, m0]
     weights = 1.0 ./ (σw_arr .^ 2)
@@ -208,7 +259,8 @@ function fit_peak(q, I, σ, centre_idx, width_pts; shape = :lorentzian)
     end
 
     fit.converged || return nothing
-    A_fit, q0_fit, w_fit = fit.param[1], fit.param[2], fit.param[3]
+    A_fit, q0_fit = fit.param[1], fit.param[2]
+    w_fit = abs(fit.param[3])  # model uses abs(w); enforce here for the returned value
     if A_fit <= 0 || w_fit <= 0
         return nothing
     end
@@ -229,7 +281,7 @@ end
 const DEFAULT_SCALES = [2.0, 2.6, 3.5, 4.5, 6.0, 8.0, 10.0, 13.0, 17.0, 22.0, 28.0, 35.0]
 
 """
-    findpeaks(q, I, σ; nσ = 5, scales = nothing, min_ridge_length = 3, shape = :lorentzian)
+    findpeaks(q, I, σ; nσ = 4, scales = nothing, min_ridge_length = 3, shape = :lorentzian)
 
 Detect Bragg peaks in a SAXS integration trace.
 
@@ -238,7 +290,7 @@ Detect Bragg peaks in a SAXS integration trace.
   per-point intensity uncertainty (third column).
 - `nσ`: SNR threshold in sigmas. A candidate is accepted iff `A / σ_A ≥ nσ`,
   where `A` is the fitted peak amplitude and `σ_A` its standard error.
-  Default 5.
+  Default 4.
 - `scales`: vector of CWT widths in *points*. `nothing` ⇒ a default
   geometric series from 2 to 35 points covering typical Bragg widths.
 - `min_ridge_length`: a CWT ridge must persist across this many adjacent
@@ -262,7 +314,7 @@ A NamedTuple `(; indices, q, snr, width)` of equal-length vectors:
 Peaks are returned sorted by ascending `q`.
 """
 function findpeaks(q, I, σ;
-                   nσ = 5, scales = nothing, min_ridge_length = 3,
+                   nσ = 4, scales = nothing, min_ridge_length = 3,
                    shape = :lorentzian, reject_edge_ridges = true)
     @assert length(q) == length(I) == length(σ) "q, I, σ must be the same length"
     sc = scales === nothing ? DEFAULT_SCALES : collect(float.(scales))
