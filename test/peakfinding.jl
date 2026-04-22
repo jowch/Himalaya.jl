@@ -77,7 +77,7 @@ end
 
 using Statistics: median
 
-@testset "fit_peak" begin
+@testset "fit_peak: gaussian" begin
     # Synthesize a clean Gaussian + linear baseline + Gaussian noise.
     # Then assert fit_peak recovers amplitude and a high SNR.
     n = 60
@@ -93,14 +93,45 @@ using Statistics: median
     I = peak .+ baseline   # noiseless to make assertions tight
     centre_idx = argmin(abs.(q .- q0_true))
 
-    fit = Himalaya.fit_peak(q, I, σ_arr, centre_idx, σw_true / dq)
+    fit = Himalaya.fit_peak(q, I, σ_arr, centre_idx, σw_true / dq; shape = :gaussian)
 
     @test fit !== nothing
     @test isapprox(fit.A, A_true; rtol = 0.01)
     @test isapprox(fit.q0, q0_true; atol = dq)
-    @test isapprox(fit.σw, σw_true; rtol = 0.05)
+    @test isapprox(fit.fwhm, 2.355 * σw_true; rtol = 0.05)
     # SNR should be very high for a noiseless peak with σ=1
     @test fit.snr > 50
+end
+
+@testset "fit_peak: lorentzian" begin
+    n = 60
+    q_range = range(0.0, 1.0; length = n)
+    q = collect(q_range)
+    dq = step(q_range)
+    A_true = 100.0
+    q0_true = 0.5
+    γ_true = 0.05
+    baseline = 5.0 .+ 2.0 .* q
+    peak = A_true ./ (1 .+ ((q .- q0_true) ./ γ_true).^2)
+    σ_arr = fill(1.0, n)
+    I = peak .+ baseline
+    centre_idx = argmin(abs.(q .- q0_true))
+
+    fit = Himalaya.fit_peak(q, I, σ_arr, centre_idx, γ_true / dq)  # default shape=:lorentzian
+
+    @test fit !== nothing
+    @test isapprox(fit.A, A_true; rtol = 0.01)
+    @test isapprox(fit.q0, q0_true; atol = dq)
+    @test isapprox(fit.fwhm, 2 * γ_true; rtol = 0.05)
+    @test fit.snr > 50
+end
+
+@testset "fit_peak: invalid shape throws" begin
+    n = 60
+    q = collect(range(0.0, 1.0; length = n))
+    I = collect(1.0:n)
+    σ_arr = fill(1.0, n)
+    @test_throws ArgumentError Himalaya.fit_peak(q, I, σ_arr, 30, 5.0; shape = :triangle)
 end
 
 @testset "fit_peak returns nothing on failure" begin

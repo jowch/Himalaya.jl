@@ -144,24 +144,32 @@ function find_ridges(coeffs, scales; min_ridge_length = 3, max_gap = 1)
 end
 
 """
-    fit_peak(q, I, σ, centre_idx, width_pts)
+    fit_peak(q, I, σ, centre_idx, width_pts; shape = :lorentzian)
 
-Locally fit a Gaussian + linear baseline to the trace `(q, I)` with
+Locally fit a peak + linear baseline to the trace `(q, I)` with
 per-point uncertainties `σ`, in a window of `±2.5 · width_pts` points
 around `centre_idx`. Uses weighted Levenberg-Marquardt (`LsqFit.curve_fit`)
 with weights `1/σᵢ²`.
 
-Returns a NamedTuple `(; A, q0, σw, snr)` on success:
+`shape` selects the peak model:
+- `:lorentzian` (default): `A / (1 + ((x - q0) / w)²) + b + m·x`
+- `:gaussian`: `A · exp(-(x - q0)² / (2w²)) + b + m·x`
+
+Returns a NamedTuple `(; A, q0, fwhm, snr)` on success:
 - `A`: fitted peak amplitude (above baseline)
 - `q0`: fitted peak centre in q-units
-- `σw`: fitted Gaussian σ in q-units
+- `fwhm`: full-width-at-half-maximum in q-units (shape-aware)
 - `snr`: `A / σ_A` where `σ_A` is the standard error on `A` from the
   covariance matrix
 
 Returns `nothing` on convergence failure or non-physical fits (A ≤ 0,
-σw ≤ 0, or window too small).
+w ≤ 0, or window too small). Throws `ArgumentError` for unknown `shape`.
 """
-function fit_peak(q, I, σ, centre_idx, width_pts)
+function fit_peak(q, I, σ, centre_idx, width_pts; shape = :lorentzian)
+    if shape !== :gaussian && shape !== :lorentzian
+        throw(ArgumentError("Unknown peak shape $(repr(shape)). Must be :gaussian or :lorentzian."))
+    end
+
     n = length(q)
     half = max(5, ceil(Int, 2.5 * width_pts))
     lo = max(1, centre_idx - half)
@@ -177,12 +185,20 @@ function fit_peak(q, I, σ, centre_idx, width_pts)
     Δq = q[2] - q[1]
     A0 = I[centre_idx] - median(Iw)
     q0_init = q[centre_idx]
-    σw_init = max(width_pts * Δq / 2.355, Δq)
+    w_init = if shape === :gaussian
+        max(width_pts * Δq / 2.355, Δq)
+    else
+        max(width_pts * Δq / 2, Δq)
+    end
     b0 = (Iw[1] + Iw[end]) / 2
     m0 = (Iw[end] - Iw[1]) / (qw[end] - qw[1])
 
-    model(x, p) = p[1] .* exp.(-((x .- p[2]).^2) ./ (2 * p[3]^2)) .+ p[4] .+ p[5] .* x
-    p0 = [A0, q0_init, σw_init, b0, m0]
+    model = if shape === :gaussian
+        (x, p) -> p[1] .* exp.(-((x .- p[2]).^2) ./ (2 * p[3]^2)) .+ p[4] .+ p[5] .* x
+    else
+        (x, p) -> p[1] ./ (1 .+ ((x .- p[2]) ./ p[3]).^2) .+ p[4] .+ p[5] .* x
+    end
+    p0 = [A0, q0_init, w_init, b0, m0]
     weights = 1.0 ./ (σw_arr .^ 2)
 
     fit = try
@@ -192,8 +208,8 @@ function fit_peak(q, I, σ, centre_idx, width_pts)
     end
 
     fit.converged || return nothing
-    A_fit, q0_fit, σw_fit = fit.param[1], fit.param[2], fit.param[3]
-    if A_fit <= 0 || σw_fit <= 0
+    A_fit, q0_fit, w_fit = fit.param[1], fit.param[2], fit.param[3]
+    if A_fit <= 0 || w_fit <= 0
         return nothing
     end
 
@@ -206,5 +222,6 @@ function fit_peak(q, I, σ, centre_idx, width_pts)
         return nothing
     end
 
-    (A = A_fit, q0 = q0_fit, σw = σw_fit, snr = A_fit / σ_A)
+    fwhm = shape === :gaussian ? 2.355 * w_fit : 2 * w_fit
+    (A = A_fit, q0 = q0_fit, fwhm = fwhm, snr = A_fit / σ_A)
 end
