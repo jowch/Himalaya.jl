@@ -14,7 +14,10 @@ Edge cases:
 - Empty input → 0.0 (nothing passes).
 - Single or two values → v[1].
 - Constant sequence → v[1] (no elbow; nothing passes).
-- No clear elbow (convex-up curve) → v[1] (conservative; nothing passes).
+- No clear elbow (convex-up curve) → returns the value just before the
+  interior point of minimum chord-deviation; this is an interior value,
+  not necessarily v[1]. Use `prom_floor`/`sharp_floor` to override when
+  the adaptive threshold misfires on degenerate inputs.
 
 Precondition: `v` must be sorted descending.
 """

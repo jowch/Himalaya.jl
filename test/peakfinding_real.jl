@@ -23,11 +23,11 @@ const LABELED_PEAKS = Dict(
 # Regression floors. Numbers reflect current algorithm behavior on these
 # specific traces; tightening these (raising recall, lowering spurious)
 # requires algorithm work and should bump these floors with the same commit.
-# See docs/superpowers/specs/2026-04-22-peakfinding-rewrite-design.md for
+# See docs/superpowers/specs/2026-04-22-persistence-peakfinding-design.md for
 # the design and the known-hard-case discussion.
 const RECALL_FLOOR = Dict(
     "example_tot.dat"     => 7,   # current: 7/10
-    "cubic_tot.dat"       => 8,   # current: 8/23
+    "cubic_tot.dat"       => 8,   # current: 8/23 — below production quality; TODO: iterate on sharpness method / CWT scale bank / normalize_by_σ default (see spec §Open Issues)
     "form-factor_tot.dat" => 0,   # no peaks expected
 )
 const SPURIOUS_CEILING = Dict(
