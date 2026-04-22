@@ -6,29 +6,41 @@ A Julia package for **indexing SAXS diffraction patterns** — given a 1D integr
 
 ## Code layout
 
+Monorepo: the core `Himalaya` package lives at the root; sub-packages live under `packages/`.
+
 ```
-src/
-  Himalaya.jl       # module entry; exports public API
-  peakfinding.jl    # findpeaks — being rewritten; see `peakfinding-rewrite` branch
-  phase.jl          # Phase abstract type hierarchy + phaseratios
-  index.jl          # Index struct, indexpeaks, score, fit
-  util.jl           # small helpers
+src/                         # core Himalaya package
+  Himalaya.jl                # module entry; exports public API
+  peakfinding.jl             # findpeaks (persistence + sharpness + kneedle)
+  persistence.jl             # topological persistence helper
+  sharpness.jl               # Savitzky-Golay / CWT curvature
+  threshold.jl               # kneedle elbow finder
+  phase.jl                   # Phase abstract type hierarchy + phaseratios
+  index.jl                   # Index struct, indexpeaks, score, fit
+  util.jl
+packages/
+  HimalayaUI/                # web-app sub-package: SQLite, pipeline, CLI, REST (planned)
+    src/{db,datfile,manifest,pipeline,cli}.jl
+    test/
 docs/
-  peak-finding.md   # narrative design notes for findpeaks
-  superpowers/      # specs and plans
-test/
-  runtests.jl       # orchestrator
-  index.jl          # indexing tests
-examples/           # scripts using Himalaya (not part of the package)
-scratch/            # gitignored — exploratory scripts and trace data
+  peak-finding.md            # narrative design notes for findpeaks
+  superpowers/               # specs and plans
+test/                        # core Himalaya tests
+examples/                    # scripts using Himalaya (not part of the package)
+scratch/                     # gitignored — exploratory scripts and trace data
 ```
 
 ## Running tests
 
 ```bash
-julia --project=. -e 'using Pkg; Pkg.instantiate()'                       # first time
-julia --project=. -e 'using Pkg; Pkg.test()'                              # full suite
-julia --project=. -e 'using Himalaya, Test; include("test/foo.jl")'       # one file
+# Core Himalaya
+julia --project=. -e 'using Pkg; Pkg.test()'
+
+# HimalayaUI sub-package
+julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.test("HimalayaUI")'
+
+# One test file in isolation
+julia --project=. -e 'using Himalaya, Test; include("test/foo.jl")'
 ```
 
 Tests use stdlib `Test` (`@testset`, `@test`, `@test_throws`). Internal (non-exported) helpers are accessed via `Himalaya.<name>` in tests.
@@ -41,9 +53,15 @@ Tests use stdlib `Test` (`@testset`, `@test`, `@test_throws`). Internal (non-exp
 - **Worktrees for feature branches.** For multi-step rewrites, `git worktree add ../Himalaya-<topic> -b <topic>`. Keeps main clean.
 - **`Manifest.toml` is gitignored** — Julia library convention. Consumers re-resolve.
 
+## HimalayaUI gotchas (SQLite.jl)
+
+- `DBInterface.lastrowid` takes the query **result**, not the db: `res = DBInterface.execute(db, sql, params); id = Int(DBInterface.lastrowid(res))`.
+- Raw rows from `DBInterface.execute` lose their values after the query closes. Materialize with `Tables.rowtable(DBInterface.execute(...))` to get stable `NamedTuple`s (access fields via `row.name`).
+
 ## Current state
 
-`v0.4.5` on `main`. A ground-up peak-finding rewrite (persistent homology + sharpness + kneedle thresholds) lives on the `peakfinding-rewrite` branch, not yet merged.
+- Core Himalaya: `v0.5.0` on `main` — v2 peak-finding (persistence + sharpness + kneedle) is merged.
+- HimalayaUI: Plan 1 of 6 (Foundation) complete on `main` — SQLite-backed pipeline and CLI (`himalaya init / analyze / show`). Plans 2–6 cover the REST API and frontend; see [docs/superpowers/plans/](docs/superpowers/plans/).
 
 ## Further reading
 
