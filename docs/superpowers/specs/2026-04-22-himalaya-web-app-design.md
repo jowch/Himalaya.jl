@@ -38,17 +38,23 @@ Himalaya.jl/                   (git root)
         │   ├── manifest.jl    CSV parser → samples + exposures
         │   ├── pipeline.jl    batch analysis orchestration
         │   └── export.jl      CSV / JSON export
-        └── frontend/          (TypeScript, Vite, Observable Plot)
+        └── frontend/          (React, Vite, Tailwind v4, TanStack Query, Observable Plot)
             ├── src/
-            │   ├── api.ts     typed fetch wrappers for all endpoints
-            │   ├── state.ts   client-side state management
-            │   └── views/
-            │       ├── SampleList.ts
-            │       ├── TraceViewer.ts
-            │       ├── PropertiesPanel.ts
-            │       ├── MillerPlot.ts
-            │       └── PhasePanel.ts
-            └── dist/          Vite build output, served by Oxygen.jl
+            │   ├── main.tsx         app entry; wraps App in ErrorBoundary + QueryClientProvider
+            │   ├── App.tsx          composition root; consumes queries + Zustand
+            │   ├── api.ts           typed fetch wrappers (AuthOpts per-call)
+            │   ├── state.ts         Zustand store (client state; persisted to localStorage)
+            │   ├── queries.ts       TanStack Query hooks + queryKeys
+            │   ├── ErrorBoundary.tsx
+            │   ├── styles.css       Tailwind + @theme tokens
+            │   └── components/
+            │       ├── Navbar.tsx
+            │       ├── Layout.tsx
+            │       ├── SampleList.tsx
+            │       └── UserModal.tsx
+            ├── test/                Vitest + RTL
+            ├── e2e/                 Playwright
+            └── dist/                Vite build output, served by Oxygen.jl
 ```
 
 **Deployment:** single Julia process per server, started with one experiment
@@ -287,11 +293,14 @@ peak position is modeled as DELETE + POST.
 ## 5. Frontend
 
 ### Tech stack
-- **React 18 + TypeScript** compiled by **Vite** (dev + build)
-- **Zustand** (with `persist` middleware) for app state — thin, proven, replaces hand-rolled store + localStorage glue
+- **React 18 + TypeScript** (strict, `exactOptionalPropertyTypes: true`) compiled by **Vite** (dev + build)
+- **Zustand** (with `persist` middleware) for client state — active sample/exposure, username; persisted to localStorage
+- **TanStack Query v5** for server state — experiments, samples, exposures, peaks, indices, groups. Provides caching, refetch on mutation, dedupe. Zustand and TanStack Query split cleanly: Zustand owns client state, Query owns anything that came from the server.
+- **Tailwind v4** + `@theme` CSS-var tokens for styling (dark palette defined once in `styles.css`; component files use utility classes)
 - **Observable Plot** for all charts (log-log traces, Miller-index scatter)
-- Function components, no class components; no additional state library beyond Zustand
-- Vitest + **React Testing Library** for unit tests; **Playwright** for E2E
+- Top-level **ErrorBoundary** wraps `<App />` to catch render-time failures (the only class component; required by React's boundary API)
+- Function components elsewhere; no additional state library beyond Zustand + TanStack Query
+- **Vitest + React Testing Library** (unit); **Playwright** (E2E). E2E selectors use `data-testid`, `role`, and stable `data-sample-id` / `data-active` attributes — never class names.
 - Served from `frontend/dist/` by Oxygen.jl in production
 
 ### Design language
@@ -482,7 +491,9 @@ Each layer uses the standard tooling for its ecosystem.
 
 **Frontend** — two tools:
 - *Vitest* — natural Vite companion, zero extra config. Unit tests for
-  `api.ts`, `state.ts`, and pure utility functions.
+  `api.ts`, `state.ts`, `queries.ts`, `ErrorBoundary.tsx`, and pure utility
+  functions. Shared `test-utils.tsx` provides `renderWithProviders` that
+  wraps components in a fresh `QueryClientProvider` per test.
 - *Playwright* — end-to-end tests for critical user interactions: click-to-add
   peak, hover preview on alternative indices, group +/−, localStorage state
   restoration across page reload.
