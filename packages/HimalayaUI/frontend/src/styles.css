@@ -103,3 +103,33 @@ input:focus, select:focus { outline: 1px solid var(--accent); border-color: var(
   color: var(--fg-dim);
   font-style: italic;
 }
+
+.sample-list-wrap { display: flex; flex-direction: column; height: 100%; }
+.sample-list-header {
+  padding: var(--gap-sm);
+  border-bottom: 1px solid var(--border);
+}
+.sample-filter { width: 100%; }
+.sample-list {
+  list-style: none;
+  overflow-y: auto;
+  flex: 1;
+}
+.sample-row {
+  display: grid;
+  grid-template-columns: 12px auto 1fr;
+  align-items: center;
+  gap: var(--gap-sm);
+  padding: 6px var(--gap-md);
+  cursor: pointer;
+  border-left: 2px solid transparent;
+}
+.sample-row:hover { background: var(--bg-hover); }
+.sample-row.active {
+  background: var(--bg-elevated);
+  border-left-color: var(--accent);
+}
+.sample-label { font-weight: 500; }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--fg-dim); }
+.status-candidates { background: var(--warning); }
+.status-confirmed  { background: var(--success); }
