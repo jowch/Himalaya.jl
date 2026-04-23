@@ -75,3 +75,31 @@ input:focus, select:focus { outline: 1px solid var(--accent); border-color: var(
 .nav-breadcrumb { font-family: var(--font-mono); font-size: 13px; }
 .nav-right { display: flex; }
 .nav-user { min-width: 80px; }
+
+.layout {
+  display: grid;
+  grid-template-columns: 280px 1fr 360px;
+  height: calc(100vh - 44px);
+  overflow: hidden;
+}
+.col { display: flex; flex-direction: column; overflow: hidden; }
+.col-left   { border-right: 1px solid var(--border); }
+.col-center { border-right: 1px solid var(--border); }
+.col-center, .col-right { min-width: 0; }
+.pane {
+  flex: 1;
+  overflow: auto;
+  padding: var(--gap-md);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.pane + .pane { border-top: 1px solid var(--border); }
+.placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  color: var(--fg-dim);
+  font-style: italic;
+}
