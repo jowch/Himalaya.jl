@@ -11,6 +11,7 @@ import { SampleList } from "./components/SampleList";
 import { UserModal } from "./components/UserModal";
 import { ExposureList } from "./components/ExposureList";
 import { TraceViewer } from "./components/TraceViewer";
+import { StaleIndicesBanner } from "./components/StaleIndicesBanner";
 
 const EXPERIMENT_ID = 1;
 
@@ -68,14 +69,21 @@ export function App(): JSX.Element {
           />
         }
         centerTop={
-          traceQ.data && peaksQ.data && activeExposureId !== undefined ? (
-            <TraceViewer
-              trace={traceQ.data}
-              peaks={peaksQ.data}
-              onAddPeak={(q) => addPeak.mutate(q)}
-              onRemovePeak={(peakId) => removePeak.mutate(peakId)}
-            />
-          ) : undefined
+          <div className="flex flex-col flex-1 min-h-0">
+            <StaleIndicesBanner exposureId={activeExposureId} />
+            {traceQ.data && peaksQ.data && activeExposureId !== undefined ? (
+              <TraceViewer
+                trace={traceQ.data}
+                peaks={peaksQ.data}
+                onAddPeak={(q) => addPeak.mutate(q)}
+                onRemovePeak={(peakId) => removePeak.mutate(peakId)}
+              />
+            ) : (
+              <p className="text-fg-muted italic flex-1 flex items-center justify-center">
+                Select an exposure to view its trace.
+              </p>
+            )}
+          </div>
         }
         centerBottom={<ExposureList />}
       />
