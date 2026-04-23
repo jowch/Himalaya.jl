@@ -46,8 +46,7 @@ export function UserModal({ open, onSelect, onClose }: UserModalProps): JSX.Elem
       return;
     }
     try {
-      await api.createUser(username);
-      api.setUsername(username);
+      await api.createUser(username, { username });
       onSelect(username);
     } catch (e) {
       setError(`Failed: ${(e as Error).message}`);

@@ -33,14 +33,17 @@ export class ApiError extends Error {
   }
 }
 
-let _username: string | undefined = undefined;
-export function setUsername(name: string | undefined): void { _username = name; }
-export function getUsername(): string | undefined { return _username; }
+export interface AuthOpts { username?: string }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function request<T>(
+  method: string,
+  path: string,
+  body?: unknown,
+  opts?: AuthOpts,
+): Promise<T> {
   const headers: Record<string, string> = {};
   if (body !== undefined) headers["Content-Type"] = "application/json";
-  if (_username && method !== "GET") headers["X-Username"] = _username;
+  if (opts?.username && method !== "GET") headers["X-Username"] = opts.username;
 
   const init: RequestInit = { method, headers };
   if (body !== undefined) init.body = JSON.stringify(body);
@@ -65,22 +68,24 @@ function safeJson(s: string): unknown {
 
 // Users
 export const listUsers  = () => request<User[]>("GET", "/api/users");
-export const createUser = (username: string) =>
-  request<User>("POST", "/api/users", { username });
+export const createUser = (username: string, opts?: AuthOpts) =>
+  request<User>("POST", "/api/users", { username }, opts);
 
 // Experiments
 export const getExperiment = (id: number) =>
   request<Experiment>("GET", `/api/experiments/${id}`);
-export const updateExperiment = (id: number, patch: Partial<Pick<Experiment,
-  "name" | "data_dir" | "analysis_dir" | "manifest_path">>) =>
-  request<Experiment>("PATCH", `/api/experiments/${id}`, patch);
+export const updateExperiment = (
+  id: number,
+  patch: Partial<Pick<Experiment, "name" | "data_dir" | "analysis_dir" | "manifest_path">>,
+  opts?: AuthOpts,
+) => request<Experiment>("PATCH", `/api/experiments/${id}`, patch, opts);
 
 // Samples
 export const listSamples    = (experiment_id: number) =>
   request<Sample[]>("GET", `/api/experiments/${experiment_id}/samples`);
-export const updateSample   = (id: number, patch: { name?: string; notes?: string }) =>
-  request<Sample>("PATCH", `/api/samples/${id}`, patch);
-export const addSampleTag   = (id: number, key: string, value: string) =>
-  request<SampleTag>("POST", `/api/samples/${id}/tags`, { key, value });
-export const removeSampleTag = (id: number, tag_id: number) =>
-  request<void>("DELETE", `/api/samples/${id}/tags/${tag_id}`);
+export const updateSample   = (id: number, patch: { name?: string; notes?: string }, opts?: AuthOpts) =>
+  request<Sample>("PATCH", `/api/samples/${id}`, patch, opts);
+export const addSampleTag   = (id: number, key: string, value: string, opts?: AuthOpts) =>
+  request<SampleTag>("POST", `/api/samples/${id}/tags`, { key, value }, opts);
+export const removeSampleTag = (id: number, tag_id: number, opts?: AuthOpts) =>
+  request<void>("DELETE", `/api/samples/${id}/tags/${tag_id}`, undefined, opts);

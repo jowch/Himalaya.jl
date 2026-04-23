@@ -21,8 +21,6 @@ export function App(): JSX.Element {
   const [bootError, setBootError]   = useState<string | null>(null);
   const [modalOpen, setModalOpen]   = useState<boolean>(!username);
 
-  useEffect(() => { api.setUsername(username); }, [username]);
-
   useEffect(() => {
     void (async () => {
       try {
