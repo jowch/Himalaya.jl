@@ -30,8 +30,9 @@
     test_peaks2     = [1.0, √3, 2.0]
     test_sharpness2 = [1.0, 10.0, 1.0]   # mixed wide/sharp
     indices2 = indexpeaks(test_peaks2, test_sharpness2, 0:0.1:2; gaps = false)
-    @test length(indices2) == 1
-    @test score(only(indices2)) < score(index)
+    @test length(indices2) == 2  # both Lamellar and Hexagonal survive (not subsets of each other)
+    hex_idx = filter(idx -> phase(idx) == Hexagonal, indices2)[1]
+    @test score(hex_idx) < score(index)  # Hexagonal with mixed sharpness scores lower than uniform
 
     test_peaks3 = 1:5
     indices3 = indexpeaks(test_peaks3)

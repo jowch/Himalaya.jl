@@ -60,7 +60,7 @@ of `a` are a subset of the peaks of `b`.
 issubset(a::Index, b::Index) = basis(a) == basis(b) && issubset(peaks(a), peaks(b))
 
 """
-    indexpeaks([phase], peaks, [proms], [domain];
+    indexpeaks([phase], peaks, [sharpness], [domain];
                tol = 0.0025, gaps = true, requiremin = true)
 
 Compute possible index assingments for a collection of `peaks` by considering
@@ -251,7 +251,7 @@ likeliness of a given `index`, where higher values are better. It captures the
 number of peaks, the prominence of those peaks, the fit of the index, and the
 number of missing peaks.
 
-See also `fit` and `totalprom`.
+See also `fit`.
 """
 function score(index::Index{P}) where P
     n = length(phaseratios(P))
@@ -261,7 +261,7 @@ function score(index::Index{P}) where P
 
     _, sharps = findnz(index.sharpness)
     cv = length(sharps) > 1 ? std(sharps) / mean(sharps) : 0.0
-    consistency = 1 / (1 + 0.05 * cv)
+    consistency = 1 / (1 + cv)
 
     coverage * consistency
 end
