@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render } from "@testing-library/react";
-import { TraceViewer } from "../src/components/TraceViewer";
+import { TraceViewer, snapToLocalMax } from "../src/components/TraceViewer";
 
 vi.mock("@observablehq/plot", () => ({
   plot: vi.fn(() => {
@@ -12,6 +12,25 @@ vi.mock("@observablehq/plot", () => ({
   line:  vi.fn(() => ({ _kind: "line" })),
   dot:   vi.fn(() => ({ _kind: "dot" })),
 }));
+
+describe("snapToLocalMax", () => {
+  const q = [0.10, 0.11, 0.12, 0.13, 0.14, 0.15, 0.16];
+  const I = [  5,    6,   15,   14,   13,   20,    4];
+
+  it("snaps to the local max within ±3 indices of the click", () => {
+    // click at 0.11 -> window covers indices 0..4; local max is at 0.12 (I=15)
+    expect(snapToLocalMax(q, I, 0.11, 3)).toBeCloseTo(0.12);
+  });
+
+  it("defaults K=3 when K is not provided", () => {
+    expect(snapToLocalMax(q, I, 0.11)).toBeCloseTo(0.12);
+  });
+
+  it("clips to array bounds", () => {
+    // qClick=0.99 → nearest=6 (last), window=[3..6], highest I in window is at index 5 (I=20)
+    expect(snapToLocalMax(q, I, 0.99, 3)).toBeCloseTo(0.15);
+  });
+});
 
 describe("<TraceViewer>", () => {
   it("renders a container with testid 'trace-viewer'", () => {

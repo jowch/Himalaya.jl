@@ -14,6 +14,20 @@ function interpolateI(q: number, trace: Trace): number {
   return trace.I[nearest]!;
 }
 
+export function snapToLocalMax(q: number[], I: number[], qClick: number, K = 3): number {
+  let nearest = 0;
+  for (let i = 1; i < q.length; i++) {
+    if (Math.abs(q[i]! - qClick) < Math.abs(q[nearest]! - qClick)) nearest = i;
+  }
+  const lo = Math.max(0, nearest - K);
+  const hi = Math.min(q.length - 1, nearest + K);
+  let best = lo;
+  for (let i = lo + 1; i <= hi; i++) {
+    if (I[i]! > I[best]!) best = i;
+  }
+  return q[best]!;
+}
+
 export interface TraceViewerProps {
   trace: Trace;
   peaks: Peak[];
@@ -22,11 +36,8 @@ export interface TraceViewerProps {
 }
 
 export function TraceViewer({
-  trace, peaks, onAddPeak: _onAddPeak, onRemovePeak: _onRemovePeak,
+  trace, peaks, onAddPeak, onRemovePeak,
 }: TraceViewerProps): JSX.Element {
-  // onAddPeak/onRemovePeak are wired in Tasks 7–8; parameters are aliased to
-  // underscore-prefixed locals here to silence TS6133 "declared but never used".
-  void _onAddPeak; void _onRemovePeak;
   const hostRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -60,8 +71,23 @@ export function TraceViewer({
     });
 
     host.replaceChildren(el);
-    return () => { host.replaceChildren(); };
-  }, [trace, peaks]);
+
+    function handleClick(ev: Event): void {
+      const me = ev as MouseEvent;
+      const xScale = (el as unknown as { scale: (name: string) => { invert?: (v: number) => number } | undefined }).scale("x");
+      if (!xScale?.invert) return;
+      const rect = el.getBoundingClientRect();
+      const qClick = xScale.invert(me.clientX - rect.left);
+      const qSnapped = snapToLocalMax(trace.q, trace.I, qClick);
+      onAddPeak(qSnapped);
+    }
+    (el as unknown as EventTarget).addEventListener("click", handleClick);
+
+    return () => {
+      (el as unknown as EventTarget).removeEventListener("click", handleClick);
+      host.replaceChildren();
+    };
+  }, [trace, peaks, onAddPeak, onRemovePeak]);
 
   return <div ref={hostRef} className="w-full h-full" data-testid="trace-viewer" />;
 }

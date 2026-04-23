@@ -28,6 +28,7 @@ describe("App smoke", () => {
       "/api/experiments/1/samples": [
         { id: 10, experiment_id: 1, label: "A1", name: "s1", notes: null, tags: [] },
       ],
+      "/api/samples/10/exposures": [],
     });
   });
 
