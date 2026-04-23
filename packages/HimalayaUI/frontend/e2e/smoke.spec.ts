@@ -39,7 +39,9 @@ test("shell loads with navbar, layout placeholders, and sample list", async ({ p
   await page.goto("/");
 
   await expect(page.locator("[data-testid='nav-logo']")).toHaveText("Himalaya");
-  await expect(page.locator("[data-testid='placeholder']")).toHaveCount(4);
+  // Plan 4 wired TraceViewer + ExposureList into the center column, leaving
+  // only the two right-column panes as placeholders (Miller plot, Phase panel).
+  await expect(page.locator("[data-testid='placeholder']")).toHaveCount(2);
   await expect(page.locator("[data-sample-id]")).toHaveCount(2);
   await expect(page.locator('[data-sample-id="1"] [data-testid="sample-label"]')).toHaveText("D1");
 });
@@ -87,4 +89,78 @@ test("filter narrows the sample list", async ({ page }) => {
   await page.locator("input[placeholder='Filter samples\u2026']").fill("DOPC");
   await expect(page.locator("[data-sample-id]")).toHaveCount(1);
   await expect(page.locator("[data-sample-id]")).toHaveAttribute("data-sample-id", "1");
+});
+
+test("clicking the trace posts a manual peak", async ({ page }) => {
+  let posted: { q: number } | null = null;
+
+  await page.route("**/api/users", (r) => r.fulfill({ status: 200, body: "[]" }));
+  await page.route("**/api/experiments/1", (r) => r.fulfill({
+    status: 200,
+    body: JSON.stringify({
+      id: 1, name: "demo", path: "/x", data_dir: "/x/data",
+      analysis_dir: "/x/analysis", manifest_path: null,
+      created_at: "2026-04-22T00:00:00Z",
+    }),
+  }));
+  await page.route("**/api/experiments/1/samples", (r) => r.fulfill({
+    status: 200,
+    body: JSON.stringify([
+      { id: 10, experiment_id: 1, label: "A1", name: "s1", notes: null, tags: [] },
+    ]),
+  }));
+  await page.route("**/api/samples/10/exposures", (r) => r.fulfill({
+    status: 200,
+    body: JSON.stringify([
+      { id: 100, sample_id: 10, filename: "demo", kind: "file",
+        selected: true, tags: [], sources: [] },
+    ]),
+  }));
+  await page.route("**/api/exposures/100/trace", (r) => r.fulfill({
+    status: 200,
+    body: JSON.stringify({
+      q:     [0.05, 0.10, 0.15, 0.20, 0.25, 0.30],
+      I:     [ 100,   80,   90,  500,   85,   70],
+      sigma: [  5,    4,    5,   25,    4,    3],
+    }),
+  }));
+  await page.route("**/api/exposures/100/peaks", async (r) => {
+    if (r.request().method() === "POST") {
+      const body = r.request().postDataJSON() as { q: number };
+      posted = body;
+      return r.fulfill({
+        status: 201,
+        body: JSON.stringify({
+          id: 999, exposure_id: 100, q: body.q, intensity: null,
+          prominence: null, sharpness: null, source: "manual",
+          stale_indices: 1,
+        }),
+      });
+    }
+    return r.fulfill({ status: 200, body: "[]" });
+  });
+  await page.route("**/api/exposures/100/indices", (r) =>
+    r.fulfill({ status: 200, body: "[]" }));
+
+  await page.addInitScript(() => {
+    localStorage.setItem(
+      "himalaya-ui:state",
+      JSON.stringify({
+        state: { username: "alice", activeSampleId: 10, activeExposureId: 100 },
+        version: 1,
+      }),
+    );
+  });
+
+  await page.goto("/");
+  const viewer = page.locator('[data-testid="trace-viewer"]');
+  await viewer.waitFor();
+  const box = await viewer.boundingBox();
+  if (!box) throw new Error("trace viewer has no bounding box");
+
+  // Click somewhere in the middle of the plot — exact coords don't matter,
+  // the snap will land on one of the data point q values.
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+
+  await expect.poll(() => posted?.q, { timeout: 2000 }).toBeGreaterThan(0);
 });
