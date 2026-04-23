@@ -106,14 +106,30 @@ describe("<PhasePanel> — alternatives", () => {
     renderWithProviders(<PhasePanel exposureId={42} />);
     await waitFor(() => expect(screen.getByText("Im3m")).toBeInTheDocument());
 
-    const lowR2Row = document.querySelector<HTMLElement>('[data-low-r2="true"]');
-    expect(lowR2Row).not.toBeNull();
-    expect(lowR2Row!.className).toMatch(/opacity-40/);
+    const im3mText = screen.getByText("Im3m");
+    const li = im3mText.closest("li");
+    expect(li).not.toBeNull();
+    expect(li).toHaveAttribute("data-low-r2", "true");
+    expect(li!.className).toMatch(/opacity-40/);
     expect(screen.getByText(/low R²/i)).toBeInTheDocument();
 
     // id:10 is in the active group (members: [10]), not alternatives
-    const goodRow = document.querySelector<HTMLElement>('[data-alternative-id="10"]');
-    expect(goodRow).toBeNull();
+    expect(document.querySelector('[data-alternative-id="10"]')).toBeNull();
+  });
+
+  it("does not dim alternatives with null r_squared", async () => {
+    mockAll(
+      [
+        { id: 11, exposure_id: 42, phase: "Im3m", basis: 0.3, score: 0.6,
+          r_squared: null, lattice_d: 9.1, status: "candidate",
+          predicted_q: [0.4, 0.6], peaks: [] },
+      ],
+      [{ id: 1, exposure_id: 42, kind: "auto", active: true, members: [] }],
+    );
+    renderWithProviders(<PhasePanel exposureId={42} />);
+    await waitFor(() => expect(screen.getByText("Im3m")).toBeInTheDocument());
+    expect(document.querySelector('[data-low-r2="true"]')).toBeNull();
+    expect(screen.queryByText(/low R²/i)).toBeNull();
   });
 
   it("hovering an alternative sets hoveredIndexId; leaving clears it", async () => {
