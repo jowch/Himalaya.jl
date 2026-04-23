@@ -56,3 +56,22 @@ input:focus, select:focus { outline: 1px solid var(--accent); border-color: var(
 .mono { font-family: var(--font-mono); }
 .muted { color: var(--fg-muted); }
 .dim { color: var(--fg-dim); }
+
+.nav {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  padding: 0 var(--gap-md);
+  height: 44px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+.nav-left { display: flex; align-items: center; gap: var(--gap-lg); }
+.nav-logo { font-weight: 600; letter-spacing: 0.02em; }
+.nav-links { display: flex; gap: var(--gap-md); }
+.nav-link { color: var(--fg-muted); text-decoration: none; padding: 2px 4px; }
+.nav-link.active { color: var(--fg); border-bottom: 1px solid var(--accent); }
+.nav-center { text-align: center; color: var(--fg-muted); }
+.nav-breadcrumb { font-family: var(--font-mono); font-size: 13px; }
+.nav-right { display: flex; }
+.nav-user { min-width: 80px; }
