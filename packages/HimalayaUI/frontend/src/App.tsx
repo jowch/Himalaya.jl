@@ -9,7 +9,7 @@ import { Navbar } from "./components/Navbar";
 import { Layout } from "./components/Layout";
 import { SampleList } from "./components/SampleList";
 import { UserModal } from "./components/UserModal";
-import { ExposureList } from "./components/ExposureList";
+import { PropertiesPanel } from "./components/PropertiesPanel";
 import { TraceViewer } from "./components/TraceViewer";
 import { StaleIndicesBanner } from "./components/StaleIndicesBanner";
 import { MillerPlot } from "./components/MillerPlot";
@@ -103,7 +103,7 @@ export function App(): JSX.Element {
             )}
           </div>
         }
-        centerBottom={<ExposureList />}
+        centerBottom={<PropertiesPanel />}
         rightTop={<MillerPlot indices={activeGroupIndices} />}
         rightBottom={<PhasePanel exposureId={activeExposureId} />}
       />
