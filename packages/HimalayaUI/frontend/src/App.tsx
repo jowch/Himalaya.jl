@@ -1,8 +1,7 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import "./styles.css";
-import * as api from "./api";
-import type { Experiment, Sample } from "./api";
 import { useAppState } from "./state";
+import { useExperiment, useSamples } from "./queries";
 import { Navbar } from "./components/Navbar";
 import { Layout } from "./components/Layout";
 import { SampleList } from "./components/SampleList";
@@ -16,30 +15,18 @@ export function App(): JSX.Element {
   const setUsername     = useAppState((s) => s.setUsername);
   const setActiveSample = useAppState((s) => s.setActiveSample);
 
-  const [experiment, setExperiment] = useState<Experiment | null>(null);
-  const [samples, setSamples]       = useState<Sample[]>([]);
-  const [bootError, setBootError]   = useState<string | null>(null);
-  const [modalOpen, setModalOpen]   = useState<boolean>(!username);
+  const [modalOpen, setModalOpen] = useState<boolean>(!username);
 
-  useEffect(() => {
-    void (async () => {
-      try {
-        const [exp, list] = await Promise.all([
-          api.getExperiment(EXPERIMENT_ID),
-          api.listSamples(EXPERIMENT_ID),
-        ]);
-        setExperiment(exp);
-        setSamples(list);
-      } catch (e) {
-        setBootError((e as Error).message);
-      }
-    })();
-  }, []);
+  const experimentQ = useExperiment(EXPERIMENT_ID);
+  const samplesQ    = useSamples(EXPERIMENT_ID);
 
+  const samples      = samplesQ.data ?? [];
   const activeSample = samples.find((s) => s.id === activeSampleId);
-  const breadcrumb   = bootError
-    ? `Error: ${bootError}`
-    : (experiment?.name ?? "experiment")
+  const bootError    = experimentQ.error ?? samplesQ.error;
+
+  const breadcrumb = bootError
+    ? `Error: ${(bootError as Error).message}`
+    : (experimentQ.data?.name ?? "experiment")
         + (activeSample
           ? ` › ${activeSample.label ?? ""} ${activeSample.name ?? ""}`.trimEnd()
           : "");
