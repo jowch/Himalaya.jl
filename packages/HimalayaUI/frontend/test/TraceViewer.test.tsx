@@ -126,4 +126,31 @@ describe("<TraceViewer> — overlays", () => {
     );
     expect(ruleX).toHaveBeenCalled();
   });
+
+  it("calls Plot.ruleX a second time (with dashed opts) when hoveredIndex is set", async () => {
+    const Plot = await import("@observablehq/plot");
+    const ruleX = Plot.ruleX as unknown as ReturnType<typeof vi.fn>;
+    ruleX.mockClear();
+
+    const trace = { q: [0.1, 0.2, 0.3], I: [10, 20, 30], sigma: [1, 1, 1] };
+    const hovered: IndexEntry = {
+      id: 11, exposure_id: 1, phase: "Im3m", basis: 0.3, score: 0.5,
+      r_squared: 0.7, lattice_d: 9.0, status: "candidate",
+      predicted_q: [0.42, 0.6],
+      peaks: [],
+    };
+    render(
+      <TraceViewer
+        trace={trace}
+        peaks={[]}
+        activeGroupIndices={[]}
+        hoveredIndex={hovered}
+        onAddPeak={() => {}}
+        onRemovePeak={() => {}}
+      />,
+    );
+    expect(ruleX.mock.calls.length).toBe(2);
+    const [data] = ruleX.mock.calls[1]! as [Array<{ q: number }>];
+    expect(data.length).toBe(2);
+  });
 });
