@@ -9,6 +9,7 @@ export const queryKeys = {
   trace:      (exposureId: number) => ["exposure", exposureId, "trace"] as const,
   peaks:      (exposureId: number) => ["exposure", exposureId, "peaks"] as const,
   indices:    (exposureId: number) => ["exposure", exposureId, "indices"] as const,
+  groups:     (exposureId: number) => ["exposure", exposureId, "groups"] as const,
 };
 
 export function useExperiment(id: number) {
@@ -90,5 +91,33 @@ export function useReanalyzeExposure(exposureId: number) {
   return useMutation({
     mutationFn: () => api.reanalyzeExposure(exposureId, authOpts(username)),
     onSuccess: () => invalidateExposure(qc, exposureId),
+  });
+}
+
+export function useGroups(exposureId: number | undefined) {
+  return useQuery({
+    queryKey: ["exposure", exposureId ?? "none", "groups"] as const,
+    queryFn: () => api.listGroups(exposureId as number),
+    enabled: exposureId !== undefined,
+  });
+}
+
+export function useAddIndexToGroup(exposureId: number, groupId: number) {
+  const qc = useQueryClient();
+  const username = useAppState((s) => s.username);
+  return useMutation({
+    mutationFn: (indexId: number) =>
+      api.addIndexToGroup(groupId, indexId, authOpts(username)),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.groups(exposureId) }),
+  });
+}
+
+export function useRemoveIndexFromGroup(exposureId: number, groupId: number) {
+  const qc = useQueryClient();
+  const username = useAppState((s) => s.username);
+  return useMutation({
+    mutationFn: (indexId: number) =>
+      api.removeIndexFromGroup(groupId, indexId, authOpts(username)),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.groups(exposureId) }),
   });
 }
