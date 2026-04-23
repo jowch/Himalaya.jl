@@ -21,6 +21,18 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test length(indices) >= 1
         @test haskey(indices[1], :peaks)
 
+        # New in Plan 5: each index has predicted_q (basis × normalized phaseratios)
+        # and each matched peak has q_observed attached.
+        for entry in indices
+            @test haskey(entry, :predicted_q)
+            @test length(entry.predicted_q) > 0
+            @test all(q -> q > 0, entry.predicted_q)
+            for p in entry.peaks
+                @test haskey(p, :q_observed)
+                @test p.q_observed > 0
+            end
+        end
+
         # Groups — auto only, active
         r = HTTP.get("$base/api/exposures/$e_id/groups")
         @test r.status == 200

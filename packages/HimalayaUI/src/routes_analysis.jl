@@ -1,4 +1,5 @@
 using HTTP, JSON3, DBInterface, Tables, Oxygen, SQLite
+using Himalaya
 
 """
     ensure_custom_group!(db, exposure_id) -> (group_id, created)
@@ -49,18 +50,41 @@ function _group_with_members(db::SQLite.DB, group_id::Int)
     d
 end
 
+"""
+    predicted_q_for_phase(phase_name, basis) -> Vector{Float64}
+
+Return predicted q positions (basis × normalized phase ratios) for a phase
+named by its string form (e.g., "Pn3m"). Returns empty vector if the phase
+is unknown to Himalaya.
+"""
+function predicted_q_for_phase(phase_name::AbstractString, basis::Float64)::Vector{Float64}
+    # Strip module prefix if present (e.g. "Himalaya.Pn3m" -> "Pn3m")
+    bare = last(split(phase_name, '.'))
+    P = try
+        getfield(Himalaya, Symbol(bare))
+    catch
+        return Float64[]
+    end
+    (P isa Type && P <: Himalaya.Phase) || return Float64[]
+    ratios = Himalaya.phaseratios(P; normalize=true)
+    [basis * r for r in ratios]
+end
+
 function register_analysis_routes!()
     @get "/api/exposures/{id}/indices" function(req::HTTP.Request, id::Int)
         db = current_db()
         indices = Tables.rowtable(DBInterface.execute(db,
             "SELECT * FROM indices WHERE exposure_id = ? ORDER BY score DESC", [id]))
         out = map(indices) do ix
-            peaks = Tables.rowtable(DBInterface.execute(db,
-                "SELECT peak_id, ratio_position, residual
-                 FROM index_peaks WHERE index_id = ? ORDER BY ratio_position",
+            peak_rows = Tables.rowtable(DBInterface.execute(db,
+                "SELECT ip.peak_id, ip.ratio_position, ip.residual, p.q AS q_observed
+                 FROM index_peaks ip JOIN peaks p ON p.id = ip.peak_id
+                 WHERE ip.index_id = ? ORDER BY ip.ratio_position",
                 [Int(ix.id)]))
+            predicted = predicted_q_for_phase(String(ix.phase), Float64(ix.basis))
             d = row_to_json(ix)
-            d[:peaks] = rows_to_json(peaks)
+            d[:peaks]        = rows_to_json(peak_rows)
+            d[:predicted_q]  = predicted
             d
         end
         HTTP.Response(200, ["Content-Type" => "application/json"],

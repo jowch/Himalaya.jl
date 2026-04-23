@@ -71,7 +71,7 @@ function persist_analysis!(db::SQLite.DB, exposure_id::Int,
         res = DBInterface.execute(db,
             "INSERT INTO indices (exposure_id, phase, basis, score, r_squared, lattice_d, status)
              VALUES (?, ?, ?, ?, ?, ?, 'candidate')",
-            [exposure_id, string(P), Himalaya.basis(idx),
+            [exposure_id, string(nameof(P)), Himalaya.basis(idx),
              s, fit_result.R², fit_result.d])
         db_id = Int(DBInterface.lastrowid(res))
         candidate_to_db_id[ci] = db_id
