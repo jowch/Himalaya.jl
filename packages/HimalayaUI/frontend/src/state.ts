@@ -7,9 +7,11 @@ export interface AppState {
   username: string | undefined;
   activeSampleId: number | undefined;
   activeExposureId: number | undefined;
+  hoveredIndexId: number | undefined;
   setUsername: (name: string) => void;
   setActiveSample: (id: number | undefined) => void;
   setActiveExposure: (id: number | undefined) => void;
+  setHoveredIndex: (id: number | undefined) => void;
 }
 
 export const useAppState = create<AppState>()(
@@ -18,10 +20,12 @@ export const useAppState = create<AppState>()(
       username: undefined,
       activeSampleId: undefined,
       activeExposureId: undefined,
+      hoveredIndexId: undefined,
       setUsername: (username) => set({ username }),
       setActiveSample: (activeSampleId) =>
         set({ activeSampleId, activeExposureId: undefined }),
       setActiveExposure: (activeExposureId) => set({ activeExposureId }),
+      setHoveredIndex: (hoveredIndexId) => set({ hoveredIndexId }),
     }),
     {
       name: LS_KEY,

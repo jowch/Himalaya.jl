@@ -37,4 +37,19 @@ describe("useAppState", () => {
     const parsed = JSON.parse(raw!);
     expect(parsed.state.username).toBe("bob");
   });
+
+  it("hoveredIndexId starts undefined and can be set/cleared", () => {
+    useAppState.setState({ hoveredIndexId: undefined });
+    expect(useAppState.getState().hoveredIndexId).toBeUndefined();
+    useAppState.getState().setHoveredIndex(7);
+    expect(useAppState.getState().hoveredIndexId).toBe(7);
+    useAppState.getState().setHoveredIndex(undefined);
+    expect(useAppState.getState().hoveredIndexId).toBeUndefined();
+  });
+
+  it("hoveredIndexId is NOT in the persisted partition", () => {
+    useAppState.setState({ hoveredIndexId: 42 });
+    const raw = localStorage.getItem(LS_KEY);
+    expect(raw ?? "").not.toContain("hoveredIndexId");
+  });
 });
