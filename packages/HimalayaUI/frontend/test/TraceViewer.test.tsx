@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render } from "@testing-library/react";
-import { TraceViewer, snapToLocalMax } from "../src/components/TraceViewer";
+import { TraceViewer, snapToLocalMax, findNearestPeak } from "../src/components/TraceViewer";
 
 vi.mock("@observablehq/plot", () => ({
   plot: vi.fn(() => {
@@ -12,6 +12,27 @@ vi.mock("@observablehq/plot", () => ({
   line:  vi.fn(() => ({ _kind: "line" })),
   dot:   vi.fn(() => ({ _kind: "dot" })),
 }));
+
+describe("findNearestPeak", () => {
+  const peaks = [
+    { id: 1, exposure_id: 1, q: 0.10, intensity: null, prominence: null,
+      sharpness: null, source: "auto" as const },
+    { id: 2, exposure_id: 1, q: 0.30, intensity: null, prominence: null,
+      sharpness: null, source: "auto" as const },
+  ];
+
+  it("returns the closest peak when within tolerance", () => {
+    expect(findNearestPeak(peaks, 0.105, 0.01)?.id).toBe(1);
+  });
+
+  it("returns null when outside tolerance", () => {
+    expect(findNearestPeak(peaks, 0.20, 0.01)).toBeNull();
+  });
+
+  it("returns null for empty list", () => {
+    expect(findNearestPeak([], 0.1, 1)).toBeNull();
+  });
+});
 
 describe("snapToLocalMax", () => {
   const q = [0.10, 0.11, 0.12, 0.13, 0.14, 0.15, 0.16];

@@ -28,6 +28,18 @@ export function snapToLocalMax(q: number[], I: number[], qClick: number, K = 3):
   return q[best]!;
 }
 
+export function findNearestPeak(
+  peaks: Peak[], qClick: number, tolerance: number,
+): Peak | null {
+  let best: Peak | null = null;
+  let bestDist = Infinity;
+  for (const p of peaks) {
+    const d = Math.abs(p.q - qClick);
+    if (d < bestDist) { best = p; bestDist = d; }
+  }
+  return best && bestDist <= tolerance ? best : null;
+}
+
 export interface TraceViewerProps {
   trace: Trace;
   peaks: Peak[];
@@ -78,8 +90,12 @@ export function TraceViewer({
       if (!xScale?.invert) return;
       const rect = el.getBoundingClientRect();
       const qClick = xScale.invert(me.clientX - rect.left);
-      const qSnapped = snapToLocalMax(trace.q, trace.I, qClick);
-      onAddPeak(qSnapped);
+
+      // Tolerance: 2% of the click q (relative, log-friendly)
+      const tolerance = Math.max(qClick * 0.02, 1e-6);
+      const existing = findNearestPeak(peaks, qClick, tolerance);
+      if (existing) onRemovePeak(existing.id);
+      else          onAddPeak(snapToLocalMax(trace.q, trace.I, qClick));
     }
     (el as unknown as EventTarget).addEventListener("click", handleClick);
 
