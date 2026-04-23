@@ -135,6 +135,13 @@ export const removePeak = (peak_id: number, opts?: AuthOpts) =>
   request<void>("DELETE", `/api/peaks/${peak_id}`, undefined, opts);
 
 // Indices
+export interface IndexPeakRef {
+  peak_id: number;
+  ratio_position: number;
+  residual: number;
+  q_observed: number;
+}
+
 export interface IndexEntry {
   id: number;
   exposure_id: number;
@@ -144,10 +151,28 @@ export interface IndexEntry {
   r_squared: number | null;
   lattice_d: number | null;
   status: "candidate" | "stale";
+  peaks: IndexPeakRef[];
+  predicted_q: number[];
 }
 
 export const listIndices = (exposure_id: number) =>
   request<IndexEntry[]>("GET", `/api/exposures/${exposure_id}/indices`);
+
+// Groups
+export interface GroupEntry {
+  id: number;
+  exposure_id: number;
+  kind: "auto" | "custom";
+  active: boolean;
+  members: number[];
+}
+
+export const listGroups = (exposure_id: number) =>
+  request<GroupEntry[]>("GET", `/api/exposures/${exposure_id}/groups`);
+export const addIndexToGroup = (group_id: number, index_id: number, opts?: AuthOpts) =>
+  request<GroupEntry>("POST", `/api/groups/${group_id}/members`, { index_id }, opts);
+export const removeIndexFromGroup = (group_id: number, index_id: number, opts?: AuthOpts) =>
+  request<GroupEntry>("DELETE", `/api/groups/${group_id}/members/${index_id}`, undefined, opts);
 
 // Analysis
 export const reanalyzeExposure = (exposure_id: number, opts?: AuthOpts) =>
