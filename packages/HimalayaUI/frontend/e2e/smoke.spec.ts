@@ -39,9 +39,9 @@ test("shell loads with navbar, layout placeholders, and sample list", async ({ p
   await page.goto("/");
 
   await expect(page.locator("[data-testid='nav-logo']")).toHaveText("Himalaya");
-  // Plan 4 wired TraceViewer + ExposureList into the center column, leaving
-  // only the two right-column panes as placeholders (Miller plot, Phase panel).
-  await expect(page.locator("[data-testid='placeholder']")).toHaveCount(2);
+  // Plan 5 wired MillerPlot + PhasePanel into the right column; no panes
+  // remain as placeholders.
+  await expect(page.locator("[data-testid='placeholder']")).toHaveCount(0);
   await expect(page.locator("[data-sample-id]")).toHaveCount(2);
   await expect(page.locator('[data-sample-id="1"] [data-testid="sample-label"]')).toHaveText("D1");
 });
@@ -163,4 +163,83 @@ test("clicking the trace posts a manual peak", async ({ page }) => {
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
 
   await expect.poll(() => posted?.q, { timeout: 2000 }).toBeGreaterThan(0);
+});
+
+test("hovering an alternative and clicking + posts to groups", async ({ page }) => {
+  let posted: { index_id: number } | null = null;
+
+  await page.route("**/api/users", (r) => r.fulfill({ status: 200, body: "[]" }));
+  await page.route("**/api/experiments/1", (r) => r.fulfill({
+    status: 200,
+    body: JSON.stringify({
+      id: 1, name: "demo", path: "/x", data_dir: "/x/data",
+      analysis_dir: "/x/analysis", manifest_path: null,
+      created_at: "2026-04-22T00:00:00Z",
+    }),
+  }));
+  await page.route("**/api/experiments/1/samples", (r) => r.fulfill({
+    status: 200,
+    body: JSON.stringify([
+      { id: 10, experiment_id: 1, label: "A1", name: "s1", notes: null, tags: [] },
+    ]),
+  }));
+  await page.route("**/api/samples/10/exposures", (r) => r.fulfill({
+    status: 200,
+    body: JSON.stringify([
+      { id: 100, sample_id: 10, filename: "demo", kind: "file",
+        selected: true, tags: [], sources: [] },
+    ]),
+  }));
+  await page.route("**/api/exposures/100/trace", (r) => r.fulfill({
+    status: 200,
+    body: JSON.stringify({
+      q: [0.05, 0.1, 0.15, 0.2], I: [100, 80, 90, 70], sigma: [5, 4, 4, 3],
+    }),
+  }));
+  await page.route("**/api/exposures/100/peaks", (r) =>
+    r.fulfill({ status: 200, body: "[]" }));
+  await page.route("**/api/exposures/100/indices", (r) => r.fulfill({
+    status: 200,
+    body: JSON.stringify([
+      { id: 1, exposure_id: 100, phase: "Pn3m", basis: 0.5, score: 1.0,
+        r_squared: 0.99, lattice_d: 12.5, status: "candidate",
+        predicted_q: [0.7, 0.86], peaks: [] },
+      { id: 2, exposure_id: 100, phase: "Im3m", basis: 0.3, score: 0.6,
+        r_squared: 0.71, lattice_d: 9.1, status: "candidate",
+        predicted_q: [0.42, 0.6], peaks: [] },
+    ]),
+  }));
+  await page.route("**/api/exposures/100/groups", (r) => r.fulfill({
+    status: 200,
+    body: JSON.stringify([
+      { id: 1, exposure_id: 100, kind: "auto", active: true, members: [1] },
+    ]),
+  }));
+  await page.route("**/api/groups/1/members", async (r) => {
+    if (r.request().method() === "POST") {
+      posted = r.request().postDataJSON() as { index_id: number };
+      return r.fulfill({
+        status: 200,
+        body: JSON.stringify({
+          id: 2, exposure_id: 100, kind: "custom", active: true, members: [1, posted.index_id],
+        }),
+      });
+    }
+    return r.fulfill({ status: 404, body: "nope" });
+  });
+
+  await page.addInitScript(() => {
+    localStorage.setItem("himalaya-ui:state", JSON.stringify({
+      state: { username: "alice", activeSampleId: 10, activeExposureId: 100 },
+      version: 1,
+    }));
+  });
+
+  await page.goto("/");
+  const altRow = page.locator('[data-alternative-id="2"]');
+  await altRow.waitFor();
+  await altRow.hover();
+  const addBtn = altRow.getByRole("button", { name: /add index 2/i });
+  await addBtn.click();
+  await expect.poll(() => posted?.index_id, { timeout: 2000 }).toBe(2);
 });
