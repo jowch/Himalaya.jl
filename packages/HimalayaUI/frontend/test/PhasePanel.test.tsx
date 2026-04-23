@@ -91,6 +91,31 @@ describe("<PhasePanel> — alternatives", () => {
     expect(screen.getByRole("button", { name: /add index 11/i })).toBeInTheDocument();
   });
 
+  it("dims alternatives with r_squared below 0.98 and shows 'low R²' label", async () => {
+    mockAll(
+      [
+        { id: 10, exposure_id: 42, phase: "Pn3m", basis: 0.5, score: 0.8,
+          r_squared: 0.998, lattice_d: 12.5, status: "candidate",
+          predicted_q: [0.7, 0.9], peaks: [] },
+        { id: 11, exposure_id: 42, phase: "Im3m", basis: 0.3, score: 0.6,
+          r_squared: 0.71, lattice_d: 9.1, status: "candidate",
+          predicted_q: [0.4, 0.6], peaks: [] },
+      ],
+      [{ id: 1, exposure_id: 42, kind: "auto", active: true, members: [10] }],
+    );
+    renderWithProviders(<PhasePanel exposureId={42} />);
+    await waitFor(() => expect(screen.getByText("Im3m")).toBeInTheDocument());
+
+    const lowR2Row = document.querySelector<HTMLElement>('[data-low-r2="true"]');
+    expect(lowR2Row).not.toBeNull();
+    expect(lowR2Row!.className).toMatch(/opacity-40/);
+    expect(screen.getByText(/low R²/i)).toBeInTheDocument();
+
+    // id:10 is in the active group (members: [10]), not alternatives
+    const goodRow = document.querySelector<HTMLElement>('[data-alternative-id="10"]');
+    expect(goodRow).toBeNull();
+  });
+
   it("hovering an alternative sets hoveredIndexId; leaving clears it", async () => {
     useAppState.setState({ hoveredIndexId: undefined });
     mockAll(
