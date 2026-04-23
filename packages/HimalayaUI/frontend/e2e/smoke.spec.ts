@@ -243,3 +243,61 @@ test("hovering an alternative and clicking + posts to groups", async ({ page }) 
   await addBtn.click();
   await expect.poll(() => posted?.index_id, { timeout: 2000 }).toBe(2);
 });
+
+test("switching to Tags tab and adding a tag posts to /api/samples/:id/tags", async ({ page }) => {
+  let posted: { key: string; value: string } | null = null;
+
+  await page.route("**/api/users", (r) => r.fulfill({ status: 200, body: "[]" }));
+  await page.route("**/api/experiments/1", (r) => r.fulfill({
+    status: 200,
+    body: JSON.stringify({
+      id: 1, name: "demo", path: "/x", data_dir: "/x/data",
+      analysis_dir: "/x/analysis", manifest_path: null,
+      created_at: "2026-04-22T00:00:00Z",
+    }),
+  }));
+  await page.route("**/api/experiments/1/samples", (r) => r.fulfill({
+    status: 200,
+    body: JSON.stringify([
+      { id: 10, experiment_id: 1, label: "A1", name: "s1", notes: null, tags: [] },
+    ]),
+  }));
+  await page.route("**/api/samples/10/exposures", (r) => r.fulfill({
+    status: 200, body: "[]",
+  }));
+  await page.route("**/api/samples/10/tags", async (r) => {
+    if (r.request().method() === "POST") {
+      posted = r.request().postDataJSON() as { key: string; value: string };
+      return r.fulfill({
+        status: 201,
+        body: JSON.stringify({
+          id: 99, sample_id: 10,
+          key: posted.key, value: posted.value, source: "manual",
+        }),
+      });
+    }
+    return r.fulfill({ status: 404, body: "nope" });
+  });
+
+  await page.addInitScript(() => {
+    localStorage.setItem("himalaya-ui:state", JSON.stringify({
+      state: { username: "alice", activeSampleId: 10, activeExposureId: undefined },
+      version: 1,
+    }));
+  });
+
+  await page.goto("/");
+  await expect(page.getByRole("tab", { name: /exposures/i }))
+    .toHaveAttribute("aria-selected", "true");
+
+  await page.getByRole("tab", { name: /tags/i }).click();
+  await expect(page.getByRole("tab", { name: /tags/i }))
+    .toHaveAttribute("aria-selected", "true");
+
+  await page.getByPlaceholder(/key/i).fill("lipid");
+  await page.getByPlaceholder(/value/i).fill("DOPC");
+  await page.getByRole("button", { name: /add tag/i }).click();
+
+  await expect.poll(() => posted?.key, { timeout: 2000 }).toBe("lipid");
+  await expect.poll(() => posted?.value, { timeout: 2000 }).toBe("DOPC");
+});
