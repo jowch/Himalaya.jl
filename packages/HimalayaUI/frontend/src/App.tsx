@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import "./styles.css";
 import { useAppState } from "./state";
 import {
-  useExperiment, useSamples, useExposures, useTrace, usePeaks,
+  useExperiment, useSamples, useExposures, useTrace, usePeaks, useIndices, useGroups,
   useAddPeak, useRemovePeak,
 } from "./queries";
 import { Navbar } from "./components/Navbar";
@@ -12,6 +12,8 @@ import { UserModal } from "./components/UserModal";
 import { ExposureList } from "./components/ExposureList";
 import { TraceViewer } from "./components/TraceViewer";
 import { StaleIndicesBanner } from "./components/StaleIndicesBanner";
+import { MillerPlot } from "./components/MillerPlot";
+import { PhasePanel } from "./components/PhasePanel";
 
 const EXPERIMENT_ID = 1;
 
@@ -19,6 +21,7 @@ export function App(): JSX.Element {
   const username          = useAppState((s) => s.username);
   const activeSampleId    = useAppState((s) => s.activeSampleId);
   const activeExposureId  = useAppState((s) => s.activeExposureId);
+  const hoveredIndexId    = useAppState((s) => s.hoveredIndexId);
   const setUsername       = useAppState((s) => s.setUsername);
   const setActiveSample   = useAppState((s) => s.setActiveSample);
   const setActiveExposure = useAppState((s) => s.setActiveExposure);
@@ -30,17 +33,30 @@ export function App(): JSX.Element {
   const exposuresQ  = useExposures(activeSampleId);
   const traceQ      = useTrace(activeExposureId);
   const peaksQ      = usePeaks(activeExposureId);
+  const indicesQ    = useIndices(activeExposureId);
+  const groupsQ     = useGroups(activeExposureId);
 
   const addPeak    = useAddPeak(activeExposureId ?? 0);
   const removePeak = useRemovePeak(activeExposureId ?? 0);
 
-  // Auto-select the first exposure when samples or the active sample changes
   useEffect(() => {
     const exposures = exposuresQ.data ?? [];
     if (exposures.length === 0) return;
     const stillValid = exposures.some((e) => e.id === activeExposureId);
     if (!stillValid) setActiveExposure(exposures[0]!.id);
   }, [exposuresQ.data, activeExposureId, setActiveExposure]);
+
+  const indices = indicesQ.data ?? [];
+  const activeGroup = (groupsQ.data ?? []).find((g) => g.active);
+  const activeGroupIndices = useMemo(
+    () => (activeGroup?.members ?? [])
+      .map((id) => indices.find((i) => i.id === id))
+      .filter((i): i is NonNullable<typeof i> => i != null),
+    [activeGroup, indices],
+  );
+  const hoveredIndex = hoveredIndexId != null
+    ? indices.find((i) => i.id === hoveredIndexId)
+    : undefined;
 
   const samples      = samplesQ.data ?? [];
   const activeSample = samples.find((s) => s.id === activeSampleId);
@@ -75,8 +91,8 @@ export function App(): JSX.Element {
               <TraceViewer
                 trace={traceQ.data}
                 peaks={peaksQ.data}
-                activeGroupIndices={[]}
-                hoveredIndex={undefined}
+                activeGroupIndices={activeGroupIndices}
+                hoveredIndex={hoveredIndex}
                 onAddPeak={(q) => addPeak.mutate(q)}
                 onRemovePeak={(peakId) => removePeak.mutate(peakId)}
               />
@@ -88,6 +104,8 @@ export function App(): JSX.Element {
           </div>
         }
         centerBottom={<ExposureList />}
+        rightTop={<MillerPlot indices={activeGroupIndices} />}
+        rightBottom={<PhasePanel exposureId={activeExposureId} />}
       />
       <UserModal
         open={modalOpen}
