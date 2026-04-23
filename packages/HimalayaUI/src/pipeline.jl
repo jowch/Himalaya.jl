@@ -148,7 +148,7 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
 
     q, I, σ      = load_dat(dat_path)
     peaks_result = Himalaya.findpeaks(q, I, σ)
-    candidates   = Himalaya.indexpeaks(peaks_result.q, peaks_result.prominence)
+    candidates   = Himalaya.indexpeaks(peaks_result.q, peaks_result.sharpness)
     group        = auto_group(candidates)
 
     persist_analysis!(db, exposure_id, q, I, peaks_result, candidates, group)

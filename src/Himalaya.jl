@@ -13,7 +13,7 @@ export
 Phase, Lamellar, Hexagonal, Square, Pn3m, Im3m, Ia3d, Fm3m, Fd3m, phaseratios,
 
 # indexing
-Index, phase, basis, peaks, numpeaks, totalprom, predictpeaks, missingpeaks,
+Index, phase, basis, peaks, numpeaks, predictpeaks, missingpeaks,
 ==, issubset, show, indexpeaks, fit, score,
 
 # peaks

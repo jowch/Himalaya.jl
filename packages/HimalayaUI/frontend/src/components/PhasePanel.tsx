@@ -3,6 +3,8 @@ import { useAppState } from "../state";
 import { phaseColor } from "../phases";
 import type { GroupEntry } from "../api";
 
+const R2_THRESHOLD = 0.98;
+
 export interface PhasePanelProps {
   exposureId: number | undefined;
 }
@@ -85,33 +87,38 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
           <p className="text-fg-muted italic text-[13px]">No alternatives.</p>
         ) : (
           <ul className="flex flex-col gap-1">
-            {alternatives.map((ix) => (
-              <li
-                key={ix.id}
-                data-alternative-id={ix.id}
-                className="flex items-center gap-2 px-2 py-1 rounded-md hover:bg-bg-hover cursor-default"
-                onMouseEnter={() => setHoveredIndex(ix.id)}
-                onMouseLeave={() => setHoveredIndex(undefined)}
-              >
-                <span
-                  className="w-2 h-2 rounded-full"
-                  style={{ background: phaseColor(ix.phase) }}
-                  aria-hidden
-                />
-                <span className="font-medium">{ix.phase}</span>
-                <span className="text-fg-muted text-[13px]">
-                  a={formatLattice(ix.lattice_d)} nm · R²={formatR2(ix.r_squared)}
-                </span>
-                <button
-                  className="ml-auto text-fg-muted hover:text-success focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent rounded-md px-1"
-                  aria-label={`Add index ${ix.id}`}
-                  onClick={() => { if (active) addMember.mutate(ix.id); }}
-                  disabled={active === undefined}
+            {alternatives.map((ix) => {
+              const lowR2 = ix.r_squared != null && ix.r_squared < R2_THRESHOLD;
+              return (
+                <li
+                  key={ix.id}
+                  data-alternative-id={ix.id}
+                  data-low-r2={lowR2 ? "true" : undefined}
+                  className={`flex items-center gap-2 px-2 py-1 rounded-md hover:bg-bg-hover cursor-default${lowR2 ? " opacity-40" : ""}`}
+                  onMouseEnter={() => setHoveredIndex(ix.id)}
+                  onMouseLeave={() => setHoveredIndex(undefined)}
                 >
-                  +
-                </button>
-              </li>
-            ))}
+                  <span
+                    className="w-2 h-2 rounded-full"
+                    style={{ background: phaseColor(ix.phase) }}
+                    aria-hidden
+                  />
+                  <span className="font-medium">{ix.phase}</span>
+                  <span className="text-fg-muted text-[13px]">
+                    a={formatLattice(ix.lattice_d)} nm · R²={formatR2(ix.r_squared)}
+                    {lowR2 && <span className="ml-1 text-warning text-[11px]">low R²</span>}
+                  </span>
+                  <button
+                    className="ml-auto text-fg-muted hover:text-success focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent rounded-md px-1"
+                    aria-label={`Add index ${ix.id}`}
+                    onClick={() => { if (active) addMember.mutate(ix.id); }}
+                    disabled={active === undefined}
+                  >
+                    +
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>

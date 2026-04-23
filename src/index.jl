@@ -1,12 +1,13 @@
 """
     Index{::Phase}
 
-Represents an index assignment. Stores the `basis` and the observed `peaks`.
+Represents an index assignment. Stores the `basis`, the observed `peaks`, and
+the per-peak `sharpness` values (aligned to ratio positions).
 """
 struct Index{P<:Phase}
     basis::Real
     peaks::SparseVector{<:Real, <:Integer}
-    prom::Real
+    sharpness::SparseVector{<:Real, <:Integer}
 end
 
 function show(io::IO, index::Index{P}) where P
@@ -23,12 +24,6 @@ basis(index::Index) = index.basis
 peaks(index::Index) = nonzeros(index.peaks)
 numpeaks(index::Index) = nnz(index.peaks)
 
-"""
-    totalprom(index)
-
-The total prominence of an index is the sum of the prominences of its peaks.
-"""
-totalprom(index::Index) = index.prom
 
 """
     predictpeaks(index)
@@ -66,7 +61,7 @@ of `a` are a subset of the peaks of `b`.
 issubset(a::Index, b::Index) = basis(a) == basis(b) && issubset(peaks(a), peaks(b))
 
 """
-    indexpeaks([phase], peaks, [proms], [domain];
+    indexpeaks([phase], peaks, [sharpness], [domain];
                tol = 0.0025, gaps = true, requiremin = true)
 
 Compute possible index assingments for a collection of `peaks` by considering
@@ -97,11 +92,11 @@ by `minpeaks`.
 
 See also `Phase`, `minpeaks`.
 """
-function indexpeaks(peaks, proms, domain; removesubsets = true, kwargs...)
+function indexpeaks(peaks, sharpness, domain; removesubsets = true, kwargs...)
     indices = Index[]
 
     for phase in (Lamellar, Hexagonal, Square, Pn3m, Im3m, Ia3d, Fd3m)
-        push!(indices, indexpeaks(phase, peaks, proms, domain; kwargs...)...)
+        push!(indices, indexpeaks(phase, peaks, sharpness, domain; kwargs...)...)
     end
 
     if removesubsets
@@ -111,8 +106,8 @@ function indexpeaks(peaks, proms, domain; removesubsets = true, kwargs...)
     end
 end
 
-function indexpeaks(::Type{P}, peaks, proms, domain; gaps = true, tol = 0.0025, requiremin = true) where {P<:Phase}
-    indices = indexpeaks(P, peaks, proms, domain, tol, requiremin)
+function indexpeaks(::Type{P}, peaks, sharpness, domain; gaps = true, tol = 0.0025, requiremin = true) where {P<:Phase}
+    indices = indexpeaks(P, peaks, sharpness, domain, tol, requiremin)
 
     # apply filter
     if !gaps
@@ -126,11 +121,11 @@ function indexpeaks(::Type{P}, peaks, proms, domain; gaps = true, tol = 0.0025, 
 end
 
 indexpeaks(peaks; kwargs...) = indexpeaks(peaks, ones(length(peaks)), peaks; kwargs...)
-indexpeaks(peaks, proms; kwargs...) = indexpeaks(peaks, proms, peaks; kwargs...)
+indexpeaks(peaks, sharpness; kwargs...) = indexpeaks(peaks, sharpness, peaks; kwargs...)
 indexpeaks(phase::Type{<:Phase}, peaks; kwargs...) = indexpeaks(phase, peaks, ones(length(peaks)), peaks; kwargs...)
-indexpeaks(phase::Type{<:Phase}, peaks, proms; kwargs...) = indexpeaks(phase, peaks, proms, peaks; kwargs...)
+indexpeaks(phase::Type{<:Phase}, peaks, sharpness; kwargs...) = indexpeaks(phase, peaks, sharpness, peaks; kwargs...)
 
-function indexpeaks(::Type{P}, peaks, proms, domain, tol, requiremin) where {P<:Phase}
+function indexpeaks(::Type{P}, peaks, sharpness, domain, tol, requiremin) where {P<:Phase}
     indices = Index[]
     ratios = phaseratios(P; normalize = true)
 
@@ -204,10 +199,8 @@ function indexpeaks(::Type{P}, peaks, proms, domain, tol, requiremin) where {P<:
             indices,
             Index{P}(
                 domain[i],
-                SparseVector{eltype(peaks),UInt8}(
-                    length(ratios), ratio_idx, peaks[peak_idx]
-                ),
-                sum(proms[peak_idx])
+                SparseVector{eltype(peaks),UInt8}(length(ratios), ratio_idx, peaks[peak_idx]),
+                SparseVector{eltype(sharpness),UInt8}(length(ratios), ratio_idx, sharpness[peak_idx])
             )
         )
     end
@@ -254,26 +247,36 @@ end
 """
     score(index::Index)
 
-Score the validity of a given `index`. This score attempts to quantify the
-likeliness of a given `index`, where higher values are better. It captures the
-number of peaks, the prominence of those peaks, the fit of the index, and the
-number of missing peaks.
+Score the validity of a given `index` on a scale of `[0, 1]`. Higher is better.
 
-See also `fit` and `totalprom`.
+The score is the product of two factors:
+
+- **Coverage**: a harmonic-weighted fraction of the phase's expected peaks that
+  were observed. The weight of each peak is `1/rank`, where `rank` is its
+  ordinal position in the phase ratio series, so missing the fundamental
+  (rank 1, weight 1.0) costs far more than missing a high-order reflection.
+
+- **Consistency**: `1 / (1 + CV)` where `CV = std(sharpness) / mean(sharpness)`
+  across the assigned peaks. Peaks from the same phase have similar shape
+  (wide-with-wide, sharp-with-sharp), so heterogeneous sharpness is penalized.
+
+See also `fit`.
 """
-function score(index::Index)
-    if numpeaks(index) > 1
-        _, rsquared = fit(index)
-    else
-        rsquared = 1
-    end
+function score(index::Index{P}) where P
+    n = length(phaseratios(P))
+    found_idx, _ = findnz(index.peaks)
+    denom = sum(1/r for r in 1:n)
+    coverage = sum(1/r for r in found_idx) / denom
 
-    num_gaps = let
-        peak_idx, _ = findnz(index.peaks)
-        count(==(0), view(index.peaks, first(peak_idx):last(peak_idx)))
+    _, sharps = findnz(index.sharpness)
+    cv = if length(sharps) > 1 && mean(sharps) > 0
+        std(sharps) / mean(sharps)
+    else
+        0.0
     end
-    
-    (numpeaks(index) + totalprom(index)) * (1 - 0.25 * num_gaps) * rsquared
+    consistency = 1 / (1 + cv)
+
+    coverage * consistency
 end
 
 """
