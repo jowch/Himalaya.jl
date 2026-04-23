@@ -76,4 +76,4 @@ julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
 
 The UI shows a trace viewer (log-log I(q) with σ ribbon), a Miller-index scatter with linear fit, and a phase-assignment panel with per-exposure auto-picked and alternative candidates. Peaks can be added or removed by clicking the trace; indices can be confirmed or excluded from the active group. All edits are attributed and audited via a username header.
 
-See [`packages/HimalayaUI/`](packages/HimalayaUI/) for the sub-package, and [`docs/superpowers/specs/`](docs/superpowers/specs/) for the full design spec.
+Full setup, CLI reference, and UI walkthrough: [packages/HimalayaUI/README.md](packages/HimalayaUI/README.md).
