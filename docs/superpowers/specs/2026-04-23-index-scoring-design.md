@@ -47,7 +47,7 @@ consistency = clamp(1 − std(sharpnesses) / mean(sharpnesses), 0, 1)
 
 For a single-peak index, `consistency = 1.0` (undefined CV → assume perfect). Peaks from the same phase have similar shape; a mixed-sharpness index is penalized.
 
-**R² as a hard gate (UI only):** R² is already stored in the `indices` table. The frontend filters out indices below a configurable threshold (default: 0.95). R² is not part of the score formula — it is almost always high for any assignment Himalaya produces, so it does not discriminate between candidates.
+**R² as a hard gate (UI only):** R² is already stored in the `indices` table. The frontend filters out indices below a configurable threshold (default: 0.98). R² is not part of the score formula — it is almost always high for any assignment Himalaya produces, so it does not discriminate between candidates.
 
 ### Struct changes
 
