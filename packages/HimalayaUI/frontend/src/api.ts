@@ -89,3 +89,66 @@ export const addSampleTag   = (id: number, key: string, value: string, opts?: Au
   request<SampleTag>("POST", `/api/samples/${id}/tags`, { key, value }, opts);
 export const removeSampleTag = (id: number, tag_id: number, opts?: AuthOpts) =>
   request<void>("DELETE", `/api/samples/${id}/tags/${tag_id}`, undefined, opts);
+
+// Exposures
+export interface Exposure {
+  id: number;
+  sample_id: number;
+  filename: string | null;
+  kind: "file" | "averaged" | "background_subtracted";
+  selected: boolean;
+  tags: unknown[];
+  sources: unknown[];
+}
+
+export const listExposures = (sample_id: number) =>
+  request<Exposure[]>("GET", `/api/samples/${sample_id}/exposures`);
+
+// Trace
+export interface Trace {
+  q: number[];
+  I: number[];
+  sigma: number[];
+}
+
+export const getTrace = (exposure_id: number) =>
+  request<Trace>("GET", `/api/exposures/${exposure_id}/trace`);
+
+// Peaks
+export interface Peak {
+  id: number;
+  exposure_id: number;
+  q: number;
+  intensity: number | null;
+  prominence: number | null;
+  sharpness: number | null;
+  source: "auto" | "manual";
+}
+
+export interface PeakCreated extends Peak { stale_indices: number }
+
+export const listPeaks = (exposure_id: number) =>
+  request<Peak[]>("GET", `/api/exposures/${exposure_id}/peaks`);
+export const addPeak = (exposure_id: number, q: number, opts?: AuthOpts) =>
+  request<PeakCreated>("POST", `/api/exposures/${exposure_id}/peaks`, { q }, opts);
+export const removePeak = (peak_id: number, opts?: AuthOpts) =>
+  request<void>("DELETE", `/api/peaks/${peak_id}`, undefined, opts);
+
+// Indices
+export interface IndexEntry {
+  id: number;
+  exposure_id: number;
+  phase: string;
+  basis: number;
+  score: number | null;
+  r_squared: number | null;
+  lattice_d: number | null;
+  status: "candidate" | "stale";
+}
+
+export const listIndices = (exposure_id: number) =>
+  request<IndexEntry[]>("GET", `/api/exposures/${exposure_id}/indices`);
+
+// Analysis
+export const reanalyzeExposure = (exposure_id: number, opts?: AuthOpts) =>
+  request<{ id: number; analyzed: boolean }>("POST", `/api/exposures/${exposure_id}/analyze`, {}, opts);
