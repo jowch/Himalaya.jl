@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render } from "@testing-library/react";
 import { TraceViewer, snapToLocalMax, findNearestPeak } from "../src/components/TraceViewer";
+import type { IndexEntry } from "../src/api";
 
 vi.mock("@observablehq/plot", () => ({
   plot: vi.fn(() => {
@@ -11,6 +12,7 @@ vi.mock("@observablehq/plot", () => ({
   areaY: vi.fn(() => ({ _kind: "areaY" })),
   line:  vi.fn(() => ({ _kind: "line" })),
   dot:   vi.fn(() => ({ _kind: "dot" })),
+  ruleX: vi.fn(() => ({ _kind: "ruleX" })),
 }));
 
 describe("findNearestPeak", () => {
@@ -60,6 +62,8 @@ describe("<TraceViewer>", () => {
       <TraceViewer
         trace={trace}
         peaks={[]}
+        activeGroupIndices={[]}
+        hoveredIndex={undefined}
         onAddPeak={() => {}}
         onRemovePeak={() => {}}
       />,
@@ -71,7 +75,8 @@ describe("<TraceViewer>", () => {
     const Plot = await import("@observablehq/plot");
     const trace = { q: [0.1, 0.2], I: [10, 20], sigma: [1, 1] };
     render(
-      <TraceViewer trace={trace} peaks={[]} onAddPeak={() => {}} onRemovePeak={() => {}} />,
+      <TraceViewer trace={trace} peaks={[]} activeGroupIndices={[]} hoveredIndex={undefined}
+        onAddPeak={() => {}} onRemovePeak={() => {}} />,
     );
     expect(Plot.plot).toHaveBeenCalled();
     expect(Plot.areaY).toHaveBeenCalled();
@@ -89,9 +94,36 @@ describe("<TraceViewer>", () => {
         sharpness: null, source: "manual" as const },
     ];
     render(
-      <TraceViewer trace={trace} peaks={peaks}
+      <TraceViewer trace={trace} peaks={peaks} activeGroupIndices={[]} hoveredIndex={undefined}
         onAddPeak={() => {}} onRemovePeak={() => {}} />,
     );
     expect((Plot.dot as unknown as { mock: { calls: unknown[] } }).mock.calls.length).toBe(2);
+  });
+});
+
+describe("<TraceViewer> — overlays", () => {
+  it("calls Plot.ruleX with predicted_q when activeGroupIndices is non-empty", async () => {
+    const Plot = await import("@observablehq/plot");
+    const ruleX = Plot.ruleX as unknown as ReturnType<typeof vi.fn>;
+    ruleX.mockClear();
+
+    const trace = { q: [0.1, 0.2, 0.3], I: [10, 20, 30], sigma: [1, 1, 1] };
+    const indices: IndexEntry[] = [{
+      id: 1, exposure_id: 1, phase: "Pn3m", basis: 0.5, score: 1,
+      r_squared: 0.99, lattice_d: 12, status: "candidate",
+      predicted_q: [0.7, 0.9],
+      peaks: [],
+    }];
+    render(
+      <TraceViewer
+        trace={trace}
+        peaks={[]}
+        activeGroupIndices={indices}
+        hoveredIndex={undefined}
+        onAddPeak={() => {}}
+        onRemovePeak={() => {}}
+      />,
+    );
+    expect(ruleX).toHaveBeenCalled();
   });
 });

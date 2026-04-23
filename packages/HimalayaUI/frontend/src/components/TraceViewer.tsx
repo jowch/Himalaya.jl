@@ -1,17 +1,15 @@
 import { useEffect, useRef } from "react";
 import * as Plot from "@observablehq/plot";
-import type { Trace, Peak } from "../api";
+import type { Trace, Peak, IndexEntry } from "../api";
+import { phaseColor } from "../phases";
 
-function withIntensity(peaks: Peak[], trace: Trace): Array<{ q: number; I: number }> {
-  return peaks.map((p) => ({ q: p.q, I: interpolateI(p.q, trace) }));
-}
-
-function interpolateI(q: number, trace: Trace): number {
-  let nearest = 0;
-  for (let i = 1; i < trace.q.length; i++) {
-    if (Math.abs(trace.q[i]! - q) < Math.abs(trace.q[nearest]! - q)) nearest = i;
-  }
-  return trace.I[nearest]!;
+export interface TraceViewerProps {
+  trace: Trace;
+  peaks: Peak[];
+  activeGroupIndices: IndexEntry[];
+  hoveredIndex: IndexEntry | undefined;
+  onAddPeak: (q: number) => void;
+  onRemovePeak: (peakId: number) => void;
 }
 
 export function snapToLocalMax(q: number[], I: number[], qClick: number, K = 3): number {
@@ -40,15 +38,26 @@ export function findNearestPeak(
   return best && bestDist <= tolerance ? best : null;
 }
 
-export interface TraceViewerProps {
-  trace: Trace;
-  peaks: Peak[];
-  onAddPeak: (q: number) => void;
-  onRemovePeak: (peakId: number) => void;
+function withIntensity(peaks: Peak[], trace: Trace): Array<{ q: number; I: number }> {
+  return peaks.map((p) => ({ q: p.q, I: interpolateI(p.q, trace) }));
+}
+
+function interpolateI(q: number, trace: Trace): number {
+  let nearest = 0;
+  for (let i = 1; i < trace.q.length; i++) {
+    if (Math.abs(trace.q[i]! - q) < Math.abs(trace.q[nearest]! - q)) nearest = i;
+  }
+  return trace.I[nearest]!;
+}
+
+function indexOverlayData(indices: IndexEntry[]): Array<{ q: number; phase: string; color: string }> {
+  return indices.flatMap((ix) =>
+    ix.predicted_q.map((q) => ({ q, phase: ix.phase, color: phaseColor(ix.phase) })),
+  );
 }
 
 export function TraceViewer({
-  trace, peaks, onAddPeak, onRemovePeak,
+  trace, peaks, activeGroupIndices, hoveredIndex, onAddPeak, onRemovePeak,
 }: TraceViewerProps): JSX.Element {
   const hostRef = useRef<HTMLDivElement>(null);
 
@@ -62,6 +71,9 @@ export function TraceViewer({
       hi: trace.I[i]! + trace.sigma[i]!,
     }));
 
+    const activeOverlay  = indexOverlayData(activeGroupIndices);
+    const hoveredOverlay = hoveredIndex ? indexOverlayData([hoveredIndex]) : [];
+
     const el = Plot.plot({
       width: host.clientWidth || 400,
       height: host.clientHeight || 300,
@@ -73,12 +85,23 @@ export function TraceViewer({
           fill: "var(--color-accent)", fillOpacity: 0.15 }),
         Plot.line(data, { x: "q", y: "I",
           stroke: "var(--color-fg)", strokeWidth: 1 }),
+        Plot.ruleX(activeOverlay, {
+          x: "q",
+          stroke: (d: { color: string }) => d.color,
+          strokeWidth: 1.5,
+          strokeOpacity: 0.9,
+        }),
+        Plot.ruleX(hoveredOverlay, {
+          x: "q",
+          stroke: (d: { color: string }) => d.color,
+          strokeWidth: 1.5,
+          strokeOpacity: 0.45,
+          strokeDasharray: "3,3",
+        }),
         Plot.dot(withIntensity(peaks.filter((p) => p.source === "auto"), trace),
-          { x: "q", y: "I",
-            fill: "var(--color-accent)", r: 4 }),
+          { x: "q", y: "I", fill: "var(--color-accent)", r: 4 }),
         Plot.dot(withIntensity(peaks.filter((p) => p.source === "manual"), trace),
-          { x: "q", y: "I",
-            stroke: "var(--color-warning)", strokeWidth: 2, fill: "none", r: 5 }),
+          { x: "q", y: "I", stroke: "var(--color-warning)", strokeWidth: 2, fill: "none", r: 5 }),
       ],
     });
 
@@ -90,8 +113,6 @@ export function TraceViewer({
       if (!xScale?.invert) return;
       const rect = el.getBoundingClientRect();
       const qClick = xScale.invert(me.clientX - rect.left);
-
-      // Tolerance: 2% of the click q (relative, log-friendly)
       const tolerance = Math.max(qClick * 0.02, 1e-6);
       const existing = findNearestPeak(peaks, qClick, tolerance);
       if (existing) onRemovePeak(existing.id);
@@ -103,7 +124,7 @@ export function TraceViewer({
       (el as unknown as EventTarget).removeEventListener("click", handleClick);
       host.replaceChildren();
     };
-  }, [trace, peaks, onAddPeak, onRemovePeak]);
+  }, [trace, peaks, activeGroupIndices, hoveredIndex, onAddPeak, onRemovePeak]);
 
   return <div ref={hostRef} className="w-full h-full" data-testid="trace-viewer" />;
 }

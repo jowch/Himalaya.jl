@@ -75,6 +75,8 @@ export function App(): JSX.Element {
               <TraceViewer
                 trace={traceQ.data}
                 peaks={peaksQ.data}
+                activeGroupIndices={[]}
+                hoveredIndex={undefined}
                 onAddPeak={(q) => addPeak.mutate(q)}
                 onRemovePeak={(peakId) => removePeak.mutate(peakId)}
               />
