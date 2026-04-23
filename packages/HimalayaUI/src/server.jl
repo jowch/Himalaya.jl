@@ -32,6 +32,7 @@ function register_routes!()
     register_samples_routes!()
     register_exposures_routes!()
     register_peaks_routes!()
+    register_trace_routes!()
     register_analysis_routes!()
     register_export_routes!()
 end
