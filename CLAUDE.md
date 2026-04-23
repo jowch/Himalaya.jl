@@ -28,10 +28,25 @@ packages/
       cli.jl                 # himalaya init/analyze/show/serve
       json.jl                # row → Dict serialization
       actions.jl             # X-Username extraction + user_actions logger
-      routes_*.jl            # one per REST resource
+      routes_*.jl            # one per REST resource (users, experiments,
+                             #   samples, exposures, peaks, analysis, trace, export)
       server.jl              # Oxygen.jl app + serve(db) + test harness
-    frontend/dist/           # served as static at / (empty until Plan 3+)
     test/
+    frontend/                # React 18 + Vite + TS strict
+      src/
+        main.tsx             # entry: StrictMode > ErrorBoundary > QueryClientProvider > App
+        App.tsx              # composition root; Zustand selectors + TanStack Query
+        api.ts               # typed fetchers (AuthOpts per-call for mutations)
+        state.ts             # Zustand client state (activeSampleId, hoveredIndexId, …)
+        queries.ts           # TanStack Query hooks + queryKeys
+        phases.ts            # phase → color palette
+        styles.css           # Tailwind v4 + @theme tokens
+        components/          # Navbar, Layout, SampleList, UserModal,
+                             #   ExposureList, TraceViewer, MillerPlot,
+                             #   PhasePanel, PropertiesPanel (+ tabs), …
+      test/                  # Vitest + React Testing Library
+      e2e/                   # Playwright (mocks /api via page.route)
+      dist/                  # Vite build output; served by Oxygen.jl in prod
 docs/
   peak-finding.md            # narrative design notes for findpeaks
   superpowers/               # specs and plans
@@ -46,10 +61,16 @@ scratch/                     # gitignored — exploratory scripts and trace data
 # Core Himalaya
 julia --project=. -e 'using Pkg; Pkg.test()'
 
-# HimalayaUI sub-package
+# HimalayaUI backend (Julia)
 julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.test("HimalayaUI")'
 
-# One test file in isolation
+# HimalayaUI frontend — from packages/HimalayaUI/frontend/
+npm test              # Vitest unit tests (one-shot)
+npm run test:watch    # Vitest watch mode
+npm run e2e           # Playwright E2E (auto-starts Vite via playwright.config.ts)
+npm run build         # tsc --noEmit + vite build (must pass before PR)
+
+# One test file in isolation (core)
 julia --project=. -e 'using Himalaya, Test; include("test/foo.jl")'
 ```
 
@@ -68,6 +89,8 @@ julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
 ```
 
 `serve` blocks. Frontend is served from `packages/HimalayaUI/frontend/dist/` if present.
+
+**Frontend dev loop:** run `himalaya serve` (backend on :8080) in one terminal and `npm run dev` (Vite on :5173) in another — Vite proxies `/api/*` to :8080 (see `vite.config.ts`).
 
 ## Conventions
 
@@ -92,10 +115,27 @@ julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
 
 **Stdlib deps must be explicit.** Stdlibs used directly in a package (`Sockets`, `Printf`, `SparseArrays`, `DelimitedFiles`, etc.) must be listed in `Project.toml`'s `[deps]` — `Pkg.add` them like regular packages.
 
+**Phase-type serialization:** `string(Himalaya.Pn3m)` returns the fully-qualified `"Himalaya.Pn3m"`. When storing phase names in SQLite, use `string(nameof(P))` → `"Pn3m"`. The inverse is `getfield(Himalaya, Symbol(name))` (always validate with `P isa Type && P <: Himalaya.Phase` before calling `phaseratios`).
+
+**`Himalaya` core resolution in worktrees:** `packages/HimalayaUI/Manifest.toml` pins `Himalaya = "c5c84187..." path = "../.."` to the local v0.5.0. `Manifest.toml` is gitignored, so fresh worktrees re-resolve against the registry and pull the older published v0.4.5 (which has a different `findpeaks` signature). After `git worktree add`, copy `Manifest.toml` from main before running `Pkg.test`.
+
+## HimalayaUI frontend gotchas
+
+**TypeScript strict + `exactOptionalPropertyTypes: true`.** `set({ username: undefined })` fails — optional fields declared as `string | undefined` rather than `username?: string` keep this ergonomic. For passing optional values through (e.g., `AuthOpts`), use the `authOpts(username)` helper in `queries.ts` which returns `{}` or `{ username }` — never `{ username: undefined }`.
+
+**State split (load-bearing):** Zustand owns *client* state (active sample/exposure, hoveredIndexId, username). TanStack Query owns *server* state (experiments, samples, exposures, peaks, indices, groups). Mutations invalidate scoped query keys (`queryKeys.peaks(id)`, `queryKeys.groups(id)`) — don't mix the two concerns in the same hook.
+
+**Observable Plot inside React:** the plot element has a runtime `.scale(name).invert(px)` method that isn't in DOM types; cast with `(el as unknown as { scale: ... })`. Used by TraceViewer to translate click pixel coords to q values.
+
+**E2E selectors:** Playwright tests use `data-testid`, `role`, or stable `data-*` attributes (`data-sample-id`, `data-exposure-id`, `data-alternative-id`, `data-active`). Never assert on Tailwind class strings — they change when styling evolves.
+
+**Tailwind v4 theming:** the dark palette is defined once in `styles.css` via `@theme { --color-* ... }`. Component files use utility classes (`bg-bg`, `text-fg-muted`, `border-accent`). If you need a new color, add it to `@theme` first.
+
 ## Current state
 
-- Core Himalaya: `v0.5.0` on `main` — v2 peak-finding (persistence + sharpness + kneedle) is merged.
-- HimalayaUI: Plans 1 & 2 of 6 complete on `main` — SQLite pipeline, full REST API (Oxygen.jl), and CLI (`himalaya init/analyze/show/serve`). Plans 3–6 cover the TypeScript/Vite frontend; see [docs/superpowers/plans/](docs/superpowers/plans/).
+- Core Himalaya: `v0.5.0` on `main` — v2 peak-finding (persistence + sharpness + kneedle).
+- HimalayaUI: **Plans 1–6 complete.** Backend: SQLite pipeline, full REST API (Oxygen.jl), CLI. Frontend: React shell (Plan 3), hardening to production-grade stack (Plan 3.5), trace viewer with peak editing (Plan 4), Phase panel + Miller plot + overlays (Plan 5), tabbed Properties panel (Plan 6). The web-app design spec (§1–10) is substantively implemented; see [docs/superpowers/plans/](docs/superpowers/plans/) for the narrative.
+- Deferred for later: Phase panel Recent section, export UI, per-user audit view, beamline-config editor, derived-exposure construction. See [docs/future-feature-ideas.md](docs/future-feature-ideas.md).
 
 ## Further reading
 
