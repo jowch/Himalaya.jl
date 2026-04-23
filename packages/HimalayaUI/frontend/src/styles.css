@@ -133,3 +133,30 @@ input:focus, select:focus { outline: 1px solid var(--accent); border-color: var(
 .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--fg-dim); }
 .status-candidates { background: var(--warning); }
 .status-confirmed  { background: var(--success); }
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+.modal-dialog {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--gap-lg);
+  min-width: 360px;
+  max-width: 480px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-md);
+}
+.modal-dialog h2 { font-size: 16px; font-weight: 600; }
+.user-select, .user-new-input { width: 100%; }
+.user-error { color: var(--error); font-size: 13px; }
+.modal-actions { display: flex; justify-content: flex-end; gap: var(--gap-sm); }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.primary:hover { filter: brightness(1.1); }
