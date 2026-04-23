@@ -1,7 +1,8 @@
 """
     Index{::Phase}
 
-Represents an index assignment. Stores the `basis` and the observed `peaks`.
+Represents an index assignment. Stores the `basis`, the observed `peaks`, and
+the per-peak `sharpness` values (aligned to ratio positions).
 """
 struct Index{P<:Phase}
     basis::Real
@@ -246,10 +247,18 @@ end
 """
     score(index::Index)
 
-Score the validity of a given `index`. This score attempts to quantify the
-likeliness of a given `index`, where higher values are better. It captures the
-number of peaks, the prominence of those peaks, the fit of the index, and the
-number of missing peaks.
+Score the validity of a given `index` on a scale of `[0, 1]`. Higher is better.
+
+The score is the product of two factors:
+
+- **Coverage**: a harmonic-weighted fraction of the phase's expected peaks that
+  were observed. The weight of each peak is `1/rank`, where `rank` is its
+  ordinal position in the phase ratio series, so missing the fundamental
+  (rank 1, weight 1.0) costs far more than missing a high-order reflection.
+
+- **Consistency**: `1 / (1 + CV)` where `CV = std(sharpness) / mean(sharpness)`
+  across the assigned peaks. Peaks from the same phase have similar shape
+  (wide-with-wide, sharp-with-sharp), so heterogeneous sharpness is penalized.
 
 See also `fit`.
 """
@@ -260,7 +269,11 @@ function score(index::Index{P}) where P
     coverage = sum(1/r for r in found_idx) / denom
 
     _, sharps = findnz(index.sharpness)
-    cv = length(sharps) > 1 ? std(sharps) / mean(sharps) : 0.0
+    cv = if length(sharps) > 1 && mean(sharps) > 0
+        std(sharps) / mean(sharps)
+    else
+        0.0
+    end
     consistency = 1 / (1 + cv)
 
     coverage * consistency

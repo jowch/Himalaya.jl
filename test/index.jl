@@ -43,6 +43,11 @@
     @test issubset(a, a)
     @test !issubset(a, b)
 
+    # zero sharpness should not produce NaN score
+    zero_idx = indexpeaks([1.0, √3, 2.0], zeros(3), 0:0.1:2; gaps = false)
+    @test !isempty(zero_idx)
+    @test all(!isnan(score(ix)) for ix in zero_idx)
+
     # End-to-end: top-scoring index is a supported phase, score in [0,1]
     A = readdlm(joinpath(@__DIR__, "data", "example_tot.dat"))
     q, I, σ = A[:, 1], A[:, 2], A[:, 3]
