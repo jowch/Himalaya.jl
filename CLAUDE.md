@@ -58,6 +58,11 @@ scratch/                     # gitignored — exploratory scripts and trace data
 ## Running tests
 
 ```bash
+# First-time setup (also run after `git worktree add`):
+(cd packages/HimalayaUI/frontend && npm install)
+# Worktrees only: copy Manifest.toml from main so Himalaya core resolves to
+# the local v0.5.0 — see "Himalaya core resolution in worktrees" gotcha below.
+
 # Core Himalaya
 julia --project=. -e 'using Pkg; Pkg.test()'
 
@@ -134,7 +139,7 @@ julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
 ## Current state
 
 - Core Himalaya: `v0.5.0` on `main` — v2 peak-finding (persistence + sharpness + kneedle).
-- HimalayaUI: **Plans 1–6 complete.** Backend: SQLite pipeline, full REST API (Oxygen.jl), CLI. Frontend: React shell (Plan 3), hardening to production-grade stack (Plan 3.5), trace viewer with peak editing (Plan 4), Phase panel + Miller plot + overlays (Plan 5), tabbed Properties panel (Plan 6). The web-app design spec (§1–10) is substantively implemented; see [docs/superpowers/plans/](docs/superpowers/plans/) for the narrative.
+- HimalayaUI: **Plans 1–6 complete.** Backend: SQLite pipeline, REST API (Oxygen.jl), CLI. Frontend: full single-page analysis UI (sample list, trace viewer with peak editing, Miller plot, phase panel, tabbed properties panel). The web-app design spec (§1–10) is substantively implemented; see [docs/superpowers/plans/](docs/superpowers/plans/) for per-plan narrative.
 - Deferred for later: Phase panel Recent section, export UI, per-user audit view, beamline-config editor, derived-exposure construction. See [docs/future-feature-ideas.md](docs/future-feature-ideas.md).
 
 ## Further reading
