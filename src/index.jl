@@ -6,7 +6,7 @@ Represents an index assignment. Stores the `basis` and the observed `peaks`.
 struct Index{P<:Phase}
     basis::Real
     peaks::SparseVector{<:Real, <:Integer}
-    prom::Real
+    sharpness::SparseVector{<:Real, <:Integer}
 end
 
 function show(io::IO, index::Index{P}) where P
@@ -23,12 +23,6 @@ basis(index::Index) = index.basis
 peaks(index::Index) = nonzeros(index.peaks)
 numpeaks(index::Index) = nnz(index.peaks)
 
-"""
-    totalprom(index)
-
-The total prominence of an index is the sum of the prominences of its peaks.
-"""
-totalprom(index::Index) = index.prom
 
 """
     predictpeaks(index)
@@ -97,11 +91,11 @@ by `minpeaks`.
 
 See also `Phase`, `minpeaks`.
 """
-function indexpeaks(peaks, proms, domain; removesubsets = true, kwargs...)
+function indexpeaks(peaks, sharpness, domain; removesubsets = true, kwargs...)
     indices = Index[]
 
     for phase in (Lamellar, Hexagonal, Square, Pn3m, Im3m, Ia3d, Fd3m)
-        push!(indices, indexpeaks(phase, peaks, proms, domain; kwargs...)...)
+        push!(indices, indexpeaks(phase, peaks, sharpness, domain; kwargs...)...)
     end
 
     if removesubsets
@@ -111,8 +105,8 @@ function indexpeaks(peaks, proms, domain; removesubsets = true, kwargs...)
     end
 end
 
-function indexpeaks(::Type{P}, peaks, proms, domain; gaps = true, tol = 0.0025, requiremin = true) where {P<:Phase}
-    indices = indexpeaks(P, peaks, proms, domain, tol, requiremin)
+function indexpeaks(::Type{P}, peaks, sharpness, domain; gaps = true, tol = 0.0025, requiremin = true) where {P<:Phase}
+    indices = indexpeaks(P, peaks, sharpness, domain, tol, requiremin)
 
     # apply filter
     if !gaps
@@ -126,11 +120,11 @@ function indexpeaks(::Type{P}, peaks, proms, domain; gaps = true, tol = 0.0025, 
 end
 
 indexpeaks(peaks; kwargs...) = indexpeaks(peaks, ones(length(peaks)), peaks; kwargs...)
-indexpeaks(peaks, proms; kwargs...) = indexpeaks(peaks, proms, peaks; kwargs...)
+indexpeaks(peaks, sharpness; kwargs...) = indexpeaks(peaks, sharpness, peaks; kwargs...)
 indexpeaks(phase::Type{<:Phase}, peaks; kwargs...) = indexpeaks(phase, peaks, ones(length(peaks)), peaks; kwargs...)
-indexpeaks(phase::Type{<:Phase}, peaks, proms; kwargs...) = indexpeaks(phase, peaks, proms, peaks; kwargs...)
+indexpeaks(phase::Type{<:Phase}, peaks, sharpness; kwargs...) = indexpeaks(phase, peaks, sharpness, peaks; kwargs...)
 
-function indexpeaks(::Type{P}, peaks, proms, domain, tol, requiremin) where {P<:Phase}
+function indexpeaks(::Type{P}, peaks, sharpness, domain, tol, requiremin) where {P<:Phase}
     indices = Index[]
     ratios = phaseratios(P; normalize = true)
 
@@ -204,10 +198,8 @@ function indexpeaks(::Type{P}, peaks, proms, domain, tol, requiremin) where {P<:
             indices,
             Index{P}(
                 domain[i],
-                SparseVector{eltype(peaks),UInt8}(
-                    length(ratios), ratio_idx, peaks[peak_idx]
-                ),
-                sum(proms[peak_idx])
+                SparseVector{eltype(peaks),UInt8}(length(ratios), ratio_idx, peaks[peak_idx]),
+                SparseVector{eltype(sharpness),UInt8}(length(ratios), ratio_idx, sharpness[peak_idx])
             )
         )
     end
@@ -261,19 +253,17 @@ number of missing peaks.
 
 See also `fit` and `totalprom`.
 """
-function score(index::Index)
-    if numpeaks(index) > 1
-        _, rsquared = fit(index)
-    else
-        rsquared = 1
-    end
+function score(index::Index{P}) where P
+    n = length(phaseratios(P))
+    found_idx, _ = findnz(index.peaks)
+    denom = sum(1/r for r in 1:n)
+    coverage = sum(1/r for r in found_idx) / denom
 
-    num_gaps = let
-        peak_idx, _ = findnz(index.peaks)
-        count(==(0), view(index.peaks, first(peak_idx):last(peak_idx)))
-    end
-    
-    (numpeaks(index) + totalprom(index)) * (1 - 0.25 * num_gaps) * rsquared
+    _, sharps = findnz(index.sharpness)
+    cv = length(sharps) > 1 ? std(sharps) / mean(sharps) : 0.0
+    consistency = 1 / (1 + 0.05 * cv)
+
+    coverage * consistency
 end
 
 """
