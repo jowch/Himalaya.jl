@@ -9,6 +9,12 @@ export interface SampleListProps {
 
 type SampleStatus = "unanalyzed" | "candidates" | "confirmed";
 
+const statusDot: Record<SampleStatus, string> = {
+  unanalyzed: "bg-fg-dim",
+  candidates: "bg-warning",
+  confirmed:  "bg-success",
+};
+
 function matches(s: Sample, filter: string): boolean {
   if (!filter) return true;
   const n = filter.toLowerCase();
@@ -24,30 +30,35 @@ export function SampleList({ samples, activeId, onSelect }: SampleListProps): JS
   const filtered = useMemo(() => samples.filter((s) => matches(s, filter)), [samples, filter]);
 
   return (
-    <div className="sample-list-wrap">
-      <div className="sample-list-header">
+    <div className="flex flex-col h-full">
+      <div className="p-2 border-b border-border">
         <input
-          className="sample-filter"
+          className="w-full bg-bg-elevated border border-border rounded-md px-2 py-1 focus:outline focus:outline-1 focus:outline-accent focus:border-accent"
           type="text"
           placeholder="Filter samples…"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
         />
       </div>
-      <ul className="sample-list">
+      <ul className="list-none overflow-y-auto flex-1">
         {filtered.map((s) => {
           const status: SampleStatus = "unanalyzed";
+          const active = s.id === activeId;
           return (
             <li
               key={s.id}
-              className={"sample-row" + (s.id === activeId ? " active" : "")}
+              className={
+                "grid grid-cols-[12px_auto_1fr] items-center gap-2 py-1.5 px-4 cursor-pointer border-l-2 " +
+                (active ? "bg-bg-elevated border-accent" : "border-transparent hover:bg-bg-hover")
+              }
               data-sample-id={s.id}
+              data-active={active}
               data-status={status}
               onClick={() => onSelect(s.id)}
             >
-              <span className={`status-dot status-${status}`} />
-              <span className="sample-label">{s.label ?? ""}</span>
-              <span className="sample-name muted">{s.name ?? ""}</span>
+              <span className={`w-2 h-2 rounded-full ${statusDot[status]}`} />
+              <span className="font-medium" data-testid="sample-label">{s.label ?? ""}</span>
+              <span className="text-fg-muted">{s.name ?? ""}</span>
             </li>
           );
         })}

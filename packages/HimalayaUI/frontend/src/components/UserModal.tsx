@@ -53,19 +53,22 @@ export function UserModal({ open, onSelect, onClose }: UserModalProps): JSX.Elem
     }
   }
 
+  const inputClass =
+    "w-full bg-bg-elevated border border-border rounded-md px-2 py-1 focus:outline focus:outline-1 focus:outline-accent focus:border-accent";
+
   return (
     <div
-      className="modal-backdrop"
+      className="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
       role="presentation"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="modal-dialog" role="dialog" aria-modal="true">
-        <h2>Who are you?</h2>
-        <p className="muted">
+      <div className="bg-bg-elevated border border-border rounded-md p-6 min-w-[360px] max-w-[480px] flex flex-col gap-4" role="dialog" aria-modal="true">
+        <h2 className="text-base font-semibold">Who are you?</h2>
+        <p className="text-fg-muted">
           Your name is stored with every change you make so others can see what you've done.
         </p>
         <select
-          className="user-select"
+          className={inputClass}
           value={selection}
           onChange={(e) => setSel(e.target.value)}
         >
@@ -76,7 +79,7 @@ export function UserModal({ open, onSelect, onClose }: UserModalProps): JSX.Elem
         </select>
         {selection === "__new__" && (
           <input
-            className="user-new-input"
+            className={inputClass}
             type="text"
             placeholder="Enter username"
             value={newName}
@@ -84,9 +87,14 @@ export function UserModal({ open, onSelect, onClose }: UserModalProps): JSX.Elem
             autoFocus
           />
         )}
-        {error && <p className="user-error">{error}</p>}
-        <div className="modal-actions">
-          <button className="user-submit primary" onClick={submit}>Continue</button>
+        {error && <p className="text-error text-[13px]">{error}</p>}
+        <div className="flex justify-end gap-2">
+          <button
+            className="bg-accent border border-accent text-white rounded-md px-2.5 py-1 hover:brightness-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            onClick={submit}
+          >
+            Continue
+          </button>
         </div>
       </div>
     </div>

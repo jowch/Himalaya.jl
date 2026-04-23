@@ -38,24 +38,24 @@ test("shell loads with navbar, layout placeholders, and sample list", async ({ p
   await mockApi(page);
   await page.goto("/");
 
-  await expect(page.locator(".nav-logo")).toHaveText("Himalaya");
-  await expect(page.locator(".placeholder")).toHaveCount(4);
+  await expect(page.locator("[data-testid='nav-logo']")).toHaveText("Himalaya");
+  await expect(page.locator("[data-testid='placeholder']")).toHaveCount(4);
   await expect(page.locator("[data-sample-id]")).toHaveCount(2);
-  await expect(page.locator('[data-sample-id="1"] .sample-label')).toHaveText("D1");
+  await expect(page.locator('[data-sample-id="1"] [data-testid="sample-label"]')).toHaveText("D1");
 });
 
 test("first-visit prompts user modal and submits new user", async ({ page }) => {
   await mockApi(page);
   await page.goto("/");
 
-  await expect(page.locator(".modal-dialog")).toBeVisible();
-  await expect(page.locator(".modal-dialog h2")).toHaveText("Who are you?");
+  await expect(page.locator("[role='dialog']")).toBeVisible();
+  await expect(page.locator("[role='dialog'] h2")).toHaveText("Who are you?");
 
-  await page.locator(".user-new-input").fill("alice");
-  await page.locator(".user-submit").click();
+  await page.locator("input[placeholder='Enter username']").fill("alice");
+  await page.locator("[role='dialog'] button", { hasText: "Continue" }).click();
 
-  await expect(page.locator(".modal-dialog")).not.toBeVisible();
-  await expect(page.locator(".nav-user")).toHaveText("alice");
+  await expect(page.locator("[role='dialog']")).not.toBeVisible();
+  await expect(page.locator("[data-testid='nav-user']")).toHaveText("alice");
 });
 
 test("clicking a sample updates the active state and breadcrumb", async ({ page }) => {
@@ -68,10 +68,10 @@ test("clicking a sample updates the active state and breadcrumb", async ({ page 
   });
   await page.goto("/");
 
-  await expect(page.locator(".modal-dialog")).not.toBeVisible();
+  await expect(page.locator("[role='dialog']")).not.toBeVisible();
   await page.locator('[data-sample-id="2"]').click();
-  await expect(page.locator('[data-sample-id="2"]')).toHaveClass(/active/);
-  await expect(page.locator(".nav-breadcrumb")).toContainText("D2");
+  await expect(page.locator('[data-sample-id="2"]')).toHaveAttribute("data-active", "true");
+  await expect(page.locator("[data-testid='nav-breadcrumb']")).toContainText("D2");
 });
 
 test("filter narrows the sample list", async ({ page }) => {
@@ -84,7 +84,7 @@ test("filter narrows the sample list", async ({ page }) => {
   });
   await page.goto("/");
 
-  await page.locator(".sample-filter").fill("DOPC");
+  await page.locator("input[placeholder='Filter samples\u2026']").fill("DOPC");
   await expect(page.locator("[data-sample-id]")).toHaveCount(1);
   await expect(page.locator("[data-sample-id]")).toHaveAttribute("data-sample-id", "1");
 });

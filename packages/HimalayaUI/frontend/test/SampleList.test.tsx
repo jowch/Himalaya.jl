@@ -20,7 +20,7 @@ describe("<SampleList>", () => {
 
   it("marks the active sample", () => {
     render(<SampleList samples={SAMPLES} activeId={2} onSelect={() => {}} />);
-    const active = document.querySelector(".sample-row.active");
+    const active = document.querySelector('[data-active="true"]');
     expect(active?.getAttribute("data-sample-id")).toBe("2");
   });
 
