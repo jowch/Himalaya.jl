@@ -121,3 +121,36 @@ export function useRemoveIndexFromGroup(exposureId: number, groupId: number) {
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.groups(exposureId) }),
   });
 }
+
+export function useUpdateSample(experimentId: number, sampleId: number) {
+  const qc = useQueryClient();
+  const username = useAppState((s) => s.username);
+  return useMutation({
+    mutationFn: (patch: { name?: string; notes?: string }) =>
+      api.updateSample(sampleId, patch, authOpts(username)),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: queryKeys.samples(experimentId) }),
+  });
+}
+
+export function useAddSampleTag(experimentId: number, sampleId: number) {
+  const qc = useQueryClient();
+  const username = useAppState((s) => s.username);
+  return useMutation({
+    mutationFn: ({ key, value }: { key: string; value: string }) =>
+      api.addSampleTag(sampleId, key, value, authOpts(username)),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: queryKeys.samples(experimentId) }),
+  });
+}
+
+export function useRemoveSampleTag(experimentId: number, sampleId: number) {
+  const qc = useQueryClient();
+  const username = useAppState((s) => s.username);
+  return useMutation({
+    mutationFn: (tagId: number) =>
+      api.removeSampleTag(sampleId, tagId, authOpts(username)),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: queryKeys.samples(experimentId) }),
+  });
+}
