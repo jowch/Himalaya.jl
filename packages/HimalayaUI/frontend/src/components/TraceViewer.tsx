@@ -2,6 +2,18 @@ import { useEffect, useRef } from "react";
 import * as Plot from "@observablehq/plot";
 import type { Trace, Peak } from "../api";
 
+function withIntensity(peaks: Peak[], trace: Trace): Array<{ q: number; I: number }> {
+  return peaks.map((p) => ({ q: p.q, I: interpolateI(p.q, trace) }));
+}
+
+function interpolateI(q: number, trace: Trace): number {
+  let nearest = 0;
+  for (let i = 1; i < trace.q.length; i++) {
+    if (Math.abs(trace.q[i]! - q) < Math.abs(trace.q[nearest]! - q)) nearest = i;
+  }
+  return trace.I[nearest]!;
+}
+
 export interface TraceViewerProps {
   trace: Trace;
   peaks: Peak[];
@@ -36,8 +48,14 @@ export function TraceViewer({
       marks: [
         Plot.areaY(data, { x: "q", y1: "lo", y2: "hi",
           fill: "var(--color-accent)", fillOpacity: 0.15 }),
-        Plot.line(data,  { x: "q", y: "I",
+        Plot.line(data, { x: "q", y: "I",
           stroke: "var(--color-fg)", strokeWidth: 1 }),
+        Plot.dot(withIntensity(peaks.filter((p) => p.source === "auto"), trace),
+          { x: "q", y: "I",
+            fill: "var(--color-accent)", r: 4 }),
+        Plot.dot(withIntensity(peaks.filter((p) => p.source === "manual"), trace),
+          { x: "q", y: "I",
+            stroke: "var(--color-warning)", strokeWidth: 2, fill: "none", r: 5 }),
       ],
     });
 

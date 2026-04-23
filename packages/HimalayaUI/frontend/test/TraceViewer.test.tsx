@@ -37,4 +37,21 @@ describe("<TraceViewer>", () => {
     expect(Plot.areaY).toHaveBeenCalled();
     expect(Plot.line).toHaveBeenCalled();
   });
+
+  it("passes auto peaks and manual peaks to separate dot marks", async () => {
+    const Plot = await import("@observablehq/plot");
+    (Plot.dot as unknown as { mockClear: () => void }).mockClear();
+    const trace = { q: [0.1, 0.2, 0.3], I: [10, 20, 30], sigma: [1, 1, 1] };
+    const peaks = [
+      { id: 1, exposure_id: 1, q: 0.1, intensity: null, prominence: null,
+        sharpness: null, source: "auto"   as const },
+      { id: 2, exposure_id: 1, q: 0.2, intensity: null, prominence: null,
+        sharpness: null, source: "manual" as const },
+    ];
+    render(
+      <TraceViewer trace={trace} peaks={peaks}
+        onAddPeak={() => {}} onRemovePeak={() => {}} />,
+    );
+    expect((Plot.dot as unknown as { mock: { calls: unknown[] } }).mock.calls.length).toBe(2);
+  });
 });
