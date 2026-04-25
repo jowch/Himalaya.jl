@@ -1,24 +1,53 @@
 @import "tailwindcss";
+@import "@fontsource/plus-jakarta-sans/400.css";
+@import "@fontsource/plus-jakarta-sans/500.css";
+@import "@fontsource/plus-jakarta-sans/600.css";
 
 @theme {
-  --color-bg: #1a1a1a;
-  --color-bg-elevated: #232323;
-  --color-bg-hover: #2a2a2a;
-  --color-fg: #e8e6e3;
-  --color-fg-muted: #9a9894;
-  --color-fg-dim: #666666;
-  --color-border: #333333;
-  --color-accent: #d97706;
-  --color-success: #22c55e;
-  --color-warning: #eab308;
-  --color-error: #ef4444;
+  --color-bg: oklch(0.095 0.004 250);
+  --color-bg-elevated: oklch(0.145 0.006 250);
+  --color-bg-hover: oklch(0.185 0.007 250);
+  --color-fg: oklch(0.95 0.005 250);
+  --color-fg-muted: oklch(0.64 0.009 250);
+  --color-fg-dim: oklch(0.46 0.009 250);
+  --color-border: oklch(0.27 0.008 250);
+  --color-border-soft: oklch(0.21 0.007 250);
+  --color-accent: oklch(0.82 0.08 220);
+  --color-success: oklch(0.72 0.08 155);
+  --color-warning: oklch(0.76 0.11 75);
+  --color-error: oklch(0.70 0.14 28);
+  /* Manual (user-added) peak marker. Bright/neon — peaks are the active
+     workflow edit. Hue 340 (magenta) keeps it well clear of the auto-peak
+     ice blue (--color-accent, ~220) and every earthy index hue in phases.ts. */
+  --color-peak-manual: oklch(0.78 0.22 340);
   --radius: 6px;
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+:root.theme-light {
+  --color-bg: oklch(0.985 0.003 250);
+  --color-bg-elevated: oklch(0.995 0.002 250);
+  --color-bg-hover: oklch(0.955 0.005 250);
+  --color-fg: oklch(0.22 0.010 250);
+  --color-fg-muted: oklch(0.46 0.010 250);
+  --color-fg-dim: oklch(0.62 0.010 250);
+  --color-border: oklch(0.85 0.007 250);
+  --color-border-soft: oklch(0.91 0.006 250);
+  --color-accent: oklch(0.55 0.09 220);
 }
 
 @layer base {
   html, body, #app { height: 100%; }
+  /*
+   * Hint to the UA that our default surface is dark — this re-themes native
+   * form controls (number-input spinner buttons, scrollbars, focus rings)
+   * to the dark variant without us hand-styling each pseudo-element.
+   * The light theme overrides this on the matching `:root.theme-light`
+   * selector below.
+   */
+  :root          { color-scheme: dark;  }
+  :root.theme-light { color-scheme: light; }
   body {
     background: var(--color-bg);
     color: var(--color-fg);
@@ -26,5 +55,94 @@
     font-size: 14px;
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    position: relative;
   }
+  /* Subtle grain overlay — fractal noise @ low opacity, blended. */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background-image:
+      url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 0 0.55 0 0 0 0.5 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.12'/></svg>");
+    mix-blend-mode: overlay;
+    opacity: 0.3;
+    pointer-events: none;
+    z-index: 0;
+  }
+  *, *::before, *::after {
+    transition-property: color, background-color, border-color, opacity;
+    transition-duration: 120ms;
+    transition-timing-function: ease-out;
+  }
+  /*
+   * Shared card-header strip — fixed height so the top edges of every card
+   * with a header line up across the workspace. Inner layout is up to the
+   * caller (use flex utilities on the children).
+   */
+  .card-header {
+    height: 56px;
+    flex-shrink: 0;
+    border-bottom: 1px solid var(--color-border);
+    padding-left: 1rem;
+    padding-right: 1rem;
+    display: flex;
+    align-items: center;
+  }
+  /* Card surface — shared across all three floating cards. */
+  .card {
+    background: var(--color-bg-elevated);
+    border: 0.5px solid var(--color-border-soft);
+    border-radius: 12px;
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, .03) inset,
+      0 12px 36px -10px rgba(0, 0, 0, .7);
+    position: relative;
+  }
+  :root.theme-light .card {
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, .6) inset,
+      0 6px 24px -8px rgba(20, 24, 40, .15);
+  }
+
+  /*
+   * Animation primitives ported from the v3 design mockup.
+   *
+   *   .anim-pal-in     — backdrop / overlay fade. 120ms.
+   *   .anim-pal-scale  — popover entry. translateY(-6px) + scale(0.98) → none.
+   *                      140ms ease.
+   *   .anim-overlay    — applied to SVG fills/strokes inside the trace
+   *                      overlay so spotlight changes (gray ↔ phase color)
+   *                      ease in over 150ms instead of snapping.
+   */
+  @keyframes pal-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+  @keyframes pal-scale {
+    from { transform: translateY(-6px) scale(0.98); opacity: 0; }
+    to   { transform: none;                          opacity: 1; }
+  }
+  .anim-pal-in    { animation: pal-in    120ms ease both; }
+  .anim-pal-scale { animation: pal-scale 140ms ease both; }
+  /* TraceViewer rebuilds overlay nodes on each render, so use a one-shot
+     fade-in animation rather than CSS transitions — newly-created circles
+     and triangles ease into view. Short duration so it reads as polish, not
+     as motion. */
+  @keyframes overlay-fade-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+  .anim-overlay svg [data-role="peak-root"] polygon,
+  .anim-overlay svg [data-role="tick-root"] line {
+    animation: overlay-fade-in 140ms ease both;
+  }
+}
+
+/*
+ * Legacy panel utilities — retained for any remaining references, but the
+ * three-card redesign uses `.card` as the primary surface container.
+ */
+@utility panel-main {
+  background: var(--color-bg);
 }

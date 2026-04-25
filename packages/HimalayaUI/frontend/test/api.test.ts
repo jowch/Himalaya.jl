@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import * as api from "../src/api";
-import { ApiError } from "../src/api";
 
 describe("api", () => {
   beforeEach(() => { vi.restoreAllMocks(); });
@@ -127,6 +126,36 @@ describe("api", () => {
     const [, init] = fetchSpy.mock.calls[0]! as [string, RequestInit];
     expect((init.headers as Record<string, string>)["X-Username"]).toBe("alice");
     expect(init.body).toBe(JSON.stringify({ index_id: 11 }));
+  });
+
+  it("listSampleMessages fetches messages for a sample", async () => {
+    vi.spyOn(global, "fetch").mockResolvedValue(
+      new Response(JSON.stringify([
+        { id: 1, sample_id: 3, author_id: 1, author: "alice", body: "hi", created_at: "2026-04-24 10:00:00" },
+        { id: 2, sample_id: 3, author_id: 2, author: "bob",   body: "yo", created_at: "2026-04-24 10:01:00" },
+      ]), { status: 200 }),
+    );
+    const msgs = await api.listSampleMessages(3);
+    expect(msgs).toHaveLength(2);
+    expect(msgs[0]!.author).toBe("alice");
+    expect(msgs[1]!.body).toBe("yo");
+  });
+
+  it("postSampleMessage posts {body} with X-Username and returns parsed message", async () => {
+    const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({
+        id: 7, sample_id: 3, author_id: 1, author: "alice", body: "hello", created_at: "2026-04-24 10:00:00",
+      }), { status: 201 }),
+    );
+    const msg = await api.postSampleMessage(3, "hello", { username: "alice" });
+    expect(msg.id).toBe(7);
+    expect(msg.author).toBe("alice");
+    expect(msg.body).toBe("hello");
+    const [url, init] = fetchSpy.mock.calls[0]! as [string, RequestInit];
+    expect(url).toBe("/api/samples/3/messages");
+    expect(init.method).toBe("POST");
+    expect((init.headers as Record<string, string>)["X-Username"]).toBe("alice");
+    expect(init.body).toBe(JSON.stringify({ body: "hello" }));
   });
 
   it("removeIndexFromGroup sends DELETE with X-Username", async () => {

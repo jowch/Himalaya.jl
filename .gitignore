@@ -33,3 +33,12 @@ Manifest.toml
 scratch/
 
 .superpowers/
+
+# Local agent / tooling artifacts (not checked in)
+.claude/
+.playwright-mcp/
+packages/HimalayaUI/frontend/test-results/
+test-results/
+
+# Iterative design screenshots — local-only
+/*.png

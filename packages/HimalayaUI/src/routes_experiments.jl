@@ -1,6 +1,14 @@
 using HTTP, JSON3, DBInterface, Tables, Oxygen
 
 function register_experiments_routes!()
+    @get "/api/experiments" function(req::HTTP.Request)
+        db   = current_db()
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT * FROM experiments ORDER BY id"))
+        HTTP.Response(200, ["Content-Type" => "application/json"],
+            JSON3.write(rows_to_json(rows)))
+    end
+
     @get "/api/experiments/{id}" function(req::HTTP.Request, id::Int)
         db   = current_db()
         rows = Tables.rowtable(DBInterface.execute(db,

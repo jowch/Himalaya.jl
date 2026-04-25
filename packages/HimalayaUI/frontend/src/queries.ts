@@ -3,6 +3,7 @@ import * as api from "./api";
 import { useAppState } from "./state";
 
 export const queryKeys = {
+  experiments: ["experiments"] as const,
   experiment: (id: number) => ["experiment", id] as const,
   samples:    (experimentId: number) => ["experiment", experimentId, "samples"] as const,
   exposures:  (sampleId: number) => ["sample", sampleId, "exposures"] as const,
@@ -10,7 +11,15 @@ export const queryKeys = {
   peaks:      (exposureId: number) => ["exposure", exposureId, "peaks"] as const,
   indices:    (exposureId: number) => ["exposure", exposureId, "indices"] as const,
   groups:     (exposureId: number) => ["exposure", exposureId, "groups"] as const,
+  messages:   (sampleId: number) => ["sample", sampleId, "messages"] as const,
 };
+
+export function useExperiments() {
+  return useQuery({
+    queryKey: queryKeys.experiments,
+    queryFn: () => api.listExperiments(),
+  });
+}
 
 export function useExperiment(id: number) {
   return useQuery({
@@ -61,17 +70,43 @@ export function useIndices(exposureId: number | undefined) {
 function invalidateExposure(qc: ReturnType<typeof useQueryClient>, exposureId: number): void {
   qc.invalidateQueries({ queryKey: queryKeys.peaks(exposureId) });
   qc.invalidateQueries({ queryKey: queryKeys.indices(exposureId) });
+  // `groups` must invalidate too: auto-reanalysis re-attaches custom-group
+  // members by semantic identity (phase + basis), so the cached `groups`
+  // payload — which carries `members` — is stale until refetched. Without
+  // this, the right-rail Active set looks empty after every peak edit even
+  // though the backend has the correct membership.
+  qc.invalidateQueries({ queryKey: queryKeys.groups(exposureId) });
 }
 
 function authOpts(username: string | undefined): api.AuthOpts {
   return username !== undefined ? { username } : {};
 }
 
+// After any peak edit we automatically re-run analysis so the indices reflect
+// the user's curation immediately — no "stale" intermediate state. Each peak
+// mutation chains: peak op → reanalyze → invalidate exposure queries.
+async function autoReanalyze(
+  exposureId: number,
+  username: string | undefined,
+): Promise<void> {
+  try {
+    await api.reanalyzeExposure(exposureId, authOpts(username));
+  } catch (e) {
+    // Best-effort: surface a console warning but don't block the peak edit.
+    // eslint-disable-next-line no-console
+    console.warn("auto-reanalyze failed", e);
+  }
+}
+
 export function useAddPeak(exposureId: number) {
   const qc = useQueryClient();
   const username = useAppState((s) => s.username);
   return useMutation({
-    mutationFn: (q: number) => api.addPeak(exposureId, q, authOpts(username)),
+    mutationFn: async (q: number) => {
+      const peak = await api.addPeak(exposureId, q, authOpts(username));
+      await autoReanalyze(exposureId, username);
+      return peak;
+    },
     onSuccess: () => invalidateExposure(qc, exposureId),
   });
 }
@@ -80,7 +115,23 @@ export function useRemovePeak(exposureId: number) {
   const qc = useQueryClient();
   const username = useAppState((s) => s.username);
   return useMutation({
-    mutationFn: (peakId: number) => api.removePeak(peakId, authOpts(username)),
+    mutationFn: async (peakId: number) => {
+      await api.removePeak(peakId, authOpts(username));
+      await autoReanalyze(exposureId, username);
+    },
+    onSuccess: () => invalidateExposure(qc, exposureId),
+  });
+}
+
+export function useSetPeakExcluded(exposureId: number) {
+  const qc = useQueryClient();
+  const username = useAppState((s) => s.username);
+  return useMutation({
+    mutationFn: async ({ peakId, excluded }: { peakId: number; excluded: boolean }) => {
+      const out = await api.setPeakExcluded(peakId, excluded, authOpts(username));
+      await autoReanalyze(exposureId, username);
+      return out;
+    },
     onSuccess: () => invalidateExposure(qc, exposureId),
   });
 }
@@ -141,6 +192,25 @@ export function useAddSampleTag(experimentId: number, sampleId: number) {
       api.addSampleTag(sampleId, key, value, authOpts(username)),
     onSuccess: () =>
       qc.invalidateQueries({ queryKey: queryKeys.samples(experimentId) }),
+  });
+}
+
+export function useSampleMessages(sampleId: number | undefined) {
+  return useQuery({
+    queryKey: ["sample", sampleId ?? "none", "messages"] as const,
+    queryFn: () => api.listSampleMessages(sampleId as number),
+    enabled: sampleId !== undefined,
+  });
+}
+
+export function usePostSampleMessage(sampleId: number) {
+  const qc = useQueryClient();
+  const username = useAppState((s) => s.username);
+  return useMutation({
+    mutationFn: (body: string) =>
+      api.postSampleMessage(sampleId, body, authOpts(username)),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: queryKeys.messages(sampleId) }),
   });
 }
 

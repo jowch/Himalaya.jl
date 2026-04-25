@@ -1,16 +1,15 @@
 import { test, expect, type Page } from "@playwright/test";
 
-const EXP = {
-  id: 1, name: "TestRun", path: "/p", data_dir: "/p/data",
-  analysis_dir: "/p/analysis", manifest_path: null, created_at: "2026-01-01",
+const EXPERIMENT = {
+  id: 1, name: "SSRL May 2026", path: "/p", data_dir: "/p/data",
+  analysis_dir: "/p/analysis", manifest_path: null, created_at: "2026-05-01",
 };
 const SAMPLES = [
-  { id: 1, experiment_id: 1, label: "D1", name: "UX1", notes: null,
-    tags: [{ id: 1, key: "lipid", value: "DOPC", source: "manual" }] },
-  { id: 2, experiment_id: 1, label: "D2", name: "UX2", notes: null, tags: [] },
+  { id: 10, experiment_id: 1, label: "D1", name: "cubic_run03", notes: null, tags: [] },
+  { id: 11, experiment_id: 1, label: "D2", name: "hex_run01",   notes: null, tags: [] },
 ];
 
-async function mockApi(page: Page, users: { id: number; username: string }[] = []): Promise<void> {
+async function mockCore(page: Page, users: { id: number; username: string }[] = []): Promise<void> {
   await page.route("**/api/users", async (route) => {
     const req = route.request();
     if (req.method() === "GET") {
@@ -24,280 +23,118 @@ async function mockApi(page: Page, users: { id: number; username: string }[] = [
       await route.continue();
     }
   });
-  await page.route("**/api/experiments/1", async (route) =>
-    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(EXP) }));
-  await page.route("**/api/experiments/1/samples", async (route) =>
-    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(SAMPLES) }));
+  await page.route("**/api/experiments", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json",
+      body: JSON.stringify([EXPERIMENT]) }));
+  await page.route("**/api/experiments/1", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json",
+      body: JSON.stringify(EXPERIMENT) }));
+  await page.route("**/api/experiments/1/samples", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json",
+      body: JSON.stringify(SAMPLES) }));
+  for (const s of SAMPLES) {
+    await page.route(`**/api/samples/${s.id}/exposures`, (r) =>
+      r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
+    await page.route(`**/api/samples/${s.id}/messages`, (r) =>
+      r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
+  }
+}
+
+async function seedState(page: Page, extra: Record<string, unknown>): Promise<void> {
+  await page.addInitScript((state) => {
+    localStorage.setItem(
+      "himalaya-ui:state",
+      JSON.stringify({ state, version: 2 }),
+    );
+  }, { username: "alice", activePage: "index", tutorialSeen: true, theme: "dark", ...extra });
 }
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => { localStorage.clear(); });
 });
 
-test("shell loads with navbar, layout placeholders, and sample list", async ({ page }) => {
-  await mockApi(page);
+test("first-run onboarding overlay is shown when no username", async ({ page }) => {
+  await mockCore(page);
   await page.goto("/");
-
-  await expect(page.locator("[data-testid='nav-logo']")).toHaveText("Himalaya");
-  // Plan 5 wired MillerPlot + PhasePanel into the right column; no panes
-  // remain as placeholders.
-  await expect(page.locator("[data-testid='placeholder']")).toHaveCount(0);
-  await expect(page.locator("[data-sample-id]")).toHaveCount(2);
-  await expect(page.locator('[data-sample-id="1"] [data-testid="sample-label"]')).toHaveText("D1");
+  await expect(page.getByTestId("onboarding-overlay")).toBeVisible();
+  await expect(page.getByTestId("onboarding-name")).toBeVisible();
 });
 
-test("first-visit prompts user modal and submits new user", async ({ page }) => {
-  await mockApi(page);
+test("picking a new user triggers the tutorial and dismisses with 'Got it'", async ({ page }) => {
+  await mockCore(page);
   await page.goto("/");
 
-  await expect(page.locator("[role='dialog']")).toBeVisible();
-  await expect(page.locator("[role='dialog'] h2")).toHaveText("Who are you?");
+  await expect(page.getByTestId("onboarding-name")).toBeVisible();
+  await page.locator('input[placeholder="Enter username"]').fill("alice");
+  await page.getByTestId("onboarding-continue").click();
 
-  await page.locator("input[placeholder='Enter username']").fill("alice");
-  await page.locator("[role='dialog'] button", { hasText: "Continue" }).click();
+  await expect(page.getByTestId("onboarding-tutorial")).toBeVisible();
+  await page.getByTestId("tutorial-next").click();
+  await page.getByTestId("tutorial-next").click();
+  await page.getByTestId("tutorial-next").click();
+  await page.getByTestId("tutorial-done").click();
 
-  await expect(page.locator("[role='dialog']")).not.toBeVisible();
-  await expect(page.locator("[data-testid='nav-user']")).toHaveText("alice");
+  await expect(page.getByTestId("onboarding-overlay")).not.toBeVisible();
+  await expect(page.getByTestId("plot-title")).toBeVisible();
 });
 
-test("clicking a sample updates the active state and breadcrumb", async ({ page }) => {
-  await mockApi(page, [{ id: 1, username: "alice" }]);
-  await page.addInitScript(() => {
-    localStorage.setItem(
-      "himalaya-ui:state",
-      JSON.stringify({ state: { username: "alice" }, version: 1 }),
-    );
-  });
+test("plot-title opens the nav modal at sample step when experiment is set", async ({ page }) => {
+  await seedState(page, { activeExperimentId: 1, activeSampleId: 10 });
+  await mockCore(page, [{ id: 1, username: "alice" }]);
   await page.goto("/");
 
-  await expect(page.locator("[role='dialog']")).not.toBeVisible();
-  await page.locator('[data-sample-id="2"]').click();
-  await expect(page.locator('[data-sample-id="2"]')).toHaveAttribute("data-active", "true");
-  await expect(page.locator("[data-testid='nav-breadcrumb']")).toContainText("D2");
+  await expect(page.getByTestId("plot-title")).toBeVisible();
+  await page.getByTestId("plot-title").click();
+  await expect(page.getByTestId("nav-modal")).toBeVisible();
+  await expect(page.getByTestId("nav-chip-experiment")).toHaveText(/SSRL May 2026/);
 });
 
-test("filter narrows the sample list", async ({ page }) => {
-  await mockApi(page, [{ id: 1, username: "alice" }]);
-  await page.addInitScript(() => {
-    localStorage.setItem(
-      "himalaya-ui:state",
-      JSON.stringify({ state: { username: "alice" }, version: 1 }),
-    );
-  });
+test("`.` key advances to the next sample", async ({ page }) => {
+  await seedState(page, { activeExperimentId: 1, activeSampleId: 10 });
+  await mockCore(page, [{ id: 1, username: "alice" }]);
   await page.goto("/");
 
-  await page.locator("input[placeholder='Filter samples\u2026']").fill("DOPC");
-  await expect(page.locator("[data-sample-id]")).toHaveCount(1);
-  await expect(page.locator("[data-sample-id]")).toHaveAttribute("data-sample-id", "1");
+  // Wait until the first sample name is visible
+  await expect(page.getByTestId("plot-title")).toContainText("cubic_run03");
+  await page.keyboard.press("."); // next
+  await expect(page.getByTestId("plot-title")).toContainText("hex_run01");
+  await page.keyboard.press(","); // back
+  await expect(page.getByTestId("plot-title")).toContainText("cubic_run03");
 });
 
-test("clicking the trace posts a manual peak", async ({ page }) => {
-  let posted: { q: number } | null = null;
-
-  await page.route("**/api/users", (r) => r.fulfill({ status: 200, body: "[]" }));
-  await page.route("**/api/experiments/1", (r) => r.fulfill({
-    status: 200,
-    body: JSON.stringify({
-      id: 1, name: "demo", path: "/x", data_dir: "/x/data",
-      analysis_dir: "/x/analysis", manifest_path: null,
-      created_at: "2026-04-22T00:00:00Z",
-    }),
-  }));
-  await page.route("**/api/experiments/1/samples", (r) => r.fulfill({
-    status: 200,
-    body: JSON.stringify([
-      { id: 10, experiment_id: 1, label: "A1", name: "s1", notes: null, tags: [] },
-    ]),
-  }));
-  await page.route("**/api/samples/10/exposures", (r) => r.fulfill({
-    status: 200,
-    body: JSON.stringify([
-      { id: 100, sample_id: 10, filename: "demo", kind: "file",
-        selected: true, tags: [], sources: [] },
-    ]),
-  }));
-  await page.route("**/api/exposures/100/trace", (r) => r.fulfill({
-    status: 200,
-    body: JSON.stringify({
-      q:     [0.05, 0.10, 0.15, 0.20, 0.25, 0.30],
-      I:     [ 100,   80,   90,  500,   85,   70],
-      sigma: [  5,    4,    5,   25,    4,    3],
-    }),
-  }));
-  await page.route("**/api/exposures/100/peaks", async (r) => {
-    if (r.request().method() === "POST") {
-      const body = r.request().postDataJSON() as { q: number };
-      posted = body;
-      return r.fulfill({
-        status: 201,
+test("chat posts a message via /api/samples/:id/messages", async ({ page }) => {
+  let posted: { body: string } | null = null;
+  await seedState(page, { activeExperimentId: 1, activeSampleId: 10 });
+  await mockCore(page, [{ id: 1, username: "alice" }]);
+  await page.route("**/api/samples/10/messages", async (route) => {
+    const req = route.request();
+    if (req.method() === "POST") {
+      posted = req.postDataJSON() as { body: string };
+      return route.fulfill({
+        status: 201, contentType: "application/json",
         body: JSON.stringify({
-          id: 999, exposure_id: 100, q: body.q, intensity: null,
-          prominence: null, sharpness: null, source: "manual",
-          stale_indices: 1,
+          id: 1, sample_id: 10, author_id: 1, author: "alice", body: posted.body,
+          created_at: "2026-04-24 10:00:00",
         }),
       });
     }
-    return r.fulfill({ status: 200, body: "[]" });
-  });
-  await page.route("**/api/exposures/100/indices", (r) =>
-    r.fulfill({ status: 200, body: "[]" }));
-
-  await page.addInitScript(() => {
-    localStorage.setItem(
-      "himalaya-ui:state",
-      JSON.stringify({
-        state: { username: "alice", activeSampleId: 10, activeExposureId: 100 },
-        version: 1,
-      }),
-    );
+    return route.fulfill({ status: 200, contentType: "application/json", body: "[]" });
   });
 
   await page.goto("/");
-  const viewer = page.locator('[data-testid="trace-viewer"]');
-  await viewer.waitFor();
-  const box = await viewer.boundingBox();
-  if (!box) throw new Error("trace viewer has no bounding box");
-
-  // Click somewhere in the middle of the plot — exact coords don't matter,
-  // the snap will land on one of the data point q values.
-  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
-
-  await expect.poll(() => posted?.q, { timeout: 2000 }).toBeGreaterThan(0);
+  const compose = page.getByTestId("chat-compose");
+  await compose.fill("looks cubic to me");
+  await compose.press("Enter");
+  await expect.poll(() => posted?.body, { timeout: 2000 }).toBe("looks cubic to me");
 });
 
-test("hovering an alternative and clicking + posts to groups", async ({ page }) => {
-  let posted: { index_id: number } | null = null;
-
-  await page.route("**/api/users", (r) => r.fulfill({ status: 200, body: "[]" }));
-  await page.route("**/api/experiments/1", (r) => r.fulfill({
-    status: 200,
-    body: JSON.stringify({
-      id: 1, name: "demo", path: "/x", data_dir: "/x/data",
-      analysis_dir: "/x/analysis", manifest_path: null,
-      created_at: "2026-04-22T00:00:00Z",
-    }),
-  }));
-  await page.route("**/api/experiments/1/samples", (r) => r.fulfill({
-    status: 200,
-    body: JSON.stringify([
-      { id: 10, experiment_id: 1, label: "A1", name: "s1", notes: null, tags: [] },
-    ]),
-  }));
-  await page.route("**/api/samples/10/exposures", (r) => r.fulfill({
-    status: 200,
-    body: JSON.stringify([
-      { id: 100, sample_id: 10, filename: "demo", kind: "file",
-        selected: true, tags: [], sources: [] },
-    ]),
-  }));
-  await page.route("**/api/exposures/100/trace", (r) => r.fulfill({
-    status: 200,
-    body: JSON.stringify({
-      q: [0.05, 0.1, 0.15, 0.2], I: [100, 80, 90, 70], sigma: [5, 4, 4, 3],
-    }),
-  }));
-  await page.route("**/api/exposures/100/peaks", (r) =>
-    r.fulfill({ status: 200, body: "[]" }));
-  await page.route("**/api/exposures/100/indices", (r) => r.fulfill({
-    status: 200,
-    body: JSON.stringify([
-      { id: 1, exposure_id: 100, phase: "Pn3m", basis: 0.5, score: 1.0,
-        r_squared: 0.99, lattice_d: 12.5, status: "candidate",
-        predicted_q: [0.7, 0.86], peaks: [] },
-      { id: 2, exposure_id: 100, phase: "Im3m", basis: 0.3, score: 0.6,
-        r_squared: 0.71, lattice_d: 9.1, status: "candidate",
-        predicted_q: [0.42, 0.6], peaks: [] },
-    ]),
-  }));
-  await page.route("**/api/exposures/100/groups", (r) => r.fulfill({
-    status: 200,
-    body: JSON.stringify([
-      { id: 1, exposure_id: 100, kind: "auto", active: true, members: [1] },
-    ]),
-  }));
-  await page.route("**/api/groups/1/members", async (r) => {
-    if (r.request().method() === "POST") {
-      posted = r.request().postDataJSON() as { index_id: number };
-      return r.fulfill({
-        status: 200,
-        body: JSON.stringify({
-          id: 2, exposure_id: 100, kind: "custom", active: true, members: [1, posted.index_id],
-        }),
-      });
-    }
-    return r.fulfill({ status: 404, body: "nope" });
-  });
-
-  await page.addInitScript(() => {
-    localStorage.setItem("himalaya-ui:state", JSON.stringify({
-      state: { username: "alice", activeSampleId: 10, activeExposureId: 100 },
-      version: 1,
-    }));
-  });
-
+test("tab rocker switches to the Compare page placeholder", async ({ page }) => {
+  await seedState(page, { activeExperimentId: 1, activeSampleId: 10 });
+  await mockCore(page, [{ id: 1, username: "alice" }]);
   await page.goto("/");
-  const altRow = page.locator('[data-alternative-id="2"]');
-  await altRow.waitFor();
-  await altRow.hover();
-  const addBtn = altRow.getByRole("button", { name: /add index 2/i });
-  await addBtn.click();
-  await expect.poll(() => posted?.index_id, { timeout: 2000 }).toBe(2);
-});
 
-test("switching to Tags tab and adding a tag posts to /api/samples/:id/tags", async ({ page }) => {
-  let posted: { key: string; value: string } | null = null;
-
-  await page.route("**/api/users", (r) => r.fulfill({ status: 200, body: "[]" }));
-  await page.route("**/api/experiments/1", (r) => r.fulfill({
-    status: 200,
-    body: JSON.stringify({
-      id: 1, name: "demo", path: "/x", data_dir: "/x/data",
-      analysis_dir: "/x/analysis", manifest_path: null,
-      created_at: "2026-04-22T00:00:00Z",
-    }),
-  }));
-  await page.route("**/api/experiments/1/samples", (r) => r.fulfill({
-    status: 200,
-    body: JSON.stringify([
-      { id: 10, experiment_id: 1, label: "A1", name: "s1", notes: null, tags: [] },
-    ]),
-  }));
-  await page.route("**/api/samples/10/exposures", (r) => r.fulfill({
-    status: 200, body: "[]",
-  }));
-  await page.route("**/api/samples/10/tags", async (r) => {
-    if (r.request().method() === "POST") {
-      posted = r.request().postDataJSON() as { key: string; value: string };
-      return r.fulfill({
-        status: 201,
-        body: JSON.stringify({
-          id: 99, sample_id: 10,
-          key: posted.key, value: posted.value, source: "manual",
-        }),
-      });
-    }
-    return r.fulfill({ status: 404, body: "nope" });
-  });
-
-  await page.addInitScript(() => {
-    localStorage.setItem("himalaya-ui:state", JSON.stringify({
-      state: { username: "alice", activeSampleId: 10, activeExposureId: undefined },
-      version: 1,
-    }));
-  });
-
-  await page.goto("/");
-  await expect(page.getByRole("tab", { name: /exposures/i }))
-    .toHaveAttribute("aria-selected", "true");
-
-  await page.getByRole("tab", { name: /tags/i }).click();
-  await expect(page.getByRole("tab", { name: /tags/i }))
-    .toHaveAttribute("aria-selected", "true");
-
-  await page.getByPlaceholder(/key/i).fill("lipid");
-  await page.getByPlaceholder(/value/i).fill("DOPC");
-  await page.getByRole("button", { name: /add tag/i }).click();
-
-  await expect.poll(() => posted?.key, { timeout: 2000 }).toBe("lipid");
-  await expect.poll(() => posted?.value, { timeout: 2000 }).toBe("DOPC");
+  await expect(page.getByTestId("index-page")).toBeVisible();
+  await page.getByTestId("tab-compare").click();
+  await expect(page.getByTestId("compare-page")).toBeVisible();
+  await expect(page.getByText(/Coming soon/i)).toBeVisible();
 });
