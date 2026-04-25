@@ -27,7 +27,7 @@ const PEAK_OFFSET_PX = 7;
 /** Plot margins (kept in sync with the effect so overlay can clip / position). */
 const MARGIN_LEFT   = 50;
 const MARGIN_RIGHT  = 14;
-const MARGIN_TOP    = 22;
+const MARGIN_TOP    = 36;
 const MARGIN_BOTTOM = 40;
 
 /** Triangle marker geometry. */
@@ -39,6 +39,10 @@ const TICK_END_OFFSET_PX = 14;
 
 /** Pixel tolerance to consider a predicted q "matched" by a detected peak. */
 const TICK_MATCH_PX = 12;
+
+/** Predicted-q track row above the plot (carries the phase-colour swatches). */
+const TRACK_Y_TOP    = 6;
+const TRACK_Y_BOTTOM = 18;
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
@@ -239,11 +243,13 @@ export function TraceViewer({
     overlay.setAttribute("width",  String(bbox.width));
     overlay.setAttribute("height", String(bbox.height));
 
-    // Wipe and redraw the peak + tick layers.
-    const peakRoot = overlay.querySelector<SVGGElement>("[data-role=peak-root]")!;
-    const tickRoot = overlay.querySelector<SVGGElement>("[data-role=tick-root]")!;
-    while (peakRoot.firstChild) peakRoot.removeChild(peakRoot.firstChild);
-    while (tickRoot.firstChild) tickRoot.removeChild(tickRoot.firstChild);
+    // Wipe and redraw the peak, tick and track layers.
+    const peakRoot  = overlay.querySelector<SVGGElement>("[data-role=peak-root]")!;
+    const tickRoot  = overlay.querySelector<SVGGElement>("[data-role=tick-root]")!;
+    const trackRoot = overlay.querySelector<SVGGElement>("[data-role=track-root]")!;
+    while (peakRoot.firstChild)  peakRoot.removeChild(peakRoot.firstChild);
+    while (tickRoot.firstChild)  tickRoot.removeChild(tickRoot.firstChild);
+    while (trackRoot.firstChild) trackRoot.removeChild(trackRoot.firstChild);
 
     const dimOthers = hoveredIndex !== undefined;
     const insideX = (px: number): boolean =>
@@ -318,8 +324,9 @@ export function TraceViewer({
       const traceY = yScale!.apply!(interpolateI(t.q, trace)) - TICK_END_OFFSET_PX;
       const y2     = matchedPy ?? traceY;
 
-      // Faded → neutral gray (color signal removed entirely).
-      const stroke = opts.faded ? "var(--color-fg-dim)" : t.color;
+      // Plot vlines stay neutral (gray) until a specific index is hovered —
+      // colour now lives in the track row above the plot.
+      const stroke = opts.strong ? t.color : "var(--color-fg-dim)";
       const strokeWidth   = opts.strong ? "1.5" : "1";
       const strokeOpacity = opts.faded ? "0.3" : (opts.strong ? "1" : "0.35");
 
@@ -335,12 +342,38 @@ export function TraceViewer({
       tickRoot.appendChild(line);
     }
 
+    // ── 3. Predicted-q track row above the plot. Each tick keeps its phase
+    //       colour at all times so the row reads as a quiet legend; default
+    //       state matches the old vline opacity, hover lights it solid, and
+    //       the off-hover indices fade to gray (same scheme as plot vlines).
+    function drawTrackTick(t: IndexTick, opts: { strong: boolean; faded: boolean }): void {
+      const px = xScale!.apply!(t.q);
+      if (!Number.isFinite(px) || !insideX(px)) return;
+
+      const stroke = opts.faded ? "var(--color-fg-dim)" : t.color;
+      const strokeWidth   = opts.strong ? "1.75" : "1.25";
+      const strokeOpacity = opts.faded ? "0.3" : (opts.strong ? "1" : "0.55");
+
+      const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      line.setAttribute("x1", String(px));
+      line.setAttribute("x2", String(px));
+      line.setAttribute("y1", String(TRACK_Y_TOP));
+      line.setAttribute("y2", String(TRACK_Y_BOTTOM));
+      line.setAttribute("stroke", stroke);
+      line.setAttribute("stroke-width", strokeWidth);
+      line.setAttribute("stroke-opacity", strokeOpacity);
+      line.setAttribute("stroke-linecap", "round");
+      trackRoot.appendChild(line);
+    }
+
     for (const t of indexTicks(activeGroupIndices)) {
-      drawTickLine(t, { strong: false, faded: dimOthers });
+      drawTickLine (t, { strong: false, faded: dimOthers });
+      drawTrackTick(t, { strong: false, faded: dimOthers });
     }
     if (hoveredIndex) {
       for (const t of indexTicks([hoveredIndex])) {
-        drawTickLine(t, { strong: true, faded: false });
+        drawTickLine (t, { strong: true, faded: false });
+        drawTrackTick(t, { strong: true, faded: false });
       }
     }
   }, [peaks, trace, hoveredIndex, activeGroupIndices, xDomain]);
@@ -421,6 +454,7 @@ export function TraceViewer({
         className="absolute inset-0 pointer-events-none"
         aria-hidden="true"
       >
+        <g data-role="track-root" />
         <g data-role="tick-root" />
         <g data-role="peak-root" />
         <line
