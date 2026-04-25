@@ -366,7 +366,10 @@ export function TraceViewer({
       trackRoot.appendChild(line);
     }
 
-    for (const t of indexTicks(activeGroupIndices)) {
+    const baseIndices = hoveredIndex
+      ? activeGroupIndices.filter(ix => ix.id !== hoveredIndex.id)
+      : activeGroupIndices;
+    for (const t of indexTicks(baseIndices)) {
       drawTickLine (t, { strong: false, faded: dimOthers });
       drawTrackTick(t, { strong: false, faded: dimOthers });
     }
@@ -468,7 +471,7 @@ export function TraceViewer({
           data-role="cursor-dot"
           r={3.5}
           fill="none"
-          stroke="var(--color-accent)"
+          stroke="var(--color-fg-dim)"
           strokeWidth={1.5}
           opacity={0}
         />

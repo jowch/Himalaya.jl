@@ -74,7 +74,7 @@ describe("<PhasePanel> — active group", () => {
 });
 
 describe("<PhasePanel> — score bars", () => {
-  it("renders a score bar for each alternative whose width reflects its score", async () => {
+  it("renders a score bar whose width reflects its score", async () => {
     mockAll(
       [
         { id: 10, exposure_id: 42, phase: "Pn3m", basis: 0.5, score: 0.8,

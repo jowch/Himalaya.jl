@@ -357,7 +357,8 @@ function LegendItem({
 }
 
 function PlotLegend({ peaks, hoveredIndex }: PlotLegendProps): JSX.Element {
-  const hasManualPeaks = peaks.some((p) => p.source === "manual");
+  const hasManualPeaks   = peaks.some((p) => p.source === "manual");
+  const hasExcludedPeaks = peaks.some((p) => p.excluded);
   return (
     <div className="flex items-center gap-4 px-4 py-1.5 border-t border-border-soft
                     text-[10.5px] font-mono text-fg-dim flex-wrap">
@@ -365,7 +366,9 @@ function PlotLegend({ peaks, hoveredIndex }: PlotLegendProps): JSX.Element {
       {hasManualPeaks && (
         <LegendItem symbol={<TriangleSvg color="var(--color-peak-manual)" />} label="manual peak" />
       )}
-      <LegendItem symbol={<TriangleSvg color="var(--color-fg-dim)" opacity={0.4} />} label="excluded" />
+      {hasExcludedPeaks && (
+        <LegendItem symbol={<TriangleSvg color="var(--color-accent)" opacity={0.3} />} label="excluded" />
+      )}
       {hoveredIndex && (
         <LegendItem
           symbol={<TickLineSvg color={phaseColor(hoveredIndex.phase)} />}

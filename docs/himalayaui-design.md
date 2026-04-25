@@ -178,6 +178,11 @@ These are the concrete choices in the current build. They are not
 - **Card-header utility** (`.card-header`, height 56px, 1rem padding,
   `flex items-center`) shared between the plot card's title strip and
   the indices card's "Index choices" header so their top edges line up.
+- **Title strip breadcrumb:** the experiment name renders in `text-fg-muted`
+  even when set; the sample name uses `text-fg`. This is intentional —
+  the experiment is context (the container) and the sample is the leaf the
+  user is actively working on. De-emphasising the parent draws the eye to
+  the sample without hiding the experiment path.
 - **Compare page** is a placeholder; the tab exists, the content does not.
 
 ### 2.2 Typography
