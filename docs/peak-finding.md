@@ -46,17 +46,18 @@ diagnostic or scripted workflows, but should not be needed in normal use.
 ## Why not σ-based SNR?
 
 The `_tot.dat` files include a per-point intensity uncertainty σ(q)
-propagated by the azimuthal integration software. An earlier design
-(v1) used σ to compute a physical SNR (`A / σ_A`) from a per-candidate
-Gaussian fit. This approach hit ~60% recall on hand-labeled real traces
-and proved difficult to improve — parametric shape fitting is brittle
-when peaks sit on a steeply falling background or overlap slightly.
+propagated by the azimuthal integration software. Computing a physical
+SNR (`A / σ_A`) from a per-candidate Gaussian fit is an intuitive
+approach, but parametric shape fitting is brittle when peaks sit on a
+steeply falling background or overlap slightly.
 
-The v2 design drops shape fitting entirely. Phase-ratio coherence (via
-`indexpeaks`) is a much stronger filter than per-peak SNR: a single 5σ
-excess could be noise, but four peaks at Pn3m's √2 : √3 : √4 : √6
-ratios cannot be. The prominence + sharpness AND-gate gets candidates
-to `indexpeaks`; `indexpeaks` validates them by phase geometry.
+More importantly, phase-ratio coherence (via `indexpeaks`) is a much
+stronger filter than per-peak SNR: a single 5σ excess could be noise,
+but four peaks at Pn3m's √2 : √3 : √4 : √6 ratios cannot be. The
+prominence + sharpness AND-gate gets candidates to `indexpeaks`;
+`indexpeaks` validates them by phase geometry. Shape fitting at the
+candidate-selection stage would add complexity without improving the
+overall recall of correct phase assignments.
 
 ## Key defaults and when to change them
 
@@ -80,11 +81,7 @@ is important.
 
 ## Intentionally out of scope
 
-- **Parametric shape fitting.** Brittle on real SAXS backgrounds; dropped
-  after v1 experience.
-- **Sub-pixel peak positions.** Peaks are returned at grid positions.
-  Parabolic interpolation is a straightforward follow-up if needed.
-- **Background subtraction** (SNIP, asymmetric least squares). A potential
-  follow-up for steep-background cases.
-- **Multi-trace batch statistics.** Thresholds are per-trace; no pooling
-  across scans.
+- **Parametric shape fitting.** Brittle on real SAXS backgrounds; phase-ratio coherence is a stronger downstream filter.
+- **Sub-pixel peak positions.** Peaks are returned at grid positions. Parabolic interpolation is a straightforward follow-up if needed.
+- **Background subtraction** (SNIP, asymmetric least squares). A potential follow-up for steep-background cases.
+- **Multi-trace batch statistics.** Thresholds are per-trace; no pooling across scans.

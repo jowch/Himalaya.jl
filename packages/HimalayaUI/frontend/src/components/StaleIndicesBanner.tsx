@@ -1,4 +1,5 @@
 import { useIndices, useReanalyzeExposure } from "../queries";
+import { Button } from "./ui";
 
 export interface StaleIndicesBannerProps {
   exposureId: number | undefined;
@@ -8,8 +9,6 @@ export function StaleIndicesBanner(
   { exposureId }: StaleIndicesBannerProps,
 ): JSX.Element | null {
   const q = useIndices(exposureId);
-  // Always call the mutation hook so hook order is stable across renders.
-  // When exposureId is undefined we never click the button anyway.
   const reanalyze = useReanalyzeExposure(exposureId ?? 0);
 
   if (exposureId === undefined) return null;
@@ -25,13 +24,13 @@ export function StaleIndicesBanner(
       <span>
         {stale.length} {stale.length === 1 ? "index is" : "indices are"} stale.
       </span>
-      <button
-        className="bg-accent border border-accent text-white rounded-md px-2.5 py-1 hover:brightness-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+      <Button
+        variant="primary"
         disabled={reanalyze.isPending}
         onClick={() => reanalyze.mutate()}
       >
         {reanalyze.isPending ? "Re-analyzing…" : "Re-analyze"}
-      </button>
+      </Button>
     </div>
   );
 }

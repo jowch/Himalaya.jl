@@ -62,7 +62,8 @@ CREATE TABLE IF NOT EXISTS peaks (
     intensity   REAL,
     prominence  REAL,
     sharpness   REAL,
-    source      TEXT DEFAULT 'auto'
+    source      TEXT DEFAULT 'auto',
+    excluded    INTEGER DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS indices (
@@ -89,7 +90,7 @@ CREATE TABLE IF NOT EXISTS index_groups (
     exposure_id INTEGER REFERENCES exposures(id),
     kind        TEXT NOT NULL DEFAULT 'auto',
     active      BOOLEAN DEFAULT FALSE,
-    created_by  INTEGER REFERENCES users(id),
+    created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
     created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -99,9 +100,20 @@ CREATE TABLE IF NOT EXISTS index_group_members (
     PRIMARY KEY (group_id, index_id)
 );
 
+CREATE TABLE IF NOT EXISTS sample_messages (
+    id         INTEGER PRIMARY KEY,
+    sample_id  INTEGER REFERENCES samples(id),
+    author_id  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    body       TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_sample_messages_sample
+    ON sample_messages(sample_id, created_at);
+
 CREATE TABLE IF NOT EXISTS user_actions (
     id          INTEGER PRIMARY KEY,
-    user_id     INTEGER REFERENCES users(id),
+    user_id     INTEGER REFERENCES users(id) ON DELETE SET NULL,
     timestamp   DATETIME DEFAULT CURRENT_TIMESTAMP,
     action      TEXT,
     entity_type TEXT,
@@ -174,5 +186,6 @@ function open_db(experiment_path::String)::SQLite.DB
     db_path = joinpath(experiment_path, "himalaya.db")
     db = SQLite.DB(db_path)
     create_schema!(db)
+    DBInterface.execute(db, "PRAGMA foreign_keys = ON")
     db
 end

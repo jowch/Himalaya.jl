@@ -72,6 +72,8 @@ export const createUser = (username: string, opts?: AuthOpts) =>
   request<User>("POST", "/api/users", { username }, opts);
 
 // Experiments
+export const listExperiments = () =>
+  request<Experiment[]>("GET", "/api/experiments");
 export const getExperiment = (id: number) =>
   request<Experiment>("GET", `/api/experiments/${id}`);
 export const updateExperiment = (
@@ -123,6 +125,8 @@ export interface Peak {
   prominence: number | null;
   sharpness: number | null;
   source: "auto" | "manual";
+  /** When true (only meaningful for auto peaks), the peak is soft-disabled by the user. */
+  excluded: boolean;
 }
 
 export interface PeakCreated extends Peak { stale_indices: number }
@@ -133,6 +137,9 @@ export const addPeak = (exposure_id: number, q: number, opts?: AuthOpts) =>
   request<PeakCreated>("POST", `/api/exposures/${exposure_id}/peaks`, { q }, opts);
 export const removePeak = (peak_id: number, opts?: AuthOpts) =>
   request<void>("DELETE", `/api/peaks/${peak_id}`, undefined, opts);
+export const setPeakExcluded = (peak_id: number, excluded: boolean, opts?: AuthOpts) =>
+  request<Peak & { stale_indices: number }>(
+    "PATCH", `/api/peaks/${peak_id}`, { excluded }, opts);
 
 // Indices
 export interface IndexPeakRef {
@@ -173,6 +180,23 @@ export const addIndexToGroup = (group_id: number, index_id: number, opts?: AuthO
   request<GroupEntry>("POST", `/api/groups/${group_id}/members`, { index_id }, opts);
 export const removeIndexFromGroup = (group_id: number, index_id: number, opts?: AuthOpts) =>
   request<GroupEntry>("DELETE", `/api/groups/${group_id}/members/${index_id}`, undefined, opts);
+
+// Sample messages (chat log)
+export interface SampleMessage {
+  id: number;
+  sample_id: number;
+  author_id: number | null;
+  /** Null if the author's user row has been deleted. */
+  author: string | null;
+  body: string;
+  created_at: string;
+}
+
+export const listSampleMessages = (sample_id: number) =>
+  request<SampleMessage[]>("GET", `/api/samples/${sample_id}/messages`);
+
+export const postSampleMessage = (sample_id: number, body: string, opts?: AuthOpts) =>
+  request<SampleMessage>("POST", `/api/samples/${sample_id}/messages`, { body }, opts);
 
 // Analysis
 export const reanalyzeExposure = (exposure_id: number, opts?: AuthOpts) =>

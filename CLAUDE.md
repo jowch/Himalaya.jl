@@ -120,6 +120,8 @@ julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
 
 **Stdlib deps must be explicit.** Stdlibs used directly in a package (`Sockets`, `Printf`, `SparseArrays`, `DelimitedFiles`, etc.) must be listed in `Project.toml`'s `[deps]` — `Pkg.add` them like regular packages.
 
+**Index scoring:** `score(index)` returns a value in `[0, 1]` — product of `coverage` (harmonic-weighted fraction of expected peaks found, `1/rank` weight per position) and `consistency` (`1/(1+CV)` of peak sharpnesses). `totalprom` and the `prom` field on `Index` no longer exist — the struct now has `sharpness::SparseVector`. Guard `cv` against zero mean before dividing (all-zero sharpness is valid and should score as consistent). `auto_group` and `remove_subsets` in `pipeline.jl` both depend on `score` ordering — correctness of auto-analysis flows from score quality. R² is stored per index but is NOT part of the score; it is a UI hard gate (threshold 0.98 in `PhasePanel`).
+
 **Phase-type serialization:** `string(Himalaya.Pn3m)` returns the fully-qualified `"Himalaya.Pn3m"`. When storing phase names in SQLite, use `string(nameof(P))` → `"Pn3m"`. The inverse is `getfield(Himalaya, Symbol(name))` (always validate with `P isa Type && P <: Himalaya.Phase` before calling `phaseratios`).
 
 **`Himalaya` core resolution in worktrees:** `packages/HimalayaUI/Manifest.toml` pins `Himalaya = "c5c84187..." path = "../.."` to the local v0.5.0. `Manifest.toml` is gitignored, so fresh worktrees re-resolve against the registry and pull the older published v0.4.5 (which has a different `findpeaks` signature). After `git worktree add`, copy `Manifest.toml` from main before running `Pkg.test`.
@@ -132,19 +134,22 @@ julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
 
 **Observable Plot inside React:** the plot element has a runtime `.scale(name).invert(px)` method that isn't in DOM types; cast with `(el as unknown as { scale: ... })`. Used by TraceViewer to translate click pixel coords to q values.
 
-**E2E selectors:** Playwright tests use `data-testid`, `role`, or stable `data-*` attributes (`data-sample-id`, `data-exposure-id`, `data-alternative-id`, `data-active`). Never assert on Tailwind class strings — they change when styling evolves.
+**E2E selectors:** Playwright tests use `data-testid`, `role`, or stable `data-*` attributes (`data-sample-id`, `data-exposure-id`, `data-alternative-id`, `data-active`, `data-low-r2`). Never assert on Tailwind class strings — they change when styling evolves. For Vitest/RTL tests, use `screen.getByText("X").closest("li")` + `toHaveAttribute` rather than `document.querySelector` — the latter bypasses RTL's async-aware retry logic.
+
+**`Fm3m` missing from `indexpeaks` dispatch** — the all-phases loop in `src/index.jl` omits `Fm3m`. The phase is defined and `minpeaks`/`phaseratios` exist, but `indexpeaks` can never return an `Fm3m` index. Known pre-existing gap, not something to fix opportunistically.
 
 **Tailwind v4 theming:** the dark palette is defined once in `styles.css` via `@theme { --color-* ... }`. Component files use utility classes (`bg-bg`, `text-fg-muted`, `border-accent`). If you need a new color, add it to `@theme` first.
 
 ## Current state
 
 - Core Himalaya: `v0.5.0` on `main` — v2 peak-finding (persistence + sharpness + kneedle).
-- HimalayaUI: **Plans 1–6 complete.** Backend: SQLite pipeline, REST API (Oxygen.jl), CLI. Frontend: full single-page analysis UI (sample list, trace viewer with peak editing, Miller plot, phase panel, tabbed properties panel). The web-app design spec (§1–10) is substantively implemented; see [docs/superpowers/plans/](docs/superpowers/plans/) for per-plan narrative.
+- HimalayaUI: **Plans 1–6 complete + index scoring redesign.** Backend: SQLite pipeline, REST API (Oxygen.jl), CLI. Frontend: full single-page analysis UI (sample list, trace viewer with peak editing, Miller plot, phase panel, tabbed properties panel). The web-app design spec (§1–10) is substantively implemented; see [docs/superpowers/plans/](docs/superpowers/plans/) for per-plan narrative.
 - Deferred for later: Phase panel Recent section, export UI, per-user audit view, beamline-config editor, derived-exposure construction. See [docs/future-feature-ideas.md](docs/future-feature-ideas.md).
 
 ## Further reading
 
 - [docs/peak-finding.md](docs/peak-finding.md) — narrative design notes, non-obvious defaults, out-of-scope decisions.
+- [docs/scoring.md](docs/scoring.md) — how and why of the index scoring formula (coverage × consistency).
 - [docs/superpowers/specs/2026-04-22-himalaya-web-app-design.md](docs/superpowers/specs/2026-04-22-himalaya-web-app-design.md) — web app design spec (schema, API, UI layout). Load-bearing for all HimalayaUI work.
 - [docs/superpowers/plans/](docs/superpowers/plans/) — implementation plans (one per sub-project).
 - [docs/future-feature-ideas.md](docs/future-feature-ideas.md) — intentionally-deferred features.
