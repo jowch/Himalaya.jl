@@ -2,6 +2,7 @@ import { useIndices, useGroups, useAddIndexToGroup, useRemoveIndexFromGroup } fr
 import { useAppState } from "../state";
 import { phaseColor } from "../phases";
 import { HintText } from "./ui";
+import { StaleIndicesBanner } from "./StaleIndicesBanner";
 import type { GroupEntry, IndexEntry } from "../api";
 
 const R2_THRESHOLD = 0.98;
@@ -182,6 +183,11 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
             Hover a candidate to preview peaks
           </div>
         </div>
+      </div>
+
+      {/* ── Stale-indices banner (shown when re-analysis is needed) ── */}
+      <div className="px-3 pt-2">
+        <StaleIndicesBanner exposureId={exposureId} />
       </div>
 
       {/* ── Scrollable list ── */}

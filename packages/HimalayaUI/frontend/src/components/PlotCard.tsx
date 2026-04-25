@@ -257,13 +257,13 @@ function QRange({ xDomain, fullRange, onXDomain }: QRangeProps): JSX.Element | n
   );
 }
 
-interface QNumInputProps {
+export interface QNumInputProps {
   value: number;
   onCommit: (v: number) => void;
   testId: string;
 }
 
-function QNumInput({ value, onCommit, testId }: QNumInputProps): JSX.Element {
+export function QNumInput({ value, onCommit, testId }: QNumInputProps): JSX.Element {
   const [draft, setDraft] = useState(value.toFixed(3));
   const [focused, setFocused] = useState(false);
 

@@ -128,6 +128,115 @@ test("chat posts a message via /api/samples/:id/messages", async ({ page }) => {
   await expect.poll(() => posted?.body, { timeout: 2000 }).toBe("looks cubic to me");
 });
 
+test("curate: clicking + adds a candidate to the active set", async ({ page }) => {
+  const EXPOSURE = {
+    id: 5, sample_id: 10, filename: "scan1.dat", kind: "file",
+    selected: true, tags: [], sources: [],
+  };
+  const CANDIDATES = [
+    {
+      id: 1, exposure_id: 5, phase: "Pn3m", basis: 0.1, score: 0.95,
+      r_squared: 0.99, lattice_d: 12.5, status: "candidate",
+      predicted_q: [0.1, 0.14], peaks: [],
+    },
+    {
+      id: 2, exposure_id: 5, phase: "Im3m", basis: 0.15, score: 0.7,
+      r_squared: 0.85, lattice_d: 9.0, status: "candidate",
+      predicted_q: [0.12, 0.17], peaks: [],
+    },
+  ];
+  const BASE_GROUP = { id: 1, exposure_id: 5, kind: "auto", active: true };
+  let groupMembers: number[] = [];
+  let addedIndexId: number | null = null;
+
+  await seedState(page, { activeExperimentId: 1, activeSampleId: 10, activeExposureId: 5 });
+  await mockCore(page, [{ id: 1, username: "alice" }]);
+
+  // Override exposures for sample 10 to include our test exposure.
+  await page.route("**/api/samples/10/exposures", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([EXPOSURE]) }));
+
+  await page.route("**/api/exposures/5/trace", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json",
+      body: JSON.stringify({ q: [0.1, 0.2], I: [10, 20], sigma: [1, 1] }) }));
+  await page.route("**/api/exposures/5/peaks", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
+  await page.route("**/api/exposures/5/indices", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(CANDIDATES) }));
+
+  // Groups reflect the current state of `groupMembers` on every fetch.
+  await page.route("**/api/exposures/5/groups", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json",
+      body: JSON.stringify([{ ...BASE_GROUP, members: [...groupMembers] }]) }));
+
+  await page.route("**/api/groups/1/members", async (route) => {
+    const data = route.request().postDataJSON() as { index_id: number };
+    addedIndexId = data.index_id;
+    groupMembers = [data.index_id];
+    await route.fulfill({ status: 200, contentType: "application/json",
+      body: JSON.stringify({ ...BASE_GROUP, members: groupMembers }) });
+  });
+
+  await page.goto("/");
+
+  // Wait for PhasePanel to show the Pn3m candidate.
+  await expect(page.getByText("Pn3m")).toBeVisible();
+
+  // Click the "+" button on the first candidate (index id 1).
+  await page.getByRole("button", { name: "Add index 1" }).click();
+
+  // POST should have been sent with the correct index_id.
+  await expect.poll(() => addedIndexId, { timeout: 2000 }).toBe(1);
+
+  // After groups refetch, index 1 should appear in the Active set section.
+  await expect(page.locator('[data-index-id="1"][data-active]')).toBeVisible();
+});
+
+test("reanalyze: stale-indices banner fires POST /analyze when clicked", async ({ page }) => {
+  const EXPOSURE = {
+    id: 5, sample_id: 10, filename: "scan1.dat", kind: "file",
+    selected: true, tags: [], sources: [],
+  };
+  const STALE_INDEX = {
+    id: 3, exposure_id: 5, phase: "Pn3m", basis: 0.1, score: 0.9,
+    r_squared: 0.99, lattice_d: 12.5, status: "stale",
+    predicted_q: [0.1, 0.14], peaks: [],
+  };
+  let analyzeCalled = false;
+
+  await seedState(page, { activeExperimentId: 1, activeSampleId: 10, activeExposureId: 5 });
+  await mockCore(page, [{ id: 1, username: "alice" }]);
+
+  await page.route("**/api/samples/10/exposures", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([EXPOSURE]) }));
+  await page.route("**/api/exposures/5/trace", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json",
+      body: JSON.stringify({ q: [0.1, 0.2], I: [10, 20], sigma: [1, 1] }) }));
+  await page.route("**/api/exposures/5/peaks", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
+  await page.route("**/api/exposures/5/indices", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([STALE_INDEX]) }));
+  await page.route("**/api/exposures/5/groups", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json",
+      body: JSON.stringify([{ id: 1, exposure_id: 5, kind: "auto", active: true, members: [3] }]) }));
+
+  await page.route("**/api/exposures/5/analyze", async (route) => {
+    analyzeCalled = true;
+    await route.fulfill({ status: 200, contentType: "application/json",
+      body: JSON.stringify({ id: 5, analyzed: true }) });
+  });
+
+  await page.goto("/");
+
+  // StaleIndicesBanner should appear because the index has status "stale".
+  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(page.getByRole("alert")).toContainText("stale");
+
+  await page.getByRole("button", { name: /Re-analyze/ }).click();
+
+  await expect.poll(() => analyzeCalled, { timeout: 2000 }).toBe(true);
+});
+
 test("tab rocker switches to the Compare page placeholder", async ({ page }) => {
   await seedState(page, { activeExperimentId: 1, activeSampleId: 10 });
   await mockCore(page, [{ id: 1, username: "alice" }]);
