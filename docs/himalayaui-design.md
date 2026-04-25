@@ -196,11 +196,12 @@ These are the concrete choices in the current build. They are not
 - **Peaks are bright/saturated**. Auto = `--color-accent` (ice blue, ~220°).
   Manual = `--color-peak-manual` (neon magenta, ~340°), well clear of every
   index hue.
-- **Indices are muted/earthy**, chroma 0.07–0.10, lightness 0.70–0.78. The
-  palette in `phases.ts` covers Pn3m (terracotta), Im3m (sage), Ia3d
-  (periwinkle), Fm3m (mauve), Fd3m (dusty rose), Hexagonal (ochre),
-  Lamellar (dusty teal), Square (amber-tan). No phase is within ±25° of
-  the peak hues.
+- **Indices are vivid but calm**, chroma 0.10–0.13, lightness 0.76–0.80,
+  inspired by the v3 design reference's sage/amber/violet anchors. The
+  palette in `phases.ts` covers Pn3m (amber), Im3m (sage), Ia3d (violet),
+  Fm3m (coral), Fd3m (rose-purple), Hexagonal (seafoam teal), Lamellar
+  (periwinkle), Square (chartreuse). Hues stay clear of ±20° of the peak
+  hues (220° accent, 340° manual) and the high-chroma warning zone (~75°).
 - **Faded annotations render in `--color-fg-dim`** (neutral gray) at
   reduced opacity, *not* at the phase color with reduced opacity.
 - `:root { color-scheme: dark }` (and `light` on the matching theme
@@ -222,14 +223,24 @@ These are the concrete choices in the current build. They are not
 - **Click empty plot space** adds a manual peak at the exact clicked q.
   **Click within ~10 pixels of an existing peak triangle** removes it.
   No q-snap — the user zooms in for precision.
-- **Cursor crosshair** (dashed vertical rule + follow-dot tracking the
-  trace) only appears inside the plot interior, gated by the plot's
-  margin constants.
+- **Cursor crosshair** (solid vertical rule + follow-dot in `--color-fg-dim`)
+  only appears inside the plot interior, gated by the plot's margin
+  constants. Neutral gray so it doesn't compete with the phase-coloured
+  ticks.
 - **Peak markers** (down-triangles) sit ~30% above the trace line, not
-  on it, so they don't get visually swallowed by the curve.
-- **Predicted-q ticks** for the active group render as short top-of-frame
-  marks. Hovering an alternative index dims the active ticks to neutral
-  gray and adds the hovered index's ticks at full chromatic strength.
+  on it, so they don't get visually swallowed by the curve. Predicted-q
+  ticks that match a peak terminate ~7px above the triangle so the two
+  markers don't visually fuse.
+- **Predicted-q ticks** render in two places:
+  - A **track row** above the plot (`TRACK_Y_TOP`–`TRACK_Y_BOTTOM` band
+    inside the bumped `MARGIN_TOP`) carries the persistent phase-colour
+    swatches at 55% opacity. This is where colour lives by default.
+  - **Plot vlines** inside the data area are neutral gray
+    (`--color-fg-dim`) at 35% opacity by default — they show *where* an
+    index would land without competing with the trace data.
+  - On hover, the hovered index's ticks go solid full-opacity in *both*
+    places (track and plot), and any other indices fade to gray 30% in
+    both places. The track row doubles as a legend-by-position.
 
 ### 2.5 Animation
 

@@ -176,7 +176,7 @@ On first visit you'll see a username prompt — enter a new name or pick from ex
 
 **Left column:** The sample list. Filter by any tag key or value. Click a sample to load it.
 
-**Center top:** The trace viewer (log-log). Auto peaks are filled circles; manual peaks are outlined circles. The phase-colored vertical ticks show the predicted q positions of whichever indices are in the **active group**.
+**Center top:** The trace viewer (log-log). Auto peaks are filled triangles in ice-blue; manual peaks are magenta. A **track row** above the plot carries phase-colored ticks at every predicted-q position for the **active group** — this is the legend by position. Inside the plot area, predicted-q vertical lines stay neutral gray so they don't compete with the trace data; **hovering an index card** lights up that index's ticks in phase color (in both the track and the plot) and dims the others. A **legend strip** under the plot labels the peak triangle types and adds a "predicted {Phase}" entry while you hover.
 - **Click on the trace** → adds a manual peak, snapped to the nearest local maximum.
 - **Click on a peak marker** → removes that peak.
 - Any peak edit marks the affected indices stale; a banner above the trace offers a "Re-analyze" button.
