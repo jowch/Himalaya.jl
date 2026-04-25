@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import * as Plot from "@observablehq/plot";
 import type { Trace, Peak, IndexEntry } from "../api";
 import { phaseColor } from "../phases";
@@ -225,7 +225,7 @@ export function TraceViewer({
   }, [trace, peaks, activeGroupIndices, hoveredIndex, xDomain, onAddPeak, onRemovePeak, onTogglePeakExclusion, onXDomain]);
 
   // ── overlay renderer (peaks + predicted-q lines + cursor) ───────────────
-  function renderOverlay(): void {
+  const renderOverlay = useCallback((): void => {
     const host    = hostRef.current;
     const overlay = overlayRef.current;
     if (!host || !overlay) return;
@@ -345,13 +345,12 @@ export function TraceViewer({
         drawTickLine(t, { strong: true, faded: false });
       }
     }
-  }
+  }, [peaks, trace, hoveredIndex, activeGroupIndices, xDomain]);
 
   // Re-render overlay whenever anything that affects it changes.
   useEffect(() => {
     renderOverlay();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeGroupIndices, hoveredIndex, peaks, trace, xDomain]);
+  }, [renderOverlay]);
 
   // ── cursor crosshair (separate, doesn't rebuild the plot) ──────────────
   useEffect(() => {

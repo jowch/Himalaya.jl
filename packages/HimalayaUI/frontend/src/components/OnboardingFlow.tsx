@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as api from "../api";
 import type { User } from "../api";
 import { useAppState } from "../state";
 import { Button } from "./ui";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 
 /**
  * OnboardingFlow — shown when no username is in persisted state.
@@ -158,11 +159,14 @@ interface NameStepProps {
 function NameStep({
   users, selection, onSelection, newName, onNewName, error, onSubmit,
 }: NameStepProps): JSX.Element {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(dialogRef, true);
   const inputClass =
     "w-full bg-bg border border-border rounded-md px-2 py-1 " +
     "focus:outline focus:outline-1 focus:outline-accent focus:border-accent";
   return (
     <div
+      ref={dialogRef}
       data-testid="onboarding-name"
       role="dialog"
       aria-modal="true"
@@ -219,10 +223,13 @@ interface TutorialStepProps {
 function TutorialStep({
   slideIdx, onPrev, onNext, onDone, onKeyDown,
 }: TutorialStepProps): JSX.Element {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(dialogRef, true);
   const slide = TUTORIAL_SLIDES[slideIdx]!;
   const isLast = slideIdx === TUTORIAL_SLIDES.length - 1;
   return (
     <div
+      ref={dialogRef}
       data-testid="onboarding-tutorial"
       role="dialog"
       aria-modal="true"

@@ -4,7 +4,7 @@ interface Pn3mIconProps {
 }
 
 /**
- * Single Im3m (Schwarz P / "plumber's nightmare") unit cell, viewed from [111]
+ * Single Pn3m (Schwarz P / "plumber's nightmare") unit cell, viewed from [111]
  * in isometric projection — a cube with one elliptical channel opening per face.
  *
  * Geometry — 24×24 viewBox, hexagon circumradius = 9:
@@ -24,11 +24,11 @@ export function Pn3mIcon({ size = 20, className = "" }: Pn3mIconProps): JSX.Elem
       viewBox="0 0 24 24"
       width={size}
       height={size}
-      aria-label="Im3m bicontinuous cubic unit cell"
+      aria-label="Pn3m bicontinuous cubic unit cell"
       role="img"
       className={className}
     >
-      <title>Im3m bicontinuous cubic unit cell</title>
+      <title>Pn3m bicontinuous cubic unit cell</title>
 
       {/* ── Face fills — stepped opacity gives isometric depth ── */}
       <polygon points="12,3 19.79,7.5 12,12 4.21,7.5"

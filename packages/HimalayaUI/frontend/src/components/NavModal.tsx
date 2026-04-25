@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useAppState } from "../state";
 import { useExperiments, useSamples } from "../queries";
 import type { Experiment, Sample } from "../api";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 
 /**
  * NavModal — cascading experiment → sample picker.
@@ -33,7 +34,9 @@ export function NavModal(): JSX.Element | null {
   const [query, setQuery] = useState("");
   const [selIdx, setSelIdx] = useState(0);
 
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef  = useRef<HTMLInputElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(dialogRef, open);
 
   // When the modal opens, sync pending values with committed, reset query.
   useEffect(() => {
@@ -174,6 +177,7 @@ export function NavModal(): JSX.Element | null {
       onClick={(e) => { if (e.target === e.currentTarget) closeModal(); }}
     >
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         className="w-[min(640px,calc(100vw-48px))] max-h-[72vh]

@@ -34,6 +34,7 @@ export interface AppState {
   openNavModal: (step?: NavModalStep) => void;
   closeNavModal: () => void;
   setNavModalStep: (step: NavModalStep) => void;
+  clearUsername: () => void;
 }
 
 export const useAppState = create<AppState>()(
@@ -69,6 +70,7 @@ export const useAppState = create<AppState>()(
         set(step ? { navModalOpen: true, navModalStep: step } : { navModalOpen: true }),
       closeNavModal: () => set({ navModalOpen: false }),
       setNavModalStep: (navModalStep) => set({ navModalStep }),
+      clearUsername: () => set({ username: undefined }),
     }),
     {
       name: LS_KEY,

@@ -264,14 +264,24 @@ interface QNumInputProps {
 }
 
 function QNumInput({ value, onCommit, testId }: QNumInputProps): JSX.Element {
+  const [draft, setDraft] = useState(value.toFixed(3));
+  const [focused, setFocused] = useState(false);
+
+  // Sync external value changes into the draft only when not actively editing.
+  useEffect(() => {
+    if (!focused) setDraft(value.toFixed(3));
+  }, [value, focused]);
+
   return (
     <input
       type="number"
       step="0.001"
-      defaultValue={value.toFixed(3)}
-      key={value.toFixed(6)} // reset controlled text when external value changes
+      value={draft}
       data-testid={testId}
+      onChange={(e) => setDraft(e.currentTarget.value)}
+      onFocus={() => setFocused(true)}
       onBlur={(e) => {
+        setFocused(false);
         const n = parseFloat(e.currentTarget.value);
         if (Number.isFinite(n)) onCommit(n);
       }}

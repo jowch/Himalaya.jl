@@ -3,10 +3,10 @@ using Himalaya: indexpeaks, Index, peaks, score
 using HimalayaUI: auto_group
 
 @testset "auto_group" begin
-    qs    = [0.1000, 0.1414, 0.2000]
-    proms = [1.0, 0.8, 0.6]
+    qs     = [0.1000, 0.1414, 0.2000]
+    sharps = [1.0, 0.8, 0.6]
 
-    candidates = indexpeaks(qs, proms)
+    candidates = indexpeaks(qs, sharps)
 
     group = auto_group(candidates)
 
@@ -38,7 +38,7 @@ using SQLite
     dat_path = joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat")
     q, I, σ  = load_dat(dat_path)
     peaks_result  = findpeaks(q, I, σ)
-    candidates    = indexpeaks(peaks_result.q, peaks_result.prominence)
+    candidates    = indexpeaks(peaks_result.q, peaks_result.sharpness)
     group_indices = auto_group(candidates)
 
     persist_analysis!(db, e_id, q, I, peaks_result, candidates, group_indices)

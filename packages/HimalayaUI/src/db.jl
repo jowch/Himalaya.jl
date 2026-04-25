@@ -90,7 +90,7 @@ CREATE TABLE IF NOT EXISTS index_groups (
     exposure_id INTEGER REFERENCES exposures(id),
     kind        TEXT NOT NULL DEFAULT 'auto',
     active      BOOLEAN DEFAULT FALSE,
-    created_by  INTEGER REFERENCES users(id),
+    created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
     created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -113,7 +113,7 @@ CREATE INDEX IF NOT EXISTS idx_sample_messages_sample
 
 CREATE TABLE IF NOT EXISTS user_actions (
     id          INTEGER PRIMARY KEY,
-    user_id     INTEGER REFERENCES users(id),
+    user_id     INTEGER REFERENCES users(id) ON DELETE SET NULL,
     timestamp   DATETIME DEFAULT CURRENT_TIMESTAMP,
     action      TEXT,
     entity_type TEXT,
@@ -186,5 +186,6 @@ function open_db(experiment_path::String)::SQLite.DB
     db_path = joinpath(experiment_path, "himalaya.db")
     db = SQLite.DB(db_path)
     create_schema!(db)
+    DBInterface.execute(db, "PRAGMA foreign_keys = ON")
     db
 end

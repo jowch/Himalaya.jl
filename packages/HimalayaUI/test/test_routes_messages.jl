@@ -71,6 +71,14 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test r.status == 200
         @test length(JSON3.read(String(r.body))) == 0
 
+        # POST to nonexistent sample → FK violation → non-2xx (FK enforcement is on)
+        r = HTTP.post("$base/api/samples/99999/messages";
+            body = JSON3.write(Dict(:body => "orphan message")),
+            headers = ["Content-Type" => "application/json",
+                       "X-Username"   => "alice"],
+            status_exception = false)
+        @test r.status >= 400
+
         # Deleting the user should null out `author` on subsequent reads (the LEFT JOIN
         # has nothing to resolve). `author_id` may or may not be preserved depending on
         # whether `PRAGMA foreign_keys = ON` is active — we only require that the UI's

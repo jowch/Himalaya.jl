@@ -13,20 +13,13 @@ function userInitials(username: string | undefined): string {
  * Currently: theme toggle + user-initials avatar (clicking opens the user picker).
  */
 export function UtilityCluster(): JSX.Element {
-  const theme       = useAppState((s) => s.theme);
-  const setTheme    = useAppState((s) => s.setTheme);
-  const username    = useAppState((s) => s.username);
-  const setUsername = useAppState((s) => s.setUsername);
+  const theme         = useAppState((s) => s.theme);
+  const setTheme      = useAppState((s) => s.setTheme);
+  const username      = useAppState((s) => s.username);
+  const clearUsername = useAppState((s) => s.clearUsername);
 
   const toggleTheme = (): void => setTheme(theme === "dark" ? "light" : "dark");
-  const switchUser  = (): void => {
-    // Clearing username re-triggers OnboardingFlow's name-picker step.
-    // Use setUsername with empty string → undefined via cast trick; we expose
-    // a dedicated signal via setState to be explicit.
-    useAppState.setState({ username: undefined });
-  };
-  // keep setUsername referenced so lint doesn't complain (future use)
-  void setUsername;
+  const switchUser  = (): void => { clearUsername(); };
 
   const initials = userInitials(username);
 

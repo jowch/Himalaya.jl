@@ -37,6 +37,18 @@ function persist_analysis!(db::SQLite.DB, exposure_id::Int,
                             peaks_result::NamedTuple,
                             candidates::Vector{<:Himalaya.Index},
                             group_indices::Vector{<:Himalaya.Index})
+    SQLite.transaction(db) do
+    _persist_analysis_inner!(db, exposure_id, q_full, I_full, peaks_result,
+                             candidates, group_indices)
+    end
+end
+
+function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
+                                   q_full::Vector{Float64},
+                                   I_full::Vector{Float64},
+                                   peaks_result::NamedTuple,
+                                   candidates::Vector{<:Himalaya.Index},
+                                   group_indices::Vector{<:Himalaya.Index})
 
     # Snapshot the custom group's members by *semantic identity* (phase + basis)
     # BEFORE we delete the indices rows. Without this, the deletion below
