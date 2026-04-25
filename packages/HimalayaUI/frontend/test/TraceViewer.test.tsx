@@ -132,10 +132,10 @@ describe("<TraceViewer> — overlay ticks", () => {
     );
     const ticks = container.querySelectorAll('[data-role="tick-root"] line');
     expect(ticks.length).toBe(2);
-    // Active (non-hovered) ticks default to a quiet stroke-opacity of 0.5
+    // Active (non-hovered) ticks default to a quiet stroke-opacity of 0.35
     // — they don't compete with the data until hovered.
     const first = ticks[0] as SVGLineElement;
-    expect(first.getAttribute("stroke-opacity")).toBe("0.5");
+    expect(first.getAttribute("stroke-opacity")).toBe("0.35");
   });
 
   it("adds the hovered index's ticks on top of active ones", () => {

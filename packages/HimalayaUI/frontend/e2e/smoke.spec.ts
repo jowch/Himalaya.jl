@@ -237,6 +237,60 @@ test("reanalyze: stale-indices banner fires POST /analyze when clicked", async (
   await expect.poll(() => analyzeCalled, { timeout: 2000 }).toBe(true);
 });
 
+test("curate → reanalyze: active-set membership survives a reanalysis round-trip", async ({ page }) => {
+  const EXPOSURE = {
+    id: 5, sample_id: 10, filename: "scan1.dat", kind: "file",
+    selected: true, tags: [], sources: [],
+  };
+  // Index 1 (Pn3m) is already in the active group and stale — the state after
+  // curating and then editing peaks, which marks indices for recomputation.
+  const BASE_INDEX = {
+    id: 1, exposure_id: 5, phase: "Pn3m", basis: 0.1, score: 0.95,
+    r_squared: 0.99, lattice_d: 12.5, predicted_q: [0.1, 0.14], peaks: [],
+  };
+  let indexStatus = "stale";
+  let analyzeCalled = false;
+
+  await seedState(page, { activeExperimentId: 1, activeSampleId: 10, activeExposureId: 5 });
+  await mockCore(page, [{ id: 1, username: "alice" }]);
+
+  await page.route("**/api/samples/10/exposures", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([EXPOSURE]) }));
+  await page.route("**/api/exposures/5/trace", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json",
+      body: JSON.stringify({ q: [0.1, 0.2], I: [10, 20], sigma: [1, 1] }) }));
+  await page.route("**/api/exposures/5/peaks", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
+  await page.route("**/api/exposures/5/indices", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json",
+      body: JSON.stringify([{ ...BASE_INDEX, status: indexStatus }]) }));
+  await page.route("**/api/exposures/5/groups", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json",
+      body: JSON.stringify([{ id: 1, exposure_id: 5, kind: "auto", active: true, members: [1] }]) }));
+
+  await page.route("**/api/exposures/5/analyze", async (route) => {
+    analyzeCalled = true;
+    indexStatus = "candidate";
+    await route.fulfill({ status: 200, contentType: "application/json",
+      body: JSON.stringify({ id: 5, analyzed: true }) });
+  });
+
+  await page.goto("/");
+
+  // Index 1 is active (curated) but stale — banner must appear.
+  await expect(page.locator('[data-index-id="1"][data-active]')).toBeVisible();
+  await expect(page.getByRole("alert")).toContainText("stale");
+
+  // Trigger reanalysis.
+  await page.getByRole("button", { name: /Re-analyze/ }).click();
+  await expect.poll(() => analyzeCalled, { timeout: 2000 }).toBe(true);
+
+  // Group membership must survive — index 1 stays active after the refetch.
+  await expect(page.locator('[data-index-id="1"][data-active]')).toBeVisible();
+  // Stale banner must be gone once indices are fresh.
+  await expect(page.getByRole("alert")).not.toBeVisible();
+});
+
 test("tab rocker switches to the Compare page placeholder", async ({ page }) => {
   await seedState(page, { activeExperimentId: 1, activeSampleId: 10 });
   await mockCore(page, [{ id: 1, username: "alice" }]);

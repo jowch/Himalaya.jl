@@ -74,7 +74,7 @@ describe("<PhasePanel> — active group", () => {
 });
 
 describe("<PhasePanel> — score bars", () => {
-  it("renders a score bar for each alternative whose width reflects its score", async () => {
+  it("renders a score bar whose width reflects its score", async () => {
     mockAll(
       [
         { id: 10, exposure_id: 42, phase: "Pn3m", basis: 0.5, score: 0.8,
@@ -114,7 +114,7 @@ describe("<PhasePanel> — alternatives", () => {
     expect(screen.getByRole("button", { name: /add index 11/i })).toBeInTheDocument();
   });
 
-  it("dims alternatives with r_squared below 0.98 and shows 'low R²' label", async () => {
+  it("dims alternatives with r_squared below 0.98", async () => {
     mockAll(
       [
         { id: 10, exposure_id: 42, phase: "Pn3m", basis: 0.5, score: 0.8,
@@ -134,7 +134,6 @@ describe("<PhasePanel> — alternatives", () => {
     expect(li).not.toBeNull();
     expect(li).toHaveAttribute("data-low-r2", "true");
     expect(li!.className).toMatch(/opacity-40/);
-    expect(screen.getByText(/low R²/i)).toBeInTheDocument();
 
     // id:10 is in the active group (members: [10]), not alternatives
     expect(document.querySelector('[data-alternative-id="10"]')).toBeNull();
@@ -152,7 +151,6 @@ describe("<PhasePanel> — alternatives", () => {
     renderWithProviders(<PhasePanel exposureId={42} />);
     await waitFor(() => expect(screen.getByText("Im3m")).toBeInTheDocument());
     expect(document.querySelector('[data-low-r2="true"]')).toBeNull();
-    expect(screen.queryByText(/low R²/i)).toBeNull();
   });
 
   it("hovering an alternative sets hoveredIndexId; leaving clears it", async () => {

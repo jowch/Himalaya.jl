@@ -5,6 +5,8 @@ import { phaseColor } from "../phases";
 
 export interface MillerPlotProps {
   indices: IndexEntry[];
+  /** When set, dims all indices except this one. Also accepts candidates not in `indices`. */
+  hoveredIndex?: IndexEntry | undefined;
 }
 
 export interface ScatterRow {
@@ -36,19 +38,24 @@ export function toScatterData(indices: IndexEntry[]): ScatterRow[] {
   return rows;
 }
 
-export function MillerPlot({ indices }: MillerPlotProps): JSX.Element {
+export function MillerPlot({ indices, hoveredIndex }: MillerPlotProps): JSX.Element {
   const hostRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
 
-    const data = toScatterData(indices);
+    const hoveredId = hoveredIndex?.id;
+    const dimming = hoveredId !== undefined;
 
-    // Group rows by indexId so we can render one regression line per index —
-    // mixing indices into a single fit would draw a line through the wrong
-    // cluster and hide per-phase goodness-of-fit. We render a separate
-    // linearRegressionY mark per group, keyed on its color.
+    // Combine active indices with the hovered candidate (if it's not already active).
+    const activeIds = new Set(indices.map((ix) => ix.id));
+    const allIndices = hoveredIndex && !activeIds.has(hoveredIndex.id)
+      ? [...indices, hoveredIndex]
+      : indices;
+
+    const data = toScatterData(allIndices);
+
     const byIndex = new Map<number, ScatterRow[]>();
     for (const r of data) {
       const list = byIndex.get(r.indexId);
@@ -56,16 +63,19 @@ export function MillerPlot({ indices }: MillerPlotProps): JSX.Element {
     }
 
     const regressionMarks: Plot.Markish[] = [];
-    for (const [, rows] of byIndex) {
-      if (rows.length < 2) continue; // need ≥2 points for a line
+    for (const [id, rows] of byIndex) {
+      if (rows.length < 2) continue;
       const color = rows[0]!.color;
+      const isHovered = id === hoveredId;
+      const opacity = dimming ? (isHovered ? 1 : 0.18) : 0.85;
       regressionMarks.push(
         Plot.linearRegressionY(rows, {
           x: "ratio",
           y: "q",
           stroke: color,
-          strokeOpacity: 0.85,
-          strokeDasharray: "4,3",
+          strokeOpacity: opacity,
+          strokeWidth: isHovered ? 1.5 : 1,
+          ...(isHovered ? {} : { strokeDasharray: "4,3" }),
         }),
       );
     }
@@ -88,9 +98,14 @@ export function MillerPlot({ indices }: MillerPlotProps): JSX.Element {
         Plot.dot(data, {
           x: "ratio", y: "q",
           fill: (d: ScatterRow) => d.color,
+          fillOpacity: dimming
+            ? (d: ScatterRow) => (d.indexId === hoveredId ? 1 : 0.15)
+            : 1,
           stroke: "var(--color-bg)",
           strokeWidth: 1,
-          r: 3,
+          r: dimming
+            ? (d: ScatterRow) => (d.indexId === hoveredId ? 4 : 2.5)
+            : 3,
           title: (d: ScatterRow) => `${d.phase}\nratio ${d.ratio.toFixed(3)}\nq ${d.q.toFixed(4)}`,
         }),
       ],
@@ -98,7 +113,7 @@ export function MillerPlot({ indices }: MillerPlotProps): JSX.Element {
 
     host.replaceChildren(el);
     return () => { host.replaceChildren(); };
-  }, [indices]);
+  }, [indices, hoveredIndex]);
 
   return <div ref={hostRef} className="w-full h-full" data-testid="miller-plot" />;
 }

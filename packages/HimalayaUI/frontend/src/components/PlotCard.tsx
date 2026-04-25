@@ -7,6 +7,8 @@ import {
 } from "../queries";
 import { TraceViewer } from "./TraceViewer";
 import { HintText } from "./ui";
+import { phaseColor } from "../phases";
+import type { IndexEntry, Peak } from "../api";
 
 /**
  * PlotCard — center card on the Index page. Wraps the TraceViewer, a Miller-plot
@@ -132,6 +134,12 @@ export function PlotCard(): JSX.Element {
       <div className="relative flex-1 min-h-0">
         {body}
       </div>
+      {activeExposureId !== undefined && traceQ.data && (
+        <PlotLegend
+          peaks={peaksQ.data ?? []}
+          hoveredIndex={hoveredIndex}
+        />
+      )}
     </div>
   );
 }
@@ -180,7 +188,7 @@ function TitleStrip({
                          max-w-[44ch]">
           {hasExp || hasSample ? (
             <>
-              <span className={hasExp ? "text-fg" : "text-fg-muted italic"}>
+              <span className={hasExp ? "text-fg-muted" : "text-fg-muted italic"}>
                 {experimentName ?? "pick an experiment"}
               </span>
               <span className="text-fg-dim mx-1.5">·</span>
@@ -296,5 +304,78 @@ export function QNumInput({ value, onCommit, testId }: QNumInputProps): JSX.Elem
                  text-fg text-[10.5px] tabular-nums text-right
                  outline-0 focus:border-accent"
     />
+  );
+}
+
+// ── Plot legend ─────────────────────────────────────────────────────────────
+
+interface PlotLegendProps {
+  peaks: Peak[];
+  hoveredIndex: IndexEntry | undefined;
+}
+
+function TriangleSvg({ color, opacity = 1 }: { color: string; opacity?: number }): JSX.Element {
+  // Downward-pointing triangle matching TraceViewer geometry (hw=4, h=7)
+  return (
+    <svg width="10" height="8" viewBox="0 0 8 7" style={{ display: "block" }}>
+      <polygon
+        points="-4,0 4,0 0,7"
+        transform="translate(4,0)"
+        fill={color}
+        fillOpacity={opacity}
+        stroke={color}
+        strokeOpacity={opacity}
+        strokeWidth="0.5"
+      />
+    </svg>
+  );
+}
+
+function TickLineSvg({ color }: { color: string }): JSX.Element {
+  return (
+    <svg width="6" height="12" viewBox="0 0 6 12" style={{ display: "block" }}>
+      <line x1="3" y1="0" x2="3" y2="12" stroke={color} strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function LegendItem({
+  symbol,
+  label,
+  style,
+}: {
+  symbol: JSX.Element;
+  label: string;
+  style?: React.CSSProperties;
+}): JSX.Element {
+  return (
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap" style={style}>
+      {symbol}
+      {label}
+    </span>
+  );
+}
+
+function PlotLegend({ peaks, hoveredIndex }: PlotLegendProps): JSX.Element {
+  const hasManualPeaks   = peaks.some((p) => p.source === "manual");
+  const hasExcludedPeaks = peaks.some((p) => p.excluded);
+  return (
+    <div className="flex items-center gap-4 px-4 py-1.5 border-t border-border-soft
+                    text-[10.5px] font-mono text-fg-dim flex-wrap">
+      <LegendItem symbol={<TriangleSvg color="var(--color-accent)" />} label="auto peak" />
+      {hasManualPeaks && (
+        <LegendItem symbol={<TriangleSvg color="var(--color-peak-manual)" />} label="manual peak" />
+      )}
+      {hasExcludedPeaks && (
+        <LegendItem symbol={<TriangleSvg color="var(--color-accent)" opacity={0.3} />} label="excluded" />
+      )}
+      {hoveredIndex && (
+        <LegendItem
+          symbol={<TickLineSvg color={phaseColor(hoveredIndex.phase)} />}
+          label={`predicted ${hoveredIndex.phase}`}
+          style={{ color: phaseColor(hoveredIndex.phase) }}
+        />
+      )}
+    </div>
   );
 }
