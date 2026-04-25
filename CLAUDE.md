@@ -2,7 +2,7 @@
 
 ## What this is
 
-A Julia package for **indexing SAXS diffraction patterns** — given a 1D integration trace, find Bragg peaks and identify the liquid-crystalline phase (Pn3m, Im3m, Ia3d, Fm3m, Fd3m, Hexagonal, Lamellar, Square) by fitting peak q-values to known phase-ratio series.
+A Julia monorepo for **indexing SAXS diffraction patterns**. The core `Himalaya` package finds Bragg peaks in a 1D integration trace and identifies the liquid-crystalline phase (Pn3m, Im3m, Ia3d, Fm3m, Fd3m, Hexagonal, Lamellar, Square) by fitting peak q-values to known phase-ratio series. `HimalayaUI` (under `packages/`) is a full-stack web app — Julia/Oxygen.jl REST backend + React/Vite frontend — for running and curating analyses on a batch of SAXS exposures.
 
 ## Code layout
 
@@ -16,7 +16,7 @@ src/                         # core Himalaya package
   sharpness.jl               # Savitzky-Golay / CWT curvature
   threshold.jl               # kneedle elbow finder
   phase.jl                   # Phase abstract type hierarchy + phaseratios
-  index.jl                   # Index struct, indexpeaks, score, fit
+  index.jl                   # Index struct, indexpeaks, score
   util.jl
 packages/
   HimalayaUI/                # web-app sub-package
@@ -41,9 +41,13 @@ packages/
         queries.ts           # TanStack Query hooks + queryKeys
         phases.ts            # phase → color palette
         styles.css           # Tailwind v4 + @theme tokens
-        components/          # Navbar, Layout, SampleList, UserModal,
-                             #   ExposureList, TraceViewer, MillerPlot,
-                             #   PhasePanel, PropertiesPanel (+ tabs), …
+        components/          # AppShell, AppHeader, TabRocker, TitleButton,
+                             #   OnboardingFlow, NavModal, UtilityCluster,
+                             #   ChatCard, PlotCard, TraceViewer,
+                             #   IndicesCard, PhasePanel, StaleIndicesBanner,
+                             #   MillerPlot, Pn3mIcon, ui/…
+        hooks/               # useFocusTrap
+        pages/               # IndexPage (three-card workspace), ComparePage
       test/                  # Vitest + React Testing Library
       e2e/                   # Playwright (mocks /api via page.route)
       dist/                  # Vite build output; served by Oxygen.jl in prod
@@ -110,6 +114,8 @@ julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
 **SQLite.jl:**
 - `DBInterface.lastrowid` takes the query **result**, not the db: `res = DBInterface.execute(db, sql, params); id = Int(DBInterface.lastrowid(res))`.
 - Raw rows from `DBInterface.execute` lose their values after the query closes. Materialize with `Tables.rowtable(DBInterface.execute(...))` to get stable `NamedTuple`s (access fields via `row.name`).
+- **FK enforcement is on.** `open_db` runs `PRAGMA foreign_keys = ON` on every connection. Any FK column that references `users(id)` and must survive user deletion needs `ON DELETE SET NULL` in the schema DDL — add it there, not at call sites. `index_groups.created_by` and `user_actions.user_id` already have this.
+- **`persist_analysis!` is transactional.** The delete-then-reinsert sequence in `pipeline.jl` is wrapped in `SQLite.transaction`. If you add new write steps to that function, put them inside `_persist_analysis_inner!` so they stay atomic.
 
 **Oxygen.jl 1.10.x:**
 - Use the singleton API: `@get "/path/{id}" function(req::HTTP.Request, id::Int) ... end`. Typed function args extract path params.
@@ -130,11 +136,23 @@ julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
 
 **TypeScript strict + `exactOptionalPropertyTypes: true`.** `set({ username: undefined })` fails — optional fields declared as `string | undefined` rather than `username?: string` keep this ergonomic. For passing optional values through (e.g., `AuthOpts`), use the `authOpts(username)` helper in `queries.ts` which returns `{}` or `{ username }` — never `{ username: undefined }`.
 
+**Zustand: use named actions, not `setState`.** The store exposes specific actions (`clearUsername`, `setTheme`, `openNavModal`, etc.). Prefer these over `useAppState.setState({ ... })` — direct setState bypasses encapsulation and triggers lint warnings. If you need a new state transition, add a named action to `state.ts`.
+
 **State split (load-bearing):** Zustand owns *client* state (active sample/exposure, hoveredIndexId, username). TanStack Query owns *server* state (experiments, samples, exposures, peaks, indices, groups). Mutations invalidate scoped query keys (`queryKeys.peaks(id)`, `queryKeys.groups(id)`) — don't mix the two concerns in the same hook.
 
 **Observable Plot inside React:** the plot element has a runtime `.scale(name).invert(px)` method that isn't in DOM types; cast with `(el as unknown as { scale: ... })`. Used by TraceViewer to translate click pixel coords to q values.
 
 **E2E selectors:** Playwright tests use `data-testid`, `role`, or stable `data-*` attributes (`data-sample-id`, `data-exposure-id`, `data-alternative-id`, `data-active`, `data-low-r2`). Never assert on Tailwind class strings — they change when styling evolves. For Vitest/RTL tests, use `screen.getByText("X").closest("li")` + `toHaveAttribute` rather than `document.querySelector` — the latter bypasses RTL's async-aware retry logic.
+
+**Playwright port binding:** `playwright.config.ts` expects the dev server on `http://127.0.0.1:5173`, not `localhost`. If another process has that port, tests hang for 60 s then fail. Kill with `lsof -ti:5173 | xargs kill -9`, then re-run. If starting Vite separately before `npm run e2e`, bind it explicitly: `npm run dev -- --host 127.0.0.1`.
+
+**Focus trapping in modals.** `src/hooks/useFocusTrap.ts` exports `useFocusTrap(containerRef, active)`. Call it inside any modal or overlay that should keep Tab focus within its bounds. It intercepts Tab/Shift+Tab to cycle among focusable children and restores the previously-focused element on cleanup. NavModal and OnboardingFlow already use it.
+
+**`QNumInput` is exported from `PlotCard.tsx`** for unit testing. It implements a focus-gated controlled input: external `value` prop changes are synced to draft state only when the input is not focused, preventing wheel-zoom events from interrupting mid-edit. Follow this pattern for any numeric input that can be updated by external events.
+
+**`StaleIndicesBanner` is mounted in `PhasePanel`.** When any index has `status: "stale"`, the banner renders above the index list with a Re-analyze button that posts to `/api/exposures/:id/analyze`. If you add new routes that mark indices stale, no further UI wiring is needed — the banner appears automatically.
+
+**Imperative render functions in effects: use `useCallback`.** Wrap any function that is both defined inside a component and used as a `useEffect` dependency in `useCallback` with its true deps. The effect then depends on `[theCallback]` alone — no redundant dep list, no eslint-disable. `TraceViewer`'s overlay renderer follows this pattern.
 
 **`Fm3m` missing from `indexpeaks` dispatch** — the all-phases loop in `src/index.jl` omits `Fm3m`. The phase is defined and `minpeaks`/`phaseratios` exist, but `indexpeaks` can never return an `Fm3m` index. Known pre-existing gap, not something to fix opportunistically.
 
@@ -143,7 +161,7 @@ julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
 ## Current state
 
 - Core Himalaya: `v0.5.0` on `main` — v2 peak-finding (persistence + sharpness + kneedle).
-- HimalayaUI: **Plans 1–6 complete + index scoring redesign.** Backend: SQLite pipeline, REST API (Oxygen.jl), CLI. Frontend: full single-page analysis UI (sample list, trace viewer with peak editing, Miller plot, phase panel, tabbed properties panel). The web-app design spec (§1–10) is substantively implemented; see [docs/superpowers/plans/](docs/superpowers/plans/) for per-plan narrative.
+- HimalayaUI: **Plans 1–6 + three-card Index redesign complete.** Backend: transactional SQLite pipeline, FK enforcement, REST API (Oxygen.jl), CLI. Frontend: three-card workspace (chat | trace plot | index choices), trace viewer with peak editing, Miller plot, PhasePanel with curate + stale-indices reanalyze, OnboardingFlow + NavModal with focus trapping. Test coverage: 237 Julia · 118 Vitest · 8 Playwright E2E.
 - Deferred for later: Phase panel Recent section, export UI, per-user audit view, beamline-config editor, derived-exposure construction. See [docs/future-feature-ideas.md](docs/future-feature-ideas.md).
 
 ## Further reading
