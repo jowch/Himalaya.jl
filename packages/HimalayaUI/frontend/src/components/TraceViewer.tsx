@@ -468,7 +468,7 @@ export function TraceViewer({
           data-role="cursor-dot"
           r={3.5}
           fill="none"
-          stroke="var(--color-fg-dim)"
+          stroke="var(--color-accent)"
           strokeWidth={1.5}
           opacity={0}
         />
