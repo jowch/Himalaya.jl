@@ -311,7 +311,7 @@ export function TraceViewer({
       let matchedPy: number | null = null;
       for (const draw of peakDraws) {
         if (Math.abs(draw.px - px) <= TICK_MATCH_PX) {
-          matchedPy = draw.py - TRIANGLE_H - 2;
+          matchedPy = draw.py - TRIANGLE_H - 7;
           break;
         }
       }
