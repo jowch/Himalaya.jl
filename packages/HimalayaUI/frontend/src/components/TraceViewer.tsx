@@ -320,10 +320,11 @@ export function TraceViewer({
 
       // Faded → neutral gray (color signal removed entirely).
       const stroke = opts.faded ? "var(--color-fg-dim)" : t.color;
-      // Quiet defaults: thin and translucent. Hover bumps to the previous
-      // emphasised state so the active phase pops without being shouty.
       const strokeWidth   = opts.strong ? "1.5" : "1";
       const strokeOpacity = opts.faded ? "0.3" : (opts.strong ? "1" : "0.5");
+      // Default state: dashed so ticks read as "predicted, not confirmed".
+      // Strong (hover) state: solid so the active phase is unambiguous.
+      const strokeDasharray = (!opts.strong && !opts.faded) ? "3,3" : "";
 
       const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
       line.setAttribute("x1", String(px));
@@ -334,6 +335,7 @@ export function TraceViewer({
       line.setAttribute("stroke-width", strokeWidth);
       line.setAttribute("stroke-opacity", strokeOpacity);
       line.setAttribute("stroke-linecap", "round");
+      if (strokeDasharray) line.setAttribute("stroke-dasharray", strokeDasharray);
       tickRoot.appendChild(line);
     }
 

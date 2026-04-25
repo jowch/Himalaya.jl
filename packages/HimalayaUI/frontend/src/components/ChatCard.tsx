@@ -103,7 +103,7 @@ function MessageRow({ msg }: { msg: SampleMessage }): JSX.Element {
         </span>
         <span className="text-fg-dim text-[10px]">{formatTime(msg.created_at)}</span>
       </div>
-      <p className="text-[12.5px] font-sans text-fg leading-snug break-words whitespace-pre-wrap">
+      <p className="text-[12.5px] font-sans text-fg-muted leading-snug break-words whitespace-pre-wrap">
         {msg.body}
       </p>
     </div>

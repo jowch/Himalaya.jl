@@ -13,17 +13,22 @@ import { useIndices, useGroups } from "../queries";
  * outside the trace plot eliminates that conflict entirely.
  */
 export function IndicesCard(): JSX.Element {
-  const exposureId = useAppState((s) => s.activeExposureId);
-  const indicesQ   = useIndices(exposureId);
-  const groupsQ    = useGroups(exposureId);
+  const exposureId    = useAppState((s) => s.activeExposureId);
+  const hoveredIndexId = useAppState((s) => s.hoveredIndexId);
+  const indicesQ      = useIndices(exposureId);
+  const groupsQ       = useGroups(exposureId);
 
-  const activeGroupIndices = useMemo(() => {
+  const { activeGroupIndices, hoveredIndex } = useMemo(() => {
     const indices = indicesQ.data ?? [];
     const active  = (groupsQ.data ?? []).find((g) => g.active);
-    return (active?.members ?? [])
+    const activeGroupIndices = (active?.members ?? [])
       .map((id) => indices.find((i) => i.id === id))
       .filter((i): i is NonNullable<typeof i> => i != null);
-  }, [indicesQ.data, groupsQ.data]);
+    const hoveredIndex = hoveredIndexId != null
+      ? indices.find((i) => i.id === hoveredIndexId)
+      : undefined;
+    return { activeGroupIndices, hoveredIndex };
+  }, [indicesQ.data, groupsQ.data, hoveredIndexId]);
 
   return (
     <div data-testid="indices-card" className="h-full min-h-0 flex flex-col">
@@ -40,7 +45,7 @@ export function IndicesCard(): JSX.Element {
           <span>√N · q sanity</span>
         </div>
         <div className="h-[140px]">
-          <MillerPlot indices={activeGroupIndices} />
+          <MillerPlot indices={activeGroupIndices} hoveredIndex={hoveredIndex} />
         </div>
       </div>
     </div>

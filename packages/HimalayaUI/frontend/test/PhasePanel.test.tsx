@@ -134,7 +134,6 @@ describe("<PhasePanel> — alternatives", () => {
     expect(li).not.toBeNull();
     expect(li).toHaveAttribute("data-low-r2", "true");
     expect(li!.className).toMatch(/opacity-40/);
-    expect(screen.getByText(/low R²/i)).toBeInTheDocument();
 
     // id:10 is in the active group (members: [10]), not alternatives
     expect(document.querySelector('[data-alternative-id="10"]')).toBeNull();

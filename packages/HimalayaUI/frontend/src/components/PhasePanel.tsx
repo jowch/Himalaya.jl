@@ -46,48 +46,61 @@ function IndexCard({ index, isActive, onAction, onHover, onLeave, "data-alternat
       data-active={isActive || undefined}
       data-low-r2={lowR2 || undefined}
       className={[
-        "flex items-start gap-2.5 rounded-xl border px-3 py-2.5 transition-all",
-        isActive ? "" : "border-transparent hover:bg-bg-hover cursor-default",
+        "grid items-stretch rounded-lg border border-border-soft overflow-hidden transition-all",
         lowR2 ? "opacity-40" : "",
       ].join(" ")}
-      style={isActive ? {
-        background: `${color}12`,
-        borderColor: `${color}38`,
-        boxShadow: `0 4px 16px ${color}18`,
-      } : undefined}
+      style={{
+        gridTemplateColumns: "3px 1fr auto",
+        background: isActive
+          ? `color-mix(in oklab, ${color} 6%, transparent)`
+          : undefined,
+        borderColor: isActive ? `color-mix(in oklab, ${color} 28%, var(--color-border-soft))` : undefined,
+      }}
       onMouseEnter={onHover}
       onMouseLeave={onLeave}
     >
-      {/* Phase color dot — glows on active items */}
-      <span
-        className="mt-[5px] w-2 h-2 rounded-full shrink-0"
-        aria-label={index.phase}
-        role="img"
-        style={{
-          background: color,
-          boxShadow: isActive ? `0 0 6px ${color}99` : undefined,
-        }}
-      />
+      {/* Left color bar */}
+      <div style={{ background: color }} />
 
-      {/* Text block */}
-      <div className="flex-1 min-w-0">
-        {/* Line 1: phase name + lattice parameter */}
-        <div className="flex items-baseline gap-2 min-w-0">
-          <span className="font-semibold text-[13px] shrink-0">
+      {/* Main content */}
+      <div className="px-2.5 py-2 flex flex-col gap-1 min-w-0">
+        {/* Primary row: phase chip + lattice param */}
+        <div className="flex items-center gap-2 min-w-0">
+          <span
+            className="font-mono text-[10.5px] font-semibold px-1.5 py-0.5 rounded-sm border shrink-0"
+            style={{
+              color,
+              background: `color-mix(in oklab, ${color} 10%, transparent)`,
+              borderColor: `color-mix(in oklab, ${color} 35%, transparent)`,
+            }}
+          >
             {index.phase}
           </span>
-          <span className="text-[12px] text-fg-muted truncate">
-            {formatLattice(index.lattice_d)}
-            <span className="text-[10px] ml-0.5">nm</span>
-          </span>
-          {lowR2 && (
-            <span className="text-[10px] text-warning uppercase tracking-wider">
-              low R²
+          {index.lattice_d != null && (
+            <span className="font-mono text-[11px] text-fg truncate min-w-0">
+              <span className="text-fg-dim">a =</span>{" "}
+              {formatLattice(index.lattice_d)}{" "}
+              <span className="text-fg-dim text-[10px]">nm</span>
             </span>
           )}
         </div>
-        {/* Line 2: score · R² as quiet metadata */}
-        <div className="flex gap-3 mt-0.5 text-[11px] text-fg-dim items-center">
+
+        {/* Secondary row: score bar + R² + peak count */}
+        <div className="flex items-center gap-3 text-[10.5px] font-mono text-fg-dim">
+          <span className="flex items-center gap-1.5">
+            <span>score</span>
+            <span className="inline-block w-10 h-1 bg-bg-hover rounded overflow-hidden">
+              <span
+                data-score-bar
+                className="block h-full"
+                style={{
+                  width: `${Math.round((index.score ?? 0) * 100)}%`,
+                  background: color,
+                }}
+              />
+            </span>
+            <span className="text-fg-muted tabular-nums">{formatScore(index.score)}</span>
+          </span>
           <span>
             R²{" "}
             <span className={index.r_squared != null && index.r_squared >= R2_THRESHOLD
@@ -95,25 +108,15 @@ function IndexCard({ index, isActive, onAction, onHover, onLeave, "data-alternat
               {formatR2(index.r_squared)}
             </span>
           </span>
-          <span className="flex items-center gap-1.5">
-            score{" "}
-            <span className="text-fg-muted">{formatScore(index.score)}</span>
-            {!isActive && index.score != null && (
-              <span className="inline-block w-8 h-1 bg-bg-hover rounded overflow-hidden">
-                <span
-                  data-score-bar
-                  className="block h-full bg-accent"
-                  style={{ width: `${Math.round(index.score * 100)}%` }}
-                />
-              </span>
-            )}
+          <span className="ml-auto px-1.5 py-0.5 border border-border-soft rounded-full text-[10px] text-fg-dim">
+            {index.peaks.length} peaks
           </span>
         </div>
       </div>
 
       {/* Add / remove button */}
       <button
-        className="w-5 h-5 shrink-0 mt-0.5 rounded-md flex items-center justify-center text-[14px] text-fg-dim hover:text-fg hover:bg-bg-hover transition-colors"
+        className="w-[34px] border-l border-border-soft bg-transparent text-fg-dim hover:text-fg hover:bg-bg-hover transition-colors text-base font-semibold"
         onClick={onAction}
         aria-label={isActive ? `Remove index ${index.id}` : `Add index ${index.id}`}
       >
