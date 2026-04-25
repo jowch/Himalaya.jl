@@ -321,10 +321,7 @@ export function TraceViewer({
       // Faded → neutral gray (color signal removed entirely).
       const stroke = opts.faded ? "var(--color-fg-dim)" : t.color;
       const strokeWidth   = opts.strong ? "1.5" : "1";
-      const strokeOpacity = opts.faded ? "0.3" : (opts.strong ? "1" : "0.5");
-      // Default state: dashed so ticks read as "predicted, not confirmed".
-      // Strong (hover) state: solid so the active phase is unambiguous.
-      const strokeDasharray = (!opts.strong && !opts.faded) ? "3,3" : "";
+      const strokeOpacity = opts.faded ? "0.3" : (opts.strong ? "1" : "0.35");
 
       const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
       line.setAttribute("x1", String(px));
@@ -335,7 +332,6 @@ export function TraceViewer({
       line.setAttribute("stroke-width", strokeWidth);
       line.setAttribute("stroke-opacity", strokeOpacity);
       line.setAttribute("stroke-linecap", "round");
-      if (strokeDasharray) line.setAttribute("stroke-dasharray", strokeDasharray);
       tickRoot.appendChild(line);
     }
 
@@ -429,17 +425,16 @@ export function TraceViewer({
         <g data-role="peak-root" />
         <line
           data-role="cursor-line"
-          stroke="var(--color-accent)"
+          stroke="var(--color-fg-dim)"
           strokeWidth={1}
-          strokeDasharray="3 3"
-          strokeOpacity={0.8}
+          strokeOpacity={0.7}
           opacity={0}
         />
         <circle
           data-role="cursor-dot"
           r={3.5}
           fill="none"
-          stroke="var(--color-accent)"
+          stroke="var(--color-fg-dim)"
           strokeWidth={1.5}
           opacity={0}
         />
