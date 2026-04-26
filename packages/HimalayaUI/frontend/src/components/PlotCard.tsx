@@ -27,7 +27,7 @@ export function PlotCard(): JSX.Element {
 
   const experimentQ = useExperiment(activeExperimentId ?? 0);
   const samplesQ    = useSamples(activeExperimentId ?? 0);
-  const exposuresQ  = useExposures(activeSampleId);
+  const exposuresQ  = useExposures(activeSampleId, { excludeRejected: true });
   const traceQ      = useTrace(activeExposureId);
   const peaksQ      = usePeaks(activeExposureId);
   const indicesQ    = useIndices(activeExposureId);
