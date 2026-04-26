@@ -1,5 +1,6 @@
 using ArgParse
 using Printf
+using DBInterface
 
 function cli_init(args)
     s = ArgParseSettings(prog = "himalaya init")
@@ -42,7 +43,11 @@ function cli_init(args)
                 name          = ms.name,
                 notes         = ms.notes_sample)
             for filename in ms.filenames
-                create_exposure!(db; sample_id = s_id, filename = filename)
+                abs_filename = isabspath(filename) ? filename :
+                               joinpath(data_dir, filename)
+                image_path = isfile(abs_filename) ? find_tiff_for_dat(abs_filename) : nothing
+                create_exposure!(db; sample_id = s_id, filename = filename,
+                                 image_path = image_path)
             end
             if !isempty(ms.notes_exposure)
                 rows = Tables.rowtable(DBInterface.execute(db,
@@ -81,6 +86,23 @@ function cli_analyze(args)
 
     for sample in samples
         exposures = get_exposures(db, Int(sample.id))
+
+        # Auto-fallback: if no exposure is explicitly selected, use first accepted one
+        has_selected = any(e -> Int(e.selected) == 1, exposures)
+        if !has_selected
+            first_accepted = findfirst(
+                e -> !ismissing(e.status) && e.status == "accepted", exposures)
+            if first_accepted !== nothing
+                fallback_id = Int(exposures[first_accepted].id)
+                DBInterface.execute(db,
+                    "UPDATE exposures SET selected = 0 WHERE sample_id = ?",
+                    [Int(sample.id)])
+                DBInterface.execute(db,
+                    "UPDATE exposures SET selected = 1 WHERE id = ?",
+                    [fallback_id])
+            end
+        end
+
         for exp_row in exposures
             e_id = Int(exp_row.id)
             print("  Analyzing $(sample.label) / $(exp_row.filename) ... ")
