@@ -3,6 +3,22 @@ using SparseArrays
 using Tables
 
 """
+    find_tiff_for_dat(dat_path) -> Union{String, Nothing}
+
+Search for a TIFF image co-located with a .dat file, by replacing
+the extension with .tiff or .tif. Returns the absolute path if found,
+otherwise nothing.
+"""
+function find_tiff_for_dat(dat_path::String)::Union{String,Nothing}
+    base = splitext(dat_path)[1]
+    for ext in (".tiff", ".tif")
+        candidate = base * ext
+        isfile(candidate) && return candidate
+    end
+    nothing
+end
+
+"""
     auto_group(indices) -> Vector{Index}
 
 Greedily select a non-overlapping set of indices by descending score.
