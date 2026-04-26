@@ -35,10 +35,14 @@ export function useSamples(experimentId: number) {
   });
 }
 
-export function useExposures(sampleId: number | undefined) {
+export function useExposures(
+  sampleId: number | undefined,
+  opts?: { excludeRejected?: boolean },
+) {
+  const excludeRejected = opts?.excludeRejected ?? false;
   return useQuery({
-    queryKey: ["sample", sampleId ?? "none", "exposures"] as const,
-    queryFn: () => api.listExposures(sampleId as number),
+    queryKey: ["sample", sampleId ?? "none", "exposures", { excludeRejected }] as const,
+    queryFn: () => api.listExposures(sampleId as number, { excludeRejected }),
     enabled: sampleId !== undefined,
   });
 }
@@ -222,5 +226,55 @@ export function useRemoveSampleTag(experimentId: number, sampleId: number) {
       api.removeSampleTag(sampleId, tagId, authOpts(username)),
     onSuccess: () =>
       qc.invalidateQueries({ queryKey: queryKeys.samples(experimentId) }),
+  });
+}
+
+export function useSetExposureStatus(sampleId: number) {
+  const qc = useQueryClient();
+  const username = useAppState((s) => s.username);
+  return useMutation({
+    mutationFn: ({ exposureId, status }: {
+      exposureId: number;
+      status: "accepted" | "rejected" | null;
+    }) => api.setExposureStatus(exposureId, status, authOpts(username)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sample", sampleId, "exposures", { excludeRejected: false }] });
+      qc.invalidateQueries({ queryKey: ["sample", sampleId, "exposures", { excludeRejected: true }] });
+    },
+  });
+}
+
+export function useSelectExposure(sampleId: number) {
+  const qc = useQueryClient();
+  const username = useAppState((s) => s.username);
+  return useMutation({
+    mutationFn: (exposureId: number) =>
+      api.selectExposure(exposureId, authOpts(username)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sample", sampleId, "exposures", { excludeRejected: false }] });
+      qc.invalidateQueries({ queryKey: ["sample", sampleId, "exposures", { excludeRejected: true }] });
+    },
+  });
+}
+
+export function useAddExposureTag(sampleId: number, exposureId: number) {
+  const qc = useQueryClient();
+  const username = useAppState((s) => s.username);
+  return useMutation({
+    mutationFn: ({ key, value }: { key: string; value: string }) =>
+      api.addExposureTag(exposureId, key, value, authOpts(username)),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: queryKeys.exposures(sampleId) }),
+  });
+}
+
+export function useRemoveExposureTag(sampleId: number, exposureId: number) {
+  const qc = useQueryClient();
+  const username = useAppState((s) => s.username);
+  return useMutation({
+    mutationFn: (tagId: number) =>
+      api.removeExposureTag(exposureId, tagId, authOpts(username)),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: queryKeys.exposures(sampleId) }),
   });
 }
