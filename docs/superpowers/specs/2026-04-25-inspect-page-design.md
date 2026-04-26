@@ -69,7 +69,7 @@ Metadata is wider than the Index chat card to accommodate name/notes/tags comfor
 
 ### `InspectPage.tsx`
 
-Composition root. Reads `activeSampleId` from Zustand, calls `useExposures(sampleId)`. Manages local `selectedExposureId` state (the exposure currently shown in the image view — distinct from the "use for indexing" flag). Default selection on mount: the indexing-marked exposure (`selected = true`) if one exists, otherwise the first non-rejected exposure, otherwise the first exposure. This state does not persist across tab switches. Renders the three cards in the appropriate grid layout. Mirrors the structure of `IndexPage.tsx`.
+Composition root. Reads `activeSampleId` from Zustand, calls `useExposures(sampleId)`. On mount, if `activeSampleId` is undefined, opens the `NavModal` (same behaviour as `IndexPage` — reuse the existing `openNavModal` Zustand action). Manages local `selectedExposureId` state (the exposure currently shown in the image view — distinct from the "use for indexing" flag). Default selection on mount: the indexing-marked exposure (`selected = true`) if one exists, otherwise the first non-rejected exposure, otherwise the first exposure. This state does not persist across tab switches. Renders the three cards in the appropriate grid layout. Mirrors the structure of `IndexPage.tsx`.
 
 ### `ThumbnailGallery.tsx`
 
