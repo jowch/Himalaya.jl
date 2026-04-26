@@ -93,18 +93,53 @@ export const removeSampleTag = (id: number, tag_id: number, opts?: AuthOpts) =>
   request<void>("DELETE", `/api/samples/${id}/tags/${tag_id}`, undefined, opts);
 
 // Exposures
+export interface ExposureTag {
+  id: number;
+  key: string;
+  value: string;
+  source: string;
+}
+
 export interface Exposure {
   id: number;
   sample_id: number;
   filename: string | null;
   kind: "file" | "averaged" | "background_subtracted";
   selected: boolean;
-  tags: unknown[];
+  status: "accepted" | "rejected" | null;
+  image_path: string | null;
+  tags: ExposureTag[];
   sources: unknown[];
 }
 
-export const listExposures = (sample_id: number) =>
-  request<Exposure[]>("GET", `/api/samples/${sample_id}/exposures`);
+export const listExposures = (
+  sample_id: number,
+  opts?: { excludeRejected?: boolean },
+) => {
+  const qs = opts?.excludeRejected ? "?exclude_rejected=true" : "";
+  return request<Exposure[]>("GET", `/api/samples/${sample_id}/exposures${qs}`);
+};
+
+export const setExposureStatus = (
+  id: number,
+  status: "accepted" | "rejected" | null,
+  opts?: AuthOpts,
+) => request<{ id: number; status: string | null }>(
+  "PATCH", `/api/exposures/${id}/status`, { status }, opts);
+
+export const selectExposure = (id: number, opts?: AuthOpts) =>
+  request<{ id: number; selected: boolean }>(
+    "PATCH", `/api/exposures/${id}/select`, {}, opts);
+
+export const addExposureTag = (
+  id: number, key: string, value: string, opts?: AuthOpts,
+) => request<ExposureTag>(
+  "POST", `/api/exposures/${id}/tags`, { key, value }, opts);
+
+export const removeExposureTag = (
+  id: number, tag_id: number, opts?: AuthOpts,
+) => request<void>(
+  "DELETE", `/api/exposures/${id}/tags/${tag_id}`, undefined, opts);
 
 // Trace
 export interface Trace {
