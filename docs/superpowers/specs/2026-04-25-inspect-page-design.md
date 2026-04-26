@@ -25,19 +25,19 @@ A third tab — **Inspect** — is added to the `TabRocker` before the existing 
 
 ## Layout and Responsive Reflow
 
-Three breakpoints using CSS grid, matching the Index page's approach (`grid-cols-[22fr_56fr_22fr]` at 1100px).
+Three breakpoints using CSS grid. The large layout uses `grid-cols-[28fr_22fr_50fr]` — wider metadata and image columns relative to a compact gallery strip, rather than mirroring the Index page's symmetric `22fr 56fr 22fr`.
 
 ### Large (≥ 1400px) — three columns
 
 ```
-┌─────────────┬──────────────────────────────┬─────────────┐
-│  Metadata   │       Thumbnail Gallery       │ Image View  │
-│   (22fr)    │   (56fr, 2-column portrait    │   (22fr)    │
-│             │    grid, scrollable)          │  full-height│
-└─────────────┴──────────────────────────────┴─────────────┘
+┌───────────────┬──────────────┬───────────────────────────┐
+│   Metadata    │   Gallery    │       Image View           │
+│    (28fr)     │   (22fr,     │        (50fr,              │
+│               │  2-col grid) │      full-height)          │
+└───────────────┴──────────────┴───────────────────────────┘
 ```
 
-Column widths mirror the Index page's `22fr 56fr 22fr` so both pages align visually.
+Metadata is wider than the Index chat card to accommodate name/notes/tags comfortably. The gallery is a compact 2-column portrait grid. The image view takes the majority of the width to display the portrait detector image well.
 
 ### Medium (1100px – 1400px) — two columns, 60/40
 
