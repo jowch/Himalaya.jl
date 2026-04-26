@@ -75,11 +75,14 @@ Composition root. Reads `activeSampleId` from Zustand, calls `useExposures(sampl
 
 Displays all exposures for the sample as a portrait-thumbnail grid. Each cell:
 - Shows the 2D TIFF rendered via `<DetectorImage>` at thumbnail size
-- Visual states:
-  - **Blue ring** — currently selected in the image view
-  - **Green ring** — marked for indexing (`selected = true`)
-  - **Dimmed + dashed border** — rejected
-  - Default — unreviewed
+- Visual states via an overlaid chip at the top-left of each thumbnail:
+  - **⊙ Indexing** (blue chip) — marked for indexing (`selected = true`); supersedes accepted chip since indexing implies acceptance
+  - **✓ Accepted** (green chip) — accepted but not the indexing pick
+  - **✗ Rejected** (red chip) — rejected; entire cell (image + label) dimmed
+  - No chip — unreviewed
+  - Currently-viewed exposure (loaded in the image card) shown with a subtle outer glow, not a chip
+- Chip styling: `position: absolute; top: 5px; left: 5px; border-radius: 1px` (thumbnail `border-radius: 6px` minus 5px offset). Thumbnail has `overflow: hidden` so the chip is clipped to the rounded corner without extra math.
+- "Use for indexing" is disabled when an exposure is rejected — the two states are mutually exclusive.
 - Clicking a cell sets `selectedExposureId` locally (does not change the indexing selection)
 - Label below each thumbnail: short filename + status icon
 
