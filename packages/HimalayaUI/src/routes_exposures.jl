@@ -2,9 +2,15 @@ using HTTP, JSON3, DBInterface, Tables, Oxygen
 
 function register_exposures_routes!()
     @get "/api/samples/{id}/exposures" function(req::HTTP.Request, id::Int)
-        db  = current_db()
-        exs = Tables.rowtable(DBInterface.execute(db,
-            "SELECT * FROM exposures WHERE sample_id = ? ORDER BY id", [id]))
+        db     = current_db()
+        params = HTTP.queryparams(req)
+        exclude_rejected = get(params, "exclude_rejected", "false") == "true"
+
+        sql = exclude_rejected ?
+            "SELECT * FROM exposures WHERE sample_id = ? AND (status IS NULL OR status != 'rejected') ORDER BY id" :
+            "SELECT * FROM exposures WHERE sample_id = ? ORDER BY id"
+
+        exs = Tables.rowtable(DBInterface.execute(db, sql, [id]))
         out = map(exs) do e
             tags = Tables.rowtable(DBInterface.execute(db,
                 "SELECT id, key, value, source FROM exposure_tags
@@ -47,6 +53,36 @@ function register_exposures_routes!()
             ["Content-Type"  => "image/png",
              "Cache-Control" => "max-age=3600"],
             bytes)
+    end
+
+    @patch "/api/exposures/{id}/status" function(req::HTTP.Request, id::Int)
+        db   = current_db()
+        body = json(req)
+
+        raw_status = get(body, :status, nothing)
+        status = raw_status === nothing ? nothing : String(raw_status)
+
+        if status !== nothing && status ∉ ("accepted", "rejected")
+            return HTTP.Response(422,
+                ["Content-Type" => "application/json"],
+                JSON3.write(Dict(:error => "status must be 'accepted', 'rejected', or null")))
+        end
+
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM exposures WHERE id = ?", [id]))
+        isempty(rows) && return HTTP.Response(404,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:error => "exposure not found")))
+
+        DBInterface.execute(db,
+            "UPDATE exposures SET status = ? WHERE id = ?", [status, id])
+
+        log_action!(db, req; action = "set_status",
+            entity_type = "exposure", entity_id = id,
+            note = something(status, "null"))
+
+        HTTP.Response(200, ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:id => id, :status => status)))
     end
 
     @patch "/api/exposures/{id}/select" function(req::HTTP.Request, id::Int)
