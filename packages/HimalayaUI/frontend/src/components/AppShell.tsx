@@ -6,6 +6,7 @@ import { TabRocker } from "./TabRocker";
 import { NavModal } from "./NavModal";
 import { IndexPage } from "../pages/IndexPage";
 import { ComparePage } from "../pages/ComparePage";
+import { InspectPage } from "../pages/InspectPage";
 import { useGlobalShortcuts } from "../hooks/useGlobalShortcuts";
 
 /**
@@ -39,7 +40,9 @@ export function AppShell(): JSX.Element {
       <div className="shrink-0 flex justify-center pt-1 pb-2">
         <TabRocker />
       </div>
-      {activePage === "index" ? <IndexPage /> : <ComparePage />}
+      {activePage === "index"   && <IndexPage />}
+      {activePage === "inspect" && <InspectPage />}
+      {activePage === "compare" && <ComparePage />}
       <NavModal />
     </div>
   );

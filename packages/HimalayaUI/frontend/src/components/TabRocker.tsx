@@ -1,6 +1,7 @@
 import { useAppState, type PageId } from "../state";
 
 const TABS: readonly { id: PageId; label: string }[] = [
+  { id: "inspect", label: "Inspect" },
   { id: "index",   label: "Index"   },
   { id: "compare", label: "Compare" },
 ];
