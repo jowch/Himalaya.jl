@@ -75,13 +75,12 @@ Composition root. Reads `activeSampleId` from Zustand, calls `useExposures(sampl
 
 Displays all exposures for the sample as a portrait-thumbnail grid. Each cell:
 - Shows the 2D TIFF rendered via `<DetectorImage>` at thumbnail size
-- Visual states via an overlaid chip at the top-left of each thumbnail:
-  - **⊙ Indexing** (blue chip) — marked for indexing (`selected = true`); supersedes accepted chip since indexing implies acceptance
-  - **✓ Accepted** (green chip) — accepted but not the indexing pick
-  - **✗ Rejected** (red chip) — rejected; entire cell (image + label) dimmed
-  - No chip — unreviewed
-  - Currently-viewed exposure (loaded in the image card) shown with a subtle outer glow, not a chip
-- Chip styling: `position: absolute; top: 5px; left: 5px; border-radius: 1px` (thumbnail `border-radius: 6px` minus 5px offset). Thumbnail has `overflow: hidden` so the chip is clipped to the rounded corner without extra math.
+- Visual states communicated through opacity and a single chip:
+  - **Rejected** — entire cell (image + label) dimmed (`opacity: 0.38`); no chip needed
+  - **Accepted / unreviewed** — full opacity; no chip (distinction is shown in the image card controls, not the gallery)
+  - **⊙ Indexing** — full opacity + a single blue chip at top-left; the only overlay used
+  - **Currently viewed** — subtle outer glow (no chip); independent of status
+- Chip styling: `position: absolute; top: 5px; left: 5px; border-radius: 1px` (thumbnail `border-radius: 6px` minus 5px offset = 1px). Thumbnail has `overflow: hidden` so the chip is clipped to the corner naturally. **If border-radius or offset is ever changed, recalculate chip radius = thumb-radius − offset.**
 - "Use for indexing" is disabled when an exposure is rejected — the two states are mutually exclusive.
 - Clicking a cell sets `selectedExposureId` locally (does not change the indexing selection)
 - Label below each thumbnail: short filename + status icon
