@@ -21,6 +21,34 @@ function register_exposures_routes!()
             JSON3.write(out))
     end
 
+    @get "/api/exposures/{id}/image" function(req::HTTP.Request, id::Int)
+        db   = current_db()
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT image_path FROM exposures WHERE id = ?", [id]))
+        isempty(rows) && return HTTP.Response(404,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:error => "exposure not found")))
+
+        ip = rows[1].image_path
+        (ip === nothing || ip isa Missing) && return HTTP.Response(404,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:error => "no image for this exposure")))
+
+        params   = HTTP.queryparams(req)
+        is_thumb = get(params, "thumb", "0") == "1"
+
+        img = load_and_lognormalize(String(ip))
+        if is_thumb
+            img = resize_to_fit(img, 128)
+        end
+        bytes = encode_png(img)
+
+        HTTP.Response(200,
+            ["Content-Type"  => "image/png",
+             "Cache-Control" => "max-age=3600"],
+            bytes)
+    end
+
     @patch "/api/exposures/{id}/select" function(req::HTTP.Request, id::Int)
         db   = current_db()
         rows = Tables.rowtable(DBInterface.execute(db,
