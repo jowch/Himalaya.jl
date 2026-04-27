@@ -110,19 +110,18 @@ export function InspectPage(): JSX.Element {
         className="
           min-h-0 grid gap-3 flex-1
           grid-cols-1
-          min-[1100px]:grid-cols-[3fr_2fr]
-          min-[1400px]:grid-cols-[28fr_22fr_50fr]
+          min-[1100px]:grid-cols-[2fr_3fr]
+          min-[1400px]:grid-cols-[1fr_2fr]
           h-auto min-[1100px]:flex-1
           min-[1100px]:max-h-[min(700px,calc(100dvh-var(--chrome-h)-1.5rem))]
         "
       >
-        {/* Metadata — col 1 row 1 on medium, col 1 on large */}
+        {/* Metadata — col 1 row 1 at all ≥1100px widths */}
         <section
           className="
             card min-h-[200px] min-[1100px]:min-h-0 overflow-hidden
             order-1
             min-[1100px]:row-start-1 min-[1100px]:col-start-1
-            min-[1400px]:col-start-1
           "
         >
           <SampleMetadataCard
@@ -134,31 +133,29 @@ export function InspectPage(): JSX.Element {
           />
         </section>
 
-        {/* Thumbnail gallery — col 1 row 2 on medium, col 2 on large */}
+        {/* Thumbnail gallery — col 1 row 2 at all ≥1100px widths (filmstrip) */}
         <section
           className="
-            card min-h-[180px] min-[1100px]:min-h-0 overflow-hidden p-2
+            card min-h-[100px] min-[1100px]:min-h-0 overflow-hidden p-2
             order-2
             min-[1100px]:row-start-2 min-[1100px]:col-start-1
-            min-[1400px]:row-start-1 min-[1400px]:col-start-2
           "
         >
           <ThumbnailGallery
             exposures={exposures}
             selectedId={viewingId}
             onSelect={setViewingId}
-            columns="auto"
+            columns={1}
             className="h-full"
           />
         </section>
 
-        {/* Detector image — col 2 row-span-2 on medium, col 3 on large */}
+        {/* Detector image — col 2 row-span-2, dominant right panel */}
         <section
           className="
             card min-h-[300px] min-[1100px]:min-h-0 overflow-hidden
             order-3
             min-[1100px]:row-span-2 min-[1100px]:col-start-2
-            min-[1400px]:row-span-1 min-[1400px]:col-start-3
           "
         >
           {viewingExposure ? (

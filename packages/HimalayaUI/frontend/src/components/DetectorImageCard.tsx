@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Exposure } from "../api";
 import { DetectorImage } from "./DetectorImage";
 
@@ -18,9 +18,27 @@ export function DetectorImageCard({
   const [rejectMode, setRejectMode] = useState(false);
   const [rejectNote, setRejectNote] = useState("");
 
+  // Reset rejection note state when switching to a different exposure
+  useEffect(() => {
+    setRejectMode(false);
+    setRejectNote("");
+  }, [exposure.id]);
+
   const isRejected = exposure.status === "rejected";
   const isAccepted = exposure.status === "accepted";
   const isIndexing = exposure.selected;
+
+  const existingNote = exposure.tags.find(
+    (t) => t.key === "rejection_reason",
+  )?.value;
+
+  function handleRejectPillClick() {
+    if (isRejected) {
+      onSetStatus(null);
+    } else {
+      setRejectMode(true);
+    }
+  }
 
   function handleRejectConfirm() {
     onSetStatus("rejected");
@@ -31,18 +49,84 @@ export function DetectorImageCard({
     setRejectNote("");
   }
 
-  const existingNote = exposure.tags.find(
-    (t) => t.key === "rejection_reason",
-  )?.value;
+  const filename = exposure.filename ?? `Exposure #${exposure.id}`;
+
+  // Status header strip
+  const headerCls = isAccepted
+    ? "bg-success/8 border-b border-success/20"
+    : isRejected
+      ? "bg-error/8 border-b border-error/20"
+      : "border-b border-border";
+
+  const barCls = isAccepted
+    ? "bg-success"
+    : isRejected
+      ? "bg-error"
+      : "bg-transparent";
+
+  // Segmented pill classes
+  const pillBase =
+    "px-3 py-1.5 text-xs transition-colors border-r border-border last:border-r-0";
+
+  const pendingCls = [
+    pillBase,
+    !isAccepted && !isRejected
+      ? "bg-bg-subtle text-fg"
+      : "text-fg-muted hover:text-fg hover:bg-bg-hover",
+  ].join(" ");
+
+  const acceptCls = [
+    pillBase,
+    isAccepted
+      ? "bg-success/15 text-success"
+      : "text-fg-muted hover:text-fg hover:bg-bg-hover",
+  ].join(" ");
+
+  const rejectCls = [
+    pillBase,
+    isRejected
+      ? "bg-error/15 text-error"
+      : "text-fg-muted hover:text-fg hover:bg-bg-hover",
+  ].join(" ");
 
   return (
-    <div className="card flex flex-col h-full min-h-0 p-3 gap-3">
-      <div className="text-xs text-fg-muted truncate shrink-0">
-        {exposure.filename ?? `Exposure #${exposure.id}`}
+    <div className="flex flex-col h-full min-h-0">
+      {/* Status header strip */}
+      <div className={`flex items-center gap-2 shrink-0 ${headerCls}`}>
+        <div className={`w-1 self-stretch shrink-0 ${barCls}`} />
+        <div className="flex items-center gap-2 py-2 pr-3 min-w-0 flex-1">
+          {isAccepted && (
+            <span className="text-[10px] font-medium text-success shrink-0">
+              ✓ Accepted
+            </span>
+          )}
+          {isRejected && (
+            <span className="text-[10px] font-medium text-error shrink-0">
+              ✗ Rejected
+            </span>
+          )}
+          {isRejected && existingNote && !rejectMode && (
+            <span className="text-[10px] text-fg-muted italic truncate">
+              {existingNote}{" "}
+              <button
+                className="underline shrink-0"
+                onClick={() => {
+                  setRejectNote(existingNote);
+                  setRejectMode(true);
+                }}
+              >
+                edit
+              </button>
+            </span>
+          )}
+          <span className="text-[10px] text-fg-muted truncate ml-auto">
+            {filename}
+          </span>
+        </div>
       </div>
 
-      {/* Portrait image — takes available height */}
-      <div className="flex-1 min-h-0 flex items-center justify-center">
+      {/* Detector image — takes all available height */}
+      <div className="flex-1 min-h-0 flex items-center justify-center p-2">
         <DetectorImage
           exposureId={exposure.id}
           imagePath={exposure.image_path}
@@ -51,25 +135,9 @@ export function DetectorImageCard({
         />
       </div>
 
-      {/* Rejection note (read mode) */}
-      {isRejected && existingNote && !rejectMode && (
-        <p className="text-[10px] text-fg-muted italic shrink-0">
-          {existingNote}{" "}
-          <button
-            className="underline"
-            onClick={() => {
-              setRejectNote(existingNote);
-              setRejectMode(true);
-            }}
-          >
-            edit
-          </button>
-        </p>
-      )}
-
-      {/* Rejection note input */}
+      {/* Rejection note input (only in rejectMode) */}
       {rejectMode && (
-        <div className="flex gap-1 shrink-0">
+        <div className="flex gap-1 shrink-0 px-3 pb-2">
           <input
             className="flex-1 text-xs bg-bg border border-border rounded px-2 py-1"
             placeholder="Rejection reason (flare, missed sample…)"
@@ -87,51 +155,38 @@ export function DetectorImageCard({
         </div>
       )}
 
-      {/* Controls */}
-      <div className="flex flex-col gap-1.5 shrink-0">
-        <button
-          onClick={() => onSetStatus(isAccepted ? null : "accepted")}
-          className={[
-            "w-full text-xs py-1.5 rounded border transition-colors",
-            isAccepted
-              ? "border-success text-success bg-success/10"
-              : "border-border text-fg-muted hover:border-success hover:text-success",
-          ].join(" ")}
-        >
-          ✓ Accept
-        </button>
+      {/* Control row */}
+      <div className="flex items-center gap-2 shrink-0 px-3 pb-3">
+        {/* Segmented Accept/Reject/Pending control */}
+        <div className="flex rounded-md overflow-hidden border border-border">
+          <button className={pendingCls} onClick={() => onSetStatus(null)}>
+            ○ Pending
+          </button>
+          <button
+            className={acceptCls}
+            onClick={() => onSetStatus(isAccepted ? null : "accepted")}
+          >
+            ✓ Accept
+          </button>
+          <button className={rejectCls} onClick={handleRejectPillClick}>
+            ✗ Reject
+          </button>
+        </div>
 
-        <button
-          onClick={() => {
-            if (isRejected) {
-              onSetStatus(null);
-            } else {
-              setRejectMode(true);
-            }
-          }}
-          className={[
-            "w-full text-xs py-1.5 rounded border transition-colors",
-            isRejected
-              ? "border-error text-error bg-error/10"
-              : "border-border text-fg-muted hover:border-error hover:text-error",
-          ].join(" ")}
-        >
-          ✗ Reject
-        </button>
-
+        {/* Indexing button */}
         <button
           disabled={isRejected}
           onClick={onSetIndexing}
           aria-label="Use for indexing"
           className={[
-            "w-full text-xs py-1.5 rounded border transition-colors",
+            "ml-auto text-xs px-3 py-1.5 rounded border transition-colors",
             "disabled:opacity-40 disabled:cursor-not-allowed",
             isIndexing
               ? "border-accent text-accent bg-accent/10"
               : "border-border text-fg-muted hover:border-accent hover:text-accent",
           ].join(" ")}
         >
-          ⊙ Use for indexing
+          ⊙ Index
         </button>
       </div>
     </div>

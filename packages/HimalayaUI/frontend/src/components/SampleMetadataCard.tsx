@@ -41,6 +41,19 @@ export function SampleMetadataCard({
 
   return (
     <div className="card flex flex-col gap-3 p-3 overflow-y-auto">
+      {/* Name — leads the card */}
+      <div className="flex flex-col gap-0.5">
+        <label className="text-[10px] text-fg-muted uppercase tracking-wide">
+          Name
+        </label>
+        <input
+          className="w-full bg-bg border border-border rounded px-2 py-1 text-[15px] font-semibold text-fg"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onBlur={() => onUpdateSample({ name })}
+        />
+      </div>
+
       <p className="text-[10px] text-fg-muted">
         {exposureSummary.total} exposures
         {" · "}
@@ -48,19 +61,6 @@ export function SampleMetadataCard({
         {" · "}
         {exposureSummary.rejected} rejected
       </p>
-
-      {/* Name */}
-      <div className="flex flex-col gap-0.5">
-        <label className="text-[10px] text-fg-muted uppercase tracking-wide">
-          Name
-        </label>
-        <input
-          className="w-full bg-bg border border-border rounded px-2 py-1 text-sm text-fg"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          onBlur={() => onUpdateSample({ name })}
-        />
-      </div>
 
       {/* Notes */}
       <div className="flex flex-col gap-0.5">
