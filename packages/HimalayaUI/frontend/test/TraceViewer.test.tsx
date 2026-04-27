@@ -132,10 +132,37 @@ describe("<TraceViewer> — overlay ticks", () => {
     );
     const ticks = container.querySelectorAll('[data-role="tick-root"] line');
     expect(ticks.length).toBe(2);
-    // Active (non-hovered) ticks default to a quiet stroke-opacity of 0.35
-    // — they don't compete with the data until hovered.
+    // No detected peaks → ticks are unmatched → dimmed to 0.15 so the user
+    // can see which predicted positions were not confirmed by the data.
     const first = ticks[0] as SVGLineElement;
-    expect(first.getAttribute("stroke-opacity")).toBe("0.35");
+    expect(first.getAttribute("stroke-opacity")).toBe("0.15");
+  });
+
+  it("matched ticks (detected peak at same q) render at full base opacity", () => {
+    const trace = { q: [0.1, 0.5, 0.9], I: [10, 20, 10], sigma: [1, 1, 1] };
+    const indices: IndexEntry[] = [{
+      id: 1, exposure_id: 1, phase: "Pn3m", basis: 0.5, score: 1,
+      r_squared: 0.99, lattice_d: 12, status: "candidate",
+      predicted_q: [0.5],
+      peaks: [],
+    }];
+    // Peak at exactly q=0.5 — same pixel as the predicted_q → matched.
+    const matchedPeak = {
+      id: 99, exposure_id: 1, q: 0.5, intensity: 20, prominence: null,
+      sharpness: null, source: "auto" as const, excluded: false,
+    };
+    const { container } = render(
+      <TraceViewer
+        trace={trace}
+        peaks={[matchedPeak]}
+        activeGroupIndices={indices}
+        hoveredIndex={undefined}
+        {...defaultProps}
+      />,
+    );
+    const ticks = container.querySelectorAll('[data-role="tick-root"] line');
+    expect(ticks.length).toBe(1);
+    expect((ticks[0] as SVGLineElement).getAttribute("stroke-opacity")).toBe("0.35");
   });
 
   it("adds the hovered index's ticks on top of active ones", () => {
@@ -164,12 +191,14 @@ describe("<TraceViewer> — overlay ticks", () => {
     const ticks = container.querySelectorAll('[data-role="tick-root"] line');
     // 2 active + 3 hovered = 5 ticks total
     expect(ticks.length).toBe(5);
-    // When hovering, the active ticks dim to neutral gray at 0.3; the last
-    // three (hovered) stay in their phase color at full opacity.
+    // Active (faded, unmatched): neutral gray at 0.12.
     const dimmed = Array.from(ticks).slice(0, 2) as SVGLineElement[];
     const dimmedOpacities = dimmed.map((n) => n.getAttribute("stroke-opacity"));
     const dimmedStrokes   = dimmed.map((n) => n.getAttribute("stroke"));
-    expect(dimmedOpacities.every((o) => o === "0.3")).toBe(true);
+    expect(dimmedOpacities.every((o) => o === "0.12")).toBe(true);
     expect(dimmedStrokes.every((s) => s === "var(--color-fg-dim)")).toBe(true);
+    // Hovered (strong, unmatched): phase color at 0.45.
+    const hov = Array.from(ticks).slice(2) as SVGLineElement[];
+    expect(hov.every((n) => n.getAttribute("stroke-opacity") === "0.45")).toBe(true);
   });
 });
