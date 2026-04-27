@@ -5,43 +5,38 @@ interface Props {
   exposures: Exposure[];
   selectedId: number | undefined;
   onSelect: (id: number) => void;
-  /** 1 = horizontal strip, 2 = two-column grid, "auto" = auto-fill grid */
-  columns: 1 | 2 | "auto";
   className?: string;
 }
 
+/*
+ * ThumbnailGallery — responsive layout via CSS only:
+ *
+ *   < 1400px  — thin horizontal filmstrip (flex-row).
+ *               Cells fill the container height; width derived from aspect-ratio.
+ *               No vertical scroll needed.
+ *
+ *   ≥ 1400px  — auto-fill wrapping grid (minmax 90px columns).
+ *               Height derived from column width via aspect-ratio.
+ *               Overflows vertically so all exposures are reachable.
+ */
 export function ThumbnailGallery({
   exposures,
   selectedId,
   onSelect,
-  columns,
   className,
 }: Props): JSX.Element {
-  const isFilmstrip = columns === 1;
-
-  /*
-   * columns === 1 (filmstrip / inspect gallery):
-   *   < 1400px — thin horizontal strip: flex-row, cells fill container height,
-   *              width derived from aspect-ratio. No vertical scroll needed.
-   *   ≥ 1400px — auto-fill grid: columns sized to ~90px, rows wrap naturally,
-   *              vertical scroll if exposures overflow. No horizontal scroll.
-   */
-  const gridClass = isFilmstrip
-    ? [
-        // Base (< 1400px): horizontal filmstrip
-        "flex flex-row gap-2 overflow-x-auto h-full",
-        // Large (≥ 1400px): switch to wrapping auto-fill grid
-        "min-[1400px]:grid min-[1400px]:flex-none",
-        "min-[1400px]:grid-cols-[repeat(auto-fill,minmax(90px,1fr))]",
-        "min-[1400px]:overflow-x-hidden min-[1400px]:overflow-y-auto",
-        "min-[1400px]:h-auto min-[1400px]:content-start",
-      ].join(" ")
-    : columns === 2
-      ? "grid grid-cols-2 gap-2"
-      : "grid grid-cols-[repeat(auto-fill,minmax(72px,1fr))] gap-2";
+  const containerClass = [
+    // Base (< 1400px): horizontal filmstrip
+    "flex flex-row gap-2 overflow-x-auto h-full",
+    // Large (≥ 1400px): wrapping auto-fill grid
+    "min-[1400px]:grid min-[1400px]:flex-none",
+    "min-[1400px]:grid-cols-[repeat(auto-fill,minmax(90px,1fr))]",
+    "min-[1400px]:overflow-x-hidden min-[1400px]:overflow-y-auto",
+    "min-[1400px]:h-auto min-[1400px]:content-start",
+  ].join(" ");
 
   return (
-    <div className={`${gridClass} ${className ?? ""}`}>
+    <div className={`${containerClass} ${className ?? ""}`}>
       {exposures.map((e) => {
         const isViewing  = e.id === selectedId;
         const isRejected = e.status === "rejected";
@@ -57,11 +52,9 @@ export function ThumbnailGallery({
             onClick={() => onSelect(e.id)}
             className={[
               "relative flex flex-col items-center gap-1 cursor-pointer group",
-              // filmstrip: h-full so cell fills strip height; aspect derives width
-              // filmstrip at large: h-auto so grid column width drives sizing
-              isFilmstrip
-                ? "aspect-[3/4] h-full min-[1400px]:h-auto"
-                : "shrink-0",
+              // filmstrip: h-full fills strip; aspect-[3/4] derives width from height
+              // grid (≥1400px): h-auto; width from grid column, height from aspect-ratio
+              "aspect-[3/4] h-full min-[1400px]:h-auto",
               isRejected ? "opacity-40 grayscale" : "",
             ].join(" ")}
           >
@@ -69,10 +62,8 @@ export function ThumbnailGallery({
               className={[
                 "relative w-full overflow-hidden rounded-md transition-all duration-150",
                 // filmstrip: flex-1 fills cell height minus label
-                // filmstrip at large: aspect-[3/4] derives height from column width
-                isFilmstrip
-                  ? "flex-1 min-h-0 min-[1400px]:flex-none min-[1400px]:aspect-[3/4]"
-                  : "aspect-[3/4]",
+                // grid (≥1400px): aspect-ratio derives height from column width
+                "flex-1 min-h-0 min-[1400px]:flex-none min-[1400px]:aspect-[3/4]",
                 isViewing
                   ? "ring-2 ring-accent ring-offset-1 ring-offset-bg-elevated"
                   : "group-hover:ring-1 group-hover:ring-border",

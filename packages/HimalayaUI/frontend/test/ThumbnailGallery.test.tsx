@@ -31,7 +31,6 @@ test("dims rejected exposures", () => {
       exposures={exposures}
       selectedId={1}
       onSelect={vi.fn()}
-      columns={2}
     />,
   );
   const rejected = screen.getByTestId("thumb-cell-2");
@@ -47,7 +46,6 @@ test("shows indexing chip on selected=true exposure", () => {
       exposures={exposures}
       selectedId={1}
       onSelect={vi.fn()}
-      columns={1}
     />,
   );
   expect(screen.getByText("⊙ Indexing")).toBeInTheDocument();
@@ -60,7 +58,6 @@ test("no indexing chip when selected=false", () => {
       exposures={exposures}
       selectedId={undefined}
       onSelect={vi.fn()}
-      columns={1}
     />,
   );
   expect(screen.queryByText("⊙ Indexing")).toBeNull();
@@ -74,7 +71,6 @@ test("calls onSelect when thumbnail clicked", async () => {
       exposures={exposures}
       selectedId={undefined}
       onSelect={onSelect}
-      columns={1}
     />,
   );
   await userEvent.click(screen.getByTestId("thumb-cell-5"));

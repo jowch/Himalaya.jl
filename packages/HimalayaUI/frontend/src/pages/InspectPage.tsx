@@ -153,7 +153,6 @@ export function InspectPage(): JSX.Element {
             exposures={exposures}
             selectedId={viewingId}
             onSelect={setViewingId}
-            columns={1}
             className="h-full"
           />
         </section>
