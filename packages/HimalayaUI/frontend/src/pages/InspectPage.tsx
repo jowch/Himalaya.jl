@@ -112,6 +112,7 @@ export function InspectPage(): JSX.Element {
           grid-cols-1
           min-[1100px]:grid-cols-[2fr_3fr]
           min-[1400px]:grid-cols-[1fr_2fr]
+          min-[1100px]:grid-rows-[auto_1fr]
           h-auto min-[1100px]:flex-1
           min-[1100px]:max-h-[min(700px,calc(100dvh-var(--chrome-h)-1.5rem))]
         "

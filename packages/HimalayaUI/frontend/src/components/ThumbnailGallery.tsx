@@ -17,12 +17,13 @@ export function ThumbnailGallery({
   columns,
   className,
 }: Props): JSX.Element {
-  const gridClass =
-    columns === 1
-      ? "flex flex-row gap-2 overflow-x-auto"
-      : columns === 2
-        ? "grid grid-cols-2 gap-2"
-        : "grid grid-cols-[repeat(auto-fill,minmax(72px,1fr))] gap-2";
+  const isFilmstrip = columns === 1;
+
+  const gridClass = isFilmstrip
+    ? "grid grid-flow-col grid-rows-1 min-[1400px]:grid-rows-2 gap-2 overflow-x-auto h-full"
+    : columns === 2
+      ? "grid grid-cols-2 gap-2"
+      : "grid grid-cols-[repeat(auto-fill,minmax(72px,1fr))] gap-2";
 
   return (
     <div className={`${gridClass} ${className ?? ""}`}>
@@ -40,13 +41,15 @@ export function ThumbnailGallery({
             data-testid={`thumb-cell-${e.id}`}
             onClick={() => onSelect(e.id)}
             className={[
-              "relative flex flex-col items-center gap-1 cursor-pointer shrink-0 group",
+              "relative flex flex-col items-center gap-1 cursor-pointer group",
+              isFilmstrip ? "aspect-[3/4]" : "shrink-0",
               isRejected ? "opacity-40 grayscale" : "",
             ].join(" ")}
           >
             <div
               className={[
-                "relative w-full overflow-hidden rounded-md aspect-[3/4] transition-all duration-150",
+                "relative w-full overflow-hidden rounded-md transition-all duration-150",
+                isFilmstrip ? "flex-1 min-h-0" : "aspect-[3/4]",
                 isViewing
                   ? "ring-2 ring-accent ring-offset-1 ring-offset-bg-elevated"
                   : "group-hover:ring-1 group-hover:ring-border",

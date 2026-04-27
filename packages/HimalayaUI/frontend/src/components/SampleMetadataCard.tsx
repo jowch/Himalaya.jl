@@ -40,7 +40,7 @@ export function SampleMetadataCard({
   }
 
   return (
-    <div className="card flex flex-col gap-3 p-3 overflow-y-auto">
+    <div className="flex flex-col gap-3 p-3 overflow-y-auto">
       {/* Name — leads the card */}
       <div className="flex flex-col gap-0.5">
         <label className="text-[10px] text-fg-muted uppercase tracking-wide">
