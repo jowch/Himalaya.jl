@@ -304,12 +304,17 @@ export function TraceViewer({
       peakRoot.appendChild(tri);
     }
 
+    // Returns true if a detected peak lies within TICK_MATCH_PX of the given q.
+    function isPeakMatched(q: number): boolean {
+      const px = xScale!.apply!(q);
+      return peakDraws.some(d => Math.abs(d.px - px) <= TICK_MATCH_PX);
+    }
+
     // ── 2. Predicted-q vlines. Adaptive endpoint: terminate above a matched
-    //       peak triangle if any, else just above the trace. Defaults are
-    //       deliberately quiet (thin, semi-transparent) so they don't
-    //       compete with the data; on hover the active phase pops to the
-    //       previous emphasised stroke and the others gray out entirely.
-    function drawTickLine(t: IndexTick, opts: { strong: boolean; faded: boolean }): void {
+    //       peak triangle if any, else just above the trace. Matched ticks
+    //       render at full opacity; unmatched (predicted but not found) are
+    //       noticeably dimmer so the user can see which positions were confirmed.
+    function drawTickLine(t: IndexTick, opts: { strong: boolean; faded: boolean; matched: boolean }): void {
       const px = xScale!.apply!(t.q);
       if (!Number.isFinite(px) || !insideX(px)) return;
 
@@ -328,7 +333,11 @@ export function TraceViewer({
       // colour now lives in the track row above the plot.
       const stroke = opts.strong ? t.color : "var(--color-fg-dim)";
       const strokeWidth   = opts.strong ? "1.5" : "1";
-      const strokeOpacity = opts.faded ? "0.3" : (opts.strong ? "1" : "0.35");
+      const strokeOpacity = opts.faded
+        ? (opts.matched ? "0.3"  : "0.12")
+        : opts.strong
+          ? (opts.matched ? "1"    : "0.45")
+          : (opts.matched ? "0.35" : "0.15");
 
       const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
       line.setAttribute("x1", String(px));
@@ -346,13 +355,17 @@ export function TraceViewer({
     //       colour at all times so the row reads as a quiet legend; default
     //       state matches the old vline opacity, hover lights it solid, and
     //       the off-hover indices fade to gray (same scheme as plot vlines).
-    function drawTrackTick(t: IndexTick, opts: { strong: boolean; faded: boolean }): void {
+    function drawTrackTick(t: IndexTick, opts: { strong: boolean; faded: boolean; matched: boolean }): void {
       const px = xScale!.apply!(t.q);
       if (!Number.isFinite(px) || !insideX(px)) return;
 
       const stroke = opts.faded ? "var(--color-fg-dim)" : t.color;
       const strokeWidth   = opts.strong ? "1.75" : "1.25";
-      const strokeOpacity = opts.faded ? "0.3" : (opts.strong ? "1" : "0.55");
+      const strokeOpacity = opts.faded
+        ? (opts.matched ? "0.3"  : "0.12")
+        : opts.strong
+          ? (opts.matched ? "1"    : "0.45")
+          : (opts.matched ? "0.55" : "0.2");
 
       const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
       line.setAttribute("x1", String(px));
@@ -370,13 +383,15 @@ export function TraceViewer({
       ? activeGroupIndices.filter(ix => ix.id !== hoveredIndex.id)
       : activeGroupIndices;
     for (const t of indexTicks(baseIndices)) {
-      drawTickLine (t, { strong: false, faded: dimOthers });
-      drawTrackTick(t, { strong: false, faded: dimOthers });
+      const matched = isPeakMatched(t.q);
+      drawTickLine (t, { strong: false, faded: dimOthers, matched });
+      drawTrackTick(t, { strong: false, faded: dimOthers, matched });
     }
     if (hoveredIndex) {
       for (const t of indexTicks([hoveredIndex])) {
-        drawTickLine (t, { strong: true, faded: false });
-        drawTrackTick(t, { strong: true, faded: false });
+        const matched = isPeakMatched(t.q);
+        drawTickLine (t, { strong: true, faded: false, matched });
+        drawTrackTick(t, { strong: true, faded: false, matched });
       }
     }
   }, [peaks, trace, hoveredIndex, activeGroupIndices, xDomain]);
