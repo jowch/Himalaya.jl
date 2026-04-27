@@ -89,7 +89,7 @@ function IndexCard({ index, isActive, onAction, onHover, onLeave, "data-alternat
         <div className="flex items-center gap-3 text-[10.5px] font-mono text-fg-dim">
           <span className="flex items-center gap-1.5">
             <span>score</span>
-            <span className="inline-block w-10 h-1 bg-bg-hover rounded overflow-hidden">
+            <span className="inline-block w-12 h-1.5 bg-bg-hover rounded-full overflow-hidden">
               <span
                 data-score-bar
                 className="block h-full"

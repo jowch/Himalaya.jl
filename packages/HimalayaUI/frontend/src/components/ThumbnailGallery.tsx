@@ -40,14 +40,16 @@ export function ThumbnailGallery({
             data-testid={`thumb-cell-${e.id}`}
             onClick={() => onSelect(e.id)}
             className={[
-              "relative flex flex-col items-center gap-1 cursor-pointer shrink-0",
-              isRejected ? "opacity-40" : "",
+              "relative flex flex-col items-center gap-1 cursor-pointer shrink-0 group",
+              isRejected ? "opacity-40 grayscale" : "",
             ].join(" ")}
           >
             <div
               className={[
-                "relative w-full overflow-hidden rounded-md aspect-[3/4]",
-                isViewing ? "ring-2 ring-accent" : "",
+                "relative w-full overflow-hidden rounded-md aspect-[3/4] transition-all duration-150",
+                isViewing
+                  ? "ring-2 ring-accent ring-offset-1 ring-offset-bg-elevated"
+                  : "group-hover:ring-1 group-hover:ring-border",
               ].join(" ")}
             >
               <DetectorImage

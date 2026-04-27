@@ -7,6 +7,7 @@
   --color-bg: oklch(0.095 0.004 250);
   --color-bg-elevated: oklch(0.145 0.006 250);
   --color-bg-hover: oklch(0.185 0.007 250);
+  --color-bg-subtle: oklch(0.168 0.007 250);
   --color-fg: oklch(0.95 0.005 250);
   --color-fg-muted: oklch(0.64 0.009 250);
   --color-fg-dim: oklch(0.46 0.009 250);
@@ -29,6 +30,7 @@
   --color-bg: oklch(0.985 0.003 250);
   --color-bg-elevated: oklch(0.995 0.002 250);
   --color-bg-hover: oklch(0.955 0.005 250);
+  --color-bg-subtle: oklch(0.965 0.004 250);
   --color-fg: oklch(0.22 0.010 250);
   --color-fg-muted: oklch(0.46 0.010 250);
   --color-fg-dim: oklch(0.62 0.010 250);

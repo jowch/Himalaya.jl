@@ -104,7 +104,7 @@ export function SampleMetadataCard({
               {tag.source !== "manifest" && (
                 <button
                   onClick={() => onRemoveTag(tag.id)}
-                  className="text-fg-muted hover:text-red-400 leading-none"
+                  className="text-fg-muted hover:text-error leading-none"
                   aria-label={`Remove ${tag.key} tag`}
                 >
                   ×

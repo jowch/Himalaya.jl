@@ -79,7 +79,7 @@ export function DetectorImageCard({
             autoFocus
           />
           <button
-            className="text-xs px-2 py-1 border border-red-400 text-red-400 rounded"
+            className="text-xs px-2 py-1 border border-error text-error rounded"
             onClick={handleRejectConfirm}
           >
             Confirm
@@ -94,8 +94,8 @@ export function DetectorImageCard({
           className={[
             "w-full text-xs py-1.5 rounded border transition-colors",
             isAccepted
-              ? "border-green-400 text-green-400 bg-green-400/10"
-              : "border-border text-fg-muted hover:border-green-400 hover:text-green-400",
+              ? "border-success text-success bg-success/10"
+              : "border-border text-fg-muted hover:border-success hover:text-success",
           ].join(" ")}
         >
           ✓ Accept
@@ -112,8 +112,8 @@ export function DetectorImageCard({
           className={[
             "w-full text-xs py-1.5 rounded border transition-colors",
             isRejected
-              ? "border-red-400 text-red-400 bg-red-400/10"
-              : "border-border text-fg-muted hover:border-red-400 hover:text-red-400",
+              ? "border-error text-error bg-error/10"
+              : "border-border text-fg-muted hover:border-error hover:text-error",
           ].join(" ")}
         >
           ✗ Reject

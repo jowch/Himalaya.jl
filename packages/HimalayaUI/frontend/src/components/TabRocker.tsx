@@ -34,7 +34,7 @@ export function TabRocker(): JSX.Element {
             className={
               "px-3.5 py-1 rounded-full font-sans text-[12px] font-medium " +
               (active
-                ? "bg-bg-hover text-fg shadow-inner"
+                ? "bg-accent/15 text-accent"
                 : "text-fg-muted hover:text-fg")
             }
           >
