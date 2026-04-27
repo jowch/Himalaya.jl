@@ -9,6 +9,7 @@ interface ExposureSummary {
 
 interface Props {
   sample: Sample;
+  experimentName?: string | undefined;
   exposureSummary: ExposureSummary;
   onUpdateSample: (patch: { name?: string; notes?: string }) => void;
   onAddTag: (key: string, value: string) => void;
@@ -17,6 +18,7 @@ interface Props {
 
 export function SampleMetadataCard({
   sample,
+  experimentName,
   exposureSummary,
   onUpdateSample,
   onAddTag,
@@ -41,13 +43,25 @@ export function SampleMetadataCard({
 
   return (
     <div className="flex flex-col gap-3 p-3 overflow-y-auto">
-      {/* Name — leads the card */}
-      <div className="flex flex-col gap-0.5">
-        <label className="text-[10px] text-fg-muted uppercase tracking-wide">
-          Name
-        </label>
+      {/* Breadcrumb + name — leads the card */}
+      <div className="flex flex-col gap-1">
+        {/* experimentName · label breadcrumb */}
+        {(experimentName || sample.label) && (
+          <p className="text-[10px] text-fg-muted truncate">
+            {experimentName && (
+              <span>{experimentName}</span>
+            )}
+            {experimentName && sample.label && (
+              <span className="mx-1 opacity-40">·</span>
+            )}
+            {sample.label && (
+              <span className="font-medium text-fg-dim">{sample.label}</span>
+            )}
+          </p>
+        )}
         <input
-          className="w-full bg-bg border border-border rounded px-2 py-1 text-[15px] font-semibold text-fg"
+          className="w-full bg-transparent border-0 outline-none px-0 text-[15px] font-semibold text-fg placeholder:text-fg-muted"
+          placeholder="Sample name"
           value={name}
           onChange={(e) => setName(e.target.value)}
           onBlur={() => onUpdateSample({ name })}
@@ -75,18 +89,6 @@ export function SampleMetadataCard({
           onBlur={() => onUpdateSample({ notes })}
         />
       </div>
-
-      {/* Label (read-only) */}
-      {sample.label && (
-        <div className="flex flex-col gap-0.5">
-          <label className="text-[10px] text-fg-muted uppercase tracking-wide">
-            Label
-          </label>
-          <span className="text-xs text-fg-muted bg-bg-subtle px-2 py-1 rounded">
-            {sample.label}
-          </span>
-        </div>
-      )}
 
       {/* Tags */}
       <div className="flex flex-col gap-1.5">

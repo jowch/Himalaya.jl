@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAppState } from "../state";
 import {
+  useExperiment,
   useExposures,
   useSamples,
   useSetExposureStatus,
@@ -34,10 +35,13 @@ export function InspectPage(): JSX.Element {
     }
   }, [username, experimentId, sampleId, openModal]);
 
-  const exposuresQ = useExposures(sampleId);
-  const samplesQ   = useSamples(experimentId ?? 0);
-  const exposures  = exposuresQ.data ?? [];
-  const sample     = samplesQ.data?.find((s) => s.id === sampleId);
+  const experimentQ = useExperiment(experimentId ?? 0);
+  const exposuresQ  = useExposures(sampleId);
+  const samplesQ    = useSamples(experimentId ?? 0);
+  const exposures   = exposuresQ.data ?? [];
+  const sample      = samplesQ.data?.find((s) => s.id === sampleId);
+  const experimentName =
+    experimentQ.data?.name ?? experimentQ.data?.path ?? undefined;
 
   // Default: indexing-marked → first accepted → first
   const defaultId = useMemo(() => {
@@ -112,7 +116,7 @@ export function InspectPage(): JSX.Element {
           grid-cols-1
           min-[1100px]:grid-cols-[2fr_3fr]
           min-[1400px]:grid-cols-[1fr_2fr]
-          min-[1100px]:grid-rows-[auto_1fr]
+          min-[1400px]:grid-rows-[auto_1fr]
           h-auto min-[1100px]:flex-1
           min-[1100px]:max-h-[min(700px,calc(100dvh-var(--chrome-h)-1.5rem))]
         "
@@ -127,6 +131,7 @@ export function InspectPage(): JSX.Element {
         >
           <SampleMetadataCard
             sample={sample}
+            experimentName={experimentName}
             exposureSummary={exposureSummary}
             onUpdateSample={(patch) => updateSample.mutate(patch)}
             onAddTag={(k, v) => addSampleTag.mutate({ key: k, value: v })}
@@ -134,12 +139,14 @@ export function InspectPage(): JSX.Element {
           />
         </section>
 
-        {/* Thumbnail gallery — col 1 row 2 at all ≥1100px widths (filmstrip) */}
+        {/* Thumbnail gallery — col 1 row 2 at all ≥1100px widths */}
         <section
           className="
-            card min-h-[100px] min-[1100px]:min-h-0 overflow-hidden p-2
+            card overflow-hidden p-2
             order-2
             min-[1100px]:row-start-2 min-[1100px]:col-start-1
+            h-[130px] min-[1100px]:h-[130px]
+            min-[1400px]:h-auto min-[1400px]:min-h-0
           "
         >
           <ThumbnailGallery
