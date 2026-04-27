@@ -48,7 +48,8 @@ export function IndexPage(): JSX.Element {
         className="min-h-0 grid gap-3
                    grid-cols-1
                    min-[1100px]:grid-cols-[22fr_56fr_22fr]
-                   h-auto min-[1100px]:h-[700px] min-[1100px]:max-h-[calc(100vh-120px)]"
+                   h-auto min-[1100px]:flex-1
+                   min-[1100px]:max-h-[min(700px,calc(100dvh-var(--chrome-h)-1.5rem))]"
       >
         <section className="card order-3 min-[1100px]:order-none min-h-[280px] min-[1100px]:min-h-0 overflow-hidden">
           <ChatCard />

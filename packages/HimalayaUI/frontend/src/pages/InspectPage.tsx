@@ -112,8 +112,8 @@ export function InspectPage(): JSX.Element {
           grid-cols-1
           min-[1100px]:grid-cols-[3fr_2fr]
           min-[1400px]:grid-cols-[28fr_22fr_50fr]
-          h-auto min-[1100px]:h-[700px]
-          min-[1100px]:max-h-[calc(100vh-120px)]
+          h-auto min-[1100px]:flex-1
+          min-[1100px]:max-h-[min(700px,calc(100dvh-var(--chrome-h)-1.5rem))]
         "
       >
         {/* Metadata — col 1 row 1 on medium, col 1 on large */}

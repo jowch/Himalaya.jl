@@ -32,6 +32,9 @@ export function AppShell(): JSX.Element {
     <div
       data-testid="app-shell"
       className="h-full w-full max-w-[1600px] mx-auto flex flex-col min-h-0 relative"
+      // --chrome-h: AppHeader (h-11 = 44px) + TabRocker row (pt-1 + ~28px + pb-2 ≈ 40px).
+      // Pages use this to cap grid height without repeating the sum.
+      style={{ "--chrome-h": "84px" } as React.CSSProperties}
     >
       <AppHeader />
       {/* Page-nav rocker sits in its own row, where the per-page title
