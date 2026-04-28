@@ -37,6 +37,14 @@ interface Layout {
 // aspect — keeps near-square images upright unless space really wants landscape.
 const ROTATE_THRESHOLD = 1.25;
 
+// Auto-rotate is gated to viewports ≥ this width. Below the WorkspaceGrid
+// breakpoint the layout stacks into a single column where the image card is
+// wider than tall by default — but at that breakpoint the user has chosen a
+// portrait-friendly layout, so we keep the exposure upright and let the image
+// fit by width. Matching the WorkspaceGrid breakpoint keeps the two decisions
+// synchronized: one CSS source of truth for "small layout."
+const ROTATE_MIN_VIEWPORT = 1400;
+
 export function DetectorImage({
   exposureId,
   imagePath,
@@ -58,6 +66,14 @@ export function DetectorImage({
     const cw = wrapper.clientWidth;
     const ch = wrapper.clientHeight;
     if (cw === 0 || ch === 0) return;
+    // Below the small-screen breakpoint, force portrait — the stacked layout
+    // gives the image card a wide-but-shallow slot, so rotating to landscape
+    // would make the diffraction pattern read sideways for no real gain.
+    const viewportW = typeof window !== "undefined" ? window.innerWidth : 0;
+    if (viewportW < ROTATE_MIN_VIEWPORT) {
+      setLayout({ orient: "portrait", caps: null });
+      return;
+    }
     const containerAspect = cw / ch;
     const imageAspect = canvas.width / canvas.height;
     if (containerAspect > imageAspect * ROTATE_THRESHOLD) {

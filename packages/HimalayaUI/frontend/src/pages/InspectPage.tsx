@@ -104,7 +104,7 @@ export function InspectPage(): JSX.Element {
   return (
     <div
       data-testid="inspect-page"
-      className="flex-1 min-h-0 flex flex-col gap-3 px-4 pb-4 pt-2"
+      className="flex-1 min-h-0 flex flex-col gap-3 px-4 pb-6 pt-2"
     >
       {/*
         Layout (shared with IndexPage via WorkspaceGrid):
@@ -130,7 +130,7 @@ export function InspectPage(): JSX.Element {
                 </div>
               )}
             </div>
-            <div className="flex-none h-[140px] p-2 border-t border-border/40">
+            <div className="flex-none h-[140px] px-2 pt-3 pb-2 border-t border-border/40">
               <ThumbnailGallery
                 exposures={exposures}
                 selectedId={viewingId}
@@ -152,7 +152,10 @@ export function InspectPage(): JSX.Element {
         }
         slotClassName={{
           left:   "min-h-[280px]",
-          center: "min-h-[440px]",
+          // Image-dominant card needs vertical room when stacked. The slot
+          // is only this tall below 1400px; at the three-col breakpoint the
+          // grid's fixed height takes over.
+          center: "min-h-[640px]",
           right:  "min-h-[200px]",
         }}
       />

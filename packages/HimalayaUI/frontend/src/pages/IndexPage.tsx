@@ -38,7 +38,7 @@ export function IndexPage(): JSX.Element {
   return (
     <div
       data-testid="index-page"
-      className="flex-1 min-h-0 flex flex-col gap-4 px-4 pb-4 pt-2"
+      className="flex-1 min-h-0 flex flex-col gap-4 px-4 pb-6 pt-2"
     >
       <WorkspaceGrid
         left={<ChatCard />}
