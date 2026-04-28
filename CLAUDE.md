@@ -83,6 +83,10 @@ npm run test:watch    # Vitest watch mode
 npm run e2e           # Playwright E2E (auto-starts Vite via playwright.config.ts)
 npm run build         # tsc --noEmit + vite build (must pass before PR)
 
+# Single frontend test file / single E2E test by name
+node_modules/.bin/vitest run test/DetectorImage.test.tsx
+node_modules/.bin/playwright test --grep "Reject → Other"
+
 # One test file in isolation (core)
 julia --project=. -e 'using Himalaya, Test; include("test/foo.jl")'
 ```
@@ -170,12 +174,12 @@ julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
 
 **`DetectorImage` auto-rotates to landscape** via a ResizeObserver on the wrapper div: when `containerAspect > imageAspect * 1.25`, rotate the canvas 90° and JS-set `maxWidth`/`maxHeight` to swap the layout box (CSS-only doesn't cut it because `transform: rotate` doesn't change a canvas's bounding box). Re-evaluates inside `renderImage` after each new image so swapping exposures with different aspects re-checks. JSDOM lacks `ResizeObserver` — the stub in `test/setup.ts` keeps unit tests honest.
 
-**TraceViewer auto-fit is floor-only.** `PlotCard::computeFit` sets `yDomain = [p05·0.7, fullTraceMax·1.2]` — bottom is the 5th percentile of *positive* intensities inside the focused x-window (suppresses beamstop/dead-pixel zeros), top is the **full** trace's data max (preserves the relative-magnitude context: peaks vs. beam vs. noise stay on one plot, no reset needed to see how bright the beam is). When peaks are present, x is also tightened to `[firstPeak·0.7, lastPeak·1.3]`. Auto-fires on `activeExposureId` change and once peaks finish loading. Double-click resets both axes via the `onReset` prop on `TraceViewer`.
+**TraceViewer auto-fit is floor-only.** `PlotCard::computeFit` sets `yDomain = [p05·0.7, fullTraceMax·1.2]` — bottom is the 5th percentile of *positive* in-window intensities (suppresses dead-pixel zeros), top is the *full* trace max (so peaks-vs-beam relative scale stays visible without resetting). When peaks exist, x is also tightened to `[firstPeak·0.7, lastPeak·1.3]`. Auto-fires on `activeExposureId` change. Double-click → `onReset` clears both axes.
 
 ## Current state
 
 - Core Himalaya: `v0.5.0` on `main` — v2 peak-finding (persistence + sharpness + kneedle).
-- HimalayaUI: **Plans 1–6 + three-card Index redesign + Inspect page complete.** Backend: transactional SQLite pipeline, FK enforcement, REST API (Oxygen.jl), CLI, TIFF→PNG image route with Q0f31-aware lognormalize. Frontend: three-card Index workspace (chat | trace plot | index choices), Inspect page (detector image + thumbnail filmstrip + reject-reason chips + sample metadata), trace viewer with peak editing + auto-fit y-floor + log/linear x toggle, auto-rotating detector canvas, Miller plot, PhasePanel with curate + stale-indices reanalyze, OnboardingFlow + NavModal with focus trapping. Test coverage: 237 Julia · 135 Vitest · ~14 Playwright E2E.
+- HimalayaUI: **Plans 1–6 + three-card Index redesign + Inspect page complete.** Backend: transactional SQLite pipeline, FK enforcement, REST API (Oxygen.jl), CLI, TIFF→PNG image route with Q0f31-aware lognormalize. Frontend: three-card Index workspace (chat | trace plot | index choices), Inspect page (detector image + thumbnail filmstrip + reject-reason chips + sample metadata), trace viewer with peak editing + auto-fit y-floor + log/linear x toggle, auto-rotating detector canvas, Miller plot, PhasePanel with curate + stale-indices reanalyze, OnboardingFlow + NavModal with focus trapping. Test coverage: 237 Julia · 135 Vitest · 14 Playwright E2E (5 inspect + 9 smoke).
 - Deferred for later: Phase panel Recent section, export UI, per-user audit view, beamline-config editor, derived-exposure construction. See [docs/future-feature-ideas.md](docs/future-feature-ideas.md).
 
 ## Further reading
