@@ -116,17 +116,17 @@ export function DetectorImageCard({
         <div className={`w-1 self-stretch shrink-0 ${barCls}`} />
         <div className="flex items-center gap-2 py-2 pr-3 min-w-0 flex-1">
           {isAccepted && (
-            <span className="text-[10px] font-medium text-success shrink-0">
+            <span className="text-xs font-medium text-success shrink-0">
               ✓ Accepted
             </span>
           )}
           {isRejected && (
-            <span className="text-[10px] font-medium text-error shrink-0">
+            <span className="text-xs font-medium text-error shrink-0">
               ✗ Rejected
             </span>
           )}
           {isRejected && existingNote && rejectStep === "idle" && (
-            <span className="text-[10px] text-fg-muted italic truncate">
+            <span className="text-xs text-fg-muted italic truncate">
               {existingNote}{" "}
               <button
                 className="underline shrink-0"
@@ -136,7 +136,7 @@ export function DetectorImageCard({
               </button>
             </span>
           )}
-          <span className="text-[10px] text-fg-muted truncate ml-auto">
+          <span className="text-caption truncate ml-auto">
             {filename}
           </span>
         </div>

@@ -69,14 +69,14 @@ export function ThumbnailGallery({
               {isIndexing && (
                 <span
                   className="absolute top-[5px] left-[5px] rounded-[3px]
-                             bg-accent/85 text-bg text-[9px] font-semibold
+                             bg-accent/85 text-bg text-xs font-semibold
                              px-1.5 py-0.5 leading-snug backdrop-blur-sm"
                 >
                   ⊙ Indexing
                 </span>
               )}
             </div>
-            <span className="text-[9px] text-fg-muted truncate w-full text-center">
+            <span className="text-caption truncate w-full text-center">
               {e.filename?.replace(/\.dat$/i, "") ?? `#${e.id}`}
             </span>
           </div>

@@ -66,7 +66,7 @@ export function TitleButton(): JSX.Element {
     >
       <span
         className={
-          "font-sans font-semibold text-[19px] leading-tight " +
+          "font-sans font-semibold text-xl leading-tight " +
           (isEmpty ? "text-fg-muted italic" : "text-fg")
         }
       >
@@ -75,7 +75,7 @@ export function TitleButton(): JSX.Element {
       {/* Detail row: experiment + shortcut hint, only while hovered or empty */}
       <span
         className={
-          "flex items-center gap-2 text-[10.5px] text-fg-dim " +
+          "flex items-center gap-2 text-xs text-fg-dim " +
           "transition-opacity " +
           (hovered || isEmpty ? "opacity-100" : "opacity-0")
         }
@@ -85,7 +85,7 @@ export function TitleButton(): JSX.Element {
         {subtitle && <span className="text-fg-dim/50">·</span>}
         <kbd
           data-testid="title-button-kbd"
-          className="text-[10px] text-fg-dim
+          className="text-xs text-fg-dim
                      border border-border rounded px-1 py-px"
         >/</kbd>
       </span>

@@ -47,7 +47,7 @@ export function SampleMetadataCard({
       <div className="flex flex-col gap-1">
         {/* experimentName · label breadcrumb */}
         {(experimentName || sample.label) && (
-          <p className="text-[10px] text-fg-muted truncate">
+          <p className="text-caption truncate">
             {experimentName && (
               <span>{experimentName}</span>
             )}
@@ -60,7 +60,7 @@ export function SampleMetadataCard({
           </p>
         )}
         <input
-          className="w-full bg-transparent border-0 outline-none px-0 text-[15px] font-semibold text-fg placeholder:text-fg-muted"
+          className="w-full bg-transparent border-0 outline-none px-0 text-title placeholder:text-fg-muted"
           placeholder="Sample name"
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -68,7 +68,7 @@ export function SampleMetadataCard({
         />
       </div>
 
-      <p className="text-[10px] text-fg-muted">
+      <p className="text-caption">
         {exposureSummary.total} exposures
         {" · "}
         {exposureSummary.accepted} accepted
@@ -78,7 +78,7 @@ export function SampleMetadataCard({
 
       {/* Notes */}
       <div className="flex flex-col gap-0.5">
-        <label className="text-[10px] text-fg-muted uppercase tracking-wide">
+        <label className="text-label">
           Notes
         </label>
         <textarea
@@ -92,14 +92,14 @@ export function SampleMetadataCard({
 
       {/* Tags */}
       <div className="flex flex-col gap-1.5">
-        <label className="text-[10px] text-fg-muted uppercase tracking-wide">
+        <label className="text-label">
           Tags
         </label>
         <div className="flex flex-wrap gap-1">
           {sample.tags.map((tag) => (
             <span
               key={tag.id}
-              className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full
+              className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full
                          bg-bg-subtle border border-border text-fg-muted"
             >
               {tag.key}: {tag.value}
@@ -117,7 +117,7 @@ export function SampleMetadataCard({
           {!addingTag && (
             <button
               onClick={() => setAddingTag(true)}
-              className="text-[10px] text-fg-muted hover:text-fg px-2 py-0.5 rounded-full
+              className="text-xs text-fg-muted hover:text-fg px-2 py-0.5 rounded-full
                          border border-dashed border-border"
             >
               + tag

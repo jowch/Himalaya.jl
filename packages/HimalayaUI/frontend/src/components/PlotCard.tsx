@@ -285,7 +285,7 @@ function TitleStrip({
                    hover:bg-bg-hover transition-colors
                    focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
       >
-        <span className="text-[13px] font-semibold tracking-tight truncate
+        <span className="text-title tracking-tight truncate
                          max-w-[44ch]">
           {hasExp || hasSample ? (
             <>
@@ -301,10 +301,10 @@ function TitleStrip({
             <span className="text-fg-muted italic">pick an experiment</span>
           )}
         </span>
-        <span className="flex items-center gap-1.5 text-[11px] text-fg-dim leading-tight">
+        <span className="flex items-center gap-1.5 text-xs text-fg-dim leading-tight">
           <span>click to change</span>
           <span className="text-fg-dim/60">·</span>
-          <kbd className="text-[10px] text-fg-dim
+          <kbd className="text-xs text-fg-dim
                           border border-border rounded px-1 leading-none py-px">/</kbd>
         </span>
       </button>
@@ -315,7 +315,7 @@ function TitleStrip({
           disabled={!canFit}
           data-testid="fit-features"
           title="Auto-zoom to peaks (or post-beam region)"
-          className="text-[10.5px] px-1.5 py-0.5 rounded text-fg-dim hover:text-fg
+          className="text-xs px-1.5 py-0.5 rounded text-fg-dim hover:text-fg
                      hover:bg-bg-hover disabled:opacity-40 disabled:cursor-default
                      border border-transparent hover:border-border whitespace-nowrap"
         >
@@ -341,7 +341,7 @@ function XScaleToggle({ xType, onSetXType }: XScaleToggleProps): JSX.Element {
       data-testid={`x-scale-${val}`}
       data-active={xType === val}
       className={[
-        "text-[10.5px] px-1.5 py-0.5 transition-colors",
+        "text-xs px-1.5 py-0.5 transition-colors",
         xType === val
           ? "bg-bg-subtle text-fg"
           : "text-fg-dim hover:text-fg hover:bg-bg-hover",
@@ -385,7 +385,7 @@ function QRange({ xDomain, fullRange, onXDomain }: QRangeProps): JSX.Element | n
       className="flex items-center gap-1.5 whitespace-nowrap"
       data-testid="q-range-controls"
     >
-      <span className="text-fg-dim uppercase tracking-wider text-[9.5px]">q</span>
+      <span className="text-fg-dim uppercase tracking-wider text-xs">q</span>
       <QNumInput
         value={qmin}
         onCommit={(v) => commit(v, qmax)}
@@ -449,7 +449,7 @@ export function QNumInput({ value, onCommit, testId }: QNumInputProps): JSX.Elem
         }
       }}
       className="w-[70px] bg-bg border border-border rounded px-1 py-0.5
-                 text-fg text-[10.5px] tabular-nums text-right
+                 text-fg text-xs tabular-nums text-right
                  outline-0 focus:border-accent"
     />
   );
@@ -509,7 +509,7 @@ function PlotLegend({ peaks, hoveredIndex }: PlotLegendProps): JSX.Element {
   const hasExcludedPeaks = peaks.some((p) => p.excluded);
   return (
     <div className="flex items-center gap-4 px-4 py-1.5 border-t border-border-soft
-                    text-[10.5px] font-mono text-fg-dim flex-wrap">
+                    font-mono text-xs text-fg-dim flex-wrap">
       <LegendItem symbol={<TriangleSvg color="var(--color-accent)" />} label="auto peak" />
       {hasManualPeaks && (
         <LegendItem symbol={<TriangleSvg color="var(--color-peak-manual)" />} label="manual peak" />
