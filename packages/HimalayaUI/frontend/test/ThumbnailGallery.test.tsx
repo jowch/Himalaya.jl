@@ -16,6 +16,7 @@ const makeExposure = (overrides: Partial<Exposure>): Exposure => ({
   selected: false,
   status: null,
   image_path: null,
+  image_version: "",
   tags: [],
   sources: [],
   ...overrides,

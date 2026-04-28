@@ -1,6 +1,29 @@
 using FileIO, TiffImages, ImageIO, ImageTransformations, ImageCore, ColorTypes
 
 """
+Bump this string whenever `load_and_lognormalize` semantics change. It feeds
+into the per-image cache-busting token; bumping forces all browsers to re-fetch.
+"""
+const IMAGE_PROCESSING_VERSION = "v1"
+
+"""
+    image_version_token(path) -> String
+
+Stable token combining `IMAGE_PROCESSING_VERSION` with the source TIFF's mtime.
+The token is appended as `?v=<token>` to image URLs so the browser can cache
+aggressively while still picking up changes when the source file is rewritten
+or our image-processing code is bumped.
+
+Returns `""` if `path` is `nothing`/`missing` or the file is missing.
+"""
+function image_version_token(path)
+    (path === nothing || path isa Missing) && return ""
+    p = String(path)
+    isfile(p) || return ""
+    string(IMAGE_PROCESSING_VERSION, "-", Int(round(mtime(p))))
+end
+
+"""
     load_and_lognormalize(path) -> Matrix{Gray{Float32}}
 
 Load a TIFF, convert to grayscale, apply log1p normalization to [0,1].

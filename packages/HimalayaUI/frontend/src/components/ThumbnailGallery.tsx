@@ -62,6 +62,7 @@ export function ThumbnailGallery({
               <DetectorImage
                 exposureId={e.id}
                 imagePath={e.image_path}
+                imageVersion={e.image_version}
                 size="thumb"
                 className="w-full h-full"
               />

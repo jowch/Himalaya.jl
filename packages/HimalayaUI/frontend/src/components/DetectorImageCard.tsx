@@ -147,6 +147,7 @@ export function DetectorImageCard({
         <DetectorImage
           exposureId={exposure.id}
           imagePath={exposure.image_path}
+          imageVersion={exposure.image_version}
           size="full"
           className="max-h-full max-w-full object-contain"
         />

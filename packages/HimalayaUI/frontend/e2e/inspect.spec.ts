@@ -11,18 +11,19 @@ const EXPOSURES = [
   {
     id: 1, sample_id: 10, filename: "pos1.dat", kind: "file",
     selected: true, status: "accepted", image_path: "/tmp/pos1.tiff",
-    tags: [], sources: [],
+    image_version: "v1-1700000001", tags: [], sources: [],
   },
   {
     id: 2, sample_id: 10, filename: "pos2.dat", kind: "file",
     selected: false, status: "rejected", image_path: null,
+    image_version: "",
     tags: [{ id: 99, key: "rejection_reason", value: "flare", source: "manual" }],
     sources: [],
   },
   {
     id: 3, sample_id: 10, filename: "pos3.dat", kind: "file",
     selected: false, status: null, image_path: null,
-    tags: [], sources: [],
+    image_version: "", tags: [], sources: [],
   },
 ];
 

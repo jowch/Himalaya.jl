@@ -108,6 +108,13 @@ export interface Exposure {
   selected: boolean;
   status: "accepted" | "rejected" | null;
   image_path: string | null;
+  /**
+   * Cache-busting token combining IMAGE_PROCESSING_VERSION (server-side
+   * constant) with the source TIFF's mtime. Empty string when no image.
+   * Append as `?v=<image_version>` to the image URL so the browser's
+   * cache key changes when the image content actually changes.
+   */
+  image_version: string;
   tags: ExposureTag[];
   sources: unknown[];
 }

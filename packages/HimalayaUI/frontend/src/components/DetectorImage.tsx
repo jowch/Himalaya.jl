@@ -3,6 +3,13 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties } from "re
 interface Props {
   exposureId: number;
   imagePath: string | null;
+  /**
+   * Cache-busting token from the backend (Exposure.image_version).
+   * Appended to the URL as `?v=<token>` so the browser can cache the PNG
+   * aggressively while still picking up real changes (TIFF mtime moved or
+   * IMAGE_PROCESSING_VERSION bumped).
+   */
+  imageVersion: string;
   size: "thumb" | "full";
   className?: string;
 }
@@ -33,6 +40,7 @@ const ROTATE_THRESHOLD = 1.25;
 export function DetectorImage({
   exposureId,
   imagePath,
+  imageVersion,
   size,
   className,
 }: Props): JSX.Element {
@@ -65,8 +73,15 @@ export function DetectorImage({
     const canvas = canvasRef.current;
     if (!canvas || !imagePath) return;
 
-    const url = `/api/exposures/${exposureId}/image${size === "thumb" ? "?thumb=1" : ""}`;
-    const res = await fetch(url, { cache: "no-store" });
+    // The `?v=<imageVersion>` token makes the URL unique per (TIFF mtime,
+    // IMAGE_PROCESSING_VERSION) pair so the browser can cache the PNG
+    // aggressively. No `cache: "no-store"` — the URL itself is the cache key.
+    const params = new URLSearchParams();
+    if (size === "thumb") params.set("thumb", "1");
+    if (imageVersion) params.set("v", imageVersion);
+    const qs = params.toString();
+    const url = `/api/exposures/${exposureId}/image${qs ? `?${qs}` : ""}`;
+    const res = await fetch(url);
     if (!res.ok) return;
 
     const blob = await res.blob();

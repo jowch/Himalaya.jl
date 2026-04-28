@@ -19,8 +19,9 @@ function register_exposures_routes!()
                 "SELECT source_exposure_id, role FROM exposure_sources
                  WHERE averaged_exposure_id = ?", [Int(e.id)]))
             d = row_to_json(e; bool_keys = (:selected,))
-            d[:tags]    = rows_to_json(tags)
-            d[:sources] = rows_to_json(srcs)
+            d[:tags]          = rows_to_json(tags)
+            d[:sources]       = rows_to_json(srcs)
+            d[:image_version] = image_version_token(e.image_path)
             d
         end
         HTTP.Response(200, ["Content-Type" => "application/json"],
@@ -49,9 +50,15 @@ function register_exposures_routes!()
         end
         bytes = encode_png(img)
 
+        # The frontend appends `?v=<image_version_token>` to the URL, so the
+        # URL itself is the cache key. We can mark responses immutable and
+        # cache them aggressively — when the underlying TIFF or our
+        # processing code changes, the token (and therefore the URL) changes.
+        vtoken = image_version_token(ip)
         HTTP.Response(200,
-            ["Content-Type"  => "image/png",
-             "Cache-Control" => "max-age=3600"],
+            ["Content-Type"    => "image/png",
+             "Cache-Control"   => "private, max-age=31536000, immutable",
+             "X-Image-Version" => vtoken],
             bytes)
     end
 
