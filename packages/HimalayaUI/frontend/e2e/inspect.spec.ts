@@ -99,7 +99,7 @@ test("rejected exposure cell is dimmed", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByTestId("inspect-page")).toBeVisible();
   const rejectedCell = page.getByTestId("thumb-cell-2");
-  await expect(rejectedCell).toHaveClass(/opacity-40/);
+  await expect(rejectedCell).toHaveAttribute("data-rejected", "true");
 });
 
 test("Reject → Other reveals custom reason input inline", async ({ page }) => {

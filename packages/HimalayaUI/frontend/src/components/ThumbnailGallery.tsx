@@ -49,6 +49,7 @@ export function ThumbnailGallery({
           <div
             key={e.id}
             data-testid={`thumb-cell-${e.id}`}
+            data-rejected={isRejected ? "true" : undefined}
             onClick={() => onSelect(e.id)}
             className={[
               "relative flex flex-col items-center gap-1 cursor-pointer group",
