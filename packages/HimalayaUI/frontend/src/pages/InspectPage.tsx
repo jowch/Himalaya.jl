@@ -14,6 +14,8 @@ import {
 import { ThumbnailGallery } from "../components/ThumbnailGallery";
 import { DetectorImageCard } from "../components/DetectorImageCard";
 import { SampleMetadataCard } from "../components/SampleMetadataCard";
+import { ChatCard } from "../components/ChatCard";
+import { WorkspaceGrid } from "../components/WorkspaceGrid";
 
 export function InspectPage(): JSX.Element {
   const username     = useAppState((s) => s.username);
@@ -105,30 +107,40 @@ export function InspectPage(): JSX.Element {
       className="flex-1 min-h-0 flex flex-col gap-3 px-4 pb-4 pt-2"
     >
       {/*
-        Breakpoints:
-          < 1100px  → single column stacked
-          1100–1400 → two columns 3fr/2fr: left=(metadata+gallery) right=image
-          ≥ 1400px  → three columns 28fr/22fr/50fr: metadata | gallery | image
+        Layout (shared with IndexPage via WorkspaceGrid):
+          < 1400px  → single column stacked: image+gallery → metadata → chat
+          ≥ 1400px  → three columns: chat | image+gallery | metadata
+                      with minmax(320px,22fr) | 56fr | minmax(320px,22fr)
       */}
-      <div
-        className="
-          min-h-0 grid gap-3 flex-1
-          grid-cols-1
-          min-[1100px]:grid-cols-[2fr_3fr]
-          min-[1400px]:grid-cols-[1fr_2fr]
-          min-[1400px]:grid-rows-[auto_1fr]
-          h-auto min-[1100px]:flex-1
-          min-[1100px]:max-h-[min(700px,calc(100dvh-var(--chrome-h)-1.5rem))]
-        "
-      >
-        {/* Metadata — col 1 row 1 at all ≥1100px widths */}
-        <section
-          className="
-            card min-h-[200px] min-[1100px]:min-h-0 overflow-hidden
-            order-1
-            min-[1100px]:row-start-1 min-[1100px]:col-start-1
-          "
-        >
+      <WorkspaceGrid
+        left={<ChatCard />}
+        center={
+          <div className="flex flex-col gap-3 h-full min-h-0">
+            <div className="flex-1 min-h-0">
+              {viewingExposure ? (
+                <DetectorImageCard
+                  exposure={viewingExposure}
+                  onSetStatus={handleSetStatus}
+                  onSetIndexing={handleSetIndexing}
+                  onAddTag={handleAddTag}
+                />
+              ) : (
+                <div className="flex items-center justify-center h-full text-fg-muted text-sm">
+                  Select an exposure
+                </div>
+              )}
+            </div>
+            <div className="flex-none h-[140px] p-2 border-t border-border/40">
+              <ThumbnailGallery
+                exposures={exposures}
+                selectedId={viewingId}
+                onSelect={setViewingId}
+                className="h-full"
+              />
+            </div>
+          </div>
+        }
+        right={
           <SampleMetadataCard
             sample={sample}
             experimentName={experimentName}
@@ -137,48 +149,13 @@ export function InspectPage(): JSX.Element {
             onAddTag={(k, v) => addSampleTag.mutate({ key: k, value: v })}
             onRemoveTag={(id) => rmSampleTag.mutate(id)}
           />
-        </section>
-
-        {/* Thumbnail gallery — col 1 row 2 at all ≥1100px widths */}
-        <section
-          className="
-            card overflow-hidden p-2
-            order-2
-            min-[1100px]:row-start-2 min-[1100px]:col-start-1
-            h-[130px] min-[1100px]:h-[130px]
-            min-[1400px]:h-auto min-[1400px]:min-h-0
-          "
-        >
-          <ThumbnailGallery
-            exposures={exposures}
-            selectedId={viewingId}
-            onSelect={setViewingId}
-            className="h-full"
-          />
-        </section>
-
-        {/* Detector image — col 2 row-span-2, dominant right panel */}
-        <section
-          className="
-            card min-h-[300px] min-[1100px]:min-h-0 overflow-hidden
-            order-3
-            min-[1100px]:row-span-2 min-[1100px]:col-start-2
-          "
-        >
-          {viewingExposure ? (
-            <DetectorImageCard
-              exposure={viewingExposure}
-              onSetStatus={handleSetStatus}
-              onSetIndexing={handleSetIndexing}
-              onAddTag={handleAddTag}
-            />
-          ) : (
-            <div className="flex items-center justify-center h-full text-fg-muted text-sm">
-              Select an exposure
-            </div>
-          )}
-        </section>
-      </div>
+        }
+        slotClassName={{
+          left:   "min-h-[280px]",
+          center: "min-h-[440px]",
+          right:  "min-h-[200px]",
+        }}
+      />
     </div>
   );
 }

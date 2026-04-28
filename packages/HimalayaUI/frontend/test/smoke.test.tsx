@@ -52,7 +52,7 @@ describe("App smoke", () => {
   it("renders the three-card index page when user + scope are set", async () => {
     renderWithProviders(<App />);
     // Three-card grid + title button should all appear
-    expect(await screen.findByTestId("three-card-grid")).toBeInTheDocument();
+    expect(await screen.findByTestId("workspace-grid")).toBeInTheDocument();
     expect(screen.getByTestId("plot-title")).toBeInTheDocument();
     expect(screen.getByTestId("tab-rocker")).toBeInTheDocument();
     // Title should include the experiment and sample name once the queries resolve

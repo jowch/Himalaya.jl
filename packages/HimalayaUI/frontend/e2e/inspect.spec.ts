@@ -43,7 +43,11 @@ async function mockCore(page: Page): Promise<void> {
     r.fulfill({ status: 200, contentType: "application/json",
       body: JSON.stringify(EXPOSURES) }));
   await page.route("**/api/samples/10/messages", (r) =>
-    r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
+    r.fulfill({ status: 200, contentType: "application/json",
+      body: JSON.stringify([
+        { id: 1, sample_id: 10, author_id: 1, author: "alice",
+          body: "shared sample note", created_at: "2026-05-01T12:00:00Z" },
+      ]) }));
   await page.route("**/api/exposures/*/image**", (r) =>
     r.fulfill({ status: 200, contentType: "image/png", body: Buffer.alloc(100) }));
   await page.route("**/api/exposures/*/status", (r) =>
@@ -122,4 +126,34 @@ test("clicking thumbnail updates the image card", async ({ page }) => {
   await expect(page.getByTestId("inspect-page")).toBeVisible();
   await page.getByTestId("thumb-cell-3").click();
   await expect(page.getByText("pos3.dat")).toBeVisible();
+});
+
+test("ChatCard appears on Inspect with sample-scoped message history", async ({ page }) => {
+  // Chat is sample-scoped, so the same conversation visible on Index appears
+  // here too — gives curators continuity when switching pages.
+  await mockCore(page);
+  await seedState(page);
+  await page.goto("/");
+  await expect(page.getByTestId("inspect-page")).toBeVisible();
+  const chat = page.getByTestId("chat-card");
+  await expect(chat).toBeVisible();
+  await expect(chat.getByText("shared sample note")).toBeVisible();
+});
+
+test("chat message persists when switching Index → Inspect", async ({ page }) => {
+  await mockCore(page);
+  await page.addInitScript(() => {
+    localStorage.setItem("himalaya-ui:state",
+      JSON.stringify({ state: { username: "alice", activePage: "index",
+        activeExperimentId: 1, activeSampleId: 10, tutorialSeen: true,
+        theme: "dark" }, version: 3 }));
+  });
+  await page.goto("/");
+  // Verify the message is visible on Index
+  await expect(page.getByText("shared sample note")).toBeVisible();
+  // Switch to Inspect tab
+  await page.getByRole("tab", { name: "Inspect" }).click();
+  await expect(page.getByTestId("inspect-page")).toBeVisible();
+  // Same message still there (same sampleId, same query cache, same component)
+  await expect(page.getByText("shared sample note")).toBeVisible();
 });

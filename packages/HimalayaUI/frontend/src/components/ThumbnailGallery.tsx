@@ -9,15 +9,12 @@ interface Props {
 }
 
 /*
- * ThumbnailGallery — responsive layout via CSS only:
+ * ThumbnailGallery — horizontal filmstrip.
  *
- *   < 1400px  — thin horizontal filmstrip (flex-row).
- *               Cells fill the container height; width derived from aspect-ratio.
- *               No vertical scroll needed.
- *
- *   ≥ 1400px  — auto-fill wrapping grid (minmax 90px columns).
- *               Height derived from column width via aspect-ratio.
- *               Overflows vertically so all exposures are reachable.
+ * Cells fill the container height; width derived from aspect-ratio (3/4).
+ * Overflow scrolls horizontally. The gallery is always rendered inside a
+ * bounded-height slot (e.g. ~140px in InspectPage), so a wrapping grid mode
+ * is no longer needed — the page-level WorkspaceGrid handles layout.
  */
 export function ThumbnailGallery({
   exposures,
@@ -25,15 +22,7 @@ export function ThumbnailGallery({
   onSelect,
   className,
 }: Props): JSX.Element {
-  const containerClass = [
-    // Base (< 1400px): horizontal filmstrip
-    "flex flex-row gap-2 overflow-x-auto h-full",
-    // Large (≥ 1400px): wrapping auto-fill grid
-    "min-[1400px]:grid min-[1400px]:flex-none",
-    "min-[1400px]:grid-cols-[repeat(auto-fill,minmax(90px,1fr))]",
-    "min-[1400px]:overflow-x-hidden min-[1400px]:overflow-y-auto",
-    "min-[1400px]:h-auto min-[1400px]:content-start",
-  ].join(" ");
+  const containerClass = "flex flex-row gap-2 overflow-x-auto h-full";
 
   return (
     <div className={`${containerClass} ${className ?? ""}`}>
@@ -53,18 +42,16 @@ export function ThumbnailGallery({
             onClick={() => onSelect(e.id)}
             className={[
               "relative flex flex-col items-center gap-1 cursor-pointer group",
-              // filmstrip: h-full fills strip; aspect-[3/4] derives width from height
-              // grid (≥1400px): h-auto; width from grid column, height from aspect-ratio
-              "aspect-[3/4] h-full min-[1400px]:h-auto",
+              // h-full fills strip; aspect-[3/4] derives width from height
+              "aspect-[3/4] h-full",
               isRejected ? "opacity-40 grayscale" : "",
             ].join(" ")}
           >
             <div
               className={[
                 "relative w-full overflow-hidden rounded-md transition-all duration-150",
-                // filmstrip: flex-1 fills cell height minus label
-                // grid (≥1400px): aspect-ratio derives height from column width
-                "flex-1 min-h-0 min-[1400px]:flex-none min-[1400px]:aspect-[3/4]",
+                // flex-1 fills cell height minus label
+                "flex-1 min-h-0",
                 // Unified ring widths (always ring-2) prevent layout shift on hover.
                 // No ring-offset → ring sits flush against the rounded corner.
                 isViewing
