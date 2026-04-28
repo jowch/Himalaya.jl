@@ -5,7 +5,7 @@ import {
   useAddPeak, useRemovePeak, useSetPeakExcluded,
   useExperiment, useSamples,
 } from "../queries";
-import { TraceViewer, interpolateI } from "./TraceViewer";
+import { TraceViewer } from "./TraceViewer";
 import { HintText } from "./ui";
 import { phaseColor } from "../phases";
 import type { IndexEntry, Peak, Trace } from "../api";
@@ -70,6 +70,13 @@ export function PlotCard(): JSX.Element {
 
   // Compute a y-domain (and tightened x-domain when peaks exist) that focuses
   // on the diffraction features rather than the dominating beam decay.
+  //
+  // Y-floor strategy: derive from a low percentile of *positive* intensities
+  // inside the visible x-window. This is the 1D analogue of the percentile
+  // clip used on 2D images — it discards beamstop / dead-pixel zeros that
+  // would otherwise drag the floor toward zero, while keeping the genuine
+  // low-signal trace between peaks (so e.g. AgBe doesn't get clipped at the
+  // bottom).
   const computeFit = useCallback(
     (trace: Trace, peaks: Peak[]): {
       x: [number, number] | null;
@@ -77,30 +84,40 @@ export function PlotCard(): JSX.Element {
     } => {
       if (trace.q.length < 2) return { x: null, y: null };
 
+      // 1. Pick the x-window. With peaks, bracket them; otherwise drop the
+      //    first 15% of q (typical beam-decay region).
+      let xMin = trace.q[0]!;
+      let xMax = trace.q[trace.q.length - 1]!;
+      let xResult: [number, number] | null = null;
+
       if (peaks.length > 0) {
         const sortedQ = peaks.map((p) => p.q).sort((a, b) => a - b);
-        const intensities = peaks
-          .map((p) => interpolateI(p.q, trace))
-          .filter((v) => Number.isFinite(v) && v > 0);
-        if (intensities.length === 0) return { x: null, y: null };
-        const lo = Math.min(...intensities);
-        const hi = Math.max(...intensities);
-        return {
-          x: [sortedQ[0]! * 0.7, sortedQ[sortedQ.length - 1]! * 1.3],
-          y: [lo / 5, hi * 5],
-        };
+        xMin = sortedQ[0]! * 0.7;
+        xMax = sortedQ[sortedQ.length - 1]! * 1.3;
+        xResult = [xMin, xMax];
+      } else {
+        const startIdx = Math.floor(trace.q.length * 0.15);
+        xMin = trace.q[startIdx] ?? xMin;
       }
 
-      // Fallback: drop the first 15% of x-range (the typical beam-decay
-      // region) and use min/max intensity in the remainder.
-      const startIdx = Math.floor(trace.q.length * 0.15);
-      const tail = trace.I
-        .slice(startIdx)
-        .filter((v) => Number.isFinite(v) && v > 0);
-      if (tail.length === 0) return { x: null, y: null };
-      const lo = Math.min(...tail);
-      const hi = Math.max(...tail);
-      return { x: null, y: [lo / 2, hi * 2] };
+      // 2. Collect positive intensities in the window. Filter out non-positives
+      //    — zero/dead-pixel artifacts that have no place on a log axis.
+      const visibleI: number[] = [];
+      for (let i = 0; i < trace.q.length; i++) {
+        const q = trace.q[i]!;
+        if (q < xMin || q > xMax) continue;
+        const v = trace.I[i]!;
+        if (Number.isFinite(v) && v > 0) visibleI.push(v);
+      }
+      if (visibleI.length === 0) return { x: xResult, y: null };
+
+      // 3. y-floor: 5th percentile, with a small safety margin below.
+      //    y-ceiling: actual max of visible data (peaks ARE in the trace so
+      //    this captures them), with margin above.
+      visibleI.sort((a, b) => a - b);
+      const p05 = visibleI[Math.floor(visibleI.length * 0.05)]!;
+      const hi  = visibleI[visibleI.length - 1]!;
+      return { x: xResult, y: [p05 * 0.7, hi * 2] };
     },
     [],
   );
