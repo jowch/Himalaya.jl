@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 
 interface Props {
   exposureId: number;
@@ -21,13 +21,45 @@ function getCssColor(varName: string): [number, number, number] {
   return [d[0], d[1], d[2]];
 }
 
+interface Layout {
+  orient: "portrait" | "landscape";
+  caps: { maxW: number; maxH: number } | null;
+}
+
+// Rotate when the container is meaningfully wider than the image's natural
+// aspect — keeps near-square images upright unless space really wants landscape.
+const ROTATE_THRESHOLD = 1.25;
+
 export function DetectorImage({
   exposureId,
   imagePath,
   size,
   className,
 }: Props): JSX.Element {
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [layout, setLayout] = useState<Layout>({
+    orient: "portrait",
+    caps: null,
+  });
+
+  const evaluateOrient = useCallback(() => {
+    const wrapper = wrapperRef.current;
+    const canvas = canvasRef.current;
+    if (!wrapper || !canvas || !canvas.width || !canvas.height) return;
+    const cw = wrapper.clientWidth;
+    const ch = wrapper.clientHeight;
+    if (cw === 0 || ch === 0) return;
+    const containerAspect = cw / ch;
+    const imageAspect = canvas.width / canvas.height;
+    if (containerAspect > imageAspect * ROTATE_THRESHOLD) {
+      // Pre-rotation max-width must be capped by container HEIGHT (becomes
+      // visual height after rotation), and max-height by container WIDTH.
+      setLayout({ orient: "landscape", caps: { maxW: ch, maxH: cw } });
+    } else {
+      setLayout({ orient: "portrait", caps: null });
+    }
+  }, []);
 
   const renderImage = useCallback(async () => {
     const canvas = canvasRef.current;
@@ -63,7 +95,10 @@ export function DetectorImage({
     canvas.width  = width;
     canvas.height = height;
     canvas.getContext("2d")?.putImageData(imageData, 0, 0);
-  }, [exposureId, imagePath, size]);
+
+    // New intrinsic dims may flip the orient decision.
+    evaluateOrient();
+  }, [exposureId, imagePath, size, evaluateOrient]);
 
   useEffect(() => {
     renderImage();
@@ -79,6 +114,15 @@ export function DetectorImage({
     return () => observer.disconnect();
   }, [renderImage]);
 
+  // Watch wrapper size — rotate when container becomes much wider than image.
+  useEffect(() => {
+    const wrapper = wrapperRef.current;
+    if (!wrapper) return;
+    const ro = new ResizeObserver(() => evaluateOrient());
+    ro.observe(wrapper);
+    return () => ro.disconnect();
+  }, [evaluateOrient]);
+
   if (!imagePath) {
     return (
       <div
@@ -90,13 +134,33 @@ export function DetectorImage({
     );
   }
 
+  const canvasStyle: CSSProperties = {
+    imageRendering: "pixelated",
+    ...(layout.orient === "landscape" && layout.caps
+      ? {
+          maxWidth: `${layout.caps.maxW}px`,
+          maxHeight: `${layout.caps.maxH}px`,
+          transform: "rotate(90deg)",
+          transformOrigin: "center",
+        }
+      : {
+          maxWidth: "100%",
+          maxHeight: "100%",
+        }),
+  };
+
   return (
-    <canvas
-      ref={canvasRef}
-      role="img"
-      aria-label="Detector image"
-      className={`object-contain ${className ?? ""}`}
-      style={{ imageRendering: "pixelated" }}
-    />
+    <div
+      ref={wrapperRef}
+      data-orient={layout.orient}
+      className={`flex items-center justify-center w-full h-full overflow-hidden ${className ?? ""}`}
+    >
+      <canvas
+        ref={canvasRef}
+        role="img"
+        aria-label="Detector image"
+        style={canvasStyle}
+      />
+    </div>
   );
 }

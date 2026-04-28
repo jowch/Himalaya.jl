@@ -1,14 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAppState } from "../state";
 import {
   useExposures, useTrace, usePeaks, useIndices, useGroups,
   useAddPeak, useRemovePeak, useSetPeakExcluded,
   useExperiment, useSamples,
 } from "../queries";
-import { TraceViewer } from "./TraceViewer";
+import { TraceViewer, interpolateI } from "./TraceViewer";
 import { HintText } from "./ui";
 import { phaseColor } from "../phases";
-import type { IndexEntry, Peak } from "../api";
+import type { IndexEntry, Peak, Trace } from "../api";
 
 /**
  * PlotCard — center card on the Index page. Wraps the TraceViewer, a Miller-plot
@@ -50,6 +50,11 @@ export function PlotCard(): JSX.Element {
   // Visible q-range (null = full trace). Shared between TraceViewer wheel-zoom
   // and the numeric inputs in StatStrip.
   const [xDomain, setXDomain] = useState<[number, number] | null>(null);
+  // Visible intensity-range (null = full data range). Auto-set by Fit features
+  // and the per-exposure auto-fit; cleared by reset.
+  const [yDomain, setYDomain] = useState<[number, number] | null>(null);
+  // X-axis scale: log (SAXS convention) or linear.
+  const [xType, setXType] = useState<"log" | "linear">("log");
 
   // Auto-pick first exposure when sample changes (or current choice is stale)
   useEffect(() => {
@@ -61,7 +66,67 @@ export function PlotCard(): JSX.Element {
 
   // Reset the q-range when the sample or exposure changes — the previous
   // zoom almost never applies to a different trace.
-  useEffect(() => { setXDomain(null); }, [activeExposureId]);
+  useEffect(() => { setXDomain(null); setYDomain(null); }, [activeExposureId]);
+
+  // Compute a y-domain (and tightened x-domain when peaks exist) that focuses
+  // on the diffraction features rather than the dominating beam decay.
+  const computeFit = useCallback(
+    (trace: Trace, peaks: Peak[]): {
+      x: [number, number] | null;
+      y: [number, number] | null;
+    } => {
+      if (trace.q.length < 2) return { x: null, y: null };
+
+      if (peaks.length > 0) {
+        const sortedQ = peaks.map((p) => p.q).sort((a, b) => a - b);
+        const intensities = peaks
+          .map((p) => interpolateI(p.q, trace))
+          .filter((v) => Number.isFinite(v) && v > 0);
+        if (intensities.length === 0) return { x: null, y: null };
+        const lo = Math.min(...intensities);
+        const hi = Math.max(...intensities);
+        return {
+          x: [sortedQ[0]! * 0.7, sortedQ[sortedQ.length - 1]! * 1.3],
+          y: [lo / 5, hi * 5],
+        };
+      }
+
+      // Fallback: drop the first 15% of x-range (the typical beam-decay
+      // region) and use min/max intensity in the remainder.
+      const startIdx = Math.floor(trace.q.length * 0.15);
+      const tail = trace.I
+        .slice(startIdx)
+        .filter((v) => Number.isFinite(v) && v > 0);
+      if (tail.length === 0) return { x: null, y: null };
+      const lo = Math.min(...tail);
+      const hi = Math.max(...tail);
+      return { x: null, y: [lo / 2, hi * 2] };
+    },
+    [],
+  );
+
+  const fitFeatures = useCallback(() => {
+    if (!traceQ.data) return;
+    const fit = computeFit(traceQ.data, peaksQ.data ?? []);
+    setXDomain(fit.x);
+    setYDomain(fit.y);
+  }, [traceQ.data, peaksQ.data, computeFit]);
+
+  // Auto-fit once per exposure (re-fits when peaks finish loading too).
+  useEffect(() => {
+    if (!traceQ.data) return;
+    const fit = computeFit(traceQ.data, peaksQ.data ?? []);
+    setXDomain(fit.x);
+    setYDomain(fit.y);
+    // Intentionally only fires when the exposure changes or peaks stream in;
+    // we don't want it to fight manual zoom on the same exposure.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeExposureId, peaksQ.data?.length, traceQ.data]);
+
+  const resetDomain = useCallback(() => {
+    setXDomain(null);
+    setYDomain(null);
+  }, []);
 
   const indices = indicesQ.data ?? [];
   const activeGroup = (groupsQ.data ?? []).find((g) => g.active);
@@ -114,6 +179,9 @@ export function PlotCard(): JSX.Element {
           setPeakExcl.mutate({ peakId, excluded })}
         xDomain={xDomain}
         onXDomain={setXDomain}
+        yDomain={yDomain}
+        xType={xType}
+        onReset={resetDomain}
       />
     );
   })();
@@ -130,6 +198,10 @@ export function PlotCard(): JSX.Element {
         xDomain={effectiveDomain}
         fullRange={fullQRange}
         onXDomain={setXDomain}
+        xType={xType}
+        onSetXType={setXType}
+        onFitFeatures={fitFeatures}
+        canFit={traceQ.data !== undefined}
       />
       <div className="relative flex-1 min-h-0">
         {body}
@@ -151,6 +223,10 @@ interface TitleStripProps {
   xDomain:  [number, number] | null;
   fullRange: [number, number] | null;
   onXDomain: (d: [number, number] | null) => void;
+  xType: "log" | "linear";
+  onSetXType: (t: "log" | "linear") => void;
+  onFitFeatures: () => void;
+  canFit: boolean;
 }
 
 /**
@@ -166,6 +242,7 @@ interface TitleStripProps {
  */
 function TitleStrip({
   experimentName, sampleName, onTitleClick, xDomain, fullRange, onXDomain,
+  xType, onSetXType, onFitFeatures, canFit,
 }: TitleStripProps): JSX.Element {
   const hasExp    = experimentName !== undefined;
   const hasSample = sampleName     !== undefined;
@@ -207,10 +284,57 @@ function TitleStrip({
                           border border-border rounded px-1 leading-none py-px">/</kbd>
         </span>
       </button>
-      <div className="shrink-0">
+      <div className="shrink-0 flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onFitFeatures}
+          disabled={!canFit}
+          data-testid="fit-features"
+          title="Auto-zoom to peaks (or post-beam region)"
+          className="text-[10.5px] px-1.5 py-0.5 rounded text-fg-dim hover:text-fg
+                     hover:bg-bg-hover disabled:opacity-40 disabled:cursor-default
+                     border border-transparent hover:border-border whitespace-nowrap"
+        >
+          fit features
+        </button>
+        <XScaleToggle xType={xType} onSetXType={onSetXType} />
         <QRange xDomain={xDomain} fullRange={fullRange} onXDomain={onXDomain} />
       </div>
     </div>
+  );
+}
+
+interface XScaleToggleProps {
+  xType: "log" | "linear";
+  onSetXType: (t: "log" | "linear") => void;
+}
+
+function XScaleToggle({ xType, onSetXType }: XScaleToggleProps): JSX.Element {
+  const btn = (val: "log" | "linear", label: string): JSX.Element => (
+    <button
+      type="button"
+      onClick={() => onSetXType(val)}
+      data-testid={`x-scale-${val}`}
+      data-active={xType === val}
+      className={[
+        "text-[10.5px] px-1.5 py-0.5 transition-colors",
+        xType === val
+          ? "bg-bg-subtle text-fg"
+          : "text-fg-dim hover:text-fg hover:bg-bg-hover",
+      ].join(" ")}
+    >
+      {label}
+    </button>
+  );
+  return (
+    <span
+      className="flex items-stretch border border-border rounded overflow-hidden"
+      title="x-axis scale"
+    >
+      {btn("log", "log")}
+      <span className="w-px bg-border" />
+      {btn("linear", "lin")}
+    </span>
   );
 }
 

@@ -64,9 +64,11 @@ export function ThumbnailGallery({
                 // filmstrip: flex-1 fills cell height minus label
                 // grid (≥1400px): aspect-ratio derives height from column width
                 "flex-1 min-h-0 min-[1400px]:flex-none min-[1400px]:aspect-[3/4]",
+                // Unified ring widths (always ring-2) prevent layout shift on hover.
+                // No ring-offset → ring sits flush against the rounded corner.
                 isViewing
-                  ? "ring-2 ring-accent ring-offset-1 ring-offset-bg-elevated"
-                  : "group-hover:ring-1 group-hover:ring-border",
+                  ? "ring-2 ring-accent shadow-sm shadow-accent/30"
+                  : "ring-1 ring-border/50 group-hover:ring-2 group-hover:ring-fg-muted/40",
               ].join(" ")}
             >
               <DetectorImage

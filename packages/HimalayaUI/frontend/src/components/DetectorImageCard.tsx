@@ -9,19 +9,23 @@ interface Props {
   onAddTag: (key: string, value: string) => void;
 }
 
+type RejectStep = "idle" | "picking" | "custom";
+
+const BUILT_IN_REJECT_REASONS = ["Flare"] as const;
+
 export function DetectorImageCard({
   exposure,
   onSetStatus,
   onSetIndexing,
   onAddTag,
 }: Props): JSX.Element {
-  const [rejectMode, setRejectMode] = useState(false);
-  const [rejectNote, setRejectNote] = useState("");
+  const [rejectStep, setRejectStep] = useState<RejectStep>("idle");
+  const [customNote, setCustomNote] = useState("");
 
-  // Reset rejection note state when switching to a different exposure
+  // Reset rejection state when switching to a different exposure
   useEffect(() => {
-    setRejectMode(false);
-    setRejectNote("");
+    setRejectStep("idle");
+    setCustomNote("");
   }, [exposure.id]);
 
   const isRejected = exposure.status === "rejected";
@@ -32,21 +36,31 @@ export function DetectorImageCard({
     (t) => t.key === "rejection_reason",
   )?.value;
 
+  function submitReject(note: string) {
+    onSetStatus("rejected");
+    const trimmed = note.trim();
+    if (trimmed) onAddTag("rejection_reason", trimmed);
+    setRejectStep("idle");
+    setCustomNote("");
+  }
+
   function handleRejectPillClick() {
     if (isRejected) {
+      // Un-reject (preserves existing toggle behavior)
       onSetStatus(null);
     } else {
-      setRejectMode(true);
+      setRejectStep("picking");
     }
   }
 
-  function handleRejectConfirm() {
-    onSetStatus("rejected");
-    if (rejectNote.trim()) {
-      onAddTag("rejection_reason", rejectNote.trim());
-    }
-    setRejectMode(false);
-    setRejectNote("");
+  function handleEditExisting() {
+    setCustomNote(existingNote ?? "");
+    setRejectStep("custom");
+  }
+
+  function cancelReject() {
+    setRejectStep("idle");
+    setCustomNote("");
   }
 
   const filename = exposure.filename ?? `Exposure #${exposure.id}`;
@@ -64,7 +78,7 @@ export function DetectorImageCard({
       ? "bg-error"
       : "bg-transparent";
 
-  // Segmented pill classes
+  // Segmented pill classes (idle state)
   const pillBase =
     "px-3 py-1.5 text-xs transition-colors border-r border-border last:border-r-0";
 
@@ -89,6 +103,12 @@ export function DetectorImageCard({
       : "text-fg-muted hover:text-fg hover:bg-bg-hover",
   ].join(" ");
 
+  // Reject-flow chip styling — visually distinct from idle pills
+  const chipBase =
+    "px-3 py-1.5 text-xs transition-colors border-r border-border last:border-r-0";
+  const cancelChipCls = `${chipBase} text-fg-muted hover:text-fg hover:bg-bg-hover`;
+  const reasonChipCls = `${chipBase} text-error hover:bg-error/10`;
+
   return (
     <div className="flex flex-col h-full min-h-0">
       {/* Status header strip */}
@@ -105,15 +125,12 @@ export function DetectorImageCard({
               ✗ Rejected
             </span>
           )}
-          {isRejected && existingNote && !rejectMode && (
+          {isRejected && existingNote && rejectStep === "idle" && (
             <span className="text-[10px] text-fg-muted italic truncate">
               {existingNote}{" "}
               <button
                 className="underline shrink-0"
-                onClick={() => {
-                  setRejectNote(existingNote);
-                  setRejectMode(true);
-                }}
+                onClick={handleEditExisting}
               >
                 edit
               </button>
@@ -135,47 +152,76 @@ export function DetectorImageCard({
         />
       </div>
 
-      {/* Rejection note input (only in rejectMode) */}
-      {rejectMode && (
-        <div className="flex gap-1 shrink-0 px-3 pb-2">
-          <input
-            className="flex-1 text-xs bg-bg border border-border rounded px-2 py-1"
-            placeholder="Rejection reason (flare, missed sample…)"
-            value={rejectNote}
-            onChange={(e) => setRejectNote(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleRejectConfirm()}
-            autoFocus
-          />
-          <button
-            className="text-xs px-2 py-1 border border-error text-error rounded"
-            onClick={handleRejectConfirm}
-          >
-            Confirm
-          </button>
-        </div>
-      )}
-
-      {/* Control row */}
+      {/* Control row — morphs based on rejectStep */}
       <div className="flex items-center gap-2 shrink-0 px-3 pb-3">
-        {/* Segmented Accept/Reject/Pending control */}
-        <div className="flex rounded-md overflow-hidden border border-border">
-          <button className={pendingCls} onClick={() => onSetStatus(null)}>
-            ○ Pending
-          </button>
-          <button
-            className={acceptCls}
-            onClick={() => onSetStatus(isAccepted ? null : "accepted")}
-          >
-            ✓ Accept
-          </button>
-          <button className={rejectCls} onClick={handleRejectPillClick}>
-            ✗ Reject
-          </button>
-        </div>
+        {rejectStep === "idle" && (
+          <div className="flex rounded-md overflow-hidden border border-border">
+            <button className={pendingCls} onClick={() => onSetStatus(null)}>
+              ○ Pending
+            </button>
+            <button
+              className={acceptCls}
+              onClick={() => onSetStatus(isAccepted ? null : "accepted")}
+            >
+              ✓ Accept
+            </button>
+            <button className={rejectCls} onClick={handleRejectPillClick}>
+              ✗ Reject
+            </button>
+          </div>
+        )}
 
-        {/* Indexing button */}
+        {rejectStep === "picking" && (
+          <div className="flex rounded-md overflow-hidden border border-error/40">
+            <button className={cancelChipCls} onClick={cancelReject}>
+              ← Cancel
+            </button>
+            {BUILT_IN_REJECT_REASONS.map((reason) => (
+              <button
+                key={reason}
+                className={reasonChipCls}
+                onClick={() => submitReject(reason)}
+              >
+                {reason}
+              </button>
+            ))}
+            <button
+              className={reasonChipCls}
+              onClick={() => setRejectStep("custom")}
+            >
+              Other
+            </button>
+          </div>
+        )}
+
+        {rejectStep === "custom" && (
+          <div className="flex items-stretch rounded-md overflow-hidden border border-error/40">
+            <button className={cancelChipCls} onClick={cancelReject}>
+              ← Cancel
+            </button>
+            <input
+              className="text-xs bg-bg px-2 py-1 border-r border-border min-w-[180px] focus:outline-none"
+              placeholder="Rejection reason…"
+              value={customNote}
+              onChange={(e) => setCustomNote(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") submitReject(customNote);
+                if (e.key === "Escape") cancelReject();
+              }}
+              autoFocus
+            />
+            <button
+              className={reasonChipCls}
+              onClick={() => submitReject(customNote)}
+            >
+              Confirm
+            </button>
+          </div>
+        )}
+
+        {/* Indexing button — always visible on the right */}
         <button
-          disabled={isRejected}
+          disabled={isRejected || rejectStep !== "idle"}
           onClick={onSetIndexing}
           aria-label="Use for indexing"
           className={[

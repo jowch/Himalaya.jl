@@ -102,12 +102,16 @@ test("rejected exposure cell is dimmed", async ({ page }) => {
   await expect(rejectedCell).toHaveClass(/opacity-40/);
 });
 
-test("clicking Reject button shows note input", async ({ page }) => {
+test("Reject → Other reveals custom reason input inline", async ({ page }) => {
   await mockCore(page);
   await seedState(page);
   await page.goto("/");
   await expect(page.getByTestId("inspect-page")).toBeVisible();
+  // Click Reject — quick-pick chips appear (Flare, Other), no input yet.
   await page.getByRole("button", { name: /reject/i }).first().click();
+  await expect(page.getByPlaceholder(/reason/i)).toHaveCount(0);
+  // Click Other to reveal the freeform input.
+  await page.getByRole("button", { name: /other/i }).click();
   await expect(page.getByPlaceholder(/reason/i)).toBeVisible();
 });
 

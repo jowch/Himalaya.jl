@@ -34,7 +34,7 @@ test("shows Accept and Reject buttons", () => {
   expect(screen.getByRole("button", { name: /reject/i })).toBeInTheDocument();
 });
 
-test("Reject shows rejection note input after click", async () => {
+test("Reject → Other reveals custom reason input", async () => {
   render(
     <DetectorImageCard
       exposure={makeExposure({})}
@@ -44,7 +44,27 @@ test("Reject shows rejection note input after click", async () => {
     />,
   );
   await userEvent.click(screen.getByRole("button", { name: /reject/i }));
+  // After clicking Reject, quick-pick chips appear (Flare, Other) — no input yet.
+  expect(screen.queryByPlaceholderText(/reason/i)).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: /other/i }));
   expect(screen.getByPlaceholderText(/reason/i)).toBeInTheDocument();
+});
+
+test("Reject → Flare immediately rejects with reason tag", async () => {
+  const onSetStatus = vi.fn();
+  const onAddTag = vi.fn();
+  render(
+    <DetectorImageCard
+      exposure={makeExposure({})}
+      onSetStatus={onSetStatus}
+      onSetIndexing={vi.fn()}
+      onAddTag={onAddTag}
+    />,
+  );
+  await userEvent.click(screen.getByRole("button", { name: /reject/i }));
+  await userEvent.click(screen.getByRole("button", { name: /flare/i }));
+  expect(onSetStatus).toHaveBeenCalledWith("rejected");
+  expect(onAddTag).toHaveBeenCalledWith("rejection_reason", "Flare");
 });
 
 test("Use for indexing is disabled when rejected", () => {

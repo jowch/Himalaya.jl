@@ -14,6 +14,12 @@ export interface TraceViewerProps {
   /** Visible q-range. null = auto (full trace). */
   xDomain: [number, number] | null;
   onXDomain: (d: [number, number] | null) => void;
+  /** Visible intensity range. null = auto (full data range). */
+  yDomain?: [number, number] | null;
+  /** X-axis scale. Defaults to "log" (SAXS convention). */
+  xType?: "log" | "linear";
+  /** Called on plot dblclick. Defaults to `() => onXDomain(null)`. */
+  onReset?: () => void;
 }
 
 // ── constants ──────────────────────────────────────────────────────────────
@@ -71,7 +77,7 @@ function formatAxis(d: number): string {
   return d.toFixed(0);
 }
 
-function interpolateI(q: number, trace: Trace): number {
+export function interpolateI(q: number, trace: Trace): number {
   const qs = trace.q;
   let nearest = 0;
   for (let i = 1; i < qs.length; i++) {
@@ -93,7 +99,7 @@ function indexTicks(indices: IndexEntry[]): IndexTick[] {
 export function TraceViewer({
   trace, peaks, activeGroupIndices, hoveredIndex,
   onAddPeak, onRemovePeak, onTogglePeakExclusion,
-  xDomain, onXDomain,
+  xDomain, onXDomain, yDomain = null, xType = "log", onReset,
 }: TraceViewerProps): JSX.Element {
   const hostRef       = useRef<HTMLDivElement>(null);
   const plotContainer = useRef<HTMLDivElement>(null);
@@ -125,7 +131,7 @@ export function TraceViewer({
         overflow: "visible",
       },
       x: {
-        type: "log",
+        type: xType,
         label: "q (Å⁻¹)",
         // Plain decimal tick labels — Plot's default SI-suffix formatter
         // renders 0.040 as "40m" which is unhelpful for SAXS q values.
@@ -136,6 +142,7 @@ export function TraceViewer({
         type: "log",
         label: "I (a.u.)",
         tickFormat: (d: number) => formatAxis(d),
+        ...(yDomain ? { domain: yDomain } : {}),
       },
       // The Plot only renders the data trace + sigma band. Everything else
       // (peak triangles, predicted-q lines, cursor) lives in the overlay so
@@ -198,22 +205,31 @@ export function TraceViewer({
       const curMin  = xDomain ? xDomain[0] : trace.q[0]!;
       const curMax  = xDomain ? xDomain[1] : trace.q[trace.q.length - 1]!;
       const factor  = Math.exp(ev.deltaY * 0.001);
-      const logMin  = Math.log(curMin);
-      const logMax  = Math.log(curMax);
-      const logCur  = Math.log(Math.max(cursorQ, 1e-6));
-      const newLogMin = logCur - (logCur - logMin) * factor;
-      const newLogMax = logCur + (logMax - logCur) * factor;
       const q0 = trace.q[0]!;
       const qN = trace.q[trace.q.length - 1]!;
-      const newMin = Math.max(q0, Math.exp(newLogMin));
-      const newMax = Math.min(qN, Math.exp(newLogMax));
+      let newMin: number;
+      let newMax: number;
+      if (xType === "log") {
+        const logMin = Math.log(curMin);
+        const logMax = Math.log(curMax);
+        const logCur = Math.log(Math.max(cursorQ, 1e-6));
+        newMin = Math.max(q0, Math.exp(logCur - (logCur - logMin) * factor));
+        newMax = Math.min(qN, Math.exp(logCur + (logMax - logCur) * factor));
+      } else {
+        // Linear x: zoom symmetrically in linear space around the cursor.
+        newMin = Math.max(q0, cursorQ - (cursorQ - curMin) * factor);
+        newMax = Math.min(qN, cursorQ + (curMax - cursorQ) * factor);
+      }
       if (newMax - newMin < (qN - q0) * 1e-4) return;
       onXDomain([newMin, newMax]);
     }
     (el as unknown as EventTarget).addEventListener("wheel", handleWheel, { passive: false } as AddEventListenerOptions);
 
-    // ── dblclick: reset x-domain ────────────────────────────────────────
-    function handleDblClick(): void { onXDomain(null); }
+    // ── dblclick: reset domain (delegates to onReset if provided) ───────
+    function handleDblClick(): void {
+      if (onReset) onReset();
+      else onXDomain(null);
+    }
     (el as unknown as EventTarget).addEventListener("dblclick", handleDblClick);
 
     renderOverlay();
@@ -226,7 +242,7 @@ export function TraceViewer({
       plotElRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trace, peaks, activeGroupIndices, hoveredIndex, xDomain, onAddPeak, onRemovePeak, onTogglePeakExclusion, onXDomain]);
+  }, [trace, peaks, activeGroupIndices, hoveredIndex, xDomain, yDomain, xType, onAddPeak, onRemovePeak, onTogglePeakExclusion, onXDomain, onReset]);
 
   // ── overlay renderer (peaks + predicted-q lines + cursor) ───────────────
   const renderOverlay = useCallback((): void => {
