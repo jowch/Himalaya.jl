@@ -34,18 +34,19 @@ export function DetectorImage({
     if (!canvas || !imagePath) return;
 
     const url = `/api/exposures/${exposureId}/image${size === "thumb" ? "?thumb=1" : ""}`;
-    const res = await fetch(url);
+    const res = await fetch(url, { cache: "no-store" });
     if (!res.ok) return;
 
     const blob = await res.blob();
     const bitmap = await createImageBitmap(blob);
 
     // Draw grayscale to offscreen canvas to read pixel data
-    const off = new OffscreenCanvas(bitmap.width, bitmap.height);
+    const { width, height } = bitmap;
+    const off = new OffscreenCanvas(width, height);
     const offCtx = off.getContext("2d")!;
     offCtx.drawImage(bitmap, 0, 0);
     bitmap.close();
-    const imageData = offCtx.getImageData(0, 0, bitmap.width, bitmap.height);
+    const imageData = offCtx.getImageData(0, 0, width, height);
 
     // Build LUT: bg color (intensity 0) → fg color (intensity 255)
     const [br, bg, bb] = getCssColor("--color-bg");
@@ -59,8 +60,8 @@ export function DetectorImage({
       data[i + 3] = 255;
     }
 
-    canvas.width  = bitmap.width;
-    canvas.height = bitmap.height;
+    canvas.width  = width;
+    canvas.height = height;
     canvas.getContext("2d")?.putImageData(imageData, 0, 0);
   }, [exposureId, imagePath, size]);
 
