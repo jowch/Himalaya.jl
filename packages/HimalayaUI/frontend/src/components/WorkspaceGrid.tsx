@@ -59,10 +59,20 @@ export function WorkspaceGrid({
     <div
       data-testid="workspace-grid"
       className={[
-        "min-h-0 grid gap-3 flex-1",
-        "grid-cols-1",
+        "grid gap-3 grid-cols-1",
+        // Sizing has two regimes:
+        //   < 1400px (stacked): grid grows naturally with content (h-auto,
+        //     no flex). The page wrapper is viewport-bound, so the grid
+        //     overflows it — but with auto height, the grid's box ends at
+        //     the bottom of its last row, which is exactly where pb-6 lives.
+        //     This puts 24px of breathing room below the bottom-most slot
+        //     even when scrolling past the wrapper.
+        //   ≥ 1400px (three-col): grid fills the card area (flex-1,
+        //     min-h-0, max-h capped). No bottom padding — the slots fill
+        //     the grid edge to edge with the existing gap.
+        "h-auto pb-6",
         "min-[1400px]:grid-cols-[minmax(320px,22fr)_56fr_minmax(320px,22fr)]",
-        "h-auto min-[1400px]:flex-1",
+        "min-[1400px]:flex-1 min-[1400px]:min-h-0 min-[1400px]:pb-0",
         "min-[1400px]:max-h-[min(700px,calc(100dvh-var(--chrome-h)-1.5rem))]",
         className ?? "",
       ].join(" ")}

@@ -104,7 +104,7 @@ export function InspectPage(): JSX.Element {
   return (
     <div
       data-testid="inspect-page"
-      className="flex-1 min-h-0 flex flex-col gap-3 px-4 pb-6 pt-2"
+      className="flex-1 min-h-0 flex flex-col gap-3 px-4 pb-4 pt-2"
     >
       {/*
         Layout (shared with IndexPage via WorkspaceGrid):
@@ -156,7 +156,7 @@ export function InspectPage(): JSX.Element {
           // is only this tall below 1400px; at the three-col breakpoint the
           // grid's fixed height takes over.
           center: "min-h-[640px]",
-          right:  "min-h-[200px]",
+          right:  "min-h-[400px]",
         }}
       />
     </div>

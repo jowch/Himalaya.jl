@@ -22,7 +22,11 @@ export function ThumbnailGallery({
   onSelect,
   className,
 }: Props): JSX.Element {
-  const containerClass = "flex flex-row gap-2 overflow-x-auto h-full";
+  // py-1 is load-bearing: `overflow-x: auto` forces `overflow-y: auto`
+  // (CSS spec — a single auto axis isn't allowed), which would clip the
+  // selected/hover ring at the top edge of the strip. The 4px vertical
+  // padding gives the 2px ring room to render inside the clip region.
+  const containerClass = "flex flex-row gap-2 overflow-x-auto h-full py-1";
 
   return (
     <div className={`${containerClass} ${className ?? ""}`}>
