@@ -100,8 +100,9 @@ export function PlotCard(): JSX.Element {
         xMin = trace.q[startIdx] ?? xMin;
       }
 
-      // 2. Collect positive intensities in the window. Filter out non-positives
-      //    — zero/dead-pixel artifacts that have no place on a log axis.
+      // 2. Floor: 5th percentile of positive intensities WITHIN the focused
+      //    x-window. Filtering to the window means the floor reflects where
+      //    the actual diffraction signal lives, not the beam region.
       const visibleI: number[] = [];
       for (let i = 0; i < trace.q.length; i++) {
         const q = trace.q[i]!;
@@ -110,14 +111,20 @@ export function PlotCard(): JSX.Element {
         if (Number.isFinite(v) && v > 0) visibleI.push(v);
       }
       if (visibleI.length === 0) return { x: xResult, y: null };
-
-      // 3. y-floor: 5th percentile, with a small safety margin below.
-      //    y-ceiling: actual max of visible data (peaks ARE in the trace so
-      //    this captures them), with margin above.
       visibleI.sort((a, b) => a - b);
       const p05 = visibleI[Math.floor(visibleI.length * 0.05)]!;
-      const hi  = visibleI[visibleI.length - 1]!;
-      return { x: xResult, y: [p05 * 0.7, hi * 2] };
+
+      // 3. Ceiling: actual max of the FULL trace (positive only). Keeping the
+      //    full top end visible preserves relative-magnitude context — the
+      //    user can see how much brighter the beam is than the peaks without
+      //    having to reset the zoom. Only the floor is "cropped".
+      let fullMax = 0;
+      for (const v of trace.I) {
+        if (Number.isFinite(v) && v > fullMax) fullMax = v;
+      }
+      if (fullMax <= 0) return { x: xResult, y: null };
+
+      return { x: xResult, y: [p05 * 0.7, fullMax * 1.2] };
     },
     [],
   );
