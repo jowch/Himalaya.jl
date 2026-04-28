@@ -7,6 +7,7 @@
   --color-bg: oklch(0.095 0.004 250);
   --color-bg-elevated: oklch(0.145 0.006 250);
   --color-bg-hover: oklch(0.185 0.007 250);
+  --color-bg-subtle: oklch(0.168 0.007 250);
   --color-fg: oklch(0.95 0.005 250);
   --color-fg-muted: oklch(0.64 0.009 250);
   --color-fg-dim: oklch(0.46 0.009 250);
@@ -23,12 +24,37 @@
   --radius: 6px;
   --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /*
+   * Type scale — five steps. Use Tailwind utilities (text-xs / text-sm /
+   * text-base / text-lg / text-xl) which now resolve to these px values
+   * app-wide. Avoid inlining `text-[Xpx]` — if a size is missing here,
+   * extend the scale rather than scattering one-offs.
+   *
+   *   xs    10.5  captions, microcopy, status badges
+   *   sm    11.5  labels, button text, tag pills
+   *   base  13    body — chat messages, hints
+   *   lg    15    card titles, primary inputs (sample name)
+   *   xl    19    page-level / rare
+   */
+  --text-xs:    10.5px;
+  --text-sm:    11.5px;
+  --text-base:  13px;
+  --text-lg:    15px;
+  --text-xl:    19px;
+
+  --text-xs--line-height:   1.4;
+  --text-sm--line-height:   1.4;
+  --text-base--line-height: 1.5;
+  --text-lg--line-height:   1.3;
+  --text-xl--line-height:   1.2;
 }
 
 :root.theme-light {
   --color-bg: oklch(0.985 0.003 250);
   --color-bg-elevated: oklch(0.995 0.002 250);
   --color-bg-hover: oklch(0.955 0.005 250);
+  --color-bg-subtle: oklch(0.965 0.004 250);
   --color-fg: oklch(0.22 0.010 250);
   --color-fg-muted: oklch(0.46 0.010 250);
   --color-fg-dim: oklch(0.62 0.010 250);
@@ -145,4 +171,37 @@
  */
 @utility panel-main {
   background: var(--color-bg);
+}
+
+/*
+ * Semantic typography roles. Components consume these instead of mixing
+ * size/weight/color triples. Six roles cover the surface area of the app:
+ *
+ *   text-caption      microcopy: timestamps, hints, "no items" placeholders
+ *   text-label        form / section labels — uppercase, tracked, dim
+ *   text-meta         inline labels (non-uppercase): author names, tag keys
+ *   text-body         default readable text — chat body, paragraph
+ *   text-title        card titles, primary input default state
+ *   text-data         numerical / monospace values — q, score, lattice
+ *   text-data-strong  monospace badge — phase chip, indexing chip
+ *
+ * Adding `font-mono` etc. on top of a role is fine if context demands it,
+ * but try to express the semantic first.
+ */
+@layer components {
+  .text-caption     { font-size: var(--text-xs);  line-height: 1.4;
+                      color: var(--color-fg-muted); }
+  .text-label       { font-size: var(--text-sm);  line-height: 1.4;
+                      font-weight: 500; text-transform: uppercase;
+                      letter-spacing: 0.04em; color: var(--color-fg-muted); }
+  .text-meta        { font-size: var(--text-sm);  line-height: 1.4;
+                      font-weight: 500; color: var(--color-fg); }
+  .text-body        { font-size: var(--text-base); line-height: 1.5;
+                      color: var(--color-fg); }
+  .text-title       { font-size: var(--text-lg); line-height: 1.3;
+                      font-weight: 600; color: var(--color-fg); }
+  .text-data        { font-family: var(--font-mono); font-size: var(--text-sm);
+                      line-height: 1.4; color: var(--color-fg); }
+  .text-data-strong { font-family: var(--font-mono); font-size: var(--text-sm);
+                      line-height: 1.4; font-weight: 600; }
 }

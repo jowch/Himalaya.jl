@@ -3,7 +3,7 @@ import { persist } from "zustand/middleware";
 
 export const LS_KEY = "himalaya-ui:state";
 
-export type PageId = "index" | "compare";
+export type PageId = "index" | "compare" | "inspect";
 export type ThemeId = "dark" | "light";
 export type NavModalStep = "experiment" | "sample";
 
@@ -74,7 +74,7 @@ export const useAppState = create<AppState>()(
     }),
     {
       name: LS_KEY,
-      version: 2,
+      version: 3,
       partialize: (s) => ({
         username: s.username,
         activeExperimentId: s.activeExperimentId,

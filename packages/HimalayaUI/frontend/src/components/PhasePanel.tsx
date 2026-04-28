@@ -67,7 +67,7 @@ function IndexCard({ index, isActive, onAction, onHover, onLeave, "data-alternat
         {/* Primary row: phase chip + lattice param */}
         <div className="flex items-center gap-2 min-w-0">
           <span
-            className="font-mono text-[10.5px] font-semibold px-1.5 py-0.5 rounded-sm border shrink-0"
+            className="text-data-strong px-1.5 py-0.5 rounded-sm border shrink-0"
             style={{
               color,
               background: `color-mix(in oklab, ${color} 10%, transparent)`,
@@ -77,19 +77,19 @@ function IndexCard({ index, isActive, onAction, onHover, onLeave, "data-alternat
             {index.phase}
           </span>
           {index.lattice_d != null && (
-            <span className="font-mono text-[11px] text-fg truncate min-w-0">
+            <span className="text-data truncate min-w-0">
               <span className="text-fg-dim">a =</span>{" "}
               {formatLattice(index.lattice_d)}{" "}
-              <span className="text-fg-dim text-[10px]">nm</span>
+              <span className="text-fg-dim text-xs">nm</span>
             </span>
           )}
         </div>
 
         {/* Secondary row: score bar + R² + peak count */}
-        <div className="flex items-center gap-3 text-[10.5px] font-mono text-fg-dim">
+        <div className="flex items-center gap-3 font-mono text-xs text-fg-dim">
           <span className="flex items-center gap-1.5">
             <span>score</span>
-            <span className="inline-block w-10 h-1 bg-bg-hover rounded overflow-hidden">
+            <span className="inline-block w-12 h-1.5 bg-bg-hover rounded-full overflow-hidden">
               <span
                 data-score-bar
                 className="block h-full"
@@ -108,7 +108,7 @@ function IndexCard({ index, isActive, onAction, onHover, onLeave, "data-alternat
               {formatR2(index.r_squared)}
             </span>
           </span>
-          <span className="ml-auto px-1.5 py-0.5 border border-border-soft rounded-full text-[10px] text-fg-dim">
+          <span className="ml-auto px-1.5 py-0.5 border border-border-soft rounded-full text-xs text-fg-dim">
             {index.peaks.length} peaks
           </span>
         </div>
@@ -131,10 +131,10 @@ function IndexCard({ index, isActive, onAction, onHover, onLeave, "data-alternat
 function GroupHead({ label, count }: { label: string; count: number }): JSX.Element {
   return (
     <div className="flex items-center justify-between mb-2 px-1">
-      <span className="text-[10px] uppercase tracking-widest text-fg-dim font-semibold">
+      <span className="text-xs uppercase tracking-widest text-fg-dim font-semibold">
         {label}
       </span>
-      <span className="text-[10px] text-fg-dim">{count}</span>
+      <span className="text-xs text-fg-dim">{count}</span>
     </div>
   );
 }
@@ -181,8 +181,8 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
       {/* ── Sticky header ── */}
       <div className="card-header">
         <div className="flex flex-col justify-center min-w-0">
-          <div className="text-[13px] font-semibold tracking-tight">Index choices</div>
-          <div className="text-[11px] text-fg-dim leading-tight">
+          <div className="text-title tracking-tight">Index choices</div>
+          <div className="text-xs text-fg-dim leading-tight">
             Hover a candidate to preview peaks
           </div>
         </div>

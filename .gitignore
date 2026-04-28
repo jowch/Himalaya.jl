@@ -34,8 +34,15 @@ scratch/
 
 .superpowers/
 
-# Local agent / tooling artifacts (not checked in)
-.claude/
+# Local agent / tooling artifacts.
+# Team-shared automations (agents, skills, hooks, launch) are checked in;
+# personal/session files (settings.local.json, plans/, transcripts) are not.
+.claude/*
+!.claude/settings.json
+!.claude/launch.json
+!.claude/agents/
+!.claude/skills/
+!.claude/commands/
 .playwright-mcp/
 packages/HimalayaUI/frontend/test-results/
 test-results/

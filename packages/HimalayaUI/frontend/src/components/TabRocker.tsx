@@ -1,6 +1,7 @@
 import { useAppState, type PageId } from "../state";
 
 const TABS: readonly { id: PageId; label: string }[] = [
+  { id: "inspect", label: "Inspect" },
   { id: "index",   label: "Index"   },
   { id: "compare", label: "Compare" },
 ];
@@ -31,9 +32,9 @@ export function TabRocker(): JSX.Element {
             data-active={active || undefined}
             onClick={() => setPage(t.id)}
             className={
-              "px-3.5 py-1 rounded-full font-sans text-[12px] font-medium " +
+              "px-3.5 py-1 rounded-full font-sans text-sm font-medium " +
               (active
-                ? "bg-bg-hover text-fg shadow-inner"
+                ? "bg-accent/15 text-accent"
                 : "text-fg-muted hover:text-fg")
             }
           >
