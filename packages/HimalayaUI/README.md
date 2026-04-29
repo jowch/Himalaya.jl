@@ -31,6 +31,8 @@ A web application for semi-automatic indexing of SAXS diffraction patterns. Drop
 
 Runs locally on your workstation or on a lab server over SSH port-forward. No external services.
 
+`bin/himalaya` and the `Makefile` require bash and GNU Make — Linux and macOS only.
+
 ---
 
 ## One-time setup

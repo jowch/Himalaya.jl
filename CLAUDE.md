@@ -82,8 +82,9 @@ scratch/                     # gitignored — exploratory scripts and trace data
 ```bash
 # First-time setup (also run after `git worktree add`):
 (cd packages/HimalayaUI/frontend && npm install)
-# Worktrees only: copy Manifest.toml from main so Himalaya core resolves to
+# Worktrees only: copy Manifest.toml files from main so Himalaya core resolves to
 # the local v0.5.0 — see "Himalaya core resolution in worktrees" gotcha below.
+# Also copy (or instantiate) scripts/Manifest.toml before running `make sysimage`.
 
 # Core Himalaya
 julia --project=. -e 'using Pkg; Pkg.test()'

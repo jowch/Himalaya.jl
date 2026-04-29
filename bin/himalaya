@@ -1,7 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Resolve the real script path before computing REPO so that symlinks
+# (e.g. sudo ln -s .../bin/himalaya /usr/local/bin/himalaya) work correctly.
+# Handles both absolute and relative symlink targets.
+SCRIPT="${BASH_SOURCE[0]}"
+while [ -L "$SCRIPT" ]; do
+    TARGET="$(readlink "$SCRIPT")"
+    if [[ "$TARGET" = /* ]]; then
+        SCRIPT="$TARGET"
+    else
+        SCRIPT="$(cd "$(dirname "$SCRIPT")" && pwd)/$TARGET"
+    fi
+done
+REPO="$(cd "$(dirname "$SCRIPT")/.." && pwd)"
+
 SYSIMAGE="$REPO/build/himalaya.so"
 PROJECT="$REPO/packages/HimalayaUI"
 
