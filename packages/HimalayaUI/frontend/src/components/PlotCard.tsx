@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Skeleton } from "boneyard-js/react";
 import { useAppState } from "../state";
 import {
   useExposures, useTrace, usePeaks, useIndices, useGroups,
@@ -9,6 +10,41 @@ import { TraceViewer } from "./TraceViewer";
 import { HintText } from "./ui";
 import { phaseColor } from "../phases";
 import type { IndexEntry, Peak, Trace } from "../api";
+
+const PLOT_CARD_FIXTURE_DATA = {
+  trace: {
+    q:     [0.05,0.07,0.09,0.12,0.15,0.18,0.22,0.27,0.32,0.38,
+            0.44,0.51,0.58,0.65,0.73,0.81,0.89,0.97,1.05,1.13],
+    I:     [1200,980,820,650,520,420,350,290,240,310,
+            280,190,150,120,95,80,68,60,54,50],
+    sigma: Array<number>(20).fill(5),
+  },
+  peaks: [
+    { id:1, exposure_id:0, q:0.18, intensity:420, prominence:180,
+      sharpness:2.1, source:"auto" as const, excluded:false },
+    { id:2, exposure_id:0, q:0.32, intensity:310, prominence:140,
+      sharpness:1.8, source:"auto" as const, excluded:false },
+    { id:3, exposure_id:0, q:0.51, intensity:190, prominence:100,
+      sharpness:1.5, source:"auto" as const, excluded:false },
+  ],
+};
+
+const PLOT_CARD_FIXTURE = (
+  <TraceViewer
+    trace={PLOT_CARD_FIXTURE_DATA.trace}
+    peaks={PLOT_CARD_FIXTURE_DATA.peaks}
+    activeGroupIndices={[]}
+    hoveredIndex={undefined}
+    onAddPeak={() => {}}
+    onRemovePeak={() => {}}
+    onTogglePeakExclusion={() => {}}
+    xDomain={null}
+    onXDomain={() => {}}
+    yDomain={null}
+    xType="log"
+    onReset={() => {}}
+  />
+);
 
 /**
  * PlotCard — center card on the Index page. Wraps the TraceViewer, a Miller-plot
@@ -178,13 +214,6 @@ export function PlotCard(): JSX.Element {
         </div>
       );
     }
-    if (activeExposureId === undefined || traceQ.isPending || peaksQ.isPending) {
-      return (
-        <div className="flex-1 flex items-center justify-center">
-          <HintText>Loading trace…</HintText>
-        </div>
-      );
-    }
     if (!traceQ.data || !peaksQ.data) {
       return (
         <div className="flex-1 flex items-center justify-center">
@@ -230,7 +259,17 @@ export function PlotCard(): JSX.Element {
         canFit={traceQ.data !== undefined}
       />
       <div className="relative flex-1 min-h-0">
-        {body}
+        <Skeleton
+          name="plot-card"
+          className="h-full w-full"
+          loading={activeExposureId !== undefined && (traceQ.isLoading || peaksQ.isLoading)}
+          stagger={50}
+          transition={200}
+          fixture={PLOT_CARD_FIXTURE}
+          fallback={<div className="flex-1 flex items-center justify-center"><HintText>Loading trace…</HintText></div>}
+        >
+          {body}
+        </Skeleton>
       </div>
       {activeExposureId !== undefined && traceQ.data && (
         <PlotLegend

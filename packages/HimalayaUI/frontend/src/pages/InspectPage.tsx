@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Skeleton } from "boneyard-js/react";
 import { useAppState } from "../state";
 import {
   useExperiment,
@@ -17,6 +18,50 @@ import { DetectorImageCard } from "../components/DetectorImageCard";
 import { SampleMetadataCard } from "../components/SampleMetadataCard";
 import { ChatCard } from "../components/ChatCard";
 import { WorkspaceGrid } from "../components/WorkspaceGrid";
+import type { Exposure, Sample } from "../api";
+
+const DETECTOR_IMAGE_FIXTURE_EXPOSURE: Exposure = {
+  id: 0,
+  sample_id: 0,
+  filename: "JC001-001.dat",
+  kind: "file",
+  selected: false,
+  status: "accepted",
+  image_path: null,
+  image_version: "",
+  tags: [],
+  sources: [],
+};
+
+const DETECTOR_IMAGE_FIXTURE = (
+  <DetectorImageCard
+    exposure={DETECTOR_IMAGE_FIXTURE_EXPOSURE}
+    onSetStatus={() => {}}
+    onSetIndexing={() => {}}
+    onAddTag={() => {}}
+    onRemoveTag={() => {}}
+  />
+);
+
+const SAMPLE_METADATA_FIXTURE_SAMPLE: Sample = {
+  id: 0,
+  experiment_id: 0,
+  label: "JC001",
+  name: "DOPE 70%",
+  notes: null,
+  tags: [{ id: 1, key: "lipid", value: "DOPE", source: "manifest" }],
+};
+
+const SAMPLE_METADATA_FIXTURE = (
+  <SampleMetadataCard
+    sample={SAMPLE_METADATA_FIXTURE_SAMPLE}
+    experimentName="Experiment A"
+    exposureSummary={{ total: 8, accepted: 6, rejected: 1 }}
+    onUpdateSample={() => {}}
+    onAddTag={() => {}}
+    onRemoveTag={() => {}}
+  />
+);
 
 export function InspectPage(): JSX.Element {
   const username     = useAppState((s) => s.username);
@@ -126,19 +171,29 @@ export function InspectPage(): JSX.Element {
         center={
           <div className="flex flex-col gap-3 h-full min-h-0">
             <div className="flex-1 min-h-0">
-              {viewingExposure ? (
-                <DetectorImageCard
-                  exposure={viewingExposure}
-                  onSetStatus={handleSetStatus}
-                  onSetIndexing={handleSetIndexing}
-                  onAddTag={handleAddTag}
-                  onRemoveTag={handleRemoveTag}
-                />
-              ) : (
-                <div className="flex items-center justify-center h-full text-fg-muted text-sm">
-                  Select an exposure
-                </div>
-              )}
+              <Skeleton
+                name="detector-image-card"
+                className="h-full w-full"
+                loading={exposuresQ.isLoading}
+                stagger={50}
+                transition={200}
+                fixture={DETECTOR_IMAGE_FIXTURE}
+                fallback={<div className="flex items-center justify-center h-full text-fg-muted text-sm">Loading exposure…</div>}
+              >
+                {viewingExposure ? (
+                  <DetectorImageCard
+                    exposure={viewingExposure}
+                    onSetStatus={handleSetStatus}
+                    onSetIndexing={handleSetIndexing}
+                    onAddTag={handleAddTag}
+                    onRemoveTag={handleRemoveTag}
+                  />
+                ) : (
+                  <div className="flex items-center justify-center h-full text-fg-muted text-sm">
+                    Select an exposure
+                  </div>
+                )}
+              </Skeleton>
             </div>
             <div className="flex-none h-[140px] px-2 pt-3 pb-2 border-t border-border/40">
               <ThumbnailGallery
@@ -151,14 +206,24 @@ export function InspectPage(): JSX.Element {
           </div>
         }
         right={
-          <SampleMetadataCard
-            sample={sample}
-            experimentName={experimentName}
-            exposureSummary={exposureSummary}
-            onUpdateSample={(patch) => updateSample.mutate(patch)}
-            onAddTag={(k, v) => addSampleTag.mutate({ key: k, value: v })}
-            onRemoveTag={(id) => rmSampleTag.mutate(id)}
-          />
+          <Skeleton
+            name="sample-metadata-card"
+            className="h-full w-full"
+            loading={samplesQ.isLoading}
+            stagger={50}
+            transition={200}
+            fixture={SAMPLE_METADATA_FIXTURE}
+            fallback={<div className="p-4 text-fg-muted text-sm">Loading sample…</div>}
+          >
+            <SampleMetadataCard
+              sample={sample}
+              experimentName={experimentName}
+              exposureSummary={exposureSummary}
+              onUpdateSample={(patch) => updateSample.mutate(patch)}
+              onAddTag={(k, v) => addSampleTag.mutate({ key: k, value: v })}
+              onRemoveTag={(id) => rmSampleTag.mutate(id)}
+            />
+          </Skeleton>
         }
         slotClassName={{
           left:   "min-h-[280px]",
