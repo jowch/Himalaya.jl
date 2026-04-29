@@ -8,6 +8,8 @@ export interface TraceViewerProps {
   peaks: Peak[];
   activeGroupIndices: IndexEntry[];
   hoveredIndex: IndexEntry | undefined;
+  /** When set, the matching peak triangle gets a highlight ring (drives the chat-mention peak chip hover effect). */
+  hoveredPeakId?: number | undefined;
   onAddPeak: (q: number) => void;
   onRemovePeak: (peakId: number) => void;
   onTogglePeakExclusion: (peakId: number, excluded: boolean) => void;
@@ -97,7 +99,7 @@ function indexTicks(indices: IndexEntry[]): IndexTick[] {
 // ── component ──────────────────────────────────────────────────────────────
 
 export function TraceViewer({
-  trace, peaks, activeGroupIndices, hoveredIndex,
+  trace, peaks, activeGroupIndices, hoveredIndex, hoveredPeakId,
   onAddPeak, onRemovePeak, onTogglePeakExclusion,
   xDomain, onXDomain, yDomain = null, xType = "log", onReset,
 }: TraceViewerProps): JSX.Element {
@@ -308,6 +310,21 @@ export function TraceViewer({
         opacity = isAuto ? 0.95 : 1;
       }
 
+      // Hover ring: a faint pulse halo behind the triangle when this peak is
+      // hovered elsewhere (chat mention chip). Drawn first so the triangle
+      // sits on top.
+      if (hoveredPeakId === peak.id) {
+        const halo = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+        halo.setAttribute("cx", String(px));
+        halo.setAttribute("cy", String(py - TRIANGLE_H / 2));
+        halo.setAttribute("r", String(TRIANGLE_H + 4));
+        halo.setAttribute("fill", "none");
+        halo.setAttribute("stroke", baseColor);
+        halo.setAttribute("stroke-width", "1.5");
+        halo.setAttribute("stroke-opacity", "0.7");
+        peakRoot.appendChild(halo);
+      }
+
       const tri = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
       tri.setAttribute("points",
         `${px - TRIANGLE_HALF_W},${py - TRIANGLE_H} ` +
@@ -410,7 +427,7 @@ export function TraceViewer({
         drawTrackTick(t, { strong: true, faded: false, matched });
       }
     }
-  }, [peaks, trace, hoveredIndex, activeGroupIndices, xDomain]);
+  }, [peaks, trace, hoveredIndex, hoveredPeakId, activeGroupIndices, xDomain]);
 
   // Re-render overlay whenever anything that affects it changes.
   useEffect(() => {

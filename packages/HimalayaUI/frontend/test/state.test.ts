@@ -126,4 +126,19 @@ describe("useAppState", () => {
     expect(raw).not.toContain("navModalOpen");
     expect(raw).not.toContain("navModalStep");
   });
+
+  it("hoveredPeakId starts undefined and can be set/cleared", () => {
+    useAppState.setState({ hoveredPeakId: undefined });
+    expect(useAppState.getState().hoveredPeakId).toBeUndefined();
+    useAppState.getState().setHoveredPeak(5);
+    expect(useAppState.getState().hoveredPeakId).toBe(5);
+    useAppState.getState().setHoveredPeak(undefined);
+    expect(useAppState.getState().hoveredPeakId).toBeUndefined();
+  });
+
+  it("hoveredPeakId is NOT in the persisted partition", () => {
+    useAppState.setState({ hoveredPeakId: 99 });
+    const raw = localStorage.getItem(LS_KEY) ?? "";
+    expect(raw).not.toContain("hoveredPeakId");
+  });
 });

@@ -144,4 +144,23 @@ function register_analysis_routes!()
         HTTP.Response(200, ["Content-Type" => "application/json"],
             JSON3.write(_group_with_members(db, custom_id)))
     end
+
+    @get "/api/indices/{id}" function(req::HTTP.Request, id::Int)
+        db   = current_db()
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT * FROM indices WHERE id = ?", [id]))
+        isempty(rows) && return HTTP.Response(404,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:error => "index not found")))
+        ix        = rows[1]
+        peak_rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT ip.peak_id, ip.ratio_position, ip.residual, p.q AS q_observed
+             FROM index_peaks ip JOIN peaks p ON p.id = ip.peak_id
+             WHERE ip.index_id = ? ORDER BY ip.ratio_position", [id]))
+        predicted = predicted_q_for_phase(String(ix.phase), Float64(ix.basis))
+        d               = row_to_json(ix)
+        d[:peaks]       = rows_to_json(peak_rows)
+        d[:predicted_q] = predicted
+        HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(d))
+    end
 end

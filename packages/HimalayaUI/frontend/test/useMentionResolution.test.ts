@@ -1,0 +1,57 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { renderHook, waitFor } from "@testing-library/react";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { createElement } from "react";
+import { makeClient } from "./test-utils";
+import * as api from "../src/api";
+import { useMentionResolution } from "../src/hooks/useMentionResolution";
+import type { MentionToken } from "../src/lib/renderMentions";
+
+const PEAK: api.Peak = {
+  id: 42, exposure_id: 1, q: 1.223, intensity: 841.2,
+  prominence: 4.2, sharpness: 0.3, source: "auto", excluded: false,
+};
+
+function wrapper() {
+  const client = makeClient();
+  return ({ children }: { children: React.ReactNode }) =>
+    createElement(QueryClientProvider, { client }, children);
+}
+
+describe("useMentionResolution", () => {
+  beforeEach(() => { vi.restoreAllMocks(); });
+
+  it("returns 'loading' initially when entity is not in cache", async () => {
+    vi.spyOn(api, "getPeak").mockResolvedValue(PEAK);
+    const tokens: MentionToken[] = [{ kind: "mention", type: "peak", id: 42 }];
+    const { result } = renderHook(() => useMentionResolution(tokens), { wrapper: wrapper() });
+    expect(result.current.get("peak:42")).toBe("loading");
+  });
+
+  it("resolves to entity data after fetch", async () => {
+    vi.spyOn(api, "getPeak").mockResolvedValue(PEAK);
+    const tokens: MentionToken[] = [{ kind: "mention", type: "peak", id: 42 }];
+    const { result } = renderHook(() => useMentionResolution(tokens), { wrapper: wrapper() });
+    await waitFor(() => {
+      const entry = result.current.get("peak:42");
+      expect(entry).not.toBe("loading");
+      expect(entry).not.toBe("dead");
+    });
+    const entry = result.current.get("peak:42");
+    expect(entry).toMatchObject({ type: "peak", data: PEAK });
+  });
+
+  it("marks entity as 'dead' on 404", async () => {
+    vi.spyOn(api, "getPeak").mockRejectedValue(
+      new api.ApiError(404, "not found", null)
+    );
+    const tokens: MentionToken[] = [{ kind: "mention", type: "peak", id: 999 }];
+    const { result } = renderHook(() => useMentionResolution(tokens), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.get("peak:999")).toBe("dead"));
+  });
+
+  it("returns empty map for empty token list", () => {
+    const { result } = renderHook(() => useMentionResolution([]), { wrapper: wrapper() });
+    expect(result.current.size).toBe(0);
+  });
+});

@@ -121,4 +121,16 @@ function register_peaks_routes!()
 
         HTTP.Response(204)
     end
+
+    @get "/api/peaks/{id}" function(req::HTTP.Request, id::Int)
+        db   = current_db()
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id, exposure_id, q, intensity, prominence, sharpness, source, excluded
+             FROM peaks WHERE id = ?", [id]))
+        isempty(rows) && return HTTP.Response(404,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:error => "peak not found")))
+        HTTP.Response(200, ["Content-Type" => "application/json"],
+            JSON3.write(row_to_json(rows[1]; bool_keys = (:excluded,))))
+    end
 end

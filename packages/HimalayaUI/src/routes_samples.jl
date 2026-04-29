@@ -74,4 +74,20 @@ function register_samples_routes!()
             note = "tag_id=$tag_id")
         HTTP.Response(204)
     end
+
+    @get "/api/samples/{id}" function(req::HTTP.Request, id::Int)
+        db   = current_db()
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT * FROM samples WHERE id = ?", [id]))
+        isempty(rows) && return HTTP.Response(404,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:error => "sample not found")))
+        sm   = rows[1]
+        tags = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id, key, value, source FROM sample_tags
+             WHERE sample_id = ? ORDER BY id", [id]))
+        d        = row_to_json(sm)
+        d[:tags] = rows_to_json(tags)
+        HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(d))
+    end
 end

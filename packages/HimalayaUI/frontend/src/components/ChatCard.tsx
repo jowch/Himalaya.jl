@@ -1,8 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useAppState } from "../state";
 import { useSampleMessages, usePostSampleMessage } from "../queries";
 import type { SampleMessage } from "../api";
 import { HintText } from "./ui";
+import { parseMentions, type MentionToken } from "../lib/renderMentions";
+import { useMentionResolution } from "../hooks/useMentionResolution";
+import { MentionChip } from "./MentionChip";
+import { MentionCompose } from "./MentionCompose";
 
 /**
  * ChatCard — per-sample notebook/chat log.
@@ -30,7 +34,7 @@ export function ChatCard(): JSX.Element {
   return (
     <Frame>
       <MessageList messages={messagesQ.data ?? []} isPending={messagesQ.isPending} />
-      <Compose
+      <MentionCompose
         disabled={username === undefined || postMsg.isPending}
         onSubmit={(body) => postMsg.mutate(body)}
       />
@@ -91,20 +95,33 @@ function MessageList({ messages, isPending }: MessageListProps): JSX.Element {
 }
 
 function MessageRow({ msg }: { msg: SampleMessage }): JSX.Element {
-  const authorLabel = msg.author ?? "deleted user";
+  const authorLabel   = msg.author ?? "deleted user";
   const authorDeleted = msg.author == null;
+  const segments      = useMemo(() => parseMentions(msg.body), [msg.body]);
+  const mentions      = useMemo(
+    () => segments.filter((s): s is MentionToken => s.kind === "mention"),
+    [segments],
+  );
+  const resolutionMap = useMentionResolution(mentions);
+
   return (
     <div className="flex flex-col gap-0.5 min-w-0" data-testid={`chat-message-${msg.id}`}>
       <div className="flex items-baseline gap-2">
-        <span className={authorDeleted
-          ? "text-meta text-fg-dim italic"
-          : "text-meta"}>
+        <span className={authorDeleted ? "text-meta text-fg-dim italic" : "text-meta"}>
           {authorLabel}
         </span>
         <span className="text-fg-dim text-xs">{formatTime(msg.created_at)}</span>
       </div>
       <p className="text-base font-sans text-fg-muted leading-snug break-words whitespace-pre-wrap">
-        {msg.body}
+        {segments.map((seg, i) => {
+          if (seg.kind === "text") return <span key={i}>{seg.text}</span>;
+          const key   = `${seg.type}:${seg.id}`;
+          const token = `[[${seg.type}:${seg.id}]]`;
+          const entry = resolutionMap.get(key) ?? "loading";
+          return (
+            <MentionChip key={i} resolved={entry} originalText={token} />
+          );
+        })}
       </p>
     </div>
   );
@@ -121,49 +138,3 @@ function formatTime(iso: string): string {
   return `${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })} ${hm}`;
 }
 
-interface ComposeProps {
-  disabled: boolean;
-  onSubmit: (body: string) => void;
-}
-
-function Compose({ disabled, onSubmit }: ComposeProps): JSX.Element {
-  const [text, setText] = useState("");
-  const ref = useRef<HTMLTextAreaElement>(null);
-
-  const trySubmit = (): void => {
-    const trimmed = text.trim();
-    if (!trimmed || disabled) return;
-    onSubmit(trimmed);
-    setText("");
-  };
-
-  const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      trySubmit();
-    }
-  };
-
-  return (
-    <div className="flex-shrink-0 border-t border-border bg-bg px-2.5 py-2">
-      <textarea
-        ref={ref}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={onKeyDown}
-        rows={2}
-        placeholder={disabled ? "Sign in to post…" : "Write a note…"}
-        data-testid="chat-compose"
-        className="w-full resize-none bg-transparent text-fg text-base font-sans
-                   placeholder:text-fg-dim outline-0 border-0"
-      />
-      <div className="flex items-center justify-between text-xs text-fg-dim">
-        <span>
-          <kbd className="border border-border rounded px-1">⏎</kbd> send
-          {" · "}
-          <kbd className="border border-border rounded px-1">⇧⏎</kbd> newline
-        </span>
-      </div>
-    </div>
-  );
-}
