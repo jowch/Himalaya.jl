@@ -7,6 +7,7 @@ import {
   useSetExposureStatus,
   useSelectExposure,
   useAddExposureTag,
+  useRemoveExposureTag,
   useAddSampleTag,
   useRemoveSampleTag,
   useUpdateSample,
@@ -66,6 +67,7 @@ export function InspectPage(): JSX.Element {
   const setStatus    = useSetExposureStatus(sampleId ?? 0);
   const setIndexing  = useSelectExposure(sampleId ?? 0);
   const addExpTag    = useAddExposureTag(sampleId ?? 0, viewingId ?? 0);
+  const rmExpTag     = useRemoveExposureTag(sampleId ?? 0, viewingId ?? 0);
   const updateSample = useUpdateSample(experimentId ?? 0, sampleId ?? 0);
   const addSampleTag = useAddSampleTag(experimentId ?? 0, sampleId ?? 0);
   const rmSampleTag  = useRemoveSampleTag(experimentId ?? 0, sampleId ?? 0);
@@ -99,6 +101,13 @@ export function InspectPage(): JSX.Element {
     [addExpTag],
   );
 
+  const handleRemoveTag = useCallback(
+    (tagId: number) => {
+      rmExpTag.mutate(tagId);
+    },
+    [rmExpTag],
+  );
+
   if (!sample) return <div className="flex-1 min-h-0" />;
 
   return (
@@ -123,6 +132,7 @@ export function InspectPage(): JSX.Element {
                   onSetStatus={handleSetStatus}
                   onSetIndexing={handleSetIndexing}
                   onAddTag={handleAddTag}
+                  onRemoveTag={handleRemoveTag}
                 />
               ) : (
                 <div className="flex items-center justify-center h-full text-fg-muted text-sm">

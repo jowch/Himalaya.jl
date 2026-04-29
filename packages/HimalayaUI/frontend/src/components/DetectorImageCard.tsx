@@ -7,6 +7,12 @@ interface Props {
   onSetStatus: (status: "accepted" | "rejected" | null) => void;
   onSetIndexing: () => void;
   onAddTag: (key: string, value: string) => void;
+  /**
+   * Remove a single tag by id. Used by the reject flow to dedup
+   * `rejection_reason` tags when the user rejects an already-rejected
+   * (or previously-rejected) exposure.
+   */
+  onRemoveTag: (tagId: number) => void;
 }
 
 type RejectStep = "idle" | "picking" | "custom";
@@ -18,6 +24,7 @@ export function DetectorImageCard({
   onSetStatus,
   onSetIndexing,
   onAddTag,
+  onRemoveTag,
 }: Props): JSX.Element {
   const [rejectStep, setRejectStep] = useState<RejectStep>("idle");
   const [customNote, setCustomNote] = useState("");
@@ -37,6 +44,13 @@ export function DetectorImageCard({
   )?.value;
 
   function submitReject(note: string) {
+    // Dedup: any prior rejection_reason tags (from a previous reject that
+    // wasn't followed by a status change to non-rejected before re-rejecting)
+    // get removed first so the exposure carries at most one rejection_reason
+    // tag at a time. The UI surfaces only the first via tags.find(...) anyway.
+    exposure.tags
+      .filter((t) => t.key === "rejection_reason")
+      .forEach((t) => onRemoveTag(t.id));
     onSetStatus("rejected");
     const trimmed = note.trim();
     if (trimmed) onAddTag("rejection_reason", trimmed);
