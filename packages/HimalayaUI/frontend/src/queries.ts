@@ -12,6 +12,10 @@ export const queryKeys = {
   indices:    (exposureId: number) => ["exposure", exposureId, "indices"] as const,
   groups:     (exposureId: number) => ["exposure", exposureId, "groups"] as const,
   messages:   (sampleId: number) => ["sample", sampleId, "messages"] as const,
+  peak:     (id: number) => ["peak", id] as const,
+  index:    (id: number) => ["index", id] as const,
+  exposure: (id: number) => ["exposure", id] as const,
+  sample:   (id: number) => ["sample", id] as const,
 };
 
 export function useExperiments() {
@@ -275,5 +279,41 @@ export function useRemoveExposureTag(sampleId: number, exposureId: number) {
       api.removeExposureTag(exposureId, tagId, authOpts(username)),
     onSuccess: () =>
       qc.invalidateQueries({ queryKey: queryKeys.exposures(sampleId) }),
+  });
+}
+
+export function usePeak(id: number | undefined) {
+  return useQuery({
+    queryKey: id !== undefined ? queryKeys.peak(id) : (["peak", "none"] as const),
+    queryFn: () => api.getPeak(id as number),
+    enabled: id !== undefined,
+    retry: false,
+  });
+}
+
+export function useIndex(id: number | undefined) {
+  return useQuery({
+    queryKey: id !== undefined ? queryKeys.index(id) : (["index", "none"] as const),
+    queryFn: () => api.getIndex(id as number),
+    enabled: id !== undefined,
+    retry: false,
+  });
+}
+
+export function useExposure(id: number | undefined) {
+  return useQuery({
+    queryKey: id !== undefined ? queryKeys.exposure(id) : (["exposure", "none"] as const),
+    queryFn: () => api.getExposure(id as number),
+    enabled: id !== undefined,
+    retry: false,
+  });
+}
+
+export function useSampleById(id: number | undefined) {
+  return useQuery({
+    queryKey: id !== undefined ? queryKeys.sample(id) : (["sample", "none"] as const),
+    queryFn: () => api.getSample(id as number),
+    enabled: id !== undefined,
+    retry: false,
   });
 }

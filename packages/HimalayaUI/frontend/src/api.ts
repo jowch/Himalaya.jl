@@ -243,3 +243,9 @@ export const postSampleMessage = (sample_id: number, body: string, opts?: AuthOp
 // Analysis
 export const reanalyzeExposure = (exposure_id: number, opts?: AuthOpts) =>
   request<{ id: number; analyzed: boolean }>("POST", `/api/exposures/${exposure_id}/analyze`, {}, opts);
+
+// Single-entity fetchers for mention resolution
+export const getPeak     = (id: number) => request<Peak>("GET", `/api/peaks/${id}`);
+export const getIndex    = (id: number) => request<IndexEntry>("GET", `/api/indices/${id}`);
+export const getExposure = (id: number) => request<Exposure>("GET", `/api/exposures/${id}`);
+export const getSample   = (id: number) => request<Sample>("GET", `/api/samples/${id}`);
