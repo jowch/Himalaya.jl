@@ -1,3 +1,4 @@
+import { Skeleton } from "boneyard-js/react";
 import { useIndices, useGroups, useAddIndexToGroup, useRemoveIndexFromGroup } from "../queries";
 import { useAppState } from "../state";
 import { phaseColor } from "../phases";
@@ -141,6 +142,40 @@ function GroupHead({ label, count }: { label: string; count: number }): JSX.Elem
 
 // ── Panel ────────────────────────────────────────────────────────────────────
 
+const FIXTURE_INDICES: IndexEntry[] = [
+  { id:1, exposure_id:0, phase:"Pn3m",     basis:0.15, score:0.91, r_squared:0.995,
+    lattice_d:64.2, status:"candidate",
+    peaks:[{ peak_id:1, ratio_position:1, residual:0.001, q_observed:0.15 },
+           { peak_id:2, ratio_position:2, residual:0.002, q_observed:0.21 }],
+    predicted_q:[0.15,0.21,0.26] },
+  { id:2, exposure_id:0, phase:"Im3m",     basis:0.14, score:0.72, r_squared:0.981,
+    lattice_d:57.1, status:"candidate",
+    peaks:[{ peak_id:1, ratio_position:1, residual:0.003, q_observed:0.15 }],
+    predicted_q:[0.15,0.22] },
+  { id:3, exposure_id:0, phase:"Lamellar", basis:0.12, score:0.55, r_squared:0.960,
+    lattice_d:52.4, status:"candidate",
+    peaks:[{ peak_id:2, ratio_position:1, residual:0.004, q_observed:0.21 }],
+    predicted_q:[0.21,0.42] },
+];
+
+const PHASE_PANEL_FIXTURE = (
+  <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-4">
+    <div>
+      <GroupHead label="Active set" count={1} />
+      <ul className="flex flex-col gap-1.5">
+        <IndexCard key={1} index={FIXTURE_INDICES[0]!} isActive onAction={() => {}} />
+      </ul>
+    </div>
+    <div>
+      <GroupHead label="Candidates" count={2} />
+      <ul className="flex flex-col gap-1.5">
+        <IndexCard key={2} index={FIXTURE_INDICES[1]!} isActive={false} onAction={() => {}} />
+        <IndexCard key={3} index={FIXTURE_INDICES[2]!} isActive={false} onAction={() => {}} />
+      </ul>
+    </div>
+  </div>
+);
+
 export interface PhasePanelProps {
   exposureId: number | undefined;
 }
@@ -157,13 +192,6 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
     return (
       <div className="p-4">
         <HintText>No exposure selected.</HintText>
-      </div>
-    );
-  }
-  if (indicesQ.isPending || groupsQ.isPending) {
-    return (
-      <div className="p-4">
-        <HintText>Loading phase assignments…</HintText>
       </div>
     );
   }
@@ -194,52 +222,60 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
       </div>
 
       {/* ── Scrollable list ── */}
-      <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-4">
+      <Skeleton
+        name="phase-panel"
+        loading={indicesQ.isLoading || groupsQ.isLoading}
+        stagger={50}
+        transition={200}
+        fixture={PHASE_PANEL_FIXTURE}
+      >
+        <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-4">
 
-        {/* Active set */}
-        <div>
-          <GroupHead label="Active set" count={activeMembers.length} />
-          {activeMembers.length === 0 ? (
-            <HintText>No indices in the active set.</HintText>
-          ) : (
-            <ul className="flex flex-col gap-1.5">
-              {activeMembers.map((ix) => (
-                <IndexCard
-                  key={ix.id}
-                  index={ix}
-                  isActive
-                  onAction={() => { if (active) removeMember.mutate(ix.id); }}
-                  onHover={() => setHoveredIndex(ix.id)}
-                  onLeave={() => setHoveredIndex(undefined)}
-                />
-              ))}
-            </ul>
-          )}
+          {/* Active set */}
+          <div>
+            <GroupHead label="Active set" count={activeMembers.length} />
+            {activeMembers.length === 0 ? (
+              <HintText>No indices in the active set.</HintText>
+            ) : (
+              <ul className="flex flex-col gap-1.5">
+                {activeMembers.map((ix) => (
+                  <IndexCard
+                    key={ix.id}
+                    index={ix}
+                    isActive
+                    onAction={() => { if (active) removeMember.mutate(ix.id); }}
+                    onHover={() => setHoveredIndex(ix.id)}
+                    onLeave={() => setHoveredIndex(undefined)}
+                  />
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {/* Candidates */}
+          <div>
+            <GroupHead label="Candidates" count={alternatives.length} />
+            {alternatives.length === 0 ? (
+              <HintText>No alternatives.</HintText>
+            ) : (
+              <ul className="flex flex-col gap-1.5">
+                {alternatives.map((ix) => (
+                  <IndexCard
+                    key={ix.id}
+                    index={ix}
+                    isActive={false}
+                    data-alternative-id={ix.id}
+                    onAction={() => addMember.mutate(ix.id)}
+                    onHover={() => setHoveredIndex(ix.id)}
+                    onLeave={() => setHoveredIndex(undefined)}
+                  />
+                ))}
+              </ul>
+            )}
+          </div>
+
         </div>
-
-        {/* Candidates */}
-        <div>
-          <GroupHead label="Candidates" count={alternatives.length} />
-          {alternatives.length === 0 ? (
-            <HintText>No alternatives.</HintText>
-          ) : (
-            <ul className="flex flex-col gap-1.5">
-              {alternatives.map((ix) => (
-                <IndexCard
-                  key={ix.id}
-                  index={ix}
-                  isActive={false}
-                  data-alternative-id={ix.id}
-                  onAction={() => addMember.mutate(ix.id)}
-                  onHover={() => setHoveredIndex(ix.id)}
-                  onLeave={() => setHoveredIndex(undefined)}
-                />
-              ))}
-            </ul>
-          )}
-        </div>
-
-      </div>
+      </Skeleton>
     </div>
   );
 }
