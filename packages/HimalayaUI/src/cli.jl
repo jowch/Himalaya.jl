@@ -105,6 +105,14 @@ function cli_analyze(args)
 
         for exp_row in exposures
             e_id = Int(exp_row.id)
+            # Mirror the auto-fallback's status guard above: rejected
+            # exposures are explicitly out of the analysis set, so don't
+            # waste compute or refresh peaks/indices for them.
+            e_status = ismissing(exp_row.status) ? nothing : exp_row.status
+            if e_status == "rejected"
+                println("  Skipping $(sample.label) / $(exp_row.filename) (rejected)")
+                continue
+            end
             print("  Analyzing $(sample.label) / $(exp_row.filename) ... ")
             try
                 analyze_exposure!(db, e_id, exp.analysis_dir)
