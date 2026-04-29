@@ -10,6 +10,16 @@
             "command": "f=$(jq -r '.tool_input.file_path // empty'); case \"$f\" in *packages/HimalayaUI/frontend/src/*.ts|*packages/HimalayaUI/frontend/src/*.tsx|*packages/HimalayaUI/frontend/test/*.ts|*packages/HimalayaUI/frontend/test/*.tsx) cd \"$CLAUDE_PROJECT_DIR/packages/HimalayaUI/frontend\" && out=$(./node_modules/.bin/tsc --noEmit -p tsconfig.build.json 2>&1 | head -40); if [ -n \"$out\" ]; then printf '\\nTSC errors after edit:\\n%s\\n' \"$out\" >&2; exit 2; fi ;; esac"
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "description": "Run matching Vitest file on frontend src/test edit",
+            "command": "f=$(jq -r '.tool_input.file_path // empty'); case \"$f\" in *packages/HimalayaUI/frontend/test/*.test.tsx|*packages/HimalayaUI/frontend/test/*.test.ts) testfile=\"$f\";; *packages/HimalayaUI/frontend/src/*.ts|*packages/HimalayaUI/frontend/src/*.tsx) base=$(basename \"${f%.*}\"); testfile=\"$CLAUDE_PROJECT_DIR/packages/HimalayaUI/frontend/test/${base}.test.tsx\"; [ -f \"$testfile\" ] || testfile=\"$CLAUDE_PROJECT_DIR/packages/HimalayaUI/frontend/test/${base}.test.ts\"; [ -f \"$testfile\" ] || testfile=\"\";; *) testfile=\"\";; esac; if [ -n \"$testfile\" ] && [ -f \"$testfile\" ]; then cd \"$CLAUDE_PROJECT_DIR/packages/HimalayaUI/frontend\" && out=$(node_modules/.bin/vitest run \"$testfile\" 2>&1 | tail -30); if echo \"$out\" | grep -q ' failed'; then printf '\\nVitest failures:\\n%s\\n' \"$out\" >&2; exit 2; fi; fi"
+          }
+        ]
       }
     ],
     "PreToolUse": [
