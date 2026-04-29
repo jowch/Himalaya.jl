@@ -50,10 +50,7 @@ You only need step 2 once per clone (or whenever you pull new frontend changes).
 **Optional: build a sysimage for fast startup (~15× speedup, ~5 min one-time cost)**
 
 ```bash
-# Resolve build-tool dependencies (one-time)
-julia --project=scripts -e 'using Pkg; Pkg.instantiate()'
-
-make sysimage          # → build/himalaya.so
+make sysimage          # → build/himalaya.so  (resolves build deps automatically)
 make check-sysimage    # verify it matches current Julia version
 ```
 

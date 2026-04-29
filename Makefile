@@ -9,6 +9,7 @@ frontend:
 	cd $(FRONTEND_DIR) && npm ci && npm run build
 
 sysimage:
+	julia --project=scripts -e 'using Pkg; Pkg.instantiate()'
 	julia --project=scripts scripts/build_sysimage.jl
 
 check-sysimage:
