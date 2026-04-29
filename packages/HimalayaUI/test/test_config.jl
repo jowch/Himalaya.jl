@@ -375,3 +375,38 @@ end
     @test cfg.data_dir == "data"
     @test cfg.integration_pattern == "{name}.dat"
 end
+
+@testset "cli_config_list prints simple" begin
+    buf = IOBuffer()
+    HimalayaUI.cli_config_list(buf)
+    output = String(take!(buf))
+    @test contains(output, "simple")
+end
+
+@testset "cli_config_new creates experiment.toml" begin
+    mktempdir() do dir
+        path = HimalayaUI.cli_config_new(type_name = "simple", dir = dir)
+        @test isfile(path)
+        @test path == joinpath(dir, "experiment.toml")
+        cfg = HimalayaUI.load_config(path)
+        @test cfg.delimiter == "\t"
+        @test cfg.integration_pattern == "{name}.dat"
+    end
+end
+
+@testset "cli_config_new refuses to overwrite existing file" begin
+    mktempdir() do dir
+        HimalayaUI.cli_config_new(type_name = "simple", dir = dir)
+        @test_throws ErrorException HimalayaUI.cli_config_new(type_name = "simple", dir = dir)
+    end
+end
+
+@testset "cli_config_new rejects unknown type" begin
+    mktempdir() do dir
+        @test_throws ErrorException HimalayaUI.cli_config_new(type_name = "nonexistent_xyz", dir = dir)
+    end
+end
+
+@testset "cli_config_new rejects missing directory" begin
+    @test_throws ErrorException HimalayaUI.cli_config_new(type_name = "simple", dir = "/no/such/dir/xyz")
+end

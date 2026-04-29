@@ -165,6 +165,63 @@ function cli_show(args)
     end
 end
 
+"""
+    cli_config_list(io=stdout)
+
+Print the names of all built-in config templates, one per line.
+"""
+function cli_config_list(io::IO = stdout)
+    types = list_config_types()
+    if isempty(types)
+        println(io, "(no built-in config types found)")
+    else
+        for t in types
+            println(io, t)
+        end
+    end
+end
+
+"""
+    cli_config_new(; type_name::String="simple", dir::String)
+
+Copy the named built-in template to `<dir>/experiment.toml`. Errors if
+the destination already exists (will not overwrite). This is the only
+documented operation that writes to an experiment directory.
+"""
+function cli_config_new(; type_name::String = "simple", dir::String)
+    isdir(dir) || error("Directory not found: $dir")
+    dest = joinpath(dir, "experiment.toml")
+    isfile(dest) && error("experiment.toml already exists at $dest — will not overwrite")
+    src = joinpath(configs_dir(), type_name * ".toml")
+    isfile(src) || error("Unknown config type '$type_name'. Run 'himalaya config list' to see options.")
+    cp(src, dest)
+    println("Created $dest from template '$type_name'")
+    println("Edit it to set your experiment name, beamline parameters, and manifest column mappings.")
+    dest
+end
+
+function cli_config(args)
+    isempty(args) && (println("Usage: himalaya config <list|new> [options]"); return)
+    sub = popfirst!(args)
+    if sub == "list"
+        cli_config_list()
+    elseif sub == "new"
+        s = ArgParseSettings(prog = "himalaya config new")
+        @add_arg_table! s begin
+            "--type"
+                default = "simple"
+                help    = "built-in template name (see 'himalaya config list')"
+            "--dir"
+                required = true
+                help     = "directory in which to write experiment.toml"
+        end
+        p = parse_args(args, s; as_symbols = true)
+        cli_config_new(type_name = p[:type], dir = p[:dir])
+    else
+        println("Unknown config subcommand: $sub. Available: list, new")
+    end
+end
+
 function cli_serve(args)
     s = ArgParseSettings(prog = "himalaya serve")
     @add_arg_table! s begin
@@ -198,7 +255,9 @@ function main(args = copy(ARGS))
         cli_show(args)
     elseif cmd == "serve"
         cli_serve(args)
+    elseif cmd == "config"
+        cli_config(args)
     else
-        println("Unknown command: $cmd. Available: init, analyze, show, serve")
+        println("Unknown command: $cmd. Available: init, analyze, show, serve, config")
     end
 end
