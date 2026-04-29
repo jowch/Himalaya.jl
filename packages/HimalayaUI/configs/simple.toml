@@ -4,8 +4,6 @@ description = ""
 manifest    = "manifest.csv"
 
 [beamline]
-energy_kev    = 0.0
-flight_path_m = 0.0
 
 [manifest]
 delimiter      = "\t"

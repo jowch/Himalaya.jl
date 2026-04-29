@@ -146,6 +146,12 @@ end
     @test cfg.exposure_type == "simple"
 end
 
+@testset "load_builtin_config(\"simple\") yields nothing beamline params" begin
+    cfg = HimalayaUI.load_builtin_config("simple")
+    @test cfg.energy_kev    === nothing
+    @test cfg.flight_path_m === nothing
+end
+
 @testset "list_config_types includes simple" begin
     types = HimalayaUI.list_config_types()
     @test "simple" in types
