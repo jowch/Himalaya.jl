@@ -95,12 +95,15 @@ function register_experiments_routes!()
             JSON3.write(Dict(:error => "experiment not found")))
         exp_path = String(rows[1].path)
         try
-            reingest!(db, id, exp_path)
+            res = reingest!(db, id, exp_path)
             log_action!(db, req; action = "reingest",
                 entity_type = "experiment", entity_id = id)
             return HTTP.Response(200,
                 ["Content-Type" => "application/json"],
-                JSON3.write(Dict(:ok => true)))
+                JSON3.write(Dict(:status          => String(res.status),
+                                 :added_samples   => res.added_samples,
+                                 :added_exposures => res.added_exposures,
+                                 :manifest_path   => res.manifest_path)))
         catch e
             return HTTP.Response(500,
                 ["Content-Type" => "application/json"],

@@ -124,7 +124,10 @@ function _reingest_inner!(db::SQLite.DB, experiment_id::Int, exp_dir::String, to
          isfile(manifest_path) ? manifest_path : nothing,
          experiment_id])
 
-    isfile(manifest_path) || (println("No manifest at $manifest_path — config updated only."); return)
+    if !isfile(manifest_path)
+        return (status = :no_manifest, added_samples = 0,
+                added_exposures = 0, manifest_path = manifest_path)
+    end
 
     samples = parse_manifest(cfg, manifest_path)
     inserted_samples = 0
@@ -170,7 +173,8 @@ function _reingest_inner!(db::SQLite.DB, experiment_id::Int, exp_dir::String, to
         end
     end
 
-    println("Reingested experiment $experiment_id: +$inserted_samples samples, +$inserted_exposures exposures.")
+    return (status = :ok, added_samples = inserted_samples,
+            added_exposures = inserted_exposures, manifest_path = manifest_path)
 end
 
 function cli_reingest(args)
@@ -187,7 +191,14 @@ function cli_reingest(args)
     rows = Tables.rowtable(DBInterface.execute(db,
         "SELECT id FROM experiments WHERE path = ?", [exp_dir]))
     isempty(rows) && error("No experiment registered at $exp_dir. Run 'himalaya init' first.")
-    reingest!(db, Int(rows[1].id), exp_dir)
+    exp_id = Int(rows[1].id)
+    res = reingest!(db, exp_id, exp_dir)
+    if res.status === :no_manifest
+        println("Reingested experiment $exp_id: config updated; no manifest at $(res.manifest_path).")
+    else
+        println("Reingested experiment $exp_id: +$(res.added_samples) samples, +$(res.added_exposures) exposures.")
+    end
+    res
 end
 
 function cli_init(args)
