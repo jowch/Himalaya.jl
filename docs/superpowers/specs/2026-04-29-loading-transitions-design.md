@@ -74,7 +74,7 @@ Breakpoints cover both the stacked single-column layout (<1400px) and the three-
 import './bones/registry'
 ```
 
-The `./src/bones/` directory is gitignored (generated artefacts). Add `src/bones/` to `.gitignore`. `boneyard.config.json` is committed — it's config, not a generated artefact.
+The `./src/bones/` directory is **committed**, not gitignored. Captured bones (`*.bones.json` and the auto-generated `registry.ts`) are stable artefacts the production bundle imports — without them, `<Skeleton>` falls back to its `fallback` prop. Capture organically during dev (the Vite plugin re-captures on every HMR update); commit deliberately when you want a new skeleton in prod. `boneyard.config.json` is also committed — it's the config the capture CLI consumes.
 
 ## Animation Parameters
 
@@ -183,7 +183,6 @@ const NAV_FIXTURE_SAMPLES = [
 | `packages/HimalayaUI/frontend/package.json` | Add `boneyard-js` dependency |
 | `packages/HimalayaUI/frontend/vite.config.ts` | Add `boneyardPlugin()` |
 | `packages/HimalayaUI/frontend/boneyard.config.json` | Create — global animation config |
-| `packages/HimalayaUI/frontend/.gitignore` | Add `src/bones/` |
 | `packages/HimalayaUI/frontend/src/main.tsx` | Add `import './bones/registry'` |
 | `packages/HimalayaUI/frontend/src/components/PlotCard.tsx` | Wrap content in `<Skeleton>`, add fixture, switch to `isLoading` |
 | `packages/HimalayaUI/frontend/src/components/PhasePanel.tsx` | Wrap content in `<Skeleton>`, add fixture, switch to `isLoading` |
