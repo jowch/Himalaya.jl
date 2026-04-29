@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useAppState } from "../state";
 import { useSampleMessages, usePostSampleMessage } from "../queries";
 import type { SampleMessage } from "../api";
@@ -6,6 +6,7 @@ import { HintText } from "./ui";
 import { parseMentions, type MentionToken } from "../lib/renderMentions";
 import { useMentionResolution } from "../hooks/useMentionResolution";
 import { MentionChip } from "./MentionChip";
+import { MentionCompose } from "./MentionCompose";
 
 /**
  * ChatCard — per-sample notebook/chat log.
@@ -33,7 +34,7 @@ export function ChatCard(): JSX.Element {
   return (
     <Frame>
       <MessageList messages={messagesQ.data ?? []} isPending={messagesQ.isPending} />
-      <Compose
+      <MentionCompose
         disabled={username === undefined || postMsg.isPending}
         onSubmit={(body) => postMsg.mutate(body)}
       />
@@ -137,49 +138,3 @@ function formatTime(iso: string): string {
   return `${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })} ${hm}`;
 }
 
-interface ComposeProps {
-  disabled: boolean;
-  onSubmit: (body: string) => void;
-}
-
-function Compose({ disabled, onSubmit }: ComposeProps): JSX.Element {
-  const [text, setText] = useState("");
-  const ref = useRef<HTMLTextAreaElement>(null);
-
-  const trySubmit = (): void => {
-    const trimmed = text.trim();
-    if (!trimmed || disabled) return;
-    onSubmit(trimmed);
-    setText("");
-  };
-
-  const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      trySubmit();
-    }
-  };
-
-  return (
-    <div className="flex-shrink-0 border-t border-border bg-bg px-2.5 py-2">
-      <textarea
-        ref={ref}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={onKeyDown}
-        rows={2}
-        placeholder={disabled ? "Sign in to post…" : "Write a note…"}
-        data-testid="chat-compose"
-        className="w-full resize-none bg-transparent text-fg text-base font-sans
-                   placeholder:text-fg-dim outline-0 border-0"
-      />
-      <div className="flex items-center justify-between text-xs text-fg-dim">
-        <span>
-          <kbd className="border border-border rounded px-1">⏎</kbd> send
-          {" · "}
-          <kbd className="border border-border rounded px-1">⇧⏎</kbd> newline
-        </span>
-      </div>
-    </div>
-  );
-}
