@@ -24,9 +24,13 @@ function register_experiments_routes!()
         db   = current_db()
         body = json(req)
 
+        # Only metadata is editable here. Path fields (data_dir, analysis_dir,
+        # manifest_path) are derived from `experiments.config` — changing the row
+        # without updating the config blob would desync the two. Path changes
+        # must go through POST /:id/reingest, which rewrites both in lockstep.
         fields = Symbol[]
         vals   = Any[]
-        for k in (:name, :data_dir, :analysis_dir, :manifest_path)
+        for k in (:name,)
             if haskey(body, k)
                 push!(fields, k)
                 push!(vals, body[k])

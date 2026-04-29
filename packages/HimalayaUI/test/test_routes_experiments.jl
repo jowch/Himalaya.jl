@@ -46,5 +46,21 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         # 404
         r = HTTP.get("$base/api/experiments/999"; status_exception = false)
         @test r.status == 404
+
+        # PATCH must not touch path fields — those go through reingest.
+        original_data_dir = Tables.rowtable(DBInterface.execute(db,
+            "SELECT data_dir FROM experiments WHERE id = ?", [exp_id]))[1].data_dir
+        r = HTTP.patch("$base/api/experiments/$exp_id";
+            body = JSON3.write(Dict(:data_dir => "/somewhere/else",
+                                    :analysis_dir => "/elsewhere",
+                                    :manifest_path => "/no.csv")),
+            headers = ["Content-Type" => "application/json",
+                       "X-Username"   => "alice"],
+            status_exception = false)
+        @test r.status == 400
+        # Row must be unchanged.
+        @test Tables.rowtable(DBInterface.execute(db,
+            "SELECT data_dir FROM experiments WHERE id = ?", [exp_id]))[1].data_dir ==
+              original_data_dir
     end
 end

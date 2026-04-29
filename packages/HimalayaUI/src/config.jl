@@ -178,16 +178,18 @@ function config_to_toml(cfg::ExperimentConfig)::String
     function col_value(v)
         v isa Integer ? Int(v) : String(v)
     end
+    # Omit nullable beamline fields when unset so a round-trip preserves
+    # `nothing` instead of silently collapsing to 0.0.
+    beamline = Dict{String,Any}()
+    cfg.energy_kev    !== nothing && (beamline["energy_kev"]    = cfg.energy_kev)
+    cfg.flight_path_m !== nothing && (beamline["flight_path_m"] = cfg.flight_path_m)
     d = Dict(
         "experiment" => Dict(
             "name"        => cfg.name,
             "description" => cfg.description,
             "manifest"    => cfg.manifest_file,
         ),
-        "beamline" => Dict(
-            "energy_kev"    => something(cfg.energy_kev,    0.0),
-            "flight_path_m" => something(cfg.flight_path_m, 0.0),
-        ),
+        "beamline" => beamline,
         "manifest" => Dict(
             "delimiter"      => cfg.delimiter,
             "skip_rows"      => cfg.skip_rows,

@@ -304,6 +304,49 @@ end
     end
 end
 
+@testset "config_to_toml omits nothing beamline params" begin
+    # Build a config with both beamline params unset.
+    mktempdir() do dir
+        toml_path = joinpath(dir, "experiment.toml")
+        # Note: no [beamline] keys → loaded as nothing.
+        write(toml_path, """
+        [experiment]
+        name = "X"
+        description = ""
+        manifest = "manifest.csv"
+        [beamline]
+        [manifest]
+        delimiter = "\\t"
+        skip_rows = 0
+        header_row = 0
+        sample_id = 1
+        label = 2
+        name = 3
+        filenames = 9
+        notes_sample = 10
+        notes_exposure = 11
+        [layout]
+        data_dir = "data"
+        analysis_dir = "analysis/automatic_analysis"
+        exposure_type = "simple"
+        [files]
+        integration = "{name}.dat"
+        image = "{name}.tiff"
+        """)
+        cfg = HimalayaUI.load_config(toml_path)
+        @test cfg.energy_kev === nothing
+        @test cfg.flight_path_m === nothing
+
+        blob = HimalayaUI.config_to_toml(cfg)
+        # Round-trip: nothing must survive as nothing, not collapse to 0.0.
+        rt_path = joinpath(dir, "rt.toml")
+        write(rt_path, blob)
+        cfg2 = HimalayaUI.load_config(rt_path)
+        @test cfg2.energy_kev === nothing
+        @test cfg2.flight_path_m === nothing
+    end
+end
+
 @testset "config_to_toml handles named string columns" begin
     mktempdir() do dir
         toml_path = joinpath(dir, "experiment.toml")
