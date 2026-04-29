@@ -4,6 +4,14 @@
 
 A Julia monorepo for **indexing SAXS diffraction patterns**. The core `Himalaya` package finds Bragg peaks in a 1D integration trace and identifies the liquid-crystalline phase (Pn3m, Im3m, Ia3d, Fm3m, Fd3m, Hexagonal, Lamellar, Square) by fitting peak q-values to known phase-ratio series. `HimalayaUI` (under `packages/`) is a full-stack web app — Julia/Oxygen.jl REST backend + React/Vite frontend — for running and curating analyses on a batch of SAXS exposures.
 
+## Read first
+
+If this is your first session on this repo, skim these in order before touching code:
+
+1. [docs/peak-finding.md](docs/peak-finding.md) — why findpeaks is the way it is. Load-bearing.
+2. [docs/experiment-config.md](docs/experiment-config.md) — required if touching `config.jl`, `manifest.jl`, or cli init/reingest.
+3. [docs/scoring.md](docs/scoring.md) — required if touching `score`, `auto_group`, or `remove_subsets`.
+
 ## Code layout
 
 Monorepo: the core `Himalaya` package lives at the root; sub-packages live under `packages/`.
@@ -59,7 +67,10 @@ packages/
       e2e/                   # Playwright (mocks /api via page.route)
       dist/                  # Vite build output; served by Oxygen.jl in prod
 docs/
-  peak-finding.md            # narrative design notes for findpeaks
+  peak-finding.md            # findpeaks design (persistence + sharpness + kneedle)
+  scoring.md                 # index scoring formula rationale
+  experiment-config.md       # experiment.toml format + read-only contract
+  future-feature-ideas.md    # intentionally-deferred features
   superpowers/               # specs and plans
 test/                        # core Himalaya tests
 examples/                    # scripts using Himalaya (not part of the package)
@@ -198,7 +209,11 @@ julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
 ## Current state
 
 - Core Himalaya: `v0.5.0` on `main` — v2 peak-finding (persistence + sharpness + kneedle).
-- HimalayaUI: **Plans 1–6 + three-card Index redesign + Inspect page + experiment-config system complete.** Backend: transactional SQLite pipeline (incl. `_reingest_inner!`), FK enforcement, REST API (Oxygen.jl), CLI (config new/list, init, analyze, reingest, show, serve), TIFF→PNG image route with Q0f31-aware lognormalize, env-driven deployment (HIMALAYA_DB_PATH for centralised DB, HIMALAYA_CONFIGS_DIR for lab-specific templates). Adapter-driven file I/O via `experiment.toml` (positional or named columns, configurable file patterns, prefix-based filesystem discovery). Frontend: three-card Index workspace (chat | trace plot | index choices), Inspect page (detector image + thumbnail filmstrip + reject-reason chips + sample metadata), trace viewer with peak editing + auto-fit y-floor + log/linear x toggle, auto-rotating detector canvas, Miller plot, PhasePanel with curate + stale-indices reanalyze, OnboardingFlow + NavModal with focus trapping. Test coverage: 379 Julia (HimalayaUI) · 90 Julia (core) · 141 Vitest · 14 Playwright E2E (5 inspect + 9 smoke).
+- HimalayaUI — Plans 1–6 + three-card Index redesign + Inspect page + experiment-config system complete:
+  - **Backend:** transactional SQLite pipeline (incl. `_reingest_inner!`), FK enforcement, REST API (Oxygen.jl), CLI (`config new/list`, `init`, `analyze`, `reingest`, `show`, `serve`), TIFF→PNG image route with Q0f31-aware lognormalize, env-driven deployment (`HIMALAYA_DB_PATH`, `HIMALAYA_CONFIGS_DIR`).
+  - **Adapter-driven I/O:** `experiment.toml` per experiment, positional or named columns, configurable file patterns, prefix-based filesystem discovery.
+  - **Frontend:** three-card Index workspace (chat | trace plot | index choices), Inspect page (detector image + thumbnail filmstrip + reject-reason chips + sample metadata), trace viewer with peak editing + auto-fit y-floor + log/linear x toggle, auto-rotating detector canvas, Miller plot, PhasePanel with curate + stale-indices reanalyze, OnboardingFlow + NavModal with focus trapping.
+  - **Test coverage:** 379 Julia (HimalayaUI) · 90 Julia (core) · 141 Vitest · 14 Playwright E2E (5 inspect + 9 smoke).
 - Deferred for later: Phase panel Recent section, export UI, per-user audit view, derived-exposure construction (raw / aggregated / background-subtracted exposure types — schema reserves `exposure_type` field), additional config templates beyond `simple.toml`. See [docs/future-feature-ideas.md](docs/future-feature-ideas.md).
 
 ## Further reading
