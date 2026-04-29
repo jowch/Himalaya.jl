@@ -214,10 +214,15 @@ function cli_analyze(args)
     end
     p = parse_args(args, s; as_symbols = true)
 
-    db            = open_db()
-    exp           = get_experiment(db, 1)
+    exp_dir = abspath(p[:experiment_path])
+    db   = open_db()
+    rows = Tables.rowtable(DBInterface.execute(db,
+        "SELECT id FROM experiments WHERE path = ?", [exp_dir]))
+    isempty(rows) && error("No experiment registered at $exp_dir. Run 'himalaya init' first.")
+    exp_id        = Int(rows[1].id)
+    exp           = get_experiment(db, exp_id)
     sample_filter = p[:sample]
-    samples       = get_samples(db, 1)
+    samples       = get_samples(db, exp_id)
     sample_filter !== nothing && filter!(sm -> sm.label == sample_filter, samples)
 
     for sample in samples
@@ -272,8 +277,13 @@ function cli_show(args)
     end
     p = parse_args(args, s; as_symbols = true)
 
-    db      = open_db()
-    samples = get_samples(db, 1)
+    exp_dir = abspath(p[:experiment_path])
+    db   = open_db()
+    rows = Tables.rowtable(DBInterface.execute(db,
+        "SELECT id FROM experiments WHERE path = ?", [exp_dir]))
+    isempty(rows) && error("No experiment registered at $exp_dir. Run 'himalaya init' first.")
+    exp_id  = Int(rows[1].id)
+    samples = get_samples(db, exp_id)
     idx     = findfirst(sm -> sm.label == p[:sample], samples)
     idx === nothing && error("sample $(p[:sample]) not found")
     sample_row = samples[idx]

@@ -449,3 +449,83 @@ end
         @test_throws ErrorException HimalayaUI.reingest!(db, exp_id, dir)
     end
 end
+
+# ── CLI path-targeting tests ──────────────────────────────────────────────────
+
+using HimalayaUI: cli_analyze, cli_show, cli_init_with_db!, open_db
+
+# Build a minimal experiment directory compatible with cli_init_with_db!.
+function _setup_exp_dir(dir; name="E", stems=["ST001"])
+    analysis_dir = joinpath(dir, "analysis", "automatic_analysis")
+    mkpath(analysis_dir)
+    mkpath(joinpath(dir, "data"))
+    fixture = joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat")
+    for stem in stems
+        cp(fixture, joinpath(analysis_dir, stem * ".dat"); force=true)
+    end
+    write(joinpath(dir, "manifest.csv"), join([
+        "skip-row",
+        "1\tD1\t$(name)\tT\tt\t\t\t\t$(join(stems, ","))\tnote_s\tnote_e",
+    ], "\n"))
+    write(joinpath(dir, "experiment.toml"), """
+    [experiment]
+    name = "$name"
+    description = ""
+    manifest = "manifest.csv"
+    [beamline]
+    [manifest]
+    delimiter = "\\t"
+    skip_rows = 1
+    header_row = 0
+    sample_id = 1
+    label = 2
+    name = 3
+    filenames = 9
+    notes_sample = 10
+    notes_exposure = 11
+    [layout]
+    data_dir = "data"
+    analysis_dir = "analysis/automatic_analysis"
+    exposure_type = "simple"
+    [files]
+    integration = "{name}.dat"
+    image = "{name}.tiff"
+    """)
+end
+
+@testset "cli_analyze uses experiment_path, not hardcoded id=1" begin
+    db_file = joinpath(mktempdir(), "himalaya.db")
+    dir1    = mktempdir()
+    dir2    = mktempdir()   # never registered
+
+    # Register only dir1 in the shared DB.
+    withenv("HIMALAYA_DB_PATH" => db_file) do
+        db = open_db(db_file)
+        _setup_exp_dir(dir1; name="Exp1", stems=["ST001"])
+        cli_init_with_db!(db, dir1)
+    end
+
+    # After fix: cli_analyze([dir2]) raises ErrorException because dir2 is not registered.
+    # Before fix: it silently operates on experiment id=1 (dir1), no error → test is RED.
+    withenv("HIMALAYA_DB_PATH" => db_file) do
+        @test_throws ErrorException cli_analyze([dir2])
+    end
+end
+
+@testset "cli_show uses experiment_path, not hardcoded id=1" begin
+    db_file = joinpath(mktempdir(), "himalaya.db")
+    dir1    = mktempdir()
+    dir2    = mktempdir()   # never registered
+
+    withenv("HIMALAYA_DB_PATH" => db_file) do
+        db = open_db(db_file)
+        _setup_exp_dir(dir1; name="Exp1", stems=["ST001"])
+        cli_init_with_db!(db, dir1)
+    end
+
+    # After fix: raises ErrorException because dir2 is not registered.
+    # Before fix: silently returns exp1's data for sample "D1" → test is RED.
+    withenv("HIMALAYA_DB_PATH" => db_file) do
+        @test_throws ErrorException cli_show([dir2, "--sample", "D1"])
+    end
+end
