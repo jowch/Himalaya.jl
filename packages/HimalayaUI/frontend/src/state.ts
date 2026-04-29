@@ -19,6 +19,7 @@ export interface AppState {
 
   // ephemeral (not persisted)
   hoveredIndexId: number | undefined;
+  hoveredPeakId: number | undefined;
   navModalOpen: boolean;
   navModalStep: NavModalStep;
 
@@ -28,6 +29,7 @@ export interface AppState {
   setActiveSample: (id: number | undefined) => void;
   setActiveExposure: (id: number | undefined) => void;
   setHoveredIndex: (id: number | undefined) => void;
+  setHoveredPeak: (id: number | undefined) => void;
   setActivePage: (page: PageId) => void;
   setTutorialSeen: (seen: boolean) => void;
   setTheme: (theme: ThemeId) => void;
@@ -49,6 +51,7 @@ export const useAppState = create<AppState>()(
       theme: "dark",
 
       hoveredIndexId: undefined,
+      hoveredPeakId: undefined,
       navModalOpen: false,
       navModalStep: "experiment",
 
@@ -63,6 +66,7 @@ export const useAppState = create<AppState>()(
         set({ activeSampleId, activeExposureId: undefined }),
       setActiveExposure: (activeExposureId) => set({ activeExposureId }),
       setHoveredIndex: (hoveredIndexId) => set({ hoveredIndexId }),
+      setHoveredPeak: (hoveredPeakId) => set({ hoveredPeakId }),
       setActivePage: (activePage) => set({ activePage }),
       setTutorialSeen: (tutorialSeen) => set({ tutorialSeen }),
       setTheme: (theme) => set({ theme }),
