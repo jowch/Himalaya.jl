@@ -160,4 +160,25 @@ function register_exposures_routes!()
         HTTP.Response(200, ["Content-Type" => "application/json"],
             JSON3.write(Dict(:id => id, :analyzed => true)))
     end
+
+    @get "/api/exposures/{id}" function(req::HTTP.Request, id::Int)
+        db   = current_db()
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT * FROM exposures WHERE id = ?", [id]))
+        isempty(rows) && return HTTP.Response(404,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:error => "exposure not found")))
+        ex   = rows[1]
+        tags = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id, key, value, source FROM exposure_tags
+             WHERE exposure_id = ? ORDER BY id", [id]))
+        srcs = Tables.rowtable(DBInterface.execute(db,
+            "SELECT source_exposure_id, role FROM exposure_sources
+             WHERE averaged_exposure_id = ?", [id]))
+        d                = row_to_json(ex; bool_keys = (:selected,))
+        d[:tags]         = rows_to_json(tags)
+        d[:sources]      = rows_to_json(srcs)
+        d[:image_version] = image_version_token(ex.image_path)
+        HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(d))
+    end
 end

@@ -21,4 +21,5 @@ using Test
     include("test_routes_trace.jl")
     include("test_routes_analysis.jl")
     include("test_routes_export.jl")
+    include("test_routes_mentions.jl")
 end
