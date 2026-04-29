@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
+import { Skeleton } from "boneyard-js/react";
 import { useAppState } from "../state";
 import { useSampleMessages, usePostSampleMessage } from "../queries";
 import type { SampleMessage } from "../api";
@@ -7,6 +8,29 @@ import { parseMentions, type MentionToken } from "../lib/renderMentions";
 import { useMentionResolution } from "../hooks/useMentionResolution";
 import { MentionChip } from "./MentionChip";
 import { MentionCompose } from "./MentionCompose";
+
+const CHAT_CARD_FIXTURE = (
+  <div className="flex-1 overflow-y-auto px-3 py-3 flex flex-col gap-3 min-h-0">
+    <div className="flex flex-col gap-0.5 min-w-0">
+      <div className="flex items-baseline gap-2">
+        <span className="text-meta">jchen</span>
+        <span className="text-fg-dim text-xs">10:15</span>
+      </div>
+      <p className="text-base font-sans text-fg-muted leading-snug">
+        Looks like a clean Pn3m. d-spacing consistent with 70% DOPE.
+      </p>
+    </div>
+    <div className="flex flex-col gap-0.5 min-w-0">
+      <div className="flex items-baseline gap-2">
+        <span className="text-meta">jchen</span>
+        <span className="text-fg-dim text-xs">11:02</span>
+      </div>
+      <p className="text-base font-sans text-fg-muted leading-snug">
+        Re-ran with tighter q-range — score improved to 0.94.
+      </p>
+    </div>
+  </div>
+);
 
 /**
  * ChatCard — per-sample notebook/chat log.
@@ -61,36 +85,34 @@ interface MessageListProps {
 function MessageList({ messages, isPending }: MessageListProps): JSX.Element {
   const scrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    // Scroll to bottom when messages change
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages.length]);
 
-  if (isPending) {
-    return (
-      <div className="flex-1 overflow-y-auto px-3 py-3">
-        <HintText>Loading…</HintText>
-      </div>
-    );
-  }
-  if (messages.length === 0) {
-    return (
-      <div className="flex-1 overflow-y-auto px-3 py-3">
-        <HintText>No notes yet. Start a conversation about this sample below.</HintText>
-      </div>
-    );
-  }
-
   return (
-    <div
-      ref={scrollRef}
-      className="flex-1 overflow-y-auto px-3 py-3 flex flex-col gap-3 min-h-0"
-      data-testid="chat-message-list"
+    <Skeleton
+      name="chat-card"
+      loading={isPending}
+      stagger={50}
+      transition={200}
+      fixture={CHAT_CARD_FIXTURE}
     >
-      {messages.map((m) => (
-        <MessageRow key={m.id} msg={m} />
-      ))}
-    </div>
+      {messages.length === 0 ? (
+        <div className="flex-1 overflow-y-auto px-3 py-3">
+          <HintText>No notes yet. Start a conversation about this sample below.</HintText>
+        </div>
+      ) : (
+        <div
+          ref={scrollRef}
+          className="flex-1 overflow-y-auto px-3 py-3 flex flex-col gap-3 min-h-0"
+          data-testid="chat-message-list"
+        >
+          {messages.map((m) => (
+            <MessageRow key={m.id} msg={m} />
+          ))}
+        </div>
+      )}
+    </Skeleton>
   );
 }
 
