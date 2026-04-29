@@ -60,7 +60,11 @@ packages/
                              #   MillerPlot, Pn3mIcon, ui/…
                              # Inspect: DetectorImage, DetectorImageCard,
                              #   ThumbnailGallery, SampleMetadataCard
-        hooks/               # useFocusTrap
+                             # Mentions: MentionChip, MentionCompose, MentionPicker
+        hooks/               # useFocusTrap, useMentionResolution
+        lib/                 # renderMentions.tsx (parseMentions tokenizer)
+        bones/               # Committed boneyard skeleton captures (*.bones.json)
+                             #   + auto-generated registry.ts
         pages/               # IndexPage (three-card workspace),
                              #   InspectPage (curate exposures), ComparePage
       test/                  # Vitest + React Testing Library
@@ -209,14 +213,23 @@ julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
 
 **TraceViewer auto-fit is floor-only.** `PlotCard::computeFit` sets `yDomain = [p05·0.7, fullTraceMax·1.2]` — bottom is the 5th percentile of *positive* in-window intensities (suppresses dead-pixel zeros), top is the *full* trace max (so peaks-vs-beam relative scale stays visible without resetting). When peaks exist, x is also tightened to `[firstPeak·0.7, lastPeak·1.3]`. Auto-fires on `activeExposureId` change. Double-click → `onReset` clears both axes.
 
+**Skeleton loading via boneyard-js.** Each load-gated card/list (PlotCard, PhasePanel, ChatCard, DetectorImageCard, SampleMetadataCard, NavModal) wraps its content in `<Skeleton>` from `boneyard-js/react`. Several non-obvious rules:
+- **Use `loading={query.isLoading}`, not `isPending`.** `isLoading = isPending && isFetching` — disabled queries (`undefined` selection) and background refetches over cached data both stay skeleton-free; only true cold fetches trigger the animation. Wrong gating causes skeleton flicker on every refetch.
+- **`fixture` prop is `ReactNode`** (JSX rendered during boneyard's headless capture so the CLI can measure layout), NOT raw data. Pass real components with mock props — e.g. `<TraceViewer trace={…} peaks={…} … />` with no-op handlers.
+- **Always set `fallback`** to mirror the original italic HintText. When bones aren't yet captured for that skeleton name, the runtime renders `fallback` during loading; without it the area is blank.
+- **`className` on `<Skeleton>` is load-bearing** — boneyard wraps children in two extra divs which would otherwise break parent flex chains (e.g. ChatCard's message list collapsed to 60px). Pass `flex-1 min-h-0 flex flex-col` (or `h-full w-full`) so the outer wrapper inherits the original child's layout role. Companion CSS in `styles.css`: `[data-boneyard-content] { display: contents }` makes the inner wrapper transparent to layout so the children's flex behaviour passes through.
+- **`configureBoneyard()` lives in `main.tsx`,** NOT in `bones/registry.ts`. The Vite HMR plugin regenerates `registry.ts` on every capture and would wipe any config call there. The values must mirror `boneyard.config.json` (which the capture CLI reads but the runtime does not) — both files have to be updated together when the card background colour or animation changes.
+- **Bones are committed,** not gitignored. `src/bones/*.bones.json` + the auto-generated `registry.ts` are required for prod builds to render skeletons; without them, `<Skeleton>` falls through to `fallback`. Capture organically during dev (the Vite plugin re-captures on every HMR update) and commit deliberately to widen prod coverage.
+- **JSDOM lacks `window.matchMedia`** — boneyard's dark-mode detection calls it on mount. The stub in `test/setup.ts` keeps unit tests honest; same pattern as the `ResizeObserver` stub above.
+
 ## Current state
 
 - Core Himalaya: `v0.5.0` on `main` — v2 peak-finding (persistence + sharpness + kneedle).
 - HimalayaUI — Plans 1–6 + three-card Index redesign + Inspect page + experiment-config system complete:
   - **Backend:** transactional SQLite pipeline (incl. `_reingest_inner!`), FK enforcement, REST API (Oxygen.jl), CLI (`config new/list`, `init`, `analyze`, `reingest`, `show`, `serve`), TIFF→PNG image route with Q0f31-aware lognormalize, env-driven deployment (`HIMALAYA_DB_PATH`, `HIMALAYA_CONFIGS_DIR`).
   - **Adapter-driven I/O:** `experiment.toml` per experiment, positional or named columns, configurable file patterns, prefix-based filesystem discovery.
-  - **Frontend:** three-card Index workspace (chat | trace plot | index choices), Inspect page (detector image + thumbnail filmstrip + reject-reason chips + sample metadata), trace viewer with peak editing + auto-fit y-floor + log/linear x toggle, auto-rotating detector canvas, Miller plot, PhasePanel with curate + stale-indices reanalyze, OnboardingFlow + NavModal with focus trapping.
-  - **Test coverage:** 379 Julia (HimalayaUI) · 90 Julia (core) · 141 Vitest · 14 Playwright E2E (5 inspect + 9 smoke).
+  - **Frontend:** three-card Index workspace (chat | trace plot | index choices), Inspect page (detector image + thumbnail filmstrip + reject-reason chips + sample metadata), trace viewer with peak editing + auto-fit y-floor + log/linear x toggle, auto-rotating detector canvas, Miller plot, PhasePanel with curate + stale-indices reanalyze, OnboardingFlow + NavModal with focus trapping, chat @-mention system (peaks / indices / exposures / samples), boneyard-js pulse skeletons across all load-gated cards.
+  - **Test coverage:** 379 Julia (HimalayaUI) · 90 Julia (core) · 174 Vitest · 16 Playwright E2E.
 - Deferred for later: Phase panel Recent section, export UI, per-user audit view, derived-exposure construction (raw / aggregated / background-subtracted exposure types — schema reserves `exposure_type` field), additional config templates beyond `simple.toml`. See [docs/future-feature-ideas.md](docs/future-feature-ideas.md).
 
 ## Further reading
