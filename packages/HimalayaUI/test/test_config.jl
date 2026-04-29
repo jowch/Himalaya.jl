@@ -474,19 +474,22 @@ end
     end
 end
 
-@testset "open_db respects HIMALAYA_DB_PATH" begin
+@testset "default_db_path respects HIMALAYA_DB_PATH" begin
+    old = get(ENV, "HIMALAYA_DB_PATH", nothing)
+    try
+        ENV["HIMALAYA_DB_PATH"] = "/tmp/himalaya-test/central.db"
+        @test HimalayaUI.default_db_path() == "/tmp/himalaya-test/central.db"
+    finally
+        old === nothing ? delete!(ENV, "HIMALAYA_DB_PATH") :
+                          (ENV["HIMALAYA_DB_PATH"] = old)
+    end
+end
+
+@testset "open_db creates parent directory" begin
     mktempdir() do dir
-        central = joinpath(dir, "central.db")
-        old = get(ENV, "HIMALAYA_DB_PATH", nothing)
-        try
-            ENV["HIMALAYA_DB_PATH"] = central
-            db = HimalayaUI.open_db("/some/unrelated/experiment/path")
-            # Schema should be created at the central path, not at experiment_path
-            @test isfile(central)
-            close(db)
-        finally
-            old === nothing ? delete!(ENV, "HIMALAYA_DB_PATH") :
-                              (ENV["HIMALAYA_DB_PATH"] = old)
-        end
+        nested = joinpath(dir, "deeply", "nested", "himalaya.db")
+        db = HimalayaUI.open_db(nested)
+        @test isfile(nested)
+        close(db)
     end
 end

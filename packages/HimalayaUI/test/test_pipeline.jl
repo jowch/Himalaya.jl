@@ -85,7 +85,7 @@ using HimalayaUI: init_experiment!, analyze_exposure!, open_db, get_experiment
     mkpath(data_dir)
     mkpath(analysis_dir)
 
-    db = open_db(tmp)
+    db = open_db(joinpath(tmp, "himalaya.db"))
     exp_id = init_experiment!(db;
         name         = "TestExp",
         path         = tmp,
@@ -114,7 +114,7 @@ using Tables
     src = joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat")
     cp(src, joinpath(analysis_dir, "example_tot.dat"))
 
-    db     = open_db(tmp)
+    db     = open_db(joinpath(tmp, "himalaya.db"))
     exp_id = init_experiment!(db; path=tmp,
                                    data_dir=joinpath(tmp, "data"),
                                    analysis_dir=analysis_dir)
@@ -173,7 +173,7 @@ end
     src = joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat")
     cp(src, joinpath(analysis_dir, "example_tot.dat"))
 
-    db     = open_db(tmp)
+    db     = open_db(joinpath(tmp, "himalaya.db"))
     exp_id = init_experiment!(db; path=tmp,
                                    data_dir=joinpath(tmp, "data"),
                                    analysis_dir=analysis_dir)

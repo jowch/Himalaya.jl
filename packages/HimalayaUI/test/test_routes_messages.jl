@@ -2,7 +2,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
 
 @testset "sample_messages routes" begin
     tmp = mktempdir()
-    db     = HimalayaUI.open_db(tmp)
+    db     = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
     exp_id = HimalayaUI.create_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
     s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, label="D1")

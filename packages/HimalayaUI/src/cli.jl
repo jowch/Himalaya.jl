@@ -183,7 +183,7 @@ function cli_reingest(args)
     p = parse_args(args, s; as_symbols = true)
     exp_dir = abspath(p[:experiment_path])
 
-    db = open_db(exp_dir)
+    db = open_db()
     rows = Tables.rowtable(DBInterface.execute(db,
         "SELECT id FROM experiments WHERE path = ?", [exp_dir]))
     isempty(rows) && error("No experiment registered at $exp_dir. Run 'himalaya init' first.")
@@ -199,7 +199,7 @@ function cli_init(args)
     end
     p = parse_args(args, s; as_symbols = true)
     exp_dir = p[:experiment_path]
-    db = open_db(exp_dir)
+    db = open_db()
     cli_init_with_db!(db, exp_dir)
 end
 
@@ -214,7 +214,7 @@ function cli_analyze(args)
     end
     p = parse_args(args, s; as_symbols = true)
 
-    db            = open_db(p[:experiment_path])
+    db            = open_db()
     exp           = get_experiment(db, 1)
     sample_filter = p[:sample]
     samples       = get_samples(db, 1)
@@ -272,7 +272,7 @@ function cli_show(args)
     end
     p = parse_args(args, s; as_symbols = true)
 
-    db      = open_db(p[:experiment_path])
+    db      = open_db()
     samples = get_samples(db, 1)
     idx     = findfirst(sm -> sm.label == p[:sample], samples)
     idx === nothing && error("sample $(p[:sample]) not found")
@@ -371,11 +371,11 @@ function cli_serve(args)
     end
     p = parse_args(args, s; as_symbols = true)
 
-    db_path = get(ENV, "HIMALAYA_DB_PATH", joinpath(p[:experiment_path], "himalaya.db"))
+    db_path = default_db_path()
     isfile(db_path) || error("no database at $db_path — run `himalaya init` first")
 
-    db = open_db(p[:experiment_path])
-    println("HimalayaUI serving $(p[:experiment_path]) on http://$(p[:host]):$(p[:port])")
+    db = open_db(db_path)
+    println("HimalayaUI serving DB at $db_path on http://$(p[:host]):$(p[:port])")
     serve(db; host = p[:host], port = p[:port])
 end
 

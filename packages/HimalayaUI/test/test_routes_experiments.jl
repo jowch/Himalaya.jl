@@ -7,7 +7,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
     cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
        joinpath(analysis_dir, "example_tot.dat"))
 
-    db = HimalayaUI.open_db(tmp)
+    db = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
     exp_id = HimalayaUI.init_experiment!(db;
         name = "E1", path = tmp,
         data_dir = joinpath(tmp, "data"),

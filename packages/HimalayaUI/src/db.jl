@@ -217,18 +217,32 @@ function get_exposures(db::SQLite.DB, sample_id::Int)
 end
 
 """
-    open_db(experiment_path) -> SQLite.DB
+    default_db_path() -> String
 
-Open the SQLite database. When `HIMALAYA_DB_PATH` is set in the
-environment, opens that path (centralised deployment — one DB shared by
-all experiments). When unset, falls back to legacy per-experiment
-behaviour: `<experiment_path>/himalaya.db`.
-
-Either way the schema is created/migrated and `PRAGMA foreign_keys = ON`
-is set on every connection.
+Resolve the canonical Himalaya DB path. Reads `HIMALAYA_DB_PATH` from
+the environment when set; otherwise falls back to `~/.himalaya/himalaya.db`
+(creating the parent directory on first call).
 """
-function open_db(experiment_path::String)::SQLite.DB
-    db_path = get(ENV, "HIMALAYA_DB_PATH", joinpath(experiment_path, "himalaya.db"))
+function default_db_path()::String
+    haskey(ENV, "HIMALAYA_DB_PATH") && return ENV["HIMALAYA_DB_PATH"]
+    dir = joinpath(homedir(), ".himalaya")
+    isdir(dir) || mkpath(dir)
+    joinpath(dir, "himalaya.db")
+end
+
+"""
+    open_db(db_path = default_db_path()) -> SQLite.DB
+
+Open the SQLite database at `db_path`, creating the file (and any missing
+parent directories) if necessary. Applies schema migrations and enables
+foreign-key enforcement on every connection.
+
+Pass an explicit path for tests or alternate deployments; omit the
+argument to use [`default_db_path`](@ref).
+"""
+function open_db(db_path::AbstractString = default_db_path())::SQLite.DB
+    parent = dirname(db_path)
+    !isempty(parent) && !isdir(parent) && mkpath(parent)
     db = SQLite.DB(db_path)
     create_schema!(db)
     migrate_schema!(db)
