@@ -3,6 +3,7 @@ module HimalayaUI
 include("db.jl")
 include("image.jl")
 include("datfile.jl")
+include("config.jl")
 include("manifest.jl")
 include("pipeline.jl")
 include("cli.jl")
@@ -19,6 +20,6 @@ include("routes_analysis.jl")
 include("routes_export.jl")
 include("server.jl")
 
-export main
+export main, ExperimentConfig, load_config
 
 end
