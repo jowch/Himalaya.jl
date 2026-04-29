@@ -177,6 +177,7 @@ export function InspectPage(): JSX.Element {
                 stagger={50}
                 transition={200}
                 fixture={DETECTOR_IMAGE_FIXTURE}
+                fallback={<div className="flex items-center justify-center h-full text-fg-muted text-sm">Loading exposure…</div>}
               >
                 {viewingExposure ? (
                   <DetectorImageCard
@@ -210,6 +211,7 @@ export function InspectPage(): JSX.Element {
             stagger={50}
             transition={200}
             fixture={SAMPLE_METADATA_FIXTURE}
+            fallback={<div className="p-4 text-fg-muted text-sm">Loading sample…</div>}
           >
             <SampleMetadataCard
               sample={sample}

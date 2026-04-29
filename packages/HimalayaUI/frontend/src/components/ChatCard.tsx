@@ -96,6 +96,7 @@ function MessageList({ messages, isPending }: MessageListProps): JSX.Element {
       stagger={50}
       transition={200}
       fixture={CHAT_CARD_FIXTURE}
+      fallback={<div className="flex-1 overflow-y-auto px-3 py-3"><HintText>Loading…</HintText></div>}
     >
       {messages.length === 0 ? (
         <div className="flex-1 overflow-y-auto px-3 py-3">

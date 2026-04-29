@@ -228,6 +228,7 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
         stagger={50}
         transition={200}
         fixture={PHASE_PANEL_FIXTURE}
+        fallback={<div className="p-4"><HintText>Loading phase assignments…</HintText></div>}
       >
         <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-4">
 

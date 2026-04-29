@@ -265,6 +265,7 @@ export function PlotCard(): JSX.Element {
           stagger={50}
           transition={200}
           fixture={PLOT_CARD_FIXTURE}
+          fallback={<div className="flex-1 flex items-center justify-center"><HintText>Loading trace…</HintText></div>}
         >
           {body}
         </Skeleton>

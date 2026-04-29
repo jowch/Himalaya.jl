@@ -258,6 +258,7 @@ export function NavModal(): JSX.Element | null {
           stagger={50}
           transition={200}
           fixture={step === "experiment" ? NAV_EXPERIMENTS_FIXTURE : NAV_SAMPLES_FIXTURE}
+          fallback={<div className="px-4 py-6 text-center text-fg-muted italic text-base">{step === "experiment" ? "loading experiments…" : "loading samples…"}</div>}
         >
           <div className="flex-1 overflow-y-auto py-1" data-testid="nav-modal-results">
             {activeList.length === 0 ? (

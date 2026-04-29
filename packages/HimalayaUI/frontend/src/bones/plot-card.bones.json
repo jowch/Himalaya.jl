@@ -1,0 +1,71 @@
+{
+  "breakpoints": {
+    "1024": {
+      "name": "plot-card",
+      "viewportWidth": 990,
+      "width": 990,
+      "height": 300,
+      "bones": [
+        [
+          0,
+          0,
+          100,
+          300,
+          8
+        ],
+        [
+          0,
+          0,
+          100,
+          300,
+          8
+        ]
+      ]
+    },
+    "1440": {
+      "name": "plot-card",
+      "viewportWidth": 742,
+      "width": 742,
+      "height": 300,
+      "bones": [
+        [
+          0,
+          0,
+          100,
+          300,
+          8
+        ],
+        [
+          0,
+          0,
+          100,
+          300,
+          8
+        ]
+      ]
+    },
+    "1920": {
+      "name": "plot-card",
+      "viewportWidth": 863,
+      "width": 863,
+      "height": 300,
+      "bones": [
+        [
+          0,
+          0,
+          100,
+          300,
+          8
+        ],
+        [
+          0,
+          0,
+          100,
+          300,
+          8
+        ]
+      ]
+    }
+  },
+  "_hash": "085a8e34c7ed2efbf82d5a21cbef6b05"
+}
