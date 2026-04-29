@@ -65,6 +65,8 @@ export function MentionPicker({ query, onSelect, onDismiss }: MentionPickerProps
 
   const [activeIdx, setActiveIdx] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const rowRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   const { type: typeFilter, rest: searchText } = useMemo(() => parseQuery(query), [query]);
 
@@ -106,6 +108,11 @@ export function MentionPicker({ query, onSelect, onDismiss }: MentionPickerProps
 
   useEffect(() => { setActiveIdx(0); }, [rows]);
 
+  // Keep the active row visible when navigating past the visible window.
+  useEffect(() => {
+    rowRefs.current[activeIdx]?.scrollIntoView({ block: "nearest" });
+  }, [activeIdx]);
+
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") { onDismiss(); return; }
@@ -141,26 +148,40 @@ export function MentionPicker({ query, onSelect, onDismiss }: MentionPickerProps
       {rows.length === 0 ? (
         <div className="px-3 py-2 text-xs text-fg-dim">No results</div>
       ) : (
-        rows.map((row, i) => {
-          const color = row.kind === "index" ? phaseColor(row.item.phase) : undefined;
-          return (
-            <div
-              key={`${row.kind}:${row.item.id}`}
-              role="option"
-              aria-selected={i === activeIdx}
-              onClick={() => onSelect(rowToken(row))}
-              className={`px-3 py-1.5 cursor-pointer flex justify-between items-center text-sm
-                          ${i === activeIdx ? "bg-bg-hover" : "hover:bg-bg-hover"}`}
-            >
-              <span style={color ? { color } : undefined}>
-                {rowLabel(row)}
-              </span>
-              {rowMeta(row) && (
-                <span className="text-xs text-fg-dim ml-2">{rowMeta(row)}</span>
-              )}
+        <>
+          <div
+            ref={scrollRef}
+            className="max-h-[176px] overflow-y-auto"
+          >
+            {rows.map((row, i) => {
+              const color = row.kind === "index" ? phaseColor(row.item.phase) : undefined;
+              return (
+                <div
+                  key={`${row.kind}:${row.item.id}`}
+                  ref={(el) => { rowRefs.current[i] = el; }}
+                  role="option"
+                  aria-selected={i === activeIdx}
+                  onClick={() => onSelect(rowToken(row))}
+                  className={`px-3 py-1.5 cursor-pointer flex justify-between items-center text-sm
+                              ${i === activeIdx ? "bg-bg-hover" : "hover:bg-bg-hover"}`}
+                >
+                  <span style={color ? { color } : undefined}>
+                    {rowLabel(row)}
+                  </span>
+                  {rowMeta(row) && (
+                    <span className="text-xs text-fg-dim ml-2">{rowMeta(row)}</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          {rows.length > 5 && (
+            <div className="px-3 py-1 border-t border-border bg-bg
+                            text-[10px] text-fg-dim opacity-70 text-right">
+              {rows.length} matches · scroll or refine query
             </div>
-          );
-        })
+          )}
+        </>
       )}
     </div>
   );

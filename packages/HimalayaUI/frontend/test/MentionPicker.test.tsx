@@ -69,4 +69,29 @@ describe("<MentionPicker>", () => {
     );
     expect(await screen.findByText(/no results/i)).toBeInTheDocument();
   });
+
+  it("renders rows in a scrollable container with a footer hint when many matches", async () => {
+    // 12 peaks + 1 default index + 1 default exposure = 14 total — over the 5-row cap.
+    const manyPeaks: api.Peak[] = Array.from({ length: 12 }, (_, i) => ({
+      id: 100 + i, exposure_id: 1, q: 1.0 + i * 0.01, intensity: 100,
+      prominence: 1.0, sharpness: 0.1, source: "auto", excluded: false,
+    }));
+    vi.spyOn(api, "listPeaks").mockResolvedValue(manyPeaks);
+    const { container } = renderWithProviders(
+      <MentionPicker query="" onSelect={vi.fn()} onDismiss={vi.fn()} />
+    );
+    expect(await screen.findByText(/14 matches.*scroll or refine/i)).toBeInTheDocument();
+    const scroller = container.querySelector("[role='listbox'] .overflow-y-auto");
+    expect(scroller).not.toBeNull();
+  });
+
+  it("does NOT show the footer hint when results fit (≤5)", async () => {
+    // 1 index + 1 peak + 1 exposure = 3 total — under the cap.
+    const { queryByText } = renderWithProviders(
+      <MentionPicker query="" onSelect={vi.fn()} onDismiss={vi.fn()} />
+    );
+    // findByText would wait; queryByText returns immediately.
+    await screen.findByText(/Pn3m/);
+    expect(queryByText(/scroll or refine/i)).toBeNull();
+  });
 });
