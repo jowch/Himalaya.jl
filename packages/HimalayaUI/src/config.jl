@@ -100,3 +100,35 @@ function load_config(path::AbstractString)::ExperimentConfig
         image,
     )
 end
+
+"""
+    configs_dir() -> String
+
+Returns the path to the directory containing built-in config templates
+(packaged with HimalayaUI under `configs/`).
+"""
+configs_dir() = joinpath(@__DIR__, "..", "configs")
+
+"""
+    list_config_types() -> Vector{String}
+
+Returns the names of all built-in config templates (filename stems of
+`*.toml` files in `configs_dir()`).
+"""
+function list_config_types()::Vector{String}
+    dir = configs_dir()
+    isdir(dir) || return String[]
+    [splitext(f)[1] for f in readdir(dir) if endswith(f, ".toml")]
+end
+
+"""
+    load_builtin_config(type_name) -> ExperimentConfig
+
+Loads a built-in config template by name (without `.toml` extension).
+Errors with the list of available types if the name is unknown.
+"""
+function load_builtin_config(type_name::AbstractString)::ExperimentConfig
+    path = joinpath(configs_dir(), type_name * ".toml")
+    isfile(path) || error("Unknown config type '$type_name'. Available: $(join(list_config_types(), ", "))")
+    load_config(path)
+end

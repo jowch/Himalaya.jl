@@ -1,0 +1,28 @@
+[experiment]
+name        = ""
+description = ""
+manifest    = "manifest.csv"
+
+[beamline]
+energy_kev    = 0.0
+flight_path_m = 0.0
+
+[manifest]
+delimiter      = "\t"
+skip_rows      = 1
+header_row     = 0
+sample_id      = 1
+label          = 2
+name           = 3
+filenames      = 9
+notes_sample   = 10
+notes_exposure = 11
+
+[layout]
+data_dir      = "data"
+analysis_dir  = "analysis/automatic_analysis"
+exposure_type = "simple"
+
+[files]
+integration = "{name}.dat"
+image       = "{name}.tiff"

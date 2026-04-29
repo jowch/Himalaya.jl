@@ -134,3 +134,23 @@ end
         @test cfg.col_sample_id == "SampleID"
     end
 end
+
+@testset "load_builtin_config simple" begin
+    cfg = HimalayaUI.load_builtin_config("simple")
+    @test cfg.delimiter == "\t"
+    @test cfg.col_sample_id == 1
+    @test cfg.data_dir == "data"
+    @test cfg.analysis_dir == "analysis/automatic_analysis"
+    @test cfg.integration_pattern == "{name}.dat"
+    @test cfg.image_pattern == "{name}.tiff"
+    @test cfg.exposure_type == "simple"
+end
+
+@testset "list_config_types includes simple" begin
+    types = HimalayaUI.list_config_types()
+    @test "simple" in types
+end
+
+@testset "load_builtin_config rejects unknown type" begin
+    @test_throws ErrorException HimalayaUI.load_builtin_config("nonexistent_type_xyz")
+end
