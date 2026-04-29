@@ -205,3 +205,6 @@
   .text-data-strong { font-family: var(--font-mono); font-size: var(--text-sm);
                       line-height: 1.4; font-weight: 600; }
 }
+
+/* Boneyard skeleton: slow pulse keeps the loading state subtle */
+.bone { animation-duration: 1.8s; }
