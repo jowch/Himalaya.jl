@@ -237,10 +237,11 @@ export function useSetExposureStatus(sampleId: number) {
       exposureId: number;
       status: "accepted" | "rejected" | null;
     }) => api.setExposureStatus(exposureId, status, authOpts(username)),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["sample", sampleId, "exposures", { excludeRejected: false }] });
-      qc.invalidateQueries({ queryKey: ["sample", sampleId, "exposures", { excludeRejected: true }] });
-    },
+    // queryKeys.exposures(id) returns the prefix ["sample", id, "exposures"];
+    // TanStack Query invalidateQueries matches by prefix, so this single
+    // call covers both excludeRejected variants (and any future variant).
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: queryKeys.exposures(sampleId) }),
   });
 }
 
@@ -250,10 +251,8 @@ export function useSelectExposure(sampleId: number) {
   return useMutation({
     mutationFn: (exposureId: number) =>
       api.selectExposure(exposureId, authOpts(username)),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["sample", sampleId, "exposures", { excludeRejected: false }] });
-      qc.invalidateQueries({ queryKey: ["sample", sampleId, "exposures", { excludeRejected: true }] });
-    },
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: queryKeys.exposures(sampleId) }),
   });
 }
 
