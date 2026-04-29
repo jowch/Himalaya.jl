@@ -1,5 +1,5 @@
-using Test, SQLite, DBInterface
-using HimalayaUI: create_schema!, create_experiment!, create_sample!,
+using Test, SQLite, DBInterface, Tables
+using HimalayaUI: create_schema!, migrate_schema!, create_experiment!, create_sample!,
                   create_exposure!, get_experiment, get_samples, get_exposures
 
 @testset "db schema" begin
@@ -15,6 +15,25 @@ using HimalayaUI: create_schema!, create_experiment!, create_sample!,
               "index_groups", "index_group_members", "user_actions"]
         @test t in tables
     end
+end
+
+@testset "exposures schema migration" begin
+    db = SQLite.DB()
+    create_schema!(db)
+    migrate_schema!(db)
+    # Verify columns exist by inserting and reading back
+    exp_id  = create_experiment!(db; path="/tmp", data_dir="/tmp", analysis_dir="/tmp")
+    samp_id = create_sample!(db; experiment_id=exp_id)
+    DBInterface.execute(db,
+        "INSERT INTO exposures (sample_id, filename, kind, selected, status, image_path)
+         VALUES (?, 'test.dat', 'file', 0, 'accepted', '/tmp/test.tiff')", [samp_id])
+    rows = Tables.rowtable(DBInterface.execute(db,
+        "SELECT status, image_path FROM exposures"))
+    @test length(rows) == 1
+    @test rows[1].status == "accepted"
+    @test rows[1].image_path == "/tmp/test.tiff"
+    # Calling migrate_schema! again is idempotent
+    migrate_schema!(db)
 end
 
 @testset "db CRUD" begin

@@ -1,0 +1,28 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "description": "Type-check frontend on TS/TSX edit",
+            "command": "f=$(jq -r '.tool_input.file_path // empty'); case \"$f\" in *packages/HimalayaUI/frontend/src/*.ts|*packages/HimalayaUI/frontend/src/*.tsx|*packages/HimalayaUI/frontend/test/*.ts|*packages/HimalayaUI/frontend/test/*.tsx) cd \"$CLAUDE_PROJECT_DIR/packages/HimalayaUI/frontend\" && out=$(./node_modules/.bin/tsc --noEmit -p tsconfig.build.json 2>&1 | head -40); if [ -n \"$out\" ]; then printf '\\nTSC errors after edit:\\n%s\\n' \"$out\" >&2; exit 2; fi ;; esac"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "description": "Block Manifest.toml edits — gitignored, re-resolves in worktrees",
+            "command": "f=$(jq -r '.tool_input.file_path // empty'); case \"$f\" in */Manifest.toml) echo 'BLOCKED: Manifest.toml is gitignored and worktrees re-resolve against the registry, pulling old Himalaya v0.4.5 with a different findpeaks signature. See CLAUDE.md > Himalaya core resolution in worktrees. If you really need to edit, copy from main first.' >&2; exit 2 ;; esac"
+          }
+        ]
+      }
+    ]
+  }
+}

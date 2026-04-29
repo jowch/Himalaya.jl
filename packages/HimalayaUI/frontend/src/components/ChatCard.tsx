@@ -95,15 +95,15 @@ function MessageRow({ msg }: { msg: SampleMessage }): JSX.Element {
   const authorDeleted = msg.author == null;
   return (
     <div className="flex flex-col gap-0.5 min-w-0" data-testid={`chat-message-${msg.id}`}>
-      <div className="flex items-baseline gap-2 text-[10.5px] font-sans">
+      <div className="flex items-baseline gap-2">
         <span className={authorDeleted
-          ? "text-fg-dim italic font-medium"
-          : "text-fg font-medium"}>
+          ? "text-meta text-fg-dim italic"
+          : "text-meta"}>
           {authorLabel}
         </span>
-        <span className="text-fg-dim text-[10px]">{formatTime(msg.created_at)}</span>
+        <span className="text-fg-dim text-xs">{formatTime(msg.created_at)}</span>
       </div>
-      <p className="text-[12.5px] font-sans text-fg-muted leading-snug break-words whitespace-pre-wrap">
+      <p className="text-base font-sans text-fg-muted leading-snug break-words whitespace-pre-wrap">
         {msg.body}
       </p>
     </div>
@@ -154,10 +154,10 @@ function Compose({ disabled, onSubmit }: ComposeProps): JSX.Element {
         rows={2}
         placeholder={disabled ? "Sign in to post…" : "Write a note…"}
         data-testid="chat-compose"
-        className="w-full resize-none bg-transparent text-fg text-[12.5px] font-sans
+        className="w-full resize-none bg-transparent text-fg text-base font-sans
                    placeholder:text-fg-dim outline-0 border-0"
       />
-      <div className="flex items-center justify-between text-[10px] text-fg-dim">
+      <div className="flex items-center justify-between text-xs text-fg-dim">
         <span>
           <kbd className="border border-border rounded px-1">⏎</kbd> send
           {" · "}

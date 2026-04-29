@@ -1,6 +1,7 @@
 module HimalayaUI
 
 include("db.jl")
+include("image.jl")
 include("datfile.jl")
 include("manifest.jl")
 include("pipeline.jl")

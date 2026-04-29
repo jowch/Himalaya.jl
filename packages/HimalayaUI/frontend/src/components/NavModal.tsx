@@ -211,13 +211,13 @@ export function NavModal(): JSX.Element | null {
             data-testid="nav-modal-input"
             spellCheck={false}
           />
-          <span className="text-[10px] text-fg-dim px-1.5 py-0.5
+          <span className="text-xs text-fg-dim px-1.5 py-0.5
                            border border-border rounded">esc</span>
         </div>
 
         <div className="flex-1 overflow-y-auto py-1" data-testid="nav-modal-results">
           {activeList.length === 0 ? (
-            <div className="px-4 py-6 text-center text-fg-muted italic text-[13px]">
+            <div className="px-4 py-6 text-center text-fg-muted italic text-base">
               {step === "experiment"
                 ? (experimentsQ.isPending ? "loading experiments…" : "no experiments")
                 : pendingExp === undefined
@@ -237,13 +237,13 @@ export function NavModal(): JSX.Element | null {
                   else                        commitSample(item.id);
                 }}
                 className={
-                  "w-full text-left px-3 py-2 flex flex-col gap-0.5 text-[13px] " +
+                  "w-full text-left px-3 py-2 flex flex-col gap-0.5 text-base " +
                   (idx === selIdx ? "bg-bg-hover text-fg" : "text-fg hover:bg-bg-hover")
                 }
               >
                 <span className="font-medium">{item.primary}</span>
                 {item.secondary && (
-                  <span className="text-fg-muted text-[11px] font-sans">{item.secondary}</span>
+                  <span className="text-fg-muted text-sm font-sans">{item.secondary}</span>
                 )}
               </button>
             ))
@@ -251,7 +251,7 @@ export function NavModal(): JSX.Element | null {
         </div>
 
         <div className="flex items-center gap-3 px-3 py-2 border-t border-border
-                        text-[10px] text-fg-dim">
+                        text-xs text-fg-dim">
           <span><kbd className="border border-border rounded px-1">↑↓</kbd> navigate</span>
           <span><kbd className="border border-border rounded px-1">⏎</kbd> select</span>
           <span><kbd className="border border-border rounded px-1">⌫</kbd> back</span>
@@ -274,7 +274,7 @@ function Chip({ label, onRemove, testId }: ChipProps): JSX.Element {
     <span
       data-testid={testId}
       className="inline-flex items-center gap-1 px-2 py-1 rounded-md
-                 bg-bg-hover border border-border text-[11.5px] text-fg"
+                 bg-bg-hover border border-border text-sm text-fg"
     >
       {label}
       <button

@@ -40,7 +40,7 @@ export function IndicesCard(): JSX.Element {
         className="shrink-0 border-t border-border bg-bg-elevated/60"
       >
         <div className="h-[18px] px-3 flex items-center justify-between
-                        text-[9.5px] uppercase tracking-wider text-fg-dim
+                        text-xs uppercase tracking-wider text-fg-dim
                         border-b border-border">
           <span>√N · q sanity</span>
         </div>

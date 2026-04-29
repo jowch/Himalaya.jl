@@ -175,7 +175,7 @@ function NameStep({
       onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); onSubmit(); } }}
     >
       <h2 className="text-base font-semibold text-fg">Who are you?</h2>
-      <p className="text-fg-muted text-[13px]">
+      <p className="text-fg-muted text-base">
         Your name is stored with every change so others can see what you've done.
       </p>
       <select
@@ -200,7 +200,7 @@ function NameStep({
           data-testid="onboarding-new-name"
         />
       )}
-      {error && <p className="text-error text-[13px]">{error}</p>}
+      {error && <p className="text-error text-base">{error}</p>}
       <div className="flex justify-end">
         <Button variant="primary" onClick={onSubmit} data-testid="onboarding-continue">
           Continue
@@ -238,11 +238,11 @@ function TutorialStep({
       className="bg-bg-elevated border border-border rounded-lg p-7
                  min-w-[420px] max-w-[520px] flex flex-col gap-4 outline-0"
     >
-      <div className="text-[10px] uppercase tracking-widest text-fg-dim">
+      <div className="text-xs uppercase tracking-widest text-fg-dim">
         Welcome · {slideIdx + 1} of {TUTORIAL_SLIDES.length}
       </div>
       <h2 className="text-lg font-semibold text-fg">{slide.title}</h2>
-      <p className="text-fg-muted text-[13px] leading-relaxed">{slide.body}</p>
+      <p className="text-fg-muted text-base leading-relaxed">{slide.body}</p>
       <div className="flex items-center justify-between pt-2">
         <div className="flex gap-1">
           {TUTORIAL_SLIDES.map((_, i) => (

@@ -15,6 +15,14 @@ beforeEach(() => {
 });
 
 describe("<TabRocker>", () => {
+  it("renders all three tabs with Inspect first", () => {
+    render(<TabRocker />);
+    const tabs = screen.getAllByRole("tab");
+    expect(tabs[0]).toHaveTextContent("Inspect");
+    expect(tabs[1]).toHaveTextContent("Index");
+    expect(tabs[2]).toHaveTextContent("Compare");
+  });
+
   it("renders both tabs with the active page marked", () => {
     render(<TabRocker />);
     const idx = screen.getByTestId("tab-index");

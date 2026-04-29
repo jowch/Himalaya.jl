@@ -33,11 +33,13 @@ CREATE TABLE IF NOT EXISTS sample_tags (
 );
 
 CREATE TABLE IF NOT EXISTS exposures (
-    id        INTEGER PRIMARY KEY,
-    sample_id INTEGER REFERENCES samples(id),
-    filename  TEXT,
-    kind      TEXT DEFAULT 'file',
-    selected  BOOLEAN DEFAULT FALSE
+    id         INTEGER PRIMARY KEY,
+    sample_id  INTEGER REFERENCES samples(id),
+    filename   TEXT,
+    kind       TEXT DEFAULT 'file',
+    selected   BOOLEAN DEFAULT FALSE,
+    status     TEXT CHECK (status IN ('accepted', 'rejected')),
+    image_path TEXT
 );
 
 CREATE TABLE IF NOT EXISTS exposure_sources (
@@ -130,6 +132,20 @@ function create_schema!(db::SQLite.DB)
     end
 end
 
+function migrate_schema!(db::SQLite.DB)
+    stmts = [
+        "ALTER TABLE exposures ADD COLUMN status TEXT CHECK (status IN ('accepted', 'rejected'))",
+        "ALTER TABLE exposures ADD COLUMN image_path TEXT",
+    ]
+    for stmt in stmts
+        try
+            DBInterface.execute(db, stmt)
+        catch
+            # column already exists — safe to ignore
+        end
+    end
+end
+
 function create_experiment!(db::SQLite.DB;
         name::Union{String,Nothing} = nothing,
         path::String,
@@ -156,12 +172,15 @@ end
 
 function create_exposure!(db::SQLite.DB;
         sample_id::Int,
-        filename::Union{String,Nothing} = nothing,
-        kind::String                    = "file",
-        selected::Bool                  = false)
+        filename::Union{String,Nothing}  = nothing,
+        kind::String                     = "file",
+        selected::Bool                   = false,
+        status::Union{String,Nothing}    = nothing,
+        image_path::Union{String,Nothing} = nothing)
     result = DBInterface.execute(db,
-        "INSERT INTO exposures (sample_id, filename, kind, selected) VALUES (?, ?, ?, ?)",
-        [sample_id, filename, kind, Int(selected)])
+        "INSERT INTO exposures (sample_id, filename, kind, selected, status, image_path)
+         VALUES (?, ?, ?, ?, ?, ?)",
+        [sample_id, filename, kind, Int(selected), status, image_path])
     Int(DBInterface.lastrowid(result))
 end
 
@@ -186,6 +205,7 @@ function open_db(experiment_path::String)::SQLite.DB
     db_path = joinpath(experiment_path, "himalaya.db")
     db = SQLite.DB(db_path)
     create_schema!(db)
+    migrate_schema!(db)
     DBInterface.execute(db, "PRAGMA foreign_keys = ON")
     db
 end

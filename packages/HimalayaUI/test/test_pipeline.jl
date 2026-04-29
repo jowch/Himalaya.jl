@@ -54,6 +54,28 @@ using SQLite
     @test stored_groups[1].active == 1
 end
 
+using HimalayaUI: find_tiff_for_dat
+
+@testset "find_tiff_for_dat" begin
+    dir = mktempdir()
+    # .tiff match
+    dat_path  = joinpath(dir, "sample_pos1.dat")
+    tiff_path = joinpath(dir, "sample_pos1.tiff")
+    touch(dat_path); touch(tiff_path)
+    @test find_tiff_for_dat(dat_path) == tiff_path
+
+    # .tif fallback
+    dat2  = joinpath(dir, "sample_pos2.dat")
+    tif2  = joinpath(dir, "sample_pos2.tif")
+    touch(dat2); touch(tif2)
+    @test find_tiff_for_dat(dat2) == tif2
+
+    # no match → nothing
+    dat3 = joinpath(dir, "sample_pos3.dat")
+    touch(dat3)
+    @test find_tiff_for_dat(dat3) === nothing
+end
+
 using HimalayaUI: init_experiment!, analyze_exposure!, open_db, get_experiment
 
 @testset "init_experiment!" begin

@@ -28,6 +28,7 @@ packages/
       cli.jl                 # himalaya init/analyze/show/serve
       json.jl                # row → Dict serialization
       actions.jl             # X-Username extraction + user_actions logger
+      image.jl               # TIFF load + log-normalize + PNG encode for /image route
       routes_*.jl            # one per REST resource (users, experiments,
                              #   samples, exposures, peaks, analysis, trace, export)
       server.jl              # Oxygen.jl app + serve(db) + test harness
@@ -46,8 +47,11 @@ packages/
                              #   ChatCard, PlotCard, TraceViewer,
                              #   IndicesCard, PhasePanel, StaleIndicesBanner,
                              #   MillerPlot, Pn3mIcon, ui/…
+                             # Inspect: DetectorImage, DetectorImageCard,
+                             #   ThumbnailGallery, SampleMetadataCard
         hooks/               # useFocusTrap
-        pages/               # IndexPage (three-card workspace), ComparePage
+        pages/               # IndexPage (three-card workspace),
+                             #   InspectPage (curate exposures), ComparePage
       test/                  # Vitest + React Testing Library
       e2e/                   # Playwright (mocks /api via page.route)
       dist/                  # Vite build output; served by Oxygen.jl in prod
@@ -78,6 +82,10 @@ npm test              # Vitest unit tests (one-shot)
 npm run test:watch    # Vitest watch mode
 npm run e2e           # Playwright E2E (auto-starts Vite via playwright.config.ts)
 npm run build         # tsc --noEmit + vite build (must pass before PR)
+
+# Single frontend test file / single E2E test by name
+node_modules/.bin/vitest run test/DetectorImage.test.tsx
+node_modules/.bin/playwright test --grep "Reject → Other"
 
 # One test file in isolation (core)
 julia --project=. -e 'using Himalaya, Test; include("test/foo.jl")'
@@ -130,6 +138,10 @@ julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
 
 **Phase-type serialization:** `string(Himalaya.Pn3m)` returns the fully-qualified `"Himalaya.Pn3m"`. When storing phase names in SQLite, use `string(nameof(P))` → `"Pn3m"`. The inverse is `getfield(Himalaya, Symbol(name))` (always validate with `P isa Type && P <: Himalaya.Phase` before calling `phaseratios`).
 
+**Detector TIFFs are Q0f31 fixed-point.** TiffImages loads as `Gray{Q0f31}` (= `Fixed{Int32, 31}`). `Float32.(channelview(raw))` divides raw photon counts by 2³¹ (~2.1e9), making `log1p` numerically a no-op (~4.7e-10 per count). To recover photon counts, use `reinterpret.(Int32, channelview(raw))`. Then `max(., 0)` clips beamstop/dead-pixel negatives, `log1p` compresses, and a p99-of-positives clip prevents the direct beam from crushing diffraction-ring contrast. See `image.jl::load_and_lognormalize`.
+
+**Image route uses `Cache-Control: no-store`** (`routes_exposures.jl`). Combined with `cache: "no-store"` on the frontend `fetch()`, this stops the browser from serving stale PNGs across analysis re-runs. Don't change to a longer max-age without invalidation tied to exposure id + analysis version.
+
 **`Himalaya` core resolution in worktrees:** `packages/HimalayaUI/Manifest.toml` pins `Himalaya = "c5c84187..." path = "../.."` to the local v0.5.0. `Manifest.toml` is gitignored, so fresh worktrees re-resolve against the registry and pull the older published v0.4.5 (which has a different `findpeaks` signature). After `git worktree add`, copy `Manifest.toml` from main before running `Pkg.test`.
 
 ## HimalayaUI frontend gotchas
@@ -158,10 +170,16 @@ julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
 
 **Tailwind v4 theming:** the dark palette is defined once in `styles.css` via `@theme { --color-* ... }`. Component files use utility classes (`bg-bg`, `text-fg-muted`, `border-accent`). If you need a new color, add it to `@theme` first.
 
+**`ImageBitmap.close()` neuters width/height** to 0 per the Web spec. Capture dims **before** closing: `const { width, height } = bitmap; bitmap.close();`. There's a regression test in `test/DetectorImage.test.tsx` using getter-based mocks that simulates the neutering — keep it green if you touch `DetectorImage.tsx`.
+
+**`DetectorImage` auto-rotates to landscape** via a ResizeObserver on the wrapper div: when `containerAspect > imageAspect * 1.25`, rotate the canvas 90° and JS-set `maxWidth`/`maxHeight` to swap the layout box (CSS-only doesn't cut it because `transform: rotate` doesn't change a canvas's bounding box). Re-evaluates inside `renderImage` after each new image so swapping exposures with different aspects re-checks. JSDOM lacks `ResizeObserver` — the stub in `test/setup.ts` keeps unit tests honest.
+
+**TraceViewer auto-fit is floor-only.** `PlotCard::computeFit` sets `yDomain = [p05·0.7, fullTraceMax·1.2]` — bottom is the 5th percentile of *positive* in-window intensities (suppresses dead-pixel zeros), top is the *full* trace max (so peaks-vs-beam relative scale stays visible without resetting). When peaks exist, x is also tightened to `[firstPeak·0.7, lastPeak·1.3]`. Auto-fires on `activeExposureId` change. Double-click → `onReset` clears both axes.
+
 ## Current state
 
 - Core Himalaya: `v0.5.0` on `main` — v2 peak-finding (persistence + sharpness + kneedle).
-- HimalayaUI: **Plans 1–6 + three-card Index redesign complete.** Backend: transactional SQLite pipeline, FK enforcement, REST API (Oxygen.jl), CLI. Frontend: three-card workspace (chat | trace plot | index choices), trace viewer with peak editing, Miller plot, PhasePanel with curate + stale-indices reanalyze, OnboardingFlow + NavModal with focus trapping. Test coverage: 237 Julia · 118 Vitest · 8 Playwright E2E.
+- HimalayaUI: **Plans 1–6 + three-card Index redesign + Inspect page complete.** Backend: transactional SQLite pipeline, FK enforcement, REST API (Oxygen.jl), CLI, TIFF→PNG image route with Q0f31-aware lognormalize. Frontend: three-card Index workspace (chat | trace plot | index choices), Inspect page (detector image + thumbnail filmstrip + reject-reason chips + sample metadata), trace viewer with peak editing + auto-fit y-floor + log/linear x toggle, auto-rotating detector canvas, Miller plot, PhasePanel with curate + stale-indices reanalyze, OnboardingFlow + NavModal with focus trapping. Test coverage: 237 Julia · 135 Vitest · 14 Playwright E2E (5 inspect + 9 smoke).
 - Deferred for later: Phase panel Recent section, export UI, per-user audit view, beamline-config editor, derived-exposure construction. See [docs/future-feature-ideas.md](docs/future-feature-ideas.md).
 
 ## Further reading

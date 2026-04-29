@@ -57,7 +57,7 @@ export function UtilityCluster(): JSX.Element {
         onClick={switchUser}
         aria-label="Switch user"
         title={username ?? "Sign in"}
-        className="w-7 h-7 rounded-full font-sans text-[10.5px] font-semibold
+        className="w-7 h-7 rounded-full font-sans text-xs font-semibold
                    text-white grid place-items-center bg-gradient-to-br
                    from-[oklch(0.68_0.05_240)] to-[oklch(0.56_0.06_200)]
                    hover:brightness-110"
