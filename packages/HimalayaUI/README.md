@@ -31,6 +31,8 @@ A web application for semi-automatic indexing of SAXS diffraction patterns. Drop
 
 Runs locally on your workstation or on a lab server over SSH port-forward. No external services.
 
+`bin/himalaya` and the `Makefile` require bash and GNU Make — Linux and macOS only.
+
 ---
 
 ## One-time setup
@@ -42,19 +44,37 @@ From the repository root:
 julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.instantiate()'
 
 # 2. Build the frontend (produces packages/HimalayaUI/frontend/dist/)
-cd packages/HimalayaUI/frontend
-npm install
-npm run build
-cd -
+make frontend
 ```
 
 You only need step 2 once per clone (or whenever you pull new frontend changes).
 
-The `himalaya` commands below are shown in their fully-explicit form. If you run them often, create an alias:
+**Optional: build a sysimage for fast startup (~15× speedup, ~5 min one-time cost)**
 
 ```bash
-alias himalaya='julia --project=/path/to/Himalaya.jl/packages/HimalayaUI -e "using HimalayaUI; main(ARGS)" --'
-# Then: himalaya config new ..., himalaya init ..., etc.
+make sysimage          # → build/himalaya.so  (resolves build deps automatically)
+make check-sysimage    # verify it matches current Julia version
+```
+
+Rebuild the sysimage after upgrading Julia — `make check-sysimage` will tell you when it's stale.
+
+**`himalaya` command**
+
+The repo ships a wrapper at `bin/himalaya` that automatically uses the sysimage when present and falls back to plain Julia otherwise:
+
+```bash
+# Add to PATH (symlink onto a directory already in PATH)
+sudo ln -s /path/to/Himalaya.jl/bin/himalaya /usr/local/bin/himalaya
+
+# Or add the repo's bin/ to your PATH
+export PATH="/path/to/Himalaya.jl/bin:$PATH"
+```
+
+The examples below use `himalaya` assuming it is on your PATH. Substitute the explicit form if preferred:
+
+```bash
+julia --project=/path/to/Himalaya.jl/packages/HimalayaUI \
+      -e 'using HimalayaUI; main(ARGS)' -- <command> ...
 ```
 
 ---
@@ -86,8 +106,7 @@ The directory paths and filename patterns above are the **defaults** in `simple.
 Every experiment is described by an `experiment.toml`. Generate one from a built-in template:
 
 ```bash
-julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
-  config new --type simple --dir ~/beamtime/2026-04-exp42
+himalaya config new --type simple --dir ~/beamtime/2026-04-exp42
 # → Created ~/beamtime/2026-04-exp42/experiment.toml from template 'simple'
 ```
 
@@ -163,8 +182,7 @@ Lists the built-in templates available to `config new`.
 Reads `experiment.toml` and the manifest from `<experiment_path>`, then registers the experiment, samples, and exposures in the central DB. Discovers exposures by filesystem prefix scan against the integration pattern.
 
 ```bash
-julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
-  init ~/beamtime/2026-04-exp42
+himalaya init ~/beamtime/2026-04-exp42
 # → Imported 37 samples and 148 exposures from manifest.csv.
 # → Initialized experiment 'SSRL-2026-Apr/Exp42' (id=1) at /Users/me/beamtime/2026-04-exp42
 ```
@@ -174,8 +192,7 @@ julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
 Re-reads `experiment.toml` + manifest and updates the DB. **Preserves curation** — exposures with `accepted`/`rejected` status or manual peaks are never deleted or modified, only new ones get inserted. Wrapped in a SQLite transaction so partial failures roll back. Safe to run repeatedly.
 
 ```bash
-julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
-  reingest ~/beamtime/2026-04-exp42
+himalaya reingest ~/beamtime/2026-04-exp42
 # → Reingested experiment 1: +0 samples, +12 exposures.
 ```
 
@@ -184,12 +201,10 @@ julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
 Runs the full pipeline — peak-finding → indexing → auto-grouping → persistence — for every exposure (or only the matching sample). Idempotent: re-running replaces prior auto-picked peaks and auto groups, but preserves any manual peaks and the user's custom group.
 
 ```bash
-julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
-  analyze ~/beamtime/2026-04-exp42
+himalaya analyze ~/beamtime/2026-04-exp42
 
 # Or just one sample:
-julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
-  analyze ~/beamtime/2026-04-exp42 --sample D1
+himalaya analyze ~/beamtime/2026-04-exp42 --sample D1
 ```
 
 ### `himalaya show <experiment_path> --sample <label>`
@@ -201,8 +216,7 @@ Prints the stored analysis for one sample — exposures, peaks, candidate indice
 Starts the web server. Blocks until you Ctrl-C. The UI lives at `http://<host>:<port>/` and the JSON API at `/api/*`.
 
 ```bash
-julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
-  serve ~/beamtime/2026-04-exp42 --port 8080
+himalaya serve ~/beamtime/2026-04-exp42 --port 8080
 # → HimalayaUI serving DB at /Users/me/.himalaya/himalaya.db on http://127.0.0.1:8080
 ```
 
@@ -231,8 +245,7 @@ Deployment is configured through environment variables. See [`.env.example`](.en
 Julia doesn't auto-load `.env` files. Use `direnv`, source them in your shell, or pass them inline:
 
 ```bash
-HIMALAYA_DB_PATH=/opt/himalaya/himalaya.db \
-  julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- serve ~/exp
+HIMALAYA_DB_PATH=/opt/himalaya/himalaya.db himalaya serve ~/exp
 ```
 
 ---
