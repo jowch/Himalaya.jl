@@ -7,13 +7,17 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 CREATE TABLE IF NOT EXISTS experiments (
-    id             INTEGER PRIMARY KEY,
-    name           TEXT,
-    path           TEXT NOT NULL,
-    data_dir       TEXT NOT NULL,
-    analysis_dir   TEXT NOT NULL,
-    manifest_path  TEXT,
-    created_at     DATETIME DEFAULT CURRENT_TIMESTAMP
+    id              INTEGER PRIMARY KEY,
+    name            TEXT,
+    path            TEXT NOT NULL,
+    data_dir        TEXT NOT NULL,
+    analysis_dir    TEXT NOT NULL,
+    manifest_path   TEXT,
+    config          TEXT,
+    experiment_type TEXT,
+    energy_kev      REAL,
+    flight_path_m   REAL,
+    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS samples (
@@ -136,6 +140,10 @@ function migrate_schema!(db::SQLite.DB)
     stmts = [
         "ALTER TABLE exposures ADD COLUMN status TEXT CHECK (status IN ('accepted', 'rejected'))",
         "ALTER TABLE exposures ADD COLUMN image_path TEXT",
+        "ALTER TABLE experiments ADD COLUMN config TEXT",
+        "ALTER TABLE experiments ADD COLUMN experiment_type TEXT",
+        "ALTER TABLE experiments ADD COLUMN energy_kev REAL",
+        "ALTER TABLE experiments ADD COLUMN flight_path_m REAL",
     ]
     for stmt in stmts
         try
@@ -151,11 +159,18 @@ function create_experiment!(db::SQLite.DB;
         path::String,
         data_dir::String,
         analysis_dir::String,
-        manifest_path::Union{String,Nothing} = nothing)
+        manifest_path::Union{String,Nothing} = nothing,
+        config::Union{String,Nothing} = nothing,
+        experiment_type::Union{String,Nothing} = nothing,
+        energy_kev::Union{Float64,Nothing} = nothing,
+        flight_path_m::Union{Float64,Nothing} = nothing)
     result = DBInterface.execute(db,
-        "INSERT INTO experiments (name, path, data_dir, analysis_dir, manifest_path)
-         VALUES (?, ?, ?, ?, ?)",
-        [name, path, data_dir, analysis_dir, manifest_path])
+        """INSERT INTO experiments
+             (name, path, data_dir, analysis_dir, manifest_path,
+              config, experiment_type, energy_kev, flight_path_m)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        [name, path, data_dir, analysis_dir, manifest_path,
+         config, experiment_type, energy_kev, flight_path_m])
     Int(DBInterface.lastrowid(result))
 end
 
@@ -201,8 +216,33 @@ function get_exposures(db::SQLite.DB, sample_id::Int)
         "SELECT * FROM exposures WHERE sample_id = ? ORDER BY id", [sample_id]))
 end
 
-function open_db(experiment_path::String)::SQLite.DB
-    db_path = joinpath(experiment_path, "himalaya.db")
+"""
+    default_db_path() -> String
+
+Resolve the canonical Himalaya DB path. Reads `HIMALAYA_DB_PATH` from
+the environment when set; otherwise falls back to `~/.himalaya/himalaya.db`
+(creating the parent directory on first call).
+"""
+function default_db_path()::String
+    haskey(ENV, "HIMALAYA_DB_PATH") && return ENV["HIMALAYA_DB_PATH"]
+    dir = joinpath(homedir(), ".himalaya")
+    isdir(dir) || mkpath(dir)
+    joinpath(dir, "himalaya.db")
+end
+
+"""
+    open_db(db_path = default_db_path()) -> SQLite.DB
+
+Open the SQLite database at `db_path`, creating the file (and any missing
+parent directories) if necessary. Applies schema migrations and enables
+foreign-key enforcement on every connection.
+
+Pass an explicit path for tests or alternate deployments; omit the
+argument to use [`default_db_path`](@ref).
+"""
+function open_db(db_path::AbstractString = default_db_path())::SQLite.DB
+    parent = dirname(db_path)
+    !isempty(parent) && !isdir(parent) && mkpath(parent)
     db = SQLite.DB(db_path)
     create_schema!(db)
     migrate_schema!(db)

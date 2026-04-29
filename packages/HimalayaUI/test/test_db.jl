@@ -65,3 +65,59 @@ end
     @test length(exposures) == 1
     @test first(exposures).filename == "JC001"
 end
+
+@testset "experiments table has config columns" begin
+    db = SQLite.DB()
+    create_schema!(db)
+    cols = [r.name for r in Tables.rowtable(DBInterface.execute(db,
+        "PRAGMA table_info(experiments)"))]
+    @test "config"          in cols
+    @test "experiment_type" in cols
+    @test "energy_kev"      in cols
+    @test "flight_path_m"   in cols
+end
+
+@testset "create_experiment! stores config columns" begin
+    db = SQLite.DB()
+    create_schema!(db)
+    exp_id = create_experiment!(db;
+        name = "ConfigTest",
+        path = "/tmp/x",
+        data_dir = "/tmp/x/data",
+        analysis_dir = "/tmp/x/analysis",
+        config = "[experiment]\nname=\"X\"\n",
+        experiment_type = "simple",
+        energy_kev = 12.0,
+        flight_path_m = 2.5)
+
+    row = Tables.rowtable(DBInterface.execute(db,
+        "SELECT config, experiment_type, energy_kev, flight_path_m FROM experiments WHERE id=?",
+        [exp_id]))[1]
+
+    @test contains(row.config, "[experiment]")
+    @test row.experiment_type == "simple"
+    @test row.energy_kev == 12.0
+    @test row.flight_path_m == 2.5
+end
+
+@testset "migrate_schema! adds config columns to legacy DB" begin
+    db = SQLite.DB()
+    # Simulate legacy schema without new columns
+    DBInterface.execute(db, """
+        CREATE TABLE experiments (
+            id INTEGER PRIMARY KEY,
+            name TEXT,
+            path TEXT NOT NULL,
+            data_dir TEXT NOT NULL,
+            analysis_dir TEXT NOT NULL,
+            manifest_path TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )""")
+    migrate_schema!(db)
+    cols = [r.name for r in Tables.rowtable(DBInterface.execute(db,
+        "PRAGMA table_info(experiments)"))]
+    @test "config" in cols
+    @test "experiment_type" in cols
+    @test "energy_kev" in cols
+    @test "flight_path_m" in cols
+end

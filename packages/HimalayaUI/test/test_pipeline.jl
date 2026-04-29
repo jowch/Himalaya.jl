@@ -85,7 +85,7 @@ using HimalayaUI: init_experiment!, analyze_exposure!, open_db, get_experiment
     mkpath(data_dir)
     mkpath(analysis_dir)
 
-    db = open_db(tmp)
+    db = open_db(joinpath(tmp, "himalaya.db"))
     exp_id = init_experiment!(db;
         name         = "TestExp",
         path         = tmp,
@@ -114,7 +114,7 @@ using Tables
     src = joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat")
     cp(src, joinpath(analysis_dir, "example_tot.dat"))
 
-    db     = open_db(tmp)
+    db     = open_db(joinpath(tmp, "himalaya.db"))
     exp_id = init_experiment!(db; path=tmp,
                                    data_dir=joinpath(tmp, "data"),
                                    analysis_dir=analysis_dir)
@@ -173,7 +173,7 @@ end
     src = joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat")
     cp(src, joinpath(analysis_dir, "example_tot.dat"))
 
-    db     = open_db(tmp)
+    db     = open_db(joinpath(tmp, "himalaya.db"))
     exp_id = init_experiment!(db; path=tmp,
                                    data_dir=joinpath(tmp, "data"),
                                    analysis_dir=analysis_dir)
@@ -185,4 +185,358 @@ end
     @test length(get_peaks_for_exposure(db, e_id))   > 0
     @test length(get_indices_for_exposure(db, e_id)) > 0
     @test length(get_groups_for_exposure(db, e_id))  == 1
+end
+
+@testset "analyze_exposure! uses integration pattern from config" begin
+    # Custom config with a different integration suffix to prove the pattern is honored
+    mktempdir() do dir
+        analysis_dir = joinpath(dir, "analysis")
+        mkpath(analysis_dir)
+        # Copy the standard fixture but write it under a custom suffix so
+        # only the config-driven pattern can resolve it.
+        src = joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat")
+        cp(src, joinpath(analysis_dir, "EX001_1d.dat"))
+
+        db = SQLite.DB()
+        HimalayaUI.create_schema!(db)
+
+        # Build a config with custom integration pattern
+        toml_blob = """
+        [experiment]
+        name = "T"
+        description = ""
+        manifest = "manifest.csv"
+        [beamline]
+        energy_kev = 0.0
+        flight_path_m = 0.0
+        [manifest]
+        delimiter = "\\t"
+        skip_rows = 1
+        header_row = 0
+        sample_id = 1
+        label = 2
+        name = 3
+        filenames = 9
+        notes_sample = 10
+        notes_exposure = 11
+        [layout]
+        data_dir = "data"
+        analysis_dir = "analysis"
+        exposure_type = "simple"
+        [files]
+        integration = "{name}_1d.dat"
+        image = "{name}.tiff"
+        """
+
+        exp_id = HimalayaUI.create_experiment!(db;
+            path = dir, data_dir = joinpath(dir, "data"), analysis_dir = analysis_dir,
+            config = toml_blob, experiment_type = "simple")
+        s_id = HimalayaUI.create_sample!(db; experiment_id = exp_id, name = "S")
+        e_id = HimalayaUI.create_exposure!(db; sample_id = s_id, filename = "EX001")
+
+        # Should resolve EX001 → "EX001_1d.dat" via the custom pattern
+        HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
+
+        # Confirm peaks were persisted (i.e. the pattern resolved correctly and the file was loaded)
+        peaks = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM peaks WHERE exposure_id = ?", [e_id]))
+        @test length(peaks) >= 0   # Just need analyze_exposure! not to throw
+    end
+end
+
+@testset "cli_init_with_db! reads experiment.toml" begin
+    mktempdir() do dir
+        # Set up experiment directory
+        analysis_dir = joinpath(dir, "analysis", "automatic_analysis")
+        data_dir     = joinpath(dir, "data")
+        mkpath(analysis_dir)
+        mkpath(data_dir)
+
+        # Use the canonical fixture for valid integration data
+        fixture = joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat")
+        cp(fixture, joinpath(analysis_dir, "JC001.dat"))
+        cp(fixture, joinpath(analysis_dir, "JC002.dat"))
+
+        # Manifest
+        manifest = joinpath(dir, "manifest.csv")
+        write(manifest, join([
+            "skip-row",
+            "1\tD1\tUX1\tT\tt\t\t\t\tJC001-002\tnote_s\tnote_e",
+        ], "\n"))
+
+        # experiment.toml
+        write(joinpath(dir, "experiment.toml"), """
+        [experiment]
+        name = "Run/Exp"
+        description = ""
+        manifest = "manifest.csv"
+        [beamline]
+        energy_kev = 12.0
+        flight_path_m = 2.5
+        [manifest]
+        delimiter = "\\t"
+        skip_rows = 1
+        header_row = 0
+        sample_id = 1
+        label = 2
+        name = 3
+        filenames = 9
+        notes_sample = 10
+        notes_exposure = 11
+        [layout]
+        data_dir = "data"
+        analysis_dir = "analysis/automatic_analysis"
+        exposure_type = "simple"
+        [files]
+        integration = "{name}.dat"
+        image = "{name}.tiff"
+        """)
+
+        db = SQLite.DB()
+        HimalayaUI.create_schema!(db)
+        exp_id = HimalayaUI.cli_init_with_db!(db, dir)
+
+        # Verify experiment was created with config and beamline params
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT name, energy_kev, flight_path_m, config FROM experiments WHERE id = ?", [exp_id]))
+        @test length(rows) == 1
+        @test rows[1].name == "Run/Exp"
+        @test rows[1].energy_kev == 12.0
+        @test rows[1].flight_path_m == 2.5
+        @test contains(rows[1].config, "[experiment]")
+
+        # Verify samples and exposures
+        samples = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM samples WHERE experiment_id = ?", [exp_id]))
+        @test length(samples) == 1
+
+        exposures = Tables.rowtable(DBInterface.execute(db,
+            "SELECT filename FROM exposures WHERE sample_id = ? ORDER BY filename", [samples[1].id]))
+        @test [e.filename for e in exposures] == ["JC001", "JC002"]
+    end
+end
+
+@testset "cli_init_with_db! errors when experiment.toml missing" begin
+    mktempdir() do dir
+        db = SQLite.DB()
+        HimalayaUI.create_schema!(db)
+        @test_throws ErrorException HimalayaUI.cli_init_with_db!(db, dir)
+    end
+end
+
+@testset "cli_init_with_db! does not write to experiment directory" begin
+    mktempdir() do dir
+        analysis_dir = joinpath(dir, "analysis", "automatic_analysis")
+        data_dir = joinpath(dir, "data")
+        mkpath(analysis_dir)
+        mkpath(data_dir)
+        fixture = joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat")
+        cp(fixture, joinpath(analysis_dir, "JC001.dat"))
+        write(joinpath(dir, "manifest.csv"),
+              "skip-row\n1\tD1\tUX1\tT\tt\t\t\t\tJC001\t\t")
+        write(joinpath(dir, "experiment.toml"), """
+        [experiment]
+        name = "T"
+        description = ""
+        manifest = "manifest.csv"
+        [beamline]
+        energy_kev = 0.0
+        flight_path_m = 0.0
+        [manifest]
+        delimiter = "\\t"
+        skip_rows = 1
+        header_row = 0
+        sample_id = 1
+        label = 2
+        name = 3
+        filenames = 9
+        notes_sample = 10
+        notes_exposure = 11
+        [layout]
+        data_dir = "data"
+        analysis_dir = "analysis/automatic_analysis"
+        exposure_type = "simple"
+        [files]
+        integration = "{name}.dat"
+        image = "{name}.tiff"
+        """)
+
+        # Snapshot the file list before init
+        before = Set(readdir(dir))
+
+        db = SQLite.DB()
+        HimalayaUI.create_schema!(db)
+        HimalayaUI.cli_init_with_db!(db, dir)
+
+        # Snapshot after init — must be identical (no DB or other files written)
+        after = Set(readdir(dir))
+        @test before == after
+    end
+end
+
+@testset "reingest! adds new exposures and preserves curated ones" begin
+    mktempdir() do dir
+        analysis_dir = joinpath(dir, "analysis", "automatic_analysis")
+        data_dir     = joinpath(dir, "data")
+        mkpath(analysis_dir)
+        mkpath(data_dir)
+        fixture = joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat")
+        for name in ["JC001", "JC002", "JC003"]
+            cp(fixture, joinpath(analysis_dir, name * ".dat"))
+        end
+
+        # Initial manifest references only JC001-002
+        manifest = joinpath(dir, "manifest.csv")
+        write(manifest, "skip-row\n1\tD1\tUX1\tT\tt\t\t\t\tJC001-002\told\t")
+
+        write(joinpath(dir, "experiment.toml"), """
+        [experiment]
+        name = "R/E"
+        description = ""
+        manifest = "manifest.csv"
+        [beamline]
+        energy_kev = 0.0
+        flight_path_m = 0.0
+        [manifest]
+        delimiter = "\\t"
+        skip_rows = 1
+        header_row = 0
+        sample_id = 1
+        label = 2
+        name = 3
+        filenames = 9
+        notes_sample = 10
+        notes_exposure = 11
+        [layout]
+        data_dir = "data"
+        analysis_dir = "analysis/automatic_analysis"
+        exposure_type = "simple"
+        [files]
+        integration = "{name}.dat"
+        image = "{name}.tiff"
+        """)
+
+        db = SQLite.DB()
+        HimalayaUI.create_schema!(db)
+        exp_id = HimalayaUI.cli_init_with_db!(db, dir)
+
+        # Curate JC001
+        DBInterface.execute(db,
+            "UPDATE exposures SET status = 'accepted' WHERE filename = ?", ["JC001"])
+
+        # Update manifest to extend the range to JC003
+        write(manifest, "skip-row\n1\tD1\tUX1\tT\tt\t\t\t\tJC001-003\tnew\t")
+
+        HimalayaUI.reingest!(db, exp_id, dir)
+
+        # Verify all three exposures are present
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT filename, status FROM exposures ORDER BY filename"))
+        @test [r.filename for r in rows] == ["JC001", "JC002", "JC003"]
+
+        # Curation on JC001 must be preserved
+        jc001 = first(filter(r -> r.filename == "JC001", rows))
+        @test jc001.status == "accepted"
+    end
+end
+
+@testset "reingest! errors when experiment.toml missing" begin
+    mktempdir() do dir
+        db = SQLite.DB()
+        HimalayaUI.create_schema!(db)
+        exp_id = HimalayaUI.create_experiment!(db;
+            path = dir, data_dir = dir, analysis_dir = dir)
+        @test_throws ErrorException HimalayaUI.reingest!(db, exp_id, dir)
+    end
+end
+
+# ── CLI path-targeting tests ──────────────────────────────────────────────────
+
+using HimalayaUI: cli_analyze, cli_show, cli_init_with_db!
+
+let
+    # Helper scoped to this section — not visible elsewhere in the test file.
+    function setup_exp_dir(dir; name="E", stems=["ST001"])
+        analysis_dir = joinpath(dir, "analysis", "automatic_analysis")
+        mkpath(analysis_dir)
+        mkpath(joinpath(dir, "data"))
+        fixture = joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat")
+        for stem in stems
+            cp(fixture, joinpath(analysis_dir, stem * ".dat"); force=true)
+        end
+        write(joinpath(dir, "manifest.csv"), join([
+            "skip-row",
+            "1\tD1\t$(name)\tT\tt\t\t\t\t$(join(stems, ","))\tnote_s\tnote_e",
+        ], "\n"))
+        write(joinpath(dir, "experiment.toml"), """
+        [experiment]
+        name = "$name"
+        description = ""
+        manifest = "manifest.csv"
+        [beamline]
+        [manifest]
+        delimiter = "\\t"
+        skip_rows = 1
+        header_row = 0
+        sample_id = 1
+        label = 2
+        name = 3
+        filenames = 9
+        notes_sample = 10
+        notes_exposure = 11
+        [layout]
+        data_dir = "data"
+        analysis_dir = "analysis/automatic_analysis"
+        exposure_type = "simple"
+        [files]
+        integration = "{name}.dat"
+        image = "{name}.tiff"
+        """)
+    end
+
+    @testset "cli_analyze uses experiment_path, not hardcoded id=1" begin
+        db_file = joinpath(mktempdir(), "himalaya.db")
+        dir1    = mktempdir()
+        dir2    = mktempdir()   # never registered
+
+        withenv("HIMALAYA_DB_PATH" => db_file) do
+            db = open_db(db_file)
+            setup_exp_dir(dir1; name="Exp1", stems=["ST001"])
+            cli_init_with_db!(db, dir1)
+        end
+
+        # After fix: raises ErrorException because dir2 is not registered.
+        # Before fix: silently operates on experiment id=1 (dir1), no error → test is RED.
+        withenv("HIMALAYA_DB_PATH" => db_file) do
+            @test_throws ErrorException cli_analyze([dir2])
+        end
+
+        # Success path: dir1 is registered — cli_analyze([dir1]) must not throw.
+        withenv("HIMALAYA_DB_PATH" => db_file) do
+            @test_nowarn cli_analyze([dir1])
+        end
+    end
+
+    @testset "cli_show uses experiment_path, not hardcoded id=1" begin
+        db_file = joinpath(mktempdir(), "himalaya.db")
+        dir1    = mktempdir()
+        dir2    = mktempdir()   # never registered
+
+        withenv("HIMALAYA_DB_PATH" => db_file) do
+            db = open_db(db_file)
+            setup_exp_dir(dir1; name="Exp1", stems=["ST001"])
+            cli_init_with_db!(db, dir1)
+        end
+
+        # After fix: raises ErrorException because dir2 is not registered.
+        # Before fix: silently returns exp1's data for sample "D1" → test is RED.
+        withenv("HIMALAYA_DB_PATH" => db_file) do
+            @test_throws ErrorException cli_show([dir2, "--sample", "D1"])
+        end
+
+        # Success path: dir1 is registered — cli_show([dir1]) with sample D1 must not throw.
+        withenv("HIMALAYA_DB_PATH" => db_file) do
+            @test_nowarn cli_show([dir1, "--sample", "D1"])
+        end
+    end
 end

@@ -24,9 +24,13 @@ function register_experiments_routes!()
         db   = current_db()
         body = json(req)
 
+        # Only metadata is editable here. Path fields (data_dir, analysis_dir,
+        # manifest_path) are derived from `experiments.config` — changing the row
+        # without updating the config blob would desync the two. Path changes
+        # must go through POST /:id/reingest, which rewrites both in lockstep.
         fields = Symbol[]
         vals   = Any[]
-        for k in (:name, :data_dir, :analysis_dir, :manifest_path)
+        for k in (:name,)
             if haskey(body, k)
                 push!(fields, k)
                 push!(vals, body[k])
@@ -80,5 +84,30 @@ function register_experiments_routes!()
 
         HTTP.Response(200, ["Content-Type" => "application/json"],
             JSON3.write(Dict(:analyzed => analyzed, :skipped => skipped)))
+    end
+
+    @post "/api/experiments/{id}/reingest" function(req::HTTP.Request, id::Int)
+        db   = current_db()
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT path FROM experiments WHERE id = ?", [id]))
+        isempty(rows) && return HTTP.Response(404,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:error => "experiment not found")))
+        exp_path = String(rows[1].path)
+        try
+            res = reingest!(db, id, exp_path)
+            log_action!(db, req; action = "reingest",
+                entity_type = "experiment", entity_id = id)
+            return HTTP.Response(200,
+                ["Content-Type" => "application/json"],
+                JSON3.write(Dict(:status          => String(res.status),
+                                 :added_samples   => res.added_samples,
+                                 :added_exposures => res.added_exposures,
+                                 :manifest_path   => res.manifest_path)))
+        catch e
+            return HTTP.Response(500,
+                ["Content-Type" => "application/json"],
+                JSON3.write(Dict(:error => sprint(showerror, e))))
+        end
     end
 end

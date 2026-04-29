@@ -23,30 +23,84 @@ function expand_filename_range(s::AbstractString)::Vector{String}
 end
 
 """
-    parse_manifest(io_or_path) -> Vector{ManifestSample}
+    parse_manifest(cfg::ExperimentConfig, source) -> Vector{ManifestSample}
 
-Parse a tab-separated manifest CSV exported from Google Sheets.
-Skips section header rows (rows where the first column is non-numeric or empty).
+Parse a manifest CSV/TSV using `cfg` to drive delimiter, skip_rows, header
+discovery, and column resolution. `source` may be an IO or a file path.
+
+For each `[manifest]` column field, if the config value is a `String` and a
+header row is present (`header_row > 0`), the column index is looked up by
+that header name; otherwise the value is treated as a 1-based positional index.
+
+Rows whose sample_id column does not parse as `Int` are silently skipped
+(handles lab-notebook section headers).
 """
-function parse_manifest(source)::Vector{ManifestSample}
+function parse_manifest(cfg::ExperimentConfig, source)::Vector{ManifestSample}
     lines = readlines(source)
+    isempty(lines) && return ManifestSample[]
+
+    cfg.skip_rows >= length(lines) && return ManifestSample[]
+    body = lines[cfg.skip_rows+1:end]
+
+    header_map = Dict{String,Int}()
+    data_start = 1
+    if cfg.header_row > 0
+        hdr_idx = cfg.header_row - cfg.skip_rows
+        if 1 <= hdr_idx <= length(body)
+            for (i, c) in enumerate(split(body[hdr_idx], cfg.delimiter))
+                header_map[strip(String(c))] = i
+            end
+            data_start = hdr_idx + 1
+        end
+    end
+
+    function resolve_col(col::Union{Int,String})::Int
+        if col isa AbstractString
+            idx = get(header_map, col, 0)
+            idx == 0 && @warn "Manifest column '$col' not found in header — field will be empty"
+            return idx
+        end
+        return col
+    end
+
+    idx_id        = resolve_col(cfg.col_sample_id)
+    idx_label     = resolve_col(cfg.col_label)
+    idx_name      = resolve_col(cfg.col_name)
+    idx_filenames = resolve_col(cfg.col_filenames)
+    idx_notes_s   = resolve_col(cfg.col_notes_sample)
+    idx_notes_e   = resolve_col(cfg.col_notes_exposure)
+
+    function safe_get(cols, idx::Int)::String
+        idx == 0 && return ""
+        idx <= length(cols) ? String(strip(cols[idx])) : ""
+    end
+
     samples = ManifestSample[]
-    for line in lines[2:end]
-        cols = split(line, '\t')
-        length(cols) < 9 && continue
-        num_str = strip(cols[1])
-        tryparse(Int, num_str) === nothing && continue
+    for line in body[data_start:end]
+        cols = split(line, cfg.delimiter)
+        id_str = safe_get(cols, idx_id)
+        tryparse(Int, id_str) === nothing && continue
 
-        label          = String(strip(get(cols, 2,  "")))
-        name           = String(strip(get(cols, 3,  "")))
-        notes_sample   = String(strip(get(cols, 10, "")))
-        notes_exposure = String(strip(get(cols, 11, "")))
-        filename_str   = String(strip(get(cols, 9,  "")))
+        filenames_str = safe_get(cols, idx_filenames)
+        isempty(filenames_str) && continue
 
-        isempty(filename_str) && continue
-        filenames = expand_filename_range(filename_str)
-
-        push!(samples, ManifestSample(label, name, notes_sample, notes_exposure, filenames))
+        push!(samples, ManifestSample(
+            safe_get(cols, idx_label),
+            safe_get(cols, idx_name),
+            safe_get(cols, idx_notes_s),
+            safe_get(cols, idx_notes_e),
+            expand_filename_range(filenames_str),
+        ))
     end
     samples
 end
+
+"""
+    parse_manifest(source) -> Vector{ManifestSample}
+
+Backward-compatible wrapper: parses using the built-in `simple` config (current
+hardcoded behavior — tab-separated, columns 1/2/3/9/10/11, skip 1 row, no header).
+For new code, prefer `parse_manifest(cfg::ExperimentConfig, source)`.
+"""
+parse_manifest(source)::Vector{ManifestSample} =
+    parse_manifest(load_builtin_config("simple"), source)
