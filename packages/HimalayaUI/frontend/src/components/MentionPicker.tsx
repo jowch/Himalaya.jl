@@ -155,6 +155,7 @@ export function MentionPicker({ query, onSelect, onDismiss }: MentionPickerProps
           >
             {rows.map((row, i) => {
               const color = row.kind === "index" ? phaseColor(row.item.phase) : undefined;
+              const meta  = rowMeta(row);
               return (
                 <div
                   key={`${row.kind}:${row.item.id}`}
@@ -168,8 +169,8 @@ export function MentionPicker({ query, onSelect, onDismiss }: MentionPickerProps
                   <span style={color ? { color } : undefined}>
                     {rowLabel(row)}
                   </span>
-                  {rowMeta(row) && (
-                    <span className="text-xs text-fg-dim ml-2">{rowMeta(row)}</span>
+                  {meta && (
+                    <span className="text-xs text-fg-dim ml-2">{meta}</span>
                   )}
                 </div>
               );

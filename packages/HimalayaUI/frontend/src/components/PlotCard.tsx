@@ -22,6 +22,7 @@ export function PlotCard(): JSX.Element {
   const activeSampleId     = useAppState((s) => s.activeSampleId);
   const activeExposureId   = useAppState((s) => s.activeExposureId);
   const hoveredIndexId     = useAppState((s) => s.hoveredIndexId);
+  const hoveredPeakId      = useAppState((s) => s.hoveredPeakId);
   const setActiveExposure  = useAppState((s) => s.setActiveExposure);
   const openNavModal       = useAppState((s) => s.openNavModal);
 
@@ -197,6 +198,7 @@ export function PlotCard(): JSX.Element {
         peaks={peaksQ.data}
         activeGroupIndices={activeGroupIndices}
         hoveredIndex={hoveredIndex}
+        hoveredPeakId={hoveredPeakId}
         onAddPeak={(q) => addPeak.mutate(q)}
         onRemovePeak={(peakId) => removePeak.mutate(peakId)}
         onTogglePeakExclusion={(peakId, excluded) =>

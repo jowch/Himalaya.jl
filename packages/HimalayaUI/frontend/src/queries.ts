@@ -12,10 +12,13 @@ export const queryKeys = {
   indices:    (exposureId: number) => ["exposure", exposureId, "indices"] as const,
   groups:     (exposureId: number) => ["exposure", exposureId, "groups"] as const,
   messages:   (sampleId: number) => ["sample", sampleId, "messages"] as const,
-  peak:     (id: number) => ["peak", id] as const,
-  index:    (id: number) => ["index", id] as const,
-  exposure: (id: number) => ["exposure", id] as const,
-  sample:   (id: number) => ["sample", id] as const,
+  // Single-entity keys are namespaced with `-entity` to avoid prefix-matching
+  // collisions with the existing collection keys (e.g., a future
+  // invalidate(["exposure", id]) would otherwise also blast peaks/indices/groups).
+  peak:     (id: number) => ["peak-entity", id] as const,
+  index:    (id: number) => ["index-entity", id] as const,
+  exposure: (id: number) => ["exposure-entity", id] as const,
+  sample:   (id: number) => ["sample-entity", id] as const,
 };
 
 export function useExperiments() {
@@ -284,7 +287,7 @@ export function useRemoveExposureTag(sampleId: number, exposureId: number) {
 
 export function usePeak(id: number | undefined) {
   return useQuery({
-    queryKey: id !== undefined ? queryKeys.peak(id) : (["peak", "none"] as const),
+    queryKey: id !== undefined ? queryKeys.peak(id) : (["peak-entity", "none"] as const),
     queryFn: () => api.getPeak(id as number),
     enabled: id !== undefined,
     retry: false,
@@ -293,7 +296,7 @@ export function usePeak(id: number | undefined) {
 
 export function useIndex(id: number | undefined) {
   return useQuery({
-    queryKey: id !== undefined ? queryKeys.index(id) : (["index", "none"] as const),
+    queryKey: id !== undefined ? queryKeys.index(id) : (["index-entity", "none"] as const),
     queryFn: () => api.getIndex(id as number),
     enabled: id !== undefined,
     retry: false,
@@ -302,7 +305,7 @@ export function useIndex(id: number | undefined) {
 
 export function useExposure(id: number | undefined) {
   return useQuery({
-    queryKey: id !== undefined ? queryKeys.exposure(id) : (["exposure", "none"] as const),
+    queryKey: id !== undefined ? queryKeys.exposure(id) : (["exposure-entity", "none"] as const),
     queryFn: () => api.getExposure(id as number),
     enabled: id !== undefined,
     retry: false,
@@ -311,7 +314,7 @@ export function useExposure(id: number | undefined) {
 
 export function useSampleById(id: number | undefined) {
   return useQuery({
-    queryKey: id !== undefined ? queryKeys.sample(id) : (["sample", "none"] as const),
+    queryKey: id !== undefined ? queryKeys.sample(id) : (["sample-entity", "none"] as const),
     queryFn: () => api.getSample(id as number),
     enabled: id !== undefined,
     retry: false,
