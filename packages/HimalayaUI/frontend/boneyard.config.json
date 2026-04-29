@@ -3,6 +3,6 @@
   "out": "./src/bones",
   "animate": "pulse",
   "boneClass": "bone",
-  "color": "rgba(42, 44, 52, 1)",
-  "darkColor": "rgba(50, 52, 62, 1)"
+  "color": "rgba(30, 31, 38, 1)",
+  "darkColor": "rgba(42, 44, 52, 1)"
 }
