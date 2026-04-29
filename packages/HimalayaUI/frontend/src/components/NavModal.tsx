@@ -254,6 +254,7 @@ export function NavModal(): JSX.Element | null {
 
         <Skeleton
           name={step === "experiment" ? "nav-experiments" : "nav-samples"}
+          className="flex-1 min-h-0 flex flex-col"
           loading={step === "experiment" ? experimentsQ.isLoading : samplesQ.isLoading}
           stagger={50}
           transition={200}

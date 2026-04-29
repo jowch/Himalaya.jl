@@ -173,6 +173,7 @@ export function InspectPage(): JSX.Element {
             <div className="flex-1 min-h-0">
               <Skeleton
                 name="detector-image-card"
+                className="h-full w-full"
                 loading={exposuresQ.isLoading}
                 stagger={50}
                 transition={200}
@@ -207,6 +208,7 @@ export function InspectPage(): JSX.Element {
         right={
           <Skeleton
             name="sample-metadata-card"
+            className="h-full w-full"
             loading={samplesQ.isLoading}
             stagger={50}
             transition={200}

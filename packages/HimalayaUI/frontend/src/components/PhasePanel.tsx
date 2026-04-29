@@ -224,6 +224,7 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
       {/* ── Scrollable list ── */}
       <Skeleton
         name="phase-panel"
+        className="flex-1 min-h-0 flex flex-col"
         loading={indicesQ.isLoading || groupsQ.isLoading}
         stagger={50}
         transition={200}

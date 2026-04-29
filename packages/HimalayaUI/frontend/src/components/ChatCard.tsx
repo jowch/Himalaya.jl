@@ -92,6 +92,7 @@ function MessageList({ messages, isPending }: MessageListProps): JSX.Element {
   return (
     <Skeleton
       name="chat-card"
+      className="flex-1 min-h-0 flex flex-col"
       loading={isPending}
       stagger={50}
       transition={200}

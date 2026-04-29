@@ -261,6 +261,7 @@ export function PlotCard(): JSX.Element {
       <div className="relative flex-1 min-h-0">
         <Skeleton
           name="plot-card"
+          className="h-full w-full"
           loading={activeExposureId !== undefined && (traceQ.isLoading || peaksQ.isLoading)}
           stagger={50}
           transition={200}

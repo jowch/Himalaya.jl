@@ -208,3 +208,10 @@
 
 /* Boneyard skeleton: slow pulse keeps the loading state subtle */
 .bone { animation-duration: 1.8s; }
+
+/* Boneyard wraps children in two extra divs which would otherwise break flex/grid
+   chains (e.g. flex-1 on a grandchild of a flex container does nothing).
+   The inner content wrapper uses display: contents to be transparent to layout —
+   children of <Skeleton> behave as if they were direct children of its outer
+   wrapper. The outer wrapper still positions the bones overlay via position:relative. */
+[data-boneyard-content] { display: contents; }
