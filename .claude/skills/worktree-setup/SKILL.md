@@ -22,16 +22,26 @@ echo "Worktree root: $root"
 # 2. Install frontend dependencies
 (cd "$root/packages/HimalayaUI/frontend" && npm install)
 
-# 3. Copy packages/HimalayaUI/Manifest.toml from main
-git show main:packages/HimalayaUI/Manifest.toml > "$root/packages/HimalayaUI/Manifest.toml"
-echo "Copied packages/HimalayaUI/Manifest.toml from main"
+# 3+4. Copy Manifest.toml files from the main worktree filesystem.
+# Manifest.toml is gitignored (Julia convention) so `git show main:` won't work —
+# we locate the main worktree via `git worktree list` instead.
+main_root=$(git worktree list | awk '/\[main\]/{print $1}')
+echo "Main worktree: $main_root"
 
-# 4. Copy scripts/Manifest.toml from main (only if it exists there)
-if git show main:scripts/Manifest.toml > /dev/null 2>&1; then
-    git show main:scripts/Manifest.toml > "$root/scripts/Manifest.toml"
-    echo "Copied scripts/Manifest.toml from main"
+src="$main_root/packages/HimalayaUI/Manifest.toml"
+if [ -f "$src" ]; then
+    cp "$src" "$root/packages/HimalayaUI/Manifest.toml"
+    echo "Copied packages/HimalayaUI/Manifest.toml"
 else
-    echo "scripts/Manifest.toml not on main — run: julia --project=scripts -e 'using Pkg; Pkg.instantiate()' before make sysimage"
+    echo "WARNING: $src not found — run Pkg.instantiate() in packages/HimalayaUI manually"
+fi
+
+src="$main_root/scripts/Manifest.toml"
+if [ -f "$src" ]; then
+    cp "$src" "$root/scripts/Manifest.toml"
+    echo "Copied scripts/Manifest.toml"
+else
+    echo "scripts/Manifest.toml not in main worktree — run: julia --project=scripts -e 'using Pkg; Pkg.instantiate()' before make sysimage"
 fi
 
 # 5. Verify Julia loads HimalayaUI correctly
