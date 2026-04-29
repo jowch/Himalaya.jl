@@ -1,8 +1,45 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Skeleton } from "boneyard-js/react";
 import { useAppState } from "../state";
 import { useExperiments, useSamples } from "../queries";
 import type { Experiment, Sample } from "../api";
 import { useFocusTrap } from "../hooks/useFocusTrap";
+
+const NAV_FIXTURE_EXPERIMENTS: { id: number; primary: string; secondary: string }[] = [
+  { id: 1, primary: "Experiment A", secondary: "/data/lipids/expA" },
+  { id: 2, primary: "Experiment B", secondary: "/data/lipids/expB" },
+  { id: 3, primary: "Experiment C", secondary: "/data/lipids/expC" },
+  { id: 4, primary: "Experiment D", secondary: "/data/lipids/expD" },
+];
+
+const NAV_FIXTURE_SAMPLES: { id: number; primary: string; secondary: string }[] = [
+  { id: 1, primary: "DOPE 70%",        secondary: "JC001" },
+  { id: 2, primary: "DOPE 80%",        secondary: "JC002" },
+  { id: 3, primary: "DPPC 100%",       secondary: "JC003" },
+  { id: 4, primary: "DPPC/DOPE 50/50", secondary: "JC004" },
+];
+
+function navFixtureItems(items: { id: number; primary: string; secondary: string }[]): JSX.Element {
+  return (
+    <>
+      {items.map((item, idx) => (
+        <div
+          key={item.id}
+          className={
+            "w-full text-left px-3 py-2 flex flex-col gap-0.5 text-base " +
+            (idx === 0 ? "bg-bg-hover text-fg" : "text-fg")
+          }
+        >
+          <span className="font-medium">{item.primary}</span>
+          <span className="text-fg-muted text-sm font-sans">{item.secondary}</span>
+        </div>
+      ))}
+    </>
+  );
+}
+
+const NAV_EXPERIMENTS_FIXTURE = navFixtureItems(NAV_FIXTURE_EXPERIMENTS);
+const NAV_SAMPLES_FIXTURE     = navFixtureItems(NAV_FIXTURE_SAMPLES);
 
 /**
  * NavModal — cascading experiment → sample picker.
@@ -215,40 +252,48 @@ export function NavModal(): JSX.Element | null {
                            border border-border rounded">esc</span>
         </div>
 
-        <div className="flex-1 overflow-y-auto py-1" data-testid="nav-modal-results">
-          {activeList.length === 0 ? (
-            <div className="px-4 py-6 text-center text-fg-muted italic text-base">
-              {step === "experiment"
-                ? (experimentsQ.isPending ? "loading experiments…" : "no experiments")
-                : pendingExp === undefined
-                  ? "pick an experiment first"
-                  : (samplesQ.isPending ? "loading samples…" : "no samples")}
-            </div>
-          ) : (
-            activeList.map((item, idx) => (
-              <button
-                key={`${step}-${item.id}`}
-                type="button"
-                data-testid={`nav-item-${step}-${item.id}`}
-                data-selected={idx === selIdx || undefined}
-                onMouseEnter={() => setSelIdx(idx)}
-                onClick={() => {
-                  if (step === "experiment") commitExperiment(item.id);
-                  else                        commitSample(item.id);
-                }}
-                className={
-                  "w-full text-left px-3 py-2 flex flex-col gap-0.5 text-base " +
-                  (idx === selIdx ? "bg-bg-hover text-fg" : "text-fg hover:bg-bg-hover")
-                }
-              >
-                <span className="font-medium">{item.primary}</span>
-                {item.secondary && (
-                  <span className="text-fg-muted text-sm font-sans">{item.secondary}</span>
-                )}
-              </button>
-            ))
-          )}
-        </div>
+        <Skeleton
+          name={step === "experiment" ? "nav-experiments" : "nav-samples"}
+          loading={step === "experiment" ? experimentsQ.isLoading : samplesQ.isLoading}
+          stagger={50}
+          transition={200}
+          fixture={step === "experiment" ? NAV_EXPERIMENTS_FIXTURE : NAV_SAMPLES_FIXTURE}
+        >
+          <div className="flex-1 overflow-y-auto py-1" data-testid="nav-modal-results">
+            {activeList.length === 0 ? (
+              <div className="px-4 py-6 text-center text-fg-muted italic text-base">
+                {step === "experiment"
+                  ? "no experiments"
+                  : pendingExp === undefined
+                    ? "pick an experiment first"
+                    : "no samples"}
+              </div>
+            ) : (
+              activeList.map((item, idx) => (
+                <button
+                  key={`${step}-${item.id}`}
+                  type="button"
+                  data-testid={`nav-item-${step}-${item.id}`}
+                  data-selected={idx === selIdx || undefined}
+                  onMouseEnter={() => setSelIdx(idx)}
+                  onClick={() => {
+                    if (step === "experiment") commitExperiment(item.id);
+                    else                        commitSample(item.id);
+                  }}
+                  className={
+                    "w-full text-left px-3 py-2 flex flex-col gap-0.5 text-base " +
+                    (idx === selIdx ? "bg-bg-hover text-fg" : "text-fg hover:bg-bg-hover")
+                  }
+                >
+                  <span className="font-medium">{item.primary}</span>
+                  {item.secondary && (
+                    <span className="text-fg-muted text-sm font-sans">{item.secondary}</span>
+                  )}
+                </button>
+              ))
+            )}
+          </div>
+        </Skeleton>
 
         <div className="flex items-center gap-3 px-3 py-2 border-t border-border
                         text-xs text-fg-dim">
