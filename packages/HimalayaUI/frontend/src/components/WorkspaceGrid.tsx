@@ -47,10 +47,12 @@ export function WorkspaceGrid({
   slotClassName,
   className,
 }: Props): JSX.Element {
-  const orderOf = (slot: Slot): string => {
-    const idx = mobileOrder.indexOf(slot) + 1; // 1-based
-    return ORDER_CLASS[slot][idx] ?? "";
-  };
+  // Returns the 1-based stack-order position of this slot in the mobileOrder
+  // tuple. Used to pick the Tailwind order-N class AND mirrored to a
+  // `data-mobile-order` attribute so tests can assert on slot order without
+  // depending on Tailwind class strings (which evolve independently of intent).
+  const orderIdx = (slot: Slot): number => mobileOrder.indexOf(slot) + 1;
+  const orderOf = (slot: Slot): string => ORDER_CLASS[slot][orderIdx(slot)] ?? "";
 
   const baseSlot =
     "card overflow-hidden min-[1400px]:order-none min-[1400px]:min-h-0";
@@ -79,18 +81,21 @@ export function WorkspaceGrid({
     >
       <section
         data-slot="left"
+        data-mobile-order={orderIdx("left")}
         className={`${baseSlot} ${orderOf("left")} ${slotClassName?.left ?? ""}`}
       >
         {left}
       </section>
       <section
         data-slot="center"
+        data-mobile-order={orderIdx("center")}
         className={`${baseSlot} ${orderOf("center")} ${slotClassName?.center ?? ""}`}
       >
         {center}
       </section>
       <section
         data-slot="right"
+        data-mobile-order={orderIdx("right")}
         className={`${baseSlot} ${orderOf("right")} ${slotClassName?.right ?? ""}`}
       >
         {right}

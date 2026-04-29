@@ -34,10 +34,13 @@ test("dims rejected exposures", () => {
       onSelect={vi.fn()}
     />,
   );
+  // Assert on the data-rejected attribute the component intentionally
+  // exposes, not on the `opacity-40` Tailwind class — see CLAUDE.md and
+  // the matching E2E fix in commit 3eddbd9.
   const rejected = screen.getByTestId("thumb-cell-2");
-  expect(rejected).toHaveClass("opacity-40");
+  expect(rejected).toHaveAttribute("data-rejected", "true");
   const good = screen.getByTestId("thumb-cell-1");
-  expect(good).not.toHaveClass("opacity-40");
+  expect(good).not.toHaveAttribute("data-rejected");
 });
 
 test("shows indexing chip on selected=true exposure", () => {

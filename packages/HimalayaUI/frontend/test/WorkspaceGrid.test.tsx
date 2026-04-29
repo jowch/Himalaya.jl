@@ -23,6 +23,12 @@ test("renders the three slots in their slots", () => {
 });
 
 test("default mobileOrder puts center first, right second, left last", () => {
+  // We assert on the data-mobile-order attribute (not on Tailwind class
+  // strings) so the test stays meaningful even if the styling vocabulary
+  // changes. The component still emits the corresponding order-N Tailwind
+  // class — that's what actually drives the layout — but tests should not
+  // couple to its name. See CLAUDE.md: "Never assert on Tailwind class
+  // strings — they change when styling evolves."
   const { container } = render(
     <WorkspaceGrid
       left={<div>L</div>}
@@ -30,12 +36,12 @@ test("default mobileOrder puts center first, right second, left last", () => {
       right={<div>R</div>}
     />,
   );
-  const center = container.querySelector('[data-slot="center"]')!;
-  const right  = container.querySelector('[data-slot="right"]')!;
-  const left   = container.querySelector('[data-slot="left"]')!;
-  expect(center.className).toMatch(/\border-1\b/);
-  expect(right.className).toMatch(/\border-2\b/);
-  expect(left.className).toMatch(/\border-3\b/);
+  expect(container.querySelector('[data-slot="center"]'))
+    .toHaveAttribute("data-mobile-order", "1");
+  expect(container.querySelector('[data-slot="right"]'))
+    .toHaveAttribute("data-mobile-order", "2");
+  expect(container.querySelector('[data-slot="left"]'))
+    .toHaveAttribute("data-mobile-order", "3");
 });
 
 test("custom mobileOrder reorders the slots", () => {
@@ -47,19 +53,19 @@ test("custom mobileOrder reorders the slots", () => {
       mobileOrder={["left", "center", "right"]}
     />,
   );
-  expect(container.querySelector('[data-slot="left"]')!.className)
-    .toMatch(/\border-1\b/);
-  expect(container.querySelector('[data-slot="center"]')!.className)
-    .toMatch(/\border-2\b/);
-  expect(container.querySelector('[data-slot="right"]')!.className)
-    .toMatch(/\border-3\b/);
+  expect(container.querySelector('[data-slot="left"]'))
+    .toHaveAttribute("data-mobile-order", "1");
+  expect(container.querySelector('[data-slot="center"]'))
+    .toHaveAttribute("data-mobile-order", "2");
+  expect(container.querySelector('[data-slot="right"]'))
+    .toHaveAttribute("data-mobile-order", "3");
 });
 
-test("uses the new 1400px breakpoint with minmax-floored side columns", () => {
-  const { container } = render(
-    <WorkspaceGrid left={<div />} center={<div />} right={<div />} />,
-  );
-  const grid = container.querySelector('[data-testid="workspace-grid"]')!;
-  // Side columns floored at 320px so chat / indices stay usable
-  expect(grid.className).toContain("min-[1400px]:grid-cols-[minmax(320px,22fr)_56fr_minmax(320px,22fr)]");
-});
+// Note: the previous "uses the new 1400px breakpoint with minmax-floored
+// side columns" test was removed. Asserting that a specific
+// `min-[1400px]:grid-cols-[...]` Tailwind class string is present in the
+// className is testing implementation, not behavior. The breakpoint
+// behavior is verified by manual + E2E review at multiple viewport widths.
+// If we ever want a programmatic gate, a Playwright test that resizes and
+// asserts on layout (computed grid template, slot counts) is the right
+// shape — the className grep is brittle either way.
