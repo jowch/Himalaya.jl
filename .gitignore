@@ -53,3 +53,6 @@ test-results/
 # Environment configuration — `.env.example` is checked in, `.env` is not
 .env
 
+# Build artifacts (sysimage, frontend dist is already in frontend/.gitignore)
+build/
+

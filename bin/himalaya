@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SYSIMAGE="$REPO/build/himalaya.so"
+PROJECT="$REPO/packages/HimalayaUI"
+
+if [ -f "$SYSIMAGE" ]; then
+    exec julia --project="$PROJECT" --sysimage="$SYSIMAGE" \
+               -e 'using HimalayaUI; main(ARGS)' -- "$@"
+else
+    exec julia --project="$PROJECT" \
+               -e 'using HimalayaUI; main(ARGS)' -- "$@"
+fi
