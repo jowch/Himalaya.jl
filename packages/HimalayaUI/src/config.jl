@@ -13,7 +13,8 @@ Supported TOML sections:
 - `[experiment]`: name, description, manifest (relative path to manifest CSV)
 - `[beamline]`: energy_kev, flight_path_m
 - `[manifest]`: delimiter, skip_rows, header_row, sample_id, label, name,
-  filenames, notes_sample, notes_exposure (each column = Int index or String header name)
+  filenames, notes_sample, notes_exposure (each column = Int index or String header name).
+  `header_row = 0` is the sentinel for "no header row; columns are positional".
 - `[layout]`: data_dir, analysis_dir, exposure_type
 - `[files]`: integration, image (path patterns containing `{name}`)
 """

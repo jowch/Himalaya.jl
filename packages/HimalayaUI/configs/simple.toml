@@ -1,15 +1,30 @@
+# Built-in template for the "simple" experiment type. `himalaya config new
+# --type simple --dir <path>` copies this file to <path>/experiment.toml as
+# a starting point. All paths are relative to the experiment directory
+# unless absolute.
+#
+# `{name}` in the [files] patterns is substituted with each filename entry
+# from the manifest column configured in [manifest].filenames. Empty values
+# (omitted keys) fall back to nothing → NULL in the database; do not write
+# `0.0` or `""` placeholders for "unknown" — leave the key out.
+
 [experiment]
-name        = ""
+name        = ""           # human-readable name; if empty, basename(dir) is used
 description = ""
 manifest    = "manifest.csv"
 
 [beamline]
+# Optional. Stored as NULL when omitted (preferred over a 0.0 sentinel,
+# which would misrepresent "unknown" as a real measurement of zero).
+# Uncomment and set when you know them:
+# energy_kev    = 12.0    # X-ray photon energy in keV
+# flight_path_m =  1.5    # sample-to-detector distance in metres
 
 [manifest]
-delimiter      = "\t"
-skip_rows      = 1
-header_row     = 0
-sample_id      = 1
+delimiter      = "\t"      # column separator
+skip_rows      = 1         # number of leading rows to skip before parsing
+header_row     = 0         # 0 = no header (positional columns); N>0 = row N is the header
+sample_id      = 1         # column index (1-based) or header name (string) — same below
 label          = 2
 name           = 3
 filenames      = 9
@@ -17,10 +32,12 @@ notes_sample   = 10
 notes_exposure = 11
 
 [layout]
-data_dir      = "data"
-analysis_dir  = "analysis/automatic_analysis"
-exposure_type = "simple"
+data_dir      = "data"                          # raw images live here (relative to dir)
+analysis_dir  = "analysis/automatic_analysis"   # integration .dat files live here
+exposure_type = "simple"                        # see VALID_EXPOSURE_TYPES in config.jl
 
 [files]
+# {name} is replaced with each filename stem from the manifest's filenames
+# column. Patterns may include a leading subdirectory like "integrated/{name}.dat".
 integration = "{name}.dat"
 image       = "{name}.tiff"
