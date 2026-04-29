@@ -1,7 +1,6 @@
 ---
 name: worktree-setup
 description: Complete first-time setup for a fresh git worktree — npm install + copy both Manifest.toml files from main so Himalaya core resolves to local v0.5.0 instead of registry v0.4.5. Run immediately after git worktree add.
-disable-model-invocation: true
 ---
 
 # worktree-setup
