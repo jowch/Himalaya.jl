@@ -83,6 +83,108 @@ function cli_init_with_db!(db::SQLite.DB, exp_dir::String)::Int
     exp_id
 end
 
+"""
+    reingest!(db, experiment_id, exp_dir)
+
+Re-read `experiment.toml` and the manifest CSV from `exp_dir` and update the
+experiment row in `db`. Inserts new samples and exposures discovered on disk;
+preserves existing exposures that have a non-NULL status (curation: accepted/rejected)
+or any peaks (manual or auto-analysis already run).
+
+Read-only with respect to `exp_dir`.
+"""
+function reingest!(db::SQLite.DB, experiment_id::Int, exp_dir::String)
+    exp_dir   = abspath(exp_dir)
+    toml_path = joinpath(exp_dir, "experiment.toml")
+    isfile(toml_path) || error("experiment.toml not found in $exp_dir")
+
+    cfg  = load_config(toml_path)
+    blob = config_to_toml(cfg)
+
+    data_dir     = isabspath(cfg.data_dir)     ? cfg.data_dir     : joinpath(exp_dir, cfg.data_dir)
+    analysis_dir = isabspath(cfg.analysis_dir) ? cfg.analysis_dir : joinpath(exp_dir, cfg.analysis_dir)
+    manifest_path = isabspath(cfg.manifest_file) ? cfg.manifest_file :
+                    joinpath(exp_dir, cfg.manifest_file)
+
+    exp_name = isempty(cfg.name) ? basename(exp_dir) : cfg.name
+
+    DBInterface.execute(db,
+        """UPDATE experiments
+              SET name = ?, config = ?, experiment_type = ?,
+                  energy_kev = ?, flight_path_m = ?,
+                  data_dir = ?, analysis_dir = ?, manifest_path = ?
+            WHERE id = ?""",
+        [exp_name, blob, cfg.exposure_type, cfg.energy_kev, cfg.flight_path_m,
+         data_dir, analysis_dir,
+         isfile(manifest_path) ? manifest_path : nothing,
+         experiment_id])
+
+    isfile(manifest_path) || (println("No manifest at $manifest_path — config updated only."); return)
+
+    samples = parse_manifest(cfg, manifest_path)
+    inserted_samples = 0
+    inserted_exposures = 0
+
+    for ms in samples
+        # Upsert sample (match by name within experiment)
+        existing = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM samples WHERE experiment_id = ? AND name = ?",
+            [experiment_id, ms.name]))
+        s_id = if isempty(existing)
+            inserted_samples += 1
+            create_sample!(db;
+                experiment_id = experiment_id,
+                label         = ms.label,
+                name          = ms.name,
+                notes         = ms.notes_sample)
+        else
+            DBInterface.execute(db,
+                "UPDATE samples SET label = ?, notes = ? WHERE id = ?",
+                [ms.label, ms.notes_sample, existing[1].id])
+            Int(existing[1].id)
+        end
+
+        for prefix in ms.filenames
+            stems = resolve_files(cfg, analysis_dir, prefix, cfg.integration_pattern)
+            for stem in stems
+                existing_exp = Tables.rowtable(DBInterface.execute(db,
+                    "SELECT id FROM exposures WHERE sample_id = ? AND filename = ?",
+                    [s_id, stem]))
+                if isempty(existing_exp)
+                    image_rel = replace(cfg.image_pattern, "{name}" => stem)
+                    image_full = joinpath(data_dir, image_rel)
+                    image_path = isfile(image_full) ? image_full : nothing
+                    create_exposure!(db;
+                        sample_id  = s_id,
+                        filename   = stem,
+                        image_path = image_path)
+                    inserted_exposures += 1
+                end
+                # Existing exposures: do NOT modify — they may carry curation/peaks.
+            end
+        end
+    end
+
+    println("Reingested experiment $experiment_id: +$inserted_samples samples, +$inserted_exposures exposures.")
+end
+
+function cli_reingest(args)
+    s = ArgParseSettings(prog = "himalaya reingest")
+    @add_arg_table! s begin
+        "experiment_path"
+            help     = "experiment directory (must already be registered via 'himalaya init')"
+            required = true
+    end
+    p = parse_args(args, s; as_symbols = true)
+    exp_dir = abspath(p[:experiment_path])
+
+    db = open_db(exp_dir)
+    rows = Tables.rowtable(DBInterface.execute(db,
+        "SELECT id FROM experiments WHERE path = ?", [exp_dir]))
+    isempty(rows) && error("No experiment registered at $exp_dir. Run 'himalaya init' first.")
+    reingest!(db, Int(rows[1].id), exp_dir)
+end
+
 function cli_init(args)
     s = ArgParseSettings(prog = "himalaya init")
     @add_arg_table! s begin
@@ -286,7 +388,9 @@ function main(args = copy(ARGS))
         cli_serve(args)
     elseif cmd == "config"
         cli_config(args)
+    elseif cmd == "reingest"
+        cli_reingest(args)
     else
-        println("Unknown command: $cmd. Available: init, analyze, show, serve, config")
+        println("Unknown command: $cmd. Available: init, analyze, show, serve, config, reingest")
     end
 end

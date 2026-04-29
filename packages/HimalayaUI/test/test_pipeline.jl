@@ -373,3 +373,79 @@ end
         @test before == after
     end
 end
+
+@testset "reingest! adds new exposures and preserves curated ones" begin
+    mktempdir() do dir
+        analysis_dir = joinpath(dir, "analysis", "automatic_analysis")
+        data_dir     = joinpath(dir, "data")
+        mkpath(analysis_dir)
+        mkpath(data_dir)
+        fixture = joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat")
+        for name in ["JC001", "JC002", "JC003"]
+            cp(fixture, joinpath(analysis_dir, name * ".dat"))
+        end
+
+        # Initial manifest references only JC001-002
+        manifest = joinpath(dir, "manifest.csv")
+        write(manifest, "skip-row\n1\tD1\tUX1\tT\tt\t\t\t\tJC001-002\told\t")
+
+        write(joinpath(dir, "experiment.toml"), """
+        [experiment]
+        name = "R/E"
+        description = ""
+        manifest = "manifest.csv"
+        [beamline]
+        energy_kev = 0.0
+        flight_path_m = 0.0
+        [manifest]
+        delimiter = "\\t"
+        skip_rows = 1
+        header_row = 0
+        sample_id = 1
+        label = 2
+        name = 3
+        filenames = 9
+        notes_sample = 10
+        notes_exposure = 11
+        [layout]
+        data_dir = "data"
+        analysis_dir = "analysis/automatic_analysis"
+        exposure_type = "simple"
+        [files]
+        integration = "{name}.dat"
+        image = "{name}.tiff"
+        """)
+
+        db = SQLite.DB()
+        HimalayaUI.create_schema!(db)
+        exp_id = HimalayaUI.cli_init_with_db!(db, dir)
+
+        # Curate JC001
+        DBInterface.execute(db,
+            "UPDATE exposures SET status = 'accepted' WHERE filename = ?", ["JC001"])
+
+        # Update manifest to extend the range to JC003
+        write(manifest, "skip-row\n1\tD1\tUX1\tT\tt\t\t\t\tJC001-003\tnew\t")
+
+        HimalayaUI.reingest!(db, exp_id, dir)
+
+        # Verify all three exposures are present
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT filename, status FROM exposures ORDER BY filename"))
+        @test [r.filename for r in rows] == ["JC001", "JC002", "JC003"]
+
+        # Curation on JC001 must be preserved
+        jc001 = first(filter(r -> r.filename == "JC001", rows))
+        @test jc001.status == "accepted"
+    end
+end
+
+@testset "reingest! errors when experiment.toml missing" begin
+    mktempdir() do dir
+        db = SQLite.DB()
+        HimalayaUI.create_schema!(db)
+        exp_id = HimalayaUI.create_experiment!(db;
+            path = dir, data_dir = dir, analysis_dir = dir)
+        @test_throws ErrorException HimalayaUI.reingest!(db, exp_id, dir)
+    end
+end

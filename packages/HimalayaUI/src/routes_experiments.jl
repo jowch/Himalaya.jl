@@ -81,4 +81,26 @@ function register_experiments_routes!()
         HTTP.Response(200, ["Content-Type" => "application/json"],
             JSON3.write(Dict(:analyzed => analyzed, :skipped => skipped)))
     end
+
+    @post "/api/experiments/{id}/reingest" function(req::HTTP.Request, id::Int)
+        db   = current_db()
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT path FROM experiments WHERE id = ?", [id]))
+        isempty(rows) && return HTTP.Response(404,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:error => "experiment not found")))
+        exp_path = String(rows[1].path)
+        try
+            reingest!(db, id, exp_path)
+            log_action!(db, req; action = "reingest",
+                entity_type = "experiment", entity_id = id)
+            return HTTP.Response(200,
+                ["Content-Type" => "application/json"],
+                JSON3.write(Dict(:ok => true)))
+        catch e
+            return HTTP.Response(500,
+                ["Content-Type" => "application/json"],
+                JSON3.write(Dict(:error => sprint(showerror, e))))
+        end
+    end
 end
