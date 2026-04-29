@@ -124,7 +124,7 @@ TOML blob.
 |-------|---------|
 | `data_dir` | Where raw images live, relative to the experiment directory. |
 | `analysis_dir` | Where 1D-integrated `.dat` files live. |
-| `exposure_type` | `"simple"` for now. Reserved for future types like `"raw"`, `"aggregated"`, `"background_subtracted"`. |
+| `exposure_type` | `"simple"` is the only value currently accepted. Validated at load time against `VALID_EXPOSURE_TYPES` in `config.jl` — unknown values are rejected with a clear error. Reserved for future types like `"raw"`, `"aggregated"`, `"background_subtracted"`. |
 
 ### `[files]`
 
@@ -207,6 +207,12 @@ list 96 files" case.
 In all three cases the **filesystem is the ground truth**. The manifest
 declares intent; the disk decides what actually exists.
 
+If the configured `analysis_dir` (or any subdirectory in the integration
+pattern) doesn't exist on disk, `resolve_files` emits a `@warn` and
+returns no matches — ingestion still succeeds with zero exposures, but
+the warning lands in the CLI/server log so the operator can spot a
+misconfigured path quickly.
+
 ## The read-only contract
 
 Experiment directories are read-only at runtime. Himalaya does not
@@ -242,7 +248,21 @@ The whole operation is wrapped in a SQLite transaction — if anything
 goes wrong mid-way, the DB rolls back to its pre-reingest state.
 
 A REST endpoint `POST /api/experiments/:id/reingest` triggers the same
-logic from the UI.
+logic from the UI. The response body distinguishes the two reingest
+outcomes:
+
+```json
+// success — manifest found and ingested
+{ "status": "ok", "added_samples": 1, "added_exposures": 12,
+  "manifest_path": "/data/.../manifest.csv" }
+
+// success — config updated but no manifest on disk
+{ "status": "no_manifest", "added_samples": 0, "added_exposures": 0,
+  "manifest_path": "/data/.../manifest.csv" }
+```
+
+HTTP status is `200` in both cases — the config-update half of reingest
+succeeded, and `status` is the discriminator for callers.
 
 ## Built-in templates
 
