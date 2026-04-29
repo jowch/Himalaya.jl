@@ -108,4 +108,31 @@ describe("<ChatCard>", () => {
     await user.keyboard("{Enter}");
     expect(postSpy).not.toHaveBeenCalled();
   });
+
+  it("renders a peak mention chip inline", async () => {
+    const PEAK: api.Peak = {
+      id: 42, exposure_id: 1, q: 1.223, intensity: 841, prominence: 4.2,
+      sharpness: 0.3, source: "auto", excluded: false,
+    };
+    vi.spyOn(api, "listSampleMessages").mockResolvedValue([
+      { id: 1, sample_id: 3, author_id: 1, author: "alice",
+        body: "see [[peak:42]]", created_at: "2026-04-24 10:00:00" },
+    ]);
+    vi.spyOn(api, "getPeak").mockResolvedValue(PEAK);
+    renderWithProviders(<ChatCard />);
+    expect(await screen.findByText(/q = 1\.223/)).toBeInTheDocument();
+  });
+
+  it("renders dead chip when mention entity returns 404", async () => {
+    vi.spyOn(api, "listSampleMessages").mockResolvedValue([
+      { id: 2, sample_id: 3, author_id: 1, author: "alice",
+        body: "old ref [[index:999]]", created_at: "2026-04-24 10:00:00" },
+    ]);
+    vi.spyOn(api, "getIndex").mockRejectedValue(new api.ApiError(404, "not found", null));
+    renderWithProviders(<ChatCard />);
+    await waitFor(() => {
+      const chip = document.querySelector("[data-mention-state='dead']");
+      expect(chip).not.toBeNull();
+    });
+  });
 });

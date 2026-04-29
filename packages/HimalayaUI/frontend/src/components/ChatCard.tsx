@@ -1,8 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAppState } from "../state";
 import { useSampleMessages, usePostSampleMessage } from "../queries";
 import type { SampleMessage } from "../api";
 import { HintText } from "./ui";
+import { parseMentions, type MentionToken } from "../lib/renderMentions";
+import { useMentionResolution } from "../hooks/useMentionResolution";
+import { MentionChip } from "./MentionChip";
 
 /**
  * ChatCard — per-sample notebook/chat log.
@@ -91,20 +94,33 @@ function MessageList({ messages, isPending }: MessageListProps): JSX.Element {
 }
 
 function MessageRow({ msg }: { msg: SampleMessage }): JSX.Element {
-  const authorLabel = msg.author ?? "deleted user";
+  const authorLabel   = msg.author ?? "deleted user";
   const authorDeleted = msg.author == null;
+  const segments      = useMemo(() => parseMentions(msg.body), [msg.body]);
+  const mentions      = useMemo(
+    () => segments.filter((s): s is MentionToken => s.kind === "mention"),
+    [segments],
+  );
+  const resolutionMap = useMentionResolution(mentions);
+
   return (
     <div className="flex flex-col gap-0.5 min-w-0" data-testid={`chat-message-${msg.id}`}>
       <div className="flex items-baseline gap-2">
-        <span className={authorDeleted
-          ? "text-meta text-fg-dim italic"
-          : "text-meta"}>
+        <span className={authorDeleted ? "text-meta text-fg-dim italic" : "text-meta"}>
           {authorLabel}
         </span>
         <span className="text-fg-dim text-xs">{formatTime(msg.created_at)}</span>
       </div>
       <p className="text-base font-sans text-fg-muted leading-snug break-words whitespace-pre-wrap">
-        {msg.body}
+        {segments.map((seg, i) => {
+          if (seg.kind === "text") return <span key={i}>{seg.text}</span>;
+          const key   = `${seg.type}:${seg.id}`;
+          const token = `[[${seg.type}:${seg.id}]]`;
+          const entry = resolutionMap.get(key) ?? "loading";
+          return (
+            <MentionChip key={i} resolved={entry} originalText={token} />
+          );
+        })}
       </p>
     </div>
   );
