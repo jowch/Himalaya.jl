@@ -1,4 +1,4 @@
-using Test, HimalayaUI, SQLite
+using Test, HimalayaUI, SQLite, TOML
 
 # Helper: build a minimal valid TOML body, allowing overrides for the
 # `[files]` and `[manifest]` sections so individual test cases can poke at
@@ -308,6 +308,13 @@ end
         @test cfg2.image_pattern       == cfg_orig.image_pattern
         @test cfg2.exposure_type       == cfg_orig.exposure_type
     end
+
+    # Round-trip via in-memory parse (the path config_from_db uses): no disk I/O.
+    cfg3 = HimalayaUI._build_config(TOML.parse(blob))
+    @test cfg3.delimiter           == cfg_orig.delimiter
+    @test cfg3.col_sample_id       == cfg_orig.col_sample_id
+    @test cfg3.integration_pattern == cfg_orig.integration_pattern
+    @test cfg3.exposure_type       == cfg_orig.exposure_type
 end
 
 @testset "config_to_toml omits nothing beamline params" begin

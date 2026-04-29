@@ -65,8 +65,10 @@ the file does not exist.
 """
 function load_config(path::AbstractString)::ExperimentConfig
     isfile(path) || error("experiment.toml not found: $path")
-    d = TOML.parsefile(path)
+    _build_config(TOML.parsefile(path))
+end
 
+function _build_config(d::AbstractDict)::ExperimentConfig
     exp    = get(d, "experiment", Dict())
     bl     = get(d, "beamline",   Dict())
     mf     = get(d, "manifest",   Dict())
@@ -233,9 +235,5 @@ function config_from_db(db::SQLite.DB, experiment_id::Int)::ExperimentConfig
     if blob === nothing || blob === missing
         return load_builtin_config("simple")
     end
-    mktempdir() do dir
-        path = joinpath(dir, "experiment.toml")
-        write(path, blob)
-        load_config(path)
-    end
+    _build_config(TOML.parse(String(blob)))
 end
