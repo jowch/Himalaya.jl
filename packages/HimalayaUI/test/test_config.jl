@@ -1,5 +1,37 @@
 using Test, HimalayaUI
 
+# Helper: build a minimal valid TOML body, allowing overrides for the
+# `[files]` and `[manifest]` sections so individual test cases can poke at
+# specific validator branches.
+function _make_toml(; integration="{name}.dat", image="{name}.tiff", sample_id="1")
+    """
+    [experiment]
+    name = "X"
+    description = ""
+    manifest = "manifest.csv"
+    [beamline]
+    energy_kev = 0.0
+    flight_path_m = 0.0
+    [manifest]
+    delimiter = "\\t"
+    skip_rows = 0
+    header_row = 0
+    sample_id = $sample_id
+    label = 2
+    name = 3
+    filenames = 9
+    notes_sample = 10
+    notes_exposure = 11
+    [layout]
+    data_dir = "data"
+    analysis_dir = "analysis/automatic_analysis"
+    exposure_type = "simple"
+    [files]
+    integration = "$integration"
+    image = "$image"
+    """
+end
+
 @testset "load_config" begin
     mktempdir() do dir
         toml = joinpath(dir, "experiment.toml")
@@ -55,35 +87,50 @@ using Test, HimalayaUI
     end
 end
 
-@testset "load_config validates path traversal" begin
+@testset "load_config validates patterns" begin
+    @testset "rejects upward traversal (..)" begin
+        mktempdir() do dir
+            toml = joinpath(dir, "experiment.toml")
+            write(toml, _make_toml(integration="../{name}.dat"))
+            @test_throws ErrorException HimalayaUI.load_config(toml)
+        end
+    end
+
+    @testset "rejects absolute path" begin
+        mktempdir() do dir
+            toml = joinpath(dir, "experiment.toml")
+            write(toml, _make_toml(integration="/abs/{name}.dat"))
+            @test_throws ErrorException HimalayaUI.load_config(toml)
+        end
+    end
+
+    @testset "rejects pattern missing {name}" begin
+        mktempdir() do dir
+            toml = joinpath(dir, "experiment.toml")
+            write(toml, _make_toml(integration="fixed.dat"))
+            @test_throws ErrorException HimalayaUI.load_config(toml)
+        end
+    end
+
+    @testset "rejects missing file" begin
+        @test_throws ErrorException HimalayaUI.load_config("/nonexistent/experiment.toml")
+    end
+end
+
+@testset "load_config rejects non-int/non-string column" begin
     mktempdir() do dir
         toml = joinpath(dir, "experiment.toml")
-        write(toml, """
-        [experiment]
-        name = "X"
-        description = ""
-        manifest = "manifest.csv"
-        [beamline]
-        energy_kev = 0.0
-        flight_path_m = 0.0
-        [manifest]
-        delimiter = "\\t"
-        skip_rows = 0
-        header_row = 0
-        sample_id = 1
-        label = 2
-        name = 3
-        filenames = 9
-        notes_sample = 10
-        notes_exposure = 11
-        [layout]
-        data_dir = "data"
-        analysis_dir = "analysis/automatic_analysis"
-        exposure_type = "simple"
-        [files]
-        integration = "../{name}.dat"
-        image = "{name}.tiff"
-        """)
+        # `sample_id = 1.5` is neither Integer nor String — should hit _coerce_col's error.
+        write(toml, _make_toml(sample_id="1.5"))
         @test_throws ErrorException HimalayaUI.load_config(toml)
+    end
+end
+
+@testset "load_config accepts string column header" begin
+    mktempdir() do dir
+        toml = joinpath(dir, "experiment.toml")
+        write(toml, _make_toml(sample_id="\"SampleID\""))
+        cfg = HimalayaUI.load_config(toml)
+        @test cfg.col_sample_id == "SampleID"
     end
 end

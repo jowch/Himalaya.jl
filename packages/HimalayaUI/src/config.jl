@@ -1,5 +1,20 @@
 using TOML
 
+"""
+    ExperimentConfig
+
+Parsed representation of an `experiment.toml` file. Drives all file I/O conventions
+for an experiment: manifest column layout, directory paths, file name patterns,
+beamline parameters.
+
+Supported TOML sections:
+- `[experiment]`: name, description, manifest (relative path to manifest CSV)
+- `[beamline]`: energy_kev, flight_path_m
+- `[manifest]`: delimiter, skip_rows, header_row, sample_id, label, name,
+  filenames, notes_sample, notes_exposure (each column = Int index or String header name)
+- `[layout]`: data_dir, analysis_dir, exposure_type
+- `[files]`: integration, image (path patterns containing `{name}`)
+"""
 struct ExperimentConfig
     # [experiment]
     name               ::String
@@ -33,6 +48,21 @@ function _validate_pattern(pattern::String, field::String)
     contains(pattern, "{name}") || error("$field must contain {name}: $pattern")
 end
 
+function _coerce_col(v, field::String)::Union{Int,String}
+    v isa Integer        && return Int(v)
+    v isa AbstractString && return String(v)
+    error("$field must be an integer column index or a string header name, got $(typeof(v)): $v")
+end
+
+"""
+    load_config(path) -> ExperimentConfig
+
+Read and parse an `experiment.toml` file at `path`. Validates that file-name
+patterns in `[files]` are relative, do not traverse upward (`..`), and contain
+`{name}`. Validates that each `[manifest]` column entry is either an integer
+index or a string header name. Throws `ErrorException` on any violation, or if
+the file does not exist.
+"""
 function load_config(path::AbstractString)::ExperimentConfig
     isfile(path) || error("experiment.toml not found: $path")
     d = TOML.parsefile(path)
@@ -57,12 +87,12 @@ function load_config(path::AbstractString)::ExperimentConfig
         get(mf,  "delimiter",      "\t"),
         get(mf,  "skip_rows",      1),
         get(mf,  "header_row",     0),
-        get(mf,  "sample_id",      1),
-        get(mf,  "label",          2),
-        get(mf,  "name",           3),
-        get(mf,  "filenames",      9),
-        get(mf,  "notes_sample",   10),
-        get(mf,  "notes_exposure", 11),
+        _coerce_col(get(mf, "sample_id",      1),  "manifest.sample_id"),
+        _coerce_col(get(mf, "label",          2),  "manifest.label"),
+        _coerce_col(get(mf, "name",           3),  "manifest.name"),
+        _coerce_col(get(mf, "filenames",      9),  "manifest.filenames"),
+        _coerce_col(get(mf, "notes_sample",   10), "manifest.notes_sample"),
+        _coerce_col(get(mf, "notes_exposure", 11), "manifest.notes_exposure"),
         get(layout, "data_dir",      "data"),
         get(layout, "analysis_dir",  "analysis/automatic_analysis"),
         get(layout, "exposure_type", "simple"),
