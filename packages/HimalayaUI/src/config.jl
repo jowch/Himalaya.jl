@@ -1,5 +1,7 @@
 using TOML
 
+const VALID_EXPOSURE_TYPES = ("simple",)
+
 """
     ExperimentConfig
 
@@ -65,7 +67,12 @@ the file does not exist.
 """
 function load_config(path::AbstractString)::ExperimentConfig
     isfile(path) || error("experiment.toml not found: $path")
-    _build_config(TOML.parsefile(path))
+    d = try
+        TOML.parsefile(path)
+    catch e
+        error("Invalid TOML in $path: $(sprint(showerror, e))")
+    end
+    _build_config(d)
 end
 
 function _build_config(d::AbstractDict)::ExperimentConfig
@@ -79,6 +86,10 @@ function _build_config(d::AbstractDict)::ExperimentConfig
     image       = get(files, "image",       "{name}.tiff")
     _validate_pattern(integration, "files.integration")
     _validate_pattern(image,       "files.image")
+
+    exposure_type = get(layout, "exposure_type", "simple")
+    exposure_type in VALID_EXPOSURE_TYPES || error(
+        "layout.exposure_type '$exposure_type' not recognized. Valid: $(join(VALID_EXPOSURE_TYPES, ", "))")
 
     ExperimentConfig(
         get(exp, "name",        ""),
@@ -97,7 +108,7 @@ function _build_config(d::AbstractDict)::ExperimentConfig
         _coerce_col(get(mf, "notes_exposure", 11), "manifest.notes_exposure"),
         get(layout, "data_dir",      "data"),
         get(layout, "analysis_dir",  "analysis/automatic_analysis"),
-        get(layout, "exposure_type", "simple"),
+        exposure_type,
         integration,
         image,
     )
@@ -162,7 +173,10 @@ function resolve_files(
     file_prefix_local = basename(before) * prefix
     scan_dir = isempty(scan_subdir) ? String(base_dir) : joinpath(base_dir, scan_subdir)
 
-    isdir(scan_dir) || return String[]
+    if !isdir(scan_dir)
+        @warn "resolve_files: scan directory does not exist" scan_dir pattern=file_pattern
+        return String[]
+    end
 
     matches = filter(readdir(scan_dir)) do f
         startswith(f, file_prefix_local) && endswith(f, after)

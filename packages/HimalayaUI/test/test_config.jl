@@ -506,3 +506,38 @@ end
         close(db)
     end
 end
+
+@testset "load_config rejects unknown exposure_type" begin
+    mktempdir() do dir
+        path = joinpath(dir, "experiment.toml")
+        write(path, """
+        [experiment]
+        name = "X"
+        [layout]
+        exposure_type = "bogus"
+        """)
+        err = try
+            HimalayaUI.load_config(path); nothing
+        catch e
+            e
+        end
+        @test err isa ErrorException
+        @test occursin("exposure_type 'bogus'", err.msg)
+    end
+end
+
+@testset "load_config wraps malformed TOML errors" begin
+    mktempdir() do dir
+        path = joinpath(dir, "experiment.toml")
+        # Unbalanced bracket — TOML parser will reject this.
+        write(path, "[experiment\nname = \"X\"\n")
+        err = try
+            HimalayaUI.load_config(path); nothing
+        catch e
+            e
+        end
+        @test err isa ErrorException
+        @test occursin("Invalid TOML", err.msg)
+        @test occursin(path, err.msg)
+    end
+end
