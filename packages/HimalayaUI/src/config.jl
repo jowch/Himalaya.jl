@@ -132,3 +132,37 @@ function load_builtin_config(type_name::AbstractString)::ExperimentConfig
     isfile(path) || error("Unknown config type '$type_name'. Available: $(join(list_config_types(), ", "))")
     load_config(path)
 end
+
+"""
+    resolve_files(cfg, base_dir, prefix, file_pattern) -> Vector{String}
+
+Scan `base_dir` for files matching `file_pattern` where `{name}` is replaced by
+`prefix*` (any string starting with `prefix`). Returns sorted bare filename stems
+with the pattern's trailing suffix stripped (e.g. "JC001" not "JC001.dat").
+
+`file_pattern` may contain a leading subdirectory (e.g. `"integrated/{name}.dat"`),
+in which case scanning happens in `joinpath(base_dir, "integrated")`. Returns
+an empty vector if the scan directory doesn't exist.
+"""
+function resolve_files(
+    ::ExperimentConfig,
+    base_dir::AbstractString,
+    prefix::AbstractString,
+    file_pattern::String,
+)::Vector{String}
+    parts = split(file_pattern, "{name}"; limit=2)
+    length(parts) == 2 || error("file pattern must contain exactly one {name}: $file_pattern")
+    before, after = String(parts[1]), String(parts[2])
+
+    scan_subdir       = dirname(before)
+    file_prefix_local = basename(before) * prefix
+    scan_dir = isempty(scan_subdir) ? String(base_dir) : joinpath(base_dir, scan_subdir)
+
+    isdir(scan_dir) || return String[]
+
+    matches = filter(readdir(scan_dir)) do f
+        startswith(f, file_prefix_local) && endswith(f, after)
+    end
+    sort!(matches)
+    [m[1:end-length(after)] for m in matches]
+end
