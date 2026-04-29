@@ -97,7 +97,12 @@ function reingest!(db::SQLite.DB, experiment_id::Int, exp_dir::String)
     exp_dir   = abspath(exp_dir)
     toml_path = joinpath(exp_dir, "experiment.toml")
     isfile(toml_path) || error("experiment.toml not found in $exp_dir")
+    SQLite.transaction(db) do
+        _reingest_inner!(db, experiment_id, exp_dir, toml_path)
+    end
+end
 
+function _reingest_inner!(db::SQLite.DB, experiment_id::Int, exp_dir::String, toml_path::String)
     cfg  = load_config(toml_path)
     blob = config_to_toml(cfg)
 
