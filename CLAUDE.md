@@ -20,12 +20,15 @@ src/                         # core Himalaya package
   util.jl
 packages/
   HimalayaUI/                # web-app sub-package
+    .env.example             # documented env vars (HIMALAYA_DB_PATH etc.)
+    configs/                 # built-in experiment.toml templates (simple.toml)
     src/
       db.jl                  # SQLite schema + CRUD
       datfile.jl             # three-column .dat parser
-      manifest.jl            # Google Sheets CSV → ManifestSample
+      config.jl              # ExperimentConfig + load_config + resolve_files
+      manifest.jl            # ManifestSample + parse_manifest (config-driven)
       pipeline.jl            # analyze_exposure!, auto_group, persist_analysis!
-      cli.jl                 # himalaya init/analyze/show/serve
+      cli.jl                 # himalaya config/init/analyze/reingest/show/serve
       json.jl                # row → Dict serialization
       actions.jl             # X-Username extraction + user_actions logger
       image.jl               # TIFF load + log-normalize + PNG encode for /image route
@@ -96,16 +99,24 @@ Tests use stdlib `Test` (`@testset`, `@test`, `@test_throws`). Internal (non-exp
 ## Running the app
 
 ```bash
-# From a fresh experiment dir:
+# From a fresh experiment dir (drop manifest.csv + data/ + analysis/ first):
 julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
-  init /path/to/experiment --manifest manifest.csv
+  config new --type simple --dir /path/to/experiment   # creates experiment.toml
+# edit /path/to/experiment/experiment.toml to set name + column mappings
+julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
+  init /path/to/experiment
 julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
   analyze /path/to/experiment
 julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
   serve /path/to/experiment --port 8080
+# After editing manifest.csv or experiment.toml:
+julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
+  reingest /path/to/experiment
 ```
 
 `serve` blocks. Frontend is served from `packages/HimalayaUI/frontend/dist/` if present.
+
+**Env vars** (see `packages/HimalayaUI/.env.example`): `HIMALAYA_DB_PATH` overrides the per-experiment DB path for `/opt`-style centralised deployment; `HIMALAYA_CONFIGS_DIR`, `HIMALAYA_HOST`, `HIMALAYA_PORT`, `HIMALAYA_FRONTEND_DIST` override the corresponding defaults.
 
 **Frontend dev loop:** run `himalaya serve` (backend on :8080) in one terminal and `npm run dev` (Vite on :5173) in another — Vite proxies `/api/*` to :8080 (see `vite.config.ts`).
 
@@ -123,7 +134,7 @@ julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
 - `DBInterface.lastrowid` takes the query **result**, not the db: `res = DBInterface.execute(db, sql, params); id = Int(DBInterface.lastrowid(res))`.
 - Raw rows from `DBInterface.execute` lose their values after the query closes. Materialize with `Tables.rowtable(DBInterface.execute(...))` to get stable `NamedTuple`s (access fields via `row.name`).
 - **FK enforcement is on.** `open_db` runs `PRAGMA foreign_keys = ON` on every connection. Any FK column that references `users(id)` and must survive user deletion needs `ON DELETE SET NULL` in the schema DDL — add it there, not at call sites. `index_groups.created_by` and `user_actions.user_id` already have this.
-- **`persist_analysis!` is transactional.** The delete-then-reinsert sequence in `pipeline.jl` is wrapped in `SQLite.transaction`. If you add new write steps to that function, put them inside `_persist_analysis_inner!` so they stay atomic.
+- **`persist_analysis!` is transactional.** The delete-then-reinsert sequence in `pipeline.jl` is wrapped in `SQLite.transaction`. If you add new write steps to that function, put them inside `_persist_analysis_inner!` so they stay atomic. Same pattern applies to `reingest!` in `cli.jl` (`_reingest_inner!`) — wrap any new multi-write CLI operations the same way.
 
 **Oxygen.jl 1.10.x:**
 - Use the singleton API: `@get "/path/{id}" function(req::HTTP.Request, id::Int) ... end`. Typed function args extract path params.
@@ -132,7 +143,15 @@ julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
 - Mount static files with `Oxygen.dynamicfiles(dir, "/")` — only if `isdir(dir)`, so empty frontends don't break tests.
 - Oxygen emits a harmless warning about OpenAPI schema generation for some routes; ignore it.
 
-**Stdlib deps must be explicit.** Stdlibs used directly in a package (`Sockets`, `Printf`, `SparseArrays`, `DelimitedFiles`, etc.) must be listed in `Project.toml`'s `[deps]` — `Pkg.add` them like regular packages.
+**Stdlib deps must be explicit.** Stdlibs used directly in a package (`Sockets`, `Printf`, `SparseArrays`, `DelimitedFiles`, `TOML`, etc.) must be listed in `Project.toml`'s `[deps]` — `Pkg.add` them like regular packages.
+
+**Experiment config (`experiment.toml`) is the source of truth.** Every experiment directory has an `experiment.toml` describing manifest column layout, file patterns, and beamline params. Generate one with `himalaya config new --dir <path>` (the only command that writes inside an experiment directory; refuses to overwrite). `himalaya init` reads it and stores the full TOML blob in `experiments.config` so the DB is self-contained. `analyze_exposure!` reads the integration pattern via `config_from_db`, falling back to `simple.toml` defaults when `config IS NULL` (legacy experiments). To change the layout or column mapping, edit `experiment.toml` then run `himalaya reingest <path>` — preserves curation (status, manual peaks). Read [docs/experiment-config.md](docs/experiment-config.md) before touching `config.jl`, `manifest.jl`, or the cli init/reingest paths.
+
+**Read-only experiment directories at runtime.** Himalaya never creates, modifies, or deletes any file inside an experiment directory during `init`, `analyze`, `reingest`, or `serve`. The sole exception is `himalaya config new --dir`, which writes `experiment.toml` once during setup. A regression test in `test_pipeline.jl` snapshots the directory contents before/after `cli_init_with_db!` — keep it green. (DB centralisation via `HIMALAYA_DB_PATH` enforces this fully; without it, `open_db` still drops `himalaya.db` in the experiment dir as a transitional fallback.)
+
+**Filename ↔ exposure association via filesystem prefix scan.** Manifest filename entries are always treated as prefixes: `JC001-004` expands to four prefixes, each scanned via `resolve_files(cfg, dir, prefix, cfg.integration_pattern)` against the filesystem. The manifest declares intent; disk decides what exists. Missing files produce a warning, not an error. When debugging "exposures missing after init/reingest," check the actual files in `analysis_dir` first — the manifest is a hint.
+
+**`parse_manifest` has two methods.** `parse_manifest(source)` is a backward-compat wrapper using `simple.toml` defaults. `parse_manifest(cfg::ExperimentConfig, source)` is the config-driven version — use this in new code. Both accept IO and paths via `readlines(source)`.
 
 **Index scoring:** `score(index)` returns a value in `[0, 1]` — product of `coverage` (harmonic-weighted fraction of expected peaks found, `1/rank` weight per position) and `consistency` (`1/(1+CV)` of peak sharpnesses). `totalprom` and the `prom` field on `Index` no longer exist — the struct now has `sharpness::SparseVector`. Guard `cv` against zero mean before dividing (all-zero sharpness is valid and should score as consistent). `auto_group` and `remove_subsets` in `pipeline.jl` both depend on `score` ordering — correctness of auto-analysis flows from score quality. R² is stored per index but is NOT part of the score; it is a UI hard gate (threshold 0.98 in `PhasePanel`).
 
@@ -179,13 +198,16 @@ julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
 ## Current state
 
 - Core Himalaya: `v0.5.0` on `main` — v2 peak-finding (persistence + sharpness + kneedle).
-- HimalayaUI: **Plans 1–6 + three-card Index redesign + Inspect page complete.** Backend: transactional SQLite pipeline, FK enforcement, REST API (Oxygen.jl), CLI, TIFF→PNG image route with Q0f31-aware lognormalize. Frontend: three-card Index workspace (chat | trace plot | index choices), Inspect page (detector image + thumbnail filmstrip + reject-reason chips + sample metadata), trace viewer with peak editing + auto-fit y-floor + log/linear x toggle, auto-rotating detector canvas, Miller plot, PhasePanel with curate + stale-indices reanalyze, OnboardingFlow + NavModal with focus trapping. Test coverage: 237 Julia · 135 Vitest · 14 Playwright E2E (5 inspect + 9 smoke).
-- Deferred for later: Phase panel Recent section, export UI, per-user audit view, beamline-config editor, derived-exposure construction. See [docs/future-feature-ideas.md](docs/future-feature-ideas.md).
+- HimalayaUI: **Plans 1–6 + three-card Index redesign + Inspect page + experiment-config system complete.** Backend: transactional SQLite pipeline (incl. `_reingest_inner!`), FK enforcement, REST API (Oxygen.jl), CLI (config new/list, init, analyze, reingest, show, serve), TIFF→PNG image route with Q0f31-aware lognormalize, env-driven deployment (HIMALAYA_DB_PATH for centralised DB, HIMALAYA_CONFIGS_DIR for lab-specific templates). Adapter-driven file I/O via `experiment.toml` (positional or named columns, configurable file patterns, prefix-based filesystem discovery). Frontend: three-card Index workspace (chat | trace plot | index choices), Inspect page (detector image + thumbnail filmstrip + reject-reason chips + sample metadata), trace viewer with peak editing + auto-fit y-floor + log/linear x toggle, auto-rotating detector canvas, Miller plot, PhasePanel with curate + stale-indices reanalyze, OnboardingFlow + NavModal with focus trapping. Test coverage: 379 Julia (HimalayaUI) · 90 Julia (core) · 141 Vitest · 14 Playwright E2E (5 inspect + 9 smoke).
+- Deferred for later: Phase panel Recent section, export UI, per-user audit view, derived-exposure construction (raw / aggregated / background-subtracted exposure types — schema reserves `exposure_type` field), additional config templates beyond `simple.toml`. See [docs/future-feature-ideas.md](docs/future-feature-ideas.md).
 
 ## Further reading
 
 - [docs/peak-finding.md](docs/peak-finding.md) — narrative design notes, non-obvious defaults, out-of-scope decisions.
 - [docs/scoring.md](docs/scoring.md) — how and why of the index scoring formula (coverage × consistency).
+- [docs/experiment-config.md](docs/experiment-config.md) — `experiment.toml` schema, read-only contract, filename association, CLI reference. Required reading before touching `config.jl`, `manifest.jl`, or the cli init/reingest paths.
 - [docs/superpowers/specs/2026-04-22-himalaya-web-app-design.md](docs/superpowers/specs/2026-04-22-himalaya-web-app-design.md) — web app design spec (schema, API, UI layout). Load-bearing for all HimalayaUI work.
+- [docs/superpowers/specs/2026-04-28-experiment-config-design.md](docs/superpowers/specs/2026-04-28-experiment-config-design.md) — config system design spec.
 - [docs/superpowers/plans/](docs/superpowers/plans/) — implementation plans (one per sub-project).
 - [docs/future-feature-ideas.md](docs/future-feature-ideas.md) — intentionally-deferred features.
+- [packages/HimalayaUI/.env.example](packages/HimalayaUI/.env.example) — deployment env vars.
