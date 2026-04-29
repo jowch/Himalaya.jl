@@ -18,8 +18,11 @@ function bind_db!(db::SQLite.DB)
 end
 
 function register_routes!()
-    # Static frontend assets — only mounted if dist directory exists with content
-    dist_dir = joinpath(pkgdir(HimalayaUI), "frontend", "dist")
+    # Static frontend assets — only mounted if dist directory exists with content.
+    # HIMALAYA_FRONTEND_DIST overrides the package-bundled location, supporting
+    # /opt-style deployments where the build artefacts ship separately from src.
+    dist_dir = get(ENV, "HIMALAYA_FRONTEND_DIST",
+                   joinpath(pkgdir(HimalayaUI), "frontend", "dist"))
     if isdir(dist_dir)
         Oxygen.dynamicfiles(dist_dir, "/")
     end

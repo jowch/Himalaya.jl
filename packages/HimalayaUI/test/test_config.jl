@@ -453,3 +453,40 @@ end
 @testset "cli_config_new rejects missing directory" begin
     @test_throws ErrorException HimalayaUI.cli_config_new(type_name = "simple", dir = "/no/such/dir/xyz")
 end
+
+@testset "configs_dir respects HIMALAYA_CONFIGS_DIR" begin
+    mktempdir() do dir
+        # Drop a custom template into the override dir
+        write(joinpath(dir, "lab_local.toml"), read(
+            joinpath(HimalayaUI.configs_dir(), "simple.toml"), String))
+
+        old = get(ENV, "HIMALAYA_CONFIGS_DIR", nothing)
+        try
+            ENV["HIMALAYA_CONFIGS_DIR"] = dir
+            @test HimalayaUI.configs_dir() == dir
+            @test "lab_local" in HimalayaUI.list_config_types()
+            cfg = HimalayaUI.load_builtin_config("lab_local")
+            @test cfg.delimiter == "\t"
+        finally
+            old === nothing ? delete!(ENV, "HIMALAYA_CONFIGS_DIR") :
+                              (ENV["HIMALAYA_CONFIGS_DIR"] = old)
+        end
+    end
+end
+
+@testset "open_db respects HIMALAYA_DB_PATH" begin
+    mktempdir() do dir
+        central = joinpath(dir, "central.db")
+        old = get(ENV, "HIMALAYA_DB_PATH", nothing)
+        try
+            ENV["HIMALAYA_DB_PATH"] = central
+            db = HimalayaUI.open_db("/some/unrelated/experiment/path")
+            # Schema should be created at the central path, not at experiment_path
+            @test isfile(central)
+            close(db)
+        finally
+            old === nothing ? delete!(ENV, "HIMALAYA_DB_PATH") :
+                              (ENV["HIMALAYA_DB_PATH"] = old)
+        end
+    end
+end

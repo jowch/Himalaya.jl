@@ -216,8 +216,19 @@ function get_exposures(db::SQLite.DB, sample_id::Int)
         "SELECT * FROM exposures WHERE sample_id = ? ORDER BY id", [sample_id]))
 end
 
+"""
+    open_db(experiment_path) -> SQLite.DB
+
+Open the SQLite database. When `HIMALAYA_DB_PATH` is set in the
+environment, opens that path (centralised deployment — one DB shared by
+all experiments). When unset, falls back to legacy per-experiment
+behaviour: `<experiment_path>/himalaya.db`.
+
+Either way the schema is created/migrated and `PRAGMA foreign_keys = ON`
+is set on every connection.
+"""
 function open_db(experiment_path::String)::SQLite.DB
-    db_path = joinpath(experiment_path, "himalaya.db")
+    db_path = get(ENV, "HIMALAYA_DB_PATH", joinpath(experiment_path, "himalaya.db"))
     db = SQLite.DB(db_path)
     create_schema!(db)
     migrate_schema!(db)

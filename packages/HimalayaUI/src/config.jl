@@ -104,10 +104,12 @@ end
 """
     configs_dir() -> String
 
-Returns the path to the directory containing built-in config templates
-(packaged with HimalayaUI under `configs/`).
+Returns the path to the directory containing config templates. When
+`HIMALAYA_CONFIGS_DIR` is set in the environment, that path is used
+(allowing labs to layer in custom templates without patching the
+package). Otherwise returns the package's bundled `configs/` directory.
 """
-configs_dir() = joinpath(@__DIR__, "..", "configs")
+configs_dir() = get(ENV, "HIMALAYA_CONFIGS_DIR", joinpath(@__DIR__, "..", "configs"))
 
 """
     list_config_types() -> Vector{String}

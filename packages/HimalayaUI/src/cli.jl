@@ -365,14 +365,14 @@ function cli_serve(args)
             required = true
         "--port"
             arg_type = Int
-            default  = 8080
+            default  = parse(Int, get(ENV, "HIMALAYA_PORT", "8080"))
         "--host"
-            default  = "127.0.0.1"
+            default  = get(ENV, "HIMALAYA_HOST", "127.0.0.1")
     end
     p = parse_args(args, s; as_symbols = true)
 
-    db_path = joinpath(p[:experiment_path], "himalaya.db")
-    isfile(db_path) || error("no himalaya.db at $db_path — run `himalaya init` first")
+    db_path = get(ENV, "HIMALAYA_DB_PATH", joinpath(p[:experiment_path], "himalaya.db"))
+    isfile(db_path) || error("no database at $db_path — run `himalaya init` first")
 
     db = open_db(p[:experiment_path])
     println("HimalayaUI serving $(p[:experiment_path]) on http://$(p[:host]):$(p[:port])")
