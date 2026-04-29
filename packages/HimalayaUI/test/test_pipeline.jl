@@ -454,23 +454,23 @@ end
 
 using HimalayaUI: cli_analyze, cli_show, cli_init_with_db!
 
-@testset "cli_analyze uses experiment_path, not hardcoded id=1" begin
-    db_file = joinpath(mktempdir(), "himalaya.db")
-    dir1    = mktempdir()
-    dir2    = mktempdir()   # never registered
-
-    withenv("HIMALAYA_DB_PATH" => db_file) do
-        db = open_db(db_file)
-        # Set up dir1 as a valid registered experiment.
-        analysis_dir = joinpath(dir1, "analysis", "automatic_analysis")
+let
+    # Helper scoped to this section — not visible elsewhere in the test file.
+    function setup_exp_dir(dir; name="E", stems=["ST001"])
+        analysis_dir = joinpath(dir, "analysis", "automatic_analysis")
         mkpath(analysis_dir)
-        mkpath(joinpath(dir1, "data"))
+        mkpath(joinpath(dir, "data"))
         fixture = joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat")
-        cp(fixture, joinpath(analysis_dir, "ST001.dat"))
-        write(joinpath(dir1, "manifest.csv"), "skip-row\n1\tD1\tExp1\tT\tt\t\t\t\tST001\tnote_s\tnote_e")
-        write(joinpath(dir1, "experiment.toml"), """
+        for stem in stems
+            cp(fixture, joinpath(analysis_dir, stem * ".dat"); force=true)
+        end
+        write(joinpath(dir, "manifest.csv"), join([
+            "skip-row",
+            "1\tD1\t$(name)\tT\tt\t\t\t\t$(join(stems, ","))\tnote_s\tnote_e",
+        ], "\n"))
+        write(joinpath(dir, "experiment.toml"), """
         [experiment]
-        name = "Exp1"
+        name = "$name"
         description = ""
         manifest = "manifest.csv"
         [beamline]
@@ -492,69 +492,51 @@ using HimalayaUI: cli_analyze, cli_show, cli_init_with_db!
         integration = "{name}.dat"
         image = "{name}.tiff"
         """)
-        cli_init_with_db!(db, dir1)
     end
 
-    # After fix: raises ErrorException because dir2 is not registered.
-    # Before fix: silently operates on experiment id=1 (dir1), no error → test is RED.
-    withenv("HIMALAYA_DB_PATH" => db_file) do
-        @test_throws ErrorException cli_analyze([dir2])
+    @testset "cli_analyze uses experiment_path, not hardcoded id=1" begin
+        db_file = joinpath(mktempdir(), "himalaya.db")
+        dir1    = mktempdir()
+        dir2    = mktempdir()   # never registered
+
+        withenv("HIMALAYA_DB_PATH" => db_file) do
+            db = open_db(db_file)
+            setup_exp_dir(dir1; name="Exp1", stems=["ST001"])
+            cli_init_with_db!(db, dir1)
+        end
+
+        # After fix: raises ErrorException because dir2 is not registered.
+        # Before fix: silently operates on experiment id=1 (dir1), no error → test is RED.
+        withenv("HIMALAYA_DB_PATH" => db_file) do
+            @test_throws ErrorException cli_analyze([dir2])
+        end
+
+        # Success path: dir1 is registered — cli_analyze([dir1]) must not throw.
+        withenv("HIMALAYA_DB_PATH" => db_file) do
+            @test_nowarn cli_analyze([dir1])
+        end
     end
 
-    # Success path: dir1 is registered, so cli_analyze([dir1]) must NOT throw.
-    withenv("HIMALAYA_DB_PATH" => db_file) do
-        @test_nowarn cli_analyze([dir1])
-    end
-end
+    @testset "cli_show uses experiment_path, not hardcoded id=1" begin
+        db_file = joinpath(mktempdir(), "himalaya.db")
+        dir1    = mktempdir()
+        dir2    = mktempdir()   # never registered
 
-@testset "cli_show uses experiment_path, not hardcoded id=1" begin
-    db_file = joinpath(mktempdir(), "himalaya.db")
-    dir1    = mktempdir()
-    dir2    = mktempdir()   # never registered
+        withenv("HIMALAYA_DB_PATH" => db_file) do
+            db = open_db(db_file)
+            setup_exp_dir(dir1; name="Exp1", stems=["ST001"])
+            cli_init_with_db!(db, dir1)
+        end
 
-    withenv("HIMALAYA_DB_PATH" => db_file) do
-        db = open_db(db_file)
-        analysis_dir = joinpath(dir1, "analysis", "automatic_analysis")
-        mkpath(analysis_dir)
-        mkpath(joinpath(dir1, "data"))
-        fixture = joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat")
-        cp(fixture, joinpath(analysis_dir, "ST001.dat"))
-        write(joinpath(dir1, "manifest.csv"), "skip-row\n1\tD1\tExp1\tT\tt\t\t\t\tST001\tnote_s\tnote_e")
-        write(joinpath(dir1, "experiment.toml"), """
-        [experiment]
-        name = "Exp1"
-        description = ""
-        manifest = "manifest.csv"
-        [beamline]
-        [manifest]
-        delimiter = "\\t"
-        skip_rows = 1
-        header_row = 0
-        sample_id = 1
-        label = 2
-        name = 3
-        filenames = 9
-        notes_sample = 10
-        notes_exposure = 11
-        [layout]
-        data_dir = "data"
-        analysis_dir = "analysis/automatic_analysis"
-        exposure_type = "simple"
-        [files]
-        integration = "{name}.dat"
-        image = "{name}.tiff"
-        """)
-        cli_init_with_db!(db, dir1)
-    end
+        # After fix: raises ErrorException because dir2 is not registered.
+        # Before fix: silently returns exp1's data for sample "D1" → test is RED.
+        withenv("HIMALAYA_DB_PATH" => db_file) do
+            @test_throws ErrorException cli_show([dir2, "--sample", "D1"])
+        end
 
-    # After fix: raises ErrorException because dir2 is not registered.
-    # Before fix: silently returns exp1's data for sample "D1" → test is RED.
-    withenv("HIMALAYA_DB_PATH" => db_file) do
-        @test_throws ErrorException cli_show([dir2, "--sample", "D1"])
-    end
-
-    # Success path: dir1 is registered, so cli_show([dir1]) with valid sample must NOT throw.
-    withenv("HIMALAYA_DB_PATH" => db_file) do
-        @test_nowarn cli_show([dir1, "--sample", "D1"])
+        # Success path: dir1 is registered — cli_show([dir1]) with sample D1 must not throw.
+        withenv("HIMALAYA_DB_PATH" => db_file) do
+            @test_nowarn cli_show([dir1, "--sample", "D1"])
+        end
     end
 end
