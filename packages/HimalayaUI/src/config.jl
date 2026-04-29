@@ -166,3 +166,72 @@ function resolve_files(
     sort!(matches)
     [m[1:end-length(after)] for m in matches]
 end
+
+"""
+    config_to_toml(cfg::ExperimentConfig) -> String
+
+Serialize an `ExperimentConfig` to a TOML-formatted string suitable for
+storage in the `experiments.config` column or writing to disk. Uses the
+stdlib `TOML.print` to handle quoting and escaping correctly.
+"""
+function config_to_toml(cfg::ExperimentConfig)::String
+    function col_value(v)
+        v isa Integer ? Int(v) : String(v)
+    end
+    d = Dict(
+        "experiment" => Dict(
+            "name"        => cfg.name,
+            "description" => cfg.description,
+            "manifest"    => cfg.manifest_file,
+        ),
+        "beamline" => Dict(
+            "energy_kev"    => something(cfg.energy_kev,    0.0),
+            "flight_path_m" => something(cfg.flight_path_m, 0.0),
+        ),
+        "manifest" => Dict(
+            "delimiter"      => cfg.delimiter,
+            "skip_rows"      => cfg.skip_rows,
+            "header_row"     => cfg.header_row,
+            "sample_id"      => col_value(cfg.col_sample_id),
+            "label"          => col_value(cfg.col_label),
+            "name"           => col_value(cfg.col_name),
+            "filenames"      => col_value(cfg.col_filenames),
+            "notes_sample"   => col_value(cfg.col_notes_sample),
+            "notes_exposure" => col_value(cfg.col_notes_exposure),
+        ),
+        "layout" => Dict(
+            "data_dir"      => cfg.data_dir,
+            "analysis_dir"  => cfg.analysis_dir,
+            "exposure_type" => cfg.exposure_type,
+        ),
+        "files" => Dict(
+            "integration" => cfg.integration_pattern,
+            "image"       => cfg.image_pattern,
+        ),
+    )
+    io = IOBuffer()
+    TOML.print(io, d)
+    String(take!(io))
+end
+
+"""
+    config_from_db(db, experiment_id) -> ExperimentConfig
+
+Read the stored TOML blob from `experiments.config` and parse it back into
+an `ExperimentConfig`. If `config` is `NULL` (legacy experiment), falls back
+to the built-in `simple` template, preserving backward compatibility.
+"""
+function config_from_db(db::SQLite.DB, experiment_id::Int)::ExperimentConfig
+    rows = Tables.rowtable(DBInterface.execute(db,
+        "SELECT config FROM experiments WHERE id = ?", [experiment_id]))
+    isempty(rows) && error("Experiment $experiment_id not found")
+    blob = rows[1].config
+    if blob === nothing || blob === missing
+        return load_builtin_config("simple")
+    end
+    mktempdir() do dir
+        path = joinpath(dir, "experiment.toml")
+        write(path, blob)
+        load_config(path)
+    end
+end

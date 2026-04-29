@@ -1,4 +1,4 @@
-using Test, HimalayaUI
+using Test, HimalayaUI, SQLite
 
 # Helper: build a minimal valid TOML body, allowing overrides for the
 # `[files]` and `[manifest]` sections so individual test cases can poke at
@@ -278,4 +278,100 @@ end
     samples_new = HimalayaUI.parse_manifest(HimalayaUI.load_builtin_config("simple"), IOBuffer(csv))
     @test length(samples_old) == length(samples_new) == 1
     @test samples_old[1].filenames == samples_new[1].filenames
+end
+
+@testset "config_to_toml roundtrip" begin
+    cfg_orig = HimalayaUI.load_builtin_config("simple")
+    blob = HimalayaUI.config_to_toml(cfg_orig)
+    @test blob isa String
+    @test contains(blob, "[experiment]")
+    @test contains(blob, "[manifest]")
+    @test contains(blob, "[layout]")
+    @test contains(blob, "[files]")
+
+    # Round-trip: parse the blob and confirm it loads to an equivalent config
+    mktempdir() do dir
+        path = joinpath(dir, "experiment.toml")
+        write(path, blob)
+        cfg2 = HimalayaUI.load_config(path)
+        @test cfg2.delimiter           == cfg_orig.delimiter
+        @test cfg2.col_sample_id       == cfg_orig.col_sample_id
+        @test cfg2.data_dir            == cfg_orig.data_dir
+        @test cfg2.analysis_dir        == cfg_orig.analysis_dir
+        @test cfg2.integration_pattern == cfg_orig.integration_pattern
+        @test cfg2.image_pattern       == cfg_orig.image_pattern
+        @test cfg2.exposure_type       == cfg_orig.exposure_type
+    end
+end
+
+@testset "config_to_toml handles named string columns" begin
+    mktempdir() do dir
+        toml_path = joinpath(dir, "experiment.toml")
+        write(toml_path, """
+        [experiment]
+        name = "Test"
+        description = ""
+        manifest = "manifest.csv"
+        [beamline]
+        energy_kev = 12.0
+        flight_path_m = 2.5
+        [manifest]
+        delimiter = ","
+        skip_rows = 0
+        header_row = 1
+        sample_id = "#"
+        label = "Sample"
+        name = "Name"
+        filenames = "Filename(s)"
+        notes_sample = "Notes (Sample)"
+        notes_exposure = "Notes (Exposure)"
+        [layout]
+        data_dir = "data"
+        analysis_dir = "analysis/automatic_analysis"
+        exposure_type = "simple"
+        [files]
+        integration = "{name}.dat"
+        image = "{name}.tiff"
+        """)
+        cfg = HimalayaUI.load_config(toml_path)
+        blob = HimalayaUI.config_to_toml(cfg)
+
+        # Round-trip preserves string columns
+        roundtrip_path = joinpath(dir, "rt.toml")
+        write(roundtrip_path, blob)
+        cfg2 = HimalayaUI.load_config(roundtrip_path)
+        @test cfg2.col_sample_id == "#"
+        @test cfg2.col_label     == "Sample"
+        @test cfg2.col_filenames == "Filename(s)"
+    end
+end
+
+@testset "config_from_db roundtrip" begin
+    db = SQLite.DB()
+    HimalayaUI.create_schema!(db)
+    cfg_orig = HimalayaUI.load_builtin_config("simple")
+    blob = HimalayaUI.config_to_toml(cfg_orig)
+
+    exp_id = HimalayaUI.create_experiment!(db;
+        name = "Test/Exp", path = "/tmp/test",
+        data_dir = "/tmp/test/data",
+        analysis_dir = "/tmp/test/analysis/automatic_analysis",
+        config = blob, experiment_type = "simple")
+
+    cfg2 = HimalayaUI.config_from_db(db, exp_id)
+    @test cfg2.data_dir == cfg_orig.data_dir
+    @test cfg2.integration_pattern == cfg_orig.integration_pattern
+    @test cfg2.delimiter == cfg_orig.delimiter
+end
+
+@testset "config_from_db falls back to simple when config is NULL" begin
+    db = SQLite.DB()
+    HimalayaUI.create_schema!(db)
+    exp_id = HimalayaUI.create_experiment!(db;
+        name = "Legacy", path = "/tmp/legacy",
+        data_dir = "/tmp/legacy/data",
+        analysis_dir = "/tmp/legacy/analysis/automatic_analysis")
+    cfg = HimalayaUI.config_from_db(db, exp_id)
+    @test cfg.data_dir == "data"
+    @test cfg.integration_pattern == "{name}.dat"
 end
