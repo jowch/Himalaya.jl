@@ -243,3 +243,133 @@ end
         @test length(peaks) >= 0   # Just need analyze_exposure! not to throw
     end
 end
+
+@testset "cli_init_with_db! reads experiment.toml" begin
+    mktempdir() do dir
+        # Set up experiment directory
+        analysis_dir = joinpath(dir, "analysis", "automatic_analysis")
+        data_dir     = joinpath(dir, "data")
+        mkpath(analysis_dir)
+        mkpath(data_dir)
+
+        # Use the canonical fixture for valid integration data
+        fixture = joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat")
+        cp(fixture, joinpath(analysis_dir, "JC001.dat"))
+        cp(fixture, joinpath(analysis_dir, "JC002.dat"))
+
+        # Manifest
+        manifest = joinpath(dir, "manifest.csv")
+        write(manifest, join([
+            "skip-row",
+            "1\tD1\tUX1\tT\tt\t\t\t\tJC001-002\tnote_s\tnote_e",
+        ], "\n"))
+
+        # experiment.toml
+        write(joinpath(dir, "experiment.toml"), """
+        [experiment]
+        name = "Run/Exp"
+        description = ""
+        manifest = "manifest.csv"
+        [beamline]
+        energy_kev = 12.0
+        flight_path_m = 2.5
+        [manifest]
+        delimiter = "\\t"
+        skip_rows = 1
+        header_row = 0
+        sample_id = 1
+        label = 2
+        name = 3
+        filenames = 9
+        notes_sample = 10
+        notes_exposure = 11
+        [layout]
+        data_dir = "data"
+        analysis_dir = "analysis/automatic_analysis"
+        exposure_type = "simple"
+        [files]
+        integration = "{name}.dat"
+        image = "{name}.tiff"
+        """)
+
+        db = SQLite.DB()
+        HimalayaUI.create_schema!(db)
+        exp_id = HimalayaUI.cli_init_with_db!(db, dir)
+
+        # Verify experiment was created with config and beamline params
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT name, energy_kev, flight_path_m, config FROM experiments WHERE id = ?", [exp_id]))
+        @test length(rows) == 1
+        @test rows[1].name == "Run/Exp"
+        @test rows[1].energy_kev == 12.0
+        @test rows[1].flight_path_m == 2.5
+        @test contains(rows[1].config, "[experiment]")
+
+        # Verify samples and exposures
+        samples = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM samples WHERE experiment_id = ?", [exp_id]))
+        @test length(samples) == 1
+
+        exposures = Tables.rowtable(DBInterface.execute(db,
+            "SELECT filename FROM exposures WHERE sample_id = ? ORDER BY filename", [samples[1].id]))
+        @test [e.filename for e in exposures] == ["JC001", "JC002"]
+    end
+end
+
+@testset "cli_init_with_db! errors when experiment.toml missing" begin
+    mktempdir() do dir
+        db = SQLite.DB()
+        HimalayaUI.create_schema!(db)
+        @test_throws ErrorException HimalayaUI.cli_init_with_db!(db, dir)
+    end
+end
+
+@testset "cli_init_with_db! does not write to experiment directory" begin
+    mktempdir() do dir
+        analysis_dir = joinpath(dir, "analysis", "automatic_analysis")
+        data_dir = joinpath(dir, "data")
+        mkpath(analysis_dir)
+        mkpath(data_dir)
+        fixture = joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat")
+        cp(fixture, joinpath(analysis_dir, "JC001.dat"))
+        write(joinpath(dir, "manifest.csv"),
+              "skip-row\n1\tD1\tUX1\tT\tt\t\t\t\tJC001\t\t")
+        write(joinpath(dir, "experiment.toml"), """
+        [experiment]
+        name = "T"
+        description = ""
+        manifest = "manifest.csv"
+        [beamline]
+        energy_kev = 0.0
+        flight_path_m = 0.0
+        [manifest]
+        delimiter = "\\t"
+        skip_rows = 1
+        header_row = 0
+        sample_id = 1
+        label = 2
+        name = 3
+        filenames = 9
+        notes_sample = 10
+        notes_exposure = 11
+        [layout]
+        data_dir = "data"
+        analysis_dir = "analysis/automatic_analysis"
+        exposure_type = "simple"
+        [files]
+        integration = "{name}.dat"
+        image = "{name}.tiff"
+        """)
+
+        # Snapshot the file list before init
+        before = Set(readdir(dir))
+
+        db = SQLite.DB()
+        HimalayaUI.create_schema!(db)
+        HimalayaUI.cli_init_with_db!(db, dir)
+
+        # Snapshot after init — must be identical (no DB or other files written)
+        after = Set(readdir(dir))
+        @test before == after
+    end
+end

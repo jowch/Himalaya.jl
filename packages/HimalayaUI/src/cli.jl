@@ -2,69 +2,98 @@ using ArgParse
 using Printf
 using DBInterface
 
-function cli_init(args)
-    s = ArgParseSettings(prog = "himalaya init")
-    @add_arg_table! s begin
-        "experiment_path"
-            help     = "path to experiment directory"
-            required = true
-        "--manifest", "-m"
-            help     = "path to manifest CSV"
-            default  = nothing
-        "--beamline"
-            help     = "beamline profile name (default: default)"
-            default  = "default"
-        "--name"
-            help     = "experiment name"
-            default  = nothing
-    end
-    p = parse_args(args, s; as_symbols = true)
+"""
+    cli_init_with_db!(db, exp_dir) -> experiment_id
 
-    exp_path      = p[:experiment_path]
-    manifest_path = p[:manifest]
+Read `experiment.toml` from `exp_dir`, register the experiment in `db`, parse
+the manifest (if present), and create samples and exposures via filesystem
+discovery using the config's integration pattern.
 
-    data_dir     = joinpath(exp_path, "data")
-    analysis_dir = joinpath(exp_path, "analysis", "automatic_analysis")
+This function is read-only with respect to `exp_dir` — it does not create,
+modify, or delete any file inside it. All writes go to `db`.
+"""
+function cli_init_with_db!(db::SQLite.DB, exp_dir::String)::Int
+    exp_dir   = abspath(exp_dir)
+    toml_path = joinpath(exp_dir, "experiment.toml")
+    isfile(toml_path) || error("experiment.toml not found in $exp_dir. Run 'himalaya config new --dir $exp_dir' first.")
 
-    db     = open_db(exp_path)
-    exp_id = init_experiment!(db;
-        name          = something(p[:name], basename(exp_path)),
-        path          = exp_path,
-        data_dir      = data_dir,
-        analysis_dir  = analysis_dir,
-        manifest_path = manifest_path)
+    cfg  = load_config(toml_path)
+    blob = config_to_toml(cfg)
 
-    if manifest_path !== nothing && isfile(manifest_path)
-        samples = parse_manifest(manifest_path)
+    data_dir     = isabspath(cfg.data_dir)     ? cfg.data_dir     : joinpath(exp_dir, cfg.data_dir)
+    analysis_dir = isabspath(cfg.analysis_dir) ? cfg.analysis_dir : joinpath(exp_dir, cfg.analysis_dir)
+    manifest_path = isabspath(cfg.manifest_file) ? cfg.manifest_file :
+                    joinpath(exp_dir, cfg.manifest_file)
+
+    exp_name = isempty(cfg.name) ? basename(exp_dir) : cfg.name
+
+    exp_id = create_experiment!(db;
+        name            = exp_name,
+        path            = exp_dir,
+        data_dir        = data_dir,
+        analysis_dir    = analysis_dir,
+        manifest_path   = isfile(manifest_path) ? manifest_path : nothing,
+        config          = blob,
+        experiment_type = cfg.exposure_type,
+        energy_kev      = cfg.energy_kev,
+        flight_path_m   = cfg.flight_path_m,
+    )
+
+    if isfile(manifest_path)
+        samples = parse_manifest(cfg, manifest_path)
+        sample_count = 0
+        exposure_count = 0
         for ms in samples
             s_id = create_sample!(db;
                 experiment_id = exp_id,
                 label         = ms.label,
                 name          = ms.name,
                 notes         = ms.notes_sample)
-            for filename in ms.filenames
-                abs_filename = isabspath(filename) ? filename :
-                               joinpath(data_dir, filename)
-                image_path = isfile(abs_filename) ? find_tiff_for_dat(abs_filename) : nothing
-                create_exposure!(db; sample_id = s_id, filename = filename,
-                                 image_path = image_path)
-            end
-            if !isempty(ms.notes_exposure)
-                rows = Tables.rowtable(DBInterface.execute(db,
-                    "SELECT id FROM exposures WHERE sample_id = ? LIMIT 1", [s_id]))
-                if !isempty(rows)
-                    e_id = Int(rows[1].id)
-                    DBInterface.execute(db,
-                        "INSERT INTO exposure_tags (exposure_id, key, value, source)
-                         VALUES (?, 'note', ?, 'manifest')",
-                        [e_id, ms.notes_exposure])
+            sample_count += 1
+
+            for prefix in ms.filenames
+                stems = resolve_files(cfg, analysis_dir, prefix, cfg.integration_pattern)
+                if isempty(stems)
+                    @warn "No integration files found for prefix '$prefix' in $analysis_dir"
+                end
+                for stem in stems
+                    image_rel = replace(cfg.image_pattern, "{name}" => stem)
+                    image_full = joinpath(data_dir, image_rel)
+                    image_path = isfile(image_full) ? image_full : nothing
+                    e_id = create_exposure!(db;
+                        sample_id  = s_id,
+                        filename   = stem,
+                        image_path = image_path)
+                    exposure_count += 1
+
+                    if !isempty(ms.notes_exposure)
+                        DBInterface.execute(db,
+                            "INSERT INTO exposure_tags (exposure_id, key, value, source) VALUES (?, 'note', ?, 'manifest')",
+                            [e_id, ms.notes_exposure])
+                    end
                 end
             end
         end
-        println("Imported $(length(samples)) samples from manifest.")
+        println("Imported $sample_count samples and $exposure_count exposures from $(basename(manifest_path)).")
+    else
+        println("No manifest at $manifest_path — experiment registered without samples.")
     end
 
-    println("Initialized experiment #$exp_id at $exp_path")
+    println("Initialized experiment '$exp_name' (id=$exp_id) at $exp_dir")
+    exp_id
+end
+
+function cli_init(args)
+    s = ArgParseSettings(prog = "himalaya init")
+    @add_arg_table! s begin
+        "experiment_path"
+            help     = "path to experiment directory containing experiment.toml"
+            required = true
+    end
+    p = parse_args(args, s; as_symbols = true)
+    exp_dir = p[:experiment_path]
+    db = open_db(exp_dir)
+    cli_init_with_db!(db, exp_dir)
 end
 
 function cli_analyze(args)
