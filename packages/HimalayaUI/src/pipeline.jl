@@ -260,14 +260,25 @@ end
 
 Load the .dat file for `exposure_id`, run findpeaks + indexpeaks,
 auto-group results, and persist everything to the DB.
-The .dat filename is taken from `exposures.filename` with `.dat` appended.
+
+The .dat filename is constructed from `exposures.filename` and the integration
+pattern stored in the experiment's config (defaults to `{name}.dat` for
+experiments without an explicit config).
 """
 function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String)
     rows = Tables.rowtable(DBInterface.execute(db,
-        "SELECT filename FROM exposures WHERE id = ?", [exposure_id]))
+        """SELECT e.filename, x.id AS experiment_id
+           FROM exposures e
+           JOIN samples s ON s.id = e.sample_id
+           JOIN experiments x ON x.id = s.experiment_id
+           WHERE e.id = ?""", [exposure_id]))
     isempty(rows) && error("exposure $exposure_id not found")
-    filename = rows[1].filename
-    dat_path = joinpath(analysis_dir, filename * ".dat")
+    filename      = rows[1].filename
+    experiment_id = rows[1].experiment_id
+
+    cfg              = config_from_db(db, experiment_id)
+    pattern_filename = replace(cfg.integration_pattern, "{name}" => filename)
+    dat_path         = joinpath(analysis_dir, pattern_filename)
     isfile(dat_path) || error("dat file not found: $dat_path")
 
     q, I, σ      = load_dat(dat_path)
