@@ -93,10 +93,15 @@ export function interpolateI(q: number, trace: Trace): number {
 
 type Scale = { invert?: (v: number) => number; apply?: (v: number) => number } | undefined;
 
-interface IndexTick { q: number; color: string; indexId: number }
+interface IndexTick { q: number; color: string; indexId: number; speculative: boolean }
 function indexTicks(indices: IndexEntry[]): IndexTick[] {
   return indices.flatMap((ix) =>
-    ix.predicted_q.map((q) => ({ q, color: phaseColor(ix.phase), indexId: ix.id })));
+    ix.predicted_q.map((q) => ({
+      q,
+      color: phaseColor(ix.phase),
+      indexId: ix.id,
+      speculative: ix.kind === "speculative",
+    })));
 }
 
 // ── component ──────────────────────────────────────────────────────────────
@@ -395,6 +400,9 @@ export function TraceViewer({
       line.setAttribute("stroke-width", strokeWidth);
       line.setAttribute("stroke-opacity", strokeOpacity);
       line.setAttribute("stroke-linecap", "round");
+      // Speculative ticks always dashed — visual warning that the index is
+      // hand-built below the auto-analysis minpeaks bar.
+      if (t.speculative) line.setAttribute("stroke-dasharray", "2,3");
       tickRoot.appendChild(line);
     }
 
@@ -423,6 +431,7 @@ export function TraceViewer({
       line.setAttribute("stroke-width", strokeWidth);
       line.setAttribute("stroke-opacity", strokeOpacity);
       line.setAttribute("stroke-linecap", "round");
+      if (t.speculative) line.setAttribute("stroke-dasharray", "1,2");
       trackRoot.appendChild(line);
     }
 

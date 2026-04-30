@@ -82,7 +82,8 @@ CREATE TABLE IF NOT EXISTS indices (
     score       REAL,
     r_squared   REAL,
     lattice_d   REAL,
-    status      TEXT DEFAULT 'candidate'
+    status      TEXT DEFAULT 'candidate',
+    kind        TEXT NOT NULL DEFAULT 'auto'
 );
 
 CREATE TABLE IF NOT EXISTS index_peaks (
@@ -148,6 +149,7 @@ function migrate_schema!(db::SQLite.DB)
         "ALTER TABLE experiments ADD COLUMN flight_path_m REAL",
         "ALTER TABLE users ADD COLUMN first_name TEXT",
         "ALTER TABLE users ADD COLUMN last_name TEXT",
+        "ALTER TABLE indices ADD COLUMN kind TEXT NOT NULL DEFAULT 'auto'",
     ]
     for stmt in stmts
         try

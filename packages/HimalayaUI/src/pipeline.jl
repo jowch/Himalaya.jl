@@ -69,17 +69,33 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
     # Snapshot the custom group's members by *semantic identity* (phase + basis)
     # BEFORE we delete the indices rows. Without this, the deletion below
     # invalidates every PK in `index_group_members`, leaving the active set
-    # empty after reanalysis.
+    # empty after reanalysis. Restricted to kind='auto' members because
+    # speculative members keep stable ids across the wipe (see below).
     custom_member_identities = Tables.rowtable(DBInterface.execute(db, """
         SELECT g.id AS group_id, i.phase, i.basis
         FROM index_groups g
         JOIN index_group_members m ON m.group_id = g.id
         JOIN indices i ON i.id = m.index_id
-        WHERE g.exposure_id = ? AND g.kind = 'custom'
+        WHERE g.exposure_id = ? AND g.kind = 'custom' AND i.kind = 'auto'
         """, [exposure_id]))
 
-    # Remove prior auto peaks, indices, and auto groups for this exposure.
-    # Manual peaks (source='manual') are preserved.
+    # Snapshot speculative indices' index_peaks rows by q-value. Auto peaks are
+    # about to be re-detected with new ids, so the FK in index_peaks would
+    # dangle without this remap.
+    speculative_assignments = Tables.rowtable(DBInterface.execute(db, """
+        SELECT i.id AS index_id, ip.ratio_position, p.q AS q_value, p.source AS peak_source, p.id AS old_peak_id
+        FROM indices i
+        JOIN index_peaks ip ON ip.index_id = i.id
+        JOIN peaks p ON p.id = ip.peak_id
+        WHERE i.exposure_id = ? AND i.kind = 'speculative'
+        """, [exposure_id]))
+    speculative_index_ids = Tables.rowtable(DBInterface.execute(db,
+        "SELECT id, phase, basis FROM indices WHERE exposure_id = ? AND kind = 'speculative'",
+        [exposure_id]))
+
+    # Remove prior auto peaks, auto indices, and auto groups for this exposure.
+    # Manual peaks (source='manual') are preserved. Speculative indices are
+    # preserved but their index_peaks are wiped and re-resolved below.
     DBInterface.execute(db,
         "DELETE FROM index_group_members WHERE group_id IN
          (SELECT id FROM index_groups WHERE exposure_id = ? AND kind = 'auto')",
@@ -87,18 +103,20 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
     DBInterface.execute(db,
         "DELETE FROM index_groups WHERE exposure_id = ? AND kind = 'auto'",
         [exposure_id])
-    # Clear stale custom-group memberships too — we'll re-attach by semantic
-    # identity below. Orphan rows would otherwise sit alongside the new ones
-    # and confuse the JOIN in `_group_with_members`.
+    # Clear custom-group memberships of *auto* indices only — we'll re-attach
+    # by semantic identity below. Speculative members keep their membership
+    # rows because their index ids are stable.
+    DBInterface.execute(db, """
+        DELETE FROM index_group_members
+        WHERE index_id IN (
+          SELECT id FROM indices WHERE exposure_id = ? AND kind = 'auto'
+        )""", [exposure_id])
+    DBInterface.execute(db, """
+        DELETE FROM index_peaks
+        WHERE index_id IN (SELECT id FROM indices WHERE exposure_id = ?)
+        """, [exposure_id])
     DBInterface.execute(db,
-        "DELETE FROM index_group_members WHERE group_id IN
-         (SELECT id FROM index_groups WHERE exposure_id = ? AND kind = 'custom')",
-        [exposure_id])
-    DBInterface.execute(db,
-        "DELETE FROM index_peaks WHERE index_id IN
-         (SELECT id FROM indices WHERE exposure_id = ?)", [exposure_id])
-    DBInterface.execute(db,
-        "DELETE FROM indices WHERE exposure_id = ?", [exposure_id])
+        "DELETE FROM indices WHERE exposure_id = ? AND kind = 'auto'", [exposure_id])
 
     # Snapshot the q-values of any auto peaks the user explicitly excluded so
     # we can re-apply that override after re-detection. Without this, every
@@ -166,6 +184,188 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
         end
     end
 
+    # ── Re-resolve speculative indices' peak references ─────────────────────
+    # Auto peaks were just re-detected with new ids, so each speculative
+    # index's `index_peaks` rows need fresh peak_ids. We match by q-value
+    # (auto peaks: lookup in q_to_peak_id; manual peaks: by stable id).
+    # An index loses ratio assignments whose q-values no longer correspond to
+    # any current peak. If ≥ 2 assignments survive, we recompute its
+    # basis/r²/d/score; if not, we mark status='stale' but keep the row so
+    # the user can decide what to do.
+    if !isempty(speculative_index_ids)
+        # Build a fresh q→peak_id lookup that includes auto + manual peaks.
+        all_peak_rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id, q, sharpness, source, excluded FROM peaks WHERE exposure_id = ?",
+            [exposure_id]))
+        q_to_id_full   = Dict{Int, NamedTuple}()  # peak_id → full row
+        for pr in all_peak_rows
+            q_to_id_full[Int(pr.id)] = pr
+        end
+        manual_q_to_id = Dict{Int, Int}()
+        for pr in all_peak_rows
+            String(pr.source) == "manual" && (manual_q_to_id[Int(pr.id)] = Int(pr.id))
+        end
+
+        function _resolve_peak_id(snap_row)
+            if String(snap_row.peak_source) == "manual"
+                # Manual peaks keep their id across reanalysis.
+                pid = Int(snap_row.old_peak_id)
+                return haskey(q_to_id_full, pid) ? pid : nothing
+            else
+                # Auto peak — match by q-value within tolerance.
+                qv = Float64(snap_row.q_value)
+                pid = get(q_to_peak_id, qv, nothing)
+                pid !== nothing && return pid
+                # Fall back to fuzzy match (peak shifted slightly under new
+                # detection): find closest current auto peak within EXCLUDE_TOL.
+                tol = max(EXCLUDE_TOL, abs(qv) * 0.001)
+                best, best_delta = nothing, Inf
+                for pr in all_peak_rows
+                    String(pr.source) == "auto" || continue
+                    d = abs(Float64(pr.q) - qv)
+                    if d < best_delta && d <= tol
+                        best_delta = d
+                        best = Int(pr.id)
+                    end
+                end
+                return best
+            end
+        end
+
+        # Group snapshot rows by index_id.
+        by_index = Dict{Int, Vector{NamedTuple}}()
+        for r in speculative_assignments
+            push!(get!(by_index, Int(r.index_id), NamedTuple[]), r)
+        end
+
+        for ix_row in speculative_index_ids
+            ix_id = Int(ix_row.id)
+            phase_name = String(ix_row.phase)
+            P = let bare = last(split(phase_name, '.'))
+                try
+                    T = getfield(Himalaya, Symbol(bare))
+                    (T isa Type && T <: Himalaya.Phase) ? T : nothing
+                catch
+                    nothing
+                end
+            end
+            P === nothing && continue  # malformed phase string — leave as-is
+
+            ratios_unnorm = Himalaya.phaseratios(P)
+            ratios_normed = Himalaya.phaseratios(P; normalize = true)
+            n             = length(ratios_normed)
+
+            snaps = get(by_index, ix_id, NamedTuple[])
+            ratio_to_peak = Dict{Int, Tuple{Int, Float64, Float64}}()  # rpos → (peak_id, q, sharpness)
+            for s in snaps
+                rpos = Int(s.ratio_position)
+                pid  = _resolve_peak_id(s)
+                pid === nothing && continue
+                pr = q_to_id_full[pid]
+                # Treat newly-excluded peaks as if they don't exist.
+                (pr.excluded == 1 || pr.excluded === true) && continue
+                sharp = pr.sharpness === nothing || ismissing(pr.sharpness) ? 0.0 : Float64(pr.sharpness)
+                ratio_to_peak[rpos] = (pid, Float64(pr.q), sharp)
+            end
+
+            # Determine a working basis we can use to discover *new* peaks that
+            # fit the speculative's predicted ratio positions. Two paths:
+            #  - Survived snapshot has ≥ 2 peaks: refit basis from those.
+            #  - Stale-recovery path (< 2 survived): use the original q-values
+            #    from the snapshot — they encode the user's hypothesis even if
+            #    the underlying peaks no longer exist. This is what makes
+            #    "speculative goes stale → user adds a manual peak → reanalyze
+            #    pulls it in" actually work.
+            basis_for_snap = if length(ratio_to_peak) >= 2
+                rpos_seed = sort(collect(keys(ratio_to_peak)))
+                qvals_seed = [ratio_to_peak[r][2] for r in rpos_seed]
+                ratios_unnorm[rpos_seed] \ qvals_seed
+            elseif length(snaps) >= 2
+                snap_pairs = sort([(Int(s.ratio_position), Float64(s.q_value)) for s in snaps])
+                rpos_seed  = [first(p) for p in snap_pairs]
+                qvals_seed = [last(p)  for p in snap_pairs]
+                ratios_unnorm[rpos_seed] \ qvals_seed
+            else
+                # Once a speculative goes stale, its index_peaks (and therefore
+                # the snapshot) is empty. The `basis` column on the indices row
+                # itself was last set when the index was built, so use it as
+                # the persisted record of user intent for auto-discovery.
+                # `phaseratios` is normalized to ratio[1] = 1, so the ratio[1]
+                # equivalent of `basis` is just `basis`.
+                stored = Float64(ix_row.basis)
+                stored > 0 ? stored : nothing
+            end
+
+            # Auto-discovery pass: pull in any current peak that fits an unfilled
+            # ratio position within snap tolerance and isn't already claimed
+            # by another ratio of this index.
+            if basis_for_snap !== nothing && basis_for_snap > 0
+                claimed_pids = Set{Int}(p[1] for p in values(ratio_to_peak))
+                for rpos in 1:n
+                    haskey(ratio_to_peak, rpos) && continue
+                    predicted_q = basis_for_snap * ratios_normed[rpos]
+                    best_pid::Union{Int, Nothing} = nothing
+                    best_q     = 0.0
+                    best_sharp = 0.0
+                    best_relresid = SNAP_TOL
+                    for pr in all_peak_rows
+                        (pr.excluded == 1 || pr.excluded === true) && continue
+                        pid = Int(pr.id)
+                        pid in claimed_pids && continue
+                        qv = Float64(pr.q)
+                        relresid = abs(qv - predicted_q) / predicted_q
+                        if relresid <= best_relresid
+                            best_relresid = relresid
+                            best_pid      = pid
+                            best_q        = qv
+                            best_sharp    = pr.sharpness === nothing || ismissing(pr.sharpness) ? 0.0 : Float64(pr.sharpness)
+                        end
+                    end
+                    if best_pid !== nothing
+                        ratio_to_peak[rpos] = (best_pid, best_q, best_sharp)
+                        push!(claimed_pids, best_pid)
+                    end
+                end
+            end
+
+            if length(ratio_to_peak) < 2
+                # Still not enough peaks to keep the index live — mark stale.
+                DBInterface.execute(db,
+                    "UPDATE indices SET status = 'stale' WHERE id = ?", [ix_id])
+                continue
+            end
+
+            rpos_sorted = sort(collect(keys(ratio_to_peak)))
+            qvals      = [ratio_to_peak[r][2] for r in rpos_sorted]
+            sharpvals  = [ratio_to_peak[r][3] for r in rpos_sorted]
+
+            # Recompute basis/r²/d/score using new peak values
+            observed_ratios_used = ratios_unnorm[rpos_sorted]
+            new_basis = observed_ratios_used \ qvals
+
+            peaks_sv     = SparseArrays.SparseVector{Float64, Int}(n, rpos_sorted, qvals)
+            sharpness_sv = SparseArrays.SparseVector{Float64, Int}(n, rpos_sorted, sharpvals)
+            new_idx = Himalaya.Index{P}(new_basis, peaks_sv, sharpness_sv)
+            fit_result = Himalaya.fit(new_idx)
+            new_score = Himalaya.score(new_idx)
+
+            DBInterface.execute(db,
+                """UPDATE indices SET basis = ?, score = ?, r_squared = ?, lattice_d = ?,
+                                       status = 'candidate'
+                   WHERE id = ?""",
+                [new_basis, new_score, fit_result.R², fit_result.d, ix_id])
+
+            for (rpos, (pid, qv, _)) in ratio_to_peak
+                ideal = ratios_unnorm[rpos] * new_basis
+                resid = abs(qv - ideal)
+                DBInterface.execute(db,
+                    """INSERT OR IGNORE INTO index_peaks (index_id, peak_id, ratio_position, residual)
+                       VALUES (?, ?, ?, ?)""",
+                    [ix_id, pid, rpos, resid])
+            end
+        end
+    end
+
     # Persist auto group
     res = DBInterface.execute(db,
         "INSERT INTO index_groups (exposure_id, kind, active) VALUES (?, 'auto', 1)",
@@ -216,18 +416,19 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
             end
         end
 
-        # If any custom group survived with at least one re-attached member,
-        # it remains the active set — demote the freshly-created auto group.
-        # Mirrors the post-curate semantics of `ensure_custom_group!`.
-        custom_still_populated = Tables.rowtable(DBInterface.execute(db,
-            "SELECT g.id FROM index_groups g
-             WHERE g.exposure_id = ? AND g.kind = 'custom'
-               AND EXISTS (SELECT 1 FROM index_group_members m WHERE m.group_id = g.id)",
-            [exposure_id]))
-        if !isempty(custom_still_populated)
-            DBInterface.execute(db,
-                "UPDATE index_groups SET active = 0 WHERE id = ?", [group_db_id])
-        end
+    end
+
+    # If any custom group survived with at least one member (auto-reattached
+    # OR speculative), it remains the active set — demote the freshly-created
+    # auto group. Mirrors the post-curate semantics of `ensure_custom_group!`.
+    custom_still_populated = Tables.rowtable(DBInterface.execute(db,
+        "SELECT g.id FROM index_groups g
+         WHERE g.exposure_id = ? AND g.kind = 'custom'
+           AND EXISTS (SELECT 1 FROM index_group_members m WHERE m.group_id = g.id)",
+        [exposure_id]))
+    if !isempty(custom_still_populated)
+        DBInterface.execute(db,
+            "UPDATE index_groups SET active = 0 WHERE id = ?", [group_db_id])
     end
 end
 

@@ -24,6 +24,15 @@ export interface AppState {
   hoveredPeakId: number | undefined;
   navModalOpen: boolean;
   navModalStep: NavModalStep;
+  // Speculative builder: when set, the trace becomes click-targeted to pick
+  // an anchor peak. `phase`/`anchorRatio` are committed; `anchorPeakId` is
+  // null until the user clicks. Set to null when the builder is closed.
+  speculativeBuilder: {
+    exposureId: number;
+    phase: string;
+    anchorRatio: number;
+    anchorPeakId: number | null;
+  } | null;
 
   // setters
   setUsername: (name: string) => void;
@@ -40,6 +49,11 @@ export interface AppState {
   closeNavModal: () => void;
   setNavModalStep: (step: NavModalStep) => void;
   clearUsername: () => void;
+  openSpeculativeBuilder: (exposureId: number, phase: string, anchorRatio: number) => void;
+  setSpeculativeAnchor: (anchorPeakId: number | null) => void;
+  setSpeculativePhase: (phase: string) => void;
+  setSpeculativeAnchorRatio: (anchorRatio: number) => void;
+  closeSpeculativeBuilder: () => void;
 }
 
 export const useAppState = create<AppState>()(
@@ -59,6 +73,7 @@ export const useAppState = create<AppState>()(
       hoveredPeakId: undefined,
       navModalOpen: false,
       navModalStep: "experiment",
+      speculativeBuilder: null,
 
       setUsername: (username) => set({ username }),
       setUser: ({ username, firstName, lastName }) =>
@@ -82,6 +97,21 @@ export const useAppState = create<AppState>()(
       closeNavModal: () => set({ navModalOpen: false }),
       setNavModalStep: (navModalStep) => set({ navModalStep }),
       clearUsername: () => set({ username: undefined, firstName: undefined, lastName: undefined }),
+      openSpeculativeBuilder: (exposureId, phase, anchorRatio) =>
+        set({ speculativeBuilder: { exposureId, phase, anchorRatio, anchorPeakId: null } }),
+      setSpeculativeAnchor: (anchorPeakId) =>
+        set((s) => s.speculativeBuilder
+          ? { speculativeBuilder: { ...s.speculativeBuilder, anchorPeakId } }
+          : {}),
+      setSpeculativePhase: (phase) =>
+        set((s) => s.speculativeBuilder
+          ? { speculativeBuilder: { ...s.speculativeBuilder, phase, anchorPeakId: null } }
+          : {}),
+      setSpeculativeAnchorRatio: (anchorRatio) =>
+        set((s) => s.speculativeBuilder
+          ? { speculativeBuilder: { ...s.speculativeBuilder, anchorRatio } }
+          : {}),
+      closeSpeculativeBuilder: () => set({ speculativeBuilder: null }),
     }),
     {
       name: LS_KEY,
