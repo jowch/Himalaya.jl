@@ -13,11 +13,102 @@ For the design philosophy and the current iteration's choices, see
 
 ### Extended lattice types
 
-Monoclinic and tetragonal lattice indexing. These require fitting a lattice
-parameter *vector* (2+ free parameters) rather than a single basis, which
-changes how `indexpeaks` and `score` work internally. Will require extending
-the `Phase` type hierarchy and the indexing engine. Design the extension points
-when the need is concrete.
+Monoclinic (`a, b, c, β`) and tetragonal (`a, c`) lattice indexing. These
+require fitting a lattice parameter *vector* rather than a single basis,
+which changes how `indexpeaks`, `Index`, `score`, and `fit` work internally.
+Design the extension points when the need is concrete; notes below are the
+starting point for that work.
+
+**Why the current code can't do this as-is.** The whole engine rests on one
+load-bearing assumption: a phase is a 1D ratio series scaled by a single
+scalar `basis`. Cubic, hexagonal, square, and lamellar all have one free
+lattice parameter, so peak ratios are constants stored in
+[src/phase.jl:62-75](src/phase.jl:62). Tetragonal ratios depend on `c/a`;
+monoclinic ratios depend on three ratios and an angle. The vectorized
+matcher at [src/index.jl:134-148](src/index.jl:134) — `observed_ratios = X * (1 ./ B)` —
+collapses search to 1D *only* because the basis is a scalar. With two
+parameters, no scalar division turns a peak into a comparable ratio.
+
+**Recommended approach: dispatch-driven, not parallel implementations.**
+Add a parameter-count axis to the `Phase` hierarchy:
+
+```julia
+abstract type OneParamPhase  <: Phase end
+abstract type TwoParamPhase  <: Phase end
+abstract type FourParamPhase <: Phase end
+
+abstract type Cubic     <: OneParamPhase end
+abstract type Lamellar  <: OneParamPhase end
+abstract type Hexagonal <: OneParamPhase end
+abstract type Square    <: OneParamPhase end
+abstract type Tetragonal <: TwoParamPhase end
+abstract type Monoclinic <: FourParamPhase end
+```
+
+Every existing `where {P<:Phase}` method still matches — nothing breaks.
+The new abstract layer is a dispatch axis disguised as a hierarchy.
+
+Then split the matcher by trait:
+
+```julia
+function indexpeaks(::Type{P}, peaks, sharpness, domain, tol, requiremin) where {P<:OneParamPhase}
+    # exactly today's body — fast vectorized X * (1./B) path
+end
+
+function indexpeaks(::Type{P}, peaks, sharpness, domain, tol, requiremin) where {P<:TwoParamPhase}
+    # subset-fitting body: pick peak pairs, assign trial (hkl)₁,(hkl)₂,
+    # solve linearly for (a, c) on q² = A(h²+k²) + B·l², score predictions
+end
+```
+
+The top-level enumerator at [src/index.jl:98-100](src/index.jl:98) just adds
+the new phases to the loop — each phase routes itself to the correct method
+via dispatch. Cubic/hex/lamellar pay zero added cost.
+
+The same pattern applies to `predictpeaks`, `fit`, `score`'s coverage weights,
+`remove_subsets`, and `==` — one method per parameter-count class instead of
+runtime branches. The hexagonal `λ = 2/√3` special case at
+[src/index.jl:238](src/index.jl:238) is a foreshadowing of this exact pattern.
+
+**The `Index` struct change is unavoidable.**
+[src/index.jl:7-11](src/index.jl:7) declares `basis::Real` concretely.
+Generalize once: `basis::Real` → `params::Tuple` (or `NTuple{N,Real}` keyed
+on phase). Provide `basis(idx) = idx.params[1]` as a back-compat accessor —
+the codebase already uses `basis(index)` everywhere it reads the value
+([src/index.jl:23](src/index.jl:23)), so most call sites are insulated.
+
+**DB schema bump.** `indices.basis FLOAT` → either `indices.params TEXT`
+(JSON tuple) or split into typed columns (`lattice_a`, `lattice_b`,
+`lattice_c`, `lattice_beta`). One-time migration: scalar → `[scalar]`.
+Schema lives in [packages/HimalayaUI/src/db.jl](packages/HimalayaUI/src/db.jl).
+
+**Prerequisite: predicate-based selection rules.** Both the one-param and
+multi-param matchers need to enumerate allowed `(hkl)` per phase. Today's
+cubic phases get this for free because `phaseratios` is the pre-enumerated
+result. Tetragonal/monoclinic need explicit `is_allowed(::Type{P}, h, k, l)`
+predicates. This is the deferred refactor described in **Predicate-based
+phase ratios** below — it becomes a hard prerequisite when this work is
+picked up. Doing the predicate refactor first is the natural opening move.
+
+**What dispatch does not solve.**
+
+- *Algorithmic cost.* The `TwoParamPhase` matcher does peak-pair enumeration
+  × HKL-pair assignment. Combinatorial work; the language can't help.
+- *Score semantics.* `score`'s coverage weights peaks by ordinal rank
+  `1/r` in the canonical ratio list. With parameter-dependent ordering,
+  "rank" stops being canonical — define `peak_rank_weights(::Type{P}, params)`
+  per phase. Cubic returns today's weights; tetragonal computes them from
+  the q-ordering induced by `(a, c)`. The dispatch hook is clean; the
+  modeling decision still has to be made.
+
+**End-state.** `indexpeaks(peaks, sharpness)` keeps the same signature, the
+same outer loop, the same `remove_subsets` post-processing. Cubic/hex/
+lamellar retain the vectorized `X * (1./B)` matcher byte-for-byte. New
+phases plug in by adding (a) an HKL-allowed predicate, (b) a
+`predict_qs(P, params)` method, (c) participating in the multi-param
+`indexpeaks` method. The `Index` struct generalizes once. The DB grows a
+column or a JSON blob. Score and fit get one extra method per
+parameter-count class.
 
 ### Predicate-based phase ratios with on-demand extension
 
