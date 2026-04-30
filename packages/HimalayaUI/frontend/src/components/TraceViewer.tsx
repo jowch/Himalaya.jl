@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import * as Plot from "@observablehq/plot";
 import type { Trace, Peak, IndexEntry } from "../api";
 import { phaseColor } from "../phases";
@@ -22,6 +22,8 @@ export interface TraceViewerProps {
   xType?: "log" | "linear";
   /** Called on plot dblclick. Defaults to `() => onXDomain(null)`. */
   onReset?: () => void;
+  /** Q-axis units label. Defaults to "Å⁻¹" if omitted. */
+  qUnits?: string;
 }
 
 // ── constants ──────────────────────────────────────────────────────────────
@@ -102,11 +104,22 @@ export function TraceViewer({
   trace, peaks, activeGroupIndices, hoveredIndex, hoveredPeakId,
   onAddPeak, onRemovePeak, onTogglePeakExclusion,
   xDomain, onXDomain, yDomain = null, xType = "log", onReset,
+  qUnits,
 }: TraceViewerProps): JSX.Element {
   const hostRef       = useRef<HTMLDivElement>(null);
   const plotContainer = useRef<HTMLDivElement>(null);
   const overlayRef    = useRef<SVGSVGElement>(null);
   const plotElRef     = useRef<HTMLElement | SVGElement | null>(null);
+
+  const [_resizeKey, setResizeKey] = useState(0);
+
+  useEffect(() => {
+    const el = plotContainer.current;
+    if (!el) return;
+    const obs = new ResizeObserver(() => setResizeKey((k) => k + 1));
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
 
   // Re-render trigger for the overlay (needed because our deps include peaks
   // and indices; effects close over those values).
@@ -134,7 +147,7 @@ export function TraceViewer({
       },
       x: {
         type: xType,
-        label: "q (Å⁻¹)",
+        label: `q (${qUnits ?? "Å⁻¹"})`,
         // Plain decimal tick labels — Plot's default SI-suffix formatter
         // renders 0.040 as "40m" which is unhelpful for SAXS q values.
         tickFormat: (d: number) => formatAxis(d),
@@ -244,7 +257,7 @@ export function TraceViewer({
       plotElRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trace, peaks, activeGroupIndices, hoveredIndex, xDomain, yDomain, xType, onAddPeak, onRemovePeak, onTogglePeakExclusion, onXDomain, onReset]);
+  }, [trace, peaks, activeGroupIndices, hoveredIndex, xDomain, yDomain, xType, qUnits, onAddPeak, onRemovePeak, onTogglePeakExclusion, onXDomain, onReset, _resizeKey]);
 
   // ── overlay renderer (peaks + predicted-q lines + cursor) ───────────────
   const renderOverlay = useCallback((): void => {

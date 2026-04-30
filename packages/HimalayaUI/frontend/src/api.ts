@@ -1,4 +1,9 @@
-export interface User { id: number; username: string; }
+export interface User {
+  id: number;
+  username: string;
+  first_name: string | null;
+  last_name: string | null;
+}
 
 export interface Experiment {
   id: number;
@@ -8,6 +13,7 @@ export interface Experiment {
   analysis_dir: string;
   manifest_path: string | null;
   created_at: string;
+  q_units: string | null;
 }
 
 export interface SampleTag {
@@ -68,8 +74,11 @@ function safeJson(s: string): unknown {
 
 // Users
 export const listUsers  = () => request<User[]>("GET", "/api/users");
-export const createUser = (username: string, opts?: AuthOpts) =>
-  request<User>("POST", "/api/users", { username }, opts);
+export const createUser = (
+  username: string,
+  fields?: { first_name?: string; last_name?: string },
+  opts?: AuthOpts,
+) => request<User>("POST", "/api/users", { username, ...fields }, opts);
 
 // Experiments
 export const listExperiments = () =>

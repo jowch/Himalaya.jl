@@ -27,13 +27,15 @@ const TUTORIAL_SLIDES: readonly { title: string; body: string }[] = [
   {
     title: "Three panels, one screen",
     body:
-      "Chat is on the left — jot observations as you go. The plot is in the middle. " +
+      "Chat is on the left — jot observations as you go, and type @ to mention a peak, " +
+      "index, exposure, or sample inline. The plot is in the middle. " +
       "Index choices are on the right: hover a candidate to preview its peaks.",
   },
   {
     title: "Move quickly between samples",
     body:
-      "Press , and . to jump to the previous or next sample in the current experiment. " +
+      "Press , and . to jump to the previous or next sample. " +
+      "Use ← → to switch between the Inspect, Index, and Compare tabs. " +
       "Press / any time to open the picker.",
   },
   {
@@ -46,28 +48,39 @@ const TUTORIAL_SLIDES: readonly { title: string; body: string }[] = [
 
 type Phase = "name" | "tutorial";
 
+/** Allowed handle characters: letters, digits, underscore. No @, no spaces. */
+const HANDLE_RE = /^[A-Za-z0-9_]+$/;
+
+interface PendingUser {
+  username: string;
+  firstName?: string | undefined;
+  lastName?: string | undefined;
+}
+
 export function OnboardingFlow(): JSX.Element | null {
   const username      = useAppState((s) => s.username);
   const tutorialSeen  = useAppState((s) => s.tutorialSeen);
-  const setUsername   = useAppState((s) => s.setUsername);
+  const setUser       = useAppState((s) => s.setUser);
   const setTutorialSeen = useAppState((s) => s.setTutorialSeen);
 
   const [phase, setPhase] = useState<Phase>("name");
   const [users, setUsers] = useState<User[]>([]);
   const [selection, setSelection] = useState<string>("__new__");
-  const [newName, setNewName] = useState("");
+  const [newHandle, setNewHandle] = useState("");
+  const [newFirst, setNewFirst]   = useState("");
+  const [newLast, setNewLast]     = useState("");
   const [error, setError] = useState<string | null>(null);
   const [slide, setSlide] = useState(0);
-  // Hold the chosen name locally until the tutorial is dismissed; setting
-  // `username` in the store would unmount this component and skip the tutorial.
-  const [pendingName, setPendingName] = useState<string | null>(null);
+  // Hold the chosen user locally until the tutorial is dismissed; committing
+  // to the store would unmount this component and skip the tutorial.
+  const [pending, setPending] = useState<PendingUser | null>(null);
 
   useEffect(() => {
     if (username !== undefined) return;
     setError(null);
     setPhase("name");
     setSlide(0);
-    setPendingName(null);
+    setPending(null);
     void (async () => {
       try {
         const list = await api.listUsers();
@@ -84,16 +97,29 @@ export function OnboardingFlow(): JSX.Element | null {
   const onSubmitName = async (): Promise<void> => {
     setError(null);
     const isNew = selection === "__new__";
-    const name  = isNew ? newName.trim() : selection;
-    if (!name) { setError("Username required"); return; }
+    // Tolerate a leading @ even though the visual prefix means it shouldn't be there.
+    const handle = isNew ? newHandle.trim().replace(/^@/, "") : selection;
+    if (!handle) { setError("Handle required"); return; }
+    if (isNew && !HANDLE_RE.test(handle)) {
+      setError("Handle may only contain letters, digits, and underscores");
+      return;
+    }
+    const fields: { first_name?: string; last_name?: string } = {};
+    if (isNew && newFirst.trim()) fields.first_name = newFirst.trim();
+    if (isNew && newLast.trim())  fields.last_name  = newLast.trim();
     try {
-      await api.createUser(name, { username: name });
-      // Brand-new user AND hasn't seen tutorial? → stash name, show tutorial.
+      const created = await api.createUser(handle, fields, { username: handle });
+      const next: PendingUser = {
+        username: created.username,
+        ...(created.first_name ? { firstName: created.first_name } : {}),
+        ...(created.last_name  ? { lastName:  created.last_name  } : {}),
+      };
+      // Brand-new user AND hasn't seen tutorial? → stash, show tutorial.
       if (isNew && !tutorialSeen) {
-        setPendingName(name);
+        setPending(next);
         setPhase("tutorial");
       } else {
-        setUsername(name);
+        setUser(next);
       }
     } catch (e) {
       setError(`Failed: ${(e as Error).message}`);
@@ -102,8 +128,8 @@ export function OnboardingFlow(): JSX.Element | null {
 
   const closeTutorial = (): void => {
     setTutorialSeen(true);
-    if (pendingName !== null) setUsername(pendingName);
-    setPendingName(null);
+    if (pending !== null) setUser(pending);
+    setPending(null);
     setPhase("name");
   };
 
@@ -125,8 +151,12 @@ export function OnboardingFlow(): JSX.Element | null {
           users={users}
           selection={selection}
           onSelection={setSelection}
-          newName={newName}
-          onNewName={setNewName}
+          newHandle={newHandle}
+          onNewHandle={setNewHandle}
+          newFirst={newFirst}
+          onNewFirst={setNewFirst}
+          newLast={newLast}
+          onNewLast={setNewLast}
           error={error}
           onSubmit={onSubmitName}
         />
@@ -150,20 +180,41 @@ interface NameStepProps {
   users: User[];
   selection: string;
   onSelection: (s: string) => void;
-  newName: string;
-  onNewName: (s: string) => void;
+  newHandle: string;
+  onNewHandle: (s: string) => void;
+  newFirst: string;
+  onNewFirst: (s: string) => void;
+  newLast: string;
+  onNewLast: (s: string) => void;
   error: string | null;
   onSubmit: () => void;
 }
 
 function NameStep({
-  users, selection, onSelection, newName, onNewName, error, onSubmit,
+  users, selection, onSelection,
+  newHandle, onNewHandle, newFirst, onNewFirst, newLast, onNewLast,
+  error, onSubmit,
 }: NameStepProps): JSX.Element {
   const dialogRef = useRef<HTMLDivElement>(null);
   useFocusTrap(dialogRef, true);
   const inputClass =
     "w-full bg-bg border border-border rounded-md px-2 py-1 " +
     "focus:outline focus:outline-1 focus:outline-accent focus:border-accent";
+
+  const displayName = (u: User): string => {
+    const full = [u.first_name, u.last_name].filter(Boolean).join(" ");
+    return full ? `${full} (@${u.username})` : u.username;
+  };
+
+  const previewLabel = (first: string, last: string, handle: string): string => {
+    const name = [first.trim(), last.trim()].filter(Boolean).join(" ");
+    const h = handle.trim().replace(/^@/, "");
+    if (!name && !h) return " "; // reserve a line of space so layout doesn't jump
+    if (!h)          return name;
+    if (!name)       return `@${h}`;
+    return `${name} @${h}`;
+  };
+
   return (
     <div
       ref={dialogRef}
@@ -185,20 +236,54 @@ function NameStep({
         data-testid="onboarding-user-select"
       >
         {users.map((u) => (
-          <option key={u.id} value={u.username}>{u.username}</option>
+          <option key={u.id} value={u.username}>{displayName(u)}</option>
         ))}
         <option value="__new__">+ New user…</option>
       </select>
       {selection === "__new__" && (
-        <input
-          className={inputClass}
-          type="text"
-          placeholder="Enter username"
-          value={newName}
-          onChange={(e) => onNewName(e.target.value)}
-          autoFocus
-          data-testid="onboarding-new-name"
-        />
+        <div className="flex flex-col gap-2">
+          <input
+            className={inputClass}
+            type="text"
+            placeholder="First name"
+            value={newFirst}
+            onChange={(e) => onNewFirst(e.target.value)}
+            autoFocus
+            data-testid="onboarding-new-first"
+          />
+          <input
+            className={inputClass}
+            type="text"
+            placeholder="Last name"
+            value={newLast}
+            onChange={(e) => onNewLast(e.target.value)}
+            data-testid="onboarding-new-last"
+          />
+          <div className="flex items-stretch border border-border rounded-md
+                          bg-bg overflow-hidden
+                          focus-within:outline focus-within:outline-1
+                          focus-within:outline-accent focus-within:border-accent">
+            <span
+              aria-hidden="true"
+              className="px-2 py-1 text-fg-muted bg-bg-elevated border-r border-border
+                         select-none"
+            >@</span>
+            <input
+              className="flex-1 bg-transparent px-2 py-1 focus:outline-none"
+              type="text"
+              placeholder="handle"
+              value={newHandle}
+              onChange={(e) => onNewHandle(e.target.value.replace(/^@/, ""))}
+              data-testid="onboarding-new-handle"
+            />
+          </div>
+          <p
+            data-testid="onboarding-preview"
+            className="text-fg-muted text-sm pl-1 min-h-[1.25rem]"
+          >
+            {previewLabel(newFirst, newLast, newHandle)}
+          </p>
+        </div>
       )}
       {error && <p className="text-error text-base">{error}</p>}
       <div className="flex justify-end">

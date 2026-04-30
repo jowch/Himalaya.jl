@@ -8,7 +8,7 @@ describe("api", () => {
     const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ id: 1, username: "alice" }), { status: 200 }),
     );
-    await api.createUser("alice", { username: "alice" });
+    await api.createUser("alice", undefined, { username: "alice" });
     const init = fetchSpy.mock.calls[0]![1] as RequestInit;
     expect((init.headers as Record<string, string>)["X-Username"]).toBe("alice");
   });

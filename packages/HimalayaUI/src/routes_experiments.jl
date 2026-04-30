@@ -1,12 +1,25 @@
 using HTTP, JSON3, DBInterface, Tables, Oxygen
 
+function _experiment_row_to_json(row::NamedTuple)
+    d = row_to_json(row)
+    cfg_text = get(d, :config, nothing)
+    q_units = if cfg_text isa AbstractString && !isempty(cfg_text)
+        bl = get(TOML.parse(cfg_text), "beamline", Dict())
+        get(bl, "q_units", "Å⁻¹")
+    else
+        "Å⁻¹"
+    end
+    d[:q_units] = q_units
+    d
+end
+
 function register_experiments_routes!()
     @get "/api/experiments" function(req::HTTP.Request)
         db   = current_db()
         rows = Tables.rowtable(DBInterface.execute(db,
             "SELECT * FROM experiments ORDER BY id"))
         HTTP.Response(200, ["Content-Type" => "application/json"],
-            JSON3.write(rows_to_json(rows)))
+            JSON3.write([_experiment_row_to_json(r) for r in rows]))
     end
 
     @get "/api/experiments/{id}" function(req::HTTP.Request, id::Int)
@@ -17,7 +30,7 @@ function register_experiments_routes!()
             ["Content-Type" => "application/json"],
             JSON3.write(Dict(:error => "experiment not found")))
         HTTP.Response(200, ["Content-Type" => "application/json"],
-            JSON3.write(row_to_json(rows[1])))
+            JSON3.write(_experiment_row_to_json(rows[1])))
     end
 
     @patch "/api/experiments/{id}" function(req::HTTP.Request, id::Int)
@@ -52,7 +65,7 @@ function register_experiments_routes!()
         rows = Tables.rowtable(DBInterface.execute(db,
             "SELECT * FROM experiments WHERE id = ?", [id]))
         HTTP.Response(200, ["Content-Type" => "application/json"],
-            JSON3.write(row_to_json(rows[1])))
+            JSON3.write(_experiment_row_to_json(rows[1])))
     end
 
     @post "/api/experiments/{id}/analyze" function(req::HTTP.Request, id::Int)

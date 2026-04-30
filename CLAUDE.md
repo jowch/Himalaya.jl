@@ -240,7 +240,7 @@ julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
   - **Backend:** transactional SQLite pipeline (incl. `_reingest_inner!`), FK enforcement, REST API (Oxygen.jl), CLI (`config new/list`, `init`, `analyze`, `reingest`, `show`, `serve`), TIFF→PNG image route with Q0f31-aware lognormalize, env-driven deployment (`HIMALAYA_DB_PATH`, `HIMALAYA_CONFIGS_DIR`).
   - **Adapter-driven I/O:** `experiment.toml` per experiment, positional or named columns, configurable file patterns, prefix-based filesystem discovery.
   - **Frontend:** three-card Index workspace (chat | trace plot | index choices), Inspect page (detector image + thumbnail filmstrip + reject-reason chips + sample metadata), trace viewer with peak editing + auto-fit y-floor + log/linear x toggle, auto-rotating detector canvas, Miller plot, PhasePanel with curate + stale-indices reanalyze, OnboardingFlow + NavModal with focus trapping. Skeleton loading screens via boneyard-js on all major data-driven cards. Chat @-mention system (`@peak`, `@index`, `@exposure`, `@sample`) via `MentionChip` / `MentionCompose` / `useMentionResolution`.
-  - **Test coverage:** 434 Julia (HimalayaUI) · 90 Julia (core) · 174 Vitest · 16 Playwright E2E (7 inspect + 9 smoke).
+  - **Test coverage:** 452 Julia (HimalayaUI) · 90 Julia (core) · 174 Vitest · 16 Playwright E2E (7 inspect + 9 smoke).
 - Deferred for later: Phase panel Recent section, export UI, per-user audit view, derived-exposure construction (raw / aggregated / background-subtracted exposure types — schema reserves `exposure_type` field), additional config templates beyond `simple.toml`. See [docs/future-feature-ideas.md](docs/future-feature-ideas.md).
 
 ## Further reading

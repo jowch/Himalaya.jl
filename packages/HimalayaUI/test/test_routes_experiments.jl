@@ -43,6 +43,18 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
             "SELECT COUNT(*) AS c FROM peaks"))[1].c
         @test peak_count > 0
 
+        # q_units present in response (default Å⁻¹ when not set in config)
+        r2 = HTTP.get("$base/api/experiments/$exp_id")
+        body2 = JSON3.read(String(r2.body))
+        @test haskey(body2, :q_units)
+        @test body2.q_units == "Å⁻¹"
+
+        # q_units in list response too
+        r3 = HTTP.get("$base/api/experiments")
+        list = JSON3.read(String(r3.body))
+        @test length(list) >= 1
+        @test haskey(list[1], :q_units)
+
         # 404
         r = HTTP.get("$base/api/experiments/999"; status_exception = false)
         @test r.status == 404

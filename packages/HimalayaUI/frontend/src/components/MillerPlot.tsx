@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as Plot from "@observablehq/plot";
 import type { IndexEntry } from "../api";
 import { phaseColor } from "../phases";
@@ -40,6 +40,15 @@ export function toScatterData(indices: IndexEntry[]): ScatterRow[] {
 
 export function MillerPlot({ indices, hoveredIndex }: MillerPlotProps): JSX.Element {
   const hostRef = useRef<HTMLDivElement>(null);
+
+  const [_resizeKey, setResizeKey] = useState(0);
+  useEffect(() => {
+    const el = hostRef.current;
+    if (!el) return;
+    const obs = new ResizeObserver(() => setResizeKey((k) => k + 1));
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -113,7 +122,7 @@ export function MillerPlot({ indices, hoveredIndex }: MillerPlotProps): JSX.Elem
 
     host.replaceChildren(el);
     return () => { host.replaceChildren(); };
-  }, [indices, hoveredIndex]);
+  }, [indices, hoveredIndex, _resizeKey]);
 
   return <div ref={hostRef} className="w-full h-full" data-testid="miller-plot" />;
 }

@@ -10,7 +10,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test r.status == 200
         @test JSON3.read(String(r.body)) == []
 
-        # Create
+        # Create without first/last (legacy path)
         r = HTTP.post("$base/api/users";
             body = JSON3.write(Dict(:username => "alice")),
             headers = ["Content-Type" => "application/json"])
@@ -18,6 +18,8 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         created = JSON3.read(String(r.body))
         @test created.username == "alice"
         @test created.id == 1
+        @test isnothing(created.first_name)
+        @test isnothing(created.last_name)
 
         # Idempotent — second create returns existing
         r = HTTP.post("$base/api/users";
@@ -26,11 +28,32 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test r.status == 200
         @test JSON3.read(String(r.body)).id == 1
 
-        # List now has alice
+        # Create with first_name and last_name
+        r = HTTP.post("$base/api/users";
+            body = JSON3.write(Dict(:username => "jwhc", :first_name => "Jonathan", :last_name => "Chen")),
+            headers = ["Content-Type" => "application/json"])
+        @test r.status == 201
+        created2 = JSON3.read(String(r.body))
+        @test created2.username   == "jwhc"
+        @test created2.first_name == "Jonathan"
+        @test created2.last_name  == "Chen"
+
+        # List returns first_name/last_name
         r = HTTP.get("$base/api/users")
         users = JSON3.read(String(r.body))
-        @test length(users) == 1
-        @test users[1].username == "alice"
+        @test length(users) == 2
+        jwhc = first(filter(u -> u.username == "jwhc", users))
+        @test jwhc.first_name == "Jonathan"
+        @test jwhc.last_name  == "Chen"
+
+        # Reject invalid handles (spaces, @, hyphens, etc.)
+        for bad in ("has space", "with-dash", "@withat", "with.dot")
+            r = HTTP.post("$base/api/users";
+                body = JSON3.write(Dict(:username => bad)),
+                headers = ["Content-Type" => "application/json"],
+                status_exception = false)
+            @test r.status == 400
+        end
 
         # Empty audit trail
         r = HTTP.get("$base/api/users/alice/actions")
