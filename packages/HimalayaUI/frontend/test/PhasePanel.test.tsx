@@ -212,4 +212,26 @@ describe("<PhasePanel> — alternatives", () => {
       expect(urls).toContain("/api/groups/2/members");
     });
   });
+
+  it("renders ⟨k⟩ for cubic phases when ngc is present, omits it otherwise", async () => {
+    mockAll(
+      [
+        { id: 10, exposure_id: 42, phase: "Pn3m", basis: 0.5, score: 1.0,
+          r_squared: 0.998, lattice_d: 12.5, ngc: -1.51, status: "candidate",
+          predicted_q: [0.7], peaks: [] },
+        { id: 11, exposure_id: 42, phase: "Lamellar", basis: 0.3, score: 0.6,
+          r_squared: 0.99, lattice_d: 9.1, ngc: null, status: "candidate",
+          predicted_q: [0.4], peaks: [] },
+      ],
+      [{ id: 1, exposure_id: 42, kind: "auto", active: true, members: [10, 11] }],
+    );
+    renderWithProviders(<PhasePanel exposureId={42} />);
+    await waitFor(() => expect(screen.getByText("Pn3m")).toBeInTheDocument());
+
+    const cubic = screen.getByTestId("ngc-10");
+    expect(cubic).toHaveTextContent("⟨k⟩");
+    expect(cubic).toHaveTextContent("-1.51");
+    expect(cubic).toHaveTextContent("nm⁻²");
+    expect(screen.queryByTestId("ngc-11")).toBeNull();
+  });
 });

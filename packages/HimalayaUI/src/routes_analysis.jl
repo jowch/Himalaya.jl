@@ -70,6 +70,30 @@ function predicted_q_for_phase(phase_name::AbstractString, basis::Float64)::Vect
     [basis * r for r in ratios]
 end
 
+"""
+    _ngc_for_phase(phase_name, lattice_d) -> Union{Float64, Nothing}
+
+Compute phase-averaged Gaussian curvature ⟨k⟩ in 1/nm² for the three
+bicontinuous cubic phases (Ia3d, Pn3m, Im3m). Returns `nothing` for
+other phases or when `lattice_d` is missing/non-positive.
+"""
+function _ngc_for_phase(phase_name::AbstractString, lattice_d)::Union{Float64, Nothing}
+    (lattice_d === nothing || ismissing(lattice_d)) && return nothing
+    a = Float64(lattice_d)
+    a > 0 || return nothing
+    bare = last(split(phase_name, '.'))
+    χ, A₀ = if bare == "Ia3d"
+        (-8, 3.091)
+    elseif bare == "Pn3m"
+        (-2, 1.919)
+    elseif bare == "Im3m"
+        (-4, 2.345)
+    else
+        return nothing
+    end
+    Float64(Himalaya.ngc(χ, A₀, a))
+end
+
 function register_analysis_routes!()
     @get "/api/exposures/{id}/indices" function(req::HTTP.Request, id::Int)
         db = current_db()
@@ -85,6 +109,7 @@ function register_analysis_routes!()
             d = row_to_json(ix)
             d[:peaks]        = rows_to_json(peak_rows)
             d[:predicted_q]  = predicted
+            d[:ngc]          = _ngc_for_phase(String(ix.phase), ix.lattice_d)
             d
         end
         HTTP.Response(200, ["Content-Type" => "application/json"],
@@ -161,6 +186,7 @@ function register_analysis_routes!()
         d               = row_to_json(ix)
         d[:peaks]       = rows_to_json(peak_rows)
         d[:predicted_q] = predicted
+        d[:ngc]         = _ngc_for_phase(String(ix.phase), ix.lattice_d)
         HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(d))
     end
 end

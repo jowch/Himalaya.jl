@@ -33,6 +33,20 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
             end
         end
 
+        # ngc — present on all indices, finite for the three bicontinuous
+        # cubic phases (Ia3d, Pn3m, Im3m), null otherwise. Sign matches
+        # core Himalaya.ngc — see src/index.jl.
+        cubic = ("Ia3d", "Pn3m", "Im3m")
+        for entry in indices
+            @test haskey(entry, :ngc)
+            if String(entry.phase) in cubic
+                @test entry.ngc !== nothing
+                @test isfinite(entry.ngc)
+            else
+                @test entry.ngc === nothing
+            end
+        end
+
         # Groups — auto only, active
         r = HTTP.get("$base/api/exposures/$e_id/groups")
         @test r.status == 200

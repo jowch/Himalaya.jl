@@ -117,7 +117,7 @@ describe("<TraceViewer> — overlay ticks", () => {
     const trace = { q: [0.1, 0.2, 0.3], I: [10, 20, 30], sigma: [1, 1, 1] };
     const indices: IndexEntry[] = [{
       id: 1, exposure_id: 1, phase: "Pn3m", basis: 0.5, score: 1,
-      r_squared: 0.99, lattice_d: 12, status: "candidate",
+      r_squared: 0.99, lattice_d: 12, ngc: -1.51, status: "candidate",
       predicted_q: [0.7, 0.9],
       peaks: [],
     }];
@@ -142,7 +142,7 @@ describe("<TraceViewer> — overlay ticks", () => {
     const trace = { q: [0.1, 0.5, 0.9], I: [10, 20, 10], sigma: [1, 1, 1] };
     const indices: IndexEntry[] = [{
       id: 1, exposure_id: 1, phase: "Pn3m", basis: 0.5, score: 1,
-      r_squared: 0.99, lattice_d: 12, status: "candidate",
+      r_squared: 0.99, lattice_d: 12, ngc: -1.51, status: "candidate",
       predicted_q: [0.5],
       peaks: [],
     }];
@@ -169,13 +169,13 @@ describe("<TraceViewer> — overlay ticks", () => {
     const trace = { q: [0.1, 0.2, 0.3], I: [10, 20, 30], sigma: [1, 1, 1] };
     const active: IndexEntry[] = [{
       id: 1, exposure_id: 1, phase: "Pn3m", basis: 0.5, score: 1,
-      r_squared: 0.99, lattice_d: 12, status: "candidate",
+      r_squared: 0.99, lattice_d: 12, ngc: -1.51, status: "candidate",
       predicted_q: [0.7, 0.9],
       peaks: [],
     }];
     const hovered: IndexEntry = {
       id: 11, exposure_id: 1, phase: "Im3m", basis: 0.3, score: 0.5,
-      r_squared: 0.7, lattice_d: 9.0, status: "candidate",
+      r_squared: 0.7, lattice_d: 9.0, ngc: -2.06, status: "candidate",
       predicted_q: [0.42, 0.6, 0.8],
       peaks: [],
     };

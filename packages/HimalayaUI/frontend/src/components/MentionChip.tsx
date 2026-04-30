@@ -1,8 +1,7 @@
 import { useState, useCallback } from "react";
 import { useAppState } from "../state";
 import type { ResolvedMention } from "../hooks/useMentionResolution";
-
-const CUBIC_PHASES: ReadonlySet<string> = new Set(["Pn3m", "Im3m", "Ia3d", "Fm3m", "Fd3m"]);
+import { CUBIC_PHASES } from "../phases";
 
 interface ChipProps {
   resolved: ResolvedMention | "loading" | "dead";
@@ -53,7 +52,7 @@ function TooltipContent({ resolved }: { resolved: ResolvedMention }): JSX.Elemen
     case "index": {
       const q1      = resolved.data.predicted_q[0];
       const isCubic = CUBIC_PHASES.has(resolved.data.phase);
-      const ngc     = (resolved.data as unknown as { ngc?: number }).ngc;
+      const ngc     = resolved.data.ngc;
       return (
         <span>
           {q1 != null && <>q₁ <code>{q1.toFixed(3)}</code> · </>}

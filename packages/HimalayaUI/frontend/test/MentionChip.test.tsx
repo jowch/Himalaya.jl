@@ -14,7 +14,7 @@ const PEAK: Peak = {
 
 const INDEX: IndexEntry = {
   id: 17, exposure_id: 1, phase: "Pn3m", basis: 1.0, score: 0.91,
-  r_squared: 0.998, lattice_d: 5.14, status: "candidate",
+  r_squared: 0.998, lattice_d: 5.14, ngc: -1.51, status: "candidate",
   peaks: [], predicted_q: [1.223, 1.414, 1.732],
 };
 
