@@ -19,6 +19,32 @@ changes how `indexpeaks` and `score` work internally. Will require extending
 the `Phase` type hierarchy and the indexing engine. Design the extension points
 when the need is concrete.
 
+### Predicate-based phase ratios with on-demand extension
+
+Today `phaseratios(P)` returns a hardcoded `Vector{Float64}` truncated by hand
+at the practical detection ceiling for each phase
+([src/phase.jl:62-75](src/phase.jl:62)). Proposed shape: a new method
+`phaseratios(P, n)` that returns the first `n` allowed ratios — slicing the
+hardcoded prefix when `n` is small, generating additional ratios from
+selection-rule predicates when `n` exceeds the prefix.
+
+Not done today because: real SAXS data rarely shows more peaks than the
+truncation; the hand-curated arrays are directly auditable against the
+*International Tables for Crystallography*; and there's no observed pressure.
+The static lists are also a useful provenance anchor — every value has a
+citation, no value came from "the predicate, probably."
+
+Revisit when: a 6th+ phase is added (predicate scaling beats hand-tabulation
+at that point); data routinely shows peaks past the current truncation; or
+someone gets a reflection condition wrong because the predicate isn't visible
+in the source.
+
+Deeper variant worth considering at that point: encode the selection rules
+themselves as per-phase predicates (e.g. a `CubicSelectionRules` struct
+capturing body-centering, axial conditions, `0kl` rule, `hhl` rule), make
+those the single source of truth, and delete the hardcoded arrays once a test
+confirms the generator reproduces them exactly. Resist doing this preemptively.
+
 ### Sub-pixel peak positions
 
 Parabolic interpolation around detected peak maxima for more precise q values.
