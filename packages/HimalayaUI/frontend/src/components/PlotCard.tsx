@@ -93,10 +93,21 @@ export function PlotCard(): JSX.Element {
   // X-axis scale: log (SAXS convention) or linear.
   const [xType, setXType] = useState<"log" | "linear">("log");
 
-  // Auto-pick first exposure when sample changes (or current choice is stale)
+  // Pick the right exposure for the Index page:
+  //   1. If the user has marked one for indexing on the Inspect page
+  //      (`selected` flag set by PATCH /api/exposures/:id/select),
+  //      follow it. This is the load-bearing case — without it, marking
+  //      for indexing has no visible effect on the Index page.
+  //   2. Otherwise keep the current activeExposureId if still valid.
+  //   3. Otherwise fall back to the first exposure.
   useEffect(() => {
     const exposures = exposuresQ.data ?? [];
     if (exposures.length === 0) return;
+    const flagged = exposures.find((e) => e.selected);
+    if (flagged) {
+      if (activeExposureId !== flagged.id) setActiveExposure(flagged.id);
+      return;
+    }
     const stillValid = exposures.some((e) => e.id === activeExposureId);
     if (!stillValid) setActiveExposure(exposures[0]!.id);
   }, [exposuresQ.data, activeExposureId, setActiveExposure]);

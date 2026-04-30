@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Group-writable umask so DB files / SQLite journals created by any user
+# inside a multi-user deploy stay writable by other group members. Without
+# this, the kernel default 022 produces 0644 files that effectively lock
+# out any subsequent writer who isn't the original creator.
+umask 0002
+
 # Resolve the real script path before computing REPO so that symlinks
 # (e.g. sudo ln -s .../bin/himalaya /usr/local/bin/himalaya) work correctly.
 # Handles both absolute and relative symlink targets.
@@ -14,6 +20,28 @@ while [ -L "$SCRIPT" ]; do
     fi
 done
 REPO="$(cd "$(dirname "$SCRIPT")/.." && pwd)"
+
+# Auto-load environment variables from a .env file. Search order:
+#   1. $HIMALAYA_ENV_FILE                   (explicit override)
+#   2. $REPO/.env                           (repo root)
+#   3. $REPO/packages/HimalayaUI/.env       (next to .env.example)
+#   4. /etc/himalaya/.env                   (system-wide fallback)
+# First match wins; the file's assignments take precedence over the
+# caller's environment (use $HIMALAYA_ENV_FILE to point at a different
+# file for ad-hoc overrides).
+for candidate in \
+    "${HIMALAYA_ENV_FILE:-}" \
+    "$REPO/.env" \
+    "$REPO/packages/HimalayaUI/.env" \
+    "/etc/himalaya/.env"; do
+    if [ -n "$candidate" ] && [ -f "$candidate" ]; then
+        set -a
+        # shellcheck disable=SC1090
+        . "$candidate"
+        set +a
+        break
+    fi
+done
 
 SYSIMAGE="$REPO/build/himalaya.so"
 PROJECT="$REPO/packages/HimalayaUI"

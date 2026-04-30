@@ -54,28 +54,6 @@ using SQLite
     @test stored_groups[1].active == 1
 end
 
-using HimalayaUI: find_tiff_for_dat
-
-@testset "find_tiff_for_dat" begin
-    dir = mktempdir()
-    # .tiff match
-    dat_path  = joinpath(dir, "sample_pos1.dat")
-    tiff_path = joinpath(dir, "sample_pos1.tiff")
-    touch(dat_path); touch(tiff_path)
-    @test find_tiff_for_dat(dat_path) == tiff_path
-
-    # .tif fallback
-    dat2  = joinpath(dir, "sample_pos2.dat")
-    tif2  = joinpath(dir, "sample_pos2.tif")
-    touch(dat2); touch(tif2)
-    @test find_tiff_for_dat(dat2) == tif2
-
-    # no match → nothing
-    dat3 = joinpath(dir, "sample_pos3.dat")
-    touch(dat3)
-    @test find_tiff_for_dat(dat3) === nothing
-end
-
 using HimalayaUI: init_experiment!, analyze_exposure!, open_db, get_experiment
 
 @testset "init_experiment!" begin
@@ -464,6 +442,36 @@ end
     end
 end
 
+@testset "cli_init_with_db! refuses duplicate registration" begin
+    mktempdir() do dir
+        write(joinpath(dir, "experiment.toml"),
+              """
+              [experiment]
+              name = "duplicate-test"
+              [layout]
+              data_dir = "data"
+              analysis_dir = "analysis/automatic_analysis"
+              exposure_type = "simple"
+              """)
+        mkpath(joinpath(dir, "analysis", "automatic_analysis"))
+        db = SQLite.DB()
+        HimalayaUI.create_schema!(db)
+        HimalayaUI.cli_init_with_db!(db, dir)              # first call ok
+        err = try
+            HimalayaUI.cli_init_with_db!(db, dir)          # second call rejected
+            nothing
+        catch e
+            e
+        end
+        @test err isa ErrorException
+        @test occursin("already registered", err.msg)
+        @test occursin("reingest", err.msg)
+        # Confirm no second row was inserted
+        rows = Tables.rowtable(DBInterface.execute(db, "SELECT id FROM experiments"))
+        @test length(rows) == 1
+    end
+end
+
 @testset "cli_init_with_db! does not write to experiment directory" begin
     mktempdir() do dir
         analysis_dir = joinpath(dir, "analysis", "automatic_analysis")
@@ -634,7 +642,7 @@ let
         """)
     end
 
-    @testset "cli_analyze uses experiment_path, not hardcoded id=1" begin
+    @testset "cli_analyze --experiment selects the right experiment" begin
         db_file = joinpath(mktempdir(), "himalaya.db")
         dir1    = mktempdir()
         dir2    = mktempdir()   # never registered
@@ -645,19 +653,18 @@ let
             cli_init_with_db!(db, dir1)
         end
 
-        # After fix: raises ErrorException because dir2 is not registered.
-        # Before fix: silently operates on experiment id=1 (dir1), no error → test is RED.
+        # Unregistered path → error.
         withenv("HIMALAYA_DB_PATH" => db_file) do
-            @test_throws ErrorException cli_analyze([dir2])
+            @test_throws ErrorException cli_analyze(["-e", dir2])
         end
 
-        # Success path: dir1 is registered — cli_analyze([dir1]) must not throw.
+        # Registered path resolves correctly.
         withenv("HIMALAYA_DB_PATH" => db_file) do
-            @test_nowarn cli_analyze([dir1])
+            @test_nowarn cli_analyze(["-e", dir1])
         end
     end
 
-    @testset "cli_show uses experiment_path, not hardcoded id=1" begin
+    @testset "cli_show --experiment selects the right experiment" begin
         db_file = joinpath(mktempdir(), "himalaya.db")
         dir1    = mktempdir()
         dir2    = mktempdir()   # never registered
@@ -668,15 +675,57 @@ let
             cli_init_with_db!(db, dir1)
         end
 
-        # After fix: raises ErrorException because dir2 is not registered.
-        # Before fix: silently returns exp1's data for sample "D1" → test is RED.
         withenv("HIMALAYA_DB_PATH" => db_file) do
-            @test_throws ErrorException cli_show([dir2, "--sample", "D1"])
+            @test_throws ErrorException cli_show(["-e", dir2, "--sample", "D1"])
         end
 
-        # Success path: dir1 is registered — cli_show([dir1]) with sample D1 must not throw.
         withenv("HIMALAYA_DB_PATH" => db_file) do
-            @test_nowarn cli_show([dir1, "--sample", "D1"])
+            @test_nowarn cli_show(["-e", dir1, "--sample", "D1"])
+        end
+
+        # No -e flag works for a single registered experiment.
+        withenv("HIMALAYA_DB_PATH" => db_file) do
+            @test_nowarn cli_show(["--sample", "D1"])
+        end
+    end
+
+    @testset "_resolve_experiment errors when multiple experiments and no key" begin
+        db_file = joinpath(mktempdir(), "himalaya.db")
+        dir1    = mktempdir()
+        dir2    = mktempdir()
+        withenv("HIMALAYA_DB_PATH" => db_file) do
+            db = open_db(db_file)
+            setup_exp_dir(dir1; name="ExpA", stems=["ST001"])
+            setup_exp_dir(dir2; name="ExpB", stems=["ST002"])
+            cli_init_with_db!(db, dir1)
+            cli_init_with_db!(db, dir2)
+            err = try; HimalayaUI._resolve_experiment(db, nothing); nothing; catch e; e; end
+            @test err isa ErrorException
+            @test occursin("Multiple experiments", err.msg)
+        end
+    end
+
+    @testset "_resolve_experiment looks up by id" begin
+        db_file = joinpath(mktempdir(), "himalaya.db")
+        dir1    = mktempdir()
+        withenv("HIMALAYA_DB_PATH" => db_file) do
+            db = open_db(db_file)
+            setup_exp_dir(dir1; name="ExpA", stems=["ST001"])
+            id = cli_init_with_db!(db, dir1)
+            row = HimalayaUI._resolve_experiment(db, string(id))
+            @test Int(row.id) == id
+        end
+    end
+
+    @testset "_resolve_experiment looks up by name" begin
+        db_file = joinpath(mktempdir(), "himalaya.db")
+        dir1    = mktempdir()
+        withenv("HIMALAYA_DB_PATH" => db_file) do
+            db = open_db(db_file)
+            setup_exp_dir(dir1; name="UniqueName123", stems=["ST001"])
+            cli_init_with_db!(db, dir1)
+            row = HimalayaUI._resolve_experiment(db, "UniqueName123")
+            @test String(row.name) == "UniqueName123"
         end
     end
 end

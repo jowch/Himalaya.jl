@@ -152,6 +152,26 @@ function load_builtin_config(type_name::AbstractString)::ExperimentConfig
 end
 
 """
+    _matches_prefix_with_boundary(f, prefix, suffix) -> Bool
+
+Like `startswith(f, prefix) && endswith(f, suffix)`, but rejects matches where
+the character immediately after `prefix` is alphanumeric. This prevents
+prefix collisions where one manifest entry is a string-prefix of another:
+`JC_C04` would otherwise catch every `JC_C04s_*.dat` file too. With the
+boundary rule, the next character must be non-alphanumeric (typically `_`,
+`.`, or `-`) — or the string must end exactly at the prefix.
+"""
+function _matches_prefix_with_boundary(f::AbstractString, prefix::AbstractString,
+                                       suffix::AbstractString)::Bool
+    startswith(f, prefix) || return false
+    endswith(f, suffix)   || return false
+    plen = ncodeunits(prefix)
+    ncodeunits(f) == plen && return true   # exact match (suffix may be "")
+    c = f[plen + 1]                        # next codeunit; filenames are ASCII
+    !(isletter(c) || isdigit(c))
+end
+
+"""
     resolve_files(cfg, base_dir, prefix, file_pattern) -> Vector{String}
 
 Scan `base_dir` for files matching `file_pattern` where `{name}` is replaced by
@@ -182,10 +202,43 @@ function resolve_files(
     end
 
     matches = filter(readdir(scan_dir)) do f
-        startswith(f, file_prefix_local) && endswith(f, after)
+        _matches_prefix_with_boundary(f, file_prefix_local, after)
     end
     sort!(matches)
     [m[1:end-length(after)] for m in matches]
+end
+
+"""
+    resolve_file_path(cfg, base_dir, prefix, file_pattern) -> Union{String,Nothing}
+
+Like [`resolve_files`](@ref) but returns the absolute path of the first match
+(sorted), or `nothing` if no file matches. Used for the image-pattern lookup
+where instrumentation typically writes one image per integration stem with
+trailing tokens that aren't in the manifest (e.g. integration stem
+`JC_D01_1_S2449` ↔ image `JC_D01_1_S2449_0_001.tiff`).
+"""
+function resolve_file_path(
+    ::ExperimentConfig,
+    base_dir::AbstractString,
+    prefix::AbstractString,
+    file_pattern::String,
+)::Union{String,Nothing}
+    parts = split(file_pattern, "{name}"; limit=2)
+    length(parts) == 2 || error("file pattern must contain exactly one {name}: $file_pattern")
+    before, after = String(parts[1]), String(parts[2])
+
+    scan_subdir       = dirname(before)
+    file_prefix_local = basename(before) * prefix
+    scan_dir = isempty(scan_subdir) ? String(base_dir) : joinpath(base_dir, scan_subdir)
+
+    isdir(scan_dir) || return nothing
+
+    matches = filter(readdir(scan_dir)) do f
+        _matches_prefix_with_boundary(f, file_prefix_local, after)
+    end
+    isempty(matches) && return nothing
+    sort!(matches)
+    joinpath(scan_dir, matches[1])
 end
 
 """

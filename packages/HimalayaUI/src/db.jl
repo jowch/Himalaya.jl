@@ -319,5 +319,19 @@ function open_db(db_path::AbstractString = default_db_path())::SQLite.DB
     create_schema!(db)
     migrate_schema!(db)
     DBInterface.execute(db, "PRAGMA foreign_keys = ON")
+
+    # SQLite hardcodes O_CREAT mode 0644 in os_unix.c — process umask only
+    # masks bits OUT, so umask 0002 can't promote 0644 to 0664. For
+    # multi-user deploys (curators in a shared group writing the same DB),
+    # we need group-write on the file. chmod is idempotent; if we don't
+    # own the file (e.g. another user created it), this is a no-op error
+    # we swallow rather than failing the whole open.
+    if isfile(db_path)
+        try
+            chmod(db_path, 0o664)
+        catch
+            # Not our file to chmod; rely on whoever created it.
+        end
+    end
     db
 end
