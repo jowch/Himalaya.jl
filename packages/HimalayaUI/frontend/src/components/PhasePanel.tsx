@@ -109,6 +109,15 @@ function IndexCard({ index, isActive, onAction, onHover, onLeave, "data-alternat
               {formatR2(index.r_squared)}
             </span>
           </span>
+          {index.ngc != null && (
+            <span data-testid={`ngc-${index.id}`}>
+              ⟨k⟩{" "}
+              <span className="text-fg-muted tabular-nums">
+                {index.ngc.toFixed(2)}
+              </span>{" "}
+              <span className="text-fg-dim">nm⁻²</span>
+            </span>
+          )}
           <span className="ml-auto px-1.5 py-0.5 border border-border-soft rounded-full text-xs text-fg-dim">
             {index.peaks.length} peaks
           </span>
@@ -144,16 +153,16 @@ function GroupHead({ label, count }: { label: string; count: number }): JSX.Elem
 
 const FIXTURE_INDICES: IndexEntry[] = [
   { id:1, exposure_id:0, phase:"Pn3m",     basis:0.15, score:0.91, r_squared:0.995,
-    lattice_d:64.2, status:"candidate",
+    lattice_d:64.2, ngc:-1.51, status:"candidate",
     peaks:[{ peak_id:1, ratio_position:1, residual:0.001, q_observed:0.15 },
            { peak_id:2, ratio_position:2, residual:0.002, q_observed:0.21 }],
     predicted_q:[0.15,0.21,0.26] },
   { id:2, exposure_id:0, phase:"Im3m",     basis:0.14, score:0.72, r_squared:0.981,
-    lattice_d:57.1, status:"candidate",
+    lattice_d:57.1, ngc:-2.06, status:"candidate",
     peaks:[{ peak_id:1, ratio_position:1, residual:0.003, q_observed:0.15 }],
     predicted_q:[0.15,0.22] },
   { id:3, exposure_id:0, phase:"Lamellar", basis:0.12, score:0.55, r_squared:0.960,
-    lattice_d:52.4, status:"candidate",
+    lattice_d:52.4, ngc:null, status:"candidate",
     peaks:[{ peak_id:2, ratio_position:1, residual:0.004, q_observed:0.21 }],
     predicted_q:[0.21,0.42] },
 ];

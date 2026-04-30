@@ -53,7 +53,7 @@ function TooltipContent({ resolved }: { resolved: ResolvedMention }): JSX.Elemen
     case "index": {
       const q1      = resolved.data.predicted_q[0];
       const isCubic = CUBIC_PHASES.has(resolved.data.phase);
-      const ngc     = (resolved.data as unknown as { ngc?: number }).ngc;
+      const ngc     = resolved.data.ngc;
       return (
         <span>
           {q1 != null && <>q₁ <code>{q1.toFixed(3)}</code> · </>}

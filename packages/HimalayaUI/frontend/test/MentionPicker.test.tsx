@@ -8,7 +8,7 @@ import * as api from "../src/api";
 
 const INDICES: api.IndexEntry[] = [
   { id: 17, exposure_id: 1, phase: "Pn3m", basis: 1.0, score: 0.91, r_squared: 0.998,
-    lattice_d: 5.14, status: "candidate", peaks: [], predicted_q: [1.223, 1.414] },
+    lattice_d: 5.14, ngc: -1.51, status: "candidate", peaks: [], predicted_q: [1.223, 1.414] },
 ];
 const PEAKS: api.Peak[] = [
   { id: 42, exposure_id: 1, q: 1.223, intensity: 841, prominence: 4.2,
