@@ -73,9 +73,19 @@ end
 """
     _ngc_for_phase(phase_name, lattice_d) -> Union{Float64, Nothing}
 
-Compute phase-averaged Gaussian curvature ⟨k⟩ in 1/nm² for the three
-bicontinuous cubic phases (Ia3d, Pn3m, Im3m). Returns `nothing` for
-other phases or when `lattice_d` is missing/non-positive.
+Compute phase-averaged Gaussian curvature κ for the three bicontinuous
+cubic phases (Ia3d, Pn3m, Im3m). Result has units `1/length²` matching
+the unit of `lattice_d` — i.e. if the experiment stores q in `A-1`,
+lattice_d is in Å and κ comes back in `Å⁻²`; if q is in `nm-1`, κ is
+in `nm⁻²`. Returns `nothing` for other phases or when `lattice_d` is
+missing/non-positive.
+
+Formula: `κ = -2π·(χ/A₀)/a²`. The legacy `Himalaya.ngc` kernel hard-codes
+a `(10/a)²` factor that assumed `a` in Å and produced `nm⁻²` output —
+fine for the matlab UI it was ported from, but it breaks dimensional
+honesty when the experiment isn't in Å. The unit-naked formula here lets
+the frontend render κ alongside its experiment-native lattice unit
+(`Å⁻²` or `nm⁻²`) without backend-side conversion.
 """
 function _ngc_for_phase(phase_name::AbstractString, lattice_d)::Union{Float64, Nothing}
     (lattice_d === nothing || ismissing(lattice_d)) && return nothing
@@ -91,7 +101,7 @@ function _ngc_for_phase(phase_name::AbstractString, lattice_d)::Union{Float64, N
     else
         return nothing
     end
-    Float64(Himalaya.ngc(χ, A₀, a))
+    -2π * (χ / A₀) / a^2
 end
 
 function register_analysis_routes!()

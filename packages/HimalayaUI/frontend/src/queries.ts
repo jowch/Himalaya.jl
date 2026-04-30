@@ -32,6 +32,10 @@ export function useExperiment(id: number) {
   return useQuery({
     queryKey: queryKeys.experiment(id),
     queryFn: () => api.getExperiment(id),
+    // Callers pass `id ?? 0` when no experiment is active; gate the fetch so
+    // we don't hit GET /api/experiments/0 → 404 (and retries) on every chip
+    // mount before the user picks an experiment.
+    enabled: id > 0,
   });
 }
 
