@@ -3,11 +3,17 @@ using HTTP, JSON3, DBInterface, Tables, Oxygen
 function _experiment_row_to_json(row::NamedTuple)
     d = row_to_json(row)
     cfg_text = get(d, :config, nothing)
+    # Defensive: malformed TOML in a single row must not 500 the list endpoint.
+    # Fall back to the ASCII default; the UI prettifies it to "Å⁻¹".
     q_units = if cfg_text isa AbstractString && !isempty(cfg_text)
-        bl = get(TOML.parse(cfg_text), "beamline", Dict())
-        get(bl, "q_units", "Å⁻¹")
+        try
+            bl = get(TOML.parse(cfg_text), "beamline", Dict())
+            get(bl, "q_units", "A-1")
+        catch
+            "A-1"
+        end
     else
-        "Å⁻¹"
+        "A-1"
     end
     d[:q_units] = q_units
     d

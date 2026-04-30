@@ -526,12 +526,12 @@ end
     end
 end
 
-@testset "q_units defaults to Å⁻¹" begin
+@testset "q_units defaults to A-1 (ASCII; UI prettifies to Å⁻¹)" begin
     mktempdir() do dir
         toml = joinpath(dir, "experiment.toml")
         write(toml, _make_toml())
         cfg = HimalayaUI.load_config(toml)
-        @test cfg.q_units == "Å⁻¹"
+        @test cfg.q_units == "A-1"
     end
 end
 
@@ -544,7 +544,7 @@ end
         description = ""
         manifest = "manifest.csv"
         [beamline]
-        q_units = "nm⁻¹"
+        q_units = "nm-1"
         [manifest]
         delimiter = "\\t"
         skip_rows = 0
@@ -564,7 +564,7 @@ end
         image = "{name}.tiff"
         """)
         cfg = HimalayaUI.load_config(toml)
-        @test cfg.q_units == "nm⁻¹"
+        @test cfg.q_units == "nm-1"
     end
 end
 

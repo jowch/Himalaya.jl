@@ -24,6 +24,21 @@ function register_users_routes!()
         rows = Tables.rowtable(DBInterface.execute(db,
             "SELECT id, username, first_name, last_name FROM users WHERE username = ?", [username]))
         if !isempty(rows)
+            existing = rows[1]
+            # Idempotent enrichment: when a previous create stored NULL for first/last,
+            # a follow-up POST that supplies them should fill the gap. Never overwrite
+            # an existing non-null name — preserves "first wins" for actual identity.
+            existing_first = ismissing(existing.first_name) ? nothing : existing.first_name
+            existing_last  = ismissing(existing.last_name)  ? nothing : existing.last_name
+            new_first = (existing_first === nothing && first_name !== nothing) ? first_name : existing_first
+            new_last  = (existing_last  === nothing && last_name  !== nothing) ? last_name  : existing_last
+            if new_first !== existing_first || new_last !== existing_last
+                DBInterface.execute(db,
+                    "UPDATE users SET first_name = ?, last_name = ? WHERE id = ?",
+                    [new_first, new_last, existing.id])
+                rows = Tables.rowtable(DBInterface.execute(db,
+                    "SELECT id, username, first_name, last_name FROM users WHERE id = ?", [existing.id]))
+            end
             return HTTP.Response(200, ["Content-Type" => "application/json"],
                 JSON3.write(row_to_json(rows[1])))
         end

@@ -99,7 +99,7 @@ function _build_config(d::AbstractDict)::ExperimentConfig
         get(exp, "manifest",    "manifest.csv"),
         get(bl,  "energy_kev",    nothing),
         get(bl,  "flight_path_m", nothing),
-        get(bl,  "q_units",       "Å⁻¹"),
+        get(bl,  "q_units",       "A-1"),
         get(mf,  "delimiter",      "\t"),
         get(mf,  "skip_rows",      1),
         get(mf,  "header_row",     0),

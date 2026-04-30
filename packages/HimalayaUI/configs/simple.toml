@@ -19,7 +19,7 @@ manifest    = "manifest.csv"
 # Uncomment and set when you know them:
 # energy_kev    = 12.0    # X-ray photon energy in keV
 # flight_path_m =  1.5    # sample-to-detector distance in metres
-# q_units       = "Å⁻¹"  # axis label units; common alternatives: nm⁻¹, 1/Å
+# q_units       = "A-1"  # axis label units (ASCII; UI prettifies to Å⁻¹). Alternatives: "nm-1", "1/A"
 
 [manifest]
 delimiter      = "\t"      # column separator

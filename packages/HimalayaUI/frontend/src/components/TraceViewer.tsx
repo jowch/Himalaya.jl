@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import * as Plot from "@observablehq/plot";
 import type { Trace, Peak, IndexEntry } from "../api";
 import { phaseColor } from "../phases";
+import { prettifyUnits } from "../lib/units";
 
 export interface TraceViewerProps {
   trace: Trace;
@@ -147,7 +148,7 @@ export function TraceViewer({
       },
       x: {
         type: xType,
-        label: `q (${qUnits ?? "Å⁻¹"})`,
+        label: `q (${prettifyUnits(qUnits ?? "A-1")})`,
         // Plain decimal tick labels — Plot's default SI-suffix formatter
         // renders 0.040 as "40m" which is unhelpful for SAXS q values.
         tickFormat: (d: number) => formatAxis(d),

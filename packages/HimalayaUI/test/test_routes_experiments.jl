@@ -43,17 +43,29 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
             "SELECT COUNT(*) AS c FROM peaks"))[1].c
         @test peak_count > 0
 
-        # q_units present in response (default Å⁻¹ when not set in config)
+        # q_units present in response (default A-1 when not set in config; UI prettifies)
         r2 = HTTP.get("$base/api/experiments/$exp_id")
         body2 = JSON3.read(String(r2.body))
         @test haskey(body2, :q_units)
-        @test body2.q_units == "Å⁻¹"
+        @test body2.q_units == "A-1"
 
         # q_units in list response too
         r3 = HTTP.get("$base/api/experiments")
         list = JSON3.read(String(r3.body))
         @test length(list) >= 1
         @test haskey(list[1], :q_units)
+
+        # Malformed config blob must not 500 the route — should fall back to default.
+        # This guards against TOML.parse exceptions taking down GET /api/experiments.
+        DBInterface.execute(db,
+            "UPDATE experiments SET config = ? WHERE id = ?",
+            ["[beamline\nq_units = \"x", exp_id])  # unbalanced bracket → invalid TOML
+        r4 = HTTP.get("$base/api/experiments/$exp_id")
+        @test r4.status == 200
+        body4 = JSON3.read(String(r4.body))
+        @test body4.q_units == "A-1"
+        r5 = HTTP.get("$base/api/experiments")
+        @test r5.status == 200
 
         # 404
         r = HTTP.get("$base/api/experiments/999"; status_exception = false)

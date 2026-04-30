@@ -28,6 +28,29 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test r.status == 200
         @test JSON3.read(String(r.body)).id == 1
 
+        # Idempotent enrichment: a follow-up POST that supplies first/last fills in
+        # the previously-NULL fields (but never overwrites non-null values).
+        r = HTTP.post("$base/api/users";
+            body = JSON3.write(Dict(:username => "alice",
+                                    :first_name => "Alice",
+                                    :last_name  => "Smith")),
+            headers = ["Content-Type" => "application/json"])
+        @test r.status == 200
+        enriched = JSON3.read(String(r.body))
+        @test enriched.id == 1
+        @test enriched.first_name == "Alice"
+        @test enriched.last_name  == "Smith"
+        # Existing names are preserved on a subsequent POST with different names.
+        r = HTTP.post("$base/api/users";
+            body = JSON3.write(Dict(:username => "alice",
+                                    :first_name => "DIFFERENT",
+                                    :last_name  => "OVERWRITE")),
+            headers = ["Content-Type" => "application/json"])
+        @test r.status == 200
+        preserved = JSON3.read(String(r.body))
+        @test preserved.first_name == "Alice"
+        @test preserved.last_name  == "Smith"
+
         # Create with first_name and last_name
         r = HTTP.post("$base/api/users";
             body = JSON3.write(Dict(:username => "jwhc", :first_name => "Jonathan", :last_name => "Chen")),
