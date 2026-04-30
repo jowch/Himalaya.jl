@@ -167,7 +167,11 @@ function _matches_prefix_with_boundary(f::AbstractString, prefix::AbstractString
     endswith(f, suffix)   || return false
     plen = ncodeunits(prefix)
     ncodeunits(f) == plen && return true   # exact match (suffix may be "")
-    c = f[plen + 1]                        # next codeunit; filenames are ASCII
+    # Filenames are ASCII in practice (SAXS detector output), but guard against
+    # mid-codepoint indexing if a non-ASCII filename ever slips in: `isvalid`
+    # confirms `plen+1` lands on a char boundary before we read it.
+    isvalid(f, plen + 1) || return false
+    c = f[plen + 1]
     !(isletter(c) || isdigit(c))
 end
 

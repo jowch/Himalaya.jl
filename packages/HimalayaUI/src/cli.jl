@@ -3,14 +3,21 @@ using Printf
 using DBInterface
 
 """
-    cli_init_with_db!(db, exp_dir) -> experiment_id
+    cli_init_with_db!(db, exp_dir; analyze=true) -> experiment_id
 
 Read `experiment.toml` from `exp_dir`, register the experiment in `db`, parse
 the manifest (if present), and create samples and exposures via filesystem
-discovery using the config's integration pattern.
+discovery using the config's integration pattern. When `analyze=true` (the
+default), runs peak-finding + indexing on every newly-created exposure.
 
 This function is read-only with respect to `exp_dir` — it does not create,
 modify, or delete any file inside it. All writes go to `db`.
+
+The auto-analyze step is *not* wrapped in an outer transaction (each
+`persist_analysis!` is itself atomic). A Ctrl-C mid-init leaves a registered
+experiment with partial analysis; recover with `himalaya analyze -e <id>`,
+which is idempotent for the unanalyzed exposures and skips the analyzed ones
+that already have peaks.
 """
 function cli_init_with_db!(db::SQLite.DB, exp_dir::String; analyze::Bool = true)::Int
     exp_dir   = abspath(exp_dir)
@@ -267,6 +274,9 @@ function _resolve_experiment(db::SQLite.DB, key::Union{Nothing,AbstractString})
         end
     end
 
+    # Heuristic: anything containing `/` is a path, not a name. Experiments
+    # whose name happens to contain `/` would be misclassified — pass `-e`
+    # with the numeric id to disambiguate in that (currently theoretical) case.
     looks_like_path = startswith(key, "/") || startswith(key, ".") || occursin('/', key)
     rows = if !isempty(key) && all(isdigit, key)
         Tables.rowtable(DBInterface.execute(db,

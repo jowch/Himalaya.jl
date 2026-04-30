@@ -329,8 +329,11 @@ function open_db(db_path::AbstractString = default_db_path())::SQLite.DB
     if isfile(db_path)
         try
             chmod(db_path, 0o664)
-        catch
-            # Not our file to chmod; rely on whoever created it.
+        catch e
+            # Swallow only the expected "not our file" / FS-permission errors;
+            # let unexpected failures (InterruptException, oddities) propagate
+            # so they don't get masked by this best-effort fix-up.
+            e isa Base.IOError || e isa SystemError || rethrow()
         end
     end
     db
