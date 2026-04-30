@@ -1,7 +1,7 @@
 import { Skeleton } from "boneyard-js/react";
 import { useIndices, useGroups, useAddIndexToGroup, useRemoveIndexFromGroup } from "../queries";
 import { useAppState } from "../state";
-import { phaseColor } from "../phases";
+import { phaseColor, CUBIC_PHASES } from "../phases";
 import { HintText } from "./ui";
 import { StaleIndicesBanner } from "./StaleIndicesBanner";
 import type { GroupEntry, IndexEntry } from "../api";
@@ -109,7 +109,7 @@ function IndexCard({ index, isActive, onAction, onHover, onLeave, "data-alternat
               {formatR2(index.r_squared)}
             </span>
           </span>
-          {index.ngc != null && (
+          {CUBIC_PHASES.has(index.phase) && index.ngc != null && (
             <span data-testid={`ngc-${index.id}`}>
               ⟨k⟩{" "}
               <span className="text-fg-muted tabular-nums">

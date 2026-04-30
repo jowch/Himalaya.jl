@@ -78,7 +78,7 @@ bicontinuous cubic phases (Ia3d, Pn3m, Im3m). Returns `nothing` for
 other phases or when `lattice_d` is missing/non-positive.
 """
 function _ngc_for_phase(phase_name::AbstractString, lattice_d)::Union{Float64, Nothing}
-    (lattice_d === nothing || lattice_d isa Missing) && return nothing
+    (lattice_d === nothing || ismissing(lattice_d)) && return nothing
     a = Float64(lattice_d)
     a > 0 || return nothing
     bare = last(split(phase_name, '.'))

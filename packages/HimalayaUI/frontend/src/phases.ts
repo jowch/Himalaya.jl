@@ -5,6 +5,10 @@ export const KNOWN_PHASES = [
 
 export type KnownPhase = typeof KNOWN_PHASES[number];
 
+export const CUBIC_PHASES: ReadonlySet<string> = new Set([
+  "Pn3m", "Im3m", "Ia3d", "Fm3m", "Fd3m",
+]);
+
 // Vivid OKLCH palette inspired by the v3 design reference (phaseA sage/phaseB amber/phaseC violet).
 // Chroma ~0.12–0.13, luminance 0.76–0.80 for clear colour on dark backgrounds.
 // Hues avoid ±20° of accent (220°) and peak-manual (340°) and the high-chroma warning zone (~75°).
