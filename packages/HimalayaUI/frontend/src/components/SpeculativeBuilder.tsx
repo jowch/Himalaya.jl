@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { usePeaks, useSpeculativeSnap, useCreateSpeculative } from "../queries";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { KNOWN_PHASES, phaseColor } from "../phases";
@@ -20,7 +20,12 @@ const PHASES_BY_MINPEAKS = [
 
 export function SpeculativeBuilder({ exposureId, onClose }: SpeculativeBuilderProps): JSX.Element {
   const peaksQ = usePeaks(exposureId);
-  const peaks  = (peaksQ.data ?? []).filter((p) => !p.excluded).slice().sort((a, b) => a.q - b.q);
+  // Memoize so the auto-pick effect doesn't re-fire on every render — without
+  // this, the array identity churns and `[peaks, anchorPeakId]` deps thrash.
+  const peaks  = useMemo(
+    () => (peaksQ.data ?? []).filter((p) => !p.excluded).slice().sort((a, b) => a.q - b.q),
+    [peaksQ.data],
+  );
 
   const [phase, setPhase]                 = useState<string>(DEFAULT_PHASE);
   const [anchorPeakId, setAnchorPeakId]   = useState<number | null>(null);

@@ -218,6 +218,10 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
                 pid !== nothing && return pid
                 # Fall back to fuzzy match (peak shifted slightly under new
                 # detection): find closest current auto peak within EXCLUDE_TOL.
+                # Note this is tighter than `SNAP_TOL` (≈0.25%) — peaks that
+                # drift more than 0.1% won't bind here, but the auto-discovery
+                # loop further down uses `SNAP_TOL` as a safety net so they're
+                # still picked up under their predicted ratio position.
                 tol = max(EXCLUDE_TOL, abs(qv) * 0.001)
                 best, best_delta = nothing, Inf
                 for pr in all_peak_rows
@@ -239,16 +243,9 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
         end
 
         for ix_row in speculative_index_ids
-            ix_id = Int(ix_row.id)
+            ix_id      = Int(ix_row.id)
             phase_name = String(ix_row.phase)
-            P = let bare = last(split(phase_name, '.'))
-                try
-                    T = getfield(Himalaya, Symbol(bare))
-                    (T isa Type && T <: Himalaya.Phase) ? T : nothing
-                catch
-                    nothing
-                end
-            end
+            P          = resolve_phase(phase_name)
             P === nothing && continue  # malformed phase string — leave as-is
 
             ratios_unnorm = Himalaya.phaseratios(P)
@@ -291,9 +288,14 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
                 # itself was last set when the index was built, so use it as
                 # the persisted record of user intent for auto-discovery.
                 # `phaseratios` is normalized to ratio[1] = 1, so the ratio[1]
-                # equivalent of `basis` is just `basis`.
-                stored = Float64(ix_row.basis)
-                stored > 0 ? stored : nothing
+                # equivalent of `basis` is just `basis`. The DDL doesn't
+                # enforce NOT NULL on `basis` (yet), so guard against it.
+                if ismissing(ix_row.basis) || ix_row.basis === nothing
+                    nothing
+                else
+                    stored = Float64(ix_row.basis)
+                    stored > 0 ? stored : nothing
+                end
             end
 
             # Auto-discovery pass: pull in any current peak that fits an unfilled

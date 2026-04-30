@@ -345,7 +345,7 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
               type="button"
               data-testid="add-speculative-button"
               className="mt-2 w-full text-xs text-fg-dim border border-dashed border-border-soft rounded-md py-1.5 hover:text-fg hover:bg-bg-hover transition-colors"
-              onClick={() => openBuilder(exposureId, "Lamellar", 1)}
+              onClick={() => openBuilder(exposureId)}
             >
               + Add speculative
             </button>
