@@ -1,10 +1,11 @@
 import { Skeleton } from "boneyard-js/react";
-import { useIndices, useGroups, useAddIndexToGroup, useRemoveIndexFromGroup, useDeleteIndex } from "../queries";
+import { useIndices, useGroups, useAddIndexToGroup, useRemoveIndexFromGroup, useDeleteIndex, useExperiment } from "../queries";
 import { useAppState } from "../state";
 import { phaseColor, CUBIC_PHASES } from "../phases";
 import { HintText } from "./ui";
 import { StaleIndicesBanner } from "./StaleIndicesBanner";
 import { SpeculativeBuilder } from "./SpeculativeBuilder";
+import { latticeUnitFromQUnits, inverseSquareUnits } from "../lib/units";
 import type { GroupEntry, IndexEntry } from "../api";
 
 const R2_THRESHOLD = 0.98;
@@ -25,6 +26,18 @@ function formatScore(s: number | null | undefined): string {
   return s != null ? s.toFixed(2) : "—";
 }
 
+/**
+ * κ ranges over many orders of magnitude depending on the experiment's
+ * length unit (≈10⁻² nm⁻² ≈ 10⁻⁴ Å⁻²). Toggle to scientific notation when
+ * a fixed-point representation would lose all the leading sig figs.
+ */
+function formatKappa(k: number): string {
+  const abs = Math.abs(k);
+  if (abs === 0) return "0";
+  if (abs < 0.01) return k.toExponential(2);
+  return k.toFixed(3);
+}
+
 // ── Individual index card ────────────────────────────────────────────────────
 
 interface IndexCardProps {
@@ -34,11 +47,15 @@ interface IndexCardProps {
   onDelete?: () => void;
   onHover?: () => void;
   onLeave?: () => void;
+  /** Lattice unit derived from the experiment's q_units (e.g. "Å", "nm"). */
+  latticeUnit: string;
+  /** Inverse-square form for κ display (e.g. "Å⁻²", "nm⁻²"). */
+  curvatureUnit: string;
   /** Forwarded to the li for E2E selectors */
   "data-alternative-id"?: number;
 }
 
-function IndexCard({ index, isActive, onAction, onDelete, onHover, onLeave, "data-alternative-id": altId }: IndexCardProps): JSX.Element {
+function IndexCard({ index, isActive, onAction, onDelete, onHover, onLeave, latticeUnit, curvatureUnit, "data-alternative-id": altId }: IndexCardProps): JSX.Element {
   const color = phaseColor(index.phase);
   const isSpeculative = index.kind === "speculative";
   // R²-gate dimming: speculative indices bypass the gate entirely (a 2-peak fit
@@ -91,7 +108,7 @@ function IndexCard({ index, isActive, onAction, onDelete, onHover, onLeave, "dat
             <span className="text-data truncate min-w-0">
               <span className="text-fg-dim">a =</span>{" "}
               {formatLattice(index.lattice_d)}{" "}
-              <span className="text-fg-dim text-xs">nm</span>
+              <span className="text-fg-dim text-xs">{latticeUnit}</span>
             </span>
           )}
         </div>
@@ -121,11 +138,11 @@ function IndexCard({ index, isActive, onAction, onDelete, onHover, onLeave, "dat
           </span>
           {CUBIC_PHASES.has(index.phase) && index.ngc != null && (
             <span data-testid={`ngc-${index.id}`}>
-              ⟨k⟩{" "}
+              κ{" "}
               <span className="text-fg-muted tabular-nums">
-                {index.ngc.toFixed(2)}
+                {formatKappa(index.ngc)}
               </span>{" "}
-              <span className="text-fg-dim">nm⁻²</span>
+              <span className="text-fg-dim">{curvatureUnit}</span>
             </span>
           )}
           <span className="ml-auto px-1.5 py-0.5 border border-border-soft rounded-full text-xs text-fg-dim">
@@ -195,14 +212,17 @@ const PHASE_PANEL_FIXTURE = (
     <div>
       <GroupHead label="Active set" count={1} />
       <ul className="flex flex-col gap-1.5">
-        <IndexCard key={1} index={FIXTURE_INDICES[0]!} isActive onAction={() => {}} />
+        <IndexCard key={1} index={FIXTURE_INDICES[0]!} isActive
+                   latticeUnit="Å" curvatureUnit="Å⁻²" onAction={() => {}} />
       </ul>
     </div>
     <div>
       <GroupHead label="Candidates" count={2} />
       <ul className="flex flex-col gap-1.5">
-        <IndexCard key={2} index={FIXTURE_INDICES[1]!} isActive={false} onAction={() => {}} />
-        <IndexCard key={3} index={FIXTURE_INDICES[2]!} isActive={false} onAction={() => {}} />
+        <IndexCard key={2} index={FIXTURE_INDICES[1]!} isActive={false}
+                   latticeUnit="Å" curvatureUnit="Å⁻²" onAction={() => {}} />
+        <IndexCard key={3} index={FIXTURE_INDICES[2]!} isActive={false}
+                   latticeUnit="Å" curvatureUnit="Å⁻²" onAction={() => {}} />
       </ul>
     </div>
   </div>
@@ -213,8 +233,10 @@ export interface PhasePanelProps {
 }
 
 export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
+  const activeExperimentId = useAppState((s) => s.activeExperimentId);
   const indicesQ = useIndices(exposureId);
   const groupsQ  = useGroups(exposureId);
+  const experimentQ = useExperiment(activeExperimentId ?? 0);
   const setHoveredIndex = useAppState((s) => s.setHoveredIndex);
   const active = (groupsQ.data && activeGroup(groupsQ.data)) ?? undefined;
   const addMember    = useAddIndexToGroup(exposureId ?? 0, active?.id ?? 0);
@@ -223,6 +245,10 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
   const builder      = useAppState((s) => s.speculativeBuilder);
   const openBuilder  = useAppState((s) => s.openSpeculativeBuilder);
   const closeBuilder = useAppState((s) => s.closeSpeculativeBuilder);
+
+  const qUnits        = experimentQ.data?.q_units ?? null;
+  const latticeUnit   = latticeUnitFromQUnits(qUnits);
+  const curvatureUnit = inverseSquareUnits(qUnits);
 
   if (exposureId === undefined) {
     return (
@@ -283,6 +309,8 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
                     key={ix.id}
                     index={ix}
                     isActive
+                    latticeUnit={latticeUnit}
+                    curvatureUnit={curvatureUnit}
                     onAction={() => { if (active) removeMember.mutate(ix.id); }}
                     onHover={() => setHoveredIndex(ix.id)}
                     onLeave={() => setHoveredIndex(undefined)}
@@ -304,6 +332,8 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
                     key={ix.id}
                     index={ix}
                     isActive={false}
+                    latticeUnit={latticeUnit}
+                    curvatureUnit={curvatureUnit}
                     data-alternative-id={ix.id}
                     onAction={() => addMember.mutate(ix.id)}
                     onHover={() => setHoveredIndex(ix.id)}
@@ -328,6 +358,8 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
                       key={ix.id}
                       index={ix}
                       isActive={inActive}
+                      latticeUnit={latticeUnit}
+                      curvatureUnit={curvatureUnit}
                       onAction={() =>
                         inActive
                           ? active && removeMember.mutate(ix.id)

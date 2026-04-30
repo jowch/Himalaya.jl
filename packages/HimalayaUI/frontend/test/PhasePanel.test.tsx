@@ -213,7 +213,7 @@ describe("<PhasePanel> — alternatives", () => {
     });
   });
 
-  it("renders ⟨k⟩ for cubic phases when ngc is present, omits it otherwise", async () => {
+  it("renders κ for cubic phases when ngc is present, omits it otherwise", async () => {
     mockAll(
       [
         { id: 10, exposure_id: 42, phase: "Pn3m", basis: 0.5, score: 1.0,
@@ -229,9 +229,10 @@ describe("<PhasePanel> — alternatives", () => {
     await waitFor(() => expect(screen.getByText("Pn3m")).toBeInTheDocument());
 
     const cubic = screen.getByTestId("ngc-10");
-    expect(cubic).toHaveTextContent("⟨k⟩");
-    expect(cubic).toHaveTextContent("-1.51");
-    expect(cubic).toHaveTextContent("nm⁻²");
+    expect(cubic).toHaveTextContent("κ");
+    expect(cubic).toHaveTextContent("-1.510");
+    // No experiment mock → q_units null → lattice unit defaults to Å
+    expect(cubic).toHaveTextContent("Å⁻²");
     expect(screen.queryByTestId("ngc-11")).toBeNull();
   });
 });

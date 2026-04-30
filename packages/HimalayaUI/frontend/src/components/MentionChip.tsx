@@ -1,7 +1,21 @@
 import { useState, useCallback } from "react";
 import { useAppState } from "../state";
+import { useExperiment } from "../queries";
+import { latticeUnitFromQUnits, inverseSquareUnits } from "../lib/units";
 import type { ResolvedMention } from "../hooks/useMentionResolution";
 import { CUBIC_PHASES } from "../phases";
+
+/**
+ * κ ranges over many orders of magnitude depending on the lattice unit
+ * (≈10⁻² nm⁻² ≈ 10⁻⁴ Å⁻²); fall back to scientific notation when fixed-point
+ * would round all the leading digits to zero.
+ */
+function formatKappa(k: number): string {
+  const abs = Math.abs(k);
+  if (abs === 0) return "0";
+  if (abs < 0.01) return k.toExponential(2);
+  return k.toFixed(3);
+}
 
 interface ChipProps {
   resolved: ResolvedMention | "loading" | "dead";
@@ -38,7 +52,13 @@ function chipLabel(resolved: ResolvedMention): string {
   }
 }
 
-function TooltipContent({ resolved }: { resolved: ResolvedMention }): JSX.Element | null {
+interface TooltipProps {
+  resolved: ResolvedMention;
+  latticeUnit: string;
+  curvatureUnit: string;
+}
+
+function TooltipContent({ resolved, latticeUnit, curvatureUnit }: TooltipProps): JSX.Element | null {
   switch (resolved.type) {
     case "peak":
       return (
@@ -57,11 +77,11 @@ function TooltipContent({ resolved }: { resolved: ResolvedMention }): JSX.Elemen
         <span>
           {q1 != null && <>q₁ <code>{q1.toFixed(3)}</code> · </>}
           {resolved.data.lattice_d != null && (
-            <>d <code>{resolved.data.lattice_d.toFixed(2)} nm</code> · </>
+            <>d <code>{resolved.data.lattice_d.toFixed(2)} {latticeUnit}</code> · </>
           )}
           R² <code>{(resolved.data.r_squared ?? 0).toFixed(3)}</code>
           {isCubic && ngc != null && (
-            <> · ngc <code>{ngc.toFixed(1)}</code></>
+            <> · κ <code>{formatKappa(ngc)} {curvatureUnit}</code></>
           )}
         </span>
       );
@@ -80,6 +100,11 @@ export function MentionChip({ resolved, originalText }: ChipProps): JSX.Element 
   const [isHovered, setIsHovered] = useState(false);
   const setHoveredPeak  = useAppState((s) => s.setHoveredPeak);
   const setHoveredIndex = useAppState((s) => s.setHoveredIndex);
+  const activeExperimentId = useAppState((s) => s.activeExperimentId);
+  const experimentQ = useExperiment(activeExperimentId ?? 0);
+  const qUnits = experimentQ.data?.q_units ?? null;
+  const latticeUnit   = latticeUnitFromQUnits(qUnits);
+  const curvatureUnit = inverseSquareUnits(qUnits);
 
   const handleMouseEnter = useCallback(() => {
     setIsHovered(true);
@@ -106,7 +131,7 @@ export function MentionChip({ resolved, originalText }: ChipProps): JSX.Element 
   const tooltip = isHovered && resolved !== "loading"
     ? (resolved === "dead"
         ? <span className="text-[#555555]">no longer exists</span>
-        : <TooltipContent resolved={resolved} />)
+        : <TooltipContent resolved={resolved} latticeUnit={latticeUnit} curvatureUnit={curvatureUnit} />)
     : null;
 
   return (

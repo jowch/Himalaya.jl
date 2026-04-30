@@ -40,3 +40,20 @@ export function prettifyUnits(s: string): string {
   out = out.replace(/(^|[^A-Za-z])A(?=⁻)/g, "$1Å");
   return out;
 }
+
+/**
+ * Real-space lattice unit derived from the q-units stored on the experiment.
+ * `1/A`, `A-1`, `Å⁻¹` → `Å`. `nm-1`, `nm⁻¹` → `nm`. Defaults to `Å` when
+ * unset (matches the backend's `A-1` default in `experiment.toml`).
+ */
+export function latticeUnitFromQUnits(qUnits: string | null | undefined): string {
+  if (!qUnits) return "Å";
+  const lower = qUnits.toLowerCase();
+  if (lower.includes("nm")) return "nm";
+  return "Å";
+}
+
+/** Inverse-square form of the lattice unit (e.g. "Å⁻²", "nm⁻²"). */
+export function inverseSquareUnits(qUnits: string | null | undefined): string {
+  return `${latticeUnitFromQUnits(qUnits)}⁻²`;
+}
