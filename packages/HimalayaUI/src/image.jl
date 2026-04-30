@@ -7,6 +7,14 @@ into the per-image cache-busting token; bumping forces all browsers to re-fetch.
 const IMAGE_PROCESSING_VERSION = "v2"
 
 """
+Percentile clips applied to the log-counts of *positive* pixels in
+`load_and_lognormalize`. Bump `IMAGE_PROCESSING_VERSION` whenever these
+change so cached PNGs are invalidated.
+"""
+const LOW_CLIP_PERCENTILE = 0.05f0
+const HIGH_CLIP_PERCENTILE = 0.99f0
+
+"""
     image_version_token(path) -> String
 
 Stable token combining `IMAGE_PROCESSING_VERSION` with the source TIFF's mtime.
@@ -48,8 +56,8 @@ function load_and_lognormalize(path::String)
     if isempty(pos)
         return colorview(Gray, lv)
     end
-    lo = pos[max(1, round(Int, 0.05 * length(pos)))]
-    hi = pos[min(end, round(Int, 0.99 * length(pos)))]
+    lo = pos[max(1, round(Int, LOW_CLIP_PERCENTILE * length(pos)))]
+    hi = pos[min(end, round(Int, HIGH_CLIP_PERCENTILE * length(pos)))]
 
     normed = hi > lo ? clamp.((lv .- lo) ./ (hi - lo), 0f0, 1f0) : lv
     colorview(Gray, normed)
