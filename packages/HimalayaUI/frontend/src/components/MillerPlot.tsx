@@ -96,6 +96,23 @@ export function MillerPlot({ indices, hoveredIndex }: MillerPlotProps): JSX.Elem
       );
     }
 
+    // Domain is computed from the dot data only — Plot's default inference
+    // mixes in `linearRegressionY`'s confidence band, which extrapolates past
+    // the data and crops some points off-canvas. Pad 5% on each side so peaks
+    // at the extrema sit inside the frame instead of on the axis.
+    const xs = data.map((d) => d.ratio);
+    const ys = data.map((d) => d.q);
+    const padded = (lo: number, hi: number): [number, number] => {
+      if (lo === hi) {
+        const eps = lo === 0 ? 1 : Math.abs(lo) * 0.05;
+        return [lo - eps, hi + eps];
+      }
+      const pad = (hi - lo) * 0.05;
+      return [lo - pad, hi + pad];
+    };
+    const xDomain = xs.length > 0 ? padded(Math.min(...xs), Math.max(...xs)) : undefined;
+    const yDomain = ys.length > 0 ? padded(Math.min(...ys), Math.max(...ys)) : undefined;
+
     const el = Plot.plot({
       width:  host.clientWidth  || 360,
       height: host.clientHeight || 260,
@@ -107,8 +124,8 @@ export function MillerPlot({ indices, hoveredIndex }: MillerPlotProps): JSX.Elem
         overflow: "visible",
         fontSize: "9px",
       },
-      x: { label: null, ticks: 4 },
-      y: { label: null, ticks: 3 },
+      x: { label: null, ticks: 4, ...(xDomain ? { domain: xDomain } : {}) },
+      y: { label: null, ticks: 3, ...(yDomain ? { domain: yDomain } : {}) },
       marks: data.length === 0 ? [] : [
         ...regressionMarks,
         Plot.dot(data, {

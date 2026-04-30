@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 CREATE TABLE IF NOT EXISTS experiments (
-    id              INTEGER PRIMARY KEY,
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
     name            TEXT,
     path            TEXT NOT NULL,
     data_dir        TEXT NOT NULL,
@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS experiments (
 );
 
 CREATE TABLE IF NOT EXISTS samples (
-    id            INTEGER PRIMARY KEY,
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
     experiment_id INTEGER REFERENCES experiments(id),
     label         TEXT,
     name          TEXT,
@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS sample_tags (
 );
 
 CREATE TABLE IF NOT EXISTS exposures (
-    id         INTEGER PRIMARY KEY,
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
     sample_id  INTEGER REFERENCES samples(id),
     filename   TEXT,
     kind       TEXT DEFAULT 'file',
@@ -64,7 +64,7 @@ CREATE TABLE IF NOT EXISTS exposure_tags (
 );
 
 CREATE TABLE IF NOT EXISTS peaks (
-    id          INTEGER PRIMARY KEY,
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
     exposure_id INTEGER REFERENCES exposures(id),
     q           REAL NOT NULL,
     intensity   REAL,
@@ -75,7 +75,7 @@ CREATE TABLE IF NOT EXISTS peaks (
 );
 
 CREATE TABLE IF NOT EXISTS indices (
-    id          INTEGER PRIMARY KEY,
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
     exposure_id INTEGER REFERENCES exposures(id),
     phase       TEXT NOT NULL,
     basis       REAL NOT NULL,
@@ -157,6 +157,59 @@ function migrate_schema!(db::SQLite.DB)
         catch
             # column already exists — safe to ignore
         end
+    end
+    migrate_pk_to_autoincrement!(db)
+end
+
+"""
+    migrate_pk_to_autoincrement!(db)
+
+Rebuild the five entity tables that participate in chat `@`-mentions
+(experiments, samples, exposures, peaks, indices) so their primary keys
+are `INTEGER PRIMARY KEY AUTOINCREMENT`. SQLite's plain `INTEGER PRIMARY
+KEY` is rowid-aliased and **reuses ids on deletion** — so a stale mention
+of a deleted index can silently rebind to a new index that takes its id.
+AUTOINCREMENT keeps a monotonically-increasing counter in `sqlite_sequence`
+so freed ids are never reused.
+
+No-op on fresh DBs (the schema already declares AUTOINCREMENT) and on
+DBs that have already been migrated.
+"""
+function migrate_pk_to_autoincrement!(db::SQLite.DB)
+    rows = Tables.rowtable(DBInterface.execute(db,
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='peaks'"))
+    isempty(rows) && return
+    occursin("AUTOINCREMENT", String(rows[1].sql)) && return
+
+    # FK enforcement must be disabled OUTSIDE a transaction (SQLite docs).
+    DBInterface.execute(db, "PRAGMA foreign_keys = OFF")
+    try
+        # Rename old tables, create the fresh schema (the 5 renamed tables no
+        # longer exist so `CREATE TABLE IF NOT EXISTS` fires for them and is
+        # a no-op for everyone else), copy rows, drop the renamed originals.
+        tables = ["experiments", "samples", "exposures", "peaks", "indices"]
+        SQLite.transaction(db) do
+            for t in tables
+                DBInterface.execute(db, "ALTER TABLE $t RENAME TO _migrate_old_$t")
+            end
+            create_schema!(db)
+            for t in tables
+                # Copy only the columns that exist in BOTH the renamed source
+                # and the freshly-created destination — the old table may be
+                # missing columns added by `migrate_schema!`'s ALTER TABLE pass
+                # (those columns will land NULL, which the schema permits).
+                new_cols = Set(String[String(c.name) for c in Tables.rowtable(
+                    DBInterface.execute(db, "PRAGMA table_info($t)"))])
+                old_cols = String[String(c.name) for c in Tables.rowtable(
+                    DBInterface.execute(db, "PRAGMA table_info(_migrate_old_$t)"))]
+                shared = join(String[c for c in old_cols if c in new_cols], ", ")
+                DBInterface.execute(db,
+                    "INSERT INTO $t ($shared) SELECT $shared FROM _migrate_old_$t")
+                DBInterface.execute(db, "DROP TABLE _migrate_old_$t")
+            end
+        end
+    finally
+        DBInterface.execute(db, "PRAGMA foreign_keys = ON")
     end
 end
 

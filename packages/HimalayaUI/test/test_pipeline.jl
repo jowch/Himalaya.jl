@@ -187,6 +187,146 @@ end
     @test length(get_groups_for_exposure(db, e_id))  == 1
 end
 
+@testset "analyze_exposure! incorporates manual peaks into candidate indices" begin
+    # Regression: manual peaks live in the DB but `Himalaya.indexpeaks` was
+    # previously called with only fresh `findpeaks` output, so a manual peak
+    # at a phase's predicted ratio position never landed in `IndexEntry.peaks`.
+    tmp          = mktempdir()
+    analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
+    mkpath(analysis_dir)
+
+    src = joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat")
+    cp(src, joinpath(analysis_dir, "example_tot.dat"))
+
+    db     = open_db(joinpath(tmp, "himalaya.db"))
+    exp_id = init_experiment!(db; path=tmp,
+                                   data_dir=joinpath(tmp, "data"),
+                                   analysis_dir=analysis_dir)
+    s_id   = create_sample!(db; experiment_id=exp_id, label="D1", name="UX1")
+    e_id   = create_exposure!(db; sample_id=s_id, filename="example_tot")
+
+    analyze_exposure!(db, e_id, analysis_dir)
+
+    # Pick a candidate index's basis and place a manual peak at its
+    # √2-ratio position — guaranteed to be a predicted q for cubic phases
+    # so SOME candidate should bind it on reanalysis.
+    ix_row = first(Tables.rowtable(DBInterface.execute(db,
+        "SELECT basis FROM indices WHERE exposure_id = ? ORDER BY score DESC LIMIT 1",
+        [e_id])))
+    target_q = Float64(ix_row.basis) * sqrt(2.0)
+
+    res = DBInterface.execute(db,
+        "INSERT INTO peaks (exposure_id, q, source) VALUES (?, ?, 'manual')",
+        [e_id, target_q])
+    manual_peak_id = Int(DBInterface.lastrowid(res))
+
+    analyze_exposure!(db, e_id, analysis_dir)
+
+    # The manual peak should appear in at least one index's `index_peaks` rows.
+    n_uses = first(Tables.rowtable(DBInterface.execute(db,
+        "SELECT COUNT(*) AS c FROM index_peaks WHERE peak_id = ?",
+        [manual_peak_id]))).c
+    @test n_uses > 0
+end
+
+@testset "analyze_exposure! ignores excluded auto peaks when scoring candidates" begin
+    # Regression: `was_excluded` carry-forward was applied at peak persistence
+    # time, but the candidate set was built from raw `findpeaks` output — so
+    # the user's "this is noise" verdict had no effect on `IndexEntry.peaks`
+    # or score until the very next reanalysis happened to drop the peak.
+    tmp          = mktempdir()
+    analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
+    mkpath(analysis_dir)
+
+    src = joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat")
+    cp(src, joinpath(analysis_dir, "example_tot.dat"))
+
+    db     = open_db(joinpath(tmp, "himalaya.db"))
+    exp_id = init_experiment!(db; path=tmp,
+                                   data_dir=joinpath(tmp, "data"),
+                                   analysis_dir=analysis_dir)
+    s_id   = create_sample!(db; experiment_id=exp_id, label="D1", name="UX1")
+    e_id   = create_exposure!(db; sample_id=s_id, filename="example_tot")
+
+    analyze_exposure!(db, e_id, analysis_dir)
+
+    # Pick an auto peak that's currently bound to ≥ 1 candidate index.
+    bound_rows = Tables.rowtable(DBInterface.execute(db, """
+        SELECT p.id, p.q FROM peaks p
+        JOIN index_peaks ip ON ip.peak_id = p.id
+        WHERE p.exposure_id = ? AND p.source = 'auto'
+        GROUP BY p.id HAVING COUNT(*) >= 1
+        ORDER BY COUNT(*) DESC LIMIT 1
+        """, [e_id]))
+    @test !isempty(bound_rows)
+    target_pid = Int(bound_rows[1].id)
+    target_q   = Float64(bound_rows[1].q)
+
+    DBInterface.execute(db,
+        "UPDATE peaks SET excluded = 1 WHERE id = ?", [target_pid])
+    analyze_exposure!(db, e_id, analysis_dir)
+
+    # After reanalysis the same q should still be detected (auto peaks are
+    # re-found by findpeaks) and re-marked excluded via `was_excluded`. But
+    # no candidate should reference it, because we now filter excluded q's
+    # before calling indexpeaks.
+    same_q = Tables.rowtable(DBInterface.execute(db,
+        "SELECT id, excluded FROM peaks WHERE exposure_id = ? AND ABS(q - ?) < 1e-9",
+        [e_id, target_q]))
+    @test !isempty(same_q)
+    @test Int(same_q[1].excluded) == 1
+    new_pid = Int(same_q[1].id)
+    n_uses = first(Tables.rowtable(DBInterface.execute(db,
+        "SELECT COUNT(*) AS c FROM index_peaks WHERE peak_id = ?",
+        [new_pid]))).c
+    @test n_uses == 0
+end
+
+@testset "open_db migrates rowid PKs to AUTOINCREMENT" begin
+    # Regression: chat @-mentions reference entities by id; SQLite rowid PKs
+    # reuse freed ids on deletion, so a deleted-then-re-created index can take
+    # the same id and silently rebind the mention to a different index.
+    tmp = mktempdir()
+    db_path = joinpath(tmp, "legacy.db")
+
+    legacy = SQLite.DB(db_path)
+    DBInterface.execute(legacy, "PRAGMA foreign_keys = ON")
+    DBInterface.execute(legacy,
+        "CREATE TABLE experiments (id INTEGER PRIMARY KEY, name TEXT, path TEXT NOT NULL,
+                                   data_dir TEXT NOT NULL, analysis_dir TEXT NOT NULL)")
+    DBInterface.execute(legacy,
+        "CREATE TABLE samples (id INTEGER PRIMARY KEY, experiment_id INTEGER, label TEXT)")
+    DBInterface.execute(legacy,
+        "CREATE TABLE exposures (id INTEGER PRIMARY KEY, sample_id INTEGER, filename TEXT)")
+    DBInterface.execute(legacy,
+        "CREATE TABLE peaks (id INTEGER PRIMARY KEY, exposure_id INTEGER, q REAL NOT NULL)")
+    DBInterface.execute(legacy,
+        "CREATE TABLE indices (id INTEGER PRIMARY KEY, exposure_id INTEGER, phase TEXT NOT NULL, basis REAL NOT NULL)")
+    DBInterface.execute(legacy,
+        "INSERT INTO experiments (name, path, data_dir, analysis_dir) VALUES ('e', '/p', '/d', '/a')")
+    DBInterface.execute(legacy, "INSERT INTO samples (experiment_id, label) VALUES (1, 'A1')")
+    DBInterface.execute(legacy, "INSERT INTO exposures (sample_id, filename) VALUES (1, 'f')")
+    DBInterface.execute(legacy, "INSERT INTO peaks (exposure_id, q) VALUES (1, 0.1)")
+    DBInterface.execute(legacy, "INSERT INTO indices (exposure_id, phase, basis) VALUES (1, 'Pn3m', 0.1)")
+    close(legacy)
+
+    db = open_db(db_path)
+    for t in ("experiments", "samples", "exposures", "peaks", "indices")
+        sql = String(first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name=?", [t]))).sql)
+        @test occursin("AUTOINCREMENT", sql)
+    end
+
+    # Pre-existing rows survive the migration with their ids intact.
+    rows = Tables.rowtable(DBInterface.execute(db, "SELECT id FROM peaks"))
+    @test [Int(r.id) for r in rows] == [1]
+
+    # Deleting and re-inserting yields a NEW id, not the recycled rowid.
+    DBInterface.execute(db, "DELETE FROM peaks WHERE id = 1")
+    res = DBInterface.execute(db, "INSERT INTO peaks (exposure_id, q) VALUES (1, 0.2)")
+    @test Int(DBInterface.lastrowid(res)) >= 2
+end
+
 @testset "analyze_exposure! uses integration pattern from config" begin
     # Custom config with a different integration suffix to prove the pattern is honored
     mktempdir() do dir

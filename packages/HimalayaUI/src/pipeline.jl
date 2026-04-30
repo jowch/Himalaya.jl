@@ -155,6 +155,15 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
         q_to_peak_id[qval] = Int(DBInterface.lastrowid(res))
     end
 
+    # Manual peaks survive the auto-peak wipe; map their stable ids by q so
+    # candidate indices that incorporate them get proper `index_peaks` rows.
+    manual_peak_rows = Tables.rowtable(DBInterface.execute(db,
+        "SELECT id, q FROM peaks WHERE exposure_id = ? AND source = 'manual'",
+        [exposure_id]))
+    for r in manual_peak_rows
+        q_to_peak_id[Float64(r.q)] = Int(r.id)
+    end
+
     # Persist candidate indices
     candidate_to_db_id = Dict{Int, Int}()
     for (ci, idx) in enumerate(candidates)
@@ -486,8 +495,46 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
 
     q, I, σ      = load_dat(dat_path)
     peaks_result = Himalaya.findpeaks(q, I, σ)
-    candidates   = Himalaya.indexpeaks(peaks_result.q, peaks_result.sharpness)
-    group        = auto_group(candidates)
+
+    # Curation snapshot: previously-excluded auto q's, plus user-added manual q's.
+    # Both adjust what the indexer sees relative to raw `findpeaks` output:
+    #   - excluded auto peaks must not contribute to candidate scoring
+    #     (otherwise the user's "this is noise" verdict gets ignored every
+    #     reanalysis), and
+    #   - manual peaks must be included so a peak the user marked at a
+    #     predicted ratio position can land in `IndexEntry.peaks`.
+    excluded_rows = Tables.rowtable(DBInterface.execute(db,
+        "SELECT q FROM peaks WHERE exposure_id = ? AND source = 'auto' AND excluded = 1",
+        [exposure_id]))
+    excluded_qs = Float64[Float64(r.q) for r in excluded_rows]
+    manual_rows = Tables.rowtable(DBInterface.execute(db,
+        "SELECT q FROM peaks WHERE exposure_id = ? AND source = 'manual'",
+        [exposure_id]))
+    manual_q = Float64[Float64(r.q) for r in manual_rows]
+
+    is_excluded(qv::Float64) = any(
+        eq -> abs(eq - qv) <= max(1e-6, abs(qv) * 0.001), excluded_qs)
+
+    keep = [i for i in eachindex(peaks_result.q) if !is_excluded(peaks_result.q[i])]
+    auto_q_kept     = peaks_result.q[keep]
+    auto_sharp_kept = peaks_result.sharpness[keep]
+
+    candidates = if isempty(manual_q)
+        Himalaya.indexpeaks(auto_q_kept, auto_sharp_kept)
+    else
+        # Sharpness for a manual peak: nearest-grid lookup against the full
+        # SG-second-derivative trace. One O(N) sharpness pass regardless of
+        # how many manual peaks exist, and consistent with the unit `findpeaks`
+        # uses for its own peaks so they mix correctly in `consistency`.
+        sharp_full   = Himalaya.sharpness(I)
+        manual_sharp = Float64[sharp_full[argmin(abs.(q .- mq))] for mq in manual_q]
+        all_q        = vcat(auto_q_kept, manual_q)
+        all_sharp    = vcat(auto_sharp_kept, manual_sharp)
+        perm         = sortperm(all_q)
+        Himalaya.indexpeaks(all_q[perm], all_sharp[perm])
+    end
+
+    group = auto_group(candidates)
 
     persist_analysis!(db, exposure_id, q, I, peaks_result, candidates, group)
 end

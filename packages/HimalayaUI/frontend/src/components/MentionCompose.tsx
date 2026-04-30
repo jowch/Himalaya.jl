@@ -77,7 +77,11 @@ export function MentionCompose({ disabled, onSubmit }: MentionComposeProps): JSX
       e.preventDefault();
       trySubmit();
     }
-    // Esc and arrow keys handled inside MentionPicker via window listener
+    if (e.key === "Escape" && pickerQuery === null) {
+      e.preventDefault();
+      ref.current?.blur();
+    }
+    // When picker is open, Esc/arrows are handled by MentionPicker's window listener.
   };
 
   return (

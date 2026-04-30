@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Skeleton } from "boneyard-js/react";
 import { useAppState } from "../state";
 import {
@@ -173,16 +173,19 @@ export function PlotCard(): JSX.Element {
     setYDomain(fit.y);
   }, [traceQ.data, peaksQ.data, computeFit]);
 
-  // Auto-fit once per exposure (re-fits when peaks finish loading too).
+  // Auto-fit once per exposure: trigger on the first render where both trace
+  // and peaks are loaded for the active exposure. Subsequent peak mutations
+  // (manual add/remove) don't re-fit — that would clobber the user's zoom.
+  const fittedExposureRef = useRef<number | null>(null);
   useEffect(() => {
-    if (!traceQ.data) return;
-    const fit = computeFit(traceQ.data, peaksQ.data ?? []);
+    if (activeExposureId === undefined) return;
+    if (!traceQ.data || !peaksQ.data) return;
+    if (fittedExposureRef.current === activeExposureId) return;
+    fittedExposureRef.current = activeExposureId;
+    const fit = computeFit(traceQ.data, peaksQ.data);
     setXDomain(fit.x);
     setYDomain(fit.y);
-    // Intentionally only fires when the exposure changes or peaks stream in;
-    // we don't want it to fight manual zoom on the same exposure.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeExposureId, peaksQ.data?.length, traceQ.data]);
+  }, [activeExposureId, traceQ.data, peaksQ.data, computeFit]);
 
   const resetDomain = useCallback(() => {
     setXDomain(null);
