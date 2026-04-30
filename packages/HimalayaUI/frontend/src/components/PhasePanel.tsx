@@ -111,22 +111,12 @@ function IndexCard({ index, isActive, onAction, onDelete, onHover, onLeave, latt
               <span className="text-fg-dim text-xs">{latticeUnit}</span>
             </span>
           )}
-          {CUBIC_PHASES.has(index.phase) && index.ngc != null && (
-            <span
-              data-testid={`ngc-${index.id}`}
-              className="text-data truncate min-w-0 flex items-center gap-1.5"
-            >
-              <span className="text-fg-dim">·</span>
-              <span>
-                κ ={" "}
-                <span className="tabular-nums">{formatKappa(index.ngc)}</span>{" "}
-                <span className="text-fg-dim text-xs">{curvatureUnit}</span>
-              </span>
-            </span>
-          )}
+          <span className="ml-auto px-1.5 py-0.5 border border-border-soft rounded-full text-xs text-fg-dim shrink-0">
+            {index.peaks.length} peaks
+          </span>
         </div>
 
-        {/* Secondary row: score bar + R² + peak count */}
+        {/* Secondary row: score bar + R² + κ (cubic phases only) */}
         <div className="flex items-center gap-3 font-mono text-xs text-fg-dim">
           <span className="flex items-center gap-1.5">
             <span>score</span>
@@ -149,9 +139,15 @@ function IndexCard({ index, isActive, onAction, onDelete, onHover, onLeave, latt
               {formatR2(index.r_squared)}
             </span>
           </span>
-          <span className="ml-auto px-1.5 py-0.5 border border-border-soft rounded-full text-xs text-fg-dim">
-            {index.peaks.length} peaks
-          </span>
+          {CUBIC_PHASES.has(index.phase) && index.ngc != null && (
+            <span data-testid={`ngc-${index.id}`} className="ml-auto">
+              κ{" "}
+              <span className="text-fg-muted tabular-nums">
+                {formatKappa(index.ngc)}
+              </span>{" "}
+              <span className="text-fg-dim">{curvatureUnit}</span>
+            </span>
+          )}
         </div>
       </div>
 
