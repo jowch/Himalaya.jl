@@ -176,18 +176,31 @@ No-op on fresh DBs (the schema already declares AUTOINCREMENT) and on
 DBs that have already been migrated.
 """
 function migrate_pk_to_autoincrement!(db::SQLite.DB)
-    rows = Tables.rowtable(DBInterface.execute(db,
-        "SELECT sql FROM sqlite_master WHERE type='table' AND name='peaks'"))
-    isempty(rows) && return
-    occursin("AUTOINCREMENT", String(rows[1].sql)) && return
+    tables = ["experiments", "samples", "exposures", "peaks", "indices"]
+
+    # Sentinel: skip iff every table in `tables` already has AUTOINCREMENT.
+    # Checking just one would let a future addition to `tables` (a 6th
+    # mention-target) get silently skipped on already-migrated DBs.
+    # Skip the migration entirely if any table is missing — the migration
+    # loop below assumes all five tables exist (it ALTER-renames each one),
+    # and partial-schema fixtures aren't real production DBs anyway.
+    needs_migration = false
+    for t in tables
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name=?", [t]))
+        isempty(rows) && return  # one or more tables missing → leave alone
+        if !occursin("AUTOINCREMENT", String(rows[1].sql))
+            needs_migration = true
+        end
+    end
+    needs_migration || return
 
     # FK enforcement must be disabled OUTSIDE a transaction (SQLite docs).
     DBInterface.execute(db, "PRAGMA foreign_keys = OFF")
     try
-        # Rename old tables, create the fresh schema (the 5 renamed tables no
+        # Rename old tables, create the fresh schema (the renamed tables no
         # longer exist so `CREATE TABLE IF NOT EXISTS` fires for them and is
         # a no-op for everyone else), copy rows, drop the renamed originals.
-        tables = ["experiments", "samples", "exposures", "peaks", "indices"]
         SQLite.transaction(db) do
             for t in tables
                 DBInterface.execute(db, "ALTER TABLE $t RENAME TO _migrate_old_$t")

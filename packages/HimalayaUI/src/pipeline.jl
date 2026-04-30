@@ -157,6 +157,15 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
 
     # Manual peaks survive the auto-peak wipe; map their stable ids by q so
     # candidate indices that incorporate them get proper `index_peaks` rows.
+    #
+    # Float64 equality is load-bearing here: `analyze_exposure!` reads these
+    # same q-values out of SQLite and `vcat`s them into the indexpeaks input,
+    # so the q's stored in `IndexEntry.peaks` are bit-identical copies of the
+    # `r.q` values queried below — no float drift on the round-trip. If
+    # `Himalaya.indexpeaks` ever starts snapping or transforming its input
+    # qs, this lookup will silently miss and the manual-peak `index_peaks`
+    # rows won't be written. The "incorporates manual peaks" testset in
+    # test_pipeline.jl will catch that regression.
     manual_peak_rows = Tables.rowtable(DBInterface.execute(db,
         "SELECT id, q FROM peaks WHERE exposure_id = ? AND source = 'manual'",
         [exposure_id]))

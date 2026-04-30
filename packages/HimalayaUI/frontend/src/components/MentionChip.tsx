@@ -1,21 +1,9 @@
 import { useState, useCallback } from "react";
 import { useAppState } from "../state";
 import { useExperiment } from "../queries";
-import { latticeUnitFromQUnits, inverseSquareUnits } from "../lib/units";
+import { latticeUnitFromQUnits, inverseSquareUnits, formatKappa } from "../lib/units";
 import type { ResolvedMention } from "../hooks/useMentionResolution";
 import { CUBIC_PHASES } from "../phases";
-
-/**
- * κ ranges over many orders of magnitude depending on the lattice unit
- * (≈10⁻² nm⁻² ≈ 10⁻⁴ Å⁻²); fall back to scientific notation when fixed-point
- * would round all the leading digits to zero.
- */
-function formatKappa(k: number): string {
-  const abs = Math.abs(k);
-  if (abs === 0) return "0";
-  if (abs < 0.01) return k.toExponential(2);
-  return k.toFixed(3);
-}
 
 interface ChipProps {
   resolved: ResolvedMention | "loading" | "dead";

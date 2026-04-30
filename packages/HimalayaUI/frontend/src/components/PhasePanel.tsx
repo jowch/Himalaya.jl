@@ -5,7 +5,7 @@ import { phaseColor, CUBIC_PHASES } from "../phases";
 import { HintText } from "./ui";
 import { StaleIndicesBanner } from "./StaleIndicesBanner";
 import { SpeculativeBuilder } from "./SpeculativeBuilder";
-import { latticeUnitFromQUnits, inverseSquareUnits } from "../lib/units";
+import { latticeUnitFromQUnits, inverseSquareUnits, formatKappa } from "../lib/units";
 import type { GroupEntry, IndexEntry } from "../api";
 
 const R2_THRESHOLD = 0.98;
@@ -24,18 +24,6 @@ function formatR2(r: number | null): string {
 
 function formatScore(s: number | null | undefined): string {
   return s != null ? s.toFixed(2) : "—";
-}
-
-/**
- * κ ranges over many orders of magnitude depending on the experiment's
- * length unit (≈10⁻² nm⁻² ≈ 10⁻⁴ Å⁻²). Toggle to scientific notation when
- * a fixed-point representation would lose all the leading sig figs.
- */
-function formatKappa(k: number): string {
-  const abs = Math.abs(k);
-  if (abs === 0) return "0";
-  if (abs < 0.01) return k.toExponential(2);
-  return k.toFixed(3);
 }
 
 // ── Individual index card ────────────────────────────────────────────────────
