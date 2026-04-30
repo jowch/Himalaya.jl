@@ -4,7 +4,15 @@ using FileIO, TiffImages, ImageIO, ImageTransformations, ImageCore, ColorTypes
 Bump this string whenever `load_and_lognormalize` semantics change. It feeds
 into the per-image cache-busting token; bumping forces all browsers to re-fetch.
 """
-const IMAGE_PROCESSING_VERSION = "v1"
+const IMAGE_PROCESSING_VERSION = "v2"
+
+"""
+Percentile clips applied to the log-counts of *positive* pixels in
+`load_and_lognormalize`. Bump `IMAGE_PROCESSING_VERSION` whenever these
+change so cached PNGs are invalidated.
+"""
+const LOW_CLIP_PERCENTILE = 0.05f0
+const HIGH_CLIP_PERCENTILE = 0.99f0
 
 """
     image_version_token(path) -> String
@@ -40,14 +48,18 @@ function load_and_lognormalize(path::String)
     lv = log1p.(max.(counts, 0f0))  # negatives → 0 before log
 
     # Clip at p99 of *positive* pixels only, so the direct beam / hot pixels
-    # don't crush contrast in the diffraction rings.
-    pos = filter(>(0f0), vec(lv))
+    # don't crush contrast in the diffraction rings. Also clip the low end at
+    # p5 of positives so the faint background floor of real signal collapses
+    # to the same pure black as detector dead pixels — otherwise the whole
+    # frame sits on a slightly-lifted gray haze that hides ring contrast.
+    pos = sort!(filter(>(0f0), vec(lv)))
     if isempty(pos)
         return colorview(Gray, lv)
     end
-    hi = sort(pos)[min(end, round(Int, 0.99 * length(pos)))]
+    lo = pos[max(1, round(Int, LOW_CLIP_PERCENTILE * length(pos)))]
+    hi = pos[min(end, round(Int, HIGH_CLIP_PERCENTILE * length(pos)))]
 
-    normed = hi > 0f0 ? clamp.(lv ./ hi, 0f0, 1f0) : lv
+    normed = hi > lo ? clamp.((lv .- lo) ./ (hi - lo), 0f0, 1f0) : lv
     colorview(Gray, normed)
 end
 
