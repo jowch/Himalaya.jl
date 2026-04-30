@@ -40,14 +40,21 @@ Runs locally on your workstation or on a lab server over SSH port-forward. No ex
 From the repository root:
 
 ```bash
-# 1. Resolve Julia dependencies
+# 1. Register the lab's private package registry (one-time per Julia depot —
+#    Himalaya.jl resolves through it). Skip if it's already registered.
+julia -e 'using Pkg; Pkg.Registry.add(Pkg.RegistrySpec(url="https://github.com/Wong-Lab/Registry.jl"))'
+
+# 2. Resolve Julia dependencies
 julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.instantiate()'
 
-# 2. Build the frontend (produces packages/HimalayaUI/frontend/dist/)
+# 3. Build the frontend (produces packages/HimalayaUI/frontend/dist/)
 make frontend
 ```
 
-You only need step 2 once per clone (or whenever you pull new frontend changes).
+You only need step 3 once per clone (or whenever you pull new frontend changes).
+Step 1 is per-depot, not per-clone — if you set `JULIA_DEPOT_PATH` (e.g. for a
+shared multi-user deploy, see [.env.example](.env.example)), run step 1 with
+that env var set so the registry lands in the shared depot.
 
 **Optional: build a sysimage for fast startup (~15× speedup, ~5 min one-time cost)**
 
@@ -158,6 +165,8 @@ Rows whose `sample_id` column doesn't parse as an integer are silently skipped, 
 
 **Filename ranges** like `JC001-004` or `JC013-JC016` are expanded to individual prefixes (`JC001`, `JC002`, `JC003`, `JC004`). All filename entries — ranges, single names, or bare prefixes — are treated as **prefixes against the filesystem**: each is scanned for matching files using the `[files].integration` pattern. Disk decides what actually exists; missing files emit warnings, not errors.
 
+**Word-boundary matching.** A prefix only matches a filename when the character immediately after the prefix is non-alphanumeric (typically `_`, `.`, or `-`). This prevents the obvious collision where `JC_C04` would otherwise also catch every `JC_C04s_*.dat` file, and the numeric variant where `JC001` would catch `JC0010`. So `JC` alone does **not** match `JC001` — use the range form (`JC001-009`) when you want to enumerate.
+
 ---
 
 ## CLI reference
@@ -177,46 +186,64 @@ julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
 
 Lists the built-in templates available to `config new`.
 
-### `himalaya init <experiment_path>`
+### `himalaya init <experiment_path> [--no-analyze]`
 
-Reads `experiment.toml` and the manifest from `<experiment_path>`, then registers the experiment, samples, and exposures in the central DB. Discovers exposures by filesystem prefix scan against the integration pattern.
+Reads `experiment.toml` and the manifest from `<experiment_path>`, registers the experiment/samples/exposures in the central DB, **and runs the full analysis pipeline** (peak-finding + indexing) over every exposure. Discovers exposures by filesystem prefix scan against the integration pattern.
 
 ```bash
 himalaya init ~/beamtime/2026-04-exp42
 # → Imported 37 samples and 148 exposures from manifest.csv.
 # → Initialized experiment 'SSRL-2026-Apr/Exp42' (id=1) at /Users/me/beamtime/2026-04-exp42
+# → Running analysis (peak-finding + indexing)...
+# →   Analyzing D1 / JC_D01_1_S2449 ... done
+# →   ...
 ```
 
-### `himalaya reingest <experiment_path>`
+Pass `--no-analyze` to skip the analysis step (run `himalaya analyze -e <id>` later). Useful when you want to inspect what got registered before committing to compute, or when the analysis dir isn't yet populated.
 
-Re-reads `experiment.toml` + manifest and updates the DB. **Preserves curation** — exposures with `accepted`/`rejected` status or manual peaks are never deleted or modified, only new ones get inserted. Wrapped in a SQLite transaction so partial failures roll back. Safe to run repeatedly.
+### Identifying an experiment after `init`
+
+Once an experiment is registered, `reingest`, `analyze`, and `show` resolve it
+from the central DB rather than from a path argument. They take an
+`-e`/`--experiment` flag whose value can be:
+
+- an **id** (`-e 1`)
+- a **name** (`-e "SSRL April 2026"`, must match `experiments.name`)
+- a **path** (`-e ~/beamtime/2026-04-exp42`, looked up against `experiments.path`)
+
+`-e` is **required** for the write commands (`reingest`, `analyze`) and
+**optional** for the read-only `show` (which defaults to the sole registered
+experiment).
+
+### `himalaya reingest -e <experiment>`
+
+Re-reads `experiment.toml` + manifest from the experiment's stored path and updates the DB. **Preserves curation** — exposures with `accepted`/`rejected` status or manual peaks are never deleted or modified, only new ones get inserted. Wrapped in a SQLite transaction so partial failures roll back. Safe to run repeatedly.
 
 ```bash
-himalaya reingest ~/beamtime/2026-04-exp42
-# → Reingested experiment 1: +0 samples, +12 exposures.
+himalaya reingest -e 1                           # by id
+himalaya reingest -e "SSRL April 2026"           # by name
+himalaya reingest -e ~/beamtime/2026-04-exp42    # by path
 ```
 
-### `himalaya analyze <experiment_path> [--sample <label>]`
+### `himalaya analyze -e <experiment> [--sample <label>]`
 
 Runs the full pipeline — peak-finding → indexing → auto-grouping → persistence — for every exposure (or only the matching sample). Idempotent: re-running replaces prior auto-picked peaks and auto groups, but preserves any manual peaks and the user's custom group.
 
 ```bash
-himalaya analyze ~/beamtime/2026-04-exp42
-
-# Or just one sample:
-himalaya analyze ~/beamtime/2026-04-exp42 --sample D1
+himalaya analyze -e 1
+himalaya analyze -e 1 --sample D1
 ```
 
-### `himalaya show <experiment_path> --sample <label>`
+### `himalaya show [-e <experiment>] --sample <label>`
 
 Prints the stored analysis for one sample — exposures, peaks, candidate indices. Useful as a quick sanity check without opening the browser.
 
-### `himalaya serve <experiment_path> [--port 8080] [--host 127.0.0.1]`
+### `himalaya serve [--port 8080] [--host 127.0.0.1]`
 
-Starts the web server. Blocks until you Ctrl-C. The UI lives at `http://<host>:<port>/` and the JSON API at `/api/*`.
+Starts the web server. Serves all experiments in the central DB; no per-experiment specifier is needed. Blocks until you Ctrl-C. The UI lives at `http://<host>:<port>/` and the JSON API at `/api/*`.
 
 ```bash
-himalaya serve ~/beamtime/2026-04-exp42 --port 8080
+himalaya serve --port 8080
 # → HimalayaUI serving DB at /Users/me/.himalaya/himalaya.db on http://127.0.0.1:8080
 ```
 
@@ -245,8 +272,48 @@ Deployment is configured through environment variables. See [`.env.example`](.en
 Julia doesn't auto-load `.env` files. Use `direnv`, source them in your shell, or pass them inline:
 
 ```bash
-HIMALAYA_DB_PATH=/opt/himalaya/himalaya.db himalaya serve ~/exp
+HIMALAYA_DB_PATH=/opt/himalaya/himalaya.db himalaya serve
 ```
+
+---
+
+## Updating a deployment
+
+The work needed depends on what changed:
+
+| Change type | Steps | Cost |
+|---|---|---|
+| Frontend only (TS/CSS/React) | `git pull` → `make frontend` → browser refresh | ~30 s |
+| Backend Julia, no new deps | `git pull` → `make sysimage` → `sudo systemctl restart himalaya` | ~5–10 min |
+| Backend with new Julia deps | as above + `Pkg.instantiate()` against the shared depot **before** `make sysimage` | ~5–10 min |
+| Schema migration | none extra — `open_db` runs migrations on connect, daemon restart picks them up | — |
+| Julia version bump (juliaup) | rebuild sysimage (`make check-sysimage` flags the mismatch) | ~5–10 min |
+
+For multi-user deploys, set `JULIA_DEPOT_PATH` for the build steps so packages
+and the sysimage write into the shared depot:
+
+```bash
+cd /opt/Himalaya.jl
+git pull
+export JULIA_DEPOT_PATH=/opt/Himalaya.jl/.julia        # or whatever .env has
+julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.instantiate()'   # only if Project.toml changed
+make frontend                                          # only if frontend/ changed
+make sysimage                                          # only if any Julia code changed
+sudo systemctl restart himalaya                        # only if you rebuilt the sysimage
+```
+
+A few non-obvious things to know:
+
+- **Frontend updates are hot.** Oxygen's static-file mount reads `dist/` per
+  request, so curators see new UI on browser refresh — no daemon restart.
+- **Sysimage swap doesn't kill the running daemon.** systemd keeps the
+  already-loaded sysimage in RAM; you can `make sysimage` (which overwrites
+  `build/himalaya.so` in place) without downtime. CLI invocations starting
+  during the rebuild will see the new file once it's fully written.
+- **CLI users do nothing.** The wrapper resolves the sysimage on each
+  invocation; whoever runs `himalaya …` next gets the new code.
+- **DB migrations are idempotent.** `create_schema!` is `CREATE TABLE IF NOT
+  EXISTS`; column-add and AUTOINCREMENT migrations only fire when needed.
 
 ---
 
@@ -291,7 +358,7 @@ Everything is stored in a single SQLite DB at `default_db_path()` (env-resolved,
 
 **`experiment.toml not found in <path>`** when running `init` or `reingest`. Run `himalaya config new --dir <path>` first, then edit the generated TOML.
 
-**`no database at <path> — run himalaya init first`** when running `serve`. The DB at `default_db_path()` doesn't exist yet. Run `himalaya init <experiment_path>` to create it. Check `HIMALAYA_DB_PATH` if you expected a different location.
+**`no database at <path> — run himalaya init first`** when running `serve`. The DB at `default_db_path()` doesn't exist yet. Run `himalaya init <experiment_path>` against your first experiment to create it. Check `HIMALAYA_DB_PATH` if you expected a different location.
 
 **`done` prints for every exposure but the UI shows no peaks.** The `.dat` files were probably not found under the registered `analysis_dir`. Check the experiment row: the `config` column embeds `data_dir` / `analysis_dir` / `[files].integration`. Verify the files actually exist at `<analysis_dir>/<integration_pattern>` and that the manifest filenames are valid prefixes.
 

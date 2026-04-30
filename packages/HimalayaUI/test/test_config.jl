@@ -169,14 +169,15 @@ end
 
         cfg = HimalayaUI.load_builtin_config("simple")
 
-        # Single stem prefix: JC001 → finds JC001.dat only (only file starting with JC001)
+        # Single stem prefix: JC001 → finds JC001.dat only
         @test HimalayaUI.resolve_files(cfg, dir, "JC001", cfg.integration_pattern) == ["JC001"]
-
-        # Range prefix: JC002
         @test HimalayaUI.resolve_files(cfg, dir, "JC002", cfg.integration_pattern) == ["JC002"]
 
-        # Broad prefix: JC → finds all JC*.dat sorted
-        @test HimalayaUI.resolve_files(cfg, dir, "JC", cfg.integration_pattern) == ["JC001", "JC002", "JC003"]
+        # Word-boundary semantics: a bare alpha prefix `JC` does NOT
+        # collide with `JC001`, `JC002` etc — boundary rule requires a
+        # non-alphanumeric character after the prefix. Use range
+        # expansion (`JC001-003`) to enumerate multiple files.
+        @test HimalayaUI.resolve_files(cfg, dir, "JC", cfg.integration_pattern) == String[]
 
         # Non-existent prefix → empty
         @test HimalayaUI.resolve_files(cfg, dir, "ZZ", cfg.integration_pattern) == String[]
@@ -194,19 +195,78 @@ end
         write(joinpath(subdir, "SA002.dat"), "")
 
         cfg = HimalayaUI.load_builtin_config("simple")
-        results = HimalayaUI.resolve_files(cfg, dir, "SA", "integrated/{name}.dat")
-        @test results == ["SA001", "SA002"]
+        # Boundary rule: bare alpha prefix doesn't catch alphanumeric continuations.
+        @test HimalayaUI.resolve_files(cfg, dir, "SA", "integrated/{name}.dat") == String[]
+        @test HimalayaUI.resolve_files(cfg, dir, "SA001", "integrated/{name}.dat") == ["SA001"]
     end
 end
 
 @testset "resolve_files filters by suffix" begin
     mktempdir() do dir
-        write(joinpath(dir, "X001.dat"), "")
-        write(joinpath(dir, "X001.tiff"), "")  # different suffix
-        write(joinpath(dir, "X002.dat"), "")
+        write(joinpath(dir, "X_001.dat"),  "")
+        write(joinpath(dir, "X_001.tiff"), "")  # different suffix
+        write(joinpath(dir, "X_002.dat"),  "")
 
         cfg = HimalayaUI.load_builtin_config("simple")
-        @test HimalayaUI.resolve_files(cfg, dir, "X", cfg.integration_pattern) == ["X001", "X002"]
+        # Boundary rule: prefix `X` matches only files with non-alphanumeric
+        # next char (here `_`). The `.tiff` is filtered by the pattern's
+        # `.dat` suffix, not by the boundary rule.
+        @test HimalayaUI.resolve_files(cfg, dir, "X", cfg.integration_pattern) == ["X_001", "X_002"]
+    end
+end
+
+@testset "resolve_file_path returns absolute path of first match" begin
+    cfg = HimalayaUI.load_builtin_config("simple")
+    mktempdir() do data_dir
+        # Real-world pattern: integration stem JC_D01_1_S2449, image filename
+        # extends with instrumentation tokens (_0_001) before the suffix.
+        write(joinpath(data_dir, "JC_D01_1_S2449_0_001.tiff"), "")
+        write(joinpath(data_dir, "JC_D01_2_S2450_0_001.tiff"), "")
+
+        @test HimalayaUI.resolve_file_path(cfg, data_dir, "JC_D01_1_S2449", "{name}.tiff") ==
+              joinpath(data_dir, "JC_D01_1_S2449_0_001.tiff")
+        @test HimalayaUI.resolve_file_path(cfg, data_dir, "JC_D01_2_S2450", "{name}.tiff") ==
+              joinpath(data_dir, "JC_D01_2_S2450_0_001.tiff")
+        @test HimalayaUI.resolve_file_path(cfg, data_dir, "NOPE", "{name}.tiff") === nothing
+        @test HimalayaUI.resolve_file_path(cfg, "/nonexistent/xyz", "X", "{name}.tiff") === nothing
+    end
+end
+
+@testset "resolve_files rejects prefix collisions" begin
+    # JC_C04 is a string-prefix of JC_C04s — without word-boundary matching,
+    # a manifest entry of "JC_C04" would scoop up every JC_C04s_*.dat file too.
+    cfg = HimalayaUI.load_builtin_config("simple")
+    mktempdir() do dir
+        write(joinpath(dir, "JC_C04_1_tot.dat"),  "")
+        write(joinpath(dir, "JC_C04_2_tot.dat"),  "")
+        write(joinpath(dir, "JC_C04s_1_tot.dat"), "")
+        write(joinpath(dir, "JC_C04s_2_tot.dat"), "")
+
+        c04  = HimalayaUI.resolve_files(cfg, dir, "JC_C04",  "{name}_tot.dat")
+        c04s = HimalayaUI.resolve_files(cfg, dir, "JC_C04s", "{name}_tot.dat")
+
+        @test c04  == ["JC_C04_1",  "JC_C04_2"]
+        @test c04s == ["JC_C04s_1", "JC_C04s_2"]
+    end
+end
+
+@testset "resolve_files rejects numeric-suffix collisions" begin
+    cfg = HimalayaUI.load_builtin_config("simple")
+    mktempdir() do dir
+        write(joinpath(dir, "JC001.dat"),  "")
+        write(joinpath(dir, "JC0010.dat"), "")
+        write(joinpath(dir, "JC001a.dat"), "")
+        @test HimalayaUI.resolve_files(cfg, dir, "JC001", "{name}.dat") == ["JC001"]
+    end
+end
+
+@testset "resolve_file_path with subdirectory pattern" begin
+    cfg = HimalayaUI.load_builtin_config("simple")
+    mktempdir() do data_dir
+        mkpath(joinpath(data_dir, "raw"))
+        write(joinpath(data_dir, "raw", "X001_meta.tiff"), "")
+        @test HimalayaUI.resolve_file_path(cfg, data_dir, "X001", "raw/{name}.tiff") ==
+              joinpath(data_dir, "raw", "X001_meta.tiff")
     end
 end
 
@@ -454,6 +514,41 @@ end
     mktempdir() do dir
         HimalayaUI.cli_config_new(type_name = "simple", dir = dir)
         @test_throws ErrorException HimalayaUI.cli_config_new(type_name = "simple", dir = dir)
+    end
+end
+
+@testset "cli_config_new fills an empty pre-existing file" begin
+    mktempdir() do dir
+        dest = joinpath(dir, "experiment.toml")
+        touch(dest)
+        @test filesize(dest) == 0
+        HimalayaUI.cli_config_new(type_name = "simple", dir = dir)
+        @test filesize(dest) > 0
+        @test occursin("[experiment]", read(dest, String))
+    end
+end
+
+@testset "cli_config_new fills a whitespace-only pre-existing file" begin
+    mktempdir() do dir
+        dest = joinpath(dir, "experiment.toml")
+        write(dest, "   \n\n")
+        HimalayaUI.cli_config_new(type_name = "simple", dir = dir)
+        cfg = HimalayaUI.load_config(dest)
+        @test cfg.integration_pattern == "{name}.dat"
+    end
+end
+
+@testset "cli_config_new fills a placeholder in a read-only directory" begin
+    mktempdir() do dir
+        dest = joinpath(dir, "experiment.toml")
+        touch(dest)
+        chmod(dir, 0o555)        # readonly parent dir; file itself stays writable
+        try
+            HimalayaUI.cli_config_new(type_name = "simple", dir = dir)
+            @test occursin("[experiment]", read(dest, String))
+        finally
+            chmod(dir, 0o755)    # so mktempdir can clean up
+        end
     end
 end
 

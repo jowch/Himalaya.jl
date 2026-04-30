@@ -1,0 +1,38 @@
+# Reference systemd unit for HimalayaUI as deployed on the SSRL lab
+# workstation. Before installing on a different host, edit:
+#   - User= (whoever owns the checkout and runs the daemon)
+#   - SupplementaryGroups= (the shared Unix group for curators)
+#   - Environment=PATH= (must include the dir holding the `julia` binary)
+#   - WorkingDirectory= and ExecStart= (your repo path)
+# Install with:
+#   sudo install -m 0644 deploy/himalaya.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now himalaya
+[Unit]
+Description=HimalayaUI web server
+After=network.target
+
+[Service]
+Type=simple
+User=jonathanchen
+SupplementaryGroups=himalaya
+
+# Group-writable umask so SQLite journals/WAL created by the daemon stay
+# accessible to other group members (curators running CLI commands).
+UMask=0002
+
+# /usr/local/bin/julia is a broken symlink on this host (→ install-julia, not
+# present). The actual binary lives in jonathanchen's juliaup install. Put
+# that first so the wrapper's unqualified `julia` resolves correctly.
+Environment=PATH=/home/jonathanchen/.julia/juliaup/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+WorkingDirectory=/opt/Himalaya.jl
+ExecStart=/opt/Himalaya.jl/bin/himalaya serve
+
+Restart=on-failure
+RestartSec=5
+
+# StandardOutput / StandardError go to the journal by default.
+# Tail with: journalctl -u himalaya -f
+
+[Install]
+WantedBy=multi-user.target

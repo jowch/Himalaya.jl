@@ -3,19 +3,34 @@ using Printf
 using DBInterface
 
 """
-    cli_init_with_db!(db, exp_dir) -> experiment_id
+    cli_init_with_db!(db, exp_dir; analyze=true) -> experiment_id
 
 Read `experiment.toml` from `exp_dir`, register the experiment in `db`, parse
 the manifest (if present), and create samples and exposures via filesystem
-discovery using the config's integration pattern.
+discovery using the config's integration pattern. When `analyze=true` (the
+default), runs peak-finding + indexing on every newly-created exposure.
 
 This function is read-only with respect to `exp_dir` — it does not create,
 modify, or delete any file inside it. All writes go to `db`.
+
+The auto-analyze step is *not* wrapped in an outer transaction (each
+`persist_analysis!` is itself atomic). A Ctrl-C mid-init leaves a registered
+experiment with partial analysis; recover with `himalaya analyze -e <id>`,
+which is idempotent for the unanalyzed exposures and skips the analyzed ones
+that already have peaks.
 """
-function cli_init_with_db!(db::SQLite.DB, exp_dir::String)::Int
+function cli_init_with_db!(db::SQLite.DB, exp_dir::String; analyze::Bool = true)::Int
     exp_dir   = abspath(exp_dir)
     toml_path = joinpath(exp_dir, "experiment.toml")
     isfile(toml_path) || error("experiment.toml not found in $exp_dir. Run 'himalaya config new --dir $exp_dir' first.")
+
+    existing = Tables.rowtable(DBInterface.execute(db,
+        "SELECT id, name FROM experiments WHERE path = ?", [exp_dir]))
+    if !isempty(existing)
+        ids = join((string(r.id) for r in existing), ", ")
+        error("$exp_dir is already registered (experiment id=$ids). " *
+              "Run `himalaya reingest $exp_dir` to update it instead.")
+    end
 
     cfg  = load_config(toml_path)
     blob = config_to_toml(cfg)
@@ -57,9 +72,7 @@ function cli_init_with_db!(db::SQLite.DB, exp_dir::String)::Int
                     @warn "No integration files found for prefix '$prefix' in $analysis_dir"
                 end
                 for stem in stems
-                    image_rel = replace(cfg.image_pattern, "{name}" => stem)
-                    image_full = joinpath(data_dir, image_rel)
-                    image_path = isfile(image_full) ? image_full : nothing
+                    image_path = resolve_file_path(cfg, data_dir, stem, cfg.image_pattern)
                     e_id = create_exposure!(db;
                         sample_id  = s_id,
                         filename   = stem,
@@ -80,6 +93,12 @@ function cli_init_with_db!(db::SQLite.DB, exp_dir::String)::Int
     end
 
     println("Initialized experiment '$exp_name' (id=$exp_id) at $exp_dir")
+
+    if analyze
+        println("Running analysis (peak-finding + indexing)...")
+        _analyze_experiment!(db, exp_id)
+    end
+
     exp_id
 end
 
@@ -156,19 +175,29 @@ function _reingest_inner!(db::SQLite.DB, experiment_id::Int, exp_dir::String, to
             stems = resolve_files(cfg, analysis_dir, prefix, cfg.integration_pattern)
             for stem in stems
                 existing_exp = Tables.rowtable(DBInterface.execute(db,
-                    "SELECT id FROM exposures WHERE sample_id = ? AND filename = ?",
+                    "SELECT id, image_path FROM exposures WHERE sample_id = ? AND filename = ?",
                     [s_id, stem]))
                 if isempty(existing_exp)
-                    image_rel = replace(cfg.image_pattern, "{name}" => stem)
-                    image_full = joinpath(data_dir, image_rel)
-                    image_path = isfile(image_full) ? image_full : nothing
+                    image_path = resolve_file_path(cfg, data_dir, stem, cfg.image_pattern)
                     create_exposure!(db;
                         sample_id  = s_id,
                         filename   = stem,
                         image_path = image_path)
                     inserted_exposures += 1
+                else
+                    # Existing exposures keep all curation. Only backfill image_path
+                    # when it's currently NULL — typically because a previous reingest
+                    # ran with a wrong image pattern and the file wasn't findable.
+                    # Never overwrite a non-NULL image_path.
+                    if ismissing(existing_exp[1].image_path) || isnothing(existing_exp[1].image_path)
+                        new_image = resolve_file_path(cfg, data_dir, stem, cfg.image_pattern)
+                        if new_image !== nothing
+                            DBInterface.execute(db,
+                                "UPDATE exposures SET image_path = ? WHERE id = ?",
+                                [new_image, Int(existing_exp[1].id)])
+                        end
+                    end
                 end
-                # Existing exposures: do NOT modify — they may carry curation/peaks.
             end
         end
     end
@@ -180,19 +209,17 @@ end
 function cli_reingest(args)
     s = ArgParseSettings(prog = "himalaya reingest")
     @add_arg_table! s begin
-        "experiment_path"
-            help     = "experiment directory (must already be registered via 'himalaya init')"
+        "--experiment", "-e"
+            help     = "experiment id, name, or path (required)"
             required = true
     end
     p = parse_args(args, s; as_symbols = true)
-    exp_dir = abspath(p[:experiment_path])
 
-    db = open_db()
-    rows = Tables.rowtable(DBInterface.execute(db,
-        "SELECT id FROM experiments WHERE path = ?", [exp_dir]))
-    isempty(rows) && error("No experiment registered at $exp_dir. Run 'himalaya init' first.")
-    exp_id = Int(rows[1].id)
-    res = reingest!(db, exp_id, exp_dir)
+    db      = open_db()
+    exp_row = _resolve_experiment(db, p[:experiment])
+    exp_id  = Int(exp_row.id)
+    exp_dir = String(exp_row.path)
+    res     = reingest!(db, exp_id, exp_dir)
     if res.status === :no_manifest
         println("Reingested experiment $exp_id: config updated; no manifest at $(res.manifest_path).")
     else
@@ -207,39 +234,85 @@ function cli_init(args)
         "experiment_path"
             help     = "path to experiment directory containing experiment.toml"
             required = true
+        "--no-analyze"
+            help     = "skip auto-analysis after registration (run `himalaya analyze` later)"
+            action   = :store_true
     end
     p = parse_args(args, s; as_symbols = true)
     exp_dir = p[:experiment_path]
     db = open_db()
-    cli_init_with_db!(db, exp_dir)
+    cli_init_with_db!(db, exp_dir; analyze = !p[Symbol("no-analyze")])
 end
 
-function cli_analyze(args)
-    s = ArgParseSettings(prog = "himalaya analyze")
-    @add_arg_table! s begin
-        "experiment_path"
-            required = true
-        "--sample", "-s"
-            help    = "analyze only this sample label (e.g. D1)"
-            default = nothing
-    end
-    p = parse_args(args, s; as_symbols = true)
+"""
+    _resolve_experiment(db, key) -> (id::Int, name::String, path::String)
 
-    exp_dir = abspath(p[:experiment_path])
-    db   = open_db()
-    rows = Tables.rowtable(DBInterface.execute(db,
-        "SELECT id FROM experiments WHERE path = ?", [exp_dir]))
-    isempty(rows) && error("No experiment registered at $exp_dir. Run 'himalaya init' first.")
-    exp_id        = Int(rows[1].id)
-    exp           = get_experiment(db, exp_id)
-    sample_filter = p[:sample]
-    samples       = get_samples(db, exp_id)
+Resolve an experiment from the central DB. `key` may be:
+  - `nothing` — picks the sole experiment if there's exactly one; errors with
+    a listing otherwise.
+  - a numeric string — looked up by `experiments.id`.
+  - a path-like string (starts with `/` or `.`, or contains a separator) —
+    looked up by `experiments.path` after `abspath` (back-compat with the
+    old positional-path CLI).
+  - any other string — looked up by `experiments.name`.
+"""
+function _resolve_experiment(db::SQLite.DB, key::Union{Nothing,AbstractString})
+    if key === nothing
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id, name, path FROM experiments ORDER BY id"))
+        if length(rows) == 1
+            return rows[1]
+        elseif isempty(rows)
+            error("No experiments registered. Run `himalaya init <path>` first.")
+        else
+            io = IOBuffer()
+            println(io, "Multiple experiments registered — specify which:")
+            for r in rows
+                println(io, "  [$(r.id)]  $(r.name)  ($(r.path))")
+            end
+            error(String(take!(io)))
+        end
+    end
+
+    # Heuristic: anything containing `/` is a path, not a name. Experiments
+    # whose name happens to contain `/` would be misclassified — pass `-e`
+    # with the numeric id to disambiguate in that (currently theoretical) case.
+    looks_like_path = startswith(key, "/") || startswith(key, ".") || occursin('/', key)
+    rows = if !isempty(key) && all(isdigit, key)
+        Tables.rowtable(DBInterface.execute(db,
+            "SELECT id, name, path FROM experiments WHERE id = ?", [parse(Int, key)]))
+    elseif looks_like_path
+        Tables.rowtable(DBInterface.execute(db,
+            "SELECT id, name, path FROM experiments WHERE path = ?", [abspath(key)]))
+    else
+        Tables.rowtable(DBInterface.execute(db,
+            "SELECT id, name, path FROM experiments WHERE name = ?", [key]))
+    end
+    isempty(rows)     && error("No experiment matching '$key'.")
+    length(rows) > 1  && error("Multiple experiments matching '$key' — disambiguate by id.")
+    rows[1]
+end
+
+"""
+    _analyze_experiment!(db, exp_id; sample_filter=nothing) -> nothing
+
+Run peak-finding + indexing for every exposure of `exp_id`, optionally
+restricted to a single sample label. Skips rejected exposures and auto-
+selects the first accepted exposure when none is currently selected.
+Errors per-exposure are caught and printed as `SKIP (...)` so one bad
+.dat file doesn't abort the batch.
+
+Shared between `cli_analyze` (explicit user invocation) and
+`cli_init_with_db!` (auto-analyze after registering a fresh experiment).
+"""
+function _analyze_experiment!(db::SQLite.DB, exp_id::Int; sample_filter=nothing)
+    exp     = get_experiment(db, exp_id)
+    samples = get_samples(db, exp_id)
     sample_filter !== nothing && filter!(sm -> sm.label == sample_filter, samples)
 
     for sample in samples
         exposures = get_exposures(db, Int(sample.id))
 
-        # Auto-fallback: if no exposure is explicitly selected, use first accepted one
         has_selected = any(e -> Int(e.selected) == 1, exposures)
         if !has_selected
             first_accepted = findfirst(
@@ -257,9 +330,6 @@ function cli_analyze(args)
 
         for exp_row in exposures
             e_id = Int(exp_row.id)
-            # Mirror the auto-fallback's status guard above: rejected
-            # exposures are explicitly out of the analysis set, so don't
-            # waste compute or refresh peaks/indices for them.
             e_status = ismissing(exp_row.status) ? nothing : exp_row.status
             if e_status == "rejected"
                 println("  Skipping $(sample.label) / $(exp_row.filename) (rejected)")
@@ -277,23 +347,38 @@ function cli_analyze(args)
     end
 end
 
+function cli_analyze(args)
+    s = ArgParseSettings(prog = "himalaya analyze")
+    @add_arg_table! s begin
+        "--experiment", "-e"
+            help     = "experiment id, name, or path (required)"
+            required = true
+        "--sample", "-s"
+            help    = "analyze only this sample label (e.g. D1)"
+            default = nothing
+    end
+    p = parse_args(args, s; as_symbols = true)
+
+    db      = open_db()
+    exp_row = _resolve_experiment(db, p[:experiment])
+    _analyze_experiment!(db, Int(exp_row.id); sample_filter = p[:sample])
+end
+
 function cli_show(args)
     s = ArgParseSettings(prog = "himalaya show")
     @add_arg_table! s begin
-        "experiment_path"
-            required = true
+        "--experiment", "-e"
+            help    = "experiment id, name, or path (default: the sole registered experiment)"
+            default = nothing
         "--sample", "-s"
             help     = "sample label"
             required = true
     end
     p = parse_args(args, s; as_symbols = true)
 
-    exp_dir = abspath(p[:experiment_path])
-    db   = open_db()
-    rows = Tables.rowtable(DBInterface.execute(db,
-        "SELECT id FROM experiments WHERE path = ?", [exp_dir]))
-    isempty(rows) && error("No experiment registered at $exp_dir. Run 'himalaya init' first.")
-    exp_id  = Int(rows[1].id)
+    db      = open_db()
+    exp_row = _resolve_experiment(db, p[:experiment])
+    exp_id  = Int(exp_row.id)
     samples = get_samples(db, exp_id)
     idx     = findfirst(sm -> sm.label == p[:sample], samples)
     idx === nothing && error("sample $(p[:sample]) not found")
@@ -342,23 +427,47 @@ end
     cli_config_new(; type_name::String="simple", dir::String)
 
 Copy the named built-in template to `<dir>/experiment.toml`. Errors if
-the destination already exists (will not overwrite). This is the only
-documented operation that writes to an experiment directory.
+the destination already exists with content (will not overwrite). An
+empty or whitespace-only file is treated as a placeholder and gets
+filled — this supports read-only experiment dirs where a sysadmin
+pre-creates the file with the right permissions for a curator to
+populate. This is the only documented operation that writes to an
+experiment directory.
 """
 function cli_config_new(; type_name::String = "simple", dir::String)
     isdir(dir) || error("Directory not found: $dir")
     dest = joinpath(dir, "experiment.toml")
-    isfile(dest) && error("experiment.toml already exists at $dest — will not overwrite")
+    placeholder = isfile(dest)
+    if placeholder && !isempty(strip(read(dest, String)))
+        error("experiment.toml already exists at $dest with content — will not overwrite")
+    end
     src = joinpath(configs_dir(), type_name * ".toml")
     isfile(src) || error("Unknown config type '$type_name'. Run 'himalaya config list' to see options.")
-    cp(src, dest)
+    # When filling a pre-existing placeholder, write into the existing file
+    # rather than unlink+copy — the parent dir may be read-only (which is
+    # the whole reason the placeholder exists). For new files we cp, so
+    # mode/ownership stay sensible.
+    if placeholder
+        write(dest, read(src, String))
+    else
+        cp(src, dest)
+    end
     println("Created $dest from template '$type_name'")
     println("Edit it to set your experiment name, beamline parameters, and manifest column mappings.")
     dest
 end
 
 function cli_config(args)
-    isempty(args) && (println("Usage: himalaya config <list|new> [options]"); return)
+    if isempty(args) || first(args) in ("--help", "-h", "help")
+        println("""
+Usage: himalaya config <subcommand> [options]
+
+Subcommands:
+  list                                  List built-in config templates
+  new --type <name> --dir <path>        Copy a template to <path>/experiment.toml
+""")
+        return
+    end
     sub = popfirst!(args)
     if sub == "list"
         cli_config_list()
@@ -382,8 +491,6 @@ end
 function cli_serve(args)
     s = ArgParseSettings(prog = "himalaya serve")
     @add_arg_table! s begin
-        "experiment_path"
-            required = true
         "--port"
             arg_type = Int
             default  = parse(Int, get(ENV, "HIMALAYA_PORT", "8080"))
@@ -400,8 +507,31 @@ function cli_serve(args)
     serve(db; host = p[:host], port = p[:port])
 end
 
+const _USAGE = """
+Usage: himalaya <command> [options]
+
+Commands:
+  config new --type <name> --dir <path>     Create experiment.toml from a template
+  config list                               List built-in config templates
+  init <experiment_path> [--no-analyze]     Register an experiment in the central DB
+                                            (auto-analyzes unless --no-analyze)
+  reingest  -e <experiment>                 Re-read experiment.toml + manifest, update DB
+  analyze   -e <experiment> [-s <label>]    Run peak-finding + indexing
+  show     [-e <experiment>] -s <label>     Print stored analysis for one sample
+  serve    [--port N] [--host H]            Start the web server
+
+`-e <experiment>` accepts an id, name, or path. Required for write commands
+(`reingest`, `analyze`); optional for the read-only `show` (defaults to the
+sole registered experiment). Run `himalaya <command> --help` for full options.
+Environment variables (HIMALAYA_DB_PATH, HIMALAYA_HOST, HIMALAYA_PORT, …) are
+documented in packages/HimalayaUI/.env.example.
+"""
+
 function main(args = copy(ARGS))
-    isempty(args) && (println("Usage: himalaya <command> [args]"); return)
+    if isempty(args) || first(args) in ("--help", "-h", "help")
+        println(_USAGE)
+        return
+    end
     cmd = popfirst!(args)
 
     if cmd == "init"
@@ -417,6 +547,8 @@ function main(args = copy(ARGS))
     elseif cmd == "reingest"
         cli_reingest(args)
     else
-        println("Unknown command: $cmd. Available: init, analyze, show, serve, config, reingest")
+        println("Unknown command: $cmd")
+        println()
+        println(_USAGE)
     end
 end
