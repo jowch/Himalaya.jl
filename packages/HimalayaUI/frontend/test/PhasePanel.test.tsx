@@ -73,28 +73,10 @@ describe("<PhasePanel> — active group", () => {
   });
 });
 
-describe("<PhasePanel> — score bars", () => {
-  it("renders a score bar whose width reflects its score", async () => {
-    mockAll(
-      [
-        { id: 10, exposure_id: 42, phase: "Pn3m", basis: 0.5, score: 0.8,
-          r_squared: 0.998, lattice_d: 12.5, status: "candidate",
-          predicted_q: [], peaks: [] },
-        { id: 11, exposure_id: 42, phase: "Im3m", basis: 0.3, score: 0.6,
-          r_squared: 0.71, lattice_d: 9.1, status: "candidate",
-          predicted_q: [], peaks: [] },
-      ],
-      [{ id: 1, exposure_id: 42, kind: "auto", active: true, members: [10] }],
-    );
-    renderWithProviders(<PhasePanel exposureId={42} />);
-    await waitFor(() => expect(screen.getByText("Im3m")).toBeInTheDocument());
-    const bar = document.querySelector(
-      '[data-alternative-id="11"] [data-score-bar]',
-    ) as HTMLElement | null;
-    expect(bar).not.toBeNull();
-    expect(bar!.style.width).toBe("60%");
-  });
-});
+// Score bars were removed in favour of a numeric-only score; the visual
+// width assertion no longer applies. Keeping the describe block as a
+// stub so the file's structure stays self-documenting.
+// describe("<PhasePanel> — score bars", () => { ... });
 
 describe("<PhasePanel> — alternatives", () => {
   it("renders alternative indices with a + button", async () => {

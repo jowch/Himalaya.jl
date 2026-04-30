@@ -118,18 +118,8 @@ function IndexCard({ index, isActive, onAction, onDelete, onHover, onLeave, latt
 
         {/* Secondary row: score bar + R² + κ (cubic phases only) */}
         <div className="flex items-center gap-3 font-mono text-xs text-fg-dim">
-          <span className="flex items-center gap-1.5">
-            <span>score</span>
-            <span className="inline-block w-12 h-1.5 bg-bg-hover rounded-full overflow-hidden">
-              <span
-                data-score-bar
-                className="block h-full"
-                style={{
-                  width: `${Math.round((index.score ?? 0) * 100)}%`,
-                  background: color,
-                }}
-              />
-            </span>
+          <span>
+            score{" "}
             <span className="text-fg-muted tabular-nums">{formatScore(index.score)}</span>
           </span>
           <span>
