@@ -55,7 +55,8 @@ packages/
         styles.css           # Tailwind v4 + @theme tokens
         components/          # AppShell, AppHeader, TabRocker, TitleButton,
                              #   OnboardingFlow, NavModal, UtilityCluster,
-                             #   ChatCard, PlotCard, TraceViewer,
+                             #   ChatCard, MentionChip, MentionCompose,
+                             #   PlotCard, TraceViewer,
                              #   IndicesCard, PhasePanel, StaleIndicesBanner,
                              #   MillerPlot, Pn3mIcon, ui/…
                              # Inspect: DetectorImage, DetectorImageCard,
@@ -79,6 +80,12 @@ docs/
 test/                        # core Himalaya tests
 examples/                    # scripts using Himalaya (not part of the package)
 scratch/                     # gitignored — exploratory scripts and trace data
+.claude/
+  skills/                    # project-specific Claude Code skills:
+                             #   review-pr, worktree-setup, new-route,
+                             #   review-response, e2e-mock-mode, seed-test-state
+  agents/                    # frontend-reviewer (project-specific review agent)
+  settings.json              # hooks: Vitest --run flag, pre-tool-use guards
 ```
 
 ## Running tests
@@ -115,19 +122,23 @@ Tests use stdlib `Test` (`@testset`, `@test`, `@test_throws`). Internal (non-exp
 ## Running the app
 
 ```bash
-# From a fresh experiment dir (drop manifest.csv + data/ + analysis/ first):
-julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
-  config new --type simple --dir /path/to/experiment   # creates experiment.toml
+# Fast path via compiled sysimage (build once, ~5 min):
+make sysimage          # creates scratch/himalaya.so
+bin/himalaya config new --type simple --dir /path/to/experiment
 # edit /path/to/experiment/experiment.toml to set name + column mappings
+bin/himalaya init /path/to/experiment
+bin/himalaya analyze /path/to/experiment
+bin/himalaya serve /path/to/experiment --port 8080
+# After editing manifest.csv or experiment.toml:
+bin/himalaya reingest /path/to/experiment
+
+# Without sysimage (slower cold start, no build required):
+julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
+  config new --type simple --dir /path/to/experiment
 julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
   init /path/to/experiment
 julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
-  analyze /path/to/experiment
-julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
   serve /path/to/experiment --port 8080
-# After editing manifest.csv or experiment.toml:
-julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
-  reingest /path/to/experiment
 ```
 
 `serve` blocks. Frontend is served from `packages/HimalayaUI/frontend/dist/` if present.
@@ -225,11 +236,11 @@ julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
 ## Current state
 
 - Core Himalaya: `v0.5.0` on `main` — v2 peak-finding (persistence + sharpness + kneedle).
-- HimalayaUI — Plans 1–6 + three-card Index redesign + Inspect page + experiment-config system complete:
+- HimalayaUI — Plans 1–6 + three-card Index redesign + Inspect page + experiment-config system + skeleton loading + chat @-mentions + build infrastructure complete:
   - **Backend:** transactional SQLite pipeline (incl. `_reingest_inner!`), FK enforcement, REST API (Oxygen.jl), CLI (`config new/list`, `init`, `analyze`, `reingest`, `show`, `serve`), TIFF→PNG image route with Q0f31-aware lognormalize, env-driven deployment (`HIMALAYA_DB_PATH`, `HIMALAYA_CONFIGS_DIR`).
   - **Adapter-driven I/O:** `experiment.toml` per experiment, positional or named columns, configurable file patterns, prefix-based filesystem discovery.
-  - **Frontend:** three-card Index workspace (chat | trace plot | index choices), Inspect page (detector image + thumbnail filmstrip + reject-reason chips + sample metadata), trace viewer with peak editing + auto-fit y-floor + log/linear x toggle, auto-rotating detector canvas, Miller plot, PhasePanel with curate + stale-indices reanalyze, OnboardingFlow + NavModal with focus trapping, chat @-mention system (peaks / indices / exposures / samples), boneyard-js pulse skeletons across all load-gated cards.
-  - **Test coverage:** 379 Julia (HimalayaUI) · 90 Julia (core) · 174 Vitest · 16 Playwright E2E.
+  - **Frontend:** three-card Index workspace (chat | trace plot | index choices), Inspect page (detector image + thumbnail filmstrip + reject-reason chips + sample metadata), trace viewer with peak editing + auto-fit y-floor + log/linear x toggle, auto-rotating detector canvas, Miller plot, PhasePanel with curate + stale-indices reanalyze, OnboardingFlow + NavModal with focus trapping. Skeleton loading screens via boneyard-js on all major data-driven cards. Chat @-mention system (`@peak`, `@index`, `@exposure`, `@sample`) via `MentionChip` / `MentionCompose` / `useMentionResolution`.
+  - **Test coverage:** 452 Julia (HimalayaUI) · 90 Julia (core) · 174 Vitest · 16 Playwright E2E (7 inspect + 9 smoke).
 - Deferred for later: Phase panel Recent section, export UI, per-user audit view, derived-exposure construction (raw / aggregated / background-subtracted exposure types — schema reserves `exposure_type` field), additional config templates beyond `simple.toml`. See [docs/future-feature-ideas.md](docs/future-feature-ideas.md).
 
 ## Further reading

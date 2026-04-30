@@ -65,7 +65,7 @@ test("picking a new user triggers the tutorial and dismisses with 'Got it'", asy
   await page.goto("/");
 
   await expect(page.getByTestId("onboarding-name")).toBeVisible();
-  await page.locator('input[placeholder="Enter username"]').fill("alice");
+  await page.getByTestId("onboarding-new-handle").fill("alice");
   await page.getByTestId("onboarding-continue").click();
 
   await expect(page.getByTestId("onboarding-tutorial")).toBeVisible();

@@ -1,11 +1,29 @@
 import { useAppState } from "../state";
 
-function userInitials(username: string | undefined): string {
-  if (!username) return "?";
+function userInitials(
+  first: string | undefined,
+  last: string | undefined,
+  username: string | undefined,
+): string {
+  // Prefer real-name initials when available; fall back to handle splitting.
+  if (first && last) return ((first[0] ?? "") + (last[0] ?? "")).toUpperCase();
+  if (first)         return first.slice(0, 2).toUpperCase();
+  if (last)          return last.slice(0, 2).toUpperCase();
+  if (!username)     return "?";
   const parts = username.split(/[\s_.-]+/).filter(Boolean);
   if (parts.length === 0) return "?";
   if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase();
   return ((parts[0]![0] ?? "") + (parts[1]![0] ?? "")).toUpperCase();
+}
+
+function userTooltip(
+  first: string | undefined,
+  last: string | undefined,
+  username: string | undefined,
+): string {
+  if (!username) return "Sign in";
+  const name = [first, last].filter(Boolean).join(" ");
+  return name ? `${name} @${username}` : `@${username}`;
 }
 
 /**
@@ -16,12 +34,15 @@ export function UtilityCluster(): JSX.Element {
   const theme         = useAppState((s) => s.theme);
   const setTheme      = useAppState((s) => s.setTheme);
   const username      = useAppState((s) => s.username);
+  const firstName     = useAppState((s) => s.firstName);
+  const lastName      = useAppState((s) => s.lastName);
   const clearUsername = useAppState((s) => s.clearUsername);
 
   const toggleTheme = (): void => setTheme(theme === "dark" ? "light" : "dark");
   const switchUser  = (): void => { clearUsername(); };
 
-  const initials = userInitials(username);
+  const initials = userInitials(firstName, lastName, username);
+  const tooltip  = userTooltip(firstName, lastName, username);
 
   return (
     <div className="flex items-center gap-1" data-testid="utility-cluster">
@@ -56,7 +77,7 @@ export function UtilityCluster(): JSX.Element {
         data-testid="user-avatar"
         onClick={switchUser}
         aria-label="Switch user"
-        title={username ?? "Sign in"}
+        title={tooltip}
         className="w-7 h-7 rounded-full font-sans text-xs font-semibold
                    text-white grid place-items-center bg-gradient-to-br
                    from-[oklch(0.68_0.05_240)] to-[oklch(0.56_0.06_200)]

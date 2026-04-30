@@ -26,6 +26,7 @@ struct ExperimentConfig
     # [beamline]
     energy_kev         ::Union{Float64,Nothing}
     flight_path_m      ::Union{Float64,Nothing}
+    q_units            ::String
     # [manifest]
     delimiter          ::String
     skip_rows          ::Int
@@ -98,6 +99,7 @@ function _build_config(d::AbstractDict)::ExperimentConfig
         get(exp, "manifest",    "manifest.csv"),
         get(bl,  "energy_kev",    nothing),
         get(bl,  "flight_path_m", nothing),
+        get(bl,  "q_units",       "A-1"),
         get(mf,  "delimiter",      "\t"),
         get(mf,  "skip_rows",      1),
         get(mf,  "header_row",     0),
@@ -202,6 +204,7 @@ function config_to_toml(cfg::ExperimentConfig)::String
     beamline = Dict{String,Any}()
     cfg.energy_kev    !== nothing && (beamline["energy_kev"]    = cfg.energy_kev)
     cfg.flight_path_m !== nothing && (beamline["flight_path_m"] = cfg.flight_path_m)
+    beamline["q_units"] = cfg.q_units
     d = Dict(
         "experiment" => Dict(
             "name"        => cfg.name,

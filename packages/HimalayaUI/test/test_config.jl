@@ -526,6 +526,59 @@ end
     end
 end
 
+@testset "q_units defaults to A-1 (ASCII; UI prettifies to Å⁻¹)" begin
+    mktempdir() do dir
+        toml = joinpath(dir, "experiment.toml")
+        write(toml, _make_toml())
+        cfg = HimalayaUI.load_config(toml)
+        @test cfg.q_units == "A-1"
+    end
+end
+
+@testset "q_units parsed from TOML" begin
+    mktempdir() do dir
+        toml = joinpath(dir, "experiment.toml")
+        write(toml, """
+        [experiment]
+        name = "X"
+        description = ""
+        manifest = "manifest.csv"
+        [beamline]
+        q_units = "nm-1"
+        [manifest]
+        delimiter = "\\t"
+        skip_rows = 0
+        header_row = 0
+        sample_id = 1
+        label = 2
+        name = 3
+        filenames = 9
+        notes_sample = 10
+        notes_exposure = 11
+        [layout]
+        data_dir = "data"
+        analysis_dir = "analysis/automatic_analysis"
+        exposure_type = "simple"
+        [files]
+        integration = "{name}.dat"
+        image = "{name}.tiff"
+        """)
+        cfg = HimalayaUI.load_config(toml)
+        @test cfg.q_units == "nm-1"
+    end
+end
+
+@testset "q_units round-trips through config_to_toml" begin
+    mktempdir() do dir
+        toml = joinpath(dir, "experiment.toml")
+        write(toml, _make_toml())
+        cfg = HimalayaUI.load_config(toml)
+        blob = HimalayaUI.config_to_toml(cfg)
+        cfg2 = HimalayaUI._build_config(TOML.parse(blob))
+        @test cfg2.q_units == cfg.q_units
+    end
+end
+
 @testset "load_config wraps malformed TOML errors" begin
     mktempdir() do dir
         path = joinpath(dir, "experiment.toml")

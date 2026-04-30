@@ -1,6 +1,8 @@
 import { useEffect } from "react";
-import { useAppState } from "../state";
+import { useAppState, type PageId } from "../state";
 import type { Sample } from "../api";
+
+const TAB_ORDER: PageId[] = ["inspect", "index", "compare"];
 
 /**
  * useGlobalShortcuts — wires the keyboard shortcuts described in the plan.
@@ -42,6 +44,22 @@ export function useGlobalShortcuts(samplesInExperiment: Sample[] | undefined): v
       if ((e.key === "t" || e.key === "T") && !e.metaKey && !e.ctrlKey && !e.altKey) {
         const s = useAppState.getState();
         s.setTheme(s.theme === "dark" ? "light" : "dark");
+        return;
+      }
+
+      // ← / → → prev / next page tab (no wrap; dialogs handle their own arrows)
+      if ((e.key === "ArrowLeft" || e.key === "ArrowRight") &&
+          !e.metaKey && !e.ctrlKey && !e.altKey) {
+        const insideDialog = (e.target as HTMLElement)?.closest('[role="dialog"]') != null;
+        if (insideDialog) return;
+        const s   = useAppState.getState();
+        const cur = TAB_ORDER.indexOf(s.activePage);
+        const step = e.key === "ArrowRight" ? 1 : -1;
+        const next = Math.max(0, Math.min(TAB_ORDER.length - 1, cur + step));
+        if (next !== cur) {
+          e.preventDefault();
+          s.setActivePage(TAB_ORDER[next]!);
+        }
         return;
       }
 

@@ -237,6 +237,7 @@ export function PlotCard(): JSX.Element {
         yDomain={yDomain}
         xType={xType}
         onReset={resetDomain}
+        {...(experimentQ.data?.q_units ? { qUnits: experimentQ.data.q_units } : {})}
       />
     );
   })();

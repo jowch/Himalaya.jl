@@ -10,6 +10,8 @@ export type NavModalStep = "experiment" | "sample";
 export interface AppState {
   // persisted
   username: string | undefined;
+  firstName: string | undefined;
+  lastName: string | undefined;
   activeExperimentId: number | undefined;
   activeSampleId: number | undefined;
   activeExposureId: number | undefined;
@@ -25,6 +27,7 @@ export interface AppState {
 
   // setters
   setUsername: (name: string) => void;
+  setUser: (u: { username: string; firstName?: string | undefined; lastName?: string | undefined }) => void;
   setActiveExperiment: (id: number | undefined) => void;
   setActiveSample: (id: number | undefined) => void;
   setActiveExposure: (id: number | undefined) => void;
@@ -43,6 +46,8 @@ export const useAppState = create<AppState>()(
   persist(
     (set) => ({
       username: undefined,
+      firstName: undefined,
+      lastName: undefined,
       activeExperimentId: undefined,
       activeSampleId: undefined,
       activeExposureId: undefined,
@@ -56,6 +61,8 @@ export const useAppState = create<AppState>()(
       navModalStep: "experiment",
 
       setUsername: (username) => set({ username }),
+      setUser: ({ username, firstName, lastName }) =>
+        set({ username, firstName, lastName }),
       setActiveExperiment: (activeExperimentId) =>
         set({
           activeExperimentId,
@@ -74,13 +81,15 @@ export const useAppState = create<AppState>()(
         set(step ? { navModalOpen: true, navModalStep: step } : { navModalOpen: true }),
       closeNavModal: () => set({ navModalOpen: false }),
       setNavModalStep: (navModalStep) => set({ navModalStep }),
-      clearUsername: () => set({ username: undefined }),
+      clearUsername: () => set({ username: undefined, firstName: undefined, lastName: undefined }),
     }),
     {
       name: LS_KEY,
       version: 3,
       partialize: (s) => ({
         username: s.username,
+        firstName: s.firstName,
+        lastName: s.lastName,
         activeExperimentId: s.activeExperimentId,
         activeSampleId: s.activeSampleId,
         activeExposureId: s.activeExposureId,

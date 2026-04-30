@@ -2,8 +2,10 @@ using SQLite, DBInterface, Tables
 
 const SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
-    id       INTEGER PRIMARY KEY,
-    username TEXT UNIQUE NOT NULL
+    id         INTEGER PRIMARY KEY,
+    username   TEXT UNIQUE NOT NULL,
+    first_name TEXT,
+    last_name  TEXT
 );
 
 CREATE TABLE IF NOT EXISTS experiments (
@@ -144,6 +146,8 @@ function migrate_schema!(db::SQLite.DB)
         "ALTER TABLE experiments ADD COLUMN experiment_type TEXT",
         "ALTER TABLE experiments ADD COLUMN energy_kev REAL",
         "ALTER TABLE experiments ADD COLUMN flight_path_m REAL",
+        "ALTER TABLE users ADD COLUMN first_name TEXT",
+        "ALTER TABLE users ADD COLUMN last_name TEXT",
     ]
     for stmt in stmts
         try
