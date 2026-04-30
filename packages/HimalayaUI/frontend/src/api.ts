@@ -210,12 +210,50 @@ export interface IndexEntry {
   lattice_d: number | null;
   ngc: number | null;
   status: "candidate" | "stale";
+  kind: "auto" | "speculative";
   peaks: IndexPeakRef[];
   predicted_q: number[];
 }
 
 export const listIndices = (exposure_id: number) =>
   request<IndexEntry[]>("GET", `/api/exposures/${exposure_id}/indices`);
+
+export const deleteIndex = (id: number, opts?: AuthOpts) =>
+  request<{ deleted: number }>("DELETE", `/api/indices/${id}`, undefined, opts);
+
+// Speculative indices (user-built, sub-minpeaks). Anchor + snap UX.
+export interface SpeculativeSnap {
+  ratio_position: number;
+  predicted_q: number;
+  suggested_peak_id: number | null;
+  suggested_q: number | null;
+  suggested_residual: number | null;
+  is_anchor: boolean;
+}
+
+export const getSpeculativeSnap = (
+  exposure_id: number,
+  phase: string,
+  anchor_peak_id: number,
+  anchor_ratio: number,
+) => {
+  const qs = `?phase=${encodeURIComponent(phase)}&anchor_peak_id=${anchor_peak_id}&anchor_ratio=${anchor_ratio}`;
+  return request<SpeculativeSnap[]>("GET", `/api/exposures/${exposure_id}/speculative-snap${qs}`);
+};
+
+export interface SpeculativeAdditional { ratio_position: number; peak_id: number }
+
+export const createSpeculative = (
+  exposure_id: number,
+  body: {
+    phase: string;
+    anchor_peak_id: number;
+    anchor_ratio: number;
+    additional: SpeculativeAdditional[];
+    active?: boolean;
+  },
+  opts?: AuthOpts,
+) => request<IndexEntry>("POST", `/api/exposures/${exposure_id}/speculative`, body, opts);
 
 // Groups
 export interface GroupEntry {

@@ -170,6 +170,150 @@ function register_analysis_routes!()
             JSON3.write(_group_with_members(db, custom_id)))
     end
 
+    @get "/api/exposures/{id}/speculative-snap" function(req::HTTP.Request, id::Int)
+        db = current_db()
+        params = HTTP.queryparams(HTTP.URI(req.target))
+        phase_name    = get(params, "phase", "")
+        anchor_pid_s  = get(params, "anchor_peak_id", "")
+        anchor_rp_s   = get(params, "anchor_ratio", "1")
+
+        P = resolve_phase(phase_name)
+        P === nothing && return HTTP.Response(400,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:error => "unknown phase: $phase_name")))
+
+        anchor_peak_id = tryparse(Int, anchor_pid_s)
+        anchor_ratio   = something(tryparse(Int, anchor_rp_s), 1)
+        anchor_peak_id === nothing && return HTTP.Response(400,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:error => "missing or invalid anchor_peak_id")))
+
+        peak_rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id, q, sharpness, source FROM peaks WHERE exposure_id = ? AND excluded = 0",
+            [id]))
+        anchor = nothing
+        for pr in peak_rows
+            if Int(pr.id) == anchor_peak_id
+                anchor = pr
+                break
+            end
+        end
+        anchor === nothing && return HTTP.Response(404,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:error => "anchor peak not found in exposure")))
+
+        ratios = Himalaya.phaseratios(P; normalize = true)
+        (1 <= anchor_ratio <= length(ratios)) || return HTTP.Response(400,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:error => "anchor_ratio out of range for phase")))
+
+        # Exclude the anchor itself from the candidate set so it doesn't
+        # snap to a different ratio position than the user requested.
+        non_anchor = filter(pr -> Int(pr.id) != anchor_peak_id, peak_rows)
+        snaps = compute_snap(non_anchor, P, Float64(anchor.q), anchor_ratio)
+
+        out = map(snaps) do s
+            Dict(
+                :ratio_position     => s.ratio_position,
+                :predicted_q        => s.predicted_q,
+                :suggested_peak_id  => s.suggested_peak_id,
+                :suggested_q        => s.suggested_q,
+                :suggested_residual => s.suggested_residual,
+                :is_anchor          => s.ratio_position == anchor_ratio,
+            )
+        end
+        HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(out))
+    end
+
+    @post "/api/exposures/{id}/speculative" function(req::HTTP.Request, id::Int)
+        db   = current_db()
+        body = json(req)
+
+        phase_name      = String(body.phase)
+        anchor_peak_id  = Int(body.anchor_peak_id)
+        anchor_ratio    = Int(body.anchor_ratio)
+        # additional_peak_ids: parallel arrays {ratio_position, peak_id}
+        additional      = haskey(body, :additional) ? body.additional : []
+        # Default to *not* in the active set — speculative indices are
+        # hypotheses, and active membership is an explicit user gesture.
+        active_default  = haskey(body, :active) ? Bool(body.active) : false
+
+        P = resolve_phase(phase_name)
+        P === nothing && return HTTP.Response(400,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:error => "unknown phase: $phase_name")))
+
+        ratio_to_peak = Dict{Int, Int}(anchor_ratio => anchor_peak_id)
+        for entry in additional
+            rp  = Int(entry.ratio_position)
+            pid = Int(entry.peak_id)
+            haskey(ratio_to_peak, rp) && return HTTP.Response(400,
+                ["Content-Type" => "application/json"],
+                JSON3.write(Dict(:error => "duplicate ratio_position $rp")))
+            ratio_to_peak[rp] = pid
+        end
+
+        new_id = try
+            insert_speculative_index!(db, id, P, ratio_to_peak)
+        catch e
+            return HTTP.Response(400,
+                ["Content-Type" => "application/json"],
+                JSON3.write(Dict(:error => sprint(showerror, e))))
+        end
+
+        if active_default
+            custom_id, _ = ensure_custom_group!(db, id)
+            DBInterface.execute(db,
+                "INSERT OR IGNORE INTO index_group_members (group_id, index_id) VALUES (?, ?)",
+                [custom_id, new_id])
+        end
+
+        log_action!(db, req; action = "create_speculative",
+            entity_type = "index", entity_id = new_id)
+
+        # Return the freshly-built index in the same shape as GET /api/indices/:id
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT * FROM indices WHERE id = ?", [new_id]))
+        ix = rows[1]
+        peak_rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT ip.peak_id, ip.ratio_position, ip.residual, p.q AS q_observed
+             FROM index_peaks ip JOIN peaks p ON p.id = ip.peak_id
+             WHERE ip.index_id = ? ORDER BY ip.ratio_position", [new_id]))
+        predicted = predicted_q_for_phase(String(ix.phase), Float64(ix.basis))
+        d = row_to_json(ix)
+        d[:peaks]       = rows_to_json(peak_rows)
+        d[:predicted_q] = predicted
+        HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(d))
+    end
+
+    @delete "/api/indices/{id}" function(req::HTTP.Request, id::Int)
+        db = current_db()
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id, kind, exposure_id FROM indices WHERE id = ?", [id]))
+        isempty(rows) && return HTTP.Response(404,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:error => "index not found")))
+        kind_val = String(rows[1].kind)
+        kind_val == "speculative" || return HTTP.Response(403,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:error => "only speculative indices can be deleted; use group exclusion for auto indices")))
+
+        SQLite.transaction(db) do
+            DBInterface.execute(db,
+                "DELETE FROM index_group_members WHERE index_id = ?", [id])
+            DBInterface.execute(db,
+                "DELETE FROM index_peaks WHERE index_id = ?", [id])
+            DBInterface.execute(db,
+                "DELETE FROM indices WHERE id = ?", [id])
+        end
+
+        log_action!(db, req; action = "delete_speculative",
+            entity_type = "index", entity_id = id)
+
+        HTTP.Response(200, ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:deleted => id)))
+    end
+
     @get "/api/indices/{id}" function(req::HTTP.Request, id::Int)
         db   = current_db()
         rows = Tables.rowtable(DBInterface.execute(db,

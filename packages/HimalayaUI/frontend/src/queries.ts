@@ -184,6 +184,52 @@ export function useRemoveIndexFromGroup(exposureId: number, groupId: number) {
   });
 }
 
+// Speculative-snap is a query keyed on (exposureId, phase, anchorPeakId, anchorRatio).
+// The hook is enabled-gated because the builder calls it after a phase + anchor
+// are both chosen — never on partial input.
+export function useSpeculativeSnap(
+  exposureId: number | undefined,
+  phase: string | undefined,
+  anchorPeakId: number | undefined,
+  anchorRatio: number,
+) {
+  return useQuery({
+    queryKey: ["exposure", exposureId ?? "none", "speculative-snap", phase ?? "", anchorPeakId ?? -1, anchorRatio] as const,
+    queryFn: () => api.getSpeculativeSnap(exposureId as number, phase as string, anchorPeakId as number, anchorRatio),
+    enabled: exposureId !== undefined && phase !== undefined && anchorPeakId !== undefined,
+  });
+}
+
+export function useCreateSpeculative(exposureId: number) {
+  const qc = useQueryClient();
+  const username = useAppState((s) => s.username);
+  return useMutation({
+    mutationFn: (body: {
+      phase: string;
+      anchor_peak_id: number;
+      anchor_ratio: number;
+      additional: api.SpeculativeAdditional[];
+      active?: boolean;
+    }) => api.createSpeculative(exposureId, body, authOpts(username)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.indices(exposureId) });
+      qc.invalidateQueries({ queryKey: queryKeys.groups(exposureId) });
+    },
+  });
+}
+
+export function useDeleteIndex(exposureId: number) {
+  const qc = useQueryClient();
+  const username = useAppState((s) => s.username);
+  return useMutation({
+    mutationFn: (indexId: number) => api.deleteIndex(indexId, authOpts(username)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.indices(exposureId) });
+      qc.invalidateQueries({ queryKey: queryKeys.groups(exposureId) });
+    },
+  });
+}
+
 export function useUpdateSample(experimentId: number, sampleId: number) {
   const qc = useQueryClient();
   const username = useAppState((s) => s.username);

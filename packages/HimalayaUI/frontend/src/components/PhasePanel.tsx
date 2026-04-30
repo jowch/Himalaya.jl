@@ -1,9 +1,10 @@
 import { Skeleton } from "boneyard-js/react";
-import { useIndices, useGroups, useAddIndexToGroup, useRemoveIndexFromGroup } from "../queries";
+import { useIndices, useGroups, useAddIndexToGroup, useRemoveIndexFromGroup, useDeleteIndex } from "../queries";
 import { useAppState } from "../state";
 import { phaseColor, CUBIC_PHASES } from "../phases";
 import { HintText } from "./ui";
 import { StaleIndicesBanner } from "./StaleIndicesBanner";
+import { SpeculativeBuilder } from "./SpeculativeBuilder";
 import type { GroupEntry, IndexEntry } from "../api";
 
 const R2_THRESHOLD = 0.98;
@@ -30,15 +31,20 @@ interface IndexCardProps {
   index: IndexEntry;
   isActive: boolean;
   onAction: () => void;
+  onDelete?: () => void;
   onHover?: () => void;
   onLeave?: () => void;
   /** Forwarded to the li for E2E selectors */
   "data-alternative-id"?: number;
 }
 
-function IndexCard({ index, isActive, onAction, onHover, onLeave, "data-alternative-id": altId }: IndexCardProps): JSX.Element {
+function IndexCard({ index, isActive, onAction, onDelete, onHover, onLeave, "data-alternative-id": altId }: IndexCardProps): JSX.Element {
   const color = phaseColor(index.phase);
-  const lowR2 = !isActive && index.r_squared != null && index.r_squared < R2_THRESHOLD;
+  const isSpeculative = index.kind === "speculative";
+  // R²-gate dimming: speculative indices bypass the gate entirely (a 2-peak fit
+  // is R²=1 by construction, so the gate is meaningless — the "speculative"
+  // label is the warning instead).
+  const lowR2 = !isActive && !isSpeculative && index.r_squared != null && index.r_squared < R2_THRESHOLD;
 
   return (
     <li
@@ -46,8 +52,12 @@ function IndexCard({ index, isActive, onAction, onHover, onLeave, "data-alternat
       data-alternative-id={altId}
       data-active={isActive || undefined}
       data-low-r2={lowR2 || undefined}
+      data-speculative={isSpeculative || undefined}
       className={[
-        "grid items-stretch rounded-lg border border-border-soft overflow-hidden transition-all",
+        "grid items-stretch rounded-lg overflow-hidden transition-all",
+        isSpeculative
+          ? "border border-dashed border-border-soft"
+          : "border border-border-soft",
         lowR2 ? "opacity-40" : "",
       ].join(" ")}
       style={{
@@ -124,14 +134,27 @@ function IndexCard({ index, isActive, onAction, onHover, onLeave, "data-alternat
         </div>
       </div>
 
-      {/* Add / remove button */}
-      <button
-        className="w-[34px] border-l border-border-soft bg-transparent text-fg-dim hover:text-fg hover:bg-bg-hover transition-colors text-base font-semibold"
-        onClick={onAction}
-        aria-label={isActive ? `Remove index ${index.id}` : `Add index ${index.id}`}
-      >
-        {isActive ? "−" : "+"}
-      </button>
+      {/* Add / remove button + (speculative) delete */}
+      <div className="flex flex-col border-l border-border-soft">
+        <button
+          className="flex-1 w-[34px] bg-transparent text-fg-dim hover:text-fg hover:bg-bg-hover transition-colors text-base font-semibold"
+          onClick={onAction}
+          aria-label={isActive ? `Remove index ${index.id}` : `Add index ${index.id}`}
+        >
+          {isActive ? "−" : "+"}
+        </button>
+        {onDelete && (
+          <button
+            className="flex-1 w-[34px] bg-transparent text-fg-dim hover:text-error hover:bg-bg-hover transition-colors text-xs border-t border-border-soft"
+            onClick={onDelete}
+            aria-label={`Delete speculative index ${index.id}`}
+            data-testid={`spec-delete-${index.id}`}
+            title="Delete this speculative index"
+          >
+            🗑
+          </button>
+        )}
+      </div>
     </li>
   );
 }
@@ -153,16 +176,16 @@ function GroupHead({ label, count }: { label: string; count: number }): JSX.Elem
 
 const FIXTURE_INDICES: IndexEntry[] = [
   { id:1, exposure_id:0, phase:"Pn3m",     basis:0.15, score:0.91, r_squared:0.995,
-    lattice_d:64.2, ngc:-1.51, status:"candidate",
+    lattice_d:64.2, ngc:-1.51, status:"candidate", kind:"auto",
     peaks:[{ peak_id:1, ratio_position:1, residual:0.001, q_observed:0.15 },
            { peak_id:2, ratio_position:2, residual:0.002, q_observed:0.21 }],
     predicted_q:[0.15,0.21,0.26] },
   { id:2, exposure_id:0, phase:"Im3m",     basis:0.14, score:0.72, r_squared:0.981,
-    lattice_d:57.1, ngc:-2.06, status:"candidate",
+    lattice_d:57.1, ngc:-2.06, status:"candidate", kind:"auto",
     peaks:[{ peak_id:1, ratio_position:1, residual:0.003, q_observed:0.15 }],
     predicted_q:[0.15,0.22] },
   { id:3, exposure_id:0, phase:"Lamellar", basis:0.12, score:0.55, r_squared:0.960,
-    lattice_d:52.4, ngc:null, status:"candidate",
+    lattice_d:52.4, ngc:null, status:"candidate", kind:"auto",
     peaks:[{ peak_id:2, ratio_position:1, residual:0.004, q_observed:0.21 }],
     predicted_q:[0.21,0.42] },
 ];
@@ -196,6 +219,10 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
   const active = (groupsQ.data && activeGroup(groupsQ.data)) ?? undefined;
   const addMember    = useAddIndexToGroup(exposureId ?? 0, active?.id ?? 0);
   const removeMember = useRemoveIndexFromGroup(exposureId ?? 0, active?.id ?? 0);
+  const deleteIndex  = useDeleteIndex(exposureId ?? 0);
+  const builder      = useAppState((s) => s.speculativeBuilder);
+  const openBuilder  = useAppState((s) => s.openSpeculativeBuilder);
+  const closeBuilder = useAppState((s) => s.closeSpeculativeBuilder);
 
   if (exposureId === undefined) {
     return (
@@ -208,9 +235,11 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
   const indices = (indicesQ.data ?? []).slice().sort(
     (a, b) => (b.score ?? 0) - (a.score ?? 0),
   );
-  const memberIds = new Set(active?.members ?? []);
-  const activeMembers = indices.filter((ix) =>  memberIds.has(ix.id));
-  const alternatives  = indices.filter((ix) => !memberIds.has(ix.id));
+  const memberIds       = new Set(active?.members ?? []);
+  const speculatives    = indices.filter((ix) => ix.kind === "speculative");
+  const auto            = indices.filter((ix) => ix.kind !== "speculative");
+  const activeMembers   = indices.filter((ix) =>  memberIds.has(ix.id));
+  const alternatives    = auto.filter((ix) => !memberIds.has(ix.id));
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -285,8 +314,49 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
             )}
           </div>
 
+          {/* Speculative — user-built sub-minpeaks indices */}
+          <div>
+            <GroupHead label="Speculative" count={speculatives.length} />
+            {speculatives.length === 0 ? (
+              <HintText>No speculative indices yet.</HintText>
+            ) : (
+              <ul className="flex flex-col gap-1.5">
+                {speculatives.map((ix) => {
+                  const inActive = memberIds.has(ix.id);
+                  return (
+                    <IndexCard
+                      key={ix.id}
+                      index={ix}
+                      isActive={inActive}
+                      onAction={() =>
+                        inActive
+                          ? active && removeMember.mutate(ix.id)
+                          : active && addMember.mutate(ix.id)
+                      }
+                      onDelete={() => deleteIndex.mutate(ix.id)}
+                      onHover={() => setHoveredIndex(ix.id)}
+                      onLeave={() => setHoveredIndex(undefined)}
+                    />
+                  );
+                })}
+              </ul>
+            )}
+            <button
+              type="button"
+              data-testid="add-speculative-button"
+              className="mt-2 w-full text-xs text-fg-dim border border-dashed border-border-soft rounded-md py-1.5 hover:text-fg hover:bg-bg-hover transition-colors"
+              onClick={() => openBuilder(exposureId)}
+            >
+              + Add speculative
+            </button>
+          </div>
+
         </div>
       </Skeleton>
+
+      {builder && builder.exposureId === exposureId && (
+        <SpeculativeBuilder exposureId={exposureId} onClose={closeBuilder} />
+      )}
     </div>
   );
 }

@@ -24,6 +24,11 @@ export interface AppState {
   hoveredPeakId: number | undefined;
   navModalOpen: boolean;
   navModalStep: NavModalStep;
+  // Speculative builder: when non-null, the modal is open for this exposure.
+  // All builder form state (phase, anchor peak, ratio) is local to the
+  // SpeculativeBuilder component — only the open/close gate lives in store
+  // because PhasePanel needs to mount/unmount the modal.
+  speculativeBuilder: { exposureId: number } | null;
 
   // setters
   setUsername: (name: string) => void;
@@ -40,6 +45,8 @@ export interface AppState {
   closeNavModal: () => void;
   setNavModalStep: (step: NavModalStep) => void;
   clearUsername: () => void;
+  openSpeculativeBuilder: (exposureId: number) => void;
+  closeSpeculativeBuilder: () => void;
 }
 
 export const useAppState = create<AppState>()(
@@ -59,6 +66,7 @@ export const useAppState = create<AppState>()(
       hoveredPeakId: undefined,
       navModalOpen: false,
       navModalStep: "experiment",
+      speculativeBuilder: null,
 
       setUsername: (username) => set({ username }),
       setUser: ({ username, firstName, lastName }) =>
@@ -82,6 +90,9 @@ export const useAppState = create<AppState>()(
       closeNavModal: () => set({ navModalOpen: false }),
       setNavModalStep: (navModalStep) => set({ navModalStep }),
       clearUsername: () => set({ username: undefined, firstName: undefined, lastName: undefined }),
+      openSpeculativeBuilder: (exposureId) =>
+        set({ speculativeBuilder: { exposureId } }),
+      closeSpeculativeBuilder: () => set({ speculativeBuilder: null }),
     }),
     {
       name: LS_KEY,

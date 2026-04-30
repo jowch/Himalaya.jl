@@ -16,6 +16,7 @@ export interface ScatterRow {
   color: string;
   /** Stable grouping key so the regression fits one line per index, not one for all. */
   indexId: number;
+  speculative: boolean;
 }
 
 export function toScatterData(indices: IndexEntry[]): ScatterRow[] {
@@ -32,6 +33,7 @@ export function toScatterData(indices: IndexEntry[]): ScatterRow[] {
         phase: ix.phase,
         color: phaseColor(ix.phase),
         indexId: ix.id,
+        speculative: ix.kind === "speculative",
       });
     }
   }
@@ -75,8 +77,13 @@ export function MillerPlot({ indices, hoveredIndex }: MillerPlotProps): JSX.Elem
     for (const [id, rows] of byIndex) {
       if (rows.length < 2) continue;
       const color = rows[0]!.color;
-      const isHovered = id === hoveredId;
+      const isHovered    = id === hoveredId;
+      const isSpeculative = rows[0]!.speculative;
       const opacity = dimming ? (isHovered ? 1 : 0.18) : 0.85;
+      // Speculative regressions are ALWAYS dashed (the visual warning that
+      // they're hand-built, sub-minpeaks). For auto, dashes only show when
+      // un-hovered as a depth cue.
+      const dashed = isSpeculative || !isHovered;
       regressionMarks.push(
         Plot.linearRegressionY(rows, {
           x: "ratio",
@@ -84,7 +91,7 @@ export function MillerPlot({ indices, hoveredIndex }: MillerPlotProps): JSX.Elem
           stroke: color,
           strokeOpacity: opacity,
           strokeWidth: isHovered ? 1.5 : 1,
-          ...(isHovered ? {} : { strokeDasharray: "4,3" }),
+          ...(dashed ? { strokeDasharray: isSpeculative ? "2,3" : "4,3" } : {}),
         }),
       );
     }
