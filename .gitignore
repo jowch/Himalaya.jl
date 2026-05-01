@@ -56,3 +56,10 @@ test-results/
 # Build artifacts (sysimage, frontend dist is already in frontend/.gitignore)
 build/
 
+# Per-deployment state — not part of the source tree
+# - data/   contains the live SQLite DB (HIMALAYA_DB_PATH default)
+# - .julia/ is a deployment-bundled depot when JULIA_DEPOT_PATH points at the
+#           checkout (used by the systemd unit on the SSRL server)
+data/
+.julia/
+
