@@ -26,17 +26,25 @@ export function SampleMetadataCard({
 }: Props): JSX.Element {
   const [name,  setName]  = useState(sample.name  ?? "");
   const [notes, setNotes] = useState(sample.notes ?? "");
+  const [nameFocused,  setNameFocused]  = useState(false);
+  const [notesFocused, setNotesFocused] = useState(false);
   const [newTagKey, setNewTagKey] = useState("");
   const [newTagVal, setNewTagVal] = useState("");
   const [addingTag, setAddingTag] = useState(false);
 
-  // Re-sync editable fields when the active sample changes. Without this,
-  // useState initializers only fire on first mount, so switching samples
-  // leaves the previous sample's name/notes in the inputs.
+  // Re-sync editable fields when the active sample (or its server-side
+  // values) change. useState initializers only fire on first mount, so
+  // without this, switching samples leaves the previous sample's values
+  // in the inputs.
+  //
+  // Focus-gate (mirrors QNumInput in PlotCard.tsx): skip the sync while
+  // the user is mid-edit, so a background refetch or another user's save
+  // doesn't clobber an in-progress draft. Sample-switch still works
+  // because focus moves out before the new sample renders.
   useEffect(() => {
-    setName(sample.name ?? "");
-    setNotes(sample.notes ?? "");
-  }, [sample.id, sample.name, sample.notes]);
+    if (!nameFocused)  setName(sample.name   ?? "");
+    if (!notesFocused) setNotes(sample.notes ?? "");
+  }, [sample.id, sample.name, sample.notes, nameFocused, notesFocused]);
 
   function handleAddTag() {
     const k = newTagKey.trim();
@@ -72,7 +80,11 @@ export function SampleMetadataCard({
           placeholder="Sample name"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          onBlur={() => onUpdateSample({ name })}
+          onFocus={() => setNameFocused(true)}
+          onBlur={() => {
+            setNameFocused(false);
+            onUpdateSample({ name });
+          }}
         />
       </div>
 
@@ -94,7 +106,11 @@ export function SampleMetadataCard({
           className="w-full bg-bg border border-border rounded px-2 py-1 text-sm text-fg resize-none"
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
-          onBlur={() => onUpdateSample({ notes })}
+          onFocus={() => setNotesFocused(true)}
+          onBlur={() => {
+            setNotesFocused(false);
+            onUpdateSample({ notes });
+          }}
         />
       </div>
 
