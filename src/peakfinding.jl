@@ -6,7 +6,7 @@ using Statistics: median
                         prom_floor       = nothing,
                         sharp_floor      = nothing,
                         q_trim_high      = 0.05,
-                        prom_ratio_floor = 30.0) -> NamedTuple
+                        prom_ratio_floor = 15.0) -> NamedTuple
     findpeaks(q, I;    kwargs...) -> NamedTuple
 
 Detect peaks in a 1D signal using topological prominence (criterion A) and
@@ -38,7 +38,7 @@ Shape-agnostic; no per-trace tuning.
   sorted-prominence curve and shifts the knee upward, regressing recall
   on real fixtures.
 - `prom_ratio_floor`: relative prominence floor as a multiple of the
-  candidate-prominence median. Default `30.0`. Set to `0.0` to disable.
+  candidate-prominence median. Default `15.0`. Set to `0.0` to disable.
   Combined with the kneedle threshold (and any manual `prom_floor`) as a
   max, this acts as a backstop on traces where kneedle's elbow falls
   inside a noise-only distribution. Skipped when fewer than
@@ -57,7 +57,7 @@ function findpeaks(q, I, σ; normalize_by_σ    = false,
                               prom_floor       = nothing,
                               sharp_floor      = nothing,
                               q_trim_high      = 0.05,
-                              prom_ratio_floor = 30.0)
+                              prom_ratio_floor = 15.0)
     @assert length(q) == length(I) == length(σ) "q, I, σ must be equal length"
     @assert 0 <= q_trim_high < 1 "q_trim_high must be in [0, 1)"
     @assert prom_ratio_floor >= 0 "prom_ratio_floor must be ≥ 0"

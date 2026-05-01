@@ -60,7 +60,7 @@ candidates that anchor the lower part of the sorted-prominence curve,
 shifting the knee upward and rejecting real peaks. We have observed
 this regression on real fixtures.
 
-**Relative-prominence floor (`prom_ratio_floor`, default `30.0`).**
+**Relative-prominence floor (`prom_ratio_floor`, default `15.0`).**
 After kneedle, every kept peak must satisfy
 `prominence ≥ prom_ratio_floor × median(candidate_prominence)`. The
 median is computed over *all* candidates produced by `persistence`, so

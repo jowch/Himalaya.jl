@@ -32,7 +32,7 @@ export function IndicesCard(): JSX.Element {
 
   return (
     <div data-testid="indices-card" className="h-full min-h-0 flex flex-col">
-      <div className="flex-1 min-h-0">
+      <div className="flex-1 min-h-0 flex flex-col">
         <PhasePanel exposureId={exposureId} />
       </div>
       <div

@@ -48,17 +48,17 @@ prominence ≥ prom_ratio_floor * median(candidate_prominence)
 
 where `candidate_prominence` is the prominence of *all* candidates produced by `persistence` on the (trimmed) trace, not just the kneedle-survivors.
 
-- New kwarg: `prom_ratio_floor::Real = 30.0`.
+- New kwarg: `prom_ratio_floor::Real = 15.0`.
 - `prom_ratio_floor = 0.0` disables the floor.
 - The effective lower bound on prominence is `max(resolved_prom_floor, prom_ratio_floor * median_cand_prom)`, where `resolved_prom_floor` is whatever `something(prom_floor, knee(...))` produces today. The ratio floor is therefore always combined with — not bypassed by — a manual `prom_floor`. A user who wants to opt out passes `prom_ratio_floor = 0.0` explicitly.
-- The floor is **skipped** when the number of candidates is below `RATIO_FLOOR_MIN_CANDIDATES` (currently 20). At low candidate counts (e.g., synthetic single-peak traces) the median is dominated by the peaks themselves, so `30 × median` is ~30× higher than the peak being measured against and would suppress real signal. The minimum count is high enough that all real-data fixtures (≥ 141 candidates) trigger the gate, and low enough that synthetic single-peak unit tests do not.
+- The floor is **skipped** when the number of candidates is below `RATIO_FLOOR_MIN_CANDIDATES` (currently 20). At low candidate counts (e.g., synthetic single-peak traces) the median is dominated by the peaks themselves, so the ratio is ~N× higher than the peak being measured against and would suppress real signal. The minimum count is high enough that all real-data fixtures (≥ 141 candidates) trigger the gate, and low enough that synthetic single-peak unit tests do not.
 
 **Defaults rationale.** On our fixtures:
 - `example`: minimum kept-peak prominence ratio = 52
 - `cubic`: minimum kept-peak prominence ratio = 243
 - `form-factor`: maximum kept-peak prominence ratio = 24.8
 
-`prom_ratio_floor = 30` sits between form-factor's worst spurious (24.8) and example's best real peak (52) with margin on both sides. It is a backstop that fires only when kneedle itself has failed (because the trace has no real signal); on traces with real peaks, the kneedle threshold is far above this floor and the gate is a no-op.
+The default was originally `30.0` (chosen to sit between form-factor's worst spurious at 24.8 and example's best real peak at 52). It was lowered to `15.0` after a real SSRL Pn3m trace was found where genuine Bragg peaks had prominence ratios in the 17–31 range — `30.0` was killing real peaks. With `15.0` the backstop now sits *below* the form-factor noise band (24.8), so on that fixture the high-q trim (`q_trim_high = 0.05`) carries the spurious-rejection load alone; the backstop fires only on noise traces whose candidates concentrate in the lower-q region the trim doesn't touch. Real-peak fixtures remain a no-op (kneedle threshold dominates).
 
 ## Failure modes to consider
 
