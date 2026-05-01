@@ -43,6 +43,31 @@ const DETECTOR_IMAGE_FIXTURE = (
   />
 );
 
+const THUMBNAIL_GALLERY_FIXTURE_EXPOSURES: Exposure[] = Array.from(
+  { length: 6 },
+  (_, i) => ({
+    id: i + 1,
+    sample_id: 0,
+    filename: `JC001-00${i + 1}.dat`,
+    kind: "file",
+    selected: i === 0,
+    status: "accepted",
+    image_path: null,
+    image_version: "",
+    tags: [],
+    sources: [],
+  }),
+);
+
+const THUMBNAIL_GALLERY_FIXTURE = (
+  <ThumbnailGallery
+    exposures={THUMBNAIL_GALLERY_FIXTURE_EXPOSURES}
+    selectedId={1}
+    onSelect={() => {}}
+    className="h-full"
+  />
+);
+
 const SAMPLE_METADATA_FIXTURE_SAMPLE: Sample = {
   id: 0,
   experiment_id: 0,
@@ -101,6 +126,14 @@ export function InspectPage(): JSX.Element {
   }, [exposures]);
 
   const [viewingId, setViewingId] = useState<number | undefined>(undefined);
+
+  // Reset on sample switch so the next render picks the new sample's default
+  // (indexing → first accepted → first). Without this, viewingId stays pinned
+  // to an exposure id from the previous sample.
+  useEffect(() => {
+    setViewingId(undefined);
+  }, [sampleId]);
+
   useEffect(() => {
     if (viewingId === undefined && defaultId !== undefined) {
       setViewingId(defaultId);
@@ -196,12 +229,22 @@ export function InspectPage(): JSX.Element {
               </Skeleton>
             </div>
             <div className="flex-none h-[140px] px-2 pt-3 pb-2 border-t border-border/40">
-              <ThumbnailGallery
-                exposures={exposures}
-                selectedId={viewingId}
-                onSelect={setViewingId}
-                className="h-full"
-              />
+              <Skeleton
+                name="thumbnail-gallery"
+                className="h-full w-full"
+                loading={exposuresQ.isLoading}
+                stagger={50}
+                transition={200}
+                fixture={THUMBNAIL_GALLERY_FIXTURE}
+                fallback={<div className="h-full w-full" />}
+              >
+                <ThumbnailGallery
+                  exposures={exposures}
+                  selectedId={viewingId}
+                  onSelect={setViewingId}
+                  className="h-full"
+                />
+              </Skeleton>
             </div>
           </div>
         }
