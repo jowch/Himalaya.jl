@@ -57,6 +57,24 @@ end
     end
 end
 
+@testset "prom_ratio_floor is skipped on low-candidate-count traces" begin
+    # A synthetic trace with one Lorentzian peak on a flat baseline produces
+    # only a handful of candidates. The candidate-prominence median is then
+    # dominated by the peak itself, so applying `30 × median` would suppress
+    # the very peak we're trying to find. The carve-out at
+    # RATIO_FLOOR_MIN_CANDIDATES = 20 keeps the gate inert in this regime.
+    n = 922
+    q = collect(range(0.005, 0.4; length = n))
+    σ = fill(1.0, n)
+    γ = 0.003
+    q0 = 0.2
+    I = 10.0 .+ 100.0 ./ (1 .+ ((q .- q0) ./ γ).^2)
+
+    pk = Himalaya.findpeaks(q, I, σ; prom_ratio_floor = 30.0)
+    @test length(pk.q) == 1
+    @test abs(pk.q[1] - q0) < 2 * step(range(0.005, 0.4; length = n))
+end
+
 @testset "prom_floor and prom_ratio_floor compose as a max" begin
     q, I, σ = _load("example_tot.dat")
 

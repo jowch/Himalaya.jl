@@ -29,15 +29,21 @@ Shape-agnostic; no per-trace tuning.
   (default), the kneedle algorithm chooses each from the data's own
   distribution. Manual values compose with `prom_ratio_floor` as a max.
 - `q_trim_high`: fraction of the q-range to discard from the high-q end
-  before peak-finding. Default `0.05`. Set to `0.0` to disable. Real
-  Bragg peaks rarely land in the upper few percent of the swept q-range
-  on typical SAXS configurations; the high-q tail is dominated by shot
-  noise on a near-zero baseline and produces spurious candidates.
+  as a post-filter (applied after kneedle). Default `0.05`. Set to `0.0`
+  to disable. Real Bragg peaks rarely land in the upper few percent of
+  the swept q-range on typical SAXS configurations; the high-q tail is
+  dominated by shot noise on a near-zero baseline and produces spurious
+  candidates. The post-filter ordering is load-bearing — truncating
+  before kneedle removes the noise candidates that anchor the
+  sorted-prominence curve and shifts the knee upward, regressing recall
+  on real fixtures.
 - `prom_ratio_floor`: relative prominence floor as a multiple of the
   candidate-prominence median. Default `30.0`. Set to `0.0` to disable.
   Combined with the kneedle threshold (and any manual `prom_floor`) as a
   max, this acts as a backstop on traces where kneedle's elbow falls
-  inside a noise-only distribution.
+  inside a noise-only distribution. Skipped when fewer than
+  `RATIO_FLOOR_MIN_CANDIDATES` (currently 20) candidates are present, so
+  synthetic single-peak traces aren't suppressed by their own median.
 
 # Returns
 `(; indices, q, prominence, sharpness)` — four equal-length vectors,
