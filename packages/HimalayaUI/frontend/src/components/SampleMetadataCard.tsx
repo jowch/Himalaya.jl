@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Sample } from "../api";
 
 interface ExposureSummary {
@@ -29,6 +29,14 @@ export function SampleMetadataCard({
   const [newTagKey, setNewTagKey] = useState("");
   const [newTagVal, setNewTagVal] = useState("");
   const [addingTag, setAddingTag] = useState(false);
+
+  // Re-sync editable fields when the active sample changes. Without this,
+  // useState initializers only fire on first mount, so switching samples
+  // leaves the previous sample's name/notes in the inputs.
+  useEffect(() => {
+    setName(sample.name ?? "");
+    setNotes(sample.notes ?? "");
+  }, [sample.id, sample.name, sample.notes]);
 
   function handleAddTag() {
     const k = newTagKey.trim();
