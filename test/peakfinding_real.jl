@@ -33,7 +33,8 @@ const RECALL_FLOOR = Dict(
 const SPURIOUS_CEILING = Dict(
     "example_tot.dat"     => 0,   # current: 0 spurious
     "cubic_tot.dat"       => 0,   # current: 0 spurious
-    "form-factor_tot.dat" => 2,   # current: 2 spurious
+    "form-factor_tot.dat" => 0,   # current: 0 spurious — eliminated by
+                                  # high-q trim + relative-prominence floor
 )
 
 function load_trace(name)

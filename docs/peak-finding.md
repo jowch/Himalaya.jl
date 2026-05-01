@@ -43,6 +43,35 @@ instruments, sample geometries, and count rates.
 Manual overrides (`prom_floor`, `sharp_floor`) are available for
 diagnostic or scripted workflows, but should not be needed in normal use.
 
+## Gating no-peak traces
+
+Kneedle assumes the candidate-prominence distribution has a real elbow.
+On a trace with no Bragg peaks at all (e.g., a pure form-factor envelope
+plus shot noise), kneedle picks a fictitious knee inside what is
+effectively a noise decay curve, and a handful of high-q candidates can
+squeak through.
+
+Two adaptive backstops sit on top of the kneedle AND-gate:
+
+**High-q post-trim (`q_trim_high`, default `0.05`).** Peaks at the very
+top of the q-range are discarded after kneedle. The post-filter
+ordering matters — truncating before kneedle would remove the noise
+candidates that anchor the lower part of the sorted-prominence curve,
+shifting the knee upward and rejecting real peaks. We have observed
+this regression on real fixtures.
+
+**Relative-prominence floor (`prom_ratio_floor`, default `30.0`).**
+After kneedle, every kept peak must satisfy
+`prominence ≥ prom_ratio_floor × median(candidate_prominence)`. The
+median is computed over *all* candidates produced by `persistence`, so
+on a noise-only trace it tracks the noise floor; on a trace with real
+peaks it is dominated by noise candidates and the gate is a no-op
+(real peaks sit far above the kneedle threshold, which is itself far
+above the ratio floor). The floor is skipped when the candidate count
+is below `RATIO_FLOOR_MIN_CANDIDATES` (currently 20) — at low candidate
+counts the median is dominated by the peaks themselves and would
+suppress real signal.
+
 ## Why not σ-based SNR?
 
 The `_tot.dat` files include a per-point intensity uncertainty σ(q)
@@ -85,3 +114,6 @@ is important.
 - **Sub-pixel peak positions.** Peaks are returned at grid positions. Parabolic interpolation is a straightforward follow-up if needed.
 - **Background subtraction** (SNIP, asymmetric least squares). A potential follow-up for steep-background cases.
 - **Multi-trace batch statistics.** Thresholds are per-trace; no pooling across scans.
+- **q-banded kneedle** (independent thresholds per q-band). Considered when designing the no-peak-trace gating; rejected because every band of a noise-only trace is itself noise, and per-band kneedle would still find spurious knees.
+- **σ(q)-based noise floor** using the third column of `_tot.dat`. Considered for the same purpose; rejected because parametric noise modelling at the candidate-selection stage re-opens the design dimension this document already closed (see "Why not σ-based SNR" above). The relative-prominence floor uses the data's own prominence distribution and avoids this.
+- **Low-q trim.** The empirical failure mode is high-q only. A symmetric trim risks clipping Lamellar 1st-order peaks; we wait for a fixture exhibiting low-q noise contamination before adding one.

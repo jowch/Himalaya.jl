@@ -28,14 +28,13 @@ Drop `SPURIOUS_CEILING["form-factor_tot.dat"]` from 2 to 0 without regressing `R
 
 Two changes to `findpeaks`, both adaptive (no fixed instrument-dependent constants), both layered on top of the existing prominence + sharpness AND-gate.
 
-### A. High-q trim
+### A. High-q trim (post-filter)
 
-Before running `persistence`, `sharpness`, and `kneedle`, restrict the trace to `q ≤ qmin + (1 - q_trim_high) * (qmax - qmin)`.
+Discard returned peaks whose `q` exceeds `qmin + (1 - q_trim_high) * (qmax - qmin)`.
 
 - New kwarg: `q_trim_high::Real = 0.05`.
 - `q_trim_high = 0.0` disables the trim (full backward compatibility for callers that pass it explicitly).
-- The trim happens at the candidate-generation boundary: candidates above the cutoff are simply never generated, which means kneedle sees a smaller (and cleaner) input distribution.
-- Returned `indices` continue to reference positions in the original input `q`/`I` vectors, not the trimmed slice. This is a correctness invariant: callers downstream rely on `indices` to look up arbitrary per-point quantities (sharpness, σ, intensity).
+- The trim happens **after** kneedle, as a post-filter on the kept peaks. This is load-bearing: trimming the trace before kneedle removes the high-q noise candidates that anchor the lower part of the sorted-prominence curve, which shifts the knee upward and rejects real peaks. Empirically we observed `example_tot.dat` recall drop from 7 to 6 with pre-kneedle trimming; the post-filter ordering preserves recall while still discarding spurious high-q peaks.
 
 **Defaults rationale.** Real peaks across our fixtures sit at `qfrac ∈ [0.10, 0.34]`. `0.05` clears the observed real-peak band by a factor of >10 in margin while covering the observed spurious peaks (`qfrac ≥ 0.99`).
 
@@ -52,6 +51,7 @@ where `candidate_prominence` is the prominence of *all* candidates produced by `
 - New kwarg: `prom_ratio_floor::Real = 30.0`.
 - `prom_ratio_floor = 0.0` disables the floor.
 - The effective lower bound on prominence is `max(resolved_prom_floor, prom_ratio_floor * median_cand_prom)`, where `resolved_prom_floor` is whatever `something(prom_floor, knee(...))` produces today. The ratio floor is therefore always combined with — not bypassed by — a manual `prom_floor`. A user who wants to opt out passes `prom_ratio_floor = 0.0` explicitly.
+- The floor is **skipped** when the number of candidates is below `RATIO_FLOOR_MIN_CANDIDATES` (currently 20). At low candidate counts (e.g., synthetic single-peak traces) the median is dominated by the peaks themselves, so `30 × median` is ~30× higher than the peak being measured against and would suppress real signal. The minimum count is high enough that all real-data fixtures (≥ 141 candidates) trigger the gate, and low enough that synthetic single-peak unit tests do not.
 
 **Defaults rationale.** On our fixtures:
 - `example`: minimum kept-peak prominence ratio = 52
@@ -62,7 +62,7 @@ where `candidate_prominence` is the prominence of *all* candidates produced by `
 
 ## Failure modes to consider
 
-- **A trace with one real peak and otherwise pure noise.** Single-peak traces have `kept_prom / median(candidate_prom)` driven entirely by that peak. If the real peak is weak (ratio < 30), the relative floor would suppress it. Mitigation: this is an acceptable trade-off — a single weak candidate without phase-ratio support cannot be indexed anyway. We document the failure mode rather than over-engineering around it.
+- **A trace with very few candidates total (< 20).** The relative-prominence floor is skipped entirely in this regime, deferring to kneedle alone. Synthetic test cases with one or two clean peaks land here; on real-data traces we have never seen fewer than 141 candidates, so this carve-out doesn't affect production behaviour.
 - **A real peak between qfrac 0.95 and 1.0.** Trim removes it. We have no fixture exhibiting this. If a real-world case appears, the `q_trim_high` kwarg is a one-line override at the call site (or a config knob in `experiment.toml` later, but that change is out of scope here).
 - **`prom_ratio_floor` interacting with manual `prom_floor`.** Both are lower bounds; `findpeaks` takes their max. Manual `prom_floor` cannot drop below the ratio floor unless the caller also sets `prom_ratio_floor = 0.0`. This is intentional — manual `prom_floor` is a *trust the data* override; `prom_ratio_floor` is a *don't trust pure-noise traces* backstop. They serve different purposes and should compose, not cancel.
 
