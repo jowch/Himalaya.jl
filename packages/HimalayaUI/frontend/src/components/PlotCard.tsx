@@ -148,9 +148,11 @@ export function PlotCard(): JSX.Element {
         xMin = trace.q[startIdx] ?? xMin;
       }
 
-      // 2. Floor: 5th percentile of positive intensities WITHIN the focused
-      //    x-window. Filtering to the window means the floor reflects where
-      //    the actual diffraction signal lives, not the beam region.
+      // 2. Floor: 1st percentile of positive intensities WITHIN the focused
+      //    x-window — close to the actual trace minimum so the low-signal
+      //    tail is visible, but robust against single dead-pixel outliers.
+      //    Filtering to the window means the floor reflects where the
+      //    diffraction signal lives, not the beam region.
       const visibleI: number[] = [];
       for (let i = 0; i < trace.q.length; i++) {
         const q = trace.q[i]!;
@@ -160,7 +162,7 @@ export function PlotCard(): JSX.Element {
       }
       if (visibleI.length === 0) return { x: xResult, y: null };
       visibleI.sort((a, b) => a - b);
-      const p05 = visibleI[Math.floor(visibleI.length * 0.05)]!;
+      const p01 = visibleI[Math.floor(visibleI.length * 0.01)]!;
 
       // 3. Ceiling: actual max of the FULL trace (positive only). Keeping the
       //    full top end visible preserves relative-magnitude context — the
@@ -172,7 +174,11 @@ export function PlotCard(): JSX.Element {
       }
       if (fullMax <= 0) return { x: xResult, y: null };
 
-      return { x: xResult, y: [p05 * 0.7, fullMax * 1.2] };
+      // Clamp the floor at fullMax / 1e5 so a stray near-zero pixel can't
+      // blow the y-range past five log decades (which crushes the upper
+      // signal into a tiny strip).
+      const floor = Math.max(p01 * 0.5, fullMax / 1e5);
+      return { x: xResult, y: [floor, fullMax * 1.2] };
     },
     [],
   );
