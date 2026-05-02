@@ -2,17 +2,19 @@ import { useEffect, useState } from "react";
 import { useIndices, useExposure, useReanalyzeExposure } from "../queries";
 import { Button } from "./ui";
 
+// Stale state must persist this long before the banner appears. Suppresses
+// the flicker during the normal `peak op → autoReanalyze → invalidate` chain
+// while still surfacing genuine failures (silent autoReanalyze errors,
+// remote-actor edits where the actor's tab closes mid-edit).
+const DEFAULT_STALE_DEBOUNCE_MS = 2000;
+
 export interface StaleIndicesBannerProps {
   exposureId: number | undefined;
-  // Stale state must persist this long before the banner appears. Suppresses
-  // the flicker during the normal `peak op → autoReanalyze → invalidate` chain
-  // while still surfacing genuine failures (silent autoReanalyze errors,
-  // remote-actor edits where the actor's tab closes mid-edit).
   debounceMs?: number;
 }
 
 export function StaleIndicesBanner(
-  { exposureId, debounceMs = 2000 }: StaleIndicesBannerProps,
+  { exposureId, debounceMs = DEFAULT_STALE_DEBOUNCE_MS }: StaleIndicesBannerProps,
 ): JSX.Element | null {
   const indicesQ = useIndices(exposureId);
   const exposureQ = useExposure(exposureId);
