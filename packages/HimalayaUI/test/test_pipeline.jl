@@ -207,6 +207,31 @@ end
     @test n_uses > 0
 end
 
+@testset "analyze_exposure! preserves auto peak IDs across reruns" begin
+    tmp          = mktempdir()
+    analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
+    mkpath(analysis_dir)
+
+    src = joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat")
+    cp(src, joinpath(analysis_dir, "example_tot.dat"))
+
+    db     = open_db(joinpath(tmp, "himalaya.db"))
+    exp_id = init_experiment!(db; path=tmp,
+                                   data_dir=joinpath(tmp, "data"),
+                                   analysis_dir=analysis_dir)
+    s_id   = create_sample!(db; experiment_id=exp_id, label="D1", name="UX1")
+    e_id   = create_exposure!(db; sample_id=s_id, filename="example_tot")
+
+    analyze_exposure!(db, e_id, analysis_dir)
+    ids_before = sort([Int(r.id) for r in get_peaks_for_exposure(db, e_id)
+                                            if String(r.source) == "auto"])
+
+    analyze_exposure!(db, e_id, analysis_dir)
+    ids_after = sort([Int(r.id) for r in get_peaks_for_exposure(db, e_id)
+                                           if String(r.source) == "auto"])
+    @test ids_before == ids_after
+end
+
 @testset "analyze_exposure! ignores excluded auto peaks when scoring candidates" begin
     # Regression: `was_excluded` carry-forward was applied at peak persistence
     # time, but the candidate set was built from raw `findpeaks` output — so

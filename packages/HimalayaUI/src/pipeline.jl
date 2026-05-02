@@ -31,6 +31,65 @@ counts as the "same" indexing if `|Δbasis| ≤ MEMBER_REATTACH_RELTOL · basis`
 """
 const MEMBER_REATTACH_RELTOL = 0.05
 
+"""
+Match new findpeaks output against existing auto rows by q-value within
+tolerance, UPDATE matched rows in place, INSERT unmatched, DELETE orphans.
+Returns Dict{Float64,Int} mapping each new peak's q to its (preserved or new) id.
+"""
+function diff_update_auto_peaks!(db::SQLite.DB, exposure_id::Int,
+                                  peaks_result::NamedTuple,
+                                  I_full::Vector{Float64})
+    EXCLUDE_TOL = 1e-6
+    tol(q) = max(EXCLUDE_TOL, abs(q) * 0.001)
+
+    existing = Tables.rowtable(DBInterface.execute(db,
+        "SELECT id, q FROM peaks WHERE exposure_id = ? AND source = 'auto'", [exposure_id]))
+    remaining = Set{Int}(Int(r.id) for r in existing)
+
+    q_to_id = Dict{Float64, Int}()
+    for i in eachindex(peaks_result.q)
+        qval     = peaks_result.q[i]
+        full_idx = peaks_result.indices[i]
+        intensity, prom, sharp = I_full[full_idx],
+                                  peaks_result.prominence[i],
+                                  peaks_result.sharpness[i]
+
+        # Find closest existing auto peak within tolerance.
+        best_id, best_d = 0, Inf
+        for r in existing
+            Int(r.id) in remaining || continue
+            d = abs(Float64(r.q) - qval)
+            if d < best_d && d <= tol(qval)
+                best_d, best_id = d, Int(r.id)
+            end
+        end
+
+        if best_id != 0
+            DBInterface.execute(db,
+                """UPDATE peaks SET q = ?, intensity = ?, prominence = ?, sharpness = ?
+                   WHERE id = ?""",
+                [qval, intensity, prom, sharp, best_id])
+            delete!(remaining, best_id)
+            q_to_id[qval] = best_id
+        else
+            res = DBInterface.execute(db,
+                """INSERT INTO peaks (exposure_id, q, intensity, prominence, sharpness, source, excluded)
+                   VALUES (?, ?, ?, ?, ?, 'auto', 0)""",
+                [exposure_id, qval, intensity, prom, sharp])
+            q_to_id[qval] = Int(DBInterface.lastrowid(res))
+        end
+    end
+
+    # Drop auto peaks that no longer correspond to any new detection. CASCADE
+    # the index_peaks rows that referenced them — they were stale anyway.
+    for orphan_id in remaining
+        DBInterface.execute(db, "DELETE FROM index_peaks WHERE peak_id = ?", [orphan_id])
+        DBInterface.execute(db, "DELETE FROM peaks WHERE id = ?", [orphan_id])
+    end
+
+    q_to_id
+end
+
 function persist_analysis!(db::SQLite.DB, exposure_id::Int,
                             q_full::Vector{Float64},
                             I_full::Vector{Float64},
@@ -49,6 +108,8 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
                                    peaks_result::NamedTuple,
                                    candidates::Vector{<:Himalaya.Index},
                                    group_indices::Vector{<:Himalaya.Index})
+
+    EXCLUDE_TOL = 1e-6   # tolerance for q-value matching in speculative re-resolution
 
     # Snapshot the custom group's members by *semantic identity* (phase + basis)
     # BEFORE we delete the indices rows. Without this, the deletion below
@@ -102,42 +163,7 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
     DBInterface.execute(db,
         "DELETE FROM indices WHERE exposure_id = ? AND kind = 'auto'", [exposure_id])
 
-    # Snapshot the q-values of any auto peaks the user explicitly excluded so
-    # we can re-apply that override after re-detection. Without this, every
-    # reanalysis silently undoes the user's curation work.
-    excluded_rows = Tables.rowtable(DBInterface.execute(db,
-        "SELECT q FROM peaks WHERE exposure_id = ? AND source = 'auto' AND excluded = 1",
-        [exposure_id]))
-    excluded_qs = Float64[Float64(r.q) for r in excluded_rows]
-
-    DBInterface.execute(db,
-        "DELETE FROM peaks WHERE exposure_id = ? AND source = 'auto'", [exposure_id])
-
-    # Persist auto peaks. If the q-value matches (within a small tolerance) one
-    # the user previously excluded, carry the `excluded = 1` flag forward.
-    EXCLUDE_TOL = 1e-6
-    function was_excluded(q::Float64)::Bool
-        for eq in excluded_qs
-            if abs(eq - q) <= max(EXCLUDE_TOL, abs(q) * 0.001)
-                return true
-            end
-        end
-        false
-    end
-
-    q_to_peak_id = Dict{Float64, Int}()
-    for i in eachindex(peaks_result.q)
-        qval       = peaks_result.q[i]
-        full_idx   = peaks_result.indices[i]
-        intensity  = I_full[full_idx]
-        res = DBInterface.execute(db,
-            "INSERT INTO peaks (exposure_id, q, intensity, prominence, sharpness, source, excluded)
-             VALUES (?, ?, ?, ?, ?, 'auto', ?)",
-            [exposure_id, qval, intensity,
-             peaks_result.prominence[i], peaks_result.sharpness[i],
-             Int(was_excluded(qval))])
-        q_to_peak_id[qval] = Int(DBInterface.lastrowid(res))
-    end
+    q_to_peak_id = diff_update_auto_peaks!(db, exposure_id, peaks_result, I_full)
 
     # Manual peaks survive the auto-peak wipe; map their stable ids by q so
     # candidate indices that incorporate them get proper `index_peaks` rows.
