@@ -606,9 +606,15 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
     findpeaks_skipped = (stored_trace_hash == new_trace_hash) && (autopeaks_count > 0)
 
     q, I, σ = load_dat(dat_path)
+    # Hold the live peaks_result when findpeaks runs so we can pass it directly
+    # to persist_analysis! below without round-tripping through the DB. When
+    # findpeaks is skipped, synthesize_peaks_result reconstructs an equivalent
+    # NamedTuple from auto_peaks rows (using persisted findpeaks_index for
+    # exact local-maximum sample fidelity).
+    fresh_peaks_result = nothing
     if !findpeaks_skipped
-        peaks_result = Himalaya.findpeaks(q, I, σ)
-        diff_update_auto_peaks!(db, exposure_id, peaks_result, I)
+        fresh_peaks_result = Himalaya.findpeaks(q, I, σ)
+        diff_update_auto_peaks!(db, exposure_id, fresh_peaks_result, I)
         DBInterface.execute(db,
             "UPDATE exposures SET trace_hash = ? WHERE id = ?",
             [new_trace_hash, exposure_id])
@@ -628,7 +634,9 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
     indexpeaks_skipped = (stored_inputs_hash == new_inputs_hash) && (indices_count > 0)
 
     if !indexpeaks_skipped
-        peaks_result_for_persist = synthesize_peaks_result(db, exposure_id, q, I)
+        peaks_result_for_persist = fresh_peaks_result === nothing ?
+            synthesize_peaks_result(db, exposure_id, q, I) :
+            fresh_peaks_result
         candidates = Himalaya.indexpeaks(eff.q, eff.sharpness)
         group = auto_group(candidates)
         persist_analysis!(db, exposure_id, q, I, peaks_result_for_persist,

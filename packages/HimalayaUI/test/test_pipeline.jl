@@ -821,12 +821,15 @@ end
     e_id = create_exposure!(db; sample_id=s_id, filename="example_tot")
 
     analyze_exposure!(db, e_id, analysis_dir)
-    h1 = first(Tables.rowtable(DBInterface.execute(db,
-        "SELECT trace_hash FROM exposures WHERE id = ?", [e_id]))).trace_hash
+    row1 = first(Tables.rowtable(DBInterface.execute(db,
+        "SELECT trace_hash, analysis_inputs_hash FROM exposures WHERE id = ?", [e_id])))
     analyze_exposure!(db, e_id, analysis_dir)
-    h2 = first(Tables.rowtable(DBInterface.execute(db,
-        "SELECT trace_hash FROM exposures WHERE id = ?", [e_id]))).trace_hash
-    @test String(h1) == String(h2)
+    row2 = first(Tables.rowtable(DBInterface.execute(db,
+        "SELECT trace_hash, analysis_inputs_hash FROM exposures WHERE id = ?", [e_id])))
+    @test String(row1.trace_hash) == String(row2.trace_hash)
+    # The peak-set hash must also stabilise across a no-op rerun: same trace
+    # bytes + same curation set → identical effective_peaks → identical hash.
+    @test String(row1.analysis_inputs_hash) == String(row2.analysis_inputs_hash)
 end
 
 @testset "analyze_exposure! re-runs findpeaks when trace bytes change" begin
