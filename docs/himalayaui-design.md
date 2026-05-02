@@ -55,18 +55,17 @@ meaning ("you excluded this"), not just context.
 
 ### 1.4 Identity at boundaries: meaning, not PK
 
-State that lives across reanalysis (the user's "active set" of indices)
-must be tracked by **what it means** — phase + basis — not by database
-auto-increment IDs. When `persist_analysis!` deletes and re-inserts every
-candidate row, the PKs are gone, but the *meaning* of the user's pick is
-still there: "I chose the Pn3m candidate near basis 0.5."
+State that lives across reanalysis (the user's "active set" of indices,
+their excluded auto peaks) must be tracked by **what it means** — phase +
+basis, q-value of the excluded peak — not by database auto-increment IDs.
 
-We translate at the boundary. The custom-group's `(phase, basis)` tuples
-are snapshotted before delete, then re-attached to the closest fresh
-candidate of the same phase within a tolerance. If no near match
-survives the peak edit, the pick is **honestly dropped** — that change
-in peaks invalidated this indexing, and it's better to surface the
-absence than to silently carry stale state.
+In the common case the implementation now preserves PKs across reanalysis
+(see §2.6), so the principle is mostly invisible. But it asserts itself
+the moment peaks genuinely shift: the user's curation is then re-resolved
+against the new candidates by *meaning*. If no near match survives the
+peak edit, the pick is **honestly dropped** — that change in peaks
+invalidated this indexing, and it's better to surface the absence than
+to silently carry stale state.
 
 ### 1.5 Server state vs client state
 
@@ -263,23 +262,41 @@ soften ambient theme/hover changes without us having to opt-in per element.
 
 ### 2.6 Backend: active-set preservation
 
-`pipeline.jl::persist_analysis!` does the snapshot-delete-recreate-reattach
-dance described in §1.4:
+We used to do a snapshot-delete-recreate-reattach dance every time a peak
+edit triggered reanalysis. Plan 7 replaced it with two layered mechanisms
+that keep the §1.4 principle intact while paying for themselves in
+multiplayer-readiness and cold-start latency:
 
-1. Snapshot custom-group members as `(group_id, phase, basis)` tuples.
-2. Delete prior auto peaks, indices, auto-group rows, and stale custom-
-   group memberships.
-3. Re-insert candidates with fresh PKs.
-4. For each snapshotted member, find the closest fresh candidate of the
-   same phase. If the basis delta is within `MEMBER_REATTACH_RELTOL = 0.05`
-   (5% of the snapshotted basis), re-attach. Otherwise drop.
-5. If any custom group survives with at least one re-attached member,
-   the freshly-created auto group is demoted to `active = 0`. The
-   curated set stays the active set.
+1. **Curation lives in its own table.** `peak_curations` (kind `add` or
+   `exclude`) is separate from the machine output in `auto_peaks`.
+   `effective_peaks(db, exposure_id, q, I)` synthesises the working set
+   as `auto − excludes ∪ adds`. Reanalysis no longer destroys curation
+   rows, so there is nothing to snapshot for excluded peaks.
+2. **Auto peaks are diff-updated, not recreated.** `diff_update_auto_peaks!`
+   matches old and new findpeaks output by q within tolerance and issues
+   `UPDATE` for survivors and targeted `INSERT`/`DELETE` for the rest.
+   Auto peak IDs are preserved across reruns, which means
+   `index_peaks(peak_id)` references stay valid for the common case and
+   never need re-resolution.
+3. **Indices fall back to phase+basis matching only when peaks shift
+   beyond tolerance.** When `diff_update_auto_peaks!` reports that some
+   referenced peaks vanished or moved past `MEMBER_REATTACH_RELTOL = 0.05`
+   (5% of basis), `_persist_analysis_inner!` re-resolves the affected
+   speculative indices against the new candidate set by phase + closest
+   basis. No match within tolerance → the pick is dropped (honest
+   staleness, §1.11).
+4. **Hash memoization skips work entirely when inputs haven't changed.**
+   `analyze_exposure!` SHA-256s the trace bytes (`trace_hash`) and the
+   effective peak set (`analysis_inputs_hash`); when both match the
+   stored hash and the corresponding rows already exist, findpeaks and
+   indexpeaks skip. The active set survives untouched because no writes
+   fire. See [`docs/event-log.md`](event-log.md) for the full hash
+   contract.
 
 `queries.ts::invalidateExposure` invalidates `peaks`, `indices`, **and
 `groups`** so the right-rail Active set updates immediately after any peak
-edit triggers auto-reanalysis.
+edit triggers auto-reanalysis. SSE multiplayer fan-out (§2.10) reuses the
+same invalidation function.
 
 ### 2.7 Persistence
 
@@ -297,15 +314,45 @@ machines starts them over (intentional — server doesn't know about
 2. **Tutorial slides** (4 short steps) only on the new-user path. Returning
    users skip. `tutorialSeen` persists.
 
-### 2.9 Backend shape (unchanged from previous iterations)
+### 2.9 Backend shape
 
 - SQLite-per-experiment, schema in `db.jl`. Oxygen.jl REST routes,
   one file per resource (`routes_experiments.jl`, `routes_peaks.jl`, …).
-- New this iteration: `sample_messages` table (FK `author_id → users.id`,
-  `ON DELETE SET NULL`) + `routes_messages.jl`. Backs the per-sample
-  ChatCard.
+- **Peaks split (Plan 7).** The legacy `peaks` table is gone. Machine
+  output lives in `auto_peaks`; user curation lives in `peak_curations`
+  (kind `add` or `exclude`). `index_peaks` carries a `peak_kind`
+  discriminator so a single index can reference both. The `/api/peaks`
+  route synthesises the legacy union via `UNION ALL` for the frontend.
+- **Structured event log (Plan 7).** `user_actions` is now the
+  source-of-truth log: `payload` (JSON), `undoes_event_id`, indexed
+  per-exposure. View tables (`peak_curations`, `index_group_members`)
+  are written exclusively by the dispatcher in `events.jl`. See
+  [`docs/event-log.md`](event-log.md) for the dispatcher contract,
+  hash memoization, and SSE multiplayer.
+- **Chat (`sample_messages`).** FK `author_id → users.id` with
+  `ON DELETE SET NULL`; backs the per-sample ChatCard.
 - Exposure, tag, and notes endpoints are intact even though the UI
   doesn't surface them right now (see §1.9).
+
+### 2.10 Multiplayer (Plan 7 R5a)
+
+- `GET /api/events` is a Server-Sent Events stream; every client opens
+  one EventSource on mount.
+- `apply_event!` fires `broadcast_event!` *after* its transaction
+  commits, so subscribers never see a rolled-back event. Process death
+  between commit and broadcast loses the frame but not the event
+  (durable in `user_actions`); clients reconcile on EventSource
+  reconnect via TanStack Query refetch.
+- The frontend `App.tsx` SSE handler (`src/lib/sseSubscriber.ts`)
+  invalidates `peaks`/`indices`/`groups`/`exposure` query keys for the
+  affected exposure on every remote `curation` event. **Self-echo
+  filter:** events whose `actor` matches the local username are
+  skipped, so the local user's own optimistic UI doesn't get clobbered
+  by a refetch on its own write.
+- **Conflict resolution is deferred.** `If-Match` + 409-retry (R5b in
+  the plan) is gated on R4 instrumentation showing actual contention
+  (≥2% delta-event collision rate over ≥4 weeks / ≥500 events). Until
+  then, last-write-wins is the documented behaviour.
 
 ---
 
@@ -322,8 +369,11 @@ Things we know we don't yet have a good answer for:
   ("good / bad / maybe", keyboard-driven) is a natural fit, but we
   haven't designed it.
 - **Reviewer workflow.** Multi-user science: is this analysis "approved"?
-  By whom? The `users` and `user_actions` tables exist; the UI for
-  promotion / review does not.
+  By whom? The substrate is now in place — `user_actions` is a
+  structured event log with payloads and `undoes_event_id` (Plan 7 R4),
+  so a per-exposure audit view or "promote to approved" workflow can
+  be built without further schema work. The UI for promotion / review
+  is the missing piece.
 - **Per-peak hkl labels on the plot.** Useful, but visual budget is
   tight. We need to know which use-cases actually demand them before
   spending the ink.
