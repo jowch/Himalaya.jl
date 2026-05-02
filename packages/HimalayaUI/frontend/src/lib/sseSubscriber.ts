@@ -19,7 +19,7 @@ interface CurationEvent {
  */
 export function handleCurationEvent(
   data: string,
-  ctx: { clientId: string | undefined; qc: QueryClient },
+  ctx: { clientId: string; qc: QueryClient },
 ): void {
   let event: CurationEvent | null = null;
   try {
@@ -30,8 +30,9 @@ export function handleCurationEvent(
   if (!event || typeof event.entity_id !== "number") return;
   // Self-echo filter: skip events authored by this tab. Other tabs of the
   // same user (or other users) pass through. System events (client_id=null)
-  // also pass through — they originated outside any tab.
-  if (event.client_id && event.client_id === ctx.clientId) return;
+  // also pass through — null !== string, so the equality check handles them
+  // without a separate truthiness guard.
+  if (event.client_id === ctx.clientId) return;
   if (event.entity_type !== "exposure") return;
   const id = event.entity_id;
   ctx.qc.invalidateQueries({ queryKey: queryKeys.peaks(id) });

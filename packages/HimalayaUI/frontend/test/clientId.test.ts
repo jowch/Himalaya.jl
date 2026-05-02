@@ -21,4 +21,24 @@ describe("getClientId", () => {
     const { getClientId } = await import("../src/lib/clientId");
     expect(getClientId()).toBe("preset-uuid");
   });
+
+  it("falls back to a non-crypto UUID when crypto.randomUUID throws", async () => {
+    // Simulates plain-http LAN deployment where randomUUID throws TypeError.
+    const original = crypto.randomUUID;
+    vi.stubGlobal("crypto", {
+      ...crypto,
+      randomUUID: () => {
+        throw new TypeError("randomUUID requires a secure context");
+      },
+    });
+    vi.resetModules();
+    try {
+      const { getClientId } = await import("../src/lib/clientId");
+      const id = getClientId();
+      expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+      expect(sessionStorage.getItem("himalaya.client_id")).toBe(id);
+    } finally {
+      vi.stubGlobal("crypto", { ...crypto, randomUUID: original });
+    }
+  });
 });
