@@ -301,3 +301,45 @@ end
         @test_throws ErrorException HimalayaUI.open_db(db_path)
     end
 end
+
+@testset "user_actions.client_id column exists on fresh DB" begin
+    mktempdir() do tmp
+        db = HimalayaUI.open_db(joinpath(tmp, "test.db"))
+        cols = Tables.rowtable(DBInterface.execute(db,
+            "PRAGMA table_info(user_actions)"))
+        @test any(c -> c.name == "client_id", cols)
+        SQLite.close(db)
+    end
+end
+
+@testset "open_db adds client_id to legacy user_actions schema" begin
+    mktempdir() do tmp
+        path = joinpath(tmp, "test.db")
+        # Build a legacy user_actions table without client_id. Mirror the
+        # CURRENT create_schema! DDL ([db.jl:146-156]) verbatim minus the
+        # new column — column names, defaults, and FKs must match exactly,
+        # otherwise the test exercises a schema that never shipped.
+        db = SQLite.DB(path)
+        DBInterface.execute(db, """
+            CREATE TABLE user_actions (
+                id              INTEGER PRIMARY KEY,
+                user_id         INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                timestamp       DATETIME DEFAULT CURRENT_TIMESTAMP,
+                action          TEXT,
+                entity_type     TEXT,
+                entity_id       INTEGER,
+                note            TEXT,
+                payload         TEXT,
+                undoes_event_id INTEGER REFERENCES user_actions(id)
+            )
+        """)
+        SQLite.close(db)
+
+        # Re-open via open_db: migrate_schema!'s ALTER TABLE adds the column
+        db = HimalayaUI.open_db(path)
+        cols = Tables.rowtable(DBInterface.execute(db,
+            "PRAGMA table_info(user_actions)"))
+        @test any(c -> c.name == "client_id", cols)
+        SQLite.close(db)
+    end
+end

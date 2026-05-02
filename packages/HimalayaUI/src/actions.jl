@@ -11,6 +11,18 @@ function get_username(req::HTTP.Request)
 end
 
 """
+    get_client_id(req) -> Union{String, Nothing}
+
+Return the `X-Client-Id` header value if present and non-empty, else nothing.
+This is the per-tab SSE routing identity, distinct from `X-Username` (audit
+identity). See docs/superpowers/specs/2026-05-02-sse-client-id-design.md.
+"""
+function get_client_id(req::HTTP.Request)
+    v = HTTP.header(req, "X-Client-Id", "")
+    isempty(v) ? nothing : String(v)
+end
+
+"""
     get_or_create_user!(db, username) -> user_id::Int
 """
 function get_or_create_user!(db::SQLite.DB, username::String)

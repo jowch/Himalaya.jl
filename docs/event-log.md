@@ -173,28 +173,31 @@ commits. Implications:
 
 ### Client side (`src/lib/sseSubscriber.ts`)
 
-`handleCurationEvent(data, { username, qc })`:
+`handleCurationEvent(data, ctx)`:
 
 1. Parse the JSON frame; ignore on parse error or missing `entity_id`.
-2. **Self-echo filter.** Skip if `event.actor === username`. This means
-   two browser tabs sharing the same `X-Username` (same lab user) both
-   filter their own echoes — by design; lab users with two tabs are
-   collaborating with themselves, not racing.
-   **Cost of the policy:** if Alice has tab A and tab B both signed in
-   as `alice`, an edit in tab A will *not* refetch in tab B. Tab B sees
-   stale data until something else triggers a refetch (window focus,
-   manual reload, navigation). For real multi-tab Alice scenarios,
-   distinguish per-tab usernames (`alice-laptop`, `alice-desktop`) or
-   accept the staleness window.
-3. Skip if `entity_type !== "exposure"` (defensive — only exposure
+2. **Self-echo filter.** Skip if `event.client_id === ctx.clientId`. The
+   `clientId` is a per-tab UUID minted into `sessionStorage` on first
+   load (see `lib/clientId.ts`); it survives reload but is scoped to a
+   single browser tab. Each mutation sends it via the `X-Client-Id`
+   header, the backend stamps it onto the `user_actions` row, and the
+   SSE frame echoes it back — so the originating tab drops its own
+   echo while every *other* subscriber (including other tabs of the
+   same user) processes it normally. The `actor` field is still on
+   every frame for future presence/attribution UI, but it no longer
+   gates routing.
+3. System-emitted events have no `client_id` (e.g. `analyze_run`
+   issued by `_system_request()` during reingest). These broadcast to
+   *all* tabs — there's no originating tab to suppress.
+4. Skip if `entity_type !== "exposure"` (defensive — only exposure
    events update view caches today).
-4. Invalidate `peaks(id)`, `indices(id)`, `groups(id)`, `exposure(id)`
+5. Invalidate `peaks(id)`, `indices(id)`, `groups(id)`, `exposure(id)`
    for the affected exposure id. TanStack Query refetches what's
    currently mounted; nothing happens for queries the user can't see.
 
 The EventSource connection is bound to `App.tsx`'s mount/unmount only;
-`username` is read through a `useRef` inside the listener so onboarding
-(`undefined → "alice"`) doesn't recycle the connection.
+`clientId` is stable for the lifetime of the tab, so no listener
+recycling is needed.
 
 ### Conflict resolution (deferred)
 

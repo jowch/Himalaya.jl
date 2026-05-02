@@ -23,6 +23,7 @@ function apply_event!(db::SQLite.DB, req;
                       payload = nothing,
                       undoes_event_id::Union{Int,Nothing} = nothing)
     username = get_username(req)
+    client_id = get_client_id(req)
     user_id  = username === nothing ? nothing : get_or_create_user!(db, username)
     payload_json = payload === nothing ? nothing : JSON3.write(payload)
 
@@ -30,9 +31,9 @@ function apply_event!(db::SQLite.DB, req;
     event_id = SQLite.transaction(db) do
         res = DBInterface.execute(db,
             """INSERT INTO user_actions
-               (user_id, action, entity_type, entity_id, payload, undoes_event_id)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            [user_id, kind, entity_type, Int(entity_id), payload_json, undoes_event_id])
+               (user_id, action, entity_type, entity_id, payload, undoes_event_id, client_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            [user_id, kind, entity_type, Int(entity_id), payload_json, undoes_event_id, client_id])
         eid = Int(DBInterface.lastrowid(res))
 
         # Canonicalize payload before dispatch — round-trip through JSON3 so
@@ -58,7 +59,7 @@ function apply_event!(db::SQLite.DB, req;
     # runtime issues; this guard catches definition-time issues.
     if isdefined(@__MODULE__, :broadcast_event!)
         try
-            broadcast_event!(event_id, kind, entity_type, Int(entity_id), user_id, payload_json)
+            broadcast_event!(event_id, kind, entity_type, Int(entity_id), user_id, payload_json, client_id)
         catch err
             @warn "broadcast_event! failed (event still durable in user_actions)" exception=err
         end
@@ -181,12 +182,17 @@ function _try_put!(ch::Channel{String}, value::String)::Bool
 end
 
 """
-    broadcast_event!(event_id, kind, entity_type, entity_id, user_id, payload_json)
+    broadcast_event!(event_id, kind, entity_type, entity_id, user_id, payload_json, client_id)
 
 Format a single SSE frame and enqueue it onto every subscriber's pending
 channel. Closed channels (disconnected clients) and full channels (slow
 subscribers) are pruned — the client will reconnect via EventSource
 auto-reconnect and refetch via TanStack Query.
+
+`client_id` is the per-tab SSE routing identity (from the `X-Client-Id`
+request header) embedded in the frame so subscribers can self-echo-filter
+events that originated in their own tab. `nothing` for system-emitted
+events (no originating request).
 
 Best-effort: this fires AFTER apply_event!'s transaction commits, so a
 subscriber never sees an event that was rolled back. If the process dies
@@ -198,7 +204,8 @@ both files are included into the same HimalayaUI module.
 """
 function broadcast_event!(event_id::Integer, kind::String, entity_type::String,
                           entity_id::Integer, user_id::Union{Integer, Nothing},
-                          payload_json::Union{String, Nothing})
+                          payload_json::Union{String, Nothing},
+                          client_id::Union{String, Nothing})
     actor = user_id === nothing ? nothing : lookup_username(current_db(), user_id)
     msg = JSON3.write(Dict(
         :id          => Int(event_id),
@@ -206,6 +213,7 @@ function broadcast_event!(event_id::Integer, kind::String, entity_type::String,
         :entity_type => entity_type,
         :entity_id   => Int(entity_id),
         :actor       => actor,
+        :client_id   => client_id,
         :payload     => payload_json === nothing ? nothing : JSON3.read(payload_json),
     ))
     frame = "event: curation\ndata: $msg\n\n"

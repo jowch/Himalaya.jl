@@ -24,7 +24,7 @@ using HimalayaUI
 
             HimalayaUI.broadcast_event!(
                 1, "test_broadcast", "exposure", 42,
-                user_id, JSON3.write(Dict(:foo => "bar")))
+                user_id, JSON3.write(Dict(:foo => "bar")), "tab-xyz")
 
             @test isready(pending)
             frame = take!(pending)
@@ -33,6 +33,7 @@ using HimalayaUI
             @test occursin("\"actor\":\"alice\"", frame)
             @test occursin("\"entity_id\":42", frame)
             @test occursin("\"entity_type\":\"exposure\"", frame)
+            @test occursin("\"client_id\":\"tab-xyz\"", frame)
 
             # Payload is embedded in the frame.
             @test occursin("\"foo\"", frame)
@@ -60,12 +61,13 @@ end
         try
             HimalayaUI.broadcast_event!(
                 2, "anon_event", "exposure", 7,
-                nothing, nothing)
+                nothing, nothing, nothing)
 
             @test isready(pending)
             frame = take!(pending)
             @test occursin("event: curation", frame)
             @test occursin("\"actor\":null", frame)
+            @test occursin("\"client_id\":null", frame)
         finally
             lock(HimalayaUI.SSE_LOCK) do
                 filter!(x -> x !== sub, HimalayaUI.SSE_SUBSCRIBERS[])
@@ -95,7 +97,7 @@ end
         try
             HimalayaUI.broadcast_event!(
                 3, "prune_test", "exposure", 1,
-                nothing, nothing)
+                nothing, nothing, nothing)
 
             # Dead sub should have been pruned.
             n = lock(HimalayaUI.SSE_LOCK) do
@@ -139,7 +141,7 @@ end
             for i in 1:6
                 HimalayaUI.broadcast_event!(
                     i, "slow_test", "exposure", 1,
-                    nothing, nothing)
+                    nothing, nothing, nothing)
             end
 
             # Slow subscriber should have been pruned after its channel filled.
