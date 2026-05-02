@@ -67,10 +67,23 @@ describe("<StaleIndicesBanner>", () => {
         r_squared: 0.99, lattice_d: 10, status: "candidate",
         inputs_hash: STALE_HASH },
     ]);
-    renderWithProviders(<StaleIndicesBanner exposureId={42} />);
+    renderWithProviders(<StaleIndicesBanner exposureId={42} debounceMs={0} />);
     await waitFor(() =>
       expect(screen.getByRole("button", { name: /re-analyze/i })).toBeInTheDocument(),
     );
+  });
+
+  it("does not render the banner before the debounce elapses", async () => {
+    mockBoth([
+      { id: 1, exposure_id: 42, phase: "Pn3m", basis: 0.1, score: 1,
+        r_squared: 0.99, lattice_d: 10, status: "candidate",
+        inputs_hash: STALE_HASH },
+    ]);
+    renderWithProviders(<StaleIndicesBanner exposureId={42} debounceMs={5000} />);
+    // Wait long enough for the queries to settle, then assert the banner is
+    // still hidden because the 5s debounce hasn't fired.
+    await new Promise((r) => setTimeout(r, 200));
+    expect(screen.queryByRole("button", { name: /re-analyze/i })).toBeNull();
   });
 
   it("clicking re-analyze calls POST /api/exposures/:id/analyze", async () => {
@@ -97,7 +110,7 @@ describe("<StaleIndicesBanner>", () => {
       }
       return new Response("not found", { status: 404 });
     });
-    renderWithProviders(<StaleIndicesBanner exposureId={42} />);
+    renderWithProviders(<StaleIndicesBanner exposureId={42} debounceMs={0} />);
     const btn = await screen.findByRole("button", { name: /re-analyze/i });
     fireEvent.click(btn);
     await waitFor(() => {
