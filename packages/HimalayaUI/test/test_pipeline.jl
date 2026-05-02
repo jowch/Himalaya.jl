@@ -60,6 +60,7 @@ using SQLite
 end
 
 using HimalayaUI: init_experiment!, analyze_exposure!, open_db, get_experiment
+using JSON3
 
 @testset "init_experiment!" begin
     tmp = mktempdir()
@@ -851,4 +852,37 @@ end
     h_after = first(Tables.rowtable(DBInterface.execute(db,
         "SELECT trace_hash FROM exposures WHERE id = ?", [e_id]))).trace_hash
     @test String(h_before) != String(h_after)
+end
+
+@testset "analyze_run payload shows both skip flags true on no-op rerun" begin
+    # Regression: the skip-flag expressions previously checked only hash equality,
+    # not the full predicate (hash match AND existing rows). A hash match on a
+    # fresh DB with empty auto_peaks would record findpeaks_skipped=true while
+    # findpeaks actually ran.
+    tmp = mktempdir()
+    analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
+    mkpath(analysis_dir)
+    src = joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat")
+    cp(src, joinpath(analysis_dir, "example_tot.dat"))
+
+    db = open_db(joinpath(tmp, "himalaya.db"))
+    exp_id = init_experiment!(db; path=tmp, data_dir=joinpath(tmp, "data"), analysis_dir=analysis_dir)
+    s_id = create_sample!(db; experiment_id=exp_id, label="D1", name="UX1")
+    e_id = create_exposure!(db; sample_id=s_id, filename="example_tot")
+
+    # First run: both skip flags must be false (nothing cached yet).
+    analyze_exposure!(db, e_id, analysis_dir)
+    row1 = first(Tables.rowtable(DBInterface.execute(db,
+        "SELECT payload FROM user_actions WHERE action = 'analyze_run' ORDER BY id DESC LIMIT 1")))
+    p1 = JSON3.read(String(row1.payload))
+    @test p1[:findpeaks_skipped]  == false
+    @test p1[:indexpeaks_skipped] == false
+
+    # Second run with identical trace and no curation changes: genuine no-op.
+    analyze_exposure!(db, e_id, analysis_dir)
+    row2 = first(Tables.rowtable(DBInterface.execute(db,
+        "SELECT payload FROM user_actions WHERE action = 'analyze_run' ORDER BY id DESC LIMIT 1")))
+    p2 = JSON3.read(String(row2.payload))
+    @test p2[:findpeaks_skipped]  == true
+    @test p2[:indexpeaks_skipped] == true
 end

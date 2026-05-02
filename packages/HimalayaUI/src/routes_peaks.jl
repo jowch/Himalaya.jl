@@ -194,8 +194,11 @@ function register_peaks_routes!()
             DBInterface.execute(db,
                 "DELETE FROM peak_curations WHERE id = ?", [id])
 
-            log_action!(db, req; action = "remove_peak",
-                entity_type = "peak", entity_id = id)
+            apply_event!(db, req;
+                kind        = "peak_removed",
+                entity_type = "exposure",
+                entity_id   = exposure_id,
+                payload     = Dict(:peak_curation_id => id))
 
             return HTTP.Response(204)
         end

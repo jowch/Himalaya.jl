@@ -44,9 +44,12 @@ function apply_event!(db::SQLite.DB, req;
     # subscriber never sees an event that was rolled back. If the process
     # dies between commit and broadcast, the event is durable in user_actions
     # but the frame is lost; clients reconcile on reconnect via TanStack
-    # Query refetch (see R5a). isdefined check keeps the helper a soft
-    # dependency: R4 lands before R5a, and apply_event! must work without
-    # broadcast wired up yet.
+    # Query refetch (see R5a).
+    # Defense-in-depth: broadcast is best-effort; if broadcast_event! is ever
+    # detached (e.g. in a stripped-down deployment that doesn't ship the SSE
+    # endpoint), the guard prevents an UndefVarError. Today broadcast_event!
+    # is always defined alongside apply_event! — the try/catch below catches
+    # runtime issues; this guard catches definition-time issues.
     if isdefined(@__MODULE__, :broadcast_event!)
         try
             broadcast_event!(event_id, kind, entity_type, Int(entity_id), user_id, payload_json)

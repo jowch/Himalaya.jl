@@ -304,8 +304,11 @@ function register_analysis_routes!()
                 [custom_id, new_id])
         end
 
-        log_action!(db, req; action = "create_speculative",
-            entity_type = "index", entity_id = new_id)
+        apply_event!(db, req;
+            kind        = "speculative_created",
+            entity_type = "exposure",
+            entity_id   = id,
+            payload     = Dict(:index_id => new_id))
 
         # Return the freshly-built index in the same shape as GET /api/indices/:id
         rows = Tables.rowtable(DBInterface.execute(db,
@@ -337,6 +340,9 @@ function register_analysis_routes!()
             ["Content-Type" => "application/json"],
             JSON3.write(Dict(:error => "only speculative indices can be deleted; use group exclusion for auto indices")))
 
+        # Capture exposure_id BEFORE the DELETE — after deletion the row is gone.
+        exposure_id = Int(rows[1].exposure_id)
+
         SQLite.transaction(db) do
             DBInterface.execute(db,
                 "DELETE FROM index_group_members WHERE index_id = ?", [id])
@@ -346,8 +352,11 @@ function register_analysis_routes!()
                 "DELETE FROM indices WHERE id = ?", [id])
         end
 
-        log_action!(db, req; action = "delete_speculative",
-            entity_type = "index", entity_id = id)
+        apply_event!(db, req;
+            kind        = "speculative_deleted",
+            entity_type = "exposure",
+            entity_id   = exposure_id,
+            payload     = Dict(:index_id => id))
 
         HTTP.Response(200, ["Content-Type" => "application/json"],
             JSON3.write(Dict(:deleted => id)))

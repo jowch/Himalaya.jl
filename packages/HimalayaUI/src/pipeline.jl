@@ -347,7 +347,7 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
                     ratios_unnorm[rpos_seed] \ qvals_seed
                 else
                     # Last resort: use the persisted basis on the indices row.
-                    if ismissing(ix_row.basis) || ix_row.basis === nothing
+                    if ismissing(ix_row.basis)
                         nothing
                     else
                         stored = Float64(ix_row.basis)
@@ -602,8 +602,11 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
     autopeaks_count = first(Tables.rowtable(DBInterface.execute(db,
         "SELECT COUNT(*) AS n FROM auto_peaks WHERE exposure_id = ?", [exposure_id]))).n
 
+    # Full skip predicate: skip only when hash matches AND rows already exist.
+    findpeaks_skipped = (stored_trace_hash == new_trace_hash) && (autopeaks_count > 0)
+
     q, I, σ = load_dat(dat_path)
-    if stored_trace_hash != new_trace_hash || autopeaks_count == 0
+    if !findpeaks_skipped
         peaks_result = Himalaya.findpeaks(q, I, σ)
         diff_update_auto_peaks!(db, exposure_id, peaks_result, I)
         DBInterface.execute(db,
@@ -621,7 +624,10 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
     indices_count = first(Tables.rowtable(DBInterface.execute(db,
         "SELECT COUNT(*) AS n FROM indices WHERE exposure_id = ?", [exposure_id]))).n
 
-    if stored_inputs_hash != new_inputs_hash || indices_count == 0
+    # Full skip predicate: skip only when hash matches AND rows already exist.
+    indexpeaks_skipped = (stored_inputs_hash == new_inputs_hash) && (indices_count > 0)
+
+    if !indexpeaks_skipped
         peaks_result_for_persist = synthesize_peaks_result(db, exposure_id, q, I)
         candidates = Himalaya.indexpeaks(eff.q, eff.sharpness)
         group = auto_group(candidates)
@@ -645,8 +651,8 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
             :trace_hash_after     => new_trace_hash,
             :inputs_hash_before   => stored_inputs_hash,
             :inputs_hash_after    => new_inputs_hash,
-            :findpeaks_skipped    => (stored_trace_hash  == new_trace_hash),
-            :indexpeaks_skipped   => (stored_inputs_hash == new_inputs_hash),
+            :findpeaks_skipped    => findpeaks_skipped,
+            :indexpeaks_skipped   => indexpeaks_skipped,
             :duration_ms          => duration_ms,
             :effective_peaks_count => length(eff.q),
         ))
