@@ -316,19 +316,29 @@ end
     close(legacy)
 
     db = open_db(db_path)
-    for t in ("experiments", "samples", "exposures", "peaks", "indices")
+    # After R2.1: `peaks` is dropped by migrate_r2_split_peaks! and replaced
+    # by auto_peaks + peak_curations. Check the surviving entity tables.
+    for t in ("experiments", "samples", "exposures", "indices")
+        sql = String(first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name=?", [t]))).sql)
+        @test occursin("AUTOINCREMENT", sql)
+    end
+    # auto_peaks replaces peaks; the migrated row (q=0.1) should survive there.
+    for t in ("auto_peaks",)
         sql = String(first(Tables.rowtable(DBInterface.execute(db,
             "SELECT sql FROM sqlite_master WHERE type='table' AND name=?", [t]))).sql)
         @test occursin("AUTOINCREMENT", sql)
     end
 
-    # Pre-existing rows survive the migration with their ids intact.
-    rows = Tables.rowtable(DBInterface.execute(db, "SELECT id FROM peaks"))
-    @test [Int(r.id) for r in rows] == [1]
+    # Pre-existing auto peaks survive the migration with their ids intact.
+    rows = Tables.rowtable(DBInterface.execute(db, "SELECT id, q FROM auto_peaks"))
+    @test length(rows) == 1
+    @test Int(rows[1].id) == 1
+    @test Float64(rows[1].q) ≈ 0.1
 
-    # Deleting and re-inserting yields a NEW id, not the recycled rowid.
-    DBInterface.execute(db, "DELETE FROM peaks WHERE id = 1")
-    res = DBInterface.execute(db, "INSERT INTO peaks (exposure_id, q) VALUES (1, 0.2)")
+    # Deleting and re-inserting yields a NEW id (AUTOINCREMENT prevents recycling).
+    DBInterface.execute(db, "DELETE FROM auto_peaks WHERE id = 1")
+    res = DBInterface.execute(db, "INSERT INTO auto_peaks (exposure_id, q) VALUES (1, 0.2)")
     @test Int(DBInterface.lastrowid(res)) >= 2
 end
 
