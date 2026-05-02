@@ -227,6 +227,88 @@ end
     @test length(ip) >= 2
 end
 
+@testset "speculative create is atomic: both indices row and user_actions row exist" begin
+    tmp = mktempdir()
+    analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
+    mkpath(analysis_dir)
+    cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
+       joinpath(analysis_dir, "example_tot.dat"))
+    db     = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    exp_id = HimalayaUI.init_experiment!(db; path=tmp,
+        data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
+    s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, label="D1")
+    e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
+    HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
+
+    peaks = Tables.rowtable(DBInterface.execute(db,
+        "SELECT id, q FROM auto_peaks WHERE exposure_id = ? ORDER BY q LIMIT 2", [e_id]))
+    p1 = Int(peaks[1].id)
+    p2 = Int(peaks[2].id)
+
+    with_test_server(db) do port, base
+        body = Dict(:phase => "Lamellar",
+                    :anchor_peak_id => p1, :anchor_ratio => 1,
+                    :additional => [Dict(:ratio_position => 2, :peak_id => p2)])
+        r = HTTP.post("$base/api/exposures/$e_id/speculative";
+            body = JSON3.write(body),
+            headers = ["Content-Type" => "application/json", "X-Username" => "alice"])
+        @test r.status == 200
+        new_ix = JSON3.read(String(r.body))
+        new_id = Int(new_ix.id)
+
+        # Both the indices row and the user_actions row must exist with matching index_id.
+        idx_rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM indices WHERE id = ? AND kind = 'speculative'", [new_id]))
+        @test length(idx_rows) == 1
+
+        evt_rows = Tables.rowtable(DBInterface.execute(db,
+            """SELECT id FROM user_actions
+               WHERE action = 'speculative_created'
+                 AND json_extract(payload, '\$.index_id') = ?""", [new_id]))
+        @test length(evt_rows) == 1
+    end
+end
+
+@testset "speculative delete is atomic: both indices row and user_actions row removed/created together" begin
+    tmp = mktempdir()
+    analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
+    mkpath(analysis_dir)
+    cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
+       joinpath(analysis_dir, "example_tot.dat"))
+    db     = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    exp_id = HimalayaUI.init_experiment!(db; path=tmp,
+        data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
+    s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, label="D1")
+    e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
+    HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
+
+    peaks = Tables.rowtable(DBInterface.execute(db,
+        "SELECT id, q FROM auto_peaks WHERE exposure_id = ? ORDER BY q LIMIT 2", [e_id]))
+    p1 = Int(peaks[1].id)
+    p2 = Int(peaks[2].id)
+
+    new_id = HimalayaUI.insert_speculative_index!(db, e_id, Himalaya.Lamellar,
+        Dict{Int,Int}(1 => p1, 2 => p2))
+
+    with_test_server(db) do port, base
+        r = HTTP.delete("$base/api/indices/$new_id";
+            headers = ["X-Username" => "alice"])
+        @test r.status == 200
+
+        # indices row gone
+        idx_rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM indices WHERE id = ?", [new_id]))
+        @test isempty(idx_rows)
+
+        # speculative_deleted event was recorded with matching index_id
+        evt_rows = Tables.rowtable(DBInterface.execute(db,
+            """SELECT id FROM user_actions
+               WHERE action = 'speculative_deleted'
+                 AND json_extract(payload, '\$.index_id') = ?""", [new_id]))
+        @test length(evt_rows) == 1
+    end
+end
+
 @testset "speculative HTTP routes" begin
     tmp = mktempdir()
     analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")

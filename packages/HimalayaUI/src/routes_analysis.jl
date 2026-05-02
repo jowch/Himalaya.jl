@@ -290,25 +290,26 @@ function register_analysis_routes!()
         end
 
         new_id = try
-            insert_speculative_index!(db, id, P, ratio_to_peak)
+            SQLite.transaction(db) do
+                nid = insert_speculative_index!(db, id, P, ratio_to_peak)
+                if active_default
+                    cid, _ = ensure_custom_group!(db, id)
+                    DBInterface.execute(db,
+                        "INSERT OR IGNORE INTO index_group_members (group_id, index_id) VALUES (?, ?)",
+                        [cid, nid])
+                end
+                apply_event!(db, req;
+                    kind        = "speculative_created",
+                    entity_type = "exposure",
+                    entity_id   = id,
+                    payload     = Dict(:index_id => nid))
+                nid
+            end
         catch e
             return HTTP.Response(400,
                 ["Content-Type" => "application/json"],
                 JSON3.write(Dict(:error => sprint(showerror, e))))
         end
-
-        if active_default
-            custom_id, _ = ensure_custom_group!(db, id)
-            DBInterface.execute(db,
-                "INSERT OR IGNORE INTO index_group_members (group_id, index_id) VALUES (?, ?)",
-                [custom_id, new_id])
-        end
-
-        apply_event!(db, req;
-            kind        = "speculative_created",
-            entity_type = "exposure",
-            entity_id   = id,
-            payload     = Dict(:index_id => new_id))
 
         # Return the freshly-built index in the same shape as GET /api/indices/:id
         rows = Tables.rowtable(DBInterface.execute(db,
@@ -343,6 +344,8 @@ function register_analysis_routes!()
         # Capture exposure_id BEFORE the DELETE — after deletion the row is gone.
         exposure_id = Int(rows[1].exposure_id)
 
+        # Wrap the delete and the event log in one transaction so the view
+        # mutation and the audit entry roll back together if either fails.
         SQLite.transaction(db) do
             DBInterface.execute(db,
                 "DELETE FROM index_group_members WHERE index_id = ?", [id])
@@ -350,13 +353,12 @@ function register_analysis_routes!()
                 "DELETE FROM index_peaks WHERE index_id = ?", [id])
             DBInterface.execute(db,
                 "DELETE FROM indices WHERE id = ?", [id])
+            apply_event!(db, req;
+                kind        = "speculative_deleted",
+                entity_type = "exposure",
+                entity_id   = exposure_id,
+                payload     = Dict(:index_id => id))
         end
-
-        apply_event!(db, req;
-            kind        = "speculative_deleted",
-            entity_type = "exposure",
-            entity_id   = exposure_id,
-            payload     = Dict(:index_id => id))
 
         HTTP.Response(200, ["Content-Type" => "application/json"],
             JSON3.write(Dict(:deleted => id)))

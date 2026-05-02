@@ -117,6 +117,50 @@ end
     end
 end
 
+@testset "SSE: broadcast_event! prunes slow (full) subscriber without blocking" begin
+    mktempdir() do dir
+        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        HimalayaUI.bind_db!(db)
+
+        # A slow subscriber: channel capacity 4, intentionally NOT drained.
+        slow = Channel{String}(4)
+        live = Channel{String}(128)
+        sub_slow = (pending = slow,)
+        sub_live = (pending = live,)
+
+        lock(HimalayaUI.SSE_LOCK) do
+            push!(HimalayaUI.SSE_SUBSCRIBERS[], sub_slow)
+            push!(HimalayaUI.SSE_SUBSCRIBERS[], sub_live)
+        end
+
+        try
+            # Pump 6 frames — more than the slow channel's capacity of 4.
+            # The broadcast loop must not hang and must prune the slow subscriber.
+            for i in 1:6
+                HimalayaUI.broadcast_event!(
+                    i, "slow_test", "exposure", 1,
+                    nothing, nothing)
+            end
+
+            # Slow subscriber should have been pruned after its channel filled.
+            n = lock(HimalayaUI.SSE_LOCK) do
+                length(HimalayaUI.SSE_SUBSCRIBERS[])
+            end
+            @test n == 1  # only live remains
+
+            # Live subscriber received all 6 frames.
+            @test Base.n_avail(live) == 6
+        finally
+            lock(HimalayaUI.SSE_LOCK) do
+                filter!(x -> x !== sub_live, HimalayaUI.SSE_SUBSCRIBERS[])
+            end
+            close(slow)
+            close(live)
+            HimalayaUI.SSE_SUBSCRIBERS[] = []
+        end
+    end
+end
+
 @testset "SSE: lookup_username returns nothing for unknown id" begin
     mktempdir() do dir
         db = HimalayaUI.open_db(joinpath(dir, "h.db"))

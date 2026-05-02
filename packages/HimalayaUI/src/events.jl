@@ -2,10 +2,15 @@ using JSON3, SQLite, DBInterface, HTTP, Tables
 
 """
     apply_event!(db, req; kind, entity_type, entity_id, payload, undoes_event_id=nothing)
-      -> event_id::Int
+      -> NamedTuple{(:event_id, :view_row_id), Tuple{Int, Union{Int, Nothing}}}
 
 Atomic event-append + view-update. The log and the views must move together
-or neither moves. Returns the newly-inserted event id.
+or neither moves. Returns a named tuple with two fields:
+- `event_id`: the newly-inserted event id in user_actions.
+- `view_row_id`: the id of the view row inserted by the dispatcher, or
+  `nothing` for non-insert dispatcher branches (DELETE, no-op, etc.).
+  Callers that need the inserted row id (e.g. POST /peaks) use this directly
+  instead of re-querying, eliminating a read-back race with concurrent writers.
 
 `payload` is any JSON-serializable Dict / NamedTuple / nothing. If nothing,
 the event is recorded but no view update fires (use sparingly — most actions
@@ -21,6 +26,7 @@ function apply_event!(db::SQLite.DB, req;
     user_id  = username === nothing ? nothing : get_or_create_user!(db, username)
     payload_json = payload === nothing ? nothing : JSON3.write(payload)
 
+    view_row_id_ref = Ref{Union{Int, Nothing}}(nothing)
     event_id = SQLite.transaction(db) do
         res = DBInterface.execute(db,
             """INSERT INTO user_actions
@@ -35,7 +41,7 @@ function apply_event!(db::SQLite.DB, req;
         # access, eliminating the Symbol-key vs String-key footgun).
         if payload_json !== nothing
             payload_canonical = JSON3.read(payload_json)
-            update_view_for_event!(db, kind, entity_id, payload_canonical, eid)
+            view_row_id_ref[] = update_view_for_event!(db, kind, entity_id, payload_canonical, eid)
         end
         eid
     end
@@ -57,7 +63,7 @@ function apply_event!(db::SQLite.DB, req;
             @warn "broadcast_event! failed (event still durable in user_actions)" exception=err
         end
     end
-    event_id
+    (event_id = event_id, view_row_id = view_row_id_ref[])
 end
 
 """
@@ -83,21 +89,23 @@ String-key footgun: `JSON3.Object` supports both `obj.q` and `obj[:q]` /
 function update_view_for_event!(db, kind, entity_id, payload, event_id)
     # R4.2 dispatcher branches — one per view-producing curation kind.
     # All writes happen inside the transaction opened by apply_event!.
+    # INSERT branches return the lastrowid of their inserted row as Union{Int,Nothing};
+    # non-INSERT branches (DELETE, no-op) return nothing.
 
     if kind == "peak_added"
-        DBInterface.execute(db,
+        res = DBInterface.execute(db,
             """INSERT INTO peak_curations (exposure_id, kind, q, created_by)
                VALUES (?, 'add', ?, (SELECT user_id FROM user_actions WHERE id = ?))""",
             [Int(entity_id), Float64(payload.q), event_id])
-        return
+        return Int(DBInterface.lastrowid(res))
     end
 
     if kind == "peak_excluded"
-        DBInterface.execute(db,
+        res = DBInterface.execute(db,
             """INSERT INTO peak_curations (exposure_id, kind, q, created_by)
                VALUES (?, 'exclude', ?, (SELECT user_id FROM user_actions WHERE id = ?))""",
             [Int(entity_id), Float64(payload.q), event_id])
-        return
+        return Int(DBInterface.lastrowid(res))
     end
 
     if kind == "peak_unexcluded"
@@ -108,7 +116,7 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
                WHERE exposure_id = ? AND kind = 'exclude'
                  AND ABS(q - ?) <= MAX(1e-6, ABS(?) * 0.001)""",
             [Int(entity_id), Float64(payload.q), Float64(payload.q)])
-        return
+        return nothing
     end
 
     if kind == "index_confirmed"
@@ -116,7 +124,7 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
             """INSERT OR IGNORE INTO index_group_members (group_id, index_id)
                VALUES (?, ?)""",
             [Int(payload.group_id), Int(payload.index_id)])
-        return
+        return nothing
     end
 
     if kind == "index_unconfirmed"
@@ -124,11 +132,11 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
             """DELETE FROM index_group_members
                WHERE group_id = ? AND index_id = ?""",
             [Int(payload.group_id), Int(payload.index_id)])
-        return
+        return nothing
     end
 
     # Scaffolding / legacy:
-    kind == "noop_test" && return
+    kind == "noop_test" && return nothing
     # default: no view update (analyze_run and other instrumentation events land here)
     nothing
 end
@@ -147,10 +155,38 @@ function lookup_username(db::SQLite.DB, user_id::Integer)::Union{String, Nothing
 end
 
 """
+    _try_put!(ch, value) -> Bool
+
+Non-blocking put! for SSE subscriber channels. Returns true if the value was
+enqueued, false if the channel is closed or full (slow subscriber).
+
+A closed channel means the subscriber disconnected; a full channel means the
+subscriber's take! loop has fallen behind. Both cases are treated as dead —
+the SSE design is best-effort with EventSource auto-reconnect + TanStack Query
+refetch providing reconciliation.
+
+TOCTOU note: the heartbeat Timer for this subscriber could race between the
+n_avail check and the put!, in theory filling the last slot and causing put!
+to block. In practice the heartbeat fires at most once per 15 s; with cap=64
+an idle subscriber would need 16+ minutes of heartbeats to fill. The race
+window is negligible; Option A (document + ship) is the right tradeoff here.
+"""
+function _try_put!(ch::Channel{String}, value::String)::Bool
+    isopen(ch) || return false
+    # Channel is full → subscriber is too slow. Skip the put rather than block;
+    # the SSE design is best-effort with reconnect-driven reconciliation.
+    Base.n_avail(ch) >= ch.sz_max && return false
+    put!(ch, value)
+    return true
+end
+
+"""
     broadcast_event!(event_id, kind, entity_type, entity_id, user_id, payload_json)
 
-Format a single SSE frame and `put!` it onto every subscriber's pending
-channel. Closed/full channels signal a dead subscriber and get pruned.
+Format a single SSE frame and enqueue it onto every subscriber's pending
+channel. Closed channels (disconnected clients) and full channels (slow
+subscribers) are pruned — the client will reconnect via EventSource
+auto-reconnect and refetch via TanStack Query.
 
 Best-effort: this fires AFTER apply_event!'s transaction commits, so a
 subscriber never sees an event that was rolled back. If the process dies
@@ -176,11 +212,7 @@ function broadcast_event!(event_id::Integer, kind::String, entity_type::String,
     lock(SSE_LOCK) do
         to_drop = []
         for sub in SSE_SUBSCRIBERS[]
-            try
-                put!(sub.pending, frame)
-            catch
-                push!(to_drop, sub)
-            end
+            _try_put!(sub.pending, frame) || push!(to_drop, sub)
         end
         for sub in to_drop
             filter!(x -> x !== sub, SSE_SUBSCRIBERS[])

@@ -7,9 +7,10 @@ using HimalayaUI
         req = HTTP.Request("POST", "/x",
             ["X-Username" => "alice"], UInt8[])
 
-        eid = HimalayaUI.apply_event!(db, req;
+        result = HimalayaUI.apply_event!(db, req;
             kind = "test_kind", entity_type = "exposure", entity_id = 42,
             payload = Dict(:foo => "bar"))
+        eid = result.event_id
         @test eid > 0
 
         row = first(Tables.rowtable(DBInterface.execute(db,
@@ -27,11 +28,13 @@ end
     mktempdir() do dir
         db = HimalayaUI.open_db(joinpath(dir, "h.db"))
         req = HTTP.Request("POST", "/x", ["X-Username" => "bob"], UInt8[])
-        eid = HimalayaUI.apply_event!(db, req;
+        result = HimalayaUI.apply_event!(db, req;
             kind = "no_payload_event", entity_type = "exposure", entity_id = 1)
+        eid = result.event_id
         row = first(Tables.rowtable(DBInterface.execute(db,
             "SELECT payload FROM user_actions WHERE id = ?", [eid])))
         @test ismissing(row.payload)
+        @test result.view_row_id === nothing
     end
 end
 
@@ -39,9 +42,10 @@ end
     mktempdir() do dir
         db = HimalayaUI.open_db(joinpath(dir, "h.db"))
         req = HTTP.Request("POST", "/x", Pair{String,String}[], UInt8[])
-        eid = HimalayaUI.apply_event!(db, req;
+        result = HimalayaUI.apply_event!(db, req;
             kind = "anon_event", entity_type = "exposure", entity_id = 1,
             payload = Dict(:k => "v"))
+        eid = result.event_id
         row = first(Tables.rowtable(DBInterface.execute(db,
             "SELECT user_id FROM user_actions WHERE id = ?", [eid])))
         @test ismissing(row.user_id)
@@ -97,12 +101,16 @@ end
             "INSERT INTO auto_peaks (exposure_id, q, sharpness) VALUES (?, 0.10, 1.0)", [e_id])
 
         # Apply a sequence of view-producing events.
-        HimalayaUI.apply_event!(db, req;
+        r1 = HimalayaUI.apply_event!(db, req;
             kind = "peak_added", entity_type = "exposure", entity_id = e_id,
             payload = Dict(:q => 0.20))
-        HimalayaUI.apply_event!(db, req;
+        @test r1.event_id > 0
+        @test r1.view_row_id isa Int
+        r2 = HimalayaUI.apply_event!(db, req;
             kind = "peak_excluded", entity_type = "exposure", entity_id = e_id,
             payload = Dict(:q => 0.10, :auto_peak_id => 1))
+        @test r2.event_id > r1.event_id
+        @test r2.view_row_id isa Int
 
         # Snapshot view state (sort by q for determinism).
         curations_before = Tables.rowtable(DBInterface.execute(db,

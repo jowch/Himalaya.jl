@@ -66,22 +66,19 @@ function register_peaks_routes!()
         body = json(req)
         q    = Float64(body.q)
 
-        apply_event!(db, req;
+        result = apply_event!(db, req;
             kind        = "peak_added",
             entity_type = "exposure",
             entity_id   = id,
             payload     = Dict(:q => q))
 
-        # Read back the just-created curation row.
-        cur = first(Tables.rowtable(DBInterface.execute(db,
-            """SELECT id FROM peak_curations
-               WHERE exposure_id = ? AND kind = 'add' AND q = ?
-               ORDER BY id DESC LIMIT 1""",
-            [id, q])))
-        peak_id = Int(cur.id)
+        # Use the view_row_id returned by the dispatcher — avoids a re-query
+        # that would race with a concurrent POST for the same (exposure, q).
+        new_curation_id = result.view_row_id
+        new_curation_id === nothing && error("dispatcher did not record a view_row_id for peak_added")
 
         HTTP.Response(201, ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:id => peak_id, :exposure_id => id,
+            JSON3.write(Dict(:id => new_curation_id, :exposure_id => id,
                              :q => q, :source => "manual", :excluded => false)))
     end
 

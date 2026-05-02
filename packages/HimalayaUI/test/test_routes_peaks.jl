@@ -279,6 +279,51 @@ end
     end
 end
 
+@testset "POST /peaks response id round-trips to the correct curation row" begin
+    # Regression for the read-back race: the response id must point to a
+    # peak_curations row whose q matches the request, not a concurrent add.
+    tmp = mktempdir()
+    analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
+    mkpath(analysis_dir)
+    cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
+       joinpath(analysis_dir, "example_tot.dat"))
+    db     = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    exp_id = HimalayaUI.init_experiment!(db; path=tmp,
+        data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
+    s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, label="D1")
+    e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
+    HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
+
+    with_test_server(db) do port, base
+        # Two sequential POSTs at different q values.
+        r1 = HTTP.post("$base/api/exposures/$e_id/peaks";
+            body = JSON3.write(Dict(:q => 0.111)),
+            headers = ["Content-Type" => "application/json", "X-Username" => "alice"])
+        @test r1.status == 201
+        b1 = JSON3.read(String(r1.body))
+
+        r2 = HTTP.post("$base/api/exposures/$e_id/peaks";
+            body = JSON3.write(Dict(:q => 0.222)),
+            headers = ["Content-Type" => "application/json", "X-Username" => "bob"])
+        @test r2.status == 201
+        b2 = JSON3.read(String(r2.body))
+
+        # Each response id must point to the row whose q matches the request.
+        row1 = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id, q FROM peak_curations WHERE id = ?", [Int(b1.id)]))
+        @test length(row1) == 1
+        @test Float64(row1[1].q) ≈ 0.111 atol=1e-9
+
+        row2 = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id, q FROM peak_curations WHERE id = ?", [Int(b2.id)]))
+        @test length(row2) == 1
+        @test Float64(row2[1].q) ≈ 0.222 atol=1e-9
+
+        # The two ids must be distinct.
+        @test Int(b1.id) != Int(b2.id)
+    end
+end
+
 @testset "DELETE auto peak returns 400" begin
     tmp = mktempdir()
     analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
