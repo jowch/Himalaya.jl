@@ -1,4 +1,4 @@
-using JSON3, SQLite, DBInterface, HTTP
+using JSON3, SQLite, DBInterface, HTTP, Tables
 
 """
     apply_event!(db, req; kind, entity_type, entity_id, payload, undoes_event_id=nothing)
@@ -127,6 +127,62 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
     # Scaffolding / legacy:
     kind == "noop_test" && return
     # default: no view update (analyze_run and other instrumentation events land here)
+    nothing
+end
+
+"""
+    lookup_username(db, user_id) -> Union{String, Nothing}
+
+Resolve a user_id to its username string. Returns nothing for NULL user_id.
+Used by broadcast_event! to format the `actor` field in SSE frames so
+clients can self-echo-filter their own edits.
+"""
+function lookup_username(db::SQLite.DB, user_id::Integer)::Union{String, Nothing}
+    rows = Tables.rowtable(DBInterface.execute(db,
+        "SELECT username FROM users WHERE id = ?", [Int(user_id)]))
+    isempty(rows) || ismissing(rows[1].username) ? nothing : String(rows[1].username)
+end
+
+"""
+    broadcast_event!(event_id, kind, entity_type, entity_id, user_id, payload_json)
+
+Format a single SSE frame and `put!` it onto every subscriber's pending
+channel. Closed/full channels signal a dead subscriber and get pruned.
+
+Best-effort: this fires AFTER apply_event!'s transaction commits, so a
+subscriber never sees an event that was rolled back. If the process dies
+between commit and broadcast, the event is durable in user_actions but the
+frame is lost; clients reconcile on reconnect via TanStack Query refetch.
+
+SSE_SUBSCRIBERS and SSE_LOCK live in server.jl but are visible here because
+both files are included into the same HimalayaUI module.
+"""
+function broadcast_event!(event_id::Integer, kind::String, entity_type::String,
+                          entity_id::Integer, user_id::Union{Integer, Nothing},
+                          payload_json::Union{String, Nothing})
+    actor = user_id === nothing ? nothing : lookup_username(current_db(), user_id)
+    msg = JSON3.write(Dict(
+        :id          => Int(event_id),
+        :kind        => kind,
+        :entity_type => entity_type,
+        :entity_id   => Int(entity_id),
+        :actor       => actor,
+        :payload     => payload_json === nothing ? nothing : JSON3.read(payload_json),
+    ))
+    frame = "event: curation\ndata: $msg\n\n"
+    lock(SSE_LOCK) do
+        to_drop = []
+        for sub in SSE_SUBSCRIBERS[]
+            try
+                put!(sub.pending, frame)
+            catch
+                push!(to_drop, sub)
+            end
+        end
+        for sub in to_drop
+            filter!(x -> x !== sub, SSE_SUBSCRIBERS[])
+        end
+    end
     nothing
 end
 
