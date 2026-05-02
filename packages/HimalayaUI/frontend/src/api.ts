@@ -126,6 +126,8 @@ export interface Exposure {
   image_version: string;
   tags: ExposureTag[];
   sources: unknown[];
+  trace_hash: string | null;
+  analysis_inputs_hash: string | null;
 }
 
 export const listExposures = (
@@ -209,8 +211,9 @@ export interface IndexEntry {
   r_squared: number | null;
   lattice_d: number | null;
   ngc: number | null;
-  status: "candidate" | "stale";
+  status: "candidate";
   kind: "auto" | "speculative";
+  inputs_hash: string | null;
   peaks: IndexPeakRef[];
   predicted_q: number[];
 }

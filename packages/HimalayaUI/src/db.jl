@@ -39,13 +39,15 @@ CREATE TABLE IF NOT EXISTS sample_tags (
 );
 
 CREATE TABLE IF NOT EXISTS exposures (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    sample_id  INTEGER REFERENCES samples(id),
-    filename   TEXT,
-    kind       TEXT DEFAULT 'file',
-    selected   BOOLEAN DEFAULT FALSE,
-    status     TEXT CHECK (status IN ('accepted', 'rejected')),
-    image_path TEXT
+    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+    sample_id            INTEGER REFERENCES samples(id),
+    filename             TEXT,
+    kind                 TEXT DEFAULT 'file',
+    selected             BOOLEAN DEFAULT FALSE,
+    status               TEXT CHECK (status IN ('accepted', 'rejected')),
+    image_path           TEXT,
+    trace_hash           TEXT,
+    analysis_inputs_hash TEXT
 );
 
 CREATE TABLE IF NOT EXISTS exposure_sources (
@@ -72,7 +74,8 @@ CREATE TABLE IF NOT EXISTS indices (
     r_squared   REAL,
     lattice_d   REAL,
     status      TEXT DEFAULT 'candidate',
-    kind        TEXT NOT NULL DEFAULT 'auto'
+    kind        TEXT NOT NULL DEFAULT 'auto',
+    inputs_hash TEXT
 );
 
 -- index_peaks: peak_id references auto_peaks OR peak_curations (peak_kind disambiguates).
@@ -199,6 +202,9 @@ function migrate_schema!(db::SQLite.DB)
         "ALTER TABLE users ADD COLUMN first_name TEXT",
         "ALTER TABLE users ADD COLUMN last_name TEXT",
         "ALTER TABLE indices ADD COLUMN kind TEXT NOT NULL DEFAULT 'auto'",
+        "ALTER TABLE exposures ADD COLUMN trace_hash TEXT",
+        "ALTER TABLE exposures ADD COLUMN analysis_inputs_hash TEXT",
+        "ALTER TABLE indices ADD COLUMN inputs_hash TEXT",
     ]
     for stmt in stmts
         try
@@ -221,6 +227,14 @@ function migrate_schema!(db::SQLite.DB)
     if !isempty(legacy)
         @warn "Legacy 'peaks' table still present after R2 migration — investigate"
     end
+
+    # R3.2: Once analysis_inputs_hash is the source of truth for staleness,
+    # the old 'stale' enum value is dead. Any existing 'stale' rows came from
+    # R2's transitional UPDATE; normalize them to 'candidate' (the next analyze
+    # run will set inputs_hash; until then, hash mismatch with NULL on the index
+    # renders them as stale to the UI). Unconditional — idempotent (no-op when
+    # no 'stale' rows exist).
+    DBInterface.execute(db, "UPDATE indices SET status = 'candidate' WHERE status = 'stale'")
 end
 
 """

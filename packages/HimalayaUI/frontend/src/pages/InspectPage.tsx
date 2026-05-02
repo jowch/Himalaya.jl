@@ -31,6 +31,8 @@ const DETECTOR_IMAGE_FIXTURE_EXPOSURE: Exposure = {
   image_version: "",
   tags: [],
   sources: [],
+  trace_hash: null,
+  analysis_inputs_hash: null,
 };
 
 const DETECTOR_IMAGE_FIXTURE = (
@@ -49,13 +51,15 @@ const THUMBNAIL_GALLERY_FIXTURE_EXPOSURES: Exposure[] = Array.from(
     id: i + 1,
     sample_id: 0,
     filename: `JC001-00${i + 1}.dat`,
-    kind: "file",
+    kind: "file" as const,
     selected: i === 0,
-    status: "accepted",
+    status: "accepted" as const,
     image_path: null,
     image_version: "",
     tags: [],
     sources: [],
+    trace_hash: null,
+    analysis_inputs_hash: null,
   }),
 );
 

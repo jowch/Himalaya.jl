@@ -35,12 +35,6 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test body.q == 0.5
         @test body.source == "manual"
         peak_id = body.id
-        @test body.stale_indices == length(initial_indices)
-
-        stale = Tables.rowtable(DBInterface.execute(db,
-            "SELECT COUNT(*) AS c FROM indices
-             WHERE exposure_id = ? AND status = 'stale'", [e_id]))
-        @test stale[1].c == length(initial_indices)
 
         r = HTTP.get("$base/api/exposures/$e_id/peaks")
         list = JSON3.read(String(r.body))

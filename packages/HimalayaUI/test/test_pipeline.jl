@@ -775,3 +775,80 @@ let
         end
     end
 end
+
+@testset "analyze_exposure! sets trace_hash and analysis_inputs_hash on first run" begin
+    tmp = mktempdir()
+    analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
+    mkpath(analysis_dir)
+    src = joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat")
+    cp(src, joinpath(analysis_dir, "example_tot.dat"))
+
+    db = open_db(joinpath(tmp, "himalaya.db"))
+    exp_id = init_experiment!(db; path=tmp,
+                                   data_dir=joinpath(tmp, "data"),
+                                   analysis_dir=analysis_dir)
+    s_id = create_sample!(db; experiment_id=exp_id, label="D1", name="UX1")
+    e_id = create_exposure!(db; sample_id=s_id, filename="example_tot")
+
+    analyze_exposure!(db, e_id, analysis_dir)
+
+    row = first(Tables.rowtable(DBInterface.execute(db,
+        "SELECT trace_hash, analysis_inputs_hash FROM exposures WHERE id = ?", [e_id])))
+    @test !ismissing(row.trace_hash)
+    @test length(String(row.trace_hash)) == 64
+    @test !ismissing(row.analysis_inputs_hash)
+    @test length(String(row.analysis_inputs_hash)) == 64
+
+    idx_hashes = [r.inputs_hash for r in Tables.rowtable(DBInterface.execute(db,
+        "SELECT inputs_hash FROM indices WHERE exposure_id = ?", [e_id]))]
+    if !isempty(idx_hashes)
+        @test all(!ismissing(h) for h in idx_hashes)
+        @test all(String(h) == String(row.analysis_inputs_hash) for h in idx_hashes)
+    end
+end
+
+@testset "analyze_exposure! preserves trace_hash across no-op reruns" begin
+    tmp = mktempdir()
+    analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
+    mkpath(analysis_dir)
+    src = joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat")
+    cp(src, joinpath(analysis_dir, "example_tot.dat"))
+
+    db = open_db(joinpath(tmp, "himalaya.db"))
+    exp_id = init_experiment!(db; path=tmp, data_dir=joinpath(tmp, "data"), analysis_dir=analysis_dir)
+    s_id = create_sample!(db; experiment_id=exp_id, label="D1", name="UX1")
+    e_id = create_exposure!(db; sample_id=s_id, filename="example_tot")
+
+    analyze_exposure!(db, e_id, analysis_dir)
+    h1 = first(Tables.rowtable(DBInterface.execute(db,
+        "SELECT trace_hash FROM exposures WHERE id = ?", [e_id]))).trace_hash
+    analyze_exposure!(db, e_id, analysis_dir)
+    h2 = first(Tables.rowtable(DBInterface.execute(db,
+        "SELECT trace_hash FROM exposures WHERE id = ?", [e_id]))).trace_hash
+    @test String(h1) == String(h2)
+end
+
+@testset "analyze_exposure! re-runs findpeaks when trace bytes change" begin
+    tmp = mktempdir()
+    analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
+    mkpath(analysis_dir)
+    src = joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat")
+    dst = joinpath(analysis_dir, "example_tot.dat")
+    cp(src, dst)
+
+    db = open_db(joinpath(tmp, "himalaya.db"))
+    exp_id = init_experiment!(db; path=tmp, data_dir=joinpath(tmp, "data"), analysis_dir=analysis_dir)
+    s_id = create_sample!(db; experiment_id=exp_id, label="D1", name="UX1")
+    e_id = create_exposure!(db; sample_id=s_id, filename="example_tot")
+
+    analyze_exposure!(db, e_id, analysis_dir)
+    h_before = first(Tables.rowtable(DBInterface.execute(db,
+        "SELECT trace_hash FROM exposures WHERE id = ?", [e_id]))).trace_hash
+
+    open(dst, "a") do io; write(io, "\n0.99 1.0 0.1\n") end
+
+    analyze_exposure!(db, e_id, analysis_dir)
+    h_after = first(Tables.rowtable(DBInterface.execute(db,
+        "SELECT trace_hash FROM exposures WHERE id = ?", [e_id]))).trace_hash
+    @test String(h_before) != String(h_after)
+end

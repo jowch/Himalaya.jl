@@ -533,10 +533,45 @@ function init_experiment!(db::SQLite.DB; kwargs...)
 end
 
 """
+    synthesize_peaks_result(db, exposure_id, q, I) -> NamedTuple
+
+Reconstruct a peaks_result NamedTuple from the persisted `auto_peaks` rows,
+matching the output shape of `Himalaya.findpeaks`. Used when findpeaks is
+skipped due to unchanged trace_hash but indexpeaks still needs to run
+(e.g. peak set changed via curation).
+
+Field `findpeaks_index` from legacy R2 migration rows may be NULL; falls back
+to `argmin` nearest-grid-index for those rows (heals on next diff_update).
+"""
+function synthesize_peaks_result(db::SQLite.DB, exposure_id::Int,
+                                  q::Vector{Float64}, I::Vector{Float64})
+    rows = Tables.rowtable(DBInterface.execute(db,
+        """SELECT q, prominence, sharpness, findpeaks_index
+           FROM auto_peaks WHERE exposure_id = ? ORDER BY q""", [exposure_id]))
+    qs    = Float64[Float64(r.q)                                           for r in rows]
+    proms = Float64[ismissing(r.prominence) ? 0.0 : Float64(r.prominence)  for r in rows]
+    shs   = Float64[ismissing(r.sharpness)  ? 0.0 : Float64(r.sharpness)   for r in rows]
+    idxs  = Int[
+        # Prefer the persisted findpeaks_index (exact local-maximum sample).
+        # Fall back to nearest-grid-index for legacy rows from R2 migration
+        # where findpeaks_index is NULL — these heal on next diff_update.
+        ismissing(r.findpeaks_index) ?
+            argmin(abs.(q .- Float64(r.q))) :
+            Int(r.findpeaks_index)
+        for r in rows
+    ]
+    (q = qs, indices = idxs, prominence = proms, sharpness = shs)
+end
+
+"""
     analyze_exposure!(db, exposure_id, analysis_dir)
 
 Load the .dat file for `exposure_id`, run findpeaks + indexpeaks,
 auto-group results, and persist everything to the DB.
+
+Hash-guarded: findpeaks is skipped when `trace_hash` matches the persisted
+value AND auto_peaks already exist. indexpeaks is skipped when
+`analysis_inputs_hash` matches the persisted value AND indices already exist.
 
 The .dat filename is constructed from `exposures.filename` and the integration
 pattern stored in the experiment's config (defaults to `{name}.dat` for
@@ -553,21 +588,49 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
     filename      = rows[1].filename
     experiment_id = rows[1].experiment_id
 
-    cfg              = config_from_db(db, experiment_id)
+    cfg = config_from_db(db, experiment_id)
     pattern_filename = replace(cfg.integration_pattern, "{name}" => filename)
-    dat_path         = joinpath(analysis_dir, pattern_filename)
+    dat_path = joinpath(analysis_dir, pattern_filename)
     isfile(dat_path) || error("dat file not found: $dat_path")
 
-    q, I, σ      = load_dat(dat_path)
-    peaks_result = Himalaya.findpeaks(q, I, σ)
+    new_trace_hash = hash_trace_file(dat_path)
+    stored_trace_hash_raw = first(Tables.rowtable(DBInterface.execute(db,
+        "SELECT trace_hash FROM exposures WHERE id = ?", [exposure_id]))).trace_hash
+    stored_trace_hash = ismissing(stored_trace_hash_raw) ? nothing : String(stored_trace_hash_raw)
 
-    diff_update_auto_peaks!(db, exposure_id, peaks_result, I)
+    autopeaks_count = first(Tables.rowtable(DBInterface.execute(db,
+        "SELECT COUNT(*) AS n FROM auto_peaks WHERE exposure_id = ?", [exposure_id]))).n
 
-    # Sharpness for `add` curations is sampled fresh inside effective_peaks
-    # from the current trace — never stored on the curation row, never stale.
+    q, I, σ = load_dat(dat_path)
+    if stored_trace_hash != new_trace_hash || autopeaks_count == 0
+        peaks_result = Himalaya.findpeaks(q, I, σ)
+        diff_update_auto_peaks!(db, exposure_id, peaks_result, I)
+        DBInterface.execute(db,
+            "UPDATE exposures SET trace_hash = ? WHERE id = ?",
+            [new_trace_hash, exposure_id])
+    end
+
     eff = effective_peaks(db, exposure_id, q, I)
-    candidates = Himalaya.indexpeaks(eff.q, eff.sharpness)
-    group = auto_group(candidates)
+    new_inputs_hash = hash_peak_set(eff)
 
-    persist_analysis!(db, exposure_id, q, I, peaks_result, candidates, group, eff)
+    stored_inputs_hash_raw = first(Tables.rowtable(DBInterface.execute(db,
+        "SELECT analysis_inputs_hash FROM exposures WHERE id = ?", [exposure_id]))).analysis_inputs_hash
+    stored_inputs_hash = ismissing(stored_inputs_hash_raw) ? nothing : String(stored_inputs_hash_raw)
+
+    indices_count = first(Tables.rowtable(DBInterface.execute(db,
+        "SELECT COUNT(*) AS n FROM indices WHERE exposure_id = ?", [exposure_id]))).n
+
+    if stored_inputs_hash != new_inputs_hash || indices_count == 0
+        peaks_result_for_persist = synthesize_peaks_result(db, exposure_id, q, I)
+        candidates = Himalaya.indexpeaks(eff.q, eff.sharpness)
+        group = auto_group(candidates)
+        persist_analysis!(db, exposure_id, q, I, peaks_result_for_persist,
+                          candidates, group, eff)
+        DBInterface.execute(db,
+            "UPDATE exposures SET analysis_inputs_hash = ? WHERE id = ?",
+            [new_inputs_hash, exposure_id])
+        DBInterface.execute(db,
+            "UPDATE indices SET inputs_hash = ? WHERE exposure_id = ?",
+            [new_inputs_hash, exposure_id])
+    end
 end

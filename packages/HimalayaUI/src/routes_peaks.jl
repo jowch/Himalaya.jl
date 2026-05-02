@@ -1,21 +1,6 @@
 using HTTP, JSON3, DBInterface, Tables, Oxygen, SQLite
 
 """
-    mark_all_indices_stale!(db, exposure_id) -> Int
-
-Set `status = 'stale'` on every index for this exposure. Returns the count
-that was marked.
-"""
-function mark_all_indices_stale!(db::SQLite.DB, exposure_id::Int)
-    rows = Tables.rowtable(DBInterface.execute(db,
-        "SELECT COUNT(*) AS c FROM indices WHERE exposure_id = ?", [exposure_id]))
-    n = Int(rows[1].c)
-    DBInterface.execute(db,
-        "UPDATE indices SET status = 'stale' WHERE exposure_id = ?", [exposure_id])
-    n
-end
-
-"""
     _peak_curation_tol(q) -> Float64
 
 Tolerance for matching auto peak q-values to exclude-curation q-values.
@@ -91,15 +76,12 @@ function register_peaks_routes!()
             [id, q, user_id])
         peak_id = Int(DBInterface.lastrowid(res))
 
-        stale = mark_all_indices_stale!(db, id)
-
         log_action!(db, req; action = "add_peak",
             entity_type = "peak", entity_id = peak_id, note = "q=$q")
 
         HTTP.Response(201, ["Content-Type" => "application/json"],
             JSON3.write(Dict(:id => peak_id, :exposure_id => id,
-                             :q => q, :source => "manual", :excluded => false,
-                             :stale_indices => stale)))
+                             :q => q, :source => "manual", :excluded => false)))
     end
 
     @patch "/api/peaks/{id}" function(req::HTTP.Request, id::Int)
@@ -171,8 +153,6 @@ function register_peaks_routes!()
                 [exposure_id, peak_q, tol])
         end
 
-        stale = mark_all_indices_stale!(db, exposure_id)
-
         log_action!(db, req; action = excluded ? "exclude_peak" : "include_peak",
             entity_type = "peak", entity_id = id)
 
@@ -183,8 +163,7 @@ function register_peaks_routes!()
             JSON3.write(Dict(:error => "peak not found after update")))
 
         HTTP.Response(200, ["Content-Type" => "application/json"],
-            JSON3.write(merge(row_to_json(out; bool_keys = (:excluded,)),
-                              Dict(:stale_indices => stale))))
+            JSON3.write(row_to_json(out; bool_keys = (:excluded,))))
     end
 
     @delete "/api/peaks/{id}" function(req::HTTP.Request, id::Int)
@@ -204,8 +183,6 @@ function register_peaks_routes!()
                 "DELETE FROM index_peaks WHERE peak_id = ? AND peak_kind = 'curation'", [id])
             DBInterface.execute(db,
                 "DELETE FROM peak_curations WHERE id = ?", [id])
-
-            mark_all_indices_stale!(db, exposure_id)
 
             log_action!(db, req; action = "remove_peak",
                 entity_type = "peak", entity_id = id)

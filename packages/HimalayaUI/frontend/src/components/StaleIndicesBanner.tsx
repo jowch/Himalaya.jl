@@ -1,4 +1,4 @@
-import { useIndices, useReanalyzeExposure } from "../queries";
+import { useIndices, useExposure, useReanalyzeExposure } from "../queries";
 import { Button } from "./ui";
 
 export interface StaleIndicesBannerProps {
@@ -8,12 +8,15 @@ export interface StaleIndicesBannerProps {
 export function StaleIndicesBanner(
   { exposureId }: StaleIndicesBannerProps,
 ): JSX.Element | null {
-  const q = useIndices(exposureId);
+  const indicesQ = useIndices(exposureId);
+  const exposureQ = useExposure(exposureId);
   const reanalyze = useReanalyzeExposure(exposureId ?? 0);
 
   if (exposureId === undefined) return null;
-  const indices = q.data ?? [];
-  const stale = indices.filter((i) => i.status === "stale");
+  const indices = indicesQ.data ?? [];
+  const exposure = exposureQ.data;
+  if (!exposure?.analysis_inputs_hash) return null;
+  const stale = indices.filter((i) => i.inputs_hash !== exposure.analysis_inputs_hash);
   if (stale.length === 0) return null;
 
   return (

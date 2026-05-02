@@ -171,16 +171,16 @@ function GroupHead({ label, count }: { label: string; count: number }): JSX.Elem
 
 const FIXTURE_INDICES: IndexEntry[] = [
   { id:1, exposure_id:0, phase:"Pn3m",     basis:0.15, score:0.91, r_squared:0.995,
-    lattice_d:64.2, ngc:-1.51, status:"candidate", kind:"auto",
+    lattice_d:64.2, ngc:-1.51, status:"candidate", kind:"auto", inputs_hash:null,
     peaks:[{ peak_id:1, ratio_position:1, residual:0.001, q_observed:0.15 },
            { peak_id:2, ratio_position:2, residual:0.002, q_observed:0.21 }],
     predicted_q:[0.15,0.21,0.26] },
   { id:2, exposure_id:0, phase:"Im3m",     basis:0.14, score:0.72, r_squared:0.981,
-    lattice_d:57.1, ngc:-2.06, status:"candidate", kind:"auto",
+    lattice_d:57.1, ngc:-2.06, status:"candidate", kind:"auto", inputs_hash:null,
     peaks:[{ peak_id:1, ratio_position:1, residual:0.003, q_observed:0.15 }],
     predicted_q:[0.15,0.22] },
   { id:3, exposure_id:0, phase:"Lamellar", basis:0.12, score:0.55, r_squared:0.960,
-    lattice_d:52.4, ngc:null, status:"candidate", kind:"auto",
+    lattice_d:52.4, ngc:null, status:"candidate", kind:"auto", inputs_hash:null,
     peaks:[{ peak_id:2, ratio_position:1, residual:0.004, q_observed:0.21 }],
     predicted_q:[0.21,0.42] },
 ];
