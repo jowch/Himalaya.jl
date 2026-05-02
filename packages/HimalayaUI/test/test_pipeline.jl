@@ -233,10 +233,11 @@ end
 end
 
 @testset "analyze_exposure! ignores excluded auto peaks when scoring candidates" begin
-    # Regression: `was_excluded` carry-forward was applied at peak persistence
-    # time, but the candidate set was built from raw `findpeaks` output — so
-    # the user's "this is noise" verdict had no effect on `IndexEntry.peaks`
-    # or score until the very next reanalysis happened to drop the peak.
+    # Regression: the candidate set used to be built from raw `findpeaks`
+    # output, so the user's "this is noise" verdict (`excluded = 1`) had no
+    # effect on `IndexEntry.peaks` or score until the very next reanalysis
+    # happened to drop the peak. Today, `analyze_exposure!` filters excluded
+    # q-values out of the indexpeaks input directly.
     tmp          = mktempdir()
     analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
     mkpath(analysis_dir)
@@ -269,10 +270,11 @@ end
         "UPDATE peaks SET excluded = 1 WHERE id = ?", [target_pid])
     analyze_exposure!(db, e_id, analysis_dir)
 
-    # After reanalysis the same q should still be detected (auto peaks are
-    # re-found by findpeaks) and re-marked excluded via `was_excluded`. But
-    # no candidate should reference it, because we now filter excluded q's
-    # before calling indexpeaks.
+    # After reanalysis the same q is still detected (auto peaks are
+    # re-found by findpeaks) and `diff_update_auto_peaks!` UPDATEs the row
+    # in place — preserving the `excluded` flag because the column isn't
+    # touched by the UPDATE. No candidate references the peak, because we
+    # filter excluded q's before calling indexpeaks.
     same_q = Tables.rowtable(DBInterface.execute(db,
         "SELECT id, excluded FROM peaks WHERE exposure_id = ? AND ABS(q - ?) < 1e-9",
         [e_id, target_q]))
