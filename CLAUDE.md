@@ -11,6 +11,7 @@ If this is your first session on this repo, skim these in order before touching 
 1. [docs/peak-finding.md](docs/peak-finding.md) — why findpeaks is the way it is. Load-bearing.
 2. [docs/experiment-config.md](docs/experiment-config.md) — required if touching `config.jl`, `manifest.jl`, or cli init/reingest.
 3. [docs/scoring.md](docs/scoring.md) — required if touching `score`, `auto_group`, or `remove_subsets`.
+4. [docs/event-log.md](docs/event-log.md) — required if touching `events.jl`, `hash.jl`, the `apply_event!` call sites in `routes_*.jl`, the SSE handler in `server.jl`, or `StaleIndicesBanner` gating.
 
 ## Code layout
 
@@ -41,7 +42,11 @@ packages/
       actions.jl             # X-Username extraction + user_actions logger
       image.jl               # TIFF load + log-normalize + PNG encode for /image route
       routes_*.jl            # one per REST resource (users, experiments,
-                             #   samples, exposures, peaks, analysis, trace, export)
+                             #   samples, exposures, peaks, analysis, trace,
+                             #   export, messages, mentions)
+      events.jl              # apply_event! dispatcher + SSE broadcast
+      hash.jl                # SHA-256 trace + peak-set content hashes
+      speculative.jl         # speculative index create/delete + re-resolve
       server.jl              # Oxygen.jl app + serve(db) + test harness
     test/
     frontend/                # React 18 + Vite + TS strict
@@ -63,7 +68,8 @@ packages/
                              #   ThumbnailGallery, SampleMetadataCard
                              # Mentions: MentionChip, MentionCompose, MentionPicker
         hooks/               # useFocusTrap, useMentionResolution
-        lib/                 # renderMentions.tsx (parseMentions tokenizer)
+        lib/                 # renderMentions.tsx (parseMentions tokenizer),
+                             #   sseSubscriber.ts (handleCurationEvent)
         bones/               # Committed boneyard skeleton captures (*.bones.json)
                              #   + auto-generated registry.ts
         pages/               # IndexPage (three-card workspace),
@@ -123,7 +129,7 @@ Tests use stdlib `Test` (`@testset`, `@test`, `@test_throws`). Internal (non-exp
 
 ```bash
 # Fast path via compiled sysimage (build once, ~5 min):
-make sysimage          # creates scratch/himalaya.so
+make sysimage          # creates build/himalaya.so
 bin/himalaya config new --type simple --dir /path/to/experiment
 # edit /path/to/experiment/experiment.toml to set name + column mappings
 bin/himalaya init /path/to/experiment
@@ -163,8 +169,8 @@ julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
 - **`Tables.rowtable` returns `missing` for SQL NULL, not `nothing`.** When comparing nullable columns in Julia code (e.g. "is this name field unset?"), use `ismissing(row.field)` and normalize to `nothing` if you need to mix with literals: `existing = ismissing(row.field) ? nothing : row.field`. The `routes_users.jl` NULL-fill enrichment path is the canonical example.
 - **FK enforcement is on.** `open_db` runs `PRAGMA foreign_keys = ON` on every connection. Any FK column that references `users(id)` and must survive user deletion needs `ON DELETE SET NULL` in the schema DDL — add it there, not at call sites. `index_groups.created_by` and `user_actions.user_id` already have this.
 - **PKs use `AUTOINCREMENT` on mention-targets** (`experiments`, `samples`, `exposures`, `peaks`, `indices`). Plain `INTEGER PRIMARY KEY` is rowid-aliased and reuses freed ids on deletion — chat `@`-mentions of a deleted entity could silently rebind to a new entity that took the same id. `migrate_pk_to_autoincrement!` in `db.jl` rebuilds these tables on existing DBs (rename → `create_schema!` → copy shared columns → drop) so legacy DBs heal on next `open_db`.
-- **`analyze_exposure!` curation contract.** Before calling `Himalaya.indexpeaks`, the function (1) drops auto peaks the user previously excluded and (2) unions in current manual peaks with sharpness sampled from `Himalaya.sharpness(I)`. Without these, a user's "this is noise" exclusion has no effect on candidate scoring, and a user-marked manual peak at a phase's predicted ratio position never lands in `IndexEntry.peaks`. Touch this only with regression tests in `test_pipeline.jl` (the "incorporates manual peaks" / "ignores excluded auto peaks" testsets) green.
-- **`persist_analysis!` is transactional.** The delete-then-reinsert sequence in `pipeline.jl` is wrapped in `SQLite.transaction`. If you add new write steps to that function, put them inside `_persist_analysis_inner!` so they stay atomic. Same pattern applies to `reingest!` in `cli.jl` (`_reingest_inner!`) — wrap any new multi-write CLI operations the same way. `_reingest_inner!` returns a `NamedTuple{(:status, :added_samples, :added_exposures, :manifest_path)}` where `:status` is `:ok` or `:no_manifest`; the route at `POST /api/experiments/:id/reingest` echoes those fields in JSON (HTTP 200 in both cases — `status` is the discriminator).
+- **`analyze_exposure!` curation contract.** Before calling `Himalaya.indexpeaks`, the function calls `effective_peaks(db, exposure_id, q, I)` which synthesises the working set as `auto_peaks − peak_curations(kind='exclude') ∪ peak_curations(kind='add')`, with sharpness for adds sampled from `Himalaya.sharpness(I)`. Without this, a user's "this is noise" exclusion has no effect on candidate scoring, and a user-marked manual peak at a phase's predicted ratio position never lands in `IndexEntry.peaks`. Touch this only with curation-lifecycle regression tests in `test_pipeline.jl` green. See [docs/event-log.md](docs/event-log.md) §1 for the auto/curation table split.
+- **`persist_analysis!` is transactional.** The auto-peak diff-update + index re-resolve sequence in `pipeline.jl` is wrapped in `SQLite.transaction`. If you add new write steps to that function, put them inside `_persist_analysis_inner!` so they stay atomic. Same pattern applies to `reingest!` in `cli.jl` (`_reingest_inner!`) — wrap any new multi-write CLI operations the same way. `_reingest_inner!` returns a `NamedTuple{(:status, :added_samples, :added_exposures, :manifest_path)}` where `:status` is `:ok` or `:no_manifest`; the route at `POST /api/experiments/:id/reingest` echoes those fields in JSON (HTTP 200 in both cases — `status` is the discriminator).
 
 **Oxygen.jl 1.10.x:**
 - Use the singleton API: `@get "/path/{id}" function(req::HTTP.Request, id::Int) ... end`. Typed function args extract path params.
@@ -215,7 +221,7 @@ julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
 
 **`QNumInput` is exported from `PlotCard.tsx`** for unit testing. It implements a focus-gated controlled input: external `value` prop changes are synced to draft state only when the input is not focused, preventing wheel-zoom events from interrupting mid-edit. Follow this pattern for any numeric input that can be updated by external events.
 
-**`StaleIndicesBanner` is mounted in `PhasePanel`.** When any index has `status: "stale"`, the banner renders above the index list with a Re-analyze button that posts to `/api/exposures/:id/analyze`. If you add new routes that mark indices stale, no further UI wiring is needed — the banner appears automatically.
+**`StaleIndicesBanner` is mounted in `PhasePanel`.** Renders when *any* index's `inputs_hash` differs from its exposure's current `analysis_inputs_hash` (hash-derived, not a `status` enum — that was removed in Plan 7 R3). The Re-analyze button posts to `/api/exposures/:id/analyze`, which recomputes hashes; matching hashes hide the banner. New routes that change the effective peak set surface the banner automatically because hashes drift; no extra UI wiring needed. See [docs/event-log.md](docs/event-log.md) §2.
 
 **Imperative render functions in effects: use `useCallback`.** Wrap any function that is both defined inside a component and used as a `useEffect` dependency in `useCallback` with its true deps. The effect then depends on `[theCallback]` alone — no redundant dep list, no eslint-disable. `TraceViewer`'s overlay renderer follows this pattern.
 
@@ -245,7 +251,7 @@ julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
   - **Backend:** transactional SQLite pipeline (incl. `_reingest_inner!`), FK enforcement, REST API (Oxygen.jl), CLI (`config new/list`, `init`, `analyze`, `reingest`, `show`, `serve`), TIFF→PNG image route with Q0f31-aware lognormalize, env-driven deployment (`HIMALAYA_DB_PATH`, `HIMALAYA_CONFIGS_DIR`).
   - **Adapter-driven I/O:** `experiment.toml` per experiment, positional or named columns, configurable file patterns, prefix-based filesystem discovery.
   - **Frontend:** three-card Index workspace (chat | trace plot | index choices), Inspect page (detector image + thumbnail filmstrip + reject-reason chips + sample metadata), trace viewer with peak editing + auto-fit y-floor + log/linear x toggle, auto-rotating detector canvas, Miller plot, PhasePanel with curate + stale-indices reanalyze (now hash-driven), OnboardingFlow + NavModal with focus trapping. Skeleton loading screens via boneyard-js on all major data-driven cards. Chat @-mention system (`@peak`, `@index`, `@exposure`, `@sample`) via `MentionChip` / `MentionCompose` / `useMentionResolution`.
-  - **Plan 7 — Multiplayer + Instrumentation Foundation:** Diff-based reanalysis preserves auto peak IDs (eliminates the snapshot/restore dance in `_persist_analysis_inner!`). Curation lives in dedicated `peak_curations` table separate from machine output (`auto_peaks`); `index_peaks.peak_kind` discriminates the reference target. Content-hash memoization (`exposures.trace_hash`, `exposures.analysis_inputs_hash`, `indices.inputs_hash`) skips findpeaks/indexpeaks when inputs are unchanged; `StaleIndicesBanner` reads hash mismatch instead of a `status='stale'` enum. Curation events recorded with structured payloads in `user_actions` (promoted to source-of-truth log via `apply_event!` + `update_view_for_event!` dispatcher contract; `rebuild_views_from_log!` enforces "dispatcher is the sole writer to view tables"). SSE-driven multiplayer at `GET /api/events` — Channel-per-subscriber + Timer-driven heartbeat, `X-Accel-Buffering: no` for nginx, frontend `App.tsx` invalidates peaks/indices/groups/exposure caches on remote `curation` events with self-echo filter via `actor === username`. R5b (If-Match conflict resolution) deferred — gated on R4 instrumentation showing actual contention (≥2% delta-event collision rate over ≥4 weeks / ≥500 events).
+  - **Plan 7 — Multiplayer + Instrumentation Foundation:** Auto/curation peak split (`auto_peaks` + `peak_curations`), diff-update preserves auto peak IDs, content-hash memoization on `findpeaks`/`indexpeaks`, structured `user_actions` event log via `apply_event!` dispatcher, SSE multiplayer at `GET /api/events`. R5b (If-Match conflict resolution) deferred behind R4 instrumentation gate. See [docs/event-log.md](docs/event-log.md) for the dispatcher contract, hash invariants, and SSE semantics.
   - **Test coverage:** 645 Julia (HimalayaUI) · 103 Julia (core) · 192 Vitest · 16 Playwright E2E (7 inspect + 9 smoke).
 - Deferred for later: Phase panel Recent section, export UI, per-user audit view, derived-exposure construction (raw / aggregated / background-subtracted exposure types — schema reserves `exposure_type` field), additional config templates beyond `simple.toml`. See [docs/future-feature-ideas.md](docs/future-feature-ideas.md).
 
@@ -254,6 +260,7 @@ julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
 - [docs/peak-finding.md](docs/peak-finding.md) — narrative design notes, non-obvious defaults, out-of-scope decisions.
 - [docs/scoring.md](docs/scoring.md) — how and why of the index scoring formula (coverage × consistency).
 - [docs/experiment-config.md](docs/experiment-config.md) — `experiment.toml` schema, read-only contract, filename association, CLI reference. Required reading before touching `config.jl`, `manifest.jl`, or the cli init/reingest paths.
+- [docs/event-log.md](docs/event-log.md) — `apply_event!` dispatcher contract, hash memoization invariants, SSE multiplayer semantics. Required reading before touching `events.jl`, `hash.jl`, or the SSE handler.
 - [docs/superpowers/specs/2026-04-22-himalaya-web-app-design.md](docs/superpowers/specs/2026-04-22-himalaya-web-app-design.md) — web app design spec (schema, API, UI layout). Load-bearing for all HimalayaUI work.
 - [docs/superpowers/specs/2026-04-28-experiment-config-design.md](docs/superpowers/specs/2026-04-28-experiment-config-design.md) — config system design spec.
 - [docs/superpowers/plans/](docs/superpowers/plans/) — implementation plans (one per sub-project).
