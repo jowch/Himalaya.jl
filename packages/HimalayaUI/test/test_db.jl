@@ -121,3 +121,53 @@ end
     @test "energy_kev" in cols
     @test "flight_path_m" in cols
 end
+
+@testset "index_groups partial unique constraint on custom" begin
+    mktempdir() do dir
+        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
+        e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
+
+        DBInterface.execute(db,
+            "INSERT INTO index_groups (exposure_id, kind) VALUES (?, 'custom')", [e_id])
+        @test_throws SQLite.SQLiteException DBInterface.execute(db,
+            "INSERT INTO index_groups (exposure_id, kind) VALUES (?, 'custom')", [e_id])
+
+        # Auto groups can multiply (only 'custom' is unique per exposure).
+        DBInterface.execute(db,
+            "INSERT INTO index_groups (exposure_id, kind) VALUES (?, 'auto')", [e_id])
+        DBInterface.execute(db,
+            "INSERT INTO index_groups (exposure_id, kind) VALUES (?, 'auto')", [e_id])
+    end
+end
+
+@testset "open_db rejects pre-existing duplicate custom index_groups" begin
+    mktempdir() do dir
+        db_path = joinpath(dir, "h.db")
+        # Build a legacy DB with the partial unique index missing AND a
+        # pre-existing duplicate-custom-group row (the multiplayer-era TOCTOU
+        # outcome the index now prevents).
+        legacy = SQLite.DB(db_path)
+        DBInterface.execute(legacy, "PRAGMA foreign_keys = ON")
+        # Minimal subset of the schema needed to seed the duplicate.
+        for stmt in split(HimalayaUI.SCHEMA, ";")
+            s = strip(stmt)
+            isempty(s) && continue
+            DBInterface.execute(legacy, s)
+        end
+        # Drop the partial unique index that open_db will try to add.
+        DBInterface.execute(legacy,
+            "DROP INDEX IF EXISTS idx_one_custom_group_per_exposure")
+        exp_id = HimalayaUI.create_experiment!(legacy; path="/x", data_dir="/x", analysis_dir="/x")
+        s_id   = HimalayaUI.create_sample!(legacy; experiment_id=exp_id)
+        e_id   = HimalayaUI.create_exposure!(legacy; sample_id=s_id)
+        DBInterface.execute(legacy,
+            "INSERT INTO index_groups (exposure_id, kind) VALUES (?, 'custom')", [e_id])
+        DBInterface.execute(legacy,
+            "INSERT INTO index_groups (exposure_id, kind) VALUES (?, 'custom')", [e_id])
+        SQLite.DBInterface.close!(legacy)
+
+        @test_throws ErrorException HimalayaUI.open_db(db_path)
+    end
+end

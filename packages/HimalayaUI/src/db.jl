@@ -103,6 +103,9 @@ CREATE TABLE IF NOT EXISTS index_groups (
     created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_one_custom_group_per_exposure
+    ON index_groups(exposure_id) WHERE kind = 'custom';
+
 CREATE TABLE IF NOT EXISTS index_group_members (
     group_id  INTEGER REFERENCES index_groups(id),
     index_id  INTEGER REFERENCES indices(id),
@@ -130,6 +133,30 @@ CREATE TABLE IF NOT EXISTS user_actions (
     note        TEXT
 );
 """
+
+"""
+    preflight_index_groups_uniqueness!(db)
+
+If a multiplayer-era duplicate-custom-group row exists in a pre-R0.1 DB,
+fail loudly with a useful message rather than letting `CREATE UNIQUE INDEX`
+produce SQLite's terse "UNIQUE constraint failed" error — operators wouldn't
+know that "merge the duplicate custom groups" is the right next step.
+No-op on truly-fresh DBs (the `index_groups` table doesn't exist yet).
+"""
+function preflight_index_groups_uniqueness!(db::SQLite.DB)
+    has_table = !isempty(Tables.rowtable(DBInterface.execute(db,
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='index_groups'")))
+    has_table || return
+    dups = Tables.rowtable(DBInterface.execute(db, """
+        SELECT exposure_id, COUNT(*) AS n FROM index_groups
+        WHERE kind = 'custom' GROUP BY exposure_id HAVING n > 1
+    """))
+    if !isempty(dups)
+        error("DB has duplicate 'custom' index_groups for exposures " *
+              join([string(d.exposure_id) for d in dups], ", ") *
+              " — manual merge required before idx_one_custom_group_per_exposure can be enforced")
+    end
+end
 
 function create_schema!(db::SQLite.DB)
     for stmt in split(SCHEMA, ";")
@@ -316,6 +343,7 @@ function open_db(db_path::AbstractString = default_db_path())::SQLite.DB
     parent = dirname(db_path)
     !isempty(parent) && !isdir(parent) && mkpath(parent)
     db = SQLite.DB(db_path)
+    preflight_index_groups_uniqueness!(db)
     create_schema!(db)
     migrate_schema!(db)
     DBInterface.execute(db, "PRAGMA foreign_keys = ON")
