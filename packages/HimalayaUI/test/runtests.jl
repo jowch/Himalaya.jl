@@ -25,4 +25,5 @@ using Test
     include("test_speculative.jl")
     include("test_routes_export.jl")
     include("test_routes_mentions.jl")
+    include("test_events.jl")
 end

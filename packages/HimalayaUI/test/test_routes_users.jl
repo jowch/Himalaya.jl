@@ -107,5 +107,6 @@ end
     @test rows[1].action      == "test"
     @test rows[1].entity_type == "sample"
     @test rows[1].entity_id   == 42
-    @test rows[1].note        == "hello"
+    # note is now stored in the payload JSON column (via apply_event! delegation)
+    @test JSON3.read(rows[1].payload).note == "hello"
 end

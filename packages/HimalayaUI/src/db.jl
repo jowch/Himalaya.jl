@@ -144,14 +144,19 @@ CREATE INDEX IF NOT EXISTS idx_sample_messages_sample
     ON sample_messages(sample_id, created_at);
 
 CREATE TABLE IF NOT EXISTS user_actions (
-    id          INTEGER PRIMARY KEY,
-    user_id     INTEGER REFERENCES users(id) ON DELETE SET NULL,
-    timestamp   DATETIME DEFAULT CURRENT_TIMESTAMP,
-    action      TEXT,
-    entity_type TEXT,
-    entity_id   INTEGER,
-    note        TEXT
+    id              INTEGER PRIMARY KEY,
+    user_id         INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    timestamp       DATETIME DEFAULT CURRENT_TIMESTAMP,
+    action          TEXT,
+    entity_type     TEXT,
+    entity_id       INTEGER,
+    note            TEXT,
+    payload         TEXT,
+    undoes_event_id INTEGER REFERENCES user_actions(id)
 );
+
+CREATE INDEX IF NOT EXISTS idx_events_by_exposure
+    ON user_actions(entity_type, entity_id, id);
 """
 
 """
@@ -205,6 +210,8 @@ function migrate_schema!(db::SQLite.DB)
         "ALTER TABLE exposures ADD COLUMN trace_hash TEXT",
         "ALTER TABLE exposures ADD COLUMN analysis_inputs_hash TEXT",
         "ALTER TABLE indices ADD COLUMN inputs_hash TEXT",
+        "ALTER TABLE user_actions ADD COLUMN payload TEXT",
+        "ALTER TABLE user_actions ADD COLUMN undoes_event_id INTEGER REFERENCES user_actions(id)",
     ]
     for stmt in stmts
         try
