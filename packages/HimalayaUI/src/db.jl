@@ -190,9 +190,10 @@ function create_schema!(db::SQLite.DB)
     for stmt in split(SCHEMA, ";")
         s = strip(stmt)
         isempty(s) && continue
-        # Skip fragments that are purely SQL comments (no executable statement).
-        # This can happen when a comment contains a semicolon that splits the
-        # SCHEMA string mid-comment, leaving a fragment with no DDL keyword.
+        # Defensive: skip fragments that are purely SQL comments. Dead on the
+        # current SCHEMA (no `;` inside any `--` comment), but a future SCHEMA
+        # edit that puts `;` inside a comment would otherwise leave a
+        # pure-comment fragment that DBInterface.execute rejects.
         all(l -> isempty(strip(l)) || startswith(strip(l), "--"), split(s, "\n")) && continue
         DBInterface.execute(db, s)
     end
