@@ -152,7 +152,8 @@ CREATE TABLE IF NOT EXISTS user_actions (
     entity_id       INTEGER,
     note            TEXT,
     payload         TEXT,
-    undoes_event_id INTEGER REFERENCES user_actions(id)
+    undoes_event_id INTEGER REFERENCES user_actions(id),
+    client_id       TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_events_by_exposure
@@ -212,6 +213,7 @@ function migrate_schema!(db::SQLite.DB)
         "ALTER TABLE indices ADD COLUMN inputs_hash TEXT",
         "ALTER TABLE user_actions ADD COLUMN payload TEXT",
         "ALTER TABLE user_actions ADD COLUMN undoes_event_id INTEGER REFERENCES user_actions(id)",
+        "ALTER TABLE user_actions ADD COLUMN client_id TEXT",
     ]
     for stmt in stmts
         try

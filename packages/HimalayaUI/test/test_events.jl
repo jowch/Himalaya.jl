@@ -138,6 +138,54 @@ end
     end
 end
 
+@testset "apply_event! persists client_id when X-Client-Id header present" begin
+    mktempdir() do tmp
+        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+        HimalayaUI.bind_db!(db)
+        exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
+        eid    = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="e1")
+        req = HTTP.Request("POST", "/x",
+            ["X-Username" => "alice", "X-Client-Id" => "tab-xyz"], UInt8[])
+        HimalayaUI.apply_event!(db, req;
+            kind="noop_test", entity_type="exposure", entity_id=eid, payload=Dict(:k=>1))
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT client_id FROM user_actions ORDER BY id DESC LIMIT 1"))
+        @test rows[1].client_id == "tab-xyz"
+    end
+end
+
+@testset "apply_event! writes NULL client_id when header absent" begin
+    mktempdir() do tmp
+        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+        HimalayaUI.bind_db!(db)
+        exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
+        eid    = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="e1")
+        req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
+        HimalayaUI.apply_event!(db, req;
+            kind="noop_test", entity_type="exposure", entity_id=eid, payload=Dict(:k=>1))
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT client_id FROM user_actions ORDER BY id DESC LIMIT 1"))
+        @test ismissing(rows[1].client_id)
+    end
+end
+
+@testset "rebuild_views_from_log! tolerates rows with NULL client_id" begin
+    mktempdir() do tmp
+        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+        HimalayaUI.bind_db!(db)
+        exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
+        eid    = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="e1")
+        DBInterface.execute(db, """
+            INSERT INTO user_actions (user_id, action, entity_type, entity_id, payload, client_id)
+            VALUES (NULL, 'noop_test', 'exposure', ?, '{}', NULL)
+        """, [eid])
+        @test_nowarn HimalayaUI.rebuild_views_from_log!(db, Int(eid))
+    end
+end
+
 @testset "migrate_r4_rebase_entity_type! rewrites legacy peak/index entity_type rows" begin
     mktempdir() do dir
         db = HimalayaUI.open_db(joinpath(dir, "h.db"))
