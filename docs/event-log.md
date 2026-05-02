@@ -38,7 +38,7 @@ round-trip test in `test_events.jl`.
 
 ### Event kinds today
 
-View-producing (route through `apply_event!`):
+**View-producing — route through `apply_event!`, dispatcher writes a view row:**
 
 | Kind | Dispatcher action |
 |---|---|
@@ -48,15 +48,16 @@ View-producing (route through `apply_event!`):
 | `index_confirmed` | `INSERT OR IGNORE INTO index_group_members(group_id, index_id)` |
 | `index_unconfirmed` | `DELETE FROM index_group_members WHERE group_id=… AND index_id=…` |
 
-Logged but no view update (use `log_action!`):
+**Route through `apply_event!` for entity-type discipline, but no view write:**
+`peak_removed`, `speculative_created`, `speculative_deleted`. Using
+`apply_event!` (with `entity_type='exposure'`) keeps these visible to
+`idx_events_by_exposure` so per-exposure folds find them; the dispatcher
+returns `nothing` for these kinds.
 
+**Pure log events — use `log_action!`** (no view side effect, no
+broadcast routing through the dispatcher):
 `set_status`, `add_tag`, `remove_tag`, `add_message`, `update_sample`,
-`update_experiment`, `analyze`, `reingest`, `analyze_run`,
-`peak_removed`, `speculative_created`, `speculative_deleted`.
-
-`peak_removed` / `speculative_*` go through `apply_event!` for entity-type
-discipline (so `idx_events_by_exposure` works) but produce no view write
-— the dispatcher returns `nothing` for these.
+`update_experiment`, `analyze`, `reingest`, `analyze_run`.
 
 ### Payload contract
 
@@ -179,6 +180,12 @@ commits. Implications:
    two browser tabs sharing the same `X-Username` (same lab user) both
    filter their own echoes — by design; lab users with two tabs are
    collaborating with themselves, not racing.
+   **Cost of the policy:** if Alice has tab A and tab B both signed in
+   as `alice`, an edit in tab A will *not* refetch in tab B. Tab B sees
+   stale data until something else triggers a refetch (window focus,
+   manual reload, navigation). For real multi-tab Alice scenarios,
+   distinguish per-tab usernames (`alice-laptop`, `alice-desktop`) or
+   accept the staleness window.
 3. Skip if `entity_type !== "exposure"` (defensive — only exposure
    events update view caches today).
 4. Invalidate `peaks(id)`, `indices(id)`, `groups(id)`, `exposure(id)`

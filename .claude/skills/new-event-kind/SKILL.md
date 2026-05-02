@@ -83,6 +83,22 @@ new_id = result.view_row_id  # never re-query by content
 
 If the route does multiple writes that must be atomic (e.g. speculative create + delete), wrap the whole block in `SQLite.transaction(db) do ... end` — `apply_event!`'s inner transaction nests safely under SQLite.jl's savepoint semantics.
 
+**`--undoes` wiring.** If this kind undoes a prior event (e.g. `peak_unexcluded` undoes `peak_excluded`), resolve the prior event's id at the route layer and pass it as `undoes_event_id`. Pattern from `routes_peaks.jl:158`:
+
+```julia
+# Find the matching prior event (e.g. by exposure + payload q within tolerance)
+undoes = find_prior_event_id(db, exposure_id, prior_kind, q)
+
+apply_event!(db, req;
+    kind            = "<your-kind>",
+    entity_type     = "exposure",
+    entity_id       = exposure_id,
+    payload         = Dict(:q => q),
+    undoes_event_id = undoes)  # may be nothing if not resolvable
+```
+
+The dispatcher branch for an undo-kind is typically a DELETE — see `peak_unexcluded` in `events.jl` for the canonical shape.
+
 ### 6. Add a `rebuild_views_from_log!` round-trip test (skip if `--no-view`)
 
 In `packages/HimalayaUI/test/test_events.jl`, mirror the existing `peak_added` + `peak_excluded` test pattern. The property: starting from empty views, applying every event in order produces the same state as live `apply_event!` did.
@@ -124,7 +140,7 @@ If the new kind is on a different entity type (`"sample"`, `"experiment"`), `han
 # Backend
 julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.test("HimalayaUI")'
 # Or just the affected files (with sysimage):
-julia --sysimage scratch/himalaya.so --project=packages/HimalayaUI -e 'using Test, HimalayaUI; include("packages/HimalayaUI/test/test_events.jl"); include("packages/HimalayaUI/test/test_routes_<resource>.jl")'
+julia --sysimage build/himalaya.so --project=packages/HimalayaUI -e 'using Test, HimalayaUI; include("packages/HimalayaUI/test/test_events.jl"); include("packages/HimalayaUI/test/test_routes_<resource>.jl")'
 
 # Frontend
 (cd packages/HimalayaUI/frontend && npm test -- sse.test.tsx)
