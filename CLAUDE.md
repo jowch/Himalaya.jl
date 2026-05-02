@@ -193,6 +193,8 @@ julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
 
 **Image route uses `Cache-Control: no-store`** (`routes_exposures.jl`). Combined with `cache: "no-store"` on the frontend `fetch()`, this stops the browser from serving stale PNGs across analysis re-runs. Don't change to a longer max-age without invalidation tied to exposure id + analysis version.
 
+**`exposures.selected` is sample-scoped LWW.** `PATCH /api/exposures/:id/select` clears `selected = 0` across all exposures in the sample, then sets one. Under multiplayer this is intentional — concurrent selects produce a single resolved value. Don't add If-Match to this route.
+
 **`Himalaya` core resolution in worktrees:** `packages/HimalayaUI/Manifest.toml` pins `Himalaya = "c5c84187..." path = "../.."` to the local v0.5.0. `Manifest.toml` is gitignored, so fresh worktrees re-resolve against the registry and pull the older published v0.4.5 (which has a different `findpeaks` signature). After `git worktree add`, copy `Manifest.toml` from main before running `Pkg.test`.
 
 ## HimalayaUI frontend gotchas

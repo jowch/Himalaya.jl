@@ -92,6 +92,11 @@ function register_exposures_routes!()
             JSON3.write(Dict(:id => id, :status => status)))
     end
 
+    # `selected` is sample-scoped client state — exactly one exposure per sample is
+    # marked selected at a time. Under multiplayer this is intentionally LWW: if Alice
+    # and Bob click different exposures within the same sample, the later click wins
+    # and SSE broadcasts the resulting state. This route does NOT participate in
+    # If-Match conflict resolution (see specs/2026-05-01-multiplayer-instrumentation-design.md).
     @patch "/api/exposures/{id}/select" function(req::HTTP.Request, id::Int)
         db   = current_db()
         rows = Tables.rowtable(DBInterface.execute(db,
