@@ -355,32 +355,29 @@ function migrate_r2_widen_index_peaks_pk!(db::SQLite.DB)
 
     DBInterface.execute(db, "PRAGMA foreign_keys = OFF")
     try
-        DBInterface.execute(db, "BEGIN TRANSACTION")
-        DBInterface.execute(db, "ALTER TABLE index_peaks RENAME TO _index_peaks_old")
-        # Re-create with the new shape (matches SCHEMA above).
-        DBInterface.execute(db, """
-            CREATE TABLE index_peaks (
-                index_id       INTEGER REFERENCES indices(id),
-                peak_id        INTEGER NOT NULL,
-                peak_kind      TEXT NOT NULL DEFAULT 'auto'
-                               CHECK (peak_kind IN ('auto', 'curation')),
-                ratio_position INTEGER,
-                residual       REAL,
-                PRIMARY KEY (index_id, peak_id, peak_kind)
-            )
-        """)
-        # Old rows are all 'auto' (this runs before migrate_r2_split_peaks!,
-        # which is responsible for repointing manual-peak refs).
-        DBInterface.execute(db, """
-            INSERT INTO index_peaks (index_id, peak_id, peak_kind, ratio_position, residual)
-            SELECT index_id, peak_id, 'auto', ratio_position, residual
-            FROM _index_peaks_old
-        """)
-        DBInterface.execute(db, "DROP TABLE _index_peaks_old")
-        DBInterface.execute(db, "COMMIT TRANSACTION")
-    catch e
-        try DBInterface.execute(db, "ROLLBACK TRANSACTION") catch; end
-        rethrow()
+        SQLite.transaction(db) do
+            DBInterface.execute(db, "ALTER TABLE index_peaks RENAME TO _index_peaks_old")
+            # Re-create with the new shape (matches SCHEMA above).
+            DBInterface.execute(db, """
+                CREATE TABLE index_peaks (
+                    index_id       INTEGER REFERENCES indices(id),
+                    peak_id        INTEGER NOT NULL,
+                    peak_kind      TEXT NOT NULL DEFAULT 'auto'
+                                   CHECK (peak_kind IN ('auto', 'curation')),
+                    ratio_position INTEGER,
+                    residual       REAL,
+                    PRIMARY KEY (index_id, peak_id, peak_kind)
+                )
+            """)
+            # Old rows are all 'auto' (this runs before migrate_r2_split_peaks!,
+            # which is responsible for repointing manual-peak refs).
+            DBInterface.execute(db, """
+                INSERT INTO index_peaks (index_id, peak_id, peak_kind, ratio_position, residual)
+                SELECT index_id, peak_id, 'auto', ratio_position, residual
+                FROM _index_peaks_old
+            """)
+            DBInterface.execute(db, "DROP TABLE _index_peaks_old")
+        end
     finally
         DBInterface.execute(db, "PRAGMA foreign_keys = ON")
     end
@@ -431,94 +428,90 @@ function migrate_r2_split_peaks!(db::SQLite.DB)
 
     DBInterface.execute(db, "PRAGMA foreign_keys = OFF")
     try
-        DBInterface.execute(db, "BEGIN TRANSACTION")
-        # Ensure destination tables exist (true pre-R2.1 DBs won't have them).
-        DBInterface.execute(db, """
-            CREATE TABLE IF NOT EXISTS auto_peaks (
-                id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                exposure_id     INTEGER REFERENCES exposures(id),
-                q               REAL NOT NULL,
-                intensity       REAL,
-                prominence      REAL,
-                sharpness       REAL,
-                findpeaks_index INTEGER
-            )
-        """)
-        DBInterface.execute(db, """
-            CREATE TABLE IF NOT EXISTS peak_curations (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                exposure_id INTEGER REFERENCES exposures(id),
-                kind        TEXT NOT NULL CHECK (kind IN ('exclude', 'add')),
-                q           REAL NOT NULL,
-                created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
-                created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
+        SQLite.transaction(db) do
+            # Ensure destination tables exist (true pre-R2.1 DBs won't have them).
+            DBInterface.execute(db, """
+                CREATE TABLE IF NOT EXISTS auto_peaks (
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    exposure_id     INTEGER REFERENCES exposures(id),
+                    q               REAL NOT NULL,
+                    intensity       REAL,
+                    prominence      REAL,
+                    sharpness       REAL,
+                    findpeaks_index INTEGER
+                )
+            """)
+            DBInterface.execute(db, """
+                CREATE TABLE IF NOT EXISTS peak_curations (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    exposure_id INTEGER REFERENCES exposures(id),
+                    kind        TEXT NOT NULL CHECK (kind IN ('exclude', 'add')),
+                    q           REAL NOT NULL,
+                    created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
 
-        # 1. Auto peaks: id preserved (peaks PK was AUTOINCREMENT).
-        # findpeaks_index left NULL for legacy rows — synthesize_peaks_result
-        # falls back to argmin lookup when NULL; the next analyze run that
-        # invokes diff_update_auto_peaks! will populate it.
-        DBInterface.execute(db, """
-            INSERT INTO auto_peaks (id, exposure_id, q, intensity, prominence, sharpness, findpeaks_index)
-            SELECT id, exposure_id, q, intensity, prominence, sharpness, NULL
-            FROM peaks WHERE source = 'auto'
-        """)
+            # 1. Auto peaks: id preserved (peaks PK was AUTOINCREMENT).
+            # findpeaks_index left NULL for legacy rows — synthesize_peaks_result
+            # falls back to argmin lookup when NULL; the next analyze run that
+            # invokes diff_update_auto_peaks! will populate it.
+            DBInterface.execute(db, """
+                INSERT INTO auto_peaks (id, exposure_id, q, intensity, prominence, sharpness, findpeaks_index)
+                SELECT id, exposure_id, q, intensity, prominence, sharpness, NULL
+                FROM peaks WHERE source = 'auto'
+            """)
 
-        # 2. Exclusion curations: q-value is the binding key.
-        DBInterface.execute(db, """
-            INSERT INTO peak_curations (exposure_id, kind, q, created_by)
-            SELECT exposure_id, 'exclude', q, NULL
-            FROM peaks WHERE source = 'auto' AND excluded = 1
-        """)
+            # 2. Exclusion curations: q-value is the binding key.
+            DBInterface.execute(db, """
+                INSERT INTO peak_curations (exposure_id, kind, q, created_by)
+                SELECT exposure_id, 'exclude', q, NULL
+                FROM peaks WHERE source = 'auto' AND excluded = 1
+            """)
 
-        # 3. Addition curations: row-by-row to capture old→new id mapping.
-        manual_rows = Tables.rowtable(DBInterface.execute(db,
-            "SELECT id, exposure_id, q FROM peaks WHERE source = 'manual'"))
-        old_to_new = Dict{Int, Int}()
-        for r in manual_rows
-            res = DBInterface.execute(db,
-                """INSERT INTO peak_curations (exposure_id, kind, q, created_by)
-                   VALUES (?, 'add', ?, NULL)""",
-                [Int(r.exposure_id), Float64(r.q)])
-            new_id = Int(DBInterface.lastrowid(res))
-            old_to_new[Int(r.id)] = new_id
+            # 3. Addition curations: row-by-row to capture old→new id mapping.
+            manual_rows = Tables.rowtable(DBInterface.execute(db,
+                "SELECT id, exposure_id, q FROM peaks WHERE source = 'manual'"))
+            old_to_new = Dict{Int, Int}()
+            for r in manual_rows
+                res = DBInterface.execute(db,
+                    """INSERT INTO peak_curations (exposure_id, kind, q, created_by)
+                       VALUES (?, 'add', ?, NULL)""",
+                    [Int(r.exposure_id), Float64(r.q)])
+                new_id = Int(DBInterface.lastrowid(res))
+                old_to_new[Int(r.id)] = new_id
+            end
+
+            # 4. Repoint index_peaks rows whose peak_id was a manual peak.
+            for (old_id, new_id) in old_to_new
+                DBInterface.execute(db,
+                    """UPDATE index_peaks SET peak_id = ?, peak_kind = 'curation'
+                       WHERE peak_id = ?""",
+                    [new_id, old_id])
+            end
+
+            # 5. Verify no orphan index_peaks rows remain (auto refs survive,
+            #    manual refs were just repointed). Any remaining row whose
+            #    peak_id doesn't resolve in either table is a bug.
+            orphans = Tables.rowtable(DBInterface.execute(db, """
+                SELECT ip.peak_id, ip.peak_kind, ip.index_id
+                FROM index_peaks ip
+                WHERE (ip.peak_kind = 'auto'     AND ip.peak_id NOT IN (SELECT id FROM auto_peaks))
+                   OR (ip.peak_kind = 'curation' AND ip.peak_id NOT IN (SELECT id FROM peak_curations))
+            """))
+            if !isempty(orphans)
+                error("migrate_r2_split_peaks!: $(length(orphans)) orphaned index_peaks " *
+                      "rows after repoint — operator intervention required")
+            end
+
+            # 6. Mark all indices stale so the next analyze recomputes basis/score
+            #    under the new effective_peaks model.
+            DBInterface.execute(db, "UPDATE indices SET status = 'stale'")
+
+            # 7. Drop the old peaks table — fully decomposed and repointed.
+            DBInterface.execute(db, "DROP TABLE peaks")
         end
-
-        # 4. Repoint index_peaks rows whose peak_id was a manual peak.
-        for (old_id, new_id) in old_to_new
-            DBInterface.execute(db,
-                """UPDATE index_peaks SET peak_id = ?, peak_kind = 'curation'
-                   WHERE peak_id = ?""",
-                [new_id, old_id])
-        end
-
-        # 5. Verify no orphan index_peaks rows remain (auto refs survive,
-        #    manual refs were just repointed). Any remaining row whose
-        #    peak_id doesn't resolve in either table is a bug.
-        orphans = Tables.rowtable(DBInterface.execute(db, """
-            SELECT ip.peak_id, ip.peak_kind, ip.index_id
-            FROM index_peaks ip
-            WHERE (ip.peak_kind = 'auto'     AND ip.peak_id NOT IN (SELECT id FROM auto_peaks))
-               OR (ip.peak_kind = 'curation' AND ip.peak_id NOT IN (SELECT id FROM peak_curations))
-        """))
-        if !isempty(orphans)
-            DBInterface.execute(db, "ROLLBACK TRANSACTION")
-            error("migrate_r2_split_peaks!: $(length(orphans)) orphaned index_peaks " *
-                  "rows after repoint — operator intervention required")
-        end
-
-        # 6. Mark all indices stale so the next analyze recomputes basis/score
-        #    under the new effective_peaks model.
-        DBInterface.execute(db, "UPDATE indices SET status = 'stale'")
-
-        # 7. Drop the old peaks table — fully decomposed and repointed.
-        DBInterface.execute(db, "DROP TABLE peaks")
-        DBInterface.execute(db, "COMMIT TRANSACTION")
         @info "migrate_r2_split_peaks! complete"
-    catch e
-        try DBInterface.execute(db, "ROLLBACK TRANSACTION") catch; end
-        rethrow()
     finally
         DBInterface.execute(db, "PRAGMA foreign_keys = ON")
     end
