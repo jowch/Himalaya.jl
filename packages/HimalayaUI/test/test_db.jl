@@ -12,11 +12,13 @@ using HimalayaUI: create_schema!, migrate_schema!, create_experiment!, create_sa
 
     for t in ["users", "experiments", "samples", "sample_tags",
               "exposures", "exposure_sources", "exposure_tags",
-              "peaks", "indices", "index_peaks",
+              "indices", "index_peaks",
               "auto_peaks", "peak_curations",
               "index_groups", "index_group_members", "user_actions"]
         @test t in tables
     end
+    # peaks is removed from SCHEMA in R2.2 — fresh DBs must NOT have it
+    @test "peaks" ∉ tables
 end
 
 @testset "exposures schema migration" begin
@@ -144,19 +146,18 @@ end
     end
 end
 
-@testset "migrate_r2_split_peaks! on fresh DB is no-op" begin
+@testset "migrate_r2_split_peaks! on fresh R2.2 DB is no-op" begin
     mktempdir() do dir
         db = HimalayaUI.open_db(joinpath(dir, "h.db"))
-        # On a fresh R2.1 DB, `peaks` exists in the schema but has never been
-        # written to (sqlite_sequence has no entry for it). The migration should
-        # return early and leave the DB unchanged.
+        # On a fresh R2.2 DB, `peaks` does not exist in the schema. The migration
+        # sentinel (peaks_exists check) should return early immediately.
         auto_before = Tables.rowtable(DBInterface.execute(db, "SELECT COUNT(*) AS n FROM auto_peaks"))[1].n
         HimalayaUI.migrate_r2_split_peaks!(db)
         auto_after = Tables.rowtable(DBInterface.execute(db, "SELECT COUNT(*) AS n FROM auto_peaks"))[1].n
         # Nothing changed (still a no-op).
         @test Int(auto_before) == Int(auto_after)
-        # peaks still exists (not dropped — no migration ran).
-        @test !isempty(Tables.rowtable(DBInterface.execute(db,
+        # peaks does not exist on R2.2+ fresh DBs.
+        @test isempty(Tables.rowtable(DBInterface.execute(db,
             "SELECT 1 FROM sqlite_master WHERE name = 'peaks'")))
     end
 end
@@ -166,13 +167,13 @@ end
         db_path = joinpath(dir, "h.db")
         db = HimalayaUI.open_db(db_path)
         # Simulate a pre-R2.1 legacy DB by: dropping the new R2.1 tables,
-        # dropping the current peaks table, and re-creating it as a plain
-        # legacy peaks table with data (data makes sqlite_sequence aware of it,
-        # which is how the migration sentinel detects "this is a legacy DB
-        # that was actually used, not a fresh R2.1 DB").
+        # and creating a legacy `peaks` table with data (data makes sqlite_sequence
+        # aware of it, which is how the migration sentinel detects "this is a
+        # legacy DB that was actually used, not a fresh R2.1 DB").
+        # Note: after R2.2, `peaks` is not in SCHEMA so it doesn't exist on
+        # fresh DBs — no need to drop it; just drop the R2.1 destination tables.
         DBInterface.execute(db, "DROP TABLE auto_peaks")
         DBInterface.execute(db, "DROP TABLE peak_curations")
-        DBInterface.execute(db, "DROP TABLE peaks")
         DBInterface.execute(db, """
             CREATE TABLE peaks (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -224,11 +225,11 @@ end
         db_path = joinpath(dir, "h.db")
         db = HimalayaUI.open_db(db_path)
         # Construct legacy schema by hand and seed with a speculative
-        # referencing a manual peak. Drop the R2.1 tables and the current
-        # peaks table, then re-create peaks as a legacy table.
+        # referencing a manual peak. Drop the R2.1 destination tables and
+        # create a legacy `peaks` table (after R2.2, peaks is not in SCHEMA
+        # so it doesn't exist on fresh DBs).
         DBInterface.execute(db, "DROP TABLE auto_peaks")
         DBInterface.execute(db, "DROP TABLE peak_curations")
-        DBInterface.execute(db, "DROP TABLE peaks")
         DBInterface.execute(db, """
             CREATE TABLE peaks (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,

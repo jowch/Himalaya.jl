@@ -40,7 +40,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test body.analyzed == 1
 
         peak_count = Tables.rowtable(DBInterface.execute(db,
-            "SELECT COUNT(*) AS c FROM peaks"))[1].c
+            "SELECT COUNT(*) AS c FROM auto_peaks"))[1].c
         @test peak_count > 0
 
         # q_units present in response (default A-1 when not set in config; UI prettifies)

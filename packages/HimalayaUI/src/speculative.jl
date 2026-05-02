@@ -141,6 +141,27 @@ function build_speculative_index(peak_rows, phase::Type{P},
 end
 
 """
+    _kind_for(db, exposure_id, peak_id) -> String
+
+Determine whether `peak_id` references an `auto_peaks` row or a
+`peak_curations(kind='add')` row for the given exposure.
+Returns `"auto"` or `"curation"`. Errors if not found in either table.
+"""
+function _kind_for(db::SQLite.DB, exposure_id::Int, peak_id::Int)
+    if !isempty(Tables.rowtable(DBInterface.execute(db,
+        "SELECT 1 FROM auto_peaks WHERE id = ? AND exposure_id = ?",
+        [peak_id, exposure_id])))
+        return "auto"
+    elseif !isempty(Tables.rowtable(DBInterface.execute(db,
+        "SELECT 1 FROM peak_curations WHERE id = ? AND exposure_id = ? AND kind = 'add'",
+        [peak_id, exposure_id])))
+        return "curation"
+    else
+        error("peak_id $peak_id not found in auto_peaks or peak_curations for exposure $exposure_id")
+    end
+end
+
+"""
     insert_speculative_index!(db, exposure_id, phase, ratio_to_peak_id)
         -> Int (new index id)
 
@@ -152,9 +173,21 @@ group — the caller is responsible for active-group membership.
 function insert_speculative_index!(db::SQLite.DB, exposure_id::Int,
                                     phase::Type{P},
                                     ratio_to_peak_id::Dict{Int,Int}) where {P<:Himalaya.Phase}
-    peak_rows = Tables.rowtable(DBInterface.execute(db,
-        "SELECT id, q, sharpness FROM peaks WHERE exposure_id = ? AND excluded = 0",
-        [exposure_id]))
+    # Build effective peak rows: non-excluded auto peaks + curation adds.
+    peak_rows = Tables.rowtable(DBInterface.execute(db, """
+        SELECT a.id, a.q, a.sharpness
+        FROM auto_peaks a
+        WHERE a.exposure_id = ?
+          AND NOT EXISTS (
+              SELECT 1 FROM peak_curations c
+              WHERE c.exposure_id = a.exposure_id AND c.kind = 'exclude'
+                AND ABS(c.q - a.q) <= MAX(1e-6, ABS(a.q) * 0.001)
+          )
+        UNION ALL
+        SELECT id, q, NULL AS sharpness
+        FROM peak_curations
+        WHERE exposure_id = ? AND kind = 'add'
+    """, [exposure_id, exposure_id]))
 
     built = build_speculative_index(peak_rows, P, ratio_to_peak_id)
 
@@ -167,10 +200,11 @@ function insert_speculative_index!(db::SQLite.DB, exposure_id::Int,
     new_id = Int(DBInterface.lastrowid(res))
 
     for (rpos, peak_id) in ratio_to_peak_id
+        pk_kind = _kind_for(db, exposure_id, peak_id)
         DBInterface.execute(db,
-            """INSERT INTO index_peaks (index_id, peak_id, ratio_position, residual)
-               VALUES (?, ?, ?, ?)""",
-            [new_id, peak_id, rpos, built.residuals[rpos]])
+            """INSERT INTO index_peaks (index_id, peak_id, peak_kind, ratio_position, residual)
+               VALUES (?, ?, ?, ?, ?)""",
+            [new_id, peak_id, pk_kind, rpos, built.residuals[rpos]])
     end
     new_id
 end

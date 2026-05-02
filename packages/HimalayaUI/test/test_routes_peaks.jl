@@ -54,7 +54,10 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
 
         r = HTTP.get("$base/api/exposures/$e_id/peaks")
         list = JSON3.read(String(r.body))
-        @test !any(p -> p.id == peak_id, list)
+        # After deleting the only manual peak, no manual peaks should remain.
+        # (Note: auto peak ids and curation ids are in separate sequences and
+        #  may collide; check by source rather than by id.)
+        @test !any(p -> p.source == "manual", list)
 
         # 404 delete
         r = HTTP.delete("$base/api/peaks/99999";
@@ -63,7 +66,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
 
         # ── PATCH excluded on auto peaks ─────────────────────────────────
         all_peaks = Tables.rowtable(DBInterface.execute(db,
-            "SELECT id FROM peaks WHERE exposure_id = ? AND source = 'auto' ORDER BY q LIMIT 1",
+            "SELECT id FROM auto_peaks WHERE exposure_id = ? ORDER BY q LIMIT 1",
             [e_id]))
         auto_id = Int(all_peaks[1].id)
 
@@ -118,12 +121,191 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
 
         HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
 
-        # Peak with the same q-value should still be excluded.
-        post_rows = Tables.rowtable(DBInterface.execute(db,
-            "SELECT q, excluded FROM peaks
-             WHERE exposure_id = ? AND source = 'auto'", [e_id]))
-        match = filter(p -> abs(Float64(p.q) - excluded_q) < 1e-6, post_rows)
+        # After reanalysis, the auto peak at the same q still exists in auto_peaks,
+        # and an exclude curation row should still be present for it.
+        # Use the joined view (get_peaks_for_exposure) via GET /api/exposures/:id/peaks.
+        r_after = HTTP.get("$base/api/exposures/$e_id/peaks")
+        post_list = JSON3.read(String(r_after.body))
+        match = filter(p -> abs(Float64(p.q) - excluded_q) < 1e-6, post_list)
         @test !isempty(match)
-        @test Bool(match[1].excluded != 0)
+        @test match[1].excluded == true
+    end
+end
+
+# ── New R2.2 curation-lifecycle testsets ─────────────────────────────────────
+
+@testset "POST /peaks then GET returns manual peak with source='manual'" begin
+    tmp = mktempdir()
+    analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
+    mkpath(analysis_dir)
+    cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
+       joinpath(analysis_dir, "example_tot.dat"))
+    db     = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    exp_id = HimalayaUI.init_experiment!(db; path=tmp,
+        data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
+    s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, label="D1")
+    e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
+    HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
+
+    with_test_server(db) do port, base
+        r = HTTP.post("$base/api/exposures/$e_id/peaks";
+            body = JSON3.write(Dict(:q => 0.77)),
+            headers = ["Content-Type" => "application/json", "X-Username" => "bob"])
+        @test r.status == 201
+        new_id = JSON3.read(String(r.body)).id
+
+        r = HTTP.get("$base/api/exposures/$e_id/peaks")
+        list = JSON3.read(String(r.body))
+        manual = filter(p -> p.source == "manual", list)
+        @test length(manual) == 1
+        @test manual[1].id == new_id
+        @test manual[1].q ≈ 0.77
+        @test manual[1].excluded == false
+    end
+end
+
+@testset "PATCH excluded=true inserts curation; excluded=false removes it" begin
+    tmp = mktempdir()
+    analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
+    mkpath(analysis_dir)
+    cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
+       joinpath(analysis_dir, "example_tot.dat"))
+    db     = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    exp_id = HimalayaUI.init_experiment!(db; path=tmp,
+        data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
+    s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, label="D1")
+    e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
+    HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
+
+    with_test_server(db) do port, base
+        # Pick an auto peak
+        auto_rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id, q FROM auto_peaks WHERE exposure_id = ? ORDER BY q LIMIT 1", [e_id]))
+        auto_id = Int(auto_rows[1].id)
+        auto_q  = Float64(auto_rows[1].q)
+
+        # Exclude it
+        r = HTTP.patch("$base/api/peaks/$auto_id";
+            body = JSON3.write(Dict(:excluded => true)),
+            headers = ["Content-Type" => "application/json", "X-Username" => "alice"])
+        @test r.status == 200
+        @test JSON3.read(String(r.body)).excluded == true
+
+        # Verify a curation row was inserted
+        excl = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM peak_curations WHERE exposure_id = ? AND kind = 'exclude' AND ABS(q - ?) < 1e-6",
+            [e_id, auto_q]))
+        @test length(excl) == 1
+
+        # Un-exclude it
+        r = HTTP.patch("$base/api/peaks/$auto_id";
+            body = JSON3.write(Dict(:excluded => false)),
+            headers = ["Content-Type" => "application/json", "X-Username" => "alice"])
+        @test r.status == 200
+        @test JSON3.read(String(r.body)).excluded == false
+
+        # Curation row should be gone
+        excl2 = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM peak_curations WHERE exposure_id = ? AND kind = 'exclude' AND ABS(q - ?) < 1e-6",
+            [e_id, auto_q]))
+        @test isempty(excl2)
+    end
+end
+
+@testset "PATCH excluded=true is idempotent (no duplicate curation rows)" begin
+    tmp = mktempdir()
+    analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
+    mkpath(analysis_dir)
+    cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
+       joinpath(analysis_dir, "example_tot.dat"))
+    db     = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    exp_id = HimalayaUI.init_experiment!(db; path=tmp,
+        data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
+    s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, label="D1")
+    e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
+    HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
+
+    with_test_server(db) do port, base
+        auto_rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id, q FROM auto_peaks WHERE exposure_id = ? ORDER BY q LIMIT 1", [e_id]))
+        auto_id = Int(auto_rows[1].id)
+        auto_q  = Float64(auto_rows[1].q)
+
+        # Two consecutive PATCH { excluded: true }
+        for _ in 1:2
+            r = HTTP.patch("$base/api/peaks/$auto_id";
+                body = JSON3.write(Dict(:excluded => true)),
+                headers = ["Content-Type" => "application/json", "X-Username" => "alice"])
+            @test r.status == 200
+        end
+
+        # Must have exactly one exclude curation row
+        excl = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM peak_curations WHERE exposure_id = ? AND kind = 'exclude' AND ABS(q - ?) < 1e-6",
+            [e_id, auto_q]))
+        @test length(excl) == 1
+    end
+end
+
+@testset "DELETE manual peak removes curation row; subsequent GET doesn't return it" begin
+    tmp = mktempdir()
+    analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
+    mkpath(analysis_dir)
+    cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
+       joinpath(analysis_dir, "example_tot.dat"))
+    db     = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    exp_id = HimalayaUI.init_experiment!(db; path=tmp,
+        data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
+    s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, label="D1")
+    e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
+    HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
+
+    with_test_server(db) do port, base
+        # Add a manual peak
+        r = HTTP.post("$base/api/exposures/$e_id/peaks";
+            body = JSON3.write(Dict(:q => 0.88)),
+            headers = ["Content-Type" => "application/json", "X-Username" => "carol"])
+        @test r.status == 201
+        manual_id = JSON3.read(String(r.body)).id
+
+        # Delete it
+        r = HTTP.delete("$base/api/peaks/$manual_id";
+            headers = ["X-Username" => "carol"])
+        @test r.status == 204
+
+        # Should no longer appear in GET (no manual peaks)
+        r = HTTP.get("$base/api/exposures/$e_id/peaks")
+        list = JSON3.read(String(r.body))
+        @test !any(p -> p.source == "manual", list)
+
+        # curation row gone
+        cr = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM peak_curations WHERE id = ?", [manual_id]))
+        @test isempty(cr)
+    end
+end
+
+@testset "DELETE auto peak returns 400" begin
+    tmp = mktempdir()
+    analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
+    mkpath(analysis_dir)
+    cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
+       joinpath(analysis_dir, "example_tot.dat"))
+    db     = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    exp_id = HimalayaUI.init_experiment!(db; path=tmp,
+        data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
+    s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, label="D1")
+    e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
+    HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
+
+    with_test_server(db) do port, base
+        auto_rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM auto_peaks WHERE exposure_id = ? ORDER BY q LIMIT 1", [e_id]))
+        auto_id = Int(auto_rows[1].id)
+
+        r = HTTP.delete("$base/api/peaks/$auto_id";
+            headers = ["X-Username" => "alice"],
+            status_exception = false)
+        @test r.status == 400
     end
 end

@@ -63,17 +63,6 @@ CREATE TABLE IF NOT EXISTS exposure_tags (
     source      TEXT DEFAULT 'manual'
 );
 
-CREATE TABLE IF NOT EXISTS peaks (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    exposure_id INTEGER REFERENCES exposures(id),
-    q           REAL NOT NULL,
-    intensity   REAL,
-    prominence  REAL,
-    sharpness   REAL,
-    source      TEXT DEFAULT 'auto',
-    excluded    INTEGER DEFAULT 0
-);
-
 CREATE TABLE IF NOT EXISTS indices (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     exposure_id INTEGER REFERENCES exposures(id),
@@ -240,22 +229,35 @@ DBs that have already been migrated.
 function migrate_pk_to_autoincrement!(db::SQLite.DB)
     tables = ["experiments", "samples", "exposures", "peaks", "indices"]
 
-    # Sentinel: skip iff every table in `tables` already has AUTOINCREMENT.
-    # Checking just one would let a future addition to `tables` (a 6th
-    # mention-target) get silently skipped on already-migrated DBs.
-    # Skip the migration entirely if any table is missing — the migration
-    # loop below assumes all five tables exist (it ALTER-renames each one),
-    # and partial-schema fixtures aren't real production DBs anyway.
+    # Sentinel: skip iff every table in `tables` that EXISTS already has
+    # AUTOINCREMENT. "peaks" may no longer exist in R2.2+ DBs (removed from
+    # SCHEMA); skip it if absent so migrate_pk_to_autoincrement! stays
+    # idempotent on fresh DBs.
     needs_migration = false
     for t in tables
         rows = Tables.rowtable(DBInterface.execute(db,
             "SELECT sql FROM sqlite_master WHERE type='table' AND name=?", [t]))
-        isempty(rows) && return  # one or more tables missing → leave alone
+        isempty(rows) && continue  # table absent (e.g. peaks on R2.2+ DBs) — skip
         if !occursin("AUTOINCREMENT", String(rows[1].sql))
             needs_migration = true
         end
     end
+    # If ALL tables are either absent or already have AUTOINCREMENT, no-op.
     needs_migration || return
+
+    # Only migrate tables that actually exist AND are still in SCHEMA (can be
+    # recreated by create_schema!). `peaks` was removed from SCHEMA in R2.2;
+    # legacy `peaks` rows are handled by migrate_r2_split_peaks! instead.
+    schema_tables = let db_tmp = SQLite.DB()
+        create_schema!(db_tmp)
+        Set(String[String(r.name) for r in Tables.rowtable(DBInterface.execute(db_tmp,
+            "SELECT name FROM sqlite_master WHERE type='table'"))])
+    end
+    tables_to_migrate = filter(t ->
+        !isempty(Tables.rowtable(DBInterface.execute(db,
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", [t]))) &&
+        t in schema_tables,
+        tables)
 
     # FK enforcement must be disabled OUTSIDE a transaction (SQLite docs).
     DBInterface.execute(db, "PRAGMA foreign_keys = OFF")
@@ -271,11 +273,11 @@ function migrate_pk_to_autoincrement!(db::SQLite.DB)
             # call in open_db (which already ran before migrate_schema!) handles
             # non-entity tables — they exist or will be created after this
             # transaction commits when the FK tracking state is clean.
-            for t in tables
+            for t in tables_to_migrate
                 DBInterface.execute(db, "ALTER TABLE $t RENAME TO _migrate_old_$t")
             end
             create_schema!(db)
-            for t in tables
+            for t in tables_to_migrate
                 # Copy only the columns that exist in BOTH the renamed source
                 # and the freshly-created destination — the old table may be
                 # missing columns added by `migrate_schema!`'s ALTER TABLE pass
@@ -401,12 +403,17 @@ function migrate_r2_split_peaks!(db::SQLite.DB)
 
     # Sentinel: distinguish fresh R2.1 DBs (peaks exists but was never written
     # to by the pipeline) from legacy DBs (peaks has data from pre-R2.1 use).
-    # `sqlite_sequence` gets an entry for a table only after its first
-    # AUTOINCREMENT INSERT — so if `peaks` has no entry there, this DB was
-    # freshly created with the new schema and the pipeline hasn't run yet.
+    # Two checks:
+    # (a) sqlite_sequence: AUTOINCREMENT tables get an entry here after first
+    #     INSERT — catches R2.1 DBs where peaks had AUTOINCREMENT.
+    # (b) Direct row count: pre-R2.1 DBs used plain INTEGER PRIMARY KEY (no
+    #     AUTOINCREMENT), so sqlite_sequence has no entry even if rows exist —
+    #     fall back to a COUNT(*) check.
     # Fresh DBs need no migration; peaks will be removed in R2.2.
     peaks_ever_written = !isempty(Tables.rowtable(DBInterface.execute(db,
-        "SELECT 1 FROM sqlite_sequence WHERE name = 'peaks'")))
+        "SELECT 1 FROM sqlite_sequence WHERE name = 'peaks'"))) ||
+        (first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT COUNT(*) AS n FROM peaks"))).n > 0)
     peaks_ever_written || return
 
     # Sentinel: if auto_peaks already has rows, we're partway through —
@@ -453,26 +460,45 @@ function migrate_r2_split_peaks!(db::SQLite.DB)
                 )
             """)
 
+            # Introspect the legacy `peaks` table to handle minimal/partial schemas
+            # (e.g. test DBs that only have id, exposure_id, q).
+            peaks_cols = Set(String.(
+                Tables.rowtable(DBInterface.execute(db, "PRAGMA table_info(peaks)")) .|>
+                r -> r.name))
+            has_source     = "source"     ∈ peaks_cols
+            has_intensity  = "intensity"  ∈ peaks_cols
+            has_prominence = "prominence" ∈ peaks_cols
+            has_sharpness  = "sharpness"  ∈ peaks_cols
+            has_excluded   = "excluded"   ∈ peaks_cols
+
+            intensity_sel  = has_intensity  ? "intensity"  : "NULL"
+            prominence_sel = has_prominence ? "prominence" : "NULL"
+            sharpness_sel  = has_sharpness  ? "sharpness"  : "NULL"
+            auto_where     = has_source     ? "WHERE source = 'auto'" : ""
+            excl_where     = has_source && has_excluded ?
+                "WHERE source = 'auto' AND excluded = 1" : "WHERE 1=0"
+            manual_where   = has_source     ? "WHERE source = 'manual'" : "WHERE 1=0"
+
             # 1. Auto peaks: id preserved (peaks PK was AUTOINCREMENT).
             # findpeaks_index left NULL for legacy rows — synthesize_peaks_result
             # falls back to argmin lookup when NULL; the next analyze run that
             # invokes diff_update_auto_peaks! will populate it.
             DBInterface.execute(db, """
                 INSERT INTO auto_peaks (id, exposure_id, q, intensity, prominence, sharpness, findpeaks_index)
-                SELECT id, exposure_id, q, intensity, prominence, sharpness, NULL
-                FROM peaks WHERE source = 'auto'
+                SELECT id, exposure_id, q, $intensity_sel, $prominence_sel, $sharpness_sel, NULL
+                FROM peaks $auto_where
             """)
 
             # 2. Exclusion curations: q-value is the binding key.
             DBInterface.execute(db, """
                 INSERT INTO peak_curations (exposure_id, kind, q, created_by)
                 SELECT exposure_id, 'exclude', q, NULL
-                FROM peaks WHERE source = 'auto' AND excluded = 1
+                FROM peaks $excl_where
             """)
 
             # 3. Addition curations: row-by-row to capture old→new id mapping.
             manual_rows = Tables.rowtable(DBInterface.execute(db,
-                "SELECT id, exposure_id, q FROM peaks WHERE source = 'manual'"))
+                "SELECT id, exposure_id, q FROM peaks $manual_where"))
             old_to_new = Dict{Int, Int}()
             for r in manual_rows
                 res = DBInterface.execute(db,

@@ -23,7 +23,7 @@ end
 using HimalayaUI: create_schema!, create_experiment!, create_sample!,
                   create_exposure!, persist_analysis!, get_peaks_for_exposure,
                   get_indices_for_exposure, get_groups_for_exposure,
-                  load_dat, auto_group
+                  load_dat, auto_group, effective_peaks, diff_update_auto_peaks!
 using Himalaya: findpeaks, indexpeaks
 using SQLite
 
@@ -38,10 +38,15 @@ using SQLite
     dat_path = joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat")
     q, I, σ  = load_dat(dat_path)
     peaks_result  = findpeaks(q, I, σ)
-    candidates    = indexpeaks(peaks_result.q, peaks_result.sharpness)
+
+    # Prime auto_peaks so effective_peaks can query them
+    diff_update_auto_peaks!(db, e_id, peaks_result, I)
+
+    eff           = effective_peaks(db, e_id, q, I)
+    candidates    = indexpeaks(eff.q, eff.sharpness)
     group_indices = auto_group(candidates)
 
-    persist_analysis!(db, e_id, q, I, peaks_result, candidates, group_indices)
+    persist_analysis!(db, e_id, q, I, peaks_result, candidates, group_indices, eff)
 
     stored_peaks   = get_peaks_for_exposure(db, e_id)
     stored_indices = get_indices_for_exposure(db, e_id)
@@ -114,11 +119,10 @@ using Tables
     @test !isempty(snap_before)
     snap_phases_before = sort(String[String(r.phase) for r in snap_before])
 
-    # Mutate peaks (simulate the user adding a manual peak), then re-analyze.
+    # Mutate peaks (simulate the user adding a manual peak via curation), then re-analyze.
     DBInterface.execute(db,
-        "INSERT INTO peaks (exposure_id, q, intensity, prominence, sharpness, source, excluded)
-         VALUES (?, ?, ?, ?, ?, 'manual', 0)",
-        [e_id, 0.123, 1.0, 0.5, 0.5])
+        "INSERT INTO peak_curations (exposure_id, kind, q) VALUES (?, 'add', ?)",
+        [e_id, 0.123])
     analyze_exposure!(db, e_id, analysis_dir)
 
     # The custom group's members should still be populated, with at least one
@@ -194,15 +198,16 @@ end
     target_q = Float64(ix_row.basis) * sqrt(2.0)
 
     res = DBInterface.execute(db,
-        "INSERT INTO peaks (exposure_id, q, source) VALUES (?, ?, 'manual')",
+        "INSERT INTO peak_curations (exposure_id, kind, q) VALUES (?, 'add', ?)",
         [e_id, target_q])
     manual_peak_id = Int(DBInterface.lastrowid(res))
 
     analyze_exposure!(db, e_id, analysis_dir)
 
     # The manual peak should appear in at least one index's `index_peaks` rows.
+    # Curation-add peaks are referenced with peak_kind='curation'.
     n_uses = first(Tables.rowtable(DBInterface.execute(db,
-        "SELECT COUNT(*) AS c FROM index_peaks WHERE peak_id = ?",
+        "SELECT COUNT(*) AS c FROM index_peaks WHERE peak_id = ? AND peak_kind = 'curation'",
         [manual_peak_id]))).c
     @test n_uses > 0
 end
@@ -256,33 +261,37 @@ end
 
     # Pick an auto peak that's currently bound to ≥ 1 candidate index.
     bound_rows = Tables.rowtable(DBInterface.execute(db, """
-        SELECT p.id, p.q FROM peaks p
-        JOIN index_peaks ip ON ip.peak_id = p.id
-        WHERE p.exposure_id = ? AND p.source = 'auto'
-        GROUP BY p.id HAVING COUNT(*) >= 1
+        SELECT ap.id, ap.q FROM auto_peaks ap
+        JOIN index_peaks ip ON ip.peak_id = ap.id AND ip.peak_kind = 'auto'
+        WHERE ap.exposure_id = ?
+        GROUP BY ap.id HAVING COUNT(*) >= 1
         ORDER BY COUNT(*) DESC LIMIT 1
         """, [e_id]))
     @test !isempty(bound_rows)
     target_pid = Int(bound_rows[1].id)
     target_q   = Float64(bound_rows[1].q)
 
+    # Exclude the auto peak via a curation row (new schema).
     DBInterface.execute(db,
-        "UPDATE peaks SET excluded = 1 WHERE id = ?", [target_pid])
+        "INSERT INTO peak_curations (exposure_id, kind, q) VALUES (?, 'exclude', ?)",
+        [e_id, target_q])
     analyze_exposure!(db, e_id, analysis_dir)
 
-    # After reanalysis the same q is still detected (auto peaks are
-    # re-found by findpeaks) and `diff_update_auto_peaks!` UPDATEs the row
-    # in place — preserving the `excluded` flag because the column isn't
-    # touched by the UPDATE. No candidate references the peak, because we
-    # filter excluded q's before calling indexpeaks.
+    # After reanalysis the same q is still in auto_peaks (re-found by findpeaks).
+    # An exclude curation still exists for it — so effective_peaks omits it
+    # from the indexpeaks input. No candidate should reference the peak.
     same_q = Tables.rowtable(DBInterface.execute(db,
-        "SELECT id, excluded FROM peaks WHERE exposure_id = ? AND ABS(q - ?) < 1e-9",
+        "SELECT id FROM auto_peaks WHERE exposure_id = ? AND ABS(q - ?) < 1e-9",
         [e_id, target_q]))
     @test !isempty(same_q)
-    @test Int(same_q[1].excluded) == 1
     new_pid = Int(same_q[1].id)
+    # exclude curation still present
+    excl_rows = Tables.rowtable(DBInterface.execute(db,
+        "SELECT id FROM peak_curations WHERE exposure_id = ? AND kind = 'exclude' AND ABS(q - ?) < 1e-9",
+        [e_id, target_q]))
+    @test !isempty(excl_rows)
     n_uses = first(Tables.rowtable(DBInterface.execute(db,
-        "SELECT COUNT(*) AS c FROM index_peaks WHERE peak_id = ?",
+        "SELECT COUNT(*) AS c FROM index_peaks WHERE peak_id = ? AND peak_kind = 'auto'",
         [new_pid]))).c
     @test n_uses == 0
 end
@@ -394,7 +403,7 @@ end
 
         # Confirm peaks were persisted (i.e. the pattern resolved correctly and the file was loaded)
         peaks = Tables.rowtable(DBInterface.execute(db,
-            "SELECT id FROM peaks WHERE exposure_id = ?", [e_id]))
+            "SELECT id FROM auto_peaks WHERE exposure_id = ?", [e_id]))
         @test length(peaks) >= 0   # Just need analyze_exposure! not to throw
     end
 end
