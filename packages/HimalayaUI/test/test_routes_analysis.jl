@@ -86,12 +86,21 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
             @test extra_candidate in cust_g.members
         end
 
-        # Reset groups and re-run analyze for a clean DELETE test
+        # Reset groups, indices, and hashes, then re-run analyze for a clean DELETE test.
+        # Must also delete indices (and clear analysis_inputs_hash) so the hash guard
+        # in analyze_exposure! treats this as a fresh run rather than a no-op.
         DBInterface.execute(db,
             "DELETE FROM index_group_members WHERE group_id IN
              (SELECT id FROM index_groups WHERE exposure_id = ?)", [e_id])
         DBInterface.execute(db,
             "DELETE FROM index_groups WHERE exposure_id = ?", [e_id])
+        DBInterface.execute(db, """
+            DELETE FROM index_peaks WHERE index_id IN
+              (SELECT id FROM indices WHERE exposure_id = ?)""", [e_id])
+        DBInterface.execute(db,
+            "DELETE FROM indices WHERE exposure_id = ?", [e_id])
+        DBInterface.execute(db,
+            "UPDATE exposures SET analysis_inputs_hash = NULL WHERE id = ?", [e_id])
         HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
 
         r = HTTP.get("$base/api/exposures/$e_id/groups")

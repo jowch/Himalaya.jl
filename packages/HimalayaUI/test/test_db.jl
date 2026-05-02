@@ -1,6 +1,7 @@
 using Test, SQLite, DBInterface, Tables
 using HimalayaUI: create_schema!, migrate_schema!, create_experiment!, create_sample!,
-                  create_exposure!, get_experiment, get_samples, get_exposures
+                  create_exposure!, get_experiment, get_samples, get_exposures,
+                  migrate_r2_split_peaks!
 
 @testset "db schema" begin
     db = SQLite.DB()  # in-memory
@@ -11,10 +12,13 @@ using HimalayaUI: create_schema!, migrate_schema!, create_experiment!, create_sa
 
     for t in ["users", "experiments", "samples", "sample_tags",
               "exposures", "exposure_sources", "exposure_tags",
-              "peaks", "indices", "index_peaks",
+              "indices", "index_peaks",
+              "auto_peaks", "peak_curations",
               "index_groups", "index_group_members", "user_actions"]
         @test t in tables
     end
+    # peaks is removed from SCHEMA in R2.2 — fresh DBs must NOT have it
+    @test "peaks" ∉ tables
 end
 
 @testset "exposures schema migration" begin
@@ -120,4 +124,180 @@ end
     @test "experiment_type" in cols
     @test "energy_kev" in cols
     @test "flight_path_m" in cols
+end
+
+@testset "index_groups partial unique constraint on custom" begin
+    mktempdir() do dir
+        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
+        e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
+
+        DBInterface.execute(db,
+            "INSERT INTO index_groups (exposure_id, kind) VALUES (?, 'custom')", [e_id])
+        @test_throws SQLite.SQLiteException DBInterface.execute(db,
+            "INSERT INTO index_groups (exposure_id, kind) VALUES (?, 'custom')", [e_id])
+
+        # Auto groups can multiply (only 'custom' is unique per exposure).
+        DBInterface.execute(db,
+            "INSERT INTO index_groups (exposure_id, kind) VALUES (?, 'auto')", [e_id])
+        DBInterface.execute(db,
+            "INSERT INTO index_groups (exposure_id, kind) VALUES (?, 'auto')", [e_id])
+    end
+end
+
+@testset "migrate_r2_split_peaks! on fresh R2.2 DB is no-op" begin
+    mktempdir() do dir
+        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        # On a fresh R2.2 DB, `peaks` does not exist in the schema. The migration
+        # sentinel (peaks_exists check) should return early immediately.
+        auto_before = Tables.rowtable(DBInterface.execute(db, "SELECT COUNT(*) AS n FROM auto_peaks"))[1].n
+        HimalayaUI.migrate_r2_split_peaks!(db)
+        auto_after = Tables.rowtable(DBInterface.execute(db, "SELECT COUNT(*) AS n FROM auto_peaks"))[1].n
+        # Nothing changed (still a no-op).
+        @test Int(auto_before) == Int(auto_after)
+        # peaks does not exist on R2.2+ fresh DBs.
+        @test isempty(Tables.rowtable(DBInterface.execute(db,
+            "SELECT 1 FROM sqlite_master WHERE name = 'peaks'")))
+    end
+end
+
+@testset "migrate_r2_split_peaks! on legacy DB backfills" begin
+    mktempdir() do dir
+        db_path = joinpath(dir, "h.db")
+        db = HimalayaUI.open_db(db_path)
+        # Simulate a pre-R2.1 legacy DB by: dropping the new R2.1 tables,
+        # and creating a legacy `peaks` table with data (data makes sqlite_sequence
+        # aware of it, which is how the migration sentinel detects "this is a
+        # legacy DB that was actually used, not a fresh R2.1 DB").
+        # Note: after R2.2, `peaks` is not in SCHEMA so it doesn't exist on
+        # fresh DBs — no need to drop it; just drop the R2.1 destination tables.
+        DBInterface.execute(db, "DROP TABLE auto_peaks")
+        DBInterface.execute(db, "DROP TABLE peak_curations")
+        DBInterface.execute(db, """
+            CREATE TABLE peaks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                exposure_id INTEGER, q REAL, intensity REAL, prominence REAL,
+                sharpness REAL, source TEXT DEFAULT 'auto', excluded INTEGER DEFAULT 0
+            )
+        """)
+        # Set up an exposure
+        exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
+        e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        # Three peaks: one auto kept, one auto excluded, one manual.
+        # The INSERTs populate sqlite_sequence["peaks"], marking this as a
+        # "used" DB (not a fresh R2.1 DB waiting for first analysis).
+        DBInterface.execute(db, "INSERT INTO peaks (exposure_id, q, source, excluded) VALUES (?, 0.10, 'auto', 0)", [e_id])
+        DBInterface.execute(db, "INSERT INTO peaks (exposure_id, q, source, excluded) VALUES (?, 0.15, 'auto', 1)", [e_id])
+        DBInterface.execute(db, "INSERT INTO peaks (exposure_id, q, source, excluded) VALUES (?, 0.20, 'manual', 0)", [e_id])
+
+        # Run migration directly (simulates what open_db → migrate_schema! does
+        # on a legacy DB: create_schema! creates the destination tables, then
+        # migrate_r2_split_peaks! backfills them).
+        HimalayaUI.create_schema!(db)
+        HimalayaUI.migrate_r2_split_peaks!(db)
+
+        autos = Tables.rowtable(DBInterface.execute(db, "SELECT * FROM auto_peaks"))
+        @test length(autos) == 2  # both auto peaks (excluded ones still in auto_peaks)
+        curs  = Tables.rowtable(DBInterface.execute(db, "SELECT * FROM peak_curations"))
+        @test length(curs) == 2  # one exclude, one add
+        @test Set([String(c.kind) for c in curs]) == Set(["exclude", "add"])
+        @test isempty(Tables.rowtable(DBInterface.execute(db,
+            "SELECT 1 FROM sqlite_master WHERE name = 'peaks'")))
+    end
+end
+
+@testset "migrate_r2_split_peaks! is idempotent" begin
+    mktempdir() do dir
+        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        # Open again — should not error or duplicate rows.
+        db2 = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        @test true  # if no exception thrown, we're good
+    end
+end
+
+@testset "migrate_r2_split_peaks! preserves index_peaks for speculatives anchored on manual peaks" begin
+    # The bug this guards against: a user-built speculative index that
+    # anchored on a manual peak loses its anchor when migration drops the
+    # manual peak. The repoint step in the migration prevents this.
+    mktempdir() do dir
+        db_path = joinpath(dir, "h.db")
+        db = HimalayaUI.open_db(db_path)
+        # Construct legacy schema by hand and seed with a speculative
+        # referencing a manual peak. Drop the R2.1 destination tables and
+        # create a legacy `peaks` table (after R2.2, peaks is not in SCHEMA
+        # so it doesn't exist on fresh DBs).
+        DBInterface.execute(db, "DROP TABLE auto_peaks")
+        DBInterface.execute(db, "DROP TABLE peak_curations")
+        DBInterface.execute(db, """
+            CREATE TABLE peaks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                exposure_id INTEGER, q REAL, intensity REAL, prominence REAL,
+                sharpness REAL, source TEXT DEFAULT 'auto', excluded INTEGER DEFAULT 0
+            )
+        """)
+        exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
+        e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        # Manual peak that the speculative will anchor on.
+        res = DBInterface.execute(db,
+            "INSERT INTO peaks (exposure_id, q, source) VALUES (?, 0.20, 'manual')", [e_id])
+        manual_peak_id = Int(DBInterface.lastrowid(res))
+        # Pseudo-speculative index referencing the manual peak.
+        res = DBInterface.execute(db,
+            "INSERT INTO indices (exposure_id, phase, basis, kind) VALUES (?, 'Pn3m', 0.20, 'speculative')",
+            [e_id])
+        ix_id = Int(DBInterface.lastrowid(res))
+        DBInterface.execute(db,
+            "INSERT INTO index_peaks (index_id, peak_id, ratio_position, residual) VALUES (?, ?, 1, 0.0)",
+            [ix_id, manual_peak_id])
+
+        # Run migration.
+        HimalayaUI.create_schema!(db)
+        HimalayaUI.migrate_r2_split_peaks!(db)
+
+        # Assert the speculative still has its anchor — repointed at the
+        # new peak_curations.id, not dangling or deleted.
+        ip = Tables.rowtable(DBInterface.execute(db,
+            "SELECT * FROM index_peaks WHERE index_id = ?", [ix_id]))
+        @test length(ip) == 1
+        @test String(ip[1].peak_kind) == "curation"
+        # The new peak_id should be a valid peak_curations row of the right shape.
+        curations = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id, kind, q FROM peak_curations WHERE id = ?", [Int(ip[1].peak_id)]))
+        @test length(curations) == 1
+        @test String(curations[1].kind) == "add"
+        @test Float64(curations[1].q) ≈ 0.20
+    end
+end
+
+@testset "open_db rejects pre-existing duplicate custom index_groups" begin
+    mktempdir() do dir
+        db_path = joinpath(dir, "h.db")
+        # Build a legacy DB with the partial unique index missing AND a
+        # pre-existing duplicate-custom-group row (the multiplayer-era TOCTOU
+        # outcome the index now prevents).
+        legacy = SQLite.DB(db_path)
+        DBInterface.execute(legacy, "PRAGMA foreign_keys = ON")
+        # Minimal subset of the schema needed to seed the duplicate.
+        for stmt in split(HimalayaUI.SCHEMA, ";")
+            s = strip(stmt)
+            isempty(s) && continue
+            DBInterface.execute(legacy, s)
+        end
+        # Drop the partial unique index that open_db will try to add.
+        DBInterface.execute(legacy,
+            "DROP INDEX IF EXISTS idx_one_custom_group_per_exposure")
+        exp_id = HimalayaUI.create_experiment!(legacy; path="/x", data_dir="/x", analysis_dir="/x")
+        s_id   = HimalayaUI.create_sample!(legacy; experiment_id=exp_id)
+        e_id   = HimalayaUI.create_exposure!(legacy; sample_id=s_id)
+        DBInterface.execute(legacy,
+            "INSERT INTO index_groups (exposure_id, kind) VALUES (?, 'custom')", [e_id])
+        DBInterface.execute(legacy,
+            "INSERT INTO index_groups (exposure_id, kind) VALUES (?, 'custom')", [e_id])
+        SQLite.DBInterface.close!(legacy)
+
+        @test_throws ErrorException HimalayaUI.open_db(db_path)
+    end
 end

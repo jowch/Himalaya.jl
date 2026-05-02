@@ -193,13 +193,18 @@ test("curate: clicking + adds a candidate to the active set", async ({ page }) =
 });
 
 test("reanalyze: stale-indices banner fires POST /analyze when clicked", async ({ page }) => {
+  // Stale index: inputs_hash differs from the exposure's analysis_inputs_hash.
+  // The banner derives staleness from hash mismatch, not the legacy
+  // status='stale' enum (which R3 retired).
   const EXPOSURE = {
     id: 5, sample_id: 10, filename: "scan1.dat", kind: "file",
     selected: true, tags: [], sources: [],
+    trace_hash: "newhash", analysis_inputs_hash: "newhash",
   };
   const STALE_INDEX = {
     id: 3, exposure_id: 5, phase: "Pn3m", basis: 0.1, score: 0.9,
-    r_squared: 0.99, lattice_d: 12.5, status: "stale",
+    r_squared: 0.99, lattice_d: 12.5, status: "candidate",
+    inputs_hash: "oldhash",
     predicted_q: [0.1, 0.14], peaks: [],
   };
   let analyzeCalled = false;
@@ -207,6 +212,8 @@ test("reanalyze: stale-indices banner fires POST /analyze when clicked", async (
   await seedState(page, { activeExperimentId: 1, activeSampleId: 10, activeExposureId: 5 });
   await mockCore(page, [{ id: 1, username: "alice" }]);
 
+  await page.route("**/api/exposures/5", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(EXPOSURE) }));
   await page.route("**/api/samples/10/exposures", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([EXPOSURE]) }));
   await page.route("**/api/exposures/5/trace", (r) =>
@@ -238,22 +245,27 @@ test("reanalyze: stale-indices banner fires POST /analyze when clicked", async (
 });
 
 test("curate → reanalyze: active-set membership survives a reanalysis round-trip", async ({ page }) => {
+  // Index is stale because its inputs_hash differs from the exposure's
+  // current analysis_inputs_hash — the post-R3 derivation. The legacy
+  // status='stale' enum was retired.
   const EXPOSURE = {
     id: 5, sample_id: 10, filename: "scan1.dat", kind: "file",
     selected: true, tags: [], sources: [],
+    trace_hash: "newhash", analysis_inputs_hash: "newhash",
   };
-  // Index 1 (Pn3m) is already in the active group and stale — the state after
-  // curating and then editing peaks, which marks indices for recomputation.
   const BASE_INDEX = {
     id: 1, exposure_id: 5, phase: "Pn3m", basis: 0.1, score: 0.95,
     r_squared: 0.99, lattice_d: 12.5, predicted_q: [0.1, 0.14], peaks: [],
+    status: "candidate",
   };
-  let indexStatus = "stale";
+  let indexInputsHash = "oldhash";
   let analyzeCalled = false;
 
   await seedState(page, { activeExperimentId: 1, activeSampleId: 10, activeExposureId: 5 });
   await mockCore(page, [{ id: 1, username: "alice" }]);
 
+  await page.route("**/api/exposures/5", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(EXPOSURE) }));
   await page.route("**/api/samples/10/exposures", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([EXPOSURE]) }));
   await page.route("**/api/exposures/5/trace", (r) =>
@@ -263,14 +275,14 @@ test("curate → reanalyze: active-set membership survives a reanalysis round-tr
     r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
   await page.route("**/api/exposures/5/indices", (r) =>
     r.fulfill({ status: 200, contentType: "application/json",
-      body: JSON.stringify([{ ...BASE_INDEX, status: indexStatus }]) }));
+      body: JSON.stringify([{ ...BASE_INDEX, inputs_hash: indexInputsHash }]) }));
   await page.route("**/api/exposures/5/groups", (r) =>
     r.fulfill({ status: 200, contentType: "application/json",
       body: JSON.stringify([{ id: 1, exposure_id: 5, kind: "auto", active: true, members: [1] }]) }));
 
   await page.route("**/api/exposures/5/analyze", async (route) => {
     analyzeCalled = true;
-    indexStatus = "candidate";
+    indexInputsHash = "newhash";  // post-reanalyze, hashes match → banner clears
     await route.fulfill({ status: 200, contentType: "application/json",
       body: JSON.stringify({ id: 5, analyzed: true }) });
   });

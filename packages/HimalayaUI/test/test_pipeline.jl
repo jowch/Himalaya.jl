@@ -23,7 +23,7 @@ end
 using HimalayaUI: create_schema!, create_experiment!, create_sample!,
                   create_exposure!, persist_analysis!, get_peaks_for_exposure,
                   get_indices_for_exposure, get_groups_for_exposure,
-                  load_dat, auto_group
+                  load_dat, auto_group, effective_peaks, diff_update_auto_peaks!
 using Himalaya: findpeaks, indexpeaks
 using SQLite
 
@@ -38,10 +38,15 @@ using SQLite
     dat_path = joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat")
     q, I, σ  = load_dat(dat_path)
     peaks_result  = findpeaks(q, I, σ)
-    candidates    = indexpeaks(peaks_result.q, peaks_result.sharpness)
+
+    # Prime auto_peaks so effective_peaks can query them
+    diff_update_auto_peaks!(db, e_id, peaks_result, I)
+
+    eff           = effective_peaks(db, e_id, q, I)
+    candidates    = indexpeaks(eff.q, eff.sharpness)
     group_indices = auto_group(candidates)
 
-    persist_analysis!(db, e_id, q, I, peaks_result, candidates, group_indices)
+    persist_analysis!(db, e_id, q, I, peaks_result, candidates, group_indices, eff)
 
     stored_peaks   = get_peaks_for_exposure(db, e_id)
     stored_indices = get_indices_for_exposure(db, e_id)
@@ -55,6 +60,7 @@ using SQLite
 end
 
 using HimalayaUI: init_experiment!, analyze_exposure!, open_db, get_experiment
+using JSON3
 
 @testset "init_experiment!" begin
     tmp = mktempdir()
@@ -114,11 +120,10 @@ using Tables
     @test !isempty(snap_before)
     snap_phases_before = sort(String[String(r.phase) for r in snap_before])
 
-    # Mutate peaks (simulate the user adding a manual peak), then re-analyze.
+    # Mutate peaks (simulate the user adding a manual peak via curation), then re-analyze.
     DBInterface.execute(db,
-        "INSERT INTO peaks (exposure_id, q, intensity, prominence, sharpness, source, excluded)
-         VALUES (?, ?, ?, ?, ?, 'manual', 0)",
-        [e_id, 0.123, 1.0, 0.5, 0.5])
+        "INSERT INTO peak_curations (exposure_id, kind, q) VALUES (?, 'add', ?)",
+        [e_id, 0.123])
     analyze_exposure!(db, e_id, analysis_dir)
 
     # The custom group's members should still be populated, with at least one
@@ -194,24 +199,51 @@ end
     target_q = Float64(ix_row.basis) * sqrt(2.0)
 
     res = DBInterface.execute(db,
-        "INSERT INTO peaks (exposure_id, q, source) VALUES (?, ?, 'manual')",
+        "INSERT INTO peak_curations (exposure_id, kind, q) VALUES (?, 'add', ?)",
         [e_id, target_q])
     manual_peak_id = Int(DBInterface.lastrowid(res))
 
     analyze_exposure!(db, e_id, analysis_dir)
 
     # The manual peak should appear in at least one index's `index_peaks` rows.
+    # Curation-add peaks are referenced with peak_kind='curation'.
     n_uses = first(Tables.rowtable(DBInterface.execute(db,
-        "SELECT COUNT(*) AS c FROM index_peaks WHERE peak_id = ?",
+        "SELECT COUNT(*) AS c FROM index_peaks WHERE peak_id = ? AND peak_kind = 'curation'",
         [manual_peak_id]))).c
     @test n_uses > 0
 end
 
+@testset "analyze_exposure! preserves auto peak IDs across reruns" begin
+    tmp          = mktempdir()
+    analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
+    mkpath(analysis_dir)
+
+    src = joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat")
+    cp(src, joinpath(analysis_dir, "example_tot.dat"))
+
+    db     = open_db(joinpath(tmp, "himalaya.db"))
+    exp_id = init_experiment!(db; path=tmp,
+                                   data_dir=joinpath(tmp, "data"),
+                                   analysis_dir=analysis_dir)
+    s_id   = create_sample!(db; experiment_id=exp_id, label="D1", name="UX1")
+    e_id   = create_exposure!(db; sample_id=s_id, filename="example_tot")
+
+    analyze_exposure!(db, e_id, analysis_dir)
+    ids_before = sort([Int(r.id) for r in get_peaks_for_exposure(db, e_id)
+                                            if String(r.source) == "auto"])
+
+    analyze_exposure!(db, e_id, analysis_dir)
+    ids_after = sort([Int(r.id) for r in get_peaks_for_exposure(db, e_id)
+                                           if String(r.source) == "auto"])
+    @test ids_before == ids_after
+end
+
 @testset "analyze_exposure! ignores excluded auto peaks when scoring candidates" begin
-    # Regression: `was_excluded` carry-forward was applied at peak persistence
-    # time, but the candidate set was built from raw `findpeaks` output — so
-    # the user's "this is noise" verdict had no effect on `IndexEntry.peaks`
-    # or score until the very next reanalysis happened to drop the peak.
+    # Regression: the candidate set used to be built from raw `findpeaks`
+    # output, so the user's "this is noise" verdict (`excluded = 1`) had no
+    # effect on `IndexEntry.peaks` or score until the very next reanalysis
+    # happened to drop the peak. Today, `analyze_exposure!` filters excluded
+    # q-values out of the indexpeaks input directly.
     tmp          = mktempdir()
     analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
     mkpath(analysis_dir)
@@ -230,32 +262,37 @@ end
 
     # Pick an auto peak that's currently bound to ≥ 1 candidate index.
     bound_rows = Tables.rowtable(DBInterface.execute(db, """
-        SELECT p.id, p.q FROM peaks p
-        JOIN index_peaks ip ON ip.peak_id = p.id
-        WHERE p.exposure_id = ? AND p.source = 'auto'
-        GROUP BY p.id HAVING COUNT(*) >= 1
+        SELECT ap.id, ap.q FROM auto_peaks ap
+        JOIN index_peaks ip ON ip.peak_id = ap.id AND ip.peak_kind = 'auto'
+        WHERE ap.exposure_id = ?
+        GROUP BY ap.id HAVING COUNT(*) >= 1
         ORDER BY COUNT(*) DESC LIMIT 1
         """, [e_id]))
     @test !isempty(bound_rows)
     target_pid = Int(bound_rows[1].id)
     target_q   = Float64(bound_rows[1].q)
 
+    # Exclude the auto peak via a curation row (new schema).
     DBInterface.execute(db,
-        "UPDATE peaks SET excluded = 1 WHERE id = ?", [target_pid])
+        "INSERT INTO peak_curations (exposure_id, kind, q) VALUES (?, 'exclude', ?)",
+        [e_id, target_q])
     analyze_exposure!(db, e_id, analysis_dir)
 
-    # After reanalysis the same q should still be detected (auto peaks are
-    # re-found by findpeaks) and re-marked excluded via `was_excluded`. But
-    # no candidate should reference it, because we now filter excluded q's
-    # before calling indexpeaks.
+    # After reanalysis the same q is still in auto_peaks (re-found by findpeaks).
+    # An exclude curation still exists for it — so effective_peaks omits it
+    # from the indexpeaks input. No candidate should reference the peak.
     same_q = Tables.rowtable(DBInterface.execute(db,
-        "SELECT id, excluded FROM peaks WHERE exposure_id = ? AND ABS(q - ?) < 1e-9",
+        "SELECT id FROM auto_peaks WHERE exposure_id = ? AND ABS(q - ?) < 1e-9",
         [e_id, target_q]))
     @test !isempty(same_q)
-    @test Int(same_q[1].excluded) == 1
     new_pid = Int(same_q[1].id)
+    # exclude curation still present
+    excl_rows = Tables.rowtable(DBInterface.execute(db,
+        "SELECT id FROM peak_curations WHERE exposure_id = ? AND kind = 'exclude' AND ABS(q - ?) < 1e-9",
+        [e_id, target_q]))
+    @test !isempty(excl_rows)
     n_uses = first(Tables.rowtable(DBInterface.execute(db,
-        "SELECT COUNT(*) AS c FROM index_peaks WHERE peak_id = ?",
+        "SELECT COUNT(*) AS c FROM index_peaks WHERE peak_id = ? AND peak_kind = 'auto'",
         [new_pid]))).c
     @test n_uses == 0
 end
@@ -289,19 +326,29 @@ end
     close(legacy)
 
     db = open_db(db_path)
-    for t in ("experiments", "samples", "exposures", "peaks", "indices")
+    # After R2.1: `peaks` is dropped by migrate_r2_split_peaks! and replaced
+    # by auto_peaks + peak_curations. Check the surviving entity tables.
+    for t in ("experiments", "samples", "exposures", "indices")
+        sql = String(first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name=?", [t]))).sql)
+        @test occursin("AUTOINCREMENT", sql)
+    end
+    # auto_peaks replaces peaks; the migrated row (q=0.1) should survive there.
+    for t in ("auto_peaks",)
         sql = String(first(Tables.rowtable(DBInterface.execute(db,
             "SELECT sql FROM sqlite_master WHERE type='table' AND name=?", [t]))).sql)
         @test occursin("AUTOINCREMENT", sql)
     end
 
-    # Pre-existing rows survive the migration with their ids intact.
-    rows = Tables.rowtable(DBInterface.execute(db, "SELECT id FROM peaks"))
-    @test [Int(r.id) for r in rows] == [1]
+    # Pre-existing auto peaks survive the migration with their ids intact.
+    rows = Tables.rowtable(DBInterface.execute(db, "SELECT id, q FROM auto_peaks"))
+    @test length(rows) == 1
+    @test Int(rows[1].id) == 1
+    @test Float64(rows[1].q) ≈ 0.1
 
-    # Deleting and re-inserting yields a NEW id, not the recycled rowid.
-    DBInterface.execute(db, "DELETE FROM peaks WHERE id = 1")
-    res = DBInterface.execute(db, "INSERT INTO peaks (exposure_id, q) VALUES (1, 0.2)")
+    # Deleting and re-inserting yields a NEW id (AUTOINCREMENT prevents recycling).
+    DBInterface.execute(db, "DELETE FROM auto_peaks WHERE id = 1")
+    res = DBInterface.execute(db, "INSERT INTO auto_peaks (exposure_id, q) VALUES (1, 0.2)")
     @test Int(DBInterface.lastrowid(res)) >= 2
 end
 
@@ -357,7 +404,7 @@ end
 
         # Confirm peaks were persisted (i.e. the pattern resolved correctly and the file was loaded)
         peaks = Tables.rowtable(DBInterface.execute(db,
-            "SELECT id FROM peaks WHERE exposure_id = ?", [e_id]))
+            "SELECT id FROM auto_peaks WHERE exposure_id = ?", [e_id]))
         @test length(peaks) >= 0   # Just need analyze_exposure! not to throw
     end
 end
@@ -728,4 +775,117 @@ let
             @test String(row.name) == "UniqueName123"
         end
     end
+end
+
+@testset "analyze_exposure! sets trace_hash and analysis_inputs_hash on first run" begin
+    tmp = mktempdir()
+    analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
+    mkpath(analysis_dir)
+    src = joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat")
+    cp(src, joinpath(analysis_dir, "example_tot.dat"))
+
+    db = open_db(joinpath(tmp, "himalaya.db"))
+    exp_id = init_experiment!(db; path=tmp,
+                                   data_dir=joinpath(tmp, "data"),
+                                   analysis_dir=analysis_dir)
+    s_id = create_sample!(db; experiment_id=exp_id, label="D1", name="UX1")
+    e_id = create_exposure!(db; sample_id=s_id, filename="example_tot")
+
+    analyze_exposure!(db, e_id, analysis_dir)
+
+    row = first(Tables.rowtable(DBInterface.execute(db,
+        "SELECT trace_hash, analysis_inputs_hash FROM exposures WHERE id = ?", [e_id])))
+    @test !ismissing(row.trace_hash)
+    @test length(String(row.trace_hash)) == 64
+    @test !ismissing(row.analysis_inputs_hash)
+    @test length(String(row.analysis_inputs_hash)) == 64
+
+    idx_hashes = [r.inputs_hash for r in Tables.rowtable(DBInterface.execute(db,
+        "SELECT inputs_hash FROM indices WHERE exposure_id = ?", [e_id]))]
+    if !isempty(idx_hashes)
+        @test all(!ismissing(h) for h in idx_hashes)
+        @test all(String(h) == String(row.analysis_inputs_hash) for h in idx_hashes)
+    end
+end
+
+@testset "analyze_exposure! preserves trace_hash across no-op reruns" begin
+    tmp = mktempdir()
+    analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
+    mkpath(analysis_dir)
+    src = joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat")
+    cp(src, joinpath(analysis_dir, "example_tot.dat"))
+
+    db = open_db(joinpath(tmp, "himalaya.db"))
+    exp_id = init_experiment!(db; path=tmp, data_dir=joinpath(tmp, "data"), analysis_dir=analysis_dir)
+    s_id = create_sample!(db; experiment_id=exp_id, label="D1", name="UX1")
+    e_id = create_exposure!(db; sample_id=s_id, filename="example_tot")
+
+    analyze_exposure!(db, e_id, analysis_dir)
+    row1 = first(Tables.rowtable(DBInterface.execute(db,
+        "SELECT trace_hash, analysis_inputs_hash FROM exposures WHERE id = ?", [e_id])))
+    analyze_exposure!(db, e_id, analysis_dir)
+    row2 = first(Tables.rowtable(DBInterface.execute(db,
+        "SELECT trace_hash, analysis_inputs_hash FROM exposures WHERE id = ?", [e_id])))
+    @test String(row1.trace_hash) == String(row2.trace_hash)
+    # The peak-set hash must also stabilise across a no-op rerun: same trace
+    # bytes + same curation set → identical effective_peaks → identical hash.
+    @test String(row1.analysis_inputs_hash) == String(row2.analysis_inputs_hash)
+end
+
+@testset "analyze_exposure! re-runs findpeaks when trace bytes change" begin
+    tmp = mktempdir()
+    analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
+    mkpath(analysis_dir)
+    src = joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat")
+    dst = joinpath(analysis_dir, "example_tot.dat")
+    cp(src, dst)
+
+    db = open_db(joinpath(tmp, "himalaya.db"))
+    exp_id = init_experiment!(db; path=tmp, data_dir=joinpath(tmp, "data"), analysis_dir=analysis_dir)
+    s_id = create_sample!(db; experiment_id=exp_id, label="D1", name="UX1")
+    e_id = create_exposure!(db; sample_id=s_id, filename="example_tot")
+
+    analyze_exposure!(db, e_id, analysis_dir)
+    h_before = first(Tables.rowtable(DBInterface.execute(db,
+        "SELECT trace_hash FROM exposures WHERE id = ?", [e_id]))).trace_hash
+
+    open(dst, "a") do io; write(io, "\n0.99 1.0 0.1\n") end
+
+    analyze_exposure!(db, e_id, analysis_dir)
+    h_after = first(Tables.rowtable(DBInterface.execute(db,
+        "SELECT trace_hash FROM exposures WHERE id = ?", [e_id]))).trace_hash
+    @test String(h_before) != String(h_after)
+end
+
+@testset "analyze_run payload shows both skip flags true on no-op rerun" begin
+    # Regression: the skip-flag expressions previously checked only hash equality,
+    # not the full predicate (hash match AND existing rows). A hash match on a
+    # fresh DB with empty auto_peaks would record findpeaks_skipped=true while
+    # findpeaks actually ran.
+    tmp = mktempdir()
+    analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
+    mkpath(analysis_dir)
+    src = joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat")
+    cp(src, joinpath(analysis_dir, "example_tot.dat"))
+
+    db = open_db(joinpath(tmp, "himalaya.db"))
+    exp_id = init_experiment!(db; path=tmp, data_dir=joinpath(tmp, "data"), analysis_dir=analysis_dir)
+    s_id = create_sample!(db; experiment_id=exp_id, label="D1", name="UX1")
+    e_id = create_exposure!(db; sample_id=s_id, filename="example_tot")
+
+    # First run: both skip flags must be false (nothing cached yet).
+    analyze_exposure!(db, e_id, analysis_dir)
+    row1 = first(Tables.rowtable(DBInterface.execute(db,
+        "SELECT payload FROM user_actions WHERE action = 'analyze_run' ORDER BY id DESC LIMIT 1")))
+    p1 = JSON3.read(String(row1.payload))
+    @test p1[:findpeaks_skipped]  == false
+    @test p1[:indexpeaks_skipped] == false
+
+    # Second run with identical trace and no curation changes: genuine no-op.
+    analyze_exposure!(db, e_id, analysis_dir)
+    row2 = first(Tables.rowtable(DBInterface.execute(db,
+        "SELECT payload FROM user_actions WHERE action = 'analyze_run' ORDER BY id DESC LIMIT 1")))
+    p2 = JSON3.read(String(row2.payload))
+    @test p2[:findpeaks_skipped]  == true
+    @test p2[:indexpeaks_skipped] == true
 end

@@ -5,6 +5,7 @@ using Test
     include("test_db.jl")
     include("test_datfile.jl")
     include("test_manifest.jl")
+    include("test_hash.jl")
     include("test_pipeline.jl")
     include("test_json.jl")
     include("test_http.jl")
@@ -24,4 +25,6 @@ using Test
     include("test_speculative.jl")
     include("test_routes_export.jl")
     include("test_routes_mentions.jl")
+    include("test_events.jl")
+    include("test_sse.jl")
 end

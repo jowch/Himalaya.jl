@@ -8,9 +8,9 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
     s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, label="A", name="sampleA")
     e_id = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="run001")
 
-    # Insert a peak manually
+    # Insert a peak manually (use auto_peaks — the new schema table)
     res = DBInterface.execute(db,
-        "INSERT INTO peaks (exposure_id, q, source, excluded) VALUES (?, ?, 'auto', 0)",
+        "INSERT INTO auto_peaks (exposure_id, q) VALUES (?, ?)",
         [e_id, 1.223])
     pk_id = Int(DBInterface.lastrowid(res))
 
@@ -26,7 +26,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         [e_id])
     ix_id = Int(DBInterface.lastrowid(res))
     DBInterface.execute(db,
-        "INSERT INTO index_peaks (index_id, peak_id, ratio_position, residual) VALUES (?, ?, 1, 0.0)",
+        "INSERT INTO index_peaks (index_id, peak_id, peak_kind, ratio_position, residual) VALUES (?, ?, 'auto', 1, 0.0)",
         [ix_id, pk_id])
 
     with_test_server(db) do port, base

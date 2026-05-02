@@ -111,9 +111,12 @@ function register_analysis_routes!()
             "SELECT * FROM indices WHERE exposure_id = ? ORDER BY score DESC", [id]))
         out = map(indices) do ix
             peak_rows = Tables.rowtable(DBInterface.execute(db,
-                "SELECT ip.peak_id, ip.ratio_position, ip.residual, p.q AS q_observed
-                 FROM index_peaks ip JOIN peaks p ON p.id = ip.peak_id
-                 WHERE ip.index_id = ? ORDER BY ip.ratio_position",
+                """SELECT ip.peak_id, ip.ratio_position, ip.residual,
+                          COALESCE(ap.q, pc.q) AS q_observed
+                   FROM index_peaks ip
+                   LEFT JOIN auto_peaks ap     ON ap.id = ip.peak_id AND ip.peak_kind = 'auto'
+                   LEFT JOIN peak_curations pc ON pc.id = ip.peak_id AND ip.peak_kind = 'curation'
+                   WHERE ip.index_id = ? ORDER BY ip.ratio_position""",
                 [Int(ix.id)]))
             predicted = predicted_q_for_phase(String(ix.phase), Float64(ix.basis))
             d = row_to_json(ix)
@@ -148,12 +151,11 @@ function register_analysis_routes!()
 
         custom_id, _ = ensure_custom_group!(db, exposure_id)
 
-        DBInterface.execute(db,
-            "INSERT OR IGNORE INTO index_group_members (group_id, index_id)
-             VALUES (?, ?)", [custom_id, index_id])
-
-        log_action!(db, req; action = "confirm_index",
-            entity_type = "index", entity_id = index_id)
+        apply_event!(db, req;
+            kind        = "index_confirmed",
+            entity_type = "exposure",
+            entity_id   = exposure_id,
+            payload     = Dict(:group_id => custom_id, :index_id => index_id))
 
         HTTP.Response(200, ["Content-Type" => "application/json"],
             JSON3.write(_group_with_members(db, custom_id)))
@@ -169,12 +171,25 @@ function register_analysis_routes!()
         exposure_id = Int(rows[1].exposure_id)
 
         custom_id, _ = ensure_custom_group!(db, exposure_id)
-        DBInterface.execute(db,
-            "DELETE FROM index_group_members
-             WHERE group_id = ? AND index_id = ?", [custom_id, index_id])
 
-        log_action!(db, req; action = "exclude_index",
-            entity_type = "index", entity_id = index_id)
+        # undoes_event_id: find the most recent index_confirmed for this (group_id, index_id).
+        prior = Tables.rowtable(DBInterface.execute(db, """
+            SELECT id FROM user_actions
+            WHERE action = 'index_confirmed'
+              AND entity_type = 'exposure' AND entity_id = ?
+              AND payload IS NOT NULL
+              AND json_extract(payload, '\$.group_id') = ?
+              AND json_extract(payload, '\$.index_id') = ?
+            ORDER BY id DESC LIMIT 1
+        """, [exposure_id, custom_id, index_id]))
+        undoes = isempty(prior) ? nothing : Int(prior[1].id)
+
+        apply_event!(db, req;
+            kind            = "index_unconfirmed",
+            entity_type     = "exposure",
+            entity_id       = exposure_id,
+            payload         = Dict(:group_id => custom_id, :index_id => index_id),
+            undoes_event_id = undoes)
 
         HTTP.Response(200, ["Content-Type" => "application/json"],
             JSON3.write(_group_with_members(db, custom_id)))
@@ -198,9 +213,20 @@ function register_analysis_routes!()
             ["Content-Type" => "application/json"],
             JSON3.write(Dict(:error => "missing or invalid anchor_peak_id")))
 
-        peak_rows = Tables.rowtable(DBInterface.execute(db,
-            "SELECT id, q, sharpness, source FROM peaks WHERE exposure_id = ? AND excluded = 0",
-            [id]))
+        peak_rows = Tables.rowtable(DBInterface.execute(db, """
+            SELECT a.id, a.q, a.sharpness
+            FROM auto_peaks a
+            WHERE a.exposure_id = ?
+              AND NOT EXISTS (
+                  SELECT 1 FROM peak_curations c
+                  WHERE c.exposure_id = a.exposure_id AND c.kind = 'exclude'
+                    AND ABS(c.q - a.q) <= MAX(1e-6, ABS(a.q) * 0.001)
+              )
+            UNION ALL
+            SELECT id, q, NULL AS sharpness
+            FROM peak_curations
+            WHERE exposure_id = ? AND kind = 'add'
+        """, [id, id]))
         anchor = nothing
         for pr in peak_rows
             if Int(pr.id) == anchor_peak_id
@@ -264,31 +290,38 @@ function register_analysis_routes!()
         end
 
         new_id = try
-            insert_speculative_index!(db, id, P, ratio_to_peak)
+            SQLite.transaction(db) do
+                nid = insert_speculative_index!(db, id, P, ratio_to_peak)
+                if active_default
+                    cid, _ = ensure_custom_group!(db, id)
+                    DBInterface.execute(db,
+                        "INSERT OR IGNORE INTO index_group_members (group_id, index_id) VALUES (?, ?)",
+                        [cid, nid])
+                end
+                apply_event!(db, req;
+                    kind        = "speculative_created",
+                    entity_type = "exposure",
+                    entity_id   = id,
+                    payload     = Dict(:index_id => nid))
+                nid
+            end
         catch e
             return HTTP.Response(400,
                 ["Content-Type" => "application/json"],
                 JSON3.write(Dict(:error => sprint(showerror, e))))
         end
 
-        if active_default
-            custom_id, _ = ensure_custom_group!(db, id)
-            DBInterface.execute(db,
-                "INSERT OR IGNORE INTO index_group_members (group_id, index_id) VALUES (?, ?)",
-                [custom_id, new_id])
-        end
-
-        log_action!(db, req; action = "create_speculative",
-            entity_type = "index", entity_id = new_id)
-
         # Return the freshly-built index in the same shape as GET /api/indices/:id
         rows = Tables.rowtable(DBInterface.execute(db,
             "SELECT * FROM indices WHERE id = ?", [new_id]))
         ix = rows[1]
         peak_rows = Tables.rowtable(DBInterface.execute(db,
-            "SELECT ip.peak_id, ip.ratio_position, ip.residual, p.q AS q_observed
-             FROM index_peaks ip JOIN peaks p ON p.id = ip.peak_id
-             WHERE ip.index_id = ? ORDER BY ip.ratio_position", [new_id]))
+            """SELECT ip.peak_id, ip.ratio_position, ip.residual,
+                      COALESCE(ap.q, pc.q) AS q_observed
+               FROM index_peaks ip
+               LEFT JOIN auto_peaks ap     ON ap.id = ip.peak_id AND ip.peak_kind = 'auto'
+               LEFT JOIN peak_curations pc ON pc.id = ip.peak_id AND ip.peak_kind = 'curation'
+               WHERE ip.index_id = ? ORDER BY ip.ratio_position""", [new_id]))
         predicted = predicted_q_for_phase(String(ix.phase), Float64(ix.basis))
         d = row_to_json(ix)
         d[:peaks]       = rows_to_json(peak_rows)
@@ -308,6 +341,11 @@ function register_analysis_routes!()
             ["Content-Type" => "application/json"],
             JSON3.write(Dict(:error => "only speculative indices can be deleted; use group exclusion for auto indices")))
 
+        # Capture exposure_id BEFORE the DELETE — after deletion the row is gone.
+        exposure_id = Int(rows[1].exposure_id)
+
+        # Wrap the delete and the event log in one transaction so the view
+        # mutation and the audit entry roll back together if either fails.
         SQLite.transaction(db) do
             DBInterface.execute(db,
                 "DELETE FROM index_group_members WHERE index_id = ?", [id])
@@ -315,10 +353,12 @@ function register_analysis_routes!()
                 "DELETE FROM index_peaks WHERE index_id = ?", [id])
             DBInterface.execute(db,
                 "DELETE FROM indices WHERE id = ?", [id])
+            apply_event!(db, req;
+                kind        = "speculative_deleted",
+                entity_type = "exposure",
+                entity_id   = exposure_id,
+                payload     = Dict(:index_id => id))
         end
-
-        log_action!(db, req; action = "delete_speculative",
-            entity_type = "index", entity_id = id)
 
         HTTP.Response(200, ["Content-Type" => "application/json"],
             JSON3.write(Dict(:deleted => id)))
@@ -333,9 +373,12 @@ function register_analysis_routes!()
             JSON3.write(Dict(:error => "index not found")))
         ix        = rows[1]
         peak_rows = Tables.rowtable(DBInterface.execute(db,
-            "SELECT ip.peak_id, ip.ratio_position, ip.residual, p.q AS q_observed
-             FROM index_peaks ip JOIN peaks p ON p.id = ip.peak_id
-             WHERE ip.index_id = ? ORDER BY ip.ratio_position", [id]))
+            """SELECT ip.peak_id, ip.ratio_position, ip.residual,
+                      COALESCE(ap.q, pc.q) AS q_observed
+               FROM index_peaks ip
+               LEFT JOIN auto_peaks ap     ON ap.id = ip.peak_id AND ip.peak_kind = 'auto'
+               LEFT JOIN peak_curations pc ON pc.id = ip.peak_id AND ip.peak_kind = 'curation'
+               WHERE ip.index_id = ? ORDER BY ip.ratio_position""", [id]))
         predicted = predicted_q_for_phase(String(ix.phase), Float64(ix.basis))
         d               = row_to_json(ix)
         d[:peaks]       = rows_to_json(peak_rows)

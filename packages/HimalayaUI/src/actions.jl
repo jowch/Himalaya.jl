@@ -26,17 +26,20 @@ end
     log_action!(db, req; action, entity_type, entity_id, note=nothing)
 
 Record an entry in `user_actions`. Missing `X-Username` => user_id = NULL.
+
+Thin wrapper around `apply_event!` for backwards compatibility. Existing
+callers continue to work unchanged. New code in R4.2 should call
+`apply_event!` directly with structured payloads.
 """
 function log_action!(db::SQLite.DB, req::HTTP.Request;
         action::String,
         entity_type::String,
         entity_id::Integer,
         note::Union{String, Nothing} = nothing)
-    username = get_username(req)
-    user_id  = username === nothing ? nothing : get_or_create_user!(db, username)
-    DBInterface.execute(db,
-        "INSERT INTO user_actions (user_id, action, entity_type, entity_id, note)
-         VALUES (?, ?, ?, ?, ?)",
-        [user_id, action, entity_type, Int(entity_id), note])
+    apply_event!(db, req;
+                 kind        = action,
+                 entity_type = entity_type,
+                 entity_id   = entity_id,
+                 payload     = note === nothing ? nothing : Dict(:note => note))
     nothing
 end

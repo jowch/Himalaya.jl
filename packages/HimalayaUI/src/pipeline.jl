@@ -31,15 +31,128 @@ counts as the "same" indexing if `|Δbasis| ≤ MEMBER_REATTACH_RELTOL · basis`
 """
 const MEMBER_REATTACH_RELTOL = 0.05
 
+"""
+    effective_peaks(db, exposure_id, q_grid, I) -> NamedTuple
+
+Compute the effective peak set for analysis. Returns
+`(q::Vector{Float64}, sharpness::Vector{Float64},
+  peak_id::Vector{Int}, peak_kind::Vector{Symbol})` sorted by q.
+Auto peaks whose q matches an `exclude` curation are dropped;
+`add` curations are unioned in with sharpness sampled from the
+current trace.
+"""
+function effective_peaks(db::SQLite.DB, exposure_id::Int,
+                          q_grid::Vector{Float64}, I::Vector{Float64})
+    auto = Tables.rowtable(DBInterface.execute(db,
+        "SELECT id, q, sharpness FROM auto_peaks WHERE exposure_id = ?", [exposure_id]))
+    excludes = Tables.rowtable(DBInterface.execute(db,
+        "SELECT q FROM peak_curations WHERE exposure_id = ? AND kind = 'exclude'",
+        [exposure_id]))
+    adds = Tables.rowtable(DBInterface.execute(db,
+        "SELECT id, q FROM peak_curations WHERE exposure_id = ? AND kind = 'add'",
+        [exposure_id]))
+
+    tol(q) = max(1e-6, abs(q) * 0.001)
+    is_excluded(qv) = any(e -> abs(Float64(e.q) - qv) <= tol(qv), excludes)
+
+    qs        = Float64[]
+    shs       = Float64[]
+    peak_id   = Int[]
+    peak_kind = Symbol[]
+    for r in auto
+        qv = Float64(r.q)
+        is_excluded(qv) && continue
+        push!(qs, qv)
+        push!(shs, ismissing(r.sharpness) ? 0.0 : Float64(r.sharpness))
+        push!(peak_id,   Int(r.id))
+        push!(peak_kind, :auto)
+    end
+    sharp_full = isempty(adds) ? Float64[] : Himalaya.sharpness(I)
+    for r in adds
+        qv = Float64(r.q)
+        push!(qs, qv)
+        push!(shs, isempty(sharp_full) ? 0.0 : sharp_full[argmin(abs.(q_grid .- qv))])
+        push!(peak_id,   Int(r.id))
+        push!(peak_kind, :curation)
+    end
+
+    perm = sortperm(qs)
+    (q = qs[perm], sharpness = shs[perm],
+     peak_id = peak_id[perm], peak_kind = peak_kind[perm])
+end
+
+"""
+Match new findpeaks output against existing auto_peaks rows by q-value within
+tolerance, UPDATE matched rows in place, INSERT unmatched, DELETE orphans.
+Populates `findpeaks_index` from `peaks_result.indices[i]` on every INSERT/UPDATE.
+"""
+function diff_update_auto_peaks!(db::SQLite.DB, exposure_id::Int,
+                                  peaks_result::NamedTuple,
+                                  I_full::Vector{Float64})
+    EXCLUDE_TOL = 1e-6
+    tol(q) = max(EXCLUDE_TOL, abs(q) * 0.001)
+
+    existing = Tables.rowtable(DBInterface.execute(db,
+        "SELECT id, q FROM auto_peaks WHERE exposure_id = ?", [exposure_id]))
+    remaining = Set{Int}(Int(r.id) for r in existing)
+
+    q_to_id = Dict{Float64, Int}()
+    for i in eachindex(peaks_result.q)
+        qval      = peaks_result.q[i]
+        full_idx  = peaks_result.indices[i]
+        intensity = I_full[full_idx]
+        prom      = peaks_result.prominence[i]
+        sharp     = peaks_result.sharpness[i]
+
+        # Find closest existing auto peak within tolerance.
+        best_id, best_d = 0, Inf
+        for r in existing
+            Int(r.id) in remaining || continue
+            d = abs(Float64(r.q) - qval)
+            if d < best_d && d <= tol(qval)
+                best_d, best_id = d, Int(r.id)
+            end
+        end
+
+        if best_id != 0
+            DBInterface.execute(db,
+                """UPDATE auto_peaks SET q = ?, intensity = ?, prominence = ?,
+                                         sharpness = ?, findpeaks_index = ?
+                   WHERE id = ?""",
+                [qval, intensity, prom, sharp, full_idx, best_id])
+            delete!(remaining, best_id)
+            q_to_id[qval] = best_id
+        else
+            res = DBInterface.execute(db,
+                """INSERT INTO auto_peaks (exposure_id, q, intensity, prominence,
+                                           sharpness, findpeaks_index)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                [exposure_id, qval, intensity, prom, sharp, full_idx])
+            q_to_id[qval] = Int(DBInterface.lastrowid(res))
+        end
+    end
+
+    # Drop auto peaks that no longer correspond to any new detection.
+    # Also drop the index_peaks rows that referenced them (kind='auto').
+    for orphan_id in remaining
+        DBInterface.execute(db,
+            "DELETE FROM index_peaks WHERE peak_id = ? AND peak_kind = 'auto'", [orphan_id])
+        DBInterface.execute(db, "DELETE FROM auto_peaks WHERE id = ?", [orphan_id])
+    end
+
+    q_to_id
+end
+
 function persist_analysis!(db::SQLite.DB, exposure_id::Int,
                             q_full::Vector{Float64},
                             I_full::Vector{Float64},
                             peaks_result::NamedTuple,
                             candidates::Vector{<:Himalaya.Index},
-                            group_indices::Vector{<:Himalaya.Index})
+                            group_indices::Vector{<:Himalaya.Index},
+                            eff::NamedTuple)
     SQLite.transaction(db) do
     _persist_analysis_inner!(db, exposure_id, q_full, I_full, peaks_result,
-                             candidates, group_indices)
+                             candidates, group_indices, eff)
     end
 end
 
@@ -48,7 +161,10 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
                                    I_full::Vector{Float64},
                                    peaks_result::NamedTuple,
                                    candidates::Vector{<:Himalaya.Index},
-                                   group_indices::Vector{<:Himalaya.Index})
+                                   group_indices::Vector{<:Himalaya.Index},
+                                   eff::NamedTuple)
+
+    EXCLUDE_TOL = 1e-6   # tolerance for q-value matching in speculative re-resolution
 
     # Snapshot the custom group's members by *semantic identity* (phase + basis)
     # BEFORE we delete the indices rows. Without this, the deletion below
@@ -67,10 +183,13 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
     # about to be re-detected with new ids, so the FK in index_peaks would
     # dangle without this remap.
     speculative_assignments = Tables.rowtable(DBInterface.execute(db, """
-        SELECT i.id AS index_id, ip.ratio_position, p.q AS q_value, p.source AS peak_source, p.id AS old_peak_id
+        SELECT i.id AS index_id, ip.ratio_position, ip.peak_kind,
+               ip.peak_id AS old_peak_id,
+               COALESCE(ap.q, pc.q) AS q_value
         FROM indices i
         JOIN index_peaks ip ON ip.index_id = i.id
-        JOIN peaks p ON p.id = ip.peak_id
+        LEFT JOIN auto_peaks ap     ON ap.id = ip.peak_id     AND ip.peak_kind = 'auto'
+        LEFT JOIN peak_curations pc ON pc.id = ip.peak_id     AND ip.peak_kind = 'curation'
         WHERE i.exposure_id = ? AND i.kind = 'speculative'
         """, [exposure_id]))
     speculative_index_ids = Tables.rowtable(DBInterface.execute(db,
@@ -78,7 +197,7 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
         [exposure_id]))
 
     # Remove prior auto peaks, auto indices, and auto groups for this exposure.
-    # Manual peaks (source='manual') are preserved. Speculative indices are
+    # Curation rows (peak_curations) are preserved. Speculative indices are
     # preserved but their index_peaks are wiped and re-resolved below.
     DBInterface.execute(db,
         "DELETE FROM index_group_members WHERE group_id IN
@@ -102,59 +221,10 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
     DBInterface.execute(db,
         "DELETE FROM indices WHERE exposure_id = ? AND kind = 'auto'", [exposure_id])
 
-    # Snapshot the q-values of any auto peaks the user explicitly excluded so
-    # we can re-apply that override after re-detection. Without this, every
-    # reanalysis silently undoes the user's curation work.
-    excluded_rows = Tables.rowtable(DBInterface.execute(db,
-        "SELECT q FROM peaks WHERE exposure_id = ? AND source = 'auto' AND excluded = 1",
-        [exposure_id]))
-    excluded_qs = Float64[Float64(r.q) for r in excluded_rows]
-
-    DBInterface.execute(db,
-        "DELETE FROM peaks WHERE exposure_id = ? AND source = 'auto'", [exposure_id])
-
-    # Persist auto peaks. If the q-value matches (within a small tolerance) one
-    # the user previously excluded, carry the `excluded = 1` flag forward.
-    EXCLUDE_TOL = 1e-6
-    function was_excluded(q::Float64)::Bool
-        for eq in excluded_qs
-            if abs(eq - q) <= max(EXCLUDE_TOL, abs(q) * 0.001)
-                return true
-            end
-        end
-        false
-    end
-
-    q_to_peak_id = Dict{Float64, Int}()
-    for i in eachindex(peaks_result.q)
-        qval       = peaks_result.q[i]
-        full_idx   = peaks_result.indices[i]
-        intensity  = I_full[full_idx]
-        res = DBInterface.execute(db,
-            "INSERT INTO peaks (exposure_id, q, intensity, prominence, sharpness, source, excluded)
-             VALUES (?, ?, ?, ?, ?, 'auto', ?)",
-            [exposure_id, qval, intensity,
-             peaks_result.prominence[i], peaks_result.sharpness[i],
-             Int(was_excluded(qval))])
-        q_to_peak_id[qval] = Int(DBInterface.lastrowid(res))
-    end
-
-    # Manual peaks survive the auto-peak wipe; map their stable ids by q so
-    # candidate indices that incorporate them get proper `index_peaks` rows.
-    #
-    # Float64 equality is load-bearing here: `analyze_exposure!` reads these
-    # same q-values out of SQLite and `vcat`s them into the indexpeaks input,
-    # so the q's stored in `IndexEntry.peaks` are bit-identical copies of the
-    # `r.q` values queried below — no float drift on the round-trip. If
-    # `Himalaya.indexpeaks` ever starts snapping or transforming its input
-    # qs, this lookup will silently miss and the manual-peak `index_peaks`
-    # rows won't be written. The "incorporates manual peaks" testset in
-    # test_pipeline.jl will catch that regression.
-    manual_peak_rows = Tables.rowtable(DBInterface.execute(db,
-        "SELECT id, q FROM peaks WHERE exposure_id = ? AND source = 'manual'",
-        [exposure_id]))
-    for r in manual_peak_rows
-        q_to_peak_id[Float64(r.q)] = Int(r.id)
+    # Build O(1) q→(peak_id, peak_kind) lookup from effective peaks.
+    eff_lookup = Dict{Float64, Tuple{Int, Symbol}}()
+    for i in eachindex(eff.q)
+        eff_lookup[eff.q[i]] = (eff.peak_id[i], eff.peak_kind[i])
     end
 
     # Persist candidate indices
@@ -175,63 +245,52 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
         ratio_positions, peak_qvals = SparseArrays.findnz(idx.peaks)
         ratios_normed = Himalaya.phaseratios(P; normalize=true)
         for (rpos, qval) in zip(ratio_positions, peak_qvals)
-            peak_id = get(q_to_peak_id, qval, nothing)
-            peak_id === nothing && continue
+            peak_info = get(eff_lookup, qval, nothing)
+            peak_info === nothing && continue
+            (peak_id, peak_kind) = peak_info
             ideal = ratios_normed[rpos] * Himalaya.basis(idx)
             resid = abs(qval - ideal)
             DBInterface.execute(db,
-                "INSERT OR IGNORE INTO index_peaks (index_id, peak_id, ratio_position, residual)
-                 VALUES (?, ?, ?, ?)",
-                [db_id, peak_id, rpos, resid])
+                """INSERT OR IGNORE INTO index_peaks
+                     (index_id, peak_id, peak_kind, ratio_position, residual)
+                   VALUES (?, ?, ?, ?, ?)""",
+                [db_id, peak_id, String(peak_kind), rpos, resid])
         end
     end
 
     # ── Re-resolve speculative indices' peak references ─────────────────────
     # Auto peaks were just re-detected with new ids, so each speculative
     # index's `index_peaks` rows need fresh peak_ids. We match by q-value
-    # (auto peaks: lookup in q_to_peak_id; manual peaks: by stable id).
-    # An index loses ratio assignments whose q-values no longer correspond to
-    # any current peak. If ≥ 2 assignments survive, we recompute its
-    # basis/r²/d/score; if not, we mark status='stale' but keep the row so
-    # the user can decide what to do.
+    # (auto peaks: lookup in eff_lookup; curation-add peaks: stable id).
     if !isempty(speculative_index_ids)
-        # Build a fresh q→peak_id lookup that includes auto + manual peaks.
-        all_peak_rows = Tables.rowtable(DBInterface.execute(db,
-            "SELECT id, q, sharpness, source, excluded FROM peaks WHERE exposure_id = ?",
-            [exposure_id]))
-        q_to_id_full   = Dict{Int, NamedTuple}()  # peak_id → full row
-        for pr in all_peak_rows
-            q_to_id_full[Int(pr.id)] = pr
-        end
-        manual_q_to_id = Dict{Int, Int}()
-        for pr in all_peak_rows
-            String(pr.source) == "manual" && (manual_q_to_id[Int(pr.id)] = Int(pr.id))
+        # Build a lookup: peak_id → (q, sharpness, peak_kind) from eff
+        eff_by_id = Dict{Int, NamedTuple}()
+        for i in eachindex(eff.q)
+            eff_by_id[eff.peak_id[i]] = (q = eff.q[i], sharpness = eff.sharpness[i],
+                                          peak_kind = eff.peak_kind[i])
         end
 
         function _resolve_peak_id(snap_row)
-            if String(snap_row.peak_source) == "manual"
-                # Manual peaks keep their id across reanalysis.
+            snap_kind = String(snap_row.peak_kind)
+            if snap_kind == "curation"
+                # Curation-add peaks keep their id across reanalysis.
                 pid = Int(snap_row.old_peak_id)
-                return haskey(q_to_id_full, pid) ? pid : nothing
+                return haskey(eff_by_id, pid) ? pid : nothing
             else
                 # Auto peak — match by q-value within tolerance.
                 qv = Float64(snap_row.q_value)
-                pid = get(q_to_peak_id, qv, nothing)
-                pid !== nothing && return pid
-                # Fall back to fuzzy match (peak shifted slightly under new
-                # detection): find closest current auto peak within EXCLUDE_TOL.
-                # Note this is tighter than `SNAP_TOL` (≈0.25%) — peaks that
-                # drift more than 0.1% won't bind here, but the auto-discovery
-                # loop further down uses `SNAP_TOL` as a safety net so they're
-                # still picked up under their predicted ratio position.
-                tol = max(EXCLUDE_TOL, abs(qv) * 0.001)
+                # Exact match via eff_lookup
+                info = get(eff_lookup, qv, nothing)
+                info !== nothing && info[2] == :auto && return info[1]
+                # Fuzzy match (peak shifted slightly under new detection)
+                tol_val = max(EXCLUDE_TOL, abs(qv) * 0.001)
                 best, best_delta = nothing, Inf
-                for pr in all_peak_rows
-                    String(pr.source) == "auto" || continue
-                    d = abs(Float64(pr.q) - qv)
-                    if d < best_delta && d <= tol
+                for i in eachindex(eff.q)
+                    eff.peak_kind[i] == :auto || continue
+                    d = abs(eff.q[i] - qv)
+                    if d < best_delta && d <= tol_val
                         best_delta = d
-                        best = Int(pr.id)
+                        best = eff.peak_id[i]
                     end
                 end
                 return best
@@ -260,10 +319,9 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
                 rpos = Int(s.ratio_position)
                 pid  = _resolve_peak_id(s)
                 pid === nothing && continue
-                pr = q_to_id_full[pid]
-                # Treat newly-excluded peaks as if they don't exist.
-                (pr.excluded == 1 || pr.excluded === true) && continue
-                sharp = pr.sharpness === nothing || ismissing(pr.sharpness) ? 0.0 : Float64(pr.sharpness)
+                pr = get(eff_by_id, pid, nothing)
+                pr === nothing && continue
+                sharp = Float64(pr.sharpness)
                 ratio_to_peak[rpos] = (pid, Float64(pr.q), sharp)
             end
 
@@ -272,31 +330,29 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
             #  - Survived snapshot has ≥ 2 peaks: refit basis from those.
             #  - Stale-recovery path (< 2 survived): use the original q-values
             #    from the snapshot — they encode the user's hypothesis even if
-            #    the underlying peaks no longer exist. This is what makes
-            #    "speculative goes stale → user adds a manual peak → reanalyze
-            #    pulls it in" actually work.
+            #    the underlying peaks no longer exist.
             basis_for_snap = if length(ratio_to_peak) >= 2
+                # Nominal path: use currently-resolved peaks to refit basis.
                 rpos_seed = sort(collect(keys(ratio_to_peak)))
                 qvals_seed = [ratio_to_peak[r][2] for r in rpos_seed]
                 ratios_unnorm[rpos_seed] \ qvals_seed
-            elseif length(snaps) >= 2
-                snap_pairs = sort([(Int(s.ratio_position), Float64(s.q_value)) for s in snaps])
-                rpos_seed  = [first(p) for p in snap_pairs]
-                qvals_seed = [last(p)  for p in snap_pairs]
-                ratios_unnorm[rpos_seed] \ qvals_seed
             else
-                # Once a speculative goes stale, its index_peaks (and therefore
-                # the snapshot) is empty. The `basis` column on the indices row
-                # itself was last set when the index was built, so use it as
-                # the persisted record of user intent for auto-discovery.
-                # `phaseratios` is normalized to ratio[1] = 1, so the ratio[1]
-                # equivalent of `basis` is just `basis`. The DDL doesn't
-                # enforce NOT NULL on `basis` (yet), so guard against it.
-                if ismissing(ix_row.basis) || ix_row.basis === nothing
-                    nothing
+                # Stale-recovery path: use stored snapshot q-values, but skip
+                # any whose underlying peak has been deleted (q_value = NULL/missing).
+                valid_snaps = filter(s -> !ismissing(s.q_value), snaps)
+                if length(valid_snaps) >= 2
+                    snap_pairs = sort([(Int(s.ratio_position), Float64(s.q_value)) for s in valid_snaps])
+                    rpos_seed  = [first(p) for p in snap_pairs]
+                    qvals_seed = [last(p)  for p in snap_pairs]
+                    ratios_unnorm[rpos_seed] \ qvals_seed
                 else
-                    stored = Float64(ix_row.basis)
-                    stored > 0 ? stored : nothing
+                    # Last resort: use the persisted basis on the indices row.
+                    if ismissing(ix_row.basis)
+                        nothing
+                    else
+                        stored = Float64(ix_row.basis)
+                        stored > 0 ? stored : nothing
+                    end
                 end
             end
 
@@ -312,17 +368,16 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
                     best_q     = 0.0
                     best_sharp = 0.0
                     best_relresid = SNAP_TOL
-                    for pr in all_peak_rows
-                        (pr.excluded == 1 || pr.excluded === true) && continue
-                        pid = Int(pr.id)
+                    for i in eachindex(eff.q)
+                        pid = eff.peak_id[i]
                         pid in claimed_pids && continue
-                        qv = Float64(pr.q)
+                        qv = eff.q[i]
                         relresid = abs(qv - predicted_q) / predicted_q
                         if relresid <= best_relresid
                             best_relresid = relresid
                             best_pid      = pid
                             best_q        = qv
-                            best_sharp    = pr.sharpness === nothing || ismissing(pr.sharpness) ? 0.0 : Float64(pr.sharpness)
+                            best_sharp    = eff.sharpness[i]
                         end
                     end
                     if best_pid !== nothing
@@ -360,12 +415,20 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
                 [new_basis, new_score, fit_result.R², fit_result.d, ix_id])
 
             for (rpos, (pid, qv, _)) in ratio_to_peak
+                # Determine peak_kind from eff_by_id
+                pk_info = get(eff_by_id, pid, nothing)
+                pk_str = if pk_info !== nothing
+                    String(pk_info.peak_kind)
+                else
+                    "auto"
+                end
                 ideal = ratios_unnorm[rpos] * new_basis
                 resid = abs(qv - ideal)
                 DBInterface.execute(db,
-                    """INSERT OR IGNORE INTO index_peaks (index_id, peak_id, ratio_position, residual)
-                       VALUES (?, ?, ?, ?)""",
-                    [ix_id, pid, rpos, resid])
+                    """INSERT OR IGNORE INTO index_peaks
+                         (index_id, peak_id, peak_kind, ratio_position, residual)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    [ix_id, pid, pk_str, rpos, resid])
             end
         end
     end
@@ -386,12 +449,6 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
     end
 
     # ── Re-attach custom-group members by semantic identity ────────────────
-    # For each (group_id, phase, basis) we snapshotted before the delete,
-    # find the freshly-inserted candidate of the same phase whose basis is
-    # closest to the snapshot. If the closest match is within
-    # MEMBER_REATTACH_RELTOL of the snapshotted basis, attach it; otherwise
-    # silently drop the member (the change in peaks invalidated that
-    # indexing — that's the honest outcome).
     if !isempty(custom_member_identities)
         new_by_phase = Dict{String, Vector{Tuple{Float64, Int}}}()
         for (ci, idx) in enumerate(candidates)
@@ -424,7 +481,7 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
 
     # If any custom group survived with at least one member (auto-reattached
     # OR speculative), it remains the active set — demote the freshly-created
-    # auto group. Mirrors the post-curate semantics of `ensure_custom_group!`.
+    # auto group.
     custom_still_populated = Tables.rowtable(DBInterface.execute(db,
         "SELECT g.id FROM index_groups g
          WHERE g.exposure_id = ? AND g.kind = 'custom'
@@ -437,8 +494,23 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
 end
 
 function get_peaks_for_exposure(db::SQLite.DB, exposure_id::Int)
-    Tables.rowtable(DBInterface.execute(db,
-        "SELECT * FROM peaks WHERE exposure_id = ? ORDER BY q", [exposure_id]))
+    Tables.rowtable(DBInterface.execute(db, """
+        SELECT a.id, a.exposure_id, a.q, a.intensity, a.prominence, a.sharpness,
+               'auto' AS source,
+               CASE WHEN c.q IS NOT NULL THEN 1 ELSE 0 END AS excluded
+        FROM auto_peaks a
+        LEFT JOIN peak_curations c
+            ON c.exposure_id = a.exposure_id
+           AND c.kind = 'exclude'
+           AND ABS(c.q - a.q) <= MAX(1e-6, ABS(a.q) * 0.001)
+        WHERE a.exposure_id = ?
+        UNION ALL
+        SELECT id, exposure_id, q, NULL AS intensity, NULL AS prominence, NULL AS sharpness,
+               'manual' AS source, 0 AS excluded
+        FROM peak_curations
+        WHERE exposure_id = ? AND kind = 'add'
+        ORDER BY q
+    """, [exposure_id, exposure_id]))
 end
 
 function get_indices_for_exposure(db::SQLite.DB, exposure_id::Int)
@@ -461,16 +533,52 @@ function init_experiment!(db::SQLite.DB; kwargs...)
 end
 
 """
+    synthesize_peaks_result(db, exposure_id, q, I) -> NamedTuple
+
+Reconstruct a peaks_result NamedTuple from the persisted `auto_peaks` rows,
+matching the output shape of `Himalaya.findpeaks`. Used when findpeaks is
+skipped due to unchanged trace_hash but indexpeaks still needs to run
+(e.g. peak set changed via curation).
+
+Field `findpeaks_index` from legacy R2 migration rows may be NULL; falls back
+to `argmin` nearest-grid-index for those rows (heals on next diff_update).
+"""
+function synthesize_peaks_result(db::SQLite.DB, exposure_id::Int,
+                                  q::Vector{Float64}, I::Vector{Float64})
+    rows = Tables.rowtable(DBInterface.execute(db,
+        """SELECT q, prominence, sharpness, findpeaks_index
+           FROM auto_peaks WHERE exposure_id = ? ORDER BY q""", [exposure_id]))
+    qs    = Float64[Float64(r.q)                                           for r in rows]
+    proms = Float64[ismissing(r.prominence) ? 0.0 : Float64(r.prominence)  for r in rows]
+    shs   = Float64[ismissing(r.sharpness)  ? 0.0 : Float64(r.sharpness)   for r in rows]
+    idxs  = Int[
+        # Prefer the persisted findpeaks_index (exact local-maximum sample).
+        # Fall back to nearest-grid-index for legacy rows from R2 migration
+        # where findpeaks_index is NULL — these heal on next diff_update.
+        ismissing(r.findpeaks_index) ?
+            argmin(abs.(q .- Float64(r.q))) :
+            Int(r.findpeaks_index)
+        for r in rows
+    ]
+    (q = qs, indices = idxs, prominence = proms, sharpness = shs)
+end
+
+"""
     analyze_exposure!(db, exposure_id, analysis_dir)
 
 Load the .dat file for `exposure_id`, run findpeaks + indexpeaks,
 auto-group results, and persist everything to the DB.
+
+Hash-guarded: findpeaks is skipped when `trace_hash` matches the persisted
+value AND auto_peaks already exist. indexpeaks is skipped when
+`analysis_inputs_hash` matches the persisted value AND indices already exist.
 
 The .dat filename is constructed from `exposures.filename` and the integration
 pattern stored in the experiment's config (defaults to `{name}.dat` for
 experiments without an explicit config).
 """
 function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String)
+    t0 = time()
     rows = Tables.rowtable(DBInterface.execute(db,
         """SELECT e.filename, x.id AS experiment_id
            FROM exposures e
@@ -481,53 +589,79 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
     filename      = rows[1].filename
     experiment_id = rows[1].experiment_id
 
-    cfg              = config_from_db(db, experiment_id)
+    cfg = config_from_db(db, experiment_id)
     pattern_filename = replace(cfg.integration_pattern, "{name}" => filename)
-    dat_path         = joinpath(analysis_dir, pattern_filename)
+    dat_path = joinpath(analysis_dir, pattern_filename)
     isfile(dat_path) || error("dat file not found: $dat_path")
 
-    q, I, σ      = load_dat(dat_path)
-    peaks_result = Himalaya.findpeaks(q, I, σ)
+    new_trace_hash = hash_trace_file(dat_path)
+    stored_trace_hash_raw = first(Tables.rowtable(DBInterface.execute(db,
+        "SELECT trace_hash FROM exposures WHERE id = ?", [exposure_id]))).trace_hash
+    stored_trace_hash = ismissing(stored_trace_hash_raw) ? nothing : String(stored_trace_hash_raw)
 
-    # Curation snapshot: previously-excluded auto q's, plus user-added manual q's.
-    # Both adjust what the indexer sees relative to raw `findpeaks` output:
-    #   - excluded auto peaks must not contribute to candidate scoring
-    #     (otherwise the user's "this is noise" verdict gets ignored every
-    #     reanalysis), and
-    #   - manual peaks must be included so a peak the user marked at a
-    #     predicted ratio position can land in `IndexEntry.peaks`.
-    excluded_rows = Tables.rowtable(DBInterface.execute(db,
-        "SELECT q FROM peaks WHERE exposure_id = ? AND source = 'auto' AND excluded = 1",
-        [exposure_id]))
-    excluded_qs = Float64[Float64(r.q) for r in excluded_rows]
-    manual_rows = Tables.rowtable(DBInterface.execute(db,
-        "SELECT q FROM peaks WHERE exposure_id = ? AND source = 'manual'",
-        [exposure_id]))
-    manual_q = Float64[Float64(r.q) for r in manual_rows]
+    autopeaks_count = first(Tables.rowtable(DBInterface.execute(db,
+        "SELECT COUNT(*) AS n FROM auto_peaks WHERE exposure_id = ?", [exposure_id]))).n
 
-    is_excluded(qv::Float64) = any(
-        eq -> abs(eq - qv) <= max(1e-6, abs(qv) * 0.001), excluded_qs)
+    # Full skip predicate: skip only when hash matches AND rows already exist.
+    findpeaks_skipped = (stored_trace_hash == new_trace_hash) && (autopeaks_count > 0)
 
-    keep = [i for i in eachindex(peaks_result.q) if !is_excluded(peaks_result.q[i])]
-    auto_q_kept     = peaks_result.q[keep]
-    auto_sharp_kept = peaks_result.sharpness[keep]
-
-    candidates = if isempty(manual_q)
-        Himalaya.indexpeaks(auto_q_kept, auto_sharp_kept)
-    else
-        # Sharpness for a manual peak: nearest-grid lookup against the full
-        # SG-second-derivative trace. One O(N) sharpness pass regardless of
-        # how many manual peaks exist, and consistent with the unit `findpeaks`
-        # uses for its own peaks so they mix correctly in `consistency`.
-        sharp_full   = Himalaya.sharpness(I)
-        manual_sharp = Float64[sharp_full[argmin(abs.(q .- mq))] for mq in manual_q]
-        all_q        = vcat(auto_q_kept, manual_q)
-        all_sharp    = vcat(auto_sharp_kept, manual_sharp)
-        perm         = sortperm(all_q)
-        Himalaya.indexpeaks(all_q[perm], all_sharp[perm])
+    q, I, σ = load_dat(dat_path)
+    # Hold the live peaks_result when findpeaks runs so we can pass it directly
+    # to persist_analysis! below without round-tripping through the DB. When
+    # findpeaks is skipped, synthesize_peaks_result reconstructs an equivalent
+    # NamedTuple from auto_peaks rows (using persisted findpeaks_index for
+    # exact local-maximum sample fidelity).
+    fresh_peaks_result = nothing
+    if !findpeaks_skipped
+        fresh_peaks_result = Himalaya.findpeaks(q, I, σ)
+        diff_update_auto_peaks!(db, exposure_id, fresh_peaks_result, I)
+        DBInterface.execute(db,
+            "UPDATE exposures SET trace_hash = ? WHERE id = ?",
+            [new_trace_hash, exposure_id])
     end
 
-    group = auto_group(candidates)
+    eff = effective_peaks(db, exposure_id, q, I)
+    new_inputs_hash = hash_peak_set(eff)
 
-    persist_analysis!(db, exposure_id, q, I, peaks_result, candidates, group)
+    stored_inputs_hash_raw = first(Tables.rowtable(DBInterface.execute(db,
+        "SELECT analysis_inputs_hash FROM exposures WHERE id = ?", [exposure_id]))).analysis_inputs_hash
+    stored_inputs_hash = ismissing(stored_inputs_hash_raw) ? nothing : String(stored_inputs_hash_raw)
+
+    indices_count = first(Tables.rowtable(DBInterface.execute(db,
+        "SELECT COUNT(*) AS n FROM indices WHERE exposure_id = ?", [exposure_id]))).n
+
+    # Full skip predicate: skip only when hash matches AND rows already exist.
+    indexpeaks_skipped = (stored_inputs_hash == new_inputs_hash) && (indices_count > 0)
+
+    if !indexpeaks_skipped
+        peaks_result_for_persist = fresh_peaks_result === nothing ?
+            synthesize_peaks_result(db, exposure_id, q, I) :
+            fresh_peaks_result
+        candidates = Himalaya.indexpeaks(eff.q, eff.sharpness)
+        group = auto_group(candidates)
+        persist_analysis!(db, exposure_id, q, I, peaks_result_for_persist,
+                          candidates, group, eff)
+        DBInterface.execute(db,
+            "UPDATE exposures SET analysis_inputs_hash = ? WHERE id = ?",
+            [new_inputs_hash, exposure_id])
+        DBInterface.execute(db,
+            "UPDATE indices SET inputs_hash = ? WHERE exposure_id = ?",
+            [new_inputs_hash, exposure_id])
+    end
+
+    duration_ms = round(Int, (time() - t0) * 1000)
+    apply_event!(db, _system_request();
+        kind        = "analyze_run",
+        entity_type = "exposure",
+        entity_id   = exposure_id,
+        payload     = Dict(
+            :trace_hash_before    => stored_trace_hash,
+            :trace_hash_after     => new_trace_hash,
+            :inputs_hash_before   => stored_inputs_hash,
+            :inputs_hash_after    => new_inputs_hash,
+            :findpeaks_skipped    => findpeaks_skipped,
+            :indexpeaks_skipped   => indexpeaks_skipped,
+            :duration_ms          => duration_ms,
+            :effective_peaks_count => length(eff.q),
+        ))
 end

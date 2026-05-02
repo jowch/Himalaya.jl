@@ -39,13 +39,15 @@ CREATE TABLE IF NOT EXISTS sample_tags (
 );
 
 CREATE TABLE IF NOT EXISTS exposures (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    sample_id  INTEGER REFERENCES samples(id),
-    filename   TEXT,
-    kind       TEXT DEFAULT 'file',
-    selected   BOOLEAN DEFAULT FALSE,
-    status     TEXT CHECK (status IN ('accepted', 'rejected')),
-    image_path TEXT
+    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+    sample_id            INTEGER REFERENCES samples(id),
+    filename             TEXT,
+    kind                 TEXT DEFAULT 'file',
+    selected             BOOLEAN DEFAULT FALSE,
+    status               TEXT CHECK (status IN ('accepted', 'rejected')),
+    image_path           TEXT,
+    trace_hash           TEXT,
+    analysis_inputs_hash TEXT
 );
 
 CREATE TABLE IF NOT EXISTS exposure_sources (
@@ -63,17 +65,6 @@ CREATE TABLE IF NOT EXISTS exposure_tags (
     source      TEXT DEFAULT 'manual'
 );
 
-CREATE TABLE IF NOT EXISTS peaks (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    exposure_id INTEGER REFERENCES exposures(id),
-    q           REAL NOT NULL,
-    intensity   REAL,
-    prominence  REAL,
-    sharpness   REAL,
-    source      TEXT DEFAULT 'auto',
-    excluded    INTEGER DEFAULT 0
-);
-
 CREATE TABLE IF NOT EXISTS indices (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     exposure_id INTEGER REFERENCES exposures(id),
@@ -83,16 +74,45 @@ CREATE TABLE IF NOT EXISTS indices (
     r_squared   REAL,
     lattice_d   REAL,
     status      TEXT DEFAULT 'candidate',
-    kind        TEXT NOT NULL DEFAULT 'auto'
+    kind        TEXT NOT NULL DEFAULT 'auto',
+    inputs_hash TEXT
 );
 
+-- index_peaks: peak_id references auto_peaks OR peak_curations (peak_kind disambiguates).
+-- Existing rows are all 'auto' (manual-peak refs get repointed during migration).
 CREATE TABLE IF NOT EXISTS index_peaks (
     index_id       INTEGER REFERENCES indices(id),
-    peak_id        INTEGER REFERENCES peaks(id),
+    peak_id        INTEGER NOT NULL,
+    peak_kind      TEXT NOT NULL DEFAULT 'auto'
+                   CHECK (peak_kind IN ('auto', 'curation')),
     ratio_position INTEGER,
     residual       REAL,
-    PRIMARY KEY (index_id, peak_id)
+    PRIMARY KEY (index_id, peak_id, peak_kind)
 );
+
+CREATE TABLE IF NOT EXISTS auto_peaks (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    exposure_id     INTEGER REFERENCES exposures(id),
+    q               REAL NOT NULL,
+    intensity       REAL,
+    prominence      REAL,
+    sharpness       REAL,
+    findpeaks_index INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS peak_curations (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    exposure_id INTEGER REFERENCES exposures(id),
+    kind        TEXT NOT NULL CHECK (kind IN ('exclude', 'add')),
+    q           REAL NOT NULL,
+    created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_auto_peaks_exposure
+    ON auto_peaks(exposure_id);
+CREATE INDEX IF NOT EXISTS idx_peak_curations_exposure
+    ON peak_curations(exposure_id);
 
 CREATE TABLE IF NOT EXISTS index_groups (
     id          INTEGER PRIMARY KEY,
@@ -102,6 +122,9 @@ CREATE TABLE IF NOT EXISTS index_groups (
     created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
     created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_one_custom_group_per_exposure
+    ON index_groups(exposure_id) WHERE kind = 'custom';
 
 CREATE TABLE IF NOT EXISTS index_group_members (
     group_id  INTEGER REFERENCES index_groups(id),
@@ -121,20 +144,54 @@ CREATE INDEX IF NOT EXISTS idx_sample_messages_sample
     ON sample_messages(sample_id, created_at);
 
 CREATE TABLE IF NOT EXISTS user_actions (
-    id          INTEGER PRIMARY KEY,
-    user_id     INTEGER REFERENCES users(id) ON DELETE SET NULL,
-    timestamp   DATETIME DEFAULT CURRENT_TIMESTAMP,
-    action      TEXT,
-    entity_type TEXT,
-    entity_id   INTEGER,
-    note        TEXT
+    id              INTEGER PRIMARY KEY,
+    user_id         INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    timestamp       DATETIME DEFAULT CURRENT_TIMESTAMP,
+    action          TEXT,
+    entity_type     TEXT,
+    entity_id       INTEGER,
+    note            TEXT,
+    payload         TEXT,
+    undoes_event_id INTEGER REFERENCES user_actions(id)
 );
+
+CREATE INDEX IF NOT EXISTS idx_events_by_exposure
+    ON user_actions(entity_type, entity_id, id);
 """
+
+"""
+    preflight_index_groups_uniqueness!(db)
+
+If a multiplayer-era duplicate-custom-group row exists in a pre-R0.1 DB,
+fail loudly with a useful message rather than letting `CREATE UNIQUE INDEX`
+produce SQLite's terse "UNIQUE constraint failed" error — operators wouldn't
+know that "merge the duplicate custom groups" is the right next step.
+No-op on truly-fresh DBs (the `index_groups` table doesn't exist yet).
+"""
+function preflight_index_groups_uniqueness!(db::SQLite.DB)
+    has_table = !isempty(Tables.rowtable(DBInterface.execute(db,
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='index_groups'")))
+    has_table || return
+    dups = Tables.rowtable(DBInterface.execute(db, """
+        SELECT exposure_id, COUNT(*) AS n FROM index_groups
+        WHERE kind = 'custom' GROUP BY exposure_id HAVING n > 1
+    """))
+    if !isempty(dups)
+        error("DB has duplicate 'custom' index_groups for exposures " *
+              join([string(d.exposure_id) for d in dups], ", ") *
+              " — manual merge required before idx_one_custom_group_per_exposure can be enforced")
+    end
+end
 
 function create_schema!(db::SQLite.DB)
     for stmt in split(SCHEMA, ";")
         s = strip(stmt)
         isempty(s) && continue
+        # Defensive: skip fragments that are purely SQL comments. Dead on the
+        # current SCHEMA (no `;` inside any `--` comment), but a future SCHEMA
+        # edit that puts `;` inside a comment would otherwise leave a
+        # pure-comment fragment that DBInterface.execute rejects.
+        all(l -> isempty(strip(l)) || startswith(strip(l), "--"), split(s, "\n")) && continue
         DBInterface.execute(db, s)
     end
 end
@@ -150,6 +207,11 @@ function migrate_schema!(db::SQLite.DB)
         "ALTER TABLE users ADD COLUMN first_name TEXT",
         "ALTER TABLE users ADD COLUMN last_name TEXT",
         "ALTER TABLE indices ADD COLUMN kind TEXT NOT NULL DEFAULT 'auto'",
+        "ALTER TABLE exposures ADD COLUMN trace_hash TEXT",
+        "ALTER TABLE exposures ADD COLUMN analysis_inputs_hash TEXT",
+        "ALTER TABLE indices ADD COLUMN inputs_hash TEXT",
+        "ALTER TABLE user_actions ADD COLUMN payload TEXT",
+        "ALTER TABLE user_actions ADD COLUMN undoes_event_id INTEGER REFERENCES user_actions(id)",
     ]
     for stmt in stmts
         try
@@ -159,6 +221,80 @@ function migrate_schema!(db::SQLite.DB)
         end
     end
     migrate_pk_to_autoincrement!(db)
+    migrate_r2_widen_index_peaks_pk!(db)  # rebuild with widened PK first
+    migrate_r2_split_peaks!(db)            # then repoint manual-peak refs
+
+    # R2.3 sentinel: belt-and-suspenders verifier. `migrate_r2_split_peaks!`
+    # is responsible for dropping the legacy `peaks` table; if it's still
+    # around at this point, something went wrong in the migration path
+    # (e.g. partial state from an aborted run). Warn loudly so operators
+    # see it in the daemon log.
+    legacy = Tables.rowtable(DBInterface.execute(db,
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='peaks'"))
+    if !isempty(legacy)
+        @warn "Legacy 'peaks' table still present after R2 migration — investigate"
+    end
+
+    # R3.2: Once analysis_inputs_hash is the source of truth for staleness,
+    # the old 'stale' enum value is dead. Any existing 'stale' rows came from
+    # R2's transitional UPDATE; normalize them to 'candidate' (the next analyze
+    # run will set inputs_hash; until then, hash mismatch with NULL on the index
+    # renders them as stale to the UI). Unconditional — idempotent (no-op when
+    # no 'stale' rows exist).
+    DBInterface.execute(db, "UPDATE indices SET status = 'candidate' WHERE status = 'stale'")
+
+    # R4.2: Rewrite legacy entity_type='peak'/'index' rows to 'exposure' so the
+    # idx_events_by_exposure index is useful for fold-by-exposure queries.
+    # Must run AFTER R2 migrations (which create auto_peaks and drop legacy peaks).
+    migrate_r4_rebase_entity_type!(db)
+end
+
+"""
+    migrate_r4_rebase_entity_type!(db)
+
+Rewrite historical user_actions rows with `entity_type='peak'` or `'index'`
+to `entity_type='exposure'`, with `entity_id` resolved to the parent exposure.
+Without this, the `idx_events_by_exposure` index is useless for fold-by-exposure
+queries on legacy events.
+
+Idempotent: returns early if no legacy rows remain.
+"""
+function migrate_r4_rebase_entity_type!(db::SQLite.DB)
+    legacy = first(Tables.rowtable(DBInterface.execute(db, """
+        SELECT COUNT(*) AS n FROM user_actions
+        WHERE entity_type IN ('peak', 'index')
+    """))).n
+    Int(legacy) == 0 && return
+
+    SQLite.transaction(db) do
+        # Resolve peak → exposure via auto_peaks/peak_curations split
+        # (legacy `peaks` table no longer exists post-R2.2).
+        DBInterface.execute(db, """
+            UPDATE user_actions SET
+                entity_type = 'exposure',
+                entity_id = COALESCE(
+                    (SELECT exposure_id FROM auto_peaks      WHERE auto_peaks.id     = user_actions.entity_id),
+                    (SELECT exposure_id FROM peak_curations  WHERE peak_curations.id = user_actions.entity_id)
+                )
+            WHERE entity_type = 'peak'
+              AND (
+                EXISTS (SELECT 1 FROM auto_peaks     WHERE auto_peaks.id     = user_actions.entity_id)
+                OR
+                EXISTS (SELECT 1 FROM peak_curations WHERE peak_curations.id = user_actions.entity_id)
+              )
+        """)
+        # Index events: resolve via indices.exposure_id.
+        DBInterface.execute(db, """
+            UPDATE user_actions SET
+                entity_type = 'exposure',
+                entity_id = (SELECT exposure_id FROM indices WHERE indices.id = user_actions.entity_id)
+            WHERE entity_type = 'index'
+              AND EXISTS (SELECT 1 FROM indices WHERE indices.id = user_actions.entity_id)
+        """)
+        # Stragglers (peak/index id no longer resolves) keep their original
+        # entity_type — they won't appear in fold-by-exposure queries but
+        # they're not lost; queryable by raw kind/id.
+    end
 end
 
 """
@@ -178,35 +314,55 @@ DBs that have already been migrated.
 function migrate_pk_to_autoincrement!(db::SQLite.DB)
     tables = ["experiments", "samples", "exposures", "peaks", "indices"]
 
-    # Sentinel: skip iff every table in `tables` already has AUTOINCREMENT.
-    # Checking just one would let a future addition to `tables` (a 6th
-    # mention-target) get silently skipped on already-migrated DBs.
-    # Skip the migration entirely if any table is missing — the migration
-    # loop below assumes all five tables exist (it ALTER-renames each one),
-    # and partial-schema fixtures aren't real production DBs anyway.
+    # Sentinel: skip iff every table in `tables` that EXISTS already has
+    # AUTOINCREMENT. "peaks" may no longer exist in R2.2+ DBs (removed from
+    # SCHEMA); skip it if absent so migrate_pk_to_autoincrement! stays
+    # idempotent on fresh DBs.
     needs_migration = false
     for t in tables
         rows = Tables.rowtable(DBInterface.execute(db,
             "SELECT sql FROM sqlite_master WHERE type='table' AND name=?", [t]))
-        isempty(rows) && return  # one or more tables missing → leave alone
+        isempty(rows) && continue  # table absent (e.g. peaks on R2.2+ DBs) — skip
         if !occursin("AUTOINCREMENT", String(rows[1].sql))
             needs_migration = true
         end
     end
+    # If ALL tables are either absent or already have AUTOINCREMENT, no-op.
     needs_migration || return
+
+    # Only migrate tables that actually exist AND are still in SCHEMA (can be
+    # recreated by create_schema!). `peaks` was removed from SCHEMA in R2.2;
+    # legacy `peaks` rows are handled by migrate_r2_split_peaks! instead.
+    schema_tables = let db_tmp = SQLite.DB()
+        create_schema!(db_tmp)
+        Set(String[String(r.name) for r in Tables.rowtable(DBInterface.execute(db_tmp,
+            "SELECT name FROM sqlite_master WHERE type='table'"))])
+    end
+    tables_to_migrate = filter(t ->
+        !isempty(Tables.rowtable(DBInterface.execute(db,
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", [t]))) &&
+        t in schema_tables,
+        tables)
 
     # FK enforcement must be disabled OUTSIDE a transaction (SQLite docs).
     DBInterface.execute(db, "PRAGMA foreign_keys = OFF")
     try
-        # Rename old tables, create the fresh schema (the renamed tables no
-        # longer exist so `CREATE TABLE IF NOT EXISTS` fires for them and is
-        # a no-op for everyone else), copy rows, drop the renamed originals.
         SQLite.transaction(db) do
-            for t in tables
+            # Rename old tables and recreate them with AUTOINCREMENT.
+            # IMPORTANT: we call create_schema! here ONLY to recreate the five
+            # entity tables. We do NOT want create_schema! to also create tables
+            # that have FK references to `exposures` within this transaction,
+            # because SQLite's ALTER TABLE RENAME tracking would corrupt those
+            # FK references (storing "_migrate_old_exposures" instead of
+            # "exposures" in the new table's schema). The deferred create_schema!
+            # call in open_db (which already ran before migrate_schema!) handles
+            # non-entity tables — they exist or will be created after this
+            # transaction commits when the FK tracking state is clean.
+            for t in tables_to_migrate
                 DBInterface.execute(db, "ALTER TABLE $t RENAME TO _migrate_old_$t")
             end
             create_schema!(db)
-            for t in tables
+            for t in tables_to_migrate
                 # Copy only the columns that exist in BOTH the renamed source
                 # and the freshly-created destination — the old table may be
                 # missing columns added by `migrate_schema!`'s ALTER TABLE pass
@@ -221,6 +377,253 @@ function migrate_pk_to_autoincrement!(db::SQLite.DB)
                 DBInterface.execute(db, "DROP TABLE _migrate_old_$t")
             end
         end
+        # After the transaction commits, fix any FK references that were corrupted
+        # by the ALTER TABLE RENAME tracking (SQLite updates all FK refs to the
+        # renamed table name, including tables created INSIDE the transaction that
+        # referenced `exposures` by name AFTER the rename — they end up stored as
+        # REFERENCES "_migrate_old_exposures" which no longer exists).
+        # Drop and recreate affected tables now that the rename transaction is done.
+        _fix_fk_references_after_autoincrement_migration!(db)
+    finally
+        DBInterface.execute(db, "PRAGMA foreign_keys = ON")
+    end
+end
+
+"""
+    _fix_fk_references_after_autoincrement_migration!(db)
+
+After `migrate_pk_to_autoincrement!` runs, SQLite's ALTER TABLE RENAME tracking
+may have stored corrupted FK references (pointing to `_migrate_old_exposures`
+instead of `exposures`) in tables created by `create_schema!` INSIDE the rename
+transaction. Fix by dropping and recreating those tables. This is safe because
+these tables were freshly created (empty) by create_schema! in the migration.
+"""
+function _fix_fk_references_after_autoincrement_migration!(db::SQLite.DB)
+    # Find tables with FK references to non-existent tables (the renamed ones).
+    # Only check tables we created in this run (non-entity new R2.1 tables).
+    candidates = ["auto_peaks", "peak_curations"]
+    for t in candidates
+        # Check if the table exists at all.
+        exists = !isempty(Tables.rowtable(DBInterface.execute(db,
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", [t])))
+        exists || continue
+        # Check if any FK points to a non-existent table.
+        fks = Tables.rowtable(DBInterface.execute(db, "PRAGMA foreign_key_list($t)"))
+        needs_fix = any(fk -> begin
+            ref_table = String(fk.table)
+            isempty(Tables.rowtable(DBInterface.execute(db,
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", [ref_table])))
+        end, fks)
+        needs_fix || continue
+        # Drop and recreate: the table was just created (empty) so no data is lost.
+        @debug "_fix_fk_references_after_autoincrement_migration!: rebuilding $t"
+        DBInterface.execute(db, "DROP TABLE $t")
+    end
+    # Recreate all affected tables via create_schema! (IF NOT EXISTS is safe).
+    create_schema!(db)
+end
+
+"""
+    migrate_r2_widen_index_peaks_pk!(db)
+
+Rebuild `index_peaks` to widen its PRIMARY KEY from `(index_id, peak_id)` to
+`(index_id, peak_id, peak_kind)` and add the `peak_kind` discriminator column.
+Idempotent: no-op if the column is already part of the PK or if the table
+doesn't exist yet (fresh DBs created from the new SCHEMA already have the
+right shape).
+"""
+function migrate_r2_widen_index_peaks_pk!(db::SQLite.DB)
+    # Sentinel: skip if peak_kind already in PK (rebuilt previously).
+    info = Tables.rowtable(DBInterface.execute(db,
+        "SELECT name, pk FROM pragma_table_info('index_peaks')"))
+    already_widened = any(r -> String(r.name) == "peak_kind" && Int(r.pk) > 0, info)
+    already_widened && return
+    # Skip on fresh DBs that already have the new shape via CREATE.
+    isempty(info) && return
+
+    DBInterface.execute(db, "PRAGMA foreign_keys = OFF")
+    try
+        SQLite.transaction(db) do
+            DBInterface.execute(db, "ALTER TABLE index_peaks RENAME TO _index_peaks_old")
+            # Re-create with the new shape (matches SCHEMA above).
+            DBInterface.execute(db, """
+                CREATE TABLE index_peaks (
+                    index_id       INTEGER REFERENCES indices(id),
+                    peak_id        INTEGER NOT NULL,
+                    peak_kind      TEXT NOT NULL DEFAULT 'auto'
+                                   CHECK (peak_kind IN ('auto', 'curation')),
+                    ratio_position INTEGER,
+                    residual       REAL,
+                    PRIMARY KEY (index_id, peak_id, peak_kind)
+                )
+            """)
+            # Old rows are all 'auto' (this runs before migrate_r2_split_peaks!,
+            # which is responsible for repointing manual-peak refs).
+            DBInterface.execute(db, """
+                INSERT INTO index_peaks (index_id, peak_id, peak_kind, ratio_position, residual)
+                SELECT index_id, peak_id, 'auto', ratio_position, residual
+                FROM _index_peaks_old
+            """)
+            DBInterface.execute(db, "DROP TABLE _index_peaks_old")
+        end
+    finally
+        DBInterface.execute(db, "PRAGMA foreign_keys = ON")
+    end
+end
+
+"""
+    migrate_r2_split_peaks!(db)
+
+Backfill `auto_peaks` and `peak_curations` from the legacy `peaks` table,
+repointing `index_peaks.peak_id` for manual-peak references so user-built
+speculatives survive the migration. Idempotent: returns early if `peaks`
+no longer exists.
+"""
+function migrate_r2_split_peaks!(db::SQLite.DB)
+    # Sentinel: if `peaks` table is gone, migration already ran (or was never
+    # needed). This is the normal state for all R2.1+ DBs after first run.
+    peaks_exists = !isempty(Tables.rowtable(DBInterface.execute(db,
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='peaks'")))
+    peaks_exists || return
+
+    # Sentinel: distinguish fresh R2.1 DBs (peaks exists but was never written
+    # to by the pipeline) from legacy DBs (peaks has data from pre-R2.1 use).
+    # Two checks:
+    # (a) sqlite_sequence: AUTOINCREMENT tables get an entry here after first
+    #     INSERT — catches R2.1 DBs where peaks had AUTOINCREMENT.
+    # (b) Direct row count: pre-R2.1 DBs used plain INTEGER PRIMARY KEY (no
+    #     AUTOINCREMENT), so sqlite_sequence has no entry even if rows exist —
+    #     fall back to a COUNT(*) check.
+    # Fresh DBs need no migration; peaks will be removed in R2.2.
+    peaks_ever_written = !isempty(Tables.rowtable(DBInterface.execute(db,
+        "SELECT 1 FROM sqlite_sequence WHERE name = 'peaks'"))) ||
+        (first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT COUNT(*) AS n FROM peaks"))).n > 0)
+    peaks_ever_written || return
+
+    # Sentinel: if auto_peaks already has rows, we're partway through —
+    # the only safe action is to bail and require operator intervention.
+    auto_peaks_exists = !isempty(Tables.rowtable(DBInterface.execute(db,
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='auto_peaks'")))
+    if auto_peaks_exists
+        auto_count = first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT COUNT(*) AS n FROM auto_peaks"))).n
+        if Int(auto_count) > 0
+            error("migrate_r2_split_peaks!: auto_peaks already has $auto_count rows " *
+                  "but peaks table still exists — operator intervention required " *
+                  "(restore from backup or manually reconcile)")
+        end
+    end
+
+    # At this point: `peaks` exists and has been written to (legacy DB).
+    # auto_peaks is either absent (true pre-R2.1) or empty (post-create_schema!).
+    # Create destination tables if they don't exist yet.
+
+    DBInterface.execute(db, "PRAGMA foreign_keys = OFF")
+    try
+        SQLite.transaction(db) do
+            # Ensure destination tables exist (true pre-R2.1 DBs won't have them).
+            DBInterface.execute(db, """
+                CREATE TABLE IF NOT EXISTS auto_peaks (
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    exposure_id     INTEGER REFERENCES exposures(id),
+                    q               REAL NOT NULL,
+                    intensity       REAL,
+                    prominence      REAL,
+                    sharpness       REAL,
+                    findpeaks_index INTEGER
+                )
+            """)
+            DBInterface.execute(db, """
+                CREATE TABLE IF NOT EXISTS peak_curations (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    exposure_id INTEGER REFERENCES exposures(id),
+                    kind        TEXT NOT NULL CHECK (kind IN ('exclude', 'add')),
+                    q           REAL NOT NULL,
+                    created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            # Introspect the legacy `peaks` table to handle minimal/partial schemas
+            # (e.g. test DBs that only have id, exposure_id, q).
+            peaks_cols = Set(String.(
+                Tables.rowtable(DBInterface.execute(db, "PRAGMA table_info(peaks)")) .|>
+                r -> r.name))
+            has_source     = "source"     ∈ peaks_cols
+            has_intensity  = "intensity"  ∈ peaks_cols
+            has_prominence = "prominence" ∈ peaks_cols
+            has_sharpness  = "sharpness"  ∈ peaks_cols
+            has_excluded   = "excluded"   ∈ peaks_cols
+
+            intensity_sel  = has_intensity  ? "intensity"  : "NULL"
+            prominence_sel = has_prominence ? "prominence" : "NULL"
+            sharpness_sel  = has_sharpness  ? "sharpness"  : "NULL"
+            auto_where     = has_source     ? "WHERE source = 'auto'" : ""
+            excl_where     = has_source && has_excluded ?
+                "WHERE source = 'auto' AND excluded = 1" : "WHERE 1=0"
+            manual_where   = has_source     ? "WHERE source = 'manual'" : "WHERE 1=0"
+
+            # 1. Auto peaks: id preserved (peaks PK was AUTOINCREMENT).
+            # findpeaks_index left NULL for legacy rows — synthesize_peaks_result
+            # falls back to argmin lookup when NULL; the next analyze run that
+            # invokes diff_update_auto_peaks! will populate it.
+            DBInterface.execute(db, """
+                INSERT INTO auto_peaks (id, exposure_id, q, intensity, prominence, sharpness, findpeaks_index)
+                SELECT id, exposure_id, q, $intensity_sel, $prominence_sel, $sharpness_sel, NULL
+                FROM peaks $auto_where
+            """)
+
+            # 2. Exclusion curations: q-value is the binding key.
+            DBInterface.execute(db, """
+                INSERT INTO peak_curations (exposure_id, kind, q, created_by)
+                SELECT exposure_id, 'exclude', q, NULL
+                FROM peaks $excl_where
+            """)
+
+            # 3. Addition curations: row-by-row to capture old→new id mapping.
+            manual_rows = Tables.rowtable(DBInterface.execute(db,
+                "SELECT id, exposure_id, q FROM peaks $manual_where"))
+            old_to_new = Dict{Int, Int}()
+            for r in manual_rows
+                res = DBInterface.execute(db,
+                    """INSERT INTO peak_curations (exposure_id, kind, q, created_by)
+                       VALUES (?, 'add', ?, NULL)""",
+                    [Int(r.exposure_id), Float64(r.q)])
+                new_id = Int(DBInterface.lastrowid(res))
+                old_to_new[Int(r.id)] = new_id
+            end
+
+            # 4. Repoint index_peaks rows whose peak_id was a manual peak.
+            for (old_id, new_id) in old_to_new
+                DBInterface.execute(db,
+                    """UPDATE index_peaks SET peak_id = ?, peak_kind = 'curation'
+                       WHERE peak_id = ?""",
+                    [new_id, old_id])
+            end
+
+            # 5. Verify no orphan index_peaks rows remain (auto refs survive,
+            #    manual refs were just repointed). Any remaining row whose
+            #    peak_id doesn't resolve in either table is a bug.
+            orphans = Tables.rowtable(DBInterface.execute(db, """
+                SELECT ip.peak_id, ip.peak_kind, ip.index_id
+                FROM index_peaks ip
+                WHERE (ip.peak_kind = 'auto'     AND ip.peak_id NOT IN (SELECT id FROM auto_peaks))
+                   OR (ip.peak_kind = 'curation' AND ip.peak_id NOT IN (SELECT id FROM peak_curations))
+            """))
+            if !isempty(orphans)
+                error("migrate_r2_split_peaks!: $(length(orphans)) orphaned index_peaks " *
+                      "rows after repoint — operator intervention required")
+            end
+
+            # 6. Mark all indices stale so the next analyze recomputes basis/score
+            #    under the new effective_peaks model.
+            DBInterface.execute(db, "UPDATE indices SET status = 'stale'")
+
+            # 7. Drop the old peaks table — fully decomposed and repointed.
+            DBInterface.execute(db, "DROP TABLE peaks")
+        end
+        @info "migrate_r2_split_peaks! complete"
     finally
         DBInterface.execute(db, "PRAGMA foreign_keys = ON")
     end
@@ -316,8 +719,15 @@ function open_db(db_path::AbstractString = default_db_path())::SQLite.DB
     parent = dirname(db_path)
     !isempty(parent) && !isdir(parent) && mkpath(parent)
     db = SQLite.DB(db_path)
+    preflight_index_groups_uniqueness!(db)
     create_schema!(db)
     migrate_schema!(db)
+    # Flush any SQLite.jl statement cache entries that became stale due to
+    # DDL operations (table renames/drops) in the migration functions.
+    # Without this, the first user query after migration can fail with
+    # "no such table: _migrate_old_*" because a cached prepared statement
+    # from inside the migration transaction references a dropped table.
+    SQLite.finalize_statements!(db)
     DBInterface.execute(db, "PRAGMA foreign_keys = ON")
 
     # SQLite hardcodes O_CREAT mode 0644 in os_unix.c — process umask only
