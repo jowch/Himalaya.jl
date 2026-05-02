@@ -221,9 +221,6 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
     DBInterface.execute(db,
         "DELETE FROM indices WHERE exposure_id = ? AND kind = 'auto'", [exposure_id])
 
-    # diff_update_auto_peaks! targets auto_peaks now.
-    diff_update_auto_peaks!(db, exposure_id, peaks_result, I_full)
-
     # Build O(1) q→(peak_id, peak_kind) lookup from effective peaks.
     eff_lookup = Dict{Float64, Tuple{Int, Symbol}}()
     for i in eachindex(eff.q)
