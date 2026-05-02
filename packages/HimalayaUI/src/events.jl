@@ -78,9 +78,55 @@ String-key footgun: `JSON3.Object` supports both `obj.q` and `obj[:q]` /
 `obj["q"]`. Branch code accesses fields uniformly via `payload.q` style.
 """
 function update_view_for_event!(db, kind, entity_id, payload, event_id)
-    # Implementations added per route in R4.2. Initial scaffolding only:
+    # R4.2 dispatcher branches — one per view-producing curation kind.
+    # All writes happen inside the transaction opened by apply_event!.
+
+    if kind == "peak_added"
+        DBInterface.execute(db,
+            """INSERT INTO peak_curations (exposure_id, kind, q, created_by)
+               VALUES (?, 'add', ?, (SELECT user_id FROM user_actions WHERE id = ?))""",
+            [Int(entity_id), Float64(payload.q), event_id])
+        return
+    end
+
+    if kind == "peak_excluded"
+        DBInterface.execute(db,
+            """INSERT INTO peak_curations (exposure_id, kind, q, created_by)
+               VALUES (?, 'exclude', ?, (SELECT user_id FROM user_actions WHERE id = ?))""",
+            [Int(entity_id), Float64(payload.q), event_id])
+        return
+    end
+
+    if kind == "peak_unexcluded"
+        # payload.q is the auto peak's q; remove the matching exclude curation.
+        # Tolerance shape mirrors effective_peaks.
+        DBInterface.execute(db,
+            """DELETE FROM peak_curations
+               WHERE exposure_id = ? AND kind = 'exclude'
+                 AND ABS(q - ?) <= MAX(1e-6, ABS(?) * 0.001)""",
+            [Int(entity_id), Float64(payload.q), Float64(payload.q)])
+        return
+    end
+
+    if kind == "index_confirmed"
+        DBInterface.execute(db,
+            """INSERT OR IGNORE INTO index_group_members (group_id, index_id)
+               VALUES (?, ?)""",
+            [Int(payload.group_id), Int(payload.index_id)])
+        return
+    end
+
+    if kind == "index_unconfirmed"
+        DBInterface.execute(db,
+            """DELETE FROM index_group_members
+               WHERE group_id = ? AND index_id = ?""",
+            [Int(payload.group_id), Int(payload.index_id)])
+        return
+    end
+
+    # Scaffolding / legacy:
     kind == "noop_test" && return
-    # default: no view update
+    # default: no view update (analyze_run and other instrumentation events land here)
     nothing
 end
 

@@ -578,6 +578,7 @@ pattern stored in the experiment's config (defaults to `{name}.dat` for
 experiments without an explicit config).
 """
 function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String)
+    t0 = time()
     rows = Tables.rowtable(DBInterface.execute(db,
         """SELECT e.filename, x.id AS experiment_id
            FROM exposures e
@@ -633,4 +634,20 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
             "UPDATE indices SET inputs_hash = ? WHERE exposure_id = ?",
             [new_inputs_hash, exposure_id])
     end
+
+    duration_ms = round(Int, (time() - t0) * 1000)
+    apply_event!(db, _system_request();
+        kind        = "analyze_run",
+        entity_type = "exposure",
+        entity_id   = exposure_id,
+        payload     = Dict(
+            :trace_hash_before    => stored_trace_hash,
+            :trace_hash_after     => new_trace_hash,
+            :inputs_hash_before   => stored_inputs_hash,
+            :inputs_hash_after    => new_inputs_hash,
+            :findpeaks_skipped    => (stored_trace_hash  == new_trace_hash),
+            :indexpeaks_skipped   => (stored_inputs_hash == new_inputs_hash),
+            :duration_ms          => duration_ms,
+            :effective_peaks_count => length(eff.q),
+        ))
 end

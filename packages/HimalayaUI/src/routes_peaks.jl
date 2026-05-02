@@ -66,18 +66,19 @@ function register_peaks_routes!()
         body = json(req)
         q    = Float64(body.q)
 
-        username = get_username(req)
-        user_id  = username === nothing ? nothing :
-                   get_or_create_user!(db, username)
+        apply_event!(db, req;
+            kind        = "peak_added",
+            entity_type = "exposure",
+            entity_id   = id,
+            payload     = Dict(:q => q))
 
-        res = DBInterface.execute(db,
-            """INSERT INTO peak_curations (exposure_id, kind, q, created_by)
-               VALUES (?, 'add', ?, ?)""",
-            [id, q, user_id])
-        peak_id = Int(DBInterface.lastrowid(res))
-
-        log_action!(db, req; action = "add_peak",
-            entity_type = "peak", entity_id = peak_id, note = "q=$q")
+        # Read back the just-created curation row.
+        cur = first(Tables.rowtable(DBInterface.execute(db,
+            """SELECT id FROM peak_curations
+               WHERE exposure_id = ? AND kind = 'add' AND q = ?
+               ORDER BY id DESC LIMIT 1""",
+            [id, q])))
+        peak_id = Int(cur.id)
 
         HTTP.Response(201, ["Content-Type" => "application/json"],
             JSON3.write(Dict(:id => peak_id, :exposure_id => id,
@@ -132,29 +133,38 @@ function register_peaks_routes!()
         tol      = _peak_curation_tol(peak_q)
 
         if excluded
-            # INSERT exclude curation — idempotent: only insert if none exists
+            # INSERT exclude curation — idempotent: only emit event if none exists
             existing = Tables.rowtable(DBInterface.execute(db,
                 """SELECT id FROM peak_curations
                    WHERE exposure_id = ? AND kind = 'exclude'
                      AND ABS(q - ?) <= ?""",
                 [exposure_id, peak_q, tol]))
             if isempty(existing)
-                DBInterface.execute(db,
-                    """INSERT INTO peak_curations (exposure_id, kind, q)
-                       VALUES (?, 'exclude', ?)""",
-                    [exposure_id, peak_q])
+                apply_event!(db, req;
+                    kind        = "peak_excluded",
+                    entity_type = "exposure",
+                    entity_id   = exposure_id,
+                    payload     = Dict(:q => peak_q, :auto_peak_id => id))
             end
         else
-            # DELETE matching exclude curation row
-            DBInterface.execute(db,
-                """DELETE FROM peak_curations
-                   WHERE exposure_id = ? AND kind = 'exclude'
-                     AND ABS(q - ?) <= ?""",
-                [exposure_id, peak_q, tol])
-        end
+            # peak_unexcluded: find the prior peak_excluded event to record as undoes.
+            prior = Tables.rowtable(DBInterface.execute(db, """
+                SELECT id FROM user_actions
+                WHERE action = 'peak_excluded'
+                  AND entity_type = 'exposure' AND entity_id = ?
+                  AND payload IS NOT NULL
+                  AND ABS(json_extract(payload, '\$.q') - ?) <= MAX(1e-6, ABS(?) * 0.001)
+                ORDER BY id DESC LIMIT 1
+            """, [exposure_id, peak_q, peak_q]))
+            undoes = isempty(prior) ? nothing : Int(prior[1].id)
 
-        log_action!(db, req; action = excluded ? "exclude_peak" : "include_peak",
-            entity_type = "peak", entity_id = id)
+            apply_event!(db, req;
+                kind            = "peak_unexcluded",
+                entity_type     = "exposure",
+                entity_id       = exposure_id,
+                payload         = Dict(:q => peak_q, :auto_peak_id => id),
+                undoes_event_id = undoes)
+        end
 
         # Return the updated row with fresh excluded state
         out = _effective_peak_row(db, id)

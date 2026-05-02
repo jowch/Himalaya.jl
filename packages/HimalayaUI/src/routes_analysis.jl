@@ -151,12 +151,11 @@ function register_analysis_routes!()
 
         custom_id, _ = ensure_custom_group!(db, exposure_id)
 
-        DBInterface.execute(db,
-            "INSERT OR IGNORE INTO index_group_members (group_id, index_id)
-             VALUES (?, ?)", [custom_id, index_id])
-
-        log_action!(db, req; action = "confirm_index",
-            entity_type = "index", entity_id = index_id)
+        apply_event!(db, req;
+            kind        = "index_confirmed",
+            entity_type = "exposure",
+            entity_id   = exposure_id,
+            payload     = Dict(:group_id => custom_id, :index_id => index_id))
 
         HTTP.Response(200, ["Content-Type" => "application/json"],
             JSON3.write(_group_with_members(db, custom_id)))
@@ -172,12 +171,25 @@ function register_analysis_routes!()
         exposure_id = Int(rows[1].exposure_id)
 
         custom_id, _ = ensure_custom_group!(db, exposure_id)
-        DBInterface.execute(db,
-            "DELETE FROM index_group_members
-             WHERE group_id = ? AND index_id = ?", [custom_id, index_id])
 
-        log_action!(db, req; action = "exclude_index",
-            entity_type = "index", entity_id = index_id)
+        # undoes_event_id: find the most recent index_confirmed for this (group_id, index_id).
+        prior = Tables.rowtable(DBInterface.execute(db, """
+            SELECT id FROM user_actions
+            WHERE action = 'index_confirmed'
+              AND entity_type = 'exposure' AND entity_id = ?
+              AND payload IS NOT NULL
+              AND json_extract(payload, '\$.group_id') = ?
+              AND json_extract(payload, '\$.index_id') = ?
+            ORDER BY id DESC LIMIT 1
+        """, [exposure_id, custom_id, index_id]))
+        undoes = isempty(prior) ? nothing : Int(prior[1].id)
+
+        apply_event!(db, req;
+            kind            = "index_unconfirmed",
+            entity_type     = "exposure",
+            entity_id       = exposure_id,
+            payload         = Dict(:group_id => custom_id, :index_id => index_id),
+            undoes_event_id = undoes)
 
         HTTP.Response(200, ["Content-Type" => "application/json"],
             JSON3.write(_group_with_members(db, custom_id)))

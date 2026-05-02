@@ -242,6 +242,59 @@ function migrate_schema!(db::SQLite.DB)
     # renders them as stale to the UI). Unconditional — idempotent (no-op when
     # no 'stale' rows exist).
     DBInterface.execute(db, "UPDATE indices SET status = 'candidate' WHERE status = 'stale'")
+
+    # R4.2: Rewrite legacy entity_type='peak'/'index' rows to 'exposure' so the
+    # idx_events_by_exposure index is useful for fold-by-exposure queries.
+    # Must run AFTER R2 migrations (which create auto_peaks and drop legacy peaks).
+    migrate_r4_rebase_entity_type!(db)
+end
+
+"""
+    migrate_r4_rebase_entity_type!(db)
+
+Rewrite historical user_actions rows with `entity_type='peak'` or `'index'`
+to `entity_type='exposure'`, with `entity_id` resolved to the parent exposure.
+Without this, the `idx_events_by_exposure` index is useless for fold-by-exposure
+queries on legacy events.
+
+Idempotent: returns early if no legacy rows remain.
+"""
+function migrate_r4_rebase_entity_type!(db::SQLite.DB)
+    legacy = first(Tables.rowtable(DBInterface.execute(db, """
+        SELECT COUNT(*) AS n FROM user_actions
+        WHERE entity_type IN ('peak', 'index')
+    """))).n
+    Int(legacy) == 0 && return
+
+    SQLite.transaction(db) do
+        # Resolve peak → exposure via auto_peaks/peak_curations split
+        # (legacy `peaks` table no longer exists post-R2.2).
+        DBInterface.execute(db, """
+            UPDATE user_actions SET
+                entity_type = 'exposure',
+                entity_id = COALESCE(
+                    (SELECT exposure_id FROM auto_peaks      WHERE auto_peaks.id     = user_actions.entity_id),
+                    (SELECT exposure_id FROM peak_curations  WHERE peak_curations.id = user_actions.entity_id)
+                )
+            WHERE entity_type = 'peak'
+              AND (
+                EXISTS (SELECT 1 FROM auto_peaks     WHERE auto_peaks.id     = user_actions.entity_id)
+                OR
+                EXISTS (SELECT 1 FROM peak_curations WHERE peak_curations.id = user_actions.entity_id)
+              )
+        """)
+        # Index events: resolve via indices.exposure_id.
+        DBInterface.execute(db, """
+            UPDATE user_actions SET
+                entity_type = 'exposure',
+                entity_id = (SELECT exposure_id FROM indices WHERE indices.id = user_actions.entity_id)
+            WHERE entity_type = 'index'
+              AND EXISTS (SELECT 1 FROM indices WHERE indices.id = user_actions.entity_id)
+        """)
+        # Stragglers (peak/index id no longer resolves) keep their original
+        # entity_type — they won't appear in fold-by-exposure queries but
+        # they're not lost; queryable by raw kind/id.
+    end
 end
 
 """
