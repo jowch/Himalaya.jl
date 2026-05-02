@@ -210,6 +210,17 @@ function migrate_schema!(db::SQLite.DB)
     migrate_pk_to_autoincrement!(db)
     migrate_r2_widen_index_peaks_pk!(db)  # rebuild with widened PK first
     migrate_r2_split_peaks!(db)            # then repoint manual-peak refs
+
+    # R2.3 sentinel: belt-and-suspenders verifier. `migrate_r2_split_peaks!`
+    # is responsible for dropping the legacy `peaks` table; if it's still
+    # around at this point, something went wrong in the migration path
+    # (e.g. partial state from an aborted run). Warn loudly so operators
+    # see it in the daemon log.
+    legacy = Tables.rowtable(DBInterface.execute(db,
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='peaks'"))
+    if !isempty(legacy)
+        @warn "Legacy 'peaks' table still present after R2 migration — investigate"
+    end
 end
 
 """
