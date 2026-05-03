@@ -1,0 +1,89 @@
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { act, render, screen, fireEvent } from "@testing-library/react";
+import { ToastContainer } from "../src/components/ui/Toast";
+import { showToast, setToastImpl } from "../src/lib/toast";
+
+describe("Toast", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    setToastImpl(null);
+  });
+
+  it("renders a toast when showToast is called", () => {
+    render(<ToastContainer />);
+    act(() => {
+      showToast("hello", "error");
+    });
+    expect(screen.getByTestId("toast")).toHaveTextContent("hello");
+    expect(screen.getByTestId("toast")).toHaveAttribute("data-toast-kind", "error");
+  });
+
+  it("auto-dismisses error toast after 5000ms", () => {
+    render(<ToastContainer />);
+    act(() => {
+      showToast("oops", "error");
+    });
+    expect(screen.getByTestId("toast")).toBeInTheDocument();
+    act(() => {
+      vi.advanceTimersByTime(4999);
+    });
+    expect(screen.queryByTestId("toast")).toBeInTheDocument();
+    act(() => {
+      vi.advanceTimersByTime(2);
+    });
+    expect(screen.queryByTestId("toast")).not.toBeInTheDocument();
+  });
+
+  it("auto-dismisses non-error toast after 3000ms", () => {
+    render(<ToastContainer />);
+    act(() => {
+      showToast("ok", "info");
+    });
+    act(() => {
+      vi.advanceTimersByTime(2999);
+    });
+    expect(screen.queryByTestId("toast")).toBeInTheDocument();
+    act(() => {
+      vi.advanceTimersByTime(2);
+    });
+    expect(screen.queryByTestId("toast")).not.toBeInTheDocument();
+  });
+
+  it("stacks multiple toasts", () => {
+    render(<ToastContainer />);
+    act(() => {
+      showToast("first", "info");
+      showToast("second", "warning");
+      showToast("third", "success");
+    });
+    const toasts = screen.getAllByTestId("toast");
+    expect(toasts).toHaveLength(3);
+    expect(toasts[0]).toHaveTextContent("first");
+    expect(toasts[1]).toHaveTextContent("second");
+    expect(toasts[2]).toHaveTextContent("third");
+  });
+
+  it("close button dismisses immediately", () => {
+    render(<ToastContainer />);
+    act(() => {
+      showToast("dismiss me", "info");
+    });
+    const btn = screen.getByLabelText("Dismiss");
+    act(() => {
+      fireEvent.click(btn);
+    });
+    expect(screen.queryByTestId("toast")).not.toBeInTheDocument();
+  });
+
+  it("falls back to console.warn after unmount", () => {
+    const { unmount } = render(<ToastContainer />);
+    unmount();
+    const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    showToast("after unmount", "error");
+    expect(spy).toHaveBeenCalledWith("[toast:error] after unmount");
+    spy.mockRestore();
+  });
+});

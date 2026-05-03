@@ -3,6 +3,8 @@ import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "./components/AppShell";
 import { OnboardingFlow } from "./components/OnboardingFlow";
+import { ToastContainer } from "./components/ui/Toast";
+import { InfrastructureBanner } from "./components/InfrastructureBanner";
 import { handleCurationEvent } from "./lib/sseSubscriber";
 import { getClientId } from "./lib/clientId";
 
@@ -29,6 +31,8 @@ export function App(): JSX.Element {
     <>
       <AppShell />
       <OnboardingFlow />
+      <ToastContainer />
+      <InfrastructureBanner />
     </>
   );
 }
