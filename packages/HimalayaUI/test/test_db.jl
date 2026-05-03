@@ -343,3 +343,79 @@ end
         SQLite.close(db)
     end
 end
+
+@testset "user_actions.client_op_id column exists on fresh DB" begin
+    mktempdir() do tmp
+        db = HimalayaUI.open_db(joinpath(tmp, "test.db"))
+        cols = Tables.rowtable(DBInterface.execute(db,
+            "PRAGMA table_info(user_actions)"))
+        @test any(c -> c.name == "client_op_id", cols)
+        SQLite.close(db)
+    end
+end
+
+@testset "idempotent_responses table exists on fresh DB" begin
+    mktempdir() do tmp
+        db = HimalayaUI.open_db(joinpath(tmp, "test.db"))
+        tables = Tables.rowtable(DBInterface.execute(db,
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='idempotent_responses'"))
+        @test length(tables) == 1
+        cols = Tables.rowtable(DBInterface.execute(db,
+            "PRAGMA table_info(idempotent_responses)"))
+        @test Set(c.name for c in cols) == Set(["client_op_id", "status_code", "body", "created_at"])
+        @test any(c -> c.name == "client_op_id" && c.pk == 1, cols)
+        SQLite.close(db)
+    end
+end
+
+@testset "open_db adds client_op_id to legacy user_actions schema" begin
+    mktempdir() do tmp
+        path = joinpath(tmp, "test.db")
+        db = SQLite.DB(path)
+        DBInterface.execute(db, """
+            CREATE TABLE user_actions (
+                id              INTEGER PRIMARY KEY,
+                user_id         INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                timestamp       DATETIME DEFAULT CURRENT_TIMESTAMP,
+                action          TEXT,
+                entity_type     TEXT,
+                entity_id       INTEGER,
+                note            TEXT,
+                payload         TEXT,
+                undoes_event_id INTEGER REFERENCES user_actions(id),
+                client_id       TEXT
+            )
+        """)
+        SQLite.close(db)
+        db = HimalayaUI.open_db(path)
+        cols = Tables.rowtable(DBInterface.execute(db,
+            "PRAGMA table_info(user_actions)"))
+        @test any(c -> c.name == "client_op_id", cols)
+        SQLite.close(db)
+    end
+end
+
+@testset "open_db creates idempotent_responses on legacy DB" begin
+    mktempdir() do tmp
+        path = joinpath(tmp, "test.db")
+        db = SQLite.DB(path)
+        DBInterface.execute(db, "CREATE TABLE foo (x INTEGER)")
+        SQLite.close(db)
+        db = HimalayaUI.open_db(path)
+        tables = Tables.rowtable(DBInterface.execute(db,
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='idempotent_responses'"))
+        @test length(tables) == 1
+        SQLite.close(db)
+    end
+end
+
+@testset "client_op_id partial index present" begin
+    mktempdir() do tmp
+        db = HimalayaUI.open_db(joinpath(tmp, "test.db"))
+        idx = Tables.rowtable(DBInterface.execute(db,
+            "SELECT sql FROM sqlite_master WHERE type='index' AND name='idx_events_by_client_op_id'"))
+        @test length(idx) == 1
+        @test occursin("WHERE client_op_id IS NOT NULL", String(idx[1].sql))
+        SQLite.close(db)
+    end
+end

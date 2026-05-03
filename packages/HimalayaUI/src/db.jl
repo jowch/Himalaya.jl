@@ -153,11 +153,22 @@ CREATE TABLE IF NOT EXISTS user_actions (
     note            TEXT,
     payload         TEXT,
     undoes_event_id INTEGER REFERENCES user_actions(id),
-    client_id       TEXT
+    client_id       TEXT,
+    client_op_id    TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_events_by_exposure
     ON user_actions(entity_type, entity_id, id);
+
+CREATE TABLE IF NOT EXISTS idempotent_responses (
+    client_op_id  TEXT PRIMARY KEY,
+    status_code   INTEGER NOT NULL,
+    body          TEXT NOT NULL,
+    created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_idempotent_responses_created
+    ON idempotent_responses(created_at);
 """
 
 """
@@ -214,6 +225,15 @@ function migrate_schema!(db::SQLite.DB)
         "ALTER TABLE user_actions ADD COLUMN payload TEXT",
         "ALTER TABLE user_actions ADD COLUMN undoes_event_id INTEGER REFERENCES user_actions(id)",
         "ALTER TABLE user_actions ADD COLUMN client_id TEXT",
+        "ALTER TABLE user_actions ADD COLUMN client_op_id TEXT",
+        "CREATE INDEX IF NOT EXISTS idx_events_by_client_op_id ON user_actions(client_op_id) WHERE client_op_id IS NOT NULL",
+        """CREATE TABLE IF NOT EXISTS idempotent_responses (
+            client_op_id  TEXT PRIMARY KEY,
+            status_code   INTEGER NOT NULL,
+            body          TEXT NOT NULL,
+            created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_idempotent_responses_created ON idempotent_responses(created_at)",
     ]
     for stmt in stmts
         try
