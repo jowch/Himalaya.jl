@@ -537,7 +537,7 @@ function _serialized_indices_bytes(db::SQLite.DB, exposure_id::Int)::Int
         :kind        => ismissing(r.kind) ? nothing : String(r.kind),
         :inputs_hash => ismissing(r.inputs_hash) ? nothing : String(r.inputs_hash),
     ) for r in rows]
-    length(JSON3.write(arr))
+    sizeof(JSON3.write(arr))
 end
 
 function get_indices_for_exposure(db::SQLite.DB, exposure_id::Int)
