@@ -1,0 +1,131 @@
+using Test, HTTP, SQLite, DBInterface, Tables
+using HimalayaUI: with_idempotency, open_db
+
+@testset "with_idempotency: passthrough when X-Client-Op-Id absent" begin
+    mktempdir() do tmp
+        db = open_db(joinpath(tmp, "test.db"))
+        req = HTTP.Request("POST", "/", Pair{String,String}[], UInt8[])
+        called = Ref(0)
+        result = with_idempotency(db, req) do
+            called[] += 1
+            HTTP.Response(200; body = "{\"x\":1}")
+        end
+        @test called[] == 1
+        @test result.status == 200
+        # Cache table should be empty.
+        rows = Tables.rowtable(DBInterface.execute(db, "SELECT * FROM idempotent_responses"))
+        @test isempty(rows)
+    end
+end
+
+@testset "with_idempotency: cache hit returns prior response" begin
+    mktempdir() do tmp
+        db = open_db(joinpath(tmp, "test.db"))
+        req = HTTP.Request("POST", "/", ["X-Client-Op-Id" => "uuid-1"], UInt8[])
+        called = Ref(0)
+        # First call.
+        r1 = with_idempotency(db, req) do
+            called[] += 1
+            HTTP.Response(201; body = "{\"id\":42}")
+        end
+        # Second call with same op_id — body should NOT execute.
+        r2 = with_idempotency(db, req) do
+            called[] += 1
+            HTTP.Response(500; body = "{\"x\":\"should not appear\"}")
+        end
+        @test called[] == 1
+        @test r1.status == 201
+        @test r2.status == 201
+        @test String(r2.body) == "{\"id\":42}"
+    end
+end
+
+@testset "with_idempotency: failures NOT cached" begin
+    mktempdir() do tmp
+        db = open_db(joinpath(tmp, "test.db"))
+        req = HTTP.Request("POST", "/", ["X-Client-Op-Id" => "uuid-2"], UInt8[])
+        called = Ref(0)
+        # First call returns 4xx.
+        r1 = with_idempotency(db, req) do
+            called[] += 1
+            HTTP.Response(400; body = "{\"error\":\"bad\"}")
+        end
+        # Second call should re-execute body (failures aren't cached).
+        r2 = with_idempotency(db, req) do
+            called[] += 1
+            HTTP.Response(200; body = "{\"id\":99}")
+        end
+        @test called[] == 2
+        @test r2.status == 200
+        @test String(r2.body) == "{\"id\":99}"
+        # Cache now contains the successful retry.
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT * FROM idempotent_responses WHERE client_op_id = 'uuid-2'"))
+        @test length(rows) == 1
+    end
+end
+
+@testset "with_idempotency: concurrent retries serialize via OP_LOCKS" begin
+    # Two parallel tasks with same op_id, both miss the cache initially.
+    # Per-op-id ReentrantLock serializes; one writes, other reads cache.
+    mktempdir() do tmp
+        db = open_db(joinpath(tmp, "test.db"))
+        req = HTTP.Request("POST", "/", ["X-Client-Op-Id" => "uuid-3"], UInt8[])
+        called = Ref(0)
+        body_lock = ReentrantLock()
+        function delay_body()
+            lock(body_lock) do
+                called[] += 1
+            end
+            sleep(0.05)
+            HTTP.Response(201; body = "{\"called\":$(called[])}")
+        end
+        # Spawn two tasks racing.
+        t1 = @async with_idempotency(db, req) do; delay_body(); end
+        t2 = @async with_idempotency(db, req) do; delay_body(); end
+        r1, r2 = fetch(t1), fetch(t2)
+        # Body executed exactly once.
+        @test called[] == 1
+        # Both responses have the same body.
+        @test String(r1.body) == String(r2.body)
+    end
+end
+
+@testset "with_idempotency: multi-event route cache hit returns identical body" begin
+    # Simulate a route that emits N events (speculative POST shape).
+    # First call commits 3 events with same client_op_id; second call returns cached.
+    mktempdir() do tmp
+        db = open_db(joinpath(tmp, "test.db"))
+        # Seed FK chain so apply_event! on entity_id=1 succeeds.
+        DBInterface.execute(db,
+            "INSERT INTO experiments (name, path, data_dir, analysis_dir) VALUES ('e', '/p', '/d', '/a')")
+        DBInterface.execute(db,
+            "INSERT INTO samples (experiment_id, label) VALUES (1, 'A1')")
+        DBInterface.execute(db,
+            "INSERT INTO exposures (sample_id, filename) VALUES (1, 'f')")
+
+        req = HTTP.Request("POST", "/", ["X-Client-Op-Id" => "uuid-4"], UInt8[])
+        called = Ref(0)
+        function multi_event_body()
+            called[] += 1
+            # Emit 3 apply_event! calls with the same client_op_id (extracted from req).
+            for i in 1:3
+                HimalayaUI.apply_event!(db, req;
+                    kind = "speculative_created",
+                    entity_type = "exposure",
+                    entity_id = 1,  # assume seeded
+                    payload = Dict(:n => i))
+            end
+            HTTP.Response(201; body = "{\"created\":3}")
+        end
+        r1 = with_idempotency(db, req) do; multi_event_body(); end
+        r2 = with_idempotency(db, req) do; multi_event_body(); end
+        @test called[] == 1
+        # 3 user_actions rows from first call only.
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM user_actions WHERE client_op_id = 'uuid-4'"))
+        @test length(rows) == 3
+        # Cached body matches.
+        @test String(r1.body) == String(r2.body)
+    end
+end
