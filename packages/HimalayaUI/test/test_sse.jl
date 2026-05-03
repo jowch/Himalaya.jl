@@ -24,7 +24,7 @@ using HimalayaUI
 
             HimalayaUI.broadcast_event!(
                 1, "test_broadcast", "exposure", 42,
-                user_id, JSON3.write(Dict(:foo => "bar")), "tab-xyz")
+                user_id, "tab-xyz", "uuid-789", JSON3.write(Dict(:foo => "bar")))
 
             @test isready(pending)
             frame = take!(pending)
@@ -34,6 +34,16 @@ using HimalayaUI
             @test occursin("\"entity_id\":42", frame)
             @test occursin("\"entity_type\":\"exposure\"", frame)
             @test occursin("\"client_id\":\"tab-xyz\"", frame)
+            @test occursin("\"client_op_id\":\"uuid-789\"", frame)
+
+            # Parse JSON to assert ts + client_op_id keys present.
+            data_line = first([l for l in split(frame, '\n') if startswith(l, "data: ")])
+            json_str = replace(data_line, r"^data: " => "")
+            obj = JSON3.read(json_str)
+            @test haskey(obj, :client_op_id)
+            @test haskey(obj, :ts)
+            @test obj.client_op_id == "uuid-789"
+            @test obj.ts isa AbstractString
 
             # Payload is embedded in the frame.
             @test occursin("\"foo\"", frame)
@@ -61,13 +71,19 @@ end
         try
             HimalayaUI.broadcast_event!(
                 2, "anon_event", "exposure", 7,
-                nothing, nothing, nothing)
+                nothing, nothing, nothing, nothing)
 
             @test isready(pending)
             frame = take!(pending)
             @test occursin("event: curation", frame)
             @test occursin("\"actor\":null", frame)
             @test occursin("\"client_id\":null", frame)
+            @test occursin("\"client_op_id\":null", frame)
+
+            data_line = first([l for l in split(frame, '\n') if startswith(l, "data: ")])
+            obj = JSON3.read(replace(data_line, r"^data: " => ""))
+            @test haskey(obj, :client_op_id)
+            @test haskey(obj, :ts)
         finally
             lock(HimalayaUI.SSE_LOCK) do
                 filter!(x -> x !== sub, HimalayaUI.SSE_SUBSCRIBERS[])
@@ -97,7 +113,7 @@ end
         try
             HimalayaUI.broadcast_event!(
                 3, "prune_test", "exposure", 1,
-                nothing, nothing, nothing)
+                nothing, nothing, nothing, nothing)
 
             # Dead sub should have been pruned.
             n = lock(HimalayaUI.SSE_LOCK) do
@@ -141,7 +157,7 @@ end
             for i in 1:6
                 HimalayaUI.broadcast_event!(
                     i, "slow_test", "exposure", 1,
-                    nothing, nothing, nothing)
+                    nothing, nothing, nothing, nothing)
             end
 
             # Slow subscriber should have been pruned after its channel filled.

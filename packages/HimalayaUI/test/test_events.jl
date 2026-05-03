@@ -171,6 +171,76 @@ end
     end
 end
 
+@testset "apply_event! persists client_op_id when X-Client-Op-Id header present" begin
+    mktempdir() do tmp
+        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+        HimalayaUI.bind_db!(db)
+        exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
+        eid    = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="e1")
+        req = HTTP.Request("POST", "/x",
+            ["X-Username" => "alice", "X-Client-Op-Id" => "uuid-abc"], UInt8[])
+        result = HimalayaUI.apply_event!(db, req;
+            kind="noop_test", entity_type="exposure", entity_id=eid, payload=Dict(:q=>1.0))
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT client_op_id FROM user_actions WHERE id = ?", [result.event_id]))
+        @test String(rows[1].client_op_id) == "uuid-abc"
+    end
+end
+
+@testset "apply_event! writes NULL client_op_id when header absent" begin
+    mktempdir() do tmp
+        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+        HimalayaUI.bind_db!(db)
+        exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
+        eid    = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="e1")
+        req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
+        result = HimalayaUI.apply_event!(db, req;
+            kind="noop_test", entity_type="exposure", entity_id=eid, payload=Dict(:q=>1.0))
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT client_op_id FROM user_actions WHERE id = ?", [result.event_id]))
+        @test ismissing(rows[1].client_op_id)
+    end
+end
+
+@testset "rebuild_views_from_log! tolerates rows with NULL/non-NULL client_op_id mix" begin
+    mktempdir() do tmp
+        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+        HimalayaUI.bind_db!(db)
+        exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
+        e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="e1")
+        DBInterface.execute(db,
+            "INSERT INTO auto_peaks (exposure_id, q, sharpness) VALUES (?, 0.10, 1.0)", [e_id])
+
+        # Mix: one event without X-Client-Op-Id (NULL), one with.
+        req_no  = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
+        req_yes = HTTP.Request("POST", "/x",
+            ["X-Username" => "alice", "X-Client-Op-Id" => "uuid-1"], UInt8[])
+        HimalayaUI.apply_event!(db, req_no;
+            kind="peak_added", entity_type="exposure", entity_id=e_id,
+            payload=Dict(:q => 0.20))
+        HimalayaUI.apply_event!(db, req_yes;
+            kind="peak_added", entity_type="exposure", entity_id=e_id,
+            payload=Dict(:q => 0.30))
+
+        # Snapshot live state, wipe, rebuild.
+        before = Tables.rowtable(DBInterface.execute(db,
+            "SELECT exposure_id, kind, q FROM peak_curations WHERE exposure_id = ? ORDER BY q",
+            [e_id]))
+        DBInterface.execute(db, "DELETE FROM peak_curations WHERE exposure_id = ?", [e_id])
+        HimalayaUI.rebuild_views_from_log!(db, Int(e_id))
+        after = Tables.rowtable(DBInterface.execute(db,
+            "SELECT exposure_id, kind, q FROM peak_curations WHERE exposure_id = ? ORDER BY q",
+            [e_id]))
+
+        @test length(before) == length(after) == 2
+        @test Set([(String(r.kind), Float64(r.q)) for r in before]) ==
+              Set([(String(r.kind), Float64(r.q)) for r in after])
+    end
+end
+
 @testset "rebuild_views_from_log! tolerates rows with NULL client_id" begin
     mktempdir() do tmp
         db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
