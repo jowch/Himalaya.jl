@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import { makeClient } from "./test-utils";
 import {
   useExposures, useTrace, usePeaks, useIndices,
-  useAddPeak, useRemovePeak, useReanalyzeExposure,
+  useReanalyzeExposure,
   queryKeys,
 } from "../src/queries";
 
@@ -68,29 +68,8 @@ describe("queries", () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
   });
 
-  it("useAddPeak invalidates peaks and indices for the exposure on success", async () => {
-    const { client, wrapper } = withClient();
-    client.setQueryData(queryKeys.peaks(42), []);
-    client.setQueryData(queryKeys.indices(42), []);
-    const invalidate = vi.spyOn(client, "invalidateQueries");
-    mockOnce(201, { id: 1, exposure_id: 42, q: 0.1, intensity: null,
-                    prominence: null, sharpness: null, source: "manual",
-                    stale_indices: 0 });
-    const { result } = renderHook(() => useAddPeak(42), { wrapper });
-    await act(async () => { await result.current.mutateAsync(0.1); });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.peaks(42) });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.indices(42) });
-  });
-
-  it("useRemovePeak invalidates peaks and indices for the exposure on success", async () => {
-    const { client, wrapper } = withClient();
-    const invalidate = vi.spyOn(client, "invalidateQueries");
-    mockOnce(204, null);
-    const { result } = renderHook(() => useRemovePeak(42), { wrapper });
-    await act(async () => { await result.current.mutateAsync(7); });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.peaks(42) });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.indices(42) });
-  });
+  // useAddPeak / useRemovePeak / useSetPeakExcluded migrated to the queue
+  // framework (M2.2) — see test/queries-peaks.test.tsx for the new coverage.
 
   it("useReanalyzeExposure invalidates peaks and indices on success", async () => {
     const { client, wrapper } = withClient();

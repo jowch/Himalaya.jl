@@ -1,0 +1,75 @@
+/**
+ * peak_excluded / peak_unexcluded mutators (M2.2). Backend uses two distinct
+ * event kinds depending on the boolean target, so we ship two mutators with
+ * the same payload + cache logic and route between them at the hook layer
+ * based on `excluded`. Optimistically flips the peak's `excluded` field;
+ * onSuccess writes the server peak (authoritative) and updates the exposure
+ * `analysis_inputs_hash` so `StaleIndicesBanner` does not flash.
+ */
+import * as api from "../../../api";
+import type { Peak, PeakUpdatedResponse, Exposure, AuthOpts } from "../../../api";
+import { queryKeys } from "../../../queries";
+import { authOpts } from "../../authOpts";
+import type { Mutator, OpPayload, OpKind, RollbackContext } from "../types";
+
+export type PeakSetExcludedInput = { peakId: number };
+type PeakSetExcludedScope = {
+  exposureId: number;
+  username: string | undefined;
+  clientId: string;
+};
+type Flat = OpPayload<PeakSetExcludedInput> & PeakSetExcludedScope & PeakSetExcludedInput;
+const flat = (p: OpPayload<PeakSetExcludedInput>): Flat => p as unknown as Flat;
+
+function buildAuthOpts(p: Flat): AuthOpts {
+  return authOpts(p.username, p.clientId, p.clientOpId);
+}
+
+function makeMutator(
+  kind: OpKind,
+  excluded: boolean,
+): Mutator<OpPayload<PeakSetExcludedInput>, PeakUpdatedResponse> {
+  return {
+    kind,
+    onMutate: (raw, qc): RollbackContext => {
+      const p = flat(raw);
+      const peaksKey = queryKeys.peaks(p.exposureId);
+      const prev = qc.getQueryData<Peak[]>(peaksKey);
+      if (prev) {
+        qc.setQueryData<Peak[]>(peaksKey, prev.map((pk) =>
+          pk.id === p.peakId ? { ...pk, excluded } : pk,
+        ));
+      }
+      return {
+        restore: () => {
+          if (prev !== undefined) qc.setQueryData(peaksKey, prev);
+        },
+      };
+    },
+    request: (raw) => {
+      const p = flat(raw);
+      return api.setPeakExcluded(p.peakId, excluded, buildAuthOpts(p));
+    },
+    onSuccess: (raw, response, qc) => {
+      const p = flat(raw);
+      const peaksKey = queryKeys.peaks(p.exposureId);
+      // Strip event-metadata fields off the response to get a plain Peak
+      // before writing to the peaks-list cache.
+      const {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        event_id, view_row_id, analysis_inputs_hash, ...peakOnly
+      } = response;
+      qc.setQueryData<Peak[]>(peaksKey, (old) =>
+        (old ?? []).map((pk) =>
+          pk.id === peakOnly.id ? (peakOnly as Peak) : pk,
+        ),
+      );
+      qc.setQueryData<Exposure>(queryKeys.exposure(p.exposureId), (old) =>
+        old ? { ...old, analysis_inputs_hash: response.analysis_inputs_hash } : old);
+    },
+    affectsExposurePeaks: () => true,
+  };
+}
+
+export const peakExcludeMutator = makeMutator("peak_excluded", true);
+export const peakUnexcludeMutator = makeMutator("peak_unexcluded", false);

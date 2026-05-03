@@ -188,16 +188,37 @@ export interface Peak {
   excluded: boolean;
 }
 
-export interface PeakCreated extends Peak { stale_indices: number }
+/**
+ * Backend response for POST /api/exposures/:id/peaks. Carries the inserted
+ * peak plus event metadata + the post-state hash so the client can mark the
+ * exposure cache fresh without a refetch round-trip.
+ */
+export interface PeakAddResponse {
+  peak: Peak;
+  event_id: number;
+  view_row_id: number;
+  analysis_inputs_hash: string;
+}
+
+/**
+ * Backend response for PATCH /api/peaks/:id. The peak fields are inlined; the
+ * event metadata fields are nullable for the no-op case where excluded did
+ * not actually change.
+ */
+export interface PeakUpdatedResponse extends Peak {
+  event_id: number | null;
+  view_row_id: number | null;
+  analysis_inputs_hash: string;
+}
 
 export const listPeaks = (exposure_id: number) =>
   request<Peak[]>("GET", `/api/exposures/${exposure_id}/peaks`);
 export const addPeak = (exposure_id: number, q: number, opts?: AuthOpts) =>
-  request<PeakCreated>("POST", `/api/exposures/${exposure_id}/peaks`, { q }, opts);
+  request<PeakAddResponse>("POST", `/api/exposures/${exposure_id}/peaks`, { q }, opts);
 export const removePeak = (peak_id: number, opts?: AuthOpts) =>
   request<void>("DELETE", `/api/peaks/${peak_id}`, undefined, opts);
 export const setPeakExcluded = (peak_id: number, excluded: boolean, opts?: AuthOpts) =>
-  request<Peak & { stale_indices: number }>(
+  request<PeakUpdatedResponse>(
     "PATCH", `/api/peaks/${peak_id}`, { excluded }, opts);
 
 // Indices

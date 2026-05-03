@@ -15,6 +15,11 @@ import {
   setExposureStatusMutator,
   selectExposureMutator,
 } from "./lib/queue/mutators/trivial";
+import { peakAddMutator } from "./lib/queue/mutators/peakAdd";
+import { peakRemoveMutator } from "./lib/queue/mutators/peakRemove";
+import {
+  peakExcludeMutator, peakUnexcludeMutator,
+} from "./lib/queue/mutators/peakSetExcluded";
 
 const CLIENT_ID = getClientId();
 
@@ -109,58 +114,53 @@ function invalidateExposure(qc: ReturnType<typeof useQueryClient>, exposureId: n
   qc.invalidateQueries({ queryKey: queryKeys.groups(exposureId) });
 }
 
-// After any peak edit we automatically re-run analysis so the indices reflect
-// the user's curation immediately — no "stale" intermediate state. Each peak
-// mutation chains: peak op → reanalyze → invalidate exposure queries.
-async function autoReanalyze(
-  exposureId: number,
-  username: string | undefined,
-): Promise<void> {
-  try {
-    await api.reanalyzeExposure(exposureId, authOpts(username, CLIENT_ID, newClientOpId()));
-  } catch (e) {
-    // Best-effort: surface a console warning but don't block the peak edit.
-    // eslint-disable-next-line no-console
-    console.warn("auto-reanalyze failed", e);
-  }
-}
-
 export function useAddPeak(exposureId: number) {
-  const qc = useQueryClient();
   const username = useAppState((s) => s.username);
-  return useMutation({
-    mutationFn: async (q: number) => {
-      const peak = await api.addPeak(exposureId, q, authOpts(username, CLIENT_ID, newClientOpId()));
-      await autoReanalyze(exposureId, username);
-      return peak;
-    },
-    onSuccess: () => invalidateExposure(qc, exposureId),
-  });
+  const inner = useQueueMutation<{ q: number }, api.PeakAddResponse>(
+    peakAddMutator,
+    { exposureId, username, clientId: CLIENT_ID },
+  );
+  return {
+    ...inner,
+    mutate: (q: number) => inner.mutate({ q }),
+  };
 }
 
 export function useRemovePeak(exposureId: number) {
-  const qc = useQueryClient();
   const username = useAppState((s) => s.username);
-  return useMutation({
-    mutationFn: async (peakId: number) => {
-      await api.removePeak(peakId, authOpts(username, CLIENT_ID, newClientOpId()));
-      await autoReanalyze(exposureId, username);
-    },
-    onSuccess: () => invalidateExposure(qc, exposureId),
-  });
+  const inner = useQueueMutation<{ peakId: number }, void>(
+    peakRemoveMutator,
+    { exposureId, username, clientId: CLIENT_ID },
+  );
+  return {
+    ...inner,
+    mutate: (peakId: number) => inner.mutate({ peakId }),
+  };
 }
 
+// `useSetPeakExcluded` decomposes into two mutators because the backend uses
+// distinct event kinds (`peak_excluded`, `peak_unexcluded`). The hook routes
+// the call to the correct mutator based on `excluded` and presents a unified
+// `mutate({ peakId, excluded })` surface so existing consumers stay unchanged.
 export function useSetPeakExcluded(exposureId: number) {
-  const qc = useQueryClient();
   const username = useAppState((s) => s.username);
-  return useMutation({
-    mutationFn: async ({ peakId, excluded }: { peakId: number; excluded: boolean }) => {
-      const out = await api.setPeakExcluded(peakId, excluded, authOpts(username, CLIENT_ID, newClientOpId()));
-      await autoReanalyze(exposureId, username);
-      return out;
+  const exclude = useQueueMutation<{ peakId: number }, api.PeakUpdatedResponse>(
+    peakExcludeMutator,
+    { exposureId, username, clientId: CLIENT_ID },
+  );
+  const unexclude = useQueueMutation<{ peakId: number }, api.PeakUpdatedResponse>(
+    peakUnexcludeMutator,
+    { exposureId, username, clientId: CLIENT_ID },
+  );
+  return {
+    mutate: (input: { peakId: number; excluded: boolean }) => {
+      if (input.excluded) exclude.mutate({ peakId: input.peakId });
+      else unexclude.mutate({ peakId: input.peakId });
     },
-    onSuccess: () => invalidateExposure(qc, exposureId),
-  });
+    isPending: exclude.isPending || unexclude.isPending,
+    error: exclude.error ?? unexclude.error,
+    reset: () => { exclude.reset(); unexclude.reset(); },
+  };
 }
 
 export function useReanalyzeExposure(exposureId: number) {
