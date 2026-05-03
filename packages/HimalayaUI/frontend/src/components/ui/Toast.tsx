@@ -31,8 +31,17 @@ const KIND_CLASS: Record<ToastKind, string> = {
 export function ToastContainer(): JSX.Element {
   const [items, setItems] = useState<ToastItem[]>([]);
   const idRef = useRef(0);
+  // Tracks the auto-dismiss timer per toast id so we can clear it on manual
+  // dismissal (close button) and on unmount, preventing stale setItems calls
+  // and harmless-but-noisy "filter an already-absent id" follow-ups.
+  const timersRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
 
   const dismiss = useCallback((id: number): void => {
+    const handle = timersRef.current.get(id);
+    if (handle !== undefined) {
+      clearTimeout(handle);
+      timersRef.current.delete(id);
+    }
     setItems((curr) => curr.filter((t) => t.id !== id));
   }, []);
 
@@ -42,11 +51,23 @@ export function ToastContainer(): JSX.Element {
       const id = idRef.current;
       const ttl = DURATIONS[kind] ?? 3000;
       setItems((curr) => [...curr, { id, msg, kind }]);
-      window.setTimeout(() => {
+      const handle = setTimeout(() => {
+        timersRef.current.delete(id);
         setItems((curr) => curr.filter((t) => t.id !== id));
       }, ttl);
+      timersRef.current.set(id, handle);
     });
     return () => setToastImpl(null);
+  }, []);
+
+  // Clear any in-flight auto-dismiss timers when the container unmounts so
+  // they don't fire setItems against stale state.
+  useEffect(() => {
+    const timers = timersRef.current;
+    return () => {
+      for (const handle of timers.values()) clearTimeout(handle);
+      timers.clear();
+    };
   }, []);
 
   return (

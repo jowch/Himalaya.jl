@@ -78,6 +78,27 @@ describe("Toast", () => {
     expect(screen.queryByTestId("toast")).not.toBeInTheDocument();
   });
 
+  it("clears auto-dismiss timer on manual close (no double dismiss)", () => {
+    render(<ToastContainer />);
+    act(() => {
+      showToast("dismiss me", "info");
+    });
+    const btn = screen.getByLabelText("Dismiss");
+    act(() => {
+      fireEvent.click(btn);
+    });
+    expect(screen.queryByTestId("toast")).not.toBeInTheDocument();
+    // Advancing past the 3000ms auto-dismiss must be a no-op — the timer
+    // should have been cleared on manual close. If it weren't, the stale
+    // setItems call would still be a no-op functionally, but vi.getTimerCount
+    // gives us a stronger assertion that the handle was actually cleared.
+    expect(vi.getTimerCount()).toBe(0);
+    act(() => {
+      vi.advanceTimersByTime(5000);
+    });
+    expect(screen.queryByTestId("toast")).not.toBeInTheDocument();
+  });
+
   it("falls back to console.warn after unmount", () => {
     const { unmount } = render(<ToastContainer />);
     unmount();

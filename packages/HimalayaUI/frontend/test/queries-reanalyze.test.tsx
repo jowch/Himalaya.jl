@@ -3,7 +3,7 @@ import { renderHook, act, waitFor } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { makeClient } from "./test-utils";
-import { useReanalyzeExposure, queryKeys } from "../src/queries";
+import { useReanalyzeExposure } from "../src/queries";
 import { useQueueOpStatus } from "../src/lib/queue/hooks";
 import { pendingDeferreds } from "../src/lib/queue/deferred";
 
@@ -73,7 +73,7 @@ describe("queries — useReanalyzeExposure (queue-driven, M2.5)", () => {
     expect(result.current.isSuccess).toBe(true);
   });
 
-  it("invalidates peaks/indices/groups on success", async () => {
+  it("does not invalidate peaks/indices/groups on success (SSE post_state owns the cache update)", async () => {
     const { client, wrapper } = withClient();
     const invalidate = vi.spyOn(client, "invalidateQueries");
     mockOnce(200, { id: EXPOSURE_ID, analyzed: true });
@@ -82,9 +82,7 @@ describe("queries — useReanalyzeExposure (queue-driven, M2.5)", () => {
     );
     act(() => { result.current.mutate({}); });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.peaks(EXPOSURE_ID) });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.indices(EXPOSURE_ID) });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.groups(EXPOSURE_ID) });
+    expect(invalidate).not.toHaveBeenCalled();
   });
 
   it("useQueueOpStatus reflects the pending in-flight reanalyze", async () => {
