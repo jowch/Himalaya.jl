@@ -42,15 +42,20 @@ function mirrorToSessionStorage(mc: MutationCache): void {
   const pending = mc.getAll().filter((m) => m.state.status === "pending");
   const ops: PersistedOp[] = [];
   for (const m of pending) {
+    // useQueueMutation flat-spreads scope + input into `variables`; there is
+    // no nested `payload` key. Persist the full variables object so rehydrate
+    // can pass it back into mutator.onMutate / .request unchanged. Mutators
+    // already destructure scope+input from this flat shape via their `flat()`
+    // helper, so the rehydrate path matches the live-mutate path.
     const vars = m.state.variables as
-      | { kind?: OpKind; clientOpId?: string; payload?: unknown }
+      | (Record<string, unknown> & { kind?: OpKind; clientOpId?: string })
       | undefined;
     if (!vars?.kind || !vars.clientOpId) continue;
     ops.push({
       schemaVersion: SCHEMA_VERSION,
       kind: vars.kind,
       clientOpId: vars.clientOpId,
-      payload: vars.payload,
+      payload: vars,
     });
   }
   try {
