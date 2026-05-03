@@ -69,7 +69,13 @@ packages/
                              # Mentions: MentionChip, MentionCompose, MentionPicker
         hooks/               # useFocusTrap, useMentionResolution
         lib/                 # renderMentions.tsx (parseMentions tokenizer),
-                             #   sseSubscriber.ts (handleCurationEvent)
+                             #   clientId.ts, clientOpId.ts, authOpts.ts, toast.ts,
+                             #   peakQTol.ts, optimisticId.ts
+        lib/queue/           # mutation queue framework (Plan 8):
+                             #   types.ts, deferred.ts, replayCoordinator.ts,
+                             #   applyRemoteToCache.ts, persistence.ts, hooks.ts,
+                             #   errors.ts, useQueueMutation.ts, mutatorRegistry.ts,
+                             #   mutators/ (peak/index/speculative/trivial/reanalyze)
         bones/               # Committed boneyard skeleton captures (*.bones.json)
                              #   + auto-generated registry.ts
         pages/               # IndexPage (three-card workspace),
@@ -228,7 +234,7 @@ tab. See docs/event-log.md §"Client side".
 
 **`QNumInput` is exported from `PlotCard.tsx`** for unit testing. It implements a focus-gated controlled input: external `value` prop changes are synced to draft state only when the input is not focused, preventing wheel-zoom events from interrupting mid-edit. Follow this pattern for any numeric input that can be updated by external events.
 
-**`StaleIndicesBanner` is mounted in `PhasePanel`.** Renders when *any* index's `inputs_hash` differs from its exposure's current `analysis_inputs_hash` (hash-derived, not a `status` enum — that was removed in Plan 7 R3). The Re-analyze button posts to `/api/exposures/:id/analyze`, which recomputes hashes; matching hashes hide the banner. New routes that change the effective peak set surface the banner automatically because hashes drift; no extra UI wiring needed. See [docs/event-log.md](docs/event-log.md) §2.
+**`StaleIndicesBanner` is mounted in `PhasePanel`.** Renders when *any* index's `inputs_hash` differs from its exposure's current `analysis_inputs_hash` (hash-derived, not a `status` enum — that was removed in Plan 7 R3). The Re-analyze button posts to `/api/exposures/:id/analyze`, which recomputes hashes; matching hashes hide the banner. New routes that change the effective peak set surface the banner automatically because hashes drift; no extra UI wiring needed. **Plan 8 update:** also gated on `useExposureHasPendingPeakOps` (returns null while a peak op is in flight) to mask cross-entity refetch races during queue mutations; debounce reduced from 2000ms to 150ms because synchronous reanalyze in the curation handler closes the stale window deterministically. See [docs/event-log.md](docs/event-log.md) §2 + §3a.
 
 **Imperative render functions in effects: use `useCallback`.** Wrap any function that is both defined inside a component and used as a `useEffect` dependency in `useCallback` with its true deps. The effect then depends on `[theCallback]` alone — no redundant dep list, no eslint-disable. `TraceViewer`'s overlay renderer follows this pattern.
 
@@ -274,7 +280,7 @@ tab. See docs/event-log.md §"Client side".
   - **Frontend:** three-card Index workspace (chat | trace plot | index choices), Inspect page (detector image + thumbnail filmstrip + reject-reason chips + sample metadata), trace viewer with peak editing + auto-fit y-floor + log/linear x toggle, auto-rotating detector canvas, Miller plot, PhasePanel with curate + stale-indices reanalyze (now hash-driven), OnboardingFlow + NavModal with focus trapping. Skeleton loading screens via boneyard-js on all major data-driven cards. Chat @-mention system (`@peak`, `@index`, `@exposure`, `@sample`) via `MentionChip` / `MentionCompose` / `useMentionResolution`.
   - **Plan 7 — Multiplayer + Instrumentation Foundation:** Auto/curation peak split (`auto_peaks` + `peak_curations`), diff-update preserves auto peak IDs, content-hash memoization on `findpeaks`/`indexpeaks`, structured `user_actions` event log via `apply_event!` dispatcher, SSE multiplayer at `GET /api/events`. R5b (If-Match conflict resolution) deferred behind R4 instrumentation gate. See [docs/event-log.md](docs/event-log.md) for the dispatcher contract, hash invariants, and SSE semantics.
   - **Plan 8 — Mutation queue + idempotency:** Per-mutation `client_op_id` keys both the backend `with_idempotency` cache (`idempotent_responses` table, `OP_LOCKS` registry) and the frontend `pendingDeferreds` registry. Routes wrap their body in `with_idempotency(db, req) do ... end`; events inside use `apply_event!(InTransaction(), ...)` to participate in the outer tx, with SSE frames flushed via the post-commit broadcast queue. Frontend `useQueueMutation` + `handleRemoteEvent` implement own-op confirmation (resolve deferred, abort HTTP) and foreign-event replay-as-rerun (rollback in reverse, applyRemoteToCache, re-run onMutate in insertion order). `analyze_run` no-op fast path suppresses both the SSE frame and the durable `user_actions` row. See [docs/event-log.md](docs/event-log.md) §3a for the full contract.
-  - **Test coverage:** 645 Julia (HimalayaUI) · 103 Julia (core) · 192 Vitest · 16 Playwright E2E (7 inspect + 9 smoke).
+  - **Test coverage:** 847 Julia (HimalayaUI) · 103 Julia (core) · 327 Vitest · 16 Playwright E2E (7 inspect + 9 smoke).
 - Deferred for later: Phase panel Recent section, export UI, per-user audit view, derived-exposure construction (raw / aggregated / background-subtracted exposure types — schema reserves `exposure_type` field), additional config templates beyond `simple.toml`. See [docs/future-feature-ideas.md](docs/future-feature-ideas.md).
 
 ## Further reading
