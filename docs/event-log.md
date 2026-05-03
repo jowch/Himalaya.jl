@@ -212,7 +212,108 @@ note in `CLAUDE.md`.
 
 ---
 
-## 4. Operational notes
+## 3a. Mutation queue + idempotency (Plan 8)
+
+The frontend mutation queue and the backend `with_idempotency` wrapper compose
+with the dispatcher and SSE contracts above. The queue does not replace
+`apply_event!`; it layers request-level deduplication and replay-as-rerun on
+top of it.
+
+### `with_idempotency` wrapping pattern
+
+Routes that need request-level idempotency wrap their handler body in
+`with_idempotency(db, req) do ... end` (`src/idempotency.jl`). Inside the
+wrapper:
+
+- The body executes inside an outer `SQLite.transaction`.
+- `apply_event!(InTransaction(), db, req; ...)` participates in that outer
+  tx — no nested savepoint, and the variant never broadcasts on its own.
+- On a status<400 commit, the response body is INSERTed into
+  `idempotent_responses` keyed by `client_op_id` atomically with the events
+  the body emitted.
+- On retry with the same `X-Client-Op-Id`, the cached body is returned
+  without re-executing `f`. Failures (status≥400) are NOT cached; the next
+  retry re-executes.
+- Concurrent retries serialize via per-op-id `ReentrantLock` (`OP_LOCKS`,
+  guarded by `OP_LOCKS_MU`). The cache is checked once outside the lock
+  (fast path) and again inside the lock + tx (double-check) so two racing
+  tasks with the same op-id execute the body exactly once.
+- Without `X-Client-Op-Id`, `f` runs once with no caching (pass-through);
+  post-commit broadcasts still flush.
+- Single-process-safe only — the `OP_LOCKS` registry is in-process. The
+  `idempotent_responses(client_op_id)` PK is defense-in-depth for any
+  future multi-process deployment.
+
+`gc_idempotent_responses!(db; ttl_seconds=3600)` sweeps both the cache rows
+and the matching `OP_LOCKS` entries under `OP_LOCKS_MU`.
+
+### Post-commit broadcast queue
+
+Events emitted inside the outer tx must defer their SSE frame until *after*
+the tx commits, otherwise subscribers could observe state that rolls back.
+Two ways to defer:
+
+- `apply_event!(db, req; ..., defer_broadcast=true)` — durable write fires,
+  broadcast is queued.
+- `apply_event!(InTransaction(), db, req; ...)` — the in-tx variant; never
+  broadcasts itself.
+
+Each request handler gets its own queue via `task_local_storage()` (key
+`POST_COMMIT_BROADCAST_KEY`). After the tx commits, `with_idempotency`
+calls `_flush_post_commit_broadcasts!()` to fire every queued frame; on
+rollback or status≥400, `_clear_post_commit_broadcasts!()` discards the
+queue without firing. Broadcast failures are logged but do not abort the
+flush — frames are best-effort, durable rows in `user_actions` are not.
+
+The same flush/clear pair runs on the no-op-id pass-through so non-
+idempotent routes that adopt the deferred-broadcast pattern still work.
+
+### `analyze_run` event suppression
+
+`_maybe_broadcast_event!` (and the deferred path) suppress the SSE frame
+for `kind == "analyze_run"` when both `findpeaks_skipped` and
+`indexpeaks_skipped` are true (M0.4). Without the rule, every curation
+event would fan out an extra `analyze_run` frame whose only payload is "I
+did nothing." M0.5 extended the rule to also drop the durable
+`user_actions` row on the no-op fast path in `pipeline.jl`: the hashes
+already prove no-op-ness, and a durable count of "nothing happened" offers
+no load-bearing observability value.
+
+### SSE frame additions
+
+Frames produced by `broadcast_event!` carry, in addition to the original
+fields:
+
+- `client_op_id` (M0.2) — the per-mutation idempotency token, echoed back
+  for own-op confirmation. Distinct from the per-tab `client_id`.
+- `ts` (M0.2) — canonical ISO-8601 timestamp.
+- `post_state` (M0.6, optional) — `{ analysis_inputs_hash, indices }`
+  envelope so subscribers can replay-without-refetch where the payload
+  alone wouldn't suffice. Curation routes that recompute analysis attach
+  this; pure log events don't.
+
+### Frontend `handleRemoteEvent` (M1.2)
+
+`src/lib/queue/replayCoordinator.ts` consumes each SSE frame:
+
+1. **Own-op confirmation.** If `remote.client_op_id` matches a registered
+   entry in `pendingDeferreds` (module-global Map, keyed on
+   `client_op_id`), resolve the deferred with a synthesized response so
+   `useQueueMutation`'s `mutationFn` settles, then abort the in-flight
+   `fetch` via the deferred's `AbortController`. The HTTP response would
+   be redundant. Order matters: resolve first, then abort.
+2. **Foreign event (replay-as-rerun).** Take all `pending` mutations from
+   `MutationCache.getAll()`, roll back their optimistic effects in reverse
+   order via the saved `restore` callbacks, call
+   `applyRemoteToCache(remote, qc)` to fold the foreign effect into the
+   query cache, then re-run each pending mutation's `onMutate` in
+   insertion order so the cache reflects the foreign effect plus our
+   pending pipeline on top.
+
+`MutationCache.getAll()` insertion-order preservation is load-bearing —
+M1.2 has a regression test that pins this against TanStack version drift.
+
+
 
 - **Reverse proxy.** Set `proxy_buffering off` on the `/api/events`
   location in nginx, or rely on the `X-Accel-Buffering: no` header. SSE
