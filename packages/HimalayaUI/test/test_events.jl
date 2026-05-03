@@ -352,3 +352,95 @@ end
         HimalayaUI.SSE_SUBSCRIBERS[] = []
     end
 end
+
+@testset "I2: apply_event! with same (client_op_id, action, entity) returns existing event_id" begin
+    mktempdir() do tmp
+        db = HimalayaUI.open_db(joinpath(tmp, "test.db"))
+        # Seed FK chain.
+        DBInterface.execute(db,
+            "INSERT INTO experiments (name, path, data_dir, analysis_dir) VALUES ('e', '/p', '/d', '/a')")
+        DBInterface.execute(db,
+            "INSERT INTO samples (experiment_id, label) VALUES (1, 'A1')")
+        res = DBInterface.execute(db,
+            "INSERT INTO exposures (sample_id, filename) VALUES (1, 'f')")
+        exp_id = Int(DBInterface.lastrowid(res))
+
+        req = HTTP.Request("POST", "/", ["X-Client-Op-Id" => "op-dup"], UInt8[])
+        r1 = HimalayaUI.apply_event!(db, req;
+            kind="peak_added", entity_type="exposure", entity_id=exp_id,
+            payload=Dict(:q => 1.0))
+        r2 = HimalayaUI.apply_event!(db, req;
+            kind="peak_added", entity_type="exposure", entity_id=exp_id,
+            payload=Dict(:q => 1.0))
+        @test r1.event_id == r2.event_id
+
+        # Only one user_actions row exists for this op tuple.
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM user_actions WHERE client_op_id = 'op-dup'"))
+        @test length(rows) == 1
+
+        # Only one peak_curations row exists (the dispatcher's first INSERT).
+        crows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM peak_curations WHERE exposure_id = ?", [exp_id]))
+        @test length(crows) == 1
+        SQLite.close(db)
+    end
+end
+
+@testset "I2: apply_event!(::InTransaction, ...) participates in caller's transaction" begin
+    mktempdir() do tmp
+        db = HimalayaUI.open_db(joinpath(tmp, "test.db"))
+        DBInterface.execute(db,
+            "INSERT INTO experiments (name, path, data_dir, analysis_dir) VALUES ('e', '/p', '/d', '/a')")
+        DBInterface.execute(db,
+            "INSERT INTO samples (experiment_id, label) VALUES (1, 'A1')")
+        res = DBInterface.execute(db,
+            "INSERT INTO exposures (sample_id, filename) VALUES (1, 'f')")
+        exp_id = Int(DBInterface.lastrowid(res))
+
+        req = HTTP.Request("POST", "/", ["X-Client-Op-Id" => "op-intx"], UInt8[])
+        SQLite.transaction(db) do
+            r = HimalayaUI.apply_event!(HimalayaUI.InTransaction(), db, req;
+                kind="peak_added", entity_type="exposure", entity_id=exp_id,
+                payload=Dict(:q => 2.0))
+            @test r.event_id > 0
+        end
+        # Row durable after outer commit.
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM user_actions WHERE client_op_id = 'op-intx'"))
+        @test length(rows) == 1
+        SQLite.close(db)
+    end
+end
+
+@testset "I2: apply_event!(::InTransaction, ...) rolls back with caller's tx on throw" begin
+    mktempdir() do tmp
+        db = HimalayaUI.open_db(joinpath(tmp, "test.db"))
+        DBInterface.execute(db,
+            "INSERT INTO experiments (name, path, data_dir, analysis_dir) VALUES ('e', '/p', '/d', '/a')")
+        DBInterface.execute(db,
+            "INSERT INTO samples (experiment_id, label) VALUES (1, 'A1')")
+        res = DBInterface.execute(db,
+            "INSERT INTO exposures (sample_id, filename) VALUES (1, 'f')")
+        exp_id = Int(DBInterface.lastrowid(res))
+
+        req = HTTP.Request("POST", "/", ["X-Client-Op-Id" => "op-roll"], UInt8[])
+        try
+            SQLite.transaction(db) do
+                HimalayaUI.apply_event!(HimalayaUI.InTransaction(), db, req;
+                    kind="peak_added", entity_type="exposure", entity_id=exp_id,
+                    payload=Dict(:q => 3.0))
+                error("intentional failure after apply_event!")
+            end
+        catch
+        end
+        # No row persisted — outer tx rolled back.
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM user_actions WHERE client_op_id = 'op-roll'"))
+        @test isempty(rows)
+        crows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM peak_curations WHERE exposure_id = ?", [exp_id]))
+        @test isempty(crows)
+        SQLite.close(db)
+    end
+end

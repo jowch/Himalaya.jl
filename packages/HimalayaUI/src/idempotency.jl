@@ -75,22 +75,32 @@ function with_idempotency(f, db::SQLite.DB, req::HTTP.Request)
     op_id = get_client_op_id(req)
     op_id === nothing && return f()
 
-    # Fast path: lock-free cache check.
+    # Fast path: lock-free cache check (outside any tx).
     cached = _lookup_cached_response(db, op_id)
     cached === nothing || return cached
 
-    # Acquire per-op-id lock; re-check cache inside the lock.
+    # Acquire per-op-id lock; re-check cache inside the lock + tx.
     return lock(_op_lock(op_id)) do
-        cached2 = _lookup_cached_response(db, op_id)
-        cached2 === nothing || return cached2
+        # I2 fix: wrap the body's event writes AND the cache-row insert in a
+        # single SQLite transaction so they commit or roll back together.
+        # Closes the crash window where apply_event!'s event row would
+        # commit but the cache row wouldn't, allowing duplicate event rows
+        # on retry. Routes whose body emits events should use
+        # `apply_event!(InTransaction(), db, req; ...)` to participate in
+        # this transaction rather than opening a nested one.
+        return SQLite.transaction(db) do
+            # Double-check the cache inside the lock + tx.
+            cached2 = _lookup_cached_response(db, op_id)
+            cached2 === nothing || return cached2
 
-        response = f()
-        if response.status < 400
-            DBInterface.execute(db,
-                "INSERT INTO idempotent_responses (client_op_id, status_code, body) VALUES (?, ?, ?)",
-                [op_id, Int(response.status), String(copy(response.body))])
+            response = f()
+            if response.status < 400
+                DBInterface.execute(db,
+                    "INSERT INTO idempotent_responses (client_op_id, status_code, body) VALUES (?, ?, ?)",
+                    [op_id, Int(response.status), String(copy(response.body))])
+            end
+            return response
         end
-        return response
     end
 end
 

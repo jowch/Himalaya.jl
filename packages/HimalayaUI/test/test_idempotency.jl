@@ -181,9 +181,11 @@ end
         function multi_event_body()
             called[] += 1
             # Emit 3 apply_event! calls with the same client_op_id (extracted from req).
+            # Use distinct (action, entity_id) tuples — the I2 partial unique
+            # index on (client_op_id, action, entity_id) rejects exact duplicates.
             for i in 1:3
                 HimalayaUI.apply_event!(db, req;
-                    kind = "speculative_created",
+                    kind = "speculative_created_$i",
                     entity_type = "exposure",
                     entity_id = 1,  # assume seeded
                     payload = Dict(:n => i))
@@ -199,5 +201,62 @@ end
         @test length(rows) == 3
         # Cached body matches.
         @test String(r1.body) == String(r2.body)
+    end
+end
+
+@testset "I2: with_idempotency body throw rolls back event AND cache atomically" begin
+    mktempdir() do tmp
+        db = open_db(joinpath(tmp, "test.db"))
+        DBInterface.execute(db,
+            "INSERT INTO experiments (name, path, data_dir, analysis_dir) VALUES ('e', '/p', '/d', '/a')")
+        DBInterface.execute(db,
+            "INSERT INTO samples (experiment_id, label) VALUES (1, 'A1')")
+        res = DBInterface.execute(db,
+            "INSERT INTO exposures (sample_id, filename) VALUES (1, 'f')")
+        exp_id = Int(DBInterface.lastrowid(res))
+
+        req = HTTP.Request("POST", "/", ["X-Client-Op-Id" => "op-atomic"], UInt8[])
+        try
+            with_idempotency(db, req) do
+                HimalayaUI.apply_event!(HimalayaUI.InTransaction(), db, req;
+                    kind="peak_added", entity_type="exposure", entity_id=exp_id,
+                    payload=Dict(:q => 4.0))
+                error("body explosion")
+            end
+        catch
+        end
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM user_actions WHERE client_op_id = 'op-atomic'"))
+        @test isempty(rows)
+        crows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT client_op_id FROM idempotent_responses WHERE client_op_id = 'op-atomic'"))
+        @test isempty(crows)
+        SQLite.close(db)
+    end
+end
+
+@testset "I2: with_idempotency success commits event AND cache atomically" begin
+    mktempdir() do tmp
+        db = open_db(joinpath(tmp, "test.db"))
+        DBInterface.execute(db,
+            "INSERT INTO experiments (name, path, data_dir, analysis_dir) VALUES ('e', '/p', '/d', '/a')")
+        DBInterface.execute(db,
+            "INSERT INTO samples (experiment_id, label) VALUES (1, 'A1')")
+        res = DBInterface.execute(db,
+            "INSERT INTO exposures (sample_id, filename) VALUES (1, 'f')")
+        exp_id = Int(DBInterface.lastrowid(res))
+
+        req = HTTP.Request("POST", "/", ["X-Client-Op-Id" => "op-success"], UInt8[])
+        with_idempotency(db, req) do
+            HimalayaUI.apply_event!(HimalayaUI.InTransaction(), db, req;
+                kind="peak_added", entity_type="exposure", entity_id=exp_id,
+                payload=Dict(:q => 5.0))
+            HTTP.Response(200; body = Vector{UInt8}("{\"ok\":true}"))
+        end
+        @test length(Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM user_actions WHERE client_op_id = 'op-success'"))) == 1
+        @test length(Tables.rowtable(DBInterface.execute(db,
+            "SELECT client_op_id FROM idempotent_responses WHERE client_op_id = 'op-success'"))) == 1
+        SQLite.close(db)
     end
 end

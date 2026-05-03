@@ -2,20 +2,42 @@ using JSON3, SQLite, DBInterface, HTTP, Tables
 using Dates: now, UTC, format, @dateformat_str
 
 """
+    InTransaction
+
+Sentinel singleton type indicating the caller has already opened a SQLite
+transaction. Use the `apply_event!(::InTransaction, db, req; ...)` method
+to participate in that transaction rather than opening a nested one. This
+exists so `with_idempotency` can wrap the entire event-write + cache-write
+sequence in a single atomic transaction — closing the I2 crash window where
+the event row would commit but the cache row wouldn't, allowing duplicate
+events on retry.
+"""
+struct InTransaction end
+
+"""
     apply_event!(db, req; kind, entity_type, entity_id, payload, undoes_event_id=nothing)
       -> NamedTuple{(:event_id, :view_row_id), Tuple{Int, Union{Int, Nothing}}}
 
 Atomic event-append + view-update. The log and the views must move together
 or neither moves. Returns a named tuple with two fields:
-- `event_id`: the newly-inserted event id in user_actions.
+- `event_id`: the newly-inserted event id in user_actions (or, on idempotent
+  retry, the id of the prior event row with the same (client_op_id, action,
+  entity_id) tuple).
 - `view_row_id`: the id of the view row inserted by the dispatcher, or
-  `nothing` for non-insert dispatcher branches (DELETE, no-op, etc.).
-  Callers that need the inserted row id (e.g. POST /peaks) use this directly
-  instead of re-querying, eliminating a read-back race with concurrent writers.
+  `nothing` for non-insert dispatcher branches (DELETE, no-op, etc.) and on
+  idempotent retry (where the dispatcher's prior insert is not re-derivable
+  from the unique-index lookup). Callers that need the inserted row id
+  (e.g. POST /peaks) use this directly instead of re-querying.
 
 `payload` is any JSON-serializable Dict / NamedTuple / nothing. If nothing,
 the event is recorded but no view update fires (use sparingly — most actions
 should carry a payload).
+
+This default method opens its own `SQLite.transaction`, then delegates to
+`apply_event!(::InTransaction, db, req; ...)`. The SSE broadcast fires AFTER
+the transaction commits so subscribers can never see uncommitted state.
+Callers that need to participate in an outer transaction (e.g. routes
+wrapped in `with_idempotency`) should use the `InTransaction` variant.
 """
 function apply_event!(db::SQLite.DB, req;
                       kind::String,
@@ -25,20 +47,69 @@ function apply_event!(db::SQLite.DB, req;
                       undoes_event_id::Union{Int,Nothing} = nothing,
                       defer_broadcast::Bool = false,
                       post_state::Union{Dict, Nothing} = nothing)
-    username = get_username(req)
-    client_id = get_client_id(req)
+    # Run the durable write inside a tx via the InTransaction variant, but
+    # always defer the broadcast there — broadcast must wait until AFTER the
+    # tx commits so subscribers can't see uncommitted state.
+    result = SQLite.transaction(db) do
+        apply_event!(InTransaction(), db, req;
+                     kind = kind, entity_type = entity_type, entity_id = entity_id,
+                     payload = payload, undoes_event_id = undoes_event_id,
+                     defer_broadcast = true,
+                     post_state = post_state)
+    end
+
+    # Now committed. Fire the broadcast unless the outer caller asked to defer
+    # it themselves (e.g. coalesced batch broadcast).
+    if !defer_broadcast
+        _maybe_broadcast_event!(db, req, result, kind, entity_type, entity_id,
+                                payload, post_state)
+    end
+
+    return (event_id = result.event_id, view_row_id = result.view_row_id)
+end
+
+"""
+    apply_event!(::InTransaction, db, req; kwargs...)
+
+In-transaction variant: the caller has already opened a `SQLite.transaction`.
+Performs the INSERT into `user_actions` plus dispatcher view-update inside
+that transaction. Does NOT broadcast (that happens after the outer tx
+commits — caller is responsible).
+
+Idempotent at the DB layer: when `client_op_id` is set and the partial
+unique index on `(client_op_id, action, entity_id)` rejects the INSERT,
+this looks up the existing event row and returns its `event_id`. The
+`view_row_id` field is `nothing` on retry (the prior dispatcher's insert
+isn't re-derivable from the unique-index lookup; callers that retry through
+`with_idempotency` get the cached HTTP response anyway, so this is unused).
+
+Returns a richer NamedTuple than the public default method — includes the
+fields needed for a deferred post-commit broadcast.
+"""
+function apply_event!(::InTransaction, db::SQLite.DB, req;
+                      kind::String,
+                      entity_type::String,
+                      entity_id::Integer,
+                      payload = nothing,
+                      undoes_event_id::Union{Int,Nothing} = nothing,
+                      defer_broadcast::Bool = true,  # accepted for kw-symmetry; ignored here
+                      post_state::Union{Dict, Nothing} = nothing)
+    username     = get_username(req)
+    client_id    = get_client_id(req)
     client_op_id = get_client_op_id(req)
-    user_id  = username === nothing ? nothing : get_or_create_user!(db, username)
+    user_id      = username === nothing ? nothing : get_or_create_user!(db, username)
     payload_json = payload === nothing ? nothing : JSON3.write(payload)
 
-    view_row_id_ref = Ref{Union{Int, Nothing}}(nothing)
-    event_id = SQLite.transaction(db) do
+    event_id::Int = 0
+    view_row_id::Union{Int, Nothing} = nothing
+
+    try
         res = DBInterface.execute(db,
             """INSERT INTO user_actions
                (user_id, action, entity_type, entity_id, payload, undoes_event_id, client_id, client_op_id)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             [user_id, kind, entity_type, Int(entity_id), payload_json, undoes_event_id, client_id, client_op_id])
-        eid = Int(DBInterface.lastrowid(res))
+        event_id = Int(DBInterface.lastrowid(res))
 
         # Canonicalize payload before dispatch — round-trip through JSON3 so
         # the live dispatcher and rebuild_views_from_log! see exactly the
@@ -46,43 +117,74 @@ function apply_event!(db::SQLite.DB, req;
         # access, eliminating the Symbol-key vs String-key footgun).
         if payload_json !== nothing
             payload_canonical = JSON3.read(payload_json)
-            view_row_id_ref[] = update_view_for_event!(db, kind, entity_id, payload_canonical, eid)
+            view_row_id = update_view_for_event!(db, kind, entity_id, payload_canonical, event_id)
         end
-        eid
+    catch err
+        # Idempotent retry: the partial unique index on
+        # (client_op_id, action, entity_id) rejected the INSERT because a
+        # prior call already applied this op. SELECT the existing event_id
+        # and return it. (SQLite raises a generic SQLiteException; match
+        # by message text since there's no stable error code surface.)
+        if client_op_id !== nothing && occursin("UNIQUE constraint failed", sprint(showerror, err))
+            existing = Tables.rowtable(DBInterface.execute(db,
+                """SELECT id FROM user_actions
+                   WHERE client_op_id = ? AND action = ? AND entity_id = ?
+                   LIMIT 1""",
+                [client_op_id, kind, Int(entity_id)]))
+            if !isempty(existing)
+                event_id = Int(existing[1].id)
+                # The dispatcher's prior insert isn't re-derivable from this
+                # lookup; leave view_row_id as nothing. Callers retrying
+                # through with_idempotency get the cached HTTP response, so
+                # this field is unused on the retry path.
+                view_row_id = nothing
+            else
+                rethrow()
+            end
+        else
+            rethrow()
+        end
     end
 
-    # Best-effort SSE broadcast — fires AFTER the transaction commits, so a
-    # subscriber never sees an event that was rolled back. If the process
-    # dies between commit and broadcast, the event is durable in user_actions
-    # but the frame is lost; clients reconcile on reconnect via TanStack
-    # Query refetch (see R5a).
-    # Defense-in-depth: broadcast is best-effort; if broadcast_event! is ever
-    # detached (e.g. in a stripped-down deployment that doesn't ship the SSE
-    # endpoint), the guard prevents an UndefVarError. Today broadcast_event!
-    # is always defined alongside apply_event! — the try/catch below catches
-    # runtime issues; this guard catches definition-time issues.
-    if !defer_broadcast && isdefined(@__MODULE__, :broadcast_event!)
-        # M0.4: suppress SSE broadcast for analyze_run no-ops (both skip flags true).
-        # M2 wires synchronous reanalyze inside curation routes; without this guard
-        # every curation event would also fan out an analyze_run frame even when
-        # nothing changed — O(N) extra frames per session. The user_actions row is
-        # still written; only the broadcast is suppressed. Strict `=== true` guards
-        # against the JSON3.Object case where a missing key would return `nothing`.
-        suppress = kind == "analyze_run" &&
-                   payload !== nothing &&
-                   get(payload, :findpeaks_skipped, false) === true &&
-                   get(payload, :indexpeaks_skipped, false) === true
-        if !suppress
-            try
-                broadcast_event!(event_id, kind, entity_type, Int(entity_id),
-                                 user_id, client_id, client_op_id, payload_json;
-                                 post_state = post_state)
-            catch err
-                @warn "broadcast_event! failed (event still durable in user_actions)" exception=err
-            end
-        end
+    return (event_id    = event_id,
+            view_row_id = view_row_id,
+            user_id     = user_id,
+            client_id   = client_id,
+            client_op_id = client_op_id,
+            payload_json = payload_json)
+end
+
+"""
+    _maybe_broadcast_event!(db, req, result, kind, entity_type, entity_id, payload, post_state)
+
+Internal: called by the default `apply_event!` after the durable transaction
+commits. Skips broadcast for analyze_run no-ops (the M0.4 suppression rule)
+and tolerates a missing or failing `broadcast_event!`.
+"""
+function _maybe_broadcast_event!(db, req, result, kind, entity_type, entity_id, payload, post_state)
+    isdefined(@__MODULE__, :broadcast_event!) || return nothing
+
+    # M0.4: suppress SSE broadcast for analyze_run no-ops (both skip flags true).
+    # M2 wires synchronous reanalyze inside curation routes; without this guard
+    # every curation event would also fan out an analyze_run frame even when
+    # nothing changed — O(N) extra frames per session. The user_actions row is
+    # still written; only the broadcast is suppressed. Strict `=== true` guards
+    # against the JSON3.Object case where a missing key would return `nothing`.
+    suppress = kind == "analyze_run" &&
+               payload !== nothing &&
+               get(payload, :findpeaks_skipped, false) === true &&
+               get(payload, :indexpeaks_skipped, false) === true
+    suppress && return nothing
+
+    try
+        broadcast_event!(result.event_id, kind, entity_type, Int(entity_id),
+                         result.user_id, result.client_id, result.client_op_id,
+                         result.payload_json;
+                         post_state = post_state)
+    catch err
+        @warn "broadcast_event! failed (event still durable in user_actions)" exception=err
     end
-    (event_id = event_id, view_row_id = view_row_id_ref[])
+    nothing
 end
 
 """

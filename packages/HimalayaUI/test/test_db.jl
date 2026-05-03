@@ -419,3 +419,70 @@ end
         SQLite.close(db)
     end
 end
+
+@testset "I2: partial unique index on user_actions(client_op_id, action, entity_id)" begin
+    mktempdir() do tmp
+        db = HimalayaUI.open_db(joinpath(tmp, "test.db"))
+        idx = Tables.rowtable(DBInterface.execute(db,
+            "SELECT sql FROM sqlite_master WHERE type='index' AND name='idx_events_unique_op'"))
+        @test length(idx) == 1
+        sql = String(idx[1].sql)
+        @test occursin("UNIQUE", uppercase(sql))
+        @test occursin("WHERE", sql)
+        @test occursin("client_op_id IS NOT NULL", sql)
+        SQLite.close(db)
+    end
+end
+
+@testset "I2: partial unique index also installed on legacy DB via migrate_schema!" begin
+    mktempdir() do tmp
+        path = joinpath(tmp, "test.db")
+        # Simulate a legacy DB (any DB that didn't already have this index).
+        db = SQLite.DB(path)
+        DBInterface.execute(db, "CREATE TABLE foo (x INTEGER)")
+        SQLite.close(db)
+        db = HimalayaUI.open_db(path)
+        idx = Tables.rowtable(DBInterface.execute(db,
+            "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_events_unique_op'"))
+        @test length(idx) == 1
+        SQLite.close(db)
+    end
+end
+
+@testset "I2: duplicate (client_op_id, action, entity_id) rejected at DB level" begin
+    mktempdir() do tmp
+        db = HimalayaUI.open_db(joinpath(tmp, "test.db"))
+        # Seed FK targets.
+        DBInterface.execute(db,
+            "INSERT INTO experiments (name, path, data_dir, analysis_dir) VALUES ('e', '/p', '/d', '/a')")
+        DBInterface.execute(db,
+            "INSERT INTO samples (experiment_id, label) VALUES (1, 'A1')")
+        res = DBInterface.execute(db,
+            "INSERT INTO exposures (sample_id, filename) VALUES (1, 'f')")
+        exp_id = Int(DBInterface.lastrowid(res))
+
+        DBInterface.execute(db, """
+            INSERT INTO user_actions (action, entity_type, entity_id, client_op_id)
+            VALUES ('peak_added', 'exposure', ?, 'op-x')""", [exp_id])
+        @test_throws Exception DBInterface.execute(db, """
+            INSERT INTO user_actions (action, entity_type, entity_id, client_op_id)
+            VALUES ('peak_added', 'exposure', ?, 'op-x')""", [exp_id])
+
+        # Multiple events under one op_id with different actions are still allowed.
+        DBInterface.execute(db, """
+            INSERT INTO user_actions (action, entity_type, entity_id, client_op_id)
+            VALUES ('index_confirmed', 'exposure', ?, 'op-x')""", [exp_id])
+
+        # NULL client_op_id rows are not constrained — partial WHERE clause.
+        for _ in 1:3
+            DBInterface.execute(db, """
+                INSERT INTO user_actions (action, entity_type, entity_id, client_op_id)
+                VALUES ('peak_added', 'exposure', ?, NULL)""", [exp_id])
+        end
+
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM user_actions WHERE action = 'peak_added' AND entity_id = ?", [exp_id]))
+        @test length(rows) == 4  # 1 with op-x + 3 with NULL
+        SQLite.close(db)
+    end
+end

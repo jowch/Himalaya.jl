@@ -160,6 +160,11 @@ CREATE TABLE IF NOT EXISTS user_actions (
 CREATE INDEX IF NOT EXISTS idx_events_by_exposure
     ON user_actions(entity_type, entity_id, id);
 
+-- I2 partial unique index: installed by migrate_schema! (runs after the
+-- legacy ALTER TABLE pass that adds client_op_id, so it works on fresh
+-- and legacy DBs alike). Defined here as a comment for discoverability —
+-- the SQL lives in migrate_schema!'s stmts array.
+
 CREATE TABLE IF NOT EXISTS idempotent_responses (
     client_op_id  TEXT PRIMARY KEY,
     status_code   INTEGER NOT NULL,
@@ -234,6 +239,9 @@ function migrate_schema!(db::SQLite.DB)
             created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
         )""",
         "CREATE INDEX IF NOT EXISTS idx_idempotent_responses_created ON idempotent_responses(created_at)",
+        """CREATE UNIQUE INDEX IF NOT EXISTS idx_events_unique_op
+            ON user_actions(client_op_id, action, entity_id)
+            WHERE client_op_id IS NOT NULL""",
     ]
     for stmt in stmts
         try
