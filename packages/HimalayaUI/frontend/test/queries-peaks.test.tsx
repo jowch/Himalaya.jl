@@ -128,19 +128,26 @@ describe("queries — peak mutations (queue-driven, M2.2)", () => {
     });
   });
 
-  it("useRemovePeak survives 204 success without re-adding the peak", async () => {
+  it("useRemovePeak writes the new hash to the exposure cache on success", async () => {
     const { client, wrapper } = withClient();
     const peak: Peak = {
       id: 5, exposure_id: EXPOSURE_ID, q: 0.1, intensity: null,
       prominence: null, sharpness: null, source: "manual", excluded: false,
     };
     client.setQueryData<Peak[]>(queryKeys.peaks(EXPOSURE_ID), [peak]);
-    mockOnce(204, null);
+    client.setQueryData<Exposure>(queryKeys.exposure(EXPOSURE_ID), makeExposure());
+    mockOnce(200, {
+      event_id: 99,
+      view_row_id: 99,
+      analysis_inputs_hash: HASH_NEW,
+    });
     const { result } = renderHook(() => useRemovePeak(EXPOSURE_ID), { wrapper });
     act(() => { result.current.mutate(5); });
     await waitFor(() => expect(result.current.isPending).toBe(false));
     const list = client.getQueryData<Peak[]>(queryKeys.peaks(EXPOSURE_ID)) ?? [];
     expect(list).toHaveLength(0);
+    const exp = client.getQueryData<Exposure>(queryKeys.exposure(EXPOSURE_ID));
+    expect(exp?.analysis_inputs_hash).toBe(HASH_NEW);
   });
 
   it("useRemovePeak rolls back on error", async () => {

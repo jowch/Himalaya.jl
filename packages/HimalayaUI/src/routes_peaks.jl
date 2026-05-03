@@ -325,7 +325,13 @@ function register_peaks_routes!()
                 _queue_curation_broadcast!(req, result, "peak_removed",
                     exposure_id, payload, post_state)
 
-                return HTTP.Response(204)
+                return HTTP.Response(200,
+                    ["Content-Type" => "application/json"],
+                    JSON3.write(Dict(
+                        :event_id             => result.event_id,
+                        :view_row_id          => result.view_row_id,
+                        :analysis_inputs_hash => post_state[:analysis_inputs_hash],
+                    )))
             end
 
             # If not a curation-add, check auto_peaks

@@ -211,12 +211,24 @@ export interface PeakUpdatedResponse extends Peak {
   analysis_inputs_hash: string;
 }
 
+/**
+ * Backend response for DELETE /api/peaks/:id. Carries the post-state hash so
+ * the client can mark the exposure cache fresh inline with the optimistic
+ * delete and avoid a transient StaleIndicesBanner flash before the SSE frame
+ * arrives.
+ */
+export interface PeakRemoveResponse {
+  event_id: number;
+  view_row_id: number | null;
+  analysis_inputs_hash: string;
+}
+
 export const listPeaks = (exposure_id: number) =>
   request<Peak[]>("GET", `/api/exposures/${exposure_id}/peaks`);
 export const addPeak = (exposure_id: number, q: number, opts?: AuthOpts) =>
   request<PeakAddResponse>("POST", `/api/exposures/${exposure_id}/peaks`, { q }, opts);
 export const removePeak = (peak_id: number, opts?: AuthOpts) =>
-  request<void>("DELETE", `/api/peaks/${peak_id}`, undefined, opts);
+  request<PeakRemoveResponse>("DELETE", `/api/peaks/${peak_id}`, undefined, opts);
 export const setPeakExcluded = (peak_id: number, excluded: boolean, opts?: AuthOpts) =>
   request<PeakUpdatedResponse>(
     "PATCH", `/api/peaks/${peak_id}`, { excluded }, opts);

@@ -307,6 +307,12 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
         return nothing
     end
 
+    # peak_removed: the route handler deletes the peak_curations(kind='add') row
+    # directly (it has the integer id from the URL), so the dispatcher is a
+    # no-op. Branch exists for exhaustiveness — rebuild_views_from_log! treats
+    # it as a known kind rather than silently falling through.
+    kind == "peak_removed" && return nothing
+
     if kind == "index_confirmed"
         DBInterface.execute(db,
             """INSERT OR IGNORE INTO index_group_members (group_id, index_id)
@@ -334,9 +340,22 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
     kind == "set_exposure_status" && return nothing
     kind == "select_exposure" && return nothing
 
+    # Speculative index lifecycle: route handlers insert/delete the indices
+    # row directly (the speculative create/delete paths in routes_analysis.jl
+    # need the auto-generated id immediately to populate the response body).
+    # Dispatcher branches exist for exhaustiveness only.
+    kind == "speculative_created" && return nothing
+    kind == "speculative_deleted" && return nothing
+
+    # analyze_run: pure observability event — no view writes. The synchronous
+    # reanalyze inside curation routes mutates indices/auto_peaks via
+    # persist_analysis!, not via this dispatcher. Branch exists so the
+    # rebuild_views_from_log! property test treats it as a known kind.
+    kind == "analyze_run" && return nothing
+
     # Scaffolding / legacy:
     kind == "noop_test" && return nothing
-    # default: no view update (analyze_run and other instrumentation events land here)
+    # default: no view update
     nothing
 end
 

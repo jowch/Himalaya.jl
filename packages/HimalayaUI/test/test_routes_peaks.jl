@@ -44,7 +44,11 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         # DELETE peak
         r = HTTP.delete("$base/api/peaks/$peak_id";
             headers = ["X-Username" => "alice"])
-        @test r.status == 204
+        @test r.status == 200
+        del_body = JSON3.read(String(r.body))
+        @test haskey(del_body, :event_id)
+        @test haskey(del_body, :view_row_id)
+        @test haskey(del_body, :analysis_inputs_hash)
 
         r = HTTP.get("$base/api/exposures/$e_id/peaks")
         list = JSON3.read(String(r.body))
@@ -265,7 +269,12 @@ end
         # Delete it
         r = HTTP.delete("$base/api/peaks/$manual_id";
             headers = ["X-Username" => "carol"])
-        @test r.status == 204
+        @test r.status == 200
+        del_body = JSON3.read(String(r.body))
+        @test haskey(del_body, :event_id)
+        @test haskey(del_body, :view_row_id)
+        @test haskey(del_body, :analysis_inputs_hash)
+        @test del_body.analysis_inputs_hash isa AbstractString
 
         # Should no longer appear in GET (no manual peaks)
         r = HTTP.get("$base/api/exposures/$e_id/peaks")
@@ -557,7 +566,9 @@ end
             r = HTTP.delete("$base/api/peaks/$manual_id";
                 headers = ["X-Username"     => "alice",
                            "X-Client-Op-Id" => "uuid-m22-del"])
-            @test r.status == 204
+            @test r.status == 200
+            del_body = JSON3.read(String(r.body))
+            @test haskey(del_body, :analysis_inputs_hash)
 
             frames = _drain_curation_frames(pending)
             removed = filter(f -> _frame_kind(f) == "peak_removed", frames)

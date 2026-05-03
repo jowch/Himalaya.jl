@@ -124,7 +124,7 @@ export function useAddPeak(exposureId: number) {
 
 export function useRemovePeak(exposureId: number) {
   const username = useAppState((s) => s.username);
-  const inner = useQueueMutation<{ peakId: number }, void>(
+  const inner = useQueueMutation<{ peakId: number }, api.PeakRemoveResponse>(
     peakRemoveMutator,
     { exposureId, username, clientId: CLIENT_ID },
   );

@@ -90,11 +90,15 @@ describe("api", () => {
     expect(init.body).toBe(JSON.stringify({ q: 0.15 }));
   });
 
-  it("removePeak sends DELETE with X-Username", async () => {
+  it("removePeak sends DELETE with X-Username and returns hash payload", async () => {
     const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue(
-      new Response(null, { status: 204 }),
+      new Response(JSON.stringify({
+        event_id: 11, view_row_id: 22, analysis_inputs_hash: "hash-x",
+      }), { status: 200, headers: { "Content-Type": "application/json" } }),
     );
-    await api.removePeak(7, { username: "alice", clientId: "tab-xyz" });
+    const r = await api.removePeak(7, { username: "alice", clientId: "tab-xyz" });
+    expect(r.analysis_inputs_hash).toBe("hash-x");
+    expect(r.event_id).toBe(11);
     const [url, init] = fetchSpy.mock.calls[0]! as [string, RequestInit];
     expect(url).toBe("/api/peaks/7");
     expect(init.method).toBe("DELETE");
