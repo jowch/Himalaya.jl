@@ -59,9 +59,11 @@ Modified docs:
 New frontend:
 - `packages/HimalayaUI/frontend/src/lib/queue/types.ts` — `OpKind`, `Mutator<T,R>`, `RollbackContext`, `PendingDeferred<T>`, `SseEvent`
 - `packages/HimalayaUI/frontend/src/lib/queue/deferred.ts` — `pendingDeferreds` Map, `makeDeferred`, registry helpers
-- `packages/HimalayaUI/frontend/src/lib/queue/replayCoordinator.ts` — `handleRemoteEvent`, `applyRemoteToCache`
+- `packages/HimalayaUI/frontend/src/lib/queue/replayCoordinator.ts` — `handleRemoteEvent`, per-kind `applyRemoteToCache`
 - `packages/HimalayaUI/frontend/src/lib/queue/persistence.ts` — sessionStorage mirror, rehydrate flow
 - `packages/HimalayaUI/frontend/src/lib/queue/hooks.ts` — `useExposureHasPendingPeakOps`, `useQueueOpStatus`
+- `packages/HimalayaUI/frontend/src/lib/queue/useQueueMutation.ts` — framework wrapper: deferred-promise resolution, optimistic-effect plumbing, AbortSignal handling, sessionStorage persistence wiring, failure-class routing
+- `packages/HimalayaUI/frontend/src/lib/queue/errors.ts` — `isValidationError`, `isInfrastructureError`, per-kind error message lookup
 - `packages/HimalayaUI/frontend/src/lib/queue/index.ts` — barrel export
 
 Modified frontend:
@@ -72,6 +74,8 @@ New tests:
 - `packages/HimalayaUI/frontend/test/queue/persistence.test.ts` — rehydrate cycle, schema-version drop with toast
 - `packages/HimalayaUI/frontend/test/queue/hooks.test.ts` — `useExposureHasPendingPeakOps` reflects pending mutations
 - `packages/HimalayaUI/frontend/test/queue/deferred.test.ts` — registry mint/resolve/leak-on-abort
+- `packages/HimalayaUI/frontend/test/queue/useQueueMutation.test.ts` — wrapper-level integration: per-call clientOpId minting, optimistic context plumbing, error-class routing, AbortSignal threading
+- `packages/HimalayaUI/frontend/test/queue/helpers.ts` — test helpers (`makeFakeMutation`, `remoteForeignEvent`)
 
 **M2: Mutator migration**
 
@@ -743,9 +747,41 @@ end
 end
 
 @testset "hash_peak_set_from_db produces same hash as hash_peak_set on equivalent inputs" begin
-    # Set up exposure with auto_peaks + exclude curations.
-    # Compute hash via DB-only path; compute hash via trace-loading path.
-    # Assert they match.
+    # Three configurations exercised:
+    # (a) auto peaks present, no curations
+    # (b) auto peaks present, one exclude curation
+    # (c) auto peaks present, multiple exclude curations
+    # Each: seed the DB, then compute both ways, assert equality.
+    mktempdir() do tmp
+        db, exp_id, analysis_dir = setup_clean_analyzed_exposure(tmp)
+        # Seed scenario (a)
+        h_db = HimalayaUI.hash_peak_set_from_db(db, exp_id)
+        q, I, σ = HimalayaUI.load_dat(resolve_trace_path(db, exp_id, analysis_dir))
+        eff = HimalayaUI.effective_peaks(db, exp_id, q, I)
+        h_ref = HimalayaUI.hash_peak_set(eff)
+        @test h_db == h_ref
+
+        # (b) Add an exclude curation; recompute.
+        peak_q = first_auto_peak_q(db, exp_id)
+        DBInterface.execute(db,
+            "INSERT INTO peak_curations (exposure_id, kind, q) VALUES (?, 'exclude', ?)",
+            [exp_id, peak_q])
+        h_db2 = HimalayaUI.hash_peak_set_from_db(db, exp_id)
+        eff2 = HimalayaUI.effective_peaks(db, exp_id, q, I)
+        h_ref2 = HimalayaUI.hash_peak_set(eff2)
+        @test h_db2 == h_ref2
+        @test h_db2 != h_db  # exclusion changed the hash
+
+        # (c) Add a second exclude; recompute.
+        peak_q2 = second_auto_peak_q(db, exp_id)
+        DBInterface.execute(db,
+            "INSERT INTO peak_curations (exposure_id, kind, q) VALUES (?, 'exclude', ?)",
+            [exp_id, peak_q2])
+        h_db3 = HimalayaUI.hash_peak_set_from_db(db, exp_id)
+        eff3 = HimalayaUI.effective_peaks(db, exp_id, q, I)
+        h_ref3 = HimalayaUI.hash_peak_set(eff3)
+        @test h_db3 == h_ref3
+    end
 end
 ```
 
@@ -855,33 +891,92 @@ All test cases pass. Existing pipeline tests stay green. The latency test (P99 <
 
 ---
 
-## Task M0.6: `post_state` payload + size observability
+## Task M0.6: `post_state` payload, broadcast deferral, size observability
 
 **Files:**
 - Modify: `packages/HimalayaUI/src/pipeline.jl` — emit `post_state_size_bytes` on analyze_run
-- Modify: `packages/HimalayaUI/src/events.jl` — `broadcast_event!` includes `post_state` for events that opt in
-- Modify: `packages/HimalayaUI/src/routes_peaks.jl` — peak-edit routes (when wired in M2) build `post_state` from the new analysis state
+- Modify: `packages/HimalayaUI/src/events.jl` — `apply_event!` gains `defer_broadcast::Bool=false` and `post_state::Union{Dict,Nothing}=nothing`; `broadcast_event!` accepts and emits `post_state`
 - Modify: `packages/HimalayaUI/test/test_sse.jl`
+- Modify: `packages/HimalayaUI/test/test_events.jl`
 
-`post_state` enrichment is the load-bearing M0 prerequisite for M2's replay-without-refetch correctness. Without it, replay coordinator falls back to invalidate-and-refetch and the cross-entity refetch race re-introduces banner flicker.
+This task is load-bearing for M2's replay-without-refetch correctness AND addresses a contract change to `apply_event!` that several routes depend on. Two coupled additions:
+
+1. **`post_state` field on the SSE frame**, optionally populated by callers that know the post-analyze state.
+2. **`defer_broadcast::Bool=false` keyword** on `apply_event!`. When true, the broadcast is *not* fired automatically after commit; the caller is responsible for calling `broadcast_event!` later (typically after running additional logic like `analyze_exposure!`). When false (default), behavior is identical to the pre-M0.6 contract — every existing call site is preserved without modification.
+
+Why both in one task: the `post_state` data isn't known until *after* `analyze_exposure!` runs, but `analyze_exposure!` runs after `apply_event!`'s transaction commits. Without `defer_broadcast`, the route handler would have to either (a) issue a second broadcast (two frames per logical event — confusing for clients) or (b) allow the inner broadcast to fire without `post_state` and accept refetch-fallback. `defer_broadcast` lets the route serialize as: open transaction → apply_event! (no broadcast) → analyze_exposure! → commit → emit one broadcast with post_state. One frame per event, post_state inline.
 
 - [ ] **Step 1: Write failing tests**
 
 ```julia
-@testset "post_state included in SSE frame for curation events with reanalyze" begin
-    # A peak_added event from the M2 wiring (handler builds post_state) → frame has it.
-    # Pre-M2 events (no post_state passed) → field absent.
+# test_events.jl
+@testset "apply_event! with defer_broadcast=true does NOT fire broadcast" begin
+    captured = String[]
+    HimalayaUI._test_subscribe!(captured)
+    mktempdir() do tmp
+        db = open_db(joinpath(tmp, "test.db"))
+        # ... seed exposure ...
+        result = HimalayaUI.apply_event!(db, _test_request();
+            kind="noop_test", entity_type="exposure", entity_id=exp_id,
+            payload=Dict(:q => 1.0),
+            defer_broadcast=true)
+        @test isempty(captured)
+        @test result.event_id > 0  # event still durable in user_actions
+    end
 end
 
-@testset "post_state_size_bytes recorded on slow-path analyze_run" begin
-    # After analyze_exposure! slow path, the analyze_run event payload
-    # has post_state_size_bytes > 0.
+@testset "apply_event! defer_broadcast=false (default) preserves existing behavior" begin
+    # Every existing call site uses the default; broadcasts fire as before.
+    captured = String[]
+    HimalayaUI._test_subscribe!(captured)
+    mktempdir() do tmp
+        db = open_db(joinpath(tmp, "test.db"))
+        # ... seed exposure ...
+        HimalayaUI.apply_event!(db, _test_request();
+            kind="noop_test", entity_type="exposure", entity_id=exp_id,
+            payload=Dict(:q => 1.0))  # no defer_broadcast kwarg
+        @test length(captured) == 1
+    end
+end
+
+@testset "broadcast_event! emits post_state when provided" begin
+    captured = String[]
+    HimalayaUI._test_subscribe!(captured)
+    HimalayaUI.broadcast_event!(1, "peak_added", "exposure", 42,
+        nothing, "tab-id", "op-id", JSON3.write(Dict(:q => 1.0));
+        post_state = Dict(:analysis_inputs_hash => "abc123", :indices => []))
+    @test length(captured) == 1
+    frame_json = JSON3.read(captured[1])
+    @test haskey(frame_json, :post_state)
+    @test frame_json.post_state.analysis_inputs_hash == "abc123"
+end
+
+@testset "broadcast_event! omits post_state when not provided" begin
+    captured = String[]
+    HimalayaUI._test_subscribe!(captured)
+    HimalayaUI.broadcast_event!(1, "peak_added", "exposure", 42,
+        nothing, "tab-id", "op-id", JSON3.write(Dict(:q => 1.0)))
+    frame_json = JSON3.read(captured[1])
+    @test !haskey(frame_json, :post_state)
+end
+
+# test_pipeline.jl
+@testset "analyze_run slow path records post_state_size_bytes" begin
+    mktempdir() do tmp
+        db, exp_id, analysis_dir = setup_clean_analyzed_exposure(tmp)
+        # Force slow path: change the trace.
+        # ... mutate trace file ...
+        HimalayaUI.analyze_exposure!(db, exp_id, analysis_dir)
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT payload FROM user_actions WHERE entity_id = ? AND action = 'analyze_run' ORDER BY id DESC LIMIT 1",
+            [exp_id]))
+        payload = JSON3.read(String(rows[1].payload))
+        @test get(payload, :post_state_size_bytes, 0) > 0
+    end
 end
 ```
 
-- [ ] **Step 2: Implement**
-
-Extend `broadcast_event!` to accept an optional `post_state` parameter:
+- [ ] **Step 2: Extend `broadcast_event!` and `apply_event!`**
 
 ```julia
 function broadcast_event!(event_id, kind, entity_type, entity_id,
@@ -901,32 +996,56 @@ function broadcast_event!(event_id, kind, entity_type, entity_id,
     )
     post_state === nothing || (fields[:post_state] = post_state)
     msg = JSON3.write(fields)
-    # ... rest unchanged ...
+    frame = "event: curation\ndata: $msg\n\n"
+    lock(SSE_LOCK) do
+        # ... existing pruning logic unchanged ...
+    end
+    nothing
 end
 ```
 
-`apply_event!` doesn't always know what `post_state` should be — the caller does. Add an optional `post_state` keyword arg to `apply_event!`:
-
 ```julia
-function apply_event!(db, req;
-                      kind, entity_type, entity_id,
+function apply_event!(db::SQLite.DB, req;
+                      kind::String,
+                      entity_type::String,
+                      entity_id::Integer,
                       payload = nothing,
-                      undoes_event_id = nothing,
-                      post_state = nothing)
-    # ...
-    broadcast_event!(...; post_state = post_state)
-    # ...
+                      undoes_event_id::Union{Int,Nothing} = nothing,
+                      defer_broadcast::Bool = false,
+                      post_state::Union{Dict, Nothing} = nothing)
+    # ... existing extraction + transaction logic ...
+
+    if !defer_broadcast && isdefined(@__MODULE__, :broadcast_event!)
+        # Apply the both-skipped suppression rule from M0.4.
+        suppress = kind == "analyze_run" &&
+                   payload !== nothing &&
+                   get(payload, :findpeaks_skipped, false) === true &&
+                   get(payload, :indexpeaks_skipped, false) === true
+        if !suppress
+            try
+                broadcast_event!(event_id, kind, entity_type, Int(entity_id),
+                                 user_id, client_id, client_op_id, payload_json;
+                                 post_state = post_state)
+            catch err
+                @warn "broadcast_event! failed (event still durable in user_actions)" exception=err
+            end
+        end
+    end
+
+    return (event_id = event_id, view_row_id = view_row_id_ref[])
 end
 ```
 
-In `analyze_exposure!`'s slow path, compute `post_state_size_bytes` and embed in the `analyze_run` payload:
+- [ ] **Step 3: Update `analyze_exposure!` slow path to record `post_state_size_bytes`**
 
 ```julia
+# In the slow-path branch of analyze_exposure!:
 indices_array = serialize_indices_for_post_state(db, exposure_id)
 size_bytes = length(JSON3.write(indices_array))
 apply_event!(db, _system_request();
     kind = "analyze_run",
-    # ...
+    entity_type = "exposure",
+    entity_id = exposure_id,
     payload = Dict(
         :findpeaks_skipped     => false,
         :indexpeaks_skipped    => false,
@@ -935,11 +1054,15 @@ apply_event!(db, _system_request();
     ))
 ```
 
-The full `post_state` field (with the actual indices array) is built and passed by the *route handler* in M2, not by `analyze_exposure!`.
+The slow path does NOT pass `post_state` as a kwarg — `analyze_exposure!` is called from many places (`reingest`, scheduled scans, etc.); it's the route handler's job to attach the full `post_state` to the curation event when desired (see M2.2). `analyze_exposure!` only records the *size* for observability.
 
-- [ ] **Step 3: Verify**
+`serialize_indices_for_post_state(db, exposure_id)` is a small helper that JSON-shapes the current indices for an exposure — same shape `GET /api/exposures/:id/indices` returns, reusing the existing serialization in `json.jl` where possible.
 
-Tests pass.
+- [ ] **Step 4: Verify**
+
+All five testsets pass. Critically, the "default preserves existing behavior" test asserts that no existing callsite of `apply_event!` regresses — backward compatibility for the unchanged routes.
+
+> **Why this lives in M0, not M2.2:** the `defer_broadcast` semantics is a contract change to a function that *every* route depends on. Putting it in M2.2 would mean the contract change ships in the same PR as three frontend mutator migrations + an autoReanalyze deletion + a banner update + new components. Pulling it into M0 keeps the contract change small, well-tested, and reviewable independently. M2.2 then just *uses* the new kwarg.
 
 ---
 
@@ -1145,6 +1268,14 @@ After all M0 tasks land, manual verification:
 
 If the latency check fails, **STOP** and apply the corresponding fallback trigger from the spec — revert M2's synchronous-reanalyze pattern before proceeding.
 
+> **M0 is *user-invisible* but not *wire-invisible*.** Two observable changes ship in M0 that are worth flagging:
+>
+> 1. **`analyze_run` broadcast suppression.** Previously every analysis call (including idempotent re-runs from the autoReanalyze chain) broadcast a frame to all subscribers. After M0.4, `analyze_run` events with both `findpeaks_skipped` and `indexpeaks_skipped` true are suppressed. Pre-M0 clients that depended on the spurious frame for some side effect would notice; HimalayaUI's frontend ignores them, so this is desirable.
+>
+> 2. **SSE frame shape.** M0.2 adds `client_op_id` and `ts`; M0.6 adds optional `post_state`. Clients that strictly typed-validate frame shape (rather than ignoring unknown fields) would error. The current `sseSubscriber.ts` uses indexed property access; new fields are tolerated.
+>
+> Neither is a regression for the intended client (HimalayaUI's own frontend), but the "behavioral no-op" claim earlier in the plan is precisely that M0 changes *no observable user behavior*. Wire changes are explicit; flag in release notes.
+
 ---
 
 ## Task M1.1: Queue framework types and registry
@@ -1281,23 +1412,110 @@ All four testcases pass.
 - [ ] **Step 1: Write failing tests**
 
 ```typescript
-// queue/replayCoordinator.test.ts — six cases:
-// 1. SSE with matching client_op_id resolves the pending deferred
-// 2. SSE without matching client_op_id triggers rollback-apply-replay
-// 3. Rollback iterates pending mutations in reverse order
-// 4. Re-run iterates in original (insertion) order
-// 5. MutationCache.getAll() insertion order is preserved (Set iteration)
-// 6. AbortSignal during replay does not double-rollback
+// queue/replayCoordinator.test.ts
+import { describe, it, expect, beforeEach } from "vitest";
+import { QueryClient, MutationCache } from "@tanstack/react-query";
+import { handleRemoteEvent } from "../src/lib/queue/replayCoordinator";
+import { makeDeferred, getDeferred } from "../src/lib/queue/deferred";
+
+describe("handleRemoteEvent", () => {
+  let qc: QueryClient;
+  let mc: MutationCache;
+
+  beforeEach(() => {
+    qc = new QueryClient();
+    mc = qc.getMutationCache();
+  });
+
+  it("SSE with matching client_op_id resolves the pending deferred", async () => {
+    const d = makeDeferred<{ ok: true }>("op-1");
+    handleRemoteEvent({
+      id: 1, kind: "peak_added", entity_type: "exposure", entity_id: 42,
+      client_op_id: "op-1", payload: { q: 1.0 },
+    }, qc, mc);
+    const result = await d.promise;
+    expect(result).toMatchObject({ event_id: 1 });
+    expect(getDeferred("op-1")).toBeUndefined();  // deferred has been resolved
+  });
+
+  it("SSE without matching client_op_id triggers rollback-apply-replay", () => {
+    // Spy onMutate / context.restore on a fake pending mutation.
+    const restore = vi.fn();
+    const onMutate = vi.fn();
+    const fakeMutation = makeFakeMutation({ status: "pending", context: { restore }, onMutate });
+    mc.add(fakeMutation);
+    handleRemoteEvent({
+      id: 2, kind: "peak_excluded", entity_type: "exposure", entity_id: 42,
+      client_op_id: "other-tab-op", payload: { q: 2.0 },
+    }, qc, mc);
+    expect(restore).toHaveBeenCalledTimes(1);
+    expect(onMutate).toHaveBeenCalledTimes(1);
+  });
+
+  it("Rollback iterates pending mutations in reverse order", () => {
+    const order: number[] = [];
+    for (let i = 0; i < 3; i++) {
+      mc.add(makeFakeMutation({
+        status: "pending",
+        context: { restore: () => order.push(i) },
+        onMutate: () => {},
+      }));
+    }
+    handleRemoteEvent(remoteForeignEvent(), qc, mc);
+    expect(order).toEqual([2, 1, 0]);
+  });
+
+  it("Re-run iterates in original (insertion) order", () => {
+    const order: number[] = [];
+    for (let i = 0; i < 3; i++) {
+      mc.add(makeFakeMutation({
+        status: "pending",
+        context: { restore: () => {} },
+        onMutate: () => order.push(i),
+      }));
+    }
+    handleRemoteEvent(remoteForeignEvent(), qc, mc);
+    expect(order).toEqual([0, 1, 2]);
+  });
+
+  it("MutationCache.getAll() insertion order is preserved (load-bearing TanStack invariant)", () => {
+    // This test exists specifically to fail loudly if a future TanStack
+    // version changes MutationCache's underlying storage from Set to
+    // something with different iteration semantics. See Open Q #7.
+    const ids: string[] = ["a", "b", "c", "d", "e"];
+    for (const id of ids) {
+      mc.add(makeFakeMutation({ status: "pending", context: {}, mutationKey: [id] }));
+    }
+    const observed = mc.getAll().map(m => (m.options.mutationKey as string[])[0]);
+    expect(observed).toEqual(ids);
+  });
+
+  it("AbortSignal during replay does not double-rollback", () => {
+    const restore = vi.fn();
+    const m = makeFakeMutation({ status: "pending", context: { restore }, onMutate: () => {} });
+    mc.add(m);
+    handleRemoteEvent(remoteForeignEvent(), qc, mc);
+    handleRemoteEvent(remoteForeignEvent(), qc, mc);
+    // Two replay events but rollback context's restore should be invoked
+    // once per event (each event independently rolls back, applies, replays).
+    // The "double-rollback" guard means: within ONE event, restore fires at
+    // most once. Verified by: restore called exactly twice across two events,
+    // not four.
+    expect(restore).toHaveBeenCalledTimes(2);
+  });
+});
 ```
+
+`makeFakeMutation` is a small test helper that fabricates a `Mutation`-shaped object with the fields the coordinator reads; it lives in `test/queue/helpers.ts`. `remoteForeignEvent()` returns a canned event with a `client_op_id` not matching any live deferred.
 
 - [ ] **Step 2: Implement**
 
 ```typescript
 // queue/replayCoordinator.ts
-import type { QueryClient } from "@tanstack/react-query";
-import type { MutationCache } from "@tanstack/react-query";
+import type { QueryClient, MutationCache } from "@tanstack/react-query";
 import type { SseEvent } from "./types";
-import { getDeferred } from "./deferred";
+import { getDeferred, clearDeferred } from "./deferred";
+import { queryKeys } from "../../queries";
 
 export function handleRemoteEvent(
   remote: SseEvent,
@@ -1309,6 +1527,7 @@ export function handleRemoteEvent(
     const deferred = getDeferred(remote.client_op_id);
     if (deferred) {
       deferred.resolve(synthesizeResponseFromSse(remote));
+      clearDeferred(remote.client_op_id);
       return;
     }
   }
@@ -1322,7 +1541,6 @@ export function handleRemoteEvent(
     ctx?.restore?.();
   }
 
-  // Apply remote to cache (cache-merge from event payload + post_state).
   applyRemoteToCache(remote, qc);
 
   // Re-run optimistic effects in queue order.
@@ -1332,34 +1550,140 @@ export function handleRemoteEvent(
 }
 
 function synthesizeResponseFromSse(remote: SseEvent): unknown {
-  // Build a response object matching what the HTTP would have returned.
-  // Per route, this means {event_id, view_row_id, analysis_inputs_hash, post_state}.
   return {
-    event_id: remote.id,
-    client_op_id: remote.client_op_id,
+    event_id:             remote.id,
+    client_op_id:         remote.client_op_id,
     analysis_inputs_hash: remote.post_state?.analysis_inputs_hash,
-    // Per-route fields filled in via remote.payload.
+    // Per-route fields lifted from payload (q, exclude target, etc.)
     ...((remote.payload as object) ?? {}),
   };
 }
 
 function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
-  // Per kind, write to the appropriate cache entries via setQueryData.
-  // - peak_added: append to peaks(exposureId) cache; if post_state, replace
-  //   indices and exposure.analysis_inputs_hash atomically.
-  // - peak_excluded: similar, removing the peak from cache.
-  // - index_confirmed: update group_members cache.
-  // - ...etc per kind.
-  // Falls back to qc.invalidateQueries for events without sufficient payload.
+  const id = remote.entity_id;
+  const payload = remote.payload as Record<string, unknown> | undefined;
+
+  // Apply post_state (atomic indices + exposure.analysis_inputs_hash) when
+  // present — this is the replay-without-refetch path.
+  const applyPostState = () => {
+    if (!remote.post_state) return;
+    qc.setQueryData(queryKeys.indices(id), remote.post_state.indices);
+    qc.setQueryData(queryKeys.exposure(id), (old: Exposure | undefined) =>
+      old ? { ...old, analysis_inputs_hash: remote.post_state!.analysis_inputs_hash } : old);
+  };
+
   switch (remote.kind) {
-    // ...
+    case "peak_added": {
+      // Append the optimistic curation row; server-side row id is on the event
+      // (the inner broadcast was deferred; this enriched broadcast carries it
+      // via remote.id and the matching curation row in payload).
+      qc.setQueryData<Peak[]>(queryKeys.peaks(id), (old = []) => [
+        ...old,
+        { id: -remote.id, q: payload?.q as number, kind: "add", excluded: false },
+      ]);
+      applyPostState();
+      break;
+    }
+    case "peak_excluded": {
+      qc.setQueryData<Peak[]>(queryKeys.peaks(id), (old = []) =>
+        old.map(p => Math.abs(p.q - (payload?.q as number)) < 1e-6
+          ? { ...p, excluded: true } : p));
+      applyPostState();
+      break;
+    }
+    case "peak_unexcluded": {
+      qc.setQueryData<Peak[]>(queryKeys.peaks(id), (old = []) =>
+        old.map(p => Math.abs(p.q - (payload?.q as number)) < 1e-6
+          ? { ...p, excluded: false } : p));
+      applyPostState();
+      break;
+    }
+    case "peak_removed": {
+      qc.setQueryData<Peak[]>(queryKeys.peaks(id), (old = []) =>
+        old.filter(p => Math.abs(p.q - (payload?.q as number)) >= 1e-6));
+      applyPostState();
+      break;
+    }
+    case "index_confirmed": {
+      const groupId = payload?.group_id as number;
+      const indexId = payload?.index_id as number;
+      qc.setQueryData<Group[]>(queryKeys.groups(id), (old = []) =>
+        old.map(g => g.id === groupId
+          ? { ...g, members: [...g.members, indexId] } : g));
+      break;
+    }
+    case "index_unconfirmed": {
+      const groupId = payload?.group_id as number;
+      const indexId = payload?.index_id as number;
+      qc.setQueryData<Group[]>(queryKeys.groups(id), (old = []) =>
+        old.map(g => g.id === groupId
+          ? { ...g, members: g.members.filter(m => m !== indexId) } : g));
+      break;
+    }
+    case "speculative_created":
+    case "speculative_deleted": {
+      // Speculatives can change index ordering; safer to invalidate indices
+      // and groups rather than reconstruct piecewise. Refetch is bounded.
+      qc.invalidateQueries({ queryKey: queryKeys.indices(id) });
+      qc.invalidateQueries({ queryKey: queryKeys.groups(id) });
+      break;
+    }
+    case "set_exposure_status": {
+      qc.setQueryData(queryKeys.exposure(id), (old: Exposure | undefined) =>
+        old ? { ...old, status: payload?.status as string } : old);
+      break;
+    }
+    case "post_message": {
+      // Append to message list cache.
+      const sampleId = payload?.sample_id as number;
+      qc.setQueryData<Message[]>(queryKeys.messages(sampleId), (old = []) => [
+        ...old,
+        payload as Message,
+      ]);
+      break;
+    }
+    case "add_tag":
+    case "remove_tag": {
+      // Tags live on samples or exposures; the entity_type tells us which.
+      // Invalidate the parent collection — tag updates are infrequent.
+      const parentKey = remote.entity_type === "sample"
+        ? queryKeys.samples(payload?.experiment_id as number)
+        : ["sample", payload?.sample_id, "exposures"];
+      qc.invalidateQueries({ queryKey: parentKey });
+      break;
+    }
+    case "update_sample": {
+      qc.setQueryData(queryKeys.sample(id), (old: Sample | undefined) =>
+        old ? { ...old, ...(payload ?? {}) } : old);
+      break;
+    }
+    case "select_exposure": {
+      // Sample-scoped LWW. Update all exposures' selected flag.
+      const sampleId = payload?.sample_id as number;
+      qc.invalidateQueries({ queryKey: queryKeys.exposures(sampleId) });
+      break;
+    }
+    case "analyze_run": {
+      // No view-table writes; only post_state matters here.
+      applyPostState();
+      break;
+    }
+    default: {
+      // Unknown kind: invalidate-and-refetch as fallback so the cache
+      // converges even if we can't reason about the event shape.
+      qc.invalidateQueries({ queryKey: queryKeys.peaks(id) });
+      qc.invalidateQueries({ queryKey: queryKeys.indices(id) });
+      qc.invalidateQueries({ queryKey: queryKeys.groups(id) });
+    }
   }
 }
 ```
 
+> **Why some events use `setQueryData` and others `invalidateQueries`:** the per-kind logic mirrors the spec's "replay-without-refetch where possible, fall back to refetch where the event payload is insufficient." Curation events for which the route handler issued an enriched broadcast (with `post_state`) get full cache-merge. Speculative events affect index ordering globally and refetching is simpler. Tag events are infrequent enough that refetch is cheaper than per-tag merge logic. Update this map when adding a new event kind.
+
 - [ ] **Step 3: Verify**
 
-All six testcases pass. The MutationCache iteration-order test is the load-bearing assertion against TanStack version drift — see Open Question #7 in the spec.
+All six testcases pass. The MutationCache iteration-order test (case 5) is the load-bearing assertion against TanStack version drift — see Open Question #7 in the spec.
 
 ---
 
@@ -1524,9 +1848,155 @@ All three testcases pass.
 
 ---
 
+## Task M1.5: `useQueueMutation` framework wrapper
+
+This is the integration point where the deferred-promise primitive (M1.1), the replay coordinator (M1.2), the persistence layer (M1.3), and the hooks (M1.4) come together as a single hook that consumers (M2) call once per mutator.
+
+**Files:**
+- New: `packages/HimalayaUI/frontend/src/lib/queue/useQueueMutation.ts`
+- New: `packages/HimalayaUI/frontend/test/queue/useQueueMutation.test.ts`
+
+- [ ] **Step 1: Specify the public surface**
+
+```typescript
+// queue/useQueueMutation.ts (interface only)
+
+export interface UseQueueMutationResult<TInput> {
+  mutate: (input: TInput) => void;
+  isPending: boolean;
+  error: unknown;
+  reset: () => void;
+}
+
+/**
+ * Wires a Mutator into TanStack Query's useMutation, with:
+ * - per-call client_op_id minted via crypto.randomUUID()
+ * - optimistic effect via mutator.onMutate(payload, qc), context restored on
+ *   error or replay-rollback
+ * - HTTP request via mutator.request(payload, signal); deferred-promise
+ *   resolution lets either HTTP or SSE confirm
+ * - sessionStorage persistence via attachPersistence (M1.3)
+ * - failure-class routing (Validation toast, Infrastructure banner)
+ *
+ * The hook accepts a static "scope" parameter (e.g., { exposureId,
+ * sampleId, experimentId, username, clientId }) that the mutator's
+ * onMutate / request need but that aren't part of the per-call input.
+ * mutate(input) merges the input into a payload of shape { ...scope,
+ * ...input, kind, clientOpId }.
+ */
+export function useQueueMutation<TInput, TResponse>(
+  mutator: Mutator<OpPayload<TInput>, TResponse>,
+  scope: Record<string, unknown>,
+): UseQueueMutationResult<TInput>;
+```
+
+- [ ] **Step 2: Write failing tests**
+
+```typescript
+// queue/useQueueMutation.test.ts
+describe("useQueueMutation", () => {
+  it("mints a fresh clientOpId per mutate() call", () => {
+    // Two mutate() calls should produce two distinct deferreds in the registry.
+  });
+  it("calls mutator.onMutate with merged scope+input payload", () => { /* ... */ });
+  it("HTTP success → mutator.onSuccess called with response", async () => { /* ... */ });
+  it("HTTP error 4xx → context.restore called (rollback) AND Validation toast emitted", async () => { /* ... */ });
+  it("HTTP timeout → retry with exponential backoff up to 30s", async () => { /* ... */ });
+  it("SSE event with matching client_op_id confirms before HTTP returns", async () => { /* ... */ });
+  it("AbortSignal threads through to mutator.request", async () => { /* ... */ });
+  it("isPending reflects MutationCache state", () => { /* ... */ });
+  it("rehydrate-on-mount replays persisted ops with original clientOpId", async () => { /* ... */ });
+});
+```
+
+Each test asserts a specific contract — the canonical "happy path" is the HTTP-succeeds case; everything else exercises one failure mode at a time.
+
+- [ ] **Step 3: Implement**
+
+```typescript
+// queue/useQueueMutation.ts (full)
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { newClientOpId } from "../clientOpId";
+import { makeDeferred, clearDeferred } from "./deferred";
+import { isValidationError, isInfrastructureError } from "./errors";
+import { showToast } from "../toast";
+import type { Mutator, OpPayload, RollbackContext } from "./types";
+
+export function useQueueMutation<TInput, TResponse>(
+  mutator: Mutator<OpPayload<TInput>, TResponse>,
+  scope: Record<string, unknown>,
+): UseQueueMutationResult<TInput> {
+  const qc = useQueryClient();
+
+  const mutation = useMutation<TResponse, unknown, OpPayload<TInput>, RollbackContext>({
+    mutationKey: [mutator.kind],
+    mutationFn: async (payload, { signal }) => {
+      const deferred = makeDeferred<TResponse>(payload.clientOpId);
+      // Wire HTTP into the deferred.
+      mutator.request(payload, signal)
+        .then(response => deferred.resolve(response))
+        .catch(err => deferred.reject(err));
+      // AbortSignal cleanup: reject deferred so registry doesn't leak.
+      signal.addEventListener("abort", () =>
+        deferred.reject(new DOMException("aborted", "AbortError")));
+      try {
+        return await deferred.promise;
+      } finally {
+        clearDeferred(payload.clientOpId);
+      }
+    },
+    onMutate: (payload) => mutator.onMutate(payload, qc),
+    onSuccess: (response, payload) => mutator.onSuccess(payload, response, qc),
+    onError: (err, payload, context) => {
+      // Roll back optimistic effect.
+      context?.restore?.();
+      // Route to failure class.
+      if (isValidationError(err)) {
+        showToast(buildValidationMessage(mutator.kind, err), "error");
+      } else if (isInfrastructureError(err)) {
+        // Infrastructure banner is mounted at App.tsx; it reads from
+        // useMutationState. Nothing per-mutation to do here beyond the
+        // built-in TanStack retry behavior.
+      }
+      // Conflict-class errors don't surface here — they manifest as
+      // mutator.onMutate producing a no-op or different effect during
+      // replay-rerun.
+    },
+    retry: (failureCount, err) => {
+      if (isValidationError(err)) return false;
+      return failureCount < 5;  // exponential backoff up to ~30s
+    },
+    retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 30000),
+  });
+
+  // Type-erased mutate that mints clientOpId at call time.
+  const mutate = (input: TInput) => {
+    const payload: OpPayload<TInput> = {
+      kind: mutator.kind,
+      clientOpId: newClientOpId(),
+      ...scope,
+      ...input,
+    } as OpPayload<TInput>;
+    mutation.mutate(payload);
+  };
+
+  return { mutate, isPending: mutation.isPending, error: mutation.error, reset: mutation.reset };
+}
+```
+
+`isValidationError` / `isInfrastructureError` are small helpers in `lib/queue/errors.ts` that classify based on HTTP status (4xx → validation; 5xx / network → infrastructure). `buildValidationMessage` looks up per-kind copy from a small table; add new kinds to the table when introducing new mutators.
+
+- [ ] **Step 4: Verify**
+
+All nine testcases pass. Manual: M2.1's `useAddSampleTag` reference implementation (already templated in M2.1) compiles against this hook signature; if it doesn't, M2.1 needs updating before tasks downstream.
+
+> **Why this is its own task and not folded into M1.1-M1.4:** the hook is the integration surface every consumer (16 mutations) talks to. Specifying it as a footnote in M2.1 (as the prior plan draft did) hides the contract from M1's test surface and risks the framework drifting between what M1 builds and what M2 expects. Putting it in M1.5 means M1 ships a complete, testable framework that M2 strictly consumes.
+
+---
+
 ## M1 verification
 
-- [ ] All M1 unit tests green.
+- [ ] All M1 unit tests green (M1.1–M1.5).
 - [ ] No consumer migrations in M1; existing component tests stay green.
 - [ ] `npm run build` clean.
 - [ ] Module is intentionally dead code at end of M1; M2 begins consumption.
@@ -1595,7 +2065,7 @@ export function useAddSampleTag(experimentId: number, sampleId: number) {
 }
 ```
 
-> **`useQueueMutation` is the framework-provided wrapper** that wires the mutator into `useMutation` with deferred-promise resolution, sessionStorage persistence, and replay-rerun. Defined in `lib/queue/index.ts` as part of M1; tests for it are part of M1.2.
+> **`useQueueMutation` is the framework-provided wrapper** that wires the mutator into `useMutation` with deferred-promise resolution, sessionStorage persistence, replay-rerun, and failure-class routing. Specified and tested in Task M1.5 (`packages/HimalayaUI/frontend/src/lib/queue/useQueueMutation.ts`). M2.1 onward is strictly consumption.
 
 - [ ] **Step 3: Migrate the remaining seven trivial mutations following the same pattern**
 
@@ -1624,7 +2094,7 @@ This is one PR. It cannot be subdivided. The PR includes backend handler changes
 
 - [ ] **Step 1: Backend route handler changes**
 
-Update each of the three peak-edit routes per the spec sketch:
+Uses the `defer_broadcast::Bool=true` semantics shipped in M0.6. The route handler defers the broadcast inside the transaction, runs `analyze_exposure!`, then emits one frame with `post_state` populated.
 
 ```julia
 @post "/api/exposures/{id}/peaks" function(req::HTTP.Request, id::Int)
@@ -1634,20 +2104,22 @@ Update each of the three peak-edit routes per the spec sketch:
         q = Float64(body["q"])
         result = SQLite.transaction(db) do
             event_result = apply_event!(db, req;
-                kind        = "peak_added",
-                entity_type = "exposure",
-                entity_id   = id,
-                payload     = Dict(:q => q))
+                kind            = "peak_added",
+                entity_type     = "exposure",
+                entity_id       = id,
+                payload         = Dict(:q => q),
+                defer_broadcast = true)  # M0.6: skip inner broadcast
             analyze_exposure!(db, id, current_analysis_dir(db);
                               trace_known_unchanged = true)
             event_result
         end
 
-        # Build extended response with post-analysis state.
-        new_hash = read_inputs_hash(db, id)
+        # Build post-analysis payload (after commit; safe because the
+        # post-state is read from durable rows, not in-flight state).
+        new_hash      = read_inputs_hash(db, id)
         indices_array = serialize_indices_for_post_state(db, id)
 
-        # Re-broadcast with post_state.
+        # One enriched broadcast per logical event.
         broadcast_event!(result.event_id, "peak_added", "exposure", id,
                          get_user_id(req, db), get_client_id(req), get_client_op_id(req),
                          JSON3.write(Dict(:q => q));
@@ -1667,12 +2139,7 @@ Update each of the three peak-edit routes per the spec sketch:
 end
 ```
 
-> **Subtle point on broadcast ordering:** the `apply_event!` call inside the transaction already broadcasts a frame *without* `post_state` (the `apply_event!` call site doesn't know about post-analyze state). The handler then issues a *second* broadcast with `post_state` after the analysis. Two options here:
->
-> 1. Suppress the inner broadcast for events whose route will issue an enriched broadcast. Add a flag.
-> 2. Always include `post_state` in the inner broadcast. Move post-analysis to before the broadcast — but `apply_event!` and `analyze_exposure!` need to be in the same transaction, and the broadcast fires after commit.
->
-> The cleanest option is (1): add an `outer_broadcast::Bool = false` keyword to `apply_event!`. When true (the M2 wiring), the inner broadcast is suppressed; the route handler issues the enriched one explicitly. Default false preserves all other call sites. Document the rule.
+The same shape applies to `DELETE /api/peaks/:id` (kind `peak_removed`) and `PATCH /api/peaks/:id` (kind `peak_excluded` or `peak_unexcluded`); each handler uses `defer_broadcast=true` and emits its own enriched broadcast after `analyze_exposure!` returns.
 
 - [ ] **Step 2: Update Julia tests**
 
@@ -1750,90 +2217,360 @@ Full test suite green: backend, frontend unit, e2e. Manual smoke: open two brows
 
 ## Task M2.3: Index/group ops slice
 
-Three mutations: `useAddIndexToGroup`, `useRemoveIndexFromGroup`, `useDeleteIndex`. Pattern follows M2.1; each migration is independent.
+Three mutations: `useAddIndexToGroup`, `useRemoveIndexFromGroup`, `useDeleteIndex`. Each migration is independently mergeable; they share structure but have different optimistic shapes.
 
-- [ ] **Step 1**: Write failing tests per mutator.
-- [ ] **Step 2**: Implement mutators following the M2.1 pattern.
-- [ ] **Step 3**: Verify; existing component tests stay green.
+**Files (per mutation):**
+- New: `packages/HimalayaUI/frontend/src/lib/queue/mutators/{addIndexToGroup,removeIndexFromGroup,deleteIndex}.ts`
+- New: `packages/HimalayaUI/frontend/test/queue/mutators/{...}.test.ts`
+- Modify: `packages/HimalayaUI/frontend/src/queries.ts` — replace each `useMutation` with the queue-shaped hook
+- Modify: consumers — `IndicesCard.tsx`, `PhasePanel.tsx` (most use the existing hook return shape unchanged)
+
+- [ ] **Step 1: Write failing tests for `useAddIndexToGroup`**
+
+```typescript
+describe("useAddIndexToGroup mutator", () => {
+  it("optimistically appends index_id to group's members", () => {
+    const qc = new QueryClient();
+    qc.setQueryData(queryKeys.groups(42), [
+      { id: 1, kind: "custom", members: [10, 20] },
+    ]);
+    const ctx = addIndexToGroupMutator.onMutate(
+      { kind: "index_confirmed", clientOpId: "op-1", exposureId: 42, groupId: 1, indexId: 30 } as OpPayload<{ groupId: number; indexId: number }>,
+      qc,
+    );
+    const groups = qc.getQueryData<Group[]>(queryKeys.groups(42));
+    expect(groups?.[0].members).toContain(30);
+    ctx.restore();
+    expect(qc.getQueryData<Group[]>(queryKeys.groups(42))?.[0].members).toEqual([10, 20]);
+  });
+  it("HTTP success replaces optimistic state with server response", async () => { /* analogous to M2.1 */ });
+  it("HTTP 4xx rolls back optimistic and surfaces validation toast", async () => { /* ... */ });
+  it("survives remote SSE event during in-flight (replay-rerun)", async () => {
+    // Spawn a pending mutation; fire a remote `index_unconfirmed` for a different
+    // index in the same group; assert the pending op's optimistic effect re-applies
+    // against the post-remote base.
+  });
+  it("rehydrates from sessionStorage on reload", async () => { /* ... */ });
+});
+```
+
+Tests for `useRemoveIndexFromGroup` and `useDeleteIndex` follow the same five-test template, swapping the optimistic effect:
+- `useRemoveIndexFromGroup`: optimistic effect *removes* an index from the group's members; rollback re-inserts.
+- `useDeleteIndex`: optimistic effect removes the index from the indices cache AND from any group's members; rollback restores both. (Server-side: only speculative indices can be deleted; auto indices return 422 → Validation toast.)
+
+- [ ] **Step 2: Implement mutators**
+
+```typescript
+// queue/mutators/addIndexToGroup.ts
+export const addIndexToGroupMutator: Mutator<
+  OpPayload<{ groupId: number; indexId: number }>,
+  GroupMemberResponse
+> = {
+  kind: "index_confirmed",
+  onMutate: (payload, qc) => {
+    const prev = qc.getQueryData<Group[]>(queryKeys.groups(payload.exposureId));
+    qc.setQueryData<Group[]>(queryKeys.groups(payload.exposureId), (old = []) =>
+      old.map(g => g.id === payload.groupId
+        ? { ...g, members: [...g.members, payload.indexId] }
+        : g));
+    return { restore: () => qc.setQueryData(queryKeys.groups(payload.exposureId), prev) };
+  },
+  request: (payload, signal) => api.addIndexToGroup(payload.groupId, payload.indexId,
+    authOpts(payload.username, payload.clientId, payload.clientOpId), { signal }),
+  onSuccess: (payload, response, qc) => {
+    // Server returns the canonical group membership; replace cache entry.
+    qc.setQueryData<Group[]>(queryKeys.groups(payload.exposureId), (old = []) =>
+      old.map(g => g.id === payload.groupId ? response.group : g));
+  },
+  affectsExposurePeaks: () => false,
+};
+
+export function useAddIndexToGroup(exposureId: number, groupId: number) {
+  const username = useAppState(s => s.username);
+  return useQueueMutation(addIndexToGroupMutator, {
+    exposureId, groupId, username, clientId: CLIENT_ID,
+  });
+}
+```
+
+`removeIndexFromGroup` and `deleteIndex` follow the same pattern with their own optimistic shapes.
+
+> **Why `affectsExposurePeaks: false`:** index/group ops don't change the effective peak set, so they don't gate the speculative-snap query nor the stale banner. Only mutators that affect peaks set this to `true`.
+
+- [ ] **Step 3: Verify**
+
+All 15 testcases (5 per mutation × 3 mutations) pass. Existing `IndicesCard.tsx` and `PhasePanel.tsx` component tests stay green.
 
 ---
 
 ## Task M2.4: Speculative ops slice
 
-Two mutations: `useCreateSpeculative`, plus the speculative-snap query gating.
+Two mutations + one query gate. The speculative POST is the canonical multi-event idempotency test for `with_idempotency`'s response-body cache.
 
-- [ ] **Step 1: Write failing tests**
+**Files:**
+- New: `packages/HimalayaUI/frontend/src/lib/queue/mutators/createSpeculative.ts`
+- New: `packages/HimalayaUI/frontend/test/queue/mutators/createSpeculative.test.ts`
+- Modify: `packages/HimalayaUI/src/routes_analysis.jl` — wrap `POST /api/exposures/:id/speculative` body in `with_idempotency` (the route emits N `apply_event!` calls; `with_idempotency` records the response for verbatim retry replay)
+- Modify: `packages/HimalayaUI/test/test_routes_analysis.jl` — verify multi-event route returns identical body on retry
+- Modify: `packages/HimalayaUI/frontend/src/queries.ts` — `useCreateSpeculative` uses `useQueueMutation`; `useSpeculativeSnap` gates on `useExposureHasPendingPeakOps`
+- Modify: `packages/HimalayaUI/frontend/src/components/SpeculativeBuilder.tsx` — render last response with "updating to latest…" subtext during gate
+
+- [ ] **Step 1: Write failing backend tests**
+
+```julia
+# test_routes_analysis.jl
+@testset "POST /api/exposures/:id/speculative is idempotent under retry" begin
+    mktempdir() do tmp
+        # ... seed exposure with auto peaks ...
+        body = Dict("phase" => "Pn3m", "anchor_peak_id" => peak_id,
+                    "anchor_ratio" => 1.0, "additional" => [])
+        op_id = "uuid-spec-1"
+        # First request creates N speculative indices.
+        r1 = HTTP.request("POST", "http://localhost:$port/api/exposures/$exp_id/speculative",
+            ["X-Client-Op-Id" => op_id, "Content-Type" => "application/json"],
+            JSON3.write(body))
+        @test r1.status == 201
+        body1 = String(r1.body)
+        n_after_first = count_speculative_indices(db, exp_id)
+
+        # Second request with same op_id returns identical body, no new events.
+        r2 = HTTP.request("POST", "http://localhost:$port/api/exposures/$exp_id/speculative",
+            ["X-Client-Op-Id" => op_id, "Content-Type" => "application/json"],
+            JSON3.write(body))
+        @test r2.status == 201
+        @test String(r2.body) == body1
+        @test count_speculative_indices(db, exp_id) == n_after_first
+    end
+end
+```
+
+- [ ] **Step 2: Wrap `routes_analysis.jl`'s speculative POST in `with_idempotency`**
+
+```julia
+@post "/api/exposures/{id}/speculative" function(req::HTTP.Request, id::Int)
+    db = current_db()
+    return with_idempotency(db, req) do
+        body = json(req)
+        # ... existing validation + iteration over (phase, anchor) combinations ...
+        SQLite.transaction(db) do
+            for combo in combinations
+                apply_event!(db, req;
+                    kind            = "speculative_created",
+                    entity_type     = "exposure",
+                    entity_id       = id,
+                    payload         = Dict(...),
+                    defer_broadcast = false)  # speculatives don't need post_state
+                # ...
+            end
+        end
+        return HTTP.Response(201; body = JSON3.write(response_body))
+    end
+end
+```
+
+The `with_idempotency` wrapper handles both single-event and multi-event routes uniformly — the cached response body is byte-identical regardless of how many events the body emits.
+
+- [ ] **Step 3: Write failing frontend tests**
 
 ```typescript
 describe("useSpeculativeSnap gates on pending peak ops", () => {
-  it("query disabled while peak op pending", () => { /* ... */ });
-  it("modal renders last response with 'updating to latest' subtext during gate", () => { /* ... */ });
-  it("re-enables after pending peak ops settle", () => { /* ... */ });
+  it("query disabled while a peak_added op is pending for the same exposure", () => {
+    const qc = new QueryClient();
+    qc.getMutationCache().add(makeFakeMutation({
+      status: "pending",
+      mutationKey: ["peak_added"],
+      variables: { kind: "peak_added", exposureId: 42, q: 1.0 },
+    }));
+    const { result } = renderHook(() => useSpeculativeSnap(42, "Pn3m", 5, 1.0));
+    expect(result.current.fetchStatus).toBe("idle");  // gated
+  });
+  it("query enabled when no pending peak ops", () => { /* ... */ });
+  it("re-enables after pending peak op settles", async () => { /* ... */ });
+});
+
+describe("useCreateSpeculative mutator", () => {
+  it("optimistically inserts placeholder speculative into indices cache", () => { /* ... */ });
+  it("HTTP success replaces placeholder with server-returned indices", async () => { /* ... */ });
+  it("idempotent retry returns cached body without re-creating", async () => { /* ... */ });
+});
+
+describe("SpeculativeBuilder during gate", () => {
+  it("renders last successful snap response", () => { /* ... */ });
+  it("shows 'updating to latest…' subtext while gated", () => { /* ... */ });
 });
 ```
 
-- [ ] **Step 2: Migrate `useCreateSpeculative` to queue-shaped mutator**
-
-The speculative create-and-delete multi-event case is the canonical test for `with_idempotency`'s response-body-cache path. Confirm that the route handler (already wrapping in `with_idempotency` per Task M0.3) returns the cached body byte-identically on retry.
-
-- [ ] **Step 3: Update `useSpeculativeSnap`**
+- [ ] **Step 4: Implement frontend changes**
 
 ```typescript
+// queue/mutators/createSpeculative.ts
+export const createSpeculativeMutator: Mutator<
+  OpPayload<{ phase: string; anchorPeakId: number; anchorRatio: number; additional: SpeculativeAdditional[] }>,
+  SpeculativeCreateResponse
+> = {
+  kind: "speculative_created",
+  onMutate: (payload, qc) => {
+    // Optimistic: insert a placeholder speculative into indices cache so
+    // PhasePanel reflects "you just created a Pn3m" instantly.
+    const prev = qc.getQueryData<Index[]>(queryKeys.indices(payload.exposureId));
+    qc.setQueryData<Index[]>(queryKeys.indices(payload.exposureId), (old = []) => [
+      ...old,
+      { id: -Date.now(), phase: payload.phase, basis: payload.anchorRatio, /* placeholder */ } as Index,
+    ]);
+    return { restore: () => qc.setQueryData(queryKeys.indices(payload.exposureId), prev) };
+  },
+  request: (payload, signal) => api.createSpeculative(payload.exposureId, {
+    phase: payload.phase, anchor_peak_id: payload.anchorPeakId,
+    anchor_ratio: payload.anchorRatio, additional: payload.additional,
+  }, authOpts(payload.username, payload.clientId, payload.clientOpId), { signal }),
+  onSuccess: (payload, response, qc) => {
+    // Replace placeholder with server's actual indices array.
+    qc.setQueryData(queryKeys.indices(payload.exposureId), response.indices);
+    qc.setQueryData(queryKeys.groups(payload.exposureId), response.groups);
+  },
+  affectsExposurePeaks: () => false,
+};
+```
+
+```typescript
+// queries.ts
 export function useSpeculativeSnap(exposureId, phase, anchorPeakId, anchorRatio) {
   const blocked = useExposureHasPendingPeakOps(exposureId);
   return useQuery({
-    queryKey: ...,
-    queryFn: ...,
-    enabled: enabled && !blocked,
+    queryKey: ["exposure", exposureId ?? "none", "speculative-snap", phase ?? "", anchorPeakId ?? -1, anchorRatio] as const,
+    queryFn: () => api.getSpeculativeSnap(exposureId as number, phase as string, anchorPeakId as number, anchorRatio),
+    enabled: exposureId !== undefined && phase !== undefined && anchorPeakId !== undefined && !blocked,
   });
 }
 ```
 
-- [ ] **Step 4: Update `SpeculativeBuilder.tsx`**
+```typescript
+// SpeculativeBuilder.tsx — pseudocode for the gate UI
+const snap = useSpeculativeSnap(exposureId, phase, anchorPeakId, anchorRatio);
+const blocked = useExposureHasPendingPeakOps(exposureId);
+const lastGood = useRef<SnapResponse | null>(null);
+if (snap.data) lastGood.current = snap.data;
 
-While the snap query is disabled (gated), render the last-known response with subtle "updating to latest…" subtext rather than a skeleton or blank state.
+return (
+  <Card>
+    {/* ... selector UI ... */}
+    {snap.data && <SnapPreview data={snap.data} />}
+    {blocked && lastGood.current && (
+      <div>
+        <SnapPreview data={lastGood.current} />
+        <span className="text-xs text-fg-muted">updating to latest…</span>
+      </div>
+    )}
+  </Card>
+);
+```
 
 - [ ] **Step 5: Verify**
 
+Backend test passes: speculative POST returns identical body on retry; `count_speculative_indices` is unchanged.
+Frontend tests pass: `useSpeculativeSnap` correctly gates and re-enables; `SpeculativeBuilder` shows the "updating to latest…" subtext during the gate window.
+
 ---
 
-## Task M2.5: Null-mutator ops slice
+## Task M2.5: Null-mutator ops slice (`useReanalyzeExposure`)
 
-`useReanalyzeExposure`. Migrates to queue framework with a null `onMutate`. Button loading state derives from `useQueueOpStatus("reanalyze_exposure", exposureId)`.
+`useReanalyzeExposure` migrates to queue framework with a null `onMutate`. Button loading state derives from `useQueueOpStatus("reanalyze_exposure", exposureId)`. FIFO ordering with pending peak ops is asserted via the queue's MutationCache iteration order (already validated in M1.2).
 
-- [ ] **Step 1: Write tests**
+**Files:**
+- New: `packages/HimalayaUI/frontend/src/lib/queue/mutators/reanalyzeExposure.ts`
+- New: `packages/HimalayaUI/frontend/test/queue/mutators/reanalyzeExposure.test.ts`
+- Modify: `packages/HimalayaUI/frontend/src/queries.ts` — `useReanalyzeExposure` swaps to `useQueueMutation`
+- Modify: `packages/HimalayaUI/frontend/src/components/StaleIndicesBanner.tsx` — button uses `useQueueOpStatus`
+
+- [ ] **Step 1: Write failing tests**
 
 ```typescript
-it("Re-analyze enters queue behind pending peak ops", () => { /* ... */ });
-it("button shows pending state while op is in queue", () => { /* ... */ });
-it("FIFO ordering: pending peak ops complete before reanalyze fires", () => { /* ... */ });
+describe("useReanalyzeExposure", () => {
+  it("button isPending true while op is in queue", () => {
+    const { result } = renderHook(() => useReanalyzeExposure(42));
+    act(() => result.current.mutate({}));
+    expect(result.current.isPending).toBe(true);
+  });
+
+  it("button isPending false after op confirms", async () => { /* ... */ });
+
+  it("FIFO ordering: pending peak op enqueued first runs first", async () => {
+    // Deterministic ordering via mocked HTTP that resolves in order of
+    // mutate() invocation.
+    const httpResolveOrder: string[] = [];
+    mockApi.addPeak = vi.fn(async (...args) => {
+      httpResolveOrder.push("addPeak");
+      await new Promise(r => setTimeout(r, 10));
+      return { /* ... */ };
+    });
+    mockApi.reanalyzeExposure = vi.fn(async (...args) => {
+      httpResolveOrder.push("reanalyze");
+      return { /* ... */ };
+    });
+    const { result: addPeakHook } = renderHook(() => useAddPeak(42));
+    const { result: reanalyzeHook } = renderHook(() => useReanalyzeExposure(42));
+    act(() => {
+      addPeakHook.current.mutate({ q: 1.0 });
+      reanalyzeHook.current.mutate({});
+    });
+    await waitFor(() => expect(httpResolveOrder).toEqual(["addPeak", "reanalyze"]));
+  });
+
+  it("Re-analyze with M0 fast-skip is fast when peak ops already produced latest hash", async () => {
+    // After a peak_added op confirms, immediately fire reanalyze; assert the
+    // server-side fast-skip path produces a near-no-op response (analyze_run
+    // payload has both skip flags true).
+  });
+});
 ```
 
-- [ ] **Step 2: Implement**
+- [ ] **Step 2: Implement mutator**
 
 ```typescript
-export const reanalyzeExposureMutator: Mutator<ReanalyzePayload, ReanalyzeResponse> = {
+// queue/mutators/reanalyzeExposure.ts
+export const reanalyzeExposureMutator: Mutator<
+  OpPayload<{}>,
+  ReanalyzeResponse
+> = {
   kind: "reanalyze_exposure",
   onMutate: () => ({ restore: () => {} }),  // null optimistic effect
   request: (payload, signal) => api.reanalyzeExposure(payload.exposureId,
-    authOpts(payload.username, payload.clientId, payload.clientOpId)),
+    authOpts(payload.username, payload.clientId, payload.clientOpId), { signal }),
   onSuccess: (payload, response, qc) => {
     qc.setQueryData(queryKeys.exposure(payload.exposureId), response.exposure);
     qc.setQueryData(queryKeys.indices(payload.exposureId), response.indices);
   },
+  affectsExposurePeaks: () => true,  // Reanalyze touches peak set indirectly
 };
+
+export function useReanalyzeExposure(exposureId: number) {
+  const username = useAppState(s => s.username);
+  return useQueueMutation(reanalyzeExposureMutator, {
+    exposureId, username, clientId: CLIENT_ID,
+  });
+}
 ```
 
 - [ ] **Step 3: Update `StaleIndicesBanner`'s button**
 
 ```typescript
+const reanalyze = useReanalyzeExposure(exposureId ?? 0);
 const status = useQueueOpStatus("reanalyze_exposure", exposureId);
-<Button disabled={status === "pending"} onClick={() => reanalyze.mutate({...})}>
+
+<Button
+  variant="primary"
+  disabled={status === "pending"}
+  onClick={() => reanalyze.mutate({})}
+>
   {status === "pending" ? "Re-analyzing…" : "Re-analyze"}
 </Button>
 ```
 
 - [ ] **Step 4: Verify**
+
+All four testcases pass. The FIFO ordering test specifically validates that the queue serializes by mutationCache insertion order, which means the M1.2 invariant test transitively gates this behavior.
+
+> **Note on "FIFO" semantics:** TanStack Query mutations run concurrently by default — the FIFO ordering here refers to *enqueue order in the MutationCache*, which the replay coordinator iterates in. The actual HTTP requests fire concurrently; FIFO ordering matters only for replay-rerun (the order onMutate is re-invoked). For `useReanalyzeExposure` specifically, the M0 fast-skip + server-side `apply_event!` ordering guarantees that even concurrent requests serialize at the SQLite write level.
 
 ---
 
@@ -1871,7 +2608,9 @@ After M0–M3 ship:
   - [ ] Reload tab mid-curation — sessionStorage queue rehydrates, op replays via HTTP, cache settles correctly.
   - [ ] Speculative builder modal: open while a peak op is pending — modal shows "updating to latest…" briefly, then snap suggestions populate.
 - [ ] Latency observability: `analyze_run` event payloads in `user_actions` show fast-skip path P99 < 100µs in steady state.
-- [ ] `post_state` size telemetry: M2 reads `post_state_size_bytes` from `analyze_run` events; confirms typical sizes are within budget (1-3KB) and outlier sizes (≥8KB) are infrequent enough that the SSE frame growth is sustainable.
+- [ ] `post_state` size telemetry: query `user_actions` for the last 100 `analyze_run` events; compute distribution of `payload->>'post_state_size_bytes'`. Confirm P50 < 3KB and P99 < 8KB. Feed back into Open Question #4 disposition: if outlier sizes are infrequent (P99 < 8KB), `post_state` enrichment is sustainable; if P99 ≥ 8KB, switch to compact "you should refetch the following keys" payload per the OQ #4 fallback. Document the decision in M3.2's docs update.
+- [ ] Cached-response staleness check: a Julia regression test asserts `idempotent_responses` returns its body verbatim even after a referenced entity (peak, index) is deleted by another user — verifies the spec's documented eventual-consistency model.
+- [ ] Cascading-rejection check: a Vitest scenario seeds N queued ops referencing one entity, then deletes that entity via a remote SSE event; assert each pending op surfaces its own Validation toast (not a single cascade summary).
 
 If any of the manual smoke checks fail, refer to the spec's [Fallback triggers](../specs/2026-05-02-mutation-queue-design.md#fallback-triggers).
 
