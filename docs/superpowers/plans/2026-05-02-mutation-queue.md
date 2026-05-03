@@ -28,7 +28,8 @@ Modified backend:
 - `packages/HimalayaUI/src/actions.jl` — new `get_client_op_id(req)` helper (mirrors `get_client_id` from PR #32)
 - `packages/HimalayaUI/src/events.jl` — `apply_event!` extracts + persists `client_op_id`; `broadcast_event!` adds `client_op_id` and `ts` to JSON; new `with_idempotency` wrapper + `OP_LOCKS` registry; broadcast suppression for both-skipped `analyze_run` events
 - `packages/HimalayaUI/src/pipeline.jl` — `analyze_exposure!` gains `trace_known_unchanged` keyword arg; refactored to do DB-only reads first and skip `hash_trace_file`/`load_dat` on hot path; new helpers `any_add_curations`, `hash_peak_set_from_db`, `read_trace_hash`, `read_inputs_hash`, `count_auto_peaks`, `count_indices`
-- `packages/HimalayaUI/src/server.jl` — periodic GC sweep of `idempotent_responses` rows older than TTL (1 hour)
+- `packages/HimalayaUI/src/events.jl` — also gains `gc_idempotent_responses!` function (sweeps `idempotent_responses` rows older than TTL + corresponding `OP_LOCKS` entries)
+- `packages/HimalayaUI/src/server.jl` — `start_gc_timer!` helper called from `serve(db)` to invoke the sweep every ~30 minutes
 
 Modified frontend:
 - `packages/HimalayaUI/frontend/src/api.ts` — `AuthOpts.clientOpId`, `X-Client-Op-Id` header on mutations
@@ -47,7 +48,7 @@ Modified tests:
 - `packages/HimalayaUI/test/test_actions.jl` — `get_client_op_id` extraction (file created in PR #32)
 - `packages/HimalayaUI/test/test_events.jl` — `apply_event!` writes/reads `client_op_id` column
 - `packages/HimalayaUI/test/test_sse.jl` — `broadcast_event!` frame includes `client_op_id` and `ts`; both-skipped `analyze_run` does NOT broadcast
-- `packages/HimalayaUI/test/test_pipeline.jl` — fast-skip path is microseconds, slow path triggers when `add` curation present, `trace_known_unchanged=true` skips `hash_trace_file`
+- `packages/HimalayaUI/test/test_pipeline.jl` — existing `analyze_exposure!` tests stay green; verify the refactor doesn't regress slow-path callers (reingest, scheduled scan, manual reanalyze)
 - `packages/HimalayaUI/frontend/test/api.test.ts` — `X-Client-Op-Id` header on mutations + GET-omit case
 
 Modified docs:
@@ -79,11 +80,11 @@ New tests:
 
 **M2: Mutator migration**
 
-The peak-op slice is one atomic PR (Migration step 2 below). Other slices land independently in any order.
+The peak-op slice is one atomic PR (Task M2.2 below). Other slices (M2.1, M2.3, M2.4, M2.5) land independently in any order.
 
 Modified backend (peak-op slice):
-- `packages/HimalayaUI/src/routes_peaks.jl` — three curation routes wrap body in `with_idempotency`, call `analyze_exposure!(db, id, dir; trace_known_unchanged=true)` synchronously inside the transaction, return extended response shape
-- `packages/HimalayaUI/src/events.jl` — `broadcast_event!` adds `post_state` field to SSE frame for events that carry it (curation events emitted from peak-edit routes after synchronous reanalyze)
+- `packages/HimalayaUI/src/routes_peaks.jl` — three curation routes wrap body in `with_idempotency`, use the `defer_broadcast=true` kwarg from M0.6 inside the transaction, call `analyze_exposure!(db, id, dir; trace_known_unchanged=true)` synchronously, then emit one enriched broadcast with `post_state` populated
+- (No new changes to `events.jl` — M0.6 already shipped `defer_broadcast` and `post_state`; M2 strictly consumes them)
 
 Modified frontend:
 - `packages/HimalayaUI/frontend/src/queries.ts` — replace each `useMutation` with a queue-shaped mutator hook; delete `autoReanalyze` chain; `useReanalyzeExposure` becomes null-mutator queue op
@@ -96,7 +97,7 @@ Modified frontend:
 New tests:
 - `packages/HimalayaUI/frontend/test/queue/peakAddMutator.test.ts` and parallel files per mutator — round-trip optimistic effect → request → confirmation → cache settled
 - `packages/HimalayaUI/frontend/e2e/multiplayer-replay-rerun.spec.ts` — two-context Playwright test: User A and User B both add peaks; both succeed; both exclude same peak; replay-rerun resolves invisibly
-- `packages/HimalayaUI/test/test_routes_peaks.jl` — synchronous reanalyze inside curation handlers; response shape includes `analysis_inputs_hash` and `peak_or_curation_row`
+- `packages/HimalayaUI/test/test_routes_peaks.jl` — synchronous reanalyze inside curation handlers; response shape includes `event_id`, `view_row_id`, `analysis_inputs_hash`, and the inserted curation row (under key `peak`)
 
 **M3: Cleanup**
 
@@ -117,7 +118,7 @@ This plan introduces two schema changes (one column, one new table) plus an `ana
 - No backfill needed: existing `user_actions` rows get NULL `client_op_id` (correct semantic value for pre-feature events). The `idempotent_responses` table starts empty.
 - Forward-only; rollback is via DB backup before deploy.
 
-The `analyze_exposure!` refactor is behaviorally identical for callers that don't pass `trace_known_unchanged=true` — existing callers (`reingest`, scheduled scans, manual `useReanalyzeExposure`) preserve current behavior. The fast-skip path activates only when curation routes opt in (M2 peak-op slice).
+The `analyze_exposure!` refactor is behaviorally identical for callers that don't pass `trace_known_unchanged=true` — existing callers (`reingest`, scheduled scans, manual `useReanalyzeExposure`) preserve current behavior. The fast-skip path activates only when callers opt in by passing `trace_known_unchanged=true`. Today (post-M0) only Task M2.2's peak-op handlers do; other callers stay on the slow path.
 
 ---
 
@@ -1793,10 +1794,94 @@ All six testcases pass.
 - [ ] **Step 1: Write failing tests**
 
 ```typescript
-// Three cases:
-// 1. Returns false when no peak ops are pending for the exposure
-// 2. Returns true while a peak_added/peak_excluded/etc op is pending
-// 3. Returns false again after the op confirms
+// queue/hooks.test.ts
+import { describe, it, expect } from "vitest";
+import { renderHook, act } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useExposureHasPendingPeakOps, useQueueOpStatus } from "../src/lib/queue/hooks";
+
+function withQueryClient(qc: QueryClient) {
+  return ({ children }: { children: React.ReactNode }) =>
+    <QueryClientProvider client={qc}>{children}</QueryClientProvider>;
+}
+
+describe("useExposureHasPendingPeakOps", () => {
+  it("returns false when no peak ops are pending for the exposure", () => {
+    const qc = new QueryClient();
+    const { result } = renderHook(() => useExposureHasPendingPeakOps(42), {
+      wrapper: withQueryClient(qc),
+    });
+    expect(result.current).toBe(false);
+  });
+
+  it("returns true while a peak_added op is pending for the same exposure", () => {
+    const qc = new QueryClient();
+    qc.getMutationCache().add(makeFakeMutation({
+      status: "pending",
+      variables: { kind: "peak_added", exposureId: 42, q: 1.0, clientOpId: "op-1" },
+    }));
+    const { result } = renderHook(() => useExposureHasPendingPeakOps(42), {
+      wrapper: withQueryClient(qc),
+    });
+    expect(result.current).toBe(true);
+  });
+
+  it("returns false for a different exposure id", () => {
+    const qc = new QueryClient();
+    qc.getMutationCache().add(makeFakeMutation({
+      status: "pending",
+      variables: { kind: "peak_added", exposureId: 99, q: 1.0, clientOpId: "op-1" },
+    }));
+    const { result } = renderHook(() => useExposureHasPendingPeakOps(42), {
+      wrapper: withQueryClient(qc),
+    });
+    expect(result.current).toBe(false);
+  });
+
+  it("returns false for a non-peak op kind on the same exposure", () => {
+    const qc = new QueryClient();
+    qc.getMutationCache().add(makeFakeMutation({
+      status: "pending",
+      variables: { kind: "add_tag", exposureId: 42, key: "k", value: "v", clientOpId: "op-1" },
+    }));
+    const { result } = renderHook(() => useExposureHasPendingPeakOps(42), {
+      wrapper: withQueryClient(qc),
+    });
+    expect(result.current).toBe(false);
+  });
+
+  it("returns false again after the op confirms", async () => {
+    const qc = new QueryClient();
+    const m = makeFakeMutation({
+      status: "pending",
+      variables: { kind: "peak_added", exposureId: 42, q: 1.0, clientOpId: "op-1" },
+    });
+    qc.getMutationCache().add(m);
+    const { result, rerender } = renderHook(() => useExposureHasPendingPeakOps(42), {
+      wrapper: withQueryClient(qc),
+    });
+    expect(result.current).toBe(true);
+    act(() => { m.state.status = "success"; qc.getMutationCache().notify(m); });
+    rerender();
+    expect(result.current).toBe(false);
+  });
+});
+
+describe("useQueueOpStatus", () => {
+  it("returns 'pending' for matching kind", () => {
+    const qc = new QueryClient();
+    qc.getMutationCache().add(makeFakeMutation({
+      status: "pending",
+      variables: { kind: "reanalyze_exposure", exposureId: 42, clientOpId: "op-1" },
+    }));
+    const { result } = renderHook(() => useQueueOpStatus("reanalyze_exposure", 42), {
+      wrapper: withQueryClient(qc),
+    });
+    expect(result.current).toBe("pending");
+  });
+  it("returns 'idle' for non-matching kind", () => { /* analogous */ });
+  it("ignores exposureId scope when not provided", () => { /* analogous */ });
+});
 ```
 
 - [ ] **Step 2: Implement**
@@ -2192,22 +2277,93 @@ export function StaleIndicesBanner({ exposureId, debounceMs = DEFAULT_STALE_DEBO
 
 - [ ] **Step 7: Write end-to-end test**
 
+The two-context test exercises real cross-context SSE delivery, so it needs a real backend (not `page.route` mocks). The existing `inspect.spec.ts` and `smoke.spec.ts` use mocks; this spec is the first that needs an actual `himalaya serve` instance.
+
+**Test fixture setup:**
+
+A `playwright.config.ts` extension or `globalSetup.ts` script that:
+1. Spins up a temporary experiment directory with a fixed seed of auto peaks.
+2. Starts `himalaya serve` against a fresh DB on a port not already used (e.g., 8081 to avoid clashing with dev's :8080).
+3. Hands the URL to tests via env var.
+4. Tears down on teardown.
+
+The existing `playwright.config.ts` only starts Vite dev (per CLAUDE.md "Playwright port binding" gotcha). Extend `webServer` to also start the backend, OR run them separately and document the run-order.
+
 `packages/HimalayaUI/frontend/e2e/multiplayer-replay-rerun.spec.ts`:
 
 ```typescript
-test("two contexts add peaks to same exposure; both succeed", async ({ browser }) => {
-  const ctxA = await browser.newContext();
-  const ctxB = await browser.newContext();
-  // ... two pages ...
-  // Both add peaks at non-overlapping q values.
-  // Wait for both SSE frames to land.
-  // Assert both peaks appear in both contexts; indices reflect both.
+import { test, expect, type Browser, type Page } from "@playwright/test";
+
+async function openExposure(browser: Browser, username: string, exposureId: number): Promise<Page> {
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  await page.goto(`/?exposure=${exposureId}`);
+  // OnboardingFlow auto-advances if username param is set.
+  await page.fill('[data-testid="username-input"]', username);
+  await page.click('[data-testid="onboarding-continue"]');
+  await page.waitForSelector('[data-testid="trace-viewer"]');
+  return page;
+}
+
+test("two users add peaks at non-overlapping q values; both succeed and both visible", async ({ browser }) => {
+  const pageA = await openExposure(browser, "alice", 1);
+  const pageB = await openExposure(browser, "bob", 1);
+
+  // Initial peak count snapshot.
+  const initialPeaksA = await pageA.locator('[data-peak-id]').count();
+  const initialPeaksB = await pageB.locator('[data-peak-id]').count();
+  expect(initialPeaksB).toBe(initialPeaksA);
+
+  // Alice double-clicks at q ≈ 0.234 to add a peak.
+  await pageA.locator('[data-testid="trace-viewer"]').dblclick({ position: { x: 100, y: 200 } });
+  // Bob double-clicks at q ≈ 0.567.
+  await pageB.locator('[data-testid="trace-viewer"]').dblclick({ position: { x: 250, y: 200 } });
+
+  // Wait for both SSE frames to deliver.
+  await expect.poll(() => pageA.locator('[data-peak-id]').count())
+    .toBe(initialPeaksA + 2);
+  await expect.poll(() => pageB.locator('[data-peak-id]').count())
+    .toBe(initialPeaksB + 2);
+
+  // Verify the indices panel reflects both adds in both contexts.
+  // Index lists should match between contexts (modulo render order).
+  const indicesA = await pageA.locator('[data-index-id]').evaluateAll(els => els.map(e => e.getAttribute('data-index-id')).sort());
+  const indicesB = await pageB.locator('[data-index-id]').evaluateAll(els => els.map(e => e.getAttribute('data-index-id')).sort());
+  expect(indicesA).toEqual(indicesB);
 });
 
-test("two contexts exclude same peak; replay-rerun resolves invisibly", async ({ browser }) => {
-  // ...
+test("two users exclude the same peak; replay-rerun produces a no-op for the second", async ({ browser }) => {
+  const pageA = await openExposure(browser, "alice", 1);
+  const pageB = await openExposure(browser, "bob", 1);
+
+  // Both pages target the same auto peak.
+  const targetPeakSelector = '[data-peak-id]:not([data-excluded="true"]):first-child';
+
+  // Alice excludes; Bob excludes the same peak ~simultaneously.
+  // (await both clicks; race semantics handled by replay-as-rerun)
+  await Promise.all([
+    pageA.locator(targetPeakSelector).click({ modifiers: ["Alt"] }),  // Alt+click = exclude per existing UX
+    pageB.locator(targetPeakSelector).click({ modifiers: ["Alt"] }),
+  ]);
+
+  // Both pages converge on the peak being excluded.
+  await expect.poll(() => pageA.locator(`${targetPeakSelector.replace(":first-child","")}[data-excluded="true"]`).count())
+    .toBeGreaterThan(0);
+  await expect.poll(() => pageB.locator(`${targetPeakSelector.replace(":first-child","")}[data-excluded="true"]`).count())
+    .toBeGreaterThan(0);
+
+  // No Validation toast appears on either page (both ops "succeeded" — the
+  // second is a no-op via replay-rerun, not a conflict).
+  expect(await pageA.locator('[role="alert"][data-class="validation"]').count()).toBe(0);
+  expect(await pageB.locator('[role="alert"][data-class="validation"]').count()).toBe(0);
+
+  // The event log shows both operations recorded (one peak_excluded; the
+  // second is dispatcher-deduplicated). Verifiable via DB inspection if the
+  // test fixture exposes it.
 });
 ```
+
+The selectors (`[data-testid=...]`, `[data-peak-id]`, `[data-index-id]`, `[data-excluded]`) follow the project's convention of stable `data-*` attributes (per CLAUDE.md "E2E selectors"). If existing components don't surface the right hooks, add them in M2.2 step 3 (frontend mutator implementation).
 
 - [ ] **Step 8: Verify**
 
