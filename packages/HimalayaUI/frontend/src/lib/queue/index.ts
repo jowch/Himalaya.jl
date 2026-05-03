@@ -15,3 +15,11 @@ export {
 } from "./deferred";
 
 export { handleRemoteEvent } from "./replayCoordinator";
+
+export {
+  attachPersistence,
+  rehydrate,
+  STORAGE_KEY,
+  SCHEMA_VERSION,
+} from "./persistence";
+export type { RehydrateResult } from "./persistence";
