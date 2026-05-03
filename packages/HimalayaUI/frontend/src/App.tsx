@@ -5,8 +5,9 @@ import { AppShell } from "./components/AppShell";
 import { OnboardingFlow } from "./components/OnboardingFlow";
 import { ToastContainer } from "./components/ui/Toast";
 import { InfrastructureBanner } from "./components/InfrastructureBanner";
-import { handleCurationEvent } from "./lib/sseSubscriber";
-import { getClientId } from "./lib/clientId";
+import { handleRemoteEvent } from "./lib/queue/replayCoordinator";
+import { attachPersistence } from "./lib/queue/persistence";
+import type { SseEvent } from "./lib/queue/types";
 
 /**
  * App — root. Two concerns: the persistent workspace shell and the
@@ -14,18 +15,27 @@ import { getClientId } from "./lib/clientId";
  */
 export function App(): JSX.Element {
   const qc = useQueryClient();
-  const clientId = getClientId(); // stable for the tab session (sessionStorage)
+  const mc = qc.getMutationCache();
 
   useEffect(() => {
     const es = new EventSource("/api/events");
     es.addEventListener("curation", (e) => {
-      handleCurationEvent((e as MessageEvent).data as string, {
-        clientId,
-        qc,
-      });
+      try {
+        const parsed = JSON.parse((e as MessageEvent).data as string) as SseEvent;
+        handleRemoteEvent(parsed, qc, mc);
+      } catch {
+        // malformed frame, ignore
+      }
     });
     return () => es.close();
-  }, [qc, clientId]); // both stable; effective deps = [] for EventSource lifetime
+  }, [qc, mc]); // both stable; effective deps = [] for EventSource lifetime
+
+  // Mirror pending mutation queue to sessionStorage so a tab reload could
+  // rehydrate it (rehydrate wiring deferred — see M3 follow-up). attach is
+  // safe to mount unconditionally; subscription is cheap.
+  useEffect(() => {
+    return attachPersistence(mc);
+  }, [mc]);
 
   return (
     <>
