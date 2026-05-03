@@ -78,10 +78,17 @@ commits — caller is responsible).
 
 Idempotent at the DB layer: when `client_op_id` is set and the partial
 unique index on `(client_op_id, action, entity_id)` rejects the INSERT,
-this looks up the existing event row and returns its `event_id`. The
-`view_row_id` field is `nothing` on retry (the prior dispatcher's insert
-isn't re-derivable from the unique-index lookup; callers that retry through
-`with_idempotency` get the cached HTTP response anyway, so this is unused).
+this looks up the existing event row and returns its `event_id`.
+
+**On idempotent retry (UNIQUE constraint trip):** the returned `view_row_id`
+is `nothing` because the dispatcher's prior INSERT isn't re-derivable from
+the event row alone, and the dispatcher is NOT re-run (the prior application
+already moved the views). Routes whose response shape depends on
+`view_row_id` must be wrapped in `with_idempotency` so the cached HTTP
+response — which carries the original `view_row_id` — is replayed on retry.
+The current default-method-only callers (routes_peaks, routes_analysis)
+don't yet wrap in `with_idempotency`, so a same-`X-Client-Op-Id` retry today
+would 500. M2 routes will adopt `with_idempotency` and resolve this.
 
 Returns a richer NamedTuple than the public default method — includes the
 fields needed for a deferred post-commit broadcast.
@@ -102,7 +109,12 @@ function apply_event!(::InTransaction, db::SQLite.DB, req;
 
     event_id::Int = 0
     view_row_id::Union{Int, Nothing} = nothing
+    fresh_insert = true
 
+    # Narrow scope: the try/catch wraps ONLY the user_actions INSERT (and
+    # lastrowid extraction). The dispatcher runs *outside* the catch's reach
+    # so a future view-INSERT that happens to trip its own UNIQUE constraint
+    # can't be misclassified as an idempotent retry of the event-log INSERT.
     try
         res = DBInterface.execute(db,
             """INSERT INTO user_actions
@@ -110,15 +122,6 @@ function apply_event!(::InTransaction, db::SQLite.DB, req;
                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             [user_id, kind, entity_type, Int(entity_id), payload_json, undoes_event_id, client_id, client_op_id])
         event_id = Int(DBInterface.lastrowid(res))
-
-        # Canonicalize payload before dispatch — round-trip through JSON3 so
-        # the live dispatcher and rebuild_views_from_log! see exactly the
-        # same shape (JSON3.Object that supports both .field and [:field]
-        # access, eliminating the Symbol-key vs String-key footgun).
-        if payload_json !== nothing
-            payload_canonical = JSON3.read(payload_json)
-            view_row_id = update_view_for_event!(db, kind, entity_id, payload_canonical, event_id)
-        end
     catch err
         # Idempotent retry: the partial unique index on
         # (client_op_id, action, entity_id) rejected the INSERT because a
@@ -133,17 +136,24 @@ function apply_event!(::InTransaction, db::SQLite.DB, req;
                 [client_op_id, kind, Int(entity_id)]))
             if !isempty(existing)
                 event_id = Int(existing[1].id)
-                # The dispatcher's prior insert isn't re-derivable from this
-                # lookup; leave view_row_id as nothing. Callers retrying
-                # through with_idempotency get the cached HTTP response, so
-                # this field is unused on the retry path.
-                view_row_id = nothing
+                fresh_insert = false
             else
                 rethrow()
             end
         else
             rethrow()
         end
+    end
+
+    # Run the dispatcher only on a fresh INSERT — on retry the prior
+    # application already moved the views, and re-running would double-apply.
+    # Canonicalize payload before dispatch — round-trip through JSON3 so the
+    # live dispatcher and rebuild_views_from_log! see exactly the same shape
+    # (JSON3.Object supports both .field and [:field] access, eliminating
+    # the Symbol-key vs String-key footgun).
+    if fresh_insert && payload_json !== nothing
+        payload_canonical = JSON3.read(payload_json)
+        view_row_id = update_view_for_event!(db, kind, entity_id, payload_canonical, event_id)
     end
 
     return (event_id    = event_id,
