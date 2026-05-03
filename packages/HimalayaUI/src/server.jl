@@ -87,10 +87,47 @@ function register_routes!()
     register_export_routes!()
 end
 
+const GC_TIMER = Ref{Union{Timer, Nothing}}(nothing)
+
+"""
+    start_gc_timer!(db; interval_seconds = 1800, ttl_seconds = 3600)
+
+Schedule periodic invocations of `gc_idempotent_responses!`. The first
+invocation fires immediately on the timer thread; subsequent invocations
+fire every `interval_seconds`. Idempotent: calling twice closes the
+previous timer before installing a new one.
+"""
+function start_gc_timer!(db::SQLite.DB; interval_seconds::Real = 30 * 60,
+                                        ttl_seconds::Int = 3600)
+    GC_TIMER[] !== nothing && (close(GC_TIMER[]); GC_TIMER[] = nothing)
+    GC_TIMER[] = Timer(0.0; interval = interval_seconds) do _
+        try
+            gc_idempotent_responses!(db; ttl_seconds = ttl_seconds)
+        catch err
+            @warn "idempotent_responses GC sweep failed" exception = err
+        end
+    end
+    nothing
+end
+
+"""
+    stop_gc_timer!()
+
+Close the active GC timer if any. No-op when no timer was started.
+"""
+function stop_gc_timer!()
+    if GC_TIMER[] !== nothing
+        close(GC_TIMER[])
+        GC_TIMER[] = nothing
+    end
+    nothing
+end
+
 function serve(db::SQLite.DB; host::String = "127.0.0.1", port::Int = 8080)
     Oxygen.resetstate()
     bind_db!(db)
     register_routes!()
+    start_gc_timer!(db)
     Oxygen.serve(; host, port, show_banner = false, docs = false, metrics = false)
 end
 
@@ -103,6 +140,7 @@ function start_test_server!(db::SQLite.DB, port::Int)
 end
 
 function stop_test_server!()
+    stop_gc_timer!()
     Oxygen.terminate()
     Oxygen.resetstate()
     _DB_REF[] = nothing

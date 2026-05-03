@@ -112,6 +112,57 @@ end
     end
 end
 
+@testset "gc_idempotent_responses! sweeps rows older than TTL" begin
+    mktempdir() do tmp
+        db = open_db(joinpath(tmp, "test.db"))
+        DBInterface.execute(db, """
+            INSERT INTO idempotent_responses (client_op_id, status_code, body, created_at)
+            VALUES ('old-1', 200, '{}', datetime('now', '-2 hours'))
+        """)
+        DBInterface.execute(db, """
+            INSERT INTO idempotent_responses (client_op_id, status_code, body, created_at)
+            VALUES ('new-1', 200, '{}', datetime('now', '-5 minutes'))
+        """)
+        HimalayaUI.gc_idempotent_responses!(db; ttl_seconds = 3600)
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT client_op_id FROM idempotent_responses ORDER BY client_op_id"))
+        @test [String(r.client_op_id) for r in rows] == ["new-1"]
+        SQLite.close(db)
+    end
+end
+
+@testset "gc_idempotent_responses! also sweeps OP_LOCKS entries with no live response" begin
+    mktempdir() do tmp
+        db = open_db(joinpath(tmp, "test.db"))
+        # Trigger creation of two OP_LOCKS entries.
+        req1 = HTTP.Request("POST", "/", ["X-Client-Op-Id" => "live-1"], UInt8[])
+        req2 = HTTP.Request("POST", "/", ["X-Client-Op-Id" => "stale-1"], UInt8[])
+
+        with_idempotency(db, req1) do
+            HTTP.Response(200; body = Vector{UInt8}("{}"))
+        end
+        with_idempotency(db, req2) do
+            HTTP.Response(200; body = Vector{UInt8}("{}"))
+        end
+
+        @test haskey(HimalayaUI.OP_LOCKS, "live-1")
+        @test haskey(HimalayaUI.OP_LOCKS, "stale-1")
+
+        # Manually expire the "stale-1" row so the GC sweep removes it.
+        DBInterface.execute(db, """
+            UPDATE idempotent_responses SET created_at = datetime('now', '-2 hours')
+            WHERE client_op_id = 'stale-1'
+        """)
+        HimalayaUI.gc_idempotent_responses!(db; ttl_seconds = 3600)
+
+        @test haskey(HimalayaUI.OP_LOCKS, "live-1")
+        @test !haskey(HimalayaUI.OP_LOCKS, "stale-1")
+        # Cleanup: don't leak OP_LOCKS state across tests.
+        delete!(HimalayaUI.OP_LOCKS, "live-1")
+        SQLite.close(db)
+    end
+end
+
 @testset "with_idempotency: multi-event route cache hit returns identical body" begin
     # Simulate a route that emits N events (speculative POST shape).
     # First call commits 3 events with same client_op_id; second call returns cached.

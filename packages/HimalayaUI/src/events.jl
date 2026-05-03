@@ -351,6 +351,42 @@ function with_idempotency(f, db::SQLite.DB, req::HTTP.Request)
 end
 
 """
+    gc_idempotent_responses!(db; ttl_seconds = 3600)
+
+Sweep `idempotent_responses` rows older than `ttl_seconds` and prune the
+corresponding `OP_LOCKS` entries. Safe to call concurrently with
+`with_idempotency`: the sweep holds `OP_LOCKS_MU` while reading the live set
+and rebuilding the Dict, which serialises against `_op_lock`'s `get!`.
+
+The combined pruning preserves the lock-free fast path: live ops keep their
+locks; only ops whose response is gone are eligible for collection. An op
+already in flight when the sweep runs will appear in the live set (because
+its response has already been INSERTed by the time it returns) — so the
+sweep cannot race-delete an active lock.
+
+Recommended TTL: 1 hour (3600s). Long enough to cover any plausible client
+retry window; short enough that long-running processes don't accumulate
+unbounded state.
+"""
+function gc_idempotent_responses!(db::SQLite.DB; ttl_seconds::Int = 3600)
+    DBInterface.execute(db,
+        "DELETE FROM idempotent_responses WHERE created_at < datetime('now', ?)",
+        ["-$(ttl_seconds) seconds"])
+    lock(OP_LOCKS_MU) do
+        live = Set{String}()
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT client_op_id FROM idempotent_responses"))
+        for r in rows
+            push!(live, String(r.client_op_id))
+        end
+        for k in collect(keys(OP_LOCKS))
+            k in live || delete!(OP_LOCKS, k)
+        end
+    end
+    nothing
+end
+
+"""
     rebuild_views_from_log!(db, exposure_id) -> Nothing
 
 Re-fold every event for `exposure_id` from `user_actions` into the materialized
