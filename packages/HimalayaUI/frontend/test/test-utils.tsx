@@ -4,7 +4,13 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 export function makeClient(): QueryClient {
   return new QueryClient({
-    defaultOptions: { queries: { retry: false, gcTime: 0, staleTime: 0 } },
+    // gcTime: Infinity so observer-less seeded data (setQueryData without a
+    // useQuery) survives across mutate→success transitions. Tests create a
+    // fresh client each run, so cross-test memory pressure is irrelevant.
+    defaultOptions: {
+      queries: { retry: false, gcTime: Infinity, staleTime: 0 },
+      mutations: { retry: false },
+    },
   });
 }
 

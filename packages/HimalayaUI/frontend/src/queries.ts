@@ -3,6 +3,18 @@ import * as api from "./api";
 import { useAppState } from "./state";
 import { getClientId } from "./lib/clientId";
 import { newClientOpId } from "./lib/clientOpId";
+import { authOpts } from "./lib/authOpts";
+import { useQueueMutation } from "./lib/queue/useQueueMutation";
+import {
+  updateSampleMutator,
+  addSampleTagMutator,
+  removeSampleTagMutator,
+  addExposureTagMutator,
+  removeExposureTagMutator,
+  postSampleMessageMutator,
+  setExposureStatusMutator,
+  selectExposureMutator,
+} from "./lib/queue/mutators/trivial";
 
 const CLIENT_ID = getClientId();
 
@@ -95,18 +107,6 @@ function invalidateExposure(qc: ReturnType<typeof useQueryClient>, exposureId: n
   // this, the right-rail Active set looks empty after every peak edit even
   // though the backend has the correct membership.
   qc.invalidateQueries({ queryKey: queryKeys.groups(exposureId) });
-}
-
-function authOpts(
-  username: string | undefined,
-  clientId: string | undefined,
-  clientOpId?: string,
-): api.AuthOpts {
-  const out: api.AuthOpts = {};
-  if (username !== undefined) out.username = username;
-  if (clientId !== undefined) out.clientId = clientId;
-  if (clientOpId !== undefined) out.clientOpId = clientOpId;
-  return out;
 }
 
 // After any peak edit we automatically re-run analysis so the indices reflect
@@ -247,25 +247,19 @@ export function useDeleteIndex(exposureId: number) {
 }
 
 export function useUpdateSample(experimentId: number, sampleId: number) {
-  const qc = useQueryClient();
   const username = useAppState((s) => s.username);
-  return useMutation({
-    mutationFn: (patch: { name?: string; notes?: string }) =>
-      api.updateSample(sampleId, patch, authOpts(username, CLIENT_ID, newClientOpId())),
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: queryKeys.samples(experimentId) }),
-  });
+  return useQueueMutation<{ name?: string; notes?: string }, api.Sample>(
+    updateSampleMutator,
+    { experimentId, sampleId, username, clientId: CLIENT_ID },
+  );
 }
 
 export function useAddSampleTag(experimentId: number, sampleId: number) {
-  const qc = useQueryClient();
   const username = useAppState((s) => s.username);
-  return useMutation({
-    mutationFn: ({ key, value }: { key: string; value: string }) =>
-      api.addSampleTag(sampleId, key, value, authOpts(username, CLIENT_ID, newClientOpId())),
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: queryKeys.samples(experimentId) }),
-  });
+  return useQueueMutation<{ key: string; value: string }, api.SampleTag>(
+    addSampleTagMutator,
+    { experimentId, sampleId, username, clientId: CLIENT_ID },
+  );
 }
 
 export function useSampleMessages(sampleId: number | undefined) {
@@ -276,75 +270,71 @@ export function useSampleMessages(sampleId: number | undefined) {
   });
 }
 
+// Adapter: useQueueMutation flat-spreads input into the payload, but the
+// existing consumers call `postMsg.mutate(body: string)`. Wrap to package the
+// string under a `body` key for the mutator.
 export function usePostSampleMessage(sampleId: number) {
-  const qc = useQueryClient();
   const username = useAppState((s) => s.username);
-  return useMutation({
-    mutationFn: (body: string) =>
-      api.postSampleMessage(sampleId, body, authOpts(username, CLIENT_ID, newClientOpId())),
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: queryKeys.messages(sampleId) }),
-  });
+  const inner = useQueueMutation<{ body: string }, api.SampleMessage>(
+    postSampleMessageMutator,
+    { sampleId, username, clientId: CLIENT_ID },
+  );
+  return {
+    ...inner,
+    mutate: (body: string) => inner.mutate({ body }),
+  };
 }
 
 export function useRemoveSampleTag(experimentId: number, sampleId: number) {
-  const qc = useQueryClient();
   const username = useAppState((s) => s.username);
-  return useMutation({
-    mutationFn: (tagId: number) =>
-      api.removeSampleTag(sampleId, tagId, authOpts(username, CLIENT_ID, newClientOpId())),
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: queryKeys.samples(experimentId) }),
-  });
+  const inner = useQueueMutation<{ tagId: number }, void>(
+    removeSampleTagMutator,
+    { experimentId, sampleId, username, clientId: CLIENT_ID },
+  );
+  return {
+    ...inner,
+    mutate: (tagId: number) => inner.mutate({ tagId }),
+  };
 }
 
 export function useSetExposureStatus(sampleId: number) {
-  const qc = useQueryClient();
   const username = useAppState((s) => s.username);
-  return useMutation({
-    mutationFn: ({ exposureId, status }: {
-      exposureId: number;
-      status: "accepted" | "rejected" | null;
-    }) => api.setExposureStatus(exposureId, status, authOpts(username, CLIENT_ID, newClientOpId())),
-    // queryKeys.exposures(id) returns the prefix ["sample", id, "exposures"];
-    // TanStack Query invalidateQueries matches by prefix, so this single
-    // call covers both excludeRejected variants (and any future variant).
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: queryKeys.exposures(sampleId) }),
-  });
+  return useQueueMutation<
+    { exposureId: number; status: "accepted" | "rejected" | null },
+    { id: number; status: string | null }
+  >(setExposureStatusMutator, { sampleId, username, clientId: CLIENT_ID });
 }
 
 export function useSelectExposure(sampleId: number) {
-  const qc = useQueryClient();
   const username = useAppState((s) => s.username);
-  return useMutation({
-    mutationFn: (exposureId: number) =>
-      api.selectExposure(exposureId, authOpts(username, CLIENT_ID, newClientOpId())),
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: queryKeys.exposures(sampleId) }),
-  });
+  const inner = useQueueMutation<
+    { exposureId: number },
+    { id: number; selected: boolean }
+  >(selectExposureMutator, { sampleId, username, clientId: CLIENT_ID });
+  return {
+    ...inner,
+    mutate: (exposureId: number) => inner.mutate({ exposureId }),
+  };
 }
 
 export function useAddExposureTag(sampleId: number, exposureId: number) {
-  const qc = useQueryClient();
   const username = useAppState((s) => s.username);
-  return useMutation({
-    mutationFn: ({ key, value }: { key: string; value: string }) =>
-      api.addExposureTag(exposureId, key, value, authOpts(username, CLIENT_ID, newClientOpId())),
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: queryKeys.exposures(sampleId) }),
-  });
+  return useQueueMutation<{ key: string; value: string }, api.ExposureTag>(
+    addExposureTagMutator,
+    { sampleId, exposureId, username, clientId: CLIENT_ID },
+  );
 }
 
 export function useRemoveExposureTag(sampleId: number, exposureId: number) {
-  const qc = useQueryClient();
   const username = useAppState((s) => s.username);
-  return useMutation({
-    mutationFn: (tagId: number) =>
-      api.removeExposureTag(exposureId, tagId, authOpts(username, CLIENT_ID, newClientOpId())),
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: queryKeys.exposures(sampleId) }),
-  });
+  const inner = useQueueMutation<{ tagId: number }, void>(
+    removeExposureTagMutator,
+    { sampleId, exposureId, username, clientId: CLIENT_ID },
+  );
+  return {
+    ...inner,
+    mutate: (tagId: number) => inner.mutate({ tagId }),
+  };
 }
 
 export function usePeak(id: number | undefined) {
