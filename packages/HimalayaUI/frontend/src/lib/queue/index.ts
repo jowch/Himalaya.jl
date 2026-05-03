@@ -13,3 +13,5 @@ export {
   getDeferred,
   clearDeferred,
 } from "./deferred";
+
+export { handleRemoteEvent } from "./replayCoordinator";
