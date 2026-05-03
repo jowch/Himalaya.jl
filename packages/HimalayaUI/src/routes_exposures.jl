@@ -84,9 +84,10 @@ function register_exposures_routes!()
         DBInterface.execute(db,
             "UPDATE exposures SET status = ? WHERE id = ?", [status, id])
 
-        log_action!(db, req; action = "set_status",
+        apply_event!(db, req;
+            kind = "set_exposure_status",
             entity_type = "exposure", entity_id = id,
-            note = something(status, "null"))
+            payload = Dict(:status => status))
 
         HTTP.Response(200, ["Content-Type" => "application/json"],
             JSON3.write(Dict(:id => id, :status => status)))
@@ -111,8 +112,10 @@ function register_exposures_routes!()
         DBInterface.execute(db,
             "UPDATE exposures SET selected = 1 WHERE id = ?", [id])
 
-        log_action!(db, req; action = "select_exposure",
-            entity_type = "exposure", entity_id = id)
+        apply_event!(db, req;
+            kind = "select_exposure",
+            entity_type = "exposure", entity_id = id,
+            payload = Dict(:sample_id => sample_id))
 
         HTTP.Response(200, ["Content-Type" => "application/json"],
             JSON3.write(Dict(:id => id, :selected => true)))
@@ -128,8 +131,16 @@ function register_exposures_routes!()
              VALUES (?, ?, ?, 'manual')", [id, key, value])
         tag_id = Int(DBInterface.lastrowid(res))
 
-        log_action!(db, req; action = "add_tag",
-            entity_type = "exposure", entity_id = id, note = "$key=$value")
+        # Look up parent sample_id so frontend can invalidate the right cache key.
+        erows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT sample_id FROM exposures WHERE id = ?", [id]))
+        sample_id = isempty(erows) ? nothing : Int(erows[1].sample_id)
+
+        apply_event!(db, req;
+            kind = "add_tag",
+            entity_type = "exposure", entity_id = id,
+            payload = Dict(:key => key, :value => value,
+                           :tag_id => tag_id, :sample_id => sample_id))
 
         HTTP.Response(201, ["Content-Type" => "application/json"],
             JSON3.write(Dict(:id=>tag_id, :exposure_id=>id,
@@ -138,11 +149,18 @@ function register_exposures_routes!()
 
     @delete "/api/exposures/{id}/tags/{tag_id}" function(req::HTTP.Request, id::Int, tag_id::Int)
         db = current_db()
+        # Query parent BEFORE deletion so the event payload carries sample_id.
+        erows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT sample_id FROM exposures WHERE id = ?", [id]))
+        sample_id = isempty(erows) ? nothing : Int(erows[1].sample_id)
+
         DBInterface.execute(db,
             "DELETE FROM exposure_tags WHERE id = ? AND exposure_id = ?",
             [tag_id, id])
-        log_action!(db, req; action = "remove_tag",
-            entity_type = "exposure", entity_id = id, note = "tag_id=$tag_id")
+        apply_event!(db, req;
+            kind = "remove_tag",
+            entity_type = "exposure", entity_id = id,
+            payload = Dict(:tag_id => tag_id, :sample_id => sample_id))
         HTTP.Response(204)
     end
 

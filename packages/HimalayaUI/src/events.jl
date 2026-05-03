@@ -266,6 +266,17 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
         return nothing
     end
 
+    # M2.1 trivial-route migrations: routes write to view tables directly,
+    # so the dispatcher is a no-op for these kinds. Branches exist for
+    # exhaustiveness so the rebuild_views_from_log! property test treats
+    # them as known kinds rather than silently falling through.
+    kind == "update_sample" && return nothing
+    kind == "add_tag" && return nothing
+    kind == "remove_tag" && return nothing
+    kind == "post_message" && return nothing
+    kind == "set_exposure_status" && return nothing
+    kind == "select_exposure" && return nothing
+
     # Scaffolding / legacy:
     kind == "noop_test" && return nothing
     # default: no view update (analyze_run and other instrumentation events land here)

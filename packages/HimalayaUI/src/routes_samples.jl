@@ -35,8 +35,13 @@ function register_samples_routes!()
         DBInterface.execute(db,
             "UPDATE samples SET $sets WHERE id = ?", vcat(vals, [id]))
 
-        log_action!(db, req; action = "update_sample",
-            entity_type = "sample", entity_id = id)
+        # Structured payload: the patched fields directly. Frontend
+        # applyRemoteToCache spreads this onto the cached sample.
+        update_payload = Dict{Symbol, Any}(zip(fields, vals))
+        apply_event!(db, req;
+            kind = "update_sample",
+            entity_type = "sample", entity_id = id,
+            payload = update_payload)
 
         rows = Tables.rowtable(DBInterface.execute(db,
             "SELECT * FROM samples WHERE id = ?", [id]))
@@ -55,9 +60,17 @@ function register_samples_routes!()
             [id, key, value])
         tag_id = Int(DBInterface.lastrowid(res))
 
-        log_action!(db, req; action = "add_tag",
+        # Look up parent experiment_id so the frontend can invalidate the
+        # right samples cache key.
+        srows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT experiment_id FROM samples WHERE id = ?", [id]))
+        exp_id = isempty(srows) ? nothing : Int(srows[1].experiment_id)
+
+        apply_event!(db, req;
+            kind = "add_tag",
             entity_type = "sample", entity_id = id,
-            note = "$key=$value")
+            payload = Dict(:key => key, :value => value,
+                           :tag_id => tag_id, :experiment_id => exp_id))
 
         HTTP.Response(201, ["Content-Type" => "application/json"],
             JSON3.write(Dict(:id => tag_id, :sample_id => id,
@@ -66,12 +79,19 @@ function register_samples_routes!()
 
     @delete "/api/samples/{id}/tags/{tag_id}" function(req::HTTP.Request, id::Int, tag_id::Int)
         db = current_db()
+        # Query parent BEFORE deletion so we can include experiment_id in the
+        # event payload for cache invalidation.
+        srows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT experiment_id FROM samples WHERE id = ?", [id]))
+        exp_id = isempty(srows) ? nothing : Int(srows[1].experiment_id)
+
         DBInterface.execute(db,
             "DELETE FROM sample_tags WHERE id = ? AND sample_id = ?",
             [tag_id, id])
-        log_action!(db, req; action = "remove_tag",
+        apply_event!(db, req;
+            kind = "remove_tag",
             entity_type = "sample", entity_id = id,
-            note = "tag_id=$tag_id")
+            payload = Dict(:tag_id => tag_id, :experiment_id => exp_id))
         HTTP.Response(204)
     end
 

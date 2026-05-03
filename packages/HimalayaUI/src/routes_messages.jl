@@ -55,11 +55,16 @@ function register_messages_routes!()
 
         sql = select_message_sql("WHERE m.id = ?")
         row = Tables.rowtable(DBInterface.execute(db, sql, [msg_id]))[1]
+        msg_json = row_to_json(row)
 
-        log_action!(db, req; action = "add_message",
-            entity_type = "sample_message", entity_id = msg_id)
+        # Payload mirrors the full SampleMessage row so applyRemoteToCache
+        # can spread it directly into the messages cache.
+        apply_event!(db, req;
+            kind = "post_message",
+            entity_type = "sample_message", entity_id = msg_id,
+            payload = msg_json)
 
         HTTP.Response(201, ["Content-Type" => "application/json"],
-            JSON3.write(row_to_json(row)))
+            JSON3.write(msg_json))
     end
 end
