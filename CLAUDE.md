@@ -211,6 +211,13 @@ julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
 
 **State split (load-bearing):** Zustand owns *client* state (active sample/exposure, hoveredIndexId, username). TanStack Query owns *server* state (experiments, samples, exposures, peaks, indices, groups). Mutations invalidate scoped query keys (`queryKeys.peaks(id)`, `queryKeys.groups(id)`) — don't mix the two concerns in the same hook.
 
+**Per-tab SSE identity.** SSE self-echo filtering uses a per-tab `client_id`
+minted into `sessionStorage` on first load (see `lib/clientId.ts`). Audit
+identity (`actor` / `X-Username`) is unchanged. Two tabs of the same user
+are treated as distinct subscribers — edits in one tab refresh the other.
+The `client_id` lives for the tab session: survives reload, scoped to one
+tab. See docs/event-log.md §"Client side".
+
 **Observable Plot inside React:** the plot element has a runtime `.scale(name).invert(px)` method that isn't in DOM types; cast with `(el as unknown as { scale: ... })`. Used by TraceViewer to translate click pixel coords to q values.
 
 **E2E selectors:** Playwright tests use `data-testid`, `role`, or stable `data-*` attributes (`data-sample-id`, `data-exposure-id`, `data-alternative-id`, `data-active`, `data-low-r2`). Never assert on Tailwind class strings — they change when styling evolves. For Vitest/RTL tests, use `screen.getByText("X").closest("li")` + `toHaveAttribute` rather than `document.querySelector` — the latter bypasses RTL's async-aware retry logic.

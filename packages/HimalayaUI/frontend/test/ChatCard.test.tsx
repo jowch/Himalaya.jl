@@ -55,7 +55,7 @@ describe("<ChatCard>", () => {
     await user.keyboard("hello there");
     await user.keyboard("{Enter}");
     await waitFor(() => {
-      expect(postSpy).toHaveBeenCalledWith(3, "hello there", { username: "carol" });
+      expect(postSpy).toHaveBeenCalledWith(3, "hello there", expect.objectContaining({ username: "carol" }));
     });
   });
 

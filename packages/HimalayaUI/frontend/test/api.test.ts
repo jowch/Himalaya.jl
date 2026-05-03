@@ -8,9 +8,10 @@ describe("api", () => {
     const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ id: 1, username: "alice" }), { status: 200 }),
     );
-    await api.createUser("alice", undefined, { username: "alice" });
+    await api.createUser("alice", undefined, { username: "alice", clientId: "tab-xyz" });
     const init = fetchSpy.mock.calls[0]![1] as RequestInit;
     expect((init.headers as Record<string, string>)["X-Username"]).toBe("alice");
+    expect((init.headers as Record<string, string>)["X-Client-Id"]).toBe("tab-xyz");
   });
 
   it("omits X-Username on GET requests", async () => {
@@ -20,6 +21,29 @@ describe("api", () => {
     await api.listUsers();
     const init = fetchSpy.mock.calls[0]![1] as RequestInit;
     const headers = (init.headers as Record<string, string>) ?? {};
+    expect(headers["X-Username"]).toBeUndefined();
+  });
+
+  it("omits X-Client-Id on GET requests", async () => {
+    const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue(
+      new Response("[]", { status: 200 }),
+    );
+    await api.listUsers();
+    const init = fetchSpy.mock.calls[0]![1] as RequestInit;
+    const headers = (init.headers as Record<string, string>) ?? {};
+    expect(headers["X-Client-Id"]).toBeUndefined();
+  });
+
+  it("sends X-Client-Id without X-Username when only clientId is provided", async () => {
+    const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({
+        id: 7, exposure_id: 42, q: 0.15, source: "manual", stale_indices: 0,
+      }), { status: 201 }),
+    );
+    await api.addPeak(42, 0.15, { clientId: "tab-xyz" });
+    const init = fetchSpy.mock.calls[0]![1] as RequestInit;
+    const headers = init.headers as Record<string, string>;
+    expect(headers["X-Client-Id"]).toBe("tab-xyz");
     expect(headers["X-Username"]).toBeUndefined();
   });
 
@@ -56,12 +80,13 @@ describe("api", () => {
         id: 7, exposure_id: 42, q: 0.15, source: "manual", stale_indices: 3,
       }), { status: 201 }),
     );
-    const p = await api.addPeak(42, 0.15, { username: "alice" });
+    const p = await api.addPeak(42, 0.15, { username: "alice", clientId: "tab-xyz" });
     expect(p.id).toBe(7);
     expect(p.source).toBe("manual");
     expect(p.stale_indices).toBe(3);
     const init = fetchSpy.mock.calls[0]![1] as RequestInit;
     expect((init.headers as Record<string, string>)["X-Username"]).toBe("alice");
+    expect((init.headers as Record<string, string>)["X-Client-Id"]).toBe("tab-xyz");
     expect(init.body).toBe(JSON.stringify({ q: 0.15 }));
   });
 
@@ -69,11 +94,12 @@ describe("api", () => {
     const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue(
       new Response(null, { status: 204 }),
     );
-    await api.removePeak(7, { username: "alice" });
+    await api.removePeak(7, { username: "alice", clientId: "tab-xyz" });
     const [url, init] = fetchSpy.mock.calls[0]! as [string, RequestInit];
     expect(url).toBe("/api/peaks/7");
     expect(init.method).toBe("DELETE");
     expect((init.headers as Record<string, string>)["X-Username"]).toBe("alice");
+    expect((init.headers as Record<string, string>)["X-Client-Id"]).toBe("tab-xyz");
   });
 
   it("reanalyzeExposure posts empty body and returns {id, analyzed}", async () => {
@@ -121,10 +147,11 @@ describe("api", () => {
         id: 2, exposure_id: 42, kind: "custom", active: true, members: [10, 11],
       }), { status: 200 }),
     );
-    const g = await api.addIndexToGroup(2, 11, { username: "alice" });
+    const g = await api.addIndexToGroup(2, 11, { username: "alice", clientId: "tab-xyz" });
     expect(g.members).toEqual([10, 11]);
     const [, init] = fetchSpy.mock.calls[0]! as [string, RequestInit];
     expect((init.headers as Record<string, string>)["X-Username"]).toBe("alice");
+    expect((init.headers as Record<string, string>)["X-Client-Id"]).toBe("tab-xyz");
     expect(init.body).toBe(JSON.stringify({ index_id: 11 }));
   });
 
@@ -147,7 +174,7 @@ describe("api", () => {
         id: 7, sample_id: 3, author_id: 1, author: "alice", body: "hello", created_at: "2026-04-24 10:00:00",
       }), { status: 201 }),
     );
-    const msg = await api.postSampleMessage(3, "hello", { username: "alice" });
+    const msg = await api.postSampleMessage(3, "hello", { username: "alice", clientId: "tab-xyz" });
     expect(msg.id).toBe(7);
     expect(msg.author).toBe("alice");
     expect(msg.body).toBe("hello");
@@ -155,6 +182,7 @@ describe("api", () => {
     expect(url).toBe("/api/samples/3/messages");
     expect(init.method).toBe("POST");
     expect((init.headers as Record<string, string>)["X-Username"]).toBe("alice");
+    expect((init.headers as Record<string, string>)["X-Client-Id"]).toBe("tab-xyz");
     expect(init.body).toBe(JSON.stringify({ body: "hello" }));
   });
 
@@ -164,10 +192,11 @@ describe("api", () => {
         id: 2, exposure_id: 42, kind: "custom", active: true, members: [10],
       }), { status: 200 }),
     );
-    await api.removeIndexFromGroup(2, 11, { username: "alice" });
+    await api.removeIndexFromGroup(2, 11, { username: "alice", clientId: "tab-xyz" });
     const [url, init] = fetchSpy.mock.calls[0]! as [string, RequestInit];
     expect(url).toBe("/api/groups/2/members/11");
     expect(init.method).toBe("DELETE");
     expect((init.headers as Record<string, string>)["X-Username"]).toBe("alice");
+    expect((init.headers as Record<string, string>)["X-Client-Id"]).toBe("tab-xyz");
   });
 });
