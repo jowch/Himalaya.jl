@@ -12,7 +12,7 @@
 import * as api from "../../../api";
 import type { AuthOpts } from "../../../api";
 import { authOpts } from "../../authOpts";
-import type { Mutator, OpPayload, RollbackContext } from "../types";
+import type { Mutator, RollbackContext } from "../types";
 
 export type ReanalyzeExposureInput = Record<string, never>;
 
@@ -22,27 +22,21 @@ type ReanalyzeExposureScope = {
   clientId: string;
 };
 
-type Flat = OpPayload<ReanalyzeExposureInput> & ReanalyzeExposureScope;
-const flat = (p: OpPayload<ReanalyzeExposureInput>): Flat =>
-  p as unknown as Flat;
-
-function buildAuthOpts(p: Flat): AuthOpts {
+function buildAuthOpts(p: { username: string | undefined; clientId: string; clientOpId: string }): AuthOpts {
   return authOpts(p.username, p.clientId, p.clientOpId);
 }
 
 type ReanalyzeResponse = { id: number; analyzed: boolean };
 
 export const reanalyzeExposureMutator: Mutator<
-  OpPayload<ReanalyzeExposureInput>,
+  ReanalyzeExposureInput,
+  ReanalyzeExposureScope,
   ReanalyzeResponse
 > = {
   kind: "reanalyze_exposure",
   // Null optimistic effect: no cache write, restore is a no-op.
   onMutate: (): RollbackContext => ({ restore: () => {} }),
-  request: (raw) => {
-    const p = flat(raw);
-    return api.reanalyzeExposure(p.exposureId, buildAuthOpts(p));
-  },
+  request: (p) => api.reanalyzeExposure(p.exposureId, buildAuthOpts(p)),
   // The HTTP response is purely advisory ({ id, analyzed }); the authoritative
   // updated peaks/indices/groups land via SSE post_state on the analyze_run
   // frame (see applyRemoteToCache.ts). No cache work needed here.

@@ -85,6 +85,14 @@ export interface SseEvent {
 }
 
 /**
+ * The flat payload shape `useQueueMutation` actually constructs and hands to
+ * mutator callbacks: the OpPayload metadata fields, the scope object the hook
+ * caller passed in, and the per-call input merged together. Defined once so
+ * mutators don't have to re-derive it via `as unknown as` casts.
+ */
+export type FlatPayload<TInput, TScope> = OpPayload<TInput> & TScope & TInput;
+
+/**
  * A mutator describes one queue-able operation:
  * - `kind` discriminates against OpKind
  * - `onMutate` writes the optimistic cache effect; returns the rollback ctx
@@ -92,11 +100,15 @@ export interface SseEvent {
  * - `onSuccess` applies the server response to the cache
  * - `affectsExposurePeaks` (optional) tells hooks whether this op should
  *   register as a "peak op" against an exposure for `useExposureHasPendingPeakOps`
+ *
+ * Three generics: `TInput` (per-call input), `TScope` (closure-injected at hook
+ * construction), `TResponse` (server response). Callbacks receive the flat
+ * merged payload — no casts at the consumer layer.
  */
-export interface Mutator<TPayload, TResponse> {
+export interface Mutator<TInput, TScope, TResponse> {
   kind: OpKind;
-  onMutate: (payload: TPayload, qc: QueryClient) => RollbackContext;
-  request: (payload: TPayload, signal: AbortSignal) => Promise<TResponse>;
-  onSuccess: (payload: TPayload, response: TResponse, qc: QueryClient) => void;
-  affectsExposurePeaks?: (payload: TPayload, exposureId: number) => boolean;
+  onMutate: (payload: FlatPayload<TInput, TScope>, qc: QueryClient) => RollbackContext;
+  request: (payload: FlatPayload<TInput, TScope>, signal: AbortSignal) => Promise<TResponse>;
+  onSuccess: (payload: FlatPayload<TInput, TScope>, response: TResponse, qc: QueryClient) => void;
+  affectsExposurePeaks?: (payload: FlatPayload<TInput, TScope>, exposureId: number) => boolean;
 }

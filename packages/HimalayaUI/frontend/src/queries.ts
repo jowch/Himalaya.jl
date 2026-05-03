@@ -24,7 +24,6 @@ import {
   deleteIndexMutator,
 } from "./lib/queue/mutators/indexGroup";
 import { createSpeculativeMutator } from "./lib/queue/mutators/createSpeculative";
-import type { CreateSpeculativeInput } from "./lib/queue/mutators/createSpeculative";
 import { reanalyzeExposureMutator } from "./lib/queue/mutators/reanalyzeExposure";
 import { useExposureHasPendingPeakOps } from "./lib/queue/hooks";
 
@@ -112,7 +111,7 @@ export function useIndices(exposureId: number | undefined) {
 
 export function useAddPeak(exposureId: number) {
   const username = useAppState((s) => s.username);
-  const inner = useQueueMutation<{ q: number }, api.PeakAddResponse>(
+  const inner = useQueueMutation(
     peakAddMutator,
     { exposureId, username, clientId: CLIENT_ID },
   );
@@ -124,7 +123,7 @@ export function useAddPeak(exposureId: number) {
 
 export function useRemovePeak(exposureId: number) {
   const username = useAppState((s) => s.username);
-  const inner = useQueueMutation<{ peakId: number }, api.PeakRemoveResponse>(
+  const inner = useQueueMutation(
     peakRemoveMutator,
     { exposureId, username, clientId: CLIENT_ID },
   );
@@ -140,11 +139,11 @@ export function useRemovePeak(exposureId: number) {
 // `mutate({ peakId, excluded })` surface so existing consumers stay unchanged.
 export function useSetPeakExcluded(exposureId: number) {
   const username = useAppState((s) => s.username);
-  const exclude = useQueueMutation<{ peakId: number }, api.PeakUpdatedResponse>(
+  const exclude = useQueueMutation(
     peakExcludeMutator,
     { exposureId, username, clientId: CLIENT_ID },
   );
-  const unexclude = useQueueMutation<{ peakId: number }, api.PeakUpdatedResponse>(
+  const unexclude = useQueueMutation(
     peakUnexcludeMutator,
     { exposureId, username, clientId: CLIENT_ID },
   );
@@ -161,7 +160,7 @@ export function useSetPeakExcluded(exposureId: number) {
 
 export function useReanalyzeExposure(exposureId: number) {
   const username = useAppState((s) => s.username);
-  return useQueueMutation<Record<string, never>, { id: number; analyzed: boolean }>(
+  return useQueueMutation(
     reanalyzeExposureMutator,
     { exposureId, username, clientId: CLIENT_ID },
   );
@@ -177,7 +176,7 @@ export function useGroups(exposureId: number | undefined) {
 
 export function useAddIndexToGroup(exposureId: number, groupId: number) {
   const username = useAppState((s) => s.username);
-  const inner = useQueueMutation<{ indexId: number }, api.GroupEntry>(
+  const inner = useQueueMutation(
     addIndexToGroupMutator,
     { exposureId, groupId, username, clientId: CLIENT_ID },
   );
@@ -189,7 +188,7 @@ export function useAddIndexToGroup(exposureId: number, groupId: number) {
 
 export function useRemoveIndexFromGroup(exposureId: number, groupId: number) {
   const username = useAppState((s) => s.username);
-  const inner = useQueueMutation<{ indexId: number }, api.GroupEntry>(
+  const inner = useQueueMutation(
     removeIndexFromGroupMutator,
     { exposureId, groupId, username, clientId: CLIENT_ID },
   );
@@ -222,7 +221,7 @@ export function useSpeculativeSnap(
 
 export function useCreateSpeculative(exposureId: number) {
   const username = useAppState((s) => s.username);
-  return useQueueMutation<CreateSpeculativeInput, api.IndexEntry>(
+  return useQueueMutation(
     createSpeculativeMutator,
     { exposureId, username, clientId: CLIENT_ID },
   );
@@ -230,7 +229,7 @@ export function useCreateSpeculative(exposureId: number) {
 
 export function useDeleteIndex(exposureId: number) {
   const username = useAppState((s) => s.username);
-  const inner = useQueueMutation<{ indexId: number }, { deleted: number }>(
+  const inner = useQueueMutation(
     deleteIndexMutator,
     { exposureId, username, clientId: CLIENT_ID },
   );
@@ -242,7 +241,7 @@ export function useDeleteIndex(exposureId: number) {
 
 export function useUpdateSample(experimentId: number, sampleId: number) {
   const username = useAppState((s) => s.username);
-  return useQueueMutation<{ name?: string; notes?: string }, api.Sample>(
+  return useQueueMutation(
     updateSampleMutator,
     { experimentId, sampleId, username, clientId: CLIENT_ID },
   );
@@ -250,7 +249,7 @@ export function useUpdateSample(experimentId: number, sampleId: number) {
 
 export function useAddSampleTag(experimentId: number, sampleId: number) {
   const username = useAppState((s) => s.username);
-  return useQueueMutation<{ key: string; value: string }, api.SampleTag>(
+  return useQueueMutation(
     addSampleTagMutator,
     { experimentId, sampleId, username, clientId: CLIENT_ID },
   );
@@ -269,7 +268,7 @@ export function useSampleMessages(sampleId: number | undefined) {
 // string under a `body` key for the mutator.
 export function usePostSampleMessage(sampleId: number) {
   const username = useAppState((s) => s.username);
-  const inner = useQueueMutation<{ body: string }, api.SampleMessage>(
+  const inner = useQueueMutation(
     postSampleMessageMutator,
     { sampleId, username, clientId: CLIENT_ID },
   );
@@ -281,7 +280,7 @@ export function usePostSampleMessage(sampleId: number) {
 
 export function useRemoveSampleTag(experimentId: number, sampleId: number) {
   const username = useAppState((s) => s.username);
-  const inner = useQueueMutation<{ tagId: number }, void>(
+  const inner = useQueueMutation(
     removeSampleTagMutator,
     { experimentId, sampleId, username, clientId: CLIENT_ID },
   );
@@ -293,18 +292,12 @@ export function useRemoveSampleTag(experimentId: number, sampleId: number) {
 
 export function useSetExposureStatus(sampleId: number) {
   const username = useAppState((s) => s.username);
-  return useQueueMutation<
-    { exposureId: number; status: "accepted" | "rejected" | null },
-    { id: number; status: string | null }
-  >(setExposureStatusMutator, { sampleId, username, clientId: CLIENT_ID });
+  return useQueueMutation(setExposureStatusMutator, { sampleId, username, clientId: CLIENT_ID });
 }
 
 export function useSelectExposure(sampleId: number) {
   const username = useAppState((s) => s.username);
-  const inner = useQueueMutation<
-    { exposureId: number },
-    { id: number; selected: boolean }
-  >(selectExposureMutator, { sampleId, username, clientId: CLIENT_ID });
+  const inner = useQueueMutation(selectExposureMutator, { sampleId, username, clientId: CLIENT_ID });
   return {
     ...inner,
     mutate: (exposureId: number) => inner.mutate({ exposureId }),
@@ -313,7 +306,7 @@ export function useSelectExposure(sampleId: number) {
 
 export function useAddExposureTag(sampleId: number, exposureId: number) {
   const username = useAppState((s) => s.username);
-  return useQueueMutation<{ key: string; value: string }, api.ExposureTag>(
+  return useQueueMutation(
     addExposureTagMutator,
     { sampleId, exposureId, username, clientId: CLIENT_ID },
   );
@@ -321,7 +314,7 @@ export function useAddExposureTag(sampleId: number, exposureId: number) {
 
 export function useRemoveExposureTag(sampleId: number, exposureId: number) {
   const username = useAppState((s) => s.username);
-  const inner = useQueueMutation<{ tagId: number }, void>(
+  const inner = useQueueMutation(
     removeExposureTagMutator,
     { sampleId, exposureId, username, clientId: CLIENT_ID },
   );

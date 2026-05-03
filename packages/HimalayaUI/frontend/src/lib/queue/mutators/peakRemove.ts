@@ -9,7 +9,7 @@ import * as api from "../../../api";
 import type { Peak, PeakRemoveResponse, Exposure, AuthOpts } from "../../../api";
 import { queryKeys } from "../../../queries";
 import { authOpts } from "../../authOpts";
-import type { Mutator, OpPayload, RollbackContext } from "../types";
+import type { Mutator, RollbackContext } from "../types";
 
 export type PeakRemoveInput = { peakId: number };
 type PeakRemoveScope = {
@@ -17,17 +17,14 @@ type PeakRemoveScope = {
   username: string | undefined;
   clientId: string;
 };
-type Flat = OpPayload<PeakRemoveInput> & PeakRemoveScope & PeakRemoveInput;
-const flat = (p: OpPayload<PeakRemoveInput>): Flat => p as unknown as Flat;
 
-function buildAuthOpts(p: Flat): AuthOpts {
+function buildAuthOpts(p: { username: string | undefined; clientId: string; clientOpId: string }): AuthOpts {
   return authOpts(p.username, p.clientId, p.clientOpId);
 }
 
-export const peakRemoveMutator: Mutator<OpPayload<PeakRemoveInput>, PeakRemoveResponse> = {
+export const peakRemoveMutator: Mutator<PeakRemoveInput, PeakRemoveScope, PeakRemoveResponse> = {
   kind: "peak_removed",
-  onMutate: (raw, qc): RollbackContext => {
-    const p = flat(raw);
+  onMutate: (p, qc): RollbackContext => {
     const peaksKey = queryKeys.peaks(p.exposureId);
     const prev = qc.getQueryData<Peak[]>(peaksKey);
     if (prev) {
@@ -39,12 +36,8 @@ export const peakRemoveMutator: Mutator<OpPayload<PeakRemoveInput>, PeakRemoveRe
       },
     };
   },
-  request: (raw) => {
-    const p = flat(raw);
-    return api.removePeak(p.peakId, buildAuthOpts(p));
-  },
-  onSuccess: (raw, response, qc) => {
-    const p = flat(raw);
+  request: (p) => api.removePeak(p.peakId, buildAuthOpts(p)),
+  onSuccess: (p, response, qc) => {
     // The peak is already removed optimistically. Write the new hash onto the
     // exposure cache so the StaleIndicesBanner doesn't flash before the SSE
     // post_state arrives.

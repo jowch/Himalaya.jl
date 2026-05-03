@@ -7,7 +7,7 @@ import {
   isInfrastructureError,
   buildValidationMessage,
 } from "./errors";
-import type { Mutator, OpPayload, RollbackContext } from "./types";
+import type { FlatPayload, Mutator, RollbackContext } from "./types";
 
 export interface UseQueueMutationResult<TInput> {
   mutate: (input: TInput) => void;
@@ -37,13 +37,15 @@ const MAX_BACKOFF_MS = 30_000;
  * **Important:** the per-call clientOpId is minted INSIDE `mutate(input)`, not
  * at hook construction. Each mutate() call produces a unique idempotency key.
  */
-export function useQueueMutation<TInput, TResponse>(
-  mutator: Mutator<OpPayload<TInput>, TResponse>,
-  scope: Record<string, unknown>,
+export function useQueueMutation<TInput, TScope, TResponse>(
+  mutator: Mutator<TInput, TScope, TResponse>,
+  scope: TScope,
 ): UseQueueMutationResult<TInput> {
   const qc = useQueryClient();
 
-  const mutation = useMutation<TResponse, unknown, OpPayload<TInput>, RollbackContext>(
+  type Payload = FlatPayload<TInput, TScope>;
+
+  const mutation = useMutation<TResponse, unknown, Payload, RollbackContext>(
     {
       mutationKey: [mutator.kind],
       mutationFn: async (payload) => {
@@ -98,12 +100,17 @@ export function useQueueMutation<TInput, TResponse>(
   );
 
   const mutate = (input: TInput): void => {
+    // The single cast at the framework layer: useMutation flat-spreads
+    // {kind, clientOpId, ...scope, ...input} into the variables, but TS
+    // can't statically prove that the resulting object satisfies the
+    // intersection. Mutator callbacks receive this flat shape directly,
+    // so consumer code never has to cast.
     const payload = {
       kind: mutator.kind,
       clientOpId: newClientOpId(),
       ...scope,
       ...(input as object),
-    } as unknown as OpPayload<TInput>;
+    } as unknown as Payload;
     mutation.mutate(payload);
   };
 

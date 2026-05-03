@@ -20,7 +20,7 @@ interface PersistedOp {
  */
 export type MutatorResolver = (
   op: PersistedOpForResolution,
-) => Mutator<any, any> | undefined;
+) => Mutator<any, any, any> | undefined;
 
 /**
  * Subscribe to MutationCache events; mirror the current pending set to
@@ -86,7 +86,7 @@ export interface RehydrateResult {
  */
 export async function rehydrate(
   qc: QueryClient,
-  mutators: Map<OpKind, Mutator<any, any>> | MutatorResolver,
+  mutators: Map<OpKind, Mutator<any, any, any>> | MutatorResolver,
 ): Promise<RehydrateResult> {
   const raw = sessionStorage.getItem(STORAGE_KEY);
   if (!raw) return { dropped: 0, replayed: 0, failed: 0 };
@@ -100,7 +100,7 @@ export async function rehydrate(
     return { dropped: 0, replayed: 0, failed: 0 };
   }
 
-  const lookup = (op: PersistedOp): Mutator<any, any> | undefined =>
+  const lookup = (op: PersistedOp): Mutator<any, any, any> | undefined =>
     typeof mutators === "function"
       ? mutators({ kind: op.kind, payload: op.payload })
       : mutators.get(op.kind);

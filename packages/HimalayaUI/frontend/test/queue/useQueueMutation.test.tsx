@@ -14,8 +14,8 @@ function withQueryClient(qc: QueryClient) {
 }
 
 function makeMutator<TInput, TResponse>(
-  partial: Partial<Mutator<OpPayload<TInput>, TResponse>> = {},
-): Mutator<OpPayload<TInput>, TResponse> {
+  partial: Partial<Mutator<TInput, Record<string, unknown>, TResponse>> = {},
+): Mutator<TInput, Record<string, unknown>, TResponse> {
   return {
     kind: "peak_added",
     onMutate: vi.fn(() => ({ restore: vi.fn() })),

@@ -76,7 +76,7 @@ describe("persistence: rehydrate", () => {
     const requestSpy = vi.fn().mockResolvedValue({ ok: true });
     const onMutate = vi.fn(() => ({ restore: () => {} }));
     const onSuccess = vi.fn();
-    const mutator: Mutator<any, any> = {
+    const mutator: Mutator<any, any, any> = {
       kind: "peak_added",
       onMutate,
       request: requestSpy,
@@ -92,7 +92,7 @@ describe("persistence: rehydrate", () => {
     ]));
 
     const qc = new QueryClient();
-    await rehydrate(qc, new Map<OpKind, Mutator<any, any>>([["peak_added", mutator]]));
+    await rehydrate(qc, new Map<OpKind, Mutator<any, any, any>>([["peak_added", mutator]]));
 
     expect(onMutate).toHaveBeenCalledTimes(1);
     expect(requestSpy).toHaveBeenCalledTimes(1);
@@ -106,7 +106,7 @@ describe("persistence: rehydrate", () => {
     ]));
 
     const requestSpy = vi.fn().mockResolvedValue({ ok: true });
-    const mutator: Mutator<any, any> = {
+    const mutator: Mutator<any, any, any> = {
       kind: "peak_added",
       onMutate: () => ({ restore: () => {} }),
       request: requestSpy,
@@ -158,14 +158,14 @@ describe("persistence: rehydrate", () => {
       ]),
     );
     const requestSpy = vi.fn().mockResolvedValue({ id: 5 });
-    const sampleScopedMutator: Mutator<any, any> = {
+    const sampleScopedMutator: Mutator<any, any, any> = {
       kind: "add_tag",
       onMutate: () => ({ restore: () => {} }),
       request: requestSpy,
       onSuccess: () => {},
     };
     const exposureScopedSpy = vi.fn();
-    const exposureScopedMutator: Mutator<any, any> = {
+    const exposureScopedMutator: Mutator<any, any, any> = {
       kind: "add_tag",
       onMutate: () => ({ restore: () => {} }),
       request: exposureScopedSpy,
@@ -208,7 +208,7 @@ describe("persistence: rehydrate", () => {
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify([
       { schemaVersion: SCHEMA_VERSION, kind: "peak_added", clientOpId: "op-fail", payload: {} },
     ]));
-    const mutator: Mutator<any, any> = {
+    const mutator: Mutator<any, any, any> = {
       kind: "peak_added",
       onMutate: () => ({ restore: () => {} }),
       request: vi.fn().mockRejectedValue(new Error("boom")),

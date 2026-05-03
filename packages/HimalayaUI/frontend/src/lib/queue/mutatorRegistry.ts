@@ -48,7 +48,7 @@ export interface PersistedOpForResolution {
  */
 export function resolveMutator(
   op: PersistedOpForResolution,
-): Mutator<any, any> | undefined {
+): Mutator<any, any, any> | undefined {
   const p = op.payload as
     | { experimentId?: number; sampleId?: number; exposureId?: number }
     | undefined;

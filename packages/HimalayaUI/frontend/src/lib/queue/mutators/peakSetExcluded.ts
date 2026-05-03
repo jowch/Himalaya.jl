@@ -10,7 +10,7 @@ import * as api from "../../../api";
 import type { Peak, PeakUpdatedResponse, Exposure, AuthOpts } from "../../../api";
 import { queryKeys } from "../../../queries";
 import { authOpts } from "../../authOpts";
-import type { Mutator, OpPayload, OpKind, RollbackContext } from "../types";
+import type { Mutator, OpKind, RollbackContext } from "../types";
 
 export type PeakSetExcludedInput = { peakId: number };
 type PeakSetExcludedScope = {
@@ -18,21 +18,18 @@ type PeakSetExcludedScope = {
   username: string | undefined;
   clientId: string;
 };
-type Flat = OpPayload<PeakSetExcludedInput> & PeakSetExcludedScope & PeakSetExcludedInput;
-const flat = (p: OpPayload<PeakSetExcludedInput>): Flat => p as unknown as Flat;
 
-function buildAuthOpts(p: Flat): AuthOpts {
+function buildAuthOpts(p: { username: string | undefined; clientId: string; clientOpId: string }): AuthOpts {
   return authOpts(p.username, p.clientId, p.clientOpId);
 }
 
 function makeMutator(
   kind: OpKind,
   excluded: boolean,
-): Mutator<OpPayload<PeakSetExcludedInput>, PeakUpdatedResponse> {
+): Mutator<PeakSetExcludedInput, PeakSetExcludedScope, PeakUpdatedResponse> {
   return {
     kind,
-    onMutate: (raw, qc): RollbackContext => {
-      const p = flat(raw);
+    onMutate: (p, qc): RollbackContext => {
       const peaksKey = queryKeys.peaks(p.exposureId);
       const prev = qc.getQueryData<Peak[]>(peaksKey);
       if (prev) {
@@ -46,12 +43,8 @@ function makeMutator(
         },
       };
     },
-    request: (raw) => {
-      const p = flat(raw);
-      return api.setPeakExcluded(p.peakId, excluded, buildAuthOpts(p));
-    },
-    onSuccess: (raw, response, qc) => {
-      const p = flat(raw);
+    request: (p) => api.setPeakExcluded(p.peakId, excluded, buildAuthOpts(p)),
+    onSuccess: (p, response, qc) => {
       const peaksKey = queryKeys.peaks(p.exposureId);
       // Strip event-metadata fields off the response to get a plain Peak
       // before writing to the peaks-list cache.

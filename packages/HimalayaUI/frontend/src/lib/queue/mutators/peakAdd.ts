@@ -9,7 +9,7 @@ import * as api from "../../../api";
 import type { Peak, PeakAddResponse, Exposure, AuthOpts } from "../../../api";
 import { queryKeys } from "../../../queries";
 import { authOpts } from "../../authOpts";
-import type { Mutator, OpPayload, RollbackContext } from "../types";
+import type { Mutator, RollbackContext } from "../types";
 
 export type PeakAddInput = { q: number };
 type PeakAddScope = {
@@ -17,8 +17,6 @@ type PeakAddScope = {
   username: string | undefined;
   clientId: string;
 };
-type Flat = OpPayload<PeakAddInput> & PeakAddScope & PeakAddInput;
-const flat = (p: OpPayload<PeakAddInput>): Flat => p as unknown as Flat;
 
 let optimisticCounter = 0;
 function nextOptimisticId(): number {
@@ -26,14 +24,13 @@ function nextOptimisticId(): number {
   return -(Date.now() * 1000 + optimisticCounter);
 }
 
-function buildAuthOpts(p: Flat): AuthOpts {
+function buildAuthOpts(p: { username: string | undefined; clientId: string; clientOpId: string }): AuthOpts {
   return authOpts(p.username, p.clientId, p.clientOpId);
 }
 
-export const peakAddMutator: Mutator<OpPayload<PeakAddInput>, PeakAddResponse> = {
+export const peakAddMutator: Mutator<PeakAddInput, PeakAddScope, PeakAddResponse> = {
   kind: "peak_added",
-  onMutate: (raw, qc): RollbackContext => {
-    const p = flat(raw);
+  onMutate: (p, qc): RollbackContext => {
     const peaksKey = queryKeys.peaks(p.exposureId);
     const prev = qc.getQueryData<Peak[]>(peaksKey);
     const placeholder: Peak = {
@@ -54,12 +51,8 @@ export const peakAddMutator: Mutator<OpPayload<PeakAddInput>, PeakAddResponse> =
       },
     };
   },
-  request: (raw) => {
-    const p = flat(raw);
-    return api.addPeak(p.exposureId, p.q, buildAuthOpts(p));
-  },
-  onSuccess: (raw, response, qc) => {
-    const p = flat(raw);
+  request: (p) => api.addPeak(p.exposureId, p.q, buildAuthOpts(p)),
+  onSuccess: (p, response, qc) => {
     const peaksKey = queryKeys.peaks(p.exposureId);
     qc.setQueryData<Peak[]>(peaksKey, (old) => {
       const list = old ?? [];

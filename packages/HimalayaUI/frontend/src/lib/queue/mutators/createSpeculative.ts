@@ -17,7 +17,7 @@ import * as api from "../../../api";
 import type { IndexEntry, GroupEntry, AuthOpts } from "../../../api";
 import { queryKeys } from "../../../queries";
 import { authOpts } from "../../authOpts";
-import type { Mutator, OpPayload, RollbackContext } from "../types";
+import type { Mutator, RollbackContext } from "../types";
 
 export type CreateSpeculativeInput = {
   phase: string;
@@ -33,24 +33,17 @@ type CreateSpeculativeScope = {
   clientId: string;
 };
 
-type Flat = OpPayload<CreateSpeculativeInput>
-  & CreateSpeculativeScope
-  & CreateSpeculativeInput;
-
-const flat = (p: OpPayload<CreateSpeculativeInput>): Flat =>
-  p as unknown as Flat;
-
-function buildAuth(p: Flat): AuthOpts {
+function buildAuth(p: { username: string | undefined; clientId: string; clientOpId: string }): AuthOpts {
   return authOpts(p.username, p.clientId, p.clientOpId);
 }
 
 export const createSpeculativeMutator: Mutator<
-  OpPayload<CreateSpeculativeInput>,
+  CreateSpeculativeInput,
+  CreateSpeculativeScope,
   IndexEntry
 > = {
   kind: "speculative_created",
-  onMutate: (raw, qc): RollbackContext => {
-    const p = flat(raw);
+  onMutate: (p, qc): RollbackContext => {
     const indicesKey = queryKeys.indices(p.exposureId);
     const groupsKey  = queryKeys.groups(p.exposureId);
     const prevIndices = qc.getQueryData<IndexEntry[]>(indicesKey);
@@ -62,18 +55,14 @@ export const createSpeculativeMutator: Mutator<
       },
     };
   },
-  request: (raw) => {
-    const p = flat(raw);
-    return api.createSpeculative(p.exposureId, {
-      phase:          p.phase,
-      anchor_peak_id: p.anchor_peak_id,
-      anchor_ratio:   p.anchor_ratio,
-      additional:     p.additional,
-      ...(p.active !== undefined ? { active: p.active } : {}),
-    }, buildAuth(p));
-  },
-  onSuccess: (raw, response, qc) => {
-    const p = flat(raw);
+  request: (p) => api.createSpeculative(p.exposureId, {
+    phase:          p.phase,
+    anchor_peak_id: p.anchor_peak_id,
+    anchor_ratio:   p.anchor_ratio,
+    additional:     p.additional,
+    ...(p.active !== undefined ? { active: p.active } : {}),
+  }, buildAuth(p)),
+  onSuccess: (p, response, qc) => {
     const indicesKey = queryKeys.indices(p.exposureId);
     qc.setQueryData<IndexEntry[]>(indicesKey, (old) => {
       const list = old ?? [];

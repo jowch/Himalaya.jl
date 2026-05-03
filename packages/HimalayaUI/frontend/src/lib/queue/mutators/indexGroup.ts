@@ -17,7 +17,7 @@ import * as api from "../../../api";
 import type { GroupEntry, IndexEntry, AuthOpts } from "../../../api";
 import { queryKeys } from "../../../queries";
 import { authOpts } from "../../authOpts";
-import type { Mutator, OpPayload, RollbackContext } from "../types";
+import type { Mutator, RollbackContext } from "../types";
 
 // ---------------------------------------------------------------------------
 // Shared scope + auth
@@ -39,14 +39,6 @@ export type AddIndexToGroupInput = { indexId: number };
 export type RemoveIndexFromGroupInput = { indexId: number };
 export type DeleteIndexInput = { indexId: number };
 
-type AddFlat = OpPayload<AddIndexToGroupInput> & GroupScope & AddIndexToGroupInput;
-type RemoveFlat = OpPayload<RemoveIndexFromGroupInput> & GroupScope & RemoveIndexFromGroupInput;
-type DeleteFlat = OpPayload<DeleteIndexInput> & ExposureOnlyScope & DeleteIndexInput;
-
-const flatAdd = (p: OpPayload<AddIndexToGroupInput>): AddFlat => p as unknown as AddFlat;
-const flatRemove = (p: OpPayload<RemoveIndexFromGroupInput>): RemoveFlat => p as unknown as RemoveFlat;
-const flatDelete = (p: OpPayload<DeleteIndexInput>): DeleteFlat => p as unknown as DeleteFlat;
-
 function buildAuth(p: { username: string | undefined; clientId: string; clientOpId: string }): AuthOpts {
   return authOpts(p.username, p.clientId, p.clientOpId);
 }
@@ -55,10 +47,9 @@ function buildAuth(p: { username: string | undefined; clientId: string; clientOp
 // addIndexToGroupMutator
 // ---------------------------------------------------------------------------
 
-export const addIndexToGroupMutator: Mutator<OpPayload<AddIndexToGroupInput>, GroupEntry> = {
+export const addIndexToGroupMutator: Mutator<AddIndexToGroupInput, GroupScope, GroupEntry> = {
   kind: "index_confirmed",
-  onMutate: (raw, qc): RollbackContext => {
-    const p = flatAdd(raw);
+  onMutate: (p, qc): RollbackContext => {
     const groupsKey = queryKeys.groups(p.exposureId);
     const prev = qc.getQueryData<GroupEntry[]>(groupsKey);
     if (prev) {
@@ -74,12 +65,8 @@ export const addIndexToGroupMutator: Mutator<OpPayload<AddIndexToGroupInput>, Gr
       },
     };
   },
-  request: (raw) => {
-    const p = flatAdd(raw);
-    return api.addIndexToGroup(p.groupId, p.indexId, buildAuth(p));
-  },
-  onSuccess: (raw, response, qc) => {
-    const p = flatAdd(raw);
+  request: (p) => api.addIndexToGroup(p.groupId, p.indexId, buildAuth(p)),
+  onSuccess: (p, response, qc) => {
     const groupsKey = queryKeys.groups(p.exposureId);
     qc.setQueryData<GroupEntry[]>(groupsKey, (old) =>
       (old ?? []).map((g) => (g.id === response.id ? response : g)));
@@ -91,10 +78,9 @@ export const addIndexToGroupMutator: Mutator<OpPayload<AddIndexToGroupInput>, Gr
 // removeIndexFromGroupMutator
 // ---------------------------------------------------------------------------
 
-export const removeIndexFromGroupMutator: Mutator<OpPayload<RemoveIndexFromGroupInput>, GroupEntry> = {
+export const removeIndexFromGroupMutator: Mutator<RemoveIndexFromGroupInput, GroupScope, GroupEntry> = {
   kind: "index_unconfirmed",
-  onMutate: (raw, qc): RollbackContext => {
-    const p = flatRemove(raw);
+  onMutate: (p, qc): RollbackContext => {
     const groupsKey = queryKeys.groups(p.exposureId);
     const prev = qc.getQueryData<GroupEntry[]>(groupsKey);
     if (prev) {
@@ -110,12 +96,8 @@ export const removeIndexFromGroupMutator: Mutator<OpPayload<RemoveIndexFromGroup
       },
     };
   },
-  request: (raw) => {
-    const p = flatRemove(raw);
-    return api.removeIndexFromGroup(p.groupId, p.indexId, buildAuth(p));
-  },
-  onSuccess: (raw, response, qc) => {
-    const p = flatRemove(raw);
+  request: (p) => api.removeIndexFromGroup(p.groupId, p.indexId, buildAuth(p)),
+  onSuccess: (p, response, qc) => {
     const groupsKey = queryKeys.groups(p.exposureId);
     qc.setQueryData<GroupEntry[]>(groupsKey, (old) =>
       (old ?? []).map((g) => (g.id === response.id ? response : g)));
@@ -134,10 +116,9 @@ export const removeIndexFromGroupMutator: Mutator<OpPayload<RemoveIndexFromGroup
 // Rollback restores both. onSuccess is a no-op — optimistic state is already
 // correct; SSE post_state may follow if the delete cascades.
 
-export const deleteIndexMutator: Mutator<OpPayload<DeleteIndexInput>, { deleted: number }> = {
+export const deleteIndexMutator: Mutator<DeleteIndexInput, ExposureOnlyScope, { deleted: number }> = {
   kind: "delete_index",
-  onMutate: (raw, qc): RollbackContext => {
-    const p = flatDelete(raw);
+  onMutate: (p, qc): RollbackContext => {
     const indicesKey = queryKeys.indices(p.exposureId);
     const groupsKey = queryKeys.groups(p.exposureId);
     const prevIndices = qc.getQueryData<IndexEntry[]>(indicesKey);
@@ -159,10 +140,7 @@ export const deleteIndexMutator: Mutator<OpPayload<DeleteIndexInput>, { deleted:
       },
     };
   },
-  request: (raw) => {
-    const p = flatDelete(raw);
-    return api.deleteIndex(p.indexId, buildAuth(p));
-  },
+  request: (p) => api.deleteIndex(p.indexId, buildAuth(p)),
   onSuccess: () => {
     // No-op: optimistic effect already reflects the post-delete state. The
     // backend emits `speculative_deleted` over SSE; applyRemoteToCache

@@ -16,27 +16,12 @@ import type {
 } from "../../../api";
 import { queryKeys } from "../../../queries";
 import { authOpts } from "../../authOpts";
-import type { Mutator, OpPayload, RollbackContext } from "../types";
-
-// ---------------------------------------------------------------------------
-// `useQueueMutation` flat-spreads the scope object and the per-call input into
-// the payload it constructs (`{ kind, clientOpId, ...scope, ...input }`),
-// even though its type signature describes the payload as `OpPayload<TInput>`.
-// We declare each mutator's payload as `OpPayload<TInput>` to satisfy the
-// framework's constraint, then narrow to a per-mutator `Flat<…>` type via a
-// single cast at the top of each callback to access the merged scope fields.
-// ---------------------------------------------------------------------------
+import type { Mutator, RollbackContext } from "../types";
 
 interface BaseScope {
   username: string | undefined;
   clientId: string;
 }
-
-type Flat<TInput, TScope extends object> = OpPayload<TInput> & TScope & TInput & BaseScope;
-
-const flat = <TInput, TScope extends object>(
-  p: OpPayload<TInput>,
-): Flat<TInput, TScope> => p as unknown as Flat<TInput, TScope>;
 
 function buildAuthOpts(p: {
   username?: string | undefined;
@@ -58,12 +43,11 @@ function nextOptimisticId(): number {
 // ---------------------------------------------------------------------------
 
 export type UpdateSampleInput = { name?: string; notes?: string };
-type UpdateSampleScope = { experimentId: number; sampleId: number };
+type UpdateSampleScope = BaseScope & { experimentId: number; sampleId: number };
 
-export const updateSampleMutator: Mutator<OpPayload<UpdateSampleInput>, Sample> = {
+export const updateSampleMutator: Mutator<UpdateSampleInput, UpdateSampleScope, Sample> = {
   kind: "update_sample",
-  onMutate: (raw, qc): RollbackContext => {
-    const p = flat<UpdateSampleInput, UpdateSampleScope>(raw);
+  onMutate: (p, qc): RollbackContext => {
     const samplesKey = queryKeys.samples(p.experimentId);
     const sampleKey = queryKeys.sample(p.sampleId);
     const prevList = qc.getQueryData<Sample[]>(samplesKey);
@@ -85,12 +69,8 @@ export const updateSampleMutator: Mutator<OpPayload<UpdateSampleInput>, Sample> 
       },
     };
   },
-  request: (raw) => {
-    const p = flat<UpdateSampleInput, UpdateSampleScope>(raw);
-    return api.updateSample(p.sampleId, patchOf(p), buildAuthOpts(p));
-  },
-  onSuccess: (raw, response, qc) => {
-    const p = flat<UpdateSampleInput, UpdateSampleScope>(raw);
+  request: (p) => api.updateSample(p.sampleId, patchOf(p), buildAuthOpts(p)),
+  onSuccess: (p, response, qc) => {
     const samplesKey = queryKeys.samples(p.experimentId);
     const sampleKey = queryKeys.sample(p.sampleId);
     const list = qc.getQueryData<Sample[]>(samplesKey);
@@ -114,12 +94,11 @@ function patchOf(p: { name?: string; notes?: string }): { name?: string; notes?:
 // ---------------------------------------------------------------------------
 
 export type AddSampleTagInput = { key: string; value: string };
-type AddSampleTagScope = { experimentId: number; sampleId: number };
+type AddSampleTagScope = BaseScope & { experimentId: number; sampleId: number };
 
-export const addSampleTagMutator: Mutator<OpPayload<AddSampleTagInput>, SampleTag> = {
+export const addSampleTagMutator: Mutator<AddSampleTagInput, AddSampleTagScope, SampleTag> = {
   kind: "add_tag",
-  onMutate: (raw, qc): RollbackContext => {
-    const p = flat<AddSampleTagInput, AddSampleTagScope>(raw);
+  onMutate: (p, qc): RollbackContext => {
     const samplesKey = queryKeys.samples(p.experimentId);
     const prev = qc.getQueryData<Sample[]>(samplesKey);
     const placeholderId = nextOptimisticId();
@@ -138,12 +117,8 @@ export const addSampleTagMutator: Mutator<OpPayload<AddSampleTagInput>, SampleTa
       },
     };
   },
-  request: (raw) => {
-    const p = flat<AddSampleTagInput, AddSampleTagScope>(raw);
-    return api.addSampleTag(p.sampleId, p.key, p.value, buildAuthOpts(p));
-  },
-  onSuccess: (raw, response, qc) => {
-    const p = flat<AddSampleTagInput, AddSampleTagScope>(raw);
+  request: (p) => api.addSampleTag(p.sampleId, p.key, p.value, buildAuthOpts(p)),
+  onSuccess: (p, response, qc) => {
     const samplesKey = queryKeys.samples(p.experimentId);
     qc.setQueryData<Sample[]>(samplesKey, (list) => {
       if (!list) return list;
@@ -164,12 +139,11 @@ export const addSampleTagMutator: Mutator<OpPayload<AddSampleTagInput>, SampleTa
 // ---------------------------------------------------------------------------
 
 export type RemoveSampleTagInput = { tagId: number };
-type RemoveSampleTagScope = { experimentId: number; sampleId: number };
+type RemoveSampleTagScope = BaseScope & { experimentId: number; sampleId: number };
 
-export const removeSampleTagMutator: Mutator<OpPayload<RemoveSampleTagInput>, void> = {
+export const removeSampleTagMutator: Mutator<RemoveSampleTagInput, RemoveSampleTagScope, void> = {
   kind: "remove_tag",
-  onMutate: (raw, qc): RollbackContext => {
-    const p = flat<RemoveSampleTagInput, RemoveSampleTagScope>(raw);
+  onMutate: (p, qc): RollbackContext => {
     const samplesKey = queryKeys.samples(p.experimentId);
     const prev = qc.getQueryData<Sample[]>(samplesKey);
     if (prev) {
@@ -185,10 +159,7 @@ export const removeSampleTagMutator: Mutator<OpPayload<RemoveSampleTagInput>, vo
       },
     };
   },
-  request: (raw) => {
-    const p = flat<RemoveSampleTagInput, RemoveSampleTagScope>(raw);
-    return api.removeSampleTag(p.sampleId, p.tagId, buildAuthOpts(p));
-  },
+  request: (p) => api.removeSampleTag(p.sampleId, p.tagId, buildAuthOpts(p)),
   onSuccess: () => {},
 };
 
@@ -197,12 +168,11 @@ export const removeSampleTagMutator: Mutator<OpPayload<RemoveSampleTagInput>, vo
 // ---------------------------------------------------------------------------
 
 export type AddExposureTagInput = { key: string; value: string };
-type AddExposureTagScope = { sampleId: number; exposureId: number };
+type AddExposureTagScope = BaseScope & { sampleId: number; exposureId: number };
 
-export const addExposureTagMutator: Mutator<OpPayload<AddExposureTagInput>, ExposureTag> = {
+export const addExposureTagMutator: Mutator<AddExposureTagInput, AddExposureTagScope, ExposureTag> = {
   kind: "add_tag",
-  onMutate: (raw, qc): RollbackContext => {
-    const p = flat<AddExposureTagInput, AddExposureTagScope>(raw);
+  onMutate: (p, qc): RollbackContext => {
     const placeholderId = nextOptimisticId();
     return {
       restore: rewriteExposureLists(qc, p.sampleId, (list) =>
@@ -216,12 +186,8 @@ export const addExposureTagMutator: Mutator<OpPayload<AddExposureTagInput>, Expo
       ),
     };
   },
-  request: (raw) => {
-    const p = flat<AddExposureTagInput, AddExposureTagScope>(raw);
-    return api.addExposureTag(p.exposureId, p.key, p.value, buildAuthOpts(p));
-  },
-  onSuccess: (raw, response, qc) => {
-    const p = flat<AddExposureTagInput, AddExposureTagScope>(raw);
+  request: (p) => api.addExposureTag(p.exposureId, p.key, p.value, buildAuthOpts(p)),
+  onSuccess: (p, response, qc) => {
     rewriteExposureLists(qc, p.sampleId, (list) =>
       list.map((e) => {
         if (e.id !== p.exposureId) return e;
@@ -240,12 +206,11 @@ export const addExposureTagMutator: Mutator<OpPayload<AddExposureTagInput>, Expo
 // ---------------------------------------------------------------------------
 
 export type RemoveExposureTagInput = { tagId: number };
-type RemoveExposureTagScope = { sampleId: number; exposureId: number };
+type RemoveExposureTagScope = BaseScope & { sampleId: number; exposureId: number };
 
-export const removeExposureTagMutator: Mutator<OpPayload<RemoveExposureTagInput>, void> = {
+export const removeExposureTagMutator: Mutator<RemoveExposureTagInput, RemoveExposureTagScope, void> = {
   kind: "remove_tag",
-  onMutate: (raw, qc): RollbackContext => {
-    const p = flat<RemoveExposureTagInput, RemoveExposureTagScope>(raw);
+  onMutate: (p, qc): RollbackContext => {
     return {
       restore: rewriteExposureLists(qc, p.sampleId, (list) =>
         list.map((e) =>
@@ -256,10 +221,7 @@ export const removeExposureTagMutator: Mutator<OpPayload<RemoveExposureTagInput>
       ),
     };
   },
-  request: (raw) => {
-    const p = flat<RemoveExposureTagInput, RemoveExposureTagScope>(raw);
-    return api.removeExposureTag(p.exposureId, p.tagId, buildAuthOpts(p));
-  },
+  request: (p) => api.removeExposureTag(p.exposureId, p.tagId, buildAuthOpts(p)),
   onSuccess: () => {},
 };
 
@@ -268,12 +230,11 @@ export const removeExposureTagMutator: Mutator<OpPayload<RemoveExposureTagInput>
 // ---------------------------------------------------------------------------
 
 export type PostSampleMessageInput = { body: string };
-type PostSampleMessageScope = { sampleId: number };
+type PostSampleMessageScope = BaseScope & { sampleId: number };
 
-export const postSampleMessageMutator: Mutator<OpPayload<PostSampleMessageInput>, SampleMessage> = {
+export const postSampleMessageMutator: Mutator<PostSampleMessageInput, PostSampleMessageScope, SampleMessage> = {
   kind: "post_message",
-  onMutate: (raw, qc): RollbackContext => {
-    const p = flat<PostSampleMessageInput, PostSampleMessageScope>(raw);
+  onMutate: (p, qc): RollbackContext => {
     const key = queryKeys.messages(p.sampleId);
     const prev = qc.getQueryData<SampleMessage[]>(key);
     const placeholder: SampleMessage = {
@@ -292,12 +253,8 @@ export const postSampleMessageMutator: Mutator<OpPayload<PostSampleMessageInput>
       },
     };
   },
-  request: (raw) => {
-    const p = flat<PostSampleMessageInput, PostSampleMessageScope>(raw);
-    return api.postSampleMessage(p.sampleId, p.body, buildAuthOpts(p));
-  },
-  onSuccess: (raw, response, qc) => {
-    const p = flat<PostSampleMessageInput, PostSampleMessageScope>(raw);
+  request: (p) => api.postSampleMessage(p.sampleId, p.body, buildAuthOpts(p)),
+  onSuccess: (p, response, qc) => {
     const key = queryKeys.messages(p.sampleId);
     const list = qc.getQueryData<SampleMessage[]>(key) ?? [];
     // Replace the most recent negative-id placeholder for this body, and
@@ -329,14 +286,13 @@ export type SetExposureStatusInput = {
   exposureId: number;
   status: "accepted" | "rejected" | null;
 };
-type SetExposureStatusScope = { sampleId: number };
+type SetExposureStatusScope = BaseScope & { sampleId: number };
 
 export const setExposureStatusMutator: Mutator<
-  OpPayload<SetExposureStatusInput>, { id: number; status: string | null }
+  SetExposureStatusInput, SetExposureStatusScope, { id: number; status: string | null }
 > = {
   kind: "set_exposure_status",
-  onMutate: (raw, qc): RollbackContext => {
-    const p = flat<SetExposureStatusInput, SetExposureStatusScope>(raw);
+  onMutate: (p, qc): RollbackContext => {
     const restoreExposures = rewriteExposureLists(qc, p.sampleId, (list) =>
       list.map((e) =>
         e.id === p.exposureId ? { ...e, status: p.status } : e,
@@ -354,10 +310,7 @@ export const setExposureStatusMutator: Mutator<
       },
     };
   },
-  request: (raw) => {
-    const p = flat<SetExposureStatusInput, SetExposureStatusScope>(raw);
-    return api.setExposureStatus(p.exposureId, p.status, buildAuthOpts(p));
-  },
+  request: (p) => api.setExposureStatus(p.exposureId, p.status, buildAuthOpts(p)),
   onSuccess: () => {},
 };
 
@@ -366,24 +319,20 @@ export const setExposureStatusMutator: Mutator<
 // ---------------------------------------------------------------------------
 
 export type SelectExposureInput = { exposureId: number };
-type SelectExposureScope = { sampleId: number };
+type SelectExposureScope = BaseScope & { sampleId: number };
 
 export const selectExposureMutator: Mutator<
-  OpPayload<SelectExposureInput>, { id: number; selected: boolean }
+  SelectExposureInput, SelectExposureScope, { id: number; selected: boolean }
 > = {
   kind: "select_exposure",
-  onMutate: (raw, qc): RollbackContext => {
-    const p = flat<SelectExposureInput, SelectExposureScope>(raw);
+  onMutate: (p, qc): RollbackContext => {
     return {
       restore: rewriteExposureLists(qc, p.sampleId, (list) =>
         list.map((e) => ({ ...e, selected: e.id === p.exposureId })),
       ),
     };
   },
-  request: (raw) => {
-    const p = flat<SelectExposureInput, SelectExposureScope>(raw);
-    return api.selectExposure(p.exposureId, buildAuthOpts(p));
-  },
+  request: (p) => api.selectExposure(p.exposureId, buildAuthOpts(p)),
   onSuccess: () => {},
 };
 
