@@ -6,7 +6,9 @@ import { OnboardingFlow } from "./components/OnboardingFlow";
 import { ToastContainer } from "./components/ui/Toast";
 import { InfrastructureBanner } from "./components/InfrastructureBanner";
 import { handleRemoteEvent } from "./lib/queue/replayCoordinator";
-import { attachPersistence } from "./lib/queue/persistence";
+import { attachPersistence, rehydrate } from "./lib/queue/persistence";
+import { resolveMutator } from "./lib/queue/mutatorRegistry";
+import { showToast } from "./lib/toast";
 import type { SseEvent } from "./lib/queue/types";
 
 /**
@@ -30,12 +32,36 @@ export function App(): JSX.Element {
     return () => es.close();
   }, [qc, mc]); // both stable; effective deps = [] for EventSource lifetime
 
-  // Mirror pending mutation queue to sessionStorage so a tab reload could
-  // rehydrate it (rehydrate wiring deferred — see M3 follow-up). attach is
-  // safe to mount unconditionally; subscription is cheap.
+  // Mirror pending mutation queue to sessionStorage so a tab reload can
+  // rehydrate it. attach is safe to mount unconditionally; subscription is
+  // cheap.
   useEffect(() => {
     return attachPersistence(mc);
   }, [mc]);
+
+  // On mount, replay any persisted ops left over from a previous tab
+  // session through their matching mutators. Server-side request-level
+  // idempotency (X-Client-Op-Id) makes this safe even if the original op
+  // already landed. Surfacing dropped/failed counts as toasts so the user
+  // knows when edits couldn't be restored.
+  useEffect(() => {
+    void rehydrate(qc, resolveMutator).then(({ dropped, failed }) => {
+      if (dropped > 0) {
+        showToast(
+          `${dropped} edits from a previous session couldn't be restored`,
+          "warning",
+        );
+      }
+      if (failed > 0) {
+        showToast(
+          `${failed} edits failed to replay; please retry`,
+          "error",
+        );
+      }
+    });
+    // Intentionally empty deps — rehydrate runs once at mount; qc is stable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <>

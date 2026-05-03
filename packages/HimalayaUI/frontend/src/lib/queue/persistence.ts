@@ -1,5 +1,6 @@
 import type { MutationCache, QueryClient } from "@tanstack/react-query";
 import type { OpKind, Mutator } from "./types";
+import type { PersistedOpForResolution } from "./mutatorRegistry";
 
 export const STORAGE_KEY = "himalaya-ui:queue";
 export const SCHEMA_VERSION = 1;
@@ -10,6 +11,16 @@ interface PersistedOp {
   clientOpId: string;
   payload: unknown;
 }
+
+/**
+ * A function that, given a persisted op, returns the Mutator that should
+ * replay it (or undefined if the op should be dropped). Used for kinds whose
+ * dispatch depends on the payload shape (e.g. `add_tag` is sample-scoped or
+ * exposure-scoped depending on whether the payload carries `experimentId`).
+ */
+export type MutatorResolver = (
+  op: PersistedOpForResolution,
+) => Mutator<any, any> | undefined;
 
 /**
  * Subscribe to MutationCache events; mirror the current pending set to
@@ -70,7 +81,7 @@ export interface RehydrateResult {
  */
 export async function rehydrate(
   qc: QueryClient,
-  mutators: Map<OpKind, Mutator<any, any>>,
+  mutators: Map<OpKind, Mutator<any, any>> | MutatorResolver,
 ): Promise<RehydrateResult> {
   const raw = sessionStorage.getItem(STORAGE_KEY);
   if (!raw) return { dropped: 0, replayed: 0, failed: 0 };
@@ -84,6 +95,11 @@ export async function rehydrate(
     return { dropped: 0, replayed: 0, failed: 0 };
   }
 
+  const lookup = (op: PersistedOp): Mutator<any, any> | undefined =>
+    typeof mutators === "function"
+      ? mutators({ kind: op.kind, payload: op.payload })
+      : mutators.get(op.kind);
+
   let dropped = 0;
   let replayed = 0;
   let failed = 0;
@@ -94,7 +110,7 @@ export async function rehydrate(
       dropped++;
       continue;
     }
-    const mutator = mutators.get(op.kind);
+    const mutator = lookup(op);
     if (!mutator) {
       dropped++;
       continue;

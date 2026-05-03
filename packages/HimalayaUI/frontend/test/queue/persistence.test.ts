@@ -1,6 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
-import { attachPersistence, rehydrate, STORAGE_KEY, SCHEMA_VERSION } from "../../src/lib/queue/persistence";
+import {
+  attachPersistence,
+  rehydrate,
+  STORAGE_KEY,
+  SCHEMA_VERSION,
+  type MutatorResolver,
+} from "../../src/lib/queue/persistence";
 import type { Mutator, OpKind } from "../../src/lib/queue/types";
 import { makeFakeMutation } from "./helpers";
 
@@ -137,6 +143,65 @@ describe("persistence: rehydrate", () => {
     const result = await rehydrate(qc, new Map());
     expect(sessionStorage.getItem(STORAGE_KEY)).toBeNull();
     expect(result).toEqual({ dropped: 0, replayed: 0, failed: 0 });
+  });
+
+  it("rehydrate accepts a resolver function for dual-scope kinds", async () => {
+    sessionStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify([
+        {
+          schemaVersion: SCHEMA_VERSION,
+          kind: "add_tag",
+          clientOpId: "op-resolver",
+          payload: { experimentId: 1, sampleId: 10, key: "k", value: "v" },
+        },
+      ]),
+    );
+    const requestSpy = vi.fn().mockResolvedValue({ id: 5 });
+    const sampleScopedMutator: Mutator<any, any> = {
+      kind: "add_tag",
+      onMutate: () => ({ restore: () => {} }),
+      request: requestSpy,
+      onSuccess: () => {},
+    };
+    const exposureScopedSpy = vi.fn();
+    const exposureScopedMutator: Mutator<any, any> = {
+      kind: "add_tag",
+      onMutate: () => ({ restore: () => {} }),
+      request: exposureScopedSpy,
+      onSuccess: () => {},
+    };
+    const resolver: MutatorResolver = (op) => {
+      if (op.kind !== "add_tag") return undefined;
+      const p = op.payload as { experimentId?: number };
+      return p?.experimentId !== undefined
+        ? sampleScopedMutator
+        : exposureScopedMutator;
+    };
+    const qc = new QueryClient();
+    const result = await rehydrate(qc, resolver);
+    expect(requestSpy).toHaveBeenCalledTimes(1);
+    expect(exposureScopedSpy).not.toHaveBeenCalled();
+    expect(result.replayed).toBe(1);
+    expect(result.dropped).toBe(0);
+  });
+
+  it("rehydrate resolver receiving undefined returns dropped", async () => {
+    sessionStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify([
+        {
+          schemaVersion: SCHEMA_VERSION,
+          kind: "peak_added",
+          clientOpId: "op-no-mut",
+          payload: {},
+        },
+      ]),
+    );
+    const qc = new QueryClient();
+    const result = await rehydrate(qc, () => undefined);
+    expect(result.dropped).toBe(1);
+    expect(result.replayed).toBe(0);
   });
 
   it("counts failed replays separately from successful ones", async () => {
