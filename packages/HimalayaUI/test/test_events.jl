@@ -291,3 +291,64 @@ end
         @test String(rows2[1].entity_type) == "exposure"
     end
 end
+
+@testset "apply_event! with defer_broadcast=true does NOT fire broadcast" begin
+    sub = (id = "t-defer", pending = Channel{String}(8))
+    lock(HimalayaUI.SSE_LOCK) do
+        push!(HimalayaUI.SSE_SUBSCRIBERS[], sub)
+    end
+    try
+        mktempdir() do tmp
+            db = HimalayaUI.open_db(joinpath(tmp, "test.db"))
+            HimalayaUI.bind_db!(db)
+            exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+            s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
+            e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="e1")
+            req = HTTP.Request("POST", "/", Pair{String,String}[], UInt8[])
+            result = HimalayaUI.apply_event!(db, req;
+                kind="noop_test", entity_type="exposure", entity_id=e_id,
+                payload=Dict(:q => 1.0),
+                defer_broadcast=true)
+            @test Base.n_avail(sub.pending) == 0
+            @test result.event_id > 0
+            rows = Tables.rowtable(DBInterface.execute(db,
+                "SELECT id FROM user_actions WHERE id = ?", [result.event_id]))
+            @test length(rows) == 1
+            SQLite.close(db)
+        end
+    finally
+        lock(HimalayaUI.SSE_LOCK) do
+            filter!(x -> x !== sub, HimalayaUI.SSE_SUBSCRIBERS[])
+        end
+        close(sub.pending)
+        HimalayaUI.SSE_SUBSCRIBERS[] = []
+    end
+end
+
+@testset "apply_event! defer_broadcast=false (default) preserves existing behavior" begin
+    sub = (id = "t-default", pending = Channel{String}(8))
+    lock(HimalayaUI.SSE_LOCK) do
+        push!(HimalayaUI.SSE_SUBSCRIBERS[], sub)
+    end
+    try
+        mktempdir() do tmp
+            db = HimalayaUI.open_db(joinpath(tmp, "test.db"))
+            HimalayaUI.bind_db!(db)
+            exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+            s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
+            e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="e1")
+            req = HTTP.Request("POST", "/", Pair{String,String}[], UInt8[])
+            HimalayaUI.apply_event!(db, req;
+                kind="noop_test", entity_type="exposure", entity_id=e_id,
+                payload=Dict(:q => 1.0))
+            @test Base.n_avail(sub.pending) == 1
+            SQLite.close(db)
+        end
+    finally
+        lock(HimalayaUI.SSE_LOCK) do
+            filter!(x -> x !== sub, HimalayaUI.SSE_SUBSCRIBERS[])
+        end
+        close(sub.pending)
+        HimalayaUI.SSE_SUBSCRIBERS[] = []
+    end
+end

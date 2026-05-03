@@ -1,6 +1,7 @@
 using Himalaya
 using SparseArrays
 using Tables
+using JSON3
 
 """
     auto_group(indices) -> Vector{Index}
@@ -513,6 +514,32 @@ function get_peaks_for_exposure(db::SQLite.DB, exposure_id::Int)
     """, [exposure_id, exposure_id]))
 end
 
+"""
+    _serialized_indices_bytes(db, exposure_id) -> Int
+
+Compute the serialized size (in bytes) of the indices for an exposure. Used
+by the slow-path `analyze_run` event to emit `post_state_size_bytes` for
+observability — M2 will use this same shape as the `post_state` kwarg passed
+to `apply_event!` from route handlers.
+"""
+function _serialized_indices_bytes(db::SQLite.DB, exposure_id::Int)::Int
+    rows = Tables.rowtable(DBInterface.execute(db,
+        "SELECT id, phase, basis, score, r_squared, lattice_d, status, kind, inputs_hash FROM indices WHERE exposure_id = ?",
+        [exposure_id]))
+    arr = [Dict(
+        :id          => Int(r.id),
+        :phase       => ismissing(r.phase) ? nothing : String(r.phase),
+        :basis       => ismissing(r.basis) ? nothing : Float64(r.basis),
+        :score       => ismissing(r.score) ? nothing : Float64(r.score),
+        :r_squared   => ismissing(r.r_squared) ? nothing : Float64(r.r_squared),
+        :lattice_d   => ismissing(r.lattice_d) ? nothing : Float64(r.lattice_d),
+        :status      => ismissing(r.status) ? nothing : String(r.status),
+        :kind        => ismissing(r.kind) ? nothing : String(r.kind),
+        :inputs_hash => ismissing(r.inputs_hash) ? nothing : String(r.inputs_hash),
+    ) for r in rows]
+    length(JSON3.write(arr))
+end
+
 function get_indices_for_exposure(db::SQLite.DB, exposure_id::Int)
     Tables.rowtable(DBInterface.execute(db,
         "SELECT * FROM indices WHERE exposure_id = ? ORDER BY score DESC", [exposure_id]))
@@ -747,18 +774,20 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
     end
 
     duration_ms = round(Int, (time() - t0) * 1000)
+    post_state_size_bytes = _serialized_indices_bytes(db, exposure_id)
     apply_event!(db, _system_request();
         kind        = "analyze_run",
         entity_type = "exposure",
         entity_id   = exposure_id,
         payload     = Dict(
-            :trace_hash_before    => stored_trace_hash,
-            :trace_hash_after     => new_trace_hash,
-            :inputs_hash_before   => stored_inputs_hash,
-            :inputs_hash_after    => new_inputs_hash,
-            :findpeaks_skipped    => findpeaks_skipped,
-            :indexpeaks_skipped   => indexpeaks_skipped,
-            :duration_ms          => duration_ms,
+            :trace_hash_before     => stored_trace_hash,
+            :trace_hash_after      => new_trace_hash,
+            :inputs_hash_before    => stored_inputs_hash,
+            :inputs_hash_after     => new_inputs_hash,
+            :findpeaks_skipped     => findpeaks_skipped,
+            :indexpeaks_skipped    => indexpeaks_skipped,
+            :duration_ms           => duration_ms,
             :effective_peaks_count => length(eff.q),
+            :post_state_size_bytes => post_state_size_bytes,
         ))
 end

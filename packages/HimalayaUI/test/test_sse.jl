@@ -316,6 +316,60 @@ end
     end
 end
 
+@testset "SSE: broadcast_event! emits post_state when provided" begin
+    mktempdir() do dir
+        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        HimalayaUI.bind_db!(db)
+        sub = (id = "t-postst", pending = Channel{String}(8))
+        lock(HimalayaUI.SSE_LOCK) do
+            push!(HimalayaUI.SSE_SUBSCRIBERS[], sub)
+        end
+        try
+            HimalayaUI.broadcast_event!(1, "peak_added", "exposure", 42,
+                nothing, "tab-id", "op-id", JSON3.write(Dict(:q => 1.0));
+                post_state = Dict(:analysis_inputs_hash => "abc123", :indices => Any[]))
+            frame = take!(sub.pending)
+            data_line = first([l for l in split(frame, '\n') if startswith(l, "data: ")])
+            json_str = replace(data_line, r"^data: " => "")
+            obj = JSON3.read(json_str)
+            @test haskey(obj, :post_state)
+            @test obj.post_state.analysis_inputs_hash == "abc123"
+        finally
+            lock(HimalayaUI.SSE_LOCK) do
+                filter!(x -> x !== sub, HimalayaUI.SSE_SUBSCRIBERS[])
+            end
+            close(sub.pending)
+            HimalayaUI.SSE_SUBSCRIBERS[] = []
+        end
+    end
+end
+
+@testset "SSE: broadcast_event! omits post_state when not provided" begin
+    mktempdir() do dir
+        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        HimalayaUI.bind_db!(db)
+        sub = (id = "t-no-postst", pending = Channel{String}(8))
+        lock(HimalayaUI.SSE_LOCK) do
+            push!(HimalayaUI.SSE_SUBSCRIBERS[], sub)
+        end
+        try
+            HimalayaUI.broadcast_event!(1, "peak_added", "exposure", 42,
+                nothing, "tab-id", "op-id", JSON3.write(Dict(:q => 1.0)))
+            frame = take!(sub.pending)
+            data_line = first([l for l in split(frame, '\n') if startswith(l, "data: ")])
+            json_str = replace(data_line, r"^data: " => "")
+            obj = JSON3.read(json_str)
+            @test !haskey(obj, :post_state)
+        finally
+            lock(HimalayaUI.SSE_LOCK) do
+                filter!(x -> x !== sub, HimalayaUI.SSE_SUBSCRIBERS[])
+            end
+            close(sub.pending)
+            HimalayaUI.SSE_SUBSCRIBERS[] = []
+        end
+    end
+end
+
 @testset "SSE: lookup_username returns nothing for unknown id" begin
     mktempdir() do dir
         db = HimalayaUI.open_db(joinpath(dir, "h.db"))

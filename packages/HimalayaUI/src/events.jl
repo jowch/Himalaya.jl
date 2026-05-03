@@ -22,7 +22,9 @@ function apply_event!(db::SQLite.DB, req;
                       entity_type::String,
                       entity_id::Integer,
                       payload = nothing,
-                      undoes_event_id::Union{Int,Nothing} = nothing)
+                      undoes_event_id::Union{Int,Nothing} = nothing,
+                      defer_broadcast::Bool = false,
+                      post_state::Union{Dict, Nothing} = nothing)
     username = get_username(req)
     client_id = get_client_id(req)
     client_op_id = get_client_op_id(req)
@@ -59,7 +61,7 @@ function apply_event!(db::SQLite.DB, req;
     # endpoint), the guard prevents an UndefVarError. Today broadcast_event!
     # is always defined alongside apply_event! — the try/catch below catches
     # runtime issues; this guard catches definition-time issues.
-    if isdefined(@__MODULE__, :broadcast_event!)
+    if !defer_broadcast && isdefined(@__MODULE__, :broadcast_event!)
         # M0.4: suppress SSE broadcast for analyze_run no-ops (both skip flags true).
         # M2 wires synchronous reanalyze inside curation routes; without this guard
         # every curation event would also fan out an analyze_run frame even when
@@ -72,7 +74,9 @@ function apply_event!(db::SQLite.DB, req;
                    get(payload, :indexpeaks_skipped, false) === true
         if !suppress
             try
-                broadcast_event!(event_id, kind, entity_type, Int(entity_id), user_id, client_id, client_op_id, payload_json)
+                broadcast_event!(event_id, kind, entity_type, Int(entity_id),
+                                 user_id, client_id, client_op_id, payload_json;
+                                 post_state = post_state)
             catch err
                 @warn "broadcast_event! failed (event still durable in user_actions)" exception=err
             end
@@ -223,9 +227,10 @@ function broadcast_event!(event_id::Integer, kind::String, entity_type::String,
                           entity_id::Integer, user_id::Union{Integer, Nothing},
                           client_id::Union{String, Nothing},
                           client_op_id::Union{String, Nothing},
-                          payload_json::Union{String, Nothing})
+                          payload_json::Union{String, Nothing};
+                          post_state::Union{Dict, Nothing} = nothing)
     actor = user_id === nothing ? nothing : lookup_username(current_db(), user_id)
-    msg = JSON3.write(Dict(
+    fields = Dict{Symbol, Any}(
         :id           => Int(event_id),
         :kind         => kind,
         :entity_type  => entity_type,
@@ -235,7 +240,9 @@ function broadcast_event!(event_id::Integer, kind::String, entity_type::String,
         :client_op_id => client_op_id,
         :ts           => format(now(UTC), dateformat"yyyy-mm-ddTHH:MM:SS.sssZ"),
         :payload      => payload_json === nothing ? nothing : JSON3.read(payload_json),
-    ))
+    )
+    post_state === nothing || (fields[:post_state] = post_state)
+    msg = JSON3.write(fields)
     frame = "event: curation\ndata: $msg\n\n"
     lock(SSE_LOCK) do
         to_drop = []

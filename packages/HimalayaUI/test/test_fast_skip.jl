@@ -207,6 +207,19 @@ end
     end
 end
 
+@testset "analyze_run slow path records post_state_size_bytes" begin
+    mktempdir() do tmp
+        ctx = setup_clean_analyzed_exposure(tmp)
+        # Force slow path via the default kwarg (no trace_known_unchanged).
+        analyze_exposure!(ctx.db, ctx.exposure_id, ctx.analysis_dir)
+        rows = Tables.rowtable(DBInterface.execute(ctx.db,
+            "SELECT payload FROM user_actions WHERE entity_id = ? AND action = 'analyze_run' ORDER BY id DESC LIMIT 1",
+            [ctx.exposure_id]))
+        payload = JSON3.read(String(rows[1].payload))
+        @test get(payload, :post_state_size_bytes, 0) > 0
+    end
+end
+
 @testset "hash_peak_set_from_db equivalence with hash_peak_set" begin
     mktempdir() do tmp
         ctx = setup_clean_analyzed_exposure(tmp)
