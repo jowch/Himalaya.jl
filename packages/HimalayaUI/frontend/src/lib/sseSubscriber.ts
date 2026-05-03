@@ -32,6 +32,14 @@ export function handleCurationEvent(
   // same user (or other users) pass through. System events (client_id=null)
   // also pass through — null !== string, so the equality check handles them
   // without a separate truthiness guard.
+  //
+  // Defense-in-depth: the queue framework's handleRemoteEvent (M1.2) covers
+  // same-tab confirmation precisely via client_op_id matching for queue
+  // mutations. This client_id-based filter is the broader fallback for the
+  // legacy invalidation path that is still wired in App.tsx — it prevents
+  // self-echo refetch for any event this tab originated, queue-shaped or
+  // not. Safe to drop once App.tsx switches to handleRemoteEvent for all
+  // SSE frames.
   if (event.client_id === ctx.clientId) return;
   if (event.entity_type !== "exposure") return;
   const id = event.entity_id;
