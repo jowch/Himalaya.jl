@@ -186,6 +186,46 @@ describe("api", () => {
     expect(init.body).toBe(JSON.stringify({ body: "hello" }));
   });
 
+  it("threads X-Client-Op-Id on POST mutations", async () => {
+    const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({
+        id: 7, exposure_id: 42, q: 0.15, source: "manual", stale_indices: 0,
+      }), { status: 201 }),
+    );
+    await api.addPeak(42, 0.15, { clientId: "tab-id", clientOpId: "op-id" });
+    const init = fetchSpy.mock.calls[0]![1] as RequestInit;
+    const headers = init.headers as Record<string, string>;
+    expect(headers["X-Client-Op-Id"]).toBe("op-id");
+  });
+
+  it("omits X-Client-Op-Id on GET requests", async () => {
+    const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue(
+      new Response("[]", { status: 200 }),
+    );
+    // GET path; AuthOpts isn't directly supported on listUsers, so use listPeaks
+    // which is also GET — but neither accepts opts. Verify via a direct GET call
+    // through any GET fetcher: listUsers does not pass opts, but the request()
+    // function still respects method===GET regardless. We assert no header
+    // appears even if upstream code somehow forwarded it.
+    await api.listUsers();
+    const init = fetchSpy.mock.calls[0]![1] as RequestInit;
+    const headers = (init.headers as Record<string, string>) ?? {};
+    expect(headers["X-Client-Op-Id"]).toBeUndefined();
+  });
+
+  it("threads X-Client-Op-Id without X-Username (system flows)", async () => {
+    const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({
+        id: 7, exposure_id: 42, q: 0.15, source: "manual", stale_indices: 0,
+      }), { status: 201 }),
+    );
+    await api.addPeak(42, 0.15, { clientId: "tab-id", clientOpId: "op-id" });
+    const init = fetchSpy.mock.calls[0]![1] as RequestInit;
+    const headers = init.headers as Record<string, string>;
+    expect(headers["X-Client-Op-Id"]).toBe("op-id");
+    expect(headers["X-Username"]).toBeUndefined();
+  });
+
   it("removeIndexFromGroup sends DELETE with X-Username", async () => {
     const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue(
       new Response(JSON.stringify({

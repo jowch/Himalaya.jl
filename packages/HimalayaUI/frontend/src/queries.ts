@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import * as api from "./api";
 import { useAppState } from "./state";
 import { getClientId } from "./lib/clientId";
+import { newClientOpId } from "./lib/clientOpId";
 
 const CLIENT_ID = getClientId();
 
@@ -99,10 +100,12 @@ function invalidateExposure(qc: ReturnType<typeof useQueryClient>, exposureId: n
 function authOpts(
   username: string | undefined,
   clientId: string | undefined,
+  clientOpId?: string,
 ): api.AuthOpts {
   const out: api.AuthOpts = {};
   if (username !== undefined) out.username = username;
   if (clientId !== undefined) out.clientId = clientId;
+  if (clientOpId !== undefined) out.clientOpId = clientOpId;
   return out;
 }
 
@@ -114,7 +117,7 @@ async function autoReanalyze(
   username: string | undefined,
 ): Promise<void> {
   try {
-    await api.reanalyzeExposure(exposureId, authOpts(username, CLIENT_ID));
+    await api.reanalyzeExposure(exposureId, authOpts(username, CLIENT_ID, newClientOpId()));
   } catch (e) {
     // Best-effort: surface a console warning but don't block the peak edit.
     // eslint-disable-next-line no-console
@@ -127,7 +130,7 @@ export function useAddPeak(exposureId: number) {
   const username = useAppState((s) => s.username);
   return useMutation({
     mutationFn: async (q: number) => {
-      const peak = await api.addPeak(exposureId, q, authOpts(username, CLIENT_ID));
+      const peak = await api.addPeak(exposureId, q, authOpts(username, CLIENT_ID, newClientOpId()));
       await autoReanalyze(exposureId, username);
       return peak;
     },
@@ -140,7 +143,7 @@ export function useRemovePeak(exposureId: number) {
   const username = useAppState((s) => s.username);
   return useMutation({
     mutationFn: async (peakId: number) => {
-      await api.removePeak(peakId, authOpts(username, CLIENT_ID));
+      await api.removePeak(peakId, authOpts(username, CLIENT_ID, newClientOpId()));
       await autoReanalyze(exposureId, username);
     },
     onSuccess: () => invalidateExposure(qc, exposureId),
@@ -152,7 +155,7 @@ export function useSetPeakExcluded(exposureId: number) {
   const username = useAppState((s) => s.username);
   return useMutation({
     mutationFn: async ({ peakId, excluded }: { peakId: number; excluded: boolean }) => {
-      const out = await api.setPeakExcluded(peakId, excluded, authOpts(username, CLIENT_ID));
+      const out = await api.setPeakExcluded(peakId, excluded, authOpts(username, CLIENT_ID, newClientOpId()));
       await autoReanalyze(exposureId, username);
       return out;
     },
@@ -164,7 +167,7 @@ export function useReanalyzeExposure(exposureId: number) {
   const qc = useQueryClient();
   const username = useAppState((s) => s.username);
   return useMutation({
-    mutationFn: () => api.reanalyzeExposure(exposureId, authOpts(username, CLIENT_ID)),
+    mutationFn: () => api.reanalyzeExposure(exposureId, authOpts(username, CLIENT_ID, newClientOpId())),
     onSuccess: () => invalidateExposure(qc, exposureId),
   });
 }
@@ -182,7 +185,7 @@ export function useAddIndexToGroup(exposureId: number, groupId: number) {
   const username = useAppState((s) => s.username);
   return useMutation({
     mutationFn: (indexId: number) =>
-      api.addIndexToGroup(groupId, indexId, authOpts(username, CLIENT_ID)),
+      api.addIndexToGroup(groupId, indexId, authOpts(username, CLIENT_ID, newClientOpId())),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.groups(exposureId) }),
   });
 }
@@ -192,7 +195,7 @@ export function useRemoveIndexFromGroup(exposureId: number, groupId: number) {
   const username = useAppState((s) => s.username);
   return useMutation({
     mutationFn: (indexId: number) =>
-      api.removeIndexFromGroup(groupId, indexId, authOpts(username, CLIENT_ID)),
+      api.removeIndexFromGroup(groupId, indexId, authOpts(username, CLIENT_ID, newClientOpId())),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.groups(exposureId) }),
   });
 }
@@ -223,7 +226,7 @@ export function useCreateSpeculative(exposureId: number) {
       anchor_ratio: number;
       additional: api.SpeculativeAdditional[];
       active?: boolean;
-    }) => api.createSpeculative(exposureId, body, authOpts(username, CLIENT_ID)),
+    }) => api.createSpeculative(exposureId, body, authOpts(username, CLIENT_ID, newClientOpId())),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.indices(exposureId) });
       qc.invalidateQueries({ queryKey: queryKeys.groups(exposureId) });
@@ -235,7 +238,7 @@ export function useDeleteIndex(exposureId: number) {
   const qc = useQueryClient();
   const username = useAppState((s) => s.username);
   return useMutation({
-    mutationFn: (indexId: number) => api.deleteIndex(indexId, authOpts(username, CLIENT_ID)),
+    mutationFn: (indexId: number) => api.deleteIndex(indexId, authOpts(username, CLIENT_ID, newClientOpId())),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.indices(exposureId) });
       qc.invalidateQueries({ queryKey: queryKeys.groups(exposureId) });
@@ -248,7 +251,7 @@ export function useUpdateSample(experimentId: number, sampleId: number) {
   const username = useAppState((s) => s.username);
   return useMutation({
     mutationFn: (patch: { name?: string; notes?: string }) =>
-      api.updateSample(sampleId, patch, authOpts(username, CLIENT_ID)),
+      api.updateSample(sampleId, patch, authOpts(username, CLIENT_ID, newClientOpId())),
     onSuccess: () =>
       qc.invalidateQueries({ queryKey: queryKeys.samples(experimentId) }),
   });
@@ -259,7 +262,7 @@ export function useAddSampleTag(experimentId: number, sampleId: number) {
   const username = useAppState((s) => s.username);
   return useMutation({
     mutationFn: ({ key, value }: { key: string; value: string }) =>
-      api.addSampleTag(sampleId, key, value, authOpts(username, CLIENT_ID)),
+      api.addSampleTag(sampleId, key, value, authOpts(username, CLIENT_ID, newClientOpId())),
     onSuccess: () =>
       qc.invalidateQueries({ queryKey: queryKeys.samples(experimentId) }),
   });
@@ -278,7 +281,7 @@ export function usePostSampleMessage(sampleId: number) {
   const username = useAppState((s) => s.username);
   return useMutation({
     mutationFn: (body: string) =>
-      api.postSampleMessage(sampleId, body, authOpts(username, CLIENT_ID)),
+      api.postSampleMessage(sampleId, body, authOpts(username, CLIENT_ID, newClientOpId())),
     onSuccess: () =>
       qc.invalidateQueries({ queryKey: queryKeys.messages(sampleId) }),
   });
@@ -289,7 +292,7 @@ export function useRemoveSampleTag(experimentId: number, sampleId: number) {
   const username = useAppState((s) => s.username);
   return useMutation({
     mutationFn: (tagId: number) =>
-      api.removeSampleTag(sampleId, tagId, authOpts(username, CLIENT_ID)),
+      api.removeSampleTag(sampleId, tagId, authOpts(username, CLIENT_ID, newClientOpId())),
     onSuccess: () =>
       qc.invalidateQueries({ queryKey: queryKeys.samples(experimentId) }),
   });
@@ -302,7 +305,7 @@ export function useSetExposureStatus(sampleId: number) {
     mutationFn: ({ exposureId, status }: {
       exposureId: number;
       status: "accepted" | "rejected" | null;
-    }) => api.setExposureStatus(exposureId, status, authOpts(username, CLIENT_ID)),
+    }) => api.setExposureStatus(exposureId, status, authOpts(username, CLIENT_ID, newClientOpId())),
     // queryKeys.exposures(id) returns the prefix ["sample", id, "exposures"];
     // TanStack Query invalidateQueries matches by prefix, so this single
     // call covers both excludeRejected variants (and any future variant).
@@ -316,7 +319,7 @@ export function useSelectExposure(sampleId: number) {
   const username = useAppState((s) => s.username);
   return useMutation({
     mutationFn: (exposureId: number) =>
-      api.selectExposure(exposureId, authOpts(username, CLIENT_ID)),
+      api.selectExposure(exposureId, authOpts(username, CLIENT_ID, newClientOpId())),
     onSuccess: () =>
       qc.invalidateQueries({ queryKey: queryKeys.exposures(sampleId) }),
   });
@@ -327,7 +330,7 @@ export function useAddExposureTag(sampleId: number, exposureId: number) {
   const username = useAppState((s) => s.username);
   return useMutation({
     mutationFn: ({ key, value }: { key: string; value: string }) =>
-      api.addExposureTag(exposureId, key, value, authOpts(username, CLIENT_ID)),
+      api.addExposureTag(exposureId, key, value, authOpts(username, CLIENT_ID, newClientOpId())),
     onSuccess: () =>
       qc.invalidateQueries({ queryKey: queryKeys.exposures(sampleId) }),
   });
@@ -338,7 +341,7 @@ export function useRemoveExposureTag(sampleId: number, exposureId: number) {
   const username = useAppState((s) => s.username);
   return useMutation({
     mutationFn: (tagId: number) =>
-      api.removeExposureTag(exposureId, tagId, authOpts(username, CLIENT_ID)),
+      api.removeExposureTag(exposureId, tagId, authOpts(username, CLIENT_ID, newClientOpId())),
     onSuccess: () =>
       qc.invalidateQueries({ queryKey: queryKeys.exposures(sampleId) }),
   });

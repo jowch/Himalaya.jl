@@ -42,6 +42,7 @@ export class ApiError extends Error {
 export interface AuthOpts {
   username?: string;
   clientId?: string;
+  clientOpId?: string;
 }
 
 async function request<T>(
@@ -54,6 +55,7 @@ async function request<T>(
   if (body !== undefined) headers["Content-Type"] = "application/json";
   if (opts?.username && method !== "GET") headers["X-Username"] = opts.username;
   if (opts?.clientId && method !== "GET") headers["X-Client-Id"] = opts.clientId;
+  if (opts?.clientOpId && method !== "GET") headers["X-Client-Op-Id"] = opts.clientOpId;
 
   const init: RequestInit = { method, headers };
   if (body !== undefined) init.body = JSON.stringify(body);
