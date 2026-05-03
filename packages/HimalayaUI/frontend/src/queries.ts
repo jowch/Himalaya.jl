@@ -25,6 +25,9 @@ import {
   removeIndexFromGroupMutator,
   deleteIndexMutator,
 } from "./lib/queue/mutators/indexGroup";
+import { createSpeculativeMutator } from "./lib/queue/mutators/createSpeculative";
+import type { CreateSpeculativeInput } from "./lib/queue/mutators/createSpeculative";
+import { useExposureHasPendingPeakOps } from "./lib/queue/hooks";
 
 const CLIENT_ID = getClientId();
 
@@ -211,36 +214,31 @@ export function useRemoveIndexFromGroup(exposureId: number, groupId: number) {
 
 // Speculative-snap is a query keyed on (exposureId, phase, anchorPeakId, anchorRatio).
 // The hook is enabled-gated because the builder calls it after a phase + anchor
-// are both chosen — never on partial input.
+// are both chosen — never on partial input. M2.4 also gates on
+// `useExposureHasPendingPeakOps`: while a peak-affecting op is in flight the
+// snap response would reflect a stale peak set, so we suspend the query and
+// the SpeculativeBuilder keeps showing the last good snap with an "updating"
+// indicator until the op settles.
 export function useSpeculativeSnap(
   exposureId: number | undefined,
   phase: string | undefined,
   anchorPeakId: number | undefined,
   anchorRatio: number,
 ) {
+  const blocked = useExposureHasPendingPeakOps(exposureId);
   return useQuery({
     queryKey: ["exposure", exposureId ?? "none", "speculative-snap", phase ?? "", anchorPeakId ?? -1, anchorRatio] as const,
     queryFn: () => api.getSpeculativeSnap(exposureId as number, phase as string, anchorPeakId as number, anchorRatio),
-    enabled: exposureId !== undefined && phase !== undefined && anchorPeakId !== undefined,
+    enabled: exposureId !== undefined && phase !== undefined && anchorPeakId !== undefined && !blocked,
   });
 }
 
 export function useCreateSpeculative(exposureId: number) {
-  const qc = useQueryClient();
   const username = useAppState((s) => s.username);
-  return useMutation({
-    mutationFn: (body: {
-      phase: string;
-      anchor_peak_id: number;
-      anchor_ratio: number;
-      additional: api.SpeculativeAdditional[];
-      active?: boolean;
-    }) => api.createSpeculative(exposureId, body, authOpts(username, CLIENT_ID, newClientOpId())),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.indices(exposureId) });
-      qc.invalidateQueries({ queryKey: queryKeys.groups(exposureId) });
-    },
-  });
+  return useQueueMutation<CreateSpeculativeInput, api.IndexEntry>(
+    createSpeculativeMutator,
+    { exposureId, username, clientId: CLIENT_ID },
+  );
 }
 
 export function useDeleteIndex(exposureId: number) {

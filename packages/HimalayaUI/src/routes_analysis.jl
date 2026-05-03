@@ -262,106 +262,125 @@ function register_analysis_routes!()
     end
 
     @post "/api/exposures/{id}/speculative" function(req::HTTP.Request, id::Int)
-        db   = current_db()
-        body = json(req)
+        db = current_db()
+        return with_idempotency(db, req) do
+            body = json(req)
 
-        phase_name      = String(body.phase)
-        anchor_peak_id  = Int(body.anchor_peak_id)
-        anchor_ratio    = Int(body.anchor_ratio)
-        # additional_peak_ids: parallel arrays {ratio_position, peak_id}
-        additional      = haskey(body, :additional) ? body.additional : []
-        # Default to *not* in the active set — speculative indices are
-        # hypotheses, and active membership is an explicit user gesture.
-        active_default  = haskey(body, :active) ? Bool(body.active) : false
+            phase_name      = String(body.phase)
+            anchor_peak_id  = Int(body.anchor_peak_id)
+            anchor_ratio    = Int(body.anchor_ratio)
+            # additional_peak_ids: parallel arrays {ratio_position, peak_id}
+            additional      = haskey(body, :additional) ? body.additional : []
+            # Default to *not* in the active set — speculative indices are
+            # hypotheses, and active membership is an explicit user gesture.
+            active_default  = haskey(body, :active) ? Bool(body.active) : false
 
-        P = resolve_phase(phase_name)
-        P === nothing && return HTTP.Response(400,
-            ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "unknown phase: $phase_name")))
-
-        ratio_to_peak = Dict{Int, Int}(anchor_ratio => anchor_peak_id)
-        for entry in additional
-            rp  = Int(entry.ratio_position)
-            pid = Int(entry.peak_id)
-            haskey(ratio_to_peak, rp) && return HTTP.Response(400,
+            P = resolve_phase(phase_name)
+            P === nothing && return HTTP.Response(400,
                 ["Content-Type" => "application/json"],
-                JSON3.write(Dict(:error => "duplicate ratio_position $rp")))
-            ratio_to_peak[rp] = pid
-        end
+                JSON3.write(Dict(:error => "unknown phase: $phase_name")))
 
-        new_id = try
-            SQLite.transaction(db) do
-                nid = insert_speculative_index!(db, id, P, ratio_to_peak)
-                if active_default
-                    cid, _ = ensure_custom_group!(db, id)
-                    DBInterface.execute(db,
-                        "INSERT OR IGNORE INTO index_group_members (group_id, index_id) VALUES (?, ?)",
-                        [cid, nid])
-                end
-                apply_event!(db, req;
-                    kind        = "speculative_created",
-                    entity_type = "exposure",
-                    entity_id   = id,
-                    payload     = Dict(:index_id => nid))
-                nid
+            ratio_to_peak = Dict{Int, Int}(anchor_ratio => anchor_peak_id)
+            for entry in additional
+                rp  = Int(entry.ratio_position)
+                pid = Int(entry.peak_id)
+                haskey(ratio_to_peak, rp) && return HTTP.Response(400,
+                    ["Content-Type" => "application/json"],
+                    JSON3.write(Dict(:error => "duplicate ratio_position $rp")))
+                ratio_to_peak[rp] = pid
             end
-        catch e
-            return HTTP.Response(400,
-                ["Content-Type" => "application/json"],
-                JSON3.write(Dict(:error => sprint(showerror, e))))
-        end
 
-        # Return the freshly-built index in the same shape as GET /api/indices/:id
-        rows = Tables.rowtable(DBInterface.execute(db,
-            "SELECT * FROM indices WHERE id = ?", [new_id]))
-        ix = rows[1]
-        peak_rows = Tables.rowtable(DBInterface.execute(db,
-            """SELECT ip.peak_id, ip.ratio_position, ip.residual,
-                      COALESCE(ap.q, pc.q) AS q_observed
-               FROM index_peaks ip
-               LEFT JOIN auto_peaks ap     ON ap.id = ip.peak_id AND ip.peak_kind = 'auto'
-               LEFT JOIN peak_curations pc ON pc.id = ip.peak_id AND ip.peak_kind = 'curation'
-               WHERE ip.index_id = ? ORDER BY ip.ratio_position""", [new_id]))
-        predicted = predicted_q_for_phase(String(ix.phase), Float64(ix.basis))
-        d = row_to_json(ix)
-        d[:peaks]       = rows_to_json(peak_rows)
-        d[:predicted_q] = predicted
-        HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(d))
+            # Run the durable writes inside with_idempotency's outer tx via
+            # InTransaction. Defer broadcast on the apply_event! so subscribers
+            # don't see uncommitted state if the tx rolls back; queue a
+            # post-commit broadcast that fires only after the outer tx commits.
+            local nid::Int
+            try
+                nid = insert_speculative_index!(db, id, P, ratio_to_peak)
+            catch e
+                return HTTP.Response(400,
+                    ["Content-Type" => "application/json"],
+                    JSON3.write(Dict(:error => sprint(showerror, e))))
+            end
+            if active_default
+                cid, _ = ensure_custom_group!(db, id)
+                DBInterface.execute(db,
+                    "INSERT OR IGNORE INTO index_group_members (group_id, index_id) VALUES (?, ?)",
+                    [cid, nid])
+            end
+            payload = Dict(:index_id => nid)
+            result = apply_event!(InTransaction(), db, req;
+                kind        = "speculative_created",
+                entity_type = "exposure",
+                entity_id   = id,
+                payload     = payload)
+
+            # Defer the SSE broadcast until the outer with_idempotency tx
+            # commits. Subscribers converge via cache invalidation in
+            # applyRemoteToCache; no post_state needed.
+            _enqueue_post_commit_broadcast!(
+                Int(result.event_id), "speculative_created", "exposure", Int(id),
+                result.user_id, result.client_id, result.client_op_id,
+                result.payload_json)
+
+            # Return the freshly-built index in the same shape as GET /api/indices/:id
+            rows = Tables.rowtable(DBInterface.execute(db,
+                "SELECT * FROM indices WHERE id = ?", [nid]))
+            ix = rows[1]
+            peak_rows = Tables.rowtable(DBInterface.execute(db,
+                """SELECT ip.peak_id, ip.ratio_position, ip.residual,
+                          COALESCE(ap.q, pc.q) AS q_observed
+                   FROM index_peaks ip
+                   LEFT JOIN auto_peaks ap     ON ap.id = ip.peak_id AND ip.peak_kind = 'auto'
+                   LEFT JOIN peak_curations pc ON pc.id = ip.peak_id AND ip.peak_kind = 'curation'
+                   WHERE ip.index_id = ? ORDER BY ip.ratio_position""", [nid]))
+            predicted = predicted_q_for_phase(String(ix.phase), Float64(ix.basis))
+            d = row_to_json(ix)
+            d[:peaks]       = rows_to_json(peak_rows)
+            d[:predicted_q] = predicted
+            HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(d))
+        end
     end
 
     @delete "/api/indices/{id}" function(req::HTTP.Request, id::Int)
         db = current_db()
-        rows = Tables.rowtable(DBInterface.execute(db,
-            "SELECT id, kind, exposure_id FROM indices WHERE id = ?", [id]))
-        isempty(rows) && return HTTP.Response(404,
-            ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "index not found")))
-        kind_val = String(rows[1].kind)
-        kind_val == "speculative" || return HTTP.Response(403,
-            ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "only speculative indices can be deleted; use group exclusion for auto indices")))
+        return with_idempotency(db, req) do
+            rows = Tables.rowtable(DBInterface.execute(db,
+                "SELECT id, kind, exposure_id FROM indices WHERE id = ?", [id]))
+            isempty(rows) && return HTTP.Response(404,
+                ["Content-Type" => "application/json"],
+                JSON3.write(Dict(:error => "index not found")))
+            kind_val = String(rows[1].kind)
+            kind_val == "speculative" || return HTTP.Response(403,
+                ["Content-Type" => "application/json"],
+                JSON3.write(Dict(:error => "only speculative indices can be deleted; use group exclusion for auto indices")))
 
-        # Capture exposure_id BEFORE the DELETE — after deletion the row is gone.
-        exposure_id = Int(rows[1].exposure_id)
+            # Capture exposure_id BEFORE the DELETE — after deletion the row is gone.
+            exposure_id = Int(rows[1].exposure_id)
 
-        # Wrap the delete and the event log in one transaction so the view
-        # mutation and the audit entry roll back together if either fails.
-        SQLite.transaction(db) do
             DBInterface.execute(db,
                 "DELETE FROM index_group_members WHERE index_id = ?", [id])
             DBInterface.execute(db,
                 "DELETE FROM index_peaks WHERE index_id = ?", [id])
             DBInterface.execute(db,
                 "DELETE FROM indices WHERE id = ?", [id])
-            apply_event!(db, req;
+
+            payload = Dict(:index_id => id)
+            result = apply_event!(InTransaction(), db, req;
                 kind        = "speculative_deleted",
                 entity_type = "exposure",
                 entity_id   = exposure_id,
-                payload     = Dict(:index_id => id))
-        end
+                payload     = payload)
 
-        HTTP.Response(200, ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:deleted => id)))
+            _enqueue_post_commit_broadcast!(
+                Int(result.event_id), "speculative_deleted", "exposure",
+                Int(exposure_id),
+                result.user_id, result.client_id, result.client_op_id,
+                result.payload_json)
+
+            HTTP.Response(200, ["Content-Type" => "application/json"],
+                JSON3.write(Dict(:deleted => id)))
+        end
     end
 
     @get "/api/indices/{id}" function(req::HTTP.Request, id::Int)

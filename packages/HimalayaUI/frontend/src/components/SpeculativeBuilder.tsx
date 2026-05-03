@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { SpeculativeSnap } from "../api";
 import { usePeaks, useSpeculativeSnap, useCreateSpeculative } from "../queries";
 import { useFocusTrap } from "../hooks/useFocusTrap";
+import { useExposureHasPendingPeakOps } from "../lib/queue/hooks";
 import { KNOWN_PHASES, phaseColor } from "../phases";
 import { Button } from "./ui";
 
@@ -48,8 +50,30 @@ export function SpeculativeBuilder({ exposureId, onClose }: SpeculativeBuilderPr
     }
   }, [peaks, anchorPeakId]);
 
+  // M2.4 gating: while a peak op is pending the snap query is disabled, but we
+  // keep showing the last good snap with an "updating to latest…" subtext so
+  // the dialog doesn't blank out mid-edit.
+  const blocked = useExposureHasPendingPeakOps(exposureId);
   const snapQ = useSpeculativeSnap(exposureId, phase, anchorPeakId ?? undefined, anchorRatio);
+  const lastGoodSnapRef = useRef<SpeculativeSnap[] | null>(null);
+  if (snapQ.data !== undefined) {
+    lastGoodSnapRef.current = snapQ.data;
+  }
+  const displaySnap: SpeculativeSnap[] | null =
+    snapQ.data ?? lastGoodSnapRef.current;
+
   const createMut = useCreateSpeculative(exposureId);
+
+  // M2.4: useQueueMutation does not expose per-call onSuccess; observe
+  // `isSuccess` (set after the mutationFn resolves) and close the dialog
+  // exactly once per successful save.
+  const closedOnSuccessRef = useRef(false);
+  useEffect(() => {
+    if (createMut.isSuccess && !closedOnSuccessRef.current) {
+      closedOnSuccessRef.current = true;
+      onClose();
+    }
+  }, [createMut.isSuccess, onClose]);
 
   function toggleIncluded(rpos: number): void {
     setIncluded((prev) => ({ ...prev, [rpos]: !prev[rpos] }));
@@ -57,16 +81,19 @@ export function SpeculativeBuilder({ exposureId, onClose }: SpeculativeBuilderPr
 
   function handleSave(): void {
     if (anchorPeakId === null) return;
-    const additional = (snapQ.data ?? [])
+    const additional = (displaySnap ?? [])
       .filter((s) => !s.is_anchor && s.suggested_peak_id !== null && included[s.ratio_position])
       .map((s) => ({ ratio_position: s.ratio_position, peak_id: s.suggested_peak_id! }));
 
     // Speculative indices land in Candidates (not the active set) by default;
     // promoting one is an explicit click on the Speculative section.
-    createMut.mutate(
-      { phase, anchor_peak_id: anchorPeakId, anchor_ratio: anchorRatio, additional, active: false },
-      { onSuccess: onClose },
-    );
+    createMut.mutate({
+      phase,
+      anchor_peak_id: anchorPeakId,
+      anchor_ratio: anchorRatio,
+      additional,
+      active: false,
+    });
   }
 
   // Esc to close
@@ -77,6 +104,11 @@ export function SpeculativeBuilder({ exposureId, onClose }: SpeculativeBuilderPr
   }, [onClose]);
 
   const color = phaseColor(phase);
+  const errorMessage: string | null = createMut.error
+    ? (createMut.error instanceof Error
+        ? createMut.error.message
+        : String(createMut.error))
+    : null;
 
   return (
     <div
@@ -166,57 +198,69 @@ export function SpeculativeBuilder({ exposureId, onClose }: SpeculativeBuilderPr
           <span className="text-xs text-fg-dim font-semibold">Predicted ratio positions</span>
           {anchorPeakId === null ? (
             <p className="text-xs text-fg-dim italic">Pick an anchor peak to see predictions.</p>
-          ) : snapQ.isLoading ? (
+          ) : displaySnap === null && snapQ.isLoading ? (
             <p className="text-xs text-fg-dim italic">Computing…</p>
           ) : snapQ.error ? (
-            <p className="text-xs text-error">Snap failed: {String(snapQ.error)}</p>
+            <p className="text-xs text-error">
+              Snap failed: {snapQ.error instanceof Error ? snapQ.error.message : String(snapQ.error)}
+            </p>
           ) : (
-            <ul className="flex flex-col gap-1 max-h-56 overflow-y-auto rounded-md border border-border-soft p-2">
-              {(snapQ.data ?? []).map((s) => {
-                const checked = s.is_anchor || (s.suggested_peak_id !== null && !!included[s.ratio_position]);
-                const disabled = s.is_anchor || s.suggested_peak_id === null;
-                const dq = s.suggested_residual !== null && s.predicted_q > 0
-                  ? (s.suggested_residual / s.predicted_q * 100).toFixed(2)
-                  : null;
-                return (
-                  <li
-                    key={s.ratio_position}
-                    data-testid={`spec-snap-row-${s.ratio_position}`}
-                    className="flex items-center gap-2 text-xs"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      disabled={disabled}
-                      onChange={() => { toggleIncluded(s.ratio_position); }}
-                      aria-label={`ratio position ${s.ratio_position}`}
-                    />
-                    <span className="font-mono text-fg-muted w-10">r{s.ratio_position}</span>
-                    <span className="font-mono text-fg-dim w-24">
-                      ≈ q {s.predicted_q.toFixed(4)}
-                    </span>
-                    {s.is_anchor ? (
-                      <span className="px-1.5 rounded text-xs"
-                            style={{ background: `color-mix(in oklab, ${color} 20%, transparent)`, color }}>
-                        anchor
+            <>
+              {blocked && (
+                <p
+                  data-testid="spec-snap-updating"
+                  className="text-xs text-fg-dim italic"
+                >
+                  Updating to latest…
+                </p>
+              )}
+              <ul className="flex flex-col gap-1 max-h-56 overflow-y-auto rounded-md border border-border-soft p-2">
+                {(displaySnap ?? []).map((s) => {
+                  const checked = s.is_anchor || (s.suggested_peak_id !== null && !!included[s.ratio_position]);
+                  const disabled = s.is_anchor || s.suggested_peak_id === null;
+                  const dq = s.suggested_residual !== null && s.predicted_q > 0
+                    ? (s.suggested_residual / s.predicted_q * 100).toFixed(2)
+                    : null;
+                  return (
+                    <li
+                      key={s.ratio_position}
+                      data-testid={`spec-snap-row-${s.ratio_position}`}
+                      className="flex items-center gap-2 text-xs"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={disabled}
+                        onChange={() => { toggleIncluded(s.ratio_position); }}
+                        aria-label={`ratio position ${s.ratio_position}`}
+                      />
+                      <span className="font-mono text-fg-muted w-10">r{s.ratio_position}</span>
+                      <span className="font-mono text-fg-dim w-24">
+                        ≈ q {s.predicted_q.toFixed(4)}
                       </span>
-                    ) : s.suggested_peak_id !== null ? (
-                      <span className="font-mono text-fg-muted truncate">
-                        snap q {s.suggested_q?.toFixed(4)} (Δ {dq}%)
-                      </span>
-                    ) : (
-                      <span className="text-fg-dim italic">no peak</span>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
+                      {s.is_anchor ? (
+                        <span className="px-1.5 rounded text-xs"
+                              style={{ background: `color-mix(in oklab, ${color} 20%, transparent)`, color }}>
+                          anchor
+                        </span>
+                      ) : s.suggested_peak_id !== null ? (
+                        <span className="font-mono text-fg-muted truncate">
+                          snap q {s.suggested_q?.toFixed(4)} (Δ {dq}%)
+                        </span>
+                      ) : (
+                        <span className="text-fg-dim italic">no peak</span>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </>
           )}
         </div>
 
-        {createMut.error && (
+        {errorMessage !== null && (
           <p className="text-xs text-error" role="alert">
-            {String((createMut.error as Error).message ?? createMut.error)}
+            {errorMessage}
           </p>
         )}
 

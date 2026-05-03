@@ -12,6 +12,7 @@ import type { Mutator, OpPayload, RollbackContext } from "./types";
 export interface UseQueueMutationResult<TInput> {
   mutate: (input: TInput) => void;
   isPending: boolean;
+  isSuccess: boolean;
   error: unknown;
   reset: () => void;
 }
@@ -109,6 +110,7 @@ export function useQueueMutation<TInput, TResponse>(
   return {
     mutate,
     isPending: mutation.isPending,
+    isSuccess: mutation.isSuccess,
     error: mutation.error,
     reset: mutation.reset,
   };
