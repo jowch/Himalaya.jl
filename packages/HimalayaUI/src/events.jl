@@ -60,10 +60,22 @@ function apply_event!(db::SQLite.DB, req;
     # is always defined alongside apply_event! — the try/catch below catches
     # runtime issues; this guard catches definition-time issues.
     if isdefined(@__MODULE__, :broadcast_event!)
-        try
-            broadcast_event!(event_id, kind, entity_type, Int(entity_id), user_id, client_id, client_op_id, payload_json)
-        catch err
-            @warn "broadcast_event! failed (event still durable in user_actions)" exception=err
+        # M0.4: suppress SSE broadcast for analyze_run no-ops (both skip flags true).
+        # M2 wires synchronous reanalyze inside curation routes; without this guard
+        # every curation event would also fan out an analyze_run frame even when
+        # nothing changed — O(N) extra frames per session. The user_actions row is
+        # still written; only the broadcast is suppressed. Strict `=== true` guards
+        # against the JSON3.Object case where a missing key would return `nothing`.
+        suppress = kind == "analyze_run" &&
+                   payload !== nothing &&
+                   get(payload, :findpeaks_skipped, false) === true &&
+                   get(payload, :indexpeaks_skipped, false) === true
+        if !suppress
+            try
+                broadcast_event!(event_id, kind, entity_type, Int(entity_id), user_id, client_id, client_op_id, payload_json)
+            catch err
+                @warn "broadcast_event! failed (event still durable in user_actions)" exception=err
+            end
         end
     end
     (event_id = event_id, view_row_id = view_row_id_ref[])
