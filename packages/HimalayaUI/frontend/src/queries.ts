@@ -20,6 +20,11 @@ import { peakRemoveMutator } from "./lib/queue/mutators/peakRemove";
 import {
   peakExcludeMutator, peakUnexcludeMutator,
 } from "./lib/queue/mutators/peakSetExcluded";
+import {
+  addIndexToGroupMutator,
+  removeIndexFromGroupMutator,
+  deleteIndexMutator,
+} from "./lib/queue/mutators/indexGroup";
 
 const CLIENT_ID = getClientId();
 
@@ -181,23 +186,27 @@ export function useGroups(exposureId: number | undefined) {
 }
 
 export function useAddIndexToGroup(exposureId: number, groupId: number) {
-  const qc = useQueryClient();
   const username = useAppState((s) => s.username);
-  return useMutation({
-    mutationFn: (indexId: number) =>
-      api.addIndexToGroup(groupId, indexId, authOpts(username, CLIENT_ID, newClientOpId())),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.groups(exposureId) }),
-  });
+  const inner = useQueueMutation<{ indexId: number }, api.GroupEntry>(
+    addIndexToGroupMutator,
+    { exposureId, groupId, username, clientId: CLIENT_ID },
+  );
+  return {
+    ...inner,
+    mutate: (indexId: number) => inner.mutate({ indexId }),
+  };
 }
 
 export function useRemoveIndexFromGroup(exposureId: number, groupId: number) {
-  const qc = useQueryClient();
   const username = useAppState((s) => s.username);
-  return useMutation({
-    mutationFn: (indexId: number) =>
-      api.removeIndexFromGroup(groupId, indexId, authOpts(username, CLIENT_ID, newClientOpId())),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.groups(exposureId) }),
-  });
+  const inner = useQueueMutation<{ indexId: number }, api.GroupEntry>(
+    removeIndexFromGroupMutator,
+    { exposureId, groupId, username, clientId: CLIENT_ID },
+  );
+  return {
+    ...inner,
+    mutate: (indexId: number) => inner.mutate({ indexId }),
+  };
 }
 
 // Speculative-snap is a query keyed on (exposureId, phase, anchorPeakId, anchorRatio).
@@ -235,15 +244,15 @@ export function useCreateSpeculative(exposureId: number) {
 }
 
 export function useDeleteIndex(exposureId: number) {
-  const qc = useQueryClient();
   const username = useAppState((s) => s.username);
-  return useMutation({
-    mutationFn: (indexId: number) => api.deleteIndex(indexId, authOpts(username, CLIENT_ID, newClientOpId())),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.indices(exposureId) });
-      qc.invalidateQueries({ queryKey: queryKeys.groups(exposureId) });
-    },
-  });
+  const inner = useQueueMutation<{ indexId: number }, { deleted: number }>(
+    deleteIndexMutator,
+    { exposureId, username, clientId: CLIENT_ID },
+  );
+  return {
+    ...inner,
+    mutate: (indexId: number) => inner.mutate({ indexId }),
+  };
 }
 
 export function useUpdateSample(experimentId: number, sampleId: number) {

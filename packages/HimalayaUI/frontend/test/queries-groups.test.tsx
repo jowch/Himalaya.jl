@@ -42,21 +42,29 @@ describe("queries — groups", () => {
     expect(spy).not.toHaveBeenCalled();
   });
 
-  it("useAddIndexToGroup invalidates groups for exposure", async () => {
+  it("useAddIndexToGroup writes the server-returned group into the groups cache", async () => {
     const { client, wrapper } = withClient();
-    const invalidate = vi.spyOn(client, "invalidateQueries");
+    client.setQueryData(queryKeys.groups(42),
+      [{ id: 2, exposure_id: 42, kind: "custom", active: true, members: [10] }]);
     mockOnce(200, { id: 2, exposure_id: 42, kind: "custom", active: true, members: [10, 11] });
     const { result } = renderHook(() => useAddIndexToGroup(42, 2), { wrapper });
-    await act(async () => { await result.current.mutateAsync(11); });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.groups(42) });
+    act(() => { result.current.mutate(11); });
+    await waitFor(() => {
+      const groups = client.getQueryData<{ id: number; members: number[] }[]>(queryKeys.groups(42));
+      expect(groups?.[0].members).toEqual([10, 11]);
+    });
   });
 
-  it("useRemoveIndexFromGroup invalidates groups for exposure", async () => {
+  it("useRemoveIndexFromGroup writes the server-returned group into the groups cache", async () => {
     const { client, wrapper } = withClient();
-    const invalidate = vi.spyOn(client, "invalidateQueries");
+    client.setQueryData(queryKeys.groups(42),
+      [{ id: 2, exposure_id: 42, kind: "custom", active: true, members: [10, 11] }]);
     mockOnce(200, { id: 2, exposure_id: 42, kind: "custom", active: true, members: [10] });
     const { result } = renderHook(() => useRemoveIndexFromGroup(42, 2), { wrapper });
-    await act(async () => { await result.current.mutateAsync(11); });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.groups(42) });
+    act(() => { result.current.mutate(11); });
+    await waitFor(() => {
+      const groups = client.getQueryData<{ id: number; members: number[] }[]>(queryKeys.groups(42));
+      expect(groups?.[0].members).toEqual([10]);
+    });
   });
 });
