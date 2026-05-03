@@ -1,0 +1,31 @@
+// Minimal toast stub — M2.2 replaces with a real Toast UI mounted at App.tsx.
+// Until then this surfaces validation errors via console.warn so they are
+// visible in dev. Production behavior changes when M2.2 ships.
+
+export type ToastKind = "info" | "success" | "warning" | "error";
+
+let activeImpl: (msg: string, kind: ToastKind) => void = (msg, kind) => {
+  // eslint-disable-next-line no-console
+  console.warn(`[toast:${kind}] ${msg}`);
+};
+
+export function showToast(msg: string, kind: ToastKind = "info"): void {
+  activeImpl(msg, kind);
+}
+
+/**
+ * Replace the toast implementation. M2.2's ToastProvider calls this on mount.
+ * Subsequent calls override; passing `null` restores the console.warn fallback.
+ */
+export function setToastImpl(
+  impl: ((msg: string, kind: ToastKind) => void) | null,
+): void {
+  if (impl === null) {
+    activeImpl = (msg, kind) => {
+      // eslint-disable-next-line no-console
+      console.warn(`[toast:${kind}] ${msg}`);
+    };
+  } else {
+    activeImpl = impl;
+  }
+}

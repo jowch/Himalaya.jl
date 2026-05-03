@@ -28,3 +28,13 @@ export {
   useExposureHasPendingPeakOps,
   useQueueOpStatus,
 } from "./hooks";
+
+export {
+  useQueueMutation,
+} from "./useQueueMutation";
+export type { UseQueueMutationResult } from "./useQueueMutation";
+export {
+  isValidationError,
+  isInfrastructureError,
+  buildValidationMessage,
+} from "./errors";
