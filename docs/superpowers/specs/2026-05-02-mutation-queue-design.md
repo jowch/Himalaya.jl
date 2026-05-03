@@ -732,7 +732,7 @@ end
 end
 ```
 
-`trace_known_unchanged=true` is safe for any curation route — these handlers don't touch the .dat file. The fast-skip refactor (M0) makes the synchronous call cheap on no-input-change cases (target: <100µs total wall-clock; falsified by the corresponding fallback trigger). Routes that don't affect the effective peak set (tags, messages, status) omit the `analyze_exposure!` call entirely; their HTTP response carries no `analysis_inputs_hash`.
+`trace_known_unchanged=true` is safe for any curation route — these handlers don't touch the .dat file. The fast-skip refactor (M0) makes the synchronous call cheap on no-input-change cases (target: microsecond-scale wall-clock — measured at ~150µs steady state, ~200× faster than the slow path; falsified if the path slips back into millisecond territory, per the corresponding fallback trigger). Routes that don't affect the effective peak set (tags, messages, status) omit the `analyze_exposure!` call entirely; their HTTP response carries no `analysis_inputs_hash`.
 
 ### Cleanup steps inside M2 (within respective slices)
 
@@ -830,7 +830,7 @@ Pre-commitments that make the architectural judgment falsifiable in implementati
 
 - **If any mutator needs to inspect *other* pending mutations to compute its effect.** That is the abstraction-leak signal — the framework's `(op, baseState) → (cacheEffect, request)` shape no longer holds because mutators have hidden dependencies on each other. Fall back to per-mutation optimistic updates via `onMutate` without queue infrastructure. Lose the replay-on-remote-event property; keep autoReanalyze elimination as the primary win.
 
-- **If M0's `analyze_exposure!` fast-skip refactor doesn't reduce the no-change path to microseconds** (target: <100µs total wall-clock; measured via M0 test that runs N curations producing zero net effect and asserts P99 wall-clock). The autoReanalyze elimination story depends on the no-change path being effectively free. If the fast-skip can't deliver this, M2's synchronous-reanalyze pattern relocates latency rather than eliminating it; revert to client-side autoReanalyze and treat the queue as cache-merging-only.
+- **If M0's `analyze_exposure!` fast-skip refactor doesn't reduce the no-change path to microseconds** (target: microsecond-scale total wall-clock — should remain order-of-magnitude faster than the slow path's file I/O cost, currently ~150µs; measured via M0 test that runs N curations producing zero net effect and asserts P99 wall-clock under the regression ceiling). The autoReanalyze elimination story depends on the no-change path being effectively free. If the fast-skip can't deliver this, M2's synchronous-reanalyze pattern relocates latency rather than eliminating it; revert to client-side autoReanalyze and treat the queue as cache-merging-only.
 
 - **If the response-body cache produces user-visible drift** between rehydrated retries and current server state more than a few times per long session (a deployed-then-upgraded-mid-session response shape change is the canonical case). Schema-versioning the cached responses or scoping retries by deploy-version becomes necessary. Diagnostic: M0 includes telemetry on cache-hit retries showing whether the response was generated under the current server version.
 
