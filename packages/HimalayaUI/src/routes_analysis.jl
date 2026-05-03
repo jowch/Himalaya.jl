@@ -138,61 +138,65 @@ function register_analysis_routes!()
     end
 
     @post "/api/groups/{id}/members" function(req::HTTP.Request, id::Int)
-        db   = current_db()
-        body = json(req)
-        index_id = Int(body.index_id)
+        db = current_db()
+        return with_idempotency(db, req) do
+            body = json(req)
+            index_id = Int(body.index_id)
 
-        rows = Tables.rowtable(DBInterface.execute(db,
-            "SELECT exposure_id, kind FROM index_groups WHERE id = ?", [id]))
-        isempty(rows) && return HTTP.Response(404,
-            ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "group not found")))
-        exposure_id = Int(rows[1].exposure_id)
+            rows = Tables.rowtable(DBInterface.execute(db,
+                "SELECT exposure_id, kind FROM index_groups WHERE id = ?", [id]))
+            isempty(rows) && return HTTP.Response(404,
+                ["Content-Type" => "application/json"],
+                JSON3.write(Dict(:error => "group not found")))
+            exposure_id = Int(rows[1].exposure_id)
 
-        custom_id, _ = ensure_custom_group!(db, exposure_id)
+            custom_id, _ = ensure_custom_group!(db, exposure_id)
 
-        apply_event!(db, req;
-            kind        = "index_confirmed",
-            entity_type = "exposure",
-            entity_id   = exposure_id,
-            payload     = Dict(:group_id => custom_id, :index_id => index_id))
+            apply_event!(InTransaction(), db, req;
+                kind        = "index_confirmed",
+                entity_type = "exposure",
+                entity_id   = exposure_id,
+                payload     = Dict(:group_id => custom_id, :index_id => index_id))
 
-        HTTP.Response(200, ["Content-Type" => "application/json"],
-            JSON3.write(_group_with_members(db, custom_id)))
+            HTTP.Response(200, ["Content-Type" => "application/json"],
+                JSON3.write(_group_with_members(db, custom_id)))
+        end
     end
 
     @delete "/api/groups/{id}/members/{index_id}" function(req::HTTP.Request, id::Int, index_id::Int)
         db = current_db()
-        rows = Tables.rowtable(DBInterface.execute(db,
-            "SELECT exposure_id FROM index_groups WHERE id = ?", [id]))
-        isempty(rows) && return HTTP.Response(404,
-            ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "group not found")))
-        exposure_id = Int(rows[1].exposure_id)
+        return with_idempotency(db, req) do
+            rows = Tables.rowtable(DBInterface.execute(db,
+                "SELECT exposure_id FROM index_groups WHERE id = ?", [id]))
+            isempty(rows) && return HTTP.Response(404,
+                ["Content-Type" => "application/json"],
+                JSON3.write(Dict(:error => "group not found")))
+            exposure_id = Int(rows[1].exposure_id)
 
-        custom_id, _ = ensure_custom_group!(db, exposure_id)
+            custom_id, _ = ensure_custom_group!(db, exposure_id)
 
-        # undoes_event_id: find the most recent index_confirmed for this (group_id, index_id).
-        prior = Tables.rowtable(DBInterface.execute(db, """
-            SELECT id FROM user_actions
-            WHERE action = 'index_confirmed'
-              AND entity_type = 'exposure' AND entity_id = ?
-              AND payload IS NOT NULL
-              AND json_extract(payload, '\$.group_id') = ?
-              AND json_extract(payload, '\$.index_id') = ?
-            ORDER BY id DESC LIMIT 1
-        """, [exposure_id, custom_id, index_id]))
-        undoes = isempty(prior) ? nothing : Int(prior[1].id)
+            # undoes_event_id: find the most recent index_confirmed for this (group_id, index_id).
+            prior = Tables.rowtable(DBInterface.execute(db, """
+                SELECT id FROM user_actions
+                WHERE action = 'index_confirmed'
+                  AND entity_type = 'exposure' AND entity_id = ?
+                  AND payload IS NOT NULL
+                  AND json_extract(payload, '\$.group_id') = ?
+                  AND json_extract(payload, '\$.index_id') = ?
+                ORDER BY id DESC LIMIT 1
+            """, [exposure_id, custom_id, index_id]))
+            undoes = isempty(prior) ? nothing : Int(prior[1].id)
 
-        apply_event!(db, req;
-            kind            = "index_unconfirmed",
-            entity_type     = "exposure",
-            entity_id       = exposure_id,
-            payload         = Dict(:group_id => custom_id, :index_id => index_id),
-            undoes_event_id = undoes)
+            apply_event!(InTransaction(), db, req;
+                kind            = "index_unconfirmed",
+                entity_type     = "exposure",
+                entity_id       = exposure_id,
+                payload         = Dict(:group_id => custom_id, :index_id => index_id),
+                undoes_event_id = undoes)
 
-        HTTP.Response(200, ["Content-Type" => "application/json"],
-            JSON3.write(_group_with_members(db, custom_id)))
+            HTTP.Response(200, ["Content-Type" => "application/json"],
+                JSON3.write(_group_with_members(db, custom_id)))
+        end
     end
 
     @get "/api/exposures/{id}/speculative-snap" function(req::HTTP.Request, id::Int)
