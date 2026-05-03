@@ -145,6 +145,7 @@ function stop_test_server!()
     Oxygen.resetstate()
     _DB_REF[] = nothing
     SSE_SUBSCRIBERS[] = []
+    empty!(OP_LOCKS)
     nothing
 end
 
