@@ -39,10 +39,11 @@ function register_samples_routes!()
             # Structured payload: the patched fields directly. Frontend
             # applyRemoteToCache spreads this onto the cached sample.
             update_payload = Dict{Symbol, Any}(zip(fields, vals))
-            apply_event!(InTransaction(), db, req;
+            result = apply_event!(InTransaction(), db, req;
                 kind = "update_sample",
                 entity_type = "sample", entity_id = id,
                 payload = update_payload)
+            _enqueue_broadcast_from_result!(result, "update_sample", "sample", id)
 
             rows = Tables.rowtable(DBInterface.execute(db,
                 "SELECT * FROM samples WHERE id = ?", [id]))
@@ -69,11 +70,12 @@ function register_samples_routes!()
                 "SELECT experiment_id FROM samples WHERE id = ?", [id]))
             exp_id = isempty(srows) ? nothing : Int(srows[1].experiment_id)
 
-            apply_event!(InTransaction(), db, req;
+            result = apply_event!(InTransaction(), db, req;
                 kind = "add_tag",
                 entity_type = "sample", entity_id = id,
                 payload = Dict(:key => key, :value => value,
                                :tag_id => tag_id, :experiment_id => exp_id))
+            _enqueue_broadcast_from_result!(result, "add_tag", "sample", id)
 
             HTTP.Response(201, ["Content-Type" => "application/json"],
                 JSON3.write(Dict(:id => tag_id, :sample_id => id,
@@ -93,10 +95,11 @@ function register_samples_routes!()
             DBInterface.execute(db,
                 "DELETE FROM sample_tags WHERE id = ? AND sample_id = ?",
                 [tag_id, id])
-            apply_event!(InTransaction(), db, req;
+            result = apply_event!(InTransaction(), db, req;
                 kind = "remove_tag",
                 entity_type = "sample", entity_id = id,
                 payload = Dict(:tag_id => tag_id, :experiment_id => exp_id))
+            _enqueue_broadcast_from_result!(result, "remove_tag", "sample", id)
             HTTP.Response(204)
         end
     end

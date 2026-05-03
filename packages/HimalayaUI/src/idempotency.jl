@@ -18,13 +18,14 @@ Lifecycle notes:
   process (see CLAUDE.md). A multi-process or sharded deployment would need a
   different primitive — e.g. `INSERT OR IGNORE` on `idempotent_responses` plus
   a cached re-read — because in-process `ReentrantLock`s don't cross processes.
-- **Sweep contract for M0.7.** A sweeper cannot delete an entry from
-  `OP_LOCKS` without holding `OP_LOCKS_MU` AND verifying no other task may
-  still hold a reference to that lock. A naive delete races with `_op_lock`
-  callers that already received the lock and are about to call `lock(it)`.
-  M0.7 will likely sweep entries whose corresponding `idempotent_responses`
-  row exists (i.e. the body has executed and won't be re-entered) under
-  `OP_LOCKS_MU` only.
+- **Sweep contract.** `gc_idempotent_responses!` only collects locks for
+  ops that have a corresponding `idempotent_responses` row OLDER than the
+  TTL — i.e. the body has executed and committed. Mid-body ops have no
+  response row yet (the row is INSERTed inside the body's transaction), so
+  the sweep cannot race-delete a lock another task is about to acquire
+  for a never-completed op. Both the response delete and the lock delete
+  happen under `OP_LOCKS_MU` so concurrent `_op_lock` callers either see
+  the old lock or `get!` a fresh one — never observe a torn deletion.
 """
 const OP_LOCKS    = Dict{String, ReentrantLock}()
 const OP_LOCKS_MU = ReentrantLock()
@@ -41,6 +42,11 @@ function _lookup_cached_response(db::SQLite.DB, op_id::String)::Union{HTTP.Respo
         [op_id]))
     isempty(rows) && return nothing
     row = rows[1]
+    # Cached replay synthesizes a fresh Response with `Content-Type: application/json`
+    # only — any other headers the original route emitted (e.g. CORS, custom
+    # `Cache-Control`) are lost on retry. All M2 idempotent routes return JSON
+    # only and don't add custom headers, so this is fine today; if a future
+    # idempotent route needs richer headers, persist them in the cache row.
     return HTTP.Response(Int(row.status_code),
                          ["Content-Type" => "application/json"];
                          body = String(row.body))
@@ -145,34 +151,35 @@ end
 """
     gc_idempotent_responses!(db; ttl_seconds = 3600)
 
-Sweep `idempotent_responses` rows older than `ttl_seconds` and prune the
-corresponding `OP_LOCKS` entries. Safe to call concurrently with
-`with_idempotency`: the sweep holds `OP_LOCKS_MU` while reading the live set
-and rebuilding the Dict, which serialises against `_op_lock`'s `get!`.
+Sweep `idempotent_responses` rows older than `ttl_seconds` and drop the
+matching `OP_LOCKS` entries. Mid-body ops have no response row yet (the row
+is INSERTed inside the body's tx), so they're invisible to the sweep — the
+sweep can only collect locks for ops that have COMPLETED past their TTL.
+This avoids the race where a naive sweep would delete a lock a fresh retry
+is about to acquire for a never-completed op.
 
-The combined pruning preserves the lock-free fast path: live ops keep their
-locks; only ops whose response is gone are eligible for collection. An op
-already in flight when the sweep runs will appear in the live set (because
-its response has already been INSERTed by the time it returns) — so the
-sweep cannot race-delete an active lock.
+Holds `OP_LOCKS_MU` while collecting the to-prune set and deleting from
+`OP_LOCKS`, so concurrent `_op_lock` callers either see the old lock or
+`get!` a fresh one — never observe a torn deletion.
 
 Recommended TTL: 1 hour (3600s). Long enough to cover any plausible client
 retry window; short enough that long-running processes don't accumulate
 unbounded state.
 """
 function gc_idempotent_responses!(db::SQLite.DB; ttl_seconds::Int = 3600)
+    # Collect the ops we're about to GC (response row past TTL) BEFORE
+    # deleting, so we can drop only those specific locks. Don't touch locks
+    # for ops without a response row — they're either in flight or never
+    # completed, and the lock is required for any concurrent retry.
+    expired = Tables.rowtable(DBInterface.execute(db,
+        "SELECT client_op_id FROM idempotent_responses WHERE created_at < datetime('now', ?)",
+        ["-$(ttl_seconds) seconds"]))
     DBInterface.execute(db,
         "DELETE FROM idempotent_responses WHERE created_at < datetime('now', ?)",
         ["-$(ttl_seconds) seconds"])
     lock(OP_LOCKS_MU) do
-        live = Set{String}()
-        rows = Tables.rowtable(DBInterface.execute(db,
-            "SELECT client_op_id FROM idempotent_responses"))
-        for r in rows
-            push!(live, String(r.client_op_id))
-        end
-        for k in collect(keys(OP_LOCKS))
-            k in live || delete!(OP_LOCKS, k)
+        for r in expired
+            delete!(OP_LOCKS, String(r.client_op_id))
         end
     end
     nothing

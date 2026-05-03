@@ -29,5 +29,6 @@ using Test
     include("test_actions.jl")
     include("test_events.jl")
     include("test_sse.jl")
+    include("test_routes_sse_broadcast.jl")
     include("test_idempotency.jl")
 end

@@ -214,7 +214,12 @@ function create_schema!(db::SQLite.DB)
 end
 
 function migrate_schema!(db::SQLite.DB)
-    stmts = [
+    # Each ALTER TABLE adds a column that may already exist on legacy DBs;
+    # SQLite has no `ADD COLUMN IF NOT EXISTS`, so we tolerate "duplicate column"
+    # specifically. CREATE INDEX/TABLE statements below are `IF NOT EXISTS`-
+    # guarded and any unexpected failure must surface — never swallow them
+    # under a bare catch (issue #6 from PR review).
+    alter_stmts = [
         "ALTER TABLE exposures ADD COLUMN status TEXT CHECK (status IN ('accepted', 'rejected'))",
         "ALTER TABLE exposures ADD COLUMN image_path TEXT",
         "ALTER TABLE experiments ADD COLUMN config TEXT",
@@ -231,25 +236,51 @@ function migrate_schema!(db::SQLite.DB)
         "ALTER TABLE user_actions ADD COLUMN undoes_event_id INTEGER REFERENCES user_actions(id)",
         "ALTER TABLE user_actions ADD COLUMN client_id TEXT",
         "ALTER TABLE user_actions ADD COLUMN client_op_id TEXT",
-        "CREATE INDEX IF NOT EXISTS idx_events_by_client_op_id ON user_actions(client_op_id) WHERE client_op_id IS NOT NULL",
+    ]
+    for stmt in alter_stmts
+        try
+            DBInterface.execute(db, stmt)
+        catch err
+            msg = sprint(showerror, err)
+            # Two errors are expected during incremental upgrades:
+            # - "duplicate column name": the column already exists on a DB
+            #   that's been migrated before. Idempotent — ignore.
+            # - "no such table": a partial legacy DB or fresh-from-create_schema!
+            #   that hasn't yet seen this table (e.g. older test fixtures
+            #   pre-dating user_actions). Idempotent — ignore.
+            # Anything else (typo, FK clash, constraint violation) must
+            # propagate so a half-migrated DB isn't silently masked (issue #6).
+            (occursin("duplicate column name", msg) || occursin("no such table", msg)) ||
+                rethrow()
+        end
+    end
+
+    # The below statements are all IF NOT EXISTS-guarded. The CREATE INDEX
+    # variants depend on `user_actions` existing; partial-legacy DBs (e.g.
+    # the test fixture in test_db.jl that only has `experiments`) tolerate
+    # "no such table" — every other failure must propagate (issue #6).
+    function _create_safely(stmt::String)
+        try
+            DBInterface.execute(db, stmt)
+        catch err
+            occursin("no such table", sprint(showerror, err)) || rethrow()
+        end
+    end
+    _create_safely(
+        "CREATE INDEX IF NOT EXISTS idx_events_by_client_op_id ON user_actions(client_op_id) WHERE client_op_id IS NOT NULL")
+    DBInterface.execute(db,
         """CREATE TABLE IF NOT EXISTS idempotent_responses (
             client_op_id  TEXT PRIMARY KEY,
             status_code   INTEGER NOT NULL,
             body          TEXT NOT NULL,
             created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
-        )""",
-        "CREATE INDEX IF NOT EXISTS idx_idempotent_responses_created ON idempotent_responses(created_at)",
+        )""")
+    DBInterface.execute(db,
+        "CREATE INDEX IF NOT EXISTS idx_idempotent_responses_created ON idempotent_responses(created_at)")
+    _create_safely(
         """CREATE UNIQUE INDEX IF NOT EXISTS idx_events_unique_op
             ON user_actions(client_op_id, action, entity_id)
-            WHERE client_op_id IS NOT NULL""",
-    ]
-    for stmt in stmts
-        try
-            DBInterface.execute(db, stmt)
-        catch
-            # column already exists — safe to ignore
-        end
-    end
+            WHERE client_op_id IS NOT NULL""")
     migrate_pk_to_autoincrement!(db)
     migrate_r2_widen_index_peaks_pk!(db)  # rebuild with widened PK first
     migrate_r2_split_peaks!(db)            # then repoint manual-peak refs

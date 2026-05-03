@@ -85,10 +85,11 @@ function register_exposures_routes!()
             DBInterface.execute(db,
                 "UPDATE exposures SET status = ? WHERE id = ?", [status, id])
 
-            apply_event!(InTransaction(), db, req;
+            result = apply_event!(InTransaction(), db, req;
                 kind = "set_exposure_status",
                 entity_type = "exposure", entity_id = id,
                 payload = Dict(:status => status))
+            _enqueue_broadcast_from_result!(result, "set_exposure_status", "exposure", id)
 
             HTTP.Response(200, ["Content-Type" => "application/json"],
                 JSON3.write(Dict(:id => id, :status => status)))
@@ -115,10 +116,11 @@ function register_exposures_routes!()
             DBInterface.execute(db,
                 "UPDATE exposures SET selected = 1 WHERE id = ?", [id])
 
-            apply_event!(InTransaction(), db, req;
+            result = apply_event!(InTransaction(), db, req;
                 kind = "select_exposure",
                 entity_type = "exposure", entity_id = id,
                 payload = Dict(:sample_id => sample_id))
+            _enqueue_broadcast_from_result!(result, "select_exposure", "exposure", id)
 
             HTTP.Response(200, ["Content-Type" => "application/json"],
                 JSON3.write(Dict(:id => id, :selected => true)))
@@ -141,11 +143,12 @@ function register_exposures_routes!()
                 "SELECT sample_id FROM exposures WHERE id = ?", [id]))
             sample_id = isempty(erows) ? nothing : Int(erows[1].sample_id)
 
-            apply_event!(InTransaction(), db, req;
+            result = apply_event!(InTransaction(), db, req;
                 kind = "add_tag",
                 entity_type = "exposure", entity_id = id,
                 payload = Dict(:key => key, :value => value,
                                :tag_id => tag_id, :sample_id => sample_id))
+            _enqueue_broadcast_from_result!(result, "add_tag", "exposure", id)
 
             HTTP.Response(201, ["Content-Type" => "application/json"],
                 JSON3.write(Dict(:id=>tag_id, :exposure_id=>id,
@@ -164,10 +167,11 @@ function register_exposures_routes!()
             DBInterface.execute(db,
                 "DELETE FROM exposure_tags WHERE id = ? AND exposure_id = ?",
                 [tag_id, id])
-            apply_event!(InTransaction(), db, req;
+            result = apply_event!(InTransaction(), db, req;
                 kind = "remove_tag",
                 entity_type = "exposure", entity_id = id,
                 payload = Dict(:tag_id => tag_id, :sample_id => sample_id))
+            _enqueue_broadcast_from_result!(result, "remove_tag", "exposure", id)
             HTTP.Response(204)
         end
     end

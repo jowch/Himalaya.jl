@@ -220,6 +220,29 @@ function _enqueue_post_commit_broadcast!(args...; kwargs...)
 end
 
 """
+    _enqueue_broadcast_from_result!(result, kind, entity_type, entity_id;
+                                    post_state = nothing)
+
+Convenience: queue a post-commit SSE broadcast from the NamedTuple returned
+by `apply_event!(InTransaction(), ...)`. Routes wrapped in `with_idempotency`
+that call the InTransaction variant must explicitly enqueue their broadcast
+(the InTransaction variant does NOT broadcast — see `apply_event!` docstring).
+This helper centralizes the field-by-field unpack so callers don't drift.
+
+Reuses `result.payload_json` (the canonical serialization frozen by
+`apply_event!` after JSON3 round-trip) — no re-serialization needed.
+"""
+function _enqueue_broadcast_from_result!(result, kind::String,
+                                         entity_type::String, entity_id::Integer;
+                                         post_state::Union{Dict, Nothing} = nothing)
+    _enqueue_post_commit_broadcast!(
+        Int(result.event_id), kind, entity_type, Int(entity_id),
+        result.user_id, result.client_id, result.client_op_id,
+        result.payload_json;
+        post_state = post_state)
+end
+
+"""
     _flush_post_commit_broadcasts!()
 
 Fire every queued broadcast for the current task and clear the queue. Called

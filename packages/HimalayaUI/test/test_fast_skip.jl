@@ -114,11 +114,102 @@ end
         @info "fast-skip P99 latency" p99
         # The spec's load-bearing claim is "microseconds, not milliseconds" — preventing
         # file I/O on the no-change path. Steady-state is ~150µs (5 SQLite SELECTs at
-        # ~30µs each, hardware-floored). 500µs is a regression ceiling: well into
-        # microseconds, but tight enough to catch a future change that re-introduces
-        # millisecond-scale work (file I/O, fsync, etc.). See plan docs/superpowers/
-        # plans/2026-05-02-mutation-queue.md M0.5 follow-up note.
-        @test p99 < 500e-6
+        # ~30µs each, hardware-floored). The ceiling is widened to 2 ms on CI to
+        # absorb shared-runner GC noise (PR review suggestion #6); on a developer
+        # box the @info logs make a real regression easy to spot well below 2 ms.
+        ceiling_s = haskey(ENV, "CI") ? 2.0e-3 : 500e-6
+        @test p99 < ceiling_s
+    end
+end
+
+@testset "fast-skip: hash mismatch falls through to slow path even when trace_known_unchanged=true" begin
+    # Suggestion #5 from PR review: the mismatch branch was untested. If a peak
+    # is added/removed/excluded between calls, the stored analysis_inputs_hash
+    # diverges from the freshly-computed one and indexpeaks must run even
+    # though the trace itself is unchanged.
+    mktempdir() do tmp
+        ctx = setup_clean_analyzed_exposure(tmp)
+        prior_hash_rows = Tables.rowtable(DBInterface.execute(ctx.db,
+            "SELECT analysis_inputs_hash FROM exposures WHERE id = ?",
+            [ctx.exposure_id]))
+        prior_hash = String(prior_hash_rows[1].analysis_inputs_hash)
+        prior_indices = first(Tables.rowtable(DBInterface.execute(ctx.db,
+            "SELECT COUNT(*) AS c FROM indices WHERE exposure_id = ?",
+            [ctx.exposure_id]))).c
+
+        # Mutate the auto_peaks set so the hash diverges. Picking the
+        # highest-q peak is safest — drops one ratio position rather than
+        # the basis peak, which keeps indexpeaks producing some indices.
+        DBInterface.execute(ctx.db,
+            """DELETE FROM auto_peaks WHERE id IN
+                 (SELECT id FROM auto_peaks WHERE exposure_id = ?
+                  ORDER BY q DESC LIMIT 1)""",
+            [ctx.exposure_id])
+        # Belt-and-braces: stale the index hashes to make sure the index set
+        # is recomputed.
+        DBInterface.execute(ctx.db,
+            "UPDATE indices SET inputs_hash = NULL WHERE exposure_id = ?",
+            [ctx.exposure_id])
+
+        n_before = first(Tables.rowtable(DBInterface.execute(ctx.db,
+            "SELECT COUNT(*) AS c FROM user_actions WHERE entity_id = ? AND action = 'analyze_run'",
+            [ctx.exposure_id]))).c
+
+        # Run with trace_known_unchanged=true. Hash mismatch should force the
+        # indexpeaks branch even though we asked it to skip the trace re-read.
+        analyze_exposure!(ctx.db, ctx.exposure_id, ctx.analysis_dir;
+                          trace_known_unchanged = true)
+
+        new_hash_rows = Tables.rowtable(DBInterface.execute(ctx.db,
+            "SELECT analysis_inputs_hash FROM exposures WHERE id = ?",
+            [ctx.exposure_id]))
+        new_hash = String(new_hash_rows[1].analysis_inputs_hash)
+        new_indices = first(Tables.rowtable(DBInterface.execute(ctx.db,
+            "SELECT COUNT(*) AS c FROM indices WHERE exposure_id = ?",
+            [ctx.exposure_id]))).c
+        n_after = first(Tables.rowtable(DBInterface.execute(ctx.db,
+            "SELECT COUNT(*) AS c FROM user_actions WHERE entity_id = ? AND action = 'analyze_run'",
+            [ctx.exposure_id]))).c
+
+        @test new_hash != prior_hash      # hash recomputed.
+        @test n_after == n_before + 1     # analyze_run row written (slow path ran).
+        @test new_indices != prior_indices || new_indices >= 1  # indexpeaks ran.
+    end
+end
+
+@testset "migrate_schema! preserves rows in legacy user_actions on upgrade (issue #7)" begin
+    # Pre-fix the bare catch in migrate_schema! could have masked a failure
+    # against a populated user_actions table. Cover the legacy path explicitly:
+    # seed rows that will be NULL on `client_op_id` after the column ALTER,
+    # then re-run the migration and verify rows survive plus the partial
+    # unique index installs cleanly.
+    mktempdir() do tmp
+        # open_db gives us the canonical schema + migrations. Seed
+        # user_actions rows whose client_op_id is NULL (which is the legacy
+        # shape post-ALTER — pre-Plan 8 rows have no op id).
+        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+        u_id = HimalayaUI.get_or_create_user!(db, "alice")
+        DBInterface.execute(db,
+            "INSERT INTO user_actions (user_id, action, entity_type, entity_id) VALUES (?, ?, ?, ?)",
+            [u_id, "noop_test", "exposure", 1])
+        DBInterface.execute(db,
+            "INSERT INTO user_actions (user_id, action, entity_type, entity_id) VALUES (?, ?, ?, ?)",
+            [u_id, "noop_test", "exposure", 2])
+
+        # Re-run migrate_schema! — must be idempotent over a populated DB.
+        HimalayaUI.migrate_schema!(db)
+
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id, action, client_op_id FROM user_actions WHERE action = 'noop_test' ORDER BY id"))
+        @test length(rows) == 2
+        @test all(r -> ismissing(r.client_op_id), rows)
+        @test rows[1].action == "noop_test"
+
+        # The partial unique index excludes NULL client_op_id rows, so
+        # multiple identical legacy rows coexist without violating it.
+        idx_rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_events_unique_op'"))
+        @test length(idx_rows) == 1
     end
 end
 

@@ -28,53 +28,88 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
 
   switch (remote.kind) {
     case "peak_added": {
-      qc.setQueryData<Peak[]>(queryKeys.peaks(id), (old = []) => [
-        ...old,
-        // Negative id placeholder per the optimistic-id invariant in types.ts.
-        // The remote event represents a manually-added peak; intensity/
-        // prominence/sharpness are null because the server hasn't run analysis
-        // yet. Peak's interface allows null for these fields.
-        {
-          id: -remote.id,
-          exposure_id: id,
-          q: payload?.q as number,
-          intensity: null,
-          prominence: null,
-          sharpness: null,
-          source: "manual",
-          excluded: false,
-        },
-      ]);
+      // Server includes peak_curation_id (= the real DB id) in the payload —
+      // use it as the row's id so a foreign-tab insert can later be deleted /
+      // patched without a 404. (Pre-fix: used -remote.id, the EVENT id, which
+      // didn't correspond to any real peak row — issue #2 from PR review.)
+      const peakId = payload?.peak_curation_id as number | undefined;
+      if (peakId === undefined) {
+        // Defensive fallback: if a future server change drops peak_curation_id,
+        // invalidate so the next read replaces the placeholder with the real
+        // row rather than leaving a phantom in the cache.
+        qc.invalidateQueries({ queryKey: queryKeys.peaks(id) });
+        applyPostState();
+        break;
+      }
+      qc.setQueryData<Peak[]>(queryKeys.peaks(id), (old = []) => {
+        // Idempotent insert: dedupe against an existing row (own-tab SSE echo
+        // arriving after onSuccess already wrote the canonical row).
+        if (old.some((p) => p.id === peakId)) return old;
+        return [
+          ...old,
+          {
+            id: peakId,
+            exposure_id: id,
+            q: payload?.q as number,
+            intensity: null,
+            prominence: null,
+            sharpness: null,
+            source: "manual",
+            excluded: false,
+          },
+        ];
+      });
       applyPostState();
       break;
     }
     case "peak_excluded": {
+      // Prefer auto_peak_id when present — id match is unambiguous, q match
+      // can mis-pick when two auto peaks are within tolerance of each other
+      // (suggestion #1 from PR review).
+      const autoPeakId = payload?.auto_peak_id as number | undefined;
       const targetQ = payload?.q as number;
       const tol = peakQTol(targetQ);
       qc.setQueryData<Peak[]>(queryKeys.peaks(id), (old = []) =>
-        old.map((p) =>
-          Math.abs(p.q - targetQ) < tol
-            ? { ...p, excluded: true }
-            : p));
+        old.map((p) => {
+          const matches = autoPeakId !== undefined
+            ? p.id === autoPeakId
+            : Math.abs(p.q - targetQ) < tol;
+          return matches ? { ...p, excluded: true } : p;
+        }));
       applyPostState();
       break;
     }
     case "peak_unexcluded": {
+      const autoPeakId = payload?.auto_peak_id as number | undefined;
       const targetQ = payload?.q as number;
       const tol = peakQTol(targetQ);
       qc.setQueryData<Peak[]>(queryKeys.peaks(id), (old = []) =>
-        old.map((p) =>
-          Math.abs(p.q - targetQ) < tol
-            ? { ...p, excluded: false }
-            : p));
+        old.map((p) => {
+          const matches = autoPeakId !== undefined
+            ? p.id === autoPeakId
+            : Math.abs(p.q - targetQ) < tol;
+          return matches ? { ...p, excluded: false } : p;
+        }));
       applyPostState();
       break;
     }
     case "peak_removed": {
-      const targetQ = payload?.q as number;
-      const tol = peakQTol(targetQ);
-      qc.setQueryData<Peak[]>(queryKeys.peaks(id), (old = []) =>
-        old.filter((p) => Math.abs(p.q - targetQ) >= tol));
+      // Filter by peak_curation_id when present; q-tolerance is the fallback
+      // for events emitted before the id was added to the payload (issue #1).
+      const removedId = payload?.peak_curation_id as number | undefined;
+      const targetQ = payload?.q as number | undefined;
+      qc.setQueryData<Peak[]>(queryKeys.peaks(id), (old = []) => {
+        if (removedId !== undefined) {
+          return old.filter((p) => p.id !== removedId);
+        }
+        if (targetQ !== undefined) {
+          const tol = peakQTol(targetQ);
+          return old.filter((p) => Math.abs(p.q - targetQ) >= tol);
+        }
+        // Neither id nor q — payload is unusable; refetch.
+        qc.invalidateQueries({ queryKey: queryKeys.peaks(id) });
+        return old;
+      });
       applyPostState();
       break;
     }
@@ -103,23 +138,25 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
       break;
     }
     case "set_exposure_status": {
-      // Forward-scaffolded: route still uses log_action!.
       qc.setQueryData(queryKeys.exposure(id), (old: Exposure | undefined) =>
         old ? { ...old, status: payload?.status as Exposure["status"] } : old);
       break;
     }
     case "post_message": {
-      // Forward-scaffolded: route still uses log_action!.
+      // entity_id on the SSE frame is the sample_message id; the message's
+      // sample_id rides in the payload (set by the route handler).
       const sampleId = payload?.sample_id as number;
-      qc.setQueryData<SampleMessage[]>(queryKeys.messages(sampleId), (old = []) => [
-        ...old,
-        payload as unknown as SampleMessage,
-      ]);
+      qc.setQueryData<SampleMessage[]>(queryKeys.messages(sampleId), (old = []) => {
+        // Dedupe in case the same SSE arrives twice (own-op late echo races
+        // post-onSuccess writes); message ids are server-assigned positives.
+        const incoming = payload as unknown as SampleMessage;
+        if (old.some((m) => m.id === incoming.id)) return old;
+        return [...old, incoming];
+      });
       break;
     }
     case "add_tag":
     case "remove_tag": {
-      // Forward-scaffolded: route still uses log_action!.
       const parentKey = remote.entity_type === "sample"
         ? queryKeys.samples(payload?.experiment_id as number)
         : queryKeys.exposures(payload?.sample_id as number);
@@ -127,13 +164,11 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
       break;
     }
     case "update_sample": {
-      // Forward-scaffolded: route still uses log_action!.
       qc.setQueryData(queryKeys.sample(id), (old: Sample | undefined) =>
         old ? { ...old, ...(payload ?? {}) } : old);
       break;
     }
     case "select_exposure": {
-      // Forward-scaffolded: route still uses log_action!.
       const sampleId = payload?.sample_id as number;
       qc.invalidateQueries({ queryKey: queryKeys.exposures(sampleId) });
       break;

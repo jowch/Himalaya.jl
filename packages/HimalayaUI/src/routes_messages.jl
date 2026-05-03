@@ -60,10 +60,12 @@ function register_messages_routes!()
 
             # Payload mirrors the full SampleMessage row so applyRemoteToCache
             # can spread it directly into the messages cache.
-            apply_event!(InTransaction(), db, req;
+            result = apply_event!(InTransaction(), db, req;
                 kind = "post_message",
                 entity_type = "sample_message", entity_id = msg_id,
                 payload = msg_json)
+            _enqueue_broadcast_from_result!(result, "post_message",
+                "sample_message", msg_id)
 
             HTTP.Response(201, ["Content-Type" => "application/json"],
                 JSON3.write(msg_json))

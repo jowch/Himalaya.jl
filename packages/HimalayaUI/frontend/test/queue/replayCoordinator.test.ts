@@ -106,7 +106,29 @@ describe("handleRemoteEvent", () => {
     expect(onMutate).not.toHaveBeenCalled();
   });
 
-  it("applyRemoteToCache for peak_added appends an optimistic-id row to the peaks cache", () => {
+  it("applyRemoteToCache for peak_added inserts the row using server-assigned peak_curation_id", () => {
+    qc.setQueryData(["exposure", 42, "peaks"], [
+      { id: 1, q: 0.5, kind: "auto", excluded: false },
+    ]);
+    handleRemoteEvent({
+      id: 99, // event id (NOT used as peak id post issue #2 fix)
+      kind: "peak_added",
+      entity_type: "exposure",
+      entity_id: 42,
+      client_op_id: "foreign-add",
+      payload: { q: 1.7, peak_curation_id: 314 },
+    }, qc, qc.getMutationCache());
+    const peaks = qc.getQueryData(["exposure", 42, "peaks"]) as any[];
+    expect(peaks).toHaveLength(2);
+    expect(peaks[1]).toMatchObject({
+      id: 314,
+      q: 1.7,
+      source: "manual",
+      excluded: false,
+    });
+  });
+
+  it("peak_added without peak_curation_id falls back to invalidation rather than inserting a phantom row", () => {
     qc.setQueryData(["exposure", 42, "peaks"], [
       { id: 1, q: 0.5, kind: "auto", excluded: false },
     ]);
@@ -115,13 +137,75 @@ describe("handleRemoteEvent", () => {
       kind: "peak_added",
       entity_type: "exposure",
       entity_id: 42,
-      client_op_id: "foreign-add",
-      payload: { q: 1.7 },
+      client_op_id: "foreign-add-legacy",
+      payload: { q: 1.7 }, // no peak_curation_id
+    }, qc, qc.getMutationCache());
+    // Cache untouched; invalidation has been queued (no phantom insert).
+    const peaks = qc.getQueryData(["exposure", 42, "peaks"]) as any[];
+    expect(peaks).toHaveLength(1);
+  });
+
+  it("peak_removed filters by peak_curation_id (not q) — preserves untargeted peaks even at the same q", () => {
+    qc.setQueryData(["exposure", 42, "peaks"], [
+      { id: 1, q: 0.5, source: "auto", excluded: false },
+      { id: 2, q: 1.7, source: "manual", excluded: false },
+      { id: 3, q: 1.7, source: "manual", excluded: false },
+    ]);
+    handleRemoteEvent({
+      id: 100,
+      kind: "peak_removed",
+      entity_type: "exposure",
+      entity_id: 42,
+      client_op_id: null,
+      payload: { peak_curation_id: 2 },
     }, qc, qc.getMutationCache());
     const peaks = qc.getQueryData(["exposure", 42, "peaks"]) as any[];
-    expect(peaks).toHaveLength(2);
-    expect(peaks[1]).toMatchObject({ q: 1.7, source: "manual", excluded: false });
-    expect(peaks[1].id).toBeLessThan(0);
+    // Only peak id=2 removed; the same-q peak id=3 survives because we filter
+    // by id, not q (issue #1 from PR review — pre-fix behavior wiped both).
+    expect(peaks.map(p => p.id).sort()).toEqual([1, 3]);
+  });
+
+  it("peak_excluded prefers auto_peak_id over q tolerance (suggestion #1)", () => {
+    qc.setQueryData(["exposure", 42, "peaks"], [
+      { id: 10, q: 1.7000, source: "auto", excluded: false },
+      { id: 11, q: 1.7005, source: "auto", excluded: false }, // within tol of 1.7
+    ]);
+    handleRemoteEvent({
+      id: 200,
+      kind: "peak_excluded",
+      entity_type: "exposure",
+      entity_id: 42,
+      client_op_id: null,
+      payload: { q: 1.7000, auto_peak_id: 11 },
+    }, qc, qc.getMutationCache());
+    const peaks = qc.getQueryData(["exposure", 42, "peaks"]) as any[];
+    expect(peaks.find(p => p.id === 10)?.excluded).toBe(false);
+    expect(peaks.find(p => p.id === 11)?.excluded).toBe(true);
+  });
+
+  it("self-echo SSE for an own op with no matching deferred is dropped (issue #8)", () => {
+    qc.setQueryData(["exposure", 42, "peaks"], [
+      { id: 1, q: 0.5, source: "auto", excluded: false },
+    ]);
+    // Read the per-tab client_id the way the runtime does so we can spoof it.
+    const ourClientId = (() => {
+      const k = "himalaya.client_id";
+      let v = sessionStorage.getItem(k);
+      if (!v) { v = "test-client"; sessionStorage.setItem(k, v); }
+      return v;
+    })();
+    handleRemoteEvent({
+      id: 99,
+      kind: "peak_added",
+      entity_type: "exposure",
+      entity_id: 42,
+      client_id: ourClientId,
+      client_op_id: "own-op-no-deferred",
+      payload: { q: 1.7, peak_curation_id: 999 },
+    }, qc, qc.getMutationCache());
+    const peaks = qc.getQueryData(["exposure", 42, "peaks"]) as any[];
+    // Self-echo guard short-circuits Case 2; cache is unchanged.
+    expect(peaks).toHaveLength(1);
   });
 
   it("aborts the HTTP request when SSE resolves the deferred first", () => {

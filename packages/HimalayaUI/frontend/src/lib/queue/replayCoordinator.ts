@@ -2,6 +2,7 @@ import type { QueryClient, MutationCache } from "@tanstack/react-query";
 import type { SseEvent } from "./types";
 import { getDeferred, clearDeferred } from "./deferred";
 import { applyRemoteToCache } from "./applyRemoteToCache";
+import { getClientId } from "../clientId";
 
 /**
  * Process an SSE frame against the local cache and pending mutation queue.
@@ -31,6 +32,10 @@ export function handleRemoteEvent(
   qc: QueryClient,
   mc: MutationCache,
 ): void {
+  const isOwnTab = remote.client_id !== undefined &&
+                   remote.client_id !== null &&
+                   remote.client_id === getClientId();
+
   // Case 1: SSE confirms a pending op of ours.
   if (remote.client_op_id) {
     const deferred = getDeferred(remote.client_op_id);
@@ -49,6 +54,14 @@ export function handleRemoteEvent(
     }
   }
 
+  // Self-echo guard (issue #8 from PR review). No deferred matches but the
+  // frame originated in this same tab — i.e. HTTP-first won and the deferred
+  // was already cleared in `mutationFn`'s finally. The mutator's onSuccess
+  // already wrote the canonical row; falling into Case 2 here would
+  // double-apply the effect via applyRemoteToCache (e.g. duplicate peak row
+  // for peak_added). Drop the frame.
+  if (isOwnTab) return;
+
   // Case 2: foreign event. Replay-as-rerun.
   const pending = mc.getAll().filter(
     (m) => m.state.status === "pending"
@@ -64,10 +77,23 @@ export function handleRemoteEvent(
   applyRemoteToCache(remote, qc);
 
   // Re-apply optimistic effects in insertion order so the cache reflects
-  // the remote effect plus our pending pipeline on top.
+  // the remote effect plus our pending pipeline on top. Capture each fresh
+  // restore closure and swap it onto `m.state.context` so a later `onError`
+  // rolls back to the post-foreign-event snapshot rather than the original
+  // pre-rollback state (issue #3 from PR review). TanStack v5 sets
+  // `state.context` once from the original `onMutate` return value and
+  // doesn't replace it on its own — the assignment below overrides that.
   for (const m of pending) {
-    const onMutate = m.options.onMutate as ((vars: unknown) => void) | undefined;
-    onMutate?.(m.state.variables);
+    const onMutate = m.options.onMutate as
+      | ((vars: unknown) => unknown)
+      | undefined;
+    const fresh = onMutate?.(m.state.variables);
+    if (fresh !== undefined) {
+      // Cast through `unknown` because TanStack types `state.context` as
+      // readonly at the public API surface; we're surgically updating it
+      // here to keep the per-mutation rollback closure consistent.
+      (m.state as unknown as { context: unknown }).context = fresh;
+    }
   }
 }
 

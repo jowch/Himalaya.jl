@@ -40,19 +40,22 @@ function _enrich_curation_post_state(db::SQLite.DB, exposure_id::Int)
 end
 
 """
-    _queue_curation_broadcast!(req, result, kind, entity_id, payload, post_state)
+    _queue_peak_added_broadcast!(result, entity_id, payload, post_state)
 
-Helper: queue the enriched post-commit SSE frame for a curation route. Mirrors
-the call shape that `_maybe_broadcast_event!` would have made on the default
-`apply_event!` path, but lets us defer to after the outer with_idempotency tx.
+Specialized broadcast helper for `peak_added`. The payload is mutated in the
+route body to include `peak_curation_id` AFTER `apply_event!` returns (the
+id is the dispatcher's `view_row_id`), so we have to re-serialize the dict
+here — `result.payload_json` was frozen by `apply_event!` before the
+mutation. All other curation kinds use `_enqueue_broadcast_from_result!`
+directly (it reuses `result.payload_json` with no re-serialization —
+suggestion #4 from PR review).
 """
-function _queue_curation_broadcast!(req, result, kind::String,
-                                     entity_id::Integer, payload, post_state)
-    payload_json = payload === nothing ? nothing : JSON3.write(payload)
+function _queue_peak_added_broadcast!(result, entity_id::Integer,
+                                       payload::AbstractDict, post_state)
     _enqueue_post_commit_broadcast!(
-        Int(result.event_id), kind, "exposure", Int(entity_id),
+        Int(result.event_id), "peak_added", "exposure", Int(entity_id),
         result.user_id, result.client_id, result.client_op_id,
-        payload_json;
+        JSON3.write(payload);
         post_state = post_state)
 end
 
@@ -115,7 +118,12 @@ function register_peaks_routes!()
         return with_idempotency(db, req) do
             body = json(req)
             q    = Float64(body.q)
-            payload = Dict(:q => q)
+
+            # Initial payload before insertion. The peak_curation_id is added
+            # below once the dispatcher returns the new row id, so the SSE
+            # frame is self-contained — foreign tabs can use the real id
+            # rather than synthesizing a placeholder from event_id (issue #2).
+            payload = Dict{Symbol, Any}(:q => q)
 
             # Participate in with_idempotency's outer transaction so the event
             # write, the curation insert, the synchronous reanalyze, AND the
@@ -129,6 +137,7 @@ function register_peaks_routes!()
             new_curation_id = result.view_row_id
             new_curation_id === nothing &&
                 error("dispatcher did not record a view_row_id for peak_added")
+            payload[:peak_curation_id] = new_curation_id
 
             # Synchronous reanalyze inside the tx; trace is unchanged so use
             # the fast-skip path. defer_broadcast=true suppresses the inner
@@ -143,7 +152,7 @@ function register_peaks_routes!()
             new_hash  = read_inputs_hash(db, id)
             post_state = _enrich_curation_post_state(db, id)
 
-            _queue_curation_broadcast!(req, result, "peak_added", id, payload, post_state)
+            _queue_peak_added_broadcast!(result, id, payload, post_state)
 
             HTTP.Response(201, ["Content-Type" => "application/json"],
                 JSON3.write(Dict(
@@ -236,8 +245,8 @@ function register_peaks_routes!()
                     end
 
                     post_state = _enrich_curation_post_state(db, exposure_id)
-                    _queue_curation_broadcast!(req, result, "peak_excluded",
-                        exposure_id, payload, post_state)
+                    _enqueue_broadcast_from_result!(result, "peak_excluded",
+                        "exposure", exposure_id; post_state = post_state)
                 end
             else
                 # peak_unexcluded: find the prior peak_excluded event to record as undoes.
@@ -270,8 +279,8 @@ function register_peaks_routes!()
                 end
 
                 post_state = _enrich_curation_post_state(db, exposure_id)
-                _queue_curation_broadcast!(req, result, "peak_unexcluded",
-                    exposure_id, payload, post_state)
+                _enqueue_broadcast_from_result!(result, "peak_unexcluded",
+                    "exposure", exposure_id; post_state = post_state)
             end
 
             # Return the updated row with fresh excluded state, plus the M2
@@ -300,6 +309,11 @@ function register_peaks_routes!()
                 [id]))
             if !isempty(curation_rows)
                 exposure_id = Int(curation_rows[1].exposure_id)
+                # Capture q BEFORE deletion so the SSE payload is self-contained;
+                # foreign tabs need either id or q to filter the cache (issue #1).
+                q_rows = Tables.rowtable(DBInterface.execute(db,
+                    "SELECT q FROM peak_curations WHERE id = ?", [id]))
+                removed_q = isempty(q_rows) ? nothing : Float64(q_rows[1].q)
 
                 # Delete the curation row and its associated index_peaks rows
                 DBInterface.execute(db,
@@ -307,7 +321,8 @@ function register_peaks_routes!()
                 DBInterface.execute(db,
                     "DELETE FROM peak_curations WHERE id = ?", [id])
 
-                payload = Dict(:peak_curation_id => id)
+                payload = Dict{Symbol, Any}(:peak_curation_id => id)
+                removed_q === nothing || (payload[:q] = removed_q)
                 result = apply_event!(InTransaction(), db, req;
                     kind        = "peak_removed",
                     entity_type = "exposure",
@@ -322,8 +337,8 @@ function register_peaks_routes!()
                 end
 
                 post_state = _enrich_curation_post_state(db, exposure_id)
-                _queue_curation_broadcast!(req, result, "peak_removed",
-                    exposure_id, payload, post_state)
+                _enqueue_broadcast_from_result!(result, "peak_removed",
+                    "exposure", exposure_id; post_state = post_state)
 
                 return HTTP.Response(200,
                     ["Content-Type" => "application/json"],

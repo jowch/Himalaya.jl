@@ -152,11 +152,12 @@ function register_analysis_routes!()
 
             custom_id, _ = ensure_custom_group!(db, exposure_id)
 
-            apply_event!(InTransaction(), db, req;
+            result = apply_event!(InTransaction(), db, req;
                 kind        = "index_confirmed",
                 entity_type = "exposure",
                 entity_id   = exposure_id,
                 payload     = Dict(:group_id => custom_id, :index_id => index_id))
+            _enqueue_broadcast_from_result!(result, "index_confirmed", "exposure", exposure_id)
 
             HTTP.Response(200, ["Content-Type" => "application/json"],
                 JSON3.write(_group_with_members(db, custom_id)))
@@ -187,12 +188,13 @@ function register_analysis_routes!()
             """, [exposure_id, custom_id, index_id]))
             undoes = isempty(prior) ? nothing : Int(prior[1].id)
 
-            apply_event!(InTransaction(), db, req;
+            result = apply_event!(InTransaction(), db, req;
                 kind            = "index_unconfirmed",
                 entity_type     = "exposure",
                 entity_id       = exposure_id,
                 payload         = Dict(:group_id => custom_id, :index_id => index_id),
                 undoes_event_id = undoes)
+            _enqueue_broadcast_from_result!(result, "index_unconfirmed", "exposure", exposure_id)
 
             HTTP.Response(200, ["Content-Type" => "application/json"],
                 JSON3.write(_group_with_members(db, custom_id)))
