@@ -248,6 +248,20 @@ body-execution + cache-write sequence.
 
 Entries accumulate per unique `client_op_id` for the lifetime of the process.
 A TTL sweep is added in M0.7 alongside the `idempotent_responses` GC.
+
+Lifecycle notes:
+
+- **Single-process-safe only.** The deployment model is one-experiment-per-
+  process (see CLAUDE.md). A multi-process or sharded deployment would need a
+  different primitive — e.g. `INSERT OR IGNORE` on `idempotent_responses` plus
+  a cached re-read — because in-process `ReentrantLock`s don't cross processes.
+- **Sweep contract for M0.7.** A sweeper cannot delete an entry from
+  `OP_LOCKS` without holding `OP_LOCKS_MU` AND verifying no other task may
+  still hold a reference to that lock. A naive delete races with `_op_lock`
+  callers that already received the lock and are about to call `lock(it)`.
+  M0.7 will likely sweep entries whose corresponding `idempotent_responses`
+  row exists (i.e. the body has executed and won't be re-entered) under
+  `OP_LOCKS_MU` only.
 """
 const OP_LOCKS    = Dict{String, ReentrantLock}()
 const OP_LOCKS_MU = ReentrantLock()
@@ -289,6 +303,10 @@ Wraps a route body `f` so that:
 
 Body is guaranteed to execute exactly once per successful op-id, even under
 concurrent retry.
+
+Single-process-safe; relies on the `idempotent_responses(client_op_id)` PK
+constraint as defense-in-depth if a future multi-process deployment is
+introduced (the in-process `OP_LOCKS` registry doesn't cross processes).
 """
 function with_idempotency(f, db::SQLite.DB, req::HTTP.Request)
     op_id = get_client_op_id(req)
@@ -307,7 +325,7 @@ function with_idempotency(f, db::SQLite.DB, req::HTTP.Request)
         if response.status < 400
             DBInterface.execute(db,
                 "INSERT INTO idempotent_responses (client_op_id, status_code, body) VALUES (?, ?, ?)",
-                [op_id, Int(response.status), String(response.body)])
+                [op_id, Int(response.status), String(copy(response.body))])
         end
         return response
     end

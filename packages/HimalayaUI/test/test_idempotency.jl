@@ -91,6 +91,27 @@ end
     end
 end
 
+@testset "with_idempotency: response body is preserved for caller" begin
+    # Regression: in Julia 1.x, `String(::Vector{UInt8})` takes ownership of
+    # the buffer (empties the vector). Real route bodies (e.g. from
+    # `Oxygen.json(...)`) are `Vector{UInt8}`, so caching must `copy` first
+    # or the caller's response object is left with an empty body.
+    mktempdir() do tmp
+        db = open_db(joinpath(tmp, "test.db"))
+        req = HTTP.Request("POST", "/", ["X-Client-Op-Id" => "uuid-preserve"], UInt8[])
+        r = with_idempotency(db, req) do
+            HTTP.Response(200; body = Vector{UInt8}("{\"id\":1}"))
+        end
+        # The caller must still be able to read the body after the wrapper returns.
+        @test String(r.body) == "{\"id\":1}"
+        # The response from the cache lookup also has a readable body.
+        r2 = with_idempotency(db, req) do
+            HTTP.Response(500; body = Vector{UInt8}("{\"x\":\"should not appear\"}"))
+        end
+        @test String(r2.body) == "{\"id\":1}"
+    end
+end
+
 @testset "with_idempotency: multi-event route cache hit returns identical body" begin
     # Simulate a route that emits N events (speculative POST shape).
     # First call commits 3 events with same client_op_id; second call returns cached.
