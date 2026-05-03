@@ -7,6 +7,7 @@ using Test
     include("test_manifest.jl")
     include("test_hash.jl")
     include("test_pipeline.jl")
+    include("test_fast_skip.jl")
     include("test_json.jl")
     include("test_http.jl")
     include("test_routes_health.jl")
