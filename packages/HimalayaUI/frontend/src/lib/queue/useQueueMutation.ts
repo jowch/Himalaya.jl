@@ -53,15 +53,21 @@ export function useQueueMutation<TInput, TResponse>(
         const controller = new AbortController();
         const { signal } = controller;
         const deferred = makeDeferred<TResponse>(payload.clientOpId);
+        // Stash the controller on the deferred so the SSE-resolution path in
+        // replayCoordinator can abort the HTTP request when SSE wins the race.
+        deferred.controller = controller;
         // Wire HTTP into the deferred. If SSE arrives first, the HTTP
         // resolution becomes a no-op (deferred already cleared).
         mutator
           .request(payload, signal)
           .then((response) => deferred.resolve(response))
           .catch((err) => deferred.reject(err));
-        // AbortSignal cleanup: reject deferred so registry doesn't leak.
-        const onAbort = () =>
+        // AbortSignal cleanup: clear the registry entry and reject deferred
+        // so a leftover entry doesn't accumulate after early abort.
+        const onAbort = () => {
+          clearDeferred(payload.clientOpId);
           deferred.reject(new DOMException("aborted", "AbortError"));
+        };
         signal.addEventListener("abort", onAbort);
         try {
           return await deferred.promise;

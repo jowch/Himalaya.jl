@@ -120,8 +120,22 @@ describe("handleRemoteEvent", () => {
     }, qc, qc.getMutationCache());
     const peaks = qc.getQueryData(["exposure", 42, "peaks"]) as any[];
     expect(peaks).toHaveLength(2);
-    expect(peaks[1]).toMatchObject({ q: 1.7, kind: "add", excluded: false });
+    expect(peaks[1]).toMatchObject({ q: 1.7, source: "manual", excluded: false });
     expect(peaks[1].id).toBeLessThan(0);
+  });
+
+  it("aborts the HTTP request when SSE resolves the deferred first", () => {
+    const controller = new AbortController();
+    const d = makeDeferred<unknown>("op-abort-test");
+    d.controller = controller;
+    handleRemoteEvent({
+      id: 1,
+      kind: "peak_added",
+      entity_type: "exposure",
+      entity_id: 42,
+      client_op_id: "op-abort-test",
+    }, qc, qc.getMutationCache());
+    expect(controller.signal.aborted).toBe(true);
   });
 
   it("applyRemoteToCache for peak_excluded sets excluded=true on the matching peak", () => {

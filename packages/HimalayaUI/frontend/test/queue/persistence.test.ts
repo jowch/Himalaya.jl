@@ -112,6 +112,7 @@ describe("persistence: rehydrate", () => {
     expect(requestSpy).toHaveBeenCalledTimes(1); // only the good one
     expect(result.dropped).toBe(1);
     expect(result.replayed).toBe(1);
+    expect(result.failed).toBe(0);
   });
 
   it("drops persisted ops whose kind has no registered mutator", async () => {
@@ -124,10 +125,10 @@ describe("persistence: rehydrate", () => {
     expect(result.replayed).toBe(0);
   });
 
-  it("returns {dropped: 0, replayed: 0} when no persisted state", async () => {
+  it("returns {dropped: 0, replayed: 0, failed: 0} when no persisted state", async () => {
     const qc = new QueryClient();
     const result = await rehydrate(qc, new Map());
-    expect(result).toEqual({ dropped: 0, replayed: 0 });
+    expect(result).toEqual({ dropped: 0, replayed: 0, failed: 0 });
   });
 
   it("clears the storage key on malformed JSON", async () => {
@@ -135,6 +136,23 @@ describe("persistence: rehydrate", () => {
     const qc = new QueryClient();
     const result = await rehydrate(qc, new Map());
     expect(sessionStorage.getItem(STORAGE_KEY)).toBeNull();
-    expect(result).toEqual({ dropped: 0, replayed: 0 });
+    expect(result).toEqual({ dropped: 0, replayed: 0, failed: 0 });
+  });
+
+  it("counts failed replays separately from successful ones", async () => {
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify([
+      { schemaVersion: SCHEMA_VERSION, kind: "peak_added", clientOpId: "op-fail", payload: {} },
+    ]));
+    const mutator: Mutator<any, any> = {
+      kind: "peak_added",
+      onMutate: () => ({ restore: () => {} }),
+      request: vi.fn().mockRejectedValue(new Error("boom")),
+      onSuccess: () => {},
+    };
+    const qc = new QueryClient();
+    const result = await rehydrate(qc, new Map([["peak_added", mutator]]));
+    expect(result.failed).toBe(1);
+    expect(result.replayed).toBe(0);
+    expect(result.dropped).toBe(0);
   });
 });

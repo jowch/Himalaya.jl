@@ -52,6 +52,7 @@ function mirrorToSessionStorage(mc: MutationCache): void {
 export interface RehydrateResult {
   dropped: number;
   replayed: number;
+  failed: number;
 }
 
 /**
@@ -72,7 +73,7 @@ export async function rehydrate(
   mutators: Map<OpKind, Mutator<any, any>>,
 ): Promise<RehydrateResult> {
   const raw = sessionStorage.getItem(STORAGE_KEY);
-  if (!raw) return { dropped: 0, replayed: 0 };
+  if (!raw) return { dropped: 0, replayed: 0, failed: 0 };
 
   let ops: PersistedOp[] = [];
   try {
@@ -80,11 +81,12 @@ export async function rehydrate(
     if (Array.isArray(parsed)) ops = parsed as PersistedOp[];
   } catch {
     sessionStorage.removeItem(STORAGE_KEY);
-    return { dropped: 0, replayed: 0 };
+    return { dropped: 0, replayed: 0, failed: 0 };
   }
 
   let dropped = 0;
   let replayed = 0;
+  let failed = 0;
   const fires: Promise<unknown>[] = [];
 
   for (const op of ops) {
@@ -106,18 +108,21 @@ export async function rehydrate(
     fires.push(
       mutator
         .request(op.payload, ctrl.signal)
-        .then((response) => mutator.onSuccess(op.payload, response, qc))
+        .then((response) => {
+          mutator.onSuccess(op.payload, response, qc);
+          replayed++;
+        })
         .catch(() => {
           // Retried request failed. The HTTP retry semantics in M1.5 will
-          // also kick in for any in-flight session; here we just let the
-          // failure surface via React Query's normal error reporting.
+          // also kick in for any in-flight session; here we count it so
+          // the caller can surface a "couldn't replay" toast accurately.
+          failed++;
         }),
     );
-    replayed++;
   }
 
   // Wait for all replays to settle so callers can act on the result.
   await Promise.all(fires);
   sessionStorage.removeItem(STORAGE_KEY);
-  return { dropped, replayed };
+  return { dropped, replayed, failed };
 }

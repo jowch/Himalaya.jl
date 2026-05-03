@@ -60,6 +60,8 @@ export interface PendingDeferred<T> {
   promise: Promise<T>;
   resolve: (value: T) => void;
   reject: (reason: unknown) => void;
+  /** AbortController for the in-flight HTTP request; abort when SSE resolves first. */
+  controller?: AbortController;
 }
 
 /**
