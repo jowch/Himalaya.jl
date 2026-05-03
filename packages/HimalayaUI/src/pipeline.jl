@@ -702,23 +702,7 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
         new_inputs_hash = hash_peak_set_from_db(db, exposure_id)
         indexpeaks_skipped = (stored_inputs_hash == new_inputs_hash) && (indices_count > 0)
         if indexpeaks_skipped
-            duration_ms = round(Int, (time() - t0) * 1000)
-            apply_event!(db, _system_request();
-                kind        = "analyze_run",
-                entity_type = "exposure",
-                entity_id   = exposure_id,
-                payload     = Dict(
-                    :trace_hash_before    => stored_trace_hash,
-                    :trace_hash_after     => new_trace_hash,
-                    :inputs_hash_before   => stored_inputs_hash,
-                    :inputs_hash_after    => new_inputs_hash,
-                    :findpeaks_skipped    => true,
-                    :indexpeaks_skipped   => true,
-                    :duration_ms          => duration_ms,
-                    # eff peaks not loaded on fast path — record DB count for
-                    # observability without paying file I/O.
-                    :effective_peaks_count => autopeaks_count,
-                ))
+            # Fast-path no-op: skip the durable analyze_run row (M0.4 already drops the SSE frame). The hashes prove no-op-ness; durable counting offers no load-bearing value here.
             return
         end
     end

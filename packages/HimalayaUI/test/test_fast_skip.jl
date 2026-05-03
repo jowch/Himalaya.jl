@@ -78,16 +78,18 @@ end
     mktempdir() do tmp
         ctx = setup_clean_analyzed_exposure(tmp)
 
-        before_id = latest_analyze_run(ctx.db, ctx.exposure_id).id
+        n_before = first(Tables.rowtable(DBInterface.execute(ctx.db,
+            "SELECT COUNT(*) AS c FROM user_actions WHERE entity_id = ? AND action = 'analyze_run'",
+            [ctx.exposure_id]))).c
 
         # Fast path call.
         analyze_exposure!(ctx.db, ctx.exposure_id, ctx.analysis_dir;
                           trace_known_unchanged=true)
 
-        ev = latest_analyze_run(ctx.db, ctx.exposure_id)
-        @test ev.id > before_id
-        @test ev.payload.findpeaks_skipped === true
-        @test ev.payload.indexpeaks_skipped === true
+        n_after = first(Tables.rowtable(DBInterface.execute(ctx.db,
+            "SELECT COUNT(*) AS c FROM user_actions WHERE entity_id = ? AND action = 'analyze_run'",
+            [ctx.exposure_id]))).c
+        @test n_after == n_before  # Fast-path no-op writes no event.
     end
 end
 
@@ -133,13 +135,15 @@ end
 
         # Now any subsequent call with trace_known_unchanged=true should hit the fast path
         # since DB-only computation of inputs hash matches stored.
-        before_id = latest_analyze_run(ctx.db, ctx.exposure_id).id
+        n_before = first(Tables.rowtable(DBInterface.execute(ctx.db,
+            "SELECT COUNT(*) AS c FROM user_actions WHERE entity_id = ? AND action = 'analyze_run'",
+            [ctx.exposure_id]))).c
         analyze_exposure!(ctx.db, ctx.exposure_id, ctx.analysis_dir;
                           trace_known_unchanged=true)
-        ev = latest_analyze_run(ctx.db, ctx.exposure_id)
-        @test ev.id > before_id
-        @test ev.payload.findpeaks_skipped === true
-        @test ev.payload.indexpeaks_skipped === true
+        n_after = first(Tables.rowtable(DBInterface.execute(ctx.db,
+            "SELECT COUNT(*) AS c FROM user_actions WHERE entity_id = ? AND action = 'analyze_run'",
+            [ctx.exposure_id]))).c
+        @test n_after == n_before  # Fast-path no-op writes no event.
     end
 end
 
