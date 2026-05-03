@@ -17,8 +17,21 @@ import type { QueryClient } from "@tanstack/react-query";
 // duplicate rows during optimistic-confirm transitions.
 
 /**
- * The set of mutation kinds the queue framework can carry. Each kind maps to
- * a route handler on the server and (typically) an `apply_event!` event kind.
+ * The set of mutation kinds the queue framework can carry.
+ *
+ * Most kinds are 1:1 with the server-side `user_actions.action` event kind
+ * (e.g. `peak_added` → `apply_event!(..., kind="peak_added")`), but a few
+ * are queue-side aliases for routes that emit a differently-named event:
+ *
+ * - `delete_index` → emits `speculative_deleted` (the only deletable index
+ *   kind today is speculative; the OpKind name describes the *user gesture*,
+ *   the event name describes the *durable mutation*).
+ * - `reanalyze_exposure` → emits `analyze_run` (manual-triggered analyze).
+ *
+ * Kind-set membership predicates (`useExposureHasPendingPeakOps`,
+ * `PEAK_AFFECTING_KINDS`) operate on OpKind, not the event name. If a new
+ * mutator's user-gesture name diverges from its event kind, document the
+ * mapping here and double-check the membership predicates.
  */
 export type OpKind =
   | "peak_added" | "peak_excluded" | "peak_unexcluded" | "peak_removed"

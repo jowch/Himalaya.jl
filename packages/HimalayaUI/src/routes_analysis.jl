@@ -159,8 +159,14 @@ function register_analysis_routes!()
                 payload     = Dict(:group_id => custom_id, :index_id => index_id))
             _enqueue_broadcast_from_result!(result, "index_confirmed", "exposure", exposure_id)
 
+            # Issue #13: include event_id/view_row_id alongside the group
+            # body so the response shape matches the spec's queue-migrated
+            # contract (event_id, view_row_id, ...).
+            body = _group_with_members(db, custom_id)
+            body[:event_id]    = result.event_id
+            body[:view_row_id] = result.view_row_id
             HTTP.Response(200, ["Content-Type" => "application/json"],
-                JSON3.write(_group_with_members(db, custom_id)))
+                JSON3.write(body))
         end
     end
 
@@ -196,8 +202,11 @@ function register_analysis_routes!()
                 undoes_event_id = undoes)
             _enqueue_broadcast_from_result!(result, "index_unconfirmed", "exposure", exposure_id)
 
+            body = _group_with_members(db, custom_id)
+            body[:event_id]    = result.event_id
+            body[:view_row_id] = result.view_row_id
             HTTP.Response(200, ["Content-Type" => "application/json"],
-                JSON3.write(_group_with_members(db, custom_id)))
+                JSON3.write(body))
         end
     end
 

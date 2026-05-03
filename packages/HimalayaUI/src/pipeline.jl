@@ -784,6 +784,15 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
 
     duration_ms = round(Int, (time() - t0) * 1000)
     post_state_size_bytes = _serialized_indices_bytes(db, exposure_id)
+    # PR review issue #12: spec §"SSE frame extension" says analyze_run frames
+    # carry `post_state: { analysis_inputs_hash, indices }`. Without this,
+    # foreign tabs need an extra refetch round-trip after a manual reanalyze.
+    # Skipped on the no-op path (early return above) — that frame is suppressed
+    # entirely by _maybe_broadcast_event! anyway.
+    post_state = Dict{Symbol, Any}(
+        :analysis_inputs_hash => new_inputs_hash,
+        :indices              => _serialized_indices_for_broadcast(db, exposure_id),
+    )
     apply_event!(db, _system_request();
         kind        = "analyze_run",
         entity_type = "exposure",
@@ -799,7 +808,9 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
             :effective_peaks_count => length(eff.q),
             :post_state_size_bytes => post_state_size_bytes,
         ),
-        defer_broadcast = defer_broadcast)
+        defer_broadcast = defer_broadcast,
+        post_state      = post_state)
+    nothing
 end
 
 """

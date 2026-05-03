@@ -160,10 +160,22 @@ CREATE TABLE IF NOT EXISTS user_actions (
 CREATE INDEX IF NOT EXISTS idx_events_by_exposure
     ON user_actions(entity_type, entity_id, id);
 
--- I2 partial unique index: installed by migrate_schema! (runs after the
--- legacy ALTER TABLE pass that adds client_op_id, so it works on fresh
--- and legacy DBs alike). Defined here as a comment for discoverability —
--- the SQL lives in migrate_schema!'s stmts array.
+-- I2 partial unique index — installed by migrate_schema! after the legacy
+-- ALTER TABLE pass that adds client_op_id, so it works on fresh and
+-- legacy DBs alike. The SQL lives in migrate_schema! and reads
+-- UNIQUE on the columns (client_op_id, action, entity_id), with a partial
+-- WHERE client_op_id IS NOT NULL filter so legacy NULL-op_id rows are
+-- excluded from the constraint.
+--
+-- Earlier drafts of the spec described this index as NOT UNIQUE, on the
+-- premise that one request might emit multiple events under one
+-- client_op_id. The implementation took the opposite path: each
+-- with_idempotency-wrapped route is constrained to emit at most one
+-- event row PER (action, entity_id) per request, which lets the unique
+-- index serve as the idempotency-retry guard at the DB layer (a retry
+-- with the same op_id trips the constraint and apply_event! short-
+-- circuits to the prior event_id). The trade-off is documented as a
+-- precondition for new routes — see CLAUDE.md Mutation queue section.
 
 CREATE TABLE IF NOT EXISTS idempotent_responses (
     client_op_id  TEXT PRIMARY KEY,

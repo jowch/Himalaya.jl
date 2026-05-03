@@ -186,14 +186,57 @@ function register_exposures_routes!()
         isempty(rows) && return HTTP.Response(404,
             ["Content-Type" => "application/json"],
             JSON3.write(Dict(:error => "exposure not found")))
+        analysis_dir = String(rows[1].analysis_dir)
 
-        analyze_exposure!(db, id, String(rows[1].analysis_dir))
+        # Issue #9: route is now queue-shaped — `with_idempotency` honors the
+        # `X-Client-Op-Id` header so a network retry returns the cached
+        # response rather than running analyze a second time.
+        # `analyze_exposure!` emits its `analyze_run` event with
+        # `defer_broadcast=true`; we re-fetch that row below and enqueue a
+        # post-commit broadcast carrying the spec'd `post_state` envelope so
+        # foreign tabs converge without a refetch round-trip (issue #12).
+        return with_idempotency(db, req) do
+            # Capture max user_actions id BEFORE analyze runs so we can
+            # identify the analyze_run row this call emits (vs. a prior one
+            # if analyze_exposure! takes the no-op fast path).
+            pre_max_rows = Tables.rowtable(DBInterface.execute(db,
+                "SELECT IFNULL(MAX(id), 0) AS m FROM user_actions"))
+            pre_max_id = Int(pre_max_rows[1].m)
 
-        log_action!(db, req; action = "analyze",
-            entity_type = "exposure", entity_id = id)
+            analyze_exposure!(db, id, analysis_dir; defer_broadcast = true)
 
-        HTTP.Response(200, ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:id => id, :analyzed => true)))
+            new_hash = read_inputs_hash(db, id)
+            evt = Tables.rowtable(DBInterface.execute(db,
+                """SELECT id, user_id, payload
+                   FROM user_actions
+                   WHERE action = 'analyze_run' AND entity_type = 'exposure'
+                     AND entity_id = ? AND id > ?
+                   ORDER BY id DESC LIMIT 1""", [id, pre_max_id]))
+            if !isempty(evt)
+                row = evt[1]
+                post_state = Dict{Symbol, Any}(
+                    :analysis_inputs_hash => new_hash,
+                    :indices              => _serialized_indices_for_broadcast(db, id),
+                )
+                # The system-emitted row carries NULL client_id/op_id; pass
+                # the request's headers in the SSE frame so foreign tabs can
+                # still self-echo-filter (own client_id matches).
+                _enqueue_post_commit_broadcast!(
+                    Int(row.id), "analyze_run", "exposure", id,
+                    ismissing(row.user_id) ? nothing : Int(row.user_id),
+                    get_client_id(req),
+                    get_client_op_id(req),
+                    ismissing(row.payload) ? nothing : String(row.payload);
+                    post_state = post_state)
+            end
+
+            HTTP.Response(200, ["Content-Type" => "application/json"],
+                JSON3.write(Dict(
+                    :id                   => id,
+                    :analyzed             => true,
+                    :analysis_inputs_hash => new_hash,
+                )))
+        end
     end
 
     @get "/api/exposures/{id}" function(req::HTTP.Request, id::Int)
