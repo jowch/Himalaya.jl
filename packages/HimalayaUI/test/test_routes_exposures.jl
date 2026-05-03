@@ -67,3 +67,37 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test r.status == 404
     end
 end
+
+@testset "PATCH /api/exposures/:id/select is idempotent under retry" begin
+    tmp = mktempdir()
+    db     = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    exp_id = HimalayaUI.init_experiment!(db; path=tmp,
+        data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
+    s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, label="D1")
+    e1 = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="A")
+    e2 = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="B")
+
+    with_test_server(db) do port, base
+        op_id = "uuid-select-retry-1"
+        hdrs  = ["X-Username"     => "alice",
+                 "X-Client-Op-Id" => op_id]
+
+        r1 = HTTP.patch("$base/api/exposures/$e2/select"; headers=hdrs)
+        @test r1.status == 200
+        body1 = String(copy(r1.body))
+
+        r2 = HTTP.patch("$base/api/exposures/$e2/select"; headers=hdrs)
+        @test r2.status == 200
+        @test String(copy(r2.body)) == body1
+
+        # Exactly one selected, and it's e2
+        n_sel = first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT COUNT(*) AS c FROM exposures WHERE sample_id = ? AND selected = 1", [s_id]))).c
+        @test n_sel == 1
+
+        n_events = first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT COUNT(*) AS c FROM user_actions WHERE action = 'select_exposure' AND entity_id = ?",
+            [e2]))).c
+        @test n_events == 1
+    end
+end

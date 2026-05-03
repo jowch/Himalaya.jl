@@ -171,9 +171,11 @@ commits. Implications:
   loop. A pruned subscriber reconnects on the EventSource side and gets
   a fresh subscription.
 
-### Client side (`src/lib/sseSubscriber.ts`)
+### Client side (`src/lib/queue/replayCoordinator.ts` + `applyRemoteToCache.ts`)
 
-`handleCurationEvent(data, ctx)`:
+`handleRemoteEvent(remote, ctx)` (in `replayCoordinator.ts`) drives SSE
+intake; cache folding lives in `applyRemoteToCache(remote, qc)`
+(`applyRemoteToCache.ts`). Together they:
 
 1. Parse the JSON frame; ignore on parse error or missing `entity_id`.
 2. **Self-echo filter.** Skip if `event.client_id === ctx.clientId`. The
@@ -343,8 +345,10 @@ M1.2 has a regression test that pins this against TanStack version drift.
 4. If the dispatcher's INSERT exposes a row id the route needs, capture
    it via the `view_row_id` field on `apply_event!`'s return tuple
    instead of re-querying.
-5. Frontend: if the new kind affects a query key not already in
-   `handleCurationEvent`, add it there.
+5. Frontend: if the new kind affects a query key not already handled by
+   `applyRemoteToCache` (`src/lib/queue/applyRemoteToCache.ts`), add a
+   branch there. See §3a for how `replayCoordinator.ts::handleRemoteEvent`
+   composes own-op confirmation, optimistic rollback, and cache folding.
 
 ---
 
@@ -355,4 +359,5 @@ M1.2 has a regression test that pins this against TanStack version drift.
 - [`docs/superpowers/specs/2026-05-01-multiplayer-instrumentation-design.md`](superpowers/specs/2026-05-01-multiplayer-instrumentation-design.md) — original design spec.
 - [`docs/superpowers/plans/2026-05-01-multiplayer-instrumentation.md`](superpowers/plans/2026-05-01-multiplayer-instrumentation.md) — implementation plan with R0–R5a phases.
 - `packages/HimalayaUI/src/{events,hash,server,pipeline}.jl` and
-  `packages/HimalayaUI/frontend/src/lib/sseSubscriber.ts` — the code.
+  `packages/HimalayaUI/frontend/src/lib/queue/{replayCoordinator,applyRemoteToCache}.ts`
+  — the code.
