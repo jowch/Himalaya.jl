@@ -1,5 +1,5 @@
 import type { MutationCache, QueryClient } from "@tanstack/react-query";
-import type { OpKind, Mutator } from "./types";
+import type { OpKind, Mutator, RollbackContext } from "./types";
 import type { PersistedOpForResolution } from "./mutatorRegistry";
 
 export const STORAGE_KEY = "himalaya-ui:queue";
@@ -120,8 +120,17 @@ export async function rehydrate(
       dropped++;
       continue;
     }
-    // Re-run optimistic effect against fresh cache.
-    mutator.onMutate(op.payload, qc);
+    // Re-run optimistic effect against fresh cache. If the mutator throws
+    // during onMutate (e.g. malformed persisted payload after a deploy that
+    // didn't bump SCHEMA_VERSION), count it as failed and continue the loop
+    // — without this guard a single bad op would abort all remaining replays.
+    let restoreCtx: RollbackContext | undefined;
+    try {
+      restoreCtx = mutator.onMutate(op.payload, qc);
+    } catch {
+      failed++;
+      continue;
+    }
     // Re-fire the request. AbortController is not wired through to rehydrate
     // because the original mutate() call's signal is gone; rehydrate-fired
     // requests run to completion and rely on idempotency for safety.
@@ -134,9 +143,12 @@ export async function rehydrate(
           replayed++;
         })
         .catch(() => {
-          // Retried request failed. The HTTP retry semantics in M1.5 will
-          // also kick in for any in-flight session; here we count it so
-          // the caller can surface a "couldn't replay" toast accurately.
+          // Retried request failed. Roll back the optimistic effect so the
+          // local cache doesn't show a phantom write that the server never
+          // accepted. The HTTP retry semantics in M1.5 will also kick in
+          // for any in-flight session; here we count it so the caller can
+          // surface a "couldn't replay" toast accurately.
+          restoreCtx?.restore?.();
           failed++;
         }),
     );

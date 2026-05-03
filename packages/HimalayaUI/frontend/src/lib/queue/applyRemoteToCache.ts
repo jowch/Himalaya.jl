@@ -2,6 +2,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import type { SseEvent } from "./types";
 import type { Peak, GroupEntry, Exposure, Sample, SampleMessage } from "../../api";
 import { queryKeys } from "../../queries";
+import { peakQTol } from "./peakQTol";
 
 /**
  * Apply a remote SSE event to the local query cache. Per-kind logic mirrors
@@ -48,26 +49,32 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
       break;
     }
     case "peak_excluded": {
+      const targetQ = payload?.q as number;
+      const tol = peakQTol(targetQ);
       qc.setQueryData<Peak[]>(queryKeys.peaks(id), (old = []) =>
         old.map((p) =>
-          Math.abs(p.q - (payload?.q as number)) < 1e-6
+          Math.abs(p.q - targetQ) < tol
             ? { ...p, excluded: true }
             : p));
       applyPostState();
       break;
     }
     case "peak_unexcluded": {
+      const targetQ = payload?.q as number;
+      const tol = peakQTol(targetQ);
       qc.setQueryData<Peak[]>(queryKeys.peaks(id), (old = []) =>
         old.map((p) =>
-          Math.abs(p.q - (payload?.q as number)) < 1e-6
+          Math.abs(p.q - targetQ) < tol
             ? { ...p, excluded: false }
             : p));
       applyPostState();
       break;
     }
     case "peak_removed": {
+      const targetQ = payload?.q as number;
+      const tol = peakQTol(targetQ);
       qc.setQueryData<Peak[]>(queryKeys.peaks(id), (old = []) =>
-        old.filter((p) => Math.abs(p.q - (payload?.q as number)) >= 1e-6));
+        old.filter((p) => Math.abs(p.q - targetQ) >= tol));
       applyPostState();
       break;
     }

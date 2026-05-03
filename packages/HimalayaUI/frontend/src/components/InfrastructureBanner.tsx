@@ -12,18 +12,24 @@ const STUCK_THRESHOLD_MS = 30000;
  * any pending mutation has been in-flight >30s.
  */
 export function InfrastructureBanner(): JSX.Element | null {
-  // Re-tick once a second so time-since-submit comparisons update without
-  // depending on mutation cache events.
   const [, setTick] = useState(0);
-  useEffect(() => {
-    const handle = window.setInterval(() => setTick((t) => t + 1), 1000);
-    return () => window.clearInterval(handle);
-  }, []);
 
   const pendingSubmittedAts = useMutationState({
     filters: { status: "pending" },
     select: (m) => m.state.submittedAt,
   });
+
+  // Re-tick once a second so time-since-submit comparisons update without
+  // depending on mutation cache events. Gated on whether any mutation is
+  // pending — the steady-state idle case (no pending writes) doesn't need
+  // a wakeup every second. Effect only re-runs when crossing the empty
+  // boundary, not on every count change.
+  const hasPending = pendingSubmittedAts.length > 0;
+  useEffect(() => {
+    if (!hasPending) return;
+    const handle = window.setInterval(() => setTick((t) => t + 1), 1000);
+    return () => window.clearInterval(handle);
+  }, [hasPending]);
 
   const now = Date.now();
   const visible = pendingSubmittedAts.filter(

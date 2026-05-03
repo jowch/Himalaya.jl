@@ -204,6 +204,47 @@ describe("persistence: rehydrate", () => {
     expect(result.replayed).toBe(0);
   });
 
+  it("counts onMutate throws as failed without aborting remaining ops", async () => {
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify([
+      { schemaVersion: SCHEMA_VERSION, kind: "peak_added", clientOpId: "op-throw", payload: { bad: true } },
+      { schemaVersion: SCHEMA_VERSION, kind: "peak_added", clientOpId: "op-good", payload: { q: 1.0 } },
+    ]));
+    const requestSpy = vi.fn().mockResolvedValue({ ok: true });
+    const onMutate = vi.fn((p: { bad?: boolean }) => {
+      if (p?.bad) throw new Error("malformed payload");
+      return { restore: () => {} };
+    });
+    const mutator: Mutator<any, any, any> = {
+      kind: "peak_added",
+      onMutate,
+      request: requestSpy,
+      onSuccess: () => {},
+    };
+    const qc = new QueryClient();
+    const result = await rehydrate(qc, new Map([["peak_added", mutator]]));
+    // First op's onMutate threw → counted as failed; loop continued so second op still ran.
+    expect(result.failed).toBe(1);
+    expect(result.replayed).toBe(1);
+    expect(requestSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("invokes restore() when a replayed request rejects", async () => {
+    const restore = vi.fn();
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify([
+      { schemaVersion: SCHEMA_VERSION, kind: "peak_added", clientOpId: "op-rollback", payload: {} },
+    ]));
+    const mutator: Mutator<any, any, any> = {
+      kind: "peak_added",
+      onMutate: () => ({ restore }),
+      request: vi.fn().mockRejectedValue(new Error("boom")),
+      onSuccess: () => {},
+    };
+    const qc = new QueryClient();
+    const result = await rehydrate(qc, new Map([["peak_added", mutator]]));
+    expect(restore).toHaveBeenCalledTimes(1);
+    expect(result.failed).toBe(1);
+  });
+
   it("counts failed replays separately from successful ones", async () => {
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify([
       { schemaVersion: SCHEMA_VERSION, kind: "peak_added", clientOpId: "op-fail", payload: {} },

@@ -9,6 +9,8 @@ import * as api from "../../../api";
 import type { Peak, PeakAddResponse, Exposure, AuthOpts } from "../../../api";
 import { queryKeys } from "../../../queries";
 import { authOpts } from "../../authOpts";
+import { nextOptimisticId } from "../optimisticId";
+import { peakQTol } from "../peakQTol";
 import type { Mutator, RollbackContext } from "../types";
 
 export type PeakAddInput = { q: number };
@@ -17,12 +19,6 @@ type PeakAddScope = {
   username: string | undefined;
   clientId: string;
 };
-
-let optimisticCounter = 0;
-function nextOptimisticId(): number {
-  optimisticCounter += 1;
-  return -(Date.now() * 1000 + optimisticCounter);
-}
 
 function buildAuthOpts(p: { username: string | undefined; clientId: string; clientOpId: string }): AuthOpts {
   return authOpts(p.username, p.clientId, p.clientOpId);
@@ -63,7 +59,7 @@ export const peakAddMutator: Mutator<PeakAddInput, PeakAddScope, PeakAddResponse
       let replaced = false;
       for (const pk of list) {
         if (pk.id < 0 && !replaced
-            && Math.abs(pk.q - p.q) < 1e-9
+            && Math.abs(pk.q - p.q) < peakQTol(p.q)
             && pk.exposure_id === p.exposureId) {
           if (!seen.has(response.peak.id)) {
             next.push(response.peak);

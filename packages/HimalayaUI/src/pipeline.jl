@@ -519,8 +519,16 @@ end
 
 Compute the serialized size (in bytes) of the indices for an exposure. Used
 by the slow-path `analyze_run` event to emit `post_state_size_bytes` for
-observability — M2 will use this same shape as the `post_state` kwarg passed
-to `apply_event!` from route handlers.
+observability.
+
+Intentionally distinct from `_serialized_indices_for_broadcast` below: this
+helper returns just the bytes of a thin metadata-only projection (no joined
+peaks, no predicted_q, no ngc), which is all the telemetry payload needs.
+The broadcast helper builds the full enriched cache-replay payload used by
+curation routes — it joins index_peaks and computes predicted_q per index.
+Consolidating the two would force `analyze_run` (which fires on every
+exposure analysis) to pay the heavier query just to measure size. The
+duplication here is structural, not redundant.
 """
 function _serialized_indices_bytes(db::SQLite.DB, exposure_id::Int)::Int
     rows = Tables.rowtable(DBInterface.execute(db,

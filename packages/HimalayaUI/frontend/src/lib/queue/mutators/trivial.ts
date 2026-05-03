@@ -16,6 +16,7 @@ import type {
 } from "../../../api";
 import { queryKeys } from "../../../queries";
 import { authOpts } from "../../authOpts";
+import { nextOptimisticId } from "../optimisticId";
 import type { Mutator, RollbackContext } from "../types";
 
 interface BaseScope {
@@ -29,13 +30,6 @@ function buildAuthOpts(p: {
   clientOpId?: string | undefined;
 }): AuthOpts {
   return authOpts(p.username, p.clientId, p.clientOpId);
-}
-
-/** Generate a unique negative id for an optimistic placeholder row. */
-let optimisticCounter = 0;
-function nextOptimisticId(): number {
-  optimisticCounter += 1;
-  return -(Date.now() * 1000 + optimisticCounter);
 }
 
 // ---------------------------------------------------------------------------
