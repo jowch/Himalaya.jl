@@ -23,3 +23,8 @@ export {
   SCHEMA_VERSION,
 } from "./persistence";
 export type { RehydrateResult } from "./persistence";
+
+export {
+  useExposureHasPendingPeakOps,
+  useQueueOpStatus,
+} from "./hooks";
