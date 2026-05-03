@@ -1,12 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { renderHook, waitFor, act } from "@testing-library/react";
+import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { makeClient } from "./test-utils";
 import {
   useExposures, useTrace, usePeaks, useIndices,
-  useReanalyzeExposure,
-  queryKeys,
 } from "../src/queries";
 
 function withClient() {
@@ -70,14 +68,6 @@ describe("queries", () => {
 
   // useAddPeak / useRemovePeak / useSetPeakExcluded migrated to the queue
   // framework (M2.2) — see test/queries-peaks.test.tsx for the new coverage.
-
-  it("useReanalyzeExposure invalidates peaks and indices on success", async () => {
-    const { client, wrapper } = withClient();
-    const invalidate = vi.spyOn(client, "invalidateQueries");
-    mockOnce(200, { id: 42, analyzed: true });
-    const { result } = renderHook(() => useReanalyzeExposure(42), { wrapper });
-    await act(async () => { await result.current.mutateAsync(); });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.peaks(42) });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.indices(42) });
-  });
+  // useReanalyzeExposure migrated to the queue framework (M2.5) — see
+  // test/queries-reanalyze.test.tsx for the new coverage.
 });

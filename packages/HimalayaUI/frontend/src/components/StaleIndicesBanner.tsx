@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useIndices, useExposure, useReanalyzeExposure } from "../queries";
-import { useExposureHasPendingPeakOps } from "../lib/queue/hooks";
+import { useExposureHasPendingPeakOps, useQueueOpStatus } from "../lib/queue/hooks";
 import { Button } from "./ui";
 
 // Stale state must persist this long before the banner appears. Suppresses
@@ -22,6 +22,11 @@ export function StaleIndicesBanner(
   const indicesQ = useIndices(exposureId);
   const exposureQ = useExposure(exposureId);
   const reanalyze = useReanalyzeExposure(exposureId ?? 0);
+  // Drives the button's "Re-analyzing…" affordance. Reads from the
+  // MutationCache by op kind + exposureId so the spinner survives across
+  // hook re-renders and is consistent with other queue-driven UI.
+  const reanalyzeStatus = useQueueOpStatus("reanalyze_exposure", exposureId);
+  const reanalyzePending = reanalyzeStatus === "pending";
   // Hide the banner during any in-flight peak op for this exposure: the user
   // has just curated, the queue is mid-flight, and a brief hash mismatch is
   // expected. The op's onSuccess (or SSE post_state) will land the matching
@@ -65,10 +70,10 @@ export function StaleIndicesBanner(
       </span>
       <Button
         variant="primary"
-        disabled={reanalyze.isPending}
-        onClick={() => reanalyze.mutate()}
+        disabled={reanalyzePending}
+        onClick={() => reanalyze.mutate({})}
       >
-        {reanalyze.isPending ? "Re-analyzing…" : "Re-analyze"}
+        {reanalyzePending ? "Re-analyzing…" : "Re-analyze"}
       </Button>
     </div>
   );

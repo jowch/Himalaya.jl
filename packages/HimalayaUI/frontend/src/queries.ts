@@ -1,9 +1,7 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import * as api from "./api";
 import { useAppState } from "./state";
 import { getClientId } from "./lib/clientId";
-import { newClientOpId } from "./lib/clientOpId";
-import { authOpts } from "./lib/authOpts";
 import { useQueueMutation } from "./lib/queue/useQueueMutation";
 import {
   updateSampleMutator,
@@ -27,6 +25,7 @@ import {
 } from "./lib/queue/mutators/indexGroup";
 import { createSpeculativeMutator } from "./lib/queue/mutators/createSpeculative";
 import type { CreateSpeculativeInput } from "./lib/queue/mutators/createSpeculative";
+import { reanalyzeExposureMutator } from "./lib/queue/mutators/reanalyzeExposure";
 import { useExposureHasPendingPeakOps } from "./lib/queue/hooks";
 
 const CLIENT_ID = getClientId();
@@ -111,17 +110,6 @@ export function useIndices(exposureId: number | undefined) {
   });
 }
 
-function invalidateExposure(qc: ReturnType<typeof useQueryClient>, exposureId: number): void {
-  qc.invalidateQueries({ queryKey: queryKeys.peaks(exposureId) });
-  qc.invalidateQueries({ queryKey: queryKeys.indices(exposureId) });
-  // `groups` must invalidate too: auto-reanalysis re-attaches custom-group
-  // members by semantic identity (phase + basis), so the cached `groups`
-  // payload — which carries `members` — is stale until refetched. Without
-  // this, the right-rail Active set looks empty after every peak edit even
-  // though the backend has the correct membership.
-  qc.invalidateQueries({ queryKey: queryKeys.groups(exposureId) });
-}
-
 export function useAddPeak(exposureId: number) {
   const username = useAppState((s) => s.username);
   const inner = useQueueMutation<{ q: number }, api.PeakAddResponse>(
@@ -172,12 +160,11 @@ export function useSetPeakExcluded(exposureId: number) {
 }
 
 export function useReanalyzeExposure(exposureId: number) {
-  const qc = useQueryClient();
   const username = useAppState((s) => s.username);
-  return useMutation({
-    mutationFn: () => api.reanalyzeExposure(exposureId, authOpts(username, CLIENT_ID, newClientOpId())),
-    onSuccess: () => invalidateExposure(qc, exposureId),
-  });
+  return useQueueMutation<Record<string, never>, { id: number; analyzed: boolean }>(
+    reanalyzeExposureMutator,
+    { exposureId, username, clientId: CLIENT_ID },
+  );
 }
 
 export function useGroups(exposureId: number | undefined) {
