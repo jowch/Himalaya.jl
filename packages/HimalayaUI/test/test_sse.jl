@@ -44,6 +44,7 @@ using HimalayaUI
             @test haskey(obj, :ts)
             @test obj.client_op_id == "uuid-789"
             @test obj.ts isa AbstractString
+            @test occursin(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$", obj.ts)
 
             # Payload is embedded in the frame.
             @test occursin("\"foo\"", frame)
@@ -84,6 +85,7 @@ end
             obj = JSON3.read(replace(data_line, r"^data: " => ""))
             @test haskey(obj, :client_op_id)
             @test haskey(obj, :ts)
+            @test occursin(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$", obj.ts)
         finally
             lock(HimalayaUI.SSE_LOCK) do
                 filter!(x -> x !== sub, HimalayaUI.SSE_SUBSCRIBERS[])

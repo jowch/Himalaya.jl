@@ -28,7 +28,7 @@ end
 Return the `X-Client-Op-Id` header value if present and non-empty, else nothing.
 This is the per-mutation idempotency key sent by the client (one UUID per
 queued op), distinct from `X-Client-Id` (per-tab SSE routing identity).
-See docs/superpowers/plans/2026-05-02-mutation-queue-plan.md (M0.2).
+See docs/superpowers/plans/2026-05-02-mutation-queue.md (M0.2).
 """
 function get_client_op_id(req::HTTP.Request)
     v = HTTP.header(req, "X-Client-Op-Id", "")

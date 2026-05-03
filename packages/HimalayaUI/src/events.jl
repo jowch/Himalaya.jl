@@ -1,5 +1,5 @@
 using JSON3, SQLite, DBInterface, HTTP, Tables
-using Dates: now, UTC
+using Dates: now, UTC, format, @dateformat_str
 
 """
     apply_event!(db, req; kind, entity_type, entity_id, payload, undoes_event_id=nothing)
@@ -221,7 +221,7 @@ function broadcast_event!(event_id::Integer, kind::String, entity_type::String,
         :actor        => actor,
         :client_id    => client_id,
         :client_op_id => client_op_id,
-        :ts           => string(now(UTC)),
+        :ts           => format(now(UTC), dateformat"yyyy-mm-ddTHH:MM:SS.sssZ"),
         :payload      => payload_json === nothing ? nothing : JSON3.read(payload_json),
     ))
     frame = "event: curation\ndata: $msg\n\n"
