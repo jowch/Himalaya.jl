@@ -693,7 +693,8 @@ pattern stored in the experiment's config (defaults to `{name}.dat` for
 experiments without an explicit config).
 """
 function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String;
-                            trace_known_unchanged::Bool=false)
+                            trace_known_unchanged::Bool=false,
+                            defer_broadcast::Bool=false)
     t0 = time()
 
     rows = Tables.rowtable(DBInterface.execute(db,
@@ -789,5 +790,37 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
             :duration_ms           => duration_ms,
             :effective_peaks_count => length(eff.q),
             :post_state_size_bytes => post_state_size_bytes,
-        ))
+        ),
+        defer_broadcast = defer_broadcast)
+end
+
+"""
+    _serialized_indices_for_broadcast(db, exposure_id) -> Vector{Dict}
+
+Build the indices array for the SSE `post_state` payload — same shape as the
+`IndexEntry[]` consumed by the frontend: `id`, `exposure_id`, `phase`, `basis`,
+`score`, `r_squared`, `lattice_d`, `status`, `kind`, `inputs_hash`, plus the
+joined `peaks` (each `peak_id`, `ratio_position`, `residual`, `q_observed`)
+and the `predicted_q` array. `ngc` mirrors what `GET /api/exposures/:id/indices`
+emits and is computed lazily by the frontend in some places, but we include it
+here too so the cache can stay authoritative.
+"""
+function _serialized_indices_for_broadcast(db::SQLite.DB, exposure_id::Int)
+    indices = Tables.rowtable(DBInterface.execute(db,
+        "SELECT * FROM indices WHERE exposure_id = ? ORDER BY score DESC", [exposure_id]))
+    map(indices) do ix
+        peak_rows = Tables.rowtable(DBInterface.execute(db,
+            """SELECT ip.peak_id, ip.ratio_position, ip.residual,
+                      COALESCE(ap.q, pc.q) AS q_observed
+               FROM index_peaks ip
+               LEFT JOIN auto_peaks ap     ON ap.id = ip.peak_id AND ip.peak_kind = 'auto'
+               LEFT JOIN peak_curations pc ON pc.id = ip.peak_id AND ip.peak_kind = 'curation'
+               WHERE ip.index_id = ? ORDER BY ip.ratio_position""",
+            [Int(ix.id)]))
+        d = row_to_json(ix)
+        d[:peaks]       = rows_to_json(peak_rows)
+        d[:predicted_q] = predicted_q_for_phase(String(ix.phase), Float64(ix.basis))
+        d[:ngc]         = _ngc_for_phase(String(ix.phase), ix.lattice_d)
+        d
+    end
 end

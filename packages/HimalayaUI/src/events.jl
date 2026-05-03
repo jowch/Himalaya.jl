@@ -198,6 +198,63 @@ function _maybe_broadcast_event!(db, req, result, kind, entity_type, entity_id, 
 end
 
 """
+    _enqueue_post_commit_broadcast!(args...)
+
+Queue a `broadcast_event!` invocation to fire AFTER the current
+`with_idempotency` transaction commits. Stored in task-local storage so each
+request handler gets its own queue. Cleared without firing on rollback.
+
+Used by M2.2 peak/curation routes that need to emit a single enriched SSE
+frame (carrying `post_state`) only after the outer with_idempotency tx
+commits — broadcasting earlier would let subscribers see state that may roll
+back.
+"""
+const POST_COMMIT_BROADCAST_KEY = :himalaya_post_commit_broadcasts
+
+function _enqueue_post_commit_broadcast!(args...; kwargs...)
+    queue = get!(task_local_storage(), POST_COMMIT_BROADCAST_KEY) do
+        Vector{Tuple{Tuple, Base.Pairs}}()
+    end
+    push!(queue, (args, kwargs))
+    nothing
+end
+
+"""
+    _flush_post_commit_broadcasts!()
+
+Fire every queued broadcast for the current task and clear the queue. Called
+by `with_idempotency` after its `SQLite.transaction` commits successfully.
+Failures in individual broadcasts are logged but do not abort the flush —
+each frame is best-effort (matches `_maybe_broadcast_event!` semantics).
+"""
+function _flush_post_commit_broadcasts!()
+    queue = get(task_local_storage(), POST_COMMIT_BROADCAST_KEY, nothing)
+    queue === nothing && return nothing
+    for (args, kwargs) in queue
+        try
+            broadcast_event!(args...; kwargs...)
+        catch err
+            @warn "post-commit broadcast failed (event still durable in user_actions)" exception=err
+        end
+    end
+    delete!(task_local_storage(), POST_COMMIT_BROADCAST_KEY)
+    nothing
+end
+
+"""
+    _clear_post_commit_broadcasts!()
+
+Discard any queued post-commit broadcasts for the current task without
+firing them. Called by `with_idempotency` when the tx body throws (rollback)
+so subscribers never see events whose underlying writes didn't durably
+commit.
+"""
+function _clear_post_commit_broadcasts!()
+    delete!(task_local_storage(), POST_COMMIT_BROADCAST_KEY)
+    nothing
+end
+
+"""
     _system_request() -> HTTP.Request
 
 Synthetic request with no `X-Username` so the resulting event's `user_id` is

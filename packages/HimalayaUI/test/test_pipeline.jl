@@ -889,3 +889,54 @@ end
     @test p2[:findpeaks_skipped]  == true
     @test p2[:indexpeaks_skipped] == true
 end
+
+@testset "analyze_exposure! defer_broadcast=true suppresses analyze_run SSE frame" begin
+    # M2.2 contract: when curation routes call analyze_exposure! synchronously
+    # inside their with_idempotency tx, they must pass defer_broadcast=true so
+    # the slow-path's inner apply_event! doesn't broadcast before the outer tx
+    # commits. The user_actions row is still written (durable), only the SSE
+    # frame is suppressed.
+    tmp = mktempdir()
+    analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
+    mkpath(analysis_dir)
+    src = joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat")
+    cp(src, joinpath(analysis_dir, "example_tot.dat"))
+
+    db = open_db(joinpath(tmp, "himalaya.db"))
+    HimalayaUI.bind_db!(db)
+    exp_id = init_experiment!(db; path=tmp, data_dir=joinpath(tmp, "data"), analysis_dir=analysis_dir)
+    s_id = create_sample!(db; experiment_id=exp_id, label="D1", name="UX1")
+    e_id = create_exposure!(db; sample_id=s_id, filename="example_tot")
+
+    # Hook a fake SSE subscriber to count frames.
+    pending = Channel{String}(64)
+    sub = (pending = pending,)
+    lock(HimalayaUI.SSE_LOCK) do
+        push!(HimalayaUI.SSE_SUBSCRIBERS[], sub)
+    end
+
+    try
+        # First run with defer_broadcast=true: slow-path runs (cold cache).
+        # No analyze_run SSE frame should be broadcast.
+        analyze_exposure!(db, e_id, analysis_dir; defer_broadcast=true)
+
+        # Drain.
+        sleep(0.05)
+        frames = String[]
+        while isready(pending)
+            push!(frames, take!(pending))
+        end
+        analyze_frames = filter(f -> occursin("\"kind\":\"analyze_run\"", f), frames)
+        @test isempty(analyze_frames)
+
+        # But the user_actions row is still durable.
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM user_actions WHERE action = 'analyze_run' AND entity_id = ?", [e_id]))
+        @test !isempty(rows)
+    finally
+        lock(HimalayaUI.SSE_LOCK) do
+            filter!(x -> x !== sub, HimalayaUI.SSE_SUBSCRIBERS[])
+        end
+        close(pending)
+    end
+end

@@ -73,7 +73,20 @@ introduced (the in-process `OP_LOCKS` registry doesn't cross processes).
 """
 function with_idempotency(f, db::SQLite.DB, req::HTTP.Request)
     op_id = get_client_op_id(req)
-    op_id === nothing && return f()
+    if op_id === nothing
+        # No-op-id path: still support post-commit broadcasts for routes that
+        # use the M2 pattern without idempotency. We don't open a tx here, so
+        # any enqueued broadcast is paired with whatever durable write the
+        # body did itself; flush on success, clear on throw.
+        try
+            response = f()
+            _flush_post_commit_broadcasts!()
+            return response
+        catch
+            _clear_post_commit_broadcasts!()
+            rethrow()
+        end
+    end
 
     # Fast path: lock-free cache check (outside any tx).
     cached = _lookup_cached_response(db, op_id)
@@ -88,19 +101,44 @@ function with_idempotency(f, db::SQLite.DB, req::HTTP.Request)
         # on retry. Routes whose body emits events should use
         # `apply_event!(InTransaction(), db, req; ...)` to participate in
         # this transaction rather than opening a nested one.
-        return SQLite.transaction(db) do
-            # Double-check the cache inside the lock + tx.
-            cached2 = _lookup_cached_response(db, op_id)
-            cached2 === nothing || return cached2
+        local response
+        local replayed_cache::Bool = false
+        try
+            response = SQLite.transaction(db) do
+                # Double-check the cache inside the lock + tx.
+                cached2 = _lookup_cached_response(db, op_id)
+                if cached2 !== nothing
+                    replayed_cache = true
+                    return cached2
+                end
 
-            response = f()
-            if response.status < 400
-                DBInterface.execute(db,
-                    "INSERT INTO idempotent_responses (client_op_id, status_code, body) VALUES (?, ?, ?)",
-                    [op_id, Int(response.status), String(copy(response.body))])
+                resp = f()
+                if resp.status < 400
+                    DBInterface.execute(db,
+                        "INSERT INTO idempotent_responses (client_op_id, status_code, body) VALUES (?, ?, ?)",
+                        [op_id, Int(resp.status), String(copy(resp.body))])
+                end
+                return resp
             end
-            return response
+        catch
+            # Rollback path: the tx threw and rolled back. Any queued
+            # post-commit broadcast must be discarded — its underlying
+            # writes never committed.
+            _clear_post_commit_broadcasts!()
+            rethrow()
         end
+
+        # On a cache replay, the body did NOT execute, so the queue should
+        # already be empty. On a fresh successful body execution (status<400),
+        # the queue is flushed AFTER the tx commits so subscribers can never
+        # see uncommitted state. Failed-but-not-thrown bodies (status≥400)
+        # have nothing cached and any speculative enqueues are dropped.
+        if replayed_cache || response.status >= 400
+            _clear_post_commit_broadcasts!()
+        else
+            _flush_post_commit_broadcasts!()
+        end
+        return response
     end
 end
 
