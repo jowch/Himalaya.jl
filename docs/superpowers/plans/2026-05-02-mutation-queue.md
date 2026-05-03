@@ -1325,6 +1325,18 @@ describe("pendingDeferreds", () => {
 
 ```typescript
 // queue/types.ts
+
+// Optimistic-id invariant:
+// Mutators that need an entity id before the server has assigned one
+// (peak_added inserting a peak_curations row; speculative_created inserting
+// an indices row) use NEGATIVE placeholder ids in optimistic cache writes.
+// Real DB ids are always positive (INTEGER PRIMARY KEY AUTOINCREMENT in
+// SQLite never returns ≤ 0 for fresh inserts). Consumers that read these
+// caches (PeakRow, MentionChip, etc.) must tolerate negative ids: don't
+// `id > 0` filter, don't strict-parse, don't dereference into URLs without
+// a sign check. The placeholder is replaced with the real id when the
+// mutator's onSuccess runs against the server response.
+
 export type OpKind =
   | "peak_added" | "peak_excluded" | "peak_unexcluded" | "peak_removed"
   | "index_confirmed" | "index_unconfirmed"
@@ -1572,6 +1584,18 @@ function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
     qc.setQueryData(queryKeys.exposure(id), (old: Exposure | undefined) =>
       old ? { ...old, analysis_inputs_hash: remote.post_state!.analysis_inputs_hash } : old);
   };
+
+  // Note on event-kind coverage:
+  // Today only events emitted via `apply_event!` reach SSE — that's
+  // peak_added/excluded/unexcluded/removed, index_confirmed/unconfirmed,
+  // speculative_created/deleted, and analyze_run. The cases below for
+  // post_message, set_exposure_status, select_exposure, add_tag, remove_tag,
+  // and update_sample are forward-scaffolded: those routes still use
+  // `log_action!` (no broadcast) today and won't trigger these branches
+  // until the trivial-mutator slice (M2.1) migrates them to `apply_event!`
+  // for cross-tab parity. Until then the branches are unreachable; the
+  // `default:` invalidate fallback would also handle them correctly if
+  // they fired.
 
   switch (remote.kind) {
     case "peak_added": {
@@ -2099,10 +2123,23 @@ Mutations in this slice:
 - `useSetExposureStatus`
 - `useSelectExposure`
 
+> **Backend coupling for cross-tab sync.** The corresponding backend routes (`routes_samples.jl`, `routes_exposures.jl` for tags + status + select, `routes_messages.jl` for chat) currently use `log_action!` (no SSE broadcast). The frontend mutator's optimistic UI works without backend changes — clicks feel instant via local cache writes. **But cross-tab sync requires migrating these routes to `apply_event!`** so SSE frames fire and other tabs see updates without manual refetch. Each per-mutation PR in this slice should include the corresponding backend migration:
+>
+> - `useUpdateSample` → migrate `PATCH /api/samples/:id` body to `apply_event!(kind="update_sample", entity_type="sample", ...)`. New dispatcher branch in `update_view_for_event!` is a no-op (no view writes; the action is already a direct UPDATE on `samples`). The migration is for SSE delivery, not view materialization.
+> - `useAddSampleTag` / `useRemoveSampleTag` / `useAddExposureTag` / `useRemoveExposureTag` → similar; new dispatcher branches return `nothing` (tag tables are written directly by the route, not via the dispatcher; we want the SSE side effect).
+> - `usePostSampleMessage` → migrate `POST /api/samples/:id/messages` to `apply_event!(kind="add_message", ...)` for cross-tab chat updates.
+> - `useSetExposureStatus` → migrate to `apply_event!(kind="set_exposure_status", ...)`.
+> - `useSelectExposure` → migrate to `apply_event!(kind="select_exposure", ...)`. Stays LWW per spec; the broadcast is purely for cross-tab "Bob is now looking at exposure 7" awareness.
+>
+> Without these backend migrations, the trivial slice's optimistic UI works in the editing tab but other tabs stay stale until refetch. The `applyRemoteToCache` switch in M1.2 is forward-scaffolded for these kinds; it activates when each route migrates.
+
 **Files (per mutation):**
 - Modify: `packages/HimalayaUI/frontend/src/queries.ts` — replace `useMutation` with queue-shaped mutator
 - New: per-mutation mutator file under `packages/HimalayaUI/frontend/src/lib/queue/mutators/<name>.ts`
 - New: per-mutation test file under `packages/HimalayaUI/frontend/test/queue/mutators/<name>.test.ts`
+- Modify: corresponding `routes_*.jl` route — swap `log_action!` for `apply_event!` (per the backend coupling note above)
+- Modify: `packages/HimalayaUI/src/events.jl` — `update_view_for_event!` dispatcher gets new branches that return `nothing` (no view write) for the new kinds; the kinds are still recorded in `user_actions` and broadcast via SSE
+- Modify: `packages/HimalayaUI/test/test_events.jl` — `rebuild_views_from_log!` round-trip test extended for each new kind (no-op dispatcher branch must not break the property)
 - Modify: any consumer components that used the old hook return shape (most don't change)
 
 - [ ] **Step 1: Write failing tests for `useAddSampleTag` (canonical first migration)**
@@ -2281,13 +2318,34 @@ The two-context test exercises real cross-context SSE delivery, so it needs a re
 
 **Test fixture setup:**
 
-A `playwright.config.ts` extension or `globalSetup.ts` script that:
-1. Spins up a temporary experiment directory with a fixed seed of auto peaks.
-2. Starts `himalaya serve` against a fresh DB on a port not already used (e.g., 8081 to avoid clashing with dev's :8080).
-3. Hands the URL to tests via env var.
-4. Tears down on teardown.
+A `playwright.config.ts` extension that adds the backend to its `webServer` array (Playwright supports multiple entries; both start before tests, both stop on teardown). Running them as separate processes outside Playwright introduces flakiness on CI (race between Vite startup and backend readiness, no automatic teardown if a test crashes); the `webServer`-array approach gives Playwright lifecycle control.
 
-The existing `playwright.config.ts` only starts Vite dev (per CLAUDE.md "Playwright port binding" gotcha). Extend `webServer` to also start the backend, OR run them separately and document the run-order.
+```typescript
+// playwright.config.ts
+export default defineConfig({
+  webServer: [
+    { command: "npm run dev -- --host 127.0.0.1", url: "http://127.0.0.1:5173", reuseExistingServer: !process.env.CI },
+    { command: "node ./e2e/start-backend.mjs", url: `http://127.0.0.1:${process.env.E2E_BACKEND_PORT ?? 8081}/api/experiments`, reuseExistingServer: !process.env.CI },
+  ],
+  // ...
+});
+```
+
+`./e2e/start-backend.mjs`:
+1. Reserves a port via `get-port` (npm package), defaulting to 8081 if free. Writes the chosen port to `process.env.E2E_BACKEND_PORT` for tests.
+2. Spawns `julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(["serve", tmpdir, "--port", ENV["E2E_BACKEND_PORT"]])'` with a fixture experiment directory.
+3. Forwards the child's stderr to its own stderr so failures surface in Playwright's logs.
+4. Cleans up the child + tmpdir on `SIGTERM` / `SIGINT`.
+
+The fixture experiment dir contains a small synthetic `experiment.toml` + a few seeded .dat files with predictable peaks. `e2e/fixtures/experiment-replay-rerun/` is the right place under the existing repo layout.
+
+**Vite proxy:** `vite.config.ts` proxies `/api/*` to `:8080` for dev. For e2e the proxy target needs to be the dynamic `E2E_BACKEND_PORT`. Either:
+- Override the proxy target via env var read in `vite.config.ts`, OR
+- Build the frontend statically (`npm run build`) and serve via the Julia backend's `dynamicfiles("dist")` path — backend serves both API and frontend on one port, no proxy needed.
+
+The second option is simpler for CI and matches production deployment. Use it.
+
+**Port-conflict handling:** the `get-port` package is not destructive (no `lsof | xargs kill` per CLAUDE.md's anti-pattern note). On a developer machine that happens to have :8081 occupied, the helper picks an alternate.
 
 `packages/HimalayaUI/frontend/e2e/multiplayer-replay-rerun.spec.ts`:
 
