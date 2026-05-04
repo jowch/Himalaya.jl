@@ -8,6 +8,7 @@ import { InfrastructureBanner } from "./components/InfrastructureBanner";
 import { handleRemoteEvent } from "./lib/queue/replayCoordinator";
 import { attachPersistence, rehydrate } from "./lib/queue/persistence";
 import { resolveMutator } from "./lib/queue/mutatorRegistry";
+import { exposeTestHelpers } from "./lib/queue/testHelpers";
 import { showToast } from "./lib/toast";
 import type { SseEvent } from "./lib/queue/types";
 
@@ -18,6 +19,12 @@ import type { SseEvent } from "./lib/queue/types";
 export function App(): JSX.Element {
   const qc = useQueryClient();
   const mc = qc.getMutationCache();
+
+  // Expose minimal test helpers on `window.__himalayaTest` in DEV only.
+  // Production bundles tree-shake this out (Vite + DEV gate).
+  useEffect(() => {
+    exposeTestHelpers(qc, mc);
+  }, [qc, mc]);
 
   useEffect(() => {
     const es = new EventSource("/api/events");

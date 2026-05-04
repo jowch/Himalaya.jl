@@ -41,7 +41,11 @@ end
 
 function _group_with_members(db::SQLite.DB, group_id::Int)
     g = Tables.rowtable(DBInterface.execute(db,
-        "SELECT * FROM index_groups WHERE id = ?", [group_id]))[1]
+        # SELECT only the fields the frontend GroupEntry type declares —
+        # `created_at` and `created_by` are server-internal and not consumed
+        # by any UI. Including them would silently pollute the cache (no
+        # type error, just bloat). Pinned by test_route_response_shapes.jl.
+        "SELECT id, exposure_id, kind, active FROM index_groups WHERE id = ?", [group_id]))[1]
     members = Tables.rowtable(DBInterface.execute(db,
         "SELECT index_id FROM index_group_members
          WHERE group_id = ? ORDER BY index_id", [group_id]))
