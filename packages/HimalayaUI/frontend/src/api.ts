@@ -306,12 +306,23 @@ export interface GroupEntry {
   members: number[];
 }
 
+/**
+ * Mutation responses on group routes carry queue-framework metadata
+ * (event_id, view_row_id) alongside the row. The mutator's onSuccess MUST
+ * destructure these out before writing the row into the cache — otherwise
+ * `GroupEntry` rows get polluted with queue plumbing fields.
+ */
+export type GroupMutationResponse = GroupEntry & {
+  event_id: number;
+  view_row_id: number | null;
+};
+
 export const listGroups = (exposure_id: number) =>
   request<GroupEntry[]>("GET", `/api/exposures/${exposure_id}/groups`);
 export const addIndexToGroup = (group_id: number, index_id: number, opts?: AuthOpts) =>
-  request<GroupEntry>("POST", `/api/groups/${group_id}/members`, { index_id }, opts);
+  request<GroupMutationResponse>("POST", `/api/groups/${group_id}/members`, { index_id }, opts);
 export const removeIndexFromGroup = (group_id: number, index_id: number, opts?: AuthOpts) =>
-  request<GroupEntry>("DELETE", `/api/groups/${group_id}/members/${index_id}`, undefined, opts);
+  request<GroupMutationResponse>("DELETE", `/api/groups/${group_id}/members/${index_id}`, undefined, opts);
 
 // Sample messages (chat log)
 export interface SampleMessage {

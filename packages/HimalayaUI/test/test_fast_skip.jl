@@ -164,54 +164,31 @@ end
             "SELECT analysis_inputs_hash FROM exposures WHERE id = ?",
             [ctx.exposure_id]))
         new_hash = String(new_hash_rows[1].analysis_inputs_hash)
-        new_indices = first(Tables.rowtable(DBInterface.execute(ctx.db,
-            "SELECT COUNT(*) AS c FROM indices WHERE exposure_id = ?",
-            [ctx.exposure_id]))).c
         n_after = first(Tables.rowtable(DBInterface.execute(ctx.db,
             "SELECT COUNT(*) AS c FROM user_actions WHERE entity_id = ? AND action = 'analyze_run'",
             [ctx.exposure_id]))).c
 
-        @test new_hash != prior_hash      # hash recomputed.
+        @test new_hash != prior_hash      # hash recomputed (slow path saw the change).
         @test n_after == n_before + 1     # analyze_run row written (slow path ran).
-        @test new_indices != prior_indices || new_indices >= 1  # indexpeaks ran.
+        # The slow-path run must have executed indexpeaks, not skipped it. Read
+        # the analyze_run payload to confirm — this is the load-bearing
+        # assertion: it pins that trace_known_unchanged=true did NOT short-
+        # circuit indexpeaks even though the trace itself was unchanged
+        # (suggestion #7 from PR review — replaces a tautological check).
+        latest_run = Tables.rowtable(DBInterface.execute(ctx.db,
+            """SELECT payload FROM user_actions
+               WHERE entity_id = ? AND action = 'analyze_run'
+               ORDER BY id DESC LIMIT 1""", [ctx.exposure_id]))
+        payload = JSON3.read(String(latest_run[1].payload))
+        @test payload[:indexpeaks_skipped] === false
+        @test payload[:findpeaks_skipped]  === true   # trace unchanged ⇒ findpeaks still skipped
     end
 end
 
-@testset "migrate_schema! preserves rows in legacy user_actions on upgrade (issue #7)" begin
-    # Pre-fix the bare catch in migrate_schema! could have masked a failure
-    # against a populated user_actions table. Cover the legacy path explicitly:
-    # seed rows that will be NULL on `client_op_id` after the column ALTER,
-    # then re-run the migration and verify rows survive plus the partial
-    # unique index installs cleanly.
-    mktempdir() do tmp
-        # open_db gives us the canonical schema + migrations. Seed
-        # user_actions rows whose client_op_id is NULL (which is the legacy
-        # shape post-ALTER — pre-Plan 8 rows have no op id).
-        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
-        u_id = HimalayaUI.get_or_create_user!(db, "alice")
-        DBInterface.execute(db,
-            "INSERT INTO user_actions (user_id, action, entity_type, entity_id) VALUES (?, ?, ?, ?)",
-            [u_id, "noop_test", "exposure", 1])
-        DBInterface.execute(db,
-            "INSERT INTO user_actions (user_id, action, entity_type, entity_id) VALUES (?, ?, ?, ?)",
-            [u_id, "noop_test", "exposure", 2])
-
-        # Re-run migrate_schema! — must be idempotent over a populated DB.
-        HimalayaUI.migrate_schema!(db)
-
-        rows = Tables.rowtable(DBInterface.execute(db,
-            "SELECT id, action, client_op_id FROM user_actions WHERE action = 'noop_test' ORDER BY id"))
-        @test length(rows) == 2
-        @test all(r -> ismissing(r.client_op_id), rows)
-        @test rows[1].action == "noop_test"
-
-        # The partial unique index excludes NULL client_op_id rows, so
-        # multiple identical legacy rows coexist without violating it.
-        idx_rows = Tables.rowtable(DBInterface.execute(db,
-            "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_events_unique_op'"))
-        @test length(idx_rows) == 1
-    end
-end
+# Legacy-DB upgrade with populated user_actions is covered by test_db.jl's
+# "open_db: legacy user_actions populated with NULL client_op_id rows survives
+# upgrade (issue #15)" testset. It exercises the true legacy schema path
+# (pre-existing rows BEFORE ALTER + CREATE UNIQUE INDEX runs).
 
 @testset "fast-skip: skipped when only exclude curations" begin
     mktempdir() do tmp

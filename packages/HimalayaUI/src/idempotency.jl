@@ -171,15 +171,24 @@ function gc_idempotent_responses!(db::SQLite.DB; ttl_seconds::Int = 3600)
     # deleting, so we can drop only those specific locks. Don't touch locks
     # for ops without a response row — they're either in flight or never
     # completed, and the lock is required for any concurrent retry.
+    #
+    # Both queries DELETE the same set by id-list rather than re-evaluating
+    # `datetime('now', ...)` twice — clock advance between the SELECT and
+    # the DELETE could otherwise widen the DELETE set to include rows
+    # inserted in the gap, leaving their locks orphaned (PR review
+    # suggestion #8).
     expired = Tables.rowtable(DBInterface.execute(db,
         "SELECT client_op_id FROM idempotent_responses WHERE created_at < datetime('now', ?)",
         ["-$(ttl_seconds) seconds"]))
+    isempty(expired) && return nothing
+    op_ids = [String(r.client_op_id) for r in expired]
+    placeholders = join(fill("?", length(op_ids)), ",")
     DBInterface.execute(db,
-        "DELETE FROM idempotent_responses WHERE created_at < datetime('now', ?)",
-        ["-$(ttl_seconds) seconds"])
+        "DELETE FROM idempotent_responses WHERE client_op_id IN ($placeholders)",
+        op_ids)
     lock(OP_LOCKS_MU) do
-        for r in expired
-            delete!(OP_LOCKS, String(r.client_op_id))
+        for k in op_ids
+            delete!(OP_LOCKS, k)
         end
     end
     nothing

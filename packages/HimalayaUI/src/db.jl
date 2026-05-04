@@ -253,7 +253,10 @@ function migrate_schema!(db::SQLite.DB)
         try
             DBInterface.execute(db, stmt)
         catch err
-            msg = sprint(showerror, err)
+            # Lowercase the message before matching so a future SQLite or
+            # SQLite.jl change in casing/prefix doesn't silently flip a
+            # tolerated error into a propagated one (PR review suggestion #9).
+            msg = lowercase(sprint(showerror, err))
             # Two errors are expected during incremental upgrades:
             # - "duplicate column name": the column already exists on a DB
             #   that's been migrated before. Idempotent — ignore.
@@ -275,7 +278,7 @@ function migrate_schema!(db::SQLite.DB)
         try
             DBInterface.execute(db, stmt)
         catch err
-            occursin("no such table", sprint(showerror, err)) || rethrow()
+            occursin("no such table", lowercase(sprint(showerror, err))) || rethrow()
         end
     end
     _create_safely(

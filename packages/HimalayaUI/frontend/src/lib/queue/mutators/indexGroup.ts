@@ -14,7 +14,7 @@
  * over SSE, which `applyRemoteToCache` already handles via cache invalidation.
  */
 import * as api from "../../../api";
-import type { GroupEntry, IndexEntry, AuthOpts } from "../../../api";
+import type { GroupEntry, GroupMutationResponse, IndexEntry, AuthOpts } from "../../../api";
 import { queryKeys } from "../../../queries";
 import { authOpts } from "../../authOpts";
 import type { Mutator, RollbackContext } from "../types";
@@ -47,7 +47,7 @@ function buildAuth(p: { username: string | undefined; clientId: string; clientOp
 // addIndexToGroupMutator
 // ---------------------------------------------------------------------------
 
-export const addIndexToGroupMutator: Mutator<AddIndexToGroupInput, GroupScope, GroupEntry> = {
+export const addIndexToGroupMutator: Mutator<AddIndexToGroupInput, GroupScope, GroupMutationResponse> = {
   kind: "index_confirmed",
   onMutate: (p, qc): RollbackContext => {
     const groupsKey = queryKeys.groups(p.exposureId);
@@ -67,9 +67,13 @@ export const addIndexToGroupMutator: Mutator<AddIndexToGroupInput, GroupScope, G
   },
   request: (p) => api.addIndexToGroup(p.groupId, p.indexId, buildAuth(p)),
   onSuccess: (p, response, qc) => {
+    // Strip queue-framework metadata before writing into the cache —
+    // GroupEntry rows must not carry event_id/view_row_id (issue #16).
+    const { event_id: _e, view_row_id: _v, ...row } = response;
+    void _e; void _v;
     const groupsKey = queryKeys.groups(p.exposureId);
     qc.setQueryData<GroupEntry[]>(groupsKey, (old) =>
-      (old ?? []).map((g) => (g.id === response.id ? response : g)));
+      (old ?? []).map((g) => (g.id === row.id ? row : g)));
   },
   affectsExposurePeaks: () => false,
 };
@@ -78,7 +82,7 @@ export const addIndexToGroupMutator: Mutator<AddIndexToGroupInput, GroupScope, G
 // removeIndexFromGroupMutator
 // ---------------------------------------------------------------------------
 
-export const removeIndexFromGroupMutator: Mutator<RemoveIndexFromGroupInput, GroupScope, GroupEntry> = {
+export const removeIndexFromGroupMutator: Mutator<RemoveIndexFromGroupInput, GroupScope, GroupMutationResponse> = {
   kind: "index_unconfirmed",
   onMutate: (p, qc): RollbackContext => {
     const groupsKey = queryKeys.groups(p.exposureId);
@@ -98,9 +102,12 @@ export const removeIndexFromGroupMutator: Mutator<RemoveIndexFromGroupInput, Gro
   },
   request: (p) => api.removeIndexFromGroup(p.groupId, p.indexId, buildAuth(p)),
   onSuccess: (p, response, qc) => {
+    // Strip queue-framework metadata before writing into the cache (issue #16).
+    const { event_id: _e, view_row_id: _v, ...row } = response;
+    void _e; void _v;
     const groupsKey = queryKeys.groups(p.exposureId);
     qc.setQueryData<GroupEntry[]>(groupsKey, (old) =>
-      (old ?? []).map((g) => (g.id === response.id ? response : g)));
+      (old ?? []).map((g) => (g.id === row.id ? row : g)));
   },
   affectsExposurePeaks: () => false,
 };

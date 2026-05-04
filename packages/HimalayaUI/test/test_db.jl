@@ -449,6 +449,81 @@ end
     end
 end
 
+@testset "open_db: legacy user_actions populated with NULL client_op_id rows survives upgrade (issue #15)" begin
+    # Reviewer-flagged gap: prior tests created legacy user_actions tables but
+    # inserted ZERO rows before calling open_db, so they didn't exercise the
+    # "rows exist before ALTER + index install" path. Pin the two properties
+    # the partial unique index design depends on:
+    #   (a) Pre-existing NULL-client_op_id rows survive ALTER ADD COLUMN +
+    #       CREATE UNIQUE INDEX (the partial WHERE excludes them).
+    #   (b) Two such rows with same (action, entity_id) coexist (partial
+    #       WHERE keeps NULL pairs out of the unique constraint).
+    #   (c) After upgrade, a non-NULL duplicate IS rejected by the live
+    #       constraint.
+    mktempdir() do tmp
+        path = joinpath(tmp, "test.db")
+        db = SQLite.DB(path)
+        # Legacy schema mirroring create_schema! pre-Plan-8.
+        DBInterface.execute(db, """
+            CREATE TABLE users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL
+            )""")
+        DBInterface.execute(db, """
+            CREATE TABLE user_actions (
+                id              INTEGER PRIMARY KEY,
+                user_id         INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                timestamp       DATETIME DEFAULT CURRENT_TIMESTAMP,
+                action          TEXT,
+                entity_type     TEXT,
+                entity_id       INTEGER,
+                note            TEXT
+            )""")
+        DBInterface.execute(db, "INSERT INTO users (username) VALUES ('alice')")
+        # Seed two rows with same (action, entity_id), both NULL on the
+        # not-yet-existing client_op_id column.
+        DBInterface.execute(db,
+            "INSERT INTO user_actions (user_id, action, entity_type, entity_id) VALUES (?, ?, ?, ?)",
+            [1, "peak_added", "exposure", 42])
+        DBInterface.execute(db,
+            "INSERT INTO user_actions (user_id, action, entity_type, entity_id) VALUES (?, ?, ?, ?)",
+            [1, "peak_added", "exposure", 42])
+        SQLite.close(db)
+
+        # Upgrade — open_db calls migrate_schema!. Must not throw despite the
+        # partial-legacy schema (no exposures/samples/etc tables) AND must
+        # preserve all rows.
+        db = HimalayaUI.open_db(path)
+
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id, action, client_op_id FROM user_actions ORDER BY id"))
+        @test length(rows) == 2                            # (a) rows survive
+        @test all(r -> ismissing(r.client_op_id), rows)
+        @test rows[1].action == "peak_added"
+        # Same (action, entity_id) appears twice with NULL op_id without
+        # tripping the unique index — (b).
+        same = Tables.rowtable(DBInterface.execute(db,
+            "SELECT COUNT(*) AS c FROM user_actions WHERE action = ? AND entity_id = ?",
+            ["peak_added", 42]))
+        @test same[1].c == 2
+
+        # The partial unique index installed.
+        idx = Tables.rowtable(DBInterface.execute(db,
+            "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_events_unique_op'"))
+        @test length(idx) == 1
+
+        # (c) A non-NULL op_id duplicate is rejected post-upgrade.
+        DBInterface.execute(db, """
+            INSERT INTO user_actions (action, entity_type, entity_id, client_op_id)
+            VALUES ('peak_added', 'exposure', 42, 'op-fresh')""")
+        @test_throws Exception DBInterface.execute(db, """
+            INSERT INTO user_actions (action, entity_type, entity_id, client_op_id)
+            VALUES ('peak_added', 'exposure', 42, 'op-fresh')""")
+
+        SQLite.close(db)
+    end
+end
+
 @testset "I2: duplicate (client_op_id, action, entity_id) rejected at DB level" begin
     mktempdir() do tmp
         db = HimalayaUI.open_db(joinpath(tmp, "test.db"))
