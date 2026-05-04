@@ -235,6 +235,31 @@ end
     end
 end
 
+@testset "OP_LOCKS entry removed when body throws (issue #37 Bug 4)" begin
+    # Without cleanup, throw-without-cache-row leaks the OP_LOCKS entry until
+    # process restart — gc_idempotent_responses! only collects locks for ops
+    # that have a corresponding idempotent_responses row, and the row is
+    # never written when the body throws.
+    mktempdir() do tmp
+        db = open_db(joinpath(tmp, "test.db"))
+        req = HTTP.Request("POST", "/",
+                           ["X-Client-Op-Id" => "op-throw-leak"], UInt8[])
+        try
+            with_idempotency(db, req) do
+                error("body explosion")
+            end
+        catch
+        end
+        @test !haskey(HimalayaUI.OP_LOCKS, "op-throw-leak")
+        # No idempotent_responses row was written either, so the GC would never
+        # have collected this entry on its own.
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT 1 FROM idempotent_responses WHERE client_op_id = 'op-throw-leak'"))
+        @test isempty(rows)
+        SQLite.close(db)
+    end
+end
+
 @testset "I2: with_idempotency success commits event AND cache atomically" begin
     mktempdir() do tmp
         db = open_db(joinpath(tmp, "test.db"))

@@ -134,6 +134,18 @@ function with_idempotency(f, db::SQLite.DB, req::HTTP.Request)
             # post-commit broadcast must be discarded — its underlying
             # writes never committed.
             _clear_post_commit_broadcasts!()
+            # Issue #37 Bug 4: clean up the OP_LOCKS entry if no cache row
+            # was written. gc_idempotent_responses! only collects locks
+            # whose ops have an idempotent_responses row, so without this
+            # cleanup, locks for permanently-failed ops would leak until
+            # process restart. The cache check is defensive — under the
+            # current control flow, a thrown tx body has already rolled
+            # back any INSERT.
+            lock(OP_LOCKS_MU) do
+                if _lookup_cached_response(db, op_id) === nothing
+                    delete!(OP_LOCKS, op_id)
+                end
+            end
             rethrow()
         end
 
