@@ -493,6 +493,22 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
         DBInterface.execute(db,
             "UPDATE index_groups SET active = 0 WHERE id = ?", [group_db_id])
     end
+
+    # Issue #34 Bug 3: write the inputs-hash markers as part of the SAME
+    # transaction as the index/group rebuild. Previously these UPDATEs lived
+    # in the `analyze_exposure!` caller AFTER persist_analysis!'s tx
+    # committed, so a crash in between left exposures.analysis_inputs_hash
+    # and indices.inputs_hash divergent — StaleIndicesBanner state would
+    # then get permanently stuck. Route callers wrap the whole flow in
+    # with_idempotency's outer tx so this was benign for HTTP routes; the
+    # bug only manifested for the CLI `himalaya analyze` path.
+    inputs_hash = hash_peak_set(eff)
+    DBInterface.execute(db,
+        "UPDATE exposures SET analysis_inputs_hash = ? WHERE id = ?",
+        [inputs_hash, exposure_id])
+    DBInterface.execute(db,
+        "UPDATE indices SET inputs_hash = ? WHERE exposure_id = ?",
+        [inputs_hash, exposure_id])
 end
 
 function get_peaks_for_exposure(db::SQLite.DB, exposure_id::Int)
@@ -777,14 +793,11 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
             fresh_peaks_result
         candidates = Himalaya.indexpeaks(eff.q, eff.sharpness)
         group = auto_group(candidates)
+        # `persist_analysis!` writes both the index/group rows AND the
+        # `analysis_inputs_hash` / per-index `inputs_hash` markers atomically
+        # (issue #34 Bug 3). No follow-up UPDATEs needed here.
         persist_analysis!(db, exposure_id, q, I, peaks_result_for_persist,
                           candidates, group, eff)
-        DBInterface.execute(db,
-            "UPDATE exposures SET analysis_inputs_hash = ? WHERE id = ?",
-            [new_inputs_hash, exposure_id])
-        DBInterface.execute(db,
-            "UPDATE indices SET inputs_hash = ? WHERE exposure_id = ?",
-            [new_inputs_hash, exposure_id])
     end
 
     duration_ms = round(Int, (time() - t0) * 1000)

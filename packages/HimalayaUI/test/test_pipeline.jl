@@ -85,6 +85,48 @@ using HimalayaUI: ensure_custom_group!
 using DBInterface
 using Tables
 
+@testset "persist_analysis! writes inputs_hash atomically with the rest of the rows (issue #34 Bug 3)" begin
+    # Pre-fix, the two `inputs_hash` UPDATEs lived in `analyze_exposure!`
+    # AFTER `persist_analysis!`'s transaction committed — autocommit, outside
+    # any tx. A crash between the persist commit and the UPDATEs would leave
+    # `exposures.analysis_inputs_hash` and `indices.inputs_hash` divergent,
+    # making StaleIndicesBanner state permanently wrong.
+    #
+    # The fix moves the UPDATEs into `_persist_analysis_inner!` so they
+    # commit/rollback as part of the same tx. This test exercises the
+    # contract: calling `persist_analysis!` directly (e.g. from the CLI
+    # path that didn't have an outer with_idempotency tx) MUST leave the
+    # hashes populated.
+    db = SQLite.DB()
+    create_schema!(db)
+    exp_id  = create_experiment!(db; path="/tmp", data_dir="/tmp/data",
+                                     analysis_dir="/tmp/analysis")
+    s_id    = create_sample!(db; experiment_id=exp_id, label="D1", name="UX1")
+    e_id    = create_exposure!(db; sample_id=s_id, filename="example_tot.dat")
+
+    dat_path = joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat")
+    q, I, σ  = load_dat(dat_path)
+    peaks_result  = findpeaks(q, I, σ)
+    diff_update_auto_peaks!(db, e_id, peaks_result, I)
+    eff           = effective_peaks(db, e_id, q, I)
+    candidates    = indexpeaks(eff.q, eff.sharpness)
+    group_indices = auto_group(candidates)
+
+    persist_analysis!(db, e_id, q, I, peaks_result, candidates, group_indices, eff)
+
+    expected = HimalayaUI.hash_peak_set(eff)
+
+    exp_hash = Tables.rowtable(DBInterface.execute(db,
+        "SELECT analysis_inputs_hash FROM exposures WHERE id = ?",
+        [e_id]))[1].analysis_inputs_hash
+    @test exp_hash == expected
+
+    idx_hashes = [r.inputs_hash for r in Tables.rowtable(DBInterface.execute(db,
+        "SELECT inputs_hash FROM indices WHERE exposure_id = ?", [e_id]))]
+    @test !isempty(idx_hashes)
+    @test all(h -> h == expected, idx_hashes)
+end
+
 @testset "persist_analysis! preserves custom-group members across reanalysis" begin
     # Regression: when a peak is added/removed/excluded the frontend triggers
     # an auto-reanalysis. That re-runs persist_analysis! which deletes all
