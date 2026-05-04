@@ -83,6 +83,7 @@ packages/
                              #   InspectPage (curate exposures), ComparePage
       test/                  # Vitest + React Testing Library
       e2e/                   # Playwright (mocks /api via page.route)
+      e2e/live/              # Playwright integration (real backend + dev DB)
       dist/                  # Vite build output; served by Oxygen.jl in prod
 docs/
   peak-finding.md            # findpeaks design (persistence + sharpness + kneedle)
@@ -120,6 +121,7 @@ julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.test("HimalayaUI")'
 npm test              # Vitest unit tests (one-shot)
 npm run test:watch    # Vitest watch mode
 npm run e2e           # Playwright E2E (auto-starts Vite via playwright.config.ts)
+npm run e2e:live      # Live integration tests (requires backend + Vite running)
 npm run build         # tsc --noEmit + vite build (must pass before PR)
 
 # Single frontend test file / single E2E test by name
@@ -241,6 +243,8 @@ tab. See docs/event-log.md §"Client side".
 **E2E selectors:** Playwright tests use `data-testid`, `role`, or stable `data-*` attributes (`data-sample-id`, `data-exposure-id`, `data-alternative-id`, `data-active`, `data-low-r2`). Never assert on Tailwind class strings — they change when styling evolves. For Vitest/RTL tests, use `screen.getByText("X").closest("li")` + `toHaveAttribute` rather than `document.querySelector` — the latter bypasses RTL's async-aware retry logic.
 
 **Playwright port binding:** `playwright.config.ts` expects the dev server on `http://127.0.0.1:5173`, not `localhost`. If another process has that port, tests hang for 60 s then fail. Kill with `lsof -ti:5173 | xargs kill -9`, then re-run. If starting Vite separately before `npm run e2e`, bind it explicitly: `npm run dev -- --host 127.0.0.1`.
+
+**Live-integration tests under `e2e/live/`.** Distinct from the default mocked `npm run e2e` suite — these hit a real backend + dev DB and are excluded from the default config via `testIgnore`. Run with `npm run e2e:live` (uses `playwright.live.config.ts`). Operator brings up the backend and Vite manually first; `playwright.live.config.ts` deliberately omits `webServer` so it can't accidentally proxy to the wrong backend. Use this category for any check that needs SSE, real DB state transitions, or cross-process atomicity — anything `page.route` can't simulate.
 
 **Focus trapping in modals.** `src/hooks/useFocusTrap.ts` exports `useFocusTrap(containerRef, active)`. Call it inside any modal or overlay that should keep Tab focus within its bounds. It intercepts Tab/Shift+Tab to cycle among focusable children and restores the previously-focused element on cleanup. NavModal and OnboardingFlow already use it.
 
