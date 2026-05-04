@@ -3,3 +3,7 @@ dist
 .DS_Store
 test-results
 playwright-report
+
+# Local dev exploration (paired with worktree-root .dev/ folder)
+playwright.dev.config.ts
+e2e/*.dev.spec.ts
