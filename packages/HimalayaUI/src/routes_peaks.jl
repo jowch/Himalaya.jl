@@ -115,9 +115,26 @@ function register_peaks_routes!()
 
     @post "/api/exposures/{id}/peaks" function(req::HTTP.Request, id::Int)
         db = current_db()
+        body = json(req)
+        # Validate before with_idempotency so a malformed body returns 400
+        # (validation toast on the frontend) rather than 500 (infrastructure
+        # banner). The frontend's failure-class router treats 4xx as
+        # validation; an uncaught Float64() conversion throw would otherwise
+        # surface as 500 and mis-route. Caught by the smoke checklist.
+        if !haskey(body, :q)
+            return HTTP.Response(400,
+                ["Content-Type" => "application/json"],
+                JSON3.write(Dict(:error => "missing field: q")))
+        end
+        local q::Float64
+        try
+            q = Float64(body.q)
+        catch
+            return HTTP.Response(400,
+                ["Content-Type" => "application/json"],
+                JSON3.write(Dict(:error => "q must be a number")))
+        end
         return with_idempotency(db, req) do
-            body = json(req)
-            q    = Float64(body.q)
 
             # Initial payload before insertion. The peak_curation_id is added
             # below once the dispatcher returns the new row id, so the SSE

@@ -297,6 +297,10 @@ function migrate_schema!(db::SQLite.DB)
             ON user_actions(client_op_id, action, entity_id)
             WHERE client_op_id IS NOT NULL""")
     migrate_pk_to_autoincrement!(db)
+    # Heal corrupted FKs from prior runs: a DB migrated before the helper
+    # was generalized may still have FK refs to `_migrate_old_*` on tables
+    # like sample_messages/sample_tags/etc. Idempotent — no-op when clean.
+    _fix_fk_references_after_autoincrement_migration!(db)
     migrate_r2_widen_index_peaks_pk!(db)  # rebuild with widened PK first
     migrate_r2_split_peaks!(db)            # then repoint manual-peak refs
 
@@ -468,35 +472,60 @@ end
 """
     _fix_fk_references_after_autoincrement_migration!(db)
 
-After `migrate_pk_to_autoincrement!` runs, SQLite's ALTER TABLE RENAME tracking
-may have stored corrupted FK references (pointing to `_migrate_old_exposures`
-instead of `exposures`) in tables created by `create_schema!` INSIDE the rename
-transaction. Fix by dropping and recreating those tables. This is safe because
-these tables were freshly created (empty) by create_schema! in the migration.
+After `migrate_pk_to_autoincrement!` runs, SQLite's ALTER TABLE RENAME
+tracking rewrites FK references in EVERY table whose CREATE statement
+named the renamed entity, including tables that were already populated.
+The references point at `_migrate_old_<entity>` which was dropped at the
+end of the rename transaction — leaving behind dead FK names that surface
+later as `SQLiteException("no such table: main._migrate_old_*")` on
+unrelated INSERTs (the prepare step walks the FK graph and trips when it
+hits a stale reference).
+
+The previous version of this function only rebuilt empty tables it knew
+were freshly created (`auto_peaks`, `peak_curations`). That missed
+populated tables like `sample_messages`, `sample_tags`, `exposure_tags`,
+`exposure_sources`, `index_groups`, `index_group_members` whose FKs had
+the same corruption. A real prod DB at `/tmp/himalaya-dev.db` with rows
+in `sample_tags`/`sample_messages` exhibited the bug — caught only by
+running the actual server (smoke checklist), not by the test suite which
+uses freshly-built DBs that don't go through this exact sequence.
+
+This implementation rewrites the FK references in-place via
+`PRAGMA writable_schema = ON` + a textual REPLACE on `sqlite_master.sql`.
+Faster and data-preserving compared to a copy-rebuild. Safe because we
+only swap the dead `_migrate_old_<x>` table name back to its real name
+`<x>` — the FK graph is otherwise unchanged. A `VACUUM` forces SQLite to
+re-read the schema cache.
 """
 function _fix_fk_references_after_autoincrement_migration!(db::SQLite.DB)
-    # Find tables with FK references to non-existent tables (the renamed ones).
-    # Only check tables we created in this run (non-entity new R2.1 tables).
-    candidates = ["auto_peaks", "peak_curations"]
-    for t in candidates
-        # Check if the table exists at all.
-        exists = !isempty(Tables.rowtable(DBInterface.execute(db,
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", [t])))
-        exists || continue
-        # Check if any FK points to a non-existent table.
-        fks = Tables.rowtable(DBInterface.execute(db, "PRAGMA foreign_key_list($t)"))
-        needs_fix = any(fk -> begin
-            ref_table = String(fk.table)
-            isempty(Tables.rowtable(DBInterface.execute(db,
-                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", [ref_table])))
-        end, fks)
-        needs_fix || continue
-        # Drop and recreate: the table was just created (empty) so no data is lost.
-        @debug "_fix_fk_references_after_autoincrement_migration!: rebuilding $t"
-        DBInterface.execute(db, "DROP TABLE $t")
+    broken = Tables.rowtable(DBInterface.execute(db,
+        "SELECT name FROM sqlite_master WHERE type='table' AND sql LIKE '%_migrate_old_%'"))
+    isempty(broken) && return
+
+    DBInterface.execute(db, "PRAGMA writable_schema = ON")
+    try
+        # Replace each known `_migrate_old_<entity>` with `<entity>`. The list
+        # mirrors the entities migrate_pk_to_autoincrement! handles. Quoted
+        # form ("_migrate_old_x") and bare form (_migrate_old_x) both occur
+        # in CREATE statements depending on whether the FK target was
+        # rendered with or without quoting.
+        for entity in ("samples", "exposures", "indices", "experiments", "peaks")
+            old_q = "\"_migrate_old_$entity\""
+            old_b = "_migrate_old_$entity"
+            DBInterface.execute(db,
+                "UPDATE sqlite_master SET sql = REPLACE(sql, ?, ?) WHERE type='table'",
+                [old_q, entity])
+            DBInterface.execute(db,
+                "UPDATE sqlite_master SET sql = REPLACE(sql, ?, ?) WHERE type='table'",
+                [old_b, entity])
+        end
+    finally
+        DBInterface.execute(db, "PRAGMA writable_schema = OFF")
     end
-    # Recreate all affected tables via create_schema! (IF NOT EXISTS is safe).
-    create_schema!(db)
+    # Force SQLite to invalidate its in-memory schema cache so subsequent
+    # prepares see the corrected FKs. VACUUM is the standard idiom; PRAGMA
+    # integrity_check would also do it but VACUUM is documented for this.
+    DBInterface.execute(db, "VACUUM")
 end
 
 """

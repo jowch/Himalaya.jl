@@ -302,6 +302,76 @@ end
     end
 end
 
+@testset "open_db heals corrupted _migrate_old_* FK references on populated tables" begin
+    # Real prod DB at /tmp/himalaya-dev.db exhibited 6 tables with FKs that
+    # referenced the dead `_migrate_old_<entity>` temp-table name from a
+    # prior `migrate_pk_to_autoincrement!` run. The previous fix function
+    # only handled `auto_peaks`/`peak_curations`; the populated tables
+    # (`sample_messages`, `sample_tags`, `exposure_tags`, `exposure_sources`,
+    # `index_groups`, `index_group_members`) silently kept the dead refs
+    # and any subsequent INSERT on a table with such an FK trips
+    # SQLiteException("no such table: main._migrate_old_*"). Caught only by
+    # running the actual server (smoke checklist), not by tests using
+    # freshly-built DBs.
+    #
+    # This regression test simulates the post-corruption state directly:
+    # builds a DB whose `sample_messages` references `_migrate_old_samples`,
+    # then runs `open_db` and asserts (a) the FK is rewritten back to
+    # `samples`, (b) an INSERT succeeds without 500.
+    mktempdir() do tmp
+        db_path = joinpath(tmp, "corrupted.db")
+        db = SQLite.DB(db_path)
+        # Build a minimal corrupted state: samples + sample_messages with
+        # a dead FK reference. Mirrors what migrate_pk_to_autoincrement!
+        # leaves behind on a DB whose ALTER TABLE RENAME tracking corrupted
+        # references inside the rename transaction.
+        DBInterface.execute(db, """
+            CREATE TABLE samples (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                experiment_id INTEGER,
+                label TEXT, name TEXT, notes TEXT
+            )""")
+        DBInterface.execute(db, """
+            CREATE TABLE users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                first_name TEXT, last_name TEXT
+            )""")
+        DBInterface.execute(db, """
+            CREATE TABLE sample_messages (
+                id         INTEGER PRIMARY KEY,
+                sample_id  INTEGER REFERENCES "_migrate_old_samples"(id),
+                author_id  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                body       TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""")
+        DBInterface.execute(db, "INSERT INTO samples (label) VALUES ('S1')")
+        SQLite.close(db)
+
+        # Pre-condition: corrupted reference present.
+        verify = SQLite.DB(db_path)
+        broken_before = Tables.rowtable(DBInterface.execute(verify,
+            "SELECT name FROM sqlite_master WHERE type='table' AND sql LIKE '%_migrate_old_%'"))
+        @test length(broken_before) == 1
+        SQLite.close(verify)
+
+        # Heal via open_db (calls migrate_schema! which calls the fix helper).
+        healed = HimalayaUI.open_db(db_path)
+        broken_after = Tables.rowtable(DBInterface.execute(healed,
+            "SELECT name FROM sqlite_master WHERE type='table' AND sql LIKE '%_migrate_old_%'"))
+        @test isempty(broken_after)
+
+        # The healed DB must accept an INSERT into sample_messages — the
+        # operation that would 500 on the corrupted DB.
+        u_id = HimalayaUI.get_or_create_user!(healed, "alice")
+        DBInterface.execute(healed,
+            "INSERT INTO sample_messages (sample_id, author_id, body) VALUES (?, ?, ?)",
+            [1, u_id, "smoke-regression"])
+        @test first(Tables.rowtable(DBInterface.execute(healed,
+            "SELECT COUNT(*) AS c FROM sample_messages"))).c == 1
+    end
+end
+
 @testset "user_actions.client_id column exists on fresh DB" begin
     mktempdir() do tmp
         db = HimalayaUI.open_db(joinpath(tmp, "test.db"))

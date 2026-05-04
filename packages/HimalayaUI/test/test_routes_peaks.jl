@@ -130,6 +130,53 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
     end
 end
 
+@testset "POST /peaks malformed body returns 400, not 500 (failure-class routing)" begin
+    # The frontend's failure-class router treats 4xx as validation (toast)
+    # and 5xx as infrastructure (banner). Pre-fix the route did
+    # `Float64(body.q)` inside the with_idempotency closure with no guards;
+    # a missing `q` or non-numeric `q` threw an MethodError → uncaught →
+    # 500, mis-routing to the InfrastructureBanner. Caught only by the
+    # smoke checklist, since the unit tests always sent a valid body.
+    tmp = mktempdir()
+    analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
+    mkpath(analysis_dir)
+    cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
+       joinpath(analysis_dir, "example_tot.dat"))
+    db     = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    exp_id = HimalayaUI.init_experiment!(db; path=tmp,
+        data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
+    s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, label="D1")
+    e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
+    HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
+
+    with_test_server(db) do port, base
+        # Missing q → 400.
+        r = HTTP.post("$base/api/exposures/$e_id/peaks";
+            body = JSON3.write(Dict(:NOT_q => 0.5)),
+            headers = ["Content-Type" => "application/json",
+                       "X-Username"   => "alice"],
+            status_exception = false)
+        @test r.status == 400
+        body = JSON3.read(String(r.body))
+        @test occursin("missing field: q", String(body.error))
+
+        # Non-numeric q → 400.
+        r = HTTP.post("$base/api/exposures/$e_id/peaks";
+            body = JSON3.write(Dict(:q => "not-a-number")),
+            headers = ["Content-Type" => "application/json",
+                       "X-Username"   => "alice"],
+            status_exception = false)
+        @test r.status == 400
+
+        # Valid body still 201.
+        r = HTTP.post("$base/api/exposures/$e_id/peaks";
+            body = JSON3.write(Dict(:q => 0.5)),
+            headers = ["Content-Type" => "application/json",
+                       "X-Username"   => "alice"])
+        @test r.status == 201
+    end
+end
+
 # ── New R2.2 curation-lifecycle testsets ─────────────────────────────────────
 
 @testset "POST /peaks then GET returns manual peak with source='manual'" begin
