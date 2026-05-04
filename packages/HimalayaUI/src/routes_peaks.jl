@@ -173,9 +173,19 @@ function register_peaks_routes!()
 
             HTTP.Response(201, ["Content-Type" => "application/json"],
                 JSON3.write(Dict(
+                    # Full Peak-shape — manual peaks have no analysis-derived
+                    # metrics yet, so intensity/prominence/sharpness are
+                    # explicitly null (NOT omitted). Pre-fix the response
+                    # omitted these three; PeakAddResponse extends Peak so
+                    # the cache write would leave them as `undefined`,
+                    # silently violating the type's `null` contract.
+                    # Caught in sixth-pass review (issue #17).
                     :id                   => new_curation_id,
                     :exposure_id          => id,
                     :q                    => q,
+                    :intensity            => nothing,
+                    :prominence           => nothing,
+                    :sharpness            => nothing,
                     :source               => "manual",
                     :excluded             => false,
                     :event_id             => result.event_id,

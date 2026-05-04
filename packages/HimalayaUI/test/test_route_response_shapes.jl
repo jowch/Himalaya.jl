@@ -54,16 +54,25 @@ end
                                "X-Username"   => "alice"])
                 @test r.status == 201
                 body = JSON3.read(String(r.body))
-                # Flat shape — Peak fields + metadata at the same level.
-                # PeakAddResponse in api.ts must `extends Peak`.
+                # Full Peak shape (intensity/prominence/sharpness null on
+                # manual peaks — but explicitly present in the response, NOT
+                # omitted) plus metadata. PeakAddResponse extends Peak in
+                # api.ts so missing fields would silently leave the cache
+                # entry with `undefined` for those columns. Issue #17 made
+                # this contract failure explicit; this test pins it.
                 assert_keys(body, [
-                    :id, :exposure_id, :q, :source, :excluded,
+                    :id, :exposure_id, :q,
+                    :intensity, :prominence, :sharpness,
+                    :source, :excluded,
                     :event_id, :view_row_id, :analysis_inputs_hash,
                 ])
                 @test body.id isa Integer
                 @test body.q == 0.5
                 @test body.source == "manual"
                 @test body.excluded === false
+                @test body.intensity === nothing
+                @test body.prominence === nothing
+                @test body.sharpness === nothing
                 @test body.event_id isa Integer
                 @test body.view_row_id isa Integer
                 @test body.analysis_inputs_hash isa AbstractString
@@ -188,6 +197,50 @@ end
                     :id, :exposure_id, :kind, :active, :members,
                     :event_id, :view_row_id,
                 ])
+            end
+        end
+    end
+
+    @testset "GET /api/exposures/:id/indices → IndexEntry[] full shape" begin
+        # Suggestion #11: pin the GET /indices shape so a future SELECT
+        # change can't silently leak a server-internal column into every
+        # cache write or SSE post_state frame.
+        mktempdir() do tmp
+            ctx = _setup_analyzed_exposure(tmp)
+            with_test_server(ctx.db) do port, base
+                r = HTTP.get("$base/api/exposures/$(ctx.exposure_id)/indices")
+                @test r.status == 200
+                indices = JSON3.read(String(r.body))
+                @test !isempty(indices)
+                expected = [
+                    :id, :exposure_id, :phase, :basis, :score, :r_squared,
+                    :lattice_d, :ngc, :status, :kind, :inputs_hash,
+                    :peaks, :predicted_q,
+                ]
+                # Every entry must have exactly these top-level keys —
+                # IndexEntry is closed.
+                for ix in indices
+                    assert_keys(ix, expected)
+                end
+            end
+        end
+    end
+
+    @testset "GET /api/indices/:id → single IndexEntry full shape" begin
+        mktempdir() do tmp
+            ctx = _setup_analyzed_exposure(tmp)
+            with_test_server(ctx.db) do port, base
+                rs = HTTP.get("$base/api/exposures/$(ctx.exposure_id)/indices")
+                first_id = JSON3.read(String(rs.body))[1].id
+                r = HTTP.get("$base/api/indices/$first_id")
+                @test r.status == 200
+                body = JSON3.read(String(r.body))
+                expected = [
+                    :id, :exposure_id, :phase, :basis, :score, :r_squared,
+                    :lattice_d, :ngc, :status, :kind, :inputs_hash,
+                    :peaks, :predicted_q,
+                ]
+                assert_keys(body, expected)
             end
         end
     end

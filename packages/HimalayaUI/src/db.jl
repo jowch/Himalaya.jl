@@ -292,6 +292,15 @@ function migrate_schema!(db::SQLite.DB)
         )""")
     DBInterface.execute(db,
         "CREATE INDEX IF NOT EXISTS idx_idempotent_responses_created ON idempotent_responses(created_at)")
+    # Precondition: legacy DBs that already populated `client_op_id` without
+    # also installing this UNIQUE index AND that wrote duplicate rows for the
+    # same (client_op_id, action, entity_id) tuple would fail this CREATE
+    # with `UNIQUE constraint failed`. _create_safely only tolerates "no such
+    # table" — a duplicate-constraint failure here propagates intentionally,
+    # so a corrupt DB can't silently mask the inconsistency. There is no
+    # released version of that partial-deploy state; should one ever exist,
+    # operators must dedupe `user_actions` by (client_op_id, action,
+    # entity_id) before re-running open_db (suggestion #13).
     _create_safely(
         """CREATE UNIQUE INDEX IF NOT EXISTS idx_events_unique_op
             ON user_actions(client_op_id, action, entity_id)

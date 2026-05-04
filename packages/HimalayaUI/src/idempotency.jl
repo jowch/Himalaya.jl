@@ -167,28 +167,24 @@ retry window; short enough that long-running processes don't accumulate
 unbounded state.
 """
 function gc_idempotent_responses!(db::SQLite.DB; ttl_seconds::Int = 3600)
-    # Collect the ops we're about to GC (response row past TTL) BEFORE
-    # deleting, so we can drop only those specific locks. Don't touch locks
-    # for ops without a response row — they're either in flight or never
-    # completed, and the lock is required for any concurrent retry.
-    #
-    # Both queries DELETE the same set by id-list rather than re-evaluating
-    # `datetime('now', ...)` twice — clock advance between the SELECT and
-    # the DELETE could otherwise widen the DELETE set to include rows
-    # inserted in the gap, leaving their locks orphaned (PR review
-    # suggestion #8).
+    # Single DELETE … RETURNING evaluates the cutoff once AND captures
+    # exactly the set of expired client_op_ids in one shot. Avoids both:
+    # (a) the SELECT/DELETE clock-skew race that an earlier two-query
+    # version had (suggestion #8), and (b) the SQLite parameter limit
+    # (`SQLITE_LIMIT_VARIABLE_NUMBER` is 999 on older builds) that an
+    # `IN (?,?,...)`-based prune would hit on busy multiplayer sessions
+    # (suggestion #10). RETURNING is supported in SQLite 3.35+, which
+    # has been the system bundled version on all our deployment
+    # targets since 2022.
     expired = Tables.rowtable(DBInterface.execute(db,
-        "SELECT client_op_id FROM idempotent_responses WHERE created_at < datetime('now', ?)",
+        """DELETE FROM idempotent_responses
+           WHERE created_at < datetime('now', ?)
+           RETURNING client_op_id""",
         ["-$(ttl_seconds) seconds"]))
     isempty(expired) && return nothing
-    op_ids = [String(r.client_op_id) for r in expired]
-    placeholders = join(fill("?", length(op_ids)), ",")
-    DBInterface.execute(db,
-        "DELETE FROM idempotent_responses WHERE client_op_id IN ($placeholders)",
-        op_ids)
     lock(OP_LOCKS_MU) do
-        for k in op_ids
-            delete!(OP_LOCKS, k)
+        for r in expired
+            delete!(OP_LOCKS, String(r.client_op_id))
         end
     end
     nothing

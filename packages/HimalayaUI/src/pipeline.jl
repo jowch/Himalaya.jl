@@ -550,7 +550,10 @@ end
 
 function get_indices_for_exposure(db::SQLite.DB, exposure_id::Int)
     Tables.rowtable(DBInterface.execute(db,
-        "SELECT * FROM indices WHERE exposure_id = ? ORDER BY score DESC", [exposure_id]))
+        """SELECT id, exposure_id, phase, basis, score, r_squared, lattice_d,
+                  status, kind, inputs_hash
+           FROM indices WHERE exposure_id = ? ORDER BY score DESC""",
+        [exposure_id]))
 end
 
 function get_groups_for_exposure(db::SQLite.DB, exposure_id::Int)
@@ -825,19 +828,43 @@ emits and is computed lazily by the frontend in some places, but we include it
 here too so the cache can stay authoritative.
 """
 function _serialized_indices_for_broadcast(db::SQLite.DB, exposure_id::Int)
+    # Suggestion #11: enumerate columns instead of SELECT * so a future
+    # server-internal column doesn't leak into every SSE post_state frame.
+    # The list mirrors the frontend IndexEntry interface (minus the joined
+    # `peaks`/`predicted_q`/`ngc` which are added below).
     indices = Tables.rowtable(DBInterface.execute(db,
-        "SELECT * FROM indices WHERE exposure_id = ? ORDER BY score DESC", [exposure_id]))
+        """SELECT id, exposure_id, phase, basis, score, r_squared, lattice_d,
+                  status, kind, inputs_hash
+           FROM indices WHERE exposure_id = ? ORDER BY score DESC""",
+        [exposure_id]))
+    isempty(indices) && return Dict[]
+
+    # Suggestion #12: was N+1 (one JOIN per index). Single JOIN, group
+    # client-side. On exposures with many auto-group indices this fires
+    # on every peak mutation/analyze on the SSE hot path.
+    index_ids = Set(Int(ix.id) for ix in indices)
+    all_peak_rows = Tables.rowtable(DBInterface.execute(db,
+        """SELECT ip.index_id, ip.peak_id, ip.ratio_position, ip.residual,
+                  COALESCE(ap.q, pc.q) AS q_observed
+           FROM index_peaks ip
+           LEFT JOIN auto_peaks ap     ON ap.id = ip.peak_id AND ip.peak_kind = 'auto'
+           LEFT JOIN peak_curations pc ON pc.id = ip.peak_id AND ip.peak_kind = 'curation'
+           WHERE ip.index_id IN (SELECT id FROM indices WHERE exposure_id = ?)
+           ORDER BY ip.index_id, ip.ratio_position""",
+        [exposure_id]))
+    peaks_by_index = Dict{Int, Vector{Any}}()
+    for r in all_peak_rows
+        iid = Int(r.index_id)
+        iid in index_ids || continue
+        push!(get!(peaks_by_index, iid, Any[]),
+              Dict(:peak_id        => Int(r.peak_id),
+                   :ratio_position => r.ratio_position,
+                   :residual       => r.residual,
+                   :q_observed     => r.q_observed))
+    end
     map(indices) do ix
-        peak_rows = Tables.rowtable(DBInterface.execute(db,
-            """SELECT ip.peak_id, ip.ratio_position, ip.residual,
-                      COALESCE(ap.q, pc.q) AS q_observed
-               FROM index_peaks ip
-               LEFT JOIN auto_peaks ap     ON ap.id = ip.peak_id AND ip.peak_kind = 'auto'
-               LEFT JOIN peak_curations pc ON pc.id = ip.peak_id AND ip.peak_kind = 'curation'
-               WHERE ip.index_id = ? ORDER BY ip.ratio_position""",
-            [Int(ix.id)]))
         d = row_to_json(ix)
-        d[:peaks]       = rows_to_json(peak_rows)
+        d[:peaks]       = get(peaks_by_index, Int(ix.id), Any[])
         d[:predicted_q] = predicted_q_for_phase(String(ix.phase), Float64(ix.basis))
         d[:ngc]         = _ngc_for_phase(String(ix.phase), ix.lattice_d)
         d

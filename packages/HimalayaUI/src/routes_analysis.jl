@@ -112,7 +112,9 @@ function register_analysis_routes!()
     @get "/api/exposures/{id}/indices" function(req::HTTP.Request, id::Int)
         db = current_db()
         indices = Tables.rowtable(DBInterface.execute(db,
-            "SELECT * FROM indices WHERE exposure_id = ? ORDER BY score DESC", [id]))
+            """SELECT id, exposure_id, phase, basis, score, r_squared, lattice_d,
+                  status, kind, inputs_hash
+           FROM indices WHERE exposure_id = ? ORDER BY score DESC""", [id]))
         out = map(indices) do ix
             peak_rows = Tables.rowtable(DBInterface.execute(db,
                 """SELECT ip.peak_id, ip.ratio_position, ip.residual,
@@ -344,7 +346,9 @@ function register_analysis_routes!()
 
             # Return the freshly-built index in the same shape as GET /api/indices/:id
             rows = Tables.rowtable(DBInterface.execute(db,
-                "SELECT * FROM indices WHERE id = ?", [nid]))
+                """SELECT id, exposure_id, phase, basis, score, r_squared, lattice_d,
+                  status, kind, inputs_hash
+           FROM indices WHERE id = ?""", [nid]))
             ix = rows[1]
             peak_rows = Tables.rowtable(DBInterface.execute(db,
                 """SELECT ip.peak_id, ip.ratio_position, ip.residual,
@@ -411,7 +415,9 @@ function register_analysis_routes!()
     @get "/api/indices/{id}" function(req::HTTP.Request, id::Int)
         db   = current_db()
         rows = Tables.rowtable(DBInterface.execute(db,
-            "SELECT * FROM indices WHERE id = ?", [id]))
+            """SELECT id, exposure_id, phase, basis, score, r_squared, lattice_d,
+                  status, kind, inputs_hash
+           FROM indices WHERE id = ?""", [id]))
         isempty(rows) && return HTTP.Response(404,
             ["Content-Type" => "application/json"],
             JSON3.write(Dict(:error => "index not found")))
