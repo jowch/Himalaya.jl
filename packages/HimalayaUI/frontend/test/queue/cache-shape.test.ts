@@ -196,9 +196,11 @@ describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", ()
   });
 
   it("peakRemove updates exposure cache shape with exactly 12 keys", async () => {
+    // Only manual peaks are removable. Seed a manual peak so the optimistic
+    // remove actually drops it.
     const initial = {
-      id: 7, exposure_id: 5, q: 0.5, intensity: 1.2, prominence: 0.8,
-      sharpness: 30.0, source: "auto", excluded: false,
+      id: 7, exposure_id: 5, q: 0.5, intensity: null, prominence: null,
+      sharpness: null, source: "manual", excluded: false,
     };
     qc.setQueryData(queryKeys.peaks(5), [initial]);
     qc.setQueryData(queryKeys.exposure(5), FULL_EXPOSURE);
@@ -378,6 +380,58 @@ describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", ()
       ["sample", 1, "exposures", { excludeRejected: false }] as const);
     const tag = list![0]!.tags[0];
     assertKeys(tag, EXPOSURE_TAG_KEYS, "addExposureTag cache row");
+  });
+
+  // -------------------------------------------------------------------------
+  // Peak-id collision (manual usage test surfaced this — auto_peaks.id and
+  // peak_curations.id share a namespace on the wire; cache filters/maps must
+  // disambiguate by source.)
+  // -------------------------------------------------------------------------
+
+  it("peakRemove with id colliding between auto and manual only drops the manual peak", async () => {
+    const colliding = [
+      { id: 3, exposure_id: 5, q: 0.075, intensity: 1.2, prominence: 0.8,
+        sharpness: 30, source: "auto", excluded: false },
+      { id: 3, exposure_id: 5, q: 0.180, intensity: null, prominence: null,
+        sharpness: null, source: "manual", excluded: false },
+    ];
+    qc.setQueryData(queryKeys.peaks(5), colliding);
+    qc.setQueryData(queryKeys.exposure(5), FULL_EXPOSURE);
+    mockFetchOnce({ event_id: 9, view_row_id: null, analysis_inputs_hash: "h2" }, 200);
+    await runMutator(qc, peakRemoveMutator, {
+      kind: "peak_removed",
+      clientOpId: "op-collide-rm",
+      exposureId: 5, username: "alice", clientId: "tab-1",
+      peakId: 3, payload: { peakId: 3 },
+    });
+    const after = qc.getQueryData<{ id: number; source: string }[]>(queryKeys.peaks(5))!;
+    expect(after).toHaveLength(1);
+    expect(after[0]!.source).toBe("auto");
+    expect(after[0]!.id).toBe(3);
+  });
+
+  it("peakExclude with id colliding only flips the auto peak", async () => {
+    const colliding = [
+      { id: 3, exposure_id: 5, q: 0.075, intensity: 1.2, prominence: 0.8,
+        sharpness: 30, source: "auto", excluded: false },
+      { id: 3, exposure_id: 5, q: 0.180, intensity: null, prominence: null,
+        sharpness: null, source: "manual", excluded: false },
+    ];
+    qc.setQueryData(queryKeys.peaks(5), colliding);
+    qc.setQueryData(queryKeys.exposure(5), FULL_EXPOSURE);
+    mockFetchOnce({
+      ...colliding[0], excluded: true,
+      event_id: 10, view_row_id: 11, analysis_inputs_hash: "h2",
+    }, 200);
+    await runMutator(qc, peakExcludeMutator, {
+      kind: "peak_excluded",
+      clientOpId: "op-collide-ex",
+      exposureId: 5, username: "alice", clientId: "tab-1",
+      peakId: 3, q: 0.075, payload: { peakId: 3, q: 0.075 },
+    });
+    const after = qc.getQueryData<{ id: number; source: string; excluded: boolean }[]>(queryKeys.peaks(5))!;
+    expect(after.find(p => p.source === "auto")!.excluded).toBe(true);
+    expect(after.find(p => p.source === "manual")!.excluded).toBe(false);
   });
 
   it("postSampleMessage writes a SampleMessage with exactly 6 keys", async () => {

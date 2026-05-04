@@ -33,8 +33,11 @@ function makeMutator(
       const peaksKey = queryKeys.peaks(p.exposureId);
       const prev = qc.getQueryData<Peak[]>(peaksKey);
       if (prev) {
+        // Only auto peaks are excludable. Match (id, source='auto') so a
+        // manual peak that happens to share the id (independent SQLite
+        // sequences) does not get its excluded flag flipped.
         qc.setQueryData<Peak[]>(peaksKey, prev.map((pk) =>
-          pk.id === p.peakId ? { ...pk, excluded } : pk,
+          pk.id === p.peakId && pk.source === "auto" ? { ...pk, excluded } : pk,
         ));
       }
       return {
@@ -54,7 +57,8 @@ function makeMutator(
       } = response;
       qc.setQueryData<Peak[]>(peaksKey, (old) =>
         (old ?? []).map((pk) =>
-          pk.id === peakOnly.id ? (peakOnly as Peak) : pk,
+          pk.id === peakOnly.id && pk.source === "auto"
+            ? (peakOnly as Peak) : pk,
         ),
       );
       qc.setQueryData<Exposure>(queryKeys.exposure(p.exposureId), (old) =>

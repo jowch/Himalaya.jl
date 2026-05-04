@@ -28,7 +28,12 @@ export const peakRemoveMutator: Mutator<PeakRemoveInput, PeakRemoveScope, PeakRe
     const peaksKey = queryKeys.peaks(p.exposureId);
     const prev = qc.getQueryData<Peak[]>(peaksKey);
     if (prev) {
-      qc.setQueryData<Peak[]>(peaksKey, prev.filter((pk) => pk.id !== p.peakId));
+      // Only manual peaks are removable. The backend's auto_peaks and
+      // peak_curations tables are independent SQLite sequences and may share
+      // an id, so filtering by id alone could drop the wrong peak. Match on
+      // (id, source='manual') to scope to the correct row.
+      qc.setQueryData<Peak[]>(peaksKey, prev.filter((pk) =>
+        !(pk.id === p.peakId && pk.source === "manual")));
     }
     return {
       restore: () => {

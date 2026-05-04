@@ -59,25 +59,28 @@ export const peakAddMutator: Mutator<PeakAddInput, PeakAddScope, PeakAddResponse
       const list = old ?? [];
       // Drop the most recent negative-id placeholder for this q (within tol),
       // and dedupe against any concurrent SSE that already inserted the row.
-      const seen = new Set<number>();
+      // Dedup is scoped to MANUAL peaks because auto_peaks.id and
+      // peak_curations.id share a namespace on the wire — an auto peak with
+      // the same id would otherwise falsely register as "already inserted."
       const next: Peak[] = [];
       let replaced = false;
+      const seenManual = new Set<number>();
       for (const pk of list) {
         if (pk.id < 0 && !replaced
             && Math.abs(pk.q - p.q) < peakQTol(p.q)
             && pk.exposure_id === p.exposureId) {
-          if (!seen.has(serverPeak.id)) {
+          if (!seenManual.has(serverPeak.id)) {
             next.push(serverPeak);
-            seen.add(serverPeak.id);
+            seenManual.add(serverPeak.id);
           }
           replaced = true;
           continue;
         }
-        if (seen.has(pk.id)) continue;
+        if (pk.source === "manual" && seenManual.has(pk.id)) continue;
         next.push(pk);
-        seen.add(pk.id);
+        if (pk.source === "manual") seenManual.add(pk.id);
       }
-      if (!replaced && !seen.has(serverPeak.id)) next.push(serverPeak);
+      if (!replaced && !seenManual.has(serverPeak.id)) next.push(serverPeak);
       return next;
     });
     qc.setQueryData<Exposure>(queryKeys.exposure(p.exposureId), (old) =>
