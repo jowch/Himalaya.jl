@@ -49,16 +49,20 @@ function makeMutator(
     request: (p) => api.setPeakExcluded(p.peakId, excluded, buildAuthOpts(p)),
     onSuccess: (p, response, qc) => {
       const peaksKey = queryKeys.peaks(p.exposureId);
-      // Strip event-metadata fields off the response to get a plain Peak
-      // before writing to the peaks-list cache.
+      // Strip event metadata + queue plumbing fields. Merge (not replace) so
+      // SSE-wins synthetic responses — which omit intensity/prominence/
+      // sharpness — preserve those fields from the optimistic row. HTTP-wins
+      // responses include the full Peak shape, so merge is equivalent to
+      // replace there.
       const {
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        event_id, view_row_id, analysis_inputs_hash, ...peakOnly
-      } = response;
+        event_id, view_row_id, analysis_inputs_hash, client_op_id,
+        ...peakFields
+      } = response as PeakUpdatedResponse & { client_op_id?: string };
       qc.setQueryData<Peak[]>(peaksKey, (old) =>
         (old ?? []).map((pk) =>
-          pk.id === peakOnly.id && pk.source === "auto"
-            ? (peakOnly as Peak) : pk,
+          pk.id === peakFields.id && pk.source === "auto"
+            ? ({ ...pk, ...peakFields } as Peak) : pk,
         ),
       );
       qc.setQueryData<Exposure>(queryKeys.exposure(p.exposureId), (old) =>

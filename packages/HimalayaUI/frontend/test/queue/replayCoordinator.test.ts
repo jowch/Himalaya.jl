@@ -331,6 +331,54 @@ describe("handleRemoteEvent", () => {
     expect(result.sharpness).toBeNull();
   });
 
+  it("synthesizeResponseFromSse for peak_excluded maps auto_peak_id → id and derives source/excluded from kind", async () => {
+    const d = makeDeferred<any>("op-pe-shape");
+    handleRemoteEvent({
+      id: 8,
+      kind: "peak_excluded",
+      entity_type: "exposure",
+      entity_id: 42,
+      client_op_id: "op-pe-shape",
+      payload: { q: 0.5, auto_peak_id: 7 },
+      post_state: { analysis_inputs_hash: "h-pe", indices: [] },
+    }, qc, qc.getMutationCache());
+    const result = await d.promise;
+    // Without these fields, peakSetExcluded.onSuccess's `pk.id === peakOnly.id`
+    // map matches no row (undefined === undefined fails on real Peak rows),
+    // and the canonical state never replaces the optimistic one.
+    expect(result).toMatchObject({
+      id: 7,
+      q: 0.5,
+      source: "auto",
+      excluded: true,
+      analysis_inputs_hash: "h-pe",
+    });
+    // auto_peak_id MUST NOT leak into the response (it's not a Peak field).
+    expect(result.auto_peak_id).toBeUndefined();
+  });
+
+  it("synthesizeResponseFromSse for peak_unexcluded derives excluded=false from kind", async () => {
+    const d = makeDeferred<any>("op-pue-shape");
+    handleRemoteEvent({
+      id: 9,
+      kind: "peak_unexcluded",
+      entity_type: "exposure",
+      entity_id: 42,
+      client_op_id: "op-pue-shape",
+      payload: { q: 0.5, auto_peak_id: 7 },
+      post_state: { analysis_inputs_hash: "h-pue", indices: [] },
+    }, qc, qc.getMutationCache());
+    const result = await d.promise;
+    expect(result).toMatchObject({
+      id: 7,
+      q: 0.5,
+      source: "auto",
+      excluded: false,
+      analysis_inputs_hash: "h-pue",
+    });
+    expect(result.auto_peak_id).toBeUndefined();
+  });
+
   it("synthesizeResponseFromSse for add_tag maps tag_id → id and adds source: 'manual'", async () => {
     const d = makeDeferred<any>("op-add-tag-shape");
     handleRemoteEvent({

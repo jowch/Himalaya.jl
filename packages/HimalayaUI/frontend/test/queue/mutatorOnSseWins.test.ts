@@ -14,11 +14,22 @@
  *   - addSampleTag / addExposureTag: SSE uses `tag_id`; HTTP uses `id`.
  *     Old synth produced a tag with `id: undefined, source: undefined`.
  *     Fixed by adding kind-aware synthesis for `add_tag`.
+ *   - peakSetExcluded (peak_excluded / peak_unexcluded): SSE payload is
+ *     `{q, auto_peak_id}` — no `id`. Old fallback produced a response with
+ *     `id: undefined`, so onSuccess's `pk.id === peakOnly.id` matched no row
+ *     and the canonical state never replaced the optimistic one. Fixed by
+ *     adding kind-aware synthesis mapping `auto_peak_id → id` and switching
+ *     onSuccess to merge fields onto the existing row (preserves
+ *     intensity/prominence/sharpness which the SSE payload omits).
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import { createSpeculativeMutator } from "../../src/lib/queue/mutators/createSpeculative";
 import { updateSampleMutator } from "../../src/lib/queue/mutators/trivial";
+import {
+  peakExcludeMutator,
+  peakUnexcludeMutator,
+} from "../../src/lib/queue/mutators/peakSetExcluded";
 import { queryKeys } from "../../src/queries";
 
 describe("mutator onSuccess on SSE-wins synthetic responses", () => {
@@ -74,6 +85,88 @@ describe("mutator onSuccess on SSE-wins synthetic responses", () => {
     const indices = qc.getQueryData<any[]>(queryKeys.indices(42));
     expect(indices).toHaveLength(2);
     expect(indices![1]).toMatchObject({ id: 99, phase: "Im3m" });
+  });
+
+  it("peakExclude.onSuccess writes canonical state from synth (SSE-wins, id mapped from auto_peak_id)", () => {
+    // Cache row reflects a stale state (excluded=false) — exercises the
+    // canonical-replaces-optimistic contract. Pre-fix, synth lacks `id`,
+    // onSuccess's match silently no-ops, and the stale state persists.
+    qc.setQueryData(queryKeys.peaks(5), [
+      { id: 7, exposure_id: 5, q: 0.5, intensity: 1.2, prominence: 0.8,
+        sharpness: 30.0, source: "auto", excluded: false },
+    ]);
+    qc.setQueryData(queryKeys.exposure(5), {
+      id: 5, sample_id: 1, filename: null, kind: "file", selected: true,
+      status: null, image_path: null, image_version: "",
+      trace_hash: null, analysis_inputs_hash: "h0",
+      tags: [], sources: [],
+    });
+    // Post-fix synthesizeResponseFromSse for peak_excluded:
+    // {event_id, client_op_id, analysis_inputs_hash, id, q, source, excluded}.
+    // intensity/prominence/sharpness intentionally absent — the SSE frame
+    // doesn't carry them; onSuccess must merge, not replace.
+    const sseSynth = {
+      event_id: 7,
+      client_op_id: "op-pe",
+      analysis_inputs_hash: "h1",
+      id: 7,
+      q: 0.5,
+      source: "auto",
+      excluded: true,
+    } as any;
+    peakExcludeMutator.onSuccess(
+      { exposureId: 5, peakId: 7, q: 0.5,
+        username: "u", clientId: "c", clientOpId: "op-pe" } as any,
+      sseSynth,
+      qc,
+    );
+    const peaks = qc.getQueryData<any[]>(queryKeys.peaks(5))!;
+    expect(peaks).toHaveLength(1);
+    expect(peaks[0]).toEqual({
+      id: 7, exposure_id: 5, q: 0.5,
+      // Preserved from optimistic state — synth doesn't carry these:
+      intensity: 1.2, prominence: 0.8, sharpness: 30.0,
+      source: "auto",
+      // Canonical from synth:
+      excluded: true,
+    });
+    const exp = qc.getQueryData<any>(queryKeys.exposure(5))!;
+    expect(exp.analysis_inputs_hash).toBe("h1");
+  });
+
+  it("peakUnexclude.onSuccess writes canonical state from synth (SSE-wins)", () => {
+    qc.setQueryData(queryKeys.peaks(5), [
+      { id: 7, exposure_id: 5, q: 0.5, intensity: 1.2, prominence: 0.8,
+        sharpness: 30.0, source: "auto", excluded: true },
+    ]);
+    qc.setQueryData(queryKeys.exposure(5), {
+      id: 5, sample_id: 1, filename: null, kind: "file", selected: true,
+      status: null, image_path: null, image_version: "",
+      trace_hash: null, analysis_inputs_hash: "h0",
+      tags: [], sources: [],
+    });
+    const sseSynth = {
+      event_id: 8,
+      client_op_id: "op-pue",
+      analysis_inputs_hash: "h2",
+      id: 7,
+      q: 0.5,
+      source: "auto",
+      excluded: false,
+    } as any;
+    peakUnexcludeMutator.onSuccess(
+      { exposureId: 5, peakId: 7, q: 0.5,
+        username: "u", clientId: "c", clientOpId: "op-pue" } as any,
+      sseSynth,
+      qc,
+    );
+    const peaks = qc.getQueryData<any[]>(queryKeys.peaks(5))!;
+    expect(peaks[0]).toEqual({
+      id: 7, exposure_id: 5, q: 0.5,
+      intensity: 1.2, prominence: 0.8, sharpness: 30.0,
+      source: "auto",
+      excluded: false,
+    });
   });
 
   it("updateSample.onSuccess skips undefined fields (SSE-wins diff payload)", () => {
