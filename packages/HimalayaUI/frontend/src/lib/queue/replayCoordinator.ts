@@ -94,16 +94,25 @@ export function handleRemoteEvent(
   // pre-rollback state (issue #3 from PR review). TanStack v5 sets
   // `state.context` once from the original `onMutate` return value and
   // doesn't replace it on its own — the assignment below overrides that.
+  //
+  // Each iteration is independently try/caught (issue #37 Bug 3): if one
+  // mutator's onMutate throws, subsequent siblings must still re-run.
+  // Otherwise their `state.context` keeps the pre-rollback snapshot, and a
+  // later HTTP-settle's onError rollback writes stale state into the cache.
   for (const m of pending) {
     const onMutate = m.options.onMutate as
       | ((vars: unknown) => unknown)
       | undefined;
-    const fresh = onMutate?.(m.state.variables);
-    if (fresh !== undefined) {
-      // Cast through `unknown` because TanStack types `state.context` as
-      // readonly at the public API surface; we're surgically updating it
-      // here to keep the per-mutation rollback closure consistent.
-      (m.state as unknown as { context: unknown }).context = fresh;
+    try {
+      const fresh = onMutate?.(m.state.variables);
+      if (fresh !== undefined) {
+        // Cast through `unknown` because TanStack types `state.context` as
+        // readonly at the public API surface; we're surgically updating it
+        // here to keep the per-mutation rollback closure consistent.
+        (m.state as unknown as { context: unknown }).context = fresh;
+      }
+    } catch (e) {
+      console.error("[handleRemoteEvent] onMutate threw during re-run:", e);
     }
   }
 }

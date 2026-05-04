@@ -66,6 +66,36 @@ describe("handleRemoteEvent", () => {
     expect(order).toEqual([0, 1, 2]);
   });
 
+  it("Re-run loop is throw-safe — one onMutate failure does not abort siblings (issue #37 Bug 3)", () => {
+    // Suppress the expected console.error (the throw is logged but swallowed).
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const order: number[] = [];
+    qc.getMutationCache().add(makeFakeMutation({
+      status: "pending",
+      context: { restore: () => {} },
+      onMutate: () => { order.push(0); },
+    }));
+    qc.getMutationCache().add(makeFakeMutation({
+      status: "pending",
+      context: { restore: () => {} },
+      onMutate: () => { order.push(1); throw new Error("boom"); },
+    }));
+    qc.getMutationCache().add(makeFakeMutation({
+      status: "pending",
+      context: { restore: () => {} },
+      onMutate: () => { order.push(2); },
+    }));
+    // Pre-fix: the throw propagates out of handleRemoteEvent; mutation #2's
+    // onMutate is never called. Post-fix: each iteration is independently
+    // try/caught, so #2's onMutate still runs.
+    expect(() =>
+      handleRemoteEvent(remoteForeignEvent(), qc, qc.getMutationCache())
+    ).not.toThrow();
+    expect(order).toEqual([0, 1, 2]);
+    expect(errSpy).toHaveBeenCalled();
+    errSpy.mockRestore();
+  });
+
   it("MutationCache.getAll() preserves insertion order (load-bearing TanStack invariant)", () => {
     const ids = ["a", "b", "c", "d", "e"];
     for (const id of ids) {
