@@ -21,6 +21,14 @@
  *     adding kind-aware synthesis mapping `auto_peak_id → id` and switching
  *     onSuccess to merge fields onto the existing row (preserves
  *     intensity/prominence/sharpness which the SSE payload omits).
+ *   - addIndexToGroup / removeIndexFromGroup: SSE payload is `{group_id,
+ *     index_id}` — no `id`. Old code spliced via `g.id === row.id` which
+ *     reduced to `g.id === undefined` and matched nothing. Worse, the
+ *     first confirmation of an exposure creates a NEW custom group via
+ *     `ensure_custom_group!` and demotes the auto group, so even HTTP-wins
+ *     missed the cache (cache had auto id=1; response had custom id=5).
+ *     Fixed by detecting id-mismatch in onSuccess and invalidating the
+ *     groups query so the next read fetches the canonical structure.
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
@@ -30,6 +38,10 @@ import {
   peakExcludeMutator,
   peakUnexcludeMutator,
 } from "../../src/lib/queue/mutators/peakSetExcluded";
+import {
+  addIndexToGroupMutator,
+  removeIndexFromGroupMutator,
+} from "../../src/lib/queue/mutators/indexGroup";
 import { queryKeys } from "../../src/queries";
 
 describe("mutator onSuccess on SSE-wins synthetic responses", () => {
@@ -132,6 +144,128 @@ describe("mutator onSuccess on SSE-wins synthetic responses", () => {
     });
     const exp = qc.getQueryData<any>(queryKeys.exposure(5))!;
     expect(exp.analysis_inputs_hash).toBe("h1");
+  });
+
+  it("addIndexToGroup.onSuccess invalidates when response id is not in cache (issue #37 Bug 1a, HTTP-wins, new custom group)", () => {
+    // Cache only has the auto group (id=1). The first confirmation triggers
+    // `ensure_custom_group!` which creates a fresh custom group (id=5) and
+    // demotes the auto group. The HTTP response is the new custom group.
+    qc.setQueryData(queryKeys.groups(5), [
+      { id: 1, exposure_id: 5, kind: "auto", active: true, members: [] },
+    ]);
+    let invalidated = false;
+    const origInvalidate = qc.invalidateQueries.bind(qc);
+    qc.invalidateQueries = (filters: any) => {
+      const k = filters?.queryKey ?? [];
+      if (Array.isArray(k) && k[0] === "exposure" && k[1] === 5 && k[2] === "groups") {
+        invalidated = true;
+      }
+      return origInvalidate(filters);
+    };
+    // HTTP response shape (routes_analysis.jl POST /groups/:id/members).
+    // The response id (5) does NOT exist in the cache.
+    const httpResponse = {
+      id: 5, exposure_id: 5, kind: "custom", active: true, members: [42],
+      event_id: 11, view_row_id: 5,
+    } as any;
+    addIndexToGroupMutator.onSuccess(
+      { exposureId: 5, groupId: 1, indexId: 42,
+        username: "u", clientId: "c", clientOpId: "op-c1" } as any,
+      httpResponse,
+      qc,
+    );
+    expect(invalidated).toBe(true);
+  });
+
+  it("addIndexToGroup.onSuccess invalidates when synth lacks id (issue #37 Bug 1b, SSE-wins)", () => {
+    qc.setQueryData(queryKeys.groups(5), [
+      { id: 1, exposure_id: 5, kind: "auto", active: true, members: [] },
+    ]);
+    let invalidated = false;
+    const origInvalidate = qc.invalidateQueries.bind(qc);
+    qc.invalidateQueries = (filters: any) => {
+      const k = filters?.queryKey ?? [];
+      if (Array.isArray(k) && k[0] === "exposure" && k[1] === 5 && k[2] === "groups") {
+        invalidated = true;
+      }
+      return origInvalidate(filters);
+    };
+    // Synth output for index_confirmed when SSE wins: only event metadata
+    // and the {group_id, index_id} payload. No `id`.
+    const sseSynth = {
+      event_id: 7,
+      client_op_id: "op-c2",
+      analysis_inputs_hash: undefined,
+      group_id: 5,
+      index_id: 42,
+    } as any;
+    addIndexToGroupMutator.onSuccess(
+      { exposureId: 5, groupId: 1, indexId: 42,
+        username: "u", clientId: "c", clientOpId: "op-c2" } as any,
+      sseSynth,
+      qc,
+    );
+    expect(invalidated).toBe(true);
+  });
+
+  it("addIndexToGroup.onSuccess splices when response id matches existing cache row (HTTP-wins, existing custom group)", () => {
+    // Subsequent confirmations: custom group already exists in cache.
+    qc.setQueryData(queryKeys.groups(5), [
+      { id: 1, exposure_id: 5, kind: "auto", active: false, members: [] },
+      { id: 5, exposure_id: 5, kind: "custom", active: true, members: [42] },
+    ]);
+    let invalidated = false;
+    const origInvalidate = qc.invalidateQueries.bind(qc);
+    qc.invalidateQueries = (filters: any) => {
+      const k = filters?.queryKey ?? [];
+      if (Array.isArray(k) && k[0] === "exposure" && k[1] === 5 && k[2] === "groups") {
+        invalidated = true;
+      }
+      return origInvalidate(filters);
+    };
+    const httpResponse = {
+      id: 5, exposure_id: 5, kind: "custom", active: true, members: [42, 99],
+      event_id: 12, view_row_id: 5,
+    } as any;
+    addIndexToGroupMutator.onSuccess(
+      { exposureId: 5, groupId: 5, indexId: 99,
+        username: "u", clientId: "c", clientOpId: "op-c3" } as any,
+      httpResponse,
+      qc,
+    );
+    expect(invalidated).toBe(false);
+    const groups = qc.getQueryData<any[]>(queryKeys.groups(5))!;
+    const custom = groups.find((g) => g.id === 5)!;
+    expect(custom.members).toEqual([42, 99]);
+  });
+
+  it("removeIndexFromGroup.onSuccess invalidates when synth lacks id (SSE-wins)", () => {
+    qc.setQueryData(queryKeys.groups(5), [
+      { id: 5, exposure_id: 5, kind: "custom", active: true, members: [42] },
+    ]);
+    let invalidated = false;
+    const origInvalidate = qc.invalidateQueries.bind(qc);
+    qc.invalidateQueries = (filters: any) => {
+      const k = filters?.queryKey ?? [];
+      if (Array.isArray(k) && k[0] === "exposure" && k[1] === 5 && k[2] === "groups") {
+        invalidated = true;
+      }
+      return origInvalidate(filters);
+    };
+    const sseSynth = {
+      event_id: 8,
+      client_op_id: "op-u1",
+      analysis_inputs_hash: undefined,
+      group_id: 5,
+      index_id: 42,
+    } as any;
+    removeIndexFromGroupMutator.onSuccess(
+      { exposureId: 5, groupId: 5, indexId: 42,
+        username: "u", clientId: "c", clientOpId: "op-u1" } as any,
+      sseSynth,
+      qc,
+    );
+    expect(invalidated).toBe(true);
   });
 
   it("peakUnexclude.onSuccess writes canonical state from synth (SSE-wins)", () => {

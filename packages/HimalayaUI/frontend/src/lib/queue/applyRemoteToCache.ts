@@ -133,19 +133,32 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
     case "index_confirmed": {
       const groupId = payload?.group_id as number;
       const indexId = payload?.index_id as number;
-      qc.setQueryData<GroupEntry[]>(queryKeys.groups(id), (old = []) =>
-        old.map((g) =>
-          g.id === groupId ? { ...g, members: [...g.members, indexId] } : g));
+      const cached = qc.getQueryData<GroupEntry[]>(queryKeys.groups(id));
+      // Issue #37 Bug 1c: the foreign tab may have just triggered
+      // `ensure_custom_group!`, which mints a new custom group id and
+      // demotes the auto group. Local tabs won't have that group cached;
+      // the surgical splice would silently miss the foreign confirmation.
+      // Invalidate to refetch the canonical group structure.
+      if (!cached || !cached.some((g) => g.id === groupId)) {
+        qc.invalidateQueries({ queryKey: queryKeys.groups(id) });
+        break;
+      }
+      qc.setQueryData<GroupEntry[]>(queryKeys.groups(id), cached.map((g) =>
+        g.id === groupId ? { ...g, members: [...g.members, indexId] } : g));
       break;
     }
     case "index_unconfirmed": {
       const groupId = payload?.group_id as number;
       const indexId = payload?.index_id as number;
-      qc.setQueryData<GroupEntry[]>(queryKeys.groups(id), (old = []) =>
-        old.map((g) =>
-          g.id === groupId
-            ? { ...g, members: g.members.filter((m) => m !== indexId) }
-            : g));
+      const cached = qc.getQueryData<GroupEntry[]>(queryKeys.groups(id));
+      if (!cached || !cached.some((g) => g.id === groupId)) {
+        qc.invalidateQueries({ queryKey: queryKeys.groups(id) });
+        break;
+      }
+      qc.setQueryData<GroupEntry[]>(queryKeys.groups(id), cached.map((g) =>
+        g.id === groupId
+          ? { ...g, members: g.members.filter((m) => m !== indexId) }
+          : g));
       break;
     }
     case "speculative_created":
