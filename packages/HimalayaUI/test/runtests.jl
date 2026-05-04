@@ -31,5 +31,6 @@ using Test
     include("test_sse.jl")
     include("test_routes_sse_broadcast.jl")
     include("test_route_response_shapes.jl")
+    include("test_route_validation_routing.jl")
     include("test_idempotency.jl")
 end

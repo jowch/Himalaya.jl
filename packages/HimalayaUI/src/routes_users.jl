@@ -8,7 +8,12 @@ function register_users_routes!()
     end
 
     @post "/api/users" function(req::HTTP.Request)
-        body     = json(req)
+        body = json(req)
+        if !haskey(body, :username)
+            return HTTP.Response(400,
+                ["Content-Type" => "application/json"],
+                JSON3.write(Dict(:error => "missing field: username")))
+        end
         username = String(body.username)
         isempty(username) && return HTTP.Response(400,
             ["Content-Type" => "application/json"],

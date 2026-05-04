@@ -302,6 +302,129 @@ end
         end
     end
 
+    # ── Entity GET routes ──────────────────────────────────────────────────
+    # Pin the read-side shapes too. Cache pollution happens here just as easily
+    # as on mutation routes — `_group_with_members` was the canonical example
+    # before we tightened it. Any future SELECT * regression on an entity
+    # table will fail one of these assertions.
+
+    @testset "GET /api/exposures/:id → full Exposure shape" begin
+        mktempdir() do tmp
+            ctx = _setup_analyzed_exposure(tmp)
+            with_test_server(ctx.db) do port, base
+                r = HTTP.get("$base/api/exposures/$(ctx.exposure_id)")
+                @test r.status == 200
+                body = JSON3.read(String(r.body))
+                expected = [
+                    :id, :sample_id, :filename, :kind, :selected, :status,
+                    :image_path, :trace_hash, :analysis_inputs_hash,
+                    :tags, :sources, :image_version,
+                ]
+                assert_keys(body, expected)
+            end
+        end
+    end
+
+    @testset "GET /api/exposures/:id/peaks → Peak[] (full shape including nullable fields)" begin
+        # Pre-fix peakAdd POST omitted intensity/prominence/sharpness (issue
+        # #17). The list endpoint includes them via _effective_peak_row, but
+        # contract-test it explicitly so a future LIST regression that
+        # tightens the SELECT and forgets to keep nullables is caught.
+        mktempdir() do tmp
+            ctx = _setup_analyzed_exposure(tmp)
+            with_test_server(ctx.db) do port, base
+                r = HTTP.get("$base/api/exposures/$(ctx.exposure_id)/peaks")
+                @test r.status == 200
+                peaks = JSON3.read(String(r.body))
+                @test !isempty(peaks)
+                expected = [
+                    :id, :exposure_id, :q, :intensity, :prominence, :sharpness,
+                    :source, :excluded,
+                ]
+                for p in peaks
+                    assert_keys(p, expected)
+                end
+            end
+        end
+    end
+
+    @testset "GET /api/peaks/:id → single Peak full shape" begin
+        mktempdir() do tmp
+            ctx = _setup_analyzed_exposure(tmp)
+            auto_id = first(Tables.rowtable(DBInterface.execute(ctx.db,
+                "SELECT id FROM auto_peaks WHERE exposure_id = ? LIMIT 1",
+                [ctx.exposure_id]))).id
+            with_test_server(ctx.db) do port, base
+                r = HTTP.get("$base/api/peaks/$auto_id")
+                @test r.status == 200
+                body = JSON3.read(String(r.body))
+                expected = [
+                    :id, :exposure_id, :q, :intensity, :prominence, :sharpness,
+                    :source, :excluded,
+                ]
+                assert_keys(body, expected)
+            end
+        end
+    end
+
+    @testset "GET /api/samples/:id → full Sample shape (including tags)" begin
+        mktempdir() do tmp
+            ctx = _setup_analyzed_exposure(tmp)
+            with_test_server(ctx.db) do port, base
+                r = HTTP.get("$base/api/samples/$(ctx.sample_id)")
+                @test r.status == 200
+                body = JSON3.read(String(r.body))
+                # Sample type: id, experiment_id, label, name, notes, tags.
+                # Route adds `created_at` from the row; document either as
+                # tightened or as known-extra.
+                @test :id in keys(body)
+                @test :experiment_id in keys(body)
+                @test :tags in keys(body)
+                @test body.tags isa AbstractVector
+            end
+        end
+    end
+
+    @testset "GET /api/exposures/:id/groups → GroupEntry[] (must NOT leak created_at/created_by)" begin
+        mktempdir() do tmp
+            ctx = _setup_analyzed_exposure(tmp)
+            with_test_server(ctx.db) do port, base
+                r = HTTP.get("$base/api/exposures/$(ctx.exposure_id)/groups")
+                @test r.status == 200
+                groups = JSON3.read(String(r.body))
+                @test !isempty(groups)
+                expected = [:id, :exposure_id, :kind, :active, :members]
+                for g in groups
+                    assert_keys(g, expected)
+                end
+            end
+        end
+    end
+
+    @testset "GET /api/samples/:id/messages → SampleMessage[]" begin
+        mktempdir() do tmp
+            db     = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+            exp_id = HimalayaUI.create_experiment!(db; path=tmp,
+                data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
+            s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, label="D1")
+            with_test_server(db) do port, base
+                # Post one to have something to read.
+                HTTP.post("$base/api/samples/$s_id/messages";
+                    body = JSON3.write(Dict(:body => "hello")),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username"   => "alice"])
+                r = HTTP.get("$base/api/samples/$s_id/messages")
+                @test r.status == 200
+                msgs = JSON3.read(String(r.body))
+                @test !isempty(msgs)
+                expected = [:id, :sample_id, :author_id, :author, :body, :created_at]
+                for m in msgs
+                    assert_keys(m, expected)
+                end
+            end
+        end
+    end
+
     @testset "POST /api/samples/:id/tags → SampleTag-shaped (with sample_id allowed extra)" begin
         mktempdir() do tmp
             db     = HimalayaUI.open_db(joinpath(tmp, "h.db"))

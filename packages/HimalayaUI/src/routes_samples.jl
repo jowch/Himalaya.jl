@@ -55,6 +55,11 @@ function register_samples_routes!()
     @post "/api/samples/{id}/tags" function(req::HTTP.Request, id::Int)
         db    = current_db()
         body  = json(req)
+        if !haskey(body, :key) || !haskey(body, :value)
+            return HTTP.Response(400,
+                ["Content-Type" => "application/json"],
+                JSON3.write(Dict(:error => "missing required fields: key, value")))
+        end
         key   = String(body.key)
         value = String(body.value)
         return with_idempotency(db, req) do

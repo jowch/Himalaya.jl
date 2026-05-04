@@ -145,9 +145,21 @@ function register_analysis_routes!()
 
     @post "/api/groups/{id}/members" function(req::HTTP.Request, id::Int)
         db = current_db()
-        return with_idempotency(db, req) do
-            body = json(req)
+        body = json(req)
+        if !haskey(body, :index_id)
+            return HTTP.Response(400,
+                ["Content-Type" => "application/json"],
+                JSON3.write(Dict(:error => "missing field: index_id")))
+        end
+        local index_id::Int
+        try
             index_id = Int(body.index_id)
+        catch
+            return HTTP.Response(400,
+                ["Content-Type" => "application/json"],
+                JSON3.write(Dict(:error => "index_id must be an integer")))
+        end
+        return with_idempotency(db, req) do
 
             rows = Tables.rowtable(DBInterface.execute(db,
                 "SELECT exposure_id, kind FROM index_groups WHERE id = ?", [id]))
@@ -284,12 +296,27 @@ function register_analysis_routes!()
 
     @post "/api/exposures/{id}/speculative" function(req::HTTP.Request, id::Int)
         db = current_db()
+        body = json(req)
+        for field in (:phase, :anchor_peak_id, :anchor_ratio)
+            if !haskey(body, field)
+                return HTTP.Response(400,
+                    ["Content-Type" => "application/json"],
+                    JSON3.write(Dict(:error => "missing field: $(field)")))
+            end
+        end
+        local phase_name::String
+        local anchor_peak_id::Int
+        local anchor_ratio::Int
+        try
+            phase_name     = String(body.phase)
+            anchor_peak_id = Int(body.anchor_peak_id)
+            anchor_ratio   = Int(body.anchor_ratio)
+        catch
+            return HTTP.Response(400,
+                ["Content-Type" => "application/json"],
+                JSON3.write(Dict(:error => "phase must be string; anchor_peak_id and anchor_ratio must be integers")))
+        end
         return with_idempotency(db, req) do
-            body = json(req)
-
-            phase_name      = String(body.phase)
-            anchor_peak_id  = Int(body.anchor_peak_id)
-            anchor_ratio    = Int(body.anchor_ratio)
             # additional_peak_ids: parallel arrays {ratio_position, peak_id}
             additional      = haskey(body, :additional) ? body.additional : []
             # Default to *not* in the active set — speculative indices are
