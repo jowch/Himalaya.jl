@@ -153,11 +153,39 @@ CREATE TABLE IF NOT EXISTS user_actions (
     note            TEXT,
     payload         TEXT,
     undoes_event_id INTEGER REFERENCES user_actions(id),
-    client_id       TEXT
+    client_id       TEXT,
+    client_op_id    TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_events_by_exposure
     ON user_actions(entity_type, entity_id, id);
+
+-- I2 partial unique index — installed by migrate_schema! after the legacy
+-- ALTER TABLE pass that adds client_op_id, so it works on fresh and
+-- legacy DBs alike. The SQL lives in migrate_schema! and reads
+-- UNIQUE on the columns (client_op_id, action, entity_id), with a partial
+-- WHERE client_op_id IS NOT NULL filter so legacy NULL-op_id rows are
+-- excluded from the constraint.
+--
+-- Earlier drafts of the spec described this index as NOT UNIQUE, on the
+-- premise that one request might emit multiple events under one
+-- client_op_id. The implementation took the opposite path: each
+-- with_idempotency-wrapped route is constrained to emit at most one
+-- event row PER (action, entity_id) per request, which lets the unique
+-- index serve as the idempotency-retry guard at the DB layer (a retry
+-- with the same op_id trips the constraint and apply_event! short-
+-- circuits to the prior event_id). The trade-off is documented as a
+-- precondition for new routes — see CLAUDE.md Mutation queue section.
+
+CREATE TABLE IF NOT EXISTS idempotent_responses (
+    client_op_id  TEXT PRIMARY KEY,
+    status_code   INTEGER NOT NULL,
+    body          TEXT NOT NULL,
+    created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_idempotent_responses_created
+    ON idempotent_responses(created_at);
 """
 
 """
@@ -198,7 +226,12 @@ function create_schema!(db::SQLite.DB)
 end
 
 function migrate_schema!(db::SQLite.DB)
-    stmts = [
+    # Each ALTER TABLE adds a column that may already exist on legacy DBs;
+    # SQLite has no `ADD COLUMN IF NOT EXISTS`, so we tolerate "duplicate column"
+    # specifically. CREATE INDEX/TABLE statements below are `IF NOT EXISTS`-
+    # guarded and any unexpected failure must surface — never swallow them
+    # under a bare catch (issue #6 from PR review).
+    alter_stmts = [
         "ALTER TABLE exposures ADD COLUMN status TEXT CHECK (status IN ('accepted', 'rejected'))",
         "ALTER TABLE exposures ADD COLUMN image_path TEXT",
         "ALTER TABLE experiments ADD COLUMN config TEXT",
@@ -214,15 +247,69 @@ function migrate_schema!(db::SQLite.DB)
         "ALTER TABLE user_actions ADD COLUMN payload TEXT",
         "ALTER TABLE user_actions ADD COLUMN undoes_event_id INTEGER REFERENCES user_actions(id)",
         "ALTER TABLE user_actions ADD COLUMN client_id TEXT",
+        "ALTER TABLE user_actions ADD COLUMN client_op_id TEXT",
     ]
-    for stmt in stmts
+    for stmt in alter_stmts
         try
             DBInterface.execute(db, stmt)
-        catch
-            # column already exists — safe to ignore
+        catch err
+            # Lowercase the message before matching so a future SQLite or
+            # SQLite.jl change in casing/prefix doesn't silently flip a
+            # tolerated error into a propagated one (PR review suggestion #9).
+            msg = lowercase(sprint(showerror, err))
+            # Two errors are expected during incremental upgrades:
+            # - "duplicate column name": the column already exists on a DB
+            #   that's been migrated before. Idempotent — ignore.
+            # - "no such table": a partial legacy DB or fresh-from-create_schema!
+            #   that hasn't yet seen this table (e.g. older test fixtures
+            #   pre-dating user_actions). Idempotent — ignore.
+            # Anything else (typo, FK clash, constraint violation) must
+            # propagate so a half-migrated DB isn't silently masked (issue #6).
+            (occursin("duplicate column name", msg) || occursin("no such table", msg)) ||
+                rethrow()
         end
     end
+
+    # The below statements are all IF NOT EXISTS-guarded. The CREATE INDEX
+    # variants depend on `user_actions` existing; partial-legacy DBs (e.g.
+    # the test fixture in test_db.jl that only has `experiments`) tolerate
+    # "no such table" — every other failure must propagate (issue #6).
+    function _create_safely(stmt::String)
+        try
+            DBInterface.execute(db, stmt)
+        catch err
+            occursin("no such table", lowercase(sprint(showerror, err))) || rethrow()
+        end
+    end
+    _create_safely(
+        "CREATE INDEX IF NOT EXISTS idx_events_by_client_op_id ON user_actions(client_op_id) WHERE client_op_id IS NOT NULL")
+    DBInterface.execute(db,
+        """CREATE TABLE IF NOT EXISTS idempotent_responses (
+            client_op_id  TEXT PRIMARY KEY,
+            status_code   INTEGER NOT NULL,
+            body          TEXT NOT NULL,
+            created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+        )""")
+    DBInterface.execute(db,
+        "CREATE INDEX IF NOT EXISTS idx_idempotent_responses_created ON idempotent_responses(created_at)")
+    # Precondition: legacy DBs that already populated `client_op_id` without
+    # also installing this UNIQUE index AND that wrote duplicate rows for the
+    # same (client_op_id, action, entity_id) tuple would fail this CREATE
+    # with `UNIQUE constraint failed`. _create_safely only tolerates "no such
+    # table" — a duplicate-constraint failure here propagates intentionally,
+    # so a corrupt DB can't silently mask the inconsistency. There is no
+    # released version of that partial-deploy state; should one ever exist,
+    # operators must dedupe `user_actions` by (client_op_id, action,
+    # entity_id) before re-running open_db (suggestion #13).
+    _create_safely(
+        """CREATE UNIQUE INDEX IF NOT EXISTS idx_events_unique_op
+            ON user_actions(client_op_id, action, entity_id)
+            WHERE client_op_id IS NOT NULL""")
     migrate_pk_to_autoincrement!(db)
+    # Heal corrupted FKs from prior runs: a DB migrated before the helper
+    # was generalized may still have FK refs to `_migrate_old_*` on tables
+    # like sample_messages/sample_tags/etc. Idempotent — no-op when clean.
+    _fix_fk_references_after_autoincrement_migration!(db)
     migrate_r2_widen_index_peaks_pk!(db)  # rebuild with widened PK first
     migrate_r2_split_peaks!(db)            # then repoint manual-peak refs
 
@@ -313,8 +400,22 @@ so freed ids are never reused.
 No-op on fresh DBs (the schema already declares AUTOINCREMENT) and on
 DBs that have already been migrated.
 """
+# Single source of truth for the entity tables that participate in the
+# AUTOINCREMENT migration. Used by both `migrate_pk_to_autoincrement!`
+# (which renames+rebuilds them) and `_fix_fk_references_after_autoincrement_migration!`
+# (which heals corrupted FK references that point at the rename-staging name).
+# Keep these in lockstep — drift causes the heal loop to silently no-op for
+# any new entity (review issue #19).
+const _AUTOINCREMENT_ENTITIES = ("experiments", "samples", "exposures", "peaks", "indices")
+
+# Superset of tables whose `_migrate_old_<name>` rename-staging name may
+# appear in CREATE statements after a partial-failure migration. Includes
+# `_AUTOINCREMENT_ENTITIES` plus `index_peaks` (R2 widen migration uses the
+# same temp-name pattern; review issue #22). Heal loop iterates this list.
+const _MIGRATION_TEMP_ENTITIES = (_AUTOINCREMENT_ENTITIES..., "index_peaks")
+
 function migrate_pk_to_autoincrement!(db::SQLite.DB)
-    tables = ["experiments", "samples", "exposures", "peaks", "indices"]
+    tables = collect(_AUTOINCREMENT_ENTITIES)
 
     # Sentinel: skip iff every table in `tables` that EXISTS already has
     # AUTOINCREMENT. "peaks" may no longer exist in R2.2+ DBs (removed from
@@ -394,35 +495,108 @@ end
 """
     _fix_fk_references_after_autoincrement_migration!(db)
 
-After `migrate_pk_to_autoincrement!` runs, SQLite's ALTER TABLE RENAME tracking
-may have stored corrupted FK references (pointing to `_migrate_old_exposures`
-instead of `exposures`) in tables created by `create_schema!` INSIDE the rename
-transaction. Fix by dropping and recreating those tables. This is safe because
-these tables were freshly created (empty) by create_schema! in the migration.
+After `migrate_pk_to_autoincrement!` runs, SQLite's ALTER TABLE RENAME
+tracking rewrites FK references in EVERY table whose CREATE statement
+named the renamed entity, including tables that were already populated.
+The references point at `_migrate_old_<entity>` which was dropped at the
+end of the rename transaction — leaving behind dead FK names that surface
+later as `SQLiteException("no such table: main._migrate_old_*")` on
+unrelated INSERTs (the prepare step walks the FK graph and trips when it
+hits a stale reference).
+
+The previous version of this function only rebuilt empty tables it knew
+were freshly created (`auto_peaks`, `peak_curations`). That missed
+populated tables like `sample_messages`, `sample_tags`, `exposure_tags`,
+`exposure_sources`, `index_groups`, `index_group_members` whose FKs had
+the same corruption. A real prod DB at `/tmp/himalaya-dev.db` with rows
+in `sample_tags`/`sample_messages` exhibited the bug — caught only by
+running the actual server (smoke checklist), not by the test suite which
+uses freshly-built DBs that don't go through this exact sequence.
+
+This implementation rewrites the FK references in-place via
+`PRAGMA writable_schema = ON` + a textual REPLACE on `sqlite_master.sql`.
+Faster and data-preserving compared to a copy-rebuild. Safe because we
+only swap the dead `_migrate_old_<x>` table name back to its real name
+`<x>` — the FK graph is otherwise unchanged. A `VACUUM` forces SQLite to
+re-read the schema cache.
 """
 function _fix_fk_references_after_autoincrement_migration!(db::SQLite.DB)
-    # Find tables with FK references to non-existent tables (the renamed ones).
-    # Only check tables we created in this run (non-entity new R2.1 tables).
-    candidates = ["auto_peaks", "peak_curations"]
-    for t in candidates
-        # Check if the table exists at all.
-        exists = !isempty(Tables.rowtable(DBInterface.execute(db,
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", [t])))
-        exists || continue
-        # Check if any FK points to a non-existent table.
-        fks = Tables.rowtable(DBInterface.execute(db, "PRAGMA foreign_key_list($t)"))
-        needs_fix = any(fk -> begin
-            ref_table = String(fk.table)
-            isempty(Tables.rowtable(DBInterface.execute(db,
-                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", [ref_table])))
-        end, fks)
-        needs_fix || continue
-        # Drop and recreate: the table was just created (empty) so no data is lost.
-        @debug "_fix_fk_references_after_autoincrement_migration!: rebuilding $t"
-        DBInterface.execute(db, "DROP TABLE $t")
+    broken = Tables.rowtable(DBInterface.execute(db,
+        "SELECT name FROM sqlite_master WHERE type='table' AND sql LIKE '%_migrate_old_%'"))
+    isempty(broken) && return
+
+    DBInterface.execute(db, "PRAGMA writable_schema = ON")
+    try
+        # Wrap the rewrite + drift assertion in an explicit transaction so a
+        # partial failure (e.g. SQLITE_CORRUPT, disk full) OR a future entity
+        # drift (assertion fires) rolls back atomically rather than leaving
+        # the DB half-healed (review issues #20 + #25). The assertion MUST
+        # run inside the tx — it's the only drift detector for issue #19.
+        # `writable_schema` is connection-local, so toggling it outside the
+        # transaction is safe.
+        SQLite.transaction(db) do
+            # Replace each `_migrate_old_<entity>` with `<entity>`. Driven from
+            # `_MIGRATION_TEMP_ENTITIES` (single source of truth — covers
+            # both the AUTOINCREMENT rename and R2 widen rename patterns)
+            # so adding a new entity to either migration automatically
+            # heals here too (review issues #19 + #22).
+            #
+            # Quoted form ("_migrate_old_x") and bare form (_migrate_old_x)
+            # both occur in CREATE statements depending on whether the FK
+            # target was rendered with or without quoting.
+            #
+            # ORDERING INVARIANT (review suggestion #17): the unanchored
+            # substring REPLACE on `_migrate_old_<entity>` is safe today
+            # because no entity name in `_MIGRATION_TEMP_ENTITIES` is a
+            # substring of another (e.g. no `peak` AND `peaks`). If you add
+            # an entity here, verify this invariant or anchor the replace.
+            for entity in _MIGRATION_TEMP_ENTITIES
+                old_q = "\"_migrate_old_$entity\""
+                old_b = "_migrate_old_$entity"
+                DBInterface.execute(db,
+                    "UPDATE sqlite_master SET sql = REPLACE(sql, ?, ?) WHERE type='table'",
+                    [old_q, entity])
+                DBInterface.execute(db,
+                    "UPDATE sqlite_master SET sql = REPLACE(sql, ?, ?) WHERE type='table'",
+                    [old_b, entity])
+            end
+            # Defense-in-depth: assert the heal worked. Catches a future drift
+            # where an entity gets added to migrate_pk_to_autoincrement! /
+            # migrate_r2_widen_index_peaks_pk! but the constant list above
+            # isn't updated (review issue #19). Inside the tx so the throw
+            # rolls back the partial REPLACE pass (review issue #25).
+            remaining = Tables.rowtable(DBInterface.execute(db,
+                "SELECT name FROM sqlite_master WHERE type='table' AND sql LIKE '%_migrate_old_%'"))
+            isempty(remaining) || error(
+                "_fix_fk_references_after_autoincrement_migration!: tables still " *
+                "carry `_migrate_old_*` FKs after heal: " *
+                join(String[String(r.name) for r in remaining], ", ") *
+                " (likely missing entry in _MIGRATION_TEMP_ENTITIES " *
+                "or _AUTOINCREMENT_ENTITIES — review suggestion #18)")
+        end
+    finally
+        DBInterface.execute(db, "PRAGMA writable_schema = OFF")
     end
-    # Recreate all affected tables via create_schema! (IF NOT EXISTS is safe).
-    create_schema!(db)
+    # Force SQLite to invalidate its in-memory schema cache so subsequent
+    # prepares see the corrected FKs. VACUUM is the standard idiom but it
+    # acquires an EXCLUSIVE lock and can fail with SQLITE_BUSY under
+    # multi-process access. Fall back to bumping schema_version (also
+    # invalidates the cache) so the heal still takes effect (review issue #21).
+    #
+    # The schema_version PRAGMA is writable only when writable_schema=ON on
+    # most builds (review issue #26). The `finally` above already toggled it
+    # off, so the fallback re-enables it for the bump and toggles off again.
+    try
+        DBInterface.execute(db, "VACUUM")
+    catch err
+        @warn "VACUUM after FK heal failed; falling back to schema_version bump" exception=err
+        DBInterface.execute(db, "PRAGMA writable_schema = ON")
+        try
+            DBInterface.execute(db, "PRAGMA schema_version = schema_version + 1")
+        finally
+            DBInterface.execute(db, "PRAGMA writable_schema = OFF")
+        end
+    end
 end
 
 """
@@ -446,7 +620,7 @@ function migrate_r2_widen_index_peaks_pk!(db::SQLite.DB)
     DBInterface.execute(db, "PRAGMA foreign_keys = OFF")
     try
         SQLite.transaction(db) do
-            DBInterface.execute(db, "ALTER TABLE index_peaks RENAME TO _index_peaks_old")
+            DBInterface.execute(db, "ALTER TABLE index_peaks RENAME TO _migrate_old_index_peaks")
             # Re-create with the new shape (matches SCHEMA above).
             DBInterface.execute(db, """
                 CREATE TABLE index_peaks (
@@ -464,9 +638,9 @@ function migrate_r2_widen_index_peaks_pk!(db::SQLite.DB)
             DBInterface.execute(db, """
                 INSERT INTO index_peaks (index_id, peak_id, peak_kind, ratio_position, residual)
                 SELECT index_id, peak_id, 'auto', ratio_position, residual
-                FROM _index_peaks_old
+                FROM _migrate_old_index_peaks
             """)
-            DBInterface.execute(db, "DROP TABLE _index_peaks_old")
+            DBInterface.execute(db, "DROP TABLE _migrate_old_index_peaks")
         end
     finally
         DBInterface.execute(db, "PRAGMA foreign_keys = ON")

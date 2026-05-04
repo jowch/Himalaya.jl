@@ -42,6 +42,7 @@ export class ApiError extends Error {
 export interface AuthOpts {
   username?: string;
   clientId?: string;
+  clientOpId?: string;
 }
 
 async function request<T>(
@@ -54,6 +55,7 @@ async function request<T>(
   if (body !== undefined) headers["Content-Type"] = "application/json";
   if (opts?.username && method !== "GET") headers["X-Username"] = opts.username;
   if (opts?.clientId && method !== "GET") headers["X-Client-Id"] = opts.clientId;
+  if (opts?.clientOpId && method !== "GET") headers["X-Client-Op-Id"] = opts.clientOpId;
 
   const init: RequestInit = { method, headers };
   if (body !== undefined) init.body = JSON.stringify(body);
@@ -186,16 +188,56 @@ export interface Peak {
   excluded: boolean;
 }
 
-export interface PeakCreated extends Peak { stale_indices: number }
+/**
+ * Backend response for POST /api/exposures/:id/peaks. Carries the inserted
+ * peak plus event metadata + the post-state hash so the client can mark the
+ * exposure cache fresh without a refetch round-trip.
+ */
+/**
+ * Backend response for POST /api/exposures/:id/peaks. The peak fields are
+ * inlined (matches `routes_peaks.jl` which JSON3.writes a flat Dict). Earlier
+ * draft typed this as `{peak: Peak, ...}` and mutators read `response.peak.id`
+ * — that would throw in production; only the unit tests passed because their
+ * mock fixture matched the (wrong) type. Now extends `Peak` like
+ * `PeakUpdatedResponse` does.
+ */
+export interface PeakAddResponse extends Peak {
+  event_id: number;
+  view_row_id: number;
+  analysis_inputs_hash: string;
+}
+
+/**
+ * Backend response for PATCH /api/peaks/:id. The peak fields are inlined; the
+ * event metadata fields are nullable for the no-op case where excluded did
+ * not actually change.
+ */
+export interface PeakUpdatedResponse extends Peak {
+  event_id: number | null;
+  view_row_id: number | null;
+  analysis_inputs_hash: string;
+}
+
+/**
+ * Backend response for DELETE /api/peaks/:id. Carries the post-state hash so
+ * the client can mark the exposure cache fresh inline with the optimistic
+ * delete and avoid a transient StaleIndicesBanner flash before the SSE frame
+ * arrives.
+ */
+export interface PeakRemoveResponse {
+  event_id: number;
+  view_row_id: number | null;
+  analysis_inputs_hash: string;
+}
 
 export const listPeaks = (exposure_id: number) =>
   request<Peak[]>("GET", `/api/exposures/${exposure_id}/peaks`);
 export const addPeak = (exposure_id: number, q: number, opts?: AuthOpts) =>
-  request<PeakCreated>("POST", `/api/exposures/${exposure_id}/peaks`, { q }, opts);
+  request<PeakAddResponse>("POST", `/api/exposures/${exposure_id}/peaks`, { q }, opts);
 export const removePeak = (peak_id: number, opts?: AuthOpts) =>
-  request<void>("DELETE", `/api/peaks/${peak_id}`, undefined, opts);
+  request<PeakRemoveResponse>("DELETE", `/api/peaks/${peak_id}`, undefined, opts);
 export const setPeakExcluded = (peak_id: number, excluded: boolean, opts?: AuthOpts) =>
-  request<Peak & { stale_indices: number }>(
+  request<PeakUpdatedResponse>(
     "PATCH", `/api/peaks/${peak_id}`, { excluded }, opts);
 
 // Indices
@@ -271,12 +313,23 @@ export interface GroupEntry {
   members: number[];
 }
 
+/**
+ * Mutation responses on group routes carry queue-framework metadata
+ * (event_id, view_row_id) alongside the row. The mutator's onSuccess MUST
+ * destructure these out before writing the row into the cache — otherwise
+ * `GroupEntry` rows get polluted with queue plumbing fields.
+ */
+export type GroupMutationResponse = GroupEntry & {
+  event_id: number;
+  view_row_id: number | null;
+};
+
 export const listGroups = (exposure_id: number) =>
   request<GroupEntry[]>("GET", `/api/exposures/${exposure_id}/groups`);
 export const addIndexToGroup = (group_id: number, index_id: number, opts?: AuthOpts) =>
-  request<GroupEntry>("POST", `/api/groups/${group_id}/members`, { index_id }, opts);
+  request<GroupMutationResponse>("POST", `/api/groups/${group_id}/members`, { index_id }, opts);
 export const removeIndexFromGroup = (group_id: number, index_id: number, opts?: AuthOpts) =>
-  request<GroupEntry>("DELETE", `/api/groups/${group_id}/members/${index_id}`, undefined, opts);
+  request<GroupMutationResponse>("DELETE", `/api/groups/${group_id}/members/${index_id}`, undefined, opts);
 
 // Sample messages (chat log)
 export interface SampleMessage {
@@ -296,8 +349,15 @@ export const postSampleMessage = (sample_id: number, body: string, opts?: AuthOp
   request<SampleMessage>("POST", `/api/samples/${sample_id}/messages`, { body }, opts);
 
 // Analysis
+export interface ReanalyzeResponse {
+  id: number;
+  analyzed: boolean;
+  /** New post-analyze hash. Used to clear StaleIndicesBanner inline with
+   *  the HTTP response, before the SSE post_state arrives. */
+  analysis_inputs_hash: string;
+}
 export const reanalyzeExposure = (exposure_id: number, opts?: AuthOpts) =>
-  request<{ id: number; analyzed: boolean }>("POST", `/api/exposures/${exposure_id}/analyze`, {}, opts);
+  request<ReanalyzeResponse>("POST", `/api/exposures/${exposure_id}/analyze`, {}, opts);
 
 // Single-entity fetchers for mention resolution
 export const getPeak     = (id: number) => request<Peak>("GET", `/api/peaks/${id}`);

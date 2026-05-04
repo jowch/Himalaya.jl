@@ -302,6 +302,185 @@ end
     end
 end
 
+@testset "open_db heals corrupted _migrate_old_* FK references on populated tables" begin
+    # Real prod DB at /tmp/himalaya-dev.db exhibited 6 tables with FKs that
+    # referenced the dead `_migrate_old_<entity>` temp-table name from a
+    # prior `migrate_pk_to_autoincrement!` run. The previous fix function
+    # only handled `auto_peaks`/`peak_curations`; the populated tables
+    # (`sample_messages`, `sample_tags`, `exposure_tags`, `exposure_sources`,
+    # `index_groups`, `index_group_members`) silently kept the dead refs
+    # and any subsequent INSERT on a table with such an FK trips
+    # SQLiteException("no such table: main._migrate_old_*"). Caught only by
+    # running the actual server (smoke checklist), not by tests using
+    # freshly-built DBs.
+    #
+    # This regression test simulates the post-corruption state directly:
+    # builds a DB whose `sample_messages` references `_migrate_old_samples`,
+    # then runs `open_db` and asserts (a) the FK is rewritten back to
+    # `samples`, (b) an INSERT succeeds without 500.
+    mktempdir() do tmp
+        db_path = joinpath(tmp, "corrupted.db")
+        db = SQLite.DB(db_path)
+        # Build a minimal corrupted state: samples + sample_messages with
+        # a dead FK reference. Mirrors what migrate_pk_to_autoincrement!
+        # leaves behind on a DB whose ALTER TABLE RENAME tracking corrupted
+        # references inside the rename transaction.
+        DBInterface.execute(db, """
+            CREATE TABLE samples (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                experiment_id INTEGER,
+                label TEXT, name TEXT, notes TEXT
+            )""")
+        DBInterface.execute(db, """
+            CREATE TABLE users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                first_name TEXT, last_name TEXT
+            )""")
+        DBInterface.execute(db, """
+            CREATE TABLE sample_messages (
+                id         INTEGER PRIMARY KEY,
+                sample_id  INTEGER REFERENCES "_migrate_old_samples"(id),
+                author_id  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                body       TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""")
+        DBInterface.execute(db, "INSERT INTO samples (label) VALUES ('S1')")
+        SQLite.close(db)
+
+        # Pre-condition: corrupted reference present.
+        verify = SQLite.DB(db_path)
+        broken_before = Tables.rowtable(DBInterface.execute(verify,
+            "SELECT name FROM sqlite_master WHERE type='table' AND sql LIKE '%_migrate_old_%'"))
+        @test length(broken_before) == 1
+        SQLite.close(verify)
+
+        # Heal via open_db (calls migrate_schema! which calls the fix helper).
+        healed = HimalayaUI.open_db(db_path)
+        broken_after = Tables.rowtable(DBInterface.execute(healed,
+            "SELECT name FROM sqlite_master WHERE type='table' AND sql LIKE '%_migrate_old_%'"))
+        @test isempty(broken_after)
+
+        # The healed DB must accept an INSERT into sample_messages — the
+        # operation that would 500 on the corrupted DB.
+        u_id = HimalayaUI.get_or_create_user!(healed, "alice")
+        DBInterface.execute(healed,
+            "INSERT INTO sample_messages (sample_id, author_id, body) VALUES (?, ?, ?)",
+            [1, u_id, "smoke-regression"])
+        @test first(Tables.rowtable(DBInterface.execute(healed,
+            "SELECT COUNT(*) AS c FROM sample_messages"))).c == 1
+    end
+end
+
+@testset "_fix_fk_references_after_autoincrement_migration! heals bare-form (no quotes)" begin
+    # The smoke regression covered the QUOTED form ("_migrate_old_samples").
+    # The other branch is the BARE form (_migrate_old_samples without quotes)
+    # — SQLite accepts unquoted table names in CREATE statements, and that's
+    # the more interesting branch since it'd be missed by a quoted-only fix
+    # (review issue #23). Tested via the heal helper directly to avoid
+    # tangling with create_schema! migrations.
+    mktempdir() do tmp
+        db_path = joinpath(tmp, "corrupted-bare.db")
+        db = SQLite.DB(db_path)
+        DBInterface.execute(db,
+            "CREATE TABLE exposures (id INTEGER PRIMARY KEY AUTOINCREMENT, x TEXT)")
+        # Bare form — no quotes around the FK target.
+        DBInterface.execute(db, """
+            CREATE TABLE refs_bare_exposure (
+                id INTEGER PRIMARY KEY,
+                exposure_id INTEGER REFERENCES _migrate_old_exposures(id)
+            )""")
+
+        broken_before = Tables.rowtable(DBInterface.execute(db,
+            "SELECT name FROM sqlite_master WHERE type='table' AND sql LIKE '%_migrate_old_%'"))
+        @test length(broken_before) == 1
+
+        HimalayaUI._fix_fk_references_after_autoincrement_migration!(db)
+
+        broken_after = Tables.rowtable(DBInterface.execute(db,
+            "SELECT name FROM sqlite_master WHERE type='table' AND sql LIKE '%_migrate_old_%'"))
+        @test isempty(broken_after)
+        SQLite.close(db)
+    end
+end
+
+@testset "_fix_fk_references_after_autoincrement_migration! heals multiple entities" begin
+    # Smoke regression covered only `samples`. Real corruption has multiple
+    # entities at once. This test exercises the heal loop directly (no
+    # open_db / create_schema! interference) so we can include corrupted
+    # FKs targeting `samples`, `exposures`, AND `experiments` in one DB
+    # without colliding with production schema migrations (review issue #23).
+    mktempdir() do tmp
+        db_path = joinpath(tmp, "corrupted-multi.db")
+        db = SQLite.DB(db_path)
+        # Three entity targets with distinct corrupted-FK references to each.
+        # Use synthetic referent table names so create_schema! is irrelevant.
+        DBInterface.execute(db,
+            "CREATE TABLE samples (id INTEGER PRIMARY KEY AUTOINCREMENT, x TEXT)")
+        DBInterface.execute(db,
+            "CREATE TABLE exposures (id INTEGER PRIMARY KEY AUTOINCREMENT, x TEXT)")
+        DBInterface.execute(db,
+            "CREATE TABLE experiments (id INTEGER PRIMARY KEY AUTOINCREMENT, x TEXT)")
+        DBInterface.execute(db, """
+            CREATE TABLE refs_to_samples (
+                id INTEGER PRIMARY KEY,
+                sample_id INTEGER REFERENCES "_migrate_old_samples"(id)
+            )""")
+        DBInterface.execute(db, """
+            CREATE TABLE refs_to_exposures (
+                id INTEGER PRIMARY KEY,
+                exposure_id INTEGER REFERENCES _migrate_old_exposures(id)
+            )""")
+        DBInterface.execute(db, """
+            CREATE TABLE refs_to_experiments (
+                id INTEGER PRIMARY KEY,
+                experiment_id INTEGER REFERENCES "_migrate_old_experiments"(id)
+            )""")
+
+        broken_before = Tables.rowtable(DBInterface.execute(db,
+            "SELECT name FROM sqlite_master WHERE type='table' AND sql LIKE '%_migrate_old_%'"))
+        @test length(broken_before) == 3
+
+        # Call the heal helper directly.
+        HimalayaUI._fix_fk_references_after_autoincrement_migration!(db)
+
+        broken_after = Tables.rowtable(DBInterface.execute(db,
+            "SELECT name FROM sqlite_master WHERE type='table' AND sql LIKE '%_migrate_old_%'"))
+        @test isempty(broken_after)
+        SQLite.close(db)
+    end
+end
+
+@testset "_fix_fk_references_after_autoincrement_migration! is idempotent on healed DB" begin
+    # Once the DB is healed, calling the heal helper again must not error or
+    # re-rewrite. Detector LIKE clause must yield empty so the heal loop
+    # short-circuits at the early return (review issue #23).
+    mktempdir() do tmp
+        db_path = joinpath(tmp, "corrupted-idem.db")
+        db = SQLite.DB(db_path)
+        DBInterface.execute(db,
+            "CREATE TABLE samples (id INTEGER PRIMARY KEY AUTOINCREMENT, x TEXT)")
+        DBInterface.execute(db, """
+            CREATE TABLE refs_to_samples (
+                id INTEGER PRIMARY KEY,
+                sample_id INTEGER REFERENCES "_migrate_old_samples"(id)
+            )""")
+
+        # First call heals.
+        HimalayaUI._fix_fk_references_after_autoincrement_migration!(db)
+        broken1 = Tables.rowtable(DBInterface.execute(db,
+            "SELECT name FROM sqlite_master WHERE type='table' AND sql LIKE '%_migrate_old_%'"))
+        @test isempty(broken1)
+
+        # Second call must short-circuit without throwing.
+        HimalayaUI._fix_fk_references_after_autoincrement_migration!(db)
+        broken2 = Tables.rowtable(DBInterface.execute(db,
+            "SELECT name FROM sqlite_master WHERE type='table' AND sql LIKE '%_migrate_old_%'"))
+        @test isempty(broken2)
+        SQLite.close(db)
+    end
+end
+
 @testset "user_actions.client_id column exists on fresh DB" begin
     mktempdir() do tmp
         db = HimalayaUI.open_db(joinpath(tmp, "test.db"))
@@ -340,6 +519,224 @@ end
         cols = Tables.rowtable(DBInterface.execute(db,
             "PRAGMA table_info(user_actions)"))
         @test any(c -> c.name == "client_id", cols)
+        SQLite.close(db)
+    end
+end
+
+@testset "user_actions.client_op_id column exists on fresh DB" begin
+    mktempdir() do tmp
+        db = HimalayaUI.open_db(joinpath(tmp, "test.db"))
+        cols = Tables.rowtable(DBInterface.execute(db,
+            "PRAGMA table_info(user_actions)"))
+        @test any(c -> c.name == "client_op_id", cols)
+        SQLite.close(db)
+    end
+end
+
+@testset "idempotent_responses table exists on fresh DB" begin
+    mktempdir() do tmp
+        db = HimalayaUI.open_db(joinpath(tmp, "test.db"))
+        tables = Tables.rowtable(DBInterface.execute(db,
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='idempotent_responses'"))
+        @test length(tables) == 1
+        cols = Tables.rowtable(DBInterface.execute(db,
+            "PRAGMA table_info(idempotent_responses)"))
+        @test Set(c.name for c in cols) == Set(["client_op_id", "status_code", "body", "created_at"])
+        @test any(c -> c.name == "client_op_id" && c.pk == 1, cols)
+        SQLite.close(db)
+    end
+end
+
+@testset "open_db adds client_op_id to legacy user_actions schema" begin
+    mktempdir() do tmp
+        path = joinpath(tmp, "test.db")
+        db = SQLite.DB(path)
+        DBInterface.execute(db, """
+            CREATE TABLE user_actions (
+                id              INTEGER PRIMARY KEY,
+                user_id         INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                timestamp       DATETIME DEFAULT CURRENT_TIMESTAMP,
+                action          TEXT,
+                entity_type     TEXT,
+                entity_id       INTEGER,
+                note            TEXT,
+                payload         TEXT,
+                undoes_event_id INTEGER REFERENCES user_actions(id),
+                client_id       TEXT
+            )
+        """)
+        SQLite.close(db)
+        db = HimalayaUI.open_db(path)
+        cols = Tables.rowtable(DBInterface.execute(db,
+            "PRAGMA table_info(user_actions)"))
+        @test any(c -> c.name == "client_op_id", cols)
+        SQLite.close(db)
+    end
+end
+
+@testset "open_db creates idempotent_responses on legacy DB" begin
+    mktempdir() do tmp
+        path = joinpath(tmp, "test.db")
+        db = SQLite.DB(path)
+        DBInterface.execute(db, "CREATE TABLE foo (x INTEGER)")
+        SQLite.close(db)
+        db = HimalayaUI.open_db(path)
+        tables = Tables.rowtable(DBInterface.execute(db,
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='idempotent_responses'"))
+        @test length(tables) == 1
+        SQLite.close(db)
+    end
+end
+
+@testset "client_op_id partial index present" begin
+    mktempdir() do tmp
+        db = HimalayaUI.open_db(joinpath(tmp, "test.db"))
+        idx = Tables.rowtable(DBInterface.execute(db,
+            "SELECT sql FROM sqlite_master WHERE type='index' AND name='idx_events_by_client_op_id'"))
+        @test length(idx) == 1
+        @test occursin("WHERE client_op_id IS NOT NULL", String(idx[1].sql))
+        SQLite.close(db)
+    end
+end
+
+@testset "I2: partial unique index on user_actions(client_op_id, action, entity_id)" begin
+    mktempdir() do tmp
+        db = HimalayaUI.open_db(joinpath(tmp, "test.db"))
+        idx = Tables.rowtable(DBInterface.execute(db,
+            "SELECT sql FROM sqlite_master WHERE type='index' AND name='idx_events_unique_op'"))
+        @test length(idx) == 1
+        sql = String(idx[1].sql)
+        @test occursin("UNIQUE", uppercase(sql))
+        @test occursin("WHERE", sql)
+        @test occursin("client_op_id IS NOT NULL", sql)
+        SQLite.close(db)
+    end
+end
+
+@testset "I2: partial unique index also installed on legacy DB via migrate_schema!" begin
+    mktempdir() do tmp
+        path = joinpath(tmp, "test.db")
+        # Simulate a legacy DB (any DB that didn't already have this index).
+        db = SQLite.DB(path)
+        DBInterface.execute(db, "CREATE TABLE foo (x INTEGER)")
+        SQLite.close(db)
+        db = HimalayaUI.open_db(path)
+        idx = Tables.rowtable(DBInterface.execute(db,
+            "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_events_unique_op'"))
+        @test length(idx) == 1
+        SQLite.close(db)
+    end
+end
+
+@testset "open_db: legacy user_actions populated with NULL client_op_id rows survives upgrade (issue #15)" begin
+    # Reviewer-flagged gap: prior tests created legacy user_actions tables but
+    # inserted ZERO rows before calling open_db, so they didn't exercise the
+    # "rows exist before ALTER + index install" path. Pin the two properties
+    # the partial unique index design depends on:
+    #   (a) Pre-existing NULL-client_op_id rows survive ALTER ADD COLUMN +
+    #       CREATE UNIQUE INDEX (the partial WHERE excludes them).
+    #   (b) Two such rows with same (action, entity_id) coexist (partial
+    #       WHERE keeps NULL pairs out of the unique constraint).
+    #   (c) After upgrade, a non-NULL duplicate IS rejected by the live
+    #       constraint.
+    mktempdir() do tmp
+        path = joinpath(tmp, "test.db")
+        db = SQLite.DB(path)
+        # Legacy schema mirroring create_schema! pre-Plan-8.
+        DBInterface.execute(db, """
+            CREATE TABLE users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL
+            )""")
+        DBInterface.execute(db, """
+            CREATE TABLE user_actions (
+                id              INTEGER PRIMARY KEY,
+                user_id         INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                timestamp       DATETIME DEFAULT CURRENT_TIMESTAMP,
+                action          TEXT,
+                entity_type     TEXT,
+                entity_id       INTEGER,
+                note            TEXT
+            )""")
+        DBInterface.execute(db, "INSERT INTO users (username) VALUES ('alice')")
+        # Seed two rows with same (action, entity_id), both NULL on the
+        # not-yet-existing client_op_id column.
+        DBInterface.execute(db,
+            "INSERT INTO user_actions (user_id, action, entity_type, entity_id) VALUES (?, ?, ?, ?)",
+            [1, "peak_added", "exposure", 42])
+        DBInterface.execute(db,
+            "INSERT INTO user_actions (user_id, action, entity_type, entity_id) VALUES (?, ?, ?, ?)",
+            [1, "peak_added", "exposure", 42])
+        SQLite.close(db)
+
+        # Upgrade — open_db calls migrate_schema!. Must not throw despite the
+        # partial-legacy schema (no exposures/samples/etc tables) AND must
+        # preserve all rows.
+        db = HimalayaUI.open_db(path)
+
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id, action, client_op_id FROM user_actions ORDER BY id"))
+        @test length(rows) == 2                            # (a) rows survive
+        @test all(r -> ismissing(r.client_op_id), rows)
+        @test rows[1].action == "peak_added"
+        # Same (action, entity_id) appears twice with NULL op_id without
+        # tripping the unique index — (b).
+        same = Tables.rowtable(DBInterface.execute(db,
+            "SELECT COUNT(*) AS c FROM user_actions WHERE action = ? AND entity_id = ?",
+            ["peak_added", 42]))
+        @test same[1].c == 2
+
+        # The partial unique index installed.
+        idx = Tables.rowtable(DBInterface.execute(db,
+            "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_events_unique_op'"))
+        @test length(idx) == 1
+
+        # (c) A non-NULL op_id duplicate is rejected post-upgrade.
+        DBInterface.execute(db, """
+            INSERT INTO user_actions (action, entity_type, entity_id, client_op_id)
+            VALUES ('peak_added', 'exposure', 42, 'op-fresh')""")
+        @test_throws Exception DBInterface.execute(db, """
+            INSERT INTO user_actions (action, entity_type, entity_id, client_op_id)
+            VALUES ('peak_added', 'exposure', 42, 'op-fresh')""")
+
+        SQLite.close(db)
+    end
+end
+
+@testset "I2: duplicate (client_op_id, action, entity_id) rejected at DB level" begin
+    mktempdir() do tmp
+        db = HimalayaUI.open_db(joinpath(tmp, "test.db"))
+        # Seed FK targets.
+        DBInterface.execute(db,
+            "INSERT INTO experiments (name, path, data_dir, analysis_dir) VALUES ('e', '/p', '/d', '/a')")
+        DBInterface.execute(db,
+            "INSERT INTO samples (experiment_id, label) VALUES (1, 'A1')")
+        res = DBInterface.execute(db,
+            "INSERT INTO exposures (sample_id, filename) VALUES (1, 'f')")
+        exp_id = Int(DBInterface.lastrowid(res))
+
+        DBInterface.execute(db, """
+            INSERT INTO user_actions (action, entity_type, entity_id, client_op_id)
+            VALUES ('peak_added', 'exposure', ?, 'op-x')""", [exp_id])
+        @test_throws Exception DBInterface.execute(db, """
+            INSERT INTO user_actions (action, entity_type, entity_id, client_op_id)
+            VALUES ('peak_added', 'exposure', ?, 'op-x')""", [exp_id])
+
+        # Multiple events under one op_id with different actions are still allowed.
+        DBInterface.execute(db, """
+            INSERT INTO user_actions (action, entity_type, entity_id, client_op_id)
+            VALUES ('index_confirmed', 'exposure', ?, 'op-x')""", [exp_id])
+
+        # NULL client_op_id rows are not constrained — partial WHERE clause.
+        for _ in 1:3
+            DBInterface.execute(db, """
+                INSERT INTO user_actions (action, entity_type, entity_id, client_op_id)
+                VALUES ('peak_added', 'exposure', ?, NULL)""", [exp_id])
+        end
+
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM user_actions WHERE action = 'peak_added' AND entity_id = ?", [exp_id]))
+        @test length(rows) == 4  # 1 with op-x + 3 with NULL
         SQLite.close(db)
     end
 end

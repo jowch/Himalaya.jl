@@ -1,6 +1,8 @@
 using Himalaya
 using SparseArrays
 using Tables
+using JSON3
+using HTTP: HTTP, Request
 
 """
     auto_group(indices) -> Vector{Index}
@@ -513,9 +515,46 @@ function get_peaks_for_exposure(db::SQLite.DB, exposure_id::Int)
     """, [exposure_id, exposure_id]))
 end
 
+"""
+    _serialized_indices_bytes(db, exposure_id) -> Int
+
+Compute the serialized size (in bytes) of the indices for an exposure. Used
+by the slow-path `analyze_run` event to emit `post_state_size_bytes` for
+observability.
+
+Intentionally distinct from `_serialized_indices_for_broadcast` below: this
+helper returns just the bytes of a thin metadata-only projection (no joined
+peaks, no predicted_q, no ngc), which is all the telemetry payload needs.
+The broadcast helper builds the full enriched cache-replay payload used by
+curation routes — it joins index_peaks and computes predicted_q per index.
+Consolidating the two would force `analyze_run` (which fires on every
+exposure analysis) to pay the heavier query just to measure size. The
+duplication here is structural, not redundant.
+"""
+function _serialized_indices_bytes(db::SQLite.DB, exposure_id::Int)::Int
+    rows = Tables.rowtable(DBInterface.execute(db,
+        "SELECT id, phase, basis, score, r_squared, lattice_d, status, kind, inputs_hash FROM indices WHERE exposure_id = ?",
+        [exposure_id]))
+    arr = [Dict(
+        :id          => Int(r.id),
+        :phase       => ismissing(r.phase) ? nothing : String(r.phase),
+        :basis       => ismissing(r.basis) ? nothing : Float64(r.basis),
+        :score       => ismissing(r.score) ? nothing : Float64(r.score),
+        :r_squared   => ismissing(r.r_squared) ? nothing : Float64(r.r_squared),
+        :lattice_d   => ismissing(r.lattice_d) ? nothing : Float64(r.lattice_d),
+        :status      => ismissing(r.status) ? nothing : String(r.status),
+        :kind        => ismissing(r.kind) ? nothing : String(r.kind),
+        :inputs_hash => ismissing(r.inputs_hash) ? nothing : String(r.inputs_hash),
+    ) for r in rows]
+    sizeof(JSON3.write(arr))
+end
+
 function get_indices_for_exposure(db::SQLite.DB, exposure_id::Int)
     Tables.rowtable(DBInterface.execute(db,
-        "SELECT * FROM indices WHERE exposure_id = ? ORDER BY score DESC", [exposure_id]))
+        """SELECT id, exposure_id, phase, basis, score, r_squared, lattice_d,
+                  status, kind, inputs_hash
+           FROM indices WHERE exposure_id = ? ORDER BY score DESC""",
+        [exposure_id]))
 end
 
 function get_groups_for_exposure(db::SQLite.DB, exposure_id::Int)
@@ -563,8 +602,89 @@ function synthesize_peaks_result(db::SQLite.DB, exposure_id::Int,
     (q = qs, indices = idxs, prominence = proms, sharpness = shs)
 end
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Lightweight DB-only readers used by analyze_exposure!'s fast-skip path.
+# Kept separate from the body so they can be reused (and so the fast path is
+# obviously file-I/O-free).
+# ──────────────────────────────────────────────────────────────────────────────
+
+function read_trace_hash(db::SQLite.DB, exposure_id::Int)::Union{String, Nothing}
+    rows = Tables.rowtable(DBInterface.execute(db,
+        "SELECT trace_hash FROM exposures WHERE id = ?", [exposure_id]))
+    isempty(rows) && return nothing
+    ismissing(rows[1].trace_hash) ? nothing : String(rows[1].trace_hash)
+end
+
+function read_inputs_hash(db::SQLite.DB, exposure_id::Int)::Union{String, Nothing}
+    rows = Tables.rowtable(DBInterface.execute(db,
+        "SELECT analysis_inputs_hash FROM exposures WHERE id = ?", [exposure_id]))
+    isempty(rows) && return nothing
+    ismissing(rows[1].analysis_inputs_hash) ? nothing : String(rows[1].analysis_inputs_hash)
+end
+
+function count_auto_peaks(db::SQLite.DB, exposure_id::Int)::Int
+    rows = Tables.rowtable(DBInterface.execute(db,
+        "SELECT COUNT(*) AS c FROM auto_peaks WHERE exposure_id = ?", [exposure_id]))
+    Int(rows[1].c)
+end
+
+function count_indices(db::SQLite.DB, exposure_id::Int)::Int
+    rows = Tables.rowtable(DBInterface.execute(db,
+        "SELECT COUNT(*) AS c FROM indices WHERE exposure_id = ?", [exposure_id]))
+    Int(rows[1].c)
+end
+
+function any_add_curations(db::SQLite.DB, exposure_id::Int)::Bool
+    rows = Tables.rowtable(DBInterface.execute(db,
+        "SELECT 1 AS x FROM peak_curations WHERE exposure_id = ? AND kind = 'add' LIMIT 1",
+        [exposure_id]))
+    !isempty(rows)
+end
+
 """
-    analyze_exposure!(db, exposure_id, analysis_dir)
+    hash_peak_set_from_db(db, exposure_id) -> String
+
+Compute the analysis_inputs_hash from `auto_peaks` + `exclude` curations alone,
+without loading the trace. Equivalent to `hash_peak_set(effective_peaks(...))`
+when no `add` curations exist for the exposure. Caller MUST verify
+`!any_add_curations(...)` first — `add` rows need sharpness sampled from the
+trace, which requires file I/O.
+
+Mirrors the `hash_peak_set` byte encoding exactly: sort by q, write 16 bytes
+per peak (8 q + 8 sharpness, native order), SHA-256.
+"""
+function hash_peak_set_from_db(db::SQLite.DB, exposure_id::Int)::String
+    auto = Tables.rowtable(DBInterface.execute(db,
+        "SELECT q, sharpness FROM auto_peaks WHERE exposure_id = ?", [exposure_id]))
+    excludes = Tables.rowtable(DBInterface.execute(db,
+        "SELECT q FROM peak_curations WHERE exposure_id = ? AND kind = 'exclude'",
+        [exposure_id]))
+    tol(q) = max(1e-6, abs(q) * 0.001)
+    is_excluded(qv) = any(e -> abs(Float64(e.q) - qv) <= tol(qv), excludes)
+
+    qs  = Float64[]
+    shs = Float64[]
+    for r in auto
+        qv = Float64(r.q)
+        is_excluded(qv) && continue
+        push!(qs, qv)
+        push!(shs, ismissing(r.sharpness) ? 0.0 : Float64(r.sharpness))
+    end
+
+    n = length(qs)
+    buf = Vector{UInt8}(undef, 16n)
+    perm = sortperm(qs)
+    for (i, k) in enumerate(perm)
+        q_bytes  = reinterpret(UInt8, [qs[k]])
+        sh_bytes = reinterpret(UInt8, [shs[k]])
+        copyto!(buf, 16(i-1) + 1, q_bytes)
+        copyto!(buf, 16(i-1) + 9, sh_bytes)
+    end
+    bytes2hex(SHA.sha256(buf))
+end
+
+"""
+    analyze_exposure!(db, exposure_id, analysis_dir; trace_known_unchanged=false)
 
 Load the .dat file for `exposure_id`, run findpeaks + indexpeaks,
 auto-group results, and persist everything to the DB.
@@ -573,12 +693,23 @@ Hash-guarded: findpeaks is skipped when `trace_hash` matches the persisted
 value AND auto_peaks already exist. indexpeaks is skipped when
 `analysis_inputs_hash` matches the persisted value AND indices already exist.
 
+When `trace_known_unchanged=true`, the caller asserts that the .dat file has
+not changed since the last `trace_hash` was computed (e.g. inside a curation
+route handler that does not touch the trace). In that case, if no `add`
+curations exist for the exposure, the function performs ZERO file I/O —
+inputs hash is computed from the DB alone and matched against the stored
+value; if they match and indices already exist, the call is effectively free.
+
 The .dat filename is constructed from `exposures.filename` and the integration
 pattern stored in the experiment's config (defaults to `{name}.dat` for
 experiments without an explicit config).
 """
-function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String)
+function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String;
+                            trace_known_unchanged::Bool=false,
+                            defer_broadcast::Bool=false,
+                            req::Union{HTTP.Request, Nothing}=nothing)
     t0 = time()
+
     rows = Tables.rowtable(DBInterface.execute(db,
         """SELECT e.filename, x.id AS experiment_id
            FROM exposures e
@@ -592,25 +723,40 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
     cfg = config_from_db(db, experiment_id)
     pattern_filename = replace(cfg.integration_pattern, "{name}" => filename)
     dat_path = joinpath(analysis_dir, pattern_filename)
+
+    # DB-only reads first so the fast path can short-circuit before any file I/O.
+    stored_trace_hash  = read_trace_hash(db, exposure_id)
+    stored_inputs_hash = read_inputs_hash(db, exposure_id)
+    autopeaks_count    = count_auto_peaks(db, exposure_id)
+    indices_count      = count_indices(db, exposure_id)
+
+    new_trace_hash = nothing
+    findpeaks_skipped = false
+    if trace_known_unchanged
+        new_trace_hash = stored_trace_hash
+        findpeaks_skipped = autopeaks_count > 0
+    end
+
+    # Fast path: no file I/O at all when caller guarantees trace unchanged AND
+    # no add curations (which require sharpness from the trace).
+    if findpeaks_skipped && !any_add_curations(db, exposure_id)
+        new_inputs_hash = hash_peak_set_from_db(db, exposure_id)
+        indexpeaks_skipped = (stored_inputs_hash == new_inputs_hash) && (indices_count > 0)
+        if indexpeaks_skipped
+            # Fast-path no-op: skip the durable analyze_run row (M0.4 already drops the SSE frame). The hashes prove no-op-ness; durable counting offers no load-bearing value here.
+            return
+        end
+    end
+
+    # Slow path: from here on, behavior mirrors the pre-refactor implementation.
     isfile(dat_path) || error("dat file not found: $dat_path")
 
-    new_trace_hash = hash_trace_file(dat_path)
-    stored_trace_hash_raw = first(Tables.rowtable(DBInterface.execute(db,
-        "SELECT trace_hash FROM exposures WHERE id = ?", [exposure_id]))).trace_hash
-    stored_trace_hash = ismissing(stored_trace_hash_raw) ? nothing : String(stored_trace_hash_raw)
-
-    autopeaks_count = first(Tables.rowtable(DBInterface.execute(db,
-        "SELECT COUNT(*) AS n FROM auto_peaks WHERE exposure_id = ?", [exposure_id]))).n
-
-    # Full skip predicate: skip only when hash matches AND rows already exist.
-    findpeaks_skipped = (stored_trace_hash == new_trace_hash) && (autopeaks_count > 0)
+    if new_trace_hash === nothing
+        new_trace_hash = hash_trace_file(dat_path)
+        findpeaks_skipped = (stored_trace_hash == new_trace_hash) && (autopeaks_count > 0)
+    end
 
     q, I, σ = load_dat(dat_path)
-    # Hold the live peaks_result when findpeaks runs so we can pass it directly
-    # to persist_analysis! below without round-tripping through the DB. When
-    # findpeaks is skipped, synthesize_peaks_result reconstructs an equivalent
-    # NamedTuple from auto_peaks rows (using persisted findpeaks_index for
-    # exact local-maximum sample fidelity).
     fresh_peaks_result = nothing
     if !findpeaks_skipped
         fresh_peaks_result = Himalaya.findpeaks(q, I, σ)
@@ -623,14 +769,6 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
     eff = effective_peaks(db, exposure_id, q, I)
     new_inputs_hash = hash_peak_set(eff)
 
-    stored_inputs_hash_raw = first(Tables.rowtable(DBInterface.execute(db,
-        "SELECT analysis_inputs_hash FROM exposures WHERE id = ?", [exposure_id]))).analysis_inputs_hash
-    stored_inputs_hash = ismissing(stored_inputs_hash_raw) ? nothing : String(stored_inputs_hash_raw)
-
-    indices_count = first(Tables.rowtable(DBInterface.execute(db,
-        "SELECT COUNT(*) AS n FROM indices WHERE exposure_id = ?", [exposure_id]))).n
-
-    # Full skip predicate: skip only when hash matches AND rows already exist.
     indexpeaks_skipped = (stored_inputs_hash == new_inputs_hash) && (indices_count > 0)
 
     if !indexpeaks_skipped
@@ -650,18 +788,92 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
     end
 
     duration_ms = round(Int, (time() - t0) * 1000)
-    apply_event!(db, _system_request();
+    post_state_size_bytes = _serialized_indices_bytes(db, exposure_id)
+    # PR review issue #12: spec §"SSE frame extension" says analyze_run frames
+    # carry `post_state: { analysis_inputs_hash, indices }`. Without this,
+    # foreign tabs need an extra refetch round-trip after a manual reanalyze.
+    # Skipped on the no-op path (early return above) — that frame is suppressed
+    # entirely by _maybe_broadcast_event! anyway.
+    post_state = Dict{Symbol, Any}(
+        :analysis_inputs_hash => new_inputs_hash,
+        :indices              => _serialized_indices_for_broadcast(db, exposure_id),
+    )
+    # Use the caller's request when supplied so the durable analyze_run row
+    # carries the originating client_op_id (review issue #15: the route's
+    # MAX(id)-sentinel filter is racy under concurrent analyze; filtering by
+    # client_op_id is unambiguous). Falls back to _system_request() for CLI
+    # / pipeline callers that have no request context.
+    apply_event!(db, req === nothing ? _system_request() : req;
         kind        = "analyze_run",
         entity_type = "exposure",
         entity_id   = exposure_id,
         payload     = Dict(
-            :trace_hash_before    => stored_trace_hash,
-            :trace_hash_after     => new_trace_hash,
-            :inputs_hash_before   => stored_inputs_hash,
-            :inputs_hash_after    => new_inputs_hash,
-            :findpeaks_skipped    => findpeaks_skipped,
-            :indexpeaks_skipped   => indexpeaks_skipped,
-            :duration_ms          => duration_ms,
+            :trace_hash_before     => stored_trace_hash,
+            :trace_hash_after      => new_trace_hash,
+            :inputs_hash_before    => stored_inputs_hash,
+            :inputs_hash_after     => new_inputs_hash,
+            :findpeaks_skipped     => findpeaks_skipped,
+            :indexpeaks_skipped    => indexpeaks_skipped,
+            :duration_ms           => duration_ms,
             :effective_peaks_count => length(eff.q),
-        ))
+            :post_state_size_bytes => post_state_size_bytes,
+        ),
+        defer_broadcast = defer_broadcast,
+        post_state      = post_state)
+    nothing
+end
+
+"""
+    _serialized_indices_for_broadcast(db, exposure_id) -> Vector{Dict}
+
+Build the indices array for the SSE `post_state` payload — same shape as the
+`IndexEntry[]` consumed by the frontend: `id`, `exposure_id`, `phase`, `basis`,
+`score`, `r_squared`, `lattice_d`, `status`, `kind`, `inputs_hash`, plus the
+joined `peaks` (each `peak_id`, `ratio_position`, `residual`, `q_observed`)
+and the `predicted_q` array. `ngc` mirrors what `GET /api/exposures/:id/indices`
+emits and is computed lazily by the frontend in some places, but we include it
+here too so the cache can stay authoritative.
+"""
+function _serialized_indices_for_broadcast(db::SQLite.DB, exposure_id::Int)
+    # Suggestion #11: enumerate columns instead of SELECT * so a future
+    # server-internal column doesn't leak into every SSE post_state frame.
+    # The list mirrors the frontend IndexEntry interface (minus the joined
+    # `peaks`/`predicted_q`/`ngc` which are added below).
+    indices = Tables.rowtable(DBInterface.execute(db,
+        """SELECT id, exposure_id, phase, basis, score, r_squared, lattice_d,
+                  status, kind, inputs_hash
+           FROM indices WHERE exposure_id = ? ORDER BY score DESC""",
+        [exposure_id]))
+    isempty(indices) && return Dict[]
+
+    # Suggestion #12: was N+1 (one JOIN per index). Single JOIN, group
+    # client-side. On exposures with many auto-group indices this fires
+    # on every peak mutation/analyze on the SSE hot path.
+    index_ids = Set(Int(ix.id) for ix in indices)
+    all_peak_rows = Tables.rowtable(DBInterface.execute(db,
+        """SELECT ip.index_id, ip.peak_id, ip.ratio_position, ip.residual,
+                  COALESCE(ap.q, pc.q) AS q_observed
+           FROM index_peaks ip
+           LEFT JOIN auto_peaks ap     ON ap.id = ip.peak_id AND ip.peak_kind = 'auto'
+           LEFT JOIN peak_curations pc ON pc.id = ip.peak_id AND ip.peak_kind = 'curation'
+           WHERE ip.index_id IN (SELECT id FROM indices WHERE exposure_id = ?)
+           ORDER BY ip.index_id, ip.ratio_position""",
+        [exposure_id]))
+    peaks_by_index = Dict{Int, Vector{Any}}()
+    for r in all_peak_rows
+        iid = Int(r.index_id)
+        iid in index_ids || continue
+        push!(get!(peaks_by_index, iid, Any[]),
+              Dict(:peak_id        => Int(r.peak_id),
+                   :ratio_position => r.ratio_position,
+                   :residual       => r.residual,
+                   :q_observed     => r.q_observed))
+    end
+    map(indices) do ix
+        d = row_to_json(ix)
+        d[:peaks]       = get(peaks_by_index, Int(ix.id), Any[])
+        d[:predicted_q] = predicted_q_for_phase(String(ix.phase), Float64(ix.basis))
+        d[:ngc]         = _ngc_for_phase(String(ix.phase), ix.lattice_d)
+        d
+    end
 end

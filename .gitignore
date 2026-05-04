@@ -63,3 +63,4 @@ build/
 data/
 .julia/
 
+.scratch/

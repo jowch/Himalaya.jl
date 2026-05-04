@@ -1,7 +1,31 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import * as api from "./api";
 import { useAppState } from "./state";
 import { getClientId } from "./lib/clientId";
+import { useQueueMutation } from "./lib/queue/useQueueMutation";
+import {
+  updateSampleMutator,
+  addSampleTagMutator,
+  removeSampleTagMutator,
+  addExposureTagMutator,
+  removeExposureTagMutator,
+  postSampleMessageMutator,
+  setExposureStatusMutator,
+  selectExposureMutator,
+} from "./lib/queue/mutators/trivial";
+import { peakAddMutator } from "./lib/queue/mutators/peakAdd";
+import { peakRemoveMutator } from "./lib/queue/mutators/peakRemove";
+import {
+  peakExcludeMutator, peakUnexcludeMutator,
+} from "./lib/queue/mutators/peakSetExcluded";
+import {
+  addIndexToGroupMutator,
+  removeIndexFromGroupMutator,
+  deleteIndexMutator,
+} from "./lib/queue/mutators/indexGroup";
+import { createSpeculativeMutator } from "./lib/queue/mutators/createSpeculative";
+import { reanalyzeExposureMutator } from "./lib/queue/mutators/reanalyzeExposure";
+import { useExposureHasPendingPeakOps } from "./lib/queue/hooks";
 
 const CLIENT_ID = getClientId();
 
@@ -85,88 +109,61 @@ export function useIndices(exposureId: number | undefined) {
   });
 }
 
-function invalidateExposure(qc: ReturnType<typeof useQueryClient>, exposureId: number): void {
-  qc.invalidateQueries({ queryKey: queryKeys.peaks(exposureId) });
-  qc.invalidateQueries({ queryKey: queryKeys.indices(exposureId) });
-  // `groups` must invalidate too: auto-reanalysis re-attaches custom-group
-  // members by semantic identity (phase + basis), so the cached `groups`
-  // payload — which carries `members` — is stale until refetched. Without
-  // this, the right-rail Active set looks empty after every peak edit even
-  // though the backend has the correct membership.
-  qc.invalidateQueries({ queryKey: queryKeys.groups(exposureId) });
-}
-
-function authOpts(
-  username: string | undefined,
-  clientId: string | undefined,
-): api.AuthOpts {
-  const out: api.AuthOpts = {};
-  if (username !== undefined) out.username = username;
-  if (clientId !== undefined) out.clientId = clientId;
-  return out;
-}
-
-// After any peak edit we automatically re-run analysis so the indices reflect
-// the user's curation immediately — no "stale" intermediate state. Each peak
-// mutation chains: peak op → reanalyze → invalidate exposure queries.
-async function autoReanalyze(
-  exposureId: number,
-  username: string | undefined,
-): Promise<void> {
-  try {
-    await api.reanalyzeExposure(exposureId, authOpts(username, CLIENT_ID));
-  } catch (e) {
-    // Best-effort: surface a console warning but don't block the peak edit.
-    // eslint-disable-next-line no-console
-    console.warn("auto-reanalyze failed", e);
-  }
-}
-
 export function useAddPeak(exposureId: number) {
-  const qc = useQueryClient();
   const username = useAppState((s) => s.username);
-  return useMutation({
-    mutationFn: async (q: number) => {
-      const peak = await api.addPeak(exposureId, q, authOpts(username, CLIENT_ID));
-      await autoReanalyze(exposureId, username);
-      return peak;
-    },
-    onSuccess: () => invalidateExposure(qc, exposureId),
-  });
+  const inner = useQueueMutation(
+    peakAddMutator,
+    { exposureId, username, clientId: CLIENT_ID },
+  );
+  return {
+    ...inner,
+    mutate: (q: number) => inner.mutate({ q }),
+  };
 }
 
 export function useRemovePeak(exposureId: number) {
-  const qc = useQueryClient();
   const username = useAppState((s) => s.username);
-  return useMutation({
-    mutationFn: async (peakId: number) => {
-      await api.removePeak(peakId, authOpts(username, CLIENT_ID));
-      await autoReanalyze(exposureId, username);
-    },
-    onSuccess: () => invalidateExposure(qc, exposureId),
-  });
+  const inner = useQueueMutation(
+    peakRemoveMutator,
+    { exposureId, username, clientId: CLIENT_ID },
+  );
+  return {
+    ...inner,
+    mutate: (peakId: number) => inner.mutate({ peakId }),
+  };
 }
 
+// `useSetPeakExcluded` decomposes into two mutators because the backend uses
+// distinct event kinds (`peak_excluded`, `peak_unexcluded`). The hook routes
+// the call to the correct mutator based on `excluded` and presents a unified
+// `mutate({ peakId, excluded })` surface so existing consumers stay unchanged.
 export function useSetPeakExcluded(exposureId: number) {
-  const qc = useQueryClient();
   const username = useAppState((s) => s.username);
-  return useMutation({
-    mutationFn: async ({ peakId, excluded }: { peakId: number; excluded: boolean }) => {
-      const out = await api.setPeakExcluded(peakId, excluded, authOpts(username, CLIENT_ID));
-      await autoReanalyze(exposureId, username);
-      return out;
+  const exclude = useQueueMutation(
+    peakExcludeMutator,
+    { exposureId, username, clientId: CLIENT_ID },
+  );
+  const unexclude = useQueueMutation(
+    peakUnexcludeMutator,
+    { exposureId, username, clientId: CLIENT_ID },
+  );
+  return {
+    mutate: (input: { peakId: number; excluded: boolean }) => {
+      if (input.excluded) exclude.mutate({ peakId: input.peakId });
+      else unexclude.mutate({ peakId: input.peakId });
     },
-    onSuccess: () => invalidateExposure(qc, exposureId),
-  });
+    isPending: exclude.isPending || unexclude.isPending,
+    error: exclude.error ?? unexclude.error,
+    reset: () => { exclude.reset(); unexclude.reset(); },
+  };
 }
 
 export function useReanalyzeExposure(exposureId: number) {
-  const qc = useQueryClient();
   const username = useAppState((s) => s.username);
-  return useMutation({
-    mutationFn: () => api.reanalyzeExposure(exposureId, authOpts(username, CLIENT_ID)),
-    onSuccess: () => invalidateExposure(qc, exposureId),
-  });
+  return useQueueMutation(
+    reanalyzeExposureMutator,
+    { exposureId, username, clientId: CLIENT_ID },
+  );
 }
 
 export function useGroups(exposureId: number | undefined) {
@@ -178,91 +175,84 @@ export function useGroups(exposureId: number | undefined) {
 }
 
 export function useAddIndexToGroup(exposureId: number, groupId: number) {
-  const qc = useQueryClient();
   const username = useAppState((s) => s.username);
-  return useMutation({
-    mutationFn: (indexId: number) =>
-      api.addIndexToGroup(groupId, indexId, authOpts(username, CLIENT_ID)),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.groups(exposureId) }),
-  });
+  const inner = useQueueMutation(
+    addIndexToGroupMutator,
+    { exposureId, groupId, username, clientId: CLIENT_ID },
+  );
+  return {
+    ...inner,
+    mutate: (indexId: number) => inner.mutate({ indexId }),
+  };
 }
 
 export function useRemoveIndexFromGroup(exposureId: number, groupId: number) {
-  const qc = useQueryClient();
   const username = useAppState((s) => s.username);
-  return useMutation({
-    mutationFn: (indexId: number) =>
-      api.removeIndexFromGroup(groupId, indexId, authOpts(username, CLIENT_ID)),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.groups(exposureId) }),
-  });
+  const inner = useQueueMutation(
+    removeIndexFromGroupMutator,
+    { exposureId, groupId, username, clientId: CLIENT_ID },
+  );
+  return {
+    ...inner,
+    mutate: (indexId: number) => inner.mutate({ indexId }),
+  };
 }
 
 // Speculative-snap is a query keyed on (exposureId, phase, anchorPeakId, anchorRatio).
 // The hook is enabled-gated because the builder calls it after a phase + anchor
-// are both chosen — never on partial input.
+// are both chosen — never on partial input. M2.4 also gates on
+// `useExposureHasPendingPeakOps`: while a peak-affecting op is in flight the
+// snap response would reflect a stale peak set, so we suspend the query and
+// the SpeculativeBuilder keeps showing the last good snap with an "updating"
+// indicator until the op settles.
 export function useSpeculativeSnap(
   exposureId: number | undefined,
   phase: string | undefined,
   anchorPeakId: number | undefined,
   anchorRatio: number,
 ) {
+  const blocked = useExposureHasPendingPeakOps(exposureId);
   return useQuery({
     queryKey: ["exposure", exposureId ?? "none", "speculative-snap", phase ?? "", anchorPeakId ?? -1, anchorRatio] as const,
     queryFn: () => api.getSpeculativeSnap(exposureId as number, phase as string, anchorPeakId as number, anchorRatio),
-    enabled: exposureId !== undefined && phase !== undefined && anchorPeakId !== undefined,
+    enabled: exposureId !== undefined && phase !== undefined && anchorPeakId !== undefined && !blocked,
   });
 }
 
 export function useCreateSpeculative(exposureId: number) {
-  const qc = useQueryClient();
   const username = useAppState((s) => s.username);
-  return useMutation({
-    mutationFn: (body: {
-      phase: string;
-      anchor_peak_id: number;
-      anchor_ratio: number;
-      additional: api.SpeculativeAdditional[];
-      active?: boolean;
-    }) => api.createSpeculative(exposureId, body, authOpts(username, CLIENT_ID)),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.indices(exposureId) });
-      qc.invalidateQueries({ queryKey: queryKeys.groups(exposureId) });
-    },
-  });
+  return useQueueMutation(
+    createSpeculativeMutator,
+    { exposureId, username, clientId: CLIENT_ID },
+  );
 }
 
 export function useDeleteIndex(exposureId: number) {
-  const qc = useQueryClient();
   const username = useAppState((s) => s.username);
-  return useMutation({
-    mutationFn: (indexId: number) => api.deleteIndex(indexId, authOpts(username, CLIENT_ID)),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.indices(exposureId) });
-      qc.invalidateQueries({ queryKey: queryKeys.groups(exposureId) });
-    },
-  });
+  const inner = useQueueMutation(
+    deleteIndexMutator,
+    { exposureId, username, clientId: CLIENT_ID },
+  );
+  return {
+    ...inner,
+    mutate: (indexId: number) => inner.mutate({ indexId }),
+  };
 }
 
 export function useUpdateSample(experimentId: number, sampleId: number) {
-  const qc = useQueryClient();
   const username = useAppState((s) => s.username);
-  return useMutation({
-    mutationFn: (patch: { name?: string; notes?: string }) =>
-      api.updateSample(sampleId, patch, authOpts(username, CLIENT_ID)),
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: queryKeys.samples(experimentId) }),
-  });
+  return useQueueMutation(
+    updateSampleMutator,
+    { experimentId, sampleId, username, clientId: CLIENT_ID },
+  );
 }
 
 export function useAddSampleTag(experimentId: number, sampleId: number) {
-  const qc = useQueryClient();
   const username = useAppState((s) => s.username);
-  return useMutation({
-    mutationFn: ({ key, value }: { key: string; value: string }) =>
-      api.addSampleTag(sampleId, key, value, authOpts(username, CLIENT_ID)),
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: queryKeys.samples(experimentId) }),
-  });
+  return useQueueMutation(
+    addSampleTagMutator,
+    { experimentId, sampleId, username, clientId: CLIENT_ID },
+  );
 }
 
 export function useSampleMessages(sampleId: number | undefined) {
@@ -273,75 +263,65 @@ export function useSampleMessages(sampleId: number | undefined) {
   });
 }
 
+// Adapter: useQueueMutation flat-spreads input into the payload, but the
+// existing consumers call `postMsg.mutate(body: string)`. Wrap to package the
+// string under a `body` key for the mutator.
 export function usePostSampleMessage(sampleId: number) {
-  const qc = useQueryClient();
   const username = useAppState((s) => s.username);
-  return useMutation({
-    mutationFn: (body: string) =>
-      api.postSampleMessage(sampleId, body, authOpts(username, CLIENT_ID)),
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: queryKeys.messages(sampleId) }),
-  });
+  const inner = useQueueMutation(
+    postSampleMessageMutator,
+    { sampleId, username, clientId: CLIENT_ID },
+  );
+  return {
+    ...inner,
+    mutate: (body: string) => inner.mutate({ body }),
+  };
 }
 
 export function useRemoveSampleTag(experimentId: number, sampleId: number) {
-  const qc = useQueryClient();
   const username = useAppState((s) => s.username);
-  return useMutation({
-    mutationFn: (tagId: number) =>
-      api.removeSampleTag(sampleId, tagId, authOpts(username, CLIENT_ID)),
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: queryKeys.samples(experimentId) }),
-  });
+  const inner = useQueueMutation(
+    removeSampleTagMutator,
+    { experimentId, sampleId, username, clientId: CLIENT_ID },
+  );
+  return {
+    ...inner,
+    mutate: (tagId: number) => inner.mutate({ tagId }),
+  };
 }
 
 export function useSetExposureStatus(sampleId: number) {
-  const qc = useQueryClient();
   const username = useAppState((s) => s.username);
-  return useMutation({
-    mutationFn: ({ exposureId, status }: {
-      exposureId: number;
-      status: "accepted" | "rejected" | null;
-    }) => api.setExposureStatus(exposureId, status, authOpts(username, CLIENT_ID)),
-    // queryKeys.exposures(id) returns the prefix ["sample", id, "exposures"];
-    // TanStack Query invalidateQueries matches by prefix, so this single
-    // call covers both excludeRejected variants (and any future variant).
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: queryKeys.exposures(sampleId) }),
-  });
+  return useQueueMutation(setExposureStatusMutator, { sampleId, username, clientId: CLIENT_ID });
 }
 
 export function useSelectExposure(sampleId: number) {
-  const qc = useQueryClient();
   const username = useAppState((s) => s.username);
-  return useMutation({
-    mutationFn: (exposureId: number) =>
-      api.selectExposure(exposureId, authOpts(username, CLIENT_ID)),
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: queryKeys.exposures(sampleId) }),
-  });
+  const inner = useQueueMutation(selectExposureMutator, { sampleId, username, clientId: CLIENT_ID });
+  return {
+    ...inner,
+    mutate: (exposureId: number) => inner.mutate({ exposureId }),
+  };
 }
 
 export function useAddExposureTag(sampleId: number, exposureId: number) {
-  const qc = useQueryClient();
   const username = useAppState((s) => s.username);
-  return useMutation({
-    mutationFn: ({ key, value }: { key: string; value: string }) =>
-      api.addExposureTag(exposureId, key, value, authOpts(username, CLIENT_ID)),
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: queryKeys.exposures(sampleId) }),
-  });
+  return useQueueMutation(
+    addExposureTagMutator,
+    { sampleId, exposureId, username, clientId: CLIENT_ID },
+  );
 }
 
 export function useRemoveExposureTag(sampleId: number, exposureId: number) {
-  const qc = useQueryClient();
   const username = useAppState((s) => s.username);
-  return useMutation({
-    mutationFn: (tagId: number) =>
-      api.removeExposureTag(exposureId, tagId, authOpts(username, CLIENT_ID)),
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: queryKeys.exposures(sampleId) }),
-  });
+  const inner = useQueueMutation(
+    removeExposureTagMutator,
+    { sampleId, exposureId, username, clientId: CLIENT_ID },
+  );
+  return {
+    ...inner,
+    mutate: (tagId: number) => inner.mutate({ tagId }),
+  };
 }
 
 export function usePeak(id: number | undefined) {

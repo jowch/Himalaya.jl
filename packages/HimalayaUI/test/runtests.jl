@@ -7,6 +7,7 @@ using Test
     include("test_manifest.jl")
     include("test_hash.jl")
     include("test_pipeline.jl")
+    include("test_fast_skip.jl")
     include("test_json.jl")
     include("test_http.jl")
     include("test_routes_health.jl")
@@ -28,4 +29,9 @@ using Test
     include("test_actions.jl")
     include("test_events.jl")
     include("test_sse.jl")
+    include("test_routes_sse_broadcast.jl")
+    include("test_route_response_shapes.jl")
+    include("test_route_validation_routing.jl")
+    include("test_idempotency.jl")
+    include("test_idempotency_replay_invariant.jl")
 end

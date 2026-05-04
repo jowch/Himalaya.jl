@@ -171,6 +171,76 @@ end
     end
 end
 
+@testset "apply_event! persists client_op_id when X-Client-Op-Id header present" begin
+    mktempdir() do tmp
+        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+        HimalayaUI.bind_db!(db)
+        exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
+        eid    = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="e1")
+        req = HTTP.Request("POST", "/x",
+            ["X-Username" => "alice", "X-Client-Op-Id" => "uuid-abc"], UInt8[])
+        result = HimalayaUI.apply_event!(db, req;
+            kind="noop_test", entity_type="exposure", entity_id=eid, payload=Dict(:q=>1.0))
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT client_op_id FROM user_actions WHERE id = ?", [result.event_id]))
+        @test String(rows[1].client_op_id) == "uuid-abc"
+    end
+end
+
+@testset "apply_event! writes NULL client_op_id when header absent" begin
+    mktempdir() do tmp
+        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+        HimalayaUI.bind_db!(db)
+        exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
+        eid    = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="e1")
+        req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
+        result = HimalayaUI.apply_event!(db, req;
+            kind="noop_test", entity_type="exposure", entity_id=eid, payload=Dict(:q=>1.0))
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT client_op_id FROM user_actions WHERE id = ?", [result.event_id]))
+        @test ismissing(rows[1].client_op_id)
+    end
+end
+
+@testset "rebuild_views_from_log! tolerates rows with NULL/non-NULL client_op_id mix" begin
+    mktempdir() do tmp
+        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+        HimalayaUI.bind_db!(db)
+        exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
+        e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="e1")
+        DBInterface.execute(db,
+            "INSERT INTO auto_peaks (exposure_id, q, sharpness) VALUES (?, 0.10, 1.0)", [e_id])
+
+        # Mix: one event without X-Client-Op-Id (NULL), one with.
+        req_no  = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
+        req_yes = HTTP.Request("POST", "/x",
+            ["X-Username" => "alice", "X-Client-Op-Id" => "uuid-1"], UInt8[])
+        HimalayaUI.apply_event!(db, req_no;
+            kind="peak_added", entity_type="exposure", entity_id=e_id,
+            payload=Dict(:q => 0.20))
+        HimalayaUI.apply_event!(db, req_yes;
+            kind="peak_added", entity_type="exposure", entity_id=e_id,
+            payload=Dict(:q => 0.30))
+
+        # Snapshot live state, wipe, rebuild.
+        before = Tables.rowtable(DBInterface.execute(db,
+            "SELECT exposure_id, kind, q FROM peak_curations WHERE exposure_id = ? ORDER BY q",
+            [e_id]))
+        DBInterface.execute(db, "DELETE FROM peak_curations WHERE exposure_id = ?", [e_id])
+        HimalayaUI.rebuild_views_from_log!(db, Int(e_id))
+        after = Tables.rowtable(DBInterface.execute(db,
+            "SELECT exposure_id, kind, q FROM peak_curations WHERE exposure_id = ? ORDER BY q",
+            [e_id]))
+
+        @test length(before) == length(after) == 2
+        @test Set([(String(r.kind), Float64(r.q)) for r in before]) ==
+              Set([(String(r.kind), Float64(r.q)) for r in after])
+    end
+end
+
 @testset "rebuild_views_from_log! tolerates rows with NULL client_id" begin
     mktempdir() do tmp
         db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
@@ -219,5 +289,158 @@ end
         rows2 = Tables.rowtable(DBInterface.execute(db,
             "SELECT entity_type FROM user_actions WHERE action = 'add_peak'"))
         @test String(rows2[1].entity_type) == "exposure"
+    end
+end
+
+@testset "apply_event! with defer_broadcast=true does NOT fire broadcast" begin
+    sub = (id = "t-defer", pending = Channel{String}(8))
+    lock(HimalayaUI.SSE_LOCK) do
+        push!(HimalayaUI.SSE_SUBSCRIBERS[], sub)
+    end
+    try
+        mktempdir() do tmp
+            db = HimalayaUI.open_db(joinpath(tmp, "test.db"))
+            HimalayaUI.bind_db!(db)
+            exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+            s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
+            e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="e1")
+            req = HTTP.Request("POST", "/", Pair{String,String}[], UInt8[])
+            result = HimalayaUI.apply_event!(db, req;
+                kind="noop_test", entity_type="exposure", entity_id=e_id,
+                payload=Dict(:q => 1.0),
+                defer_broadcast=true)
+            @test Base.n_avail(sub.pending) == 0
+            @test result.event_id > 0
+            rows = Tables.rowtable(DBInterface.execute(db,
+                "SELECT id FROM user_actions WHERE id = ?", [result.event_id]))
+            @test length(rows) == 1
+            SQLite.close(db)
+        end
+    finally
+        lock(HimalayaUI.SSE_LOCK) do
+            filter!(x -> x !== sub, HimalayaUI.SSE_SUBSCRIBERS[])
+        end
+        close(sub.pending)
+        HimalayaUI.SSE_SUBSCRIBERS[] = []
+    end
+end
+
+@testset "apply_event! defer_broadcast=false (default) preserves existing behavior" begin
+    sub = (id = "t-default", pending = Channel{String}(8))
+    lock(HimalayaUI.SSE_LOCK) do
+        push!(HimalayaUI.SSE_SUBSCRIBERS[], sub)
+    end
+    try
+        mktempdir() do tmp
+            db = HimalayaUI.open_db(joinpath(tmp, "test.db"))
+            HimalayaUI.bind_db!(db)
+            exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+            s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
+            e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="e1")
+            req = HTTP.Request("POST", "/", Pair{String,String}[], UInt8[])
+            HimalayaUI.apply_event!(db, req;
+                kind="noop_test", entity_type="exposure", entity_id=e_id,
+                payload=Dict(:q => 1.0))
+            @test Base.n_avail(sub.pending) == 1
+            SQLite.close(db)
+        end
+    finally
+        lock(HimalayaUI.SSE_LOCK) do
+            filter!(x -> x !== sub, HimalayaUI.SSE_SUBSCRIBERS[])
+        end
+        close(sub.pending)
+        HimalayaUI.SSE_SUBSCRIBERS[] = []
+    end
+end
+
+@testset "I2: apply_event! with same (client_op_id, action, entity) returns existing event_id" begin
+    mktempdir() do tmp
+        db = HimalayaUI.open_db(joinpath(tmp, "test.db"))
+        # Seed FK chain.
+        DBInterface.execute(db,
+            "INSERT INTO experiments (name, path, data_dir, analysis_dir) VALUES ('e', '/p', '/d', '/a')")
+        DBInterface.execute(db,
+            "INSERT INTO samples (experiment_id, label) VALUES (1, 'A1')")
+        res = DBInterface.execute(db,
+            "INSERT INTO exposures (sample_id, filename) VALUES (1, 'f')")
+        exp_id = Int(DBInterface.lastrowid(res))
+
+        req = HTTP.Request("POST", "/", ["X-Client-Op-Id" => "op-dup"], UInt8[])
+        r1 = HimalayaUI.apply_event!(db, req;
+            kind="peak_added", entity_type="exposure", entity_id=exp_id,
+            payload=Dict(:q => 1.0))
+        r2 = HimalayaUI.apply_event!(db, req;
+            kind="peak_added", entity_type="exposure", entity_id=exp_id,
+            payload=Dict(:q => 1.0))
+        @test r1.event_id == r2.event_id
+
+        # Only one user_actions row exists for this op tuple.
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM user_actions WHERE client_op_id = 'op-dup'"))
+        @test length(rows) == 1
+
+        # Only one peak_curations row exists (the dispatcher's first INSERT).
+        crows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM peak_curations WHERE exposure_id = ?", [exp_id]))
+        @test length(crows) == 1
+        SQLite.close(db)
+    end
+end
+
+@testset "I2: apply_event!(::InTransaction, ...) participates in caller's transaction" begin
+    mktempdir() do tmp
+        db = HimalayaUI.open_db(joinpath(tmp, "test.db"))
+        DBInterface.execute(db,
+            "INSERT INTO experiments (name, path, data_dir, analysis_dir) VALUES ('e', '/p', '/d', '/a')")
+        DBInterface.execute(db,
+            "INSERT INTO samples (experiment_id, label) VALUES (1, 'A1')")
+        res = DBInterface.execute(db,
+            "INSERT INTO exposures (sample_id, filename) VALUES (1, 'f')")
+        exp_id = Int(DBInterface.lastrowid(res))
+
+        req = HTTP.Request("POST", "/", ["X-Client-Op-Id" => "op-intx"], UInt8[])
+        SQLite.transaction(db) do
+            r = HimalayaUI.apply_event!(HimalayaUI.InTransaction(), db, req;
+                kind="peak_added", entity_type="exposure", entity_id=exp_id,
+                payload=Dict(:q => 2.0))
+            @test r.event_id > 0
+        end
+        # Row durable after outer commit.
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM user_actions WHERE client_op_id = 'op-intx'"))
+        @test length(rows) == 1
+        SQLite.close(db)
+    end
+end
+
+@testset "I2: apply_event!(::InTransaction, ...) rolls back with caller's tx on throw" begin
+    mktempdir() do tmp
+        db = HimalayaUI.open_db(joinpath(tmp, "test.db"))
+        DBInterface.execute(db,
+            "INSERT INTO experiments (name, path, data_dir, analysis_dir) VALUES ('e', '/p', '/d', '/a')")
+        DBInterface.execute(db,
+            "INSERT INTO samples (experiment_id, label) VALUES (1, 'A1')")
+        res = DBInterface.execute(db,
+            "INSERT INTO exposures (sample_id, filename) VALUES (1, 'f')")
+        exp_id = Int(DBInterface.lastrowid(res))
+
+        req = HTTP.Request("POST", "/", ["X-Client-Op-Id" => "op-roll"], UInt8[])
+        try
+            SQLite.transaction(db) do
+                HimalayaUI.apply_event!(HimalayaUI.InTransaction(), db, req;
+                    kind="peak_added", entity_type="exposure", entity_id=exp_id,
+                    payload=Dict(:q => 3.0))
+                error("intentional failure after apply_event!")
+            end
+        catch
+        end
+        # No row persisted — outer tx rolled back.
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM user_actions WHERE client_op_id = 'op-roll'"))
+        @test isempty(rows)
+        crows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM peak_curations WHERE exposure_id = ?", [exp_id]))
+        @test isempty(crows)
+        SQLite.close(db)
     end
 end

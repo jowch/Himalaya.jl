@@ -24,7 +24,7 @@ using HimalayaUI
 
             HimalayaUI.broadcast_event!(
                 1, "test_broadcast", "exposure", 42,
-                user_id, JSON3.write(Dict(:foo => "bar")), "tab-xyz")
+                user_id, "tab-xyz", "uuid-789", JSON3.write(Dict(:foo => "bar")))
 
             @test isready(pending)
             frame = take!(pending)
@@ -34,6 +34,17 @@ using HimalayaUI
             @test occursin("\"entity_id\":42", frame)
             @test occursin("\"entity_type\":\"exposure\"", frame)
             @test occursin("\"client_id\":\"tab-xyz\"", frame)
+            @test occursin("\"client_op_id\":\"uuid-789\"", frame)
+
+            # Parse JSON to assert ts + client_op_id keys present.
+            data_line = first([l for l in split(frame, '\n') if startswith(l, "data: ")])
+            json_str = replace(data_line, r"^data: " => "")
+            obj = JSON3.read(json_str)
+            @test haskey(obj, :client_op_id)
+            @test haskey(obj, :ts)
+            @test obj.client_op_id == "uuid-789"
+            @test obj.ts isa AbstractString
+            @test occursin(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$", obj.ts)
 
             # Payload is embedded in the frame.
             @test occursin("\"foo\"", frame)
@@ -61,13 +72,20 @@ end
         try
             HimalayaUI.broadcast_event!(
                 2, "anon_event", "exposure", 7,
-                nothing, nothing, nothing)
+                nothing, nothing, nothing, nothing)
 
             @test isready(pending)
             frame = take!(pending)
             @test occursin("event: curation", frame)
             @test occursin("\"actor\":null", frame)
             @test occursin("\"client_id\":null", frame)
+            @test occursin("\"client_op_id\":null", frame)
+
+            data_line = first([l for l in split(frame, '\n') if startswith(l, "data: ")])
+            obj = JSON3.read(replace(data_line, r"^data: " => ""))
+            @test haskey(obj, :client_op_id)
+            @test haskey(obj, :ts)
+            @test occursin(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$", obj.ts)
         finally
             lock(HimalayaUI.SSE_LOCK) do
                 filter!(x -> x !== sub, HimalayaUI.SSE_SUBSCRIBERS[])
@@ -97,7 +115,7 @@ end
         try
             HimalayaUI.broadcast_event!(
                 3, "prune_test", "exposure", 1,
-                nothing, nothing, nothing)
+                nothing, nothing, nothing, nothing)
 
             # Dead sub should have been pruned.
             n = lock(HimalayaUI.SSE_LOCK) do
@@ -141,7 +159,7 @@ end
             for i in 1:6
                 HimalayaUI.broadcast_event!(
                     i, "slow_test", "exposure", 1,
-                    nothing, nothing, nothing)
+                    nothing, nothing, nothing, nothing)
             end
 
             # Slow subscriber should have been pruned after its channel filled.
@@ -158,6 +176,195 @@ end
             end
             close(slow)
             close(live)
+            HimalayaUI.SSE_SUBSCRIBERS[] = []
+        end
+    end
+end
+
+@testset "SSE: analyze_run with both skip flags true does NOT broadcast" begin
+    mktempdir() do tmp
+        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+        HimalayaUI.bind_db!(db)
+
+        # Seed FK chain so apply_event! on entity_id=1 succeeds.
+        DBInterface.execute(db,
+            "INSERT INTO experiments (name, path, data_dir, analysis_dir) VALUES ('e', '/p', '/d', '/a')")
+        DBInterface.execute(db,
+            "INSERT INTO samples (experiment_id, label) VALUES (1, 'A1')")
+        DBInterface.execute(db,
+            "INSERT INTO exposures (sample_id, filename) VALUES (1, 'f')")
+
+        pending = Channel{String}(64)
+        sub = (pending = pending,)
+        lock(HimalayaUI.SSE_LOCK) do
+            push!(HimalayaUI.SSE_SUBSCRIBERS[], sub)
+        end
+
+        try
+            req = HimalayaUI._system_request()
+            result = HimalayaUI.apply_event!(db, req;
+                kind = "analyze_run",
+                entity_type = "exposure",
+                entity_id = 1,
+                payload = Dict(:findpeaks_skipped => true,
+                               :indexpeaks_skipped => true,
+                               :duration_ms => 0))
+
+            # No frame should have been enqueued.
+            @test Base.n_avail(pending) == 0
+
+            # But the user_actions row IS still written.
+            rows = Tables.rowtable(DBInterface.execute(db,
+                "SELECT id, action FROM user_actions WHERE id = ?", [result.event_id]))
+            @test length(rows) == 1
+            @test String(rows[1].action) == "analyze_run"
+        finally
+            lock(HimalayaUI.SSE_LOCK) do
+                filter!(x -> x !== sub, HimalayaUI.SSE_SUBSCRIBERS[])
+            end
+            close(pending)
+            HimalayaUI.SSE_SUBSCRIBERS[] = []
+        end
+    end
+end
+
+@testset "SSE: analyze_run with one skip flag true DOES broadcast" begin
+    mktempdir() do tmp
+        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+        HimalayaUI.bind_db!(db)
+
+        DBInterface.execute(db,
+            "INSERT INTO experiments (name, path, data_dir, analysis_dir) VALUES ('e', '/p', '/d', '/a')")
+        DBInterface.execute(db,
+            "INSERT INTO samples (experiment_id, label) VALUES (1, 'A1')")
+        DBInterface.execute(db,
+            "INSERT INTO exposures (sample_id, filename) VALUES (1, 'f')")
+
+        pending = Channel{String}(64)
+        sub = (pending = pending,)
+        lock(HimalayaUI.SSE_LOCK) do
+            push!(HimalayaUI.SSE_SUBSCRIBERS[], sub)
+        end
+
+        try
+            req = HimalayaUI._system_request()
+            HimalayaUI.apply_event!(db, req;
+                kind = "analyze_run",
+                entity_type = "exposure",
+                entity_id = 1,
+                payload = Dict(:findpeaks_skipped => true,
+                               :indexpeaks_skipped => false,
+                               :duration_ms => 5))
+
+            @test Base.n_avail(pending) == 1
+            frame = take!(pending)
+            @test occursin("event: curation", frame)
+            data_line = first([l for l in split(frame, '\n') if startswith(l, "data: ")])
+            obj = JSON3.read(replace(data_line, r"^data: " => ""))
+            @test obj.kind == "analyze_run"
+        finally
+            lock(HimalayaUI.SSE_LOCK) do
+                filter!(x -> x !== sub, HimalayaUI.SSE_SUBSCRIBERS[])
+            end
+            close(pending)
+            HimalayaUI.SSE_SUBSCRIBERS[] = []
+        end
+    end
+end
+
+@testset "SSE: non-analyze_run events broadcast regardless of skip flags in payload" begin
+    mktempdir() do tmp
+        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+        HimalayaUI.bind_db!(db)
+
+        DBInterface.execute(db,
+            "INSERT INTO experiments (name, path, data_dir, analysis_dir) VALUES ('e', '/p', '/d', '/a')")
+        DBInterface.execute(db,
+            "INSERT INTO samples (experiment_id, label) VALUES (1, 'A1')")
+        DBInterface.execute(db,
+            "INSERT INTO exposures (sample_id, filename) VALUES (1, 'f')")
+
+        pending = Channel{String}(64)
+        sub = (pending = pending,)
+        lock(HimalayaUI.SSE_LOCK) do
+            push!(HimalayaUI.SSE_SUBSCRIBERS[], sub)
+        end
+
+        try
+            # peak_added would normally come from a user route; build a real HTTP.Request.
+            req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
+            HimalayaUI.apply_event!(db, req;
+                kind = "peak_added",
+                entity_type = "exposure",
+                entity_id = 1,
+                payload = Dict(:q => 0.123,
+                               :findpeaks_skipped => true,
+                               :indexpeaks_skipped => true))
+
+            @test Base.n_avail(pending) == 1
+            frame = take!(pending)
+            data_line = first([l for l in split(frame, '\n') if startswith(l, "data: ")])
+            obj = JSON3.read(replace(data_line, r"^data: " => ""))
+            @test obj.kind == "peak_added"
+        finally
+            lock(HimalayaUI.SSE_LOCK) do
+                filter!(x -> x !== sub, HimalayaUI.SSE_SUBSCRIBERS[])
+            end
+            close(pending)
+            HimalayaUI.SSE_SUBSCRIBERS[] = []
+        end
+    end
+end
+
+@testset "SSE: broadcast_event! emits post_state when provided" begin
+    mktempdir() do dir
+        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        HimalayaUI.bind_db!(db)
+        sub = (id = "t-postst", pending = Channel{String}(8))
+        lock(HimalayaUI.SSE_LOCK) do
+            push!(HimalayaUI.SSE_SUBSCRIBERS[], sub)
+        end
+        try
+            HimalayaUI.broadcast_event!(1, "peak_added", "exposure", 42,
+                nothing, "tab-id", "op-id", JSON3.write(Dict(:q => 1.0));
+                post_state = Dict(:analysis_inputs_hash => "abc123", :indices => Any[]))
+            frame = take!(sub.pending)
+            data_line = first([l for l in split(frame, '\n') if startswith(l, "data: ")])
+            json_str = replace(data_line, r"^data: " => "")
+            obj = JSON3.read(json_str)
+            @test haskey(obj, :post_state)
+            @test obj.post_state.analysis_inputs_hash == "abc123"
+        finally
+            lock(HimalayaUI.SSE_LOCK) do
+                filter!(x -> x !== sub, HimalayaUI.SSE_SUBSCRIBERS[])
+            end
+            close(sub.pending)
+            HimalayaUI.SSE_SUBSCRIBERS[] = []
+        end
+    end
+end
+
+@testset "SSE: broadcast_event! omits post_state when not provided" begin
+    mktempdir() do dir
+        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        HimalayaUI.bind_db!(db)
+        sub = (id = "t-no-postst", pending = Channel{String}(8))
+        lock(HimalayaUI.SSE_LOCK) do
+            push!(HimalayaUI.SSE_SUBSCRIBERS[], sub)
+        end
+        try
+            HimalayaUI.broadcast_event!(1, "peak_added", "exposure", 42,
+                nothing, "tab-id", "op-id", JSON3.write(Dict(:q => 1.0)))
+            frame = take!(sub.pending)
+            data_line = first([l for l in split(frame, '\n') if startswith(l, "data: ")])
+            json_str = replace(data_line, r"^data: " => "")
+            obj = JSON3.read(json_str)
+            @test !haskey(obj, :post_state)
+        finally
+            lock(HimalayaUI.SSE_LOCK) do
+                filter!(x -> x !== sub, HimalayaUI.SSE_SUBSCRIBERS[])
+            end
+            close(sub.pending)
             HimalayaUI.SSE_SUBSCRIBERS[] = []
         end
     end

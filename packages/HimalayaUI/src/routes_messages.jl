@@ -47,19 +47,28 @@ function register_messages_routes!()
                 JSON3.write(Dict(:error => "message body required")))
         end
 
-        author_id = get_or_create_user!(db, username)
-        res = DBInterface.execute(db,
-            "INSERT INTO sample_messages (sample_id, author_id, body) VALUES (?, ?, ?)",
-            [id, author_id, text])
-        msg_id = Int(DBInterface.lastrowid(res))
+        return with_idempotency(db, req) do
+            author_id = get_or_create_user!(db, username)
+            res = DBInterface.execute(db,
+                "INSERT INTO sample_messages (sample_id, author_id, body) VALUES (?, ?, ?)",
+                [id, author_id, text])
+            msg_id = Int(DBInterface.lastrowid(res))
 
-        sql = select_message_sql("WHERE m.id = ?")
-        row = Tables.rowtable(DBInterface.execute(db, sql, [msg_id]))[1]
+            sql = select_message_sql("WHERE m.id = ?")
+            row = Tables.rowtable(DBInterface.execute(db, sql, [msg_id]))[1]
+            msg_json = row_to_json(row)
 
-        log_action!(db, req; action = "add_message",
-            entity_type = "sample_message", entity_id = msg_id)
+            # Payload mirrors the full SampleMessage row so applyRemoteToCache
+            # can spread it directly into the messages cache.
+            result = apply_event!(InTransaction(), db, req;
+                kind = "post_message",
+                entity_type = "sample_message", entity_id = msg_id,
+                payload = msg_json)
+            _enqueue_broadcast_from_result!(result, "post_message",
+                "sample_message", msg_id)
 
-        HTTP.Response(201, ["Content-Type" => "application/json"],
-            JSON3.write(row_to_json(row)))
+            HTTP.Response(201, ["Content-Type" => "application/json"],
+                JSON3.write(msg_json))
+        end
     end
 end

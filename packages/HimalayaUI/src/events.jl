@@ -1,4 +1,18 @@
 using JSON3, SQLite, DBInterface, HTTP, Tables
+using Dates: now, UTC, format, @dateformat_str
+
+"""
+    InTransaction
+
+Sentinel singleton type indicating the caller has already opened a SQLite
+transaction. Use the `apply_event!(::InTransaction, db, req; ...)` method
+to participate in that transaction rather than opening a nested one. This
+exists so `with_idempotency` can wrap the entire event-write + cache-write
+sequence in a single atomic transaction — closing the I2 crash window where
+the event row would commit but the cache row wouldn't, allowing duplicate
+events on retry.
+"""
+struct InTransaction end
 
 """
     apply_event!(db, req; kind, entity_type, entity_id, payload, undoes_event_id=nothing)
@@ -6,65 +20,261 @@ using JSON3, SQLite, DBInterface, HTTP, Tables
 
 Atomic event-append + view-update. The log and the views must move together
 or neither moves. Returns a named tuple with two fields:
-- `event_id`: the newly-inserted event id in user_actions.
+- `event_id`: the newly-inserted event id in user_actions (or, on idempotent
+  retry, the id of the prior event row with the same (client_op_id, action,
+  entity_id) tuple).
 - `view_row_id`: the id of the view row inserted by the dispatcher, or
-  `nothing` for non-insert dispatcher branches (DELETE, no-op, etc.).
-  Callers that need the inserted row id (e.g. POST /peaks) use this directly
-  instead of re-querying, eliminating a read-back race with concurrent writers.
+  `nothing` for non-insert dispatcher branches (DELETE, no-op, etc.) and on
+  idempotent retry (where the dispatcher's prior insert is not re-derivable
+  from the unique-index lookup). Callers that need the inserted row id
+  (e.g. POST /peaks) use this directly instead of re-querying.
 
 `payload` is any JSON-serializable Dict / NamedTuple / nothing. If nothing,
 the event is recorded but no view update fires (use sparingly — most actions
 should carry a payload).
+
+This default method opens its own `SQLite.transaction`, then delegates to
+`apply_event!(::InTransaction, db, req; ...)`. The SSE broadcast fires AFTER
+the transaction commits so subscribers can never see uncommitted state.
+Callers that need to participate in an outer transaction (e.g. routes
+wrapped in `with_idempotency`) should use the `InTransaction` variant.
 """
 function apply_event!(db::SQLite.DB, req;
                       kind::String,
                       entity_type::String,
                       entity_id::Integer,
                       payload = nothing,
-                      undoes_event_id::Union{Int,Nothing} = nothing)
-    username = get_username(req)
-    client_id = get_client_id(req)
-    user_id  = username === nothing ? nothing : get_or_create_user!(db, username)
+                      undoes_event_id::Union{Int,Nothing} = nothing,
+                      defer_broadcast::Bool = false,
+                      post_state::Union{Dict, Nothing} = nothing)
+    # Run the durable write inside a tx via the InTransaction variant, but
+    # always defer the broadcast there — broadcast must wait until AFTER the
+    # tx commits so subscribers can't see uncommitted state.
+    result = SQLite.transaction(db) do
+        apply_event!(InTransaction(), db, req;
+                     kind = kind, entity_type = entity_type, entity_id = entity_id,
+                     payload = payload, undoes_event_id = undoes_event_id,
+                     defer_broadcast = true,
+                     post_state = post_state)
+    end
+
+    # Now committed. Fire the broadcast unless the outer caller asked to defer
+    # it themselves (e.g. coalesced batch broadcast).
+    if !defer_broadcast
+        _maybe_broadcast_event!(db, req, result, kind, entity_type, entity_id,
+                                payload, post_state)
+    end
+
+    return (event_id = result.event_id, view_row_id = result.view_row_id)
+end
+
+"""
+    apply_event!(::InTransaction, db, req; kwargs...)
+
+In-transaction variant: the caller has already opened a `SQLite.transaction`.
+Performs the INSERT into `user_actions` plus dispatcher view-update inside
+that transaction. Does NOT broadcast (that happens after the outer tx
+commits — caller is responsible).
+
+Idempotent at the DB layer: when `client_op_id` is set and the partial
+unique index on `(client_op_id, action, entity_id)` rejects the INSERT,
+this looks up the existing event row and returns its `event_id`.
+
+**On idempotent retry (UNIQUE constraint trip):** the returned `view_row_id`
+is `nothing` because the dispatcher's prior INSERT isn't re-derivable from
+the event row alone, and the dispatcher is NOT re-run (the prior application
+already moved the views). Routes whose response shape depends on
+`view_row_id` must be wrapped in `with_idempotency` so the cached HTTP
+response — which carries the original `view_row_id` — is replayed on retry.
+The current default-method-only callers (routes_peaks, routes_analysis)
+don't yet wrap in `with_idempotency`, so a same-`X-Client-Op-Id` retry today
+would 500. M2 routes will adopt `with_idempotency` and resolve this.
+
+Returns a richer NamedTuple than the public default method — includes the
+fields needed for a deferred post-commit broadcast.
+"""
+function apply_event!(::InTransaction, db::SQLite.DB, req;
+                      kind::String,
+                      entity_type::String,
+                      entity_id::Integer,
+                      payload = nothing,
+                      undoes_event_id::Union{Int,Nothing} = nothing,
+                      defer_broadcast::Bool = true,  # accepted for kw-symmetry; ignored here
+                      post_state::Union{Dict, Nothing} = nothing)
+    username     = get_username(req)
+    client_id    = get_client_id(req)
+    client_op_id = get_client_op_id(req)
+    user_id      = username === nothing ? nothing : get_or_create_user!(db, username)
     payload_json = payload === nothing ? nothing : JSON3.write(payload)
 
-    view_row_id_ref = Ref{Union{Int, Nothing}}(nothing)
-    event_id = SQLite.transaction(db) do
+    event_id::Int = 0
+    view_row_id::Union{Int, Nothing} = nothing
+    fresh_insert = true
+
+    # Narrow scope: the try/catch wraps ONLY the user_actions INSERT (and
+    # lastrowid extraction). The dispatcher runs *outside* the catch's reach
+    # so a future view-INSERT that happens to trip its own UNIQUE constraint
+    # can't be misclassified as an idempotent retry of the event-log INSERT.
+    try
         res = DBInterface.execute(db,
             """INSERT INTO user_actions
-               (user_id, action, entity_type, entity_id, payload, undoes_event_id, client_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            [user_id, kind, entity_type, Int(entity_id), payload_json, undoes_event_id, client_id])
-        eid = Int(DBInterface.lastrowid(res))
-
-        # Canonicalize payload before dispatch — round-trip through JSON3 so
-        # the live dispatcher and rebuild_views_from_log! see exactly the
-        # same shape (JSON3.Object that supports both .field and [:field]
-        # access, eliminating the Symbol-key vs String-key footgun).
-        if payload_json !== nothing
-            payload_canonical = JSON3.read(payload_json)
-            view_row_id_ref[] = update_view_for_event!(db, kind, entity_id, payload_canonical, eid)
+               (user_id, action, entity_type, entity_id, payload, undoes_event_id, client_id, client_op_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            [user_id, kind, entity_type, Int(entity_id), payload_json, undoes_event_id, client_id, client_op_id])
+        event_id = Int(DBInterface.lastrowid(res))
+    catch err
+        # Idempotent retry: the partial unique index on
+        # (client_op_id, action, entity_id) rejected the INSERT because a
+        # prior call already applied this op. SELECT the existing event_id
+        # and return it. (SQLite raises a generic SQLiteException; match
+        # by message text since there's no stable error code surface.)
+        if client_op_id !== nothing && occursin("UNIQUE constraint failed", sprint(showerror, err))
+            existing = Tables.rowtable(DBInterface.execute(db,
+                """SELECT id FROM user_actions
+                   WHERE client_op_id = ? AND action = ? AND entity_id = ?
+                   LIMIT 1""",
+                [client_op_id, kind, Int(entity_id)]))
+            if !isempty(existing)
+                event_id = Int(existing[1].id)
+                fresh_insert = false
+            else
+                rethrow()
+            end
+        else
+            rethrow()
         end
-        eid
     end
 
-    # Best-effort SSE broadcast — fires AFTER the transaction commits, so a
-    # subscriber never sees an event that was rolled back. If the process
-    # dies between commit and broadcast, the event is durable in user_actions
-    # but the frame is lost; clients reconcile on reconnect via TanStack
-    # Query refetch (see R5a).
-    # Defense-in-depth: broadcast is best-effort; if broadcast_event! is ever
-    # detached (e.g. in a stripped-down deployment that doesn't ship the SSE
-    # endpoint), the guard prevents an UndefVarError. Today broadcast_event!
-    # is always defined alongside apply_event! — the try/catch below catches
-    # runtime issues; this guard catches definition-time issues.
-    if isdefined(@__MODULE__, :broadcast_event!)
+    # Run the dispatcher only on a fresh INSERT — on retry the prior
+    # application already moved the views, and re-running would double-apply.
+    # Canonicalize payload before dispatch — round-trip through JSON3 so the
+    # live dispatcher and rebuild_views_from_log! see exactly the same shape
+    # (JSON3.Object supports both .field and [:field] access, eliminating
+    # the Symbol-key vs String-key footgun).
+    if fresh_insert && payload_json !== nothing
+        payload_canonical = JSON3.read(payload_json)
+        view_row_id = update_view_for_event!(db, kind, entity_id, payload_canonical, event_id)
+    end
+
+    return (event_id    = event_id,
+            view_row_id = view_row_id,
+            user_id     = user_id,
+            client_id   = client_id,
+            client_op_id = client_op_id,
+            payload_json = payload_json)
+end
+
+"""
+    _maybe_broadcast_event!(db, req, result, kind, entity_type, entity_id, payload, post_state)
+
+Internal: called by the default `apply_event!` after the durable transaction
+commits. Skips broadcast for analyze_run no-ops (the M0.4 suppression rule)
+and tolerates a missing or failing `broadcast_event!`.
+"""
+function _maybe_broadcast_event!(db, req, result, kind, entity_type, entity_id, payload, post_state)
+    isdefined(@__MODULE__, :broadcast_event!) || return nothing
+
+    # M0.4: suppress SSE broadcast for analyze_run no-ops (both skip flags true).
+    # M2 wires synchronous reanalyze inside curation routes; without this guard
+    # every curation event would also fan out an analyze_run frame even when
+    # nothing changed — O(N) extra frames per session. The user_actions row is
+    # still written; only the broadcast is suppressed. Strict `=== true` guards
+    # against the JSON3.Object case where a missing key would return `nothing`.
+    suppress = kind == "analyze_run" &&
+               payload !== nothing &&
+               get(payload, :findpeaks_skipped, false) === true &&
+               get(payload, :indexpeaks_skipped, false) === true
+    suppress && return nothing
+
+    try
+        broadcast_event!(result.event_id, kind, entity_type, Int(entity_id),
+                         result.user_id, result.client_id, result.client_op_id,
+                         result.payload_json;
+                         post_state = post_state)
+    catch err
+        @warn "broadcast_event! failed (event still durable in user_actions)" exception=err
+    end
+    nothing
+end
+
+"""
+    _enqueue_post_commit_broadcast!(args...)
+
+Queue a `broadcast_event!` invocation to fire AFTER the current
+`with_idempotency` transaction commits. Stored in task-local storage so each
+request handler gets its own queue. Cleared without firing on rollback.
+
+Used by M2.2 peak/curation routes that need to emit a single enriched SSE
+frame (carrying `post_state`) only after the outer with_idempotency tx
+commits — broadcasting earlier would let subscribers see state that may roll
+back.
+"""
+const POST_COMMIT_BROADCAST_KEY = :himalaya_post_commit_broadcasts
+
+function _enqueue_post_commit_broadcast!(args...; kwargs...)
+    queue = get!(task_local_storage(), POST_COMMIT_BROADCAST_KEY) do
+        Vector{Tuple{Tuple, Base.Pairs}}()
+    end
+    push!(queue, (args, kwargs))
+    nothing
+end
+
+"""
+    _enqueue_broadcast_from_result!(result, kind, entity_type, entity_id;
+                                    post_state = nothing)
+
+Convenience: queue a post-commit SSE broadcast from the NamedTuple returned
+by `apply_event!(InTransaction(), ...)`. Routes wrapped in `with_idempotency`
+that call the InTransaction variant must explicitly enqueue their broadcast
+(the InTransaction variant does NOT broadcast — see `apply_event!` docstring).
+This helper centralizes the field-by-field unpack so callers don't drift.
+
+Reuses `result.payload_json` (the canonical serialization frozen by
+`apply_event!` after JSON3 round-trip) — no re-serialization needed.
+"""
+function _enqueue_broadcast_from_result!(result, kind::String,
+                                         entity_type::String, entity_id::Integer;
+                                         post_state::Union{Dict, Nothing} = nothing)
+    _enqueue_post_commit_broadcast!(
+        Int(result.event_id), kind, entity_type, Int(entity_id),
+        result.user_id, result.client_id, result.client_op_id,
+        result.payload_json;
+        post_state = post_state)
+end
+
+"""
+    _flush_post_commit_broadcasts!()
+
+Fire every queued broadcast for the current task and clear the queue. Called
+by `with_idempotency` after its `SQLite.transaction` commits successfully.
+Failures in individual broadcasts are logged but do not abort the flush —
+each frame is best-effort (matches `_maybe_broadcast_event!` semantics).
+"""
+function _flush_post_commit_broadcasts!()
+    queue = get(task_local_storage(), POST_COMMIT_BROADCAST_KEY, nothing)
+    queue === nothing && return nothing
+    for (args, kwargs) in queue
         try
-            broadcast_event!(event_id, kind, entity_type, Int(entity_id), user_id, payload_json, client_id)
+            broadcast_event!(args...; kwargs...)
         catch err
-            @warn "broadcast_event! failed (event still durable in user_actions)" exception=err
+            @warn "post-commit broadcast failed (event still durable in user_actions)" exception=err
         end
     end
-    (event_id = event_id, view_row_id = view_row_id_ref[])
+    delete!(task_local_storage(), POST_COMMIT_BROADCAST_KEY)
+    nothing
+end
+
+"""
+    _clear_post_commit_broadcasts!()
+
+Discard any queued post-commit broadcasts for the current task without
+firing them. Called by `with_idempotency` when the tx body throws (rollback)
+so subscribers never see events whose underlying writes didn't durably
+commit.
+"""
+function _clear_post_commit_broadcasts!()
+    delete!(task_local_storage(), POST_COMMIT_BROADCAST_KEY)
+    nothing
 end
 
 """
@@ -120,6 +330,12 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
         return nothing
     end
 
+    # peak_removed: the route handler deletes the peak_curations(kind='add') row
+    # directly (it has the integer id from the URL), so the dispatcher is a
+    # no-op. Branch exists for exhaustiveness — rebuild_views_from_log! treats
+    # it as a known kind rather than silently falling through.
+    kind == "peak_removed" && return nothing
+
     if kind == "index_confirmed"
         DBInterface.execute(db,
             """INSERT OR IGNORE INTO index_group_members (group_id, index_id)
@@ -136,9 +352,33 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
         return nothing
     end
 
+    # M2.1 trivial-route migrations: routes write to view tables directly,
+    # so the dispatcher is a no-op for these kinds. Branches exist for
+    # exhaustiveness so the rebuild_views_from_log! property test treats
+    # them as known kinds rather than silently falling through.
+    kind == "update_sample" && return nothing
+    kind == "add_tag" && return nothing
+    kind == "remove_tag" && return nothing
+    kind == "post_message" && return nothing
+    kind == "set_exposure_status" && return nothing
+    kind == "select_exposure" && return nothing
+
+    # Speculative index lifecycle: route handlers insert/delete the indices
+    # row directly (the speculative create/delete paths in routes_analysis.jl
+    # need the auto-generated id immediately to populate the response body).
+    # Dispatcher branches exist for exhaustiveness only.
+    kind == "speculative_created" && return nothing
+    kind == "speculative_deleted" && return nothing
+
+    # analyze_run: pure observability event — no view writes. The synchronous
+    # reanalyze inside curation routes mutates indices/auto_peaks via
+    # persist_analysis!, not via this dispatcher. Branch exists so the
+    # rebuild_views_from_log! property test treats it as a known kind.
+    kind == "analyze_run" && return nothing
+
     # Scaffolding / legacy:
     kind == "noop_test" && return nothing
-    # default: no view update (analyze_run and other instrumentation events land here)
+    # default: no view update
     nothing
 end
 
@@ -182,12 +422,15 @@ function _try_put!(ch::Channel{String}, value::String)::Bool
 end
 
 """
-    broadcast_event!(event_id, kind, entity_type, entity_id, user_id, payload_json, client_id)
+    broadcast_event!(event_id, kind, entity_type, entity_id, user_id, client_id, client_op_id, payload_json)
 
 Format a single SSE frame and enqueue it onto every subscriber's pending
-channel. Closed channels (disconnected clients) and full channels (slow
-subscribers) are pruned — the client will reconnect via EventSource
-auto-reconnect and refetch via TanStack Query.
+channel. The frame carries `client_op_id` (the per-mutation idempotency key
+echoed from the originating request's `X-Client-Op-Id` header) and `ts`
+(the server-side broadcast timestamp, ISO-8601 UTC). Closed channels
+(disconnected clients) and full channels (slow subscribers) are pruned —
+the client will reconnect via EventSource auto-reconnect and refetch via
+TanStack Query.
 
 `client_id` is the per-tab SSE routing identity (from the `X-Client-Id`
 request header) embedded in the frame so subscribers can self-echo-filter
@@ -204,18 +447,24 @@ both files are included into the same HimalayaUI module.
 """
 function broadcast_event!(event_id::Integer, kind::String, entity_type::String,
                           entity_id::Integer, user_id::Union{Integer, Nothing},
-                          payload_json::Union{String, Nothing},
-                          client_id::Union{String, Nothing})
+                          client_id::Union{String, Nothing},
+                          client_op_id::Union{String, Nothing},
+                          payload_json::Union{String, Nothing};
+                          post_state::Union{Dict, Nothing} = nothing)
     actor = user_id === nothing ? nothing : lookup_username(current_db(), user_id)
-    msg = JSON3.write(Dict(
-        :id          => Int(event_id),
-        :kind        => kind,
-        :entity_type => entity_type,
-        :entity_id   => Int(entity_id),
-        :actor       => actor,
-        :client_id   => client_id,
-        :payload     => payload_json === nothing ? nothing : JSON3.read(payload_json),
-    ))
+    fields = Dict{Symbol, Any}(
+        :id           => Int(event_id),
+        :kind         => kind,
+        :entity_type  => entity_type,
+        :entity_id    => Int(entity_id),
+        :actor        => actor,
+        :client_id    => client_id,
+        :client_op_id => client_op_id,
+        :ts           => format(now(UTC), dateformat"yyyy-mm-ddTHH:MM:SS.sssZ"),
+        :payload      => payload_json === nothing ? nothing : JSON3.read(payload_json),
+    )
+    post_state === nothing || (fields[:post_state] = post_state)
+    msg = JSON3.write(fields)
     frame = "event: curation\ndata: $msg\n\n"
     lock(SSE_LOCK) do
         to_drop = []

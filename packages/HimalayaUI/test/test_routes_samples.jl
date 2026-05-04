@@ -52,3 +52,35 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test list[1].tags == []
     end
 end
+
+@testset "POST /api/samples/:id/tags is idempotent under retry" begin
+    db = SQLite.DB()
+    HimalayaUI.create_schema!(db)
+    exp_id = HimalayaUI.init_experiment!(db; path="/t2", data_dir="/t2/d",
+                                             analysis_dir="/t2/a")
+    s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, label="D1")
+
+    with_test_server(db) do port, base
+        op_id = "uuid-tag-retry-1"
+        body  = JSON3.write(Dict(:key => "lipid", :value => "DOPC"))
+        hdrs  = ["Content-Type"   => "application/json",
+                 "X-Username"     => "alice",
+                 "X-Client-Op-Id" => op_id]
+
+        r1 = HTTP.post("$base/api/samples/$s_id/tags"; body=body, headers=hdrs)
+        @test r1.status == 201
+        body1 = String(copy(r1.body))
+
+        r2 = HTTP.post("$base/api/samples/$s_id/tags"; body=body, headers=hdrs)
+        @test r2.status == 201
+        @test String(copy(r2.body)) == body1
+
+        n_tags = first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT COUNT(*) AS c FROM sample_tags WHERE sample_id = ?", [s_id]))).c
+        @test n_tags == 1
+
+        n_events = first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT COUNT(*) AS c FROM user_actions WHERE action = 'add_tag' AND entity_type = 'sample'"))).c
+        @test n_events == 1
+    end
+end
