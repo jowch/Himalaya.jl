@@ -155,8 +155,10 @@ function register_exposures_routes!()
                                :tag_id => tag_id, :sample_id => sample_id))
             _enqueue_broadcast_from_result!(result, "add_tag", "exposure", id)
 
+            # Response shape is `ExposureTag` exactly (id, key, value, source);
+            # parent FK is implicit from the URL.
             HTTP.Response(201, ["Content-Type" => "application/json"],
-                JSON3.write(Dict(:id=>tag_id, :exposure_id=>id,
+                JSON3.write(Dict(:id=>tag_id,
                                  :key=>key, :value=>value, :source=>"manual")))
         end
     end

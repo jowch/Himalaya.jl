@@ -425,7 +425,7 @@ end
         end
     end
 
-    @testset "POST /api/samples/:id/tags → SampleTag-shaped (with sample_id allowed extra)" begin
+    @testset "POST /api/samples/:id/tags → SampleTag exactly (no parent FK leak)" begin
         mktempdir() do tmp
             db     = HimalayaUI.open_db(joinpath(tmp, "h.db"))
             exp_id = HimalayaUI.create_experiment!(db; path=tmp,
@@ -438,14 +438,29 @@ end
                                "X-Username"   => "alice"])
                 @test r.status == 201
                 body = JSON3.read(String(r.body))
-                # Frontend SampleTag interface = {id, key, value, source}.
-                # The route includes an extra `sample_id` (and `exposure_id`
-                # for the exposure variant). They're harmless cache
-                # pollution today; documented here so a future tightening
-                # of the shape is a deliberate change.
-                for required in (:id, :key, :value, :source)
-                    @test required in keys(body)
-                end
+                # Pin: frontend `SampleTag = {id, key, value, source}`.
+                # The route formerly leaked `sample_id`; the cache-shape
+                # test caught it. Pinned here so future drift is deliberate.
+                assert_keys(body, [:id, :key, :value, :source])
+            end
+        end
+    end
+
+    @testset "POST /api/exposures/:id/tags → ExposureTag exactly (no parent FK leak)" begin
+        mktempdir() do tmp
+            db     = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+            exp_id = HimalayaUI.create_experiment!(db; path=tmp,
+                data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
+            s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, label="D1")
+            e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="x")
+            with_test_server(db) do port, base
+                r = HTTP.post("$base/api/exposures/$e_id/tags";
+                    body = JSON3.write(Dict(:key => "k", :value => "v")),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username"   => "alice"])
+                @test r.status == 201
+                body = JSON3.read(String(r.body))
+                assert_keys(body, [:id, :key, :value, :source])
             end
         end
     end

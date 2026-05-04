@@ -127,6 +127,13 @@ export const addSampleTagMutator: Mutator<AddSampleTagInput, AddSampleTagScope, 
   },
   request: (p) => api.addSampleTag(p.sampleId, p.key, p.value, buildAuthOpts(p)),
   onSuccess: (p, response, qc) => {
+    // The route emits `{id, sample_id, key, value, source}` (routes_samples.jl)
+    // but the SampleTag type omits `sample_id`. Strip it so the cache row
+    // matches the type — otherwise tag entries pollute with sample_id.
+    const tag: SampleTag = {
+      id: response.id, key: response.key, value: response.value,
+      source: response.source,
+    };
     const samplesKey = queryKeys.samples(p.experimentId);
     qc.setQueryData<Sample[]>(samplesKey, (list) => {
       if (!list) return list;
@@ -134,9 +141,9 @@ export const addSampleTagMutator: Mutator<AddSampleTagInput, AddSampleTagScope, 
         if (s.id !== p.sampleId) return s;
         const filtered = s.tags.filter((t) =>
           !(t.id < 0 && t.key === p.key && t.value === p.value)
-          && t.id !== response.id,
+          && t.id !== tag.id,
         );
-        return { ...s, tags: [...filtered, response] };
+        return { ...s, tags: [...filtered, tag] };
       });
     });
   },
@@ -196,14 +203,20 @@ export const addExposureTagMutator: Mutator<AddExposureTagInput, AddExposureTagS
   },
   request: (p) => api.addExposureTag(p.exposureId, p.key, p.value, buildAuthOpts(p)),
   onSuccess: (p, response, qc) => {
+    // The route emits `{id, exposure_id, key, value, source}` (routes_exposures.jl)
+    // but ExposureTag omits `exposure_id`. Strip it before caching.
+    const tag: ExposureTag = {
+      id: response.id, key: response.key, value: response.value,
+      source: response.source,
+    };
     rewriteExposureLists(qc, p.sampleId, (list) =>
       list.map((e) => {
         if (e.id !== p.exposureId) return e;
         const filtered = e.tags.filter((t) =>
           !(t.id < 0 && t.key === p.key && t.value === p.value)
-          && t.id !== response.id,
+          && t.id !== tag.id,
         );
-        return { ...e, tags: [...filtered, response] };
+        return { ...e, tags: [...filtered, tag] };
       }),
     );
   },

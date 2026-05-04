@@ -4,12 +4,15 @@
  *
  * The bug class this catches: a mutator's onSuccess writes the full
  * response into a cache typed as `Foo`, but the response has extra
- * (event_id, view_row_id, etc.) or missing fields. TypeScript can't
- * see this at runtime — issue #16 (group response pollution) was caught
- * only by reading the code; sixth-pass issue #17 (Peak missing
- * intensity/etc.) was caught only by re-running the route. This test
- * runs each cache-writing mutator end-to-end against a route-shaped
- * mock and asserts the cache row's keys match the type's exactly.
+ * (event_id, view_row_id, sample_id, etc.) or missing fields. TypeScript
+ * can't see this at runtime — issue #16 (group response pollution) and
+ * sixth-pass issue #17 (Peak missing intensity/etc.) were both caught
+ * only by re-reading the code or re-running the route.
+ *
+ * Each test runs a mutator end-to-end against a route-shaped mock and
+ * asserts the cache row's keys match the type's exactly (both directions
+ * strict — extras mean pollution, missing mean the route omitted a
+ * type-required field).
  *
  * Discipline: the mocked response shape MUST be derived from the actual
  * route's emit, not from the TypeScript interface (since the type might
@@ -19,13 +22,21 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import { peakAddMutator } from "../../src/lib/queue/mutators/peakAdd";
+import { peakRemoveMutator } from "../../src/lib/queue/mutators/peakRemove";
 import {
   peakExcludeMutator, peakUnexcludeMutator,
 } from "../../src/lib/queue/mutators/peakSetExcluded";
 import {
   addIndexToGroupMutator, removeIndexFromGroupMutator,
 } from "../../src/lib/queue/mutators/indexGroup";
-import { updateSampleMutator } from "../../src/lib/queue/mutators/trivial";
+import { createSpeculativeMutator } from "../../src/lib/queue/mutators/createSpeculative";
+import { reanalyzeExposureMutator } from "../../src/lib/queue/mutators/reanalyzeExposure";
+import {
+  updateSampleMutator,
+  addSampleTagMutator,
+  addExposureTagMutator,
+  postSampleMessageMutator,
+} from "../../src/lib/queue/mutators/trivial";
 import { queryKeys } from "../../src/queries";
 import { pendingDeferreds } from "../../src/lib/queue/deferred";
 
@@ -39,6 +50,21 @@ const GROUP_KEYS = new Set([
 const SAMPLE_KEYS = new Set([
   "id", "experiment_id", "label", "name", "notes", "tags",
 ]);
+const EXPOSURE_KEYS = new Set([
+  "id", "sample_id", "filename", "kind", "selected", "status",
+  "image_path", "image_version", "tags", "sources", "trace_hash",
+  "analysis_inputs_hash",
+]);
+const SAMPLE_TAG_KEYS = new Set(["id", "key", "value", "source"]);
+const EXPOSURE_TAG_KEYS = new Set(["id", "key", "value", "source"]);
+const SAMPLE_MESSAGE_KEYS = new Set([
+  "id", "sample_id", "author_id", "author", "body", "created_at",
+]);
+const INDEX_ENTRY_KEYS = new Set([
+  "id", "exposure_id", "phase", "basis", "score", "r_squared",
+  "lattice_d", "ngc", "status", "kind", "inputs_hash",
+  "peaks", "predicted_q",
+]);
 
 function mockFetchOnce(body: unknown, status = 200): void {
   const original = globalThis.fetch;
@@ -50,7 +76,7 @@ function mockFetchOnce(body: unknown, status = 200): void {
   }) as typeof fetch;
 }
 
-async function runMutator<I, S, R>(
+async function runMutator<R>(
   qc: QueryClient,
   m: { onMutate: (p: any, q: QueryClient) => any;
        request: (p: any, s: AbortSignal) => Promise<R>;
@@ -72,11 +98,15 @@ function assertKeys(obj: unknown, expected: Set<string>, label: string): void {
   expect(obj).toBeTypeOf("object");
   expect(obj).not.toBeNull();
   const actual = new Set(Object.keys(obj as object));
-  // Both directions strict — extra keys mean cache pollution; missing
-  // keys mean the route response omitted a type-required field.
   expect({ label, actual: [...actual].sort() })
     .toEqual({ label, actual: [...expected].sort() });
 }
+
+const FULL_EXPOSURE = {
+  id: 5, sample_id: 1, filename: null, kind: "file" as const, selected: true,
+  status: null, image_path: null, trace_hash: null,
+  analysis_inputs_hash: "h0", tags: [], sources: [], image_version: "",
+};
 
 describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", () => {
   let qc: QueryClient;
@@ -85,13 +115,13 @@ describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", ()
     pendingDeferreds.clear();
   });
 
+  // -------------------------------------------------------------------------
+  // Peak mutators
+  // -------------------------------------------------------------------------
+
   it("peakAdd writes a Peak with exactly the 8 declared keys (issue #17 + deep-scan #1)", async () => {
     qc.setQueryData(queryKeys.peaks(5), []);
-    qc.setQueryData(queryKeys.exposure(5), {
-      id: 5, sample_id: 1, filename: null, kind: "file", selected: true,
-      status: null, image_path: null, trace_hash: null,
-      analysis_inputs_hash: "h0", tags: [], sources: [], image_version: "",
-    });
+    qc.setQueryData(queryKeys.exposure(5), FULL_EXPOSURE);
     // Mock derived from routes_peaks.jl:156-186 (POST response Dict).
     mockFetchOnce({
       id: 100, exposure_id: 5, q: 0.42,
@@ -109,22 +139,21 @@ describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", ()
     const list = qc.getQueryData<unknown[]>(queryKeys.peaks(5));
     expect(list).toHaveLength(1);
     assertKeys(list![0], PEAK_KEYS, "peakAdd cache row");
+    // Exposure cache hash was rewritten — make sure no extra fields leaked.
+    assertKeys(qc.getQueryData(queryKeys.exposure(5)), EXPOSURE_KEYS,
+      "peakAdd exposure cache");
   });
 
   it("peakExclude writes a Peak with exactly 8 keys (no event metadata leak)", async () => {
-    const initialPeak = {
+    const initial = {
       id: 7, exposure_id: 5, q: 0.5, intensity: 1.2, prominence: 0.8,
       sharpness: 30.0, source: "auto", excluded: false,
     };
-    qc.setQueryData(queryKeys.peaks(5), [initialPeak]);
-    qc.setQueryData(queryKeys.exposure(5), {
-      id: 5, sample_id: 1, filename: null, kind: "file", selected: true,
-      status: null, image_path: null, trace_hash: null,
-      analysis_inputs_hash: "h0", tags: [], sources: [], image_version: "",
-    });
-    // Mock derived from routes_peaks.jl PATCH /peaks/:id response (extends Peak).
+    qc.setQueryData(queryKeys.peaks(5), [initial]);
+    qc.setQueryData(queryKeys.exposure(5), FULL_EXPOSURE);
+    // Mock derived from routes_peaks.jl PATCH /peaks/:id response.
     mockFetchOnce({
-      ...initialPeak, excluded: true,
+      ...initial, excluded: true,
       event_id: 10, view_row_id: 11,
       analysis_inputs_hash: "h1",
     }, 200);
@@ -135,24 +164,94 @@ describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", ()
       peakId: 7, q: 0.5,
       payload: { peakId: 7, q: 0.5 },
     });
-    const list = qc.getQueryData<unknown[]>(queryKeys.peaks(5));
-    assertKeys((list as { id: number }[])!.find(p => p.id === 7)!,
-      PEAK_KEYS, "peakExclude cache row");
+    const list = qc.getQueryData<{ id: number }[]>(queryKeys.peaks(5));
+    assertKeys(list!.find(p => p.id === 7)!, PEAK_KEYS,
+      "peakExclude cache row");
+    assertKeys(qc.getQueryData(queryKeys.exposure(5)), EXPOSURE_KEYS,
+      "peakExclude exposure cache");
   });
+
+  it("peakUnexclude writes a Peak with exactly 8 keys", async () => {
+    const initial = {
+      id: 7, exposure_id: 5, q: 0.5, intensity: 1.2, prominence: 0.8,
+      sharpness: 30.0, source: "auto", excluded: true,
+    };
+    qc.setQueryData(queryKeys.peaks(5), [initial]);
+    qc.setQueryData(queryKeys.exposure(5), FULL_EXPOSURE);
+    mockFetchOnce({
+      ...initial, excluded: false,
+      event_id: 11, view_row_id: 12,
+      analysis_inputs_hash: "h1",
+    }, 200);
+    await runMutator(qc, peakUnexcludeMutator, {
+      kind: "peak_unexcluded",
+      clientOpId: "op-shape-3",
+      exposureId: 5, username: "alice", clientId: "tab-1",
+      peakId: 7, q: 0.5,
+      payload: { peakId: 7, q: 0.5 },
+    });
+    const list = qc.getQueryData<{ id: number }[]>(queryKeys.peaks(5));
+    assertKeys(list!.find(p => p.id === 7)!, PEAK_KEYS,
+      "peakUnexclude cache row");
+  });
+
+  it("peakRemove updates exposure cache shape with exactly 12 keys", async () => {
+    const initial = {
+      id: 7, exposure_id: 5, q: 0.5, intensity: 1.2, prominence: 0.8,
+      sharpness: 30.0, source: "auto", excluded: false,
+    };
+    qc.setQueryData(queryKeys.peaks(5), [initial]);
+    qc.setQueryData(queryKeys.exposure(5), FULL_EXPOSURE);
+    // Mock derived from routes_peaks.jl DELETE /peaks/:id response.
+    mockFetchOnce({
+      event_id: 12, view_row_id: null,
+      analysis_inputs_hash: "h2",
+    }, 200);
+    await runMutator(qc, peakRemoveMutator, {
+      kind: "peak_removed",
+      clientOpId: "op-shape-4",
+      exposureId: 5, username: "alice", clientId: "tab-1",
+      peakId: 7, payload: { peakId: 7 },
+    });
+    // The peaks list lost the row — but the survivors must still be Peak-shaped
+    // and the exposure cache hash-rewrite must not have polluted the entity.
+    const peaks = qc.getQueryData<unknown[]>(queryKeys.peaks(5));
+    expect(peaks).toHaveLength(0);
+    assertKeys(qc.getQueryData(queryKeys.exposure(5)), EXPOSURE_KEYS,
+      "peakRemove exposure cache");
+  });
+
+  it("reanalyzeExposure updates exposure cache shape with exactly 12 keys", async () => {
+    qc.setQueryData(queryKeys.exposure(5), FULL_EXPOSURE);
+    // Mock derived from routes_exposures.jl POST /exposures/:id/analyze response.
+    mockFetchOnce({
+      id: 5, analyzed: true, analysis_inputs_hash: "h3",
+    }, 200);
+    await runMutator(qc, reanalyzeExposureMutator, {
+      kind: "reanalyze_exposure",
+      clientOpId: "op-shape-5",
+      exposureId: 5, username: "alice", clientId: "tab-1",
+      payload: {},
+    });
+    assertKeys(qc.getQueryData(queryKeys.exposure(5)), EXPOSURE_KEYS,
+      "reanalyzeExposure exposure cache");
+  });
+
+  // -------------------------------------------------------------------------
+  // Group / index mutators
+  // -------------------------------------------------------------------------
 
   it("addIndexToGroup writes a GroupEntry with exactly 5 keys (issue #16)", async () => {
     qc.setQueryData(queryKeys.groups(5), [
       { id: 1, exposure_id: 5, kind: "auto", active: true, members: [] },
     ]);
-    // Mock derived from routes_analysis.jl _group_with_members + the
-    // event_id/view_row_id metadata added in issue #13's fix.
     mockFetchOnce({
       id: 1, exposure_id: 5, kind: "custom", active: true, members: [42],
       event_id: 11, view_row_id: 1,
     }, 200);
     await runMutator(qc, addIndexToGroupMutator, {
       kind: "index_confirmed",
-      clientOpId: "op-shape-3",
+      clientOpId: "op-shape-6",
       exposureId: 5, groupId: 1, username: "alice", clientId: "tab-1",
       indexId: 42, payload: { groupId: 1, indexId: 42 },
     });
@@ -170,7 +269,7 @@ describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", ()
     }, 200);
     await runMutator(qc, removeIndexFromGroupMutator, {
       kind: "index_unconfirmed",
-      clientOpId: "op-shape-4",
+      clientOpId: "op-shape-7",
       exposureId: 5, groupId: 1, username: "alice", clientId: "tab-1",
       indexId: 42, payload: { groupId: 1, indexId: 42 },
     });
@@ -178,35 +277,125 @@ describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", ()
     assertKeys(groups![0], GROUP_KEYS, "removeIndexFromGroup cache row");
   });
 
+  it("createSpeculative writes an IndexEntry with exactly 13 keys", async () => {
+    qc.setQueryData(queryKeys.indices(5), []);
+    qc.setQueryData(queryKeys.groups(5), []);
+    // Mock derived from routes_analysis.jl POST /speculative response (~line 374-397).
+    mockFetchOnce({
+      id: 99, exposure_id: 5, phase: "Pn3m", basis: 0.123,
+      score: 0.85, r_squared: 0.99, lattice_d: 50.0, ngc: 0.5,
+      status: "candidate", kind: "speculative", inputs_hash: "h-spec",
+      peaks: [
+        { peak_id: 7, ratio_position: 1, residual: 0.001, q_observed: 0.123 },
+      ],
+      predicted_q: [0.123, 0.174],
+    }, 200);
+    await runMutator(qc, createSpeculativeMutator, {
+      kind: "speculative_created",
+      clientOpId: "op-shape-8",
+      exposureId: 5, username: "alice", clientId: "tab-1",
+      phase: "Pn3m", anchor_peak_id: 7, anchor_ratio: 1, additional: [],
+      payload: { phase: "Pn3m", anchor_peak_id: 7, anchor_ratio: 1, additional: [] },
+    });
+    const indices = qc.getQueryData<unknown[]>(queryKeys.indices(5));
+    expect(indices).toHaveLength(1);
+    assertKeys(indices![0], INDEX_ENTRY_KEYS, "createSpeculative cache row");
+  });
+
+  // -------------------------------------------------------------------------
+  // Sample / message / tag mutators
+  // -------------------------------------------------------------------------
+
   it("updateSample preserves tags via field-merge (deep-scan Bug #2)", async () => {
-    // Pre-populate the sample cache with a `tags` array that the PATCH
-    // response will NOT include — the mutator must merge only the patched
-    // fields, NOT spread the response wholesale (which would clobber
-    // tags to undefined).
     const initialSample = {
       id: 10, experiment_id: 1, label: "D1", name: "old", notes: "n",
       tags: [{ id: 1, key: "k", value: "v", source: "manual" }],
     };
     qc.setQueryData(queryKeys.sample(10), initialSample);
     qc.setQueryData(queryKeys.samples(1), [initialSample]);
-    // Mock derived from routes_samples.jl PATCH /samples/:id response —
-    // bare samples row with NO tags. This is exactly the shape that
-    // would clobber Sample.tags if the mutator spread the response.
     mockFetchOnce({
       id: 10, experiment_id: 1, label: "D1", name: "new", notes: "n",
       created_at: "2026-05-03",
     }, 200);
     await runMutator(qc, updateSampleMutator, {
       kind: "update_sample",
-      clientOpId: "op-shape-5",
+      clientOpId: "op-shape-9",
       sampleId: 10, experimentId: 1, username: "alice", clientId: "tab-1",
       name: "new",
       payload: { sampleId: 10 },
     });
     const single = qc.getQueryData<{ tags: unknown[] }>(queryKeys.sample(10));
     assertKeys(single!, SAMPLE_KEYS, "updateSample single cache row");
-    // Tags survived — the bug was that a wholesale spread would set
-    // tags = undefined on the cache.
     expect(single!.tags).toHaveLength(1);
+  });
+
+  it("addSampleTag inserts a SampleTag with exactly 4 keys (no sample_id leak)", async () => {
+    // The route emits {id, sample_id, key, value, source} (routes_samples.jl:85-87)
+    // but the SampleTag type has only {id, key, value, source}. If the mutator
+    // spreads the response wholesale, the cached tag pollutes with sample_id.
+    const initialSample = {
+      id: 10, experiment_id: 1, label: "D1", name: "n", notes: null, tags: [],
+    };
+    qc.setQueryData(queryKeys.samples(1), [initialSample]);
+    mockFetchOnce({
+      id: 50, sample_id: 10, key: "color", value: "red", source: "manual",
+    }, 201);
+    await runMutator(qc, addSampleTagMutator, {
+      kind: "add_tag",
+      clientOpId: "op-shape-10",
+      sampleId: 10, experimentId: 1, username: "alice", clientId: "tab-1",
+      key: "color", value: "red",
+      payload: { key: "color", value: "red" },
+    });
+    const list = qc.getQueryData<{ tags: unknown[] }[]>(queryKeys.samples(1));
+    const tag = list![0]!.tags[0];
+    assertKeys(tag, SAMPLE_TAG_KEYS, "addSampleTag cache row");
+  });
+
+  it("addExposureTag inserts an ExposureTag with exactly 4 keys (no exposure_id leak)", async () => {
+    // The route emits {id, exposure_id, key, value, source}; ExposureTag is
+    // only {id, key, value, source}.
+    const initialExposure = {
+      id: 5, sample_id: 1, filename: null, kind: "file", selected: true,
+      status: null, image_path: null, trace_hash: null,
+      analysis_inputs_hash: "h0", tags: [], sources: [], image_version: "",
+    };
+    qc.setQueryData(
+      ["sample", 1, "exposures", { excludeRejected: false }] as const,
+      [initialExposure],
+    );
+    mockFetchOnce({
+      id: 60, exposure_id: 5, key: "noisy", value: "yes", source: "manual",
+    }, 201);
+    await runMutator(qc, addExposureTagMutator, {
+      kind: "add_tag",
+      clientOpId: "op-shape-11",
+      sampleId: 1, exposureId: 5, username: "alice", clientId: "tab-1",
+      key: "noisy", value: "yes",
+      payload: { key: "noisy", value: "yes" },
+    });
+    const list = qc.getQueryData<{ tags: unknown[] }[]>(
+      ["sample", 1, "exposures", { excludeRejected: false }] as const);
+    const tag = list![0]!.tags[0];
+    assertKeys(tag, EXPOSURE_TAG_KEYS, "addExposureTag cache row");
+  });
+
+  it("postSampleMessage writes a SampleMessage with exactly 6 keys", async () => {
+    qc.setQueryData(queryKeys.messages(10), []);
+    // Mock derived from routes_messages.jl POST /samples/:id/messages response.
+    mockFetchOnce({
+      id: 200, sample_id: 10, author_id: 3, author: "alice",
+      body: "hello", created_at: "2026-05-03T12:00:00Z",
+    }, 201);
+    await runMutator(qc, postSampleMessageMutator, {
+      kind: "post_message",
+      clientOpId: "op-shape-12",
+      sampleId: 10, username: "alice", clientId: "tab-1",
+      body: "hello",
+      payload: { body: "hello" },
+    });
+    const list = qc.getQueryData<unknown[]>(queryKeys.messages(10));
+    expect(list).toHaveLength(1);
+    assertKeys(list![0], SAMPLE_MESSAGE_KEYS, "postSampleMessage cache row");
   });
 });

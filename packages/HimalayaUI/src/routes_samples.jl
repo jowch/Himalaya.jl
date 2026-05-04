@@ -82,8 +82,11 @@ function register_samples_routes!()
                                :tag_id => tag_id, :experiment_id => exp_id))
             _enqueue_broadcast_from_result!(result, "add_tag", "sample", id)
 
+            # Response shape is `SampleTag` exactly (id, key, value, source).
+            # The parent FK is implicit from the URL — including it would be
+            # cache pollution if the frontend spread the response wholesale.
             HTTP.Response(201, ["Content-Type" => "application/json"],
-                JSON3.write(Dict(:id => tag_id, :sample_id => id,
+                JSON3.write(Dict(:id => tag_id,
                                  :key => key, :value => value, :source => "manual")))
         end
     end
