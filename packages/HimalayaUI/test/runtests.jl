@@ -33,4 +33,5 @@ using Test
     include("test_route_response_shapes.jl")
     include("test_route_validation_routing.jl")
     include("test_idempotency.jl")
+    include("test_idempotency_replay_invariant.jl")
 end
