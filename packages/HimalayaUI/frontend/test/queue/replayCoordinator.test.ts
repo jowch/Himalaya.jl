@@ -224,8 +224,8 @@ describe("handleRemoteEvent", () => {
 
   it("applyRemoteToCache for peak_excluded sets excluded=true on the matching peak", () => {
     qc.setQueryData(["exposure", 42, "peaks"], [
-      { id: 1, q: 0.5, kind: "auto", excluded: false },
-      { id: 2, q: 1.7, kind: "auto", excluded: false },
+      { id: 1, q: 0.5, source: "auto", excluded: false },
+      { id: 2, q: 1.7, source: "auto", excluded: false },
     ]);
     handleRemoteEvent({
       id: 100,

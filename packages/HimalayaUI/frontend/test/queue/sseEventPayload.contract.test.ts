@@ -104,6 +104,79 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
     expect(peaks.map((p) => p.id)).toEqual([8]);
   });
 
+  // ---- (id, source) collision regression rows for SSE merge path -----------
+  // auto_peaks and peak_curations have independent SQLite sequences; they can
+  // collide on the wire. The merge-path handlers must be source-scoped just
+  // like the mutator-path onMutate handlers (issue #24).
+
+  it("peak_added: foreign event with id colliding with existing auto peak still inserts the manual peak", () => {
+    qc.setQueryData<Peak[]>(queryKeys.peaks(5), [
+      { id: 100, exposure_id: 5, q: 0.3, intensity: 1, prominence: 1,
+        sharpness: 30, source: "auto", excluded: false },
+    ]);
+    const evt: SseEvent = {
+      id: 99, kind: "peak_added", entity_type: "exposure", entity_id: 5,
+      payload: { q: 0.42, peak_curation_id: 100 },  // collides with auto peak id
+    };
+    applyRemoteToCache(evt, qc);
+    const peaks = qc.getQueryData<Peak[]>(queryKeys.peaks(5))!;
+    expect(peaks).toHaveLength(2);
+    expect(peaks.find((p) => p.source === "manual")?.q).toBe(0.42);
+    expect(peaks.find((p) => p.source === "auto")?.q).toBe(0.3);  // untouched
+  });
+
+  it("peak_excluded: foreign event with auto_peak_id colliding with manual peak only flips the auto", () => {
+    qc.setQueryData<Peak[]>(queryKeys.peaks(5), [
+      { id: 7, exposure_id: 5, q: 0.5, intensity: 1, prominence: 1,
+        sharpness: 30, source: "auto", excluded: false },
+      { id: 7, exposure_id: 5, q: 0.9, intensity: null, prominence: null,
+        sharpness: null, source: "manual", excluded: false },
+    ]);
+    const evt: SseEvent = {
+      id: 99, kind: "peak_excluded", entity_type: "exposure", entity_id: 5,
+      payload: { q: 0.5, auto_peak_id: 7 },
+    };
+    applyRemoteToCache(evt, qc);
+    const peaks = qc.getQueryData<Peak[]>(queryKeys.peaks(5))!;
+    expect(peaks.find((p) => p.source === "auto")!.excluded).toBe(true);
+    expect(peaks.find((p) => p.source === "manual")!.excluded).toBe(false);
+  });
+
+  it("peak_unexcluded: foreign event scoped to auto source only", () => {
+    qc.setQueryData<Peak[]>(queryKeys.peaks(5), [
+      { id: 7, exposure_id: 5, q: 0.5, intensity: 1, prominence: 1,
+        sharpness: 30, source: "auto", excluded: true },
+      { id: 7, exposure_id: 5, q: 0.9, intensity: null, prominence: null,
+        sharpness: null, source: "manual", excluded: true },
+    ]);
+    const evt: SseEvent = {
+      id: 99, kind: "peak_unexcluded", entity_type: "exposure", entity_id: 5,
+      payload: { q: 0.5, auto_peak_id: 7 },
+    };
+    applyRemoteToCache(evt, qc);
+    const peaks = qc.getQueryData<Peak[]>(queryKeys.peaks(5))!;
+    expect(peaks.find((p) => p.source === "auto")!.excluded).toBe(false);
+    expect(peaks.find((p) => p.source === "manual")!.excluded).toBe(true);  // untouched
+  });
+
+  it("peak_removed: foreign event with peak_curation_id colliding with auto peak only drops the manual", () => {
+    qc.setQueryData<Peak[]>(queryKeys.peaks(5), [
+      { id: 7, exposure_id: 5, q: 0.5, intensity: 1, prominence: 1,
+        sharpness: 30, source: "auto", excluded: false },
+      { id: 7, exposure_id: 5, q: 0.9, intensity: null, prominence: null,
+        sharpness: null, source: "manual", excluded: false },
+    ]);
+    const evt: SseEvent = {
+      id: 99, kind: "peak_removed", entity_type: "exposure", entity_id: 5,
+      payload: { peak_curation_id: 7, q: 0.9 },
+    };
+    applyRemoteToCache(evt, qc);
+    const peaks = qc.getQueryData<Peak[]>(queryKeys.peaks(5))!;
+    expect(peaks).toHaveLength(1);
+    expect(peaks[0]!.source).toBe("auto");
+    expect(peaks[0]!.q).toBe(0.5);  // auto peak survives despite shared id
+  });
+
   it("analyze_run with post_state writes indices and updates exposure hash", () => {
     qc.setQueryData<Exposure>(queryKeys.exposure(5), FULL_EXPOSURE);
     qc.setQueryData(queryKeys.indices(5), []);

@@ -44,7 +44,9 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
       qc.setQueryData<Peak[]>(queryKeys.peaks(id), (old = []) => {
         // Idempotent insert: dedupe against an existing row (own-tab SSE echo
         // arriving after onSuccess already wrote the canonical row).
-        if (old.some((p) => p.id === peakId)) return old;
+        // Source-scoped: auto and curation tables have independent id sequences
+        // and can collide on the wire. Same invariant as peakAdd mutator.
+        if (old.some((p) => p.id === peakId && p.source === "manual")) return old;
         return [
           ...old,
           {
@@ -71,9 +73,11 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
       const tol = peakQTol(targetQ);
       qc.setQueryData<Peak[]>(queryKeys.peaks(id), (old = []) =>
         old.map((p) => {
+          // Only auto peaks can be excluded; scope by source to avoid flipping
+          // a manual peak that happens to share an id with the targeted auto peak.
           const matches = autoPeakId !== undefined
-            ? p.id === autoPeakId
-            : Math.abs(p.q - targetQ) < tol;
+            ? p.id === autoPeakId && p.source === "auto"
+            : p.source === "auto" && Math.abs(p.q - targetQ) < tol;
           return matches ? { ...p, excluded: true } : p;
         }));
       applyPostState();
@@ -86,8 +90,8 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
       qc.setQueryData<Peak[]>(queryKeys.peaks(id), (old = []) =>
         old.map((p) => {
           const matches = autoPeakId !== undefined
-            ? p.id === autoPeakId
-            : Math.abs(p.q - targetQ) < tol;
+            ? p.id === autoPeakId && p.source === "auto"
+            : p.source === "auto" && Math.abs(p.q - targetQ) < tol;
           return matches ? { ...p, excluded: false } : p;
         }));
       applyPostState();
@@ -100,11 +104,13 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
       const targetQ = payload?.q as number | undefined;
       qc.setQueryData<Peak[]>(queryKeys.peaks(id), (old = []) => {
         if (removedId !== undefined) {
-          return old.filter((p) => p.id !== removedId);
+          // Only manual peaks are removable; scope by source so a colliding
+          // auto peak id can't be dropped by a foreign-tab remove event.
+          return old.filter((p) => !(p.id === removedId && p.source === "manual"));
         }
         if (targetQ !== undefined) {
           const tol = peakQTol(targetQ);
-          return old.filter((p) => Math.abs(p.q - targetQ) >= tol);
+          return old.filter((p) => !(p.source === "manual" && Math.abs(p.q - targetQ) < tol));
         }
         // Neither id nor q — payload is unusable; refetch.
         qc.invalidateQueries({ queryKey: queryKeys.peaks(id) });

@@ -527,9 +527,11 @@ function _fix_fk_references_after_autoincrement_migration!(db::SQLite.DB)
 
     DBInterface.execute(db, "PRAGMA writable_schema = ON")
     try
-        # Wrap the rewrite in an explicit transaction so a partial failure
-        # (e.g. SQLITE_CORRUPT, disk full) rolls back atomically rather than
-        # leaving some entities healed and others not (review issue #20).
+        # Wrap the rewrite + drift assertion in an explicit transaction so a
+        # partial failure (e.g. SQLITE_CORRUPT, disk full) OR a future entity
+        # drift (assertion fires) rolls back atomically rather than leaving
+        # the DB half-healed (review issues #20 + #25). The assertion MUST
+        # run inside the tx — it's the only drift detector for issue #19.
         # `writable_schema` is connection-local, so toggling it outside the
         # transaction is safe.
         SQLite.transaction(db) do
@@ -538,9 +540,16 @@ function _fix_fk_references_after_autoincrement_migration!(db::SQLite.DB)
             # both the AUTOINCREMENT rename and R2 widen rename patterns)
             # so adding a new entity to either migration automatically
             # heals here too (review issues #19 + #22).
+            #
             # Quoted form ("_migrate_old_x") and bare form (_migrate_old_x)
             # both occur in CREATE statements depending on whether the FK
             # target was rendered with or without quoting.
+            #
+            # ORDERING INVARIANT (review suggestion #17): the unanchored
+            # substring REPLACE on `_migrate_old_<entity>` is safe today
+            # because no entity name in `_MIGRATION_TEMP_ENTITIES` is a
+            # substring of another (e.g. no `peak` AND `peaks`). If you add
+            # an entity here, verify this invariant or anchor the replace.
             for entity in _MIGRATION_TEMP_ENTITIES
                 old_q = "\"_migrate_old_$entity\""
                 old_b = "_migrate_old_$entity"
@@ -551,17 +560,20 @@ function _fix_fk_references_after_autoincrement_migration!(db::SQLite.DB)
                     "UPDATE sqlite_master SET sql = REPLACE(sql, ?, ?) WHERE type='table'",
                     [old_b, entity])
             end
+            # Defense-in-depth: assert the heal worked. Catches a future drift
+            # where an entity gets added to migrate_pk_to_autoincrement! /
+            # migrate_r2_widen_index_peaks_pk! but the constant list above
+            # isn't updated (review issue #19). Inside the tx so the throw
+            # rolls back the partial REPLACE pass (review issue #25).
+            remaining = Tables.rowtable(DBInterface.execute(db,
+                "SELECT name FROM sqlite_master WHERE type='table' AND sql LIKE '%_migrate_old_%'"))
+            isempty(remaining) || error(
+                "_fix_fk_references_after_autoincrement_migration!: tables still " *
+                "carry `_migrate_old_*` FKs after heal: " *
+                join(String[String(r.name) for r in remaining], ", ") *
+                " (likely missing entry in _MIGRATION_TEMP_ENTITIES " *
+                "or _AUTOINCREMENT_ENTITIES — review suggestion #18)")
         end
-        # Defense-in-depth: assert the heal worked. Catches a future drift
-        # where an entity gets added to migrate_pk_to_autoincrement! but the
-        # constant list above isn't updated (review issue #19).
-        remaining = Tables.rowtable(DBInterface.execute(db,
-            "SELECT name FROM sqlite_master WHERE type='table' AND sql LIKE '%_migrate_old_%'"))
-        isempty(remaining) || error(
-            "_fix_fk_references_after_autoincrement_migration!: tables still " *
-            "carry `_migrate_old_*` FKs after heal: " *
-            join(String[String(r.name) for r in remaining], ", ") *
-            " (likely missing entry in _AUTOINCREMENT_ENTITIES)")
     finally
         DBInterface.execute(db, "PRAGMA writable_schema = OFF")
     end
@@ -570,11 +582,20 @@ function _fix_fk_references_after_autoincrement_migration!(db::SQLite.DB)
     # acquires an EXCLUSIVE lock and can fail with SQLITE_BUSY under
     # multi-process access. Fall back to bumping schema_version (also
     # invalidates the cache) so the heal still takes effect (review issue #21).
+    #
+    # The schema_version PRAGMA is writable only when writable_schema=ON on
+    # most builds (review issue #26). The `finally` above already toggled it
+    # off, so the fallback re-enables it for the bump and toggles off again.
     try
         DBInterface.execute(db, "VACUUM")
     catch err
         @warn "VACUUM after FK heal failed; falling back to schema_version bump" exception=err
-        DBInterface.execute(db, "PRAGMA schema_version = schema_version + 1")
+        DBInterface.execute(db, "PRAGMA writable_schema = ON")
+        try
+            DBInterface.execute(db, "PRAGMA schema_version = schema_version + 1")
+        finally
+            DBInterface.execute(db, "PRAGMA writable_schema = OFF")
+        end
     end
 end
 
