@@ -400,8 +400,22 @@ so freed ids are never reused.
 No-op on fresh DBs (the schema already declares AUTOINCREMENT) and on
 DBs that have already been migrated.
 """
+# Single source of truth for the entity tables that participate in the
+# AUTOINCREMENT migration. Used by both `migrate_pk_to_autoincrement!`
+# (which renames+rebuilds them) and `_fix_fk_references_after_autoincrement_migration!`
+# (which heals corrupted FK references that point at the rename-staging name).
+# Keep these in lockstep — drift causes the heal loop to silently no-op for
+# any new entity (review issue #19).
+const _AUTOINCREMENT_ENTITIES = ("experiments", "samples", "exposures", "peaks", "indices")
+
+# Superset of tables whose `_migrate_old_<name>` rename-staging name may
+# appear in CREATE statements after a partial-failure migration. Includes
+# `_AUTOINCREMENT_ENTITIES` plus `index_peaks` (R2 widen migration uses the
+# same temp-name pattern; review issue #22). Heal loop iterates this list.
+const _MIGRATION_TEMP_ENTITIES = (_AUTOINCREMENT_ENTITIES..., "index_peaks")
+
 function migrate_pk_to_autoincrement!(db::SQLite.DB)
-    tables = ["experiments", "samples", "exposures", "peaks", "indices"]
+    tables = collect(_AUTOINCREMENT_ENTITIES)
 
     # Sentinel: skip iff every table in `tables` that EXISTS already has
     # AUTOINCREMENT. "peaks" may no longer exist in R2.2+ DBs (removed from
@@ -513,28 +527,55 @@ function _fix_fk_references_after_autoincrement_migration!(db::SQLite.DB)
 
     DBInterface.execute(db, "PRAGMA writable_schema = ON")
     try
-        # Replace each known `_migrate_old_<entity>` with `<entity>`. The list
-        # mirrors the entities migrate_pk_to_autoincrement! handles. Quoted
-        # form ("_migrate_old_x") and bare form (_migrate_old_x) both occur
-        # in CREATE statements depending on whether the FK target was
-        # rendered with or without quoting.
-        for entity in ("samples", "exposures", "indices", "experiments", "peaks")
-            old_q = "\"_migrate_old_$entity\""
-            old_b = "_migrate_old_$entity"
-            DBInterface.execute(db,
-                "UPDATE sqlite_master SET sql = REPLACE(sql, ?, ?) WHERE type='table'",
-                [old_q, entity])
-            DBInterface.execute(db,
-                "UPDATE sqlite_master SET sql = REPLACE(sql, ?, ?) WHERE type='table'",
-                [old_b, entity])
+        # Wrap the rewrite in an explicit transaction so a partial failure
+        # (e.g. SQLITE_CORRUPT, disk full) rolls back atomically rather than
+        # leaving some entities healed and others not (review issue #20).
+        # `writable_schema` is connection-local, so toggling it outside the
+        # transaction is safe.
+        SQLite.transaction(db) do
+            # Replace each `_migrate_old_<entity>` with `<entity>`. Driven from
+            # `_MIGRATION_TEMP_ENTITIES` (single source of truth — covers
+            # both the AUTOINCREMENT rename and R2 widen rename patterns)
+            # so adding a new entity to either migration automatically
+            # heals here too (review issues #19 + #22).
+            # Quoted form ("_migrate_old_x") and bare form (_migrate_old_x)
+            # both occur in CREATE statements depending on whether the FK
+            # target was rendered with or without quoting.
+            for entity in _MIGRATION_TEMP_ENTITIES
+                old_q = "\"_migrate_old_$entity\""
+                old_b = "_migrate_old_$entity"
+                DBInterface.execute(db,
+                    "UPDATE sqlite_master SET sql = REPLACE(sql, ?, ?) WHERE type='table'",
+                    [old_q, entity])
+                DBInterface.execute(db,
+                    "UPDATE sqlite_master SET sql = REPLACE(sql, ?, ?) WHERE type='table'",
+                    [old_b, entity])
+            end
         end
+        # Defense-in-depth: assert the heal worked. Catches a future drift
+        # where an entity gets added to migrate_pk_to_autoincrement! but the
+        # constant list above isn't updated (review issue #19).
+        remaining = Tables.rowtable(DBInterface.execute(db,
+            "SELECT name FROM sqlite_master WHERE type='table' AND sql LIKE '%_migrate_old_%'"))
+        isempty(remaining) || error(
+            "_fix_fk_references_after_autoincrement_migration!: tables still " *
+            "carry `_migrate_old_*` FKs after heal: " *
+            join(String[String(r.name) for r in remaining], ", ") *
+            " (likely missing entry in _AUTOINCREMENT_ENTITIES)")
     finally
         DBInterface.execute(db, "PRAGMA writable_schema = OFF")
     end
     # Force SQLite to invalidate its in-memory schema cache so subsequent
-    # prepares see the corrected FKs. VACUUM is the standard idiom; PRAGMA
-    # integrity_check would also do it but VACUUM is documented for this.
-    DBInterface.execute(db, "VACUUM")
+    # prepares see the corrected FKs. VACUUM is the standard idiom but it
+    # acquires an EXCLUSIVE lock and can fail with SQLITE_BUSY under
+    # multi-process access. Fall back to bumping schema_version (also
+    # invalidates the cache) so the heal still takes effect (review issue #21).
+    try
+        DBInterface.execute(db, "VACUUM")
+    catch err
+        @warn "VACUUM after FK heal failed; falling back to schema_version bump" exception=err
+        DBInterface.execute(db, "PRAGMA schema_version = schema_version + 1")
+    end
 end
 
 """
@@ -558,7 +599,7 @@ function migrate_r2_widen_index_peaks_pk!(db::SQLite.DB)
     DBInterface.execute(db, "PRAGMA foreign_keys = OFF")
     try
         SQLite.transaction(db) do
-            DBInterface.execute(db, "ALTER TABLE index_peaks RENAME TO _index_peaks_old")
+            DBInterface.execute(db, "ALTER TABLE index_peaks RENAME TO _migrate_old_index_peaks")
             # Re-create with the new shape (matches SCHEMA above).
             DBInterface.execute(db, """
                 CREATE TABLE index_peaks (
@@ -576,9 +617,9 @@ function migrate_r2_widen_index_peaks_pk!(db::SQLite.DB)
             DBInterface.execute(db, """
                 INSERT INTO index_peaks (index_id, peak_id, peak_kind, ratio_position, residual)
                 SELECT index_id, peak_id, 'auto', ratio_position, residual
-                FROM _index_peaks_old
+                FROM _migrate_old_index_peaks
             """)
-            DBInterface.execute(db, "DROP TABLE _index_peaks_old")
+            DBInterface.execute(db, "DROP TABLE _migrate_old_index_peaks")
         end
     finally
         DBInterface.execute(db, "PRAGMA foreign_keys = ON")

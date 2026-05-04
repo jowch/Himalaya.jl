@@ -27,30 +27,40 @@ function _count_actions(db, kind)
     Int(rows[1].c)
 end
 
-# Helper — collect SSE frames during a closure execution. Subscribes,
-# runs the closure, sleeps briefly to flush post-commit broadcasts, then
-# unsubscribes and returns the captured frames.
-function _capture_sse_during(base::String, kind_filter::String, f::Function)
-    frames = String[]
-    task = @async begin
-        try
-            HTTP.open("GET", "$base/api/events";
-                headers = ["Accept" => "text/event-stream"]) do io
-                while !eof(io)
-                    line = readavailable(io)
-                    isempty(line) && break
-                    s = String(line)
-                    occursin("\"kind\":\"$kind_filter\"", s) && push!(frames, s)
-                end
-            end
-        catch
-            # Connection closed by the test harness — expected.
-        end
+# Helper — register a direct in-process SSE subscriber (no HTTP), run the
+# closure, then drain captured frames. Subscribers in HimalayaUI.SSE_SUBSCRIBERS
+# receive a JSON-encoded `event: curation\ndata: {...}\n\n` string per
+# `broadcast_event!` call. Filtering by `kind_filter` (the event kind from
+# the JSON) lets us count only the frames the test cares about.
+#
+# Why this matters: the third invariant in this file's docstring is "exactly
+# one SSE fanout per replayed op." If `with_idempotency`'s cache-replay path
+# ever stops short-circuiting the broadcast (e.g. a refactor removes the
+# `result.cached` skip), this helper is the only thing that catches it —
+# byte-equal HTTP body and durable-row count would both still pass.
+function _capture_sse_during(f::Function, kind_filter::String)
+    pending = Channel{String}(64)
+    sub = (pending = pending,)
+    lock(HimalayaUI.SSE_LOCK) do
+        push!(HimalayaUI.SSE_SUBSCRIBERS[], sub)
     end
-    sleep(0.2)  # let SSE handshake complete
-    f()
-    sleep(0.5)  # let post-commit broadcasts flush
-    schedule(task, InterruptException(); error = true)
+    try
+        f()
+        # Allow the post-commit broadcast queue to flush. `apply_event!` enqueues
+        # the broadcast; it fires from the post-commit hook on the same thread.
+        sleep(0.3)
+    finally
+        lock(HimalayaUI.SSE_LOCK) do
+            filter!(x -> x !== sub, HimalayaUI.SSE_SUBSCRIBERS[])
+        end
+        close(pending)
+    end
+    frames = String[]
+    for frame in pending
+        # Skip heartbeats (": heartbeat" lines) and frames of other kinds.
+        startswith(frame, ":") && continue
+        occursin("\"kind\":\"$kind_filter\"", frame) && push!(frames, frame)
+    end
     frames
 end
 
@@ -78,16 +88,20 @@ end
                 body_json = JSON3.write(Dict(:q => 0.99))
 
                 pre_count = _count_actions(db, "peak_added")
-                r1 = HTTP.post("$base/api/exposures/$e_id/peaks";
-                    body = body_json, headers = headers)
+                r1 = nothing; r2 = nothing
+                frames = _capture_sse_during("peak_added") do
+                    r1 = HTTP.post("$base/api/exposures/$e_id/peaks";
+                        body = body_json, headers = headers)
+                    # Replay — same op_id, must produce identical body and zero new rows.
+                    r2 = HTTP.post("$base/api/exposures/$e_id/peaks";
+                        body = body_json, headers = headers)
+                end
                 @test r1.status == 201
-                # Replay — same op_id, must produce identical body and zero new rows.
-                r2 = HTTP.post("$base/api/exposures/$e_id/peaks";
-                    body = body_json, headers = headers)
                 @test r2.status == 201
                 @test String(r2.body) == String(r1.body)
                 post_count = _count_actions(db, "peak_added")
                 @test post_count - pre_count == 1  # exactly one durable row
+                @test length(frames) == 1          # exactly one SSE fanout
             end
         end
     end
@@ -127,15 +141,19 @@ end
                 body_json = JSON3.write(Dict(:index_id => ix_id))
 
                 pre_count = _count_actions(db, "index_confirmed")
-                r1 = HTTP.post("$base/api/groups/$grp_id/members";
-                    body = body_json, headers = headers)
+                r1 = nothing; r2 = nothing
+                frames = _capture_sse_during("index_confirmed") do
+                    r1 = HTTP.post("$base/api/groups/$grp_id/members";
+                        body = body_json, headers = headers)
+                    r2 = HTTP.post("$base/api/groups/$grp_id/members";
+                        body = body_json, headers = headers)
+                end
                 @test r1.status == 200
-                r2 = HTTP.post("$base/api/groups/$grp_id/members";
-                    body = body_json, headers = headers)
                 @test r2.status == 200
                 @test String(r2.body) == String(r1.body)
                 post_count = _count_actions(db, "index_confirmed")
                 @test post_count - pre_count == 1
+                @test length(frames) == 1
             end
         end
     end
@@ -156,15 +174,19 @@ end
                 body_json = JSON3.write(Dict(:body => "hello"))
 
                 pre_count = _count_actions(db, "post_message")
-                r1 = HTTP.post("$base/api/samples/$s_id/messages";
-                    body = body_json, headers = headers)
+                r1 = nothing; r2 = nothing
+                frames = _capture_sse_during("post_message") do
+                    r1 = HTTP.post("$base/api/samples/$s_id/messages";
+                        body = body_json, headers = headers)
+                    r2 = HTTP.post("$base/api/samples/$s_id/messages";
+                        body = body_json, headers = headers)
+                end
                 @test r1.status == 201
-                r2 = HTTP.post("$base/api/samples/$s_id/messages";
-                    body = body_json, headers = headers)
                 @test r2.status == 201
                 @test String(r2.body) == String(r1.body)
                 post_count = _count_actions(db, "post_message")
                 @test post_count - pre_count == 1
+                @test length(frames) == 1
             end
         end
     end
@@ -185,15 +207,19 @@ end
                 body_json = JSON3.write(Dict(:name => "renamed"))
 
                 pre_count = _count_actions(db, "update_sample")
-                r1 = HTTP.patch("$base/api/samples/$s_id";
-                    body = body_json, headers = headers)
+                r1 = nothing; r2 = nothing
+                frames = _capture_sse_during("update_sample") do
+                    r1 = HTTP.patch("$base/api/samples/$s_id";
+                        body = body_json, headers = headers)
+                    r2 = HTTP.patch("$base/api/samples/$s_id";
+                        body = body_json, headers = headers)
+                end
                 @test r1.status == 200
-                r2 = HTTP.patch("$base/api/samples/$s_id";
-                    body = body_json, headers = headers)
                 @test r2.status == 200
                 @test String(r2.body) == String(r1.body)
                 post_count = _count_actions(db, "update_sample")
                 @test post_count - pre_count == 1
+                @test length(frames) == 1
             end
         end
     end

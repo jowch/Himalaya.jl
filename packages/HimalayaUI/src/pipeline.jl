@@ -2,6 +2,7 @@ using Himalaya
 using SparseArrays
 using Tables
 using JSON3
+using HTTP: HTTP, Request
 
 """
     auto_group(indices) -> Vector{Index}
@@ -705,7 +706,8 @@ experiments without an explicit config).
 """
 function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String;
                             trace_known_unchanged::Bool=false,
-                            defer_broadcast::Bool=false)
+                            defer_broadcast::Bool=false,
+                            req::Union{HTTP.Request, Nothing}=nothing)
     t0 = time()
 
     rows = Tables.rowtable(DBInterface.execute(db,
@@ -796,7 +798,12 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
         :analysis_inputs_hash => new_inputs_hash,
         :indices              => _serialized_indices_for_broadcast(db, exposure_id),
     )
-    apply_event!(db, _system_request();
+    # Use the caller's request when supplied so the durable analyze_run row
+    # carries the originating client_op_id (review issue #15: the route's
+    # MAX(id)-sentinel filter is racy under concurrent analyze; filtering by
+    # client_op_id is unambiguous). Falls back to _system_request() for CLI
+    # / pipeline callers that have no request context.
+    apply_event!(db, req === nothing ? _system_request() : req;
         kind        = "analyze_run",
         entity_type = "exposure",
         entity_id   = exposure_id,

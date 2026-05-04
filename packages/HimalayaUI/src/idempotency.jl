@@ -73,9 +73,12 @@ Wraps a route body `f` so that:
 Body is guaranteed to execute exactly once per successful op-id, even under
 concurrent retry.
 
-Single-process-safe; relies on the `idempotent_responses(client_op_id)` PK
-constraint as defense-in-depth if a future multi-process deployment is
-introduced (the in-process `OP_LOCKS` registry doesn't cross processes).
+Single-process-safe only. The in-process `OP_LOCKS` registry doesn't cross
+processes, AND the cache `INSERT` (line below) isn't `INSERT OR IGNORE` — a
+multi-process retry where two processes both see no cached row and race to
+INSERT will hit `UNIQUE constraint failed` and 500. To support multi-process
+deployment, change the cache write to `INSERT OR IGNORE` and on `changes()=0`
+re-read the cached row to return.
 """
 function with_idempotency(f, db::SQLite.DB, req::HTTP.Request)
     op_id = get_client_op_id(req)

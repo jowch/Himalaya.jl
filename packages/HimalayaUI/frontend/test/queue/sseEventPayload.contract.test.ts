@@ -289,6 +289,31 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
     expect(invalidated).toEqual(queryKeys.samples(1));
   });
 
+  it("delete_index falls through to default (invalidates peaks+indices+groups)", () => {
+    // `delete_index` is the OpKind for the user gesture that hits the
+    // DELETE /api/indices/:id route — the backend emits `speculative_deleted`
+    // on the wire, which has its own dedicated case. But if a future
+    // contributor adds a typed branch for `delete_index` in applyRemoteToCache
+    // and forgets to handle the wire-name divergence, this test pins the
+    // expected default fall-through (review suggestion #16).
+    let invalidatedKeys: unknown[] = [];
+    const orig = qc.invalidateQueries.bind(qc);
+    qc.invalidateQueries = ((arg: { queryKey: unknown }) => {
+      invalidatedKeys.push(arg.queryKey); return orig(arg);
+    }) as typeof qc.invalidateQueries;
+    const evt: SseEvent = {
+      id: 99, kind: "delete_index", entity_type: "exposure", entity_id: 5,
+      payload: { index_id: 7 },
+    };
+    applyRemoteToCache(evt, qc);
+    // Default branch invalidates peaks, indices, groups for the entity.
+    expect(invalidatedKeys).toEqual([
+      queryKeys.peaks(5),
+      queryKeys.indices(5),
+      queryKeys.groups(5),
+    ]);
+  });
+
   it("remove_tag (exposure) invalidates the sample's exposures list", () => {
     let invalidated: unknown = null;
     qc.invalidateQueries = ((arg: { queryKey: unknown }) => {

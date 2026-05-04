@@ -372,6 +372,115 @@ end
     end
 end
 
+@testset "_fix_fk_references_after_autoincrement_migration! heals bare-form (no quotes)" begin
+    # The smoke regression covered the QUOTED form ("_migrate_old_samples").
+    # The other branch is the BARE form (_migrate_old_samples without quotes)
+    # — SQLite accepts unquoted table names in CREATE statements, and that's
+    # the more interesting branch since it'd be missed by a quoted-only fix
+    # (review issue #23). Tested via the heal helper directly to avoid
+    # tangling with create_schema! migrations.
+    mktempdir() do tmp
+        db_path = joinpath(tmp, "corrupted-bare.db")
+        db = SQLite.DB(db_path)
+        DBInterface.execute(db,
+            "CREATE TABLE exposures (id INTEGER PRIMARY KEY AUTOINCREMENT, x TEXT)")
+        # Bare form — no quotes around the FK target.
+        DBInterface.execute(db, """
+            CREATE TABLE refs_bare_exposure (
+                id INTEGER PRIMARY KEY,
+                exposure_id INTEGER REFERENCES _migrate_old_exposures(id)
+            )""")
+
+        broken_before = Tables.rowtable(DBInterface.execute(db,
+            "SELECT name FROM sqlite_master WHERE type='table' AND sql LIKE '%_migrate_old_%'"))
+        @test length(broken_before) == 1
+
+        HimalayaUI._fix_fk_references_after_autoincrement_migration!(db)
+
+        broken_after = Tables.rowtable(DBInterface.execute(db,
+            "SELECT name FROM sqlite_master WHERE type='table' AND sql LIKE '%_migrate_old_%'"))
+        @test isempty(broken_after)
+        SQLite.close(db)
+    end
+end
+
+@testset "_fix_fk_references_after_autoincrement_migration! heals multiple entities" begin
+    # Smoke regression covered only `samples`. Real corruption has multiple
+    # entities at once. This test exercises the heal loop directly (no
+    # open_db / create_schema! interference) so we can include corrupted
+    # FKs targeting `samples`, `exposures`, AND `experiments` in one DB
+    # without colliding with production schema migrations (review issue #23).
+    mktempdir() do tmp
+        db_path = joinpath(tmp, "corrupted-multi.db")
+        db = SQLite.DB(db_path)
+        # Three entity targets with distinct corrupted-FK references to each.
+        # Use synthetic referent table names so create_schema! is irrelevant.
+        DBInterface.execute(db,
+            "CREATE TABLE samples (id INTEGER PRIMARY KEY AUTOINCREMENT, x TEXT)")
+        DBInterface.execute(db,
+            "CREATE TABLE exposures (id INTEGER PRIMARY KEY AUTOINCREMENT, x TEXT)")
+        DBInterface.execute(db,
+            "CREATE TABLE experiments (id INTEGER PRIMARY KEY AUTOINCREMENT, x TEXT)")
+        DBInterface.execute(db, """
+            CREATE TABLE refs_to_samples (
+                id INTEGER PRIMARY KEY,
+                sample_id INTEGER REFERENCES "_migrate_old_samples"(id)
+            )""")
+        DBInterface.execute(db, """
+            CREATE TABLE refs_to_exposures (
+                id INTEGER PRIMARY KEY,
+                exposure_id INTEGER REFERENCES _migrate_old_exposures(id)
+            )""")
+        DBInterface.execute(db, """
+            CREATE TABLE refs_to_experiments (
+                id INTEGER PRIMARY KEY,
+                experiment_id INTEGER REFERENCES "_migrate_old_experiments"(id)
+            )""")
+
+        broken_before = Tables.rowtable(DBInterface.execute(db,
+            "SELECT name FROM sqlite_master WHERE type='table' AND sql LIKE '%_migrate_old_%'"))
+        @test length(broken_before) == 3
+
+        # Call the heal helper directly.
+        HimalayaUI._fix_fk_references_after_autoincrement_migration!(db)
+
+        broken_after = Tables.rowtable(DBInterface.execute(db,
+            "SELECT name FROM sqlite_master WHERE type='table' AND sql LIKE '%_migrate_old_%'"))
+        @test isempty(broken_after)
+        SQLite.close(db)
+    end
+end
+
+@testset "_fix_fk_references_after_autoincrement_migration! is idempotent on healed DB" begin
+    # Once the DB is healed, calling the heal helper again must not error or
+    # re-rewrite. Detector LIKE clause must yield empty so the heal loop
+    # short-circuits at the early return (review issue #23).
+    mktempdir() do tmp
+        db_path = joinpath(tmp, "corrupted-idem.db")
+        db = SQLite.DB(db_path)
+        DBInterface.execute(db,
+            "CREATE TABLE samples (id INTEGER PRIMARY KEY AUTOINCREMENT, x TEXT)")
+        DBInterface.execute(db, """
+            CREATE TABLE refs_to_samples (
+                id INTEGER PRIMARY KEY,
+                sample_id INTEGER REFERENCES "_migrate_old_samples"(id)
+            )""")
+
+        # First call heals.
+        HimalayaUI._fix_fk_references_after_autoincrement_migration!(db)
+        broken1 = Tables.rowtable(DBInterface.execute(db,
+            "SELECT name FROM sqlite_master WHERE type='table' AND sql LIKE '%_migrate_old_%'"))
+        @test isempty(broken1)
+
+        # Second call must short-circuit without throwing.
+        HimalayaUI._fix_fk_references_after_autoincrement_migration!(db)
+        broken2 = Tables.rowtable(DBInterface.execute(db,
+            "SELECT name FROM sqlite_master WHERE type='table' AND sql LIKE '%_migrate_old_%'"))
+        @test isempty(broken2)
+        SQLite.close(db)
+    end
+end
+
 @testset "user_actions.client_id column exists on fresh DB" begin
     mktempdir() do tmp
         db = HimalayaUI.open_db(joinpath(tmp, "test.db"))

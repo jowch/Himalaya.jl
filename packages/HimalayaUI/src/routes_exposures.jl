@@ -203,22 +203,35 @@ function register_exposures_routes!()
         # post-commit broadcast carrying the spec'd `post_state` envelope so
         # foreign tabs converge without a refetch round-trip (issue #12).
         return with_idempotency(db, req) do
-            # Capture max user_actions id BEFORE analyze runs so we can
-            # identify the analyze_run row this call emits (vs. a prior one
-            # if analyze_exposure! takes the no-op fast path).
-            pre_max_rows = Tables.rowtable(DBInterface.execute(db,
-                "SELECT IFNULL(MAX(id), 0) AS m FROM user_actions"))
-            pre_max_id = Int(pre_max_rows[1].m)
-
-            analyze_exposure!(db, id, analysis_dir; defer_broadcast = true)
+            # Pass `req` so analyze_exposure!'s durable analyze_run row carries
+            # this request's client_op_id. We then filter by client_op_id
+            # below — unambiguous, vs. the prior MAX(id)-sentinel approach
+            # which could alias if a concurrent analyze interleaved between
+            # the snapshot and the SELECT (review issue #15).
+            analyze_exposure!(db, id, analysis_dir; defer_broadcast = true, req = req)
 
             new_hash = read_inputs_hash(db, id)
-            evt = Tables.rowtable(DBInterface.execute(db,
-                """SELECT id, user_id, payload
-                   FROM user_actions
-                   WHERE action = 'analyze_run' AND entity_type = 'exposure'
-                     AND entity_id = ? AND id > ?
-                   ORDER BY id DESC LIMIT 1""", [id, pre_max_id]))
+            client_op_id = get_client_op_id(req)
+            # client_op_id is guaranteed non-nothing here because the queue
+            # mutator always sends X-Client-Op-Id; a missing header would
+            # have skipped the `with_idempotency` cache and we'd have no
+            # disambiguation handle. Defend anyway — fall back to LIMIT 1
+            # ORDER BY id DESC, which matches the prior behaviour.
+            evt = if client_op_id === nothing
+                Tables.rowtable(DBInterface.execute(db,
+                    """SELECT id, user_id, payload
+                       FROM user_actions
+                       WHERE action = 'analyze_run' AND entity_type = 'exposure'
+                         AND entity_id = ?
+                       ORDER BY id DESC LIMIT 1""", [id]))
+            else
+                Tables.rowtable(DBInterface.execute(db,
+                    """SELECT id, user_id, payload
+                       FROM user_actions
+                       WHERE action = 'analyze_run' AND entity_type = 'exposure'
+                         AND entity_id = ? AND client_op_id = ?
+                       LIMIT 1""", [id, client_op_id]))
+            end
             if !isempty(evt)
                 row = evt[1]
                 post_state = Dict{Symbol, Any}(
