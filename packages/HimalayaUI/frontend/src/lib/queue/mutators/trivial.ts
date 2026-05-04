@@ -71,21 +71,25 @@ export const updateSampleMutator: Mutator<UpdateSampleInput, UpdateSampleScope, 
     // tags client-side. Spreading the response wholesale into the cache
     // would clobber `tags` to undefined.  Merge ONLY the patched fields
     // onto the existing cache entry so tags survive.
+    //
+    // Also: when SSE wins the race against HTTP, `synthesizeResponseFromSse`
+    // hands us the SSE payload (the diff — only the patched field), so
+    // unpatched fields are `undefined` on the response. Skip undefined
+    // fields below so they don't clobber existing values.
     const samplesKey = queryKeys.samples(p.experimentId);
     const sampleKey = queryKeys.sample(p.sampleId);
+    const patch: Partial<Sample> = {};
+    if (response.name !== undefined) patch.name = response.name;
+    if (response.notes !== undefined) patch.notes = response.notes;
+    if (response.label !== undefined) patch.label = response.label;
     const list = qc.getQueryData<Sample[]>(samplesKey);
     if (list) {
       qc.setQueryData<Sample[]>(samplesKey, list.map((s) =>
-        s.id === response.id
-          ? { ...s, name: response.name, notes: response.notes, label: response.label }
-          : s));
+        s.id === p.sampleId ? { ...s, ...patch } : s));
     }
     const prevSingle = qc.getQueryData<Sample>(sampleKey);
-    if (prevSingle && prevSingle.id === response.id) {
-      qc.setQueryData<Sample>(sampleKey, {
-        ...prevSingle,
-        name: response.name, notes: response.notes, label: response.label,
-      });
+    if (prevSingle && prevSingle.id === p.sampleId) {
+      qc.setQueryData<Sample>(sampleKey, { ...prevSingle, ...patch });
     }
   },
 };

@@ -5,6 +5,24 @@ import { queryKeys } from "../../queries";
 import { peakQTol } from "./peakQTol";
 
 /**
+ * Write `post_state.indices` and `post_state.analysis_inputs_hash` into the
+ * local cache without applying any per-kind body. Used by the foreign-event
+ * path (via `applyRemoteToCache`) AND by the own-op confirmation paths in
+ * `replayCoordinator` — own ops need post_state propagation too, otherwise
+ * the indices cache stays frozen at the pre-mutation `inputs_hash` and the
+ * StaleIndicesBanner sticks until a hard refetch.
+ */
+export function applyPostStateOnly(remote: SseEvent, qc: QueryClient): void {
+  if (!remote.post_state) return;
+  const id = remote.entity_id;
+  qc.setQueryData(queryKeys.indices(id), remote.post_state.indices);
+  qc.setQueryData(queryKeys.exposure(id), (old: Exposure | undefined) =>
+    old
+      ? { ...old, analysis_inputs_hash: remote.post_state!.analysis_inputs_hash }
+      : old);
+}
+
+/**
  * Apply a remote SSE event to the local query cache. Per-kind logic mirrors
  * the spec's "replay-without-refetch where post_state covers it; refetch
  * fallback where the event payload is insufficient or update is rare."
@@ -17,14 +35,7 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
   const id = remote.entity_id;
   const payload = remote.payload as Record<string, unknown> | undefined;
 
-  const applyPostState = (): void => {
-    if (!remote.post_state) return;
-    qc.setQueryData(queryKeys.indices(id), remote.post_state.indices);
-    qc.setQueryData(queryKeys.exposure(id), (old: Exposure | undefined) =>
-      old
-        ? { ...old, analysis_inputs_hash: remote.post_state!.analysis_inputs_hash }
-        : old);
-  };
+  const applyPostState = (): void => applyPostStateOnly(remote, qc);
 
   switch (remote.kind) {
     case "peak_added": {

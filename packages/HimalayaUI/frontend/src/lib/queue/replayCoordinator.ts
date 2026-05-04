@@ -1,7 +1,7 @@
 import type { QueryClient, MutationCache } from "@tanstack/react-query";
 import type { SseEvent } from "./types";
 import { getDeferred, clearDeferred } from "./deferred";
-import { applyRemoteToCache } from "./applyRemoteToCache";
+import { applyRemoteToCache, applyPostStateOnly } from "./applyRemoteToCache";
 import { getClientId } from "../clientId";
 
 /**
@@ -40,6 +40,12 @@ export function handleRemoteEvent(
   if (remote.client_op_id) {
     const deferred = getDeferred(remote.client_op_id);
     if (deferred) {
+      // Apply post_state (indices + exposure hash) BEFORE resolving the
+      // deferred so that by the time the mutator's onSuccess runs the
+      // indices cache is already fresh. Without this, the indices stay
+      // frozen at the pre-mutation `inputs_hash` and StaleIndicesBanner
+      // sticks until a hard refetch.
+      applyPostStateOnly(remote, qc);
       // Resolve first, THEN abort — Promises only settle once, so the
       // resolution wins and the abort-handler's reject becomes a no-op.
       // Order matters: aborting first triggers onAbort → reject, which
@@ -57,10 +63,15 @@ export function handleRemoteEvent(
   // Self-echo guard (issue #8 from PR review). No deferred matches but the
   // frame originated in this same tab — i.e. HTTP-first won and the deferred
   // was already cleared in `mutationFn`'s finally. The mutator's onSuccess
-  // already wrote the canonical row; falling into Case 2 here would
-  // double-apply the effect via applyRemoteToCache (e.g. duplicate peak row
-  // for peak_added). Drop the frame.
-  if (isOwnTab) return;
+  // already wrote the canonical peak row + exposure hash; falling into Case
+  // 2 would double-apply the per-kind body (e.g. duplicate peak row for
+  // peak_added). But we still need to propagate `post_state.indices` —
+  // mutator onSuccess paths don't write the indices cache, so without this
+  // the StaleIndicesBanner sticks.
+  if (isOwnTab) {
+    applyPostStateOnly(remote, qc);
+    return;
+  }
 
   // Case 2: foreign event. Replay-as-rerun.
   const pending = mc.getAll().filter(
@@ -105,13 +116,47 @@ export function handleRemoteEvent(
  * from the SSE frame; analysis_inputs_hash from post_state if present;
  * remaining fields are the route-specific payload (q, group_id, etc.)
  * that the original route handler would have echoed.
+ *
+ * Kind-aware for `peak_added`: the SSE payload only carries `q` and
+ * `peak_curation_id`, but `peakAddMutator.onSuccess` reads `id`, `source`,
+ * and `exposure_id` off the response. Without this branch, the SSE-wins
+ * path lands a peak row with `id === undefined` in the cache, which then
+ * matches `hoveredPeakId` (also undefined) and renders a permanent halo.
  */
 function synthesizeResponseFromSse(remote: SseEvent): unknown {
   const payload = (remote.payload as Record<string, unknown> | undefined) ?? {};
-  return {
+  const base = {
     event_id: remote.id,
     client_op_id: remote.client_op_id,
     analysis_inputs_hash: remote.post_state?.analysis_inputs_hash,
-    ...payload,
   };
+  if (remote.kind === "peak_added") {
+    const peakId = payload.peak_curation_id as number | undefined;
+    return {
+      ...base,
+      id: peakId,
+      exposure_id: remote.entity_id,
+      q: payload.q as number,
+      intensity: null,
+      prominence: null,
+      sharpness: null,
+      source: "manual",
+      excluded: false,
+      view_row_id: peakId,
+    };
+  }
+  if (remote.kind === "add_tag") {
+    // SSE payload uses `tag_id`; HTTP response uses `id`. Mutators
+    // (addSampleTagMutator / addExposureTagMutator) read response.id and
+    // response.source. Without this branch, SSE-wins lands a malformed tag
+    // with id=undefined and source=undefined — undeletable, mis-classified.
+    return {
+      ...base,
+      id: payload.tag_id,
+      key: payload.key,
+      value: payload.value,
+      source: "manual",
+    };
+  }
+  return { ...base, ...payload };
 }
