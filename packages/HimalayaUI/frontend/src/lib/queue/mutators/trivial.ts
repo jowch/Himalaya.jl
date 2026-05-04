@@ -65,14 +65,28 @@ export const updateSampleMutator: Mutator<UpdateSampleInput, UpdateSampleScope, 
   },
   request: (p) => api.updateSample(p.sampleId, patchOf(p), buildAuthOpts(p)),
   onSuccess: (p, response, qc) => {
+    // The PATCH route returns only the `samples` row — no `tags` field.
+    // The Sample type requires `tags: SampleTag[]`, and the listing routes
+    // (GET /api/experiments/:id/samples and GET /api/samples/:id) attach
+    // tags client-side. Spreading the response wholesale into the cache
+    // would clobber `tags` to undefined.  Merge ONLY the patched fields
+    // onto the existing cache entry so tags survive.
     const samplesKey = queryKeys.samples(p.experimentId);
     const sampleKey = queryKeys.sample(p.sampleId);
     const list = qc.getQueryData<Sample[]>(samplesKey);
     if (list) {
       qc.setQueryData<Sample[]>(samplesKey, list.map((s) =>
-        s.id === response.id ? response : s));
+        s.id === response.id
+          ? { ...s, name: response.name, notes: response.notes, label: response.label }
+          : s));
     }
-    qc.setQueryData<Sample>(sampleKey, response);
+    const prevSingle = qc.getQueryData<Sample>(sampleKey);
+    if (prevSingle && prevSingle.id === response.id) {
+      qc.setQueryData<Sample>(sampleKey, {
+        ...prevSingle,
+        name: response.name, notes: response.notes, label: response.label,
+      });
+    }
   },
 };
 

@@ -49,6 +49,11 @@ export const peakAddMutator: Mutator<PeakAddInput, PeakAddScope, PeakAddResponse
   },
   request: (p) => api.addPeak(p.exposureId, p.q, buildAuthOpts(p)),
   onSuccess: (p, response, qc) => {
+    // Strip queue-framework metadata before treating the response as a Peak.
+    // The route returns a flat `Peak & {event_id, view_row_id, analysis_inputs_hash}`;
+    // the cache holds Peak[], so we don't want event_id/etc. polluting it.
+    const { event_id: _e, view_row_id: _v, analysis_inputs_hash, ...serverPeak } = response;
+    void _e; void _v;
     const peaksKey = queryKeys.peaks(p.exposureId);
     qc.setQueryData<Peak[]>(peaksKey, (old) => {
       const list = old ?? [];
@@ -61,9 +66,9 @@ export const peakAddMutator: Mutator<PeakAddInput, PeakAddScope, PeakAddResponse
         if (pk.id < 0 && !replaced
             && Math.abs(pk.q - p.q) < peakQTol(p.q)
             && pk.exposure_id === p.exposureId) {
-          if (!seen.has(response.peak.id)) {
-            next.push(response.peak);
-            seen.add(response.peak.id);
+          if (!seen.has(serverPeak.id)) {
+            next.push(serverPeak);
+            seen.add(serverPeak.id);
           }
           replaced = true;
           continue;
@@ -72,11 +77,11 @@ export const peakAddMutator: Mutator<PeakAddInput, PeakAddScope, PeakAddResponse
         next.push(pk);
         seen.add(pk.id);
       }
-      if (!replaced && !seen.has(response.peak.id)) next.push(response.peak);
+      if (!replaced && !seen.has(serverPeak.id)) next.push(serverPeak);
       return next;
     });
     qc.setQueryData<Exposure>(queryKeys.exposure(p.exposureId), (old) =>
-      old ? { ...old, analysis_inputs_hash: response.analysis_inputs_hash } : old);
+      old ? { ...old, analysis_inputs_hash } : old);
   },
   affectsExposurePeaks: () => true,
 };

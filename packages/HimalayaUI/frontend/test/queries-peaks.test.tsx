@@ -78,11 +78,15 @@ describe("queries — peak mutations (queue-driven, M2.2)", () => {
     const { client, wrapper } = withClient();
     client.setQueryData<Peak[]>(queryKeys.peaks(EXPOSURE_ID), []);
     client.setQueryData<Exposure>(queryKeys.exposure(EXPOSURE_ID), makeExposure());
+    // Flat shape (matches `routes_peaks.jl` JSON3.write Dict). Earlier
+    // version of this fixture wrapped under `peak: {...}`, which matched
+    // a stale `PeakAddResponse.peak: Peak` type but NOT the actual server
+    // response — the production mutator crashed on `response.peak.id`
+    // because there is no `peak` key. Caught only in the deep-scan after
+    // the fourth review round.
     mockOnce(201, {
-      peak: {
-        id: 99, exposure_id: EXPOSURE_ID, q: 0.123, intensity: null,
-        prominence: null, sharpness: null, source: "manual", excluded: false,
-      },
+      id: 99, exposure_id: EXPOSURE_ID, q: 0.123, intensity: null,
+      prominence: null, sharpness: null, source: "manual", excluded: false,
       event_id: 7,
       view_row_id: 7,
       analysis_inputs_hash: HASH_NEW,
@@ -243,10 +247,8 @@ describe("queries — peak mutations (queue-driven, M2.2)", () => {
     client.setQueryData<Exposure>(queryKeys.exposure(EXPOSURE_ID), makeExposure());
     const reanalyzeSpy = vi.spyOn(api, "reanalyzeExposure");
     mockOnce(201, {
-      peak: {
-        id: 99, exposure_id: EXPOSURE_ID, q: 0.5, intensity: null,
-        prominence: null, sharpness: null, source: "manual", excluded: false,
-      },
+      id: 99, exposure_id: EXPOSURE_ID, q: 0.5, intensity: null,
+      prominence: null, sharpness: null, source: "manual", excluded: false,
       event_id: 1, view_row_id: 1, analysis_inputs_hash: HASH_NEW,
     });
     const { result } = renderHook(() => useAddPeak(EXPOSURE_ID), { wrapper });

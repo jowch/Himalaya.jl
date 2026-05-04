@@ -193,8 +193,15 @@ export interface Peak {
  * peak plus event metadata + the post-state hash so the client can mark the
  * exposure cache fresh without a refetch round-trip.
  */
-export interface PeakAddResponse {
-  peak: Peak;
+/**
+ * Backend response for POST /api/exposures/:id/peaks. The peak fields are
+ * inlined (matches `routes_peaks.jl` which JSON3.writes a flat Dict). Earlier
+ * draft typed this as `{peak: Peak, ...}` and mutators read `response.peak.id`
+ * — that would throw in production; only the unit tests passed because their
+ * mock fixture matched the (wrong) type. Now extends `Peak` like
+ * `PeakUpdatedResponse` does.
+ */
+export interface PeakAddResponse extends Peak {
   event_id: number;
   view_row_id: number;
   analysis_inputs_hash: string;
@@ -342,8 +349,15 @@ export const postSampleMessage = (sample_id: number, body: string, opts?: AuthOp
   request<SampleMessage>("POST", `/api/samples/${sample_id}/messages`, { body }, opts);
 
 // Analysis
+export interface ReanalyzeResponse {
+  id: number;
+  analyzed: boolean;
+  /** New post-analyze hash. Used to clear StaleIndicesBanner inline with
+   *  the HTTP response, before the SSE post_state arrives. */
+  analysis_inputs_hash: string;
+}
 export const reanalyzeExposure = (exposure_id: number, opts?: AuthOpts) =>
-  request<{ id: number; analyzed: boolean }>("POST", `/api/exposures/${exposure_id}/analyze`, {}, opts);
+  request<ReanalyzeResponse>("POST", `/api/exposures/${exposure_id}/analyze`, {}, opts);
 
 // Single-entity fetchers for mention resolution
 export const getPeak     = (id: number) => request<Peak>("GET", `/api/peaks/${id}`);

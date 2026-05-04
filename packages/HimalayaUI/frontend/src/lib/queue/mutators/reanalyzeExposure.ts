@@ -10,7 +10,8 @@
  * preserves FIFO ordering with peak ops via MutationCache iteration order.
  */
 import * as api from "../../../api";
-import type { AuthOpts } from "../../../api";
+import type { AuthOpts, Exposure, ReanalyzeResponse } from "../../../api";
+import { queryKeys } from "../../../queries";
 import { authOpts } from "../../authOpts";
 import type { Mutator, RollbackContext } from "../types";
 
@@ -26,8 +27,6 @@ function buildAuthOpts(p: { username: string | undefined; clientId: string; clie
   return authOpts(p.username, p.clientId, p.clientOpId);
 }
 
-type ReanalyzeResponse = { id: number; analyzed: boolean };
-
 export const reanalyzeExposureMutator: Mutator<
   ReanalyzeExposureInput,
   ReanalyzeExposureScope,
@@ -37,10 +36,16 @@ export const reanalyzeExposureMutator: Mutator<
   // Null optimistic effect: no cache write, restore is a no-op.
   onMutate: (): RollbackContext => ({ restore: () => {} }),
   request: (p) => api.reanalyzeExposure(p.exposureId, buildAuthOpts(p)),
-  // The HTTP response is purely advisory ({ id, analyzed }); the authoritative
-  // updated peaks/indices/groups land via SSE post_state on the analyze_run
-  // frame (see applyRemoteToCache.ts). No cache work needed here.
-  onSuccess: () => {},
+  // Write the new hash onto the exposure cache so StaleIndicesBanner clears
+  // immediately on HTTP success — without this, there's a flicker window
+  // between the HTTP response and the SSE post_state arrival where the
+  // banner still shows "stale" against the old hash. Indices/groups still
+  // arrive via SSE post_state on the analyze_run frame (see
+  // applyRemoteToCache.ts).
+  onSuccess: (p, response, qc) => {
+    qc.setQueryData<Exposure>(queryKeys.exposure(p.exposureId), (old) =>
+      old ? { ...old, analysis_inputs_hash: response.analysis_inputs_hash } : old);
+  },
   // Marks this op as peak-affecting so StaleIndicesBanner / speculative-snap
   // gating treats an in-flight reanalyze the same way as a peak curation.
   affectsExposurePeaks: () => true,
