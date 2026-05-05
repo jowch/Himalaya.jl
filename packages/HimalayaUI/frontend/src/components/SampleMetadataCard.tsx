@@ -76,6 +76,7 @@ export function SampleMetadataCard({
           </p>
         )}
         <input
+          data-testid="sample-name-input"
           className="w-full bg-transparent border-0 outline-none px-0 text-title placeholder:text-fg-muted"
           placeholder="Sample name"
           value={name}
@@ -102,6 +103,7 @@ export function SampleMetadataCard({
           Notes
         </label>
         <textarea
+          data-testid="sample-notes-textarea"
           rows={2}
           className="w-full bg-bg border border-border rounded px-2 py-1 text-sm text-fg resize-none"
           value={notes}

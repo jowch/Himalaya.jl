@@ -79,17 +79,32 @@
  */
 import { test, expect, type Page } from "@playwright/test";
 
-const BACKEND_BASE = process.env["BACKEND_BASE"] ?? "http://127.0.0.1:8080";
+const BACKEND_BASE = process.env["BACKEND_BASE"] ?? "http://127.0.0.1:8090";
 
-type Exposure = { id: number; sample_id: number };
+type Exposure = { id: number; sample_id: number; selected: boolean };
 type Sample = { id: number; experiment_id: number };
 type IndexEntry = { id: number; kind: string };
 type GroupEntry = { id: number; exposure_id: number; kind: string;
                     active: boolean; members: number[] };
 
-async function findTestExposure(): Promise<{ exposureId: number; indices: number[] }> {
-  // Walk the API to find an analyzed exposure with ≥2 auto indices and
-  // no existing custom group (so we exercise the first-confirmation path).
+interface TestExposure {
+  experimentId: number;
+  sampleId: number;
+  exposureId: number;
+  indices: number[];
+}
+
+async function findTestExposure(): Promise<TestExposure> {
+  // Walk the API to find a sample whose `selected:true` exposure has ≥2 auto
+  // indices NOT yet in the auto group's members, and no existing custom
+  // group (so we exercise the first-confirmation path).
+  //
+  // Two filters are load-bearing:
+  //   - `selected:true` — Index page auto-redirects to the selected exposure
+  //     (PlotCard.tsx:106), overriding any seeded activeExposureId.
+  //   - `id NOT in autoGroup.members` — the test confirms two CANDIDATES into
+  //     a new custom group. Confirming an already-active member is a no-op
+  //     (button reads "Remove", not "Add"), so the test would never advance.
   const exps = await fetch(`${BACKEND_BASE}/api/experiments`).then(r => r.json());
   for (const exp of exps) {
     const samples: Sample[] = await fetch(
@@ -97,40 +112,50 @@ async function findTestExposure(): Promise<{ exposureId: number; indices: number
     for (const sm of samples) {
       const exposures: Exposure[] = await fetch(
         `${BACKEND_BASE}/api/samples/${sm.id}/exposures`).then(r => r.json());
-      for (const ex of exposures) {
-        const indices: IndexEntry[] = await fetch(
-          `${BACKEND_BASE}/api/exposures/${ex.id}/indices`).then(r => r.json());
-        const autoIxs = indices.filter(ix => ix.kind === "auto");
-        if (autoIxs.length < 2) continue;
-        const groups: GroupEntry[] = await fetch(
-          `${BACKEND_BASE}/api/exposures/${ex.id}/groups`).then(r => r.json());
-        const hasCustom = groups.some(g => g.kind === "custom");
-        if (hasCustom) continue;
-        return {
-          exposureId: ex.id,
-          indices: autoIxs.slice(0, 2).map(ix => ix.id),
-        };
-      }
+      const selected = exposures.find(e => e.selected);
+      if (!selected) continue;
+      const indices: IndexEntry[] = await fetch(
+        `${BACKEND_BASE}/api/exposures/${selected.id}/indices`).then(r => r.json());
+      const autoIxs = indices.filter(ix => ix.kind === "auto");
+      const groups: GroupEntry[] = await fetch(
+        `${BACKEND_BASE}/api/exposures/${selected.id}/groups`).then(r => r.json());
+      if (groups.some(g => g.kind === "custom")) continue;
+      const activeMembers = new Set(
+        groups.filter(g => g.active).flatMap(g => g.members));
+      const candidates = autoIxs.filter(ix => !activeMembers.has(ix.id));
+      if (candidates.length < 2) continue;
+      return {
+        experimentId: exp.id, sampleId: sm.id, exposureId: selected.id,
+        indices: candidates.slice(0, 2).map(ix => ix.id),
+      };
     }
   }
   throw new Error(
     `No suitable exposure found at ${BACKEND_BASE}. ` +
-    `Need an analyzed exposure with ≥2 auto indices and no custom group. ` +
-    `See "Pre-conditions on the dev DB" in this file.`);
+    `Need a selected exposure with ≥2 auto indices NOT in the auto group, ` +
+    `and no custom group. See "Pre-conditions on the dev DB".`);
 }
 
-async function navigateToExposure(page: Page, exposureId: number): Promise<void> {
-  // The frontend doesn't expose a deep-link to an exposure id; we click
-  // through the navigator instead. If the app has an OnboardingFlow, dismiss
-  // it first (the test DB may have no users registered).
+async function navigateToExposure(page: Page, fx: TestExposure): Promise<void> {
+  // No deep-link route; seed Zustand-persisted client state so the app
+  // mounts directly on the Index page for this exposure. Bypasses
+  // OnboardingFlow + NavModal in one shot.
+  await page.addInitScript((args) => {
+    localStorage.setItem("himalaya-ui:state", JSON.stringify({
+      state: {
+        username: args.username, firstName: args.username, lastName: "tester",
+        activeExperimentId: args.expId,
+        activeSampleId: args.sampId,
+        activeExposureId: args.expoId,
+        activePage: "index",
+        tutorialSeen: true,
+        theme: "dark",
+      },
+      version: 3,
+    }));
+  }, { username: "post-pr37-tester", expId: fx.experimentId,
+       sampId: fx.sampleId, expoId: fx.exposureId });
   await page.goto("/");
-  // Try to dismiss onboarding if present (no-op if absent).
-  const onboardingCta = page.getByRole("button", { name: /^(continue|skip)/i });
-  if (await onboardingCta.isVisible().catch(() => false)) {
-    await onboardingCta.click().catch(() => {});
-  }
-  // Click the exposure tile by data attribute.
-  await page.locator(`[data-exposure-id="${exposureId}"]`).first().click();
   // Wait for the index list to render (a card with [data-index-id] appears).
   await expect(page.locator("[data-index-id]").first()).toBeVisible();
 }
@@ -144,22 +169,52 @@ async function confirmIndex(page: Page, indexId: number): Promise<void> {
     .toBeVisible();
 }
 
+/**
+ * post-pr37 tests share a single fixture: the dev DB only has 1 exposure that
+ * matches our criteria (selected:true, ≥2 auto candidates, no existing custom
+ * group). Bug 1a mutates that exposure into a state the other two tests can't
+ * reuse (custom group absorbs all auto-group members → no candidates left).
+ *
+ * To run all three deterministically, the operator must run them ONE AT A
+ * TIME against a freshly-reset DB:
+ *
+ *   bash packages/HimalayaUI/scripts/reset-test-db.sh
+ *   npm run e2e:live -- e2e/live/post-pr37.spec.ts --grep "Bug 1a"
+ *   bash packages/HimalayaUI/scripts/reset-test-db.sh
+ *   npm run e2e:live -- e2e/live/post-pr37.spec.ts --grep "Bug 1c"
+ *   bash packages/HimalayaUI/scripts/reset-test-db.sh
+ *   npm run e2e:live -- e2e/live/post-pr37.spec.ts --grep "no console"
+ *
+ * In a default `npm run e2e:live` run, only Bug 1a executes; the others skip
+ * unless POST_PR37_RUN_ALL=1 is set (and the operator accepts they may fail
+ * on a dirty DB).
+ *
+ * Why not auto-reset between tests: the reset script bounces the backend,
+ * which invalidates Vite's HTTP keepAlive pool. The next page-load request
+ * through the proxy hangs for 30 s+ retrying dead connections. Restarting
+ * Vite per test is heavyweight; running tests independently against a fresh
+ * DB is cleaner.
+ */
+const RUN_ALL_PR37 = process.env["POST_PR37_RUN_ALL"] === "1";
+
 test.describe("post-PR#33 extended fixes (issue #37)", () => {
+  let fx: TestExposure;
   let exposureId: number;
   let indexA: number;
   let indexB: number;
 
   test.beforeAll(async () => {
-    const t = await findTestExposure();
-    exposureId = t.exposureId;
-    [indexA, indexB] = t.indices as [number, number];
+    fx = await findTestExposure();
+    exposureId = fx.exposureId;
+    [indexA, indexB] = fx.indices as [number, number];
     console.log(
-      `[post-pr37] using exposure=${exposureId} indexA=${indexA} indexB=${indexB}`);
+      `[post-pr37] using exp=${fx.experimentId} sample=${fx.sampleId} ` +
+      `exposure=${exposureId} indexA=${indexA} indexB=${indexB}`);
   });
 
   test("Bug 1a — second confirmation works after first creates the custom group",
     async ({ page }) => {
-      await navigateToExposure(page, exposureId);
+      await navigateToExposure(page, fx);
 
       // First confirmation: triggers ensure_custom_group! on the backend.
       // Pre-fix: the new custom group's id wasn't in the cache, so the
@@ -187,13 +242,20 @@ test.describe("post-PR#33 extended fixes (issue #37)", () => {
       const custom = groups.find(g => g.kind === "custom");
       expect(custom, "custom group should exist post-confirmation").toBeDefined();
       expect(custom!.active).toBe(true);
-      expect(custom!.members.sort()).toEqual([indexA, indexB].sort());
+      // Custom group ⊇ {indexA, indexB}. ensure_custom_group! also migrates
+      // the auto group's existing members on the first promotion, so equality
+      // would fail if the auto group already had members.
+      expect(custom!.members).toContain(indexA);
+      expect(custom!.members).toContain(indexB);
       const auto = groups.find(g => g.kind === "auto");
       expect(auto?.active, "auto group should be demoted").toBe(false);
     });
 
   test("Bug 1c — foreign tab picks up new custom group via SSE invalidation",
     async ({ browser }) => {
+      test.skip(!RUN_ALL_PR37,
+        "needs a fresh DB after Bug 1a — run with " +
+        "POST_PR37_RUN_ALL=1 + reset-test-db.sh first.");
       // Two independent browser contexts simulate two tabs / two users.
       const ctxA = await browser.newContext();
       const ctxB = await browser.newContext();
@@ -201,8 +263,8 @@ test.describe("post-PR#33 extended fixes (issue #37)", () => {
       const tabB = await ctxB.newPage();
 
       try {
-        await navigateToExposure(tabA, exposureId);
-        await navigateToExposure(tabB, exposureId);
+        await navigateToExposure(tabA, fx);
+        await navigateToExposure(tabB, fx);
 
         // Snapshot initial state in tab B.
         await expect(tabB.locator(`[data-index-id="${indexA}"]:not([data-active])`))
@@ -227,12 +289,15 @@ test.describe("post-PR#33 extended fixes (issue #37)", () => {
     });
 
   test("no console errors during reconciliation", async ({ page }) => {
+    test.skip(!RUN_ALL_PR37,
+      "needs a fresh DB after Bug 1a — run with " +
+      "POST_PR37_RUN_ALL=1 + reset-test-db.sh first.");
     const errors: string[] = [];
     page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
     page.on("console", (m) => {
       if (m.type() === "error") errors.push(`console.error: ${m.text()}`);
     });
-    await navigateToExposure(page, exposureId);
+    await navigateToExposure(page, fx);
     await confirmIndex(page, indexA);
     await page.waitForTimeout(500);
     // Bug 3 (re-run loop throw safety): if a mutator's onMutate threw and
