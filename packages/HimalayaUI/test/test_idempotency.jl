@@ -301,6 +301,41 @@ end
     end
 end
 
+@testset "OP_LOCKS entry removed when body returns >= 400 (issue #38)" begin
+    # Symmetric to Bug 4: a body that *returns* (without throwing) a 4xx
+    # response also writes no idempotent_responses row. Without cleanup, the
+    # OP_LOCKS entry leaks until process restart. A subsequent successful
+    # retry with the same op_id should still work — the cleanup path must
+    # not corrupt the lock registry for legitimate retry sequences.
+    mktempdir() do tmp
+        db = open_db(joinpath(tmp, "test.db"))
+        req = HTTP.Request("POST", "/",
+                           ["X-Client-Op-Id" => "op-4xx-leak"], UInt8[])
+        r = with_idempotency(db, req) do
+            HTTP.Response(400; body = "{\"error\":\"bad\"}")
+        end
+        @test r.status == 400
+        @test !haskey(HimalayaUI.OP_LOCKS, "op-4xx-leak")
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT 1 FROM idempotent_responses WHERE client_op_id = 'op-4xx-leak'"))
+        @test isempty(rows)
+
+        # A successful retry with the same op_id must still execute and cache.
+        r2 = with_idempotency(db, req) do
+            HTTP.Response(200; body = "{\"id\":7}")
+        end
+        @test r2.status == 200
+        rows2 = Tables.rowtable(DBInterface.execute(db,
+            "SELECT 1 FROM idempotent_responses WHERE client_op_id = 'op-4xx-leak'"))
+        @test length(rows2) == 1
+        @test haskey(HimalayaUI.OP_LOCKS, "op-4xx-leak")
+
+        # Cleanup: don't leak OP_LOCKS state across tests.
+        delete!(HimalayaUI.OP_LOCKS, "op-4xx-leak")
+        SQLite.close(db)
+    end
+end
+
 @testset "I2: with_idempotency success commits event AND cache atomically" begin
     mktempdir() do tmp
         db = open_db(joinpath(tmp, "test.db"))
