@@ -967,6 +967,80 @@ end
     @test String(h_before) != String(h_after)
 end
 
+@testset "analyze_exposure! commits persist_analysis! + analyze_run row atomically (issue #42)" begin
+    # Pre-fix, the apply_event! call lived AFTER persist_analysis!'s tx
+    # committed (autocommit, outside any tx). On the CLI / programmatic /
+    # POST /api/experiments/{id}/analyze paths (no enclosing with_idempotency
+    # tx), a crash between persist_analysis!'s commit and apply_event!'s
+    # INSERT would land the analysis state durably but with no analyze_run
+    # user_actions row. Same shape as #34 Bug 3, one layer up.
+    #
+    # The fix wraps persist_analysis! + apply_event! in a single
+    # SQLite.transaction inside analyze_exposure!; apply_event! switches to
+    # the InTransaction() variant to participate. We can't deterministically
+    # induce a mid-tx crash in a test, but two structural invariants pin
+    # the contract:
+    #
+    # 1. Forward correlation: after each state-advancing call, the latest
+    #    analyze_run row's inputs_hash_after / trace_hash_after match the
+    #    exposures row's analysis_inputs_hash / trace_hash. Catches any
+    #    future regression that reorders the writes (e.g. emits the event
+    #    before persist_analysis! ran).
+    # 2. Outer-tx rollback symmetry: wrap analyze_exposure! in an outer
+    #    SQLite.transaction that throws — the analyze_run row, the auto_peaks
+    #    rebuild, and the exposures hash columns must all revert together.
+    #    The inner SQLite.transaction nests as a SAVEPOINT inside the outer
+    #    tx; a future regression that pulled apply_event! back outside the
+    #    SAVEPOINT (autocommit) would leave a dangling analyze_run row here.
+    tmp = mktempdir()
+    analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
+    mkpath(analysis_dir)
+    src = joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat")
+    dst = joinpath(analysis_dir, "example_tot.dat")
+    cp(src, dst)
+
+    db = open_db(joinpath(tmp, "himalaya.db"))
+    exp_id = init_experiment!(db; path=tmp, data_dir=joinpath(tmp, "data"),
+                                   analysis_dir=analysis_dir)
+    s_id = create_sample!(db; experiment_id=exp_id, label="D1", name="UX1")
+    e_id = create_exposure!(db; sample_id=s_id, filename="example_tot")
+
+    # Layer 1: forward correlation after a slow-path run.
+    analyze_exposure!(db, e_id, analysis_dir)
+    state = first(Tables.rowtable(DBInterface.execute(db,
+        "SELECT trace_hash, analysis_inputs_hash FROM exposures WHERE id = ?", [e_id])))
+    event = first(Tables.rowtable(DBInterface.execute(db,
+        "SELECT payload FROM user_actions WHERE action = 'analyze_run' ORDER BY id DESC LIMIT 1")))
+    p = JSON3.read(String(event.payload))
+    @test String(state.trace_hash)          == String(p[:trace_hash_after])
+    @test String(state.analysis_inputs_hash) == String(p[:inputs_hash_after])
+
+    # Layer 2: outer-tx rollback symmetry. Append bytes to force the slow path
+    # again, run analyze_exposure! inside an outer tx that throws, then verify
+    # nothing landed.
+    open(dst, "a") do io; write(io, "\n0.99 1.0 0.1\n") end
+    n_runs_before = first(Tables.rowtable(DBInterface.execute(db,
+        "SELECT COUNT(*) AS n FROM user_actions WHERE action = 'analyze_run'"))).n
+    state_before = first(Tables.rowtable(DBInterface.execute(db,
+        "SELECT trace_hash, analysis_inputs_hash FROM exposures WHERE id = ?", [e_id])))
+    n_peaks_before = first(Tables.rowtable(DBInterface.execute(db,
+        "SELECT COUNT(*) AS n FROM auto_peaks WHERE exposure_id = ?", [e_id]))).n
+    @test_throws ErrorException SQLite.transaction(db) do
+        analyze_exposure!(db, e_id, analysis_dir; defer_broadcast=true)
+        error("rollback sentinel")
+    end
+    n_runs_after = first(Tables.rowtable(DBInterface.execute(db,
+        "SELECT COUNT(*) AS n FROM user_actions WHERE action = 'analyze_run'"))).n
+    state_after = first(Tables.rowtable(DBInterface.execute(db,
+        "SELECT trace_hash, analysis_inputs_hash FROM exposures WHERE id = ?", [e_id])))
+    n_peaks_after = first(Tables.rowtable(DBInterface.execute(db,
+        "SELECT COUNT(*) AS n FROM auto_peaks WHERE exposure_id = ?", [e_id]))).n
+    @test n_runs_after == n_runs_before
+    @test String(state_after.trace_hash)           == String(state_before.trace_hash)
+    @test String(state_after.analysis_inputs_hash) == String(state_before.analysis_inputs_hash)
+    @test n_peaks_after == n_peaks_before
+end
+
 @testset "analyze_run payload shows both skip flags true on no-op rerun" begin
     # Regression: the skip-flag expressions previously checked only hash equality,
     # not the full predicate (hash match AND existing rows). A hash match on a
