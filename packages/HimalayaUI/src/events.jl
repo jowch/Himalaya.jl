@@ -61,7 +61,7 @@ function apply_event!(db::SQLite.DB, req;
     # Now committed. Fire the broadcast unless the outer caller asked to defer
     # it themselves (e.g. coalesced batch broadcast).
     if !defer_broadcast
-        _maybe_broadcast_event!(db, req, result, kind, entity_type, entity_id,
+        _maybe_broadcast_event!(db, result, kind, entity_type, entity_id,
                                 payload, post_state)
     end
 
@@ -165,13 +165,13 @@ function apply_event!(::InTransaction, db::SQLite.DB, req;
 end
 
 """
-    _maybe_broadcast_event!(db, req, result, kind, entity_type, entity_id, payload, post_state)
+    _maybe_broadcast_event!(db, result, kind, entity_type, entity_id, payload, post_state)
 
 Internal: called by the default `apply_event!` after the durable transaction
 commits. Skips broadcast for analyze_run no-ops (the M0.4 suppression rule)
 and tolerates a missing or failing `broadcast_event!`.
 """
-function _maybe_broadcast_event!(db, req, result, kind, entity_type, entity_id, payload, post_state)
+function _maybe_broadcast_event!(db, result, kind, entity_type, entity_id, payload, post_state)
     isdefined(@__MODULE__, :broadcast_event!) || return nothing
 
     # M0.4: suppress SSE broadcast for analyze_run no-ops (both skip flags true).

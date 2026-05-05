@@ -789,11 +789,21 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
     # callers (no enclosing tx) get all-or-nothing atomicity. `findpeaks`
     # itself is pure compute and stays outside the tx to keep the critical
     # section short.
-    # Bindings declared in the outer scope so the closure body's assignments
-    # propagate back out (without these declarations the `do`-block would
-    # create closure-local variables and they'd be invisible to the broadcast
-    # below).
-    local eff, new_inputs_hash, indexpeaks_skipped, event_result, payload, post_state
+    #
+    # Critical-section growth note: `Himalaya.indexpeaks`, `auto_group`, and
+    # `_serialized_indices_for_broadcast` now run *inside* the tx (previously
+    # only `diff_update + trace_hash UPDATE` were bracketed). Indexing must
+    # commit atomically with the auto_peaks rebuild it depends on; the
+    # SSE-payload snapshot must reflect committed-with-the-tx state. For
+    # typical SAXS data (~10–20 candidate peaks) this stays sub-second. If
+    # write contention becomes a problem under multiplayer, look here first —
+    # the snapshot read could be hoisted out post-commit at the cost of a
+    # second SELECT round-trip.
+    # `event_result`, `payload`, `post_state` are declared `local` so the
+    # do-block's assignments escape to the post-tx broadcast call below;
+    # other in-tx bindings (`eff`, `new_inputs_hash`, `indexpeaks_skipped`)
+    # stay closure-local because they're only read inside the same closure.
+    local event_result, payload, post_state
     event_req = req === nothing ? _system_request() : req
 
     SQLite.transaction(db) do
@@ -863,7 +873,7 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
     # own their own enrichment + post-commit enqueue path).
     # `_maybe_broadcast_event!` honors the M0.4 no-op suppression rule.
     if !defer_broadcast
-        _maybe_broadcast_event!(db, event_req, event_result, "analyze_run",
+        _maybe_broadcast_event!(db, event_result, "analyze_run",
                                 "exposure", exposure_id, payload, post_state)
     end
     nothing
