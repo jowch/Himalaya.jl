@@ -124,4 +124,17 @@ export interface Mutator<TInput, TScope, TResponse> {
   request: (payload: FlatPayload<TInput, TScope>, signal: AbortSignal) => Promise<TResponse>;
   onSuccess: (payload: FlatPayload<TInput, TScope>, response: TResponse, qc: QueryClient) => void;
   affectsExposurePeaks?: (payload: FlatPayload<TInput, TScope>, exposureId: number) => boolean;
+  /**
+   * When set, an HTTP 404 response is treated as a no-op success: the
+   * framework skips both the toast and the rollback, leaving the optimistic
+   * cache state in place. Use on idempotent remove/delete operations where
+   * "the server doesn't have it" is the desired end state.
+   *
+   * Motivation: under 5xx-then-retry, a successful first attempt deletes the
+   * row; the client retries on the missed response and gets a 404 from a
+   * server that's already done the work. Without this flag, the rollback
+   * re-inserts the row that the server (and SSE) have already removed,
+   * producing a phantom row visible until the next refetch.
+   */
+  treats404AsSuccess?: boolean;
 }

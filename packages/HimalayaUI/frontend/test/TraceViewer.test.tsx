@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render } from "@testing-library/react";
-import { TraceViewer, findNearestPeak } from "../src/components/TraceViewer";
-import type { IndexEntry } from "../src/api";
+import { TraceViewer, findNearestPeak, nearestClickablePeak } from "../src/components/TraceViewer";
+import type { IndexEntry, Peak } from "../src/api";
 
 vi.mock("@observablehq/plot", () => ({
   plot: vi.fn(() => {
@@ -19,6 +19,39 @@ vi.mock("@observablehq/plot", () => ({
   line:  vi.fn(() => ({ _kind: "line" })),
   dot:   vi.fn(() => ({ _kind: "dot" })),
 }));
+
+describe("nearestClickablePeak", () => {
+  // toPx mock: identity * 1000 (matches the mocked Plot.scale.apply elsewhere).
+  const toPx = (q: number) => q * 1000;
+  const real: Peak = {
+    id: 1, exposure_id: 1, q: 0.10, intensity: null, prominence: null,
+    sharpness: null, source: "manual", excluded: false,
+  };
+  const optimistic: Peak = {
+    id: -7, exposure_id: 1, q: 0.10, intensity: null, prominence: null,
+    sharpness: null, source: "manual", excluded: false,
+  };
+
+  it("returns the real peak when click hits a confirmed id", () => {
+    expect(nearestClickablePeak([real], 100, toPx, 10)?.id).toBe(1);
+  });
+
+  it("skips optimistic placeholders so the click is a no-op while pending", () => {
+    expect(nearestClickablePeak([optimistic], 100, toPx, 10)).toBeNull();
+  });
+
+  it("returns the confirmed peak even when an optimistic one is closer", () => {
+    // Real peak at q=0.10 (px=100). Optimistic placeholder at q=0.105 (px=105).
+    // Click at px=104 — placeholder is closer but must be skipped, so the
+    // real peak still wins.
+    const both: Peak[] = [{ ...optimistic, q: 0.105 }, real];
+    expect(nearestClickablePeak(both, 104, toPx, 10)?.id).toBe(1);
+  });
+
+  it("returns null when nothing is in pixel-tolerance", () => {
+    expect(nearestClickablePeak([real], 200, toPx, 10)).toBeNull();
+  });
+});
 
 describe("findNearestPeak", () => {
   const peaks = [
@@ -90,6 +123,29 @@ describe("<TraceViewer>", () => {
     );
     const triangles = container.querySelectorAll('[data-role="peak-root"] polygon');
     expect(triangles.length).toBe(2);
+  });
+
+  it("optimistic placeholder peaks (id < 0) render outlined, not filled", () => {
+    const trace = { q: [0.1, 0.2, 0.3], I: [10, 20, 30], sigma: [1, 1, 1] };
+    const peaks: Peak[] = [
+      { id: 1,  exposure_id: 1, q: 0.1, intensity: null, prominence: null,
+        sharpness: null, source: "manual", excluded: false },
+      { id: -7, exposure_id: 1, q: 0.2, intensity: null, prominence: null,
+        sharpness: null, source: "manual", excluded: false },
+    ];
+    const { container } = render(
+      <TraceViewer trace={trace} peaks={peaks} activeGroupIndices={[]} hoveredIndex={undefined}
+        {...defaultProps} />,
+    );
+    const triangles = container.querySelectorAll('[data-role="peak-root"] polygon');
+    expect(triangles.length).toBe(2);
+    const optimistic = container.querySelector('[data-role="peak-root"] polygon[data-optimistic="true"]');
+    expect(optimistic).not.toBeNull();
+    expect(optimistic!.getAttribute("fill")).toBe("none");
+    // Confirmed peak keeps the filled rendering.
+    const confirmed = Array.from(triangles).find((t) => !t.hasAttribute("data-optimistic"));
+    expect(confirmed).toBeDefined();
+    expect(confirmed!.getAttribute("fill")).not.toBe("none");
   });
 
   it("excluded auto peaks render at reduced opacity", () => {

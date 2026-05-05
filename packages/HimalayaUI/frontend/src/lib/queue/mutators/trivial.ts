@@ -180,6 +180,8 @@ export const removeSampleTagMutator: Mutator<RemoveSampleTagInput, RemoveSampleT
   },
   request: (p) => api.removeSampleTag(p.sampleId, p.tagId, buildAuthOpts(p)),
   onSuccess: () => {},
+  // 404 = the tag is already gone → desired end state.
+  treats404AsSuccess: true,
 };
 
 // ---------------------------------------------------------------------------
@@ -248,6 +250,8 @@ export const removeExposureTagMutator: Mutator<RemoveExposureTagInput, RemoveExp
   },
   request: (p) => api.removeExposureTag(p.exposureId, p.tagId, buildAuthOpts(p)),
   onSuccess: () => {},
+  // 404 = the tag is already gone → desired end state.
+  treats404AsSuccess: true,
 };
 
 // ---------------------------------------------------------------------------

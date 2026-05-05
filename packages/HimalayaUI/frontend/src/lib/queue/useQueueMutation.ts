@@ -5,6 +5,7 @@ import { makeDeferred, clearDeferred } from "./deferred";
 import {
   isValidationError,
   isInfrastructureError,
+  is404Error,
   buildValidationMessage,
 } from "./errors";
 import type { FlatPayload, Mutator, RollbackContext } from "./types";
@@ -83,6 +84,11 @@ export function useQueueMutation<TInput, TScope, TResponse>(
       onSuccess: (response, payload) =>
         mutator.onSuccess(payload, response, qc),
       onError: (err, _payload, context) => {
+        // Mutators that opt into `treats404AsSuccess` (idempotent removes)
+        // swallow a 404 entirely: the optimistic effect already reflects the
+        // desired end state, and re-running rollback would re-insert a row
+        // the server has already deleted. Skip both restore and toast.
+        if (mutator.treats404AsSuccess && is404Error(err)) return;
         context?.restore?.();
         if (isValidationError(err)) {
           showToast(buildValidationMessage(mutator.kind, err), "error");

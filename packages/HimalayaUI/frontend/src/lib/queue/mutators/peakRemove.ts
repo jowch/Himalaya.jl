@@ -25,6 +25,24 @@ function buildAuthOpts(p: { username: string | undefined; clientId: string; clie
 export const peakRemoveMutator: Mutator<PeakRemoveInput, PeakRemoveScope, PeakRemoveResponse> = {
   kind: "peak_removed",
   onMutate: (p, qc): RollbackContext => {
+    // Invariant: optimistic placeholder ids (negative) are an internal cache
+    // sentinel and must never be sent over the wire. The TraceViewer click
+    // handler skips negative-id peaks, so this should be unreachable. If a
+    // future regression at the click layer routes a negative id here, the
+    // throw surfaces as a console error (the thrown Error has no `status`,
+    // so it doesn't route through the validation toast or retry path; the
+    // mutation simply settles in error state and the user sees no UI change).
+    // That's intentional: the user did nothing wrong, and the desync this
+    // guard prevents — DELETE /api/peaks/-N → 404 → rollback re-inserts the
+    // placeholder while the still-pending add resolves into a real "ghost
+    // peak" — should fail at the dev/test layer, not surface as a toast.
+    if (p.peakId < 0) {
+      throw new Error(
+        `peakRemove invariant: cannot remove optimistic placeholder peak ` +
+        `(id=${p.peakId}). The TraceViewer click handler is expected to ` +
+        `skip negative-id peaks until the add confirms.`,
+      );
+    }
     const peaksKey = queryKeys.peaks(p.exposureId);
     const prev = qc.getQueryData<Peak[]>(peaksKey);
     if (prev) {
@@ -50,4 +68,18 @@ export const peakRemoveMutator: Mutator<PeakRemoveInput, PeakRemoveScope, PeakRe
       old ? { ...old, analysis_inputs_hash: response.analysis_inputs_hash } : old);
   },
   affectsExposurePeaks: () => true,
+  // 404 = "already gone" → desired end state. Without this, a 5xx-then-retry
+  // can land a 404 on a peak the first attempt already deleted, and rollback
+  // re-inserts a phantom row visible until the next refetch.
+  //
+  // Stale-hash window: TanStack does not fire `onSuccess` on a rejected
+  // `mutationFn`, so the `analysis_inputs_hash` write above is skipped on the
+  // 404 path. The fresh hash normally arrives via the original op's SSE
+  // `post_state` frame, and `useExposureHasPendingPeakOps` masks
+  // `StaleIndicesBanner` until the mutation settles. Edge case: if the user
+  // disconnects across both the original HTTP response *and* its SSE frame,
+  // the cache hash stays stale until the next refetch — the banner could
+  // briefly read "stale" once `useExposureHasPendingPeakOps` un-masks. This
+  // is an acceptable trade vs the phantom-row desync this flag prevents.
+  treats404AsSuccess: true,
 };

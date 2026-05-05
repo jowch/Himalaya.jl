@@ -134,6 +134,8 @@ export const removeIndexFromGroupMutator: Mutator<RemoveIndexFromGroupInput, Gro
       (old ?? []).map((g) => (g.id === row.id ? row : g)));
   },
   affectsExposurePeaks: () => false,
+  // 404 = the index isn't a member of the group → desired end state.
+  treats404AsSuccess: true,
 };
 
 // ---------------------------------------------------------------------------
@@ -178,4 +180,6 @@ export const deleteIndexMutator: Mutator<DeleteIndexInput, ExposureOnlyScope, { 
     // invalidates indices + groups for any concurrent reconciliation.
   },
   affectsExposurePeaks: () => false,
+  // 404 = the index is already gone → desired end state.
+  treats404AsSuccess: true,
 };
