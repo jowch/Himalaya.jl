@@ -776,10 +776,20 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
     fresh_peaks_result = nothing
     if !findpeaks_skipped
         fresh_peaks_result = Himalaya.findpeaks(q, I, σ)
-        diff_update_auto_peaks!(db, exposure_id, fresh_peaks_result, I)
-        DBInterface.execute(db,
-            "UPDATE exposures SET trace_hash = ? WHERE id = ?",
-            [new_trace_hash, exposure_id])
+        # Issue #39: diff_update_auto_peaks! runs multiple INSERT/DELETE
+        # statements that autocommit individually outside a tx, and the
+        # trace_hash UPDATE was a third bare statement. A crash anywhere in
+        # this sequence could land trace_hash without the matching auto_peaks
+        # (or vice versa), causing the next analyze_exposure! to skip findpeaks
+        # against a stale peak set. Bracket all writes in one tx so they
+        # commit atomically. findpeaks itself is pure compute (no DB writes)
+        # and stays outside the tx to keep the critical section short.
+        SQLite.transaction(db) do
+            diff_update_auto_peaks!(db, exposure_id, fresh_peaks_result, I)
+            DBInterface.execute(db,
+                "UPDATE exposures SET trace_hash = ? WHERE id = ?",
+                [new_trace_hash, exposure_id])
+        end
     end
 
     eff = effective_peaks(db, exposure_id, q, I)
