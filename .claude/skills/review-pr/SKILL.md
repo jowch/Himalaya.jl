@@ -55,7 +55,7 @@ Reviews a pull request and posts the findings directly as a PR comment without p
 
    ### Build / infra
    - `Manifest.toml` is gitignored. Any change to `Project.toml` deps in a worktree needs a re-resolve.
-   - `scripts/Manifest.toml` is also gitignored — `make sysimage` in a fresh worktree needs it copied from main or instantiated.
+   - `scripts/Manifest.toml` is also gitignored — `make sysimage` in a fresh worktree needs `julia --project=scripts -e 'using Pkg; Pkg.instantiate()'` first.
    - Sysimage path is `build/himalaya.so`. `make check-sysimage` validates Julia version stamp.
 
 4. **Format the review** with these sections (omit any that don't apply to this diff):

@@ -116,9 +116,8 @@ scratch/                     # gitignored — exploratory scripts and trace data
 ```bash
 # First-time setup (also run after `git worktree add`):
 (cd packages/HimalayaUI/frontend && npm install)
-# Worktrees only: copy Manifest.toml files from main so Himalaya core resolves to
-# the local v0.5.1 — see "Himalaya core resolution in worktrees" gotcha below.
-# Also copy (or instantiate) scripts/Manifest.toml before running `make sysimage`.
+julia --project=. -e 'using Pkg; Pkg.instantiate()'
+julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.instantiate()'
 
 # Core Himalaya
 julia --project=. -e 'using Pkg; Pkg.test()'
@@ -230,7 +229,7 @@ Read [docs/experiment-config.md](docs/experiment-config.md) before touching `con
 
 **`exposures.selected` is sample-scoped LWW.** `PATCH /api/exposures/:id/select` clears `selected = 0` across all exposures in the sample, then sets one. Under multiplayer this is intentional — concurrent selects produce a single resolved value. Don't add If-Match to this route.
 
-**`Himalaya` core resolution in worktrees:** `packages/HimalayaUI/Manifest.toml` pins `Himalaya = "c5c84187..." path = "../.."` to the local v0.5.1. `Manifest.toml` is gitignored, so fresh worktrees re-resolve against the registry and pull the older published v0.4.5 (which has a different `findpeaks` signature). After `git worktree add`, copy `Manifest.toml` from main before running `Pkg.test`.
+**`Himalaya` core resolution in worktrees:** `Manifest.toml` is gitignored, so fresh worktrees re-resolve against the registry. The Wong Lab registry now publishes v0.5+, so `Pkg.instantiate()` finds a current `findpeaks` and tests pass without copying anything from main. If you need core changes made *inside* the worktree to flow through to HimalayaUI (rather than working off the registry version), run `julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.develop(path="../..")'` once. The `worktree-setup` skill documents both paths.
 
 ## HimalayaUI frontend gotchas
 

@@ -45,7 +45,7 @@ You are the Himalaya project's specialized code reviewer. You know this codebase
 
 ### Worktree-specific
 
-- **`Manifest.toml` is gitignored.** A worktree without a copied Manifest re-resolves and pulls the old Himalaya v0.4.5 with a different `findpeaks` signature. Check that the worktree's Manifest matches main if the change touches Himalaya core APIs.
+- **`Manifest.toml` is gitignored.** Worktrees re-resolve against the registry, which now publishes Himalaya v0.5+. If a PR touches core Himalaya APIs and the change relies on edits made *inside* the worktree (rather than the registry version), the worktree must run `Pkg.develop(path="../..")` from `packages/HimalayaUI` so HimalayaUI picks up the local source — flag if that's missing.
 
 ## Reporting format
 
