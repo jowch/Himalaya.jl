@@ -773,64 +773,66 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
     end
 
     q, I, σ = load_dat(dat_path)
-    fresh_peaks_result = nothing
-    if !findpeaks_skipped
-        fresh_peaks_result = Himalaya.findpeaks(q, I, σ)
-        # Issue #39: diff_update_auto_peaks! runs multiple INSERT/DELETE
-        # statements that autocommit individually outside a tx, and the
-        # trace_hash UPDATE was a third bare statement. A crash anywhere in
-        # this sequence could land trace_hash without the matching auto_peaks
-        # (or vice versa), causing the next analyze_exposure! to skip findpeaks
-        # against a stale peak set. Bracket all writes in one tx so they
-        # commit atomically. findpeaks itself is pure compute (no DB writes)
-        # and stays outside the tx to keep the critical section short.
-        SQLite.transaction(db) do
+    fresh_peaks_result = findpeaks_skipped ? nothing : Himalaya.findpeaks(q, I, σ)
+
+    # Issue #42: bracket the entire write sequence — diff_update + trace_hash
+    # UPDATE + persist_analysis! + the durable analyze_run row — in one tx.
+    # Pre-fix, the apply_event! call lived AFTER persist_analysis!'s tx
+    # committed (autocommit, outside any tx). A crash in that window left the
+    # analysis state durable but without the matching `analyze_run` user_actions
+    # row. Same shape as #34 Bug 3 (which bracketed inputs_hash markers into
+    # persist_analysis!'s tx) and #39 (which bracketed diff_update + trace_hash
+    # into a single tx); now all four sit in one outer tx. Route callers that
+    # already wrap in `with_idempotency` see this as a SAVEPOINT inside their
+    # outer tx — the explicit `defer_broadcast=true` they pass keeps the
+    # broadcast contract unchanged. CLI / `POST /api/experiments/{id}/analyze`
+    # callers (no enclosing tx) get all-or-nothing atomicity. `findpeaks`
+    # itself is pure compute and stays outside the tx to keep the critical
+    # section short.
+    # Bindings declared in the outer scope so the closure body's assignments
+    # propagate back out (without these declarations the `do`-block would
+    # create closure-local variables and they'd be invisible to the broadcast
+    # below).
+    local eff, new_inputs_hash, indexpeaks_skipped, event_result, payload, post_state
+    event_req = req === nothing ? _system_request() : req
+
+    SQLite.transaction(db) do
+        if !findpeaks_skipped
             diff_update_auto_peaks!(db, exposure_id, fresh_peaks_result, I)
             DBInterface.execute(db,
                 "UPDATE exposures SET trace_hash = ? WHERE id = ?",
                 [new_trace_hash, exposure_id])
         end
-    end
 
-    eff = effective_peaks(db, exposure_id, q, I)
-    new_inputs_hash = hash_peak_set(eff)
+        eff = effective_peaks(db, exposure_id, q, I)
+        new_inputs_hash    = hash_peak_set(eff)
+        indexpeaks_skipped = (stored_inputs_hash == new_inputs_hash) && (indices_count > 0)
 
-    indexpeaks_skipped = (stored_inputs_hash == new_inputs_hash) && (indices_count > 0)
+        if !indexpeaks_skipped
+            peaks_result_for_persist = fresh_peaks_result === nothing ?
+                synthesize_peaks_result(db, exposure_id, q, I) :
+                fresh_peaks_result
+            candidates = Himalaya.indexpeaks(eff.q, eff.sharpness)
+            group = auto_group(candidates)
+            # `persist_analysis!` writes both the index/group rows AND the
+            # `analysis_inputs_hash` / per-index `inputs_hash` markers atomically
+            # (issue #34 Bug 3). No follow-up UPDATEs needed here.
+            persist_analysis!(db, exposure_id, q, I, peaks_result_for_persist,
+                              candidates, group, eff)
+        end
 
-    if !indexpeaks_skipped
-        peaks_result_for_persist = fresh_peaks_result === nothing ?
-            synthesize_peaks_result(db, exposure_id, q, I) :
-            fresh_peaks_result
-        candidates = Himalaya.indexpeaks(eff.q, eff.sharpness)
-        group = auto_group(candidates)
-        # `persist_analysis!` writes both the index/group rows AND the
-        # `analysis_inputs_hash` / per-index `inputs_hash` markers atomically
-        # (issue #34 Bug 3). No follow-up UPDATEs needed here.
-        persist_analysis!(db, exposure_id, q, I, peaks_result_for_persist,
-                          candidates, group, eff)
-    end
-
-    duration_ms = round(Int, (time() - t0) * 1000)
-    post_state_size_bytes = _serialized_indices_bytes(db, exposure_id)
-    # PR review issue #12: spec §"SSE frame extension" says analyze_run frames
-    # carry `post_state: { analysis_inputs_hash, indices }`. Without this,
-    # foreign tabs need an extra refetch round-trip after a manual reanalyze.
-    # Skipped on the no-op path (early return above) — that frame is suppressed
-    # entirely by _maybe_broadcast_event! anyway.
-    post_state = Dict{Symbol, Any}(
-        :analysis_inputs_hash => new_inputs_hash,
-        :indices              => _serialized_indices_for_broadcast(db, exposure_id),
-    )
-    # Use the caller's request when supplied so the durable analyze_run row
-    # carries the originating client_op_id (review issue #15: the route's
-    # MAX(id)-sentinel filter is racy under concurrent analyze; filtering by
-    # client_op_id is unambiguous). Falls back to _system_request() for CLI
-    # / pipeline callers that have no request context.
-    apply_event!(db, req === nothing ? _system_request() : req;
-        kind        = "analyze_run",
-        entity_type = "exposure",
-        entity_id   = exposure_id,
-        payload     = Dict(
+        duration_ms = round(Int, (time() - t0) * 1000)
+        post_state_size_bytes = _serialized_indices_bytes(db, exposure_id)
+        # PR review issue #12: spec §"SSE frame extension" says analyze_run frames
+        # carry `post_state: { analysis_inputs_hash, indices }`. Without this,
+        # foreign tabs need an extra refetch round-trip after a manual reanalyze.
+        # Skipped on the no-op path (early return above) — that frame is suppressed
+        # entirely by _maybe_broadcast_event! anyway.
+        post_state = Dict{Symbol, Any}(
+            :analysis_inputs_hash => new_inputs_hash,
+            :indices              => _serialized_indices_for_broadcast(db, exposure_id),
+        )
+        payload = Dict{Symbol, Any}(
             :trace_hash_before     => stored_trace_hash,
             :trace_hash_after      => new_trace_hash,
             :inputs_hash_before    => stored_inputs_hash,
@@ -840,9 +842,30 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
             :duration_ms           => duration_ms,
             :effective_peaks_count => length(eff.q),
             :post_state_size_bytes => post_state_size_bytes,
-        ),
-        defer_broadcast = defer_broadcast,
-        post_state      = post_state)
+        )
+        # Use the caller's request when supplied so the durable analyze_run row
+        # carries the originating client_op_id (review issue #15: the route's
+        # MAX(id)-sentinel filter is racy under concurrent analyze; filtering by
+        # client_op_id is unambiguous). Falls back to _system_request() for CLI
+        # / pipeline callers that have no request context. InTransaction()
+        # variant participates in the outer tx so the event row commits with
+        # the analysis state — broadcast deferred to after the tx commits.
+        event_result = apply_event!(InTransaction(), db, event_req;
+            kind        = "analyze_run",
+            entity_type = "exposure",
+            entity_id   = exposure_id,
+            payload     = payload,
+            post_state  = post_state)
+    end
+
+    # After the outer tx commits, fire the broadcast unless the caller asked
+    # to defer (route handlers wrapped in `with_idempotency` always defer; they
+    # own their own enrichment + post-commit enqueue path).
+    # `_maybe_broadcast_event!` honors the M0.4 no-op suppression rule.
+    if !defer_broadcast
+        _maybe_broadcast_event!(db, event_req, event_result, "analyze_run",
+                                "exposure", exposure_id, payload, post_state)
+    end
     nothing
 end
 
