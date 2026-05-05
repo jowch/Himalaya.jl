@@ -68,6 +68,33 @@ export function findNearestPeak(peaks: Peak[], qClick: number, tolerance: number
 }
 
 /**
+ * Return the click-target peak nearest the cursor pixel, skipping optimistic
+ * placeholders (id < 0). Optimistic peaks have no server-side row yet —
+ * routing a remove click to one would DELETE /api/peaks/-N, hit a 404,
+ * trigger rollback that re-inserts the placeholder, and then the still-pending
+ * add would resolve into a real peak the user believed they removed (the
+ * "ghost peak" desync). Until the add confirms the click is a no-op; the
+ * placeholder renders as an outlined triangle so the unclickability is visible.
+ */
+export function nearestClickablePeak(
+  peaks: Peak[],
+  clickX: number,
+  toPx: (q: number) => number,
+  tolerancePx: number,
+): Peak | null {
+  let best: Peak | null = null;
+  let bestDist = tolerancePx;
+  for (const p of peaks) {
+    if (p.id < 0) continue;
+    const px = toPx(p.q);
+    if (!Number.isFinite(px)) continue;
+    const d = Math.abs(px - clickX);
+    if (d <= bestDist) { best = p; bestDist = d; }
+  }
+  return best;
+}
+
+/**
  * Plain-decimal axis label formatter for SAXS log scales. Avoids Plot's
  * default SI-suffix formatter (which renders 0.04 as "40m"). Uses scientific
  * notation only at the extremes where decimals would be unreadable.
@@ -193,15 +220,7 @@ export function TraceViewer({
       const clickY = me.clientY - rect.top;
       if (!insideInterior(clickX, clickY, rect.width, rect.height)) return;
 
-      // Pixel-proximity: walk visible peaks and check which the user hit.
-      let bestPeak: Peak | null = null;
-      let bestDist = PEAK_HIT_PX;
-      for (const p of peaks) {
-        const px = xScale.apply!(p.q);
-        if (!Number.isFinite(px)) continue;
-        const d = Math.abs(px - clickX);
-        if (d <= bestDist) { bestPeak = p; bestDist = d; }
-      }
+      const bestPeak = nearestClickablePeak(peaks, clickX, xScale.apply!, PEAK_HIT_PX);
 
       if (bestPeak) {
         if (bestPeak.source === "manual") onRemovePeak(bestPeak.id);
@@ -349,10 +368,22 @@ export function TraceViewer({
         `${px - TRIANGLE_HALF_W},${py - TRIANGLE_H} ` +
         `${px + TRIANGLE_HALF_W},${py - TRIANGLE_H} ` +
         `${px},${py}`);
-      tri.setAttribute("fill", fill);
-      tri.setAttribute("fill-opacity", String(opacity));
-      tri.setAttribute("stroke", "var(--color-bg)");
-      tri.setAttribute("stroke-width", "0.75");
+      // Optimistic placeholders (negative id) render outlined to signal
+      // "in flight, not yet interactable". The empty triangle fills in once
+      // the server confirms and the row swaps to a positive id.
+      const isOptimistic = peak.id < 0;
+      if (isOptimistic) {
+        tri.setAttribute("fill", "none");
+        tri.setAttribute("stroke", baseColor);
+        tri.setAttribute("stroke-width", "1.25");
+        tri.setAttribute("stroke-opacity", String(opacity));
+        tri.setAttribute("data-optimistic", "true");
+      } else {
+        tri.setAttribute("fill", fill);
+        tri.setAttribute("fill-opacity", String(opacity));
+        tri.setAttribute("stroke", "var(--color-bg)");
+        tri.setAttribute("stroke-width", "0.75");
+      }
       peakRoot.appendChild(tri);
     }
 

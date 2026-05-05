@@ -144,7 +144,28 @@ describe("queries — exposure mutations (queue-driven)", () => {
       });
     });
 
-    it("restores the tag on 4xx", async () => {
+    it("restores the tag on 4xx other than 404", async () => {
+      const { client, wrapper } = withClient();
+      const seeded = [
+        makeExposure({ tags: [{ id: 7, key: "buffer", value: "PBS", source: "manual" }] }),
+      ];
+      client.setQueryData(queryKeys.exposures(SAMPLE_ID), seeded);
+      mockOnce(400, { error: "bad" });
+      const { result } = renderHook(
+        () => useRemoveExposureTag(SAMPLE_ID, EXPOSURE_ID), { wrapper },
+      );
+      act(() => { result.current.mutate(7); });
+      await waitFor(() => {
+        const list = client.getQueryData(queryKeys.exposures(SAMPLE_ID)) as Exposure[];
+        expect(list[0].tags).toHaveLength(1);
+        expect(list[0].tags[0].id).toBe(7);
+      });
+    });
+
+    it("treats 404 as a no-op success — keeps the optimistic delete", async () => {
+      // Idempotent remove: a 404 means "already gone on the server", which
+      // matches the optimistic state. Rolling back would re-insert a tag the
+      // server doesn't have. See `treats404AsSuccess` on removeExposureTagMutator.
       const { client, wrapper } = withClient();
       const seeded = [
         makeExposure({ tags: [{ id: 7, key: "buffer", value: "PBS", source: "manual" }] }),
@@ -155,11 +176,9 @@ describe("queries — exposure mutations (queue-driven)", () => {
         () => useRemoveExposureTag(SAMPLE_ID, EXPOSURE_ID), { wrapper },
       );
       act(() => { result.current.mutate(7); });
-      await waitFor(() => {
-        const list = client.getQueryData(queryKeys.exposures(SAMPLE_ID)) as Exposure[];
-        expect(list[0].tags).toHaveLength(1);
-        expect(list[0].tags[0].id).toBe(7);
-      });
+      await waitFor(() => expect(result.current.isPending).toBe(false));
+      const list = client.getQueryData(queryKeys.exposures(SAMPLE_ID)) as Exposure[];
+      expect(list[0].tags).toHaveLength(0);
     });
   });
 

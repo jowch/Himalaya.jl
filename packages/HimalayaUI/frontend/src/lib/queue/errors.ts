@@ -23,6 +23,17 @@ export function isValidationError(err: unknown): boolean {
 }
 
 /**
+ * 404 specifically. Mutators that opt into `treats404AsSuccess` use this to
+ * recognise the "already gone on the server" case — typical when a remove
+ * retries after a successful first attempt that the client missed (5xx /
+ * network blip), where the desired end state already exists.
+ */
+export function is404Error(err: unknown): boolean {
+  const e = asErrorWithStatus(err);
+  return !!e && e.status === 404;
+}
+
+/**
  * 5xx HTTP, network failures (TypeError from fetch), and timeout errors are
  * infrastructure problems — likely transient. Retry behaviour applies; the
  * InfrastructureBanner (mounted at App.tsx by M2) surfaces persistent failures.
