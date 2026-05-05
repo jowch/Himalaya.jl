@@ -920,11 +920,26 @@ end
     @test String(h0) != String(h1)             # trace_hash advanced
     @test String(h1) == HimalayaUI.hash_trace_file(dst)  # to the current bytes
     @test n1 > 0                                # auto_peaks landed alongside
-    # Both writes are now governed by the same SQLite.transaction in
-    # analyze_exposure!, so a future split of that tx would reintroduce
-    # the autocommit window. The assertion below isn't crash-injectable,
-    # but the source-level invariant — a single tx around both writes —
-    # is the load-bearing guarantee this test guards.
+    # Stronger atomicity discriminator (PR #41 review suggestion 2): verify
+    # auto_peaks and analysis_inputs_hash are mutually consistent — i.e.
+    # exposures.analysis_inputs_hash == hash_peak_set(effective_peaks(...)).
+    # If diff_update_auto_peaks! had silently no-oped (or partially landed)
+    # before the trace_hash UPDATE, persist_analysis! would have hashed a
+    # stale peak set and the stored hash would diverge from the recomputed
+    # one. Reviewer suggested `n1 != n0`, but appending a single low-I
+    # out-of-range point doesn't disturb the seven existing peaks (verified
+    # empirically: n0=n1=7) — this consistency check is more robust to the
+    # specific trace edit and catches the same regression class.
+    q_full, I_full, _ = HimalayaUI.load_dat(dst)
+    eff = HimalayaUI.effective_peaks(db, e_id, q_full, I_full)
+    expected_inputs = HimalayaUI.hash_peak_set(eff)
+    stored_inputs = first(Tables.rowtable(DBInterface.execute(db,
+        "SELECT analysis_inputs_hash FROM exposures WHERE id = ?", [e_id]))).analysis_inputs_hash
+    @test String(stored_inputs) == expected_inputs
+    # And every auto_peak row has a finite q (no orphan/partial INSERT).
+    qs = [r.q for r in Tables.rowtable(DBInterface.execute(db,
+        "SELECT q FROM auto_peaks WHERE exposure_id = ?", [e_id]))]
+    @test all(q -> !ismissing(q) && isfinite(Float64(q)), qs)
 end
 
 @testset "analyze_exposure! re-runs findpeaks when trace bytes change" begin

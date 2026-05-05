@@ -165,7 +165,11 @@ function with_idempotency(f, db::SQLite.DB, req::HTTP.Request)
             # would leak until process restart. The `!replayed_cache` guard
             # avoids deleting a lock a concurrent retry just bound to a
             # freshly-cached row; the `_lookup_cached_response` defensive
-            # check mirrors the throw-path invariant.
+            # check mirrors the throw-path invariant — structurally redundant
+            # in this branch (line 128 only inserts a cache row for status<400,
+            # so a non-replay 4xx commit never cached) but kept for symmetry
+            # with the throw path so the "lock-free iff no cache row" invariant
+            # has one consistent shape across both cleanup sites.
             if !replayed_cache && response.status >= 400
                 lock(OP_LOCKS_MU) do
                     if _lookup_cached_response(db, op_id) === nothing
