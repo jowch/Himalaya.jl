@@ -170,34 +170,59 @@ async function confirmIndex(page: Page, indexId: number): Promise<void> {
 }
 
 /**
- * post-pr37 tests share a single fixture: the dev DB only has 1 exposure that
- * matches our criteria (selected:true, ≥2 auto candidates, no existing custom
- * group). Bug 1a mutates that exposure into a state the other two tests can't
- * reuse (custom group absorbs all auto-group members → no candidates left).
+ * Free up a candidate index on the given exposure for tests after Bug 1a has
+ * run.
  *
- * To run all three deterministically, the operator must run them ONE AT A
- * TIME against a freshly-reset DB:
+ * Bug 1a confirms BOTH fixture indices into the auto group's promoted custom
+ * group (and migrates the auto group's existing members into it too). After
+ * Bug 1a, every auto index on this exposure is in the active custom group,
+ * so subsequent tests have no candidate to confirm.
  *
- *   bash packages/HimalayaUI/scripts/reset-test-db.sh
- *   npm run e2e:live -- e2e/live/post-pr37.spec.ts --grep "Bug 1a"
- *   bash packages/HimalayaUI/scripts/reset-test-db.sh
- *   npm run e2e:live -- e2e/live/post-pr37.spec.ts --grep "Bug 1c"
- *   bash packages/HimalayaUI/scripts/reset-test-db.sh
- *   npm run e2e:live -- e2e/live/post-pr37.spec.ts --grep "no console"
+ * This helper finds an existing candidate if one is still around, or removes
+ * one member from the active custom group via the public DELETE-member route
+ * to demote it back to candidate. Returns the freed-up index id.
  *
- * In a default `npm run e2e:live` run, only Bug 1a executes; the others skip
- * unless POST_PR37_RUN_ALL=1 is set (and the operator accepts they may fail
- * on a dirty DB).
- *
- * Why not auto-reset between tests: the reset script bounces the backend,
- * which invalidates Vite's HTTP keepAlive pool. The next page-load request
- * through the proxy hangs for 30 s+ retrying dead connections. Restarting
- * Vite per test is heavyweight; running tests independently against a fresh
- * DB is cleaner.
+ * Designed for serial execution within `test.describe.configure({mode:'serial'})`
+ * — concurrent tests calling this against the same exposure would race each
+ * other.
  */
-const RUN_ALL_PR37 = process.env["POST_PR37_RUN_ALL"] === "1";
+async function freeUpCandidate(exposureId: number): Promise<number> {
+  const indices: IndexEntry[] = await fetch(
+    `${BACKEND_BASE}/api/exposures/${exposureId}/indices`).then(r => r.json());
+  const groups: GroupEntry[] = await fetch(
+    `${BACKEND_BASE}/api/exposures/${exposureId}/groups`).then(r => r.json());
+  const activeMembers = new Set(
+    groups.filter(g => g.active).flatMap(g => g.members));
+  const candidate = indices.find(
+    i => i.kind === "auto" && !activeMembers.has(i.id));
+  if (candidate) return candidate.id;
+
+  const customActive = groups.find(g => g.kind === "custom" && g.active);
+  if (!customActive || customActive.members.length === 0) {
+    throw new Error(
+      `freeUpCandidate(${exposureId}): no candidate auto index AND no ` +
+      `removable custom-group member — fixture may need a fresh DB.`);
+  }
+  const memberToFree = customActive.members[0]!;
+  const r = await fetch(
+    `${BACKEND_BASE}/api/groups/${customActive.id}/members/${memberToFree}`,
+    { method: "DELETE", headers: { "X-Username": "post-pr37-tester" } });
+  if (!r.ok) {
+    throw new Error(
+      `freeUpCandidate: DELETE returned ${r.status} ${r.statusText}`);
+  }
+  return memberToFree;
+}
 
 test.describe("post-PR#33 extended fixes (issue #37)", () => {
+  // Tests share a single fixture: the dev DB has only one exposure satisfying
+  // the criteria (selected:true, ≥2 auto candidates, no existing custom
+  // group). Bug 1a fills that fixture's custom group; Bug 1c and the
+  // console-error sweep call freeUpCandidate() to reclaim a candidate via
+  // the public DELETE-member route. Run serially so the helper's API calls
+  // can't race the prior test's writes.
+  test.describe.configure({ mode: "serial" });
+
   let fx: TestExposure;
   let exposureId: number;
   let indexA: number;
@@ -253,9 +278,14 @@ test.describe("post-PR#33 extended fixes (issue #37)", () => {
 
   test("Bug 1c — foreign tab picks up new custom group via SSE invalidation",
     async ({ browser }) => {
-      test.skip(!RUN_ALL_PR37,
-        "needs a fresh DB after Bug 1a — run with " +
-        "POST_PR37_RUN_ALL=1 + reset-test-db.sh first.");
+      // Bug 1a left every auto index in the active custom group.
+      // freeUpCandidate() removes one via DELETE-member so we have an index
+      // to confirm. The bug under test (foreign-tab convergence on
+      // `index_confirmed`) is unaffected by whether the index started its
+      // life as a candidate or was demoted from custom — both routes hit
+      // `applyRemoteToCache`'s `index_confirmed` branch the same way.
+      const targetIndex = await freeUpCandidate(fx.exposureId);
+
       // Two independent browser contexts simulate two tabs / two users.
       const ctxA = await browser.newContext();
       const ctxB = await browser.newContext();
@@ -266,12 +296,15 @@ test.describe("post-PR#33 extended fixes (issue #37)", () => {
         await navigateToExposure(tabA, fx);
         await navigateToExposure(tabB, fx);
 
-        // Snapshot initial state in tab B.
-        await expect(tabB.locator(`[data-index-id="${indexA}"]:not([data-active])`))
-          .toBeVisible();
+        // Snapshot initial state in tab B — `targetIndex` should be a
+        // candidate (just demoted from custom by freeUpCandidate).
+        await expect(tabB.locator(
+          `[data-index-id="${targetIndex}"]:not([data-active])`)).toBeVisible();
 
-        // Tab A confirms.
-        await confirmIndex(tabA, indexA);
+        // Tab A confirms. Re-confirming a previously-removed member is the
+        // identical wire path as a first confirmation (POST /groups/:id/members);
+        // the bug is in tab B's reconciliation, not in tab A's mutation.
+        await confirmIndex(tabA, targetIndex);
 
         // Tab B should converge: the SSE for index_confirmed arrives, the
         // applyRemoteToCache fix detects the new custom group_id is not in
@@ -279,7 +312,7 @@ test.describe("post-PR#33 extended fixes (issue #37)", () => {
         // in the Active set. Pre-fix: tab B's surgical splice silently
         // missed the new group_id, so this assertion would time out.
         await expect(
-          tabB.locator(`[data-index-id="${indexA}"][data-active]`),
+          tabB.locator(`[data-index-id="${targetIndex}"][data-active]`),
           "tab B should see index in Active set after tab A confirmed",
         ).toBeVisible({ timeout: 8000 });
       } finally {
@@ -289,16 +322,16 @@ test.describe("post-PR#33 extended fixes (issue #37)", () => {
     });
 
   test("no console errors during reconciliation", async ({ page }) => {
-    test.skip(!RUN_ALL_PR37,
-      "needs a fresh DB after Bug 1a — run with " +
-      "POST_PR37_RUN_ALL=1 + reset-test-db.sh first.");
+    // Free up an index to confirm — same rationale as Bug 1c.
+    const targetIndex = await freeUpCandidate(fx.exposureId);
+
     const errors: string[] = [];
     page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
     page.on("console", (m) => {
       if (m.type() === "error") errors.push(`console.error: ${m.text()}`);
     });
     await navigateToExposure(page, fx);
-    await confirmIndex(page, indexA);
+    await confirmIndex(page, targetIndex);
     await page.waitForTimeout(500);
     // Bug 3 (re-run loop throw safety): if a mutator's onMutate threw and
     // the loop wasn't try/caught, the unhandled rejection would surface
