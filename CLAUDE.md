@@ -12,7 +12,8 @@ If this is your first session on this repo, skim these in order before touching 
 2. [docs/experiment-config.md](docs/experiment-config.md) — required if touching `config.jl`, `manifest.jl`, or cli init/reingest.
 3. [docs/scoring.md](docs/scoring.md) — required if touching `score`, `auto_group`, or `remove_subsets`.
 4. [docs/event-log.md](docs/event-log.md) — required if touching `events.jl`, `hash.jl`, the `apply_event!` call sites in `routes_*.jl`, the SSE handler in `server.jl`, or `StaleIndicesBanner` gating.
-5. [docs/superpowers/plans/2026-05-02-mutation-queue.md](docs/superpowers/plans/2026-05-02-mutation-queue.md) — required if touching `lib/queue/`, `idempotency.jl`, `with_idempotency`, or `applyRemoteToCache.ts`.
+5. [docs/mutation-queue.md](docs/mutation-queue.md) — required if touching `lib/queue/`, `idempotency.jl`, `with_idempotency`, or `applyRemoteToCache.ts`. Architecture + invariants of the server-reconciliation queue.
+6. [docs/contract-testing.md](docs/contract-testing.md) — the six-layer testing rule. Required reading before fixing a queue/SSE/cache reconciliation bug.
 
 ## Code layout
 
@@ -44,15 +45,17 @@ packages/
       image.jl               # TIFF load + log-normalize + PNG encode for /image route
       routes_*.jl            # one per REST resource (users, experiments,
                              #   samples, exposures, peaks, analysis, trace,
-                             #   export, messages, mentions)
+                             #   export, messages)
       events.jl              # apply_event! dispatcher + SSE broadcast
       hash.jl                # SHA-256 trace + peak-set content hashes
+      idempotency.jl         # with_idempotency + InTransaction sentinel (Plan 8)
       speculative.jl         # speculative index create/delete + re-resolve
       server.jl              # Oxygen.jl app + serve(db) + test harness
     test/
     frontend/                # React 18 + Vite + TS strict
       src/
         main.tsx             # entry: StrictMode > ErrorBoundary > QueryClientProvider > App
+        ErrorBoundary.tsx    # top-level React error boundary
         App.tsx              # composition root; Zustand selectors + TanStack Query
         api.ts               # typed fetchers (AuthOpts per-call for mutations)
         state.ts             # Zustand client state (activeSampleId, hoveredIndexId, …)
@@ -61,21 +64,24 @@ packages/
         styles.css           # Tailwind v4 + @theme tokens
         components/          # AppShell, AppHeader, TabRocker, TitleButton,
                              #   OnboardingFlow, NavModal, UtilityCluster,
+                             #   WorkspaceGrid (shared 3-col layout for Index+Inspect),
                              #   ChatCard, MentionChip, MentionCompose,
                              #   PlotCard, TraceViewer,
                              #   IndicesCard, PhasePanel, StaleIndicesBanner,
+                             #   SpeculativeBuilder, InfrastructureBanner,
                              #   MillerPlot, Pn3mIcon, ui/…
                              # Inspect: DetectorImage, DetectorImageCard,
                              #   ThumbnailGallery, SampleMetadataCard
                              # Mentions: MentionChip, MentionCompose, MentionPicker
-        hooks/               # useFocusTrap, useMentionResolution
+        hooks/               # useFocusTrap, useMentionResolution, useGlobalShortcuts
         lib/                 # renderMentions.tsx (parseMentions tokenizer),
                              #   clientId.ts, clientOpId.ts, authOpts.ts, toast.ts,
-                             #   peakQTol.ts, optimisticId.ts
+                             #   units.ts (ASCII↔Unicode unit pretty-print)
         lib/queue/           # mutation queue framework (Plan 8):
                              #   types.ts, deferred.ts, replayCoordinator.ts,
                              #   applyRemoteToCache.ts, persistence.ts, hooks.ts,
                              #   errors.ts, useQueueMutation.ts, mutatorRegistry.ts,
+                             #   optimisticId.ts, peakQTol.ts, testHelpers.ts,
                              #   mutators/ (peak/index/speculative/trivial/reanalyze)
         bones/               # Committed boneyard skeleton captures (*.bones.json)
                              #   + auto-generated registry.ts
@@ -96,9 +102,12 @@ examples/                    # scripts using Himalaya (not part of the package)
 scratch/                     # gitignored — exploratory scripts and trace data
 .claude/
   skills/                    # project-specific Claude Code skills:
-                             #   review-pr, worktree-setup, new-route,
-                             #   review-response, e2e-mock-mode, seed-test-state
-  agents/                    # frontend-reviewer (project-specific review agent)
+                             #   review-pr, review-response, worktree-setup,
+                             #   new-route, new-event-kind, new-mutator,
+                             #   pre-merge-smoke, e2e-mock-mode, seed-test-state
+  agents/                    # project-specific review agents:
+                             #   frontend-reviewer, himalaya-reviewer,
+                             #   queue-reviewer, saxs-physics-reviewer
   settings.json              # hooks: Vitest --run flag, pre-tool-use guards
 ```
 
@@ -108,7 +117,7 @@ scratch/                     # gitignored — exploratory scripts and trace data
 # First-time setup (also run after `git worktree add`):
 (cd packages/HimalayaUI/frontend && npm install)
 # Worktrees only: copy Manifest.toml files from main so Himalaya core resolves to
-# the local v0.5.0 — see "Himalaya core resolution in worktrees" gotcha below.
+# the local v0.5.1 — see "Himalaya core resolution in worktrees" gotcha below.
 # Also copy (or instantiate) scripts/Manifest.toml before running `make sysimage`.
 
 # Core Himalaya
@@ -221,7 +230,7 @@ Read [docs/experiment-config.md](docs/experiment-config.md) before touching `con
 
 **`exposures.selected` is sample-scoped LWW.** `PATCH /api/exposures/:id/select` clears `selected = 0` across all exposures in the sample, then sets one. Under multiplayer this is intentional — concurrent selects produce a single resolved value. Don't add If-Match to this route.
 
-**`Himalaya` core resolution in worktrees:** `packages/HimalayaUI/Manifest.toml` pins `Himalaya = "c5c84187..." path = "../.."` to the local v0.5.0. `Manifest.toml` is gitignored, so fresh worktrees re-resolve against the registry and pull the older published v0.4.5 (which has a different `findpeaks` signature). After `git worktree add`, copy `Manifest.toml` from main before running `Pkg.test`.
+**`Himalaya` core resolution in worktrees:** `packages/HimalayaUI/Manifest.toml` pins `Himalaya = "c5c84187..." path = "../.."` to the local v0.5.1. `Manifest.toml` is gitignored, so fresh worktrees re-resolve against the registry and pull the older published v0.4.5 (which has a different `findpeaks` signature). After `git worktree add`, copy `Manifest.toml` from main before running `Pkg.test`.
 
 ## HimalayaUI frontend gotchas
 
@@ -244,12 +253,7 @@ tab. See docs/event-log.md §"Client side".
 
 **Playwright port binding:** `playwright.config.ts` expects the dev server on `http://127.0.0.1:5173`, not `localhost`. If another process has that port, tests hang for 60 s then fail. Kill with `lsof -ti:5173 | xargs kill -9`, then re-run. If starting Vite separately before `npm run e2e`, bind it explicitly: `npm run dev -- --host 127.0.0.1`.
 
-**Live-integration tests under `e2e/live/`.** Distinct from the default mocked `npm run e2e` suite — these hit a real backend + dev DB and are excluded from the default config via `testIgnore`. Run with `npm run e2e:live` (uses `playwright.live.config.ts`). Operator brings up the backend and Vite manually first; `playwright.live.config.ts` deliberately omits `webServer` so it can't accidentally proxy to the wrong backend. Use this category for any check that needs SSE, real DB state transitions, or cross-process atomicity — anything `page.route` can't simulate. Several non-obvious rules:
-- **Default port pair is 8090 (backend) + 5180 (Vite)** with the test DB at `/tmp/himalaya-test/himalaya.db` (a copy of prod data, so prod's 8080/5173/`data/himalaya.db` stay untouched). Override either side via `PLAYWRIGHT_BASE_URL` / `BACKEND_BASE` env vars.
-- **`workers: 1`** in `playwright.live.config.ts`. Live tests share one backend; parallel mutations on the same row collide.
-- **EventSource warmup**: after `page.goto("/")`, wait ~800 ms before triggering a mutation. The server-side SSE subscriber registration completes ~50–200 ms after the GET, but a click that fires before the subscriber is in `SSE_SUBSCRIBERS[]` will broadcast `post_state` to no one and the test browser misses the indices update — `StaleIndicesBanner` then sticks until refetch.
-- **`vite.config.ts` ignores `e2e/`** in its watcher. Editing a spec during a live Playwright run would otherwise trigger an HMR page-reload that crashes the dev server.
-- **Reset DB between flows**: `bash packages/HimalayaUI/scripts/reset-test-db.sh` re-copies `data/himalaya.db` over the test DB and bounces the backend (~5 s). Required for tests that need a clean state on the same exposure (e.g. `post-pr37.spec.ts`'s Bug 1c needs no existing custom group). The script also warms Vite's proxy connection pool — without that warmup, the next page-load hangs ~30 s retrying dead keepAlive connections.
+**Live-integration tests under `e2e/live/`.** Distinct from the default mocked `npm run e2e` suite — these hit a real backend + dev DB. Use them for any check that needs SSE, real DB state transitions, or cross-process atomicity (anything `page.route` can't simulate). Operator brings up backend (port 8090) + Vite (5180) manually before `npm run e2e:live`. The most non-obvious rule: **wait ~800 ms after `page.goto("/")`** before any mutation that expects an SSE echo, otherwise the test browser misses the broadcast. Full runbook: [packages/HimalayaUI/frontend/e2e/live/README.md](packages/HimalayaUI/frontend/e2e/live/README.md).
 
 **Focus trapping in modals.** `src/hooks/useFocusTrap.ts` exports `useFocusTrap(containerRef, active)`. Call it inside any modal or overlay that should keep Tab focus within its bounds. It intercepts Tab/Shift+Tab to cycle among focusable children and restores the previously-focused element on cleanup. NavModal and OnboardingFlow already use it.
 
@@ -271,41 +275,29 @@ tab. See docs/event-log.md §"Client side".
 
 **TraceViewer auto-fit is floor-only.** `PlotCard::computeFit` sets `yDomain = [max(p01·0.5, fullMax/1e5), fullMax·1.2]` — bottom is the 1st percentile of *positive* in-window intensities scaled down (suppresses dead-pixel zeros while keeping the low-signal tail visible), clamped at `fullMax/1e5` so a single near-zero pixel can't blow the y-range past five log decades. Top is the *full* trace max (so peaks-vs-beam relative scale stays visible without resetting). When peaks exist, x is also tightened to `[firstPeak·0.7, lastPeak·1.3]`. Auto-fires on `activeExposureId` change. Double-click → `onReset` clears both axes.
 
-**Mutation queue (Plan 8) — per-mutation `client_op_id`.** Distinct from the per-tab `client_id` introduced in PR #32. The op-id is the idempotency token: same id on retry returns the cached response, different ids re-execute. Mint inside `mutationFn` via `newClientOpId()` (`src/lib/clientOpId.ts`), NOT at hook creation — capturing it in a closure when the hook mounts means every retry of every mutation through that hook would share the same id. `useQueueMutation` already follows this pattern; new queue mutators must do the same.
+**Mutation queue — load-bearing one-liners.** Full architecture in [docs/mutation-queue.md](docs/mutation-queue.md). The handful of invariants that bite often enough to live here:
+- **Optimistic placeholder ids are NEGATIVE.** `Peak.id < 0` means "not yet confirmed by server"; the SSE confirmation overwrites with the positive server id. UI code that filters or compares peak ids must handle negatives.
+- **Mint `client_op_id` inside `mutationFn`, not at hook creation.** Capturing it in a closure when the hook mounts means every retry of every mutation shares one idempotency key. `useQueueMutation` does this correctly via `newClientOpId()` per `mutate()` call.
+- **`apply_event!(InTransaction(), …)` from inside `with_idempotency`,** never the public `apply_event!(db, req; …)`. The public method opens a nested savepoint AND broadcasts immediately — bypassing the post-commit queue.
+- **`useExposureHasPendingPeakOps` gates any UI that reads `peaks(id)` derivatively** while a peak op is in flight (StaleIndicesBanner, useSpeculativeSnap). Without it: flicker as optimistic / HTTP / SSE land out of order.
+- **`MutationCache.getAll()` insertion order is load-bearing** — replay-as-rerun depends on it. A regression test pins this against TanStack version drift.
 
-**`useExposureHasPendingPeakOps` gates UI on in-flight peak ops.** While a peak-affecting mutation is queued for an exposure, any UI affordance or query that depends on the effective peak set must be suspended — otherwise the user sees flicker as the optimistic state, the server response, and the SSE echo land out of order. Canonical consumers: `StaleIndicesBanner` (don't show "stale" while a re-analyze is mid-flight) and `useSpeculativeSnap` (don't snap to a peak that may roll back). Reuse the hook for any new card/query that reads `peaks(id)` derivatively.
+**Multi-layer contract testing.** Every reconciliation contract has six layers (route emit → SSE payload → `applyRemoteToCache` merge → cache row → `onMutate` → `onSuccess`). When fixing a bug at one layer, add a regression row at every other layer where the same class can manifest. See [docs/contract-testing.md](docs/contract-testing.md) for the canonical paired test files (`cache-shape.test.ts`, `sseEventPayload.contract.test.ts`, `rollbackSymmetry.test.ts`, `authHeaders.test.ts`, `test_route_response_shapes.jl`, `test_idempotency_replay_invariant.jl`).
 
-**Synchronous reanalyze in curation routes.** Peak add/remove/exclude routes pass `trace_known_unchanged=true` to `analyze_exposure!` so it skips the `findpeaks` stage (the .dat file hasn't changed) but still recomputes `analysis_inputs_hash` and the index set. The route returns the new hash in the response body, and the queue mutator's `onSuccess` writes it into the exposure cache directly — no refetch round-trip, no stale-banner flicker. If you add a new curation route, follow this pattern; otherwise the banner spuriously fires until a polling refetch lands.
-
-**`InTransaction` sentinel for events inside `with_idempotency`.** Routes wrapped in `with_idempotency(db, req) do ... end` are already inside an outer `SQLite.transaction`. Calling the public `apply_event!(db, req; ...)` from within would open a nested savepoint and broadcast immediately, bypassing the post-commit queue. Use `apply_event!(InTransaction(), db, req; ...)` instead — it participates in the outer tx and lets `_flush_post_commit_broadcasts!` fire the SSE frame after commit. See `src/idempotency.jl` and `src/events.jl` for the contract; [docs/event-log.md](docs/event-log.md) §3a documents the queueing semantics.
-
-**Mutation-queue invariants** (regression-tested; don't violate without updating tests):
-- `MutationCache.getAll()` insertion order is load-bearing — the foreign-event replay-as-rerun in `handleRemoteEvent` depends on it. M1.2 pins this against TanStack version drift.
-- `pendingDeferreds` is a module-global `Map` keyed on `client_op_id`. Tests must clear it in `beforeEach`; leaking entries across tests causes spurious own-op confirmations.
-- `setToastImpl(...)` and `unsubscribePersistence()` cleanup must run from `useEffect` returns. The toast slot and the persistence subscription are process-global — without cleanup, a remounted hook stacks duplicate listeners.
-- Optimistic placeholder ids are NEGATIVE. `Peak.id < 0` means "not yet confirmed by the server"; the SSE confirmation overwrites with the server-assigned positive id. UI code that filters or compares peak ids must handle negatives.
-
-**Multi-layer contract testing discipline.** Every reconciliation contract has SIX layers: route emit (Julia) → SSE frame payload → `applyRemoteToCache` merge handler → cache row shape → mutator `onMutate` (optimistic) → mutator `onSuccess` (canonical). A bug class (e.g. auto/curation peak-id collision) can manifest from any of them. **Rule: when fixing a bug at one layer, the regression test must exercise EVERY layer where the bug class can occur.** Don't ship a fix to mutator `onMutate` without a matching row in `sseEventPayload.contract.test.ts` for the merge path (and vice versa). Three review passes (#17, #18, #24) all surfaced fixes that landed at one layer but not its symmetric layer; encoding the rule prevents the next instance. Canonical paired tests: cache-shape (mutator path) ↔ SSE event-payload contract (merge path) ↔ rollback-symmetry (`onMutate` reverse) — these three together cover all six layers. Test files (under `frontend/test/queue/`): `cache-shape.test.ts` (mutator `onSuccess` row shape), `sseEventPayload.contract.test.ts` (`applyRemoteToCache` wire-format merge), `rollbackSymmetry.test.ts` (`onMutate` snapshot ↔ rollback inverse), `authHeaders.test.ts` (`X-Username`/`X-Client-Id`/`X-Client-Op-Id` propagation). Backend pair: `test_route_response_shapes.jl` (route emit) + `test_idempotency_replay_invariant.jl` (SSE-fanout invariant).
-
-**Skeleton loading via boneyard-js.** Each load-gated card/list (PlotCard, PhasePanel, ChatCard, DetectorImageCard, SampleMetadataCard, NavModal) wraps its content in `<Skeleton>` from `boneyard-js/react`. Several non-obvious rules:
-- **Use `loading={query.isLoading}`, not `isPending`.** `isLoading = isPending && isFetching` — disabled queries (`undefined` selection) and background refetches over cached data both stay skeleton-free; only true cold fetches trigger the animation. Wrong gating causes skeleton flicker on every refetch.
-- **`fixture` prop is `ReactNode`** (JSX rendered during boneyard's headless capture so the CLI can measure layout), NOT raw data. Pass real components with mock props — e.g. `<TraceViewer trace={…} peaks={…} … />` with no-op handlers.
-- **Always set `fallback`** to mirror the original italic HintText. When bones aren't yet captured for that skeleton name, the runtime renders `fallback` during loading; without it the area is blank.
-- **`className` on `<Skeleton>` is load-bearing** — boneyard wraps children in two extra divs which would otherwise break parent flex chains (e.g. ChatCard's message list collapsed to 60px). Pass `flex-1 min-h-0 flex flex-col` (or `h-full w-full`) so the outer wrapper inherits the original child's layout role. Companion CSS in `styles.css`: `[data-boneyard-content] { display: contents }` makes the inner wrapper transparent to layout so the children's flex behaviour passes through.
-- **`configureBoneyard()` lives in `main.tsx`,** NOT in `bones/registry.ts`. The Vite HMR plugin regenerates `registry.ts` on every capture and would wipe any config call there. The values must mirror `boneyard.config.json` (which the capture CLI reads but the runtime does not) — both files have to be updated together when the card background colour or animation changes.
-- **Bones are committed,** not gitignored. `src/bones/*.bones.json` + the auto-generated `registry.ts` are required for prod builds to render skeletons; without them, `<Skeleton>` falls through to `fallback`. Capture organically during dev (the Vite plugin re-captures on every HMR update) and commit deliberately to widen prod coverage.
-- **JSDOM lacks `window.matchMedia`** — boneyard's dark-mode detection calls it on mount. The stub in `test/setup.ts` keeps unit tests honest; same pattern as the `ResizeObserver` stub above.
+**Skeleton loading via boneyard-js.** Each load-gated card wraps content in `<Skeleton>` from `boneyard-js/react`. Full reference: [packages/HimalayaUI/docs/boneyard.md](packages/HimalayaUI/docs/boneyard.md). The two rules that bite hardest:
+- **Gate on `query.isLoading`, not `isPending`.** `isLoading = isPending && isFetching` — disabled queries and background refetches stay skeleton-free; only true cold fetches animate. Wrong gating ⇒ flicker on every refetch.
+- **`className` on `<Skeleton>` is load-bearing.** Boneyard adds two wrapper divs that break parent flex chains (e.g. ChatCard's message list collapsing to 60px). Pass `flex-1 min-h-0 flex flex-col` (or `h-full w-full`) to inherit the original child's layout role. Companion CSS in `styles.css`: `[data-boneyard-content] { display: contents }`.
 
 ## Current state
 
-- Core Himalaya: `v0.5.0` on `main` — v2 peak-finding (persistence + sharpness + kneedle).
+- Core Himalaya: `v0.5.1` on `main` — v2 peak-finding (persistence + sharpness + kneedle).
 - HimalayaUI — Plans 1–8 + three-card Index redesign + Inspect page + experiment-config system + skeleton loading + chat @-mentions + multiplayer + instrumentation foundation + mutation queue complete:
   - **Backend:** transactional SQLite pipeline (incl. `_reingest_inner!`), FK enforcement, REST API (Oxygen.jl), CLI (`config new/list`, `init`, `analyze`, `reingest`, `show`, `serve`), TIFF→PNG image route with Q0f31-aware lognormalize, env-driven deployment (`HIMALAYA_DB_PATH`, `HIMALAYA_CONFIGS_DIR`).
   - **Adapter-driven I/O:** `experiment.toml` per experiment, positional or named columns, configurable file patterns, prefix-based filesystem discovery.
   - **Frontend:** three-card Index workspace (chat | trace plot | index choices), Inspect page (detector image + thumbnail filmstrip + reject-reason chips + sample metadata), trace viewer with peak editing + auto-fit y-floor + log/linear x toggle, auto-rotating detector canvas, Miller plot, PhasePanel with curate + stale-indices reanalyze (now hash-driven), OnboardingFlow + NavModal with focus trapping. Skeleton loading screens via boneyard-js on all major data-driven cards. Chat @-mention system (`@peak`, `@index`, `@exposure`, `@sample`) via `MentionChip` / `MentionCompose` / `useMentionResolution`.
   - **Plan 7 — Multiplayer + Instrumentation Foundation:** Auto/curation peak split (`auto_peaks` + `peak_curations`), diff-update preserves auto peak IDs, content-hash memoization on `findpeaks`/`indexpeaks`, structured `user_actions` event log via `apply_event!` dispatcher, SSE multiplayer at `GET /api/events`. R5b (If-Match conflict resolution) deferred behind R4 instrumentation gate. See [docs/event-log.md](docs/event-log.md) for the dispatcher contract, hash invariants, and SSE semantics.
   - **Plan 8 — Mutation queue + idempotency:** Per-mutation `client_op_id` keys both the backend `with_idempotency` cache (`idempotent_responses` table, `OP_LOCKS` registry) and the frontend `pendingDeferreds` registry. Routes wrap their body in `with_idempotency(db, req) do ... end`; events inside use `apply_event!(InTransaction(), ...)` to participate in the outer tx, with SSE frames flushed via the post-commit broadcast queue. Frontend `useQueueMutation` + `handleRemoteEvent` implement own-op confirmation (resolve deferred, abort HTTP) and foreign-event replay-as-rerun (rollback in reverse, applyRemoteToCache, re-run onMutate in insertion order). `analyze_run` no-op fast path suppresses both the SSE frame and the durable `user_actions` row. See [docs/event-log.md](docs/event-log.md) §3a for the full contract.
-  - **Test coverage:** ~1000 Julia (HimalayaUI) · ~100 Julia (core) · ~400 Vitest · 16 Playwright E2E (7 inspect + 9 smoke) + 8 Playwright live-integration (`e2e/live/`, opt-in via `npm run e2e:live`).
+  - **Test coverage:** ~1000 Julia (HimalayaUI) · ~100 Julia (core) · 53 Vitest files · 3 Playwright E2E spec files (mocked) + 5 Playwright live-integration specs (`e2e/live/`, opt-in via `npm run e2e:live`).
 - Deferred for later: Phase panel Recent section, export UI, per-user audit view, derived-exposure construction (raw / aggregated / background-subtracted exposure types — schema reserves `exposure_type` field), additional config templates beyond `simple.toml`. See [docs/future-feature-ideas.md](docs/future-feature-ideas.md).
 
 ## Further reading
@@ -314,6 +306,10 @@ tab. See docs/event-log.md §"Client side".
 - [docs/scoring.md](docs/scoring.md) — how and why of the index scoring formula (coverage × consistency).
 - [docs/experiment-config.md](docs/experiment-config.md) — `experiment.toml` schema, read-only contract, filename association, CLI reference. Required reading before touching `config.jl`, `manifest.jl`, or the cli init/reingest paths.
 - [docs/event-log.md](docs/event-log.md) — `apply_event!` dispatcher contract, hash memoization invariants, SSE multiplayer semantics. Required reading before touching `events.jl`, `hash.jl`, or the SSE handler.
+- [docs/mutation-queue.md](docs/mutation-queue.md) — server-reconciliation queue architecture, `client_op_id` lifecycle, deferred-promise pattern, replay-as-rerun, `with_idempotency`. Required reading before touching `lib/queue/`, `idempotency.jl`, or `applyRemoteToCache.ts`.
+- [docs/contract-testing.md](docs/contract-testing.md) — the six-layer rule and the canonical paired test files for queue/SSE/cache reconciliation work.
+- [packages/HimalayaUI/docs/boneyard.md](packages/HimalayaUI/docs/boneyard.md) — skeleton loading reference (rules, fixture pattern, capture workflow).
+- [packages/HimalayaUI/frontend/e2e/live/README.md](packages/HimalayaUI/frontend/e2e/live/README.md) — runbook for live-integration Playwright tests (real backend + dev DB).
 - [docs/superpowers/specs/2026-04-22-himalaya-web-app-design.md](docs/superpowers/specs/2026-04-22-himalaya-web-app-design.md) — web app design spec (schema, API, UI layout). Load-bearing for all HimalayaUI work.
 - [docs/superpowers/specs/2026-04-28-experiment-config-design.md](docs/superpowers/specs/2026-04-28-experiment-config-design.md) — config system design spec.
 - [docs/superpowers/plans/](docs/superpowers/plans/) — implementation plans (one per sub-project).
