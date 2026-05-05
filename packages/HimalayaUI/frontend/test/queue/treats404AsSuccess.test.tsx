@@ -18,8 +18,10 @@ import { renderHook, act, waitFor } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { makeClient } from "../test-utils";
-import { useRemovePeak } from "../../src/queries";
-import { queryKeys } from "../../src/queries";
+import {
+  useRemovePeak, useDeleteIndex, useRemoveSampleTag,
+  queryKeys,
+} from "../../src/queries";
 import { peakRemoveMutator } from "../../src/lib/queue/mutators/peakRemove";
 import {
   removeIndexFromGroupMutator, deleteIndexMutator,
@@ -29,7 +31,7 @@ import {
 } from "../../src/lib/queue/mutators/trivial";
 import { setToastImpl } from "../../src/lib/toast";
 import { pendingDeferreds } from "../../src/lib/queue/deferred";
-import type { Peak } from "../../src/api";
+import type { Peak, GroupEntry, IndexEntry, Sample } from "../../src/api";
 
 describe("treats404AsSuccess flag — set on idempotent remove mutators", () => {
   it("peakRemove", () => {
@@ -106,5 +108,74 @@ describe("treats404AsSuccess framework branch — useRemovePeak under HTTP 404",
     // Wait long enough for onError to have run if it were going to.
     await waitFor(() => expect(result.current.isPending).toBe(false));
     expect(toastCalls).toEqual([]);
+  });
+});
+
+// The framework branch is mutator-shape-agnostic in principle, but a regression
+// dependent on rollback-context shape, response type, or cache topology would
+// only be caught by exercising more than one mutator. Two extra cases — across
+// distinct cache shapes (indices+groups, samples-with-nested-tags) — pin this.
+describe("treats404AsSuccess framework branch — coverage across mutator shapes", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    pendingDeferreds.clear();
+    setToastImpl(() => {});
+  });
+  afterEach(() => { setToastImpl(null); });
+
+  function mockFetch404(): void {
+    vi.spyOn(global, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ error: "missing" }), {
+        status: 404, headers: { "Content-Type": "application/json" },
+      }),
+    );
+  }
+
+  it("useDeleteIndex: optimistic removal sticks across two caches on 404", async () => {
+    const EXPOSURE_ID = 5;
+    const INDEX: IndexEntry = {
+      id: 10, exposure_id: EXPOSURE_ID, phase: "Pn3m", basis: 0.1, score: 0.9,
+      r_squared: 0.99, lattice_d: 50, ngc: 0.5, status: "candidate",
+      kind: "auto", inputs_hash: "h1", peaks: [], predicted_q: [0.1],
+    };
+    const GROUP: GroupEntry = {
+      id: 1, exposure_id: EXPOSURE_ID, kind: "custom", active: true, members: [10],
+    };
+    const client = makeClient();
+    client.setQueryData(queryKeys.indices(EXPOSURE_ID), [INDEX]);
+    client.setQueryData(queryKeys.groups(EXPOSURE_ID), [GROUP]);
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
+    mockFetch404();
+    const { result } = renderHook(() => useDeleteIndex(EXPOSURE_ID), { wrapper });
+    act(() => { result.current.mutate(10); });
+    await waitFor(() => expect(result.current.isPending).toBe(false));
+    expect(client.getQueryData<IndexEntry[]>(queryKeys.indices(EXPOSURE_ID))).toEqual([]);
+    const groupAfter = client.getQueryData<GroupEntry[]>(queryKeys.groups(EXPOSURE_ID))?.[0];
+    expect(groupAfter?.members).toEqual([]);
+  });
+
+  it("useRemoveSampleTag: optimistic tag removal sticks on 404", async () => {
+    const EXPERIMENT_ID = 1;
+    const SAMPLE_ID = 10;
+    const SAMPLE: Sample = {
+      id: SAMPLE_ID, experiment_id: EXPERIMENT_ID, label: "D1", name: "n",
+      notes: null,
+      tags: [{ id: 99, key: "buffer", value: "PBS", source: "manual" }],
+    };
+    const client = makeClient();
+    client.setQueryData(queryKeys.samples(EXPERIMENT_ID), [SAMPLE]);
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
+    mockFetch404();
+    const { result } = renderHook(
+      () => useRemoveSampleTag(EXPERIMENT_ID, SAMPLE_ID), { wrapper },
+    );
+    act(() => { result.current.mutate(99); });
+    await waitFor(() => expect(result.current.isPending).toBe(false));
+    const sample = client.getQueryData<Sample[]>(queryKeys.samples(EXPERIMENT_ID))?.[0];
+    expect(sample?.tags).toEqual([]);
   });
 });
