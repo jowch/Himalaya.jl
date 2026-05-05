@@ -389,3 +389,39 @@ end
         @test isempty(rs)
     end
 end
+
+@testset "insert_speculative_index! inherits exposure analysis_inputs_hash (issue #35 Bug 6)" begin
+    # Pre-fix, the INSERT into `indices` set inputs_hash = NULL on speculative
+    # rows. StaleIndicesBanner gates on (index.inputs_hash !== exposure
+    # .analysis_inputs_hash), so a speculative create immediately registered as
+    # stale and the banner spuriously fired after every speculative create. The
+    # fix in src/speculative.jl reads the exposure's current analysis_inputs_hash
+    # and writes it onto the new index — they share the effective peak set, so
+    # the inherited hash is correct by construction.
+    tmp = mktempdir()
+    db  = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    exp_id = HimalayaUI.init_experiment!(db; path=tmp,
+        data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
+    s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, label="D1")
+    e_id = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="x")
+
+    expected_hash = "deadbeef" ^ 8  # 64 hex chars, matches SHA-256 fingerprint shape
+    DBInterface.execute(db,
+        "UPDATE exposures SET analysis_inputs_hash = ? WHERE id = ?",
+        [expected_hash, e_id])
+
+    res = DBInterface.execute(db,
+        "INSERT INTO peak_curations (exposure_id, kind, q) VALUES (?, 'add', 1.0)", [e_id])
+    p1 = Int(DBInterface.lastrowid(res))
+    res = DBInterface.execute(db,
+        "INSERT INTO peak_curations (exposure_id, kind, q) VALUES (?, 'add', 2.0)", [e_id])
+    p2 = Int(DBInterface.lastrowid(res))
+
+    new_id = HimalayaUI.insert_speculative_index!(db, e_id, Himalaya.Lamellar,
+        Dict{Int,Int}(1 => p1, 2 => p2))
+
+    rows = Tables.rowtable(DBInterface.execute(db,
+        "SELECT inputs_hash FROM indices WHERE id = ?", [new_id]))
+    @test length(rows) == 1
+    @test String(rows[1].inputs_hash) == expected_hash
+end

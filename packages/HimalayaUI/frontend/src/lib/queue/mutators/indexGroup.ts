@@ -72,6 +72,20 @@ export const addIndexToGroupMutator: Mutator<AddIndexToGroupInput, GroupScope, G
     const { event_id: _e, view_row_id: _v, ...row } = response;
     void _e; void _v;
     const groupsKey = queryKeys.groups(p.exposureId);
+    const cached = qc.getQueryData<GroupEntry[]>(groupsKey);
+    // Issue #37 Bug 1: when `ensure_custom_group!` creates a new custom
+    // group on first confirmation, the response id (custom_id) doesn't
+    // exist in the cache yet — only the auto group does. The same shape
+    // mismatch happens on SSE-wins, where synth omits `id` entirely.
+    // Either way, the surgical splice silently no-ops; invalidate so
+    // the next read picks up the canonical {auto demoted, custom new}
+    // structure.
+    const hasMatch = (row as Partial<GroupEntry>).id !== undefined
+      && (cached ?? []).some((g) => g.id === (row as GroupEntry).id);
+    if (!hasMatch) {
+      qc.invalidateQueries({ queryKey: groupsKey });
+      return;
+    }
     qc.setQueryData<GroupEntry[]>(groupsKey, (old) =>
       (old ?? []).map((g) => (g.id === row.id ? row : g)));
   },
@@ -106,6 +120,16 @@ export const removeIndexFromGroupMutator: Mutator<RemoveIndexFromGroupInput, Gro
     const { event_id: _e, view_row_id: _v, ...row } = response;
     void _e; void _v;
     const groupsKey = queryKeys.groups(p.exposureId);
+    const cached = qc.getQueryData<GroupEntry[]>(groupsKey);
+    // Issue #37 Bug 1: same id-mismatch contract as addIndexToGroup —
+    // SSE-wins synth omits `id`, and a fresh custom group from
+    // `ensure_custom_group!` won't yet be in the cache.
+    const hasMatch = (row as Partial<GroupEntry>).id !== undefined
+      && (cached ?? []).some((g) => g.id === (row as GroupEntry).id);
+    if (!hasMatch) {
+      qc.invalidateQueries({ queryKey: groupsKey });
+      return;
+    }
     qc.setQueryData<GroupEntry[]>(groupsKey, (old) =>
       (old ?? []).map((g) => (g.id === row.id ? row : g)));
   },

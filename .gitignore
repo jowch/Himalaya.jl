@@ -64,3 +64,6 @@ data/
 .julia/
 
 .scratch/
+
+# Local dev sandbox — copy of prod DB for click-testing changes in worktrees
+.dev/

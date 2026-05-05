@@ -204,6 +204,47 @@ end
     end
 end
 
+@testset "No-op-id path is transactional — body throw rolls back event + view rows (issue #34 Bug 2)" begin
+    # When `X-Client-Op-Id` is absent, `with_idempotency` previously ran the
+    # body without opening a transaction. Curation route bodies still call
+    # `apply_event!(InTransaction(), ...)`, whose contract requires an
+    # outer tx — without one, the event-row INSERT and the view-row INSERT
+    # autocommit separately and a body-throw between them leaves an
+    # orphaned event row.
+    mktempdir() do tmp
+        db = open_db(joinpath(tmp, "test.db"))
+        DBInterface.execute(db,
+            "INSERT INTO experiments (name, path, data_dir, analysis_dir) VALUES ('e', '/p', '/d', '/a')")
+        DBInterface.execute(db,
+            "INSERT INTO samples (experiment_id, label) VALUES (1, 'A1')")
+        res = DBInterface.execute(db,
+            "INSERT INTO exposures (sample_id, filename) VALUES (1, 'f')")
+        exp_id = Int(DBInterface.lastrowid(res))
+
+        # NOTE: no X-Client-Op-Id header.
+        req = HTTP.Request("POST", "/", Pair{String,String}[], UInt8[])
+        try
+            with_idempotency(db, req) do
+                HimalayaUI.apply_event!(HimalayaUI.InTransaction(), db, req;
+                    kind="peak_added", entity_type="exposure", entity_id=exp_id,
+                    payload=Dict(:q => 6.0))
+                error("body explosion (no-op-id path)")
+            end
+        catch
+        end
+        # The event row must NOT have committed independently of the body.
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM user_actions WHERE entity_id = ? AND action = 'peak_added'",
+            [exp_id]))
+        @test isempty(rows)
+        # And neither should the corresponding view-row update have landed.
+        crows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM peak_curations WHERE exposure_id = ?", [exp_id]))
+        @test isempty(crows)
+        SQLite.close(db)
+    end
+end
+
 @testset "I2: with_idempotency body throw rolls back event AND cache atomically" begin
     mktempdir() do tmp
         db = open_db(joinpath(tmp, "test.db"))
@@ -231,6 +272,31 @@ end
         crows = Tables.rowtable(DBInterface.execute(db,
             "SELECT client_op_id FROM idempotent_responses WHERE client_op_id = 'op-atomic'"))
         @test isempty(crows)
+        SQLite.close(db)
+    end
+end
+
+@testset "OP_LOCKS entry removed when body throws (issue #37 Bug 4)" begin
+    # Without cleanup, throw-without-cache-row leaks the OP_LOCKS entry until
+    # process restart — gc_idempotent_responses! only collects locks for ops
+    # that have a corresponding idempotent_responses row, and the row is
+    # never written when the body throws.
+    mktempdir() do tmp
+        db = open_db(joinpath(tmp, "test.db"))
+        req = HTTP.Request("POST", "/",
+                           ["X-Client-Op-Id" => "op-throw-leak"], UInt8[])
+        try
+            with_idempotency(db, req) do
+                error("body explosion")
+            end
+        catch
+        end
+        @test !haskey(HimalayaUI.OP_LOCKS, "op-throw-leak")
+        # No idempotent_responses row was written either, so the GC would never
+        # have collected this entry on its own.
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT 1 FROM idempotent_responses WHERE client_op_id = 'op-throw-leak'"))
+        @test isempty(rows)
         SQLite.close(db)
     end
 end

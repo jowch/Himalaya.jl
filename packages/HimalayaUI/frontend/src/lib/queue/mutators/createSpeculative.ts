@@ -64,11 +64,21 @@ export const createSpeculativeMutator: Mutator<
   }, buildAuth(p)),
   onSuccess: (p, response, qc) => {
     const indicesKey = queryKeys.indices(p.exposureId);
-    qc.setQueryData<IndexEntry[]>(indicesKey, (old) => {
-      const list = old ?? [];
-      if (list.some((ix) => ix.id === response.id)) return list;
-      return [...list, response];
-    });
+    // SSE-wins synthesis only carries `index_id` (the SSE payload for
+    // speculative_created omits the IndexEntry shape — see routes_analysis.jl).
+    // Detect by checking for `phase`: HTTP response has it, synth doesn't.
+    // Without this guard, the splice below pushes a phantom row with
+    // id=undefined/phase=undefined/score=undefined into the indices cache.
+    const hasFullShape = (response as Partial<IndexEntry>).phase !== undefined;
+    if (hasFullShape) {
+      qc.setQueryData<IndexEntry[]>(indicesKey, (old) => {
+        const list = old ?? [];
+        if (list.some((ix) => ix.id === response.id)) return list;
+        return [...list, response];
+      });
+    } else {
+      qc.invalidateQueries({ queryKey: indicesKey });
+    }
     // Groups membership lives on the backend; invalidate so the active set
     // reflects any auto-add when `active: true`.
     qc.invalidateQueries({ queryKey: queryKeys.groups(p.exposureId) });

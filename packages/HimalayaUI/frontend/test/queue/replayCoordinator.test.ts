@@ -66,6 +66,36 @@ describe("handleRemoteEvent", () => {
     expect(order).toEqual([0, 1, 2]);
   });
 
+  it("Re-run loop is throw-safe — one onMutate failure does not abort siblings (issue #37 Bug 3)", () => {
+    // Suppress the expected console.error (the throw is logged but swallowed).
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const order: number[] = [];
+    qc.getMutationCache().add(makeFakeMutation({
+      status: "pending",
+      context: { restore: () => {} },
+      onMutate: () => { order.push(0); },
+    }));
+    qc.getMutationCache().add(makeFakeMutation({
+      status: "pending",
+      context: { restore: () => {} },
+      onMutate: () => { order.push(1); throw new Error("boom"); },
+    }));
+    qc.getMutationCache().add(makeFakeMutation({
+      status: "pending",
+      context: { restore: () => {} },
+      onMutate: () => { order.push(2); },
+    }));
+    // Pre-fix: the throw propagates out of handleRemoteEvent; mutation #2's
+    // onMutate is never called. Post-fix: each iteration is independently
+    // try/caught, so #2's onMutate still runs.
+    expect(() =>
+      handleRemoteEvent(remoteForeignEvent(), qc, qc.getMutationCache())
+    ).not.toThrow();
+    expect(order).toEqual([0, 1, 2]);
+    expect(errSpy).toHaveBeenCalled();
+    errSpy.mockRestore();
+  });
+
   it("MutationCache.getAll() preserves insertion order (load-bearing TanStack invariant)", () => {
     const ids = ["a", "b", "c", "d", "e"];
     for (const id of ids) {
@@ -253,6 +283,152 @@ describe("handleRemoteEvent", () => {
     }, qc, qc.getMutationCache());
     expect(qc.getQueryData(["exposure", 42, "indices"])).toEqual([{ id: 5 }, { id: 6 }]);
     expect((qc.getQueryData(["exposure-entity", 42]) as any).analysis_inputs_hash).toBe("new-hash");
+  });
+
+  it("own-op SSE (matching deferred) applies post_state to indices and exposure caches", async () => {
+    qc.setQueryData(["exposure-entity", 42], { id: 42, analysis_inputs_hash: "old-hash" });
+    qc.setQueryData(["exposure", 42, "indices"], [{ id: 1, inputs_hash: "old-hash" }]);
+    const d = makeDeferred<{ id?: number }>("own-op-with-postState");
+    handleRemoteEvent({
+      id: 7,
+      kind: "peak_added",
+      entity_type: "exposure",
+      entity_id: 42,
+      client_op_id: "own-op-with-postState",
+      payload: { q: 1.7, peak_curation_id: 314 },
+      post_state: { analysis_inputs_hash: "new-hash", indices: [{ id: 5, inputs_hash: "new-hash" }] },
+    }, qc, qc.getMutationCache());
+    await d.promise;
+    // Without this propagation the indices stay frozen at "old-hash" and the
+    // StaleIndicesBanner sticks until a hard refetch.
+    expect(qc.getQueryData(["exposure", 42, "indices"])).toEqual([{ id: 5, inputs_hash: "new-hash" }]);
+    expect((qc.getQueryData(["exposure-entity", 42]) as any).analysis_inputs_hash).toBe("new-hash");
+  });
+
+  it("self-echo SSE (own client_id, no deferred) still applies post_state to indices/exposure", () => {
+    qc.setQueryData(["exposure-entity", 42], { id: 42, analysis_inputs_hash: "old-hash" });
+    qc.setQueryData(["exposure", 42, "indices"], [{ id: 1, inputs_hash: "old-hash" }]);
+    const ourClientId = (() => {
+      const k = "himalaya.client_id";
+      let v = sessionStorage.getItem(k);
+      if (!v) { v = "test-client"; sessionStorage.setItem(k, v); }
+      return v;
+    })();
+    handleRemoteEvent({
+      id: 99,
+      kind: "peak_added",
+      entity_type: "exposure",
+      entity_id: 42,
+      client_id: ourClientId,
+      client_op_id: "self-echo-no-deferred",
+      payload: { q: 1.7, peak_curation_id: 999 },
+      post_state: { analysis_inputs_hash: "new-hash", indices: [{ id: 5, inputs_hash: "new-hash" }] },
+    }, qc, qc.getMutationCache());
+    // Self-echo guard short-circuits the per-kind body (mutator already wrote
+    // peaks + exposure hash), but post_state must still propagate to indices —
+    // mutator onSuccess paths don't write indices, so without this the banner
+    // sticks. Regression for "stale banner persists after own peak add."
+    expect(qc.getQueryData(["exposure", 42, "indices"])).toEqual([{ id: 5, inputs_hash: "new-hash" }]);
+    expect((qc.getQueryData(["exposure-entity", 42]) as any).analysis_inputs_hash).toBe("new-hash");
+  });
+
+  it("synthesizeResponseFromSse for peak_added produces a properly-shaped Peak (id, source, exposure_id)", async () => {
+    const d = makeDeferred<any>("op-synth-shape");
+    handleRemoteEvent({
+      id: 7,
+      kind: "peak_added",
+      entity_type: "exposure",
+      entity_id: 42,
+      client_op_id: "op-synth-shape",
+      payload: { q: 1.7, peak_curation_id: 314 },
+      post_state: { analysis_inputs_hash: "new-hash", indices: [] },
+    }, qc, qc.getMutationCache());
+    const result = await d.promise;
+    // Without these fields, peakAdd.onSuccess pushes a Peak with id=undefined
+    // into the cache; TraceViewer then renders a permanent halo because
+    // hoveredPeakId (undefined) === peak.id (undefined). Regression for
+    // "circle around added peak doesn't clear without refresh."
+    expect(result).toMatchObject({
+      id: 314,
+      exposure_id: 42,
+      q: 1.7,
+      source: "manual",
+      excluded: false,
+      analysis_inputs_hash: "new-hash",
+    });
+    expect(result.intensity).toBeNull();
+    expect(result.prominence).toBeNull();
+    expect(result.sharpness).toBeNull();
+  });
+
+  it("synthesizeResponseFromSse for peak_excluded maps auto_peak_id → id and derives source/excluded from kind", async () => {
+    const d = makeDeferred<any>("op-pe-shape");
+    handleRemoteEvent({
+      id: 8,
+      kind: "peak_excluded",
+      entity_type: "exposure",
+      entity_id: 42,
+      client_op_id: "op-pe-shape",
+      payload: { q: 0.5, auto_peak_id: 7 },
+      post_state: { analysis_inputs_hash: "h-pe", indices: [] },
+    }, qc, qc.getMutationCache());
+    const result = await d.promise;
+    // Without these fields, peakSetExcluded.onSuccess's `pk.id === peakOnly.id`
+    // map matches no row (undefined === undefined fails on real Peak rows),
+    // and the canonical state never replaces the optimistic one.
+    expect(result).toMatchObject({
+      id: 7,
+      q: 0.5,
+      source: "auto",
+      excluded: true,
+      analysis_inputs_hash: "h-pe",
+    });
+    // auto_peak_id MUST NOT leak into the response (it's not a Peak field).
+    expect(result.auto_peak_id).toBeUndefined();
+  });
+
+  it("synthesizeResponseFromSse for peak_unexcluded derives excluded=false from kind", async () => {
+    const d = makeDeferred<any>("op-pue-shape");
+    handleRemoteEvent({
+      id: 9,
+      kind: "peak_unexcluded",
+      entity_type: "exposure",
+      entity_id: 42,
+      client_op_id: "op-pue-shape",
+      payload: { q: 0.5, auto_peak_id: 7 },
+      post_state: { analysis_inputs_hash: "h-pue", indices: [] },
+    }, qc, qc.getMutationCache());
+    const result = await d.promise;
+    expect(result).toMatchObject({
+      id: 7,
+      q: 0.5,
+      source: "auto",
+      excluded: false,
+      analysis_inputs_hash: "h-pue",
+    });
+    expect(result.auto_peak_id).toBeUndefined();
+  });
+
+  it("synthesizeResponseFromSse for add_tag maps tag_id → id and adds source: 'manual'", async () => {
+    const d = makeDeferred<any>("op-add-tag-shape");
+    handleRemoteEvent({
+      id: 50,
+      kind: "add_tag",
+      entity_type: "sample",
+      entity_id: 10,
+      client_op_id: "op-add-tag-shape",
+      payload: { key: "category", value: "control", tag_id: 77, experiment_id: 1 },
+    }, qc, qc.getMutationCache());
+    const result = await d.promise;
+    // Without this synthesis, addSampleTagMutator.onSuccess would read
+    // response.id → undefined and response.source → undefined, landing a
+    // malformed (undeletable, mis-classified) tag in the cache.
+    expect(result).toMatchObject({
+      id: 77,
+      key: "category",
+      value: "control",
+      source: "manual",
+    });
   });
 
   it("applyRemoteToCache default branch invalidates peaks/indices/groups for unknown kinds", () => {

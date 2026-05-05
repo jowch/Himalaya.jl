@@ -83,12 +83,15 @@ re-read the cached row to return.
 function with_idempotency(f, db::SQLite.DB, req::HTTP.Request)
     op_id = get_client_op_id(req)
     if op_id === nothing
-        # No-op-id path: still support post-commit broadcasts for routes that
-        # use the M2 pattern without idempotency. We don't open a tx here, so
-        # any enqueued broadcast is paired with whatever durable write the
-        # body did itself; flush on success, clear on throw.
+        # No-op-id path: still wrap in a transaction so that bodies which
+        # call `apply_event!(InTransaction(), ...)` get the outer tx that
+        # contract requires (issue #34 Bug 2). Without a tx, the event row
+        # and the view-row update autocommit separately and a body throw
+        # between them leaves an orphaned event row.
         try
-            response = f()
+            response = SQLite.transaction(db) do
+                f()
+            end
             _flush_post_commit_broadcasts!()
             return response
         catch
@@ -134,6 +137,18 @@ function with_idempotency(f, db::SQLite.DB, req::HTTP.Request)
             # post-commit broadcast must be discarded — its underlying
             # writes never committed.
             _clear_post_commit_broadcasts!()
+            # Issue #37 Bug 4: clean up the OP_LOCKS entry if no cache row
+            # was written. gc_idempotent_responses! only collects locks
+            # whose ops have an idempotent_responses row, so without this
+            # cleanup, locks for permanently-failed ops would leak until
+            # process restart. The cache check is defensive — under the
+            # current control flow, a thrown tx body has already rolled
+            # back any INSERT.
+            lock(OP_LOCKS_MU) do
+                if _lookup_cached_response(db, op_id) === nothing
+                    delete!(OP_LOCKS, op_id)
+                end
+            end
             rethrow()
         end
 

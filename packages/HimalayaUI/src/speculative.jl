@@ -191,12 +191,20 @@ function insert_speculative_index!(db::SQLite.DB, exposure_id::Int,
 
     built = build_speculative_index(peak_rows, P, ratio_to_peak_id)
 
+    # Inherit the exposure's current analysis_inputs_hash so this new index
+    # doesn't read as "stale" the moment it lands. The speculative is built
+    # from the same effective peak set the exposure hash already covers, so
+    # any inputs_hash other than `analysis_inputs_hash` would be misleading.
+    # Without this, StaleIndicesBanner fires immediately after every
+    # speculative create (NULL ≠ exposure hash → mismatch).
+    current_hash = read_inputs_hash(db, exposure_id)
+
     res = DBInterface.execute(db,
         """INSERT INTO indices
-             (exposure_id, phase, basis, score, r_squared, lattice_d, status, kind)
-           VALUES (?, ?, ?, ?, ?, ?, 'candidate', 'speculative')""",
+             (exposure_id, phase, basis, score, r_squared, lattice_d, status, kind, inputs_hash)
+           VALUES (?, ?, ?, ?, ?, ?, 'candidate', 'speculative', ?)""",
         [exposure_id, string(nameof(P)), built.basis,
-         built.score, built.r_squared, built.lattice_d])
+         built.score, built.r_squared, built.lattice_d, current_hash])
     new_id = Int(DBInterface.lastrowid(res))
 
     for (rpos, peak_id) in ratio_to_peak_id

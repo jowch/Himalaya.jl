@@ -5,6 +5,24 @@ import { queryKeys } from "../../queries";
 import { peakQTol } from "./peakQTol";
 
 /**
+ * Write `post_state.indices` and `post_state.analysis_inputs_hash` into the
+ * local cache without applying any per-kind body. Used by the foreign-event
+ * path (via `applyRemoteToCache`) AND by the own-op confirmation paths in
+ * `replayCoordinator` — own ops need post_state propagation too, otherwise
+ * the indices cache stays frozen at the pre-mutation `inputs_hash` and the
+ * StaleIndicesBanner sticks until a hard refetch.
+ */
+export function applyPostStateOnly(remote: SseEvent, qc: QueryClient): void {
+  if (!remote.post_state) return;
+  const id = remote.entity_id;
+  qc.setQueryData(queryKeys.indices(id), remote.post_state.indices);
+  qc.setQueryData(queryKeys.exposure(id), (old: Exposure | undefined) =>
+    old
+      ? { ...old, analysis_inputs_hash: remote.post_state!.analysis_inputs_hash }
+      : old);
+}
+
+/**
  * Apply a remote SSE event to the local query cache. Per-kind logic mirrors
  * the spec's "replay-without-refetch where post_state covers it; refetch
  * fallback where the event payload is insufficient or update is rare."
@@ -17,14 +35,7 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
   const id = remote.entity_id;
   const payload = remote.payload as Record<string, unknown> | undefined;
 
-  const applyPostState = (): void => {
-    if (!remote.post_state) return;
-    qc.setQueryData(queryKeys.indices(id), remote.post_state.indices);
-    qc.setQueryData(queryKeys.exposure(id), (old: Exposure | undefined) =>
-      old
-        ? { ...old, analysis_inputs_hash: remote.post_state!.analysis_inputs_hash }
-        : old);
-  };
+  const applyPostState = (): void => applyPostStateOnly(remote, qc);
 
   switch (remote.kind) {
     case "peak_added": {
@@ -122,19 +133,32 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
     case "index_confirmed": {
       const groupId = payload?.group_id as number;
       const indexId = payload?.index_id as number;
-      qc.setQueryData<GroupEntry[]>(queryKeys.groups(id), (old = []) =>
-        old.map((g) =>
-          g.id === groupId ? { ...g, members: [...g.members, indexId] } : g));
+      const cached = qc.getQueryData<GroupEntry[]>(queryKeys.groups(id));
+      // Issue #37 Bug 1c: the foreign tab may have just triggered
+      // `ensure_custom_group!`, which mints a new custom group id and
+      // demotes the auto group. Local tabs won't have that group cached;
+      // the surgical splice would silently miss the foreign confirmation.
+      // Invalidate to refetch the canonical group structure.
+      if (!cached || !cached.some((g) => g.id === groupId)) {
+        qc.invalidateQueries({ queryKey: queryKeys.groups(id) });
+        break;
+      }
+      qc.setQueryData<GroupEntry[]>(queryKeys.groups(id), cached.map((g) =>
+        g.id === groupId ? { ...g, members: [...g.members, indexId] } : g));
       break;
     }
     case "index_unconfirmed": {
       const groupId = payload?.group_id as number;
       const indexId = payload?.index_id as number;
-      qc.setQueryData<GroupEntry[]>(queryKeys.groups(id), (old = []) =>
-        old.map((g) =>
-          g.id === groupId
-            ? { ...g, members: g.members.filter((m) => m !== indexId) }
-            : g));
+      const cached = qc.getQueryData<GroupEntry[]>(queryKeys.groups(id));
+      if (!cached || !cached.some((g) => g.id === groupId)) {
+        qc.invalidateQueries({ queryKey: queryKeys.groups(id) });
+        break;
+      }
+      qc.setQueryData<GroupEntry[]>(queryKeys.groups(id), cached.map((g) =>
+        g.id === groupId
+          ? { ...g, members: g.members.filter((m) => m !== indexId) }
+          : g));
       break;
     }
     case "speculative_created":

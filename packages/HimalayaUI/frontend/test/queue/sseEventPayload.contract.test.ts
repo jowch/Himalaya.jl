@@ -227,6 +227,52 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
       .toEqual([10]);
   });
 
+  it("index_confirmed for an unknown group_id invalidates the groups list (issue #37 Bug 1c)", () => {
+    // Foreign tab confirmed an index for the FIRST time on this exposure,
+    // creating a fresh custom group on the backend. Other tabs only have the
+    // auto group cached; the surgical update would silently miss the new
+    // custom group, leaving the foreign confirmation invisible until refetch.
+    qc.setQueryData<GroupEntry[]>(queryKeys.groups(5), [
+      { id: 1, exposure_id: 5, kind: "auto", active: true, members: [] },
+    ]);
+    let invalidated = false;
+    const orig = qc.invalidateQueries.bind(qc);
+    qc.invalidateQueries = (filters: any) => {
+      const k = filters?.queryKey ?? [];
+      if (Array.isArray(k) && k[0] === "exposure" && k[1] === 5 && k[2] === "groups") {
+        invalidated = true;
+      }
+      return orig(filters);
+    };
+    const evt: SseEvent = {
+      id: 99, kind: "index_confirmed", entity_type: "exposure", entity_id: 5,
+      payload: { group_id: 5, index_id: 42 },  // group_id=5 NOT in cache
+    };
+    applyRemoteToCache(evt, qc);
+    expect(invalidated).toBe(true);
+  });
+
+  it("index_unconfirmed for an unknown group_id invalidates the groups list", () => {
+    qc.setQueryData<GroupEntry[]>(queryKeys.groups(5), [
+      { id: 1, exposure_id: 5, kind: "auto", active: true, members: [] },
+    ]);
+    let invalidated = false;
+    const orig = qc.invalidateQueries.bind(qc);
+    qc.invalidateQueries = (filters: any) => {
+      const k = filters?.queryKey ?? [];
+      if (Array.isArray(k) && k[0] === "exposure" && k[1] === 5 && k[2] === "groups") {
+        invalidated = true;
+      }
+      return orig(filters);
+    };
+    const evt: SseEvent = {
+      id: 99, kind: "index_unconfirmed", entity_type: "exposure", entity_id: 5,
+      payload: { group_id: 5, index_id: 42 },
+    };
+    applyRemoteToCache(evt, qc);
+    expect(invalidated).toBe(true);
+  });
+
   it("speculative_created invalidates indices+groups (no inline cache write)", () => {
     let called = 0;
     const orig = qc.invalidateQueries.bind(qc);
