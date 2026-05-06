@@ -184,10 +184,10 @@ describe("saveComparisonMutator (OpKind=comparison_save)", () => {
 
   it("onSuccess writes comparison + members into cache and invalidates listings", () => {
     const response = buildComparison(42);
-    let invalidatedKeys: unknown[] = [];
+    const invalidatedKeys: unknown[] = [];
     const orig = qc.invalidateQueries.bind(qc);
-    qc.invalidateQueries = ((arg: { queryKey: unknown }) => {
-      invalidatedKeys.push(arg.queryKey);
+    qc.invalidateQueries = ((arg: any) => {
+      invalidatedKeys.push(arg?.queryKey);
       return orig(arg);
     }) as typeof qc.invalidateQueries;
     saveComparisonMutator.onSuccess(
