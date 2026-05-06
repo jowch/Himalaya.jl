@@ -161,6 +161,7 @@ Per CLAUDE.md frontend gotchas: **never assert against Tailwind class strings.**
 | Create | `packages/HimalayaUI/frontend/src/lib/comparison/draft.ts` | 4 (sessionStorage shape + hooks) |
 | Create | `packages/HimalayaUI/frontend/src/lib/comparison/coloring.ts` | 9 (palette / grouping mode) |
 | Create | `packages/HimalayaUI/frontend/src/lib/comparison/normalization.ts` | 6 (peak-fit/signal-fit logic) |
+| Create | `packages/HimalayaUI/frontend/src/lib/comparison/snapshot.ts` | 3 (client-side `computeMemberSnapshot` — reads TanStack cache, produces `MemberSnapshot` shape) |
 | Create | `packages/HimalayaUI/frontend/src/lib/comparison/contentHash.ts` | 3 (canonical client-side hash for citation) |
 | Modify | `packages/HimalayaUI/frontend/src/main.tsx` | 4 (router config) |
 | Modify | `packages/HimalayaUI/frontend/src/phases.ts` | (no change expected; reuse) |
@@ -192,12 +193,12 @@ Per CLAUDE.md frontend gotchas: **never assert against Tailwind class strings.**
 - Modify: `packages/HimalayaUI/src/db.jl`
 - Modify: `packages/HimalayaUI/test/test_db.jl`
 
-**Migration impact:** Adds three new tables (`comparisons`, `comparison_members` with `snapshot TEXT`, `comparison_messages`) and four indexes. Pure additions; no backfill.
+**Migration impact:** Adds three new tables (`comparisons`, `comparison_members` with `snapshot TEXT NOT NULL CHECK (json_valid(snapshot))` and `peak_display TEXT CHECK (peak_display IS NULL OR json_valid(peak_display))`, `comparison_messages`) and four indexes. Pure additions; no backfill.
 
 - [ ] **Step 1: Write the failing migration tests** in `test_db.jl`. Cover:
   - **Fresh DB:** after `open_db`, all three Compare tables exist with correct columns; all four indexes exist.
   - **Already-migrated DB:** second `open_db` is a no-op (no errors, no duplicate tables).
-  - **AUTOINCREMENT contract:** `comparisons.id` and `comparison_members.id` strict-monotonic — deleting and re-inserting does not reuse the freed id.
+  - **AUTOINCREMENT contract:** `comparisons.id`, `comparison_members.id`, and `comparison_messages.id` all strict-monotonic — deleting and re-inserting does not reuse the freed id (mention-target stability rule).
   - **FK enforcement:** inserting `comparison_members` with `comparison_id` referencing a non-existent comparison fails when `PRAGMA foreign_keys = ON`.
   - **`ON DELETE SET NULL` on `comparison_members.exposure_id`:** delete an exposure that's a member; member row survives with `exposure_id IS NULL`.
   - **`ON DELETE CASCADE` on `comparison_members.comparison_id` and `comparison_messages.comparison_id`:** delete a comparison; both child tables drop their rows.
@@ -229,7 +230,7 @@ The dispatcher writes to `comparisons` and `comparison_members` exclusively. Per
   - `comparison_submitted` reorder → all `display_order` values match payload.
   - `comparison_deleted` → cascades to `comparison_members` and `comparison_messages`.
 
-- [ ] **Step 2: Implement** the three dispatcher branches in `events.jl`. The `comparison_submitted` branch follows the diff-based pattern documented in the spec (`update_view_for_comparison_submitted!`) — note the **three** member dispositions: DELETE (in DB, not in payload), UPDATE (in both, payload has integer `id`), INSERT (payload `id === nothing`). Each INSERT and UPDATE writes the per-member `snapshot` JSON computed via `compute_member_snapshot(db, exposure_id)`. Use `Tables.rowtable` for any read-then-modify pattern (per CLAUDE.md SQLite gotcha). Be careful with the JSON `null` ↔ Julia `nothing` ↔ `Tables.rowtable` `missing` triangle: payload-side member ids are typed `Union{Nothing,Int}` (never `Missing`); DB-side reads use `ismissing()` to detect SQL NULL.
+- [ ] **Step 2: Implement** the three dispatcher branches in `events.jl`. The `comparison_submitted` branch follows the diff-based pattern documented in the spec (`update_view_for_comparison_submitted!`) — note the **three** member dispositions: DELETE (in DB, not in payload), UPDATE (in both, payload has integer `id`), INSERT (payload `id === nothing`). **Snapshot data comes from the payload, not from the DB** — each member in the payload carries its own `snapshot` JSON, computed by the client at submit time against the cache state the user was looking at. The dispatcher reads `m.snapshot` verbatim and writes it to the `snapshot` column. **Every UPDATE writes the snapshot unconditionally** — not conditionally on whether `exposure_id` changed (the user may have confirmed a new index on the same exposure between submissions). Error on zero-row UPDATE (payload references a member id that doesn't exist for this comparison). Use `Tables.rowtable` for any read-then-modify pattern (per CLAUDE.md SQLite gotcha). Be careful with the JSON `null` ↔ Julia `nothing` ↔ `Tables.rowtable` `missing` triangle: payload-side member ids are typed `Union{Nothing,Int}` (never `Missing`); DB-side reads use `ismissing()` to detect SQL NULL.
 
 - [ ] **Step 3: Implement `compute_content_hash`** helper (will live in `comparisons.jl` once Task 2.1 lands; for now, inline in `events.jl` and refactor later, OR scaffold `comparisons.jl` here). Recommendation: scaffold `comparisons.jl` now, since it's the same effort.
 
@@ -315,7 +316,7 @@ Routes:
 
 - [ ] **Step 2: Implement** routes. Per [mutation-queue.md](../../mutation-queue.md) §6: use `apply_event!(InTransaction(), …)` and let the post-commit broadcast queue handle SSE.
 
-- [ ] **Step 3: Idempotency-replay matrix** — add comparison kinds to `test_idempotency_replay_invariant.jl` so SSE-fanout-under-retry is verified.
+- [ ] **Step 3: Idempotency-replay matrix** — add comparison kinds to `test_idempotency_replay_invariant.jl` so SSE-fanout-under-retry is verified. Include a **409-cached-replay row**: submit with wrong `expected_content_hash` → 409; retry with same `client_op_id` → identical 409 from cache (not fresh evaluation). This is the canonical home for "second invocation under same `client_op_id` returns identical (status, body) pair."
 
 - [ ] **Step 4: Commit** as `feat(compare): REST routes with idempotency + auth gates`.
 
@@ -325,10 +326,10 @@ Routes:
 - Modify: `packages/HimalayaUI/src/events.jl` (add_message dispatch by entity_type)
 - Modify: `packages/HimalayaUI/src/routes_messages.jl` (or routes_comparisons depending on existing organization)
 
-Per spec: `add_message` event handler routes to either `sample_messages` or `comparison_messages` based on `entity_type`. The existing handler is sample-only today.
+Per spec: `add_message` event handler routes to either `sample_messages` or `comparison_messages` based on `entity_type`. **The existing handler hard-codes `sample_messages` — this is a new dispatch branch, not a trivial extension.** The INSERT target table must be chosen based on `entity_type`.
 
-- [ ] **Step 1:** Test that `add_message` with `entity_type='comparison'` writes to `comparison_messages`, and with `entity_type='sample'` still writes to `sample_messages`.
-- [ ] **Step 2:** Implement the dispatch.
+- [ ] **Step 1:** Test that `add_message` with `entity_type='comparison'` writes to `comparison_messages`, and with `entity_type='sample'` still writes to `sample_messages`. Also test that an unknown `entity_type` returns an error (not a silent no-op).
+- [ ] **Step 2:** Implement the dispatch. The route handler at `POST /api/comparisons/:id/messages` must wrap in `with_idempotency(db, req) do ... end` and use `apply_event!(InTransaction(), …)` per the standard discipline — same as every other mutating comparison route.
 - [ ] **Step 3:** Commit as `feat(compare): add_message event routes by entity_type`.
 
 ---
@@ -360,7 +361,7 @@ The mutator (`kind: "comparison_save"`) handles both create and update — `payl
   - 409 response is a *success* from TanStack's perspective (HTTP returned a body); the mutator should detect and surface it as a typed error so the UI can open the conflict modal. See [mutation-queue.md](../../mutation-queue.md) §10 — likely the cleanest is throwing a `ConflictError` from `request` so it lands in `onError`.
   - 403 response is a validation-class error (no retry).
 
-- [ ] **Step 3: `applyRemoteToCache` branches** for `comparison_created` / `comparison_submitted` / `comparison_deleted`. Foreign events (other users' creates / submits / deletes) invalidate `comparison(id)`, `comparisonMembers(id)`, `comparisons` listing.
+- [ ] **Step 3: `applyRemoteToCache` branches** for `comparison_created` / `comparison_submitted` / `comparison_deleted`. Foreign `comparison_created` and `comparison_submitted` events invalidate `comparison(id)`, `comparisonMembers(id)`, `comparisons` listing. Foreign `comparison_deleted` events use `qc.removeQueries` (NOT `invalidateQueries` — refetching a deleted resource 404s and leaves stale error state) for `comparison(id)` and `comparisonMembers(id)`, plus `qc.setQueryData` to filter the id out of listing keys.
 
 - [ ] **Step 4: Commit** as `feat(compare): saveComparison queue mutator + contract tests`.
 
@@ -370,7 +371,21 @@ Similar shape, fewer edges. `kind: "comparison_delete"`. Same six contract tests
 
 - [ ] **Steps 1–4:** Mirror Task 3.1 but for `DELETE /api/comparisons/:id`.
 
-### Task 3.3: Client-side `contentHash`
+### Task 3.3: Client-side `computeMemberSnapshot` + `MemberSnapshot` type
+
+**Files:**
+- Create: `packages/HimalayaUI/frontend/src/lib/comparison/snapshot.ts`
+- Modify: `packages/HimalayaUI/frontend/src/api.ts` (`MemberSnapshot` type defined here — shared by HTTP response parser and SSE handler)
+
+`computeMemberSnapshot(exposureId, qc)` reads from the TanStack cache: `effective_peaks` from `queryKeys.peaks(exposureId)`, `confirmed_index` from `queryKeys.indices(exposureId)` (R²-gated — below 0.98 produces `null`), and `analysis_inputs_hash` from the exposure query. Returns the `MemberSnapshot` shape defined in the spec. Called by the save flow at submit time for every member.
+
+The `MemberSnapshot` type is defined in `api.ts` (not in `snapshot.ts`) because it must be the single source of truth for both the HTTP response parser and the SSE `applyRemoteToCache` handler — both paths must produce the same parsed shape to prevent cache divergence during reconciliation.
+
+- [ ] **Step 1: Write** tests asserting that `computeMemberSnapshot` produces the correct shape for a mock cache state, including the R²-gate (below 0.98 → `confirmed_index: null`).
+- [ ] **Step 2: Implement.**
+- [ ] **Step 3:** Commit as `feat(compare): client-side computeMemberSnapshot`.
+
+### Task 3.4: Client-side `contentHash`
 
 **Files:**
 - Create: `packages/HimalayaUI/frontend/src/lib/comparison/contentHash.ts`
@@ -378,7 +393,7 @@ Similar shape, fewer edges. `kind: "comparison_delete"`. Same six contract tests
 
 Mirrors the server's canonical serialization so the client can verify on render and citation. SHA-256 in browser via `crypto.subtle.digest`.
 
-- [ ] **Step 1: Write** tests asserting that for a fixed input shape, the JS hash matches the Julia hash. Use a small fixture committed to the test directory, hashed by both sides.
+- [ ] **Step 1: Write** tests asserting that for a fixed input shape, the JS hash matches the Julia hash. Use a small fixture committed to the test directory, hashed by both sides. This fixture also pins the client-side `computeMemberSnapshot` output against the server-side `compute_member_snapshot` output for the same input.
 - [ ] **Step 2: Implement.**
 - [ ] **Step 3:** Commit as `feat(compare): client-side content_hash for citation parity`.
 
@@ -446,9 +461,12 @@ The `id: number | undefined` form (rather than `id?: number`) is required by `ex
 
 `baseHash` is captured at edit-mode entry (when loading an existing comparison's state into the draft slot) and **does not refresh** if a foreign SSE event arrives mid-edit — submission compares this baseline against the server's current hash via `expected_content_hash`, and a mismatch is a real conflict. Auto-updating `baseHash` from SSE events would silently swallow conflicts.
 
+**Create-flow lifecycle:** for a brand-new comparison (never submitted), `id` is `undefined` and `baseHash` is `undefined`. The submit payload uses `POST /api/comparisons` (not `/submit`) and omits `expected_content_hash` entirely — there's no prior server state to conflict with, so the 409 path is unreachable on first submit. After the first submit succeeds and the comparison gets a server-assigned `id`, subsequent edits load with `baseHash` set to the server's `content_hash`.
+
 Mirrored to `sessionStorage` with a schema version. On reload, rehydrate. Closing the tab loses the draft (acceptable for v1 per spec).
 
 - Named actions: `startNewDraft`, `loadDraftFromComparison`, `setDraftTitle`, `setDraftDescription`, `addMember`, `removeMember`, `updateMember`, `reorderMembers`, `resizeBands`, `discardDraft`.
+- **`loadDraftFromComparison` recovery path for stale comparisons:** loads saved render parameters (offsets, normalization, colors, labels, q-windows, peak_display) from the server state, but calls `computeMemberSnapshot` against the **current** TanStack cache for each member — not the saved snapshot. This means re-submit = "refresh to current truth." Rationale: edit mode shows live trace data; showing stale peaks that don't match the live trace would be confusing.
 
 - [ ] **Step 1:** Tests for round-trip persistence, schema-version mismatch handling, action correctness.
 - [ ] **Step 2:** Implement. Per CLAUDE.md frontend gotchas, no raw `setState`.
@@ -470,12 +488,12 @@ Mirrored to `sessionStorage` with a schema version. On reload, rehydrate. Closin
 
 **Files:**
 - Create: `packages/HimalayaUI/frontend/src/components/ExposureListRow.tsx`
-- Modify: `packages/HimalayaUI/frontend/src/components/InspectPage.tsx` (consume)
+- Modify: `packages/HimalayaUI/frontend/src/pages/InspectPage.tsx` (consume)
 
 Single row: exposure name, sample name, sample notes (truncated, full on hover), checkbox or click handler. Used by the picker and the Inspect page's exposure list.
 
 - [ ] **Step 1:** Tests + implement.
-- [ ] **Step 2:** Refactor Inspect's exposure list to use it.
+- [ ] **Step 2:** Refactor Inspect's exposure list to use it. Verify existing Inspect tests still pass after the extraction — the component interface must match what InspectPage currently renders.
 - [ ] **Step 3:** Commit as `refactor: extract ExposureListRow`.
 
 ### Task 5.2: Picker modal
@@ -489,7 +507,7 @@ Search + experiment filter + tag filter + recently-used + already-added locks + 
 - Backend route for picker recently-used: `GET /api/users/:id/recently-picked-exposures?limit=20`. Add this in Phase 5 (small backend addition).
 - Backend route for tag listing in scope: `GET /api/experiments/:eid/sample-tags` returning distinct `(key, value)` pairs. Add here.
 
-- [ ] **Step 1:** Backend routes + tests.
+- [ ] **Step 1:** Backend routes + tests. The tag listing route must return distinct `(key, value)` pairs (not just flat values) — add a test that seeds two tags with the same value but different keys and asserts both appear as separate filter options.
 - [ ] **Step 2:** Frontend tests covering filters, sort, multi-select, already-added locks, empty state, focus-trap (Tab cycles within modal, Esc closes), restored focus on close.
 - [ ] **Step 3:** Implement frontend modal. Wrap the modal container with `useFocusTrap(containerRef, isOpen)` per the existing NavModal/OnboardingFlow pattern.
 - [ ] **Step 4:** Wire to edit mode's "Add traces" button.
@@ -502,7 +520,7 @@ Inspect page gains an "Add to comparison" affordance. Dropdown options:
 - "Pick a comparison..." → opens picker modal scoped to comparisons
 - "+ New comparison" → navigates to edit mode of new draft pre-populated with the selected exposure
 
-- [ ] **Step 1:** Tests covering each menu path.
+- [ ] **Step 1:** Tests covering each menu path. Include a **cross-tab boundary test**: adding to "current draft" from Inspect only affects the same tab's Zustand draft — a second tab's draft is unchanged until the user submits and the SSE event fires. (Drafts are `sessionStorage`-scoped per tab; no `BroadcastChannel` in v1.)
 - [ ] **Step 2:** Implement.
 - [ ] **Step 3:** Commit as `feat(compare): warm-add from Inspect page`.
 
@@ -667,13 +685,25 @@ No predicted-phase-ratio toggle — per spec, we don't render predicted-q ticks 
 - [ ] **Step 2:** Implement.
 - [ ] **Step 3:** Commit as `feat(compare): annotation toggles`.
 
+### Task 9.4: Per-member color override picker
+
+Color swatch grid in `MemberMetaRow`'s expanded state. Click sets `color_override`. "Reset color" clears it.
+
+- [ ] **Steps 1–3.**
+
 ### Task 9.5: Hover-driven phase coloring of peaks
 
-Hovering a metadata row sets `highlightedIndexId` in Zustand (or component-local state) to `member.snapshot.confirmed_index?.id`. `MemberTraceLayer` reads this prop and colors index-member peaks in the phase color when set; non-index peaks stay black. Click-to-pin makes the highlight sticky; click again unpins.
+**State location: Zustand named action** (`setHighlightedCompareMemberId` / `clearHighlightedCompareMemberId`), matching the existing `hoveredIndexId` precedent on the Index page. Not component-local — the highlight must coordinate across `MemberMetaRow` (hover source) and `MemberTraceLayer` (render target).
 
-Members with `confirmed_index === null` have no hover affordance — nothing to highlight.
+**Render mechanism:** `MemberTraceLayer` re-renders its peak marks when `highlightedMemberId` changes — switching from black fill to phase-color fill on existing marks. No full plot recompute.
 
-- [ ] **Step 1:** Tests for hover state, click-to-pin, no-confirmed-index inert path.
+Hovering a metadata row sets `highlightedCompareMemberId` in Zustand to the member's id. `MemberTraceLayer` reads this and colors that member's `snapshot.confirmed_index.peak_ids` peaks in the phase color; non-index peaks stay black. Click-to-pin makes the highlight sticky; click again unpins. Cleared on page navigation, entering edit mode, or member removal.
+
+**Keyboard equivalent:** rows are focusable (`tabindex="0"`); focus triggers transient highlight same as hover. Enter to pin, Esc to clear.
+
+Members with `confirmed_index === null` have no hover affordance — nothing to highlight. Hover association always reads from `snapshot.confirmed_index.peak_ids` (snapshot data, not live).
+
+- [ ] **Step 1:** Tests for hover state, click-to-pin, keyboard (Tab + Enter + Esc), no-confirmed-index inert path.
 - [ ] **Step 2:** Implement.
 - [ ] **Step 3:** Commit as `feat(compare): hover-driven phase coloring of peaks`.
 
@@ -683,20 +713,14 @@ Members with `confirmed_index === null` have no hover affordance — nothing to 
 - Modify: `packages/HimalayaUI/frontend/src/pages/ComparePage.tsx`
 - Modify: `packages/HimalayaUI/frontend/src/api.ts` (response includes `is_stale` per member)
 
-Backend `GET /api/comparisons/:id` response includes `is_stale: bool` per member, computed by joining each member's `snapshot.analysis_inputs_hash` against the current exposure's `analysis_inputs_hash`. The comparison is stale if any member is.
+Backend `GET /api/comparisons/:id` response includes `is_stale: bool` per member, computed by joining each member's `snapshot.analysis_inputs_hash` against the current exposure's `analysis_inputs_hash`. The comparison is stale if any member is. Per-member staleness shows a warning icon on each stale metadata row (`data-stale="true"`) so the user knows which of N members drifted.
 
-Review-mode header shows a "Needs Review" badge with a tooltip when stale. Clicking the badge (only available to the author) navigates to edit mode. Non-authors see the badge as informational only.
+Review-mode header shows a "Needs Review" badge (amber/warning tone, same visual language as `StaleIndicesBanner`) with a tooltip when stale. Clicking the badge (only available to the author) navigates to edit mode. Non-authors see the badge as informational only.
 
-- [ ] **Step 1:** Backend test: create comparison, change underlying exposure, fetch comparison, assert `is_stale: true` on affected member.
-- [ ] **Step 2:** Frontend test: badge visible when any member stale, hidden otherwise; clickability author-gated.
+- [ ] **Step 1:** Backend test: create comparison, change underlying exposure, fetch comparison, assert `is_stale: true` on affected member. Also test **low-R² snapshot path**: confirm an index with R²=0.95 on the source exposure, submit comparison, fetch, assert `confirmed_index === null` in snapshot (below-gate confirmations are not snapshotted).
+- [ ] **Step 2:** Frontend test: badge visible when any member stale, hidden otherwise; clickability author-gated; per-member `data-stale` attribute correct.
 - [ ] **Step 3:** Implement.
 - [ ] **Step 4:** Commit as `feat(compare): Needs Review badge for stale snapshots`.
-
-### Task 9.4: Per-member color override picker
-
-Color swatch grid in `MemberMetaRow`'s expanded state. Click sets `color_override`. "Reset color" clears it.
-
-- [ ] **Steps 1–3.**
 
 ---
 
@@ -789,10 +813,14 @@ Forks popover: "Forks (N) →" link that opens a list of child comparisons via `
 Mounted at `App.tsx`. Listens for `ConflictError` from `saveComparison` mutator. Modal shows side-by-side: server's current state (from the **409 response body**, never `qc.getQueryData`) vs the local draft. Wrap the modal container with `useFocusTrap(containerRef, isOpen)`. Actions:
 
 - *Discard my changes* — clears draft, navigates to review of server state.
-- *Overwrite with mine* — re-submits with `expected_content_hash` set to server's `current_hash`.
+- *Overwrite with mine* — re-submits with `expected_content_hash` set to server's `current_hash`. **Second-409 race:** if another tab submits between the 409 and the re-submit, the re-submit itself returns a second 409 with updated `current_state`. The modal must handle re-opening with the new server state (refresh the diff view, let the user pick again). Rare but must not break.
 - *Fork to a new comparison* — calls saveComparison with no `id`, with `forked_from_id` set to the original. New comparison opens.
 
-- [ ] **Steps 1–3.** Test, implement, commit.
+Each modal action mints a fresh `client_op_id` (via `useQueueMutation`'s per-`mutate()` mint) so the new submission isn't tied to the cached 409 idempotency entry.
+
+- [ ] **Step 1:** Tests including: basic 409 → modal opens; overwrite succeeds; overwrite hits second 409 → modal re-opens with updated state; fork creates new comparison.
+- [ ] **Step 2:** Implement.
+- [ ] **Step 3:** Commit as `feat(compare): conflict modal with second-409 handling`.
 
 ---
 
@@ -825,6 +853,7 @@ Smoke test: create comparison with 2 members → submit → reload → fork → 
 - Keyboard shortcuts (Esc to cancel edit, Cmd+Enter to submit).
 - Tooltip cleanup.
 - Visual review against [himalayaui-design.md](../../himalayaui-design.md) §1 (plot-dominant, recede chrome).
+- **Verify `data-testid` coverage**: every affordance in the E2E selector table (Phase 0 section) should have its `data-testid` added in the same phase that builds the component — not bolted on here.
 
 ---
 

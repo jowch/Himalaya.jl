@@ -92,8 +92,8 @@ CREATE TABLE comparison_members (
   label_override  TEXT,                                    -- nullable; falls back to exposure name
   q_window_min    REAL,
   q_window_max    REAL,
-  peak_display    TEXT,                                    -- JSON; per-peak display state, see "Plot rendering"
-  snapshot        TEXT    NOT NULL,                         -- JSON; effective_peaks + confirmed_index + analysis_inputs_hash at submit time. See "Derived analysis state and staleness"
+  peak_display    TEXT    CHECK (peak_display IS NULL OR json_valid(peak_display)),  -- JSON; per-peak display state, see "Plot rendering"
+  snapshot        TEXT    NOT NULL CHECK (json_valid(snapshot)),  -- JSON; effective_peaks + confirmed_index + analysis_inputs_hash at submit time. See "Derived analysis state and staleness"
   created_by      INTEGER REFERENCES users(id) ON DELETE SET NULL,  -- drives picker "recently used"
   created_at      TEXT    NOT NULL                         -- set by dispatcher on insert
 );
@@ -120,7 +120,7 @@ Notes:
 - **`comparisons` has no `experiment_id` column.** A comparison is a pure artifact — its scope is implied by its members, not a stored field. Sidebar listing and per-experiment views are derived from membership at query time (see "Sidebar listing" below). Empty comparisons are not persisted: a comparison only enters the DB when its first submission carries at least one member.
 - **`forked_from_id` is `ON DELETE SET NULL`** — when a parent is deleted, forks survive as independent artifacts but lose their lineage pointer. Preserves the fork's chat history and content; doesn't cascade-delete derivative work. The reverse direction is also fine: deleting a fork has no effect on its parent.
 - **`forked_at_hash` is immutable** — captures the parent's `content_hash` at fork time. Enables a future "parent has changed since you forked" indicator without requiring it in v1.
-- `idx_events_by_comparison` is the parallel of `idx_events_by_exposure` — required for `rebuild_views_from_log!(db, comparison_id)` to perform.
+- `idx_events_by_comparison` is the parallel of `idx_events_by_exposure` — required for `rebuild_views_from_log!(db, comparison_id)` to perform. Uses SQLite partial index syntax (`WHERE entity_type = 'comparison'`); follow the exact pattern of the existing `idx_events_by_exposure` for implementation.
 - **`comparison_messages` is parallel to the existing `sample_messages`** — same shape, different scope. Chat history cascades on comparison delete (chat is part of the artifact's discussion, not independently durable). Generalizing both into a single polymorphic `messages` table would be cleaner long-term but is out of scope for this v1; doing it as part of Compare's plan would be feature creep.
 
 **Cross-experiment membership.** Members may belong to any experiment in the central DB. A comparison "appears in" experiment X's sidebar if any of its members reference an exposure under X — the comparison can appear in multiple experiments' sidebars simultaneously, which is the correct cross-cutting view.
@@ -136,23 +136,39 @@ The `comparison_members.snapshot TEXT` column stores per-member JSON at submit t
 ```json
 {
   "effective_peaks": [
-    {"q": 1.234, "intensity": 5678.9, "kind": "auto"},
-    {"q": 1.745, "intensity": 4321.0, "kind": "manual"}
+    {"id": 42, "q": 1.234, "intensity": 5678.9, "sharpness": 0.87, "kind": "auto"},
+    {"id": 105, "q": 1.745, "intensity": 4321.0, "sharpness": 0.65, "kind": "manual"}
   ],
   "confirmed_index": {
+    "id": 7,
     "phase": "Pn3m",
     "lattice_param": 12.34,
     "r_squared": 0.992,
     "k_value": 0.71,
-    "peak_qs": [1.234, 1.745, ...]
+    "peak_ids": [42, 105]
   },
   "analysis_inputs_hash": "sha256:a1b2c3..."
 }
 ```
 
-- **`effective_peaks`** = the curated peak set at submit time (`auto_peaks` ∪ `peak_curations(kind='add')` − `peak_curations(kind='exclude')`), exactly the set used by `analyze_exposure!`. This is what the plot renders, what normalization references, and what the metadata gutter reports a count for.
-- **`confirmed_index`** = the index entry the user confirmed for this exposure at submit time (or `null` if no confirmation). Provides phase, lattice parameter, R², `K`, and the peak-q's that belong to this index. Below-R²-gate confirmations are not snapshotted (consistency with PhasePanel's gate). If no index is confirmed, the metadata gutter shows "no index" and any phase-color hover affordance is inert.
+- **`effective_peaks`** = the curated peak set at submit time (`auto_peaks` ∪ `peak_curations(kind='add')` − `peak_curations(kind='exclude')`), exactly the set used by `analyze_exposure!`. Each entry includes `id` (peak row id — stable across refetches; needed for hover-coloring association and `peak_display` references), `q`, `intensity`, `sharpness` (not `prominence` — the `prom` field was removed in favor of `sharpness::SparseVector`; see CLAUDE.md), and `kind` (`"auto"` or `"manual"`). This is what the plot renders, what normalization references, and what the metadata gutter reports a count for.
+- **`confirmed_index`** = the index entry the user confirmed for this exposure at submit time (or `null` if no confirmation). Provides `id` (index row id), phase, lattice parameter, R², `K`, and `peak_ids` — the list of peak ids belonging to this index (used by hover-driven phase coloring to know which peaks to highlight). Below-R²-gate confirmations are not snapshotted (consistency with PhasePanel's gate). If no index is confirmed, the metadata gutter shows "no index" and any phase-color hover affordance is inert.
 - **`analysis_inputs_hash`** = the exposure's hash at snapshot time. Used to detect drift.
+
+**`MemberSnapshot` TypeScript type.** Defined in `api.ts` and used by both the HTTP response parser and the SSE `applyRemoteToCache` handler — both paths must produce the same parsed shape to prevent cache divergence during reconciliation:
+
+```ts
+type MemberSnapshot = {
+  effective_peaks: Array<{
+    id: number; q: number; intensity: number; sharpness: number; kind: "auto" | "manual";
+  }>;
+  confirmed_index: {
+    id: number; phase: string; lattice_param: number;
+    r_squared: number; k_value: number; peak_ids: number[];
+  } | null;
+  analysis_inputs_hash: string;
+};
+```
 
 ### Staleness detection
 
@@ -164,6 +180,14 @@ When stale: the review-mode header shows a "**Needs Review**" badge with text li
 - Only the author can clear it (only they can re-submit). Non-authors who want a refreshed version fork.
 - Staleness check happens at fetch time (one comparison detail query joins members against current exposures' `analysis_inputs_hash` and tags each as stale or fresh). Cheap; surfaces in the API response so the frontend doesn't need a second round-trip.
 - The comparison's `content_hash` does **not** change when staleness flips — that's purely about the comparison's own state, not upstream drift.
+
+**Per-member staleness granularity.** The API response includes `is_stale: bool` on each member row (not just a top-level flag). Stale members render with `data-stale="true"` on their metadata row, and the UI shows a small warning icon inline on each stale row so the user knows *which* of N members drifted — not just "something changed."
+
+**Recovery path when editing a stale comparison.** When the author hits Edit on a stale comparison, `loadDraftFromComparison` loads the saved render parameters (offsets, normalization, colors, labels, q-windows, peak_display) but calls `computeMemberSnapshot` against the **current** TanStack cache state for each member — not the saved snapshot. This means re-submit = "refresh to current truth." The rationale: edit mode shows live trace data alongside snapshot-derived peaks; showing stale peaks that don't match the live trace would be confusing. The user sees the current state, reviews it, and re-submitting confirms "yes, this is what I want now." The old snapshot is preserved in `user_actions.payload` for historical reference.
+
+**Pending-ops gating.** Badge rendering is not gated on pending peak ops (unlike `StaleIndicesBanner` which uses `useExposureHasPendingPeakOps`). The comparison's staleness check runs against the server-side `analysis_inputs_hash` at GET time — it doesn't see in-flight client mutations at all. Transient badge flicker during foreign peak ops is acceptable because the comparison page is a review context (not a live-editing context like Index), and the badge is informational only.
+
+**Visual contract.** The badge follows the same visual language as `StaleIndicesBanner` (amber/warning tone, not red/error). Positioned in the review-mode header, not as a full-width banner — it's less urgent than StaleIndicesBanner because the comparison figure isn't *wrong*, just *possibly out of date*.
 
 ### What does not get snapshotted
 
@@ -190,16 +214,18 @@ Plus one log-only kind:
 
 | Kind                   | Purpose                                                                                            |
 |------------------------|----------------------------------------------------------------------------------------------------|
-| `add_message` (extended) | Existing kind gains `entity_type='comparison'` semantics. Comparison chat threads use a new `comparison_messages` table parallel to the existing `sample_messages` (which stays sample-scoped). The `add_message` event handler routes to whichever table based on the event's `entity_type`. |
+| `add_message` (extended) | Existing kind gains `entity_type='comparison'` semantics. **This is a new dispatch branch in the existing handler** — the current handler hard-codes `sample_messages` and must be modified to route to the correct table (`sample_messages` or `comparison_messages`) based on the event's `entity_type`. The comparison chat thread uses a new `comparison_messages` table parallel to the existing `sample_messages` (which stays sample-scoped). The route handler for `POST /api/comparisons/:id/messages` wraps in `with_idempotency` and uses `apply_event!(InTransaction(), …)` per the standard discipline. |
 
 That's it. No `comparison_member_added`, `_removed`, `_updated`, `_reordered`, or `comparison_renamed` — title, description, and full membership snapshot all ride inside `comparison_submitted` (and inside the initial `comparison_created` for new comparisons).
 
 ### Submission diff
 
-`comparison_submitted` carries the full client-side draft snapshot. The dispatcher computes the diff against the current view-table state inside the transaction. Members with an `id` field are existing rows (UPDATE); members with `id === nothing` are new (INSERT). Members in the DB whose ids aren't present in the payload are removed (DELETE). Snapshot computation runs per-member at write time, sourcing the current `effective_peaks` + confirmed index entry from the exposure.
+`comparison_submitted` carries the full client-side draft snapshot **including per-member snapshots computed by the client at submit time**. The client runs `computeMemberSnapshot` against the TanStack cache state that fed the user's visual draft — this is the data the user was looking at when they clicked Save, so it's the correct source of truth. The dispatcher reads snapshots from the payload verbatim (never recomputing from the DB), which makes all replay scenarios deterministic: `rebuild_views_from_log!` round-trips, `@comparison:42@<oldhash>` historical citations, and replay-as-rerun on foreign events all produce identical results because the snapshot is a pure function of the payload, not of DB state at execution time.
+
+The dispatcher diffs the payload against the current view-table state inside the transaction. Members with an `id` field are existing rows (UPDATE); members with `id === nothing` are new (INSERT). Members in the DB whose ids aren't present in the payload are removed (DELETE). **Every UPDATE recomputes the snapshot from the payload — not conditionally on whether `exposure_id` changed.** A user may have confirmed a new index or edited peaks on the same exposure between submissions; the snapshot must always reflect the submit-time state.
 
 ```julia
-function update_view_for_comparison_submitted!(db, entity_id, payload, user_id)
+function update_view_for_comparison_submitted!(db, kind, entity_id, payload, event_id)
     payload_existing = Dict(m.id => m for m in payload.members if m.id isa Int)
     payload_new      = [m for m in payload.members if m.id === nothing]
     current_ids      = Set(member_ids_for_comparison(db, entity_id))
@@ -208,19 +234,20 @@ function update_view_for_comparison_submitted!(db, entity_id, payload, user_id)
     for id in setdiff(current_ids, keys(payload_existing))
         DBInterface.execute(db, "DELETE FROM comparison_members WHERE id=?", (id,))
     end
-    # UPDATE: rows present in both; recompute snapshot only if exposure_id changed
+    # UPDATE: rows present in both — snapshot from payload, always (not conditional on exposure_id change)
     for (id, m) in payload_existing
-        snap = compute_member_snapshot(db, m.exposure_id)
-        DBInterface.execute(db,
-            "UPDATE comparison_members SET display_order=?, band_height=?, y_offset=?, normalization=?, color_override=?, label_override=?, q_window_min=?, q_window_max=?, peak_display=?, snapshot=? WHERE id=?",
-            (m.display_order, m.band_height, m.y_offset, m.normalization, m.color_override, m.label_override, m.q_window_min, m.q_window_max, m.peak_display, JSON3.write(snap), id))
+        nrows = DBInterface.execute(db,
+            "UPDATE comparison_members SET exposure_id=?, display_order=?, band_height=?, y_offset=?, normalization=?, color_override=?, label_override=?, q_window_min=?, q_window_max=?, peak_display=?, snapshot=? WHERE id=? AND comparison_id=?",
+            (m.exposure_id, m.display_order, m.band_height, m.y_offset, m.normalization, m.color_override, m.label_override, m.q_window_min, m.q_window_max, m.peak_display, JSON3.write(m.snapshot), id, entity_id))
+        # Error on zero-row UPDATE — payload references a member id that doesn't exist for this comparison
+        rowcount(nrows) == 0 && error("comparison_submitted: member id=$id not found for comparison $entity_id")
     end
     # INSERT: new members (id === nothing in payload)
+    user_id = user_id_for_event(db, event_id)
     for m in payload_new
-        snap = compute_member_snapshot(db, m.exposure_id)
         DBInterface.execute(db,
             "INSERT INTO comparison_members (comparison_id, exposure_id, display_order, band_height, y_offset, normalization, color_override, label_override, q_window_min, q_window_max, peak_display, snapshot, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (entity_id, m.exposure_id, m.display_order, m.band_height, m.y_offset, m.normalization, m.color_override, m.label_override, m.q_window_min, m.q_window_max, m.peak_display, JSON3.write(snap), user_id, now_iso()))
+            (entity_id, m.exposure_id, m.display_order, m.band_height, m.y_offset, m.normalization, m.color_override, m.label_override, m.q_window_min, m.q_window_max, m.peak_display, JSON3.write(m.snapshot), user_id, now_iso()))
     end
     # Recompute content_hash and bump comparison metadata
     new_hash = compute_content_hash(db, entity_id)
@@ -231,7 +258,11 @@ function update_view_for_comparison_submitted!(db, entity_id, payload, user_id)
 end
 ```
 
-`compute_member_snapshot(db, exposure_id)` calls `effective_peaks(db, exposure_id, q, I)` (the existing helper from `analyze_exposure!`'s curation contract — see CLAUDE.md), pulls the exposure's confirmed index (skipping any with R² < 0.98), and reads the current `analysis_inputs_hash`. The result is the JSON shape documented in "Derived analysis state and staleness" above.
+**Snapshot computation lives on the client.** `computeMemberSnapshot(exposureId, qc)` in `lib/comparison/snapshot.ts` reads from the TanStack cache: `effective_peaks` from `queryKeys.peaks(exposureId)` (the same set rendered in the draft), `confirmed_index` from `queryKeys.indices(exposureId)` (R²-gated — below 0.98 produces `null`), and `analysis_inputs_hash` from the exposure query. The result is the JSON shape documented in "Derived analysis state and staleness" above.
+
+The server-side `compute_member_snapshot(db, exposure_id)` helper still exists for the `GET /api/comparisons/:id` staleness-check path and the `comparison_created` dispatcher (which also receives snapshots in the payload). It is **never called by the `comparison_submitted` dispatcher** — that path reads exclusively from `payload.members[i].snapshot`.
+
+**Client-side snapshot mirrors the server helper.** Both compute the same shape from the same inputs; the client reads from cache, the server from DB. A cross-hash test fixture in `test/contentHash.test.ts` (Phase 3) pins them to identical output for a fixed input — if they drift, the test fails.
 
 The route around this body checks `expected_content_hash` against the pre-update value and returns 409 on mismatch. The 409 response is **cached under the original `client_op_id`** by `with_idempotency` — retries return the same 409 without re-executing. To break out of a conflict, the client must mint a fresh `client_op_id` (which any of the conflict-modal actions does naturally, since they each issue a new mutation).
 
@@ -250,9 +281,31 @@ if !isnothing(payload.expected_content_hash) && current != payload.expected_cont
 end
 ```
 
-`expected_content_hash = nothing` means "I'm not checking" (used by the very first submission of a freshly-created comparison, where there is no prior state). Subsequent submissions always include it.
+**409 response body shape** — same shape as `GET /api/comparisons/:id` (including per-member `is_stale` and `snapshot`), wrapped in an error envelope. Pinned here so `test_route_response_shapes.jl` can assert it:
 
-Client receives 409 → shows the conflict modal (see "Conflict modal" under Frontend below). No automatic merge; the user picks.
+```json
+{
+  "error": "conflict",
+  "current_hash": "<sha256>",
+  "current_state": {
+    "id": 42,
+    "title": "...",
+    "description": "...",
+    "content_hash": "<sha256>",
+    "created_by": 1,
+    "members": [
+      { "id": 1, "exposure_id": 100, "snapshot": { ... }, "is_stale": false, ... }
+    ],
+    ...
+  }
+}
+```
+
+**`expected_content_hash = nothing` (create flow).** For the very first submission of a freshly-created comparison (`POST /api/comparisons`), there is no prior state and no `expected_content_hash` to check. The 409 conflict path is unreachable on first submit — the comparison doesn't exist yet, so there's nothing to conflict with. Subsequent submissions (via `POST /api/comparisons/:id/submit`) always include `expected_content_hash`.
+
+**`baseHash` lifecycle.** The frontend draft slot captures `baseHash` (the server's `content_hash`) at edit-mode entry. For a new comparison (never submitted), `baseHash` is `undefined` and the submit payload omits `expected_content_hash`. For an existing comparison, `baseHash` is the hash at edit-entry time and rides as `expected_content_hash` in the submit payload.
+
+Client receives 409 → shows the conflict modal (see "Conflict modal" under Frontend below). No automatic merge; the user picks. **Second-409 race:** "Overwrite with mine" re-submits with `expected_content_hash` set to the server's `current_hash` from the 409 body. If another tab submits between the 409 and the re-submit, the re-submit itself returns a *second* 409 with a new `current_state`. The conflict modal must handle re-opening with the updated server state — it's not a one-shot guarantee. The UX is: the modal refreshes its diff view with the new server state; the user picks again. Rare in practice (requires three rapid cross-tab submits by the same author) but must not break.
 
 ## Mutation queue integration
 
@@ -287,13 +340,13 @@ Things that *don't* apply because of the draft/submit model:
 
 - **No negative placeholder ids.** Members aren't sent until submit; the cache reflects either the saved state or the local draft (Zustand), never an in-flight optimistic row.
 - **No `useComparisonHasPendingOps` granularity.** A comparison either has a pending `comparison_save` or it doesn't; the existing `useMutationState` hook is enough.
-- **No per-field `applyRemoteToCache` branches.** A foreign `comparison_submitted` event invalidates `comparison(id)` + `comparisonMembers(id)` and refetches. Member-level field merges aren't a thing.
+- **No per-field `applyRemoteToCache` branches.** A foreign `comparison_created` or `comparison_submitted` event invalidates `comparison(id)` + `comparisonMembers(id)` and refetches. A foreign `comparison_deleted` event uses `qc.removeQueries({ queryKey: queryKeys.comparison(id) })` and `qc.removeQueries({ queryKey: queryKeys.comparisonMembers(id) })` plus `qc.setQueryData` to filter the id out of listing keys — **not** `invalidateQueries`, which would refetch the deleted resource, 404, and leave stale error state in cache. Member-level field merges aren't a thing.
 
 What still applies:
 
 - **`with_idempotency` wraps the submit route.** Retries return the cached response without re-executing.
 - **`apply_event!(InTransaction(), …)` inside.** SSE frame is post-commit-broadcast.
-- **Six-layer contract tests** for `comparison_save` and `comparison_delete` only — that's 2 kinds × 6 = 12 cases, not 7 × 6 = 42.
+- **Six-layer contract tests** for `comparison_save` and `comparison_delete`. Note that 2 OpKinds emit 3 distinct SSE event kinds (`saveComparison` emits `comparison_created` for create or `comparison_submitted` for update; `deleteComparison` emits `comparison_deleted`). The OpKind-shaped contract tests get 2 rows each (one per OpKind); the event-shape-shaped tests get 3 rows each (one per event kind). Total: 2×4 + 3×3 = **17 cases**, not 42.
 
 ## Hash memoization
 
@@ -568,6 +621,8 @@ Log/linear x toggle, auto-fit y-floor at `p01·0.5` from `PlotCard::computeFit` 
 
 **Default `q_window_min/max` for new members.** When a member is first added (and the user hasn't manually set a q-window), default to `[first_peak_q × 0.7, q_max]` — mirrors `TraceViewer::computeFit`'s heuristic when peaks exist. This prevents the direct-beam region from dominating normalization (direct-beam intensity is 4–6 decades above peak intensity; without exclusion, the 70/30 working band cannot save the figure). Members with no detected peaks default to `q_window = NULL` (full range) since there's no peak heuristic to anchor on.
 
+**Computation site: frontend-on-add.** The q_window default is computed by the client when adding a member to the draft — reading the exposure's peaks from the TanStack cache to derive the heuristic. The server stores whatever the client sends (including `NULL` for peakless exposures). Server-side fill would be unstable on retry/replay (the peak set can change between the original request and a replay if a peak op landed in between).
+
 In **edit mode**, the plot reads from local draft state. In **review mode**, from `queryKeys.comparisonMembers(id)`.
 
 ### Peak click semantics (edit mode)
@@ -591,7 +646,7 @@ shown (default) → labeled → hidden → shown
 
 Peak ids surface visually only via:
 
-- Hover tooltip on the triangle (q-value, optional id, prominence)
+- Hover tooltip on the triangle (q-value, optional id, sharpness)
 - A debug "show peak ids" toggle (developer-facing; not in v1 user UI)
 
 ### Label placement
@@ -628,6 +683,16 @@ Phase color appears via **hover on the metadata row**: hovering a member's metad
 - *Click-to-pin* — sticky highlight, useful when reading the chat.
 
 Members without a confirmed index (`snapshot.confirmed_index === null`) have no hover-color affordance — there's nothing to highlight. The metadata row's phase chip shows "—" or is omitted in this case.
+
+**State location: Zustand named action** (`setHighlightedCompareMemberId` / `clearHighlightedCompareMemberId`), matching the existing `hoveredIndexId` precedent on the Index page. Not component-local state — the highlight must coordinate across `MemberMetaRow` (hover source) and `MemberTraceLayer` (render target), which are separate component trees connected only through the shared y-stacking math.
+
+**Render mechanism:** `MemberTraceLayer` re-renders its peak marks when `highlightedMemberId` changes — peak marks already render each tick, so switching from black fill to phase-color fill is a prop change on existing marks, not a new SVG layer. No full plot recompute; only the affected member's marks update (~N ticks, not the entire N×M mark set).
+
+**Click-to-pin lifecycle:** pinned state cleared on (a) navigation away from the comparison page, (b) entering edit mode (where peaks have their own click semantics), (c) member removal from the comparison. Persisted across review/edit transitions only if review→review (e.g., switching comparisons); entering edit mode always clears.
+
+**Keyboard equivalent:** Tab-to-row + Enter to pin + Esc to clear. Rows are focusable (`tabindex="0"`); focus triggers the same transient highlight as hover. This prevents hover-only being mouse-only.
+
+**Hover association source:** always `snapshot.confirmed_index.peak_ids` (from the snapshot, not live data). If a peak id in `peak_ids` doesn't exist in `snapshot.effective_peaks`, skip it silently — no phantom highlights for peaks that were removed between snapshot and render.
 
 This replaces what would otherwise be a global "color by phase" mode for peaks. Trace *line* color still follows the trace coloring rules ("Trace coloring" above) — by sample, by phase, or distinct-per-trace, controlled by the grouping-mode toggle. The peak-color hover is a separate concern from line color.
 
@@ -813,13 +878,13 @@ The modal reads the server's "current state" from the **409 response body**, nev
 
 1. Schema (incl. `peak_display`) + dispatcher branches for `comparison_created` / `comparison_submitted` / `comparison_deleted` + `rebuild_views_from_log!` extension + dispatcher round-trip test.
 2. Backend routes wrapped in `with_idempotency`; conflict-detection path; `test_route_response_shapes.jl` rows; idempotency-replay invariant rows.
-3. `saveComparison` + `deleteComparison` mutators; six-layer contract tests for each (12 cases total).
+3. `saveComparison` + `deleteComparison` mutators; six-layer contract tests (17 cases total: 2 OpKinds × 4 + 3 event kinds × 3).
 4. Frontend list page (with scope toggle: this experiment / all) + create flow (edit mode for client-only draft until first submit).
 5. Picker modal (search + experiment/tag filters + recently-used + already-added locks); warm-add affordances from Inspect/Sample.
 6. Multi-trace plot component: shared Plot instance with per-member mark layers, y-stacking math driven by `band_height` ratios, log/linear x toggle, q-window brush zoom, double-click reset.
 7. Metadata gutter rows (label / phase / `a` / R² / `K`); drag-handle reorder *on* row, resize divider *between* rows; review-mode read-only vs edit-mode controls; "Reset heights" header button.
 8. Edit-mode peak click cycle (shown → labeled → hidden → shown); label placement above triangle with leader-line dodge; `peak_display` persistence.
-9. Review-mode annotation toggles (peak ticks / phase ticks / labels).
+9. Review-mode annotation toggles (peak ticks / per-trace labels), hover-driven phase coloring, coloring library + grouping mode.
 10. Review-mode chat thread + `@comparison` mention resolution + content_hash citation.
 11. Author-only edit gates (route 403 + frontend hide-Edit-show-Fork); fork creation flow; lineage badge + forks popover.
 12. Conflict modal (overwrite / discard / fork).
