@@ -63,7 +63,7 @@ Implications:
 
 ## Schema
 
-Two view tables, both written exclusively by `update_view_for_event!` per the dispatcher contract.
+Two view tables (`comparisons`, `comparison_members`), both written exclusively by `update_view_for_event!` per the dispatcher contract. `comparison_messages` (defined below) is written directly by the route handler, same as `sample_messages` — it is not a dispatcher-written view table.
 
 ```sql
 CREATE TABLE comparisons (
@@ -137,7 +137,7 @@ The `comparison_members.snapshot TEXT` column stores per-member JSON at submit t
 {
   "effective_peaks": [
     {"id": 42, "q": 1.234, "intensity": 5678.9, "sharpness": 0.87, "source": "auto"},
-    {"id": 105, "q": 1.745, "intensity": 4321.0, "sharpness": 0.65, "source": "manual"}
+    {"id": 105, "q": 1.745, "intensity": null, "sharpness": 0.65, "source": "manual"}
   ],
   "confirmed_index": {
     "id": 7,
@@ -160,7 +160,7 @@ The `comparison_members.snapshot TEXT` column stores per-member JSON at submit t
 ```ts
 type MemberSnapshot = {
   effective_peaks: Array<{
-    id: number; q: number; intensity: number; sharpness: number; source: "auto" | "manual";
+    id: number; q: number; intensity: number | null; sharpness: number; source: "auto" | "manual";
   }>;
   confirmed_index: {
     id: number; phase: string; lattice_param: number;
