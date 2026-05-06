@@ -1,4 +1,4 @@
-using Test, HTTP, JSON3, SQLite, DBInterface, Tables
+using Test, HTTP, JSON3, SQLite, DBInterface, Tables, SHA
 using HimalayaUI
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -499,6 +499,48 @@ end
         finally
             close(ctx.db)
         end
+    end
+
+    @testset "canonical_json: alphabetical key ordering (matches JS)" begin
+        # Pin the spec: `canonical_json` sorts keys at every nesting level
+        # so cross-language hash parity holds against
+        # `frontend/src/lib/comparison/contentHash.ts::canonicalJson`.
+        @test HimalayaUI.canonical_json(Dict(:b => 2, :a => 1)) == "{\"a\":1,\"b\":2}"
+        @test HimalayaUI.canonical_json(Dict(:z => Dict(:b => 2, :a => 1), :a => 1)) ==
+              "{\"a\":1,\"z\":{\"a\":1,\"b\":2}}"
+        # Arrays preserve order
+        @test HimalayaUI.canonical_json([3, 1, 2]) == "[3,1,2]"
+        # nothing/missing → null
+        @test HimalayaUI.canonical_json(nothing) == "null"
+        @test HimalayaUI.canonical_json(missing) == "null"
+        # Float-canonicalization: integer-valued floats drop the .0 to match JS
+        @test HimalayaUI.canonical_json(1.0) == "1"
+        @test HimalayaUI.canonical_json(-2.0) == "-2"
+        @test HimalayaUI.canonical_json(1.5) == "1.5"
+        @test HimalayaUI.canonical_json(0.05) == "0.05"
+    end
+
+    @testset "cross-language contentHash fixture parity" begin
+        # Spec: chat citations like `@comparison:42@<hash8>` resolve to a
+        # frozen snapshot. If client and server canonicalize differently,
+        # the @-resolver mismatches. The fixture in
+        # `frontend/test/fixtures/contentHash.fixture.json` pins both
+        # implementations to byte-identical output for the same input.
+        # Hashed by both sides; this test is the Julia leg.
+        fixture_path = joinpath(@__DIR__, "..", "frontend", "test",
+                                "fixtures", "contentHash.fixture.json")
+        @test isfile(fixture_path)
+        fixture = JSON3.read(read(fixture_path, String))
+        @test haskey(fixture, :input)
+        @test haskey(fixture, :expected_canonical)
+        @test haskey(fixture, :expected_hash)
+
+        canonical = HimalayaUI.canonical_json(fixture.input)
+        @test canonical == String(fixture.expected_canonical)
+
+        # The hash also matches — the canonical bytes determine it.
+        actual_hash = "sha256:" * bytes2hex(SHA.sha256(canonical))
+        @test actual_hash == String(fixture.expected_hash)
     end
 end
 

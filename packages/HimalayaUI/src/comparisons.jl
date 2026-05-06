@@ -12,11 +12,74 @@ should be a deliberate edit in lockstep with `frontend/.../PhasePanel.tsx`.
 const CONFIRMED_INDEX_R2_GATE = 0.98
 
 """
+    canonical_json(x) -> String
+
+Deterministic JSON serialization for content-hash inputs. **Object keys
+are sorted alphabetically** at every level so the byte stream is
+unambiguous across implementations — Julia `Dict{Symbol,Any}` iteration
+order is hash-based and not portable to JS.
+
+Numbers are emitted in their JSON3 default form (which matches the JS
+`JSON.stringify` output for IEEE-754 doubles). `nothing` becomes `null`.
+Strings, booleans, integers all delegate to `JSON3.write`.
+
+Mirrors `canonical_json` in `frontend/src/lib/comparison/contentHash.ts`
+— the cross-language fixture in `test/contentHash.test.ts` /
+`test_comparisons.jl` pins them to identical bytes for a fixed input.
+"""
+function canonical_json(x::AbstractDict)::String
+    keys_sorted = sort(collect(keys(x)); by = k -> string(k))
+    parts = String[]
+    for k in keys_sorted
+        push!(parts, JSON3.write(string(k)) * ":" * canonical_json(x[k]))
+    end
+    "{" * join(parts, ",") * "}"
+end
+
+# JSON3.Object behaves like an ordered Dict but iteration is insertion-
+# ordered (driven by the source bytes). Re-emit through the AbstractDict
+# branch by converting keys → strings and recursing on each value.
+function canonical_json(x::JSON3.Object)::String
+    keys_sorted = sort(collect(keys(x)); by = k -> string(k))
+    parts = String[]
+    for k in keys_sorted
+        push!(parts, JSON3.write(string(k)) * ":" * canonical_json(x[k]))
+    end
+    "{" * join(parts, ",") * "}"
+end
+
+canonical_json(x::AbstractVector)::String =
+    "[" * join((canonical_json(v) for v in x), ",") * "]"
+canonical_json(x::JSON3.Array)::String =
+    "[" * join((canonical_json(v) for v in x), ",") * "]"
+canonical_json(::Nothing)::String = "null"
+canonical_json(::Missing)::String = "null"
+canonical_json(x::Bool)::String = x ? "true" : "false"
+
+# Numbers: emit in a JS-compatible form. JS `JSON.stringify(1.0)` → "1"
+# (no trailing `.0`), but Julia JSON3.write(1.0) → "1.0". Cross-language
+# parity requires we collapse integer-valued floats to their integer
+# representation.
+function canonical_json(x::AbstractFloat)::String
+    isnan(x) || isinf(x) ? "null" : (
+        # Integer-valued? Emit without ".0" so it matches JS JSON.stringify.
+        (isfinite(x) && trunc(x) == x && abs(x) < 1e16) ?
+            string(Int(x)) :
+            JSON3.write(x))
+end
+
+# Fallback: integers, strings — JSON3 already produces canonical output
+# that matches JSON.stringify byte-for-byte.
+canonical_json(x)::String = JSON3.write(x)
+
+"""
     compute_content_hash(db, comparison_id) -> String
 
 SHA-256 over a canonical serialization of the comparison's identity:
 title, description, and members ordered by `display_order` (each member's
-exposure_id, render parameters, peak_display, snapshot).
+exposure_id, render parameters, peak_display, snapshot, **and
+`display_order` itself** — included as a tuple field so the hash is
+unambiguous when display_order ties exist; see `canonical_json`).
 
 Used by the dispatcher (`comparison_created` / `comparison_submitted`) to
 populate `comparisons.content_hash`. Mirrors the client-side
@@ -26,7 +89,9 @@ identically across server and browser.
 NULL columns serialize as JSON `null`; member ordering is deterministic
 (`display_order ASC, id ASC`). Snapshot and peak_display are read as their
 already-canonicalized JSON strings — re-parsing them through `JSON3.read`
-+ re-emit would re-key them and create drift between server and client.
++ re-emit would normally re-key them, but we route through
+`canonical_json` which alphabetically sorts at every nesting level so the
+hash is invariant across re-parse cycles.
 
 Returns the lowercase hex digest with a `sha256:` prefix to match the
 spec's hash format.
@@ -50,9 +115,8 @@ function compute_content_hash(db::SQLite.DB, comparison_id::Integer)::String
     members = Vector{Any}(undef, length(member_rows))
     for (i, m) in enumerate(member_rows)
         # Already-canonical JSON columns are re-parsed so the encoded form
-        # is structural (a nested object) rather than a quoted string —
-        # otherwise an embedded quote in the JSON literal would shift the
-        # hash on round-trips.
+        # is structural (a nested object) rather than a quoted string.
+        # `canonical_json` re-sorts keys, so re-parse drift is impossible.
         snap_obj = ismissing(m.snapshot) ? nothing : JSON3.read(String(m.snapshot))
         peak_obj = ismissing(m.peak_display) ? nothing : JSON3.read(String(m.peak_display))
         members[i] = Dict{Symbol,Any}(
@@ -75,8 +139,7 @@ function compute_content_hash(db::SQLite.DB, comparison_id::Integer)::String
         :description => description,
         :members     => members,
     )
-    canonical = JSON3.write(payload)
-    "sha256:" * bytes2hex(SHA.sha256(canonical))
+    "sha256:" * bytes2hex(SHA.sha256(canonical_json(payload)))
 end
 
 """

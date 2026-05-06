@@ -1,0 +1,73 @@
+{
+    "description": "Phase 3 cross-language hash parity fixture. Updated when the canonical-JSON spec changes — keep in lockstep with frontend/src/lib/comparison/contentHash.ts and packages/HimalayaUI/src/comparisons.jl::canonical_json.",
+    "expected_canonical": "{\"description\":\"Two exposures, ground-truth Pn3m vs candidate Im3m\",\"members\":[{\"band_height\":1,\"color_override\":\"#abcdef\",\"display_order\":0,\"exposure_id\":100,\"label_override\":\"Ground truth\",\"normalization\":\"max\",\"peak_display\":{\"show_unmatched\":true},\"q_window_max\":0.5,\"q_window_min\":0.05,\"snapshot\":{\"analysis_inputs_hash\":\"sha256:abcd1234\",\"confirmed_index\":{\"id\":20,\"lattice_d\":50,\"ngc\":-2,\"peak_ids\":[10,12],\"phase\":\"Pn3m\",\"r_squared\":0.99},\"effective_peaks\":[{\"id\":10,\"intensity\":100.5,\"q\":0.123,\"sharpness\":30,\"source\":\"auto\"},{\"id\":12,\"intensity\":null,\"q\":0.789,\"sharpness\":12.5,\"source\":\"manual\"}]},\"y_offset\":0},{\"band_height\":0.5,\"color_override\":null,\"display_order\":1,\"exposure_id\":200,\"label_override\":null,\"normalization\":\"none\",\"peak_display\":null,\"q_window_max\":null,\"q_window_min\":null,\"snapshot\":{\"analysis_inputs_hash\":\"sha256:zero\",\"confirmed_index\":null,\"effective_peaks\":[]},\"y_offset\":100}],\"title\":\"Comparison Alpha\"}",
+    "expected_hash": "sha256:8bb21896d2cf2b50a34fd2a9b2f5d0fcdf89cb5790f4395e19c3c41b71dd531a",
+    "input": {
+        "description": "Two exposures, ground-truth Pn3m vs candidate Im3m",
+        "members": [
+            {
+                "q_window_min": 0.05,
+                "band_height": 1,
+                "display_order": 0,
+                "y_offset": 0,
+                "exposure_id": 100,
+                "peak_display": {
+                    "show_unmatched": true
+                },
+                "snapshot": {
+                    "confirmed_index": {
+                        "phase": "Pn3m",
+                        "r_squared": 0.99,
+                        "peak_ids": [
+                            10,
+                            12
+                        ],
+                        "id": 20,
+                        "lattice_d": 50,
+                        "ngc": -2
+                    },
+                    "effective_peaks": [
+                        {
+                            "id": 10,
+                            "intensity": 100.5,
+                            "q": 0.123,
+                            "source": "auto",
+                            "sharpness": 30
+                        },
+                        {
+                            "id": 12,
+                            "intensity": null,
+                            "q": 0.789,
+                            "source": "manual",
+                            "sharpness": 12.5
+                        }
+                    ],
+                    "analysis_inputs_hash": "sha256:abcd1234"
+                },
+                "q_window_max": 0.5,
+                "label_override": "Ground truth",
+                "normalization": "max",
+                "color_override": "#abcdef"
+            },
+            {
+                "q_window_min": null,
+                "band_height": 0.5,
+                "display_order": 1,
+                "y_offset": 100,
+                "exposure_id": 200,
+                "peak_display": null,
+                "snapshot": {
+                    "confirmed_index": null,
+                    "effective_peaks": [
+                    ],
+                    "analysis_inputs_hash": "sha256:zero"
+                },
+                "q_window_max": null,
+                "label_override": null,
+                "normalization": "none",
+                "color_override": null
+            }
+        ],
+        "title": "Comparison Alpha"
+    }
+}
