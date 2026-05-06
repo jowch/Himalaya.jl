@@ -185,6 +185,45 @@ end
         end
     end
 
+    # Regression: pin compute_member_snapshot's parallel SQL implementation
+    # against the canonical effective_peaks helper from pipeline.jl. Both
+    # produce the same q-tolerance union of (auto_peaks − exclude curations
+    # ∪ add curations); this test fails loudly if either side drifts.
+    @testset "compute_member_snapshot agrees with effective_peaks (auto + exclude + add)" begin
+        mktempdir() do tmp
+            ctx = _setup_analyzed_exposure(tmp)
+            # Pick one auto peak to exclude and add a manual peak at a
+            # distinct q so the union exercises both curation kinds.
+            auto_q = first(Tables.rowtable(DBInterface.execute(ctx.db,
+                "SELECT q FROM auto_peaks WHERE exposure_id = ? ORDER BY q LIMIT 1",
+                [ctx.exposure_id]))).q
+            DBInterface.execute(ctx.db,
+                "INSERT INTO peak_curations (exposure_id, kind, q) VALUES (?, 'exclude', ?)",
+                [ctx.exposure_id, auto_q])
+            DBInterface.execute(ctx.db,
+                "INSERT INTO peak_curations (exposure_id, kind, q) VALUES (?, 'add', ?)",
+                [ctx.exposure_id, 0.5])
+
+            # Canonical set via the pipeline.jl helper: load the trace once,
+            # then call effective_peaks(db, eid, q, I).
+            dat_path = joinpath(ctx.analysis_dir, "example_tot.dat")
+            q, I, _ = HimalayaUI.load_dat(dat_path)
+            canonical = HimalayaUI.effective_peaks(ctx.db, ctx.exposure_id, q, I)
+
+            # Snapshot set via the parallel SQL.
+            snap = HimalayaUI.compute_member_snapshot(ctx.db, ctx.exposure_id)
+            snap_ids = sort([p[:id] for p in snap[:effective_peaks]])
+            snap_qs  = sort([p[:q]  for p in snap[:effective_peaks]])
+
+            @test snap_ids == sort(canonical.peak_id)
+            @test snap_qs  ≈ sort(canonical.q)
+            # Sanity: the exclude actually dropped one peak, and the add
+            # actually contributed one peak, so the diff is nontrivial.
+            @test 0.5 in snap_qs
+            @test !(auto_q in snap_qs)
+        end
+    end
+
     @testset "compute_member_snapshot: confirmed_index R²-gated" begin
         mktempdir() do tmp
             ctx = _setup_analyzed_exposure(tmp; datfile="cubic_tot.dat",

@@ -179,6 +179,17 @@ member) AND the `is_member_stale` fresh side. Reads from the DB — never the
 trace file directly — so it requires `auto_peaks` and `peak_curations` rows
 to be in place. Add curations get `intensity = nothing` (matches
 `get_peaks_for_exposure`).
+
+NOTE: The peak-set union (auto − exclude ∪ add) is a parallel SQL
+implementation of `effective_peaks(db, exposure_id, q, I)` from
+`pipeline.jl` — same q-tolerance (`MAX(1e-6, |q|*0.001)`), same union
+semantics. We keep the parallel implementation here rather than calling
+`effective_peaks` directly so this function can run without trace file I/O
+(load_dat) — important on the snapshot-create hot path. The contract is
+pinned by the regression test "compute_member_snapshot agrees with
+effective_peaks (auto + exclude + add)" in test_comparisons.jl; if you
+change the q-tolerance or union semantics in either implementation, both
+must move together or that test will fail.
 """
 function compute_member_snapshot(db::SQLite.DB, exposure_id::Integer)::Dict{Symbol, Any}
     eid = Int(exposure_id)
