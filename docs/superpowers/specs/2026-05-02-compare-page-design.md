@@ -81,7 +81,7 @@ CREATE TABLE comparisons (
 CREATE INDEX idx_comparisons_forked_from ON comparisons(forked_from_id);
 
 CREATE TABLE comparison_members (
-  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  id              INTEGER PRIMARY KEY,                     -- not AUTOINCREMENT: members are never @-mentioned
   comparison_id   INTEGER NOT NULL REFERENCES comparisons(id) ON DELETE CASCADE,
   exposure_id     INTEGER REFERENCES exposures(id) ON DELETE SET NULL,  -- placeholder on delete
   display_order   INTEGER NOT NULL,
@@ -136,8 +136,8 @@ The `comparison_members.snapshot TEXT` column stores per-member JSON at submit t
 ```json
 {
   "effective_peaks": [
-    {"id": 42, "q": 1.234, "intensity": 5678.9, "sharpness": 0.87, "kind": "auto"},
-    {"id": 105, "q": 1.745, "intensity": 4321.0, "sharpness": 0.65, "kind": "manual"}
+    {"id": 42, "q": 1.234, "intensity": 5678.9, "sharpness": 0.87, "source": "auto"},
+    {"id": 105, "q": 1.745, "intensity": 4321.0, "sharpness": 0.65, "source": "manual"}
   ],
   "confirmed_index": {
     "id": 7,
@@ -151,7 +151,7 @@ The `comparison_members.snapshot TEXT` column stores per-member JSON at submit t
 }
 ```
 
-- **`effective_peaks`** = the curated peak set at submit time (`auto_peaks` ∪ `peak_curations(kind='add')` − `peak_curations(kind='exclude')`), exactly the set used by `analyze_exposure!`. Each entry includes `id` (peak row id — stable across refetches; needed for hover-coloring association and `peak_display` references), `q`, `intensity`, `sharpness` (not `prominence` — the `prom` field was removed in favor of `sharpness::SparseVector`; see CLAUDE.md), and `kind` (`"auto"` or `"manual"`). This is what the plot renders, what normalization references, and what the metadata gutter reports a count for.
+- **`effective_peaks`** = the curated peak set at submit time (`auto_peaks` ∪ `peak_curations(kind='add')` − `peak_curations(kind='exclude')`), exactly the set used by `analyze_exposure!`. Each entry includes `id` (peak row id — stable across refetches; needed for hover-coloring association and `peak_display` references), `q`, `intensity`, `sharpness` (not `prominence` — the `prom` field was removed in favor of `sharpness::SparseVector`; see CLAUDE.md), and `source` (`"auto"` or `"manual"`, matching the `get_peaks_for_exposure` API response field). This is what the plot renders, what normalization references, and what the metadata gutter reports a count for.
 - **`confirmed_index`** = the index entry the user confirmed for this exposure at submit time (or `null` if no confirmation). Provides `id` (index row id), phase, lattice parameter, R², `K`, and `peak_ids` — the list of peak ids belonging to this index (used by hover-driven phase coloring to know which peaks to highlight). Below-R²-gate confirmations are not snapshotted (consistency with PhasePanel's gate). If no index is confirmed, the metadata gutter shows "no index" and any phase-color hover affordance is inert.
 - **`analysis_inputs_hash`** = the exposure's hash at snapshot time. Used to detect drift.
 
@@ -160,7 +160,7 @@ The `comparison_members.snapshot TEXT` column stores per-member JSON at submit t
 ```ts
 type MemberSnapshot = {
   effective_peaks: Array<{
-    id: number; q: number; intensity: number; sharpness: number; kind: "auto" | "manual";
+    id: number; q: number; intensity: number; sharpness: number; source: "auto" | "manual";
   }>;
   confirmed_index: {
     id: number; phase: string; lattice_param: number;
@@ -214,7 +214,7 @@ Plus one log-only kind:
 
 | Kind                   | Purpose                                                                                            |
 |------------------------|----------------------------------------------------------------------------------------------------|
-| `add_message` (extended) | Existing kind gains `entity_type='comparison'` semantics. **This is a new dispatch branch in the existing handler** — the current handler hard-codes `sample_messages` and must be modified to route to the correct table (`sample_messages` or `comparison_messages`) based on the event's `entity_type`. The comparison chat thread uses a new `comparison_messages` table parallel to the existing `sample_messages` (which stays sample-scoped). The route handler for `POST /api/comparisons/:id/messages` wraps in `with_idempotency` and uses `apply_event!(InTransaction(), …)` per the standard discipline. |
+| `post_message` (extended) | Existing kind (currently `entity_type='sample_message'` in `routes_messages.jl`) gains `entity_type='comparison_message'` semantics. **This is a new dispatch branch in the existing handler** — the current handler hard-codes `sample_messages` and must be modified to route to the correct table (`sample_messages` or `comparison_messages`) based on the event's `entity_type`. The comparison chat thread uses a new `comparison_messages` table parallel to the existing `sample_messages` (which stays sample-scoped). The route handler for `POST /api/comparisons/:id/messages` wraps in `with_idempotency` and uses `apply_event!(InTransaction(), …)` per the standard discipline. |
 
 That's it. No `comparison_member_added`, `_removed`, `_updated`, `_reordered`, or `comparison_renamed` — title, description, and full membership snapshot all ride inside `comparison_submitted` (and inside the initial `comparison_created` for new comparisons).
 
@@ -236,11 +236,11 @@ function update_view_for_comparison_submitted!(db, kind, entity_id, payload, eve
     end
     # UPDATE: rows present in both — snapshot from payload, always (not conditional on exposure_id change)
     for (id, m) in payload_existing
-        nrows = DBInterface.execute(db,
+        DBInterface.execute(db,
             "UPDATE comparison_members SET exposure_id=?, display_order=?, band_height=?, y_offset=?, normalization=?, color_override=?, label_override=?, q_window_min=?, q_window_max=?, peak_display=?, snapshot=? WHERE id=? AND comparison_id=?",
             (m.exposure_id, m.display_order, m.band_height, m.y_offset, m.normalization, m.color_override, m.label_override, m.q_window_min, m.q_window_max, m.peak_display, JSON3.write(m.snapshot), id, entity_id))
         # Error on zero-row UPDATE — payload references a member id that doesn't exist for this comparison
-        rowcount(nrows) == 0 && error("comparison_submitted: member id=$id not found for comparison $entity_id")
+        SQLite.changes(db) == 0 && error("comparison_submitted: member id=$id not found for comparison $entity_id")
     end
     # INSERT: new members (id === nothing in payload)
     user_id = user_id_for_event(db, event_id)
@@ -264,7 +264,7 @@ The server-side `compute_member_snapshot(db, exposure_id)` helper still exists f
 
 **Client-side snapshot mirrors the server helper.** Both compute the same shape from the same inputs; the client reads from cache, the server from DB. A cross-hash test fixture in `test/contentHash.test.ts` (Phase 3) pins them to identical output for a fixed input — if they drift, the test fails.
 
-The route around this body checks `expected_content_hash` against the pre-update value and returns 409 on mismatch. The 409 response is **cached under the original `client_op_id`** by `with_idempotency` — retries return the same 409 without re-executing. To break out of a conflict, the client must mint a fresh `client_op_id` (which any of the conflict-modal actions does naturally, since they each issue a new mutation).
+The route around this body checks `expected_content_hash` against the pre-update value and returns 409 on mismatch. Per the `with_idempotency` contract, **status ≥ 400 responses are NOT cached** — a retry with the same `client_op_id` re-evaluates the conflict check (which is correct: the conflict may have resolved between retries if the other tab's submit was reverted or the user discarded their draft). The client breaks out of a stale conflict by minting a fresh `client_op_id` via a new `mutate()` call, which each conflict-modal action does naturally.
 
 ### Conflict detection
 
@@ -415,7 +415,7 @@ A reverse-direction "Forks (N) →" link near the badge opens a popover listing 
 
 What stays multiplayer:
 
-- **Chat thread.** `add_message` events broadcast normally. Two users (or any number) can discuss a comparison live regardless of who authored it. Comments are gated only by user identity, not by authorship.
+- **Chat thread.** `post_message` events broadcast normally. Two users (or any number) can discuss a comparison live regardless of who authored it. Comments are gated only by user identity, not by authorship.
 - **Submission visibility.** When the author submits, all other viewers' review-mode pages invalidate and refetch via SSE → the new figure appears.
 - **Per-tab `client_id` (PR #32).** Two tabs of the same user have distinct `client_id`s; the originating tab's edit refreshes the other.
 
@@ -442,7 +442,7 @@ GET    /api/comparisons/:id/forks                         -- list forks of this 
 POST   /api/comparisons/:id/submit                        -- author-only (403 otherwise); idempotent; 409 on hash mismatch
 DELETE /api/comparisons/:id                               -- author-only (403 otherwise); idempotent
 GET    /api/comparisons/:id/messages                      -- chat thread (any user)
-POST   /api/comparisons/:id/messages                      -- any user; add_message with entity_type='comparison'; idempotent
+POST   /api/comparisons/:id/messages                      -- any user; post_message with entity_type='comparison_message'; idempotent
 ```
 
 No member-level routes — all member changes ride inside `POST /submit`. The create route is *not* nested under an experiment because comparisons aren't owned by experiments; it's a top-level resource.
@@ -621,6 +621,8 @@ Log/linear x toggle, auto-fit y-floor at `p01·0.5` from `PlotCard::computeFit` 
 
 **Default `q_window_min/max` for new members.** When a member is first added (and the user hasn't manually set a q-window), default to `[first_peak_q × 0.7, q_max]` — mirrors `TraceViewer::computeFit`'s heuristic when peaks exist. This prevents the direct-beam region from dominating normalization (direct-beam intensity is 4–6 decades above peak intensity; without exclusion, the 70/30 working band cannot save the figure). Members with no detected peaks default to `q_window = NULL` (full range) since there's no peak heuristic to anchor on.
 
+Boundaries are inclusive: `q_window_min ≤ q ≤ q_window_max`. Peaks at the boundary q values are included in normalization and rendering.
+
 **Computation site: frontend-on-add.** The q_window default is computed by the client when adding a member to the draft — reading the exposure's peaks from the TanStack cache to derive the heuristic. The server stores whatever the client sends (including `NULL` for peakless exposures). Server-side fill would be unstable on retry/replay (the peak set can change between the original request and a replay if a peak op landed in between).
 
 In **edit mode**, the plot reads from local draft state. In **review mode**, from `queryKeys.comparisonMembers(id)`.
@@ -684,7 +686,7 @@ Phase color appears via **hover on the metadata row**: hovering a member's metad
 
 Members without a confirmed index (`snapshot.confirmed_index === null`) have no hover-color affordance — there's nothing to highlight. The metadata row's phase chip shows "—" or is omitted in this case.
 
-**State location: Zustand named action** (`setHighlightedCompareMemberId` / `clearHighlightedCompareMemberId`), matching the existing `hoveredIndexId` precedent on the Index page. Not component-local state — the highlight must coordinate across `MemberMetaRow` (hover source) and `MemberTraceLayer` (render target), which are separate component trees connected only through the shared y-stacking math.
+**State location: Zustand named action** (`setHighlightedCompareMemberId(id: number | undefined)`), matching the existing single-setter `hoveredIndexId` pattern on the Index page. Pass `undefined` to clear. Not component-local state — the highlight must coordinate across `MemberMetaRow` (hover source) and `MemberTraceLayer` (render target), which are separate component trees connected only through the shared y-stacking math.
 
 **Render mechanism:** `MemberTraceLayer` re-renders its peak marks when `highlightedMemberId` changes — peak marks already render each tick, so switching from black fill to phase-color fill is a prop change on existing marks, not a new SVG layer. No full plot recompute; only the affected member's marks update (~N ticks, not the entire N×M mark set).
 
@@ -861,7 +863,7 @@ When `POST /submit` returns 409, the client opens a modal. With author-only edit
 
 "Overwrite with mine" re-submits with `expected_content_hash` set to the server's current hash. "Fork to a new" creates a new comparison from the local draft with `forked_from_id` set to the original — the same fork mechanism described in "Authorship and forking" above.
 
-The modal reads the server's "current state" from the **409 response body**, never from the TanStack cache. The cache may be stale during foreign-event arrival (the SSE refresh and the 409 response can race), and showing a cache-derived diff against a not-yet-applied SSE event would be misleading. The server includes `current_state` (full members array) in the 409 body specifically to give the modal a known-fresh source of truth. Each modal action that re-submits also mints a fresh `client_op_id` (the `useQueueMutation` hook does this per `mutate()` call) so the new submission isn't tied to the cached 409 idempotency entry.
+The modal reads the server's "current state" from the **409 response body**, never from the TanStack cache. The cache may be stale during foreign-event arrival (the SSE refresh and the 409 response can race), and showing a cache-derived diff against a not-yet-applied SSE event would be misleading. The server includes `current_state` (full members array) in the 409 body specifically to give the modal a known-fresh source of truth. Each modal action that re-submits mints a fresh `client_op_id` (the `useQueueMutation` hook does this per `mutate()` call). Note: per the `with_idempotency` contract, 409 responses (status ≥ 400) are not cached, so a retry with the same `client_op_id` re-evaluates the conflict check — no stale cached 409 to break out of.
 
 ## Open questions
 

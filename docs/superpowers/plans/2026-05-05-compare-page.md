@@ -4,7 +4,7 @@
 
 **Goal:** Implement the Compare page per [docs/superpowers/specs/2026-05-02-compare-page-design.md](../specs/2026-05-02-compare-page-design.md): a draft/submit-style multi-trace overlay tool with author-only edit, fork-based collaboration, picker-modal selection, per-trace band heights, edit-mode peak click cycling, review-mode annotation toggles, chat thread, and `@comparison:N` mention support.
 
-**Architecture:** Three view tables (`comparisons`, `comparison_members`, `comparison_messages`) written exclusively by `update_view_for_event!`. Three view-producing event kinds (`comparison_created`, `comparison_submitted`, `comparison_deleted`) routed through `apply_event!(InTransaction(), …)` inside `with_idempotency`. Plus the existing `add_message` extended for `entity_type='comparison'`. One frontend queue mutator (`saveComparison`) plus a thin `deleteComparison`. Page UI is structured as Sidebar + Plot Panel (plot column + metadata gutter) + Chat, mirroring the Index page's three-card composition.
+**Architecture:** Three view tables (`comparisons`, `comparison_members`, `comparison_messages`) written exclusively by `update_view_for_event!`. Three view-producing event kinds (`comparison_created`, `comparison_submitted`, `comparison_deleted`) routed through `apply_event!(InTransaction(), …)` inside `with_idempotency`. Plus the existing `post_message` kind extended for `entity_type='comparison_message'`. One frontend queue mutator (`saveComparison`) plus a thin `deleteComparison`. Page UI is structured as Sidebar + Plot Panel (plot column + metadata gutter) + Chat, mirroring the Index page's three-card composition.
 
 **Tech stack:** Julia 1.9+, SQLite.jl, Oxygen.jl 1.10, JSON3, SHA (already a dep); React 18, TanStack Query v5, Zustand, Observable Plot, Vitest, Playwright.
 
@@ -157,6 +157,7 @@ Per CLAUDE.md frontend gotchas: **never assert against Tailwind class strings.**
 | Create | `packages/HimalayaUI/frontend/src/lib/queue/mutators/saveComparison.ts` | 3 |
 | Create | `packages/HimalayaUI/frontend/src/lib/queue/mutators/deleteComparison.ts` | 3 |
 | Modify | `packages/HimalayaUI/frontend/src/lib/queue/applyRemoteToCache.ts` | 3 (comparison kinds) |
+| Modify | `packages/HimalayaUI/frontend/src/lib/queue/types.ts` | 3 (extend `OpKind` union with `"comparison_save" \| "comparison_delete"`) |
 | Modify | `packages/HimalayaUI/frontend/src/lib/queue/mutatorRegistry.ts` | 3 (register both) |
 | Create | `packages/HimalayaUI/frontend/src/lib/comparison/draft.ts` | 4 (sessionStorage shape + hooks) |
 | Create | `packages/HimalayaUI/frontend/src/lib/comparison/coloring.ts` | 9 (palette / grouping mode) |
@@ -198,7 +199,7 @@ Per CLAUDE.md frontend gotchas: **never assert against Tailwind class strings.**
 - [ ] **Step 1: Write the failing migration tests** in `test_db.jl`. Cover:
   - **Fresh DB:** after `open_db`, all three Compare tables exist with correct columns; all four indexes exist.
   - **Already-migrated DB:** second `open_db` is a no-op (no errors, no duplicate tables).
-  - **AUTOINCREMENT contract:** `comparisons.id`, `comparison_members.id`, and `comparison_messages.id` all strict-monotonic — deleting and re-inserting does not reuse the freed id (mention-target stability rule).
+  - **AUTOINCREMENT contract:** `comparisons.id` and `comparison_messages.id` strict-monotonic — deleting and re-inserting does not reuse the freed id (mention-target stability rule). `comparison_members.id` uses plain `INTEGER PRIMARY KEY` (members are never `@`-mentioned).
   - **FK enforcement:** inserting `comparison_members` with `comparison_id` referencing a non-existent comparison fails when `PRAGMA foreign_keys = ON`.
   - **`ON DELETE SET NULL` on `comparison_members.exposure_id`:** delete an exposure that's a member; member row survives with `exposure_id IS NULL`.
   - **`ON DELETE CASCADE` on `comparison_members.comparison_id` and `comparison_messages.comparison_id`:** delete a comparison; both child tables drop their rows.
@@ -269,7 +270,7 @@ Pure helpers (no HTTP):
 
 - `compute_content_hash(db, comparison_id)` — SHA-256 over canonical serialization (title, description, ordered members tuple per spec, including snapshot JSON).
 - `current_content_hash(db, comparison_id)` — fetches stored `content_hash` (returns `nothing` if comparison doesn't exist).
-- `compute_member_snapshot(db, exposure_id)` — returns the JSON shape per spec ("Derived analysis state and staleness"): `effective_peaks` + `confirmed_index` (R²-gated) + `analysis_inputs_hash`. Calls existing `effective_peaks(db, …)` helper.
+- `compute_member_snapshot(db, exposure_id)` — returns the JSON shape per spec ("Derived analysis state and staleness"): `effective_peaks` + `confirmed_index` (R²-gated) + `analysis_inputs_hash`. **Note:** the existing `effective_peaks(db, …)` helper returns `(q, sharpness, peak_id, peak_kind)` — no `intensity`. The snapshot shape requires intensity, so `compute_member_snapshot` must join the peak ids against `auto_peaks.intensity` (for auto peaks) or look up `I(q)` from the trace (for manual/curation peaks). The R² gate threshold (0.98) should be extracted as a named constant shared with `PhasePanel` to prevent drift.
 - `is_member_stale(db, member)::Bool` — compares `member.snapshot.analysis_inputs_hash` with `current_analysis_inputs_hash(member.exposure_id)`.
 - `fetch_comparison_with_members(db, comparison_id)` — returns the full comparison + members shape used in API responses. Handles `exposure_id IS NULL` orphan placeholders. Includes per-member `is_stale: Bool` flag.
 - `member_ids_for_comparison(db, comparison_id)` — returns `Set{Int}` of current member ids.
@@ -301,7 +302,7 @@ Routes:
 - `POST /api/comparisons/:id/submit` — author-only (403 if not). 409 on `expected_content_hash` mismatch. Idempotent.
 - `DELETE /api/comparisons/:id` — author-only.
 - `GET /api/comparisons/:id/messages` — chat thread.
-- `POST /api/comparisons/:id/messages` — `add_message` event.
+- `POST /api/comparisons/:id/messages` — `post_message` event with `entity_type='comparison_message'`.
 
 - [ ] **Step 1: Write** route-shape tests (`test_route_response_shapes.jl` rows + per-route happy/sad paths in `test_comparisons.jl`).
   - Create-with-zero-members → 400.
@@ -311,26 +312,26 @@ Routes:
   - Submit-with-correct-hash → 200 + new state in response.
   - Delete-as-non-author → 403.
   - Idempotent retry of submit → cached response, no duplicate event.
-  - **409 caching contract:** retry of a submit that originally returned 409 (under same `client_op_id`) returns the same 409 from idempotency cache, **not** fresh evaluation. To break out of the conflict, the client must mint a fresh `client_op_id` (which the conflict-modal flow does naturally because each modal action issues a new `useQueueMutation.mutate()` call).
+  - **409 retry contract:** per `with_idempotency`, status ≥ 400 responses are NOT cached. A retry of a submit that originally returned 409 (under same `client_op_id`) re-evaluates the conflict check (correct: the conflict may have resolved between retries). The client breaks out of a stale conflict by minting a fresh `client_op_id` (which the conflict-modal flow does naturally because each modal action issues a new `useQueueMutation.mutate()` call).
   - Cascade test: delete a comparison → children gone (members + messages).
 
 - [ ] **Step 2: Implement** routes. Per [mutation-queue.md](../../mutation-queue.md) §6: use `apply_event!(InTransaction(), …)` and let the post-commit broadcast queue handle SSE.
 
-- [ ] **Step 3: Idempotency-replay matrix** — add comparison kinds to `test_idempotency_replay_invariant.jl` so SSE-fanout-under-retry is verified. Include a **409-cached-replay row**: submit with wrong `expected_content_hash` → 409; retry with same `client_op_id` → identical 409 from cache (not fresh evaluation). This is the canonical home for "second invocation under same `client_op_id` returns identical (status, body) pair."
+- [ ] **Step 3: Idempotency-replay matrix** — add comparison kinds to `test_idempotency_replay_invariant.jl` so SSE-fanout-under-retry is verified. Include a **409-retry-re-evaluates row**: submit with wrong `expected_content_hash` → 409; retry with same `client_op_id` → re-evaluates conflict check (per `with_idempotency` contract: status ≥ 400 not cached). Also test that a successful submit (status 200) IS cached on retry.
 
 - [ ] **Step 4: Commit** as `feat(compare): REST routes with idempotency + auth gates`.
 
-### Task 2.3: `add_message` extension for comparisons
+### Task 2.3: `post_message` extension for comparisons
 
 **Files:**
-- Modify: `packages/HimalayaUI/src/events.jl` (add_message dispatch by entity_type)
-- Modify: `packages/HimalayaUI/src/routes_messages.jl` (or routes_comparisons depending on existing organization)
+- Modify: `packages/HimalayaUI/src/events.jl` (`post_message` dispatch by `entity_type`)
+- Modify: `packages/HimalayaUI/src/routes_messages.jl` (or `routes_comparisons.jl` depending on organization)
 
-Per spec: `add_message` event handler routes to either `sample_messages` or `comparison_messages` based on `entity_type`. **The existing handler hard-codes `sample_messages` — this is a new dispatch branch, not a trivial extension.** The INSERT target table must be chosen based on `entity_type`.
+Per spec: the existing `post_message` kind (used with `entity_type='sample_message'` in `routes_messages.jl:64`) gains `entity_type='comparison_message'` semantics. **The existing handler hard-codes `sample_messages` — this is a new dispatch branch, not a trivial extension.** The INSERT target table must be chosen based on `entity_type`.
 
-- [ ] **Step 1:** Test that `add_message` with `entity_type='comparison'` writes to `comparison_messages`, and with `entity_type='sample'` still writes to `sample_messages`. Also test that an unknown `entity_type` returns an error (not a silent no-op).
+- [ ] **Step 1:** Test that `post_message` with `entity_type='comparison_message'` writes to `comparison_messages`, and with `entity_type='sample_message'` still writes to `sample_messages`. Also test that an unknown `entity_type` returns an error (not a silent no-op).
 - [ ] **Step 2:** Implement the dispatch. The route handler at `POST /api/comparisons/:id/messages` must wrap in `with_idempotency(db, req) do ... end` and use `apply_event!(InTransaction(), …)` per the standard discipline — same as every other mutating comparison route.
-- [ ] **Step 3:** Commit as `feat(compare): add_message event routes by entity_type`.
+- [ ] **Step 3:** Commit as `feat(compare): post_message event routes by entity_type`.
 
 ---
 
@@ -358,10 +359,10 @@ The mutator (`kind: "comparison_save"`) handles both create and update — `payl
 - [ ] **Step 2: Implement** the mutator. Pay attention to:
   - `payload.id` discriminates create vs submit.
   - `expected_content_hash` is included on submits (not creates).
-  - 409 response is a *success* from TanStack's perspective (HTTP returned a body); the mutator should detect and surface it as a typed error so the UI can open the conflict modal. See [mutation-queue.md](../../mutation-queue.md) §10 — likely the cleanest is throwing a `ConflictError` from `request` so it lands in `onError`.
+  - 409 response should be detected in `request` and thrown as a typed `ConflictError` so it lands in `onError` and the UI can open the conflict modal. See [mutation-queue.md](../../mutation-queue.md) §10.
   - 403 response is a validation-class error (no retry).
 
-- [ ] **Step 3: `applyRemoteToCache` branches** for `comparison_created` / `comparison_submitted` / `comparison_deleted`. Foreign `comparison_created` and `comparison_submitted` events invalidate `comparison(id)`, `comparisonMembers(id)`, `comparisons` listing. Foreign `comparison_deleted` events use `qc.removeQueries` (NOT `invalidateQueries` — refetching a deleted resource 404s and leaves stale error state) for `comparison(id)` and `comparisonMembers(id)`, plus `qc.setQueryData` to filter the id out of listing keys.
+- [ ] **Step 3: `applyRemoteToCache` branches** for `comparison_created` / `comparison_submitted` / `comparison_deleted`. Foreign `comparison_created` and `comparison_submitted` events invalidate `comparison(id)`, `comparisonMembers(id)`, `comparisons` listing. Foreign `comparison_deleted` events use `qc.removeQueries` (NOT `invalidateQueries` — refetching a deleted resource 404s and leaves stale error state) for `comparison(id)` and `comparisonMembers(id)`, plus `qc.setQueryData` to filter the id out of listing keys. **Note:** verify that `replayCoordinator.handleRemoteEvent` forwards comparison events correctly — the coordinator dispatches on `remote.kind` via `applyRemoteToCache`'s switch statement with no `entity_type` filter, so adding new `case` branches is sufficient. Also extend `OpKind` union in `types.ts`.
 
 - [ ] **Step 4: Commit** as `feat(compare): saveComparison queue mutator + contract tests`.
 
@@ -457,7 +458,24 @@ type ActiveDraft = {
 type ActiveDraftSlot = ActiveDraft | null;
 ```
 
-The `id: number | undefined` form (rather than `id?: number`) is required by `exactOptionalPropertyTypes: true` — see CLAUDE.md frontend gotchas. Same rule for any nullable field on `DraftMember`.
+The `id: number | undefined` form (rather than `id?: number`) is required by `exactOptionalPropertyTypes: true` — see CLAUDE.md frontend gotchas. Same rule for nullable fields on `DraftMember`:
+
+```ts
+type DraftMember = {
+  id: number | undefined;           // undefined = new member (INSERT on submit)
+  exposure_id: number;
+  display_order: number;
+  band_height: number;
+  y_offset: number;
+  normalization: "none" | "max" | "area" | "qwindow";
+  color_override: string | undefined;
+  label_override: string | undefined;
+  q_window_min: number | undefined;
+  q_window_max: number | undefined;
+  peak_display: { hidden: number[]; labeled: number[] } | undefined;
+  snapshot: MemberSnapshot;          // computed fresh at submit time
+};
+```
 
 `baseHash` is captured at edit-mode entry (when loading an existing comparison's state into the draft slot) and **does not refresh** if a foreign SSE event arrives mid-edit — submission compares this baseline against the server's current hash via `expected_content_hash`, and a mismatch is a real conflict. Auto-updating `baseHash` from SSE events would silently swallow conflicts.
 
@@ -557,7 +575,7 @@ Normalization library:
 - Create: `packages/HimalayaUI/frontend/src/components/MultiTracePlot.tsx`
 - Create: `packages/HimalayaUI/frontend/test/MultiTracePlot.test.tsx`
 
-Single Observable `<Plot>` with shared q-scale + zoom domain. Computes y-bands from `band_height` ratios (per spec formula). Composes N `MemberTraceLayer` marks. Brush + double-click reset zoom; mouse-wheel pan/zoom. Same control surface as existing `TraceViewer` — reuse hooks where possible.
+Single Observable `<Plot>` with shared q-scale + zoom domain. Computes y-bands from `band_height` ratios (per spec formula). Composes N `MemberTraceLayer` marks. Brush + double-click reset zoom; mouse-wheel pan/zoom. Same control surface as existing `TraceViewer` — reuse hooks where possible. **Note:** brush-to-zoom requires the Observable Plot `.scale(name).invert(px)` cast pattern documented in CLAUDE.md frontend gotchas (`(el as unknown as { scale: ... })`) — extract a shared `invertQ(plot, px)` helper for both `MultiTracePlot` and `TraceViewer`.
 
 - Aspect ratio: `0.3` hardcoded constant exported as `COMPARE_PLOT_ASPECT` for future surfacing.
 - `panel_height` derived from container; `MultiTracePlot` is `flex-1` and queries its own bounding rect via `useElementSize` or similar.
@@ -693,7 +711,7 @@ Color swatch grid in `MemberMetaRow`'s expanded state. Click sets `color_overrid
 
 ### Task 9.5: Hover-driven phase coloring of peaks
 
-**State location: Zustand named action** (`setHighlightedCompareMemberId` / `clearHighlightedCompareMemberId`), matching the existing `hoveredIndexId` precedent on the Index page. Not component-local — the highlight must coordinate across `MemberMetaRow` (hover source) and `MemberTraceLayer` (render target).
+**State location: Zustand single-setter** (`setHighlightedCompareMemberId(id: number | undefined)`) — pass `undefined` to clear, matching the existing `hoveredIndexId` pattern on the Index page. Not component-local — the highlight must coordinate across `MemberMetaRow` (hover source) and `MemberTraceLayer` (render target).
 
 **Render mechanism:** `MemberTraceLayer` re-renders its peak marks when `highlightedMemberId` changes — switching from black fill to phase-color fill on existing marks. No full plot recompute.
 
@@ -816,7 +834,7 @@ Mounted at `App.tsx`. Listens for `ConflictError` from `saveComparison` mutator.
 - *Overwrite with mine* — re-submits with `expected_content_hash` set to server's `current_hash`. **Second-409 race:** if another tab submits between the 409 and the re-submit, the re-submit itself returns a second 409 with updated `current_state`. The modal must handle re-opening with the new server state (refresh the diff view, let the user pick again). Rare but must not break.
 - *Fork to a new comparison* — calls saveComparison with no `id`, with `forked_from_id` set to the original. New comparison opens.
 
-Each modal action mints a fresh `client_op_id` (via `useQueueMutation`'s per-`mutate()` mint) so the new submission isn't tied to the cached 409 idempotency entry.
+Each modal action mints a fresh `client_op_id` (via `useQueueMutation`'s per-`mutate()` mint). Note: per `with_idempotency`, 409 responses (status ≥ 400) are not cached, so a retry with the same `client_op_id` re-evaluates the conflict check — no stale cached 409 to break out of.
 
 - [ ] **Step 1:** Tests including: basic 409 → modal opens; overwrite succeeds; overwrite hits second 409 → modal re-opens with updated state; fork creates new comparison.
 - [ ] **Step 2:** Implement.
@@ -828,7 +846,7 @@ Each modal action mints a fresh `client_op_id` (via `useQueueMutation`'s per-`mu
 
 ### Task 13.1: Skeleton loading
 
-Per CLAUDE.md boneyard rules: every load-gated card on Compare gets a `<Skeleton>` wrapper. List page, plot card, member panel, chat. Boneyard captures committed.
+Per CLAUDE.md boneyard rules: every load-gated card on Compare gets a `<Skeleton>` wrapper gated on `query.isLoading` (NOT `isPending` — disabled queries and background refetches stay skeleton-free). List page, plot card, member panel, chat. Boneyard captures committed.
 
 - [ ] Implement.
 
