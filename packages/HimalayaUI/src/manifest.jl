@@ -1,3 +1,6 @@
+using CSV
+using Tables
+
 struct ManifestSample
     label          ::String
     name           ::String
@@ -23,73 +26,105 @@ function expand_filename_range(s::AbstractString)::Vector{String}
 end
 
 """
+    expand_filename_field(s) -> Vector{String}
+
+Expand a manifest filenames cell into individual filename stems. Supports
+one or more ranges separated by `;` or `,` — e.g. `"JC037-040;JC153-156"`
+or (CSV-quoted) `"JC037-JC040,JC153-156"`. Each segment may be a single
+filename or a range like `JC001-004` / `JC013-JC016`. Surrounding
+whitespace is stripped and empty segments are skipped.
+"""
+function expand_filename_field(s::AbstractString)::Vector{String}
+    out = String[]
+    for seg in split(s, r"[;,]")
+        seg = strip(seg)
+        isempty(seg) && continue
+        append!(out, expand_filename_range(seg))
+    end
+    out
+end
+
+"""
     parse_manifest(cfg::ExperimentConfig, source) -> Vector{ManifestSample}
 
 Parse a manifest CSV/TSV using `cfg` to drive delimiter, skip_rows, header
 discovery, and column resolution. `source` may be an IO or a file path.
 
+Row tokenization is delegated to CSV.jl, so RFC 4180-style quoted fields
+(commas inside `"..."` cells) work for free. The filenames cell may
+contain multiple ranges separated by `;` or `,` — see
+[`expand_filename_field`](@ref).
+
 For each `[manifest]` column field, if the config value is a `String` and a
-header row is present (`header_row > 0`), the column index is looked up by
-that header name; otherwise the value is treated as a 1-based positional index.
+header row is present (`header_row > 0`), the column is looked up by that
+header name; otherwise the value is treated as a 1-based positional index.
 
 Rows whose sample_id column does not parse as `Int` are silently skipped
-(handles lab-notebook section headers).
+(handles lab-notebook section headers and stray preamble rows).
 """
 function parse_manifest(cfg::ExperimentConfig, source)::Vector{ManifestSample}
-    lines = readlines(source)
-    isempty(lines) && return ManifestSample[]
-
-    cfg.skip_rows >= length(lines) && return ManifestSample[]
-    body = lines[cfg.skip_rows+1:end]
-
-    header_map = Dict{String,Int}()
-    data_start = 1
-    if cfg.header_row > 0
-        hdr_idx = cfg.header_row - cfg.skip_rows
-        if 1 <= hdr_idx <= length(body)
-            for (i, c) in enumerate(split(body[hdr_idx], cfg.delimiter))
-                header_map[strip(String(c))] = i
-            end
-            data_start = hdr_idx + 1
-        end
+    cf = if cfg.header_row > 0
+        # Named columns: row `header_row` is the header. CSV.jl skips
+        # preamble rows above it automatically; `skip_rows` is implicit.
+        CSV.File(source;
+            delim = cfg.delimiter, header = cfg.header_row,
+            types = String, stringtype = String,
+            silencewarnings = true,
+        )
+    else
+        # Positional columns: skip `skip_rows` lines, then treat the next
+        # row as the start of data. CSV.jl assigns synthetic Column1,
+        # Column2, ... names which we resolve by index.
+        CSV.File(source;
+            delim = cfg.delimiter, header = false,
+            skipto = cfg.skip_rows + 1,
+            types = String, stringtype = String,
+            silencewarnings = true,
+        )
     end
 
-    function resolve_col(col::Union{Int,String})::Int
+    isempty(cf) && return ManifestSample[]
+    column_syms = collect(Tables.columnnames(cf))
+
+    function resolve_col(col::Union{Int,String})::Symbol
         if col isa AbstractString
-            idx = get(header_map, col, 0)
-            idx == 0 && @warn "Manifest column '$col' not found in header — field will be empty"
-            return idx
+            sym = Symbol(col)
+            sym in column_syms || (
+                @warn "Manifest column '$col' not found in header — field will be empty";
+                return Symbol("")
+            )
+            return sym
         end
-        return col
+        1 <= col <= length(column_syms) ? column_syms[col] : Symbol("")
     end
 
-    idx_id        = resolve_col(cfg.col_sample_id)
-    idx_label     = resolve_col(cfg.col_label)
-    idx_name      = resolve_col(cfg.col_name)
-    idx_filenames = resolve_col(cfg.col_filenames)
-    idx_notes_s   = resolve_col(cfg.col_notes_sample)
-    idx_notes_e   = resolve_col(cfg.col_notes_exposure)
+    sym_id        = resolve_col(cfg.col_sample_id)
+    sym_label     = resolve_col(cfg.col_label)
+    sym_name      = resolve_col(cfg.col_name)
+    sym_filenames = resolve_col(cfg.col_filenames)
+    sym_notes_s   = resolve_col(cfg.col_notes_sample)
+    sym_notes_e   = resolve_col(cfg.col_notes_exposure)
 
-    function safe_get(cols, idx::Int)::String
-        idx == 0 && return ""
-        idx <= length(cols) ? String(strip(cols[idx])) : ""
+    function safe_get(row, sym::Symbol)::String
+        sym == Symbol("") && return ""
+        v = getproperty(row, sym)
+        v === missing ? "" : String(strip(String(v)))
     end
 
     samples = ManifestSample[]
-    for line in body[data_start:end]
-        cols = split(line, cfg.delimiter)
-        id_str = safe_get(cols, idx_id)
+    for row in cf
+        id_str = safe_get(row, sym_id)
         tryparse(Int, id_str) === nothing && continue
 
-        filenames_str = safe_get(cols, idx_filenames)
+        filenames_str = safe_get(row, sym_filenames)
         isempty(filenames_str) && continue
 
         push!(samples, ManifestSample(
-            safe_get(cols, idx_label),
-            safe_get(cols, idx_name),
-            safe_get(cols, idx_notes_s),
-            safe_get(cols, idx_notes_e),
-            expand_filename_range(filenames_str),
+            safe_get(row, sym_label),
+            safe_get(row, sym_name),
+            safe_get(row, sym_notes_s),
+            safe_get(row, sym_notes_e),
+            expand_filename_field(filenames_str),
         ))
     end
     samples
@@ -98,9 +133,9 @@ end
 """
     parse_manifest(source) -> Vector{ManifestSample}
 
-Backward-compatible wrapper: parses using the built-in `simple` config (current
-hardcoded behavior — tab-separated, columns 1/2/3/9/10/11, skip 1 row, no header).
-For new code, prefer `parse_manifest(cfg::ExperimentConfig, source)`.
+Backward-compatible wrapper: parses using the built-in `simple` config
+(tab-separated, columns 1/2/3/9/10/11, skip 1 row, no header). New code
+should prefer `parse_manifest(cfg::ExperimentConfig, source)`.
 """
 parse_manifest(source)::Vector{ManifestSample} =
     parse_manifest(load_builtin_config("simple"), source)
