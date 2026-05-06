@@ -37,6 +37,8 @@ import {
   addExposureTagMutator,
   postSampleMessageMutator,
 } from "../../src/lib/queue/mutators/trivial";
+import { saveComparisonMutator } from "../../src/lib/queue/mutators/saveComparison";
+import { deleteComparisonMutator } from "../../src/lib/queue/mutators/deleteComparison";
 import { queryKeys } from "../../src/queries";
 import { pendingDeferreds } from "../../src/lib/queue/deferred";
 
@@ -64,6 +66,20 @@ const INDEX_ENTRY_KEYS = new Set([
   "id", "exposure_id", "phase", "basis", "score", "r_squared",
   "lattice_d", "ngc", "status", "kind", "inputs_hash",
   "peaks", "predicted_q",
+]);
+const COMPARISON_KEYS = new Set([
+  "id", "title", "description", "content_hash",
+  "created_by", "created_at", "updated_at",
+  "forked_from_id", "forked_at_hash", "forked_from_title",
+  "members",
+]);
+const COMPARISON_MEMBER_KEYS = new Set([
+  "id", "comparison_id", "exposure_id", "display_order",
+  "band_height", "y_offset", "normalization",
+  "color_override", "label_override",
+  "q_window_min", "q_window_max",
+  "peak_display", "snapshot", "is_stale",
+  "created_by", "created_at",
 ]);
 
 function mockFetchOnce(body: unknown, status = 200): void {
@@ -432,6 +448,92 @@ describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", ()
     const after = qc.getQueryData<{ id: number; source: string; excluded: boolean }[]>(queryKeys.peaks(5))!;
     expect(after.find(p => p.source === "auto")!.excluded).toBe(true);
     expect(after.find(p => p.source === "manual")!.excluded).toBe(false);
+  });
+
+  // -------------------------------------------------------------------------
+  // Compare page mutators (Phase 3). 3 event-shape rows: comparison_created
+  // (saveComparison create), comparison_submitted (saveComparison update),
+  // comparison_deleted (deleteComparison).
+  // -------------------------------------------------------------------------
+
+  function buildComparisonResponse(id: number, hash = "sha256:abc") {
+    return {
+      id, title: "X", description: null, content_hash: hash,
+      created_by: 1, created_at: "2026-05-06",
+      updated_at: "2026-05-06",
+      forked_from_id: null, forked_at_hash: null, forked_from_title: null,
+      members: [
+        {
+          id: 999, comparison_id: id, exposure_id: 100, display_order: 0,
+          band_height: 1, y_offset: 0, normalization: "none",
+          color_override: null, label_override: null,
+          q_window_min: null, q_window_max: null,
+          peak_display: null,
+          snapshot: { effective_peaks: [], confirmed_index: null,
+                      analysis_inputs_hash: "sha256:zero" },
+          is_stale: false, created_by: 1, created_at: "2026-05-06",
+        },
+      ],
+    };
+  }
+
+  it("saveComparison (create → comparison_created) writes a Comparison with exactly 11 keys", async () => {
+    mockFetchOnce(buildComparisonResponse(42), 201);
+    await runMutator(qc, saveComparisonMutator, {
+      kind: "comparison_save", clientOpId: "op-cmp-create",
+      username: "alice", clientId: "tab-1",
+      title: "X",
+      members: [{ exposure_id: 100, display_order: 0,
+                  snapshot: { effective_peaks: [], confirmed_index: null,
+                              analysis_inputs_hash: "sha256:zero" } }],
+      payload: {},
+    });
+    assertKeys(qc.getQueryData(queryKeys.comparison(42)), COMPARISON_KEYS,
+      "saveComparison(create) cache row");
+    const members = qc.getQueryData<unknown[]>(queryKeys.comparisonMembers(42))!;
+    assertKeys(members[0], COMPARISON_MEMBER_KEYS,
+      "saveComparison(create) member cache row");
+  });
+
+  it("saveComparison (submit → comparison_submitted) writes a Comparison with exactly 11 keys", async () => {
+    mockFetchOnce(buildComparisonResponse(42, "sha256:new"), 200);
+    await runMutator(qc, saveComparisonMutator, {
+      kind: "comparison_save", clientOpId: "op-cmp-submit",
+      username: "alice", clientId: "tab-1",
+      id: 42, title: "X edited",
+      members: [{ id: 999, exposure_id: 100, display_order: 0,
+                  snapshot: { effective_peaks: [], confirmed_index: null,
+                              analysis_inputs_hash: "sha256:zero" } }],
+      expected_content_hash: "sha256:abc",
+      payload: {},
+    });
+    assertKeys(qc.getQueryData(queryKeys.comparison(42)), COMPARISON_KEYS,
+      "saveComparison(submit) cache row");
+  });
+
+  it("deleteComparison (→ comparison_deleted) removes entity caches and prunes listings", async () => {
+    qc.setQueryData(queryKeys.comparison(42), { id: 42 });
+    qc.setQueryData(queryKeys.comparisonMembers(42), []);
+    qc.setQueryData(queryKeys.comparisons("all"), [
+      { id: 42, title: "doomed", description: null, content_hash: "h",
+        created_by: 1, created_at: null, updated_at: null,
+        forked_from_id: null, forked_at_hash: null },
+      { id: 99, title: "kept", description: null, content_hash: "h2",
+        created_by: 1, created_at: null, updated_at: null,
+        forked_from_id: null, forked_at_hash: null },
+    ]);
+    mockFetchOnce({ id: 42, deleted: true, event_id: 7 }, 200);
+    await runMutator(qc, deleteComparisonMutator, {
+      kind: "comparison_delete", clientOpId: "op-cmp-del",
+      username: "alice", clientId: "tab-1",
+      id: 42, payload: { id: 42 },
+    });
+    // Removed (no cache entry, no error state)
+    expect(qc.getQueryState(queryKeys.comparison(42))).toBeUndefined();
+    expect(qc.getQueryState(queryKeys.comparisonMembers(42))).toBeUndefined();
+    // Listing filtered down
+    const listing = qc.getQueryData<{ id: number }[]>(queryKeys.comparisons("all"))!;
+    expect(listing.map((c) => c.id)).toEqual([99]);
   });
 
   it("postSampleMessage writes a SampleMessage with exactly 6 keys", async () => {

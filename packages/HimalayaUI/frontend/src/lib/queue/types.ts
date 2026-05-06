@@ -41,7 +41,14 @@ export type OpKind =
   | "add_tag" | "remove_tag"
   | "post_message" | "update_sample"
   | "reanalyze_exposure"
-  | "delete_index";
+  | "delete_index"
+  // Compare page (Plan §Phase 3). One queue mutator handles both create
+  // (`POST /api/comparisons`) and submit (`POST /api/comparisons/:id/submit`)
+  // — `payload.id` discriminates. The wire-side event names
+  // (`comparison_created`, `comparison_submitted`) diverge from the OpKind
+  // because a single user gesture (Save) can map to either event.
+  // `comparison_delete` maps 1:1 with `comparison_deleted`.
+  | "comparison_save" | "comparison_delete";
 
 /**
  * A queued operation: its kind, its per-call client_op_id (Stripe-style

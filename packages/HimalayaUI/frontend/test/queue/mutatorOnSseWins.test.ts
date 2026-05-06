@@ -42,6 +42,8 @@ import {
   addIndexToGroupMutator,
   removeIndexFromGroupMutator,
 } from "../../src/lib/queue/mutators/indexGroup";
+import { saveComparisonMutator } from "../../src/lib/queue/mutators/saveComparison";
+import { deleteComparisonMutator } from "../../src/lib/queue/mutators/deleteComparison";
 import { queryKeys } from "../../src/queries";
 
 describe("mutator onSuccess on SSE-wins synthetic responses", () => {
@@ -301,6 +303,91 @@ describe("mutator onSuccess on SSE-wins synthetic responses", () => {
       source: "auto",
       excluded: false,
     });
+  });
+
+  // -------------------------------------------------------------------------
+  // Compare page mutators (Phase 3). Three event-shape rows.
+  // -------------------------------------------------------------------------
+
+  it("saveComparison.onSuccess invalidates when response lacks full Comparison shape (SSE-wins, comparison_created)", () => {
+    qc.setQueryData(queryKeys.comparison(42), { id: 42, title: "stale" });
+    let invalidatedKeys: unknown[] = [];
+    const orig = qc.invalidateQueries.bind(qc);
+    qc.invalidateQueries = ((arg: { queryKey: unknown }) => {
+      invalidatedKeys.push(arg.queryKey); return orig(arg);
+    }) as typeof qc.invalidateQueries;
+    // Synth from `synthesizeResponseFromSse`: title/description/members ride
+    // as INPUT shape (no `id`s on members, no `is_stale`, no `content_hash`).
+    // The mutator's onSuccess must NOT splice this into cache — it would
+    // pollute with a malformed Comparison shape.
+    const sseSynth = {
+      event_id: 7, client_op_id: "op-cmp-create",
+      analysis_inputs_hash: undefined,
+      id: 42, title: "X", description: null,
+      members: [{ exposure_id: 100, display_order: 0,
+                  snapshot: { effective_peaks: [], confirmed_index: null,
+                              analysis_inputs_hash: "h" } }],
+    } as any;
+    saveComparisonMutator.onSuccess(
+      { id: 42, title: "X", members: [],
+        username: "u", clientId: "c", clientOpId: "op-cmp-create" } as any,
+      sseSynth, qc,
+    );
+    // The half-baked synth was NOT spliced. Cache is invalidated for refetch.
+    expect(qc.getQueryData(queryKeys.comparison(42))).toEqual({ id: 42, title: "stale" });
+    expect(invalidatedKeys).toContainEqual(queryKeys.comparison(42));
+    expect(invalidatedKeys).toContainEqual(queryKeys.comparisonMembers(42));
+    expect(invalidatedKeys).toContainEqual(["comparisons"]);
+  });
+
+  it("saveComparison.onSuccess splices when response has full Comparison shape (HTTP-wins, comparison_submitted)", () => {
+    const fullResponse = {
+      id: 42, title: "X edited", description: null,
+      content_hash: "sha256:new",
+      created_by: 1, created_at: "2026-05-06", updated_at: "2026-05-06",
+      forked_from_id: null, forked_at_hash: null, forked_from_title: null,
+      members: [
+        { id: 999, comparison_id: 42, exposure_id: 100, display_order: 0,
+          band_height: 1, y_offset: 0, normalization: "none",
+          color_override: null, label_override: null,
+          q_window_min: null, q_window_max: null,
+          peak_display: null,
+          snapshot: { effective_peaks: [], confirmed_index: null,
+                      analysis_inputs_hash: "sha256:zero" },
+          is_stale: false, created_by: 1, created_at: "2026-05-06" },
+      ],
+    } as any;
+    saveComparisonMutator.onSuccess(
+      { id: 42, title: "X edited", members: [],
+        expected_content_hash: "sha256:base",
+        username: "u", clientId: "c", clientOpId: "op-cmp-submit" } as any,
+      fullResponse, qc,
+    );
+    expect(qc.getQueryData(queryKeys.comparison(42))).toEqual(fullResponse);
+    expect(qc.getQueryData(queryKeys.comparisonMembers(42))).toEqual(fullResponse.members);
+  });
+
+  it("deleteComparison.onSuccess removes entity caches and prunes listings (uniform across HTTP- and SSE-wins)", () => {
+    qc.setQueryData(queryKeys.comparison(42), { id: 42 });
+    qc.setQueryData(queryKeys.comparisons("all"), [
+      { id: 42, title: "doomed", description: null, content_hash: "h",
+        created_by: 1, created_at: null, updated_at: null,
+        forked_from_id: null, forked_at_hash: null },
+    ]);
+    // SSE-wins synth for comparison_deleted is just `{event_id, client_op_id,
+    // analysis_inputs_hash, id}` — and the mutator only reads `p.id` from the
+    // flat input, never from the response. Pin: same observable behavior.
+    const sseSynth = {
+      event_id: 7, client_op_id: "op-cmp-del",
+      analysis_inputs_hash: undefined, id: 42,
+    } as any;
+    deleteComparisonMutator.onSuccess(
+      { id: 42, username: "u", clientId: "c", clientOpId: "op-cmp-del" } as any,
+      sseSynth, qc,
+    );
+    expect(qc.getQueryState(queryKeys.comparison(42))).toBeUndefined();
+    const listing = qc.getQueryData<{ id: number }[]>(queryKeys.comparisons("all"))!;
+    expect(listing).toEqual([]);
   });
 
   it("updateSample.onSuccess skips undefined fields (SSE-wins diff payload)", () => {

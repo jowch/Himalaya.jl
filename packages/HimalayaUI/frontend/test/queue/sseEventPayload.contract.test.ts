@@ -25,6 +25,7 @@ import { applyRemoteToCache } from "../../src/lib/queue/applyRemoteToCache";
 import type { SseEvent } from "../../src/lib/queue/types";
 import type {
   Peak, Exposure, Sample, GroupEntry, SampleMessage,
+  ComparisonMessage, ComparisonSummary,
 } from "../../src/api";
 import { queryKeys } from "../../src/queries";
 
@@ -431,6 +432,123 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
       queryKeys.indices(5),
       queryKeys.groups(5),
     ]);
+  });
+
+  // -------------------------------------------------------------------------
+  // Compare page events (Phase 3). Three kinds:
+  // - comparison_created  → invalidate comparison + members + listings
+  // - comparison_submitted → invalidate same set (rebuilds full state)
+  // - comparison_deleted  → REMOVE (not invalidate) entity + filter listings
+  // - post_message (entity_type=comparison_message) → comparison thread cache
+  // -------------------------------------------------------------------------
+
+  it("comparison_created invalidates comparison(id), comparisonMembers(id), and listings", () => {
+    const invalidatedKeys: unknown[] = [];
+    const orig = qc.invalidateQueries.bind(qc);
+    qc.invalidateQueries = ((arg: { queryKey: unknown }) => {
+      invalidatedKeys.push(arg.queryKey); return orig(arg);
+    }) as typeof qc.invalidateQueries;
+    const evt: SseEvent = {
+      id: 99, kind: "comparison_created", entity_type: "comparison", entity_id: 42,
+      payload: { title: "X", members: [] },
+    };
+    applyRemoteToCache(evt, qc);
+    expect(invalidatedKeys).toEqual([
+      queryKeys.comparison(42),
+      queryKeys.comparisonMembers(42),
+      ["comparisons"],  // prefix invalidation hits all listing scopes
+    ]);
+  });
+
+  it("comparison_submitted invalidates comparison(id), comparisonMembers(id), and listings", () => {
+    const invalidatedKeys: unknown[] = [];
+    const orig = qc.invalidateQueries.bind(qc);
+    qc.invalidateQueries = ((arg: { queryKey: unknown }) => {
+      invalidatedKeys.push(arg.queryKey); return orig(arg);
+    }) as typeof qc.invalidateQueries;
+    const evt: SseEvent = {
+      id: 99, kind: "comparison_submitted", entity_type: "comparison", entity_id: 42,
+      payload: { title: "X edited", members: [] },
+    };
+    applyRemoteToCache(evt, qc);
+    expect(invalidatedKeys).toEqual([
+      queryKeys.comparison(42),
+      queryKeys.comparisonMembers(42),
+      ["comparisons"],
+    ]);
+  });
+
+  it("comparison_deleted removes entity caches (NOT invalidates) and filters listings", () => {
+    qc.setQueryData(queryKeys.comparison(42), { id: 42 });
+    qc.setQueryData(queryKeys.comparisonMembers(42), []);
+    qc.setQueryData(queryKeys.comparisonMessages(42), []);
+    qc.setQueryData(queryKeys.comparisonForks(42), []);
+    qc.setQueryData<ComparisonSummary[]>(queryKeys.comparisons("all"), [
+      { id: 42, title: "doomed", description: null, content_hash: "h",
+        created_by: 1, created_at: null, updated_at: null,
+        forked_from_id: null, forked_at_hash: null },
+      { id: 99, title: "kept", description: null, content_hash: "h",
+        created_by: 1, created_at: null, updated_at: null,
+        forked_from_id: null, forked_at_hash: null },
+    ]);
+    let invalidated = false;
+    const orig = qc.invalidateQueries.bind(qc);
+    qc.invalidateQueries = ((arg: { queryKey: unknown }) => {
+      invalidated = true; return orig(arg);
+    }) as typeof qc.invalidateQueries;
+
+    const evt: SseEvent = {
+      id: 99, kind: "comparison_deleted", entity_type: "comparison", entity_id: 42,
+      payload: { id: 42 },
+    };
+    applyRemoteToCache(evt, qc);
+
+    // Entity caches REMOVED, not invalidated
+    expect(invalidated).toBe(false);
+    expect(qc.getQueryState(queryKeys.comparison(42))).toBeUndefined();
+    expect(qc.getQueryState(queryKeys.comparisonMembers(42))).toBeUndefined();
+    expect(qc.getQueryState(queryKeys.comparisonMessages(42))).toBeUndefined();
+    expect(qc.getQueryState(queryKeys.comparisonForks(42))).toBeUndefined();
+    // Listing filtered (id pruned, others retained)
+    const listing = qc.getQueryData<ComparisonSummary[]>(queryKeys.comparisons("all"))!;
+    expect(listing.map((c) => c.id)).toEqual([99]);
+  });
+
+  it("post_message with entity_type=comparison_message routes to comparisonMessages cache", () => {
+    qc.setQueryData<ComparisonMessage[]>(queryKeys.comparisonMessages(42), []);
+    const evt: SseEvent = {
+      id: 99, kind: "post_message", entity_type: "comparison_message", entity_id: 200,
+      payload: {
+        id: 200, comparison_id: 42, author_id: 3, author: "alice",
+        body: "hi cmp", created_at: "2026-05-06T12:00:00Z",
+      },
+    };
+    applyRemoteToCache(evt, qc);
+    const msgs = qc.getQueryData<ComparisonMessage[]>(queryKeys.comparisonMessages(42))!;
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0]!.id).toBe(200);
+    expect(msgs[0]!.body).toBe("hi cmp");
+    // Idempotency: replay must not double-insert
+    applyRemoteToCache(evt, qc);
+    expect(qc.getQueryData<ComparisonMessage[]>(queryKeys.comparisonMessages(42))!)
+      .toHaveLength(1);
+    // And the sample messages cache is untouched (no cross-thread pollution)
+    expect(qc.getQueryData(queryKeys.messages(42))).toBeUndefined();
+  });
+
+  it("post_message with entity_type=sample_message still routes to sample messages cache", () => {
+    // Regression: extending the dispatch must not break the legacy path.
+    qc.setQueryData<SampleMessage[]>(queryKeys.messages(10), []);
+    const evt: SseEvent = {
+      id: 99, kind: "post_message", entity_type: "sample_message", entity_id: 200,
+      payload: {
+        id: 200, sample_id: 10, author_id: 3, author: "alice",
+        body: "hi sample", created_at: "2026-05-06T12:00:00Z",
+      },
+    };
+    applyRemoteToCache(evt, qc);
+    const msgs = qc.getQueryData<SampleMessage[]>(queryKeys.messages(10))!;
+    expect(msgs).toHaveLength(1);
   });
 
   it("remove_tag (exposure) invalidates the sample's exposures list", () => {

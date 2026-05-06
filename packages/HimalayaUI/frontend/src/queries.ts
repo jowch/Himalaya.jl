@@ -46,6 +46,16 @@ export const queryKeys = {
   index:    (id: number) => ["index-entity", id] as const,
   exposure: (id: number) => ["exposure-entity", id] as const,
   sample:   (id: number) => ["sample-entity", id] as const,
+  // Compare page (Plan §Phase 3). Listing key is parameterized by scope —
+  // pass "all" for the global listing, an experimentId for the per-experiment
+  // listing. Membership-derived listings can change in either direction when
+  // ANY exposure-touching event lands, so the SSE handler invalidates both
+  // forms with a prefix `["comparisons"]` invalidation.
+  comparisons:        (scope: number | "all") => ["comparisons", scope] as const,
+  comparison:         (id: number) => ["comparison", id] as const,
+  comparisonMembers:  (id: number) => ["comparison", id, "members"] as const,
+  comparisonForks:    (id: number) => ["comparison", id, "forks"] as const,
+  comparisonMessages: (id: number) => ["comparison", id, "messages"] as const,
 };
 
 export function useExperiments() {

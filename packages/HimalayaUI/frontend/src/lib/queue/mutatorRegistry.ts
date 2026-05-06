@@ -22,6 +22,8 @@ import {
 } from "./mutators/indexGroup";
 import { createSpeculativeMutator } from "./mutators/createSpeculative";
 import { reanalyzeExposureMutator } from "./mutators/reanalyzeExposure";
+import { saveComparisonMutator } from "./mutators/saveComparison";
+import { deleteComparisonMutator } from "./mutators/deleteComparison";
 
 /**
  * Minimal shape required by the resolver: just enough of a persisted op to
@@ -89,6 +91,10 @@ export function resolveMutator(
       return undefined; // server-driven; no outbound op of this kind
     case "reanalyze_exposure":
       return reanalyzeExposureMutator;
+    case "comparison_save":
+      return saveComparisonMutator;
+    case "comparison_delete":
+      return deleteComparisonMutator;
     default:
       return undefined;
   }

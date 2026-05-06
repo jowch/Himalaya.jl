@@ -1,6 +1,9 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type { SseEvent } from "./types";
-import type { Peak, GroupEntry, Exposure, Sample, SampleMessage } from "../../api";
+import type {
+  Peak, GroupEntry, Exposure, Sample, SampleMessage,
+  ComparisonMessage, ComparisonSummary,
+} from "../../api";
 import { queryKeys } from "../../queries";
 import { peakQTol } from "./peakQTol";
 
@@ -173,16 +176,61 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
       break;
     }
     case "post_message": {
-      // entity_id on the SSE frame is the sample_message id; the message's
-      // sample_id rides in the payload (set by the route handler).
-      const sampleId = payload?.sample_id as number;
-      qc.setQueryData<SampleMessage[]>(queryKeys.messages(sampleId), (old = []) => {
-        // Dedupe in case the same SSE arrives twice (own-op late echo races
-        // post-onSuccess writes); message ids are server-assigned positives.
-        const incoming = payload as unknown as SampleMessage;
-        if (old.some((m) => m.id === incoming.id)) return old;
-        return [...old, incoming];
-      });
+      // The same OpKind covers two distinct chat threads. The route handler
+      // tags `entity_type` so the merger can pick the right cache key:
+      //   - `sample_message`     → `routes_messages.jl` (sample chat)
+      //   - `comparison_message` → `routes_comparisons.jl` (comparison chat)
+      // entity_id on the SSE frame is the message id; the parent id rides in
+      // the payload.
+      if (remote.entity_type === "comparison_message") {
+        const comparisonId = payload?.comparison_id as number;
+        qc.setQueryData<ComparisonMessage[]>(
+          queryKeys.comparisonMessages(comparisonId),
+          (old = []) => {
+            const incoming = payload as unknown as ComparisonMessage;
+            if (old.some((m) => m.id === incoming.id)) return old;
+            return [...old, incoming];
+          });
+      } else {
+        // Default + explicit `sample_message`: legacy behavior.
+        const sampleId = payload?.sample_id as number;
+        qc.setQueryData<SampleMessage[]>(queryKeys.messages(sampleId), (old = []) => {
+          // Dedupe in case the same SSE arrives twice (own-op late echo races
+          // post-onSuccess writes); message ids are server-assigned positives.
+          const incoming = payload as unknown as SampleMessage;
+          if (old.some((m) => m.id === incoming.id)) return old;
+          return [...old, incoming];
+        });
+      }
+      break;
+    }
+    case "comparison_created":
+    case "comparison_submitted": {
+      // Foreign tab created or re-submitted a comparison. Invalidate the
+      // entity caches so the next read fetches the canonical state.
+      // We don't try to splice from the payload because the response shape
+      // (with `is_stale`, `forked_from_title`, etc.) is computed server-side
+      // and replicating it here would drift; the comparison detail page is
+      // a low-frequency view, a refetch is cheap.
+      qc.invalidateQueries({ queryKey: queryKeys.comparison(id) });
+      qc.invalidateQueries({ queryKey: queryKeys.comparisonMembers(id) });
+      // Membership-derived listings change in either direction on any submit
+      // (members touch any experiment; the global "all" listing also moves).
+      qc.invalidateQueries({ queryKey: ["comparisons"] });
+      break;
+    }
+    case "comparison_deleted": {
+      // Remove the entity caches — refetching a deleted resource 404s and
+      // leaves stale `isError: true` state. Spec line 345.
+      qc.removeQueries({ queryKey: queryKeys.comparison(id) });
+      qc.removeQueries({ queryKey: queryKeys.comparisonMembers(id) });
+      qc.removeQueries({ queryKey: queryKeys.comparisonMessages(id) });
+      qc.removeQueries({ queryKey: queryKeys.comparisonForks(id) });
+      // Filter the id out of every cached listing (prefix walk).
+      qc.setQueriesData<ComparisonSummary[]>(
+        { queryKey: ["comparisons"] },
+        (old) => (old ? old.filter((c) => c.id !== id) : old),
+      );
       break;
     }
     case "add_tag":
