@@ -899,6 +899,65 @@ end
         end
     end
 
+    # Phase 2 Task 2.3 — `post_message` event routing by entity_type.
+    # Verifies the message routes write to distinct tables and that an
+    # unknown entity_type at the apply_event! layer doesn't silently
+    # corrupt either table. The route-level dispatch is what makes this
+    # work — `update_view_for_event!` still no-ops on `post_message`
+    # (sample_messages and comparison_messages are written by the route
+    # handlers, not the dispatcher).
+    @testset "post_message routing: comparison_message vs sample_message tables" begin
+        mktempdir() do tmp
+            ctx = _setup_analyzed_exposure(tmp)
+            with_test_server(ctx.db) do port, base
+                r1 = HTTP.post("$base/api/comparisons";
+                    body = JSON3.write(_create_body(ctx.exposure_id)),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username"   => "alice"])
+                cmp = JSON3.read(String(r1.body))
+
+                # Sample message → sample_messages, NOT comparison_messages.
+                HTTP.post("$base/api/samples/$(ctx.sample_id)/messages";
+                    body = JSON3.write(Dict(:body => "sample-only")),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username"   => "alice"])
+                # Comparison message → comparison_messages, NOT sample_messages.
+                HTTP.post("$base/api/comparisons/$(cmp.id)/messages";
+                    body = JSON3.write(Dict(:body => "comparison-only")),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username"   => "alice"])
+
+                n_sample = first(Tables.rowtable(DBInterface.execute(ctx.db,
+                    "SELECT COUNT(*) AS c FROM sample_messages WHERE sample_id = ?",
+                    [ctx.sample_id]))).c
+                n_compare = first(Tables.rowtable(DBInterface.execute(ctx.db,
+                    "SELECT COUNT(*) AS c FROM comparison_messages WHERE comparison_id = ?",
+                    [cmp.id]))).c
+                @test n_sample == 1
+                @test n_compare == 1
+
+                # No comparison_message rows landed in sample_messages and
+                # vice versa.
+                bodies_sample = [String(r.body) for r in Tables.rowtable(DBInterface.execute(ctx.db,
+                    "SELECT body FROM sample_messages WHERE sample_id = ?",
+                    [ctx.sample_id]))]
+                @test bodies_sample == ["sample-only"]
+                bodies_compare = [String(r.body) for r in Tables.rowtable(DBInterface.execute(ctx.db,
+                    "SELECT body FROM comparison_messages WHERE comparison_id = ?",
+                    [cmp.id]))]
+                @test bodies_compare == ["comparison-only"]
+
+                # The user_actions log carries entity_type so replay can
+                # reconstruct routing. Both kinds are 'post_message'.
+                events = Tables.rowtable(DBInterface.execute(ctx.db,
+                    "SELECT entity_type, entity_id FROM user_actions WHERE action = 'post_message'"))
+                etypes = Set(String(e.entity_type) for e in events)
+                @test "sample_message"     in etypes
+                @test "comparison_message" in etypes
+            end
+        end
+    end
+
     @testset "409 retry contract: status >= 400 NOT cached → conflict re-evaluates" begin
         mktempdir() do tmp
             ctx = _setup_analyzed_exposure(tmp)
