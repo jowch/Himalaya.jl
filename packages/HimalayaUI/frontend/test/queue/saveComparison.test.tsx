@@ -12,11 +12,17 @@
  * - onMutate is a no-op (no optimistic write per spec)
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { QueryClient } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { renderHook, act, waitFor } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { saveComparisonMutator } from "../../src/lib/queue/mutators/saveComparison";
+import { useQueueMutation } from "../../src/lib/queue/useQueueMutation";
+import { setToastImpl } from "../../src/lib/toast";
+import { pendingDeferreds } from "../../src/lib/queue/deferred";
 import { ConflictError } from "../../src/api";
 import type { Comparison, ComparisonMemberInput } from "../../src/api";
 import { queryKeys } from "../../src/queries";
+import { makeClient } from "../test-utils";
 
 const SNAP = {
   effective_peaks: [],
@@ -241,5 +247,95 @@ describe("saveComparisonMutator (OpKind=comparison_save)", () => {
       response, qc,
     );
     expect(qc.getQueryData(queryKeys.comparison(99))).toEqual(response);
+  });
+});
+
+// Fix 1 (queue-reviewer): a 409 ConflictError is a validation-class error
+// (status 400-499), but it has its own bespoke surface — the conflict modal,
+// driven off `useMutation.error instanceof ConflictError`. Without the
+// explicit instanceof gate in `useQueueMutation::onError`, the validation-
+// toast branch fires AND the modal opens — duplicate "Couldn't save
+// comparison" copy stacked behind the diff UI.
+describe("saveComparisonMutator — useQueueMutation suppresses toast on 409 ConflictError", () => {
+  let toastCalls: Array<{ msg: string; kind: string }> = [];
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    pendingDeferreds.clear();
+    toastCalls = [];
+    setToastImpl((msg, kind) => { toastCalls.push({ msg, kind }); });
+  });
+  afterEach(() => {
+    setToastImpl(null);
+  });
+
+  function withClient() {
+    const client = makeClient();
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
+    return { client, wrapper };
+  }
+
+  function mockFetch409(): void {
+    vi.spyOn(global, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({
+        error: "conflict",
+        current_hash: "sha256:server",
+        current_state: buildComparison(42, "sha256:server"),
+      }), {
+        status: 409, headers: { "Content-Type": "application/json" },
+      }),
+    );
+  }
+
+  it("does not surface a validation toast on 409 (modal handles it)", async () => {
+    const { wrapper } = withClient();
+    mockFetch409();
+    const { result } = renderHook(
+      () => useQueueMutation(saveComparisonMutator, {
+        username: "alice", clientId: "tab",
+      }),
+      { wrapper },
+    );
+    act(() => {
+      result.current.mutate({
+        id: 42, title: "Edited", members: [MEMBER_INPUT],
+        expected_content_hash: "sha256:stale",
+      });
+    });
+    // Wait long enough for onError to have fired if it were going to.
+    await waitFor(() => expect(result.current.isPending).toBe(false));
+    expect(toastCalls).toEqual([]);
+    // Sanity: the typed throw still landed on `error` for the modal to read.
+    expect(result.current.error).toBeInstanceOf(ConflictError);
+  });
+
+  it("still surfaces a validation toast on a non-Conflict 4xx (e.g. 403)", async () => {
+    const { wrapper } = withClient();
+    vi.spyOn(global, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ error: "only the author can submit" }), {
+        status: 403, headers: { "Content-Type": "application/json" },
+      }),
+    );
+    const { result } = renderHook(
+      () => useQueueMutation(saveComparisonMutator, {
+        username: "bob", clientId: "tab",
+      }),
+      { wrapper },
+    );
+    act(() => {
+      result.current.mutate({
+        id: 42, title: "Edited", members: [MEMBER_INPUT],
+        expected_content_hash: "sha256:x",
+      });
+    });
+    await waitFor(() => expect(result.current.isPending).toBe(false));
+    // Pin: the toast did fire for the non-Conflict validation case so the
+    // suppression is narrowly scoped to ConflictError, not blanket-disabling
+    // toasts for the saveComparison mutator.
+    expect(toastCalls).toHaveLength(1);
+    expect(toastCalls[0]!.kind).toBe("error");
+    expect(toastCalls[0]!.msg).toContain("Couldn't save comparison");
   });
 });

@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { newClientOpId } from "../clientOpId";
 import { showToast } from "../toast";
+import { ConflictError } from "../../api";
 import { makeDeferred, clearDeferred } from "./deferred";
 import {
   isValidationError,
@@ -91,6 +92,13 @@ export function useQueueMutation<TInput, TScope, TResponse>(
         if (mutator.treats404AsSuccess && is404Error(err)) return;
         context?.restore?.();
         if (isValidationError(err)) {
+          // ConflictError (409, content_hash drift) is surfaced via the
+          // typed throw on `useMutation.error` and rendered by the conflict
+          // modal — suppressing the toast keeps the user from seeing a
+          // generic "Couldn't save comparison" banner stacked on top of the
+          // dedicated diff UI. The same goes for any future typed-throw that
+          // routes through a bespoke error surface; gate via instanceof.
+          if (err instanceof ConflictError) return;
           showToast(buildValidationMessage(mutator.kind, err), "error");
         }
         // Infrastructure errors: handled by retry; the banner reads from
