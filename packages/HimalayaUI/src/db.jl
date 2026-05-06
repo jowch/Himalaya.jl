@@ -336,6 +336,92 @@ function migrate_schema!(db::SQLite.DB)
     # idx_events_by_exposure index is useful for fold-by-exposure queries.
     # Must run AFTER R2 migrations (which create auto_peaks and drop legacy peaks).
     migrate_r4_rebase_entity_type!(db)
+
+    # Compare page (Plan §Phase 1, Task 1.1): comparisons / comparison_members /
+    # comparison_messages. Must run AFTER R4 — none of the compare tables touch
+    # user_actions, but ordering keeps every cross-cutting fix-up bounded by the
+    # earlier R-numbered migrations. See docs/superpowers/specs/2026-05-02-compare-page-design.md.
+    migrate_compare!(db)
+end
+
+"""
+    migrate_compare!(db)
+
+Install the Compare-page tables (`comparisons`, `comparison_members`,
+`comparison_messages`) and their supporting indexes. Idempotent — every
+statement is `IF NOT EXISTS`-guarded so reopening an already-migrated DB
+is a no-op.
+
+Why each FK action:
+- `comparisons.forked_from_id ON DELETE SET NULL` — forks survive parent
+  deletion as independent artifacts; the `forked_at_hash` (immutable) is
+  retained for historical reference.
+- `comparisons.created_by ON DELETE SET NULL` — user-FK rule.
+- `comparison_members.comparison_id ON DELETE CASCADE` — members are part
+  of the artifact; deleting the comparison drops its membership.
+- `comparison_members.exposure_id ON DELETE SET NULL` — exposure deletion
+  leaves a visible orphan placeholder rather than silently mutating the
+  figure (preserves chat references).
+- `comparison_messages.comparison_id ON DELETE CASCADE` — chat is part
+  of the comparison's discussion thread.
+- `comparison_messages.author_id ON DELETE SET NULL` — user-FK rule.
+
+`comparisons.id` uses `INTEGER PRIMARY KEY AUTOINCREMENT` because comparisons
+are `@`-mention targets (mention-target rule, see CLAUDE.md). Members and
+messages use plain `INTEGER PRIMARY KEY` — neither is `@`-mentioned, and
+`comparison_messages` matches the existing `sample_messages` shape.
+"""
+function migrate_compare!(db::SQLite.DB)
+    DBInterface.execute(db, """
+        CREATE TABLE IF NOT EXISTS comparisons (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            title           TEXT NOT NULL,
+            description     TEXT,
+            content_hash    TEXT NOT NULL,
+            created_by      INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            created_at      TEXT NOT NULL,
+            updated_at      TEXT NOT NULL,
+            forked_from_id  INTEGER REFERENCES comparisons(id) ON DELETE SET NULL,
+            forked_at_hash  TEXT
+        )""")
+    DBInterface.execute(db, """
+        CREATE INDEX IF NOT EXISTS idx_comparisons_forked_from
+            ON comparisons(forked_from_id)""")
+
+    DBInterface.execute(db, """
+        CREATE TABLE IF NOT EXISTS comparison_members (
+            id              INTEGER PRIMARY KEY,
+            comparison_id   INTEGER NOT NULL REFERENCES comparisons(id) ON DELETE CASCADE,
+            exposure_id     INTEGER REFERENCES exposures(id) ON DELETE SET NULL,
+            display_order   INTEGER NOT NULL,
+            band_height     REAL    NOT NULL DEFAULT 1.0,
+            y_offset        REAL    NOT NULL DEFAULT 0,
+            normalization   TEXT    NOT NULL DEFAULT 'none',
+            color_override  TEXT,
+            label_override  TEXT,
+            q_window_min    REAL,
+            q_window_max    REAL,
+            peak_display    TEXT    CHECK (peak_display IS NULL OR json_valid(peak_display)),
+            snapshot        TEXT    NOT NULL CHECK (json_valid(snapshot)),
+            created_by      INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            created_at      TEXT    NOT NULL
+        )""")
+    DBInterface.execute(db, """
+        CREATE INDEX IF NOT EXISTS idx_comparison_members_by_comparison
+            ON comparison_members(comparison_id, display_order)""")
+
+    DBInterface.execute(db, """
+        CREATE TABLE IF NOT EXISTS comparison_messages (
+            id            INTEGER PRIMARY KEY,
+            comparison_id INTEGER NOT NULL REFERENCES comparisons(id) ON DELETE CASCADE,
+            author_id     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            body          TEXT NOT NULL,
+            created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+        )""")
+    DBInterface.execute(db, """
+        CREATE INDEX IF NOT EXISTS idx_comparison_messages_comparison
+            ON comparison_messages(comparison_id, created_at)""")
+    nothing
 end
 
 """
