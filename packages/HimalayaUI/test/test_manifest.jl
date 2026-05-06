@@ -1,10 +1,40 @@
 using Test
-using HimalayaUI: expand_filename_range, parse_manifest, ManifestSample
+using HimalayaUI: expand_filename_range, expand_filename_field, parse_manifest,
+    ManifestSample
 
 @testset "expand_filename_range" begin
     @test expand_filename_range("JC001-004") == ["JC001", "JC002", "JC003", "JC004"]
     @test expand_filename_range("JC013-JC016") == ["JC013", "JC014", "JC015", "JC016"]
     @test expand_filename_range("JC001") == ["JC001"]
+end
+
+@testset "expand_filename_field: multi-range" begin
+    # Single range / single filename still works
+    @test expand_filename_field("JC001-004") == ["JC001", "JC002", "JC003", "JC004"]
+    @test expand_filename_field("JC001") == ["JC001"]
+
+    # Semicolon-separated multiple ranges (no CSV quoting needed)
+    @test expand_filename_field("JC037-040;JC153-156;JC161-164") ==
+        ["JC037", "JC038", "JC039", "JC040",
+         "JC153", "JC154", "JC155", "JC156",
+         "JC161", "JC162", "JC163", "JC164"]
+
+    # Comma-separated multiple ranges (cell already CSV-unquoted by parser)
+    @test expand_filename_field("JC037-JC040,JC153-156,JC161-164") ==
+        ["JC037", "JC038", "JC039", "JC040",
+         "JC153", "JC154", "JC155", "JC156",
+         "JC161", "JC162", "JC163", "JC164"]
+
+    # Mixed range styles (with/without prefix on second bound) and stray spaces
+    @test expand_filename_field(" JC001-002 ; JC005-JC006 ") ==
+        ["JC001", "JC002", "JC005", "JC006"]
+
+    # Empty segments are skipped
+    @test expand_filename_field(";JC001;;JC003;") == ["JC001", "JC003"]
+
+    # Edge cases: empty cell and all-delimiter cell both yield no filenames
+    @test expand_filename_field("") == String[]
+    @test expand_filename_field(" , ; ") == String[]
 end
 
 const MANIFEST_CSV = """
@@ -35,4 +65,71 @@ const MANIFEST_CSV = """
     @test s4.notes_sample   == "condensed"
     @test s4.notes_exposure == "sq"
     @test s4.filenames == ["JC013", "JC014", "JC015", "JC016"]
+end
+
+# Both fixtures below mirror the user's real /data/ssrl/2026_01/0p7/ files:
+# the same logical sample with multiple non-contiguous filename ranges, expressed
+# either as `;`-separated ranges (no quoting needed) or as `,`-separated ranges
+# with the cell wrapped in CSV double quotes.
+const MANIFEST_MULTIRANGE_SEMI = """
+#,Sample,Name,Type,Time(s),,#,,Filename(s),Notes (Sample),Notes (Exposure)
+1,D1,XX,Control,,,,,JC001-004,,
+10,D10,B1,Sample,,,,,JC037-040;JC153-156;JC161-164,,Try to get stronger peaks; spin
+"""
+
+const MANIFEST_MULTIRANGE_QUOTED = """
+#,Sample,Name,Type,Time(s),,#,,Filename(s),Notes (Sample),Notes (Exposure)
+1,D1,XX,Control,,,,,JC001-JC004,,
+10,D10,B1,Sample,,,,,"JC037-JC040,JC153-156,JC161-164",,Try to get stronger peaks; spin
+"""
+
+@testset "parse_manifest: multi-range filename cells" begin
+    cfg = HimalayaUI.ExperimentConfig(
+        "x", "", "manifest.csv",
+        nothing, nothing, "A-1",
+        ",", 1, 0,
+        1, 2, 3, 9, 10, 11,
+        "data", "analysis", "simple",
+        "{name}.dat", "{name}.tiff",
+    )
+
+    for csv in (MANIFEST_MULTIRANGE_SEMI, MANIFEST_MULTIRANGE_QUOTED)
+        samples = parse_manifest(cfg, IOBuffer(csv))
+        @test length(samples) == 2
+
+        @test samples[1].label == "D1"
+        @test samples[1].filenames == ["JC001", "JC002", "JC003", "JC004"]
+
+        @test samples[2].label == "D10"
+        @test samples[2].name  == "B1"
+        @test samples[2].filenames == [
+            "JC037", "JC038", "JC039", "JC040",
+            "JC153", "JC154", "JC155", "JC156",
+            "JC161", "JC162", "JC163", "JC164",
+        ]
+        @test samples[2].notes_exposure == "Try to get stronger peaks; spin"
+    end
+end
+
+@testset "parse_manifest: multi-range with named-header columns" begin
+    # Same multi-range payload, but resolved via header_row=1 + String column
+    # names instead of positional Int indices. Exercises the CSV.jl named-
+    # column code path with the new field-expander.
+    cfg = HimalayaUI.ExperimentConfig(
+        "x", "", "manifest.csv",
+        nothing, nothing, "A-1",
+        ",", 0, 1,
+        "#", "Sample", "Name", "Filename(s)",
+        "Notes (Sample)", "Notes (Exposure)",
+        "data", "analysis", "simple",
+        "{name}.dat", "{name}.tiff",
+    )
+    samples = parse_manifest(cfg, IOBuffer(MANIFEST_MULTIRANGE_QUOTED))
+    @test length(samples) == 2
+    @test samples[2].label == "D10"
+    @test samples[2].filenames == [
+        "JC037", "JC038", "JC039", "JC040",
+        "JC153", "JC154", "JC155", "JC156",
+        "JC161", "JC162", "JC163", "JC164",
+    ]
 end
