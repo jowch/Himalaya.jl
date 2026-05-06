@@ -807,6 +807,66 @@ end
         end
     end
 
+    # HTTP semantics: 404 must precede 403 — a request for a resource that
+    # does not exist cannot be "forbidden" because there is nothing to
+    # forbid. `is_author` returns false for missing comparisons, which
+    # previously made author-gated routes return 403 in the missing case.
+    # The fix probes existence via `current_content_hash === nothing` first.
+    @testset "POST /submit: 404 (not 403) for never-existed comparison id" begin
+        mktempdir() do tmp
+            ctx = _setup_analyzed_exposure(tmp)
+            with_test_server(ctx.db) do port, base
+                r = HTTP.post("$base/api/comparisons/9999/submit";
+                    body = JSON3.write(Dict(:title => "T", :members => [])),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username"   => "alice"],
+                    status_exception = false)
+                @test r.status == 404
+                err = JSON3.read(String(r.body))
+                @test err.error == "comparison not found"
+            end
+        end
+    end
+
+    @testset "DELETE /:id: 404 (not 403) for never-existed comparison id" begin
+        mktempdir() do tmp
+            ctx = _setup_analyzed_exposure(tmp)
+            with_test_server(ctx.db) do port, base
+                r = HTTP.delete("$base/api/comparisons/9999";
+                    headers = ["X-Username" => "alice"],
+                    status_exception = false)
+                @test r.status == 404
+                err = JSON3.read(String(r.body))
+                @test err.error == "comparison not found"
+            end
+        end
+    end
+
+    # Regression: 403 still fires when the comparison exists but the actor
+    # is not the author (the most common author-gate path).
+    @testset "POST /submit: 403 for existing comparison + non-author (regression)" begin
+        mktempdir() do tmp
+            ctx = _setup_analyzed_exposure(tmp)
+            with_test_server(ctx.db) do port, base
+                r1 = HTTP.post("$base/api/comparisons";
+                    body = JSON3.write(_create_body(ctx.exposure_id)),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username"   => "alice"])
+                cmp = JSON3.read(String(r1.body))
+
+                # Bob tries to submit Alice's existing comparison → 403,
+                # not 404 (the comparison exists, just not bob's).
+                r2 = HTTP.post("$base/api/comparisons/$(cmp.id)/submit";
+                    body = JSON3.write(Dict(:title => "T", :members => [],
+                                            :expected_content_hash => cmp.content_hash)),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username"   => "bob"],
+                    status_exception = false)
+                @test r2.status == 403
+            end
+        end
+    end
+
     @testset "GET / POST /api/comparisons/:id/messages" begin
         mktempdir() do tmp
             ctx = _setup_analyzed_exposure(tmp)

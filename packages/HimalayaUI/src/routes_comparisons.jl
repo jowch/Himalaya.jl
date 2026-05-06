@@ -185,19 +185,23 @@ function register_comparisons_routes!()
                         String(body.expected_content_hash) : nothing
 
         return with_idempotency(db, req) do
+            # Existence check before the author gate: HTTP semantics require
+            # 404 to fire BEFORE 403 — a request for a resource that doesn't
+            # exist can't be "forbidden" because there's nothing to forbid.
+            # `current_content_hash === nothing` is the existence probe (it
+            # returns nothing for missing comparisons).
+            if current_content_hash(db, id) === nothing
+                return _json_error(404, "comparison not found")
+            end
             # Author gate. 403s are not cached → a retry under the same
             # client_op_id re-evaluates (allows the conflict to resolve if
             # ownership changes via fork or admin action).
             user_id = get_user_id_for_request(db, req)
             if !is_author(db, id, user_id)
-                # The orphan-author case (`created_by IS NULL`) is also
-                # covered by `is_author` returning false; surface a hint in
-                # the body so the frontend can present a "comparison has no
-                # author" copy if needed.
-                detail = current_content_hash(db, id) === nothing ?
-                         "comparison not found" :
-                         "only the author can submit"
-                return _json_error(403, detail)
+                # The orphan-author case (`created_by IS NULL`) is covered
+                # by `is_author` returning false; the comparison exists but
+                # has no author.
+                return _json_error(403, "only the author can submit")
             end
 
             # Conflict check: stored hash MUST match the client's
@@ -237,12 +241,14 @@ function register_comparisons_routes!()
     @delete "/api/comparisons/{id}" function(req::HTTP.Request, id::Int)
         db = current_db()
         return with_idempotency(db, req) do
+            # Existence check before the author gate (see POST /submit for
+            # rationale). `current_content_hash` is the existence probe.
+            if current_content_hash(db, id) === nothing
+                return _json_error(404, "comparison not found")
+            end
             user_id = get_user_id_for_request(db, req)
             if !is_author(db, id, user_id)
-                detail = current_content_hash(db, id) === nothing ?
-                         "comparison not found" :
-                         "only the author can delete"
-                return _json_error(403, detail)
+                return _json_error(403, "only the author can delete")
             end
 
             result = apply_event!(InTransaction(), db, req;
