@@ -52,7 +52,7 @@ function migrate_compare!(db::SQLite.DB)
     # CREATE TABLE IF NOT EXISTS comparison_members (...)
     # CREATE TABLE IF NOT EXISTS comparison_messages (...)
     # CREATE INDEX IF NOT EXISTS idx_comparison_members_by_comparison
-    # CREATE INDEX IF NOT EXISTS idx_events_by_comparison ... WHERE entity_type='comparison'
+    # No idx_events_by_comparison — existing idx_events_by_exposure composite covers it
     # CREATE INDEX IF NOT EXISTS idx_comparison_messages_comparison
     # CREATE INDEX IF NOT EXISTS idx_comparisons_forked_from
 end
@@ -156,7 +156,7 @@ Per CLAUDE.md frontend gotchas: **never assert against Tailwind class strings.**
 | Modify | `packages/HimalayaUI/frontend/src/App.tsx` | 4 (route registration), 12 (conflict modal mount) |
 | Create | `packages/HimalayaUI/frontend/src/lib/queue/mutators/saveComparison.ts` | 3 |
 | Create | `packages/HimalayaUI/frontend/src/lib/queue/mutators/deleteComparison.ts` | 3 |
-| Modify | `packages/HimalayaUI/frontend/src/lib/queue/applyRemoteToCache.ts` | 3 (comparison kinds) |
+| Modify | `packages/HimalayaUI/frontend/src/lib/queue/applyRemoteToCache.ts` | 2 (`post_message` entity_type dispatch), 3 (comparison event kinds) |
 | Modify | `packages/HimalayaUI/frontend/src/lib/queue/types.ts` | 3 (extend `OpKind` union with `"comparison_save" \| "comparison_delete"`) |
 | Modify | `packages/HimalayaUI/frontend/src/lib/queue/mutatorRegistry.ts` | 3 (register both) |
 | Create | `packages/HimalayaUI/frontend/src/lib/comparison/draft.ts` | 4 (sessionStorage shape + hooks) |
@@ -194,10 +194,10 @@ Per CLAUDE.md frontend gotchas: **never assert against Tailwind class strings.**
 - Modify: `packages/HimalayaUI/src/db.jl`
 - Modify: `packages/HimalayaUI/test/test_db.jl`
 
-**Migration impact:** Adds three new tables (`comparisons`, `comparison_members` with `snapshot TEXT NOT NULL CHECK (json_valid(snapshot))` and `peak_display TEXT CHECK (peak_display IS NULL OR json_valid(peak_display))`, `comparison_messages`) and four indexes. Pure additions; no backfill.
+**Migration impact:** Adds three new tables (`comparisons`, `comparison_members` with `snapshot TEXT NOT NULL CHECK (json_valid(snapshot))` and `peak_display TEXT CHECK (peak_display IS NULL OR json_valid(peak_display))`, `comparison_messages`) and three indexes (`idx_comparison_members_by_comparison`, `idx_comparison_messages_comparison`, `idx_comparisons_forked_from`). No separate events index needed — the existing `idx_events_by_exposure` composite already covers `entity_type='comparison'` queries. Pure additions; no backfill.
 
 - [ ] **Step 1: Write the failing migration tests** in `test_db.jl`. Cover:
-  - **Fresh DB:** after `open_db`, all three Compare tables exist with correct columns; all four indexes exist.
+  - **Fresh DB:** after `open_db`, all three Compare tables exist with correct columns; all three new indexes exist.
   - **Already-migrated DB:** second `open_db` is a no-op (no errors, no duplicate tables).
   - **AUTOINCREMENT contract:** `comparisons.id` strict-monotonic — deleting and re-inserting does not reuse the freed id (mention-target stability rule). `comparison_members.id` and `comparison_messages.id` use plain `INTEGER PRIMARY KEY` (neither is `@`-mentioned; `comparison_messages` matches `sample_messages` symmetry).
   - **FK enforcement:** inserting `comparison_members` with `comparison_id` referencing a non-existent comparison fails when `PRAGMA foreign_keys = ON`.
@@ -270,7 +270,7 @@ Pure helpers (no HTTP):
 
 - `compute_content_hash(db, comparison_id)` — SHA-256 over canonical serialization (title, description, ordered members tuple per spec, including snapshot JSON).
 - `current_content_hash(db, comparison_id)` — fetches stored `content_hash` (returns `nothing` if comparison doesn't exist).
-- `compute_member_snapshot(db, exposure_id)` — returns the JSON shape per spec ("Derived analysis state and staleness"): `effective_peaks` + `confirmed_index` (R²-gated) + `analysis_inputs_hash`. **Note:** the existing `effective_peaks(db, …)` helper returns `(q, sharpness, peak_id, peak_kind)` — no `intensity`. The snapshot shape requires intensity, so `compute_member_snapshot` must join the peak ids against `auto_peaks.intensity` (for auto peaks). **Manual peaks carry `intensity: null`** — `peak_curations` has no intensity column, and `get_peaks_for_exposure` returns `NULL AS intensity` for them (see `routes_peaks.jl:86`). This matches the existing API behavior. The normalization layer must handle null intensity gracefully: manual peaks are excluded from peak-fit reference computation (fall back to signal-fit if all peaks in the q_window are manual). The R² gate threshold (0.98) should be extracted as a named constant shared with `PhasePanel` to prevent drift.
+- `compute_member_snapshot(db, exposure_id)` — returns the JSON shape per spec ("Derived analysis state and staleness"): `effective_peaks` + `confirmed_index` (R²-gated) + `analysis_inputs_hash`. **Note:** the existing `effective_peaks(db, …)` helper returns `(q, sharpness, peak_id, peak_kind)` — no `intensity`. The snapshot shape requires intensity, so `compute_member_snapshot` must join the peak ids against `auto_peaks.intensity` (for auto peaks). **Manual peaks carry `intensity: null`** and `source: "manual"`. Note: `effective_peaks()` returns `peak_kind = :add` for curation peaks (not `:manual`); `compute_member_snapshot` must map `:add` → `"manual"` to match the API's `source` field (see `get_peaks_for_exposure` at `routes_peaks.jl:107`). `peak_curations` has no intensity column, and `get_peaks_for_exposure` returns `NULL AS intensity` for them (see `routes_peaks.jl:86`). This matches the existing API behavior. The normalization layer must handle null intensity gracefully: manual peaks are excluded from peak-fit reference computation (fall back to signal-fit if all peaks in the q_window are manual). The R² gate threshold (0.98) should be extracted as a named constant shared with `PhasePanel` to prevent drift.
 - `is_member_stale(db, member)::Bool` — compares `member.snapshot.analysis_inputs_hash` with `current_analysis_inputs_hash(member.exposure_id)`.
 - `fetch_comparison_with_members(db, comparison_id)` — returns the full comparison + members shape used in API responses. Handles `exposure_id IS NULL` orphan placeholders. Includes per-member `is_stale: Bool` flag.
 - `member_ids_for_comparison(db, comparison_id)` — returns `Set{Int}` of current member ids.
@@ -352,7 +352,7 @@ Per spec: the existing `post_message` kind (used with `entity_type='sample_messa
 - Modify: `packages/HimalayaUI/frontend/test/queue/authHeaders.test.ts`
 - Modify: `packages/HimalayaUI/frontend/test/queue/mutatorOnSseWins.test.ts`
 
-Per [contract-testing.md](../../contract-testing.md), every new `OpKind` adds a row to all six contract tests. Note that the **2 OpKinds emit 3 distinct SSE event kinds** (`saveComparison` emits `comparison_created` for create or `comparison_submitted` for update; `deleteComparison` emits `comparison_deleted`). The OpKind-shaped contract tests (`saveComparison.test.tsx`, `deleteComparison.test.tsx`, `authHeaders.test.ts`, `rollbackSymmetry.test.ts`) get **2 rows each** (one per OpKind). The event-shape-shaped contract tests (`cache-shape.test.ts`, `sseEventPayload.contract.test.ts`, `mutatorOnSseWins.test.ts`) get **3 rows each** (one per event kind) — otherwise the `comparison_deleted` `applyRemoteToCache` branch ships untested. Total cases: 2×4 + 3×3 = **17**, not 12.
+Per [contract-testing.md](../../contract-testing.md), every new `OpKind` adds a row to all six contract tests. Note that the **2 OpKinds emit 3 distinct SSE event kinds** (`saveComparison` emits `comparison_created` for create or `comparison_submitted` for update; `deleteComparison` emits `comparison_deleted`). The OpKind-shaped contract tests (`saveComparison.test.tsx`, `deleteComparison.test.tsx`, `authHeaders.test.ts`, `rollbackSymmetry.test.ts`) get **2 rows each** (one per OpKind). The event-shape-shaped contract tests (`cache-shape.test.ts`, `sseEventPayload.contract.test.ts`, `mutatorOnSseWins.test.ts`) get **3 rows each** (one per event kind) — otherwise the `comparison_deleted` `applyRemoteToCache` branch ships untested. Total frontend contract test cases: 2×4 + 3×3 = **17**. Backend contract tests (`test_route_response_shapes.jl` + `test_idempotency_replay_invariant.jl`) add 3 event kinds × 2 backend files = **6 more rows**, for **23 total** across all six layers.
 
 The mutator (`kind: "comparison_save"`) handles both create and update — `payload.id` absent means create; present means submit. `request` calls `POST /api/comparisons` or `POST /api/comparisons/:id/submit` accordingly. `onMutate` is a no-op (no optimistic write — submission shows a spinner). `onSuccess` writes the canonical comparison + members into the cache and invalidates listing keys.
 
@@ -464,7 +464,7 @@ The `id: number | undefined` form (rather than `id?: number`) is required by `ex
 ```ts
 type DraftMember = {
   id: number | undefined;           // undefined = new member (INSERT on submit)
-  exposure_id: number;
+  exposure_id: number | null;         // null = orphaned member (exposure was deleted; ON DELETE SET NULL)
   display_order: number;
   band_height: number;
   y_offset: number;
@@ -595,7 +595,7 @@ Single Observable `<Plot>` with shared q-scale + zoom domain. Computes y-bands f
 - Create: `packages/HimalayaUI/frontend/src/components/MemberMetaRow.tsx`
 - Create: `packages/HimalayaUI/frontend/test/MemberMetaRow.test.tsx`
 
-Single line per trace in review mode (label / phase chip / `a` / R² / `K` for cubics). Hover or click expands into a detail card overlay (peak count + other secondary metadata).
+Single line per trace in review mode (label / phase chip / `d` / R² / NGC for cubics). Hover or click expands into a detail card overlay (peak count + other secondary metadata).
 
 In edit mode, the row exposes:
 - Drag handle (left edge) — for reorder.

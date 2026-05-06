@@ -99,7 +99,9 @@ CREATE TABLE comparison_members (
 );
 
 CREATE INDEX idx_comparison_members_by_comparison ON comparison_members(comparison_id, display_order);
-CREATE INDEX idx_events_by_comparison ON user_actions(entity_id) WHERE entity_type = 'comparison';
+-- Note: no separate idx_events_by_comparison needed — the existing
+-- idx_events_by_exposure composite index ON user_actions(entity_type, entity_id, id)
+-- already efficiently serves WHERE entity_type='comparison' queries (entity_type is the leading key).
 
 CREATE TABLE comparison_messages (
   id            INTEGER PRIMARY KEY,                      -- plain PK, matching sample_messages (messages are not @-mentioned)
@@ -120,7 +122,7 @@ Notes:
 - **`comparisons` has no `experiment_id` column.** A comparison is a pure artifact — its scope is implied by its members, not a stored field. Sidebar listing and per-experiment views are derived from membership at query time (see "Sidebar listing" below). Empty comparisons are not persisted: a comparison only enters the DB when its first submission carries at least one member.
 - **`forked_from_id` is `ON DELETE SET NULL`** — when a parent is deleted, forks survive as independent artifacts but lose their lineage pointer. Preserves the fork's chat history and content; doesn't cascade-delete derivative work. The reverse direction is also fine: deleting a fork has no effect on its parent.
 - **`forked_at_hash` is immutable** — captures the parent's `content_hash` at fork time. Enables a future "parent has changed since you forked" indicator without requiring it in v1.
-- `idx_events_by_comparison` is the parallel of `idx_events_by_exposure` — required for `rebuild_views_from_log!(db, comparison_id)` to perform. Uses SQLite partial index syntax (`WHERE entity_type = 'comparison'`); follow the exact pattern of the existing `idx_events_by_exposure` for implementation.
+- **No separate `idx_events_by_comparison` index needed.** The existing `idx_events_by_exposure` composite index `ON user_actions(entity_type, entity_id, id)` already efficiently serves `WHERE entity_type = 'comparison' AND entity_id = ?` queries because `entity_type` is the leading column. `rebuild_views_from_log!(db, comparison_id)` will use this index.
 - **`comparison_messages` is parallel to the existing `sample_messages`** — same shape, different scope. Chat history cascades on comparison delete (chat is part of the artifact's discussion, not independently durable). Generalizing both into a single polymorphic `messages` table would be cleaner long-term but is out of scope for this v1; doing it as part of Compare's plan would be feature creep.
 
 **Cross-experiment membership.** Members may belong to any experiment in the central DB. A comparison "appears in" experiment X's sidebar if any of its members reference an exposure under X — the comparison can appear in multiple experiments' sidebars simultaneously, which is the correct cross-cutting view.
@@ -142,9 +144,9 @@ The `comparison_members.snapshot TEXT` column stores per-member JSON at submit t
   "confirmed_index": {
     "id": 7,
     "phase": "Pn3m",
-    "lattice_param": 12.34,
+    "lattice_d": 12.34,
     "r_squared": 0.992,
-    "k_value": 0.71,
+    "ngc": 0.71,
     "peak_ids": [42, 105]
   },
   "analysis_inputs_hash": "sha256:a1b2c3..."
@@ -152,7 +154,7 @@ The `comparison_members.snapshot TEXT` column stores per-member JSON at submit t
 ```
 
 - **`effective_peaks`** = the curated peak set at submit time (`auto_peaks` ∪ `peak_curations(kind='add')` − `peak_curations(kind='exclude')`), exactly the set used by `analyze_exposure!`. Each entry includes `id` (peak row id — stable across refetches; needed for hover-coloring association and `peak_display` references), `q`, `intensity`, `sharpness` (not `prominence` — the `prom` field was removed in favor of `sharpness::SparseVector`; see CLAUDE.md), and `source` (`"auto"` or `"manual"`, matching the `get_peaks_for_exposure` API response field). This is what the plot renders, what normalization references, and what the metadata gutter reports a count for.
-- **`confirmed_index`** = the index entry the user confirmed for this exposure at submit time (or `null` if no confirmation). Provides `id` (index row id), phase, lattice parameter, R², `K`, and `peak_ids` — the list of peak ids belonging to this index (used by hover-driven phase coloring to know which peaks to highlight). Below-R²-gate confirmations are not snapshotted (consistency with PhasePanel's gate). If no index is confirmed, the metadata gutter shows "no index" and any phase-color hover affordance is inert.
+- **`confirmed_index`** = the index entry the user confirmed for this exposure at submit time (or `null` if no confirmation). Provides `id` (index row id), phase, `lattice_d` (lattice spacing), R², `ngc` (negative Gaussian curvature, for cubic phases), and `peak_ids` — the list of peak ids belonging to this index (used by hover-driven phase coloring to know which peaks to highlight). Below-R²-gate confirmations are not snapshotted (consistency with PhasePanel's gate). If no index is confirmed, the metadata gutter shows "no index" and any phase-color hover affordance is inert.
 - **`analysis_inputs_hash`** = the exposure's hash at snapshot time. Used to detect drift.
 
 **`MemberSnapshot` TypeScript type.** Defined in `api.ts` and used by both the HTTP response parser and the SSE `applyRemoteToCache` handler — both paths must produce the same parsed shape to prevent cache divergence during reconciliation:
@@ -163,8 +165,8 @@ type MemberSnapshot = {
     id: number; q: number; intensity: number | null; sharpness: number; source: "auto" | "manual";
   }>;
   confirmed_index: {
-    id: number; phase: string; lattice_param: number;
-    r_squared: number; k_value: number; peak_ids: number[];
+    id: number; phase: string; lattice_d: number;
+    r_squared: number; ngc: number; peak_ids: number[];
   } | null;
   analysis_inputs_hash: string;
 };
@@ -192,7 +194,7 @@ When stale: the review-mode header shows a "**Needs Review**" badge with text li
 ### What does not get snapshotted
 
 - **Trace data (`q`, `I` arrays).** Read live from the exposure file. Trace data doesn't change without explicit file replacement; not worth the storage cost (thousands of points per trace).
-- **Phase-ratio predictions.** We don't render predicted-phase-ratio ticks at v1 (see "Plot rendering"). If we add them later, they're *derived* from `confirmed_index.phase` + `confirmed_index.lattice_param` via `phaseratios` — pure math, no live lookup needed.
+- **Phase-ratio predictions.** We don't render predicted-phase-ratio ticks at v1 (see "Plot rendering"). If we add them later, they're *derived* from `confirmed_index.phase` + `confirmed_index.lattice_d` via `phaseratios` — pure math, no live lookup needed.
 
 ### Older revisions
 
@@ -214,7 +216,7 @@ Plus one log-only kind:
 
 | Kind                   | Purpose                                                                                            |
 |------------------------|----------------------------------------------------------------------------------------------------|
-| `post_message` (extended) | Existing kind (currently `entity_type='sample_message'` in `routes_messages.jl`) gains `entity_type='comparison_message'` semantics. **This is a new dispatch branch in the existing handler** — the current handler hard-codes `sample_messages` and must be modified to route to the correct table (`sample_messages` or `comparison_messages`) based on the event's `entity_type`. The comparison chat thread uses a new `comparison_messages` table parallel to the existing `sample_messages` (which stays sample-scoped). The route handler for `POST /api/comparisons/:id/messages` wraps in `with_idempotency` and uses `apply_event!(InTransaction(), …)` per the standard discipline. |
+| `post_message` (extended) | Existing kind (currently `entity_type='sample_message'` in `routes_messages.jl`) gains `entity_type='comparison_message'` semantics. **This is a new route, not a dispatcher change** — the table routing happens at the route handler level (separate routes: `POST /api/samples/:id/messages` writes `sample_messages`, `POST /api/comparisons/:id/messages` writes `comparison_messages`), not inside `update_view_for_event!` which remains a no-op for `post_message`. The comparison chat thread uses a new `comparison_messages` table parallel to the existing `sample_messages` (which stays sample-scoped). The route handler for `POST /api/comparisons/:id/messages` wraps in `with_idempotency` and uses `apply_event!(InTransaction(), …)` per the standard discipline. |
 
 That's it. No `comparison_member_added`, `_removed`, `_updated`, `_reordered`, or `comparison_renamed` — title, description, and full membership snapshot all ride inside `comparison_submitted` (and inside the initial `comparison_created` for new comparisons).
 
@@ -346,7 +348,7 @@ What still applies:
 
 - **`with_idempotency` wraps the submit route.** Successful responses (status < 400) are cached; retries return the cached response without re-executing. Failures (status ≥ 400, including 409 conflicts) are not cached and re-evaluate on retry (see "Conflict detection" above).
 - **`apply_event!(InTransaction(), …)` inside.** SSE frame is post-commit-broadcast.
-- **Six-layer contract tests** for `comparison_save` and `comparison_delete`. Note that 2 OpKinds emit 3 distinct SSE event kinds (`saveComparison` emits `comparison_created` for create or `comparison_submitted` for update; `deleteComparison` emits `comparison_deleted`). The OpKind-shaped contract tests get 2 rows each (one per OpKind); the event-shape-shaped tests get 3 rows each (one per event kind). Total: 2×4 + 3×3 = **17 cases**, not 42.
+- **Six-layer contract tests** for `comparison_save` and `comparison_delete`. Note that 2 OpKinds emit 3 distinct SSE event kinds (`saveComparison` emits `comparison_created` for create or `comparison_submitted` for update; `deleteComparison` emits `comparison_deleted`). The OpKind-shaped contract tests get 2 rows each (one per OpKind); the event-shape-shaped tests get 3 rows each (one per event kind). Total: 2×4 + 3×3 = **17 frontend cases**; backend contract tests (`test_route_response_shapes.jl` + `test_idempotency_replay_invariant.jl`) add 6 more rows (3 event kinds × 2 files), for **23 total** across all six layers.
 
 ## Hash memoization
 
@@ -492,7 +494,7 @@ Compare mirrors the Index page's three-card composition for visual continuity. S
 ```
 ┌── Sidebar ──┬── Plot Panel (wide card) ─────────────────┐
 │ comparisons │  ┌─ plot ─┐ ┌── per-trace metadata ────┐  │
-│ list        │  │  thin  │ │  trace 1: phase, a, R²,K │  │
+│ list        │  │  thin  │ │  trace 1: phase, d, R²   │  │
 │ + New       │  │  tall  │ │  trace 2: …               │  │
 │ search      │  │  3:10  │ │  trace 3: …               │  │
 │ pin         │  │ aspect │ │  …                        │  │
@@ -507,7 +509,7 @@ The plot panel is a single card. Inside it, two regions:
 1. **Plot column.** Thin tall plot, fixed aspect ratio `0.3` (3:10 W:H) for v1 — hardcoded based on the workflow not benefiting from on-the-fly tuning. The `aspect` prop is plumbed in the component for future surfacing if feedback shows it's needed. With 8 traces and a 600px-wide panel, the plot column is ~180px wide × ~600px tall, giving each trace a vertical band of ~75px.
 2. **Per-trace metadata gutter.** Wider than the plot. Each trace's metadata row is absolute-positioned so its vertical center aligns with the trace's y-baseline in the plot — one source of truth for the y-stacking math, both halves stay in lockstep.
 
-The metadata row is a single line per trace (matches the thin-plot aesthetic): trace label, phase chip, lattice parameter `a`, R², and `K` for cubic phases. Hover or click expands into a detail card overlay. Number-of-peaks is intentionally *not* in this row — by the time a comparison exists, the indexing decision is already made; surfacing peak count here would re-litigate something settled. Peak count remains accessible via the hover/expand path for completeness.
+The metadata row is a single line per trace (matches the thin-plot aesthetic): trace label, phase chip, `d` (lattice spacing), R², and NGC for cubic phases. Hover or click expands into a detail card overlay. Number-of-peaks is intentionally *not* in this row — by the time a comparison exists, the indexing decision is already made; surfacing peak count here would re-litigate something settled. Peak count remains accessible via the hover/expand path for completeness.
 
 **Reflow.** On narrow viewports the sidebar collapses behind a button; the plot panel stays intact and the metadata gutter wraps below the plot column past a breakpoint where the gutter would otherwise compress below readable. Chat moves below the plot panel, as on other pages. Same reflow story as Index — no new mental model.
 
@@ -884,7 +886,7 @@ The modal reads the server's "current state" from the **409 response body**, nev
 4. Frontend list page (with scope toggle: this experiment / all) + create flow (edit mode for client-only draft until first submit).
 5. Picker modal (search + experiment/tag filters + recently-used + already-added locks); warm-add affordances from Inspect/Sample.
 6. Multi-trace plot component: shared Plot instance with per-member mark layers, y-stacking math driven by `band_height` ratios, log/linear x toggle, q-window brush zoom, double-click reset.
-7. Metadata gutter rows (label / phase / `a` / R² / `K`); drag-handle reorder *on* row, resize divider *between* rows; review-mode read-only vs edit-mode controls; "Reset heights" header button.
+7. Metadata gutter rows (label / phase / `d` / R² / NGC); drag-handle reorder *on* row, resize divider *between* rows; review-mode read-only vs edit-mode controls; "Reset heights" header button.
 8. Edit-mode peak click cycle (shown → labeled → hidden → shown); label placement above triangle with leader-line dodge; `peak_display` persistence.
 9. Review-mode annotation toggles (peak ticks / per-trace labels), hover-driven phase coloring, coloring library + grouping mode.
 10. Review-mode chat thread + `@comparison` mention resolution + content_hash citation.
