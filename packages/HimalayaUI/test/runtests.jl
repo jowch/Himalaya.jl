@@ -34,4 +34,5 @@ using Test
     include("test_route_validation_routing.jl")
     include("test_idempotency.jl")
     include("test_idempotency_replay_invariant.jl")
+    include("test_comparisons.jl")
 end

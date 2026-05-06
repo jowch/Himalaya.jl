@@ -48,6 +48,20 @@ function get_or_create_user!(db::SQLite.DB, username::String)
 end
 
 """
+    get_user_id_for_request(db, req) -> Union{Int, Nothing}
+
+Resolve the request's `X-Username` header to a `users.id`, creating the row
+if needed (mirrors `get_or_create_user!` in the action-logging path). Returns
+`nothing` when the header is absent or empty — used by route author gates
+that 403 unauthenticated callers without minting a phantom user row.
+"""
+function get_user_id_for_request(db::SQLite.DB, req::HTTP.Request)::Union{Int, Nothing}
+    username = get_username(req)
+    username === nothing && return nothing
+    get_or_create_user!(db, username)
+end
+
+"""
     log_action!(db, req; action, entity_type, entity_id, note=nothing)
 
 Record an entry in `user_actions`. Missing `X-Username` => user_id = NULL.
