@@ -4,7 +4,7 @@
 
 **Goal:** Implement the Compare page per [docs/superpowers/specs/2026-05-02-compare-page-design.md](../specs/2026-05-02-compare-page-design.md): a draft/submit-style multi-trace overlay tool with author-only edit, fork-based collaboration, picker-modal selection, per-trace band heights, edit-mode peak click cycling, review-mode annotation toggles, chat thread, and `@comparison:N` mention support.
 
-**Architecture:** Three view tables (`comparisons`, `comparison_members`, `comparison_messages`) written exclusively by `update_view_for_event!`. Three view-producing event kinds (`comparison_created`, `comparison_submitted`, `comparison_deleted`) routed through `apply_event!(InTransaction(), …)` inside `with_idempotency`. Plus the existing `post_message` kind extended for `entity_type='comparison_message'`. One frontend queue mutator (`saveComparison`) plus a thin `deleteComparison`. Page UI is structured as Sidebar + Plot Panel (plot column + metadata gutter) + Chat, mirroring the Index page's three-card composition.
+**Architecture:** Two view tables (`comparisons`, `comparison_members`) written exclusively by `update_view_for_event!`, plus `comparison_messages` written directly by the route handler (same pattern as `sample_messages` — the route does the INSERT, `apply_event!` is called for the event log + SSE broadcast only, and `events.jl` returns `nothing` for `post_message`). Three view-producing event kinds (`comparison_created`, `comparison_submitted`, `comparison_deleted`) routed through `apply_event!(InTransaction(), …)` inside `with_idempotency`. Plus the existing `post_message` kind extended for `entity_type='comparison_message'`. One frontend queue mutator (`saveComparison`) plus a thin `deleteComparison`. Page UI is structured as Sidebar + Plot Panel (plot column + metadata gutter) + Chat, mirroring the Index page's three-card composition.
 
 **Tech stack:** Julia 1.9+, SQLite.jl, Oxygen.jl 1.10, JSON3, SHA (already a dep); React 18, TanStack Query v5, Zustand, Observable Plot, Vitest, Playwright.
 
@@ -199,7 +199,7 @@ Per CLAUDE.md frontend gotchas: **never assert against Tailwind class strings.**
 - [ ] **Step 1: Write the failing migration tests** in `test_db.jl`. Cover:
   - **Fresh DB:** after `open_db`, all three Compare tables exist with correct columns; all four indexes exist.
   - **Already-migrated DB:** second `open_db` is a no-op (no errors, no duplicate tables).
-  - **AUTOINCREMENT contract:** `comparisons.id` and `comparison_messages.id` strict-monotonic — deleting and re-inserting does not reuse the freed id (mention-target stability rule). `comparison_members.id` uses plain `INTEGER PRIMARY KEY` (members are never `@`-mentioned).
+  - **AUTOINCREMENT contract:** `comparisons.id` strict-monotonic — deleting and re-inserting does not reuse the freed id (mention-target stability rule). `comparison_members.id` and `comparison_messages.id` use plain `INTEGER PRIMARY KEY` (neither is `@`-mentioned; `comparison_messages` matches `sample_messages` symmetry).
   - **FK enforcement:** inserting `comparison_members` with `comparison_id` referencing a non-existent comparison fails when `PRAGMA foreign_keys = ON`.
   - **`ON DELETE SET NULL` on `comparison_members.exposure_id`:** delete an exposure that's a member; member row survives with `exposure_id IS NULL`.
   - **`ON DELETE CASCADE` on `comparison_members.comparison_id` and `comparison_messages.comparison_id`:** delete a comparison; both child tables drop their rows.
@@ -270,7 +270,7 @@ Pure helpers (no HTTP):
 
 - `compute_content_hash(db, comparison_id)` — SHA-256 over canonical serialization (title, description, ordered members tuple per spec, including snapshot JSON).
 - `current_content_hash(db, comparison_id)` — fetches stored `content_hash` (returns `nothing` if comparison doesn't exist).
-- `compute_member_snapshot(db, exposure_id)` — returns the JSON shape per spec ("Derived analysis state and staleness"): `effective_peaks` + `confirmed_index` (R²-gated) + `analysis_inputs_hash`. **Note:** the existing `effective_peaks(db, …)` helper returns `(q, sharpness, peak_id, peak_kind)` — no `intensity`. The snapshot shape requires intensity, so `compute_member_snapshot` must join the peak ids against `auto_peaks.intensity` (for auto peaks) or look up `I(q)` from the trace (for manual/curation peaks). The R² gate threshold (0.98) should be extracted as a named constant shared with `PhasePanel` to prevent drift.
+- `compute_member_snapshot(db, exposure_id)` — returns the JSON shape per spec ("Derived analysis state and staleness"): `effective_peaks` + `confirmed_index` (R²-gated) + `analysis_inputs_hash`. **Note:** the existing `effective_peaks(db, …)` helper returns `(q, sharpness, peak_id, peak_kind)` — no `intensity`. The snapshot shape requires intensity, so `compute_member_snapshot` must join the peak ids against `auto_peaks.intensity` (for auto peaks). **Manual peaks carry `intensity: null`** — `peak_curations` has no intensity column, and `get_peaks_for_exposure` returns `NULL AS intensity` for them (see `routes_peaks.jl:86`). This matches the existing API behavior. The normalization layer must handle null intensity gracefully: manual peaks are excluded from peak-fit reference computation (fall back to signal-fit if all peaks in the q_window are manual). The R² gate threshold (0.98) should be extracted as a named constant shared with `PhasePanel` to prevent drift.
 - `is_member_stale(db, member)::Bool` — compares `member.snapshot.analysis_inputs_hash` with `current_analysis_inputs_hash(member.exposure_id)`.
 - `fetch_comparison_with_members(db, comparison_id)` — returns the full comparison + members shape used in API responses. Handles `exposure_id IS NULL` orphan placeholders. Includes per-member `is_stale: Bool` flag.
 - `member_ids_for_comparison(db, comparison_id)` — returns `Set{Int}` of current member ids.
@@ -311,7 +311,7 @@ Routes:
   - Submit-with-wrong-`expected_content_hash` → 409 with `current_hash` + `current_state` body.
   - Submit-with-correct-hash → 200 + new state in response.
   - Delete-as-non-author → 403.
-  - Idempotent retry of submit → cached response, no duplicate event.
+  - Idempotent retry of *successful* submit (status 200) → cached response, no duplicate event. (Status ≥ 400 retries re-evaluate; see 409 retry contract below.)
   - **409 retry contract:** per `with_idempotency`, status ≥ 400 responses are NOT cached. A retry of a submit that originally returned 409 (under same `client_op_id`) re-evaluates the conflict check (correct: the conflict may have resolved between retries). The client breaks out of a stale conflict by minting a fresh `client_op_id` (which the conflict-modal flow does naturally because each modal action issues a new `useQueueMutation.mutate()` call).
   - Cascade test: delete a comparison → children gone (members + messages).
 
@@ -330,7 +330,8 @@ Routes:
 Per spec: the existing `post_message` kind (used with `entity_type='sample_message'` in `routes_messages.jl:64`) gains `entity_type='comparison_message'` semantics. **The existing handler hard-codes `sample_messages` — this is a new dispatch branch, not a trivial extension.** The INSERT target table must be chosen based on `entity_type`.
 
 - [ ] **Step 1:** Test that `post_message` with `entity_type='comparison_message'` writes to `comparison_messages`, and with `entity_type='sample_message'` still writes to `sample_messages`. Also test that an unknown `entity_type` returns an error (not a silent no-op).
-- [ ] **Step 2:** Implement the dispatch. The route handler at `POST /api/comparisons/:id/messages` must wrap in `with_idempotency(db, req) do ... end` and use `apply_event!(InTransaction(), …)` per the standard discipline — same as every other mutating comparison route.
+- [ ] **Step 2:** Implement the dispatch. The route handler at `POST /api/comparisons/:id/messages` does the INSERT into `comparison_messages` directly (same pattern as `sample_messages` — see `routes_messages.jl:53`), then calls `apply_event!` for the event log + SSE broadcast only. Wrap in `with_idempotency(db, req) do ... end` per the standard discipline.
+- [ ] **Step 2b:** Update `applyRemoteToCache.ts`'s existing `post_message` case. The current implementation hard-codes `payload.sample_id` and `SampleMessage` type. Add an `entity_type` dispatch: `entity_type === 'sample_message'` → existing `queryKeys.messages(sampleId)` path; `entity_type === 'comparison_message'` → new `queryKeys.comparisonMessages(comparisonId)` path. Without this, comparison chat SSE events write to the wrong query key.
 - [ ] **Step 3:** Commit as `feat(compare): post_message event routes by entity_type`.
 
 ---
@@ -473,7 +474,7 @@ type DraftMember = {
   q_window_min: number | undefined;
   q_window_max: number | undefined;
   peak_display: { hidden: number[]; labeled: number[] } | undefined;
-  snapshot: MemberSnapshot;          // computed fresh at submit time
+  snapshot: MemberSnapshot | undefined; // undefined during editing; computed fresh at submit time via computeMemberSnapshot
 };
 ```
 

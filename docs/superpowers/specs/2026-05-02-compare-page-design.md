@@ -102,7 +102,7 @@ CREATE INDEX idx_comparison_members_by_comparison ON comparison_members(comparis
 CREATE INDEX idx_events_by_comparison ON user_actions(entity_id) WHERE entity_type = 'comparison';
 
 CREATE TABLE comparison_messages (
-  id            INTEGER PRIMARY KEY AUTOINCREMENT,        -- mention-target rule (chat refs)
+  id            INTEGER PRIMARY KEY,                      -- plain PK, matching sample_messages (messages are not @-mentioned)
   comparison_id INTEGER NOT NULL REFERENCES comparisons(id) ON DELETE CASCADE,
   author_id     INTEGER REFERENCES users(id) ON DELETE SET NULL,
   body          TEXT NOT NULL,
@@ -344,7 +344,7 @@ Things that *don't* apply because of the draft/submit model:
 
 What still applies:
 
-- **`with_idempotency` wraps the submit route.** Retries return the cached response without re-executing.
+- **`with_idempotency` wraps the submit route.** Successful responses (status < 400) are cached; retries return the cached response without re-executing. Failures (status ≥ 400, including 409 conflicts) are not cached and re-evaluate on retry (see "Conflict detection" above).
 - **`apply_event!(InTransaction(), …)` inside.** SSE frame is post-commit-broadcast.
 - **Six-layer contract tests** for `comparison_save` and `comparison_delete`. Note that 2 OpKinds emit 3 distinct SSE event kinds (`saveComparison` emits `comparison_created` for create or `comparison_submitted` for update; `deleteComparison` emits `comparison_deleted`). The OpKind-shaped contract tests get 2 rows each (one per OpKind); the event-shape-shaped tests get 3 rows each (one per event kind). Total: 2×4 + 3×3 = **17 cases**, not 42.
 

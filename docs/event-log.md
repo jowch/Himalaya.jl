@@ -56,7 +56,7 @@ returns `nothing` for these kinds.
 
 **Pure log events — use `log_action!`** (no view side effect, no
 broadcast routing through the dispatcher):
-`set_status`, `add_tag`, `remove_tag`, `add_message`, `update_sample`,
+`set_status`, `add_tag`, `remove_tag`, `post_message`, `update_sample`,
 `update_experiment`, `analyze`, `reingest`, `analyze_run`.
 
 ### Payload contract
