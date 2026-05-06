@@ -376,9 +376,245 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
     # rebuild_views_from_log! property test treats it as a known kind.
     kind == "analyze_run" && return nothing
 
+    # Compare page (Plan §Phase 1, Task 1.2): three view-producing kinds.
+    # See docs/superpowers/specs/2026-05-02-compare-page-design.md §Event kinds.
+    if kind == "comparison_created"
+        return _update_view_for_comparison_created!(db, entity_id, payload, event_id)
+    end
+    if kind == "comparison_submitted"
+        return _update_view_for_comparison_submitted!(db, entity_id, payload, event_id)
+    end
+    if kind == "comparison_deleted"
+        DBInterface.execute(db, "DELETE FROM comparisons WHERE id = ?", [Int(entity_id)])
+        # The schema's ON DELETE CASCADE clauses drop comparison_members and
+        # comparison_messages automatically.
+        return nothing
+    end
+
     # Scaffolding / legacy:
     kind == "noop_test" && return nothing
     # default: no view update
+    nothing
+end
+
+"""
+    _update_view_for_comparison_created!(db, entity_id, payload, event_id)
+
+Insert the `comparisons` row and any payload-supplied members. `entity_id`
+is the comparison id (always pre-allocated by the route handler — the
+event-driven dispatcher cannot assign autoincrement ids reliably across
+idempotent retry, so the route mints the id with an explicit INSERT and
+passes it as `entity_id`). Returns the comparison id for `view_row_id`.
+
+The route is responsible for the route-side `INSERT INTO comparisons`
+that mints the id; this dispatcher branch instead **upserts** so a fresh
+INSERT plus a replay land on the same row. In practice the route+dispatcher
+sequence is:
+  1. route INSERTs a placeholder comparison row, captures its autoincrement id.
+  2. apply_event!(InTransaction, …, entity_id=that_id).
+  3. dispatcher updates title/description/content_hash on the placeholder
+     and inserts members.
+"""
+function _update_view_for_comparison_created!(db, entity_id, payload, event_id)
+    user_id = user_id_for_event(db, event_id)
+    now_str = comparison_now_iso()
+    title = String(payload.title)
+    description = haskey(payload, :description) && payload.description !== nothing ?
+                  String(payload.description) : nothing
+    forked_from_id = haskey(payload, :forked_from_id) && payload.forked_from_id !== nothing ?
+                     Int(payload.forked_from_id) : nothing
+    forked_at_hash = haskey(payload, :forked_at_hash) && payload.forked_at_hash !== nothing ?
+                     String(payload.forked_at_hash) : nothing
+
+    # Insert/upsert the comparisons row at this id. The route may have minted
+    # the row already (to capture the AUTOINCREMENT id); if so this UPDATE
+    # supersedes that placeholder. Otherwise INSERT — the route can choose to
+    # rely on dispatcher-driven creation.
+    existing = Tables.rowtable(DBInterface.execute(db,
+        "SELECT id FROM comparisons WHERE id = ?", [Int(entity_id)]))
+    if isempty(existing)
+        # Use INSERT with explicit id; sqlite's AUTOINCREMENT counter will
+        # advance past entity_id automatically. (Suitable for replay paths
+        # where the original row was deleted but the event is being re-folded.)
+        DBInterface.execute(db,
+            """INSERT INTO comparisons
+               (id, title, description, content_hash, created_by, created_at,
+                updated_at, forked_from_id, forked_at_hash)
+               VALUES (?, ?, ?, '', ?, ?, ?, ?, ?)""",
+            [Int(entity_id), title, description, user_id,
+             now_str, now_str, forked_from_id, forked_at_hash])
+    else
+        DBInterface.execute(db,
+            """UPDATE comparisons
+               SET title = ?, description = ?, created_by = ?,
+                   created_at = COALESCE(created_at, ?), updated_at = ?,
+                   forked_from_id = ?, forked_at_hash = ?
+               WHERE id = ?""",
+            [title, description, user_id, now_str, now_str,
+             forked_from_id, forked_at_hash, Int(entity_id)])
+    end
+
+    # Insert members (all members in a comparison_created payload are NEW —
+    # ids in the payload are ignored; the dispatcher mints fresh PKs).
+    members = haskey(payload, :members) ? payload.members : []
+    for m in members
+        _insert_comparison_member!(db, Int(entity_id), m, user_id, now_str)
+    end
+
+    # Recompute the canonical content_hash from the just-written state and
+    # bump the comparisons row.
+    new_hash = compute_content_hash(db, Int(entity_id))
+    DBInterface.execute(db,
+        "UPDATE comparisons SET content_hash = ? WHERE id = ?",
+        [new_hash, Int(entity_id)])
+
+    return Int(entity_id)
+end
+
+"""
+    _update_view_for_comparison_submitted!(db, entity_id, payload, event_id)
+
+Diff the payload's member list against the current `comparison_members`
+rows for this comparison. Three dispositions:
+- **DELETE** rows present in the DB but absent from the payload.
+- **UPDATE** rows present in both (`payload.id isa Int`); the snapshot is
+  written unconditionally — see spec §Submission diff: "Every UPDATE
+  recomputes the snapshot from the payload."
+- **INSERT** rows in the payload with `id === nothing`.
+
+Errors on a zero-row UPDATE (payload references a member id that doesn't
+belong to this comparison). After the diff, recomputes `content_hash` and
+bumps `updated_at`; may also update title/description.
+"""
+function _update_view_for_comparison_submitted!(db, entity_id, payload, event_id)
+    members = haskey(payload, :members) ? payload.members : []
+    payload_existing = Dict{Int, Any}()
+    payload_new = Any[]
+    for m in members
+        # `m.id` arrives as JSON3.Object's accessor; nothing/null → INSERT,
+        # integer → UPDATE. JSON3 decodes JSON null as `nothing` in this path.
+        mid = haskey(m, :id) ? m.id : nothing
+        if mid === nothing
+            push!(payload_new, m)
+        else
+            payload_existing[Int(mid)] = m
+        end
+    end
+
+    current_ids = member_ids_for_comparison(db, entity_id)
+
+    # DELETE: in DB, not in payload.
+    for id in setdiff(current_ids, keys(payload_existing))
+        DBInterface.execute(db,
+            "DELETE FROM comparison_members WHERE id = ? AND comparison_id = ?",
+            [Int(id), Int(entity_id)])
+    end
+
+    # UPDATE: in both.
+    for (id, m) in payload_existing
+        DBInterface.execute(db,
+            """UPDATE comparison_members
+               SET exposure_id = ?, display_order = ?, band_height = ?,
+                   y_offset = ?, normalization = ?, color_override = ?,
+                   label_override = ?, q_window_min = ?, q_window_max = ?,
+                   peak_display = ?, snapshot = ?
+               WHERE id = ? AND comparison_id = ?""",
+            [_member_field(m, :exposure_id),
+             Int(_member_field(m, :display_order)),
+             Float64(_member_field(m, :band_height; default=1.0)),
+             Float64(_member_field(m, :y_offset; default=0.0)),
+             String(_member_field(m, :normalization; default="none")),
+             _member_field(m, :color_override),
+             _member_field(m, :label_override),
+             _member_field(m, :q_window_min),
+             _member_field(m, :q_window_max),
+             _member_json(m, :peak_display),
+             _member_json(m, :snapshot)::String,  # NOT NULL — JSON3.write of payload
+             Int(id), Int(entity_id)])
+        # SQLite's changes() returns the row-count of the most recent statement.
+        # Used here to reject UPDATEs whose `id` doesn't belong to this
+        # comparison — payload references a stale or cross-comparison id.
+        n_changed = Int(first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT changes() AS n"))).n)
+        n_changed == 0 &&
+            error("comparison_submitted: member id=$id not found for comparison $entity_id")
+    end
+
+    # INSERT: new members (id === nothing in payload).
+    user_id = user_id_for_event(db, event_id)
+    now_str = comparison_now_iso()
+    for m in payload_new
+        _insert_comparison_member!(db, Int(entity_id), m, user_id, now_str)
+    end
+
+    # Optional title/description update + content_hash recompute + updated_at bump.
+    new_title = haskey(payload, :title) ? String(payload.title) : nothing
+    new_desc  = haskey(payload, :description) ?
+                (payload.description === nothing ? nothing : String(payload.description)) :
+                nothing
+    new_hash = compute_content_hash(db, Int(entity_id))
+    if new_title === nothing
+        DBInterface.execute(db,
+            "UPDATE comparisons SET content_hash = ?, updated_at = ? WHERE id = ?",
+            [new_hash, now_str, Int(entity_id)])
+    else
+        DBInterface.execute(db,
+            """UPDATE comparisons
+               SET title = ?, description = ?, content_hash = ?, updated_at = ?
+               WHERE id = ?""",
+            [new_title, new_desc, new_hash, now_str, Int(entity_id)])
+    end
+    return nothing
+end
+
+# Helper: read a payload member field tolerating JSON3.Object's both-keys
+# (`m.field` and `m[:field]`) interface and a missing key. Returns `nothing`
+# for JSON null or absent key. Numeric defaults are applied via the kwarg.
+function _member_field(m, key::Symbol; default=nothing)
+    haskey(m, key) || return default
+    v = getproperty(m, key)
+    v === nothing ? default : v
+end
+
+# Helper: serialize a (possibly nil) payload sub-object back to JSON for
+# the snapshot/peak_display TEXT columns. Returns `nothing` (→ NULL) when
+# the field is absent or null. The payload value is already a JSON3.Object
+# or nested Dict — re-serializing is the canonical way to land it in the
+# TEXT column.
+function _member_json(m, key::Symbol)
+    haskey(m, key) || return nothing
+    v = getproperty(m, key)
+    v === nothing && return nothing
+    JSON3.write(v)
+end
+
+# Helper: INSERT one comparison_members row, validating that the snapshot
+# field is present (NOT NULL CHECK in the schema; the route is responsible
+# for constructing it on the client side).
+function _insert_comparison_member!(db, comparison_id, m, user_id, now_str)
+    snap = _member_json(m, :snapshot)
+    snap === nothing &&
+        error("comparison member missing required `snapshot` field")
+    DBInterface.execute(db,
+        """INSERT INTO comparison_members
+             (comparison_id, exposure_id, display_order, band_height, y_offset,
+              normalization, color_override, label_override,
+              q_window_min, q_window_max, peak_display, snapshot,
+              created_by, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        [Int(comparison_id),
+         _member_field(m, :exposure_id),
+         Int(_member_field(m, :display_order)),
+         Float64(_member_field(m, :band_height; default=1.0)),
+         Float64(_member_field(m, :y_offset; default=0.0)),
+         String(_member_field(m, :normalization; default="none")),
+         _member_field(m, :color_override),
+         _member_field(m, :label_override),
+         _member_field(m, :q_window_min),
+         _member_field(m, :q_window_max),
+         _member_json(m, :peak_display),
+         snap,
+         user_id, now_str])
     nothing
 end
 
