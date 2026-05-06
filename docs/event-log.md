@@ -56,7 +56,7 @@ returns `nothing` for these kinds.
 
 **Pure log events — use `log_action!`** (no view side effect, no
 broadcast routing through the dispatcher):
-`set_status`, `add_tag`, `remove_tag`, `add_message`, `update_sample`,
+`set_status`, `add_tag`, `remove_tag`, `post_message`, `update_sample`,
 `update_experiment`, `analyze`, `reingest`, `analyze_run`.
 
 ### Payload contract
@@ -191,11 +191,12 @@ intake; cache folding lives in `applyRemoteToCache(remote, qc)`
 3. System-emitted events have no `client_id` (e.g. `analyze_run`
    issued by `_system_request()` during reingest). These broadcast to
    *all* tabs — there's no originating tab to suppress.
-4. Skip if `entity_type !== "exposure"` (defensive — only exposure
-   events update view caches today).
-5. Invalidate `peaks(id)`, `indices(id)`, `groups(id)`, `exposure(id)`
-   for the affected exposure id. TanStack Query refetches what's
-   currently mounted; nothing happens for queries the user can't see.
+4. Dispatch on `remote.kind` via `applyRemoteToCache`'s switch
+   statement — each event kind has a per-kind cache merge branch
+   (e.g. `peak_added` writes the new peak row, `comparison_deleted`
+   removes comparison queries). No `entity_type` filter; all event
+   kinds are forwarded. Unknown kinds fall through to a default
+   invalidate-by-entity-id fallback.
 
 The EventSource connection is bound to `App.tsx`'s mount/unmount only;
 `clientId` is stable for the lifetime of the tab, so no listener
