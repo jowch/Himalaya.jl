@@ -25,6 +25,8 @@ import {
 } from "./lib/queue/mutators/indexGroup";
 import { createSpeculativeMutator } from "./lib/queue/mutators/createSpeculative";
 import { reanalyzeExposureMutator } from "./lib/queue/mutators/reanalyzeExposure";
+import { saveComparisonMutator } from "./lib/queue/mutators/saveComparison";
+import { deleteComparisonMutator } from "./lib/queue/mutators/deleteComparison";
 import { useExposureHasPendingPeakOps } from "./lib/queue/hooks";
 
 const CLIENT_ID = getClientId();
@@ -368,4 +370,64 @@ export function useSampleById(id: number | undefined) {
     enabled: id !== undefined,
     retry: false,
   });
+}
+
+// ─── Comparisons (Plan §Phase 4, Task 4.1 Step 2/3) ────────────────────────
+
+/**
+ * List comparisons for the given scope.
+ * - scope = experiment id → `/api/experiments/:eid/comparisons`
+ * - scope = "all"         → `/api/comparisons`
+ *
+ * Returns the same `ComparisonSummary[]` shape from both routes so the
+ * sidebar doesn't have to branch on scope.
+ */
+export function useComparisons(scope: number | "all") {
+  return useQuery({
+    queryKey: queryKeys.comparisons(scope),
+    queryFn: () => scope === "all"
+      ? api.listComparisons()
+      : api.listExperimentComparisons(scope),
+  });
+}
+
+export function useComparison(id: number | undefined) {
+  return useQuery({
+    queryKey: id !== undefined ? queryKeys.comparison(id) : (["comparison", "none"] as const),
+    queryFn: () => api.getComparison(id as number),
+    enabled: id !== undefined,
+    retry: false,
+  });
+}
+
+export function useComparisonForks(id: number | undefined) {
+  return useQuery({
+    queryKey: id !== undefined ? queryKeys.comparisonForks(id) : (["comparison", "none", "forks"] as const),
+    queryFn: () => api.getComparisonForks(id as number),
+    enabled: id !== undefined,
+  });
+}
+
+export function useComparisonMessages(id: number | undefined) {
+  return useQuery({
+    queryKey: id !== undefined ? queryKeys.comparisonMessages(id) : (["comparison", "none", "messages"] as const),
+    queryFn: () => api.listComparisonMessages(id as number),
+    enabled: id !== undefined,
+  });
+}
+
+export function useSaveComparison() {
+  const username = useAppState((s) => s.username);
+  return useQueueMutation(
+    saveComparisonMutator,
+    { username, clientId: CLIENT_ID },
+  );
+}
+
+export function useDeleteComparison() {
+  const username = useAppState((s) => s.username);
+  return useQueueMutation(
+    deleteComparisonMutator,
+    { username, clientId: CLIENT_ID },
+  );
 }
