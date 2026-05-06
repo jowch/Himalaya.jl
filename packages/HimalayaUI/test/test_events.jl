@@ -742,6 +742,72 @@ end
     end
 end
 
+@testset "rebuild_views_from_log!(entity_type=\"comparison\") reproduces live state" begin
+    mktempdir() do dir
+        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        HimalayaUI.bind_db!(db)
+        exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+        s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id)
+        e1 = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        e2 = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        e3 = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        cmp_id = 21
+        _premint_comparison!(db, cmp_id)
+        req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
+
+        HimalayaUI.apply_event!(db, req;
+            kind="comparison_created", entity_type="comparison", entity_id=cmp_id,
+            payload=Dict(:title => "T", :description => "d",
+                         :forked_from_id => nothing, :forked_at_hash => nothing,
+                         :members => [
+                            _compare_member_payload(exposure_id=e1, display_order=0),
+                            _compare_member_payload(exposure_id=e2, display_order=1),
+                         ]))
+        ids = [Int(r.id) for r in Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM comparison_members WHERE comparison_id = ? ORDER BY display_order",
+            [cmp_id]))]
+        HimalayaUI.apply_event!(db, req;
+            kind="comparison_submitted", entity_type="comparison", entity_id=cmp_id,
+            payload=Dict(:title => "T2", :description => "d2",
+                         :members => [
+                            _compare_member_payload(id=ids[1], exposure_id=e1, display_order=0),
+                            _compare_member_payload(id=nothing, exposure_id=e3, display_order=1),
+                         ]))
+
+        # Snapshot live state.
+        live_cmp = first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT title, description, content_hash FROM comparisons WHERE id = ?", [cmp_id])))
+        live_members = Tables.rowtable(DBInterface.execute(db,
+            """SELECT id, exposure_id, display_order, snapshot
+               FROM comparison_members WHERE comparison_id = ? ORDER BY id""", [cmp_id]))
+
+        # Wipe view tables for this comparison and replay.
+        DBInterface.execute(db, "DELETE FROM comparison_members WHERE comparison_id = ?", [cmp_id])
+        DBInterface.execute(db, "DELETE FROM comparisons WHERE id = ?", [cmp_id])
+        # Re-mint the comparison row at the original id so the dispatcher's
+        # update branch lands on it.
+        _premint_comparison!(db, cmp_id)
+
+        HimalayaUI.rebuild_views_from_log!(db, cmp_id; entity_type="comparison")
+
+        rebuilt_cmp = first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT title, description, content_hash FROM comparisons WHERE id = ?", [cmp_id])))
+        rebuilt_members = Tables.rowtable(DBInterface.execute(db,
+            """SELECT id, exposure_id, display_order, snapshot
+               FROM comparison_members WHERE comparison_id = ? ORDER BY id""", [cmp_id]))
+
+        @test String(live_cmp.title) == String(rebuilt_cmp.title)
+        @test String(live_cmp.description) == String(rebuilt_cmp.description)
+        @test String(live_cmp.content_hash) == String(rebuilt_cmp.content_hash)
+        @test length(live_members) == length(rebuilt_members)
+        for (a, b) in zip(live_members, rebuilt_members)
+            @test Int(a.exposure_id) == Int(b.exposure_id)
+            @test Int(a.display_order) == Int(b.display_order)
+            @test String(a.snapshot) == String(b.snapshot)
+        end
+    end
+end
+
 # ─────────────────────────────────────────────────────────────────────────────
 # (Continuation of pre-existing tests below.)
 # ─────────────────────────────────────────────────────────────────────────────

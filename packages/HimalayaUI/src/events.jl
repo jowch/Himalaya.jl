@@ -729,12 +729,13 @@ every event in order produces the same state as live `apply_event!` does.
 For R4.1 this is a stub — R4.2 fills in dispatcher branches per kind, and
 the property test asserts the round-trip.
 """
-function rebuild_views_from_log!(db::SQLite.DB, exposure_id::Int)
+function rebuild_views_from_log!(db::SQLite.DB, entity_id::Integer;
+                                  entity_type::String = "exposure")
     rows = Tables.rowtable(DBInterface.execute(db,
         """SELECT id, action, entity_id, payload
            FROM user_actions
-           WHERE entity_type = 'exposure' AND entity_id = ?
-           ORDER BY id""", [exposure_id]))
+           WHERE entity_type = ? AND entity_id = ?
+           ORDER BY id""", [entity_type, Int(entity_id)]))
     for r in rows
         kind = String(r.action)
         eid  = Int(r.id)
