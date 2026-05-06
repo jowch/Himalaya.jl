@@ -11,10 +11,12 @@ import {
 } from "./errors";
 import type { FlatPayload, Mutator, RollbackContext } from "./types";
 
-export interface UseQueueMutationResult<TInput> {
+export interface UseQueueMutationResult<TInput, TResponse = unknown> {
   mutate: (input: TInput) => void;
   isPending: boolean;
   isSuccess: boolean;
+  /** Last successful response, or undefined if no mutation has succeeded yet. */
+  data: TResponse | undefined;
   error: unknown;
   reset: () => void;
 }
@@ -42,7 +44,7 @@ const MAX_BACKOFF_MS = 30_000;
 export function useQueueMutation<TInput, TScope, TResponse>(
   mutator: Mutator<TInput, TScope, TResponse>,
   scope: TScope,
-): UseQueueMutationResult<TInput> {
+): UseQueueMutationResult<TInput, TResponse> {
   const qc = useQueryClient();
 
   type Payload = FlatPayload<TInput, TScope>;
@@ -132,6 +134,7 @@ export function useQueueMutation<TInput, TScope, TResponse>(
     mutate,
     isPending: mutation.isPending,
     isSuccess: mutation.isSuccess,
+    data: mutation.data ?? undefined,
     error: mutation.error,
     reset: mutation.reset,
   };
