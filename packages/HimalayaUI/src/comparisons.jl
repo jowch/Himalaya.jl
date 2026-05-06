@@ -280,7 +280,14 @@ function compute_member_snapshot(db::SQLite.DB, exposure_id::Integer)::Dict{Symb
             :id        => Int(r.id),
             :q         => Float64(r.q),
             :intensity => ismissing(r.intensity) ? nothing : Float64(r.intensity),
-            :sharpness => ismissing(r.sharpness) ? nothing : Float64(r.sharpness),
+            # NULL → 0.0 (NOT nothing). The client-side
+            # `computeMemberSnapshot` already coerces `null → 0` (snapshot.ts:60)
+            # so the JS `MemberSnapshotPeak.sharpness: number` type contract
+            # holds. If the server emits `nothing`, a GET-fetched snapshot
+            # rehashed client-side diverges from the locally-computed hash
+            # and `content_hash` parity breaks for the chat-citation
+            # `@comparison:42@<hash8>` resolver.
+            :sharpness => ismissing(r.sharpness) ? 0.0 : Float64(r.sharpness),
             :source    => String(r.source),
         )
     end

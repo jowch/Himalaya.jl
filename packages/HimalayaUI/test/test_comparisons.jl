@@ -176,12 +176,50 @@ end
                 @test haskey(p, :source)
                 if p[:source] == "manual"
                     @test p[:intensity] === nothing
-                    @test p[:sharpness] === nothing
+                    # Snapshot contract: `sharpness` is never `nothing` so
+                    # the JS-side `MemberSnapshotPeak.sharpness: number`
+                    # (non-null) holds. Manual peaks default to 0.0 — the
+                    # client coerces null to 0 too (`p.sharpness ?? 0`),
+                    # so server + client hash the same canonical bytes.
+                    @test p[:sharpness] === 0.0
                 else
                     @test p[:intensity] isa Real
+                    @test p[:sharpness] isa Real
                 end
             end
             @test snap[:analysis_inputs_hash] isa AbstractString
+        end
+    end
+
+    # Regression (Fix 4 / spec auditor): a NULL-sharpness auto peak must
+    # surface in the snapshot as `sharpness = 0.0`, not `nothing`. The JS
+    # `MemberSnapshotPeak.sharpness: number` type is non-nullable, and the
+    # client `computeMemberSnapshot` already coerces null → 0 (snapshot.ts).
+    # Without the server-side coercion, a re-hash of a GET-fetched snapshot
+    # diverges from the locally-computed hash and `content_hash` parity
+    # breaks. The client-vs-server contract for hash inputs lives in
+    # contentHash.test.ts (cross-language fixture parity).
+    @testset "compute_member_snapshot: NULL auto sharpness coerces to 0.0" begin
+        mktempdir() do tmp
+            ctx = _setup_analyzed_exposure(tmp)
+            # Force one auto peak's sharpness to NULL — simulates a legacy
+            # row from before sharpness was always populated.
+            target = first(Tables.rowtable(DBInterface.execute(ctx.db,
+                "SELECT id FROM auto_peaks WHERE exposure_id = ? LIMIT 1",
+                [ctx.exposure_id])))
+            DBInterface.execute(ctx.db,
+                "UPDATE auto_peaks SET sharpness = NULL WHERE id = ?",
+                [target.id])
+            snap = HimalayaUI.compute_member_snapshot(ctx.db, ctx.exposure_id)
+            patched = first(p for p in snap[:effective_peaks]
+                            if p[:id] == target.id)
+            @test patched[:source] == "auto"
+            @test patched[:sharpness] === 0.0
+            # And every entry honours the non-null contract — broad sweep.
+            for p in snap[:effective_peaks]
+                @test p[:sharpness] isa Real
+                @test !(p[:sharpness] === nothing)
+            end
         end
     end
 
