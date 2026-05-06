@@ -182,6 +182,33 @@ describe("saveComparisonMutator (OpKind=comparison_save)", () => {
     )).rejects.toMatchObject({ status: 403 });
   });
 
+  // Fix 3 (spec auditor): 404 mirrors the 403 path — the existing comparison
+  // was deleted between edit-mode entry and submit. Surfaces as a non-retry
+  // ApiError (NOT a ConflictError, so the conflict modal stays closed and the
+  // failure-class router classifies it as validation per `isValidationError`).
+  it("404 on submit surfaces as ApiError with status=404 (non-retry, not ConflictError)", async () => {
+    captureFetch({ error: "comparison not found" }, 404);
+    let thrown: unknown;
+    try {
+      await saveComparisonMutator.request(
+        { kind: "comparison_save", clientOpId: "op-404",
+          username: "alice", clientId: "tab",
+          id: 42, title: "Edited", members: [MEMBER_INPUT],
+          expected_content_hash: "sha256:x",
+          payload: {} } as any,
+        new AbortController().signal,
+      );
+    } catch (e) {
+      thrown = e;
+    }
+    expect(thrown).toBeDefined();
+    expect((thrown as { status?: number }).status).toBe(404);
+    // Critical: the 404 path must NOT throw a ConflictError. The conflict
+    // modal is wired off `error instanceof ConflictError` — a stray Conflict
+    // throw on the deleted-comparison path opens an empty/null conflict UI.
+    expect(thrown).not.toBeInstanceOf(ConflictError);
+  });
+
   it("onSuccess writes comparison + members into cache and invalidates listings", () => {
     const response = buildComparison(42);
     const invalidatedKeys: unknown[] = [];
