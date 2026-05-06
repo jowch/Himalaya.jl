@@ -131,6 +131,23 @@ describe("<TraceViewer>", () => {
 		).not.toBeNull();
 	});
 
+	it("renders a cursor-label text element in the overlay", () => {
+		const trace = { q: [0.1, 0.2, 0.3], I: [10, 20, 30], sigma: [1, 1, 1] };
+		const { container } = render(
+			<TraceViewer
+				trace={trace}
+				peaks={[]}
+				activeGroupIndices={[]}
+				hoveredIndex={undefined}
+				{...defaultProps}
+			/>,
+		);
+		const label = container.querySelector('[data-role="cursor-label"]');
+		expect(label).not.toBeNull();
+		expect(label!.tagName).toBe("text");
+		expect(label!.getAttribute("opacity")).toBe("0");
+	});
+
 	it("invokes Plot.plot with marks including line and areaY for trace", async () => {
 		const Plot = await import("@observablehq/plot");
 		const trace = { q: [0.1, 0.2], I: [10, 20], sigma: [1, 1] };
@@ -296,6 +313,8 @@ describe("<TraceViewer> — overlay ticks", () => {
 				lattice_d: 12,
 				ngc: -1.51,
 				status: "candidate",
+				kind: "auto",
+				inputs_hash: null,
 				predicted_q: [0.7, 0.9],
 				peaks: [],
 			},
@@ -330,6 +349,8 @@ describe("<TraceViewer> — overlay ticks", () => {
 				lattice_d: 12,
 				ngc: -1.51,
 				status: "candidate",
+				kind: "auto",
+				inputs_hash: null,
 				predicted_q: [0.5],
 				peaks: [],
 			},
@@ -374,6 +395,8 @@ describe("<TraceViewer> — overlay ticks", () => {
 				lattice_d: 12,
 				ngc: -1.51,
 				status: "candidate",
+				kind: "auto",
+				inputs_hash: null,
 				predicted_q: [0.7, 0.9],
 				peaks: [],
 			},
@@ -388,6 +411,8 @@ describe("<TraceViewer> — overlay ticks", () => {
 			lattice_d: 9.0,
 			ngc: -2.06,
 			status: "candidate",
+			kind: "auto",
+			inputs_hash: null,
 			predicted_q: [0.42, 0.6, 0.8],
 			peaks: [],
 		};

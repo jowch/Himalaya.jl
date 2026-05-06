@@ -640,6 +640,7 @@ export function TraceViewer({
 			if (!insideInterior(relX, relY, bbox.width, bbox.height)) {
 				line.setAttribute("opacity", "0");
 				dot.setAttribute("opacity", "0");
+				label.setAttribute("opacity", "0");
 				return;
 			}
 
@@ -655,6 +656,11 @@ export function TraceViewer({
 			dot.setAttribute("cx", String(relX));
 			dot.setAttribute("cy", String(py));
 			dot.setAttribute("opacity", Number.isFinite(py) ? "1" : "0");
+
+			label.setAttribute("x", String(relX));
+			label.setAttribute("y", String(bbox.height - MARGIN_BOTTOM + 14));
+			label.textContent = formatAxis(q);
+			label.setAttribute("opacity", "1");
 		}
 
 		function onMove(ev: MouseEvent): void {
@@ -673,6 +679,7 @@ export function TraceViewer({
 			)!;
 			line.setAttribute("opacity", "0");
 			dot.setAttribute("opacity", "0");
+			label.setAttribute("opacity", "0");
 		}
 
 		host.addEventListener("mousemove", onMove);
@@ -712,6 +719,15 @@ export function TraceViewer({
 					fill="none"
 					stroke="var(--color-accent)"
 					strokeWidth={1.5}
+					opacity={0}
+				/>
+				<text
+					data-role="cursor-label"
+					textAnchor="middle"
+					dominantBaseline="hanging"
+					fill="var(--color-fg-muted)"
+					fontSize="10"
+					fontFamily="var(--font-mono)"
 					opacity={0}
 				/>
 			</svg>
