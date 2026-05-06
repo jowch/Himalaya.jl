@@ -464,4 +464,212 @@ end
             end
         end
     end
+
+    # ── Compare-page route shapes ──────────────────────────────────────────
+    # Pin the create + GET + 409 + delete + messages shapes per spec §REST API
+    # so a future schema drift is caught before the frontend type ever reaches
+    # production. The 409 conflict body shape is from spec lines 286-310.
+
+    function _compare_setup(tmp::String)
+        analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
+        mkpath(analysis_dir)
+        cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
+           joinpath(analysis_dir, "example_tot.dat"))
+        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+        exp_id = HimalayaUI.init_experiment!(db; path=tmp,
+            data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
+        s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, label="D1")
+        e_id = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
+        HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
+        (db = db, exposure_id = e_id, experiment_id = exp_id)
+    end
+
+    function _compare_create_body(eid::Int)
+        Dict{Symbol,Any}(:title => "T",
+            :members => [Dict(:exposure_id => eid, :display_order => 0,
+                              :snapshot => Dict(:effective_peaks => [],
+                                                :confirmed_index => nothing,
+                                                :analysis_inputs_hash => "sha256:zero"))])
+    end
+
+    @testset "POST /api/comparisons → full Comparison shape" begin
+        mktempdir() do tmp
+            ctx = _compare_setup(tmp)
+            with_test_server(ctx.db) do port, base
+                r = HTTP.post("$base/api/comparisons";
+                    body = JSON3.write(_compare_create_body(ctx.exposure_id)),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username"   => "alice"])
+                @test r.status == 201
+                body = JSON3.read(String(r.body))
+                assert_keys(body, [
+                    :id, :title, :description, :content_hash,
+                    :created_by, :created_at, :updated_at,
+                    :forked_from_id, :forked_at_hash, :forked_from_title,
+                    :members,
+                ])
+                @test body.id isa Integer
+                @test length(body.members) == 1
+                # Member shape pin.
+                m_keys = [
+                    :id, :comparison_id, :exposure_id, :display_order,
+                    :band_height, :y_offset, :normalization,
+                    :color_override, :label_override,
+                    :q_window_min, :q_window_max,
+                    :peak_display, :snapshot, :is_stale,
+                    :created_by, :created_at,
+                ]
+                assert_keys(body.members[1], m_keys)
+            end
+        end
+    end
+
+    @testset "GET /api/comparisons/:id → same Comparison shape" begin
+        mktempdir() do tmp
+            ctx = _compare_setup(tmp)
+            with_test_server(ctx.db) do port, base
+                r1 = HTTP.post("$base/api/comparisons";
+                    body = JSON3.write(_compare_create_body(ctx.exposure_id)),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username"   => "alice"])
+                cid = JSON3.read(String(r1.body)).id
+                r = HTTP.get("$base/api/comparisons/$cid")
+                @test r.status == 200
+                body = JSON3.read(String(r.body))
+                assert_keys(body, [
+                    :id, :title, :description, :content_hash,
+                    :created_by, :created_at, :updated_at,
+                    :forked_from_id, :forked_at_hash, :forked_from_title,
+                    :members,
+                ])
+            end
+        end
+    end
+
+    @testset "POST /submit → 409 conflict body shape (error envelope)" begin
+        mktempdir() do tmp
+            ctx = _compare_setup(tmp)
+            with_test_server(ctx.db) do port, base
+                r1 = HTTP.post("$base/api/comparisons";
+                    body = JSON3.write(_compare_create_body(ctx.exposure_id)),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username"   => "alice"])
+                cmp = JSON3.read(String(r1.body))
+                m_id = cmp.members[1].id
+
+                r = HTTP.post("$base/api/comparisons/$(cmp.id)/submit";
+                    body = JSON3.write(Dict(:title => "x", :description => nothing,
+                        :expected_content_hash => "sha256:stale",
+                        :members => [Dict(:id => m_id, :exposure_id => ctx.exposure_id,
+                                          :display_order => 0,
+                                          :snapshot => Dict(:effective_peaks => [],
+                                                            :confirmed_index => nothing,
+                                                            :analysis_inputs_hash => "sha256:zero"))])),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username"   => "alice"],
+                    status_exception = false)
+                @test r.status == 409
+                body = JSON3.read(String(r.body))
+                # Spec lines 286-310 fix the envelope: error + current_hash +
+                # current_state. current_state mirrors GET /api/comparisons/:id.
+                assert_keys(body, [:error, :current_hash, :current_state])
+                @test body.error == "conflict"
+                @test body.current_hash == cmp.content_hash
+                assert_keys(body.current_state, [
+                    :id, :title, :description, :content_hash,
+                    :created_by, :created_at, :updated_at,
+                    :forked_from_id, :forked_at_hash, :forked_from_title,
+                    :members,
+                ])
+            end
+        end
+    end
+
+    @testset "DELETE /api/comparisons/:id → DeleteResponse shape" begin
+        mktempdir() do tmp
+            ctx = _compare_setup(tmp)
+            with_test_server(ctx.db) do port, base
+                r1 = HTTP.post("$base/api/comparisons";
+                    body = JSON3.write(_compare_create_body(ctx.exposure_id)),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username"   => "alice"])
+                cid = JSON3.read(String(r1.body)).id
+                r = HTTP.delete("$base/api/comparisons/$cid";
+                    headers = ["X-Username" => "alice"])
+                @test r.status == 200
+                body = JSON3.read(String(r.body))
+                assert_keys(body, [:id, :deleted, :event_id])
+                @test body.deleted === true
+            end
+        end
+    end
+
+    @testset "POST /api/comparisons/:id/messages → ComparisonMessage shape" begin
+        mktempdir() do tmp
+            ctx = _compare_setup(tmp)
+            with_test_server(ctx.db) do port, base
+                r1 = HTTP.post("$base/api/comparisons";
+                    body = JSON3.write(_compare_create_body(ctx.exposure_id)),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username"   => "alice"])
+                cid = JSON3.read(String(r1.body)).id
+                r = HTTP.post("$base/api/comparisons/$cid/messages";
+                    body = JSON3.write(Dict(:body => "hello")),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username"   => "alice"])
+                @test r.status == 201
+                body = JSON3.read(String(r.body))
+                assert_keys(body, [:id, :comparison_id, :author_id, :author,
+                                   :body, :created_at])
+            end
+        end
+    end
+
+    @testset "GET /api/comparisons/:id/messages → ComparisonMessage[] shape" begin
+        mktempdir() do tmp
+            ctx = _compare_setup(tmp)
+            with_test_server(ctx.db) do port, base
+                r1 = HTTP.post("$base/api/comparisons";
+                    body = JSON3.write(_compare_create_body(ctx.exposure_id)),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username"   => "alice"])
+                cid = JSON3.read(String(r1.body)).id
+                HTTP.post("$base/api/comparisons/$cid/messages";
+                    body = JSON3.write(Dict(:body => "hi")),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username"   => "alice"])
+                r = HTTP.get("$base/api/comparisons/$cid/messages")
+                @test r.status == 200
+                msgs = JSON3.read(String(r.body))
+                @test !isempty(msgs)
+                expected = [:id, :comparison_id, :author_id, :author,
+                            :body, :created_at]
+                for m in msgs
+                    assert_keys(m, expected)
+                end
+            end
+        end
+    end
+
+    @testset "GET /api/comparisons (listing) → summary row shape (no members nested)" begin
+        mktempdir() do tmp
+            ctx = _compare_setup(tmp)
+            with_test_server(ctx.db) do port, base
+                HTTP.post("$base/api/comparisons";
+                    body = JSON3.write(_compare_create_body(ctx.exposure_id)),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username"   => "alice"])
+                r = HTTP.get("$base/api/comparisons")
+                @test r.status == 200
+                rows = JSON3.read(String(r.body))
+                @test !isempty(rows)
+                expected = [:id, :title, :description, :content_hash,
+                            :created_by, :created_at, :updated_at,
+                            :forked_from_id, :forked_at_hash]
+                for row in rows
+                    assert_keys(row, expected)
+                end
+            end
+        end
+    end
 end

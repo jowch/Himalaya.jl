@@ -462,3 +462,499 @@ end
         end
     end
 end
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 2 Task 2.2 — REST routes (`routes_comparisons.jl`).
+#
+# Covers happy + sad paths for every route per spec §REST API + the
+# 409-on-stale-hash contract per spec lines 273-310. Idempotency-replay
+# rows for the comparison kinds live in `test_idempotency_replay_invariant.jl`.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Build a request body for POST /api/comparisons.
+function _create_body(exposure_id::Int; title::String = "T", members_extra...)
+    snap = Dict(:effective_peaks => [], :confirmed_index => nothing,
+                :analysis_inputs_hash => "sha256:zero")
+    members = [Dict{Symbol,Any}(:exposure_id => exposure_id,
+                                :display_order => 0,
+                                :snapshot => snap)]
+    Dict{Symbol, Any}(:title => title, :members => members, members_extra...)
+end
+
+@testset "Comparisons REST routes" begin
+
+    @testset "POST /api/comparisons: 400 on zero members" begin
+        mktempdir() do tmp
+            ctx = _setup_analyzed_exposure(tmp)
+            with_test_server(ctx.db) do port, base
+                r = HTTP.post("$base/api/comparisons";
+                    body = JSON3.write(Dict(:title => "T", :members => [])),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username"   => "alice"],
+                    status_exception = false)
+                @test r.status == 400
+            end
+        end
+    end
+
+    @testset "POST /api/comparisons: 201 + canonical body shape" begin
+        mktempdir() do tmp
+            ctx = _setup_analyzed_exposure(tmp)
+            with_test_server(ctx.db) do port, base
+                # Use the live analysis hash in the snapshot so is_stale is false.
+                cur_hash = HimalayaUI.read_inputs_hash(ctx.db, ctx.exposure_id)
+                fresh_snap = Dict(:effective_peaks => [], :confirmed_index => nothing,
+                                  :analysis_inputs_hash => cur_hash)
+                body_in = Dict{Symbol,Any}(:title => "T",
+                    :members => [Dict(:exposure_id => ctx.exposure_id,
+                                      :display_order => 0,
+                                      :snapshot => fresh_snap)])
+                r = HTTP.post("$base/api/comparisons";
+                    body = JSON3.write(body_in),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username"   => "alice"])
+                @test r.status == 201
+                body = JSON3.read(String(r.body))
+                @test body.id isa Integer
+                @test body.title == "T"
+                @test startswith(body.content_hash, "sha256:")
+                @test body.created_by !== nothing
+                @test body.forked_from_id === nothing
+                @test length(body.members) == 1
+                @test body.members[1].exposure_id == ctx.exposure_id
+                @test body.members[1].is_stale == false
+                @test body.members[1].snapshot !== nothing
+            end
+        end
+    end
+
+    @testset "POST /api/comparisons: dispatcher fallback fills missing snapshot from server" begin
+        mktempdir() do tmp
+            ctx = _setup_analyzed_exposure(tmp)
+            with_test_server(ctx.db) do port, base
+                # Send a member WITHOUT a snapshot — the route should fall
+                # back to compute_member_snapshot(db, exposure_id) before
+                # apply_event! (the dispatcher errors on missing snapshot).
+                no_snap_body = Dict{Symbol,Any}(:title => "T",
+                    :members => [Dict(:exposure_id => ctx.exposure_id,
+                                      :display_order => 0)])
+                r = HTTP.post("$base/api/comparisons";
+                    body = JSON3.write(no_snap_body),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username"   => "alice"])
+                @test r.status == 201
+                body = JSON3.read(String(r.body))
+                snap = body.members[1].snapshot
+                @test haskey(snap, :effective_peaks)
+                @test haskey(snap, :confirmed_index)
+                @test haskey(snap, :analysis_inputs_hash)
+            end
+        end
+    end
+
+    @testset "POST /api/comparisons: fork payload echoes forked_from_id + forked_at_hash" begin
+        mktempdir() do tmp
+            ctx = _setup_analyzed_exposure(tmp)
+            with_test_server(ctx.db) do port, base
+                # First create a parent.
+                r1 = HTTP.post("$base/api/comparisons";
+                    body = JSON3.write(_create_body(ctx.exposure_id; title="parent")),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username"   => "alice"])
+                parent = JSON3.read(String(r1.body))
+                # Now fork it.
+                fork_body = _create_body(ctx.exposure_id; title="fork-of-parent",
+                    forked_from_id = parent.id,
+                    forked_at_hash = parent.content_hash)
+                r2 = HTTP.post("$base/api/comparisons";
+                    body = JSON3.write(fork_body),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username"   => "bob"])
+                @test r2.status == 201
+                fork = JSON3.read(String(r2.body))
+                @test fork.forked_from_id    == parent.id
+                @test fork.forked_at_hash    == parent.content_hash
+                @test fork.forked_from_title == "parent"
+            end
+        end
+    end
+
+    @testset "GET /api/comparisons/:id: 404 when missing, 200 when present" begin
+        mktempdir() do tmp
+            ctx = _setup_analyzed_exposure(tmp)
+            with_test_server(ctx.db) do port, base
+                r404 = HTTP.get("$base/api/comparisons/9999";
+                    status_exception = false)
+                @test r404.status == 404
+
+                r1 = HTTP.post("$base/api/comparisons";
+                    body = JSON3.write(_create_body(ctx.exposure_id)),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username"   => "alice"])
+                cmp = JSON3.read(String(r1.body))
+                r2 = HTTP.get("$base/api/comparisons/$(cmp.id)")
+                @test r2.status == 200
+                body = JSON3.read(String(r2.body))
+                @test body.id == cmp.id
+                @test length(body.members) == 1
+            end
+        end
+    end
+
+    @testset "GET /api/comparisons (global listing) and per-experiment listing" begin
+        mktempdir() do tmp
+            ctx = _setup_analyzed_exposure(tmp)
+            with_test_server(ctx.db) do port, base
+                HTTP.post("$base/api/comparisons";
+                    body = JSON3.write(_create_body(ctx.exposure_id)),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username"   => "alice"])
+                r = HTTP.get("$base/api/comparisons")
+                @test r.status == 200
+                @test length(JSON3.read(String(r.body))) == 1
+
+                r2 = HTTP.get("$base/api/experiments/$(ctx.experiment_id)/comparisons")
+                @test r2.status == 200
+                @test length(JSON3.read(String(r2.body))) == 1
+            end
+        end
+    end
+
+    @testset "GET /api/comparisons/:id/forks lists forks (and is empty when none)" begin
+        mktempdir() do tmp
+            ctx = _setup_analyzed_exposure(tmp)
+            with_test_server(ctx.db) do port, base
+                r1 = HTTP.post("$base/api/comparisons";
+                    body = JSON3.write(_create_body(ctx.exposure_id; title="parent")),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username"   => "alice"])
+                parent = JSON3.read(String(r1.body))
+
+                forks_empty = JSON3.read(String(HTTP.get(
+                    "$base/api/comparisons/$(parent.id)/forks").body))
+                @test isempty(forks_empty)
+
+                HTTP.post("$base/api/comparisons";
+                    body = JSON3.write(_create_body(ctx.exposure_id; title="fork",
+                        forked_from_id = parent.id, forked_at_hash = parent.content_hash)),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username"   => "bob"])
+                forks = JSON3.read(String(HTTP.get(
+                    "$base/api/comparisons/$(parent.id)/forks").body))
+                @test length(forks) == 1
+            end
+        end
+    end
+
+    @testset "POST /submit: 403 for non-author" begin
+        mktempdir() do tmp
+            ctx = _setup_analyzed_exposure(tmp)
+            with_test_server(ctx.db) do port, base
+                r1 = HTTP.post("$base/api/comparisons";
+                    body = JSON3.write(_create_body(ctx.exposure_id)),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username"   => "alice"])
+                cmp = JSON3.read(String(r1.body))
+
+                # Bob tries to submit Alice's comparison → 403.
+                r2 = HTTP.post("$base/api/comparisons/$(cmp.id)/submit";
+                    body = JSON3.write(Dict(:title => "T", :members => [],
+                                            :expected_content_hash => cmp.content_hash)),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username"   => "bob"],
+                    status_exception = false)
+                @test r2.status == 403
+            end
+        end
+    end
+
+    @testset "POST /submit: 403 for orphaned author (NULL created_by)" begin
+        mktempdir() do tmp
+            ctx = _setup_analyzed_exposure(tmp)
+            with_test_server(ctx.db) do port, base
+                r1 = HTTP.post("$base/api/comparisons";
+                    body = JSON3.write(_create_body(ctx.exposure_id)),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username"   => "alice"])
+                cmp = JSON3.read(String(r1.body))
+
+                # Force created_by to NULL (simulates the user row being deleted).
+                DBInterface.execute(ctx.db,
+                    "UPDATE comparisons SET created_by = NULL WHERE id = ?", [cmp.id])
+
+                # Even Alice can't submit now.
+                r2 = HTTP.post("$base/api/comparisons/$(cmp.id)/submit";
+                    body = JSON3.write(Dict(:title => "T", :members => [],
+                                            :expected_content_hash => cmp.content_hash)),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username"   => "alice"],
+                    status_exception = false)
+                @test r2.status == 403
+                # Spec §Authorship: "no author" detail in the error body.
+                # Body shape is just {error}; the orphan path simply 403s.
+                err = JSON3.read(String(r2.body))
+                @test haskey(err, :error)
+            end
+        end
+    end
+
+    @testset "POST /submit: 409 on expected_content_hash mismatch (full body shape)" begin
+        mktempdir() do tmp
+            ctx = _setup_analyzed_exposure(tmp)
+            with_test_server(ctx.db) do port, base
+                r1 = HTTP.post("$base/api/comparisons";
+                    body = JSON3.write(_create_body(ctx.exposure_id)),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username"   => "alice"])
+                cmp = JSON3.read(String(r1.body))
+                m_id = cmp.members[1].id
+
+                # Submit with a stale expected_content_hash → 409.
+                r2 = HTTP.post("$base/api/comparisons/$(cmp.id)/submit";
+                    body = JSON3.write(Dict(:title => "T", :description => nothing,
+                        :expected_content_hash => "sha256:oldgarbage",
+                        :members => [Dict(:id => m_id, :exposure_id => ctx.exposure_id,
+                                          :display_order => 0,
+                                          :snapshot => Dict(:effective_peaks => [],
+                                                            :confirmed_index => nothing,
+                                                            :analysis_inputs_hash => "sha256:zero"))])),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username"   => "alice"],
+                    status_exception = false)
+                @test r2.status == 409
+                body = JSON3.read(String(r2.body))
+                @test body.error == "conflict"
+                @test body.current_hash == cmp.content_hash
+                # current_state mirrors GET /api/comparisons/:id shape.
+                @test body.current_state.id == cmp.id
+                @test body.current_state.title == cmp.title
+                @test haskey(body.current_state, :members)
+                @test length(body.current_state.members) == 1
+            end
+        end
+    end
+
+    @testset "POST /submit: 200 + new state with correct expected_content_hash" begin
+        mktempdir() do tmp
+            ctx = _setup_analyzed_exposure(tmp)
+            with_test_server(ctx.db) do port, base
+                r1 = HTTP.post("$base/api/comparisons";
+                    body = JSON3.write(_create_body(ctx.exposure_id; title="orig")),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username"   => "alice"])
+                cmp = JSON3.read(String(r1.body))
+                m_id = cmp.members[1].id
+
+                r2 = HTTP.post("$base/api/comparisons/$(cmp.id)/submit";
+                    body = JSON3.write(Dict(:title => "renamed", :description => "d2",
+                        :expected_content_hash => cmp.content_hash,
+                        :members => [Dict(:id => m_id, :exposure_id => ctx.exposure_id,
+                                          :display_order => 0,
+                                          :snapshot => Dict(:effective_peaks => [],
+                                                            :confirmed_index => nothing,
+                                                            :analysis_inputs_hash => "sha256:zero"))])),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username"   => "alice"])
+                @test r2.status == 200
+                body = JSON3.read(String(r2.body))
+                @test body.title == "renamed"
+                @test body.description == "d2"
+                @test body.content_hash != cmp.content_hash
+            end
+        end
+    end
+
+    @testset "DELETE /:id: 403 for non-author, 200 + cascade for author" begin
+        mktempdir() do tmp
+            ctx = _setup_analyzed_exposure(tmp)
+            with_test_server(ctx.db) do port, base
+                r1 = HTTP.post("$base/api/comparisons";
+                    body = JSON3.write(_create_body(ctx.exposure_id)),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username"   => "alice"])
+                cmp = JSON3.read(String(r1.body))
+
+                # Post a chat message so the cascade can be observed.
+                HTTP.post("$base/api/comparisons/$(cmp.id)/messages";
+                    body = JSON3.write(Dict(:body => "hello")),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username"   => "alice"])
+
+                # Bob can't delete.
+                r403 = HTTP.delete("$base/api/comparisons/$(cmp.id)";
+                    headers = ["X-Username" => "bob"],
+                    status_exception = false)
+                @test r403.status == 403
+
+                # Alice can.
+                r2 = HTTP.delete("$base/api/comparisons/$(cmp.id)";
+                    headers = ["X-Username" => "alice"])
+                @test r2.status == 200
+                body = JSON3.read(String(r2.body))
+                @test body.deleted == true
+
+                # Cascade: comparisons + members + messages all gone.
+                @test HimalayaUI.fetch_comparison_with_members(ctx.db, cmp.id) === nothing
+                n_members = first(Tables.rowtable(DBInterface.execute(ctx.db,
+                    "SELECT COUNT(*) AS c FROM comparison_members WHERE comparison_id = ?",
+                    [cmp.id]))).c
+                @test n_members == 0
+                n_msgs = first(Tables.rowtable(DBInterface.execute(ctx.db,
+                    "SELECT COUNT(*) AS c FROM comparison_messages WHERE comparison_id = ?",
+                    [cmp.id]))).c
+                @test n_msgs == 0
+            end
+        end
+    end
+
+    @testset "GET / POST /api/comparisons/:id/messages" begin
+        mktempdir() do tmp
+            ctx = _setup_analyzed_exposure(tmp)
+            with_test_server(ctx.db) do port, base
+                r1 = HTTP.post("$base/api/comparisons";
+                    body = JSON3.write(_create_body(ctx.exposure_id)),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username"   => "alice"])
+                cmp = JSON3.read(String(r1.body))
+
+                # Empty initially.
+                r_empty = HTTP.get("$base/api/comparisons/$(cmp.id)/messages")
+                @test r_empty.status == 200
+                @test isempty(JSON3.read(String(r_empty.body)))
+
+                # 401 without X-Username.
+                r401 = HTTP.post("$base/api/comparisons/$(cmp.id)/messages";
+                    body = JSON3.write(Dict(:body => "anon")),
+                    headers = ["Content-Type" => "application/json"],
+                    status_exception = false)
+                @test r401.status == 401
+
+                # 400 on empty body.
+                r400 = HTTP.post("$base/api/comparisons/$(cmp.id)/messages";
+                    body = JSON3.write(Dict(:body => "   ")),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username"   => "alice"],
+                    status_exception = false)
+                @test r400.status == 400
+
+                # 201 + chat thread populated.
+                r2 = HTTP.post("$base/api/comparisons/$(cmp.id)/messages";
+                    body = JSON3.write(Dict(:body => "looks good")),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username"   => "bob"])
+                @test r2.status == 201
+                msg = JSON3.read(String(r2.body))
+                @test msg.author == "bob"
+                @test msg.body == "looks good"
+                @test msg.comparison_id == cmp.id
+
+                r_list = HTTP.get("$base/api/comparisons/$(cmp.id)/messages")
+                @test length(JSON3.read(String(r_list.body))) == 1
+            end
+        end
+    end
+
+    @testset "Idempotent retry of successful submit (200) → cached, no duplicate event" begin
+        mktempdir() do tmp
+            ctx = _setup_analyzed_exposure(tmp)
+            with_test_server(ctx.db) do port, base
+                r1 = HTTP.post("$base/api/comparisons";
+                    body = JSON3.write(_create_body(ctx.exposure_id; title="orig")),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username"   => "alice"])
+                cmp = JSON3.read(String(r1.body))
+                m_id = cmp.members[1].id
+
+                op_id = "submit-replay-$(rand(UInt32))"
+                payload_body = JSON3.write(Dict(:title => "renamed",
+                    :description => nothing,
+                    :expected_content_hash => cmp.content_hash,
+                    :members => [Dict(:id => m_id, :exposure_id => ctx.exposure_id,
+                                      :display_order => 0,
+                                      :snapshot => Dict(:effective_peaks => [],
+                                                        :confirmed_index => nothing,
+                                                        :analysis_inputs_hash => "sha256:zero"))]))
+                hdrs = ["Content-Type" => "application/json",
+                        "X-Username" => "alice",
+                        "X-Client-Op-Id" => op_id]
+
+                pre_count = first(Tables.rowtable(DBInterface.execute(ctx.db,
+                    "SELECT COUNT(*) AS c FROM user_actions WHERE action = 'comparison_submitted'"))).c
+
+                r2 = HTTP.post("$base/api/comparisons/$(cmp.id)/submit";
+                    body = payload_body, headers = hdrs)
+                @test r2.status == 200
+                body1 = String(copy(r2.body))
+
+                # Replay → same op_id → cached, byte-identical, no extra event row.
+                r3 = HTTP.post("$base/api/comparisons/$(cmp.id)/submit";
+                    body = payload_body, headers = hdrs)
+                @test r3.status == 200
+                @test String(copy(r3.body)) == body1
+
+                post_count = first(Tables.rowtable(DBInterface.execute(ctx.db,
+                    "SELECT COUNT(*) AS c FROM user_actions WHERE action = 'comparison_submitted'"))).c
+                @test post_count - pre_count == 1
+            end
+        end
+    end
+
+    @testset "409 retry contract: status >= 400 NOT cached → conflict re-evaluates" begin
+        mktempdir() do tmp
+            ctx = _setup_analyzed_exposure(tmp)
+            with_test_server(ctx.db) do port, base
+                r1 = HTTP.post("$base/api/comparisons";
+                    body = JSON3.write(_create_body(ctx.exposure_id; title="orig")),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username"   => "alice"])
+                cmp = JSON3.read(String(r1.body))
+                m_id = cmp.members[1].id
+
+                op_id = "conflict-retry-$(rand(UInt32))"
+                stale_payload = JSON3.write(Dict(:title => "x",
+                    :description => nothing,
+                    :expected_content_hash => "sha256:stale",
+                    :members => [Dict(:id => m_id, :exposure_id => ctx.exposure_id,
+                                      :display_order => 0,
+                                      :snapshot => Dict(:effective_peaks => [],
+                                                        :confirmed_index => nothing,
+                                                        :analysis_inputs_hash => "sha256:zero"))]))
+                hdrs = ["Content-Type" => "application/json",
+                        "X-Username" => "alice",
+                        "X-Client-Op-Id" => op_id]
+
+                # First call → 409 (stale hash). 4xx not cached.
+                r_a = HTTP.post("$base/api/comparisons/$(cmp.id)/submit";
+                    body = stale_payload, headers = hdrs,
+                    status_exception = false)
+                @test r_a.status == 409
+
+                # Second call → still 409, conflict re-evaluated (not a
+                # cached replay of the prior 409 — the OP_LOCKS entry is
+                # cleaned up after a 4xx, and the cache is empty).
+                r_b = HTTP.post("$base/api/comparisons/$(cmp.id)/submit";
+                    body = stale_payload, headers = hdrs,
+                    status_exception = false)
+                @test r_b.status == 409
+
+                # Now resolve the conflict by submitting with the correct
+                # hash but a fresh op_id (the spec's prescribed escape valve).
+                resolve_payload = JSON3.write(Dict(:title => "renamed",
+                    :description => nothing,
+                    :expected_content_hash => cmp.content_hash,
+                    :members => [Dict(:id => m_id, :exposure_id => ctx.exposure_id,
+                                      :display_order => 0,
+                                      :snapshot => Dict(:effective_peaks => [],
+                                                        :confirmed_index => nothing,
+                                                        :analysis_inputs_hash => "sha256:zero"))]))
+                r_c = HTTP.post("$base/api/comparisons/$(cmp.id)/submit";
+                    body = resolve_payload,
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username" => "alice",
+                               "X-Client-Op-Id" => "fresh-$(rand(UInt32))"])
+                @test r_c.status == 200
+            end
+        end
+    end
+end
+

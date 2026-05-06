@@ -547,23 +547,23 @@ function _update_view_for_comparison_submitted!(db, entity_id, payload, event_id
         _insert_comparison_member!(db, Int(entity_id), m, user_id, now_str)
     end
 
-    # Optional title/description update + content_hash recompute + updated_at bump.
+    # Optional title/description update — must happen BEFORE the hash
+    # recompute, otherwise compute_content_hash sees the pre-update title and
+    # the content_hash never moves on a rename-only submit (caught by the
+    # routes' "rename + same membership → hash changes" regression test).
     new_title = haskey(payload, :title) ? String(payload.title) : nothing
     new_desc  = haskey(payload, :description) ?
                 (payload.description === nothing ? nothing : String(payload.description)) :
                 nothing
-    new_hash = compute_content_hash(db, Int(entity_id))
-    if new_title === nothing
+    if new_title !== nothing
         DBInterface.execute(db,
-            "UPDATE comparisons SET content_hash = ?, updated_at = ? WHERE id = ?",
-            [new_hash, now_str, Int(entity_id)])
-    else
-        DBInterface.execute(db,
-            """UPDATE comparisons
-               SET title = ?, description = ?, content_hash = ?, updated_at = ?
-               WHERE id = ?""",
-            [new_title, new_desc, new_hash, now_str, Int(entity_id)])
+            "UPDATE comparisons SET title = ?, description = ? WHERE id = ?",
+            [new_title, new_desc, Int(entity_id)])
     end
+    new_hash = compute_content_hash(db, Int(entity_id))
+    DBInterface.execute(db,
+        "UPDATE comparisons SET content_hash = ?, updated_at = ? WHERE id = ?",
+        [new_hash, now_str, Int(entity_id)])
     return nothing
 end
 

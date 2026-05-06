@@ -23,6 +23,7 @@ include("routes_messages.jl")
 include("routes_trace.jl")
 include("routes_analysis.jl")
 include("routes_export.jl")
+include("routes_comparisons.jl")
 include("server.jl")
 
 export main, ExperimentConfig, load_config, list_config_types, load_builtin_config, resolve_files, config_to_toml, config_from_db
