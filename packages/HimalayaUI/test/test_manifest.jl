@@ -31,6 +31,10 @@ end
 
     # Empty segments are skipped
     @test expand_filename_field(";JC001;;JC003;") == ["JC001", "JC003"]
+
+    # Edge cases: empty cell and all-delimiter cell both yield no filenames
+    @test expand_filename_field("") == String[]
+    @test expand_filename_field(" , ; ") == String[]
 end
 
 const MANIFEST_CSV = """
@@ -105,4 +109,27 @@ const MANIFEST_MULTIRANGE_QUOTED = """
         ]
         @test samples[2].notes_exposure == "Try to get stronger peaks; spin"
     end
+end
+
+@testset "parse_manifest: multi-range with named-header columns" begin
+    # Same multi-range payload, but resolved via header_row=1 + String column
+    # names instead of positional Int indices. Exercises the CSV.jl named-
+    # column code path with the new field-expander.
+    cfg = HimalayaUI.ExperimentConfig(
+        "x", "", "manifest.csv",
+        nothing, nothing, "A-1",
+        ",", 0, 1,
+        "#", "Sample", "Name", "Filename(s)",
+        "Notes (Sample)", "Notes (Exposure)",
+        "data", "analysis", "simple",
+        "{name}.dat", "{name}.tiff",
+    )
+    samples = parse_manifest(cfg, IOBuffer(MANIFEST_MULTIRANGE_QUOTED))
+    @test length(samples) == 2
+    @test samples[2].label == "D10"
+    @test samples[2].filenames == [
+        "JC037", "JC038", "JC039", "JC040",
+        "JC153", "JC154", "JC155", "JC156",
+        "JC161", "JC162", "JC163", "JC164",
+    ]
 end

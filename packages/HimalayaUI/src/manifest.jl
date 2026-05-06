@@ -55,9 +55,13 @@ Row tokenization is delegated to CSV.jl, so RFC 4180-style quoted fields
 contain multiple ranges separated by `;` or `,` — see
 [`expand_filename_field`](@ref).
 
-For each `[manifest]` column field, if the config value is a `String` and a
-header row is present (`header_row > 0`), the column is looked up by that
-header name; otherwise the value is treated as a 1-based positional index.
+Column resolution happens in two steps. First, CSV.jl produces a list of
+column names: the actual header values when `header_row > 0`, or synthetic
+`Column1`, `Column2`, … when `header_row == 0` (positional mode). Second,
+each `[manifest]` column entry from `cfg` is resolved against that list:
+a `String` value matches a column by name (warns and yields an empty field
+on miss), and an `Int` value selects the i-th column (1-based). Cells are
+then accessed via `getproperty(row, sym)` against the resolved Symbols.
 
 Rows whose sample_id column does not parse as `Int` are silently skipped
 (handles lab-notebook section headers and stray preamble rows).
@@ -108,7 +112,7 @@ function parse_manifest(cfg::ExperimentConfig, source)::Vector{ManifestSample}
     function safe_get(row, sym::Symbol)::String
         sym == Symbol("") && return ""
         v = getproperty(row, sym)
-        v === missing ? "" : String(strip(String(v)))
+        v === missing ? "" : String(strip(v))
     end
 
     samples = ManifestSample[]
