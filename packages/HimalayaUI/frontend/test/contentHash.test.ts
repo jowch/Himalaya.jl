@@ -18,6 +18,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { contentHash, canonicalJson } from "../src/lib/comparison/contentHash";
+import type { ContentHashInput } from "../src/lib/comparison/contentHash";
 import { webcrypto } from "node:crypto";
 
 // JSDOM doesn't ship `crypto.subtle`. Polyfill from Node's webcrypto so the
@@ -148,7 +149,12 @@ describe("contentHash cross-language fixture parity", () => {
 
   it("matches the expected SHA-256 hash from the fixture", async () => {
     const f = loadFixture();
-    const h = await contentHash(f.input);
+    // The fixture's `members` is typed loosely as `Record<string, unknown>[]`
+    // (the JSON loader can't infer the precise per-member shape). The fixture
+    // data IS structurally a valid ContentHashInput at runtime — assert that
+    // contract via the cast so `tsc --noEmit` accepts the call without
+    // weakening `ContentHashInput.members` itself.
+    const h = await contentHash(f.input as ContentHashInput);
     expect(h).toBe(f.expected_hash);
   });
 });
