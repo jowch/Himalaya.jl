@@ -636,6 +636,9 @@ export function TraceViewer({
 			const dot = overlay!.querySelector<SVGCircleElement>(
 				"[data-role=cursor-dot]",
 			)!;
+			const label = overlay!.querySelector<SVGTextElement>(
+				"[data-role=cursor-label]",
+			)!
 
 			if (!insideInterior(relX, relY, bbox.width, bbox.height)) {
 				line.setAttribute("opacity", "0");
@@ -677,6 +680,9 @@ export function TraceViewer({
 			const dot = overlay!.querySelector<SVGCircleElement>(
 				"[data-role=cursor-dot]",
 			)!;
+			const label = overlay!.querySelector<SVGTextElement>(
+				"[data-role=cursor-label]",
+			)!
 			line.setAttribute("opacity", "0");
 			dot.setAttribute("opacity", "0");
 			label.setAttribute("opacity", "0");
