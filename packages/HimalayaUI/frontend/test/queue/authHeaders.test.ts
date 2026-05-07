@@ -18,6 +18,7 @@
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
+import { request } from "../../src/api";
 import { peakAddMutator } from "../../src/lib/queue/mutators/peakAdd";
 import { peakRemoveMutator } from "../../src/lib/queue/mutators/peakRemove";
 import {
@@ -258,4 +259,36 @@ describe("Auth-header propagation contract — every mutator carries audit + ide
       }
     });
   }
+});
+
+describe("Auth-header propagation contract — GET requests carry X-Username when opts provided", () => {
+  let originalFetch: typeof fetch;
+  beforeEach(() => { originalFetch = globalThis.fetch; });
+
+  it("request() sends X-Username on GET when opts.username is set", async () => {
+    const captured: { url: string; method: string; headers: Headers }[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : String(input);
+      const method = init?.method ?? "GET";
+      const headers = new Headers(init?.headers ?? {});
+      captured.push({ url, method, headers });
+      return new Response(JSON.stringify({}), { status: 200, headers: { "Content-Type": "application/json" } });
+    }) as typeof fetch;
+
+    try {
+      await request("GET", "/api/users/me/comparison-pins", undefined, {
+        username: "alice",
+        clientId: "tab-1",
+        clientOpId: "test-op-id",
+      }).catch(() => {/* response shape doesn't matter */});
+
+      expect(captured.length).toBe(1);
+      const headers = captured[0]!.headers;
+      expect(headers.get("X-Username")).toBe("alice");
+      expect(headers.get("X-Client-Id")).toBe("tab-1");
+      expect(headers.get("X-Client-Op-Id")).toBe("test-op-id");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });
