@@ -34,6 +34,11 @@ export interface MemberMetaRowProps {
    * controls dispatch through `updateMember(index, partial)`.
    */
   memberIndex?: number;
+  /**
+   * Forwarded by `MemberMetaGutter` so the parent can orchestrate HTML5
+   * drag-and-drop reorder across rows. Hooks into the grip's `onDragStart`.
+   */
+  onGripDragStart?: (e: React.DragEvent) => void;
 }
 
 const NORMALIZATION_OPTIONS: DraftMemberNormalization[] = [
@@ -57,7 +62,7 @@ function defaultLabel(member: ComparisonMember): string {
 }
 
 export function MemberMetaRow(props: MemberMetaRowProps): JSX.Element {
-  const { member, top, height, mode, memberIndex } = props;
+  const { member, top, height, mode, memberIndex, onGripDragStart } = props;
   const [expanded, setExpanded] = useState(false);
 
   const updateMember = useAppState((s) => s.updateMember);
@@ -129,6 +134,7 @@ export function MemberMetaRow(props: MemberMetaRowProps): JSX.Element {
             className="cursor-grab select-none px-1 text-fg-dim hover:text-fg"
             title="Drag to reorder"
             onClick={(e) => e.stopPropagation()}
+            {...(onGripDragStart ? { onDragStart: onGripDragStart } : {})}
           >
             ⋮⋮
           </span>
