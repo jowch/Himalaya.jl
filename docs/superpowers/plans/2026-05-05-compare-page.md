@@ -98,7 +98,6 @@ Per CLAUDE.md frontend gotchas: **never assert against Tailwind class strings.**
 | Member metadata row | `data-testid="member-meta-row"` `data-member-id={id}` `data-stale={true\|false}` | |
 | Band resize divider | `data-testid="band-divider"` `data-above-id={id}` `data-below-id={id}` | |
 | Reorder grip | `data-testid="member-reorder-grip"` `data-member-id={id}` | |
-| Peak triangle | `data-testid="peak-tick"` `data-member-id={id}` `data-peak-q={q}` `data-state={"shown"\|"labeled"\|"hidden"}` | Q in row to support hover; peak id is internal |
 | Annotation toggles | `data-testid="annotation-toggle-{peaks\|labels}"` | |
 | Grouping mode dropdown | `data-testid="grouping-mode"` `data-mode={"bySample"\|"byPhase"\|"distinct"}` | |
 | Picker modal root | `data-testid="comparison-picker"` | |
@@ -107,6 +106,8 @@ Per CLAUDE.md frontend gotchas: **never assert against Tailwind class strings.**
 | Conflict modal root | `data-testid="conflict-modal"` | |
 | Conflict modal actions | `data-testid="conflict-{discard\|overwrite\|fork}"` | |
 | Mention chip (comparison) | Reuses existing MentionChip pattern with `data-mention-type="comparison"` `data-mention-id={id}` `data-hash-drift={true\|false}` | |
+
+**No per-peak testid.** Observable Plot's `Plot.dot` marks don't accept arbitrary `data-*` attributes, so individual peak triangles can't carry a `peak-tick` testid. Per-peak interaction is unit-tested via `peakCycle.test.ts` (the cycle logic) and `MemberTraceLayer.test.tsx` (mark-arg capture); the per-band `member-trace` overlay covers band-level E2E selection. If a future change makes per-peak E2E necessary, the path is an invisible sibling SVG layer with `pointer-events: none` (see `MemberTraceLayer.tsx` for the constraint comment).
 
 **`role` usage.** Modals have `role="dialog"` + `aria-labelledby`. Picker uses `role="listbox"`/`role="option"` for the rows. Toggles and checkboxes use native semantics (no extra `role` needed).
 

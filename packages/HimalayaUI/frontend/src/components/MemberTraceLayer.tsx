@@ -248,6 +248,10 @@ export function buildMemberMarks(props: MemberMarksProps): unknown[] {
   );
 
   if (showPeakTicks && visiblePeaks.length > 0) {
+    // No per-peak `data-testid="peak-tick"`: Plot.dot doesn't pass arbitrary
+    // data-* attributes through to the rendered SVG. Per-peak interaction is
+    // unit-tested via peakCycle.test.ts + this file's mark-arg capture tests;
+    // the band-level `member-trace` overlay in MultiTracePlot covers E2E.
     marks.push(
       Plot.dot(visiblePeaks, {
         x: "q",
