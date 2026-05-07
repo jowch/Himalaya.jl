@@ -402,6 +402,65 @@ describe("<ConflictModal>", () => {
     expect(document.activeElement).toBe(discard);
   });
 
+  it("Overwrite is debounced against double-click: two synchronous clicks fire ONE mutate", async () => {
+    // queue-reviewer Fix 3: the `disabled={save.isPending}` flag flips
+    // async, so two synchronous clicks both pass the disabled check and
+    // both call `save.mutate(...)`. Each mints a fresh client_op_id so
+    // the queue's idempotency layer doesn't dedupe them — they race
+    // against the same `expected_content_hash` and the second hits a 409
+    // with the user's own just-committed state showing as "server".
+    //
+    // Guard via `overwriteInFlightRef` at the top of `handleOverwrite`:
+    // the second click reads the ref synchronously and bails before
+    // mutate runs.
+    const server = buildComparison({ id: 42, hash: "sha256:server-v1" });
+    seedDraft({ title: "Local title", members: 1, id: 42, baseHash: "sha256:stale" });
+
+    const captured: { url: string; body: unknown }[] = [];
+    let resolveResponse: ((r: Response) => void) | undefined;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : String(input);
+      const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
+      captured.push({ url, body });
+      // Hold the response open so a second click happens while the first
+      // mutation is still pending — closing the window the bug would have
+      // exploited (the ref must hold past mutate() return, not just
+      // until the response lands).
+      return new Promise<Response>((resolve) => { resolveResponse = resolve; });
+    }) as typeof fetch;
+
+    renderModal();
+    act(() => {
+      useAppState.getState().setPendingConflict(
+        new ConflictError("sha256:server-v1", server),
+      );
+    });
+    const overwrite = screen.getByTestId("conflict-overwrite");
+
+    // Two synchronous clicks. Don't use userEvent (which awaits) — we
+    // want the back-to-back-fire path the user can hit with a fast
+    // double-click before React re-renders the disabled state.
+    act(() => {
+      overwrite.click();
+      overwrite.click();
+    });
+
+    // Settle React effects so the mutation lifecycle has had a chance to
+    // run.
+    await waitFor(() => expect(captured.length).toBeGreaterThanOrEqual(1));
+    // Pin: only ONE request hit the network. Without the guard there
+    // would be two captured submits with two distinct client_op_ids.
+    expect(captured).toHaveLength(1);
+    expect(captured[0]!.url).toBe("/api/comparisons/42/submit");
+
+    // Cleanup so the held promise doesn't leak past the test.
+    if (resolveResponse) {
+      resolveResponse(new Response(JSON.stringify(buildComparison({
+        id: 42, hash: "sha256:after-overwrite",
+      })), { status: 200, headers: { "Content-Type": "application/json" } }));
+    }
+  });
+
   it("renders without exploding when local draft is null (e.g., user navigated away)", () => {
     const server = buildComparison({ id: 42, members: 3 });
     // No draft seeded — global modal must still render the server side.

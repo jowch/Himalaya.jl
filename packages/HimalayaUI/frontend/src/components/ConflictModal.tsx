@@ -168,9 +168,19 @@ export function ConflictModal(): JSX.Element | null {
   // The `useSaveComparison` post-success effect lives in ComparePageEdit, but
   // the modal navigates itself when the mutation succeeds — `save.isSuccess`
   // flips to true and we tear down the slot + navigate.
+  //
+  // Double-click guard (queue-reviewer Fix 3): `disabled={save.isPending}`
+  // flips ASYNC after the first click — both clicks of a fast double-click
+  // can pass the disabled check and both call `save.mutate(...)`. Each
+  // `mutate()` mints a fresh `client_op_id` (correct per Plan 8), so the
+  // queue's idempotency layer can't dedupe them; they race against the
+  // SAME `expected_content_hash`, the second hits a 409 against the user's
+  // own just-committed state. Read+write the ref synchronously inside
+  // `handleOverwrite` so the second invocation bails before mutate runs.
   const overwriteInFlightRef = useRef(false);
   const handleOverwrite = useCallback(() => {
     if (draft === null || serverHash === null) return;
+    if (save.isPending || overwriteInFlightRef.current) return;
     overwriteInFlightRef.current = true;
     save.mutate(buildOverwritePayload(draft, serverHash, qc));
   }, [draft, serverHash, save, qc]);
@@ -179,7 +189,8 @@ export function ConflictModal(): JSX.Element | null {
   // We deliberately read `save.data` rather than the conflict slot because the
   // save mutator's success bumps `data` to the canonical Comparison response.
   // A SECOND 409 leaves `isSuccess` false and (re-)sets `pendingConflict` via
-  // `useSaveComparison`'s effect — the modal stays open with new server state.
+  // the App-level `attachConflictBridge` subscriber — the modal stays open
+  // with new server state.
   useEffect(() => {
     if (!save.isSuccess) return;
     if (!overwriteInFlightRef.current) return;
@@ -191,6 +202,18 @@ export function ConflictModal(): JSX.Element | null {
       goToReview(response.id);
     }
   }, [save.isSuccess, save.data, discardDraft, setPendingConflict, goToReview]);
+
+  // Reset the in-flight guard on terminal error (e.g. a SECOND 409 lands).
+  // Without this, after a second-409 the ref would remain true forever and
+  // the user could never click Overwrite again — the bridge re-populates
+  // `pendingConflict` with the new server state, but the button would
+  // bail at the guard. The disabled flag flips back to false on its own
+  // because `save.isPending` settles after the error.
+  useEffect(() => {
+    if (save.error && overwriteInFlightRef.current) {
+      overwriteInFlightRef.current = false;
+    }
+  }, [save.error]);
 
   // Fork: start a fork-flavored draft from the SERVER's current state (so
   // the fork inherits the canonical truth, not the user's stale-baseHash
