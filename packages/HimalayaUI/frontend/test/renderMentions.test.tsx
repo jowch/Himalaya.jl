@@ -94,4 +94,13 @@ describe("parseMentions", () => {
     const result = parseMentions("[[comparison:42@abc]]");
     expect(result.every((s) => s.kind === "text")).toBe(true);
   });
+
+  it("parses comparison mention with hash from sha256-prefixed content_hash", () => {
+    // MentionPicker strips the "sha256:" prefix before slicing, so the
+    // parser must accept the resulting 8-char hex token.
+    const result = parseMentions("[[comparison:7@ecbebc37]]");
+    expect(result).toEqual([
+      { kind: "mention", type: "comparison", id: 7, hash: "ecbebc37" },
+    ]);
+  });
 });

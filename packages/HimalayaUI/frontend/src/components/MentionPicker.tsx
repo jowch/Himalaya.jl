@@ -24,7 +24,7 @@ interface MentionPickerProps {
  * author intended to cite.
  */
 function comparisonHash8(item: ComparisonSummary): string {
-  return item.content_hash.slice(0, 8).toLowerCase();
+  return item.content_hash.replace(/^sha256:/, "").slice(0, 8).toLowerCase();
 }
 
 function rowToken(row: PickerRow): string {
