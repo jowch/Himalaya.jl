@@ -22,13 +22,16 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { render, screen, act, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { ReactNode } from "react";
+import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
+import { useEffect, type ReactNode } from "react";
 import { ConflictModal } from "../src/components/ConflictModal";
 import { useAppState, LS_KEY } from "../src/state";
 import { ConflictError } from "../src/api";
 import type { Comparison } from "../src/api";
 import { COMPARE_DRAFT_KEY } from "../src/lib/comparison/draft";
+import {
+  attachConflictBridge, _resetConflictBridgeForTest,
+} from "../src/lib/queue/conflictBridge";
 
 function makeQc(): QueryClient {
   return new QueryClient({
@@ -91,6 +94,21 @@ function PathProbe(): JSX.Element {
   return <div data-testid="path-probe">{loc.pathname}</div>;
 }
 
+/**
+ * Mounts the App-level MutationCache → Zustand bridge for the duration of
+ * the render, mirroring what App.tsx does in production. Without this,
+ * `useSaveComparison`'s 409 throws never reach `pendingConflict` (the
+ * bridge is no longer in the hook). See `lib/queue/conflictBridge.ts`.
+ */
+function ConflictBridgeMount(): null {
+  const queryClient = useQueryClient();
+  const setPendingConflict = useAppState((s) => s.setPendingConflict);
+  useEffect(() => {
+    return attachConflictBridge(queryClient.getMutationCache(), setPendingConflict);
+  }, [queryClient, setPendingConflict]);
+  return null;
+}
+
 function renderModal(opts?: {
   initialPath?: string;
 }): { qc: QueryClient } {
@@ -102,6 +120,7 @@ function renderModal(opts?: {
         <Routes>
           <Route path="*" element={
             <>
+              <ConflictBridgeMount />
               {children}
               <PathProbe />
             </>
@@ -154,6 +173,9 @@ beforeEach(() => {
     activeDraft: null,
     username: "alice",
   });
+  // Reset the module-scoped bridged-mutationId set so a stale cache entry
+  // from a previous test doesn't suppress legitimate bridging in the next.
+  _resetConflictBridgeForTest();
 });
 
 afterEach(() => {

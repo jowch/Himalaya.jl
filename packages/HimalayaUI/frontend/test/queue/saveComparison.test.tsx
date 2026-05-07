@@ -23,6 +23,9 @@ import { ConflictError } from "../../src/api";
 import type { Comparison, ComparisonMemberInput } from "../../src/api";
 import { queryKeys, useSaveComparison } from "../../src/queries";
 import { useAppState } from "../../src/state";
+import {
+  attachConflictBridge, _resetConflictBridgeForTest,
+} from "../../src/lib/queue/conflictBridge";
 import { makeClient } from "../test-utils";
 
 const SNAP = {
@@ -312,11 +315,20 @@ describe("saveComparisonMutator — useQueueMutation suppresses toast on 409 Con
     expect(result.current.error).toBeInstanceOf(ConflictError);
   });
 
-  it("on 409, useSaveComparison populates Zustand `pendingConflict` (Phase 12 bridge)", async () => {
-    const { wrapper } = withClient();
+  it("on 409, the App-level conflictBridge populates Zustand `pendingConflict` (Phase 12 bridge)", async () => {
+    const { client, wrapper } = withClient();
     mockFetch409();
-    // Reset slot in case other tests left it set.
+    // Reset slot + bridge state in case other tests left them set.
     useAppState.setState({ pendingConflict: null });
+    _resetConflictBridgeForTest();
+    // Mount the bridge for this test, mirroring App.tsx. Lifting it out of
+    // useSaveComparison removed the per-hook race; the contract pinned here
+    // is "a 409 on a comparison_save mutation lands in the slot via the
+    // App-level subscriber" — independent of how many places mount the hook.
+    const detachBridge = attachConflictBridge(
+      client.getMutationCache(),
+      useAppState.getState().setPendingConflict,
+    );
     const { result } = renderHook(() => useSaveComparison(), { wrapper });
     act(() => {
       result.current.mutate({
@@ -326,13 +338,17 @@ describe("saveComparisonMutator — useQueueMutation suppresses toast on 409 Con
     });
     await waitFor(() => expect(result.current.isPending).toBe(false));
     // Bridge fired: the typed throw is now in Zustand for the modal to read.
+    await waitFor(() => {
+      const slot = useAppState.getState().pendingConflict;
+      expect(slot).toBeInstanceOf(ConflictError);
+    });
     const slot = useAppState.getState().pendingConflict;
-    expect(slot).toBeInstanceOf(ConflictError);
     expect(slot?.current_hash).toBe("sha256:server");
     expect(slot?.current_state?.id).toBe(42);
     // Toast still suppressed (regression on Phase 3 follow-up).
     expect(toastCalls).toEqual([]);
     // Cleanup so subsequent tests start clean.
+    detachBridge();
     useAppState.setState({ pendingConflict: null });
   });
 
