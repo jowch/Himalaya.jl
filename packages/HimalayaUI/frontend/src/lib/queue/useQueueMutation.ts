@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { newClientOpId } from "../clientOpId";
 import { showToast } from "../toast";
+import { ConflictError } from "../../api";
 import { makeDeferred, clearDeferred } from "./deferred";
 import {
   isValidationError,
@@ -10,10 +11,12 @@ import {
 } from "./errors";
 import type { FlatPayload, Mutator, RollbackContext } from "./types";
 
-export interface UseQueueMutationResult<TInput> {
+export interface UseQueueMutationResult<TInput, TResponse = unknown> {
   mutate: (input: TInput) => void;
   isPending: boolean;
   isSuccess: boolean;
+  /** Last successful response, or undefined if no mutation has succeeded yet. */
+  data: TResponse | undefined;
   error: unknown;
   reset: () => void;
 }
@@ -41,7 +44,7 @@ const MAX_BACKOFF_MS = 30_000;
 export function useQueueMutation<TInput, TScope, TResponse>(
   mutator: Mutator<TInput, TScope, TResponse>,
   scope: TScope,
-): UseQueueMutationResult<TInput> {
+): UseQueueMutationResult<TInput, TResponse> {
   const qc = useQueryClient();
 
   type Payload = FlatPayload<TInput, TScope>;
@@ -91,6 +94,13 @@ export function useQueueMutation<TInput, TScope, TResponse>(
         if (mutator.treats404AsSuccess && is404Error(err)) return;
         context?.restore?.();
         if (isValidationError(err)) {
+          // ConflictError (409, content_hash drift) is surfaced via the
+          // typed throw on `useMutation.error` and rendered by the conflict
+          // modal — suppressing the toast keeps the user from seeing a
+          // generic "Couldn't save comparison" banner stacked on top of the
+          // dedicated diff UI. The same goes for any future typed-throw that
+          // routes through a bespoke error surface; gate via instanceof.
+          if (err instanceof ConflictError) return;
           showToast(buildValidationMessage(mutator.kind, err), "error");
         }
         // Infrastructure errors: handled by retry; the banner reads from
@@ -124,6 +134,7 @@ export function useQueueMutation<TInput, TScope, TResponse>(
     mutate,
     isPending: mutation.isPending,
     isSuccess: mutation.isSuccess,
+    data: mutation.data ?? undefined,
     error: mutation.error,
     reset: mutation.reset,
   };

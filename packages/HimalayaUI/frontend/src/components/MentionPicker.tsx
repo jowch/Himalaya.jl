@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAppState } from "../state";
-import { useIndices, usePeaks, useExposures, useSamples } from "../queries";
+import { useIndices, usePeaks, useExposures, useSamples, useComparisons } from "../queries";
 import { phaseColor } from "../phases";
-import type { IndexEntry, Peak, Exposure, Sample } from "../api";
+import type { IndexEntry, Peak, Exposure, Sample, ComparisonSummary } from "../api";
 
 type PickerRow =
-  | { kind: "index";    item: IndexEntry }
-  | { kind: "peak";     item: Peak }
-  | { kind: "exposure"; item: Exposure }
-  | { kind: "sample";   item: Sample };
+  | { kind: "index";      item: IndexEntry }
+  | { kind: "peak";       item: Peak }
+  | { kind: "exposure";   item: Exposure }
+  | { kind: "sample";     item: Sample }
+  | { kind: "comparison"; item: ComparisonSummary };
 
 interface MentionPickerProps {
   query: string;
@@ -16,12 +17,23 @@ interface MentionPickerProps {
   onDismiss: () => void;
 }
 
+/**
+ * Eager hash for comparison mentions: first 8 chars of `content_hash`,
+ * lowercased. The hash is unambiguous because `content_hash` only changes
+ * at submission boundaries — the value at compose time is the value the
+ * author intended to cite.
+ */
+function comparisonHash8(item: ComparisonSummary): string {
+  return item.content_hash.slice(0, 8).toLowerCase();
+}
+
 function rowToken(row: PickerRow): string {
   switch (row.kind) {
-    case "index":    return `[[index:${row.item.id}]]`;
-    case "peak":     return `[[peak:${row.item.id}]]`;
-    case "exposure": return `[[exposure:${row.item.id}]]`;
-    case "sample":   return `[[sample:${row.item.id}]]`;
+    case "index":      return `[[index:${row.item.id}]]`;
+    case "peak":       return `[[peak:${row.item.id}]]`;
+    case "exposure":   return `[[exposure:${row.item.id}]]`;
+    case "sample":     return `[[sample:${row.item.id}]]`;
+    case "comparison": return `[[comparison:${row.item.id}@${comparisonHash8(row.item)}]]`;
   }
 }
 
@@ -37,19 +49,21 @@ function parseQuery(raw: string): { type: string | null; rest: string } {
 
 function rowLabel(row: PickerRow): string {
   switch (row.kind) {
-    case "index":    return `${row.item.phase} · ${(row.item.score ?? 0).toFixed(2)}`;
-    case "peak":     return `q = ${row.item.q.toFixed(3)}`;
-    case "exposure": return row.item.filename ?? `exposure ${row.item.id}`;
-    case "sample":   return row.item.name ?? row.item.label ?? `sample ${row.item.id}`;
+    case "index":      return `${row.item.phase} · ${(row.item.score ?? 0).toFixed(2)}`;
+    case "peak":       return `q = ${row.item.q.toFixed(3)}`;
+    case "exposure":   return row.item.filename ?? `exposure ${row.item.id}`;
+    case "sample":     return row.item.name ?? row.item.label ?? `sample ${row.item.id}`;
+    case "comparison": return row.item.title;
   }
 }
 
 function rowMeta(row: PickerRow): string | null {
   switch (row.kind) {
-    case "index":    return `score ${(row.item.score ?? 0).toFixed(2)}`;
-    case "peak":     return `${row.item.source} · prom ${(row.item.prominence ?? 0).toFixed(1)}`;
-    case "exposure": return row.item.status ?? null;
-    case "sample":   return null;
+    case "index":      return `score ${(row.item.score ?? 0).toFixed(2)}`;
+    case "peak":       return `${row.item.source} · prom ${(row.item.prominence ?? 0).toFixed(1)}`;
+    case "exposure":   return row.item.status ?? null;
+    case "sample":     return null;
+    case "comparison": return `@${comparisonHash8(row.item)}`;
   }
 }
 
@@ -62,6 +76,13 @@ export function MentionPicker({ query, onSelect, onDismiss }: MentionPickerProps
   const peaksQ     = usePeaks(activeExposureId);
   const exposuresQ = useExposures(activeSampleId);
   const samplesQ   = useSamples(activeExperimentId ?? 0);
+  // Scope rule (Phase 10, v1): show comparisons in the current experiment
+  // when one is active, else fall back to the global listing. The richer
+  // membership-aware scope (only comparisons that touch the active
+  // sample/exposure) is deferred — listing all in-experiment comparisons
+  // is unambiguous and cheap because the listing query is already mounted
+  // by the sidebar in most flows.
+  const comparisonsQ = useComparisons(activeExperimentId ?? "all");
 
   const [activeIdx, setActiveIdx] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
@@ -79,6 +100,7 @@ export function MentionPicker({ query, onSelect, onDismiss }: MentionPickerProps
     const wantPeak  = wantAll || typeFilter === "peak";
     const wantExp   = wantAll || typeFilter === "exposure";
     const wantSamp  = wantAll || typeFilter === "sample";
+    const wantComp  = wantAll || typeFilter === "comparison";
 
     if (wantIndex) {
       (indicesQ.data ?? [])
@@ -103,8 +125,15 @@ export function MentionPicker({ query, onSelect, onDismiss }: MentionPickerProps
         .filter((sm) => !q || matchesQuery(sm.name ?? sm.label ?? "", q))
         .forEach((sm) => all.push({ kind: "sample", item: sm }));
     }
+    if (wantComp) {
+      (comparisonsQ.data ?? [])
+        .filter((cm) => !q ||
+          matchesQuery(cm.title, q) ||
+          matchesQuery(cm.description ?? "", q))
+        .forEach((cm) => all.push({ kind: "comparison", item: cm }));
+    }
     return all;
-  }, [typeFilter, searchText, indicesQ.data, peaksQ.data, exposuresQ.data, samplesQ.data]);
+  }, [typeFilter, searchText, indicesQ.data, peaksQ.data, exposuresQ.data, samplesQ.data, comparisonsQ.data]);
 
   useEffect(() => { setActiveIdx(0); }, [rows]);
 

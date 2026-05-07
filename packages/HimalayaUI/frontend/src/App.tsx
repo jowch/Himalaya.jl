@@ -5,11 +5,14 @@ import { AppShell } from "./components/AppShell";
 import { OnboardingFlow } from "./components/OnboardingFlow";
 import { ToastContainer } from "./components/ui/Toast";
 import { InfrastructureBanner } from "./components/InfrastructureBanner";
+import { ConflictModal } from "./components/ConflictModal";
 import { handleRemoteEvent } from "./lib/queue/replayCoordinator";
 import { attachPersistence, rehydrate } from "./lib/queue/persistence";
+import { attachConflictBridge } from "./lib/queue/conflictBridge";
 import { resolveMutator } from "./lib/queue/mutatorRegistry";
 import { exposeTestHelpers } from "./lib/queue/testHelpers";
 import { showToast } from "./lib/toast";
+import { useAppState } from "./state";
 import type { SseEvent } from "./lib/queue/types";
 
 /**
@@ -46,6 +49,18 @@ export function App(): JSX.Element {
     return attachPersistence(mc);
   }, [mc]);
 
+  // Single-source-of-truth bridge: ConflictError on `comparison_save`
+  // mutations → Zustand `pendingConflict`. Mounted once at App startup so
+  // multiple `useSaveComparison()` mount sites (ComparePageEdit's Save +
+  // ConflictModal's Overwrite) cannot race on the slot. Module-scoped
+  // last-seen tracking keeps remount/HMR from re-popping the modal on a
+  // stale terminal-error mutation still in the cache. See
+  // `lib/queue/conflictBridge.ts`.
+  useEffect(() => {
+    const setPendingConflict = useAppState.getState().setPendingConflict;
+    return attachConflictBridge(mc, setPendingConflict);
+  }, [mc]);
+
   // On mount, replay any persisted ops left over from a previous tab
   // session through their matching mutators. Server-side request-level
   // idempotency (X-Client-Op-Id) makes this safe even if the original op
@@ -74,6 +89,7 @@ export function App(): JSX.Element {
     <>
       <AppShell />
       <OnboardingFlow />
+      <ConflictModal />
       <ToastContainer />
       <InfrastructureBanner />
     </>

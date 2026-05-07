@@ -65,4 +65,32 @@ describe("<MentionCompose>", () => {
     await user.keyboard("{Enter}");
     expect(onSubmit).toHaveBeenCalledWith("hello");
   });
+
+  // Phase 10 — eager hash insertion for @comparison:N picks. The picker
+  // tokenizes a comparison row as `[[comparison:N@<hash8>]]` (rowToken in
+  // MentionPicker); MentionCompose only has to pass that string through.
+  // This test is the contract that the compose path doesn't strip the
+  // hash suffix.
+  it("inserts eager-hash token for comparison selections", async () => {
+    vi.spyOn(api, "listExperimentComparisons").mockResolvedValue([
+      {
+        id: 7, title: "DOPE titration",
+        description: null,
+        content_hash: "a1b2c3d4e5f60718",
+        created_by: 1,
+        created_at: "2026-05-02 10:00:00",
+        updated_at: "2026-05-02 10:00:00",
+        forked_from_id: null,
+        forked_at_hash: null,
+      },
+    ]);
+    const user = userEvent.setup();
+    renderWithProviders(<MentionCompose disabled={false} onSubmit={vi.fn()} />);
+    const ta = screen.getByRole("textbox") as HTMLTextAreaElement;
+    await user.click(ta);
+    await user.keyboard("see @DOPE");
+    const row = await screen.findByText(/DOPE titration/);
+    await user.click(row);
+    expect(ta.value).toBe("see [[comparison:7@a1b2c3d4]]");
+  });
 });

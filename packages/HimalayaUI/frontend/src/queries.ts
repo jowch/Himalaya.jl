@@ -1,7 +1,10 @@
-import { useQuery } from "@tanstack/react-query";
+import { useRef } from "react";
+import { useQuery, useQueries, useMutation, useQueryClient } from "@tanstack/react-query";
+import { authOpts } from "./lib/authOpts";
 import * as api from "./api";
 import { useAppState } from "./state";
 import { getClientId } from "./lib/clientId";
+import { newClientOpId } from "./lib/clientOpId";
 import { useQueueMutation } from "./lib/queue/useQueueMutation";
 import {
   updateSampleMutator,
@@ -10,6 +13,7 @@ import {
   addExposureTagMutator,
   removeExposureTagMutator,
   postSampleMessageMutator,
+  postComparisonMessageMutator,
   setExposureStatusMutator,
   selectExposureMutator,
 } from "./lib/queue/mutators/trivial";
@@ -25,6 +29,8 @@ import {
 } from "./lib/queue/mutators/indexGroup";
 import { createSpeculativeMutator } from "./lib/queue/mutators/createSpeculative";
 import { reanalyzeExposureMutator } from "./lib/queue/mutators/reanalyzeExposure";
+import { saveComparisonMutator } from "./lib/queue/mutators/saveComparison";
+import { deleteComparisonMutator } from "./lib/queue/mutators/deleteComparison";
 import { useExposureHasPendingPeakOps } from "./lib/queue/hooks";
 
 const CLIENT_ID = getClientId();
@@ -46,6 +52,26 @@ export const queryKeys = {
   index:    (id: number) => ["index-entity", id] as const,
   exposure: (id: number) => ["exposure-entity", id] as const,
   sample:   (id: number) => ["sample-entity", id] as const,
+  // Compare page (Plan §Phase 3). Listing key is parameterized by scope —
+  // pass "all" for the global listing, an experimentId for the per-experiment
+  // listing. Membership-derived listings can change in either direction when
+  // ANY exposure-touching event lands, so the SSE handler invalidates both
+  // forms with a prefix `["comparisons"]` invalidation.
+  comparisons:        (scope: number | "all") => ["comparisons", scope] as const,
+  comparison:         (id: number) => ["comparison", id] as const,
+  comparisonMembers:  (id: number) => ["comparison", id, "members"] as const,
+  comparisonForks:    (id: number) => ["comparison", id, "forks"] as const,
+  comparisonMessages: (id: number) => ["comparison", id, "messages"] as const,
+  // Picker support routes (Plan §Phase 5, Task 5.2). Both are read-only —
+  // `recentlyPickedExposures` is per-user across all experiments; `sampleTags`
+  // is per-experiment (distinct (key, value) pairs).
+  recentlyPickedExposures: (userId: number, limit: number) =>
+    ["user", userId, "recently-picked-exposures", limit] as const,
+  sampleTags: (experimentId: number) =>
+    ["experiment", experimentId, "sample-tags"] as const,
+  // Phase 13 — comparison pins, scoped per-user via the X-Username header
+  // (no userId in the key — the cache row is implicitly per-tab/per-username).
+  comparisonPins: ["comparison-pins"] as const,
 };
 
 export function useExperiments() {
@@ -91,6 +117,65 @@ export function useTrace(exposureId: number | undefined) {
     queryFn: () => api.getTrace(exposureId as number),
     enabled: exposureId !== undefined,
   });
+}
+
+/**
+ * Fetch live `(q, I)` traces for a variable list of exposure ids in parallel.
+ * Used by the Compare page MultiTracePlot — one trace per member. Returns a
+ * `Map<exposure_id, Trace>` for compose-time consumption by `MultiTracePlot`.
+ *
+ * Cache keys mirror `useTrace` exactly so single-exposure pages and Compare
+ * share the same cache row (no double-fetching across pages).
+ */
+export function useMemberTraces(exposureIds: number[]): Map<number, api.Trace> {
+  const queries = useQueries({
+    queries: exposureIds.map((id) => ({
+      queryKey: ["exposure", id, "trace"] as const,
+      queryFn: () => api.getTrace(id),
+    })),
+  });
+  // Stable Map across renders: TanStack reuses query.data refs when the
+  // underlying row hasn't changed, so we keep returning the same Map until
+  // some (id, dataRef) pair actually changes. Without this, every parent
+  // re-render mints a fresh Map and any downstream useCallback that depends
+  // on it tears down + replots — wheel/brush smoothness in MultiTracePlot
+  // depends on this.
+  const stableRef = useRef<Map<number, api.Trace>>(new Map());
+  const next = new Map<number, api.Trace>();
+  for (let i = 0; i < exposureIds.length; i++) {
+    const data = queries[i]?.data;
+    if (data) next.set(exposureIds[i]!, data);
+  }
+  let same = stableRef.current.size === next.size;
+  if (same) {
+    for (const [k, v] of next) {
+      if (stableRef.current.get(k) !== v) {
+        same = false;
+        break;
+      }
+    }
+  }
+  if (!same) stableRef.current = next;
+  return stableRef.current;
+}
+
+/**
+ * Sibling of `useMemberTraces` that surfaces a single boolean — true when
+ * any underlying trace fetch is in its cold-loading state. Used by the
+ * Compare-page skeleton wrappers to gate plot + gutter.
+ *
+ * Mirrors the boneyard rule (CLAUDE.md): gate on `query.isLoading`, NOT
+ * `isPending` — disabled queries (empty `exposureIds`) and background
+ * refetches must NOT trigger the skeleton.
+ */
+export function useMemberTracesLoading(exposureIds: number[]): boolean {
+  const queries = useQueries({
+    queries: exposureIds.map((id) => ({
+      queryKey: ["exposure", id, "trace"] as const,
+      queryFn: () => api.getTrace(id),
+    })),
+  });
+  return queries.some((q) => q.isLoading);
 }
 
 export function usePeaks(exposureId: number | undefined) {
@@ -357,5 +442,169 @@ export function useSampleById(id: number | undefined) {
     queryFn: () => api.getSample(id as number),
     enabled: id !== undefined,
     retry: false,
+  });
+}
+
+// ─── Comparisons (Plan §Phase 4, Task 4.1 Step 2/3) ────────────────────────
+
+/**
+ * List comparisons for the given scope.
+ * - scope = experiment id → `/api/experiments/:eid/comparisons`
+ * - scope = "all"         → `/api/comparisons`
+ *
+ * Returns the same `ComparisonSummary[]` shape from both routes so the
+ * sidebar doesn't have to branch on scope.
+ */
+export function useComparisons(scope: number | "all") {
+  return useQuery({
+    queryKey: queryKeys.comparisons(scope),
+    queryFn: () => scope === "all"
+      ? api.listComparisons()
+      : api.listExperimentComparisons(scope),
+  });
+}
+
+export function useComparison(id: number | undefined) {
+  return useQuery({
+    queryKey: id !== undefined ? queryKeys.comparison(id) : (["comparison", "none"] as const),
+    queryFn: () => api.getComparison(id as number),
+    enabled: id !== undefined,
+    retry: false,
+  });
+}
+
+export function useComparisonForks(id: number | undefined) {
+  return useQuery({
+    queryKey: id !== undefined ? queryKeys.comparisonForks(id) : (["comparison", "none", "forks"] as const),
+    queryFn: () => api.getComparisonForks(id as number),
+    enabled: id !== undefined,
+  });
+}
+
+export function useComparisonMessages(id: number | undefined) {
+  return useQuery({
+    queryKey: id !== undefined ? queryKeys.comparisonMessages(id) : (["comparison", "none", "messages"] as const),
+    queryFn: () => api.listComparisonMessages(id as number),
+    enabled: id !== undefined,
+  });
+}
+
+/**
+ * Posts a chat message to the comparison thread. Mirrors
+ * `usePostSampleMessage` — the registry discriminates by the presence of
+ * `comparisonId` in the payload (vs `sampleId`) to select the right mutator.
+ */
+export function usePostComparisonMessage(comparisonId: number) {
+  const username = useAppState((s) => s.username);
+  const inner = useQueueMutation(
+    postComparisonMessageMutator,
+    { comparisonId, username, clientId: CLIENT_ID },
+  );
+  return {
+    ...inner,
+    mutate: (body: string) => inner.mutate({ body }),
+  };
+}
+
+export function useSaveComparison() {
+  const username = useAppState((s) => s.username);
+  // Phase 12 — bridging ConflictError to Zustand's `pendingConflict` slot
+  // happens via a single MutationCache subscriber mounted in App.tsx (see
+  // `lib/queue/conflictBridge.ts`). The hook is intentionally bridge-free
+  // so multiple mount sites (ComparePageEdit's Save, ConflictModal's
+  // Overwrite) cannot race on the slot — there is one subscriber, one
+  // writer. Toast suppression on 409 still lives in useQueueMutation's
+  // onError (the conflict modal owns that surface).
+  return useQueueMutation(
+    saveComparisonMutator,
+    { username, clientId: CLIENT_ID },
+  );
+}
+
+export function useDeleteComparison() {
+  const username = useAppState((s) => s.username);
+  return useQueueMutation(
+    deleteComparisonMutator,
+    { username, clientId: CLIENT_ID },
+  );
+}
+
+// ─── Picker support hooks (Plan §Phase 5, Task 5.2) ────────────────────────
+
+/**
+ * Fetches the user's most-recently-picked exposures (across all comparisons
+ * and experiments). Used by the ComparisonPicker's "Recently used" section.
+ * Disabled until `userId` is defined so an empty user state doesn't fire a
+ * GET /api/users/undefined/recently-picked-exposures.
+ */
+export function useRecentlyPickedExposures(
+  userId: number | undefined, limit = 20,
+) {
+  return useQuery({
+    queryKey: userId !== undefined
+      ? queryKeys.recentlyPickedExposures(userId, limit)
+      : (["user", "none", "recently-picked-exposures", limit] as const),
+    queryFn: () => api.getRecentlyPickedExposures(userId as number, limit),
+    enabled: userId !== undefined,
+  });
+}
+
+/**
+ * Fetches distinct `(key, value)` sample-tag pairs for an experiment. Used
+ * by the picker's tag-filter dropdown. Empty list when no tags exist.
+ */
+export function useSampleTags(experimentId: number | undefined) {
+  return useQuery({
+    queryKey: experimentId !== undefined
+      ? queryKeys.sampleTags(experimentId)
+      : (["experiment", "none", "sample-tags"] as const),
+    queryFn: () => api.getSampleTags(experimentId as number),
+    enabled: experimentId !== undefined,
+  });
+}
+
+// ─── Comparison pins (Plan §Phase 13, Task 13.2) ───────────────────────────
+//
+// Pin/unpin are trivial idempotent state toggles that don't go through
+// `useQueueMutation` (no cross-tab SSE, no `client_op_id` keying — the
+// backend uses plain `INSERT OR REPLACE` / `DELETE` with no event-log
+// emit). Plain `useMutation` + `invalidateQueries` is the cleanest fit.
+//
+// The cache key (`queryKeys.comparisonPins`) is global per-tab; if the
+// user changes their X-Username mid-session, a manual invalidation is
+// needed (out of scope — the username flow already requires a logout
+// → re-onboarding round trip).
+
+/** List of comparison ids the current user has pinned (most-recent first). */
+export function useComparisonPins() {
+  const username = useAppState((s) => s.username);
+  return useQuery({
+    queryKey: queryKeys.comparisonPins,
+    queryFn: () => api.listComparisonPins(authOpts(username, CLIENT_ID)),
+    enabled: username !== undefined,
+  });
+}
+
+export function usePinComparison() {
+  const qc = useQueryClient();
+  const username = useAppState((s) => s.username);
+  return useMutation({
+    // Mint clientOpId per call (not per hook mount) so retries reuse one
+    // idempotency key — without it, a network-blip retry would write a
+    // duplicate `comparison_pinned` row in user_actions even though the
+    // view-table state is already correct.
+    mutationFn: (id: number) =>
+      api.pinComparison(id, authOpts(username, CLIENT_ID, newClientOpId())),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.comparisonPins }),
+  });
+}
+
+export function useUnpinComparison() {
+  const qc = useQueryClient();
+  const username = useAppState((s) => s.username);
+  return useMutation({
+    mutationFn: (id: number) =>
+      api.unpinComparison(id, authOpts(username, CLIENT_ID, newClientOpId())),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.comparisonPins }),
   });
 }

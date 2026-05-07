@@ -364,3 +364,243 @@ export const getPeak     = (id: number) => request<Peak>("GET", `/api/peaks/${id
 export const getIndex    = (id: number) => request<IndexEntry>("GET", `/api/indices/${id}`);
 export const getExposure = (id: number) => request<Exposure>("GET", `/api/exposures/${id}`);
 export const getSample   = (id: number) => request<Sample>("GET", `/api/samples/${id}`);
+
+// ─── Comparisons (Plan §Phase 3) ────────────────────────────────────────────
+//
+// Shapes mirror the Julia route emit / `fetch_comparison_with_members` in
+// `comparisons.jl`. The `MemberSnapshot` type lives here (not in
+// `lib/comparison/snapshot.ts`) because it must be the single source of
+// truth for both the HTTP response parser AND the SSE `applyRemoteToCache`
+// handler — both paths must produce the same parsed shape to avoid cache
+// divergence during reconciliation.
+
+export interface MemberSnapshotPeak {
+  id: number;
+  q: number;
+  intensity: number | null;
+  sharpness: number;
+  source: "auto" | "manual";
+}
+
+export interface MemberSnapshotConfirmedIndex {
+  id: number;
+  phase: string;
+  lattice_d: number;
+  r_squared: number;
+  ngc: number;
+  peak_ids: number[];
+}
+
+export interface MemberSnapshot {
+  effective_peaks: MemberSnapshotPeak[];
+  confirmed_index: MemberSnapshotConfirmedIndex | null;
+  analysis_inputs_hash: string;
+}
+
+/** Per-member input shape sent to `POST /api/comparisons` and `/submit`. */
+export interface ComparisonMemberInput {
+  /** Existing member id (UPDATE on submit) or null/undefined (INSERT/create). */
+  id?: number | null;
+  exposure_id: number | null;
+  display_order: number;
+  band_height?: number;
+  y_offset?: number;
+  normalization?: string;
+  color_override?: string | null;
+  label_override?: string | null;
+  q_window_min?: number | null;
+  q_window_max?: number | null;
+  peak_display?: unknown;
+  snapshot: MemberSnapshot;
+}
+
+/** Per-member shape returned by GET / POST endpoints. Mirrors `fetch_comparison_with_members`. */
+export interface ComparisonMember {
+  id: number;
+  comparison_id: number;
+  exposure_id: number | null;
+  display_order: number;
+  band_height: number;
+  y_offset: number;
+  normalization: string;
+  color_override: string | null;
+  label_override: string | null;
+  q_window_min: number | null;
+  q_window_max: number | null;
+  peak_display: unknown;
+  snapshot: MemberSnapshot | null;
+  is_stale: boolean;
+  created_by: number | null;
+  created_at: string | null;
+}
+
+export interface Comparison {
+  id: number;
+  title: string;
+  description: string | null;
+  content_hash: string;
+  created_by: number | null;
+  created_at: string | null;
+  updated_at: string | null;
+  forked_from_id: number | null;
+  forked_at_hash: string | null;
+  forked_from_title: string | null;
+  members: ComparisonMember[];
+}
+
+/** Lightweight summary row used by the listing endpoints. */
+export interface ComparisonSummary {
+  id: number;
+  title: string;
+  description: string | null;
+  content_hash: string;
+  created_by: number | null;
+  created_at: string | null;
+  updated_at: string | null;
+  forked_from_id: number | null;
+  forked_at_hash: string | null;
+}
+
+export interface ComparisonMessage {
+  id: number;
+  comparison_id: number;
+  author_id: number | null;
+  author: string | null;
+  body: string;
+  created_at: string;
+}
+
+/**
+ * Body shape posted to `POST /api/comparisons` (create) and
+ * `POST /api/comparisons/:id/submit` (update). The mutator picks the route
+ * based on the presence of `id` in the payload.
+ */
+export interface SaveComparisonBody {
+  title: string;
+  description?: string | null;
+  members: ComparisonMemberInput[];
+  /** Required on submit (existing comparison); absent on create. */
+  expected_content_hash?: string;
+  /** Set when forking; both fields ride together or not at all. */
+  forked_from_id?: number | null;
+  forked_at_hash?: string | null;
+}
+
+/**
+ * Thrown by `saveComparison` when the server returns 409 (content_hash drift).
+ * Carries the server's `current_hash` and `current_state` so the conflict
+ * modal can render the diff. `status` is set to 409 so the queue's failure-
+ * class router treats it as a validation error (no retry, surfaces in
+ * `onError`); the modal opens off the typed throw, not the toast.
+ */
+export class ConflictError extends Error {
+  status = 409 as const;
+  constructor(
+    public current_hash: string | null,
+    public current_state: Comparison | null,
+    message?: string,
+  ) {
+    super(message ?? "comparison content_hash conflict");
+    this.name = "ConflictError";
+  }
+}
+
+/**
+ * Save a comparison — create (no id) or submit (id present). Internally calls
+ * `POST /api/comparisons` or `POST /api/comparisons/:id/submit`. On 409,
+ * throws `ConflictError` with the server's current state attached.
+ *
+ * Why this branches on id (rather than two separate fetchers): the queue
+ * mutator's `request` function takes a single payload — branching here keeps
+ * the OpKind-to-route mapping in one place and the mutator's `request`
+ * trivially testable.
+ */
+export async function saveComparison(
+  body: SaveComparisonBody,
+  comparisonId: number | undefined,
+  opts?: AuthOpts,
+): Promise<Comparison> {
+  const path = comparisonId === undefined
+    ? "/api/comparisons"
+    : `/api/comparisons/${comparisonId}/submit`;
+  try {
+    return await request<Comparison>("POST", path, body, opts);
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 409) {
+      const b = err.body as
+        | { current_hash?: string; current_state?: Comparison }
+        | null;
+      throw new ConflictError(
+        b?.current_hash ?? null,
+        b?.current_state ?? null,
+        err.message,
+      );
+    }
+    throw err;
+  }
+}
+
+export const deleteComparison = (id: number, opts?: AuthOpts) =>
+  request<{ id: number; deleted: boolean; event_id: number }>(
+    "DELETE", `/api/comparisons/${id}`, undefined, opts);
+
+export const getComparison = (id: number) =>
+  request<Comparison>("GET", `/api/comparisons/${id}`);
+
+export const listComparisons = () =>
+  request<ComparisonSummary[]>("GET", "/api/comparisons");
+
+export const listExperimentComparisons = (experiment_id: number) =>
+  request<ComparisonSummary[]>("GET", `/api/experiments/${experiment_id}/comparisons`);
+
+export const getComparisonForks = (id: number) =>
+  request<ComparisonSummary[]>("GET", `/api/comparisons/${id}/forks`);
+
+export const listComparisonMessages = (comparison_id: number) =>
+  request<ComparisonMessage[]>("GET", `/api/comparisons/${comparison_id}/messages`);
+
+export const postComparisonMessage = (
+  comparison_id: number, body: string, opts?: AuthOpts,
+) => request<ComparisonMessage>(
+  "POST", `/api/comparisons/${comparison_id}/messages`, { body }, opts);
+
+// ─── Picker support routes (Plan §Phase 5, Task 5.2) ───────────────────────
+//
+// Read-only GETs feeding the ComparisonPicker modal. `recently-picked` returns
+// a flat exposure-id list in most-recent-first order; `sample-tags` returns
+// distinct (key, value) pairs scoped to one experiment.
+
+/** Per-pair shape returned by `GET /api/experiments/:eid/sample-tags`. */
+export interface SampleTagPair {
+  key: string;
+  value: string;
+}
+
+export const getRecentlyPickedExposures = (
+  user_id: number, limit?: number,
+): Promise<number[]> => {
+  const qs = limit !== undefined ? `?limit=${limit}` : "";
+  return request<number[]>("GET", `/api/users/${user_id}/recently-picked-exposures${qs}`);
+};
+
+export const getSampleTags = (experiment_id: number): Promise<SampleTagPair[]> =>
+  request<SampleTagPair[]>("GET", `/api/experiments/${experiment_id}/sample-tags`);
+
+// ─── Comparison pins (Plan §Phase 13, Task 13.2) ────────────────────────────
+//
+// Per-user pinned comparisons surface at the top of the sidebar. Pin/unpin
+// are trivial idempotent state toggles — no `with_idempotency`, no SSE — so
+// the API is a straightforward POST/DELETE pair. The list endpoint reads
+// `X-Username` and returns a flat array of comparison ids in
+// most-recently-pinned-first order.
+
+export const listComparisonPins = (opts?: AuthOpts): Promise<number[]> =>
+  request<number[]>("GET", "/api/users/me/comparison-pins", undefined, opts);
+
+export const pinComparison = (id: number, opts?: AuthOpts) =>
+  request<{ comparison_id: number; pinned: boolean }>(
+    "POST", `/api/comparisons/${id}/pin`, undefined, opts);
+
+export const unpinComparison = (id: number, opts?: AuthOpts) =>
+  request<{ comparison_id: number; pinned: boolean }>(
+    "DELETE", `/api/comparisons/${id}/pin`, undefined, opts);

@@ -1,8 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { App } from "../src/App";
 import { useAppState } from "../src/state";
 import { renderWithProviders } from "./test-utils";
+
+// Plan §Phase 4 introduced URL routing for Compare. Wrap App renders in a
+// MemoryRouter so route hooks resolve. We start at "/" so the existing
+// Zustand-driven IndexPage smoke assertions still pass.
+const renderApp = () =>
+  renderWithProviders(
+    <MemoryRouter initialEntries={["/"]}>
+      <App />
+    </MemoryRouter>,
+  );
 
 function mockFetch(map: Record<string, unknown>): void {
   vi.spyOn(global, "fetch").mockImplementation(async (input) => {
@@ -50,7 +61,7 @@ describe("App smoke", () => {
   });
 
   it("renders the three-card index page when user + scope are set", async () => {
-    renderWithProviders(<App />);
+    renderApp();
     // Three-card grid + title button should all appear
     expect(await screen.findByTestId("workspace-grid")).toBeInTheDocument();
     expect(screen.getByTestId("plot-title")).toBeInTheDocument();
@@ -62,12 +73,12 @@ describe("App smoke", () => {
 
   it("shows the onboarding overlay when no user is set", () => {
     useAppState.setState({ username: undefined });
-    renderWithProviders(<App />);
+    renderApp();
     expect(screen.getByTestId("onboarding-overlay")).toBeInTheDocument();
   });
 
   it("switching the tab rocker changes the active page to Compare", async () => {
-    renderWithProviders(<App />);
+    renderApp();
     const cmpTab = await screen.findByTestId("tab-compare");
     cmpTab.click();
     await waitFor(() => expect(screen.getByTestId("compare-page")).toBeInTheDocument());

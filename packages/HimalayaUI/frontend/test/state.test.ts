@@ -141,4 +141,101 @@ describe("useAppState", () => {
     const raw = localStorage.getItem(LS_KEY) ?? "";
     expect(raw).not.toContain("hoveredPeakId");
   });
+
+  // ── compare-page review-mode UI state (Phase 9) ────────────────────────
+
+  it("groupingMode defaults to 'bySample' and switches via named action", () => {
+    expect(useAppState.getState().groupingMode).toBe("bySample");
+    useAppState.getState().setGroupingMode("byPhase");
+    expect(useAppState.getState().groupingMode).toBe("byPhase");
+    useAppState.getState().setGroupingMode("distinct");
+    expect(useAppState.getState().groupingMode).toBe("distinct");
+  });
+
+  it("groupingMode is NOT in the persisted partition", () => {
+    useAppState.getState().setGroupingMode("byPhase");
+    const raw = localStorage.getItem(LS_KEY) ?? "";
+    expect(raw).not.toContain("groupingMode");
+    expect(raw).not.toContain("byPhase");
+  });
+
+  it("showPeakTicks defaults to true and can be set", () => {
+    expect(useAppState.getState().showPeakTicks).toBe(true);
+    useAppState.getState().setShowPeakTicks(false);
+    expect(useAppState.getState().showPeakTicks).toBe(false);
+    useAppState.getState().setShowPeakTicks(true);
+    expect(useAppState.getState().showPeakTicks).toBe(true);
+  });
+
+  it("showPeakLabels defaults to true and can be set", () => {
+    expect(useAppState.getState().showPeakLabels).toBe(true);
+    useAppState.getState().setShowPeakLabels(false);
+    expect(useAppState.getState().showPeakLabels).toBe(false);
+  });
+
+  it("annotation toggles are NOT persisted", () => {
+    useAppState.getState().setShowPeakTicks(false);
+    useAppState.getState().setShowPeakLabels(false);
+    const raw = localStorage.getItem(LS_KEY) ?? "";
+    expect(raw).not.toContain("showPeakTicks");
+    expect(raw).not.toContain("showPeakLabels");
+  });
+
+  it("highlightedCompareMemberId starts undefined and can set/clear via single setter", () => {
+    expect(useAppState.getState().highlightedCompareMemberId).toBeUndefined();
+    useAppState.getState().setHighlightedCompareMemberId(42);
+    expect(useAppState.getState().highlightedCompareMemberId).toBe(42);
+    useAppState.getState().setHighlightedCompareMemberId(undefined);
+    expect(useAppState.getState().highlightedCompareMemberId).toBeUndefined();
+  });
+
+  it("highlightedCompareMemberId is NOT persisted", () => {
+    useAppState.getState().setHighlightedCompareMemberId(7);
+    const raw = localStorage.getItem(LS_KEY) ?? "";
+    expect(raw).not.toContain("highlightedCompareMemberId");
+  });
+
+  // ── compareXDomains is keyed per-comparison (Phase 6 reviewer fix) ──────
+  // A single shared zoom domain bled across comparisons: zooming A to a
+  // narrow q-range and then navigating to B (with a different q-range) made
+  // B look broken. Per-comparison keying preserves zoom across review/edit
+  // toggles for the SAME comparison while isolating different ones.
+
+  it("compareXDomains starts as an empty record and is per-comparison-id", () => {
+    useAppState.setState({ compareXDomains: {} });
+    expect(useAppState.getState().compareXDomains).toEqual({});
+  });
+
+  it("setCompareXDomain(id, d) scopes the domain to that id only", () => {
+    useAppState.setState({ compareXDomains: {} });
+    useAppState.getState().setCompareXDomain(1, [0.1, 0.3]);
+    useAppState.getState().setCompareXDomain(2, [0.5, 1.0]);
+    const s = useAppState.getState();
+    expect(s.compareXDomains[1]).toEqual([0.1, 0.3]);
+    expect(s.compareXDomains[2]).toEqual([0.5, 1.0]);
+  });
+
+  it("setting the domain for one comparison does not affect another", () => {
+    useAppState.setState({ compareXDomains: {} });
+    useAppState.getState().setCompareXDomain(1, [0.1, 0.3]);
+    useAppState.getState().setCompareXDomain(2, [0.5, 1.0]);
+    // Mutate id=1, ensure id=2 untouched.
+    useAppState.getState().setCompareXDomain(1, [0.2, 0.4]);
+    const s = useAppState.getState();
+    expect(s.compareXDomains[1]).toEqual([0.2, 0.4]);
+    expect(s.compareXDomains[2]).toEqual([0.5, 1.0]);
+  });
+
+  it("setCompareXDomain(id, null) clears the entry", () => {
+    useAppState.setState({ compareXDomains: {} });
+    useAppState.getState().setCompareXDomain(1, [0.1, 0.3]);
+    useAppState.getState().setCompareXDomain(1, null);
+    expect(useAppState.getState().compareXDomains[1] ?? null).toBeNull();
+  });
+
+  it("compareXDomains is NOT in the persisted partition (ephemeral UI state)", () => {
+    useAppState.getState().setCompareXDomain(1, [0.1, 0.3]);
+    const raw = localStorage.getItem(LS_KEY) ?? "";
+    expect(raw).not.toContain("compareXDomains");
+  });
 });

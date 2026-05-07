@@ -3,6 +3,7 @@ import * as Plot from "@observablehq/plot";
 import type { Trace, Peak, IndexEntry } from "../api";
 import { phaseColor } from "../phases";
 import { prettifyUnits } from "../lib/units";
+import { invertQ } from "../lib/plot/invertQ";
 
 export interface TraceViewerProps {
 	trace: Trace;
@@ -286,12 +287,9 @@ export function TraceViewer({
 		function handleWheel(evRaw: Event): void {
 			const ev = evRaw as WheelEvent;
 			ev.preventDefault();
-			const xScale: Scale = (
-				plotElRef.current as unknown as { scale: (n: string) => Scale }
-			)?.scale("x");
-			if (!xScale?.invert) return;
 			const rect = container!.getBoundingClientRect();
-			const cursorQ = xScale.invert(ev.clientX - rect.left);
+			const cursorQ = invertQ(plotElRef.current, ev.clientX - rect.left);
+			if (cursorQ === null) return;
 			const curMin = xDomain ? xDomain[0] : trace.q[0]!;
 			const curMax = xDomain ? xDomain[1] : trace.q[trace.q.length - 1]!;
 			const factor = Math.exp(ev.deltaY * 0.001);
@@ -618,13 +616,10 @@ export function TraceViewer({
 		function drawCursor(mx: number, my: number): void {
 			const plotEl = plotElRef.current as unknown as SVGElement | null;
 			if (!plotEl) return;
-			const xScale: Scale = (
-				plotEl as unknown as { scale: (n: string) => Scale }
-			).scale("x");
 			const yScale: Scale = (
 				plotEl as unknown as { scale: (n: string) => Scale }
 			).scale("y");
-			if (!xScale?.invert || !yScale?.apply) return;
+			if (!yScale?.apply) return;
 
 			const bbox = (plotEl as Element).getBoundingClientRect();
 			const relX = mx - bbox.left;
@@ -647,7 +642,8 @@ export function TraceViewer({
 				return;
 			}
 
-			const q = xScale.invert(relX);
+			const q = invertQ(plotEl, relX);
+			if (q === null) return;
 			const Iv = interpolateI(q, trace);
 			const py = yScale.apply(Iv);
 

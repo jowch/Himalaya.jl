@@ -1,27 +1,324 @@
 /**
- * ComparePage — placeholder. A future multi-sample comparison workflow.
+ * ComparePage — review-mode shell (Plan §Phase 4, Task 4.1).
  *
- * Kept minimal so the tab-rocker can switch to it without breaking; real
- * content will be designed in a follow-up iteration.
+ * Reads URL params via react-router:
+ *   /experiments/:eid/compare        — sidebar list scoped to experiment, no comparison selected
+ *   /experiments/:eid/compare/:id    — review mode of comparison `:id`
+ *   /compare/all                     — global listing scope (no experiment context)
+ *
+ * Layout mirrors the three-card workspace pattern (sidebar | main).
+ * The plot, member panel, chat, badges, and edit/fork affordances are
+ * built out across Phases 6–11; this file is only the shell that hosts them.
  */
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useParams, useLocation, useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
+import { Skeleton } from "boneyard-js/react";
+import { ComparisonSidebar } from "../components/ComparisonSidebar";
+import { MultiTracePlot } from "../components/MultiTracePlot";
+import { MemberMetaGutter } from "../components/MemberMetaGutter";
+import { GroupingModeToggle } from "../components/GroupingModeToggle";
+import { AnnotationToggles } from "../components/AnnotationToggles";
+import { NeedsReviewBadge } from "../components/NeedsReviewBadge";
+import { LineageBadge } from "../components/LineageBadge";
+import { ForksPopover } from "../components/ForksPopover";
+import { ChatCard } from "../components/ChatCard";
+import { HintText } from "../components/ui";
+import { useComparison, useMemberTraces, useMemberTracesLoading, queryKeys } from "../queries";
+import { useAppState } from "../state";
+import { useCurrentUserId } from "../hooks/useCurrentUserId";
+import { comparePath, type CompareScope } from "../lib/comparison/routes";
+import type { Comparison, ComparisonMember, Exposure } from "../api";
+
+// Boneyard fixture for the compare-review-plot skeleton — a stand-in plot
+// pane + gutter so the captured bones reflect the dual-column geometry the
+// user sees during a true cold fetch (comparison + member-traces both loading).
+const COMPARE_PLOT_FIXTURE = (
+  <div className="flex-1 min-h-0 flex flex-row gap-3">
+    <div className="flex-1 min-w-0 border border-border/40 rounded h-full" />
+    <div className="w-[280px] shrink-0 border border-border/40 rounded h-full" />
+  </div>
+);
+
 export function ComparePage(): JSX.Element {
+  const params = useParams<{ eid?: string; id?: string }>();
+  const location = useLocation();
+  const eid = params.eid !== undefined ? Number(params.eid) : undefined;
+  const id  = params.id  !== undefined ? Number(params.id)  : undefined;
+  const scope: "all" | "experiment" =
+    location.pathname.startsWith("/compare/all") ? "all" : "experiment";
+
   return (
     <div
       data-testid="compare-page"
-      className="flex-1 min-h-0 flex items-center justify-center px-4 pb-4"
+      data-scope={scope}
+      {...(id !== undefined ? { "data-comparison-id": String(id) } : {})}
+      className="flex-1 min-h-0 flex gap-3 px-4 pb-4 pt-2"
     >
-      <div className="card max-w-lg w-full p-8 flex flex-col items-center gap-2 text-center">
-        <div className="text-xs uppercase tracking-widest text-fg-dim">
-          Compare
+      <aside className="card overflow-hidden w-[300px] shrink-0 flex flex-col">
+        <ComparisonSidebar
+          experimentId={eid}
+          scope={scope}
+          activeComparisonId={id}
+        />
+      </aside>
+      <section className="card overflow-hidden flex-1 min-h-0 flex flex-col">
+        {id === undefined ? (
+          <div
+            data-testid="compare-empty-state"
+            className="flex-1 flex items-center justify-center text-fg-muted text-sm p-8 text-center"
+          >
+            Pick a comparison from the sidebar, or use{" "}
+            <span className="font-medium text-fg ml-1">+ New</span> to create one.
+          </div>
+        ) : (
+          <ReviewPlot id={id} eid={eid} scope={scope} />
+        )}
+      </section>
+    </div>
+  );
+}
+
+/**
+ * Hosts the multi-trace plot in review mode. Members come from the saved
+ * comparison; live `(q, I)` traces are fetched in parallel via
+ * `useMemberTraces`.
+ */
+function ReviewPlot({
+  id, eid, scope,
+}: {
+  id: number;
+  eid: number | undefined;
+  scope: CompareScope;
+}): JSX.Element {
+  const compQ = useComparison(id);
+  // Per-comparison zoom keying — selecting only the slice for `id` so this
+  // component does not re-render on zoom changes to other comparisons.
+  const xDomain = useAppState((s) => s.compareXDomains[id] ?? null);
+  const setCompareXDomain = useAppState((s) => s.setCompareXDomain);
+  const setXDomain = useCallback(
+    (d: [number, number] | null) => setCompareXDomain(id, d),
+    [setCompareXDomain, id],
+  );
+
+  const members = useMemo(() => {
+    if (!compQ.data) return [];
+    return [...compQ.data.members].sort((a, b) => a.display_order - b.display_order);
+  }, [compQ.data]);
+
+  // Phase 9.6 — comparison-level stale flag is the disjunction of per-member
+  // is_stale. Hidden when the comparison hasn't loaded yet.
+  const isStale = useMemo(() => members.some((m) => m.is_stale), [members]);
+  const authorUserId = compQ.data?.created_by ?? null;
+
+  // Phase 9.3 — annotation toggles read straight from Zustand. Both default
+  // to `true`; `MultiTracePlot` rebuilds marks when the values change so
+  // toggling re-renders without a full plot lifecycle event.
+  const showPeakTicks  = useAppState((s) => s.showPeakTicks);
+  const showPeakLabels = useAppState((s) => s.showPeakLabels);
+
+  // Phase 9 gap-fix — line-stroke coloring grouping mode + sample-id resolver.
+  // The resolver reads the TanStack `exposure` cache so the color stays a
+  // pure derivation off the same data source the rest of the page uses.
+  // Cache misses (exposure not yet fetched) return null → `colorFor` falls
+  // back to ORPHAN_FALLBACK for that member, which is acceptable transient
+  // behaviour that resolves on the next render after the fetch lands.
+  const groupingMode = useAppState((s) => s.groupingMode);
+  const qc = useQueryClient();
+  const sampleIdFor = useCallback(
+    (m: ComparisonMember): number | null => {
+      if (m.exposure_id === null) return null;
+      const exposure = qc.getQueryData<Exposure>(queryKeys.exposure(m.exposure_id));
+      return exposure?.sample_id ?? null;
+    },
+    [qc],
+  );
+
+  // Phase 9.5 — hover/click-to-pin highlight state. `MemberTraceLayer`
+  // reads this and recolors that member's confirmed_index peaks to the
+  // phase color; non-index peaks stay black. The lifecycle hook below
+  // clears the pin on page navigation away (component unmount) and on
+  // member-set changes that no longer include the pinned member.
+  const highlightedCompareMemberId = useAppState(
+    (s) => s.highlightedCompareMemberId,
+  );
+  const setHighlightedCompareMemberId = useAppState(
+    (s) => s.setHighlightedCompareMemberId,
+  );
+  // Clear stale pin if the pinned member is no longer in the comparison
+  // (e.g., re-fetched comparison drops a member). Without this, the pin
+  // would persist across navigation between comparisons in the SAME
+  // review-mode page.
+  useEffect(() => {
+    if (highlightedCompareMemberId === undefined) return;
+    const stillPresent = members.some((m) => m.id === highlightedCompareMemberId);
+    if (!stillPresent) setHighlightedCompareMemberId(undefined);
+  }, [
+    highlightedCompareMemberId,
+    members,
+    setHighlightedCompareMemberId,
+  ]);
+  // Unmount cleanup: navigating away from the compare page (or to edit
+  // mode, which is a separate page component) clears the pin.
+  useEffect(() => {
+    return () => setHighlightedCompareMemberId(undefined);
+  }, [setHighlightedCompareMemberId]);
+
+  const exposureIds = useMemo(
+    () => members.flatMap((m) => (m.exposure_id !== null ? [m.exposure_id] : [])),
+    [members],
+  );
+  const traces = useMemberTraces(exposureIds);
+  const tracesLoading = useMemberTracesLoading(exposureIds);
+  // Cold-fetch gate. Per CLAUDE.md boneyard rules: gate on `query.isLoading`
+  // not `isPending` so disabled queries / background refetches don't flicker.
+  const plotLoading = compQ.isLoading || tracesLoading;
+
+  // Track the plot column's height so the gutter rows align pixel-for-pixel
+  // with the plot's y-bands (both consumers share `computeYBands`).
+  const plotColRef = useRef<HTMLDivElement>(null);
+  const [panelHeight, setPanelHeight] = useState(0);
+  useEffect(() => {
+    const el = plotColRef.current;
+    if (!el) return;
+    setPanelHeight(el.clientHeight);
+    const obs = new ResizeObserver(() => {
+      if (plotColRef.current) setPanelHeight(plotColRef.current.clientHeight);
+    });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
+
+  return (
+    <div className="flex-1 min-h-0 flex flex-col p-4 gap-3" data-testid="compare-review-plot">
+      <div
+        data-testid="compare-review-header"
+        className="flex items-center gap-3 flex-wrap"
+      >
+        <GroupingModeToggle />
+        <AnnotationToggles />
+        {isStale && (
+          <NeedsReviewBadge
+            comparisonId={id}
+            experimentId={eid}
+            scope={scope}
+            authorUserId={authorUserId}
+          />
+        )}
+        {compQ.data && (
+          <EditOrForkButton
+            comparison={compQ.data}
+            experimentId={eid}
+            scope={scope}
+          />
+        )}
+        {compQ.data && (
+          <LineageBadge comparison={compQ.data} experimentId={eid} scope={scope} />
+        )}
+        <ForksPopover comparisonId={id} experimentId={eid} scope={scope} />
+      </div>
+      <Skeleton
+        name="compare-review-plot"
+        className="flex-1 min-h-0 flex flex-row gap-3"
+        loading={plotLoading}
+        stagger={50}
+        transition={200}
+        fixture={COMPARE_PLOT_FIXTURE}
+        fallback={<div className="flex-1 flex items-center justify-center"><HintText>Loading comparison…</HintText></div>}
+      >
+        <div ref={plotColRef} className="flex-1 min-w-0">
+          <MultiTracePlot
+            members={members}
+            traces={traces}
+            xDomain={xDomain}
+            onXDomain={setXDomain}
+            showPeakTicks={showPeakTicks}
+            showPeakLabels={showPeakLabels}
+            highlightedMemberId={highlightedCompareMemberId}
+            groupingMode={groupingMode}
+            sampleIdFor={sampleIdFor}
+          />
         </div>
-        <h2 className="text-title">
-          Coming soon
-        </h2>
-        <p className="text-base text-fg-muted max-w-sm">
-          Multi-sample comparison view. For now, use <kbd className="border border-border rounded px-1 text-xs">/</kbd>
-          {" "}to switch between samples one at a time on the Index page.
-        </p>
+        <div
+          className="w-[280px] shrink-0 relative"
+          data-testid="compare-review-gutter"
+        >
+          <MemberMetaGutter members={members} panelHeight={panelHeight} mode="review" />
+        </div>
+      </Skeleton>
+      <div
+        data-testid="compare-review-chat"
+        className="h-[280px] shrink-0 border-t border-border -mx-4 -mb-4 mt-1"
+      >
+        <ChatCard entityType="comparison" entityId={id} />
       </div>
     </div>
+  );
+}
+
+/**
+ * Author-vs-fork affordance (Plan §Phase 11, Task 11.2). Mutually exclusive
+ * — Edit when the current user authored the comparison, Fork otherwise. The
+ * orphan-author case (`comparison.created_by === null`) shows Fork to ALL
+ * users since no one matches null; combined with the backend's spec
+ * §Authorship "fork-only" gate, this is the right fallback.
+ *
+ * Edit click navigates to the edit-mode shell and seeds the Zustand draft
+ * via `loadDraftFromComparison` so the editor has the full saved state to
+ * mutate. Fork click creates a brand-new draft pre-populated from the
+ * parent's data + lineage (`forkedFromId` + `forkedAtHash`) and navigates
+ * to the create flow; submit will POST /api/comparisons with the lineage
+ * fields per Phase 3's `SaveComparisonBody` contract.
+ */
+function EditOrForkButton({
+  comparison, experimentId, scope,
+}: {
+  comparison: Comparison;
+  experimentId: number | undefined;
+  scope: CompareScope;
+}): JSX.Element {
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+  const currentUserId = useCurrentUserId();
+  const loadDraft = useAppState((s) => s.loadDraftFromComparison);
+  const startFork = useAppState((s) => s.startForkDraft);
+
+  const isAuthor =
+    comparison.created_by !== null
+    && currentUserId !== undefined
+    && currentUserId === comparison.created_by;
+
+  if (isAuthor) {
+    const onEdit = (): void => {
+      loadDraft(comparison, qc);
+      navigate(comparePath({ scope, eid: experimentId, id: comparison.id, edit: true }));
+    };
+    return (
+      <button
+        type="button"
+        data-testid="comparison-edit"
+        onClick={onEdit}
+        className="px-3 py-1 rounded border border-border text-fg text-sm
+                   hover:bg-bg-elevated"
+      >
+        Edit
+      </button>
+    );
+  }
+
+  const onFork = (): void => {
+    startFork(comparison, qc);
+    navigate(comparePath({ scope, eid: experimentId, isNew: true }));
+  };
+  return (
+    <button
+      type="button"
+      data-testid="comparison-fork"
+      onClick={onFork}
+      className="px-3 py-1 rounded border border-border text-fg text-sm
+                 hover:bg-bg-elevated"
+    >
+      Fork
+    </button>
   );
 }

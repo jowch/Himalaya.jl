@@ -1,9 +1,16 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import { TabRocker } from "../src/components/TabRocker";
 import { AppHeader } from "../src/components/AppHeader";
 import { useAppState } from "../src/state";
+
+// TabRocker uses `useNavigate()` (Plan §Phase 4: hybrid Zustand/router model
+// — Compare nav goes through URL, Index/Inspect through Zustand). Wrap in
+// MemoryRouter so tests have a routing context.
+const renderInRouter = (ui: React.ReactElement) =>
+  render(<MemoryRouter>{ui}</MemoryRouter>);
 
 beforeEach(() => {
   localStorage.clear();
@@ -16,7 +23,7 @@ beforeEach(() => {
 
 describe("<TabRocker>", () => {
   it("renders all three tabs with Inspect first", () => {
-    render(<TabRocker />);
+    renderInRouter(<TabRocker />);
     const tabs = screen.getAllByRole("tab");
     expect(tabs[0]).toHaveTextContent("Inspect");
     expect(tabs[1]).toHaveTextContent("Index");
@@ -24,7 +31,7 @@ describe("<TabRocker>", () => {
   });
 
   it("renders both tabs with the active page marked", () => {
-    render(<TabRocker />);
+    renderInRouter(<TabRocker />);
     const idx = screen.getByTestId("tab-index");
     const cmp = screen.getByTestId("tab-compare");
     expect(idx).toHaveAttribute("aria-selected", "true");
@@ -34,7 +41,7 @@ describe("<TabRocker>", () => {
 
   it("clicking a tab updates activePage in the store", async () => {
     const user = userEvent.setup();
-    render(<TabRocker />);
+    renderInRouter(<TabRocker />);
     await user.click(screen.getByTestId("tab-compare"));
     expect(useAppState.getState().activePage).toBe("compare");
   });

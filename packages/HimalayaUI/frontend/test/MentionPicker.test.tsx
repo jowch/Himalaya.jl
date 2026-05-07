@@ -94,4 +94,65 @@ describe("<MentionPicker>", () => {
     await screen.findByText(/Pn3m/);
     expect(queryByText(/scroll or refine/i)).toBeNull();
   });
+
+  // ─── Comparisons group (Phase 10) ──────────────────────────────────────
+  describe("comparison rows", () => {
+    const COMPARISONS: api.ComparisonSummary[] = [
+      {
+        id: 7, title: "DOPE titration",
+        description: "5 candidates",
+        content_hash: "a1b2c3d4e5f60718",
+        created_by: 1,
+        created_at: "2026-05-02 10:00:00",
+        updated_at: "2026-05-02 10:00:00",
+        forked_from_id: null,
+        forked_at_hash: null,
+      },
+      {
+        id: 8, title: "MO37 vs Im3m",
+        description: null,
+        content_hash: "deadbeef00112233",
+        created_by: 1,
+        created_at: "2026-05-03 09:00:00",
+        updated_at: "2026-05-03 09:00:00",
+        forked_from_id: null,
+        forked_at_hash: null,
+      },
+    ];
+
+    beforeEach(() => {
+      vi.spyOn(api, "listExperimentComparisons").mockResolvedValue(COMPARISONS);
+    });
+
+    it("shows comparison rows when query matches a title", async () => {
+      renderWithProviders(
+        <MentionPicker query="DOPE" onSelect={vi.fn()} onDismiss={vi.fn()} />,
+      );
+      expect(await screen.findByText(/DOPE titration/)).toBeInTheDocument();
+    });
+
+    it("calls onSelect with eager-hash token for a comparison", async () => {
+      const onSelect = vi.fn();
+      const user = userEvent.setup();
+      renderWithProviders(
+        <MentionPicker query="DOPE" onSelect={onSelect} onDismiss={vi.fn()} />,
+      );
+      await user.click(await screen.findByText(/DOPE titration/));
+      // hash8 = first 8 chars of content_hash, lowercased hex.
+      expect(onSelect).toHaveBeenCalledWith("[[comparison:7@a1b2c3d4]]");
+    });
+
+    it("filters by `comparison:` type prefix", async () => {
+      renderWithProviders(
+        <MentionPicker
+          query="comparison:Im3m"
+          onSelect={vi.fn()}
+          onDismiss={vi.fn()}
+        />,
+      );
+      // Only matches MO37 vs Im3m (title contains "Im3m"); nothing else.
+      expect(await screen.findByText(/MO37 vs Im3m/)).toBeInTheDocument();
+      expect(screen.queryByText(/DOPE titration/)).toBeNull();
+    });
+  });
 });

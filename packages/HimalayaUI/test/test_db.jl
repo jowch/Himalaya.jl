@@ -740,3 +740,193 @@ end
         SQLite.close(db)
     end
 end
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Compare page (Plan §Phase 1, Task 1.1): comparisons / comparison_members /
+# comparison_messages schema. See docs/superpowers/specs/2026-05-02-compare-page-design.md.
+# ─────────────────────────────────────────────────────────────────────────────
+
+@testset "Compare schema: tables and indexes exist after open_db" begin
+    mktempdir() do tmp
+        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+        tables = Set(String[String(r.name) for r in Tables.rowtable(DBInterface.execute(db,
+            "SELECT name FROM sqlite_master WHERE type='table'"))])
+        @test "comparisons" in tables
+        @test "comparison_members" in tables
+        @test "comparison_messages" in tables
+
+        indexes = Set(String[String(r.name) for r in Tables.rowtable(DBInterface.execute(db,
+            "SELECT name FROM sqlite_master WHERE type='index'"))])
+        @test "idx_comparisons_forked_from" in indexes
+        @test "idx_comparison_members_by_comparison" in indexes
+        @test "idx_comparison_messages_comparison" in indexes
+    end
+end
+
+@testset "Compare schema: comparisons has expected columns" begin
+    mktempdir() do tmp
+        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+        cols = Set(String[String(c.name) for c in Tables.rowtable(DBInterface.execute(db,
+            "PRAGMA table_info(comparisons)"))])
+        for c in ("id", "title", "description", "content_hash",
+                  "created_by", "created_at", "updated_at",
+                  "forked_from_id", "forked_at_hash")
+            @test c in cols
+        end
+        # comparisons.id must use AUTOINCREMENT (mention-target rule).
+        sql = first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='comparisons'"))).sql
+        @test occursin("AUTOINCREMENT", String(sql))
+    end
+end
+
+@testset "Compare schema: comparison_members columns and JSON CHECKs" begin
+    mktempdir() do tmp
+        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+        cols = Set(String[String(c.name) for c in Tables.rowtable(DBInterface.execute(db,
+            "PRAGMA table_info(comparison_members)"))])
+        for c in ("id", "comparison_id", "exposure_id", "display_order",
+                  "band_height", "y_offset", "normalization", "color_override",
+                  "label_override", "q_window_min", "q_window_max",
+                  "peak_display", "snapshot", "created_by", "created_at")
+            @test c in cols
+        end
+        # Plain INTEGER PRIMARY KEY (not AUTOINCREMENT — members are not @-mentioned).
+        sql = String(first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='comparison_members'"))).sql)
+        @test !occursin("AUTOINCREMENT", sql)
+        # snapshot CHECK (json_valid(...))
+        @test occursin("json_valid(snapshot)", sql)
+        @test occursin("json_valid(peak_display)", sql)
+    end
+end
+
+@testset "Compare schema: comparison_messages plain PK" begin
+    mktempdir() do tmp
+        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+        sql = String(first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='comparison_messages'"))).sql)
+        @test !occursin("AUTOINCREMENT", sql)
+        cols = Set(String[String(c.name) for c in Tables.rowtable(DBInterface.execute(db,
+            "PRAGMA table_info(comparison_messages)"))])
+        for c in ("id", "comparison_id", "author_id", "body", "created_at")
+            @test c in cols
+        end
+    end
+end
+
+@testset "Compare schema: idempotent — second open_db is a no-op" begin
+    mktempdir() do tmp
+        path = joinpath(tmp, "h.db")
+        db1 = HimalayaUI.open_db(path)
+        SQLite.close(db1)
+        # Second open must not error and must not duplicate the schema.
+        db2 = HimalayaUI.open_db(path)
+        tables = [String(r.name) for r in Tables.rowtable(DBInterface.execute(db2,
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='comparisons'"))]
+        @test length(tables) == 1
+        SQLite.close(db2)
+    end
+end
+
+@testset "Compare schema: comparisons.id AUTOINCREMENT does not reuse freed ids" begin
+    mktempdir() do tmp
+        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+        DBInterface.execute(db, """
+            INSERT INTO comparisons (title, content_hash, created_at, updated_at)
+            VALUES ('a', 'h1', '2026-01-01', '2026-01-01')""")
+        DBInterface.execute(db, """
+            INSERT INTO comparisons (title, content_hash, created_at, updated_at)
+            VALUES ('b', 'h2', '2026-01-01', '2026-01-01')""")
+        first_max = first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT MAX(id) AS m FROM comparisons"))).m
+        DBInterface.execute(db, "DELETE FROM comparisons")
+        DBInterface.execute(db, """
+            INSERT INTO comparisons (title, content_hash, created_at, updated_at)
+            VALUES ('c', 'h3', '2026-01-01', '2026-01-01')""")
+        new_id = first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM comparisons"))).id
+        @test Int(new_id) > Int(first_max)  # AUTOINCREMENT didn't reuse
+    end
+end
+
+@testset "Compare schema: FK on comparison_members.comparison_id rejects orphans" begin
+    mktempdir() do tmp
+        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+        @test_throws SQLite.SQLiteException DBInterface.execute(db, """
+            INSERT INTO comparison_members
+              (comparison_id, display_order, snapshot, created_at)
+            VALUES (9999, 0, '{}', '2026-01-01')""")
+    end
+end
+
+@testset "Compare schema: ON DELETE SET NULL on comparison_members.exposure_id" begin
+    mktempdir() do tmp
+        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+        exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
+        e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        DBInterface.execute(db, """
+            INSERT INTO comparisons (title, content_hash, created_at, updated_at)
+            VALUES ('t', 'h', '2026-01-01', '2026-01-01')""")
+        cmp_id = Int(first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM comparisons"))).id)
+        DBInterface.execute(db, """
+            INSERT INTO comparison_members
+              (comparison_id, exposure_id, display_order, snapshot, created_at)
+            VALUES (?, ?, 0, '{}', '2026-01-01')""", [cmp_id, e_id])
+        DBInterface.execute(db, "DELETE FROM exposures WHERE id = ?", [e_id])
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT exposure_id FROM comparison_members WHERE comparison_id = ?", [cmp_id]))
+        @test length(rows) == 1
+        @test ismissing(rows[1].exposure_id)
+    end
+end
+
+@testset "Compare schema: ON DELETE CASCADE on comparison_members.comparison_id" begin
+    mktempdir() do tmp
+        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+        DBInterface.execute(db, """
+            INSERT INTO comparisons (title, content_hash, created_at, updated_at)
+            VALUES ('t', 'h', '2026-01-01', '2026-01-01')""")
+        cmp_id = Int(first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM comparisons"))).id)
+        DBInterface.execute(db, """
+            INSERT INTO comparison_members
+              (comparison_id, display_order, snapshot, created_at)
+            VALUES (?, 0, '{}', '2026-01-01')""", [cmp_id])
+        DBInterface.execute(db, """
+            INSERT INTO comparison_messages (comparison_id, body)
+            VALUES (?, 'hi')""", [cmp_id])
+        DBInterface.execute(db, "DELETE FROM comparisons WHERE id = ?", [cmp_id])
+        @test isempty(Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM comparison_members WHERE comparison_id = ?", [cmp_id])))
+        @test isempty(Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM comparison_messages WHERE comparison_id = ?", [cmp_id])))
+    end
+end
+
+@testset "Compare schema: ON DELETE SET NULL on forked_from_id" begin
+    mktempdir() do tmp
+        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+        DBInterface.execute(db, """
+            INSERT INTO comparisons (title, content_hash, created_at, updated_at)
+            VALUES ('parent', 'hp', '2026-01-01', '2026-01-01')""")
+        parent_id = Int(first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM comparisons"))).id)
+        DBInterface.execute(db, """
+            INSERT INTO comparisons
+              (title, content_hash, created_at, updated_at, forked_from_id, forked_at_hash)
+            VALUES ('fork', 'hf', '2026-01-01', '2026-01-01', ?, ?)""",
+            [parent_id, "hp"])
+        fork_id = Int(first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM comparisons WHERE forked_from_id = ?", [parent_id]))).id)
+        DBInterface.execute(db, "DELETE FROM comparisons WHERE id = ?", [parent_id])
+        # Fork survives, forked_from_id is now NULL, forked_at_hash preserved.
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT forked_from_id, forked_at_hash FROM comparisons WHERE id = ?", [fork_id]))
+        @test length(rows) == 1
+        @test ismissing(rows[1].forked_from_id)
+        @test String(rows[1].forked_at_hash) == "hp"
+    end
+end

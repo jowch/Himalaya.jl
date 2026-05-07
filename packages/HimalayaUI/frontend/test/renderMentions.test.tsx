@@ -47,4 +47,51 @@ describe("parseMentions", () => {
   it("handles empty string", () => {
     expect(parseMentions("")).toEqual([]);
   });
+
+  // ─── Comparison mention syntax (Phase 10) ───────────────────────────────
+  // The eager-hash-insertion model means comparison mentions land in chat
+  // bodies as `[[comparison:42@a1b2c3d4]]`, where the 8-char hex suffix is
+  // the truncated content_hash at compose time. The hash is optional —
+  // legacy `[[comparison:42]]` (no hash) must still parse to support
+  // bodies authored before the eager-hash policy or for non-comparison
+  // types that don't carry a hash.
+
+  it("parses comparison mention with hash suffix", () => {
+    const result = parseMentions("[[comparison:42@a1b2c3d4]]");
+    expect(result).toEqual([
+      { kind: "mention", type: "comparison", id: 42, hash: "a1b2c3d4" },
+    ]);
+  });
+
+  it("parses comparison mention without hash suffix", () => {
+    const result = parseMentions("[[comparison:42]]");
+    expect(result).toEqual([
+      { kind: "mention", type: "comparison", id: 42 },
+    ]);
+  });
+
+  it("hash field is undefined for non-comparison types", () => {
+    const result = parseMentions("[[peak:1]]");
+    // No `hash` key on peak/index/exposure/sample mentions.
+    expect(result).toEqual([{ kind: "mention", type: "peak", id: 1 }]);
+  });
+
+  it("handles mixed comparison + other mentions in one body", () => {
+    const result = parseMentions(
+      "see [[comparison:42@a1b2c3d4]] vs [[peak:8]]",
+    );
+    expect(result).toEqual([
+      { kind: "text", text: "see " },
+      { kind: "mention", type: "comparison", id: 42, hash: "a1b2c3d4" },
+      { kind: "text", text: " vs " },
+      { kind: "mention", type: "peak", id: 8 },
+    ]);
+  });
+
+  it("rejects an obviously-malformed hash (too long)", () => {
+    // The lexer is strict — only [0-9a-f]{8} qualifies. Anything else falls
+    // through to the legacy literal-text fallback.
+    const result = parseMentions("[[comparison:42@abc]]");
+    expect(result.every((s) => s.kind === "text")).toBe(true);
+  });
 });

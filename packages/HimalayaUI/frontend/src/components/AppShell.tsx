@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { Routes, Route, useLocation, useNavigate } from "react-router-dom";
 import { useAppState } from "../state";
 import { useSamples } from "../queries";
 import { AppHeader } from "./AppHeader";
@@ -6,17 +7,39 @@ import { TabRocker } from "./TabRocker";
 import { NavModal } from "./NavModal";
 import { IndexPage } from "../pages/IndexPage";
 import { ComparePage } from "../pages/ComparePage";
+import { ComparePageEdit } from "../pages/ComparePageEdit";
 import { InspectPage } from "../pages/InspectPage";
 import { useGlobalShortcuts } from "../hooks/useGlobalShortcuts";
 
 /**
  * AppShell — top-level layout with the grain background, the app header,
  * and the active page body. Owns global keyboard shortcuts.
+ *
+ * Routing model: the Compare page is URL-routed (so `:eid`/`:id` survive
+ * reloads — see Plan §Phase 4). Index and Inspect remain Zustand-driven
+ * for now (existing behaviour). The two systems coexist via:
+ *   - URL `/experiments/:eid/compare*` or `/compare/all` → render Compare
+ *   - Anything else → render IndexPage / InspectPage based on `activePage`
+ *
+ * `TabRocker` syncs the two: clicking "Compare" navigates to the URL,
+ * clicking "Index"/"Inspect" navigates back to "/" and updates `activePage`.
  */
+function ZustandShellPage(): JSX.Element {
+  const activePage = useAppState((s) => s.activePage);
+  return (
+    <>
+      {activePage === "index"   && <IndexPage />}
+      {activePage === "inspect" && <InspectPage />}
+    </>
+  );
+}
+
 export function AppShell(): JSX.Element {
-  const activePage  = useAppState((s) => s.activePage);
-  const theme       = useAppState((s) => s.theme);
+  const theme        = useAppState((s) => s.theme);
   const experimentId = useAppState((s) => s.activeExperimentId);
+  const setActivePage = useAppState((s) => s.setActivePage);
+  const location = useLocation();
+  const navigate = useNavigate();
 
   // Apply theme to <html> so our CSS can key off `html.theme-light`.
   useEffect(() => {
@@ -24,6 +47,19 @@ export function AppShell(): JSX.Element {
     document.documentElement.className = cls;
     return () => { document.documentElement.className = ""; };
   }, [theme]);
+
+  // Sync URL → Zustand activePage. When the URL is /compare* or
+  // /experiments/:eid/compare*, mark the page tab as "compare". When the
+  // URL is "/", we leave activePage alone (it's already index/inspect).
+  const onComparePath = location.pathname.startsWith("/compare")
+    || /^\/experiments\/\d+\/compare(\/|$)/.test(location.pathname);
+  useEffect(() => {
+    if (onComparePath) setActivePage("compare");
+  }, [onComparePath, setActivePage]);
+
+  // When the user's activePage flips from compare back to index/inspect via
+  // TabRocker, we navigate back to "/" so the Zustand shell takes over.
+  // This is handled in TabRocker itself — see TabRocker.tsx.
 
   const samplesQ = useSamples(experimentId ?? 0);
   useGlobalShortcuts(experimentId === undefined ? undefined : samplesQ.data);
@@ -41,11 +77,34 @@ export function AppShell(): JSX.Element {
           used to live. The page title now lives in the plot card's top
           strip on the Index page. */}
       <div className="shrink-0 flex justify-center pt-1 pb-2">
-        <TabRocker />
+        <TabRocker
+          experimentId={experimentId}
+          onNavigateAway={(target) => {
+            // Leaving Compare → return to "/" so the Zustand shell renders
+            // the chosen page.
+            if (onComparePath && target !== "compare") navigate("/");
+          }}
+        />
       </div>
-      {activePage === "index"   && <IndexPage />}
-      {activePage === "inspect" && <InspectPage />}
-      {activePage === "compare" && <ComparePage />}
+      <Routes>
+        <Route path="/experiments/:eid/compare" element={<ComparePage />} />
+        <Route path="/experiments/:eid/compare/new" element={<ComparePageEdit />} />
+        <Route path="/experiments/:eid/compare/:id" element={<ComparePage />} />
+        <Route path="/experiments/:eid/compare/:id/edit" element={<ComparePageEdit />} />
+        <Route path="/compare/all" element={<ComparePage />} />
+        {/*
+          Global (experiment-less) deep-link routes — mirror the experiment-
+          scoped review/edit/new triple so picking a comparison from
+          /compare/all lands on its review page (not the empty list). New
+          drafts created from /compare/all/new have no `experiment_id`
+          association on the backend (comparisons aren't FK'd to experiments
+          per spec); the global picker context applies.
+        */}
+        <Route path="/compare/all/new" element={<ComparePageEdit />} />
+        <Route path="/compare/all/:id" element={<ComparePage />} />
+        <Route path="/compare/all/:id/edit" element={<ComparePageEdit />} />
+        <Route path="*" element={<ZustandShellPage />} />
+      </Routes>
       <NavModal />
     </div>
   );

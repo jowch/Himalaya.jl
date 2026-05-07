@@ -5,6 +5,7 @@ import { renderWithProviders } from "./test-utils";
 import { MentionChip } from "../src/components/MentionChip";
 import { useAppState } from "../src/state";
 import type { ResolvedMention } from "../src/hooks/useMentionResolution";
+import type * as api from "../src/api";
 import type { Peak, IndexEntry } from "../src/api";
 
 const PEAK: Peak = {
@@ -76,3 +77,82 @@ describe("<MentionChip> — loading and dead", () => {
     expect(chip.closest("[data-mention-state='dead']")).toBeInTheDocument();
   });
 });
+
+// ─── Comparison chip (Phase 10) ───────────────────────────────────────────
+describe("<MentionChip> — comparison", () => {
+  const COMP: api.Comparison = {
+    id: 7, title: "DOPE titration",
+    description: null,
+    content_hash: "a1b2c3d4e5f60718",
+    created_by: 1,
+    created_at: "2026-05-02 10:00:00",
+    updated_at: "2026-05-02 10:00:00",
+    forked_from_id: null,
+    forked_at_hash: null,
+    forked_from_title: null,
+    members: [
+      // Three members — count surfaces in the chip tooltip.
+      makeMember(1), makeMember(2), makeMember(3),
+    ],
+  };
+
+  it("renders title as the chip label", () => {
+    const resolved: ResolvedMention = { type: "comparison", data: COMP };
+    renderWithProviders(<MentionChip resolved={resolved} />);
+    expect(screen.getByText("DOPE titration")).toBeInTheDocument();
+  });
+
+  it("exposes data-testid + data-mention-* attrs for E2E selectors", () => {
+    const resolved: ResolvedMention = { type: "comparison", data: COMP };
+    renderWithProviders(<MentionChip resolved={resolved} tokenHash="a1b2c3d4" />);
+    const chip = screen.getByText("DOPE titration").closest("[data-mention-type]")!;
+    expect(chip).toHaveAttribute("data-testid", "mention-chip");
+    expect(chip).toHaveAttribute("data-mention-type", "comparison");
+    expect(chip).toHaveAttribute("data-mention-id", "7");
+  });
+
+  it("data-hash-drift='false' when tokenHash matches current content_hash", () => {
+    const resolved: ResolvedMention = { type: "comparison", data: COMP };
+    renderWithProviders(<MentionChip resolved={resolved} tokenHash="a1b2c3d4" />);
+    const chip = screen.getByText("DOPE titration").closest("[data-mention-type]")!;
+    expect(chip).toHaveAttribute("data-hash-drift", "false");
+  });
+
+  it("data-hash-drift='true' when tokenHash diverges from current content_hash", () => {
+    const resolved: ResolvedMention = { type: "comparison", data: COMP };
+    renderWithProviders(<MentionChip resolved={resolved} tokenHash="00000000" />);
+    const chip = screen.getByText(/DOPE titration/).closest("[data-mention-type]")!;
+    expect(chip).toHaveAttribute("data-hash-drift", "true");
+    // Visible drift annotation alongside the title.
+    expect(screen.getByText(/changed/i)).toBeInTheDocument();
+  });
+
+  it("data-hash-drift='false' when no tokenHash is provided", () => {
+    // Legacy `[[comparison:7]]` form (no eager hash) — drift indicator off.
+    const resolved: ResolvedMention = { type: "comparison", data: COMP };
+    renderWithProviders(<MentionChip resolved={resolved} />);
+    const chip = screen.getByText("DOPE titration").closest("[data-mention-type]")!;
+    expect(chip).toHaveAttribute("data-hash-drift", "false");
+  });
+});
+
+function makeMember(id: number): api.ComparisonMember {
+  return {
+    id,
+    comparison_id: 7,
+    exposure_id: 100 + id,
+    display_order: id,
+    band_height: 1.0,
+    y_offset: 0,
+    normalization: "none",
+    color_override: null,
+    label_override: null,
+    q_window_min: null,
+    q_window_max: null,
+    peak_display: null,
+    snapshot: null,
+    is_stale: false,
+    created_by: null,
+    created_at: null,
+  };
+}

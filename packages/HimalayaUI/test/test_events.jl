@@ -413,6 +413,405 @@ end
     end
 end
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Compare page (Plan §Phase 1, Task 1.2 + 1.3): comparison_created /
+# comparison_submitted / comparison_deleted dispatcher branches.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Helper: build a single member dict with the minimum required fields.
+_compare_member_payload(; id=nothing, exposure_id=nothing, display_order::Int=0,
+                          band_height::Float64=1.0, y_offset::Float64=0.0,
+                          normalization::String="none",
+                          color_override=nothing, label_override=nothing,
+                          q_window_min=nothing, q_window_max=nothing,
+                          peak_display=nothing,
+                          snapshot=Dict(:effective_peaks => [],
+                                        :confirmed_index => nothing,
+                                        :analysis_inputs_hash => "sha256:zero")) =
+    Dict{Symbol,Any}(
+        :id             => id,
+        :exposure_id    => exposure_id,
+        :display_order  => display_order,
+        :band_height    => band_height,
+        :y_offset       => y_offset,
+        :normalization  => normalization,
+        :color_override => color_override,
+        :label_override => label_override,
+        :q_window_min   => q_window_min,
+        :q_window_max   => q_window_max,
+        :peak_display   => peak_display,
+        :snapshot       => snapshot,
+    )
+
+# Helper: pre-mint a comparisons row at a known id so the dispatcher's
+# INSERT/UPDATE-on-existing path runs against an existing row (matches the
+# real route handler's two-step pattern).
+function _premint_comparison!(db, id::Int)
+    DBInterface.execute(db,
+        """INSERT INTO comparisons (id, title, content_hash, created_at, updated_at)
+           VALUES (?, '', '', '', '')""", [id])
+    nothing
+end
+
+@testset "comparison_created: 0 members" begin
+    mktempdir() do dir
+        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        HimalayaUI.bind_db!(db)
+        req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
+        _premint_comparison!(db, 1)
+        HimalayaUI.apply_event!(db, req;
+            kind="comparison_created", entity_type="comparison", entity_id=1,
+            payload=Dict(:title => "T1", :description => "d",
+                         :forked_from_id => nothing, :forked_at_hash => nothing,
+                         :members => []))
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT title, description, content_hash FROM comparisons WHERE id = 1"))
+        @test length(rows) == 1
+        @test String(rows[1].title) == "T1"
+        @test String(rows[1].description) == "d"
+        @test startswith(String(rows[1].content_hash), "sha256:")
+        @test isempty(Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM comparison_members WHERE comparison_id = 1")))
+    end
+end
+
+@testset "comparison_created: 3 members, content_hash populated, member fields present" begin
+    mktempdir() do dir
+        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        HimalayaUI.bind_db!(db)
+        # Seed exposures so exposure_id FKs are valid.
+        exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+        s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id)
+        e1 = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        e2 = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        e3 = HimalayaUI.create_exposure!(db; sample_id=s_id)
+
+        _premint_comparison!(db, 1)
+        members = [
+            _compare_member_payload(exposure_id=e1, display_order=0, band_height=1.0),
+            _compare_member_payload(exposure_id=e2, display_order=1, band_height=2.0),
+            _compare_member_payload(exposure_id=e3, display_order=2, band_height=3.0),
+        ]
+        req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
+        HimalayaUI.apply_event!(db, req;
+            kind="comparison_created", entity_type="comparison", entity_id=1,
+            payload=Dict(:title => "Three", :description => nothing,
+                         :forked_from_id => nothing, :forked_at_hash => nothing,
+                         :members => members))
+        rows = Tables.rowtable(DBInterface.execute(db,
+            """SELECT exposure_id, display_order, band_height, snapshot, created_by
+               FROM comparison_members WHERE comparison_id = 1
+               ORDER BY display_order"""))
+        @test length(rows) == 3
+        @test [Int(r.exposure_id) for r in rows] == [e1, e2, e3]
+        @test [Int(r.display_order) for r in rows] == [0, 1, 2]
+        @test [Float64(r.band_height) for r in rows] == [1.0, 2.0, 3.0]
+        # snapshot column populated (not NULL).
+        @test all(!ismissing(r.snapshot) for r in rows)
+        # created_by populated from the X-Username actor.
+        @test all(!ismissing(r.created_by) for r in rows)
+
+        ch = first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT content_hash FROM comparisons WHERE id = 1"))).content_hash
+        @test startswith(String(ch), "sha256:")
+    end
+end
+
+@testset "comparison_submitted: no-op (same state) preserves rows but recomputes hash" begin
+    mktempdir() do dir
+        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        HimalayaUI.bind_db!(db)
+        exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+        s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id)
+        e_id = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        _premint_comparison!(db, 7)
+        req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
+
+        HimalayaUI.apply_event!(db, req;
+            kind="comparison_created", entity_type="comparison", entity_id=7,
+            payload=Dict(:title => "T", :description => nothing,
+                         :forked_from_id => nothing, :forked_at_hash => nothing,
+                         :members => [_compare_member_payload(exposure_id=e_id)]))
+        member_id = Int(first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM comparison_members WHERE comparison_id = 7"))).id)
+
+        # Submit with the same payload structure (carrying the existing member id).
+        HimalayaUI.apply_event!(db, req;
+            kind="comparison_submitted", entity_type="comparison", entity_id=7,
+            payload=Dict(:title => "T", :description => nothing,
+                         :members => [_compare_member_payload(id=member_id, exposure_id=e_id)]))
+        # Same single member, same exposure_id.
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id, exposure_id FROM comparison_members WHERE comparison_id = 7"))
+        @test length(rows) == 1
+        @test Int(rows[1].id) == member_id
+        @test Int(rows[1].exposure_id) == e_id
+    end
+end
+
+@testset "comparison_submitted: member added (id === nothing)" begin
+    mktempdir() do dir
+        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        HimalayaUI.bind_db!(db)
+        exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+        s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id)
+        e1 = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        e2 = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        _premint_comparison!(db, 5)
+        req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
+
+        HimalayaUI.apply_event!(db, req;
+            kind="comparison_created", entity_type="comparison", entity_id=5,
+            payload=Dict(:title => "T", :description => nothing,
+                         :forked_from_id => nothing, :forked_at_hash => nothing,
+                         :members => [_compare_member_payload(exposure_id=e1, display_order=0)]))
+        m1_id = Int(first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM comparison_members WHERE comparison_id = 5"))).id)
+
+        HimalayaUI.apply_event!(db, req;
+            kind="comparison_submitted", entity_type="comparison", entity_id=5,
+            payload=Dict(:title => "T", :description => nothing,
+                         :members => [
+                            _compare_member_payload(id=m1_id, exposure_id=e1, display_order=0),
+                            _compare_member_payload(id=nothing, exposure_id=e2, display_order=1),
+                         ]))
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT exposure_id, display_order FROM comparison_members WHERE comparison_id = 5 ORDER BY display_order"))
+        @test length(rows) == 2
+        @test [Int(r.exposure_id) for r in rows] == [e1, e2]
+    end
+end
+
+@testset "comparison_submitted: member removed (DB id absent from payload)" begin
+    mktempdir() do dir
+        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        HimalayaUI.bind_db!(db)
+        exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+        s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id)
+        e1 = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        e2 = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        _premint_comparison!(db, 8)
+        req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
+
+        HimalayaUI.apply_event!(db, req;
+            kind="comparison_created", entity_type="comparison", entity_id=8,
+            payload=Dict(:title => "T", :description => nothing,
+                         :forked_from_id => nothing, :forked_at_hash => nothing,
+                         :members => [
+                            _compare_member_payload(exposure_id=e1, display_order=0),
+                            _compare_member_payload(exposure_id=e2, display_order=1),
+                         ]))
+        ids = [Int(r.id) for r in Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM comparison_members WHERE comparison_id = 8 ORDER BY display_order"))]
+
+        HimalayaUI.apply_event!(db, req;
+            kind="comparison_submitted", entity_type="comparison", entity_id=8,
+            payload=Dict(:title => "T", :description => nothing,
+                         :members => [
+                            _compare_member_payload(id=ids[1], exposure_id=e1, display_order=0),
+                         ]))
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id, exposure_id FROM comparison_members WHERE comparison_id = 8"))
+        @test length(rows) == 1
+        @test Int(rows[1].id) == ids[1]
+    end
+end
+
+@testset "comparison_submitted: UPDATE writes snapshot unconditionally on same exposure" begin
+    mktempdir() do dir
+        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        HimalayaUI.bind_db!(db)
+        exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+        s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id)
+        e1 = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        _premint_comparison!(db, 12)
+        req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
+
+        first_snap = Dict(:effective_peaks => [Dict(:id => 1, :q => 0.1, :intensity => 1.0,
+                                                    :sharpness => 0.5, :source => "auto")],
+                          :confirmed_index => nothing,
+                          :analysis_inputs_hash => "sha256:firstsnap")
+        HimalayaUI.apply_event!(db, req;
+            kind="comparison_created", entity_type="comparison", entity_id=12,
+            payload=Dict(:title => "T", :description => nothing,
+                         :forked_from_id => nothing, :forked_at_hash => nothing,
+                         :members => [_compare_member_payload(exposure_id=e1, snapshot=first_snap)]))
+        m_id = Int(first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM comparison_members WHERE comparison_id = 12"))).id)
+
+        # Same exposure, NEW snapshot — must update unconditionally.
+        new_snap = Dict(:effective_peaks => [],
+                        :confirmed_index => Dict(:id => 99, :phase => "Pn3m",
+                                                 :lattice_d => 12.0, :r_squared => 0.99,
+                                                 :ngc => 0.7, :peak_ids => [42]),
+                        :analysis_inputs_hash => "sha256:newsnap")
+        HimalayaUI.apply_event!(db, req;
+            kind="comparison_submitted", entity_type="comparison", entity_id=12,
+            payload=Dict(:title => "T", :description => nothing,
+                         :members => [_compare_member_payload(id=m_id, exposure_id=e1,
+                                                               snapshot=new_snap)]))
+        snap_str = String(first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT snapshot FROM comparison_members WHERE id = ?", [m_id]))).snapshot)
+        snap_obj = JSON3.read(snap_str)
+        @test String(snap_obj.analysis_inputs_hash) == "sha256:newsnap"
+        @test snap_obj.confirmed_index !== nothing
+        @test String(snap_obj.confirmed_index.phase) == "Pn3m"
+    end
+end
+
+@testset "comparison_submitted: reorder updates display_order" begin
+    mktempdir() do dir
+        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        HimalayaUI.bind_db!(db)
+        exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+        s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id)
+        e1 = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        e2 = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        _premint_comparison!(db, 3)
+        req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
+
+        HimalayaUI.apply_event!(db, req;
+            kind="comparison_created", entity_type="comparison", entity_id=3,
+            payload=Dict(:title => "T", :description => nothing,
+                         :forked_from_id => nothing, :forked_at_hash => nothing,
+                         :members => [
+                            _compare_member_payload(exposure_id=e1, display_order=0),
+                            _compare_member_payload(exposure_id=e2, display_order=1),
+                         ]))
+        rows0 = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id, exposure_id, display_order FROM comparison_members WHERE comparison_id = 3 ORDER BY display_order"))
+        m1, m2 = Int(rows0[1].id), Int(rows0[2].id)
+
+        # Swap order.
+        HimalayaUI.apply_event!(db, req;
+            kind="comparison_submitted", entity_type="comparison", entity_id=3,
+            payload=Dict(:title => "T", :description => nothing,
+                         :members => [
+                            _compare_member_payload(id=m1, exposure_id=e1, display_order=1),
+                            _compare_member_payload(id=m2, exposure_id=e2, display_order=0),
+                         ]))
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id, display_order FROM comparison_members WHERE comparison_id = 3 ORDER BY id"))
+        @test Int(rows[1].id) == m1
+        @test Int(rows[1].display_order) == 1
+        @test Int(rows[2].id) == m2
+        @test Int(rows[2].display_order) == 0
+    end
+end
+
+@testset "comparison_submitted: zero-row UPDATE errors (member id not for this comparison)" begin
+    mktempdir() do dir
+        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        HimalayaUI.bind_db!(db)
+        _premint_comparison!(db, 4)
+        req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
+        # Try to UPDATE a member that doesn't exist.
+        @test_throws Exception HimalayaUI.apply_event!(db, req;
+            kind="comparison_submitted", entity_type="comparison", entity_id=4,
+            payload=Dict(:title => "T", :description => nothing,
+                         :members => [_compare_member_payload(id=999_999, exposure_id=nothing)]))
+    end
+end
+
+@testset "comparison_deleted cascades to members and messages" begin
+    mktempdir() do dir
+        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        HimalayaUI.bind_db!(db)
+        exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+        s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id)
+        e1 = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        _premint_comparison!(db, 11)
+        req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
+        HimalayaUI.apply_event!(db, req;
+            kind="comparison_created", entity_type="comparison", entity_id=11,
+            payload=Dict(:title => "T", :description => nothing,
+                         :forked_from_id => nothing, :forked_at_hash => nothing,
+                         :members => [_compare_member_payload(exposure_id=e1)]))
+        DBInterface.execute(db,
+            "INSERT INTO comparison_messages (comparison_id, body) VALUES (?, ?)",
+            [11, "hi"])
+        HimalayaUI.apply_event!(db, req;
+            kind="comparison_deleted", entity_type="comparison", entity_id=11,
+            payload=Dict(:reason => "test"))
+        @test isempty(Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM comparisons WHERE id = 11")))
+        @test isempty(Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM comparison_members WHERE comparison_id = 11")))
+        @test isempty(Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM comparison_messages WHERE comparison_id = 11")))
+    end
+end
+
+@testset "rebuild_views_from_log!(entity_type=\"comparison\") reproduces live state" begin
+    mktempdir() do dir
+        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        HimalayaUI.bind_db!(db)
+        exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+        s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id)
+        e1 = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        e2 = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        e3 = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        cmp_id = 21
+        _premint_comparison!(db, cmp_id)
+        req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
+
+        HimalayaUI.apply_event!(db, req;
+            kind="comparison_created", entity_type="comparison", entity_id=cmp_id,
+            payload=Dict(:title => "T", :description => "d",
+                         :forked_from_id => nothing, :forked_at_hash => nothing,
+                         :members => [
+                            _compare_member_payload(exposure_id=e1, display_order=0),
+                            _compare_member_payload(exposure_id=e2, display_order=1),
+                         ]))
+        ids = [Int(r.id) for r in Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM comparison_members WHERE comparison_id = ? ORDER BY display_order",
+            [cmp_id]))]
+        HimalayaUI.apply_event!(db, req;
+            kind="comparison_submitted", entity_type="comparison", entity_id=cmp_id,
+            payload=Dict(:title => "T2", :description => "d2",
+                         :members => [
+                            _compare_member_payload(id=ids[1], exposure_id=e1, display_order=0),
+                            _compare_member_payload(id=nothing, exposure_id=e3, display_order=1),
+                         ]))
+
+        # Snapshot live state.
+        live_cmp = first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT title, description, content_hash FROM comparisons WHERE id = ?", [cmp_id])))
+        live_members = Tables.rowtable(DBInterface.execute(db,
+            """SELECT id, exposure_id, display_order, snapshot
+               FROM comparison_members WHERE comparison_id = ? ORDER BY id""", [cmp_id]))
+
+        # Wipe view tables for this comparison and replay.
+        DBInterface.execute(db, "DELETE FROM comparison_members WHERE comparison_id = ?", [cmp_id])
+        DBInterface.execute(db, "DELETE FROM comparisons WHERE id = ?", [cmp_id])
+        # Re-mint the comparison row at the original id so the dispatcher's
+        # update branch lands on it.
+        _premint_comparison!(db, cmp_id)
+
+        HimalayaUI.rebuild_views_from_log!(db, cmp_id; entity_type="comparison")
+
+        rebuilt_cmp = first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT title, description, content_hash FROM comparisons WHERE id = ?", [cmp_id])))
+        rebuilt_members = Tables.rowtable(DBInterface.execute(db,
+            """SELECT id, exposure_id, display_order, snapshot
+               FROM comparison_members WHERE comparison_id = ? ORDER BY id""", [cmp_id]))
+
+        @test String(live_cmp.title) == String(rebuilt_cmp.title)
+        @test String(live_cmp.description) == String(rebuilt_cmp.description)
+        @test String(live_cmp.content_hash) == String(rebuilt_cmp.content_hash)
+        @test length(live_members) == length(rebuilt_members)
+        for (a, b) in zip(live_members, rebuilt_members)
+            @test Int(a.exposure_id) == Int(b.exposure_id)
+            @test Int(a.display_order) == Int(b.display_order)
+            @test String(a.snapshot) == String(b.snapshot)
+        end
+    end
+end
+
+# ─────────────────────────────────────────────────────────────────────────────
+# (Continuation of pre-existing tests below.)
+# ─────────────────────────────────────────────────────────────────────────────
+
 @testset "I2: apply_event!(::InTransaction, ...) rolls back with caller's tx on throw" begin
     mktempdir() do tmp
         db = HimalayaUI.open_db(joinpath(tmp, "test.db"))

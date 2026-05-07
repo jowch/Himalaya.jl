@@ -18,6 +18,7 @@ import { DetectorImageCard } from "../components/DetectorImageCard";
 import { SampleMetadataCard } from "../components/SampleMetadataCard";
 import { ChatCard } from "../components/ChatCard";
 import { WorkspaceGrid } from "../components/WorkspaceGrid";
+import { WarmAddMenu } from "../components/WarmAddMenu";
 import type { Exposure, Sample } from "../api";
 
 const DETECTOR_IMAGE_FIXTURE_EXPOSURE: Exposure = {
@@ -197,6 +198,9 @@ export function InspectPage(): JSX.Element {
       data-testid="inspect-page"
       className="flex-1 min-h-0 flex flex-col gap-3 px-4 pb-4 pt-2"
     >
+      <div className="flex items-center justify-end gap-2 px-2">
+        <WarmAddMenu exposureId={viewingId} experimentId={experimentId} />
+      </div>
       {/*
         Layout (shared with IndexPage via WorkspaceGrid):
           < 1400px  → single column stacked: image+gallery → metadata → chat
