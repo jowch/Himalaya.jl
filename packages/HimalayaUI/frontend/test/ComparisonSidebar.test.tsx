@@ -149,6 +149,27 @@ describe("ComparisonSidebar", () => {
     expect(screen.getByTestId("comparison-sidebar-empty")).toBeInTheDocument();
   });
 
+  it("empty state surfaces a + New CTA that navigates to /new", async () => {
+    const user = userEvent.setup();
+    qc.setQueryData(queryKeys.comparisons(7), []);
+    renderSidebar({
+      qc, scope: "experiment", experimentId: 7, probe: true,
+    });
+    const cta = screen.getByTestId("comparison-sidebar-empty-new");
+    expect(cta).toBeEnabled();
+    await user.click(cta);
+    expect(screen.getByTestId("path-probe")).toHaveTextContent(
+      "/experiments/7/compare/new",
+    );
+  });
+
+  it("empty state CTA is disabled when no experiment context", () => {
+    qc.setQueryData(queryKeys.comparisons("all"), []);
+    renderSidebar({ qc, scope: "all", experimentId: undefined });
+    const cta = screen.getByTestId("comparison-sidebar-empty-new");
+    expect(cta).toBeDisabled();
+  });
+
   it("sorts rows most-recent first by updated_at", () => {
     qc.setQueryData(queryKeys.comparisons(7), [ROW_OLD, ROW_NEW, ROW_MID]);
     renderSidebar({ qc, scope: "experiment", experimentId: 7 });

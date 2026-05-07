@@ -303,13 +303,20 @@ test("curate → reanalyze: active-set membership survives a reanalysis round-tr
   await expect(page.getByRole("alert")).not.toBeVisible();
 });
 
-test("tab rocker switches to the Compare page placeholder", async ({ page }) => {
+test("tab rocker switches to the Compare page", async ({ page }) => {
   await seedState(page, { activeExperimentId: 1, activeSampleId: 10 });
   await mockCore(page, [{ id: 1, username: "alice" }]);
+  // The Compare sidebar fetches its scoped listing on mount.
+  await page.route("**/api/experiments/1/comparisons", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
+  await page.route("**/api/users/me/comparison-pins", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
   await page.goto("/");
 
   await expect(page.getByTestId("index-page")).toBeVisible();
   await page.getByTestId("tab-compare").click();
   await expect(page.getByTestId("compare-page")).toBeVisible();
-  await expect(page.getByText(/Coming soon/i)).toBeVisible();
+  // Sidebar is the persistent shell on the Compare page; assert it instead
+  // of the long-since-removed "Coming soon" placeholder.
+  await expect(page.getByTestId("comparison-sidebar")).toBeVisible();
 });

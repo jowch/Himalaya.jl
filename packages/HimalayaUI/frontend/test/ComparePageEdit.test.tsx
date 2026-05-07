@@ -312,4 +312,79 @@ describe("ComparePageEdit", () => {
     // Member meta row mounted via the gutter
     expect(screen.getByTestId("member-meta-row")).toBeInTheDocument();
   });
+
+  // ─── Keyboard shortcuts (Phase 13, Task 13.4) ─────────────────────────────
+
+  it("Escape cancels the edit (returns to /:id review for edit-existing)", () => {
+    const qc = makeQc();
+    // Seed a draft tied to id=42 to exercise the cancel-from-edit path.
+    useAppState.setState({
+      activeDraft: {
+        id: 42, baseHash: "h", title: "T", description: "",
+        members: [],
+      },
+    });
+    renderEdit({ qc, initialPath: "/experiments/7/compare/42/edit" });
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.getByTestId("path-probe")).toHaveTextContent(
+      "/experiments/7/compare/42",
+    );
+  });
+
+  it("Cmd+Enter triggers save when draft has members", async () => {
+    const qc = makeQc();
+    seedExposure(qc, 100);
+    useAppState.getState().startNewDraft();
+    useAppState.getState().setDraftTitle("kbd save");
+    useAppState.getState().addMember(100, qc);
+
+    const created: Comparison = {
+      id: 99,
+      title: "kbd save",
+      description: null,
+      content_hash: "h-new",
+      created_by: 1,
+      created_at: "2026-05-06T00:00:00Z",
+      updated_at: "2026-05-06T00:00:00Z",
+      forked_from_id: null,
+      forked_at_hash: null,
+      forked_from_title: null,
+      members: [],
+    };
+    const fetchSpy = vi.spyOn(global, "fetch").mockImplementation(async (input, init) => {
+      const url = typeof input === "string" ? input : String(input);
+      if (url === "/api/comparisons" && init?.method === "POST") {
+        return new Response(JSON.stringify(created), {
+          status: 200, headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    renderEdit({ qc, initialPath: "/experiments/7/compare/new" });
+    fireEvent.keyDown(window, { key: "Enter", metaKey: true });
+    await waitFor(() => {
+      const calls = fetchSpy.mock.calls.map((c) =>
+        [typeof c[0] === "string" ? c[0] : String(c[0]),
+         (c[1] as RequestInit | undefined)?.method] as const,
+      );
+      expect(calls).toContainEqual(["/api/comparisons", "POST"]);
+    });
+  });
+
+  it("Cmd+Enter is a no-op when draft has zero members", () => {
+    const qc = makeQc();
+    useAppState.getState().startNewDraft();
+    const fetchSpy = vi.spyOn(global, "fetch")
+      .mockResolvedValue(new Response("[]", { status: 200,
+        headers: { "Content-Type": "application/json" } }));
+    renderEdit({ qc, initialPath: "/experiments/7/compare/new" });
+    fireEvent.keyDown(window, { key: "Enter", metaKey: true });
+    // No POST /api/comparisons call. (Other reads — pins, etc — may fire,
+    // but Save itself must not.)
+    const saveCalls = fetchSpy.mock.calls.filter(([u, init]) => {
+      const url = typeof u === "string" ? u : String(u);
+      return url === "/api/comparisons" && (init as RequestInit | undefined)?.method === "POST";
+    });
+    expect(saveCalls).toHaveLength(0);
+  });
 });

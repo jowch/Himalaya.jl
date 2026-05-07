@@ -208,11 +208,26 @@ export function ComparisonSidebar({
         {filtered.length === 0 ? (
           <li
             data-testid="comparison-sidebar-empty"
-            className="text-fg-muted text-sm p-3 text-center"
+            className="text-fg-muted text-sm p-4 text-center flex flex-col items-center gap-2"
           >
-            {rows.length === 0
-              ? "No comparisons yet. Click + New to create one."
-              : "No matches."}
+            {rows.length === 0 ? (
+              <>
+                <span className="italic">No comparisons yet.</span>
+                <button
+                  type="button"
+                  data-testid="comparison-sidebar-empty-new"
+                  onClick={onNew}
+                  disabled={experimentId === undefined}
+                  className="px-3 py-1 rounded border border-border text-fg
+                             hover:bg-bg-elevated text-sm disabled:opacity-50
+                             disabled:cursor-not-allowed"
+                >
+                  + New comparison
+                </button>
+              </>
+            ) : (
+              <span>No matches.</span>
+            )}
           </li>
         ) : (
           filtered.map((c) => {

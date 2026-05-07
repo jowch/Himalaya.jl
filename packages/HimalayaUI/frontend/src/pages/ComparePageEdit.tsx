@@ -218,6 +218,36 @@ export function ComparePageEdit(): JSX.Element {
     }
   }, [save.isSuccess, save.data, discardDraft, goToReview, goToList]);
 
+  // Phase 13 Task 13.4 — keyboard shortcuts:
+  //   Esc            → cancel (return to review or list)
+  //   Cmd/Ctrl+Enter → submit (Save), if save isn't already disabled
+  // Listener is attached to the page-edit shell so the shortcut only fires
+  // while the user is on the edit page. The save handler reads `draft`
+  // through the closure already; we re-check `members.length === 0` to
+  // mirror the button's disabled state and avoid sending an empty payload.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") {
+        // Don't intercept Esc when a modal (picker, conflict, nav) is open
+        // — those have their own Esc handling. The presence of an open
+        // dialog with role="dialog" is the cleanest cross-modal probe.
+        const openDialog = document.querySelector('[role="dialog"]');
+        if (openDialog) return;
+        e.preventDefault();
+        handleCancel();
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+        if (draft === null || draft.members.length === 0) return;
+        if (save.isPending) return;
+        e.preventDefault();
+        handleSave();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [handleCancel, handleSave, draft, save.isPending]);
+
   const scope: "all" | "experiment" = eid !== undefined ? "experiment" : "all";
 
   // Phase 5 Task 5.2 — local state for the picker open/close. Picker open
@@ -348,6 +378,7 @@ export function ComparePageEdit(): JSX.Element {
             data-testid="comparison-save"
             onClick={handleSave}
             disabled={(draft?.members.length ?? 0) === 0 || save.isPending}
+            title="Save (Cmd+Enter)"
             className="px-3 py-1 rounded bg-accent text-bg disabled:opacity-50 text-sm font-medium"
           >
             {save.isPending ? "Saving…" : "Save"}
@@ -356,6 +387,7 @@ export function ComparePageEdit(): JSX.Element {
             type="button"
             data-testid="comparison-cancel"
             onClick={handleCancel}
+            title="Cancel (Esc)"
             className="px-3 py-1 rounded border border-border text-sm"
           >
             Cancel
