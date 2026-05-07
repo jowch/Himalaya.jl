@@ -323,4 +323,5 @@ tab. See docs/event-log.md §"Client side".
 - [docs/superpowers/specs/2026-04-28-experiment-config-design.md](docs/superpowers/specs/2026-04-28-experiment-config-design.md) — config system design spec.
 - [docs/superpowers/plans/](docs/superpowers/plans/) — implementation plans (one per sub-project).
 - [docs/future-feature-ideas.md](docs/future-feature-ideas.md) — intentionally-deferred features.
+- **AGENTS.md hierarchy** — root `AGENTS.md` + `src/AGENTS.md` + `packages/HimalayaUI/src/AGENTS.md` + `packages/HimalayaUI/frontend/src/AGENTS.md` + `packages/HimalayaUI/frontend/src/lib/queue/AGENTS.md`. Deeper files contain module-specific conventions and anti-patterns; read the one nearest the code you're touching.
 - [packages/HimalayaUI/.env.example](packages/HimalayaUI/.env.example) — deployment env vars.

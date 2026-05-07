@@ -1,5 +1,33 @@
 # AGENTS.md — Himalaya.jl quick reference
 
+**Generated:** 2026-05-07
+**Commit:** a907bea
+**Branch:** main
+
+## OVERVIEW
+
+Julia monorepo for indexing SAXS diffraction patterns. Core `Himalaya` package (root) finds Bragg peaks and identifies liquid-crystalline phases. `HimalayaUI` (under `packages/`) is a full-stack web app — Julia/Oxygen.jl REST backend + React/Vite frontend — for running and curating analyses.
+
+## STRUCTURE
+
+```
+.
+├── src/                         # Core Himalaya package (peak finding, phase indexing)
+├── test/                        # Core package tests
+├── packages/
+│   └── HimalayaUI/              # Full-stack web app
+│       ├── src/                 # Julia backend (Oxygen.jl, SQLite, SSE)
+│       ├── test/                # Backend tests
+│       ├── frontend/            # React 18 + Vite frontend
+│       │   ├── src/             # Frontend source
+│       │   ├── test/            # Vitest unit tests
+│       │   └── e2e/             # Playwright E2E specs
+│       └── docs/                # Frontend-specific docs (boneyard)
+├── docs/                        # Architecture docs (peak-finding, queue, events, scoring)
+├── scripts/                     # Build scripts (PackageCompiler sysimage)
+└── bin/                         # CLI wrapper script
+```
+
 ## First session
 
 Read these in order before touching code:
@@ -9,13 +37,6 @@ Read these in order before touching code:
 4. `docs/event-log.md` — if touching events.jl, hash.jl, SSE, or StaleIndicesBanner
 5. `docs/mutation-queue.md` — if touching lib/queue/, idempotency.jl, or applyRemoteToCache.ts
 6. `docs/contract-testing.md` — if fixing queue/SSE/cache reconciliation bugs
-
-## Project structure
-
-- **Root** = core `Himalaya` package (peak finding, phase indexing, scoring)
-- **`packages/HimalayaUI/`** = full-stack web app
-  - `src/` = Julia/Oxygen.jl REST backend + CLI
-  - `frontend/` = React 18 + Vite + TypeScript strict
 
 ## Running tests
 
@@ -47,25 +68,18 @@ npm run build
 
 When reviewing a PR (as reviewer, not author):
 
-1. **Check out the PR branch into a worktree** — never review from diff alone:
+1. **Check out the PR branch into a worktree**:
    ```bash
    git worktree add .claude/worktrees/pr-<N> -b pr-<N> origin/pull/<N>/head
    ```
-   This gives you the exact commit that will be merged, isolates from your current work, and enables LSP navigation + test runs against the PR code.
-
-2. **Read the changed files from the worktree** — full file context, not just the delta. Pay attention to docstrings, type signatures, and module-level changes (new `using` imports, etc.).
-
-3. **Run the tests from the worktree**:
+2. **Read changed files from the worktree** — full context, not just diff.
+3. **Run tests from the worktree**:
    ```bash
    cd .claude/worktrees/pr-<N>
    julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.test("HimalayaUI")'
    ```
-   A diff can't tell you whether a tab-separated fixture still parses correctly after switching to CSV.jl.
-
-4. **Review and post the comment** — use `gh pr comment <N> --body "..."`. Structure the review with severity levels (🔴 blocker, 🟡 medium, 🟢 minor) and specific line-level issues.
-
-5. **If the author rebuts**, re-read the updated diff and verify each fix point-by-point. Post a rebuttal review confirming whether each issue is adequate, inadequate, or over-fixed.
-
+4. **Review and post comment** — `gh pr comment <N> --body "..."`. Use severity levels (🔴 blocker, 🟡 medium, 🟢 minor).
+5. **If author rebuts**, verify fixes point-by-point.
 6. **Clean up after merge**:
    ```bash
    git worktree remove .claude/worktrees/pr-<N>
@@ -131,3 +145,5 @@ See `docs/contract-testing.md` for canonical paired test files.
 | Frontend state | `packages/HimalayaUI/frontend/src/state.ts`, `queries.ts` |
 | Mutation queue | `packages/HimalayaUI/frontend/src/lib/queue/` |
 | Skeleton loading | `packages/HimalayaUI/docs/boneyard.md` |
+
+See `CLAUDE.md` for more info and gotchas.
