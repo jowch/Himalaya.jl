@@ -182,69 +182,74 @@ export function ComparePageEdit(): JSX.Element {
       .filter((id): id is number => id !== null)
       .filter((id) => qc.getQueryData<Exposure>(queryKeys.exposure(id)) === undefined);
 
-    if (coldExposureIds.length > 0) {
-      await Promise.all(
-        coldExposureIds.flatMap((id) => [
-          qc.fetchQuery({
-            queryKey: queryKeys.exposure(id),
-            queryFn: () => getExposure(id),
-          }),
-          qc.fetchQuery({
-            queryKey: queryKeys.peaks(id),
-            queryFn: () => listPeaks(id),
-          }),
-          qc.fetchQuery({
-            queryKey: queryKeys.indices(id),
-            queryFn: () => listIndices(id),
-          }),
-          qc.fetchQuery({
-            queryKey: queryKeys.groups(id),
-            queryFn: () => listGroups(id),
-          }),
-        ]),
-      );
-    }
+    try {
+      if (coldExposureIds.length > 0) {
+        await Promise.all(
+          coldExposureIds.flatMap((id) => [
+            qc.fetchQuery({
+              queryKey: queryKeys.exposure(id),
+              queryFn: () => getExposure(id),
+            }),
+            qc.fetchQuery({
+              queryKey: queryKeys.peaks(id),
+              queryFn: () => listPeaks(id),
+            }),
+            qc.fetchQuery({
+              queryKey: queryKeys.indices(id),
+              queryFn: () => listIndices(id),
+            }),
+            qc.fetchQuery({
+              queryKey: queryKeys.groups(id),
+              queryFn: () => listGroups(id),
+            }),
+          ]),
+        );
+      }
 
-    // Compute a fresh snapshot per member at submit time (Plan §Task 4.3).
-    const members: ComparisonMemberInput[] = draft.members.map((m) => {
-      const snapshot = m.exposure_id !== null
-        ? computeMemberSnapshot(m.exposure_id, qc)
-        : (m.snapshot ?? {
-            effective_peaks: [],
-            confirmed_index: null,
-            analysis_inputs_hash: "",
-          });
-      const out: ComparisonMemberInput = {
-        exposure_id: m.exposure_id,
-        display_order: m.display_order,
-        band_height: m.band_height,
-        y_offset: m.y_offset,
-        normalization: m.normalization,
-        snapshot,
+      // Compute a fresh snapshot per member at submit time (Plan §Task 4.3).
+      const members: ComparisonMemberInput[] = draft.members.map((m) => {
+        const snapshot = m.exposure_id !== null
+          ? computeMemberSnapshot(m.exposure_id, qc)
+          : (m.snapshot ?? {
+              effective_peaks: [],
+              confirmed_index: null,
+              analysis_inputs_hash: "",
+            });
+        const out: ComparisonMemberInput = {
+          exposure_id: m.exposure_id,
+          display_order: m.display_order,
+          band_height: m.band_height,
+          y_offset: m.y_offset,
+          normalization: m.normalization,
+          snapshot,
+        };
+        if (m.id !== undefined) out.id = m.id;
+        if (m.color_override !== undefined) out.color_override = m.color_override;
+        if (m.label_override !== undefined) out.label_override = m.label_override;
+        if (m.q_window_min !== undefined) out.q_window_min = m.q_window_min;
+        if (m.q_window_max !== undefined) out.q_window_max = m.q_window_max;
+        if (m.peak_display !== undefined) out.peak_display = m.peak_display;
+        return out;
+      });
+      // useSaveComparison flat-spreads the input into the SaveComparisonBody;
+      // see saveComparison mutator's `request: (p) => api.saveComparison(...)`.
+      const payload: SaveComparisonBody & { id?: number } = {
+        title: draft.title,
+        members,
       };
-      if (m.id !== undefined) out.id = m.id;
-      if (m.color_override !== undefined) out.color_override = m.color_override;
-      if (m.label_override !== undefined) out.label_override = m.label_override;
-      if (m.q_window_min !== undefined) out.q_window_min = m.q_window_min;
-      if (m.q_window_max !== undefined) out.q_window_max = m.q_window_max;
-      if (m.peak_display !== undefined) out.peak_display = m.peak_display;
-      return out;
-    });
-    // useSaveComparison flat-spreads the input into the SaveComparisonBody;
-    // see saveComparison mutator's `request: (p) => api.saveComparison(...)`.
-    const payload: SaveComparisonBody & { id?: number } = {
-      title: draft.title,
-      members,
-    };
-    if (draft.id !== undefined) payload.id = draft.id;
-    if (draft.description !== "") payload.description = draft.description;
-    if (draft.baseHash !== undefined) payload.expected_content_hash = draft.baseHash;
-    // Phase 11 — fork lineage rides through to POST /api/comparisons. Both
-    // fields ride together (or not at all) per backend contract; the UI
-    // factory `fromComparisonAsFork` always sets both when populating a fork.
-    if (draft.forkedFromId !== undefined) payload.forked_from_id = draft.forkedFromId;
-    if (draft.forkedAtHash !== undefined) payload.forked_at_hash = draft.forkedAtHash;
-    save.mutate(payload);
+      if (draft.id !== undefined) payload.id = draft.id;
+      if (draft.description !== "") payload.description = draft.description;
+      if (draft.baseHash !== undefined) payload.expected_content_hash = draft.baseHash;
+      // Phase 11 — fork lineage rides through to POST /api/comparisons. Both
+      // fields ride together (or not at all) per backend contract; the UI
+      // factory `fromComparisonAsFork` always sets both when populating a fork.
+      if (draft.forkedFromId !== undefined) payload.forked_from_id = draft.forkedFromId;
+      if (draft.forkedAtHash !== undefined) payload.forked_at_hash = draft.forkedAtHash;
+      save.mutate(payload);
+    } catch {
+      // Prefetch or mutate failed — release the guard so the user can retry.
+      pendingSubmitRef.current = false;
+    }
   }, [draft, qc, save]);
 
   // Post-success navigation. Reading `save.data` (the response) lets us

@@ -91,18 +91,26 @@ describe("ComparePage review mode — ResizeObserver", () => {
     const qc = new QueryClient({
       defaultOptions: { queries: { retry: false, gcTime: Infinity, staleTime: 0 }, mutations: { retry: false } },
     });
-    // Seed the comparison query so plotLoading resolves false.
-    qc.setQueryData(["comparison", 42], {
-      id: 42, title: "T", description: null, content_hash: "h",
-      created_by: 1, created_at: "", updated_at: "",
-      forked_from_id: null, forked_at_hash: null, forked_from_title: null,
-      members: [{ id: 1, exposure_id: 100, display_order: 0, band_height: 1, y_offset: 0, normalization: "max", snapshot: null }],
-    });
-    qc.setQueryData(["exposure", 100, "trace"], { q: [0.1], I: [1], sigma: [0.01] });
+    // Do NOT seed the comparison query — let it start in isLoading so
+    // Skeleton renders its fallback, then resolves asynchronously.
+    // This exercises the bug: with deps: [] the effect runs while the
+    // ref is null (Skeleton has no children) and never re-attaches.
 
-    vi.spyOn(global, "fetch").mockResolvedValue(
-      new Response(JSON.stringify([]), { status: 200, headers: { "Content-Type": "application/json" } }),
-    );
+    vi.spyOn(global, "fetch").mockImplementation(async (input) => {
+      const url = typeof input === "string" ? input : String(input);
+      if (url === "/api/comparisons/42") {
+        return new Response(JSON.stringify({
+          id: 42, title: "T", description: null, content_hash: "h",
+          created_by: 1, created_at: "", updated_at: "",
+          forked_from_id: null, forked_at_hash: null, forked_from_title: null,
+          members: [{ id: 1, exposure_id: 100, display_order: 0, band_height: 1, y_offset: 0, normalization: "max", snapshot: null }],
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (url === "/api/exposures/100/trace") {
+        return new Response(JSON.stringify({ q: [0.1], I: [1], sigma: [0.01] }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      return new Response("not found", { status: 404 });
+    });
 
     render(
       <QueryClientProvider client={qc}>
@@ -119,8 +127,10 @@ describe("ComparePage review mode — ResizeObserver", () => {
       expect(screen.queryByText("Loading comparison…")).toBeNull();
     });
 
-    // At least one ResizeObserver should have been constructed after
-    // Skeleton swapped in the real DOM.
+    // With the bug (deps: []) the effect runs once while the ref is null
+    // and the observer is never created. With the fix (deps: [plotLoading])
+    // the effect re-runs when Skeleton swaps in children and the observer
+    // attaches to the real DOM element.
     expect(ROInstances.length).toBeGreaterThanOrEqual(1);
     expect(ROInstances[0]!.observe).toHaveBeenCalled();
   });
