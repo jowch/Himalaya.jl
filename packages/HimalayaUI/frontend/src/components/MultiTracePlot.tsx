@@ -130,6 +130,16 @@ export interface MultiTracePlotProps {
   /** X-axis scale. Defaults to "log". */
   xType?: "log" | "linear";
   /**
+   * Global annotation toggles (Phase 9.3). When `showPeakTicks` is false,
+   * NO peak triangles render across all members; when `showPeakLabels` is
+   * false, no labels render either. Both default to `true`. The parent
+   * page (review = ComparePage) reads them from Zustand and passes them
+   * down; edit mode (ComparePageEdit) leaves them at the defaults so the
+   * peak-click cycle stays usable.
+   */
+  showPeakTicks?: boolean;
+  showPeakLabels?: boolean;
+  /**
    * Edit-mode peak click handler (Phase 8.1). When set, the plot installs a
    * click listener that does pixel-distance hit-testing against the rendered
    * peak rows (per member band) and dispatches `onPeakClick(memberId,
@@ -145,6 +155,7 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
     peakDisplayByMemberId, highlightedMemberId,
     qUnits, xType = "log",
     onPeakClick,
+    showPeakTicks = true, showPeakLabels = true,
   } = props;
 
   const hostRef       = useRef<HTMLDivElement>(null);
@@ -250,6 +261,8 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
             ? m.snapshot.confirmed_index.id
             : undefined,
         xScale,
+        showPeakTicks,
+        showPeakLabels,
       };
       const memberMarks = buildMemberMarks(layerProps);
       for (const mk of memberMarks) allMarks.push(mk);
@@ -441,6 +454,7 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
     members, traces, xDomain, xType, qUnits,
     peakDisplayByMemberId, highlightedMemberId,
     onXDomain, qExtent, onPeakClick,
+    showPeakTicks, showPeakLabels,
   ]);
 
   useEffect(() => {

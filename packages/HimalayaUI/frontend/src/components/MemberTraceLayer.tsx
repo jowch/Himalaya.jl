@@ -82,6 +82,16 @@ export interface MemberMarksProps {
    * the second pass.
    */
   xScale?: { toPx: (q: number) => number; fromPx: (px: number) => number } | undefined;
+  /**
+   * Global annotation toggles (Phase 9.3). When `showPeakTicks` is false,
+   * NO peak triangles render for this member regardless of `peak_display`
+   * (`peak_display.hidden` per-peak hides still take effect when the
+   * global flag is on). When `showPeakLabels` is false, no labels render
+   * even for peaks marked `peak_display.labeled`. Both default to `true`
+   * when omitted (review-mode default; edit mode passes `true` for both).
+   */
+  showPeakTicks?: boolean;
+  showPeakLabels?: boolean;
 }
 
 /**
@@ -173,6 +183,8 @@ export function buildMemberPeakRows(props: MemberMarksProps): {
 export function buildMemberMarks(props: MemberMarksProps): unknown[] {
   const marks: unknown[] = [];
   const { member, trace, yBand, peakDisplay } = props;
+  const showPeakTicks  = props.showPeakTicks  ?? true;
+  const showPeakLabels = props.showPeakLabels ?? true;
 
   if (!trace || trace.q.length === 0) return marks;
 
@@ -187,7 +199,7 @@ export function buildMemberMarks(props: MemberMarksProps): unknown[] {
     }),
   );
 
-  if (visiblePeaks.length > 0) {
+  if (showPeakTicks && visiblePeaks.length > 0) {
     marks.push(
       Plot.dot(visiblePeaks, {
         x: "q",
@@ -207,8 +219,14 @@ export function buildMemberMarks(props: MemberMarksProps): unknown[] {
     // text back to the triangle anchor. Without xScale (first render pass
     // before Plot creates the scale), fall back to direct-above placement;
     // the parent re-renders with the scale on the next pass.
+    //
+    // Phase 9.3: also gated on the global `showPeakLabels` flag — toggling
+    // it off hides labels everywhere even when individual peaks are
+    // `peak_display.labeled`.
     const labeled = new Set<number>(peakDisplay?.labeled ?? []);
-    const labels = visiblePeaks.filter((p) => labeled.has(p.peakId));
+    const labels = showPeakLabels
+      ? visiblePeaks.filter((p) => labeled.has(p.peakId))
+      : [];
     if (labels.length > 0) {
       if (props.xScale) {
         const dodged = layoutPeakLabels(

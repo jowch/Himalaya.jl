@@ -16,6 +16,7 @@ import { ComparisonSidebar } from "../components/ComparisonSidebar";
 import { MultiTracePlot } from "../components/MultiTracePlot";
 import { MemberMetaGutter } from "../components/MemberMetaGutter";
 import { GroupingModeToggle } from "../components/GroupingModeToggle";
+import { AnnotationToggles } from "../components/AnnotationToggles";
 import { useComparison, useMemberTraces } from "../queries";
 import { useAppState } from "../state";
 
@@ -79,6 +80,12 @@ function ReviewPlot({ id }: { id: number }): JSX.Element {
     return [...compQ.data.members].sort((a, b) => a.display_order - b.display_order);
   }, [compQ.data]);
 
+  // Phase 9.3 — annotation toggles read straight from Zustand. Both default
+  // to `true`; `MultiTracePlot` rebuilds marks when the values change so
+  // toggling re-renders without a full plot lifecycle event.
+  const showPeakTicks  = useAppState((s) => s.showPeakTicks);
+  const showPeakLabels = useAppState((s) => s.showPeakLabels);
+
   const exposureIds = useMemo(
     () => members.flatMap((m) => (m.exposure_id !== null ? [m.exposure_id] : [])),
     [members],
@@ -104,9 +111,10 @@ function ReviewPlot({ id }: { id: number }): JSX.Element {
     <div className="flex-1 min-h-0 flex flex-col p-4 gap-3" data-testid="compare-review-plot">
       <div
         data-testid="compare-review-header"
-        className="flex items-center gap-2 flex-wrap"
+        className="flex items-center gap-3 flex-wrap"
       >
         <GroupingModeToggle />
+        <AnnotationToggles />
       </div>
       <div className="flex-1 min-h-0 flex flex-row gap-3">
         <div ref={plotColRef} className="flex-1 min-w-0">
@@ -115,6 +123,8 @@ function ReviewPlot({ id }: { id: number }): JSX.Element {
             traces={traces}
             xDomain={xDomain}
             onXDomain={setXDomain}
+            showPeakTicks={showPeakTicks}
+            showPeakLabels={showPeakLabels}
           />
         </div>
         <div
