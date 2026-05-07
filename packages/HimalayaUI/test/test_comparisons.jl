@@ -1053,6 +1053,70 @@ end
         end
     end
 
+    @testset "DELETE /:id: 403 for orphaned author (NULL created_by)" begin
+        # Spec §Authorship: when `created_by IS NULL` (the original author's
+        # user row was deleted), the comparison enters a "fork-only" state.
+        # No user matches `is_author`, so even the original actor — and any
+        # other user — gets 403 on author-gated mutations. The frontend
+        # disambiguates orphan vs non-author via `created_by === null` from
+        # the GET payload (Phase 2 design note); the unified 403 keeps the
+        # backend simple.
+        mktempdir() do tmp
+            ctx = _setup_analyzed_exposure(tmp)
+            with_test_server(ctx.db) do port, base
+                r1 = HTTP.post("$base/api/comparisons";
+                    body = JSON3.write(_create_body(ctx.exposure_id)),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username"   => "alice"])
+                cmp = JSON3.read(String(r1.body))
+
+                # Force created_by to NULL (simulates ON DELETE SET NULL).
+                DBInterface.execute(ctx.db,
+                    "UPDATE comparisons SET created_by = NULL WHERE id = ?", [cmp.id])
+
+                # Even Alice (the original author) can't delete now.
+                r403_alice = HTTP.delete("$base/api/comparisons/$(cmp.id)";
+                    headers = ["X-Username" => "alice"],
+                    status_exception = false)
+                @test r403_alice.status == 403
+
+                # And Bob certainly can't either.
+                r403_bob = HTTP.delete("$base/api/comparisons/$(cmp.id)";
+                    headers = ["X-Username" => "bob"],
+                    status_exception = false)
+                @test r403_bob.status == 403
+            end
+        end
+    end
+
+    @testset "GET /:id: orphaned-author comparison still readable by anyone" begin
+        # "Fork-only" status from spec §Authorship: orphan-author comparisons
+        # are not hidden — anyone can GET them so they can still be forked.
+        # The frontend uses `created_by === null` from the GET payload to
+        # disambiguate orphan from non-author and shows Fork (not Edit).
+        mktempdir() do tmp
+            ctx = _setup_analyzed_exposure(tmp)
+            with_test_server(ctx.db) do port, base
+                r1 = HTTP.post("$base/api/comparisons";
+                    body = JSON3.write(_create_body(ctx.exposure_id)),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username"   => "alice"])
+                cmp = JSON3.read(String(r1.body))
+
+                DBInterface.execute(ctx.db,
+                    "UPDATE comparisons SET created_by = NULL WHERE id = ?", [cmp.id])
+
+                # Bob can GET the orphan-author comparison.
+                r_get = HTTP.get("$base/api/comparisons/$(cmp.id)";
+                    headers = ["X-Username" => "bob"])
+                @test r_get.status == 200
+                body = JSON3.read(String(r_get.body))
+                @test body.id == cmp.id
+                @test body.created_by === nothing  # JSON null → nothing
+            end
+        end
+    end
+
     # HTTP semantics: 404 must precede 403 — a request for a resource that
     # does not exist cannot be "forbidden" because there is nothing to
     # forbid. `is_author` returns false for missing comparisons, which
