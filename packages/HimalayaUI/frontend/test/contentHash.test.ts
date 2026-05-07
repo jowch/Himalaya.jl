@@ -154,17 +154,16 @@ describe("comparisonHash8 — short form for [[comparison:N@hash8]] mention toke
     expect(comparisonHash8("a1b2c3d4e5f60718")).toBe("a1b2c3d4");
   });
 
-  it("regression #62: picker-emit and chip-drift agree on the same primitive", async () => {
-    // Bug shape: the picker stripped `sha256:` before slicing, but the
-    // chip drift detector did not — so every well-formed mention drifted
-    // immediately. The fix collapses both call sites onto this helper.
-    // This test pins the contract from a fresh content_hash → emit-then-
-    // resolve round-trip at the helper boundary, surviving any future
-    // refactor that renames the chip-side function or moves the picker.
+  it("regression #62: prefixed and bare-hex inputs collapse to the same short form", () => {
+    // Bug shape: pre-fix the picker stripped `sha256:` before slicing while
+    // the chip drift detector did not. Same content_hash → divergent short
+    // forms → drift always true. This case pins the post-fix invariant
+    // directly: a prefixed input and its stripped equivalent produce
+    // identical output, so any call site that forgets to strip first still
+    // agrees with one that did.
     const live = "sha256:7b498791ff012345abcdef0102030405060708090a0b0c0d0e0f1011121314";
-    const tokenHash = comparisonHash8(live);                   // picker emit
-    const drift     = comparisonHash8(live) !== tokenHash;     // chip detector
-    expect(drift).toBe(false);
+    const stripped = live.replace(/^sha256:/, "");
+    expect(comparisonHash8(live)).toBe(comparisonHash8(stripped));
   });
 });
 

@@ -396,6 +396,12 @@ export function ComparePageEdit(): JSX.Element {
   // review fix (issue #51, see PR #59 [plotLoading]). `plotMembers.length`
   // alone doesn't gate on Skeleton, so the gutter stayed at height 0
   // until any other re-render happened to coincide with the ref attaching.
+  //
+  // Note: `plotMembers.length` does NOT need to be in the deps. The plot
+  // column div is stable across member changes; ResizeObserver continues
+  // observing it across re-renders and fires its callback automatically
+  // when the column resizes. Adding member-count would just thrash the
+  // observer (disconnect + re-observe) on every add/remove for no benefit.
   const plotColRef = useRef<HTMLDivElement>(null);
   const [panelHeight, setPanelHeight] = useState(0);
   useEffect(() => {
