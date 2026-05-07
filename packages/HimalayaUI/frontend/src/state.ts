@@ -95,6 +95,7 @@ export interface AppState {
   updateMember: (index: number, partial: Partial<DraftMember>) => void;
   reorderMembers: (newOrder: number[]) => void;
   resizeBands: (memberIdx: number, deltaPx: number, totalHeightPx: number) => void;
+  resetBandHeights: () => void;
   discardDraft: () => void;
 }
 
@@ -248,6 +249,12 @@ export const useAppState = create<AppState>()(
           const members = cur.members.slice();
           members[memberIdx] = { ...a, band_height: newA };
           members[memberIdx + 1] = { ...b, band_height: adjustedB === newB ? newB : adjustedB };
+          setDraft({ ...cur, members });
+        },
+        resetBandHeights: () => {
+          const cur = get().activeDraft;
+          if (cur === null) return;
+          const members = cur.members.map((m) => ({ ...m, band_height: 1 }));
           setDraft({ ...cur, members });
         },
         discardDraft: () => setDraft(null),
