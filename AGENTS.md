@@ -64,6 +64,31 @@ npm run build
 - **Regression floors**, not hard-coded counts: `recall ≥ floor`, `spurious ≤ ceiling`
 - **Worktrees** for feature branches: `git worktree add .claude/worktrees/<topic> -b <topic>`
 
+## Pre-submit verification checklist (author)
+
+Before declaring any bugfix or behavioral change complete, do these in order:
+
+1. **Revert the fix, confirm the test fails.**
+   - Temporarily revert your code change.
+   - Run the new regression test.
+   - If it still passes, the test is a false positive — rewrite the assertion.
+   - Re-apply the fix before continuing.
+
+2. **Read wrapper contracts before assuming behavior.**
+   - When using a wrapper (e.g., `useQueueMutation`), read its return type.
+   - `mutate` = fire-and-forget; errors surface via `.error`, not by throwing.
+   - `try/catch` around `mutate()` only catches synchronous exceptions, not HTTP failures.
+
+3. **Assert on observable side-effects, not internal instances.**
+   - Bad: `expect(mock.instances.length).toBe(1)` — too broad, counts anything.
+   - Good: `expect(element.style.height).not.toBe("0px")` — asserts the state change.
+   - Ask: "What user-visible behavior proves this works?"
+
+4. **Use the reviewer agent.**
+   - Spawn `.claude/agents/frontend-reviewer.md` (or the relevant reviewer) before sending.
+   - The reviewer catches patterns you are blind to after writing the code.
+   - Do not self-review complex PRs — delegation is cheaper than review cycles.
+
 ## PR Review Workflow
 
 When reviewing a PR (as reviewer, not author):
