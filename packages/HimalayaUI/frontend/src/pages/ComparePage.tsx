@@ -187,7 +187,7 @@ function ReviewPlot({
     });
     obs.observe(el);
     return () => obs.disconnect();
-  }, []);
+  }, [plotLoading]);
 
   return (
     <div className="flex-1 min-h-0 flex flex-col p-4 gap-3" data-testid="compare-review-plot">
