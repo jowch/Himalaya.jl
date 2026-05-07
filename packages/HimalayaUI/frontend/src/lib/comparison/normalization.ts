@@ -62,7 +62,7 @@ export function computeReference(
 ): number {
   switch (normalization) {
     case "none":
-      return 1;
+      return positiveOr(signalMaxInWindow(trace, null), MIN_REFERENCE);
     case "max":
       return positiveOr(signalMaxInWindow(trace, qWindow), MIN_REFERENCE);
     case "area":

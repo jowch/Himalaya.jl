@@ -13,9 +13,13 @@ describe("computeReference", () => {
     I: [10, 20, 30, 50, 80, 60, 40, 25, 15, 12],
   };
 
-  it("returns 1 for normalization 'none'", () => {
-    expect(computeReference(trace, [], null, "none")).toBe(1);
-    expect(computeReference(trace, [], [0.2, 0.5], "none")).toBe(1);
+  it("'none' returns the global signal max (fills the band without additional scaling)", () => {
+    // "none" is no longer a literal passthrough (reference=1) because raw
+    // SAXS intensities are in the hundreds–thousands, which would clip every
+    // point to the top of the band. It now behaves like "max" with no q-window.
+    expect(computeReference(trace, [], null, "none")).toBe(80);
+    // With an explicit window the reference is the max inside that window.
+    expect(computeReference(trace, [], [0.2, 0.5], "none")).toBe(80);
   });
 
   it("'max' returns the signal max in the q_window (full trace if window null)", () => {
