@@ -86,6 +86,36 @@ function ReviewPlot({ id }: { id: number }): JSX.Element {
   const showPeakTicks  = useAppState((s) => s.showPeakTicks);
   const showPeakLabels = useAppState((s) => s.showPeakLabels);
 
+  // Phase 9.5 — hover/click-to-pin highlight state. `MemberTraceLayer`
+  // reads this and recolors that member's confirmed_index peaks to the
+  // phase color; non-index peaks stay black. The lifecycle hook below
+  // clears the pin on page navigation away (component unmount) and on
+  // member-set changes that no longer include the pinned member.
+  const highlightedCompareMemberId = useAppState(
+    (s) => s.highlightedCompareMemberId,
+  );
+  const setHighlightedCompareMemberId = useAppState(
+    (s) => s.setHighlightedCompareMemberId,
+  );
+  // Clear stale pin if the pinned member is no longer in the comparison
+  // (e.g., re-fetched comparison drops a member). Without this, the pin
+  // would persist across navigation between comparisons in the SAME
+  // review-mode page.
+  useEffect(() => {
+    if (highlightedCompareMemberId === undefined) return;
+    const stillPresent = members.some((m) => m.id === highlightedCompareMemberId);
+    if (!stillPresent) setHighlightedCompareMemberId(undefined);
+  }, [
+    highlightedCompareMemberId,
+    members,
+    setHighlightedCompareMemberId,
+  ]);
+  // Unmount cleanup: navigating away from the compare page (or to edit
+  // mode, which is a separate page component) clears the pin.
+  useEffect(() => {
+    return () => setHighlightedCompareMemberId(undefined);
+  }, [setHighlightedCompareMemberId]);
+
   const exposureIds = useMemo(
     () => members.flatMap((m) => (m.exposure_id !== null ? [m.exposure_id] : [])),
     [members],
@@ -125,6 +155,7 @@ function ReviewPlot({ id }: { id: number }): JSX.Element {
             onXDomain={setXDomain}
             showPeakTicks={showPeakTicks}
             showPeakLabels={showPeakLabels}
+            highlightedMemberId={highlightedCompareMemberId}
           />
         </div>
         <div

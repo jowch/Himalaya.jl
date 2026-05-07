@@ -67,7 +67,18 @@ export function MemberMetaRow(props: MemberMetaRowProps): JSX.Element {
   const [expanded, setExpanded] = useState(false);
 
   const updateMember = useAppState((s) => s.updateMember);
+  const setHighlight = useAppState((s) => s.setHighlightedCompareMemberId);
   const idx = memberIndex ?? -1;
+
+  // Phase 9.5 — only members with a confirmed index participate in
+  // hover-driven phase coloring. Hover/focus/click on rows without a
+  // confirmed_index are inert (no highlight, not in tab order).
+  const canHighlight = member.snapshot?.confirmed_index != null;
+  // Pin lifecycle is tracked LOCALLY — the Zustand `highlightedCompareMemberId`
+  // is the render target (a single id), but it can't tell us whether the
+  // current target was hovered vs. pinned. Tracking pin state on the row
+  // lets `onMouseLeave` know whether to clear or keep.
+  const [isPinned, setIsPinned] = useState(false);
 
   const onLabelCommit = useCallback(
     (val: string) => {
@@ -113,6 +124,43 @@ export function MemberMetaRow(props: MemberMetaRowProps): JSX.Element {
     [updateMember, idx],
   );
 
+  // ── hover-driven phase coloring handlers (Phase 9.5) ─────────────────
+  // Hover/focus → set highlight; leave/blur → clear UNLESS pinned. Click
+  // toggles the pin (sets to this id, or clears if already pinned to this
+  // id). Keyboard parity: Enter pins; Esc clears.
+  const onMouseEnter = useCallback(() => {
+    if (!canHighlight) return;
+    setHighlight(member.id);
+  }, [canHighlight, member.id, setHighlight]);
+  const onMouseLeave = useCallback(() => {
+    if (!canHighlight) return;
+    if (isPinned) return;
+    setHighlight(undefined);
+  }, [canHighlight, isPinned, setHighlight]);
+  const onFocus = useCallback(() => {
+    if (!canHighlight) return;
+    setHighlight(member.id);
+  }, [canHighlight, member.id, setHighlight]);
+  const onBlur = useCallback(() => {
+    if (!canHighlight) return;
+    if (isPinned) return;
+    setHighlight(undefined);
+  }, [canHighlight, isPinned, setHighlight]);
+  const onKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (!canHighlight) return;
+      if (e.key === "Enter") {
+        // Pin: track locally + reassert the highlight target.
+        setIsPinned(true);
+        setHighlight(member.id);
+      } else if (e.key === "Escape") {
+        setIsPinned(false);
+        setHighlight(undefined);
+      }
+    },
+    [canHighlight, member.id, setHighlight],
+  );
+
   const ci = member.snapshot?.confirmed_index ?? null;
   const isCubic = ci !== null && CUBIC_PHASES.has(ci.phase);
 
@@ -121,7 +169,30 @@ export function MemberMetaRow(props: MemberMetaRowProps): JSX.Element {
       data-testid="member-meta-row"
       data-member-id={String(member.id)}
       data-stale={member.is_stale ? "true" : "false"}
-      onClick={() => setExpanded((e) => !e)}
+      data-highlighted={isPinned ? "true" : "false"}
+      // Tab into the row only when there's a confirmed index to highlight —
+      // otherwise pressing Tab past it is dead air.
+      {...(canHighlight ? { tabIndex: 0 } : {})}
+      onClick={() => {
+        // Click toggles both the expansion (always) and the pin (when
+        // hoverable). Pin lifecycle: click pins, click-again unpins. The
+        // expanded panel mirrors that — second click closes both.
+        setExpanded((e) => !e);
+        if (canHighlight) {
+          if (isPinned) {
+            setIsPinned(false);
+            setHighlight(undefined);
+          } else {
+            setIsPinned(true);
+            setHighlight(member.id);
+          }
+        }
+      }}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+      onFocus={onFocus}
+      onBlur={onBlur}
+      onKeyDown={onKeyDown}
       style={{
         position: "absolute",
         left: 0,
@@ -129,7 +200,8 @@ export function MemberMetaRow(props: MemberMetaRowProps): JSX.Element {
         top: `${top}px`,
         height: `${height}px`,
       }}
-      className="flex flex-col gap-0.5 px-2 py-1 text-xs hover:bg-bg-elevated/40 cursor-pointer"
+      className="flex flex-col gap-0.5 px-2 py-1 text-xs hover:bg-bg-elevated/40 cursor-pointer
+                 outline-0 focus-visible:ring-1 focus-visible:ring-accent"
     >
       {/* Primary single line */}
       <div className="flex items-center gap-2 min-w-0">

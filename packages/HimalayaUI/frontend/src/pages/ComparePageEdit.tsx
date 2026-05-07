@@ -85,6 +85,17 @@ export function ComparePageEdit(): JSX.Element {
   const setDraftTitle       = useAppState((s) => s.setDraftTitle);
   const setDraftDescription = useAppState((s) => s.setDraftDescription);
   const discardDraft        = useAppState((s) => s.discardDraft);
+  const setHighlightedCompareMemberId = useAppState(
+    (s) => s.setHighlightedCompareMemberId,
+  );
+
+  // Phase 9.5 — entering edit mode always clears any review-mode pin so
+  // peak-click cycle isn't confused by a hovered/pinned highlight from
+  // a sibling tab's review session. Mirrors the same lifecycle as
+  // `discardDraft` on Cancel/Save.
+  useEffect(() => {
+    setHighlightedCompareMemberId(undefined);
+  }, [setHighlightedCompareMemberId]);
 
   // Hydrate draft from URL on mount / when URL id changes.
   const comparisonQ = useComparison(id);
