@@ -32,8 +32,13 @@ interface Props {
   onCheckedChange?: (next: boolean) => void;
   /** Lock the row — disables checkbox + suppresses onClick. */
   locked?: boolean;
-  /** Hint shown next to a locked checkbox (e.g. "already added"). */
-  lockedReason?: string;
+  /**
+   * Hint shown next to a locked checkbox (e.g. "already added"). Typed
+   * `string | undefined` (not `string?:`) so callers can pass an undefined
+   * literal under `exactOptionalPropertyTypes: true` — see the picker's
+   * conditional `r.alreadyAdded ? "already added" : undefined`.
+   */
+  lockedReason?: string | undefined;
   /** Escape-hatch trailing slot for callers that don't want checkbox/onClick. */
   actionElement?: ReactNode;
   /** Optional class merge for the row container. */
