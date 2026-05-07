@@ -75,5 +75,38 @@ export function fromComparison(c: Comparison, qc: QueryClient): ActiveDraft {
     title: c.title ?? "",
     description: c.description ?? "",
     members: c.members.map((m) => memberFromSaved(m, qc)),
+    forkedFromId: undefined,
+    forkedAtHash: undefined,
+  };
+}
+
+/**
+ * Fork-draft factory (Plan §Phase 11, Task 11.2). Creates a brand-new
+ * draft (no `id`, no `baseHash`) pre-populated from a parent comparison's
+ * members and lineage. The submit will route to `POST /api/comparisons`
+ * (create), with `forked_from_id` + `forked_at_hash` riding the body.
+ *
+ * Member id is deliberately dropped — each member becomes a fresh INSERT
+ * on the new comparison. Snapshot recomputes against the current cache so
+ * the fork starts at "current truth" rather than the parent's frozen
+ * snapshot (matches `loadDraftFromComparison` recovery semantics).
+ *
+ * Title defaults to "Fork of <parent title>" so the user has something
+ * meaningful in the title field; they can rename before submit.
+ */
+export function fromComparisonAsFork(c: Comparison, qc: QueryClient): ActiveDraft {
+  return {
+    id: undefined,
+    baseHash: undefined,
+    title: `Fork of ${c.title ?? "comparison"}`,
+    description: c.description ?? "",
+    members: c.members.map((m) => {
+      const dm = memberFromSaved(m, qc);
+      // Drop server id — each member becomes an INSERT on the new
+      // comparison. memberFromSaved already recomputed the snapshot.
+      return { ...dm, id: undefined };
+    }),
+    forkedFromId: c.id,
+    forkedAtHash: c.content_hash,
   };
 }

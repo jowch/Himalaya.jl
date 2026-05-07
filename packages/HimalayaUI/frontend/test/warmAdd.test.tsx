@@ -167,6 +167,8 @@ describe("WarmAddMenu", () => {
           q_window_min: undefined, q_window_max: undefined,
           peak_display: undefined, snapshot: undefined,
         }],
+        forkedFromId: undefined,
+        forkedAtHash: undefined,
       },
     });
 
@@ -204,6 +206,8 @@ describe("WarmAddMenu", () => {
           q_window_min: undefined, q_window_max: undefined,
           peak_display: undefined, snapshot: undefined,
         }],
+        forkedFromId: undefined,
+        forkedAtHash: undefined,
       },
     });
 
@@ -249,6 +253,8 @@ describe("WarmAddMenu", () => {
           q_window_min: undefined, q_window_max: undefined,
           peak_display: undefined, snapshot: undefined,
         }],
+        forkedFromId: undefined,
+        forkedAtHash: undefined,
       },
     });
 

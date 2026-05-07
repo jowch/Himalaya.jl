@@ -177,6 +177,8 @@ describe("ComparePageEdit", () => {
           peak_display: undefined,
           snapshot: undefined,
         }],
+        forkedFromId: undefined,
+        forkedAtHash: undefined,
       },
     });
     const updated: Comparison = {
@@ -235,6 +237,8 @@ describe("ComparePageEdit", () => {
         title: "x",
         description: "",
         members: [],
+        forkedFromId: undefined,
+        forkedAtHash: undefined,
       },
     });
     renderEdit({ qc, initialPath: "/experiments/7/compare/42/edit" });

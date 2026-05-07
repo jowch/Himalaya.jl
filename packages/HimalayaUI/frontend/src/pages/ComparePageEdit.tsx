@@ -186,6 +186,11 @@ export function ComparePageEdit(): JSX.Element {
     if (draft.id !== undefined) payload.id = draft.id;
     if (draft.description !== "") payload.description = draft.description;
     if (draft.baseHash !== undefined) payload.expected_content_hash = draft.baseHash;
+    // Phase 11 — fork lineage rides through to POST /api/comparisons. Both
+    // fields ride together (or not at all) per backend contract; the UI
+    // factory `fromComparisonAsFork` always sets both when populating a fork.
+    if (draft.forkedFromId !== undefined) payload.forked_from_id = draft.forkedFromId;
+    if (draft.forkedAtHash !== undefined) payload.forked_at_hash = draft.forkedAtHash;
     // Mark this submit as "in-flight" so the post-success effect knows to
     // navigate. Without the ref, an already-saved success state on remount
     // would re-fire navigation.

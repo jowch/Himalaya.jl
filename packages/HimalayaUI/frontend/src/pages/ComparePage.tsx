@@ -11,7 +11,7 @@
  * built out across Phases 6–11; this file is only the shell that hosts them.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams, useLocation } from "react-router-dom";
+import { useParams, useLocation, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { ComparisonSidebar } from "../components/ComparisonSidebar";
 import { MultiTracePlot } from "../components/MultiTracePlot";
@@ -22,7 +22,8 @@ import { NeedsReviewBadge } from "../components/NeedsReviewBadge";
 import { ChatCard } from "../components/ChatCard";
 import { useComparison, useMemberTraces, queryKeys } from "../queries";
 import { useAppState } from "../state";
-import type { ComparisonMember, Exposure } from "../api";
+import { useCurrentUserId } from "../hooks/useCurrentUserId";
+import type { Comparison, ComparisonMember, Exposure } from "../api";
 
 export function ComparePage(): JSX.Element {
   const params = useParams<{ eid?: string; id?: string }>();
@@ -178,6 +179,9 @@ function ReviewPlot({ id, eid }: { id: number; eid: number | undefined }): JSX.E
             authorUserId={authorUserId}
           />
         )}
+        {compQ.data && (
+          <EditOrForkButton comparison={compQ.data} experimentId={eid} />
+        )}
       </div>
       <div className="flex-1 min-h-0 flex flex-row gap-3">
         <div ref={plotColRef} className="flex-1 min-w-0">
@@ -207,5 +211,79 @@ function ReviewPlot({ id, eid }: { id: number; eid: number | undefined }): JSX.E
         <ChatCard entityType="comparison" entityId={id} />
       </div>
     </div>
+  );
+}
+
+/**
+ * Author-vs-fork affordance (Plan §Phase 11, Task 11.2). Mutually exclusive
+ * — Edit when the current user authored the comparison, Fork otherwise. The
+ * orphan-author case (`comparison.created_by === null`) shows Fork to ALL
+ * users since no one matches null; combined with the backend's spec
+ * §Authorship "fork-only" gate, this is the right fallback.
+ *
+ * Edit click navigates to the edit-mode shell and seeds the Zustand draft
+ * via `loadDraftFromComparison` so the editor has the full saved state to
+ * mutate. Fork click creates a brand-new draft pre-populated from the
+ * parent's data + lineage (`forkedFromId` + `forkedAtHash`) and navigates
+ * to the create flow; submit will POST /api/comparisons with the lineage
+ * fields per Phase 3's `SaveComparisonBody` contract.
+ */
+function EditOrForkButton({
+  comparison, experimentId,
+}: {
+  comparison: Comparison;
+  experimentId: number | undefined;
+}): JSX.Element {
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+  const currentUserId = useCurrentUserId();
+  const loadDraft = useAppState((s) => s.loadDraftFromComparison);
+  const startFork = useAppState((s) => s.startForkDraft);
+
+  const isAuthor =
+    comparison.created_by !== null
+    && currentUserId !== undefined
+    && currentUserId === comparison.created_by;
+
+  if (isAuthor) {
+    const onEdit = (): void => {
+      loadDraft(comparison, qc);
+      if (experimentId !== undefined) {
+        navigate(`/experiments/${experimentId}/compare/${comparison.id}/edit`);
+      } else {
+        navigate("/compare/all");
+      }
+    };
+    return (
+      <button
+        type="button"
+        data-testid="comparison-edit"
+        onClick={onEdit}
+        className="px-3 py-1 rounded border border-border text-fg text-sm
+                   hover:bg-bg-elevated"
+      >
+        Edit
+      </button>
+    );
+  }
+
+  const onFork = (): void => {
+    startFork(comparison, qc);
+    if (experimentId !== undefined) {
+      navigate(`/experiments/${experimentId}/compare/new`);
+    } else {
+      navigate("/compare/all");
+    }
+  };
+  return (
+    <button
+      type="button"
+      data-testid="comparison-fork"
+      onClick={onFork}
+      className="px-3 py-1 rounded border border-border text-fg text-sm
+                 hover:bg-bg-elevated"
+    >
+      Fork
+    </button>
   );
 }

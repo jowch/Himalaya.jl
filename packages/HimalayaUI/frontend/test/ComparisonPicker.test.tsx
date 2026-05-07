@@ -112,6 +112,8 @@ function resetStore(): void {
       title: "",
       description: "",
       members: [],
+      forkedFromId: undefined,
+      forkedAtHash: undefined,
     },
   });
 }
@@ -238,6 +240,8 @@ describe("<ComparisonPicker>", () => {
             snapshot: undefined,
           },
         ],
+        forkedFromId: undefined,
+        forkedAtHash: undefined,
       },
     });
     renderWithProviders(

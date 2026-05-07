@@ -57,6 +57,14 @@ export interface ActiveDraft {
   title: string;
   description: string;
   members: DraftMember[];
+  /**
+   * Fork lineage (Plan §Phase 11). Set when this draft was started as a fork
+   * of an existing comparison; both ride together to `POST /api/comparisons`
+   * so the backend can record the parent + the parent's content_hash at
+   * fork time. Undefined for non-fork create flows.
+   */
+  forkedFromId: number | undefined;
+  forkedAtHash: string | undefined;
 }
 
 export type ActiveDraftSlot = ActiveDraft | null;
@@ -104,5 +112,7 @@ export function emptyDraft(): ActiveDraft {
     title: "",
     description: "",
     members: [],
+    forkedFromId: undefined,
+    forkedAtHash: undefined,
   };
 }

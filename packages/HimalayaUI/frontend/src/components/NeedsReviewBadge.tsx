@@ -17,33 +17,13 @@
  *   - `data-clickable={"true"|"false"}` reflects author gating
  */
 import { useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
-import { useAppState } from "../state";
-import * as api from "../api";
+import { useCurrentUserId } from "../hooks/useCurrentUserId";
 
 export interface NeedsReviewBadgeProps {
   comparisonId: number;
   experimentId: number | undefined;
   /** Numeric user id of the author. Pass null for unauthored comparisons. */
   authorUserId: number | null;
-}
-
-/**
- * Resolve the current user's numeric id from `useAppState.username` via
- * the cached `listUsers` query. Returns `undefined` until resolution lands
- * (or if no user is selected). Mirrors `useCurrentUserId` in
- * `ComparisonPicker.tsx` — kept inline to avoid another shared util file.
- */
-function useCurrentUserId(): number | undefined {
-  const username = useAppState((s) => s.username);
-  const usersQ = useQuery({
-    queryKey: ["users"] as const,
-    queryFn: () => api.listUsers(),
-    enabled: username !== undefined,
-  });
-  if (username === undefined) return undefined;
-  const u = (usersQ.data ?? []).find((x) => x.username === username);
-  return u?.id;
 }
 
 const TOOLTIP_TEXT =

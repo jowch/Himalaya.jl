@@ -12,6 +12,7 @@ import {
 } from "./lib/comparison/draft";
 import {
   fromComparison,
+  fromComparisonAsFork,
   memberFromNewExposure,
 } from "./lib/comparison/draftFactories";
 import { cyclePeakDisplay } from "./lib/comparison/peakCycle";
@@ -114,6 +115,14 @@ export interface AppState {
 
   // Compare-draft actions
   startNewDraft: () => void;
+  /**
+   * Start a fork-flavored draft pre-populated from a parent comparison
+   * (Plan §Phase 11, Task 11.2). Members come from the parent (with ids
+   * dropped so they INSERT under the new comparison) and the parent's
+   * lineage rides on the draft so the eventual `POST /api/comparisons`
+   * carries `forked_from_id` + `forked_at_hash`.
+   */
+  startForkDraft: (comparison: Comparison, qc: QueryClient) => void;
   loadDraftFromComparison: (comparison: Comparison, qc: QueryClient) => void;
   setDraftTitle: (title: string) => void;
   setDraftDescription: (description: string) => void;
@@ -219,6 +228,8 @@ export const useAppState = create<AppState>()(
 
         // ── Compare-draft actions ──────────────────────────────────────
         startNewDraft: () => setDraft(emptyDraft()),
+        startForkDraft: (comparison, qc) =>
+          setDraft(fromComparisonAsFork(comparison, qc)),
         loadDraftFromComparison: (comparison, qc) =>
           setDraft(fromComparison(comparison, qc)),
         setDraftTitle: (title) => {

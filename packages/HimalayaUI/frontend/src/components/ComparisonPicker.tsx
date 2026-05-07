@@ -30,7 +30,7 @@
  * is selected so the user sees their immediate working set first.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useQuery, useQueries, useQueryClient } from "@tanstack/react-query";
+import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { useAppState } from "../state";
 import {
   useExperiments,
@@ -39,30 +39,10 @@ import {
   useSampleTags,
 } from "../queries";
 import { useFocusTrap } from "../hooks/useFocusTrap";
+import { useCurrentUserId } from "../hooks/useCurrentUserId";
 import { ExposureListRow } from "./ExposureListRow";
 import * as api from "../api";
 import type { Exposure, Sample } from "../api";
-
-/**
- * Resolve the current user's id by username, off the cached `listUsers`
- * query. Returns `undefined` until the lookup resolves so dependent queries
- * can stay disabled. Local helper rather than a top-level hook to keep the
- * picker's user-resolution scope contained — only the picker's
- * "Recently used" section needs it today.
- */
-function useCurrentUserId(): number | undefined {
-  const username = useAppState((s) => s.username);
-  const usersQ = useQuery({
-    queryKey: ["users"] as const,
-    // Reuse the existing `listUsers` fetcher rather than duplicating the
-    // request shape; TanStack dedupes if other code already loaded it.
-    queryFn: () => api.listUsers(),
-    enabled: username !== undefined,
-  });
-  if (username === undefined) return undefined;
-  const u = (usersQ.data ?? []).find((x) => x.username === username);
-  return u?.id;
-}
 
 interface Props {
   isOpen: boolean;
