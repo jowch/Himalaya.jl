@@ -469,10 +469,15 @@ function _update_view_for_comparison_created!(db, entity_id, payload, event_id)
             [Int(entity_id), title, description, user_id,
              now_str, now_str, forked_from_id, forked_at_hash])
     else
+        # NULLIF treats the empty-string placeholder seeded by the route's
+        # mint-the-id INSERT (routes_comparisons.jl::POST /api/comparisons)
+        # as "missing" so it gets stamped here. Plain COALESCE would keep
+        # the empty string forever (it's NOT NULL but IS empty) — issue #54.
+        # Real timestamps from a prior fold survive untouched (replay path).
         DBInterface.execute(db,
             """UPDATE comparisons
                SET title = ?, description = ?, created_by = ?,
-                   created_at = COALESCE(created_at, ?), updated_at = ?,
+                   created_at = COALESCE(NULLIF(created_at, ''), ?), updated_at = ?,
                    forked_from_id = ?, forked_at_hash = ?
                WHERE id = ?""",
             [title, description, user_id, now_str, now_str,
