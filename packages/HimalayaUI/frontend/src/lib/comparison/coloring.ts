@@ -35,20 +35,28 @@ export type GroupingMode = "bySample" | "byPhase" | "distinct";
  * 12-color categorical palette (OKLCH). Hues spaced ~30° apart so two
  * adjacent palette entries are always distinguishable. Chroma + luminance
  * tuned to match the dark theme's text/background contrast band.
+ *
+ * Hues are offset +15° from the canonical phase palette in `phases.ts`
+ * so no entry matches a phase color exactly — required for `byPhase` and
+ * `bySample` not to visually conflate (a sample never indexed as Pn3m
+ * must not render in Pn3m's amber). A regression test in
+ * `test/coloring.test.ts` pins the no-collision invariant; keep it
+ * green if you re-tune hues here. Chroma + luminance unchanged from the
+ * original tuning so dark-background contrast still holds.
  */
 export const COMPARE_PALETTE: readonly string[] = [
-  "oklch(0.78 0.13  18)", // coral
-  "oklch(0.80 0.13  62)", // amber
-  "oklch(0.79 0.12 132)", // chartreuse
-  "oklch(0.78 0.12 160)", // sage
-  "oklch(0.79 0.12 185)", // seafoam teal
-  "oklch(0.78 0.12 205)", // sky
-  "oklch(0.80 0.10 248)", // periwinkle
-  "oklch(0.76 0.12 280)", // indigo-violet
-  "oklch(0.76 0.12 300)", // violet
-  "oklch(0.76 0.12 318)", // rose-purple
-  "oklch(0.78 0.12 348)", // pink
-  "oklch(0.79 0.10  90)", // olive-yellow
+  "oklch(0.78 0.13  33)", // warm coral
+  "oklch(0.80 0.13  77)", // gold
+  "oklch(0.79 0.12 147)", // moss
+  "oklch(0.78 0.12 175)", // teal
+  "oklch(0.79 0.12 200)", // cyan
+  "oklch(0.78 0.12 220)", // azure
+  "oklch(0.80 0.10 263)", // lavender
+  "oklch(0.76 0.12 295)", // purple
+  "oklch(0.76 0.12 315)", // magenta-purple
+  "oklch(0.76 0.12 333)", // raspberry
+  "oklch(0.78 0.12   3)", // pink-red
+  "oklch(0.79 0.10 105)", // chartreuse
 ];
 
 /** Neutral cool-gray for orphans (NULL exposure, no phase, etc.). */

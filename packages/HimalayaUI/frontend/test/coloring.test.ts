@@ -18,7 +18,7 @@ import {
   ORPHAN_FALLBACK,
   type GroupingMode,
 } from "../src/lib/comparison/coloring";
-import { phaseColor } from "../src/phases";
+import { phaseColor, PHASE_PALETTE } from "../src/phases";
 
 function makeMember(over: Partial<ComparisonMember> = {}): ComparisonMember {
   return {
@@ -63,6 +63,18 @@ describe("colorFor — palette + fallback", () => {
   it("ORPHAN_FALLBACK is a non-empty string", () => {
     expect(typeof ORPHAN_FALLBACK).toBe("string");
     expect(ORPHAN_FALLBACK.length).toBeGreaterThan(0);
+  });
+
+  it("COMPARE_PALETTE does not collide with the phase palette", () => {
+    // The grouping mode `byPhase` resolves through `phaseColor()` (i.e.
+    // `PHASE_PALETTE`), while `bySample` and `distinct` walk `COMPARE_PALETTE`.
+    // If any entry overlaps, two members chosen under different rules would
+    // render identically — visually conflating sample- and phase-colorings.
+    // See coloring.ts doc-comment lines 19–22.
+    const phaseColors = new Set(Object.values(PHASE_PALETTE));
+    for (const c of COMPARE_PALETTE) {
+      expect(phaseColors.has(c)).toBe(false);
+    }
   });
 });
 

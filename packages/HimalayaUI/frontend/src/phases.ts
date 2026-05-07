@@ -14,7 +14,12 @@ export const CUBIC_PHASES: ReadonlySet<string> = new Set([
 // Hues avoid ±20° of accent (220°) and peak-manual (340°) and the high-chroma warning zone (~75°).
 // Exception: Pn3m at 62° is 13° from the warning hue, but is visually distinct because its
 // luminance (0.80) and chroma (0.13) differ enough from --color-warning (0.76 / 0.11 / 75°).
-const PALETTE: Record<KnownPhase, string> = {
+//
+// Exported so the Compare page's categorical trace palette
+// (`COMPARE_PALETTE` in `lib/comparison/coloring.ts`) can assert it does
+// not collide — `byPhase` and `bySample` would visually conflate if they
+// shared colors.
+export const PHASE_PALETTE: Readonly<Record<KnownPhase, string>> = {
   Pn3m:      "oklch(0.80 0.13  62)", // amber — 13° from warning zone; distinct by luminance + chroma
   Im3m:      "oklch(0.78 0.12 160)", // sage   (mock-up phaseA)
   Ia3d:      "oklch(0.76 0.12 300)", // violet (mock-up phaseC)
@@ -28,5 +33,5 @@ const PALETTE: Record<KnownPhase, string> = {
 const FALLBACK = "oklch(0.65 0.02 270)"; // neutral cool-gray
 
 export function phaseColor(phase: string): string {
-  return (PALETTE as Record<string, string>)[phase] ?? FALLBACK;
+  return (PHASE_PALETTE as Record<string, string>)[phase] ?? FALLBACK;
 }
