@@ -11,7 +11,7 @@
  * Zustand wiring: edit-mode controls dispatch through `updateMember`.
  */
 import { describe, it, expect, beforeEach } from "vitest";
-import { render, screen, fireEvent, act } from "@testing-library/react";
+import { render, screen, fireEvent, act, cleanup } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ComparisonMember } from "../src/api";
 import { MemberMetaRow } from "../src/components/MemberMetaRow";
@@ -244,5 +244,61 @@ describe("MemberMetaRow — edit mode", () => {
     render(<MemberMetaRow member={m} top={0} height={50} mode="edit" memberIndex={0} />);
     fireEvent.click(screen.getByTestId("member-meta-reset-color"));
     expect(useAppState.getState().activeDraft!.members[0]!.color_override).toBeUndefined();
+  });
+
+  // ─── Color-override picker (Phase 9, Task 9.4) ────────────────────────
+
+  it("color picker swatch grid renders with palette colors", () => {
+    render(<MemberMetaRow member={makeMember()} top={0} height={50} mode="edit" memberIndex={0} />);
+    // Expand the row first so the picker becomes visible.
+    fireEvent.click(screen.getByTestId("member-meta-row"));
+    const grid = screen.getByTestId("member-color-picker-grid");
+    expect(grid).toBeInTheDocument();
+    const swatches = screen.getAllByTestId(/^member-color-picker-swatch-/);
+    expect(swatches.length).toBeGreaterThanOrEqual(10);
+    expect(swatches.length).toBeLessThanOrEqual(12);
+  });
+
+  it("clicking a swatch sets color_override to that hex/oklch color", () => {
+    render(<MemberMetaRow member={makeMember()} top={0} height={50} mode="edit" memberIndex={0} />);
+    fireEvent.click(screen.getByTestId("member-meta-row"));
+    const swatches = screen.getAllByTestId(/^member-color-picker-swatch-/);
+    const first = swatches[0]!;
+    const colorValue = first.getAttribute("data-color")!;
+    expect(colorValue).toBeTruthy();
+    fireEvent.click(first);
+    expect(useAppState.getState().activeDraft!.members[0]!.color_override).toBe(colorValue);
+  });
+
+  it("color picker swatch grid is hidden in review mode", () => {
+    render(<MemberMetaRow member={makeMember()} top={0} height={50} mode="review" />);
+    // Even when expanded, review mode does not render the swatch grid.
+    fireEvent.click(screen.getByTestId("member-meta-row"));
+    expect(screen.queryByTestId("member-color-picker-grid")).toBeNull();
+  });
+
+  it("active swatch (matching color_override) is marked", () => {
+    // First swatch's data-color is what we'll claim is the override.
+    render(<MemberMetaRow member={makeMember()} top={0} height={50} mode="edit" memberIndex={0} />);
+    fireEvent.click(screen.getByTestId("member-meta-row"));
+    const swatches = screen.getAllByTestId(/^member-color-picker-swatch-/);
+    const targetColor = swatches[2]!.getAttribute("data-color")!;
+    cleanup();
+    // Re-render with that color set as override.
+    render(
+      <MemberMetaRow
+        member={makeMember({ color_override: targetColor })}
+        top={0}
+        height={50}
+        mode="edit"
+        memberIndex={0}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("member-meta-row"));
+    const reSwatches = screen.getAllByTestId(/^member-color-picker-swatch-/);
+    const target = reSwatches[2]!;
+    expect(target).toHaveAttribute("data-active", "true");
+    // Other swatches should be inactive.
+    expect(reSwatches[0]!).toHaveAttribute("data-active", "false");
   });
 });

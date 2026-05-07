@@ -20,6 +20,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { ComparisonMember } from "../api";
 import { useAppState } from "../state";
 import { phaseColor, CUBIC_PHASES } from "../phases";
+import { COMPARE_PALETTE } from "../lib/comparison/coloring";
 import type { DraftMemberNormalization } from "../lib/comparison/draft";
 
 export interface MemberMetaRowProps {
@@ -103,6 +104,14 @@ export function MemberMetaRow(props: MemberMetaRowProps): JSX.Element {
     if (idx < 0) return;
     updateMember(idx, { color_override: undefined });
   }, [updateMember, idx]);
+
+  const onPickColor = useCallback(
+    (color: string) => {
+      if (idx < 0) return;
+      updateMember(idx, { color_override: color });
+    },
+    [updateMember, idx],
+  );
 
   const ci = member.snapshot?.confirmed_index ?? null;
   const isCubic = ci !== null && CUBIC_PHASES.has(ci.phase);
@@ -251,7 +260,7 @@ export function MemberMetaRow(props: MemberMetaRowProps): JSX.Element {
         <div
           data-testid="member-meta-detail"
           className="absolute z-10 left-2 top-full mt-1 bg-bg-elevated border border-border
-                     rounded shadow-md p-2 text-xs flex flex-col gap-1 min-w-[180px]"
+                     rounded shadow-md p-2 text-xs flex flex-col gap-2 min-w-[180px]"
           onClick={(e) => e.stopPropagation()}
         >
           <div>
@@ -272,8 +281,63 @@ export function MemberMetaRow(props: MemberMetaRowProps): JSX.Element {
               <span className="tabular-nums">#{member.exposure_id}</span>
             </div>
           )}
+          {mode === "edit" && (
+            <ColorPickerSwatchGrid
+              activeColor={member.color_override ?? null}
+              onPick={onPickColor}
+            />
+          )}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * 12-color swatch grid for per-member color override (Phase 9.4). Sources
+ * its palette from `COMPARE_PALETTE` so the override matches the
+ * grouping-mode default palette one-to-one — keeps figures visually
+ * consistent within a comparison. Custom hex input is deferred to v2.
+ */
+interface ColorPickerSwatchGridProps {
+  activeColor: string | null;
+  onPick: (color: string) => void;
+}
+
+function ColorPickerSwatchGrid(
+  { activeColor, onPick }: ColorPickerSwatchGridProps,
+): JSX.Element {
+  return (
+    <div
+      data-testid="member-color-picker-grid"
+      role="radiogroup"
+      aria-label="Trace color override"
+      className="grid grid-cols-6 gap-1"
+    >
+      {COMPARE_PALETTE.map((c, i) => {
+        const active = c === activeColor;
+        return (
+          <button
+            key={i}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            data-testid={`member-color-picker-swatch-${i}`}
+            data-color={c}
+            data-active={active ? "true" : "false"}
+            title={c}
+            onClick={(e) => {
+              e.stopPropagation();
+              onPick(c);
+            }}
+            style={{ background: c }}
+            className={
+              "h-5 w-5 rounded-sm border " +
+              (active ? "border-fg ring-1 ring-fg" : "border-border hover:border-fg-muted")
+            }
+          />
+        );
+      })}
     </div>
   );
 }
