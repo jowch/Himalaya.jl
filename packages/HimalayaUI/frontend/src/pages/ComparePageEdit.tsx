@@ -43,6 +43,9 @@ import {
 } from "../queries";
 import { computeMemberSnapshot } from "../lib/comparison/snapshot";
 import { comparePath } from "../lib/comparison/routes";
+import {
+  getExposure,
+} from "../api";
 import type {
   Comparison, ComparisonMember, ComparisonMemberInput, Exposure, SaveComparisonBody,
 } from "../api";
@@ -158,9 +161,29 @@ export function ComparePageEdit(): JSX.Element {
     goToList();
   }, [discardDraft, goToList]);
 
-  const handleSave = useCallback(() => {
+  const handleSave = useCallback(async () => {
     if (draft === null) return;
     if (draft.members.length === 0) return;
+    // Warm the cache for any never-visited exposures before computing
+    // snapshots. Without this, computeMemberSnapshot falls back to
+    // analysis_inputs_hash = "", which mismatches the server hash and
+    // marks every cold member stale immediately after save (issue #49).
+    const coldExposureIds = draft.members
+      .map((m) => m.exposure_id)
+      .filter((id): id is number => id !== null)
+      .filter((id) => qc.getQueryData<Exposure>(queryKeys.exposure(id)) === undefined);
+
+    if (coldExposureIds.length > 0) {
+      await Promise.all(
+        coldExposureIds.map((id) =>
+          qc.fetchQuery({
+            queryKey: queryKeys.exposure(id),
+            queryFn: () => getExposure(id),
+          }),
+        ),
+      );
+    }
+
     // Compute a fresh snapshot per member at submit time (Plan §Task 4.3).
     const members: ComparisonMemberInput[] = draft.members.map((m) => {
       const snapshot = m.exposure_id !== null
