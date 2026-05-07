@@ -106,11 +106,19 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
   const plotElRef     = useRef<HTMLElement | SVGElement | null>(null);
 
   const [_resizeKey, setResizeKey] = useState(0);
+  // Tracked panel height drives the per-band overlay positions in the JSX
+  // below. Read from the same `clientHeight` source the plot uses, so the
+  // overlay y-bands stay in sync with the rendered plot.
+  const [panelHeight, setPanelHeight] = useState(0);
 
   useEffect(() => {
     const el = plotContainer.current;
     if (!el) return;
-    const obs = new ResizeObserver(() => setResizeKey((k) => k + 1));
+    setPanelHeight(el.clientHeight);
+    const obs = new ResizeObserver(() => {
+      setResizeKey((k) => k + 1);
+      if (plotContainer.current) setPanelHeight(plotContainer.current.clientHeight);
+    });
     obs.observe(el);
     return () => obs.disconnect();
   }, []);
@@ -286,6 +294,22 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
     // so include it as a primitive dep.
   }, [renderPlot, _resizeKey]);
 
+  // Per-member invisible overlays carrying `data-testid="member-trace"` and
+  // `data-member-id={id}` for E2E selectors (Plan §"E2E selector and
+  // accessibility strategy"). MemberTraceLayer is a mark factory that
+  // returns null, so the per-band selector cannot live on a JSX element it
+  // owns. The overlays mount at each band's y-position with
+  // `pointer-events: none` so they don't interfere with the plot's own
+  // wheel/brush listeners. Phase 9's hover-driven phase coloring will hang
+  // hover affordances on these same nodes.
+  // Always emit the per-member overlays (one per member) so E2E selectors
+  // resolve regardless of layout state. Positions degenerate to [0, 0] when
+  // panelHeight is 0 (initial mount before ResizeObserver fires, JSDOM
+  // tests) — that's fine; the boxes still exist and carry the right
+  // `data-member-id`. Once layout settles, the next render places them at
+  // the correct y-band envelope.
+  const overlayBands = computeYBands(members.map((m) => m.band_height || 1), panelHeight);
+
   return (
     <div
       ref={hostRef}
@@ -293,6 +317,31 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
       data-testid="multi-trace-plot"
     >
       <div ref={plotContainer} className="w-full h-full" />
+      <div
+        aria-hidden="true"
+        className="absolute inset-0 pointer-events-none"
+        data-testid="member-trace-overlays"
+      >
+        {members.map((m, i) => {
+          const band = overlayBands[i];
+          const top = band ? band[0] : 0;
+          const height = band ? band[1] - band[0] : 0;
+          return (
+            <div
+              key={m.id}
+              data-testid="member-trace"
+              data-member-id={String(m.id)}
+              style={{
+                position: "absolute",
+                left: 0,
+                right: 0,
+                top: `${top}px`,
+                height: `${height}px`,
+              }}
+            />
+          );
+        })}
+      </div>
     </div>
   );
 }

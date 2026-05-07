@@ -171,6 +171,28 @@ describe("<MultiTracePlot>", () => {
     expect(onXDomain).toHaveBeenCalledWith(null);
   });
 
+  it("renders one [data-testid='member-trace'] overlay per member with the right data-member-id", () => {
+    const m1 = makeMember({ id: 11, exposure_id: 110, display_order: 0 });
+    const m2 = makeMember({ id: 22, exposure_id: 220, display_order: 1 });
+    const m3 = makeMember({ id: 33, exposure_id: 330, display_order: 2 });
+    const trace = { q: [0.1, 0.2], I: [10, 20], sigma: [0, 0] };
+    const traces = new Map([[110, trace], [220, trace], [330, trace]]);
+
+    const { container } = render(
+      <MultiTracePlot
+        members={[m1, m2, m3]}
+        traces={traces}
+        xDomain={null}
+        onXDomain={() => {}}
+      />,
+    );
+
+    const overlays = container.querySelectorAll('[data-testid="member-trace"]');
+    expect(overlays).toHaveLength(3);
+    const ids = Array.from(overlays).map((el) => el.getAttribute("data-member-id"));
+    expect(ids).toEqual(["11", "22", "33"]);
+  });
+
   it("re-renders the plot when members reorder (regression: bands shift)", async () => {
     const Plot = await import("@observablehq/plot");
     (Plot.plot as unknown as { mockClear: () => void }).mockClear();
