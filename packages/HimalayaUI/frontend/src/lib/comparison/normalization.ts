@@ -13,6 +13,10 @@
  * inner working band (default 70%); zero intensity maps to the bottom of
  * the working band; over/underflow clips at the total envelope edges.
  *
+ * Intensity is compressed through `log1p` before scaling so SAXS traces
+ * (2–4 decades dynamic range) keep their full shape inside one band — see
+ * the body comment in `applyNormalization` for the rationale.
+ *
  * Why peak-fit-with-signal-fallback for `qwindow`:
  * - Peak-bearing traces (typical exposures) → reference = max peak intensity
  *   in the window, so peak-position alignment reads cleanly across the stack.
@@ -125,17 +129,25 @@ export function applyNormalization(
   // the working band's bottom — every point lands at the floor.
   const safeRef = reference > 0 ? reference : MIN_REFERENCE;
 
+  // Log y-mapping (issue #56): SAXS intensities span 2–4 decades in a
+  // single trace. A linear pixel map collapses the low-intensity tail to
+  // the band floor — peaks at q=0.20 fall onto the same y as the floor
+  // even though they're orders of magnitude above noise. Map through
+  // log1p so each decade gets its own slice of the band; reference→top
+  // and zero→bottom are preserved by dividing by log1p(safeRef).
+  // safeRef ≥ MIN_REFERENCE > 0 ⇒ logRef > 0, so no division guard needed.
+  const logRef = Math.log1p(safeRef);
+
   const out: Array<{ q: number; y: number }> = new Array(trace.q.length);
   for (let i = 0; i < trace.q.length; i++) {
     const q = trace.q[i]!;
     const I = trace.I[i]!;
-    // Map I to a fraction of the working band: 0 → bottom, reference → top.
-    const frac = Number.isFinite(I) ? I / safeRef : 0;
+    // Math.max(I, 0) keeps log1p in its domain (negatives clamp to bottom
+    // of the working band). With I clamped ≥ 0 and logRef > 0, frac ∈ [0, ∞)
+    // — the only clamp that can fire is the band-top one for I > reference.
+    const frac = Number.isFinite(I) ? Math.log1p(Math.max(I, 0)) / logRef : 0;
     let y = workBottom - frac * workHeight;
-    // Clip at total band envelope (so a low-q dropoff doesn't bleed into
-    // the adjacent member's working band).
-    if (y < bandTop)    y = bandTop;
-    if (y > bandBottom) y = bandBottom;
+    if (y < bandTop) y = bandTop;
     out[i] = { q, y };
   }
   return out;
