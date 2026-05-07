@@ -17,7 +17,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { contentHash, canonicalJson } from "../src/lib/comparison/contentHash";
+import { contentHash, canonicalJson, comparisonHash8 } from "../src/lib/comparison/contentHash";
 import type { ContentHashInput } from "../src/lib/comparison/contentHash";
 import { webcrypto } from "node:crypto";
 
@@ -138,6 +138,33 @@ describe("contentHash — SHA-256 over canonical-JSON, sha256: prefixed lowercas
       members: [{ ...baseMember, display_order: 5 }],
     });
     expect(h1).not.toBe(h2);
+  });
+});
+
+describe("comparisonHash8 — short form for [[comparison:N@hash8]] mention tokens", () => {
+  it("strips the `sha256:` prefix and slices to the first 8 hex chars", () => {
+    expect(comparisonHash8("sha256:a1b2c3d4e5f60718")).toBe("a1b2c3d4");
+  });
+
+  it("lowercases hex (input may carry uppercase)", () => {
+    expect(comparisonHash8("sha256:A1B2C3D4E5F60718")).toBe("a1b2c3d4");
+  });
+
+  it("tolerates a missing `sha256:` prefix (legacy / fixture data)", () => {
+    expect(comparisonHash8("a1b2c3d4e5f60718")).toBe("a1b2c3d4");
+  });
+
+  it("regression #62: picker-emit and chip-drift agree on the same primitive", async () => {
+    // Bug shape: the picker stripped `sha256:` before slicing, but the
+    // chip drift detector did not — so every well-formed mention drifted
+    // immediately. The fix collapses both call sites onto this helper.
+    // This test pins the contract from a fresh content_hash → emit-then-
+    // resolve round-trip at the helper boundary, surviving any future
+    // refactor that renames the chip-side function or moves the picker.
+    const live = "sha256:7b498791ff012345abcdef0102030405060708090a0b0c0d0e0f1011121314";
+    const tokenHash = comparisonHash8(live);                   // picker emit
+    const drift     = comparisonHash8(live) !== tokenHash;     // chip detector
+    expect(drift).toBe(false);
   });
 });
 

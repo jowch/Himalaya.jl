@@ -83,7 +83,10 @@ describe("<MentionChip> — comparison", () => {
   const COMP: api.Comparison = {
     id: 7, title: "DOPE titration",
     description: null,
-    content_hash: "a1b2c3d4e5f60718",
+    // Prefixed `sha256:` form matches the real API payload — this fixture
+    // previously stored the bare hex, which masked issue #62 (the drift
+    // detector and the picker emit path sliced inconsistently).
+    content_hash: "sha256:a1b2c3d4e5f60718",
     created_by: 1,
     created_at: "2026-05-02 10:00:00",
     updated_at: "2026-05-02 10:00:00",

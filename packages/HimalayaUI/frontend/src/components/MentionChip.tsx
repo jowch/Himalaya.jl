@@ -2,6 +2,7 @@ import { useState, useCallback } from "react";
 import { useAppState } from "../state";
 import { useExperiment } from "../queries";
 import { latticeUnitFromQUnits, inverseSquareUnits, formatKappa } from "../lib/units";
+import { comparisonHash8 } from "../lib/comparison/contentHash";
 import type { ResolvedMention } from "../hooks/useMentionResolution";
 import { CUBIC_PHASES } from "../phases";
 
@@ -127,7 +128,7 @@ function computeHashDrift(
   if (tokenHash === undefined) return false;
   if (resolved === "loading" || resolved === "dead") return false;
   if (resolved.type !== "comparison") return false;
-  return resolved.data.content_hash.slice(0, 8).toLowerCase() !== tokenHash.toLowerCase();
+  return comparisonHash8(resolved.data.content_hash) !== tokenHash.toLowerCase();
 }
 
 export function MentionChip({ resolved, originalText, tokenHash }: ChipProps): JSX.Element {

@@ -101,7 +101,11 @@ describe("<MentionPicker>", () => {
       {
         id: 7, title: "DOPE titration",
         description: "5 candidates",
-        content_hash: "a1b2c3d4e5f60718",
+        // Prefixed `sha256:` form matches real API payloads — issue #62
+        // surfaced because the picker emit and chip drift detector sliced
+        // this string inconsistently. Keep the prefix in fixtures so a
+        // future regression on either side fails loudly.
+        content_hash: "sha256:a1b2c3d4e5f60718",
         created_by: 1,
         created_at: "2026-05-02 10:00:00",
         updated_at: "2026-05-02 10:00:00",
@@ -111,7 +115,7 @@ describe("<MentionPicker>", () => {
       {
         id: 8, title: "MO37 vs Im3m",
         description: null,
-        content_hash: "deadbeef00112233",
+        content_hash: "sha256:deadbeef00112233",
         created_by: 1,
         created_at: "2026-05-03 09:00:00",
         updated_at: "2026-05-03 09:00:00",
