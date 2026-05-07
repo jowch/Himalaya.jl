@@ -342,6 +342,9 @@ function migrate_schema!(db::SQLite.DB)
     # user_actions, but ordering keeps every cross-cutting fix-up bounded by the
     # earlier R-numbered migrations. See docs/superpowers/specs/2026-05-02-compare-page-design.md.
     migrate_compare!(db)
+
+    # Compare page Phase 13: per-user pinned comparisons.
+    migrate_comparison_pins!(db)
 end
 
 """
@@ -421,6 +424,38 @@ function migrate_compare!(db::SQLite.DB)
     DBInterface.execute(db, """
         CREATE INDEX IF NOT EXISTS idx_comparison_messages_comparison
             ON comparison_messages(comparison_id, created_at)""")
+    nothing
+end
+
+"""
+    migrate_comparison_pins!(db)
+
+Install the `comparison_pins` table for per-user pinned comparisons
+(Plan §Phase 13, Task 13.2). Idempotent.
+
+Composite PK on `(user_id, comparison_id)` enforces "one pin per (user,
+comparison)" — pinning the same comparison twice is a no-op INSERT OR
+IGNORE. Both FK columns cascade on delete: if a user is removed, their
+pins disappear; if a comparison is deleted, the pin disappears with it.
+This matches the expectation that a "pin" is purely metadata about an
+otherwise-unaffected user/comparison pair.
+
+Pin/unpin is a trivial idempotent state change (toggle), so the routes
+do not wrap in `with_idempotency` — repeated POSTs simply re-affirm the
+"pinned" state. The `pinned_at` timestamp captures user-perceived
+ordering for display in the sidebar (most-recently-pinned first).
+"""
+function migrate_comparison_pins!(db::SQLite.DB)
+    DBInterface.execute(db, """
+        CREATE TABLE IF NOT EXISTS comparison_pins (
+            user_id        INTEGER NOT NULL REFERENCES users(id)       ON DELETE CASCADE,
+            comparison_id  INTEGER NOT NULL REFERENCES comparisons(id) ON DELETE CASCADE,
+            pinned_at      TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (user_id, comparison_id)
+        )""")
+    DBInterface.execute(db, """
+        CREATE INDEX IF NOT EXISTS idx_comparison_pins_by_user
+            ON comparison_pins(user_id, pinned_at DESC)""")
     nothing
 end
 

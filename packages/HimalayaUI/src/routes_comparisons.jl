@@ -330,4 +330,69 @@ function register_comparisons_routes!()
                 JSON3.write(msg_json))
         end
     end
+
+    # ── Pins (Phase 13, Task 13.2) ──────────────────────────────────────────
+    #
+    # Per-user pinned comparisons. Pin/unpin are trivial idempotent state
+    # toggles, so the routes do NOT wrap in `with_idempotency` — repeating
+    # the same POST simply re-affirms the pinned state.
+    #
+    # GET /api/users/me/comparison-pins is keyed off the X-Username header.
+    # Empty username → 401 (matches the auth gate elsewhere). Empty result
+    # for an unrecognised user is an empty array — not a 404 — so the UI
+    # can render "no pins yet" without bespoke error handling.
+
+    @get "/api/users/me/comparison-pins" function(req::HTTP.Request)
+        db = current_db()
+        user_id = get_user_id_for_request(db, req)
+        if user_id === nothing
+            return _json_error(401, "X-Username header required")
+        end
+        # Most-recently-pinned first.
+        rows = Tables.rowtable(DBInterface.execute(db, """
+            SELECT comparison_id FROM comparison_pins
+            WHERE user_id = ?
+            ORDER BY pinned_at DESC, comparison_id DESC
+        """, [user_id]))
+        ids = Int[Int(r.comparison_id) for r in rows]
+        HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(ids))
+    end
+
+    @post "/api/comparisons/{id}/pin" function(req::HTTP.Request, id::Int)
+        db = current_db()
+        user_id = get_user_id_for_request(db, req)
+        if user_id === nothing
+            return _json_error(401, "X-Username header required")
+        end
+        # Existence check — pinning a nonexistent comparison is a 404.
+        if current_content_hash(db, id) === nothing
+            return _json_error(404, "comparison not found")
+        end
+        # INSERT OR REPLACE refreshes pinned_at on re-pin so the row floats
+        # back to the top of the user's list. INSERT OR IGNORE would keep
+        # the original timestamp — both are correct, but "re-pin = bump" is
+        # the more intuitive UX.
+        DBInterface.execute(db, """
+            INSERT OR REPLACE INTO comparison_pins (user_id, comparison_id, pinned_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+        """, [user_id, id])
+        HTTP.Response(200, ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:comparison_id => id, :pinned => true)))
+    end
+
+    @delete "/api/comparisons/{id}/pin" function(req::HTTP.Request, id::Int)
+        db = current_db()
+        user_id = get_user_id_for_request(db, req)
+        if user_id === nothing
+            return _json_error(401, "X-Username header required")
+        end
+        # Idempotent — unpinning a never-pinned comparison is a no-op 200,
+        # so the frontend doesn't need to distinguish "was pinned" from
+        # "wasn't pinned" in a single round trip.
+        DBInterface.execute(db,
+            "DELETE FROM comparison_pins WHERE user_id = ? AND comparison_id = ?",
+            [user_id, id])
+        HTTP.Response(200, ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:comparison_id => id, :pinned => false)))
+    end
 end

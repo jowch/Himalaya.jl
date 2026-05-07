@@ -15,7 +15,9 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Skeleton } from "boneyard-js/react";
-import { useComparisons } from "../queries";
+import {
+  useComparisons, useComparisonPins, usePinComparison, useUnpinComparison,
+} from "../queries";
 import type { ComparisonSummary } from "../api";
 import { HintText } from "./ui";
 
@@ -61,17 +63,41 @@ export function ComparisonSidebar({
   const listQ = useComparisons(listScope);
   const rows = listQ.data ?? [];
 
+  // Phase 13 — per-user pins. The pin set is a Set<number> for O(1) lookup
+  // when partitioning the sorted list. Pinned ids that aren't in the
+  // current scope's listing are silently ignored (a pinned comparison from
+  // another experiment won't appear under "This experiment").
+  const pinsQ = useComparisonPins();
+  const pinSet = useMemo(
+    () => new Set<number>(pinsQ.data ?? []),
+    [pinsQ.data],
+  );
+  const pin   = usePinComparison();
+  const unpin = useUnpinComparison();
+
+  // Sort: pinned first (preserving the pin order from the API — most
+  // recently pinned at top), then non-pinned by updated_at desc.
   const sorted = useMemo(() => {
-    return rows.slice().sort((a, b) => {
-      // Most-recent first by `updated_at`. Null sorts last.
+    const pinnedOrder = pinsQ.data ?? [];
+    const pinnedIdx = new Map<number, number>(
+      pinnedOrder.map((id, i) => [id, i] as const),
+    );
+    const byUpdated = (a: ComparisonSummary, b: ComparisonSummary): number => {
       const ai = a.updated_at ?? "";
       const bi = b.updated_at ?? "";
-      if (ai === bi) return b.id - a.id; // tie-break by id desc
+      if (ai === bi) return b.id - a.id;
       if (ai === "") return 1;
       if (bi === "") return -1;
       return bi.localeCompare(ai);
-    });
-  }, [rows]);
+    };
+    const pinned: ComparisonSummary[] = [];
+    const unpinned: ComparisonSummary[] = [];
+    for (const c of rows) (pinSet.has(c.id) ? pinned : unpinned).push(c);
+    pinned.sort((a, b) =>
+      (pinnedIdx.get(a.id) ?? 0) - (pinnedIdx.get(b.id) ?? 0));
+    unpinned.sort(byUpdated);
+    return [...pinned, ...unpinned];
+  }, [rows, pinSet, pinsQ.data]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -191,18 +217,26 @@ export function ComparisonSidebar({
         ) : (
           filtered.map((c) => {
             const active = c.id === activeComparisonId;
+            const pinned = pinSet.has(c.id);
+            const onTogglePin = (e: React.MouseEvent): void => {
+              e.stopPropagation();
+              if (pinned) unpin.mutate(c.id);
+              else        pin.mutate(c.id);
+            };
             return (
               <li
                 key={c.id}
                 data-testid="comparison-list-item"
                 data-comparison-id={c.id}
                 {...(active ? { "data-active": "true" } : {})}
+                {...(pinned ? { "data-pinned": "true" } : {})}
+                className="group flex items-start gap-1"
               >
                 <button
                   type="button"
                   onClick={() => onPickRow(c.id)}
                   className={
-                    "w-full text-left px-2 py-1.5 rounded text-sm "
+                    "flex-1 min-w-0 text-left px-2 py-1.5 rounded text-sm "
                     + (active
                       ? "bg-accent/10 text-fg"
                       : "text-fg-muted hover:text-fg hover:bg-bg-elevated")
@@ -212,6 +246,23 @@ export function ComparisonSidebar({
                   {c.description && (
                     <div className="text-xs text-fg-dim truncate">{c.description}</div>
                   )}
+                </button>
+                <button
+                  type="button"
+                  data-testid="comparison-pin-toggle"
+                  data-comparison-id={c.id}
+                  data-pinned={pinned ? "true" : "false"}
+                  onClick={onTogglePin}
+                  title={pinned ? "Unpin from top" : "Pin to top"}
+                  aria-label={pinned ? "Unpin comparison" : "Pin comparison"}
+                  className={
+                    "shrink-0 px-1.5 py-1 rounded text-sm leading-none "
+                    + (pinned
+                      ? "text-accent"
+                      : "text-fg-dim opacity-0 group-hover:opacity-100 hover:text-fg")
+                  }
+                >
+                  {pinned ? "★" : "☆"}
                 </button>
               </li>
             );

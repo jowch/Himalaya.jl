@@ -36,4 +36,5 @@ using Test
     include("test_idempotency_replay_invariant.jl")
     include("test_comparisons.jl")
     include("test_picker_routes.jl")
+    include("test_comparison_pins.jl")
 end

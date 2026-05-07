@@ -1,4 +1,5 @@
-import { useQuery, useQueries } from "@tanstack/react-query";
+import { useQuery, useQueries, useMutation, useQueryClient } from "@tanstack/react-query";
+import { authOpts } from "./lib/authOpts";
 import * as api from "./api";
 import { useAppState } from "./state";
 import { getClientId } from "./lib/clientId";
@@ -66,6 +67,9 @@ export const queryKeys = {
     ["user", userId, "recently-picked-exposures", limit] as const,
   sampleTags: (experimentId: number) =>
     ["experiment", experimentId, "sample-tags"] as const,
+  // Phase 13 — comparison pins, scoped per-user via the X-Username header
+  // (no userId in the key — the cache row is implicitly per-tab/per-username).
+  comparisonPins: ["comparison-pins"] as const,
 };
 
 export function useExperiments() {
@@ -537,5 +541,45 @@ export function useSampleTags(experimentId: number | undefined) {
       : (["experiment", "none", "sample-tags"] as const),
     queryFn: () => api.getSampleTags(experimentId as number),
     enabled: experimentId !== undefined,
+  });
+}
+
+// ─── Comparison pins (Plan §Phase 13, Task 13.2) ───────────────────────────
+//
+// Pin/unpin are trivial idempotent state toggles that don't go through
+// `useQueueMutation` (no cross-tab SSE, no `client_op_id` keying — the
+// backend uses plain `INSERT OR REPLACE` / `DELETE` with no event-log
+// emit). Plain `useMutation` + `invalidateQueries` is the cleanest fit.
+//
+// The cache key (`queryKeys.comparisonPins`) is global per-tab; if the
+// user changes their X-Username mid-session, a manual invalidation is
+// needed (out of scope — the username flow already requires a logout
+// → re-onboarding round trip).
+
+/** List of comparison ids the current user has pinned (most-recent first). */
+export function useComparisonPins() {
+  const username = useAppState((s) => s.username);
+  return useQuery({
+    queryKey: queryKeys.comparisonPins,
+    queryFn: () => api.listComparisonPins(authOpts(username, CLIENT_ID)),
+    enabled: username !== undefined,
+  });
+}
+
+export function usePinComparison() {
+  const qc = useQueryClient();
+  const username = useAppState((s) => s.username);
+  return useMutation({
+    mutationFn: (id: number) => api.pinComparison(id, authOpts(username, CLIENT_ID)),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.comparisonPins }),
+  });
+}
+
+export function useUnpinComparison() {
+  const qc = useQueryClient();
+  const username = useAppState((s) => s.username);
+  return useMutation({
+    mutationFn: (id: number) => api.unpinComparison(id, authOpts(username, CLIENT_ID)),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.comparisonPins }),
   });
 }

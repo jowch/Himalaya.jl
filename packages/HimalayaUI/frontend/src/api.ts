@@ -585,3 +585,22 @@ export const getRecentlyPickedExposures = (
 
 export const getSampleTags = (experiment_id: number): Promise<SampleTagPair[]> =>
   request<SampleTagPair[]>("GET", `/api/experiments/${experiment_id}/sample-tags`);
+
+// ─── Comparison pins (Plan §Phase 13, Task 13.2) ────────────────────────────
+//
+// Per-user pinned comparisons surface at the top of the sidebar. Pin/unpin
+// are trivial idempotent state toggles — no `with_idempotency`, no SSE — so
+// the API is a straightforward POST/DELETE pair. The list endpoint reads
+// `X-Username` and returns a flat array of comparison ids in
+// most-recently-pinned-first order.
+
+export const listComparisonPins = (opts?: AuthOpts): Promise<number[]> =>
+  request<number[]>("GET", "/api/users/me/comparison-pins", undefined, opts);
+
+export const pinComparison = (id: number, opts?: AuthOpts) =>
+  request<{ comparison_id: number; pinned: boolean }>(
+    "POST", `/api/comparisons/${id}/pin`, undefined, opts);
+
+export const unpinComparison = (id: number, opts?: AuthOpts) =>
+  request<{ comparison_id: number; pinned: boolean }>(
+    "DELETE", `/api/comparisons/${id}/pin`, undefined, opts);
