@@ -141,4 +141,48 @@ describe("useAppState", () => {
     const raw = localStorage.getItem(LS_KEY) ?? "";
     expect(raw).not.toContain("hoveredPeakId");
   });
+
+  // ── compareXDomains is keyed per-comparison (Phase 6 reviewer fix) ──────
+  // A single shared zoom domain bled across comparisons: zooming A to a
+  // narrow q-range and then navigating to B (with a different q-range) made
+  // B look broken. Per-comparison keying preserves zoom across review/edit
+  // toggles for the SAME comparison while isolating different ones.
+
+  it("compareXDomains starts as an empty record and is per-comparison-id", () => {
+    useAppState.setState({ compareXDomains: {} });
+    expect(useAppState.getState().compareXDomains).toEqual({});
+  });
+
+  it("setCompareXDomain(id, d) scopes the domain to that id only", () => {
+    useAppState.setState({ compareXDomains: {} });
+    useAppState.getState().setCompareXDomain(1, [0.1, 0.3]);
+    useAppState.getState().setCompareXDomain(2, [0.5, 1.0]);
+    const s = useAppState.getState();
+    expect(s.compareXDomains[1]).toEqual([0.1, 0.3]);
+    expect(s.compareXDomains[2]).toEqual([0.5, 1.0]);
+  });
+
+  it("setting the domain for one comparison does not affect another", () => {
+    useAppState.setState({ compareXDomains: {} });
+    useAppState.getState().setCompareXDomain(1, [0.1, 0.3]);
+    useAppState.getState().setCompareXDomain(2, [0.5, 1.0]);
+    // Mutate id=1, ensure id=2 untouched.
+    useAppState.getState().setCompareXDomain(1, [0.2, 0.4]);
+    const s = useAppState.getState();
+    expect(s.compareXDomains[1]).toEqual([0.2, 0.4]);
+    expect(s.compareXDomains[2]).toEqual([0.5, 1.0]);
+  });
+
+  it("setCompareXDomain(id, null) clears the entry", () => {
+    useAppState.setState({ compareXDomains: {} });
+    useAppState.getState().setCompareXDomain(1, [0.1, 0.3]);
+    useAppState.getState().setCompareXDomain(1, null);
+    expect(useAppState.getState().compareXDomains[1] ?? null).toBeNull();
+  });
+
+  it("compareXDomains is NOT in the persisted partition (ephemeral UI state)", () => {
+    useAppState.getState().setCompareXDomain(1, [0.1, 0.3]);
+    const raw = localStorage.getItem(LS_KEY) ?? "";
+    expect(raw).not.toContain("compareXDomains");
+  });
 });

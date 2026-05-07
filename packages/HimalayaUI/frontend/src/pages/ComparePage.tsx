@@ -10,7 +10,7 @@
  * The plot, member panel, chat, badges, and edit/fork affordances are
  * built out across Phases 6–11; this file is only the shell that hosts them.
  */
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import { useParams, useLocation } from "react-router-dom";
 import { ComparisonSidebar } from "../components/ComparisonSidebar";
 import { MultiTracePlot } from "../components/MultiTracePlot";
@@ -63,8 +63,14 @@ export function ComparePage(): JSX.Element {
  */
 function ReviewPlot({ id }: { id: number }): JSX.Element {
   const compQ = useComparison(id);
-  const xDomain = useAppState((s) => s.compareXDomain);
-  const setXDomain = useAppState((s) => s.setCompareXDomain);
+  // Per-comparison zoom keying — selecting only the slice for `id` so this
+  // component does not re-render on zoom changes to other comparisons.
+  const xDomain = useAppState((s) => s.compareXDomains[id] ?? null);
+  const setCompareXDomain = useAppState((s) => s.setCompareXDomain);
+  const setXDomain = useCallback(
+    (d: [number, number] | null) => setCompareXDomain(id, d),
+    [setCompareXDomain, id],
+  );
 
   const members = useMemo(() => {
     if (!compQ.data) return [];

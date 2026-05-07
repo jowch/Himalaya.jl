@@ -205,9 +205,18 @@ export function ComparePageEdit(): JSX.Element {
 
   // Phase 6 — wire MultiTracePlot. Members reflect the live draft (Zustand);
   // traces fetched in parallel via `useMemberTraces`. The q-axis zoom domain
-  // lives in shared Zustand so toggling between review/edit preserves it.
-  const xDomain = useAppState((s) => s.compareXDomain);
-  const setXDomain = useAppState((s) => s.setCompareXDomain);
+  // is keyed per comparison id so toggling between review/edit for the SAME
+  // comparison preserves the zoom but switching to a DIFFERENT comparison
+  // doesn't bleed (zoom ranges can differ by orders of magnitude).
+  // Unsaved drafts (create flow, no id yet) use the `0` sentinel — autoincrement
+  // comparison ids start at 1 so collision is impossible.
+  const xDomainKey = id ?? 0;
+  const xDomain = useAppState((s) => s.compareXDomains[xDomainKey] ?? null);
+  const setCompareXDomain = useAppState((s) => s.setCompareXDomain);
+  const setXDomain = useCallback(
+    (d: [number, number] | null) => setCompareXDomain(xDomainKey, d),
+    [setCompareXDomain, xDomainKey],
+  );
   const plotMembers = useMemo<ComparisonMember[]>(
     () => (draft?.members ?? []).map(draftToMember),
     [draft?.members],

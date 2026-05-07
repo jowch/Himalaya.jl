@@ -44,11 +44,19 @@ export interface AppState {
   // because PhasePanel needs to mount/unmount the modal.
   speculativeBuilder: { exposureId: number } | null;
   /**
-   * Compare-page q-axis zoom domain. Per-tab UI state — not persisted.
-   * `null` = full data range. Shared across review/edit modes for the
-   * same comparison so toggling between them keeps the user's zoom intact.
+   * Compare-page q-axis zoom domains, keyed per comparison id. Per-tab UI
+   * state — not persisted. Missing entry / `null` value = full data range.
+   *
+   * Keying per-comparison preserves zoom across review/edit toggles for
+   * the SAME comparison while isolating different comparisons (different
+   * comparisons can have q-ranges differing by orders of magnitude — a
+   * shared single slot caused B to inherit A's zoom and look broken).
+   *
+   * The unsaved-draft case (create flow, no id yet) uses key `0` as a
+   * sentinel — autoincrement comparison ids start at 1, so collision is
+   * impossible.
    */
-  compareXDomain: [number, number] | null;
+  compareXDomains: Record<number, [number, number] | null>;
 
   /**
    * Compare-page draft slot (Plan §Phase 4, Task 4.3). Single slot — only
@@ -75,7 +83,7 @@ export interface AppState {
   clearUsername: () => void;
   openSpeculativeBuilder: (exposureId: number) => void;
   closeSpeculativeBuilder: () => void;
-  setCompareXDomain: (d: [number, number] | null) => void;
+  setCompareXDomain: (id: number, d: [number, number] | null) => void;
 
   // Compare-draft actions
   startNewDraft: () => void;
@@ -128,7 +136,7 @@ export const useAppState = create<AppState>()(
         navModalOpen: false,
         navModalStep: "experiment",
         speculativeBuilder: null,
-        compareXDomain: null,
+        compareXDomains: {},
         // Rehydrate the draft from sessionStorage at module-init time so
         // a tab reload restores edit-in-progress.
         activeDraft: loadDraftFromSession(),
@@ -158,7 +166,8 @@ export const useAppState = create<AppState>()(
         openSpeculativeBuilder: (exposureId) =>
           set({ speculativeBuilder: { exposureId } }),
         closeSpeculativeBuilder: () => set({ speculativeBuilder: null }),
-        setCompareXDomain: (compareXDomain) => set({ compareXDomain }),
+        setCompareXDomain: (id, d) =>
+          set({ compareXDomains: { ...get().compareXDomains, [id]: d } }),
 
         // ── Compare-draft actions ──────────────────────────────────────
         startNewDraft: () => setDraft(emptyDraft()),
