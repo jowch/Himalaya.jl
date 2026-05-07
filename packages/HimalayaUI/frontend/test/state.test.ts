@@ -142,6 +142,59 @@ describe("useAppState", () => {
     expect(raw).not.toContain("hoveredPeakId");
   });
 
+  // ── compare-page review-mode UI state (Phase 9) ────────────────────────
+
+  it("groupingMode defaults to 'bySample' and switches via named action", () => {
+    expect(useAppState.getState().groupingMode).toBe("bySample");
+    useAppState.getState().setGroupingMode("byPhase");
+    expect(useAppState.getState().groupingMode).toBe("byPhase");
+    useAppState.getState().setGroupingMode("distinct");
+    expect(useAppState.getState().groupingMode).toBe("distinct");
+  });
+
+  it("groupingMode is NOT in the persisted partition", () => {
+    useAppState.getState().setGroupingMode("byPhase");
+    const raw = localStorage.getItem(LS_KEY) ?? "";
+    expect(raw).not.toContain("groupingMode");
+    expect(raw).not.toContain("byPhase");
+  });
+
+  it("showPeakTicks defaults to true and can be set", () => {
+    expect(useAppState.getState().showPeakTicks).toBe(true);
+    useAppState.getState().setShowPeakTicks(false);
+    expect(useAppState.getState().showPeakTicks).toBe(false);
+    useAppState.getState().setShowPeakTicks(true);
+    expect(useAppState.getState().showPeakTicks).toBe(true);
+  });
+
+  it("showPeakLabels defaults to true and can be set", () => {
+    expect(useAppState.getState().showPeakLabels).toBe(true);
+    useAppState.getState().setShowPeakLabels(false);
+    expect(useAppState.getState().showPeakLabels).toBe(false);
+  });
+
+  it("annotation toggles are NOT persisted", () => {
+    useAppState.getState().setShowPeakTicks(false);
+    useAppState.getState().setShowPeakLabels(false);
+    const raw = localStorage.getItem(LS_KEY) ?? "";
+    expect(raw).not.toContain("showPeakTicks");
+    expect(raw).not.toContain("showPeakLabels");
+  });
+
+  it("highlightedCompareMemberId starts undefined and can set/clear via single setter", () => {
+    expect(useAppState.getState().highlightedCompareMemberId).toBeUndefined();
+    useAppState.getState().setHighlightedCompareMemberId(42);
+    expect(useAppState.getState().highlightedCompareMemberId).toBe(42);
+    useAppState.getState().setHighlightedCompareMemberId(undefined);
+    expect(useAppState.getState().highlightedCompareMemberId).toBeUndefined();
+  });
+
+  it("highlightedCompareMemberId is NOT persisted", () => {
+    useAppState.getState().setHighlightedCompareMemberId(7);
+    const raw = localStorage.getItem(LS_KEY) ?? "";
+    expect(raw).not.toContain("highlightedCompareMemberId");
+  });
+
   // ── compareXDomains is keyed per-comparison (Phase 6 reviewer fix) ──────
   // A single shared zoom domain bled across comparisons: zooming A to a
   // narrow q-range and then navigating to B (with a different q-range) made

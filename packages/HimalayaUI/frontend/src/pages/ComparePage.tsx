@@ -15,6 +15,7 @@ import { useParams, useLocation } from "react-router-dom";
 import { ComparisonSidebar } from "../components/ComparisonSidebar";
 import { MultiTracePlot } from "../components/MultiTracePlot";
 import { MemberMetaGutter } from "../components/MemberMetaGutter";
+import { GroupingModeToggle } from "../components/GroupingModeToggle";
 import { useComparison, useMemberTraces } from "../queries";
 import { useAppState } from "../state";
 
@@ -100,20 +101,28 @@ function ReviewPlot({ id }: { id: number }): JSX.Element {
   }, []);
 
   return (
-    <div className="flex-1 min-h-0 flex flex-row p-4 gap-3" data-testid="compare-review-plot">
-      <div ref={plotColRef} className="flex-1 min-w-0">
-        <MultiTracePlot
-          members={members}
-          traces={traces}
-          xDomain={xDomain}
-          onXDomain={setXDomain}
-        />
-      </div>
+    <div className="flex-1 min-h-0 flex flex-col p-4 gap-3" data-testid="compare-review-plot">
       <div
-        className="w-[280px] shrink-0 relative"
-        data-testid="compare-review-gutter"
+        data-testid="compare-review-header"
+        className="flex items-center gap-2 flex-wrap"
       >
-        <MemberMetaGutter members={members} panelHeight={panelHeight} mode="review" />
+        <GroupingModeToggle />
+      </div>
+      <div className="flex-1 min-h-0 flex flex-row gap-3">
+        <div ref={plotColRef} className="flex-1 min-w-0">
+          <MultiTracePlot
+            members={members}
+            traces={traces}
+            xDomain={xDomain}
+            onXDomain={setXDomain}
+          />
+        </div>
+        <div
+          className="w-[280px] shrink-0 relative"
+          data-testid="compare-review-gutter"
+        >
+          <MemberMetaGutter members={members} panelHeight={panelHeight} mode="review" />
+        </div>
       </div>
     </div>
   );

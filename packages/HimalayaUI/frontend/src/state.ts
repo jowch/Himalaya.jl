@@ -15,6 +15,7 @@ import {
   memberFromNewExposure,
 } from "./lib/comparison/draftFactories";
 import { cyclePeakDisplay } from "./lib/comparison/peakCycle";
+import type { GroupingMode } from "./lib/comparison/coloring";
 
 export const LS_KEY = "himalaya-ui:state";
 
@@ -67,6 +68,31 @@ export interface AppState {
    */
   activeDraft: ActiveDraftSlot;
 
+  /**
+   * Compare-page review/edit-mode grouping mode for trace coloring (Plan
+   * §Phase 9, Task 9.2). Per-tab viewing preference — NOT persisted on the
+   * comparison and NOT mirrored to sessionStorage. Default `"bySample"`.
+   */
+  groupingMode: GroupingMode;
+
+  /**
+   * Compare-page review-mode annotation toggles (Plan §Phase 9, Task 9.3).
+   * Both default to `true`. Per-tab viewing preference — neither persisted
+   * on the comparison nor in storage. Hidden in edit mode (everything
+   * renders so the user can edit).
+   */
+  showPeakTicks: boolean;
+  showPeakLabels: boolean;
+
+  /**
+   * Compare-page hover/click-to-pin highlight target (Plan §Phase 9,
+   * Task 9.5). When set, `MemberTraceLayer` recolors that member's
+   * snapshotted index peaks to the phase color; non-index peaks stay black.
+   * Mirrors the `hoveredIndexId` single-setter pattern from the Index page.
+   * Cleared on page navigation, edit-mode entry, and member removal.
+   */
+  highlightedCompareMemberId: number | undefined;
+
   // setters
   setUsername: (name: string) => void;
   setUser: (u: { username: string; firstName?: string | undefined; lastName?: string | undefined }) => void;
@@ -106,6 +132,12 @@ export interface AppState {
    */
   cyclePeakDisplayForMember: (memberIdx: number, peakId: number, altKey: boolean) => void;
   discardDraft: () => void;
+
+  // Compare-page Phase 9 review-mode UI actions
+  setGroupingMode: (mode: GroupingMode) => void;
+  setShowPeakTicks: (show: boolean) => void;
+  setShowPeakLabels: (show: boolean) => void;
+  setHighlightedCompareMemberId: (id: number | undefined) => void;
 }
 
 /**
@@ -150,6 +182,12 @@ export const useAppState = create<AppState>()(
         // Rehydrate the draft from sessionStorage at module-init time so
         // a tab reload restores edit-in-progress.
         activeDraft: loadDraftFromSession(),
+
+        // Phase 9 — review-mode UI defaults. All per-tab; not persisted.
+        groupingMode: "bySample",
+        showPeakTicks: true,
+        showPeakLabels: true,
+        highlightedCompareMemberId: undefined,
 
         setUsername: (username) => set({ username }),
         setUser: ({ username, firstName, lastName }) =>
@@ -277,6 +315,13 @@ export const useAppState = create<AppState>()(
           setDraft({ ...cur, members });
         },
         discardDraft: () => setDraft(null),
+
+        // Phase 9 — review-mode UI actions
+        setGroupingMode: (groupingMode) => set({ groupingMode }),
+        setShowPeakTicks: (showPeakTicks) => set({ showPeakTicks }),
+        setShowPeakLabels: (showPeakLabels) => set({ showPeakLabels }),
+        setHighlightedCompareMemberId: (highlightedCompareMemberId) =>
+          set({ highlightedCompareMemberId }),
       };
     },
     {
