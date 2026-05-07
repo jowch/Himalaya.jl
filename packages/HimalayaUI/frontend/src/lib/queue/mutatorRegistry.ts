@@ -6,6 +6,7 @@ import {
   addExposureTagMutator,
   removeExposureTagMutator,
   postSampleMessageMutator,
+  postComparisonMessageMutator,
   setExposureStatusMutator,
   selectExposureMutator,
 } from "./mutators/trivial";
@@ -52,7 +53,10 @@ export function resolveMutator(
   op: PersistedOpForResolution,
 ): Mutator<any, any, any> | undefined {
   const p = op.payload as
-    | { experimentId?: number; sampleId?: number; exposureId?: number }
+    | {
+        experimentId?: number; sampleId?: number;
+        exposureId?: number; comparisonId?: number;
+      }
     | undefined;
   switch (op.kind) {
     case "update_sample":
@@ -66,7 +70,9 @@ export function resolveMutator(
         ? removeSampleTagMutator
         : removeExposureTagMutator;
     case "post_message":
-      return postSampleMessageMutator;
+      return p?.comparisonId !== undefined
+        ? postComparisonMessageMutator
+        : postSampleMessageMutator;
     case "set_exposure_status":
       return setExposureStatusMutator;
     case "select_exposure":

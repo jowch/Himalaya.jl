@@ -10,6 +10,7 @@ import {
   addExposureTagMutator,
   removeExposureTagMutator,
   postSampleMessageMutator,
+  postComparisonMessageMutator,
   setExposureStatusMutator,
   selectExposureMutator,
 } from "./lib/queue/mutators/trivial";
@@ -444,6 +445,23 @@ export function useComparisonMessages(id: number | undefined) {
     queryFn: () => api.listComparisonMessages(id as number),
     enabled: id !== undefined,
   });
+}
+
+/**
+ * Posts a chat message to the comparison thread. Mirrors
+ * `usePostSampleMessage` — the registry discriminates by the presence of
+ * `comparisonId` in the payload (vs `sampleId`) to select the right mutator.
+ */
+export function usePostComparisonMessage(comparisonId: number) {
+  const username = useAppState((s) => s.username);
+  const inner = useQueueMutation(
+    postComparisonMessageMutator,
+    { comparisonId, username, clientId: CLIENT_ID },
+  );
+  return {
+    ...inner,
+    mutate: (body: string) => inner.mutate({ body }),
+  };
 }
 
 export function useSaveComparison() {

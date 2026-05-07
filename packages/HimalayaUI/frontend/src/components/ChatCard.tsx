@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useRef } from "react";
 import { Skeleton } from "boneyard-js/react";
 import { useAppState } from "../state";
-import { useSampleMessages, usePostSampleMessage } from "../queries";
-import type { SampleMessage } from "../api";
+import {
+  useSampleMessages, usePostSampleMessage,
+  useComparisonMessages, usePostComparisonMessage,
+} from "../queries";
+import type { SampleMessage, ComparisonMessage } from "../api";
 import { HintText } from "./ui";
 import { parseMentions, type MentionToken } from "../lib/renderMentions";
 import { useMentionResolution } from "../hooks/useMentionResolution";
@@ -32,29 +35,87 @@ const CHAT_CARD_FIXTURE = (
   </div>
 );
 
+/** Either flavour of chat row — both are message-like with author + body. */
+type AnyMessage = SampleMessage | ComparisonMessage;
+
+interface ChatCardProps {
+  /**
+   * Phase 10: explicit entity context. When provided, the hook layer routes
+   * to the matching API + cache key. When omitted, the legacy path reads
+   * `activeSampleId` from Zustand for backward compatibility with the
+   * existing Index/Inspect call sites.
+   */
+  entityType?: "sample" | "comparison";
+  entityId?: number;
+}
+
 /**
- * ChatCard — per-sample notebook/chat log.
+ * ChatCard — chat thread for a sample or a comparison.
  *
  * Renders a scrollable list of messages with the compose textarea pinned at
  * the bottom of the card. Enter submits; Shift-Enter inserts a newline.
+ *
+ * The component supports two contexts:
+ *   - `<ChatCard />` — sample-scoped (legacy): reads `activeSampleId` from
+ *     Zustand. Used on the Index and Inspect pages.
+ *   - `<ChatCard entityType="comparison" entityId={N} />` — comparison-scoped:
+ *     used on review-mode `ComparePage`.
+ *
+ * Both flavours route to the right API + cache key via the queries layer.
+ * Edit-mode Compare does NOT mount the chat (chat is review-only per spec).
  */
-export function ChatCard(): JSX.Element {
-  const sampleId = useAppState((s) => s.activeSampleId);
-  const username = useAppState((s) => s.username);
+export function ChatCard(props: ChatCardProps): JSX.Element {
+  const activeSampleId = useAppState((s) => s.activeSampleId);
 
-  const messagesQ = useSampleMessages(sampleId);
-  const postMsg   = usePostSampleMessage(sampleId ?? 0);
+  // Resolve effective context: explicit props win, fall back to active sample.
+  const entityType: "sample" | "comparison" = props.entityType ?? "sample";
+  const entityId: number | undefined =
+    props.entityId !== undefined
+      ? props.entityId
+      : entityType === "sample"
+        ? activeSampleId
+        : undefined;
 
-  if (sampleId === undefined) {
+  if (entityId === undefined) {
     return (
       <Frame>
         <div className="flex-1 flex items-center justify-center p-4">
-          <HintText>Pick a sample to start a conversation.</HintText>
+          <HintText>
+            {entityType === "comparison"
+              ? "Pick a comparison to start a conversation."
+              : "Pick a sample to start a conversation."}
+          </HintText>
         </div>
       </Frame>
     );
   }
 
+  return entityType === "comparison" ? (
+    <ComparisonThread comparisonId={entityId} />
+  ) : (
+    <SampleThread sampleId={entityId} />
+  );
+}
+
+function SampleThread({ sampleId }: { sampleId: number }): JSX.Element {
+  const username = useAppState((s) => s.username);
+  const messagesQ = useSampleMessages(sampleId);
+  const postMsg   = usePostSampleMessage(sampleId);
+  return (
+    <Frame>
+      <MessageList messages={messagesQ.data ?? []} isPending={messagesQ.isPending} />
+      <MentionCompose
+        disabled={username === undefined || postMsg.isPending}
+        onSubmit={(body) => postMsg.mutate(body)}
+      />
+    </Frame>
+  );
+}
+
+function ComparisonThread({ comparisonId }: { comparisonId: number }): JSX.Element {
+  const username = useAppState((s) => s.username);
+  const messagesQ = useComparisonMessages(comparisonId);
+  const postMsg   = usePostComparisonMessage(comparisonId);
   return (
     <Frame>
       <MessageList messages={messagesQ.data ?? []} isPending={messagesQ.isPending} />
@@ -78,7 +139,7 @@ function Frame({ children }: { children: React.ReactNode }): JSX.Element {
 }
 
 interface MessageListProps {
-  messages: SampleMessage[];
+  messages: AnyMessage[];
   isPending: boolean;
 }
 
@@ -101,7 +162,7 @@ function MessageList({ messages, isPending }: MessageListProps): JSX.Element {
     >
       {messages.length === 0 ? (
         <div className="flex-1 overflow-y-auto px-3 py-3">
-          <HintText>No notes yet. Start a conversation about this sample below.</HintText>
+          <HintText>No notes yet. Start a conversation below.</HintText>
         </div>
       ) : (
         <div
@@ -118,7 +179,7 @@ function MessageList({ messages, isPending }: MessageListProps): JSX.Element {
   );
 }
 
-function MessageRow({ msg }: { msg: SampleMessage }): JSX.Element {
+function MessageRow({ msg }: { msg: AnyMessage }): JSX.Element {
   const authorLabel   = msg.author ?? "deleted user";
   const authorDeleted = msg.author == null;
   const segments      = useMemo(() => parseMentions(msg.body), [msg.body]);
@@ -161,4 +222,3 @@ function formatTime(iso: string): string {
   if (d.toDateString() === today.toDateString()) return hm;
   return `${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })} ${hm}`;
 }
-

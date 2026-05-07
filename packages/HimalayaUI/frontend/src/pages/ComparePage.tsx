@@ -19,6 +19,7 @@ import { MemberMetaGutter } from "../components/MemberMetaGutter";
 import { GroupingModeToggle } from "../components/GroupingModeToggle";
 import { AnnotationToggles } from "../components/AnnotationToggles";
 import { NeedsReviewBadge } from "../components/NeedsReviewBadge";
+import { ChatCard } from "../components/ChatCard";
 import { useComparison, useMemberTraces, queryKeys } from "../queries";
 import { useAppState } from "../state";
 import type { ComparisonMember, Exposure } from "../api";
@@ -198,6 +199,12 @@ function ReviewPlot({ id, eid }: { id: number; eid: number | undefined }): JSX.E
         >
           <MemberMetaGutter members={members} panelHeight={panelHeight} mode="review" />
         </div>
+      </div>
+      <div
+        data-testid="compare-review-chat"
+        className="h-[280px] shrink-0 border-t border-border -mx-4 -mb-4 mt-1"
+      >
+        <ChatCard entityType="comparison" entityId={id} />
       </div>
     </div>
   );

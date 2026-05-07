@@ -136,3 +136,82 @@ describe("<ChatCard>", () => {
     });
   });
 });
+
+// ─── Comparison context (Phase 10, Task 10.1) ─────────────────────────────
+//
+// `ChatCard` accepts an explicit entity context so it can host BOTH the
+// per-sample chat (Index/Inspect pages) and the per-comparison chat
+// (review-mode Compare page). The hook layer routes to the right
+// API by inspecting `entityType`; the legacy zero-prop call site still
+// reads `activeSampleId` from Zustand for backward compatibility.
+
+describe("<ChatCard entityType='comparison'>", () => {
+  const COMPARISON_MSGS: api.ComparisonMessage[] = [
+    {
+      id: 11, comparison_id: 7, author_id: 1, author: "alice",
+      body: "first comparison thought", created_at: "2026-05-02 09:00:00",
+    },
+    {
+      id: 12, comparison_id: 7, author_id: 2, author: "bob",
+      body: "second comparison thought", created_at: "2026-05-02 09:05:00",
+    },
+  ];
+
+  beforeEach(() => {
+    useAppState.setState({
+      activeSampleId: undefined,
+      username: "carol",
+      activeExperimentId: 1,
+    });
+  });
+
+  it("calls listComparisonMessages and renders messages", async () => {
+    const listSpy = vi.spyOn(api, "listComparisonMessages").mockResolvedValue(COMPARISON_MSGS);
+    const sampleSpy = vi.spyOn(api, "listSampleMessages").mockResolvedValue([]);
+    renderWithProviders(<ChatCard entityType="comparison" entityId={7} />);
+    expect(await screen.findByText("first comparison thought")).toBeInTheDocument();
+    expect(screen.getByText("second comparison thought")).toBeInTheDocument();
+    expect(listSpy).toHaveBeenCalledWith(7);
+    expect(sampleSpy).not.toHaveBeenCalled();
+  });
+
+  it("posts via postComparisonMessage on Enter", async () => {
+    vi.spyOn(api, "listComparisonMessages").mockResolvedValue([]);
+    const postSpy = vi.spyOn(api, "postComparisonMessage").mockResolvedValue({
+      id: 99, comparison_id: 7, author_id: 3, author: "carol",
+      body: "compare note", created_at: "2026-05-02 10:05:00",
+    });
+    const sampleSpy = vi.spyOn(api, "postSampleMessage");
+    const user = userEvent.setup();
+    renderWithProviders(<ChatCard entityType="comparison" entityId={7} />);
+    const compose = await screen.findByTestId("chat-compose");
+    await user.click(compose);
+    await user.keyboard("compare note");
+    await user.keyboard("{Enter}");
+    await waitFor(() => {
+      expect(postSpy).toHaveBeenCalledWith(7, "compare note", expect.objectContaining({ username: "carol" }));
+    });
+    expect(sampleSpy).not.toHaveBeenCalled();
+  });
+
+  it("renders empty state with comparison-specific copy", async () => {
+    vi.spyOn(api, "listComparisonMessages").mockResolvedValue([]);
+    renderWithProviders(<ChatCard entityType="comparison" entityId={7} />);
+    expect(await screen.findByText(/no notes yet/i)).toBeInTheDocument();
+  });
+});
+
+describe("<ChatCard entityType='sample'>", () => {
+  it("explicit sample context routes to listSampleMessages", async () => {
+    const sampleSpy = vi.spyOn(api, "listSampleMessages").mockResolvedValue([
+      { id: 1, sample_id: 5, author_id: 1, author: "alice",
+        body: "hi sample", created_at: "2026-04-24 10:00:00" },
+    ]);
+    const compSpy = vi.spyOn(api, "listComparisonMessages").mockResolvedValue([]);
+    useAppState.setState({ activeSampleId: undefined, username: "carol", activeExperimentId: 1 });
+    renderWithProviders(<ChatCard entityType="sample" entityId={5} />);
+    expect(await screen.findByText("hi sample")).toBeInTheDocument();
+    expect(sampleSpy).toHaveBeenCalledWith(5);
+    expect(compSpy).not.toHaveBeenCalled();
+  });
+});
