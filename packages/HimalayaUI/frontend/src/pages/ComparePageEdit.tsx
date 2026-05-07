@@ -388,6 +388,14 @@ export function ComparePageEdit(): JSX.Element {
   // Track the plot column's height so the edit-mode gutter aligns pixel-for-
   // pixel with the plot bands (both consumers feed `computeYBands` the same
   // ratios + height).
+  //
+  // Re-attach the observer on `tracesLoading` flips: while the Skeleton
+  // fallback is showing, `plotColRef.current` is null and the effect bails
+  // at the early-out. Once Skeleton swaps in the real children, the ref
+  // attaches and we need to fire again — same shape as the ComparePage
+  // review fix (issue #51, see PR #59 [plotLoading]). `plotMembers.length`
+  // alone doesn't gate on Skeleton, so the gutter stayed at height 0
+  // until any other re-render happened to coincide with the ref attaching.
   const plotColRef = useRef<HTMLDivElement>(null);
   const [panelHeight, setPanelHeight] = useState(0);
   useEffect(() => {
@@ -399,7 +407,7 @@ export function ComparePageEdit(): JSX.Element {
     });
     obs.observe(el);
     return () => obs.disconnect();
-  }, [plotMembers.length]);
+  }, [tracesLoading]);
   // Phase 11 wires Edit/Fork visibility against current_user vs. created_by;
   // for now we surface the testid so downstream tests can target it once
   // the gating exists. The button is hidden from the rendered tree until

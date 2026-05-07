@@ -371,6 +371,87 @@ describe("ComparePageEdit", () => {
     });
   });
 
+  // ── Regression: ResizeObserver re-attach when Skeleton swaps in (issue #51-edit)
+  // Mirrors the review-mode #51 fix in ComparePage.test.tsx. The page-level
+  // ResizeObserver gates `panelHeight`, which feeds MemberMetaGutter's
+  // outer style.height. With the buggy `[plotMembers.length]` deps, the
+  // effect runs once with `plotColRef.current === null` (Skeleton fallback
+  // is up), bails at the early-out, and never re-fires when Skeleton lifts —
+  // so the gutter rows stack at top:0 with height 0.
+  it("attaches ResizeObserver after Skeleton lifts (tracesLoading flips to false)", async () => {
+    // Seed peaks/exposure/etc. but NOT the trace cache — trace data is the
+    // gate for `tracesLoading`. Initial mount has Skeleton up (plotColRef
+    // null); when the async trace fetch lands, Skeleton lifts and the
+    // observer must re-attach. Mirrors the review-mode #51 test pattern.
+    const qc = makeQc();
+    const peaks: Peak[] = [
+      { id: 1, exposure_id: 200, q: 0.10, intensity: 1.0, sharpness: 0.5, source: "auto", excluded: false },
+    ];
+    const exposure: Exposure = {
+      id: 200, sample_id: 1, filename: "x.dat", kind: "file", selected: false,
+      status: "accepted", image_path: null, image_version: "", tags: [],
+      sources: [], trace_hash: "tr", analysis_inputs_hash: "abcd",
+    };
+    qc.setQueryData(queryKeys.peaks(200), peaks);
+    qc.setQueryData(queryKeys.indices(200), []);
+    qc.setQueryData(queryKeys.groups(200), []);
+    qc.setQueryData(queryKeys.exposure(200), exposure);
+
+    useAppState.setState({
+      activeDraft: {
+        id: undefined, baseHash: undefined, title: "T", description: "",
+        members: [{
+          id: 1, exposure_id: 200, display_order: 0,
+          band_height: 1, y_offset: 0, normalization: "max",
+          color_override: undefined, label_override: undefined,
+          q_window_min: undefined, q_window_max: undefined,
+          peak_display: undefined,
+          snapshot: { effective_peaks: [], confirmed_index: null, analysis_inputs_hash: "abcd" },
+        }],
+        forkedFromId: undefined, forkedAtHash: undefined,
+      },
+    });
+
+    // Async-resolve the trace fetch so Skeleton starts up, then lifts.
+    vi.spyOn(global, "fetch").mockImplementation(async (input) => {
+      const url = typeof input === "string" ? input : String(input);
+      if (url === "/api/exposures/200/trace") {
+        return new Response(
+          JSON.stringify({ q: [0.1, 0.2], I: [1.0, 0.5], sigma: [0.01, 0.01] }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response("not found", { status: 404 });
+    });
+
+    // ResizeObserver stub that fires its callback immediately on observe()
+    // and surfaces the observed element's clientHeight.
+    vi.stubGlobal("ResizeObserver", vi.fn((cb: ResizeObserverCallback) => {
+      const inst = {
+        observe: vi.fn((el: Element) => {
+          Object.defineProperty(el, "clientHeight", { value: 400, configurable: true });
+          cb(
+            [{ target: el, contentRect: { height: 400 } } as unknown as ResizeObserverEntry],
+            inst as unknown as ResizeObserver,
+          );
+        }),
+        disconnect: vi.fn(),
+      };
+      return inst;
+    }));
+
+    renderEdit({ qc, initialPath: "/experiments/7/compare/new" });
+
+    // After Skeleton lifts, the gutter container exists and the page-level
+    // observer must have fired with a non-zero height. The gutter's inline
+    // style.height is driven by `panelHeight` — pinning to it asserts that
+    // the page-level observer attached, NOT MultiTracePlot's own observer.
+    await waitFor(() => {
+      const gutter = screen.getByTestId("member-meta-gutter");
+      expect(gutter.style.height).not.toBe("0px");
+    });
+  });
+
   it("Cmd+Enter is a no-op when draft has zero members", () => {
     const qc = makeQc();
     useAppState.getState().startNewDraft();
