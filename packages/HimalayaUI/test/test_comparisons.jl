@@ -580,6 +580,133 @@ end
         actual_hash = "sha256:" * bytes2hex(SHA.sha256(canonical))
         @test actual_hash == String(fixture.expected_hash)
     end
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Phase 9.6 — backend stale-flip + low-R² snapshot regression tests.
+    # ─────────────────────────────────────────────────────────────────────
+
+    @testset "Phase 9.6 stale-flip: change underlying exposure → is_stale flips" begin
+        mktempdir() do tmp
+            ctx = _setup_analyzed_exposure(tmp)
+            current_hash = HimalayaUI.read_inputs_hash(ctx.db, ctx.exposure_id)
+            @test current_hash isa AbstractString
+
+            # Build a fresh comparison with the live snapshot hash.
+            _premint_cmp!(ctx.db, 71)
+            req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
+            HimalayaUI.apply_event!(ctx.db, req;
+                kind="comparison_created", entity_type="comparison", entity_id=71,
+                payload=Dict(:title => "Phase 9.6", :description => nothing,
+                             :forked_from_id => nothing, :forked_at_hash => nothing,
+                             :members => [
+                                _member_payload(
+                                    exposure_id=ctx.exposure_id,
+                                    snapshot=Dict(:effective_peaks => [],
+                                                  :confirmed_index => nothing,
+                                                  :analysis_inputs_hash => current_hash)),
+                             ]))
+
+            # Sanity: fresh fetch reports is_stale=false.
+            out = HimalayaUI.fetch_comparison_with_members(ctx.db, 71)
+            @test length(out[:members]) == 1
+            @test out[:members][1][:is_stale] == false
+
+            # Drift the live exposure's hash (simulates a peak set change
+            # under the hood without re-running the full pipeline).
+            DBInterface.execute(ctx.db,
+                "UPDATE exposures SET analysis_inputs_hash = ? WHERE id = ?",
+                ["sha256:after-curation", ctx.exposure_id])
+
+            out2 = HimalayaUI.fetch_comparison_with_members(ctx.db, 71)
+            @test out2[:members][1][:is_stale] == true
+        end
+    end
+
+    @testset "Phase 9.6 stale-flip: only affected member flips, others stay fresh" begin
+        mktempdir() do tmp
+            ctx = _setup_analyzed_exposure(tmp)
+            # A second exposure on the same sample, also analyzed. Both
+            # members start fresh; we drift exposure A only.
+            e2 = HimalayaUI.create_exposure!(ctx.db; sample_id=ctx.sample_id,
+                                              filename="example_tot")
+            HimalayaUI.analyze_exposure!(ctx.db, e2, ctx.analysis_dir)
+            ha = HimalayaUI.read_inputs_hash(ctx.db, ctx.exposure_id)
+            hb = HimalayaUI.read_inputs_hash(ctx.db, e2)
+
+            _premint_cmp!(ctx.db, 72)
+            req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
+            HimalayaUI.apply_event!(ctx.db, req;
+                kind="comparison_created", entity_type="comparison", entity_id=72,
+                payload=Dict(:title => "AB", :description => nothing,
+                             :forked_from_id => nothing, :forked_at_hash => nothing,
+                             :members => [
+                                _member_payload(
+                                    exposure_id=ctx.exposure_id, display_order=0,
+                                    snapshot=Dict(:effective_peaks => [],
+                                                  :confirmed_index => nothing,
+                                                  :analysis_inputs_hash => ha)),
+                                _member_payload(
+                                    exposure_id=e2, display_order=1,
+                                    snapshot=Dict(:effective_peaks => [],
+                                                  :confirmed_index => nothing,
+                                                  :analysis_inputs_hash => hb)),
+                             ]))
+            # Drift only A's hash.
+            DBInterface.execute(ctx.db,
+                "UPDATE exposures SET analysis_inputs_hash = ? WHERE id = ?",
+                ["sha256:drifted-A", ctx.exposure_id])
+            out = HimalayaUI.fetch_comparison_with_members(ctx.db, 72)
+            @test length(out[:members]) == 2
+            @test out[:members][1][:is_stale] == true   # A drifted
+            @test out[:members][2][:is_stale] == false  # B unchanged
+        end
+    end
+
+    @testset "Phase 9.6 low-R² confirmed_index snapshot path: below-gate → null" begin
+        mktempdir() do tmp
+            ctx = _setup_analyzed_exposure(tmp; datfile="cubic_tot.dat",
+                                            filename="cubic_tot")
+            # Force every index below the gate AND confirm one via a custom
+            # active group, simulating a user who clicked Confirm on an
+            # imperfect fit. The snapshot must NOT carry the index.
+            DBInterface.execute(ctx.db,
+                "UPDATE indices SET r_squared = 0.95 WHERE exposure_id = ?",
+                [ctx.exposure_id])
+            ix_id = first(Tables.rowtable(DBInterface.execute(ctx.db,
+                "SELECT id FROM indices WHERE exposure_id = ? ORDER BY score DESC LIMIT 1",
+                [ctx.exposure_id]))).id |> Int
+            (custom_id, _) = HimalayaUI.ensure_custom_group!(ctx.db, ctx.exposure_id)
+            DBInterface.execute(ctx.db,
+                "UPDATE index_groups SET active = 1 WHERE id = ?", [custom_id])
+            DBInterface.execute(ctx.db,
+                "INSERT OR IGNORE INTO index_group_members (group_id, index_id) VALUES (?, ?)",
+                [custom_id, ix_id])
+
+            # The snapshot computed at submit time MUST reflect the gate
+            # (R² >= 0.98). 0.95 is below → null.
+            snap = HimalayaUI.compute_member_snapshot(ctx.db, ctx.exposure_id)
+            @test snap[:confirmed_index] === nothing
+
+            # Submit the comparison with this snapshot; the fetch round-trip
+            # surfaces null in the JSON shape too.
+            _premint_cmp!(ctx.db, 73)
+            req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
+            HimalayaUI.apply_event!(ctx.db, req;
+                kind="comparison_created", entity_type="comparison", entity_id=73,
+                payload=Dict(:title => "low R²", :description => nothing,
+                             :forked_from_id => nothing, :forked_at_hash => nothing,
+                             :members => [
+                                _member_payload(
+                                    exposure_id=ctx.exposure_id,
+                                    snapshot=snap),
+                             ]))
+            out = HimalayaUI.fetch_comparison_with_members(ctx.db, 73)
+            # `snapshot` JSON has `confirmed_index === nothing` — round-tripped.
+            ms = out[:members][1][:snapshot]
+            @test ms isa AbstractDict
+            @test ms[:confirmed_index] === nothing
+        end
+    end
 end
 
 # ─────────────────────────────────────────────────────────────────────────────
