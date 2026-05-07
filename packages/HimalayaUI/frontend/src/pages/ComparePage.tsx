@@ -19,6 +19,8 @@ import { MemberMetaGutter } from "../components/MemberMetaGutter";
 import { GroupingModeToggle } from "../components/GroupingModeToggle";
 import { AnnotationToggles } from "../components/AnnotationToggles";
 import { NeedsReviewBadge } from "../components/NeedsReviewBadge";
+import { LineageBadge } from "../components/LineageBadge";
+import { ForksPopover } from "../components/ForksPopover";
 import { ChatCard } from "../components/ChatCard";
 import { useComparison, useMemberTraces, queryKeys } from "../queries";
 import { useAppState } from "../state";
@@ -182,6 +184,10 @@ function ReviewPlot({ id, eid }: { id: number; eid: number | undefined }): JSX.E
         {compQ.data && (
           <EditOrForkButton comparison={compQ.data} experimentId={eid} />
         )}
+        {compQ.data && (
+          <LineageBadge comparison={compQ.data} experimentId={eid} />
+        )}
+        <ForksPopover comparisonId={id} experimentId={eid} />
       </div>
       <div className="flex-1 min-h-0 flex flex-row gap-3">
         <div ref={plotColRef} className="flex-1 min-w-0">
