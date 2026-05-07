@@ -35,4 +35,5 @@ using Test
     include("test_idempotency.jl")
     include("test_idempotency_replay_invariant.jl")
     include("test_comparisons.jl")
+    include("test_picker_routes.jl")
 end

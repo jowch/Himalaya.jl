@@ -563,3 +563,25 @@ export const postComparisonMessage = (
   comparison_id: number, body: string, opts?: AuthOpts,
 ) => request<ComparisonMessage>(
   "POST", `/api/comparisons/${comparison_id}/messages`, { body }, opts);
+
+// ─── Picker support routes (Plan §Phase 5, Task 5.2) ───────────────────────
+//
+// Read-only GETs feeding the ComparisonPicker modal. `recently-picked` returns
+// a flat exposure-id list in most-recent-first order; `sample-tags` returns
+// distinct (key, value) pairs scoped to one experiment.
+
+/** Per-pair shape returned by `GET /api/experiments/:eid/sample-tags`. */
+export interface SampleTagPair {
+  key: string;
+  value: string;
+}
+
+export const getRecentlyPickedExposures = (
+  user_id: number, limit?: number,
+): Promise<number[]> => {
+  const qs = limit !== undefined ? `?limit=${limit}` : "";
+  return request<number[]>("GET", `/api/users/${user_id}/recently-picked-exposures${qs}`);
+};
+
+export const getSampleTags = (experiment_id: number): Promise<SampleTagPair[]> =>
+  request<SampleTagPair[]>("GET", `/api/experiments/${experiment_id}/sample-tags`);

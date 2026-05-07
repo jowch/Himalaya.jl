@@ -58,6 +58,13 @@ export const queryKeys = {
   comparisonMembers:  (id: number) => ["comparison", id, "members"] as const,
   comparisonForks:    (id: number) => ["comparison", id, "forks"] as const,
   comparisonMessages: (id: number) => ["comparison", id, "messages"] as const,
+  // Picker support routes (Plan §Phase 5, Task 5.2). Both are read-only —
+  // `recentlyPickedExposures` is per-user across all experiments; `sampleTags`
+  // is per-experiment (distinct (key, value) pairs).
+  recentlyPickedExposures: (userId: number, limit: number) =>
+    ["user", userId, "recently-picked-exposures", limit] as const,
+  sampleTags: (experimentId: number) =>
+    ["experiment", experimentId, "sample-tags"] as const,
 };
 
 export function useExperiments() {
@@ -430,4 +437,38 @@ export function useDeleteComparison() {
     deleteComparisonMutator,
     { username, clientId: CLIENT_ID },
   );
+}
+
+// ─── Picker support hooks (Plan §Phase 5, Task 5.2) ────────────────────────
+
+/**
+ * Fetches the user's most-recently-picked exposures (across all comparisons
+ * and experiments). Used by the ComparisonPicker's "Recently used" section.
+ * Disabled until `userId` is defined so an empty user state doesn't fire a
+ * GET /api/users/undefined/recently-picked-exposures.
+ */
+export function useRecentlyPickedExposures(
+  userId: number | undefined, limit = 20,
+) {
+  return useQuery({
+    queryKey: userId !== undefined
+      ? queryKeys.recentlyPickedExposures(userId, limit)
+      : (["user", "none", "recently-picked-exposures", limit] as const),
+    queryFn: () => api.getRecentlyPickedExposures(userId as number, limit),
+    enabled: userId !== undefined,
+  });
+}
+
+/**
+ * Fetches distinct `(key, value)` sample-tag pairs for an experiment. Used
+ * by the picker's tag-filter dropdown. Empty list when no tags exist.
+ */
+export function useSampleTags(experimentId: number | undefined) {
+  return useQuery({
+    queryKey: experimentId !== undefined
+      ? queryKeys.sampleTags(experimentId)
+      : (["experiment", "none", "sample-tags"] as const),
+    queryFn: () => api.getSampleTags(experimentId as number),
+    enabled: experimentId !== undefined,
+  });
 }
