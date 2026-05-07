@@ -355,6 +355,66 @@ describe("<MultiTracePlot>", () => {
     expect([31, 32]).toContain(args[1]);
   });
 
+  it("renders high-intensity points at smaller DOM y than low-intensity points (regression #63: plot was upside-down)", async () => {
+    // Invariant: within a trace, the brightest q-point must render closer
+    // to the top of the plot than the dimmest. This survives any future
+    // change to either `applyNormalization`'s output convention or Plot's
+    // y-scale configuration — as long as the two stay consistent.
+    //
+    // To catch #63 (where Plot's y.domain was [0, panelH] while
+    // applyNormalization produced screen-coord ys), we compose both sides
+    // of the chain:
+    //   1. capture the y values handed to Plot.line for two q-points — a
+    //      "peak" (high I) and a "baseline" (low I) — within the same
+    //      single-member trace;
+    //   2. capture the y.domain config passed to Plot.plot;
+    //   3. project each pixel-y onto a normalized [0, 1] DOM-position axis
+    //      via `(y - domain[0]) / (domain[1] - domain[0])`. Plot maps
+    //      domain[0] → bottom, domain[1] → top, so a *higher* normalized
+    //      value = closer to top; we want the peak to score higher than
+    //      the baseline.
+    const Plot = await import("@observablehq/plot");
+    (Plot.plot as unknown as { mockClear: () => void }).mockClear();
+    (Plot.line as unknown as { mockClear: () => void }).mockClear();
+
+    const member = makeMember({ id: 1, exposure_id: 10, display_order: 0 });
+    // One trace with a "baseline" point (low I) and a "peak" point (high I)
+    // at distinct q values. Self-normalization scales both into the band
+    // but preserves their relative ordering (the peak fills the working
+    // band; the baseline collapses to its bottom).
+    const trace = {
+      q: [0.10, 0.20],
+      I: [    1, 10000],
+      sigma: [0, 0],
+    };
+
+    render(
+      <MultiTracePlot
+        members={[member]}
+        traces={new Map([[10, trace]])}
+        xDomain={null}
+        onXDomain={() => {}}
+      />,
+    );
+
+    const lineCalls = (Plot.line as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+    const data = lineCalls[0]![0] as Array<{ q: number; y: number }>;
+    const baseline = data.find((p) => p.q === 0.10);
+    const peak     = data.find((p) => p.q === 0.20);
+    if (baseline === undefined || peak === undefined) {
+      throw new Error("trace endpoints missing from line mark data");
+    }
+
+    const plotCalls = (Plot.plot as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+    const cfg = plotCalls[0]![0] as { y: { domain: [number, number] } };
+    const [d0, d1] = cfg.y.domain;
+    expect(d1).not.toBe(d0); // sanity: scale is non-degenerate
+
+    // Project pixel-y onto [0, 1] DOM-position axis (1 = top).
+    const topness = (y: number): number => (y - d0) / (d1 - d0);
+    expect(topness(peak.y)).toBeGreaterThan(topness(baseline.y));
+  });
+
   it("re-renders the plot when members reorder (regression: bands shift)", async () => {
     const Plot = await import("@observablehq/plot");
     (Plot.plot as unknown as { mockClear: () => void }).mockClear();

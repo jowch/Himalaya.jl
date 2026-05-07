@@ -311,11 +311,13 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
         ...(xDomain ? { domain: xDomain } : {}),
       },
       // Y-axis is in pixel-space envelope coordinates produced by
-      // `applyNormalization`. Using a linear identity scale on
-      // [0, panelH] keeps the rendered y values aligned with the y-bands.
+      // `applyNormalization` (small y = top of band, large y = bottom).
+      // Plot's default orientation maps domain[0] → bottom, domain[1] →
+      // top, so we reverse the domain to keep small-y at top — otherwise
+      // every trace renders upside-down (issue #63).
       y: {
         type: "linear",
-        domain: [0, panelH],
+        domain: [panelH, 0],
         // Hide y axis — the y-band layout is the visualization, not the
         // numbers themselves.
         axis: null,
