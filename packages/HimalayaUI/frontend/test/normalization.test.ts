@@ -124,13 +124,15 @@ describe("applyNormalization", () => {
     expect(out[0]!.y).toBeLessThanOrEqual(100);
   });
 
-  it("clips overflow at the bottom of the total band envelope", () => {
+  it("clamps negative intensities to the bottom of the working band", () => {
     // Negative-intensity points (rare but possible after baseline subtraction)
-    // would map BELOW the working band; should clip at total envelope bottom.
+    // are undefined in log space; the y-mapping clamps I to 0 before log1p,
+    // so a negative point lands at the working band's bottom edge — never
+    // strays into the adjacent member's band.
     const t = { q: [0, 1], I: [-50, 1] };
     const out = applyNormalization(t, 1, [0, 100], 0.7);
-    // The negative point's mapped y exceeds the total band bottom (100) → clip.
-    expect(out[0]!.y).toBe(100);
+    // workBottom = bandBottom - padding = 100 - 15 = 85.
+    expect(out[0]!.y).toBeCloseTo(85, 5);
   });
 
   it("respects a custom working_band_fraction", () => {
@@ -157,5 +159,42 @@ describe("applyNormalization", () => {
 
   it("does not crash on an empty trace", () => {
     expect(applyNormalization({ q: [], I: [] }, 1, [0, 100])).toEqual([]);
+  });
+
+  // Issue #56 regression: a SAXS trace spanning ~3 decades inside one band
+  // must not collapse to a smooth roll-off near the floor. Linear y-mapping
+  // squashes everything except the highest decade; log mapping keeps the
+  // low- and mid-q tail visible. The shape-level assertion: the y-values at
+  // ~mid-q (q=0.10) and ~high-q (q=0.20) are well separated relative to the
+  // working-band height, even though I drops 100x between those samples.
+  it("issue #56: 3-decade SAXS dynamic range stays visible inside the band", () => {
+    // Synthesised trace: I drops from 10000 at low q to 10 at high q
+    // (3 decades) — typical SAXS shape. Reference = max in window = 10000.
+    const trace = {
+      q: [0.05, 0.10, 0.15, 0.20, 0.25],
+      I:  [10000, 1000, 100, 10, 5],
+    };
+    const yBand: [number, number] = [0, 100]; // working band = [15, 85], height 70
+    const out = applyNormalization(trace, 10000, yBand, 0.7);
+
+    // Reference (q=0.05, I=10000) lands at top of working band (~15).
+    expect(out[0]!.y).toBeCloseTo(15, 0);
+
+    // The point at I=10 (1000x below the reference) must be visibly above
+    // the working-band floor — i.e. NOT collapsed to the floor (~85). With
+    // a linear map, y(I=10) = 85 - (10/10000)*70 ≈ 84.93, indistinguishable
+    // from the floor (85) at any pixel resolution. With a log map this is
+    // pushed up into the band (around y ≈ 32, well above floor).
+    const yHighQ = out[3]!.y;
+    expect(yHighQ).toBeLessThan(70);
+
+    // Mid-q (I=1000, 10x below reference) and high-q (I=10, 1000x below
+    // reference) must be SEPARATED by a meaningful fraction of the band.
+    // Linear mapping gives ∆y ≈ 6.93 px (10% of band). Log mapping gives
+    // ∆y ≈ 1/3 of the band (one decade in three).
+    const yMidQ = out[1]!.y;
+    const spread = Math.abs(yHighQ - yMidQ);
+    const workHeight = 70;
+    expect(spread).toBeGreaterThan(workHeight * 0.2);
   });
 });
