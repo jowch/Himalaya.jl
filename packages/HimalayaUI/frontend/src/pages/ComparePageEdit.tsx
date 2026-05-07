@@ -268,6 +268,12 @@ export function ComparePageEdit(): JSX.Element {
     }
   }, [save.isSuccess, save.data, discardDraft, goToReview, goToList]);
 
+  // Release the guard on mutation error so the user can retry.
+  // save.mutate() is fire-and-forget; errors surface via save.error.
+  useEffect(() => {
+    if (save.error) pendingSubmitRef.current = false;
+  }, [save.error]);
+
   // Phase 13 Task 13.4 — keyboard shortcuts:
   //   Esc            → cancel (return to review or list)
   //   Cmd/Ctrl+Enter → submit (Save), if save isn't already disabled

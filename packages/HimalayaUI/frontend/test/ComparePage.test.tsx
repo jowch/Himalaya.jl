@@ -79,7 +79,12 @@ describe("ComparePage review mode — ResizeObserver", () => {
     ROInstances = [];
     vi.stubGlobal("ResizeObserver", vi.fn((cb: ResizeObserverCallback) => {
       const inst = {
-        observe: vi.fn((el: Element) => { cb([{ target: el, contentRect: { height: 400 } } as unknown as ResizeObserverEntry], inst as unknown as ResizeObserver); }),
+        observe: vi.fn((el: Element) => {
+          // Give the element a non-zero clientHeight so the page-level
+          // observer callback sets panelHeight > 0.
+          Object.defineProperty(el, "clientHeight", { value: 400, configurable: true });
+          cb([{ target: el, contentRect: { height: 400 } } as unknown as ResizeObserverEntry], inst as unknown as ResizeObserver);
+        }),
         disconnect: vi.fn(),
       };
       ROInstances.push(inst);
@@ -127,11 +132,11 @@ describe("ComparePage review mode — ResizeObserver", () => {
       expect(screen.queryByText("Loading comparison…")).toBeNull();
     });
 
-    // With the bug (deps: []) the effect runs once while the ref is null
-    // and the observer is never created. With the fix (deps: [plotLoading])
-    // the effect re-runs when Skeleton swaps in children and the observer
-    // attaches to the real DOM element.
-    expect(ROInstances.length).toBeGreaterThanOrEqual(1);
-    expect(ROInstances[0]!.observe).toHaveBeenCalled();
+    // The page-level ResizeObserver drives panelHeight state, which is
+    // passed to MemberMetaGutter as style.height. Asserting on the gutter's
+    // height pins to the page-level observer specifically (MultiTracePlot
+    // has its own observer but does not affect panelHeight).
+    const gutter = screen.getByTestId("member-meta-gutter");
+    expect(gutter.style.height).not.toBe("0px");
   });
 });
