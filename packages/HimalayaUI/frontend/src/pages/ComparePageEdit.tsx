@@ -44,7 +44,7 @@ import {
 import { computeMemberSnapshot } from "../lib/comparison/snapshot";
 import { comparePath } from "../lib/comparison/routes";
 import {
-  getExposure,
+  getExposure, listPeaks, listIndices, listGroups,
 } from "../api";
 import type {
   Comparison, ComparisonMember, ComparisonMemberInput, Exposure, SaveComparisonBody,
@@ -164,10 +164,19 @@ export function ComparePageEdit(): JSX.Element {
   const handleSave = useCallback(async () => {
     if (draft === null) return;
     if (draft.members.length === 0) return;
+    // Guard against duplicate triggers during the async prefetch window.
+    // save.isPending is false until save.mutate() fires, so a second
+    // Cmd+Enter while awaiting would start a parallel round. Set the
+    // in-flight ref early so the keyboard handler and button both reject.
+    if (pendingSubmitRef.current) return;
+    pendingSubmitRef.current = true;
+
     // Warm the cache for any never-visited exposures before computing
     // snapshots. Without this, computeMemberSnapshot falls back to
     // analysis_inputs_hash = "", which mismatches the server hash and
     // marks every cold member stale immediately after save (issue #49).
+    // We prefetch all four cache keys (exposure, peaks, indices, groups)
+    // so the snapshot is complete, not just the hash.
     const coldExposureIds = draft.members
       .map((m) => m.exposure_id)
       .filter((id): id is number => id !== null)
@@ -175,12 +184,24 @@ export function ComparePageEdit(): JSX.Element {
 
     if (coldExposureIds.length > 0) {
       await Promise.all(
-        coldExposureIds.map((id) =>
+        coldExposureIds.flatMap((id) => [
           qc.fetchQuery({
             queryKey: queryKeys.exposure(id),
             queryFn: () => getExposure(id),
           }),
-        ),
+          qc.fetchQuery({
+            queryKey: queryKeys.peaks(id),
+            queryFn: () => listPeaks(id),
+          }),
+          qc.fetchQuery({
+            queryKey: queryKeys.indices(id),
+            queryFn: () => listIndices(id),
+          }),
+          qc.fetchQuery({
+            queryKey: queryKeys.groups(id),
+            queryFn: () => listGroups(id),
+          }),
+        ]),
       );
     }
 
@@ -223,10 +244,6 @@ export function ComparePageEdit(): JSX.Element {
     // factory `fromComparisonAsFork` always sets both when populating a fork.
     if (draft.forkedFromId !== undefined) payload.forked_from_id = draft.forkedFromId;
     if (draft.forkedAtHash !== undefined) payload.forked_at_hash = draft.forkedAtHash;
-    // Mark this submit as "in-flight" so the post-success effect knows to
-    // navigate. Without the ref, an already-saved success state on remount
-    // would re-fire navigation.
-    pendingSubmitRef.current = true;
     save.mutate(payload);
   }, [draft, qc, save]);
 

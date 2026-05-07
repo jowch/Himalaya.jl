@@ -387,4 +387,83 @@ describe("ComparePageEdit", () => {
     });
     expect(saveCalls).toHaveLength(0);
   });
+
+  // ── Regression: cold-exposure snapshot prefetch (issue #49) ────────────────
+
+  it("Save prefetches exposure, peaks, indices, and groups for cold members", async () => {
+    const user = userEvent.setup();
+    const qc = makeQc();
+    // Do NOT seed exposure 200 — it is "cold" in the cache.
+    useAppState.getState().startNewDraft();
+    useAppState.getState().setDraftTitle("Cold member test");
+    useAppState.getState().addMember(200, qc);
+
+    const fetchSpy = vi.spyOn(global, "fetch").mockImplementation(async (input, init) => {
+      const url = typeof input === "string" ? input : String(input);
+      if (url === "/api/exposures/200" && init?.method === "GET") {
+        return new Response(JSON.stringify({
+          id: 200, sample_id: 1, filename: "cold.dat", kind: "file",
+          selected: false, status: "accepted", image_path: null,
+          image_version: "", tags: [], sources: [], trace_hash: "tr",
+          analysis_inputs_hash: "cold-hash",
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (url === "/api/exposures/200/peaks" && init?.method === "GET") {
+        return new Response(JSON.stringify([
+          { id: 1, exposure_id: 200, q: 0.10, intensity: 1.0, sharpness: 0.5, source: "auto", excluded: false },
+        ]), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (url === "/api/exposures/200/indices" && init?.method === "GET") {
+        return new Response(JSON.stringify([]), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (url === "/api/exposures/200/groups" && init?.method === "GET") {
+        return new Response(JSON.stringify([]), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (url === "/api/comparisons" && init?.method === "POST") {
+        return new Response(JSON.stringify({
+          id: 77, title: "Cold member test", description: null,
+          content_hash: "h-new", created_by: 1,
+          created_at: "2026-05-01T00:00:00Z", updated_at: "2026-05-01T00:00:00Z",
+          forked_from_id: null, forked_at_hash: null, forked_from_title: null,
+          members: [],
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      return new Response("not found", { status: 404 });
+    });
+
+    renderEdit({ qc, initialPath: "/experiments/7/compare/new" });
+    await user.click(screen.getByTestId("comparison-save"));
+
+    await waitFor(() => {
+      const calls = fetchSpy.mock.calls.map((c) =>
+        [typeof c[0] === "string" ? c[0] : String(c[0]),
+         (c[1] as RequestInit | undefined)?.method] as const,
+      );
+      expect(calls).toContainEqual(["/api/comparisons", "POST"]);
+    });
+
+    // Assert that all four cold-read GETs happened before the save POST.
+    const callOrder = fetchSpy.mock.calls
+      .filter(([u]) => {
+        const url = typeof u === "string" ? u : String(u);
+        return url.startsWith("/api/exposures/200") || url === "/api/comparisons";
+      })
+      .map(([u, init]) => ({
+        url: typeof u === "string" ? u : String(u),
+        method: (init as RequestInit | undefined)?.method ?? "GET",
+      }));
+
+    const saveIndex = callOrder.findIndex((c) => c.url === "/api/comparisons" && c.method === "POST");
+    expect(saveIndex).toBeGreaterThanOrEqual(4); // exposure + peaks + indices + groups
+
+    // Assert the submitted snapshot carries the warmed data.
+    const saveCall = fetchSpy.mock.calls.find(([u, init]) => {
+      const url = typeof u === "string" ? u : String(u);
+      return url === "/api/comparisons" && (init as RequestInit | undefined)?.method === "POST";
+    });
+    const body = JSON.parse((saveCall![1] as RequestInit).body as string);
+    expect(body.members).toHaveLength(1);
+    expect(body.members[0].snapshot.analysis_inputs_hash).toBe("cold-hash");
+    expect(body.members[0].snapshot.effective_peaks).toHaveLength(1);
+  });
 });
