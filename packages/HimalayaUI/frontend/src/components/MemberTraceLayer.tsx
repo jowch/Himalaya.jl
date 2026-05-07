@@ -41,6 +41,7 @@ import {
   type Normalization,
   type QWindow,
 } from "../lib/comparison/normalization";
+import { layoutPeakLabels } from "../lib/plot/labelDodge";
 
 const PEAK_COLOR_DEFAULT = "black";
 
@@ -49,6 +50,13 @@ const PEAK_OFFSET_PX = 5;
 
 /** Pixel offset above the peak triangle at which labels render (v6.1). */
 const LABEL_OFFSET_PX = 12;
+
+/**
+ * Default label width estimate (px). Tuned for the q→3-sig-fig label
+ * format ("0.123") at fontSize 10. Used as the minimum gap between two
+ * adjacent labels by `layoutPeakLabels`.
+ */
+const DEFAULT_LABEL_WIDTH_PX = 32;
 
 export interface MemberMarksProps {
   member: ComparisonMember;
@@ -66,6 +74,14 @@ export interface MemberMarksProps {
    * belonging to that index recolor to the phase color.
    */
   highlightedIndexId?: number | undefined;
+  /**
+   * x-scale apply/invert pair for label dodge layout (Phase 8.2). When
+   * provided, labels for crowded peaks are spread horizontally and a leader
+   * line is emitted from the dodged label back to the triangle. Omitted on
+   * the first render pass (before the plot exists); the dodge re-runs on
+   * the second pass.
+   */
+  xScale?: { toPx: (q: number) => number; fromPx: (px: number) => number } | undefined;
 }
 
 /**
@@ -186,31 +202,83 @@ export function buildMemberMarks(props: MemberMarksProps): unknown[] {
       }),
     );
 
-    // Labels: v6.1 renders directly above the triangle. Phase 8.2 will add
-    // the leader-line dodge layout.
+    // Labels: when `xScale` is provided, run `layoutPeakLabels` to spread
+    // crowded labels horizontally + emit leader lines from the dodged
+    // text back to the triangle anchor. Without xScale (first render pass
+    // before Plot creates the scale), fall back to direct-above placement;
+    // the parent re-renders with the scale on the next pass.
     const labeled = new Set<number>(peakDisplay?.labeled ?? []);
     const labels = visiblePeaks.filter((p) => labeled.has(p.peakId));
     if (labels.length > 0) {
-      marks.push(
-        Plot.text(
-          labels.map((p) => ({
-            ...p,
-            // Display label = q rounded to 3 sig digits — matches the q
-            // label format used elsewhere; Phase 8 may swap for lattice-d
-            // or Miller index later.
-            label: p.q.toPrecision(3),
-            y: Math.max(yBand[0], p.y - LABEL_OFFSET_PX),
-          })),
+      if (props.xScale) {
+        const dodged = layoutPeakLabels(
+          labels.map((p) => ({ q: p.q, y: p.y, peakId: p.peakId })),
           {
-            x: "q",
-            y: "y",
-            text: "label",
-            fill: "var(--color-fg)",
-            fontSize: 10,
-            textAnchor: "middle",
+            toPx: props.xScale.toPx,
+            fromPx: props.xScale.fromPx,
+            labelWidthPx: DEFAULT_LABEL_WIDTH_PX,
           },
-        ),
-      );
+        );
+        marks.push(
+          Plot.text(
+            dodged.map((d) => ({
+              q: d.qLabel,
+              y: Math.max(yBand[0], d.yLabel),
+              label: d.label,
+              peakId: d.peakId,
+            })),
+            {
+              x: "q",
+              y: "y",
+              text: "label",
+              fill: "var(--color-fg)",
+              fontSize: 10,
+              textAnchor: "middle",
+            },
+          ),
+        );
+        // Leader lines: only emit for labels the dodge had to push sideways
+        // (qLabel ≠ qPeak). Sparse labels sit directly above and need no
+        // string. The link mark connects (qPeak, yPeak) → (qLabel, yLabel).
+        const links = dodged.filter((d) => d.qLabel !== d.qPeak);
+        if (links.length > 0) {
+          marks.push(
+            Plot.link(
+              links.map((d) => ({
+                qPeak: d.qPeak,
+                yPeak: d.yPeak,
+                qLabel: d.qLabel,
+                yLabel: Math.max(yBand[0], d.yLabel),
+              })),
+              {
+                x1: "qPeak", y1: "yPeak",
+                x2: "qLabel", y2: "yLabel",
+                stroke: "var(--color-fg-muted)",
+                strokeWidth: 0.5,
+                strokeOpacity: 0.7,
+              },
+            ),
+          );
+        }
+      } else {
+        marks.push(
+          Plot.text(
+            labels.map((p) => ({
+              ...p,
+              label: p.q.toPrecision(3),
+              y: Math.max(yBand[0], p.y - LABEL_OFFSET_PX),
+            })),
+            {
+              x: "q",
+              y: "y",
+              text: "label",
+              fill: "var(--color-fg)",
+              fontSize: 10,
+              textAnchor: "middle",
+            },
+          ),
+        );
+      }
     }
   }
 

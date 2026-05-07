@@ -41,6 +41,35 @@ import { prettifyUnits } from "../lib/units";
  */
 const PEAK_HIT_PX = 10;
 
+/**
+ * Synthesize an x-scale `(toPx, fromPx)` matching the active plot's domain
+ * and width. Used by the label-dodge layout (Phase 8.2) so we can dodge in
+ * the same render pass as mark building, without needing two `Plot.plot()`
+ * calls. Match's Plot's clamping behaviour at the domain edges.
+ */
+function makeXScale(
+  type: "log" | "linear",
+  xMin: number,
+  xMax: number,
+  innerLeftPx: number,
+  innerWidthPx: number,
+): { toPx: (q: number) => number; fromPx: (px: number) => number } {
+  if (type === "log") {
+    const lo = Math.log(Math.max(xMin, 1e-12));
+    const hi = Math.log(Math.max(xMax, lo + 1e-12));
+    const span = hi - lo;
+    return {
+      toPx: (q) => innerLeftPx + ((Math.log(Math.max(q, 1e-12)) - lo) / span) * innerWidthPx,
+      fromPx: (px) => Math.exp(lo + ((px - innerLeftPx) / innerWidthPx) * span),
+    };
+  }
+  const span = xMax - xMin;
+  return {
+    toPx: (q) => innerLeftPx + ((q - xMin) / span) * innerWidthPx,
+    fromPx: (px) => xMin + ((px - innerLeftPx) / innerWidthPx) * span,
+  };
+}
+
 /** Hardcoded plot aspect ratio (W / H) per spec §Plot rendering. */
 export const COMPARE_PLOT_ASPECT = 0.3;
 
@@ -173,6 +202,17 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
     const ratios = members.map((m) => m.band_height || 1);
     const yBands = computeYBands(ratios, panelH);
 
+    // Synthesize an x-scale directly from the domain + plot width so the
+    // label-dodge layout (Phase 8.2) can run in the SAME pass as mark
+    // building — no two-pass `Plot.plot()` call needed. The plot interior
+    // is `[MARGIN_LEFT, panelW - MARGIN_RIGHT]`; pixels outside that range
+    // map to the corresponding domain edges (matches Plot's clamping).
+    const ext = qExtent();
+    const xMin = xDomain ? xDomain[0] : ext?.[0] ?? 1;
+    const xMax = xDomain ? xDomain[1] : ext?.[1] ?? 10;
+    const innerW = Math.max(1, panelW - MARGIN_LEFT - MARGIN_RIGHT);
+    const xScale = makeXScale(xType, xMin, xMax, MARGIN_LEFT, innerW);
+
     const allMarks: unknown[] = [];
     // Per-member visible peak rows + y-band, captured for click hit-testing.
     // Built in the same loop as the marks so we never drift from what was
@@ -196,6 +236,7 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
           highlightedMemberId === m.id && m.snapshot?.confirmed_index
             ? m.snapshot.confirmed_index.id
             : undefined,
+        xScale,
       };
       const memberMarks = buildMemberMarks(layerProps);
       for (const mk of memberMarks) allMarks.push(mk);
