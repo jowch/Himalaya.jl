@@ -28,15 +28,47 @@
  * `/:id/edit` ⇒ load from the comparison fetch (with cache-derived snapshot
  * recovery) if the draft isn't already this id.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { ComparisonSidebar } from "../components/ComparisonSidebar";
 import { ComparisonPicker } from "../components/ComparisonPicker";
+import { MultiTracePlot } from "../components/MultiTracePlot";
 import { useAppState } from "../state";
-import { useSaveComparison, useComparison } from "../queries";
+import { useSaveComparison, useComparison, useMemberTraces } from "../queries";
 import { computeMemberSnapshot } from "../lib/comparison/snapshot";
-import type { Comparison, ComparisonMemberInput, SaveComparisonBody } from "../api";
+import type {
+  Comparison, ComparisonMember, ComparisonMemberInput, SaveComparisonBody,
+} from "../api";
+import type { DraftMember } from "../lib/comparison/draft";
+
+/**
+ * Convert a draft member into a ComparisonMember-shaped object suitable for
+ * `MultiTracePlot`. Unsaved drafts have `id = undefined`; we substitute a
+ * stable negative synthetic id keyed by display_order so the plot's per-member
+ * keying stays consistent across re-renders. Snapshot can also be undefined
+ * mid-edit; the plot tolerates a null snapshot (no peaks rendered).
+ */
+function draftToMember(d: DraftMember): ComparisonMember {
+  return {
+    id: d.id ?? -(d.display_order + 1),
+    comparison_id: 0,
+    exposure_id: d.exposure_id,
+    display_order: d.display_order,
+    band_height: d.band_height,
+    y_offset: d.y_offset,
+    normalization: d.normalization,
+    color_override: d.color_override ?? null,
+    label_override: d.label_override ?? null,
+    q_window_min: d.q_window_min ?? null,
+    q_window_max: d.q_window_max ?? null,
+    peak_display: d.peak_display ?? null,
+    snapshot: d.snapshot ?? null,
+    is_stale: false,
+    created_by: null,
+    created_at: null,
+  };
+}
 
 export function ComparePageEdit(): JSX.Element {
   const params = useParams<{ eid?: string; id?: string }>();
@@ -170,6 +202,21 @@ export function ComparePageEdit(): JSX.Element {
   // Phase 5 Task 5.2 — local state for the picker open/close. Picker open
   // state is purely client-side, no need for Zustand.
   const [pickerOpen, setPickerOpen] = useState(false);
+
+  // Phase 6 — wire MultiTracePlot. Members reflect the live draft (Zustand);
+  // traces fetched in parallel via `useMemberTraces`. The q-axis zoom domain
+  // lives in shared Zustand so toggling between review/edit preserves it.
+  const xDomain = useAppState((s) => s.compareXDomain);
+  const setXDomain = useAppState((s) => s.setCompareXDomain);
+  const plotMembers = useMemo<ComparisonMember[]>(
+    () => (draft?.members ?? []).map(draftToMember),
+    [draft?.members],
+  );
+  const exposureIds = useMemo(
+    () => plotMembers.flatMap((m) => (m.exposure_id !== null ? [m.exposure_id] : [])),
+    [plotMembers],
+  );
+  const traces = useMemberTraces(exposureIds);
   // Phase 11 wires Edit/Fork visibility against current_user vs. created_by;
   // for now we surface the testid so downstream tests can target it once
   // the gating exists. The button is hidden from the rendered tree until
@@ -232,22 +279,47 @@ export function ComparePageEdit(): JSX.Element {
           className="bg-transparent border border-border rounded px-2 py-1 text-sm resize-none h-16"
         />
         <div
-          data-testid="compare-edit-plot-placeholder"
-          className="flex-1 min-h-0 flex flex-col items-center justify-center
-                     border border-border/40 rounded text-fg-muted text-sm gap-3"
+          data-testid="compare-edit-plot-host"
+          className="flex-1 min-h-0 flex flex-col gap-2"
         >
-          <div>
-            Plot + member panel land in Phases 6–9 ({(draft?.members.length ?? 0)} member{(draft?.members.length ?? 0) === 1 ? "" : "s"})
-          </div>
-          <button
-            type="button"
-            data-testid="compare-edit-add-traces"
-            onClick={() => setPickerOpen(true)}
-            className="px-3 py-1 rounded border border-border text-fg text-sm
-                       hover:bg-bg-elevated"
-          >
-            + Add traces
-          </button>
+          {plotMembers.length === 0 ? (
+            <div
+              data-testid="compare-edit-plot-empty"
+              className="flex-1 flex flex-col items-center justify-center
+                         border border-border/40 rounded text-fg-muted text-sm gap-3"
+            >
+              <div>No traces yet — add some to get started.</div>
+              <button
+                type="button"
+                data-testid="compare-edit-add-traces"
+                onClick={() => setPickerOpen(true)}
+                className="px-3 py-1 rounded border border-border text-fg text-sm
+                           hover:bg-bg-elevated"
+              >
+                + Add traces
+              </button>
+            </div>
+          ) : (
+            <>
+              <MultiTracePlot
+                members={plotMembers}
+                traces={traces}
+                xDomain={xDomain}
+                onXDomain={setXDomain}
+              />
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  data-testid="compare-edit-add-traces"
+                  onClick={() => setPickerOpen(true)}
+                  className="px-3 py-1 rounded border border-border text-fg text-sm
+                             hover:bg-bg-elevated"
+                >
+                  + Add traces
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </section>
 

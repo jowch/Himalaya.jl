@@ -43,6 +43,12 @@ export interface AppState {
   // SpeculativeBuilder component — only the open/close gate lives in store
   // because PhasePanel needs to mount/unmount the modal.
   speculativeBuilder: { exposureId: number } | null;
+  /**
+   * Compare-page q-axis zoom domain. Per-tab UI state — not persisted.
+   * `null` = full data range. Shared across review/edit modes for the
+   * same comparison so toggling between them keeps the user's zoom intact.
+   */
+  compareXDomain: [number, number] | null;
 
   /**
    * Compare-page draft slot (Plan §Phase 4, Task 4.3). Single slot — only
@@ -69,6 +75,7 @@ export interface AppState {
   clearUsername: () => void;
   openSpeculativeBuilder: (exposureId: number) => void;
   closeSpeculativeBuilder: () => void;
+  setCompareXDomain: (d: [number, number] | null) => void;
 
   // Compare-draft actions
   startNewDraft: () => void;
@@ -121,6 +128,7 @@ export const useAppState = create<AppState>()(
         navModalOpen: false,
         navModalStep: "experiment",
         speculativeBuilder: null,
+        compareXDomain: null,
         // Rehydrate the draft from sessionStorage at module-init time so
         // a tab reload restores edit-in-progress.
         activeDraft: loadDraftFromSession(),
@@ -150,6 +158,7 @@ export const useAppState = create<AppState>()(
         openSpeculativeBuilder: (exposureId) =>
           set({ speculativeBuilder: { exposureId } }),
         closeSpeculativeBuilder: () => set({ speculativeBuilder: null }),
+        setCompareXDomain: (compareXDomain) => set({ compareXDomain }),
 
         // ── Compare-draft actions ──────────────────────────────────────
         startNewDraft: () => setDraft(emptyDraft()),

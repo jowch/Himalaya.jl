@@ -10,8 +10,12 @@
  * The plot, member panel, chat, badges, and edit/fork affordances are
  * built out across Phases 6–11; this file is only the shell that hosts them.
  */
+import { useMemo } from "react";
 import { useParams, useLocation } from "react-router-dom";
 import { ComparisonSidebar } from "../components/ComparisonSidebar";
+import { MultiTracePlot } from "../components/MultiTracePlot";
+import { useComparison, useMemberTraces } from "../queries";
+import { useAppState } from "../state";
 
 export function ComparePage(): JSX.Element {
   const params = useParams<{ eid?: string; id?: string }>();
@@ -45,14 +49,42 @@ export function ComparePage(): JSX.Element {
             <span className="font-medium text-fg ml-1">+ New</span> to create one.
           </div>
         ) : (
-          <div
-            data-testid="compare-review-placeholder"
-            className="flex-1 flex items-center justify-center text-fg-muted text-sm p-8 text-center"
-          >
-            Comparison #{id} (review mode) — plot + chat + badges land in later phases.
-          </div>
+          <ReviewPlot id={id} />
         )}
       </section>
+    </div>
+  );
+}
+
+/**
+ * Hosts the multi-trace plot in review mode. Members come from the saved
+ * comparison; live `(q, I)` traces are fetched in parallel via
+ * `useMemberTraces`.
+ */
+function ReviewPlot({ id }: { id: number }): JSX.Element {
+  const compQ = useComparison(id);
+  const xDomain = useAppState((s) => s.compareXDomain);
+  const setXDomain = useAppState((s) => s.setCompareXDomain);
+
+  const members = useMemo(() => {
+    if (!compQ.data) return [];
+    return [...compQ.data.members].sort((a, b) => a.display_order - b.display_order);
+  }, [compQ.data]);
+
+  const exposureIds = useMemo(
+    () => members.flatMap((m) => (m.exposure_id !== null ? [m.exposure_id] : [])),
+    [members],
+  );
+  const traces = useMemberTraces(exposureIds);
+
+  return (
+    <div className="flex-1 min-h-0 flex flex-col p-4" data-testid="compare-review-plot">
+      <MultiTracePlot
+        members={members}
+        traces={traces}
+        xDomain={xDomain}
+        onXDomain={setXDomain}
+      />
     </div>
   );
 }

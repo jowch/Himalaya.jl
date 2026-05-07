@@ -187,7 +187,12 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
         // numbers themselves.
         axis: null,
       },
-      marks: allMarks,
+      // Observable Plot's `Markish` type is closed over the public mark
+      // factories; `buildMemberMarks` returns `unknown[]` because callers
+      // shouldn't depend on the internal mark constructor shapes. Cast at
+      // the boundary; the runtime contract holds (these were produced by
+      // `Plot.line / Plot.dot / Plot.text`).
+      marks: allMarks as Plot.Markish[],
     });
 
     container.replaceChildren(el);

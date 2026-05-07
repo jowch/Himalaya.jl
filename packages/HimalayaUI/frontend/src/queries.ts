@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueries } from "@tanstack/react-query";
 import * as api from "./api";
 import { useAppState } from "./state";
 import { getClientId } from "./lib/clientId";
@@ -110,6 +110,29 @@ export function useTrace(exposureId: number | undefined) {
     queryFn: () => api.getTrace(exposureId as number),
     enabled: exposureId !== undefined,
   });
+}
+
+/**
+ * Fetch live `(q, I)` traces for a variable list of exposure ids in parallel.
+ * Used by the Compare page MultiTracePlot — one trace per member. Returns a
+ * `Map<exposure_id, Trace>` for compose-time consumption by `MultiTracePlot`.
+ *
+ * Cache keys mirror `useTrace` exactly so single-exposure pages and Compare
+ * share the same cache row (no double-fetching across pages).
+ */
+export function useMemberTraces(exposureIds: number[]): Map<number, api.Trace> {
+  const queries = useQueries({
+    queries: exposureIds.map((id) => ({
+      queryKey: ["exposure", id, "trace"] as const,
+      queryFn: () => api.getTrace(id),
+    })),
+  });
+  const out = new Map<number, api.Trace>();
+  for (let i = 0; i < exposureIds.length; i++) {
+    const q = queries[i];
+    if (q?.data) out.set(exposureIds[i]!, q.data);
+  }
+  return out;
 }
 
 export function usePeaks(exposureId: number | undefined) {
