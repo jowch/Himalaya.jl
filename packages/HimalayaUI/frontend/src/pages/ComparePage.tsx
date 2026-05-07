@@ -12,14 +12,16 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useLocation } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { ComparisonSidebar } from "../components/ComparisonSidebar";
 import { MultiTracePlot } from "../components/MultiTracePlot";
 import { MemberMetaGutter } from "../components/MemberMetaGutter";
 import { GroupingModeToggle } from "../components/GroupingModeToggle";
 import { AnnotationToggles } from "../components/AnnotationToggles";
 import { NeedsReviewBadge } from "../components/NeedsReviewBadge";
-import { useComparison, useMemberTraces } from "../queries";
+import { useComparison, useMemberTraces, queryKeys } from "../queries";
 import { useAppState } from "../state";
+import type { ComparisonMember, Exposure } from "../api";
 
 export function ComparePage(): JSX.Element {
   const params = useParams<{ eid?: string; id?: string }>();
@@ -91,6 +93,23 @@ function ReviewPlot({ id, eid }: { id: number; eid: number | undefined }): JSX.E
   // toggling re-renders without a full plot lifecycle event.
   const showPeakTicks  = useAppState((s) => s.showPeakTicks);
   const showPeakLabels = useAppState((s) => s.showPeakLabels);
+
+  // Phase 9 gap-fix — line-stroke coloring grouping mode + sample-id resolver.
+  // The resolver reads the TanStack `exposure` cache so the color stays a
+  // pure derivation off the same data source the rest of the page uses.
+  // Cache misses (exposure not yet fetched) return null → `colorFor` falls
+  // back to ORPHAN_FALLBACK for that member, which is acceptable transient
+  // behaviour that resolves on the next render after the fetch lands.
+  const groupingMode = useAppState((s) => s.groupingMode);
+  const qc = useQueryClient();
+  const sampleIdFor = useCallback(
+    (m: ComparisonMember): number | null => {
+      if (m.exposure_id === null) return null;
+      const exposure = qc.getQueryData<Exposure>(queryKeys.exposure(m.exposure_id));
+      return exposure?.sample_id ?? null;
+    },
+    [qc],
+  );
 
   // Phase 9.5 — hover/click-to-pin highlight state. `MemberTraceLayer`
   // reads this and recolors that member's confirmed_index peaks to the
@@ -169,6 +188,8 @@ function ReviewPlot({ id, eid }: { id: number; eid: number | undefined }): JSX.E
             showPeakTicks={showPeakTicks}
             showPeakLabels={showPeakLabels}
             highlightedMemberId={highlightedCompareMemberId}
+            groupingMode={groupingMode}
+            sampleIdFor={sampleIdFor}
           />
         </div>
         <div

@@ -36,10 +36,10 @@ import { ComparisonPicker } from "../components/ComparisonPicker";
 import { MultiTracePlot } from "../components/MultiTracePlot";
 import { MemberMetaGutter } from "../components/MemberMetaGutter";
 import { useAppState } from "../state";
-import { useSaveComparison, useComparison, useMemberTraces } from "../queries";
+import { useSaveComparison, useComparison, useMemberTraces, queryKeys } from "../queries";
 import { computeMemberSnapshot } from "../lib/comparison/snapshot";
 import type {
-  Comparison, ComparisonMember, ComparisonMemberInput, SaveComparisonBody,
+  Comparison, ComparisonMember, ComparisonMemberInput, Exposure, SaveComparisonBody,
 } from "../api";
 import type { DraftMember } from "../lib/comparison/draft";
 
@@ -264,6 +264,21 @@ export function ComparePageEdit(): JSX.Element {
   const traces = useMemberTraces(exposureIds);
   const resetBandHeights = useAppState((s) => s.resetBandHeights);
 
+  // Phase 9 gap-fix — line-stroke coloring grouping mode + sample-id resolver
+  // for edit mode. Mirrors ComparePage so toggling the grouping mode in
+  // sister tabs / re-entering review keeps trace colors consistent. Reads
+  // the TanStack `exposure` cache directly; cache misses → ORPHAN_FALLBACK
+  // until the fetch settles.
+  const groupingMode = useAppState((s) => s.groupingMode);
+  const sampleIdFor = useCallback(
+    (m: ComparisonMember): number | null => {
+      if (m.exposure_id === null) return null;
+      const exposure = qc.getQueryData<Exposure>(queryKeys.exposure(m.exposure_id));
+      return exposure?.sample_id ?? null;
+    },
+    [qc],
+  );
+
   // Track the plot column's height so the edit-mode gutter aligns pixel-for-
   // pixel with the plot bands (both consumers feed `computeYBands` the same
   // ratios + height).
@@ -383,6 +398,8 @@ export function ComparePageEdit(): JSX.Element {
                     onXDomain={setXDomain}
                     peakDisplayByMemberId={peakDisplayByMemberId}
                     onPeakClick={handlePeakClick}
+                    groupingMode={groupingMode}
+                    sampleIdFor={sampleIdFor}
                   />
                 </div>
                 <div

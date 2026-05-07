@@ -33,6 +33,7 @@ import { buildMemberMarks, buildMemberPeakRows } from "./MemberTraceLayer";
 import type { PeakRow } from "./MemberTraceLayer";
 import { invertQ, applyQ } from "../lib/plot/invertQ";
 import { prettifyUnits } from "../lib/units";
+import type { GroupingMode } from "../lib/comparison/coloring";
 
 /**
  * Pixel hit radius for peak click hit-testing in edit mode (Phase 8.1).
@@ -147,6 +148,20 @@ export interface MultiTracePlotProps {
    * this prop disables click handling entirely (review-mode default).
    */
   onPeakClick?: (memberId: number, peakId: number, altKey: boolean) => void;
+  /**
+   * Trace coloring grouping mode (Phase 9 gap-fix; spec §Trace coloring).
+   * Forwarded to `MemberTraceLayer.buildMemberMarks` so the per-member line
+   * stroke routes through `colorFor`. Omit to fall back to the legacy
+   * "color_override → var(--color-fg)" behaviour (e.g. tests that don't
+   * exercise grouping).
+   */
+  groupingMode?: GroupingMode;
+  /**
+   * Sample-id resolver supplied by the parent page (typically wired against
+   * the TanStack exposure cache). `colorFor` consults this in `bySample`
+   * mode. Required when `groupingMode` is set; ignored otherwise.
+   */
+  sampleIdFor?: (m: ComparisonMember) => number | null;
 }
 
 export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
@@ -156,6 +171,7 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
     qUnits, xType = "log",
     onPeakClick,
     showPeakTicks = true, showPeakLabels = true,
+    groupingMode, sampleIdFor,
   } = props;
 
   const hostRef       = useRef<HTMLDivElement>(null);
@@ -263,6 +279,12 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
         xScale,
         showPeakTicks,
         showPeakLabels,
+        // Phase 9 gap-fix: forward grouping context so the per-member line
+        // stroke recolors with the toggle. `MemberTraceLayer` falls back
+        // to legacy single-color rendering when these are undefined.
+        ...(groupingMode !== undefined && sampleIdFor !== undefined
+          ? { groupingMode, allMembers: members, sampleIdFor }
+          : {}),
       };
       const memberMarks = buildMemberMarks(layerProps);
       for (const mk of memberMarks) allMarks.push(mk);
@@ -455,6 +477,7 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
     peakDisplayByMemberId, highlightedMemberId,
     onXDomain, qExtent, onPeakClick,
     showPeakTicks, showPeakLabels,
+    groupingMode, sampleIdFor,
   ]);
 
   useEffect(() => {

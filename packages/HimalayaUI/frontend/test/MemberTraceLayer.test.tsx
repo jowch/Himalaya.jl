@@ -15,6 +15,11 @@ import * as Plot from "@observablehq/plot";
 import type { ComparisonMember } from "../src/api";
 import { buildMemberMarks } from "../src/components/MemberTraceLayer";
 import { phaseColor } from "../src/phases";
+import {
+  COMPARE_PALETTE,
+  ORPHAN_FALLBACK,
+  colorFor,
+} from "../src/lib/comparison/coloring";
 
 vi.mock("@observablehq/plot", () => ({
   line: vi.fn((data: unknown, opts: unknown) => ({ _kind: "line", data, opts })),
@@ -233,5 +238,144 @@ describe("buildMemberMarks (Phase 6.1)", () => {
     // also suppressed.
     expect(Plot.dot).not.toHaveBeenCalled();
     expect(Plot.text).not.toHaveBeenCalled();
+  });
+});
+
+// ── Phase 9 gap-fix: line stroke wired to grouping mode ────────────────────
+//
+// Until this batch, `MemberTraceLayer` rendered the line stroke as
+// `member.color_override ?? "var(--color-fg)"`. The grouping toggle changed
+// the picker palette + (already-implemented) hover phase coloring, but the
+// line color stayed the same regardless of mode. These tests pin the wired
+// behaviour: the stroke is `colorFor(member, mode, palette, ctx)`.
+function getLineStroke(): string | undefined {
+  const lineCalls = (Plot.line as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+  const last = lineCalls[lineCalls.length - 1];
+  if (!last) return undefined;
+  const opts = last[1] as { stroke?: string } | undefined;
+  return opts?.stroke;
+}
+
+describe("buildMemberMarks line stroke (Phase 9 grouping-mode wiring)", () => {
+  const trivialResolver = () => null;
+
+  it("bySample: two members with the same sample_id render the same stroke", () => {
+    const a = makeMember({ id: 1, exposure_id: 10, display_order: 0, snapshot: null });
+    const b = makeMember({ id: 2, exposure_id: 11, display_order: 1, snapshot: null });
+    const sampleIdFor = (m: ComparisonMember) =>
+      m.exposure_id === 10 ? 7 : m.exposure_id === 11 ? 7 : null;
+    const ctx = { allMembers: [a, b], sampleIdFor };
+
+    buildMemberMarks({
+      member: a,
+      trace,
+      yBand: [0, 100],
+      groupingMode: "bySample",
+      allMembers: [a, b],
+      sampleIdFor,
+    });
+    const strokeA = getLineStroke();
+    (Plot.line as unknown as { mockClear: () => void }).mockClear();
+
+    buildMemberMarks({
+      member: b,
+      trace,
+      yBand: [0, 100],
+      groupingMode: "bySample",
+      allMembers: [a, b],
+      sampleIdFor,
+    });
+    const strokeB = getLineStroke();
+
+    expect(strokeA).toBeDefined();
+    expect(strokeA).toBe(strokeB);
+    // And both match the colorFor library's resolution exactly.
+    expect(strokeA).toBe(colorFor(a, "bySample", COMPARE_PALETTE, ctx));
+  });
+
+  it("byPhase: two members with the same confirmed_index.phase render the same stroke", () => {
+    const a = makeMember({ id: 1, exposure_id: 10, display_order: 0 });
+    const b = makeMember({ id: 2, exposure_id: 11, display_order: 1 });
+
+    buildMemberMarks({
+      member: a,
+      trace,
+      yBand: [0, 100],
+      groupingMode: "byPhase",
+      allMembers: [a, b],
+      sampleIdFor: trivialResolver,
+    });
+    const strokeA = getLineStroke();
+    (Plot.line as unknown as { mockClear: () => void }).mockClear();
+
+    buildMemberMarks({
+      member: b,
+      trace,
+      yBand: [0, 100],
+      groupingMode: "byPhase",
+      allMembers: [a, b],
+      sampleIdFor: trivialResolver,
+    });
+    const strokeB = getLineStroke();
+
+    expect(strokeA).toBe(strokeB);
+    expect(strokeA).toBe(phaseColor("Pn3m"));
+  });
+
+  it("distinct: each member gets a unique stroke", () => {
+    const a = makeMember({ id: 1, exposure_id: 10, display_order: 0 });
+    const b = makeMember({ id: 2, exposure_id: 11, display_order: 1 });
+
+    buildMemberMarks({
+      member: a,
+      trace,
+      yBand: [0, 100],
+      groupingMode: "distinct",
+      allMembers: [a, b],
+      sampleIdFor: trivialResolver,
+    });
+    const strokeA = getLineStroke();
+    (Plot.line as unknown as { mockClear: () => void }).mockClear();
+
+    buildMemberMarks({
+      member: b,
+      trace,
+      yBand: [0, 100],
+      groupingMode: "distinct",
+      allMembers: [a, b],
+      sampleIdFor: trivialResolver,
+    });
+    const strokeB = getLineStroke();
+
+    expect(strokeA).not.toBe(strokeB);
+  });
+
+  it("color_override always wins regardless of grouping mode", () => {
+    const m = makeMember({ color_override: "#abcdef" });
+    for (const mode of ["bySample", "byPhase", "distinct"] as const) {
+      (Plot.line as unknown as { mockClear: () => void }).mockClear();
+      buildMemberMarks({
+        member: m,
+        trace,
+        yBand: [0, 100],
+        groupingMode: mode,
+        allMembers: [m],
+        sampleIdFor: () => 42,
+      });
+      expect(getLineStroke()).toBe("#abcdef");
+    }
+  });
+
+  it("orphan member (no confirmed_index) under byPhase falls back to the orphan gray", () => {
+    const m = makeMember({ snapshot: null });
+    buildMemberMarks({
+      member: m,
+      trace,
+      yBand: [0, 100],
+      groupingMode: "byPhase",
+      allMembers: [m],
+      sampleIdFor: () => null,
+    });
+    expect(getLineStroke()).toBe(ORPHAN_FALLBACK);
   });
 });

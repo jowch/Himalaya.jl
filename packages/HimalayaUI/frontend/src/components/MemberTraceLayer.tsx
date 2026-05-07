@@ -42,6 +42,11 @@ import {
   type QWindow,
 } from "../lib/comparison/normalization";
 import { layoutPeakLabels } from "../lib/plot/labelDodge";
+import {
+  colorFor,
+  COMPARE_PALETTE,
+  type GroupingMode,
+} from "../lib/comparison/coloring";
 
 const PEAK_COLOR_DEFAULT = "black";
 
@@ -92,6 +97,32 @@ export interface MemberMarksProps {
    */
   showPeakTicks?: boolean;
   showPeakLabels?: boolean;
+  /**
+   * Grouping mode for the per-member line stroke (Phase 9 gap-fix; spec
+   * §Trace coloring). Wires the line color through the shared `colorFor`
+   * library so toggling between bySample / byPhase / distinct visibly
+   * recolors traces. `member.color_override` always wins (resolution order
+   * is enforced inside `colorFor`).
+   *
+   * When `groupingMode` is omitted, the layer falls back to the legacy
+   * "color_override → var(--color-fg)" behaviour. This keeps the few
+   * non-Compare callers (and minimal test fixtures) working without
+   * forcing them to wire the full `allMembers` + `sampleIdFor` context.
+   */
+  groupingMode?: GroupingMode;
+  /**
+   * All members in the same comparison (in display order). Required for
+   * `bySample` and `distinct` palette indexing in `colorFor`. Ignored
+   * when `groupingMode` is undefined.
+   */
+  allMembers?: ReadonlyArray<ComparisonMember>;
+  /**
+   * Sample-id resolver supplied by the caller (typically wired against the
+   * TanStack exposure cache at the page level). Returns `null` when the
+   * exposure is unknown (cache miss / orphan). Ignored when `groupingMode`
+   * is undefined.
+   */
+  sampleIdFor?: (m: ComparisonMember) => number | null;
 }
 
 /**
@@ -190,11 +221,28 @@ export function buildMemberMarks(props: MemberMarksProps): unknown[] {
 
   const { peaks: visiblePeaks, linePoints } = buildMemberPeakRows(props);
 
+  // Phase 9 gap-fix: route the line stroke through the shared `colorFor`
+  // library so toggling the grouping mode visibly recolors traces. The
+  // resolution order (`color_override` → grouping default → orphan
+  // fallback) lives inside `colorFor` — keep the call site dumb.
+  //
+  // Fallback: when no grouping context is supplied, retain the legacy
+  // behaviour so out-of-tree callers (and minimal test fixtures) don't
+  // break. The Compare page always supplies the full triplet.
+  const stroke = props.groupingMode !== undefined
+    && props.allMembers !== undefined
+    && props.sampleIdFor !== undefined
+    ? colorFor(member, props.groupingMode, COMPARE_PALETTE, {
+        allMembers: props.allMembers,
+        sampleIdFor: props.sampleIdFor,
+      })
+    : (member.color_override ?? "var(--color-fg)");
+
   marks.push(
     Plot.line(linePoints, {
       x: "q",
       y: "y",
-      stroke: member.color_override ?? "var(--color-fg)",
+      stroke,
       strokeWidth: 1,
     }),
   );
