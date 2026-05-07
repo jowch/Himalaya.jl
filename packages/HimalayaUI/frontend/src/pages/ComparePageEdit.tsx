@@ -102,23 +102,24 @@ export function ComparePageEdit(): JSX.Element {
   }, [setHighlightedCompareMemberId]);
 
   // Hydrate draft from URL on mount / when URL id changes.
+  //
+  // Both actions are idempotent (see state.ts):
+  //   - `startNewDraft` is a no-op when the active draft is already a
+  //     fresh one (id undefined) — preserves an in-progress create.
+  //   - `loadDraftFromComp` is a no-op when the active draft already
+  //     matches the comparison id — preserves an in-progress edit.
+  // The guards live in the action bodies, so this effect can stay
+  // dep-exhaustive without reading `draft` and without an eslint-disable.
   const comparisonQ = useComparison(id);
   useEffect(() => {
     if (id === undefined) {
-      // /new: start an empty draft if there isn't one (or one that's tied
-      // to a different comparison id). Don't clobber a fresh draft mid-edit.
-      if (draft === null || draft.id !== undefined) {
-        startNewDraft();
-      }
-    } else if (comparisonQ.data && (draft === null || draft.id !== id)) {
-      // /:id/edit: load from the server fetch with cache-derived snapshots.
+      // /new: start an empty draft (no-op if already on a fresh draft).
+      startNewDraft();
+    } else if (comparisonQ.data) {
+      // /:id/edit: load from the server fetch with cache-derived snapshots
+      // (no-op if the draft already matches this comparison id).
       loadDraftFromComp(comparisonQ.data, qc);
     }
-    // Intentionally exclude `draft` from deps — we only re-evaluate when
-    // the URL id or the fetched comparison changes. Reading `draft` inside
-    // the effect for the comparison-id check is fine; including it would
-    // re-run the effect after the load and re-load again.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, comparisonQ.data, startNewDraft, loadDraftFromComp, qc]);
 
   const save = useSaveComparison();

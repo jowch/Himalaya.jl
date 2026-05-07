@@ -173,6 +173,130 @@ describe("compare draft state + sessionStorage", () => {
     expect(loadDraftFromSession()).toBeNull();
   });
 
+  it("startNewDraft is a no-op when the active draft is already a fresh one (id undefined)", () => {
+    // Push the URL→draft hydration guards into the action body so the
+    // ComparePageEdit hydration effect can drop `draft` from its read set
+    // (and from its deps) without an eslint-disable. See the effect at
+    // ComparePageEdit.tsx hydration step.
+    useAppState.getState().startNewDraft();
+    const before = useAppState.getState().activeDraft;
+    expect(before).not.toBeNull();
+    // Mutate the draft to give us a way to detect a re-create (re-create
+    // would clobber the title back to "").
+    useAppState.getState().setDraftTitle("in-progress");
+    expect(useAppState.getState().activeDraft!.title).toBe("in-progress");
+
+    // Re-call startNewDraft — should NOT clobber the in-progress draft.
+    useAppState.getState().startNewDraft();
+    expect(useAppState.getState().activeDraft!.title).toBe("in-progress");
+  });
+
+  it("startNewDraft DOES replace a non-new draft (one with a comparison id)", () => {
+    // Seed a draft tied to a comparison id (mimic post-loadDraftFromComparison).
+    useAppState.setState({
+      activeDraft: {
+        id: 42,
+        baseHash: "h",
+        title: "loaded",
+        description: "",
+        members: [],
+        forkedFromId: undefined,
+        forkedAtHash: undefined,
+      },
+    });
+    useAppState.getState().startNewDraft();
+    const after = useAppState.getState().activeDraft!;
+    expect(after.id).toBeUndefined();
+    expect(after.title).toBe("");
+  });
+
+  it("loadDraftFromComparison is a no-op when the active draft already matches the comparison id", () => {
+    const qc = new QueryClient();
+    // Seed a draft ALREADY tied to comparison 7 + mutate title in-progress.
+    useAppState.setState({
+      activeDraft: {
+        id: 7,
+        baseHash: "h-server",
+        title: "in-progress edit",
+        description: "",
+        members: [],
+        forkedFromId: undefined,
+        forkedAtHash: undefined,
+      },
+    });
+
+    const comparison: Comparison = {
+      id: 7,
+      title: "Stored",
+      description: "from server",
+      content_hash: "h-server",
+      created_by: 1,
+      created_at: "2026-04-01T00:00:00Z",
+      updated_at: "2026-04-15T00:00:00Z",
+      forked_from_id: null,
+      forked_at_hash: null,
+      forked_from_title: null,
+      members: [],
+    };
+
+    useAppState.getState().loadDraftFromComparison(comparison, qc);
+    // No clobber: in-progress title preserved.
+    expect(useAppState.getState().activeDraft!.title).toBe("in-progress edit");
+  });
+
+  it("loadDraftFromComparison DOES replace a draft tied to a different comparison id", () => {
+    const qc = new QueryClient();
+    useAppState.setState({
+      activeDraft: {
+        id: 99,
+        baseHash: "h-other",
+        title: "different",
+        description: "",
+        members: [],
+        forkedFromId: undefined,
+        forkedAtHash: undefined,
+      },
+    });
+
+    const comparison: Comparison = {
+      id: 7,
+      title: "Stored",
+      description: "from server",
+      content_hash: "h-server",
+      created_by: 1,
+      created_at: "2026-04-01T00:00:00Z",
+      updated_at: "2026-04-15T00:00:00Z",
+      forked_from_id: null,
+      forked_at_hash: null,
+      forked_from_title: null,
+      members: [],
+    };
+
+    useAppState.getState().loadDraftFromComparison(comparison, qc);
+    expect(useAppState.getState().activeDraft!.id).toBe(7);
+    expect(useAppState.getState().activeDraft!.title).toBe("Stored");
+  });
+
+  it("loadDraftFromComparison DOES replace a null draft", () => {
+    const qc = new QueryClient();
+    expect(useAppState.getState().activeDraft).toBeNull();
+    const comparison: Comparison = {
+      id: 7,
+      title: "Stored",
+      description: "from server",
+      content_hash: "h-server",
+      created_by: 1,
+      created_at: "2026-04-01T00:00:00Z",
+      updated_at: "2026-04-15T00:00:00Z",
+      forked_from_id: null,
+      forked_at_hash: null,
+      forked_from_title: null,
+      members: [],
+    };
+    useAppState.getState().loadDraftFromComparison(comparison, qc);
+    expect(useAppState.getState().activeDraft!.id).toBe(7);
+  });
+
   it("loadDraftFromComparison computes fresh snapshots against the cache", () => {
     const qc = new QueryClient();
     const exposureId = 200;

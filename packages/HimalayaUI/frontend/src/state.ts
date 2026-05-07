@@ -251,11 +251,24 @@ export const useAppState = create<AppState>()(
           set({ compareXDomains: { ...get().compareXDomains, [id]: d } }),
 
         // ── Compare-draft actions ──────────────────────────────────────
-        startNewDraft: () => setDraft(emptyDraft()),
+        // Guard: re-calling on an already-new draft (id undefined) is a
+        // no-op so the ComparePageEdit hydration effect can re-run without
+        // clobbering an in-progress draft. Keeps the effect's deps array
+        // exhaustive (no `draft` read inside the effect → no eslint-disable).
+        startNewDraft: () => {
+          const cur = get().activeDraft;
+          if (cur !== null && cur.id === undefined) return;
+          setDraft(emptyDraft());
+        },
         startForkDraft: (comparison, qc) =>
           setDraft(fromComparisonAsFork(comparison, qc)),
-        loadDraftFromComparison: (comparison, qc) =>
-          setDraft(fromComparison(comparison, qc)),
+        // Guard: re-loading the same comparison id is a no-op (don't clobber
+        // an in-progress edit) — see startNewDraft above for rationale.
+        loadDraftFromComparison: (comparison, qc) => {
+          const cur = get().activeDraft;
+          if (cur !== null && cur.id === comparison.id) return;
+          setDraft(fromComparison(comparison, qc));
+        },
         setDraftTitle: (title) => {
           const cur = get().activeDraft;
           if (cur === null) return;
