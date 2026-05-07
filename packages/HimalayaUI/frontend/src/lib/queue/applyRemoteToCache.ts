@@ -233,6 +233,20 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
       );
       break;
     }
+    case "comparison_pinned":
+    case "comparison_unpinned": {
+      // Pin/unpin SSE drives cross-tab fanout. The frontend's
+      // `comparisonPins` cache is global per-tab (only ever stores the
+      // current user's pin set), and the SSE self-echo filter via
+      // `client_id` already discards events the originating tab emitted.
+      // What's left are foreign-tab pins from the same user → invalidate
+      // so the next read gets the canonical list. Pins from OTHER users
+      // also fan out (every connected client sees every event), but their
+      // user_id mismatches and the route's per-user filter excludes them
+      // on read. Invalidating in that case is a harmless no-op refetch.
+      qc.invalidateQueries({ queryKey: queryKeys.comparisonPins });
+      break;
+    }
     case "add_tag":
     case "remove_tag": {
       const parentKey = remote.entity_type === "sample"

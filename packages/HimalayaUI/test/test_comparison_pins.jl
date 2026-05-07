@@ -196,6 +196,133 @@ using HimalayaUI
         end
     end
 
+    # ─── Event-log round-trip (Phase 4 follow-up) ─────────────────────────────
+    #
+    # Phase 13 originally landed pin/unpin as direct SQL writes — no
+    # event-log row, no SSE broadcast. The follow-up routes everything
+    # through `apply_event!` so cross-tab fanout works and the durable
+    # history is queryable. These tests pin the round-trip property: live
+    # writes via `apply_event!` produce the same view-table state as
+    # `rebuild_views_from_log!` rebuilding from `user_actions` alone.
+
+    @testset "comparison_pinned: rebuild_views_from_log! matches live state" begin
+        mktempdir() do tmp
+            ctx = _setup_analyzed_exposure(tmp)
+            _premint_cmp!(ctx.db, 1)
+            DBInterface.execute(ctx.db,
+                "UPDATE comparisons SET content_hash = 'h1' WHERE id = 1")
+
+            user_id = HimalayaUI.get_or_create_user!(ctx.db, "alice")
+            req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
+            HimalayaUI.apply_event!(ctx.db, req;
+                kind = "comparison_pinned",
+                entity_type = "user",
+                entity_id = user_id,
+                payload = Dict(:comparison_id => 1))
+
+            before = Tables.rowtable(DBInterface.execute(ctx.db, """
+                SELECT user_id, comparison_id FROM comparison_pins
+                ORDER BY user_id, comparison_id
+            """))
+            @test length(before) == 1
+            @test Int(before[1].comparison_id) == 1
+
+            # Wipe + replay from log.
+            DBInterface.execute(ctx.db, "DELETE FROM comparison_pins")
+            HimalayaUI.rebuild_views_from_log!(ctx.db, user_id; entity_type = "user")
+
+            after = Tables.rowtable(DBInterface.execute(ctx.db, """
+                SELECT user_id, comparison_id FROM comparison_pins
+                ORDER BY user_id, comparison_id
+            """))
+            @test length(after) == length(before)
+            @test Int(after[1].comparison_id) == Int(before[1].comparison_id)
+            @test Int(after[1].user_id)       == Int(before[1].user_id)
+        end
+    end
+
+    @testset "comparison_unpinned: rebuild_views_from_log! matches live state" begin
+        mktempdir() do tmp
+            ctx = _setup_analyzed_exposure(tmp)
+            _premint_cmp!(ctx.db, 1)
+            DBInterface.execute(ctx.db,
+                "UPDATE comparisons SET content_hash = 'h1' WHERE id = 1")
+            user_id = HimalayaUI.get_or_create_user!(ctx.db, "alice")
+            req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
+
+            # Pin then unpin via apply_event!.
+            HimalayaUI.apply_event!(ctx.db, req;
+                kind = "comparison_pinned",
+                entity_type = "user",
+                entity_id = user_id,
+                payload = Dict(:comparison_id => 1))
+            HimalayaUI.apply_event!(ctx.db, req;
+                kind = "comparison_unpinned",
+                entity_type = "user",
+                entity_id = user_id,
+                payload = Dict(:comparison_id => 1))
+
+            before = Tables.rowtable(DBInterface.execute(ctx.db,
+                "SELECT 1 FROM comparison_pins"))
+            @test isempty(before)
+
+            # Reset views, rebuild from log — pin then unpin → no rows.
+            DBInterface.execute(ctx.db, "DELETE FROM comparison_pins")
+            HimalayaUI.rebuild_views_from_log!(ctx.db, user_id; entity_type = "user")
+
+            after = Tables.rowtable(DBInterface.execute(ctx.db,
+                "SELECT 1 FROM comparison_pins"))
+            @test isempty(after)
+        end
+    end
+
+    @testset "POST .../pin writes a comparison_pinned event row" begin
+        mktempdir() do tmp
+            ctx = _setup_analyzed_exposure(tmp)
+            _premint_cmp!(ctx.db, 1)
+            DBInterface.execute(ctx.db,
+                "UPDATE comparisons SET content_hash = 'h1' WHERE id = 1")
+            with_test_server(ctx.db) do port, base
+                r = HTTP.post("$base/api/comparisons/1/pin",
+                              ["X-Username" => "alice"])
+                @test r.status == 200
+                # One event row, kind=comparison_pinned, entity_type=user,
+                # entity_id=user_id, payload contains comparison_id=1.
+                rows = Tables.rowtable(DBInterface.execute(ctx.db, """
+                    SELECT action, entity_type, entity_id, payload FROM user_actions
+                    WHERE action = 'comparison_pinned'
+                """))
+                @test length(rows) == 1
+                @test String(rows[1].entity_type) == "user"
+                payload = JSON3.read(String(rows[1].payload))
+                @test Int(payload.comparison_id) == 1
+            end
+        end
+    end
+
+    @testset "DELETE .../pin writes a comparison_unpinned event row" begin
+        mktempdir() do tmp
+            ctx = _setup_analyzed_exposure(tmp)
+            _premint_cmp!(ctx.db, 1)
+            DBInterface.execute(ctx.db,
+                "UPDATE comparisons SET content_hash = 'h1' WHERE id = 1")
+            with_test_server(ctx.db) do port, base
+                HTTP.post("$base/api/comparisons/1/pin", ["X-Username" => "alice"])
+                r = HTTP.delete("$base/api/comparisons/1/pin",
+                                ["X-Username" => "alice"])
+                @test r.status == 200
+                rows = Tables.rowtable(DBInterface.execute(ctx.db, """
+                    SELECT entity_type, payload FROM user_actions
+                    WHERE action = 'comparison_unpinned'
+                """))
+                @test length(rows) == 1
+                @test String(rows[1].entity_type) == "user"
+                payload = JSON3.read(String(rows[1].payload))
+                @test Int(payload.comparison_id) == 1
+            end
+        end
+    end
+
     @testset "FK ON DELETE CASCADE: pin disappears when comparison deleted" begin
         mktempdir() do tmp
             ctx = _setup_analyzed_exposure(tmp)

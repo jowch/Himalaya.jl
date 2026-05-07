@@ -391,6 +391,31 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
         return nothing
     end
 
+    # Per-user pin/unpin (Plan §Phase 13 follow-up): pin/unpin events live on
+    # `entity_type='user'` so the durable history is queryable per-user via
+    # the existing `user_actions` indexes. The view-table is `comparison_pins`
+    # (composite PK: user_id, comparison_id). Payload carries `comparison_id`
+    # plus `pinned_at` for the pin variant. Dispatcher derives user_id by
+    # joining `user_actions WHERE id = event_id` — same pattern peak_added
+    # uses to extract created_by.
+    if kind == "comparison_pinned"
+        DBInterface.execute(db,
+            """INSERT OR REPLACE INTO comparison_pins (user_id, comparison_id, pinned_at)
+               VALUES ((SELECT user_id FROM user_actions WHERE id = ?),
+                       ?, CURRENT_TIMESTAMP)""",
+            [event_id, Int(payload.comparison_id)])
+        return nothing
+    end
+
+    if kind == "comparison_unpinned"
+        DBInterface.execute(db,
+            """DELETE FROM comparison_pins
+               WHERE user_id = (SELECT user_id FROM user_actions WHERE id = ?)
+                 AND comparison_id = ?""",
+            [event_id, Int(payload.comparison_id)])
+        return nothing
+    end
+
     # Scaffolding / legacy:
     kind == "noop_test" && return nothing
     # default: no view update

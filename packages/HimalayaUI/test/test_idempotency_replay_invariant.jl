@@ -401,6 +401,72 @@ end
         end
     end
 
+    @testset "POST /api/comparisons/:id/pin (comparison_pinned)" begin
+        mktempdir() do tmp
+            ctx = _replay_setup_compare(tmp)
+            with_test_server(ctx.db) do port, base
+                # Pre-mint a comparison via the route so the pin target exists.
+                r0 = HTTP.post("$base/api/comparisons";
+                    body = JSON3.write(_create_body_replay(ctx.exposure_id)),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username" => "alice"])
+                cmp = JSON3.read(String(r0.body))
+
+                op_id = "replay-cmp-pin-$(rand(UInt32))"
+                headers = ["X-Username" => "alice",
+                           "X-Client-Id" => "tab-1",
+                           "X-Client-Op-Id" => op_id]
+
+                pre_count = _count_actions(ctx.db, "comparison_pinned")
+                r1 = nothing; r2 = nothing
+                frames = _capture_sse_during("comparison_pinned") do
+                    r1 = HTTP.post("$base/api/comparisons/$(cmp.id)/pin"; headers = headers)
+                    r2 = HTTP.post("$base/api/comparisons/$(cmp.id)/pin"; headers = headers)
+                end
+                @test r1.status == 200
+                @test r2.status == 200
+                @test String(r2.body) == String(r1.body)
+                post_count = _count_actions(ctx.db, "comparison_pinned")
+                @test post_count - pre_count == 1
+                @test length(frames) == 1
+            end
+        end
+    end
+
+    @testset "DELETE /api/comparisons/:id/pin (comparison_unpinned)" begin
+        mktempdir() do tmp
+            ctx = _replay_setup_compare(tmp)
+            with_test_server(ctx.db) do port, base
+                r0 = HTTP.post("$base/api/comparisons";
+                    body = JSON3.write(_create_body_replay(ctx.exposure_id)),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username" => "alice"])
+                cmp = JSON3.read(String(r0.body))
+                # Establish a pin to unpin.
+                HTTP.post("$base/api/comparisons/$(cmp.id)/pin",
+                    ["X-Username" => "alice"])
+
+                op_id = "replay-cmp-unpin-$(rand(UInt32))"
+                headers = ["X-Username" => "alice",
+                           "X-Client-Id" => "tab-1",
+                           "X-Client-Op-Id" => op_id]
+
+                pre_count = _count_actions(ctx.db, "comparison_unpinned")
+                r1 = nothing; r2 = nothing
+                frames = _capture_sse_during("comparison_unpinned") do
+                    r1 = HTTP.delete("$base/api/comparisons/$(cmp.id)/pin"; headers = headers)
+                    r2 = HTTP.delete("$base/api/comparisons/$(cmp.id)/pin"; headers = headers)
+                end
+                @test r1.status == 200
+                @test r2.status == 200
+                @test String(r2.body) == String(r1.body)
+                post_count = _count_actions(ctx.db, "comparison_unpinned")
+                @test post_count - pre_count == 1
+                @test length(frames) == 1
+            end
+        end
+    end
+
     @testset "POST /submit 409 retry: status >= 400 NOT cached → conflict re-evaluates" begin
         mktempdir() do tmp
             ctx = _replay_setup_compare(tmp)

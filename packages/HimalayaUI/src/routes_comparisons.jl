@@ -331,16 +331,27 @@ function register_comparisons_routes!()
         end
     end
 
-    # ── Pins (Phase 13, Task 13.2) ──────────────────────────────────────────
+    # ── Pins (Phase 13 + Phase 4 follow-up) ────────────────────────────────
     #
-    # Per-user pinned comparisons. Pin/unpin are trivial idempotent state
-    # toggles, so the routes do NOT wrap in `with_idempotency` — repeating
-    # the same POST simply re-affirms the pinned state.
+    # Per-user pinned comparisons. Pin/unpin route through the event log so:
+    #   1. Cross-tab fanout works via SSE (a pin in tab A propagates to tab
+    #      B before cache stales; previously tabs only saw their own pins).
+    #   2. Durable history is recorded for audit / per-user activity views.
+    #   3. The route surface looks like every other mutating route — wrapped
+    #      in `with_idempotency`, calls `apply_event!(InTransaction(), …)`,
+    #      enqueues a post-commit broadcast.
     #
-    # GET /api/users/me/comparison-pins is keyed off the X-Username header.
-    # Empty username → 401 (matches the auth gate elsewhere). Empty result
-    # for an unrecognised user is an empty array — not a 404 — so the UI
-    # can render "no pins yet" without bespoke error handling.
+    # Event entity model: `entity_type='user'`, `entity_id=user_id`. The
+    # event "happens to" the user (their pin set changes); the affected
+    # comparison rides in the payload. This matches the typical durable-log
+    # convention where the entity is the noun whose state mutates.
+    #
+    # The view-table write (INSERT/DELETE on `comparison_pins`) moves into
+    # the dispatcher's `comparison_pinned`/`comparison_unpinned` branches —
+    # the dispatcher derives user_id from `user_actions WHERE id = event_id`
+    # so the route doesn't need to forward it through the payload.
+    #
+    # GET /api/users/me/comparison-pins stays a plain read; no event involved.
 
     @get "/api/users/me/comparison-pins" function(req::HTTP.Request)
         db = current_db()
@@ -364,20 +375,26 @@ function register_comparisons_routes!()
         if user_id === nothing
             return _json_error(401, "X-Username header required")
         end
-        # Existence check — pinning a nonexistent comparison is a 404.
+        # Existence check stays OUTSIDE with_idempotency so a 404 is not
+        # cached — a future pin attempt after the comparison gets re-created
+        # at a new id should not echo a stale error response. Same pattern
+        # the submit/delete routes use.
         if current_content_hash(db, id) === nothing
             return _json_error(404, "comparison not found")
         end
-        # INSERT OR REPLACE refreshes pinned_at on re-pin so the row floats
-        # back to the top of the user's list. INSERT OR IGNORE would keep
-        # the original timestamp — both are correct, but "re-pin = bump" is
-        # the more intuitive UX.
-        DBInterface.execute(db, """
-            INSERT OR REPLACE INTO comparison_pins (user_id, comparison_id, pinned_at)
-            VALUES (?, ?, CURRENT_TIMESTAMP)
-        """, [user_id, id])
-        HTTP.Response(200, ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:comparison_id => id, :pinned => true)))
+        return with_idempotency(db, req) do
+            payload = Dict{Symbol, Any}(:comparison_id => id)
+            result = apply_event!(InTransaction(), db, req;
+                kind        = "comparison_pinned",
+                entity_type = "user",
+                entity_id   = user_id,
+                payload     = payload)
+            _enqueue_broadcast_from_result!(result, "comparison_pinned",
+                                            "user", user_id)
+
+            HTTP.Response(200, ["Content-Type" => "application/json"],
+                JSON3.write(Dict(:comparison_id => id, :pinned => true)))
+        end
     end
 
     @delete "/api/comparisons/{id}/pin" function(req::HTTP.Request, id::Int)
@@ -386,13 +403,23 @@ function register_comparisons_routes!()
         if user_id === nothing
             return _json_error(401, "X-Username header required")
         end
-        # Idempotent — unpinning a never-pinned comparison is a no-op 200,
-        # so the frontend doesn't need to distinguish "was pinned" from
-        # "wasn't pinned" in a single round trip.
-        DBInterface.execute(db,
-            "DELETE FROM comparison_pins WHERE user_id = ? AND comparison_id = ?",
-            [user_id, id])
-        HTTP.Response(200, ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:comparison_id => id, :pinned => false)))
+        return with_idempotency(db, req) do
+            # Idempotent at the SQL layer — unpinning a never-pinned
+            # comparison is a no-op DELETE, so the frontend doesn't need to
+            # distinguish "was pinned" from "wasn't pinned" in a single
+            # round trip. The event itself is still recorded so the
+            # cross-tab broadcast fires either way.
+            payload = Dict{Symbol, Any}(:comparison_id => id)
+            result = apply_event!(InTransaction(), db, req;
+                kind        = "comparison_unpinned",
+                entity_type = "user",
+                entity_id   = user_id,
+                payload     = payload)
+            _enqueue_broadcast_from_result!(result, "comparison_unpinned",
+                                            "user", user_id)
+
+            HTTP.Response(200, ["Content-Type" => "application/json"],
+                JSON3.write(Dict(:comparison_id => id, :pinned => false)))
+        end
     end
 end
