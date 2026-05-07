@@ -14,6 +14,7 @@ import {
   fromComparison,
   memberFromNewExposure,
 } from "./lib/comparison/draftFactories";
+import { cyclePeakDisplay } from "./lib/comparison/peakCycle";
 
 export const LS_KEY = "himalaya-ui:state";
 
@@ -96,6 +97,14 @@ export interface AppState {
   reorderMembers: (newOrder: number[]) => void;
   resizeBands: (memberIdx: number, deltaPx: number, totalHeightPx: number) => void;
   resetBandHeights: () => void;
+  /**
+   * Cycle one peak's display state on a draft member (Plan §Phase 8.1):
+   *   shown → labeled → hidden → shown (regular click)
+   *   any   → hidden                  (alt+click)
+   *
+   * No-op when there's no active draft or `memberIdx` is out of range.
+   */
+  cyclePeakDisplayForMember: (memberIdx: number, peakId: number, altKey: boolean) => void;
   discardDraft: () => void;
 }
 
@@ -255,6 +264,16 @@ export const useAppState = create<AppState>()(
           const cur = get().activeDraft;
           if (cur === null) return;
           const members = cur.members.map((m) => ({ ...m, band_height: 1 }));
+          setDraft({ ...cur, members });
+        },
+        cyclePeakDisplayForMember: (memberIdx, peakId, altKey) => {
+          const cur = get().activeDraft;
+          if (cur === null) return;
+          if (memberIdx < 0 || memberIdx >= cur.members.length) return;
+          const target = cur.members[memberIdx]!;
+          const next = cyclePeakDisplay(target.peak_display, peakId, altKey);
+          const members = cur.members.slice();
+          members[memberIdx] = { ...target, peak_display: next };
           setDraft({ ...cur, members });
         },
         discardDraft: () => setDraft(null),

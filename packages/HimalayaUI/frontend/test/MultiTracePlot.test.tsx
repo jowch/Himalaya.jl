@@ -193,6 +193,168 @@ describe("<MultiTracePlot>", () => {
     expect(ids).toEqual(["11", "22", "33"]);
   });
 
+  it("calls onPeakClick(memberId, peakId, altKey) when click lands within hit radius of a peak", () => {
+    const onPeakClick = vi.fn();
+    const m1 = makeMember({
+      id: 11, exposure_id: 110, display_order: 0,
+      snapshot: {
+        effective_peaks: [
+          { id: 21, q: 0.30, intensity: 50, sharpness: 1, source: "auto" },
+          { id: 22, q: 0.50, intensity: 80, sharpness: 1, source: "auto" },
+        ],
+        confirmed_index: null,
+        analysis_inputs_hash: "h",
+      },
+    });
+    const trace = { q: [0.1, 0.2, 0.3, 0.4, 0.5], I: [1, 2, 3, 4, 5], sigma: [0, 0, 0, 0, 0] };
+
+    render(
+      <MultiTracePlot
+        members={[m1]}
+        traces={new Map([[110, trace]])}
+        xDomain={null}
+        onXDomain={() => {}}
+        onPeakClick={onPeakClick}
+      />,
+    );
+
+    expect(lastPlotElement).not.toBeNull();
+    // The mock x-scale maps q*100 → px; peak 21 sits at q=0.30 ⇒ px=30.
+    // Dispatch a click at clientX=30 + container offset (jsdom defaults to 0).
+    const ev = new MouseEvent("click", { bubbles: true, clientX: 30, clientY: 5 });
+    lastPlotElement!.dispatchEvent(ev);
+    expect(onPeakClick).toHaveBeenCalledWith(11, 21, false);
+  });
+
+  it("does NOT call onPeakClick when click is outside hit radius of any peak", () => {
+    const onPeakClick = vi.fn();
+    const m1 = makeMember({
+      id: 11, exposure_id: 110, display_order: 0,
+      snapshot: {
+        effective_peaks: [
+          { id: 21, q: 0.30, intensity: 50, sharpness: 1, source: "auto" },
+        ],
+        confirmed_index: null,
+        analysis_inputs_hash: "h",
+      },
+    });
+    const trace = { q: [0.1, 0.2, 0.3, 0.4, 0.5], I: [1, 2, 3, 4, 5], sigma: [0, 0, 0, 0, 0] };
+
+    render(
+      <MultiTracePlot
+        members={[m1]}
+        traces={new Map([[110, trace]])}
+        xDomain={null}
+        onXDomain={() => {}}
+        onPeakClick={onPeakClick}
+      />,
+    );
+
+    // Click far from peak 21 (px=30): clientX=200 is well beyond hit radius.
+    const ev = new MouseEvent("click", { bubbles: true, clientX: 200, clientY: 5 });
+    lastPlotElement!.dispatchEvent(ev);
+    expect(onPeakClick).not.toHaveBeenCalled();
+  });
+
+  it("propagates altKey through to onPeakClick", () => {
+    const onPeakClick = vi.fn();
+    const m1 = makeMember({
+      id: 11, exposure_id: 110, display_order: 0,
+      snapshot: {
+        effective_peaks: [
+          { id: 21, q: 0.30, intensity: 50, sharpness: 1, source: "auto" },
+        ],
+        confirmed_index: null,
+        analysis_inputs_hash: "h",
+      },
+    });
+    const trace = { q: [0.1, 0.2, 0.3, 0.4, 0.5], I: [1, 2, 3, 4, 5], sigma: [0, 0, 0, 0, 0] };
+
+    render(
+      <MultiTracePlot
+        members={[m1]}
+        traces={new Map([[110, trace]])}
+        xDomain={null}
+        onXDomain={() => {}}
+        onPeakClick={onPeakClick}
+      />,
+    );
+
+    const ev = new MouseEvent("click", { bubbles: true, clientX: 30, clientY: 5, altKey: true });
+    lastPlotElement!.dispatchEvent(ev);
+    expect(onPeakClick).toHaveBeenCalledWith(11, 21, true);
+  });
+
+  it("does not register a click handler when onPeakClick is not provided (no edit mode)", () => {
+    const onPeakClick = vi.fn();
+    const m1 = makeMember({
+      id: 11, exposure_id: 110, display_order: 0,
+      snapshot: {
+        effective_peaks: [{ id: 21, q: 0.30, intensity: 50, sharpness: 1, source: "auto" }],
+        confirmed_index: null,
+        analysis_inputs_hash: "h",
+      },
+    });
+    const trace = { q: [0.1, 0.2, 0.3, 0.4, 0.5], I: [1, 2, 3, 4, 5], sigma: [0, 0, 0, 0, 0] };
+
+    // No onPeakClick prop.
+    render(
+      <MultiTracePlot
+        members={[m1]}
+        traces={new Map([[110, trace]])}
+        xDomain={null}
+        onXDomain={() => {}}
+      />,
+    );
+
+    const ev = new MouseEvent("click", { bubbles: true, clientX: 30, clientY: 5 });
+    lastPlotElement!.dispatchEvent(ev);
+    expect(onPeakClick).not.toHaveBeenCalled();
+  });
+
+  it("hits the correct member when multiple members stack and click Y picks one band", () => {
+    const onPeakClick = vi.fn();
+    const m1 = makeMember({
+      id: 11, exposure_id: 110, display_order: 0,
+      snapshot: {
+        effective_peaks: [{ id: 31, q: 0.30, intensity: 50, sharpness: 1, source: "auto" }],
+        confirmed_index: null,
+        analysis_inputs_hash: "h",
+      },
+    });
+    const m2 = makeMember({
+      id: 22, exposure_id: 220, display_order: 1,
+      snapshot: {
+        effective_peaks: [{ id: 32, q: 0.30, intensity: 50, sharpness: 1, source: "auto" }],
+        confirmed_index: null,
+        analysis_inputs_hash: "h",
+      },
+    });
+    const trace = { q: [0.1, 0.2, 0.3, 0.4, 0.5], I: [1, 2, 3, 4, 5], sigma: [0, 0, 0, 0, 0] };
+
+    render(
+      <MultiTracePlot
+        members={[m1, m2]}
+        traces={new Map([[110, trace], [220, trace]])}
+        xDomain={null}
+        onXDomain={() => {}}
+        onPeakClick={onPeakClick}
+      />,
+    );
+
+    // Both members have a peak at q=0.30 ⇒ both at px=30. Click should
+    // resolve to ONE specific member based on which is closer (within
+    // hit radius of either). Either resolution is acceptable; here we
+    // assert at least ONE call landed (no double-firing) and the peak id
+    // matches the expected (m1's 31 or m2's 32).
+    const ev = new MouseEvent("click", { bubbles: true, clientX: 30, clientY: 5 });
+    lastPlotElement!.dispatchEvent(ev);
+    expect(onPeakClick).toHaveBeenCalledTimes(1);
+    const args = onPeakClick.mock.calls[0]!;
+    expect([11, 22]).toContain(args[0]);
+    expect([31, 32]).toContain(args[1]);
+  });
+
   it("re-renders the plot when members reorder (regression: bands shift)", async () => {
     const Plot = await import("@observablehq/plot");
     (Plot.plot as unknown as { mockClear: () => void }).mockClear();

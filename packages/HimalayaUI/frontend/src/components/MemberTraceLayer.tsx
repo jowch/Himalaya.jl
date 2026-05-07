@@ -68,7 +68,13 @@ export interface MemberMarksProps {
   highlightedIndexId?: number | undefined;
 }
 
-interface PeakRow {
+/**
+ * One visible peak after hidden-filtering and y-positioning. Exported so the
+ * parent `MultiTracePlot` can re-derive identical rows for click hit-testing
+ * (Phase 8.1) and tooltip lookup (Phase 8.3) without re-implementing the
+ * normalization math.
+ */
+export interface PeakRow {
   q: number;
   y: number;
   peakId: number;
@@ -76,16 +82,21 @@ interface PeakRow {
 }
 
 /**
- * Build the array of Observable Plot marks for one member. Pure function —
- * safe to call inside a render. `Plot.line / Plot.dot / Plot.text` are
- * imported lazily through dynamic dispatch to keep the unit-test mock
- * surface minimal.
+ * Compute the per-member visible-peak rows + the normalized line points used
+ * by `buildMemberMarks`. Extracted so the parent `MultiTracePlot` can re-use
+ * the same data for click hit-testing (Phase 8.1) and tooltip lookup
+ * (Phase 8.3) without re-implementing the normalization math.
+ *
+ * Returns `null` for `peaks` (and an empty `linePoints`) when the trace is
+ * missing or empty — matches `buildMemberMarks`'s "emit no marks" path.
  */
-export function buildMemberMarks(props: MemberMarksProps): unknown[] {
-  const marks: unknown[] = [];
+export function buildMemberPeakRows(props: MemberMarksProps): {
+  peaks: PeakRow[];
+  linePoints: Array<{ q: number; y: number }>;
+} {
   const { member, trace, yBand, peakDisplay, highlightedIndexId } = props;
 
-  if (!trace || trace.q.length === 0) return marks;
+  if (!trace || trace.q.length === 0) return { peaks: [], linePoints: [] };
 
   const snapshot = member.snapshot;
   const peaks: MemberSnapshotPeak[] = snapshot ? snapshot.effective_peaks : [];
@@ -107,6 +118,50 @@ export function buildMemberMarks(props: MemberMarksProps): unknown[] {
     yBand,
   );
 
+  if (!snapshot || peaks.length === 0) return { peaks: [], linePoints };
+
+  const hidden = new Set<number>(peakDisplay?.hidden ?? []);
+
+  // Highlighted = those belonging to the confirmed_index when its id matches.
+  const highlightedPeakIds = new Set<number>(
+    highlightedIndexId !== undefined
+    && snapshot.confirmed_index !== null
+    && snapshot.confirmed_index.id === highlightedIndexId
+      ? snapshot.confirmed_index.peak_ids
+      : [],
+  );
+  const highlightColor = snapshot.confirmed_index
+    ? phaseColor(snapshot.confirmed_index.phase)
+    : PEAK_COLOR_DEFAULT;
+
+  const visiblePeaks: PeakRow[] = [];
+  for (const p of peaks) {
+    if (hidden.has(p.id)) continue;
+    const lineY = interpolateLineY(linePoints, p.q);
+    const y = Math.max(yBand[0], lineY - PEAK_OFFSET_PX);
+    const color = highlightedPeakIds.has(p.id)
+      ? highlightColor
+      : PEAK_COLOR_DEFAULT;
+    visiblePeaks.push({ q: p.q, y, peakId: p.id, color });
+  }
+
+  return { peaks: visiblePeaks, linePoints };
+}
+
+/**
+ * Build the array of Observable Plot marks for one member. Pure function —
+ * safe to call inside a render. `Plot.line / Plot.dot / Plot.text` are
+ * imported lazily through dynamic dispatch to keep the unit-test mock
+ * surface minimal.
+ */
+export function buildMemberMarks(props: MemberMarksProps): unknown[] {
+  const marks: unknown[] = [];
+  const { member, trace, yBand, peakDisplay } = props;
+
+  if (!trace || trace.q.length === 0) return marks;
+
+  const { peaks: visiblePeaks, linePoints } = buildMemberPeakRows(props);
+
   marks.push(
     Plot.line(linePoints, {
       x: "q",
@@ -116,54 +171,24 @@ export function buildMemberMarks(props: MemberMarksProps): unknown[] {
     }),
   );
 
-  // Peaks. `effective_peaks` is rendered against the snapshot intensities;
-  // the y-coordinate is derived from the same normalization mapping as the
-  // line, so peak dots sit on (or just above) the line at their q.
-  if (snapshot && peaks.length > 0) {
-    const hidden = new Set<number>(peakDisplay?.hidden ?? []);
-    const labeled = new Set<number>(peakDisplay?.labeled ?? []);
-
-    // Highlighted = those belonging to the confirmed_index when its id matches.
-    const highlightedPeakIds = new Set<number>(
-      highlightedIndexId !== undefined
-      && snapshot.confirmed_index !== null
-      && snapshot.confirmed_index.id === highlightedIndexId
-        ? snapshot.confirmed_index.peak_ids
-        : [],
+  if (visiblePeaks.length > 0) {
+    marks.push(
+      Plot.dot(visiblePeaks, {
+        x: "q",
+        y: "y",
+        symbol: "triangle",
+        // Per-row color via channel — Observable Plot reads the `color`
+        // field as the fill via the `fill` accessor below.
+        fill: (d: unknown) => (d as PeakRow).color,
+        stroke: "var(--color-bg)",
+        strokeWidth: 0.75,
+        r: 4,
+      }),
     );
-    const highlightColor = snapshot.confirmed_index
-      ? phaseColor(snapshot.confirmed_index.phase)
-      : PEAK_COLOR_DEFAULT;
 
-    const visiblePeaks: PeakRow[] = [];
-    for (const p of peaks) {
-      if (hidden.has(p.id)) continue;
-      const lineY = interpolateLineY(linePoints, p.q);
-      const y = Math.max(yBand[0], lineY - PEAK_OFFSET_PX);
-      const color = highlightedPeakIds.has(p.id)
-        ? highlightColor
-        : PEAK_COLOR_DEFAULT;
-      visiblePeaks.push({ q: p.q, y, peakId: p.id, color });
-    }
-
-    if (visiblePeaks.length > 0) {
-      marks.push(
-        Plot.dot(visiblePeaks, {
-          x: "q",
-          y: "y",
-          symbol: "triangle",
-          // Per-row color via channel — Observable Plot reads the `color`
-          // field as the fill via the `fill` accessor below.
-          fill: (d: unknown) => (d as PeakRow).color,
-          stroke: "var(--color-bg)",
-          strokeWidth: 0.75,
-          r: 4,
-        }),
-      );
-    }
-
-    // Labels: v6.1 renders directly above the triangle. Phase 8 adds the
-    // leader-line dodge layout.
+    // Labels: v6.1 renders directly above the triangle. Phase 8.2 will add
+    // the leader-line dodge layout.
+    const labeled = new Set<number>(peakDisplay?.labeled ?? []);
     const labels = visiblePeaks.filter((p) => labeled.has(p.peakId));
     if (labels.length > 0) {
       marks.push(

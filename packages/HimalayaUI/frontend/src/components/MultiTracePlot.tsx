@@ -29,9 +29,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as Plot from "@observablehq/plot";
 import type { Trace, ComparisonMember } from "../api";
-import { buildMemberMarks } from "./MemberTraceLayer";
-import { invertQ } from "../lib/plot/invertQ";
+import { buildMemberMarks, buildMemberPeakRows } from "./MemberTraceLayer";
+import type { PeakRow } from "./MemberTraceLayer";
+import { invertQ, applyQ } from "../lib/plot/invertQ";
 import { prettifyUnits } from "../lib/units";
+
+/**
+ * Pixel hit radius for peak click hit-testing in edit mode (Phase 8.1).
+ * Triangle radius is `r = 4` so a 10 px radius covers the marker plus a
+ * comfortable interaction buffer.
+ */
+const PEAK_HIT_PX = 10;
 
 /** Hardcoded plot aspect ratio (W / H) per spec §Plot rendering. */
 export const COMPARE_PLOT_ASPECT = 0.3;
@@ -92,6 +100,14 @@ export interface MultiTracePlotProps {
   qUnits?: string;
   /** X-axis scale. Defaults to "log". */
   xType?: "log" | "linear";
+  /**
+   * Edit-mode peak click handler (Phase 8.1). When set, the plot installs a
+   * click listener that does pixel-distance hit-testing against the rendered
+   * peak rows (per member band) and dispatches `onPeakClick(memberId,
+   * peakId, altKey)` for the closest peak within `PEAK_HIT_PX`. Omitting
+   * this prop disables click handling entirely (review-mode default).
+   */
+  onPeakClick?: (memberId: number, peakId: number, altKey: boolean) => void;
 }
 
 export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
@@ -99,6 +115,7 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
     members, traces, xDomain, onXDomain,
     peakDisplayByMemberId, highlightedMemberId,
     qUnits, xType = "log",
+    onPeakClick,
   } = props;
 
   const hostRef       = useRef<HTMLDivElement>(null);
@@ -157,22 +174,36 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
     const yBands = computeYBands(ratios, panelH);
 
     const allMarks: unknown[] = [];
+    // Per-member visible peak rows + y-band, captured for click hit-testing.
+    // Built in the same loop as the marks so we never drift from what was
+    // rendered (the same `buildMemberPeakRows` call sources both).
+    const peakIndex: Array<{
+      memberId: number;
+      yBand: [number, number];
+      peaks: PeakRow[];
+    }> = [];
     for (let i = 0; i < members.length; i++) {
       const m = members[i]!;
       const yBand = yBands[i] ?? [0, panelH];
       const trace = m.exposure_id !== null ? traces.get(m.exposure_id) : undefined;
       const peakDisplay = peakDisplayByMemberId?.get(m.id);
-      const memberMarks = buildMemberMarks({
+      const layerProps = {
         member: m,
         trace,
-        yBand,
+        yBand: yBand as [number, number],
         peakDisplay,
         highlightedIndexId:
           highlightedMemberId === m.id && m.snapshot?.confirmed_index
             ? m.snapshot.confirmed_index.id
             : undefined,
-      });
+      };
+      const memberMarks = buildMemberMarks(layerProps);
       for (const mk of memberMarks) allMarks.push(mk);
+      // Only collect peaks for click hit-testing when edit mode wired one in.
+      if (onPeakClick) {
+        const { peaks } = buildMemberPeakRows(layerProps);
+        peakIndex.push({ memberId: m.id, yBand: yBand as [number, number], peaks });
+      }
     }
 
     const el = Plot.plot({
@@ -246,6 +277,41 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
     }
     (el as unknown as EventTarget).addEventListener("dblclick", handleDblClick);
 
+    // ── peak click hit-testing (Phase 8.1, edit mode only) ─────────────
+    // Only installs when `onPeakClick` is provided. Hit-test logic:
+    //   1. Convert click pixel → q via the x-scale.
+    //   2. Identify the member whose y-band contains the click Y.
+    //   3. Find the closest peak in that member's `peaks` within
+    //      `PEAK_HIT_PX` pixels (using `applyQ` to convert peak q → px).
+    //   4. Dispatch `onPeakClick(memberId, peakId, altKey)`.
+    // Bails silently when nothing matches — leaves brush/zoom untouched.
+    function handlePeakClick(evRaw: Event): void {
+      if (!onPeakClick) return;
+      const ev = evRaw as MouseEvent;
+      const rect = container!.getBoundingClientRect();
+      const clickX = ev.clientX - rect.left;
+      const clickY = ev.clientY - rect.top;
+      let best: { memberId: number; peakId: number; dist: number } | null = null;
+      for (const band of peakIndex) {
+        // Y-band selection — pick the member whose band contains the click Y.
+        // We still allow a small tolerance so clicks on the very edge of the
+        // band (e.g. on a triangle that pokes above the line) hit the right
+        // member.
+        const [top, bottom] = band.yBand;
+        if (clickY < top - PEAK_HIT_PX || clickY > bottom + PEAK_HIT_PX) continue;
+        for (const p of band.peaks) {
+          const px = applyQ(plotElRef.current, p.q);
+          if (px === null) continue;
+          const d = Math.abs(px - clickX);
+          if (d <= PEAK_HIT_PX && (best === null || d < best.dist)) {
+            best = { memberId: band.memberId, peakId: p.peakId, dist: d };
+          }
+        }
+      }
+      if (best !== null) onPeakClick(best.memberId, best.peakId, ev.altKey);
+    }
+    (el as unknown as EventTarget).addEventListener("click", handlePeakClick);
+
     // Brush-to-zoom: drag horizontally to set a q sub-range. Implemented as
     // mousedown→mousemove→mouseup; we track pixel coords and invert at end.
     let brushStartPx: number | null = null;
@@ -277,13 +343,14 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
       (el as unknown as EventTarget).removeEventListener("dblclick", handleDblClick);
       (el as unknown as EventTarget).removeEventListener("mousedown", handleMouseDown);
       (el as unknown as EventTarget).removeEventListener("mouseup", handleMouseUp);
+      (el as unknown as EventTarget).removeEventListener("click", handlePeakClick);
       container.replaceChildren();
       plotElRef.current = null;
     };
   }, [
     members, traces, xDomain, xType, qUnits,
     peakDisplayByMemberId, highlightedMemberId,
-    onXDomain, qExtent,
+    onXDomain, qExtent, onPeakClick,
   ]);
 
   useEffect(() => {

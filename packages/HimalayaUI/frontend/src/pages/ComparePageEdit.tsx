@@ -222,6 +222,30 @@ export function ComparePageEdit(): JSX.Element {
     () => (draft?.members ?? []).map(draftToMember),
     [draft?.members],
   );
+
+  // Phase 8.1 — peak click cycle. Maps a `MultiTracePlot` callback
+  // (memberId, peakId, altKey) → Zustand cycle action by looking up the
+  // member index from its synthetic id (draftToMember mints stable ids).
+  const cyclePeak = useAppState((s) => s.cyclePeakDisplayForMember);
+  const handlePeakClick = useCallback(
+    (memberId: number, peakId: number, altKey: boolean) => {
+      const idx = plotMembers.findIndex((m) => m.id === memberId);
+      if (idx < 0) return;
+      cyclePeak(idx, peakId, altKey);
+    },
+    [plotMembers, cyclePeak],
+  );
+
+  // Materialize the per-member peak_display map from draft state so the
+  // plot's optimistic state survives between server-side updates.
+  const peakDisplayByMemberId = useMemo(() => {
+    const m = new Map<number, { hidden: number[]; labeled: number[] }>();
+    for (const dm of draft?.members ?? []) {
+      const memberId = dm.id ?? -(dm.display_order + 1);
+      if (dm.peak_display) m.set(memberId, dm.peak_display);
+    }
+    return m;
+  }, [draft?.members]);
   const exposureIds = useMemo(
     () => plotMembers.flatMap((m) => (m.exposure_id !== null ? [m.exposure_id] : [])),
     [plotMembers],
@@ -346,6 +370,8 @@ export function ComparePageEdit(): JSX.Element {
                     traces={traces}
                     xDomain={xDomain}
                     onXDomain={setXDomain}
+                    peakDisplayByMemberId={peakDisplayByMemberId}
+                    onPeakClick={handlePeakClick}
                   />
                 </div>
                 <div
