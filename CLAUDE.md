@@ -142,6 +142,16 @@ julia --project=. -e 'using Himalaya, Test; include("test/foo.jl")'
 
 Tests use stdlib `Test` (`@testset`, `@test`, `@test_throws`). Internal (non-exported) helpers are accessed via `Himalaya.<name>` in tests.
 
+**Test runs are slow — capture output once, then grep the file.** The HimalayaUI Julia suite takes 5–10 min per invocation (per-test fixture DBs + Oxygen lifecycle dominate). Do NOT re-run the same suite with different `| grep` filters — every invocation rebuilds the fixtures from scratch, burning real wall-clock and context. Redirect once, then inspect:
+
+```bash
+julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.test("HimalayaUI")' > /tmp/jl-test.out 2>&1
+grep -E "Test Summary|did not pass|fail" /tmp/jl-test.out
+tail -50 /tmp/jl-test.out
+```
+
+Same pattern for `npm test` when you need to slice a long Vitest run multiple ways: `npm test > /tmp/vitest.out 2>&1` once, then grep the file.
+
 ## Running the app
 
 ```bash
