@@ -215,6 +215,34 @@ describe("<ComparisonPicker>", () => {
     expect(addBtn).toHaveTextContent(/Add 2 selected/i);
   });
 
+  it("clicking the row body toggles the checkbox (issue #53 regression)", async () => {
+    // The row carries `role="option"` and `cursor: pointer` — the affordance
+    // signals click-to-select. Pre-fix, only the checkbox glyph was wired,
+    // so clicks on the row body were no-ops. Asserting on the checkbox
+    // state after a row-body click pins the contract regardless of whether
+    // future refactors move the click handler up or down the tree.
+    const user = userEvent.setup();
+    renderWithProviders(
+      <ComparisonPicker isOpen onClose={() => {}} experimentId={1} />,
+    );
+    const rows = await screen.findAllByTestId("picker-row");
+    expect(rows.length).toBeGreaterThanOrEqual(1);
+    const row = rows[0]!;
+    const cb = row.querySelector(
+      '[data-testid="exposure-list-row-checkbox"]',
+    ) as HTMLInputElement;
+    expect(cb.checked).toBe(false);
+
+    // Click on the row's exposure-name cell (anywhere outside the checkbox).
+    const nameCell = within(row).getByText("JC001-101");
+    await user.click(nameCell);
+    expect(cb.checked).toBe(true);
+
+    // A second row-body click toggles back off.
+    await user.click(nameCell);
+    expect(cb.checked).toBe(false);
+  });
+
   it("already-added rows render locked and cannot be toggled", async () => {
     const user = userEvent.setup();
     // Pre-populate the active draft with exposure 101 — picker should lock that row.
