@@ -45,7 +45,7 @@ export interface AuthOpts {
   clientOpId?: string;
 }
 
-async function request<T>(
+export async function request<T>(
   method: string,
   path: string,
   body?: unknown,
@@ -53,9 +53,9 @@ async function request<T>(
 ): Promise<T> {
   const headers: Record<string, string> = {};
   if (body !== undefined) headers["Content-Type"] = "application/json";
-  if (opts?.username && method !== "GET") headers["X-Username"] = opts.username;
-  if (opts?.clientId && method !== "GET") headers["X-Client-Id"] = opts.clientId;
-  if (opts?.clientOpId && method !== "GET") headers["X-Client-Op-Id"] = opts.clientOpId;
+  if (opts?.username) headers["X-Username"] = opts.username;
+  if (opts?.clientId) headers["X-Client-Id"] = opts.clientId;
+  if (opts?.clientOpId) headers["X-Client-Op-Id"] = opts.clientOpId;
 
   const init: RequestInit = { method, headers };
   if (body !== undefined) init.body = JSON.stringify(body);

@@ -5,10 +5,10 @@
  * routes and read URL params correctly. Behaviour exercised by later tasks
  * (sidebar, draft state, save flow) lives in their own test files.
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { ComparePage } from "../src/pages/ComparePage";
 import { ComparePageEdit } from "../src/pages/ComparePageEdit";
 
@@ -67,5 +67,76 @@ describe("ComparePageEdit shell", () => {
     const edit = screen.getByTestId("compare-page-edit");
     expect(edit).toBeInTheDocument();
     expect(edit).toHaveAttribute("data-comparison-id", "42");
+  });
+});
+
+// ── Regression: ResizeObserver re-attach when Skeleton swaps in (issue #51)
+
+describe("ComparePage review mode — ResizeObserver", () => {
+  let ROInstances: { observe: unknown; disconnect: unknown }[] = [];
+
+  beforeEach(() => {
+    ROInstances = [];
+    vi.stubGlobal("ResizeObserver", vi.fn((cb: ResizeObserverCallback) => {
+      const inst = {
+        observe: vi.fn((el: Element) => {
+          // Give the element a non-zero clientHeight so the page-level
+          // observer callback sets panelHeight > 0.
+          Object.defineProperty(el, "clientHeight", { value: 400, configurable: true });
+          cb([{ target: el, contentRect: { height: 400 } } as unknown as ResizeObserverEntry], inst as unknown as ResizeObserver);
+        }),
+        disconnect: vi.fn(),
+      };
+      ROInstances.push(inst);
+      return inst;
+    }));
+  });
+
+  it("attaches ResizeObserver after Skeleton lifts (plotLoading false)", async () => {
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: Infinity, staleTime: 0 }, mutations: { retry: false } },
+    });
+    // Do NOT seed the comparison query — let it start in isLoading so
+    // Skeleton renders its fallback, then resolves asynchronously.
+    // This exercises the bug: with deps: [] the effect runs while the
+    // ref is null (Skeleton has no children) and never re-attaches.
+
+    vi.spyOn(global, "fetch").mockImplementation(async (input) => {
+      const url = typeof input === "string" ? input : String(input);
+      if (url === "/api/comparisons/42") {
+        return new Response(JSON.stringify({
+          id: 42, title: "T", description: null, content_hash: "h",
+          created_by: 1, created_at: "", updated_at: "",
+          forked_from_id: null, forked_at_hash: null, forked_from_title: null,
+          members: [{ id: 1, exposure_id: 100, display_order: 0, band_height: 1, y_offset: 0, normalization: "max", snapshot: null }],
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (url === "/api/exposures/100/trace") {
+        return new Response(JSON.stringify({ q: [0.1], I: [1], sigma: [0.01] }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      return new Response("not found", { status: 404 });
+    });
+
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={["/experiments/7/compare/42"]}>
+          <Routes>
+            <Route path="/experiments/:eid/compare/:id" element={<ComparePage />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    // Wait for the real plot column (not skeleton) to render.
+    await waitFor(() => {
+      expect(screen.queryByText("Loading comparison…")).toBeNull();
+    });
+
+    // The page-level ResizeObserver drives panelHeight state, which is
+    // passed to MemberMetaGutter as style.height. Asserting on the gutter's
+    // height pins to the page-level observer specifically (MultiTracePlot
+    // has its own observer but does not affect panelHeight).
+    const gutter = screen.getByTestId("member-meta-gutter");
+    expect(gutter.style.height).not.toBe("0px");
   });
 });

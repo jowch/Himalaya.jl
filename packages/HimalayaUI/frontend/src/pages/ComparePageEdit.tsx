@@ -43,6 +43,9 @@ import {
 } from "../queries";
 import { computeMemberSnapshot } from "../lib/comparison/snapshot";
 import { comparePath } from "../lib/comparison/routes";
+import {
+  getExposure, listPeaks, listIndices, listGroups,
+} from "../api";
 import type {
   Comparison, ComparisonMember, ComparisonMemberInput, Exposure, SaveComparisonBody,
 } from "../api";
@@ -158,53 +161,95 @@ export function ComparePageEdit(): JSX.Element {
     goToList();
   }, [discardDraft, goToList]);
 
-  const handleSave = useCallback(() => {
+  const handleSave = useCallback(async () => {
     if (draft === null) return;
     if (draft.members.length === 0) return;
-    // Compute a fresh snapshot per member at submit time (Plan §Task 4.3).
-    const members: ComparisonMemberInput[] = draft.members.map((m) => {
-      const snapshot = m.exposure_id !== null
-        ? computeMemberSnapshot(m.exposure_id, qc)
-        : (m.snapshot ?? {
-            effective_peaks: [],
-            confirmed_index: null,
-            analysis_inputs_hash: "",
-          });
-      const out: ComparisonMemberInput = {
-        exposure_id: m.exposure_id,
-        display_order: m.display_order,
-        band_height: m.band_height,
-        y_offset: m.y_offset,
-        normalization: m.normalization,
-        snapshot,
-      };
-      if (m.id !== undefined) out.id = m.id;
-      if (m.color_override !== undefined) out.color_override = m.color_override;
-      if (m.label_override !== undefined) out.label_override = m.label_override;
-      if (m.q_window_min !== undefined) out.q_window_min = m.q_window_min;
-      if (m.q_window_max !== undefined) out.q_window_max = m.q_window_max;
-      if (m.peak_display !== undefined) out.peak_display = m.peak_display;
-      return out;
-    });
-    // useSaveComparison flat-spreads the input into the SaveComparisonBody;
-    // see saveComparison mutator's `request: (p) => api.saveComparison(...)`.
-    const payload: SaveComparisonBody & { id?: number } = {
-      title: draft.title,
-      members,
-    };
-    if (draft.id !== undefined) payload.id = draft.id;
-    if (draft.description !== "") payload.description = draft.description;
-    if (draft.baseHash !== undefined) payload.expected_content_hash = draft.baseHash;
-    // Phase 11 — fork lineage rides through to POST /api/comparisons. Both
-    // fields ride together (or not at all) per backend contract; the UI
-    // factory `fromComparisonAsFork` always sets both when populating a fork.
-    if (draft.forkedFromId !== undefined) payload.forked_from_id = draft.forkedFromId;
-    if (draft.forkedAtHash !== undefined) payload.forked_at_hash = draft.forkedAtHash;
-    // Mark this submit as "in-flight" so the post-success effect knows to
-    // navigate. Without the ref, an already-saved success state on remount
-    // would re-fire navigation.
+    // Guard against duplicate triggers during the async prefetch window.
+    // save.isPending is false until save.mutate() fires, so a second
+    // Cmd+Enter while awaiting would start a parallel round. Set the
+    // in-flight ref early so the keyboard handler and button both reject.
+    if (pendingSubmitRef.current) return;
     pendingSubmitRef.current = true;
-    save.mutate(payload);
+
+    // Warm the cache for any never-visited exposures before computing
+    // snapshots. Without this, computeMemberSnapshot falls back to
+    // analysis_inputs_hash = "", which mismatches the server hash and
+    // marks every cold member stale immediately after save (issue #49).
+    // We prefetch all four cache keys (exposure, peaks, indices, groups)
+    // so the snapshot is complete, not just the hash.
+    const coldExposureIds = draft.members
+      .map((m) => m.exposure_id)
+      .filter((id): id is number => id !== null)
+      .filter((id) => qc.getQueryData<Exposure>(queryKeys.exposure(id)) === undefined);
+
+    try {
+      if (coldExposureIds.length > 0) {
+        await Promise.all(
+          coldExposureIds.flatMap((id) => [
+            qc.fetchQuery({
+              queryKey: queryKeys.exposure(id),
+              queryFn: () => getExposure(id),
+            }),
+            qc.fetchQuery({
+              queryKey: queryKeys.peaks(id),
+              queryFn: () => listPeaks(id),
+            }),
+            qc.fetchQuery({
+              queryKey: queryKeys.indices(id),
+              queryFn: () => listIndices(id),
+            }),
+            qc.fetchQuery({
+              queryKey: queryKeys.groups(id),
+              queryFn: () => listGroups(id),
+            }),
+          ]),
+        );
+      }
+
+      // Compute a fresh snapshot per member at submit time (Plan §Task 4.3).
+      const members: ComparisonMemberInput[] = draft.members.map((m) => {
+        const snapshot = m.exposure_id !== null
+          ? computeMemberSnapshot(m.exposure_id, qc)
+          : (m.snapshot ?? {
+              effective_peaks: [],
+              confirmed_index: null,
+              analysis_inputs_hash: "",
+            });
+        const out: ComparisonMemberInput = {
+          exposure_id: m.exposure_id,
+          display_order: m.display_order,
+          band_height: m.band_height,
+          y_offset: m.y_offset,
+          normalization: m.normalization,
+          snapshot,
+        };
+        if (m.id !== undefined) out.id = m.id;
+        if (m.color_override !== undefined) out.color_override = m.color_override;
+        if (m.label_override !== undefined) out.label_override = m.label_override;
+        if (m.q_window_min !== undefined) out.q_window_min = m.q_window_min;
+        if (m.q_window_max !== undefined) out.q_window_max = m.q_window_max;
+        if (m.peak_display !== undefined) out.peak_display = m.peak_display;
+        return out;
+      });
+      // useSaveComparison flat-spreads the input into the SaveComparisonBody;
+      // see saveComparison mutator's `request: (p) => api.saveComparison(...)`.
+      const payload: SaveComparisonBody & { id?: number } = {
+        title: draft.title,
+        members,
+      };
+      if (draft.id !== undefined) payload.id = draft.id;
+      if (draft.description !== "") payload.description = draft.description;
+      if (draft.baseHash !== undefined) payload.expected_content_hash = draft.baseHash;
+      // Phase 11 — fork lineage rides through to POST /api/comparisons. Both
+      // fields ride together (or not at all) per backend contract; the UI
+      // factory `fromComparisonAsFork` always sets both when populating a fork.
+      if (draft.forkedFromId !== undefined) payload.forked_from_id = draft.forkedFromId;
+      if (draft.forkedAtHash !== undefined) payload.forked_at_hash = draft.forkedAtHash;
+      save.mutate(payload);
+    } catch {
+      // Prefetch or mutate failed — release the guard so the user can retry.
+      pendingSubmitRef.current = false;
+    }
   }, [draft, qc, save]);
 
   // Post-success navigation. Reading `save.data` (the response) lets us
@@ -222,6 +267,12 @@ export function ComparePageEdit(): JSX.Element {
       goToList();
     }
   }, [save.isSuccess, save.data, discardDraft, goToReview, goToList]);
+
+  // Release the guard on mutation error so the user can retry.
+  // save.mutate() is fire-and-forget; errors surface via save.error.
+  useEffect(() => {
+    if (save.error) pendingSubmitRef.current = false;
+  }, [save.error]);
 
   // Phase 13 Task 13.4 — keyboard shortcuts:
   //   Esc            → cancel (return to review or list)
