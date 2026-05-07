@@ -132,7 +132,13 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
     return [lo, hi];
   }, [members, traces]);
 
-  useEffect(() => {
+  // Imperative render-and-bind: builds the Plot element from current props,
+  // installs the wheel/dblclick/brush listeners, and returns a cleanup that
+  // detaches them. Wrapped in `useCallback` with its true deps so the effect
+  // below depends on `[renderPlot, _resizeKey]` alone — no eslint-disable,
+  // no hand-curated dep list (per CLAUDE.md "Imperative render functions
+  // in effects: use `useCallback`").
+  const renderPlot = useCallback((): (() => void) | undefined => {
     const container = plotContainer.current;
     if (!container) return;
 
@@ -266,8 +272,19 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
       container.replaceChildren();
       plotElRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [members, traces, xDomain, xType, qUnits, peakDisplayByMemberId, highlightedMemberId, _resizeKey]);
+  }, [
+    members, traces, xDomain, xType, qUnits,
+    peakDisplayByMemberId, highlightedMemberId,
+    onXDomain, qExtent,
+  ]);
+
+  useEffect(() => {
+    return renderPlot();
+    // `_resizeKey` rerenders the plot when the container resizes — the
+    // ResizeObserver bumps the key so we recompute panelW/panelH. It's not
+    // captured by `renderPlot` (we read `container.clientWidth` directly),
+    // so include it as a primitive dep.
+  }, [renderPlot, _resizeKey]);
 
   return (
     <div
