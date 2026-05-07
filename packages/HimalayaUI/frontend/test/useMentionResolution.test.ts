@@ -54,4 +54,44 @@ describe("useMentionResolution", () => {
     const { result } = renderHook(() => useMentionResolution([]), { wrapper: wrapper() });
     expect(result.current.size).toBe(0);
   });
+
+  // ─── Comparison resolution (Phase 10) ────────────────────────────────────
+  it("resolves a comparison mention to entity data", async () => {
+    const COMP: api.Comparison = {
+      id: 7, title: "DOPE titration",
+      description: null,
+      content_hash: "a1b2c3d4e5f60718",
+      created_by: 1,
+      created_at: "2026-05-02 10:00:00",
+      updated_at: "2026-05-02 10:00:00",
+      forked_from_id: null,
+      forked_at_hash: null,
+      forked_from_title: null,
+      members: [],
+    };
+    vi.spyOn(api, "getComparison").mockResolvedValue(COMP);
+    const tokens: MentionToken[] = [
+      { kind: "mention", type: "comparison", id: 7, hash: "a1b2c3d4" },
+    ];
+    const { result } = renderHook(() => useMentionResolution(tokens), { wrapper: wrapper() });
+    await waitFor(() => {
+      const entry = result.current.get("comparison:7");
+      expect(entry).not.toBe("loading");
+      expect(entry).not.toBe("dead");
+    });
+    expect(result.current.get("comparison:7")).toMatchObject({
+      type: "comparison", data: COMP,
+    });
+  });
+
+  it("marks a missing comparison as 'dead' on 404", async () => {
+    vi.spyOn(api, "getComparison").mockRejectedValue(
+      new api.ApiError(404, "not found", null),
+    );
+    const tokens: MentionToken[] = [
+      { kind: "mention", type: "comparison", id: 999 },
+    ];
+    const { result } = renderHook(() => useMentionResolution(tokens), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.get("comparison:999")).toBe("dead"));
+  });
 });

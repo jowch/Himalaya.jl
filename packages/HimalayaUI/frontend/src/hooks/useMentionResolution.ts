@@ -9,7 +9,8 @@ export type ResolvedMention =
   | { type: "index";      data: api.IndexEntry }
   | { type: "exposure";   data: api.Exposure }
   | { type: "sample";     data: api.Sample }
-  | { type: "experiment"; data: api.Experiment };
+  | { type: "experiment"; data: api.Experiment }
+  | { type: "comparison"; data: api.Comparison };
 
 type ResolutionEntry = ResolvedMention | "loading" | "dead";
 
@@ -26,6 +27,8 @@ function queryForToken(token: MentionToken) {
       return { queryKey: queryKeys.sample(id), queryFn: () => api.getSample(id), retry: false };
     case "experiment":
       return { queryKey: queryKeys.experiment(id), queryFn: () => api.getExperiment(id), retry: false };
+    case "comparison":
+      return { queryKey: queryKeys.comparison(id), queryFn: () => api.getComparison(id), retry: false };
   }
 }
 

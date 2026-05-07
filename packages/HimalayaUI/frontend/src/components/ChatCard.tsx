@@ -201,10 +201,20 @@ function MessageRow({ msg }: { msg: AnyMessage }): JSX.Element {
         {segments.map((seg, i) => {
           if (seg.kind === "text") return <span key={i}>{seg.text}</span>;
           const key   = `${seg.type}:${seg.id}`;
-          const token = `[[${seg.type}:${seg.id}]]`;
+          const token = seg.hash !== undefined
+            ? `[[${seg.type}:${seg.id}@${seg.hash}]]`
+            : `[[${seg.type}:${seg.id}]]`;
           const entry = resolutionMap.get(key) ?? "loading";
+          // Phase 10 — pass the parsed token hash through to the chip so
+          // comparison drift can render. Other mention types ignore it.
+          const extraProps = seg.hash !== undefined ? { tokenHash: seg.hash } : {};
           return (
-            <MentionChip key={i} resolved={entry} originalText={token} />
+            <MentionChip
+              key={i}
+              resolved={entry}
+              originalText={token}
+              {...extraProps}
+            />
           );
         })}
       </p>
