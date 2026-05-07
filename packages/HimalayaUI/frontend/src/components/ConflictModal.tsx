@@ -119,6 +119,7 @@ export function ConflictModal(): JSX.Element | null {
   const setPendingConflict = useAppState((s) => s.setPendingConflict);
   const discardDraft       = useAppState((s) => s.discardDraft);
   const startForkDraft     = useAppState((s) => s.startForkDraft);
+  const setDraftTitle      = useAppState((s) => s.setDraftTitle);
   const navigate           = useNavigate();
   const location           = useLocation();
   const qc                 = useQueryClient();
@@ -228,18 +229,21 @@ export function ConflictModal(): JSX.Element | null {
   // Fork: start a fork-flavored draft from the SERVER's current state (so
   // the fork inherits the canonical truth, not the user's stale-baseHash
   // local edits). Mirrors `EditOrForkButton::onFork` from Phase 11.
-  // Documenting the shape choice: forking from the server's current state
-  // matches the Phase 11 EditOrForkButton; forking from the local draft
-  // would silently lose the conflict context (the user's local title edit
-  // would survive but the lineage would still point at the server hash).
-  // Server-state-as-fork-source is the least surprising: the user explicitly
-  // chose "Fork", which traditionally means "branch off the canonical state".
+  //
+  // Title preservation (issue #58): the default seed is `Fork of <parent>`,
+  // but when the user has a non-empty drafted title we override with their
+  // text — Fork-to-new is offered as the safe conflict resolution and
+  // silently discarding their title undermines that promise. The members /
+  // description / lineage all come from the server state per the
+  // canonical-truth rationale; only the title is special-cased.
   const handleFork = useCallback(() => {
     if (serverState === null) return;
+    const userTitle = draft?.title.trim();
     startForkDraft(serverState, qc);
+    if (userTitle) setDraftTitle(userTitle);
     setPendingConflict(null);
     goToNewDraft();
-  }, [serverState, startForkDraft, qc, setPendingConflict, goToNewDraft]);
+  }, [serverState, draft, startForkDraft, setDraftTitle, qc, setPendingConflict, goToNewDraft]);
 
   if (!isOpen || serverState === null) return null;
 
