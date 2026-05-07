@@ -364,6 +364,7 @@ export function ComparisonPicker({
                       sample={r.sample}
                       checked={r.alreadyAdded || picks.includes(r.exposure.id)}
                       onCheckedChange={(next) => togglePick(r.exposure.id, next)}
+                      onClick={(eid) => togglePick(eid, !picks.includes(eid))}
                       locked={r.alreadyAdded}
                       lockedReason={r.alreadyAdded ? "already added" : undefined}
                     />
@@ -402,6 +403,7 @@ export function ComparisonPicker({
                       sample={r.sample}
                       checked={r.alreadyAdded || picks.includes(r.exposure.id)}
                       onCheckedChange={(next) => togglePick(r.exposure.id, next)}
+                      onClick={(eid) => togglePick(eid, !picks.includes(eid))}
                       locked={r.alreadyAdded}
                       lockedReason={r.alreadyAdded ? "already added" : undefined}
                     />

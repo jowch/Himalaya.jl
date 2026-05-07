@@ -103,3 +103,17 @@ function bytesToHex(buf: Uint8Array): string {
   }
   return s;
 }
+
+/**
+ * Short form of a comparison's `content_hash`: first 8 hex chars after
+ * stripping the `sha256:` prefix, lowercased. Used as the eager-hash
+ * fragment of `[[comparison:N@hash8]]` mention tokens.
+ *
+ * Lives here (not in MentionPicker / MentionChip) so the picker emit path
+ * and the chip drift detector cannot drift on the same primitive — see
+ * issue #62 where the two slice conventions disagreed and every well-
+ * formed mention rendered a permanent "(changed)" annotation.
+ */
+export function comparisonHash8(content_hash: string): string {
+  return content_hash.replace(/^sha256:/, "").slice(0, 8).toLowerCase();
+}

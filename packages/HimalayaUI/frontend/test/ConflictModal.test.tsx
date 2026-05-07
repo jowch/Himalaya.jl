@@ -331,13 +331,54 @@ describe("<ConflictModal>", () => {
     expect(draft!.forkedAtHash).toBe("sha256:server");
     expect(draft!.id).toBeUndefined();
     expect(draft!.baseHash).toBeUndefined();
-    expect(draft!.title).toBe("Fork of Server title");
     // Members come from server state (2), NOT local draft (5).
     expect(draft!.members).toHaveLength(2);
     for (const m of draft!.members) expect(m.id).toBeUndefined();
 
     expect(useAppState.getState().pendingConflict).toBeNull();
     expect(screen.getByTestId("path-probe")).toHaveTextContent("/experiments/7/compare/new");
+  });
+
+  // Issue #58: Fork-to-new must preserve the user's drafted title rather
+  // than silently overwriting it with `Fork of <server-title>`. The fork is
+  // offered as the SAFE conflict resolution; discarding the user's title
+  // edit undermines that promise.
+  it("Fork preserves the user's drafted title (issue #58)", async () => {
+    const user = userEvent.setup();
+    const server = buildComparison({
+      id: 42, hash: "sha256:server", title: "Reference traces (A3)", members: 2,
+    });
+    seedDraft({ title: "Reference traces (B3)", members: 5 });
+    renderModal();
+    act(() => {
+      useAppState.getState().setPendingConflict(
+        new ConflictError("sha256:server", server),
+      );
+    });
+    await user.click(screen.getByTestId("conflict-fork"));
+
+    const draft = useAppState.getState().activeDraft;
+    expect(draft).not.toBeNull();
+    expect(draft!.title).toBe("Reference traces (B3)");
+  });
+
+  it("Fork falls back to `Fork of <parent>` when the user's drafted title is empty", async () => {
+    const user = userEvent.setup();
+    const server = buildComparison({
+      id: 42, hash: "sha256:server", title: "Server title", members: 2,
+    });
+    // Whitespace-only counts as empty — the helper trims before checking.
+    seedDraft({ title: "   ", members: 5 });
+    renderModal();
+    act(() => {
+      useAppState.getState().setPendingConflict(
+        new ConflictError("sha256:server", server),
+      );
+    });
+    await user.click(screen.getByTestId("conflict-fork"));
+
+    const draft = useAppState.getState().activeDraft;
+    expect(draft!.title).toBe("Fork of Server title");
   });
 
   it("Esc closes the modal without acting (draft preserved)", async () => {

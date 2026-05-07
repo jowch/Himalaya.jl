@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useAppState } from "../state";
 import { useIndices, usePeaks, useExposures, useSamples, useComparisons } from "../queries";
 import { phaseColor } from "../phases";
+import { comparisonHash8 } from "../lib/comparison/contentHash";
 import type { IndexEntry, Peak, Exposure, Sample, ComparisonSummary } from "../api";
 
 type PickerRow =
@@ -17,23 +18,13 @@ interface MentionPickerProps {
   onDismiss: () => void;
 }
 
-/**
- * Eager hash for comparison mentions: first 8 chars of `content_hash`,
- * lowercased. The hash is unambiguous because `content_hash` only changes
- * at submission boundaries — the value at compose time is the value the
- * author intended to cite.
- */
-function comparisonHash8(item: ComparisonSummary): string {
-  return item.content_hash.replace(/^sha256:/, "").slice(0, 8).toLowerCase();
-}
-
 function rowToken(row: PickerRow): string {
   switch (row.kind) {
     case "index":      return `[[index:${row.item.id}]]`;
     case "peak":       return `[[peak:${row.item.id}]]`;
     case "exposure":   return `[[exposure:${row.item.id}]]`;
     case "sample":     return `[[sample:${row.item.id}]]`;
-    case "comparison": return `[[comparison:${row.item.id}@${comparisonHash8(row.item)}]]`;
+    case "comparison": return `[[comparison:${row.item.id}@${comparisonHash8(row.item.content_hash)}]]`;
   }
 }
 
@@ -63,7 +54,7 @@ function rowMeta(row: PickerRow): string | null {
     case "peak":       return `${row.item.source} · prom ${(row.item.prominence ?? 0).toFixed(1)}`;
     case "exposure":   return row.item.status ?? null;
     case "sample":     return null;
-    case "comparison": return `@${comparisonHash8(row.item)}`;
+    case "comparison": return `@${comparisonHash8(row.item.content_hash)}`;
   }
 }
 
