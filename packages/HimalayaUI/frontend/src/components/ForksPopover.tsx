@@ -50,7 +50,14 @@ export function ForksPopover({
                      overflow-y-auto card border border-border bg-bg-elevated
                      shadow-lg p-2"
         >
-          {forks.length === 0 ? (
+          {forksQ.isLoading ? (
+            <div
+              data-testid="comparison-forks-loading"
+              className="text-fg-muted text-xs px-2 py-1 italic"
+            >
+              Loading forks…
+            </div>
+          ) : forks.length === 0 ? (
             <div className="text-fg-muted text-xs px-2 py-1">No forks yet</div>
           ) : (
             <ul className="flex flex-col gap-1">

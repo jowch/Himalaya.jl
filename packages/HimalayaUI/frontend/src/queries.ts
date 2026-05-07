@@ -136,6 +136,25 @@ export function useMemberTraces(exposureIds: number[]): Map<number, api.Trace> {
   return out;
 }
 
+/**
+ * Sibling of `useMemberTraces` that surfaces a single boolean — true when
+ * any underlying trace fetch is in its cold-loading state. Used by the
+ * Compare-page skeleton wrappers to gate plot + gutter.
+ *
+ * Mirrors the boneyard rule (CLAUDE.md): gate on `query.isLoading`, NOT
+ * `isPending` — disabled queries (empty `exposureIds`) and background
+ * refetches must NOT trigger the skeleton.
+ */
+export function useMemberTracesLoading(exposureIds: number[]): boolean {
+  const queries = useQueries({
+    queries: exposureIds.map((id) => ({
+      queryKey: ["exposure", id, "trace"] as const,
+      queryFn: () => api.getTrace(id),
+    })),
+  });
+  return queries.some((q) => q.isLoading);
+}
+
 export function usePeaks(exposureId: number | undefined) {
   return useQuery({
     queryKey: ["exposure", exposureId ?? "none", "peaks"] as const,

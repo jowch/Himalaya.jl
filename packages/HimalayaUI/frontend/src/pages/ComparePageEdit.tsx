@@ -31,12 +31,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
+import { Skeleton } from "boneyard-js/react";
 import { ComparisonSidebar } from "../components/ComparisonSidebar";
 import { ComparisonPicker } from "../components/ComparisonPicker";
 import { MultiTracePlot } from "../components/MultiTracePlot";
 import { MemberMetaGutter } from "../components/MemberMetaGutter";
+import { HintText } from "../components/ui";
 import { useAppState } from "../state";
-import { useSaveComparison, useComparison, useMemberTraces, queryKeys } from "../queries";
+import {
+  useSaveComparison, useComparison, useMemberTraces, useMemberTracesLoading, queryKeys,
+} from "../queries";
 import { computeMemberSnapshot } from "../lib/comparison/snapshot";
 import type {
   Comparison, ComparisonMember, ComparisonMemberInput, Exposure, SaveComparisonBody,
@@ -267,7 +271,19 @@ export function ComparePageEdit(): JSX.Element {
     [plotMembers],
   );
   const traces = useMemberTraces(exposureIds);
+  const tracesLoading = useMemberTracesLoading(exposureIds);
   const resetBandHeights = useAppState((s) => s.resetBandHeights);
+
+  // Boneyard fixture mirrors the dual-column plot+gutter geometry.
+  const editPlotFixture = useMemo(
+    () => (
+      <div className="flex flex-row flex-1 min-h-0 gap-3">
+        <div className="flex-1 min-w-0 border border-border/40 rounded h-full" />
+        <div className="w-[320px] shrink-0 border border-border/40 rounded h-full" />
+      </div>
+    ),
+    [],
+  );
 
   // Phase 9 gap-fix — line-stroke coloring grouping mode + sample-id resolver
   // for edit mode. Mirrors ComparePage so toggling the grouping mode in
@@ -394,7 +410,15 @@ export function ComparePageEdit(): JSX.Element {
             </div>
           ) : (
             <>
-              <div className="flex flex-row flex-1 min-h-0 gap-3">
+              <Skeleton
+                name="compare-edit-plot"
+                className="flex flex-row flex-1 min-h-0 gap-3"
+                loading={tracesLoading}
+                stagger={50}
+                transition={200}
+                fixture={editPlotFixture}
+                fallback={<div className="flex-1 flex items-center justify-center"><HintText>Loading traces…</HintText></div>}
+              >
                 <div ref={plotColRef} className="flex-1 min-w-0">
                   <MultiTracePlot
                     members={plotMembers}
@@ -417,7 +441,7 @@ export function ComparePageEdit(): JSX.Element {
                     mode="edit"
                   />
                 </div>
-              </div>
+              </Skeleton>
               <div className="flex justify-end">
                 <button
                   type="button"

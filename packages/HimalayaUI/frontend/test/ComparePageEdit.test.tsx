@@ -79,6 +79,11 @@ function seedExposure(qc: QueryClient, exposureId: number): void {
   qc.setQueryData(queryKeys.indices(exposureId), []);
   qc.setQueryData(queryKeys.groups(exposureId), []);
   qc.setQueryData(queryKeys.exposure(exposureId), exposure);
+  // Seed trace cache so `useMemberTracesLoading` resolves false and the
+  // `compare-edit-plot` skeleton wraps lift, exposing the gutter testid.
+  qc.setQueryData(["exposure", exposureId, "trace"] as const, {
+    q: [0.1, 0.2], I: [1.0, 0.5], sigma: [0.01, 0.01],
+  });
 }
 
 beforeEach(() => {

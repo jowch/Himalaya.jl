@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useLocation, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
+import { Skeleton } from "boneyard-js/react";
 import { ComparisonSidebar } from "../components/ComparisonSidebar";
 import { MultiTracePlot } from "../components/MultiTracePlot";
 import { MemberMetaGutter } from "../components/MemberMetaGutter";
@@ -22,10 +23,21 @@ import { NeedsReviewBadge } from "../components/NeedsReviewBadge";
 import { LineageBadge } from "../components/LineageBadge";
 import { ForksPopover } from "../components/ForksPopover";
 import { ChatCard } from "../components/ChatCard";
-import { useComparison, useMemberTraces, queryKeys } from "../queries";
+import { HintText } from "../components/ui";
+import { useComparison, useMemberTraces, useMemberTracesLoading, queryKeys } from "../queries";
 import { useAppState } from "../state";
 import { useCurrentUserId } from "../hooks/useCurrentUserId";
 import type { Comparison, ComparisonMember, Exposure } from "../api";
+
+// Boneyard fixture for the compare-review-plot skeleton — a stand-in plot
+// pane + gutter so the captured bones reflect the dual-column geometry the
+// user sees during a true cold fetch (comparison + member-traces both loading).
+const COMPARE_PLOT_FIXTURE = (
+  <div className="flex-1 min-h-0 flex flex-row gap-3">
+    <div className="flex-1 min-w-0 border border-border/40 rounded h-full" />
+    <div className="w-[280px] shrink-0 border border-border/40 rounded h-full" />
+  </div>
+);
 
 export function ComparePage(): JSX.Element {
   const params = useParams<{ eid?: string; id?: string }>();
@@ -150,6 +162,10 @@ function ReviewPlot({ id, eid }: { id: number; eid: number | undefined }): JSX.E
     [members],
   );
   const traces = useMemberTraces(exposureIds);
+  const tracesLoading = useMemberTracesLoading(exposureIds);
+  // Cold-fetch gate. Per CLAUDE.md boneyard rules: gate on `query.isLoading`
+  // not `isPending` so disabled queries / background refetches don't flicker.
+  const plotLoading = compQ.isLoading || tracesLoading;
 
   // Track the plot column's height so the gutter rows align pixel-for-pixel
   // with the plot's y-bands (both consumers share `computeYBands`).
@@ -189,7 +205,15 @@ function ReviewPlot({ id, eid }: { id: number; eid: number | undefined }): JSX.E
         )}
         <ForksPopover comparisonId={id} experimentId={eid} />
       </div>
-      <div className="flex-1 min-h-0 flex flex-row gap-3">
+      <Skeleton
+        name="compare-review-plot"
+        className="flex-1 min-h-0 flex flex-row gap-3"
+        loading={plotLoading}
+        stagger={50}
+        transition={200}
+        fixture={COMPARE_PLOT_FIXTURE}
+        fallback={<div className="flex-1 flex items-center justify-center"><HintText>Loading comparison…</HintText></div>}
+      >
         <div ref={plotColRef} className="flex-1 min-w-0">
           <MultiTracePlot
             members={members}
@@ -209,7 +233,7 @@ function ReviewPlot({ id, eid }: { id: number; eid: number | undefined }): JSX.E
         >
           <MemberMetaGutter members={members} panelHeight={panelHeight} mode="review" />
         </div>
-      </div>
+      </Skeleton>
       <div
         data-testid="compare-review-chat"
         className="h-[280px] shrink-0 border-t border-border -mx-4 -mb-4 mt-1"

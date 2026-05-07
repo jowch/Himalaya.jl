@@ -14,8 +14,30 @@
  */
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { Skeleton } from "boneyard-js/react";
 import { useComparisons } from "../queries";
 import type { ComparisonSummary } from "../api";
+import { HintText } from "./ui";
+
+// Mock fixture for boneyard layout capture. Renders a few canonical rows so
+// the captured bones reflect the realistic geometry the user will see during
+// a true cold fetch.
+const COMPARISON_SIDEBAR_FIXTURE = (
+  <ul className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-1">
+    {[
+      { id: 1, title: "Pn3m vs Im3m sweep" },
+      { id: 2, title: "Hex run B comparison" },
+      { id: 3, title: "Lipid:water ratio" },
+    ].map((c) => (
+      <li key={c.id}>
+        <div className="w-full text-left px-2 py-1.5 rounded text-sm text-fg-muted">
+          <div className="font-medium truncate">{c.title}</div>
+          <div className="text-xs text-fg-dim truncate">3 traces</div>
+        </div>
+      </li>
+    ))}
+  </ul>
+);
 
 interface Props {
   experimentId: number | undefined;
@@ -147,6 +169,15 @@ export function ComparisonSidebar({
         </button>
       </div>
 
+      <Skeleton
+        name="comparison-sidebar"
+        className="flex-1 min-h-0 flex flex-col"
+        loading={listQ.isLoading}
+        stagger={50}
+        transition={200}
+        fixture={COMPARISON_SIDEBAR_FIXTURE}
+        fallback={<div className="p-3"><HintText>Loading comparisons…</HintText></div>}
+      >
       <ul className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-1">
         {filtered.length === 0 ? (
           <li
@@ -187,6 +218,7 @@ export function ComparisonSidebar({
           })
         )}
       </ul>
+      </Skeleton>
     </div>
   );
 }
