@@ -375,14 +375,14 @@ function register_comparisons_routes!()
         if user_id === nothing
             return _json_error(401, "X-Username header required")
         end
-        # Existence check stays OUTSIDE with_idempotency so a 404 is not
-        # cached — a future pin attempt after the comparison gets re-created
-        # at a new id should not echo a stale error response. Same pattern
-        # the submit/delete routes use.
-        if current_content_hash(db, id) === nothing
-            return _json_error(404, "comparison not found")
-        end
         return with_idempotency(db, req) do
+            # Existence check inside with_idempotency for convention parity
+            # with submit/delete. 4xx responses aren't cached by the wrapper,
+            # so a future pin attempt after re-creation at a new id still
+            # gets a fresh existence probe.
+            if current_content_hash(db, id) === nothing
+                return _json_error(404, "comparison not found")
+            end
             payload = Dict{Symbol, Any}(:comparison_id => id)
             result = apply_event!(InTransaction(), db, req;
                 kind        = "comparison_pinned",

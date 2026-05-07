@@ -14,7 +14,9 @@
  * the focus-gated `QNumInput` pattern from `PlotCard.tsx` so external
  * state changes don't interrupt mid-edit.
  *
- * Stale members surface `data-stale="true"` and an inline warning icon.
+ * Stale members surface a present-when-true `data-stale` attribute (matches
+ * the codebase convention used by `data-active`, `data-pinned`, etc.) plus
+ * an inline warning icon.
  */
 import { useCallback, useEffect, useState } from "react";
 import type { ComparisonMember } from "../api";
@@ -168,8 +170,8 @@ export function MemberMetaRow(props: MemberMetaRowProps): JSX.Element {
     <div
       data-testid="member-meta-row"
       data-member-id={String(member.id)}
-      data-stale={member.is_stale ? "true" : "false"}
-      data-highlighted={isPinned ? "true" : "false"}
+      {...(member.is_stale ? { "data-stale": "" } : {})}
+      {...(isPinned ? { "data-highlighted": "" } : {})}
       // Tab into the row only when there's a confirmed index to highlight —
       // otherwise pressing Tab past it is dead air.
       {...(canHighlight ? { tabIndex: 0 } : {})}

@@ -234,9 +234,10 @@ export function ComparePageEdit(): JSX.Element {
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === "Escape") {
         // Don't intercept Esc when a modal (picker, conflict, nav) is open
-        // — those have their own Esc handling. The presence of an open
-        // dialog with role="dialog" is the cleanest cross-modal probe.
-        const openDialog = document.querySelector('[role="dialog"]');
+        // — those have their own Esc handling. `:not([hidden])` filters out
+        // dialogs that exist in the DOM but are not currently presented (a
+        // future regression where a hidden modal silently swallows Esc).
+        const openDialog = document.querySelector('[role="dialog"]:not([hidden])');
         if (openDialog) return;
         e.preventDefault();
         handleCancel();

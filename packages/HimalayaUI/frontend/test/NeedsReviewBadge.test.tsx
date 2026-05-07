@@ -260,7 +260,7 @@ describe("NeedsReviewBadge — author clickability via ComparePage", () => {
 });
 
 describe("NeedsReviewBadge — per-member data-stale", () => {
-  it("MemberMetaRow surfaces data-stale=true on stale members", async () => {
+  it("MemberMetaRow surfaces data-stale on stale members", async () => {
     const { MemberMetaRow } = await import("../src/components/MemberMetaRow");
     render(
       <MemberMetaRow
@@ -277,11 +277,11 @@ describe("NeedsReviewBadge — per-member data-stale", () => {
       />,
     );
     const row = screen.getByTestId("member-meta-row");
-    expect(row).toHaveAttribute("data-stale", "true");
+    expect(row).toHaveAttribute("data-stale");
     expect(screen.getByTestId("member-meta-stale-icon")).toBeInTheDocument();
   });
 
-  it("MemberMetaRow data-stale=false when not stale", async () => {
+  it("MemberMetaRow data-stale absent when not stale", async () => {
     const { MemberMetaRow } = await import("../src/components/MemberMetaRow");
     render(
       <MemberMetaRow
@@ -297,6 +297,6 @@ describe("NeedsReviewBadge — per-member data-stale", () => {
         top={0} height={50} mode="review"
       />,
     );
-    expect(screen.getByTestId("member-meta-row")).toHaveAttribute("data-stale", "false");
+    expect(screen.getByTestId("member-meta-row")).not.toHaveAttribute("data-stale");
   });
 });

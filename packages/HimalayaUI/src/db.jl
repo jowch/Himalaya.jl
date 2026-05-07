@@ -440,9 +440,12 @@ pins disappear; if a comparison is deleted, the pin disappears with it.
 This matches the expectation that a "pin" is purely metadata about an
 otherwise-unaffected user/comparison pair.
 
-Pin/unpin is a trivial idempotent state change (toggle), so the routes
-do not wrap in `with_idempotency` — repeated POSTs simply re-affirm the
-"pinned" state. The `pinned_at` timestamp captures user-perceived
+Pin/unpin routes wrap in `with_idempotency` (the wrapper provides the
+outer SQLite tx that `apply_event!(InTransaction(), …)` requires); when
+no `X-Client-Op-Id` header is present the wrapper falls through, and
+repeated POSTs simply re-affirm the "pinned" state via
+`INSERT OR IGNORE` / idempotent `DELETE`. View-table state stays
+correct either way. The `pinned_at` timestamp captures user-perceived
 ordering for display in the sidebar (most-recently-pinned first).
 """
 function migrate_comparison_pins!(db::SQLite.DB)

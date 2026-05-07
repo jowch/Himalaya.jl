@@ -1,8 +1,10 @@
+import { useRef } from "react";
 import { useQuery, useQueries, useMutation, useQueryClient } from "@tanstack/react-query";
 import { authOpts } from "./lib/authOpts";
 import * as api from "./api";
 import { useAppState } from "./state";
 import { getClientId } from "./lib/clientId";
+import { newClientOpId } from "./lib/clientOpId";
 import { useQueueMutation } from "./lib/queue/useQueueMutation";
 import {
   updateSampleMutator,
@@ -132,12 +134,29 @@ export function useMemberTraces(exposureIds: number[]): Map<number, api.Trace> {
       queryFn: () => api.getTrace(id),
     })),
   });
-  const out = new Map<number, api.Trace>();
+  // Stable Map across renders: TanStack reuses query.data refs when the
+  // underlying row hasn't changed, so we keep returning the same Map until
+  // some (id, dataRef) pair actually changes. Without this, every parent
+  // re-render mints a fresh Map and any downstream useCallback that depends
+  // on it tears down + replots — wheel/brush smoothness in MultiTracePlot
+  // depends on this.
+  const stableRef = useRef<Map<number, api.Trace>>(new Map());
+  const next = new Map<number, api.Trace>();
   for (let i = 0; i < exposureIds.length; i++) {
-    const q = queries[i];
-    if (q?.data) out.set(exposureIds[i]!, q.data);
+    const data = queries[i]?.data;
+    if (data) next.set(exposureIds[i]!, data);
   }
-  return out;
+  let same = stableRef.current.size === next.size;
+  if (same) {
+    for (const [k, v] of next) {
+      if (stableRef.current.get(k) !== v) {
+        same = false;
+        break;
+      }
+    }
+  }
+  if (!same) stableRef.current = next;
+  return stableRef.current;
 }
 
 /**
@@ -570,7 +589,12 @@ export function usePinComparison() {
   const qc = useQueryClient();
   const username = useAppState((s) => s.username);
   return useMutation({
-    mutationFn: (id: number) => api.pinComparison(id, authOpts(username, CLIENT_ID)),
+    // Mint clientOpId per call (not per hook mount) so retries reuse one
+    // idempotency key — without it, a network-blip retry would write a
+    // duplicate `comparison_pinned` row in user_actions even though the
+    // view-table state is already correct.
+    mutationFn: (id: number) =>
+      api.pinComparison(id, authOpts(username, CLIENT_ID, newClientOpId())),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.comparisonPins }),
   });
 }
@@ -579,7 +603,8 @@ export function useUnpinComparison() {
   const qc = useQueryClient();
   const username = useAppState((s) => s.username);
   return useMutation({
-    mutationFn: (id: number) => api.unpinComparison(id, authOpts(username, CLIENT_ID)),
+    mutationFn: (id: number) =>
+      api.unpinComparison(id, authOpts(username, CLIENT_ID, newClientOpId())),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.comparisonPins }),
   });
 }

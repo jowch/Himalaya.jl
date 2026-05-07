@@ -94,17 +94,17 @@ describe("MemberMetaRow — review mode", () => {
     expect(screen.getByText(/no index/i)).toBeInTheDocument();
   });
 
-  it("data-stale='true' when member.is_stale", () => {
+  it("data-stale present when member.is_stale", () => {
     const m = makeMember({ is_stale: true });
     render(<MemberMetaRow member={m} top={0} height={50} mode="review" />);
-    expect(screen.getByTestId("member-meta-row")).toHaveAttribute("data-stale", "true");
+    expect(screen.getByTestId("member-meta-row")).toHaveAttribute("data-stale");
     // Inline stale indicator
     expect(screen.getByTestId("member-meta-stale-icon")).toBeInTheDocument();
   });
 
-  it("data-stale='false' when member.is_stale === false", () => {
+  it("data-stale absent when member.is_stale === false", () => {
     render(<MemberMetaRow member={makeMember()} top={0} height={50} mode="review" />);
-    expect(screen.getByTestId("member-meta-row")).toHaveAttribute("data-stale", "false");
+    expect(screen.getByTestId("member-meta-row")).not.toHaveAttribute("data-stale");
   });
 
   it("uses label_override when present, else falls back to a default label", () => {
