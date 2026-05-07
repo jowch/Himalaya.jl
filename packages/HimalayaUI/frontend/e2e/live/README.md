@@ -26,7 +26,7 @@ HIMALAYA_DB_PATH=/tmp/himalaya-test/himalaya.db \
 
 # Terminal 2 — Vite on port 5180, proxying /api → :8090
 (cd packages/HimalayaUI/frontend && \
-   VITE_BACKEND_PORT=8090 npm run dev -- --host 127.0.0.1 --port 5180)
+   VITE_API_PORT=8090 npm run dev -- --host 127.0.0.1 --port 5180)
 
 # Terminal 3 — run the live tests
 (cd packages/HimalayaUI/frontend && npm run e2e:live)
