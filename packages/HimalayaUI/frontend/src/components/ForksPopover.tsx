@@ -17,17 +17,27 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useComparisonForks } from "../queries";
+import { comparePath, type CompareScope } from "../lib/comparison/routes";
 import type { ComparisonSummary } from "../api";
 
 export interface ForksPopoverProps {
   comparisonId: number;
   /** Experiment context (undefined → global /compare/all routing for forks). */
   experimentId: number | undefined;
+  /**
+   * Explicit scope override; when omitted, falls back to eid-derived. The
+   * Compare page passes scope so /compare/all/:id's fork list deep-links
+   * each child to /compare/all/:childId rather than possibly jumping to
+   * an experiment route.
+   */
+  scope?: CompareScope;
 }
 
 export function ForksPopover({
-  comparisonId, experimentId,
+  comparisonId, experimentId, scope,
 }: ForksPopoverProps): JSX.Element {
+  const resolvedScope: CompareScope = scope
+    ?? (experimentId !== undefined ? "experiment" : "all");
   const [open, setOpen] = useState(false);
   const forksQ = useComparisonForks(comparisonId);
   const forks: ComparisonSummary[] = forksQ.data ?? [];
@@ -68,11 +78,11 @@ export function ForksPopover({
                   className="text-xs"
                 >
                   <Link
-                    to={
-                      experimentId !== undefined
-                        ? `/experiments/${experimentId}/compare/${f.id}`
-                        : "/compare/all"
-                    }
+                    to={comparePath({
+                      scope: resolvedScope,
+                      eid: experimentId,
+                      id: f.id,
+                    })}
                     className="block px-2 py-1 rounded hover:bg-bg
                                text-fg hover:text-accent"
                     onClick={() => setOpen(false)}

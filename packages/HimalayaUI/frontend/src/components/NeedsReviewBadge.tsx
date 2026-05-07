@@ -18,10 +18,19 @@
  */
 import { useNavigate } from "react-router-dom";
 import { useCurrentUserId } from "../hooks/useCurrentUserId";
+import { comparePath, type CompareScope } from "../lib/comparison/routes";
 
 export interface NeedsReviewBadgeProps {
   comparisonId: number;
   experimentId: number | undefined;
+  /**
+   * "experiment" → /experiments/:eid/compare/:id/edit
+   * "all"        → /compare/all/:id/edit
+   * Defaults to "experiment" when an eid is present (backward compat); the
+   * Compare page passes scope explicitly so /compare/all routing stays
+   * deep-linkable on the global listing.
+   */
+  scope?: CompareScope;
   /** Numeric user id of the author. Pass null for unauthored comparisons. */
   authorUserId: number | null;
 }
@@ -30,7 +39,7 @@ const TOOLTIP_TEXT =
   "Underlying analysis has changed since this comparison was last submitted. Edit and re-submit to refresh.";
 
 export function NeedsReviewBadge(
-  { comparisonId, experimentId, authorUserId }: NeedsReviewBadgeProps,
+  { comparisonId, experimentId, scope, authorUserId }: NeedsReviewBadgeProps,
 ): JSX.Element {
   const navigate = useNavigate();
   const currentUserId = useCurrentUserId();
@@ -39,15 +48,19 @@ export function NeedsReviewBadge(
     && currentUserId !== undefined
     && currentUserId === authorUserId;
 
+  const resolvedScope: CompareScope = scope
+    ?? (experimentId !== undefined ? "experiment" : "all");
+
   const onClick = (): void => {
     if (!isAuthor) return;
-    if (experimentId !== undefined) {
-      navigate(`/experiments/${experimentId}/compare/${comparisonId}/edit`);
-    } else {
-      // Global scope still has an edit route via the all-listing page;
-      // route shape mirrors `ComparePageEdit`'s navigation helpers.
-      navigate(`/compare/all`);
-    }
+    navigate(
+      comparePath({
+        scope: resolvedScope,
+        eid: experimentId,
+        id: comparisonId,
+        edit: true,
+      }),
+    );
   };
 
   // Both clickable + non-clickable variants share visual language; only the

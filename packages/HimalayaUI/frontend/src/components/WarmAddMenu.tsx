@@ -33,6 +33,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAppState } from "../state";
+import { comparePath } from "../lib/comparison/routes";
 
 interface Props {
   /** The exposure currently being viewed in Inspect; undefined disables the trigger. */
@@ -86,11 +87,17 @@ export function WarmAddMenu({
     const now = new Date().toISOString().slice(0, 10);
     setDraftTitle(`Comparison ${now}`);
     setOpen(false);
-    if (experimentId !== undefined) {
-      navigate(`/experiments/${experimentId}/compare/new`);
-    } else {
-      navigate(`/compare/all`);
-    }
+    // No experiment context → use the global create route
+    // (/compare/all/new) so the user has somewhere to land. Comparisons
+    // have no FK to experiments per spec, so the global vs experiment
+    // scope only affects which sidebar listing they end up in.
+    navigate(
+      comparePath({
+        scope: experimentId !== undefined ? "experiment" : "all",
+        eid: experimentId,
+        isNew: true,
+      }),
+    );
   };
 
   const onPickRecent = (): void => {

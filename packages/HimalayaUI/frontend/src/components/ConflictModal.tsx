@@ -40,6 +40,7 @@ import { useAppState } from "../state";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { useSaveComparison } from "../queries";
 import { computeMemberSnapshot } from "../lib/comparison/snapshot";
+import { comparePath, type CompareScope } from "../lib/comparison/routes";
 import type {
   Comparison, ComparisonMemberInput, SaveComparisonBody,
 } from "../api";
@@ -51,6 +52,16 @@ function extractEid(pathname: string): number | undefined {
   if (!m) return undefined;
   const n = Number(m[1]);
   return Number.isFinite(n) ? n : undefined;
+}
+
+/**
+ * Derive the compare scope from the current pathname. Mirrors the same
+ * branching `ComparePage` / `ComparePageEdit` use so post-Discard /
+ * post-Fork navigation stays in the user's current scope (global edits
+ * stay on /compare/all/...; experiment edits stay on /experiments/:eid/...).
+ */
+function deriveScope(pathname: string): CompareScope {
+  return pathname.startsWith("/compare/all") ? "all" : "experiment";
 }
 
 /**
@@ -121,19 +132,18 @@ export function ConflictModal(): JSX.Element | null {
   const serverHash:  string | null     = conflict?.current_hash  ?? null;
 
   const eid = useMemo(() => extractEid(location.pathname), [location.pathname]);
+  const scope = useMemo(() => deriveScope(location.pathname), [location.pathname]);
 
   const goToReview = useCallback(
     (comparisonId: number) => {
-      if (eid !== undefined) navigate(`/experiments/${eid}/compare/${comparisonId}`);
-      else                   navigate("/compare/all");
+      navigate(comparePath({ scope, eid, id: comparisonId }));
     },
-    [navigate, eid],
+    [navigate, scope, eid],
   );
 
   const goToNewDraft = useCallback(() => {
-    if (eid !== undefined) navigate(`/experiments/${eid}/compare/new`);
-    else                   navigate("/compare/all");
-  }, [navigate, eid]);
+    navigate(comparePath({ scope, eid, isNew: true }));
+  }, [navigate, scope, eid]);
 
   // Esc and outside-click both close the modal WITHOUT committing — the
   // local draft is preserved. This matches the design call (non-destructive

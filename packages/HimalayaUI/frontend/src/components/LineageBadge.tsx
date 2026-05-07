@@ -21,18 +21,29 @@
  *     when the parent still exists).
  */
 import { Link } from "react-router-dom";
+import { comparePath, type CompareScope } from "../lib/comparison/routes";
 import type { Comparison } from "../api";
 
 export interface LineageBadgeProps {
   comparison: Comparison;
   /** Experiment context (undefined → global /compare/all). */
   experimentId: number | undefined;
+  /**
+   * Scope explicitly controls the URL prefix; when omitted, falls back to
+   * the eid-derived default (experiment if eid, else "all"). Compare pages
+   * pass `scope` so the link from /compare/all/:id deep-links to the
+   * parent's `/compare/all/:parentId` rather than jumping into experiment
+   * scope when the parent happens to belong to one.
+   */
+  scope?: CompareScope;
 }
 
 export function LineageBadge({
-  comparison, experimentId,
+  comparison, experimentId, scope,
 }: LineageBadgeProps): JSX.Element | null {
   const { forked_from_id, forked_at_hash, forked_from_title } = comparison;
+  const resolvedScope: CompareScope = scope
+    ?? (experimentId !== undefined ? "experiment" : "all");
 
   // Not a fork at all.
   if (forked_from_id === null && forked_at_hash === null) return null;
@@ -54,9 +65,11 @@ export function LineageBadge({
   }
 
   // Live parent: build the link and surface "Forked from <title>".
-  const parentHref = experimentId !== undefined
-    ? `/experiments/${experimentId}/compare/${forked_from_id}`
-    : "/compare/all";
+  const parentHref = comparePath({
+    scope: resolvedScope,
+    eid: experimentId,
+    id: forked_from_id,
+  });
   const parentTitle = forked_from_title ?? "comparison";
   return (
     <span

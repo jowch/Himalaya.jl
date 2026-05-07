@@ -29,7 +29,7 @@
  * recovery) if the draft isn't already this id.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { Skeleton } from "boneyard-js/react";
 import { ComparisonSidebar } from "../components/ComparisonSidebar";
@@ -42,6 +42,7 @@ import {
   useSaveComparison, useComparison, useMemberTraces, useMemberTracesLoading, queryKeys,
 } from "../queries";
 import { computeMemberSnapshot } from "../lib/comparison/snapshot";
+import { comparePath } from "../lib/comparison/routes";
 import type {
   Comparison, ComparisonMember, ComparisonMemberInput, Exposure, SaveComparisonBody,
 } from "../api";
@@ -78,10 +79,16 @@ function draftToMember(d: DraftMember): ComparisonMember {
 export function ComparePageEdit(): JSX.Element {
   const params = useParams<{ eid?: string; id?: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const qc = useQueryClient();
 
   const eid = params.eid !== undefined ? Number(params.eid) : undefined;
   const id  = params.id  !== undefined ? Number(params.id)  : undefined;
+  // Pathname-derived scope mirrors ComparePage. The picker / sidebar /
+  // post-save navigation all branch on this so /compare/all/:id/edit stays
+  // in the global scope rather than silently jumping back to /compare/all.
+  const scope: "all" | "experiment" =
+    location.pathname.startsWith("/compare/all") ? "all" : "experiment";
 
   const draft = useAppState((s) => s.activeDraft);
   const startNewDraft       = useAppState((s) => s.startNewDraft);
@@ -127,27 +134,24 @@ export function ComparePageEdit(): JSX.Element {
 
   const goToReview = useCallback(
     (newId: number) => {
-      if (eid !== undefined) navigate(`/experiments/${eid}/compare/${newId}`);
-      else navigate(`/compare/all`);
+      navigate(comparePath({ scope, eid, id: newId }));
     },
-    [navigate, eid],
+    [navigate, scope, eid],
   );
 
   const goToList = useCallback(() => {
-    if (eid !== undefined) navigate(`/experiments/${eid}/compare`);
-    else navigate(`/compare/all`);
-  }, [navigate, eid]);
+    navigate(comparePath({ scope, eid }));
+  }, [navigate, scope, eid]);
 
   const handleCancel = useCallback(() => {
     if (id !== undefined) {
       // Cancel from edit-existing → return to that comparison's review page.
-      if (eid !== undefined) navigate(`/experiments/${eid}/compare/${id}`);
-      else navigate(`/compare/all`);
+      navigate(comparePath({ scope, eid, id }));
     } else {
       // Cancel from create → return to list.
       goToList();
     }
-  }, [navigate, id, eid, goToList]);
+  }, [navigate, id, scope, eid, goToList]);
 
   const handleDiscard = useCallback(() => {
     discardDraft();
@@ -248,8 +252,6 @@ export function ComparePageEdit(): JSX.Element {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [handleCancel, handleSave, draft, save.isPending]);
-
-  const scope: "all" | "experiment" = eid !== undefined ? "experiment" : "all";
 
   // Phase 5 Task 5.2 — local state for the picker open/close. Picker open
   // state is purely client-side, no need for Zustand.

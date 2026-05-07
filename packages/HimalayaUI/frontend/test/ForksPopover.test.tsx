@@ -111,7 +111,7 @@ describe("ForksPopover", () => {
     expect(popover.textContent?.toLowerCase()).toContain("no forks yet");
   });
 
-  it("global scope routes forks to /compare/all", () => {
+  it("global scope deep-links forks to /compare/all/:forkId", () => {
     renderPopover({
       parentId: 100,
       experimentId: undefined,
@@ -119,9 +119,10 @@ describe("ForksPopover", () => {
     });
     fireEvent.click(screen.getByTestId("comparison-forks-trigger"));
     const link = screen.getByTestId("comparison-forks-row").querySelector("a");
-    // No experiment context means we can't deep-link to a per-experiment
-    // review URL — fall back to the global scope.
-    expect(link).toHaveAttribute("href", "/compare/all");
+    // Phase 4 follow-up: the global scope has /compare/all/:id, so each
+    // fork row deep-links directly rather than punting the user to the
+    // empty global listing.
+    expect(link).toHaveAttribute("href", "/compare/all/200");
   });
 
   it("clicking the trigger again closes the popover", () => {

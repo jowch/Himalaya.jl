@@ -18,6 +18,7 @@ import { Skeleton } from "boneyard-js/react";
 import {
   useComparisons, useComparisonPins, usePinComparison, useUnpinComparison,
 } from "../queries";
+import { comparePath } from "../lib/comparison/routes";
 import type { ComparisonSummary } from "../api";
 import { HintText } from "./ui";
 
@@ -114,19 +115,32 @@ export function ComparisonSidebar({
   };
   const onPickAll = (): void => navigate("/compare/all");
   const onNew = (): void => {
-    if (experimentId !== undefined) navigate(`/experiments/${experimentId}/compare/new`);
-    else navigate("/compare/all"); // no experiment context → go to global list (new requires :eid)
+    // From the global scope we now have a real /compare/all/new route, so
+    // creating without an experiment context lands somewhere coherent
+    // (was previously a falsey navigate to /compare/all).
+    navigate(
+      comparePath({
+        scope: scope === "experiment" && experimentId !== undefined
+          ? "experiment"
+          : "all",
+        eid: experimentId,
+        isNew: true,
+      }),
+    );
   };
   const onPickRow = (id: number): void => {
-    if (scope === "experiment" && experimentId !== undefined) {
-      navigate(`/experiments/${experimentId}/compare/${id}`);
-    } else {
-      // Global scope → still navigate to the experiment-scoped review URL
-      // is impossible without :eid; for now, stay on /compare/all and rely
-      // on Phase 5's picker modal to land users on the right URL. We keep
-      // the click as a no-op selector to surface the row visually.
-      navigate(`/compare/all`);
-    }
+    // Both scopes deep-link directly to the comparison's review page now
+    // — global scope routes to /compare/all/:id (Phase 4 follow-up); the
+    // earlier "stay on /compare/all and let the picker land you" hack is gone.
+    navigate(
+      comparePath({
+        scope: scope === "experiment" && experimentId !== undefined
+          ? "experiment"
+          : "all",
+        eid: experimentId,
+        id,
+      }),
+    );
   };
 
   const dataScope: "this" | "all" = scope === "experiment" ? "this" : "all";

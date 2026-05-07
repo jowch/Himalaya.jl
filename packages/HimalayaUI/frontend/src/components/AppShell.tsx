@@ -92,6 +92,17 @@ export function AppShell(): JSX.Element {
         <Route path="/experiments/:eid/compare/:id" element={<ComparePage />} />
         <Route path="/experiments/:eid/compare/:id/edit" element={<ComparePageEdit />} />
         <Route path="/compare/all" element={<ComparePage />} />
+        {/*
+          Global (experiment-less) deep-link routes — mirror the experiment-
+          scoped review/edit/new triple so picking a comparison from
+          /compare/all lands on its review page (not the empty list). New
+          drafts created from /compare/all/new have no `experiment_id`
+          association on the backend (comparisons aren't FK'd to experiments
+          per spec); the global picker context applies.
+        */}
+        <Route path="/compare/all/new" element={<ComparePageEdit />} />
+        <Route path="/compare/all/:id" element={<ComparePage />} />
+        <Route path="/compare/all/:id/edit" element={<ComparePageEdit />} />
         <Route path="*" element={<ZustandShellPage />} />
       </Routes>
       <NavModal />

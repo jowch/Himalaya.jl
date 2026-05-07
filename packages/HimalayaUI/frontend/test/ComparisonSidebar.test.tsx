@@ -87,6 +87,32 @@ function renderSidebar(opts: {
             }
           />
           <Route
+            path="/compare/all/new"
+            element={
+              <>
+                <ComparisonSidebar
+                  experimentId={undefined}
+                  scope="all"
+                  activeComparisonId={opts.activeId}
+                />
+                {opts.probe && <PathProbe />}
+              </>
+            }
+          />
+          <Route
+            path="/compare/all/:id"
+            element={
+              <>
+                <ComparisonSidebar
+                  experimentId={undefined}
+                  scope="all"
+                  activeComparisonId={opts.activeId}
+                />
+                {opts.probe && <PathProbe />}
+              </>
+            }
+          />
+          <Route
             path="/experiments/:eid/compare/new"
             element={
               <>
@@ -229,6 +255,35 @@ describe("ComparisonSidebar", () => {
     });
     await user.click(screen.getByTestId("comparison-new"));
     expect(screen.getByTestId("path-probe")).toHaveTextContent("/experiments/7/compare/new");
+  });
+
+  // Phase 4 follow-up: /compare/all has deep-link routes for review + new.
+  // Before this fix, picking a row from the global sidebar fell through
+  // to /compare/all (the empty list) regardless of which row was clicked.
+
+  it("'+ New' from global scope navigates to /compare/all/new", async () => {
+    const user = userEvent.setup();
+    qc.setQueryData(queryKeys.comparisons("all"), []);
+    renderSidebar({
+      qc, scope: "all", experimentId: undefined,
+      initialPath: "/compare/all", probe: true,
+    });
+    await user.click(screen.getByTestId("comparison-new"));
+    expect(screen.getByTestId("path-probe")).toHaveTextContent("/compare/all/new");
+  });
+
+  it("clicking a row in global scope deep-links to /compare/all/:id", async () => {
+    const user = userEvent.setup();
+    qc.setQueryData(queryKeys.comparisons("all"), [ROW_OLD, ROW_NEW]);
+    renderSidebar({
+      qc, scope: "all", experimentId: undefined,
+      initialPath: "/compare/all", probe: true,
+    });
+    const row = screen.getAllByTestId("comparison-list-item").find(
+      (r) => r.getAttribute("data-comparison-id") === "3",
+    )!;
+    await user.click(row.querySelector("button")!);
+    expect(screen.getByTestId("path-probe")).toHaveTextContent("/compare/all/3");
   });
 
   // ─── Pin tests (Phase 13, Task 13.2) ──────────────────────────────────────

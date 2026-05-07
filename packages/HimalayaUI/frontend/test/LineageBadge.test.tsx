@@ -101,7 +101,10 @@ describe("LineageBadge", () => {
     expect(screen.getByTestId("comparison-lineage-view-parent")).toBeInTheDocument();
   });
 
-  it("uses /compare/all when experimentId is undefined (global scope)", () => {
+  it("deep-links to /compare/all/:parentId when experimentId is undefined (global scope)", () => {
+    // Phase 4 follow-up: the global scope now has /compare/all/:id, so
+    // "view parent →" deep-links to the parent's review page rather than
+    // dumping the user back to the empty list.
     const cmp = makeComparison({
       forked_from_id: 42,
       forked_at_hash: "sha256:parent",
@@ -115,6 +118,6 @@ describe("LineageBadge", () => {
       </QueryClientProvider>,
     );
     const link = screen.getByTestId("comparison-lineage-view-parent");
-    expect(link).toHaveAttribute("href", "/compare/all");
+    expect(link).toHaveAttribute("href", "/compare/all/42");
   });
 });

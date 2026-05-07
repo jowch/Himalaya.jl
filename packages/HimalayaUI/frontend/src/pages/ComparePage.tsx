@@ -27,6 +27,7 @@ import { HintText } from "../components/ui";
 import { useComparison, useMemberTraces, useMemberTracesLoading, queryKeys } from "../queries";
 import { useAppState } from "../state";
 import { useCurrentUserId } from "../hooks/useCurrentUserId";
+import { comparePath, type CompareScope } from "../lib/comparison/routes";
 import type { Comparison, ComparisonMember, Exposure } from "../api";
 
 // Boneyard fixture for the compare-review-plot skeleton — a stand-in plot
@@ -71,7 +72,7 @@ export function ComparePage(): JSX.Element {
             <span className="font-medium text-fg ml-1">+ New</span> to create one.
           </div>
         ) : (
-          <ReviewPlot id={id} eid={eid} />
+          <ReviewPlot id={id} eid={eid} scope={scope} />
         )}
       </section>
     </div>
@@ -83,7 +84,13 @@ export function ComparePage(): JSX.Element {
  * comparison; live `(q, I)` traces are fetched in parallel via
  * `useMemberTraces`.
  */
-function ReviewPlot({ id, eid }: { id: number; eid: number | undefined }): JSX.Element {
+function ReviewPlot({
+  id, eid, scope,
+}: {
+  id: number;
+  eid: number | undefined;
+  scope: CompareScope;
+}): JSX.Element {
   const compQ = useComparison(id);
   // Per-comparison zoom keying — selecting only the slice for `id` so this
   // component does not re-render on zoom changes to other comparisons.
@@ -194,16 +201,21 @@ function ReviewPlot({ id, eid }: { id: number; eid: number | undefined }): JSX.E
           <NeedsReviewBadge
             comparisonId={id}
             experimentId={eid}
+            scope={scope}
             authorUserId={authorUserId}
           />
         )}
         {compQ.data && (
-          <EditOrForkButton comparison={compQ.data} experimentId={eid} />
+          <EditOrForkButton
+            comparison={compQ.data}
+            experimentId={eid}
+            scope={scope}
+          />
         )}
         {compQ.data && (
-          <LineageBadge comparison={compQ.data} experimentId={eid} />
+          <LineageBadge comparison={compQ.data} experimentId={eid} scope={scope} />
         )}
-        <ForksPopover comparisonId={id} experimentId={eid} />
+        <ForksPopover comparisonId={id} experimentId={eid} scope={scope} />
       </div>
       <Skeleton
         name="compare-review-plot"
@@ -259,10 +271,11 @@ function ReviewPlot({ id, eid }: { id: number; eid: number | undefined }): JSX.E
  * fields per Phase 3's `SaveComparisonBody` contract.
  */
 function EditOrForkButton({
-  comparison, experimentId,
+  comparison, experimentId, scope,
 }: {
   comparison: Comparison;
   experimentId: number | undefined;
+  scope: CompareScope;
 }): JSX.Element {
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -278,11 +291,7 @@ function EditOrForkButton({
   if (isAuthor) {
     const onEdit = (): void => {
       loadDraft(comparison, qc);
-      if (experimentId !== undefined) {
-        navigate(`/experiments/${experimentId}/compare/${comparison.id}/edit`);
-      } else {
-        navigate("/compare/all");
-      }
+      navigate(comparePath({ scope, eid: experimentId, id: comparison.id, edit: true }));
     };
     return (
       <button
@@ -299,11 +308,7 @@ function EditOrForkButton({
 
   const onFork = (): void => {
     startFork(comparison, qc);
-    if (experimentId !== undefined) {
-      navigate(`/experiments/${experimentId}/compare/new`);
-    } else {
-      navigate("/compare/all");
-    }
+    navigate(comparePath({ scope, eid: experimentId, isNew: true }));
   };
   return (
     <button
