@@ -21,7 +21,8 @@ import { setToastImpl } from "../../src/lib/toast";
 import { pendingDeferreds } from "../../src/lib/queue/deferred";
 import { ConflictError } from "../../src/api";
 import type { Comparison, ComparisonMemberInput } from "../../src/api";
-import { queryKeys } from "../../src/queries";
+import { queryKeys, useSaveComparison } from "../../src/queries";
+import { useAppState } from "../../src/state";
 import { makeClient } from "../test-utils";
 
 const SNAP = {
@@ -309,6 +310,30 @@ describe("saveComparisonMutator — useQueueMutation suppresses toast on 409 Con
     expect(toastCalls).toEqual([]);
     // Sanity: the typed throw still landed on `error` for the modal to read.
     expect(result.current.error).toBeInstanceOf(ConflictError);
+  });
+
+  it("on 409, useSaveComparison populates Zustand `pendingConflict` (Phase 12 bridge)", async () => {
+    const { wrapper } = withClient();
+    mockFetch409();
+    // Reset slot in case other tests left it set.
+    useAppState.setState({ pendingConflict: null });
+    const { result } = renderHook(() => useSaveComparison(), { wrapper });
+    act(() => {
+      result.current.mutate({
+        id: 42, title: "Edited", members: [MEMBER_INPUT],
+        expected_content_hash: "sha256:stale",
+      });
+    });
+    await waitFor(() => expect(result.current.isPending).toBe(false));
+    // Bridge fired: the typed throw is now in Zustand for the modal to read.
+    const slot = useAppState.getState().pendingConflict;
+    expect(slot).toBeInstanceOf(ConflictError);
+    expect(slot?.current_hash).toBe("sha256:server");
+    expect(slot?.current_state?.id).toBe(42);
+    // Toast still suppressed (regression on Phase 3 follow-up).
+    expect(toastCalls).toEqual([]);
+    // Cleanup so subsequent tests start clean.
+    useAppState.setState({ pendingConflict: null });
   });
 
   it("still surfaces a validation toast on a non-Conflict 4xx (e.g. 403)", async () => {

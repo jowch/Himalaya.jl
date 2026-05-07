@@ -5,6 +5,7 @@ import { AppShell } from "./components/AppShell";
 import { OnboardingFlow } from "./components/OnboardingFlow";
 import { ToastContainer } from "./components/ui/Toast";
 import { InfrastructureBanner } from "./components/InfrastructureBanner";
+import { ConflictModal } from "./components/ConflictModal";
 import { handleRemoteEvent } from "./lib/queue/replayCoordinator";
 import { attachPersistence, rehydrate } from "./lib/queue/persistence";
 import { resolveMutator } from "./lib/queue/mutatorRegistry";
@@ -74,6 +75,7 @@ export function App(): JSX.Element {
     <>
       <AppShell />
       <OnboardingFlow />
+      <ConflictModal />
       <ToastContainer />
       <InfrastructureBanner />
     </>

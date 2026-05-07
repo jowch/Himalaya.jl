@@ -1,5 +1,7 @@
+import { useEffect } from "react";
 import { useQuery, useQueries } from "@tanstack/react-query";
 import * as api from "./api";
+import { ConflictError } from "./api";
 import { useAppState } from "./state";
 import { getClientId } from "./lib/clientId";
 import { useQueueMutation } from "./lib/queue/useQueueMutation";
@@ -466,10 +468,27 @@ export function usePostComparisonMessage(comparisonId: number) {
 
 export function useSaveComparison() {
   const username = useAppState((s) => s.username);
-  return useQueueMutation(
+  const setPendingConflict = useAppState((s) => s.setPendingConflict);
+  const result = useQueueMutation(
     saveComparisonMutator,
     { username, clientId: CLIENT_ID },
   );
+  // Phase 12 — bridge the typed `ConflictError` through to the global
+  // `pendingConflict` slot so the App-mounted `ConflictModal` can render
+  // it. We cannot extend the Mutator interface with `onError` without a
+  // wider refactor (no other mutator needs it), and `useQueueMutation`'s
+  // own onError already special-cases ConflictError to suppress the toast.
+  // A one-shot effect on `result.error` is the lightest plumbing.
+  //
+  // Re-callability: a second 409 lands as a NEW `ConflictError` instance
+  // (TanStack mints fresh error objects per attempt), so the effect re-
+  // fires and `setPendingConflict` overwrites — never stacks.
+  useEffect(() => {
+    if (result.error instanceof ConflictError) {
+      setPendingConflict(result.error);
+    }
+  }, [result.error, setPendingConflict]);
+  return result;
 }
 
 export function useDeleteComparison() {
