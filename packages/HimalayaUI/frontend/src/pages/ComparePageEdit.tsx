@@ -28,10 +28,11 @@
  * `/:id/edit` ⇒ load from the comparison fetch (with cache-derived snapshot
  * recovery) if the draft isn't already this id.
  */
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { ComparisonSidebar } from "../components/ComparisonSidebar";
+import { ComparisonPicker } from "../components/ComparisonPicker";
 import { useAppState } from "../state";
 import { useSaveComparison, useComparison } from "../queries";
 import { computeMemberSnapshot } from "../lib/comparison/snapshot";
@@ -165,6 +166,10 @@ export function ComparePageEdit(): JSX.Element {
   }, [save.isSuccess, save.data, discardDraft, goToReview, goToList]);
 
   const scope: "all" | "experiment" = eid !== undefined ? "experiment" : "all";
+
+  // Phase 5 Task 5.2 — local state for the picker open/close. Picker open
+  // state is purely client-side, no need for Zustand.
+  const [pickerOpen, setPickerOpen] = useState(false);
   // Phase 11 wires Edit/Fork visibility against current_user vs. created_by;
   // for now we surface the testid so downstream tests can target it once
   // the gating exists. The button is hidden from the rendered tree until
@@ -228,11 +233,29 @@ export function ComparePageEdit(): JSX.Element {
         />
         <div
           data-testid="compare-edit-plot-placeholder"
-          className="flex-1 min-h-0 flex items-center justify-center border border-border/40 rounded text-fg-muted text-sm"
+          className="flex-1 min-h-0 flex flex-col items-center justify-center
+                     border border-border/40 rounded text-fg-muted text-sm gap-3"
         >
-          Plot + member panel land in Phases 6–9 ({(draft?.members.length ?? 0)} member{(draft?.members.length ?? 0) === 1 ? "" : "s"})
+          <div>
+            Plot + member panel land in Phases 6–9 ({(draft?.members.length ?? 0)} member{(draft?.members.length ?? 0) === 1 ? "" : "s"})
+          </div>
+          <button
+            type="button"
+            data-testid="compare-edit-add-traces"
+            onClick={() => setPickerOpen(true)}
+            className="px-3 py-1 rounded border border-border text-fg text-sm
+                       hover:bg-bg-elevated"
+          >
+            + Add traces
+          </button>
         </div>
       </section>
+
+      <ComparisonPicker
+        isOpen={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        experimentId={eid}
+      />
     </div>
   );
 }

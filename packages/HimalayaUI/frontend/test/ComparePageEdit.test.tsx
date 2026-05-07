@@ -252,4 +252,21 @@ describe("ComparePageEdit", () => {
     expect(useAppState.getState().activeDraft).toBeNull();
     expect(screen.getByTestId("path-probe")).toHaveTextContent("/experiments/7/compare");
   });
+
+  it("'+ Add traces' button opens the picker modal (Phase 5 wire-up)", async () => {
+    const user = userEvent.setup();
+    const qc = makeQc();
+    useAppState.getState().startNewDraft();
+    // The picker reads a few queries; mock them so it doesn't 404 in JSDOM.
+    vi.spyOn(global, "fetch").mockResolvedValue(
+      new Response("[]", {
+        status: 200, headers: { "Content-Type": "application/json" },
+      }),
+    );
+    renderEdit({ qc, initialPath: "/experiments/7/compare/new" });
+    // Picker is closed by default.
+    expect(screen.queryByTestId("comparison-picker")).toBeNull();
+    await user.click(screen.getByTestId("compare-edit-add-traces"));
+    expect(await screen.findByTestId("comparison-picker")).toBeInTheDocument();
+  });
 });
