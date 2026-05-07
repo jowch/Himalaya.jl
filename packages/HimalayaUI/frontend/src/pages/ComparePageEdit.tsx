@@ -34,6 +34,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { ComparisonSidebar } from "../components/ComparisonSidebar";
 import { ComparisonPicker } from "../components/ComparisonPicker";
 import { MultiTracePlot } from "../components/MultiTracePlot";
+import { MemberMetaGutter } from "../components/MemberMetaGutter";
 import { useAppState } from "../state";
 import { useSaveComparison, useComparison, useMemberTraces } from "../queries";
 import { computeMemberSnapshot } from "../lib/comparison/snapshot";
@@ -226,6 +227,23 @@ export function ComparePageEdit(): JSX.Element {
     [plotMembers],
   );
   const traces = useMemberTraces(exposureIds);
+  const resetBandHeights = useAppState((s) => s.resetBandHeights);
+
+  // Track the plot column's height so the edit-mode gutter aligns pixel-for-
+  // pixel with the plot bands (both consumers feed `computeYBands` the same
+  // ratios + height).
+  const plotColRef = useRef<HTMLDivElement>(null);
+  const [panelHeight, setPanelHeight] = useState(0);
+  useEffect(() => {
+    const el = plotColRef.current;
+    if (!el) return;
+    setPanelHeight(el.clientHeight);
+    const obs = new ResizeObserver(() => {
+      if (plotColRef.current) setPanelHeight(plotColRef.current.clientHeight);
+    });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [plotMembers.length]);
   // Phase 11 wires Edit/Fork visibility against current_user vs. created_by;
   // for now we surface the testid so downstream tests can target it once
   // the gating exists. The button is hidden from the rendered tree until
@@ -279,6 +297,17 @@ export function ComparePageEdit(): JSX.Element {
           >
             Discard draft
           </button>
+          <button
+            type="button"
+            data-testid="compare-edit-reset-heights"
+            onClick={resetBandHeights}
+            disabled={(draft?.members.length ?? 0) === 0}
+            className="px-3 py-1 rounded border border-border text-fg-muted text-sm
+                       disabled:opacity-50"
+            title="Reset all band heights to default"
+          >
+            Reset heights
+          </button>
         </div>
         <textarea
           data-testid="compare-edit-description"
@@ -310,12 +339,26 @@ export function ComparePageEdit(): JSX.Element {
             </div>
           ) : (
             <>
-              <MultiTracePlot
-                members={plotMembers}
-                traces={traces}
-                xDomain={xDomain}
-                onXDomain={setXDomain}
-              />
+              <div className="flex flex-row flex-1 min-h-0 gap-3">
+                <div ref={plotColRef} className="flex-1 min-w-0">
+                  <MultiTracePlot
+                    members={plotMembers}
+                    traces={traces}
+                    xDomain={xDomain}
+                    onXDomain={setXDomain}
+                  />
+                </div>
+                <div
+                  className="w-[320px] shrink-0 relative"
+                  data-testid="compare-edit-gutter"
+                >
+                  <MemberMetaGutter
+                    members={plotMembers}
+                    panelHeight={panelHeight}
+                    mode="edit"
+                  />
+                </div>
+              </div>
               <div className="flex justify-end">
                 <button
                   type="button"

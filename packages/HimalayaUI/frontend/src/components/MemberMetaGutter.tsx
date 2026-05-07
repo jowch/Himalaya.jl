@@ -44,11 +44,6 @@ export function MemberMetaGutter(props: MemberMetaGutterProps): JSX.Element {
   const ratios = members.map((m) => m.band_height || 1);
   const yBands = computeYBands(ratios, panelHeight);
 
-  const idToIndex = useCallback(
-    (id: number): number => members.findIndex((m) => m.id === id),
-    [members],
-  );
-
   const handleDragStart = useCallback(
     (e: React.DragEvent, fromIdx: number) => {
       dragSourceIdxRef.current = fromIdx;

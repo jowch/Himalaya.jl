@@ -10,10 +10,11 @@
  * The plot, member panel, chat, badges, and edit/fork affordances are
  * built out across Phases 6–11; this file is only the shell that hosts them.
  */
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useLocation } from "react-router-dom";
 import { ComparisonSidebar } from "../components/ComparisonSidebar";
 import { MultiTracePlot } from "../components/MultiTracePlot";
+import { MemberMetaGutter } from "../components/MemberMetaGutter";
 import { useComparison, useMemberTraces } from "../queries";
 import { useAppState } from "../state";
 
@@ -83,14 +84,37 @@ function ReviewPlot({ id }: { id: number }): JSX.Element {
   );
   const traces = useMemberTraces(exposureIds);
 
+  // Track the plot column's height so the gutter rows align pixel-for-pixel
+  // with the plot's y-bands (both consumers share `computeYBands`).
+  const plotColRef = useRef<HTMLDivElement>(null);
+  const [panelHeight, setPanelHeight] = useState(0);
+  useEffect(() => {
+    const el = plotColRef.current;
+    if (!el) return;
+    setPanelHeight(el.clientHeight);
+    const obs = new ResizeObserver(() => {
+      if (plotColRef.current) setPanelHeight(plotColRef.current.clientHeight);
+    });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
+
   return (
-    <div className="flex-1 min-h-0 flex flex-col p-4" data-testid="compare-review-plot">
-      <MultiTracePlot
-        members={members}
-        traces={traces}
-        xDomain={xDomain}
-        onXDomain={setXDomain}
-      />
+    <div className="flex-1 min-h-0 flex flex-row p-4 gap-3" data-testid="compare-review-plot">
+      <div ref={plotColRef} className="flex-1 min-w-0">
+        <MultiTracePlot
+          members={members}
+          traces={traces}
+          xDomain={xDomain}
+          onXDomain={setXDomain}
+        />
+      </div>
+      <div
+        className="w-[280px] shrink-0 relative"
+        data-testid="compare-review-gutter"
+      >
+        <MemberMetaGutter members={members} panelHeight={panelHeight} mode="review" />
+      </div>
     </div>
   );
 }

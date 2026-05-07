@@ -14,7 +14,7 @@
  * pattern in CLAUDE.md.
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -268,5 +268,39 @@ describe("ComparePageEdit", () => {
     expect(screen.queryByTestId("comparison-picker")).toBeNull();
     await user.click(screen.getByTestId("compare-edit-add-traces"));
     expect(await screen.findByTestId("comparison-picker")).toBeInTheDocument();
+  });
+
+  // ── Phase 7 wiring ───────────────────────────────────────────────────────
+
+  it("Reset heights button is rendered in the edit-mode header", () => {
+    const qc = makeQc();
+    useAppState.getState().startNewDraft();
+    renderEdit({ qc, initialPath: "/experiments/7/compare/new" });
+    expect(screen.getByTestId("compare-edit-reset-heights")).toBeInTheDocument();
+  });
+
+  it("Reset heights button restores all band_heights to 1.0", () => {
+    const qc = makeQc();
+    seedExposure(qc, 100);
+    useAppState.getState().startNewDraft();
+    useAppState.getState().addMember(100, qc);
+    // Inflate band_height to verify the reset.
+    useAppState.getState().updateMember(0, { band_height: 2.5 });
+    expect(useAppState.getState().activeDraft!.members[0]!.band_height).toBe(2.5);
+
+    renderEdit({ qc, initialPath: "/experiments/7/compare/new" });
+    fireEvent.click(screen.getByTestId("compare-edit-reset-heights"));
+    expect(useAppState.getState().activeDraft!.members[0]!.band_height).toBe(1);
+  });
+
+  it("metadata gutter mounts with the draft members in edit mode", () => {
+    const qc = makeQc();
+    seedExposure(qc, 100);
+    useAppState.getState().startNewDraft();
+    useAppState.getState().addMember(100, qc);
+    renderEdit({ qc, initialPath: "/experiments/7/compare/new" });
+    expect(screen.getByTestId("compare-edit-gutter")).toBeInTheDocument();
+    // Member meta row mounted via the gutter
+    expect(screen.getByTestId("member-meta-row")).toBeInTheDocument();
   });
 });
