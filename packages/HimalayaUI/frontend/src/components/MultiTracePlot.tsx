@@ -157,6 +157,17 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
   // overlay y-bands stay in sync with the rendered plot.
   const [panelHeight, setPanelHeight] = useState(0);
 
+  // Phase 8.3 — peak hover tooltip state. `null` = nothing hovered. The
+  // `xPx` / `yPx` values are container-local pixel coordinates used to
+  // position the tooltip overlay; `q` and `peakId` are the rendered fields.
+  // Peak id is only displayed when the developer-only `?showPeakIds` URL
+  // flag is set (read once on mount; doesn't react to history changes).
+  const [tooltip, setTooltip] = useState<{
+    q: number; peakId: number; xPx: number; yPx: number;
+  } | null>(null);
+  const showPeakIds = typeof window !== "undefined"
+    && new URLSearchParams(window.location.search).has("showPeakIds");
+
   useEffect(() => {
     const el = plotContainer.current;
     if (!el) return;
@@ -214,10 +225,12 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
     const xScale = makeXScale(xType, xMin, xMax, MARGIN_LEFT, innerW);
 
     const allMarks: unknown[] = [];
-    // Per-member visible peak rows + y-band, captured for click hit-testing.
-    // Built in the same loop as the marks so we never drift from what was
-    // rendered (the same `buildMemberPeakRows` call sources both).
-    const peakIndex: Array<{
+    // Per-member visible peak rows + y-band, captured for click + hover
+    // hit-testing. Built in the same loop as the marks so we never drift
+    // from what was rendered (the same `buildMemberPeakRows` call sources
+    // both). The HOVER index is unconditional (tooltip works in review
+    // mode too); the CLICK index is the same data, gated by `onPeakClick`.
+    const hoverPeakIndex: Array<{
       memberId: number;
       yBand: [number, number];
       peaks: PeakRow[];
@@ -240,12 +253,11 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
       };
       const memberMarks = buildMemberMarks(layerProps);
       for (const mk of memberMarks) allMarks.push(mk);
-      // Only collect peaks for click hit-testing when edit mode wired one in.
-      if (onPeakClick) {
-        const { peaks } = buildMemberPeakRows(layerProps);
-        peakIndex.push({ memberId: m.id, yBand: yBand as [number, number], peaks });
-      }
+      const { peaks } = buildMemberPeakRows(layerProps);
+      hoverPeakIndex.push({ memberId: m.id, yBand: yBand as [number, number], peaks });
     }
+    // Click-hit-test reuses the same index when `onPeakClick` is wired.
+    const peakIndex = onPeakClick ? hoverPeakIndex : [];
 
     const el = Plot.plot({
       width:  panelW,
@@ -353,6 +365,40 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
     }
     (el as unknown as EventTarget).addEventListener("click", handlePeakClick);
 
+    // ── peak hover tooltip (Phase 8.3) ─────────────────────────────────
+    // Mousemove hit-tests against ALL members' visible peaks (regardless
+    // of edit mode — tooltip is informational and unconditional). Same
+    // hit radius as click. Mouseleave hides the tooltip.
+    function handleHoverMove(evRaw: Event): void {
+      const ev = evRaw as MouseEvent;
+      const rect = container!.getBoundingClientRect();
+      const cursorX = ev.clientX - rect.left;
+      const cursorY = ev.clientY - rect.top;
+      let best: { memberId: number; peakId: number; q: number; dist: number } | null = null;
+      for (const band of hoverPeakIndex) {
+        const [top, bottom] = band.yBand;
+        if (cursorY < top - PEAK_HIT_PX || cursorY > bottom + PEAK_HIT_PX) continue;
+        for (const p of band.peaks) {
+          const px = applyQ(plotElRef.current, p.q);
+          if (px === null) continue;
+          const d = Math.abs(px - cursorX);
+          if (d <= PEAK_HIT_PX && (best === null || d < best.dist)) {
+            best = { memberId: band.memberId, peakId: p.peakId, q: p.q, dist: d };
+          }
+        }
+      }
+      if (best === null) {
+        setTooltip(null);
+        return;
+      }
+      setTooltip({ q: best.q, peakId: best.peakId, xPx: cursorX, yPx: cursorY });
+    }
+    function handleHoverLeave(): void {
+      setTooltip(null);
+    }
+    (el as unknown as EventTarget).addEventListener("mousemove", handleHoverMove);
+    (el as unknown as EventTarget).addEventListener("mouseleave", handleHoverLeave);
+
     // Brush-to-zoom: drag horizontally to set a q sub-range. Implemented as
     // mousedown→mousemove→mouseup; we track pixel coords and invert at end.
     let brushStartPx: number | null = null;
@@ -385,8 +431,11 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
       (el as unknown as EventTarget).removeEventListener("mousedown", handleMouseDown);
       (el as unknown as EventTarget).removeEventListener("mouseup", handleMouseUp);
       (el as unknown as EventTarget).removeEventListener("click", handlePeakClick);
+      (el as unknown as EventTarget).removeEventListener("mousemove", handleHoverMove);
+      (el as unknown as EventTarget).removeEventListener("mouseleave", handleHoverLeave);
       container.replaceChildren();
       plotElRef.current = null;
+      setTooltip(null);
     };
   }, [
     members, traces, xDomain, xType, qUnits,
@@ -450,6 +499,24 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
           );
         })}
       </div>
+      {tooltip !== null && (
+        <div
+          data-testid="peak-tooltip"
+          role="tooltip"
+          className="absolute pointer-events-none rounded border border-border
+                     bg-bg-elevated text-fg text-xs px-2 py-1 shadow"
+          style={{
+            // Offset above-and-right of the cursor so the tooltip doesn't
+            // sit under the pointer (which would block subsequent clicks).
+            left: `${tooltip.xPx + 8}px`,
+            top: `${tooltip.yPx - 22}px`,
+            zIndex: 10,
+          }}
+        >
+          q = {tooltip.q.toPrecision(3)}
+          {showPeakIds ? <span className="text-fg-muted ml-2">id={tooltip.peakId}</span> : null}
+        </div>
+      )}
     </div>
   );
 }
