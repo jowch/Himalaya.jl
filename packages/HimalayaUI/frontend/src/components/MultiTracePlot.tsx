@@ -26,7 +26,7 @@
  * not zoom y. Peak click semantics (edit-mode cycle through shown / labeled
  * / hidden) land in Phase 8 — for v6.2 we host the plot only.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as Plot from "@observablehq/plot";
 import type { Trace, ComparisonMember } from "../api";
 import { buildMemberMarks, buildMemberPeakRows } from "./MemberTraceLayer";
@@ -74,6 +74,22 @@ function makeXScale(
 
 /** Hardcoded plot aspect ratio (W / H) per spec §Plot rendering. */
 export const COMPARE_PLOT_ASPECT = 0.3;
+
+/**
+ * Default per-band aspect target (W / H). 1.0 = each member's band is square.
+ * Issue #81: SAXS stack-plot convention is taller-than-wide bands so peak
+ * features aren't visually compressed. The acceptance bar is ≤ 1.5:1; 1.0
+ * leaves headroom while remaining sensible at small member counts.
+ */
+const DEFAULT_BAND_ASPECT_TARGET = 1.0;
+
+/**
+ * Lower bound on the actual plot width (px). Without this floor, a single-
+ * member case would shrink the plot to band-height-sized which is too narrow
+ * to read q-axis ticks. ~360 px is the minimum that keeps default tick
+ * spacing legible.
+ */
+const MIN_PLOT_WIDTH = 360;
 
 const MARGIN_LEFT   = 50;
 const MARGIN_RIGHT  = 14;
@@ -163,6 +179,14 @@ export interface MultiTracePlotProps {
    * mode. Required when `groupingMode` is set; ignored otherwise.
    */
   sampleIdFor?: (m: ComparisonMember) => number | null;
+  /**
+   * Per-band aspect ratio target (W / H). The plot self-constrains its width
+   * so each member's band lands ≤ this aspect ratio (issue #81). Defaults to
+   * `DEFAULT_BAND_ASPECT_TARGET` (1.0). Pass a higher value (e.g. 1.5) to
+   * accept wider bands; pass a lower value to force narrower / taller bands.
+   * The plot height is unaffected — only the width shrinks.
+   */
+  bandAspectTarget?: number;
 }
 
 export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
@@ -173,6 +197,7 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
     onPeakClick,
     showPeakTicks = true, showPeakLabels = true,
     groupingMode, sampleIdFor,
+    bandAspectTarget = DEFAULT_BAND_ASPECT_TARGET,
   } = props;
 
   const hostRef       = useRef<HTMLDivElement>(null);
@@ -511,37 +536,69 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
   // the correct y-band envelope.
   const overlayBands = computeYBands(members.map((m) => m.band_height || 1), panelHeight);
 
+  // Issue #81 — self-constrain the plot width so each member's band lands at
+  // the requested W:H aspect ratio (default 1.0, i.e. square). Without this,
+  // 4 members in an ~810 px-wide column produces ~5.4:1 W:H bands which
+  // visually crushes peak features. We do NOT grow plot height — only
+  // shrink width when there's headroom; clamp at MIN_PLOT_WIDTH so a
+  // single-member case still has legible q-axis ticks.
+  //
+  // Degenerate cases: zero members, zero panelHeight, or zero target → fall
+  // back to MIN_PLOT_WIDTH (no upper bound from this calc; the parent column
+  // still constrains via natural flexbox).
+  const maxPlotWidth = useMemo(() => {
+    const n = members.length;
+    if (n === 0 || panelHeight <= 0 || bandAspectTarget <= 0) {
+      return MIN_PLOT_WIDTH;
+    }
+    const bandH = panelHeight / n;
+    const target = n * bandH * bandAspectTarget; // == panelHeight * bandAspectTarget
+    return Math.max(MIN_PLOT_WIDTH, target);
+  }, [members.length, panelHeight, bandAspectTarget]);
+
   return (
     <div
       ref={hostRef}
       className="w-full h-full relative"
       data-testid="multi-trace-plot"
     >
-      <div ref={plotContainer} className="w-full h-full" />
+      {/*
+        Inner wrapper carries the width cap + horizontal centering. Both the
+        plot host and the per-band overlays are children of this wrapper so
+        their bounding boxes coincide pixel-for-pixel. The plot host gets
+        replaceChildren'd by Plot.plot() — overlays must be a SIBLING, not a
+        child, or they'd get wiped on every render.
+      */}
       <div
-        aria-hidden="true"
-        className="absolute inset-0 pointer-events-none"
-        data-testid="member-trace-overlays"
+        className="h-full mx-auto relative"
+        style={{ maxWidth: `${maxPlotWidth}px`, width: "100%" }}
       >
-        {members.map((m, i) => {
-          const band = overlayBands[i];
-          const top = band ? band[0] : 0;
-          const height = band ? band[1] - band[0] : 0;
-          return (
-            <div
-              key={m.id}
-              data-testid="member-trace"
-              data-member-id={String(m.id)}
-              style={{
-                position: "absolute",
-                left: 0,
-                right: 0,
-                top: `${top}px`,
-                height: `${height}px`,
-              }}
-            />
-          );
-        })}
+        <div ref={plotContainer} className="w-full h-full" />
+        <div
+          aria-hidden="true"
+          className="absolute inset-0 pointer-events-none"
+          data-testid="member-trace-overlays"
+        >
+          {members.map((m, i) => {
+            const band = overlayBands[i];
+            const top = band ? band[0] : 0;
+            const height = band ? band[1] - band[0] : 0;
+            return (
+              <div
+                key={m.id}
+                data-testid="member-trace"
+                data-member-id={String(m.id)}
+                style={{
+                  position: "absolute",
+                  left: 0,
+                  right: 0,
+                  top: `${top}px`,
+                  height: `${height}px`,
+                }}
+              />
+            );
+          })}
+        </div>
       </div>
       {tooltip !== null && (
         <div
