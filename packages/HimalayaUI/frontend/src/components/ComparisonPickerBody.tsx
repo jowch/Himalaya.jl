@@ -37,7 +37,7 @@ interface Props {
 }
 
 export function ComparisonPickerBody({
-  experimentId, picks, onPicksChange, alreadyAddedExposureIds: _alreadyAddedExposureIds,
+  experimentId, picks, onPicksChange, alreadyAddedExposureIds,
   searchInputRef,
 }: Props): JSX.Element {
   const userId = useCurrentUserId();
@@ -209,17 +209,22 @@ export function ComparisonPickerBody({
               Recently used
             </div>
             <ul role="listbox" aria-label="Recently used samples" className="flex flex-col">
-              {recentSamples.map((r) => (
-                <li key={`recent-${r.sample.id}`} data-testid="picker-row">
-                  <SamplePickerRow
-                    row={r}
-                    checked={pickedSampleIds.has(r.sample.id)}
-                    onCheckedChange={(next) => togglePickFor(r, next)}
-                    overrideExposureId={overrideBySampleId.get(r.sample.id)}
-                    onOverrideChange={(eid) => overridePickFor(r, eid)}
-                  />
-                </li>
-              ))}
+              {recentSamples.map((r) => {
+                const alreadyAdded = r.indexing_exposure_id !== null
+                  && alreadyAddedExposureIds.has(r.indexing_exposure_id);
+                return (
+                  <li key={`recent-${r.sample.id}`} data-testid="picker-row">
+                    <SamplePickerRow
+                      row={r}
+                      checked={pickedSampleIds.has(r.sample.id)}
+                      onCheckedChange={(next) => togglePickFor(r, next)}
+                      overrideExposureId={overrideBySampleId.get(r.sample.id)}
+                      onOverrideChange={(eid) => overridePickFor(r, eid)}
+                      alreadyAdded={alreadyAdded}
+                    />
+                  </li>
+                );
+              })}
             </ul>
           </section>
         )}
@@ -235,17 +240,22 @@ export function ComparisonPickerBody({
               All samples
             </div>
             <ul role="listbox" aria-label="Samples" className="flex flex-col">
-              {mainListRows.map((r) => (
-                <li key={r.sample.id} data-testid="picker-row">
-                  <SamplePickerRow
-                    row={r}
-                    checked={pickedSampleIds.has(r.sample.id)}
-                    onCheckedChange={(next) => togglePickFor(r, next)}
-                    overrideExposureId={overrideBySampleId.get(r.sample.id)}
-                    onOverrideChange={(eid) => overridePickFor(r, eid)}
-                  />
-                </li>
-              ))}
+              {mainListRows.map((r) => {
+                const alreadyAdded = r.indexing_exposure_id !== null
+                  && alreadyAddedExposureIds.has(r.indexing_exposure_id);
+                return (
+                  <li key={r.sample.id} data-testid="picker-row">
+                    <SamplePickerRow
+                      row={r}
+                      checked={pickedSampleIds.has(r.sample.id)}
+                      onCheckedChange={(next) => togglePickFor(r, next)}
+                      overrideExposureId={overrideBySampleId.get(r.sample.id)}
+                      onOverrideChange={(eid) => overridePickFor(r, eid)}
+                      alreadyAdded={alreadyAdded}
+                    />
+                  </li>
+                );
+              })}
             </ul>
           </section>
         )}

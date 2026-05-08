@@ -9,6 +9,8 @@ interface Props {
   /** Override exposure id, or undefined for default. */
   overrideExposureId: number | undefined;
   onOverrideChange: (exposureId: number) => void;
+  /** When true, the row is locked because this exposure is already a draft member. */
+  alreadyAdded?: boolean;
 }
 
 function sampleLabel(s: PickerRow["sample"]): string {
@@ -17,6 +19,7 @@ function sampleLabel(s: PickerRow["sample"]): string {
 
 export function SamplePickerRow({
   row, checked, onCheckedChange, overrideExposureId, onOverrideChange,
+  alreadyAdded = false,
 }: Props): JSX.Element {
   const [expanded, setExpanded] = useState(false);
   const disabled = row.indexing_exposure_id === null;
@@ -25,6 +28,7 @@ export function SamplePickerRow({
   const dataAttrs: Record<string, string> = {};
   dataAttrs["data-sample-id"] = String(row.sample.id);
   if (disabled) dataAttrs["data-disabled"] = "true";
+  if (alreadyAdded) dataAttrs["data-locked"] = "true";
   if (resolvedExposureId !== null && resolvedExposureId !== undefined) {
     dataAttrs["data-exposure-id"] = String(resolvedExposureId);
   }
@@ -35,18 +39,19 @@ export function SamplePickerRow({
       {...dataAttrs}
       className={
         "flex items-start gap-3 px-3 py-2 rounded " +
-        (disabled
-          ? "opacity-60"
+        (disabled || alreadyAdded
+          ? "opacity-60 cursor-not-allowed"
           : "cursor-pointer hover:bg-bg-elevated") +
-        (checked && !disabled ? " ring-1 ring-accent/30" : "")
+        (checked && !disabled && !alreadyAdded ? " ring-1 ring-accent/30" : "")
       }
     >
       {!disabled && (
         <input
           type="checkbox"
           data-testid="sample-picker-row-checkbox"
-          checked={checked}
-          onChange={(e) => onCheckedChange(e.target.checked)}
+          checked={alreadyAdded ? true : checked}
+          disabled={alreadyAdded}
+          onChange={alreadyAdded ? undefined : (e) => onCheckedChange(e.target.checked)}
           className="mt-1 shrink-0"
         />
       )}
@@ -55,6 +60,9 @@ export function SamplePickerRow({
           <span className="font-medium text-fg truncate">
             {sampleLabel(row.sample)}
           </span>
+          {alreadyAdded && (
+            <span className="text-xs text-fg-dim italic shrink-0">already added</span>
+          )}
           <span className="text-xs text-fg-dim shrink-0">
             {row.all_exposures.length} {row.all_exposures.length === 1 ? "exposure" : "exposures"}
           </span>

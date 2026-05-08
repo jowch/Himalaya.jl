@@ -83,3 +83,25 @@ test("data-exposure-id reflects override when set", () => {
   );
   expect(screen.getByTestId("sample-picker-row")).toHaveAttribute("data-exposure-id", "101");
 });
+
+test("alreadyAdded renders locked row with hint", () => {
+  const handle = vi.fn();
+  render(
+    <SamplePickerRow
+      row={baseRow} checked={false} onCheckedChange={handle}
+      overrideExposureId={undefined} onOverrideChange={() => {}}
+      alreadyAdded={true}
+    />,
+  );
+  const row = screen.getByTestId("sample-picker-row");
+  expect(row).toHaveAttribute("data-locked", "true");
+  expect(screen.getByText("already added")).toBeInTheDocument();
+  const checkbox = screen.getByTestId("sample-picker-row-checkbox") as HTMLInputElement;
+  expect(checkbox.disabled).toBe(true);
+  expect(checkbox.checked).toBe(true);
+  // Clicking the disabled checkbox must not fire onCheckedChange.
+  fireEvent.click(checkbox);
+  expect(handle).not.toHaveBeenCalled();
+  // Caret still renders (user can inspect exposures).
+  expect(screen.getByTestId("sample-picker-row-caret")).toBeInTheDocument();
+});

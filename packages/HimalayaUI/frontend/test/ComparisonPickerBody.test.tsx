@@ -70,6 +70,25 @@ test("recents section dedupes against main list (one row per sample, S2 appears 
   expect(s2Rows.length).toBeLessThanOrEqual(1);   // exactly one section renders it
 });
 
+test("rows whose exposure id is in alreadyAddedExposureIds render locked", async () => {
+  wrap(
+    <ComparisonPickerBody
+      experimentId={1}
+      picks={[]}
+      onPicksChange={() => {}}
+      alreadyAddedExposureIds={new Set([100])}
+    />,
+  );
+  await screen.findByText("S1");
+  // S1 has indexing_exposure_id=100 which is in the set → data-locked="true".
+  const s1Row = screen.getByText("S1").closest("[data-testid='sample-picker-row']")!;
+  expect(s1Row).toHaveAttribute("data-locked", "true");
+  expect(screen.getByText("already added")).toBeInTheDocument();
+  // S2 (exposure 200, appears in recents) should NOT be locked.
+  const s2Row = screen.getByText("S2").closest("[data-testid='sample-picker-row']")!;
+  expect(s2Row).not.toHaveAttribute("data-locked");
+});
+
 test("does not flicker on background refetch (gates on isLoading not isPending)", async () => {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 0 } } });
   qc.setQueryData(["experiment", 1, "picker-samples"], [
