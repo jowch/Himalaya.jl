@@ -69,6 +69,8 @@ export const queryKeys = {
     ["user", userId, "recently-picked-exposures", limit] as const,
   sampleTags: (experimentId: number) =>
     ["experiment", experimentId, "sample-tags"] as const,
+  pickerSamples: (experimentId: number) =>
+    ["experiment", experimentId, "picker-samples"] as const,
   // Phase 13 — comparison pins, scoped per-user via the X-Username header
   // (no userId in the key — the cache row is implicitly per-tab/per-username).
   comparisonPins: ["comparison-pins"] as const,
@@ -595,6 +597,24 @@ export function useSampleTags(experimentId: number | undefined) {
       ? queryKeys.sampleTags(experimentId)
       : (["experiment", "none", "sample-tags"] as const),
     queryFn: () => api.getSampleTags(experimentId as number),
+    enabled: experimentId !== undefined,
+  });
+}
+
+/**
+ * Picker primary list. Returns one row per sample with the resolved
+ * indexing-exposure id frozen at fetch time. Spec §PR1 backend.
+ *
+ * `enabled: experimentId !== undefined` matches `useSampleTags` — picker is
+ * always opened from an experiment context, but the hook is shaped to
+ * accept `undefined` so render isn't gated on experiment selection.
+ */
+export function usePickerSamples(experimentId: number | undefined) {
+  return useQuery({
+    queryKey: experimentId !== undefined
+      ? queryKeys.pickerSamples(experimentId)
+      : (["experiment", "none", "picker-samples"] as const),
+    queryFn: () => api.getPickerSamples(experimentId as number),
     enabled: experimentId !== undefined,
   });
 }
