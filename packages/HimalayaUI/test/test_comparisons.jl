@@ -14,10 +14,12 @@ using HimalayaUI
 # Pre-mint a comparisons row at a known id so the dispatcher can run UPDATEs
 # (matches the route handler's two-step "INSERT placeholder, then dispatcher
 # fills in" pattern). Mirrors `_premint_comparison!` in test_events.jl.
+# Uses NULL placeholders to mirror the post-#67 route — the dispatcher's
+# `COALESCE(col, ?)` then stamps real values on first fold.
 function _premint_cmp!(db, id::Int)
     DBInterface.execute(db,
         """INSERT INTO comparisons (id, title, content_hash, created_at, updated_at)
-           VALUES (?, '', '', '', '')""", [id])
+           VALUES (?, NULL, NULL, NULL, NULL)""", [id])
     nothing
 end
 

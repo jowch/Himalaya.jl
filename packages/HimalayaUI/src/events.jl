@@ -461,23 +461,25 @@ function _update_view_for_comparison_created!(db, entity_id, payload, event_id)
         # Use INSERT with explicit id; sqlite's AUTOINCREMENT counter will
         # advance past entity_id automatically. (Suitable for replay paths
         # where the original row was deleted but the event is being re-folded.)
+        # `content_hash` lands NULL here and is overwritten unconditionally by
+        # compute_content_hash below; the column is nullable post-#67.
         DBInterface.execute(db,
             """INSERT INTO comparisons
                (id, title, description, content_hash, created_by, created_at,
                 updated_at, forked_from_id, forked_at_hash)
-               VALUES (?, ?, ?, '', ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?)""",
             [Int(entity_id), title, description, user_id,
              now_str, now_str, forked_from_id, forked_at_hash])
     else
-        # NULLIF treats the empty-string placeholder seeded by the route's
-        # mint-the-id INSERT (routes_comparisons.jl::POST /api/comparisons)
-        # as "missing" so it gets stamped here. Plain COALESCE would keep
-        # the empty string forever (it's NOT NULL but IS empty) — issue #54.
-        # Real timestamps from a prior fold survive untouched (replay path).
+        # The route's mint-the-id INSERT seeds NULL placeholders (#67), so
+        # plain COALESCE stamps `created_at` on first fold. A real timestamp
+        # from a prior fold survives untouched (replay path). Pre-#67 this
+        # was `COALESCE(NULLIF(created_at, ''), ?)` — the NULLIF wrapper was
+        # the #66 patch for the placeholder being `''` rather than NULL.
         DBInterface.execute(db,
             """UPDATE comparisons
                SET title = ?, description = ?, created_by = ?,
-                   created_at = COALESCE(NULLIF(created_at, ''), ?), updated_at = ?,
+                   created_at = COALESCE(created_at, ?), updated_at = ?,
                    forked_from_id = ?, forked_at_hash = ?
                WHERE id = ?""",
             [title, description, user_id, now_str, now_str,

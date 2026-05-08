@@ -113,12 +113,15 @@ function register_comparisons_routes!()
                          String(body.forked_at_hash) : nothing
 
         return with_idempotency(db, req) do
-            # Mint the AUTOINCREMENT id by inserting a placeholder row. The
-            # dispatcher's `comparison_created` branch upserts at this id —
-            # see _update_view_for_comparison_created!.
+            # Mint the AUTOINCREMENT id with a NULL-only placeholder row.
+            # The dispatcher's `comparison_created` branch upserts at this id
+            # via plain `COALESCE(col, ?)` — see
+            # _update_view_for_comparison_created!. Pre-#67 this INSERT seeded
+            # `''` for four NOT NULL columns; #67 relaxed those to nullable
+            # so `DEFAULT VALUES` Just Works and no NULLIF wrapper is needed
+            # at the dispatcher.
             res = DBInterface.execute(db,
-                """INSERT INTO comparisons (title, content_hash, created_at, updated_at)
-                   VALUES ('', '', '', '')""")
+                "INSERT INTO comparisons DEFAULT VALUES")
             new_id = Int(DBInterface.lastrowid(res))
 
             members_payload = [_comparison_member_payload(db, m) for m in body.members]

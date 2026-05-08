@@ -930,3 +930,231 @@ end
         @test String(rows[1].forked_at_hash) == "hp"
     end
 end
+
+# Issue #67 — eliminate empty-string-in-NOT-NULL placeholder pattern.
+# After PR #66 patched the symptom (NULLIF in the dispatcher COALESCE),
+# this set of tests pins the structural fix: the four columns the route's
+# mint-the-id INSERT used to seed with '' (`title`, `content_hash`,
+# `created_at`, `updated_at`) are now nullable, so the route can use a
+# clean NULL placeholder (`INSERT INTO comparisons DEFAULT VALUES`) and
+# the dispatcher's plain `COALESCE(col, ?)` Just Works.
+
+# Build a comparisons schema with the OLD strict NOT NULL columns so the
+# `migrate_compare_relax_nullability!` heal path can be exercised. Mirrors
+# the migrate_compare! shape pre-#67 (the four mint-the-id columns are
+# `TEXT NOT NULL` rather than nullable).
+function _build_legacy_strict_compare_db(path::String)
+    db = SQLite.DB(path)
+    DBInterface.execute(db, "PRAGMA foreign_keys = ON")
+    DBInterface.execute(db, """
+        CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT)
+    """)
+    DBInterface.execute(db, """
+        CREATE TABLE comparisons (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            title           TEXT NOT NULL,
+            description     TEXT,
+            content_hash    TEXT NOT NULL,
+            created_by      INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            created_at      TEXT NOT NULL,
+            updated_at      TEXT NOT NULL,
+            forked_from_id  INTEGER REFERENCES comparisons(id) ON DELETE SET NULL,
+            forked_at_hash  TEXT
+        )
+    """)
+    DBInterface.execute(db, """
+        CREATE TABLE comparison_members (
+            id              INTEGER PRIMARY KEY,
+            comparison_id   INTEGER NOT NULL REFERENCES comparisons(id) ON DELETE CASCADE,
+            exposure_id     INTEGER,
+            display_order   INTEGER NOT NULL,
+            snapshot        TEXT    NOT NULL CHECK (json_valid(snapshot)),
+            created_at      TEXT    NOT NULL
+        )
+    """)
+    DBInterface.execute(db, """
+        CREATE TABLE comparison_pins (
+            user_id        INTEGER NOT NULL REFERENCES users(id)       ON DELETE CASCADE,
+            comparison_id  INTEGER NOT NULL REFERENCES comparisons(id) ON DELETE CASCADE,
+            pinned_at      TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (user_id, comparison_id)
+        )
+    """)
+    db
+end
+
+@testset "Compare schema: comparisons NOT NULL columns relaxed (#67)" begin
+    mktempdir() do tmp
+        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+        sql = String(first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='comparisons'"))).sql)
+        # All four mint-the-id placeholder columns must NOT carry NOT NULL on
+        # a fresh DB. The route's `INSERT … DEFAULT VALUES` depends on this.
+        for col in ("title", "content_hash", "created_at", "updated_at")
+            @test !occursin(Regex("\\b$col\\s+TEXT\\s+NOT\\s+NULL\\b", "i"), sql)
+        end
+    end
+end
+
+@testset "Compare schema: relaxed schema accepts INSERT DEFAULT VALUES (#67)" begin
+    mktempdir() do tmp
+        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+        # Proves the route can use a clean NULL placeholder. If this fires
+        # `NOT NULL constraint failed`, the relax migration didn't run.
+        DBInterface.execute(db, "INSERT INTO comparisons DEFAULT VALUES")
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id, title, content_hash, created_at, updated_at FROM comparisons"))
+        @test length(rows) == 1
+        @test rows[1].id isa Integer
+        @test ismissing(rows[1].title)
+        @test ismissing(rows[1].content_hash)
+        @test ismissing(rows[1].created_at)
+        @test ismissing(rows[1].updated_at)
+    end
+end
+
+@testset "migrate_compare_relax_nullability!: legacy NOT NULL schema rebuilds (#67)" begin
+    mktempdir() do tmp
+        path = joinpath(tmp, "legacy.db")
+        db = _build_legacy_strict_compare_db(path)
+        # Seed: a row with the #54-bug `created_at = ''` plus a normal row.
+        DBInterface.execute(db, """
+            INSERT INTO comparisons (title, content_hash, created_at, updated_at)
+            VALUES ('broken', 'h1', '', '')""")
+        DBInterface.execute(db, """
+            INSERT INTO comparisons (title, content_hash, created_at, updated_at)
+            VALUES ('normal', 'h2', '2026-05-01T00:00:00', '2026-05-01T00:00:00')""")
+        broken_id = 1
+        normal_id = 2
+        # FK-related rows in BOTH comparison_members AND comparison_pins so
+        # the heal walks both referrers (review suggestion #2 on PR #72 —
+        # second referrer matters because _fix_fk_references_after_autoincrement_migration!
+        # had a prod incident where only the first referrer was rebuilt).
+        DBInterface.execute(db, """
+            INSERT INTO comparison_members
+              (comparison_id, display_order, snapshot, created_at)
+            VALUES (?, 0, '{}', '2026-05-01T00:00:00')""",
+            [broken_id])
+        DBInterface.execute(db, """
+            INSERT INTO users (id, username) VALUES (1, 'alice')""")
+        DBInterface.execute(db, """
+            INSERT INTO comparison_pins (user_id, comparison_id, pinned_at)
+            VALUES (1, ?, '2026-05-01T00:00:00')""", [broken_id])
+
+        HimalayaUI.migrate_compare_relax_nullability!(db)
+
+        # Schema is relaxed
+        sql = String(first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='comparisons'"))).sql)
+        for col in ("title", "content_hash", "created_at", "updated_at")
+            @test !occursin(Regex("\\b$col\\s+TEXT\\s+NOT\\s+NULL\\b", "i"), sql)
+        end
+
+        # Existing rows survive
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id, title, created_at FROM comparisons ORDER BY id"))
+        @test length(rows) == 2
+        @test String(rows[1].title) == "broken"
+        @test String(rows[2].title) == "normal"
+        @test String(rows[2].created_at) == "2026-05-01T00:00:00"
+
+        # Issue body's edge case: the stale '' created_at gets healed.
+        # Format MUST match the fresh-row format (`yyyy-mm-ddTHH:MM:SS.sssZ`
+        # from `comparison_now_iso()`) so ComparisonSidebar's lexical sort
+        # on `updated_at` keeps healed and fresh rows in monotonic order
+        # (review suggestion #1 on PR #72: SQLite's CURRENT_TIMESTAMP uses
+        # `YYYY-MM-DD HH:MM:SS` and space < T, so it would lexically precede
+        # fresh rows of the same instant).
+        @test rows[1].created_at != ""
+        @test occursin(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}", String(rows[1].created_at))
+        @test endswith(String(rows[1].created_at), "Z")
+
+        # FK from comparison_members still resolves (heal worked).
+        DBInterface.execute(db, """
+            INSERT INTO comparison_members
+              (comparison_id, display_order, snapshot, created_at)
+            VALUES (?, 1, '{}', '2026-05-01T00:00:00')""", [broken_id])
+        # FK from comparison_pins (the SECOND referrer) also resolves —
+        # this is the suggestion #2 coverage: prove the heal walked both
+        # referrers, not just the first one.
+        DBInterface.execute(db, """
+            INSERT INTO comparison_pins (user_id, comparison_id, pinned_at)
+            VALUES (1, ?, '2026-05-02T00:00:00')""", [normal_id])
+        # And the orphan-rejection path: inserting a member pointing at a
+        # nonexistent comparison must still 19=>SQLITE_CONSTRAINT.
+        @test_throws SQLite.SQLiteException DBInterface.execute(db, """
+            INSERT INTO comparison_members
+              (comparison_id, display_order, snapshot, created_at)
+            VALUES (9999, 0, '{}', '2026-05-01T00:00:00')""")
+        # Same orphan rejection on comparison_pins (proves the FK
+        # constraint, not just the column, survived the heal).
+        @test_throws SQLite.SQLiteException DBInterface.execute(db, """
+            INSERT INTO comparison_pins (user_id, comparison_id, pinned_at)
+            VALUES (1, 9999, '2026-05-01T00:00:00')""")
+
+        # ON DELETE CASCADE still fires for BOTH referrers: deleting a
+        # comparison drops its members AND its pins (proves the FK action
+        # survived the rebuild for both edges).
+        m_before = Int(first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT COUNT(*) AS n FROM comparison_members WHERE comparison_id = ?",
+            [broken_id]))).n)
+        p_before = Int(first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT COUNT(*) AS n FROM comparison_pins WHERE comparison_id = ?",
+            [broken_id]))).n)
+        @test m_before > 0
+        @test p_before > 0
+        DBInterface.execute(db, "DELETE FROM comparisons WHERE id = ?", [broken_id])
+        m_after = Int(first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT COUNT(*) AS n FROM comparison_members WHERE comparison_id = ?",
+            [broken_id]))).n)
+        p_after = Int(first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT COUNT(*) AS n FROM comparison_pins WHERE comparison_id = ?",
+            [broken_id]))).n)
+        @test m_after == 0
+        @test p_after == 0
+
+        # Now the route's clean placeholder works
+        DBInterface.execute(db, "INSERT INTO comparisons DEFAULT VALUES")
+
+        SQLite.close(db)
+    end
+end
+
+@testset "migrate_compare_relax_nullability! is idempotent (#67)" begin
+    mktempdir() do tmp
+        path = joinpath(tmp, "legacy.db")
+        db = _build_legacy_strict_compare_db(path)
+        HimalayaUI.migrate_compare_relax_nullability!(db)
+        sql_first = String(first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='comparisons'"))).sql)
+        # Second call must not change the schema.
+        HimalayaUI.migrate_compare_relax_nullability!(db)
+        sql_second = String(first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='comparisons'"))).sql)
+        @test sql_first == sql_second
+        # Third call from within open_db (which always runs migrate_schema!)
+        # must also be a no-op — the bigger guarantee.
+        SQLite.close(db)
+        db2 = HimalayaUI.open_db(path)
+        sql_third = String(first(Tables.rowtable(DBInterface.execute(db2,
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='comparisons'"))).sql)
+        @test sql_first == sql_third
+        SQLite.close(db2)
+    end
+end
+
+@testset "no INSERT in routes_*.jl uses empty-string placeholder pattern (#67 guardrail)" begin
+    src_dir = joinpath(dirname(@__FILE__), "..", "src")
+    routes = filter(f -> startswith(basename(f), "routes_") && endswith(f, ".jl"),
+                    readdir(src_dir, join=true))
+    @test !isempty(routes)
+    for f in routes
+        text = read(f, String)
+        # Reject any `VALUES (...)` clause containing two or more `''`
+        # literals — the empty-string-in-NOT-NULL placeholder pattern from
+        # #67. Single `''` (e.g. as a deliberate sentinel for one column
+        # later overwritten unconditionally) is permitted.
+        m = match(r"VALUES\s*\([^)]*''[^)]*''[^)]*\)", text)
+        @test m === nothing
+    end
+end
