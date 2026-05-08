@@ -12,15 +12,20 @@ import {
   PREDICTED_Q_STROKE_PX,
 } from "../presets";
 
-/** Returns Plot marks. Caller threads them into ExportSpec.plot.marks. */
+/** Returns Plot marks. Caller threads them into ExportSpec.plot.marks.
+ *
+ *  Return type is `Plot.Markish[]` (not `Plot.Mark[]`) to match Plot's
+ *  `PlotOptions.marks` field — `Markish` is the public-facing type Plot
+ *  expects for caller-supplied marks. The runtime values produced by
+ *  `Plot.line / Plot.dot / Plot.ruleX` satisfy both. */
 export function buildTraceExportMarks(args: {
   trace: Trace;
   peaks: Peak[];
   activeGroupIndices: IndexEntry[];
-}): Plot.Mark[] {
+}): Plot.Markish[] {
   const { trace, peaks, activeGroupIndices } = args;
 
-  const marks: Plot.Mark[] = [];
+  const marks: Plot.Markish[] = [];
 
   // Trace line. Map (q,I) zip → array-of-objects for Plot.
   const points = trace.q.map((q, i) => ({ q, I: trace.I[i] ?? 0 }));
