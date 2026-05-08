@@ -70,16 +70,23 @@ interface Props {
   /** Controlled picks list. */
   picks: Pick[];
   onPicksChange: (next: Pick[]) => void;
+  /**
+   * Immediate-mode callback. When set, the body fires `onPick` on each toggle
+   * and does NOT mutate the `picks`/`onPicksChange` controlled state — the
+   * caller is responsible for committing each pick directly (e.g. `addMember`).
+   * `picks` and `onPicksChange` are still required for checked-state display in
+   * the modal shell; pass `[]` + a no-op when using immediate mode.
+   */
+  onPick?: (pick: Pick) => void;
   /** Set of exposure ids already in the active draft — rendered as locked. */
   alreadyAddedExposureIds: Set<number>;
   /** Optional ref the parent threads down to focus the search input. */
   searchInputRef?: RefObject<HTMLInputElement>;
   // Filter chip state (search / tag-chip) is internal to the body.
-  // PR2 adds an `onPick` prop for immediate-commit shells.
 }
 
 export function ComparisonPickerBody({
-  experimentId, picks, onPicksChange, alreadyAddedExposureIds,
+  experimentId, picks, onPicksChange, onPick, alreadyAddedExposureIds,
   searchInputRef,
 }: Props): JSX.Element {
   const userId = useCurrentUserId();
@@ -150,18 +157,43 @@ export function ComparisonPickerBody({
     [filteredRows, recentSampleIds],
   );
 
-  // Pick-set lookup.
-  const pickedSampleIds = useMemo(
-    () => new Set(picks.map((p) => p.sample_id)),
-    [picks],
-  );
+  // Pick-set lookup. In immediate mode (`onPick` set), derive from draft
+  // state via alreadyAddedExposureIds × picker data so SamplePickerRow's
+  // checkbox + override radios reflect the actual committed state. In modal
+  // mode, derive from the controlled `picks` list.
+  const pickedSampleIds = useMemo(() => {
+    if (onPick) {
+      const out = new Set<number>();
+      for (const r of allRows) {
+        if (r.all_exposures.some((e) => alreadyAddedExposureIds.has(e.id))) {
+          out.add(r.sample.id);
+        }
+      }
+      return out;
+    }
+    return new Set(picks.map((p) => p.sample_id));
+  }, [onPick, picks, allRows, alreadyAddedExposureIds]);
+
   const overrideBySampleId = useMemo(() => {
+    if (onPick) {
+      // Immediate mode: a member exists in the draft for some exposure of
+      // this sample. If that exposure is NOT the indexing one, surface as an
+      // override so the corresponding radio shows checked.
+      const m = new Map<number, number>();
+      for (const r of allRows) {
+        const matching = r.all_exposures.find((e) => alreadyAddedExposureIds.has(e.id));
+        if (matching && matching.id !== r.indexing_exposure_id) {
+          m.set(r.sample.id, matching.id);
+        }
+      }
+      return m;
+    }
     const m = new Map<number, number>();
     for (const p of picks) {
       if (p.source === "override") m.set(p.sample_id, p.exposure_id);
     }
     return m;
-  }, [picks]);
+  }, [onPick, picks, allRows, alreadyAddedExposureIds]);
 
   const togglePickFor = (row: PickerSampleRow, next: boolean): void => {
     if (row.indexing_exposure_id === null) return;
@@ -170,6 +202,10 @@ export function ComparisonPickerBody({
       exposure_id: row.indexing_exposure_id,
       source: "default",
     };
+    if (onPick) {
+      if (next) onPick(pick);
+      return;
+    }
     if (next) onPicksChange([...picks, pick]);
     else onPicksChange(picks.filter((p) => p.sample_id !== row.sample.id));
   };
@@ -180,6 +216,7 @@ export function ComparisonPickerBody({
       exposure_id: exposureId,
       source: exposureId === row.indexing_exposure_id ? "default" : "override",
     };
+    if (onPick) { onPick(next); return; }
     const i = picks.findIndex((p) => p.sample_id === row.sample.id);
     if (i < 0) onPicksChange([...picks, next]);
     else onPicksChange(picks.map((p, j) => (j === i ? next : p)));
@@ -255,8 +292,15 @@ export function ComparisonPickerBody({
             </div>
             <ul role="listbox" aria-label="Recently used samples" className="flex flex-col">
               {recentSamples.map((r) => {
-                const alreadyAdded = r.indexing_exposure_id !== null
-                  && alreadyAddedExposureIds.has(r.indexing_exposure_id);
+                // alreadyAdded = "any exposure of this sample is in the draft"
+                // — the indexing-only check missed override-added rows in
+                // immediate mode (PR #97 review): clicking the checkbox to
+                // un-check an override-added row was a silent no-op since
+                // togglePickFor(_, false) does nothing in onPick mode.
+                // Locking via the some() check covers both modes.
+                const alreadyAdded = r.all_exposures.some(
+                  (e) => alreadyAddedExposureIds.has(e.id),
+                );
                 return (
                   <li key={`recent-${r.sample.id}`} data-testid="picker-row">
                     <SamplePickerRow
@@ -286,8 +330,15 @@ export function ComparisonPickerBody({
             </div>
             <ul role="listbox" aria-label="Samples" className="flex flex-col">
               {mainListRows.map((r) => {
-                const alreadyAdded = r.indexing_exposure_id !== null
-                  && alreadyAddedExposureIds.has(r.indexing_exposure_id);
+                // alreadyAdded = "any exposure of this sample is in the draft"
+                // — the indexing-only check missed override-added rows in
+                // immediate mode (PR #97 review): clicking the checkbox to
+                // un-check an override-added row was a silent no-op since
+                // togglePickFor(_, false) does nothing in onPick mode.
+                // Locking via the some() check covers both modes.
+                const alreadyAdded = r.all_exposures.some(
+                  (e) => alreadyAddedExposureIds.has(e.id),
+                );
                 return (
                   <li key={r.sample.id} data-testid="picker-row">
                     <SamplePickerRow

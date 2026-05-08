@@ -262,21 +262,32 @@ describe("ComparePageEdit", () => {
     expect(screen.getByTestId("path-probe")).toHaveTextContent("/experiments/7/compare");
   });
 
-  it("'+ Add traces' button opens the picker modal (Phase 5 wire-up)", async () => {
-    const user = userEvent.setup();
+  it("right slot hosts ComparisonPickerPanel in edit mode", async () => {
     const qc = makeQc();
     useAppState.getState().startNewDraft();
-    // The picker reads a few queries; mock them so it doesn't 404 in JSDOM.
     vi.spyOn(global, "fetch").mockResolvedValue(
       new Response("[]", {
         status: 200, headers: { "Content-Type": "application/json" },
       }),
     );
     renderEdit({ qc, initialPath: "/experiments/7/compare/new" });
-    // Picker is closed by default.
-    expect(screen.queryByTestId("comparison-picker")).toBeNull();
-    await user.click(screen.getByTestId("compare-edit-add-traces"));
-    expect(await screen.findByTestId("comparison-picker")).toBeInTheDocument();
+    expect(await screen.findByTestId("comparison-picker-panel")).toBeInTheDocument();
+    expect(screen.queryByTestId("compare-edit-right-hint")).toBeNull();
+  });
+
+  it("empty-state '+ Add traces' button focuses the panel's search input", async () => {
+    const qc = makeQc();
+    useAppState.getState().startNewDraft();
+    vi.spyOn(global, "fetch").mockResolvedValue(
+      new Response("[]", {
+        status: 200, headers: { "Content-Type": "application/json" },
+      }),
+    );
+    renderEdit({ qc, initialPath: "/experiments/7/compare/new" });
+    // Wait for panel to mount.
+    await screen.findByTestId("comparison-picker-panel");
+    fireEvent.click(screen.getByTestId("compare-edit-add-traces"));
+    expect(screen.getByTestId("comparison-picker-search")).toHaveFocus();
   });
 
   // ── Phase 7 wiring ───────────────────────────────────────────────────────
@@ -469,25 +480,7 @@ describe("ComparePageEdit", () => {
     expect(saveCalls).toHaveLength(0);
   });
 
-  // ── Issue #78: right-slot hint conditional on empty draft ─────────────────
-
-  describe("ComparePageEdit — right-slot hint (#78)", () => {
-    it("right-slot hint shows when the draft is empty", () => {
-      const qc = makeQc();
-      useAppState.getState().startNewDraft();
-      renderEdit({ qc, initialPath: "/experiments/7/compare/new" });
-      expect(screen.getByTestId("compare-edit-right-hint")).toBeInTheDocument();
-    });
-
-    it("right-slot hint hides when the draft has members", () => {
-      const qc = makeQc();
-      seedExposure(qc, 100);
-      useAppState.getState().startNewDraft();
-      useAppState.getState().addMember(100, qc);
-      renderEdit({ qc, initialPath: "/experiments/7/compare/new" });
-      expect(screen.queryByTestId("compare-edit-right-hint")).toBeNull();
-    });
-  });
+  // ── PR2: right slot is always the inline ComparisonPickerPanel ───────────
 
   // ── Regression: cold-exposure snapshot prefetch (issue #49) ────────────────
 
