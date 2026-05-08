@@ -11,6 +11,9 @@ export default defineConfig({
     baseURL: "http://127.0.0.1:5173",
     browserName: "chromium",
     headless: true,
+    // Clipboard permissions are scoped per-spec via `test.use({ permissions })`
+    // in the spec file (currently only `e2e/figure-export.spec.ts`) so prompts
+    // don't silently apply to specs that didn't opt in.
   },
   webServer: {
     // `--host 127.0.0.1` is load-bearing: default `npm run dev` binds Vite to
