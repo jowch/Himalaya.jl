@@ -48,8 +48,8 @@ export function ForksPopover({
         type="button"
         data-testid="comparison-forks-trigger"
         onClick={() => setOpen((v) => !v)}
-        className="px-2 py-0.5 rounded border border-border text-fg-muted text-xs
-                   hover:bg-bg-elevated"
+        className="px-1.5 py-0.5 rounded text-xs text-fg-dim hover:text-fg
+                   hover:bg-bg-hover border border-transparent hover:border-border"
       >
         Forks ({forks.length}) →
       </button>

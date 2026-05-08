@@ -347,8 +347,8 @@ function EditOrForkButton({
         type="button"
         data-testid="comparison-edit"
         onClick={onEdit}
-        className="px-3 py-1 rounded border border-border text-fg text-sm
-                   hover:bg-bg-elevated"
+        className="px-1.5 py-0.5 rounded text-xs text-fg-dim hover:text-fg
+                   hover:bg-bg-hover border border-transparent hover:border-border"
       >
         Edit
       </button>
@@ -364,8 +364,8 @@ function EditOrForkButton({
       type="button"
       data-testid="comparison-fork"
       onClick={onFork}
-      className="px-3 py-1 rounded border border-border text-fg text-sm
-                 hover:bg-bg-elevated"
+      className="px-1.5 py-0.5 rounded text-xs text-fg-dim hover:text-fg
+                 hover:bg-bg-hover border border-transparent hover:border-border"
     >
       Fork
     </button>

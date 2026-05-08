@@ -1,5 +1,5 @@
 /**
- * GroupingModeToggle — segmented control for the Compare-page grouping mode
+ * GroupingModeToggle — text-link toggle for the Compare-page grouping mode
  * (Plan §Phase 9, Task 9.2; spec §Trace coloring).
  *
  * Three options: By sample / By phase / Distinct. Reads/writes Zustand
@@ -7,7 +7,14 @@
  *
  * Spec selectors: container `data-testid="grouping-mode"` with
  * `data-mode={"bySample" | "byPhase" | "distinct"}` reflecting the
- * active option (used by E2E tests).
+ * active option (used by E2E tests). Each option carries `data-value` and
+ * `data-active` for assertions.
+ *
+ * **Styling — text-link parity with PlotCard.** Mirrors the q-range-reset /
+ * XScaleToggle vocabulary used by the Index page: `text-fg-dim` at rest,
+ * `text-fg + bg-bg-hover + border-border` on hover, `bg-bg-subtle text-fg`
+ * when active. No outer bordered wrapper, no leading "Color" cell — the
+ * `aria-label="Trace grouping mode"` carries that semantic.
  */
 import { useAppState } from "../state";
 import type { GroupingMode } from "../lib/comparison/coloring";
@@ -28,11 +35,8 @@ export function GroupingModeToggle(): JSX.Element {
       data-mode={mode}
       role="radiogroup"
       aria-label="Trace grouping mode"
-      className="inline-flex items-center gap-0 rounded border border-border overflow-hidden"
+      className="inline-flex items-center gap-1"
     >
-      <span className="px-2 py-1 text-xs text-fg-muted bg-bg-elevated/40 border-r border-border">
-        Color
-      </span>
       {OPTIONS.map((opt) => {
         const active = opt.value === mode;
         return (
@@ -44,12 +48,13 @@ export function GroupingModeToggle(): JSX.Element {
             data-active={active ? "true" : "false"}
             data-value={opt.value}
             onClick={() => setMode(opt.value)}
-            className={
-              "px-2 py-1 text-xs " +
-              (active
-                ? "bg-accent text-bg"
-                : "text-fg-muted hover:text-fg hover:bg-bg-elevated/40")
-            }
+            className={[
+              "px-1.5 py-0.5 rounded text-xs transition-colors",
+              "border border-transparent hover:border-border",
+              active
+                ? "bg-bg-subtle text-fg"
+                : "text-fg-dim hover:text-fg hover:bg-bg-hover",
+            ].join(" ")}
           >
             {opt.label}
           </button>
