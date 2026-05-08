@@ -273,7 +273,7 @@ describe("NeedsReviewBadge — per-member data-stale", () => {
           snapshot: { effective_peaks: [], confirmed_index: null, analysis_inputs_hash: "h" },
           is_stale: true, created_by: null, created_at: null,
         }}
-        top={0} height={50} mode="review"
+        top={0} height={50} mode="review" displayLabel="row-label"
       />,
     );
     const row = screen.getByTestId("member-meta-row");
@@ -294,7 +294,7 @@ describe("NeedsReviewBadge — per-member data-stale", () => {
           snapshot: { effective_peaks: [], confirmed_index: null, analysis_inputs_hash: "h" },
           is_stale: false, created_by: null, created_at: null,
         }}
-        top={0} height={50} mode="review"
+        top={0} height={50} mode="review" displayLabel="row-label"
       />,
     );
     expect(screen.getByTestId("member-meta-row")).not.toHaveAttribute("data-stale");

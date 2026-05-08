@@ -79,11 +79,16 @@ describe("Member reorder via metadata-row drag handle", () => {
   });
 
   it("MemberMetaGutter dispatches reorder when drag-and-drop completes", () => {
+    const members = makeMembers(3);
+    const labelMap = new Map<number, string>(
+      members.map((m) => [m.id, `row-${m.id}`]),
+    );
     render(
       <MemberMetaGutter
-        members={makeMembers(3)}
+        members={members}
         panelHeight={300}
         mode="edit"
+        displayLabelByMemberId={labelMap}
       />,
     );
     // dragstart on grip-1 (member at idx 0); dragover/drop on grip-3 (idx 2).
@@ -124,11 +129,16 @@ describe("Member reorder via metadata-row drag handle", () => {
   });
 
   it("does NOT reorder when dragging onto the same row", () => {
+    const members = makeMembers(3);
+    const labelMap = new Map<number, string>(
+      members.map((m) => [m.id, `row-${m.id}`]),
+    );
     render(
       <MemberMetaGutter
-        members={makeMembers(3)}
+        members={members}
         panelHeight={300}
         mode="edit"
+        displayLabelByMemberId={labelMap}
       />,
     );
     const grips = screen.getAllByTestId("member-reorder-grip");
@@ -150,11 +160,16 @@ describe("Member reorder via metadata-row drag handle", () => {
   });
 
   it("review mode hides drag handles", () => {
+    const members = makeMembers(3);
+    const labelMap = new Map<number, string>(
+      members.map((m) => [m.id, `row-${m.id}`]),
+    );
     render(
       <MemberMetaGutter
-        members={makeMembers(3)}
+        members={members}
         panelHeight={300}
         mode="review"
+        displayLabelByMemberId={labelMap}
       />,
     );
     expect(screen.queryAllByTestId("member-reorder-grip")).toHaveLength(0);

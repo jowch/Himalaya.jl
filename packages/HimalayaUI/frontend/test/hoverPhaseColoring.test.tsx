@@ -55,14 +55,14 @@ beforeEach(() => {
 
 describe("hover-driven phase coloring — review mode", () => {
   it("mouseenter sets the highlight to this member's id", () => {
-    render(<MemberMetaRow member={makeMember({ id: 42 })} top={0} height={50} mode="review" />);
+    render(<MemberMetaRow member={makeMember({ id: 42 })} top={0} height={50} mode="review" displayLabel="row-label" />);
     const row = screen.getByTestId("member-meta-row");
     fireEvent.mouseEnter(row);
     expect(useAppState.getState().highlightedCompareMemberId).toBe(42);
   });
 
   it("mouseleave clears the highlight when not pinned", () => {
-    render(<MemberMetaRow member={makeMember({ id: 42 })} top={0} height={50} mode="review" />);
+    render(<MemberMetaRow member={makeMember({ id: 42 })} top={0} height={50} mode="review" displayLabel="row-label" />);
     const row = screen.getByTestId("member-meta-row");
     fireEvent.mouseEnter(row);
     fireEvent.mouseLeave(row);
@@ -70,7 +70,7 @@ describe("hover-driven phase coloring — review mode", () => {
   });
 
   it("clicking pins the highlight; mouseleave does NOT clear after pin", () => {
-    render(<MemberMetaRow member={makeMember({ id: 42 })} top={0} height={50} mode="review" />);
+    render(<MemberMetaRow member={makeMember({ id: 42 })} top={0} height={50} mode="review" displayLabel="row-label" />);
     const row = screen.getByTestId("member-meta-row");
     fireEvent.click(row);
     expect(useAppState.getState().highlightedCompareMemberId).toBe(42);
@@ -80,7 +80,7 @@ describe("hover-driven phase coloring — review mode", () => {
   });
 
   it("clicking a pinned row unpins it (toggle)", () => {
-    render(<MemberMetaRow member={makeMember({ id: 42 })} top={0} height={50} mode="review" />);
+    render(<MemberMetaRow member={makeMember({ id: 42 })} top={0} height={50} mode="review" displayLabel="row-label" />);
     const row = screen.getByTestId("member-meta-row");
     fireEvent.click(row);
     expect(useAppState.getState().highlightedCompareMemberId).toBe(42);
@@ -89,7 +89,7 @@ describe("hover-driven phase coloring — review mode", () => {
   });
 
   it("focus + Enter pins; Esc clears", () => {
-    render(<MemberMetaRow member={makeMember({ id: 42 })} top={0} height={50} mode="review" />);
+    render(<MemberMetaRow member={makeMember({ id: 42 })} top={0} height={50} mode="review" displayLabel="row-label" />);
     const row = screen.getByTestId("member-meta-row");
     expect(row).toHaveAttribute("tabindex", "0");
     fireEvent.focus(row);
@@ -103,7 +103,7 @@ describe("hover-driven phase coloring — review mode", () => {
   });
 
   it("focus on a row sets the highlight (transient until pin)", () => {
-    render(<MemberMetaRow member={makeMember({ id: 42 })} top={0} height={50} mode="review" />);
+    render(<MemberMetaRow member={makeMember({ id: 42 })} top={0} height={50} mode="review" displayLabel="row-label" />);
     const row = screen.getByTestId("member-meta-row");
     fireEvent.focus(row);
     expect(useAppState.getState().highlightedCompareMemberId).toBe(42);
@@ -123,7 +123,7 @@ describe("hover-driven phase coloring — no confirmed_index → inert", () => {
         analysis_inputs_hash: "abc",
       },
     });
-    render(<MemberMetaRow member={m} top={0} height={50} mode="review" />);
+    render(<MemberMetaRow member={m} top={0} height={50} mode="review" displayLabel="row-label" />);
     const row = screen.getByTestId("member-meta-row");
     expect(row).not.toHaveAttribute("tabindex", "0");
     fireEvent.mouseEnter(row);
@@ -132,7 +132,7 @@ describe("hover-driven phase coloring — no confirmed_index → inert", () => {
 
   it("members with snapshot === null also stay inert", () => {
     const m = makeMember({ id: 99, snapshot: null });
-    render(<MemberMetaRow member={m} top={0} height={50} mode="review" />);
+    render(<MemberMetaRow member={m} top={0} height={50} mode="review" displayLabel="row-label" />);
     const row = screen.getByTestId("member-meta-row");
     fireEvent.mouseEnter(row);
     expect(useAppState.getState().highlightedCompareMemberId).toBeUndefined();
@@ -148,8 +148,8 @@ describe("hover-driven phase coloring — switching members updates highlight", 
     const B = makeMember({ id: 2 });
     render(
       <>
-        <MemberMetaRow member={A} top={0} height={50} mode="review" />
-        <MemberMetaRow member={B} top={50} height={50} mode="review" />
+        <MemberMetaRow member={A} top={0} height={50} mode="review" displayLabel="row-label" />
+        <MemberMetaRow member={B} top={50} height={50} mode="review" displayLabel="row-label" />
       </>,
     );
     const rows = screen.getAllByTestId("member-meta-row");

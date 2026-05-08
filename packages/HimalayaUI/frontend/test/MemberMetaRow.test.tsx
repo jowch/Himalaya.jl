@@ -52,13 +52,13 @@ function makeMember(over: Partial<ComparisonMember> = {}): ComparisonMember {
 
 describe("MemberMetaRow — review mode", () => {
   it("renders the testid + member id", () => {
-    render(<MemberMetaRow member={makeMember()} top={0} height={50} mode="review" />);
+    render(<MemberMetaRow member={makeMember()} top={0} height={50} mode="review" displayLabel="row-label" />);
     const row = screen.getByTestId("member-meta-row");
     expect(row).toHaveAttribute("data-member-id", "1");
   });
 
   it("shows phase chip / d / R² / NGC for cubic phase", () => {
-    render(<MemberMetaRow member={makeMember()} top={0} height={50} mode="review" />);
+    render(<MemberMetaRow member={makeMember()} top={0} height={50} mode="review" displayLabel="row-label" />);
     expect(screen.getByText("Pn3m")).toBeInTheDocument();
     // lattice d = 12.345 → toFixed(2) → "12.35"
     expect(screen.getByText(/12\.35/)).toBeInTheDocument();
@@ -78,7 +78,7 @@ describe("MemberMetaRow — review mode", () => {
         analysis_inputs_hash: "h",
       },
     });
-    render(<MemberMetaRow member={m} top={0} height={50} mode="review" />);
+    render(<MemberMetaRow member={m} top={0} height={50} mode="review" displayLabel="row-label" />);
     expect(screen.queryByTestId("member-meta-ngc")).toBeNull();
   });
 
@@ -90,31 +90,48 @@ describe("MemberMetaRow — review mode", () => {
         analysis_inputs_hash: "h",
       },
     });
-    render(<MemberMetaRow member={m} top={0} height={50} mode="review" />);
+    render(<MemberMetaRow member={m} top={0} height={50} mode="review" displayLabel="row-label" />);
     expect(screen.getByText(/no index/i)).toBeInTheDocument();
   });
 
   it("data-stale present when member.is_stale", () => {
     const m = makeMember({ is_stale: true });
-    render(<MemberMetaRow member={m} top={0} height={50} mode="review" />);
+    render(<MemberMetaRow member={m} top={0} height={50} mode="review" displayLabel="row-label" />);
     expect(screen.getByTestId("member-meta-row")).toHaveAttribute("data-stale");
     // Inline stale indicator
     expect(screen.getByTestId("member-meta-stale-icon")).toBeInTheDocument();
   });
 
   it("data-stale absent when member.is_stale === false", () => {
-    render(<MemberMetaRow member={makeMember()} top={0} height={50} mode="review" />);
+    render(<MemberMetaRow member={makeMember()} top={0} height={50} mode="review" displayLabel="row-label" />);
     expect(screen.getByTestId("member-meta-row")).not.toHaveAttribute("data-stale");
   });
 
   it("uses label_override when present, else falls back to a default label", () => {
+    // The label_override fallback chain now lives in resolveDisplayLabels
+    // (lib/comparison/labels.ts) — MemberMetaRow simply renders displayLabel.
     const m = makeMember({ label_override: "Sample A1 24h" });
-    render(<MemberMetaRow member={m} top={0} height={50} mode="review" />);
+    render(<MemberMetaRow member={m} top={0} height={50} mode="review" displayLabel="Sample A1 24h" />);
     expect(screen.getByTestId("member-meta-label").textContent).toContain("Sample A1 24h");
   });
 
+  it("renders the displayLabel prop verbatim (no internal fallback chain)", () => {
+    render(
+      <MemberMetaRow
+        member={makeMember()}
+        top={0}
+        height={50}
+        mode="review"
+        displayLabel="JC068P · run-007.dat"
+      />,
+    );
+    expect(screen.getByTestId("member-meta-label").textContent).toBe(
+      "JC068P · run-007.dat",
+    );
+  });
+
   it("clicking the row expands a detail card overlay with peak count", () => {
-    render(<MemberMetaRow member={makeMember()} top={0} height={50} mode="review" />);
+    render(<MemberMetaRow member={makeMember()} top={0} height={50} mode="review" displayLabel="row-label" />);
     const row = screen.getByTestId("member-meta-row");
     fireEvent.click(row);
     const detail = screen.getByTestId("member-meta-detail");
@@ -124,14 +141,14 @@ describe("MemberMetaRow — review mode", () => {
   });
 
   it("positions the row at the supplied top + height", () => {
-    render(<MemberMetaRow member={makeMember()} top={120} height={45} mode="review" />);
+    render(<MemberMetaRow member={makeMember()} top={120} height={45} mode="review" displayLabel="row-label" />);
     const row = screen.getByTestId("member-meta-row");
     expect(row.style.top).toBe("120px");
     expect(row.style.height).toBe("45px");
   });
 
   it("shows no edit-mode controls in review mode", () => {
-    render(<MemberMetaRow member={makeMember()} top={0} height={50} mode="review" />);
+    render(<MemberMetaRow member={makeMember()} top={0} height={50} mode="review" displayLabel="row-label" />);
     expect(screen.queryByTestId("member-reorder-grip")).toBeNull();
     expect(screen.queryByTestId("member-meta-label-input")).toBeNull();
     expect(screen.queryByTestId("member-meta-normalization")).toBeNull();
@@ -164,14 +181,14 @@ describe("MemberMetaRow — edit mode", () => {
   });
 
   it("shows the drag handle", () => {
-    render(<MemberMetaRow member={makeMember()} top={0} height={50} mode="edit" memberIndex={0} />);
+    render(<MemberMetaRow member={makeMember()} top={0} height={50} mode="edit" memberIndex={0} displayLabel="row-label" />);
     const grip = screen.getByTestId("member-reorder-grip");
     expect(grip).toBeInTheDocument();
     expect(grip).toHaveAttribute("data-member-id", "1");
   });
 
   it("label override input updates draft via updateMember", async () => {
-    render(<MemberMetaRow member={makeMember()} top={0} height={50} mode="edit" memberIndex={0} />);
+    render(<MemberMetaRow member={makeMember()} top={0} height={50} mode="edit" memberIndex={0} displayLabel="row-label" />);
     const input = screen.getByTestId("member-meta-label-input") as HTMLInputElement;
     await userEvent.type(input, "My label");
     fireEvent.blur(input);
@@ -180,7 +197,7 @@ describe("MemberMetaRow — edit mode", () => {
   });
 
   it("normalization dropdown updates draft", () => {
-    render(<MemberMetaRow member={makeMember()} top={0} height={50} mode="edit" memberIndex={0} />);
+    render(<MemberMetaRow member={makeMember()} top={0} height={50} mode="edit" memberIndex={0} displayLabel="row-label" />);
     const sel = screen.getByTestId("member-meta-normalization") as HTMLSelectElement;
     fireEvent.change(sel, { target: { value: "max" } });
     const m = useAppState.getState().activeDraft!.members[0]!;
@@ -190,7 +207,7 @@ describe("MemberMetaRow — edit mode", () => {
   it("q-window inputs commit on blur (focus-gated, mid-edit external state ignored)", () => {
     const m = makeMember({ q_window_min: 0.05, q_window_max: 0.5 });
     const { rerender } = render(
-      <MemberMetaRow member={m} top={0} height={50} mode="edit" memberIndex={0} />,
+      <MemberMetaRow member={m} top={0} height={50} mode="edit" memberIndex={0} displayLabel="row-label" />,
     );
     const minIn = screen.getByTestId("member-meta-qwindow-min") as HTMLInputElement;
     expect(minIn.value).toBe("0.050");
@@ -206,6 +223,7 @@ describe("MemberMetaRow — edit mode", () => {
         height={50}
         mode="edit"
         memberIndex={0}
+        displayLabel="row-label"
       />,
     );
     expect(minIn.value).toBe("0.123");
@@ -219,12 +237,12 @@ describe("MemberMetaRow — edit mode", () => {
   it("'Reset color' button appears only when color_override is set", () => {
     const m1 = makeMember({ color_override: null });
     const { rerender } = render(
-      <MemberMetaRow member={m1} top={0} height={50} mode="edit" memberIndex={0} />,
+      <MemberMetaRow member={m1} top={0} height={50} mode="edit" memberIndex={0} displayLabel="row-label" />,
     );
     expect(screen.queryByTestId("member-meta-reset-color")).toBeNull();
 
     const m2 = makeMember({ color_override: "#ff00aa" });
-    rerender(<MemberMetaRow member={m2} top={0} height={50} mode="edit" memberIndex={0} />);
+    rerender(<MemberMetaRow member={m2} top={0} height={50} mode="edit" memberIndex={0} displayLabel="row-label" />);
     expect(screen.getByTestId("member-meta-reset-color")).toBeInTheDocument();
   });
 
@@ -241,7 +259,7 @@ describe("MemberMetaRow — edit mode", () => {
       },
     });
     const m = makeMember({ color_override: "#ff00aa" });
-    render(<MemberMetaRow member={m} top={0} height={50} mode="edit" memberIndex={0} />);
+    render(<MemberMetaRow member={m} top={0} height={50} mode="edit" memberIndex={0} displayLabel="row-label" />);
     fireEvent.click(screen.getByTestId("member-meta-reset-color"));
     expect(useAppState.getState().activeDraft!.members[0]!.color_override).toBeUndefined();
   });
@@ -249,7 +267,7 @@ describe("MemberMetaRow — edit mode", () => {
   // ─── Color-override picker (Phase 9, Task 9.4) ────────────────────────
 
   it("color picker swatch grid renders with palette colors", () => {
-    render(<MemberMetaRow member={makeMember()} top={0} height={50} mode="edit" memberIndex={0} />);
+    render(<MemberMetaRow member={makeMember()} top={0} height={50} mode="edit" memberIndex={0} displayLabel="row-label" />);
     // Expand the row first so the picker becomes visible.
     fireEvent.click(screen.getByTestId("member-meta-row"));
     const grid = screen.getByTestId("member-color-picker-grid");
@@ -260,7 +278,7 @@ describe("MemberMetaRow — edit mode", () => {
   });
 
   it("clicking a swatch sets color_override to that hex/oklch color", () => {
-    render(<MemberMetaRow member={makeMember()} top={0} height={50} mode="edit" memberIndex={0} />);
+    render(<MemberMetaRow member={makeMember()} top={0} height={50} mode="edit" memberIndex={0} displayLabel="row-label" />);
     fireEvent.click(screen.getByTestId("member-meta-row"));
     const swatches = screen.getAllByTestId(/^member-color-picker-swatch-/);
     const first = swatches[0]!;
@@ -271,7 +289,7 @@ describe("MemberMetaRow — edit mode", () => {
   });
 
   it("color picker swatch grid is hidden in review mode", () => {
-    render(<MemberMetaRow member={makeMember()} top={0} height={50} mode="review" />);
+    render(<MemberMetaRow member={makeMember()} top={0} height={50} mode="review" displayLabel="row-label" />);
     // Even when expanded, review mode does not render the swatch grid.
     fireEvent.click(screen.getByTestId("member-meta-row"));
     expect(screen.queryByTestId("member-color-picker-grid")).toBeNull();
@@ -279,7 +297,7 @@ describe("MemberMetaRow — edit mode", () => {
 
   it("active swatch (matching color_override) is marked", () => {
     // First swatch's data-color is what we'll claim is the override.
-    render(<MemberMetaRow member={makeMember()} top={0} height={50} mode="edit" memberIndex={0} />);
+    render(<MemberMetaRow member={makeMember()} top={0} height={50} mode="edit" memberIndex={0} displayLabel="row-label" />);
     fireEvent.click(screen.getByTestId("member-meta-row"));
     const swatches = screen.getAllByTestId(/^member-color-picker-swatch-/);
     const targetColor = swatches[2]!.getAttribute("data-color")!;
@@ -292,6 +310,7 @@ describe("MemberMetaRow — edit mode", () => {
         height={50}
         mode="edit"
         memberIndex={0}
+        displayLabel="row-label"
       />,
     );
     fireEvent.click(screen.getByTestId("member-meta-row"));
