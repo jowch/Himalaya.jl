@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
+import { Skeleton } from "boneyard-js/react";
 import {
   useRecentlyPickedExposures,
   useSampleTags,
@@ -8,6 +9,13 @@ import {
 import { useCurrentUserId } from "../hooks/useCurrentUserId";
 import { SamplePickerRow } from "./SamplePickerRow";
 import type { PickerSampleRow } from "../api";
+
+const COMPARISON_PICKER_BODY_FIXTURE = (
+  <div className="flex flex-col flex-1 min-h-0">
+    <div className="px-4 py-2 border-b border-border h-[44px]" />
+    <div className="flex-1" />
+  </div>
+);
 
 export type Pick = {
   sample_id: number;
@@ -147,6 +155,12 @@ export function ComparisonPickerBody({
   };
 
   return (
+    <Skeleton
+      name="comparison-picker-body"
+      className="flex flex-col flex-1 min-h-0"
+      loading={pickerQ.isLoading}
+      fixture={COMPARISON_PICKER_BODY_FIXTURE}
+    >
     <div className="flex flex-col flex-1 min-h-0">
       {/* Filters (search + tag chips). */}
       <div className="px-4 py-2 border-b border-border space-y-2">
@@ -237,5 +251,6 @@ export function ComparisonPickerBody({
         )}
       </div>
     </div>
+    </Skeleton>
   );
 }

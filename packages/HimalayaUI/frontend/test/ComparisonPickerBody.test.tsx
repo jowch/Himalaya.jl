@@ -69,3 +69,33 @@ test("recents section dedupes against main list (one row per sample, S2 appears 
   const s2Rows = screen.queryAllByText("S2");
   expect(s2Rows.length).toBeLessThanOrEqual(1);   // exactly one section renders it
 });
+
+test("does not flicker on background refetch (gates on isLoading not isPending)", async () => {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 0 } } });
+  qc.setQueryData(["experiment", 1, "picker-samples"], [
+    {
+      sample: { id: 10, experiment_id: 1, name: "S1", label: null, notes: null, tags: [] },
+      indexing_exposure_id: 100,
+      all_exposures: [{ id: 100, sample_id: 10, filename: "f1", selected: true }],
+    },
+  ]);
+  const { rerender } = render(
+    <QueryClientProvider client={qc}>
+      <ComparisonPickerBody
+        experimentId={1} picks={[]} onPicksChange={() => {}}
+        alreadyAddedExposureIds={new Set()}
+      />
+    </QueryClientProvider>,
+  );
+  expect(screen.getByText("S1")).toBeInTheDocument();
+  qc.invalidateQueries({ queryKey: ["experiment", 1, "picker-samples"] });
+  rerender(
+    <QueryClientProvider client={qc}>
+      <ComparisonPickerBody
+        experimentId={1} picks={[]} onPicksChange={() => {}}
+        alreadyAddedExposureIds={new Set()}
+      />
+    </QueryClientProvider>,
+  );
+  expect(screen.getByText("S1")).toBeInTheDocument();
+});
