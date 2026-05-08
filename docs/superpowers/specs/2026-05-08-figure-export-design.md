@@ -101,7 +101,9 @@ interface ExportSpec {
   title: { primary: string; secondary?: string };
   width: number;
   height: number;
-  plot: PlotConfig;       // marks + x/y configs for Plot.plot()
+  plot: PlotOptions;      // marks + x/y configs for Plot.plot() (only a subset
+                          // of PlotOptions fields are populated by the adapter:
+                          // typically marks, x, y, width, height, margin*, style)
   legend?: LegendSpec;    // structured legend rows the renderer paints below
 }
 ```
@@ -140,6 +142,8 @@ buildExportSvg(spec: ExportSpec): SVGElement
 buildExportPng(spec: ExportSpec, scale = 2): Promise<Blob>
   // Serialize the SVG, draw onto an OffscreenCanvas at width*scale × height*scale,
   // canvas.convertToBlob({ type: "image/png" })
+  // `width`/`height` in ExportSpec are logical (CSS) pixels. scale=2 produces a
+  // 2× retina-quality raster suitable for print and HiDPI displays.
 ```
 
 ### Colour resolution
@@ -160,6 +164,8 @@ The export-only mark factories accept literal colours from `LIGHT_PALETTE` (in `
 The Download button is a split:
 - Main click → download PNG (the most common case)
 - Chevron → focus-trapped popover with "Download as PNG" / "Download as SVG", pattern matching `ForksPopover`
+
+**Note on render cost:** The parent creates a new `spec` function reference on every render. This does not affect correctness — the thunk is only evaluated on click — but it defeats `React.memo` on `FigureExportControls` if applied. In practice the component is small (two buttons) so the extra re-render is negligible. If profiling later shows a concern, wrap the thunk in `useCallback` with stable deps.
 
 ### Placement
 
@@ -194,11 +200,12 @@ No state lifted to Zustand or TanStack Query — the export is a pure derivation
 - Use `font-family: ui-sans-serif, system-ui, sans-serif` for export. Avoids `@font-face url(...)` references → no canvas-taint risk. Won't match the app's Plus Jakarta Sans exactly; accepted as the "progress report" tradeoff.
 - Outer wrapper SVG must declare `xmlns="http://www.w3.org/2000/svg"`. Plot's inner SVG already does; the outer wrapper sets it explicitly.
 - Standard recipe: serialize SVG → blob URL → `Image` → `OffscreenCanvas.drawImage` → `convertToBlob({ type: "image/png" })`.
+- Fallback when `OffscreenCanvas` is unavailable (Safari < 16.4): use `document.createElement('canvas')` + `HTMLCanvasElement.toBlob()` synchronously. A pre-flight check at mount disables Copy and Download when neither rendering path works, and surfaces a tooltip explaining the browser limitation.
 
 ## Disabled states
 
 - PlotCard: Copy + Download disabled if `!traceQ.data || !peaksQ.data` (matches the existing `canFit` gate pattern).
-- ComparePage: disabled if `members.length === 0 || traces.size === 0`.
+- ComparePage: disabled if `members.length === 0` or the trace data map (`memberTraces`, a `Map<number, {x: number[], y: number[]}>` keyed by member id) is empty.
 
 ## Filenames
 
@@ -206,6 +213,8 @@ No state lifted to Zustand or TanStack Query — the export is a pure derivation
 - Compare: `himalaya-comparison-{experiment}-{name}-{YYYY-MM-DD}.{ext}`
 
 `slugifyForFilename(s)`: lowercase, non-alphanumeric runs → `-`, collapse repeated dashes, trim. Empty / all-special-char input falls back to a sentinel.
+
+**Applied per segment**, not to the concatenated filename — each template variable (`{experiment}`, `{sample}`, etc.) is slugified individually before interpolation. The static separator dashes between segments remain unambiguous delimiters, so a slugified segment containing dashes (e.g., an experiment named "SAXS-run-042") cannot be confused with the boundary between segments.
 
 ## Testing
 
@@ -237,7 +246,7 @@ Out of scope. The "good enough for progress reports" framing means structural sn
 
 - Copy success: "Copied figure to clipboard"
 - Copy failure (no clipboard support): "Clipboard not available — try Download instead"
-- Copy failure (denied / error): "Couldn't copy figure: <reason>"
+- Copy failure (denied / error): "Couldn't copy figure — try Download instead." — the raw error object is logged to console.warn for debugging but not surfaced to the user, who cannot act on browser-internal error messages like "ClipboardItem's type image/png is not supported".
 - Download: silent (the file lands; the OS confirms)
 
 ## Risks
