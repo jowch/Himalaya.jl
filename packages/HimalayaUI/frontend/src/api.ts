@@ -586,6 +586,26 @@ export const getRecentlyPickedExposures = (
 export const getSampleTags = (experiment_id: number): Promise<SampleTagPair[]> =>
   request<SampleTagPair[]>("GET", `/api/experiments/${experiment_id}/sample-tags`);
 
+/** Per-row shape returned by `GET /api/experiments/:eid/picker-samples`. */
+export interface PickerSampleRow {
+  sample: Sample;
+  indexing_exposure_id: number | null;
+  all_exposures: PickerSampleExposure[];
+}
+
+export interface PickerSampleExposure {
+  id: number;
+  sample_id: number;
+  filename: string | null;
+  selected: boolean;
+}
+
+export const getPickerSamples = (
+  experiment_id: number,
+): Promise<PickerSampleRow[]> =>
+  request<PickerSampleRow[]>(
+    "GET", `/api/experiments/${experiment_id}/picker-samples`);
+
 // ─── Comparison pins (Plan §Phase 13, Task 13.2) ────────────────────────────
 //
 // Per-user pinned comparisons surface at the top of the sidebar. Pin/unpin
