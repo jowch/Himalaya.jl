@@ -1,4 +1,5 @@
 using Test
+using HTTP, JSON3
 using SQLite, DBInterface, Tables
 using HimalayaUI
 using HimalayaUI: open_db, picker_samples
@@ -124,6 +125,32 @@ using HimalayaUI: open_db, picker_samples
             DBInterface.execute(db, "INSERT INTO exposures (id, sample_id, filename, selected) VALUES (200, 10, 'b', 1)")
             rows = picker_samples(db, 1)
             @test rows[1][:indexing_exposure_id] == 200   # higher id wins among multiple selected
+        end
+    end
+end
+
+@testset "GET /api/experiments/:eid/picker-samples" begin
+    mktempdir() do tmp
+        db = open_db(joinpath(tmp, "h.db"))
+        DBInterface.execute(db, "INSERT INTO experiments (id, name, path, data_dir, analysis_dir) VALUES (1, 'E', '/tmp', '/tmp/data', '/tmp/analysis')")
+        DBInterface.execute(db, "INSERT INTO samples (id, experiment_id, name) VALUES (10, 1, 'S')")
+        DBInterface.execute(db, "INSERT INTO exposures (id, sample_id, filename, selected) VALUES (100, 10, 'f1', 1)")
+
+        with_test_server(db) do port, base
+            r = HTTP.get("$base/api/experiments/1/picker-samples")
+            @test r.status == 200
+            body = JSON3.read(String(r.body))
+            @test length(body) == 1
+            @test body[1].indexing_exposure_id == 100
+            @test body[1].all_exposures[1].selected === true   # JSON-shape: bool, not 1
+            @test haskey(body[1], :indexing_exposure_id)        # null vs absent key
+
+            # Sanity: zero-exposure sample produces null (not absent).
+            DBInterface.execute(db, "INSERT INTO samples (id, experiment_id, name) VALUES (11, 1, 'Empty')")
+            r2 = HTTP.get("$base/api/experiments/1/picker-samples")
+            body2 = JSON3.read(String(r2.body))
+            empty_row = first(filter(b -> b.sample.id == 11, collect(body2)))
+            @test empty_row.indexing_exposure_id === nothing
         end
     end
 end

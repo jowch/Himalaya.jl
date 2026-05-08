@@ -67,4 +67,10 @@ function register_picker_routes!()
         out = [Dict(:key => String(r.key), :value => String(r.value)) for r in rows]
         HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(out))
     end
+
+    @get "/api/experiments/{eid}/picker-samples" function(req::HTTP.Request, eid::Int)
+        db = current_db()
+        rows = picker_samples(db, eid)
+        HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(rows))
+    end
 end
