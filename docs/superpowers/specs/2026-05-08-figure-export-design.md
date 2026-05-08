@@ -73,10 +73,16 @@ Self-explanatory contents:
 - **Stacked traces** in current band layout, current `xDomain`. Members with `exposure_id === null` (placeholder rows that haven't been bound to an exposure, or whose exposure was deleted) are **filtered out** before plotting — they can't index into the `traces` map, and the gutter renders them as `"(deleted exposure)"` in `MemberMetaRow.defaultLabel`. The disabled-state gate is augmented to also disable export when *every* member is null-exposure (band collapse → empty figure).
 - **Per-member labels** rendered inline at each band's vertical position, inside the SVG. Today these labels live in `MemberMetaGutter`, a sibling component to the plot; the export folds them into the figure so it reads alone. The label string is `defaultLabel(member)` from `MemberMetaRow.tsx:61-65` — either `member.label_override` if set, or `"Exposure #${member.exposure_id}"` (post-filter, exposure_id is non-null). Sample names, R-factors, and other metadata are out of scope for v1, matching the on-screen gutter's primary line.
 - **Honours current toggles** (`showPeakTicks`, `showPeakLabels`) — these already exist on the page and are the user's "what to include" controls; respecting them means no separate export config.
-- **Per-member colours** are resolved via `colorFor(member, ctx, mode)` from `src/lib/comparison/coloring.ts` — the same function the on-screen plot uses. The export adapter pre-computes a `Map<number /* member.id */, string /* css colour */>` once and threads it into the export-marks builder, so the mark builder doesn't repeat colour resolution per band.
-- **Legend** depends on `groupingMode`:
+- **Per-member colours** are resolved via `colorFor(member, mode, palette, context)` from `src/lib/comparison/coloring.ts` — same function the on-screen plot uses. Signature reference: `coloring.ts:88-93`; live call site: `MemberTraceLayer.tsx:235`. The adapter computes a `Map<number /* member.id */, string /* css colour */>` once and threads it into the export-marks builder, so the mark builder doesn't repeat resolution per band:
+  ```ts
+  const colorByMember = new Map(
+    members.map(m => [m.id, colorFor(m, groupingMode, COMPARE_PALETTE, { allMembers: members, sampleIdFor })])
+  );
+  ```
+  **Critical**: `colorFor` is invoked on the **unfiltered** `members` array (with the full list passed as `ColorContext.allMembers`), and only **then** are null-`exposure_id` members filtered for the mark-build pass. `defaultDistinct` (`coloring.ts:157-166`) keys colour off `allMembers.findIndex(m.id)`, so passing a filtered list would shift every member's colour after a null-exposure row — the on-screen vs. exported figure would silently disagree on `distinct` mode. Compute first, filter second.
+- **Legend** depends on `groupingMode`. For all three modes, members whose `colorFor` resolves to `ORPHAN_FALLBACK` (`coloring.ts:63`) — null exposure, missing phase, sample-id cache miss — render with the orphan colour and produce **one shared "unphased / unbound" legend row** (when any orphans are present) rather than one row per orphan. After the null-exposure filter, orphan-by-exposure can't appear in `byPhase`, but orphan-by-missing-phase still can (an exposure exists without a confirmed index).
   - `"bySample"` — legend is a sample → colour key (each unique `sampleIdFor(m)` gets one row).
-  - `"byPhase"` — legend is a phase → colour key (each unique `member.snapshot.confirmed_index.phase` gets one row), matching `colorFor`'s palette for that mode.
+  - `"byPhase"` — legend is a phase → colour key (each unique `member.snapshot.confirmed_index.phase` gets one row). Members without a `confirmed_index` use `ORPHAN_FALLBACK` and join the shared orphan row described above.
   - `"distinct"` — no legend; per-member labels inline at each band already encode the colour.
 
 ## Architecture
@@ -130,9 +136,13 @@ function buildTraceExportSpec(args: {
   trace: Trace;
   peaks: Peak[];
   activeGroupIndices: IndexEntry[];
-  experimentName: string;
-  sampleName: string;
-  exposureLabel: string;
+  experimentName: string;      // parent coalesces Experiment.name (string|null) → e.g.
+                               // experiment.name ?? `Experiment ${experiment.id}`
+  sampleName: string;          // parent coalesces Sample.label / Sample.name (both
+                               // string|null) — see PlotCard.tsx for the existing
+                               // pattern: sample.name ?? sample.label ?? `Sample ${id}`
+  exposureLabel: string;       // parent supplies a non-null string (typically the
+                               // exposure's display label or numeric id)
   xDomain: [number, number] | null;
   yDomain: [number, number] | null;
   xType: "log" | "linear";
@@ -145,10 +155,13 @@ function buildMultiTraceExportSpec(args: {
   members: ComparisonMember[];           // already in display_order; null-exposure members
                                          // are filtered by the adapter before plotting
   traces: Map<number, Trace>;            // keyed by exposure_id, shape { q, I, sigma }
-  comparisonTitle: string;               // = Comparison.title from api.ts
+  comparisonTitle: string;               // = Comparison.title from api.ts (Comparison.title
+                                         // is non-null in api.ts:439, so no coalesce needed)
   experimentName?: string;               // optional: undefined in /compare/all global scope
                                          // (Comparison has no experiment_id). When defined,
-                                         // ComparePage sources it via useExperiment(eid).
+                                         // ComparePage sources it via useExperiment(eid)
+                                         // and coalesces the api.ts:10 string|null to a
+                                         // non-null fallback (e.g. `Experiment ${id}`).
   xDomain: [number, number] | null;
   showPeakTicks: boolean;
   showPeakLabels: boolean;
@@ -297,13 +310,19 @@ Three layers, matching the existing project conventions.
 
 ### Vitest (unit)
 
-All test files live in `frontend/test/figure-export/` (matching the project's `frontend/test/` convention seen in `test/coloring.test.ts`, `test/TraceViewer.test.tsx`, etc.).
+Test files live in `frontend/test/figure-export/` — the figure-export module has ≥5 test files and benefits from a cohesive subdirectory, matching the existing precedent of `frontend/test/queue/` (Plan 8 mutation queue), `frontend/test/ui/`, and `frontend/test/fixtures/`. The bulk of `frontend/test/` is flat (`coloring.test.ts`, `ComparePage.test.tsx`, etc.), but multi-file modules already use subdirectories — this isn't a new pattern.
 
-- `traceAdapter.test.ts` — given fixture state, returns expected `ExportSpec` shape (title parts, dims, presence of tick marks per index, legend rows).
-- `multiTraceAdapter.test.ts` — same for Compare, with one case per `GroupingMode` value (`"bySample"`, `"byPhase"`, `"distinct"`) to verify legend variation. Also a case where every member has `exposure_id === null` (asserts the disabled-state condition fires) and a case where one member is null-exposure (asserts the filter drops it from the figure).
+Tests are split by layer (each test file targets one unit's contract, not a feature end-to-end):
+
+- `traceAdapter.test.ts` — `buildTraceExportSpec(args)` returns expected `ExportSpec` shape: title parts, dims, presence of tick marks per index, legend rows. Pure adapter contract.
+- `multiTraceAdapter.test.ts` — `buildMultiTraceExportSpec(args)` returns expected `ExportSpec` per `GroupingMode` value (`"bySample"`, `"byPhase"`, `"distinct"`). Verifies legend variation. Also covers:
+  - `byPhase` with a member that has no `confirmed_index` → that member's colour is `ORPHAN_FALLBACK` and the legend gains exactly one shared "unphased" row.
+  - One null-`exposure_id` member among real members → filtered out of marks, but `colorByMember` was computed on the unfiltered list (so other members' `distinct` colours are unchanged from the on-screen render).
+  - All-null-`exposure_id` input → adapter throws (or returns an empty-marks spec — pick one in implementation, but the unit must have a defined behaviour). The disabled-state gate that prevents *calling* the adapter in this case is tested in `FigureExportControls.test.tsx`, not here — adapter contract vs. parent-component wiring are different layers.
 - `renderer.test.ts` — `buildExportSvg(spec)` produces an SVG with no `var(--…)` literals (string regex), title `<text>` node present at expected position, legend group at expected y, white background `<rect>`. Also: round-trip `XMLSerializer.serializeToString(svg)` and re-parse to confirm the output is well-formed XML. Also: assert `Plot.plot(spec.plot)` returns `SVGSVGElement` (not `HTMLElement`) — guards against an adapter accidentally setting `title` / `caption` / `figure: true`.
-- `filename.test.ts` — slugify covers spaces, slashes, parens, unicode, empty input. Empty/all-special input returns `"figure"`. Date suffix uses `en-CA` locale and produces `YYYY-MM-DD` regardless of system locale (test by stubbing `Date`; verify with `vi.setSystemTime` and check the formatted output literally equals e.g. `"2026-05-08"`).
-- `clipboard.test.ts` — mock `navigator.clipboard.write` via `vi.stubGlobal("navigator", { ...navigator, clipboard: { write: vi.fn() } })`; assert the expected `ClipboardItem` was passed. (Cleaner than `Object.defineProperty` on the read-only `clipboard` getter; restores correctly between tests.)
+- `filename.test.ts` — slugify covers spaces, slashes, parens, unicode, empty input. Empty/all-special input returns `"figure"`. Date suffix uses `en-CA` locale and produces `YYYY-MM-DD` regardless of system locale (test by stubbing `Date` with `vi.setSystemTime` and asserting the formatted output literally equals e.g. `"2026-05-08"`).
+- `clipboard.test.ts` — mock `navigator.clipboard.write` via `vi.stubGlobal("navigator", { ...navigator, clipboard: { write: vi.fn() } })`; assert the expected `ClipboardItem` was passed.
+- `FigureExportControls.test.tsx` — parent-wiring tests: disabled-state gate fires when `members.every(m => m.exposure_id == null)` (and the trace-side equivalents), `pending` flag round-trip via `try/finally` (mock the renderer to throw and assert buttons re-enable), `aria-label` strings reflect `ariaContext` prop. This layer owns the disabled gate; the adapter tests own the data-shape contract.
 
 ### JSDOM constraint
 
@@ -332,5 +351,6 @@ There is **no** "no clipboard support" toast: the pre-flight check disables the 
 ## Risks
 
 - **Mark-builder duplication drift.** The export marks for trace + peaks + predicted-q ticks live in a separate file from the on-screen overlay logic. New peak-source types or tick-geometry changes need updates in both places. Mitigation: name the export-mark file alongside the on-screen file in CLAUDE.md so the dependency is discoverable; structural snapshot test asserts the basic mark inventory.
+- **`COMPARE_PALETTE` contrast on light background.** The palette is tuned for the dark theme (OKLCH luminance 0.76–0.80 per `coloring.ts:47-60`). On the export's white background, some entries (notably the lighter golds and chartreuse) may produce insufficient contrast for printed output. Implementation should eyeball the result; if any palette entries fail readability, options are: (a) a separate `COMPARE_PALETTE_LIGHT` for export with the same hue assignments at lower luminance (preferred — keeps the on-screen-to-export hue mapping stable), (b) drop palette entries that fail contrast, or (c) add a thin dark stroke around marks. Not blocking spec acceptance; flagging as a known tuning issue.
 - **Font fidelity.** Using `ui-sans-serif` instead of Plus Jakarta Sans means exported figures don't typographically match the app. Accepted: the "progress report" framing lowers the bar, and embedding the app's webfont would require base64-encoding into every export — not worth the bytes.
 - **Browser compat on Firefox.** Older Firefox stable does not support `image/png` `ClipboardItem`. Mitigation: pre-flight check + graceful fallback to Download.
