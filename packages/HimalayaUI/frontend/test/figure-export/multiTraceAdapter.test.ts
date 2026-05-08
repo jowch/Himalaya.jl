@@ -153,6 +153,28 @@ describe("buildMultiTraceExportSpec", () => {
     expect(marksCount).toBeGreaterThan(0);
   });
 
+  it("bySample: orphan-by-null-sampleIdFor produces a single shared 'unphased / unbound' legend row", () => {
+    // Regression: colorFor returns the dark-bg ORPHAN_FALLBACK for orphans
+    // regardless of the palette passed in. The adapter must remap that to
+    // ORPHAN_FALLBACK_LIGHT so (a) the marks render orphans with light-bg
+    // contrast and (b) the legend's color-equality check detects them.
+    const m1 = makeMember({ id: 1, exposure_id: 100 });
+    const orphanByNullSample = makeMember({ id: 2, exposure_id: 999 });
+    const noSampleResolver = (m: ComparisonMember): number | null =>
+      m.exposure_id === 100 ? 1 : null;
+    const spec = buildMultiTraceExportSpec({
+      members: [m1, orphanByNullSample],
+      traces,
+      comparisonTitle: "T",
+      xDomain: null,
+      showPeakTicks: true, showPeakLabels: true,
+      groupingMode: "bySample", sampleIdFor: noSampleResolver,
+    });
+    const labels = (spec.legend?.rows ?? []).map((r) => r.label.toLowerCase());
+    expect(labels.some((l) => l.includes("sample 1"))).toBe(true);
+    expect(labels.some((l) => l.includes("unphased") || l.includes("unbound"))).toBe(true);
+  });
+
   it("throws when every member has exposure_id === null", () => {
     expect(() => buildMultiTraceExportSpec({
       members: [

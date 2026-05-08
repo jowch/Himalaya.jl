@@ -6,7 +6,7 @@ import {
   EXPORT_MARGIN,
 } from "../presets";
 import { buildMultiTraceExportMarks } from "../marks/multiTraceExportMarks";
-import { colorFor, type GroupingMode } from "../../comparison/coloring";
+import { colorFor, ORPHAN_FALLBACK, type GroupingMode } from "../../comparison/coloring";
 import { phaseColor } from "../../../phases";
 
 export interface MultiTraceAdapterArgs {
@@ -34,15 +34,20 @@ export function buildMultiTraceExportSpec(args: MultiTraceAdapterArgs): ExportSp
   // Critical ordering (spec §MultiTracePlot export "Critical"): compute
   // colors on the UNFILTERED members so defaultDistinct findIndex is stable,
   // then filter null-exposure_id rows from the mark-build pass.
+  //
+  // colorFor returns the dark-bg ORPHAN_FALLBACK for null-exposure / missing-
+  // sample / missing-phase members regardless of which palette we pass — the
+  // orphan constant is hardcoded inside coloring.ts. For the export's white
+  // background we want the light-bg variant. Swap dark→light here so the
+  // marks render orphans with correct contrast AND the legend's color-equality
+  // check below detects them.
   const colorByMember = new Map<number, string>();
   for (const m of members) {
-    colorByMember.set(
-      m.id,
-      colorFor(m, groupingMode, COMPARE_PALETTE_LIGHT, {
-        allMembers: members,
-        sampleIdFor,
-      }),
-    );
+    const c = colorFor(m, groupingMode, COMPARE_PALETTE_LIGHT, {
+      allMembers: members,
+      sampleIdFor,
+    });
+    colorByMember.set(m.id, c === ORPHAN_FALLBACK ? ORPHAN_FALLBACK_LIGHT : c);
   }
 
   const filtered = members.filter((m) => m.exposure_id !== null);
