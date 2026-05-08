@@ -52,8 +52,17 @@ export function buildMultiTraceExportMarks(args: MultiTraceMarksArgs): Plot.Mark
     // per-band). Each band has its own (per-member) y-range.
     const positiveI = trace.I.filter((v) => Number.isFinite(v) && v > 0);
     if (positiveI.length === 0) continue;
-    const logMin = Math.log10(Math.min(...positiveI));
-    const logMax = Math.log10(Math.max(...positiveI));
+    // reduce() rather than Math.min(...positiveI) — V8's spread-arg cap
+    // (~65k–500k depending on build) crashes on long SAXS traces seen via
+    // /compare/all with high-resolution detectors. reduce() is unbounded.
+    let minI = Infinity;
+    let maxI = -Infinity;
+    for (const v of positiveI) {
+      if (v < minI) minI = v;
+      if (v > maxI) maxI = v;
+    }
+    const logMin = Math.log10(minI);
+    const logMax = Math.log10(maxI);
     const logRange = Math.max(1e-6, logMax - logMin);
     const points = trace.q.map((q, idx) => {
       const I = trace.I[idx] ?? 0;
