@@ -57,6 +57,21 @@ export function AppShell(): JSX.Element {
     if (onComparePath) setActivePage("compare");
   }, [onComparePath, setActivePage]);
 
+  const activePage = useAppState((s) => s.activePage);
+
+  // Symmetric: when activePage is "compare" but URL isn't on a compare path,
+  // navigate so the URL-routed Compare pages mount. Without this, a reload
+  // at "/" with persisted activePage='compare' renders the rocker but no
+  // page body (issue #77).
+  useEffect(() => {
+    if (activePage !== "compare") return;
+    if (onComparePath) return;
+    const url = experimentId !== undefined
+      ? `/experiments/${experimentId}/compare`
+      : "/compare/all";
+    navigate(url, { replace: true });
+  }, [activePage, onComparePath, experimentId, navigate]);
+
   // When the user's activePage flips from compare back to index/inspect via
   // TabRocker, we navigate back to "/" so the Zustand shell takes over.
   // This is handled in TabRocker itself — see TabRocker.tsx.
