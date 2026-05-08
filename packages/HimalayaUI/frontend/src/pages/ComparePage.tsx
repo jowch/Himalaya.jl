@@ -24,11 +24,17 @@ import { LineageBadge } from "../components/LineageBadge";
 import { ForksPopover } from "../components/ForksPopover";
 import { ChatCard } from "../components/ChatCard";
 import { HintText } from "../components/ui";
-import { useComparison, useMemberTraces, useMemberTracesLoading, queryKeys } from "../queries";
+import {
+  useComparison,
+  useMemberTraces,
+  useMemberTracesLoading,
+  useMemberExposures,
+  useMemberSamples,
+} from "../queries";
 import { useAppState } from "../state";
 import { useCurrentUserId } from "../hooks/useCurrentUserId";
 import { comparePath, type CompareScope } from "../lib/comparison/routes";
-import type { Comparison, ComparisonMember, Exposure } from "../api";
+import type { Comparison, ComparisonMember } from "../api";
 
 // Boneyard fixture for the compare-review-plot skeleton — a stand-in plot
 // pane + gutter so the captured bones reflect the dual-column geometry the
@@ -118,21 +124,11 @@ function ReviewPlot({
   const showPeakLabels = useAppState((s) => s.showPeakLabels);
 
   // Phase 9 gap-fix — line-stroke coloring grouping mode + sample-id resolver.
-  // The resolver reads the TanStack `exposure` cache so the color stays a
-  // pure derivation off the same data source the rest of the page uses.
-  // Cache misses (exposure not yet fetched) return null → `colorFor` falls
-  // back to ORPHAN_FALLBACK for that member, which is acceptable transient
-  // behaviour that resolves on the next render after the fetch lands.
+  // The resolver reads from the per-member exposure subscription set up
+  // below. Without that explicit subscription the cache never warms in
+  // review mode (only the trace key is fetched), and every trace falls back
+  // to ORPHAN_FALLBACK gray. See issue #61 + #52.
   const groupingMode = useAppState((s) => s.groupingMode);
-  const qc = useQueryClient();
-  const sampleIdFor = useCallback(
-    (m: ComparisonMember): number | null => {
-      if (m.exposure_id === null) return null;
-      const exposure = qc.getQueryData<Exposure>(queryKeys.exposure(m.exposure_id));
-      return exposure?.sample_id ?? null;
-    },
-    [qc],
-  );
 
   // Phase 9.5 — hover/click-to-pin highlight state. `MemberTraceLayer`
   // reads this and recolors that member's confirmed_index peaks to the
@@ -170,6 +166,62 @@ function ReviewPlot({
   );
   const traces = useMemberTraces(exposureIds);
   const tracesLoading = useMemberTracesLoading(exposureIds);
+
+  // Hydrate per-member exposure rows so `sampleIdFor` and the gutter label
+  // resolver below have the data they need (issue #61 + #52). The Map is
+  // ref-stable across renders.
+  const exposures = useMemberExposures(exposureIds);
+  const sampleIds = useMemo(() => {
+    const ids = new Set<number>();
+    for (const e of exposures.values()) ids.add(e.sample_id);
+    return Array.from(ids).sort((a, b) => a - b);
+  }, [exposures]);
+  const samples = useMemberSamples(sampleIds);
+
+  const sampleIdFor = useCallback(
+    (m: ComparisonMember): number | null => {
+      if (m.exposure_id === null) return null;
+      return exposures.get(m.exposure_id)?.sample_id ?? null;
+    },
+    [exposures],
+  );
+
+  // Resolved per-member labels: `${sample.label||sample.name} · ${exposure.filename}`,
+  // honoring `member.label_override` first. Falls back to the legacy
+  // "Exposure #N" form while the underlying rows are still loading so the
+  // skeleton lift doesn't reveal a different transient label.
+  const displayLabelByMemberId = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const m of members) {
+      if (m.label_override) {
+        map.set(m.id, m.label_override);
+        continue;
+      }
+      if (m.exposure_id === null) {
+        map.set(m.id, "(deleted exposure)");
+        continue;
+      }
+      const exposure = exposures.get(m.exposure_id);
+      const sample = exposure ? samples.get(exposure.sample_id) : undefined;
+      // `||` (not `??`) so an empty-string label/name falls through to the
+      // next fallback rather than rendering as a leading separator like
+      // " · run-A.dat". Sample.label is currently typed `string | null`,
+      // so this is theoretical — but cheap to harden.
+      const sampleName = sample ? (sample.label || sample.name || null) : null;
+      const filename = exposure?.filename || null;
+      if (sampleName && filename) {
+        map.set(m.id, `${sampleName} · ${filename}`);
+      } else if (filename) {
+        map.set(m.id, filename);
+      } else if (sampleName) {
+        map.set(m.id, sampleName);
+      } else {
+        map.set(m.id, `Exposure #${m.exposure_id}`);
+      }
+    }
+    return map;
+  }, [members, exposures, samples]);
+
   // Cold-fetch gate. Per CLAUDE.md boneyard rules: gate on `query.isLoading`
   // not `isPending` so disabled queries / background refetches don't flicker.
   const plotLoading = compQ.isLoading || tracesLoading;
@@ -243,7 +295,12 @@ function ReviewPlot({
           className="w-[280px] shrink-0 relative"
           data-testid="compare-review-gutter"
         >
-          <MemberMetaGutter members={members} panelHeight={panelHeight} mode="review" />
+          <MemberMetaGutter
+            members={members}
+            panelHeight={panelHeight}
+            mode="review"
+            displayLabelByMemberId={displayLabelByMemberId}
+          />
         </div>
       </Skeleton>
       <div
