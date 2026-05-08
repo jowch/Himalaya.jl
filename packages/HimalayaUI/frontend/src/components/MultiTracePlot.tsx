@@ -86,10 +86,11 @@ const DEFAULT_BAND_ASPECT_TARGET = 1.0;
 /**
  * Lower bound on the actual plot width (px). Without this floor, a single-
  * member case would shrink the plot to band-height-sized which is too narrow
- * to read q-axis ticks. ~360 px is the minimum that keeps default tick
- * spacing legible.
+ * to read q-axis ticks. ~280 px keeps default tick spacing legible and lets
+ * the per-band aspect target stay reachable at N≥4 in typical panel heights
+ * (a higher floor consistently overrode the target for large member counts).
  */
-const MIN_PLOT_WIDTH = 360;
+const MIN_PLOT_WIDTH = 280;
 
 const MARGIN_LEFT   = 50;
 const MARGIN_RIGHT  = 14;
@@ -568,8 +569,13 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
     if (n === 0 || panelHeight <= 0 || bandAspectTarget <= 0) {
       return MIN_PLOT_WIDTH;
     }
+    // Each band is `panelHeight / n` tall and `plotW` wide. Target per-band
+    // W:H = `bandAspectTarget`, so `plotW = (panelHeight / n) * target`.
+    // (An earlier draft used `n * bandH * target`, which simplifies to
+    // `panelHeight * target` — that targets the *whole-plot* aspect, not
+    // per-band, and produced caps ~N× too large.)
     const bandH = panelHeight / n;
-    const target = n * bandH * bandAspectTarget; // == panelHeight * bandAspectTarget
+    const target = bandH * bandAspectTarget;
     return Math.max(MIN_PLOT_WIDTH, target);
   }, [members.length, panelHeight, bandAspectTarget]);
 
