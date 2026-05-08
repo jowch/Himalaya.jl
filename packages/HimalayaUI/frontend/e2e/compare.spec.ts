@@ -318,19 +318,17 @@ test("compare smoke: create → submit → review", async ({ page }) => {
   // 3. Fill the title.
   await page.getByTestId("compare-edit-title").fill("My first comparison");
 
-  // 4. Open the picker, add 2 traces.
-  await page.getByTestId("compare-edit-add-traces").click();
-  await expect(page.getByTestId("comparison-picker")).toBeVisible();
-  // Click each picker row's checkbox to select it. Both samples 10 and 11
-  // surface their exposures because experiment-1 is the picker's default scope.
+  // 4. Inline picker panel is in the right slot (PR2). Tick each sample
+  // row to immediate-commit add — no modal, no batch "Add N selected" footer.
+  await expect(page.getByTestId("comparison-picker-panel")).toBeVisible();
+  // Both samples 10 and 11 surface as picker rows in experiment-1's panel.
   const rows = page.getByTestId("picker-row");
   await expect(rows).toHaveCount(2);
-  // Tick the input inside each row (ExposureListRow renders a checkbox).
   for (let i = 0; i < 2; i++) {
     await rows.nth(i).locator('input[type="checkbox"]').check();
   }
-  await page.getByTestId("comparison-picker-add").click();
-  // Picker dismisses after add.
+  // Both members should now be in the draft (immediate-commit).
+  // Modal `comparison-picker` is no longer mounted in edit mode.
   await expect(page.getByTestId("comparison-picker")).not.toBeVisible();
 
   // 5. Save — verify the request lands and we navigate to review.
