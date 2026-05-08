@@ -42,6 +42,13 @@ export interface MemberMetaRowProps {
    * drag-and-drop reorder across rows. Hooks into the grip's `onDragStart`.
    */
   onGripDragStart?: (e: React.DragEvent) => void;
+  /**
+   * Pre-resolved display label (typically `${sample.label||sample.name} ·
+   * ${exposure.filename}`). When provided, it wins over `defaultLabel`. The
+   * Compare review page assembles this from the per-member exposure +
+   * sample caches (issue #52). `member.label_override` is honored upstream.
+   */
+  displayLabel?: string;
 }
 
 const NORMALIZATION_OPTIONS: DraftMemberNormalization[] = [
@@ -65,7 +72,7 @@ function defaultLabel(member: ComparisonMember): string {
 }
 
 export function MemberMetaRow(props: MemberMetaRowProps): JSX.Element {
-  const { member, top, height, mode, memberIndex, onGripDragStart } = props;
+  const { member, top, height, mode, memberIndex, onGripDragStart, displayLabel } = props;
   const [expanded, setExpanded] = useState(false);
 
   const updateMember = useAppState((s) => s.updateMember);
@@ -225,8 +232,9 @@ export function MemberMetaRow(props: MemberMetaRowProps): JSX.Element {
         <span
           data-testid="member-meta-label"
           className="truncate min-w-0 max-w-[16ch] text-fg"
+          title={displayLabel ?? defaultLabel(member)}
         >
-          {defaultLabel(member)}
+          {displayLabel ?? defaultLabel(member)}
         </span>
         {ci !== null ? (
           <>

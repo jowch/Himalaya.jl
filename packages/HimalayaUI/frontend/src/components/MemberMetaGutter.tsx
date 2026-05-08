@@ -31,12 +31,19 @@ export interface MemberMetaGutterProps {
   /** Panel height in pixels — drives the y-band envelopes. */
   panelHeight: number;
   mode: "review" | "edit";
+  /**
+   * Optional per-member display label resolved by the parent (typically
+   * `${sample.label||sample.name} · ${exposure.filename}`, with
+   * `member.label_override` honored first). When absent, MemberMetaRow
+   * falls back to its internal default. Issue #52.
+   */
+  displayLabelByMemberId?: Map<number, string>;
 }
 
 const DRAG_MIME = "application/x-himalaya-member-id";
 
 export function MemberMetaGutter(props: MemberMetaGutterProps): JSX.Element {
-  const { members, panelHeight, mode } = props;
+  const { members, panelHeight, mode, displayLabelByMemberId } = props;
   const reorderMembers = useAppState((s) => s.reorderMembers);
   const dragSourceIdxRef = useRef<number | null>(null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
@@ -119,6 +126,9 @@ export function MemberMetaGutter(props: MemberMetaGutterProps): JSX.Element {
               height={height}
               mode={mode}
               memberIndex={i}
+              {...(displayLabelByMemberId?.get(m.id) !== undefined
+                ? { displayLabel: displayLabelByMemberId.get(m.id)! }
+                : {})}
               {...(mode === "edit"
                 ? { onGripDragStart: (e: React.DragEvent) => handleDragStart(e, i) }
                 : {})}

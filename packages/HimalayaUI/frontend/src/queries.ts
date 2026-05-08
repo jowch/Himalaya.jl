@@ -178,6 +178,69 @@ export function useMemberTracesLoading(exposureIds: number[]): boolean {
   return queries.some((q) => q.isLoading);
 }
 
+/**
+ * Sibling of `useMemberTraces` that hydrates per-member EXPOSURE rows. Compare
+ * review-mode pages use `sampleIdFor` and label resolution that depend on the
+ * exposure cache being populated; without an explicit subscription the cache
+ * never warms (only the trace key is fetched), and downstream readers fall
+ * back to the orphan path. Issue #61 / #52.
+ *
+ * Returns a stable `Map<exposure_id, Exposure>`, mirroring the
+ * `useMemberTraces` shape so MultiTracePlot consumers can treat the two
+ * symmetrically.
+ */
+export function useMemberExposures(exposureIds: number[]): Map<number, api.Exposure> {
+  const queries = useQueries({
+    queries: exposureIds.map((id) => ({
+      queryKey: queryKeys.exposure(id),
+      queryFn: () => api.getExposure(id),
+    })),
+  });
+  const stableRef = useRef<Map<number, api.Exposure>>(new Map());
+  const next = new Map<number, api.Exposure>();
+  for (let i = 0; i < exposureIds.length; i++) {
+    const data = queries[i]?.data;
+    if (data) next.set(exposureIds[i]!, data);
+  }
+  let same = stableRef.current.size === next.size;
+  if (same) {
+    for (const [k, v] of next) {
+      if (stableRef.current.get(k) !== v) { same = false; break; }
+    }
+  }
+  if (!same) stableRef.current = next;
+  return stableRef.current;
+}
+
+/**
+ * Hydrates per-member SAMPLE rows. Used together with `useMemberExposures`
+ * by the Compare review-mode label resolver — a member's display label is
+ * `${sample.label || sample.name} · ${exposure.filename}` (issue #52). Same
+ * stable-Map pattern as the sibling hooks.
+ */
+export function useMemberSamples(sampleIds: number[]): Map<number, api.Sample> {
+  const queries = useQueries({
+    queries: sampleIds.map((id) => ({
+      queryKey: queryKeys.sample(id),
+      queryFn: () => api.getSample(id),
+    })),
+  });
+  const stableRef = useRef<Map<number, api.Sample>>(new Map());
+  const next = new Map<number, api.Sample>();
+  for (let i = 0; i < sampleIds.length; i++) {
+    const data = queries[i]?.data;
+    if (data) next.set(sampleIds[i]!, data);
+  }
+  let same = stableRef.current.size === next.size;
+  if (same) {
+    for (const [k, v] of next) {
+      if (stableRef.current.get(k) !== v) { same = false; break; }
+    }
+  }
+  if (!same) stableRef.current = next;
+  return stableRef.current;
+}
+
 export function usePeaks(exposureId: number | undefined) {
   return useQuery({
     queryKey: ["exposure", exposureId ?? "none", "peaks"] as const,
