@@ -67,3 +67,6 @@ data/
 
 # Local dev sandbox — copy of prod DB for click-testing changes in worktrees
 .dev/
+
+# Git worktree directories — session-local checkouts
+.worktrees/
