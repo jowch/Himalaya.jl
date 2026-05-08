@@ -70,16 +70,23 @@ interface Props {
   /** Controlled picks list. */
   picks: Pick[];
   onPicksChange: (next: Pick[]) => void;
+  /**
+   * Immediate-mode callback. When set, the body fires `onPick` on each toggle
+   * and does NOT mutate the `picks`/`onPicksChange` controlled state — the
+   * caller is responsible for committing each pick directly (e.g. `addMember`).
+   * `picks` and `onPicksChange` are still required for checked-state display in
+   * the modal shell; pass `[]` + a no-op when using immediate mode.
+   */
+  onPick?: (pick: Pick) => void;
   /** Set of exposure ids already in the active draft — rendered as locked. */
   alreadyAddedExposureIds: Set<number>;
   /** Optional ref the parent threads down to focus the search input. */
   searchInputRef?: RefObject<HTMLInputElement>;
   // Filter chip state (search / tag-chip) is internal to the body.
-  // PR2 adds an `onPick` prop for immediate-commit shells.
 }
 
 export function ComparisonPickerBody({
-  experimentId, picks, onPicksChange, alreadyAddedExposureIds,
+  experimentId, picks, onPicksChange, onPick, alreadyAddedExposureIds,
   searchInputRef,
 }: Props): JSX.Element {
   const userId = useCurrentUserId();
@@ -170,6 +177,10 @@ export function ComparisonPickerBody({
       exposure_id: row.indexing_exposure_id,
       source: "default",
     };
+    if (onPick) {
+      if (next) onPick(pick);
+      return;
+    }
     if (next) onPicksChange([...picks, pick]);
     else onPicksChange(picks.filter((p) => p.sample_id !== row.sample.id));
   };
@@ -180,6 +191,7 @@ export function ComparisonPickerBody({
       exposure_id: exposureId,
       source: exposureId === row.indexing_exposure_id ? "default" : "override",
     };
+    if (onPick) { onPick(next); return; }
     const i = picks.findIndex((p) => p.sample_id === row.sample.id);
     if (i < 0) onPicksChange([...picks, next]);
     else onPicksChange(picks.map((p, j) => (j === i ? next : p)));
