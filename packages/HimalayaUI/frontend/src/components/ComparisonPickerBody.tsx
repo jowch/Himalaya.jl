@@ -292,8 +292,15 @@ export function ComparisonPickerBody({
             </div>
             <ul role="listbox" aria-label="Recently used samples" className="flex flex-col">
               {recentSamples.map((r) => {
-                const alreadyAdded = r.indexing_exposure_id !== null
-                  && alreadyAddedExposureIds.has(r.indexing_exposure_id);
+                // alreadyAdded = "any exposure of this sample is in the draft"
+                // — the indexing-only check missed override-added rows in
+                // immediate mode (PR #97 review): clicking the checkbox to
+                // un-check an override-added row was a silent no-op since
+                // togglePickFor(_, false) does nothing in onPick mode.
+                // Locking via the some() check covers both modes.
+                const alreadyAdded = r.all_exposures.some(
+                  (e) => alreadyAddedExposureIds.has(e.id),
+                );
                 return (
                   <li key={`recent-${r.sample.id}`} data-testid="picker-row">
                     <SamplePickerRow
@@ -323,8 +330,15 @@ export function ComparisonPickerBody({
             </div>
             <ul role="listbox" aria-label="Samples" className="flex flex-col">
               {mainListRows.map((r) => {
-                const alreadyAdded = r.indexing_exposure_id !== null
-                  && alreadyAddedExposureIds.has(r.indexing_exposure_id);
+                // alreadyAdded = "any exposure of this sample is in the draft"
+                // — the indexing-only check missed override-added rows in
+                // immediate mode (PR #97 review): clicking the checkbox to
+                // un-check an override-added row was a silent no-op since
+                // togglePickFor(_, false) does nothing in onPick mode.
+                // Locking via the some() check covers both modes.
+                const alreadyAdded = r.all_exposures.some(
+                  (e) => alreadyAddedExposureIds.has(e.id),
+                );
                 return (
                   <li key={r.sample.id} data-testid="picker-row">
                     <SamplePickerRow

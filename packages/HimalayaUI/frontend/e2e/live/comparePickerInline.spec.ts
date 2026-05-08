@@ -38,13 +38,30 @@ interface Fixture {
  * Find the first experiment that has at least one picker-sample row with
  * a non-null `indexing_exposure_id`. Rows with null are rendered as
  * disabled (no checkbox) and cannot be checked.
+ *
+ * Two-pass: prefer rows with ≥2 exposures so the override-caret test has
+ * something to switch to (PR #97 review). Fall back to ≥1 exposure if no
+ * rich row exists, in which case the override-caret test is `test.skip`'d.
  */
 async function findFixture(): Promise<Fixture> {
   const exps = await fetch(`${BACKEND_BASE}/api/experiments`).then(r => r.json());
+  type Cached = { exp: { id: number }; rows: PickerSampleRow[] };
+  const cache: Cached[] = [];
+
   for (const exp of exps) {
     const rows: PickerSampleRow[] = await fetch(
       `${BACKEND_BASE}/api/experiments/${exp.id}/picker-samples`,
     ).then(r => r.json());
+    cache.push({ exp, rows });
+    const rich = rows.find(r =>
+      r.indexing_exposure_id !== null && r.all_exposures.length >= 2,
+    );
+    if (rich) {
+      return { experimentId: exp.id, pickerRow: rich };
+    }
+  }
+  // No multi-exposure row found — fall back to any non-null row.
+  for (const { exp, rows } of cache) {
     const usable = rows.find(r => r.indexing_exposure_id !== null);
     if (usable) {
       return { experimentId: exp.id, pickerRow: usable };

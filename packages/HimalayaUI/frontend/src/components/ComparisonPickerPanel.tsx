@@ -44,16 +44,17 @@ export function ComparisonPickerPanel({
   const handlePick = (p: Pick): void => {
     if (alreadyAddedExposureIds.has(p.exposure_id)) return;
 
-    // Swap semantics: if a different exposure of the same sample is already a
-    // member, remove it before adding the new one. Iterates back-to-front so
-    // the index stays valid for the splice in `removeMember(index)`.
+    // Swap semantics: if a different exposure of the same sample is already
+    // a member, remove it before adding the new one. The panel maintains
+    // the invariant of at most one same-sample member at a time, so first
+    // match wins and direction doesn't matter.
     const members = draft?.members ?? [];
-    for (let i = members.length - 1; i >= 0; i--) {
+    for (let i = 0; i < members.length; i++) {
       const eid = members[i]?.exposure_id;
       if (eid === null || eid === undefined || eid === p.exposure_id) continue;
       if (exposureToSample.get(eid) === p.sample_id) {
         removeMember(i);
-        break;   // only one same-sample member at a time
+        break;
       }
     }
 
