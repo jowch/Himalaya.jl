@@ -32,12 +32,14 @@ export interface MemberMetaGutterProps {
   panelHeight: number;
   mode: "review" | "edit";
   /**
-   * Optional per-member display label resolved by the parent (typically
-   * `${sample.label||sample.name} · ${exposure.filename}`, with
-   * `member.label_override` honored first). When absent, MemberMetaRow
-   * falls back to its internal default. Issue #52.
+   * Per-member display label resolved by the parent via
+   * `resolveDisplayLabels` (`lib/comparison/labels.ts`) — the single
+   * source of truth for the fallback chain (issues #52, #69, #73). The
+   * resolver always populates an entry for every member id, so this
+   * component does no fallback reconstruction of its own; doing so would
+   * re-introduce the drift seam #73 closed.
    */
-  displayLabelByMemberId?: Map<number, string>;
+  displayLabelByMemberId: Map<number, string>;
 }
 
 const DRAG_MIME = "application/x-himalaya-member-id";
@@ -126,9 +128,10 @@ export function MemberMetaGutter(props: MemberMetaGutterProps): JSX.Element {
               height={height}
               mode={mode}
               memberIndex={i}
-              {...(displayLabelByMemberId?.get(m.id) !== undefined
-                ? { displayLabel: displayLabelByMemberId.get(m.id)! }
-                : {})}
+              // `resolveDisplayLabels` always populates an entry per member;
+              // the `?? ""` is a TypeScript-narrowing safety net, never a
+              // user-facing fallback (those all live in `labels.ts`, #73).
+              displayLabel={displayLabelByMemberId.get(m.id) ?? ""}
               {...(mode === "edit"
                 ? { onGripDragStart: (e: React.DragEvent) => handleDragStart(e, i) }
                 : {})}

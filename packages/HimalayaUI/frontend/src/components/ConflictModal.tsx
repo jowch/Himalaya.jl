@@ -38,9 +38,13 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAppState } from "../state";
 import { useFocusTrap } from "../hooks/useFocusTrap";
-import { useSaveComparison } from "../queries";
+import { useSaveComparison, queryKeys } from "../queries";
 import { computeMemberSnapshot } from "../lib/comparison/snapshot";
 import { comparePath, type CompareScope } from "../lib/comparison/routes";
+import { showToast } from "../lib/toast";
+import {
+  getExposure, listPeaks, listIndices, listGroups,
+} from "../api";
 import type {
   Comparison, ComparisonMemberInput, SaveComparisonBody,
 } from "../api";
@@ -72,11 +76,49 @@ function deriveScope(pathname: string): CompareScope {
  * Mirrors `ComparePageEdit::handleSave` snapshot-recompute semantics so a
  * stale snapshot doesn't ride the overwrite request.
  */
-function buildOverwritePayload(
+async function buildOverwritePayload(
   draft: ActiveDraft,
   serverHash: string,
   qc: ReturnType<typeof useQueryClient>,
-): SaveComparisonBody & { id?: number } {
+): Promise<SaveComparisonBody & { id?: number }> {
+  // Mirror handleSave's cold-cache prefetch (#49) — without it, snapshots
+  // for never-visited members land with analysis_inputs_hash = "" and the
+  // server marks them stale on the next view fold. Today this is masked
+  // because Overwrite is reached via Save→409 (caches already warm); the
+  // prefetch closes the regression mode (long-idle conflict modal, future
+  // codepaths, test fixtures with cleared caches). See issue #74.
+  const coldExposureIds = draft.members
+    .map((m) => m.exposure_id)
+    .filter((id): id is number => id !== null)
+    .filter((id) =>
+      qc.getQueryData(queryKeys.exposure(id)) === undefined
+      || qc.getQueryData(queryKeys.peaks(id)) === undefined
+      || qc.getQueryData(queryKeys.indices(id)) === undefined
+      || qc.getQueryData(queryKeys.groups(id)) === undefined
+    );
+  if (coldExposureIds.length > 0) {
+    await Promise.all(
+      coldExposureIds.flatMap((id) => [
+        qc.fetchQuery({
+          queryKey: queryKeys.exposure(id),
+          queryFn: () => getExposure(id),
+        }),
+        qc.fetchQuery({
+          queryKey: queryKeys.peaks(id),
+          queryFn: () => listPeaks(id),
+        }),
+        qc.fetchQuery({
+          queryKey: queryKeys.indices(id),
+          queryFn: () => listIndices(id),
+        }),
+        qc.fetchQuery({
+          queryKey: queryKeys.groups(id),
+          queryFn: () => listGroups(id),
+        }),
+      ]),
+    );
+  }
+
   const members: ComparisonMemberInput[] = draft.members.map((m) => {
     const snapshot = m.exposure_id !== null
       ? computeMemberSnapshot(m.exposure_id, qc)
@@ -189,11 +231,22 @@ export function ConflictModal(): JSX.Element | null {
   // own just-committed state. Read+write the ref synchronously inside
   // `handleOverwrite` so the second invocation bails before mutate runs.
   const overwriteInFlightRef = useRef(false);
-  const handleOverwrite = useCallback(() => {
+  const handleOverwrite = useCallback(async () => {
     if (draft === null || serverHash === null) return;
     if (save.isPending || overwriteInFlightRef.current) return;
     overwriteInFlightRef.current = true;
-    save.mutate(buildOverwritePayload(draft, serverHash, qc));
+    try {
+      const payload = await buildOverwritePayload(draft, serverHash, qc);
+      save.mutate(payload);
+    } catch {
+      // Prefetch failed — release the in-flight guard so the user can retry.
+      // Surface a toast: handleSave's prefetch failure rides through
+      // save.mutate's onError pipeline, but here the prefetch happens BEFORE
+      // save.mutate ever fires, so a transient network blip would otherwise
+      // be silent feedback (PR #92 review point).
+      overwriteInFlightRef.current = false;
+      showToast("Failed to refresh comparison data — try again", "error");
+    }
   }, [draft, serverHash, save, qc]);
 
   // Watch for overwrite success → clear modal + navigate.

@@ -603,12 +603,14 @@ export function ComparePageEdit(): JSX.Element {
         }
         center={editCenter}
         right={
-          <div
-            data-testid="compare-edit-right-hint"
-            className="h-full flex items-center justify-center p-4 text-center"
-          >
-            <HintText>Use “+ Add traces” to populate the comparison.</HintText>
-          </div>
+          (draft?.members.length ?? 0) === 0 ? (
+            <div
+              data-testid="compare-edit-right-hint"
+              className="h-full flex items-center justify-center p-4 text-center"
+            >
+              <HintText>Use “+ Add traces” to populate the comparison.</HintText>
+            </div>
+          ) : null
         }
         slotClassName={{
           // ComparisonSidebar uses `flex-1`, so the slot needs `display:flex`.

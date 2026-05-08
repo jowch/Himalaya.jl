@@ -132,4 +132,33 @@ describe("ForksPopover", () => {
     fireEvent.click(screen.getByTestId("comparison-forks-trigger"));
     expect(screen.queryByTestId("comparison-forks-popover")).toBeNull();
   });
+
+  it("Esc closes the popover (#75)", () => {
+    renderPopover({ parentId: 100, experimentId: 7, forks: [] });
+    fireEvent.click(screen.getByTestId("comparison-forks-trigger"));
+    expect(screen.getByTestId("comparison-forks-popover")).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByTestId("comparison-forks-popover")).toBeNull();
+  });
+
+  it("outside click closes the popover (#75)", () => {
+    const { container } = renderPopover({ parentId: 100, experimentId: 7, forks: [] });
+    fireEvent.click(screen.getByTestId("comparison-forks-trigger"));
+    expect(screen.getByTestId("comparison-forks-popover")).toBeInTheDocument();
+
+    // Click an element outside the popover and outside the trigger.
+    fireEvent.mouseDown(container);
+    expect(screen.queryByTestId("comparison-forks-popover")).toBeNull();
+  });
+
+  it("trigger reflects open state via aria-expanded (#75)", () => {
+    renderPopover({ parentId: 100, experimentId: 7, forks: [] });
+    const trigger = screen.getByTestId("comparison-forks-trigger");
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(trigger).toHaveAttribute("aria-haspopup", "true");
+
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+  });
 });

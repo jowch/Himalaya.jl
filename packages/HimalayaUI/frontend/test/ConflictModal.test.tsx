@@ -28,6 +28,7 @@ import { ConflictModal } from "../src/components/ConflictModal";
 import { useAppState, LS_KEY } from "../src/state";
 import { ConflictError } from "../src/api";
 import type { Comparison } from "../src/api";
+import { queryKeys } from "../src/queries";
 import { COMPARE_DRAFT_KEY } from "../src/lib/comparison/draft";
 import {
   attachConflictBridge, _resetConflictBridgeForTest,
@@ -131,6 +132,32 @@ function renderModal(opts?: {
   );
   render(<ConflictModal />, { wrapper: Wrapper });
   return { qc };
+}
+
+/**
+ * Pre-seed all four cache keys (exposure, peaks, indices, groups) for the
+ * given draft-member exposure ids so `buildOverwritePayload`'s cold-cache
+ * prefetch (#74) is a no-op. Use this in tests that exercise Overwrite but
+ * aren't asserting prefetch behavior — without it, the prefetch would issue
+ * extra `fetch` calls that disturb the captured-request count those tests
+ * pin.
+ *
+ * `seedDraft` numbers exposure ids starting at 300; pass that range here
+ * (or use `seedWarmCachesForSeedDraft(qc, n)`).
+ */
+function seedWarmCaches(qc: QueryClient, exposureIds: number[]): void {
+  for (const id of exposureIds) {
+    qc.setQueryData(queryKeys.exposure(id), {
+      id, sample_id: 1, exposure_type: "simple", filename: `exp${id}`,
+    });
+    qc.setQueryData(queryKeys.peaks(id),  []);
+    qc.setQueryData(queryKeys.indices(id), []);
+    qc.setQueryData(queryKeys.groups(id), []);
+  }
+}
+
+function seedWarmCachesForSeedDraft(qc: QueryClient, members: number): void {
+  seedWarmCaches(qc, Array.from({ length: members }, (_, i) => 300 + i));
 }
 
 function seedDraft(opts: { title?: string; members?: number; id?: number; baseHash?: string }) {
@@ -240,7 +267,10 @@ describe("<ConflictModal>", () => {
       })), { status: 200, headers: { "Content-Type": "application/json" } });
     }) as typeof fetch;
 
-    renderModal();
+    const { qc } = renderModal();
+    // Pre-warm caches so #74's prefetch is a no-op — this test pins the
+    // captured-request count and a prefetch would inflate it.
+    seedWarmCachesForSeedDraft(qc, 1);
     act(() => {
       useAppState.getState().setPendingConflict(
         new ConflictError("sha256:server-v1", server),
@@ -285,7 +315,10 @@ describe("<ConflictModal>", () => {
       }), { status: 409, headers: { "Content-Type": "application/json" } });
     }) as typeof fetch;
 
-    renderModal();
+    const { qc } = renderModal();
+    // Pre-warm caches so #74's prefetch is a no-op (it would otherwise hit
+    // the same fake fetch and trigger a 409 cascade before the save fires).
+    seedWarmCachesForSeedDraft(qc, 1);
     act(() => {
       useAppState.getState().setPendingConflict(
         new ConflictError("sha256:v1", server1),
@@ -470,7 +503,10 @@ describe("<ConflictModal>", () => {
       return new Promise<Response>((resolve) => { resolveResponse = resolve; });
     }) as typeof fetch;
 
-    renderModal();
+    const { qc } = renderModal();
+    // Pre-warm caches so #74's prefetch is a no-op — this test pins the
+    // captured-request count and the prefetch would inflate it.
+    seedWarmCachesForSeedDraft(qc, 1);
     act(() => {
       useAppState.getState().setPendingConflict(
         new ConflictError("sha256:server-v1", server),
@@ -500,6 +536,152 @@ describe("<ConflictModal>", () => {
         id: 42, hash: "sha256:after-overwrite",
       })), { status: 200, headers: { "Content-Type": "application/json" } }));
     }
+  });
+
+  it("Overwrite prefetches cold member caches before computing snapshots (#74)", async () => {
+    // `buildOverwritePayload` calls `computeMemberSnapshot`, which reads four
+    // cache keys (exposure, peaks, indices, groups) per member. If any are
+    // cold, the snapshot lands `analysis_inputs_hash = ""` and the server
+    // marks the member stale on first view fold — silently regressing the
+    // #49 prefetch fix that `handleSave` carries. Today the bug is masked
+    // because Overwrite is reached via Save→409 (caches already warm); this
+    // test exercises the cold-cache scenario to lock the fix.
+    const user = userEvent.setup();
+    const server = buildComparison({ id: 42, hash: "sha256:server-v1" });
+    // Seed a draft member with exposure_id = 999 — NOT pre-seeded in the
+    // QueryClient cache. All four cache keys for 999 must be cold so the
+    // prefetch actually fires.
+    useAppState.setState({
+      activeDraft: {
+        id: 42,
+        baseHash: "sha256:stale",
+        title: "Local title",
+        description: "",
+        members: [{
+          id: undefined,
+          exposure_id: 999,
+          display_order: 0,
+          band_height: 1,
+          y_offset: 0,
+          normalization: "none",
+          color_override: undefined,
+          label_override: undefined,
+          q_window_min: undefined,
+          q_window_max: undefined,
+          peak_display: undefined,
+          snapshot: {
+            effective_peaks: [],
+            confirmed_index: null,
+            analysis_inputs_hash: "",
+          },
+        }],
+        forkedFromId: undefined,
+        forkedAtHash: undefined,
+      },
+    });
+
+    const fetchSpy = vi.spyOn(global, "fetch").mockImplementation((async (
+      input: RequestInfo | URL,
+    ) => {
+      const url = typeof input === "string" ? input : String(input);
+      // Prefetch endpoints — return minimal shapes that satisfy the typed
+      // fetchers in api.ts (lists return arrays; exposure returns a row).
+      if (/\/api\/exposures\/999(?:\?|$)/.test(url)) {
+        return new Response(JSON.stringify({
+          id: 999, sample_id: 1, exposure_type: "simple", filename: "x",
+          analysis_inputs_hash: "sha256:exposure999",
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (url.includes("/api/exposures/999/peaks")
+          || url.includes("/api/exposures/999/indices")
+          || url.includes("/api/exposures/999/groups")) {
+        return new Response("[]", {
+          status: 200, headers: { "Content-Type": "application/json" },
+        });
+      }
+      // Save mutation
+      return new Response(JSON.stringify(buildComparison({
+        id: 42, hash: "sha256:after-overwrite", title: "Local title",
+      })), { status: 200, headers: { "Content-Type": "application/json" } });
+    }) as typeof fetch);
+
+    renderModal();
+    act(() => {
+      useAppState.getState().setPendingConflict(
+        new ConflictError("sha256:server-v1", server),
+      );
+    });
+
+    await user.click(screen.getByTestId("conflict-overwrite"));
+
+    await waitFor(() => {
+      const urls = fetchSpy.mock.calls.map((c) =>
+        typeof c[0] === "string" ? c[0] : String(c[0]),
+      );
+      expect(urls.some((u) => /\/api\/exposures\/999(?:\?|$)/.test(u))).toBe(true);
+      expect(urls.some((u) => u.includes("/api/exposures/999/peaks"))).toBe(true);
+      expect(urls.some((u) => u.includes("/api/exposures/999/indices"))).toBe(true);
+      expect(urls.some((u) => u.includes("/api/exposures/999/groups"))).toBe(true);
+    });
+
+    // Sanity: the save mutation must run AFTER the prefetch — the Overwrite
+    // POST should appear in the fetch log too.
+    await waitFor(() => {
+      const urls = fetchSpy.mock.calls.map((c) =>
+        typeof c[0] === "string" ? c[0] : String(c[0]),
+      );
+      expect(urls.some((u) => u.includes("/api/comparisons/42/submit"))).toBe(true);
+    });
+  });
+
+  it("Overwrite surfaces a toast when prefetch fails (#92 review)", async () => {
+    // PR #92 review point — the catch block previously swallowed the
+    // prefetch error silently. Verify the user gets feedback now.
+    const user = userEvent.setup();
+    const server = buildComparison({ id: 42, hash: "sha256:server-v1" });
+    useAppState.setState({
+      activeDraft: {
+        id: 42, baseHash: "sha256:stale", title: "Local title", description: "",
+        members: [{
+          id: undefined, exposure_id: 999, display_order: 0,
+          band_height: 1, y_offset: 0, normalization: "none",
+          color_override: undefined, label_override: undefined,
+          q_window_min: undefined, q_window_max: undefined, peak_display: undefined,
+          snapshot: { effective_peaks: [], confirmed_index: null, analysis_inputs_hash: "" },
+        }],
+        forkedFromId: undefined, forkedAtHash: undefined,
+      },
+    });
+
+    // Make the prefetch fail. Any of the four endpoints throwing causes
+    // Promise.all to reject, which our catch block handles.
+    vi.spyOn(global, "fetch").mockImplementation((async () => {
+      throw new Error("network down");
+    }) as typeof fetch);
+
+    // Capture the toast surface — toast.ts publishes via setToastImpl.
+    const { setToastImpl } = await import("../src/lib/toast");
+    const toastSpy = vi.fn();
+    setToastImpl(toastSpy);
+
+    renderModal();
+    act(() => {
+      useAppState.getState().setPendingConflict(
+        new ConflictError("sha256:server-v1", server),
+      );
+    });
+
+    await user.click(screen.getByTestId("conflict-overwrite"));
+
+    await waitFor(() => {
+      expect(toastSpy).toHaveBeenCalledWith(
+        expect.stringMatching(/refresh comparison data/i),
+        "error",
+      );
+    });
+
+    // Restore default impl for downstream tests.
+    setToastImpl(null);
   });
 
   it("renders without exploding when local draft is null (e.g., user navigated away)", () => {

@@ -57,6 +57,29 @@ export function AppShell(): JSX.Element {
     if (onComparePath) setActivePage("compare");
   }, [onComparePath, setActivePage]);
 
+  const activePage = useAppState((s) => s.activePage);
+
+  // Symmetric: when activePage is "compare" but URL isn't on a compare path,
+  // navigate so the URL-routed Compare pages mount. Without this, a reload
+  // at "/" with persisted activePage='compare' renders the rocker but no
+  // page body (issue #77).
+  //
+  // Trade-off: browser-Back from /compare/<id> to "/" bounces immediately
+  // back to a compare URL (Back doesn't clear `activePage`). This is the
+  // intentional fallout of the existing localStorage-persisted activePage
+  // model — once the user is on Compare, "/" with no URL trail is treated
+  // as a redirect target, not a meaningful destination. Users who want
+  // Index/Inspect should click the rocker (which clears activePage). The
+  // alternative (no redirect) was the empty-body bug we're fixing.
+  useEffect(() => {
+    if (activePage !== "compare") return;
+    if (onComparePath) return;
+    const url = experimentId !== undefined
+      ? `/experiments/${experimentId}/compare`
+      : "/compare/all";
+    navigate(url, { replace: true });
+  }, [activePage, onComparePath, experimentId, navigate]);
+
   // When the user's activePage flips from compare back to index/inspect via
   // TabRocker, we navigate back to "/" so the Zustand shell takes over.
   // This is handled in TabRocker itself — see TabRocker.tsx.
