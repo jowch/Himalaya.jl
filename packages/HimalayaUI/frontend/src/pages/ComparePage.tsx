@@ -26,13 +26,17 @@ import { LineageBadge } from "../components/LineageBadge";
 import { ForksPopover } from "../components/ForksPopover";
 import { ChatCard } from "../components/ChatCard";
 import { WorkspaceGrid } from "../components/WorkspaceGrid";
+import { FigureExportControls } from "../components/FigureExportControls";
 import { HintText } from "../components/ui";
+import { buildMultiTraceExportSpec } from "../lib/figure-export/adapters/multiTraceAdapter";
+import { slugifyForFilename } from "../lib/figure-export/filename";
 import {
   useComparison,
   useMemberTraces,
   useMemberTracesLoading,
   useMemberExposures,
   useMemberSamples,
+  useExperiment,
 } from "../queries";
 import { useAppState } from "../state";
 import { useCurrentUserId } from "../hooks/useCurrentUserId";
@@ -220,6 +224,45 @@ function ReviewPlot({
     [members, exposures, samples],
   );
 
+  // Figure export — read experiment name only when in experiment scope.
+  const experimentQ = useExperiment(eid ?? 0);
+  const experimentName = eid !== undefined
+    ? (experimentQ.data?.name ?? `Experiment ${eid}`)
+    : undefined;
+
+  const exportFilenameStem = `himalaya-comparison-${
+    slugifyForFilename(experimentName ?? "all")
+  }-${
+    slugifyForFilename(compQ.data?.title ?? "")
+  }`;
+
+  const exportSpec = useCallback(() => {
+    if (!compQ.data || members.length === 0) {
+      throw new Error("FigureExportControls: parent disabled-gate violated");
+    }
+    return buildMultiTraceExportSpec({
+      members,
+      traces,
+      comparisonTitle: compQ.data.title,
+      ...(experimentName !== undefined ? { experimentName } : {}),
+      xDomain,
+      showPeakTicks,
+      showPeakLabels,
+      groupingMode,
+      sampleIdFor,
+      displayLabelByMemberId,
+    });
+  }, [
+    compQ.data, members, traces, experimentName,
+    xDomain, showPeakTicks, showPeakLabels,
+    groupingMode, sampleIdFor, displayLabelByMemberId,
+  ]);
+
+  const exportDisabled =
+    members.length === 0
+    || traces.size === 0
+    || members.every((m) => m.exposure_id === null);
+
   // Cold-fetch gate. Per CLAUDE.md boneyard rules: gate on `query.isLoading`
   // not `isPending` so disabled queries / background refetches don't flicker.
   const plotLoading = compQ.isLoading || tracesLoading;
@@ -266,6 +309,14 @@ function ReviewPlot({
           <LineageBadge comparison={compQ.data} experimentId={eid} scope={scope} />
         )}
         <ForksPopover comparisonId={id} experimentId={eid} scope={scope} />
+        <span className="ml-auto inline-flex items-center gap-1">
+          <FigureExportControls
+            spec={exportSpec}
+            filenameStem={exportFilenameStem}
+            ariaContext="comparison plot"
+            disabled={exportDisabled}
+          />
+        </span>
       </div>
       <Skeleton
         name="compare-review-plot"
