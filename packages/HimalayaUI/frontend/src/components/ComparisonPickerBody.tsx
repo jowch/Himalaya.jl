@@ -8,12 +8,54 @@ import {
 } from "../queries";
 import { useCurrentUserId } from "../hooks/useCurrentUserId";
 import { SamplePickerRow } from "./SamplePickerRow";
+import { HintText } from "./ui";
 import type { PickerSampleRow } from "../api";
+
+const FIXTURE_ROWS: PickerSampleRow[] = [
+  {
+    sample: { id: 1, experiment_id: 0, name: "Sample A", label: null,
+              notes: "Cubic phase replicate · 24°C", tags: [] },
+    indexing_exposure_id: 11,
+    all_exposures: [{ id: 11, sample_id: 1, filename: "JC068P_E257_S1418_tot", selected: true }],
+  },
+  {
+    sample: { id: 2, experiment_id: 0, name: "Sample B", label: null,
+              notes: "Hexagonal phase reference · 37°C", tags: [] },
+    indexing_exposure_id: 21,
+    all_exposures: [{ id: 21, sample_id: 2, filename: "JC068P_E258_S1418_tot", selected: true }],
+  },
+  {
+    sample: { id: 3, experiment_id: 0, name: "Form factor", label: null, notes: null, tags: [] },
+    indexing_exposure_id: 31,
+    all_exposures: [{ id: 31, sample_id: 3, filename: "JC068P_E259_S1418_tot", selected: true }],
+  },
+];
 
 const COMPARISON_PICKER_BODY_FIXTURE = (
   <div className="flex flex-col flex-1 min-h-0">
-    <div className="px-4 py-2 border-b border-border h-[44px]" />
-    <div className="flex-1" />
+    <div className="px-4 py-2 border-b border-border space-y-2">
+      <div className="w-full bg-transparent border border-border rounded px-2 py-1 text-sm h-[28px]" />
+    </div>
+    <div className="flex-1 overflow-hidden">
+      <div className="py-2">
+        <div className="px-4 text-xs font-medium text-fg-muted uppercase tracking-wide pb-1">
+          All samples
+        </div>
+        <ul className="flex flex-col">
+          {FIXTURE_ROWS.map((r) => (
+            <li key={r.sample.id}>
+              <SamplePickerRow
+                row={r}
+                checked={false}
+                onCheckedChange={() => {}}
+                overrideExposureId={undefined}
+                onOverrideChange={() => {}}
+              />
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
   </div>
 );
 
@@ -160,6 +202,7 @@ export function ComparisonPickerBody({
       className="flex flex-col flex-1 min-h-0"
       loading={pickerQ.isLoading}
       fixture={COMPARISON_PICKER_BODY_FIXTURE}
+      fallback={<div className="flex-1 flex items-center justify-center"><HintText>Loading samples…</HintText></div>}
     >
     <div className="flex flex-col flex-1 min-h-0">
       {/* Filters (search + tag chips). */}
