@@ -157,18 +157,43 @@ export function ComparisonPickerBody({
     [filteredRows, recentSampleIds],
   );
 
-  // Pick-set lookup.
-  const pickedSampleIds = useMemo(
-    () => new Set(picks.map((p) => p.sample_id)),
-    [picks],
-  );
+  // Pick-set lookup. In immediate mode (`onPick` set), derive from draft
+  // state via alreadyAddedExposureIds × picker data so SamplePickerRow's
+  // checkbox + override radios reflect the actual committed state. In modal
+  // mode, derive from the controlled `picks` list.
+  const pickedSampleIds = useMemo(() => {
+    if (onPick) {
+      const out = new Set<number>();
+      for (const r of allRows) {
+        if (r.all_exposures.some((e) => alreadyAddedExposureIds.has(e.id))) {
+          out.add(r.sample.id);
+        }
+      }
+      return out;
+    }
+    return new Set(picks.map((p) => p.sample_id));
+  }, [onPick, picks, allRows, alreadyAddedExposureIds]);
+
   const overrideBySampleId = useMemo(() => {
+    if (onPick) {
+      // Immediate mode: a member exists in the draft for some exposure of
+      // this sample. If that exposure is NOT the indexing one, surface as an
+      // override so the corresponding radio shows checked.
+      const m = new Map<number, number>();
+      for (const r of allRows) {
+        const matching = r.all_exposures.find((e) => alreadyAddedExposureIds.has(e.id));
+        if (matching && matching.id !== r.indexing_exposure_id) {
+          m.set(r.sample.id, matching.id);
+        }
+      }
+      return m;
+    }
     const m = new Map<number, number>();
     for (const p of picks) {
       if (p.source === "override") m.set(p.sample_id, p.exposure_id);
     }
     return m;
-  }, [picks]);
+  }, [onPick, picks, allRows, alreadyAddedExposureIds]);
 
   const togglePickFor = (row: PickerSampleRow, next: boolean): void => {
     if (row.indexing_exposure_id === null) return;

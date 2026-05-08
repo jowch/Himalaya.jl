@@ -107,9 +107,11 @@ test.describe("Compare picker inline panel — live mode", () => {
 
     // Find the row for our fixture sample. Wait for picker rows to populate
     // (the picker query runs after mount).
-    const sampleRow = page
-      .getByTestId("sample-picker-row")
-      .filter({ has: page.locator(`[data-sample-id="${fx.pickerRow.sample.id}"]`) });
+    // `data-sample-id` is on the same element as `data-testid="sample-picker-row"`,
+    // so `has:` doesn't apply (it expects descendants). Match both attrs in one selector.
+    const sampleRow = page.locator(
+      `[data-testid="sample-picker-row"][data-sample-id="${fx.pickerRow.sample.id}"]`,
+    );
     await expect(sampleRow).toBeVisible({ timeout: 8000 });
 
     // Before checking: the plot empty-state placeholder should be visible.
@@ -124,11 +126,13 @@ test.describe("Compare picker inline panel — live mode", () => {
     ).toBeChecked();
 
     // Adding a member replaces the empty-state with the plot + gutter.
-    // Wait for the gutter to appear — it only renders when draft.members.length > 0.
-    await expect(page.getByTestId("compare-edit-gutter")).toBeVisible({ timeout: 8000 });
-
-    // The plot-empty placeholder should now be gone.
+    // The plot-empty placeholder should hide immediately on the next render.
     await expect(page.getByTestId("compare-edit-plot-empty")).not.toBeVisible();
+
+    // The gutter renders inside the Skeleton wrapper that gates on `tracesLoading`,
+    // so we wait long enough for the cold trace fetch to land. Live mode against
+    // real exposures can take several seconds per trace on a cold cache.
+    await expect(page.getByTestId("compare-edit-gutter")).toBeVisible({ timeout: 30_000 });
   });
 
   test("override caret expands exposure list and switching radio updates data-exposure-id", async ({ page }) => {
@@ -145,9 +149,11 @@ test.describe("Compare picker inline panel — live mode", () => {
     }
 
     // Wait for the picker row to load.
-    const sampleRow = page
-      .getByTestId("sample-picker-row")
-      .filter({ has: page.locator(`[data-sample-id="${fx.pickerRow.sample.id}"]`) });
+    // `data-sample-id` is on the same element as `data-testid="sample-picker-row"`,
+    // so `has:` doesn't apply (it expects descendants). Match both attrs in one selector.
+    const sampleRow = page.locator(
+      `[data-testid="sample-picker-row"][data-sample-id="${fx.pickerRow.sample.id}"]`,
+    );
     await expect(sampleRow).toBeVisible({ timeout: 8000 });
 
     // Read the initial resolved exposure id (set by the component to indexing_exposure_id).
