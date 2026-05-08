@@ -58,6 +58,10 @@ using Test
 using SQLite, DBInterface, Tables
 using HimalayaUI
 using HimalayaUI: open_db, picker_samples
+# Note: `picker_samples` is reachable via `using HimalayaUI:` because it is a
+# module-level binding in `comparisons.jl` (which is `include`d into the
+# HimalayaUI module). No `export` is required — same pattern as
+# `recently_used_exposures` referenced from `routes_picker.jl:51`.
 
 @testset "picker_samples helper" begin
     @testset "selected exposure resolves" begin
@@ -84,10 +88,16 @@ end
 
 - [ ] **Step 2: Run test to verify it fails**
 
+`runtests.jl` does not read `ARGS` — `Pkg.test(...; test_args=...)` would silently run the entire 5–10 min suite. For the iterative red→green loop, run the test file directly. The `test_http.jl` include is needed for `with_test_server` (used in Task 3).
+
 Run from the worktree root:
 
 ```bash
-julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.test("HimalayaUI", test_args=["test_picker_samples_route.jl"])' > /tmp/jl-picker.out 2>&1
+julia --project=packages/HimalayaUI -e '
+using Test, HimalayaUI
+include("packages/HimalayaUI/test/test_http.jl")
+include("packages/HimalayaUI/test/test_picker_samples_route.jl")
+' > /tmp/jl-picker.out 2>&1
 grep -E "Test Summary|did not pass|fail|UndefVarError" /tmp/jl-picker.out
 ```
 
@@ -95,11 +105,14 @@ Expected: `UndefVarError: picker_samples not defined` or similar.
 
 - [ ] **Step 3: Add `runtests.jl` include**
 
-Modify `packages/HimalayaUI/test/runtests.jl` — add the include alongside the other route tests:
+Modify `packages/HimalayaUI/test/runtests.jl` — add the include directly after `include("test_picker_routes.jl")`:
 
 ```julia
-include("test_picker_samples_route.jl")
+    include("test_picker_routes.jl")
+    include("test_picker_samples_route.jl")
 ```
+
+Tests run in include order top-to-bottom inside the outer `@testset "HimalayaUI"`.
 
 - [ ] **Step 4: Implement the helper**
 
@@ -116,8 +129,11 @@ For each sample in `experiment_id`, returns:
   :indexing_exposure_id => Int or nothing — `selected = 1` else MAX(id) else nothing
   :all_exposures       => Vector of {:id, :filename, :selected::Bool}, ORDER BY id ASC
 
-Two queries (no JOIN'd Cartesian flatten): one for samples + tags, one for
-exposures bulk-grouped by `WHERE sample_id IN (...)`. Empty experiment ⇒ [].
+Three bulk queries (no JOIN'd Cartesian flatten, no per-sample N+1):
+(1) `WHERE experiment_id = ?` for samples,
+(2) `WHERE sample_id IN (...)` for exposures,
+(3) `WHERE sample_id IN (...)` for sample_tags.
+Empty experiment ⇒ [].
 """
 function picker_samples(db::SQLite.DB, experiment_id::Integer)::Vector{Dict{Symbol, Any}}
     samples = Tables.rowtable(DBInterface.execute(db,
@@ -130,20 +146,30 @@ function picker_samples(db::SQLite.DB, experiment_id::Integer)::Vector{Dict{Symb
         "SELECT id, sample_id, filename, selected FROM exposures
          WHERE sample_id IN ($placeholders) ORDER BY sample_id ASC, id ASC",
         sample_ids))
+    tag_rows = Tables.rowtable(DBInterface.execute(db,
+        "SELECT id, sample_id, key, value, source FROM sample_tags
+         WHERE sample_id IN ($placeholders) ORDER BY sample_id ASC, id ASC",
+        sample_ids))
 
-    # Group exposures by sample_id in Julia (avoids a Cartesian JOIN dedup).
-    grouped = Dict{Int, Vector{NamedTuple}}()
+    # Group exposures + tags by sample_id in Julia (avoids a Cartesian JOIN dedup).
+    grouped_exps = Dict{Int, Vector{NamedTuple}}()
     for e in exposures
-        push!(get!(grouped, Int(e.sample_id), NamedTuple[]), e)
+        push!(get!(grouped_exps, Int(e.sample_id), NamedTuple[]), e)
+    end
+    grouped_tags = Dict{Int, Vector{NamedTuple}}()
+    for t in tag_rows
+        push!(get!(grouped_tags, Int(t.sample_id), NamedTuple[]), t)
     end
 
     out = Dict{Symbol, Any}[]
     for sm in samples
         sid  = Int(sm.id)
-        exps = get(grouped, sid, NamedTuple[])
+        exps = get(grouped_exps, sid, NamedTuple[])
 
-        # Resolve indexing exposure: selected=1 first (LIMIT 1 + tiebreaker
-        # via descending iteration), else MAX(id) of any, else nothing.
+        # Resolve indexing exposure: highest-id selected wins (defensive
+        # against legacy multi-selected data); else highest-id overall;
+        # else nothing for zero-exposure samples. `exps` is sorted id ASC,
+        # so iterating in reverse yields highest-id first.
         idx_id = nothing
         for e in Iterators.reverse(exps)
             if e.selected != 0
@@ -151,15 +177,19 @@ function picker_samples(db::SQLite.DB, experiment_id::Integer)::Vector{Dict{Symb
             end
         end
         if idx_id === nothing && !isempty(exps)
-            idx_id = Int(last(exps).id)   # exps sorted by id ASC, so last == max
+            idx_id = Int(last(exps).id)   # last == max by id ASC ordering
         end
 
-        # Sample → row_to_json + tags lookup (mirrors routes_samples.jl).
-        tags = Tables.rowtable(DBInterface.execute(db,
-            "SELECT id, key, value, source FROM sample_tags
-             WHERE sample_id = ? ORDER BY id", [sid]))
+        # Sample → row_to_json + bulk-grouped tags. Drop sample_id from each
+        # tag dict (it's redundant once grouped under the sample).
+        tags_for_sm = get(grouped_tags, sid, NamedTuple[])
+        tag_dicts = map(tags_for_sm) do t
+            d = row_to_json(t)
+            delete!(d, :sample_id)
+            d
+        end
         sample_dict = row_to_json(sm)
-        sample_dict[:tags] = rows_to_json(tags)
+        sample_dict[:tags] = tag_dicts
 
         all_exp = [row_to_json(e; bool_keys = (:selected,)) for e in exps]
         push!(out, Dict{Symbol, Any}(
@@ -175,7 +205,11 @@ end
 - [ ] **Step 5: Run test to verify it passes**
 
 ```bash
-julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.test("HimalayaUI", test_args=["test_picker_samples_route.jl"])' > /tmp/jl-picker.out 2>&1
+julia --project=packages/HimalayaUI -e '
+using Test, HimalayaUI
+include("packages/HimalayaUI/test/test_http.jl")
+include("packages/HimalayaUI/test/test_picker_samples_route.jl")
+' > /tmp/jl-picker.out 2>&1
 grep -E "Test Summary|did not pass|fail" /tmp/jl-picker.out
 ```
 
@@ -295,7 +329,11 @@ end
 - [ ] **Step 2: Run tests, verify all pass**
 
 ```bash
-julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.test("HimalayaUI", test_args=["test_picker_samples_route.jl"])' > /tmp/jl-picker.out 2>&1
+julia --project=packages/HimalayaUI -e '
+using Test, HimalayaUI
+include("packages/HimalayaUI/test/test_http.jl")
+include("packages/HimalayaUI/test/test_picker_samples_route.jl")
+' > /tmp/jl-picker.out 2>&1
 grep -E "Test Summary|did not pass|fail" /tmp/jl-picker.out
 ```
 
@@ -315,7 +353,7 @@ git commit -m "test(picker): corner-case coverage for picker_samples"
 
 - [ ] **Step 1: Write the failing route test**
 
-Append to `packages/HimalayaUI/test/test_picker_samples_route.jl`:
+Append to `packages/HimalayaUI/test/test_picker_samples_route.jl`. The test harness is `with_test_server(f, db)` defined in `test_http.jl` (yields `(port, base)`):
 
 ```julia
 using HTTP, JSON3
@@ -327,23 +365,27 @@ using HTTP, JSON3
         DBInterface.execute(db, "INSERT INTO samples (id, experiment_id, name) VALUES (10, 1, 'S')")
         DBInterface.execute(db, "INSERT INTO exposures (id, sample_id, filename, selected) VALUES (100, 10, 'f1', 1)")
 
-        port = HimalayaUI._test_serve!(db; port = 8765)
-        try
-            r = HTTP.get("http://127.0.0.1:$port/api/experiments/1/picker-samples")
+        with_test_server(db) do port, base
+            r = HTTP.get("$base/api/experiments/1/picker-samples")
             @test r.status == 200
             body = JSON3.read(String(r.body))
             @test length(body) == 1
             @test body[1].indexing_exposure_id == 100
             @test body[1].all_exposures[1].selected === true   # JSON-shape: bool, not 1
             @test haskey(body[1], :indexing_exposure_id)        # null vs absent key
-        finally
-            HimalayaUI._test_terminate!()
+
+            # Sanity: zero-exposure sample produces null (not absent).
+            DBInterface.execute(db, "INSERT INTO samples (id, experiment_id, name) VALUES (11, 1, 'Empty')")
+            r2 = HTTP.get("$base/api/experiments/1/picker-samples")
+            body2 = JSON3.read(String(r2.body))
+            empty_row = first(filter(b -> b.sample.id == 11, collect(body2)))
+            @test empty_row.indexing_exposure_id === nothing
         end
     end
 end
 ```
 
-(Use the existing test harness `_test_serve!` / `_test_terminate!` if they exist, else mirror the pattern from `test_picker_routes.jl`. Read `test_picker_routes.jl` for the canonical Oxygen test setup.)
+`with_test_server` calls `start_test_server!(db, port)` (server.jl:136) which binds the db so `current_db()` resolves correctly inside the route handler. Don't bypass it — there's no `_test_serve!` / `_test_terminate!` helper.
 
 - [ ] **Step 2: Run test, verify it fails**
 
@@ -361,12 +403,16 @@ Inside `register_picker_routes!()` (add after the `sample-tags` route):
     end
 ```
 
-Verify `picker_samples` is exported or qualified — it lives in `comparisons.jl` and is referenced from `routes_picker.jl` so add `picker_samples` to whatever `comparisons.jl` already exports (usually unqualified in the same module — check the existing `recently_used_exposures` reference at `routes_picker.jl:51` to see whether qualification is needed).
+No `export` needed. `picker_samples` is reachable unqualified from `routes_picker.jl` because both files are `include`d into the same `HimalayaUI` module — same pattern as `recently_used_exposures` referenced at `routes_picker.jl:51`.
 
 - [ ] **Step 4: Run test, verify pass**
 
 ```bash
-julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.test("HimalayaUI", test_args=["test_picker_samples_route.jl"])' > /tmp/jl-picker.out 2>&1
+julia --project=packages/HimalayaUI -e '
+using Test, HimalayaUI
+include("packages/HimalayaUI/test/test_http.jl")
+include("packages/HimalayaUI/test/test_picker_samples_route.jl")
+' > /tmp/jl-picker.out 2>&1
 grep -E "Test Summary|did not pass|fail" /tmp/jl-picker.out
 ```
 
@@ -794,26 +840,32 @@ git commit -m "feat(picker): SamplePickerRow with override caret (#84)"
 ```tsx
 import { render, screen, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { beforeEach, afterEach, vi } from "vitest";
 import { ComparisonPickerBody, type Pick } from "../src/components/ComparisonPickerBody";
 import * as api from "../src/api";
 
-vi.spyOn(api, "getPickerSamples").mockResolvedValue([
-  {
-    sample: { id: 10, experiment_id: 1, name: "S1", label: null, notes: null, tags: [] },
-    indexing_exposure_id: 100,
-    all_exposures: [{ id: 100, sample_id: 10, filename: "f1.dat", selected: true }],
-  },
-  {
-    sample: { id: 20, experiment_id: 1, name: "S2", label: null, notes: null, tags: [] },
-    indexing_exposure_id: 200,
-    all_exposures: [{ id: 200, sample_id: 20, filename: "f2.dat", selected: true }],
-  },
-]);
-vi.spyOn(api, "listExperiments").mockResolvedValue([
-  { id: 1, name: "E", config: null },
-]);
-vi.spyOn(api, "getRecentlyPickedExposures").mockResolvedValue([200, 100]);
-vi.spyOn(api, "getSampleTags").mockResolvedValue([]);
+// Wrap mocks in beforeEach so they're isolated per test (the project's
+// vitest setup does not call vi.restoreAllMocks() between files).
+beforeEach(() => {
+  vi.spyOn(api, "getPickerSamples").mockResolvedValue([
+    {
+      sample: { id: 10, experiment_id: 1, name: "S1", label: null, notes: null, tags: [] },
+      indexing_exposure_id: 100,
+      all_exposures: [{ id: 100, sample_id: 10, filename: "f1.dat", selected: true }],
+    },
+    {
+      sample: { id: 20, experiment_id: 1, name: "S2", label: null, notes: null, tags: [] },
+      indexing_exposure_id: 200,
+      all_exposures: [{ id: 200, sample_id: 20, filename: "f2.dat", selected: true }],
+    },
+  ]);
+  vi.spyOn(api, "listExperiments").mockResolvedValue([
+    { id: 1, name: "E", config: null },
+  ]);
+  vi.spyOn(api, "getRecentlyPickedExposures").mockResolvedValue([200, 100]);
+  vi.spyOn(api, "getSampleTags").mockResolvedValue([]);
+});
+afterEach(() => { vi.restoreAllMocks(); });
 
 function wrap(ui: React.ReactElement) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -837,21 +889,9 @@ test("controlled-picks: onPicksChange fires with default exposure id on toggle",
   ]);
 });
 
-test("immediate mode: onPick fires per toggle, picks prop ignored", async () => {
-  const onPick = vi.fn();
-  wrap(
-    <ComparisonPickerBody
-      experimentId={1}
-      picks={[]}
-      onPicksChange={() => {}}
-      onPick={onPick}
-      alreadyAddedExposureIds={new Set()}
-    />,
-  );
-  await screen.findByText("S1");
-  fireEvent.click(screen.getByTestId("sample-picker-row-checkbox"));
-  expect(onPick).toHaveBeenCalledWith({ sample_id: 10, exposure_id: 100, source: "default" });
-});
+// NOTE: Immediate-mode `onPick` is added in PR2 Task 13. PR1 ships only the
+// controlled-picks interface (`picks` + `onPicksChange`). Skip the immediate-mode
+// test until PR2.
 
 test("recents section dedupes against main list (one row per sample, S2 appears once)", async () => {
   wrap(
@@ -874,10 +914,9 @@ test("recents section dedupes against main list (one row per sample, S2 appears 
 - [ ] **Step 3: Implement `ComparisonPickerBody`**
 
 ```tsx
-import { useMemo, useRef } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { useExperiments, useRecentlyPickedExposures, useSampleTags, usePickerSamples } from "../queries";
-import { useCurrentUserId } from "../hooks/useCurrentUserId";
 import { SamplePickerRow } from "./SamplePickerRow";
 import type { PickerSampleRow } from "../api";
 
@@ -889,30 +928,30 @@ export type Pick = {
 
 interface Props {
   experimentId: number | undefined;
-  /** Controlled picks list. Inline-mode shells pass `[]` and use `onPick`. */
+  /** Controlled picks list. */
   picks: Pick[];
   onPicksChange: (next: Pick[]) => void;
-  /** When set, fires per-pick instead of accumulating in `picks`. */
-  onPick?: (pick: Pick) => void;
   /** Set of exposure ids already in the active draft — rendered as locked. */
   alreadyAddedExposureIds: Set<number>;
   /** Optional ref the parent threads down to focus the search input. */
   searchInputRef?: RefObject<HTMLInputElement>;
-  // Filter chip state lifted to props is overkill for v1 — keep search /
-  // experiment-chip / tag-chip state internal to the body.
+  // Filter chip state (search / tag-chip) is internal to the body.
+  // PR2 adds an `onPick` prop for immediate-commit shells.
 }
 
 export function ComparisonPickerBody({
-  experimentId, picks, onPicksChange, onPick, alreadyAddedExposureIds,
+  experimentId, picks, onPicksChange, alreadyAddedExposureIds,
   searchInputRef,
 }: Props): JSX.Element {
   const userId = useCurrentUserId();
 
   // Data sources.
   const pickerQ      = usePickerSamples(experimentId);
-  const experimentsQ = useExperiments();
   const recentsQ     = useRecentlyPickedExposures(userId, 20);
   const tagsQ        = useSampleTags(experimentId);
+  // `useExperiments` is intentionally not invoked — the picker scope is the
+  // active experiment only in PR1. Cross-experiment widening can return in
+  // a follow-on if user demand surfaces.
 
   const fallbackRef = useRef<HTMLInputElement>(null);
   const inputRef = searchInputRef ?? fallbackRef;
@@ -992,10 +1031,6 @@ export function ComparisonPickerBody({
       exposure_id: row.indexing_exposure_id,
       source: "default",
     };
-    if (onPick) {
-      if (next) onPick(pick);
-      return;
-    }
     if (next) onPicksChange([...picks, pick]);
     else onPicksChange(picks.filter((p) => p.sample_id !== row.sample.id));
   };
@@ -1006,10 +1041,6 @@ export function ComparisonPickerBody({
       exposure_id: exposureId,
       source: exposureId === row.indexing_exposure_id ? "default" : "override",
     };
-    if (onPick) {
-      onPick(next);
-      return;
-    }
     const i = picks.findIndex((p) => p.sample_id === row.sample.id);
     if (i < 0) onPicksChange([...picks, next]);
     else onPicksChange(picks.map((p, j) => (j === i ? next : p)));
@@ -1040,9 +1071,32 @@ export function ComparisonPickerBody({
           className="w-full bg-transparent border border-border rounded px-2 py-1 text-sm"
           spellCheck={false}
         />
-        {/* Tag-chip strip — same shape as before, omitted here for brevity;
-            copy from the existing ComparisonPicker.tsx tag-chip render
-            block at lines 309-337 verbatim, just bound to local state. */}
+        {(tagsQ.data ?? []).length > 0 && (
+          <div data-testid="picker-filter-tag" className="flex flex-wrap gap-1 items-center">
+            <span className="text-xs text-fg-muted">Tags:</span>
+            {(tagsQ.data ?? []).map((t) => {
+              const id = `${t.key}:${t.value}`;
+              const active = selectedTags.has(id);
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  data-testid={`picker-tag-option-${id}`}
+                  data-active={active ? "true" : undefined}
+                  onClick={() => toggleTag(t.key, t.value)}
+                  className={
+                    "text-xs px-2 py-0.5 rounded-full border " +
+                    (active
+                      ? "bg-accent/15 border-accent text-accent"
+                      : "border-border text-fg-muted hover:text-fg")
+                  }
+                >
+                  {t.key}:{t.value}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto">
@@ -1098,8 +1152,6 @@ export function ComparisonPickerBody({
 }
 ```
 
-(Add `import { useState } from "react";` at the top — was missing in the snippet above. Verify imports against the actual file.)
-
 - [ ] **Step 4: Run tests, verify pass**
 
 ```bash
@@ -1113,12 +1165,38 @@ git add packages/HimalayaUI/frontend/src/components/ComparisonPickerBody.tsx pac
 git commit -m "feat(picker): ComparisonPickerBody extraction (sample-first)"
 ```
 
-## Task 9: Skeleton-gating regression test
+## Task 9: Wrap body in Skeleton + skeleton-gating regression test
 
 **Files:**
+- Modify: `packages/HimalayaUI/frontend/src/components/ComparisonPickerBody.tsx`
 - Modify: `packages/HimalayaUI/frontend/test/ComparisonPickerBody.test.tsx`
 
-- [ ] **Step 1: Add skeleton-gating test**
+- [ ] **Step 1: Wire the Skeleton wrapper in `ComparisonPickerBody.tsx`**
+
+Import Skeleton and wrap the body's content (everything inside the outer `<div className="flex flex-col …">`) so cold fetches show a skeleton but background refetches don't flicker. Per CLAUDE.md "Skeleton loading via boneyard-js": gate on `isLoading`, not `isPending`. The four queries (`pickerQ`, `recentsQ`, `tagsQ`, plus any add-on) — gate on the *primary* query (`pickerQ.isLoading`) since that's what actually materializes rows.
+
+```tsx
+import { Skeleton } from "boneyard-js/react";
+
+// Inside the component, replace the outermost <div> wrapper with:
+return (
+  <Skeleton
+    name="comparison-picker-body"
+    className="flex flex-col flex-1 min-h-0"
+    loading={pickerQ.isLoading}
+    fixture={
+      <div className="flex flex-col flex-1 min-h-0">
+        <div className="px-4 py-2 border-b border-border h-[44px]" />
+        <div className="flex-1" />
+      </div>
+    }
+  >
+    { /* existing body content */ }
+  </Skeleton>
+);
+```
+
+- [ ] **Step 2: Add the skeleton-gating regression test**
 
 ```tsx
 test("does not flicker on background refetch (gates on isLoading not isPending)", async () => {
@@ -1153,15 +1231,17 @@ test("does not flicker on background refetch (gates on isLoading not isPending)"
 });
 ```
 
-(Note: this assumes the body wraps its content in `<Skeleton loading={pickerQ.isLoading}>` — ensure the implementation does so. If not yet wired, add the Skeleton wrapper to the body as part of this task.)
+- [ ] **Step 3: Run, verify pass**
 
-- [ ] **Step 2: Run, verify pass (or wire Skeleton if needed)**
+```bash
+cd packages/HimalayaUI/frontend && node_modules/.bin/vitest run test/ComparisonPickerBody.test.tsx
+```
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
 git add packages/HimalayaUI/frontend/test/ComparisonPickerBody.test.tsx packages/HimalayaUI/frontend/src/components/ComparisonPickerBody.tsx
-git commit -m "test(picker): skeleton gating on isLoading not isPending"
+git commit -m "feat(picker): Skeleton wrapper + isLoading gating regression"
 ```
 
 ## Task 10: Slim `ComparisonPicker` down to modal shell
@@ -1433,8 +1513,15 @@ Expected: all specs pass.
 
 - [ ] **Step 4: Backend slice**
 
+`Pkg.test(...; test_args=…)` does not filter — `runtests.jl` does not read `ARGS`. Use direct includes:
+
 ```bash
-julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.test("HimalayaUI", test_args=["test_picker_samples_route.jl", "test_picker_routes.jl"])' > /tmp/jl-picker.out 2>&1
+julia --project=packages/HimalayaUI -e '
+using Test, HimalayaUI
+include("packages/HimalayaUI/test/test_http.jl")
+include("packages/HimalayaUI/test/test_picker_routes.jl")
+include("packages/HimalayaUI/test/test_picker_samples_route.jl")
+' > /tmp/jl-picker.out 2>&1
 grep -E "Test Summary|did not pass|fail" /tmp/jl-picker.out
 ```
 
@@ -1466,13 +1553,114 @@ EOF
 
 # PR2 — Inline picker panel in edit mode
 
-## Task 13: Add `onPick` immediate-mode prop wiring
+## Task 13: Add `onPick` immediate-mode prop to `ComparisonPickerBody`
 
-(Already added in Task 8 via `onPick` prop. This task is a placeholder — verify the prop is honored correctly by re-running the relevant ComparisonPickerBody test with `onPick` set.)
+**Files:**
+- Modify: `packages/HimalayaUI/frontend/src/components/ComparisonPickerBody.tsx`
+- Modify: `packages/HimalayaUI/frontend/test/ComparisonPickerBody.test.tsx`
 
-- [ ] **Step 1: Re-run `ComparisonPickerBody.test.tsx::"immediate mode"`** to confirm it passes after PR1 lands.
+PR1 deliberately omits `onPick` so it doesn't ship dead code. PR2 adds it as the first task — used by `ComparisonPickerPanel` (Task 14).
 
-If it does, skip to Task 14. (The prop was implemented in Task 8.)
+- [ ] **Step 1: Add the failing test**
+
+```tsx
+test("immediate mode: onPick fires per toggle, picks prop ignored", async () => {
+  const onPick = vi.fn();
+  wrap(
+    <ComparisonPickerBody
+      experimentId={1}
+      picks={[]}
+      onPicksChange={() => {}}
+      onPick={onPick}
+      alreadyAddedExposureIds={new Set()}
+    />,
+  );
+  await screen.findByText("S1");
+  fireEvent.click(screen.getByTestId("sample-picker-row-checkbox"));
+  expect(onPick).toHaveBeenCalledWith({ sample_id: 10, exposure_id: 100, source: "default" });
+});
+
+test("immediate mode: override caret pick fires onPick with override exposure id", async () => {
+  const onPick = vi.fn();
+  wrap(
+    <ComparisonPickerBody
+      experimentId={1}
+      picks={[]}
+      onPicksChange={() => {}}
+      onPick={onPick}
+      alreadyAddedExposureIds={new Set()}
+    />,
+  );
+  await screen.findByText("S1");
+  // Open caret on S1 row, pick an override (single exposure here, so this
+  // re-fires the same id but exercises the override path through onPick).
+  fireEvent.click(screen.getAllByTestId("sample-picker-row-caret")[0]);
+  fireEvent.click(screen.getByLabelText(/f1\.dat/));
+  expect(onPick).toHaveBeenCalled();
+});
+```
+
+- [ ] **Step 2: Run, verify fail**
+
+- [ ] **Step 3: Add the prop + branch in `ComparisonPickerBody.tsx`**
+
+Update the `Props` interface:
+
+```tsx
+interface Props {
+  experimentId: number | undefined;
+  picks: Pick[];
+  onPicksChange: (next: Pick[]) => void;
+  /** When set, fires per-pick instead of accumulating in `picks`. */
+  onPick?: (pick: Pick) => void;
+  alreadyAddedExposureIds: Set<number>;
+  searchInputRef?: RefObject<HTMLInputElement>;
+}
+```
+
+Update `togglePickFor`:
+
+```tsx
+const togglePickFor = (row: PickerSampleRow, next: boolean): void => {
+  if (row.indexing_exposure_id === null) return;
+  const pick: Pick = {
+    sample_id: row.sample.id,
+    exposure_id: row.indexing_exposure_id,
+    source: "default",
+  };
+  if (onPick) {
+    if (next) onPick(pick);
+    return;
+  }
+  if (next) onPicksChange([...picks, pick]);
+  else onPicksChange(picks.filter((p) => p.sample_id !== row.sample.id));
+};
+```
+
+Same shape for `overridePickFor`:
+
+```tsx
+const overridePickFor = (row: PickerSampleRow, exposureId: number): void => {
+  const next: Pick = {
+    sample_id: row.sample.id,
+    exposure_id: exposureId,
+    source: exposureId === row.indexing_exposure_id ? "default" : "override",
+  };
+  if (onPick) { onPick(next); return; }
+  const i = picks.findIndex((p) => p.sample_id === row.sample.id);
+  if (i < 0) onPicksChange([...picks, next]);
+  else onPicksChange(picks.map((p, j) => (j === i ? next : p)));
+};
+```
+
+- [ ] **Step 4: Run, verify pass**
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add packages/HimalayaUI/frontend/src/components/ComparisonPickerBody.tsx packages/HimalayaUI/frontend/test/ComparisonPickerBody.test.tsx
+git commit -m "feat(picker): onPick immediate-mode prop on ComparisonPickerBody (#87)"
+```
 
 ## Task 14: `ComparisonPickerPanel` component
 
@@ -1485,6 +1673,7 @@ If it does, skip to Task 14. (The prop was implemented in Task 8.)
 ```tsx
 import { render, screen, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { beforeEach, afterEach, vi } from "vitest";
 import { ComparisonPickerPanel } from "../src/components/ComparisonPickerPanel";
 import * as api from "../src/api";
 import { useAppState } from "../src/state";
@@ -1494,10 +1683,18 @@ const ROW = {
   indexing_exposure_id: 100,
   all_exposures: [{ id: 100, sample_id: 10, filename: "f1.dat", selected: true }],
 };
-vi.spyOn(api, "getPickerSamples").mockResolvedValue([ROW]);
-vi.spyOn(api, "getRecentlyPickedExposures").mockResolvedValue([]);
-vi.spyOn(api, "getSampleTags").mockResolvedValue([]);
-vi.spyOn(api, "listExperiments").mockResolvedValue([{ id: 1, name: "E", config: null }]);
+beforeEach(() => {
+  // Reset Zustand to a fresh draft so per-test seeding (or absence of) is
+  // deterministic. The store reads `loadDraftFromSession` at module load,
+  // so without an explicit reset prior tests' drafts leak.
+  useAppState.getState().discardDraft();
+  useAppState.getState().startNewDraft();
+
+  vi.spyOn(api, "getPickerSamples").mockResolvedValue([ROW]);
+  vi.spyOn(api, "getRecentlyPickedExposures").mockResolvedValue([]);
+  vi.spyOn(api, "getSampleTags").mockResolvedValue([]);
+});
+afterEach(() => { vi.restoreAllMocks(); });
 
 function wrap(ui: React.ReactElement) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -1511,8 +1708,6 @@ test("inline shell does not render dialog role or focus trap", async () => {
 });
 
 test("toggle fires addMember immediately (immediate-commit semantics)", async () => {
-  // Start with a fresh draft so addMember has somewhere to land.
-  useAppState.getState().startNewDraft();
   wrap(<ComparisonPickerPanel experimentId={1} />);
   await screen.findByText("S1");
   fireEvent.click(screen.getByTestId("sample-picker-row-checkbox"));
@@ -1522,14 +1717,18 @@ test("toggle fires addMember immediately (immediate-commit semantics)", async ()
 });
 
 test("already-added rows render locked (alreadyAddedExposureIds gate)", async () => {
+  // Pre-seed a draft with exposure 100 already a member.
   useAppState.getState().startNewDraft();
-  // Pre-seed a member.
-  // ... follow the project's existing pattern from ComparisonPicker.test.tsx
-  // for seeding a draft member with exposure_id 100.
+  // QueryClient mock so addMember's snapshot derivation doesn't blow up.
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  useAppState.getState().addMember(100, qc);
   wrap(<ComparisonPickerPanel experimentId={1} />);
   await screen.findByText("S1");
-  // Check that the row's checkbox is in a checked-locked state.
-  // Rely on data-locked or aria-disabled — see SamplePickerRow's locked branch.
+  // Re-clicking should not append a duplicate member (panel filters via
+  // alreadyAddedExposureIds before calling addMember).
+  fireEvent.click(screen.getByTestId("sample-picker-row-checkbox"));
+  const members = useAppState.getState().activeDraft?.members ?? [];
+  expect(members.filter((m) => m.exposure_id === 100).length).toBe(1);
 });
 ```
 
@@ -1655,9 +1854,9 @@ right={
 onClick={() => pickerSearchRef.current?.focus()}
 ```
 
-4. Delete the bottom-right "+ Add traces" button (the JSX block at lines 573-583 in the current file — the `<div className="flex justify-end">` wrapping the button when `plotMembers.length > 0`).
+4. Delete the bottom-right "+ Add traces" button. To find it: `grep -n '+ Add traces' packages/HimalayaUI/frontend/src/pages/ComparePageEdit.tsx` finds two matches — keep the empty-state CTA inside `compare-edit-plot-empty`, delete the trailing `<div className="flex justify-end">…</div>` block that hosts the second button (the one rendered when `plotMembers.length > 0`).
 
-5. Delete the modal mount at lines 621-625 (the `<ComparisonPicker isOpen={pickerOpen} … />` block) and the `pickerOpen` state — the modal is no longer needed for edit mode. Keep `ComparisonPicker` itself (still used by sidebar entry points).
+5. Delete the modal mount: `grep -n '<ComparisonPicker' packages/HimalayaUI/frontend/src/pages/ComparePageEdit.tsx` finds the `<ComparisonPicker isOpen={pickerOpen} onClose={…} experimentId={eid} />` block — delete that JSX, the `pickerOpen` `useState`, and the `import { ComparisonPicker }` line. Keep `ComparisonPicker` itself in the codebase (still used by sidebar entry points).
 
 6. Update `slotClassName.right` if the panel needs a different min-height than the hint card (it does — try `flex flex-col min-h-[400px]` mirroring `slotClassName.left`).
 
@@ -1809,12 +2008,12 @@ EOF
 | §PR1 `usePickerSamples` hook | Task 5 |
 | §PR1 `ExposureListRow` `control` prop | Task 6 |
 | §PR1 `SamplePickerRow` (incl. disabled-row branch + accent-ring) | Task 7 |
-| §PR1 `ComparisonPickerBody` extraction (controlled picks, onPick, recents dedup as useMemo) | Task 8 |
-| §PR1 Skeleton-gating regression | Task 9 |
+| §PR1 `ComparisonPickerBody` extraction (controlled picks, recents dedup as useMemo) | Task 8 |
+| §PR1 Skeleton wrap + isLoading-gating regression | Task 9 |
 | §PR1 `ComparisonPicker` slimmed to modal shell + focus-trap regression + title="Add traces" | Task 10 |
 | §PR1 E2E mock update | Task 11 |
 | §PR1 Headless verification (vitest + build + e2e + julia) | Task 12 |
-| §PR2 `onPick` immediate-mode wiring | Task 13 (covered by Task 8) |
+| §PR2 `onPick` immediate-mode prop on ComparisonPickerBody | Task 13 |
 | §PR2 `ComparisonPickerPanel` (no overlay, no focus trap, immediate commit) | Task 14 |
 | §PR2 `ComparePageEdit` right-slot swap + buried-button removal + searchInputRef | Task 15 |
 | §PR2 Live-mode E2E | Task 16 |
