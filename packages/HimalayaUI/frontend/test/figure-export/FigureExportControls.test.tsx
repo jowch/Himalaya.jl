@@ -16,6 +16,10 @@ let toastSpy: ReturnType<typeof vi.fn>;
 beforeEach(() => {
   toastSpy = vi.fn();
   toastModule.setToastImpl(toastSpy);
+  // JSDOM has no OffscreenCanvas, so canExportPng() naturally returns false.
+  // Default it to true for the bulk of tests; the canExportPng=false case
+  // gets its own test below.
+  vi.spyOn(renderer, "canExportPng").mockReturnValue(true);
 });
 afterEach(() => {
   toastModule.setToastImpl(null);
@@ -107,6 +111,29 @@ describe("FigureExportControls", () => {
       />,
     );
     expect(screen.getByRole("button", { name: /copy trace plot/i })).toBeDisabled();
+  });
+
+  it("Copy and Save-PNG disable when canExportPng() returns false; SVG stays usable", () => {
+    vi.spyOn(clipboard, "canCopyPngToClipboard").mockReturnValue(true);
+    vi.spyOn(renderer, "canExportPng").mockReturnValue(false);
+    render(
+      <FigureExportControls
+        spec={() => fakeSpec}
+        filenameStem="x"
+        ariaContext="trace plot"
+      />,
+    );
+    expect(screen.getByRole("button", { name: /copy trace plot/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /download trace plot as png/i })).toBeDisabled();
+    // The chevron itself stays clickable so the user can still get to SVG.
+    const chevron = screen.getByRole("button", { name: /other download formats/i });
+    expect(chevron).not.toBeDisabled();
+    fireEvent.click(chevron);
+    // The PNG menu row is disabled; the SVG menu row is not.
+    const pngMenuItem = screen.getByText(/download as png/i);
+    expect(pngMenuItem).toBeDisabled();
+    const svgMenuItem = screen.getByText(/download as svg/i);
+    expect(svgMenuItem).not.toBeDisabled();
   });
 
   it("disabled prop disables both buttons (parent gate)", () => {

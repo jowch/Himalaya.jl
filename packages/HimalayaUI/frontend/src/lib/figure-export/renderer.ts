@@ -127,6 +127,23 @@ function renderLegendItem(row: LegendRow, x: number): { group: SVGGElement; widt
 }
 
 /**
+ * Pre-flight feature check for the PNG path. Mirrors `canCopyPngToClipboard()`
+ * in clipboard.ts — the Save button uses this to disable itself on browsers
+ * that lack the OffscreenCanvas/convertToBlob pipeline. Without this gate the
+ * user clicks Save and only finds out the export failed when the error toast
+ * fires; with it the Save button stays disabled with no surprise.
+ */
+export function canExportPng(): boolean {
+  if (typeof OffscreenCanvas === "undefined") return false;
+  // convertToBlob landed alongside OffscreenCanvas in evergreen browsers but
+  // is missing on some Safari versions where OffscreenCanvas exists.
+  const proto = (OffscreenCanvas as unknown as { prototype?: { convertToBlob?: unknown } }).prototype;
+  if (!proto || typeof proto.convertToBlob !== "function") return false;
+  if (typeof Image === "undefined") return false;
+  return true;
+}
+
+/**
  * Render the export as a 2× DPI PNG blob. Pipeline: SVG → blob URL → Image
  * decode → OffscreenCanvas drawImage → convertToBlob.
  *

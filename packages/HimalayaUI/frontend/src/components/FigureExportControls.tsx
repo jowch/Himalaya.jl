@@ -1,7 +1,7 @@
 // FigureExportControls.tsx — Copy + split-Download (PNG/SVG) buttons.
 import { useEffect, useRef, useState } from "react";
 import type { ExportSpec } from "../lib/figure-export/types";
-import { buildExportPng, buildExportSvg } from "../lib/figure-export/renderer";
+import { buildExportPng, buildExportSvg, canExportPng } from "../lib/figure-export/renderer";
 import { canCopyPngToClipboard, copyPngToClipboard } from "../lib/figure-export/clipboard";
 import { downloadBlob } from "../lib/figure-export/download";
 import { buildFilename } from "../lib/figure-export/filename";
@@ -29,6 +29,7 @@ export function FigureExportControls({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const canCopy = canCopyPngToClipboard();
+  const canPng = canExportPng();
 
   // Esc + outside-click dismiss (mirrors ForksPopover pattern; spec §Popover).
   useEffect(() => {
@@ -54,7 +55,7 @@ export function FigureExportControls({
   }, [menuOpen]);
 
   const onCopy = async (): Promise<void> => {
-    if (disabled || !canCopy || pending) return;
+    if (disabled || !canCopy || !canPng || pending) return;
     setPending(true);
     try {
       const blob = await buildExportPng(spec());
@@ -70,7 +71,7 @@ export function FigureExportControls({
   };
 
   const onDownloadPng = async (): Promise<void> => {
-    if (disabled || pending) return;
+    if (disabled || !canPng || pending) return;
     setMenuOpen(false);
     setPending(true);
     try {
@@ -103,12 +104,22 @@ export function FigureExportControls({
     }
   };
 
-  const copyDisabled = disabled || !canCopy || pending;
-  const downloadDisabled = disabled || pending;
+  // Copy needs both clipboard support AND the PNG renderer (which produces the
+  // blob). Save-PNG (and the chevron's PNG menu row) needs the renderer; SVG
+  // download stays accessible regardless because it doesn't go through
+  // OffscreenCanvas.
+  const copyDisabled = disabled || !canCopy || !canPng || pending;
+  const pngDisabled = disabled || !canPng || pending;
+  const downloadAnyDisabled = disabled || pending;
 
   const copyTitle = !canCopy
     ? "Clipboard requires HTTPS"
-    : `Copy ${ariaContext} to clipboard`;
+    : !canPng
+      ? "Browser doesn't support PNG export"
+      : `Copy ${ariaContext} to clipboard`;
+  const pngTitle = !canPng
+    ? "Browser doesn't support PNG export"
+    : `Download ${ariaContext} as PNG`;
 
   return (
     <span
@@ -133,7 +144,8 @@ export function FigureExportControls({
           type="button"
           data-testid="figure-export-download-png"
           aria-label={`Download ${ariaContext} as PNG`}
-          disabled={downloadDisabled}
+          title={pngTitle}
+          disabled={pngDisabled}
           onClick={() => { void onDownloadPng(); }}
           className="px-1.5 py-0.5 text-xs text-fg-dim hover:text-fg hover:bg-bg-hover
                      disabled:opacity-40 disabled:cursor-default"
@@ -148,7 +160,7 @@ export function FigureExportControls({
           aria-label="Other download formats"
           aria-haspopup="true"
           aria-expanded={menuOpen}
-          disabled={downloadDisabled}
+          disabled={downloadAnyDisabled}
           onClick={() => setMenuOpen((v) => !v)}
           className="px-1 text-xs text-fg-dim hover:text-fg hover:bg-bg-hover
                      disabled:opacity-40 disabled:cursor-default"
@@ -166,8 +178,11 @@ export function FigureExportControls({
           <button
             type="button"
             data-testid="figure-export-download-menu-png"
+            disabled={!canPng}
+            title={pngTitle}
             onClick={() => { void onDownloadPng(); }}
-            className="block w-full text-left px-2 py-1 text-xs text-fg hover:bg-bg-hover rounded"
+            className="block w-full text-left px-2 py-1 text-xs text-fg hover:bg-bg-hover rounded
+                       disabled:opacity-40 disabled:cursor-default"
           >
             Download as PNG
           </button>
