@@ -120,6 +120,41 @@ export function useTrace(exposureId: number | undefined) {
 }
 
 /**
+ * Run a parallel `useQueries` over a list of ids and return a stable
+ * `Map<id, T>`. Stability is load-bearing: TanStack reuses `query.data` refs
+ * when underlying rows don't change, so we hash on `(id, dataRef)` and only
+ * mint a new Map when some pair actually changed. Without this, every parent
+ * re-render produces a new Map and downstream `useCallback`s that depend on
+ * it tear down + replot — wheel/brush smoothness in MultiTracePlot depends
+ * on this invariant.
+ *
+ * Used by the three `useMember*` hooks below (traces, exposures, samples)
+ * so any future tweak to the identity-comparison logic is applied once.
+ */
+function useStableQueryMap<T>(
+  ids: number[],
+  buildOptions: (id: number) => { queryKey: readonly unknown[]; queryFn: () => Promise<T> },
+): Map<number, T> {
+  const queries = useQueries({
+    queries: ids.map((id) => buildOptions(id)),
+  });
+  const stableRef = useRef<Map<number, T>>(new Map());
+  const next = new Map<number, T>();
+  for (let i = 0; i < ids.length; i++) {
+    const data = queries[i]?.data;
+    if (data !== undefined) next.set(ids[i]!, data as T);
+  }
+  let same = stableRef.current.size === next.size;
+  if (same) {
+    for (const [k, v] of next) {
+      if (stableRef.current.get(k) !== v) { same = false; break; }
+    }
+  }
+  if (!same) stableRef.current = next;
+  return stableRef.current;
+}
+
+/**
  * Fetch live `(q, I)` traces for a variable list of exposure ids in parallel.
  * Used by the Compare page MultiTracePlot — one trace per member. Returns a
  * `Map<exposure_id, Trace>` for compose-time consumption by `MultiTracePlot`.
@@ -128,35 +163,10 @@ export function useTrace(exposureId: number | undefined) {
  * share the same cache row (no double-fetching across pages).
  */
 export function useMemberTraces(exposureIds: number[]): Map<number, api.Trace> {
-  const queries = useQueries({
-    queries: exposureIds.map((id) => ({
-      queryKey: ["exposure", id, "trace"] as const,
-      queryFn: () => api.getTrace(id),
-    })),
-  });
-  // Stable Map across renders: TanStack reuses query.data refs when the
-  // underlying row hasn't changed, so we keep returning the same Map until
-  // some (id, dataRef) pair actually changes. Without this, every parent
-  // re-render mints a fresh Map and any downstream useCallback that depends
-  // on it tears down + replots — wheel/brush smoothness in MultiTracePlot
-  // depends on this.
-  const stableRef = useRef<Map<number, api.Trace>>(new Map());
-  const next = new Map<number, api.Trace>();
-  for (let i = 0; i < exposureIds.length; i++) {
-    const data = queries[i]?.data;
-    if (data) next.set(exposureIds[i]!, data);
-  }
-  let same = stableRef.current.size === next.size;
-  if (same) {
-    for (const [k, v] of next) {
-      if (stableRef.current.get(k) !== v) {
-        same = false;
-        break;
-      }
-    }
-  }
-  if (!same) stableRef.current = next;
-  return stableRef.current;
+  return useStableQueryMap(exposureIds, (id) => ({
+    queryKey: ["exposure", id, "trace"] as const,
+    queryFn: () => api.getTrace(id),
+  }));
 }
 
 /**
@@ -184,61 +194,24 @@ export function useMemberTracesLoading(exposureIds: number[]): boolean {
  * exposure cache being populated; without an explicit subscription the cache
  * never warms (only the trace key is fetched), and downstream readers fall
  * back to the orphan path. Issue #61 / #52.
- *
- * Returns a stable `Map<exposure_id, Exposure>`, mirroring the
- * `useMemberTraces` shape so MultiTracePlot consumers can treat the two
- * symmetrically.
  */
 export function useMemberExposures(exposureIds: number[]): Map<number, api.Exposure> {
-  const queries = useQueries({
-    queries: exposureIds.map((id) => ({
-      queryKey: queryKeys.exposure(id),
-      queryFn: () => api.getExposure(id),
-    })),
-  });
-  const stableRef = useRef<Map<number, api.Exposure>>(new Map());
-  const next = new Map<number, api.Exposure>();
-  for (let i = 0; i < exposureIds.length; i++) {
-    const data = queries[i]?.data;
-    if (data) next.set(exposureIds[i]!, data);
-  }
-  let same = stableRef.current.size === next.size;
-  if (same) {
-    for (const [k, v] of next) {
-      if (stableRef.current.get(k) !== v) { same = false; break; }
-    }
-  }
-  if (!same) stableRef.current = next;
-  return stableRef.current;
+  return useStableQueryMap(exposureIds, (id) => ({
+    queryKey: queryKeys.exposure(id),
+    queryFn: () => api.getExposure(id),
+  }));
 }
 
 /**
  * Hydrates per-member SAMPLE rows. Used together with `useMemberExposures`
  * by the Compare review-mode label resolver — a member's display label is
- * `${sample.label || sample.name} · ${exposure.filename}` (issue #52). Same
- * stable-Map pattern as the sibling hooks.
+ * `${sample.label || sample.name} · ${exposure.filename}` (issue #52).
  */
 export function useMemberSamples(sampleIds: number[]): Map<number, api.Sample> {
-  const queries = useQueries({
-    queries: sampleIds.map((id) => ({
-      queryKey: queryKeys.sample(id),
-      queryFn: () => api.getSample(id),
-    })),
-  });
-  const stableRef = useRef<Map<number, api.Sample>>(new Map());
-  const next = new Map<number, api.Sample>();
-  for (let i = 0; i < sampleIds.length; i++) {
-    const data = queries[i]?.data;
-    if (data) next.set(sampleIds[i]!, data);
-  }
-  let same = stableRef.current.size === next.size;
-  if (same) {
-    for (const [k, v] of next) {
-      if (stableRef.current.get(k) !== v) { same = false; break; }
-    }
-  }
-  if (!same) stableRef.current = next;
-  return stableRef.current;
+  return useStableQueryMap(sampleIds, (id) => ({
+    queryKey: queryKeys.sample(id),
+    queryFn: () => api.getSample(id),
+  }));
 }
 
 export function usePeaks(exposureId: number | undefined) {

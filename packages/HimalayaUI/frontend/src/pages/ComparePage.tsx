@@ -203,8 +203,12 @@ function ReviewPlot({
       }
       const exposure = exposures.get(m.exposure_id);
       const sample = exposure ? samples.get(exposure.sample_id) : undefined;
-      const sampleName = sample ? (sample.label ?? sample.name ?? null) : null;
-      const filename = exposure?.filename ?? null;
+      // `||` (not `??`) so an empty-string label/name falls through to the
+      // next fallback rather than rendering as a leading separator like
+      // " · run-A.dat". Sample.label is currently typed `string | null`,
+      // so this is theoretical — but cheap to harden.
+      const sampleName = sample ? (sample.label || sample.name || null) : null;
+      const filename = exposure?.filename || null;
       if (sampleName && filename) {
         map.set(m.id, `${sampleName} · ${filename}`);
       } else if (filename) {
