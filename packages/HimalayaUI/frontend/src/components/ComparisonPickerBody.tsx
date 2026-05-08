@@ -31,30 +31,30 @@ const FIXTURE_ROWS: PickerSampleRow[] = [
   },
 ];
 
+// Skeleton fixture covers ONLY the result list area — the filter strip
+// (search input + tag chips) renders outside the Skeleton so it's
+// interactive immediately on cold load (regression fix from PR #96 review:
+// search input was unfocusable when ref pointed inside the Skeleton's
+// fixture/fallback DOM during cold fetch).
 const COMPARISON_PICKER_BODY_FIXTURE = (
-  <div className="flex flex-col flex-1 min-h-0">
-    <div className="px-4 py-2 border-b border-border space-y-2">
-      <div className="w-full bg-transparent border border-border rounded px-2 py-1 text-sm h-[28px]" />
-    </div>
-    <div className="flex-1 overflow-hidden">
-      <div className="py-2">
-        <div className="px-4 text-xs font-medium text-fg-muted uppercase tracking-wide pb-1">
-          All samples
-        </div>
-        <ul className="flex flex-col">
-          {FIXTURE_ROWS.map((r) => (
-            <li key={r.sample.id}>
-              <SamplePickerRow
-                row={r}
-                checked={false}
-                onCheckedChange={() => {}}
-                overrideExposureId={undefined}
-                onOverrideChange={() => {}}
-              />
-            </li>
-          ))}
-        </ul>
+  <div className="flex-1 overflow-hidden">
+    <div className="py-2">
+      <div className="px-4 text-xs font-medium text-fg-muted uppercase tracking-wide pb-1">
+        All samples
       </div>
+      <ul className="flex flex-col">
+        {FIXTURE_ROWS.map((r) => (
+          <li key={r.sample.id}>
+            <SamplePickerRow
+              row={r}
+              checked={false}
+              onCheckedChange={() => {}}
+              overrideExposureId={undefined}
+              onOverrideChange={() => {}}
+            />
+          </li>
+        ))}
+      </ul>
     </div>
   </div>
 );
@@ -197,15 +197,10 @@ export function ComparisonPickerBody({
   };
 
   return (
-    <Skeleton
-      name="comparison-picker-body"
-      className="flex flex-col flex-1 min-h-0"
-      loading={pickerQ.isLoading}
-      fixture={COMPARISON_PICKER_BODY_FIXTURE}
-      fallback={<div className="flex-1 flex items-center justify-center"><HintText>Loading samples…</HintText></div>}
-    >
     <div className="flex flex-col flex-1 min-h-0">
-      {/* Filters (search + tag chips). */}
+      {/* Filters (search + tag chips). Rendered OUTSIDE the Skeleton so the
+          search input is mounted on first paint — keeps `inputRef.current?.focus()`
+          working during cold load (PR #96 review fix). */}
       <div className="px-4 py-2 border-b border-border space-y-2">
         <input
           ref={inputRef}
@@ -245,6 +240,13 @@ export function ComparisonPickerBody({
         )}
       </div>
 
+      <Skeleton
+        name="comparison-picker-body"
+        className="flex-1 min-h-0 flex flex-col"
+        loading={pickerQ.isLoading}
+        fixture={COMPARISON_PICKER_BODY_FIXTURE}
+        fallback={<div className="flex-1 flex items-center justify-center"><HintText>Loading samples…</HintText></div>}
+      >
       <div className="flex-1 min-h-0 overflow-y-auto">
         {recentSamples.length > 0 && (
           <section data-testid="comparison-picker-recents" className="border-b border-border/40 py-2">
@@ -303,7 +305,7 @@ export function ComparisonPickerBody({
           </section>
         )}
       </div>
+      </Skeleton>
     </div>
-    </Skeleton>
   );
 }

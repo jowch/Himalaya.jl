@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type { MouseEvent } from "react";
 import type { PickerSampleRow as PickerRow } from "../api";
 
 interface Props {
@@ -33,10 +34,24 @@ export function SamplePickerRow({
     dataAttrs["data-exposure-id"] = String(resolvedExposureId);
   }
 
+  // Row-level click toggles the checkbox so the cursor-pointer styling
+  // matches actual behavior (PR #96 review fix). Bail out when the click
+  // landed on an interactive child (checkbox, override radio, caret button)
+  // so it doesn't double-fire alongside the child's own handler.
+  const handleRowClick = (e: MouseEvent<HTMLDivElement>): void => {
+    if (disabled || alreadyAdded) return;
+    const target = e.target as HTMLElement;
+    if (target instanceof HTMLInputElement) return;   // checkbox or override radio
+    if (target.closest("button") !== null) return;    // caret button (or any nested button)
+    if (target.closest("label") !== null) return;     // override radio's <label> wrapper
+    onCheckedChange(!checked);
+  };
+
   return (
     <div
       data-testid="sample-picker-row"
       {...dataAttrs}
+      onClick={handleRowClick}
       className={
         "flex items-start gap-3 px-3 py-2 rounded " +
         (disabled || alreadyAdded

@@ -500,8 +500,13 @@ Three bulk queries (no JOIN'd Cartesian flatten, no per-sample N+1):
 Empty experiment ⇒ [].
 """
 function picker_samples(db::SQLite.DB, experiment_id::Integer)::Vector{Dict{Symbol, Any}}
+    # Explicit column list (PR #96 review): keep the picker JSON shape
+    # deliberate so a future column added to `samples` doesn't auto-leak
+    # into the picker payload.
     samples = Tables.rowtable(DBInterface.execute(db,
-        "SELECT * FROM samples WHERE experiment_id = ? ORDER BY id", [Int(experiment_id)]))
+        "SELECT id, experiment_id, name, label, notes
+         FROM samples WHERE experiment_id = ? ORDER BY id",
+        [Int(experiment_id)]))
     isempty(samples) && return Dict{Symbol, Any}[]
 
     sample_ids   = [Int(s.id) for s in samples]
