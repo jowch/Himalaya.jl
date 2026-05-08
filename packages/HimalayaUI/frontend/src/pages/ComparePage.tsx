@@ -88,7 +88,7 @@ export function ComparePage(): JSX.Element {
         }
         right={
           id === undefined ? (
-            <div className="h-full flex items-center justify-center text-fg-muted text-xs p-4 text-center">
+            <div className="h-full flex items-center justify-center p-4 text-center">
               <HintText>Chat appears once a comparison is selected.</HintText>
             </div>
           ) : (

@@ -605,14 +605,11 @@ export function ComparePageEdit(): JSX.Element {
         right={
           <div
             data-testid="compare-edit-right-hint"
-            className="h-full flex items-center justify-center text-fg-muted text-xs p-4 text-center"
+            className="h-full flex items-center justify-center p-4 text-center"
           >
             <HintText>Use “+ Add traces” to populate the comparison.</HintText>
           </div>
         }
-        // Sidebar (navigation) is least important on mobile; push it last.
-        // Center (the edit form) leads, then the right hint, then sidebar.
-        mobileOrder={["center", "right", "left"]}
         slotClassName={{
           // ComparisonSidebar uses `flex-1`, so the slot needs `display:flex`.
           left:   "flex flex-col min-h-[400px]",
