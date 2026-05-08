@@ -510,6 +510,13 @@ end
                 ])
                 @test body.id isa Integer
                 @test length(body.members) == 1
+                # Issue #54 regression: created_at / updated_at must be
+                # non-empty ISO timestamps, not the empty-string placeholder
+                # that the route's mint-the-id INSERT used to leave behind.
+                @test body.created_at !== ""
+                @test body.updated_at !== ""
+                @test occursin(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}", body.created_at)
+                @test occursin(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}", body.updated_at)
                 # Member shape pin.
                 m_keys = [
                     :id, :comparison_id, :exposure_id, :display_order,
@@ -542,6 +549,11 @@ end
                     :forked_from_id, :forked_at_hash, :forked_from_title,
                     :members,
                 ])
+                # Issue #54 regression on GET path — same contract as POST.
+                @test body.created_at !== ""
+                @test body.updated_at !== ""
+                @test occursin(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}", body.created_at)
+                @test occursin(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}", body.updated_at)
             end
         end
     end
