@@ -44,6 +44,21 @@ const EXPOSURES = [
 ];
 const TRACE = { q: [0.1, 0.2, 0.3], I: [10, 5, 2], sigma: [1, 1, 1] };
 
+const PICKER_SAMPLES = SAMPLES.map((s) => {
+  const all_exposures = EXPOSURES.filter((e) => e.sample_id === s.id).map((e) => ({
+    id: e.id,
+    sample_id: e.sample_id,
+    filename: e.filename,
+    selected: e.selected,
+  }));
+  const indexing = all_exposures.find((e) => e.selected) ?? all_exposures[all_exposures.length - 1];
+  return {
+    sample: s,
+    indexing_exposure_id: indexing ? indexing.id : null,
+    all_exposures,
+  };
+});
+
 // Initial users — only "alice" exists. Fork test creates "bob" via setting
 // localStorage username before reload (see test 2 below).
 const USERS = [{ id: 1, username: "alice", first_name: null, last_name: null }];
@@ -92,6 +107,8 @@ async function mockApi(page: Page, state: ServerState): Promise<void> {
   await page.route("**/api/experiments/1/exposures*", (r) =>
     jsonOK(r, EXPOSURES));
   await page.route("**/api/experiments/1/sample-tags", (r) => jsonOK(r, []));
+  await page.route("**/api/experiments/1/picker-samples", (r) =>
+    jsonOK(r, PICKER_SAMPLES));
   await page.route("**/api/samples/10/exposures*", (r) =>
     jsonOK(r, EXPOSURES.filter((e) => e.sample_id === 10)));
   await page.route("**/api/samples/11/exposures*", (r) =>
