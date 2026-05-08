@@ -548,3 +548,155 @@ describe("ComparePageEdit", () => {
     expect(body.members[0].snapshot.effective_peaks).toHaveLength(1);
   });
 });
+
+// ── Issue #69: edit-mode cold-load cache hydration parity ─────────────────────
+//
+// Mirror of the #61/#52 review-mode regression in test/ComparePage.test.tsx.
+// Edit mode is a separate page component and used to skip the per-member
+// exposure + sample subscriptions, so deep-linking
+// `/experiments/:eid/compare/:id/edit` cold (no Inspect visit warming the
+// cache, no picker pre-warm) produced gray (ORPHAN_FALLBACK) traces and
+// gutter rows labeled `Exposure #N`. Fix: subscribe to useMemberExposures
+// and useMemberSamples in ComparePageEdit and pipe the resolved labels into
+// MemberMetaGutter via the shared resolver in lib/comparison/labels.ts.
+
+describe("ComparePageEdit — cold-cache exposure + sample hydration (#69)", () => {
+  beforeEach(() => {
+    vi.stubGlobal("ResizeObserver", vi.fn(() => ({
+      observe: vi.fn((el: Element) => {
+        Object.defineProperty(el, "clientHeight", { value: 400, configurable: true });
+      }),
+      disconnect: vi.fn(),
+    })));
+    // Reset Zustand draft so a previous test doesn't leak an in-progress
+    // draft past the URL hydration guard in ComparePageEdit (the
+    // `loadDraftFromComparison` call no-ops if the active draft already
+    // matches the comparison id).
+    useAppState.getState().discardDraft();
+  });
+
+  function makeFetchMock() {
+    return vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : String(input);
+      if (url === "/api/comparisons/42") {
+        return new Response(JSON.stringify({
+          id: 42, title: "T", description: null, content_hash: "h",
+          created_by: 1, created_at: "2026-05-07T00:00:00",
+          updated_at: "2026-05-07T00:00:00",
+          forked_from_id: null, forked_at_hash: null, forked_from_title: null,
+          members: [
+            {
+              id: 1, comparison_id: 42, exposure_id: 100, display_order: 0,
+              band_height: 1, y_offset: 0, normalization: "none",
+              color_override: null, label_override: null,
+              q_window_min: null, q_window_max: null, peak_display: null,
+              snapshot: null, is_stale: false, created_by: 1,
+              created_at: "2026-05-07T00:00:00",
+            },
+            {
+              id: 2, comparison_id: 42, exposure_id: 200, display_order: 1,
+              band_height: 1, y_offset: 0, normalization: "none",
+              color_override: null, label_override: null,
+              q_window_min: null, q_window_max: null, peak_display: null,
+              snapshot: null, is_stale: false, created_by: 1,
+              created_at: "2026-05-07T00:00:00",
+            },
+          ],
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (url === "/api/exposures/100") {
+        return new Response(JSON.stringify({
+          id: 100, sample_id: 11, filename: "run-A.dat", kind: "file",
+          selected: true, status: "accepted", image_path: null,
+          image_version: "", tags: [], sources: [],
+          trace_hash: "h1", analysis_inputs_hash: "h1",
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (url === "/api/exposures/200") {
+        return new Response(JSON.stringify({
+          id: 200, sample_id: 22, filename: "run-B.dat", kind: "file",
+          selected: true, status: "accepted", image_path: null,
+          image_version: "", tags: [], sources: [],
+          trace_hash: "h2", analysis_inputs_hash: "h2",
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (url === "/api/samples/11") {
+        return new Response(JSON.stringify({
+          id: 11, experiment_id: 7, label: "Lipid-A", name: "JC001",
+          notes: null, tags: [],
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (url === "/api/samples/22") {
+        return new Response(JSON.stringify({
+          id: 22, experiment_id: 7, label: "Lipid-B", name: "JC002",
+          notes: null, tags: [],
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (url === "/api/exposures/100/trace") {
+        return new Response(JSON.stringify({ q: [0.1, 0.2], I: [1, 2], sigma: [0.01, 0.01] }), {
+          status: 200, headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url === "/api/exposures/200/trace") {
+        return new Response(JSON.stringify({ q: [0.1, 0.2], I: [3, 4], sigma: [0.01, 0.01] }), {
+          status: 200, headers: { "Content-Type": "application/json" },
+        });
+      }
+      // Peaks/indices/groups are read by computeMemberSnapshot at submit
+      // time, not on mount — return empty 200s so the load path stays clean.
+      if (/^\/api\/exposures\/\d+\/(peaks|indices|groups)$/.test(url)) {
+        return new Response(JSON.stringify([]), {
+          status: 200, headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response("not found", { status: 404 });
+    }) as unknown as typeof fetch;
+  }
+
+  it("hydrates the per-member exposure cache on edit-mode cold-load (#69)", async () => {
+    vi.spyOn(global, "fetch").mockImplementation(makeFetchMock());
+    const qc = makeQc();
+
+    renderEdit({ qc, initialPath: "/experiments/7/compare/42/edit" });
+
+    // Wait for the comparison fetch to resolve and the draft to hydrate.
+    await waitFor(() => {
+      expect(screen.getByTestId("compare-page-edit")).toHaveAttribute(
+        "data-comparison-id", "42",
+      );
+    });
+
+    // Bug: ComparePageEdit never subscribed to per-member exposure rows in
+    // cold-load (the picker pre-warms via #49, but deep-linking
+    // /:id/edit bypasses the picker). Without an explicit subscription the
+    // exposure cache stays undefined indefinitely.
+    await waitFor(() => {
+      expect(qc.getQueryData(queryKeys.exposure(100))).toBeDefined();
+      expect(qc.getQueryData(queryKeys.exposure(200))).toBeDefined();
+    });
+  });
+
+  it("renders gutter labels with sample label + filename, not 'Exposure #N' (#69)", async () => {
+    vi.spyOn(global, "fetch").mockImplementation(makeFetchMock());
+    const qc = makeQc();
+
+    renderEdit({ qc, initialPath: "/experiments/7/compare/42/edit" });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("compare-page-edit")).toHaveAttribute(
+        "data-comparison-id", "42",
+      );
+    });
+
+    // After exposure + sample data lands, the edit-mode gutter resolves
+    // the same human-readable labels as review mode. The `Exposure #N`
+    // form is the regressed fallback — assert it's gone.
+    await waitFor(() => {
+      const labels = screen.getAllByTestId("member-meta-label").map((n) => n.textContent ?? "");
+      expect(labels.length).toBeGreaterThan(0);
+      expect(labels.some((t) => t.includes("Lipid-A") && t.includes("run-A"))).toBe(true);
+      expect(labels.some((t) => t.includes("Lipid-B") && t.includes("run-B"))).toBe(true);
+      expect(labels.every((t) => !t.startsWith("Exposure #"))).toBe(true);
+    });
+  });
+});

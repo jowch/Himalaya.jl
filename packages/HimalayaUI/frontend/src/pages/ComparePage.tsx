@@ -34,6 +34,7 @@ import {
 import { useAppState } from "../state";
 import { useCurrentUserId } from "../hooks/useCurrentUserId";
 import { comparePath, type CompareScope } from "../lib/comparison/routes";
+import { resolveDisplayLabels } from "../lib/comparison/labels";
 import type { Comparison, ComparisonMember } from "../api";
 
 // Boneyard fixture for the compare-review-plot skeleton — a stand-in plot
@@ -186,41 +187,13 @@ function ReviewPlot({
     [exposures],
   );
 
-  // Resolved per-member labels: `${sample.label||sample.name} · ${exposure.filename}`,
-  // honoring `member.label_override` first. Falls back to the legacy
-  // "Exposure #N" form while the underlying rows are still loading so the
-  // skeleton lift doesn't reveal a different transient label.
-  const displayLabelByMemberId = useMemo(() => {
-    const map = new Map<number, string>();
-    for (const m of members) {
-      if (m.label_override) {
-        map.set(m.id, m.label_override);
-        continue;
-      }
-      if (m.exposure_id === null) {
-        map.set(m.id, "(deleted exposure)");
-        continue;
-      }
-      const exposure = exposures.get(m.exposure_id);
-      const sample = exposure ? samples.get(exposure.sample_id) : undefined;
-      // `||` (not `??`) so an empty-string label/name falls through to the
-      // next fallback rather than rendering as a leading separator like
-      // " · run-A.dat". Sample.label is currently typed `string | null`,
-      // so this is theoretical — but cheap to harden.
-      const sampleName = sample ? (sample.label || sample.name || null) : null;
-      const filename = exposure?.filename || null;
-      if (sampleName && filename) {
-        map.set(m.id, `${sampleName} · ${filename}`);
-      } else if (filename) {
-        map.set(m.id, filename);
-      } else if (sampleName) {
-        map.set(m.id, sampleName);
-      } else {
-        map.set(m.id, `Exposure #${m.exposure_id}`);
-      }
-    }
-    return map;
-  }, [members, exposures, samples]);
+  // Resolved per-member labels via the shared resolver (lib/comparison/labels.ts).
+  // ComparePageEdit shares the same helper so the fallback chain stays in
+  // lockstep across review and edit modes. See issue #69.
+  const displayLabelByMemberId = useMemo(
+    () => resolveDisplayLabels(members, exposures, samples),
+    [members, exposures, samples],
+  );
 
   // Cold-fetch gate. Per CLAUDE.md boneyard rules: gate on `query.isLoading`
   // not `isPending` so disabled queries / background refetches don't flicker.

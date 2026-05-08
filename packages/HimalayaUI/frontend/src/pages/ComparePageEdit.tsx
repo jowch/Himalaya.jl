@@ -39,15 +39,17 @@ import { MemberMetaGutter } from "../components/MemberMetaGutter";
 import { HintText } from "../components/ui";
 import { useAppState } from "../state";
 import {
-  useSaveComparison, useComparison, useMemberTraces, useMemberTracesLoading, queryKeys,
+  useSaveComparison, useComparison, useMemberTraces, useMemberTracesLoading,
+  useMemberExposures, useMemberSamples, queryKeys,
 } from "../queries";
 import { computeMemberSnapshot } from "../lib/comparison/snapshot";
 import { comparePath } from "../lib/comparison/routes";
+import { resolveDisplayLabels } from "../lib/comparison/labels";
 import {
   getExposure, listPeaks, listIndices, listGroups,
 } from "../api";
 import type {
-  Comparison, ComparisonMember, ComparisonMemberInput, Exposure, SaveComparisonBody,
+  Comparison, ComparisonMember, ComparisonMemberInput, SaveComparisonBody,
 } from "../api";
 import type { DraftMember } from "../lib/comparison/draft";
 
@@ -177,10 +179,21 @@ export function ComparePageEdit(): JSX.Element {
     // marks every cold member stale immediately after save (issue #49).
     // We prefetch all four cache keys (exposure, peaks, indices, groups)
     // so the snapshot is complete, not just the hash.
+    //
+    // Issue #69: `useMemberExposures` now subscribes to the exposure row
+    // on render, so checking only `queryKeys.exposure` would mark every
+    // member warm prematurely and skip the peaks/indices/groups prefetch
+    // that the snapshot needs. Treat a member as cold if ANY of the four
+    // keys is missing.
     const coldExposureIds = draft.members
       .map((m) => m.exposure_id)
       .filter((id): id is number => id !== null)
-      .filter((id) => qc.getQueryData<Exposure>(queryKeys.exposure(id)) === undefined);
+      .filter((id) =>
+        qc.getQueryData(queryKeys.exposure(id)) === undefined
+        || qc.getQueryData(queryKeys.peaks(id)) === undefined
+        || qc.getQueryData(queryKeys.indices(id)) === undefined
+        || qc.getQueryData(queryKeys.groups(id)) === undefined
+      );
 
     try {
       if (coldExposureIds.length > 0) {
@@ -359,6 +372,20 @@ export function ComparePageEdit(): JSX.Element {
   const tracesLoading = useMemberTracesLoading(exposureIds);
   const resetBandHeights = useAppState((s) => s.resetBandHeights);
 
+  // Issue #69 — hydrate per-member exposure + sample rows so the gutter
+  // resolves human-readable labels and `sampleIdFor` resolves grouping
+  // colors. Picker pre-warming (#49) covers the picker-add path; this
+  // covers the deep-link cold load (`/experiments/:eid/compare/:id/edit`),
+  // where the comparison fetch hydrates the draft but never the
+  // per-exposure rows. Mirror of ComparePage's #61 + #52 fix.
+  const exposures = useMemberExposures(exposureIds);
+  const sampleIds = useMemo(() => {
+    const ids = new Set<number>();
+    for (const e of exposures.values()) ids.add(e.sample_id);
+    return Array.from(ids).sort((a, b) => a - b);
+  }, [exposures]);
+  const samples = useMemberSamples(sampleIds);
+
   // Boneyard fixture mirrors the dual-column plot+gutter geometry.
   const editPlotFixture = useMemo(
     () => (
@@ -373,16 +400,23 @@ export function ComparePageEdit(): JSX.Element {
   // Phase 9 gap-fix — line-stroke coloring grouping mode + sample-id resolver
   // for edit mode. Mirrors ComparePage so toggling the grouping mode in
   // sister tabs / re-entering review keeps trace colors consistent. Reads
-  // the TanStack `exposure` cache directly; cache misses → ORPHAN_FALLBACK
-  // until the fetch settles.
+  // from the per-member exposures Map (hydrated by useMemberExposures
+  // above) instead of `qc.getQueryData` so the resolver re-evaluates when
+  // the cache settles — see issue #69.
   const groupingMode = useAppState((s) => s.groupingMode);
   const sampleIdFor = useCallback(
     (m: ComparisonMember): number | null => {
       if (m.exposure_id === null) return null;
-      const exposure = qc.getQueryData<Exposure>(queryKeys.exposure(m.exposure_id));
-      return exposure?.sample_id ?? null;
+      return exposures.get(m.exposure_id)?.sample_id ?? null;
     },
-    [qc],
+    [exposures],
+  );
+
+  // Issue #69 — same fallback chain as ComparePage. Both pages share
+  // `resolveDisplayLabels` so the chain stays in lockstep.
+  const displayLabelByMemberId = useMemo(
+    () => resolveDisplayLabels(plotMembers, exposures, samples),
+    [plotMembers, exposures, samples],
   );
 
   // Track the plot column's height so the edit-mode gutter aligns pixel-for-
@@ -540,6 +574,7 @@ export function ComparePageEdit(): JSX.Element {
                     members={plotMembers}
                     panelHeight={panelHeight}
                     mode="edit"
+                    displayLabelByMemberId={displayLabelByMemberId}
                   />
                 </div>
               </Skeleton>
