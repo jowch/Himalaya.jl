@@ -36,6 +36,7 @@ import { ComparisonSidebar } from "../components/ComparisonSidebar";
 import { ComparisonPicker } from "../components/ComparisonPicker";
 import { MultiTracePlot } from "../components/MultiTracePlot";
 import { MemberMetaGutter } from "../components/MemberMetaGutter";
+import { WorkspaceGrid } from "../components/WorkspaceGrid";
 import { HintText } from "../components/ui";
 import { useAppState } from "../state";
 import {
@@ -453,86 +454,123 @@ export function ComparePageEdit(): JSX.Element {
   // the gating exists. The button is hidden from the rendered tree until
   // then to keep the edit shell clean.
 
-  return (
-    <div
-      data-testid="compare-page-edit"
-      {...(id !== undefined ? { "data-comparison-id": String(id) } : {})}
-      className="flex-1 min-h-0 flex gap-3 px-4 pb-4 pt-2"
-    >
-      <aside className="card overflow-hidden w-[300px] shrink-0 flex flex-col">
-        <ComparisonSidebar
-          experimentId={eid}
-          scope={scope}
-          activeComparisonId={id}
+  // Edit-mode center pane — title strip + description + plot host. Lives
+  // in the WorkspaceGrid center slot; the right slot holds a hint card
+  // because edit mode has no chat (#60 OOS for picker-as-panel work).
+  const editCenter = (
+    <div className="flex-1 min-h-0 flex flex-col p-4 gap-3">
+      <div className="flex items-center gap-2">
+        <input
+          data-testid="compare-edit-title"
+          type="text"
+          placeholder="Comparison title"
+          value={draft?.title ?? ""}
+          onChange={(e) => setDraftTitle(e.target.value)}
+          className="flex-1 bg-transparent border border-border rounded px-2 py-1 text-base"
         />
-      </aside>
-      <section className="card overflow-hidden flex-1 min-h-0 flex flex-col p-4 gap-3">
-        <div className="flex items-center gap-2">
-          <input
-            data-testid="compare-edit-title"
-            type="text"
-            placeholder="Comparison title"
-            value={draft?.title ?? ""}
-            onChange={(e) => setDraftTitle(e.target.value)}
-            className="flex-1 bg-transparent border border-border rounded px-2 py-1 text-base"
-          />
-          <button
-            type="button"
-            data-testid="comparison-save"
-            onClick={handleSave}
-            disabled={(draft?.members.length ?? 0) === 0 || save.isPending}
-            title="Save (Cmd+Enter)"
-            className="px-3 py-1 rounded bg-accent text-bg disabled:opacity-50 text-sm font-medium"
-          >
-            {save.isPending ? "Saving…" : "Save"}
-          </button>
-          <button
-            type="button"
-            data-testid="comparison-cancel"
-            onClick={handleCancel}
-            title="Cancel (Esc)"
-            className="px-3 py-1 rounded border border-border text-sm"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            data-testid="comparison-discard"
-            onClick={handleDiscard}
-            className="px-3 py-1 rounded border border-border text-fg-muted text-sm"
-          >
-            Discard draft
-          </button>
-          <button
-            type="button"
-            data-testid="compare-edit-reset-heights"
-            onClick={resetBandHeights}
-            disabled={(draft?.members.length ?? 0) === 0}
-            className="px-3 py-1 rounded border border-border text-fg-muted text-sm
-                       disabled:opacity-50"
-            title="Reset all band heights to default"
-          >
-            Reset heights
-          </button>
-        </div>
-        <textarea
-          data-testid="compare-edit-description"
-          placeholder="Description (optional)"
-          value={draft?.description ?? ""}
-          onChange={(e) => setDraftDescription(e.target.value)}
-          className="bg-transparent border border-border rounded px-2 py-1 text-sm resize-none h-16"
-        />
-        <div
-          data-testid="compare-edit-plot-host"
-          className="flex-1 min-h-0 flex flex-col gap-2"
+        <button
+          type="button"
+          data-testid="comparison-save"
+          onClick={handleSave}
+          disabled={(draft?.members.length ?? 0) === 0 || save.isPending}
+          title="Save (Cmd+Enter)"
+          className="px-3 py-1 rounded bg-accent text-bg disabled:opacity-50 text-sm font-medium"
         >
-          {plotMembers.length === 0 ? (
-            <div
-              data-testid="compare-edit-plot-empty"
-              className="flex-1 flex flex-col items-center justify-center
-                         border border-border/40 rounded text-fg-muted text-sm gap-3"
+          {save.isPending ? "Saving…" : "Save"}
+        </button>
+        <button
+          type="button"
+          data-testid="comparison-cancel"
+          onClick={handleCancel}
+          title="Cancel (Esc)"
+          className="px-3 py-1 rounded border border-border text-sm"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          data-testid="comparison-discard"
+          onClick={handleDiscard}
+          className="px-3 py-1 rounded border border-border text-fg-muted text-sm"
+        >
+          Discard draft
+        </button>
+        <button
+          type="button"
+          data-testid="compare-edit-reset-heights"
+          onClick={resetBandHeights}
+          disabled={(draft?.members.length ?? 0) === 0}
+          className="px-3 py-1 rounded border border-border text-fg-muted text-sm
+                     disabled:opacity-50"
+          title="Reset all band heights to default"
+        >
+          Reset heights
+        </button>
+      </div>
+      <textarea
+        data-testid="compare-edit-description"
+        placeholder="Description (optional)"
+        value={draft?.description ?? ""}
+        onChange={(e) => setDraftDescription(e.target.value)}
+        className="bg-transparent border border-border rounded px-2 py-1 text-sm resize-none h-16"
+      />
+      <div
+        data-testid="compare-edit-plot-host"
+        className="flex-1 min-h-0 flex flex-col gap-2"
+      >
+        {plotMembers.length === 0 ? (
+          <div
+            data-testid="compare-edit-plot-empty"
+            className="flex-1 flex flex-col items-center justify-center
+                       border border-border/40 rounded text-fg-muted text-sm gap-3"
+          >
+            <div>No traces yet — add some to get started.</div>
+            <button
+              type="button"
+              data-testid="compare-edit-add-traces"
+              onClick={() => setPickerOpen(true)}
+              className="px-3 py-1 rounded border border-border text-fg text-sm
+                         hover:bg-bg-elevated"
             >
-              <div>No traces yet — add some to get started.</div>
+              + Add traces
+            </button>
+          </div>
+        ) : (
+          <>
+            <Skeleton
+              name="compare-edit-plot"
+              className="flex flex-row flex-1 min-h-0 gap-3"
+              loading={tracesLoading}
+              stagger={50}
+              transition={200}
+              fixture={editPlotFixture}
+              fallback={<div className="flex-1 flex items-center justify-center"><HintText>Loading traces…</HintText></div>}
+            >
+              <div ref={plotColRef} className="flex-1 min-w-0">
+                <MultiTracePlot
+                  members={plotMembers}
+                  traces={traces}
+                  xDomain={xDomain}
+                  onXDomain={setXDomain}
+                  peakDisplayByMemberId={peakDisplayByMemberId}
+                  onPeakClick={handlePeakClick}
+                  groupingMode={groupingMode}
+                  sampleIdFor={sampleIdFor}
+                />
+              </div>
+              <div
+                className="w-[320px] shrink-0 relative"
+                data-testid="compare-edit-gutter"
+              >
+                <MemberMetaGutter
+                  members={plotMembers}
+                  panelHeight={panelHeight}
+                  mode="edit"
+                  displayLabelByMemberId={displayLabelByMemberId}
+                />
+              </div>
+            </Skeleton>
+            <div className="flex justify-end">
               <button
                 type="button"
                 data-testid="compare-edit-add-traces"
@@ -543,56 +581,45 @@ export function ComparePageEdit(): JSX.Element {
                 + Add traces
               </button>
             </div>
-          ) : (
-            <>
-              <Skeleton
-                name="compare-edit-plot"
-                className="flex flex-row flex-1 min-h-0 gap-3"
-                loading={tracesLoading}
-                stagger={50}
-                transition={200}
-                fixture={editPlotFixture}
-                fallback={<div className="flex-1 flex items-center justify-center"><HintText>Loading traces…</HintText></div>}
-              >
-                <div ref={plotColRef} className="flex-1 min-w-0">
-                  <MultiTracePlot
-                    members={plotMembers}
-                    traces={traces}
-                    xDomain={xDomain}
-                    onXDomain={setXDomain}
-                    peakDisplayByMemberId={peakDisplayByMemberId}
-                    onPeakClick={handlePeakClick}
-                    groupingMode={groupingMode}
-                    sampleIdFor={sampleIdFor}
-                  />
-                </div>
-                <div
-                  className="w-[320px] shrink-0 relative"
-                  data-testid="compare-edit-gutter"
-                >
-                  <MemberMetaGutter
-                    members={plotMembers}
-                    panelHeight={panelHeight}
-                    mode="edit"
-                    displayLabelByMemberId={displayLabelByMemberId}
-                  />
-                </div>
-              </Skeleton>
-              <div className="flex justify-end">
-                <button
-                  type="button"
-                  data-testid="compare-edit-add-traces"
-                  onClick={() => setPickerOpen(true)}
-                  className="px-3 py-1 rounded border border-border text-fg text-sm
-                             hover:bg-bg-elevated"
-                >
-                  + Add traces
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-      </section>
+          </>
+        )}
+      </div>
+    </div>
+  );
+
+  return (
+    <div
+      data-testid="compare-page-edit"
+      {...(id !== undefined ? { "data-comparison-id": String(id) } : {})}
+      className="flex-1 min-h-0 flex flex-col gap-3 px-4 pb-4 pt-2"
+    >
+      <WorkspaceGrid
+        left={
+          <ComparisonSidebar
+            experimentId={eid}
+            scope={scope}
+            activeComparisonId={id}
+          />
+        }
+        center={editCenter}
+        right={
+          <div
+            data-testid="compare-edit-right-hint"
+            className="h-full flex items-center justify-center text-fg-muted text-xs p-4 text-center"
+          >
+            <HintText>Use “+ Add traces” to populate the comparison.</HintText>
+          </div>
+        }
+        // Sidebar (navigation) is least important on mobile; push it last.
+        // Center (the edit form) leads, then the right hint, then sidebar.
+        mobileOrder={["center", "right", "left"]}
+        slotClassName={{
+          // ComparisonSidebar uses `flex-1`, so the slot needs `display:flex`.
+          left:   "flex flex-col min-h-[400px]",
+          center: "flex flex-col min-h-[640px]",
+          right:  "flex flex-col min-h-[120px]",
+        }}
+      />
 
       <ComparisonPicker
         isOpen={pickerOpen}
