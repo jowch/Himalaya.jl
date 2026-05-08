@@ -1,6 +1,6 @@
 # Compare picker rethink — design spec
 
-**Status:** Draft (2026-05-08)
+**Status:** Draft (2026-05-08, rev. after frontend-reviewer + himalaya-reviewer pass)
 **Bundle:** GitHub issues #84, #85, #87 (§6–7 only)
 **PR cut:** Two PRs, ordered #84 → polish
 
@@ -36,9 +36,13 @@ Returns one row per sample in the experiment, enriched with the resolved indexin
 ```
 
 `indexing_exposure_id` resolution per spec §"Default exposure per sample":
-1. The exposure with `exposures.selected = 1` for the sample, if any.
+1. The exposure with `exposures.selected = 1` for the sample. SQL: `… WHERE selected = 1 ORDER BY id DESC LIMIT 1`. The `selected` LWW invariant in `routes_exposures.jl:99–117` guarantees at most one in current data, but the explicit `LIMIT 1` + tiebreaker is defensive against legacy rows that pre-date the invariant.
 2. Else the highest `exposures.id` for the sample. (`id` is autoincrementing; without a dedicated `analyzed_at` column this is the cleanest proxy for "most-recently-ingested-and-typically-most-recently-analyzed". Avoids a join through `user_actions` for what is a defensive fallback path — most production samples have `selected = 1` set on the Inspect page.)
-3. Else `null` (sample has zero exposures — no row should be selectable).
+3. Else `null` (sample has zero exposures — UI renders the row disabled with no checkbox interaction; see frontend §"Selection state model" below).
+
+**Query shape (locked):** *two* `Tables.rowtable(DBInterface.execute(db, …))` calls, not one JOIN'd query. (1) `SELECT * FROM samples WHERE experiment_id = ?` for the sample list, plus its tags via existing `samples_with_tags` helper. (2) `SELECT id, sample_id, filename, selected FROM exposures WHERE sample_id IN (?, …) ORDER BY sample_id ASC, id ASC` for the exposures, then group by `sample_id` in Julia. Avoids a Cartesian flatten that would require deduping in-Julia. Per CLAUDE.md "SQLite.jl" gotchas: materialize raw rows via `Tables.rowtable` before fields are read.
+
+**Serialization (locked):** when projecting each exposure into `all_exposures`, pass `bool_keys = (:selected,)` to `row_to_json` (`json.jl:13`) so the boolean serializes as `true`/`false`, not `1`/`0`. Mirrors the existing `routes_exposures.jl:21` pattern. `indexing_exposure_id` serializes as JSON `null` (not an absent key) when no exposure resolves — frontend TS strict mode reads it as `number | null`.
 
 Read-only, no idempotency, no SSE, no `user_actions` row. Lives in `routes_picker.jl` next to the existing `recently-picked-exposures` and `sample-tags` routes. Helper `picker_samples(db, experiment_id)` lives in `comparisons.jl` next to `recently_used_exposures`.
 
@@ -49,7 +53,13 @@ Read-only, no idempotency, no SSE, no `user_actions` row. Lives in `routes_picke
 - Sample with one exposure → that exposure regardless of selected flag.
 - Sample with zero exposures → row included, `indexing_exposure_id = null`. (Decision: include rather than filter — UI can show a disabled row instead of silently dropping samples.)
 - Unknown experiment id → empty list, HTTP 200 (matches existing `sample-tags` semantics).
-- `all_exposures` ordered by `id ASC` so the override list is stable across renders.
+- `all_exposures` ordered by `id ASC` (assert ordering, not just set-equality — SQLite returns insertion order without explicit `ORDER BY`).
+- **Multi-experiment isolation:** sample in experiment A whose exposure ids are smaller than any in experiment B — confirms the helper filters on `samples.experiment_id`, not on a global `MAX(id)`. Two-experiment fixture, assert no cross-leakage.
+- **`exposures.sample_id IS NULL` orphans:** seed an orphan exposure row, confirm it appears in no sample's `all_exposures`. (Schema has no `NOT NULL` on `sample_id`.)
+- **Sample with `name IS NULL` and/or `label IS NULL`:** confirm the JSON output is `null` (not absent key, not `missing`). The `routes_users.jl` NULL-fill pattern uses `ismissing` to normalize — assert the picker route does the same.
+- **Defensive multi-`selected` legacy:** seed two rows with `selected = 1` for the same sample (simulates pre-LWW data). Confirm `LIMIT 1 ORDER BY id DESC` resolves deterministically to the higher id.
+- **`selected` JSON-shape regression:** assert exact JSON bytes for a sample row to lock in `"selected": true`/`false`, not `1`/`0`. This is the canonical contract-test layer per CLAUDE.md "Multi-layer contract testing."
+- **`indexing_exposure_id`: null JSON, not absent key** — assert via `JSON3.read` that the key is present with value `nothing`/`null`.
 
 ### Frontend — components
 
@@ -57,30 +67,41 @@ Decomposition:
 
 - **`ComparisonPickerBody.tsx`** (new) — extracted: filters (search, experiment chips, tag chips), Recents section, main list, Add-N-selected footer. Stateless on container choice; both modal and (PR2) inline shells consume it.
 - **`ComparisonPicker.tsx`** (rewritten) — thin modal shell only: overlay, dialog role, focus trap, Esc-to-close, restores focus to trigger. Wraps `ComparisonPickerBody`.
-- **`SamplePickerRow.tsx`** (new) — primary row. Sample name (font-medium, primary slot), sample label as secondary, sample notes as tertiary line-clamp, exposure-count badge (e.g. "3 exposures"), checkbox, override disclosure caret. The caret expands an inline `<ul>` of override rows.
-- **`ExposureOverrideRow.tsx`** (new) — leaf row with a radio (one-active-per-sample). Filename as primary, "selected" badge on the indexing exposure. Hidden until parent caret is expanded.
-- **`ExposureListRow.tsx`** (kept) — no longer the picker's primary row, but retained for any future Inspect-side use. No changes.
+- **`SamplePickerRow.tsx`** (new) — primary row. Sample name (font-medium, primary slot), sample label as secondary, sample notes as tertiary line-clamp, exposure-count badge (e.g. "3 exposures"), checkbox, override disclosure caret. The caret expands an inline `<ul>` of override rows. When `indexing_exposure_id === null` (zero-exposure sample), the row renders disabled: no checkbox, no caret, `data-disabled` set, no `data-exposure-id`.
+- **`ExposureListRow.tsx`** (extended, not duplicated) — gains a `control: "checkbox" | "radio"` prop so the override leaf reuses the same component. Filename labelling, locked-state styling, and notes truncation stay shared. The picker's primary row is `SamplePickerRow` (new); `ExposureListRow` becomes the override leaf when caret is expanded. No new `ExposureOverrideRow` component — avoids the two-near-identical-rows footgun the reviewer flagged.
 
 ### Frontend — selection state model
 
-Local state in `ComparisonPickerBody`:
+`ComparisonPickerBody` is a pure render layer — it does not own selection state. It accepts a callback prop:
 
 ```ts
-type Pick = {
+export type Pick = {
   sample_id: number;
   exposure_id: number;          // resolved at pick time (frozen)
   source: "default" | "override";
 };
-const [picks, setPicks] = useState<Pick[]>([]);
+interface BodyProps {
+  experimentId: number | undefined;
+  picks: Pick[];                // controlled
+  onPicksChange: (next: Pick[]) => void;  // batch shell
+  onPick?: (pick: Pick) => void;          // immediate shell — fires per pick
+  alreadyAddedExposureIds: Set<number>;
+}
 ```
 
-- Toggling a sample's checkbox adds `{sample_id, exposure_id: indexing_exposure_id, source: "default"}`.
-- Opening the caret + selecting a different exposure replaces the entry with `{exposure_id: <override>, source: "override"}` while keeping the same `sample_id`.
-- "Add N selected" iterates `picks` and calls existing `addMember(exposureId, qc)` for each. The Zustand action is unchanged. `source` is debug-only metadata, not persisted.
+- The shell decides what to do with picks: modal accumulates into `picks` and flushes via "Add N selected"; inline panel ignores `picks` and uses `onPick` to call `addMember` immediately.
+- A row whose `indexing_exposure_id === null` is rendered disabled — its checkbox is absent (not just disabled) so a `Pick` with `exposure_id: null` cannot be constructed. This makes line 112's "every pick resolves to an exposure id" claim a true invariant rather than a comment.
+- `Pick.source` is required (not optional) so TS-strict's `exactOptionalPropertyTypes` rule doesn't bite. It's debug-only metadata, not persisted, but its presence on the type is guaranteed.
+
+Replaces the earlier `commitMode: "batch" | "immediate"` proposal — the reviewer flagged that as a load-bearing branch inside the body. Pushing the commit decision to the shell collapses the body to "render rows, emit picks."
 
 ### Frontend — recents
 
-Reuse existing `GET /api/users/:id/recently-picked-exposures` (returns exposure ids). Client maps each id → its sample id (via the picker-samples response), dedupes to one row per sample (the most recent pick wins), and renders as `SamplePickerRow` with the picked exposure pre-selected as the override (so re-adding from recents lands the same exposure the user picked last time). Recents section dedupes against the main list by sample id (the same sample never appears twice in the visible list).
+Reuse existing `GET /api/users/:id/recently-picked-exposures` (returns exposure ids). Client maps each id → its sample id (via the picker-samples response), dedupes to one row per sample (the most recent pick wins), and renders as `SamplePickerRow` with the picked exposure pre-selected — as the default if the picked exposure is still the sample's `indexing_exposure_id`, else as an explicit override (caret expanded, radio set). Recents section dedupes against the main list by sample id (the same sample never appears twice in the visible list).
+
+The dedup is a `useMemo([recentsQ.data, pickerSamplesQ.data])` inside `ComparisonPickerBody` — recents is server state and must not leak into Zustand. (Per CLAUDE.md state-split: TanStack Query owns server state, Zustand owns client state.)
+
+**Future-bug seed (documented for follow-on, not addressed in PR1):** `recently_used_exposures` reads `comparison_members.exposure_id`. Freeze-at-pick + sample-default means two distinct user intents collapse to the same row: "user explicitly chose this exposure" vs "user picked sample, system resolved it." A future "recently picked samples" route would either require a new column on `comparison_members` (e.g. `picked_via TEXT CHECK IN ('default','override')`) or a parallel derivation through `user_actions.payload`. No `user_actions` invariant requires the source attribution today, so PR1 doesn't add one. Out of scope.
 
 If recents granularity ends up noisy (e.g. lots of cross-sample picks dropping rows from view), follow-on work can add a `GET /api/users/:id/recently-picked-samples` route. Out of scope for PR1.
 
@@ -90,13 +111,15 @@ If recents granularity ends up noisy (e.g. lots of cross-sample picks dropping r
 - Sample notes appear as a line-clamp-2 secondary line.
 - Filename only appears under the override caret, where it's actually meaningful.
 - Section dividers: `<hr>`-style border, not just spacing. Headings as `text-xs text-fg-muted` (legibility upgrade from current `text-fg-dim`).
-- Selection feedback beyond "N selected": picked rows get a subtle accent ring (`ring-1 ring-accent/30`). A full chip strip is deferred — it duplicates information the row's checked state already conveys.
+- Selection feedback beyond "N selected": picked rows get a subtle accent ring. Tailwind v4 slash-opacity (`ring-accent/30`) decomposes against `--color-accent` only if the token is in `oklch`/`rgb` form in `styles.css` `@theme`. Implementer step: verify the existing accent token shape works with the slash syntax; if not, define an explicit `--color-accent-30` (or use `bg-accent/15` which is already in use elsewhere in this file at `text-accent` chip styling). A full chip strip is deferred — it duplicates information the row's checked state already conveys.
 
 ### Frontend — tests (Vitest)
 
-- **`test/SamplePickerRow.test.tsx`** (new) — sample-first rendering, caret toggle behavior, override radio behavior, exposure-count badge.
-- **`test/ComparisonPickerBody.test.tsx`** (new) — filter chip behavior, search filter, recents section, add-N-selected wiring (verifies `addMember` called once per pick with the resolved exposure id).
-- **`test/ComparisonPicker.test.tsx`** (updated) — narrowed to modal-shell concerns: open/close, Esc, focus trap, focus-restore. Body-level assertions move to `ComparisonPickerBody.test.tsx`.
+- **`test/SamplePickerRow.test.tsx`** (new) — sample-first rendering, caret toggle behavior, override radio behavior, exposure-count badge, **disabled-row branch** (zero-exposure samples render no checkbox + `data-disabled`).
+- **`test/ComparisonPickerBody.test.tsx`** (new) — filter chip behavior, search filter, recents section dedup against main list, controlled-`picks` wiring (verifies `onPicksChange` is called with the right `Pick` shape), `onPick` immediate path (calls fired in pick order with resolved exposure id).
+- **`test/ComparisonPicker.test.tsx`** (updated) — narrowed to modal-shell concerns: open/close, Esc, focus trap, focus-restore. Body-level assertions move to `ComparisonPickerBody.test.tsx`. **Add focus-trap regression test** — the modal shell uses `useFocusTrap`; pulling shared filter chips out of it shouldn't allow Tab to escape the dialog.
+- **`test/ExposureListRow.test.tsx`** (updated) — new `control: "checkbox" | "radio"` prop branch.
+- **Skeleton-gating test** in `ComparisonPickerBody.test.tsx` — confirms the picker doesn't flicker on background refetch by gating on `isLoading`, not `isPending` (per CLAUDE.md "Skeleton loading via boneyard-js"). The four queries (`useSamples`, the new `usePickerSamples`, `useRecentlyPickedExposures`, `useSampleTags`) all need this discipline.
 
 ### Frontend — E2E (Playwright, mocked)
 
@@ -109,7 +132,7 @@ If recents granularity ends up noisy (e.g. lots of cross-sample picks dropping r
 
 ### Migration / rollout
 
-- Existing `data-testid="picker-row"` on rows stays. New `data-sample-id` added. `data-exposure-id` is set to the resolved exposure id (the default unless the override is active). Existing E2E selectors that target `data-exposure-id` continue to work because every pick resolves to an exposure id.
+- Existing `data-testid="picker-row"` on rows stays. New `data-sample-id` added. `data-exposure-id` is set to the resolved exposure id on every *selectable* row (the default unless the override is active). Disabled rows (zero-exposure samples) get `data-disabled` and **omit** `data-exposure-id`. Existing E2E selectors that target `data-exposure-id` continue to work for selectable rows; tests that need to count rows must filter on `:not([data-disabled])` if zero-exposure samples are in the fixture.
 - No schema migration. No event-log change. No SSE change. No mutation-queue contact surface.
 - `comparison_members.exposure_id` semantics unchanged; the picker is just smarter about which exposure id to send.
 
@@ -118,20 +141,16 @@ If recents granularity ends up noisy (e.g. lots of cross-sample picks dropping r
 ### Components
 
 - **`ComparisonPickerPanel.tsx`** (new) — inline shell wrapping the same `ComparisonPickerBody`. No overlay, no focus trap, no Esc-to-close. Different selection-commit semantics (see below).
-- **`ComparePageEdit.tsx`** (updated) — right WorkspaceGrid slot swaps from the hint card to `<ComparisonPickerPanel experimentId={eid} />`. The bottom-right "+ Add traces" button (rendered when `plotMembers.length > 0`) is removed. The empty-state CTA inside the plot host stays but its onClick switches to `panelRef.current?.focusSearch()` (or similar) — focuses the inline panel's search input rather than opening a modal.
+- **`ComparePageEdit.tsx`** (updated) — right WorkspaceGrid slot swaps from the hint card to `<ComparisonPickerPanel experimentId={eid} searchInputRef={pickerSearchRef} />`. The bottom-right "+ Add traces" button (rendered when `plotMembers.length > 0`) is removed. The empty-state CTA inside the plot host stays but its `onClick` switches to `pickerSearchRef.current?.focus()` — focuses the inline panel's search input rather than opening a modal.
+- **No `useImperativeHandle`.** The panel accepts a `searchInputRef: RefObject<HTMLInputElement>` prop and threads it down to the body's search input. Idiomatic for this codebase (avoids introducing a one-off imperative-handle pattern).
 
 ### Selection-commit semantics
 
-The modal shell has a "Add N selected" footer because the modal is dismissive — the user commits a batch and the modal goes away. The inline panel is always-on, so batching is visual noise. New body-level prop:
+The modal shell accumulates picks and flushes on "Add N selected" because the modal is dismissive. The inline panel is always-on, so batching is visual noise — each toggle should commit immediately. The body's `picks` / `onPicksChange` / `onPick` prop split (see PR1 §"Selection state model" above, revised per reviewer feedback) makes this a shell decision, not a body branch:
 
-```ts
-type CommitMode = "batch" | "immediate";
-```
-
-- `"batch"` (modal): existing behavior. Picks accumulate; "Add N selected" footer fires `addMember` per pick on click.
-- `"immediate"` (inline panel): each toggle/override fires `addMember` (or a future `removeMemberByExposure`) immediately. The picked row visually transitions to the locked state (`alreadyAdded = true`) on the next render via the existing draft-membership lookup. No footer rendered.
-
-`ComparisonPickerBody` already does the lookup; the new mode flips the toggle handler.
+- **Modal shell (`ComparisonPicker`):** owns `picks` state, passes via `picks` + `onPicksChange`. Renders the "Add N selected" footer. On click, iterates `picks` and calls `addMember(p.exposure_id, qc)` per entry.
+- **Inline shell (`ComparisonPickerPanel`):** does NOT own `picks` state — passes `picks={[]}` + `onPick={(p) => addMember(p.exposure_id, qc)}`. Each toggle fires `addMember` directly. The picked row visually transitions to the locked state (`alreadyAdded = true`) on the next render via the existing draft-membership lookup (`alreadyAddedExposureIds` prop). No footer rendered.
+- **Removal in inline mode** stays with the existing member gutter's "remove" affordance — the panel is add-only. PR2 does not introduce a `removeMemberByExposure` Zustand action.
 
 ### Frontend — tests (Vitest)
 
@@ -140,7 +159,7 @@ type CommitMode = "batch" | "immediate";
 
 ### Frontend — E2E
 
-- **`e2e/live/comparePickerInline.spec.ts`** (new, live-mode) — real backend roundtrip. Open `/compare/new`, panel is visible in the right slot, click a sample row, see a band appear on the plot, click the override caret, switch exposure, see the band's resolved exposure id update. Per the live-mode runbook: wait ~800ms after `page.goto("/")` before the first mutation that expects an SSE echo.
+- **`e2e/live/comparePickerInline.spec.ts`** (new, live-mode) — real backend roundtrip. Open `/compare/new`, panel is visible in the right slot, click a sample row, see a band appear on the plot, click the override caret, switch exposure, see the band's resolved exposure id update. Per the live-mode runbook (`packages/HimalayaUI/frontend/e2e/live/README.md`): wait ~800ms after `page.goto("/")` before the first mutation that expects an SSE echo. If that wait time changes, update the runbook in lockstep.
 - **Headless verification I run myself:**
   - `npm run e2e -- --grep "ComparisonPickerPanel|ComparePageEdit"` for the mocked slice.
   - For the live spec, the user (operator) brings up backend + Vite per the live-mode runbook; I run `npm run e2e:live -- --grep "comparePickerInline"` from there.
@@ -157,9 +176,10 @@ type CommitMode = "batch" | "immediate";
 ```
 ComparisonPickerBody  ◄── ComparisonPicker        (modal shell, batch commit)
                       ◄── ComparisonPickerPanel   (inline shell, immediate commit, PR2)
-                      
-SamplePickerRow       ◄── ComparisonPickerBody (primary row)
-ExposureOverrideRow   ◄── SamplePickerRow      (caret-expanded leaf)
+
+SamplePickerRow       ◄── ComparisonPickerBody  (primary row)
+ExposureListRow       ◄── SamplePickerRow       (caret-expanded leaf, control="radio")
+                      (still standalone for any future Inspect-side use)
 
 picker_samples(db, experiment_id)  ◄── routes_picker.jl
                                    ◄── test_picker_samples_route.jl
@@ -191,7 +211,7 @@ picker_samples(db, experiment_id)  ◄── routes_picker.jl
 |------|-----------|
 | Existing E2E selectors break when picker-row content changes | Retain `picker-row` testid + `data-exposure-id` on the resolved exposure id; add `data-sample-id` for new assertions. |
 | Recents section becomes empty for users whose history is across sister samples that no longer match the picker's sample-set | Acceptable — recents is best-effort. Document in component header. |
-| `picker-samples` N+1 against `all_exposures` if experiments have hundreds of samples | One JOIN'd query in `picker_samples`; benchmark in backend test on a 200-sample fixture if needed. Falls under existing perf envelope. |
+| `picker_samples` cost on experiments with hundreds of samples | Two queries (samples list, then exposures bulk-grouped via `WHERE sample_id IN (?, …)`) — *not* one JOIN'd query (the JOIN'd shape would Cartesian-flatten samples × exposures and need in-Julia deduping, which the previous spec draft mistakenly recommended). Benchmark on a 200-sample fixture if needed; falls under the existing perf envelope. |
 | Inline panel misses the "Esc to dismiss" muscle memory | Inline panel doesn't dismiss — the panel is always present in edit mode. Document in `ComparisonPickerPanel` header. The bottom-right "+ Add traces" button being gone is the discoverability cue. |
 | Drift surprise — user expects the picker to retarget when Inspect's selected exposure changes | Drift policy locked to freeze-at-pick. Deliberate; documented in component + spec. Stale-banner work is a separate follow-on if user feedback demands it. |
 
