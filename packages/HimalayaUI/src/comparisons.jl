@@ -484,6 +484,93 @@ function recently_used_exposures(db::SQLite.DB, user_id::Integer; limit::Int = 2
 end
 
 """
+    picker_samples(db, experiment_id) -> Vector{Dict{Symbol, Any}}
+
+Picker primary list per spec §"PR1 — sample-first picker → Backend".
+
+For each sample in `experiment_id`, returns:
+  :sample              => sample row (Symbol-keyed Dict, with :tags vector)
+  :indexing_exposure_id => Int or nothing — `selected = 1` else MAX(id) else nothing
+  :all_exposures       => Vector of {:id, :filename, :selected::Bool}, ORDER BY id ASC
+
+Three bulk queries (no JOIN'd Cartesian flatten, no per-sample N+1):
+(1) `WHERE experiment_id = ?` for samples,
+(2) `WHERE sample_id IN (...)` for exposures,
+(3) `WHERE sample_id IN (...)` for sample_tags.
+Empty experiment ⇒ [].
+"""
+function picker_samples(db::SQLite.DB, experiment_id::Integer)::Vector{Dict{Symbol, Any}}
+    # Explicit column list (PR #96 review): keep the picker JSON shape
+    # deliberate so a future column added to `samples` doesn't auto-leak
+    # into the picker payload.
+    samples = Tables.rowtable(DBInterface.execute(db,
+        "SELECT id, experiment_id, name, label, notes
+         FROM samples WHERE experiment_id = ? ORDER BY id",
+        [Int(experiment_id)]))
+    isempty(samples) && return Dict{Symbol, Any}[]
+
+    sample_ids   = [Int(s.id) for s in samples]
+    placeholders = join(fill("?", length(sample_ids)), ",")
+    exposures    = Tables.rowtable(DBInterface.execute(db,
+        "SELECT id, sample_id, filename, selected FROM exposures
+         WHERE sample_id IN ($placeholders) ORDER BY sample_id ASC, id ASC",
+        sample_ids))
+    tag_rows = Tables.rowtable(DBInterface.execute(db,
+        "SELECT id, sample_id, key, value, source FROM sample_tags
+         WHERE sample_id IN ($placeholders) ORDER BY sample_id ASC, id ASC",
+        sample_ids))
+
+    # Group exposures + tags by sample_id in Julia (avoids a Cartesian JOIN dedup).
+    grouped_exps = Dict{Int, Vector{NamedTuple}}()
+    for e in exposures
+        push!(get!(grouped_exps, Int(e.sample_id), NamedTuple[]), e)
+    end
+    grouped_tags = Dict{Int, Vector{NamedTuple}}()
+    for t in tag_rows
+        push!(get!(grouped_tags, Int(t.sample_id), NamedTuple[]), t)
+    end
+
+    out = Dict{Symbol, Any}[]
+    for sm in samples
+        sid  = Int(sm.id)
+        exps = get(grouped_exps, sid, NamedTuple[])
+
+        # Resolve indexing exposure: highest-id selected wins (defensive
+        # against legacy multi-selected data); else highest-id overall;
+        # else nothing for zero-exposure samples. `exps` is sorted id ASC,
+        # so iterating in reverse yields highest-id first.
+        idx_id = nothing
+        for e in Iterators.reverse(exps)
+            if e.selected != 0
+                idx_id = Int(e.id); break
+            end
+        end
+        if idx_id === nothing && !isempty(exps)
+            idx_id = Int(last(exps).id)   # last == max by id ASC ordering
+        end
+
+        # Sample → row_to_json + bulk-grouped tags. Drop sample_id from each
+        # tag dict (it's redundant once grouped under the sample).
+        tags_for_sm = get(grouped_tags, sid, NamedTuple[])
+        tag_dicts = map(tags_for_sm) do t
+            d = row_to_json(t)
+            delete!(d, :sample_id)
+            d
+        end
+        sample_dict = row_to_json(sm)
+        sample_dict[:tags] = tag_dicts
+
+        all_exp = [row_to_json(e; bool_keys = (:selected,)) for e in exps]
+        push!(out, Dict{Symbol, Any}(
+            :sample               => sample_dict,
+            :indexing_exposure_id => idx_id,
+            :all_exposures        => all_exp,
+        ))
+    end
+    out
+end
+
+"""
     comparisons_for_experiment(db, experiment_id) -> Vector{Dict}
 
 Per-experiment listing per spec §REST API. Returns the comparisons that

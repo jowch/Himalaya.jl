@@ -39,6 +39,8 @@ interface Props {
    * conditional `r.alreadyAdded ? "already added" : undefined`.
    */
   lockedReason?: string | undefined;
+  /** Input control type. Defaults to "checkbox". */
+  control?: "checkbox" | "radio";
   /** Escape-hatch trailing slot for callers that don't want checkbox/onClick. */
   actionElement?: ReactNode;
   /** Optional class merge for the row container. */
@@ -63,6 +65,7 @@ export function ExposureListRow({
   onCheckedChange,
   locked = false,
   lockedReason,
+  control = "checkbox",
   actionElement,
   className,
 }: Props): JSX.Element {
@@ -89,7 +92,7 @@ export function ExposureListRow({
     >
       {hasCheckbox && (
         <input
-          type="checkbox"
+          type={control}
           data-testid="exposure-list-row-checkbox"
           checked={checked}
           disabled={locked}

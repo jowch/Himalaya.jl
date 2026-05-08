@@ -177,4 +177,27 @@ describe("<ExposureListRow>", () => {
     await user.click(screen.getByTestId("exposure-list-row"));
     expect(onClick).not.toHaveBeenCalled();
   });
+
+  it("renders radio when control='radio'", () => {
+    render(
+      <ExposureListRow
+        exposure={makeExposure()} sample={makeSample()}
+        control="radio"
+        checked={false} onCheckedChange={() => {}}
+      />,
+    );
+    const input = screen.getByTestId("exposure-list-row-checkbox") as HTMLInputElement;
+    expect(input.type).toBe("radio");
+  });
+
+  it("renders checkbox when control unset (default)", () => {
+    render(
+      <ExposureListRow
+        exposure={makeExposure()} sample={makeSample()}
+        checked={false} onCheckedChange={() => {}}
+      />,
+    );
+    const input = screen.getByTestId("exposure-list-row-checkbox") as HTMLInputElement;
+    expect(input.type).toBe("checkbox");
+  });
 });
