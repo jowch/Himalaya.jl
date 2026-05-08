@@ -32,6 +32,7 @@ import type { Trace, ComparisonMember } from "../api";
 import { buildMemberMarks, buildMemberPeakRows } from "./MemberTraceLayer";
 import type { PeakRow } from "./MemberTraceLayer";
 import { invertQ, applyQ } from "../lib/plot/invertQ";
+import { formatAxis } from "../lib/plot/formatAxis";
 import { prettifyUnits } from "../lib/units";
 import type { GroupingMode } from "../lib/comparison/coloring";
 
@@ -308,6 +309,10 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
       x: {
         type: xType,
         label: `q (${prettifyUnits(qUnits ?? "A-1")})`,
+        // Plain decimal tick labels — Plot's default SI-suffix formatter
+        // renders 0.040 as "40m" which is unhelpful for SAXS q values.
+        // Shared with `TraceViewer` for cross-page parity (issue #80).
+        tickFormat: (d: number) => formatAxis(d),
         ...(xDomain ? { domain: xDomain } : {}),
       },
       // Y-axis is in pixel-space envelope coordinates produced by
