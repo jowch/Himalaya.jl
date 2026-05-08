@@ -469,6 +469,26 @@ describe("ComparePageEdit", () => {
     expect(saveCalls).toHaveLength(0);
   });
 
+  // ── Issue #78: right-slot hint conditional on empty draft ─────────────────
+
+  describe("ComparePageEdit — right-slot hint (#78)", () => {
+    it("right-slot hint shows when the draft is empty", () => {
+      const qc = makeQc();
+      useAppState.getState().startNewDraft();
+      renderEdit({ qc, initialPath: "/experiments/7/compare/new" });
+      expect(screen.getByTestId("compare-edit-right-hint")).toBeInTheDocument();
+    });
+
+    it("right-slot hint hides when the draft has members", () => {
+      const qc = makeQc();
+      seedExposure(qc, 100);
+      useAppState.getState().startNewDraft();
+      useAppState.getState().addMember(100, qc);
+      renderEdit({ qc, initialPath: "/experiments/7/compare/new" });
+      expect(screen.queryByTestId("compare-edit-right-hint")).toBeNull();
+    });
+  });
+
   // ── Regression: cold-exposure snapshot prefetch (issue #49) ────────────────
 
   it("Save prefetches exposure, peaks, indices, and groups for cold members", async () => {
