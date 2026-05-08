@@ -60,6 +60,12 @@ async function seedState(page: import("@playwright/test").Page): Promise<void> {
   });
 }
 
+// Clipboard permissions are scoped to this spec only (rather than globally
+// in playwright.config.ts) so prompts don't leak into other specs that
+// didn't opt in. The Copy test reads the clipboard via page.evaluate; the
+// Download tests don't need permissions but inheriting them is harmless.
+test.use({ permissions: ["clipboard-read", "clipboard-write"] });
+
 test.describe("Figure export — Index page (TraceViewer)", () => {
   test("Copy puts a PNG on the clipboard (Chromium)", async ({ page, browserName }) => {
     test.skip(browserName !== "chromium", "Clipboard read requires Chromium permissions");
