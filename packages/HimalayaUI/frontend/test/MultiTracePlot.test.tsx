@@ -13,7 +13,13 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render } from "@testing-library/react";
-import { MultiTracePlot, computeYBands, COMPARE_PLOT_ASPECT } from "../src/components/MultiTracePlot";
+import {
+  MultiTracePlot,
+  computeYBands,
+  computeMaxPlotWidth,
+  MIN_PLOT_WIDTH,
+  COMPARE_PLOT_ASPECT,
+} from "../src/components/MultiTracePlot";
 import type { ComparisonMember } from "../src/api";
 
 let lastPlotElement: HTMLElement | null = null;
@@ -83,6 +89,40 @@ describe("computeYBands", () => {
 describe("COMPARE_PLOT_ASPECT", () => {
   it("is hardcoded at 0.3 per spec §Plot rendering", () => {
     expect(COMPARE_PLOT_ASPECT).toBe(0.3);
+  });
+});
+
+// ── computeMaxPlotWidth ──────────────────────────────────────────────────────
+//
+// Pins the per-band aspect math from issue #81. The formula
+// `(panelHeight / n) * target` is load-bearing and was previously written as
+// `n * bandH * target` which simplifies to `panelHeight * target` — that
+// targets the *whole-plot* aspect, not per-band, and produced caps ~N× too
+// large. Without these tests, the algebra trap could quietly recur during a
+// future refactor.
+
+describe("computeMaxPlotWidth", () => {
+  it("for a single member with a short panel, clamps to MIN_PLOT_WIDTH", () => {
+    // bandH = 200, target = 200×1.0 = 200, max(280, 200) = 280.
+    expect(computeMaxPlotWidth(200, 1)).toBe(MIN_PLOT_WIDTH);
+  });
+
+  it("for n=4 members at 600px panel, the floor wins (per-band 1.0 ≈ 150 < 280)", () => {
+    // bandH = 150, target = 150×1.0 = 150, max(280, 150) = 280.
+    expect(computeMaxPlotWidth(600, 4)).toBe(MIN_PLOT_WIDTH);
+  });
+
+  it("for n=4 members at 1600px panel, the per-band target wins (≈ 400 > 280)", () => {
+    // bandH = 400, target = 400×1.0 = 400, max(280, 400) = 400.
+    expect(computeMaxPlotWidth(1600, 4)).toBe(400);
+  });
+
+  it("returns MIN_PLOT_WIDTH for zero members (degenerate render frame)", () => {
+    expect(computeMaxPlotWidth(800, 0)).toBe(MIN_PLOT_WIDTH);
+  });
+
+  it("returns MIN_PLOT_WIDTH for zero panel height (initial mount, JSDOM)", () => {
+    expect(computeMaxPlotWidth(0, 3)).toBe(MIN_PLOT_WIDTH);
   });
 });
 

@@ -1,5 +1,5 @@
 /**
- * AnnotationToggles — review-mode header checkboxes (Plan §Phase 9, Task 9.3;
+ * AnnotationToggles — review-mode header toggles (Plan §Phase 9, Task 9.3;
  * spec §Plot rendering / "Annotation toggles").
  *
  * Two flags, both default `true`, both per-tab Zustand:
@@ -15,12 +15,48 @@
  * per-peak state the user is trying to manipulate. Caller (ComparePage vs.
  * ComparePageEdit) decides whether to mount this component.
  *
+ * **Styling — text-link parity with PlotCard.** Mirrors the q-range-reset /
+ * XScaleToggle vocabulary used by the Index page: `text-fg-dim` at rest,
+ * `text-fg + bg-bg-hover + border-border` on hover, `bg-bg-subtle text-fg`
+ * when active. No native checkbox — `aria-pressed` carries the toggle
+ * semantics and `data-active` lets E2E selectors assert state.
+ *
  * No predicted-phase-ratio toggle. Per spec §Annotation toggles, v1
  * doesn't render predicted-q ticks at all — the figure is the result of
  * curation, not helpful suggestions. If users later need predicted-q
  * overlays, that ships behind a separate considered design.
  */
 import { useAppState } from "../state";
+
+interface ToggleButtonProps {
+  testId: string;
+  label: string;
+  active: boolean;
+  onToggle: () => void;
+}
+
+function ToggleButton({
+  testId, label, active, onToggle,
+}: ToggleButtonProps): JSX.Element {
+  return (
+    <button
+      type="button"
+      data-testid={testId}
+      data-active={active ? "true" : "false"}
+      aria-pressed={active}
+      onClick={onToggle}
+      className={[
+        "px-1.5 py-0.5 rounded text-xs transition-colors",
+        "border border-transparent hover:border-border",
+        active
+          ? "bg-bg-subtle text-fg"
+          : "text-fg-dim hover:text-fg hover:bg-bg-hover",
+      ].join(" ")}
+    >
+      {label}
+    </button>
+  );
+}
 
 export function AnnotationToggles(): JSX.Element {
   const showPeakTicks  = useAppState((s) => s.showPeakTicks);
@@ -33,28 +69,20 @@ export function AnnotationToggles(): JSX.Element {
       data-testid="annotation-toggles"
       role="group"
       aria-label="Annotation toggles"
-      className="inline-flex items-center gap-3 text-xs text-fg-muted"
+      className="inline-flex items-center gap-1 text-xs"
     >
-      <label className="inline-flex items-center gap-1 cursor-pointer">
-        <input
-          type="checkbox"
-          data-testid="annotation-toggle-peaks"
-          checked={showPeakTicks}
-          onChange={(e) => setShowPeakTicks(e.currentTarget.checked)}
-          className="cursor-pointer"
-        />
-        <span>Peak ticks</span>
-      </label>
-      <label className="inline-flex items-center gap-1 cursor-pointer">
-        <input
-          type="checkbox"
-          data-testid="annotation-toggle-labels"
-          checked={showPeakLabels}
-          onChange={(e) => setShowPeakLabels(e.currentTarget.checked)}
-          className="cursor-pointer"
-        />
-        <span>Peak labels</span>
-      </label>
+      <ToggleButton
+        testId="annotation-toggle-peaks"
+        label="Peak ticks"
+        active={showPeakTicks}
+        onToggle={() => setShowPeakTicks(!showPeakTicks)}
+      />
+      <ToggleButton
+        testId="annotation-toggle-labels"
+        label="Peak labels"
+        active={showPeakLabels}
+        onToggle={() => setShowPeakLabels(!showPeakLabels)}
+      />
     </div>
   );
 }

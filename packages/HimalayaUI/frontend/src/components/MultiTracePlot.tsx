@@ -26,12 +26,13 @@
  * not zoom y. Peak click semantics (edit-mode cycle through shown / labeled
  * / hidden) land in Phase 8 — for v6.2 we host the plot only.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as Plot from "@observablehq/plot";
 import type { Trace, ComparisonMember } from "../api";
 import { buildMemberMarks, buildMemberPeakRows } from "./MemberTraceLayer";
 import type { PeakRow } from "./MemberTraceLayer";
 import { invertQ, applyQ } from "../lib/plot/invertQ";
+import { formatAxis } from "../lib/plot/formatAxis";
 import { prettifyUnits } from "../lib/units";
 import type { GroupingMode } from "../lib/comparison/coloring";
 
@@ -73,6 +74,45 @@ function makeXScale(
 
 /** Hardcoded plot aspect ratio (W / H) per spec §Plot rendering. */
 export const COMPARE_PLOT_ASPECT = 0.3;
+
+/**
+ * Per-band aspect target (W / H). 1.0 = each member's band is square. Issue
+ * #81: SAXS stack-plot convention is taller-than-wide bands so peak features
+ * aren't visually compressed. The acceptance bar is ≤ 1.5:1; 1.0 leaves
+ * headroom while remaining sensible at small member counts.
+ */
+const BAND_ASPECT_TARGET = 1.0;
+
+/**
+ * Lower bound on the actual plot width (px). Without this floor, a single-
+ * member case would shrink the plot to band-height-sized which is too narrow
+ * to read q-axis ticks. ~280 px keeps default tick spacing legible and lets
+ * the per-band aspect target stay reachable at N≥4 in typical panel heights
+ * (a higher floor consistently overrode the target for large member counts).
+ */
+export const MIN_PLOT_WIDTH = 280;
+
+/**
+ * Compute the plot's `maxWidth` cap in CSS pixels for the inner wrapper that
+ * centers the plot inside the slot (issue #81). Pure helper so the math is
+ * unit-testable without rendering the full component.
+ *
+ * Each band is `panelHeight / memberCount` tall; we target a per-band aspect
+ * of `BAND_ASPECT_TARGET` (1.0 = square), so `plotW = bandH × target`. The
+ * `MIN_PLOT_WIDTH` floor keeps small panels / single-member cases legible.
+ *
+ * Degenerate inputs (`memberCount === 0`, `panelHeight ≤ 0`) fall back to
+ * the floor so initial mount + JSDOM tests don't produce NaN/negative.
+ */
+export function computeMaxPlotWidth(
+  panelHeight: number,
+  memberCount: number,
+): number {
+  if (memberCount <= 0 || panelHeight <= 0) return MIN_PLOT_WIDTH;
+  const bandH = panelHeight / memberCount;
+  const target = bandH * BAND_ASPECT_TARGET;
+  return Math.max(MIN_PLOT_WIDTH, target);
+}
 
 const MARGIN_LEFT   = 50;
 const MARGIN_RIGHT  = 14;
@@ -308,6 +348,10 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
       x: {
         type: xType,
         label: `q (${prettifyUnits(qUnits ?? "A-1")})`,
+        // Plain decimal tick labels — Plot's default SI-suffix formatter
+        // renders 0.040 as "40m" which is unhelpful for SAXS q values.
+        // Shared with `TraceViewer` for cross-page parity (issue #80).
+        tickFormat: (d: number) => formatAxis(d),
         ...(xDomain ? { domain: xDomain } : {}),
       },
       // Y-axis is in pixel-space envelope coordinates produced by
@@ -428,7 +472,22 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
         setTooltip(null);
         return;
       }
-      setTooltip({ q: best.q, peakId: best.peakId, xPx: cursorX, yPx: cursorY });
+      // Tooltip is positioned absolutely against `hostRef`, but `cursorX/Y`
+      // above are `plotContainer`-relative (used for plot-pixel hit-testing
+      // via `applyQ`). After issue #81's width cap, `plotContainer` is
+      // `mx-auto`-centered inside `hostRef`, so the two origins differ by
+      // `(hostWidth - maxPlotWidth) / 2`. Translate to host-relative before
+      // storing — otherwise the tooltip lands offset to the left of the
+      // hovered peak. `hostRef.current` is non-null whenever `plotContainer`
+      // is (plotContainer is a descendant of hostRef in the JSX), so the
+      // bang matches the `container!` usage above.
+      const hostRect = hostRef.current!.getBoundingClientRect();
+      setTooltip({
+        q: best.q,
+        peakId: best.peakId,
+        xPx: ev.clientX - hostRect.left,
+        yPx: ev.clientY - hostRect.top,
+      });
     }
     function handleHoverLeave(): void {
       setTooltip(null);
@@ -506,37 +565,59 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
   // the correct y-band envelope.
   const overlayBands = computeYBands(members.map((m) => m.band_height || 1), panelHeight);
 
+  // Issue #81 — self-constrain the plot width so each member's band lands at
+  // a square aspect ratio (default 1.0). Without this, 4 members in an
+  // ~810 px-wide column produces ~5.4:1 W:H bands which visually crushes peak
+  // features. The math lives in `computeMaxPlotWidth` for unit-testability —
+  // see `MultiTracePlot.test.tsx` for the test cases that pin it.
+  const maxPlotWidth = useMemo(
+    () => computeMaxPlotWidth(panelHeight, members.length),
+    [members.length, panelHeight],
+  );
+
   return (
     <div
       ref={hostRef}
       className="w-full h-full relative"
       data-testid="multi-trace-plot"
     >
-      <div ref={plotContainer} className="w-full h-full" />
+      {/*
+        Inner wrapper carries the width cap + horizontal centering. Both the
+        plot host and the per-band overlays are children of this wrapper so
+        their bounding boxes coincide pixel-for-pixel. The plot host gets
+        replaceChildren'd by Plot.plot() — overlays must be a SIBLING, not a
+        child, or they'd get wiped on every render.
+      */}
       <div
-        aria-hidden="true"
-        className="absolute inset-0 pointer-events-none"
-        data-testid="member-trace-overlays"
+        className="h-full mx-auto relative"
+        style={{ maxWidth: `${maxPlotWidth}px`, width: "100%" }}
       >
-        {members.map((m, i) => {
-          const band = overlayBands[i];
-          const top = band ? band[0] : 0;
-          const height = band ? band[1] - band[0] : 0;
-          return (
-            <div
-              key={m.id}
-              data-testid="member-trace"
-              data-member-id={String(m.id)}
-              style={{
-                position: "absolute",
-                left: 0,
-                right: 0,
-                top: `${top}px`,
-                height: `${height}px`,
-              }}
-            />
-          );
-        })}
+        <div ref={plotContainer} className="w-full h-full" />
+        <div
+          aria-hidden="true"
+          className="absolute inset-0 pointer-events-none"
+          data-testid="member-trace-overlays"
+        >
+          {members.map((m, i) => {
+            const band = overlayBands[i];
+            const top = band ? band[0] : 0;
+            const height = band ? band[1] - band[0] : 0;
+            return (
+              <div
+                key={m.id}
+                data-testid="member-trace"
+                data-member-id={String(m.id)}
+                style={{
+                  position: "absolute",
+                  left: 0,
+                  right: 0,
+                  top: `${top}px`,
+                  height: `${height}px`,
+                }}
+              />
+            );
+          })}
+        </div>
       </div>
       {tooltip !== null && (
         <div

@@ -40,33 +40,36 @@ beforeEach(() => {
 });
 
 describe("AnnotationToggles — render + Zustand wiring", () => {
-  it("both checkboxes render with default state true", () => {
+  it("both toggle buttons render with default state active=true", () => {
     render(<AnnotationToggles />);
-    const peaks = screen.getByTestId("annotation-toggle-peaks") as HTMLInputElement;
-    const labels = screen.getByTestId("annotation-toggle-labels") as HTMLInputElement;
-    expect(peaks.checked).toBe(true);
-    expect(labels.checked).toBe(true);
+    const peaks = screen.getByTestId("annotation-toggle-peaks");
+    const labels = screen.getByTestId("annotation-toggle-labels");
+    expect(peaks).toHaveAttribute("data-active", "true");
+    expect(peaks).toHaveAttribute("aria-pressed", "true");
+    expect(labels).toHaveAttribute("data-active", "true");
+    expect(labels).toHaveAttribute("aria-pressed", "true");
   });
 
   it("toggling peaks fires setShowPeakTicks", () => {
     render(<AnnotationToggles />);
-    const peaks = screen.getByTestId("annotation-toggle-peaks") as HTMLInputElement;
+    const peaks = screen.getByTestId("annotation-toggle-peaks");
     fireEvent.click(peaks);
     expect(useAppState.getState().showPeakTicks).toBe(false);
   });
 
   it("toggling labels fires setShowPeakLabels", () => {
     render(<AnnotationToggles />);
-    const labels = screen.getByTestId("annotation-toggle-labels") as HTMLInputElement;
+    const labels = screen.getByTestId("annotation-toggle-labels");
     fireEvent.click(labels);
     expect(useAppState.getState().showPeakLabels).toBe(false);
   });
 
-  it("checkbox state reflects the store after external set", () => {
+  it("toggle state reflects the store after external set", () => {
     useAppState.setState({ showPeakTicks: false });
     render(<AnnotationToggles />);
-    const peaks = screen.getByTestId("annotation-toggle-peaks") as HTMLInputElement;
-    expect(peaks.checked).toBe(false);
+    const peaks = screen.getByTestId("annotation-toggle-peaks");
+    expect(peaks).toHaveAttribute("data-active", "false");
+    expect(peaks).toHaveAttribute("aria-pressed", "false");
   });
 });
 
