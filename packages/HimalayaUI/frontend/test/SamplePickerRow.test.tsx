@@ -1,4 +1,5 @@
 import { render, screen, fireEvent } from "@testing-library/react";
+import { vi } from "vitest";
 import { SamplePickerRow } from "../src/components/SamplePickerRow";
 import type { PickerSampleRow } from "../src/api";
 
@@ -20,6 +21,74 @@ test("renders sample name as primary, no filename in primary slot", () => {
   );
   expect(screen.getByText("S1")).toBeInTheDocument();
   expect(screen.queryByText("f1.dat")).toBeNull();   // hidden until caret expanded
+});
+
+test("clicking row body toggles the checkbox — regression: PR #96 review (issue #53 carryover)", () => {
+  const handle = vi.fn();
+  render(
+    <SamplePickerRow
+      row={baseRow} checked={false} onCheckedChange={handle}
+      overrideExposureId={undefined} onOverrideChange={() => {}}
+    />,
+  );
+  // Click the sample-name span — bubbles up to the outer div's onClick.
+  fireEvent.click(screen.getByText("S1"));
+  expect(handle).toHaveBeenCalledWith(true);
+});
+
+test("clicking the caret button does NOT toggle the checkbox", () => {
+  const handle = vi.fn();
+  render(
+    <SamplePickerRow
+      row={baseRow} checked={false} onCheckedChange={handle}
+      overrideExposureId={undefined} onOverrideChange={() => {}}
+    />,
+  );
+  // Caret is a <button> — handleRowClick bails on closest("button").
+  fireEvent.click(screen.getByTestId("sample-picker-row-caret"));
+  expect(handle).not.toHaveBeenCalled();
+});
+
+test("clicking the checkbox does NOT double-fire via row bubble", () => {
+  const handle = vi.fn();
+  render(
+    <SamplePickerRow
+      row={baseRow} checked={false} onCheckedChange={handle}
+      overrideExposureId={undefined} onOverrideChange={() => {}}
+    />,
+  );
+  // Checkbox is an HTMLInputElement — handleRowClick bails on it.
+  // The change handler still fires for the actual checkbox toggle (once).
+  fireEvent.click(screen.getByTestId("sample-picker-row-checkbox"));
+  expect(handle).toHaveBeenCalledTimes(1);
+});
+
+test("disabled and alreadyAdded rows do not toggle on body click", () => {
+  // Disabled (zero-exposure) row.
+  const disabledHandle = vi.fn();
+  const disabled: PickerSampleRow = {
+    ...baseRow, indexing_exposure_id: null, all_exposures: [],
+  };
+  const { rerender } = render(
+    <SamplePickerRow
+      row={disabled} checked={false} onCheckedChange={disabledHandle}
+      overrideExposureId={undefined} onOverrideChange={() => {}}
+    />,
+  );
+  fireEvent.click(screen.getByText("S1"));
+  expect(disabledHandle).not.toHaveBeenCalled();
+
+  // alreadyAdded row.
+  const lockedHandle = vi.fn();
+  rerender(
+    <SamplePickerRow
+      row={baseRow} checked={true} onCheckedChange={lockedHandle}
+      overrideExposureId={undefined} onOverrideChange={() => {}}
+      alreadyAdded={true}
+    />,
+  );
+  fireEvent.click(screen.getByText("S1"));
+  expect(lockedHandle).not.toHaveBeenCalled();
 });
 
 test("caret toggles override list visibility", () => {

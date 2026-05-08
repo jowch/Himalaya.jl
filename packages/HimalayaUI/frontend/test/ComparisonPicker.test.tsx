@@ -106,6 +106,18 @@ describe("<ComparisonPicker> — shell", () => {
     expect((addBtn as HTMLButtonElement).disabled).toBe(true);
   });
 
+  it("search input is focused on cold open — regression: PR #96 review", () => {
+    // Override the beforeEach's mockResolvedValue with a never-resolving
+    // promise so pickerQ.isLoading stays true. If a future refactor moves
+    // the search input back inside the Skeleton boundary, inputRef.current
+    // is null at effect time and this assertion breaks.
+    vi.spyOn(api, "getPickerSamples").mockReturnValue(new Promise<never>(() => {}));
+    wrap(<ComparisonPicker isOpen={true} onClose={() => {}} experimentId={1} />);
+    expect(document.activeElement).toBe(
+      screen.getByTestId("comparison-picker-search"),
+    );
+  });
+
   it("focus trap: Tab cycles within dialog", async () => {
     const user = userEvent.setup();
     wrap(<ComparisonPicker isOpen={true} onClose={() => {}} experimentId={1} />);
