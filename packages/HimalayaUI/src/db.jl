@@ -1,4 +1,5 @@
 using SQLite, DBInterface, Tables
+using Dates: now, UTC, format, @dateformat_str
 
 const SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -546,17 +547,25 @@ function migrate_compare_relax_nullability!(db::SQLite.DB)
         # comparison_pins (and any future table that REFERENCES comparisons)
         # had their stored FK target rewritten to `_migrate_old_comparisons`.
         _heal_renamed_table_fk_refs!(db, "comparisons")
-        # One-time data heal: convert the #54 stale `''` created_at rows to
-        # a real timestamp so the frontend's row-shape assertion holds for
-        # legacy rows. Idempotent — no-op once the rewrite has run.
+        # One-time data heal: convert the #54 stale `''` created_at /
+        # updated_at rows to a real timestamp so the frontend's row-shape
+        # assertion holds for legacy rows. Format MUST match
+        # `comparison_now_iso()` — fresh rows use
+        # `yyyy-mm-ddTHH:MM:SS.sssZ`, and ComparisonSidebar.tsx sorts on
+        # `updated_at` as a string. SQLite's `CURRENT_TIMESTAMP` returns
+        # `YYYY-MM-DD HH:MM:SS` (space, no `Z`); space sorts BEFORE `T`,
+        # so healed legacy rows would lexically precede fresh rows of the
+        # same instant. Substitute a Julia-formatted string instead.
+        # Idempotent — no-op once the rewrite has run.
+        now_iso = format(now(UTC), dateformat"yyyy-mm-ddTHH:MM:SS.sssZ")
         DBInterface.execute(db, """
             UPDATE comparisons
-               SET created_at = CURRENT_TIMESTAMP
-             WHERE created_at = ''""")
+               SET created_at = ?
+             WHERE created_at = ''""", [now_iso])
         DBInterface.execute(db, """
             UPDATE comparisons
-               SET updated_at = CURRENT_TIMESTAMP
-             WHERE updated_at = ''""")
+               SET updated_at = ?
+             WHERE updated_at = ''""", [now_iso])
     finally
         DBInterface.execute(db, "PRAGMA foreign_keys = ON")
     end
@@ -569,6 +578,12 @@ end
 # INSERTs (the prepare step walks the FK graph). Mirrors the strategy in
 # `_fix_fk_references_after_autoincrement_migration!` but scoped to one entity
 # (the `comparisons` rebuild for #67).
+#
+# When to use this vs. _fix_fk_references_after_autoincrement_migration!:
+# - one-off scoped rebuild of a single entity (e.g. comparisons for #67) →
+#   call this helper directly with the entity name.
+# - entity participates in the autoincrement / R2 widen rebuild → add it to
+#   `_MIGRATION_TEMP_ENTITIES` instead so the existing iteration covers it.
 function _heal_renamed_table_fk_refs!(db::SQLite.DB, entity::String)
     old_name = "_migrate_old_$entity"
     broken = Tables.rowtable(DBInterface.execute(db,

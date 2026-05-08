@@ -1026,12 +1026,20 @@ end
             VALUES ('normal', 'h2', '2026-05-01T00:00:00', '2026-05-01T00:00:00')""")
         broken_id = 1
         normal_id = 2
-        # FK-related row in comparison_members so the heal path is exercised
+        # FK-related rows in BOTH comparison_members AND comparison_pins so
+        # the heal walks both referrers (review suggestion #2 on PR #72 —
+        # second referrer matters because _fix_fk_references_after_autoincrement_migration!
+        # had a prod incident where only the first referrer was rebuilt).
         DBInterface.execute(db, """
             INSERT INTO comparison_members
               (comparison_id, display_order, snapshot, created_at)
             VALUES (?, 0, '{}', '2026-05-01T00:00:00')""",
             [broken_id])
+        DBInterface.execute(db, """
+            INSERT INTO users (id, username) VALUES (1, 'alice')""")
+        DBInterface.execute(db, """
+            INSERT INTO comparison_pins (user_id, comparison_id, pinned_at)
+            VALUES (1, ?, '2026-05-01T00:00:00')""", [broken_id])
 
         HimalayaUI.migrate_compare_relax_nullability!(db)
 
@@ -1050,36 +1058,60 @@ end
         @test String(rows[2].title) == "normal"
         @test String(rows[2].created_at) == "2026-05-01T00:00:00"
 
-        # Issue body's edge case: the stale '' created_at gets healed (NOT
-        # NULL or NULL — the migration converts '' → CURRENT_TIMESTAMP so the
-        # frontend's row-shape assertion in test_route_response_shapes.jl
-        # continues to pass on legacy rows).
+        # Issue body's edge case: the stale '' created_at gets healed.
+        # Format MUST match the fresh-row format (`yyyy-mm-ddTHH:MM:SS.sssZ`
+        # from `comparison_now_iso()`) so ComparisonSidebar's lexical sort
+        # on `updated_at` keeps healed and fresh rows in monotonic order
+        # (review suggestion #1 on PR #72: SQLite's CURRENT_TIMESTAMP uses
+        # `YYYY-MM-DD HH:MM:SS` and space < T, so it would lexically precede
+        # fresh rows of the same instant).
         @test rows[1].created_at != ""
-        @test occursin(r"^\d{4}-\d{2}-\d{2}", String(rows[1].created_at))
+        @test occursin(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}", String(rows[1].created_at))
+        @test endswith(String(rows[1].created_at), "Z")
 
         # FK from comparison_members still resolves (heal worked).
         DBInterface.execute(db, """
             INSERT INTO comparison_members
               (comparison_id, display_order, snapshot, created_at)
             VALUES (?, 1, '{}', '2026-05-01T00:00:00')""", [broken_id])
+        # FK from comparison_pins (the SECOND referrer) also resolves —
+        # this is the suggestion #2 coverage: prove the heal walked both
+        # referrers, not just the first one.
+        DBInterface.execute(db, """
+            INSERT INTO comparison_pins (user_id, comparison_id, pinned_at)
+            VALUES (1, ?, '2026-05-02T00:00:00')""", [normal_id])
         # And the orphan-rejection path: inserting a member pointing at a
         # nonexistent comparison must still 19=>SQLITE_CONSTRAINT.
         @test_throws SQLite.SQLiteException DBInterface.execute(db, """
             INSERT INTO comparison_members
               (comparison_id, display_order, snapshot, created_at)
             VALUES (9999, 0, '{}', '2026-05-01T00:00:00')""")
+        # Same orphan rejection on comparison_pins (proves the FK
+        # constraint, not just the column, survived the heal).
+        @test_throws SQLite.SQLiteException DBInterface.execute(db, """
+            INSERT INTO comparison_pins (user_id, comparison_id, pinned_at)
+            VALUES (1, 9999, '2026-05-01T00:00:00')""")
 
-        # ON DELETE CASCADE still fires: deleting a comparison drops its
-        # members (proves the FK action survived the rebuild).
-        n_before = Int(first(Tables.rowtable(DBInterface.execute(db,
+        # ON DELETE CASCADE still fires for BOTH referrers: deleting a
+        # comparison drops its members AND its pins (proves the FK action
+        # survived the rebuild for both edges).
+        m_before = Int(first(Tables.rowtable(DBInterface.execute(db,
             "SELECT COUNT(*) AS n FROM comparison_members WHERE comparison_id = ?",
             [broken_id]))).n)
-        @test n_before > 0
+        p_before = Int(first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT COUNT(*) AS n FROM comparison_pins WHERE comparison_id = ?",
+            [broken_id]))).n)
+        @test m_before > 0
+        @test p_before > 0
         DBInterface.execute(db, "DELETE FROM comparisons WHERE id = ?", [broken_id])
-        n_after = Int(first(Tables.rowtable(DBInterface.execute(db,
+        m_after = Int(first(Tables.rowtable(DBInterface.execute(db,
             "SELECT COUNT(*) AS n FROM comparison_members WHERE comparison_id = ?",
             [broken_id]))).n)
-        @test n_after == 0
+        p_after = Int(first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT COUNT(*) AS n FROM comparison_pins WHERE comparison_id = ?",
+            [broken_id]))).n)
+        @test m_after == 0
+        @test p_after == 0
 
         # Now the route's clean placeholder works
         DBInterface.execute(db, "INSERT INTO comparisons DEFAULT VALUES")
