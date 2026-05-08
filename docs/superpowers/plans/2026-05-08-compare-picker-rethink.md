@@ -67,7 +67,7 @@ using HimalayaUI: open_db, picker_samples
     @testset "selected exposure resolves" begin
         mktempdir() do tmp
             db = open_db(joinpath(tmp, "h.db"))
-            DBInterface.execute(db, "INSERT INTO experiments (id, name) VALUES (1, 'E')")
+            DBInterface.execute(db, "INSERT INTO experiments (id, name, path, data_dir, analysis_dir) VALUES (1, 'E', '/tmp', '/tmp/data', '/tmp/analysis')")
             DBInterface.execute(db,
                 "INSERT INTO samples (id, experiment_id, name) VALUES (10, 1, 'S')")
             DBInterface.execute(db,
@@ -233,7 +233,7 @@ git commit -m "feat(picker): picker_samples helper (sample-first picker, #84)"
 @testset "no selected falls back to highest id" begin
     mktempdir() do tmp
         db = open_db(joinpath(tmp, "h.db"))
-        DBInterface.execute(db, "INSERT INTO experiments (id, name) VALUES (1, 'E')")
+        DBInterface.execute(db, "INSERT INTO experiments (id, name, path, data_dir, analysis_dir) VALUES (1, 'E', '/tmp', '/tmp/data', '/tmp/analysis')")
         DBInterface.execute(db, "INSERT INTO samples (id, experiment_id, name) VALUES (10, 1, 'S')")
         DBInterface.execute(db, "INSERT INTO exposures (id, sample_id, filename, selected) VALUES (200, 10, 'a', 0)")
         DBInterface.execute(db, "INSERT INTO exposures (id, sample_id, filename, selected) VALUES (199, 10, 'b', 0)")
@@ -245,7 +245,7 @@ end
 @testset "single exposure, selected=0 — still resolves" begin
     mktempdir() do tmp
         db = open_db(joinpath(tmp, "h.db"))
-        DBInterface.execute(db, "INSERT INTO experiments (id, name) VALUES (1, 'E')")
+        DBInterface.execute(db, "INSERT INTO experiments (id, name, path, data_dir, analysis_dir) VALUES (1, 'E', '/tmp', '/tmp/data', '/tmp/analysis')")
         DBInterface.execute(db, "INSERT INTO samples (id, experiment_id, name) VALUES (10, 1, 'S')")
         DBInterface.execute(db, "INSERT INTO exposures (id, sample_id, filename, selected) VALUES (300, 10, 'x', 0)")
         rows = picker_samples(db, 1)
@@ -256,7 +256,7 @@ end
 @testset "zero-exposure sample — included with null indexing_exposure_id" begin
     mktempdir() do tmp
         db = open_db(joinpath(tmp, "h.db"))
-        DBInterface.execute(db, "INSERT INTO experiments (id, name) VALUES (1, 'E')")
+        DBInterface.execute(db, "INSERT INTO experiments (id, name, path, data_dir, analysis_dir) VALUES (1, 'E', '/tmp', '/tmp/data', '/tmp/analysis')")
         DBInterface.execute(db, "INSERT INTO samples (id, experiment_id, name) VALUES (10, 1, 'EmptyS')")
         rows = picker_samples(db, 1)
         @test length(rows) == 1
@@ -275,8 +275,8 @@ end
 @testset "multi-experiment isolation" begin
     mktempdir() do tmp
         db = open_db(joinpath(tmp, "h.db"))
-        DBInterface.execute(db, "INSERT INTO experiments (id, name) VALUES (1, 'A')")
-        DBInterface.execute(db, "INSERT INTO experiments (id, name) VALUES (2, 'B')")
+        DBInterface.execute(db, "INSERT INTO experiments (id, name, path, data_dir, analysis_dir) VALUES (1, 'A', '/tmp/a', '/tmp/a/data', '/tmp/a/analysis')")
+        DBInterface.execute(db, "INSERT INTO experiments (id, name, path, data_dir, analysis_dir) VALUES (2, 'B', '/tmp/b', '/tmp/b/data', '/tmp/b/analysis')")
         DBInterface.execute(db, "INSERT INTO samples (id, experiment_id, name) VALUES (10, 1, 'A1')")
         DBInterface.execute(db, "INSERT INTO samples (id, experiment_id, name) VALUES (20, 2, 'B1')")
         DBInterface.execute(db, "INSERT INTO exposures (id, sample_id, filename, selected) VALUES (100, 10, 'a', 0)")
@@ -291,7 +291,7 @@ end
 @testset "orphan exposure (sample_id NULL) excluded" begin
     mktempdir() do tmp
         db = open_db(joinpath(tmp, "h.db"))
-        DBInterface.execute(db, "INSERT INTO experiments (id, name) VALUES (1, 'E')")
+        DBInterface.execute(db, "INSERT INTO experiments (id, name, path, data_dir, analysis_dir) VALUES (1, 'E', '/tmp', '/tmp/data', '/tmp/analysis')")
         DBInterface.execute(db, "INSERT INTO samples (id, experiment_id, name) VALUES (10, 1, 'S')")
         DBInterface.execute(db, "INSERT INTO exposures (id, sample_id, filename, selected) VALUES (100, 10, 'a', 1)")
         DBInterface.execute(db, "INSERT INTO exposures (id, sample_id, filename, selected) VALUES (200, NULL, 'orphan', 0)")
@@ -304,7 +304,7 @@ end
 @testset "NULL name and label render as null in JSON" begin
     mktempdir() do tmp
         db = open_db(joinpath(tmp, "h.db"))
-        DBInterface.execute(db, "INSERT INTO experiments (id, name) VALUES (1, 'E')")
+        DBInterface.execute(db, "INSERT INTO experiments (id, name, path, data_dir, analysis_dir) VALUES (1, 'E', '/tmp', '/tmp/data', '/tmp/analysis')")
         DBInterface.execute(db, "INSERT INTO samples (id, experiment_id) VALUES (10, 1)")  # name+label NULL
         DBInterface.execute(db, "INSERT INTO exposures (id, sample_id, filename, selected) VALUES (100, 10, 'f', 1)")
         rows = picker_samples(db, 1)
@@ -316,7 +316,7 @@ end
 @testset "defensive multi-selected legacy data" begin
     mktempdir() do tmp
         db = open_db(joinpath(tmp, "h.db"))
-        DBInterface.execute(db, "INSERT INTO experiments (id, name) VALUES (1, 'E')")
+        DBInterface.execute(db, "INSERT INTO experiments (id, name, path, data_dir, analysis_dir) VALUES (1, 'E', '/tmp', '/tmp/data', '/tmp/analysis')")
         DBInterface.execute(db, "INSERT INTO samples (id, experiment_id, name) VALUES (10, 1, 'S')")
         DBInterface.execute(db, "INSERT INTO exposures (id, sample_id, filename, selected) VALUES (100, 10, 'a', 1)")
         DBInterface.execute(db, "INSERT INTO exposures (id, sample_id, filename, selected) VALUES (200, 10, 'b', 1)")
@@ -361,7 +361,7 @@ using HTTP, JSON3
 @testset "GET /api/experiments/:eid/picker-samples" begin
     mktempdir() do tmp
         db = open_db(joinpath(tmp, "h.db"))
-        DBInterface.execute(db, "INSERT INTO experiments (id, name) VALUES (1, 'E')")
+        DBInterface.execute(db, "INSERT INTO experiments (id, name, path, data_dir, analysis_dir) VALUES (1, 'E', '/tmp', '/tmp/data', '/tmp/analysis')")
         DBInterface.execute(db, "INSERT INTO samples (id, experiment_id, name) VALUES (10, 1, 'S')")
         DBInterface.execute(db, "INSERT INTO exposures (id, sample_id, filename, selected) VALUES (100, 10, 'f1', 1)")
 

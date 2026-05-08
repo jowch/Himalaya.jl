@@ -7,6 +7,9 @@ using HimalayaUI: open_db, picker_samples
 # HimalayaUI module). No `export` is required — same pattern as
 # `recently_used_exposures` referenced from `routes_picker.jl:51`.
 
+# `experiments.path / data_dir / analysis_dir` are NOT NULL in the schema;
+# the '/tmp' literals are valid-path sentinels that picker_samples never
+# reads — they exist solely to satisfy the constraint.
 @testset "picker_samples helper" begin
     @testset "selected exposure resolves" begin
         mktempdir() do tmp
