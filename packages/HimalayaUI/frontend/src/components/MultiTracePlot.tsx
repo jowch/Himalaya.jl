@@ -76,12 +76,12 @@ function makeXScale(
 export const COMPARE_PLOT_ASPECT = 0.3;
 
 /**
- * Default per-band aspect target (W / H). 1.0 = each member's band is square.
- * Issue #81: SAXS stack-plot convention is taller-than-wide bands so peak
- * features aren't visually compressed. The acceptance bar is ≤ 1.5:1; 1.0
- * leaves headroom while remaining sensible at small member counts.
+ * Per-band aspect target (W / H). 1.0 = each member's band is square. Issue
+ * #81: SAXS stack-plot convention is taller-than-wide bands so peak features
+ * aren't visually compressed. The acceptance bar is ≤ 1.5:1; 1.0 leaves
+ * headroom while remaining sensible at small member counts.
  */
-const DEFAULT_BAND_ASPECT_TARGET = 1.0;
+const BAND_ASPECT_TARGET = 1.0;
 
 /**
  * Lower bound on the actual plot width (px). Without this floor, a single-
@@ -90,7 +90,29 @@ const DEFAULT_BAND_ASPECT_TARGET = 1.0;
  * the per-band aspect target stay reachable at N≥4 in typical panel heights
  * (a higher floor consistently overrode the target for large member counts).
  */
-const MIN_PLOT_WIDTH = 280;
+export const MIN_PLOT_WIDTH = 280;
+
+/**
+ * Compute the plot's `maxWidth` cap in CSS pixels for the inner wrapper that
+ * centers the plot inside the slot (issue #81). Pure helper so the math is
+ * unit-testable without rendering the full component.
+ *
+ * Each band is `panelHeight / memberCount` tall; we target a per-band aspect
+ * of `BAND_ASPECT_TARGET` (1.0 = square), so `plotW = bandH × target`. The
+ * `MIN_PLOT_WIDTH` floor keeps small panels / single-member cases legible.
+ *
+ * Degenerate inputs (`memberCount === 0`, `panelHeight ≤ 0`) fall back to
+ * the floor so initial mount + JSDOM tests don't produce NaN/negative.
+ */
+export function computeMaxPlotWidth(
+  panelHeight: number,
+  memberCount: number,
+): number {
+  if (memberCount <= 0 || panelHeight <= 0) return MIN_PLOT_WIDTH;
+  const bandH = panelHeight / memberCount;
+  const target = bandH * BAND_ASPECT_TARGET;
+  return Math.max(MIN_PLOT_WIDTH, target);
+}
 
 const MARGIN_LEFT   = 50;
 const MARGIN_RIGHT  = 14;
@@ -180,17 +202,6 @@ export interface MultiTracePlotProps {
    * mode. Required when `groupingMode` is set; ignored otherwise.
    */
   sampleIdFor?: (m: ComparisonMember) => number | null;
-  /**
-   * Per-band aspect ratio target (W / H). The plot self-constrains its width
-   * so each member's band approaches this aspect ratio (issue #81). Defaults
-   * to `DEFAULT_BAND_ASPECT_TARGET` (1.0). Pass a higher value (e.g. 1.5) to
-   * accept wider bands; pass a lower value to force narrower / taller bands.
-   * The plot height is unaffected — only the width shrinks. Note: a
-   * `MIN_PLOT_WIDTH` floor keeps single-member / short-panel cases legible,
-   * so very small `panelHeight × bandAspectTarget` products may yield bands
-   * wider than the target.
-   */
-  bandAspectTarget?: number;
 }
 
 export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
@@ -201,7 +212,6 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
     onPeakClick,
     showPeakTicks = true, showPeakLabels = true,
     groupingMode, sampleIdFor,
-    bandAspectTarget = DEFAULT_BAND_ASPECT_TARGET,
   } = props;
 
   const hostRef       = useRef<HTMLDivElement>(null);
@@ -468,9 +478,10 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
       // `mx-auto`-centered inside `hostRef`, so the two origins differ by
       // `(hostWidth - maxPlotWidth) / 2`. Translate to host-relative before
       // storing — otherwise the tooltip lands offset to the left of the
-      // hovered peak.
-      const hostEl = hostRef.current;
-      const hostRect = hostEl ? hostEl.getBoundingClientRect() : rect;
+      // hovered peak. `hostRef.current` is non-null whenever `plotContainer`
+      // is (plotContainer is a descendant of hostRef in the JSX), so the
+      // bang matches the `container!` usage above.
+      const hostRect = hostRef.current!.getBoundingClientRect();
       setTooltip({
         q: best.q,
         peakId: best.peakId,
@@ -555,29 +566,14 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
   const overlayBands = computeYBands(members.map((m) => m.band_height || 1), panelHeight);
 
   // Issue #81 — self-constrain the plot width so each member's band lands at
-  // the requested W:H aspect ratio (default 1.0, i.e. square). Without this,
-  // 4 members in an ~810 px-wide column produces ~5.4:1 W:H bands which
-  // visually crushes peak features. We do NOT grow plot height — only
-  // shrink width when there's headroom; clamp at MIN_PLOT_WIDTH so a
-  // single-member case still has legible q-axis ticks.
-  //
-  // Degenerate cases: zero members, zero panelHeight, or zero target → fall
-  // back to MIN_PLOT_WIDTH (no upper bound from this calc; the parent column
-  // still constrains via natural flexbox).
-  const maxPlotWidth = useMemo(() => {
-    const n = members.length;
-    if (n === 0 || panelHeight <= 0 || bandAspectTarget <= 0) {
-      return MIN_PLOT_WIDTH;
-    }
-    // Each band is `panelHeight / n` tall and `plotW` wide. Target per-band
-    // W:H = `bandAspectTarget`, so `plotW = (panelHeight / n) * target`.
-    // (An earlier draft used `n * bandH * target`, which simplifies to
-    // `panelHeight * target` — that targets the *whole-plot* aspect, not
-    // per-band, and produced caps ~N× too large.)
-    const bandH = panelHeight / n;
-    const target = bandH * bandAspectTarget;
-    return Math.max(MIN_PLOT_WIDTH, target);
-  }, [members.length, panelHeight, bandAspectTarget]);
+  // a square aspect ratio (default 1.0). Without this, 4 members in an
+  // ~810 px-wide column produces ~5.4:1 W:H bands which visually crushes peak
+  // features. The math lives in `computeMaxPlotWidth` for unit-testability —
+  // see `MultiTracePlot.test.tsx` for the test cases that pin it.
+  const maxPlotWidth = useMemo(
+    () => computeMaxPlotWidth(panelHeight, members.length),
+    [members.length, panelHeight],
+  );
 
   return (
     <div
