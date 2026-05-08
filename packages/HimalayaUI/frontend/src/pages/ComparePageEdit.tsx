@@ -33,7 +33,7 @@ import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { Skeleton } from "boneyard-js/react";
 import { ComparisonSidebar } from "../components/ComparisonSidebar";
-import { ComparisonPicker } from "../components/ComparisonPicker";
+import { ComparisonPickerPanel } from "../components/ComparisonPickerPanel";
 import { MultiTracePlot } from "../components/MultiTracePlot";
 import { MemberMetaGutter } from "../components/MemberMetaGutter";
 import { WorkspaceGrid } from "../components/WorkspaceGrid";
@@ -134,6 +134,8 @@ export function ComparePageEdit(): JSX.Element {
       loadDraftFromComp(comparisonQ.data, qc);
     }
   }, [id, comparisonQ.data, startNewDraft, loadDraftFromComp, qc]);
+
+  const pickerSearchRef = useRef<HTMLInputElement>(null);
 
   const save = useSaveComparison();
   const pendingSubmitRef = useRef(false);
@@ -318,10 +320,6 @@ export function ComparePageEdit(): JSX.Element {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [handleCancel, handleSave, draft, save.isPending]);
-
-  // Phase 5 Task 5.2 — local state for the picker open/close. Picker open
-  // state is purely client-side, no need for Zustand.
-  const [pickerOpen, setPickerOpen] = useState(false);
 
   // Phase 6 — wire MultiTracePlot. Members reflect the live draft (Zustand);
   // traces fetched in parallel via `useMemberTraces`. The q-axis zoom domain
@@ -528,7 +526,7 @@ export function ComparePageEdit(): JSX.Element {
             <button
               type="button"
               data-testid="compare-edit-add-traces"
-              onClick={() => setPickerOpen(true)}
+              onClick={() => pickerSearchRef.current?.focus()}
               className="px-3 py-1 rounded border border-border text-fg text-sm
                          hover:bg-bg-elevated"
             >
@@ -570,17 +568,6 @@ export function ComparePageEdit(): JSX.Element {
                 />
               </div>
             </Skeleton>
-            <div className="flex justify-end">
-              <button
-                type="button"
-                data-testid="compare-edit-add-traces"
-                onClick={() => setPickerOpen(true)}
-                className="px-3 py-1 rounded border border-border text-fg text-sm
-                           hover:bg-bg-elevated"
-              >
-                + Add traces
-              </button>
-            </div>
           </>
         )}
       </div>
@@ -603,28 +590,16 @@ export function ComparePageEdit(): JSX.Element {
         }
         center={editCenter}
         right={
-          (draft?.members.length ?? 0) === 0 ? (
-            <div
-              data-testid="compare-edit-right-hint"
-              className="h-full flex items-center justify-center p-4 text-center"
-            >
-              <HintText>Use “+ Add traces” to populate the comparison.</HintText>
-            </div>
-          ) : null
+          <ComparisonPickerPanel experimentId={eid} searchInputRef={pickerSearchRef} />
         }
         slotClassName={{
           // ComparisonSidebar uses `flex-1`, so the slot needs `display:flex`.
           left:   "flex flex-col min-h-[400px]",
           center: "flex flex-col min-h-[640px]",
-          right:  "flex flex-col min-h-[120px]",
+          right:  "flex flex-col min-h-[400px]",
         }}
       />
 
-      <ComparisonPicker
-        isOpen={pickerOpen}
-        onClose={() => setPickerOpen(false)}
-        experimentId={eid}
-      />
     </div>
   );
 }
