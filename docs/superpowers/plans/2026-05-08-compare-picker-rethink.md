@@ -1511,18 +1511,14 @@ tail -30 /tmp/picker-e2e.out
 
 Expected: all specs pass.
 
-- [ ] **Step 4: Backend slice**
+- [ ] **Step 4: Backend full suite (PR-cut gate)**
 
-`Pkg.test(...; test_args=…)` does not filter — `runtests.jl` does not read `ARGS`. Use direct includes:
+The PR1 gate runs the full Julia suite (~5–10 min) — confirms nothing else broke. The direct-include slices used during Tasks 1–3 (`test_http.jl + test_picker_samples_route.jl`) are sufficient for the iterative red→green loop, but the gate before merge wants full coverage. `test_picker_routes.jl` depends on `_setup_analyzed_exposure` which lives inside `test_comparisons.jl` — only the runtests.jl include order satisfies that.
 
 ```bash
-julia --project=packages/HimalayaUI -e '
-using Test, HimalayaUI
-include("packages/HimalayaUI/test/test_http.jl")
-include("packages/HimalayaUI/test/test_picker_routes.jl")
-include("packages/HimalayaUI/test/test_picker_samples_route.jl")
-' > /tmp/jl-picker.out 2>&1
-grep -E "Test Summary|did not pass|fail" /tmp/jl-picker.out
+julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.test("HimalayaUI")' > /tmp/jl-full.out 2>&1
+grep -E "Test Summary|did not pass|fail" /tmp/jl-full.out
+tail -50 /tmp/jl-full.out
 ```
 
 Expected: zero failures.
