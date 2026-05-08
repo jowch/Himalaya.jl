@@ -21,6 +21,7 @@ import {
 import { comparePath } from "../lib/comparison/routes";
 import type { ComparisonSummary } from "../api";
 import { HintText } from "./ui";
+import { useAppState } from "../state";
 
 // Mock fixture for boneyard layout capture. Renders a few canonical rows so
 // the captured bones reflect the realistic geometry the user will see during
@@ -55,6 +56,14 @@ export function ComparisonSidebar({
 }: Props): JSX.Element {
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
+
+  // Fall back to the persisted Zustand experiment context when the URL has
+  // no `:eid` (e.g. on `/compare/all`). Without this fallback the
+  // "This experiment" tab is stuck-disabled the moment the user toggles
+  // to All experiments — even though they have a live experiment context
+  // they were just looking at (issue #79).
+  const fallbackExperimentId = useAppState((s) => s.activeExperimentId);
+  const effectiveExperimentId = experimentId ?? fallbackExperimentId;
 
   // The query key picks up the right scope. When scope is "experiment" but
   // experimentId is undefined (shouldn't happen in practice), fall back to
@@ -111,7 +120,12 @@ export function ComparisonSidebar({
   }, [sorted, search]);
 
   const onPickThis = (): void => {
-    if (experimentId !== undefined) navigate(`/experiments/${experimentId}/compare`);
+    // Read from the URL prop OR the Zustand fallback — clicking "This
+    // experiment" while on /compare/all should still navigate to the
+    // user's last-active experiment context (issue #79).
+    if (effectiveExperimentId !== undefined) {
+      navigate(`/experiments/${effectiveExperimentId}/compare`);
+    }
   };
   const onPickAll = (): void => navigate("/compare/all");
   const onNew = (): void => {
@@ -163,7 +177,7 @@ export function ComparisonSidebar({
           data-testid="comparison-scope-this"
           aria-selected={dataScope === "this"}
           onClick={onPickThis}
-          disabled={experimentId === undefined}
+          disabled={effectiveExperimentId === undefined}
           className={
             "px-2.5 py-0.5 rounded-full font-medium "
             + (dataScope === "this"

@@ -236,6 +236,43 @@ describe("ComparisonSidebar", () => {
     expect(screen.getByTestId("path-probe")).toHaveTextContent("/compare/all");
   });
 
+  // Regression for #79: when on /compare/all (URL has no :eid prop) but
+  // Zustand has a persisted activeExperimentId, the "This experiment" tab
+  // should remain enabled and clicking it should navigate to the
+  // experiment-scoped compare URL. Without the Zustand fallback the user
+  // is stuck in /compare/all once they toggle off "This experiment".
+  it("'This experiment' tab is enabled on /compare/all when Zustand has activeExperimentId (#79)", async () => {
+    const user = userEvent.setup();
+    useAppState.setState({ activeExperimentId: 7 });
+    qc.setQueryData(queryKeys.comparisons("all"), []);
+    qc.setQueryData(queryKeys.comparisons(7), []);
+    renderSidebar({
+      qc,
+      scope: "all",
+      experimentId: undefined,
+      initialPath: "/compare/all",
+      probe: true,
+    });
+    const tab = screen.getByTestId("comparison-scope-this");
+    expect(tab).toBeEnabled();
+    await user.click(tab);
+    expect(screen.getByTestId("path-probe")).toHaveTextContent(
+      "/experiments/7/compare",
+    );
+  });
+
+  it("'This experiment' tab stays disabled on /compare/all when Zustand has no activeExperimentId", () => {
+    useAppState.setState({ activeExperimentId: undefined });
+    qc.setQueryData(queryKeys.comparisons("all"), []);
+    renderSidebar({
+      qc,
+      scope: "all",
+      experimentId: undefined,
+      initialPath: "/compare/all",
+    });
+    expect(screen.getByTestId("comparison-scope-this")).toBeDisabled();
+  });
+
   it("search box filters the rendered list", async () => {
     const user = userEvent.setup();
     qc.setQueryData(queryKeys.comparisons(7), [ROW_OLD, ROW_MID, ROW_NEW]);
