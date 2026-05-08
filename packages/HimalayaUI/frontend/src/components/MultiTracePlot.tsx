@@ -181,10 +181,13 @@ export interface MultiTracePlotProps {
   sampleIdFor?: (m: ComparisonMember) => number | null;
   /**
    * Per-band aspect ratio target (W / H). The plot self-constrains its width
-   * so each member's band lands ≤ this aspect ratio (issue #81). Defaults to
-   * `DEFAULT_BAND_ASPECT_TARGET` (1.0). Pass a higher value (e.g. 1.5) to
+   * so each member's band approaches this aspect ratio (issue #81). Defaults
+   * to `DEFAULT_BAND_ASPECT_TARGET` (1.0). Pass a higher value (e.g. 1.5) to
    * accept wider bands; pass a lower value to force narrower / taller bands.
-   * The plot height is unaffected — only the width shrinks.
+   * The plot height is unaffected — only the width shrinks. Note: a
+   * `MIN_PLOT_WIDTH` floor keeps single-member / short-panel cases legible,
+   * so very small `panelHeight × bandAspectTarget` products may yield bands
+   * wider than the target.
    */
   bandAspectTarget?: number;
 }
@@ -458,7 +461,21 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
         setTooltip(null);
         return;
       }
-      setTooltip({ q: best.q, peakId: best.peakId, xPx: cursorX, yPx: cursorY });
+      // Tooltip is positioned absolutely against `hostRef`, but `cursorX/Y`
+      // above are `plotContainer`-relative (used for plot-pixel hit-testing
+      // via `applyQ`). After issue #81's width cap, `plotContainer` is
+      // `mx-auto`-centered inside `hostRef`, so the two origins differ by
+      // `(hostWidth - maxPlotWidth) / 2`. Translate to host-relative before
+      // storing — otherwise the tooltip lands offset to the left of the
+      // hovered peak.
+      const hostEl = hostRef.current;
+      const hostRect = hostEl ? hostEl.getBoundingClientRect() : rect;
+      setTooltip({
+        q: best.q,
+        peakId: best.peakId,
+        xPx: ev.clientX - hostRect.left,
+        yPx: ev.clientY - hostRect.top,
+      });
     }
     function handleHoverLeave(): void {
       setTooltip(null);
