@@ -11,6 +11,7 @@ export default defineConfig({
     baseURL: "http://127.0.0.1:5173",
     browserName: "chromium",
     headless: true,
+    permissions: ["clipboard-read", "clipboard-write"],
   },
   webServer: {
     // `--host 127.0.0.1` is load-bearing: default `npm run dev` binds Vite to
