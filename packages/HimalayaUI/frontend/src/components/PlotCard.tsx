@@ -8,6 +8,9 @@ import {
 } from "../queries";
 import { TraceViewer } from "./TraceViewer";
 import { HintText } from "./ui";
+import { FigureExportControls } from "./FigureExportControls";
+import { buildTraceExportSpec } from "../lib/figure-export/adapters/traceAdapter";
+import { slugifyForFilename } from "../lib/figure-export/filename";
 import { phaseColor } from "../phases";
 import type { IndexEntry, Peak, Trace } from "../api";
 
@@ -221,6 +224,42 @@ export function PlotCard(): JSX.Element {
     ? indices.find((i) => i.id === hoveredIndexId)
     : undefined;
 
+  // Figure export (spec: 2026-05-08-figure-export-design.md).
+  const exposureLabel = activeExposureId !== undefined
+    ? `Exposure ${activeExposureId}`
+    : "";
+  const filenameStem = `himalaya-trace-${
+    slugifyForFilename(experimentName ?? "")
+  }-${
+    slugifyForFilename(sampleName ?? "")
+  }-${
+    slugifyForFilename(exposureLabel)
+  }`;
+
+  const exportSpec = useCallback(() => {
+    if (!traceQ.data || !peaksQ.data) {
+      throw new Error("FigureExportControls: parent disabled-gate violated");
+    }
+    return buildTraceExportSpec({
+      trace: traceQ.data,
+      peaks: peaksQ.data,
+      activeGroupIndices,
+      experimentName: experimentName ?? "",
+      sampleName: sampleName ?? "",
+      exposureLabel,
+      xDomain,
+      yDomain,
+      xType,
+      ...(experimentQ.data?.q_units ? { qUnits: experimentQ.data.q_units } : {}),
+    });
+  }, [
+    traceQ.data, peaksQ.data, activeGroupIndices,
+    experimentName, sampleName, exposureLabel,
+    xDomain, yDomain, xType, experimentQ.data?.q_units,
+  ]);
+
+  const exportDisabled = !traceQ.data || !peaksQ.data;
+
   const fullQRange: [number, number] | null = traceQ.data && traceQ.data.q.length > 0
     ? [traceQ.data.q[0]!, traceQ.data.q[traceQ.data.q.length - 1]!]
     : null;
@@ -278,6 +317,9 @@ export function PlotCard(): JSX.Element {
         onSetXType={setXType}
         onFitFeatures={fitFeatures}
         canFit={traceQ.data !== undefined}
+        exportSpec={exportSpec}
+        exportFilenameStem={filenameStem}
+        exportDisabled={exportDisabled}
       />
       <div className="relative flex-1 min-h-0">
         <Skeleton
@@ -313,6 +355,9 @@ interface TitleStripProps {
   onSetXType: (t: "log" | "linear") => void;
   onFitFeatures: () => void;
   canFit: boolean;
+  exportSpec: () => import("../lib/figure-export/types").ExportSpec;
+  exportFilenameStem: string;
+  exportDisabled: boolean;
 }
 
 /**
@@ -329,6 +374,7 @@ interface TitleStripProps {
 function TitleStrip({
   experimentName, sampleName, onTitleClick, xDomain, fullRange, onXDomain,
   xType, onSetXType, onFitFeatures, canFit,
+  exportSpec, exportFilenameStem, exportDisabled,
 }: TitleStripProps): JSX.Element {
   const hasExp    = experimentName !== undefined;
   const hasSample = sampleName     !== undefined;
@@ -385,6 +431,14 @@ function TitleStrip({
         </button>
         <XScaleToggle xType={xType} onSetXType={onSetXType} />
         <QRange xDomain={xDomain} fullRange={fullRange} onXDomain={onXDomain} />
+        {/* Thin divider before the export cluster. */}
+        <span className="w-px h-4 bg-border" aria-hidden="true" />
+        <FigureExportControls
+          spec={exportSpec}
+          filenameStem={exportFilenameStem}
+          ariaContext="trace plot"
+          disabled={exportDisabled}
+        />
       </div>
     </div>
   );
