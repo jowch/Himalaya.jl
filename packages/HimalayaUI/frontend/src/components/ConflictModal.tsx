@@ -41,6 +41,7 @@ import { useFocusTrap } from "../hooks/useFocusTrap";
 import { useSaveComparison, queryKeys } from "../queries";
 import { computeMemberSnapshot } from "../lib/comparison/snapshot";
 import { comparePath, type CompareScope } from "../lib/comparison/routes";
+import { showToast } from "../lib/toast";
 import {
   getExposure, listPeaks, listIndices, listGroups,
 } from "../api";
@@ -239,7 +240,12 @@ export function ConflictModal(): JSX.Element | null {
       save.mutate(payload);
     } catch {
       // Prefetch failed — release the in-flight guard so the user can retry.
+      // Surface a toast: handleSave's prefetch failure rides through
+      // save.mutate's onError pipeline, but here the prefetch happens BEFORE
+      // save.mutate ever fires, so a transient network blip would otherwise
+      // be silent feedback (PR #92 review point).
       overwriteInFlightRef.current = false;
+      showToast("Failed to refresh comparison data — try again", "error");
     }
   }, [draft, serverHash, save, qc]);
 

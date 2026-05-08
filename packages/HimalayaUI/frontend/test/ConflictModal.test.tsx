@@ -634,6 +634,56 @@ describe("<ConflictModal>", () => {
     });
   });
 
+  it("Overwrite surfaces a toast when prefetch fails (#92 review)", async () => {
+    // PR #92 review point — the catch block previously swallowed the
+    // prefetch error silently. Verify the user gets feedback now.
+    const user = userEvent.setup();
+    const server = buildComparison({ id: 42, hash: "sha256:server-v1" });
+    useAppState.setState({
+      activeDraft: {
+        id: 42, baseHash: "sha256:stale", title: "Local title", description: "",
+        members: [{
+          id: undefined, exposure_id: 999, display_order: 0,
+          band_height: 1, y_offset: 0, normalization: "none",
+          color_override: undefined, label_override: undefined,
+          q_window_min: undefined, q_window_max: undefined, peak_display: undefined,
+          snapshot: { effective_peaks: [], confirmed_index: null, analysis_inputs_hash: "" },
+        }],
+        forkedFromId: undefined, forkedAtHash: undefined,
+      },
+    });
+
+    // Make the prefetch fail. Any of the four endpoints throwing causes
+    // Promise.all to reject, which our catch block handles.
+    vi.spyOn(global, "fetch").mockImplementation((async () => {
+      throw new Error("network down");
+    }) as typeof fetch);
+
+    // Capture the toast surface — toast.ts publishes via setToastImpl.
+    const { setToastImpl } = await import("../src/lib/toast");
+    const toastSpy = vi.fn();
+    setToastImpl(toastSpy);
+
+    renderModal();
+    act(() => {
+      useAppState.getState().setPendingConflict(
+        new ConflictError("sha256:server-v1", server),
+      );
+    });
+
+    await user.click(screen.getByTestId("conflict-overwrite"));
+
+    await waitFor(() => {
+      expect(toastSpy).toHaveBeenCalledWith(
+        expect.stringMatching(/refresh comparison data/i),
+        "error",
+      );
+    });
+
+    // Restore default impl for downstream tests.
+    setToastImpl(null);
+  });
+
   it("renders without exploding when local draft is null (e.g., user navigated away)", () => {
     const server = buildComparison({ id: 42, members: 3 });
     // No draft seeded — global modal must still render the server side.

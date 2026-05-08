@@ -64,4 +64,30 @@ describe("AppShell — Zustand → URL sync (#77)", () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(screen.queryByTestId("compare-page")).toBeNull();
   });
+
+  it("back-nav from /experiments/:eid/compare/:id to '/' bounces to /experiments/:eid/compare (intentional)", async () => {
+    // Regression pin for the documented browser-Back trade-off (PR #92
+    // review point). When the user navigates back to "/" while activePage
+    // stays "compare" (Back doesn't clear it), the redirect kicks in and
+    // re-routes to a Compare URL. Pinning this so anyone who weakens the
+    // condition has to update both the comment and this test.
+    useAppState.setState({ activePage: "compare", activeExperimentId: 7 });
+    const qc = makeQc();
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter
+          initialEntries={["/experiments/7/compare/123", "/"]}
+          initialIndex={1}
+        >
+          <AppShell />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    // From "/" with persisted compare state, the Zustand→URL effect kicks
+    // the user onto /experiments/7/compare and the page mounts.
+    await waitFor(() => {
+      expect(screen.getByTestId("compare-page")).toBeInTheDocument();
+    });
+  });
 });
