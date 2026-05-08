@@ -113,7 +113,7 @@ export function FigureExportControls({
   return (
     <span
       data-testid="figure-export-controls"
-      className="inline-flex items-center gap-1"
+      className="relative inline-flex items-center gap-1"
     >
       <button
         type="button"
@@ -160,9 +160,8 @@ export function FigureExportControls({
         <div
           ref={panelRef}
           data-testid="figure-export-download-menu"
-          className="absolute z-50 mt-6 right-0 min-w-[140px] card border border-border
+          className="absolute z-50 top-full mt-1 right-0 min-w-[140px] card border border-border
                      bg-bg-elevated shadow-lg p-1"
-          style={{ position: "absolute" }}
         >
           <button
             type="button"
