@@ -11,10 +11,9 @@
  *   - `data-testid="comparison-forks-row"` on each fork row.
  *
  * The popover is intentionally lightweight (no focus trap; not a modal).
- * Clicking the trigger again closes it. A future enhancement could add
- * outside-click dismiss, but the trigger toggle is enough for v1.
+ * Dismissal: trigger toggle, Esc keydown, or outside-click (issue #75).
  */
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useComparisonForks } from "../queries";
 import { comparePath, type CompareScope } from "../lib/comparison/routes";
@@ -39,14 +38,41 @@ export function ForksPopover({
   const resolvedScope: CompareScope = scope
     ?? (experimentId !== undefined ? "experiment" : "all");
   const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const forksQ = useComparisonForks(comparisonId);
   const forks: ComparisonSummary[] = forksQ.data ?? [];
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent): void => {
+      const target = e.target as Node | null;
+      if (target === null) return;
+      if (panelRef.current?.contains(target)) return;
+      if (triggerRef.current?.contains(target)) return;
+      setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
 
   return (
     <div className="relative inline-block">
       <button
+        ref={triggerRef}
         type="button"
         data-testid="comparison-forks-trigger"
+        aria-expanded={open}
+        aria-haspopup="true"
         onClick={() => setOpen((v) => !v)}
         className="px-2 py-0.5 rounded border border-border text-fg-muted text-xs
                    hover:bg-bg-elevated"
@@ -55,6 +81,7 @@ export function ForksPopover({
       </button>
       {open && (
         <div
+          ref={panelRef}
           data-testid="comparison-forks-popover"
           className="absolute z-50 mt-1 right-0 min-w-[260px] max-h-[280px]
                      overflow-y-auto card border border-border bg-bg-elevated
