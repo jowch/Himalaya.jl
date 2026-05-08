@@ -446,10 +446,12 @@ _compare_member_payload(; id=nothing, exposure_id=nothing, display_order::Int=0,
 # Helper: pre-mint a comparisons row at a known id so the dispatcher's
 # INSERT/UPDATE-on-existing path runs against an existing row (matches the
 # real route handler's two-step pattern).
+# Uses NULL placeholders to mirror the post-#67 route — the dispatcher's
+# `COALESCE(col, ?)` then stamps real values on first fold.
 function _premint_comparison!(db, id::Int)
     DBInterface.execute(db,
         """INSERT INTO comparisons (id, title, content_hash, created_at, updated_at)
-           VALUES (?, '', '', '', '')""", [id])
+           VALUES (?, NULL, NULL, NULL, NULL)""", [id])
     nothing
 end
 

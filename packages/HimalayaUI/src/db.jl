@@ -345,6 +345,13 @@ function migrate_schema!(db::SQLite.DB)
 
     # Compare page Phase 13: per-user pinned comparisons.
     migrate_comparison_pins!(db)
+
+    # Issue #67: drop NOT NULL on the four `comparisons` columns the route
+    # used to seed with empty-string placeholders. Must run AFTER
+    # migrate_comparison_pins! (and migrate_compare!) — both create FK refs
+    # to comparisons that the relax migration heals when it RENAMEs the
+    # table during the rebuild.
+    migrate_compare_relax_nullability!(db)
 end
 
 """
@@ -375,15 +382,22 @@ messages use plain `INTEGER PRIMARY KEY` — neither is `@`-mentioned, and
 `comparison_messages` matches the existing `sample_messages` shape.
 """
 function migrate_compare!(db::SQLite.DB)
+    # `title`, `content_hash`, `created_at`, `updated_at` are nullable here
+    # (issue #67): the route uses `INSERT INTO comparisons DEFAULT VALUES`
+    # to mint the AUTOINCREMENT id and the dispatcher fills these via
+    # `COALESCE(col, ?)`. Pre-#67 these were `TEXT NOT NULL` and the route
+    # seeded `''` placeholders, which trapped #54 because empty-string is
+    # NOT NULL but IS a sentinel that the dispatcher's COALESCE preserved.
+    # `migrate_compare_relax_nullability!` rebuilds legacy DBs to this shape.
     DBInterface.execute(db, """
         CREATE TABLE IF NOT EXISTS comparisons (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
-            title           TEXT NOT NULL,
+            title           TEXT,
             description     TEXT,
-            content_hash    TEXT NOT NULL,
+            content_hash    TEXT,
             created_by      INTEGER REFERENCES users(id) ON DELETE SET NULL,
-            created_at      TEXT NOT NULL,
-            updated_at      TEXT NOT NULL,
+            created_at      TEXT,
+            updated_at      TEXT,
             forked_from_id  INTEGER REFERENCES comparisons(id) ON DELETE SET NULL,
             forked_at_hash  TEXT
         )""")
@@ -460,6 +474,144 @@ function migrate_comparison_pins!(db::SQLite.DB)
         CREATE INDEX IF NOT EXISTS idx_comparison_pins_by_user
             ON comparison_pins(user_id, pinned_at DESC)""")
     nothing
+end
+
+"""
+    migrate_compare_relax_nullability!(db)
+
+Issue #67: drop `NOT NULL` on `title`, `content_hash`, `created_at`,
+`updated_at` of the `comparisons` table. Pre-#67 these four columns were
+`TEXT NOT NULL` and the route's mint-the-id INSERT seeded them with
+empty-string placeholders that the dispatcher then folded over. Empty
+string is NOT NULL but IS a sentinel — it trapped #54 because plain
+`COALESCE(created_at, ?)` preserved `''` forever. PR #66 patched the
+symptom with `NULLIF(created_at, '')`; this migration removes the trap
+structurally so the route can use a clean `INSERT INTO comparisons
+DEFAULT VALUES` and the dispatcher's `COALESCE` Just Works on NULLs.
+
+Idempotent — sentinel parses `sqlite_master.sql` and no-ops once the
+relaxed shape is already installed (fresh DBs created by the post-#67
+`migrate_compare!` are already relaxed).
+
+Data heal: rows with `created_at = ''` (the #54 bug) have it rewritten
+to `CURRENT_TIMESTAMP` so the frontend's row-shape contract (non-empty
+ISO timestamp, asserted in test_route_response_shapes.jl) holds for
+legacy rows too.
+"""
+function migrate_compare_relax_nullability!(db::SQLite.DB)
+    rows = Tables.rowtable(DBInterface.execute(db,
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='comparisons'"))
+    isempty(rows) && return  # comparisons table absent (pre-migrate_compare!)
+    sql = String(rows[1].sql)
+    # Sentinel: `title TEXT NOT NULL` is the canonical legacy marker; absent
+    # iff the relaxed schema is already installed.
+    occursin(r"\btitle\s+TEXT\s+NOT\s+NULL\b"i, sql) || return
+
+    # FK enforcement must be disabled OUTSIDE the transaction (SQLite docs)
+    # — comparisons is referenced by comparison_members (CASCADE) and
+    # comparison_pins (CASCADE), which would otherwise trip during the
+    # rename + rebuild sequence.
+    DBInterface.execute(db, "PRAGMA foreign_keys = OFF")
+    try
+        SQLite.transaction(db) do
+            DBInterface.execute(db,
+                "ALTER TABLE comparisons RENAME TO _migrate_old_comparisons")
+            DBInterface.execute(db, """
+                CREATE TABLE comparisons (
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    title           TEXT,
+                    description     TEXT,
+                    content_hash    TEXT,
+                    created_by      INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                    created_at      TEXT,
+                    updated_at      TEXT,
+                    forked_from_id  INTEGER REFERENCES comparisons(id) ON DELETE SET NULL,
+                    forked_at_hash  TEXT
+                )""")
+            DBInterface.execute(db, """
+                INSERT INTO comparisons
+                  (id, title, description, content_hash, created_by,
+                   created_at, updated_at, forked_from_id, forked_at_hash)
+                SELECT id, title, description, content_hash, created_by,
+                       created_at, updated_at, forked_from_id, forked_at_hash
+                  FROM _migrate_old_comparisons""")
+            DBInterface.execute(db, "DROP TABLE _migrate_old_comparisons")
+            # The forked_from_id index travels with the table — recreate it.
+            DBInterface.execute(db, """
+                CREATE INDEX IF NOT EXISTS idx_comparisons_forked_from
+                    ON comparisons(forked_from_id)""")
+        end
+        # After the transaction commits, heal FK references corrupted by
+        # SQLite's ALTER TABLE RENAME tracking — comparison_members and
+        # comparison_pins (and any future table that REFERENCES comparisons)
+        # had their stored FK target rewritten to `_migrate_old_comparisons`.
+        _heal_renamed_table_fk_refs!(db, "comparisons")
+        # One-time data heal: convert the #54 stale `''` created_at rows to
+        # a real timestamp so the frontend's row-shape assertion holds for
+        # legacy rows. Idempotent — no-op once the rewrite has run.
+        DBInterface.execute(db, """
+            UPDATE comparisons
+               SET created_at = CURRENT_TIMESTAMP
+             WHERE created_at = ''""")
+        DBInterface.execute(db, """
+            UPDATE comparisons
+               SET updated_at = CURRENT_TIMESTAMP
+             WHERE updated_at = ''""")
+    finally
+        DBInterface.execute(db, "PRAGMA foreign_keys = ON")
+    end
+end
+
+# Heal FK references in `sqlite_master.sql` that point at `_migrate_old_<entity>`
+# back to `<entity>`. SQLite's ALTER TABLE RENAME tracking rewrites stored FK
+# refs in EVERY table whose CREATE statement named the renamed entity — those
+# stale refs surface later as `no such table: main._migrate_old_*` on unrelated
+# INSERTs (the prepare step walks the FK graph). Mirrors the strategy in
+# `_fix_fk_references_after_autoincrement_migration!` but scoped to one entity
+# (the `comparisons` rebuild for #67).
+function _heal_renamed_table_fk_refs!(db::SQLite.DB, entity::String)
+    old_name = "_migrate_old_$entity"
+    broken = Tables.rowtable(DBInterface.execute(db,
+        "SELECT name FROM sqlite_master WHERE type='table' AND sql LIKE ?",
+        ["%$old_name%"]))
+    isempty(broken) && return
+    DBInterface.execute(db, "PRAGMA writable_schema = ON")
+    try
+        SQLite.transaction(db) do
+            # Quoted ("…") and bare forms both occur depending on how the FK
+            # target was rendered in the original CREATE.
+            DBInterface.execute(db,
+                "UPDATE sqlite_master SET sql = REPLACE(sql, ?, ?) WHERE type='table'",
+                ["\"$old_name\"", entity])
+            DBInterface.execute(db,
+                "UPDATE sqlite_master SET sql = REPLACE(sql, ?, ?) WHERE type='table'",
+                [old_name, entity])
+            remaining = Tables.rowtable(DBInterface.execute(db,
+                "SELECT name FROM sqlite_master WHERE type='table' AND sql LIKE ?",
+                ["%$old_name%"]))
+            isempty(remaining) || error(
+                "_heal_renamed_table_fk_refs!($entity): tables still carry " *
+                "`$old_name` FKs after heal: " *
+                join(String[String(r.name) for r in remaining], ", "))
+        end
+    finally
+        DBInterface.execute(db, "PRAGMA writable_schema = OFF")
+    end
+    # Force SQLite to invalidate its in-memory schema cache. VACUUM is the
+    # standard idiom but acquires an EXCLUSIVE lock and can fail with
+    # SQLITE_BUSY under multi-process access — fall back to bumping
+    # schema_version (also invalidates the cache).
+    try
+        DBInterface.execute(db, "VACUUM")
+    catch err
+        @warn "VACUUM after $entity FK heal failed; bumping schema_version" exception=err
+        DBInterface.execute(db, "PRAGMA writable_schema = ON")
+        try
+            DBInterface.execute(db, "PRAGMA schema_version = schema_version + 1")
+        finally
+            DBInterface.execute(db, "PRAGMA writable_schema = OFF")
+        end
+    end
 end
 
 """
