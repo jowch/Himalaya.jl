@@ -41,7 +41,7 @@ function register_routes!()
         @get "/**" function(req::HTTP.Request)
             path = HTTP.URI(req.target).path
             rest = lstrip(path, '/')
-            startswith(rest, "api/") && return HTTP.Response(404, "Not found")
+            (startswith(rest, "api/") || rest == "api") && return HTTP.Response(404, "Not found")
             return HTTP.Response(200,
                 ["Content-Type" => "text/html; charset=utf-8",
                  "Cache-Control" => "no-store"],

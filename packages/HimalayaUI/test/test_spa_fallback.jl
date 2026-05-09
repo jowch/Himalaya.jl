@@ -42,6 +42,11 @@ using HimalayaUI
                     @test r.status == 404
                 end
 
+                @testset "/api with no subpath returns 404 (regression for bare-api guard hole)" begin
+                    r = HTTP.get("$base/api"; status_exception=false)
+                    @test r.status == 404
+                end
+
                 @testset "asset path served by dynamicfiles, not catch-all" begin
                     r = HTTP.get("$base/asset.png"; status_exception=false)
                     @test r.status == 200
