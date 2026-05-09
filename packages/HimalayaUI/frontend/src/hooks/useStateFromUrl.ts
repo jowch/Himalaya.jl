@@ -4,7 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useAppState } from "../state";
 import { parseLocation } from "../lib/url/parseLocation";
 import * as api from "../api";
-import type { ResolveSuccess, Experiment, Sample } from "../api";
+import type { ResolveSuccess, Experiment, Sample, Exposure } from "../api";
 import { queryKeys } from "../queries";
 
 // Spec §4.2 — URL → Zustand. Reads `useLocation()` so popstate AND
@@ -124,6 +124,69 @@ export function useStateFromUrl(): void {
         exposureId: undefined,
       });
       return;
+    }
+
+    // Slug-equality fast path (issue #114). Most URL changes on this page
+    // originate from a Zustand mutation (TabRocker, NavModal, `,`/`.`
+    // shortcuts) that useUrlFromState reflected to the address bar. The
+    // active ids are already authoritative; the slug pair is just their
+    // stable representation. When the cache confirms `name(activeId) ===
+    // parsed.slug` for every slot in the URL, skip the network round-trip
+    // — and crucially the `resolving:true` set, since PageBody swaps the
+    // entire page tree to ResolvingFallback while it's true (visible flash
+    // on every keypress otherwise). Falls through to the slow path on any
+    // mismatch (cold mount, popstate to a new slug, renamed entity in
+    // flight, paste-into-address-bar) — that's where the resolve fetch
+    // remains the right escape hatch.
+    {
+      const a = useAppState.getState();
+      const sampleDefinednessMatches = parsed.sample === undefined
+        ? a.activeSampleId === undefined
+        : a.activeSampleId !== undefined;
+      if (a.activeExperimentId !== undefined && sampleDefinednessMatches) {
+        const exps = qc.getQueryData<Experiment[]>(queryKeys.experiments) ?? [];
+        const expCacheName = exps.find((e) => e.id === a.activeExperimentId)?.name;
+        const samples = a.activeSampleId !== undefined
+          ? qc.getQueryData<Sample[]>(queryKeys.samples(a.activeExperimentId)) ?? []
+          : [];
+        const sampleCacheName = a.activeSampleId !== undefined
+          ? samples.find((s) => s.id === a.activeSampleId)?.name : undefined;
+
+        let exposureMatches = true;
+        let exposureForState: number | undefined = undefined;
+        if (parsed.kind === "inspect") {
+          if (parsed.exposure === undefined) {
+            exposureMatches = a.activeExposureId === undefined;
+          } else if (a.activeExposureId !== undefined && a.activeSampleId !== undefined) {
+            const exposures = qc.getQueryData<Exposure[]>(
+              queryKeys.exposures(a.activeSampleId),
+            ) ?? [];
+            const expoCacheName = exposures.find((e) => e.id === a.activeExposureId)?.filename;
+            exposureMatches = expoCacheName === parsed.exposure;
+            if (exposureMatches) exposureForState = a.activeExposureId;
+          } else {
+            exposureMatches = false;
+          }
+        }
+
+        if (expCacheName === parsed.experiment &&
+            sampleCacheName === parsed.sample &&
+            exposureMatches) {
+          // Match slow-path side effects exactly: setResolveSuccess writes
+          // activePage + clears staleUrlContext + emits replace-mode for the
+          // next URL emit (consumed harmlessly by useUrlFromState's equality
+          // guard since the URL we'd emit equals `current`). For Index URLs
+          // the slow path also clears activeExposureId; we do the same by
+          // passing `undefined` when parsed.kind === "index".
+          a.setResolveSuccess({
+            page: parsed.kind,
+            experimentId: a.activeExperimentId,
+            sampleId: a.activeSampleId,
+            exposureId: exposureForState,
+          });
+          return;
+        }
+      }
     }
 
     // Pre-fetch clear of staleUrlContext + set resolving.

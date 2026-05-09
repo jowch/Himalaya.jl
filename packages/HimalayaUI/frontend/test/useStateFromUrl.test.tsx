@@ -133,6 +133,146 @@ describe("useStateFromUrl", () => {
   });
 });
 
+// Issue #114 — slug-equality fast path. When the parsed slugs already
+// match what the current activeIds + TanStack cache would resolve to,
+// the URL is just a stable representation of state we already have.
+// Skip the /api/resolve round-trip (and the resolving:true that swaps
+// PageBody to ResolvingFallback, which is what visually flashes).
+describe("useStateFromUrl — slug-equality fast path", () => {
+  function makeFastPathWrapper(qc: QueryClient) {
+    return function FastPathWrapper({ children }: { children: ReactNode }) {
+      return (
+        <QueryClientProvider client={qc}>
+          <BrowserRouter>{children}</BrowserRouter>
+        </QueryClientProvider>
+      );
+    };
+  }
+
+  function seedExperimentSample(qc: QueryClient) {
+    qc.setQueryData(queryKeys.experiments, [
+      { id: 17, name: "lipid", path: "", data_dir: "", analysis_dir: "",
+        manifest_path: null, created_at: "", q_units: null },
+    ]);
+    qc.setQueryData(queryKeys.samples(17), [
+      { id: 42, experiment_id: 17, name: "JC001", display_name: null, notes: null, tags: [] },
+    ]);
+  }
+
+  function seedExposure(qc: QueryClient) {
+    qc.setQueryData(queryKeys.exposures(42), [
+      { id: 99, sample_id: 42, filename: "img001.tif", kind: "file",
+        selected: true, status: null, image_path: null, image_version: "",
+        tags: [], sources: [], trace_hash: null, analysis_inputs_hash: null },
+    ]);
+  }
+
+  it("Index URL: slugs match cache+activeIds → no fetch, resolving stays false", () => {
+    history.replaceState(null, "", "/index/lipid/JC001");
+    useAppState.setState({
+      activePage: "index", activeExperimentId: 17, activeSampleId: 42, activeExposureId: undefined,
+    });
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    seedExperimentSample(qc);
+    const fetchSpy = vi.spyOn(global, "fetch");
+    renderHook(() => useStateFromUrl(), { wrapper: makeFastPathWrapper(qc) });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(useAppState.getState().resolving).toBe(false);
+    expect(useAppState.getState().activeExperimentId).toBe(17);
+    expect(useAppState.getState().activeSampleId).toBe(42);
+  });
+
+  it("Inspect URL: slugs+exposure match cache+activeIds → no fetch", () => {
+    history.replaceState(null, "", "/inspect/lipid/JC001?exposure=img001.tif");
+    useAppState.setState({
+      activePage: "inspect", activeExperimentId: 17, activeSampleId: 42, activeExposureId: 99,
+    });
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    seedExperimentSample(qc);
+    seedExposure(qc);
+    const fetchSpy = vi.spyOn(global, "fetch");
+    renderHook(() => useStateFromUrl(), { wrapper: makeFastPathWrapper(qc) });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(useAppState.getState().resolving).toBe(false);
+    expect(useAppState.getState().activeExposureId).toBe(99);
+  });
+
+  it("URL kind differs from activePage but slugs match → no fetch, activePage flips", () => {
+    history.replaceState(null, "", "/inspect/lipid/JC001");
+    useAppState.setState({
+      activePage: "index", activeExperimentId: 17, activeSampleId: 42, activeExposureId: undefined,
+    });
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    seedExperimentSample(qc);
+    const fetchSpy = vi.spyOn(global, "fetch");
+    renderHook(() => useStateFromUrl(), { wrapper: makeFastPathWrapper(qc) });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(useAppState.getState().activePage).toBe("inspect");
+  });
+
+  it("cold mount with empty cache → still fetches /api/resolve", async () => {
+    history.replaceState(null, "", "/index/lipid/JC001");
+    useAppState.setState({
+      activePage: "index", activeExperimentId: 17, activeSampleId: 42, activeExposureId: undefined,
+    });
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    // Intentionally NO seedExperimentSample(qc) — cache is empty (cold mount).
+    const fetchSpy = vi.spyOn(global, "fetch").mockImplementation(() =>
+      ok({
+        experiment_id: 17, experiment_name: "lipid",
+        sample_id: 42, sample_name: "JC001",
+        exposure_id: undefined, exposure_filename: undefined,
+      }),
+    );
+    renderHook(() => useStateFromUrl(), { wrapper: makeFastPathWrapper(qc) });
+    await waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledOnce();
+    });
+  });
+
+  it("popstate to a new sample slug (cache lookup wrong name) → still fetches", async () => {
+    // Zustand still on old sample id 42 (name "JC001"), URL points at "JC002".
+    // The cache row for 42 disagrees with the URL slug → can't fast-path.
+    history.replaceState(null, "", "/index/lipid/JC002");
+    useAppState.setState({
+      activePage: "index", activeExperimentId: 17, activeSampleId: 42, activeExposureId: undefined,
+    });
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    seedExperimentSample(qc);
+    const fetchSpy = vi.spyOn(global, "fetch").mockImplementation(() =>
+      ok({
+        experiment_id: 17, experiment_name: "lipid",
+        sample_id: 43, sample_name: "JC002",
+        exposure_id: undefined, exposure_filename: undefined,
+      }),
+    );
+    renderHook(() => useStateFromUrl(), { wrapper: makeFastPathWrapper(qc) });
+    await waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledOnce();
+    });
+  });
+
+  it("activeIds undefined despite URL slugs (eg. fresh tab on deep link) → still fetches", async () => {
+    history.replaceState(null, "", "/index/lipid/JC001");
+    useAppState.setState({
+      activePage: "index", activeExperimentId: undefined, activeSampleId: undefined, activeExposureId: undefined,
+    });
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    seedExperimentSample(qc);  // cache present but activeIds aren't
+    const fetchSpy = vi.spyOn(global, "fetch").mockImplementation(() =>
+      ok({
+        experiment_id: 17, experiment_name: "lipid",
+        sample_id: 42, sample_name: "JC001",
+        exposure_id: undefined, exposure_filename: undefined,
+      }),
+    );
+    renderHook(() => useStateFromUrl(), { wrapper: makeFastPathWrapper(qc) });
+    await waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledOnce();
+    });
+  });
+});
+
 describe("useStateFromUrl — / redirect", () => {
   // The redirect path uses `useNavigate()` which under BrowserRouter calls
   // `window.history.replaceState`. We assert on the URL arg only (`mock.calls[i][2]`)
