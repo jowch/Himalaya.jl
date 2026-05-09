@@ -200,6 +200,7 @@ On any change, computes the target URL and emits `pushState` or `replaceState` p
 | Inspect thumbnail click → `activeExposureId` change | replace |
 | App-init URL sync (initial render after `useStateFromUrl`) | replace |
 | SSE-driven cache update that invalidates the current URL | replace, then re-resolve |
+| Stale-URL recovery (`recoverFromStaleUrl` or `setActivePage` from StaleUrlPage CTA) | replace (drops the broken URL from history) |
 
 The hook **does not emit** when the resulting URL equals the current one (string compare on `pathname + search`). Prevents spurious history entries when an SSE refetch hydrates names without changing them.
 
@@ -245,16 +246,24 @@ When `parseLocation` returns `{ kind: "root" }`:
 
 ## 6. StaleUrlPage (404 component)
 
-**AppShell rendering ladder (precedence top-to-bottom):**
+**AppShell rendering ladder.** The chrome (AppHeader, TabRocker) renders unconditionally; only the page region swaps based on the ladder. This matches §4.2's "AppHeader and TabRocker stay rendered above [the resolving fallback] without a layout shift."
 
 ```tsx
 // components/AppShell.tsx (sketch)
 const resolving       = useAppState(s => s.resolving);
 const staleUrlContext = useAppState(s => s.staleUrlContext);
 
-if (resolving)             return <ResolvingFallback />;     // 1. resolving wins
-if (staleUrlContext)       return <StaleUrlPage … />;        // 2. then stale
-return <PageRouter />;                                        // 3. otherwise the page
+return (
+  <>
+    <AppHeader />
+    <TabRocker />
+    <main>
+      {resolving       ? <ResolvingFallback />
+       : staleUrlContext ? <StaleUrlPage staleUrlContext={staleUrlContext} />
+       : <PageRouter />}
+    </main>
+  </>
+);
 ```
 
 `resolving` outranks `staleUrlContext` so a navigation away from a stale URL doesn't briefly re-show the old 404 between popstate-fire and the §4.2 pre-fetch clear (defense-in-depth — the pre-fetch clear should already cover it). `staleUrlContext` outranks the page-router because a `kind: "stale"` URL has no `activePage`, so per-page mounting would leave the 404 unreachable.
@@ -293,12 +302,28 @@ The `not_found` variant is populated from the `/api/resolve` 404 body. The `unkn
 
 | variant | `data-missing` | `header` | CTA |
 |---|---|---|---|
-| `kind: "not_found"`, `missing: "experiment"` | `"experiment"` | `Experiment '{missing_value}' not found.` | "Select an experiment" `/` → `openNavModal("experiment")` |
-| `kind: "not_found"`, `missing: "sample"` | `"sample"` | `Sample '{missing_value}' not found in '{experiment_resolved.name}'.` | "Select another sample" `/` → `setActiveExperiment(experiment_resolved.id)` then `openNavModal("sample")` |
-| `kind: "not_found"`, `missing: "exposure"` | `"exposure"` | `Exposure '{missing_value}' not found in '{sample_resolved.name}'.` | "Select another sample" `/` → same as above; Inspect filmstrip handles per-exposure picking |
-| `kind: "unknown_path"` | `"path"` | `Page not found.` | "Go to Index" → `setActivePage("index")` (clears `staleUrlContext` per §4.4; `useUrlFromState` then emits `/index`) |
+| `kind: "not_found"`, `missing: "experiment"` | `"experiment"` | `Experiment '{missing_value}' not found.` | "Select an experiment" `/` → `recoverFromStaleUrl(undefined, "experiment")` |
+| `kind: "not_found"`, `missing: "sample"` | `"sample"` | `Sample '{missing_value}' not found in '{experiment_resolved.name}'.` | "Select another sample" `/` → `recoverFromStaleUrl(experiment_resolved.id, "sample")` |
+| `kind: "not_found"`, `missing: "exposure"` | `"exposure"` | `Exposure '{missing_value}' not found in '{sample_resolved.name}'.` | "Select another sample" `/` → `recoverFromStaleUrl(experiment_resolved.id, "sample")`; Inspect filmstrip handles per-exposure picking once a sample is chosen |
+| `kind: "unknown_path"` | `"path"` | `Page not found.` | "Go to Index" → `setActivePage("index")` (clears `staleUrlContext` per §4.4; `useUrlFromState` emits `/index`) |
 
-Note: the `unknown_path` variant has no `missing_value` and no scope; the simpler "Page not found." copy is intentional. The trailing-period punctuation is uniform across variants. The `unknown_path` CTA dispatches a Zustand action rather than a raw `replaceState` because `replaceState` does not fire `popstate`, so `useStateFromUrl`'s pre-fetch clear would not run and `staleUrlContext` would remain set; routing through `setActivePage` clears the slot via the named-action discipline.
+**`recoverFromStaleUrl(experimentId, step)` named action** in `state.ts` — single atomic Zustand transition. Clears `staleUrlContext`, optionally sets `activeExperimentId` (when given), and opens NavModal at the requested step. One transition means `useUrlFromState` recomputes once, no half-state where the slot is cleared but the modal hasn't opened (or vice versa):
+
+```ts
+recoverFromStaleUrl: (experimentId: number | undefined, step: NavModalStep) =>
+  set((s) => ({
+    staleUrlContext: null,
+    activeExperimentId: experimentId !== undefined ? experimentId : s.activeExperimentId,
+    activeSampleId: undefined,
+    activeExposureId: undefined,
+    navModalOpen: true,
+    navModalStep: step,
+  }))
+```
+
+This consolidates rows 1–3 into one action. Without it, row 1 (`openNavModal("experiment")` alone) wouldn't clear `staleUrlContext` — closing the NavModal without picking would leave the user back at the StaleUrlPage. Routing all three through `recoverFromStaleUrl` makes that bug structurally impossible. The `unknown_path` row uses `setActivePage("index")` because there's no NavModal to open — the user is taking themselves to the Index empty state, where NavModal will auto-open at the experiment step via the existing `IndexPage` mount logic.
+
+Notes: the `unknown_path` variant has no `missing_value` and no scope; the simpler "Page not found." copy is intentional. The trailing-period punctuation is uniform across variants. The `unknown_path` CTA dispatches a Zustand action rather than a raw `replaceState` because `replaceState` does not fire `popstate`, so `useStateFromUrl`'s pre-fetch clear would not run and `staleUrlContext` would remain set.
 
 **Keyboard.** `/` triggers the same handler as the button (matches `useGlobalShortcuts` line 35 binding for opening NavModal). The visible `<kbd>/</kbd>` chip teaches the shortcut.
 
@@ -362,7 +387,7 @@ In practice the URL-invalidation path fires only on entity deletion (names are s
 - New: `packages/HimalayaUI/src/routes_resolve.jl`, `packages/HimalayaUI/test/test_routes_resolve.jl`, `packages/HimalayaUI/test/test_spa_fallback.jl`.
 - Edit: `packages/HimalayaUI/src/server.jl` — `register_resolve_routes!()` call + `/**` SPA catch-all.
 - Edit: `packages/HimalayaUI/src/HimalayaUI.jl` — `include("routes_resolve.jl")`.
-- Edit: `packages/HimalayaUI/src/db.jl` — add named helper `migrate_exposures_unique_filename!(db)` following the `migrate_samples_naming!` precedent (dedupe-then-enforce inside `SQLite.transaction`); call from `migrate_schema!` after `migrate_samples_naming!`.
+- Edit: `packages/HimalayaUI/src/db.jl` — add named helper `migrate_exposures_unique_filename!(db)` following the `migrate_samples_naming!` precedent (dedupe-then-enforce inside `SQLite.transaction`); call from `migrate_schema!` **after `_fix_fk_references_after_autoincrement_migration!`** (so the AUTOINCREMENT rebuild has settled and the index attaches to the rebuilt `exposures` table — see §3.1 for the rationale).
 - Edit: `packages/HimalayaUI/test/test_db.jl` — directly invoke `migrate_exposures_unique_filename!` on synthetic-duplicate fixtures (FK-heal regression-test pattern; bypasses `open_db`'s full migration chain).
 - Edit: `packages/HimalayaUI/test/runtests.jl` — register the new test files.
 - Edit: `packages/HimalayaUI/test/test_route_response_shapes.jl` — add resolve 200/400/404 shape rows.
@@ -374,7 +399,7 @@ In practice the URL-invalidation path fires only on entity deletion (names are s
 - New: `components/ResolvingFallback.tsx` — the near-empty placeholder rendered while a resolve is in flight (§4.2).
 - Edit: `App.tsx` — mount the two hooks.
 - Edit: `components/AppShell.tsx` — read `staleUrlContext` and `resolving`; render `<StaleUrlPage>` / `<ResolvingFallback>` / page-router accordingly.
-- Edit: `state.ts` — add `staleUrlContext: StaleUrlContext | null` (type defined in §6), `setStaleUrlContext`; add `resolving: boolean`, `setResolving`; have `setActivePage` / `setActiveExperiment` / `setActiveSample` / `setActiveExposure` clear `staleUrlContext` (do NOT clear `resolving` — it's controlled by `useStateFromUrl` lifecycle). Both slots are **not** persisted (omit from `partialize`). No localStorage version bump (ephemeral slots).
+- Edit: `state.ts` — add `staleUrlContext: StaleUrlContext | null` (type defined in §6), `setStaleUrlContext`; add `resolving: boolean`, `setResolving`; add `recoverFromStaleUrl(experimentId, step)` (signature in §6) for the not_found:* CTAs; have `setActivePage` / `setActiveExperiment` / `setActiveSample` / `setActiveExposure` clear `staleUrlContext` (do NOT clear `resolving` — it's controlled by `useStateFromUrl` lifecycle). All new slots are **not** persisted (omit from `partialize`). No localStorage version bump (ephemeral slots).
 - Edit: `api.ts` — `ResolveSuccess`, `ResolveError404`, `ResolveError400` types using `T | undefined` for optional fields.
 - New: `e2e/permalinks.spec.ts` (mocked); `e2e/live/permalinks.spec.ts` (live).
 
@@ -389,6 +414,7 @@ In practice the URL-invalidation path fires only on entity deletion (names are s
 ## 11. Risks and migration
 
 - **Additive schema migration.** The `exposures_unique_filename` UNIQUE INDEX is the only schema change, applied via `migrate_exposures_unique_filename!` (dedupe-then-enforce inside a single `SQLite.transaction`, mirroring the `migrate_samples_naming!` precedent from #88). Idempotent on re-run.
+- **Reingest concurrency surface.** `routes_experiments.jl:87` does not wrap `reingest!` in `with_idempotency`; under fast double-fire of `POST /api/experiments/:id/reingest`, a SELECT-then-INSERT race against the new `exposures_unique_filename` (or the existing `samples_unique_name` from #88) can surface as HTTP 500 on a UNIQUE-constraint violation. Operationally rare; pre-exists this spec; flagged as a follow-up to wrap reingest in `with_idempotency`. Operators should expect this as a known transient until the follow-up lands.
 - **Browser back-button surprises.** A user with a long edit session might walk back through dozens of pushed states. The push-only-on-commit policy keeps this manageable, but worth noting.
 - **Persisted-URL on cold-mount mismatch.** If localStorage Zustand has a stale `activeSampleId` (the sample was deleted while the tab was closed), the cold-mount `/` redirect resolves through `/api/resolve?sample_id=M` and 404s. We handle it by falling through to `/index` — the user lands in the empty state without explicit feedback. Acceptable: reload-after-deletion is rare, and the user reaching the empty state and re-picking a sample is what they'd do anyway.
 - **Non-conformant experiment names.** Backfill data may have spaces in `experiments.name`. Round-trip via `encode/decodeURIComponent` handles encoding; the `ORDER BY id ASC LIMIT 1` tiebreaker handles duplicates. The §8.4 stale-name regression test covers the rename case. A future #88-style experiment migration would supplant both these workarounds.
