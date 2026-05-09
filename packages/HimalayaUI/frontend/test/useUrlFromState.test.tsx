@@ -101,6 +101,37 @@ describe("useUrlFromState", () => {
     expect(replaceSpy).not.toHaveBeenCalled();
   });
 
+  it("does not emit while experiments cache is unhydrated (deep-link race)", () => {
+    // Cold-mount race: applySuccess populated activeExperimentId / activeSampleId
+    // before useExperiments() finished. If the hook emitted now, buildUrl
+    // would resolve to /index (no slugs) and useStateFromUrl would wipe the
+    // just-populated active ids. The cache-hydration gate prevents that.
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    // Deliberately do NOT setQueryData — simulate cache loading.
+    const Wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={qc}>
+        <BrowserRouter>{children}</BrowserRouter>
+      </QueryClientProvider>
+    );
+    history.replaceState(null, "", "/index/lipid-screen/JC001");
+    useAppState.setState({
+      activePage: "index", activeExperimentId: 17, activeSampleId: 42,
+    });
+    const pushSpy = vi.spyOn(history, "pushState");
+    const replaceSpy = vi.spyOn(history, "replaceState");
+    renderHook(() => useUrlFromState(), { wrapper: Wrapper });
+    // Effect runs but should bail because experiments cache is empty.
+    // BrowserRouter's mount calls history.replaceState(state, "") with two
+    // args to inject its own internal `{ idx: 0 }` marker — filter for
+    // hook-driven navigations (which pass a URL string as the 3rd arg).
+    const hookPushes = pushSpy.mock.calls.filter((c) => typeof c[2] === "string");
+    const hookReplaces = replaceSpy.mock.calls.filter((c) => typeof c[2] === "string");
+    expect(hookPushes).toHaveLength(0);
+    expect(hookReplaces).toHaveLength(0);
+    // URL must remain the deep link — the bug would have rewritten it to /index.
+    expect(location.pathname).toBe("/index/lipid-screen/JC001");
+  });
+
   it("replay-as-rerun: identical optimistic + confirmed slug → no spurious emit", () => {
     // Simulate the trivial replay case: cache row gets replaced (foreign event)
     // but the same id-name mapping holds. URL recompute should see the same

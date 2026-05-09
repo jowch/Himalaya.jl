@@ -136,6 +136,17 @@ export function useUrlFromState(): void {
       (prev.sample !== undefined && sampleName === undefined && activeSampleId !== undefined);
     prevSlugsRef.current = { exp: expName, sample: sampleName };
 
+    // Wait for cache hydration before emitting. Without this, a cold-mount
+    // deep link can be destroyed if /api/resolve returns before
+    // /api/experiments: applySuccess populates Zustand active ids; this
+    // hook fires with experiments still undefined; nameForExperiment
+    // returns undefined; buildUrl emits /index; useStateFromUrl re-parses
+    // /index and wipes the just-populated active ids.
+    const cacheReady =
+      (activeExperimentId === undefined || experiments !== undefined) &&
+      (activeSampleId === undefined || samples !== undefined);
+    if (!cacheReady) return;
+
     // Consume the emit-mode flag BEFORE the equality guard. Otherwise a
     // settle-emit (e.g. applySuccess flips to /index/lipid/JC001 — same as
     // the resolved URL) skips navigate but leaves `nextEmitMode = replace`

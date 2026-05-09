@@ -113,4 +113,16 @@ describe("Zustand state — permalink slots", () => {
     expect(persisted.state?.resolving).toBeUndefined();
     expect(persisted.state?.staleUrlContext).toBeUndefined();
   });
+
+  it("setActiveExposure no-op call does NOT arm emitReplaceNext", async () => {
+    const { _resetEmitMode, consumeEmitMode } = await import("../src/lib/url/emitMode");
+    _resetEmitMode();
+    useAppState.setState({ activeExposureId: 100 });
+    // Setting to the same value should be a no-op — replace flag stays unset.
+    useAppState.getState().setActiveExposure(100);
+    expect(consumeEmitMode()).toBe("push");
+    // Setting to a different value should arm replace.
+    useAppState.getState().setActiveExposure(200);
+    expect(consumeEmitMode()).toBe("replace");
+  });
 });

@@ -272,7 +272,9 @@ export const useAppState = create<AppState>()(
         setActiveSample: (activeSampleId) =>
           set({ activeSampleId, activeExposureId: undefined, staleUrlContext: null }),
         setActiveExposure: (activeExposureId) => {
-          emitReplaceNext();
+          // Only arm replace if the value actually changes — otherwise the
+          // flag leaks to the next legitimate state change.
+          if (get().activeExposureId !== activeExposureId) emitReplaceNext();
           set({ activeExposureId, staleUrlContext: null });
         },
         setHoveredIndex: (hoveredIndexId) => set({ hoveredIndexId }),

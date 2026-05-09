@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useAppState } from "../state";
 import type { StaleUrlContext } from "../state";
+import { emitReplaceNext } from "../lib/url/emitMode";
 
 interface Props {
   staleUrlContext: StaleUrlContext;
@@ -19,7 +20,13 @@ function uiFor(ctx: StaleUrlContext, store: ReturnType<typeof useAppState.getSta
       dataMissing: "path",
       header: "Page not found.",
       ctaLabel: "Go to Index",
-      onPick: () => store.setActivePage("index"),
+      // Arm replace so the back button doesn't loop back to /foo/bar →
+      // re-render StaleUrlPage. Without emitReplaceNext, useUrlFromState
+      // emits a push and traps the user.
+      onPick: () => {
+        emitReplaceNext();
+        store.setActivePage("index");
+      },
     };
   }
   if (ctx.missing === "experiment") {

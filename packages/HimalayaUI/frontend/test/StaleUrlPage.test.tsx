@@ -3,9 +3,11 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { StaleUrlPage } from "../src/components/StaleUrlPage";
 import { useAppState } from "../src/state";
 import type { StaleUrlContext } from "../src/state";
+import { _resetEmitMode, consumeEmitMode } from "../src/lib/url/emitMode";
 
 describe("StaleUrlPage", () => {
   beforeEach(() => {
+    _resetEmitMode();
     useAppState.setState({
       staleUrlContext: null,
       activeExperimentId: undefined,
@@ -69,6 +71,16 @@ describe("StaleUrlPage", () => {
     fireEvent.click(screen.getByTestId("stale-url-cta"));
     expect(useAppState.getState().activePage).toBe("index");
     expect(useAppState.getState().staleUrlContext).toBeNull();
+  });
+
+  it("unknown_path CTA arms emitReplaceNext (avoids back-button trap)", () => {
+    // Without arming replace, useUrlFromState emits a push and back-button
+    // takes the user back to /foo/bar → re-renders StaleUrlPage. Trapped.
+    _resetEmitMode();
+    const ctx: StaleUrlContext = { kind: "unknown_path", raw: "/foo/bar" };
+    render(<StaleUrlPage staleUrlContext={ctx} />);
+    fireEvent.click(screen.getByTestId("stale-url-cta"));
+    expect(consumeEmitMode()).toBe("replace");
   });
 
   it("/ keypress triggers CTA", () => {

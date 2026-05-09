@@ -1,4 +1,4 @@
-using Test, HTTP, SQLite, DBInterface
+using Test, HTTP, JSON3, SQLite, DBInterface
 using HimalayaUI
 
 # Helpers are available via runtests.jl include order — see test_routes_resolve.jl.
@@ -52,6 +52,15 @@ using HimalayaUI
                     @test r.status == 200
                     # dynamicfiles doesn't add no-store; the catch-all does.
                     @test HTTP.header(r, "Cache-Control") != "no-store"
+                end
+
+                @testset "registered /api/health returns 200, NOT served by catch-all" begin
+                    # Pins HTTP.jl tree-router specificity invariant: registered
+                    # /api/* routes must take precedence over the SPA catch-all.
+                    r = HTTP.get("$base/api/health"; status_exception=false)
+                    @test r.status == 200
+                    body = JSON3.read(String(r.body))
+                    @test body.status == "ok"
                 end
             end
         finally
