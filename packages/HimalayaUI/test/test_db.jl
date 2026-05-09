@@ -1,4 +1,4 @@
-using Test, SQLite, DBInterface, Tables
+using Test, SQLite, DBInterface, Tables, Logging
 using HimalayaUI: create_schema!, migrate_schema!, create_experiment!, create_sample!,
                   create_exposure!, get_experiment, get_samples, get_exposures,
                   migrate_r2_split_peaks!
@@ -1331,5 +1331,81 @@ end
         # Friendly text (was name) preserved as display_name:
         @test rows[1].display_name == "DOPC + chol"
         @test rows[2].display_name == "POPC"
+    end
+end
+
+@testset "migrate_exposures_unique_filename!" begin
+    @testset "clean DB: index exists, no warnings" begin
+        mktempdir() do tmp
+            db = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+            try
+                # open_db already runs the migration; assert the index is in place.
+                rows = Tables.rowtable(DBInterface.execute(db,
+                    "SELECT name FROM sqlite_master WHERE type='index' AND name='exposures_unique_filename'"))
+                @test length(rows) == 1
+            finally
+                close(db)
+            end
+        end
+    end
+
+    @testset "idempotent re-run: no-op" begin
+        mktempdir() do tmp
+            db = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+            try
+                # Calling the helper directly a second time should be a no-op (no error,
+                # no warnings, index still present).
+                HimalayaUI.migrate_exposures_unique_filename!(db)
+                rows = Tables.rowtable(DBInterface.execute(db,
+                    "SELECT name FROM sqlite_master WHERE type='index' AND name='exposures_unique_filename'"))
+                @test length(rows) == 1
+            finally
+                close(db)
+            end
+        end
+    end
+
+    @testset "synthetic duplicates: rename + warn + index created" begin
+        mktempdir() do tmp
+            db = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+            try
+                # Drop the index so we can synthesize duplicates and re-run the helper.
+                DBInterface.execute(db, "DROP INDEX IF EXISTS exposures_unique_filename")
+
+                # Seed a sample + two duplicate exposures via raw SQL (bypassing the upsert).
+                eid = let res = DBInterface.execute(db,
+                          "INSERT INTO experiments (name, path, data_dir, analysis_dir) VALUES ('e','/p','/d','/a')")
+                    Int(DBInterface.lastrowid(res))
+                end
+                sid = let res = DBInterface.execute(db,
+                          "INSERT INTO samples (experiment_id, name) VALUES (?, 'S1')", [eid])
+                    Int(DBInterface.lastrowid(res))
+                end
+                # Two rows with the same (sample_id, filename).
+                DBInterface.execute(db,
+                    "INSERT INTO exposures (sample_id, filename, kind) VALUES (?, 'JC001-007', 'simple')", [sid])
+                DBInterface.execute(db,
+                    "INSERT INTO exposures (sample_id, filename, kind) VALUES (?, 'JC001-007', 'simple')", [sid])
+
+                # Run the helper directly (FK-heal pattern).
+                @test_logs (:warn, r"Renamed duplicate exposure"i) min_level=Logging.Warn match_mode=:any begin
+                    HimalayaUI.migrate_exposures_unique_filename!(db)
+                end
+
+                # Oldest id keeps the bare name; second is suffixed.
+                rows = Tables.rowtable(DBInterface.execute(db,
+                    "SELECT id, filename FROM exposures WHERE sample_id = ? ORDER BY id ASC", [sid]))
+                @test length(rows) == 2
+                @test rows[1].filename == "JC001-007"
+                @test rows[2].filename == "JC001-007-2"
+
+                # Index now present.
+                idx = Tables.rowtable(DBInterface.execute(db,
+                    "SELECT name FROM sqlite_master WHERE type='index' AND name='exposures_unique_filename'"))
+                @test length(idx) == 1
+            finally
+                close(db)
+            end
+        end
     end
 end
