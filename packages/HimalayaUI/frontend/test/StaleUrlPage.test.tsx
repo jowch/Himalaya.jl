@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { StaleUrlPage } from "../src/components/StaleUrlPage";
 import { useAppState } from "../src/state";
@@ -79,5 +79,20 @@ describe("StaleUrlPage", () => {
     render(<StaleUrlPage staleUrlContext={ctx} />);
     fireEvent.keyDown(window, { key: "/" });
     expect(useAppState.getState().navModalOpen).toBe(true);
+  });
+
+  it("/ keypress inside an INPUT does NOT trigger CTA", () => {
+    const ctx: StaleUrlContext = {
+      kind: "not_found", missing: "experiment", missing_value: "x",
+      experiment_resolved: undefined, sample_resolved: undefined,
+    };
+    render(<StaleUrlPage staleUrlContext={ctx} />);
+    // Mount an input and dispatch keydown FROM that input as target.
+    const input = document.createElement("input");
+    document.body.appendChild(input);
+    input.focus();
+    fireEvent.keyDown(input, { key: "/" });
+    expect(useAppState.getState().navModalOpen).toBe(false);
+    document.body.removeChild(input);
   });
 });

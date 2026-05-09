@@ -71,6 +71,12 @@ export function StaleUrlPage({ staleUrlContext }: Props): JSX.Element {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      const editing = t && (
+        t.tagName === "INPUT" || t.tagName === "TEXTAREA" ||
+        (t as HTMLElement).isContentEditable
+      );
+      if (editing) return;
       if (e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey) {
         e.preventDefault();
         ui.onPick();
