@@ -303,6 +303,80 @@ function config_to_toml(cfg::ExperimentConfig)::String
 end
 
 """
+    migrate_manifest_toml_text(text) -> (new_text, changed)
+
+Pure-text rewrite of a TOML blob from the legacy `[manifest].label`/`name`
+shape (column 2 is the stable identifier, column 3 is the user-facing label)
+to the canonical `[manifest].name`/`display_name` shape (column 2 is the
+stable identifier `name`, column 3 is the editable `display_name`). See
+PR #107.
+
+Section-aware: only substitutes inside the `[manifest]` block so a
+`name` key in `[experiment]` (the human-readable experiment name) is not
+touched. Per-line state machine: a single line is EITHER a `label=` rewrite
+OR a `name=` rewrite, never both — so `name` doesn't catch the line we just
+rewrote from `label`.
+
+Idempotent: returns `(text, false)` when no rewrite is needed (already
+migrated, or no `[manifest].label` present). Errors when the blob has
+both `label` and `display_name` in `[manifest]` — that's a corrupt state
+that needs operator attention; better to surface the corruption than to
+guess.
+"""
+function migrate_manifest_toml_text(text::AbstractString)::Tuple{String,Bool}
+    lines = collect(eachline(IOBuffer(text); keep=true))
+
+    # First pass: classify [manifest] contents.
+    section = ""
+    has_label = false
+    has_display_name = false
+    for line in lines
+        m = match(r"^\s*\[([A-Za-z0-9_]+)\]\s*$", line)
+        if m !== nothing
+            section = m.captures[1]; continue
+        end
+        if section == "manifest"
+            occursin(r"^\s*label\s*=", line)        && (has_label = true)
+            occursin(r"^\s*display_name\s*=", line) && (has_display_name = true)
+        end
+    end
+
+    # No-op cases.
+    has_label || return (String(text), false)
+    if has_label && has_display_name
+        error("manifest TOML has both `label` and `display_name` in [manifest]; manual edit needed")
+    end
+
+    # Second pass: rewrite only inside [manifest].
+    section = ""
+    out = IOBuffer()
+    for line in lines
+        m = match(r"^\s*\[([A-Za-z0-9_]+)\]\s*$", line)
+        if m !== nothing
+            section = m.captures[1]
+            print(out, line); continue
+        end
+        if section == "manifest"
+            if (m2 = match(r"^(\s*)label(\s*=\s*\S+)(.*)$", line)) !== nothing
+                rest = rstrip(m2.captures[3], '\n')
+                # Preserve trailing newline iff present in the original.
+                nl = endswith(line, '\n') ? "\n" : ""
+                print(out, m2.captures[1] * "name" * m2.captures[2] * rest * nl)
+            elseif (m3 = match(r"^(\s*)name(\s*=\s*\S+)(.*)$", line)) !== nothing
+                rest = rstrip(m3.captures[3], '\n')
+                nl = endswith(line, '\n') ? "\n" : ""
+                print(out, m3.captures[1] * "display_name" * m3.captures[2] * rest * nl)
+            else
+                print(out, line)
+            end
+        else
+            print(out, line)
+        end
+    end
+    (String(take!(out)), true)
+end
+
+"""
     config_from_db(db, experiment_id) -> ExperimentConfig
 
 Read the stored TOML blob from `experiments.config` and parse it back into
