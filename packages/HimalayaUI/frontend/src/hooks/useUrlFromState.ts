@@ -76,6 +76,8 @@ export function useUrlFromState(): void {
   const activeExperimentId = useAppState((s) => s.activeExperimentId);
   const activeSampleId = useAppState((s) => s.activeSampleId);
   const activeExposureId = useAppState((s) => s.activeExposureId);
+  const resolving = useAppState((s) => s.resolving);
+  const staleUrlContext = useAppState((s) => s.staleUrlContext);
 
   // Subscribe to experiments + (when an experiment is active) samples
   // queries so SSE-driven cache rewrites trigger a re-render. We use
@@ -101,6 +103,25 @@ export function useUrlFromState(): void {
   );
 
   useEffect(() => {
+    // While useStateFromUrl is resolving the address bar (cold-mount deep
+    // URL, popstate to a new slug), the URL is the authoritative input.
+    // Tugging it back here from a half-populated Zustand snapshot would
+    // race the resolve and clobber the user's deep link before
+    // useStateFromUrl can apply the resolved id pair. The `resolving` flag
+    // is precisely for this — released when applySuccess / staleUrlContext
+    // dispatch lands. We re-read it via getState() because useStateFromUrl
+    // (declared first in App.tsx, so its effect runs first) sets resolving
+    // synchronously inside its effect; that value won't propagate into this
+    // effect's closure until the next render commit, but Zustand's
+    // getState() sees it immediately.
+    if (resolving || useAppState.getState().resolving) return;
+    // Same logic for stale URLs: the user is parked on an unresolvable
+    // address (404 from /api/resolve, or unknown_path). Letting the URL be
+    // overwritten by a half-populated state would clear the stale page
+    // before they can act on it. StaleUrlPage / NavModal are responsible
+    // for clearing staleUrlContext once recovery commits.
+    if (staleUrlContext !== null) return;
+
     const expName = nameForExperiment(experiments, activeExperimentId);
     const sampleName = nameForSample(samples, activeSampleId);
     const exposureName = filenameForExposure(qc, activeSampleId, activeExposureId);
@@ -115,12 +136,18 @@ export function useUrlFromState(): void {
       (prev.sample !== undefined && sampleName === undefined && activeSampleId !== undefined);
     prevSlugsRef.current = { exp: expName, sample: sampleName };
 
-    if (target === current) return;        // equality guard
+    // Consume the emit-mode flag BEFORE the equality guard. Otherwise a
+    // settle-emit (e.g. applySuccess flips to /index/lipid/JC001 — same as
+    // the resolved URL) skips navigate but leaves `nextEmitMode = replace`
+    // armed; the next user-driven URL change (tab click → push) silently
+    // replaces instead, breaking back-button history.
     const explicitMode = consumeEmitMode();
+    if (target === current) return;        // equality guard
     const mode = slugDisappeared ? "replace" : explicitMode;
     navigate(target, { replace: mode === "replace" });
   }, [
     activePage, activeExperimentId, activeSampleId, activeExposureId,
+    resolving, staleUrlContext,
     experiments, samples,
     location.pathname, location.search,
     navigate, qc,
