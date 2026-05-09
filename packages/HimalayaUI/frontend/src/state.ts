@@ -17,6 +17,7 @@ import {
 } from "./lib/comparison/draftFactories";
 import { cyclePeakDisplay } from "./lib/comparison/peakCycle";
 import type { GroupingMode } from "./lib/comparison/coloring";
+import { emitReplaceNext } from "./lib/url/emitMode";
 
 export const LS_KEY = "himalaya-ui:state";
 
@@ -270,8 +271,10 @@ export const useAppState = create<AppState>()(
           }),
         setActiveSample: (activeSampleId) =>
           set({ activeSampleId, activeExposureId: undefined, staleUrlContext: null }),
-        setActiveExposure: (activeExposureId) =>
-          set({ activeExposureId, staleUrlContext: null }),
+        setActiveExposure: (activeExposureId) => {
+          emitReplaceNext();
+          set({ activeExposureId, staleUrlContext: null });
+        },
         setHoveredIndex: (hoveredIndexId) => set({ hoveredIndexId }),
         setHoveredPeak: (hoveredPeakId) => set({ hoveredPeakId }),
         setActivePage: (activePage) => set({ activePage, staleUrlContext: null }),
@@ -419,7 +422,8 @@ export const useAppState = create<AppState>()(
         // an intermediate state.
         setStaleUrlContext: (staleUrlContext) => set({ staleUrlContext }),
         setResolving: (resolving) => set({ resolving }),
-        recoverFromStaleUrl: (opts) =>
+        recoverFromStaleUrl: (opts) => {
+          emitReplaceNext();
           set((s) => ({
             staleUrlContext: null,
             activeExperimentId: opts.experimentId ?? s.activeExperimentId,
@@ -427,7 +431,8 @@ export const useAppState = create<AppState>()(
             activeExposureId: undefined,
             navModalOpen: opts.openModal ?? true,
             navModalStep: opts.step,
-          })),
+          }));
+        },
       };
     },
     {
