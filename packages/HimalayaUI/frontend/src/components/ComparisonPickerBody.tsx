@@ -39,8 +39,11 @@ const FIXTURE_ROWS: PickerSampleRow[] = [
 const COMPARISON_PICKER_BODY_FIXTURE = (
   <div className="flex-1 overflow-hidden">
     <div className="py-2">
-      <div className="px-4 text-xs font-medium text-fg-muted uppercase tracking-wide pb-1">
-        All samples
+      <div className="px-4 pb-1 flex items-baseline gap-2">
+        <span className="text-xs font-semibold text-fg uppercase tracking-wide">
+          All samples
+        </span>
+        <span className="text-xs text-fg-muted">{FIXTURE_ROWS.length}</span>
       </div>
       <ul className="flex flex-col">
         {FIXTURE_ROWS.map((r) => (
@@ -287,8 +290,11 @@ export function ComparisonPickerBody({
       <div className="flex-1 min-h-0 overflow-y-auto">
         {recentSamples.length > 0 && (
           <section data-testid="comparison-picker-recents" className="border-b border-border/40 py-2">
-            <div className="px-4 text-xs font-medium text-fg-muted uppercase tracking-wide pb-1">
-              Recently used
+            <div className="px-4 pb-1 flex items-baseline gap-2">
+              <span className="text-xs font-semibold text-fg uppercase tracking-wide">
+                Recently used
+              </span>
+              <span className="text-xs text-fg-muted">{recentSamples.length}</span>
             </div>
             <ul role="listbox" aria-label="Recently used samples" className="flex flex-col">
               {recentSamples.map((r) => {
@@ -325,8 +331,11 @@ export function ComparisonPickerBody({
           </div>
         ) : (
           <section className="py-2">
-            <div className="px-4 text-xs font-medium text-fg-muted uppercase tracking-wide pb-1">
-              All samples
+            <div className="px-4 pb-1 flex items-baseline gap-2">
+              <span className="text-xs font-semibold text-fg uppercase tracking-wide">
+                All samples
+              </span>
+              <span className="text-xs text-fg-muted">{mainListRows.length}</span>
             </div>
             <ul role="listbox" aria-label="Samples" className="flex flex-col">
               {mainListRows.map((r) => {
