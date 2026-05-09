@@ -575,8 +575,9 @@ end
 
 Per-experiment listing per spec §REST API. Returns the comparisons that
 have at least one member whose exposure → sample → experiment chain
-points at `experiment_id`. Sorted by latest `user_actions.created_at` for
-that comparison (so newly-edited rows float to the top).
+points at `experiment_id`. Server ORDER BY is a best-effort
+recently-touched sort that the frontend re-sorts; see
+`_comparison_listing_rows`.
 """
 function comparisons_for_experiment(db::SQLite.DB, experiment_id::Integer)::Vector{Dict{Symbol, Any}}
     rows = Tables.rowtable(DBInterface.execute(db,
@@ -599,10 +600,10 @@ end
 """
     comparisons_listing(db) -> Vector{Dict}
 
-Global listing per `GET /api/comparisons`. Sorted by latest event time.
-Includes orphan comparisons (members with NULL exposure_id) and
-zero-member comparisons (which can exist transiently between create and
-member insert; defensive).
+Global listing per `GET /api/comparisons`. Server ORDER BY is best-effort
+(see `_comparison_listing_rows`). Includes orphan comparisons (members
+with NULL exposure_id) and zero-member comparisons (which can exist
+transiently between create and member insert; defensive).
 """
 function comparisons_listing(db::SQLite.DB)::Vector{Dict{Symbol, Any}}
     rows = Tables.rowtable(DBInterface.execute(db,
@@ -619,9 +620,16 @@ function comparisons_listing(db::SQLite.DB)::Vector{Dict{Symbol, Any}}
 end
 
 # Helper: shared listing-row projection. Returns the lightweight per-row
-# shape used by both `comparisons_listing` and `comparisons_for_experiment`
-# (no member nesting — listing rows are summaries; clients fetch
-# `GET /api/comparisons/:id` for details).
+# shape used by `comparisons_for_experiment`, `comparisons_listing`, and
+# `forks_of_comparison` (no member nesting — listing rows are summaries;
+# clients fetch `GET /api/comparisons/:id` for details).
+#
+# Note: `last_event_at` is a server sort key, not projected — the frontend
+# `ComparisonSidebar` re-sorts unpinned rows by `updated_at` and pinned
+# rows by the separate `comparison-pins` query. Mixed string format
+# (`MAX(ua.timestamp)` is space-sep, `c.updated_at` is T-sep from
+# `comparison_now_iso`) is therefore tolerated in the SQL ORDER BY; do not
+# add a caller that consumes that order without re-sorting (issue #76).
 function _comparison_listing_rows(rows)::Vector{Dict{Symbol, Any}}
     out = Vector{Dict{Symbol, Any}}(undef, length(rows))
     for (i, r) in enumerate(rows)

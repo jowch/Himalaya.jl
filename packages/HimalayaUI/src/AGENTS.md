@@ -22,6 +22,7 @@ Julia/Oxygen.jl REST backend, SQLite DB, event-log dispatcher, SSE multiplayer, 
 - SQL NULL → `missing` (not `nothing`): use `ismissing(row.field)`
 - `apply_event!(InTransaction(), ...)` inside `with_idempotency` — never the public `apply_event!(db, req; ...)` from within a queue mutation
 - `persist_analysis!` and `reingest!` are transactional — add new writes inside `_persist_analysis_inner!` / `_reingest_inner!`
+- New timestamps use `comparison_now_iso()` (T-separator, ms, Z); legacy `CURRENT_TIMESTAMP` (space-sep) survives in `user_actions.timestamp` and `comparison_pins.pinned_at`. Don't sort across the two formats as strings (issue #76).
 
 ## ANTI-PATTERNS
 - No route may INSERT/DELETE into `peak_curations` or `index_group_members` except through `apply_event!`
