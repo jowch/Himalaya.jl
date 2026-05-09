@@ -530,7 +530,10 @@ function register_resolve_routes!()
             end
         end
 
-        # Resolve experiment.
+        # Resolve experiment. NULL-name rows are treated as "no canonical
+        # slug" → 404. The frontend has no path to construct a URL for an
+        # experiment without a name; rejecting them here keeps the round
+        # trip well-formed.
         exp_row = nothing
         if _has_param(params, "experiment")
             name = params["experiment"]
@@ -548,6 +551,10 @@ function register_resolve_routes!()
             isempty(rows) && return _json(404, Dict(
                 :error => "not_found", :missing => "experiment",
                 :missing_value => string(id)))
+            ismissing(rows[1].name) && return _json(404, Dict(
+                :error => "not_found", :missing => "experiment",
+                :missing_value => string(id),
+                :reason => "experiment has no canonical name"))
             exp_row = (id=Int(rows[1].id), name=_safe_str(rows[1].name))
         else
             return _json(400, Dict(:error => "missing_experiment"))
@@ -2520,14 +2527,33 @@ export function useUrlFromState(): void {
   });
   const samples = activeExperimentId !== undefined ? samplesQuery.data : undefined;
 
+  // Track the previous resolved slug pair so we can detect SSE-driven
+  // disappearance (a slug went from defined → undefined because the
+  // entity was deleted from the cache). Per spec §4.3 + §7, that case
+  // should emit replace, not push (otherwise back-button stops at the
+  // broken URL).
+  const prevSlugsRef = useRef<{ exp: string | undefined; sample: string | undefined }>(
+    { exp: undefined, sample: undefined },
+  );
+
   useEffect(() => {
     const expName = nameForExperiment(experiments, activeExperimentId);
     const sampleName = nameForSample(samples, activeSampleId);
     const exposureName = filenameForExposure(qc, activeSampleId, activeExposureId);
     const current = location.pathname + location.search;
     const target = buildUrl(activePage, expName, sampleName, exposureName, current);
+
+    // SSE-driven invalidation detection: a previously-resolvable slug
+    // is now undefined (the row vanished from cache). Force replace.
+    const prev = prevSlugsRef.current;
+    const slugDisappeared =
+      (prev.exp !== undefined && expName === undefined && activeExperimentId !== undefined) ||
+      (prev.sample !== undefined && sampleName === undefined && activeSampleId !== undefined);
+    prevSlugsRef.current = { exp: expName, sample: sampleName };
+
     if (target === current) return;        // equality guard
-    const mode = consumeEmitMode();
+    const explicitMode = consumeEmitMode();
+    const mode = slugDisappeared ? "replace" : explicitMode;
     navigate(target, { replace: mode === "replace" });
   }, [
     activePage, activeExperimentId, activeSampleId, activeExposureId,
@@ -2536,6 +2562,12 @@ export function useUrlFromState(): void {
     navigate, qc,
   ]);
 }
+```
+
+Add `useRef` to the imports:
+
+```ts
+import { useEffect, useRef } from "react";
 ```
 
 - [ ] **Step 5: Wire `emitReplaceNext()` into state.ts call sites**
