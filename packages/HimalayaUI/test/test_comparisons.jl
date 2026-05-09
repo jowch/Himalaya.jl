@@ -1012,6 +1012,75 @@ end
         end
     end
 
+    @testset "POST /submit: empty analysis_inputs_hash in overwrite payload → is_stale" begin
+        # Issue #94 — server-side pin for the bug class fixed by #74. The
+        # frontend's ConflictModal::buildOverwritePayload prefetches cache
+        # entries so a cold cache no longer lands `analysis_inputs_hash = ""`
+        # on outgoing snapshots. This test fixes the *server-side*
+        # consequence so the prefetch fix stays load-bearing: if anyone
+        # ever relaxes `is_member_stale` to treat empty hash as "unknown,
+        # preserve previous", the frontend prefetch quietly stops mattering
+        # and bug #74 reappears without any frontend test catching it.
+        #
+        # Six-layer rule (docs/contract-testing.md): frontend layers (cache
+        # shape, onMutate payload) are already pinned in Vitest. This row
+        # covers the two missing server layers — submit-route response
+        # body and the view-fold staleness derivation on follow-up GET.
+        mktempdir() do tmp
+            ctx = _setup_analyzed_exposure(tmp)
+            with_test_server(ctx.db) do port, base
+                cur_hash = HimalayaUI.read_inputs_hash(ctx.db, ctx.exposure_id)
+                @test cur_hash isa AbstractString && !isempty(cur_hash)
+
+                # Create with a fresh snapshot so the initial state is not stale.
+                fresh_snap = Dict(:effective_peaks => [], :confirmed_index => nothing,
+                                  :analysis_inputs_hash => cur_hash)
+                r1 = HTTP.post("$base/api/comparisons";
+                    body = JSON3.write(Dict(:title => "T",
+                        :members => [Dict(:exposure_id => ctx.exposure_id,
+                                          :display_order => 0,
+                                          :snapshot => fresh_snap)])),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username"   => "alice"])
+                @test r1.status == 201
+                cmp = JSON3.read(String(r1.body))
+                @test cmp.members[1].is_stale == false
+                m_id = cmp.members[1].id
+
+                # Overwrite via /submit with analysis_inputs_hash = "". The
+                # canonical staleness predicate `snapshot_hash != current_hash`
+                # MUST treat "" as drift from the live, non-empty cur_hash.
+                empty_snap = Dict(:effective_peaks => [], :confirmed_index => nothing,
+                                  :analysis_inputs_hash => "")
+                r2 = HTTP.post("$base/api/comparisons/$(cmp.id)/submit";
+                    body = JSON3.write(Dict(:title => "T", :description => nothing,
+                        :expected_content_hash => cmp.content_hash,
+                        :members => [Dict(:id => m_id, :exposure_id => ctx.exposure_id,
+                                          :display_order => 0,
+                                          :snapshot => empty_snap)])),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username"   => "alice"])
+                @test r2.status == 200
+                submit_body = JSON3.read(String(r2.body))
+                @test submit_body.members[1].is_stale == true
+
+                # Follow-up GET pins the view-fold derivation specifically:
+                # the empty-hash snapshot was persisted and `is_member_stale`
+                # re-derives drift on every read.
+                r3 = HTTP.get("$base/api/comparisons/$(cmp.id)")
+                @test r3.status == 200
+                got = JSON3.read(String(r3.body))
+                @test got.members[1].is_stale == true
+                # Pin literal empty-string persistence — guards against a
+                # different failure mode than the staleness predicate above:
+                # a future serializer that drops empty fields, or a SQLite
+                # TEXT round-trip that coerces "" → NULL, would still leave
+                # is_stale == true (NULL ≠ live hash) but break this assert.
+                @test got.members[1].snapshot.analysis_inputs_hash == ""
+            end
+        end
+    end
+
     @testset "DELETE /:id: 403 for non-author, 200 + cascade for author" begin
         mktempdir() do tmp
             ctx = _setup_analyzed_exposure(tmp)
