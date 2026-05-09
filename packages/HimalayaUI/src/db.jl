@@ -313,6 +313,10 @@ function migrate_schema!(db::SQLite.DB)
     # was generalized may still have FK refs to `_migrate_old_*` on tables
     # like sample_messages/sample_tags/etc. Idempotent — no-op when clean.
     _fix_fk_references_after_autoincrement_migration!(db)
+    # Rename legacy samples(label, name) → samples(name, display_name).
+    # Must run after FK heal so the samples table shape is stable before
+    # column mutation. Idempotent — no-op on canonical-shape DBs.
+    migrate_samples_naming!(db)
     migrate_r2_widen_index_peaks_pk!(db)  # rebuild with widened PK first
     migrate_r2_split_peaks!(db)            # then repoint manual-peak refs
 
@@ -890,6 +894,63 @@ function _fix_fk_references_after_autoincrement_migration!(db::SQLite.DB)
             DBInterface.execute(db, "PRAGMA writable_schema = OFF")
         end
     end
+end
+
+"""
+    migrate_samples_naming!(db) :: Nothing
+
+Convert legacy `samples (label, name)` shape to `(name, display_name)`. Idempotent
+on the canonical shape (sentinel: `display_name` exists AND `label` does not).
+Atomic: all four ALTER/UPDATE/DROP statements + the duplicate-suffix pass +
+the UNIQUE INDEX creation + the idempotent_responses purge run inside one
+SQLite.transaction so a partial migration is impossible.
+
+Pre-existing `(experiment_id, name)` duplicates (the missing UNIQUE never
+blocked them) are renamed to `<name>-2`, `<name>-3`, … ordered by ascending id
+(oldest sample wins the bare name; deterministic across reruns).
+"""
+function migrate_samples_naming!(db::SQLite.DB)::Nothing
+    cols = Set(r.name for r in Tables.rowtable(DBInterface.execute(db,
+        "PRAGMA table_info('samples')")))
+    if "display_name" in cols && !("label" in cols)
+        return nothing  # already migrated
+    end
+    SQLite.transaction(db) do
+        if !("display_name" in cols)
+            try DBInterface.execute(db, "ALTER TABLE samples ADD COLUMN display_name TEXT")
+            catch e; occursin("duplicate column", sprint(showerror, e)) || rethrow(); end
+        end
+        if "label" in cols
+            DBInterface.execute(db, """UPDATE samples
+                                          SET display_name = name,
+                                              name         = COALESCE(NULLIF(label, ''), name)""")
+            try DBInterface.execute(db, "ALTER TABLE samples DROP COLUMN label")
+            catch e; occursin("no such column", sprint(showerror, e)) || rethrow(); end
+        end
+        # Duplicate suffix pass (oldest id keeps bare name).
+        dups = Tables.rowtable(DBInterface.execute(db, """
+            SELECT experiment_id, name FROM samples
+            GROUP BY experiment_id, name HAVING COUNT(*) > 1"""))
+        for d in dups
+            ids = Tables.rowtable(DBInterface.execute(db,
+                "SELECT id FROM samples WHERE experiment_id = ? AND name = ? ORDER BY id ASC",
+                [d.experiment_id, d.name]))
+            for (i, row) in enumerate(ids)
+                i == 1 && continue  # oldest keeps the bare name
+                new_name = "$(d.name)-$(i)"
+                @warn "Renamed duplicate sample" experiment_id=d.experiment_id old=d.name new=new_name id=row.id
+                DBInterface.execute(db, "UPDATE samples SET name = ? WHERE id = ?",
+                    [new_name, row.id])
+            end
+        end
+        DBInterface.execute(db,
+            "CREATE UNIQUE INDEX IF NOT EXISTS samples_unique_name ON samples(experiment_id, name)")
+        # Old idempotent_responses rows carry pre-rename payload shape; purge to
+        # prevent stale-shape replays on retried client_op_id keys post-deploy.
+        try DBInterface.execute(db, "DELETE FROM idempotent_responses")
+        catch e; occursin("no such table", lowercase(sprint(showerror, e))) || rethrow(); end
+    end
+    nothing
 end
 
 """

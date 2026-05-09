@@ -1158,3 +1158,50 @@ end
         @test m === nothing
     end
 end
+
+@testset "migrate_samples_naming! — legacy (label, name) → (name, display_name)" begin
+    mktempdir() do tmp
+        dbpath = joinpath(tmp, "h.db")
+        db     = SQLite.DB(dbpath)
+        # Synthetic LEGACY shape (pre-rename), bypassing open_db's migrations.
+        DBInterface.execute(db, "PRAGMA foreign_keys = ON")
+        DBInterface.execute(db, """CREATE TABLE experiments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, path TEXT,
+            data_dir TEXT, analysis_dir TEXT, manifest_path TEXT, config TEXT,
+            experiment_type TEXT, energy_kev REAL, flight_path_m REAL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP)""")
+        DBInterface.execute(db, """CREATE TABLE samples (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, experiment_id INTEGER REFERENCES experiments(id),
+            label TEXT, name TEXT, notes TEXT)""")
+        DBInterface.execute(db,
+            "INSERT INTO experiments (id, name, path) VALUES (?, ?, ?)", [1, "exp", "/tmp"])
+        DBInterface.execute(db,
+            "INSERT INTO samples (experiment_id, label, name, notes) VALUES (?, ?, ?, ?)",
+            [1, "JC001", "DOPC + chol", "first run"])
+        DBInterface.execute(db,
+            "INSERT INTO samples (experiment_id, label, name, notes) VALUES (?, ?, ?, ?)",
+            [1, "", "fallback only", nothing])
+        DBInterface.execute(db,
+            "INSERT INTO samples (experiment_id, label, name, notes) VALUES (?, ?, ?, ?)",
+            [1, "JC002", "second run", nothing])
+
+        HimalayaUI.migrate_samples_naming!(db)
+
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id, name, display_name, notes FROM samples ORDER BY id"))
+        @test rows[1].name == "JC001";          @test rows[1].display_name == "DOPC + chol"
+        @test rows[2].name == "fallback only";  @test rows[2].display_name == "fallback only"
+        @test rows[3].name == "JC002";          @test rows[3].display_name == "second run"
+
+        # Old `label` column is gone.
+        cols = [r.name for r in Tables.rowtable(DBInterface.execute(db,
+            "PRAGMA table_info('samples')"))]
+        @test "label" ∉ cols
+        @test "display_name" ∈ cols
+
+        # Unique index exists.
+        idxs = [r.name for r in Tables.rowtable(DBInterface.execute(db,
+            "PRAGMA index_list('samples')"))]
+        @test "samples_unique_name" ∈ idxs
+    end
+end
