@@ -26,8 +26,8 @@ delimiter      = "\t"      # column separator
 skip_rows      = 1         # number of leading rows to skip before parsing
 header_row     = 0         # 0 = no header (positional columns); N>0 = row N is the header
 sample_id      = 1         # column index (1-based) or header name (string) — same below
-label          = 2
-name           = 3
+name           = 2
+display_name   = 3
 filenames      = 9
 notes_sample   = 10
 notes_exposure = 11
