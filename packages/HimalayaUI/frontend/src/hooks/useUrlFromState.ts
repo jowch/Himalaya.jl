@@ -29,12 +29,10 @@ function nameForSample(list: Sample[] | undefined, sId: number | undefined):
   return found.name === null ? undefined : found.name;
 }
 
-function filenameForExposure(qc: ReturnType<typeof useQueryClient>,
-                              sId: number | undefined,
+function filenameForExposure(list: Exposure[] | undefined,
                               eId: number | undefined): string | undefined
 {
-  if (sId === undefined || eId === undefined) return undefined;
-  const list = qc.getQueryData<Exposure[]>(queryKeys.exposures(sId)) ?? [];
+  if (eId === undefined || list === undefined) return undefined;
   const found = list.find((e) => e.id === eId);
   if (found === undefined) return undefined;
   return found.filename === null ? undefined : found.filename;
@@ -92,6 +90,12 @@ export function useUrlFromState(): void {
     enabled: activeExperimentId !== undefined,
   });
   const samples = activeExperimentId !== undefined ? samplesQuery.data : undefined;
+  const exposuresQuery = useQuery({
+    queryKey: queryKeys.exposures(activeSampleId ?? 0),
+    queryFn: () => api.listExposures(activeSampleId as number),
+    enabled: activeSampleId !== undefined,
+  });
+  const exposures = activeSampleId !== undefined ? exposuresQuery.data : undefined;
 
   // Track the previous resolved slug pair so we can detect SSE-driven
   // disappearance (a slug went from defined → undefined because the
@@ -124,7 +128,7 @@ export function useUrlFromState(): void {
 
     const expName = nameForExperiment(experiments, activeExperimentId);
     const sampleName = nameForSample(samples, activeSampleId);
-    const exposureName = filenameForExposure(qc, activeSampleId, activeExposureId);
+    const exposureName = filenameForExposure(exposures, activeExposureId);
     const current = location.pathname + location.search;
     const target = buildUrl(activePage, expName, sampleName, exposureName, current);
 
@@ -144,7 +148,8 @@ export function useUrlFromState(): void {
     // /index and wipes the just-populated active ids.
     const cacheReady =
       (activeExperimentId === undefined || experiments !== undefined) &&
-      (activeSampleId === undefined || samples !== undefined);
+      (activeSampleId === undefined || samples !== undefined) &&
+      (activeExposureId === undefined || exposures !== undefined);
     if (!cacheReady) return;
 
     // Consume the emit-mode flag BEFORE the equality guard. Otherwise a
@@ -159,7 +164,7 @@ export function useUrlFromState(): void {
   }, [
     activePage, activeExperimentId, activeSampleId, activeExposureId,
     resolving, staleUrlContext,
-    experiments, samples,
+    experiments, samples, exposures,
     location.pathname, location.search,
     navigate, qc,
   ]);
