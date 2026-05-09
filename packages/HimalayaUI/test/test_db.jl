@@ -1193,6 +1193,27 @@ end
     end
 end
 
+@testset "migrate_samples_naming! — idempotent on second run" begin
+    mktempdir() do tmp
+        db = SQLite.DB(joinpath(tmp, "h.db"))
+        # Build canonical post-migration shape directly.
+        DBInterface.execute(db, """CREATE TABLE samples (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, experiment_id INTEGER,
+            name TEXT, display_name TEXT, notes TEXT)""")
+        DBInterface.execute(db,
+            "CREATE UNIQUE INDEX samples_unique_name ON samples(experiment_id, name)")
+        DBInterface.execute(db,
+            "INSERT INTO samples (id, experiment_id, name, display_name) VALUES (1, 1, 'JC001', 'DOPC')")
+        # Migration should be a no-op (sentinel triggers).
+        HimalayaUI.migrate_samples_naming!(db)
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id, name, display_name FROM samples"))
+        @test length(rows) == 1
+        @test rows[1].name == "JC001"
+        @test rows[1].display_name == "DOPC"
+    end
+end
+
 @testset "migrate_samples_naming! — legacy (label, name) → (name, display_name)" begin
     mktempdir() do tmp
         dbpath = joinpath(tmp, "h.db")
