@@ -4,10 +4,11 @@ import { BrowserRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { useStateFromUrl } from "../src/hooks/useStateFromUrl";
+import { useUrlFromState } from "../src/hooks/useUrlFromState";
 import { useAppState } from "../src/state";
 import type { ResolveSuccess, ResolveError404 } from "../src/api";
 import { queryKeys } from "../src/queries";
-import { _resetEmitMode } from "../src/lib/url/emitMode";
+import { _resetEmitMode, consumeEmitMode } from "../src/lib/url/emitMode";
 
 // BrowserRouter reads from `window.history` / `window.location`, which is
 // what the tests manipulate via `history.replaceState`. A QueryClient
@@ -250,6 +251,83 @@ describe("useStateFromUrl — slug-equality fast path", () => {
     await waitFor(() => {
       expect(fetchSpy).toHaveBeenCalledOnce();
     });
+  });
+
+  it("Index URL with stale activeExposureId in state → fast-path clears it (matches slow path)", () => {
+    // Inspect→Index transition: state still carries activeExposureId from
+    // the previous Inspect page. Slow path's setResolveSuccess clears it
+    // by writing exposureId:undefined for Index URLs; the fast path must
+    // do the same so consumers (PlotCard etc.) don't see a stale exposure
+    // selection bleed across the page swap.
+    history.replaceState(null, "", "/index/lipid/JC001");
+    useAppState.setState({
+      activePage: "inspect", activeExperimentId: 17, activeSampleId: 42, activeExposureId: 99,
+    });
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    seedExperimentSample(qc);
+    const fetchSpy = vi.spyOn(global, "fetch");
+    renderHook(() => useStateFromUrl(), { wrapper: makeFastPathWrapper(qc) });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(useAppState.getState().activePage).toBe("index");
+    expect(useAppState.getState().activeExposureId).toBeUndefined();
+  });
+
+  it("Inspect URL with mismatched exposure filename → falls through to fetch", async () => {
+    // Active exposure id 99 is in cache as "img001.tif" but URL asks for
+    // a different filename. Cache says "the activeId would slug to X but
+    // URL says Y" — must defer to /api/resolve to pick up the right id.
+    history.replaceState(null, "", "/inspect/lipid/JC001?exposure=other.tif");
+    useAppState.setState({
+      activePage: "inspect", activeExperimentId: 17, activeSampleId: 42, activeExposureId: 99,
+    });
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    seedExperimentSample(qc);
+    seedExposure(qc);  // exposure id=99, filename="img001.tif"
+    const fetchSpy = vi.spyOn(global, "fetch").mockImplementation(() =>
+      ok({
+        experiment_id: 17, experiment_name: "lipid",
+        sample_id: 42, sample_name: "JC001",
+        exposure_id: 100, exposure_filename: "other.tif",
+      }),
+    );
+    renderHook(() => useStateFromUrl(), { wrapper: makeFastPathWrapper(qc) });
+    await waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledOnce();
+    });
+  });
+
+  it("composed with useUrlFromState: emitReplaceNext armed by fast path is consumed harmlessly", () => {
+    // The fast path calls setResolveSuccess which arms emitReplaceNext().
+    // Safe because location.pathname changing is what triggered useStateFromUrl
+    // in the first place — useUrlFromState's effect (also subscribed to
+    // location) fires in the same render cycle, calls consumeEmitMode()
+    // BEFORE its `target === current` guard, and bails. Net: the flag is
+    // consumed without affecting any URL emit. This test pins that contract
+    // — break consumeEmitMode's ordering past the equality guard, or drop
+    // location from useUrlFromState's deps, and this test catches it (a
+    // later user-driven push would silently become replace).
+    history.replaceState(null, "", "/index/lipid/JC001");
+    useAppState.setState({
+      activePage: "index", activeExperimentId: 17, activeSampleId: 42, activeExposureId: undefined,
+    });
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    seedExperimentSample(qc);
+    const fetchSpy = vi.spyOn(global, "fetch");
+    renderHook(
+      () => { useStateFromUrl(); useUrlFromState(); },
+      { wrapper: makeFastPathWrapper(qc) },
+    );
+    // No /api/resolve call proves the fast path actually triggered. The
+    // other queries useUrlFromState mounts (experiments, samples) refetch
+    // on mount per TanStack defaults — that's unrelated to this contract.
+    const resolveCalls = fetchSpy.mock.calls.filter((c) =>
+      String(c[0]).startsWith("/api/resolve"),
+    );
+    expect(resolveCalls).toHaveLength(0);
+    // After both hooks have flushed, the next consumer of consumeEmitMode
+    // should see the default ("push") — proof useUrlFromState already
+    // drained the "replace" the fast path armed.
+    expect(consumeEmitMode()).toBe("push");
   });
 
   it("activeIds undefined despite URL slugs (eg. fresh tab on deep link) → still fetches", async () => {
