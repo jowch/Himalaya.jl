@@ -1,7 +1,7 @@
 # Permalink URLs — Design Spec
 
 **Issue:** #89 (depends on #88, which has landed at `8ac2bf6`)
-**Status:** Revised 2026-05-09 (second pass against `himalaya-reviewer`, `frontend-reviewer`, `queue-reviewer`)
+**Status:** Amended 2026-05-09 to integrate with the existing `react-router-dom` setup discovered during plan review. The original design said "no router library"; in fact `BrowserRouter` is already mounted at `main.tsx` and Compare pages use `<Route>` + `useParams` already. The amendment below preserves the original intent (URL ↔ Zustand sync) while routing through react-router primitives so the two systems coexist coherently.
 **Worktree:** `.claude/worktrees/permalinks` (branch `permalinks`)
 
 ## 1. Problem
@@ -126,7 +126,13 @@ end
 
 ## 4. Frontend URL-sync layer
 
-No router library. Two hooks plus a pure parser, mounted at `App.tsx` under the `QueryClient`. Total surface: ~150 lines across the parser + the two hooks + the page component.
+**Router integration.** `react-router-dom` v6 is already in use — `BrowserRouter` mounts at `main.tsx`; `<Routes>` lives in `AppShell.tsx` for Compare URLs (`/experiments/:eid/compare/...` and `/compare/all/...`); `TabRocker` uses `useNavigate`. The new permalink hooks integrate with this rather than fighting it:
+
+- `useStateFromUrl` reads the URL via `useLocation()` (subscribes to react-router's location, so `popstate` and `useNavigate` both flow through) and dispatches Zustand setters.
+- `useUrlFromState` writes the URL via `useNavigate()` with `{ replace: true | false }`. No raw `history.pushState`.
+- New `<Route>` declarations cover the index/inspect URL shapes; the existing `<Route path="*" element={<ZustandShellPage />} />` fallback becomes the explicit `kind: "stale"` handler.
+
+Total surface: ~150 lines across the parser + the two hooks + the page component + ~10 new `<Route>` lines in AppShell.
 
 ### 4.1 `parseLocation(pathname, search) → ParsedUrl`
 
@@ -159,7 +165,7 @@ The 200 / 404 response shapes in §3.1 use `field?: T` syntax in the on-the-wire
 
 ### 4.2 `useStateFromUrl()`
 
-Mounted in `App.tsx`. On mount and on every `popstate`:
+Mounted in `App.tsx` (or AppShell — anywhere under `BrowserRouter`). Reads `useLocation()` from react-router so it reacts to both `popstate` and `useNavigate`:
 
 1. `parseLocation(location.pathname, location.search)`.
 2. If `kind: "root"` → run the §5 redirect.
@@ -188,9 +194,9 @@ applyResolveResult(data);
 
 ### 4.3 `useUrlFromState()`
 
-Mounted in `App.tsx`. Subscribes via TanStack `useQuery`s to `experiments` and to `samples` for the active experiment, so name-by-id lookups happen against live cache state. Also subscribes to the relevant Zustand selectors via `useAppState`.
+Mounted in `App.tsx`. Subscribes via TanStack `useQuery`s to `experiments` and to `samples` for the active experiment, so name-by-id lookups happen against live cache state — and so SSE-driven cache rewrites trigger a re-render of this hook (§7 invalidation). Also subscribes to the relevant Zustand selectors via `useAppState`.
 
-On any change, computes the target URL and emits `pushState` or `replaceState` per the policy:
+On any change, computes the target URL and emits `navigate(target, { replace })` per the policy:
 
 | Trigger | Push or replace |
 |---|---|
