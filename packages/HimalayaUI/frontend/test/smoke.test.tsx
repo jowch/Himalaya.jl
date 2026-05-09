@@ -18,7 +18,9 @@ const renderApp = () =>
 function mockFetch(map: Record<string, unknown>): void {
   vi.spyOn(global, "fetch").mockImplementation(async (input) => {
     const url = typeof input === "string" ? input : (input as Request).url;
-    const key = Object.keys(map).find((k) => url.endsWith(k));
+    // Strip query string so map keys can match by pathname alone.
+    const path = url.split("?")[0] ?? url;
+    const key = Object.keys(map).find((k) => path.endsWith(k));
     if (!key) return new Response("not found", { status: 404 });
     return new Response(JSON.stringify(map[key]), {
       status: 200, headers: { "Content-Type": "application/json" },
@@ -57,18 +59,35 @@ describe("App smoke", () => {
       ],
       "/api/samples/10/exposures": [],
       "/api/samples/10/messages": [],
+      // Cold-mount root redirect path: useStateFromUrl falls through to
+      // resolve-by-id when the TanStack cache is cold (test env never
+      // hydrates synchronously). Without this, the redirect 404s and
+      // /index wipes the seeded activeExperimentId / activeSampleId.
+      "/api/resolve": {
+        experiment_id: 1, experiment_name: "demo",
+        sample_id: 10, sample_name: "s1",
+        exposure_id: undefined, exposure_filename: undefined,
+      },
     });
   });
 
   it("renders the three-card index page when user + scope are set", async () => {
     renderApp();
-    // Three-card grid + title button should all appear
-    expect(await screen.findByTestId("workspace-grid")).toBeInTheDocument();
+    // Three-card grid + title button should all appear once the URL→state
+    // resolve finishes. Cold-mount path goes through ResolvingFallback
+    // briefly because the TanStack cache is empty when useStateFromUrl
+    // first fires; we wait for the resolve to land before asserting.
+    await waitFor(() =>
+      expect(screen.getByTestId("workspace-grid")).toBeInTheDocument(),
+      { timeout: 3000 },
+    );
     expect(screen.getByTestId("plot-title")).toBeInTheDocument();
     expect(screen.getByTestId("tab-rocker")).toBeInTheDocument();
     // Title should include the experiment and sample name once the queries resolve
-    await waitFor(() => expect(screen.getByText(/demo/)).toBeInTheDocument());
-    await waitFor(() => expect(screen.getByText("s1")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/demo/)).toBeInTheDocument(),
+      { timeout: 3000 });
+    await waitFor(() => expect(screen.getByText("s1")).toBeInTheDocument(),
+      { timeout: 3000 });
   });
 
   it("shows the onboarding overlay when no user is set", () => {
