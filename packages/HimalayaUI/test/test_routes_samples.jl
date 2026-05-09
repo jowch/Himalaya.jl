@@ -53,6 +53,32 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
     end
 end
 
+@testset "PATCH /api/samples/:id rejects name (now immutable), accepts display_name" begin
+    db = SQLite.DB()
+    HimalayaUI.create_schema!(db)
+    exp_id = HimalayaUI.init_experiment!(db; path="/t3", data_dir="/t3/d",
+                                             analysis_dir="/t3/a")
+    sid = HimalayaUI.create_sample!(db; experiment_id=exp_id, label="D1", name="UX-immut")
+
+    with_test_server(db) do port, base
+        # :name is no longer in the allowlist — should return 400.
+        r = HTTP.request("PATCH", "$base/api/samples/$sid",
+            ["Content-Type" => "application/json",
+             "X-Username"   => "alice"],
+            JSON3.write(Dict(:name => "renamed")); status_exception=false)
+        @test r.status == 400
+
+        # :display_name is accepted; leading/trailing whitespace is trimmed.
+        r2 = HTTP.request("PATCH", "$base/api/samples/$sid",
+            ["Content-Type" => "application/json",
+             "X-Username"   => "alice"],
+            JSON3.write(Dict(:display_name => "  spaced  ")))
+        @test r2.status == 200
+        body = JSON3.read(String(r2.body))
+        @test body[:display_name] == "spaced"
+    end
+end
+
 @testset "POST /api/samples/:id/tags is idempotent under retry" begin
     db = SQLite.DB()
     HimalayaUI.create_schema!(db)
