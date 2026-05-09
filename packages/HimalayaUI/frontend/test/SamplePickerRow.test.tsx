@@ -104,6 +104,21 @@ test("caret toggles override list visibility", () => {
   expect(screen.getByText("f2.dat")).toBeInTheDocument();
 });
 
+// Regression for #85.3: the override-list filename span carries `title=` so
+// truncated names remain readable on hover. Asserting the attribute (not the
+// Tailwind classes) survives styling refactors.
+test("override-list filename span exposes the full filename via title=", () => {
+  render(
+    <SamplePickerRow
+      row={baseRow} checked={false} onCheckedChange={() => {}}
+      overrideExposureId={undefined} onOverrideChange={() => {}}
+    />,
+  );
+  fireEvent.click(screen.getByTestId("sample-picker-row-caret"));
+  expect(screen.getByText("f1.dat")).toHaveAttribute("title", "f1.dat");
+  expect(screen.getByText("f2.dat")).toHaveAttribute("title", "f2.dat");
+});
+
 test("zero-exposure sample renders disabled, no checkbox", () => {
   const empty: PickerSampleRow = {
     ...baseRow, indexing_exposure_id: null, all_exposures: [],
