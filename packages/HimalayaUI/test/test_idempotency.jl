@@ -172,7 +172,7 @@ end
         DBInterface.execute(db,
             "INSERT INTO experiments (name, path, data_dir, analysis_dir) VALUES ('e', '/p', '/d', '/a')")
         DBInterface.execute(db,
-            "INSERT INTO samples (experiment_id, label) VALUES (1, 'A1')")
+            "INSERT INTO samples (experiment_id, name) VALUES (1, 'A1')")
         DBInterface.execute(db,
             "INSERT INTO exposures (sample_id, filename) VALUES (1, 'f')")
 
@@ -216,7 +216,7 @@ end
         DBInterface.execute(db,
             "INSERT INTO experiments (name, path, data_dir, analysis_dir) VALUES ('e', '/p', '/d', '/a')")
         DBInterface.execute(db,
-            "INSERT INTO samples (experiment_id, label) VALUES (1, 'A1')")
+            "INSERT INTO samples (experiment_id, name) VALUES (1, 'A1')")
         res = DBInterface.execute(db,
             "INSERT INTO exposures (sample_id, filename) VALUES (1, 'f')")
         exp_id = Int(DBInterface.lastrowid(res))
@@ -251,7 +251,7 @@ end
         DBInterface.execute(db,
             "INSERT INTO experiments (name, path, data_dir, analysis_dir) VALUES ('e', '/p', '/d', '/a')")
         DBInterface.execute(db,
-            "INSERT INTO samples (experiment_id, label) VALUES (1, 'A1')")
+            "INSERT INTO samples (experiment_id, name) VALUES (1, 'A1')")
         res = DBInterface.execute(db,
             "INSERT INTO exposures (sample_id, filename) VALUES (1, 'f')")
         exp_id = Int(DBInterface.lastrowid(res))
@@ -342,7 +342,7 @@ end
         DBInterface.execute(db,
             "INSERT INTO experiments (name, path, data_dir, analysis_dir) VALUES ('e', '/p', '/d', '/a')")
         DBInterface.execute(db,
-            "INSERT INTO samples (experiment_id, label) VALUES (1, 'A1')")
+            "INSERT INTO samples (experiment_id, name) VALUES (1, 'A1')")
         res = DBInterface.execute(db,
             "INSERT INTO exposures (sample_id, filename) VALUES (1, 'f')")
         exp_id = Int(DBInterface.lastrowid(res))

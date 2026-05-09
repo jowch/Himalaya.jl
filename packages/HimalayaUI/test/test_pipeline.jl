@@ -32,7 +32,7 @@ using SQLite
     create_schema!(db)
     exp_id  = create_experiment!(db; path="/tmp", data_dir="/tmp/data",
                                      analysis_dir="/tmp/analysis")
-    s_id    = create_sample!(db; experiment_id=exp_id, label="D1", name="UX1")
+    s_id    = create_sample!(db; experiment_id=exp_id, name="D1", display_name="UX1")
     e_id    = create_exposure!(db; sample_id=s_id, filename="example_tot.dat")
 
     dat_path = joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat")
@@ -101,7 +101,7 @@ using Tables
     create_schema!(db)
     exp_id  = create_experiment!(db; path="/tmp", data_dir="/tmp/data",
                                      analysis_dir="/tmp/analysis")
-    s_id    = create_sample!(db; experiment_id=exp_id, label="D1", name="UX1")
+    s_id    = create_sample!(db; experiment_id=exp_id, name="D1", display_name="UX1")
     e_id    = create_exposure!(db; sample_id=s_id, filename="example_tot.dat")
 
     dat_path = joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat")
@@ -144,7 +144,7 @@ end
     exp_id = init_experiment!(db; path=tmp,
                                    data_dir=joinpath(tmp, "data"),
                                    analysis_dir=analysis_dir)
-    s_id   = create_sample!(db; experiment_id=exp_id, label="D1", name="UX1")
+    s_id   = create_sample!(db; experiment_id=exp_id, name="D1", display_name="UX1")
     e_id   = create_exposure!(db; sample_id=s_id, filename="example_tot")
 
     analyze_exposure!(db, e_id, analysis_dir)
@@ -202,7 +202,7 @@ end
     exp_id = init_experiment!(db; path=tmp,
                                    data_dir=joinpath(tmp, "data"),
                                    analysis_dir=analysis_dir)
-    s_id   = create_sample!(db; experiment_id=exp_id, label="D1", name="UX1")
+    s_id   = create_sample!(db; experiment_id=exp_id, name="D1", display_name="UX1")
     e_id   = create_exposure!(db; sample_id=s_id, filename="example_tot")
 
     analyze_exposure!(db, e_id, analysis_dir)
@@ -227,7 +227,7 @@ end
     exp_id = init_experiment!(db; path=tmp,
                                    data_dir=joinpath(tmp, "data"),
                                    analysis_dir=analysis_dir)
-    s_id   = create_sample!(db; experiment_id=exp_id, label="D1", name="UX1")
+    s_id   = create_sample!(db; experiment_id=exp_id, name="D1", display_name="UX1")
     e_id   = create_exposure!(db; sample_id=s_id, filename="example_tot")
 
     analyze_exposure!(db, e_id, analysis_dir)
@@ -267,7 +267,7 @@ end
     exp_id = init_experiment!(db; path=tmp,
                                    data_dir=joinpath(tmp, "data"),
                                    analysis_dir=analysis_dir)
-    s_id   = create_sample!(db; experiment_id=exp_id, label="D1", name="UX1")
+    s_id   = create_sample!(db; experiment_id=exp_id, name="D1", display_name="UX1")
     e_id   = create_exposure!(db; sample_id=s_id, filename="example_tot")
 
     analyze_exposure!(db, e_id, analysis_dir)
@@ -297,7 +297,7 @@ end
     exp_id = init_experiment!(db; path=tmp,
                                    data_dir=joinpath(tmp, "data"),
                                    analysis_dir=analysis_dir)
-    s_id   = create_sample!(db; experiment_id=exp_id, label="D1", name="UX1")
+    s_id   = create_sample!(db; experiment_id=exp_id, name="D1", display_name="UX1")
     e_id   = create_exposure!(db; sample_id=s_id, filename="example_tot")
 
     analyze_exposure!(db, e_id, analysis_dir)
@@ -421,8 +421,8 @@ end
         skip_rows = 1
         header_row = 0
         sample_id = 1
-        label = 2
-        name = 3
+        name = 2
+        display_name = 3
         filenames = 9
         notes_sample = 10
         notes_exposure = 11
@@ -485,8 +485,8 @@ end
         skip_rows = 1
         header_row = 0
         sample_id = 1
-        label = 2
-        name = 3
+        name = 2
+        display_name = 3
         filenames = 9
         notes_sample = 10
         notes_exposure = 11
@@ -584,8 +584,8 @@ end
         skip_rows = 1
         header_row = 0
         sample_id = 1
-        label = 2
-        name = 3
+        name = 2
+        display_name = 3
         filenames = 9
         notes_sample = 10
         notes_exposure = 11
@@ -639,8 +639,8 @@ end
         skip_rows = 1
         header_row = 0
         sample_id = 1
-        label = 2
-        name = 3
+        name = 2
+        display_name = 3
         filenames = 9
         notes_sample = 10
         notes_exposure = 11
@@ -716,8 +716,8 @@ let
         skip_rows = 1
         header_row = 0
         sample_id = 1
-        label = 2
-        name = 3
+        name = 2
+        display_name = 3
         filenames = 9
         notes_sample = 10
         notes_exposure = 11
@@ -830,7 +830,7 @@ end
     exp_id = init_experiment!(db; path=tmp,
                                    data_dir=joinpath(tmp, "data"),
                                    analysis_dir=analysis_dir)
-    s_id = create_sample!(db; experiment_id=exp_id, label="D1", name="UX1")
+    s_id = create_sample!(db; experiment_id=exp_id, name="D1", display_name="UX1")
     e_id = create_exposure!(db; sample_id=s_id, filename="example_tot")
 
     analyze_exposure!(db, e_id, analysis_dir)
@@ -859,7 +859,7 @@ end
 
     db = open_db(joinpath(tmp, "himalaya.db"))
     exp_id = init_experiment!(db; path=tmp, data_dir=joinpath(tmp, "data"), analysis_dir=analysis_dir)
-    s_id = create_sample!(db; experiment_id=exp_id, label="D1", name="UX1")
+    s_id = create_sample!(db; experiment_id=exp_id, name="D1", display_name="UX1")
     e_id = create_exposure!(db; sample_id=s_id, filename="example_tot")
 
     analyze_exposure!(db, e_id, analysis_dir)
@@ -898,7 +898,7 @@ end
     exp_id = init_experiment!(db; path=tmp,
                                    data_dir=joinpath(tmp, "data"),
                                    analysis_dir=analysis_dir)
-    s_id   = create_sample!(db; experiment_id=exp_id, label="D1", name="UX1")
+    s_id   = create_sample!(db; experiment_id=exp_id, name="D1", display_name="UX1")
     e_id   = create_exposure!(db; sample_id=s_id, filename="example_tot")
 
     # First run populates auto_peaks + trace_hash + analysis hash.
@@ -952,7 +952,7 @@ end
 
     db = open_db(joinpath(tmp, "himalaya.db"))
     exp_id = init_experiment!(db; path=tmp, data_dir=joinpath(tmp, "data"), analysis_dir=analysis_dir)
-    s_id = create_sample!(db; experiment_id=exp_id, label="D1", name="UX1")
+    s_id = create_sample!(db; experiment_id=exp_id, name="D1", display_name="UX1")
     e_id = create_exposure!(db; sample_id=s_id, filename="example_tot")
 
     analyze_exposure!(db, e_id, analysis_dir)
@@ -1002,7 +1002,7 @@ end
     db = open_db(joinpath(tmp, "himalaya.db"))
     exp_id = init_experiment!(db; path=tmp, data_dir=joinpath(tmp, "data"),
                                    analysis_dir=analysis_dir)
-    s_id = create_sample!(db; experiment_id=exp_id, label="D1", name="UX1")
+    s_id = create_sample!(db; experiment_id=exp_id, name="D1", display_name="UX1")
     e_id = create_exposure!(db; sample_id=s_id, filename="example_tot")
 
     # Layer 1: forward correlation after a slow-path run.
@@ -1054,7 +1054,7 @@ end
 
     db = open_db(joinpath(tmp, "himalaya.db"))
     exp_id = init_experiment!(db; path=tmp, data_dir=joinpath(tmp, "data"), analysis_dir=analysis_dir)
-    s_id = create_sample!(db; experiment_id=exp_id, label="D1", name="UX1")
+    s_id = create_sample!(db; experiment_id=exp_id, name="D1", display_name="UX1")
     e_id = create_exposure!(db; sample_id=s_id, filename="example_tot")
 
     # First run: both skip flags must be false (nothing cached yet).
@@ -1089,7 +1089,7 @@ end
     db = open_db(joinpath(tmp, "himalaya.db"))
     HimalayaUI.bind_db!(db)
     exp_id = init_experiment!(db; path=tmp, data_dir=joinpath(tmp, "data"), analysis_dir=analysis_dir)
-    s_id = create_sample!(db; experiment_id=exp_id, label="D1", name="UX1")
+    s_id = create_sample!(db; experiment_id=exp_id, name="D1", display_name="UX1")
     e_id = create_exposure!(db; sample_id=s_id, filename="example_tot")
 
     # Hook a fake SSE subscriber to count frames.

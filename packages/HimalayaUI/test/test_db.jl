@@ -55,12 +55,12 @@ end
     @test exp.name == "TestRun"
     @test exp.path == "/data/exp1"
 
-    s_id = create_sample!(db; experiment_id = exp_id, label = "D1", name = "UX1")
+    s_id = create_sample!(db; experiment_id = exp_id, name = "D1", display_name = "UX1")
     @test s_id == 1
 
     samples = get_samples(db, exp_id)
     @test length(samples) == 1
-    @test first(samples).label == "D1"
+    @test first(samples).name == "D1"
 
     e_id = create_exposure!(db; sample_id = s_id, filename = "JC001", kind = "file")
     @test e_id == 1
@@ -710,7 +710,7 @@ end
         DBInterface.execute(db,
             "INSERT INTO experiments (name, path, data_dir, analysis_dir) VALUES ('e', '/p', '/d', '/a')")
         DBInterface.execute(db,
-            "INSERT INTO samples (experiment_id, label) VALUES (1, 'A1')")
+            "INSERT INTO samples (experiment_id, name) VALUES (1, 'A1')")
         res = DBInterface.execute(db,
             "INSERT INTO exposures (sample_id, filename) VALUES (1, 'f')")
         exp_id = Int(DBInterface.lastrowid(res))

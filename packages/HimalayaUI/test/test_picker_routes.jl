@@ -75,8 +75,8 @@ using HimalayaUI
             # Seed two more samples so we cover multi-sample aggregation, and
             # populate sample_tags rows. Critical: two tags share the same VALUE
             # but different KEYS — both must surface as separate filter options.
-            s2 = HimalayaUI.create_sample!(ctx.db; experiment_id=ctx.experiment_id, label="D2")
-            s3 = HimalayaUI.create_sample!(ctx.db; experiment_id=ctx.experiment_id, label="D3")
+            s2 = HimalayaUI.create_sample!(ctx.db; experiment_id=ctx.experiment_id, name="D2")
+            s3 = HimalayaUI.create_sample!(ctx.db; experiment_id=ctx.experiment_id, name="D3")
             DBInterface.execute(ctx.db,
                 "INSERT INTO sample_tags (sample_id, key, value, source) VALUES (?, ?, ?, 'manual')",
                 [ctx.sample_id, "lipid", "DOPC"])
@@ -115,7 +115,7 @@ using HimalayaUI
             # leak into the first experiment's sample-tags response.
             e2_id = HimalayaUI.init_experiment!(ctx.db; path=tmp * "/e2",
                 data_dir=tmp * "/e2/data", analysis_dir=tmp * "/e2/analysis")
-            s_other = HimalayaUI.create_sample!(ctx.db; experiment_id=e2_id, label="OTHER")
+            s_other = HimalayaUI.create_sample!(ctx.db; experiment_id=e2_id, name="OTHER")
             DBInterface.execute(ctx.db,
                 "INSERT INTO sample_tags (sample_id, key, value, source) VALUES (?, ?, ?, 'manual')",
                 [s_other, "leaky", "value"])
