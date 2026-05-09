@@ -2,12 +2,9 @@
  * ExposureListRow (Plan §Phase 5, Task 5.1).
  *
  * Single row representing one exposure in the context of its parent sample.
- * Used by the picker modal (`ComparisonPicker`) and reserved for any future
- * Inspect surfaces that need a list-style exposure presentation. The Inspect
- * page itself currently uses `ThumbnailGallery` (image filmstrip) — it does
- * NOT consume this component yet because its current layout is image-driven,
- * not list-driven. The component is built standalone so the picker can use
- * it without forcing a presentation rewrite on Inspect.
+ * Currently has no production callers — the picker collapsed to one row per
+ * sample (`SamplePickerRow`) and Inspect uses `ThumbnailGallery`. Kept for
+ * the moment as a list-style exposure-row primitive should one be needed.
  *
  * Action surface:
  *   - `onClick(exposureId)` — fires on row click. Suppressed when `locked`.

@@ -311,30 +311,13 @@ test("#77 cold-load with no active experiment redirects to /compare/all", async 
   await expect(page.getByTestId("comparison-sidebar")).toBeVisible();
 });
 
-// ─── #78: edit-mode right-slot hint conditional ────────────────────────────
-
-test("#78 edit-mode right-slot hint hides when draft has members", async ({ page }) => {
-  const state = makeState();
-  await mockApi(page, state);
-  await seedState(page);
-  await page.goto("/experiments/1/compare/new");
-
-  await expect(page.getByTestId("compare-page-edit")).toBeVisible();
-  // Empty draft → hint visible.
-  await expect(page.getByTestId("compare-edit-right-hint")).toBeVisible();
-
-  // Add a member via the picker.
-  await page.getByTestId("compare-edit-add-traces").click();
-  await expect(page.getByTestId("comparison-picker")).toBeVisible();
-  const rows = page.getByTestId("picker-row");
-  await expect(rows.first()).toBeVisible();
-  await rows.first().locator('input[type="checkbox"]').check();
-  await page.getByTestId("comparison-picker-add").click();
-  await expect(page.getByTestId("comparison-picker")).not.toBeVisible();
-
-  // Hint must now be gone.
-  await expect(page.getByTestId("compare-edit-right-hint")).toHaveCount(0);
-});
+// #78's "edit-mode right-slot hint" is gone — PR #96 replaced the
+// conditional hint card with the always-mounted ComparisonPickerPanel,
+// so the test that asserted "hint hides when draft has members" no
+// longer corresponds to live behavior. The inline immediate-commit flow
+// it would update to drive is already covered by the happy-path test
+// in `compare.spec.ts` (drives `comparison-picker-panel` + `picker-row`
+// checkboxes). Removed rather than ported.
 
 // ─── #75: ForksPopover dismissal affordances ───────────────────────────────
 

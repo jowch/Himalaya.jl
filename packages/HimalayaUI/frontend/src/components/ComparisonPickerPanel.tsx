@@ -71,8 +71,6 @@ export function ComparisonPickerPanel({
       </div>
       <ComparisonPickerBody
         experimentId={experimentId}
-        picks={[]}                        // immediate mode: ignored
-        onPicksChange={() => {}}          // immediate mode: ignored
         onPick={handlePick}
         alreadyAddedExposureIds={alreadyAddedExposureIds}
         {...(searchInputRef ? { searchInputRef } : {})}
