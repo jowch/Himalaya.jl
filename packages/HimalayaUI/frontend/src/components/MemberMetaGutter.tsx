@@ -21,7 +21,7 @@
 import { useCallback, useRef, useState } from "react";
 import type { ComparisonMember } from "../api";
 import { useAppState } from "../state";
-import { computeYBands } from "./MultiTracePlot";
+import { computeYBands } from "../lib/comparison/yBands";
 import { MemberMetaRow } from "./MemberMetaRow";
 import { BandResizeDivider } from "./BandResizeDivider";
 

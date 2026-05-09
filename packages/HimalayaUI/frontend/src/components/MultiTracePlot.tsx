@@ -35,6 +35,7 @@ import { invertQ, applyQ } from "../lib/plot/invertQ";
 import { formatAxis } from "../lib/plot/formatAxis";
 import { prettifyUnits } from "../lib/units";
 import type { GroupingMode } from "../lib/comparison/coloring";
+import { computeYBands } from "../lib/comparison/yBands";
 
 /**
  * Pixel hit radius for peak click hit-testing in edit mode (Phase 8.1).
@@ -120,35 +121,6 @@ const MARGIN_TOP    = 8;
 const MARGIN_BOTTOM = 32;
 
 type Scale = { invert?: (v: number) => number; apply?: (v: number) => number } | undefined;
-
-/**
- * Compute the per-member y-band envelopes (top, bottom in pixels) given
- * the member band ratios and the panel pixel height. Pure function; the
- * order of `bandRatios` matches the caller's render order (display_order).
- */
-export function computeYBands(
-  bandRatios: number[],
-  panelHeight: number,
-): Array<[number, number]> {
-  if (bandRatios.length === 0) return [];
-  const total = bandRatios.reduce((s, r) => s + Math.max(0, r), 0);
-  if (total <= 0) {
-    // Degenerate: every ratio is zero. Fall back to equal slicing so the
-    // plot still has well-defined bands.
-    const each = panelHeight / bandRatios.length;
-    return bandRatios.map((_, i) => [i * each, (i + 1) * each]);
-  }
-  const out: Array<[number, number]> = [];
-  let cumulative = 0;
-  for (const r of bandRatios) {
-    const top    = (cumulative / total) * panelHeight;
-    const next   = cumulative + Math.max(0, r);
-    const bottom = (next / total) * panelHeight;
-    out.push([top, bottom]);
-    cumulative = next;
-  }
-  return out;
-}
 
 export interface MultiTracePlotProps {
   /** Members in render order (top → bottom). Caller sorts by `display_order`. */
