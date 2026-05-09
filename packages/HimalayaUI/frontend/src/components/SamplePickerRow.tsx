@@ -117,7 +117,10 @@ export function SamplePickerRow({
                       onChange={() => onOverrideChange(e.id)}
                       className="shrink-0"
                     />
-                    <span className="text-sm text-fg truncate">
+                    <span
+                      className="text-sm text-fg truncate flex-1 min-w-0"
+                      title={e.filename ?? undefined}
+                    >
                       {e.filename ?? `#${e.id}`}
                     </span>
                   </label>
