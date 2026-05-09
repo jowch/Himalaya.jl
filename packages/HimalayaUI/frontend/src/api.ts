@@ -566,7 +566,7 @@ export const postComparisonMessage = (
 
 // ─── Picker support routes (Plan §Phase 5, Task 5.2) ───────────────────────
 //
-// Read-only GETs feeding the ComparisonPicker modal. `recently-picked` returns
+// Read-only GETs feeding the comparison picker. `recently-picked` returns
 // a flat exposure-id list in most-recent-first order; `sample-tags` returns
 // distinct (key, value) pairs scoped to one experiment.
 

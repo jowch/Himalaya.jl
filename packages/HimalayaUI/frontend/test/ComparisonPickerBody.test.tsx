@@ -1,7 +1,7 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, afterEach, vi } from "vitest";
-import { ComparisonPickerBody, type Pick } from "../src/components/ComparisonPickerBody";
+import { ComparisonPickerBody } from "../src/components/ComparisonPickerBody";
 import * as api from "../src/api";
 
 // Wrap mocks in beforeEach so they're isolated per test (the project's
@@ -32,34 +32,11 @@ function wrap(ui: React.ReactElement) {
   return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>);
 }
 
-test("controlled-picks: onPicksChange fires with default exposure id on toggle", async () => {
-  const onPicksChange = vi.fn();
-  wrap(
-    <ComparisonPickerBody
-      experimentId={1}
-      picks={[]}
-      onPicksChange={onPicksChange}
-      alreadyAddedExposureIds={new Set()}
-    />,
-  );
-  await screen.findByText("S1");
-  // S1 is in the main list (S2 only is in recents). Click its checkbox.
-  const s1Row = screen.getByText("S1").closest("[data-testid='sample-picker-row']")!;
-  fireEvent.click(s1Row.querySelector("[data-testid='sample-picker-row-checkbox']")!);
-  expect(onPicksChange).toHaveBeenCalledWith([
-    { sample_id: 10, exposure_id: 100, source: "default" },
-  ]);
-});
-
-// NOTE: Immediate-mode `onPick` is added in PR2 Task 13. PR1 ships only the
-// controlled-picks interface (`picks` + `onPicksChange`). Skip the immediate-mode
-// test until PR2.
-
 test("recents section dedupes against main list (one row per sample, S2 appears once)", async () => {
   wrap(
     <ComparisonPickerBody
       experimentId={1}
-      picks={[]} onPicksChange={() => {}}
+      onPick={() => {}}
       alreadyAddedExposureIds={new Set()}
     />,
   );
@@ -74,8 +51,7 @@ test("rows whose exposure id is in alreadyAddedExposureIds render locked", async
   wrap(
     <ComparisonPickerBody
       experimentId={1}
-      picks={[]}
-      onPicksChange={() => {}}
+      onPick={() => {}}
       alreadyAddedExposureIds={new Set([100])}
     />,
   );
@@ -89,13 +65,11 @@ test("rows whose exposure id is in alreadyAddedExposureIds render locked", async
   expect(s2Row).not.toHaveAttribute("data-locked");
 });
 
-test("immediate mode: onPick fires per toggle, picks prop ignored", async () => {
+test("onPick fires per toggle with default exposure id", async () => {
   const onPick = vi.fn();
   wrap(
     <ComparisonPickerBody
       experimentId={1}
-      picks={[]}
-      onPicksChange={() => {}}
       onPick={onPick}
       alreadyAddedExposureIds={new Set()}
     />,
@@ -107,9 +81,9 @@ test("immediate mode: onPick fires per toggle, picks prop ignored", async () => 
   expect(onPick).toHaveBeenCalledWith({ sample_id: 10, exposure_id: 100, source: "default" });
 });
 
-test("immediate mode: override caret pick fires onPick with override exposure id", async () => {
+test("override caret pick fires onPick with override exposure id", async () => {
   // Override the mock for this test to give S1 two exposures so we can
-  // select the non-default one (f2.dat/id=101) to trigger onOverrideChange.
+  // select the non-default one (f2.dat/id=101) to trigger the override path.
   vi.spyOn(api, "getPickerSamples").mockResolvedValue([
     {
       sample: { id: 10, experiment_id: 1, name: "S1", display_name: null, notes: null, tags: [] },
@@ -129,8 +103,6 @@ test("immediate mode: override caret pick fires onPick with override exposure id
   wrap(
     <ComparisonPickerBody
       experimentId={1}
-      picks={[]}
-      onPicksChange={() => {}}
       onPick={onPick}
       alreadyAddedExposureIds={new Set()}
     />,
@@ -139,9 +111,11 @@ test("immediate mode: override caret pick fires onPick with override exposure id
   // S1 is in the main list. Expand its caret dropdown, then select the non-default radio.
   const s1Row = screen.getByText("S1").closest("[data-testid='sample-picker-row']")!;
   fireEvent.click(s1Row.querySelector("[data-testid='sample-picker-row-caret']")!);
-  // Click the f2.dat radio (a different exposure → triggers onOverrideChange).
+  // Click the f2.dat radio (a different exposure → override source).
   fireEvent.click(screen.getByLabelText(/f2\.dat/));
-  expect(onPick).toHaveBeenCalled();
+  expect(onPick).toHaveBeenCalledWith({
+    sample_id: 10, exposure_id: 101, source: "override",
+  });
 });
 
 test("does not flicker on background refetch (gates on isLoading not isPending)", async () => {
@@ -156,7 +130,7 @@ test("does not flicker on background refetch (gates on isLoading not isPending)"
   const { rerender } = render(
     <QueryClientProvider client={qc}>
       <ComparisonPickerBody
-        experimentId={1} picks={[]} onPicksChange={() => {}}
+        experimentId={1} onPick={() => {}}
         alreadyAddedExposureIds={new Set()}
       />
     </QueryClientProvider>,
@@ -166,7 +140,7 @@ test("does not flicker on background refetch (gates on isLoading not isPending)"
   rerender(
     <QueryClientProvider client={qc}>
       <ComparisonPickerBody
-        experimentId={1} picks={[]} onPicksChange={() => {}}
+        experimentId={1} onPick={() => {}}
         alreadyAddedExposureIds={new Set()}
       />
     </QueryClientProvider>,

@@ -571,7 +571,7 @@ export function useDeleteComparison() {
 
 /**
  * Fetches the user's most-recently-picked exposures (across all comparisons
- * and experiments). Used by the ComparisonPicker's "Recently used" section.
+ * and experiments). Used by the comparison picker's "Recently used" section.
  * Disabled until `userId` is defined so an empty user state doesn't fire a
  * GET /api/users/undefined/recently-picked-exposures.
  */
