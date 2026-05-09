@@ -2,8 +2,8 @@
  * MemberMetaRow — per-trace metadata gutter row (Plan §Phase 7, Task 7.1).
  *
  * Two render paths share the same vertical-positioning math (`top`/`height`
- * from `computeYBands` in `MultiTracePlot`) so reorders + resizes stay in
- * lockstep with the plot.
+ * from `computeYBands` in `lib/comparison/yBands`) so reorders + resizes
+ * stay in lockstep with the plot.
  *
  * Review-mode (read-only): one line — label / phase chip / d / R² / NGC for
  * cubics. Hover or click expands a detail card (peak count + secondary

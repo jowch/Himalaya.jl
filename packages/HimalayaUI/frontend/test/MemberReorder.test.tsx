@@ -19,7 +19,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { useAppState } from "../src/state";
 import { emptyDraft } from "../src/lib/comparison/draft";
 import { MemberMetaGutter } from "../src/components/MemberMetaGutter";
-import { computeYBands } from "../src/components/MultiTracePlot";
+import { computeYBands } from "../src/lib/comparison/yBands";
 import type { ComparisonMember } from "../src/api";
 
 function seedDraft(memberCount: number) {

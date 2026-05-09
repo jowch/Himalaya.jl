@@ -4,7 +4,7 @@
 import * as Plot from "@observablehq/plot";
 import type { ComparisonMember } from "../../../api";
 import type { Trace } from "../../../api";
-import { computeYBands } from "../../../components/MultiTracePlot";
+import { computeYBands } from "../../comparison/yBands";
 import {
   LIGHT_PALETTE,
   TRACE_STROKE_PX,
