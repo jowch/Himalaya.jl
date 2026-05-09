@@ -1295,6 +1295,137 @@ end
     end
 end
 
+@testset "migrate_experiment_config_label_to_name! — legacy [manifest].label blob rewritten in place" begin
+    mktempdir() do tmp
+        dbpath = joinpath(tmp, "h.db")
+        db = SQLite.DB(dbpath)
+        DBInterface.execute(db, "PRAGMA foreign_keys = ON")
+        DBInterface.execute(db, """CREATE TABLE experiments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, path TEXT,
+            data_dir TEXT, analysis_dir TEXT, manifest_path TEXT, config TEXT)""")
+        legacy = """
+        [experiment]
+        name = "Legacy Exp"
+
+        [manifest]
+        delimiter = ","
+        sample_id = 1
+        label     = 2
+        name      = 3
+        filenames = 9
+
+        [files]
+        integration = "{name}_tot.dat"
+        """
+        DBInterface.execute(db,
+            "INSERT INTO experiments (id, name, path, config) VALUES (?, ?, ?, ?)",
+            [1, "exp", "/tmp", legacy])
+        # Pre-condition: _build_config rejects the legacy blob.
+        @test_throws ErrorException HimalayaUI.config_from_db(db, 1)
+
+        HimalayaUI.migrate_experiment_config_label_to_name!(db)
+
+        # Post: blob no longer has `[manifest].label`; has `display_name`; `name`
+        # is still present (was column 3 before, now column 2 with the rewrite).
+        blob = String(only(Tables.rowtable(DBInterface.execute(db,
+            "SELECT config FROM experiments WHERE id = 1"))).config)
+        section = ""
+        seen_label = false; seen_display_name = false; seen_name_in_manifest = false
+        for line in eachline(IOBuffer(blob))
+            m = match(r"^\s*\[([A-Za-z0-9_]+)\]\s*$", line)
+            if m !== nothing; section = m.captures[1]; continue; end
+            if section == "manifest"
+                occursin(r"^\s*label\s*=", line)        && (seen_label = true)
+                occursin(r"^\s*display_name\s*=", line) && (seen_display_name = true)
+                occursin(r"^\s*name\s*=", line)         && (seen_name_in_manifest = true)
+            end
+        end
+        @test !seen_label
+        @test seen_display_name
+        @test seen_name_in_manifest
+
+        # And config_from_db succeeds, with column indices matching the rewrite:
+        # original `label = 2` ⇒ `name = 2` (stable identifier),
+        # original `name = 3`  ⇒ `display_name = 3` (editable).
+        cfg = HimalayaUI.config_from_db(db, 1)
+        @test cfg.col_name         == 2
+        @test cfg.col_display_name == 3
+    end
+end
+
+@testset "migrate_experiment_config_label_to_name! — idempotent on already-migrated blob" begin
+    mktempdir() do tmp
+        db = SQLite.DB(joinpath(tmp, "h.db"))
+        DBInterface.execute(db, """CREATE TABLE experiments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, path TEXT, config TEXT)""")
+        canonical = "[manifest]\nname = 2\ndisplay_name = 3\n"
+        DBInterface.execute(db,
+            "INSERT INTO experiments (id, name, path, config) VALUES (?, ?, ?, ?)",
+            [1, "e", "/", canonical])
+        HimalayaUI.migrate_experiment_config_label_to_name!(db)
+        # Bytes unchanged.
+        blob = String(only(Tables.rowtable(DBInterface.execute(db,
+            "SELECT config FROM experiments WHERE id = 1"))).config)
+        @test blob == canonical
+        # Second run still no-op.
+        HimalayaUI.migrate_experiment_config_label_to_name!(db)
+        @test String(only(Tables.rowtable(DBInterface.execute(db,
+            "SELECT config FROM experiments WHERE id = 1"))).config) == canonical
+    end
+end
+
+@testset "migrate_experiment_config_label_to_name! — NULL/missing config rows tolerated" begin
+    mktempdir() do tmp
+        db = SQLite.DB(joinpath(tmp, "h.db"))
+        DBInterface.execute(db, """CREATE TABLE experiments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, path TEXT, config TEXT)""")
+        DBInterface.execute(db,
+            "INSERT INTO experiments (id, name, path, config) VALUES (?, ?, ?, NULL)",
+            [1, "legacy-no-config", "/"])
+        # Should not raise; config column NULL is filtered by the WHERE clause.
+        @test (HimalayaUI.migrate_experiment_config_label_to_name!(db); true)
+    end
+end
+
+@testset "migrate_experiment_config_label_to_name! — corrupt 'both label AND display_name' raises" begin
+    mktempdir() do tmp
+        db = SQLite.DB(joinpath(tmp, "h.db"))
+        DBInterface.execute(db, """CREATE TABLE experiments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, path TEXT, config TEXT)""")
+        corrupt = "[manifest]\nlabel = 2\nname = 3\ndisplay_name = 4\n"
+        DBInterface.execute(db,
+            "INSERT INTO experiments (id, name, path, config) VALUES (?, ?, ?, ?)",
+            [1, "e", "/", corrupt])
+        @test_throws ErrorException HimalayaUI.migrate_experiment_config_label_to_name!(db)
+    end
+end
+
+@testset "open_db: prod-shape DB with legacy experiments.config blob heals end-to-end" begin
+    mktempdir() do tmp
+        dbpath = joinpath(tmp, "h.db")
+        # Build a DB via open_db FIRST so the schema is current, then synthesize
+        # the legacy blob. This mirrors the actual prod state: schema is recent
+        # (samples migrated, AUTOINCREMENT etc.) but the experiments.config blob
+        # is stale because PR #107 didn't include an in-DB migration.
+        HimalayaUI.open_db(dbpath)  # initial open establishes schema
+
+        # Now poison the experiments.config blob and re-open.
+        db = SQLite.DB(dbpath)
+        legacy = "[manifest]\nlabel = 2\nname = 3\nfilenames = 9\n"
+        DBInterface.execute(db,
+            "INSERT INTO experiments (id, name, path, data_dir, analysis_dir, config) VALUES (?, ?, ?, ?, ?, ?)",
+            [1, "e", "/", "/d", "/a", legacy])
+        close(db)
+
+        # Re-open should run migrate_experiment_config_label_to_name! and heal it.
+        db2 = HimalayaUI.open_db(dbpath)
+        cfg = HimalayaUI.config_from_db(db2, 1)
+        @test cfg.col_name         == 2
+        @test cfg.col_display_name == 3
+        close(db2)
+    end
+end
+
 @testset "open_db: pre-Plan-7 legacy DB (non-AUTOINCREMENT + (label, name)) preserves identifiers" begin
     mktempdir() do tmp
         dbpath = joinpath(tmp, "h.db")

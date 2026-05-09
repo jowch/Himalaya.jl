@@ -534,72 +534,22 @@ function cli_migrate_toml(args::Vector{<:AbstractString})
     path = joinpath(dir, "experiment.toml")
     isfile(path) || error("experiment.toml not found in $dir")
 
-    lines = readlines(path; keep=true)
-    section = ""
-    has_label = false
-    has_display_name = false
-    has_old_name = false  # `name` inside [manifest] when display_name is absent → legacy-shape `name`
-
-    # First pass: classify what's in [manifest].
-    for line in lines
-        # Section regex assumes plain unquoted [section] headers per the current schema.
-        # Quoted (`["weird name"]`) or dotted (`[manifest.subsection]`) headers are not
-        # matched; if those are added to the schema later, this regex needs widening.
-        m = match(r"^\s*\[([A-Za-z0-9_]+)\]\s*$", line)
-        if m !== nothing
-            section = m.captures[1]; continue
-        end
-        if section == "manifest"
-            occursin(r"^\s*label\s*=", line)        && (has_label = true)
-            occursin(r"^\s*display_name\s*=", line) && (has_display_name = true)
-            occursin(r"^\s*name\s*=", line)         && (has_old_name = true)
-        end
+    text = read(path, String)
+    new_text, changed = try
+        migrate_manifest_toml_text(text)
+    catch err
+        # Re-raise with a path-aware prefix; intentionally a fresh exception
+        # rather than `rethrow(err)` because the helper's bare message lacks
+        # the file path that operators need in this CLI context.
+        throw(ErrorException("experiment.toml at $path: $(sprint(showerror, err))"))
     end
-
-    if has_display_name && !has_label
-        @info "experiment.toml at $path already migrated"
+    if !changed
+        @info "experiment.toml at $path already migrated (or no `[manifest].label` to migrate)"
         return nothing
     end
-    if has_display_name && has_label
-        error("experiment.toml at $path has both `label` and `display_name` in [manifest]; " *
-              "manual edit needed")
-    end
-    if !has_label
-        error("experiment.toml at $path has no `[manifest].label` to migrate")
-    end
 
-    # Second pass: rewrite. Only inside [manifest]. Per-line state machine: a line is
-    # EITHER a label= rewrite OR a name= rewrite, never both — so `name` doesn't catch
-    # the line we just rewrote from `label` to `name`.
-    section = ""
-    out_lines = String[]
-    for line in lines
-        m = match(r"^\s*\[([A-Za-z0-9_]+)\]\s*$", line)
-        if m !== nothing
-            section = m.captures[1]
-            push!(out_lines, line); continue
-        end
-        if section == "manifest"
-            if (m2 = match(r"^(\s*)label(\s*=\s*\S+)(.*)$", line)) !== nothing
-                # Strip trailing newline from captures[3] if present, then re-add one.
-                rest = rstrip(m2.captures[3], '\n')
-                push!(out_lines, m2.captures[1] * "name" * m2.captures[2] * rest * "\n")
-            elseif (m3 = match(r"^(\s*)name(\s*=\s*\S+)(.*)$", line)) !== nothing
-                rest = rstrip(m3.captures[3], '\n')
-                push!(out_lines, m3.captures[1] * "display_name" * m3.captures[2] * rest * "\n")
-            else
-                push!(out_lines, line)
-            end
-        else
-            push!(out_lines, line)
-        end
-    end
-
-    # Atomic write.
     tmp = path * ".tmp"
-    open(tmp, "w") do io
-        for l in out_lines; print(io, l); end
-    end
+    open(tmp, "w") do io; print(io, new_text); end
     mv(tmp, path; force=true)
     @info "Migrated $path"
     nothing

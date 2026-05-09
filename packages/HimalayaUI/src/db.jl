@@ -362,6 +362,57 @@ function migrate_schema!(db::SQLite.DB)
     # to comparisons that the relax migration heals when it RENAMEs the
     # table during the rebuild.
     migrate_compare_relax_nullability!(db)
+
+    # PR #107 left the on-disk experiment.toml AND the in-DB experiments.config
+    # blob using the legacy `[manifest].label/name` shape. The deprecation
+    # error in `_build_config` (config.jl) hard-fails any route that calls
+    # `config_from_db` (trace plot, analyze_exposure!, reanalyze) for those
+    # experiments. Migrate the in-DB blob in place; the on-disk file is the
+    # operator's responsibility (`himalaya migrate-toml <dir>`) but is no
+    # longer load-bearing at runtime since `experiments.config` is the
+    # source of truth for `analyze_exposure!`.
+    migrate_experiment_config_label_to_name!(db)
+end
+
+"""
+    migrate_experiment_config_label_to_name!(db)
+
+Rewrite each `experiments.config` blob from the legacy `[manifest].label/name`
+shape to the canonical `[manifest].name/display_name` shape (PR #107). Pure
+text rewrite via `migrate_manifest_toml_text`; only touches blobs that
+actually contain `[manifest].label`. Idempotent — already-migrated blobs
+return unchanged and we skip the UPDATE.
+
+If a blob is in the corrupt "both `label` AND `display_name`" state, the
+helper raises; we let it propagate so the operator can see which experiment
+is broken rather than silently masking it.
+"""
+function migrate_experiment_config_label_to_name!(db::SQLite.DB)
+    rows = try
+        Tables.rowtable(DBInterface.execute(db,
+            "SELECT id, config FROM experiments WHERE config IS NOT NULL"))
+    catch err
+        # In normal `migrate_schema!` flow the `config` column already
+        # exists — `alter_stmts` adds it earlier in the same function. This
+        # tolerance is purely for test fixtures that build a `SQLite.DB`
+        # directly and call this migration in isolation (no
+        # `migrate_schema!` invocation). Production `open_db` callers never
+        # hit this branch.
+        msg = lowercase(sprint(showerror, err))
+        (occursin("no such column", msg) || occursin("no such table", msg)) ||
+            rethrow()
+        return nothing
+    end
+    for row in rows
+        blob = String(row.config)
+        new_text, changed = migrate_manifest_toml_text(blob)
+        changed || continue
+        DBInterface.execute(db,
+            "UPDATE experiments SET config = ? WHERE id = ?",
+            [new_text, row.id])
+        @info "Healed experiments.config blob (legacy [manifest].label → name/display_name)" experiment_id = Int(row.id)
+    end
+    nothing
 end
 
 """

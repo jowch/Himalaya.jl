@@ -1,5 +1,5 @@
 using Test
-using HimalayaUI: cli_migrate_toml
+using HimalayaUI: cli_migrate_toml, migrate_manifest_toml_text
 
 const _OLD_TOML = """
 [experiment]
@@ -84,4 +84,22 @@ end
     mktempdir() do dir
         @test_throws ErrorException cli_migrate_toml([dir])
     end
+end
+
+@testset "migrate_manifest_toml_text — newline preservation matches source byte-for-byte" begin
+    # A blob with NO trailing newline must come out with NO trailing newline
+    # (rewritten line follows the same rule). This pins the behavior change
+    # vs the old cli_migrate_toml that always appended `\n`. Important for
+    # the in-DB blob path where we round-trip the bytes through SQLite.
+    no_newline = "[manifest]\nlabel = 2\nname = 3"
+    out, changed = migrate_manifest_toml_text(no_newline)
+    @test changed
+    @test out == "[manifest]\nname = 2\ndisplay_name = 3"
+    @test !endswith(out, '\n')
+
+    # And a blob WITH trailing newline keeps it.
+    with_newline = "[manifest]\nlabel = 2\nname = 3\n"
+    out2, changed2 = migrate_manifest_toml_text(with_newline)
+    @test changed2
+    @test out2 == "[manifest]\nname = 2\ndisplay_name = 3\n"
 end
