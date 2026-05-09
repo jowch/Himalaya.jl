@@ -20,7 +20,20 @@ which is idempotent for the unanalyzed exposures and skips the analyzed ones
 that already have peaks.
 """
 function cli_init_with_db!(db::SQLite.DB, exp_dir::String; analyze::Bool = true)::Int
-    exp_dir   = abspath(exp_dir)
+    exp_dir = abspath(exp_dir)
+    exp_id = SQLite.transaction(db) do
+        _cli_init_inner!(db, exp_dir)
+    end
+    # Auto-analyze stays OUTSIDE the transaction — a crash mid-analyze must
+    # not roll back experiment registration. (Existing docstring contract.)
+    if analyze
+        println("Running analysis (peak-finding + indexing)...")
+        _analyze_experiment!(db, exp_id)
+    end
+    exp_id
+end
+
+function _cli_init_inner!(db::SQLite.DB, exp_dir::String)::Int
     toml_path = joinpath(exp_dir, "experiment.toml")
     isfile(toml_path) || error("experiment.toml not found in $exp_dir. Run 'himalaya config new --dir $exp_dir' first.")
 
@@ -56,6 +69,10 @@ function cli_init_with_db!(db::SQLite.DB, exp_dir::String; analyze::Bool = true)
 
     if isfile(manifest_path)
         samples = parse_manifest(cfg, manifest_path)
+        # Validate the manifest BEFORE inserting any sample/exposure rows.
+        violations = validate_manifest(samples)
+        isempty(violations) || throw(ManifestValidationError(violations))
+
         sample_count = 0
         exposure_count = 0
         for ms in samples
@@ -93,12 +110,6 @@ function cli_init_with_db!(db::SQLite.DB, exp_dir::String; analyze::Bool = true)
     end
 
     println("Initialized experiment '$exp_name' (id=$exp_id) at $exp_dir")
-
-    if analyze
-        println("Running analysis (peak-finding + indexing)...")
-        _analyze_experiment!(db, exp_id)
-    end
-
     exp_id
 end
 
