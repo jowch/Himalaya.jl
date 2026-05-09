@@ -20,8 +20,18 @@ export default defineConfig({
     // spec edit during a live Playwright run triggers a page reload that
     // crashes the Vite dev server (no further log; child exits silently).
     // e2e specs aren't part of the served bundle anyway.
+    //
+    // src/bones/** holds boneyard skeleton captures + the auto-generated
+    // registry. The boneyard plugin writes these on cold loads of any
+    // captured Skeleton; without ignoring them, every cold load forces a
+    // full page reload mid-interaction.
     watch: {
-      ignored: ["**/e2e/**", "**/test-results/**", "**/playwright-report/**"],
+      ignored: [
+        "**/e2e/**",
+        "**/test-results/**",
+        "**/playwright-report/**",
+        "**/src/bones/**",
+      ],
     },
   },
   build: {
