@@ -1260,3 +1260,42 @@ end
         @test "samples_unique_name" ∈ idxs
     end
 end
+
+@testset "open_db: pre-Plan-7 legacy DB (non-AUTOINCREMENT + (label, name)) preserves identifiers" begin
+    mktempdir() do tmp
+        dbpath = joinpath(tmp, "h.db")
+        # Build the worst-case fixture: legacy (label, name) shape WITHOUT AUTOINCREMENT.
+        # This emulates a pre-Plan-7 deployment that never ran any migrations.
+        db = SQLite.DB(dbpath)
+        DBInterface.execute(db, "PRAGMA foreign_keys = ON")
+        DBInterface.execute(db, """CREATE TABLE experiments (
+            id INTEGER PRIMARY KEY, name TEXT, path TEXT,
+            data_dir TEXT, analysis_dir TEXT, manifest_path TEXT, config TEXT,
+            experiment_type TEXT, energy_kev REAL, flight_path_m REAL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP)""")
+        DBInterface.execute(db, """CREATE TABLE samples (
+            id INTEGER PRIMARY KEY,
+            experiment_id INTEGER REFERENCES experiments(id),
+            label TEXT, name TEXT, notes TEXT)""")
+        DBInterface.execute(db, "INSERT INTO experiments (id, name, path, data_dir, analysis_dir) VALUES (1, 'exp', '/tmp', '/tmp', '/tmp')")
+        DBInterface.execute(db,
+            "INSERT INTO samples (id, experiment_id, label, name) VALUES (?, ?, ?, ?)",
+            [1, 1, "JC001", "DOPC + chol"])
+        DBInterface.execute(db,
+            "INSERT INTO samples (id, experiment_id, label, name) VALUES (?, ?, ?, ?)",
+            [2, 1, "JC002", "POPC"])
+        # Close and reopen via open_db to trigger the FULL migration chain.
+        SQLite.close(db)
+
+        db2 = HimalayaUI.open_db(dbpath)
+        rows = Tables.rowtable(DBInterface.execute(db2,
+            "SELECT id, name, display_name FROM samples ORDER BY id"))
+        @test length(rows) == 2
+        # Stable identifier (was label) preserved as name:
+        @test rows[1].name == "JC001"
+        @test rows[2].name == "JC002"
+        # Friendly text (was name) preserved as display_name:
+        @test rows[1].display_name == "DOPC + chol"
+        @test rows[2].display_name == "POPC"
+    end
+end

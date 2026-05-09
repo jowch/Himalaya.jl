@@ -306,15 +306,15 @@ function migrate_schema!(db::SQLite.DB)
         """CREATE UNIQUE INDEX IF NOT EXISTS idx_events_unique_op
             ON user_actions(client_op_id, action, entity_id)
             WHERE client_op_id IS NOT NULL""")
+    # (Issue #88) Run BEFORE the AUTOINCREMENT rebuild so the rebuild's column-copy
+    # step sees the canonical (name, display_name) shape on both sides — preserving
+    # stable identifiers on pre-Plan-7 DBs that lack AUTOINCREMENT.
+    migrate_samples_naming!(db)
     migrate_pk_to_autoincrement!(db)
     # Heal corrupted FKs from prior runs: a DB migrated before the helper
     # was generalized may still have FK refs to `_migrate_old_*` on tables
     # like sample_messages/sample_tags/etc. Idempotent — no-op when clean.
     _fix_fk_references_after_autoincrement_migration!(db)
-    # Rename legacy samples(label, name) → samples(name, display_name).
-    # Must run after FK heal so the samples table shape is stable before
-    # column mutation. Idempotent — no-op on canonical-shape DBs.
-    migrate_samples_naming!(db)
     migrate_r2_widen_index_peaks_pk!(db)  # rebuild with widened PK first
     migrate_r2_split_peaks!(db)            # then repoint manual-peak refs
 
@@ -910,6 +910,9 @@ blocked them) are renamed to `<name>-2`, `<name>-3`, … ordered by ascending id
 function migrate_samples_naming!(db::SQLite.DB)::Nothing
     cols = Set(r.name for r in Tables.rowtable(DBInterface.execute(db,
         "PRAGMA table_info('samples')")))
+    # No samples table yet (partial legacy fixture or pre-create_schema! call) — skip.
+    # create_schema! will create it with the canonical shape; nothing to rename.
+    isempty(cols) && return nothing
     if "display_name" in cols && !("label" in cols)
         return nothing  # already migrated
     end
@@ -919,9 +922,19 @@ function migrate_samples_naming!(db::SQLite.DB)::Nothing
             catch e; occursin("duplicate column", sprint(showerror, e)) || rethrow(); end
         end
         if "label" in cols
-            DBInterface.execute(db, """UPDATE samples
-                                          SET display_name = name,
-                                              name         = COALESCE(NULLIF(label, ''), name)""")
+            if "name" in cols
+                # Full Plan-7 shape: both label (stable id) and name (friendly) present.
+                # label → name (stable id), name → display_name (friendly text).
+                DBInterface.execute(db, """UPDATE samples
+                                              SET display_name = name,
+                                                  name         = COALESCE(NULLIF(label, ''), name)""")
+            else
+                # Older shape: only label present (no name column yet).
+                # Add name column and populate from label; display_name stays NULL.
+                try DBInterface.execute(db, "ALTER TABLE samples ADD COLUMN name TEXT")
+                catch e; occursin("duplicate column", sprint(showerror, e)) || rethrow(); end
+                DBInterface.execute(db, "UPDATE samples SET name = COALESCE(NULLIF(label, ''), CAST(id AS TEXT))")
+            end
             try DBInterface.execute(db, "ALTER TABLE samples DROP COLUMN label")
             catch e; occursin("no such column", sprint(showerror, e)) || rethrow(); end
         end
