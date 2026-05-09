@@ -11,7 +11,9 @@ One validation problem found in a parsed manifest. `kind` is one of
 """
 struct ManifestViolation
     kind         ::Symbol
-    sample_index ::Int        # 1-based row in manifest
+    sample_index ::Int        # 1-based index in the parsed Vector{ManifestSample};
+                              # may differ from the original CSV row number when
+                              # parse_manifest filters out blank-filename rows.
     sample_name  ::String     # may be "" for :empty_name
     detail       ::String     # human-readable specifics
 end

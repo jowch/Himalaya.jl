@@ -542,6 +542,9 @@ function cli_migrate_toml(args::Vector{<:AbstractString})
 
     # First pass: classify what's in [manifest].
     for line in lines
+        # Section regex assumes plain unquoted [section] headers per the current schema.
+        # Quoted (`["weird name"]`) or dotted (`[manifest.subsection]`) headers are not
+        # matched; if those are added to the schema later, this regex needs widening.
         m = match(r"^\s*\[([A-Za-z0-9_]+)\]\s*$", line)
         if m !== nothing
             section = m.captures[1]; continue

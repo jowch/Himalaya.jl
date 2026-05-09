@@ -1193,6 +1193,40 @@ end
     end
 end
 
+@testset "migrate_samples_naming! — dup suffix avoids user-named -N collision" begin
+    mktempdir() do tmp
+        db = SQLite.DB(joinpath(tmp, "h.db"))
+        DBInterface.execute(db, "PRAGMA foreign_keys = ON")
+        DBInterface.execute(db, """CREATE TABLE experiments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, path TEXT,
+            data_dir TEXT, analysis_dir TEXT, manifest_path TEXT, config TEXT,
+            experiment_type TEXT, energy_kev REAL, flight_path_m REAL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP)""")
+        DBInterface.execute(db, """CREATE TABLE samples (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, experiment_id INTEGER REFERENCES experiments(id),
+            label TEXT, name TEXT, notes TEXT)""")
+        DBInterface.execute(db, "INSERT INTO experiments (id, name) VALUES (1, 'exp')")
+        # Two duplicates of JC001 PLUS a user-named JC001-2 already in the table.
+        DBInterface.execute(db,
+            "INSERT INTO samples (id, experiment_id, label, name) VALUES (?, ?, ?, ?)",
+            [10, 1, "JC001", "v1"])
+        DBInterface.execute(db,
+            "INSERT INTO samples (id, experiment_id, label, name) VALUES (?, ?, ?, ?)",
+            [11, 1, "JC001", "v2"])
+        DBInterface.execute(db,
+            "INSERT INTO samples (id, experiment_id, label, name) VALUES (?, ?, ?, ?)",
+            [12, 1, "JC001-2", "user-named"])
+
+        HimalayaUI.migrate_samples_naming!(db)
+
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id, name FROM samples ORDER BY id"))
+        @test rows[1].name == "JC001"        # oldest of the dup pair keeps bare name
+        @test rows[2].name == "JC001-3"      # second dup gets suffix-3 (skipping -2)
+        @test rows[3].name == "JC001-2"      # user-named sample preserved
+    end
+end
+
 @testset "migrate_samples_naming! — idempotent on second run" begin
     mktempdir() do tmp
         db = SQLite.DB(joinpath(tmp, "h.db"))

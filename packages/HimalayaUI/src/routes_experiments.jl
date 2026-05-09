@@ -50,7 +50,7 @@ function register_experiments_routes!()
         # This route is a defensive surface for future fields only.
         return HTTP.Response(400,
             ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "no updatable fields provided")))
+            JSON3.write(Dict(:error => "experiment metadata is read-only; rename via experiment.toml + reingest")))
     end
 
     @post "/api/experiments/{id}/analyze" function(req::HTTP.Request, id::Int)

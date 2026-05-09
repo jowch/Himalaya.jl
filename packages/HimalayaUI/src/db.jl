@@ -939,6 +939,12 @@ function migrate_samples_naming!(db::SQLite.DB)::Nothing
             catch e; occursin("no such column", sprint(showerror, e)) || rethrow(); end
         end
         # Duplicate suffix pass (oldest id keeps bare name).
+        # Collision-safe: track existing (experiment_id, name) pairs so a user-named
+        # sample literally called "<name>-2" doesn't conflict with our rename target.
+        existing = Set{Tuple{Int64,String}}(
+            (Int64(r.experiment_id), String(r.name))
+            for r in Tables.rowtable(DBInterface.execute(db,
+                "SELECT experiment_id, name FROM samples WHERE name IS NOT NULL AND experiment_id IS NOT NULL")))
         dups = Tables.rowtable(DBInterface.execute(db, """
             SELECT experiment_id, name FROM samples
             GROUP BY experiment_id, name HAVING COUNT(*) > 1"""))
@@ -948,7 +954,14 @@ function migrate_samples_naming!(db::SQLite.DB)::Nothing
                 [d.experiment_id, d.name]))
             for (i, row) in enumerate(ids)
                 i == 1 && continue  # oldest keeps the bare name
-                new_name = "$(d.name)-$(i)"
+                # Pick the next suffix that isn't already taken by a user-named sample.
+                suffix_n = i
+                new_name = "$(d.name)-$(suffix_n)"
+                while (Int64(d.experiment_id), new_name) in existing
+                    suffix_n += 1
+                    new_name = "$(d.name)-$(suffix_n)"
+                end
+                push!(existing, (Int64(d.experiment_id), new_name))
                 @warn "Renamed duplicate sample" experiment_id=d.experiment_id old=d.name new=new_name id=row.id
                 DBInterface.execute(db, "UPDATE samples SET name = ? WHERE id = ?",
                     [new_name, row.id])
