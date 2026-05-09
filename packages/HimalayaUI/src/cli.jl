@@ -308,7 +308,7 @@ Shared between `cli_analyze` (explicit user invocation) and
 function _analyze_experiment!(db::SQLite.DB, exp_id::Int; sample_filter=nothing)
     exp     = get_experiment(db, exp_id)
     samples = get_samples(db, exp_id)
-    sample_filter !== nothing && filter!(sm -> sm.label == sample_filter, samples)
+    sample_filter !== nothing && filter!(sm -> sm.name == sample_filter, samples)
 
     for sample in samples
         exposures = get_exposures(db, Int(sample.id))
@@ -332,10 +332,10 @@ function _analyze_experiment!(db::SQLite.DB, exp_id::Int; sample_filter=nothing)
             e_id = Int(exp_row.id)
             e_status = ismissing(exp_row.status) ? nothing : exp_row.status
             if e_status == "rejected"
-                println("  Skipping $(sample.label) / $(exp_row.filename) (rejected)")
+                println("  Skipping $(sample.name) / $(exp_row.filename) (rejected)")
                 continue
             end
-            print("  Analyzing $(sample.label) / $(exp_row.filename) ... ")
+            print("  Analyzing $(sample.name) / $(exp_row.filename) ... ")
             try
                 analyze_exposure!(db, e_id, exp.analysis_dir)
                 println("done")
@@ -354,7 +354,7 @@ function cli_analyze(args)
             help     = "experiment id, name, or path (required)"
             required = true
         "--sample", "-s"
-            help    = "analyze only this sample label (e.g. D1)"
+            help    = "sample name (stable identifier) (e.g. D1)"
             default = nothing
     end
     p = parse_args(args, s; as_symbols = true)
@@ -371,7 +371,7 @@ function cli_show(args)
             help    = "experiment id, name, or path (default: the sole registered experiment)"
             default = nothing
         "--sample", "-s"
-            help     = "sample label"
+            help     = "sample name (stable identifier)"
             required = true
     end
     p = parse_args(args, s; as_symbols = true)
@@ -380,7 +380,7 @@ function cli_show(args)
     exp_row = _resolve_experiment(db, p[:experiment])
     exp_id  = Int(exp_row.id)
     samples = get_samples(db, exp_id)
-    idx     = findfirst(sm -> sm.label == p[:sample], samples)
+    idx     = findfirst(sm -> sm.name == p[:sample], samples)
     idx === nothing && error("sample $(p[:sample]) not found")
     sample_row = samples[idx]
 
