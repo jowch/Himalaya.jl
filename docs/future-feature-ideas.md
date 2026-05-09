@@ -249,6 +249,26 @@ JOIN across them via SQLite's `ATTACH` mechanism.
 
 ## Multi-user / review
 
+### Cross-tab SSE URL invalidation — live integration coverage
+
+The slug-disappearance branch in `useUrlFromState.ts` (a previously-resolved
+slug going `defined → undefined` because the entity was deleted from cache)
+is exercised by the unit suite via synthetic cache manipulation. The
+end-to-end SSE → cache update → URL invalidation contract is *not* pinned
+by an integration test. A live-integration spec was scaffolded during the
+permalinks PR and removed as placeholder code; re-introducing it requires:
+
+- A `DELETE /api/samples/{id}` route (and matching event-log/SSE wiring).
+- Seed-script entries in `e2e/live/README.md` for `SeedSample` /
+  `AlreadyDeletedSample` / experiment `E2ETest`, plus concrete ids the
+  spec can reference.
+- A two-tab Playwright spec asserting tab A's URL → StaleUrlPage transition
+  after tab B's delete (per spec §8.3).
+
+Pick this up when cross-tab delete becomes a real UX surface. The current
+multiplayer model treats deletes as low-volume; the unit-level coverage
+of the URL invalidation logic is sufficient for now.
+
 ### Reviewer workflow
 
 `reviewed` status transitions on indexings, with a reviewer attribution.
