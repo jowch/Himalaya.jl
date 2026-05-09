@@ -10,6 +10,33 @@ const SAMPLES = [
 ];
 
 async function mockCore(page: Page, users: { id: number; username: string }[] = []): Promise<void> {
+  // Permalinks: cold mount with seeded activeExperimentId/activeSampleId
+  // triggers useStateFromUrl's resolve-by-id fallback when the TanStack
+  // cache hasn't hydrated yet. Same path also fires on every navigate
+  // (e.g. `.` → next sample). The mock inspects the query so multi-sample
+  // tests get the right (experiment, sample) pair back.
+  await page.route(/\/api\/resolve\?/, (route) => {
+    const url = new URL(route.request().url());
+    const params = url.searchParams;
+    // Match by name first (slug URL navigation), then by id (cold-mount).
+    const sampleName = params.get("sample") ?? undefined;
+    const sampleIdStr = params.get("sample_id") ?? undefined;
+    let sample = SAMPLES[0];
+    if (sampleName !== undefined) {
+      sample = SAMPLES.find((s) => s.name === sampleName) ?? SAMPLES[0];
+    } else if (sampleIdStr !== undefined) {
+      const sId = Number(sampleIdStr);
+      sample = SAMPLES.find((s) => s.id === sId) ?? SAMPLES[0];
+    }
+    route.fulfill({
+      status: 200, contentType: "application/json",
+      body: JSON.stringify({
+        experiment_id: 1, experiment_name: "SSRL May 2026",
+        sample_id: sample.id, sample_name: sample.name,
+        exposure_id: undefined, exposure_filename: undefined,
+      }),
+    });
+  });
   await page.route("**/api/users", async (route) => {
     const req = route.request();
     if (req.method() === "GET") {

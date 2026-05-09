@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { Skeleton } from "boneyard-js/react";
 import { useAppState } from "../state";
+import { parseLocation } from "../lib/url/parseLocation";
 import {
   useExperiment,
   useExposures,
@@ -101,9 +103,14 @@ export function InspectPage(): JSX.Element {
 
   // Auto-open nav modal if no sample selected (mirrors IndexPage behaviour)
   const autoOpenedRef = useRef(false);
+  const location      = useLocation();
   useEffect(() => {
     if (autoOpenedRef.current) return;
     if (username === undefined) return;
+    // Don't auto-open during slug-URL resolution — see IndexPage for the
+    // race rationale.
+    const parsed = parseLocation(location.pathname, location.search);
+    if (parsed.kind === "inspect" && parsed.experiment !== undefined) return;
     if (experimentId === undefined) {
       autoOpenedRef.current = true;
       openModal("experiment");
@@ -111,7 +118,7 @@ export function InspectPage(): JSX.Element {
       autoOpenedRef.current = true;
       openModal("sample");
     }
-  }, [username, experimentId, sampleId, openModal]);
+  }, [username, experimentId, sampleId, openModal, location.pathname, location.search]);
 
   const experimentQ = useExperiment(experimentId ?? 0);
   const exposuresQ  = useExposures(sampleId);

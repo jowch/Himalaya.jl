@@ -624,3 +624,62 @@ export const pinComparison = (id: number, opts?: AuthOpts) =>
 export const unpinComparison = (id: number, opts?: AuthOpts) =>
   request<{ comparison_id: number; pinned: boolean }>(
     "DELETE", `/api/comparisons/${id}/pin`, undefined, opts);
+
+// ─── Permalink resolve (Plan §Task 8) ───────────────────────────────────────
+
+export interface ResolveSuccess {
+  experiment_id: number;
+  experiment_name: string;
+  sample_id: number | undefined;
+  sample_name: string | undefined;
+  exposure_id: number | undefined;
+  exposure_filename: string | undefined;
+}
+
+export interface ResolveError404 {
+  error: "not_found";
+  missing: "experiment" | "sample" | "exposure";
+  missing_value: string;
+  experiment_resolved: { id: number; name: string } | undefined;
+  sample_resolved:     { id: number; name: string } | undefined;
+}
+
+export interface ResolveError400 {
+  error: "ambiguous_params" | "missing_experiment" | "missing_sample";
+}
+
+export interface ResolveQuery {
+  experiment?: string;
+  sample?: string;
+  exposure?: string;
+  experiment_id?: number;
+  sample_id?: number;
+  exposure_id?: number;
+}
+
+/**
+ * Calls /api/resolve. Returns either a `ResolveSuccess` (200), a
+ * `ResolveError404`, or a `ResolveError400`. Caller distinguishes on
+ * `error` field. Read-only — no auth headers.
+ *
+ * `signal` exposed for AbortController; caller is responsible for
+ * the origin-tag race check (§4.2).
+ */
+export async function resolve(
+  q: ResolveQuery,
+  signal: AbortSignal | undefined = undefined,
+): Promise<ResolveSuccess | ResolveError404 | ResolveError400> {
+  const params = new URLSearchParams();
+  if (q.experiment !== undefined) params.set("experiment", q.experiment);
+  if (q.sample !== undefined) params.set("sample", q.sample);
+  if (q.exposure !== undefined) params.set("exposure", q.exposure);
+  if (q.experiment_id !== undefined) params.set("experiment_id", String(q.experiment_id));
+  if (q.sample_id !== undefined) params.set("sample_id", String(q.sample_id));
+  if (q.exposure_id !== undefined) params.set("exposure_id", String(q.exposure_id));
+
+  const init: RequestInit = {};
+  if (signal !== undefined) init.signal = signal;
+  const res = await fetch(`/api/resolve?${params.toString()}`, init);
+  const body = await res.json();
+  return body as ResolveSuccess | ResolveError404 | ResolveError400;
+}

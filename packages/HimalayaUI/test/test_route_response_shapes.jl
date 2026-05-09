@@ -42,6 +42,26 @@ function _setup_analyzed_exposure(tmp::String)
     (db = db, exposure_id = e_id, sample_id = s_id, analysis_dir = analysis_dir)
 end
 
+"""
+Like `_setup_analyzed_exposure` but UPDATEs the rows to known slug-resolvable
+names ("test-exp" / "S1" / "JC001-007") and captures `experiment_id` for tests
+that need it. Used by `test_routes_resolve.jl` and the resolve-shape rows below.
+"""
+function _setup_for_resolve(tmp::String)
+    ctx = _setup_analyzed_exposure(tmp)
+    DBInterface.execute(ctx.db, "UPDATE experiments SET name = 'test-exp'")
+    DBInterface.execute(ctx.db, "UPDATE samples SET name = 'S1' WHERE id = ?",
+                        [ctx.sample_id])
+    DBInterface.execute(ctx.db, "UPDATE exposures SET filename = 'JC001-007' WHERE id = ?",
+                        [ctx.exposure_id])
+    exp_row = Tables.rowtable(DBInterface.execute(ctx.db,
+        "SELECT id FROM experiments LIMIT 1"))[1]
+    return (db = ctx.db,
+            experiment_id = Int(exp_row.id),
+            sample_id = ctx.sample_id,
+            exposure_id = ctx.exposure_id)
+end
+
 @testset "Route response shapes (queue contract)" begin
 
     @testset "POST /api/exposures/:id/peaks → PeakAddResponse (flat Peak & metadata)" begin
@@ -681,6 +701,51 @@ end
                 for row in rows
                     assert_keys(row, expected)
                 end
+            end
+        end
+    end
+
+    @testset "GET /api/resolve 200 (experiment+sample+exposure)" begin
+        mktempdir() do tmp
+            ctx = _setup_for_resolve(tmp)
+            with_test_server(ctx.db) do port, base
+                r = HTTP.get("$base/api/resolve?experiment=test-exp&sample=S1&exposure=JC001-007")
+                body = JSON3.read(String(r.body))
+                # Key set frozen.
+                @test Set(keys(body)) == Set([
+                    :experiment_id, :experiment_name,
+                    :sample_id, :sample_name,
+                    :exposure_id, :exposure_filename,
+                ])
+            end
+        end
+    end
+
+    @testset "GET /api/resolve 404 (missing exposure)" begin
+        mktempdir() do tmp
+            ctx = _setup_for_resolve(tmp)
+            with_test_server(ctx.db) do port, base
+                r = HTTP.get("$base/api/resolve?experiment=test-exp&sample=S1&exposure=nope";
+                             status_exception=false)
+                body = JSON3.read(String(r.body))
+                @test Set(keys(body)) == Set([
+                    :error, :missing, :missing_value,
+                    :experiment_resolved, :sample_resolved,
+                ])
+                @test Set(keys(body.experiment_resolved)) == Set([:id, :name])
+                @test Set(keys(body.sample_resolved))     == Set([:id, :name])
+            end
+        end
+    end
+
+    @testset "GET /api/resolve 400 (ambiguous params)" begin
+        mktempdir() do tmp
+            ctx = _setup_for_resolve(tmp)
+            with_test_server(ctx.db) do port, base
+                r = HTTP.get("$base/api/resolve?experiment=test-exp&experiment_id=$(ctx.experiment_id)";
+                             status_exception=false)
+                body = JSON3.read(String(r.body))
+                @test Set(keys(body)) == Set([:error])
             end
         end
     end

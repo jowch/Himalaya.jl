@@ -315,6 +315,11 @@ function migrate_schema!(db::SQLite.DB)
     # was generalized may still have FK refs to `_migrate_old_*` on tables
     # like sample_messages/sample_tags/etc. Idempotent — no-op when clean.
     _fix_fk_references_after_autoincrement_migration!(db)
+    # Run AFTER `_fix_fk_references_after_autoincrement_migration!` so the
+    # AUTOINCREMENT rebuild has settled and the index attaches to the rebuilt
+    # `exposures` table — placing it earlier would have it dropped along with
+    # `_migrate_old_exposures` during `migrate_pk_to_autoincrement!`.
+    migrate_exposures_unique_filename!(db)
     migrate_r2_widen_index_peaks_pk!(db)  # rebuild with widened PK first
     migrate_r2_split_peaks!(db)            # then repoint manual-peak refs
 
@@ -973,6 +978,61 @@ function migrate_samples_naming!(db::SQLite.DB)::Nothing
         # prevent stale-shape replays on retried client_op_id keys post-deploy.
         try DBInterface.execute(db, "DELETE FROM idempotent_responses")
         catch e; occursin("no such table", lowercase(sprint(showerror, e))) || rethrow(); end
+    end
+    nothing
+end
+
+"""
+    migrate_exposures_unique_filename!(db)
+
+Add `UNIQUE INDEX exposures_unique_filename ON exposures(sample_id, filename)`
+following the dedupe-then-enforce pattern from `migrate_samples_naming!`.
+Renames pre-existing duplicates (oldest id keeps the bare filename;
+second-and-later get `<filename>-2`, …) before creating the index, so the
+`CREATE UNIQUE INDEX` always succeeds against clean data.
+
+Idempotent on re-run. Wrapped in `SQLite.transaction` so a partial run
+cannot leave duplicates renamed without uniqueness enforcement.
+
+Direct-invocation pattern from CLAUDE.md (FK-heal regression tests) —
+tests can call this without going through `open_db`.
+"""
+function migrate_exposures_unique_filename!(db::SQLite.DB)
+    SQLite.transaction(db) do
+        # Track existing (sample_id, filename) pairs so a row literally named
+        # "<x>-2" doesn't collide with our rename target.
+        existing = Set{Tuple{Int64,String}}(
+            (Int64(r.sample_id), String(r.filename))
+            for r in Tables.rowtable(DBInterface.execute(db,
+                "SELECT sample_id, filename FROM exposures WHERE sample_id IS NOT NULL AND filename IS NOT NULL")))
+
+        dups = Tables.rowtable(DBInterface.execute(db, """
+            SELECT sample_id, filename FROM exposures
+            WHERE sample_id IS NOT NULL AND filename IS NOT NULL
+            GROUP BY sample_id, filename HAVING COUNT(*) > 1"""))
+
+        for d in dups
+            ids = Tables.rowtable(DBInterface.execute(db,
+                "SELECT id FROM exposures WHERE sample_id = ? AND filename = ? ORDER BY id ASC",
+                [d.sample_id, d.filename]))
+            for (i, row) in enumerate(ids)
+                i == 1 && continue  # oldest keeps the bare name
+                suffix_n = i
+                new_name = "$(d.filename)-$(suffix_n)"
+                while (Int64(d.sample_id), new_name) in existing
+                    suffix_n += 1
+                    new_name = "$(d.filename)-$(suffix_n)"
+                end
+                push!(existing, (Int64(d.sample_id), new_name))
+                @warn "Renamed duplicate exposure" sample_id=d.sample_id old=d.filename new=new_name id=row.id
+                DBInterface.execute(db,
+                    "UPDATE exposures SET filename = ? WHERE id = ?",
+                    [new_name, row.id])
+            end
+        end
+
+        DBInterface.execute(db,
+            "CREATE UNIQUE INDEX IF NOT EXISTS exposures_unique_filename ON exposures(sample_id, filename)")
     end
     nothing
 end

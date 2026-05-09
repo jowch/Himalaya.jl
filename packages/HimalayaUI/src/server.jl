@@ -32,6 +32,21 @@ function register_routes!()
                    joinpath(pkgdir(HimalayaUI), "frontend", "dist"))
     if isdir(dist_dir)
         Oxygen.dynamicfiles(dist_dir, "/")
+
+        # SPA catch-all (spec §3.2). Doublestar `/**` is HTTP.jl's multi-
+        # segment wildcard (Handlers.jl:174,219–227); single-conditional
+        # captures like `{rest:.*}` only match one segment. The `api/`
+        # guard is critical — without it an unregistered API route would
+        # fall through to index.html and mask 404s as 200s.
+        @get "/**" function(req::HTTP.Request)
+            path = HTTP.URI(req.target).path
+            rest = lstrip(path, '/')
+            (startswith(rest, "api/") || rest == "api") && return HTTP.Response(404, "Not found")
+            return HTTP.Response(200,
+                ["Content-Type" => "text/html; charset=utf-8",
+                 "Cache-Control" => "no-store"],
+                read(joinpath(dist_dir, "index.html")))
+        end
     end
 
     @get "/api/health" function(req::HTTP.Request)
@@ -87,6 +102,7 @@ function register_routes!()
     register_export_routes!()
     register_comparisons_routes!()
     register_picker_routes!()
+    register_resolve_routes!()
 end
 
 const GC_TIMER = Ref{Union{Timer, Nothing}}(nothing)

@@ -9,6 +9,8 @@ import { IndexPage } from "../pages/IndexPage";
 import { ComparePage } from "../pages/ComparePage";
 import { ComparePageEdit } from "../pages/ComparePageEdit";
 import { InspectPage } from "../pages/InspectPage";
+import { ResolvingFallback } from "./ResolvingFallback";
+import { StaleUrlPage } from "./StaleUrlPage";
 import { useGlobalShortcuts } from "../hooks/useGlobalShortcuts";
 
 /**
@@ -24,14 +26,20 @@ import { useGlobalShortcuts } from "../hooks/useGlobalShortcuts";
  * `TabRocker` syncs the two: clicking "Compare" navigates to the URL,
  * clicking "Index"/"Inspect" navigates back to "/" and updates `activePage`.
  */
-function ZustandShellPage(): JSX.Element {
+function PageBody(): JSX.Element {
   const activePage = useAppState((s) => s.activePage);
-  return (
-    <>
-      {activePage === "index"   && <IndexPage />}
-      {activePage === "inspect" && <InspectPage />}
-    </>
-  );
+  const resolving = useAppState((s) => s.resolving);
+  const staleUrlContext = useAppState((s) => s.staleUrlContext);
+
+  if (resolving) return <ResolvingFallback />;
+  if (staleUrlContext !== null) {
+    return <StaleUrlPage staleUrlContext={staleUrlContext} />;
+  }
+  if (activePage === "index")   return <IndexPage />;
+  if (activePage === "inspect") return <InspectPage />;
+  // activePage === "compare" never reaches here because compare URLs are
+  // matched by their explicit <Route> entries above.
+  return <></>;
 }
 
 export function AppShell(): JSX.Element {
@@ -126,7 +134,19 @@ export function AppShell(): JSX.Element {
         <Route path="/compare/all/new" element={<ComparePageEdit />} />
         <Route path="/compare/all/:id" element={<ComparePage />} />
         <Route path="/compare/all/:id/edit" element={<ComparePageEdit />} />
-        <Route path="*" element={<ZustandShellPage />} />
+        {/* New permalink shapes — all render PageBody, which inspects Zustand
+            to decide which page to mount. The URL-sync hooks dispatch state
+            based on the matched route, so PageBody only needs to read the
+            already-populated Zustand. */}
+        <Route path="/" element={<PageBody />} />
+        <Route path="/index" element={<PageBody />} />
+        <Route path="/index/:experiment" element={<PageBody />} />
+        <Route path="/index/:experiment/:sample" element={<PageBody />} />
+        <Route path="/inspect" element={<PageBody />} />
+        <Route path="/inspect/:experiment" element={<PageBody />} />
+        <Route path="/inspect/:experiment/:sample" element={<PageBody />} />
+
+        <Route path="*" element={<PageBody />} />  {/* stale fallback */}
       </Routes>
       <NavModal />
     </div>

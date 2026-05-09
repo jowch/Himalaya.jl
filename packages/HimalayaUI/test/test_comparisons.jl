@@ -629,8 +629,13 @@ end
             ctx = _setup_analyzed_exposure(tmp)
             # A second exposure on the same sample, also analyzed. Both
             # members start fresh; we drift exposure A only.
+            # Distinct filename — `exposures_unique_filename` UNIQUE INDEX
+            # forbids `(sample_id, filename)` collisions; reuse the same .dat
+            # via a copy so analyze_exposure! succeeds.
+            cp(joinpath(ctx.analysis_dir, "example_tot.dat"),
+               joinpath(ctx.analysis_dir, "example_tot_b.dat"))
             e2 = HimalayaUI.create_exposure!(ctx.db; sample_id=ctx.sample_id,
-                                              filename="example_tot")
+                                              filename="example_tot_b")
             HimalayaUI.analyze_exposure!(ctx.db, e2, ctx.analysis_dir)
             ha = HimalayaUI.read_inputs_hash(ctx.db, ctx.exposure_id)
             hb = HimalayaUI.read_inputs_hash(ctx.db, e2)

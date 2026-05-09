@@ -28,6 +28,20 @@ const EXPOSURES = [
 ];
 
 async function mockCore(page: Page): Promise<void> {
+  // Permalinks: cold mount with seeded activeExperimentId/activeSampleId
+  // triggers useStateFromUrl's resolve-by-id fallback when the TanStack
+  // cache hasn't hydrated yet. Without this stub the call falls through
+  // to the dev proxy and the seeded ids get wiped.
+  await page.route(/\/api\/resolve\?/, (route) => {
+    route.fulfill({
+      status: 200, contentType: "application/json",
+      body: JSON.stringify({
+        experiment_id: 1, experiment_name: "SSRL Test",
+        sample_id: 10, sample_name: "cubic_run03",
+        exposure_id: undefined, exposure_filename: undefined,
+      }),
+    });
+  });
   await page.route("**/api/users", (r) =>
     r.fulfill({ status: 200, contentType: "application/json",
       body: JSON.stringify([{ id: 1, username: "alice" }]) }));

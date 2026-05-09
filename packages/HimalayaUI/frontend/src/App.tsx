@@ -13,6 +13,8 @@ import { resolveMutator } from "./lib/queue/mutatorRegistry";
 import { exposeTestHelpers } from "./lib/queue/testHelpers";
 import { showToast } from "./lib/toast";
 import { useAppState } from "./state";
+import { useStateFromUrl } from "./hooks/useStateFromUrl";
+import { useUrlFromState } from "./hooks/useUrlFromState";
 import type { SseEvent } from "./lib/queue/types";
 
 /**
@@ -22,6 +24,13 @@ import type { SseEvent } from "./lib/queue/types";
 export function App(): JSX.Element {
   const qc = useQueryClient();
   const mc = qc.getMutationCache();
+
+  // Permalink URL ↔ Zustand sync. Order matters on cold mount —
+  // useStateFromUrl populates Zustand from the address bar first; then
+  // useUrlFromState's equality guard makes ordering irrelevant after the
+  // first render.
+  useStateFromUrl();    // URL → Zustand
+  useUrlFromState();    // Zustand → URL
 
   // Expose minimal test helpers on `window.__himalayaTest` in DEV only.
   // Production bundles tree-shake this out (Vite + DEV gate).
