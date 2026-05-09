@@ -35,7 +35,7 @@ export function parseLocation(pathname: string, search: string): ParsedUrl {
     if (experiment !== undefined && sample !== undefined && search) {
       const params = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
       const e = params.get("exposure");
-      if (e !== null) exposure = e;
+      if (e !== null && e !== "") exposure = e;
     }
     return { kind: "inspect", experiment, sample, exposure };
   }

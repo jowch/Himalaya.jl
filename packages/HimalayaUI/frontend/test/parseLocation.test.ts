@@ -39,6 +39,12 @@ describe("parseLocation", () => {
     });
   });
 
+  it("/inspect with empty ?exposure= treats as undefined", () => {
+    expect(parseLocation("/inspect/lipid/JC001", "?exposure=")).toEqual({
+      kind: "inspect", experiment: "lipid", sample: "JC001", exposure: undefined,
+    });
+  });
+
   it("/compare (legacy list) → compare:list", () => {
     expect(parseLocation("/compare", "")).toEqual({ kind: "compare", view: "list" });
   });
