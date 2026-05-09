@@ -163,10 +163,10 @@ Mounted in `App.tsx`. On mount and on every `popstate`:
 
 1. `parseLocation(location.pathname, location.search)`.
 2. If `kind: "root"` → run the §5 redirect.
-3. If `kind: "stale"` → set Zustand `staleUrlContext = { kind: "unknown_path", raw }`.
+3. If `kind: "stale"` → set Zustand `staleUrlContext = { kind: "unknown_path", raw }`. Active-* slots (`activeExperimentId`, `activeSampleId`, `activeExposureId`) are **not** cleared — the user just pasted an unparseable URL; preserving prior context lets the recovery CTA route them back to where they were if they want.
 4. Otherwise → fetch `/api/resolve?…` with whichever slugs are present.
    - 200 → dispatch Zustand setters: `setActivePage`, `setActiveExperiment`, `setActiveSample` (or `undefined`, depending on what resolved), `setActiveExposure`. Setters clear `staleUrlContext` (see §6).
-   - 404 → `setStaleUrlContext(body)` with the full payload.
+   - 404 → `setStaleUrlContext(body)`. Active-* slots are **not** cleared on 404 either — same rationale. The recovery action (`recoverFromStaleUrl` in §6) decides which slots to overwrite based on what the 404 payload knows resolved, so blanket clearing here would lose useful context.
 
 **Origin-tagged fetches.** Each fetch is tagged with the `pathname + search` it was launched against. Before applying the response (200 or 404), the hook compares the tag to the current `location.pathname + search`; if it changed (the user navigated mid-flight via TabRocker, NavModal, or another `popstate`), the response is discarded. This closes the popstate-vs-click race that a bare `AbortController` doesn't catch — Zustand-driven mutations don't trigger `popstate` so the abort signal alone is insufficient.
 
@@ -302,22 +302,29 @@ The `not_found` variant is populated from the `/api/resolve` 404 body. The `unkn
 
 | variant | `data-missing` | `header` | CTA |
 |---|---|---|---|
-| `kind: "not_found"`, `missing: "experiment"` | `"experiment"` | `Experiment '{missing_value}' not found.` | "Select an experiment" `/` → `recoverFromStaleUrl(undefined, "experiment")` |
-| `kind: "not_found"`, `missing: "sample"` | `"sample"` | `Sample '{missing_value}' not found in '{experiment_resolved.name}'.` | "Select another sample" `/` → `recoverFromStaleUrl(experiment_resolved.id, "sample")` |
-| `kind: "not_found"`, `missing: "exposure"` | `"exposure"` | `Exposure '{missing_value}' not found in '{sample_resolved.name}'.` | "Select another sample" `/` → `recoverFromStaleUrl(experiment_resolved.id, "sample")`; Inspect filmstrip handles per-exposure picking once a sample is chosen |
+| `kind: "not_found"`, `missing: "experiment"` | `"experiment"` | `Experiment '{missing_value}' not found.` | "Select an experiment" `/` → `recoverFromStaleUrl({ step: "experiment" })` |
+| `kind: "not_found"`, `missing: "sample"` | `"sample"` | `Sample '{missing_value}' not found in '{experiment_resolved.name}'.` | "Select another sample" `/` → `recoverFromStaleUrl({ step: "sample", experimentId: experiment_resolved.id })` |
+| `kind: "not_found"`, `missing: "exposure"` | `"exposure"` | `Exposure '{missing_value}' not found in '{sample_resolved.name}'.` | "Back to sample" `/` → `recoverFromStaleUrl({ step: "sample", experimentId: experiment_resolved.id, sampleId: sample_resolved.id, openModal: false })` — the prior sample is still valid, so we just snap back to it; Inspect filmstrip then handles per-exposure picking |
 | `kind: "unknown_path"` | `"path"` | `Page not found.` | "Go to Index" → `setActivePage("index")` (clears `staleUrlContext` per §4.4; `useUrlFromState` emits `/index`) |
 
-**`recoverFromStaleUrl(experimentId, step)` named action** in `state.ts` — single atomic Zustand transition. Clears `staleUrlContext`, optionally sets `activeExperimentId` (when given), and opens NavModal at the requested step. One transition means `useUrlFromState` recomputes once, no half-state where the slot is cleared but the modal hasn't opened (or vice versa):
+**`recoverFromStaleUrl(opts)` named action** in `state.ts` — single atomic Zustand transition. Clears `staleUrlContext`, sets active-* ids when provided, and optionally opens NavModal at the requested step. One transition means `useUrlFromState` recomputes once, no half-state where the slot is cleared but the modal hasn't opened (or vice versa):
 
 ```ts
-recoverFromStaleUrl: (experimentId: number | undefined, step: NavModalStep) =>
+type RecoverOpts = {
+  step: NavModalStep;
+  experimentId: number | undefined;
+  sampleId: number | undefined;
+  openModal: boolean;          // default true; row "exposure" passes false
+};
+
+recoverFromStaleUrl: (opts: RecoverOpts) =>
   set((s) => ({
     staleUrlContext: null,
-    activeExperimentId: experimentId !== undefined ? experimentId : s.activeExperimentId,
-    activeSampleId: undefined,
-    activeExposureId: undefined,
-    navModalOpen: true,
-    navModalStep: step,
+    activeExperimentId: opts.experimentId ?? s.activeExperimentId,
+    activeSampleId:     opts.sampleId     ?? undefined,
+    activeExposureId:   undefined,
+    navModalOpen:       opts.openModal,
+    navModalStep:       opts.step,
   }))
 ```
 
@@ -399,7 +406,7 @@ In practice the URL-invalidation path fires only on entity deletion (names are s
 - New: `components/ResolvingFallback.tsx` — the near-empty placeholder rendered while a resolve is in flight (§4.2).
 - Edit: `App.tsx` — mount the two hooks.
 - Edit: `components/AppShell.tsx` — read `staleUrlContext` and `resolving`; render `<StaleUrlPage>` / `<ResolvingFallback>` / page-router accordingly.
-- Edit: `state.ts` — add `staleUrlContext: StaleUrlContext | null` (type defined in §6), `setStaleUrlContext`; add `resolving: boolean`, `setResolving`; add `recoverFromStaleUrl(experimentId, step)` (signature in §6) for the not_found:* CTAs; have `setActivePage` / `setActiveExperiment` / `setActiveSample` / `setActiveExposure` clear `staleUrlContext` (do NOT clear `resolving` — it's controlled by `useStateFromUrl` lifecycle). All new slots are **not** persisted (omit from `partialize`). No localStorage version bump (ephemeral slots).
+- Edit: `state.ts` — add `staleUrlContext: StaleUrlContext | null` (type defined in §6), `setStaleUrlContext`; add `resolving: boolean`, `setResolving`; add `recoverFromStaleUrl(opts)` (signature in §6) for the not_found:* CTAs; have `setActivePage` / `setActiveExperiment` / `setActiveSample` / `setActiveExposure` clear `staleUrlContext` (do NOT clear `resolving` — it's controlled by `useStateFromUrl` lifecycle). All new slots are **not** persisted (omit from `partialize`). No localStorage version bump (ephemeral slots).
 - Edit: `api.ts` — `ResolveSuccess`, `ResolveError404`, `ResolveError400` types using `T | undefined` for optional fields.
 - New: `e2e/permalinks.spec.ts` (mocked); `e2e/live/permalinks.spec.ts` (live).
 
