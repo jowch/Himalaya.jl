@@ -113,7 +113,7 @@ export function useStateFromUrl(): void {
           navigate("/index", { replace: true });
           return;
         }
-        const path = body.sample_name !== undefined && body.sample_name !== null
+        const path = body.sample_name !== undefined
           ? `/${page}/${encodeURIComponent(body.experiment_name)}/${encodeURIComponent(body.sample_name)}`
           : `/${page}/${encodeURIComponent(body.experiment_name)}`;
         navigate(path, { replace: true });

@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import { useStateFromUrl } from "../src/hooks/useStateFromUrl";
 import { useAppState } from "../src/state";
 import type { ResolveSuccess, ResolveError404 } from "../src/api";
+import { _resetEmitMode } from "../src/lib/url/emitMode";
 
 // BrowserRouter reads from `window.history` / `window.location`, which is
 // what the tests manipulate via `history.replaceState`. A QueryClient
@@ -37,6 +38,7 @@ beforeEach(() => {
     activePage: "index",
   });
   history.replaceState(null, "", "/");
+  _resetEmitMode();
 });
 
 afterEach(() => {
