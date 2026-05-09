@@ -150,4 +150,62 @@ using HimalayaUI
             end
         end
     end
+
+    @testset "400: ambiguous params (experiment + experiment_id)" begin
+        mktempdir() do tmp
+            ctx = _setup_for_resolve(tmp)
+            with_test_server(ctx.db) do port, base
+                r = HTTP.get("$base/api/resolve?experiment=test-exp&experiment_id=$(ctx.experiment_id)";
+                             status_exception=false)
+                @test r.status == 400
+                body = JSON3.read(String(r.body))
+                @test body.error == "ambiguous_params"
+            end
+        end
+    end
+
+    @testset "400: ambiguous params (sample + sample_id)" begin
+        mktempdir() do tmp
+            ctx = _setup_for_resolve(tmp)
+            with_test_server(ctx.db) do port, base
+                r = HTTP.get("$base/api/resolve?experiment=test-exp&sample=S1&sample_id=$(ctx.sample_id)";
+                             status_exception=false)
+                @test r.status == 400
+            end
+        end
+    end
+
+    @testset "200: mixed name+id across entities is allowed" begin
+        mktempdir() do tmp
+            ctx = _setup_for_resolve(tmp)
+            with_test_server(ctx.db) do port, base
+                # name-form experiment + id-form sample is fine.
+                r = HTTP.get("$base/api/resolve?experiment=test-exp&sample_id=$(ctx.sample_id)")
+                @test r.status == 200
+                body = JSON3.read(String(r.body))
+                @test body.experiment_id == ctx.experiment_id
+                @test body.sample_id == ctx.sample_id
+            end
+        end
+    end
+
+    @testset "tiebreaker: duplicate experiment names → lowest id wins" begin
+        mktempdir() do tmp
+            ctx = _setup_for_resolve(tmp)
+            # Insert a second experiment with the same name.
+            res = DBInterface.execute(ctx.db,
+                "INSERT INTO experiments (name, path, data_dir, analysis_dir) VALUES ('test-exp','/p','/d','/a')")
+            second_id = Int(DBInterface.lastrowid(res))
+            @test second_id > ctx.experiment_id
+
+            with_test_server(ctx.db) do port, base
+                r = HTTP.get("$base/api/resolve?experiment=test-exp")
+                @test r.status == 200
+                body = JSON3.read(String(r.body))
+                # Lowest id wins deterministically.
+                @test body.experiment_id == ctx.experiment_id
+                @test body.experiment_id < second_id
+            end
+        end
+    end
 end
