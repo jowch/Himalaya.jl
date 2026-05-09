@@ -38,4 +38,5 @@ using Test
     include("test_picker_routes.jl")
     include("test_picker_samples_route.jl")
     include("test_comparison_pins.jl")
+    include("test_validate.jl")
 end
