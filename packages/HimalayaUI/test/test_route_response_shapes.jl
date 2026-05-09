@@ -704,4 +704,49 @@ end
             end
         end
     end
+
+    @testset "GET /api/resolve 200 (experiment+sample+exposure)" begin
+        mktempdir() do tmp
+            ctx = _setup_for_resolve(tmp)
+            with_test_server(ctx.db) do port, base
+                r = HTTP.get("$base/api/resolve?experiment=test-exp&sample=S1&exposure=JC001-007")
+                body = JSON3.read(String(r.body))
+                # Key set frozen.
+                @test Set(keys(body)) == Set([
+                    :experiment_id, :experiment_name,
+                    :sample_id, :sample_name,
+                    :exposure_id, :exposure_filename,
+                ])
+            end
+        end
+    end
+
+    @testset "GET /api/resolve 404 (missing exposure)" begin
+        mktempdir() do tmp
+            ctx = _setup_for_resolve(tmp)
+            with_test_server(ctx.db) do port, base
+                r = HTTP.get("$base/api/resolve?experiment=test-exp&sample=S1&exposure=nope";
+                             status_exception=false)
+                body = JSON3.read(String(r.body))
+                @test Set(keys(body)) == Set([
+                    :error, :missing, :missing_value,
+                    :experiment_resolved, :sample_resolved,
+                ])
+                @test Set(keys(body.experiment_resolved)) == Set([:id, :name])
+                @test Set(keys(body.sample_resolved))     == Set([:id, :name])
+            end
+        end
+    end
+
+    @testset "GET /api/resolve 400 (ambiguous params)" begin
+        mktempdir() do tmp
+            ctx = _setup_for_resolve(tmp)
+            with_test_server(ctx.db) do port, base
+                r = HTTP.get("$base/api/resolve?experiment=test-exp&experiment_id=$(ctx.experiment_id)";
+                             status_exception=false)
+                body = JSON3.read(String(r.body))
+                @test Set(keys(body)) == Set([:error])
+            end
+        end
+    end
 end
