@@ -90,12 +90,17 @@ export function useUrlFromState(): void {
     enabled: activeExperimentId !== undefined,
   });
   const samples = activeExperimentId !== undefined ? samplesQuery.data : undefined;
+  // Only Inspect URLs include `?exposure=`. Gating on `activePage === "inspect"`
+  // avoids a wasted GET on every Index landing where Inspect was never visited
+  // (cache is shared with InspectPage; Inspect re-mounts trigger the fetch
+  // there anyway).
+  const exposuresEnabled = activeSampleId !== undefined && activePage === "inspect";
   const exposuresQuery = useQuery({
     queryKey: queryKeys.exposures(activeSampleId ?? 0),
     queryFn: () => api.listExposures(activeSampleId as number),
-    enabled: activeSampleId !== undefined,
+    enabled: exposuresEnabled,
   });
-  const exposures = activeSampleId !== undefined ? exposuresQuery.data : undefined;
+  const exposures = exposuresEnabled ? exposuresQuery.data : undefined;
 
   // Track the previous resolved slug pair so we can detect SSE-driven
   // disappearance (a slug went from defined → undefined because the
@@ -146,10 +151,13 @@ export function useUrlFromState(): void {
     // hook fires with experiments still undefined; nameForExperiment
     // returns undefined; buildUrl emits /index; useStateFromUrl re-parses
     // /index and wipes the just-populated active ids.
+    //
+    // Exposures only matter on Inspect (the URL only includes `?exposure=`
+    // there); on other pages we don't need to wait for that cache to hydrate.
     const cacheReady =
       (activeExperimentId === undefined || experiments !== undefined) &&
       (activeSampleId === undefined || samples !== undefined) &&
-      (activeExposureId === undefined || exposures !== undefined);
+      (activeExposureId === undefined || activePage !== "inspect" || exposures !== undefined);
     if (!cacheReady) return;
 
     // Consume the emit-mode flag BEFORE the equality guard. Otherwise a

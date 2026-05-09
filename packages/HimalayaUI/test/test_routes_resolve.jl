@@ -208,4 +208,41 @@ using HimalayaUI
             end
         end
     end
+
+    @testset "404: id-form lookup of NULL-name sample (no canonical slug)" begin
+        mktempdir() do tmp
+            ctx = _setup_for_resolve(tmp)
+            DBInterface.execute(ctx.db, "UPDATE samples SET name = NULL WHERE id = ?",
+                                [ctx.sample_id])
+            with_test_server(ctx.db) do port, base
+                r = HTTP.get("$base/api/resolve?experiment_id=$(ctx.experiment_id)&sample_id=$(ctx.sample_id)";
+                             status_exception=false)
+                @test r.status == 404
+                body = JSON3.read(String(r.body))
+                @test body.missing == "sample"
+                @test body.reason == "sample has no canonical name"
+                # experiment_resolved present so the frontend StaleUrlPage
+                # can offer "go to the experiment" recovery.
+                @test body.experiment_resolved.id == ctx.experiment_id
+            end
+        end
+    end
+
+    @testset "404: id-form lookup of NULL-filename exposure (no canonical slug)" begin
+        mktempdir() do tmp
+            ctx = _setup_for_resolve(tmp)
+            DBInterface.execute(ctx.db, "UPDATE exposures SET filename = NULL WHERE id = ?",
+                                [ctx.exposure_id])
+            with_test_server(ctx.db) do port, base
+                r = HTTP.get("$base/api/resolve?experiment_id=$(ctx.experiment_id)&sample_id=$(ctx.sample_id)&exposure_id=$(ctx.exposure_id)";
+                             status_exception=false)
+                @test r.status == 404
+                body = JSON3.read(String(r.body))
+                @test body.missing == "exposure"
+                @test body.reason == "exposure has no canonical filename"
+                @test body.experiment_resolved.id == ctx.experiment_id
+                @test body.sample_resolved.id == ctx.sample_id
+            end
+        end
+    end
 end

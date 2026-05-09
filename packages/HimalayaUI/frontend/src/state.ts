@@ -42,6 +42,13 @@ export type RecoverOpts = {
   openModal?: boolean; // default true; row "exposure" passes false
 };
 
+export type ResolveSuccessSlots = {
+  page: PageId;
+  experimentId: number | undefined;
+  sampleId: number | undefined;
+  exposureId: number | undefined;
+};
+
 export interface AppState {
   // persisted
   username: string | undefined;
@@ -201,6 +208,18 @@ export interface AppState {
   setStaleUrlContext: (ctx: StaleUrlContext | null) => void;
   setResolving: (v: boolean) => void;
   recoverFromStaleUrl: (opts: RecoverOpts) => void;
+  /**
+   * Atomic commit of a `/api/resolve` 200 response. Single setState so
+   * `useUrlFromState` recomputes once — no cascading partial URL emits.
+   * Arms `emitReplaceNext()` so the resulting state→URL emit is replace.
+   */
+  setResolveSuccess: (slots: ResolveSuccessSlots) => void;
+  /** Mark the URL as an unknown frontend path (renders StaleUrlPage). */
+  setStaleUnknownPath: (raw: string) => void;
+  /** Atomic commit of a `/api/resolve` 404 response. Renders StaleUrlPage. */
+  setStaleNotFound: (
+    ctx: Extract<StaleUrlContext, { kind: "not_found" }>,
+  ) => void;
 }
 
 /**
@@ -435,6 +454,27 @@ export const useAppState = create<AppState>()(
             navModalStep: opts.step,
           }));
         },
+        setResolveSuccess: ({ page, experimentId, sampleId, exposureId }) => {
+          emitReplaceNext();
+          set({
+            activePage: page,
+            activeExperimentId: experimentId,
+            activeSampleId: sampleId,
+            activeExposureId: exposureId,
+            staleUrlContext: null,
+            resolving: false,
+          });
+        },
+        setStaleUnknownPath: (raw) =>
+          set({
+            staleUrlContext: { kind: "unknown_path", raw },
+            resolving: false,
+          }),
+        setStaleNotFound: (ctx) =>
+          set({
+            staleUrlContext: ctx,
+            resolving: false,
+          }),
       };
     },
     {

@@ -78,7 +78,11 @@ function register_resolve_routes!()
             return _json(400, Dict(:error => "missing_experiment"))
         end
 
-        # Resolve sample (optional).
+        # Resolve sample (optional). NULL-name samples are 404'd symmetric
+        # with the experiment branch — a missing canonical slug means the
+        # frontend can't construct a stable permalink for the row, and
+        # falling through with `name=""` would emit `/index/<exp>/`
+        # (trailing slash) on the URL hook, kicking off a re-resolve loop.
         sample_row = nothing
         if _has_param(params, "sample") || _has_param(params, "sample_id")
             if _has_param(params, "sample")
@@ -100,11 +104,17 @@ function register_resolve_routes!()
                 isempty(rows) && return _json(404, Dict(
                     :error => "not_found", :missing => "sample", :missing_value => string(id),
                     :experiment_resolved => Dict(:id => exp_row.id, :name => exp_row.name)))
+                ismissing(rows[1].name) && return _json(404, Dict(
+                    :error => "not_found", :missing => "sample",
+                    :missing_value => string(id),
+                    :reason => "sample has no canonical name",
+                    :experiment_resolved => Dict(:id => exp_row.id, :name => exp_row.name)))
                 sample_row = (id=Int(rows[1].id), name=_safe_str(rows[1].name))
             end
         end
 
-        # Resolve exposure (optional, requires sample).
+        # Resolve exposure (optional, requires sample). NULL-filename rows
+        # are 404'd for the same reason as NULL-name samples above.
         exposure_row = nothing
         if _has_param(params, "exposure") || _has_param(params, "exposure_id")
             sample_row === nothing && return _json(400, Dict(:error => "missing_sample"))
@@ -127,6 +137,12 @@ function register_resolve_routes!()
                     [id, sample_row.id]))
                 isempty(rows) && return _json(404, Dict(
                     :error => "not_found", :missing => "exposure", :missing_value => string(id),
+                    :experiment_resolved => Dict(:id => exp_row.id, :name => exp_row.name),
+                    :sample_resolved     => Dict(:id => sample_row.id, :name => sample_row.name)))
+                ismissing(rows[1].filename) && return _json(404, Dict(
+                    :error => "not_found", :missing => "exposure",
+                    :missing_value => string(id),
+                    :reason => "exposure has no canonical filename",
                     :experiment_resolved => Dict(:id => exp_row.id, :name => exp_row.name),
                     :sample_resolved     => Dict(:id => sample_row.id, :name => sample_row.name)))
                 exposure_row = (id=Int(rows[1].id), filename=_safe_str(rows[1].filename))

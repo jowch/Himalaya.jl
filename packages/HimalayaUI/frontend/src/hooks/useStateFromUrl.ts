@@ -6,32 +6,11 @@ import { parseLocation } from "../lib/url/parseLocation";
 import * as api from "../api";
 import type { ResolveSuccess, Experiment, Sample } from "../api";
 import { queryKeys } from "../queries";
-import { emitReplaceNext } from "../lib/url/emitMode";
 
 // Spec §4.2 — URL → Zustand. Reads `useLocation()` so popstate AND
 // useNavigate both flow through the hook. Origin-tagged fetches avoid
 // the Zustand-mid-flight race (Zustand mutations don't change `location`,
 // so AbortController alone is insufficient).
-
-/**
- * Atomic apply of a 200 resolve response. Single setState commit so
- * useUrlFromState recomputes once, no cascading partial URL emits.
- *
- * App-init URL sync (per spec §4.3 trigger table) → replace, so the
- * initial state→URL emit doesn't push a redundant history entry over
- * the URL the user just landed on.
- */
-function applySuccess(body: ResolveSuccess, page: "index" | "inspect" | "compare") {
-  emitReplaceNext();
-  useAppState.setState({
-    activePage: page,
-    activeExperimentId: body.experiment_id,
-    activeSampleId: body.sample_id,
-    activeExposureId: body.exposure_id,
-    staleUrlContext: null,
-    resolving: false,
-  });
-}
 
 const VALID_PAGES = new Set(["index", "inspect", "compare"]);
 
@@ -46,21 +25,18 @@ export function useStateFromUrl(): void {
     const parsed = parseLocation(location.pathname, location.search);
 
     if (parsed.kind === "stale") {
-      useAppState.setState({
-        staleUrlContext: { kind: "unknown_path", raw: parsed.raw },
-        resolving: false,
-      });
+      useAppState.getState().setStaleUnknownPath(parsed.raw);
       return;
     }
 
     if (parsed.kind === "compare") {
       // Compare uses numeric ids resolved by react-router useParams in the
-      // ComparePage component itself; just set the active page.
-      useAppState.setState({
-        activePage: "compare",
-        staleUrlContext: null,
-        resolving: false,
-      });
+      // ComparePage component itself; just set the active page + clear
+      // resolving. `setActivePage` already clears `staleUrlContext` as a
+      // side effect, so we don't need a separate call for that.
+      const a = useAppState.getState();
+      a.setActivePage("compare");
+      a.setResolving(false);
       return;
     }
 
@@ -105,7 +81,7 @@ export function useStateFromUrl(): void {
       // from `/` BEFORE the resolve-by-id call lands — clobbering the
       // seeded slug pair we're trying to recover. Symmetric with the
       // resolving:true set on the recognized-kind branch below.
-      useAppState.setState({ resolving: true });
+      useAppState.getState().setResolving(true);
       (async () => {
         const q: api.ResolveQuery = { experiment_id: expId };
         if (sId !== undefined) q.sample_id = sId;
@@ -114,13 +90,13 @@ export function useStateFromUrl(): void {
           body = await api.resolve(q);
         } catch {
           if (!cancelled) {
-            useAppState.setState({ resolving: false });
+            useAppState.getState().setResolving(false);
             navigate("/index", { replace: true });
           }
           return;
         }
         if (cancelled) return;
-        useAppState.setState({ resolving: false });
+        useAppState.getState().setResolving(false);
         if ("error" in body) {
           navigate("/index", { replace: true });
           return;
@@ -130,24 +106,32 @@ export function useStateFromUrl(): void {
           : `/${page}/${encodeURIComponent(body.experiment_name)}`;
         navigate(path, { replace: true });
       })();
-      return;
+      // Cleanup also runs for this branch — see the cleanup at the end of
+      // the effect for the rationale on why we always reset resolving.
+      return () => {
+        cancelled = true;
+        useAppState.getState().setResolving(false);
+      };
     }
 
     // index or inspect — fetch /api/resolve with whichever slugs are present.
     if (parsed.experiment === undefined) {
-      useAppState.setState({
-        activePage: parsed.kind,
-        activeExperimentId: undefined,
-        activeSampleId: undefined,
-        activeExposureId: undefined,
-        staleUrlContext: null,
-        resolving: false,
+      // Bare /index or /inspect — clear active selection atomically.
+      useAppState.getState().setResolveSuccess({
+        page: parsed.kind,
+        experimentId: undefined,
+        sampleId: undefined,
+        exposureId: undefined,
       });
       return;
     }
 
     // Pre-fetch clear of staleUrlContext + set resolving.
-    useAppState.setState({ staleUrlContext: null, resolving: true });
+    {
+      const a = useAppState.getState();
+      a.setStaleUrlContext(null);
+      a.setResolving(true);
+    }
 
     // Capture window.location at fetch start. We re-read at fetch end
     // and bail if it changed, catching the raw `history.replaceState` /
@@ -172,38 +156,45 @@ export function useStateFromUrl(): void {
         body = await api.resolve(q, ctl.signal);
       } catch (e) {
         if ((e as Error).name === "AbortError") return;
-        if (!cancelled) useAppState.setState({ resolving: false });
+        if (!cancelled) useAppState.getState().setResolving(false);
         return;
       }
       if (cancelled) return;
       const currentWindowUrl = window.location.pathname + window.location.search;
       if (currentWindowUrl !== startWindowUrl) return;
       if ("error" in body && body.error === "not_found") {
-        useAppState.setState({
-          staleUrlContext: {
-            kind: "not_found",
-            missing: body.missing,
-            missing_value: body.missing_value,
-            experiment_resolved: body.experiment_resolved,
-            sample_resolved: body.sample_resolved,
-          },
-          resolving: false,
+        useAppState.getState().setStaleNotFound({
+          kind: "not_found",
+          missing: body.missing,
+          missing_value: body.missing_value,
+          experiment_resolved: body.experiment_resolved,
+          sample_resolved: body.sample_resolved,
         });
         return;
       }
       if ("error" in body) {
-        useAppState.setState({
-          staleUrlContext: { kind: "unknown_path", raw: origin },
-          resolving: false,
-        });
+        useAppState.getState().setStaleUnknownPath(origin);
         return;
       }
-      applySuccess(body as ResolveSuccess, parsed.kind);
+      const ok = body as ResolveSuccess;
+      useAppState.getState().setResolveSuccess({
+        page: parsed.kind,
+        experimentId: ok.experiment_id,
+        sampleId: ok.sample_id,
+        exposureId: ok.exposure_id,
+      });
     })();
 
     return () => {
       cancelled = true;
       ctl.abort();
+      // Defensive reset: if the effect is unmounting (no remount immediately
+      // following), `resolving:true` would otherwise leak past the
+      // component's lifetime. If a remount IS following (location changed
+      // mid-fetch), the new effect's `setResolving(true)` runs synchronously
+      // after this cleanup within React's deferred-effects flush, so no
+      // intermediate render observes the false→true transition.
+      useAppState.getState().setResolving(false);
     };
   }, [location.pathname, location.search, navigate, qc]);
 }

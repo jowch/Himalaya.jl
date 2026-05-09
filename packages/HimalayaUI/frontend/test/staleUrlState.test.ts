@@ -125,4 +125,48 @@ describe("Zustand state — permalink slots", () => {
     useAppState.getState().setActiveExposure(200);
     expect(consumeEmitMode()).toBe("replace");
   });
+
+  it("setResolveSuccess commits page+ids atomically and arms replace", async () => {
+    const { _resetEmitMode, consumeEmitMode } = await import("../src/lib/url/emitMode");
+    _resetEmitMode();
+    useAppState.getState().setResolving(true);
+    useAppState.getState().setStaleUrlContext({ kind: "unknown_path", raw: "/x" });
+    useAppState.getState().setResolveSuccess({
+      page: "inspect",
+      experimentId: 7,
+      sampleId: 11,
+      exposureId: 22,
+    });
+    const s = useAppState.getState();
+    expect(s.activePage).toBe("inspect");
+    expect(s.activeExperimentId).toBe(7);
+    expect(s.activeSampleId).toBe(11);
+    expect(s.activeExposureId).toBe(22);
+    expect(s.staleUrlContext).toBeNull();
+    expect(s.resolving).toBe(false);
+    expect(consumeEmitMode()).toBe("replace");
+  });
+
+  it("setStaleUnknownPath stores raw + clears resolving", () => {
+    useAppState.getState().setResolving(true);
+    useAppState.getState().setStaleUnknownPath("/foo/bar/baz");
+    const s = useAppState.getState();
+    expect(s.staleUrlContext).toEqual({ kind: "unknown_path", raw: "/foo/bar/baz" });
+    expect(s.resolving).toBe(false);
+  });
+
+  it("setStaleNotFound commits 404 context atomically + clears resolving", () => {
+    useAppState.getState().setResolving(true);
+    const ctx = {
+      kind: "not_found" as const,
+      missing: "sample" as const,
+      missing_value: "lipid-typo",
+      experiment_resolved: { id: 3, name: "ExpA" },
+      sample_resolved: undefined,
+    };
+    useAppState.getState().setStaleNotFound(ctx);
+    const s = useAppState.getState();
+    expect(s.staleUrlContext).toEqual(ctx);
+    expect(s.resolving).toBe(false);
+  });
 });
