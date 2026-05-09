@@ -41,4 +41,5 @@ using Test
     include("test_comparison_pins.jl")
     include("test_validate.jl")
     include("test_migrate_toml.jl")
+    include("test_spa_fallback.jl")
 end
