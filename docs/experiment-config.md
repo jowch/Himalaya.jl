@@ -74,8 +74,8 @@ header_row     = 0                    # 1-based row of named headers; 0 = positi
 # Each column value is either an integer (1-based position) or a string
 # (header name). Named lookup is tried first when header_row > 0.
 sample_id      = 1
-label          = 2
-name           = 3
+name           = 2     # stable scientific identifier (e.g. "JC001")
+display_name   = 3     # user-facing label (e.g. "DOPC + cholesterol")
 filenames      = 9
 notes_sample   = 10
 notes_exposure = 11
@@ -116,7 +116,21 @@ TOML blob.
 | `delimiter` | Field separator. `"\t"` (tab) or `","` (comma). |
 | `skip_rows` | Number of rows to skip at the top of the file (for preamble like institution headers). |
 | `header_row` | 1-based row number containing column headers. `0` means no headers — all column references must be integers. |
-| `sample_id`, `label`, `name`, `filenames`, `notes_sample`, `notes_exposure` | Column references — see [Column resolution](#column-resolution). |
+| `sample_id`, `name`, `display_name`, `filenames`, `notes_sample`, `notes_exposure` | Column references — see [Column resolution](#column-resolution). |
+
+#### `name` vs `display_name`
+
+The `[manifest].name` column is the **stable scientific identifier** (e.g. `JC001`). It must match
+`[A-Za-z0-9._-]+`, be non-empty, and be unique within the experiment. It cannot be edited via the UI;
+rename happens through the manifest CSV + reingest.
+
+The `[manifest].display_name` column is the **friendly user-facing label** (e.g. `DOPC + cholesterol`).
+It is initialised from the manifest at first ingest and editable via the UI thereafter; reingest never
+clobbers it.
+
+Migrating an existing `experiment.toml` from the legacy `label/name` shape to the new
+`name/display_name` shape: run `himalaya migrate-toml <experiment-dir>`. Section-aware
+regex-anchored substitution; idempotent.
 
 ### `[layout]`
 
@@ -153,7 +167,8 @@ This dual mode lets a lab notebook evolve. A typical positional config:
 [manifest]
 header_row     = 0
 sample_id      = 1
-label          = 2
+name           = 2
+display_name   = 3
 filenames      = 9
 ```
 
@@ -163,7 +178,8 @@ If the lab adopts named headers later, switch to:
 [manifest]
 header_row     = 1
 sample_id      = "#"
-label          = "Sample"
+name           = "ID"
+display_name   = "Sample"
 filenames      = "Filename(s)"
 ```
 
@@ -236,7 +252,8 @@ DB. Reingestion is **safe to run repeatedly** and preserves curation
 work:
 
 - Existing samples are matched by `(experiment_id, name)` and updated
-  in place — labels and notes get refreshed.
+  in place — `display_name` is **not** clobbered on reingest (user edits are preserved);
+  notes get refreshed.
 - Exposures are matched by `(sample_id, filename)`. **Existing exposures
   are never deleted or modified by reingest** — their `accepted` /
   `rejected` status, manual peaks, and analysis results are preserved.
@@ -314,6 +331,12 @@ himalaya init <experiment_dir>
 himalaya reingest <experiment_dir>
     Re-read experiment.toml + manifest.csv and update the DB.
     Idempotent on stable input. Preserves curated exposures.
+
+himalaya migrate-toml <experiment_dir>
+    Upgrade experiment.toml from the legacy label/name column shape to the new
+    name/display_name shape. Section-aware, regex-anchored; idempotent (safe to
+    re-run on an already-migrated file). Required once per experiment dir when
+    deploying the issue #88 schema change.
 ```
 
 ## Storage
