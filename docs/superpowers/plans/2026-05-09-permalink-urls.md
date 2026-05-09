@@ -288,24 +288,9 @@ using HimalayaUI
 # runtests.jl includes those files before this one. See Step 3 for the
 # correct ordering when adding the new include lines.
 
-# Helper: the existing `_setup_analyzed_exposure` returns
-# (db, exposure_id, sample_id, analysis_dir) with experiment.name = NULL,
-# sample.name = "D1", exposure.filename = "example_tot". We add resolvable
-# names by direct UPDATE and capture the experiment_id from the DB.
-function _setup_for_resolve(tmp::String)
-    ctx = _setup_analyzed_exposure(tmp)
-    DBInterface.execute(ctx.db, "UPDATE experiments SET name = 'test-exp'")
-    DBInterface.execute(ctx.db, "UPDATE samples SET name = 'S1' WHERE id = ?",
-                        [ctx.sample_id])
-    DBInterface.execute(ctx.db, "UPDATE exposures SET filename = 'JC001-007' WHERE id = ?",
-                        [ctx.exposure_id])
-    exp_row = Tables.rowtable(DBInterface.execute(ctx.db,
-        "SELECT id FROM experiments LIMIT 1"))[1]
-    return (db = ctx.db,
-            experiment_id = Int(exp_row.id),
-            sample_id = ctx.sample_id,
-            exposure_id = ctx.exposure_id)
-end
+# `_setup_for_resolve` is defined in test_route_response_shapes.jl
+# (alongside `_setup_analyzed_exposure`) so both Task 2 and Task 4 can
+# call it. See Task 2 Step 3 for the helper body.
 
 @testset "GET /api/resolve" begin
     @testset "200: experiment + sample + exposure happy path" begin
@@ -427,7 +412,14 @@ end
     @testset "404: id-form for deleted sample (cold-mount Zustand staleness)" begin
         mktempdir() do tmp
             ctx = _setup_for_resolve(tmp)
+            # FK enforcement is on (open_db sets PRAGMA foreign_keys = ON);
+            # exposures.sample_id REFERENCES samples(id) without ON DELETE.
+            # Disable FKs around the synthetic delete to simulate the
+            # "sample id no longer exists" cold-mount state without
+            # tearing down dependent rows.
+            DBInterface.execute(ctx.db, "PRAGMA foreign_keys = OFF")
             DBInterface.execute(ctx.db, "DELETE FROM samples WHERE id = ?", [ctx.sample_id])
+            DBInterface.execute(ctx.db, "PRAGMA foreign_keys = ON")
             with_test_server(ctx.db) do port, base
                 r = HTTP.get("$base/api/resolve?experiment_id=$(ctx.experiment_id)&sample_id=$(ctx.sample_id)";
                              status_exception=false)
@@ -454,6 +446,34 @@ grep -E "Test Summary|fail|did not pass" /tmp/jl-test.out
 ```
 
 Expected: 404s on all calls (the route doesn't exist).
+
+- [ ] **Step 3a: Hoist a shared `_setup_for_resolve` helper into `test_route_response_shapes.jl`**
+
+In `packages/HimalayaUI/test/test_route_response_shapes.jl`, immediately after the existing `_setup_analyzed_exposure` definition (around line 43), add:
+
+```julia
+"""
+Like `_setup_analyzed_exposure` but UPDATEs the rows to known slug-resolvable
+names ("test-exp" / "S1" / "JC001-007") and captures `experiment_id` for tests
+that need it. Used by `test_routes_resolve.jl` and the resolve-shape rows below.
+"""
+function _setup_for_resolve(tmp::String)
+    ctx = _setup_analyzed_exposure(tmp)
+    DBInterface.execute(ctx.db, "UPDATE experiments SET name = 'test-exp'")
+    DBInterface.execute(ctx.db, "UPDATE samples SET name = 'S1' WHERE id = ?",
+                        [ctx.sample_id])
+    DBInterface.execute(ctx.db, "UPDATE exposures SET filename = 'JC001-007' WHERE id = ?",
+                        [ctx.exposure_id])
+    exp_row = Tables.rowtable(DBInterface.execute(ctx.db,
+        "SELECT id FROM experiments LIMIT 1"))[1]
+    return (db = ctx.db,
+            experiment_id = Int(exp_row.id),
+            sample_id = ctx.sample_id,
+            exposure_id = ctx.exposure_id)
+end
+```
+
+This hoist is required because `runtests.jl` includes `test_route_response_shapes.jl` (line 33) BEFORE `test_routes_resolve.jl`, and the resolve-shape contract test (Task 4) lives inside `test_route_response_shapes.jl`. Defining the helper there makes it available to both files.
 
 - [ ] **Step 3: Implement the route**
 
@@ -657,7 +677,7 @@ Append to the existing `@testset "GET /api/resolve"`:
 ```julia
     @testset "400: ambiguous params (experiment + experiment_id)" begin
         mktempdir() do tmp
-            ctx = _setup_analyzed_exposure(tmp)
+            ctx = _setup_for_resolve(tmp)
             with_test_server(ctx.db) do port, base
                 r = HTTP.get("$base/api/resolve?experiment=test-exp&experiment_id=$(ctx.experiment_id)";
                              status_exception=false)
@@ -670,7 +690,7 @@ Append to the existing `@testset "GET /api/resolve"`:
 
     @testset "400: ambiguous params (sample + sample_id)" begin
         mktempdir() do tmp
-            ctx = _setup_analyzed_exposure(tmp)
+            ctx = _setup_for_resolve(tmp)
             with_test_server(ctx.db) do port, base
                 r = HTTP.get("$base/api/resolve?experiment=test-exp&sample=S1&sample_id=$(ctx.sample_id)";
                              status_exception=false)
@@ -681,7 +701,7 @@ Append to the existing `@testset "GET /api/resolve"`:
 
     @testset "200: mixed name+id across entities is allowed" begin
         mktempdir() do tmp
-            ctx = _setup_analyzed_exposure(tmp)
+            ctx = _setup_for_resolve(tmp)
             with_test_server(ctx.db) do port, base
                 # name-form experiment + id-form sample is fine.
                 r = HTTP.get("$base/api/resolve?experiment=test-exp&sample_id=$(ctx.sample_id)")
@@ -695,7 +715,7 @@ Append to the existing `@testset "GET /api/resolve"`:
 
     @testset "tiebreaker: duplicate experiment names → lowest id wins" begin
         mktempdir() do tmp
-            ctx = _setup_analyzed_exposure(tmp)
+            ctx = _setup_for_resolve(tmp)
             # Insert a second experiment with the same name.
             res = DBInterface.execute(ctx.db,
                 "INSERT INTO experiments (name, path, data_dir, analysis_dir) VALUES ('test-exp','/p','/d','/a')")
@@ -752,12 +772,12 @@ The file should have a top-level `@testset "route response shapes"` containing r
 
 - [ ] **Step 2: Add the rows**
 
-Inside the existing top-level `@testset`, append:
+Inside the existing top-level `@testset`, append. `_setup_for_resolve` was added to `test_route_response_shapes.jl` itself in Task 2 Step 3a, so it's available here without import.
 
 ```julia
     @testset "GET /api/resolve 200 (experiment+sample+exposure)" begin
         mktempdir() do tmp
-            ctx = _setup_analyzed_exposure(tmp)
+            ctx = _setup_for_resolve(tmp)
             with_test_server(ctx.db) do port, base
                 r = HTTP.get("$base/api/resolve?experiment=test-exp&sample=S1&exposure=JC001-007")
                 body = JSON3.read(String(r.body))
@@ -773,7 +793,7 @@ Inside the existing top-level `@testset`, append:
 
     @testset "GET /api/resolve 404 (missing exposure)" begin
         mktempdir() do tmp
-            ctx = _setup_analyzed_exposure(tmp)
+            ctx = _setup_for_resolve(tmp)
             with_test_server(ctx.db) do port, base
                 r = HTTP.get("$base/api/resolve?experiment=test-exp&sample=S1&exposure=nope";
                              status_exception=false)
@@ -790,7 +810,7 @@ Inside the existing top-level `@testset`, append:
 
     @testset "GET /api/resolve 400 (ambiguous params)" begin
         mktempdir() do tmp
-            ctx = _setup_analyzed_exposure(tmp)
+            ctx = _setup_for_resolve(tmp)
             with_test_server(ctx.db) do port, base
                 r = HTTP.get("$base/api/resolve?experiment=test-exp&experiment_id=$(ctx.experiment_id)";
                              status_exception=false)
@@ -1271,24 +1291,28 @@ describe("parseLocation", () => {
     });
   });
 
-  it("/compare → list", () => {
+  it("/compare (legacy list) → compare:list", () => {
     expect(parseLocation("/compare", "")).toEqual({ kind: "compare", view: "list" });
   });
 
-  it("/compare/new → new draft", () => {
-    expect(parseLocation("/compare/new", "")).toEqual({ kind: "compare", view: "new" });
+  it("/compare/all → compare:list", () => {
+    expect(parseLocation("/compare/all", "")).toEqual({ kind: "compare", view: "list" });
   });
 
-  it("/compare/<n> → review", () => {
-    expect(parseLocation("/compare/42", "")).toEqual({ kind: "compare", view: "review", id: 42 });
+  it("/compare/all/42 → compare:list (ComparePage handles numeric id)", () => {
+    expect(parseLocation("/compare/all/42", "")).toEqual({ kind: "compare", view: "list" });
   });
 
-  it("/compare/<n>/edit → edit", () => {
-    expect(parseLocation("/compare/42/edit", "")).toEqual({ kind: "compare", view: "edit", id: 42 });
+  it("/compare/all/42/edit → compare:list", () => {
+    expect(parseLocation("/compare/all/42/edit", "")).toEqual({ kind: "compare", view: "list" });
   });
 
-  it("/compare/<non-int> → stale", () => {
-    expect(parseLocation("/compare/abc", "")).toEqual({ kind: "stale", raw: "/compare/abc" });
+  it("/experiments/17/compare → compare:list", () => {
+    expect(parseLocation("/experiments/17/compare", "")).toEqual({ kind: "compare", view: "list" });
+  });
+
+  it("/experiments/17/compare/42 → compare:list", () => {
+    expect(parseLocation("/experiments/17/compare/42", "")).toEqual({ kind: "compare", view: "list" });
   });
 
   it("/foo/bar → stale", () => {
@@ -1326,14 +1350,15 @@ Create `frontend/src/lib/url/parseLocation.ts`:
 ```ts
 // Spec §4.1 — pure URL parser. No side effects.
 
+// Compare URLs are owned by ComparePage / ComparePageEdit (which use
+// useParams + useNavigate). useStateFromUrl only needs to know "this is
+// a compare path so set activePage='compare' and don't 404 it." Numeric
+// ids are not tracked in Zustand.
 export type ParsedUrl =
   | { kind: "root" }
   | { kind: "index";   experiment: string | undefined; sample: string | undefined }
   | { kind: "inspect"; experiment: string | undefined; sample: string | undefined; exposure: string | undefined }
   | { kind: "compare"; view: "list" }
-  | { kind: "compare"; view: "new" }
-  | { kind: "compare"; view: "review"; id: number }
-  | { kind: "compare"; view: "edit"; id: number }
   | { kind: "stale"; raw: string };
 
 const safeDecode = (s: string): string => {
@@ -1365,21 +1390,19 @@ export function parseLocation(pathname: string, search: string): ParsedUrl {
     return { kind: "inspect", experiment, sample, exposure };
   }
 
-  if (page === "compare") {
-    if (segs.length === 1) return { kind: "compare", view: "list" };
-    if (segs.length === 2 && a === "new") return { kind: "compare", view: "new" };
-    if (segs.length === 2) {
-      const id = Number(a);
-      if (Number.isInteger(id) && id > 0) {
-        return { kind: "compare", view: "review", id };
-      }
-    }
-    if (segs.length === 3 && b === "edit") {
-      const id = Number(a);
-      if (Number.isInteger(id) && id > 0) {
-        return { kind: "compare", view: "edit", id };
-      }
-    }
+  // Compare URLs in the actual app live under two roots:
+  //   /experiments/:eid/compare(/new|/:id|/:id/edit)
+  //   /compare/all(/new|/:id|/:id/edit)
+  // The hooks don't track Compare numeric ids in Zustand — ComparePage
+  // handles its own URL via useNavigate/useParams. Recognizing the shape
+  // here just lets useStateFromUrl set activePage="compare" without
+  // falsely flagging the path as "stale".
+  const isExperimentCompare = page === "experiments" && segs[2] === "compare";
+  const isCompareAll = page === "compare" && a === "all";
+  const isLegacyCompareList = page === "compare" && segs.length === 1;
+
+  if (isExperimentCompare || isCompareAll || isLegacyCompareList) {
+    return { kind: "compare", view: "list" };
   }
 
   return { kind: "stale", raw: pathname + (search ?? "") };
@@ -2029,13 +2052,14 @@ Create `frontend/src/hooks/useStateFromUrl.ts`:
 
 ```ts
 import { useEffect } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAppState } from "../state";
 import { parseLocation, type ParsedUrl } from "../lib/url/parseLocation";
 import * as api from "../api";
 import type { ResolveSuccess, ResolveError404, Experiment, Sample } from "../api";
 import { queryKeys } from "../queries";
+import { emitReplaceNext } from "../lib/url/emitMode";
 
 // Spec §4.2 — URL → Zustand. Reads `useLocation()` so popstate AND
 // useNavigate both flow through the hook. Origin-tagged fetches avoid
@@ -2045,8 +2069,13 @@ import { queryKeys } from "../queries";
 /**
  * Atomic apply of a 200 resolve response. Single setState commit so
  * useUrlFromState recomputes once, no cascading partial URL emits.
+ *
+ * App-init URL sync (per spec §4.3 trigger table) → replace, so the
+ * initial state→URL emit doesn't push a redundant history entry over
+ * the URL the user just landed on.
  */
 function applySuccess(body: ResolveSuccess, page: "index" | "inspect" | "compare") {
+  emitReplaceNext();
   useAppState.setState({
     activePage: page,
     activeExperimentId: body.experiment_id,
@@ -2057,8 +2086,11 @@ function applySuccess(body: ResolveSuccess, page: "index" | "inspect" | "compare
   });
 }
 
+const VALID_PAGES = new Set(["index", "inspect", "compare"]);
+
 export function useStateFromUrl(): void {
   const location = useLocation();
+  const navigate = useNavigate();
   const qc = useQueryClient();
 
   useEffect(() => {
@@ -2086,27 +2118,21 @@ export function useStateFromUrl(): void {
     }
 
     if (parsed.kind === "root") {
-      // §5 redirect: build slug URL from persisted Zustand and use
-      // navigate(replace). useNavigate is not directly available here
-      // (this is the URL-IN side); instead we call history.replaceState
-      // directly because react-router's <Route path="/"> is matched —
-      // we want to leave that route immediately. react-router will pick
-      // up the change on the next render via its own popstate listener.
+      // §5 redirect: build slug URL from persisted Zustand and navigate
+      // (replace). All emits go through useNavigate so react-router's
+      // location subscription stays consistent.
       const s = useAppState.getState();
+      const page = VALID_PAGES.has(s.activePage) ? s.activePage : "index";
       const expId = s.activeExperimentId;
       const sId = s.activeSampleId;
-      if (s.activePage === "compare") {
-        history.replaceState(null, "", expId !== undefined
+      if (page === "compare") {
+        navigate(expId !== undefined
           ? `/experiments/${expId}/compare`
-          : "/compare/all");
-        // Trigger react-router to notice; popstate isn't fired by
-        // replaceState, so dispatch one manually.
-        window.dispatchEvent(new PopStateEvent("popstate"));
+          : "/compare/all", { replace: true });
         return;
       }
       if (expId === undefined) {
-        history.replaceState(null, "", `/${s.activePage}`);
-        window.dispatchEvent(new PopStateEvent("popstate"));
+        navigate(`/${page}`, { replace: true });
         return;
       }
       // Synchronous cache hit?
@@ -2119,10 +2145,9 @@ export function useStateFromUrl(): void {
       if (expName !== null && expName !== undefined &&
           (sId === undefined || (sName !== null && sName !== undefined))) {
         const path = sName !== undefined && sName !== null
-          ? `/${s.activePage}/${encodeURIComponent(expName)}/${encodeURIComponent(sName)}`
-          : `/${s.activePage}/${encodeURIComponent(expName)}`;
-        history.replaceState(null, "", path);
-        window.dispatchEvent(new PopStateEvent("popstate"));
+          ? `/${page}/${encodeURIComponent(expName)}/${encodeURIComponent(sName)}`
+          : `/${page}/${encodeURIComponent(expName)}`;
+        navigate(path, { replace: true });
         return;
       }
       // Cold-mount fallback: resolve-by-id.
@@ -2133,21 +2158,18 @@ export function useStateFromUrl(): void {
         try {
           body = await api.resolve(q);
         } catch {
-          history.replaceState(null, "", "/index");
-          window.dispatchEvent(new PopStateEvent("popstate"));
+          if (!cancelled) navigate("/index", { replace: true });
           return;
         }
         if (cancelled) return;
         if ("error" in body) {
-          history.replaceState(null, "", "/index");
-          window.dispatchEvent(new PopStateEvent("popstate"));
+          navigate("/index", { replace: true });
           return;
         }
         const path = body.sample_name !== undefined && body.sample_name !== null
-          ? `/${s.activePage}/${encodeURIComponent(body.experiment_name)}/${encodeURIComponent(body.sample_name)}`
-          : `/${s.activePage}/${encodeURIComponent(body.experiment_name)}`;
-        history.replaceState(null, "", path);
-        window.dispatchEvent(new PopStateEvent("popstate"));
+          ? `/${page}/${encodeURIComponent(body.experiment_name)}/${encodeURIComponent(body.sample_name)}`
+          : `/${page}/${encodeURIComponent(body.experiment_name)}`;
+        navigate(path, { replace: true });
       })();
       return;
     }
@@ -2215,16 +2237,17 @@ export function useStateFromUrl(): void {
       cancelled = true;
       ctl.abort();
     };
-  }, [location.pathname, location.search, qc]);
+  }, [location.pathname, location.search, navigate, qc]);
 }
 ```
 
 Key changes vs. the earlier draft:
 - **Reads `useLocation()` from react-router** — no manual popstate listener.
-- **Effect deps `[location.pathname, location.search, qc]`** — fires on every URL change (popstate or `useNavigate`).
-- **`applySuccess` is one atomic `setState`** — no cascading `setActive*` calls.
+- **Effect deps `[location.pathname, location.search, navigate, qc]`** — fires on every URL change (popstate or `useNavigate`).
+- **`applySuccess` is one atomic `setState`** — no cascading `setActive*` calls — and calls `emitReplaceNext()` so the URL→state→URL roundtrip on cold mount uses replace mode (matches spec §4.3).
 - **Origin-tag race** uses `window.location.pathname + window.location.search` at response time.
-- **Root redirect** is folded inline; emits a synthetic `PopStateEvent` so react-router picks up the new URL.
+- **Root redirect** uses `useNavigate(target, { replace: true })` everywhere — no raw `history.replaceState`, no synthetic `PopStateEvent`.
+- **Page validation** — `VALID_PAGES` set guards against an unrecognized persisted `activePage` falling through to `/<garbage>`.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -2408,7 +2431,8 @@ import { useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { useAppState } from "../state";
-import { useExperiments, useSamples, queryKeys } from "../queries";
+import { useExperiments, queryKeys } from "../queries";
+import * as api from "../api";
 import type { Experiment, Sample, Exposure } from "../api";
 import { consumeEmitMode } from "../lib/url/emitMode";
 
@@ -2483,10 +2507,18 @@ export function useUrlFromState(): void {
   const activeExposureId = useAppState((s) => s.activeExposureId);
 
   // Subscribe to experiments + (when an experiment is active) samples
-  // queries so SSE-driven cache rewrites trigger a re-render.
+  // queries so SSE-driven cache rewrites trigger a re-render. We use
+  // `useQuery` directly here (rather than `useSamples`) so we can gate
+  // on `enabled: activeExperimentId !== undefined` — `useSamples` doesn't
+  // expose `enabled`, and calling it with `0` would fire `GET
+  // /api/experiments/0/samples` → 404 with retries on every cold mount.
   const { data: experiments } = useExperiments();
-  const samplesQ = useSamples(activeExperimentId ?? 0);
-  const samples = activeExperimentId !== undefined ? samplesQ.data : undefined;
+  const samplesQuery = useQuery({
+    queryKey: queryKeys.samples(activeExperimentId ?? 0),
+    queryFn: () => api.listSamples(activeExperimentId as number),
+    enabled: activeExperimentId !== undefined,
+  });
+  const samples = activeExperimentId !== undefined ? samplesQuery.data : undefined;
 
   useEffect(() => {
     const expName = nameForExperiment(experiments, activeExperimentId);
