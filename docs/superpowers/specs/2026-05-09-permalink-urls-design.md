@@ -77,7 +77,9 @@ Names are always echoed in the 200 response so the cold-mount `/` redirect (§5)
 
 `exposures.filename` gets a new `UNIQUE INDEX exposures_unique_filename ON exposures(sample_id, filename)` to make the procedural upsert contract declarative and remove resolve ambiguity at the source. The migration follows the **dedupe-then-enforce** pattern established by `migrate_samples_naming!` (`db.jl:910–977`) — duplicates (none expected; the upsert contract has been in place since v1, but legacy data is checked anyway) are renamed deterministically before the index is created, so the `CREATE UNIQUE INDEX` always succeeds against clean data. There is no permanent safety-net fallback in the resolve query.
 
-Implemented as a named helper `migrate_exposures_unique_filename!(db)` in `db.jl`, called from `migrate_schema!` after `migrate_samples_naming!` (samples migration must complete first because exposures FK to samples). Direct invocation from tests follows the FK-heal regression-test pattern in CLAUDE.md (helper called directly, bypassing `open_db`'s full migration chain).
+Implemented as a named helper `migrate_exposures_unique_filename!(db)` in `db.jl`, called from `migrate_schema!` **after `_fix_fk_references_after_autoincrement_migration!`** (`db.jl:317`). This ordering is load-bearing: `migrate_pk_to_autoincrement!` (`db.jl:313`) renames `exposures` → `_migrate_old_exposures` and rebuilds via `create_schema!` on legacy DBs; placing the index-creation any earlier would attach the index to the soon-to-be-dropped table. Running after the FK-heal step ensures the AUTOINCREMENT rebuild has settled and the index attaches to the rebuilt `exposures` table that survives.
+
+Direct invocation from tests follows the FK-heal regression-test pattern in CLAUDE.md (helper called directly, bypassing `open_db`'s full migration chain).
 
 ```sql
 -- Step 1: Find duplicates via GROUP BY HAVING COUNT(*) > 1
@@ -91,7 +93,7 @@ Implemented as a named helper `migrate_exposures_unique_filename!(db)` in `db.jl
 
 All three steps run inside `SQLite.transaction(db) do … end` so a Ctrl-C between steps 2 and 3 cannot leave a half-renamed DB without uniqueness enforcement. Idempotent on re-run: the duplicate-suffix pass becomes a no-op once names are unique, and `CREATE UNIQUE INDEX IF NOT EXISTS` is idempotent.
 
-**Upsert invariant.** The new index is now an additional invariant the upsert in `cli.jl:191` relies on. The existing SELECT-then-INSERT pattern remains correct (the SELECT runs first), but a hypothetical parallel reingest could in principle hit the unique-index UNIQUE constraint during INSERT. Reingest is single-threaded per process today (CLI: one `himalaya reingest` invocation; web: a single `POST /api/experiments/:id/reingest` route handler), so the race is not real. If multi-threaded reingest is ever added, the upsert must be wrapped in an `INSERT OR IGNORE` + post-check or moved into a transaction with retry-on-constraint-violation.
+**Upsert invariant.** The new index is now an additional invariant the upsert in `cli.jl:191` relies on. The existing SELECT-then-INSERT pattern remains correct (the SELECT runs first). Concurrency surface: Oxygen.jl handlers run concurrently (`server.jl:140` `async = true`), and `routes_experiments.jl:87` does NOT wrap `reingest!` in `with_idempotency` — so two simultaneous `POST /api/experiments/:id/reingest` calls for the same experiment can in principle race on the SELECT-then-INSERT and trigger a UNIQUE-constraint failure. The race is rare (operators typically do not double-fire reingest) and pre-exists this spec — `samples_unique_name` from #88 has the same shape. Wrapping reingest in `with_idempotency` is out of scope for #89, but is the right fix and should be filed as a follow-up. If reingest is ever moved to a worker thread or made parallel, the upsert must be wrapped in `INSERT OR IGNORE` + post-check or moved into a transaction with retry-on-constraint-violation.
 
 **Read-only.** No writes; no `with_idempotency` wrapping; no `apply_event!`; no SSE emission; no `client_op_id`; no `pendingDeferreds` participation. Three SELECTs and a response. The route is queue-orthogonal by design — confirmed against `docs/mutation-queue.md`. Future maintainers tempted to extend it with a write path: please don't; add a sibling endpoint instead.
 
@@ -178,7 +180,7 @@ applyResolveResult(data);
 
 **No automatic redirect on partial 404.** The earlier "redirect to fallback" model (per the original issue text) is replaced by the 404 page; the URL stays at the broken value until the user picks something.
 
-**Render-state during fetch.** While a resolve is in flight, AppShell renders a `<ResolvingFallback />` placeholder instead of the previous page contents. This avoids the "flash of wrong content" that would otherwise occur when a deep-link cold mount paints the previously-active page (from persisted Zustand) for ~30–80ms before the resolve completes and swaps in the right one. The placeholder is a near-empty container (DOM identical to the empty workspace, no entity-keyed elements) marked with `data-testid="resolving"` for the §8.2 test.
+**Render-state during fetch.** While a resolve is in flight, AppShell renders a `<ResolvingFallback />` placeholder instead of the previous page contents. This avoids the "flash of wrong content" that would otherwise occur when a deep-link cold mount paints the previously-active page (from persisted Zustand) for ~30–80ms before the resolve completes and swaps in the right one. The placeholder is intentionally minimal: an empty container matching the existing layout chrome's flex bones (so the AppHeader and TabRocker stay rendered above it without a layout shift) marked with `data-testid="resolving"` for the §8.2 test. No `<Skeleton>` from boneyard — this is a sub-paint flicker mask, not a load-state animation; a skeleton would itself flash on every navigation.
 
 `resolving` lives in Zustand alongside `staleUrlContext` (one slot, one source of truth, AppShell reads via a single selector). Set to `true` at the start of `useStateFromUrl`'s recognized-kind fetch; cleared on success/failure/discard. The named-action discipline of `state.ts` covers it: `setResolving(value: boolean)` is the only mutator, and the various `setActive*` setters do not touch it.
 
@@ -294,9 +296,9 @@ The `not_found` variant is populated from the `/api/resolve` 404 body. The `unkn
 | `kind: "not_found"`, `missing: "experiment"` | `"experiment"` | `Experiment '{missing_value}' not found.` | "Select an experiment" `/` → `openNavModal("experiment")` |
 | `kind: "not_found"`, `missing: "sample"` | `"sample"` | `Sample '{missing_value}' not found in '{experiment_resolved.name}'.` | "Select another sample" `/` → `setActiveExperiment(experiment_resolved.id)` then `openNavModal("sample")` |
 | `kind: "not_found"`, `missing: "exposure"` | `"exposure"` | `Exposure '{missing_value}' not found in '{sample_resolved.name}'.` | "Select another sample" `/` → same as above; Inspect filmstrip handles per-exposure picking |
-| `kind: "unknown_path"` | `"path"` | `Page not found.` | "Go to Index" → `replaceState("/index")` |
+| `kind: "unknown_path"` | `"path"` | `Page not found.` | "Go to Index" → `setActivePage("index")` (clears `staleUrlContext` per §4.4; `useUrlFromState` then emits `/index`) |
 
-Note: the `unknown_path` variant has no `missing_value` and no scope; the simpler "Page not found." copy is intentional. The trailing-period punctuation is uniform across variants.
+Note: the `unknown_path` variant has no `missing_value` and no scope; the simpler "Page not found." copy is intentional. The trailing-period punctuation is uniform across variants. The `unknown_path` CTA dispatches a Zustand action rather than a raw `replaceState` because `replaceState` does not fire `popstate`, so `useStateFromUrl`'s pre-fetch clear would not run and `staleUrlContext` would remain set; routing through `setActivePage` clears the slot via the named-action discipline.
 
 **Keyboard.** `/` triggers the same handler as the button (matches `useGlobalShortcuts` line 35 binding for opening NavModal). The visible `<kbd>/</kbd>` chip teaches the shortcut.
 
@@ -346,7 +348,8 @@ In practice the URL-invalidation path fires only on entity deletion (names are s
 - **`exposures_unique_filename` migration** — direct invocation of `migrate_exposures_unique_filename!(db)` (FK-heal regression-test pattern):
   - Clean DB → index exists, no warnings.
   - Idempotent re-run → no-op.
-  - Synthetic-duplicate fixture (insert two rows with identical `(sample_id, filename)` directly via SQL, bypassing the upsert) → second-and-later renamed to `<filename>-2`, …; `@warn` emitted per rename; index created. The atomic transaction wrapping is asserted by interrupting the test before step 3 and confirming step 2 was rolled back.
+  - Synthetic-duplicate fixture (insert two rows with identical `(sample_id, filename)` directly via SQL, bypassing the upsert) → second-and-later renamed to `<filename>-2`, …; `@warn` emitted per rename; index created.
+  - Transactionality (whole-helper wrapped in `SQLite.transaction(db) do … end`) is verified by code review, not at test time — same as the `migrate_samples_naming!` precedent, where there is no Julia-test idiom for forcing a mid-transaction interruption short of monkey-patching SQLite.jl.
 - SPA fallback (uses synthetic `dist_dir` with one HTML + one asset):
   - `/foo` → 200 `index.html`, `Cache-Control: no-store`.
   - `/inspect/exp/sample` → 200 `index.html` (multi-segment must reach the catch-all — pins the `/**` syntax fix).
@@ -385,7 +388,7 @@ In practice the URL-invalidation path fires only on entity deletion (names are s
 
 ## 11. Risks and migration
 
-- **One-line additive migration.** The `exposures_unique_filename` UNIQUE INDEX is the only schema change. Wrapped in try/catch with a warning + SELECT-tiebreaker fallback in case of pre-existing duplicates. Idempotent.
+- **Additive schema migration.** The `exposures_unique_filename` UNIQUE INDEX is the only schema change, applied via `migrate_exposures_unique_filename!` (dedupe-then-enforce inside a single `SQLite.transaction`, mirroring the `migrate_samples_naming!` precedent from #88). Idempotent on re-run.
 - **Browser back-button surprises.** A user with a long edit session might walk back through dozens of pushed states. The push-only-on-commit policy keeps this manageable, but worth noting.
 - **Persisted-URL on cold-mount mismatch.** If localStorage Zustand has a stale `activeSampleId` (the sample was deleted while the tab was closed), the cold-mount `/` redirect resolves through `/api/resolve?sample_id=M` and 404s. We handle it by falling through to `/index` — the user lands in the empty state without explicit feedback. Acceptable: reload-after-deletion is rare, and the user reaching the empty state and re-picking a sample is what they'd do anyway.
 - **Non-conformant experiment names.** Backfill data may have spaces in `experiments.name`. Round-trip via `encode/decodeURIComponent` handles encoding; the `ORDER BY id ASC LIMIT 1` tiebreaker handles duplicates. The §8.4 stale-name regression test covers the rename case. A future #88-style experiment migration would supplant both these workarounds.
