@@ -42,12 +42,12 @@ beforeEach(() => {
   // Minimal mocks so the body doesn't throw during shell tests.
   vi.spyOn(api, "getPickerSamples").mockResolvedValue([
     {
-      sample: { id: 10, experiment_id: 1, name: "S1", label: null, notes: null, tags: [] },
+      sample: { id: 10, experiment_id: 1, name: "S1", display_name: null, notes: null, tags: [] },
       indexing_exposure_id: 100,
       all_exposures: [{ id: 100, sample_id: 10, filename: "f1.dat", selected: true }],
     },
     {
-      sample: { id: 20, experiment_id: 1, name: "S2", label: null, notes: null, tags: [] },
+      sample: { id: 20, experiment_id: 1, name: "S2", display_name: null, notes: null, tags: [] },
       indexing_exposure_id: 200,
       all_exposures: [{ id: 200, sample_id: 20, filename: "f2.dat", selected: true }],
     },

@@ -158,7 +158,7 @@ const SPECS: Spec[] = [
     run: (qc) => updateSampleMutator.request(
       { ...FLAT_BASE, kind: "update_sample",
         payload: { sampleId: 10 },
-        sampleId: 10, experimentId: 1, name: "x" } as any,
+        sampleId: 10, experimentId: 1, display_name: "x" } as any,
       new AbortController().signal),
   },
   {

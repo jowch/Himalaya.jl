@@ -150,7 +150,7 @@ describe("ComparePage review mode — ResizeObserver", () => {
 //   - `sampleIdFor` returning null for every member → ORPHAN_FALLBACK gray
 //     for every trace stroke regardless of grouping mode (#61).
 //   - `MemberMetaRow` falling back to `Exposure #N` instead of the
-//     human-friendly `${sample.label} · ${exposure.filename}` (#52).
+//     human-friendly `${sample.display_name || sample.name} · ${exposure.filename}` (#52).
 // Both regressions resolve once review mode subscribes to each member's
 // exposure row (and the matching sample row) so the cache populates.
 
@@ -211,13 +211,13 @@ describe("ComparePage review mode — cold-cache exposure + sample hydration (#6
       }
       if (url === "/api/samples/11") {
         return new Response(JSON.stringify({
-          id: 11, experiment_id: 7, label: "Lipid-A", name: "JC001",
+          id: 11, experiment_id: 7, display_name: "Lipid-A", name: "JC001",
           notes: null, tags: [],
         }), { status: 200, headers: { "Content-Type": "application/json" } });
       }
       if (url === "/api/samples/22") {
         return new Response(JSON.stringify({
-          id: 22, experiment_id: 7, label: "Lipid-B", name: "JC002",
+          id: 22, experiment_id: 7, display_name: "Lipid-B", name: "JC002",
           notes: null, tags: [],
         }), { status: 200, headers: { "Content-Type": "application/json" } });
       }
@@ -293,8 +293,8 @@ describe("ComparePage review mode — cold-cache exposure + sample hydration (#6
     });
 
     // After exposure + sample data lands, the gutter resolves human labels:
-    // `${sample.label} · ${exposure.filename}` (truncated). The internal id
-    // form ("Exposure #100") is the regressed fallback we're moving away from.
+    // `${sample.display_name || sample.name} · ${exposure.filename}` (truncated).
+    // The internal id form ("Exposure #100") is the regressed fallback we're moving away from.
     await waitFor(() => {
       const labels = screen.getAllByTestId("member-meta-label").map((n) => n.textContent ?? "");
       expect(labels.some((t) => t.includes("Lipid-A") && t.includes("run-A"))).toBe(true);

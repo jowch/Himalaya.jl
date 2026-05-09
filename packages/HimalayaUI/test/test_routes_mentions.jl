@@ -5,7 +5,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
     db  = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
     exp_id = HimalayaUI.create_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
-    s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, label="A", name="sampleA")
+    s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="A", display_name="sampleA")
     e_id = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="run001")
 
     # Insert a peak manually (use auto_peaks — the new schema table)
@@ -59,7 +59,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
             @test r.status == 200
             body = JSON3.read(String(r.body))
             @test body.id == s_id
-            @test body.name == "sampleA"
+            @test body.name == "A"
 
             r404 = HTTP.get("$base/api/samples/999999"; status_exception=false)
             @test r404.status == 404

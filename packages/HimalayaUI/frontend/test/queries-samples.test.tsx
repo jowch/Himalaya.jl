@@ -35,9 +35,9 @@ describe("queries — sample mutations (queue-driven)", () => {
   it("useUpdateSample writes the server response into the samples cache on success", async () => {
     const { client, wrapper } = withClient();
     client.setQueryData(queryKeys.samples(EXPERIMENT_ID), [
-      { id: 10, experiment_id: 1, label: "A1", name: "s1", notes: "", tags: [] },
+      { id: 10, experiment_id: 1, display_name: null, name: "s1", notes: "", tags: [] },
     ]);
-    mockOnce(200, { id: 10, experiment_id: 1, label: "A1", name: "s1",
+    mockOnce(200, { id: 10, experiment_id: 1, display_name: null, name: "s1",
                     notes: "updated", tags: [] });
     const { result } = renderHook(
       () => useUpdateSample(EXPERIMENT_ID, 10), { wrapper },
@@ -52,7 +52,7 @@ describe("queries — sample mutations (queue-driven)", () => {
   it("useAddSampleTag appends an optimistic placeholder, replaced by server tag", async () => {
     const { client, wrapper } = withClient();
     client.setQueryData(queryKeys.samples(EXPERIMENT_ID), [
-      { id: 10, experiment_id: 1, label: "A1", name: "s1", notes: "", tags: [] },
+      { id: 10, experiment_id: 1, display_name: null, name: "s1", notes: "", tags: [] },
     ]);
     mockOnce(201, { id: 5, sample_id: 10, key: "lipid", value: "DOPC",
                     source: "manual" });
@@ -71,7 +71,7 @@ describe("queries — sample mutations (queue-driven)", () => {
   it("useRemoveSampleTag removes the tag optimistically", async () => {
     const { client, wrapper } = withClient();
     client.setQueryData(queryKeys.samples(EXPERIMENT_ID), [
-      { id: 10, experiment_id: 1, label: "A1", name: "s1", notes: "",
+      { id: 10, experiment_id: 1, display_name: null, name: "s1", notes: "",
         tags: [{ id: 5, key: "lipid", value: "DOPC", source: "manual" }] },
     ]);
     mockOnce(204, null);

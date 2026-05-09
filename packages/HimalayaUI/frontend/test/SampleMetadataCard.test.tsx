@@ -7,8 +7,8 @@ import type { Sample } from "../src/api";
 const makeSample = (overrides: Partial<Sample> = {}): Sample => ({
   id: 1,
   experiment_id: 1,
-  label: "D1",
-  name: "DOPC 37C",
+  display_name: "DOPC 37C",
+  name: "D1",
   notes: "run 2",
   tags: [
     { id: 10, key: "concentration", value: "10mM", source: "manifest" },
@@ -17,7 +17,7 @@ const makeSample = (overrides: Partial<Sample> = {}): Sample => ({
   ...overrides,
 });
 
-test("renders name, notes, label, and tags", () => {
+test("renders display_name in input, stable name in breadcrumb, and tags", () => {
   render(
     <SampleMetadataCard
       sample={makeSample()}
@@ -28,7 +28,7 @@ test("renders name, notes, label, and tags", () => {
     />,
   );
   expect(screen.getByDisplayValue("DOPC 37C")).toBeInTheDocument();
-  expect(screen.getByText("D1")).toBeInTheDocument();
+  expect(screen.getByText("D1")).toBeInTheDocument(); // stable name in breadcrumb
   expect(screen.getByText("concentration: 10mM")).toBeInTheDocument();
   expect(
     screen.getByText("5 exposures · 3 accepted · 2 rejected"),
@@ -60,9 +60,9 @@ test("calls onUpdateSample on name blur", async () => {
       onRemoveTag={vi.fn()}
     />,
   );
-  const nameInput = screen.getByDisplayValue("DOPC 37C");
+  const nameInput = screen.getByDisplayValue("DOPC 37C");  // display_name value
   await userEvent.clear(nameInput);
   await userEvent.type(nameInput, "New Name");
   await userEvent.tab();
-  expect(onUpdate).toHaveBeenCalledWith({ name: "New Name" });
+  expect(onUpdate).toHaveBeenCalledWith({ display_name: "New Name" });
 });

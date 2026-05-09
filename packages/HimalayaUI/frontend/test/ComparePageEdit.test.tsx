@@ -635,13 +635,13 @@ describe("ComparePageEdit — cold-cache exposure + sample hydration (#69)", () 
       }
       if (url === "/api/samples/11") {
         return new Response(JSON.stringify({
-          id: 11, experiment_id: 7, label: "Lipid-A", name: "JC001",
+          id: 11, experiment_id: 7, display_name: "Lipid-A", name: "JC001",
           notes: null, tags: [],
         }), { status: 200, headers: { "Content-Type": "application/json" } });
       }
       if (url === "/api/samples/22") {
         return new Response(JSON.stringify({
-          id: 22, experiment_id: 7, label: "Lipid-B", name: "JC002",
+          id: 22, experiment_id: 7, display_name: "Lipid-B", name: "JC002",
           notes: null, tags: [],
         }), { status: 200, headers: { "Content-Type": "application/json" } });
       }

@@ -333,17 +333,17 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
 
   it("update_sample spreads payload onto the sample entity", () => {
     const sample: Sample = {
-      id: 10, experiment_id: 1, label: "D1", name: "old", notes: "n", tags: [],
+      id: 10, experiment_id: 1, display_name: "D1", name: "old", notes: "n", tags: [],
     };
     qc.setQueryData(queryKeys.sample(10), sample);
     // Mirrors routes_samples.jl PATCH: payload is the patched fields directly.
     const evt: SseEvent = {
       id: 99, kind: "update_sample", entity_type: "sample", entity_id: 10,
-      payload: { name: "new" },
+      payload: { display_name: "new" },
     };
     applyRemoteToCache(evt, qc);
     const after = qc.getQueryData<Sample>(queryKeys.sample(10))!;
-    expect(after.name).toBe("new");
+    expect(after.display_name).toBe("new");
     expect(after.notes).toBe("n");  // unpatched fields preserved
     expect(after.tags).toEqual([]); // tags survive (deep-scan #2)
   });

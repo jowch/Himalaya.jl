@@ -160,7 +160,7 @@ describe("treats404AsSuccess framework branch — coverage across mutator shapes
     const EXPERIMENT_ID = 1;
     const SAMPLE_ID = 10;
     const SAMPLE: Sample = {
-      id: SAMPLE_ID, experiment_id: EXPERIMENT_ID, label: "D1", name: "n",
+      id: SAMPLE_ID, experiment_id: EXPERIMENT_ID, display_name: null, name: "n",
       notes: null,
       tags: [{ id: 99, key: "buffer", value: "PBS", source: "manual" }],
     };

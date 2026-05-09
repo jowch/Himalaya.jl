@@ -504,7 +504,7 @@ function picker_samples(db::SQLite.DB, experiment_id::Integer)::Vector{Dict{Symb
     # deliberate so a future column added to `samples` doesn't auto-leak
     # into the picker payload.
     samples = Tables.rowtable(DBInterface.execute(db,
-        "SELECT id, experiment_id, name, label, notes
+        "SELECT id, experiment_id, name, display_name, notes
          FROM samples WHERE experiment_id = ? ORDER BY id",
         [Int(experiment_id)]))
     isempty(samples) && return Dict{Symbol, Any}[]

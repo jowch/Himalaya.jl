@@ -5,7 +5,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
     db     = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
     exp_id = HimalayaUI.create_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
-    s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, label="D1")
+    s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
 
     with_test_server(db) do port, base
         # GET empty list
@@ -96,7 +96,7 @@ end
     db     = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
     exp_id = HimalayaUI.create_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
-    s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, label="D1")
+    s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
 
     with_test_server(db) do port, base
         op_id = "uuid-msg-retry-1"

@@ -9,7 +9,7 @@ using Test, HTTP, JSON3
     db     = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
-    s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, label="D1")
+    s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
     e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
 
     with_test_server(db) do port, base
@@ -54,7 +54,7 @@ end
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir,
         config=config_blob)
-    s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, label="D1")
+    s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
     e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="JC_D01_1_S2449")
 
     with_test_server(db) do port, base

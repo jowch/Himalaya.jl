@@ -5,7 +5,7 @@ const EXPERIMENT = {
   analysis_dir: "/p/analysis", manifest_path: null, created_at: "2026-05-01",
 };
 const SAMPLES = [
-  { id: 10, experiment_id: 1, label: "D1", name: "cubic_run03", notes: null, tags: [] },
+  { id: 10, experiment_id: 1, display_name: "D1", name: "cubic_run03", notes: null, tags: [] },
 ];
 const EXPOSURES = [
   {

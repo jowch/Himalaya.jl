@@ -36,7 +36,7 @@ function _setup_analyzed_exposure(tmp::String)
     db     = HimalayaUI.open_db(joinpath(tmp, "h.db"))
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
-    s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, label="D1")
+    s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
     e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
     HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
     (db = db, exposure_id = e_id, sample_id = s_id, analysis_dir = analysis_dir)
@@ -287,7 +287,7 @@ end
             db     = HimalayaUI.open_db(joinpath(tmp, "h.db"))
             exp_id = HimalayaUI.create_experiment!(db; path=tmp,
                 data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
-            s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, label="D1")
+            s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
             with_test_server(db) do port, base
                 r = HTTP.patch("$base/api/samples/$s_id";
                     body = JSON3.write(Dict(:notes => "n")),
@@ -374,7 +374,7 @@ end
                 r = HTTP.get("$base/api/samples/$(ctx.sample_id)")
                 @test r.status == 200
                 body = JSON3.read(String(r.body))
-                # Sample type: id, experiment_id, label, name, notes, tags.
+                # Sample type: id, experiment_id, name, display_name, notes, tags.
                 # Route adds `created_at` from the row; document either as
                 # tightened or as known-extra.
                 @test :id in keys(body)
@@ -406,7 +406,7 @@ end
             db     = HimalayaUI.open_db(joinpath(tmp, "h.db"))
             exp_id = HimalayaUI.create_experiment!(db; path=tmp,
                 data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
-            s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, label="D1")
+            s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
             with_test_server(db) do port, base
                 # Post one to have something to read.
                 HTTP.post("$base/api/samples/$s_id/messages";
@@ -430,7 +430,7 @@ end
             db     = HimalayaUI.open_db(joinpath(tmp, "h.db"))
             exp_id = HimalayaUI.create_experiment!(db; path=tmp,
                 data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
-            s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, label="D1")
+            s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
             with_test_server(db) do port, base
                 r = HTTP.post("$base/api/samples/$s_id/tags";
                     body = JSON3.write(Dict(:key => "k", :value => "v")),
@@ -451,7 +451,7 @@ end
             db     = HimalayaUI.open_db(joinpath(tmp, "h.db"))
             exp_id = HimalayaUI.create_experiment!(db; path=tmp,
                 data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
-            s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, label="D1")
+            s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
             e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="x")
             with_test_server(db) do port, base
                 r = HTTP.post("$base/api/exposures/$e_id/tags";
@@ -478,7 +478,7 @@ end
         db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
         exp_id = HimalayaUI.init_experiment!(db; path=tmp,
             data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
-        s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, label="D1")
+        s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
         e_id = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
         HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
         (db = db, exposure_id = e_id, experiment_id = exp_id)

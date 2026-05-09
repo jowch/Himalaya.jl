@@ -55,12 +55,12 @@ end
     @test exp.name == "TestRun"
     @test exp.path == "/data/exp1"
 
-    s_id = create_sample!(db; experiment_id = exp_id, label = "D1", name = "UX1")
+    s_id = create_sample!(db; experiment_id = exp_id, name = "D1", display_name = "UX1")
     @test s_id == 1
 
     samples = get_samples(db, exp_id)
     @test length(samples) == 1
-    @test first(samples).label == "D1"
+    @test first(samples).name == "D1"
 
     e_id = create_exposure!(db; sample_id = s_id, filename = "JC001", kind = "file")
     @test e_id == 1
@@ -710,7 +710,7 @@ end
         DBInterface.execute(db,
             "INSERT INTO experiments (name, path, data_dir, analysis_dir) VALUES ('e', '/p', '/d', '/a')")
         DBInterface.execute(db,
-            "INSERT INTO samples (experiment_id, label) VALUES (1, 'A1')")
+            "INSERT INTO samples (experiment_id, name) VALUES (1, 'A1')")
         res = DBInterface.execute(db,
             "INSERT INTO exposures (sample_id, filename) VALUES (1, 'f')")
         exp_id = Int(DBInterface.lastrowid(res))
@@ -1156,5 +1156,180 @@ end
         # later overwritten unconditionally) is permitted.
         m = match(r"VALUES\s*\([^)]*''[^)]*''[^)]*\)", text)
         @test m === nothing
+    end
+end
+
+@testset "migrate_samples_naming! — duplicate names suffixed by ascending id" begin
+    mktempdir() do tmp
+        db = SQLite.DB(joinpath(tmp, "h.db"))
+        DBInterface.execute(db, "PRAGMA foreign_keys = ON")
+        DBInterface.execute(db, """CREATE TABLE experiments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, path TEXT,
+            data_dir TEXT, analysis_dir TEXT, manifest_path TEXT, config TEXT,
+            experiment_type TEXT, energy_kev REAL, flight_path_m REAL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP)""")
+        DBInterface.execute(db, """CREATE TABLE samples (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, experiment_id INTEGER REFERENCES experiments(id),
+            label TEXT, name TEXT, notes TEXT)""")
+        DBInterface.execute(db, "INSERT INTO experiments (id, name) VALUES (1, 'exp')")
+        # Three rows that collide post-COALESCE on (1, "JC001").
+        DBInterface.execute(db,
+            "INSERT INTO samples (id, experiment_id, label, name) VALUES (?, ?, ?, ?)",
+            [10, 1, "JC001", "v1"])
+        DBInterface.execute(db,
+            "INSERT INTO samples (id, experiment_id, label, name) VALUES (?, ?, ?, ?)",
+            [11, 1, "JC001", "v2"])
+        DBInterface.execute(db,
+            "INSERT INTO samples (id, experiment_id, label, name) VALUES (?, ?, ?, ?)",
+            [12, 1, "JC001", "v3"])
+
+        HimalayaUI.migrate_samples_naming!(db)
+
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id, name FROM samples ORDER BY id"))
+        @test rows[1].name == "JC001"
+        @test rows[2].name == "JC001-2"
+        @test rows[3].name == "JC001-3"
+    end
+end
+
+@testset "migrate_samples_naming! — dup suffix avoids user-named -N collision" begin
+    mktempdir() do tmp
+        db = SQLite.DB(joinpath(tmp, "h.db"))
+        DBInterface.execute(db, "PRAGMA foreign_keys = ON")
+        DBInterface.execute(db, """CREATE TABLE experiments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, path TEXT,
+            data_dir TEXT, analysis_dir TEXT, manifest_path TEXT, config TEXT,
+            experiment_type TEXT, energy_kev REAL, flight_path_m REAL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP)""")
+        DBInterface.execute(db, """CREATE TABLE samples (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, experiment_id INTEGER REFERENCES experiments(id),
+            label TEXT, name TEXT, notes TEXT)""")
+        DBInterface.execute(db, "INSERT INTO experiments (id, name) VALUES (1, 'exp')")
+        # Two duplicates of JC001 PLUS a user-named JC001-2 already in the table.
+        DBInterface.execute(db,
+            "INSERT INTO samples (id, experiment_id, label, name) VALUES (?, ?, ?, ?)",
+            [10, 1, "JC001", "v1"])
+        DBInterface.execute(db,
+            "INSERT INTO samples (id, experiment_id, label, name) VALUES (?, ?, ?, ?)",
+            [11, 1, "JC001", "v2"])
+        DBInterface.execute(db,
+            "INSERT INTO samples (id, experiment_id, label, name) VALUES (?, ?, ?, ?)",
+            [12, 1, "JC001-2", "user-named"])
+
+        HimalayaUI.migrate_samples_naming!(db)
+
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id, name FROM samples ORDER BY id"))
+        @test rows[1].name == "JC001"        # oldest of the dup pair keeps bare name
+        @test rows[2].name == "JC001-3"      # second dup gets suffix-3 (skipping -2)
+        @test rows[3].name == "JC001-2"      # user-named sample preserved
+    end
+end
+
+@testset "migrate_samples_naming! — idempotent on second run" begin
+    mktempdir() do tmp
+        db = SQLite.DB(joinpath(tmp, "h.db"))
+        # Build canonical post-migration shape directly.
+        DBInterface.execute(db, """CREATE TABLE samples (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, experiment_id INTEGER,
+            name TEXT, display_name TEXT, notes TEXT)""")
+        DBInterface.execute(db,
+            "CREATE UNIQUE INDEX samples_unique_name ON samples(experiment_id, name)")
+        DBInterface.execute(db,
+            "INSERT INTO samples (id, experiment_id, name, display_name) VALUES (1, 1, 'JC001', 'DOPC')")
+        # Migration should be a no-op (sentinel triggers).
+        HimalayaUI.migrate_samples_naming!(db)
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id, name, display_name FROM samples"))
+        @test length(rows) == 1
+        @test rows[1].name == "JC001"
+        @test rows[1].display_name == "DOPC"
+    end
+end
+
+@testset "migrate_samples_naming! — legacy (label, name) → (name, display_name)" begin
+    mktempdir() do tmp
+        dbpath = joinpath(tmp, "h.db")
+        db     = SQLite.DB(dbpath)
+        # Synthetic LEGACY shape (pre-rename), bypassing open_db's migrations.
+        DBInterface.execute(db, "PRAGMA foreign_keys = ON")
+        DBInterface.execute(db, """CREATE TABLE experiments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, path TEXT,
+            data_dir TEXT, analysis_dir TEXT, manifest_path TEXT, config TEXT,
+            experiment_type TEXT, energy_kev REAL, flight_path_m REAL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP)""")
+        DBInterface.execute(db, """CREATE TABLE samples (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, experiment_id INTEGER REFERENCES experiments(id),
+            label TEXT, name TEXT, notes TEXT)""")
+        DBInterface.execute(db,
+            "INSERT INTO experiments (id, name, path) VALUES (?, ?, ?)", [1, "exp", "/tmp"])
+        DBInterface.execute(db,
+            "INSERT INTO samples (experiment_id, label, name, notes) VALUES (?, ?, ?, ?)",
+            [1, "JC001", "DOPC + chol", "first run"])
+        DBInterface.execute(db,
+            "INSERT INTO samples (experiment_id, label, name, notes) VALUES (?, ?, ?, ?)",
+            [1, "", "fallback only", nothing])
+        DBInterface.execute(db,
+            "INSERT INTO samples (experiment_id, label, name, notes) VALUES (?, ?, ?, ?)",
+            [1, "JC002", "second run", nothing])
+
+        HimalayaUI.migrate_samples_naming!(db)
+
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id, name, display_name, notes FROM samples ORDER BY id"))
+        @test rows[1].name == "JC001";          @test rows[1].display_name == "DOPC + chol"
+        @test rows[2].name == "fallback only";  @test rows[2].display_name == "fallback only"
+        @test rows[3].name == "JC002";          @test rows[3].display_name == "second run"
+
+        # Old `label` column is gone.
+        cols = [r.name for r in Tables.rowtable(DBInterface.execute(db,
+            "PRAGMA table_info('samples')"))]
+        @test "label" ∉ cols
+        @test "display_name" ∈ cols
+
+        # Unique index exists.
+        idxs = [r.name for r in Tables.rowtable(DBInterface.execute(db,
+            "PRAGMA index_list('samples')"))]
+        @test "samples_unique_name" ∈ idxs
+    end
+end
+
+@testset "open_db: pre-Plan-7 legacy DB (non-AUTOINCREMENT + (label, name)) preserves identifiers" begin
+    mktempdir() do tmp
+        dbpath = joinpath(tmp, "h.db")
+        # Build the worst-case fixture: legacy (label, name) shape WITHOUT AUTOINCREMENT.
+        # This emulates a pre-Plan-7 deployment that never ran any migrations.
+        db = SQLite.DB(dbpath)
+        DBInterface.execute(db, "PRAGMA foreign_keys = ON")
+        DBInterface.execute(db, """CREATE TABLE experiments (
+            id INTEGER PRIMARY KEY, name TEXT, path TEXT,
+            data_dir TEXT, analysis_dir TEXT, manifest_path TEXT, config TEXT,
+            experiment_type TEXT, energy_kev REAL, flight_path_m REAL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP)""")
+        DBInterface.execute(db, """CREATE TABLE samples (
+            id INTEGER PRIMARY KEY,
+            experiment_id INTEGER REFERENCES experiments(id),
+            label TEXT, name TEXT, notes TEXT)""")
+        DBInterface.execute(db, "INSERT INTO experiments (id, name, path, data_dir, analysis_dir) VALUES (1, 'exp', '/tmp', '/tmp', '/tmp')")
+        DBInterface.execute(db,
+            "INSERT INTO samples (id, experiment_id, label, name) VALUES (?, ?, ?, ?)",
+            [1, 1, "JC001", "DOPC + chol"])
+        DBInterface.execute(db,
+            "INSERT INTO samples (id, experiment_id, label, name) VALUES (?, ?, ?, ?)",
+            [2, 1, "JC002", "POPC"])
+        # Close and reopen via open_db to trigger the FULL migration chain.
+        SQLite.close(db)
+
+        db2 = HimalayaUI.open_db(dbpath)
+        rows = Tables.rowtable(DBInterface.execute(db2,
+            "SELECT id, name, display_name FROM samples ORDER BY id"))
+        @test length(rows) == 2
+        # Stable identifier (was label) preserved as name:
+        @test rows[1].name == "JC001"
+        @test rows[2].name == "JC002"
+        # Friendly text (was name) preserved as display_name:
+        @test rows[1].display_name == "DOPC + chol"
+        @test rows[2].display_name == "POPC"
     end
 end

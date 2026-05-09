@@ -56,7 +56,7 @@ end
         db     = HimalayaUI.open_db(joinpath(tmp, "h.db"))
         exp_id = HimalayaUI.create_experiment!(db; path=tmp,
             data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
-        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, label="D1")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
 
         _with_sub() do pending
             with_test_server(db) do port, base
@@ -76,7 +76,7 @@ end
         db     = HimalayaUI.open_db(joinpath(tmp, "h.db"))
         exp_id = HimalayaUI.create_experiment!(db; path=tmp,
             data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
-        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, label="D1")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
 
         _with_sub() do pending
             with_test_server(db) do port, base
@@ -96,7 +96,7 @@ end
         db     = HimalayaUI.open_db(joinpath(tmp, "h.db"))
         exp_id = HimalayaUI.create_experiment!(db; path=tmp,
             data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
-        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, label="D1")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
 
         _with_sub() do pending
             with_test_server(db) do port, base
@@ -122,7 +122,7 @@ end
         db     = HimalayaUI.open_db(joinpath(tmp, "h.db"))
         exp_id = HimalayaUI.create_experiment!(db; path=tmp,
             data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
-        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, label="D1")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
         e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="x")
 
         _with_sub() do pending
@@ -143,7 +143,7 @@ end
         db     = HimalayaUI.open_db(joinpath(tmp, "h.db"))
         exp_id = HimalayaUI.create_experiment!(db; path=tmp,
             data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
-        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, label="D1")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
         e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="x")
 
         _with_sub() do pending
@@ -166,7 +166,7 @@ end
         db     = HimalayaUI.open_db(joinpath(tmp, "h.db"))
         exp_id = HimalayaUI.init_experiment!(db; path=tmp,
             data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
-        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, label="D1")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
         e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
         HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
 
@@ -195,7 +195,7 @@ end
         db     = HimalayaUI.open_db(joinpath(tmp, "h.db"))
         exp_id = HimalayaUI.init_experiment!(db; path=tmp,
             data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
-        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, label="D1")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
         e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
         HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
 
@@ -235,7 +235,7 @@ end
         db     = HimalayaUI.open_db(joinpath(tmp, "h.db"))
         exp_id = HimalayaUI.init_experiment!(db; path=tmp,
             data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
-        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, label="D1")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
         e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
         HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
 
@@ -272,7 +272,7 @@ end
         db     = HimalayaUI.open_db(joinpath(tmp, "h.db"))
         exp_id = HimalayaUI.init_experiment!(db; path=tmp,
             data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
-        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, label="D1")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
         e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
         HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
 
@@ -304,7 +304,7 @@ end
         db     = HimalayaUI.open_db(joinpath(tmp, "h.db"))
         exp_id = HimalayaUI.create_experiment!(db; path=tmp,
             data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
-        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, label="D1")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
         e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="x")
 
         _with_sub() do pending

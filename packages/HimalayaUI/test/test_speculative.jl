@@ -6,7 +6,7 @@ using Himalaya
     db  = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
-    s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, label="D1")
+    s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
     e_id = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="x")
 
     # Insert two manual peaks via peak_curations(kind='add')
@@ -69,7 +69,7 @@ end
     db     = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
-    s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, label="D1")
+    s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
     e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
     HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
 
@@ -126,7 +126,7 @@ function _spec_synthetic_exposure(qs::Vector{Float64})
     db  = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
-    s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, label="D1")
+    s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
     e_id = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="x")
     pids = Int[]
     for (i, q) in enumerate(qs)
@@ -236,7 +236,7 @@ end
     db     = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
-    s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, label="D1")
+    s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
     e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
     HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
 
@@ -278,7 +278,7 @@ end
     db     = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
-    s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, label="D1")
+    s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
     e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
     HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
 
@@ -318,7 +318,7 @@ end
     db     = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
-    s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, label="D1")
+    s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
     e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
     HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
 
@@ -402,7 +402,7 @@ end
     db  = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
-    s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, label="D1")
+    s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
     e_id = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="x")
 
     expected_hash = "deadbeef" ^ 8  # 64 hex chars, matches SHA-256 fingerprint shape

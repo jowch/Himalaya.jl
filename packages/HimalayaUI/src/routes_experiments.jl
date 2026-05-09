@@ -43,35 +43,14 @@ function register_experiments_routes!()
         db   = current_db()
         body = json(req)
 
-        # Only metadata is editable here. Path fields (data_dir, analysis_dir,
-        # manifest_path) are derived from `experiments.config` — changing the row
-        # without updating the config blob would desync the two. Path changes
-        # must go through POST /:id/reingest, which rewrites both in lockstep.
-        fields = Symbol[]
-        vals   = Any[]
-        for k in (:name,)
-            if haskey(body, k)
-                push!(fields, k)
-                push!(vals, body[k])
-            end
-        end
-        if isempty(fields)
-            return HTTP.Response(400,
-                ["Content-Type" => "application/json"],
-                JSON3.write(Dict(:error => "no updatable fields provided")))
-        end
-
-        sets = join(["$(string(f)) = ?" for f in fields], ", ")
-        DBInterface.execute(db,
-            "UPDATE experiments SET $sets WHERE id = ?", vcat(vals, [id]))
-
-        log_action!(db, req; action = "update_experiment",
-            entity_type = "experiment", entity_id = id)
-
-        rows = Tables.rowtable(DBInterface.execute(db,
-            "SELECT * FROM experiments WHERE id = ?", [id]))
-        HTTP.Response(200, ["Content-Type" => "application/json"],
-            JSON3.write(_experiment_row_to_json(rows[1])))
+        # Experiment name and path fields are no longer mutable via PATCH.
+        # Name is derived from experiment.toml via reingest; path fields
+        # (data_dir, analysis_dir, manifest_path) must also go through reingest
+        # to stay in sync with the config blob.
+        # This route is a defensive surface for future fields only.
+        return HTTP.Response(400,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:error => "experiment metadata is read-only; rename via experiment.toml + reingest")))
     end
 
     @post "/api/experiments/{id}/analyze" function(req::HTTP.Request, id::Int)
@@ -92,7 +71,7 @@ function register_experiments_routes!()
                     analyze_exposure!(db, Int(ex.id), String(analysis_dir))
                     analyzed += 1
                 catch e
-                    push!(skipped, "$(sm.label)/$(ex.filename): $(sprint(showerror, e))")
+                    push!(skipped, "$(sm.name)/$(ex.filename): $(sprint(showerror, e))")
                 end
             end
         end
@@ -124,6 +103,16 @@ function register_experiments_routes!()
                                  :added_exposures => res.added_exposures,
                                  :manifest_path   => res.manifest_path)))
         catch e
+            if e isa ManifestValidationError
+                return HTTP.Response(400,
+                    ["Content-Type" => "application/json"],
+                    JSON3.write(Dict(:error => "manifest_invalid",
+                                     :violations => [Dict(:kind => string(v.kind),
+                                                          :sample_index => v.sample_index,
+                                                          :sample_name => v.sample_name,
+                                                          :detail => v.detail)
+                                                     for v in e.violations])))
+            end
             return HTTP.Response(500,
                 ["Content-Type" => "application/json"],
                 JSON3.write(Dict(:error => sprint(showerror, e))))

@@ -392,36 +392,36 @@ describe("mutator onSuccess on SSE-wins synthetic responses", () => {
 
   it("updateSample.onSuccess skips undefined fields (SSE-wins diff payload)", () => {
     const original = {
-      id: 5, experiment_id: 1, label: "S5", name: "old name",
+      id: 5, experiment_id: 1, display_name: "S5", name: "old-id",
       notes: "old notes", tags: [{ id: 100, key: "k", value: "v", source: "manual" }],
     };
     qc.setQueryData(queryKeys.sample(5), original);
     qc.setQueryData(queryKeys.samples(1), [original]);
-    // SSE payload for update_sample is the diff; if only `name` was patched,
-    // `notes` and `label` are undefined in the synthesized response.
+    // SSE payload for update_sample is the diff; if only `display_name` was patched,
+    // `notes` and `name` are undefined in the synthesized response.
     const sseSynth = {
       event_id: 7,
       client_op_id: "op-update",
       analysis_inputs_hash: undefined,
-      name: "new name",
-      // notes: undefined, label: undefined  ← intentionally absent
+      display_name: "new display",
+      // notes: undefined, name: undefined  ← intentionally absent
     } as any;
     updateSampleMutator.onSuccess(
-      { sampleId: 5, experimentId: 1, name: "new name",
+      { sampleId: 5, experimentId: 1, display_name: "new display",
         username: "u", clientId: "c", clientOpId: "op-update" } as any,
       sseSynth,
       qc,
     );
     const single = qc.getQueryData<any>(queryKeys.sample(5));
-    // name updated; notes/label/tags preserved (NOT clobbered to undefined)
+    // display_name updated; name/notes/tags preserved (NOT clobbered to undefined)
     expect(single).toEqual({
-      id: 5, experiment_id: 1, label: "S5", name: "new name",
+      id: 5, experiment_id: 1, display_name: "new display", name: "old-id",
       notes: "old notes",
       tags: [{ id: 100, key: "k", value: "v", source: "manual" }],
     });
     const list = qc.getQueryData<any[]>(queryKeys.samples(1));
     expect(list![0]).toEqual({
-      id: 5, experiment_id: 1, label: "S5", name: "new name",
+      id: 5, experiment_id: 1, display_name: "new display", name: "old-id",
       notes: "old notes",
       tags: [{ id: 100, key: "k", value: "v", source: "manual" }],
     });

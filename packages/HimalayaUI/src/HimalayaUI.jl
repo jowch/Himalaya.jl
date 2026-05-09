@@ -5,6 +5,7 @@ include("image.jl")
 include("datfile.jl")
 include("config.jl")
 include("manifest.jl")
+include("validate.jl")
 include("hash.jl")
 include("speculative.jl")
 include("pipeline.jl")
@@ -28,5 +29,6 @@ include("routes_picker.jl")
 include("server.jl")
 
 export main, ExperimentConfig, load_config, list_config_types, load_builtin_config, resolve_files, config_to_toml, config_from_db
+export ManifestViolation, validate_manifest, ManifestValidationError
 
 end

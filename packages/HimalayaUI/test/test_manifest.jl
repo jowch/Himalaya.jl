@@ -52,8 +52,8 @@ const MANIFEST_CSV = """
     @test length(samples) == 4
 
     s1 = samples[1]
-    @test s1.label == "D1"
-    @test s1.name  == "UX1"
+    @test s1.name         == "D1"
+    @test s1.display_name == "UX1"
     @test s1.notes_sample == "clear"
     @test s1.filenames == ["JC001", "JC002", "JC003", "JC004"]
 
@@ -61,7 +61,7 @@ const MANIFEST_CSV = """
     @test s3.filenames == ["JC009", "JC010", "JC011", "JC012"]
 
     s4 = samples[4]
-    @test s4.label == "D4"
+    @test s4.name           == "D4"
     @test s4.notes_sample   == "condensed"
     @test s4.notes_exposure == "sq"
     @test s4.filenames == ["JC013", "JC014", "JC015", "JC016"]
@@ -97,11 +97,11 @@ const MANIFEST_MULTIRANGE_QUOTED = """
         samples = parse_manifest(cfg, IOBuffer(csv))
         @test length(samples) == 2
 
-        @test samples[1].label == "D1"
+        @test samples[1].name == "D1"
         @test samples[1].filenames == ["JC001", "JC002", "JC003", "JC004"]
 
-        @test samples[2].label == "D10"
-        @test samples[2].name  == "B1"
+        @test samples[2].name         == "D10"
+        @test samples[2].display_name == "B1"
         @test samples[2].filenames == [
             "JC037", "JC038", "JC039", "JC040",
             "JC153", "JC154", "JC155", "JC156",
@@ -126,10 +126,25 @@ end
     )
     samples = parse_manifest(cfg, IOBuffer(MANIFEST_MULTIRANGE_QUOTED))
     @test length(samples) == 2
-    @test samples[2].label == "D10"
+    @test samples[2].name == "D10"
     @test samples[2].filenames == [
         "JC037", "JC038", "JC039", "JC040",
         "JC153", "JC154", "JC155", "JC156",
         "JC161", "JC162", "JC163", "JC164",
     ]
+end
+
+@testset "parse_manifest — column 2 is identifier (name), column 3 is display_name" begin
+    cfg = HimalayaUI.load_builtin_config("simple")
+    csv = """sample_id\tname\tdisplay_name\tcol4\tcol5\tcol6\tcol7\tcol8\tfilenames\tnotes_sample\tnotes_exposure
+1\tJC001\tDOPC + chol\t\t\t\t\t\tJC001\t\t
+2\tJC002\tPOPC\t\t\t\t\t\tJC002\t\t
+"""
+        # skip_rows=1 with header_row=0 means line 1 is skipped, parsing starts at line 2.
+    samples = HimalayaUI.parse_manifest(cfg, IOBuffer(csv))
+    @test length(samples) == 2
+    @test samples[1].name == "JC001"
+    @test samples[1].display_name == "DOPC + chol"
+    @test samples[2].name == "JC002"
+    @test samples[2].display_name == "POPC"
 end

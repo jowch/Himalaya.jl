@@ -20,7 +20,20 @@ which is idempotent for the unanalyzed exposures and skips the analyzed ones
 that already have peaks.
 """
 function cli_init_with_db!(db::SQLite.DB, exp_dir::String; analyze::Bool = true)::Int
-    exp_dir   = abspath(exp_dir)
+    exp_dir = abspath(exp_dir)
+    exp_id = SQLite.transaction(db) do
+        _cli_init_inner!(db, exp_dir)
+    end
+    # Auto-analyze stays OUTSIDE the transaction — a crash mid-analyze must
+    # not roll back experiment registration. (Existing docstring contract.)
+    if analyze
+        println("Running analysis (peak-finding + indexing)...")
+        _analyze_experiment!(db, exp_id)
+    end
+    exp_id
+end
+
+function _cli_init_inner!(db::SQLite.DB, exp_dir::String)::Int
     toml_path = joinpath(exp_dir, "experiment.toml")
     isfile(toml_path) || error("experiment.toml not found in $exp_dir. Run 'himalaya config new --dir $exp_dir' first.")
 
@@ -56,13 +69,17 @@ function cli_init_with_db!(db::SQLite.DB, exp_dir::String; analyze::Bool = true)
 
     if isfile(manifest_path)
         samples = parse_manifest(cfg, manifest_path)
+        # Validate the manifest BEFORE inserting any sample/exposure rows.
+        violations = validate_manifest(samples)
+        isempty(violations) || throw(ManifestValidationError(violations))
+
         sample_count = 0
         exposure_count = 0
         for ms in samples
             s_id = create_sample!(db;
                 experiment_id = exp_id,
-                label         = ms.label,
                 name          = ms.name,
+                display_name  = ms.display_name,
                 notes         = ms.notes_sample)
             sample_count += 1
 
@@ -93,12 +110,6 @@ function cli_init_with_db!(db::SQLite.DB, exp_dir::String; analyze::Bool = true)
     end
 
     println("Initialized experiment '$exp_name' (id=$exp_id) at $exp_dir")
-
-    if analyze
-        println("Running analysis (peak-finding + indexing)...")
-        _analyze_experiment!(db, exp_id)
-    end
-
     exp_id
 end
 
@@ -149,6 +160,8 @@ function _reingest_inner!(db::SQLite.DB, experiment_id::Int, exp_dir::String, to
     end
 
     samples = parse_manifest(cfg, manifest_path)
+    violations = validate_manifest(samples)
+    isempty(violations) || throw(ManifestValidationError(violations))
     inserted_samples = 0
     inserted_exposures = 0
 
@@ -161,13 +174,13 @@ function _reingest_inner!(db::SQLite.DB, experiment_id::Int, exp_dir::String, to
             inserted_samples += 1
             create_sample!(db;
                 experiment_id = experiment_id,
-                label         = ms.label,
                 name          = ms.name,
+                display_name  = ms.display_name,
                 notes         = ms.notes_sample)
         else
             DBInterface.execute(db,
-                "UPDATE samples SET label = ?, notes = ? WHERE id = ?",
-                [ms.label, ms.notes_sample, existing[1].id])
+                "UPDATE samples SET display_name = ?, notes = ? WHERE id = ?",
+                [ms.display_name, ms.notes_sample, existing[1].id])
             Int(existing[1].id)
         end
 
@@ -308,7 +321,7 @@ Shared between `cli_analyze` (explicit user invocation) and
 function _analyze_experiment!(db::SQLite.DB, exp_id::Int; sample_filter=nothing)
     exp     = get_experiment(db, exp_id)
     samples = get_samples(db, exp_id)
-    sample_filter !== nothing && filter!(sm -> sm.label == sample_filter, samples)
+    sample_filter !== nothing && filter!(sm -> sm.name == sample_filter, samples)
 
     for sample in samples
         exposures = get_exposures(db, Int(sample.id))
@@ -332,10 +345,10 @@ function _analyze_experiment!(db::SQLite.DB, exp_id::Int; sample_filter=nothing)
             e_id = Int(exp_row.id)
             e_status = ismissing(exp_row.status) ? nothing : exp_row.status
             if e_status == "rejected"
-                println("  Skipping $(sample.label) / $(exp_row.filename) (rejected)")
+                println("  Skipping $(sample.name) / $(exp_row.filename) (rejected)")
                 continue
             end
-            print("  Analyzing $(sample.label) / $(exp_row.filename) ... ")
+            print("  Analyzing $(sample.name) / $(exp_row.filename) ... ")
             try
                 analyze_exposure!(db, e_id, exp.analysis_dir)
                 println("done")
@@ -354,7 +367,7 @@ function cli_analyze(args)
             help     = "experiment id, name, or path (required)"
             required = true
         "--sample", "-s"
-            help    = "analyze only this sample label (e.g. D1)"
+            help    = "sample name (stable identifier) (e.g. D1)"
             default = nothing
     end
     p = parse_args(args, s; as_symbols = true)
@@ -371,7 +384,7 @@ function cli_show(args)
             help    = "experiment id, name, or path (default: the sole registered experiment)"
             default = nothing
         "--sample", "-s"
-            help     = "sample label"
+            help     = "sample name (stable identifier)"
             required = true
     end
     p = parse_args(args, s; as_symbols = true)
@@ -380,7 +393,7 @@ function cli_show(args)
     exp_row = _resolve_experiment(db, p[:experiment])
     exp_id  = Int(exp_row.id)
     samples = get_samples(db, exp_id)
-    idx     = findfirst(sm -> sm.label == p[:sample], samples)
+    idx     = findfirst(sm -> sm.name == p[:sample], samples)
     idx === nothing && error("sample $(p[:sample]) not found")
     sample_row = samples[idx]
 
@@ -507,6 +520,91 @@ function cli_serve(args)
     serve(db; host = p[:host], port = p[:port])
 end
 
+"""
+    cli_migrate_toml(args)
+
+Rewrite `<dir>/experiment.toml` from the legacy `[manifest].label/name` shape
+to the canonical `[manifest].name/display_name` shape. Section-aware: only
+substitutes inside the `[manifest]` block so the "axis label units" comment
+in `[beamline]` is not misfired. Idempotent. Atomic file write.
+"""
+function cli_migrate_toml(args::Vector{<:AbstractString})
+    isempty(args) && error("Usage: himalaya migrate-toml <experiment-dir>")
+    dir  = args[1]
+    path = joinpath(dir, "experiment.toml")
+    isfile(path) || error("experiment.toml not found in $dir")
+
+    lines = readlines(path; keep=true)
+    section = ""
+    has_label = false
+    has_display_name = false
+    has_old_name = false  # `name` inside [manifest] when display_name is absent → legacy-shape `name`
+
+    # First pass: classify what's in [manifest].
+    for line in lines
+        # Section regex assumes plain unquoted [section] headers per the current schema.
+        # Quoted (`["weird name"]`) or dotted (`[manifest.subsection]`) headers are not
+        # matched; if those are added to the schema later, this regex needs widening.
+        m = match(r"^\s*\[([A-Za-z0-9_]+)\]\s*$", line)
+        if m !== nothing
+            section = m.captures[1]; continue
+        end
+        if section == "manifest"
+            occursin(r"^\s*label\s*=", line)        && (has_label = true)
+            occursin(r"^\s*display_name\s*=", line) && (has_display_name = true)
+            occursin(r"^\s*name\s*=", line)         && (has_old_name = true)
+        end
+    end
+
+    if has_display_name && !has_label
+        @info "experiment.toml at $path already migrated"
+        return nothing
+    end
+    if has_display_name && has_label
+        error("experiment.toml at $path has both `label` and `display_name` in [manifest]; " *
+              "manual edit needed")
+    end
+    if !has_label
+        error("experiment.toml at $path has no `[manifest].label` to migrate")
+    end
+
+    # Second pass: rewrite. Only inside [manifest]. Per-line state machine: a line is
+    # EITHER a label= rewrite OR a name= rewrite, never both — so `name` doesn't catch
+    # the line we just rewrote from `label` to `name`.
+    section = ""
+    out_lines = String[]
+    for line in lines
+        m = match(r"^\s*\[([A-Za-z0-9_]+)\]\s*$", line)
+        if m !== nothing
+            section = m.captures[1]
+            push!(out_lines, line); continue
+        end
+        if section == "manifest"
+            if (m2 = match(r"^(\s*)label(\s*=\s*\S+)(.*)$", line)) !== nothing
+                # Strip trailing newline from captures[3] if present, then re-add one.
+                rest = rstrip(m2.captures[3], '\n')
+                push!(out_lines, m2.captures[1] * "name" * m2.captures[2] * rest * "\n")
+            elseif (m3 = match(r"^(\s*)name(\s*=\s*\S+)(.*)$", line)) !== nothing
+                rest = rstrip(m3.captures[3], '\n')
+                push!(out_lines, m3.captures[1] * "display_name" * m3.captures[2] * rest * "\n")
+            else
+                push!(out_lines, line)
+            end
+        else
+            push!(out_lines, line)
+        end
+    end
+
+    # Atomic write.
+    tmp = path * ".tmp"
+    open(tmp, "w") do io
+        for l in out_lines; print(io, l); end
+    end
+    mv(tmp, path; force=true)
+    @info "Migrated $path"
+    nothing
+end
+
 const _USAGE = """
 Usage: himalaya <command> [options]
 
@@ -546,6 +644,8 @@ function main(args = copy(ARGS))
         cli_config(args)
     elseif cmd == "reingest"
         cli_reingest(args)
+    elseif cmd == "migrate-toml"
+        cli_migrate_toml(args)
     else
         println("Unknown command: $cmd")
         println()

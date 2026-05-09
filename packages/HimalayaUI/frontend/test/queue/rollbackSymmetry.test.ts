@@ -53,7 +53,7 @@ const EXPOSURE = {
   trace_hash: null, analysis_inputs_hash: "h0", tags: [], sources: [],
 };
 const SAMPLE = {
-  id: 10, experiment_id: 1, label: "D1", name: "n", notes: null,
+  id: 10, experiment_id: 1, display_name: "D1", name: "n", notes: null,
   tags: [{ id: 1, key: "k", value: "v", source: "manual" }],
 };
 const GROUP = {
@@ -221,7 +221,7 @@ const SPECS: Spec[] = [
         kind: "update_sample", clientOpId: "op",
         payload: { sampleId: 10 },
         sampleId: 10, experimentId: 1, username: "alice", clientId: "tab",
-        name: "renamed",
+        display_name: "renamed",
       } as any, qc);
       ctx.restore();
     },

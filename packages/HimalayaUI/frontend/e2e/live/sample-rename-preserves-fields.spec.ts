@@ -25,7 +25,7 @@ const BACKEND_BASE = process.env["BACKEND_BASE"] ?? "http://127.0.0.1:8090";
 
 type Sample = {
   id: number; experiment_id: number;
-  name: string | null; label: string | null; notes: string | null;
+  name: string | null; display_name: string | null; notes: string | null;
 };
 
 interface Fixture {
@@ -85,11 +85,11 @@ test.describe("issue #35 sample partial-patch reconciliation (Bug 5)", () => {
   });
 
   test.afterAll(async () => {
-    // Restore the sample's name + notes so the dev DB doesn't drift between runs.
+    // Restore the sample's display_name + notes so the dev DB doesn't drift between runs.
     await fetch(`${BACKEND_BASE}/api/samples/${fx.sampleId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json", "X-Username": "rename-tester" },
-      body: JSON.stringify({ name: fx.originalName, notes: fx.originalNotes }),
+      body: JSON.stringify({ display_name: fx.originalName, notes: fx.originalNotes }),
     }).catch(() => { /* best-effort cleanup */ });
   });
 
@@ -117,9 +117,9 @@ test.describe("issue #35 sample partial-patch reconciliation (Bug 5)", () => {
     await nameInput.fill(newName);
     await nameInput.blur();
 
-    // 3. Wait for the name write to land.
+    // 3. Wait for the display_name write to land.
     await expect.poll(
-      async () => (await getSample(fx.sampleId)).name,
+      async () => (await getSample(fx.sampleId)).display_name,
       { timeout: 8000 },
     ).toBe(newName);
 
@@ -130,7 +130,7 @@ test.describe("issue #35 sample partial-patch reconciliation (Bug 5)", () => {
 
     // 5. Backend sanity: server still has the notes too (full round-trip).
     const final = await getSample(fx.sampleId);
-    expect(final.name).toBe(newName);
+    expect(final.display_name).toBe(newName);
     expect(final.notes).toBe(notesText);
   });
 });

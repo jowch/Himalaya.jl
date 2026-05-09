@@ -21,9 +21,12 @@ function register_samples_routes!()
         db   = current_db()
         body = json(req)
         fields, vals = Symbol[], Any[]
-        for k in (:name, :notes)
+        for k in (:display_name, :notes)
             if haskey(body, k)
-                push!(fields, k); push!(vals, body[k])
+                v = body[k]
+                # Trim leading/trailing whitespace on display_name only.
+                v isa AbstractString && k === :display_name && (v = strip(String(v)))
+                push!(fields, k); push!(vals, v)
             end
         end
         if isempty(fields)

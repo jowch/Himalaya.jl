@@ -510,12 +510,14 @@ Input: CSV exported from Google Sheets (or equivalent). Expected columns:
 | Column | Field | Notes |
 |---|---|---|
 | `#` | row index | used to detect section header rows (non-numeric → skip) |
-| `Sample` | `samples.label` | "D1" |
-| `Name` | `samples.name` | "UX1" |
+| `Sample` | `samples.name` | stable scientific identifier, e.g. "JC001" *(was `samples.label`; see issue #88)* |
+| `Name` | `samples.display_name` | user-facing label, e.g. "DOPC + cholesterol" *(was `samples.name`; see issue #88)* |
 | `Time(s)` | ignored for now | |
 | `Filename(s)` | `exposures.filename` | range "JC001-004" expanded to JC001..JC004 |
 | `Notes (Sample)` | `samples.notes` | |
 | `Notes (Exposure)` | exposure tag `note` | e.g. "sq", "condensed" |
+
+*(Schema updated by issue #88; see docs/superpowers/specs/2026-05-08-sample-naming-refactor-design.md)*
 
 Section header rows (where `#` is non-numeric or empty) are skipped. Filename
 ranges like `JC001-004` and `JC013-JC016` are expanded to individual filenames.

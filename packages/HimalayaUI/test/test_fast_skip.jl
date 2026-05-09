@@ -30,8 +30,8 @@ function setup_clean_analyzed_exposure(tmp::String; name="FastSkipExp", stem="ST
     skip_rows = 1
     header_row = 0
     sample_id = 1
-    label = 2
-    name = 3
+    name = 2
+    display_name = 3
     filenames = 9
     notes_sample = 10
     notes_exposure = 11

@@ -102,7 +102,7 @@ async function mockBackend(page: Page, state: MockState, username: string): Prom
     analysis_dir: "/p/a", manifest_path: null, created_at: "2026-05-03",
   };
   const sample = {
-    id: SAMPLE_ID, experiment_id: 1, label: "D1", name: "s1", notes: null, tags: [],
+    id: SAMPLE_ID, experiment_id: 1, display_name: "D1", name: "s1", notes: null, tags: [],
   };
   const exposure = {
     id: EXPOSURE_ID, sample_id: SAMPLE_ID, filename: "scan", kind: "file",

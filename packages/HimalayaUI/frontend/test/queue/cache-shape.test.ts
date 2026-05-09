@@ -50,7 +50,7 @@ const GROUP_KEYS = new Set([
   "id", "exposure_id", "kind", "active", "members",
 ]);
 const SAMPLE_KEYS = new Set([
-  "id", "experiment_id", "label", "name", "notes", "tags",
+  "id", "experiment_id", "name", "display_name", "notes", "tags",
 ]);
 const EXPOSURE_KEYS = new Set([
   "id", "sample_id", "filename", "kind", "selected", "status",
@@ -326,20 +326,20 @@ describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", ()
 
   it("updateSample preserves tags via field-merge (deep-scan Bug #2)", async () => {
     const initialSample = {
-      id: 10, experiment_id: 1, label: "D1", name: "old", notes: "n",
+      id: 10, experiment_id: 1, display_name: "D1", name: "old", notes: "n",
       tags: [{ id: 1, key: "k", value: "v", source: "manual" }],
     };
     qc.setQueryData(queryKeys.sample(10), initialSample);
     qc.setQueryData(queryKeys.samples(1), [initialSample]);
     mockFetchOnce({
-      id: 10, experiment_id: 1, label: "D1", name: "new", notes: "n",
+      id: 10, experiment_id: 1, display_name: "D1", name: "old", notes: "n",
       created_at: "2026-05-03",
     }, 200);
     await runMutator(qc, updateSampleMutator, {
       kind: "update_sample",
       clientOpId: "op-shape-9",
       sampleId: 10, experimentId: 1, username: "alice", clientId: "tab-1",
-      name: "new",
+      display_name: "new",
       payload: { sampleId: 10 },
     });
     const single = qc.getQueryData<{ tags: unknown[] }>(queryKeys.sample(10));
@@ -352,7 +352,7 @@ describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", ()
     // but the SampleTag type has only {id, key, value, source}. If the mutator
     // spreads the response wholesale, the cached tag pollutes with sample_id.
     const initialSample = {
-      id: 10, experiment_id: 1, label: "D1", name: "n", notes: null, tags: [],
+      id: 10, experiment_id: 1, display_name: "D1", name: "n", notes: null, tags: [],
     };
     qc.setQueryData(queryKeys.samples(1), [initialSample]);
     mockFetchOnce({

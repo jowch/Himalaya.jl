@@ -26,8 +26,8 @@ export interface SampleTag {
 export interface Sample {
   id: number;
   experiment_id: number;
-  label: string | null;
   name: string | null;
+  display_name: string | null;
   notes: string | null;
   tags: SampleTag[];
 }
@@ -93,14 +93,14 @@ export const getExperiment = (id: number) =>
   request<Experiment>("GET", `/api/experiments/${id}`);
 export const updateExperiment = (
   id: number,
-  patch: Partial<Pick<Experiment, "name" | "data_dir" | "analysis_dir" | "manifest_path">>,
+  patch: Record<string, never>,
   opts?: AuthOpts,
 ) => request<Experiment>("PATCH", `/api/experiments/${id}`, patch, opts);
 
 // Samples
 export const listSamples    = (experiment_id: number) =>
   request<Sample[]>("GET", `/api/experiments/${experiment_id}/samples`);
-export const updateSample   = (id: number, patch: { name?: string; notes?: string }, opts?: AuthOpts) =>
+export const updateSample   = (id: number, patch: { display_name?: string; notes?: string }, opts?: AuthOpts) =>
   request<Sample>("PATCH", `/api/samples/${id}`, patch, opts);
 export const addSampleTag   = (id: number, key: string, value: string, opts?: AuthOpts) =>
   request<SampleTag>("POST", `/api/samples/${id}/tags`, { key, value }, opts);

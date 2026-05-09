@@ -26,8 +26,8 @@ CREATE TABLE IF NOT EXISTS experiments (
 CREATE TABLE IF NOT EXISTS samples (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     experiment_id INTEGER REFERENCES experiments(id),
-    label         TEXT,
     name          TEXT,
+    display_name  TEXT,
     notes         TEXT
 );
 
@@ -306,6 +306,10 @@ function migrate_schema!(db::SQLite.DB)
         """CREATE UNIQUE INDEX IF NOT EXISTS idx_events_unique_op
             ON user_actions(client_op_id, action, entity_id)
             WHERE client_op_id IS NOT NULL""")
+    # (Issue #88) Run BEFORE the AUTOINCREMENT rebuild so the rebuild's column-copy
+    # step sees the canonical (name, display_name) shape on both sides — preserving
+    # stable identifiers on pre-Plan-7 DBs that lack AUTOINCREMENT.
+    migrate_samples_naming!(db)
     migrate_pk_to_autoincrement!(db)
     # Heal corrupted FKs from prior runs: a DB migrated before the helper
     # was generalized may still have FK refs to `_migrate_old_*` on tables
@@ -891,6 +895,89 @@ function _fix_fk_references_after_autoincrement_migration!(db::SQLite.DB)
 end
 
 """
+    migrate_samples_naming!(db) :: Nothing
+
+Convert legacy `samples (label, name)` shape to `(name, display_name)`. Idempotent
+on the canonical shape (sentinel: `display_name` exists AND `label` does not).
+Atomic: all four ALTER/UPDATE/DROP statements + the duplicate-suffix pass +
+the UNIQUE INDEX creation + the idempotent_responses purge run inside one
+SQLite.transaction so a partial migration is impossible.
+
+Pre-existing `(experiment_id, name)` duplicates (the missing UNIQUE never
+blocked them) are renamed to `<name>-2`, `<name>-3`, … ordered by ascending id
+(oldest sample wins the bare name; deterministic across reruns).
+"""
+function migrate_samples_naming!(db::SQLite.DB)::Nothing
+    cols = Set(r.name for r in Tables.rowtable(DBInterface.execute(db,
+        "PRAGMA table_info('samples')")))
+    # No samples table yet (partial legacy fixture or pre-create_schema! call) — skip.
+    # create_schema! will create it with the canonical shape; nothing to rename.
+    isempty(cols) && return nothing
+    if "display_name" in cols && !("label" in cols)
+        return nothing  # already migrated
+    end
+    SQLite.transaction(db) do
+        if !("display_name" in cols)
+            try DBInterface.execute(db, "ALTER TABLE samples ADD COLUMN display_name TEXT")
+            catch e; occursin("duplicate column", sprint(showerror, e)) || rethrow(); end
+        end
+        if "label" in cols
+            if "name" in cols
+                # Full Plan-7 shape: both label (stable id) and name (friendly) present.
+                # label → name (stable id), name → display_name (friendly text).
+                DBInterface.execute(db, """UPDATE samples
+                                              SET display_name = name,
+                                                  name         = COALESCE(NULLIF(label, ''), name)""")
+            else
+                # Older shape: only label present (no name column yet).
+                # Add name column and populate from label; display_name stays NULL.
+                try DBInterface.execute(db, "ALTER TABLE samples ADD COLUMN name TEXT")
+                catch e; occursin("duplicate column", sprint(showerror, e)) || rethrow(); end
+                DBInterface.execute(db, "UPDATE samples SET name = COALESCE(NULLIF(label, ''), CAST(id AS TEXT))")
+            end
+            try DBInterface.execute(db, "ALTER TABLE samples DROP COLUMN label")
+            catch e; occursin("no such column", sprint(showerror, e)) || rethrow(); end
+        end
+        # Duplicate suffix pass (oldest id keeps bare name).
+        # Collision-safe: track existing (experiment_id, name) pairs so a user-named
+        # sample literally called "<name>-2" doesn't conflict with our rename target.
+        existing = Set{Tuple{Int64,String}}(
+            (Int64(r.experiment_id), String(r.name))
+            for r in Tables.rowtable(DBInterface.execute(db,
+                "SELECT experiment_id, name FROM samples WHERE name IS NOT NULL AND experiment_id IS NOT NULL")))
+        dups = Tables.rowtable(DBInterface.execute(db, """
+            SELECT experiment_id, name FROM samples
+            GROUP BY experiment_id, name HAVING COUNT(*) > 1"""))
+        for d in dups
+            ids = Tables.rowtable(DBInterface.execute(db,
+                "SELECT id FROM samples WHERE experiment_id = ? AND name = ? ORDER BY id ASC",
+                [d.experiment_id, d.name]))
+            for (i, row) in enumerate(ids)
+                i == 1 && continue  # oldest keeps the bare name
+                # Pick the next suffix that isn't already taken by a user-named sample.
+                suffix_n = i
+                new_name = "$(d.name)-$(suffix_n)"
+                while (Int64(d.experiment_id), new_name) in existing
+                    suffix_n += 1
+                    new_name = "$(d.name)-$(suffix_n)"
+                end
+                push!(existing, (Int64(d.experiment_id), new_name))
+                @warn "Renamed duplicate sample" experiment_id=d.experiment_id old=d.name new=new_name id=row.id
+                DBInterface.execute(db, "UPDATE samples SET name = ? WHERE id = ?",
+                    [new_name, row.id])
+            end
+        end
+        DBInterface.execute(db,
+            "CREATE UNIQUE INDEX IF NOT EXISTS samples_unique_name ON samples(experiment_id, name)")
+        # Old idempotent_responses rows carry pre-rename payload shape; purge to
+        # prevent stale-shape replays on retried client_op_id keys post-deploy.
+        try DBInterface.execute(db, "DELETE FROM idempotent_responses")
+        catch e; occursin("no such table", lowercase(sprint(showerror, e))) || rethrow(); end
+    end
+    nothing
+end
+
+"""
     migrate_r2_widen_index_peaks_pk!(db)
 
 Rebuild `index_peaks` to widen its PRIMARY KEY from `(index_id, peak_id)` to
@@ -1118,12 +1205,12 @@ end
 
 function create_sample!(db::SQLite.DB;
         experiment_id::Int,
-        label::Union{String,Nothing} = nothing,
-        name::Union{String,Nothing}  = nothing,
-        notes::Union{String,Nothing} = nothing)
+        name::Union{String,Nothing}         = nothing,
+        display_name::Union{String,Nothing} = nothing,
+        notes::Union{String,Nothing}        = nothing)
     result = DBInterface.execute(db,
-        "INSERT INTO samples (experiment_id, label, name, notes) VALUES (?, ?, ?, ?)",
-        [experiment_id, label, name, notes])
+        "INSERT INTO samples (experiment_id, name, display_name, notes) VALUES (?, ?, ?, ?)",
+        [experiment_id, name, display_name, notes])
     Int(DBInterface.lastrowid(result))
 end
 

@@ -53,8 +53,8 @@ function exposureLabel(exposure: Exposure): string {
 }
 
 function sampleLabel(sample: Sample): string {
-  // Spec: prefer sample.name, fall back to sample.label.
-  return sample.name ?? sample.label ?? `Sample #${sample.id}`;
+  // Spec: prefer display_name, fall back to name.
+  return sample.display_name || sample.name || `Sample #${sample.id}`;
 }
 
 export function ExposureListRow({

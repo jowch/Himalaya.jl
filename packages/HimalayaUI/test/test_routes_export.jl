@@ -10,7 +10,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
     s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id,
-        label="D1", name="UX1")
+        name="D1", display_name="UX1")
     e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
     HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
 
@@ -22,7 +22,8 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         body = JSON3.read(String(r.body))
         @test length(body) == 1
         s = body[1]
-        @test s.label == "D1"
+        @test s.name == "D1"
+        @test s.display_name == "UX1"
         @test length(s.exposures) == 1
         @test s.exposures[1].filename == "example_tot"
         @test length(s.exposures[1].indices) >= 1
@@ -32,7 +33,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test r.status == 200
         @test occursin("text/csv", HTTP.header(r, "Content-Type"))
         csv_body = String(r.body)
-        @test startswith(csv_body, "sample_label,sample_name,exposure_filename,phases")
+        @test startswith(csv_body, "sample_name,sample_display_name,exposure_filename,phases")
         @test occursin("D1,UX1,example_tot", csv_body)
 
         # Default = json

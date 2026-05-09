@@ -12,7 +12,7 @@ beamline parameters.
 Supported TOML sections:
 - `[experiment]`: name, description, manifest (relative path to manifest CSV)
 - `[beamline]`: energy_kev, flight_path_m
-- `[manifest]`: delimiter, skip_rows, header_row, sample_id, label, name,
+- `[manifest]`: delimiter, skip_rows, header_row, sample_id, name, display_name,
   filenames, notes_sample, notes_exposure (each column = Int index or String header name).
   `header_row = 0` is the sentinel for "no header row; columns are positional".
 - `[layout]`: data_dir, analysis_dir, exposure_type
@@ -32,8 +32,8 @@ struct ExperimentConfig
     skip_rows          ::Int
     header_row         ::Int
     col_sample_id      ::Union{Int,String}
-    col_label          ::Union{Int,String}
     col_name           ::Union{Int,String}
+    col_display_name   ::Union{Int,String}
     col_filenames      ::Union{Int,String}
     col_notes_sample   ::Union{Int,String}
     col_notes_exposure ::Union{Int,String}
@@ -93,6 +93,13 @@ function _build_config(d::AbstractDict)::ExperimentConfig
     exposure_type in VALID_EXPOSURE_TYPES || error(
         "layout.exposure_type '$exposure_type' not recognized. Valid: $(join(VALID_EXPOSURE_TYPES, ", "))")
 
+    if haskey(mf, "label")
+        error("deprecated key '[manifest].label' in experiment.toml. " *
+              "The manifest column meanings were swapped: column 2 is now `name` " *
+              "(stable identifier), column 3 is now `display_name` (user-friendly label). " *
+              "Run `himalaya migrate-toml <experiment-dir>` to upgrade automatically.")
+    end
+
     ExperimentConfig(
         get(exp, "name",        ""),
         get(exp, "description", ""),
@@ -104,8 +111,8 @@ function _build_config(d::AbstractDict)::ExperimentConfig
         get(mf,  "skip_rows",      1),
         get(mf,  "header_row",     0),
         _coerce_col(get(mf, "sample_id",      1),  "manifest.sample_id"),
-        _coerce_col(get(mf, "label",          2),  "manifest.label"),
-        _coerce_col(get(mf, "name",           3),  "manifest.name"),
+        _coerce_col(get(mf, "name",         2),  "manifest.name"),
+        _coerce_col(get(mf, "display_name", 3),  "manifest.display_name"),
         _coerce_col(get(mf, "filenames",      9),  "manifest.filenames"),
         _coerce_col(get(mf, "notes_sample",   10), "manifest.notes_sample"),
         _coerce_col(get(mf, "notes_exposure", 11), "manifest.notes_exposure"),
@@ -274,8 +281,8 @@ function config_to_toml(cfg::ExperimentConfig)::String
             "skip_rows"      => cfg.skip_rows,
             "header_row"     => cfg.header_row,
             "sample_id"      => col_value(cfg.col_sample_id),
-            "label"          => col_value(cfg.col_label),
             "name"           => col_value(cfg.col_name),
+            "display_name"   => col_value(cfg.col_display_name),
             "filenames"      => col_value(cfg.col_filenames),
             "notes_sample"   => col_value(cfg.col_notes_sample),
             "notes_exposure" => col_value(cfg.col_notes_exposure),
