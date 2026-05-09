@@ -1179,12 +1179,19 @@ end
 
 function create_sample!(db::SQLite.DB;
         experiment_id::Int,
-        label::Union{String,Nothing} = nothing,
-        name::Union{String,Nothing}  = nothing,
-        notes::Union{String,Nothing} = nothing)
+        name::Union{String,Nothing}         = nothing,
+        display_name::Union{String,Nothing} = nothing,
+        # Legacy keyword: old callers passed `label=` for the identifier field.
+        # When `label` is supplied but `name` is not, treat `label` as `name`.
+        # When both are supplied (legacy call with label=identifier, name=display),
+        # label wins for the identifier slot and name becomes display_name fallback.
+        label::Union{String,Nothing}        = nothing,
+        notes::Union{String,Nothing}        = nothing)
+    effective_name         = label !== nothing ? label : name
+    effective_display_name = label !== nothing ? name : display_name
     result = DBInterface.execute(db,
-        "INSERT INTO samples (experiment_id, label, name, notes) VALUES (?, ?, ?, ?)",
-        [experiment_id, label, name, notes])
+        "INSERT INTO samples (experiment_id, name, display_name, notes) VALUES (?, ?, ?, ?)",
+        [experiment_id, effective_name, effective_display_name, notes])
     Int(DBInterface.lastrowid(result))
 end
 

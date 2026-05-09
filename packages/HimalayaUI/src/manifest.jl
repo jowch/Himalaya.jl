@@ -2,8 +2,8 @@ using CSV
 using Tables
 
 struct ManifestSample
-    label          ::String
-    name           ::String
+    name           ::String   # was: label — stable identifier (e.g. "JC001")
+    display_name   ::String   # was: name  — user-friendly label (e.g. "DOPC + chol")
     notes_sample   ::String
     notes_exposure ::String
     filenames      ::Vector{String}
@@ -102,12 +102,12 @@ function parse_manifest(cfg::ExperimentConfig, source)::Vector{ManifestSample}
         1 <= col <= length(column_syms) ? column_syms[col] : Symbol("")
     end
 
-    sym_id        = resolve_col(cfg.col_sample_id)
-    sym_label     = resolve_col(cfg.col_label)
-    sym_name      = resolve_col(cfg.col_name)
-    sym_filenames = resolve_col(cfg.col_filenames)
-    sym_notes_s   = resolve_col(cfg.col_notes_sample)
-    sym_notes_e   = resolve_col(cfg.col_notes_exposure)
+    sym_id               = resolve_col(cfg.col_sample_id)
+    sym_name_col         = resolve_col(cfg.col_name)
+    sym_display_name_col = resolve_col(cfg.col_display_name)
+    sym_filenames        = resolve_col(cfg.col_filenames)
+    sym_notes_s          = resolve_col(cfg.col_notes_sample)
+    sym_notes_e          = resolve_col(cfg.col_notes_exposure)
 
     function safe_get(row, sym::Symbol)::String
         sym == Symbol("") && return ""
@@ -124,8 +124,8 @@ function parse_manifest(cfg::ExperimentConfig, source)::Vector{ManifestSample}
         isempty(filenames_str) && continue
 
         push!(samples, ManifestSample(
-            safe_get(row, sym_label),
-            safe_get(row, sym_name),
+            safe_get(row, sym_name_col),         # column 2 → name field (stable identifier)
+            safe_get(row, sym_display_name_col), # column 3 → display_name field (user-friendly label)
             safe_get(row, sym_notes_s),
             safe_get(row, sym_notes_e),
             expand_filename_field(filenames_str),

@@ -17,8 +17,8 @@ function _make_toml(; integration="{name}.dat", image="{name}.tiff", sample_id="
     skip_rows = 0
     header_row = 0
     sample_id = $sample_id
-    label = 2
-    name = 3
+    name = 2
+    display_name = 3
     filenames = 9
     notes_sample = 10
     notes_exposure = 11
@@ -50,8 +50,8 @@ end
         skip_rows      = 1
         header_row     = 0
         sample_id      = 1
-        label          = 2
-        name           = 3
+        name           = 2
+        display_name   = 3
         filenames      = 9
         notes_sample   = 10
         notes_exposure = 11
@@ -74,8 +74,8 @@ end
         @test cfg.skip_rows == 1
         @test cfg.header_row == 0
         @test cfg.col_sample_id == 1
-        @test cfg.col_label == 2
-        @test cfg.col_name == 3
+        @test cfg.col_name == 2
+        @test cfg.col_display_name == 3
         @test cfg.col_filenames == 9
         @test cfg.col_notes_sample == 10
         @test cfg.col_notes_exposure == 11
@@ -281,8 +281,8 @@ end
     samples = HimalayaUI.parse_manifest(cfg, IOBuffer(csv))
 
     @test length(samples) == 2
-    @test samples[1].label == "D1"
-    @test samples[1].name  == "UX1"
+    @test samples[1].name         == "D1"
+    @test samples[1].display_name == "UX1"
     @test samples[1].filenames == ["JC001", "JC002", "JC003"]
     @test samples[1].notes_sample   == "note_s"
     @test samples[1].notes_exposure == "note_e"
@@ -313,8 +313,8 @@ end
         skip_rows = 0
         header_row = 1
         sample_id = "#"
-        label = "Sample"
-        name = "Name"
+        name = "Sample"
+        display_name = "Name"
         filenames = "Filename(s)"
         notes_sample = "Notes (Sample)"
         notes_exposure = "Notes (Exposure)"
@@ -330,7 +330,7 @@ end
 
         samples = HimalayaUI.parse_manifest(cfg, IOBuffer(csv))
         @test length(samples) == 2
-        @test samples[1].label    == "D1"
+        @test samples[1].name     == "D1"
         @test samples[1].filenames == ["AB001", "AB002"]
         @test samples[1].notes_sample   == "s_note"
         @test samples[1].notes_exposure == "e_note"
@@ -393,8 +393,8 @@ end
         skip_rows = 0
         header_row = 0
         sample_id = 1
-        label = 2
-        name = 3
+        name = 2
+        display_name = 3
         filenames = 9
         notes_sample = 10
         notes_exposure = 11
@@ -436,8 +436,8 @@ end
         skip_rows = 0
         header_row = 1
         sample_id = "#"
-        label = "Sample"
-        name = "Name"
+        name = "Sample"
+        display_name = "Name"
         filenames = "Filename(s)"
         notes_sample = "Notes (Sample)"
         notes_exposure = "Notes (Exposure)"
@@ -456,9 +456,9 @@ end
         roundtrip_path = joinpath(dir, "rt.toml")
         write(roundtrip_path, blob)
         cfg2 = HimalayaUI.load_config(roundtrip_path)
-        @test cfg2.col_sample_id == "#"
-        @test cfg2.col_label     == "Sample"
-        @test cfg2.col_filenames == "Filename(s)"
+        @test cfg2.col_sample_id   == "#"
+        @test cfg2.col_name        == "Sample"
+        @test cfg2.col_filenames   == "Filename(s)"
     end
 end
 
@@ -645,8 +645,8 @@ end
         skip_rows = 0
         header_row = 0
         sample_id = 1
-        label = 2
-        name = 3
+        name = 2
+        display_name = 3
         filenames = 9
         notes_sample = 10
         notes_exposure = 11
@@ -687,5 +687,57 @@ end
         @test err isa ErrorException
         @test occursin("Invalid TOML", err.msg)
         @test occursin(path, err.msg)
+    end
+end
+
+@testset "load_config rejects deprecated [manifest].label key" begin
+    mktempdir() do tmp
+        path = joinpath(tmp, "experiment.toml")
+        write(path, """
+[experiment]
+name = "demo"
+[manifest]
+sample_id = 1
+label     = 2
+name      = 3
+filenames = 9
+[layout]
+data_dir = "data"
+analysis_dir = "analysis/automatic_analysis"
+[files]
+integration = "{name}.dat"
+image       = "{name}.tiff"
+""")
+        @test_throws ErrorException HimalayaUI.load_config(path)
+        try
+            HimalayaUI.load_config(path)
+        catch e
+            @test occursin("deprecated key '[manifest].label'", sprint(showerror, e))
+            @test occursin("migrate-toml", sprint(showerror, e))
+        end
+    end
+end
+
+@testset "load_config accepts new [manifest].name + display_name" begin
+    mktempdir() do tmp
+        path = joinpath(tmp, "experiment.toml")
+        write(path, """
+[experiment]
+name = "demo"
+[manifest]
+sample_id    = 1
+name         = 2
+display_name = 3
+filenames    = 9
+[layout]
+data_dir = "data"
+analysis_dir = "analysis/automatic_analysis"
+[files]
+integration = "{name}.dat"
+image       = "{name}.tiff"
+""")
+        cfg = HimalayaUI.load_config(path)
+        @test cfg.col_name == 2
+        @test cfg.col_display_name == 3
     end
 end
