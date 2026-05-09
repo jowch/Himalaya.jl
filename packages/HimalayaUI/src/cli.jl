@@ -507,6 +507,88 @@ function cli_serve(args)
     serve(db; host = p[:host], port = p[:port])
 end
 
+"""
+    cli_migrate_toml(args)
+
+Rewrite `<dir>/experiment.toml` from the legacy `[manifest].label/name` shape
+to the canonical `[manifest].name/display_name` shape. Section-aware: only
+substitutes inside the `[manifest]` block so the "axis label units" comment
+in `[beamline]` is not misfired. Idempotent. Atomic file write.
+"""
+function cli_migrate_toml(args::Vector{<:AbstractString})
+    isempty(args) && error("Usage: himalaya migrate-toml <experiment-dir>")
+    dir  = args[1]
+    path = joinpath(dir, "experiment.toml")
+    isfile(path) || error("experiment.toml not found in $dir")
+
+    lines = readlines(path; keep=true)
+    section = ""
+    has_label = false
+    has_display_name = false
+    has_old_name = false  # `name` inside [manifest] when display_name is absent → legacy-shape `name`
+
+    # First pass: classify what's in [manifest].
+    for line in lines
+        m = match(r"^\s*\[([A-Za-z0-9_]+)\]\s*$", line)
+        if m !== nothing
+            section = m.captures[1]; continue
+        end
+        if section == "manifest"
+            occursin(r"^\s*label\s*=", line)        && (has_label = true)
+            occursin(r"^\s*display_name\s*=", line) && (has_display_name = true)
+            occursin(r"^\s*name\s*=", line)         && (has_old_name = true)
+        end
+    end
+
+    if has_display_name && !has_label
+        @info "experiment.toml at $path already migrated"
+        return nothing
+    end
+    if has_display_name && has_label
+        error("experiment.toml at $path has both `label` and `display_name` in [manifest]; " *
+              "manual edit needed")
+    end
+    if !has_label
+        error("experiment.toml at $path has no `[manifest].label` to migrate")
+    end
+
+    # Second pass: rewrite. Only inside [manifest]. Per-line state machine: a line is
+    # EITHER a label= rewrite OR a name= rewrite, never both — so `name` doesn't catch
+    # the line we just rewrote from `label` to `name`.
+    section = ""
+    out_lines = String[]
+    for line in lines
+        m = match(r"^\s*\[([A-Za-z0-9_]+)\]\s*$", line)
+        if m !== nothing
+            section = m.captures[1]
+            push!(out_lines, line); continue
+        end
+        if section == "manifest"
+            if (m2 = match(r"^(\s*)label(\s*=\s*\S+)(.*)$", line)) !== nothing
+                # Strip trailing newline from captures[3] if present, then re-add one.
+                rest = rstrip(m2.captures[3], '\n')
+                push!(out_lines, m2.captures[1] * "name" * m2.captures[2] * rest * "\n")
+            elseif (m3 = match(r"^(\s*)name(\s*=\s*\S+)(.*)$", line)) !== nothing
+                rest = rstrip(m3.captures[3], '\n')
+                push!(out_lines, m3.captures[1] * "display_name" * m3.captures[2] * rest * "\n")
+            else
+                push!(out_lines, line)
+            end
+        else
+            push!(out_lines, line)
+        end
+    end
+
+    # Atomic write.
+    tmp = path * ".tmp"
+    open(tmp, "w") do io
+        for l in out_lines; print(io, l); end
+    end
+    mv(tmp, path; force=true)
+    @info "Migrated $path"
+    nothing
+end
+
 const _USAGE = """
 Usage: himalaya <command> [options]
 
@@ -546,6 +628,8 @@ function main(args = copy(ARGS))
         cli_config(args)
     elseif cmd == "reingest"
         cli_reingest(args)
+    elseif cmd == "migrate-toml"
+        cli_migrate_toml(args)
     else
         println("Unknown command: $cmd")
         println()
