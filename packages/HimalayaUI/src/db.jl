@@ -31,8 +31,6 @@ CREATE TABLE IF NOT EXISTS samples (
     notes         TEXT
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS samples_unique_name ON samples(experiment_id, name);
-
 CREATE TABLE IF NOT EXISTS sample_tags (
     id        INTEGER PRIMARY KEY,
     sample_id INTEGER REFERENCES samples(id),
