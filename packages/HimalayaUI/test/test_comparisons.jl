@@ -1071,6 +1071,12 @@ end
                 @test r3.status == 200
                 got = JSON3.read(String(r3.body))
                 @test got.members[1].is_stale == true
+                # Pin literal empty-string persistence — guards against a
+                # different failure mode than the staleness predicate above:
+                # a future serializer that drops empty fields, or a SQLite
+                # TEXT round-trip that coerces "" → NULL, would still leave
+                # is_stale == true (NULL ≠ live hash) but break this assert.
+                @test got.members[1].snapshot.analysis_inputs_hash == ""
             end
         end
     end
