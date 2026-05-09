@@ -87,6 +87,7 @@ function register_routes!()
     register_export_routes!()
     register_comparisons_routes!()
     register_picker_routes!()
+    register_resolve_routes!()
 end
 
 const GC_TIMER = Ref{Union{Timer, Nothing}}(nothing)

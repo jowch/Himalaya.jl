@@ -37,6 +37,7 @@ using Test
     include("test_comparisons.jl")
     include("test_picker_routes.jl")
     include("test_picker_samples_route.jl")
+    include("test_routes_resolve.jl")
     include("test_comparison_pins.jl")
     include("test_validate.jl")
     include("test_migrate_toml.jl")
