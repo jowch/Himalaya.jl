@@ -33,7 +33,8 @@ async function mockCore(page: Page, users: { id: number; username: string }[] = 
     r.fulfill({ status: 200, contentType: "application/json",
       body: JSON.stringify(SAMPLES) }));
   for (const s of SAMPLES) {
-    await page.route(`**/api/samples/${s.id}/exposures`, (r) =>
+    // Trailing `*` matches `?exclude_rejected=true`; without it requests fall through Vite proxy to whatever's on :8080.
+    await page.route(`**/api/samples/${s.id}/exposures*`, (r) =>
       r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
     await page.route(`**/api/samples/${s.id}/messages`, (r) =>
       r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
@@ -153,7 +154,7 @@ test("curate: clicking + adds a candidate to the active set", async ({ page }) =
   await mockCore(page, [{ id: 1, username: "alice" }]);
 
   // Override exposures for sample 10 to include our test exposure.
-  await page.route("**/api/samples/10/exposures", (r) =>
+  await page.route("**/api/samples/10/exposures*", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([EXPOSURE]) }));
 
   await page.route("**/api/exposures/5/trace", (r) =>
@@ -214,7 +215,7 @@ test("reanalyze: stale-indices banner fires POST /analyze when clicked", async (
 
   await page.route("**/api/exposures/5", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(EXPOSURE) }));
-  await page.route("**/api/samples/10/exposures", (r) =>
+  await page.route("**/api/samples/10/exposures*", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([EXPOSURE]) }));
   await page.route("**/api/exposures/5/trace", (r) =>
     r.fulfill({ status: 200, contentType: "application/json",
@@ -266,7 +267,7 @@ test("curate → reanalyze: active-set membership survives a reanalysis round-tr
 
   await page.route("**/api/exposures/5", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(EXPOSURE) }));
-  await page.route("**/api/samples/10/exposures", (r) =>
+  await page.route("**/api/samples/10/exposures*", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([EXPOSURE]) }));
   await page.route("**/api/exposures/5/trace", (r) =>
     r.fulfill({ status: 200, contentType: "application/json",
