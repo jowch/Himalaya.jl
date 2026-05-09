@@ -92,7 +92,7 @@ function register_experiments_routes!()
                     analyze_exposure!(db, Int(ex.id), String(analysis_dir))
                     analyzed += 1
                 catch e
-                    push!(skipped, "$(sm.label)/$(ex.filename): $(sprint(showerror, e))")
+                    push!(skipped, "$(sm.name)/$(ex.filename): $(sprint(showerror, e))")
                 end
             end
         end
