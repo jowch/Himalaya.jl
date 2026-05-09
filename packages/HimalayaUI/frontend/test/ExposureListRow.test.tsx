@@ -33,7 +33,7 @@ function makeSample(overrides: Partial<Sample> = {}): Sample {
   return {
     id: 10,
     experiment_id: 1,
-    label: "JC001",
+    display_name: null,
     name: "Sample A1",
     notes: "DOPC + 50% chol, 10 mM CaCl2, hydrated 24h",
     tags: [],
@@ -53,11 +53,11 @@ describe("<ExposureListRow>", () => {
     expect(screen.getByText("Sample A1")).toBeInTheDocument();
   });
 
-  it("falls back to sample.label when sample.name is missing", () => {
+  it("falls back to sample.name when sample.display_name is missing", () => {
     render(
       <ExposureListRow
         exposure={makeExposure()}
-        sample={makeSample({ name: null, label: "JC042" })}
+        sample={makeSample({ display_name: null, name: "JC042" })}
       />,
     );
     expect(screen.getByText("JC042")).toBeInTheDocument();

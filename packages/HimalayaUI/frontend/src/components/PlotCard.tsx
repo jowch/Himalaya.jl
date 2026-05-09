@@ -80,7 +80,7 @@ export function PlotCard(): JSX.Element {
     ? samplesQ.data?.find((s) => s.id === activeSampleId)
     : undefined;
   const sampleName = sampleObj
-    ? (sampleObj.name ?? sampleObj.label ?? `Sample ${activeSampleId}`)
+    ? (sampleObj.display_name || sampleObj.name || `Sample ${activeSampleId}`)
     : undefined;
 
   const addPeak       = useAddPeak(activeExposureId ?? 0);

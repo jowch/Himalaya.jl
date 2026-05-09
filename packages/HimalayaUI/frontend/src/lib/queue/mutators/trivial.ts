@@ -37,7 +37,7 @@ function buildAuthOpts(p: {
 // update_sample
 // ---------------------------------------------------------------------------
 
-export type UpdateSampleInput = { name?: string; notes?: string };
+export type UpdateSampleInput = { display_name?: string; notes?: string };
 type UpdateSampleScope = BaseScope & { experimentId: number; sampleId: number };
 
 export const updateSampleMutator: Mutator<UpdateSampleInput, UpdateSampleScope, Sample> = {
@@ -82,7 +82,7 @@ export const updateSampleMutator: Mutator<UpdateSampleInput, UpdateSampleScope, 
     const patch: Partial<Sample> = {};
     if (response.name !== undefined) patch.name = response.name;
     if (response.notes !== undefined) patch.notes = response.notes;
-    if (response.label !== undefined) patch.label = response.label;
+    if (response.display_name !== undefined) patch.display_name = response.display_name;
     const list = qc.getQueryData<Sample[]>(samplesKey);
     if (list) {
       qc.setQueryData<Sample[]>(samplesKey, list.map((s) =>
@@ -95,9 +95,9 @@ export const updateSampleMutator: Mutator<UpdateSampleInput, UpdateSampleScope, 
   },
 };
 
-function patchOf(p: { name?: string; notes?: string }): { name?: string; notes?: string } {
-  const out: { name?: string; notes?: string } = {};
-  if (p.name !== undefined) out.name = p.name;
+function patchOf(p: { display_name?: string; notes?: string }): { display_name?: string; notes?: string } {
+  const out: { display_name?: string; notes?: string } = {};
+  if (p.display_name !== undefined) out.display_name = p.display_name;
   if (p.notes !== undefined) out.notes = p.notes;
   return out;
 }

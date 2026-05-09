@@ -28,7 +28,7 @@ async function mockApi(page: import("@playwright/test").Page): Promise<void> {
   await page.route("**/api/experiments/7", (r) =>
     r.fulfill({ json: { id: 7, name: "JC23", path: "/x", data_dir: "/x", analysis_dir: "/x", manifest_path: null, created_at: "2026", q_units: "A-1" } }));
   await page.route("**/api/experiments/7/samples", (r) =>
-    r.fulfill({ json: [{ id: 10, experiment_id: 7, label: "S4", name: "Sample 4", notes: null, tags: [] }] }));
+    r.fulfill({ json: [{ id: 10, experiment_id: 7, display_name: "S4", name: "Sample 4", notes: null, tags: [] }] }));
   await page.route("**/api/samples/10/exposures*", (r) =>
     r.fulfill({ json: [SAMPLE_FIXTURE.exposure] }));
   await page.route("**/api/exposures/1/trace", (r) =>

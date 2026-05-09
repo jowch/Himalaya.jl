@@ -53,7 +53,7 @@ describe("App smoke", () => {
         created_at: "2026-04-22T00:00:00Z",
       },
       "/api/experiments/1/samples": [
-        { id: 10, experiment_id: 1, label: "A1", name: "s1", notes: null, tags: [] },
+        { id: 10, experiment_id: 1, display_name: null, name: "s1", notes: null, tags: [] },
       ],
       "/api/samples/10/exposures": [],
       "/api/samples/10/messages": [],

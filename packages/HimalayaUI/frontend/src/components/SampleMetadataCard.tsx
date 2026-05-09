@@ -11,7 +11,7 @@ interface Props {
   sample: Sample;
   experimentName?: string | undefined;
   exposureSummary: ExposureSummary;
-  onUpdateSample: (patch: { name?: string; notes?: string }) => void;
+  onUpdateSample: (patch: { display_name?: string; notes?: string }) => void;
   onAddTag: (key: string, value: string) => void;
   onRemoveTag: (tagId: number) => void;
 }
@@ -24,7 +24,7 @@ export function SampleMetadataCard({
   onAddTag,
   onRemoveTag,
 }: Props): JSX.Element {
-  const [name,  setName]  = useState(sample.name  ?? "");
+  const [name,  setName]  = useState(sample.display_name  ?? "");
   const [notes, setNotes] = useState(sample.notes ?? "");
   const [nameFocused,  setNameFocused]  = useState(false);
   const [notesFocused, setNotesFocused] = useState(false);
@@ -42,9 +42,9 @@ export function SampleMetadataCard({
   // doesn't clobber an in-progress draft. Sample-switch still works
   // because focus moves out before the new sample renders.
   useEffect(() => {
-    if (!nameFocused)  setName(sample.name   ?? "");
+    if (!nameFocused)  setName(sample.display_name ?? "");
     if (!notesFocused) setNotes(sample.notes ?? "");
-  }, [sample.id, sample.name, sample.notes, nameFocused, notesFocused]);
+  }, [sample.id, sample.display_name, sample.notes, nameFocused, notesFocused]);
 
   function handleAddTag() {
     const k = newTagKey.trim();
@@ -61,20 +61,21 @@ export function SampleMetadataCard({
     <div className="flex flex-col gap-3 p-3 overflow-y-auto">
       {/* Breadcrumb + name — leads the card */}
       <div className="flex flex-col gap-1">
-        {/* experimentName · label breadcrumb */}
-        {(experimentName || sample.label) && (
+        {/* experimentName · stable identifier breadcrumb */}
+        {(experimentName || sample.name) && (
           <p className="text-caption truncate">
             {experimentName && (
               <span>{experimentName}</span>
             )}
-            {experimentName && sample.label && (
+            {experimentName && sample.name && (
               <span className="mx-1 opacity-40">·</span>
             )}
-            {sample.label && (
-              <span className="font-medium text-fg-dim">{sample.label}</span>
+            {sample.name && (
+              <span className="font-medium text-fg-dim">{sample.name}</span>
             )}
           </p>
         )}
+        {/* data-testid is historical (issue #88); the field now edits display_name. */}
         <input
           data-testid="sample-name-input"
           className="w-full bg-transparent border-0 outline-none px-0 text-title placeholder:text-fg-muted"
@@ -84,7 +85,7 @@ export function SampleMetadataCard({
           onFocus={() => setNameFocused(true)}
           onBlur={() => {
             setNameFocused(false);
-            onUpdateSample({ name });
+            onUpdateSample({ display_name: name });
           }}
         />
       </div>

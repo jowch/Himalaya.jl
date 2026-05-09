@@ -3,7 +3,8 @@ import type { OpKind, Mutator, RollbackContext } from "./types";
 import type { PersistedOpForResolution } from "./mutatorRegistry";
 
 export const STORAGE_KEY = "himalaya-ui:queue";
-export const SCHEMA_VERSION = 1;
+// Bumped 1 → 2 in issue #88: sample.label dropped, payload.name → payload.display_name.
+export const SCHEMA_VERSION = 2;
 
 interface PersistedOp {
   schemaVersion: number;

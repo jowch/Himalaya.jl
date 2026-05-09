@@ -12,7 +12,7 @@ const EXPERIMENT: api.Experiment = {
 };
 
 const SAMPLES: api.Sample[] = [
-  { id: 10, experiment_id: 1, label: "D1", name: "cubic_run03", notes: null, tags: [] },
+  { id: 10, experiment_id: 1, display_name: null, name: "cubic_run03", notes: null, tags: [] },
 ];
 
 beforeEach(() => {

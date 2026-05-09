@@ -9,12 +9,12 @@ import * as api from "../src/api";
 beforeEach(() => {
   vi.spyOn(api, "getPickerSamples").mockResolvedValue([
     {
-      sample: { id: 10, experiment_id: 1, name: "S1", label: null, notes: null, tags: [] },
+      sample: { id: 10, experiment_id: 1, name: "S1", display_name: null, notes: null, tags: [] },
       indexing_exposure_id: 100,
       all_exposures: [{ id: 100, sample_id: 10, filename: "f1.dat", selected: true }],
     },
     {
-      sample: { id: 20, experiment_id: 1, name: "S2", label: null, notes: null, tags: [] },
+      sample: { id: 20, experiment_id: 1, name: "S2", display_name: null, notes: null, tags: [] },
       indexing_exposure_id: 200,
       all_exposures: [{ id: 200, sample_id: 20, filename: "f2.dat", selected: true }],
     },
@@ -112,7 +112,7 @@ test("immediate mode: override caret pick fires onPick with override exposure id
   // select the non-default one (f2.dat/id=101) to trigger onOverrideChange.
   vi.spyOn(api, "getPickerSamples").mockResolvedValue([
     {
-      sample: { id: 10, experiment_id: 1, name: "S1", label: null, notes: null, tags: [] },
+      sample: { id: 10, experiment_id: 1, name: "S1", display_name: null, notes: null, tags: [] },
       indexing_exposure_id: 100,
       all_exposures: [
         { id: 100, sample_id: 10, filename: "f1.dat", selected: true },
@@ -120,7 +120,7 @@ test("immediate mode: override caret pick fires onPick with override exposure id
       ],
     },
     {
-      sample: { id: 20, experiment_id: 1, name: "S2", label: null, notes: null, tags: [] },
+      sample: { id: 20, experiment_id: 1, name: "S2", display_name: null, notes: null, tags: [] },
       indexing_exposure_id: 200,
       all_exposures: [{ id: 200, sample_id: 20, filename: "f3.dat", selected: true }],
     },
@@ -148,7 +148,7 @@ test("does not flicker on background refetch (gates on isLoading not isPending)"
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 0 } } });
   qc.setQueryData(["experiment", 1, "picker-samples"], [
     {
-      sample: { id: 10, experiment_id: 1, name: "S1", label: null, notes: null, tags: [] },
+      sample: { id: 10, experiment_id: 1, name: "S1", display_name: null, notes: null, tags: [] },
       indexing_exposure_id: 100,
       all_exposures: [{ id: 100, sample_id: 10, filename: "f1", selected: true }],
     },

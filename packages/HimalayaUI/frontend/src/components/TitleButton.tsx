@@ -25,7 +25,7 @@ export function TitleButton(): JSX.Element {
     ? samplesQ.data?.find((s) => s.id === sampleId)
     : undefined;
   const sampleName = sampleObj
-    ? (sampleObj.name ?? sampleObj.label ?? `Sample ${sampleId}`)
+    ? (sampleObj.display_name || sampleObj.name || `Sample ${sampleId}`)
     : undefined;
 
   const step: "experiment" | "sample" =

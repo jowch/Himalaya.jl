@@ -43,7 +43,7 @@ function rowLabel(row: PickerRow): string {
     case "index":      return `${row.item.phase} · ${(row.item.score ?? 0).toFixed(2)}`;
     case "peak":       return `q = ${row.item.q.toFixed(3)}`;
     case "exposure":   return row.item.filename ?? `exposure ${row.item.id}`;
-    case "sample":     return row.item.name ?? row.item.label ?? `sample ${row.item.id}`;
+    case "sample":     return row.item.display_name || row.item.name || `sample ${row.item.id}`;
     case "comparison": return row.item.title;
   }
 }
@@ -113,7 +113,7 @@ export function MentionPicker({ query, onSelect, onDismiss }: MentionPickerProps
     }
     if (wantSamp) {
       (samplesQ.data ?? [])
-        .filter((sm) => !q || matchesQuery(sm.name ?? sm.label ?? "", q))
+        .filter((sm) => !q || [sm.name ?? "", sm.display_name ?? ""].some(h => matchesQuery(h, q)))
         .forEach((sm) => all.push({ kind: "sample", item: sm }));
     }
     if (wantComp) {

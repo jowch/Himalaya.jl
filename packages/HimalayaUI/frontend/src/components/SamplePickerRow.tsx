@@ -15,7 +15,7 @@ interface Props {
 }
 
 function sampleLabel(s: PickerRow["sample"]): string {
-  return s.name ?? s.label ?? `Sample #${s.id}`;
+  return s.display_name || s.name || `Sample #${s.id}`;
 }
 
 export function SamplePickerRow({

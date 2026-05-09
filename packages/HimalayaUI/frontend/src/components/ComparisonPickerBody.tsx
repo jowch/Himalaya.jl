@@ -13,19 +13,19 @@ import type { PickerSampleRow } from "../api";
 
 const FIXTURE_ROWS: PickerSampleRow[] = [
   {
-    sample: { id: 1, experiment_id: 0, name: "Sample A", label: null,
+    sample: { id: 1, experiment_id: 0, name: "Sample A", display_name: null,
               notes: "Cubic phase replicate · 24°C", tags: [] },
     indexing_exposure_id: 11,
     all_exposures: [{ id: 11, sample_id: 1, filename: "JC068P_E257_S1418_tot", selected: true }],
   },
   {
-    sample: { id: 2, experiment_id: 0, name: "Sample B", label: null,
+    sample: { id: 2, experiment_id: 0, name: "Sample B", display_name: null,
               notes: "Hexagonal phase reference · 37°C", tags: [] },
     indexing_exposure_id: 21,
     all_exposures: [{ id: 21, sample_id: 2, filename: "JC068P_E258_S1418_tot", selected: true }],
   },
   {
-    sample: { id: 3, experiment_id: 0, name: "Form factor", label: null, notes: null, tags: [] },
+    sample: { id: 3, experiment_id: 0, name: "Form factor", display_name: null, notes: null, tags: [] },
     indexing_exposure_id: 31,
     all_exposures: [{ id: 31, sample_id: 3, filename: "JC068P_E259_S1418_tot", selected: true }],
   },
@@ -116,7 +116,7 @@ export function ComparisonPickerBody({
       if (search.trim() !== "") {
         const needle = search.toLowerCase();
         const haystack = [
-          r.sample.name ?? "", r.sample.label ?? "", r.sample.notes ?? "",
+          r.sample.name ?? "", r.sample.display_name ?? "", r.sample.notes ?? "",
           ...r.sample.tags.map((t) => t.value),
           ...r.all_exposures.map((e) => e.filename ?? ""),
         ].map((s) => s.toLowerCase());

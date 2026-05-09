@@ -105,8 +105,7 @@ export function NavModal(): JSX.Element | null {
     if (!query) return list;
     const needle = query.toLowerCase();
     return list.filter((s) =>
-      (s.name  ?? "").toLowerCase().includes(needle) ||
-      (s.label ?? "").toLowerCase().includes(needle),
+      [s.name ?? "", s.display_name ?? ""].some(h => h.toLowerCase().includes(needle)),
     );
   }, [samplesQ.data, query]);
 
@@ -124,8 +123,8 @@ export function NavModal(): JSX.Element | null {
         }))
       : filteredSamples.map((s) => ({
           id: s.id,
-          primary: s.name ?? s.label ?? `Sample ${s.id}`,
-          secondary: s.label && s.name && s.label !== s.name ? s.label : "",
+          primary: s.display_name || s.name || `Sample ${s.id}`,
+          secondary: s.name && s.display_name && s.name !== s.display_name ? s.name : "",
         }));
 
   const commitExperiment = (id: number): void => {
@@ -201,7 +200,7 @@ export function NavModal(): JSX.Element | null {
   const sampChipLabel = (() => {
     if (pendingSamp === undefined) return null;
     const samp = samplesQ.data?.find((s) => s.id === pendingSamp);
-    return `Sample ${samp?.name ?? samp?.label ?? pendingSamp}`;
+    return `Sample ${samp?.display_name || samp?.name || pendingSamp}`;
   })();
 
   return (

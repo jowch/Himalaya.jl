@@ -46,7 +46,7 @@ function chipLabel(resolved: ResolvedMention): string {
     case "peak":       return `q = ${resolved.data.q.toFixed(3)}`;
     case "index":      return `${resolved.data.phase} · ${(resolved.data.score ?? 0).toFixed(2)}`;
     case "exposure":   return resolved.data.filename ?? `exposure ${resolved.data.id}`;
-    case "sample":     return resolved.data.name ?? resolved.data.label ?? `sample ${resolved.data.id}`;
+    case "sample":     return resolved.data.display_name || resolved.data.name || `sample ${resolved.data.id}`;
     case "experiment": return resolved.data.name ?? `experiment ${resolved.data.id}`;
     case "comparison": return resolved.data.title;
   }

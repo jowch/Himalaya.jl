@@ -76,8 +76,8 @@ const THUMBNAIL_GALLERY_FIXTURE = (
 const SAMPLE_METADATA_FIXTURE_SAMPLE: Sample = {
   id: 0,
   experiment_id: 0,
-  label: "JC001",
-  name: "DOPE 70%",
+  name: "JC001",
+  display_name: "DOPE 70%",
   notes: null,
   tags: [{ id: 1, key: "lipid", value: "DOPE", source: "manifest" }],
 };

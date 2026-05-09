@@ -4,7 +4,7 @@ import { SamplePickerRow } from "../src/components/SamplePickerRow";
 import type { PickerSampleRow } from "../src/api";
 
 const baseRow: PickerSampleRow = {
-  sample: { id: 10, experiment_id: 1, name: "S1", label: null, notes: null, tags: [] },
+  sample: { id: 10, experiment_id: 1, name: "S1", display_name: null, notes: null, tags: [] },
   indexing_exposure_id: 100,
   all_exposures: [
     { id: 100, sample_id: 10, filename: "f1.dat", selected: true },
