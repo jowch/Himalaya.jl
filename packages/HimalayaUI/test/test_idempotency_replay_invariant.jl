@@ -204,7 +204,7 @@ end
                            "X-Username"   => "alice",
                            "X-Client-Id"  => "tab-1",
                            "X-Client-Op-Id" => op_id]
-                body_json = JSON3.write(Dict(:name => "renamed"))
+                body_json = JSON3.write(Dict(:display_name => "Renamed Display"))
 
                 pre_count = _count_actions(db, "update_sample")
                 r1 = nothing; r2 = nothing

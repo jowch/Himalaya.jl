@@ -92,3 +92,20 @@ function validate_manifest(samples::Vector{ManifestSample})::Vector{ManifestViol
 
     out
 end
+
+"""
+    ManifestValidationError(violations)
+
+Raised when validate_manifest returns non-empty violations and the caller
+rejects the manifest. The HTTP layer maps this to 400 + structured JSON;
+the CLI layer prints all violations and exits non-zero.
+"""
+struct ManifestValidationError <: Exception
+    violations::Vector{ManifestViolation}
+end
+function Base.showerror(io::IO, e::ManifestValidationError)
+    print(io, "Manifest invalid ($(length(e.violations)) violations):\n")
+    for v in e.violations
+        print(io, "  [$(v.kind)] $(v.detail)\n")
+    end
+end

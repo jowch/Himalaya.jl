@@ -149,6 +149,8 @@ function _reingest_inner!(db::SQLite.DB, experiment_id::Int, exp_dir::String, to
     end
 
     samples = parse_manifest(cfg, manifest_path)
+    violations = validate_manifest(samples)
+    isempty(violations) || throw(ManifestValidationError(violations))
     inserted_samples = 0
     inserted_exposures = 0
 
