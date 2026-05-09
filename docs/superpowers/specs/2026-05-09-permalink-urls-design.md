@@ -1,7 +1,7 @@
 # Permalink URLs — Design Spec
 
 **Issue:** #89 (depends on #88, which has landed at `8ac2bf6`)
-**Status:** Revised 2026-05-09 (post-review pass against `himalaya-reviewer`, `frontend-reviewer`, `queue-reviewer`)
+**Status:** Revised 2026-05-09 (second pass against `himalaya-reviewer`, `frontend-reviewer`, `queue-reviewer`)
 **Worktree:** `.claude/worktrees/permalinks` (branch `permalinks`)
 
 ## 1. Problem
@@ -75,14 +75,23 @@ Names are always echoed in the 200 response so the cold-mount `/` redirect (§5)
 
 **Tiebreakers for non-unique names.** `experiments.name` has no UNIQUE constraint and no convention enforcement; legacy data may contain duplicates. The resolve query selects deterministically: `WHERE name = ? ORDER BY id ASC LIMIT 1`. This is the same tiebreaker rule samples used pre-#88. The behavior is documented and pinned in `test_route_response_shapes.jl`. A future #88-style experiment-name migration would supplant this (§10).
 
-`exposures.filename` gets the new `UNIQUE INDEX exposures_unique_filename ON exposures(sample_id, filename)` mentioned in §2 — this is a one-line additive migration in `migrate_schema!` and removes the ambiguity at the source rather than papering over it. The migration:
+`exposures.filename` gets a new `UNIQUE INDEX exposures_unique_filename ON exposures(sample_id, filename)` to make the procedural upsert contract declarative and remove resolve ambiguity at the source. The migration follows the **dedupe-then-enforce** pattern established by `migrate_samples_naming!` (`db.jl:910–977`) — duplicates (none expected; the upsert contract has been in place since v1, but legacy data is checked anyway) are renamed deterministically before the index is created, so the `CREATE UNIQUE INDEX` always succeeds against clean data. There is no permanent safety-net fallback in the resolve query.
+
+Implemented as a named helper `migrate_exposures_unique_filename!(db)` in `db.jl`, called from `migrate_schema!` after `migrate_samples_naming!` (samples migration must complete first because exposures FK to samples). Direct invocation from tests follows the FK-heal regression-test pattern in CLAUDE.md (helper called directly, bypassing `open_db`'s full migration chain).
 
 ```sql
-CREATE UNIQUE INDEX IF NOT EXISTS exposures_unique_filename
-  ON exposures(sample_id, filename);
+-- Step 1: Find duplicates via GROUP BY HAVING COUNT(*) > 1
+-- Step 2: For each (sample_id, filename) duplicate group, ordered by id ASC,
+--         the first row keeps the bare filename; second-and-later get
+--         <filename>-2, <filename>-3, etc., with collision avoidance against
+--         user-supplied filenames already shaped that way. Emit @warn per rename.
+-- Step 3: CREATE UNIQUE INDEX IF NOT EXISTS exposures_unique_filename
+--           ON exposures(sample_id, filename);
 ```
 
-If the index creation fails because of pre-existing duplicates (none expected — the upsert contract has been in place since v1, but this is a cheap insurance against unknown legacy state), emit a warning and fall back to `WHERE sample_id = ? AND filename = ? ORDER BY id ASC LIMIT 1` in the resolve query as a safety net. The migration is wrapped in `try/catch` per the existing convention in `migrate_schema!`.
+All three steps run inside `SQLite.transaction(db) do … end` so a Ctrl-C between steps 2 and 3 cannot leave a half-renamed DB without uniqueness enforcement. Idempotent on re-run: the duplicate-suffix pass becomes a no-op once names are unique, and `CREATE UNIQUE INDEX IF NOT EXISTS` is idempotent.
+
+**Upsert invariant.** The new index is now an additional invariant the upsert in `cli.jl:191` relies on. The existing SELECT-then-INSERT pattern remains correct (the SELECT runs first), but a hypothetical parallel reingest could in principle hit the unique-index UNIQUE constraint during INSERT. Reingest is single-threaded per process today (CLI: one `himalaya reingest` invocation; web: a single `POST /api/experiments/:id/reingest` route handler), so the race is not real. If multi-threaded reingest is ever added, the upsert must be wrapped in an `INSERT OR IGNORE` + post-check or moved into a transaction with retry-on-constraint-violation.
 
 **Read-only.** No writes; no `with_idempotency` wrapping; no `apply_event!`; no SSE emission; no `client_op_id`; no `pendingDeferreds` participation. Three SELECTs and a response. The route is queue-orthogonal by design — confirmed against `docs/mutation-queue.md`. Future maintainers tempted to extend it with a write path: please don't; add a sibling endpoint instead.
 
@@ -111,7 +120,7 @@ end
 - The `api/` guard returns 404 for any unregistered API path. Without this guard, `/api/typo` would fall through to `index.html`, masking server bugs as 200s and breaking client error handling.
 - `Cache-Control: no-store` on the HTML shell ensures users get the latest after deploy. Vite-bundled JS/CSS keep their content-hashed long-cache headers via `dynamicfiles`.
 
-**Test-environment guard.** The catch-all only mounts when `dist_dir` exists. The Julia test harness has no frontend dist, so `routes_resolve` is exercised directly via HTTP and the SPA fallback never runs in those tests. A separate test file mounts a synthetic `dist_dir` (containing only `index.html` and one asset) to cover the fallback paths in §8.4.
+**Test-environment guard.** The catch-all only mounts when `dist_dir` exists. The Julia test harness has no frontend dist, so `routes_resolve` is exercised directly via HTTP and the SPA fallback never runs in those tests. A separate test file in §8.4 covers the fallback paths by setting `ENV["HIMALAYA_FRONTEND_DIST"]` to a synthetic dir (containing only `index.html` and one asset) before `start_test_server!`, then deleting it on teardown — `server.jl:31–35` reads this env var inside `register_routes!` so the synthetic dir is picked up cleanly.
 
 ## 4. Frontend URL-sync layer
 
@@ -169,7 +178,11 @@ applyResolveResult(data);
 
 **No automatic redirect on partial 404.** The earlier "redirect to fallback" model (per the original issue text) is replaced by the 404 page; the URL stays at the broken value until the user picks something.
 
-**Render-state during fetch.** While a resolve is in flight, the previous page contents stay rendered (no skeleton). The reasoning: cold mounts almost always hit the cache (the `/` redirect path is the common cold-mount entry point and has its own rules in §5); deep-link cold mounts hit a 30–80ms resolve that's faster than a skeleton would be useful for. AppShell renders the loading state via boneyard skeletons on the page-data queries that subscribe *after* the resolve resolves — that path is unchanged. A bool `resolving` flag is exposed by the hook but the AppShell only reads it for the §8.2 Playwright "no flash of wrong content" test, which asserts that during a deep-link cold mount the previous page does not paint *and* the new page hasn't yet painted (the AppShell renders a single near-empty "resolving" state — same DOM as the empty workspace, no entity-keyed elements). Implementation: `<AppShell>` reads `useAppState.staleUrlContext === null && resolving === true` and renders `<ResolvingFallback />` (a near-empty placeholder distinguishable in tests via `data-testid="resolving"`).
+**Render-state during fetch.** While a resolve is in flight, AppShell renders a `<ResolvingFallback />` placeholder instead of the previous page contents. This avoids the "flash of wrong content" that would otherwise occur when a deep-link cold mount paints the previously-active page (from persisted Zustand) for ~30–80ms before the resolve completes and swaps in the right one. The placeholder is a near-empty container (DOM identical to the empty workspace, no entity-keyed elements) marked with `data-testid="resolving"` for the §8.2 test.
+
+`resolving` lives in Zustand alongside `staleUrlContext` (one slot, one source of truth, AppShell reads via a single selector). Set to `true` at the start of `useStateFromUrl`'s recognized-kind fetch; cleared on success/failure/discard. The named-action discipline of `state.ts` covers it: `setResolving(value: boolean)` is the only mutator, and the various `setActive*` setters do not touch it.
+
+**Pre-fetch `staleUrlContext` clear.** The first thing `useStateFromUrl` does on a recognized-kind URL (anything other than `kind: "stale"`) is `setStaleUrlContext(null)`. This prevents a stale 404 page from leaking into the next render cycle when the user navigates away from a stale URL — without this, the AppShell ladder below would briefly show the OLD `<StaleUrlPage>` over the new `<ResolvingFallback />` between popstate-fire and the named-action clear that lands when the resolve 200s.
 
 ### 4.3 `useUrlFromState()`
 
@@ -186,7 +199,11 @@ On any change, computes the target URL and emits `pushState` or `replaceState` p
 | App-init URL sync (initial render after `useStateFromUrl`) | replace |
 | SSE-driven cache update that invalidates the current URL | replace, then re-resolve |
 
-The hook **does not emit** when the resulting URL equals the current one (string compare on `pathname + search`). Prevents spurious history entries when an SSE refetch hydrates names without changing them, and suppresses the brief intra-render mismatch during replay-as-rerun (`replayCoordinator.ts` rolls back, re-applies, re-runs onMutate; the URL recompute should see the same slug after each step because optimistic ids re-create the same name mapping).
+The hook **does not emit** when the resulting URL equals the current one (string compare on `pathname + search`). Prevents spurious history entries when an SSE refetch hydrates names without changing them.
+
+**Replay-as-rerun.** During `replayCoordinator.ts`'s rollback → applyRemoteToCache → re-run-onMutate cycle, two cases are possible for the URL:
+1. **Foreign event does not affect the active entity** (the common case — e.g. another user edits a different sample). Optimistic ids re-create the same name mapping; the URL recompute sees the same slug after every step; the equality guard suppresses the trivial echo. The §8.1 replay-as-rerun no-spurious-emit test asserts exactly this case.
+2. **Foreign event removes the active entity** (e.g. another user deletes the sample you're viewing). The URL legitimately changes — the active sample's slug becomes `undefined`. The equality check does not suppress this, nor should it: this is the §7 SSE-driven URL invalidation flow, which is the correct UX (replace to a still-valid URL, set `staleUrlContext`). The replay test does not cover this case; the §7 live-integration test does.
 
 **Continuity rule.** When the user TabRockers from `/compare/123` to Index, the hook reads `activeExperimentId` / `activeSampleId` from Zustand and emits `/index/<exp>/<sample>` if both are present. If either is missing, emits the bare page (`/index`). Names come from the TanStack cache via `useQuery` subscriptions, so a name change (cache hydration or refetch) triggers a re-emit through normal React reactivity.
 
@@ -226,16 +243,41 @@ When `parseLocation` returns `{ kind: "root" }`:
 
 ## 6. StaleUrlPage (404 component)
 
-**Mounting site.** `<AppShell>` checks `useAppState(s => s.staleUrlContext)` and renders `<StaleUrlPage>` instead of the page-router output when it is non-null. This must happen above the page switch — a `kind: "stale"` URL has no `activePage` set, so per-page mounting would mean none of `IndexPage` / `InspectPage` / `ComparePage` mount, and the 404 would be unreachable. AppShell-level mounting is the only correct location.
+**AppShell rendering ladder (precedence top-to-bottom):**
+
+```tsx
+// components/AppShell.tsx (sketch)
+const resolving       = useAppState(s => s.resolving);
+const staleUrlContext = useAppState(s => s.staleUrlContext);
+
+if (resolving)             return <ResolvingFallback />;     // 1. resolving wins
+if (staleUrlContext)       return <StaleUrlPage … />;        // 2. then stale
+return <PageRouter />;                                        // 3. otherwise the page
+```
+
+`resolving` outranks `staleUrlContext` so a navigation away from a stale URL doesn't briefly re-show the old 404 between popstate-fire and the §4.2 pre-fetch clear (defense-in-depth — the pre-fetch clear should already cover it). `staleUrlContext` outranks the page-router because a `kind: "stale"` URL has no `activePage`, so per-page mounting would leave the 404 unreachable.
 
 URL stays at the stale path — the 404 *is* the response for that URL, so the link remains shareable as broken.
+
+**`StaleUrlContext` type:**
+
+```ts
+export type StaleUrlContext =
+  | { kind: "not_found"; missing: "experiment" | "sample" | "exposure";
+      missing_value: string;
+      experiment_resolved: { id: number; name: string } | undefined;
+      sample_resolved:     { id: number; name: string } | undefined }
+  | { kind: "unknown_path"; raw: string };
+```
+
+The `not_found` variant is populated from the `/api/resolve` 404 body. The `unknown_path` variant is set by `useStateFromUrl` when `parseLocation` returns `kind: "stale"` (i.e. the URL doesn't match any grammar rule).
 
 ```tsx
 // components/StaleUrlPage.tsx (sketch)
 <div role="alert"
      data-testid="stale-url-page"
-     data-missing={staleUrlContext.missing}>
-  <h2>{entityType} '{value}' not found{scope}.</h2>
+     data-missing={dataMissing}>
+  <h2>{header}</h2>
   <p>It may have been renamed or removed.</p>
   <button onClick={onPick} data-testid="stale-url-cta">
     {ctaLabel}<kbd>/</kbd>
@@ -243,16 +285,18 @@ URL stays at the stale path — the 404 *is* the response for that URL, so the l
 </div>
 ```
 
-The `data-testid="stale-url-page"` and `data-missing="<missing>"` attributes follow the project's E2E selector convention (CLAUDE.md gotcha: never assert on Tailwind class strings).
+`data-testid="stale-url-page"` and `data-missing` follow the project's E2E selector convention (CLAUDE.md gotcha: never assert on Tailwind class strings).
 
-**Variant by `staleUrlContext.missing`:**
+**Per-variant copy (computed from `staleUrlContext`):**
 
-| missing | scope | CTA |
-|---|---|---|
-| `"experiment"` | `""` | "Select an experiment" → `openNavModal("experiment")` |
-| `"sample"` | `" in '<experiment>'"` (from `experiment_resolved.name`) | "Select another sample" → `setActiveExperiment(experiment_resolved.id)` then `openNavModal("sample")` |
-| `"exposure"` | `" in '<sample>'"` (from `sample_resolved.name`) | "Select another sample" → same as above; the Inspect filmstrip handles per-exposure picking |
-| `"unknown_path"` | _(no scope)_ | "Go to Index" → `replaceState("/index")` |
+| variant | `data-missing` | `header` | CTA |
+|---|---|---|---|
+| `kind: "not_found"`, `missing: "experiment"` | `"experiment"` | `Experiment '{missing_value}' not found.` | "Select an experiment" `/` → `openNavModal("experiment")` |
+| `kind: "not_found"`, `missing: "sample"` | `"sample"` | `Sample '{missing_value}' not found in '{experiment_resolved.name}'.` | "Select another sample" `/` → `setActiveExperiment(experiment_resolved.id)` then `openNavModal("sample")` |
+| `kind: "not_found"`, `missing: "exposure"` | `"exposure"` | `Exposure '{missing_value}' not found in '{sample_resolved.name}'.` | "Select another sample" `/` → same as above; Inspect filmstrip handles per-exposure picking |
+| `kind: "unknown_path"` | `"path"` | `Page not found.` | "Go to Index" → `replaceState("/index")` |
+
+Note: the `unknown_path` variant has no `missing_value` and no scope; the simpler "Page not found." copy is intentional. The trailing-period punctuation is uniform across variants.
 
 **Keyboard.** `/` triggers the same handler as the button (matches `useGlobalShortcuts` line 35 binding for opening NavModal). The visible `<kbd>/</kbd>` chip teaches the shortcut.
 
@@ -299,7 +343,10 @@ In practice the URL-invalidation path fires only on entity deletion (names are s
 - **Response-shape contract** — add a row to `test_route_response_shapes.jl` pinning the exact key sets on the 200, 404, and 400 bodies. Mirror with a TS interface in `api.ts`.
 - **Stale-name regression** — resolve an experiment by name, rename it via raw SQL, assert old name 404s and new name resolves.
 - **Cold-mount Zustand staleness** — resolve-by-id with a `sample_id` whose row was deleted; assert 404 with `missing: "sample"`.
-- **`exposures_unique_filename` migration** — running `migrate_schema!` against a clean DB creates the index; running it twice is a no-op; running against a DB with synthetic duplicates emits the warning and falls back to the SELECT tiebreaker (test the safety-net path).
+- **`exposures_unique_filename` migration** — direct invocation of `migrate_exposures_unique_filename!(db)` (FK-heal regression-test pattern):
+  - Clean DB → index exists, no warnings.
+  - Idempotent re-run → no-op.
+  - Synthetic-duplicate fixture (insert two rows with identical `(sample_id, filename)` directly via SQL, bypassing the upsert) → second-and-later renamed to `<filename>-2`, …; `@warn` emitted per rename; index created. The atomic transaction wrapping is asserted by interrupting the test before step 3 and confirming step 2 was rolled back.
 - SPA fallback (uses synthetic `dist_dir` with one HTML + one asset):
   - `/foo` → 200 `index.html`, `Cache-Control: no-store`.
   - `/inspect/exp/sample` → 200 `index.html` (multi-segment must reach the catch-all — pins the `/**` syntax fix).
@@ -312,7 +359,8 @@ In practice the URL-invalidation path fires only on entity deletion (names are s
 - New: `packages/HimalayaUI/src/routes_resolve.jl`, `packages/HimalayaUI/test/test_routes_resolve.jl`, `packages/HimalayaUI/test/test_spa_fallback.jl`.
 - Edit: `packages/HimalayaUI/src/server.jl` — `register_resolve_routes!()` call + `/**` SPA catch-all.
 - Edit: `packages/HimalayaUI/src/HimalayaUI.jl` — `include("routes_resolve.jl")`.
-- Edit: `packages/HimalayaUI/src/db.jl::migrate_schema!` — add `CREATE UNIQUE INDEX IF NOT EXISTS exposures_unique_filename` (with try/catch + warning fallback per existing migration convention).
+- Edit: `packages/HimalayaUI/src/db.jl` — add named helper `migrate_exposures_unique_filename!(db)` following the `migrate_samples_naming!` precedent (dedupe-then-enforce inside `SQLite.transaction`); call from `migrate_schema!` after `migrate_samples_naming!`.
+- Edit: `packages/HimalayaUI/test/test_db.jl` — directly invoke `migrate_exposures_unique_filename!` on synthetic-duplicate fixtures (FK-heal regression-test pattern; bypasses `open_db`'s full migration chain).
 - Edit: `packages/HimalayaUI/test/runtests.jl` — register the new test files.
 - Edit: `packages/HimalayaUI/test/test_route_response_shapes.jl` — add resolve 200/400/404 shape rows.
 
@@ -323,7 +371,7 @@ In practice the URL-invalidation path fires only on entity deletion (names are s
 - New: `components/ResolvingFallback.tsx` — the near-empty placeholder rendered while a resolve is in flight (§4.2).
 - Edit: `App.tsx` — mount the two hooks.
 - Edit: `components/AppShell.tsx` — read `staleUrlContext` and `resolving`; render `<StaleUrlPage>` / `<ResolvingFallback>` / page-router accordingly.
-- Edit: `state.ts` — add `staleUrlContext: StaleUrlContext | null`, `setStaleUrlContext`; have `setActivePage` / `setActiveExperiment` / `setActiveSample` / `setActiveExposure` clear `staleUrlContext`. **Not** persisted (omit from `partialize`). No localStorage version bump (ephemeral slot).
+- Edit: `state.ts` — add `staleUrlContext: StaleUrlContext | null` (type defined in §6), `setStaleUrlContext`; add `resolving: boolean`, `setResolving`; have `setActivePage` / `setActiveExperiment` / `setActiveSample` / `setActiveExposure` clear `staleUrlContext` (do NOT clear `resolving` — it's controlled by `useStateFromUrl` lifecycle). Both slots are **not** persisted (omit from `partialize`). No localStorage version bump (ephemeral slots).
 - Edit: `api.ts` — `ResolveSuccess`, `ResolveError404`, `ResolveError400` types using `T | undefined` for optional fields.
 - New: `e2e/permalinks.spec.ts` (mocked); `e2e/live/permalinks.spec.ts` (live).
 
