@@ -98,6 +98,14 @@ export function useStateFromUrl(): void {
         return;
       }
       // Cold-mount fallback: resolve-by-id.
+      // Set `resolving: true` so useUrlFromState's guard suppresses its
+      // settle emit while the async fetch is in flight. Without this the
+      // Zustand→URL hook sees an empty experiments cache (queries haven't
+      // resolved yet either), computes target=`/index`, and navigates away
+      // from `/` BEFORE the resolve-by-id call lands — clobbering the
+      // seeded slug pair we're trying to recover. Symmetric with the
+      // resolving:true set on the recognized-kind branch below.
+      useAppState.setState({ resolving: true });
       (async () => {
         const q: api.ResolveQuery = { experiment_id: expId };
         if (sId !== undefined) q.sample_id = sId;
@@ -105,10 +113,14 @@ export function useStateFromUrl(): void {
         try {
           body = await api.resolve(q);
         } catch {
-          if (!cancelled) navigate("/index", { replace: true });
+          if (!cancelled) {
+            useAppState.setState({ resolving: false });
+            navigate("/index", { replace: true });
+          }
           return;
         }
         if (cancelled) return;
+        useAppState.setState({ resolving: false });
         if ("error" in body) {
           navigate("/index", { replace: true });
           return;
@@ -137,6 +149,16 @@ export function useStateFromUrl(): void {
     // Pre-fetch clear of staleUrlContext + set resolving.
     useAppState.setState({ staleUrlContext: null, resolving: true });
 
+    // Capture window.location at fetch start. We re-read at fetch end
+    // and bail if it changed, catching the raw `history.replaceState` /
+    // `pushState` case where the URL was changed without going through
+    // react-router (no popstate, no cleanup). For react-router-driven
+    // changes (TabRocker, NavModal, useNavigate), `cancelled` is set by
+    // the effect cleanup. The combination handles both production
+    // (BrowserRouter) and tests (MemoryRouter — where window.location is
+    // stable, so this check no-ops and we rely on `cancelled`).
+    const startWindowUrl = window.location.pathname + window.location.search;
+
     const ctl = new AbortController();
     const q: api.ResolveQuery = { experiment: parsed.experiment };
     if (parsed.sample !== undefined) q.sample = parsed.sample;
@@ -153,10 +175,9 @@ export function useStateFromUrl(): void {
         if (!cancelled) useAppState.setState({ resolving: false });
         return;
       }
-      // Origin-tag check: did the URL change during the fetch?
-      if (cancelled || (window.location.pathname + window.location.search) !== origin) {
-        return;
-      }
+      if (cancelled) return;
+      const currentWindowUrl = window.location.pathname + window.location.search;
+      if (currentWindowUrl !== startWindowUrl) return;
       if ("error" in body && body.error === "not_found") {
         useAppState.setState({
           staleUrlContext: {
