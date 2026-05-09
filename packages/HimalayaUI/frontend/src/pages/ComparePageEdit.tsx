@@ -41,14 +41,12 @@ import { HintText } from "../components/ui";
 import { useAppState } from "../state";
 import {
   useSaveComparison, useComparison, useMemberTraces, useMemberTracesLoading,
-  useMemberExposures, useMemberSamples, queryKeys,
+  useMemberExposures, useMemberSamples,
 } from "../queries";
 import { computeMemberSnapshot } from "../lib/comparison/snapshot";
 import { comparePath } from "../lib/comparison/routes";
 import { resolveDisplayLabels } from "../lib/comparison/labels";
-import {
-  getExposure, listPeaks, listIndices, listGroups,
-} from "../api";
+import { prefetchColdMembers } from "../lib/comparison/prefetchMembers";
 import type {
   Comparison, ComparisonMember, ComparisonMemberInput, SaveComparisonBody,
 } from "../api";
@@ -176,51 +174,18 @@ export function ComparePageEdit(): JSX.Element {
     if (pendingSubmitRef.current) return;
     pendingSubmitRef.current = true;
 
-    // Warm the cache for any never-visited exposures before computing
-    // snapshots. Without this, computeMemberSnapshot falls back to
-    // analysis_inputs_hash = "", which mismatches the server hash and
-    // marks every cold member stale immediately after save (issue #49).
-    // We prefetch all four cache keys (exposure, peaks, indices, groups)
-    // so the snapshot is complete, not just the hash.
-    //
-    // Issue #69: `useMemberExposures` now subscribes to the exposure row
-    // on render, so checking only `queryKeys.exposure` would mark every
-    // member warm prematurely and skip the peaks/indices/groups prefetch
-    // that the snapshot needs. Treat a member as cold if ANY of the four
-    // keys is missing.
-    const coldExposureIds = draft.members
+    // Warm the four cache keys computeMemberSnapshot reads (#49) before
+    // computing snapshots — without this, never-visited members land with
+    // analysis_inputs_hash = "" and the server marks them stale on the
+    // next view fold. Per-key cold detection (#93): each key is checked
+    // independently so an exposure with three warm keys and one cold key
+    // only refetches the missing one.
+    const exposureIds = draft.members
       .map((m) => m.exposure_id)
-      .filter((id): id is number => id !== null)
-      .filter((id) =>
-        qc.getQueryData(queryKeys.exposure(id)) === undefined
-        || qc.getQueryData(queryKeys.peaks(id)) === undefined
-        || qc.getQueryData(queryKeys.indices(id)) === undefined
-        || qc.getQueryData(queryKeys.groups(id)) === undefined
-      );
+      .filter((id): id is number => id !== null);
 
     try {
-      if (coldExposureIds.length > 0) {
-        await Promise.all(
-          coldExposureIds.flatMap((id) => [
-            qc.fetchQuery({
-              queryKey: queryKeys.exposure(id),
-              queryFn: () => getExposure(id),
-            }),
-            qc.fetchQuery({
-              queryKey: queryKeys.peaks(id),
-              queryFn: () => listPeaks(id),
-            }),
-            qc.fetchQuery({
-              queryKey: queryKeys.indices(id),
-              queryFn: () => listIndices(id),
-            }),
-            qc.fetchQuery({
-              queryKey: queryKeys.groups(id),
-              queryFn: () => listGroups(id),
-            }),
-          ]),
-        );
-      }
+      await prefetchColdMembers(exposureIds, qc);
 
       // Compute a fresh snapshot per member at submit time (Plan §Task 4.3).
       const members: ComparisonMemberInput[] = draft.members.map((m) => {

@@ -38,13 +38,11 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAppState } from "../state";
 import { useFocusTrap } from "../hooks/useFocusTrap";
-import { useSaveComparison, queryKeys } from "../queries";
+import { useSaveComparison } from "../queries";
 import { computeMemberSnapshot } from "../lib/comparison/snapshot";
 import { comparePath, type CompareScope } from "../lib/comparison/routes";
+import { prefetchColdMembers } from "../lib/comparison/prefetchMembers";
 import { showToast } from "../lib/toast";
-import {
-  getExposure, listPeaks, listIndices, listGroups,
-} from "../api";
 import type {
   Comparison, ComparisonMemberInput, SaveComparisonBody,
 } from "../api";
@@ -87,37 +85,10 @@ async function buildOverwritePayload(
   // because Overwrite is reached via Save→409 (caches already warm); the
   // prefetch closes the regression mode (long-idle conflict modal, future
   // codepaths, test fixtures with cleared caches). See issue #74.
-  const coldExposureIds = draft.members
+  const exposureIds = draft.members
     .map((m) => m.exposure_id)
-    .filter((id): id is number => id !== null)
-    .filter((id) =>
-      qc.getQueryData(queryKeys.exposure(id)) === undefined
-      || qc.getQueryData(queryKeys.peaks(id)) === undefined
-      || qc.getQueryData(queryKeys.indices(id)) === undefined
-      || qc.getQueryData(queryKeys.groups(id)) === undefined
-    );
-  if (coldExposureIds.length > 0) {
-    await Promise.all(
-      coldExposureIds.flatMap((id) => [
-        qc.fetchQuery({
-          queryKey: queryKeys.exposure(id),
-          queryFn: () => getExposure(id),
-        }),
-        qc.fetchQuery({
-          queryKey: queryKeys.peaks(id),
-          queryFn: () => listPeaks(id),
-        }),
-        qc.fetchQuery({
-          queryKey: queryKeys.indices(id),
-          queryFn: () => listIndices(id),
-        }),
-        qc.fetchQuery({
-          queryKey: queryKeys.groups(id),
-          queryFn: () => listGroups(id),
-        }),
-      ]),
-    );
-  }
+    .filter((id): id is number => id !== null);
+  await prefetchColdMembers(exposureIds, qc);
 
   const members: ComparisonMemberInput[] = draft.members.map((m) => {
     const snapshot = m.exposure_id !== null
