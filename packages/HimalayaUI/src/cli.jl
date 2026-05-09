@@ -538,7 +538,10 @@ function cli_migrate_toml(args::Vector{<:AbstractString})
     new_text, changed = try
         migrate_manifest_toml_text(text)
     catch err
-        rethrow(ErrorException("experiment.toml at $path: $(sprint(showerror, err))"))
+        # Re-raise with a path-aware prefix; intentionally a fresh exception
+        # rather than `rethrow(err)` because the helper's bare message lacks
+        # the file path that operators need in this CLI context.
+        throw(ErrorException("experiment.toml at $path: $(sprint(showerror, err))"))
     end
     if !changed
         @info "experiment.toml at $path already migrated (or no `[manifest].label` to migrate)"

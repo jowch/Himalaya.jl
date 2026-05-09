@@ -392,8 +392,12 @@ function migrate_experiment_config_label_to_name!(db::SQLite.DB)
         Tables.rowtable(DBInterface.execute(db,
             "SELECT id, config FROM experiments WHERE config IS NOT NULL"))
     catch err
-        # `experiments.config` column may not exist yet on a partial-legacy
-        # DB (test fixtures that skip the alter_stmts loop). Tolerate.
+        # In normal `migrate_schema!` flow the `config` column already
+        # exists — `alter_stmts` adds it earlier in the same function. This
+        # tolerance is purely for test fixtures that build a `SQLite.DB`
+        # directly and call this migration in isolation (no
+        # `migrate_schema!` invocation). Production `open_db` callers never
+        # hit this branch.
         msg = lowercase(sprint(showerror, err))
         (occursin("no such column", msg) || occursin("no such table", msg)) ||
             rethrow()
@@ -406,6 +410,7 @@ function migrate_experiment_config_label_to_name!(db::SQLite.DB)
         DBInterface.execute(db,
             "UPDATE experiments SET config = ? WHERE id = ?",
             [new_text, row.id])
+        @info "Healed experiments.config blob (legacy [manifest].label → name/display_name)" experiment_id = Int(row.id)
     end
     nothing
 end
