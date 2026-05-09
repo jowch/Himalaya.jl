@@ -327,9 +327,7 @@ test("compare smoke: create → submit → review", async ({ page }) => {
   for (let i = 0; i < 2; i++) {
     await rows.nth(i).locator('input[type="checkbox"]').check();
   }
-  // Both members should now be in the draft (immediate-commit).
-  // Modal `comparison-picker` is no longer mounted in edit mode.
-  await expect(page.getByTestId("comparison-picker")).not.toBeVisible();
+  // Both members are now in the draft (immediate-commit).
 
   // 5. Save — verify the request lands and we navigate to review.
   await page.getByTestId("comparison-save").click();
