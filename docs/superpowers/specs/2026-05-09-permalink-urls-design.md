@@ -314,7 +314,7 @@ type RecoverOpts = {
   step: NavModalStep;
   experimentId: number | undefined;
   sampleId: number | undefined;
-  openModal: boolean;          // default true; row "exposure" passes false
+  openModal?: boolean;         // default true; row "exposure" passes false
 };
 
 recoverFromStaleUrl: (opts: RecoverOpts) =>
@@ -323,10 +323,16 @@ recoverFromStaleUrl: (opts: RecoverOpts) =>
     activeExperimentId: opts.experimentId ?? s.activeExperimentId,
     activeSampleId:     opts.sampleId     ?? undefined,
     activeExposureId:   undefined,
-    navModalOpen:       opts.openModal,
+    navModalOpen:       opts.openModal ?? true,
     navModalStep:       opts.step,
   }))
 ```
+
+Notes on field semantics:
+- **`experimentId` `?? s.activeExperimentId`** — row 1 omits `experimentId` so the previous active experiment stays set; the URL reads `/index/<previous-exp>` while NavModal is open at experiment step. Intentional: gives the user a visual anchor to where they were before pasting the bad URL.
+- **`sampleId ?? undefined`** — row 1 and row 2 omit `sampleId` to clear it (fresh sample selection); row 3 passes the still-valid `sample_resolved.id` to preserve it.
+- **`openModal ?? true`** — rows 1, 2 default to opening NavModal; row 3 explicitly passes `false` (user is snapped to the still-valid sample, no modal needed).
+- **`navModalStep`** is set even when `openModal: false` (row 3) so any later `/` keypress opens NavModal at the right starting step.
 
 This consolidates rows 1–3 into one action. Without it, row 1 (`openNavModal("experiment")` alone) wouldn't clear `staleUrlContext` — closing the NavModal without picking would leave the user back at the StaleUrlPage. Routing all three through `recoverFromStaleUrl` makes that bug structurally impossible. The `unknown_path` row uses `setActivePage("index")` because there's no NavModal to open — the user is taking themselves to the Index empty state, where NavModal will auto-open at the experiment step via the existing `IndexPage` mount logic.
 
@@ -406,7 +412,7 @@ In practice the URL-invalidation path fires only on entity deletion (names are s
 - New: `components/ResolvingFallback.tsx` — the near-empty placeholder rendered while a resolve is in flight (§4.2).
 - Edit: `App.tsx` — mount the two hooks.
 - Edit: `components/AppShell.tsx` — read `staleUrlContext` and `resolving`; render `<StaleUrlPage>` / `<ResolvingFallback>` / page-router accordingly.
-- Edit: `state.ts` — add `staleUrlContext: StaleUrlContext | null` (type defined in §6), `setStaleUrlContext`; add `resolving: boolean`, `setResolving`; add `recoverFromStaleUrl(opts)` (signature in §6) for the not_found:* CTAs; have `setActivePage` / `setActiveExperiment` / `setActiveSample` / `setActiveExposure` clear `staleUrlContext` (do NOT clear `resolving` — it's controlled by `useStateFromUrl` lifecycle). All new slots are **not** persisted (omit from `partialize`). No localStorage version bump (ephemeral slots).
+- Edit: `state.ts` — add `staleUrlContext: StaleUrlContext | null` (type defined in §6), `setStaleUrlContext`; add `resolving: boolean`, `setResolving`; add `recoverFromStaleUrl(opts)` and export the `RecoverOpts` type alongside `StaleUrlContext` (signatures in §6) for the not_found:* CTAs; have `setActivePage` / `setActiveExperiment` / `setActiveSample` / `setActiveExposure` clear `staleUrlContext` (do NOT clear `resolving` — it's controlled by `useStateFromUrl` lifecycle). All new slots are **not** persisted (omit from `partialize`). No localStorage version bump (ephemeral slots).
 - Edit: `api.ts` — `ResolveSuccess`, `ResolveError404`, `ResolveError400` types using `T | undefined` for optional fields.
 - New: `e2e/permalinks.spec.ts` (mocked); `e2e/live/permalinks.spec.ts` (live).
 
