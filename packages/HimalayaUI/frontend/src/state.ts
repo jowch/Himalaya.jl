@@ -24,6 +24,23 @@ export type PageId = "index" | "compare" | "inspect";
 export type ThemeId = "dark" | "light";
 export type NavModalStep = "experiment" | "sample";
 
+export type StaleUrlContext =
+  | {
+      kind: "not_found";
+      missing: "experiment" | "sample" | "exposure";
+      missing_value: string;
+      experiment_resolved: { id: number; name: string } | undefined;
+      sample_resolved: { id: number; name: string } | undefined;
+    }
+  | { kind: "unknown_path"; raw: string };
+
+export type RecoverOpts = {
+  step: NavModalStep;
+  experimentId: number | undefined;
+  sampleId: number | undefined;
+  openModal?: boolean; // default true; row "exposure" passes false
+};
+
 export interface AppState {
   // persisted
   username: string | undefined;
@@ -112,6 +129,16 @@ export interface AppState {
    */
   pendingConflict: ConflictError | null;
 
+  /**
+   * Permalink URL handling slots (spec §4.4 + §6).
+   * Both ephemeral — not persisted. `staleUrlContext` is non-null when the
+   * current URL points to a slug that doesn't resolve (404 from
+   * `/api/resolve` or unknown path). `resolving` is true while the
+   * URL→state resolve fetch is in flight.
+   */
+  staleUrlContext: StaleUrlContext | null;
+  resolving: boolean;
+
   // setters
   setUsername: (name: string) => void;
   setUser: (u: { username: string; firstName?: string | undefined; lastName?: string | undefined }) => void;
@@ -168,6 +195,11 @@ export interface AppState {
 
   // Phase 12 — conflict modal slot
   setPendingConflict: (conflict: ConflictError | null) => void;
+
+  // Permalink URL handling actions (spec §4.4 + §6)
+  setStaleUrlContext: (ctx: StaleUrlContext | null) => void;
+  setResolving: (v: boolean) => void;
+  recoverFromStaleUrl: (opts: RecoverOpts) => void;
 }
 
 /**
@@ -222,6 +254,10 @@ export const useAppState = create<AppState>()(
         // Phase 12 — conflict modal closed by default.
         pendingConflict: null,
 
+        // Permalink URL handling — both ephemeral, default empty.
+        staleUrlContext: null,
+        resolving: false,
+
         setUsername: (username) => set({ username }),
         setUser: ({ username, firstName, lastName }) =>
           set({ username, firstName, lastName }),
@@ -230,13 +266,15 @@ export const useAppState = create<AppState>()(
             activeExperimentId,
             activeSampleId: undefined,
             activeExposureId: undefined,
+            staleUrlContext: null,
           }),
         setActiveSample: (activeSampleId) =>
-          set({ activeSampleId, activeExposureId: undefined }),
-        setActiveExposure: (activeExposureId) => set({ activeExposureId }),
+          set({ activeSampleId, activeExposureId: undefined, staleUrlContext: null }),
+        setActiveExposure: (activeExposureId) =>
+          set({ activeExposureId, staleUrlContext: null }),
         setHoveredIndex: (hoveredIndexId) => set({ hoveredIndexId }),
         setHoveredPeak: (hoveredPeakId) => set({ hoveredPeakId }),
-        setActivePage: (activePage) => set({ activePage }),
+        setActivePage: (activePage) => set({ activePage, staleUrlContext: null }),
         setTutorialSeen: (tutorialSeen) => set({ tutorialSeen }),
         setTheme: (theme) => set({ theme }),
         openNavModal: (step) =>
@@ -374,6 +412,22 @@ export const useAppState = create<AppState>()(
         // Phase 12 — replace, never stack. A second 409 mid-modal updates
         // `current_state` in-place; the modal stays open.
         setPendingConflict: (pendingConflict) => set({ pendingConflict }),
+
+        // Permalink URL handling actions (spec §4.4 + §6).
+        // `recoverFromStaleUrl` is atomic: clears stale + sets active ids +
+        // opens nav modal in one render-cycle commit so consumers don't see
+        // an intermediate state.
+        setStaleUrlContext: (staleUrlContext) => set({ staleUrlContext }),
+        setResolving: (resolving) => set({ resolving }),
+        recoverFromStaleUrl: (opts) =>
+          set((s) => ({
+            staleUrlContext: null,
+            activeExperimentId: opts.experimentId ?? s.activeExperimentId,
+            activeSampleId: opts.sampleId ?? undefined,
+            activeExposureId: undefined,
+            navModalOpen: opts.openModal ?? true,
+            navModalStep: opts.step,
+          })),
       };
     },
     {
