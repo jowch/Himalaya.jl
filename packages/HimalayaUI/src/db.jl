@@ -1402,12 +1402,13 @@ function open_db(db_path::AbstractString = default_db_path())::SQLite.DB
     # for existing DBs and a no-op on every subsequent open. Skipped for
     # `:memory:` and shared-cache URI DBs, which can't run WAL.
     #
-    # `Tables.rowtable(...)` materializes the result row so the underlying
-    # prepared statement is finalized synchronously — without this, the
-    # PRAGMA's result statement stays cached and any subsequent DDL
-    # (e.g. `DROP TABLE` in tests, or migration loops on legacy DBs) fails
-    # with `database table is locked`. The trailing `finalize_statements!`
-    # is a belt-and-braces clear so callers see a quiescent connection.
+    # `Tables.rowtable(...)` drains the result iterator so the prepared
+    # statement is dropped before `finalize_statements!`. Without the drain,
+    # the iterator keeps the PRAGMA's statement attached, and any subsequent
+    # DDL (e.g. `DROP TABLE` in tests, or migration loops on legacy DBs)
+    # fails with `database table is locked`. The trailing
+    # `finalize_statements!` then clears the cache so callers see a
+    # quiescent connection.
     if db_path != ":memory:" && !startswith(db_path, "file:")
         Tables.rowtable(DBInterface.execute(db, "PRAGMA journal_mode = WAL"))
         SQLite.finalize_statements!(db)
