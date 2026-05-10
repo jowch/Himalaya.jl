@@ -44,6 +44,20 @@ describe("queries", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  // Regression for #116. The hook used to take an `excludeRejected` option
+  // that landed in the cache key, splitting the same sample's exposures
+  // across two cache rows (Index page filtered, Inspect/MentionPicker not).
+  // Result: cold re-fetch on every Index↔Inspect crossing. Pinning the key
+  // shape keeps a future regressor from quietly reintroducing the suffix.
+  it("useExposures keys on the bare exposures prefix (no opts in cache key)", async () => {
+    mockOnce(200, []);
+    const { client, wrapper } = withClient();
+    const { result } = renderHook(() => useExposures(10), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(client.getQueryData(["sample", 10, "exposures"] as const))
+      .toEqual([]);
+  });
+
   it("useTrace fetches for a given exposureId", async () => {
     mockOnce(200, { q: [0.1], I: [10], sigma: [1] });
     const { wrapper } = withClient();

@@ -136,13 +136,8 @@ export interface Exposure {
   analysis_inputs_hash: string | null;
 }
 
-export const listExposures = (
-  sample_id: number,
-  opts?: { excludeRejected?: boolean },
-) => {
-  const qs = opts?.excludeRejected ? "?exclude_rejected=true" : "";
-  return request<Exposure[]>("GET", `/api/samples/${sample_id}/exposures${qs}`);
-};
+export const listExposures = (sample_id: number) =>
+  request<Exposure[]>("GET", `/api/samples/${sample_id}/exposures`);
 
 export const setExposureStatus = (
   id: number,

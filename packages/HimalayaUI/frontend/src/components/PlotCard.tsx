@@ -67,7 +67,7 @@ export function PlotCard(): JSX.Element {
 
   const experimentQ = useExperiment(activeExperimentId ?? 0);
   const samplesQ    = useSamples(activeExperimentId ?? 0);
-  const exposuresQ  = useExposures(activeSampleId, { excludeRejected: true });
+  const exposuresQ  = useExposures(activeSampleId);
   const traceQ      = useTrace(activeExposureId);
   const peaksQ      = usePeaks(activeExposureId);
   const indicesQ    = useIndices(activeExposureId);
@@ -104,7 +104,10 @@ export function PlotCard(): JSX.Element {
   //   2. Otherwise keep the current activeExposureId if still valid.
   //   3. Otherwise fall back to the first exposure.
   useEffect(() => {
-    const exposures = exposuresQ.data ?? [];
+    // Skip rejected exposures when picking the Index page's active exposure.
+    // Hook returns the unfiltered list (one cache row shared with Inspect);
+    // the Index page is the only consumer that wants acceptable-only.
+    const exposures = (exposuresQ.data ?? []).filter((e) => e.status !== "rejected");
     if (exposures.length === 0) return;
     const flagged = exposures.find((e) => e.selected);
     if (flagged) {

@@ -429,9 +429,10 @@ export const selectExposureMutator: Mutator<
 // ---------------------------------------------------------------------------
 
 /**
- * Walk every cached `["sample", sampleId, "exposures", …]` query — multiple
- * variants exist (excludeRejected on/off) — apply `mutate` to each, and
- * return a `restore` closure that captures the snapshots for rollback.
+ * Walk every cached `["sample", sampleId, "exposures", …]` query, apply
+ * `mutate` to each, and return a `restore` closure that captures the
+ * snapshots for rollback. Prefix-walks rather than direct-keys so any
+ * future per-view variant still gets the rewrite without extra plumbing.
  */
 function rewriteExposureLists(
   qc: QueryClient,
