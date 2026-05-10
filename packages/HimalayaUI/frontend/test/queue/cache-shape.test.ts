@@ -379,7 +379,7 @@ describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", ()
       analysis_inputs_hash: "h0", tags: [], sources: [], image_version: "",
     };
     qc.setQueryData(
-      ["sample", 1, "exposures", { excludeRejected: false }] as const,
+      ["sample", 1, "exposures"] as const,
       [initialExposure],
     );
     mockFetchOnce({
@@ -393,7 +393,7 @@ describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", ()
       payload: { key: "noisy", value: "yes" },
     });
     const list = qc.getQueryData<{ tags: unknown[] }[]>(
-      ["sample", 1, "exposures", { excludeRejected: false }] as const);
+      ["sample", 1, "exposures"] as const);
     const tag = list![0]!.tags[0];
     assertKeys(tag, EXPOSURE_TAG_KEYS, "addExposureTag cache row");
   });

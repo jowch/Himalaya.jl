@@ -60,7 +60,7 @@ async function mockCore(page: Page, users: { id: number; username: string }[] = 
     r.fulfill({ status: 200, contentType: "application/json",
       body: JSON.stringify(SAMPLES) }));
   for (const s of SAMPLES) {
-    // Trailing `*` matches `?exclude_rejected=true`; without it requests fall through Vite proxy to whatever's on :8080.
+    // Trailing `*` covers any future query string; without it requests fall through Vite proxy to whatever's on :8080.
     await page.route(`**/api/samples/${s.id}/exposures*`, (r) =>
       r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
     await page.route(`**/api/samples/${s.id}/messages`, (r) =>

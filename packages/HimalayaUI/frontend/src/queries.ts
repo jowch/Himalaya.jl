@@ -101,14 +101,12 @@ export function useSamples(experimentId: number) {
   });
 }
 
-export function useExposures(
-  sampleId: number | undefined,
-  opts?: { excludeRejected?: boolean },
-) {
-  const excludeRejected = opts?.excludeRejected ?? false;
+export function useExposures(sampleId: number | undefined) {
   return useQuery({
-    queryKey: ["sample", sampleId ?? "none", "exposures", { excludeRejected }] as const,
-    queryFn: () => api.listExposures(sampleId as number, { excludeRejected }),
+    queryKey: sampleId !== undefined
+      ? queryKeys.exposures(sampleId)
+      : (["sample", "none", "exposures"] as const),
+    queryFn: () => api.listExposures(sampleId as number),
     enabled: sampleId !== undefined,
   });
 }

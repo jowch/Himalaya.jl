@@ -18,7 +18,6 @@ using Test
     include("test_image.jl")
     include("test_routes_image.jl")
     include("test_routes_status.jl")
-    include("test_routes_exposures_filter.jl")
     include("test_routes_peaks.jl")
     include("test_routes_messages.jl")
     include("test_routes_trace.jl")

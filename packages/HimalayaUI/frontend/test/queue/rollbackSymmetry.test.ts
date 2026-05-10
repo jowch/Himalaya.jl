@@ -64,7 +64,7 @@ const INDEX = {
   r_squared: 0.99, lattice_d: 50, ngc: 0.5, status: "candidate" as const,
   kind: "auto" as const, inputs_hash: "h1", peaks: [], predicted_q: [0.1],
 };
-const EXP_LIST_KEY = ["sample", 1, "exposures", { excludeRejected: false }] as const;
+const EXP_LIST_KEY = ["sample", 1, "exposures"] as const;
 
 interface Spec {
   name: string;
