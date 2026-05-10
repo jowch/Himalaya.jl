@@ -2,14 +2,8 @@ using HTTP, JSON3, DBInterface, Tables, Oxygen
 
 function register_exposures_routes!()
     @get "/api/samples/{id}/exposures" function(req::HTTP.Request, id::Int)
-        db     = current_db()
-        params = HTTP.queryparams(req)
-        exclude_rejected = get(params, "exclude_rejected", "false") == "true"
-
-        sql = exclude_rejected ?
-            "SELECT * FROM exposures WHERE sample_id = ? AND (status IS NULL OR status != 'rejected') ORDER BY id" :
-            "SELECT * FROM exposures WHERE sample_id = ? ORDER BY id"
-
+        db = current_db()
+        sql = "SELECT * FROM exposures WHERE sample_id = ? ORDER BY id"
         exs = Tables.rowtable(DBInterface.execute(db, sql, [id]))
         out = map(exs) do e
             tags = Tables.rowtable(DBInterface.execute(db,
