@@ -25,13 +25,35 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, act } from "@testing-library/react";
 import { BrowserRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useEffect, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { useUrlFromState } from "../src/hooks/useUrlFromState";
 import { useStateFromUrl } from "../src/hooks/useStateFromUrl";
+import { useAutoPickExposure } from "../src/hooks/useAutoPickExposure";
 import { useAppState } from "../src/state";
-import { useExposures, queryKeys } from "../src/queries";
+import { queryKeys } from "../src/queries";
 import { _resetEmitMode } from "../src/lib/url/emitMode";
 import type { Experiment, Sample, Exposure } from "../src/api";
+
+// Typed factory mirrors the pattern from queries-exposures.test.tsx — the
+// `as Exposure[]` cast hides drift if the auto-pick predicate ever consumes
+// a new field, so build a complete, typed object instead.
+function makeExposure(over: Partial<Exposure>): Exposure {
+  return {
+    id: 0,
+    sample_id: 0,
+    filename: null,
+    kind: "file",
+    selected: false,
+    status: "accepted",
+    image_path: null,
+    image_version: "",
+    tags: [],
+    sources: [],
+    trace_hash: null,
+    analysis_inputs_hash: null,
+    ...over,
+  };
+}
 
 function makeWrapper() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -48,13 +70,11 @@ function makeWrapper() {
   // returning to a previously-visited sample whose exposures are still in
   // TanStack's cache.
   qc.setQueryData<Exposure[]>(queryKeys.exposures(42), [
-    { id: 200, sample_id: 42, filename: "C2-001", kind: "simple", selected: 0,
-      status: "accepted", reject_reason: null },
-  ] as Exposure[]);
+    makeExposure({ id: 200, sample_id: 42, filename: "C2-001" }),
+  ]);
   qc.setQueryData<Exposure[]>(queryKeys.exposures(43), [
-    { id: 300, sample_id: 43, filename: "C3-001", kind: "simple", selected: 0,
-      status: "accepted", reject_reason: null },
-  ] as Exposure[]);
+    makeExposure({ id: 300, sample_id: 43, filename: "C3-001" }),
+  ]);
 
   const Wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={qc}>
@@ -64,25 +84,12 @@ function makeWrapper() {
   return { qc, Wrapper };
 }
 
-// Mirrors PlotCard's auto-pick effect (PlotCard.tsx:106-119). Runs as a
-// child useEffect so it fires within the same commit phase as
-// useUrlFromState's effect — that interleaving is what reproduces #118.
+// Mounts the same auto-pick hook PlotCard uses, as a child component so its
+// useEffect fires within the same commit phase as useUrlFromState's effect
+// — that interleaving is what reproduces #118.
 function FakePlotCard(): null {
   const activeSampleId = useAppState((s) => s.activeSampleId);
-  const activeExposureId = useAppState((s) => s.activeExposureId);
-  const setActiveExposure = useAppState((s) => s.setActiveExposure);
-  const exposuresQ = useExposures(activeSampleId);
-  useEffect(() => {
-    const exposures = (exposuresQ.data ?? []).filter((e) => e.status !== "rejected");
-    if (exposures.length === 0) return;
-    const flagged = exposures.find((e) => e.selected);
-    if (flagged) {
-      if (activeExposureId !== flagged.id) setActiveExposure(flagged.id);
-      return;
-    }
-    const stillValid = exposures.some((e) => e.id === activeExposureId);
-    if (!stillValid) setActiveExposure(exposures[0]!.id);
-  }, [exposuresQ.data, activeExposureId, setActiveExposure]);
+  useAutoPickExposure(activeSampleId);
   return null;
 }
 
