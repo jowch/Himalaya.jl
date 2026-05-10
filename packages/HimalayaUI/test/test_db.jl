@@ -21,6 +21,19 @@ using HimalayaUI: create_schema!, migrate_schema!, create_experiment!, create_sa
     @test "peaks" ∉ tables
 end
 
+@testset "open_db sets journal_mode = WAL" begin
+    # WAL lets concurrent readers proceed alongside one writer, which is
+    # load-bearing for the parallel-request perf fix (#115). Without WAL,
+    # SQLite's default rollback journal serializes all readers behind any
+    # in-flight writer.
+    mktempdir() do dir
+        db_path = joinpath(dir, "h.db")
+        db = HimalayaUI.open_db(db_path)
+        rows = Tables.rowtable(DBInterface.execute(db, "PRAGMA journal_mode"))
+        @test lowercase(String(rows[1].journal_mode)) == "wal"
+    end
+end
+
 @testset "exposures schema migration" begin
     db = SQLite.DB()
     create_schema!(db)

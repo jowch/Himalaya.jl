@@ -230,6 +230,7 @@ See [docs/frontend-dev-loop.md](docs/frontend-dev-loop.md) — default + side-by
 - Test harness pattern: `Oxygen.resetstate()` before `Oxygen.serve(; async=true)`, `Oxygen.terminate()` after. A module-level `Ref{Union{SQLite.DB, Nothing}}` holds the live DB (matches the one-experiment-per-process deployment model).
 - Mount static files with `Oxygen.dynamicfiles(dir, "/")` — only if `isdir(dir)`, so empty frontends don't break tests.
 - Oxygen emits a harmless warning about OpenAPI schema generation for some routes; ignore it.
+- **`parallel = true` is on** (#115). Every request handler dispatches across the worker thread pool — without it, all handlers stickied to tid=1 even with `JULIA_NUM_THREADS > 1`. Routes therefore must not assume cooperative single-threaded execution. **Known limit (#122):** all routes still share one `_DB_REF` connection; reads are safe under WAL but two concurrent writers can race on `SQLite.transaction(db)` (TOCTOU silently nests savepoints) and on the unlocked `db.stmt_wrappers` Dict in `Stmt(db, sql)`. Per-request connections are required before shipping any write-heavy concurrent path (multi-user mutations, batch ops).
 
 **Stdlib deps must be explicit.** Stdlibs used directly in a package (`Sockets`, `Printf`, `SparseArrays`, `DelimitedFiles`, `TOML`, etc.) must be listed in `Project.toml`'s `[deps]` — `Pkg.add` them like regular packages.
 

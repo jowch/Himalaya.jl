@@ -146,14 +146,32 @@ function serve(db::SQLite.DB; host::String = "127.0.0.1", port::Int = 8080)
     bind_db!(db)
     register_routes!()
     start_gc_timer!(db)
-    Oxygen.serve(; host, port, show_banner = false, docs = false, metrics = false)
+    # parallel = true wraps each request in `Threads.@spawn`, dispatching
+    # handlers across the default thread pool. Without it, every handler
+    # runs cooperatively on HTTP.jl's single interactive thread — even with
+    # JULIA_NUM_THREADS > 1 — so concurrent requests serialize. See #115.
+    #
+    # KNOWN LIMIT (#122): all routes still share one `_DB_REF` connection.
+    # Reads under WAL are safe because SQLite's C-level mutex serializes
+    # `sqlite3_step`. Two concurrent WRITERS on the singleton can race on
+    # `SQLite.transaction(db)`'s TOCTOU (silently nesting savepoints) and
+    # on the unlocked `db.stmt_wrappers` Dict in `Stmt(db, sql)`. Per-
+    # request connections are required before any write-heavy concurrent
+    # path (multi-user mutations, batch ops) can ship.
+    Oxygen.serve(; host, port, show_banner = false, docs = false, metrics = false,
+                 parallel = true)
 end
 
 function start_test_server!(db::SQLite.DB, port::Int)
     Oxygen.resetstate()
     bind_db!(db)
     register_routes!()
-    Oxygen.serve(; host = "127.0.0.1", port, async = true, show_banner = false, docs = false, metrics = false)
+    # Match production's threading model so the test suite exercises the
+    # same scheduling as `serve`. Any test that depends on single-threaded
+    # request ordering is a bug.
+    Oxygen.serve(; host = "127.0.0.1", port, async = true,
+                 show_banner = false, docs = false, metrics = false,
+                 parallel = true)
     _wait_for_server(port)
 end
 

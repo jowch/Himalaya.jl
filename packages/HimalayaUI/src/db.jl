@@ -1395,20 +1395,43 @@ function open_db(db_path::AbstractString = default_db_path())::SQLite.DB
     SQLite.finalize_statements!(db)
     DBInterface.execute(db, "PRAGMA foreign_keys = ON")
 
+    # WAL lets concurrent readers proceed alongside one writer — load-bearing
+    # for parallel request handling (#115). The default rollback journal
+    # serializes every reader behind any in-flight writer. WAL persists in
+    # the DB file header, so this PRAGMA is effectively a one-time migration
+    # for existing DBs and a no-op on every subsequent open. Skipped for
+    # `:memory:` and shared-cache URI DBs, which can't run WAL.
+    #
+    # `Tables.rowtable(...)` drains the result iterator so the prepared
+    # statement is dropped before `finalize_statements!`. Without the drain,
+    # the iterator keeps the PRAGMA's statement attached, and any subsequent
+    # DDL (e.g. `DROP TABLE` in tests, or migration loops on legacy DBs)
+    # fails with `database table is locked`. The trailing
+    # `finalize_statements!` then clears the cache so callers see a
+    # quiescent connection.
+    if db_path != ":memory:" && !startswith(db_path, "file:")
+        Tables.rowtable(DBInterface.execute(db, "PRAGMA journal_mode = WAL"))
+        SQLite.finalize_statements!(db)
+    end
+
     # SQLite hardcodes O_CREAT mode 0644 in os_unix.c — process umask only
     # masks bits OUT, so umask 0002 can't promote 0644 to 0664. For
     # multi-user deploys (curators in a shared group writing the same DB),
-    # we need group-write on the file. chmod is idempotent; if we don't
-    # own the file (e.g. another user created it), this is a no-op error
-    # we swallow rather than failing the whole open.
-    if isfile(db_path)
-        try
-            chmod(db_path, 0o664)
-        catch e
-            # Swallow only the expected "not our file" / FS-permission errors;
-            # let unexpected failures (InterruptException, oddities) propagate
-            # so they don't get masked by this best-effort fix-up.
-            e isa Base.IOError || e isa SystemError || rethrow()
+    # we need group-write on the file. WAL creates `-wal` and `-shm`
+    # sidecars on first write; chmod those too so other group members can
+    # write through them. chmod is idempotent; if we don't own the file
+    # (e.g. another user created it), this is a no-op error we swallow
+    # rather than failing the whole open.
+    for p in (db_path, db_path * "-wal", db_path * "-shm")
+        if isfile(p)
+            try
+                chmod(p, 0o664)
+            catch e
+                # Swallow only the expected "not our file" / FS-permission errors;
+                # let unexpected failures (InterruptException, oddities) propagate
+                # so they don't get masked by this best-effort fix-up.
+                e isa Base.IOError || e isa SystemError || rethrow()
+            end
         end
     end
     db
