@@ -134,7 +134,17 @@ export function useUrlFromState(): void {
     const expName = nameForExperiment(experiments, activeExperimentId);
     const sampleName = nameForSample(samples, activeSampleId);
     const exposureName = filenameForExposure(exposures, activeExposureId);
-    const current = location.pathname + location.search;
+    // Compare against `window.location` (the DOM truth), not `useLocation()`.
+    // When Zustand's useSyncExternalStore-driven re-render fires before
+    // BrowserRouter's React.useState commit (e.g., PlotCard auto-pick
+    // landing in the same commit cycle as a `,`/`.` sample-step keypress),
+    // `useLocation()` lags by one render — the equality guard would miss
+    // and emit a duplicate navigate to the URL we just wrote (issue #118).
+    // Effect deps still include location.pathname/search so we re-run on
+    // popstate and other URL changes; we just compare against the truth.
+    // Same precedent: useStateFromUrl's mid-fetch race-detector reads
+    // window.location directly.
+    const current = window.location.pathname + window.location.search;
     const target = buildUrl(activePage, expName, sampleName, exposureName, current);
 
     // SSE-driven invalidation detection: a previously-resolvable slug

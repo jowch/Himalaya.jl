@@ -114,16 +114,26 @@ describe("Zustand state — permalink slots", () => {
     expect(persisted.state?.staleUrlContext).toBeUndefined();
   });
 
-  it("setActiveExposure no-op call does NOT arm emitReplaceNext", async () => {
+  it("setActiveExposure on Inspect: no-op leaves push; change arms replace", async () => {
     const { _resetEmitMode, consumeEmitMode } = await import("../src/lib/url/emitMode");
     _resetEmitMode();
-    useAppState.setState({ activeExposureId: 100 });
-    // Setting to the same value should be a no-op — replace flag stays unset.
+    useAppState.setState({ activeExposureId: 100, activePage: "inspect" });
+    // No-op (same value) — flag stays unset.
     useAppState.getState().setActiveExposure(100);
     expect(consumeEmitMode()).toBe("push");
-    // Setting to a different value should arm replace.
+    // Value change on Inspect — exposure is in the URL, so replace mode is correct.
     useAppState.getState().setActiveExposure(200);
     expect(consumeEmitMode()).toBe("replace");
+  });
+
+  it("setActiveExposure on Index: even a value change does NOT arm replace (issue #118)", async () => {
+    const { _resetEmitMode, consumeEmitMode } = await import("../src/lib/url/emitMode");
+    _resetEmitMode();
+    useAppState.setState({ activeExposureId: 100, activePage: "index" });
+    // On Index, the exposure isn't part of the URL — auto-pick (PlotCard) must
+    // not clobber a sample-switch's PUSH mode with a stray REPLACE.
+    useAppState.getState().setActiveExposure(200);
+    expect(consumeEmitMode()).toBe("push");
   });
 
   it("setResolveSuccess commits page+ids atomically and arms replace", async () => {

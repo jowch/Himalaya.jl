@@ -2,10 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Skeleton } from "boneyard-js/react";
 import { useAppState } from "../state";
 import {
-  useExposures, useTrace, usePeaks, useIndices, useGroups,
+  useTrace, usePeaks, useIndices, useGroups,
   useAddPeak, useRemovePeak, useSetPeakExcluded,
   useExperiment, useSamples,
 } from "../queries";
+import { useAutoPickExposure } from "../hooks/useAutoPickExposure";
 import { TraceViewer } from "./TraceViewer";
 import { HintText } from "./ui";
 import { FigureExportControls } from "./FigureExportControls";
@@ -62,12 +63,10 @@ export function PlotCard(): JSX.Element {
   const activeExposureId   = useAppState((s) => s.activeExposureId);
   const hoveredIndexId     = useAppState((s) => s.hoveredIndexId);
   const hoveredPeakId      = useAppState((s) => s.hoveredPeakId);
-  const setActiveExposure  = useAppState((s) => s.setActiveExposure);
   const openNavModal       = useAppState((s) => s.openNavModal);
 
   const experimentQ = useExperiment(activeExperimentId ?? 0);
   const samplesQ    = useSamples(activeExperimentId ?? 0);
-  const exposuresQ  = useExposures(activeSampleId);
   const traceQ      = useTrace(activeExposureId);
   const peaksQ      = usePeaks(activeExposureId);
   const indicesQ    = useIndices(activeExposureId);
@@ -96,27 +95,11 @@ export function PlotCard(): JSX.Element {
   // X-axis scale: log (SAXS convention) or linear.
   const [xType, setXType] = useState<"log" | "linear">("log");
 
-  // Pick the right exposure for the Index page:
-  //   1. If the user has marked one for indexing on the Inspect page
-  //      (`selected` flag set by PATCH /api/exposures/:id/select),
-  //      follow it. This is the load-bearing case — without it, marking
-  //      for indexing has no visible effect on the Index page.
-  //   2. Otherwise keep the current activeExposureId if still valid.
-  //   3. Otherwise fall back to the first exposure.
-  useEffect(() => {
-    // Skip rejected exposures when picking the Index page's active exposure.
-    // Hook returns the unfiltered list (one cache row shared with Inspect);
-    // the Index page is the only consumer that wants acceptable-only.
-    const exposures = (exposuresQ.data ?? []).filter((e) => e.status !== "rejected");
-    if (exposures.length === 0) return;
-    const flagged = exposures.find((e) => e.selected);
-    if (flagged) {
-      if (activeExposureId !== flagged.id) setActiveExposure(flagged.id);
-      return;
-    }
-    const stillValid = exposures.some((e) => e.id === activeExposureId);
-    if (!stillValid) setActiveExposure(exposures[0]!.id);
-  }, [exposuresQ.data, activeExposureId, setActiveExposure]);
+  // Auto-pick the active exposure when the active sample changes — see the
+  // hook for the full priority order. The regression test for issue #118
+  // (test/sampleSwitchKeypress.test.tsx) subscribes to the same hook so
+  // there's no manual mirror to drift.
+  useAutoPickExposure(activeSampleId);
 
   // Reset the q-range when the sample or exposure changes — the previous
   // zoom almost never applies to a different trace.
