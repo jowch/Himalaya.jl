@@ -38,14 +38,16 @@ packages/
       datfile.jl             # three-column .dat parser
       config.jl              # ExperimentConfig + load_config + resolve_files
       manifest.jl            # ManifestSample + parse_manifest (config-driven)
+      validate.jl            # ManifestViolation + validate_manifest (pre-ingest checks)
       pipeline.jl            # analyze_exposure!, auto_group, persist_analysis!
+      comparisons.jl         # Compare-page server logic (member resolution, last_event_at)
       cli.jl                 # himalaya config/init/analyze/reingest/show/serve
       json.jl                # row → Dict serialization
       actions.jl             # X-Username extraction + user_actions logger
       image.jl               # TIFF load + log-normalize + PNG encode for /image route
       routes_*.jl            # one per REST resource (users, experiments,
                              #   samples, exposures, peaks, analysis, trace,
-                             #   export, messages)
+                             #   export, messages, comparisons, picker, resolve)
       events.jl              # apply_event! dispatcher + SSE broadcast
       hash.jl                # SHA-256 trace + peak-set content hashes
       idempotency.jl         # with_idempotency + InTransaction sentinel (Plan 8)
@@ -64,29 +66,44 @@ packages/
         styles.css           # Tailwind v4 + @theme tokens
         components/          # AppShell, AppHeader, TabRocker, TitleButton,
                              #   OnboardingFlow, NavModal, UtilityCluster,
-                             #   WorkspaceGrid (shared 3-col layout for Index+Inspect),
+                             #   WorkspaceGrid (shared 3-col layout),
+                             #   BandResizeDivider, AnnotationToggles,
                              #   ChatCard, MentionChip, MentionCompose,
-                             #   PlotCard, TraceViewer,
+                             #   PlotCard, TraceViewer, FigureExportControls,
                              #   IndicesCard, PhasePanel, StaleIndicesBanner,
                              #   SpeculativeBuilder, InfrastructureBanner,
+                             #   ConflictModal, StaleUrlPage, ResolvingFallback,
                              #   MillerPlot, Pn3mIcon, ui/…
                              # Inspect: DetectorImage, DetectorImageCard,
                              #   ThumbnailGallery, SampleMetadataCard
                              # Mentions: MentionChip, MentionCompose, MentionPicker
-        hooks/               # useFocusTrap, useMentionResolution, useGlobalShortcuts
+                             # Compare: MultiTracePlot, MemberTraceLayer,
+                             #   MemberMetaRow, MemberMetaGutter, ComparisonSidebar,
+                             #   ComparisonPickerBody, ComparisonPickerPanel,
+                             #   SamplePickerRow, GroupingModeToggle,
+                             #   ForksPopover, LineageBadge, NeedsReviewBadge,
+                             #   WarmAddMenu
+        hooks/               # useFocusTrap, useMentionResolution, useGlobalShortcuts,
+                             #   useStateFromUrl, useUrlFromState (slug permalinks)
         lib/                 # renderMentions.tsx (parseMentions tokenizer),
                              #   clientId.ts, clientOpId.ts, authOpts.ts, toast.ts,
-                             #   units.ts (ASCII↔Unicode unit pretty-print)
+                             #   units.ts (ASCII↔Unicode unit pretty-print),
+                             #   sample/displayName.ts,
+                             #   url/ (parseLocation, emitMode — slug permalinks),
+                             #   plot/ (axis/Q helpers shared Index↔Compare),
+                             #   comparison/ (yBands, prefetchMembers, snapshot, …),
+                             #   figure-export/ (PNG/SVG renderer + clipboard)
         lib/queue/           # mutation queue framework (Plan 8):
                              #   types.ts, deferred.ts, replayCoordinator.ts,
                              #   applyRemoteToCache.ts, persistence.ts, hooks.ts,
                              #   errors.ts, useQueueMutation.ts, mutatorRegistry.ts,
                              #   optimisticId.ts, peakQTol.ts, testHelpers.ts,
+                             #   conflictBridge.ts (drives ConflictModal),
                              #   mutators/ (peak/index/speculative/trivial/reanalyze)
         bones/               # Committed boneyard skeleton captures (*.bones.json)
                              #   + auto-generated registry.ts
-        pages/               # IndexPage (three-card workspace),
-                             #   InspectPage (curate exposures), ComparePage
+        pages/               # ComparePage, ComparePageEdit
+                             #   (Index + Inspect surfaces are inlined into AppShell)
       test/                  # Vitest + React Testing Library
       e2e/                   # Playwright (mocks /api via page.route)
       e2e/live/              # Playwright integration (real backend + dev DB)
@@ -352,13 +369,14 @@ tab. See docs/event-log.md §"Client side".
 ## Current state
 
 - Core Himalaya: `v0.5.1` on `main` — v2 peak-finding (persistence + sharpness + kneedle).
-- HimalayaUI — Plans 1–8 + three-card Index redesign + Inspect page + experiment-config system + skeleton loading + chat @-mentions + multiplayer + instrumentation foundation + mutation queue complete:
+- HimalayaUI — Plans 1–8 + three-card Index redesign + Inspect page + experiment-config system + skeleton loading + chat @-mentions + multiplayer + instrumentation foundation + mutation queue + Compare page + slug permalinks + figure export complete:
   - **Backend:** transactional SQLite pipeline (incl. `_reingest_inner!`), FK enforcement, REST API (Oxygen.jl), CLI (`config new/list`, `init`, `analyze`, `reingest`, `show`, `serve`), TIFF→PNG image route with Q0f31-aware lognormalize, env-driven deployment (`HIMALAYA_DB_PATH`, `HIMALAYA_CONFIGS_DIR`).
   - **Adapter-driven I/O:** `experiment.toml` per experiment, positional or named columns, configurable file patterns, prefix-based filesystem discovery.
   - **Frontend:** three-card Index workspace (chat | trace plot | index choices), Inspect page (detector image + thumbnail filmstrip + reject-reason chips + sample metadata), trace viewer with peak editing + auto-fit y-floor + log/linear x toggle, auto-rotating detector canvas, Miller plot, PhasePanel with curate + stale-indices reanalyze (now hash-driven), OnboardingFlow + NavModal with focus trapping. Skeleton loading screens via boneyard-js on all major data-driven cards. Chat @-mention system (`@peak`, `@index`, `@exposure`, `@sample`) via `MentionChip` / `MentionCompose` / `useMentionResolution`.
   - **Plan 7 — Multiplayer + Instrumentation Foundation:** Auto/curation peak split (`auto_peaks` + `peak_curations`), diff-update preserves auto peak IDs, content-hash memoization on `findpeaks`/`indexpeaks`, structured `user_actions` event log via `apply_event!` dispatcher, SSE multiplayer at `GET /api/events`. R5b (If-Match conflict resolution) deferred behind R4 instrumentation gate. See [docs/event-log.md](docs/event-log.md) for the dispatcher contract, hash invariants, and SSE semantics.
   - **Plan 8 — Mutation queue + idempotency:** Per-mutation `client_op_id` keys both the backend `with_idempotency` cache (`idempotent_responses` table, `OP_LOCKS` registry) and the frontend `pendingDeferreds` registry. Routes wrap their body in `with_idempotency(db, req) do ... end`; events inside use `apply_event!(InTransaction(), ...)` to participate in the outer tx, with SSE frames flushed via the post-commit broadcast queue. Frontend `useQueueMutation` + `handleRemoteEvent` implement own-op confirmation (resolve deferred, abort HTTP) and foreign-event replay-as-rerun (rollback in reverse, applyRemoteToCache, re-run onMutate in insertion order). `analyze_run` no-op fast path suppresses both the SSE frame and the durable `user_actions` row. See [docs/event-log.md](docs/event-log.md) §3a for the full contract.
-  - **Test coverage:** ~1000 Julia (HimalayaUI) · ~100 Julia (core) · 53 Vitest files · 3 Playwright E2E spec files (mocked) + 5 Playwright live-integration specs (`e2e/live/`, opt-in via `npm run e2e:live`).
+  - **Compare + picker + figure export + permalinks:** Compare page (`ComparePage` / `ComparePageEdit`) renders multi-trace overlays with sample-first picker (`ComparisonPickerBody/Panel`), inline edit panel, conflict resolution modal driven by `lib/queue/conflictBridge.ts`, and PNG/SVG copy/save via `lib/figure-export/`. Slug-based permalink URLs round-trip through `useStateFromUrl` / `useUrlFromState` (Zustand ↔ address bar). Sample identity uses stable `samples.name` (manifest col 2) + editable `samples.display_name` (col 3, never clobbered by reingest); resolve via the `sampleDisplayName` helper.
+  - **Test coverage:** ~1000 Julia (HimalayaUI) · ~100 Julia (core) · ~100 Vitest files · 7 Playwright E2E spec files (mocked) + 6 Playwright live-integration specs (`e2e/live/`, opt-in via `npm run e2e:live`).
 - Deferred for later: Phase panel Recent section, export UI, per-user audit view, derived-exposure construction (raw / aggregated / background-subtracted exposure types — schema reserves `exposure_type` field), additional config templates beyond `simple.toml`. See [docs/future-feature-ideas.md](docs/future-feature-ideas.md).
 
 ## Further reading
