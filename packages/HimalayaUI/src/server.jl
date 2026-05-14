@@ -6,6 +6,19 @@ import Sockets
 
 const _DB_REF = Ref{Union{SQLite.DB, Nothing}}(nothing)
 
+# Issue #122. Serializes every `SQLite.transaction(db)` call that targets the
+# singleton `_DB_REF` connection. Without this, two concurrent writers race on
+# `SQLite.transaction`'s TOCTOU: both can pass `intransaction(db) == false`
+# and attempt `BEGIN` (loud 500), or one passes false/the other true and
+# silently nests a SAVEPOINT inside the other's tx (silent corruption —
+# Failure mode B in #122). The lock also serializes `db.stmt_wrappers` Dict
+# mutation between concurrent writers (Race 2 writer-vs-writer).
+#
+# ReentrantLock so nested write paths in the SAME task — e.g. a route body
+# inside `with_idempotency` that calls `analyze_exposure!` which opens its
+# own tx — don't self-deadlock.
+const _DB_WRITE_LOCK = ReentrantLock()
+
 # SSE subscribers. Each entry has a `pending::Channel{String}` queue. The
 # handler loop blocks on `take!(pending)`; broadcast_event! `put!`s frames
 # directly onto every subscriber's queue (no shared Condition needed —
@@ -151,13 +164,19 @@ function serve(db::SQLite.DB; host::String = "127.0.0.1", port::Int = 8080)
     # runs cooperatively on HTTP.jl's single interactive thread — even with
     # JULIA_NUM_THREADS > 1 — so concurrent requests serialize. See #115.
     #
-    # KNOWN LIMIT (#122): all routes still share one `_DB_REF` connection.
-    # Reads under WAL are safe because SQLite's C-level mutex serializes
-    # `sqlite3_step`. Two concurrent WRITERS on the singleton can race on
-    # `SQLite.transaction(db)`'s TOCTOU (silently nesting savepoints) and
-    # on the unlocked `db.stmt_wrappers` Dict in `Stmt(db, sql)`. Per-
-    # request connections are required before any write-heavy concurrent
-    # path (multi-user mutations, batch ops) can ship.
+    # All routes still share one `_DB_REF` connection. Writes serialize at
+    # the Julia level via `_DB_WRITE_LOCK` (above) — every `SQLite.transaction`
+    # site on the singleton (`with_idempotency`, default `apply_event!`,
+    # `persist_analysis!`, `analyze_exposure!`, the `gc_idempotent_responses!`
+    # DELETE) acquires it. This closes the `SQLite.transaction` TOCTOU race
+    # (#122 Race 1: loud 500s + silent savepoint nesting) and the
+    # writer-vs-writer `db.stmt_wrappers` Dict race (#122 Race 2).
+    #
+    # Residual: reader-vs-writer `stmt_wrappers` mutation remains possible
+    # because reads don't take the lock (and shouldn't — WAL is the whole
+    # point of #115). Empirically rare; surfaces as intermittent test flakes
+    # or sporadic 500s. The real fix is per-request reader connections;
+    # tracked as a follow-up to #122.
     Oxygen.serve(; host, port, show_banner = false, docs = false, metrics = false,
                  parallel = true)
 end
