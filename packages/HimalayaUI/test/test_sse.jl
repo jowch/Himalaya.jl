@@ -494,8 +494,13 @@ end
     put!(ch, "b")  # channel is now at capacity
     task = @async HimalayaUI._try_put!(ch, "c")
     # With non-blocking semantics, the task completes ~immediately. If a
-    # regression reintroduced blocking put!, this would time out.
-    @test timedwait(() -> istaskdone(task), 2.0) === :ok
+    # regression reintroduced blocking put!, timedwait reports :timed_out.
+    # Guard the subsequent fetch/take! — they would otherwise hang the
+    # whole suite by waiting on the still-blocked task instead of failing
+    # the @test cleanly.
+    done = (timedwait(() -> istaskdone(task), 2.0) === :ok)
+    @test done
+    done || return
     @test fetch(task) === false
     # The dropped frame did not displace existing entries.
     @test take!(ch) == "a"
