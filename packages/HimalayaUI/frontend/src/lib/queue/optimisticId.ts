@@ -8,8 +8,10 @@ import { getClientId } from "../clientId";
  *
  * Encoding: `-(tabFingerprint * 2^28 + counter)`.
  *   - `tabFingerprint`: 24-bit FNV-1a hash of the per-tab `clientId` from
- *     `lib/clientId.ts`. Stable for the lifetime of the tab; 1-in-16M
- *     collision probability between any two tabs.
+ *     `lib/clientId.ts`. Stable for the lifetime of the tab; ~1-in-16M
+ *     collision probability between any two tabs (effective space is
+ *     2^24 − 1 — value 0 is remapped to 1 to keep `-counter`-only ids out
+ *     of the encoding space).
  *   - `counter`: 28-bit monotonic per-tab counter (~268M ids per tab, far
  *     beyond any realistic session burst).
  *   - Total magnitude: 52 bits — within `Number.MAX_SAFE_INTEGER` (53 bits).
@@ -33,10 +35,14 @@ function tabFingerprint(): number {
     h ^= id.charCodeAt(i);
     h = Math.imul(h, 0x01000193);
   }
-  // Force into 24-bit unsigned range; reserve 0 as a sentinel-free space by
-  // OR-ing with 1 (a fingerprint of literal zero would degenerate into bare
-  // -counter, indistinguishable across tabs).
-  cachedTabFingerprint = ((h >>> 8) & 0xffffff) | 0x1;
+  // Force into 24-bit unsigned range; remap a literal-zero fingerprint to 1
+  // (zero would degenerate into bare -counter, indistinguishable across
+  // tabs). `masked === 0 ? 1 : masked` preserves the full 24-bit cardinality
+  // except for the single value 0 — an earlier version OR-ed with 0x1, which
+  // halved the effective space by collapsing every even number onto its
+  // odd-1 neighbour.
+  const masked = (h >>> 8) & 0xffffff;
+  cachedTabFingerprint = masked === 0 ? 1 : masked;
   return cachedTabFingerprint;
 }
 

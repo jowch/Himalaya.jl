@@ -85,7 +85,9 @@ describe("SSE-resolved-then-late-404 race — useRemovePeak", () => {
         entity_type: "exposure",
         entity_id: EXPOSURE_ID,
         client_op_id: clientOpId,
-        payload: { peakId: PEAK.id, q: PEAK.q },
+        // Wire format: `routes_peaks.jl` DELETE emits {peak_curation_id, q?}.
+        // See sseEventPayload.contract.test.ts for the canonical shape.
+        payload: { peak_curation_id: PEAK.id, q: PEAK.q },
       } as any,
       client,
       client.getMutationCache(),
