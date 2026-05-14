@@ -29,10 +29,12 @@ function _capture_sse(f::Function, kind_filter::String)
     end
     try
         f()
-        # The post-commit queue fires synchronously on the same task, so no
-        # sleep is needed for the rollback paths (queue is cleared, never
-        # drained). Keep a small slack to absorb any future async refactor.
-        sleep(0.1)
+        # No sleep: on the suppression paths the post-commit queue is cleared
+        # synchronously by `_clear_post_commit_broadcasts!`, no broadcast Task
+        # is spawned, and there is no other writer to the subscriber channel.
+        # (The success-path helper in test_idempotency_replay_invariant.jl
+        # uses sleep(0.3) because broadcast_event! IS called there and we
+        # need to give the fire-and-forget delivery a chance to land.)
     finally
         lock(HimalayaUI.SSE_LOCK) do
             filter!(x -> x !== sub, HimalayaUI.SSE_SUBSCRIBERS[])
