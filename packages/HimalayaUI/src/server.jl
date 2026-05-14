@@ -17,6 +17,15 @@ const _DB_REF = Ref{Union{SQLite.DB, Nothing}}(nothing)
 # ReentrantLock so nested write paths in the SAME task — e.g. a route body
 # inside `with_idempotency` that calls `analyze_exposure!` which opens its
 # own tx — don't self-deadlock.
+#
+# Lock-ordering invariant: `OP_LOCKS_MU` (idempotency.jl) is never held
+# across a `_DB_WRITE_LOCK` acquisition. Today `with_idempotency` does
+# OP_LOCKS_MU → release → _DB_WRITE_LOCK (`_op_lock` takes the mutex only to
+# `get!` from the Dict, then releases before the lock body runs), while
+# `gc_idempotent_responses!` does _DB_WRITE_LOCK → release → OP_LOCKS_MU
+# (the DELETE commits before the OP_LOCKS prune runs). Future code added
+# under OP_LOCKS_MU must not call into anything that may acquire
+# _DB_WRITE_LOCK, or the orderings will diverge into a deadlock.
 const _DB_WRITE_LOCK = ReentrantLock()
 
 # SSE subscribers. Each entry has a `pending::Channel{String}` queue. The

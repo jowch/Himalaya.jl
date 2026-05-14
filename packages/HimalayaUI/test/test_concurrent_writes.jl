@@ -24,8 +24,9 @@ import HimalayaUI
     # (Failure mode B from #122) and complete before t1 releases.
     mktempdir() do tmp
         db = open_db(joinpath(tmp, "test.db"))
-        ready   = Channel{Nothing}(1)
-        release = Channel{Nothing}(1)
+        ready     = Channel{Nothing}(1)
+        release   = Channel{Nothing}(1)
+        t2_armed  = Channel{Nothing}(1)
 
         t1 = @async with_idempotency(db,
             HTTP.Request("POST", "/", ["X-Client-Op-Id" => "lock-test-1"], UInt8[])) do
@@ -37,16 +38,24 @@ import HimalayaUI
         take!(ready)  # t1 is inside its transaction, holding the write lock.
 
         # Different op-id, so per-op-id OP_LOCKS does NOT serialize this against t1.
-        t2 = @async with_idempotency(db,
-            HTTP.Request("POST", "/", ["X-Client-Op-Id" => "lock-test-2"], UInt8[])) do
-            HTTP.Response(201; body = "{\"i\":2}")
+        # `t2_armed` is published *just before* the with_idempotency call, so a
+        # successful `take!(t2_armed)` proves t2 was scheduled and about to enter
+        # the wrapper — without it the `!istaskdone(t2)` check would pass trivially
+        # on a CI runner where t2 hadn't even started yet.
+        t2 = @async begin
+            put!(t2_armed, nothing)
+            with_idempotency(db,
+                HTTP.Request("POST", "/", ["X-Client-Op-Id" => "lock-test-2"], UInt8[])) do
+                HTTP.Response(201; body = "{\"i\":2}")
+            end
         end
 
-        # Yield enough times for t2 to definitely attempt the inner transaction.
-        for _ in 1:10
-            yield()
-            sleep(0.01)
-        end
+        take!(t2_armed)
+        # Small grace window for t2 to traverse the fast-path cache check + op-lock
+        # acquire and reach the `_DB_WRITE_LOCK` attempt. The 50 ms is well above
+        # the local-cache-check round-trip; if it's not enough on a slow CI host
+        # the stress test still catches the BEGIN-vs-BEGIN regression.
+        sleep(0.05)
         @test !istaskdone(t2)  # t2 must be waiting on _DB_WRITE_LOCK.
 
         put!(release, nothing)
