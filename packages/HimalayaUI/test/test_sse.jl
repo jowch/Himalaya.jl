@@ -480,3 +480,36 @@ end
         end
     end
 end
+
+# ---------------------------------------------------------------------------
+# _try_put! contract — load-bearing for both broadcast_event! and the
+# per-subscriber heartbeat Timer at server.jl:78 (fixed in #127). A
+# saturated channel must NEVER block the caller; the heartbeat task would
+# otherwise hang on a slow subscriber and silently leak.
+# ---------------------------------------------------------------------------
+
+@testset "SSE: _try_put! on full channel returns false without blocking" begin
+    ch = Channel{String}(2)
+    put!(ch, "a")
+    put!(ch, "b")  # channel is now at capacity
+    task = @async HimalayaUI._try_put!(ch, "c")
+    # With non-blocking semantics, the task completes ~immediately. If a
+    # regression reintroduced blocking put!, this would time out.
+    @test timedwait(() -> istaskdone(task), 2.0) === :ok
+    @test fetch(task) === false
+    # The dropped frame did not displace existing entries.
+    @test take!(ch) == "a"
+    @test take!(ch) == "b"
+end
+
+@testset "SSE: _try_put! on open channel with capacity succeeds" begin
+    ch = Channel{String}(2)
+    @test HimalayaUI._try_put!(ch, "x") === true
+    @test take!(ch) == "x"
+end
+
+@testset "SSE: _try_put! on closed channel returns false" begin
+    ch = Channel{String}(2)
+    close(ch)
+    @test HimalayaUI._try_put!(ch, "x") === false
+end

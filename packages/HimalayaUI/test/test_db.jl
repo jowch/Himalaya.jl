@@ -1553,3 +1553,26 @@ end
         end
     end
 end
+
+@testset "open_db chmods owned DB file to 0664" begin
+    # SQLite creates files at 0644 (hardcoded in os_unix.c, ignores umask).
+    # open_db chmods to 0664 so other curators in the shared group can
+    # write the same DB on multi-user deploys. Regression for #127: the
+    # chmod path must only skip the cross-user case (another user owns
+    # the file). On a file WE own — which is what this test exercises —
+    # chmod must succeed; any failure (read-only mount, immutable bit,
+    # etc.) must propagate, not silently leave 0644.
+    #
+    # WAL sidecars (-wal / -shm) are not asserted: -wal is checkpointed
+    # away on close, and -shm doesn't exist at the chmod call site on a
+    # fresh DB (chmod runs immediately after WAL PRAGMA, before any
+    # write). The sidecar branch shares the same code path as the main
+    # file — covered by inspection.
+    Sys.isunix() || return
+    mktempdir() do tmp
+        path = joinpath(tmp, "h.db")
+        db = HimalayaUI.open_db(path)
+        close(db)
+        @test (stat(path).mode & 0o777) == 0o664
+    end
+end
