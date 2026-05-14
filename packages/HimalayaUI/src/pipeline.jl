@@ -152,9 +152,14 @@ function persist_analysis!(db::SQLite.DB, exposure_id::Int,
                             candidates::Vector{<:Himalaya.Index},
                             group_indices::Vector{<:Himalaya.Index},
                             eff::NamedTuple)
-    SQLite.transaction(db) do
-    _persist_analysis_inner!(db, exposure_id, q_full, I_full, peaks_result,
-                             candidates, group_indices, eff)
+    # _DB_WRITE_LOCK (#122) serializes the tx against any other singleton
+    # writer. Reentrant — `analyze_exposure!` already holds it when calling
+    # through here.
+    lock(_DB_WRITE_LOCK) do
+        SQLite.transaction(db) do
+            _persist_analysis_inner!(db, exposure_id, q_full, I_full, peaks_result,
+                                     candidates, group_indices, eff)
+        end
     end
 end
 
@@ -806,6 +811,11 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
     local event_result, payload, post_state
     event_req = req === nothing ? _system_request() : req
 
+    # _DB_WRITE_LOCK (#122): serialize this multi-step write against any other
+    # singleton writer. Reentrant — wraps `persist_analysis!`'s tx safely. The
+    # outer tx (BEGIN) makes the inner persist_analysis! tx a SAVEPOINT so
+    # everything commits atomically.
+    lock(_DB_WRITE_LOCK) do
     SQLite.transaction(db) do
         if !findpeaks_skipped
             diff_update_auto_peaks!(db, exposure_id, fresh_peaks_result, I)
@@ -867,6 +877,7 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
             payload     = payload,
             post_state  = post_state)
     end
+    end  # lock(_DB_WRITE_LOCK)
 
     # After the outer tx commits, fire the broadcast unless the caller asked
     # to defer (route handlers wrapped in `with_idempotency` always defer; they

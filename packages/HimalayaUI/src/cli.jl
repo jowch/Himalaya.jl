@@ -127,8 +127,14 @@ function reingest!(db::SQLite.DB, experiment_id::Int, exp_dir::String)
     exp_dir   = abspath(exp_dir)
     toml_path = joinpath(exp_dir, "experiment.toml")
     isfile(toml_path) || error("experiment.toml not found in $exp_dir")
-    SQLite.transaction(db) do
-        _reingest_inner!(db, experiment_id, exp_dir, toml_path)
+    # _DB_WRITE_LOCK (#122): also reached via POST /api/experiments/{id}/reingest,
+    # so it races with concurrent route writers on the singleton. Reentrant —
+    # the CLI caller doesn't hold the lock; HTTP callers don't either at this
+    # point (route body runs outside `with_idempotency`).
+    lock(_DB_WRITE_LOCK) do
+        SQLite.transaction(db) do
+            _reingest_inner!(db, experiment_id, exp_dir, toml_path)
+        end
     end
 end
 

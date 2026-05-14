@@ -89,8 +89,13 @@ function with_idempotency(f, db::SQLite.DB, req::HTTP.Request)
         # and the view-row update autocommit separately and a body throw
         # between them leaves an orphaned event row.
         try
-            response = SQLite.transaction(db) do
-                f()
+            # _DB_WRITE_LOCK (#122) serializes the tx against any other writer
+            # on the singleton. Reentrant — if the body opens nested writes in
+            # the same task they re-acquire the same lock.
+            response = lock(_DB_WRITE_LOCK) do
+                SQLite.transaction(db) do
+                    f()
+                end
             end
             _flush_post_commit_broadcasts!()
             return response
@@ -116,21 +121,24 @@ function with_idempotency(f, db::SQLite.DB, req::HTTP.Request)
         local response
         local replayed_cache::Bool = false
         try
-            response = SQLite.transaction(db) do
-                # Double-check the cache inside the lock + tx.
-                cached2 = _lookup_cached_response(db, op_id)
-                if cached2 !== nothing
-                    replayed_cache = true
-                    return cached2
-                end
+            # _DB_WRITE_LOCK (#122): see no-op-id branch above.
+            response = lock(_DB_WRITE_LOCK) do
+                SQLite.transaction(db) do
+                    # Double-check the cache inside the lock + tx.
+                    cached2 = _lookup_cached_response(db, op_id)
+                    if cached2 !== nothing
+                        replayed_cache = true
+                        return cached2
+                    end
 
-                resp = f()
-                if resp.status < 400
-                    DBInterface.execute(db,
-                        "INSERT INTO idempotent_responses (client_op_id, status_code, body) VALUES (?, ?, ?)",
-                        [op_id, Int(resp.status), String(copy(resp.body))])
+                    resp = f()
+                    if resp.status < 400
+                        DBInterface.execute(db,
+                            "INSERT INTO idempotent_responses (client_op_id, status_code, body) VALUES (?, ?, ?)",
+                            [op_id, Int(resp.status), String(copy(resp.body))])
+                    end
+                    return resp
                 end
-                return resp
             end
         catch
             # Rollback path: the tx threw and rolled back. Any queued
@@ -212,11 +220,16 @@ function gc_idempotent_responses!(db::SQLite.DB; ttl_seconds::Int = 3600)
     # (suggestion #10). RETURNING is supported in SQLite 3.35+, which
     # has been the system bundled version on all our deployment
     # targets since 2022.
-    expired = Tables.rowtable(DBInterface.execute(db,
-        """DELETE FROM idempotent_responses
-           WHERE created_at < datetime('now', ?)
-           RETURNING client_op_id""",
-        ["-$(ttl_seconds) seconds"]))
+    #
+    # _DB_WRITE_LOCK (#122) so the autocommit DELETE doesn't race with an
+    # in-progress route writer on the singleton's `stmt_wrappers` Dict.
+    expired = lock(_DB_WRITE_LOCK) do
+        Tables.rowtable(DBInterface.execute(db,
+            """DELETE FROM idempotent_responses
+               WHERE created_at < datetime('now', ?)
+               RETURNING client_op_id""",
+            ["-$(ttl_seconds) seconds"]))
+    end
     isempty(expired) && return nothing
     lock(OP_LOCKS_MU) do
         for r in expired
