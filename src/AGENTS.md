@@ -22,6 +22,16 @@ Background reading: `docs/peak-finding.md` (load-bearing), `docs/scoring.md`.
 - Regression floors, not hard-coded counts (`recall ≥ floor`, `spurious ≤ ceiling`)
 - `include()` order must respect dependency graph (no forward refs)
 
+## Running tests
+
+```bash
+# Full core suite
+julia --project=. -e 'using Pkg; Pkg.test()'
+
+# One file in isolation
+julia --project=. -e 'using Himalaya, Test; include("test/foo.jl")'
+```
+
 ## Index scoring
 
 `score(index)` returns a value in `[0, 1]` — product of:

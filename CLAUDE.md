@@ -39,7 +39,7 @@ src/                                # core Himalaya package — see src/AGENTS.m
 test/                               # core tests
 packages/HimalayaUI/
   src/                              # backend — see packages/HimalayaUI/src/AGENTS.md
-  test/                             # backend tests — see test/AGENTS.md
+  test/                             # backend tests — see packages/HimalayaUI/test/AGENTS.md
   configs/                          # built-in experiment.toml templates (simple.toml)
   frontend/
     src/                            # frontend — see frontend/src/AGENTS.md
@@ -49,7 +49,7 @@ packages/HimalayaUI/
         queue/                      # mutation queue — see lib/queue/AGENTS.md
       pages/                        # ComparePage, ComparePageEdit
       bones/                        # committed *.bones.json skeleton captures
-    test/                           # Vitest unit tests — see test/AGENTS.md
+    test/                           # Vitest unit tests — see frontend/test/AGENTS.md
     e2e/                            # Playwright mocked — see e2e/AGENTS.md
     e2e/live/                       # Playwright live integration — see e2e/live/README.md
     dist/                           # vite build output; served by Oxygen.jl in prod
@@ -134,6 +134,7 @@ Module-specific conventions and anti-patterns live in the AGENTS.md file nearest
 | Mutation queue internals | [packages/HimalayaUI/frontend/src/lib/queue/AGENTS.md](packages/HimalayaUI/frontend/src/lib/queue/AGENTS.md) |
 | Vitest / JSDOM / RTL patterns | [packages/HimalayaUI/frontend/test/AGENTS.md](packages/HimalayaUI/frontend/test/AGENTS.md) |
 | Playwright selectors, port binding, live-mode timing | [packages/HimalayaUI/frontend/e2e/AGENTS.md](packages/HimalayaUI/frontend/e2e/AGENTS.md) |
+| Running a dev session against a live backend (port cleanup, side-by-side prod-DB, `VITE_API_PORT`) | [docs/frontend-dev-loop.md](docs/frontend-dev-loop.md) |
 
 ## Current state
 
