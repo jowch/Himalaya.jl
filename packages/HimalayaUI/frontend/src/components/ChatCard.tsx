@@ -103,7 +103,7 @@ function SampleThread({ sampleId }: { sampleId: number }): JSX.Element {
   const postMsg   = usePostSampleMessage(sampleId);
   return (
     <Frame>
-      <MessageList messages={messagesQ.data ?? []} isPending={messagesQ.isPending} />
+      <MessageList messages={messagesQ.data ?? []} isLoading={messagesQ.isLoading} />
       <MentionCompose
         disabled={username === undefined || postMsg.isPending}
         onSubmit={(body) => postMsg.mutate(body)}
@@ -118,7 +118,7 @@ function ComparisonThread({ comparisonId }: { comparisonId: number }): JSX.Eleme
   const postMsg   = usePostComparisonMessage(comparisonId);
   return (
     <Frame>
-      <MessageList messages={messagesQ.data ?? []} isPending={messagesQ.isPending} />
+      <MessageList messages={messagesQ.data ?? []} isLoading={messagesQ.isLoading} />
       <MentionCompose
         disabled={username === undefined || postMsg.isPending}
         onSubmit={(body) => postMsg.mutate(body)}
@@ -140,10 +140,10 @@ function Frame({ children }: { children: React.ReactNode }): JSX.Element {
 
 interface MessageListProps {
   messages: AnyMessage[];
-  isPending: boolean;
+  isLoading: boolean;
 }
 
-function MessageList({ messages, isPending }: MessageListProps): JSX.Element {
+function MessageList({ messages, isLoading }: MessageListProps): JSX.Element {
   const scrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = scrollRef.current;
@@ -154,7 +154,7 @@ function MessageList({ messages, isPending }: MessageListProps): JSX.Element {
     <Skeleton
       name="chat-card"
       className="flex-1 min-h-0 flex flex-col"
-      loading={isPending}
+      loading={isLoading}
       stagger={50}
       transition={200}
       fixture={CHAT_CARD_FIXTURE}
