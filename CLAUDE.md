@@ -4,128 +4,62 @@
 
 A Julia monorepo for **indexing SAXS diffraction patterns**. The core `Himalaya` package finds Bragg peaks in a 1D integration trace and identifies the liquid-crystalline phase (Pn3m, Im3m, Ia3d, Fm3m, Fd3m, Hexagonal, Lamellar, Square) by fitting peak q-values to known phase-ratio series. `HimalayaUI` (under `packages/`) is a full-stack web app — Julia/Oxygen.jl REST backend + React/Vite frontend — for running and curating analyses on a batch of SAXS exposures.
 
+## How to use this file
+
+This file is the **top-level index**. Module-specific gotchas live in nested `AGENTS.md` files — always read the AGENTS.md closest to the code you're touching. Design docs live in `docs/`.
+
+```
+CLAUDE.md                                            # this file (index)
+AGENTS.md                                            # quick reference (you may already have read it)
+src/AGENTS.md                                        # core peak-finding/indexing
+packages/HimalayaUI/src/AGENTS.md                    # backend (SQLite, Oxygen, pipeline)
+packages/HimalayaUI/test/AGENTS.md                   # Julia test patterns
+packages/HimalayaUI/frontend/src/AGENTS.md           # frontend conventions
+packages/HimalayaUI/frontend/src/components/AGENTS.md  # UI component gotchas
+packages/HimalayaUI/frontend/src/lib/queue/AGENTS.md  # mutation queue internals
+packages/HimalayaUI/frontend/test/AGENTS.md          # Vitest/JSDOM patterns
+packages/HimalayaUI/frontend/e2e/AGENTS.md           # Playwright patterns
+```
+
 ## Read first
 
 If this is your first session on this repo, skim these in order before touching code:
 
-1. [docs/peak-finding.md](docs/peak-finding.md) — why findpeaks is the way it is. Load-bearing.
+1. [docs/peak-finding.md](docs/peak-finding.md) — why `findpeaks` is the way it is. Load-bearing.
 2. [docs/experiment-config.md](docs/experiment-config.md) — required if touching `config.jl`, `manifest.jl`, or cli init/reingest.
 3. [docs/scoring.md](docs/scoring.md) — required if touching `score`, `auto_group`, or `remove_subsets`.
-4. [docs/event-log.md](docs/event-log.md) — required if touching `events.jl`, `hash.jl`, the `apply_event!` call sites in `routes_*.jl`, the SSE handler in `server.jl`, or `StaleIndicesBanner` gating.
-5. [docs/mutation-queue.md](docs/mutation-queue.md) — required if touching `lib/queue/`, `idempotency.jl`, `with_idempotency`, or `applyRemoteToCache.ts`. Architecture + invariants of the server-reconciliation queue.
-6. [docs/contract-testing.md](docs/contract-testing.md) — the six-layer testing rule. Required reading before fixing a queue/SSE/cache reconciliation bug.
+4. [docs/event-log.md](docs/event-log.md) — required if touching `events.jl`, `hash.jl`, the `apply_event!` call sites, the SSE handler, or `StaleIndicesBanner` gating.
+5. [docs/mutation-queue.md](docs/mutation-queue.md) — required if touching `lib/queue/`, `idempotency.jl`, `with_idempotency`, or `applyRemoteToCache.ts`.
+6. [docs/contract-testing.md](docs/contract-testing.md) — six-layer testing rule. Required before fixing a queue/SSE/cache reconciliation bug.
 
 ## Code layout
 
-Monorepo: the core `Himalaya` package lives at the root; sub-packages live under `packages/`.
-
 ```
-src/                         # core Himalaya package
-  Himalaya.jl                # module entry; exports public API
-  peakfinding.jl             # findpeaks (persistence + sharpness + kneedle)
-  persistence.jl             # topological persistence helper
-  sharpness.jl               # Savitzky-Golay / CWT curvature
-  threshold.jl               # kneedle elbow finder
-  phase.jl                   # Phase abstract type hierarchy + phaseratios
-  index.jl                   # Index struct, indexpeaks, score
-  util.jl
-packages/
-  HimalayaUI/                # web-app sub-package
-    .env.example             # documented env vars (HIMALAYA_DB_PATH etc.)
-    configs/                 # built-in experiment.toml templates (simple.toml)
-    src/
-      db.jl                  # SQLite schema + CRUD
-      datfile.jl             # three-column .dat parser
-      config.jl              # ExperimentConfig + load_config + resolve_files
-      manifest.jl            # ManifestSample + parse_manifest (config-driven)
-      validate.jl            # ManifestViolation + validate_manifest (pre-ingest checks)
-      pipeline.jl            # analyze_exposure!, auto_group, persist_analysis!
-      comparisons.jl         # Compare-page server logic (member resolution, last_event_at)
-      cli.jl                 # himalaya config/init/analyze/reingest/show/serve
-      json.jl                # row → Dict serialization
-      actions.jl             # X-Username extraction + user_actions logger
-      image.jl               # TIFF load + log-normalize + PNG encode for /image route
-      routes_*.jl            # one per REST resource (users, experiments,
-                             #   samples, exposures, peaks, analysis, trace,
-                             #   export, messages, comparisons, picker, resolve)
-      events.jl              # apply_event! dispatcher + SSE broadcast
-      hash.jl                # SHA-256 trace + peak-set content hashes
-      idempotency.jl         # with_idempotency + InTransaction sentinel (Plan 8)
-      speculative.jl         # speculative index create/delete + re-resolve
-      server.jl              # Oxygen.jl app + serve(db) + test harness
-    test/
-    frontend/                # React 18 + Vite + TS strict
-      src/
-        main.tsx             # entry: StrictMode > ErrorBoundary > QueryClientProvider > App
-        ErrorBoundary.tsx    # top-level React error boundary
-        App.tsx              # composition root; Zustand selectors + TanStack Query
-        api.ts               # typed fetchers (AuthOpts per-call for mutations)
-        state.ts             # Zustand client state (activeSampleId, hoveredIndexId, …)
-        queries.ts           # TanStack Query hooks + queryKeys
-        phases.ts            # phase → color palette
-        styles.css           # Tailwind v4 + @theme tokens
-        components/          # AppShell, AppHeader, TabRocker, TitleButton,
-                             #   OnboardingFlow, NavModal, UtilityCluster,
-                             #   WorkspaceGrid (shared 3-col layout),
-                             #   BandResizeDivider, AnnotationToggles,
-                             #   ChatCard, MentionChip, MentionCompose,
-                             #   PlotCard, TraceViewer, FigureExportControls,
-                             #   IndicesCard, PhasePanel, StaleIndicesBanner,
-                             #   SpeculativeBuilder, InfrastructureBanner,
-                             #   ConflictModal, StaleUrlPage, ResolvingFallback,
-                             #   MillerPlot, Pn3mIcon, ui/…
-                             # Inspect: DetectorImage, DetectorImageCard,
-                             #   ThumbnailGallery, SampleMetadataCard
-                             # Mentions: MentionChip, MentionCompose, MentionPicker
-                             # Compare: MultiTracePlot, MemberTraceLayer,
-                             #   MemberMetaRow, MemberMetaGutter, ComparisonSidebar,
-                             #   ComparisonPickerBody, ComparisonPickerPanel,
-                             #   SamplePickerRow, GroupingModeToggle,
-                             #   ForksPopover, LineageBadge, NeedsReviewBadge,
-                             #   WarmAddMenu
-        hooks/               # useFocusTrap, useMentionResolution, useGlobalShortcuts,
-                             #   useStateFromUrl, useUrlFromState (slug permalinks)
-        lib/                 # renderMentions.tsx (parseMentions tokenizer),
-                             #   clientId.ts, clientOpId.ts, authOpts.ts, toast.ts,
-                             #   units.ts (ASCII↔Unicode unit pretty-print),
-                             #   sample/displayName.ts,
-                             #   url/ (parseLocation, emitMode — slug permalinks),
-                             #   plot/ (axis/Q helpers shared Index↔Compare),
-                             #   comparison/ (yBands, prefetchMembers, snapshot, …),
-                             #   figure-export/ (PNG/SVG renderer + clipboard)
-        lib/queue/           # mutation queue framework (Plan 8):
-                             #   types.ts, deferred.ts, replayCoordinator.ts,
-                             #   applyRemoteToCache.ts, persistence.ts, hooks.ts,
-                             #   errors.ts, useQueueMutation.ts, mutatorRegistry.ts,
-                             #   optimisticId.ts, peakQTol.ts, testHelpers.ts,
-                             #   conflictBridge.ts (drives ConflictModal),
-                             #   mutators/ (peak/index/speculative/trivial/reanalyze)
-        bones/               # Committed boneyard skeleton captures (*.bones.json)
-                             #   + auto-generated registry.ts
-        pages/               # ComparePage, ComparePageEdit
-                             #   (Index + Inspect surfaces are inlined into AppShell)
-      test/                  # Vitest + React Testing Library
-      e2e/                   # Playwright (mocks /api via page.route)
-      e2e/live/              # Playwright integration (real backend + dev DB)
-      dist/                  # Vite build output; served by Oxygen.jl in prod
-docs/
-  peak-finding.md            # findpeaks design (persistence + sharpness + kneedle)
-  scoring.md                 # index scoring formula rationale
-  experiment-config.md       # experiment.toml format + read-only contract
-  future-feature-ideas.md    # intentionally-deferred features
-  superpowers/               # specs and plans
-test/                        # core Himalaya tests
-examples/                    # scripts using Himalaya (not part of the package)
-scratch/                     # gitignored — exploratory scripts and trace data
+src/                                # core Himalaya package — see src/AGENTS.md
+test/                               # core tests
+packages/HimalayaUI/
+  src/                              # backend — see packages/HimalayaUI/src/AGENTS.md
+  test/                             # backend tests — see packages/HimalayaUI/test/AGENTS.md
+  configs/                          # built-in experiment.toml templates (simple.toml)
+  frontend/
+    src/                            # frontend — see frontend/src/AGENTS.md
+      components/                   # see components/AGENTS.md
+      hooks/                        # custom React hooks
+      lib/                          # url, plot, comparison, figure-export helpers
+        queue/                      # mutation queue — see lib/queue/AGENTS.md
+      pages/                        # ComparePage, ComparePageEdit
+      bones/                        # committed *.bones.json skeleton captures
+    test/                           # Vitest unit tests — see frontend/test/AGENTS.md
+    e2e/                            # Playwright mocked — see e2e/AGENTS.md
+    e2e/live/                       # Playwright live integration — see e2e/live/README.md
+    dist/                           # vite build output; served by Oxygen.jl in prod
+docs/                               # design docs (peak-finding, scoring, event-log, …)
+examples/                           # scripts using Himalaya (not part of the package)
+scratch/                            # gitignored — exploratory scripts and trace data
 .claude/
-  skills/                    # project-specific Claude Code skills:
-                             #   review-pr, review-response, worktree-setup,
-                             #   new-route, new-event-kind, new-mutator,
-                             #   pre-merge-smoke, e2e-mock-mode, seed-test-state
-  agents/                    # project-specific review agents:
-                             #   frontend-reviewer, himalaya-reviewer,
-                             #   queue-reviewer, saxs-physics-reviewer
-  settings.json              # hooks: Vitest --run flag, pre-tool-use guards
+  skills/                           # review-pr, worktree-setup, new-route, new-event-kind, …
+  agents/                           # frontend-reviewer, himalaya-reviewer, queue-reviewer, saxs-physics-reviewer
+  settings.json                     # hooks: Vitest --run flag, pre-tool-use guards
 ```
 
 ## Running tests
@@ -139,35 +73,20 @@ julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.instantiate()'
 # Core Himalaya
 julia --project=. -e 'using Pkg; Pkg.test()'
 
-# HimalayaUI backend (Julia)
-julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.test("HimalayaUI")'
+# HimalayaUI backend (Julia) — slow, capture once. See packages/HimalayaUI/test/AGENTS.md
+julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.test("HimalayaUI")' > /tmp/jl-test.out 2>&1
 
 # HimalayaUI frontend — from packages/HimalayaUI/frontend/
 npm test              # Vitest unit tests (one-shot)
 npm run test:watch    # Vitest watch mode
-npm run e2e           # Playwright E2E (auto-starts Vite via playwright.config.ts)
+npm run e2e           # Playwright E2E (mocked; auto-starts Vite)
 npm run e2e:live      # Live integration tests (requires backend + Vite running)
 npm run build         # tsc --noEmit + vite build (must pass before PR)
-
-# Single frontend test file / single E2E test by name
-node_modules/.bin/vitest run test/DetectorImage.test.tsx
-node_modules/.bin/playwright test --grep "Reject → Other"
-
-# One test file in isolation (core)
-julia --project=. -e 'using Himalaya, Test; include("test/foo.jl")'
 ```
 
-Tests use stdlib `Test` (`@testset`, `@test`, `@test_throws`). Internal (non-exported) helpers are accessed via `Himalaya.<name>` in tests.
+Tests use stdlib `Test` (`@testset`, `@test`, `@test_throws`). Internal (non-exported) helpers are accessed via `Himalaya.<name>` / `HimalayaUI.<name>` in tests.
 
-**Test runs are slow — capture output once, then grep the file.** The HimalayaUI Julia suite takes 5–10 min per invocation (per-test fixture DBs + Oxygen lifecycle dominate). Do NOT re-run the same suite with different `| grep` filters — every invocation rebuilds the fixtures from scratch, burning real wall-clock and context. Redirect once, then inspect:
-
-```bash
-julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.test("HimalayaUI")' > /tmp/jl-test.out 2>&1
-grep -E "Test Summary|did not pass|fail" /tmp/jl-test.out
-tail -50 /tmp/jl-test.out
-```
-
-Same pattern for `npm test` when you need to slice a long Vitest run multiple ways: `npm test > /tmp/vitest.out 2>&1` once, then grep the file.
+**The Julia backend suite is slow** (5–10 min). Capture output once, grep the file. Same for `npm test`. Detailed slow-suite guidance in `packages/HimalayaUI/test/AGENTS.md`.
 
 ## Running the app
 
@@ -184,167 +103,73 @@ bin/himalaya reingest /path/to/experiment
 
 # Without sysimage (slower cold start, no build required):
 julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
-  config new --type simple --dir /path/to/experiment
-julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
-  init /path/to/experiment
-julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
   serve /path/to/experiment --port 8080
 ```
 
 `serve` blocks. Frontend is served from `packages/HimalayaUI/frontend/dist/` if present.
 
-**Env vars** (see `packages/HimalayaUI/.env.example`): `HIMALAYA_DB_PATH` overrides the per-experiment DB path for `/opt`-style centralised deployment; `HIMALAYA_CONFIGS_DIR`, `HIMALAYA_HOST`, `HIMALAYA_PORT`, `HIMALAYA_FRONTEND_DIST` override the corresponding defaults.
+**Env vars** (see `packages/HimalayaUI/.env.example`): `HIMALAYA_DB_PATH`, `HIMALAYA_CONFIGS_DIR`, `HIMALAYA_HOST`, `HIMALAYA_PORT`, `HIMALAYA_FRONTEND_DIST`.
 
-### Frontend dev loop
-
-See [docs/frontend-dev-loop.md](docs/frontend-dev-loop.md) — default + side-by-side dev session setup, `VITE_API_PORT` proxy semantics, port cleanup, and common gotchas (`localhost` vs `127.0.0.1`, stale Vite children, prod-sysimage caching).
+Frontend dev loop (live backend, port cleanup, side-by-side prod-DB sessions): [docs/frontend-dev-loop.md](docs/frontend-dev-loop.md).
 
 ## Conventions
 
 - **TDD by default.** Failing test → minimal implementation → verify pass → commit. Each step is its own commit.
 - **One responsibility per file.** When a `src/` file accumulates multiple concepts, split it.
 - **Regression floors, not hard-coded counts.** For tests against real-data fixtures, prefer `recall ≥ floor` / `spurious ≤ ceiling` assertions over exact counts. Raising a floor is a deliberate commit.
-- **Worktrees for feature branches.** For multi-step rewrites, `git worktree add /opt/Himalaya.jl/.claude/worktrees/<topic> -b <topic>`. `.claude/worktrees/` is gitignored (`.claude/*` rule) and keeps worktrees discoverable inside the repo. Keeps main clean.
+- **Worktrees for feature branches.** For multi-step rewrites, `git worktree add .claude/worktrees/<topic> -b <topic>`. `.claude/worktrees/` is gitignored.
 - **`Manifest.toml` is gitignored** — Julia library convention. Consumers re-resolve.
 
-## HimalayaUI gotchas
+## Where to find gotchas
 
-**SQLite.jl:**
-- `DBInterface.lastrowid` takes the query **result**, not the db: `res = DBInterface.execute(db, sql, params); id = Int(DBInterface.lastrowid(res))`.
-- Raw rows from `DBInterface.execute` lose their values after the query closes. Materialize with `Tables.rowtable(DBInterface.execute(...))` to get stable `NamedTuple`s (access fields via `row.name`).
-- **`Tables.rowtable` returns `missing` for SQL NULL, not `nothing`.** When comparing nullable columns in Julia code (e.g. "is this name field unset?"), use `ismissing(row.field)` and normalize to `nothing` if you need to mix with literals: `existing = ismissing(row.field) ? nothing : row.field`. The `routes_users.jl` NULL-fill enrichment path is the canonical example.
-- **`samples.name` is the stable identifier; `samples.display_name` is editable.** Set at ingest from manifest column 2 (was `label`); never UI-mutable. `display_name` is from manifest column 3 (was `name`); user-editable via PATCH; reingest never clobbers it. UNIQUE INDEX on `(experiment_id, name)`. Use the `sampleDisplayName(s)` helper in `lib/sample/displayName.ts` everywhere — uses `||` not `??` so empty strings fall through to `name` then to `Sample #id`.
-- **FK enforcement is on.** `open_db` runs `PRAGMA foreign_keys = ON` on every connection. Any FK column that references `users(id)` and must survive user deletion needs `ON DELETE SET NULL` in the schema DDL — add it there, not at call sites. `index_groups.created_by` and `user_actions.user_id` already have this.
-- **`PRAGMA schema_version = N+1` requires `writable_schema = ON`** on most SQLite builds. Used as a VACUUM-free schema-cache invalidator (e.g. when VACUUM fails with `SQLITE_BUSY` under multi-process access); silently no-ops if `writable_schema` is off. The FK-heal fallback in `_fix_fk_references_after_autoincrement_migration!` toggles it back on for the bump.
-- **PKs use `AUTOINCREMENT` on mention-targets** (`experiments`, `samples`, `exposures`, `peaks`, `indices`). Plain `INTEGER PRIMARY KEY` is rowid-aliased and reuses freed ids on deletion — chat `@`-mentions of a deleted entity could silently rebind to a new entity that took the same id. `migrate_pk_to_autoincrement!` in `db.jl` rebuilds these tables on existing DBs (rename → `create_schema!` → copy shared columns → drop) so legacy DBs heal on next `open_db`.
-- **`analyze_exposure!` curation contract.** Before calling `Himalaya.indexpeaks`, the function calls `effective_peaks(db, exposure_id, q, I)` which synthesises the working set as `auto_peaks − peak_curations(kind='exclude') ∪ peak_curations(kind='add')`, with sharpness for adds sampled from `Himalaya.sharpness(I)`. Without this, a user's "this is noise" exclusion has no effect on candidate scoring, and a user-marked manual peak at a phase's predicted ratio position never lands in `IndexEntry.peaks`. Touch this only with curation-lifecycle regression tests in `test_pipeline.jl` green. See [docs/event-log.md](docs/event-log.md) §1 for the auto/curation table split.
-- **`persist_analysis!` is transactional.** The auto-peak diff-update + index re-resolve sequence in `pipeline.jl` is wrapped in `SQLite.transaction`. If you add new write steps to that function, put them inside `_persist_analysis_inner!` so they stay atomic. Same pattern applies to `reingest!` in `cli.jl` (`_reingest_inner!`) — wrap any new multi-write CLI operations the same way. `_reingest_inner!` returns a `NamedTuple{(:status, :added_samples, :added_exposures, :manifest_path)}` where `:status` is `:ok` or `:no_manifest`; the route at `POST /api/experiments/:id/reingest` echoes those fields in JSON (HTTP 200 in both cases — `status` is the discriminator).
+Module-specific conventions and anti-patterns live in the AGENTS.md file nearest the code you're editing. The deeper the file, the more specific the rules:
 
-**In-process SSE subscriber for testing.** To assert SSE fanout in Julia tests, register a `(pending = Channel{String}(64),)` directly on `HimalayaUI.SSE_SUBSCRIBERS[]` under `HimalayaUI.SSE_LOCK` instead of opening an HTTP streaming connection. Faster, deterministic, no port management. `test_idempotency_replay_invariant.jl::_capture_sse_during` is the canonical pattern. Remember Julia `do`-block syntax passes the function as the FIRST arg: `_capture_sse_during("kind") do ... end` ⇒ `_capture_sse_during(f, "kind")`.
-
-**FK-heal regression tests call the helper directly.** `_fix_fk_references_after_autoincrement_migration!(db)` should be invoked directly from tests rather than through `open_db`, because `open_db` runs `create_schema!` migrations that expect full production schemas — synthetic FK fixtures (`refs_to_samples`, `_migrate_old_*`) break the migration chain. See `test_db.jl` FK-heal regression tests for the pattern.
-
-**Oxygen.jl 1.10.x:**
-- Use the singleton API: `@get "/path/{id}" function(req::HTTP.Request, id::Int) ... end`. Typed function args extract path params.
-- Parse JSON body with `json(req)` (unqualified, imported via `using Oxygen`), **not** `Oxygen.json(req)`.
-- Test harness pattern: `Oxygen.resetstate()` before `Oxygen.serve(; async=true)`, `Oxygen.terminate()` after. A module-level `Ref{Union{SQLite.DB, Nothing}}` holds the live DB (matches the one-experiment-per-process deployment model).
-- Mount static files with `Oxygen.dynamicfiles(dir, "/")` — only if `isdir(dir)`, so empty frontends don't break tests.
-- Oxygen emits a harmless warning about OpenAPI schema generation for some routes; ignore it.
-- **`parallel = true` is on** (#115). Every request handler dispatches across the worker thread pool — without it, all handlers stickied to tid=1 even with `JULIA_NUM_THREADS > 1`. Routes therefore must not assume cooperative single-threaded execution. Writers serialize at the Julia level via `_DB_WRITE_LOCK` (server.jl), a `ReentrantLock` acquired by every `SQLite.transaction(db)` site on the singleton: `with_idempotency` (both branches), the default `apply_event!`, `persist_analysis!`, `analyze_exposure!`, and the `gc_idempotent_responses!` DELETE. Closes #122 Race 1 (`SQLite.transaction` TOCTOU — loud 500s + silent savepoint nesting) and Race 2 writer-vs-writer (`db.stmt_wrappers` Dict mutation). Reentrant so a route body inside `with_idempotency` calling `analyze_exposure!` doesn't self-deadlock. **Residual #122 limit:** reader-vs-writer `stmt_wrappers` mutation remains possible because reads don't take the lock. Rare; surfaces as intermittent test flakes or sporadic 500s. Per-request reader connections will close it — tracked as a follow-up.
-
-**Stdlib deps must be explicit.** Stdlibs used directly in a package (`Sockets`, `Printf`, `SparseArrays`, `DelimitedFiles`, `TOML`, etc.) must be listed in `Project.toml`'s `[deps]` — `Pkg.add` them like regular packages.
-
-**Experiment config (`experiment.toml`) is the source of truth.** Every experiment directory has one; `himalaya init` slurps the full TOML blob into `experiments.config` so the DB is self-contained. `analyze_exposure!` reads it via `config_from_db` (in-memory parse — no tempfile per call), falling back to `simple.toml` defaults when `config IS NULL`. To change layout or columns: edit `experiment.toml` then `himalaya reingest <path>` (preserves curation). Key gotchas:
-- `himalaya config new --dir <path>` is the ONLY command that writes inside an experiment dir; it refuses to overwrite.
-- `layout.exposure_type` is validated at parse against `VALID_EXPOSURE_TYPES` (currently `("simple",)`) — extend the tuple before adding a new type.
-- Malformed TOML throws a wrapped `Invalid TOML in <path>: …` error.
-- `_build_config(::AbstractDict)` is the shared helper between `config_from_db` and `load_config`.
-
-Read [docs/experiment-config.md](docs/experiment-config.md) before touching `config.jl`, `manifest.jl`, or the cli init/reingest paths.
-
-**Read-only experiment directories at runtime.** Himalaya never creates, modifies, or deletes any file inside an experiment directory during `init`, `analyze`, `reingest`, or `serve`. The sole exception is `himalaya config new --dir`, which writes `experiment.toml` once during setup. A regression test in `test_pipeline.jl` snapshots the directory contents before/after `cli_init_with_db!` — keep it green.
-
-**Central DB.** All CLI commands open the same DB resolved by `default_db_path()` in `db.jl`: `HIMALAYA_DB_PATH` if set, else `~/.himalaya/himalaya.db` (parent dir auto-created). One DB stores every experiment ever registered; experiment dirs are pure read-only data sources. Tests pass an explicit file path (`open_db(joinpath(tmp, "himalaya.db"))`) to keep each testset isolated.
-
-**Filename ↔ exposure association via filesystem prefix scan.** Manifest filename entries are always treated as prefixes: `JC001-004` expands to four prefixes, each scanned via `resolve_files(cfg, dir, prefix, cfg.integration_pattern)` against the filesystem. The manifest declares intent; disk decides what exists. Missing files produce a warning, not an error. When debugging "exposures missing after init/reingest," check the actual files in `analysis_dir` first — the manifest is a hint.
-
-**`parse_manifest` has two methods.** `parse_manifest(source)` is a backward-compat wrapper using `simple.toml` defaults. `parse_manifest(cfg::ExperimentConfig, source)` is the config-driven version — use this in new code. Both accept IO and paths via `readlines(source)`.
-
-**Index scoring:** `score(index)` returns a value in `[0, 1]` — product of `coverage` (harmonic-weighted fraction of expected peaks found, `1/rank` weight per position) and `consistency` (`1/(1+CV)` of peak sharpnesses). `totalprom` and the `prom` field on `Index` no longer exist — the struct now has `sharpness::SparseVector`. Guard `cv` against zero mean before dividing (all-zero sharpness is valid and should score as consistent). `auto_group` and `remove_subsets` in `pipeline.jl` both depend on `score` ordering — correctness of auto-analysis flows from score quality. R² is stored per index but is NOT part of the score; it is a UI hard gate (threshold 0.98 in `PhasePanel`).
-
-**Phase-type serialization:** `string(Himalaya.Pn3m)` returns the fully-qualified `"Himalaya.Pn3m"`. When storing phase names in SQLite, use `string(nameof(P))` → `"Pn3m"`. The inverse is `getfield(Himalaya, Symbol(name))` (always validate with `P isa Type && P <: Himalaya.Phase` before calling `phaseratios`).
-
-**Detector TIFFs are Q0f31 fixed-point.** TiffImages loads as `Gray{Q0f31}` (= `Fixed{Int32, 31}`). `Float32.(channelview(raw))` divides raw photon counts by 2³¹ (~2.1e9), making `log1p` numerically a no-op (~4.7e-10 per count). To recover photon counts, use `reinterpret.(Int32, channelview(raw))`. Then `max(., 0)` clips beamstop/dead-pixel negatives, `log1p` compresses, and a p99-of-positives clip prevents the direct beam from crushing diffraction-ring contrast. See `image.jl::load_and_lognormalize`.
-
-**Image route uses `Cache-Control: no-store`** (`routes_exposures.jl`). Combined with `cache: "no-store"` on the frontend `fetch()`, this stops the browser from serving stale PNGs across analysis re-runs. Don't change to a longer max-age without invalidation tied to exposure id + analysis version.
-
-**`exposures.selected` is sample-scoped LWW.** `PATCH /api/exposures/:id/select` clears `selected = 0` across all exposures in the sample, then sets one. Under multiplayer this is intentional — concurrent selects produce a single resolved value. Don't add If-Match to this route.
-
-**`Himalaya` core resolution in worktrees:** `Manifest.toml` is gitignored, so fresh worktrees re-resolve against the registry. The Wong Lab registry now publishes v0.5+, so `Pkg.instantiate()` finds a current `findpeaks` and tests pass without copying anything from main. If you need core changes made *inside* the worktree to flow through to HimalayaUI (rather than working off the registry version), run `julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.develop(path="../..")'` once. The `worktree-setup` skill documents both paths.
-
-## HimalayaUI frontend gotchas
-
-**TypeScript strict + `exactOptionalPropertyTypes: true`.** `set({ username: undefined })` fails — optional fields declared as `string | undefined` rather than `username?: string` keep this ergonomic. For passing optional values through (e.g., `AuthOpts`), use the `authOpts(username)` helper in `queries.ts` which returns `{}` or `{ username }` — never `{ username: undefined }`.
-
-**Zustand: use named actions, not `setState`.** The store exposes specific actions (`clearUsername`, `setTheme`, `openNavModal`, etc.). Prefer these over `useAppState.setState({ ... })` — direct setState bypasses encapsulation and triggers lint warnings. If you need a new state transition, add a named action to `state.ts`.
-
-**State split (load-bearing):** Zustand owns *client* state (active sample/exposure, hoveredIndexId, username). TanStack Query owns *server* state (experiments, samples, exposures, peaks, indices, groups). Mutations invalidate scoped query keys (`queryKeys.peaks(id)`, `queryKeys.groups(id)`) — don't mix the two concerns in the same hook.
-
-**Per-tab SSE identity.** SSE self-echo filtering uses a per-tab `client_id`
-minted into `sessionStorage` on first load (see `lib/clientId.ts`). Audit
-identity (`actor` / `X-Username`) is unchanged. Two tabs of the same user
-are treated as distinct subscribers — edits in one tab refresh the other.
-The `client_id` lives for the tab session: survives reload, scoped to one
-tab. See docs/event-log.md §"Client side".
-
-**Observable Plot inside React:** the plot element has a runtime `.scale(name).invert(px)` method that isn't in DOM types; cast with `(el as unknown as { scale: ... })`. Used by TraceViewer to translate click pixel coords to q values.
-
-**E2E selectors:** Playwright tests use `data-testid`, `role`, or stable `data-*` attributes (`data-index-id`, `data-alternative-id`, `data-active`, `data-low-r2`, `data-speculative`). Never assert on Tailwind class strings — they change when styling evolves. For Vitest/RTL tests, use `screen.getByText("X").closest("li")` + `toHaveAttribute` rather than `document.querySelector` — the latter bypasses RTL's async-aware retry logic. There is no `data-sample-id` / `data-exposure-id`; navigate by seeding Zustand state in `localStorage` (`himalaya-ui:state`, `version: 3`) before `page.goto("/")` — see the live specs for the pattern.
-
-**Playwright port binding:** `playwright.config.ts` expects the dev server on `http://127.0.0.1:5173`, not `localhost`. If another process has that port, tests hang for 60 s then fail. Kill with `lsof -ti:5173 | xargs kill -9`, then re-run. If starting Vite separately before `npm run e2e`, bind it explicitly: `npm run dev -- --host 127.0.0.1`.
-
-**Live-integration tests under `e2e/live/`.** Distinct from the default mocked `npm run e2e` suite — these hit a real backend + dev DB. Use them for any check that needs SSE, real DB state transitions, or cross-process atomicity (anything `page.route` can't simulate). Operator brings up backend (port 8090) + Vite (5180) manually before `npm run e2e:live`. The most non-obvious rule: **wait ~800 ms after `page.goto("/")`** before any mutation that expects an SSE echo, otherwise the test browser misses the broadcast. Full runbook: [packages/HimalayaUI/frontend/e2e/live/README.md](packages/HimalayaUI/frontend/e2e/live/README.md).
-
-**Focus trapping in modals.** `src/hooks/useFocusTrap.ts` exports `useFocusTrap(containerRef, active)`. Call it inside any modal or overlay that should keep Tab focus within its bounds. It intercepts Tab/Shift+Tab to cycle among focusable children and restores the previously-focused element on cleanup. NavModal and OnboardingFlow already use it.
-
-**JSDOM `fetch` interceptor pattern.** `new Request(input, init)` throws under JSDOM (no constructor in the test environment). When spying on global `fetch` to assert headers/URLs, extract the URL with `typeof input === "string" ? input : String(input)` and read headers off `init?.headers`. Don't construct a Request to introspect the call. See `test/queue/authHeaders.test.ts`.
-
-**`QNumInput` is exported from `PlotCard.tsx`** for unit testing. It implements a focus-gated controlled input: external `value` prop changes are synced to draft state only when the input is not focused, preventing wheel-zoom events from interrupting mid-edit. Follow this pattern for any numeric input that can be updated by external events.
-
-**`StaleIndicesBanner` is mounted in `PhasePanel`.** Renders when *any* index's `inputs_hash` differs from its exposure's current `analysis_inputs_hash` (hash-derived, not a `status` enum — that was removed in Plan 7 R3). The Re-analyze button posts to `/api/exposures/:id/analyze`, which recomputes hashes; matching hashes hide the banner. New routes that change the effective peak set surface the banner automatically because hashes drift; no extra UI wiring needed. **Plan 8 update:** also gated on `useExposureHasPendingPeakOps` (returns null while a peak op is in flight) to mask cross-entity refetch races during queue mutations; debounce reduced from 2000ms to 150ms because synchronous reanalyze in the curation handler closes the stale window deterministically. See [docs/event-log.md](docs/event-log.md) §2 + §3a.
-
-**Imperative render functions in effects: use `useCallback`.** Wrap any function that is both defined inside a component and used as a `useEffect` dependency in `useCallback` with its true deps. The effect then depends on `[theCallback]` alone — no redundant dep list, no eslint-disable. `TraceViewer`'s overlay renderer follows this pattern.
-
-**`Fm3m` missing from `indexpeaks` dispatch** — the all-phases loop in `src/index.jl` omits `Fm3m`. The phase is defined and `minpeaks`/`phaseratios` exist, but `indexpeaks` can never return an `Fm3m` index. Known pre-existing gap, not something to fix opportunistically.
-
-**Tailwind v4 theming:** the dark palette is defined once in `styles.css` via `@theme { --color-* ... }`. Component files use utility classes (`bg-bg`, `text-fg-muted`, `border-accent`). If you need a new color, add it to `@theme` first.
-
-**`ImageBitmap.close()` neuters width/height** to 0 per the Web spec. Capture dims **before** closing: `const { width, height } = bitmap; bitmap.close();`. There's a regression test in `test/DetectorImage.test.tsx` using getter-based mocks that simulates the neutering — keep it green if you touch `DetectorImage.tsx`.
-
-**`DetectorImage` auto-rotates to landscape** via a ResizeObserver on the wrapper div: when `containerAspect > imageAspect * 1.25`, rotate the canvas 90° and JS-set `maxWidth`/`maxHeight` to swap the layout box (CSS-only doesn't cut it because `transform: rotate` doesn't change a canvas's bounding box). Re-evaluates inside `renderImage` after each new image so swapping exposures with different aspects re-checks. JSDOM lacks `ResizeObserver` — the stub in `test/setup.ts` keeps unit tests honest.
-
-**TraceViewer auto-fit is floor-only.** `PlotCard::computeFit` sets `yDomain = [max(p01·0.5, fullMax/1e5), fullMax·1.2]` — bottom is the 1st percentile of *positive* in-window intensities scaled down (suppresses dead-pixel zeros while keeping the low-signal tail visible), clamped at `fullMax/1e5` so a single near-zero pixel can't blow the y-range past five log decades. Top is the *full* trace max (so peaks-vs-beam relative scale stays visible without resetting). When peaks exist, x is also tightened to `[firstPeak·0.7, lastPeak·1.3]`. Auto-fires on `activeExposureId` change. Double-click → `onReset` clears both axes.
-
-**Mutation queue — load-bearing one-liners.** Full architecture in [docs/mutation-queue.md](docs/mutation-queue.md). The handful of invariants that bite often enough to live here:
-- **Optimistic placeholder ids are NEGATIVE.** `Peak.id < 0` means "not yet confirmed by server"; the SSE confirmation overwrites with the positive server id. UI code that filters or compares peak ids must handle negatives.
-- **Mint `client_op_id` inside `mutationFn`, not at hook creation.** Capturing it in a closure when the hook mounts means every retry of every mutation shares one idempotency key. `useQueueMutation` does this correctly via `newClientOpId()` per `mutate()` call.
-- **`apply_event!(InTransaction(), …)` from inside `with_idempotency`,** never the public `apply_event!(db, req; …)`. The public method opens a nested savepoint AND broadcasts immediately — bypassing the post-commit queue.
-- **`useExposureHasPendingPeakOps` gates any UI that reads `peaks(id)` derivatively** while a peak op is in flight (StaleIndicesBanner, useSpeculativeSnap). Without it: flicker as optimistic / HTTP / SSE land out of order.
-- **`MutationCache.getAll()` insertion order is load-bearing** — replay-as-rerun depends on it. A regression test pins this against TanStack version drift.
-
-**Multi-layer contract testing.** Every reconciliation contract has six layers (route emit → SSE payload → `applyRemoteToCache` merge → cache row → `onMutate` → `onSuccess`). When fixing a bug at one layer, add a regression row at every other layer where the same class can manifest. See [docs/contract-testing.md](docs/contract-testing.md) for the canonical paired test files (`cache-shape.test.ts`, `sseEventPayload.contract.test.ts`, `rollbackSymmetry.test.ts`, `authHeaders.test.ts`, `test_route_response_shapes.jl`, `test_idempotency_replay_invariant.jl`).
-
-**Skeleton loading via boneyard-js.** Each load-gated card wraps content in `<Skeleton>` from `boneyard-js/react`. Full reference: [packages/HimalayaUI/docs/boneyard.md](packages/HimalayaUI/docs/boneyard.md). The two rules that bite hardest:
-- **Gate on `query.isLoading`, not `isPending`.** `isLoading = isPending && isFetching` — disabled queries and background refetches stay skeleton-free; only true cold fetches animate. Wrong gating ⇒ flicker on every refetch.
-- **`className` on `<Skeleton>` is load-bearing.** Boneyard adds two wrapper divs that break parent flex chains (e.g. ChatCard's message list collapsing to 60px). Pass `flex-1 min-h-0 flex flex-col` (or `h-full w-full`) to inherit the original child's layout role. Companion CSS in `styles.css`: `[data-boneyard-content] { display: contents }`.
+| Editing… | Read… |
+|---|---|
+| Peak finding, scoring, phase types | [src/AGENTS.md](src/AGENTS.md) |
+| Routes, SQLite, pipeline, events, image, idempotency | [packages/HimalayaUI/src/AGENTS.md](packages/HimalayaUI/src/AGENTS.md) |
+| Backend tests, in-process SSE, FK-heal fixtures | [packages/HimalayaUI/test/AGENTS.md](packages/HimalayaUI/test/AGENTS.md) |
+| Zustand, TanStack Query, SSE wiring, Tailwind, boneyard | [packages/HimalayaUI/frontend/src/AGENTS.md](packages/HimalayaUI/frontend/src/AGENTS.md) |
+| Component-specific quirks (Plot, DetectorImage, TraceViewer, StaleIndicesBanner) | [packages/HimalayaUI/frontend/src/components/AGENTS.md](packages/HimalayaUI/frontend/src/components/AGENTS.md) |
+| Mutation queue internals | [packages/HimalayaUI/frontend/src/lib/queue/AGENTS.md](packages/HimalayaUI/frontend/src/lib/queue/AGENTS.md) |
+| Vitest / JSDOM / RTL patterns | [packages/HimalayaUI/frontend/test/AGENTS.md](packages/HimalayaUI/frontend/test/AGENTS.md) |
+| Playwright selectors, port binding, live-mode timing | [packages/HimalayaUI/frontend/e2e/AGENTS.md](packages/HimalayaUI/frontend/e2e/AGENTS.md) |
+| Running a dev session against a live backend (port cleanup, side-by-side prod-DB, `VITE_API_PORT`) | [docs/frontend-dev-loop.md](docs/frontend-dev-loop.md) |
 
 ## Current state
 
 - Core Himalaya: `v0.5.1` on `main` — v2 peak-finding (persistence + sharpness + kneedle).
 - HimalayaUI — Plans 1–8 + three-card Index redesign + Inspect page + experiment-config system + skeleton loading + chat @-mentions + multiplayer + instrumentation foundation + mutation queue + Compare page + slug permalinks + figure export complete:
-  - **Backend:** transactional SQLite pipeline (incl. `_reingest_inner!`), FK enforcement, REST API (Oxygen.jl), CLI (`config new/list`, `init`, `analyze`, `reingest`, `show`, `serve`), TIFF→PNG image route with Q0f31-aware lognormalize, env-driven deployment (`HIMALAYA_DB_PATH`, `HIMALAYA_CONFIGS_DIR`).
+  - **Backend:** transactional SQLite pipeline (incl. `_reingest_inner!`), FK enforcement, REST API (Oxygen.jl), CLI (`config new/list`, `init`, `analyze`, `reingest`, `show`, `serve`), TIFF→PNG image route with Q0f31-aware lognormalize, env-driven deployment.
   - **Adapter-driven I/O:** `experiment.toml` per experiment, positional or named columns, configurable file patterns, prefix-based filesystem discovery.
-  - **Frontend:** three-card Index workspace (chat | trace plot | index choices), Inspect page (detector image + thumbnail filmstrip + reject-reason chips + sample metadata), trace viewer with peak editing + auto-fit y-floor + log/linear x toggle, auto-rotating detector canvas, Miller plot, PhasePanel with curate + stale-indices reanalyze (now hash-driven), OnboardingFlow + NavModal with focus trapping. Skeleton loading screens via boneyard-js on all major data-driven cards. Chat @-mention system (`@peak`, `@index`, `@exposure`, `@sample`) via `MentionChip` / `MentionCompose` / `useMentionResolution`.
-  - **Plan 7 — Multiplayer + Instrumentation Foundation:** Auto/curation peak split (`auto_peaks` + `peak_curations`), diff-update preserves auto peak IDs, content-hash memoization on `findpeaks`/`indexpeaks`, structured `user_actions` event log via `apply_event!` dispatcher, SSE multiplayer at `GET /api/events`. R5b (If-Match conflict resolution) deferred behind R4 instrumentation gate. See [docs/event-log.md](docs/event-log.md) for the dispatcher contract, hash invariants, and SSE semantics.
-  - **Plan 8 — Mutation queue + idempotency:** Per-mutation `client_op_id` keys both the backend `with_idempotency` cache (`idempotent_responses` table, `OP_LOCKS` registry) and the frontend `pendingDeferreds` registry. Routes wrap their body in `with_idempotency(db, req) do ... end`; events inside use `apply_event!(InTransaction(), ...)` to participate in the outer tx, with SSE frames flushed via the post-commit broadcast queue. Frontend `useQueueMutation` + `handleRemoteEvent` implement own-op confirmation (resolve deferred, abort HTTP) and foreign-event replay-as-rerun (rollback in reverse, applyRemoteToCache, re-run onMutate in insertion order). `analyze_run` no-op fast path suppresses both the SSE frame and the durable `user_actions` row. See [docs/event-log.md](docs/event-log.md) §3a for the full contract.
-  - **Compare + picker + figure export + permalinks:** Compare page (`ComparePage` / `ComparePageEdit`) renders multi-trace overlays with sample-first picker (`ComparisonPickerBody/Panel`), inline edit panel, conflict resolution modal driven by `lib/queue/conflictBridge.ts`, and PNG/SVG copy/save via `lib/figure-export/`. Slug-based permalink URLs round-trip through `useStateFromUrl` / `useUrlFromState` (Zustand ↔ address bar). Sample identity uses stable `samples.name` (manifest col 2) + editable `samples.display_name` (col 3, never clobbered by reingest); resolve via the `sampleDisplayName` helper.
-  - **Test coverage:** ~1000 Julia (HimalayaUI) · ~100 Julia (core) · ~100 Vitest files · 7 Playwright E2E spec files (mocked) + 6 Playwright live-integration specs (`e2e/live/`, opt-in via `npm run e2e:live`).
-- Deferred for later: Phase panel Recent section, export UI, per-user audit view, derived-exposure construction (raw / aggregated / background-subtracted exposure types — schema reserves `exposure_type` field), additional config templates beyond `simple.toml`. See [docs/future-feature-ideas.md](docs/future-feature-ideas.md).
+  - **Frontend:** three-card Index workspace (chat | trace plot | index choices), Inspect page (detector image + thumbnail filmstrip + reject-reason chips + sample metadata), trace viewer with peak editing + auto-fit + log/linear toggle, Miller plot, PhasePanel with curate + stale-indices reanalyze, OnboardingFlow + NavModal with focus trapping, skeleton loading on all data-driven cards, chat @-mentions (`@peak`, `@index`, `@exposure`, `@sample`).
+  - **Plan 7 — Multiplayer + Instrumentation:** Auto/curation peak split, diff-update preserves auto peak IDs, content-hash memoization, structured `user_actions` log via `apply_event!`, SSE multiplayer at `GET /api/events`. R5b (If-Match conflict resolution) deferred behind R4 instrumentation gate.
+  - **Plan 8 — Mutation queue + idempotency:** Per-mutation `client_op_id` keys both the backend `with_idempotency` cache and the frontend `pendingDeferreds` registry. Frontend `useQueueMutation` + `handleRemoteEvent` implement own-op confirmation and foreign-event replay-as-rerun. `analyze_run` no-op fast path suppresses both the SSE frame and the durable `user_actions` row.
+  - **Compare + picker + figure export + permalinks:** `ComparePage` / `ComparePageEdit` renders multi-trace overlays with sample-first picker, conflict resolution modal, and PNG/SVG copy/save. Slug-based permalink URLs round-trip through `useStateFromUrl` / `useUrlFromState`.
+  - **Test coverage:** ~1000 Julia (HimalayaUI) · ~100 Julia (core) · ~100 Vitest files · 7 Playwright E2E spec files (mocked) + 6 Playwright live-integration specs.
+- Deferred: Phase panel Recent section, export UI, per-user audit view, derived-exposure construction. See [docs/future-feature-ideas.md](docs/future-feature-ideas.md).
 
 ## Further reading
 
-- [docs/peak-finding.md](docs/peak-finding.md) — narrative design notes, non-obvious defaults, out-of-scope decisions.
-- [docs/scoring.md](docs/scoring.md) — how and why of the index scoring formula (coverage × consistency).
-- [docs/experiment-config.md](docs/experiment-config.md) — `experiment.toml` schema, read-only contract, filename association, CLI reference. Required reading before touching `config.jl`, `manifest.jl`, or the cli init/reingest paths.
-- [docs/frontend-dev-loop.md](docs/frontend-dev-loop.md) — running a dev session against a live backend (default pair, side-by-side pair with prod DB copy, port cleanup, gotchas).
-- [docs/event-log.md](docs/event-log.md) — `apply_event!` dispatcher contract, hash memoization invariants, SSE multiplayer semantics. Required reading before touching `events.jl`, `hash.jl`, or the SSE handler.
-- [docs/mutation-queue.md](docs/mutation-queue.md) — server-reconciliation queue architecture, `client_op_id` lifecycle, deferred-promise pattern, replay-as-rerun, `with_idempotency`. Required reading before touching `lib/queue/`, `idempotency.jl`, or `applyRemoteToCache.ts`.
-- [docs/contract-testing.md](docs/contract-testing.md) — the six-layer rule and the canonical paired test files for queue/SSE/cache reconciliation work.
-- [packages/HimalayaUI/docs/boneyard.md](packages/HimalayaUI/docs/boneyard.md) — skeleton loading reference (rules, fixture pattern, capture workflow).
-- [packages/HimalayaUI/frontend/e2e/live/README.md](packages/HimalayaUI/frontend/e2e/live/README.md) — runbook for live-integration Playwright tests (real backend + dev DB).
-- [docs/superpowers/specs/2026-04-22-himalaya-web-app-design.md](docs/superpowers/specs/2026-04-22-himalaya-web-app-design.md) — web app design spec (schema, API, UI layout). Load-bearing for all HimalayaUI work.
-- [docs/superpowers/specs/2026-04-28-experiment-config-design.md](docs/superpowers/specs/2026-04-28-experiment-config-design.md) — config system design spec.
-- [docs/superpowers/plans/](docs/superpowers/plans/) — implementation plans (one per sub-project).
-- [docs/future-feature-ideas.md](docs/future-feature-ideas.md) — intentionally-deferred features.
-- **AGENTS.md hierarchy** — root `AGENTS.md` + `src/AGENTS.md` + `packages/HimalayaUI/src/AGENTS.md` + `packages/HimalayaUI/frontend/src/AGENTS.md` + `packages/HimalayaUI/frontend/src/lib/queue/AGENTS.md`. Deeper files contain module-specific conventions and anti-patterns; read the one nearest the code you're touching.
+**Design docs (`docs/`):**
+
+- [peak-finding.md](docs/peak-finding.md) — narrative design notes, non-obvious defaults, out-of-scope decisions.
+- [scoring.md](docs/scoring.md) — how and why of the index scoring formula (coverage × consistency).
+- [experiment-config.md](docs/experiment-config.md) — `experiment.toml` schema, read-only contract, filename association, CLI reference.
+- [frontend-dev-loop.md](docs/frontend-dev-loop.md) — running a dev session against a live backend.
+- [event-log.md](docs/event-log.md) — `apply_event!` dispatcher contract, hash memoization invariants, SSE multiplayer semantics.
+- [mutation-queue.md](docs/mutation-queue.md) — server-reconciliation queue architecture, `client_op_id` lifecycle, replay-as-rerun, `with_idempotency`.
+- [contract-testing.md](docs/contract-testing.md) — six-layer rule and canonical paired test files.
+- [future-feature-ideas.md](docs/future-feature-ideas.md) — intentionally-deferred features.
+
+**Package-specific:**
+
+- [packages/HimalayaUI/docs/boneyard.md](packages/HimalayaUI/docs/boneyard.md) — skeleton loading reference.
+- [packages/HimalayaUI/frontend/e2e/live/README.md](packages/HimalayaUI/frontend/e2e/live/README.md) — runbook for live-integration Playwright tests.
 - [packages/HimalayaUI/.env.example](packages/HimalayaUI/.env.example) — deployment env vars.
+
+**Specs and plans:**
+
+- [docs/superpowers/specs/2026-04-22-himalaya-web-app-design.md](docs/superpowers/specs/2026-04-22-himalaya-web-app-design.md) — web-app design spec (schema, API, UI).
+- [docs/superpowers/specs/2026-04-28-experiment-config-design.md](docs/superpowers/specs/2026-04-28-experiment-config-design.md) — config system design.
+- [docs/superpowers/plans/](docs/superpowers/plans/) — implementation plans (one per sub-project).
