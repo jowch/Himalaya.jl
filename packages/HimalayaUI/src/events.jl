@@ -50,12 +50,17 @@ function apply_event!(db::SQLite.DB, req;
     # Run the durable write inside a tx via the InTransaction variant, but
     # always defer the broadcast there — broadcast must wait until AFTER the
     # tx commits so subscribers can't see uncommitted state.
-    result = SQLite.transaction(db) do
-        apply_event!(InTransaction(), db, req;
-                     kind = kind, entity_type = entity_type, entity_id = entity_id,
-                     payload = payload, undoes_event_id = undoes_event_id,
-                     defer_broadcast = true,
-                     post_state = post_state)
+    # _DB_WRITE_LOCK (#122) serializes the tx against any other singleton
+    # writer; reentrant so a route already holding the lock (e.g. through
+    # `with_idempotency`) re-enters cleanly.
+    result = lock(_DB_WRITE_LOCK) do
+        SQLite.transaction(db) do
+            apply_event!(InTransaction(), db, req;
+                         kind = kind, entity_type = entity_type, entity_id = entity_id,
+                         payload = payload, undoes_event_id = undoes_event_id,
+                         defer_broadcast = true,
+                         post_state = post_state)
+        end
     end
 
     # Now committed. Fire the broadcast unless the outer caller asked to defer
