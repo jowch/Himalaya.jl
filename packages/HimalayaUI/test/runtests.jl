@@ -6,6 +6,7 @@ using Test
     include("test_datfile.jl")
     include("test_manifest.jl")
     include("test_hash.jl")
+    include("test_hash_peak_set_memoization.jl")
     include("test_pipeline.jl")
     include("test_auto_group_peak_id_claiming.jl")
     include("test_effective_peaks_sharpness_passthrough.jl")
