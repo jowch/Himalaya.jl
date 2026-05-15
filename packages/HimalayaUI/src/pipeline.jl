@@ -136,9 +136,9 @@ function effective_peaks(db::SQLite.DB, exposure_id::Int,
         else
             i_hi = searchsortedfirst(q_grid, qv)
             i_hi = clamp(i_hi, 1, length(q_grid))
-            # Choose closer of i_hi and i_hi-1.
-            if i_hi > 1 && (i_hi > length(q_grid) ||
-                            abs(q_grid[i_hi - 1] - qv) <= abs(q_grid[i_hi] - qv))
+            # Choose closer of i_hi and i_hi-1. (clamp guarantees i_hi <= length(q_grid),
+            # so the upper-bound case collapses to the standard "pick i_hi" branch.)
+            if i_hi > 1 && abs(q_grid[i_hi - 1] - qv) <= abs(q_grid[i_hi] - qv)
                 sharp_lookup[i_hi - 1]
             else
                 sharp_lookup[i_hi]

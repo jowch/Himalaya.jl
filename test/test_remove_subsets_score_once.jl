@@ -3,21 +3,21 @@ using Himalaya
 using Himalaya: Index, indexpeaks, score, remove_subsets
 
 @testset "remove_subsets is idempotent and equals the score-each-pair behavior" begin
-    # Hand-built indices with a known subset relation.
-    qs        = [0.1000, 0.1414, 0.1732, 0.2000]
-    sharpness = [1.0, 0.9, 0.8, 0.7]
+    # 6-peak fixture: covers multiple phase ratio series so indexpeaks emits
+    # several candidates, including some that are strict subsets of others.
+    qs        = [0.1, 0.1414, 0.1732, 0.2, 0.2236, 0.2449]
+    sharpness = ones(length(qs))
     candidates = indexpeaks(qs, sharpness)
 
-    if length(candidates) >= 2
-        kept = remove_subsets(candidates)
-        @test !isempty(kept)
-        # Idempotent: a second pass changes nothing.
-        @test remove_subsets(kept) == kept
-        # No strict subset survives.
-        for a in kept, b in kept
-            a === b && continue
-            @test !(Himalaya.issubset(a, b) && score(a) < score(b))
-        end
+    @test length(candidates) >= 2   # fixture invariant — guards silent-pass below
+    kept = remove_subsets(candidates)
+    @test !isempty(kept)
+    # Idempotent: a second pass changes nothing.
+    @test remove_subsets(kept) == kept
+    # No strict subset survives.
+    for a in kept, b in kept
+        a === b && continue
+        @test !(Himalaya.issubset(a, b) && score(a) < score(b))
     end
 end
 
