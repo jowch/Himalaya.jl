@@ -455,6 +455,13 @@ function _update_view_for_comparison_created!(db, entity_id, payload, event_id)
                      Int(payload.forked_from_id) : nothing
     forked_at_hash = haskey(payload, :forked_at_hash) && payload.forked_at_hash !== nothing ?
                      String(payload.forked_at_hash) : nothing
+    # View-choice columns (spec §6.4). Bare write (no COALESCE) — clients can
+    # null these to reset to per-tab defaults. `String()` coercion normalises
+    # JSON3 string subtypes before write.
+    vgm  = haskey(payload, :view_grouping_mode) && payload.view_grouping_mode !== nothing ?
+           String(payload.view_grouping_mode) : nothing
+    vspt = haskey(payload, :view_show_peak_ticks)  ? payload.view_show_peak_ticks  : nothing
+    vspl = haskey(payload, :view_show_peak_labels) ? payload.view_show_peak_labels : nothing
 
     # Insert/upsert the comparisons row at this id. The route may have minted
     # the row already (to capture the AUTOINCREMENT id); if so this UPDATE
@@ -471,10 +478,12 @@ function _update_view_for_comparison_created!(db, entity_id, payload, event_id)
         DBInterface.execute(db,
             """INSERT INTO comparisons
                (id, title, description, content_hash, created_by, created_at,
-                updated_at, forked_from_id, forked_at_hash)
-               VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?)""",
+                updated_at, forked_from_id, forked_at_hash,
+                view_grouping_mode, view_show_peak_ticks, view_show_peak_labels)
+               VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)""",
             [Int(entity_id), title, description, user_id,
-             now_str, now_str, forked_from_id, forked_at_hash])
+             now_str, now_str, forked_from_id, forked_at_hash,
+             vgm, vspt, vspl])
     else
         # The route's mint-the-id INSERT seeds NULL placeholders (#67), so
         # plain COALESCE stamps `created_at` on first fold. A real timestamp
@@ -485,10 +494,13 @@ function _update_view_for_comparison_created!(db, entity_id, payload, event_id)
             """UPDATE comparisons
                SET title = ?, description = ?, created_by = ?,
                    created_at = COALESCE(created_at, ?), updated_at = ?,
-                   forked_from_id = ?, forked_at_hash = ?
+                   forked_from_id = ?, forked_at_hash = ?,
+                   view_grouping_mode = ?, view_show_peak_ticks = ?,
+                   view_show_peak_labels = ?
                WHERE id = ?""",
             [title, description, user_id, now_str, now_str,
-             forked_from_id, forked_at_hash, Int(entity_id)])
+             forked_from_id, forked_at_hash,
+             vgm, vspt, vspl, Int(entity_id)])
     end
 
     # Insert members (all members in a comparison_created payload are NEW —
@@ -584,19 +596,32 @@ function _update_view_for_comparison_submitted!(db, entity_id, payload, event_id
         _insert_comparison_member!(db, Int(entity_id), m, user_id, now_str)
     end
 
-    # Optional title/description update — must happen BEFORE the hash
+    # Title / description / view-choice update — must happen BEFORE the hash
     # recompute, otherwise compute_content_hash sees the pre-update title and
     # the content_hash never moves on a rename-only submit (caught by the
     # routes' "rename + same membership → hash changes" regression test).
-    new_title = haskey(payload, :title) ? String(payload.title) : nothing
-    new_desc  = haskey(payload, :description) ?
-                (payload.description === nothing ? nothing : String(payload.description)) :
-                nothing
-    if new_title !== nothing
-        DBInterface.execute(db,
-            "UPDATE comparisons SET title = ?, description = ? WHERE id = ?",
-            [new_title, new_desc, Int(entity_id)])
-    end
+    # `String()` coercion normalises JSON3 string subtypes before write.
+    # title / description use COALESCE (omit keeps current); the three
+    # view-choice columns use a bare write so clients can null them to reset
+    # to per-tab defaults (spec §6.4). The content_hash does NOT fold the
+    # view-choice columns — no change to hash.jl.
+    title_val = haskey(payload, :title) && payload.title !== nothing ?
+                String(payload.title) : nothing
+    desc_val  = haskey(payload, :description) && payload.description !== nothing ?
+                String(payload.description) : nothing
+    vgm  = haskey(payload, :view_grouping_mode) && payload.view_grouping_mode !== nothing ?
+           String(payload.view_grouping_mode) : nothing
+    vspt = haskey(payload, :view_show_peak_ticks)  ? payload.view_show_peak_ticks  : nothing
+    vspl = haskey(payload, :view_show_peak_labels) ? payload.view_show_peak_labels : nothing
+    DBInterface.execute(db,
+        """UPDATE comparisons SET
+              title = COALESCE(?, title),
+              description = COALESCE(?, description),
+              view_grouping_mode = ?,
+              view_show_peak_ticks = ?,
+              view_show_peak_labels = ?
+           WHERE id = ?""",
+        [title_val, desc_val, vgm, vspt, vspl, Int(entity_id)])
     new_hash = compute_content_hash(db, Int(entity_id))
     DBInterface.execute(db,
         "UPDATE comparisons SET content_hash = ?, updated_at = ? WHERE id = ?",

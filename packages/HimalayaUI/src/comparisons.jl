@@ -399,7 +399,8 @@ function fetch_comparison_with_members(db::SQLite.DB, comparison_id::Integer)
     cid = Int(comparison_id)
     cmp_rows = Tables.rowtable(DBInterface.execute(db,
         """SELECT id, title, description, content_hash, created_by,
-                  created_at, updated_at, forked_from_id, forked_at_hash
+                  created_at, updated_at, forked_from_id, forked_at_hash,
+                  view_grouping_mode, view_show_peak_ticks, view_show_peak_labels
            FROM comparisons WHERE id = ?""", [cid]))
     isempty(cmp_rows) && return nothing
     cmp = cmp_rows[1]
@@ -460,6 +461,9 @@ function fetch_comparison_with_members(db::SQLite.DB, comparison_id::Integer)
         :forked_from_id  => ismissing(cmp.forked_from_id) ? nothing : Int(cmp.forked_from_id),
         :forked_at_hash  => ismissing(cmp.forked_at_hash) ? nothing : String(cmp.forked_at_hash),
         :forked_from_title => forked_from_title,
+        :view_grouping_mode    => ismissing(cmp.view_grouping_mode) ? nothing : String(cmp.view_grouping_mode),
+        :view_show_peak_ticks  => ismissing(cmp.view_show_peak_ticks) ? nothing : Bool(cmp.view_show_peak_ticks),
+        :view_show_peak_labels => ismissing(cmp.view_show_peak_labels) ? nothing : Bool(cmp.view_show_peak_labels),
         :members         => members,
     )
 end
@@ -584,11 +588,28 @@ function comparisons_for_experiment(db::SQLite.DB, experiment_id::Integer)::Vect
         """SELECT DISTINCT c.id, c.title, c.description, c.content_hash,
                   c.created_by, c.created_at, c.updated_at,
                   c.forked_from_id, c.forked_at_hash,
+                  c.view_grouping_mode, c.view_show_peak_ticks, c.view_show_peak_labels,
                   COALESCE((SELECT MAX(ua.timestamp) FROM user_actions ua
                             WHERE ua.entity_type = 'comparison'
-                              AND ua.entity_id = c.id),
-                           c.updated_at) AS last_event_at
+                              AND ua.entity_id = c.id), c.updated_at) AS last_event_at,
+                  u.username AS author_username,
+                  (SELECT COUNT(*) FROM comparison_members cm2
+                   WHERE cm2.comparison_id = c.id) AS member_count,
+                  (SELECT GROUP_CONCAT(json_extract(cm2.snapshot, '\$.confirmed_index.phase')
+                                       || '#' || cm2.display_order, '|')
+                   FROM comparison_members cm2
+                   WHERE cm2.comparison_id = c.id
+                     AND json_extract(cm2.snapshot, '\$.confirmed_index.phase') IS NOT NULL) AS member_phases_concat,
+                  EXISTS (
+                    SELECT 1 FROM comparison_members cm2
+                    JOIN exposures e2 ON e2.id = cm2.exposure_id
+                    WHERE cm2.comparison_id = c.id
+                      AND cm2.exposure_id IS NOT NULL
+                      AND json_extract(cm2.snapshot, '\$.analysis_inputs_hash')
+                          IS NOT e2.analysis_inputs_hash
+                  ) AS has_stale_members
            FROM comparisons c
+           LEFT JOIN users u ON u.id = c.created_by
            JOIN comparison_members cm ON cm.comparison_id = c.id
            JOIN exposures e ON e.id = cm.exposure_id
            JOIN samples s ON s.id = e.sample_id
@@ -610,11 +631,28 @@ function comparisons_listing(db::SQLite.DB)::Vector{Dict{Symbol, Any}}
         """SELECT c.id, c.title, c.description, c.content_hash,
                   c.created_by, c.created_at, c.updated_at,
                   c.forked_from_id, c.forked_at_hash,
+                  c.view_grouping_mode, c.view_show_peak_ticks, c.view_show_peak_labels,
                   COALESCE((SELECT MAX(ua.timestamp) FROM user_actions ua
                             WHERE ua.entity_type = 'comparison'
-                              AND ua.entity_id = c.id),
-                           c.updated_at) AS last_event_at
+                              AND ua.entity_id = c.id), c.updated_at) AS last_event_at,
+                  u.username AS author_username,
+                  (SELECT COUNT(*) FROM comparison_members cm
+                   WHERE cm.comparison_id = c.id) AS member_count,
+                  (SELECT GROUP_CONCAT(json_extract(cm.snapshot, '\$.confirmed_index.phase')
+                                       || '#' || cm.display_order, '|')
+                   FROM comparison_members cm
+                   WHERE cm.comparison_id = c.id
+                     AND json_extract(cm.snapshot, '\$.confirmed_index.phase') IS NOT NULL) AS member_phases_concat,
+                  EXISTS (
+                    SELECT 1 FROM comparison_members cm
+                    JOIN exposures e ON e.id = cm.exposure_id
+                    WHERE cm.comparison_id = c.id
+                      AND cm.exposure_id IS NOT NULL
+                      AND json_extract(cm.snapshot, '\$.analysis_inputs_hash')
+                          IS NOT e.analysis_inputs_hash
+                  ) AS has_stale_members
            FROM comparisons c
+           LEFT JOIN users u ON u.id = c.created_by
            ORDER BY last_event_at DESC, c.id DESC"""))
     _comparison_listing_rows(rows)
 end
@@ -624,28 +662,78 @@ end
 # `forks_of_comparison` (no member nesting — listing rows are summaries;
 # clients fetch `GET /api/comparisons/:id` for details).
 #
-# Note: `last_event_at` is a server sort key, not projected — the frontend
-# `ComparisonSidebar` re-sorts unpinned rows by `updated_at` and pinned
-# rows by the separate `comparison-pins` query. Mixed string format
-# (`MAX(ua.timestamp)` is space-sep, `c.updated_at` is T-sep from
-# `comparison_now_iso`) is therefore tolerated in the SQL ORDER BY; do not
-# add a caller that consumes that order without re-sorting (issue #76).
+# Compare UX A-3 (spec §8): the row now also carries `author_username`,
+# `member_count`, `member_phases`, `has_stale_members`, `last_event_at`,
+# and the three `view_*` choices.
+#
+# Note on `last_event_at`: it doubles as the SQL `ORDER BY` sort key. Mixed
+# string format (`MAX(ua.timestamp)` is space-sep, `c.updated_at` is T-sep
+# from `comparison_now_iso`) means the projected value is NOT a uniformly
+# sortable string — the frontend `ComparisonSidebar` re-sorts unpinned rows
+# by `updated_at` and pinned rows by the separate `comparison-pins` query;
+# `last_event_at` is surfaced as a recency display hint, not a sort key for
+# clients (issue #76).
 function _comparison_listing_rows(rows)::Vector{Dict{Symbol, Any}}
     out = Vector{Dict{Symbol, Any}}(undef, length(rows))
     for (i, r) in enumerate(rows)
+        # Phase list: split the `|`-joined "<phase>#<display_order>" tokens,
+        # dedup, keep the top 3 by frequency (client decides `+N more`).
+        phases_str = ismissing(r.member_phases_concat) ? "" : String(r.member_phases_concat)
+        member_phases = _topk_phases(phases_str, 3)
+
         out[i] = Dict{Symbol, Any}(
-            :id              => Int(r.id),
-            :title           => ismissing(r.title) ? "" : String(r.title),
-            :description     => ismissing(r.description) ? nothing : String(r.description),
-            :content_hash    => ismissing(r.content_hash) ? "" : String(r.content_hash),
-            :created_by      => ismissing(r.created_by) ? nothing : Int(r.created_by),
-            :created_at      => ismissing(r.created_at) ? nothing : String(r.created_at),
-            :updated_at      => ismissing(r.updated_at) ? nothing : String(r.updated_at),
-            :forked_from_id  => ismissing(r.forked_from_id) ? nothing : Int(r.forked_from_id),
-            :forked_at_hash  => ismissing(r.forked_at_hash) ? nothing : String(r.forked_at_hash),
+            :id                    => Int(r.id),
+            :title                 => ismissing(r.title) ? "" : String(r.title),
+            :description           => ismissing(r.description) ? nothing : String(r.description),
+            :content_hash          => ismissing(r.content_hash) ? "" : String(r.content_hash),
+            :created_by            => ismissing(r.created_by) ? nothing : Int(r.created_by),
+            :created_at            => ismissing(r.created_at) ? nothing : String(r.created_at),
+            :updated_at            => ismissing(r.updated_at) ? nothing : String(r.updated_at),
+            :forked_from_id        => ismissing(r.forked_from_id) ? nothing : Int(r.forked_from_id),
+            :forked_at_hash        => ismissing(r.forked_at_hash) ? nothing : String(r.forked_at_hash),
+            :view_grouping_mode    => ismissing(r.view_grouping_mode) ? nothing : String(r.view_grouping_mode),
+            :view_show_peak_ticks  => ismissing(r.view_show_peak_ticks) ? nothing : Bool(r.view_show_peak_ticks),
+            :view_show_peak_labels => ismissing(r.view_show_peak_labels) ? nothing : Bool(r.view_show_peak_labels),
+            :last_event_at         => ismissing(r.last_event_at) ? nothing : String(r.last_event_at),
+            :author_username       => ismissing(r.author_username) ? nothing : String(r.author_username),
+            :member_count          => Int(r.member_count),
+            :member_phases         => member_phases,
+            :has_stale_members     => Bool(r.has_stale_members),
         )
     end
     out
+end
+
+"""
+    _topk_phases(concat, k) -> Vector{String}
+
+Parses a `|`-joined list of `"<phase>#<display_order>"` tokens
+(NULL-filtered upstream by the listing SELECT) and returns the top-K
+phases by frequency. Tiebreak by smallest first-seen `display_order`
+(deterministic per spec §8.1). Empty / missing input → empty vector.
+"""
+function _topk_phases(concat::AbstractString, k::Integer)::Vector{String}
+    isempty(concat) && return String[]
+    parts = filter(!isempty, split(concat, '|'))
+    counts        = Dict{String, Int}()
+    first_seen_do = Dict{String, Int}()
+    for p in parts
+        # Each token looks like "Pn3m#3" — split on the final '#'.
+        s_token = String(p)
+        idx = findlast(==('#'), s_token)
+        idx === nothing && continue  # malformed; skip
+        phase = s_token[1:idx-1]
+        do_num = tryparse(Int, s_token[idx+1:end])
+        do_num === nothing && continue
+        counts[phase] = get(counts, phase, 0) + 1
+        if !haskey(first_seen_do, phase) || do_num < first_seen_do[phase]
+            first_seen_do[phase] = do_num
+        end
+    end
+    # Sort by (descending frequency, ascending first-seen display_order).
+    phases = collect(keys(counts))
+    sort!(phases, by = p -> (-counts[p], first_seen_do[p]))
+    return phases[1:min(k, length(phases))]
 end
 
 """
@@ -659,11 +747,28 @@ function forks_of_comparison(db::SQLite.DB, comparison_id::Integer)::Vector{Dict
         """SELECT c.id, c.title, c.description, c.content_hash,
                   c.created_by, c.created_at, c.updated_at,
                   c.forked_from_id, c.forked_at_hash,
+                  c.view_grouping_mode, c.view_show_peak_ticks, c.view_show_peak_labels,
                   COALESCE((SELECT MAX(ua.timestamp) FROM user_actions ua
                             WHERE ua.entity_type = 'comparison'
-                              AND ua.entity_id = c.id),
-                           c.updated_at) AS last_event_at
+                              AND ua.entity_id = c.id), c.updated_at) AS last_event_at,
+                  u.username AS author_username,
+                  (SELECT COUNT(*) FROM comparison_members cm
+                   WHERE cm.comparison_id = c.id) AS member_count,
+                  (SELECT GROUP_CONCAT(json_extract(cm.snapshot, '\$.confirmed_index.phase')
+                                       || '#' || cm.display_order, '|')
+                   FROM comparison_members cm
+                   WHERE cm.comparison_id = c.id
+                     AND json_extract(cm.snapshot, '\$.confirmed_index.phase') IS NOT NULL) AS member_phases_concat,
+                  EXISTS (
+                    SELECT 1 FROM comparison_members cm
+                    JOIN exposures e ON e.id = cm.exposure_id
+                    WHERE cm.comparison_id = c.id
+                      AND cm.exposure_id IS NOT NULL
+                      AND json_extract(cm.snapshot, '\$.analysis_inputs_hash')
+                          IS NOT e.analysis_inputs_hash
+                  ) AS has_stale_members
            FROM comparisons c
+           LEFT JOIN users u ON u.id = c.created_by
            WHERE c.forked_from_id = ?
            ORDER BY last_event_at DESC, c.id DESC""", [Int(comparison_id)]))
     _comparison_listing_rows(rows)

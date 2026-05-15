@@ -512,3 +512,65 @@ end
         end
     end
 end
+
+# ── Compare UX A-6: SSE frame carries the view-choice post_state ────────────
+#
+# A-5 Step 5b threaded the `post_state` envelope through both comparison
+# broadcast call sites. This testset is the contract that pins it: the
+# `comparison_submitted` SSE frame must carry the three view-choice fields
+# inside `post_state` so foreign tabs reconcile their cache without a
+# refetch. `@test length(frames) == 1` is also the exactly-one-broadcast
+# pin — a regression that double-broadcasts (or broadcasts inside
+# InTransaction) would surface here even though own-op dedup masks it on
+# the originating client.
+@testset "SSE frame includes view_* fields on comparison_submitted (Compare UX A-6)" begin
+    mktempdir() do tmp
+        db = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+        DBInterface.execute(db, """INSERT INTO experiments
+            (id, name, path, data_dir, analysis_dir)
+            VALUES (10, 'exp', '/x', '/x/d', '/x/a')""")
+        DBInterface.execute(db,
+            "INSERT INTO samples (id, experiment_id, name) VALUES (100, 10, 'sA')")
+        DBInterface.execute(db,
+            "INSERT INTO exposures (id, sample_id, filename, selected) VALUES (1000, 100, 'JC001', 1)")
+        # Explicit snapshot so the route never needs analysis output.
+        member = Dict{Symbol, Any}(
+            :exposure_id => 1000, :display_order => 0,
+            :band_height => 1.0, :y_offset => 0.0, :normalization => "max",
+            :snapshot => Dict(:effective_peaks => Any[], :confirmed_index => nothing,
+                              :analysis_inputs_hash => nothing))
+        with_test_server(db) do port, base
+            resp = HTTP.post("$base/api/comparisons",
+                ["X-Username" => "alice", "Content-Type" => "application/json"],
+                JSON3.write(Dict(:title => "t", :members => [member])))
+            created = JSON3.read(resp.body, Dict{Symbol, Any})
+            cid  = created[:id]
+            hash = created[:content_hash]
+
+            frames = _capture_sse_during("comparison_submitted") do
+                HTTP.post("$base/api/comparisons/$(cid)/submit",
+                    ["X-Username" => "alice", "Content-Type" => "application/json"],
+                    JSON3.write(Dict(
+                        :title => "t",
+                        :members => [member],
+                        :expected_content_hash => hash,
+                        :view_grouping_mode    => "distinct",
+                        :view_show_peak_ticks  => false,
+                        :view_show_peak_labels => true,
+                    )))
+            end
+
+            @test length(frames) == 1                  # exactly one broadcast per op
+            data_line = match(r"^data:\s*(.+)$"m, frames[1]).captures[1]
+            parsed = JSON3.read(data_line, Dict{Symbol, Any})
+            @test parsed[:kind] == "comparison_submitted"
+            # `JSON3.read(_, Dict{Symbol,Any})` only Symbol-keys the top
+            # level; nested objects (post_state) land as Dict{String,Any}.
+            post_state = parsed[:post_state]
+            @test post_state["view_grouping_mode"]    == "distinct"
+            @test post_state["view_show_peak_ticks"]  == false
+            @test post_state["view_show_peak_labels"] == true
+        end
+        close(db)
+    end
+end

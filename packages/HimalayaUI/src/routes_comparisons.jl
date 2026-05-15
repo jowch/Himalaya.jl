@@ -71,6 +71,30 @@ function _json_error(status::Int, msg::AbstractString; extra...)
                   JSON3.write(body))
 end
 
+"""
+    _view_fields_error(body) -> Union{HTTP.Response, Nothing}
+
+Type-guard the optional comparison view-choice fields. Returns a 400
+`HTTP.Response` when a field is present with the wrong type, else `nothing`.
+`view_show_peak_ticks` / `view_show_peak_labels` land in INTEGER columns
+read back through `Bool(...)`; a non-boolean would otherwise throw
+`InexactError` on a later GET (a 500 instead of a clean 400 at write
+time). A present-but-null value is allowed — it resets to the per-tab
+default (spec §6.4).
+"""
+function _view_fields_error(body)
+    if haskey(body, :view_grouping_mode) && body.view_grouping_mode !== nothing &&
+            !(body.view_grouping_mode isa AbstractString)
+        return _json_error(400, "view_grouping_mode must be a string")
+    end
+    for k in (:view_show_peak_ticks, :view_show_peak_labels)
+        if haskey(body, k) && body[k] !== nothing && !(body[k] isa Bool)
+            return _json_error(400, "$(k) must be a boolean")
+        end
+    end
+    nothing
+end
+
 function register_comparisons_routes!()
     # ── Listing routes ──────────────────────────────────────────────────────
 
@@ -103,6 +127,8 @@ function register_comparisons_routes!()
                 isempty(body.members)
             return _json_error(400, "members must be a non-empty array")
         end
+        verr = _view_fields_error(body)
+        verr === nothing || return verr
 
         title = String(body.title)
         description = haskey(body, :description) && body.description !== nothing ?
@@ -111,6 +137,13 @@ function register_comparisons_routes!()
                          Int(body.forked_from_id) : nothing
         forked_at_hash = haskey(body, :forked_at_hash) && body.forked_at_hash !== nothing ?
                          String(body.forked_at_hash) : nothing
+        # View-choice fields (spec §6.4). `haskey && !== nothing` keeps an
+        # omitted field as `nothing`; a present-but-null field is `nothing`
+        # too (JSON3 null ⇒ Julia nothing). The dispatcher writes them bare.
+        view_grouping_mode = haskey(body, :view_grouping_mode) && body.view_grouping_mode !== nothing ?
+            String(body.view_grouping_mode) : nothing
+        view_show_peak_ticks  = haskey(body, :view_show_peak_ticks)  ? body.view_show_peak_ticks  : nothing
+        view_show_peak_labels = haskey(body, :view_show_peak_labels) ? body.view_show_peak_labels : nothing
 
         return with_idempotency(db, req) do
             # Mint the AUTOINCREMENT id with a NULL-only placeholder row.
@@ -137,6 +170,9 @@ function register_comparisons_routes!()
                 :description    => description,
                 :forked_from_id => forked_from_id,
                 :forked_at_hash => forked_at_hash,
+                :view_grouping_mode    => view_grouping_mode,
+                :view_show_peak_ticks  => view_show_peak_ticks,
+                :view_show_peak_labels => view_show_peak_labels,
                 :members        => members_payload,
             )
             result = apply_event!(InTransaction(), db, req;
@@ -144,10 +180,18 @@ function register_comparisons_routes!()
                 entity_type = "comparison",
                 entity_id   = new_id,
                 payload     = payload)
-            _enqueue_broadcast_from_result!(result, "comparison_created",
-                                            "comparison", new_id)
 
+            # Project the post-write state ONCE: it is both the SSE
+            # `post_state` envelope (so foreign tabs reconcile without a
+            # refetch) and the HTTP response body — identical shapes so an
+            # HTTP-wins / SSE-wins race converges on the same cache row.
+            # Read inside the tx; a `nothing` return post-write is impossible
+            # under a single tx, so surface it rather than emit a broken frame.
             out = fetch_comparison_with_members(db, new_id)
+            out === nothing && error(
+                "post-write fetch_comparison_with_members returned nothing for id=$(new_id)")
+            _enqueue_broadcast_from_result!(result, "comparison_created",
+                                            "comparison", new_id; post_state = out)
             HTTP.Response(201, ["Content-Type" => "application/json"], JSON3.write(out))
         end
     end
@@ -179,6 +223,8 @@ function register_comparisons_routes!()
         if !haskey(body, :members) || !(body.members isa AbstractVector)
             return _json_error(400, "members must be an array")
         end
+        verr = _view_fields_error(body)
+        verr === nothing || return verr
 
         title = String(body.title)
         description = haskey(body, :description) && body.description !== nothing ?
@@ -186,6 +232,12 @@ function register_comparisons_routes!()
         expected_hash = haskey(body, :expected_content_hash) &&
                         body.expected_content_hash !== nothing ?
                         String(body.expected_content_hash) : nothing
+        # View-choice fields (spec §6.4) — see the create handler for the
+        # `haskey && !== nothing` rationale.
+        view_grouping_mode = haskey(body, :view_grouping_mode) && body.view_grouping_mode !== nothing ?
+            String(body.view_grouping_mode) : nothing
+        view_show_peak_ticks  = haskey(body, :view_show_peak_ticks)  ? body.view_show_peak_ticks  : nothing
+        view_show_peak_labels = haskey(body, :view_show_peak_labels) ? body.view_show_peak_labels : nothing
 
         return with_idempotency(db, req) do
             # Existence check before the author gate: HTTP semantics require
@@ -224,6 +276,9 @@ function register_comparisons_routes!()
             payload = Dict{Symbol, Any}(
                 :title       => title,
                 :description => description,
+                :view_grouping_mode    => view_grouping_mode,
+                :view_show_peak_ticks  => view_show_peak_ticks,
+                :view_show_peak_labels => view_show_peak_labels,
                 :members     => members_payload,
             )
             result = apply_event!(InTransaction(), db, req;
@@ -231,10 +286,14 @@ function register_comparisons_routes!()
                 entity_type = "comparison",
                 entity_id   = id,
                 payload     = payload)
-            _enqueue_broadcast_from_result!(result, "comparison_submitted",
-                                            "comparison", id)
 
+            # Project the post-write state ONCE — SSE post_state envelope and
+            # HTTP body share the identical shape (see the create handler).
             out = fetch_comparison_with_members(db, id)
+            out === nothing && error(
+                "post-write fetch_comparison_with_members returned nothing for id=$(id)")
+            _enqueue_broadcast_from_result!(result, "comparison_submitted",
+                                            "comparison", id; post_state = out)
             HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(out))
         end
     end
