@@ -130,6 +130,7 @@ export type FlatPayload<TInput, TScope> = OpPayload<TInput> & TScope & TInput;
  * - `onMutate` writes the optimistic cache effect; returns the rollback ctx
  * - `request` issues the HTTP call; honours AbortSignal
  * - `onSuccess` applies the server response to the cache
+ * - `synthesizeFromSse` (optional) builds the SSE-wins synthetic response
  * - `affectsExposurePeaks` (optional) tells hooks whether this op should
  *   register as a "peak op" against an exposure for `useExposureHasPendingPeakOps`
  *
