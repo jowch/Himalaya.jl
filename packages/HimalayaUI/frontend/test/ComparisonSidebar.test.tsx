@@ -191,7 +191,7 @@ describe("ComparisonSidebar", () => {
     renderSidebar({
       qc, scope: "experiment", experimentId: 7, probe: true,
     });
-    const cta = screen.getByTestId("comparison-sidebar-empty-new");
+    const cta = screen.getByTestId("sidebar-empty-new");
     expect(cta).toBeEnabled();
     await user.click(cta);
     expect(screen.getByTestId("path-probe")).toHaveTextContent(
@@ -199,11 +199,16 @@ describe("ComparisonSidebar", () => {
     );
   });
 
-  it("empty state CTA is disabled when no experiment context", () => {
+  it("empty state CTA from global scope navigates to /compare/all/new", async () => {
+    const user = userEvent.setup();
     qc.setQueryData(queryKeys.comparisons("all"), []);
-    renderSidebar({ qc, scope: "all", experimentId: undefined });
-    const cta = screen.getByTestId("comparison-sidebar-empty-new");
-    expect(cta).toBeDisabled();
+    renderSidebar({
+      qc, scope: "all", experimentId: undefined, probe: true,
+    });
+    await user.click(screen.getByTestId("sidebar-empty-new"));
+    expect(screen.getByTestId("path-probe")).toHaveTextContent(
+      "/compare/all/new",
+    );
   });
 
   it("sorts rows most-recent first by last_event_at", () => {

@@ -256,33 +256,47 @@ export function ComparisonSidebar({
         fixture={COMPARISON_SIDEBAR_FIXTURE}
         fallback={<div className="p-3"><HintText>Loading comparisons…</HintText></div>}
       >
-      <ul className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-1">
-        {filtered.length === 0 ? (
-          <li
-            data-testid="comparison-sidebar-empty"
-            className="text-fg-muted text-sm p-4 text-center flex flex-col items-center gap-2"
+      {rows.length === 0 ? (
+        <div
+          data-testid="comparison-sidebar-empty"
+          className="px-4 py-8 text-center text-fg-muted
+                     flex flex-col items-center gap-3"
+        >
+          <p className="text-sm">
+            {scope === "experiment"
+              ? "No comparisons in this experiment yet."
+              : "No comparisons yet."}
+          </p>
+          <button
+            type="button"
+            data-testid="sidebar-empty-new"
+            onClick={onNew}
+            className="px-3 py-1 rounded border border-border text-fg
+                       hover:bg-bg-elevated text-sm"
           >
-            {rows.length === 0 ? (
-              <>
-                <span className="italic">No comparisons yet.</span>
-                <button
-                  type="button"
-                  data-testid="comparison-sidebar-empty-new"
-                  onClick={onNew}
-                  disabled={experimentId === undefined}
-                  className="px-3 py-1 rounded border border-border text-fg
-                             hover:bg-bg-elevated text-sm disabled:opacity-50
-                             disabled:cursor-not-allowed"
-                >
-                  + New comparison
-                </button>
-              </>
-            ) : (
-              <span>No matches.</span>
-            )}
-          </li>
-        ) : (
-          filtered.map((c) => {
+            + New comparison
+          </button>
+        </div>
+      ) : filtered.length === 0 ? (
+        <div
+          data-testid="comparison-sidebar-empty"
+          className="px-4 py-8 text-center text-fg-muted
+                     flex flex-col items-center gap-3"
+        >
+          <p className="text-sm">No matches for &ldquo;{search}&rdquo;.</p>
+          <button
+            type="button"
+            data-testid="sidebar-empty-clear"
+            onClick={() => setSearch("")}
+            className="px-3 py-1 rounded border border-border text-fg
+                       hover:bg-bg-elevated text-sm"
+          >
+            Clear search
+          </button>
+        </div>
+      ) : (
+        <ul className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-1">
+          {filtered.map((c) => {
             const active = c.id === activeComparisonId;
             const pinned = pinSet.has(c.id);
             const onTogglePin = (e: React.MouseEvent): void => {
@@ -369,9 +383,9 @@ export function ComparisonSidebar({
                 </button>
               </li>
             );
-          })
-        )}
-      </ul>
+          })}
+        </ul>
+      )}
       </Skeleton>
     </div>
   );
