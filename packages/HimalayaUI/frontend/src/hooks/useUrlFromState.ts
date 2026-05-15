@@ -81,11 +81,10 @@ export function useUrlFromState(): void {
   // queries so SSE-driven cache rewrites trigger a re-render. We use
   // `useQuery` directly here (rather than `useSamples`) so we can gate
   // on `enabled: activeExperimentId !== undefined` — `useSamples` doesn't
-  // expose `enabled`, and calling it with `0` would fire `GET
-  // /api/experiments/0/samples` → 404 with retries on every cold mount.
+  // expose `enabled`, so it would fire a GET on every cold mount.
   const { data: experiments } = useExperiments();
   const samplesQuery = useQuery({
-    queryKey: queryKeys.samples(activeExperimentId ?? 0),
+    queryKey: queryKeys.samples(activeExperimentId),
     queryFn: () => api.listSamples(activeExperimentId as number),
     enabled: activeExperimentId !== undefined,
   });
@@ -96,7 +95,7 @@ export function useUrlFromState(): void {
   // there anyway).
   const exposuresEnabled = activeSampleId !== undefined && activePage === "inspect";
   const exposuresQuery = useQuery({
-    queryKey: queryKeys.exposures(activeSampleId ?? 0),
+    queryKey: queryKeys.exposures(activeSampleId),
     queryFn: () => api.listExposures(activeSampleId as number),
     enabled: exposuresEnabled,
   });

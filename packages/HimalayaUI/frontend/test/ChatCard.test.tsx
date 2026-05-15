@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "./test-utils";
-import { ChatCard } from "../src/components/ChatCard";
+import { ChatCard, MessageList } from "../src/components/ChatCard";
 import { useAppState } from "../src/state";
 import * as api from "../src/api";
 
@@ -121,6 +121,23 @@ describe("<ChatCard>", () => {
     vi.spyOn(api, "getPeak").mockResolvedValue(PEAK);
     renderWithProviders(<ChatCard />);
     expect(await screen.findByText(/q = 1\.223/)).toBeInTheDocument();
+  });
+
+  // Regression #124: gate `<Skeleton>` on `query.isLoading`, NOT `isPending`.
+  // `isPending` is true for disabled queries (`enabled: false`) — gating on it
+  // would flash a skeleton when the consumer caller hasn't yet picked an
+  // entity. The discriminating state is `{ isPending: true, isLoading: false }`,
+  // which is unreachable through the public `<ChatCard>` flow (the early-return
+  // for undefined entityId masks it), so we exercise `<MessageList>` directly.
+  it("MessageList: skeleton hidden when isLoading=false (#124)", () => {
+    renderWithProviders(<MessageList messages={[]} isLoading={false} />);
+    expect(screen.getByText(/no notes yet/i)).toBeInTheDocument();
+    expect(screen.queryByText(/loading…/i)).toBeNull();
+  });
+
+  it("MessageList: skeleton shown when isLoading=true (#124)", () => {
+    renderWithProviders(<MessageList messages={[]} isLoading={true} />);
+    expect(screen.queryByText(/no notes yet/i)).toBeNull();
   });
 
   it("renders dead chip when mention entity returns 404", async () => {

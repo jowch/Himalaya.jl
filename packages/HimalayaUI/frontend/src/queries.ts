@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useMemo, useRef } from "react";
 import { useQuery, useQueries, useMutation, useQueryClient } from "@tanstack/react-query";
 import { authOpts } from "./lib/authOpts";
 import * as api from "./api";
@@ -35,42 +35,64 @@ import { useExposureHasPendingPeakOps } from "./lib/queue/hooks";
 
 const CLIENT_ID = getClientId();
 
+// Nullable id slots emit `"none"` instead of the id so prefix invalidations
+// (e.g. ["exposure", id]) never accidentally match a disabled query's key.
+// Centralising means the "build the key inline" gotcha is mechanically gone:
+// every hook + mutator goes through these helpers.
 export const queryKeys = {
   experiments: ["experiments"] as const,
   experiment: (id: number) => ["experiment", id] as const,
-  samples:    (experimentId: number) => ["experiment", experimentId, "samples"] as const,
-  exposures:  (sampleId: number) => ["sample", sampleId, "exposures"] as const,
-  trace:      (exposureId: number) => ["exposure", exposureId, "trace"] as const,
-  peaks:      (exposureId: number) => ["exposure", exposureId, "peaks"] as const,
-  indices:    (exposureId: number) => ["exposure", exposureId, "indices"] as const,
-  groups:     (exposureId: number) => ["exposure", exposureId, "groups"] as const,
-  messages:   (sampleId: number) => ["sample", sampleId, "messages"] as const,
+  samples:    (experimentId: number | undefined) =>
+    ["experiment", experimentId ?? "none", "samples"] as const,
+  exposures:  (sampleId: number | undefined) =>
+    ["sample", sampleId ?? "none", "exposures"] as const,
+  trace:      (exposureId: number | undefined) =>
+    ["exposure", exposureId ?? "none", "trace"] as const,
+  peaks:      (exposureId: number | undefined) =>
+    ["exposure", exposureId ?? "none", "peaks"] as const,
+  indices:    (exposureId: number | undefined) =>
+    ["exposure", exposureId ?? "none", "indices"] as const,
+  groups:     (exposureId: number | undefined) =>
+    ["exposure", exposureId ?? "none", "groups"] as const,
+  messages:   (sampleId: number | undefined) =>
+    ["sample", sampleId ?? "none", "messages"] as const,
+  speculativeSnap: (
+    exposureId: number | undefined,
+    phase: string | undefined,
+    anchorPeakId: number | undefined,
+    anchorRatio: number,
+  ) => ["exposure", exposureId ?? "none", "speculative-snap",
+        phase ?? "", anchorPeakId ?? -1, anchorRatio] as const,
   // Single-entity keys are namespaced with `-entity` to avoid prefix-matching
   // collisions with the existing collection keys (e.g., a future
   // invalidate(["exposure", id]) would otherwise also blast peaks/indices/groups).
-  peak:     (id: number) => ["peak-entity", id] as const,
-  index:    (id: number) => ["index-entity", id] as const,
-  exposure: (id: number) => ["exposure-entity", id] as const,
-  sample:   (id: number) => ["sample-entity", id] as const,
+  peak:     (id: number | undefined) => ["peak-entity", id ?? "none"] as const,
+  index:    (id: number | undefined) => ["index-entity", id ?? "none"] as const,
+  exposure: (id: number | undefined) => ["exposure-entity", id ?? "none"] as const,
+  sample:   (id: number | undefined) => ["sample-entity", id ?? "none"] as const,
   // Compare page (Plan §Phase 3). Listing key is parameterized by scope —
   // pass "all" for the global listing, an experimentId for the per-experiment
   // listing. Membership-derived listings can change in either direction when
   // ANY exposure-touching event lands, so the SSE handler invalidates both
   // forms with a prefix `["comparisons"]` invalidation.
   comparisons:        (scope: number | "all") => ["comparisons", scope] as const,
-  comparison:         (id: number) => ["comparison", id] as const,
-  comparisonMembers:  (id: number) => ["comparison", id, "members"] as const,
-  comparisonForks:    (id: number) => ["comparison", id, "forks"] as const,
-  comparisonMessages: (id: number) => ["comparison", id, "messages"] as const,
+  comparison:         (id: number | undefined) =>
+    ["comparison", id ?? "none"] as const,
+  comparisonMembers:  (id: number | undefined) =>
+    ["comparison", id ?? "none", "members"] as const,
+  comparisonForks:    (id: number | undefined) =>
+    ["comparison", id ?? "none", "forks"] as const,
+  comparisonMessages: (id: number | undefined) =>
+    ["comparison", id ?? "none", "messages"] as const,
   // Picker support routes (Plan §Phase 5, Task 5.2). Both are read-only —
   // `recentlyPickedExposures` is per-user across all experiments; `sampleTags`
   // is per-experiment (distinct (key, value) pairs).
-  recentlyPickedExposures: (userId: number, limit: number) =>
-    ["user", userId, "recently-picked-exposures", limit] as const,
-  sampleTags: (experimentId: number) =>
-    ["experiment", experimentId, "sample-tags"] as const,
-  pickerSamples: (experimentId: number) =>
-    ["experiment", experimentId, "picker-samples"] as const,
+  recentlyPickedExposures: (userId: number | undefined, limit: number) =>
+    ["user", userId ?? "none", "recently-picked-exposures", limit] as const,
+  sampleTags: (experimentId: number | undefined) =>
+    ["experiment", experimentId ?? "none", "sample-tags"] as const,
+  pickerSamples: (experimentId: number | undefined) =>
+    ["experiment", experimentId ?? "none", "picker-samples"] as const,
   // Phase 13 — comparison pins, scoped per-user via the X-Username header
   // (no userId in the key — the cache row is implicitly per-tab/per-username).
   comparisonPins: ["comparison-pins"] as const,
@@ -103,9 +125,7 @@ export function useSamples(experimentId: number) {
 
 export function useExposures(sampleId: number | undefined) {
   return useQuery({
-    queryKey: sampleId !== undefined
-      ? queryKeys.exposures(sampleId)
-      : (["sample", "none", "exposures"] as const),
+    queryKey: queryKeys.exposures(sampleId),
     queryFn: () => api.listExposures(sampleId as number),
     enabled: sampleId !== undefined,
   });
@@ -113,7 +133,7 @@ export function useExposures(sampleId: number | undefined) {
 
 export function useTrace(exposureId: number | undefined) {
   return useQuery({
-    queryKey: ["exposure", exposureId ?? "none", "trace"] as const,
+    queryKey: queryKeys.trace(exposureId),
     queryFn: () => api.getTrace(exposureId as number),
     enabled: exposureId !== undefined,
   });
@@ -138,20 +158,39 @@ function useStableQueryMap<T>(
   const queries = useQueries({
     queries: ids.map((id) => buildOptions(id)),
   });
-  const stableRef = useRef<Map<number, T>>(new Map());
-  const next = new Map<number, T>();
-  for (let i = 0; i < ids.length; i++) {
-    const data = queries[i]?.data;
-    if (data !== undefined) next.set(ids[i]!, data as T);
-  }
-  let same = stableRef.current.size === next.size;
-  if (same) {
-    for (const [k, v] of next) {
-      if (stableRef.current.get(k) !== v) { same = false; break; }
+  // Collapse (ids, data refs) into a single fixed-length string so `useMemo`'s
+  // deps comparison stays well-defined — variable-length deps arrays break
+  // memoisation when the previous length was 0 (React's elementwise loop
+  // terminates early and returns the stale cached value). A per-hook-instance
+  // WeakMap assigns each fresh data object a stable nonce so the signature
+  // tracks REF identity (TanStack reuses `q.data` refs when nothing changed),
+  // which is what wheel-/brush-smoothness in MultiTracePlot depends on. The
+  // WeakMap write is idempotent (`set(k, n)` with the same `n`), so this is
+  // StrictMode- and Concurrent-render-safe.
+  const refTable = useRef<{ map: WeakMap<object, number>; next: number } | null>(null);
+  if (refTable.current === null) refTable.current = { map: new WeakMap(), next: 0 };
+  const t = refTable.current;
+  const nonceOf = (v: unknown): string => {
+    if (v === undefined) return "_";
+    if (v === null || typeof v !== "object") return `p${String(v)}`;
+    const obj = v as object;
+    let n = t.map.get(obj);
+    if (n === undefined) {
+      n = t.next++;
+      t.map.set(obj, n);
     }
-  }
-  if (!same) stableRef.current = next;
-  return stableRef.current;
+    return `o${n}`;
+  };
+  const signature = ids.map((id, i) => `${id}:${nonceOf(queries[i]?.data)}`).join("|");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  return useMemo(() => {
+    const m = new Map<number, T>();
+    for (let i = 0; i < ids.length; i++) {
+      const d = queries[i]?.data;
+      if (d !== undefined) m.set(ids[i]!, d as T);
+    }
+    return m;
+  }, [signature]);
 }
 
 /**
@@ -164,7 +203,7 @@ function useStableQueryMap<T>(
  */
 export function useMemberTraces(exposureIds: number[]): Map<number, api.Trace> {
   return useStableQueryMap(exposureIds, (id) => ({
-    queryKey: ["exposure", id, "trace"] as const,
+    queryKey: queryKeys.trace(id),
     queryFn: () => api.getTrace(id),
   }));
 }
@@ -181,7 +220,7 @@ export function useMemberTraces(exposureIds: number[]): Map<number, api.Trace> {
 export function useMemberTracesLoading(exposureIds: number[]): boolean {
   const queries = useQueries({
     queries: exposureIds.map((id) => ({
-      queryKey: ["exposure", id, "trace"] as const,
+      queryKey: queryKeys.trace(id),
       queryFn: () => api.getTrace(id),
     })),
   });
@@ -216,7 +255,7 @@ export function useMemberSamples(sampleIds: number[]): Map<number, api.Sample> {
 
 export function usePeaks(exposureId: number | undefined) {
   return useQuery({
-    queryKey: ["exposure", exposureId ?? "none", "peaks"] as const,
+    queryKey: queryKeys.peaks(exposureId),
     queryFn: () => api.listPeaks(exposureId as number),
     enabled: exposureId !== undefined,
   });
@@ -224,7 +263,7 @@ export function usePeaks(exposureId: number | undefined) {
 
 export function useIndices(exposureId: number | undefined) {
   return useQuery({
-    queryKey: ["exposure", exposureId ?? "none", "indices"] as const,
+    queryKey: queryKeys.indices(exposureId),
     queryFn: () => api.listIndices(exposureId as number),
     enabled: exposureId !== undefined,
   });
@@ -289,7 +328,7 @@ export function useReanalyzeExposure(exposureId: number) {
 
 export function useGroups(exposureId: number | undefined) {
   return useQuery({
-    queryKey: ["exposure", exposureId ?? "none", "groups"] as const,
+    queryKey: queryKeys.groups(exposureId),
     queryFn: () => api.listGroups(exposureId as number),
     enabled: exposureId !== undefined,
   });
@@ -334,7 +373,7 @@ export function useSpeculativeSnap(
 ) {
   const blocked = useExposureHasPendingPeakOps(exposureId);
   return useQuery({
-    queryKey: ["exposure", exposureId ?? "none", "speculative-snap", phase ?? "", anchorPeakId ?? -1, anchorRatio] as const,
+    queryKey: queryKeys.speculativeSnap(exposureId, phase, anchorPeakId, anchorRatio),
     queryFn: () => api.getSpeculativeSnap(exposureId as number, phase as string, anchorPeakId as number, anchorRatio),
     enabled: exposureId !== undefined && phase !== undefined && anchorPeakId !== undefined && !blocked,
   });
@@ -378,7 +417,7 @@ export function useAddSampleTag(experimentId: number, sampleId: number) {
 
 export function useSampleMessages(sampleId: number | undefined) {
   return useQuery({
-    queryKey: ["sample", sampleId ?? "none", "messages"] as const,
+    queryKey: queryKeys.messages(sampleId),
     queryFn: () => api.listSampleMessages(sampleId as number),
     enabled: sampleId !== undefined,
   });
@@ -447,7 +486,7 @@ export function useRemoveExposureTag(sampleId: number, exposureId: number) {
 
 export function usePeak(id: number | undefined) {
   return useQuery({
-    queryKey: id !== undefined ? queryKeys.peak(id) : (["peak-entity", "none"] as const),
+    queryKey: queryKeys.peak(id),
     queryFn: () => api.getPeak(id as number),
     enabled: id !== undefined,
     retry: false,
@@ -456,7 +495,7 @@ export function usePeak(id: number | undefined) {
 
 export function useIndex(id: number | undefined) {
   return useQuery({
-    queryKey: id !== undefined ? queryKeys.index(id) : (["index-entity", "none"] as const),
+    queryKey: queryKeys.index(id),
     queryFn: () => api.getIndex(id as number),
     enabled: id !== undefined,
     retry: false,
@@ -465,7 +504,7 @@ export function useIndex(id: number | undefined) {
 
 export function useExposure(id: number | undefined) {
   return useQuery({
-    queryKey: id !== undefined ? queryKeys.exposure(id) : (["exposure-entity", "none"] as const),
+    queryKey: queryKeys.exposure(id),
     queryFn: () => api.getExposure(id as number),
     enabled: id !== undefined,
     retry: false,
@@ -474,7 +513,7 @@ export function useExposure(id: number | undefined) {
 
 export function useSampleById(id: number | undefined) {
   return useQuery({
-    queryKey: id !== undefined ? queryKeys.sample(id) : (["sample-entity", "none"] as const),
+    queryKey: queryKeys.sample(id),
     queryFn: () => api.getSample(id as number),
     enabled: id !== undefined,
     retry: false,
@@ -502,7 +541,7 @@ export function useComparisons(scope: number | "all") {
 
 export function useComparison(id: number | undefined) {
   return useQuery({
-    queryKey: id !== undefined ? queryKeys.comparison(id) : (["comparison", "none"] as const),
+    queryKey: queryKeys.comparison(id),
     queryFn: () => api.getComparison(id as number),
     enabled: id !== undefined,
     retry: false,
@@ -511,7 +550,7 @@ export function useComparison(id: number | undefined) {
 
 export function useComparisonForks(id: number | undefined) {
   return useQuery({
-    queryKey: id !== undefined ? queryKeys.comparisonForks(id) : (["comparison", "none", "forks"] as const),
+    queryKey: queryKeys.comparisonForks(id),
     queryFn: () => api.getComparisonForks(id as number),
     enabled: id !== undefined,
   });
@@ -519,7 +558,7 @@ export function useComparisonForks(id: number | undefined) {
 
 export function useComparisonMessages(id: number | undefined) {
   return useQuery({
-    queryKey: id !== undefined ? queryKeys.comparisonMessages(id) : (["comparison", "none", "messages"] as const),
+    queryKey: queryKeys.comparisonMessages(id),
     queryFn: () => api.listComparisonMessages(id as number),
     enabled: id !== undefined,
   });
@@ -577,9 +616,7 @@ export function useRecentlyPickedExposures(
   userId: number | undefined, limit = 20,
 ) {
   return useQuery({
-    queryKey: userId !== undefined
-      ? queryKeys.recentlyPickedExposures(userId, limit)
-      : (["user", "none", "recently-picked-exposures", limit] as const),
+    queryKey: queryKeys.recentlyPickedExposures(userId, limit),
     queryFn: () => api.getRecentlyPickedExposures(userId as number, limit),
     enabled: userId !== undefined,
   });
@@ -591,9 +628,7 @@ export function useRecentlyPickedExposures(
  */
 export function useSampleTags(experimentId: number | undefined) {
   return useQuery({
-    queryKey: experimentId !== undefined
-      ? queryKeys.sampleTags(experimentId)
-      : (["experiment", "none", "sample-tags"] as const),
+    queryKey: queryKeys.sampleTags(experimentId),
     queryFn: () => api.getSampleTags(experimentId as number),
     enabled: experimentId !== undefined,
   });
@@ -609,9 +644,7 @@ export function useSampleTags(experimentId: number | undefined) {
  */
 export function usePickerSamples(experimentId: number | undefined) {
   return useQuery({
-    queryKey: experimentId !== undefined
-      ? queryKeys.pickerSamples(experimentId)
-      : (["experiment", "none", "picker-samples"] as const),
+    queryKey: queryKeys.pickerSamples(experimentId),
     queryFn: () => api.getPickerSamples(experimentId as number),
     enabled: experimentId !== undefined,
   });
