@@ -363,6 +363,10 @@ function migrate_schema!(db::SQLite.DB)
     # table during the rebuild.
     migrate_compare_relax_nullability!(db)
 
+    # 2026-05-14 — Compare UX refinement (spec §6.4): persist view choices
+    # on the comparison so they round-trip across viewers.
+    migrate_compare_view_choices!(db)
+
     # PR #107 left the on-disk experiment.toml AND the in-DB experiments.config
     # blob using the legacy `[manifest].label/name` shape. The deprecation
     # error in `_build_config` (config.jl) hard-fails any route that calls
@@ -628,6 +632,33 @@ function migrate_compare_relax_nullability!(db::SQLite.DB)
              WHERE updated_at = ''""", [now_iso])
     finally
         DBInterface.execute(db, "PRAGMA foreign_keys = ON")
+    end
+end
+
+"""
+    migrate_compare_view_choices!(db)
+
+Add `view_grouping_mode`, `view_show_peak_ticks`, `view_show_peak_labels`
+columns to `comparisons` so the author's view choices round-trip across
+viewers (spec §6.4). All NULL on existing rows; the frontend falls back to
+per-tab Zustand defaults when NULL.
+
+Idempotent: each `ALTER TABLE ... ADD COLUMN` is wrapped in a try/catch
+that treats "duplicate column name" as success — the same pattern used
+by other additive migrations.
+"""
+function migrate_compare_view_choices!(db::SQLite.DB)
+    for stmt in (
+        "ALTER TABLE comparisons ADD COLUMN view_grouping_mode TEXT",
+        "ALTER TABLE comparisons ADD COLUMN view_show_peak_ticks INTEGER",
+        "ALTER TABLE comparisons ADD COLUMN view_show_peak_labels INTEGER",
+    )
+        try
+            DBInterface.execute(db, stmt)
+        catch err
+            msg = sprint(showerror, err)
+            occursin("duplicate column name", lowercase(msg)) || rethrow()
+        end
     end
 end
 

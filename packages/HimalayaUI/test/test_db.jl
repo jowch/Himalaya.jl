@@ -1146,12 +1146,18 @@ end
             "SELECT sql FROM sqlite_master WHERE type='table' AND name='comparisons'"))).sql)
         @test sql_first == sql_second
         # Third call from within open_db (which always runs migrate_schema!)
-        # must also be a no-op — the bigger guarantee.
+        # must not re-fire the relax rebuild — the bigger guarantee. The
+        # rebuilt `comparisons` SQL is preserved verbatim as a prefix, so
+        # `sql_first` (minus its closing paren) still leads `sql_third`.
+        # `migrate_compare_view_choices!` then additively ALTER-appends the
+        # three view-choice columns before the closing paren — that is an
+        # additive ALTER, not a table rebuild.
         SQLite.close(db)
         db2 = HimalayaUI.open_db(path)
         sql_third = String(first(Tables.rowtable(DBInterface.execute(db2,
             "SELECT sql FROM sqlite_master WHERE type='table' AND name='comparisons'"))).sql)
-        @test sql_first == sql_third
+        @test startswith(sql_third, sql_first[1:end-1])
+        @test occursin("view_grouping_mode", sql_third)
         SQLite.close(db2)
     end
 end
@@ -1574,5 +1580,29 @@ end
         db = HimalayaUI.open_db(path)
         close(db)
         @test (stat(path).mode & 0o777) == 0o664
+    end
+end
+
+@testset "migrate_compare_view_choices!" begin
+    mktempdir() do tmp
+        db = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+        # All three view-choice columns must exist on a freshly opened DB.
+        cols = Set(r.name for r in
+            Tables.rowtable(DBInterface.execute(db,
+                "PRAGMA table_info(comparisons)")))
+        @test "view_grouping_mode" in cols
+        @test "view_show_peak_ticks" in cols
+        @test "view_show_peak_labels" in cols
+
+        # Each is nullable (default NULL).
+        DBInterface.execute(db,
+            "INSERT INTO comparisons (id, title) VALUES (1, 'x')")
+        row = Tables.rowtable(DBInterface.execute(db,
+            "SELECT view_grouping_mode, view_show_peak_ticks, view_show_peak_labels
+             FROM comparisons WHERE id = 1"))[1]
+        @test ismissing(row.view_grouping_mode)
+        @test ismissing(row.view_show_peak_ticks)
+        @test ismissing(row.view_show_peak_labels)
+        close(db)
     end
 end
