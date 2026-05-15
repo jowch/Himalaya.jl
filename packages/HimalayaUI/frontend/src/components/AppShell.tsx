@@ -55,8 +55,11 @@ function PageBody(): JSX.Element {
  */
 function EditToBareRedirect(): JSX.Element {
   const loc = useLocation();
-  const here = loc.pathname.replace(/\/edit\/?$/, "");
-  return <Navigate to={here} replace />;
+  const pathname = loc.pathname.replace(/\/edit\/?$/, "");
+  // Carry `search`/`hash` through so the redirect is lossless — `/edit` is an
+  // id-based route today, but keeping any query/hash state survives a future
+  // edit mode that grows it (and costs nothing now).
+  return <Navigate to={{ pathname, search: loc.search, hash: loc.hash }} replace />;
 }
 
 export function AppShell(): JSX.Element {

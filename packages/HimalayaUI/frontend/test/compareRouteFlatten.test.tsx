@@ -23,7 +23,7 @@ function makeQc() {
 
 function LocationProbe(): JSX.Element {
   const loc = useLocation();
-  return <div data-testid="probe">{loc.pathname}</div>;
+  return <div data-testid="probe">{loc.pathname}{loc.search}</div>;
 }
 
 function renderShell(initialPath: string) {
@@ -62,5 +62,11 @@ describe("Compare /edit redirect — Compare UX B-1", () => {
     const { findByTestId } = renderShell("/compare/all/7/edit");
     const probe = await findByTestId("probe");
     expect(probe.textContent).toBe("/compare/all/7");
+  });
+
+  it("preserves the query string through the redirect", async () => {
+    const { findByTestId } = renderShell("/experiments/10/compare/5/edit?tab=peaks");
+    const probe = await findByTestId("probe");
+    expect(probe.textContent).toBe("/experiments/10/compare/5?tab=peaks");
   });
 });
