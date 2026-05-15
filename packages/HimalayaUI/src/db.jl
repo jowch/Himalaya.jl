@@ -1429,7 +1429,10 @@ function open_db(db_path::AbstractString = default_db_path())::SQLite.DB
     # and must propagate — the prior broad `e isa IOError || e isa
     # SystemError` catch silently masked all of those, leaving SQLite's
     # hardcoded 0644 in place.
-    my_uid = Sys.isunix() ? @ccall(getuid()::Cuint) : Cuint(0)
+    # Base.Libc.getuid() wraps :jl_getuid (portable across platforms) and
+    # returns Culong, the same type as stat(p).uid — no promotion gymnastics
+    # at the comparison.
+    my_uid = Base.Libc.getuid()
     for p in (db_path, db_path * "-wal", db_path * "-shm")
         isfile(p) || continue
         if Sys.isunix() && stat(p).uid != my_uid
