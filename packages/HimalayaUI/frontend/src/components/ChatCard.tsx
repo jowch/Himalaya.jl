@@ -138,12 +138,16 @@ function Frame({ children }: { children: React.ReactNode }): JSX.Element {
   );
 }
 
-interface MessageListProps {
+export interface MessageListProps {
   messages: AnyMessage[];
   isLoading: boolean;
 }
 
-function MessageList({ messages, isLoading }: MessageListProps): JSX.Element {
+/**
+ * Exported for unit testing only — gate this `<Skeleton loading=…>` on
+ * `query.isLoading`, never `isPending`. See #124 regression test.
+ */
+export function MessageList({ messages, isLoading }: MessageListProps): JSX.Element {
   const scrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = scrollRef.current;

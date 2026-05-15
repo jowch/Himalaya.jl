@@ -42,7 +42,8 @@ const CLIENT_ID = getClientId();
 export const queryKeys = {
   experiments: ["experiments"] as const,
   experiment: (id: number) => ["experiment", id] as const,
-  samples:    (experimentId: number) => ["experiment", experimentId, "samples"] as const,
+  samples:    (experimentId: number | undefined) =>
+    ["experiment", experimentId ?? "none", "samples"] as const,
   exposures:  (sampleId: number | undefined) =>
     ["sample", sampleId ?? "none", "exposures"] as const,
   trace:      (exposureId: number | undefined) =>
