@@ -69,5 +69,22 @@ export const peakAddMutator: Mutator<PeakAddInput, PeakAddScope, PeakAddResponse
     qc.setQueryData<Exposure>(queryKeys.exposure(p.exposureId), (old) =>
       old ? { ...old, analysis_inputs_hash } : old);
   },
+  synthesizeFromSse: (remote, base) => {
+    const payload = (remote.payload as Record<string, unknown> | undefined) ?? {};
+    const peakId = payload.peak_curation_id as number | undefined;
+    if (peakId === undefined) return undefined;
+    return {
+      ...base,
+      id: peakId,
+      exposure_id: remote.entity_id,
+      q: payload.q as number,
+      intensity: null,
+      prominence: null,
+      sharpness: null,
+      source: "manual",
+      excluded: false,
+      view_row_id: peakId,
+    } as PeakAddResponse;
+  },
   affectsExposurePeaks: () => true,
 };
