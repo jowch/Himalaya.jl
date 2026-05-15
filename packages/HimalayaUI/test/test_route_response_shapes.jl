@@ -712,6 +712,60 @@ end
         end
     end
 
+    @testset "create response body uses fetch_comparison_with_members shape (Compare UX A-5)" begin
+        mktempdir() do tmp
+            ctx = _compare_setup(tmp)
+            with_test_server(ctx.db) do port, base
+                body_in = merge(_compare_create_body(ctx.exposure_id),
+                                Dict{Symbol, Any}(:view_grouping_mode => "distinct"))
+                r = HTTP.post("$base/api/comparisons";
+                    body = JSON3.write(body_in),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username"   => "alice"])
+                @test r.status == 201
+                created = JSON3.read(String(r.body))
+                # HTTP body is the SAME shape as the per-id GET (A-4 Step 4b)
+                # so an HTTP-wins / SSE-wins race converges on one cache row.
+                assert_keys(created, [
+                    :id, :title, :description, :content_hash, :created_by,
+                    :created_at, :updated_at, :forked_from_id, :forked_at_hash,
+                    :forked_from_title, :view_grouping_mode, :view_show_peak_ticks,
+                    :view_show_peak_labels, :members,
+                ])
+                @test created.view_grouping_mode == "distinct"
+            end
+        end
+    end
+
+    @testset "submit response body uses fetch_comparison_with_members shape (Compare UX A-5)" begin
+        mktempdir() do tmp
+            ctx = _compare_setup(tmp)
+            with_test_server(ctx.db) do port, base
+                r = HTTP.post("$base/api/comparisons";
+                    body = JSON3.write(_compare_create_body(ctx.exposure_id)),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username"   => "alice"])
+                created = JSON3.read(String(r.body))
+                submit_body = merge(_compare_create_body(ctx.exposure_id),
+                    Dict{Symbol, Any}(:expected_content_hash => created.content_hash,
+                                      :view_grouping_mode    => "byPhase"))
+                r2 = HTTP.post("$base/api/comparisons/$(created.id)/submit";
+                    body = JSON3.write(submit_body),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username"   => "alice"])
+                @test r2.status == 200
+                submitted = JSON3.read(String(r2.body))
+                assert_keys(submitted, [
+                    :id, :title, :description, :content_hash, :created_by,
+                    :created_at, :updated_at, :forked_from_id, :forked_at_hash,
+                    :forked_from_title, :view_grouping_mode, :view_show_peak_ticks,
+                    :view_show_peak_labels, :members,
+                ])
+                @test submitted.view_grouping_mode == "byPhase"
+            end
+        end
+    end
+
     @testset "GET /api/resolve 200 (experiment+sample+exposure)" begin
         mktempdir() do tmp
             ctx = _setup_for_resolve(tmp)
