@@ -18,6 +18,7 @@ import type { GroupEntry, GroupMutationResponse, IndexEntry, AuthOpts } from "..
 import { queryKeys } from "../../../queries";
 import { authOpts } from "../../authOpts";
 import type { Mutator, RollbackContext } from "../types";
+import { stripQueueMetadata } from "../queueMeta";
 
 // ---------------------------------------------------------------------------
 // Shared scope + auth
@@ -69,8 +70,7 @@ export const addIndexToGroupMutator: Mutator<AddIndexToGroupInput, GroupScope, G
   onSuccess: (p, response, qc) => {
     // Strip queue-framework metadata before writing into the cache —
     // GroupEntry rows must not carry event_id/view_row_id (issue #16).
-    const { event_id: _e, view_row_id: _v, ...row } = response;
-    void _e; void _v;
+    const { payload: row } = stripQueueMetadata(response);
     const groupsKey = queryKeys.groups(p.exposureId);
     const cached = qc.getQueryData<GroupEntry[]>(groupsKey);
     // Issue #37 Bug 1: when `ensure_custom_group!` creates a new custom
@@ -117,8 +117,7 @@ export const removeIndexFromGroupMutator: Mutator<RemoveIndexFromGroupInput, Gro
   request: (p) => api.removeIndexFromGroup(p.groupId, p.indexId, buildAuth(p)),
   onSuccess: (p, response, qc) => {
     // Strip queue-framework metadata before writing into the cache (issue #16).
-    const { event_id: _e, view_row_id: _v, ...row } = response;
-    void _e; void _v;
+    const { payload: row } = stripQueueMetadata(response);
     const groupsKey = queryKeys.groups(p.exposureId);
     const cached = qc.getQueryData<GroupEntry[]>(groupsKey);
     // Issue #37 Bug 1: same id-mismatch contract as addIndexToGroup —
