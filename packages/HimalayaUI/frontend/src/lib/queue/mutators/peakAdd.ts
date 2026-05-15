@@ -12,6 +12,7 @@ import { authOpts } from "../../authOpts";
 import { nextOptimisticId } from "../optimisticId";
 import { peakQTol } from "../peakQTol";
 import { replacePlaceholder } from "../replacePlaceholder";
+import { stripQueueMetadata } from "../queueMeta";
 import type { Mutator, RollbackContext } from "../types";
 
 export type PeakAddInput = { q: number };
@@ -51,8 +52,7 @@ export const peakAddMutator: Mutator<PeakAddInput, PeakAddScope, PeakAddResponse
   request: (p) => api.addPeak(p.exposureId, p.q, buildAuthOpts(p)),
   onSuccess: (p, response, qc) => {
     // Strip queue-framework metadata before treating the response as a Peak.
-    const { event_id: _e, view_row_id: _v, analysis_inputs_hash, ...serverPeak } = response;
-    void _e; void _v;
+    const { meta, payload: serverPeak } = stripQueueMetadata(response);
     const peaksKey = queryKeys.peaks(p.exposureId);
     qc.setQueryData<Peak[]>(peaksKey, (old) =>
       // Dedup is scoped to MANUAL peaks: auto_peaks.id and peak_curations.id
@@ -67,7 +67,7 @@ export const peakAddMutator: Mutator<PeakAddInput, PeakAddScope, PeakAddResponse
       ),
     );
     qc.setQueryData<Exposure>(queryKeys.exposure(p.exposureId), (old) =>
-      old ? { ...old, analysis_inputs_hash } : old);
+      old ? { ...old, analysis_inputs_hash: meta.analysis_inputs_hash ?? null } : old);
   },
   synthesizeFromSse: (remote, base) => {
     const payload = (remote.payload as Record<string, unknown> | undefined) ?? {};
