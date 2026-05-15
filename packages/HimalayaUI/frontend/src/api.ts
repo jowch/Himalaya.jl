@@ -440,6 +440,11 @@ export interface Comparison {
   forked_from_id: number | null;
   forked_at_hash: string | null;
   forked_from_title: string | null;
+  /** Author's persisted view choices (spec §6.4); NULL = author never picked. */
+  view_grouping_mode: string | null;
+  view_show_peak_ticks: boolean | null;
+  view_show_peak_labels: boolean | null;
+  last_event_at: string | null;
   members: ComparisonMember[];
 }
 
@@ -454,6 +459,16 @@ export interface ComparisonSummary {
   updated_at: string | null;
   forked_from_id: number | null;
   forked_at_hash: string | null;
+  /** Author's persisted view choices (spec §6.4); NULL = author never picked. */
+  view_grouping_mode: string | null;
+  view_show_peak_ticks: boolean | null;
+  view_show_peak_labels: boolean | null;
+  last_event_at: string | null;
+  /** Listing projection fields (see `_comparison_listing_rows`). */
+  author_username: string | null;
+  member_count: number;
+  member_phases: string[];
+  has_stale_members: boolean;
 }
 
 export interface ComparisonMessage {
@@ -479,6 +494,10 @@ export interface SaveComparisonBody {
   /** Set when forking; both fields ride together or not at all. */
   forked_from_id?: number | null;
   forked_at_hash?: string | null;
+  /** Author's view choices (spec §6.4); omitted = not changed by this save. */
+  view_grouping_mode?: "bySample" | "byPhase" | "distinct" | null;
+  view_show_peak_ticks?: boolean | null;
+  view_show_peak_labels?: boolean | null;
 }
 
 /**
