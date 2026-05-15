@@ -279,7 +279,7 @@ export function ComparisonSidebar({
         </div>
       ) : filtered.length === 0 ? (
         <div
-          data-testid="comparison-sidebar-empty"
+          data-testid="comparison-sidebar-no-matches"
           className="px-4 py-8 text-center text-fg-muted
                      flex flex-col items-center gap-3"
         >
