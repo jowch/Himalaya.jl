@@ -95,9 +95,13 @@ function register_routes!()
         end
 
         # Per-subscriber heartbeat: keeps the TCP connection alive through
-        # reverse proxies that close idle connections after ~60 s.
+        # reverse proxies that close idle connections after ~60 s. Uses
+        # _try_put! (same helper as broadcast_event!) so a saturated
+        # subscriber drops the heartbeat frame instead of blocking the
+        # Timer task — a slow client must not be able to leak heartbeat
+        # tasks at one-per-15s.
         heartbeat = Timer(15; interval = 15) do _
-            try put!(pending, ":heartbeat\n\n") catch end
+            _try_put!(pending, ":heartbeat\n\n")
         end
 
         try

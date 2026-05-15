@@ -1419,20 +1419,26 @@ function open_db(db_path::AbstractString = default_db_path())::SQLite.DB
     # multi-user deploys (curators in a shared group writing the same DB),
     # we need group-write on the file. WAL creates `-wal` and `-shm`
     # sidecars on first write; chmod those too so other group members can
-    # write through them. chmod is idempotent; if we don't own the file
-    # (e.g. another user created it), this is a no-op error we swallow
-    # rather than failing the whole open.
+    # write through them.
+    #
+    # Skip the chmod when another user owns the file: in the shared-group
+    # deploy, only the owner can chmod (chmod fails — typically EPERM —
+    # on a cross-user file), and they presumably already set group-write
+    # on first open. On a file WE own, any failure (read-only mount,
+    # immutable bit, EROFS, fs quirk) is a real configuration problem
+    # and must propagate — the prior broad `e isa IOError || e isa
+    # SystemError` catch silently masked all of those, leaving SQLite's
+    # hardcoded 0644 in place.
+    # Base.Libc.getuid() wraps :jl_getuid (portable across platforms) and
+    # returns Culong, the same type as stat(p).uid — no promotion gymnastics
+    # at the comparison.
+    my_uid = Base.Libc.getuid()
     for p in (db_path, db_path * "-wal", db_path * "-shm")
-        if isfile(p)
-            try
-                chmod(p, 0o664)
-            catch e
-                # Swallow only the expected "not our file" / FS-permission errors;
-                # let unexpected failures (InterruptException, oddities) propagate
-                # so they don't get masked by this best-effort fix-up.
-                e isa Base.IOError || e isa SystemError || rethrow()
-            end
+        isfile(p) || continue
+        if Sys.isunix() && stat(p).uid != my_uid
+            continue  # cross-user shared-group case: owner sets perms
         end
+        chmod(p, 0o664)
     end
     db
 end
