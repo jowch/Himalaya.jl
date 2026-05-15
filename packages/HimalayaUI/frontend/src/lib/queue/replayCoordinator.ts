@@ -149,27 +149,6 @@ function synthesizeResponseFromSse(remote: SseEvent): unknown {
   // Legacy fallback: per-kind branches still here until each mutator owns
   // its own synthesizeFromSse (tasks B5–B8). Once those land, this block
   // collapses to just `return { ...base, ...payload };`.
-  if (remote.kind === "comparison_created" || remote.kind === "comparison_submitted") {
-    // SSE payload for comparison events carries title/description/members —
-    // but `members` ride as INPUT shape (no server-assigned `id`s, no
-    // `is_stale`, no `created_by`/`created_at`). The mutator's onSuccess
-    // expects the FULL Comparison shape (including `id`, lineage fields,
-    // `forked_from_title`, and per-member `is_stale`).
-    //
-    // Rather than fabricating those fields here (which would diverge from
-    // the live DB state), invalidate the comparison + listings so the next
-    // read fetches the canonical state. We still resolve the deferred
-    // (mutation transitions to success) so the UI's pending spinner clears.
-    // The caller's onSuccess then writes whatever it gets — and because
-    // we left `id` undefined on the synth response, the mutator's onSuccess
-    // detects "this isn't a real Comparison" and skips the splice in favor
-    // of letting the invalidation drive the refetch.
-    return {
-      ...base,
-      ...payload,
-      id: remote.entity_id,  // ← so onSuccess can target the right cache key
-    };
-  }
   if (remote.kind === "comparison_deleted") {
     // SSE payload is just {id}. Pass through verbatim — the mutator's
     // onSuccess only reads `p.id` from the flat input, not the response.
