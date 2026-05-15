@@ -42,8 +42,11 @@ end
     pr       = Himalaya.findpeaks(q, I, σ)
     diff_update_auto_peaks!(db, e_id, pr, I)
 
-    # Add a curation in the middle of the q range so it samples sharps_full.
-    mid_q = q[length(q) ÷ 2]
+    # Add a curation BETWEEN two grid samples so searchsortedfirst's
+    # nearest-neighbor selection is exercised (an exact grid-point value
+    # would never trigger the i_hi-1 vs i_hi pick).
+    k = length(q) ÷ 2
+    mid_q = (q[k] + q[k + 1]) / 2  # off-grid; falls strictly between samples
     DBInterface.execute(db,
         "INSERT INTO peak_curations (exposure_id, q, kind) VALUES (?, ?, 'add')",
         [e_id, mid_q])
@@ -54,6 +57,13 @@ end
     @test eff_recompute.sharpness == eff_passthrough.sharpness
     @test eff_recompute.peak_id   == eff_passthrough.peak_id
     @test eff_recompute.peak_kind == eff_passthrough.peak_kind
+
+    # Pin nearest-neighbor selection against argmin oracle.
+    sharps_full = pr.sharpness_full
+    oracle_sharp = sharps_full[argmin(abs.(q .- mid_q))]
+    add_pos = findfirst(==(mid_q), eff_passthrough.q)
+    @test add_pos !== nothing
+    @test eff_passthrough.sharpness[add_pos] == oracle_sharp
 end
 
 @testset "findpeaks return includes sharpness_full" begin

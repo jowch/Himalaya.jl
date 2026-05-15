@@ -7,6 +7,8 @@ using Test
     include("test_manifest.jl")
     include("test_hash.jl")
     include("test_pipeline.jl")
+    include("test_auto_group_peak_id_claiming.jl")
+    include("test_effective_peaks_sharpness_passthrough.jl")
     include("test_fast_skip.jl")
     include("test_json.jl")
     include("test_http.jl")
