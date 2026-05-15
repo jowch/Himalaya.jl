@@ -24,6 +24,7 @@ import * as api from "../../../api";
 import type {
   AuthOpts, Comparison, ComparisonMemberInput, SaveComparisonBody,
 } from "../../../api";
+import type { GroupingMode } from "../../comparison/coloring";
 import { queryKeys } from "../../../queries";
 import { authOpts } from "../../authOpts";
 import type { Mutator, RollbackContext } from "../types";
@@ -39,6 +40,11 @@ export interface SaveComparisonInput {
   expected_content_hash?: string;
   forked_from_id?: number | null;
   forked_at_hash?: string | null;
+  /** Author's view choices (spec §6.4); omitted ⇒ unchanged by this save.
+   *  Strict `GroupingMode` on write, matching `SaveComparisonBody`. */
+  view_grouping_mode?: GroupingMode | null;
+  view_show_peak_ticks?: boolean | null;
+  view_show_peak_labels?: boolean | null;
 }
 
 interface SaveComparisonScope {
@@ -61,6 +67,9 @@ function buildBody(p: SaveComparisonInput): SaveComparisonBody {
   }
   if (p.forked_from_id !== undefined) out.forked_from_id = p.forked_from_id;
   if (p.forked_at_hash !== undefined) out.forked_at_hash = p.forked_at_hash;
+  if (p.view_grouping_mode !== undefined) out.view_grouping_mode = p.view_grouping_mode;
+  if (p.view_show_peak_ticks !== undefined) out.view_show_peak_ticks = p.view_show_peak_ticks;
+  if (p.view_show_peak_labels !== undefined) out.view_show_peak_labels = p.view_show_peak_labels;
   return out;
 }
 
