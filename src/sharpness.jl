@@ -38,11 +38,17 @@ we flip sign — large positive output = sharply peaked.
 """
 sharpness_savgol(y, m) = -savitzky_golay(m, 4, y; order = 2)
 
-# `savitzky_golay(m, n, y; order)` — preserved verbatim from the v0.4.5
-# src/peakfinding.jl (commit fddd611). General-purpose SG: any window,
-# polynomial order, derivative order.
+# `savitzky_golay(m, n, y; order)` — general-purpose SG: any window,
+# polynomial order, derivative order. Originally from v0.4.5
+# src/peakfinding.jl (commit fddd611); the per-sample convolution was
+# rewritten allocation-free for issue #128.
 function savitzky_golay(m, n, y; order = 0)
     num_y = length(y)
+    # Precondition for `_sg_convolve!`: the edge-reflection index math only
+    # stays within `1:num_y` when the window fits inside the trace. Guarding
+    # here lets the convolution loop keep its `@inbounds` annotation.
+    num_y >= 2m + 1 ||
+        throw(ArgumentError("trace length $num_y is shorter than the SG window $(2m + 1)"))
     z = -m:m
     J = zeros(2m + 1, n + 1)
 
@@ -50,23 +56,15 @@ function savitzky_golay(m, n, y; order = 0)
         @inbounds J[:, i + 1] .= z .^ i
     end
 
-    # The convolution term matrix
+    # The convolution term matrix — depends only on window size + order, so it
+    # is built once here and reused for every sample.
     C = J' \ I(n .+ 1)[:, order .+ 1]   # = pinv(J) picking out the requested order(s)
     Y = zeros(num_y, length(order))
 
-    for i in 1:num_y
-        if i <= m
-            window_indices = abs.(z .+ i) .+ 1
-        elseif i > num_y - m
-            window_indices = -abs.(z .+ i .- num_y) .+ num_y
-        else
-            window_indices = z .+ i
-        end
-
-        for j in eachindex(order)
-            @inbounds Y[i, j] = C[:, j]' * y[window_indices]
-        end
-    end
+    # The `\` solve leaves `C`'s type un-inferrable here, so the convolution
+    # runs behind a function barrier — `_sg_convolve!` specialises on the
+    # concrete types of `C` and `y`, keeping its inner loop allocation-free.
+    _sg_convolve!(Y, C, y, m, num_y, order)
 
     # SG extracts polynomial coefficients c_k; the k-th derivative is k! * c_k.
     fac = factorial.(order)
@@ -75,6 +73,31 @@ function savitzky_golay(m, n, y; order = 0)
     end
 
     length(order) == 1 ? Y[:, 1] : Y
+end
+
+# Per-sample convolution: each output sample is a dot product of a column of
+# `C` against an edge-reflected window of `y`. The window index is computed
+# inline so the inner loop allocates nothing.
+function _sg_convolve!(Y, C, y, m, num_y, order)
+    win = 2m + 1
+    @inbounds for i in 1:num_y
+        for j in eachindex(order)
+            acc = 0.0
+            for k in 1:win
+                zk = k - m - 1
+                widx = if i <= m
+                    abs(zk + i) + 1
+                elseif i > num_y - m
+                    -abs(zk + i - num_y) + num_y
+                else
+                    zk + i
+                end
+                acc += C[k, j] * y[widx]
+            end
+            Y[i, j] = acc
+        end
+    end
+    Y
 end
 
 # ---------------------------------------------------------------------------
