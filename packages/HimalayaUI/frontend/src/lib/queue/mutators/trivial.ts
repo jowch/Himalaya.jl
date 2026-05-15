@@ -156,6 +156,17 @@ export const addSampleTagMutator: Mutator<AddSampleTagInput, AddSampleTagScope, 
       );
     });
   },
+  synthesizeFromSse: (remote, base) => {
+    const payload = (remote.payload as Record<string, unknown> | undefined) ?? {};
+    if (payload.tag_id === undefined) return undefined;
+    return {
+      ...base,
+      id: payload.tag_id as number,
+      key: payload.key as string,
+      value: payload.value as string,
+      source: "manual",
+    } as SampleTag;
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -234,6 +245,17 @@ export const addExposureTagMutator: Mutator<AddExposureTagInput, AddExposureTagS
             },
       ),
     );
+  },
+  synthesizeFromSse: (remote, base) => {
+    const payload = (remote.payload as Record<string, unknown> | undefined) ?? {};
+    if (payload.tag_id === undefined) return undefined;
+    return {
+      ...base,
+      id: payload.tag_id as number,
+      key: payload.key as string,
+      value: payload.value as string,
+      source: "manual",
+    } as ExposureTag;
   },
 };
 

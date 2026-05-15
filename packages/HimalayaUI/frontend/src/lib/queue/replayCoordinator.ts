@@ -149,19 +149,6 @@ function synthesizeResponseFromSse(remote: SseEvent): unknown {
   // Legacy fallback: per-kind branches still here until each mutator owns
   // its own synthesizeFromSse (tasks B5–B8). Once those land, this block
   // collapses to just `return { ...base, ...payload };`.
-  if (remote.kind === "add_tag") {
-    // SSE payload uses `tag_id`; HTTP response uses `id`. Mutators
-    // (addSampleTagMutator / addExposureTagMutator) read response.id and
-    // response.source. Without this branch, SSE-wins lands a malformed tag
-    // with id=undefined and source=undefined — undeletable, mis-classified.
-    return {
-      ...base,
-      id: payload.tag_id,
-      key: payload.key,
-      value: payload.value,
-      source: "manual",
-    };
-  }
   if (remote.kind === "comparison_created" || remote.kind === "comparison_submitted") {
     // SSE payload for comparison events carries title/description/members —
     // but `members` ride as INPUT shape (no server-assigned `id`s, no
