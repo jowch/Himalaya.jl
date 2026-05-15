@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Routes, Route, useLocation, useNavigate } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useAppState } from "../state";
 import { useSamples } from "../queries";
 import { AppHeader } from "./AppHeader";
@@ -40,6 +40,23 @@ function PageBody(): JSX.Element {
   // activePage === "compare" never reaches here because compare URLs are
   // matched by their explicit <Route> entries above.
   return <></>;
+}
+
+/**
+ * EditToBareRedirect — Compare UX Phase B: the `/edit` URL segment is gone.
+ * `/compare/:id` is the only route shape; edit is now an inline gesture, not
+ * a separate URL. Old `/edit` deep-links still resolve by redirecting to the
+ * bare path.
+ *
+ * Reads `useLocation()` (the router's internal store), NOT
+ * `window.location` — under `MemoryRouter` (used in tests) JSDOM's
+ * `window.location.pathname` stays at "/" and the redirect would land in the
+ * wrong place. `useLocation` is correct in both browser and test envs.
+ */
+function EditToBareRedirect(): JSX.Element {
+  const loc = useLocation();
+  const here = loc.pathname.replace(/\/edit\/?$/, "");
+  return <Navigate to={here} replace />;
 }
 
 export function AppShell(): JSX.Element {
@@ -121,7 +138,8 @@ export function AppShell(): JSX.Element {
         <Route path="/experiments/:eid/compare" element={<ComparePage />} />
         <Route path="/experiments/:eid/compare/new" element={<ComparePageEdit />} />
         <Route path="/experiments/:eid/compare/:id" element={<ComparePage />} />
-        <Route path="/experiments/:eid/compare/:id/edit" element={<ComparePageEdit />} />
+        {/* Phase B: `/edit` is gone — redirect old deep-links to the bare URL. */}
+        <Route path="/experiments/:eid/compare/:id/edit" element={<EditToBareRedirect />} />
         <Route path="/compare/all" element={<ComparePage />} />
         {/*
           Global (experiment-less) deep-link routes — mirror the experiment-
@@ -133,7 +151,8 @@ export function AppShell(): JSX.Element {
         */}
         <Route path="/compare/all/new" element={<ComparePageEdit />} />
         <Route path="/compare/all/:id" element={<ComparePage />} />
-        <Route path="/compare/all/:id/edit" element={<ComparePageEdit />} />
+        {/* Phase B: `/edit` is gone — redirect old deep-links to the bare URL. */}
+        <Route path="/compare/all/:id/edit" element={<EditToBareRedirect />} />
         {/* New permalink shapes — all render PageBody, which inspects Zustand
             to decide which page to mount. The URL-sync hooks dispatch state
             based on the matched route, so PageBody only needs to read the
