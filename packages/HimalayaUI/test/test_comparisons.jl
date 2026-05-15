@@ -1463,3 +1463,97 @@ end
     end
 end
 
+@testset "listing projection — Compare UX A-3" begin
+    mktempdir() do tmp
+        db = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+
+        # Minimal fixture: user, experiment, sample, exposure, comparison
+        # with one member whose snapshot pins a Pn3m index.
+        DBInterface.execute(db, "INSERT INTO users (id, username) VALUES (1, 'alice')")
+        DBInterface.execute(db, """INSERT INTO experiments
+                                   (id, name, path, data_dir, analysis_dir)
+                                   VALUES (10, 'exp', '/x', '/x/d', '/x/a')""")
+        DBInterface.execute(db, """INSERT INTO samples (id, experiment_id, name)
+                                   VALUES (100, 10, 'sA')""")
+        DBInterface.execute(db, """INSERT INTO exposures
+                                   (id, sample_id, filename, selected)
+                                   VALUES (1000, 100, 'JC001', 1)""")
+        DBInterface.execute(db, """INSERT INTO comparisons
+                                   (id, title, content_hash, created_by, updated_at)
+                                   VALUES (1, 'Cubic vs Hex', 'h', 1, '2026-05-14T10:00:00Z')""")
+        snap = JSON3.write(Dict(
+            :confirmed_index => Dict(:id => 1, :phase => "Pn3m"),
+            :analysis_inputs_hash => "ih1",
+        ))
+        DBInterface.execute(db, """INSERT INTO comparison_members
+                                   (comparison_id, exposure_id, display_order,
+                                    band_height, y_offset, normalization, snapshot, created_at)
+                                   VALUES (1, 1000, 0, 1.0, 0.0, 'max', ?,
+                                           '2026-05-14T10:00:00Z')""",
+                            [snap])
+
+        rows = HimalayaUI.comparisons_listing(db)
+        @test length(rows) == 1
+        r = rows[1]
+        @test r[:author_username]    == "alice"
+        @test r[:member_count]       == 1
+        @test r[:member_phases]      == ["Pn3m"]
+        @test r[:has_stale_members]  == false
+        @test r[:last_event_at] isa Union{String, Nothing}
+        close(db)
+    end
+end
+
+@testset "forks_of_comparison projects new aggregates (Compare UX A-3)" begin
+    mktempdir() do tmp
+        db = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+        DBInterface.execute(db, "INSERT INTO users (id, username) VALUES (1, 'alice')")
+        DBInterface.execute(db, """INSERT INTO experiments
+                                   (id, name, path, data_dir, analysis_dir)
+                                   VALUES (10, 'exp', '/x', '/x/d', '/x/a')""")
+        DBInterface.execute(db, """INSERT INTO samples (id, experiment_id, name)
+                                   VALUES (100, 10, 'sA')""")
+        DBInterface.execute(db, """INSERT INTO exposures
+                                   (id, sample_id, filename, selected)
+                                   VALUES (1000, 100, 'JC001', 1)""")
+        # Parent comparison + one Pn3m member.
+        DBInterface.execute(db, """INSERT INTO comparisons
+                                   (id, title, content_hash, created_by, updated_at)
+                                   VALUES (1, 'Parent', 'h1', 1, '2026-05-14T10:00:00Z')""")
+        parent_snap = JSON3.write(Dict(
+            :confirmed_index => Dict(:id => 1, :phase => "Pn3m"),
+            :analysis_inputs_hash => "ih1"))
+        DBInterface.execute(db, """INSERT INTO comparison_members
+                                   (comparison_id, exposure_id, display_order,
+                                    band_height, y_offset, normalization, snapshot, created_at)
+                                   VALUES (1, 1000, 0, 1.0, 0.0, 'max', ?,
+                                           '2026-05-14T10:00:00Z')""",
+                            [parent_snap])
+        # Fork (forked_from_id = 1) + one Hex member.
+        DBInterface.execute(db, """INSERT INTO comparisons
+                                   (id, title, content_hash, created_by, updated_at,
+                                    forked_from_id)
+                                   VALUES (2, 'Fork', 'h2', 1, '2026-05-14T11:00:00Z', 1)""")
+        fork_snap = JSON3.write(Dict(
+            :confirmed_index => Dict(:id => 2, :phase => "Hex"),
+            :analysis_inputs_hash => "ih2"))
+        DBInterface.execute(db, """INSERT INTO comparison_members
+                                   (comparison_id, exposure_id, display_order,
+                                    band_height, y_offset, normalization, snapshot, created_at)
+                                   VALUES (2, 1000, 0, 1.0, 0.0, 'max', ?,
+                                           '2026-05-14T11:00:00Z')""",
+                            [fork_snap])
+
+        forks = HimalayaUI.forks_of_comparison(db, 1)
+        @test length(forks) == 1
+        f = forks[1]
+        @test f[:author_username]   == "alice"
+        @test f[:member_count]      == 1
+        @test f[:member_phases]     == ["Hex"]
+        @test f[:has_stale_members] == false
+        @test haskey(f, :view_grouping_mode)
+        @test haskey(f, :last_event_at)
+        close(db)
+    end
+end
+

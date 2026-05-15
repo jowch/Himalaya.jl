@@ -695,9 +695,13 @@ end
                 @test r.status == 200
                 rows = JSON3.read(String(r.body))
                 @test !isempty(rows)
-                expected = [:id, :title, :description, :content_hash,
-                            :created_by, :created_at, :updated_at,
-                            :forked_from_id, :forked_at_hash]
+                expected = [
+                    :id, :title, :description, :content_hash, :created_by,
+                    :created_at, :updated_at, :forked_from_id, :forked_at_hash,
+                    :view_grouping_mode, :view_show_peak_ticks, :view_show_peak_labels,
+                    :last_event_at, :author_username, :member_count, :member_phases,
+                    :has_stale_members,
+                ]
                 for row in rows
                     assert_keys(row, expected)
                 end
