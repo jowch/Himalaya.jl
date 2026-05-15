@@ -105,3 +105,56 @@ export function resolveMutator(
       return undefined;
   }
 }
+
+/**
+ * Resolve the mutator that owns a given SSE event kind. Used by the replay
+ * coordinator to dispatch `synthesizeFromSse` per event kind.
+ *
+ * `entity_type` is required because three event kinds (`add_tag`,
+ * `remove_tag`, `post_message`) are shared across mutators that differ only
+ * by the entity scope they operate on.
+ *
+ * Returns undefined for unknown event kinds — replayCoordinator will fall
+ * back to the generic `{ ...base, ...payload }` shape.
+ */
+export function resolveMutatorForEvent(
+  eventKind: string,
+  entityType: string,
+): Mutator<any, any, any> | undefined {
+  switch (eventKind) {
+    case "peak_added":          return peakAddMutator;
+    case "peak_removed":        return peakRemoveMutator;
+    case "peak_excluded":       return peakExcludeMutator;
+    case "peak_unexcluded":     return peakUnexcludeMutator;
+    case "index_confirmed":     return addIndexToGroupMutator;
+    case "index_unconfirmed":   return removeIndexFromGroupMutator;
+    case "speculative_created": return createSpeculativeMutator;
+    // event-kind speculative_deleted is the SSE counterpart of op-kind delete_index
+    case "speculative_deleted": return deleteIndexMutator;
+    case "analyze_run":         return reanalyzeExposureMutator;
+    case "comparison_created":
+    case "comparison_submitted":
+      return saveComparisonMutator;
+    case "comparison_deleted":  return deleteComparisonMutator;
+    case "update_sample":       return updateSampleMutator;
+    case "set_exposure_status": return setExposureStatusMutator;
+    case "select_exposure":     return selectExposureMutator;
+    case "add_tag":
+      return entityType === "sample" ? addSampleTagMutator : addExposureTagMutator;
+    case "remove_tag":
+      return entityType === "sample" ? removeSampleTagMutator : removeExposureTagMutator;
+    case "post_message":
+      // entity_type is the wire string ("sample_message" / "comparison_message"),
+      // matching applyRemoteToCache.ts's discriminator. Default the
+      // unknown branch to sample (mirroring applyRemoteToCache's default).
+      return entityType === "comparison_message"
+        ? postComparisonMessageMutator
+        : postSampleMessageMutator;
+    // Event kinds with no queue mutator fall through here. This includes
+    // invalidate-only foreign events like comparison_pinned / comparison_unpinned
+    // (handled entirely by applyRemoteToCache — no optimistic outbound op exists).
+    // replayCoordinator treats undefined as "use the generic {...base,...payload} shape".
+    default:
+      return undefined;
+  }
+}

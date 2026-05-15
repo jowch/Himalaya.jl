@@ -18,6 +18,7 @@ import type {
 import { queryKeys } from "../../../queries";
 import { authOpts } from "../../authOpts";
 import { nextOptimisticId } from "../optimisticId";
+import { replacePlaceholder } from "../replacePlaceholder";
 import type { Mutator, RollbackContext } from "../types";
 
 interface BaseScope {
@@ -133,8 +134,7 @@ export const addSampleTagMutator: Mutator<AddSampleTagInput, AddSampleTagScope, 
   request: (p) => api.addSampleTag(p.sampleId, p.key, p.value, buildAuthOpts(p)),
   onSuccess: (p, response, qc) => {
     // The route emits `{id, sample_id, key, value, source}` (routes_samples.jl)
-    // but the SampleTag type omits `sample_id`. Strip it so the cache row
-    // matches the type — otherwise tag entries pollute with sample_id.
+    // but SampleTag omits `sample_id`. Strip it so the cache row matches type.
     const tag: SampleTag = {
       id: response.id, key: response.key, value: response.value,
       source: response.source,
@@ -142,15 +142,30 @@ export const addSampleTagMutator: Mutator<AddSampleTagInput, AddSampleTagScope, 
     const samplesKey = queryKeys.samples(p.experimentId);
     qc.setQueryData<Sample[]>(samplesKey, (list) => {
       if (!list) return list;
-      return list.map((s) => {
-        if (s.id !== p.sampleId) return s;
-        const filtered = s.tags.filter((t) =>
-          !(t.id < 0 && t.key === p.key && t.value === p.value)
-          && t.id !== tag.id,
-        );
-        return { ...s, tags: [...filtered, tag] };
-      });
+      return list.map((s) =>
+        s.id !== p.sampleId
+          ? s
+          : {
+              ...s,
+              tags: replacePlaceholder(
+                s.tags,
+                tag,
+                (t) => t.key === p.key && t.value === p.value,
+              ),
+            },
+      );
     });
+  },
+  synthesizeFromSse: (remote, base) => {
+    const payload = (remote.payload as Record<string, unknown> | undefined) ?? {};
+    if (payload.tag_id === undefined) return undefined;
+    return {
+      ...base,
+      id: payload.tag_id as number,
+      key: payload.key as string,
+      value: payload.value as string,
+      source: "manual",
+    } as SampleTag;
   },
 };
 
@@ -217,15 +232,30 @@ export const addExposureTagMutator: Mutator<AddExposureTagInput, AddExposureTagS
       source: response.source,
     };
     rewriteExposureLists(qc, p.sampleId, (list) =>
-      list.map((e) => {
-        if (e.id !== p.exposureId) return e;
-        const filtered = e.tags.filter((t) =>
-          !(t.id < 0 && t.key === p.key && t.value === p.value)
-          && t.id !== tag.id,
-        );
-        return { ...e, tags: [...filtered, tag] };
-      }),
+      list.map((e) =>
+        e.id !== p.exposureId
+          ? e
+          : {
+              ...e,
+              tags: replacePlaceholder(
+                e.tags,
+                tag,
+                (t) => t.key === p.key && t.value === p.value,
+              ),
+            },
+      ),
     );
+  },
+  synthesizeFromSse: (remote, base) => {
+    const payload = (remote.payload as Record<string, unknown> | undefined) ?? {};
+    if (payload.tag_id === undefined) return undefined;
+    return {
+      ...base,
+      id: payload.tag_id as number,
+      key: payload.key as string,
+      value: payload.value as string,
+      source: "manual",
+    } as ExposureTag;
   },
 };
 
@@ -286,25 +316,13 @@ export const postSampleMessageMutator: Mutator<PostSampleMessageInput, PostSampl
   request: (p) => api.postSampleMessage(p.sampleId, p.body, buildAuthOpts(p)),
   onSuccess: (p, response, qc) => {
     const key = queryKeys.messages(p.sampleId);
-    const list = qc.getQueryData<SampleMessage[]>(key) ?? [];
-    // Replace the most recent negative-id placeholder for this body, and
-    // dedupe against any concurrent SSE that already inserted the real msg.
-    const seen = new Set<number>();
-    const next: SampleMessage[] = [];
-    let replaced = false;
-    for (const m of list) {
-      if (m.id < 0 && !replaced && m.body === response.body
-          && m.sample_id === response.sample_id) {
-        if (!seen.has(response.id)) { next.push(response); seen.add(response.id); }
-        replaced = true;
-        continue;
-      }
-      if (seen.has(m.id)) continue;
-      next.push(m);
-      seen.add(m.id);
-    }
-    if (!replaced && !seen.has(response.id)) next.push(response);
-    qc.setQueryData<SampleMessage[]>(key, next);
+    qc.setQueryData<SampleMessage[]>(key, (list) =>
+      replacePlaceholder(
+        list ?? [],
+        response,
+        (m) => m.body === response.body && m.sample_id === response.sample_id,
+      ),
+    );
   },
 };
 
@@ -346,23 +364,13 @@ export const postComparisonMessageMutator: Mutator<
   request: (p) => api.postComparisonMessage(p.comparisonId, p.body, buildAuthOpts(p)),
   onSuccess: (p, response, qc) => {
     const key = queryKeys.comparisonMessages(p.comparisonId);
-    const list = qc.getQueryData<ComparisonMessage[]>(key) ?? [];
-    const seen = new Set<number>();
-    const next: ComparisonMessage[] = [];
-    let replaced = false;
-    for (const m of list) {
-      if (m.id < 0 && !replaced && m.body === response.body
-          && m.comparison_id === response.comparison_id) {
-        if (!seen.has(response.id)) { next.push(response); seen.add(response.id); }
-        replaced = true;
-        continue;
-      }
-      if (seen.has(m.id)) continue;
-      next.push(m);
-      seen.add(m.id);
-    }
-    if (!replaced && !seen.has(response.id)) next.push(response);
-    qc.setQueryData<ComparisonMessage[]>(key, next);
+    qc.setQueryData<ComparisonMessage[]>(key, (list) =>
+      replacePlaceholder(
+        list ?? [],
+        response,
+        (m) => m.body === response.body && m.comparison_id === response.comparison_id,
+      ),
+    );
   },
 };
 

@@ -22,7 +22,9 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import { applyRemoteToCache } from "../../src/lib/queue/applyRemoteToCache";
+import { resolveMutatorForEvent } from "../../src/lib/queue/mutatorRegistry";
 import type { SseEvent } from "../../src/lib/queue/types";
+import { remoteForeignEvent } from "./helpers";
 import type {
   Peak, Exposure, Sample, GroupEntry, SampleMessage,
   ComparisonMessage, ComparisonSummary,
@@ -563,4 +565,85 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
     applyRemoteToCache(evt, qc);
     expect(invalidated).toEqual(queryKeys.exposures(1));
   });
+});
+
+describe("synthesizeFromSse coverage (resolveMutatorForEvent contract)", () => {
+  // Factory for a minimally-valid SseEvent. Reuses `remoteForeignEvent` from
+  // test/queue/helpers.ts (already exported) so we don't fall behind on
+  // SseEvent shape drift.
+  function evt(kind: string, entity_type: string, entity_id: number, payload: object) {
+    return remoteForeignEvent({ id: 1, kind, entity_type, entity_id, payload });
+  }
+
+  // The exact set of kinds that had a bespoke branch in the legacy switch.
+  // Each MUST resolve to a mutator that returns non-undefined for a
+  // minimally-shaped SseEvent.
+  const cases: Array<{ kind: string; entity_type: string; entity_id: number; payload: object }> = [
+    { kind: "peak_added",           entity_type: "exposure",   entity_id: 5,  payload: { peak_curation_id: 99, q: 0.123 } },
+    { kind: "add_tag",              entity_type: "sample",     entity_id: 5,  payload: { tag_id: 7, key: "tag", value: "v" } },
+    { kind: "add_tag",              entity_type: "exposure",   entity_id: 5,  payload: { tag_id: 7, key: "tag", value: "v" } },
+    { kind: "comparison_created",   entity_type: "comparison", entity_id: 11, payload: { title: "T" } },
+    { kind: "comparison_submitted", entity_type: "comparison", entity_id: 11, payload: { title: "T" } },
+    { kind: "comparison_deleted",   entity_type: "comparison", entity_id: 11, payload: {} },
+    { kind: "peak_excluded",        entity_type: "exposure",   entity_id: 5,  payload: { auto_peak_id: 1, q: 0.1 } },
+    { kind: "peak_unexcluded",      entity_type: "exposure",   entity_id: 5,  payload: { auto_peak_id: 1, q: 0.1 } },
+  ];
+  it.each(cases)("$kind/$entity_type resolves and synthesizes", ({ kind, entity_type, entity_id, payload }) => {
+    const mutator = resolveMutatorForEvent(kind, entity_type);
+    expect(mutator).toBeDefined();
+    const synth = mutator!.synthesizeFromSse?.(
+      evt(kind, entity_type, entity_id, payload),
+      { event_id: 1, client_op_id: "x", analysis_inputs_hash: undefined },
+    );
+    expect(synth).toBeDefined();
+  });
+
+  // Every event kind in resolveMutatorForEvent's switch falls into one of
+  // two camps: (a) bespoke synth via the owning mutator's synthesizeFromSse
+  // (the `cases` array above), or (b) generic `{...base, ...payload}`
+  // fallback. The noSynth array enumerates camp (b) so any future drift
+  // (e.g. a half-baked synth landed on a mutator before the pipeline is
+  // ready) trips a test rather than silently changing wire shape.
+  //
+  // Camp (b) breaks down into three rationales:
+  //
+  //   (b.i)  Forward-scaffolded — mutator exists but no UI gesture queues it
+  //          today (set_exposure_status, update_sample, select_exposure,
+  //          remove_tag ×2). When a future plan wires the gesture, add
+  //          synthesizeFromSse to the owning mutator.
+  //   (b.ii) Active mutators whose SSE payload IS the cache row shape, so
+  //          the generic fallback already produces the correct shape
+  //          (post_message ×2 — payload IS SampleMessage / ComparisonMessage).
+  //   (b.iii) Active mutators whose onSuccess relies on the `looksFull`
+  //          detector to invalidate when the synth shape is incomplete
+  //          (createSpeculative, both indexGroup variants, deleteIndex).
+  //          Plus mutators whose SSE-wins-and-then-resolve has no cache
+  //          effect beyond `analysis_inputs_hash` (analyze_run, peak_removed
+  //          — peakRemove.onSuccess is a no-op beyond the hash write).
+  const noSynth: Array<{ kind: string; entity_type: string }> = [
+    // (b.i) forward-scaffolded
+    { kind: "set_exposure_status", entity_type: "exposure"           },
+    { kind: "update_sample",       entity_type: "sample"             },
+    { kind: "select_exposure",     entity_type: "exposure"           },
+    { kind: "remove_tag",          entity_type: "sample"             },
+    { kind: "remove_tag",          entity_type: "exposure"           },
+    // (b.ii) payload IS cache-row shape
+    { kind: "post_message",        entity_type: "sample_message"     },
+    { kind: "post_message",        entity_type: "comparison_message" },
+    // (b.iii) looksFull-handled or hash-only effects
+    { kind: "analyze_run",         entity_type: "exposure"           },
+    { kind: "peak_removed",        entity_type: "exposure"           },
+    { kind: "index_confirmed",     entity_type: "exposure"           },
+    { kind: "index_unconfirmed",   entity_type: "exposure"           },
+    { kind: "speculative_created", entity_type: "exposure"           },
+    { kind: "speculative_deleted", entity_type: "exposure"           },
+  ];
+  it.each(noSynth)(
+    "$kind/$entity_type stays on the generic fallback (no mutator.synthesizeFromSse)",
+    ({ kind, entity_type }) => {
+      const mutator = resolveMutatorForEvent(kind, entity_type);
+      expect(mutator).toBeDefined();
+      expect(mutator!.synthesizeFromSse).toBeUndefined();
+    },
+  );
 });

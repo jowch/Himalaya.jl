@@ -1,8 +1,9 @@
 import type { QueryClient, MutationCache } from "@tanstack/react-query";
-import type { SseEvent } from "./types";
+import type { SseEvent, QueueResponseMeta } from "./types";
 import { getDeferred, clearDeferred } from "./deferred";
 import { applyRemoteToCache, applyPostStateOnly } from "./applyRemoteToCache";
 import { getClientId } from "../clientId";
+import { resolveMutatorForEvent } from "./mutatorRegistry";
 
 /**
  * Process an SSE frame against the local cache and pending mutation queue.
@@ -21,11 +22,9 @@ import { getClientId } from "../clientId";
  * MutationCache.getAll() preserves insertion order — a regression test
  * asserts this against TanStack version drift.
  *
- * Forward-scaffolded branches (post_message, set_exposure_status, add_tag,
- * remove_tag, update_sample, select_exposure) are unreachable today: their
- * routes still use log_action! and don't emit SSE. They will become live
- * once those routes migrate to apply_event! in M2.1. The default branch's
- * invalidate fallback would also handle them in the meantime.
+ * Per-kind SSE response synthesis is delegated to each owning mutator's
+ * synthesizeFromSse method — see synthesizeResponseFromSse below for the
+ * dispatch model and the generic fallback for kinds without a custom synth.
  */
 export function handleRemoteEvent(
   remote: SseEvent,
@@ -120,93 +119,48 @@ export function handleRemoteEvent(
 /**
  * Build a synthetic response object mirroring what the HTTP route would
  * have returned. The deferred is awaited inside useQueueMutation's
- * mutationFn (M1.5); the resolution lets the mutation transition to
- * "success" without the HTTP call having returned. event_id is lifted
- * from the SSE frame; analysis_inputs_hash from post_state if present;
- * remaining fields are the route-specific payload (q, group_id, etc.)
- * that the original route handler would have echoed.
+ * mutationFn; the resolution lets the mutation transition to "success"
+ * without the HTTP call having returned. event_id is lifted from the SSE
+ * frame; analysis_inputs_hash from post_state if present; remaining
+ * fields come from the owning mutator's synthesizeFromSse method.
  *
- * Kind-aware for `peak_added`: the SSE payload only carries `q` and
- * `peak_curation_id`, but `peakAddMutator.onSuccess` reads `id`, `source`,
- * and `exposure_id` off the response. Without this branch, the SSE-wins
- * path lands a peak row with `id === undefined` in the cache, which then
- * matches `hoveredPeakId` (also undefined) and renders a permanent halo.
+ * Dispatch: lookup by (event_kind, entity_type) via resolveMutatorForEvent,
+ * then ask the mutator to build its shape. Falls back to a generic
+ * `{...base, ...payload}` in two cases:
+ *
+ *   (a) Forward-scaffolded kinds — set_exposure_status, update_sample,
+ *       select_exposure, remove_tag. These emit SSE today but their UI
+ *       gesture doesn't queue through this pipeline (yet); when a future
+ *       plan wires that gesture, add `synthesizeFromSse` to the matching
+ *       mutator and the fallback stops handling them.
+ *
+ *   (b) Active mutators whose SSE payload already matches the cache row
+ *       shape — post_message (sample + comparison). The SSE frame carries
+ *       `{id, body, author_id, author, created_at, sample_id|comparison_id}`
+ *       which IS the cache row shape; no shape massaging needed, so the
+ *       generic `{...base, ...payload}` suffices without a per-mutator synth.
+ *
+ * Ordering note: `applyPostStateOnly(remote)` runs BEFORE the deferred is
+ * resolved with this synth (see handleRemoteEvent). That ordering keeps the
+ * post-mutation indices cache fresh before the mutator's onSuccess fires.
+ * This refactor does NOT change that ordering — it only changes how the
+ * synth shape is produced.
+ *
+ * `base` carries only the three guaranteed framework fields (event_id,
+ * client_op_id, analysis_inputs_hash). `view_row_id` is NOT in `base` —
+ * it's an optional field on QueueResponseMeta that any mutator whose
+ * TResponse requires it (e.g. `PeakAddResponse` which has `view_row_id:
+ * number` required) must include explicitly in its `synthesizeFromSse`.
  */
 function synthesizeResponseFromSse(remote: SseEvent): unknown {
-  const payload = (remote.payload as Record<string, unknown> | undefined) ?? {};
-  const base = {
+  const base: QueueResponseMeta = {
     event_id: remote.id,
     client_op_id: remote.client_op_id,
     analysis_inputs_hash: remote.post_state?.analysis_inputs_hash,
   };
-  if (remote.kind === "peak_added") {
-    const peakId = payload.peak_curation_id as number | undefined;
-    return {
-      ...base,
-      id: peakId,
-      exposure_id: remote.entity_id,
-      q: payload.q as number,
-      intensity: null,
-      prominence: null,
-      sharpness: null,
-      source: "manual",
-      excluded: false,
-      view_row_id: peakId,
-    };
-  }
-  if (remote.kind === "add_tag") {
-    // SSE payload uses `tag_id`; HTTP response uses `id`. Mutators
-    // (addSampleTagMutator / addExposureTagMutator) read response.id and
-    // response.source. Without this branch, SSE-wins lands a malformed tag
-    // with id=undefined and source=undefined — undeletable, mis-classified.
-    return {
-      ...base,
-      id: payload.tag_id,
-      key: payload.key,
-      value: payload.value,
-      source: "manual",
-    };
-  }
-  if (remote.kind === "comparison_created" || remote.kind === "comparison_submitted") {
-    // SSE payload for comparison events carries title/description/members —
-    // but `members` ride as INPUT shape (no server-assigned `id`s, no
-    // `is_stale`, no `created_by`/`created_at`). The mutator's onSuccess
-    // expects the FULL Comparison shape (including `id`, lineage fields,
-    // `forked_from_title`, and per-member `is_stale`).
-    //
-    // Rather than fabricating those fields here (which would diverge from
-    // the live DB state), invalidate the comparison + listings so the next
-    // read fetches the canonical state. We still resolve the deferred
-    // (mutation transitions to success) so the UI's pending spinner clears.
-    // The caller's onSuccess then writes whatever it gets — and because
-    // we left `id` undefined on the synth response, the mutator's onSuccess
-    // detects "this isn't a real Comparison" and skips the splice in favor
-    // of letting the invalidation drive the refetch.
-    return {
-      ...base,
-      ...payload,
-      id: remote.entity_id,  // ← so onSuccess can target the right cache key
-    };
-  }
-  if (remote.kind === "comparison_deleted") {
-    // SSE payload is just {id}. Pass through verbatim — the mutator's
-    // onSuccess only reads `p.id` from the flat input, not the response.
-    return { ...base, id: remote.entity_id };
-  }
-  if (remote.kind === "peak_excluded" || remote.kind === "peak_unexcluded") {
-    // SSE payload is `{q, auto_peak_id}` — no `id`. Map auto_peak_id → id so
-    // peakSetExcluded.onSuccess's `pk.id === peakOnly.id` match key works.
-    // intensity/prominence/sharpness are intentionally absent: the SSE frame
-    // doesn't carry them. The mutator must MERGE these fields onto the
-    // existing row (not replace) so the original detection values are
-    // preserved. source/excluded are kind-derived.
-    return {
-      ...base,
-      id: payload.auto_peak_id,
-      q: payload.q,
-      source: "auto",
-      excluded: remote.kind === "peak_excluded",
-    };
-  }
+  const mutator = resolveMutatorForEvent(remote.kind, remote.entity_type);
+  const synth = mutator?.synthesizeFromSse?.(remote, base);
+  if (synth !== undefined) return synth;
+  const payload = (remote.payload as Record<string, unknown> | undefined) ?? {};
   return { ...base, ...payload };
 }

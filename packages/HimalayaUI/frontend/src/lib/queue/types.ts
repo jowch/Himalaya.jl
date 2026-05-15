@@ -105,6 +105,18 @@ export interface SseEvent {
 }
 
 /**
+ * The framework-owned fields that the replay coordinator threads into every
+ * synthesized response. Mutators MAY destructure these off via
+ * `stripQueueMetadata`. The values come from the SSE frame, not the payload.
+ */
+export interface QueueResponseMeta {
+  event_id: number;
+  client_op_id: string | null | undefined;
+  analysis_inputs_hash: string | undefined;
+  view_row_id?: number;
+}
+
+/**
  * The flat payload shape `useQueueMutation` actually constructs and hands to
  * mutator callbacks: the OpPayload metadata fields, the scope object the hook
  * caller passed in, and the per-call input merged together. Defined once so
@@ -118,6 +130,7 @@ export type FlatPayload<TInput, TScope> = OpPayload<TInput> & TScope & TInput;
  * - `onMutate` writes the optimistic cache effect; returns the rollback ctx
  * - `request` issues the HTTP call; honours AbortSignal
  * - `onSuccess` applies the server response to the cache
+ * - `synthesizeFromSse` (optional) builds the SSE-wins synthetic response
  * - `affectsExposurePeaks` (optional) tells hooks whether this op should
  *   register as a "peak op" against an exposure for `useExposureHasPendingPeakOps`
  *
@@ -130,6 +143,17 @@ export interface Mutator<TInput, TScope, TResponse> {
   onMutate: (payload: FlatPayload<TInput, TScope>, qc: QueryClient) => RollbackContext;
   request: (payload: FlatPayload<TInput, TScope>, signal: AbortSignal) => Promise<TResponse>;
   onSuccess: (payload: FlatPayload<TInput, TScope>, response: TResponse, qc: QueryClient) => void;
+  /**
+   * Build a synthetic response for the SSE-wins path. When the SSE for our
+   * own pending op lands before the HTTP response, the deferred resolves
+   * with this value so `onSuccess` can apply the cache effect without
+   * waiting for the (now-aborted) HTTP call. Return `undefined` to fall
+   * back to the generic `{ ...base, ...payload }` shape.
+   *
+   * The shape contract for what this returns IS the same shape `onSuccess`
+   * expects in its second argument — co-locating the two prevents drift.
+   */
+  synthesizeFromSse?: (remote: SseEvent, base: QueueResponseMeta) => TResponse | undefined;
   affectsExposurePeaks?: (payload: FlatPayload<TInput, TScope>, exposureId: number) => boolean;
   /**
    * When set, an HTTP 404 response is treated as a no-op success: the

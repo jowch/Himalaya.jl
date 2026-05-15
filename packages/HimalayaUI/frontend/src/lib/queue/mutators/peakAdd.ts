@@ -11,6 +11,8 @@ import { queryKeys } from "../../../queries";
 import { authOpts } from "../../authOpts";
 import { nextOptimisticId } from "../optimisticId";
 import { peakQTol } from "../peakQTol";
+import { replacePlaceholder } from "../replacePlaceholder";
+import { stripQueueMetadata } from "../queueMeta";
 import type { Mutator, RollbackContext } from "../types";
 
 export type PeakAddInput = { q: number };
@@ -50,41 +52,39 @@ export const peakAddMutator: Mutator<PeakAddInput, PeakAddScope, PeakAddResponse
   request: (p) => api.addPeak(p.exposureId, p.q, buildAuthOpts(p)),
   onSuccess: (p, response, qc) => {
     // Strip queue-framework metadata before treating the response as a Peak.
-    // The route returns a flat `Peak & {event_id, view_row_id, analysis_inputs_hash}`;
-    // the cache holds Peak[], so we don't want event_id/etc. polluting it.
-    const { event_id: _e, view_row_id: _v, analysis_inputs_hash, ...serverPeak } = response;
-    void _e; void _v;
+    const { meta, payload: serverPeak } = stripQueueMetadata(response);
     const peaksKey = queryKeys.peaks(p.exposureId);
-    qc.setQueryData<Peak[]>(peaksKey, (old) => {
-      const list = old ?? [];
-      // Drop the most recent negative-id placeholder for this q (within tol),
-      // and dedupe against any concurrent SSE that already inserted the row.
-      // Dedup is scoped to MANUAL peaks because auto_peaks.id and
-      // peak_curations.id share a namespace on the wire — an auto peak with
-      // the same id would otherwise falsely register as "already inserted."
-      const next: Peak[] = [];
-      let replaced = false;
-      const seenManual = new Set<number>();
-      for (const pk of list) {
-        if (pk.id < 0 && !replaced
-            && Math.abs(pk.q - p.q) < peakQTol(p.q)
-            && pk.exposure_id === p.exposureId) {
-          if (!seenManual.has(serverPeak.id)) {
-            next.push(serverPeak);
-            seenManual.add(serverPeak.id);
-          }
-          replaced = true;
-          continue;
-        }
-        if (pk.source === "manual" && seenManual.has(pk.id)) continue;
-        next.push(pk);
-        if (pk.source === "manual") seenManual.add(pk.id);
-      }
-      if (!replaced && !seenManual.has(serverPeak.id)) next.push(serverPeak);
-      return next;
-    });
+    qc.setQueryData<Peak[]>(peaksKey, (old) =>
+      // Dedup is scoped to MANUAL peaks: auto_peaks.id and peak_curations.id
+      // share a wire namespace, so an auto peak with the same id must survive.
+      replacePlaceholder(
+        old ?? [],
+        serverPeak,
+        (pk) => pk.source !== "auto"
+             && Math.abs(pk.q - p.q) < peakQTol(p.q)
+             && pk.exposure_id === p.exposureId,
+        { isDuplicate: (pk) => pk.source === "manual" && pk.id === serverPeak.id },
+      ),
+    );
     qc.setQueryData<Exposure>(queryKeys.exposure(p.exposureId), (old) =>
-      old ? { ...old, analysis_inputs_hash } : old);
+      old ? { ...old, analysis_inputs_hash: meta.analysis_inputs_hash ?? null } : old);
+  },
+  synthesizeFromSse: (remote, base) => {
+    const payload = (remote.payload as Record<string, unknown> | undefined) ?? {};
+    const peakId = payload.peak_curation_id as number | undefined;
+    if (peakId === undefined) return undefined;
+    return {
+      ...base,
+      id: peakId,
+      exposure_id: remote.entity_id,
+      q: payload.q as number,
+      intensity: null,
+      prominence: null,
+      sharpness: null,
+      source: "manual",
+      excluded: false,
+      view_row_id: peakId,
+    } as PeakAddResponse;
   },
   affectsExposurePeaks: () => true,
 };

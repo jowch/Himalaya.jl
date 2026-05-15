@@ -92,4 +92,17 @@ export const saveComparisonMutator: Mutator<SaveComparisonInput, SaveComparisonS
     // experiment scope.
     qc.invalidateQueries({ queryKey: ["comparisons"] });
   },
+  synthesizeFromSse: (remote, base) => {
+    const payload = (remote.payload as Record<string, unknown> | undefined) ?? {};
+    // Partial Comparison shape — `onSuccess`'s looksFull detector (see
+    // saveComparison.ts:80-81 `Array.isArray(response.members) && typeof
+    // response.content_hash === "string"`) trips the invalidate fallback
+    // because `members` is absent from the SSE payload. `id` is required so
+    // the cache-key targeting in the invalidate branch still works.
+    return {
+      ...base,
+      ...payload,
+      id: remote.entity_id,
+    } as unknown as Comparison;
+  },
 };
