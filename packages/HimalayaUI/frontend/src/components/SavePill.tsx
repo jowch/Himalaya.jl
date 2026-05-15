@@ -18,6 +18,9 @@ const COPY: Record<CompareMode["kind"], string> = {
 
 export function SavePill({ dirty, mode, onSave, isSaving }: Props): JSX.Element | null {
   if (!dirty) return null;
+  // Viewing modes never own a dirty draft; guard regardless of the caller so
+  // the pill can't render an empty-label button if `dirty` is ever wrong.
+  if (mode.kind === "viewing" || mode.kind === "viewing-stale") return null;
   return (
     <button
       type="button"

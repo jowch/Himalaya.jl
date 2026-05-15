@@ -52,6 +52,8 @@ export function CompareToolbar(p: Props): JSX.Element {
         </button>
         {open && (
           <div role="menu" className="absolute z-50 mt-1 right-0 min-w-[200px] card border border-border bg-bg-elevated shadow-lg p-1">
+            {/* TODO(#142): wire an onShowForks handler — for now this is a
+                visual placeholder that only closes the menu. */}
             <button
               type="button"
               data-testid="compare-toolbar-forks"

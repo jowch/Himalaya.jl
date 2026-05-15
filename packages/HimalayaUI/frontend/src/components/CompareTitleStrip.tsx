@@ -4,6 +4,10 @@ import { relativeTime } from "../lib/comparison/relativeTime";
 
 interface Props {
   title: string;
+  /**
+   * Pass `""` to show an editable (empty) description row with the
+   * "Add a description…" placeholder; pass `null` to hide the row entirely.
+   */
   description: string | null;
   memberCount: number;
   authorUsername: string | null;

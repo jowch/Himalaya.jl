@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { makeDragThresholdState, type DragOutcome } from "../../../src/lib/comparison/dragThreshold";
 
 describe("dragThreshold — Compare UX C-1", () => {
-  it("treats < 4px move as click", () => {
+  it("treats a move equal to the 4px threshold as click", () => {
     const s = makeDragThresholdState({ thresholdPx: 4 });
     s.onPointerDown(10, 10);
     s.onPointerMove(12, 12);
