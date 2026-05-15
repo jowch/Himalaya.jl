@@ -11,6 +11,7 @@ import type { Peak, PeakUpdatedResponse, Exposure, AuthOpts } from "../../../api
 import { queryKeys } from "../../../queries";
 import { authOpts } from "../../authOpts";
 import type { Mutator, OpKind, RollbackContext } from "../types";
+import { stripQueueMetadata } from "../queueMeta";
 
 export type PeakSetExcludedInput = { peakId: number };
 type PeakSetExcludedScope = {
@@ -54,11 +55,13 @@ function makeMutator(
       // sharpness — preserve those fields from the optimistic row. HTTP-wins
       // responses include the full Peak shape, so merge is equivalent to
       // replace there.
-      const {
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        event_id, view_row_id, analysis_inputs_hash, client_op_id,
-        ...peakFields
-      } = response as PeakUpdatedResponse & { client_op_id?: string };
+      // PeakUpdatedResponse.event_id is `number | null` (nullable for the
+      // no-op case) while QueueResponseMeta.event_id is `number`. Widen via
+      // `unknown` to satisfy the helper's Partial<QueueResponseMeta> constraint
+      // — runtime semantics are identical; stripQueueMetadata treats null the
+      // same as undefined for event_id.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { meta, payload: peakFields } = stripQueueMetadata(response as any);
       qc.setQueryData<Peak[]>(peaksKey, (old) =>
         (old ?? []).map((pk) =>
           pk.id === peakFields.id && pk.source === "auto"
@@ -66,7 +69,7 @@ function makeMutator(
         ),
       );
       qc.setQueryData<Exposure>(queryKeys.exposure(p.exposureId), (old) =>
-        old ? { ...old, analysis_inputs_hash: response.analysis_inputs_hash } : old);
+        old ? { ...old, analysis_inputs_hash: meta.analysis_inputs_hash ?? null } : old);
     },
     affectsExposurePeaks: () => true,
     synthesizeFromSse: (remote, base) => {
