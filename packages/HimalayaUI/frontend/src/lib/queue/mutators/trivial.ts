@@ -18,6 +18,7 @@ import type {
 import { queryKeys } from "../../../queries";
 import { authOpts } from "../../authOpts";
 import { nextOptimisticId } from "../optimisticId";
+import { replacePlaceholder } from "../replacePlaceholder";
 import type { Mutator, RollbackContext } from "../types";
 
 interface BaseScope {
@@ -286,25 +287,13 @@ export const postSampleMessageMutator: Mutator<PostSampleMessageInput, PostSampl
   request: (p) => api.postSampleMessage(p.sampleId, p.body, buildAuthOpts(p)),
   onSuccess: (p, response, qc) => {
     const key = queryKeys.messages(p.sampleId);
-    const list = qc.getQueryData<SampleMessage[]>(key) ?? [];
-    // Replace the most recent negative-id placeholder for this body, and
-    // dedupe against any concurrent SSE that already inserted the real msg.
-    const seen = new Set<number>();
-    const next: SampleMessage[] = [];
-    let replaced = false;
-    for (const m of list) {
-      if (m.id < 0 && !replaced && m.body === response.body
-          && m.sample_id === response.sample_id) {
-        if (!seen.has(response.id)) { next.push(response); seen.add(response.id); }
-        replaced = true;
-        continue;
-      }
-      if (seen.has(m.id)) continue;
-      next.push(m);
-      seen.add(m.id);
-    }
-    if (!replaced && !seen.has(response.id)) next.push(response);
-    qc.setQueryData<SampleMessage[]>(key, next);
+    qc.setQueryData<SampleMessage[]>(key, (list) =>
+      replacePlaceholder(
+        list ?? [],
+        response,
+        (m) => m.body === response.body && m.sample_id === response.sample_id,
+      ),
+    );
   },
 };
 
