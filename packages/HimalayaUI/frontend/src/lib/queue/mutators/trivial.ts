@@ -221,14 +221,18 @@ export const addExposureTagMutator: Mutator<AddExposureTagInput, AddExposureTagS
       source: response.source,
     };
     rewriteExposureLists(qc, p.sampleId, (list) =>
-      list.map((e) => {
-        if (e.id !== p.exposureId) return e;
-        const filtered = e.tags.filter((t) =>
-          !(t.id < 0 && t.key === p.key && t.value === p.value)
-          && t.id !== tag.id,
-        );
-        return { ...e, tags: [...filtered, tag] };
-      }),
+      list.map((e) =>
+        e.id !== p.exposureId
+          ? e
+          : {
+              ...e,
+              tags: replacePlaceholder(
+                e.tags,
+                tag,
+                (t) => t.key === p.key && t.value === p.value,
+              ),
+            },
+      ),
     );
   },
 };
