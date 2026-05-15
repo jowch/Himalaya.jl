@@ -149,11 +149,6 @@ function synthesizeResponseFromSse(remote: SseEvent): unknown {
   // Legacy fallback: per-kind branches still here until each mutator owns
   // its own synthesizeFromSse (tasks B5–B8). Once those land, this block
   // collapses to just `return { ...base, ...payload };`.
-  if (remote.kind === "comparison_deleted") {
-    // SSE payload is just {id}. Pass through verbatim — the mutator's
-    // onSuccess only reads `p.id` from the flat input, not the response.
-    return { ...base, id: remote.entity_id };
-  }
   if (remote.kind === "peak_excluded" || remote.kind === "peak_unexcluded") {
     // SSE payload is `{q, auto_peak_id}` — no `id`. Map auto_peak_id → id so
     // peakSetExcluded.onSuccess's `pk.id === peakOnly.id` match key works.

@@ -54,4 +54,9 @@ export const deleteComparisonMutator: Mutator<DeleteComparisonInput, DeleteCompa
   // and rollback (which is a no-op here anyway) doesn't matter — but the
   // toast would fire. Suppressing it keeps the UX clean.
   treats404AsSuccess: true,
+  synthesizeFromSse: (remote, base) => ({
+    ...base,
+    id: remote.entity_id,
+    deleted: true,
+  } as DeleteResponse),
 };
