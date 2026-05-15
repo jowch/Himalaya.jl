@@ -1,5 +1,5 @@
 import type { QueryClient, MutationCache } from "@tanstack/react-query";
-import type { SseEvent, QueueResponseMeta } from "./types";
+import type { SseEvent, QueueResponseMeta, CurationPostState } from "./types";
 import { getDeferred, clearDeferred } from "./deferred";
 import { applyRemoteToCache, applyPostStateOnly } from "./applyRemoteToCache";
 import { getClientId } from "../clientId";
@@ -156,7 +156,11 @@ function synthesizeResponseFromSse(remote: SseEvent): unknown {
   const base: QueueResponseMeta = {
     event_id: remote.id,
     client_op_id: remote.client_op_id,
-    analysis_inputs_hash: remote.post_state?.analysis_inputs_hash,
+    // Only curation-frame post_state carries analysis_inputs_hash; a
+    // comparison-frame post_state (a Comparison projection) has none, so the
+    // cast-then-optional-chain correctly yields undefined there.
+    analysis_inputs_hash: (remote.post_state as CurationPostState | undefined)
+      ?.analysis_inputs_hash,
   };
   const mutator = resolveMutatorForEvent(remote.kind, remote.entity_type);
   const synth = mutator?.synthesizeFromSse?.(remote, base);

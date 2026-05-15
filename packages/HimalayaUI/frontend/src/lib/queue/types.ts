@@ -1,4 +1,5 @@
 import type { QueryClient } from "@tanstack/react-query";
+import type { Comparison } from "../../api";
 
 // ---------------------------------------------------------------------------
 // Optimistic-id invariant
@@ -85,11 +86,25 @@ export interface PendingDeferred<T> {
 }
 
 /**
+ * Curation-frame `post_state`: the recomputed indices snapshot threaded onto
+ * `peak_*` / `analyze_run` SSE frames so the cache can replay without a
+ * refetch.
+ */
+export interface CurationPostState {
+  analysis_inputs_hash: string;
+  indices: unknown[];
+}
+
+/**
  * The shape of an SSE frame as parsed from the JSON `data:` line. Mirrors
  * the Julia-side `broadcast_event!` JSON shape (events.jl).
  *
  * Optional `post_state` carries an enriched snapshot for replay-without-
- * refetch on curation events that recompute indices.
+ * refetch. Its shape depends on `kind`: curation events (peak_*, analyze_run)
+ * carry a `CurationPostState`; comparison events (comparison_created /
+ * comparison_submitted) carry the full `Comparison` projection — the same
+ * shape `fetch_comparison_with_members` / `GET /api/comparisons/:id` returns
+ * (per Compare UX A-5 Step 5b). Consumers narrow by `kind` and cast.
  */
 export interface SseEvent {
   id: number;
@@ -101,7 +116,7 @@ export interface SseEvent {
   client_op_id?: string | null;
   ts?: string;
   payload?: unknown;
-  post_state?: { analysis_inputs_hash: string; indices: unknown[] };
+  post_state?: CurationPostState | Comparison;
 }
 
 /**
