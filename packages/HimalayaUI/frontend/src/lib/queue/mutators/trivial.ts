@@ -134,8 +134,7 @@ export const addSampleTagMutator: Mutator<AddSampleTagInput, AddSampleTagScope, 
   request: (p) => api.addSampleTag(p.sampleId, p.key, p.value, buildAuthOpts(p)),
   onSuccess: (p, response, qc) => {
     // The route emits `{id, sample_id, key, value, source}` (routes_samples.jl)
-    // but the SampleTag type omits `sample_id`. Strip it so the cache row
-    // matches the type — otherwise tag entries pollute with sample_id.
+    // but SampleTag omits `sample_id`. Strip it so the cache row matches type.
     const tag: SampleTag = {
       id: response.id, key: response.key, value: response.value,
       source: response.source,
@@ -143,14 +142,18 @@ export const addSampleTagMutator: Mutator<AddSampleTagInput, AddSampleTagScope, 
     const samplesKey = queryKeys.samples(p.experimentId);
     qc.setQueryData<Sample[]>(samplesKey, (list) => {
       if (!list) return list;
-      return list.map((s) => {
-        if (s.id !== p.sampleId) return s;
-        const filtered = s.tags.filter((t) =>
-          !(t.id < 0 && t.key === p.key && t.value === p.value)
-          && t.id !== tag.id,
-        );
-        return { ...s, tags: [...filtered, tag] };
-      });
+      return list.map((s) =>
+        s.id !== p.sampleId
+          ? s
+          : {
+              ...s,
+              tags: replacePlaceholder(
+                s.tags,
+                tag,
+                (t) => t.key === p.key && t.value === p.value,
+              ),
+            },
+      );
     });
   },
 };
