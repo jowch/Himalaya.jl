@@ -17,9 +17,13 @@ import HimalayaUI
 end
 
 @testset "hash_peak_set: cache works across separate NamedTuple constructions" begin
+    HimalayaUI._clear_peak_set_hash_cache!()
     h1 = hash_peak_set((q = [0.11, 0.22], sharpness = [1.0, 0.9]))
+    n_after_first = length(HimalayaUI._PEAK_SET_HASH_CACHE)
     h2 = hash_peak_set((q = [0.11, 0.22], sharpness = [1.0, 0.9]))
+    n_after_second = length(HimalayaUI._PEAK_SET_HASH_CACHE)
     @test h1 == h2
+    @test n_after_second == n_after_first  # second call hit the cache, didn't insert
 end
 
 @testset "hash_peak_set: cache cap" begin

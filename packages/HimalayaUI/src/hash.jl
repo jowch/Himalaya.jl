@@ -37,11 +37,18 @@ function _clear_peak_set_hash_cache!()
 end
 
 function hash_peak_set(eff::NamedTuple)::String
-    qs = collect(Float64, eff.q)
-    ss = collect(Float64, eff.sharpness)
-    key = (qs, ss)
+    # Fast path: when eff.q and eff.sharpness are already Vector{Float64}, the
+    # Dict lookup compares tuples by `==` (content-equality on each Vector), so
+    # we can probe with the caller-owned arrays without allocating. Only on a
+    # miss do we copy — the cache then owns its keys, so external mutation of
+    # eff.q can't corrupt them.
+    fast = eff.q isa Vector{Float64} && eff.sharpness isa Vector{Float64}
+    qs = fast ? eff.q        : collect(Float64, eff.q)
+    ss = fast ? eff.sharpness : collect(Float64, eff.sharpness)
+    lookup_key = (qs, ss)
+
     lock(_PEAK_SET_HASH_CACHE_LOCK) do
-        cached = get(_PEAK_SET_HASH_CACHE, key, nothing)
+        cached = get(_PEAK_SET_HASH_CACHE, lookup_key, nothing)
         cached !== nothing && return cached
 
         n = length(qs)
@@ -55,12 +62,15 @@ function hash_peak_set(eff::NamedTuple)::String
         end
         result = bytes2hex(SHA.sha256(buf))
 
+        # Store under a cache-owned key so external mutation can't corrupt it.
+        store_key = fast ? (copy(qs), copy(ss)) : lookup_key
+
         if length(_PEAK_SET_HASH_CACHE_ORDER) >= PEAK_SET_HASH_CACHE_CAP
             oldest = popfirst!(_PEAK_SET_HASH_CACHE_ORDER)
             delete!(_PEAK_SET_HASH_CACHE, oldest)
         end
-        _PEAK_SET_HASH_CACHE[key] = result
-        push!(_PEAK_SET_HASH_CACHE_ORDER, key)
+        _PEAK_SET_HASH_CACHE[store_key] = result
+        push!(_PEAK_SET_HASH_CACHE_ORDER, store_key)
         result
     end
 end

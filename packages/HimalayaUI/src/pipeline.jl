@@ -12,10 +12,20 @@ Greedily select a non-overlapping set of indices by descending score.
 An index is added to the group only if none of its peaks are already
 claimed by a previously selected index.
 
-The two-arg form claims by `eff.peak_id` (arithmetic-safe — works even
-if an index's q-values were re-derived rather than reused from `eff.q`).
-The one-arg form falls back to q-value equality and is retained for
-test fixtures that don't materialize an `eff` tuple.
+The two-arg form claims by `eff.peak_id` (Int) — the membership test is
+on integer identity instead of `Float64` equality, so two indices whose
+peaks come from the same underlying `eff` row can never simultaneously
+win. **Contract**: every `q` in `peaks(idx)` for each `idx in indices`
+MUST be `==` to some `eff.q` value. Q-values that don't match any
+`eff.q` are silently dropped from the claim set (their index can still
+be admitted to the group), so a future caller that arithmetically
+derives q would lose claims rather than wrongly intersect. Production
+call site is `analyze_exposure!`, where `candidates =
+Himalaya.indexpeaks(eff.q, eff.sharpness)` reuses `eff.q` references so
+the contract holds by construction.
+
+The one-arg form falls back to q-value equality (`Set{Float64}`) and is
+retained for test fixtures that don't materialize an `eff` tuple.
 """
 function auto_group(indices::Vector{<:Himalaya.Index},
                     eff::NamedTuple)::Vector{<:Himalaya.Index}

@@ -12,7 +12,7 @@ using SparseArrays
            peak_kind = fill(:auto, length(qs)))
 
     candidates = indexpeaks(eff.q, eff.sharpness)
-    isempty(candidates) && return
+    @test !isempty(candidates)
 
     group = auto_group(candidates, eff)
 
@@ -41,7 +41,7 @@ end
     qs        = [0.1, 0.1414, 0.1732, 0.2, 0.2449]
     sharpness = ones(length(qs))
     candidates = indexpeaks(qs, sharpness)
-    isempty(candidates) && return
+    @test !isempty(candidates)
     eff = (q = qs, sharpness = sharpness,
            peak_id = collect(1:length(qs)),
            peak_kind = fill(:auto, length(qs)))
