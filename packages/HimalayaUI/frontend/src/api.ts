@@ -1,3 +1,5 @@
+import type { GroupingMode } from "./lib/comparison/coloring";
+
 export interface User {
   id: number;
   username: string;
@@ -459,12 +461,20 @@ export interface ComparisonSummary {
   updated_at: string | null;
   forked_from_id: number | null;
   forked_at_hash: string | null;
-  /** Author's persisted view choices (spec §6.4); NULL = author never picked. */
+  /**
+   * Author's persisted view choices (spec §6.4); NULL = author never picked.
+   * `view_grouping_mode` is intentionally loose (`string | null`) on read —
+   * permissive-read / strict-write; `SaveComparisonBody` uses `GroupingMode`.
+   * Populated by #137 (backend); reads `undefined` until that lands.
+   */
   view_grouping_mode: string | null;
   view_show_peak_ticks: boolean | null;
   view_show_peak_labels: boolean | null;
   last_event_at: string | null;
-  /** Listing projection fields (see `_comparison_listing_rows`). */
+  /**
+   * Listing projection fields (see `_comparison_listing_rows`).
+   * Populated by #137 (backend); reads `undefined` until that lands.
+   */
   author_username: string | null;
   member_count: number;
   member_phases: string[];
@@ -494,8 +504,12 @@ export interface SaveComparisonBody {
   /** Set when forking; both fields ride together or not at all. */
   forked_from_id?: number | null;
   forked_at_hash?: string | null;
-  /** Author's view choices (spec §6.4); omitted = not changed by this save. */
-  view_grouping_mode?: "bySample" | "byPhase" | "distinct" | null;
+  /**
+   * Author's view choices (spec §6.4); omitted = not changed by this save.
+   * Strict `GroupingMode` on write vs. permissive `string | null` on the read
+   * types is deliberate — see the read-type comments.
+   */
+  view_grouping_mode?: GroupingMode | null;
   view_show_peak_ticks?: boolean | null;
   view_show_peak_labels?: boolean | null;
 }
