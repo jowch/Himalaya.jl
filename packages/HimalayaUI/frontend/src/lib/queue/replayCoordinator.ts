@@ -1,8 +1,9 @@
 import type { QueryClient, MutationCache } from "@tanstack/react-query";
-import type { SseEvent } from "./types";
+import type { SseEvent, QueueResponseMeta } from "./types";
 import { getDeferred, clearDeferred } from "./deferred";
 import { applyRemoteToCache, applyPostStateOnly } from "./applyRemoteToCache";
 import { getClientId } from "../clientId";
+import { resolveMutatorForEvent } from "./mutatorRegistry";
 
 /**
  * Process an SSE frame against the local cache and pending mutation queue.
@@ -134,11 +135,20 @@ export function handleRemoteEvent(
  */
 function synthesizeResponseFromSse(remote: SseEvent): unknown {
   const payload = (remote.payload as Record<string, unknown> | undefined) ?? {};
-  const base = {
+  const base: QueueResponseMeta = {
     event_id: remote.id,
     client_op_id: remote.client_op_id,
     analysis_inputs_hash: remote.post_state?.analysis_inputs_hash,
   };
+
+  // Phase B preferred path: ask the owning mutator to build the synth shape.
+  const mutator = resolveMutatorForEvent(remote.kind, remote.entity_type);
+  const synth = mutator?.synthesizeFromSse?.(remote, base);
+  if (synth !== undefined) return synth;
+
+  // Legacy fallback: per-kind branches still here until each mutator owns
+  // its own synthesizeFromSse (tasks B4–B8). Once those land, this block
+  // collapses to just `return { ...base, ...payload };`.
   if (remote.kind === "peak_added") {
     const peakId = payload.peak_curation_id as number | undefined;
     return {
