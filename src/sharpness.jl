@@ -44,6 +44,11 @@ sharpness_savgol(y, m) = -savitzky_golay(m, 4, y; order = 2)
 # rewritten allocation-free for issue #128.
 function savitzky_golay(m, n, y; order = 0)
     num_y = length(y)
+    # Precondition for `_sg_convolve!`: the edge-reflection index math only
+    # stays within `1:num_y` when the window fits inside the trace. Guarding
+    # here lets the convolution loop keep its `@inbounds` annotation.
+    num_y >= 2m + 1 ||
+        throw(ArgumentError("trace length $num_y is shorter than the SG window $(2m + 1)"))
     z = -m:m
     J = zeros(2m + 1, n + 1)
 

@@ -73,10 +73,17 @@ end
     @test per_sample < 64
 end
 
+@testset "savitzky_golay: rejects a trace shorter than the window" begin
+    # The edge-reflection index math is only in-bounds when num_y >= 2m+1.
+    # A shorter trace must fail loudly rather than reach the @inbounds loop.
+    @test_throws ArgumentError Himalaya.savitzky_golay(5, 4, rand(8); order = 2)
+    @test Himalaya.savitzky_golay(5, 4, rand(11); order = 2) isa Vector  # 2m+1 ok
+end
+
 @testset "savitzky_golay: numerical output pinned on a fixture trace" begin
     A = readdlm(joinpath(@__DIR__, "data", "example_tot.dat"))
-    I = A[:, 2]
-    s = Himalaya.sharpness(I; method = :savgol, m = 5)
+    intensity = A[:, 2]
+    s = Himalaya.sharpness(intensity; method = :savgol, m = 5)
     @test length(s) == 922
     # Pinned values spanning boundary-low, interior, and boundary-high regions.
     pinned = Dict(
