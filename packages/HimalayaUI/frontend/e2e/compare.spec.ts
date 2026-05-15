@@ -65,6 +65,21 @@ const USERS = [{ id: 1, username: "alice", first_name: null, last_name: null }];
 
 const EMPTY_COMPARISONS_LIST: ReadonlyArray<unknown> = [];
 
+// Listing-projection fields (#136/#137). Every comparison object that lands
+// in `comparisonsByExp` is also served as a sidebar listing row, and the
+// redesigned ComparisonSidebar (Compare UX Phase F) consumes these fields,
+// so each mock comparison must carry the projection shape.
+const PROJECTION_DEFAULTS = {
+  view_grouping_mode: null,
+  view_show_peak_ticks: null,
+  view_show_peak_labels: null,
+  last_event_at: "2026-05-06T00:00:00Z",
+  author_username: "alice",
+  member_count: 2,
+  member_phases: [] as string[],
+  has_stale_members: false,
+};
+
 interface ServerState {
   users: typeof USERS;
   comparisonsByExp: Map<number, Array<{ id: number; title: string; description: string | null;
@@ -143,6 +158,8 @@ async function mockApi(page: Page, state: ServerState): Promise<void> {
       const id = state.nextComparisonId++;
       const comp = {
         id,
+        ...PROJECTION_DEFAULTS,
+        member_count: body.members.length,
         title: body.title,
         description: body.description ?? null,
         content_hash: `h-${id}`,
@@ -343,6 +360,8 @@ test("compare smoke: review survives full page reload", async ({ page }) => {
   // Pre-seed a saved comparison.
   const comp = {
     id: 1,
+    ...PROJECTION_DEFAULTS,
+    member_count: 1,
     title: "Saved comparison",
     description: null,
     content_hash: "h-1",
@@ -385,6 +404,8 @@ test("compare smoke: non-author sees Fork → can save fork", async ({ page }) =
   // alice authored the comparison; we'll log in as "bob" who can only fork.
   const comp = {
     id: 1,
+    ...PROJECTION_DEFAULTS,
+    member_count: 1,
     title: "Alice's comparison",
     description: null,
     content_hash: "h-1",

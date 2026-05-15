@@ -43,6 +43,20 @@ const TRACE = { q: [0.1, 0.2, 0.3], I: [10, 5, 2], sigma: [1, 1, 1] };
 
 const USERS = [{ id: 1, username: "alice", first_name: null, last_name: null }];
 
+// Listing-projection fields (#136/#137). Comparison objects in
+// `comparisonsByExp` double as sidebar listing rows, which the redesigned
+// ComparisonSidebar (Compare UX Phase F) consumes — so each must carry them.
+const PROJECTION_DEFAULTS = {
+  view_grouping_mode: null,
+  view_show_peak_ticks: null,
+  view_show_peak_labels: null,
+  last_event_at: "2026-05-06T00:00:00Z",
+  author_username: "alice",
+  member_count: 1,
+  member_phases: [] as string[],
+  has_stale_members: false,
+};
+
 interface ServerState {
   users: typeof USERS;
   comparisonsByExp: Map<number, Array<{ id: number; title: string; description: string | null;
@@ -117,6 +131,8 @@ async function mockApi(page: Page, state: ServerState): Promise<void> {
       const id = state.nextComparisonId++;
       const comp = {
         id,
+        ...PROJECTION_DEFAULTS,
+        member_count: body.members.length,
         title: body.title,
         description: body.description ?? null,
         content_hash: `h-${id}`,
@@ -327,6 +343,7 @@ test("#75 ForksPopover Esc + outside-click close + aria-expanded", async ({ page
   // Pre-seed parent + fork pair on the mocked server.
   const parent = {
     id: 1,
+    ...PROJECTION_DEFAULTS,
     title: "Parent comparison",
     description: null,
     content_hash: "h-1",
@@ -348,6 +365,7 @@ test("#75 ForksPopover Esc + outside-click close + aria-expanded", async ({ page
   };
   const fork = {
     id: 2,
+    ...PROJECTION_DEFAULTS,
     title: "My fork",
     description: null,
     content_hash: "h-2",
