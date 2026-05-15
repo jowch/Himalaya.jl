@@ -57,9 +57,9 @@ function synthesizeResponseFromSse(remote: SseEvent): unknown {
 
 #### Event-kind → mutator lookup
 
-The existing `mutatorRegistry` is keyed by `OpKind`. SSE frames carry the *event kind* string (not `OpKind`) — most are 1:1 but a few diverge (`comparison_save` → `comparison_created` | `comparison_submitted`, `delete_index` → `speculative_deleted`, `reanalyze_exposure` → `analyze_run`).
+The existing `mutatorRegistry.ts` exports `resolveMutator(op)` keyed by `OpKind` + payload-shape discrimination. SSE frames carry the *event kind* string (not `OpKind`) — most are 1:1 but a few diverge (`comparison_save` → `comparison_created` | `comparison_submitted`, `delete_index` → `speculative_deleted`, `reanalyze_exposure` → `analyze_run`).
 
-Add a sibling `EVENT_KIND_TO_MUTATOR: Record<string, Mutator>` next to the existing registry, populated from each mutator's own declared mapping (a new optional `eventKinds?: string[]` field on `Mutator` defaulting to `[mutator.kind]`). Mutators with diverging event names (`saveComparison`, `deleteSpeculative`, `reanalyzeExposure`) override.
+Add a sibling `resolveMutatorForEvent(eventKind, entityType): Mutator | undefined` next to `resolveMutator`. The dispatcher is an explicit switch (mirroring `resolveMutator`'s shape), not a derived registry — the `add_tag`/`remove_tag`/`post_message` entity-type splits couldn't be expressed by a per-mutator `eventKinds: string[]` field anyway. A consistency cross-check test ensures every mutator round-trips: for each canonical (eventKind, entityType) the mutator emits, `resolveMutatorForEvent` returns the same mutator.
 
 #### Per-mutator migration
 
@@ -67,9 +67,9 @@ Add a sibling `EVENT_KIND_TO_MUTATOR: Record<string, Mutator>` next to the exist
 |---|---|---|
 | `peak_added` | `peakAddMutator` | Move synth body verbatim to `synthesizeFromSse` |
 | `add_tag` | `addSampleTagMutator` + `addExposureTagMutator` | Both register `add_tag`; coordinator must route by entity. → Use entity_type discriminator on the synth method, or split synth to two mutator methods and look up by `(kind, entity_type)` pair. Recommendation: **look up by `(kind, entity_type)` tuple** for these two; both other mutators are entity-uniqued already. |
-| `comparison_created`, `comparison_submitted` | `saveComparisonMutator` | Move synth body verbatim; declare both event kinds via `eventKinds` |
+| `comparison_created`, `comparison_submitted` | `saveComparisonMutator` | Move synth body verbatim; both event kinds route to the same mutator via the `resolveMutatorForEvent` switch (two `case` arms fall through) |
 | `comparison_deleted` | `deleteComparisonMutator` | Move synth body verbatim |
-| `peak_excluded`, `peak_unexcluded` | `peakSetExcludedMutator` | Move synth body verbatim; declare both event kinds |
+| `peak_excluded`, `peak_unexcluded` | `peakSetExcludedMutator` | Move synth body verbatim; both event kinds route via the switch (the `excluded: boolean` flips per kind inside the synth) |
 
 After migration, `replayCoordinator.ts` shrinks by ~70 lines and the kind-aware shape contracts live next to their consumers.
 

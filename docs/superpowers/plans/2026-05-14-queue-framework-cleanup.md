@@ -28,13 +28,13 @@
 - `packages/HimalayaUI/frontend/test/queue/queueMeta.test.ts`
 
 **Modified:**
-- `packages/HimalayaUI/frontend/src/lib/queue/types.ts` — add `synthesizeFromSse?` and `eventKinds?` to `Mutator<>`
+- `packages/HimalayaUI/frontend/src/lib/queue/types.ts` — add `synthesizeFromSse?` and `QueueResponseMeta` to `Mutator<>` interface module
 - `packages/HimalayaUI/frontend/src/lib/queue/mutatorRegistry.ts` — add `resolveMutatorForEvent(kind, entity_type)`
 - `packages/HimalayaUI/frontend/src/lib/queue/replayCoordinator.ts` — replace switch with mutator dispatch
 - `packages/HimalayaUI/frontend/src/lib/queue/mutators/peakAdd.ts` — adopt `replacePlaceholder`, `stripQueueMetadata`, declare `synthesizeFromSse`
 - `packages/HimalayaUI/frontend/src/lib/queue/mutators/peakSetExcluded.ts` — adopt `stripQueueMetadata`, declare `synthesizeFromSse`
 - `packages/HimalayaUI/frontend/src/lib/queue/mutators/indexGroup.ts` — adopt `stripQueueMetadata` (×2 sites)
-- `packages/HimalayaUI/frontend/src/lib/queue/mutators/saveComparison.ts` — declare `synthesizeFromSse`, `eventKinds`
+- `packages/HimalayaUI/frontend/src/lib/queue/mutators/saveComparison.ts` — declare `synthesizeFromSse` (covers both `comparison_created` and `comparison_submitted` event kinds via the switch in `resolveMutatorForEvent`)
 - `packages/HimalayaUI/frontend/src/lib/queue/mutators/deleteComparison.ts` — declare `synthesizeFromSse`
 - `packages/HimalayaUI/frontend/src/lib/queue/mutators/trivial.ts` — adopt `replacePlaceholder` (×4 sites); declare `synthesizeFromSse` for add_tag mutators
 - `packages/HimalayaUI/frontend/test/queue/sseEventPayload.contract.test.ts` — add coverage assertion (no failing test churn; just an extra it-block)
@@ -704,18 +704,11 @@ export interface QueueResponseMeta {
 }
 ```
 
-Add the two new optional fields to the `Mutator<TInput, TScope, TResponse>` interface (currently lines 128–147):
+Add the new optional method to the `Mutator<TInput, TScope, TResponse>` interface (currently lines 128–147). The event-kind→mutator routing lives in `resolveMutatorForEvent` (Task B2) as an explicit switch — it does NOT consult a per-mutator `eventKinds` field. We considered adding such a field but rejected it: the switch is the single source of truth (mirroring the existing `resolveMutator(op)` shape), and the `add_tag`/`remove_tag`/`post_message` entity-type splits couldn't be expressed by a flat `eventKinds: string[]` alone anyway.
 
 ```ts
 export interface Mutator<TInput, TScope, TResponse> {
   kind: OpKind;
-  /**
-   * The set of SSE event kinds (strings on the wire) this mutator can answer
-   * for. Defaults to `[kind]` when omitted. Override when the OpKind name
-   * differs from the event kind, e.g. `comparison_save` emits
-   * `comparison_created` and `comparison_submitted`.
-   */
-  eventKinds?: string[];
   onMutate: (payload: FlatPayload<TInput, TScope>, qc: QueryClient) => RollbackContext;
   request: (payload: FlatPayload<TInput, TScope>, signal: AbortSignal) => Promise<TResponse>;
   onSuccess: (payload: FlatPayload<TInput, TScope>, response: TResponse, qc: QueryClient) => void;
@@ -750,17 +743,18 @@ export interface Mutator<TInput, TScope, TResponse> {
 - [ ] **Step 2: Run typecheck**
 
 Run: `npm run build`
-Expected: PASS — `synthesizeFromSse?` and `eventKinds?` are optional, so no existing mutator must change.
+Expected: PASS — `synthesizeFromSse?` is optional, so no existing mutator must change.
 
 - [ ] **Step 3: Commit**
 
 ```bash
 git add packages/HimalayaUI/frontend/src/lib/queue/types.ts
-git commit -m "feat(queue): extend Mutator with synthesizeFromSse + eventKinds
+git commit -m "feat(queue): extend Mutator with synthesizeFromSse
 
-Optional fields — no existing mutators need to change. Sets up the
+Optional method — no existing mutators need to change. Sets up the
 shape contract for moving per-kind synth from replayCoordinator into
-the mutator. (#129)
+the mutator. The event-kind→mutator routing lives in a separate
+explicit switch (Task B2), not a per-mutator field. (#129)
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 ```
@@ -776,7 +770,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 The dispatcher must handle:
 - 1:1 OpKind ↔ event kind for most mutators (`peak_added`, etc.)
 - `add_tag` event splits by `entity_type`: `"sample"` → `addSampleTagMutator`, `"exposure"` → `addExposureTagMutator`. Same for `remove_tag` → remove variants.
-- `post_message` event splits by `entity_type`: `"sample"` → `postSampleMessageMutator`, `"comparison"` → `postComparisonMessageMutator`.
+- `post_message` event splits by `entity_type`: `"sample_message"` → `postSampleMessageMutator`, `"comparison_message"` → `postComparisonMessageMutator`. **Important:** these are the literal wire strings emitted by the backend (`routes_messages.jl:65` → `"sample_message"`, `routes_comparisons.jl:326` → `"comparison_message"`); `applyRemoteToCache.ts:178-181` already discriminates on these exact strings.
 - `comparison_created` and `comparison_submitted` both → `saveComparisonMutator`.
 - `analyze_run` event → `reanalyzeExposureMutator`.
 - `speculative_deleted` event → `deleteIndexMutator` (the user gesture is `delete_index`, the wire event is `speculative_deleted`).
@@ -836,9 +830,9 @@ describe("resolveMutatorForEvent", () => {
     expect(resolveMutatorForEvent("remove_tag", "exposure")).toBe(removeExposureTagMutator);
   });
 
-  it("splits post_message by entity_type", () => {
-    expect(resolveMutatorForEvent("post_message", "sample"))    .toBe(postSampleMessageMutator);
-    expect(resolveMutatorForEvent("post_message", "comparison")).toBe(postComparisonMessageMutator);
+  it("splits post_message by entity_type (wire-string entity types)", () => {
+    expect(resolveMutatorForEvent("post_message", "sample_message"))    .toBe(postSampleMessageMutator);
+    expect(resolveMutatorForEvent("post_message", "comparison_message")).toBe(postComparisonMessageMutator);
   });
 
   it("routes both comparison_created and comparison_submitted to saveComparison", () => {
@@ -860,10 +854,10 @@ describe("resolveMutatorForEvent", () => {
 });
 
 describe("resolveMutator ↔ resolveMutatorForEvent consistency", () => {
-  // Cross-check: for each mutator, the event kind it canonically emits
-  // (from `eventKinds[0]` or `kind`) must resolve back to the same mutator.
-  // Catches drift if someone adds a mutator + updates resolveMutator but
-  // forgets resolveMutatorForEvent (or vice versa).
+  // Cross-check: for each mutator, every (eventKind, entityType) pair that
+  // resolveMutatorForEvent's switch maps to it must round-trip back to the
+  // same mutator instance. Catches drift if someone adds a mutator + updates
+  // resolveMutator but forgets resolveMutatorForEvent (or vice versa).
   const cases = [
     { mutator: peakAddMutator,          eventKind: "peak_added",          entityType: "exposure"   },
     { mutator: peakRemoveMutator,       eventKind: "peak_removed",        entityType: "exposure"   },
@@ -881,19 +875,21 @@ describe("resolveMutator ↔ resolveMutatorForEvent consistency", () => {
     { mutator: addExposureTagMutator,   eventKind: "add_tag",             entityType: "exposure"   },
     { mutator: removeSampleTagMutator,  eventKind: "remove_tag",          entityType: "sample"     },
     { mutator: removeExposureTagMutator, eventKind: "remove_tag",         entityType: "exposure"   },
-    { mutator: postSampleMessageMutator, eventKind: "post_message",       entityType: "sample"     },
-    { mutator: postComparisonMessageMutator, eventKind: "post_message",   entityType: "comparison" },
+    { mutator: postSampleMessageMutator, eventKind: "post_message",       entityType: "sample_message"     },
+    { mutator: postComparisonMessageMutator, eventKind: "post_message",   entityType: "comparison_message" },
     { mutator: updateSampleMutator,     eventKind: "update_sample",       entityType: "sample"     },
     { mutator: setExposureStatusMutator, eventKind: "set_exposure_status", entityType: "exposure"  },
     { mutator: selectExposureMutator,   eventKind: "select_exposure",     entityType: "exposure"   },
   ];
 
-  it.each(cases)(
-    "$eventKind / $entityType resolves to $mutator.kind",
-    ({ mutator, eventKind, entityType }) => {
+  // Use forEach + it() instead of it.each($mutator.kind) — dot-property
+  // interpolation in it.each titles is Vitest-2.1+ but the codebase has no
+  // prior example; a template-literal title is unambiguous.
+  cases.forEach(({ mutator, eventKind, entityType }) => {
+    it(`${eventKind} / ${entityType} resolves to ${mutator.kind}`, () => {
       expect(resolveMutatorForEvent(eventKind, entityType)).toBe(mutator);
-    },
-  );
+    });
+  });
 });
 ```
 
@@ -944,7 +940,10 @@ export function resolveMutatorForEvent(
     case "remove_tag":
       return entityType === "sample" ? removeSampleTagMutator : removeExposureTagMutator;
     case "post_message":
-      return entityType === "comparison" ? postComparisonMessageMutator : postSampleMessageMutator;
+      // entity_type is the wire string ("sample_message" / "comparison_message"),
+      // matching applyRemoteToCache.ts:178-181's discriminator. Default the
+      // unknown branch to sample (mirroring applyRemoteToCache's default).
+      return entityType === "comparison_message" ? postComparisonMessageMutator : postSampleMessageMutator;
     default:
       return undefined;
   }
@@ -1085,6 +1084,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 
 **Files:**
 - Modify: `packages/HimalayaUI/frontend/src/lib/queue/mutators/peakAdd.ts`
+- Modify: `packages/HimalayaUI/frontend/src/lib/queue/replayCoordinator.ts` (delete legacy `peak_added` branch)
 
 - [ ] **Step 1: Add `synthesizeFromSse` to peakAddMutator**
 
@@ -1155,6 +1155,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 
 **Files:**
 - Modify: `packages/HimalayaUI/frontend/src/lib/queue/mutators/trivial.ts`
+- Modify: `packages/HimalayaUI/frontend/src/lib/queue/replayCoordinator.ts` (delete legacy `add_tag` branch)
 
 Both `addSampleTagMutator` and `addExposureTagMutator` produce the same synth shape — only the `entity_type` discriminates which one runs (handled by `resolveMutatorForEvent`). The bodies are identical; declare both.
 
@@ -1231,13 +1232,15 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 
 **Files:**
 - Modify: `packages/HimalayaUI/frontend/src/lib/queue/mutators/saveComparison.ts`
+- Modify: `packages/HimalayaUI/frontend/src/lib/queue/replayCoordinator.ts`
 
-- [ ] **Step 1: Declare eventKinds + synthesizeFromSse**
+This is the one mutator that answers for two event kinds (`comparison_created`, `comparison_submitted`). The routing is done by `resolveMutatorForEvent`'s switch (Task B2 already maps both kinds to `saveComparisonMutator`); the mutator only declares one synth body that handles both.
+
+- [ ] **Step 1: Declare synthesizeFromSse**
 
 Add to `saveComparisonMutator`:
 
 ```ts
-  eventKinds: ["comparison_created", "comparison_submitted"],
   synthesizeFromSse: (remote, base) => {
     const payload = (remote.payload as Record<string, unknown> | undefined) ?? {};
     // Partial Comparison shape — `onSuccess`'s looksFull detector (see
@@ -1290,6 +1293,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 
 **Files:**
 - Modify: `packages/HimalayaUI/frontend/src/lib/queue/mutators/deleteComparison.ts`
+- Modify: `packages/HimalayaUI/frontend/src/lib/queue/replayCoordinator.ts` (delete legacy `comparison_deleted` branch)
 
 - [ ] **Step 1: Declare synthesizeFromSse**
 
@@ -1336,6 +1340,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 
 **Files:**
 - Modify: `packages/HimalayaUI/frontend/src/lib/queue/mutators/peakSetExcluded.ts`
+- Modify: `packages/HimalayaUI/frontend/src/lib/queue/replayCoordinator.ts` (delete legacy `peak_excluded`/`peak_unexcluded` branch)
 
 Both `peakExcludeMutator` and `peakUnexcludeMutator` are exported from this file. The synth shape differs only by the boolean field. The mapping by event kind is already in `resolveMutatorForEvent` (B2). Each mutator declares only its own kind.
 
@@ -1443,6 +1448,12 @@ Final state of `synthesizeResponseFromSse`:
  * post-mutation indices cache fresh before the mutator's onSuccess fires.
  * This refactor does NOT change that ordering — it only changes how the
  * synth shape is produced.
+ *
+ * `base` carries only the three guaranteed framework fields (event_id,
+ * client_op_id, analysis_inputs_hash). `view_row_id` is NOT in `base` —
+ * it's an optional field on QueueResponseMeta that any mutator whose
+ * TResponse requires it (e.g. `PeakAddResponse` which has `view_row_id:
+ * number` required) must include explicitly in its `synthesizeFromSse`.
  */
 function synthesizeResponseFromSse(remote: SseEvent): unknown {
   const base: QueueResponseMeta = {
@@ -1527,21 +1538,33 @@ describe("synthesizeFromSse coverage (resolveMutatorForEvent contract)", () => {
     expect(synth).toBeDefined();
   });
 
-  // Forward-scaffolded kinds: their mutators MUST NOT declare synthesizeFromSse.
-  // If a future contributor accidentally adds a half-baked synth to one of
-  // these mutators before the rest of the pipeline is ready, this assertion
-  // catches it. These kinds emit SSE today but no client mutator queues them,
-  // so synthesis falls through to the generic `{...base, ...payload}` shape.
-  const forwardScaffolded: Array<{ kind: string; entity_type: string }> = [
-    { kind: "post_message",       entity_type: "sample"     },
-    { kind: "post_message",       entity_type: "comparison" },
-    { kind: "set_exposure_status", entity_type: "exposure"   },
-    { kind: "update_sample",      entity_type: "sample"     },
-    { kind: "select_exposure",    entity_type: "exposure"   },
-    { kind: "remove_tag",         entity_type: "sample"     },
-    { kind: "remove_tag",         entity_type: "exposure"   },
+  // Kinds whose mutators MUST NOT declare synthesizeFromSse. Two cohorts:
+  //
+  //   (a) Forward-scaffolded — mutator exists but no UI gesture queues it
+  //       today (set_exposure_status, update_sample, select_exposure,
+  //       remove_tag).
+  //   (b) Active mutators whose SSE payload already matches the cache row
+  //       shape (post_message — payload IS the SampleMessage / ComparisonMessage),
+  //       so the generic `{...base, ...payload}` fallback suffices.
+  //   (c) Active mutators where SSE-wins is unreachable in practice
+  //       (analyze_run — fire-and-forget; the SSE handler updates the
+  //       indices cache via applyPostStateOnly and the mutator's onSuccess
+  //       does not depend on a specific response shape beyond
+  //       analysis_inputs_hash already carried in `base`).
+  //
+  // If a future contributor adds a half-baked synth to any of these before
+  // the rest of the pipeline is ready, this assertion catches it.
+  const noSynth: Array<{ kind: string; entity_type: string }> = [
+    { kind: "post_message",        entity_type: "sample_message"     },
+    { kind: "post_message",        entity_type: "comparison_message" },
+    { kind: "set_exposure_status", entity_type: "exposure"           },
+    { kind: "update_sample",       entity_type: "sample"             },
+    { kind: "select_exposure",     entity_type: "exposure"           },
+    { kind: "remove_tag",          entity_type: "sample"             },
+    { kind: "remove_tag",          entity_type: "exposure"           },
+    { kind: "analyze_run",         entity_type: "exposure"           },
   ];
-  it.each(forwardScaffolded)(
+  it.each(noSynth)(
     "$kind/$entity_type stays on the generic fallback (no mutator.synthesizeFromSse)",
     ({ kind, entity_type }) => {
       const mutator = resolveMutatorForEvent(kind, entity_type);
