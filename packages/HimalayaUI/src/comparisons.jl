@@ -399,7 +399,8 @@ function fetch_comparison_with_members(db::SQLite.DB, comparison_id::Integer)
     cid = Int(comparison_id)
     cmp_rows = Tables.rowtable(DBInterface.execute(db,
         """SELECT id, title, description, content_hash, created_by,
-                  created_at, updated_at, forked_from_id, forked_at_hash
+                  created_at, updated_at, forked_from_id, forked_at_hash,
+                  view_grouping_mode, view_show_peak_ticks, view_show_peak_labels
            FROM comparisons WHERE id = ?""", [cid]))
     isempty(cmp_rows) && return nothing
     cmp = cmp_rows[1]
@@ -460,6 +461,9 @@ function fetch_comparison_with_members(db::SQLite.DB, comparison_id::Integer)
         :forked_from_id  => ismissing(cmp.forked_from_id) ? nothing : Int(cmp.forked_from_id),
         :forked_at_hash  => ismissing(cmp.forked_at_hash) ? nothing : String(cmp.forked_at_hash),
         :forked_from_title => forked_from_title,
+        :view_grouping_mode    => ismissing(cmp.view_grouping_mode) ? nothing : String(cmp.view_grouping_mode),
+        :view_show_peak_ticks  => ismissing(cmp.view_show_peak_ticks) ? nothing : Bool(cmp.view_show_peak_ticks),
+        :view_show_peak_labels => ismissing(cmp.view_show_peak_labels) ? nothing : Bool(cmp.view_show_peak_labels),
         :members         => members,
     )
 end

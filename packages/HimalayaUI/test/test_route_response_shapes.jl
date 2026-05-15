@@ -526,6 +526,7 @@ end
                     :id, :title, :description, :content_hash,
                     :created_by, :created_at, :updated_at,
                     :forked_from_id, :forked_at_hash, :forked_from_title,
+                    :view_grouping_mode, :view_show_peak_ticks, :view_show_peak_labels,
                     :members,
                 ])
                 @test body.id isa Integer
@@ -567,6 +568,7 @@ end
                     :id, :title, :description, :content_hash,
                     :created_by, :created_at, :updated_at,
                     :forked_from_id, :forked_at_hash, :forked_from_title,
+                    :view_grouping_mode, :view_show_peak_ticks, :view_show_peak_labels,
                     :members,
                 ])
                 # Issue #54 regression on GET path — same contract as POST.
@@ -611,6 +613,7 @@ end
                     :id, :title, :description, :content_hash,
                     :created_by, :created_at, :updated_at,
                     :forked_from_id, :forked_at_hash, :forked_from_title,
+                    :view_grouping_mode, :view_show_peak_ticks, :view_show_peak_labels,
                     :members,
                 ])
             end

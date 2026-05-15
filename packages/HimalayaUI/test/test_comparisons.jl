@@ -1557,3 +1557,19 @@ end
     end
 end
 
+@testset "fetch_comparison_with_members projects view_* — Compare UX A-4" begin
+    mktempdir() do tmp
+        db = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+        DBInterface.execute(db, """INSERT INTO comparisons
+                                   (id, title, content_hash, view_grouping_mode,
+                                    view_show_peak_ticks, view_show_peak_labels)
+                                   VALUES (1, 'x', 'h', 'byPhase', 1, 0)""")
+        result = HimalayaUI.fetch_comparison_with_members(db, 1)
+        @test result !== nothing
+        @test result[:view_grouping_mode]    == "byPhase"
+        @test result[:view_show_peak_ticks]  == true
+        @test result[:view_show_peak_labels] == false
+        close(db)
+    end
+end
+
