@@ -19,9 +19,24 @@ import {
   useComparisons, useComparisonPins, usePinComparison, useUnpinComparison,
 } from "../queries";
 import { comparePath } from "../lib/comparison/routes";
+import { relativeTime } from "../lib/comparison/relativeTime";
+import { useCurrentUserId } from "../hooks/useCurrentUserId";
 import type { ComparisonSummary } from "../api";
 import { HintText } from "./ui";
 import { useAppState } from "../state";
+
+/**
+ * Phase-summary line for a sidebar row (Compare UX F-1). Shows up to three
+ * distinct member phases, an "+N more" overflow, and the trace count:
+ *   ["Pn3m","Hex","Lam"], 4 → "Pn3m · Hex · Lam · 4 traces"
+ *   five phases,          5 → "Pn3m · Im3m · Ia3d · +2 more · 5 traces"
+ *   [],                   2 → "2 traces"
+ */
+function formatPhaseSummary(phases: string[], total: number): string {
+  if (phases.length === 0) return `${total} traces`;
+  if (phases.length <= 3) return `${phases.join(" · ")} · ${total} traces`;
+  return `${phases.slice(0, 3).join(" · ")} · +${phases.length - 3} more · ${total} traces`;
+}
 
 // Mock fixture for boneyard layout capture. Renders a few canonical rows so
 // the captured bones reflect the realistic geometry the user will see during
@@ -56,6 +71,7 @@ export function ComparisonSidebar({
 }: Props): JSX.Element {
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
+  const currentUserId = useCurrentUserId();
 
   // Fall back to the persisted Zustand experiment context when the URL has
   // no `:eid` (e.g. on `/compare/all`). Without this fallback the
@@ -86,26 +102,31 @@ export function ComparisonSidebar({
   const unpin = useUnpinComparison();
 
   // Sort: pinned first (preserving the pin order from the API — most
-  // recently pinned at top), then non-pinned by updated_at desc.
+  // recently pinned at top), then non-pinned by `last_event_at` desc
+  // (spec §8.4 — replaces `updated_at`; `last_event_at` also covers chat
+  // activity). ISO strings from SQLite are canonical `YYYY-MM-DDTHH:MM:SSZ`,
+  // so lexicographic compare == chronological. Nulls sort LAST (a row with
+  // no events is conceptually older than any timestamped row).
   const sorted = useMemo(() => {
     const pinnedOrder = pinsQ.data ?? [];
     const pinnedIdx = new Map<number, number>(
       pinnedOrder.map((id, i) => [id, i] as const),
     );
-    const byUpdated = (a: ComparisonSummary, b: ComparisonSummary): number => {
-      const ai = a.updated_at ?? "";
-      const bi = b.updated_at ?? "";
-      if (ai === bi) return b.id - a.id;
-      if (ai === "") return 1;
-      if (bi === "") return -1;
-      return bi.localeCompare(ai);
+    const byLastEvent = (a: ComparisonSummary, b: ComparisonSummary): number => {
+      const at = a.last_event_at;
+      const bt = b.last_event_at;
+      if (at === null && bt === null) return b.id - a.id;
+      if (at === null) return 1;   // a is null → after b
+      if (bt === null) return -1;  // b is null → after a
+      if (at === bt) return b.id - a.id;
+      return bt.localeCompare(at);
     };
     const pinned: ComparisonSummary[] = [];
     const unpinned: ComparisonSummary[] = [];
     for (const c of rows) (pinSet.has(c.id) ? pinned : unpinned).push(c);
     pinned.sort((a, b) =>
       (pinnedIdx.get(a.id) ?? 0) - (pinnedIdx.get(b.id) ?? 0));
-    unpinned.sort(byUpdated);
+    unpinned.sort(byLastEvent);
     return [...pinned, ...unpinned];
   }, [rows, pinSet, pinsQ.data]);
 
@@ -266,6 +287,14 @@ export function ComparisonSidebar({
               if (pinned) unpin.mutate(c.id);
               else        pin.mutate(c.id);
             };
+            // Author byline: "by you" when the current user authored it,
+            // else "by <username>", else "by —" when the author is unknown.
+            const isMine = currentUserId !== undefined
+              && c.created_by === currentUserId;
+            const byline = isMine
+              ? "by you"
+              : c.author_username !== null ? `by ${c.author_username}` : "by —";
+            const rel = relativeTime(c.last_event_at, Date.now());
             return (
               <li
                 key={c.id}
@@ -273,7 +302,7 @@ export function ComparisonSidebar({
                 data-comparison-id={c.id}
                 {...(active ? { "data-active": "true" } : {})}
                 {...(pinned ? { "data-pinned": "true" } : {})}
-                className="group flex items-start gap-1"
+                className="group relative flex items-start gap-1"
               >
                 <button
                   type="button"
@@ -286,10 +315,22 @@ export function ComparisonSidebar({
                   }
                 >
                   <div className="font-medium truncate">{c.title || `Comparison #${c.id}`}</div>
-                  {c.description && (
-                    <div className="text-xs text-fg-dim truncate">{c.description}</div>
-                  )}
+                  <div className="text-xs text-fg-dim truncate">
+                    {formatPhaseSummary(c.member_phases, c.member_count)}
+                  </div>
+                  <div className="text-xs text-fg-dim truncate">
+                    {byline} · {rel === null ? "—" : `edited ${rel}`}
+                  </div>
                 </button>
+                {c.has_stale_members && (
+                  <span
+                    data-testid="sidebar-stale-warn"
+                    title="Some members have stale indices"
+                    className="absolute top-1 right-8 text-warning"
+                  >
+                    ⚠
+                  </span>
+                )}
                 <button
                   type="button"
                   data-testid="comparison-pin-toggle"
