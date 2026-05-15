@@ -1110,7 +1110,7 @@ Insert into the mutator object literal, alongside `kind`, `onMutate`, `request`,
   },
 ```
 
-(`PeakAddResponse` is the existing imported TResponse type at the top of the file — `import type { Peak, PeakAddResponse, Exposure, AuthOpts } from "../../../api"`. No new imports needed for the cast.)
+(`PeakAddResponse` is the existing imported TResponse type — see `peakAdd.ts:9` `import type { Peak, PeakAddResponse, Exposure, AuthOpts } from "../../../api"`. No new imports needed for the cast. The type extends `Peak` with `{event_id, view_row_id, analysis_inputs_hash}` — the synth above provides all of these via spread of `...base` plus the explicit `view_row_id: peakId`.)
 
 - [ ] **Step 2: Remove the legacy peak_added branch from replayCoordinator**
 
@@ -1170,7 +1170,7 @@ For `addSampleTagMutator`, add:
       ...base,
       id: payload.tag_id as number,
       key: payload.key as string,
-      value: (payload.value as string) ?? null,
+      value: payload.value as string,
       source: "manual",
     } as SampleTag;
   },
@@ -1186,13 +1186,13 @@ For `addExposureTagMutator`, add:
       ...base,
       id: payload.tag_id as number,
       key: payload.key as string,
-      value: (payload.value as string) ?? null,
+      value: payload.value as string,
       source: "manual",
     } as ExposureTag;
   },
 ```
 
-`SampleTag` and `ExposureTag` are the actual `TResponse` types declared on each mutator (`Mutator<…, …, SampleTag>` and `Mutator<…, …, ExposureTag>` respectively, with the types imported from `../../../api`). The fact that the synth object also carries `event_id` / `analysis_inputs_hash` / `client_op_id` is irrelevant to the cast — those framework fields are stripped in `onSuccess` (the route response is `SampleTag & sample_id & framework-meta`, and `onSuccess` already filters the inner shape before writing the cache).
+`SampleTag` and `ExposureTag` are the actual `TResponse` types declared on each mutator (`Mutator<…, …, SampleTag>` and `Mutator<…, …, ExposureTag>` respectively, with the types imported from `../../../api`). Both types declare `value: string` (non-nullable) — match the legacy synth in `replayCoordinator.ts` lines 159–167 which assigns `payload.value` directly without coercion. The synth object also carries `event_id` / `analysis_inputs_hash` / `client_op_id` from `...base`; those framework fields are stripped in `onSuccess` (the route response is `SampleTag & sample_id & framework-meta`, and `onSuccess` already filters the inner shape before writing the cache).
 
 - [ ] **Step 2: Remove the legacy `add_tag` branch from replayCoordinator**
 
@@ -1240,9 +1240,11 @@ Add to `saveComparisonMutator`:
   eventKinds: ["comparison_created", "comparison_submitted"],
   synthesizeFromSse: (remote, base) => {
     const payload = (remote.payload as Record<string, unknown> | undefined) ?? {};
-    // Partial Comparison shape — onSuccess's looksFull detector trips the
-    // invalidate fallback because `members` is absent. id is required so
-    // the cache-key targeting works.
+    // Partial Comparison shape — `onSuccess`'s looksFull detector (see
+    // saveComparison.ts:80-81 `Array.isArray(response.members) && typeof
+    // response.content_hash === "string"`) trips the invalidate fallback
+    // because `members` is absent from the SSE payload. `id` is required so
+    // the cache-key targeting in the invalidate branch still works.
     return {
       ...base,
       ...payload,
@@ -1251,7 +1253,7 @@ Add to `saveComparisonMutator`:
   },
 ```
 
-(`Comparison` is the response type — confirm in the existing file.)
+(`Comparison` is the response type imported at `saveComparison.ts:25` — `import type { AuthOpts, Comparison, ComparisonMemberInput, SaveComparisonBody } from "../../../api"`.)
 
 - [ ] **Step 2: Remove the legacy comparison_created/comparison_submitted branch**
 
@@ -1345,6 +1347,14 @@ For `peakExcludeMutator`, add:
   synthesizeFromSse: (remote, base) => {
     const payload = (remote.payload as Record<string, unknown> | undefined) ?? {};
     if (payload.auto_peak_id === undefined) return undefined;
+    // intensity/prominence/sharpness are intentionally absent — they aren't
+    // carried on the SSE wire. The `as PeakUpdatedResponse` cast is unsound
+    // at the type level (PeakUpdatedResponse extends Peak which requires
+    // those fields) BUT safe at runtime: peakSetExcluded.onSuccess at line
+    // 60-66 uses spread merge `{ ...pk, ...peakFields }` into the existing
+    // cached Peak, so the optimistic row's detection values survive when
+    // the synth omits them. The legacy synth at replayCoordinator.ts:196-210
+    // relied on the same merge — preserve the contract.
     return {
       ...base,
       id: payload.auto_peak_id as number,
@@ -1357,7 +1367,7 @@ For `peakExcludeMutator`, add:
 
 For `peakUnexcludeMutator`, add the same body but `excluded: false`.
 
-(`PeakUpdatedResponse` is the existing TResponse type — confirm in the file.)
+(`PeakUpdatedResponse` is imported at `peakSetExcluded.ts:10` — `import type { Peak, PeakUpdatedResponse, Exposure, AuthOpts } from "../../../api"`.)
 
 - [ ] **Step 2: Remove the legacy peak_excluded/peak_unexcluded branch**
 
@@ -1414,13 +1424,19 @@ Final state of `synthesizeResponseFromSse`:
  *
  * Dispatch: lookup by (event_kind, entity_type) via resolveMutatorForEvent,
  * then ask the mutator to build its shape. Falls back to a generic
- * `{...base, ...payload}` for forward-scaffolded kinds that have no client
- * mutator yet (post_message, set_exposure_status, update_sample,
- * select_exposure, remove_tag). These emit SSE today (applyRemoteToCache
- * merges them) but no UI gesture queues them, so the generic shape suffices.
- * When a future plan wires a UI mutation that emits one of these kinds, add
- * `synthesizeFromSse` to the corresponding mutator and the generic fallback
- * stops being hit for that kind automatically.
+ * `{...base, ...payload}` in two cases:
+ *
+ *   (a) Forward-scaffolded kinds — set_exposure_status, update_sample,
+ *       select_exposure, remove_tag. These emit SSE today but their UI
+ *       gesture doesn't queue through this pipeline (yet); when a future
+ *       plan wires that gesture, add `synthesizeFromSse` to the matching
+ *       mutator and the fallback stops handling them.
+ *
+ *   (b) Active mutators whose SSE payload already matches the cache row
+ *       shape — post_message (sample + comparison). The SSE frame carries
+ *       `{id, body, author_id, author, created_at, sample_id|comparison_id}`
+ *       which IS the cache row shape; no shape massaging needed, so the
+ *       generic `{...base, ...payload}` suffices without a per-mutator synth.
  *
  * Ordering note: `applyPostStateOnly(remote)` runs BEFORE the deferred is
  * resolved with this synth (see handleRemoteEvent). That ordering keeps the
@@ -1481,24 +1497,31 @@ Append a new `describe` block:
 
 ```ts
 describe("synthesizeFromSse coverage (resolveMutatorForEvent contract)", () => {
+  // Factory for a minimally-valid SseEvent. Reuses `remoteForeignEvent` from
+  // test/queue/helpers.ts (already exported) so we don't fall behind on
+  // SseEvent shape drift.
+  function evt(kind: string, entity_type: string, entity_id: number, payload: object) {
+    return remoteForeignEvent({ id: 1, kind, entity_type, entity_id, payload });
+  }
+
   // The exact set of kinds that had a bespoke branch in the legacy switch.
   // Each MUST resolve to a mutator that returns non-undefined for a
   // minimally-shaped SseEvent.
-  const cases: Array<{ kind: string; entity_type: string; payload: object }> = [
-    { kind: "peak_added",         entity_type: "exposure",   payload: { peak_curation_id: 99, q: 0.123 } },
-    { kind: "add_tag",            entity_type: "sample",     payload: { tag_id: 7, key: "tag", value: "v" } },
-    { kind: "add_tag",            entity_type: "exposure",   payload: { tag_id: 7, key: "tag", value: "v" } },
-    { kind: "comparison_created", entity_type: "comparison", payload: { title: "T" } },
-    { kind: "comparison_submitted", entity_type: "comparison", payload: { title: "T" } },
-    { kind: "comparison_deleted", entity_type: "comparison", payload: {} },
-    { kind: "peak_excluded",      entity_type: "exposure",   payload: { auto_peak_id: 1, q: 0.1 } },
-    { kind: "peak_unexcluded",    entity_type: "exposure",   payload: { auto_peak_id: 1, q: 0.1 } },
+  const cases: Array<{ kind: string; entity_type: string; entity_id: number; payload: object }> = [
+    { kind: "peak_added",           entity_type: "exposure",   entity_id: 5,  payload: { peak_curation_id: 99, q: 0.123 } },
+    { kind: "add_tag",              entity_type: "sample",     entity_id: 5,  payload: { tag_id: 7, key: "tag", value: "v" } },
+    { kind: "add_tag",              entity_type: "exposure",   entity_id: 5,  payload: { tag_id: 7, key: "tag", value: "v" } },
+    { kind: "comparison_created",   entity_type: "comparison", entity_id: 11, payload: { title: "T" } },
+    { kind: "comparison_submitted", entity_type: "comparison", entity_id: 11, payload: { title: "T" } },
+    { kind: "comparison_deleted",   entity_type: "comparison", entity_id: 11, payload: {} },
+    { kind: "peak_excluded",        entity_type: "exposure",   entity_id: 5,  payload: { auto_peak_id: 1, q: 0.1 } },
+    { kind: "peak_unexcluded",      entity_type: "exposure",   entity_id: 5,  payload: { auto_peak_id: 1, q: 0.1 } },
   ];
-  it.each(cases)("$kind/$entity_type resolves and synthesizes", ({ kind, entity_type, payload }) => {
+  it.each(cases)("$kind/$entity_type resolves and synthesizes", ({ kind, entity_type, entity_id, payload }) => {
     const mutator = resolveMutatorForEvent(kind, entity_type);
     expect(mutator).toBeDefined();
     const synth = mutator!.synthesizeFromSse?.(
-      { id: 1, kind, entity_type, entity_id: 42, payload } as SseEvent,
+      evt(kind, entity_type, entity_id, payload),
       { event_id: 1, client_op_id: "x", analysis_inputs_hash: undefined },
     );
     expect(synth).toBeDefined();
@@ -1529,10 +1552,11 @@ describe("synthesizeFromSse coverage (resolveMutatorForEvent contract)", () => {
 });
 ```
 
-Add the missing import at the top of the file:
+Add the missing imports at the top of the file:
 
 ```ts
 import { resolveMutatorForEvent } from "../../src/lib/queue/mutatorRegistry";
+import { remoteForeignEvent } from "./helpers";
 ```
 
 - [ ] **Step 2: Run the test**
@@ -1811,66 +1835,7 @@ git commit -m "refactor(queue): indexGroup uses stripQueueMetadata (#129)
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 ```
 
----
-
-### Task C5: Pin client_op_id absence in cache-shape contract
-
-**Files:**
-- Modify: `packages/HimalayaUI/frontend/test/queue/cache-shape.test.ts`
-
-`stripQueueMetadata` strips `client_op_id` from the payload, which is a silent improvement for `peakAdd` and `indexGroup` (both previously left it in `serverPeak` / `row`). Pin the property so a future regression that bypasses `stripQueueMetadata` and writes the raw response into the cache fails this test.
-
-- [ ] **Step 1: Add assertions to the existing cache-shape tests**
-
-In `cache-shape.test.ts`, the file has per-mutator `describe` blocks. Inside the `peakAdd` and `indexGroup` (both confirm + unconfirm) describes, add a test asserting the cache row does NOT carry queue metadata. Pattern:
-
-```ts
-it("does not write queue metadata fields into the cache row (peakAdd)", () => {
-  const qc = new QueryClient();
-  const exposureId = 1;
-  const response: PeakAddResponse = {
-    id: 7,
-    exposure_id: exposureId,
-    q: 0.12,
-    intensity: null,
-    prominence: null,
-    sharpness: null,
-    source: "manual",
-    excluded: false,
-    view_row_id: 7,
-    event_id: 42,
-    analysis_inputs_hash: "abc",
-    // @ts-expect-error — client_op_id is plumbing, NOT part of the response type
-    client_op_id: "op-1",
-  };
-  peakAddMutator.onSuccess(
-    { exposureId, q: 0.12, kind: "peak_added", payload: { q: 0.12 }, clientOpId: "op-1" } as any,
-    response,
-    qc,
-  );
-  const row = qc.getQueryData<Peak[]>(queryKeys.peaks(exposureId))![0];
-  expect(row).not.toHaveProperty("event_id");
-  expect(row).not.toHaveProperty("view_row_id");
-  expect(row).not.toHaveProperty("analysis_inputs_hash");
-  expect(row).not.toHaveProperty("client_op_id");
-});
-```
-
-Add an analogous test for `addIndexToGroupMutator.onSuccess` and `removeIndexFromGroupMutator.onSuccess`. The exact response shape comes from the existing test fixtures in the file — match those.
-
-- [ ] **Step 2: Run tests**
-
-Run: `npm test -- test/queue/cache-shape.test.ts`
-Expected: PASS — fields are stripped, assertions hold.
-
-- [ ] **Step 3: Commit**
-
-```bash
-git add packages/HimalayaUI/frontend/test/queue/cache-shape.test.ts
-git commit -m "test(queue): pin client_op_id absence post-stripQueueMetadata (#129)
-
-Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
-```
+> **Note (no separate test task needed):** `cache-shape.test.ts` uses `assertKeys(obj, EXPECTED_KEYS, label)` — a *full-allowlist* comparison via `toEqual` on sorted key sets, not a `toMatchObject` subset check. The existing `PEAK_KEYS`, `GROUP_KEYS`, etc. omit `event_id`, `view_row_id`, `analysis_inputs_hash`, **and** `client_op_id` — so any field leak (including the silent improvement from stripQueueMetadata for indexGroup) already fails the existing assertions. No new test is required for Phase C completeness; running the existing suite after each migration confirms the pin.
 
 ---
 
@@ -1904,15 +1869,15 @@ If the live-test infrastructure isn't available locally, document the skip in th
 
 - [ ] **Step 5: Grep for remaining hand-rolled placeholder loops**
 
-Run: `grep -n "id < 0 && !replaced" packages/HimalayaUI/frontend/src/lib/queue/`
-Expected: zero matches. (If `peakRemove.ts` or any other file still has a hand-rolled loop, address before closing.)
+Run: `grep -rnE "(id < 0 && !replaced)|(!replaced && [a-z]+\.id < 0)" packages/HimalayaUI/frontend/src/lib/queue/`
+Expected: zero matches. The disjunction catches both field-orderings (peakAdd-style `pk.id < 0 && !replaced` and message-style `!replaced && m.id < 0`). If anything remains (e.g., `peakRemove.ts` if it has an unconverted loop), migrate before closing.
 
-Run: `grep -nE "event_id: _e, view_row_id: _v" packages/HimalayaUI/frontend/src/lib/queue/`
-Expected: zero matches.
+Run: `grep -rnE "event_id: _e, view_row_id: _v" packages/HimalayaUI/frontend/src/lib/queue/`
+Expected: zero matches. (Note `-r` is required — the target is a directory.)
 
 - [ ] **Step 6: Grep for the legacy synth switch**
 
-Run: `grep -nE 'remote\.kind === "(peak_added|add_tag|comparison_created|comparison_deleted|peak_excluded|peak_unexcluded)"' packages/HimalayaUI/frontend/src/lib/queue/replayCoordinator.ts`
+Run: `grep -nE 'remote\.kind === "(peak_added|add_tag|comparison_created|comparison_submitted|comparison_deleted|peak_excluded|peak_unexcluded)"' packages/HimalayaUI/frontend/src/lib/queue/replayCoordinator.ts`
 Expected: zero matches.
 
 - [ ] **Step 7: Final commit if any cleanup landed**
