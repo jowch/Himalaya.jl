@@ -8,8 +8,8 @@
  *     users — no user matches null, so the Edit affordance hides.
  *
  * Plus action wiring:
- *   - Edit click navigates to /experiments/:eid/compare/:id/edit and
- *     `loadDraftFromComparison` seeds the Zustand draft.
+ *   - Edit click navigates to the bare comparison URL (Compare UX Phase B
+ *     dropped `/edit`) and `loadDraftFromComparison` seeds the Zustand draft.
  *   - Fork click creates a brand-new draft (`id === undefined`) carrying
  *     `forkedFromId` + `forkedAtHash` from the parent, and navigates to
  *     /experiments/:eid/compare/new.
@@ -87,10 +87,12 @@ function renderReview(qc: QueryClient) {
   return render(
     <QueryClientProvider client={qc}>
       <MemoryRouter initialEntries={["/experiments/7/compare/42"]}>
+        {/* LocationSpy is an always-mounted sibling so navigation is
+            observable even when it lands on the same route ComparePage
+            owns — Compare UX Phase B made Edit navigate to the bare URL. */}
+        <LocationSpy />
         <Routes>
           <Route path="/experiments/:eid/compare/:id" element={<ComparePage />} />
-          <Route path="/experiments/:eid/compare/:id/edit" element={<LocationSpy />} />
-          <Route path="/experiments/:eid/compare/new" element={<LocationSpy />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -165,7 +167,7 @@ describe("Edit-vs-Fork affordance — actions", () => {
     useAppState.getState().discardDraft();
   });
 
-  it("Edit click navigates to /experiments/:eid/compare/:id/edit and seeds the draft", async () => {
+  it("Edit click navigates to the bare comparison URL and seeds the draft", async () => {
     const qc = makeQc();
     qc.setQueryData(["users"] as const, [
       { id: 7, username: "alice", first_name: null, last_name: null },
@@ -176,9 +178,11 @@ describe("Edit-vs-Fork affordance — actions", () => {
     renderReview(qc);
     const editBtn = await waitFor(() => screen.getByTestId("comparison-edit"));
     fireEvent.click(editBtn);
+    // Compare UX Phase B: `/edit` is gone — Edit stays on the bare URL and
+    // seeds the draft into Zustand (the edit surface is now inline).
     await waitFor(() =>
       expect(screen.getByTestId("current-location").textContent)
-        .toBe("/experiments/7/compare/42/edit"),
+        .toBe("/experiments/7/compare/42"),
     );
     // Draft was loaded against the parent; loadDraftFromComparison shape:
     // - id matches, baseHash matches content_hash.

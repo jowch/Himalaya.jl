@@ -12,12 +12,14 @@
  * URL shape mirrors the routes registered in `AppShell.tsx`:
  *   - `/experiments/:eid/compare`            — experiment-scoped list
  *   - `/experiments/:eid/compare/:id`        — experiment-scoped review
- *   - `/experiments/:eid/compare/:id/edit`   — experiment-scoped edit
  *   - `/experiments/:eid/compare/new`        — experiment-scoped create
  *   - `/compare/all`                         — global list
  *   - `/compare/all/:id`                     — global review
- *   - `/compare/all/:id/edit`                — global edit
  *   - `/compare/all/new`                     — global create
+ *
+ * Compare UX Phase B: the `/edit` URL segment is gone — `/compare/:id` is
+ * the only review/edit surface; edit is now an inline gesture. AppShell
+ * keeps a redirect Route so old `/edit` deep-links still resolve.
  *
  * The `scope` param is explicit (not derived from `eid`) so callers must
  * decide intentionally whether the URL should pin to an experiment or to
@@ -33,8 +35,6 @@ export interface ComparePathOpts {
   eid?: number | undefined;
   /** Comparison id. Omit for the list/new path. */
   id?: number | undefined;
-  /** When true, append `/edit` (only meaningful when `id` is set). */
-  edit?: boolean | undefined;
   /** When true, return the create path (`.../new`). Mutually exclusive with `id`. */
   isNew?: boolean | undefined;
 }
@@ -45,7 +45,7 @@ export interface ComparePathOpts {
  * scope so a stray undefined doesn't 404 the user.
  */
 export function comparePath(opts: ComparePathOpts): string {
-  const { scope, eid, id, edit, isNew } = opts;
+  const { scope, eid, id, isNew } = opts;
 
   // Build the prefix. When scope=experiment but eid is undefined (defensive
   // — TypeScript can't always prove eid is set), fall through to the global
@@ -57,5 +57,5 @@ export function comparePath(opts: ComparePathOpts): string {
 
   if (isNew) return `${prefix}/new`;
   if (id === undefined) return prefix;
-  return edit ? `${prefix}/${id}/edit` : `${prefix}/${id}`;
+  return `${prefix}/${id}`;
 }

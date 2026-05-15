@@ -6,6 +6,9 @@
  * the six navigation sites (sidebar, edit/fork buttons, conflict modal,
  * lineage badge, forks popover, warm-add menu, needs-review badge) stay
  * in sync.
+ *
+ * Compare UX Phase B-2: the `/edit` URL segment is gone — `comparePath`
+ * no longer accepts an `edit` option. These cases lock the bare-URL shape.
  */
 import { describe, it, expect } from "vitest";
 import { comparePath } from "../src/lib/comparison/routes";
@@ -24,12 +27,6 @@ describe("comparePath", () => {
       );
     });
 
-    it("returns the edit path for scope+eid+id+edit", () => {
-      expect(
-        comparePath({ scope: "experiment", eid: 7, id: 42, edit: true }),
-      ).toBe("/experiments/7/compare/42/edit");
-    });
-
     it("returns the create path for scope+eid+isNew", () => {
       expect(comparePath({ scope: "experiment", eid: 7, isNew: true })).toBe(
         "/experiments/7/compare/new",
@@ -44,12 +41,6 @@ describe("comparePath", () => {
 
     it("returns /compare/all/:id for scope+id (the deep-link gap this fixes)", () => {
       expect(comparePath({ scope: "all", id: 99 })).toBe("/compare/all/99");
-    });
-
-    it("returns /compare/all/:id/edit for scope+id+edit", () => {
-      expect(comparePath({ scope: "all", id: 99, edit: true })).toBe(
-        "/compare/all/99/edit",
-      );
     });
 
     it("returns /compare/all/new for scope+isNew", () => {

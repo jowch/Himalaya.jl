@@ -391,7 +391,7 @@ function EditOrForkButton({
   if (isAuthor) {
     const onEdit = (): void => {
       loadDraft(comparison, qc);
-      navigate(comparePath({ scope, eid: experimentId, id: comparison.id, edit: true }));
+      navigate(comparePath({ scope, eid: experimentId, id: comparison.id }));
     };
     return (
       <button

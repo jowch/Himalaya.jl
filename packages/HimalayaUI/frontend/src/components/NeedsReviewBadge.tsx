@@ -24,11 +24,12 @@ export interface NeedsReviewBadgeProps {
   comparisonId: number;
   experimentId: number | undefined;
   /**
-   * "experiment" → /experiments/:eid/compare/:id/edit
-   * "all"        → /compare/all/:id/edit
+   * "experiment" → /experiments/:eid/compare/:id
+   * "all"        → /compare/all/:id
    * Defaults to "experiment" when an eid is present (backward compat); the
    * Compare page passes scope explicitly so /compare/all routing stays
-   * deep-linkable on the global listing.
+   * deep-linkable on the global listing. (Compare UX Phase B dropped the
+   * `/edit` segment — the author lands on the bare comparison URL.)
    */
   scope?: CompareScope;
   /** Numeric user id of the author. Pass null for unauthored comparisons. */
@@ -58,7 +59,6 @@ export function NeedsReviewBadge(
         scope: resolvedScope,
         eid: experimentId,
         id: comparisonId,
-        edit: true,
       }),
     );
   };
