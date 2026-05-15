@@ -1,7 +1,7 @@
 /**
  * NeedsReviewBadge tests (Plan §Phase 9, Task 9.6).
  *
- * - Author can click → navigates to edit mode.
+ * - Author can click → navigates to the bare comparison URL.
  * - Non-author sees badge as informational; click is a no-op.
  * - Page-level mounting: visible when any member stale, hidden otherwise.
  * - Per-member `data-stale` attribute already covered by MemberMetaRow.test;
@@ -155,7 +155,7 @@ describe("NeedsReviewBadge — author clickability via ComparePage", () => {
     expect(badge).toBeInTheDocument();
   });
 
-  it("author (created_by matches current user) → badge is clickable; navigates to edit mode", async () => {
+  it("author (created_by matches current user) → badge is clickable; navigates to the comparison", async () => {
     const qc = makeQc();
     // Pre-cache the users list so `useCurrentUserId` resolves synchronously.
     qc.setQueryData(["users"] as const, [
@@ -188,12 +188,12 @@ describe("NeedsReviewBadge — author clickability via ComparePage", () => {
     render(
       <QueryClientProvider client={qc}>
         <MemoryRouter initialEntries={["/experiments/7/compare/42"]}>
+          {/* Always-mounted so navigation is observable even when it lands
+              on the route ComparePage owns — Compare UX Phase B dropped the
+              `/edit` segment, so the author badge navigates to the bare URL. */}
+          <LocationSpy />
           <Routes>
             <Route path="/experiments/:eid/compare/:id" element={<ComparePage />} />
-            <Route
-              path="/experiments/:eid/compare/:id/edit"
-              element={<LocationSpy />}
-            />
           </Routes>
         </MemoryRouter>
       </QueryClientProvider>,
@@ -203,7 +203,7 @@ describe("NeedsReviewBadge — author clickability via ComparePage", () => {
     fireEvent.click(badge);
     await waitFor(() =>
       expect(screen.getByTestId("current-location").textContent)
-        .toBe("/experiments/7/compare/42/edit"),
+        .toBe("/experiments/7/compare/42"),
     );
   });
 
@@ -241,12 +241,9 @@ describe("NeedsReviewBadge — author clickability via ComparePage", () => {
     render(
       <QueryClientProvider client={qc}>
         <MemoryRouter initialEntries={["/experiments/7/compare/42"]}>
+          <LocationSpy />
           <Routes>
             <Route path="/experiments/:eid/compare/:id" element={<ComparePage />} />
-            <Route
-              path="/experiments/:eid/compare/:id/edit"
-              element={<LocationSpy />}
-            />
           </Routes>
         </MemoryRouter>
       </QueryClientProvider>,
@@ -254,8 +251,9 @@ describe("NeedsReviewBadge — author clickability via ComparePage", () => {
     const badge = await waitFor(() => screen.getByTestId("comparison-needs-review"));
     expect(badge).toHaveAttribute("data-clickable", "false");
     fireEvent.click(badge);
-    // Still on the same page (no /edit suffix in DOM).
-    expect(screen.queryByTestId("current-location")).toBeNull();
+    // Non-author click is a no-op — still on the bare comparison page.
+    expect(screen.getByTestId("current-location").textContent)
+      .toBe("/experiments/7/compare/42");
   });
 });
 
