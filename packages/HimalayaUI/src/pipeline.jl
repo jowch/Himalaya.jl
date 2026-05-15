@@ -5,18 +5,57 @@ using JSON3
 using HTTP: HTTP, Request
 
 """
-    auto_group(indices) -> Vector{Index}
+    auto_group(indices, eff) -> Vector{<:Index}
+    auto_group(indices)       -> Vector{<:Index}
 
 Greedily select a non-overlapping set of indices by descending score.
 An index is added to the group only if none of its peaks are already
 claimed by a previously selected index.
+
+The two-arg form claims by `eff.peak_id` (arithmetic-safe — works even
+if an index's q-values were re-derived rather than reused from `eff.q`).
+The one-arg form falls back to q-value equality and is retained for
+test fixtures that don't materialize an `eff` tuple.
 """
+function auto_group(indices::Vector{<:Himalaya.Index},
+                    eff::NamedTuple)::Vector{<:Himalaya.Index}
+    isempty(indices) && return indices
+
+    # Score once; sort by score descending via sortperm.
+    scores  = Himalaya.score.(indices)
+    perm    = sortperm(scores; rev = true)
+    sorted  = indices[perm]
+
+    # q → peak_id lookup (eff is sorted by q in effective_peaks, but the dict
+    # tolerates either ordering).
+    q_to_id = Dict{Float64, Int}()
+    for i in eachindex(eff.q)
+        q_to_id[Float64(eff.q[i])] = Int(eff.peak_id[i])
+    end
+
+    claimed = Set{Int}()
+    group   = eltype(indices)[]
+    for idx in sorted
+        idx_ids = Set{Int}()
+        for q in Himalaya.peaks(idx)
+            pid = get(q_to_id, Float64(q), nothing)
+            pid === nothing && continue  # arithmetically-derived q — won't claim
+            push!(idx_ids, pid)
+        end
+        isempty(intersect(idx_ids, claimed)) || continue
+        push!(group, idx)
+        union!(claimed, idx_ids)
+    end
+    group
+end
+
 function auto_group(indices::Vector{<:Himalaya.Index})::Vector{<:Himalaya.Index}
     isempty(indices) && return indices
-    sorted  = sort(indices; by = Himalaya.score, rev = true)
+    scores  = Himalaya.score.(indices)
+    perm    = sortperm(scores; rev = true)
+    sorted  = indices[perm]
     claimed = Set{Float64}()
     group   = eltype(indices)[]
-
     for idx in sorted
         idx_peaks = Set(Himalaya.peaks(idx))
         isempty(intersect(idx_peaks, claimed)) || continue
@@ -833,7 +872,7 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
                 synthesize_peaks_result(db, exposure_id, q, I) :
                 fresh_peaks_result
             candidates = Himalaya.indexpeaks(eff.q, eff.sharpness)
-            group = auto_group(candidates)
+            group = auto_group(candidates, eff)
             # `persist_analysis!` writes both the index/group rows AND the
             # `analysis_inputs_hash` / per-index `inputs_hash` markers atomically
             # (issue #34 Bug 3). No follow-up UPDATEs needed here.
