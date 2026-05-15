@@ -103,6 +103,6 @@ export const saveComparisonMutator: Mutator<SaveComparisonInput, SaveComparisonS
       ...base,
       ...payload,
       id: remote.entity_id,
-    } as Comparison;
+    } as unknown as Comparison;
   },
 };
