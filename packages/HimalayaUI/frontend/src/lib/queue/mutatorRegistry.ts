@@ -129,6 +129,7 @@ export function resolveMutatorForEvent(
     case "index_confirmed":     return addIndexToGroupMutator;
     case "index_unconfirmed":   return removeIndexFromGroupMutator;
     case "speculative_created": return createSpeculativeMutator;
+    // event-kind speculative_deleted is the SSE counterpart of op-kind delete_index
     case "speculative_deleted": return deleteIndexMutator;
     case "analyze_run":         return reanalyzeExposureMutator;
     case "comparison_created":
@@ -149,6 +150,10 @@ export function resolveMutatorForEvent(
       return entityType === "comparison_message"
         ? postComparisonMessageMutator
         : postSampleMessageMutator;
+    // Event kinds with no queue mutator fall through here. This includes
+    // invalidate-only foreign events like comparison_pinned / comparison_unpinned
+    // (handled entirely by applyRemoteToCache — no optimistic outbound op exists).
+    // replayCoordinator treats undefined as "use the generic {...base,...payload} shape".
     default:
       return undefined;
   }
