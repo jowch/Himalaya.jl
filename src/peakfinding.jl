@@ -46,9 +46,13 @@ Shape-agnostic; no per-trace tuning.
   synthetic single-peak traces aren't suppressed by their own median.
 
 # Returns
-`(; indices, q, prominence, sharpness)` — four equal-length vectors,
+`(; indices, q, prominence, sharpness, sharpness_full)` —
+`indices`, `q`, `prominence`, `sharpness` are four equal-length vectors,
 sorted by ascending q. `indices` reference positions in the original
-input vectors (the trim is invisible to callers).
+input vectors (the trim is invisible to callers). `sharpness_full` is
+the per-sample sharpness vector over the *entire* trace
+(`length(sharpness_full) == length(I)`); callers can reuse it to avoid
+re-running the Savitzky–Golay pass.
 """
 const RATIO_FLOOR_MIN_CANDIDATES = 20
 
@@ -97,10 +101,11 @@ function findpeaks(q, I, σ; normalize_by_σ    = false,
         perm = perm[in_window]
     end
 
-    (indices    = idx[perm],
-     q          = q[idx[perm]],
-     prominence = cands.prominence[keep][perm],
-     sharpness  = sharps_at_peaks[keep][perm])
+    (indices        = idx[perm],
+     q              = q[idx[perm]],
+     prominence     = cands.prominence[keep][perm],
+     sharpness      = sharps_at_peaks[keep][perm],
+     sharpness_full = sharps_full)
 end
 
 findpeaks(q, I; kwargs...) = findpeaks(q, I, ones(length(I)); kwargs...)

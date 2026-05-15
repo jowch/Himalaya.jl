@@ -5,18 +5,67 @@ using JSON3
 using HTTP: HTTP, Request
 
 """
-    auto_group(indices) -> Vector{Index}
+    auto_group(indices, eff) -> Vector{<:Index}
+    auto_group(indices)       -> Vector{<:Index}
 
 Greedily select a non-overlapping set of indices by descending score.
 An index is added to the group only if none of its peaks are already
 claimed by a previously selected index.
+
+The two-arg form claims by `eff.peak_id` (Int) — the membership test is
+on integer identity instead of `Float64` equality, so two indices whose
+peaks come from the same underlying `eff` row can never simultaneously
+win. **Contract**: every `q` in `peaks(idx)` for each `idx in indices`
+MUST be `==` to some `eff.q` value. Q-values that don't match any
+`eff.q` are silently dropped from the claim set (their index can still
+be admitted to the group), so a future caller that arithmetically
+derives q would lose claims rather than wrongly intersect. Production
+call site is `analyze_exposure!`, where `candidates =
+Himalaya.indexpeaks(eff.q, eff.sharpness)` reuses `eff.q` references so
+the contract holds by construction.
+
+The one-arg form falls back to q-value equality (`Set{Float64}`) and is
+retained for test fixtures that don't materialize an `eff` tuple.
 """
+function auto_group(indices::Vector{<:Himalaya.Index},
+                    eff::NamedTuple)::Vector{<:Himalaya.Index}
+    isempty(indices) && return indices
+
+    # Score once; sort by score descending via sortperm.
+    scores  = Himalaya.score.(indices)
+    perm    = sortperm(scores; rev = true)
+    sorted  = indices[perm]
+
+    # q → peak_id lookup (eff is sorted by q in effective_peaks, but the dict
+    # tolerates either ordering).
+    q_to_id = Dict{Float64, Int}()
+    for i in eachindex(eff.q)
+        q_to_id[Float64(eff.q[i])] = Int(eff.peak_id[i])
+    end
+
+    claimed = Set{Int}()
+    group   = eltype(indices)[]
+    for idx in sorted
+        idx_ids = Set{Int}()
+        for q in Himalaya.peaks(idx)
+            pid = get(q_to_id, Float64(q), nothing)
+            pid === nothing && continue  # arithmetically-derived q — won't claim
+            push!(idx_ids, pid)
+        end
+        isempty(intersect(idx_ids, claimed)) || continue
+        push!(group, idx)
+        union!(claimed, idx_ids)
+    end
+    group
+end
+
 function auto_group(indices::Vector{<:Himalaya.Index})::Vector{<:Himalaya.Index}
     isempty(indices) && return indices
-    sorted  = sort(indices; by = Himalaya.score, rev = true)
+    scores  = Himalaya.score.(indices)
+    perm    = sortperm(scores; rev = true)
+    sorted  = indices[perm]
     claimed = Set{Float64}()
     group   = eltype(indices)[]
-
     for idx in sorted
         idx_peaks = Set(Himalaya.peaks(idx))
         isempty(intersect(idx_peaks, claimed)) || continue
@@ -34,7 +83,8 @@ counts as the "same" indexing if `|Δbasis| ≤ MEMBER_REATTACH_RELTOL · basis`
 const MEMBER_REATTACH_RELTOL = 0.05
 
 """
-    effective_peaks(db, exposure_id, q_grid, I) -> NamedTuple
+    effective_peaks(db, exposure_id, q_grid, I;
+                    sharps_full = nothing) -> NamedTuple
 
 Compute the effective peak set for analysis. Returns
 `(q::Vector{Float64}, sharpness::Vector{Float64},
@@ -42,9 +92,17 @@ Compute the effective peak set for analysis. Returns
 Auto peaks whose q matches an `exclude` curation are dropped;
 `add` curations are unioned in with sharpness sampled from the
 current trace.
+
+Pass `sharps_full` (the per-sample sharpness vector returned by a fresh
+`Himalaya.findpeaks`) to avoid re-running the Savitzky–Golay pass when
+sampling sharpness for `add`-curation q-values. When `nothing` (default)
+and `add` curations exist, the SG pass is computed lazily; when no `add`
+curations exist, no SG work is done either way. The q-lookup uses
+`searchsortedfirst` on the ascending `q_grid`.
 """
 function effective_peaks(db::SQLite.DB, exposure_id::Int,
-                          q_grid::Vector{Float64}, I::Vector{Float64})
+                          q_grid::Vector{Float64}, I::Vector{Float64};
+                          sharps_full::Union{Vector{Float64}, Nothing} = nothing)
     auto = Tables.rowtable(DBInterface.execute(db,
         "SELECT id, q, sharpness FROM auto_peaks WHERE exposure_id = ?", [exposure_id]))
     excludes = Tables.rowtable(DBInterface.execute(db,
@@ -69,11 +127,34 @@ function effective_peaks(db::SQLite.DB, exposure_id::Int,
         push!(peak_id,   Int(r.id))
         push!(peak_kind, :auto)
     end
-    sharp_full = isempty(adds) ? Float64[] : Himalaya.sharpness(I)
+
+    # Only compute SG if needed AND not provided by caller.
+    sharp_lookup = if isempty(adds)
+        nothing
+    elseif sharps_full !== nothing
+        sharps_full
+    else
+        Himalaya.sharpness(I)
+    end
+
     for r in adds
         qv = Float64(r.q)
         push!(qs, qv)
-        push!(shs, isempty(sharp_full) ? 0.0 : sharp_full[argmin(abs.(q_grid .- qv))])
+        # q_grid is sorted ascending (from load_dat); use binary search.
+        sh = if sharp_lookup === nothing || isempty(sharp_lookup)
+            0.0
+        else
+            i_hi = searchsortedfirst(q_grid, qv)
+            i_hi = clamp(i_hi, 1, length(q_grid))
+            # Choose closer of i_hi and i_hi-1. (clamp guarantees i_hi <= length(q_grid),
+            # so the upper-bound case collapses to the standard "pick i_hi" branch.)
+            if i_hi > 1 && abs(q_grid[i_hi - 1] - qv) <= abs(q_grid[i_hi] - qv)
+                sharp_lookup[i_hi - 1]
+            else
+                sharp_lookup[i_hi]
+            end
+        end
+        push!(shs, sh)
         push!(peak_id,   Int(r.id))
         push!(peak_kind, :curation)
     end
@@ -824,7 +905,13 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
                 [new_trace_hash, exposure_id])
         end
 
-        eff = effective_peaks(db, exposure_id, q, I)
+        # Reuse sharps_full from fresh findpeaks output when available; on the
+        # findpeaks-skipped slow path it's not available and effective_peaks
+        # lazily computes it iff add curations exist.
+        sharps_full_for_eff = fresh_peaks_result === nothing ?
+            nothing : fresh_peaks_result.sharpness_full
+        eff = effective_peaks(db, exposure_id, q, I;
+                              sharps_full = sharps_full_for_eff)
         new_inputs_hash    = hash_peak_set(eff)
         indexpeaks_skipped = (stored_inputs_hash == new_inputs_hash) && (indices_count > 0)
 
@@ -833,7 +920,7 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
                 synthesize_peaks_result(db, exposure_id, q, I) :
                 fresh_peaks_result
             candidates = Himalaya.indexpeaks(eff.q, eff.sharpness)
-            group = auto_group(candidates)
+            group = auto_group(candidates, eff)
             # `persist_analysis!` writes both the index/group rows AND the
             # `analysis_inputs_hash` / per-index `inputs_hash` markers atomically
             # (issue #34 Bug 3). No follow-up UPDATEs needed here.

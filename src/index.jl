@@ -289,11 +289,22 @@ peaks.
 See also `issubset` and `score`.
 """
 function remove_subsets(indices::Vector{<:Index})
-    subsets = [
-        a != b && issubset(a, b) && score(a) < score(b)
-        for a = indices, b = indices
-    ]
-    indices[.!any(subsets; dims = 2) |> vec]
+    n = length(indices)
+    n <= 1 && return indices
+    scores = score.(indices)
+    keep = trues(n)
+    @inbounds for i in 1:n
+        ki = keep[i]
+        ki || continue
+        for j in 1:n
+            i == j && continue
+            if issubset(indices[i], indices[j]) && scores[i] < scores[j]
+                keep[i] = false
+                break
+            end
+        end
+    end
+    indices[keep]
 end
 
 ngc(χ, A₀, a) = -2π * (χ/A₀) * (10 / a)^2
