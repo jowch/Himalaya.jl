@@ -22,11 +22,9 @@ import { resolveMutatorForEvent } from "./mutatorRegistry";
  * MutationCache.getAll() preserves insertion order — a regression test
  * asserts this against TanStack version drift.
  *
- * Forward-scaffolded branches (post_message, set_exposure_status, add_tag,
- * remove_tag, update_sample, select_exposure) are unreachable today: their
- * routes still use log_action! and don't emit SSE. They will become live
- * once those routes migrate to apply_event! in M2.1. The default branch's
- * invalidate fallback would also handle them in the meantime.
+ * Per-kind SSE response synthesis is delegated to each owning mutator's
+ * synthesizeFromSse method — see synthesizeResponseFromSse below for the
+ * dispatch model and the generic fallback for kinds without a custom synth.
  */
 export function handleRemoteEvent(
   remote: SseEvent,
