@@ -1606,3 +1606,18 @@ end
         close(db)
     end
 end
+
+@testset "migrate_compare_view_choices! is idempotent" begin
+    mktempdir() do tmp
+        # Open once → migration runs.
+        db = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+        close(db)
+        # Open again → migration runs again; must not throw.
+        db = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+        cols = Set(r.name for r in
+            Tables.rowtable(DBInterface.execute(db,
+                "PRAGMA table_info(comparisons)")))
+        @test "view_grouping_mode" in cols
+        close(db)
+    end
+end
