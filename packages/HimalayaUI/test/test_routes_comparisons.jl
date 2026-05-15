@@ -129,4 +129,47 @@ end
         end
     end
 
+    @testset "wrong-typed view fields → 400 (review #149)" begin
+        mktempdir() do tmp
+            db = _routes_cmp_db(tmp)
+            with_test_server(db) do port, base
+                # Non-boolean view_show_peak_ticks on create — a bad value
+                # would otherwise reach the INTEGER column and 500 on readback.
+                r1 = HTTP.post("$base/api/comparisons",
+                    ["X-Username" => "alice", "Content-Type" => "application/json"],
+                    JSON3.write(Dict(:title => "t",
+                        :members => [_minimal_member_payload(1000)],
+                        :view_show_peak_ticks => 2));
+                    status_exception = false)
+                @test r1.status == 400
+
+                # Non-string view_grouping_mode on create.
+                r2 = HTTP.post("$base/api/comparisons",
+                    ["X-Username" => "alice", "Content-Type" => "application/json"],
+                    JSON3.write(Dict(:title => "t",
+                        :members => [_minimal_member_payload(1000)],
+                        :view_grouping_mode => 5));
+                    status_exception = false)
+                @test r2.status == 400
+
+                # Submit handler shares the guard — create cleanly, then
+                # submit a wrong-typed view_show_peak_labels.
+                ok = HTTP.post("$base/api/comparisons",
+                    ["X-Username" => "alice", "Content-Type" => "application/json"],
+                    JSON3.write(Dict(:title => "t",
+                        :members => [_minimal_member_payload(1000)])))
+                created = JSON3.read(ok.body, Dict{Symbol, Any})
+                r3 = HTTP.post("$base/api/comparisons/$(created[:id])/submit",
+                    ["X-Username" => "alice", "Content-Type" => "application/json"],
+                    JSON3.write(Dict(:title => "t",
+                        :members => [_minimal_member_payload(1000)],
+                        :expected_content_hash => created[:content_hash],
+                        :view_show_peak_labels => "yes"));
+                    status_exception = false)
+                @test r3.status == 400
+            end
+            close(db)
+        end
+    end
+
 end

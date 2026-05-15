@@ -71,6 +71,30 @@ function _json_error(status::Int, msg::AbstractString; extra...)
                   JSON3.write(body))
 end
 
+"""
+    _view_fields_error(body) -> Union{HTTP.Response, Nothing}
+
+Type-guard the optional comparison view-choice fields. Returns a 400
+`HTTP.Response` when a field is present with the wrong type, else `nothing`.
+`view_show_peak_ticks` / `view_show_peak_labels` land in INTEGER columns
+read back through `Bool(...)`; a non-boolean would otherwise throw
+`InexactError` on a later GET (a 500 instead of a clean 400 at write
+time). A present-but-null value is allowed — it resets to the per-tab
+default (spec §6.4).
+"""
+function _view_fields_error(body)
+    if haskey(body, :view_grouping_mode) && body.view_grouping_mode !== nothing &&
+            !(body.view_grouping_mode isa AbstractString)
+        return _json_error(400, "view_grouping_mode must be a string")
+    end
+    for k in (:view_show_peak_ticks, :view_show_peak_labels)
+        if haskey(body, k) && body[k] !== nothing && !(body[k] isa Bool)
+            return _json_error(400, "$(k) must be a boolean")
+        end
+    end
+    nothing
+end
+
 function register_comparisons_routes!()
     # ── Listing routes ──────────────────────────────────────────────────────
 
@@ -103,6 +127,8 @@ function register_comparisons_routes!()
                 isempty(body.members)
             return _json_error(400, "members must be a non-empty array")
         end
+        verr = _view_fields_error(body)
+        verr === nothing || return verr
 
         title = String(body.title)
         description = haskey(body, :description) && body.description !== nothing ?
@@ -197,6 +223,8 @@ function register_comparisons_routes!()
         if !haskey(body, :members) || !(body.members isa AbstractVector)
             return _json_error(400, "members must be an array")
         end
+        verr = _view_fields_error(body)
+        verr === nothing || return verr
 
         title = String(body.title)
         description = haskey(body, :description) && body.description !== nothing ?

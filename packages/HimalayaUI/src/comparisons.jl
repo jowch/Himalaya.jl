@@ -606,7 +606,7 @@ function comparisons_for_experiment(db::SQLite.DB, experiment_id::Integer)::Vect
                     WHERE cm2.comparison_id = c.id
                       AND cm2.exposure_id IS NOT NULL
                       AND json_extract(cm2.snapshot, '\$.analysis_inputs_hash')
-                          != e2.analysis_inputs_hash
+                          IS NOT e2.analysis_inputs_hash
                   ) AS has_stale_members
            FROM comparisons c
            LEFT JOIN users u ON u.id = c.created_by
@@ -649,7 +649,7 @@ function comparisons_listing(db::SQLite.DB)::Vector{Dict{Symbol, Any}}
                     WHERE cm.comparison_id = c.id
                       AND cm.exposure_id IS NOT NULL
                       AND json_extract(cm.snapshot, '\$.analysis_inputs_hash')
-                          != e.analysis_inputs_hash
+                          IS NOT e.analysis_inputs_hash
                   ) AS has_stale_members
            FROM comparisons c
            LEFT JOIN users u ON u.id = c.created_by
@@ -765,7 +765,7 @@ function forks_of_comparison(db::SQLite.DB, comparison_id::Integer)::Vector{Dict
                     WHERE cm.comparison_id = c.id
                       AND cm.exposure_id IS NOT NULL
                       AND json_extract(cm.snapshot, '\$.analysis_inputs_hash')
-                          != e.analysis_inputs_hash
+                          IS NOT e.analysis_inputs_hash
                   ) AS has_stale_members
            FROM comparisons c
            LEFT JOIN users u ON u.id = c.created_by
