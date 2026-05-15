@@ -18,7 +18,12 @@ export function CompareStatusSurface(p: Props): JSX.Element | null {
   // passage of time, so the "Saved" pill needs an explicit timeout to
   // retire itself 2s after the save. Without the effect the pill would
   // stick forever once shown.
-  const [showSaved, setShowSaved] = useState(false);
+  // Initialise from the prop so a save that already happened shows the pill
+  // on the very first render — avoids a one-frame flash of nothing before
+  // the effect below fires.
+  const [showSaved, setShowSaved] = useState<boolean>(
+    () => p.savedAt !== null && Date.now() - p.savedAt < 2000,
+  );
   useEffect(() => {
     if (p.savedAt === null) {
       setShowSaved(false);

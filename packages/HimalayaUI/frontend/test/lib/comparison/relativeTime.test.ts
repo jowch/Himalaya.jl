@@ -17,6 +17,12 @@ describe("relativeTime — Compare UX C-2", () => {
   it("renders days up to 30d", () => {
     expect(at("2026-05-10T12:00:00Z")).toBe("4d ago");
   });
+  it("still renders '30d ago' exactly at the 30-day boundary", () => {
+    expect(at("2026-04-14T12:00:00Z")).toBe("30d ago");
+  });
+  it("falls back to a date once past 30 days", () => {
+    expect(at("2026-04-13T12:00:00Z")).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
   it("falls back to a date for >30d", () => {
     expect(at("2026-01-01T12:00:00Z")).toMatch(/\d{4}-\d{2}-\d{2}/);
   });

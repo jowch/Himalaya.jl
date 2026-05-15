@@ -44,4 +44,11 @@ describe("InlineEditableText — Compare UX C-3", () => {
     expect(screen.getByText("hello").closest("[data-interactable]"))
       .toHaveAttribute("data-interactable", "edit");
   });
+
+  it("does not become editable when readOnly", () => {
+    render(<InlineEditableText value="locked" onCommit={vi.fn()} readOnly />);
+    fireEvent.click(screen.getByText("locked"));
+    expect(screen.queryByRole("textbox")).toBeNull();
+    expect(screen.getByText("locked").closest("[data-interactable]")).toBeNull();
+  });
 });

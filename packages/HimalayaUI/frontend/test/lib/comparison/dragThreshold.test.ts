@@ -10,7 +10,7 @@ describe("dragThreshold — Compare UX C-1", () => {
     expect(outcome).toBe("click");
   });
 
-  it("treats >= 4px move as drag", () => {
+  it("treats > 4px move as drag", () => {
     const s = makeDragThresholdState({ thresholdPx: 4 });
     s.onPointerDown(10, 10);
     s.onPointerMove(15, 10);
