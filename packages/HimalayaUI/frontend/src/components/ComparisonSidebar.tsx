@@ -72,6 +72,9 @@ export function ComparisonSidebar({
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const currentUserId = useCurrentUserId();
+  // Server id of the comparison currently open as an unsaved draft, if any.
+  // Undefined for a brand-new (never-saved) draft — it has no listing row.
+  const draftId = useAppState((s) => s.activeDraft?.id);
 
   // Fall back to the persisted Zustand experiment context when the URL has
   // no `:eid` (e.g. on `/compare/all`). Without this fallback the
@@ -295,6 +298,8 @@ export function ComparisonSidebar({
               ? "by you"
               : c.author_username !== null ? `by ${c.author_username}` : "by —";
             const rel = relativeTime(c.last_event_at, Date.now());
+            // This row has an unsaved draft open against it (F-2).
+            const isDraft = draftId !== undefined && draftId === c.id;
             return (
               <li
                 key={c.id}
@@ -314,12 +319,26 @@ export function ComparisonSidebar({
                       : "text-fg-muted hover:text-fg hover:bg-bg-elevated")
                   }
                 >
-                  <div className="font-medium truncate">{c.title || `Comparison #${c.id}`}</div>
+                  <div className="font-medium truncate">
+                    {isDraft && (
+                      <span
+                        data-testid="sidebar-draft-dot"
+                        aria-hidden="true"
+                        className="text-accent mr-1"
+                      >
+                        •
+                      </span>
+                    )}
+                    {(c.title || `Comparison #${c.id}`)
+                      + (isDraft ? " (draft)" : "")}
+                  </div>
                   <div className="text-xs text-fg-dim truncate">
                     {formatPhaseSummary(c.member_phases, c.member_count)}
                   </div>
                   <div className="text-xs text-fg-dim truncate">
-                    {byline} · {rel === null ? "—" : `edited ${rel}`}
+                    {isDraft
+                      ? "by you · just now"
+                      : `${byline} · ${rel === null ? "—" : `edited ${rel}`}`}
                   </div>
                 </button>
                 {c.has_stale_members && (
