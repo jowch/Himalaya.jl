@@ -335,23 +335,13 @@ export const postComparisonMessageMutator: Mutator<
   request: (p) => api.postComparisonMessage(p.comparisonId, p.body, buildAuthOpts(p)),
   onSuccess: (p, response, qc) => {
     const key = queryKeys.comparisonMessages(p.comparisonId);
-    const list = qc.getQueryData<ComparisonMessage[]>(key) ?? [];
-    const seen = new Set<number>();
-    const next: ComparisonMessage[] = [];
-    let replaced = false;
-    for (const m of list) {
-      if (m.id < 0 && !replaced && m.body === response.body
-          && m.comparison_id === response.comparison_id) {
-        if (!seen.has(response.id)) { next.push(response); seen.add(response.id); }
-        replaced = true;
-        continue;
-      }
-      if (seen.has(m.id)) continue;
-      next.push(m);
-      seen.add(m.id);
-    }
-    if (!replaced && !seen.has(response.id)) next.push(response);
-    qc.setQueryData<ComparisonMessage[]>(key, next);
+    qc.setQueryData<ComparisonMessage[]>(key, (list) =>
+      replacePlaceholder(
+        list ?? [],
+        response,
+        (m) => m.body === response.body && m.comparison_id === response.comparison_id,
+      ),
+    );
   },
 };
 
