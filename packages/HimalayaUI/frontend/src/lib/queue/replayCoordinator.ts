@@ -121,33 +121,48 @@ export function handleRemoteEvent(
 /**
  * Build a synthetic response object mirroring what the HTTP route would
  * have returned. The deferred is awaited inside useQueueMutation's
- * mutationFn (M1.5); the resolution lets the mutation transition to
- * "success" without the HTTP call having returned. event_id is lifted
- * from the SSE frame; analysis_inputs_hash from post_state if present;
- * remaining fields are the route-specific payload (q, group_id, etc.)
- * that the original route handler would have echoed.
+ * mutationFn; the resolution lets the mutation transition to "success"
+ * without the HTTP call having returned. event_id is lifted from the SSE
+ * frame; analysis_inputs_hash from post_state if present; remaining
+ * fields come from the owning mutator's synthesizeFromSse method.
  *
- * Kind-aware for `peak_added`: the SSE payload only carries `q` and
- * `peak_curation_id`, but `peakAddMutator.onSuccess` reads `id`, `source`,
- * and `exposure_id` off the response. Without this branch, the SSE-wins
- * path lands a peak row with `id === undefined` in the cache, which then
- * matches `hoveredPeakId` (also undefined) and renders a permanent halo.
+ * Dispatch: lookup by (event_kind, entity_type) via resolveMutatorForEvent,
+ * then ask the mutator to build its shape. Falls back to a generic
+ * `{...base, ...payload}` in two cases:
+ *
+ *   (a) Forward-scaffolded kinds — set_exposure_status, update_sample,
+ *       select_exposure, remove_tag. These emit SSE today but their UI
+ *       gesture doesn't queue through this pipeline (yet); when a future
+ *       plan wires that gesture, add `synthesizeFromSse` to the matching
+ *       mutator and the fallback stops handling them.
+ *
+ *   (b) Active mutators whose SSE payload already matches the cache row
+ *       shape — post_message (sample + comparison). The SSE frame carries
+ *       `{id, body, author_id, author, created_at, sample_id|comparison_id}`
+ *       which IS the cache row shape; no shape massaging needed, so the
+ *       generic `{...base, ...payload}` suffices without a per-mutator synth.
+ *
+ * Ordering note: `applyPostStateOnly(remote)` runs BEFORE the deferred is
+ * resolved with this synth (see handleRemoteEvent). That ordering keeps the
+ * post-mutation indices cache fresh before the mutator's onSuccess fires.
+ * This refactor does NOT change that ordering — it only changes how the
+ * synth shape is produced.
+ *
+ * `base` carries only the three guaranteed framework fields (event_id,
+ * client_op_id, analysis_inputs_hash). `view_row_id` is NOT in `base` —
+ * it's an optional field on QueueResponseMeta that any mutator whose
+ * TResponse requires it (e.g. `PeakAddResponse` which has `view_row_id:
+ * number` required) must include explicitly in its `synthesizeFromSse`.
  */
 function synthesizeResponseFromSse(remote: SseEvent): unknown {
-  const payload = (remote.payload as Record<string, unknown> | undefined) ?? {};
   const base: QueueResponseMeta = {
     event_id: remote.id,
     client_op_id: remote.client_op_id,
     analysis_inputs_hash: remote.post_state?.analysis_inputs_hash,
   };
-
-  // Phase B preferred path: ask the owning mutator to build the synth shape.
   const mutator = resolveMutatorForEvent(remote.kind, remote.entity_type);
   const synth = mutator?.synthesizeFromSse?.(remote, base);
   if (synth !== undefined) return synth;
-
-  // Legacy fallback: per-kind branches still here until each mutator owns
-  // its own synthesizeFromSse (tasks B5–B8). Once those land, this block
-  // collapses to just `return { ...base, ...payload };`.
+  const payload = (remote.payload as Record<string, unknown> | undefined) ?? {};
   return { ...base, ...payload };
 }
