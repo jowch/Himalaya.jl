@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveMutator } from "../../src/lib/queue/mutatorRegistry";
+import { resolveMutator, resolveMutatorForEvent } from "../../src/lib/queue/mutatorRegistry";
 import {
   addSampleTagMutator,
   removeSampleTagMutator,
@@ -7,6 +7,7 @@ import {
   removeExposureTagMutator,
   updateSampleMutator,
   postSampleMessageMutator,
+  postComparisonMessageMutator,
   setExposureStatusMutator,
   selectExposureMutator,
 } from "../../src/lib/queue/mutators/trivial";
@@ -23,6 +24,8 @@ import {
 } from "../../src/lib/queue/mutators/indexGroup";
 import { createSpeculativeMutator } from "../../src/lib/queue/mutators/createSpeculative";
 import { reanalyzeExposureMutator } from "../../src/lib/queue/mutators/reanalyzeExposure";
+import { saveComparisonMutator } from "../../src/lib/queue/mutators/saveComparison";
+import { deleteComparisonMutator } from "../../src/lib/queue/mutators/deleteComparison";
 
 describe("resolveMutator", () => {
   it("dispatches add_tag based on payload experimentId presence", () => {
@@ -111,5 +114,87 @@ describe("resolveMutator", () => {
     expect(resolveMutator({ kind: "add_tag", payload: null })).toBe(
       addExposureTagMutator,
     );
+  });
+});
+
+describe("resolveMutatorForEvent", () => {
+  it("routes peak_added to peakAddMutator", () => {
+    expect(resolveMutatorForEvent("peak_added", "exposure")).toBe(peakAddMutator);
+  });
+
+  it("routes peak_excluded and peak_unexcluded to their dedicated mutators", () => {
+    expect(resolveMutatorForEvent("peak_excluded",   "exposure")).toBe(peakExcludeMutator);
+    expect(resolveMutatorForEvent("peak_unexcluded", "exposure")).toBe(peakUnexcludeMutator);
+  });
+
+  it("splits add_tag by entity_type", () => {
+    expect(resolveMutatorForEvent("add_tag", "sample"))  .toBe(addSampleTagMutator);
+    expect(resolveMutatorForEvent("add_tag", "exposure")).toBe(addExposureTagMutator);
+  });
+
+  it("splits remove_tag by entity_type", () => {
+    expect(resolveMutatorForEvent("remove_tag", "sample"))  .toBe(removeSampleTagMutator);
+    expect(resolveMutatorForEvent("remove_tag", "exposure")).toBe(removeExposureTagMutator);
+  });
+
+  it("splits post_message by entity_type (wire-string entity types)", () => {
+    expect(resolveMutatorForEvent("post_message", "sample_message"))    .toBe(postSampleMessageMutator);
+    expect(resolveMutatorForEvent("post_message", "comparison_message")).toBe(postComparisonMessageMutator);
+  });
+
+  it("routes both comparison_created and comparison_submitted to saveComparison", () => {
+    expect(resolveMutatorForEvent("comparison_created",   "comparison")).toBe(saveComparisonMutator);
+    expect(resolveMutatorForEvent("comparison_submitted", "comparison")).toBe(saveComparisonMutator);
+  });
+
+  it("routes comparison_deleted to deleteComparison", () => {
+    expect(resolveMutatorForEvent("comparison_deleted", "comparison")).toBe(deleteComparisonMutator);
+  });
+
+  it("routes analyze_run to reanalyzeExposure", () => {
+    expect(resolveMutatorForEvent("analyze_run", "exposure")).toBe(reanalyzeExposureMutator);
+  });
+
+  it("returns undefined for unknown event kinds", () => {
+    expect(resolveMutatorForEvent("not_a_kind", "exposure")).toBeUndefined();
+  });
+});
+
+describe("resolveMutator ↔ resolveMutatorForEvent consistency", () => {
+  // Cross-check: for each mutator, every (eventKind, entityType) pair that
+  // resolveMutatorForEvent's switch maps to it must round-trip back to the
+  // same mutator instance. Catches drift if someone adds a mutator + updates
+  // resolveMutator but forgets resolveMutatorForEvent (or vice versa).
+  const cases = [
+    { mutator: peakAddMutator,          eventKind: "peak_added",          entityType: "exposure"   },
+    { mutator: peakRemoveMutator,       eventKind: "peak_removed",        entityType: "exposure"   },
+    { mutator: peakExcludeMutator,      eventKind: "peak_excluded",       entityType: "exposure"   },
+    { mutator: peakUnexcludeMutator,    eventKind: "peak_unexcluded",     entityType: "exposure"   },
+    { mutator: addIndexToGroupMutator,  eventKind: "index_confirmed",     entityType: "exposure"   },
+    { mutator: removeIndexFromGroupMutator, eventKind: "index_unconfirmed", entityType: "exposure" },
+    { mutator: deleteIndexMutator,      eventKind: "speculative_deleted", entityType: "exposure"   },
+    { mutator: createSpeculativeMutator, eventKind: "speculative_created", entityType: "exposure"  },
+    { mutator: reanalyzeExposureMutator, eventKind: "analyze_run",        entityType: "exposure"   },
+    { mutator: saveComparisonMutator,   eventKind: "comparison_created",  entityType: "comparison" },
+    { mutator: saveComparisonMutator,   eventKind: "comparison_submitted", entityType: "comparison" },
+    { mutator: deleteComparisonMutator, eventKind: "comparison_deleted",  entityType: "comparison" },
+    { mutator: addSampleTagMutator,     eventKind: "add_tag",             entityType: "sample"     },
+    { mutator: addExposureTagMutator,   eventKind: "add_tag",             entityType: "exposure"   },
+    { mutator: removeSampleTagMutator,  eventKind: "remove_tag",          entityType: "sample"     },
+    { mutator: removeExposureTagMutator, eventKind: "remove_tag",         entityType: "exposure"   },
+    { mutator: postSampleMessageMutator, eventKind: "post_message",       entityType: "sample_message"     },
+    { mutator: postComparisonMessageMutator, eventKind: "post_message",   entityType: "comparison_message" },
+    { mutator: updateSampleMutator,     eventKind: "update_sample",       entityType: "sample"     },
+    { mutator: setExposureStatusMutator, eventKind: "set_exposure_status", entityType: "exposure"  },
+    { mutator: selectExposureMutator,   eventKind: "select_exposure",     entityType: "exposure"   },
+  ];
+
+  // Use forEach + it() instead of it.each($mutator.kind) — dot-property
+  // interpolation in it.each titles is Vitest-2.1+ but the codebase has no
+  // prior example; a template-literal title is unambiguous.
+  cases.forEach(({ mutator, eventKind, entityType }) => {
+    it(`${eventKind} / ${entityType} resolves to ${mutator.kind}`, () => {
+      expect(resolveMutatorForEvent(eventKind, entityType)).toBe(mutator);
+    });
   });
 });
