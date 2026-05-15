@@ -174,6 +174,29 @@ describe("replacePlaceholder", () => {
       );
       expect(out).toEqual([{ id: 42, source: "manual" }]);
     });
+
+    it("preserves peakAdd's exact three-row race: placeholder + auto-same-id + manual-different-id", () => {
+      // Mirrors the original peakAdd loop's defended scenario:
+      // placeholder gets replaced; auto peak sharing id namespace survives;
+      // unrelated manual peak survives.
+      const list: Tagged[] = [
+        { id: -1, source: "manual" },     // placeholder for the q the user clicked
+        { id: 42, source: "auto"   },     // auto peak that happens to have id=42
+        { id: 15, source: "manual" },     // unrelated existing manual peak
+      ];
+      const server: Tagged = { id: 42, source: "manual" };
+      const out = replacePlaceholder(
+        list,
+        server,
+        (r) => r.source === "manual",
+        { isDuplicate: (r) => r.source === "manual" && r.id === server.id },
+      );
+      expect(out).toEqual([
+        { id: 42, source: "manual" },     // placeholder replaced
+        { id: 42, source: "auto"   },     // auto survives — id collision is allowed across sources
+        { id: 15, source: "manual" },     // unrelated manual survives
+      ]);
+    });
   });
 });
 ```
@@ -677,7 +700,7 @@ export interface QueueResponseMeta {
   event_id: number;
   client_op_id: string | null | undefined;
   analysis_inputs_hash: string | undefined;
-  view_row_id?: number | null;
+  view_row_id?: number;
 }
 ```
 
@@ -758,7 +781,36 @@ The dispatcher must handle:
 - `analyze_run` event → `reanalyzeExposureMutator`.
 - `speculative_deleted` event → `deleteIndexMutator` (the user gesture is `delete_index`, the wire event is `speculative_deleted`).
 
-- [ ] **Step 1: Add the unit test first**
+- [ ] **Step 1: Update test file imports**
+
+The test file currently imports trivial mutators (addSampleTag, removeSampleTag, addExposureTag, removeExposureTag, updateSample, postSampleMessage, setExposureStatus, selectExposure), peakAdd, peakRemove, peakExclude, peakUnexclude, the three indexGroup variants, createSpeculative, and reanalyzeExposure. **Add three new imports:**
+
+```ts
+// Inside the existing trivial-mutators import block: add postComparisonMessageMutator.
+import {
+  addSampleTagMutator,
+  removeSampleTagMutator,
+  addExposureTagMutator,
+  removeExposureTagMutator,
+  updateSampleMutator,
+  postSampleMessageMutator,
+  postComparisonMessageMutator,    // ← new
+  setExposureStatusMutator,
+  selectExposureMutator,
+} from "../../src/lib/queue/mutators/trivial";
+
+// New separate imports near the existing mutator imports:
+import { saveComparisonMutator }   from "../../src/lib/queue/mutators/saveComparison";
+import { deleteComparisonMutator } from "../../src/lib/queue/mutators/deleteComparison";
+```
+
+Also add the named export of the new function to the existing top-of-file import:
+
+```ts
+import { resolveMutator, resolveMutatorForEvent } from "../../src/lib/queue/mutatorRegistry";
+```
+
+- [ ] **Step 2: Add the unit test**
 
 Append to `packages/HimalayaUI/frontend/test/queue/mutatorRegistry.test.ts`:
 
@@ -806,16 +858,51 @@ describe("resolveMutatorForEvent", () => {
     expect(resolveMutatorForEvent("not_a_kind", "exposure")).toBeUndefined();
   });
 });
+
+describe("resolveMutator ↔ resolveMutatorForEvent consistency", () => {
+  // Cross-check: for each mutator, the event kind it canonically emits
+  // (from `eventKinds[0]` or `kind`) must resolve back to the same mutator.
+  // Catches drift if someone adds a mutator + updates resolveMutator but
+  // forgets resolveMutatorForEvent (or vice versa).
+  const cases = [
+    { mutator: peakAddMutator,          eventKind: "peak_added",          entityType: "exposure"   },
+    { mutator: peakRemoveMutator,       eventKind: "peak_removed",        entityType: "exposure"   },
+    { mutator: peakExcludeMutator,      eventKind: "peak_excluded",       entityType: "exposure"   },
+    { mutator: peakUnexcludeMutator,    eventKind: "peak_unexcluded",     entityType: "exposure"   },
+    { mutator: addIndexToGroupMutator,  eventKind: "index_confirmed",     entityType: "exposure"   },
+    { mutator: removeIndexFromGroupMutator, eventKind: "index_unconfirmed", entityType: "exposure" },
+    { mutator: deleteIndexMutator,      eventKind: "speculative_deleted", entityType: "exposure"   },
+    { mutator: createSpeculativeMutator, eventKind: "speculative_created", entityType: "exposure"  },
+    { mutator: reanalyzeExposureMutator, eventKind: "analyze_run",        entityType: "exposure"   },
+    { mutator: saveComparisonMutator,   eventKind: "comparison_created",  entityType: "comparison" },
+    { mutator: saveComparisonMutator,   eventKind: "comparison_submitted", entityType: "comparison" },
+    { mutator: deleteComparisonMutator, eventKind: "comparison_deleted",  entityType: "comparison" },
+    { mutator: addSampleTagMutator,     eventKind: "add_tag",             entityType: "sample"     },
+    { mutator: addExposureTagMutator,   eventKind: "add_tag",             entityType: "exposure"   },
+    { mutator: removeSampleTagMutator,  eventKind: "remove_tag",          entityType: "sample"     },
+    { mutator: removeExposureTagMutator, eventKind: "remove_tag",         entityType: "exposure"   },
+    { mutator: postSampleMessageMutator, eventKind: "post_message",       entityType: "sample"     },
+    { mutator: postComparisonMessageMutator, eventKind: "post_message",   entityType: "comparison" },
+    { mutator: updateSampleMutator,     eventKind: "update_sample",       entityType: "sample"     },
+    { mutator: setExposureStatusMutator, eventKind: "set_exposure_status", entityType: "exposure"  },
+    { mutator: selectExposureMutator,   eventKind: "select_exposure",     entityType: "exposure"   },
+  ];
+
+  it.each(cases)(
+    "$eventKind / $entityType resolves to $mutator.kind",
+    ({ mutator, eventKind, entityType }) => {
+      expect(resolveMutatorForEvent(eventKind, entityType)).toBe(mutator);
+    },
+  );
+});
 ```
 
-You will also need to import `postComparisonMessageMutator` from `../../src/lib/queue/mutators/trivial` and `saveComparisonMutator` + `deleteComparisonMutator` if they are not already imported in that file — check the file header and add only what's missing.
-
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **Step 3: Run test to verify it fails**
 
 Run: `npm test -- test/queue/mutatorRegistry.test.ts`
 Expected: FAIL — `resolveMutatorForEvent` is not exported.
 
-- [ ] **Step 3: Implement resolveMutatorForEvent**
+- [ ] **Step 4: Implement resolveMutatorForEvent**
 
 Append to `packages/HimalayaUI/frontend/src/lib/queue/mutatorRegistry.ts`:
 
@@ -866,12 +953,12 @@ export function resolveMutatorForEvent(
 
 The imports at the top of `mutatorRegistry.ts` already include every mutator name used above (the existing `resolveMutator` switch references them). No new imports needed unless verifying with the existing file shows a missing one.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **Step 5: Run test to verify it passes**
 
 Run: `npm test -- test/queue/mutatorRegistry.test.ts`
-Expected: PASS — all new describe block assertions green.
+Expected: PASS — all new describe block assertions green, plus the consistency cross-check.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add packages/HimalayaUI/frontend/src/lib/queue/mutatorRegistry.ts \
@@ -1019,19 +1106,11 @@ Insert into the mutator object literal, alongside `kind`, `onMutate`, `request`,
       source: "manual",
       excluded: false,
       view_row_id: peakId,
-    } as Peak & QueueResponseMeta;
+    } as PeakAddResponse;
   },
 ```
 
-(`TResponse` for `peakAddMutator` is `Peak & {event_id, view_row_id, analysis_inputs_hash}` — match the cast.)
-
-Add import:
-
-```ts
-import type { QueueResponseMeta, SseEvent } from "../types";
-```
-
-(`SseEvent` is needed only if TS infers `remote` as `any` — verify and add only if the build complains.)
+(`PeakAddResponse` is the existing imported TResponse type at the top of the file — `import type { Peak, PeakAddResponse, Exposure, AuthOpts } from "../../../api"`. No new imports needed for the cast.)
 
 - [ ] **Step 2: Remove the legacy peak_added branch from replayCoordinator**
 
@@ -1093,7 +1172,7 @@ For `addSampleTagMutator`, add:
       key: payload.key as string,
       value: (payload.value as string) ?? null,
       source: "manual",
-    } as SampleTagResponse;
+    } as SampleTag;
   },
 ```
 
@@ -1109,11 +1188,11 @@ For `addExposureTagMutator`, add:
       key: payload.key as string,
       value: (payload.value as string) ?? null,
       source: "manual",
-    } as ExposureTagResponse;
+    } as ExposureTag;
   },
 ```
 
-`SampleTagResponse` and `ExposureTagResponse` are the existing TResponse types in `trivial.ts`. Use whatever names are declared there.
+`SampleTag` and `ExposureTag` are the actual `TResponse` types declared on each mutator (`Mutator<…, …, SampleTag>` and `Mutator<…, …, ExposureTag>` respectively, with the types imported from `../../../api`). The fact that the synth object also carries `event_id` / `analysis_inputs_hash` / `client_op_id` is irrelevant to the cast — those framework fields are stripped in `onSuccess` (the route response is `SampleTag & sample_id & framework-meta`, and `onSuccess` already filters the inner shape before writing the cache).
 
 - [ ] **Step 2: Remove the legacy `add_tag` branch from replayCoordinator**
 
@@ -1218,10 +1297,11 @@ Add to `deleteComparisonMutator`:
   synthesizeFromSse: (remote, base) => ({
     ...base,
     id: remote.entity_id,
-  } as DeleteComparisonResponse),
+    deleted: true,
+  } as DeleteResponse),
 ```
 
-(`DeleteComparisonResponse` is the existing TResponse type.)
+(`DeleteResponse` is the file-local type declared in `deleteComparison.ts:29` — `{ id: number; deleted: boolean; event_id: number }`. The synth must include `deleted: true` to satisfy the type; the server-side semantics of the event already imply deletion succeeded.)
 
 - [ ] **Step 2: Remove the legacy comparison_deleted branch**
 
@@ -1324,6 +1404,30 @@ After B4–B8 land, every per-kind branch has been migrated. The function reduce
 Final state of `synthesizeResponseFromSse`:
 
 ```ts
+/**
+ * Build a synthetic response object mirroring what the HTTP route would
+ * have returned. The deferred is awaited inside useQueueMutation's
+ * mutationFn; the resolution lets the mutation transition to "success"
+ * without the HTTP call having returned. event_id is lifted from the SSE
+ * frame; analysis_inputs_hash from post_state if present; remaining
+ * fields come from the owning mutator's synthesizeFromSse method.
+ *
+ * Dispatch: lookup by (event_kind, entity_type) via resolveMutatorForEvent,
+ * then ask the mutator to build its shape. Falls back to a generic
+ * `{...base, ...payload}` for forward-scaffolded kinds that have no client
+ * mutator yet (post_message, set_exposure_status, update_sample,
+ * select_exposure, remove_tag). These emit SSE today (applyRemoteToCache
+ * merges them) but no UI gesture queues them, so the generic shape suffices.
+ * When a future plan wires a UI mutation that emits one of these kinds, add
+ * `synthesizeFromSse` to the corresponding mutator and the generic fallback
+ * stops being hit for that kind automatically.
+ *
+ * Ordering note: `applyPostStateOnly(remote)` runs BEFORE the deferred is
+ * resolved with this synth (see handleRemoteEvent). That ordering keeps the
+ * post-mutation indices cache fresh before the mutator's onSuccess fires.
+ * This refactor does NOT change that ordering — it only changes how the
+ * synth shape is produced.
+ */
 function synthesizeResponseFromSse(remote: SseEvent): unknown {
   const base: QueueResponseMeta = {
     event_id: remote.id,
@@ -1333,15 +1437,12 @@ function synthesizeResponseFromSse(remote: SseEvent): unknown {
   const mutator = resolveMutatorForEvent(remote.kind, remote.entity_type);
   const synth = mutator?.synthesizeFromSse?.(remote, base);
   if (synth !== undefined) return synth;
-  // Fallback for kinds with no custom synth (forward-scaffolded kinds like
-  // post_message / set_exposure_status / update_sample / select_exposure):
-  // the generic shape mirrors the HTTP route's response — `{...meta, ...payload}`.
   const payload = (remote.payload as Record<string, unknown> | undefined) ?? {};
   return { ...base, ...payload };
 }
 ```
 
-Update the function's doc-comment (lines 120–134 in the original) to reflect mutator dispatch instead of the per-kind switch.
+Replace the function's original doc-comment (lines 120–134 in the legacy file) with the doc-comment above so the new dispatch model is documented.
 
 - [ ] **Step 2: Run all queue tests**
 
@@ -1402,6 +1503,29 @@ describe("synthesizeFromSse coverage (resolveMutatorForEvent contract)", () => {
     );
     expect(synth).toBeDefined();
   });
+
+  // Forward-scaffolded kinds: their mutators MUST NOT declare synthesizeFromSse.
+  // If a future contributor accidentally adds a half-baked synth to one of
+  // these mutators before the rest of the pipeline is ready, this assertion
+  // catches it. These kinds emit SSE today but no client mutator queues them,
+  // so synthesis falls through to the generic `{...base, ...payload}` shape.
+  const forwardScaffolded: Array<{ kind: string; entity_type: string }> = [
+    { kind: "post_message",       entity_type: "sample"     },
+    { kind: "post_message",       entity_type: "comparison" },
+    { kind: "set_exposure_status", entity_type: "exposure"   },
+    { kind: "update_sample",      entity_type: "sample"     },
+    { kind: "select_exposure",    entity_type: "exposure"   },
+    { kind: "remove_tag",         entity_type: "sample"     },
+    { kind: "remove_tag",         entity_type: "exposure"   },
+  ];
+  it.each(forwardScaffolded)(
+    "$kind/$entity_type stays on the generic fallback (no mutator.synthesizeFromSse)",
+    ({ kind, entity_type }) => {
+      const mutator = resolveMutatorForEvent(kind, entity_type);
+      expect(mutator).toBeDefined();
+      expect(mutator!.synthesizeFromSse).toBeUndefined();
+    },
+  );
 });
 ```
 
@@ -1689,6 +1813,67 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 
 ---
 
+### Task C5: Pin client_op_id absence in cache-shape contract
+
+**Files:**
+- Modify: `packages/HimalayaUI/frontend/test/queue/cache-shape.test.ts`
+
+`stripQueueMetadata` strips `client_op_id` from the payload, which is a silent improvement for `peakAdd` and `indexGroup` (both previously left it in `serverPeak` / `row`). Pin the property so a future regression that bypasses `stripQueueMetadata` and writes the raw response into the cache fails this test.
+
+- [ ] **Step 1: Add assertions to the existing cache-shape tests**
+
+In `cache-shape.test.ts`, the file has per-mutator `describe` blocks. Inside the `peakAdd` and `indexGroup` (both confirm + unconfirm) describes, add a test asserting the cache row does NOT carry queue metadata. Pattern:
+
+```ts
+it("does not write queue metadata fields into the cache row (peakAdd)", () => {
+  const qc = new QueryClient();
+  const exposureId = 1;
+  const response: PeakAddResponse = {
+    id: 7,
+    exposure_id: exposureId,
+    q: 0.12,
+    intensity: null,
+    prominence: null,
+    sharpness: null,
+    source: "manual",
+    excluded: false,
+    view_row_id: 7,
+    event_id: 42,
+    analysis_inputs_hash: "abc",
+    // @ts-expect-error — client_op_id is plumbing, NOT part of the response type
+    client_op_id: "op-1",
+  };
+  peakAddMutator.onSuccess(
+    { exposureId, q: 0.12, kind: "peak_added", payload: { q: 0.12 }, clientOpId: "op-1" } as any,
+    response,
+    qc,
+  );
+  const row = qc.getQueryData<Peak[]>(queryKeys.peaks(exposureId))![0];
+  expect(row).not.toHaveProperty("event_id");
+  expect(row).not.toHaveProperty("view_row_id");
+  expect(row).not.toHaveProperty("analysis_inputs_hash");
+  expect(row).not.toHaveProperty("client_op_id");
+});
+```
+
+Add an analogous test for `addIndexToGroupMutator.onSuccess` and `removeIndexFromGroupMutator.onSuccess`. The exact response shape comes from the existing test fixtures in the file — match those.
+
+- [ ] **Step 2: Run tests**
+
+Run: `npm test -- test/queue/cache-shape.test.ts`
+Expected: PASS — fields are stripped, assertions hold.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add packages/HimalayaUI/frontend/test/queue/cache-shape.test.ts
+git commit -m "test(queue): pin client_op_id absence post-stripQueueMetadata (#129)
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
+```
+
+---
+
 ## Phase D — Verification
 
 ### Task D1: Full test sweep + build
@@ -1708,7 +1893,16 @@ Expected: PASS — `tsc --noEmit` clean, Vite build succeeds.
 Run: `npm run e2e`
 Expected: PASS — all spec files green.
 
-- [ ] **Step 4: Grep for remaining hand-rolled placeholder loops**
+- [ ] **Step 4: Run live Playwright spec for peak_add (one canonical SSE-wins path)**
+
+Prereq: a running backend on the live-test port (see `packages/HimalayaUI/frontend/e2e/live/README.md` for setup). With backend + Vite up:
+
+Run: `npm run e2e:live -- peak-add-no-stale-banner`
+Expected: PASS — the SSE-wins path that this refactor touches most heavily is exercised end-to-end (peakAdd's synth + replacePlaceholder + stripQueueMetadata all participate).
+
+If the live-test infrastructure isn't available locally, document the skip in the PR description — the mocked E2E in Step 3 plus the unit-level contract tests cover the same paths at the Layer 1–5 level.
+
+- [ ] **Step 5: Grep for remaining hand-rolled placeholder loops**
 
 Run: `grep -n "id < 0 && !replaced" packages/HimalayaUI/frontend/src/lib/queue/`
 Expected: zero matches. (If `peakRemove.ts` or any other file still has a hand-rolled loop, address before closing.)
@@ -1716,12 +1910,12 @@ Expected: zero matches. (If `peakRemove.ts` or any other file still has a hand-r
 Run: `grep -nE "event_id: _e, view_row_id: _v" packages/HimalayaUI/frontend/src/lib/queue/`
 Expected: zero matches.
 
-- [ ] **Step 5: Grep for the legacy synth switch**
+- [ ] **Step 6: Grep for the legacy synth switch**
 
 Run: `grep -nE 'remote\.kind === "(peak_added|add_tag|comparison_created|comparison_deleted|peak_excluded|peak_unexcluded)"' packages/HimalayaUI/frontend/src/lib/queue/replayCoordinator.ts`
 Expected: zero matches.
 
-- [ ] **Step 6: Final commit if any cleanup landed**
+- [ ] **Step 7: Final commit if any cleanup landed**
 
 Only if cleanup landed:
 

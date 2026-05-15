@@ -18,6 +18,7 @@ The mutation queue grew to 11 mutators. Three framework-shape leaks are now visi
 - No change to the rollback ordering / replay-as-rerun invariants.
 - No change to the existing per-mutator HTTP contract (request shape, status codes).
 - No rename of `OpKind` or any wire-side event kind.
+- The `looksFull` invalidate detectors in `saveComparison` / `createSpeculative` / `indexGroup` stay. They handle synth-vs-HTTP shape divergence — a related but distinct concern from where the synth lives. Removing them would require a separate refactor that gives the synth full Comparison/IndexEntry shapes (with `members[]`, `phase`, lineage fields). That's deferred — this refactor only moves the synth *location*, not its *fidelity*.
 
 ## Design
 
