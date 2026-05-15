@@ -69,6 +69,26 @@ function makeMutator(
         old ? { ...old, analysis_inputs_hash: response.analysis_inputs_hash } : old);
     },
     affectsExposurePeaks: () => true,
+    synthesizeFromSse: (remote, base) => {
+      const payload = (remote.payload as Record<string, unknown> | undefined) ?? {};
+      if (payload.auto_peak_id === undefined) return undefined;
+      // intensity/prominence/sharpness/exposure_id are intentionally absent —
+      // they aren't carried on the SSE wire. The cast goes through `unknown`
+      // because PeakUpdatedResponse extends Peak (which requires those fields),
+      // and `as PeakUpdatedResponse` alone would be rejected by tsc-strict for
+      // insufficient overlap. Safe at runtime: peakSetExcluded.onSuccess uses
+      // spread merge `{ ...pk, ...peakFields }` into the existing cached Peak,
+      // so the optimistic row's detection values survive when the synth omits
+      // them. The legacy synth in replayCoordinator relied on the same merge —
+      // preserve the contract.
+      return {
+        ...base,
+        id: payload.auto_peak_id as number,
+        q: payload.q as number,
+        source: "auto",
+        excluded,
+      } as unknown as PeakUpdatedResponse;
+    },
   };
 }
 

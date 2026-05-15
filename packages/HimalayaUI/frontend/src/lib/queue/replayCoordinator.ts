@@ -149,20 +149,5 @@ function synthesizeResponseFromSse(remote: SseEvent): unknown {
   // Legacy fallback: per-kind branches still here until each mutator owns
   // its own synthesizeFromSse (tasks B5–B8). Once those land, this block
   // collapses to just `return { ...base, ...payload };`.
-  if (remote.kind === "peak_excluded" || remote.kind === "peak_unexcluded") {
-    // SSE payload is `{q, auto_peak_id}` — no `id`. Map auto_peak_id → id so
-    // peakSetExcluded.onSuccess's `pk.id === peakOnly.id` match key works.
-    // intensity/prominence/sharpness are intentionally absent: the SSE frame
-    // doesn't carry them. The mutator must MERGE these fields onto the
-    // existing row (not replace) so the original detection values are
-    // preserved. source/excluded are kind-derived.
-    return {
-      ...base,
-      id: payload.auto_peak_id,
-      q: payload.q,
-      source: "auto",
-      excluded: remote.kind === "peak_excluded",
-    };
-  }
   return { ...base, ...payload };
 }
