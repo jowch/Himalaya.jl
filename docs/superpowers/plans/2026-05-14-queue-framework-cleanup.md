@@ -30,6 +30,7 @@
 **Modified:**
 - `packages/HimalayaUI/frontend/src/lib/queue/types.ts` — add `synthesizeFromSse?` and `QueueResponseMeta` to `Mutator<>` interface module
 - `packages/HimalayaUI/frontend/src/lib/queue/mutatorRegistry.ts` — add `resolveMutatorForEvent(kind, entity_type)`
+- `packages/HimalayaUI/frontend/test/queue/mutatorRegistry.test.ts` — add resolveMutatorForEvent tests + consistency cross-check
 - `packages/HimalayaUI/frontend/src/lib/queue/replayCoordinator.ts` — replace switch with mutator dispatch
 - `packages/HimalayaUI/frontend/src/lib/queue/mutators/peakAdd.ts` — adopt `replacePlaceholder`, `stripQueueMetadata`, declare `synthesizeFromSse`
 - `packages/HimalayaUI/frontend/src/lib/queue/mutators/peakSetExcluded.ts` — adopt `stripQueueMetadata`, declare `synthesizeFromSse`
@@ -43,10 +44,11 @@
 
 ## Phase A — `replacePlaceholder` helper
 
-### Task A1: Write replacePlaceholder unit tests
+### Task A1: Write replacePlaceholder helper + unit tests
 
 **Files:**
-- Test: `packages/HimalayaUI/frontend/test/queue/replacePlaceholder.test.ts`
+- Create: `packages/HimalayaUI/frontend/src/lib/queue/replacePlaceholder.ts`
+- Test:   `packages/HimalayaUI/frontend/test/queue/replacePlaceholder.test.ts`
 
 - [ ] **Step 1: Write the failing test file**
 
@@ -266,11 +268,11 @@ Expected: PASS — 7 tests green.
 ```bash
 git add packages/HimalayaUI/frontend/src/lib/queue/replacePlaceholder.ts \
         packages/HimalayaUI/frontend/test/queue/replacePlaceholder.test.ts
-git commit -m "feat(queue): add replacePlaceholder helper
+git commit -m "feat(queue): add replacePlaceholder helper (#129)
 
 Generic helper that replaces one negative-id placeholder with the
 server row, deduping against concurrent SSE inserts. Will replace
-five hand-rolled copies in peakAdd + trivial. (#129)
+five hand-rolled copies in peakAdd + trivial.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 ```
@@ -379,10 +381,10 @@ Expected: PASS — no type errors. (The build script runs `tsc --noEmit` before 
 
 ```bash
 git add packages/HimalayaUI/frontend/src/lib/queue/mutators/peakAdd.ts
-git commit -m "refactor(queue): migrate peakAdd to replacePlaceholder
+git commit -m "refactor(queue): migrate peakAdd to replacePlaceholder (#129)
 
 The hand-rolled loop is exactly replacePlaceholder's contract.
-The 'manual-only dedup' wrinkle moves into the predicate. (#129)
+The 'manual-only dedup' wrinkle moves into the predicate.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 ```
@@ -600,10 +602,10 @@ Expected: PASS. If any test asserts position-at-end for tags (search `s.tags[s.t
 
 ```bash
 git add packages/HimalayaUI/frontend/src/lib/queue/mutators/trivial.ts
-git commit -m "refactor(queue): migrate addSampleTag to replacePlaceholder
+git commit -m "refactor(queue): migrate addSampleTag to replacePlaceholder (#129)
 
 Side benefit: placeholder tags now keep their insertion position
-rather than jumping to the end of the list. (#129)
+rather than jumping to the end of the list.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 ```
@@ -749,12 +751,12 @@ Expected: PASS — `synthesizeFromSse?` is optional, so no existing mutator must
 
 ```bash
 git add packages/HimalayaUI/frontend/src/lib/queue/types.ts
-git commit -m "feat(queue): extend Mutator with synthesizeFromSse
+git commit -m "feat(queue): extend Mutator with synthesizeFromSse (#129)
 
 Optional method — no existing mutators need to change. Sets up the
 shape contract for moving per-kind synth from replayCoordinator into
 the mutator. The event-kind→mutator routing lives in a separate
-explicit switch (Task B2), not a per-mutator field. (#129)
+explicit switch (Task B2), not a per-mutator field.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 ```
@@ -962,11 +964,11 @@ Expected: PASS — all new describe block assertions green, plus the consistency
 ```bash
 git add packages/HimalayaUI/frontend/src/lib/queue/mutatorRegistry.ts \
         packages/HimalayaUI/frontend/test/queue/mutatorRegistry.test.ts
-git commit -m "feat(queue): add resolveMutatorForEvent dispatcher
+git commit -m "feat(queue): add resolveMutatorForEvent dispatcher (#129)
 
 Maps SSE event kind + entity_type to the owning mutator, the inverse
 index of resolveMutator. Used next to dispatch synthesizeFromSse from
-replayCoordinator. (#129)
+replayCoordinator.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 ```
@@ -1069,11 +1071,11 @@ Expected: PASS.
 
 ```bash
 git add packages/HimalayaUI/frontend/src/lib/queue/replayCoordinator.ts
-git commit -m "feat(queue): dispatch synthesizeFromSse via mutator first
+git commit -m "feat(queue): dispatch synthesizeFromSse via mutator first (#129)
 
 replayCoordinator now asks the owning mutator to synthesize the SSE
 response, falling back to the legacy per-kind switch when the mutator
-hasn't declared synthesizeFromSse yet. Behavior identical. (#129)
+hasn't declared synthesizeFromSse yet. Behavior identical.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 ```
@@ -1352,25 +1354,27 @@ For `peakExcludeMutator`, add:
   synthesizeFromSse: (remote, base) => {
     const payload = (remote.payload as Record<string, unknown> | undefined) ?? {};
     if (payload.auto_peak_id === undefined) return undefined;
-    // intensity/prominence/sharpness are intentionally absent — they aren't
-    // carried on the SSE wire. The `as PeakUpdatedResponse` cast is unsound
-    // at the type level (PeakUpdatedResponse extends Peak which requires
-    // those fields) BUT safe at runtime: peakSetExcluded.onSuccess at line
-    // 60-66 uses spread merge `{ ...pk, ...peakFields }` into the existing
-    // cached Peak, so the optimistic row's detection values survive when
-    // the synth omits them. The legacy synth at replayCoordinator.ts:196-210
-    // relied on the same merge — preserve the contract.
+    // intensity/prominence/sharpness/exposure_id are intentionally absent —
+    // they aren't carried on the SSE wire. The cast goes through `unknown`
+    // because PeakUpdatedResponse extends Peak (which requires those fields),
+    // and `as PeakUpdatedResponse` alone would be rejected by tsc-strict for
+    // insufficient overlap. Safe at runtime: peakSetExcluded.onSuccess at
+    // lines 60-66 uses spread merge `{ ...pk, ...peakFields }` into the
+    // existing cached Peak, so the optimistic row's detection values
+    // survive when the synth omits them. The legacy synth at
+    // replayCoordinator.ts:196-210 relied on the same merge — preserve
+    // the contract.
     return {
       ...base,
       id: payload.auto_peak_id as number,
       q: payload.q as number,
       source: "auto",
       excluded: true,
-    } as PeakUpdatedResponse;
+    } as unknown as PeakUpdatedResponse;
   },
 ```
 
-For `peakUnexcludeMutator`, add the same body but `excluded: false`.
+For `peakUnexcludeMutator`, add the same body but `excluded: false` and the same `as unknown as PeakUpdatedResponse` cast.
 
 (`PeakUpdatedResponse` is imported at `peakSetExcluded.ts:10` — `import type { Peak, PeakUpdatedResponse, Exposure, AuthOpts } from "../../../api"`.)
 
@@ -1485,10 +1489,10 @@ Expected: PASS.
 
 ```bash
 git add packages/HimalayaUI/frontend/src/lib/queue/replayCoordinator.ts
-git commit -m "refactor(queue): replayCoordinator drops legacy synth switch
+git commit -m "refactor(queue): replayCoordinator drops legacy synth switch (#129)
 
 Every kind now has either a mutator-owned synthesizeFromSse or hits
-the generic fallback. The 80-line per-kind switch is gone. (#129)
+the generic fallback. The 80-line per-kind switch is gone.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 ```
@@ -1538,31 +1542,45 @@ describe("synthesizeFromSse coverage (resolveMutatorForEvent contract)", () => {
     expect(synth).toBeDefined();
   });
 
-  // Kinds whose mutators MUST NOT declare synthesizeFromSse. Two cohorts:
+  // Every event kind in resolveMutatorForEvent's switch falls into one of
+  // two camps: (a) bespoke synth via the owning mutator's synthesizeFromSse
+  // (the `cases` array above), or (b) generic `{...base, ...payload}`
+  // fallback. The noSynth array enumerates camp (b) so any future drift
+  // (e.g. a half-baked synth landed on a mutator before the pipeline is
+  // ready) trips a test rather than silently changing wire shape.
   //
-  //   (a) Forward-scaffolded — mutator exists but no UI gesture queues it
-  //       today (set_exposure_status, update_sample, select_exposure,
-  //       remove_tag).
-  //   (b) Active mutators whose SSE payload already matches the cache row
-  //       shape (post_message — payload IS the SampleMessage / ComparisonMessage),
-  //       so the generic `{...base, ...payload}` fallback suffices.
-  //   (c) Active mutators where SSE-wins is unreachable in practice
-  //       (analyze_run — fire-and-forget; the SSE handler updates the
-  //       indices cache via applyPostStateOnly and the mutator's onSuccess
-  //       does not depend on a specific response shape beyond
-  //       analysis_inputs_hash already carried in `base`).
+  // Camp (b) breaks down into three rationales:
   //
-  // If a future contributor adds a half-baked synth to any of these before
-  // the rest of the pipeline is ready, this assertion catches it.
+  //   (b.i)  Forward-scaffolded — mutator exists but no UI gesture queues it
+  //          today (set_exposure_status, update_sample, select_exposure,
+  //          remove_tag ×2). When a future plan wires the gesture, add
+  //          synthesizeFromSse to the owning mutator.
+  //   (b.ii) Active mutators whose SSE payload IS the cache row shape, so
+  //          the generic fallback already produces the correct shape
+  //          (post_message ×2 — payload IS SampleMessage / ComparisonMessage).
+  //   (b.iii) Active mutators whose onSuccess relies on the `looksFull`
+  //          detector to invalidate when the synth shape is incomplete
+  //          (createSpeculative, both indexGroup variants, deleteIndex).
+  //          Plus mutators whose SSE-wins-and-then-resolve has no cache
+  //          effect beyond `analysis_inputs_hash` (analyze_run, peak_removed
+  //          — peakRemove.onSuccess is a no-op beyond the hash write).
   const noSynth: Array<{ kind: string; entity_type: string }> = [
-    { kind: "post_message",        entity_type: "sample_message"     },
-    { kind: "post_message",        entity_type: "comparison_message" },
+    // (b.i) forward-scaffolded
     { kind: "set_exposure_status", entity_type: "exposure"           },
     { kind: "update_sample",       entity_type: "sample"             },
     { kind: "select_exposure",     entity_type: "exposure"           },
     { kind: "remove_tag",          entity_type: "sample"             },
     { kind: "remove_tag",          entity_type: "exposure"           },
+    // (b.ii) payload IS cache-row shape
+    { kind: "post_message",        entity_type: "sample_message"     },
+    { kind: "post_message",        entity_type: "comparison_message" },
+    // (b.iii) looksFull-handled or hash-only effects
     { kind: "analyze_run",         entity_type: "exposure"           },
+    { kind: "peak_removed",        entity_type: "exposure"           },
+    { kind: "index_confirmed",     entity_type: "exposure"           },
+    { kind: "index_unconfirmed",   entity_type: "exposure"           },
+    { kind: "speculative_created", entity_type: "exposure"           },
+    { kind: "speculative_deleted", entity_type: "exposure"           },
   ];
   it.each(noSynth)(
     "$kind/$entity_type stays on the generic fallback (no mutator.synthesizeFromSse)",

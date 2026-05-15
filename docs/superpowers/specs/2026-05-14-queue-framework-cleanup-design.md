@@ -49,7 +49,7 @@ function synthesizeResponseFromSse(remote: SseEvent): unknown {
     client_op_id: remote.client_op_id,
     analysis_inputs_hash: remote.post_state?.analysis_inputs_hash,
   };
-  const mutator = mutatorForEventKind(remote.kind);
+  const mutator = resolveMutatorForEvent(remote.kind, remote.entity_type);
   const synth = mutator?.synthesizeFromSse?.(remote, base);
   return synth ?? { ...base, ...((remote.payload as object) ?? {}) };
 }
@@ -172,7 +172,7 @@ Run `peak_add` end-to-end via Playwright live spec (`e2e/live/peak-add-no-stale-
 
 1. Add `replacePlaceholder` helper + tests (no migration)
 2. Migrate 5 sites to `replacePlaceholder` (one commit per logical file: peakAdd, trivial)
-3. Add `synthesizeFromSse` to Mutator interface, `EVENT_KIND_TO_MUTATOR` lookup, refactor replayCoordinator dispatcher
+3. Add `synthesizeFromSse` to Mutator interface, `resolveMutatorForEvent(kind, entity_type)` dispatcher, refactor replayCoordinator
 4. Migrate 5 event kinds to own synth (one commit per mutator: peakAdd, addTag, saveComparison, deleteComparison, peakSetExcluded)
 5. Add `stripQueueMetadata` helper + tests
 6. Migrate 4 onSuccess consumers
