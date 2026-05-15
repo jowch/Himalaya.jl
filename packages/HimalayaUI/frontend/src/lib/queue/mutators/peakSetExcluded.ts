@@ -55,13 +55,7 @@ function makeMutator(
       // sharpness — preserve those fields from the optimistic row. HTTP-wins
       // responses include the full Peak shape, so merge is equivalent to
       // replace there.
-      // PeakUpdatedResponse.event_id is `number | null` (nullable for the
-      // no-op case) while QueueResponseMeta.event_id is `number`. Widen via
-      // `unknown` to satisfy the helper's Partial<QueueResponseMeta> constraint
-      // — runtime semantics are identical; stripQueueMetadata treats null the
-      // same as undefined for event_id.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { meta, payload: peakFields } = stripQueueMetadata(response as any);
+      const { meta, payload: peakFields } = stripQueueMetadata(response);
       qc.setQueryData<Peak[]>(peaksKey, (old) =>
         (old ?? []).map((pk) =>
           pk.id === peakFields.id && pk.source === "auto"

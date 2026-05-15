@@ -11,7 +11,7 @@ import type { QueueResponseMeta } from "./types";
  *   qc.setQueryData(...payload row...)
  *   writeExposureHash(qc, exposureId, meta.analysis_inputs_hash);
  */
-export function stripQueueMetadata<T extends Partial<QueueResponseMeta>>(
+export function stripQueueMetadata<T extends object>(
   response: T,
 ): { meta: QueueResponseMeta; payload: Omit<T, keyof QueueResponseMeta> } {
   const {
