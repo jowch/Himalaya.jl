@@ -19,6 +19,15 @@
  *   - At most one placeholder is consumed per call. Stale placeholders left
  *     over (rare) survive — a later mutator call or invalidate sweeps them.
  *   - Rows that do not match `isDuplicate` are preserved verbatim.
+ *
+ * Behavior-equivalence note:
+ *   This drops EVERY `isDuplicate` row regardless of position, whereas the
+ *   hand-rolled loops it replaced seeded their `seen` set as they iterated —
+ *   so a duplicate appearing BEFORE the placeholder was kept and the server
+ *   row dropped. That divergence is unreachable: the optimistic placeholder
+ *   is written synchronously in `onMutate` before any SSE-inserted server row
+ *   can be appended, so the placeholder always precedes its duplicate. The
+ *   equivalence holds only because of that ordering guarantee.
  */
 export function replacePlaceholder<T extends { id: number }>(
   list: T[],
