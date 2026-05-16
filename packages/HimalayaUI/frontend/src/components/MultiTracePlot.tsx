@@ -36,6 +36,7 @@ import { formatAxis } from "../lib/plot/formatAxis";
 import { prettifyUnits } from "../lib/units";
 import type { GroupingMode } from "../lib/comparison/coloring";
 import { computeYBands } from "../lib/comparison/yBands";
+import { useActiveBand } from "./ActiveBandContext";
 
 /**
  * Pixel hit radius for peak click hit-testing in edit mode (Phase 8.1).
@@ -575,17 +576,11 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
             const top = band ? band[0] : 0;
             const height = band ? band[1] - band[0] : 0;
             return (
-              <div
+              <MemberBandOverlay
                 key={m.id}
-                data-testid="member-trace"
-                data-member-id={String(m.id)}
-                style={{
-                  position: "absolute",
-                  left: 0,
-                  right: 0,
-                  top: `${top}px`,
-                  height: `${height}px`,
-                }}
+                memberId={m.id}
+                top={top}
+                height={height}
               />
             );
           })}
@@ -610,6 +605,54 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Per-member invisible plot overlay (Plan §"E2E selector and accessibility
+ * strategy"). Carries `data-testid="member-trace"` + `data-member-id` for
+ * E2E selectors, and subscribes to `ActiveBandContext` for two distinct
+ * gutter-driven gestures:
+ *
+ *   - Compare UX E-4 — a hovered/dragged inter-row resize gap tints the
+ *     band ABOVE it: the overlay gains `data-active-band` when its member
+ *     id is the published active band.
+ *   - Compare UX E-5 — a pointer-drag reorder highlights the band the
+ *     dragged row would land in: the overlay gains `data-drop-target` when
+ *     its member id is the published drop target.
+ *
+ * Outside an `ActiveBandProvider` the context returns `null` for both, so
+ * neither attribute is ever set.
+ */
+function MemberBandOverlay(props: {
+  memberId: number;
+  top: number;
+  height: number;
+}): JSX.Element {
+  const { activeBandMemberId, dropTargetMemberId } = useActiveBand();
+  const active = activeBandMemberId === props.memberId;
+  const dropTarget = dropTargetMemberId === props.memberId;
+  return (
+    <div
+      data-testid="member-trace"
+      data-member-id={String(props.memberId)}
+      {...(active ? { "data-active-band": String(props.memberId) } : {})}
+      {...(dropTarget ? { "data-drop-target": "true" } : {})}
+      className={
+        dropTarget
+          ? "ring-1 ring-inset ring-accent bg-accent/15"
+          : active
+            ? "bg-accent/10"
+            : undefined
+      }
+      style={{
+        position: "absolute",
+        left: 0,
+        right: 0,
+        top: `${props.top}px`,
+        height: `${props.height}px`,
+      }}
+    />
   );
 }
 

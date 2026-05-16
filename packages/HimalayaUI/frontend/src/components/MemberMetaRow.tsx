@@ -18,12 +18,14 @@
  * the codebase convention used by `data-active`, `data-pinned`, etc.) plus
  * an inline warning icon.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ComparisonMember } from "../api";
 import { useAppState } from "../state";
 import { phaseColor, CUBIC_PHASES } from "../phases";
 import { COMPARE_PALETTE } from "../lib/comparison/coloring";
 import type { DraftMemberNormalization } from "../lib/comparison/draft";
+import { makeDragThresholdState } from "../lib/comparison/dragThreshold";
+import { RowActionZone } from "./RowActionZone";
 
 export interface MemberMetaRowProps {
   member: ComparisonMember;
@@ -44,6 +46,25 @@ export interface MemberMetaRowProps {
   onGripDragStart?: (e: React.DragEvent) => void;
   /** Pre-resolved display label from `resolveDisplayLabels` (lib/comparison/labels.ts). */
   displayLabel: string;
+  /**
+   * Compare UX E-2 — collapse/expand is CONTROLLED. The row never owns
+   * this state; the single-expanded-at-a-time invariant lives on
+   * `MemberMetaGutter` (one `expandedMemberId`). Collapsed rows show only
+   * label + meta + disclosure caret; the per-member control widgets
+   * (label / color / normalization / q-window / peaks) render only when
+   * `expanded` is true.
+   */
+  expanded: boolean;
+  /** Toggles this row's expansion (clears it if already expanded). */
+  onToggleExpand: () => void;
+  /**
+   * Compare UX E-3 — grab-anywhere reorder. Invoked with the row's member
+   * id the moment a pointer gesture on the row body crosses the 4px
+   * drag threshold (`makeDragThresholdState`). The gutter owns reorder, so
+   * it maps the id back to a row index and primes its drag-source ref.
+   * Optional: review-mode rows pass nothing, so a stray drag is inert.
+   */
+  onDragStart?: (memberId: number) => void;
 }
 
 const NORMALIZATION_OPTIONS: DraftMemberNormalization[] = [
@@ -61,8 +82,13 @@ function formatKappa(k: number | null | undefined): string {
 }
 
 export function MemberMetaRow(props: MemberMetaRowProps): JSX.Element {
-  const { member, top, height, mode, memberIndex, onGripDragStart, displayLabel } = props;
-  const [expanded, setExpanded] = useState(false);
+  const {
+    member, top, height, mode, memberIndex, onGripDragStart, displayLabel,
+    expanded, onToggleExpand, onDragStart,
+  } = props;
+  // Compare UX E-2 — `expanded` is a controlled prop; the row owns no
+  // expansion state. The overflow menu's open/close stays local.
+  const [overflowOpen, setOverflowOpen] = useState(false);
 
   const updateMember = useAppState((s) => s.updateMember);
   const setHighlight = useAppState((s) => s.setHighlightedCompareMemberId);
@@ -158,6 +184,77 @@ export function MemberMetaRow(props: MemberMetaRowProps): JSX.Element {
     },
     [canHighlight, member.id, setHighlight],
   );
+  // Root click drives the hover-pin lifecycle: click pins, click-again
+  // unpins. Expansion moved to `member-meta-row-body` in E-2; a body click
+  // bubbles here, so clicking the row both pins and expands.
+  const onRootClick = useCallback(() => {
+    if (!canHighlight) return;
+    if (isPinned) {
+      setIsPinned(false);
+      setHighlight(undefined);
+    } else {
+      setIsPinned(true);
+      setHighlight(member.id);
+    }
+  }, [canHighlight, isPinned, member.id, setHighlight]);
+
+  // ── Compare UX E-3 — grab-anywhere drag-vs-click threshold ───────────
+  // A pointer gesture on the row body is a CLICK (→ toggle expand) when it
+  // moved ≤4px before release, or a DRAG (→ reorder) when it moved >4px.
+  // `makeDragThresholdState` (lib/comparison/dragThreshold.ts) owns the
+  // 4px / Manhattan-distance math; the ref persists one disambiguator
+  // instance per row across renders.
+  //
+  // Native-drag approach (A) — the row body keeps its HTML5 `draggable`
+  // attribute (edit mode only) so the gutter's existing `dragover`/`drop`
+  // listeners drive the actual reorder unchanged; the threshold gate adds
+  // nothing to that path. Its sole jobs here are (1) suppress the
+  // expand-toggle once a drag is in progress and (2) notify the gutter
+  // via `onDragStart(member.id)` so it can prime its drag-source ref even
+  // when the gesture started off the grip. This avoids the fragility of a
+  // fully-manual portal drag (approach B) and never touches the grip
+  // path that `MemberReorder.test.tsx` exercises.
+  const dragState = useRef(makeDragThresholdState({ thresholdPx: 4 }));
+  const onBodyPointerDown = useCallback((e: React.PointerEvent) => {
+    // Capture the pointer so `pointermove`/`pointerup`/`pointercancel`
+    // keep firing on this div even if the gesture wanders off the row —
+    // without capture, a drag that leaves the row drops the gesture and
+    // the threshold machine never gets its `pointerup` cleanup.
+    // `setPointerCapture` throws on invalid pointer ids and is absent in
+    // JSDOM, so guard with a feature check.
+    const el = e.currentTarget as Element;
+    if (typeof el.setPointerCapture === "function") {
+      try {
+        el.setPointerCapture(e.pointerId);
+      } catch {
+        // Invalid pointer id — capture is best-effort; the gesture still
+        // works as long as events keep landing on this div.
+      }
+    }
+    dragState.current.onPointerDown(e.clientX, e.clientY);
+  }, []);
+  const onBodyPointerMove = useCallback(
+    (e: React.PointerEvent) => {
+      if (dragState.current.onPointerMove(e.clientX, e.clientY) === "drag-start") {
+        onDragStart?.(member.id);
+      }
+    },
+    [onDragStart, member.id],
+  );
+  const onBodyPointerUp = useCallback(
+    (e: React.PointerEvent) => {
+      if (dragState.current.onPointerUp(e.clientX, e.clientY) === "click") {
+        onToggleExpand();
+      }
+    },
+    [onToggleExpand],
+  );
+  // `pointercancel` (native drag takeover, OS gesture, touch interruption)
+  // is NOT followed by a `pointerup`, so the threshold machine would be
+  // stranded mid-gesture. Reset it to neutral; do NOT toggle expand.
+  const onBodyPointerCancel = useCallback(() => {
+    dragState.current.reset();
+  }, []);
 
   const ci = member.snapshot?.confirmed_index ?? null;
   const isCubic = ci !== null && CUBIC_PHASES.has(ci.phase);
@@ -166,26 +263,15 @@ export function MemberMetaRow(props: MemberMetaRowProps): JSX.Element {
     <div
       data-testid="member-meta-row"
       data-member-id={String(member.id)}
+      data-expanded={expanded ? "true" : "false"}
+      data-interactable="expand"
+      {...(overflowOpen ? { "data-overflow-open": "" } : {})}
       {...(member.is_stale ? { "data-stale": "" } : {})}
       {...(isPinned ? { "data-highlighted": "" } : {})}
       // Tab into the row only when there's a confirmed index to highlight —
       // otherwise pressing Tab past it is dead air.
       {...(canHighlight ? { tabIndex: 0 } : {})}
-      onClick={() => {
-        // Click toggles both the expansion (always) and the pin (when
-        // hoverable). Pin lifecycle: click pins, click-again unpins. The
-        // expanded panel mirrors that — second click closes both.
-        setExpanded((e) => !e);
-        if (canHighlight) {
-          if (isPinned) {
-            setIsPinned(false);
-            setHighlight(undefined);
-          } else {
-            setIsPinned(true);
-            setHighlight(member.id);
-          }
-        }
-      }}
+      onClick={onRootClick}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
       onFocus={onFocus}
@@ -201,8 +287,31 @@ export function MemberMetaRow(props: MemberMetaRowProps): JSX.Element {
       className="flex flex-col gap-0.5 px-2 py-1 text-xs hover:bg-bg-elevated/40 cursor-pointer
                  outline-0 focus-visible:ring-1 focus-visible:ring-accent"
     >
-      {/* Primary single line */}
-      <div className="flex items-center gap-2 min-w-0">
+      {/* Primary single line — the grab-anywhere collapse/expand +
+          reorder affordance. Compare UX E-3: pointer handlers run the
+          4px drag-threshold gate (click → expand, drag → reorder). The
+          body is HTML5-`draggable` in edit mode so the gutter's existing
+          dragover/drop reorder still fires; review-mode rows are inert. */}
+      <div
+        data-testid="member-meta-row-body"
+        className="flex items-center gap-2 min-w-0"
+        {...(mode === "edit" ? { draggable: true } : {})}
+        onPointerDown={onBodyPointerDown}
+        onPointerMove={onBodyPointerMove}
+        onPointerUp={onBodyPointerUp}
+        onPointerCancel={onBodyPointerCancel}
+        // This body-level `onDragStart` is the LOAD-BEARING binding for
+        // grab-anywhere reorder (a native `dragstart` anywhere on the row).
+        // The grip `<span>` below ALSO carries `onGripDragStart`; a grip
+        // `dragstart` bubbles here, so both fire — idempotent, no bug.
+        // Do not "fix" the duplication by removing this binding.
+        {...(mode === "edit" && onGripDragStart
+          ? { onDragStart: onGripDragStart }
+          : {})}
+      >
+        <span aria-hidden="true" className="text-fg-dim shrink-0 select-none">
+          {expanded ? "▾" : "▸"}
+        </span>
         {mode === "edit" && (
           <span
             data-testid="member-reorder-grip"
@@ -271,94 +380,103 @@ export function MemberMetaRow(props: MemberMetaRowProps): JSX.Element {
         )}
       </div>
 
-      {/* Edit-mode controls row */}
-      {mode === "edit" && (
-        <div
-          className="flex items-center gap-1 flex-wrap"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <input
-            type="text"
-            data-testid="member-meta-label-input"
-            placeholder="Label override"
-            defaultValue={member.label_override ?? ""}
-            onBlur={(e) => onLabelCommit(e.currentTarget.value)}
-            className="bg-bg border border-border rounded px-1 py-0.5 text-fg text-xs
-                       outline-0 focus:border-accent w-[12ch]"
-          />
-          <select
-            data-testid="member-meta-normalization"
-            value={member.normalization}
-            onChange={(e) =>
-              onNormChange(e.currentTarget.value as DraftMemberNormalization)
-            }
-            className="bg-bg border border-border rounded px-1 py-0.5 text-fg text-xs"
-          >
-            {NORMALIZATION_OPTIONS.map((n) => (
-              <option key={n} value={n}>
-                {n}
-              </option>
-            ))}
-          </select>
-          <span className="text-fg-dim">q∈[</span>
-          <QWindowInput
-            value={member.q_window_min ?? null}
-            testId="member-meta-qwindow-min"
-            onCommit={onQWindowMin}
-          />
-          <span className="text-fg-dim">,</span>
-          <QWindowInput
-            value={member.q_window_max ?? null}
-            testId="member-meta-qwindow-max"
-            onCommit={onQWindowMax}
-          />
-          <span className="text-fg-dim">]</span>
-          {member.color_override != null && (
-            <button
-              type="button"
-              data-testid="member-meta-reset-color"
-              onClick={onResetColor}
-              className="text-fg-dim hover:text-fg text-xs underline"
-            >
-              Reset color
-            </button>
-          )}
-        </div>
-      )}
+      {/* Compare UX E-1/E-2 — overflow + drag-cue affordances. Always
+          visible (collapsed or expanded); stops propagation internally. */}
+      <RowActionZone onOverflow={() => setOverflowOpen((v) => !v)} />
 
-      {/* Expand-on-click detail card overlay (review + edit) */}
+      {/* Compare UX E-2 — per-member control widgets render only when the
+          row is expanded. Collapsed rows show just label + meta + caret. */}
       {expanded && (
-        <div
-          data-testid="member-meta-detail"
-          className="absolute z-10 left-2 top-full mt-1 bg-bg-elevated border border-border
-                     rounded shadow-md p-2 text-xs flex flex-col gap-2 min-w-[180px]"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div>
-            <span className="text-fg-dim">Peaks: </span>
-            <span className="tabular-nums">
-              {member.snapshot?.effective_peaks?.length ?? 0}
-            </span>
-          </div>
-          {ci !== null && (
-            <div>
-              <span className="text-fg-dim">Index id: </span>
-              <span className="tabular-nums">{ci.id}</span>
-            </div>
-          )}
-          {member.exposure_id !== null && (
-            <div>
-              <span className="text-fg-dim">Exposure: </span>
-              <span className="tabular-nums">#{member.exposure_id}</span>
-            </div>
-          )}
+        <>
+          {/* Edit-mode controls row */}
           {mode === "edit" && (
-            <ColorPickerSwatchGrid
-              activeColor={member.color_override ?? null}
-              onPick={onPickColor}
-            />
+            <div
+              className="flex items-center gap-1 flex-wrap"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <input
+                type="text"
+                data-testid="member-meta-label-input"
+                placeholder="Label override"
+                defaultValue={member.label_override ?? ""}
+                onBlur={(e) => onLabelCommit(e.currentTarget.value)}
+                className="bg-bg border border-border rounded px-1 py-0.5 text-fg text-xs
+                           outline-0 focus:border-accent w-[12ch]"
+              />
+              <select
+                data-testid="member-meta-normalization"
+                value={member.normalization}
+                onChange={(e) =>
+                  onNormChange(e.currentTarget.value as DraftMemberNormalization)
+                }
+                className="bg-bg border border-border rounded px-1 py-0.5 text-fg text-xs"
+              >
+                {NORMALIZATION_OPTIONS.map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+              <span className="text-fg-dim">q∈[</span>
+              <QWindowInput
+                value={member.q_window_min ?? null}
+                testId="member-meta-qwindow-min"
+                onCommit={onQWindowMin}
+              />
+              <span className="text-fg-dim">,</span>
+              <QWindowInput
+                value={member.q_window_max ?? null}
+                testId="member-meta-qwindow-max"
+                onCommit={onQWindowMax}
+              />
+              <span className="text-fg-dim">]</span>
+              {member.color_override != null && (
+                <button
+                  type="button"
+                  data-testid="member-meta-reset-color"
+                  onClick={onResetColor}
+                  className="text-fg-dim hover:text-fg text-xs underline"
+                >
+                  Reset color
+                </button>
+              )}
+            </div>
           )}
-        </div>
+
+          {/* Expanded detail card (review + edit): peak count + secondary
+              metadata, plus the color-picker swatch grid in edit mode. */}
+          <div
+            data-testid="member-meta-detail"
+            className="absolute z-10 left-2 top-full mt-1 bg-bg-elevated border border-border
+                       rounded shadow-md p-2 text-xs flex flex-col gap-2 min-w-[180px]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div>
+              <span className="text-fg-dim">Peaks: </span>
+              <span className="tabular-nums">
+                {member.snapshot?.effective_peaks?.length ?? 0}
+              </span>
+            </div>
+            {ci !== null && (
+              <div>
+                <span className="text-fg-dim">Index id: </span>
+                <span className="tabular-nums">{ci.id}</span>
+              </div>
+            )}
+            {member.exposure_id !== null && (
+              <div>
+                <span className="text-fg-dim">Exposure: </span>
+                <span className="tabular-nums">#{member.exposure_id}</span>
+              </div>
+            )}
+            {mode === "edit" && (
+              <ColorPickerSwatchGrid
+                activeColor={member.color_override ?? null}
+                onPick={onPickColor}
+              />
+            )}
+          </div>
+        </>
       )}
     </div>
   );

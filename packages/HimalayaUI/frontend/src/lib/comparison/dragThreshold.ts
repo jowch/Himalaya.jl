@@ -19,6 +19,13 @@ export interface DragThresholdState {
   onPointerMove(x: number, y: number): "drag-start" | "below-threshold";
   onPointerUp(x: number, y: number): DragOutcome;
   isDragging(): boolean;
+  /**
+   * Abandon the in-progress gesture without resolving it to a click or
+   * drag. Called on `pointercancel` (native drag takeover, OS gesture,
+   * touch interruption) — when no `pointerup` will follow — so the machine
+   * is left in a neutral state ready for the next `onPointerDown`.
+   */
+  reset(): void;
 }
 
 export function makeDragThresholdState(
@@ -54,5 +61,6 @@ export function makeDragThresholdState(
       return outcome;
     },
     isDragging() { return dragging; },
+    reset() { downX = null; downY = null; dragging = false; },
   };
 }

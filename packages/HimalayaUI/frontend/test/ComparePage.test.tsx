@@ -1,16 +1,20 @@
 /**
- * Page shells (Plan §Phase 4, Task 4.1).
+ * Compare page shells (Plan §Phase 4, Task 4.1; merged by Compare UX C-15).
  *
- * Verifies that ComparePage and ComparePageEdit render under the expected
- * routes and read URL params correctly. Behaviour exercised by later tasks
- * (sidebar, draft state, save flow) lives in their own test files.
+ * Verifies that the unified `Compare` component renders the review body and
+ * the edit body under the expected routes and reads URL params correctly.
+ * `Compare` picks the edit body when the URL ends `/new` or a draft is active,
+ * and the review body otherwise — so the edit-mode assertions seed a draft.
+ *
+ * Behaviour exercised by later tasks (sidebar, draft state, save flow) lives
+ * in their own test files.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
-import { ComparePage } from "../src/pages/ComparePage";
-import { ComparePageEdit } from "../src/pages/ComparePageEdit";
+import { Compare } from "../src/pages/Compare";
+import { useAppState } from "../src/state";
 import { queryKeys } from "../src/queries";
 
 function renderAt(path: string) {
@@ -24,47 +28,77 @@ function renderAt(path: string) {
     <QueryClientProvider client={qc}>
       <MemoryRouter initialEntries={[path]}>
         <Routes>
-          <Route path="/experiments/:eid/compare" element={<ComparePage />} />
-          <Route path="/experiments/:eid/compare/:id" element={<ComparePage />} />
-          <Route path="/experiments/:eid/compare/new" element={<ComparePageEdit />} />
-          <Route path="/experiments/:eid/compare/:id/edit" element={<ComparePageEdit />} />
-          <Route path="/compare/all" element={<ComparePage />} />
+          <Route path="/experiments/:eid/compare" element={<Compare />} />
+          <Route path="/experiments/:eid/compare/:id" element={<Compare />} />
+          <Route path="/experiments/:eid/compare/new" element={<Compare />} />
+          <Route path="/experiments/:eid/compare/:id/edit" element={<Compare />} />
+          <Route path="/compare/all" element={<Compare />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
   );
 }
 
-describe("ComparePage shell", () => {
+/** A minimal draft tied to `id` so `Compare` mounts the edit body. */
+function seedDraftFor(id: number | undefined): void {
+  useAppState.setState({
+    activeDraft: {
+      id,
+      baseHash: id !== undefined ? "h" : undefined,
+      title: "T",
+      description: "",
+      members: [],
+      forkedFromId: undefined,
+      forkedAtHash: undefined,
+      viewGroupingMode: undefined,
+      viewShowPeakTicks: undefined,
+      viewShowPeakLabels: undefined,
+    },
+  });
+}
+
+describe("Compare review body", () => {
+  beforeEach(() => {
+    sessionStorage.clear();
+    useAppState.setState({ activeDraft: null, username: undefined });
+  });
+
   it("renders empty state under /experiments/:eid/compare with no active id", () => {
     renderAt("/experiments/7/compare");
-    expect(screen.getByTestId("compare-page")).toBeInTheDocument();
+    expect(screen.getByTestId("compare-page-body")).toBeInTheDocument();
     // No comparison selected → empty state placeholder
     expect(screen.getByTestId("compare-empty-state")).toBeInTheDocument();
   });
 
   it("reads :id from URL when present (review mode placeholder)", () => {
     renderAt("/experiments/7/compare/42");
-    const page = screen.getByTestId("compare-page");
+    const page = screen.getByTestId("compare-page-body");
     expect(page).toBeInTheDocument();
     expect(page).toHaveAttribute("data-comparison-id", "42");
   });
 
   it("renders global listing scope under /compare/all", () => {
     renderAt("/compare/all");
-    expect(screen.getByTestId("compare-page")).toBeInTheDocument();
-    expect(screen.getByTestId("compare-page")).toHaveAttribute("data-scope", "all");
+    const body = screen.getByTestId("compare-page-body");
+    expect(body).toBeInTheDocument();
+    expect(body).toHaveAttribute("data-scope", "all");
   });
 });
 
-describe("ComparePageEdit shell", () => {
-  it("renders edit shell under /experiments/:eid/compare/new", () => {
+describe("Compare edit body", () => {
+  beforeEach(() => {
+    sessionStorage.clear();
+    useAppState.setState({ activeDraft: null, username: undefined });
+  });
+
+  it("renders edit body under /experiments/:eid/compare/new", () => {
     renderAt("/experiments/7/compare/new");
     expect(screen.getByTestId("compare-page-edit")).toBeInTheDocument();
   });
 
-  it("reads :id from URL under /experiments/:eid/compare/:id/edit", () => {
-    renderAt("/experiments/7/compare/42/edit");
+  it("reads :id from URL under /experiments/:eid/compare/:id with an active draft", () => {
+    seedDraftFor(42);
+    renderAt("/experiments/7/compare/42");
     const edit = screen.getByTestId("compare-page-edit");
     expect(edit).toBeInTheDocument();
     expect(edit).toHaveAttribute("data-comparison-id", "42");
@@ -73,10 +107,12 @@ describe("ComparePageEdit shell", () => {
 
 // ── Regression: ResizeObserver re-attach when Skeleton swaps in (issue #51)
 
-describe("ComparePage review mode — ResizeObserver", () => {
+describe("Compare review mode — ResizeObserver", () => {
   let ROInstances: { observe: unknown; disconnect: unknown }[] = [];
 
   beforeEach(() => {
+    sessionStorage.clear();
+    useAppState.setState({ activeDraft: null, username: undefined });
     ROInstances = [];
     vi.stubGlobal("ResizeObserver", vi.fn((cb: ResizeObserverCallback) => {
       const inst = {
@@ -122,7 +158,7 @@ describe("ComparePage review mode — ResizeObserver", () => {
       <QueryClientProvider client={qc}>
         <MemoryRouter initialEntries={["/experiments/7/compare/42"]}>
           <Routes>
-            <Route path="/experiments/:eid/compare/:id" element={<ComparePage />} />
+            <Route path="/experiments/:eid/compare/:id" element={<Compare />} />
           </Routes>
         </MemoryRouter>
       </QueryClientProvider>,
@@ -154,8 +190,10 @@ describe("ComparePage review mode — ResizeObserver", () => {
 // Both regressions resolve once review mode subscribes to each member's
 // exposure row (and the matching sample row) so the cache populates.
 
-describe("ComparePage review mode — cold-cache exposure + sample hydration (#61, #52)", () => {
+describe("Compare review mode — cold-cache exposure + sample hydration (#61, #52)", () => {
   beforeEach(() => {
+    sessionStorage.clear();
+    useAppState.setState({ activeDraft: null, username: undefined });
     vi.stubGlobal("ResizeObserver", vi.fn(() => ({
       observe: vi.fn((el: Element) => {
         Object.defineProperty(el, "clientHeight", { value: 400, configurable: true });
@@ -248,7 +286,7 @@ describe("ComparePage review mode — cold-cache exposure + sample hydration (#6
       <QueryClientProvider client={qc}>
         <MemoryRouter initialEntries={["/experiments/7/compare/42"]}>
           <Routes>
-            <Route path="/experiments/:eid/compare/:id" element={<ComparePage />} />
+            <Route path="/experiments/:eid/compare/:id" element={<Compare />} />
           </Routes>
         </MemoryRouter>
       </QueryClientProvider>,
@@ -282,7 +320,7 @@ describe("ComparePage review mode — cold-cache exposure + sample hydration (#6
       <QueryClientProvider client={qc}>
         <MemoryRouter initialEntries={["/experiments/7/compare/42"]}>
           <Routes>
-            <Route path="/experiments/:eid/compare/:id" element={<ComparePage />} />
+            <Route path="/experiments/:eid/compare/:id" element={<Compare />} />
           </Routes>
         </MemoryRouter>
       </QueryClientProvider>,

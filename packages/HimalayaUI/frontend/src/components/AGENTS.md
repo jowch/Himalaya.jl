@@ -8,7 +8,7 @@ React components for the three-card Index workspace, Inspect page, Compare page,
 - **Index workspace cards**: `ChatCard`, `PlotCard` + `TraceViewer`, `IndicesCard`, `PhasePanel`, `StaleIndicesBanner`, `SpeculativeBuilder`, `MillerPlot`, `Pn3mIcon`.
 - **Inspect**: `DetectorImage`, `DetectorImageCard`, `ThumbnailGallery`, `SampleMetadataCard`.
 - **Mentions**: `MentionChip`, `MentionCompose`, `MentionPicker`.
-- **Compare**: `MultiTracePlot`, `MemberTraceLayer`, `MemberMetaRow`, `MemberMetaGutter`, `ComparisonSidebar`, `ComparisonPickerBody`, `ComparisonPickerPanel`, `SamplePickerRow`, `GroupingModeToggle`, `ForksPopover`, `LineageBadge`, `NeedsReviewBadge`, `WarmAddMenu`.
+- **Compare**: `MultiTracePlot`, `MemberTraceLayer`, `MemberMetaRow`, `MemberMetaGutter`, `ComparisonSidebar`, `ComparisonPickerBody`, `ComparisonPickerPanel`, `SamplePickerRow`, `GroupingModeToggle`, `WarmAddMenu`, `CompareTitleStrip`, `CompareStatusSurface`, `CompareToolbar`, `SavePill`, `InlineEditableText`, `RowActionZone`.
 - **Onboarding / modals / errors**: `OnboardingFlow`, `NavModal`, `ConflictModal`, `StaleUrlPage`, `ResolvingFallback`, `InfrastructureBanner`, `FigureExportControls`.
 - **Primitives**: `components/ui/`.
 

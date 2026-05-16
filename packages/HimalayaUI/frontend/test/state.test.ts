@@ -144,19 +144,29 @@ describe("useAppState", () => {
 
   // ── compare-page review-mode UI state (Phase 9) ────────────────────────
 
-  it("groupingMode defaults to 'bySample' and switches via named action", () => {
-    expect(useAppState.getState().groupingMode).toBe("bySample");
-    useAppState.getState().setGroupingMode("byPhase");
-    expect(useAppState.getState().groupingMode).toBe("byPhase");
-    useAppState.getState().setGroupingMode("distinct");
-    expect(useAppState.getState().groupingMode).toBe("distinct");
+  // C-4: groupingMode was removed from Zustand; it now lives on
+  // ActiveDraft.viewGroupingMode and is resolved via effectiveGroupingMode.
+  it("setDraftViewGroupingMode creates an empty draft and sets viewGroupingMode", () => {
+    // Start with no draft.
+    useAppState.setState({ activeDraft: null });
+    useAppState.getState().setDraftViewGroupingMode("byPhase");
+    const draft = useAppState.getState().activeDraft;
+    expect(draft).not.toBeNull();
+    expect(draft?.viewGroupingMode).toBe("byPhase");
   });
 
-  it("groupingMode is NOT in the persisted partition", () => {
-    useAppState.getState().setGroupingMode("byPhase");
+  it("setDraftViewGroupingMode updates existing draft's viewGroupingMode", () => {
+    useAppState.getState().setDraftViewGroupingMode("bySample");
+    useAppState.getState().setDraftViewGroupingMode("distinct");
+    expect(useAppState.getState().activeDraft?.viewGroupingMode).toBe("distinct");
+  });
+
+  it("viewGroupingMode is NOT in the persisted partition (carried on draft, not LS_KEY state)", () => {
+    // The draft is sessionStorage-persisted, not localStorage; the main store
+    // key should not contain the raw string "viewGroupingMode".
+    useAppState.getState().setDraftViewGroupingMode("byPhase");
     const raw = localStorage.getItem(LS_KEY) ?? "";
-    expect(raw).not.toContain("groupingMode");
-    expect(raw).not.toContain("byPhase");
+    expect(raw).not.toContain("viewGroupingMode");
   });
 
   it("showPeakTicks defaults to true and can be set", () => {

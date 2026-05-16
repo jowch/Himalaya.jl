@@ -82,6 +82,15 @@ describe("<MentionCompose>", () => {
         updated_at: "2026-05-02 10:00:00",
         forked_from_id: null,
         forked_at_hash: null,
+        view_grouping_mode: null,
+        view_show_peak_ticks: null,
+        view_show_peak_labels: null,
+        last_event_at: null,
+        author_username: null,
+        member_count: 0,
+        member_phases: [],
+        member_phase_count: 0,
+        has_stale_members: false,
       },
     ]);
     const user = userEvent.setup();

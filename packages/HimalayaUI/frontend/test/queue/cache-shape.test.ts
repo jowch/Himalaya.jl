@@ -585,6 +585,7 @@ describe("comparison listing cache shape — Compare UX A-8", () => {
       author_username: "alice",
       member_count: 3,
       member_phases: ["Pn3m", "Hex"],
+      member_phase_count: 2,
       has_stale_members: false,
     };
     expect(row.member_count).toBe(3);
@@ -609,7 +610,7 @@ describe("comparison listing cache shape — Compare UX A-8", () => {
       view_show_peak_ticks: true,
       view_show_peak_labels: false,
       last_event_at: null, author_username: null,
-      member_count: 0, member_phases: [], has_stale_members: false,
+      member_count: 0, member_phases: [], member_phase_count: 0, has_stale_members: false,
     };
     expect(row.view_grouping_mode).toBe("byPhase");
     expect(row.view_show_peak_ticks).toBe(true);

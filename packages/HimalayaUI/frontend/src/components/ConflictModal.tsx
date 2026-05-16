@@ -118,6 +118,9 @@ async function buildOverwritePayload(
     title: draft.title,
     members,
     expected_content_hash: serverHash,
+    view_grouping_mode:    draft.viewGroupingMode   ?? null,
+    view_show_peak_ticks:  draft.viewShowPeakTicks  ?? null,
+    view_show_peak_labels: draft.viewShowPeakLabels ?? null,
   };
   if (draft.id !== undefined) payload.id = draft.id;
   if (draft.description !== "") payload.description = draft.description;

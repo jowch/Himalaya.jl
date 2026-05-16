@@ -336,9 +336,16 @@ test("#77 cold-load with no active experiment redirects to /compare/all", async 
 // in `compare.spec.ts` (drives `comparison-picker-panel` + `picker-row`
 // checkboxes). Removed rather than ported.
 
-// ─── #75: ForksPopover dismissal affordances ───────────────────────────────
+// ─── #75: CompareToolbar ⋯-more menu dismissal + forks navigation ───────────
+//
+// Compare UX C-16/C-17 deleted the standalone `ForksPopover`; the forks UX
+// now lives as a sub-section inside `CompareToolbar`'s ⋯-more overflow menu.
+// This test is rewritten against that menu — it preserves the original #75
+// intent (Esc / outside-click dismissal + `aria-expanded` toggling) and also
+// keeps E2E coverage of the forks-navigation flow (clicking a fork link
+// routes to that fork's review page).
 
-test("#75 ForksPopover Esc + outside-click close + aria-expanded", async ({ page }) => {
+test("#75 CompareToolbar ⋯-more menu: Esc + outside-click close + aria-expanded + fork nav", async ({ page }) => {
   const state = makeState();
 
   // Pre-seed parent + fork pair on the mocked server.
@@ -406,30 +413,39 @@ test("#75 ForksPopover Esc + outside-click close + aria-expanded", async ({ page
   await page.goto("/experiments/1/compare/1");
   await expect(page.getByTestId("compare-review-plot")).toBeVisible();
 
-  const trigger = page.getByTestId("comparison-forks-trigger");
+  const trigger = page.getByTestId("compare-toolbar-more");
+  const menu = page.locator('[role="menu"]');
   await expect(trigger).toBeVisible();
   await expect(trigger).toHaveAttribute("aria-expanded", "false");
 
-  // Open via click.
+  // Open via click — the ⋯-more menu carries the folded-in forks section.
   await trigger.click();
-  await expect(page.getByTestId("comparison-forks-popover")).toBeVisible();
+  await expect(menu).toBeVisible();
   await expect(trigger).toHaveAttribute("aria-expanded", "true");
-  // Sanity: the fork row landed (so the override is wired correctly and
-  // the popover content reflects state, not just visibility).
-  await expect(page.getByTestId("comparison-forks-row")).toHaveCount(1);
+  // Sanity: the fork link landed (so the /forks override is wired correctly
+  // and the menu content reflects state, not just visibility).
+  await expect(page.getByTestId("compare-toolbar-fork-link")).toHaveCount(1);
 
   // Esc closes.
   await page.keyboard.press("Escape");
-  await expect(page.getByTestId("comparison-forks-popover")).not.toBeVisible();
+  await expect(menu).not.toBeVisible();
   await expect(trigger).toHaveAttribute("aria-expanded", "false");
 
   // Reopen + outside-click closes. Click in the sidebar's empty area at
   // a corner away from any interactive element.
   await trigger.click();
-  await expect(page.getByTestId("comparison-forks-popover")).toBeVisible();
+  await expect(menu).toBeVisible();
   await expect(trigger).toHaveAttribute("aria-expanded", "true");
 
   await page.getByTestId("comparison-sidebar").click({ position: { x: 5, y: 5 } });
-  await expect(page.getByTestId("comparison-forks-popover")).not.toBeVisible();
+  await expect(menu).not.toBeVisible();
   await expect(trigger).toHaveAttribute("aria-expanded", "false");
+
+  // Forks-navigation flow: reopen the menu and click the fork link — it
+  // routes to that fork's review page (this is the navigation coverage the
+  // old ForksPopover row provided).
+  await trigger.click();
+  await page.getByTestId("compare-toolbar-fork-link").click();
+  await expect(page).toHaveURL(/\/experiments\/1\/compare\/2$/);
+  await expect(page.getByTestId("compare-review-plot")).toBeVisible();
 });

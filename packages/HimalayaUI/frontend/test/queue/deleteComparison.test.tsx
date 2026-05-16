@@ -34,6 +34,10 @@ function summary(id: number, title: string): ComparisonSummary {
     id, title, description: null, content_hash: "sha256:" + id,
     created_by: 1, created_at: null, updated_at: null,
     forked_from_id: null, forked_at_hash: null,
+    view_grouping_mode: null, view_show_peak_ticks: null, view_show_peak_labels: null,
+    last_event_at: null,
+    author_username: null, member_count: 0,
+    member_phases: [], member_phase_count: 0, has_stale_members: false,
   };
 }
 

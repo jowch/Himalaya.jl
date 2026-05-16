@@ -18,7 +18,7 @@ import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { ComparePageEdit } from "../src/pages/ComparePageEdit";
+import { Compare } from "../src/pages/Compare";
 import { useAppState } from "../src/state";
 import { queryKeys } from "../src/queries";
 import type {
@@ -48,9 +48,9 @@ function renderEdit(opts: {
       <MemoryRouter initialEntries={[opts.initialPath]}>
         <Routes>
           <Route path="/experiments/:eid/compare" element={<><PathProbe /><div data-testid="list-page" /></>} />
-          <Route path="/experiments/:eid/compare/new" element={<><PathProbe /><ComparePageEdit /></>} />
+          <Route path="/experiments/:eid/compare/new" element={<><PathProbe /><Compare /></>} />
           <Route path="/experiments/:eid/compare/:id" element={<><PathProbe /><div data-testid="review-page" /></>} />
-          <Route path="/experiments/:eid/compare/:id/edit" element={<><PathProbe /><ComparePageEdit /></>} />
+          <Route path="/experiments/:eid/compare/:id/edit" element={<><PathProbe /><Compare /></>} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -59,7 +59,7 @@ function renderEdit(opts: {
 
 function seedExposure(qc: QueryClient, exposureId: number): void {
   const peaks: Peak[] = [
-    { id: 1, exposure_id: exposureId, q: 0.10, intensity: 1.0, sharpness: 0.5, source: "auto", excluded: false },
+    { id: 1, exposure_id: exposureId, q: 0.10, intensity: 1.0, sharpness: 0.5, prominence: null, source: "auto", excluded: false },
   ];
   const exposure: Exposure = {
     id: exposureId,
@@ -94,11 +94,13 @@ beforeEach(() => {
 });
 
 describe("ComparePageEdit", () => {
-  it("Save button is disabled when the draft has zero members", () => {
+  // Compare UX C-13 — the Save affordance is now the SavePill, which is
+  // *hidden* (not disabled-present) when the draft has no members.
+  it("Save pill is absent when the draft has zero members", () => {
     const qc = makeQc();
     useAppState.getState().startNewDraft();
     renderEdit({ qc, initialPath: "/experiments/7/compare/new" });
-    expect(screen.getByTestId("comparison-save")).toBeDisabled();
+    expect(screen.queryByTestId("save-pill")).toBeNull();
   });
 
   it("Save with members posts to /api/comparisons (create flow) and navigates to review", async () => {
@@ -120,6 +122,10 @@ describe("ComparePageEdit", () => {
       forked_from_id: null,
       forked_at_hash: null,
       forked_from_title: null,
+      view_grouping_mode: null,
+      view_show_peak_ticks: null,
+      view_show_peak_labels: null,
+      last_event_at: null,
       members: [],
     };
     const fetchSpy = vi.spyOn(global, "fetch").mockImplementation(async (input, init) => {
@@ -133,7 +139,7 @@ describe("ComparePageEdit", () => {
     });
 
     renderEdit({ qc, initialPath: "/experiments/7/compare/new" });
-    await user.click(screen.getByTestId("comparison-save"));
+    await user.click(screen.getByTestId("save-pill"));
 
     await waitFor(() => {
       expect(fetchSpy).toHaveBeenCalled();
@@ -184,14 +190,29 @@ describe("ComparePageEdit", () => {
         }],
         forkedFromId: undefined,
         forkedAtHash: undefined,
+        viewGroupingMode: undefined,
+        viewShowPeakTicks: undefined,
+        viewShowPeakLabels: undefined,
       },
     });
     const updated: Comparison = {
       id: 42, title: "Existing", description: null, content_hash: "h-new",
       created_by: 1, created_at: null, updated_at: "2026-05-02T00:00:00Z",
       forked_from_id: null, forked_at_hash: null, forked_from_title: null,
+      view_grouping_mode: null, view_show_peak_ticks: null, view_show_peak_labels: null,
+      last_event_at: null,
       members: [],
     };
+    // Compare UX C-14 — `handleSave` now branches on `useCompareMode`. Seed the
+    // comparison + users caches so authorship resolves: alice (id 1) === the
+    // comparison's `created_by`, giving mode `editing-mine` (normal submit path)
+    // rather than `editing-as-fork-of`.
+    qc.setQueryData(queryKeys.comparison(42), {
+      ...updated, content_hash: "h-existing",
+    });
+    qc.setQueryData(["users"] as const, [
+      { id: 1, username: "alice", first_name: null, last_name: null },
+    ]);
     const fetchSpy = vi.spyOn(global, "fetch").mockImplementation(async (input, init) => {
       const url = typeof input === "string" ? input : String(input);
       if (url === "/api/comparisons/42/submit" && init?.method === "POST") {
@@ -203,7 +224,7 @@ describe("ComparePageEdit", () => {
     });
 
     renderEdit({ qc, initialPath: "/experiments/7/compare/42/edit" });
-    await user.click(screen.getByTestId("comparison-save"));
+    await user.click(screen.getByTestId("save-pill"));
 
     await waitFor(() => {
       expect(fetchSpy).toHaveBeenCalled();
@@ -228,7 +249,7 @@ describe("ComparePageEdit", () => {
     const qc = makeQc();
     useAppState.getState().startNewDraft();
     renderEdit({ qc, initialPath: "/experiments/7/compare/new" });
-    await user.click(screen.getByTestId("comparison-cancel"));
+    await user.click(screen.getByTestId("compare-edit-cancel"));
     expect(screen.getByTestId("path-probe")).toHaveTextContent("/experiments/7/compare");
   });
 
@@ -244,22 +265,42 @@ describe("ComparePageEdit", () => {
         members: [],
         forkedFromId: undefined,
         forkedAtHash: undefined,
+        viewGroupingMode: undefined,
+        viewShowPeakTicks: undefined,
+        viewShowPeakLabels: undefined,
       },
     });
     renderEdit({ qc, initialPath: "/experiments/7/compare/42/edit" });
-    await user.click(screen.getByTestId("comparison-cancel"));
+    await user.click(screen.getByTestId("compare-edit-cancel"));
     expect(screen.getByTestId("path-probe")).toHaveTextContent("/experiments/7/compare/42");
   });
 
-  it("Discard clears draft and navigates to list", async () => {
+  // Compare UX C-13 — "Discard changes" moved into the toolbar's ⋯-more menu
+  // and is now guarded by a window.confirm() pop-confirm.
+  it("Discard (via ⋯ menu, confirmed) clears draft and navigates to list", async () => {
     const user = userEvent.setup();
     const qc = makeQc();
     useAppState.getState().startNewDraft();
     useAppState.getState().setDraftTitle("Sticky");
+    vi.spyOn(window, "confirm").mockReturnValue(true);
     renderEdit({ qc, initialPath: "/experiments/7/compare/new" });
-    await user.click(screen.getByTestId("comparison-discard"));
+    await user.click(screen.getByTestId("compare-toolbar-more"));
+    await user.click(screen.getByText("Discard changes"));
     expect(useAppState.getState().activeDraft).toBeNull();
     expect(screen.getByTestId("path-probe")).toHaveTextContent("/experiments/7/compare");
+  });
+
+  it("Discard (via ⋯ menu, cancelled) keeps the draft intact", async () => {
+    const user = userEvent.setup();
+    const qc = makeQc();
+    useAppState.getState().startNewDraft();
+    useAppState.getState().setDraftTitle("Sticky");
+    vi.spyOn(window, "confirm").mockReturnValue(false);
+    renderEdit({ qc, initialPath: "/experiments/7/compare/new" });
+    await user.click(screen.getByTestId("compare-toolbar-more"));
+    await user.click(screen.getByText("Discard changes"));
+    expect(useAppState.getState().activeDraft).not.toBeNull();
+    expect(screen.getByTestId("path-probe")).toHaveTextContent("/experiments/7/compare/new");
   });
 
   it("right slot hosts ComparisonPickerPanel in edit mode", async () => {
@@ -333,6 +374,8 @@ describe("ComparePageEdit", () => {
       activeDraft: {
         id: 42, baseHash: "h", title: "T", description: "",
         members: [],
+        forkedFromId: undefined, forkedAtHash: undefined,
+        viewGroupingMode: undefined, viewShowPeakTicks: undefined, viewShowPeakLabels: undefined,
       },
     });
     renderEdit({ qc, initialPath: "/experiments/7/compare/42/edit" });
@@ -360,6 +403,10 @@ describe("ComparePageEdit", () => {
       forked_from_id: null,
       forked_at_hash: null,
       forked_from_title: null,
+      view_grouping_mode: null,
+      view_show_peak_ticks: null,
+      view_show_peak_labels: null,
+      last_event_at: null,
       members: [],
     };
     const fetchSpy = vi.spyOn(global, "fetch").mockImplementation(async (input, init) => {
@@ -396,7 +443,7 @@ describe("ComparePageEdit", () => {
     // observer must re-attach. Mirrors the review-mode #51 test pattern.
     const qc = makeQc();
     const peaks: Peak[] = [
-      { id: 1, exposure_id: 200, q: 0.10, intensity: 1.0, sharpness: 0.5, source: "auto", excluded: false },
+      { id: 1, exposure_id: 200, q: 0.10, intensity: 1.0, sharpness: 0.5, prominence: null, source: "auto", excluded: false },
     ];
     const exposure: Exposure = {
       id: 200, sample_id: 1, filename: "x.dat", kind: "file", selected: false,
@@ -420,6 +467,7 @@ describe("ComparePageEdit", () => {
           snapshot: { effective_peaks: [], confirmed_index: null, analysis_inputs_hash: "abcd" },
         }],
         forkedFromId: undefined, forkedAtHash: undefined,
+        viewGroupingMode: undefined, viewShowPeakTicks: undefined, viewShowPeakLabels: undefined,
       },
     });
 
@@ -526,7 +574,7 @@ describe("ComparePageEdit", () => {
     });
 
     renderEdit({ qc, initialPath: "/experiments/7/compare/new" });
-    await user.click(screen.getByTestId("comparison-save"));
+    await user.click(screen.getByTestId("save-pill"));
 
     await waitFor(() => {
       const calls = fetchSpy.mock.calls.map((c) =>
@@ -574,6 +622,38 @@ describe("ComparePageEdit", () => {
 // MemberMetaGutter via the shared resolver in lib/comparison/labels.ts.
 
 describe("ComparePageEdit — cold-cache exposure + sample hydration (#69)", () => {
+  // Compare UX C-15: the unified `Compare` shell only mounts the edit body
+  // when a draft is active (or the URL ends `/new`). Seed a draft tied to
+  // comparison 42 so the edit body mounts — the hydration effect's
+  // `loadDraftFromComparison` then no-ops (draft id already matches) and the
+  // per-member exposure subscriptions fire, which is what this suite exercises.
+  function seedDraft42(): void {
+    useAppState.setState({
+      activeDraft: {
+        id: 42, baseHash: "h", title: "T", description: "",
+        members: [
+          {
+            id: 1, exposure_id: 100, display_order: 0,
+            band_height: 1, y_offset: 0, normalization: "none",
+            color_override: undefined, label_override: undefined,
+            q_window_min: undefined, q_window_max: undefined,
+            peak_display: undefined, snapshot: undefined,
+          },
+          {
+            id: 2, exposure_id: 200, display_order: 1,
+            band_height: 1, y_offset: 0, normalization: "none",
+            color_override: undefined, label_override: undefined,
+            q_window_min: undefined, q_window_max: undefined,
+            peak_display: undefined, snapshot: undefined,
+          },
+        ],
+        forkedFromId: undefined, forkedAtHash: undefined,
+        viewGroupingMode: undefined, viewShowPeakTicks: undefined,
+        viewShowPeakLabels: undefined,
+      },
+    });
+  }
+
   beforeEach(() => {
     vi.stubGlobal("ResizeObserver", vi.fn(() => ({
       observe: vi.fn((el: Element) => {
@@ -582,7 +662,7 @@ describe("ComparePageEdit — cold-cache exposure + sample hydration (#69)", () 
       disconnect: vi.fn(),
     })));
     // Reset Zustand draft so a previous test doesn't leak an in-progress
-    // draft past the URL hydration guard in ComparePageEdit (the
+    // draft past the URL hydration guard in the edit body (the
     // `loadDraftFromComparison` call no-ops if the active draft already
     // matches the comparison id).
     useAppState.getState().discardDraft();
@@ -669,6 +749,7 @@ describe("ComparePageEdit — cold-cache exposure + sample hydration (#69)", () 
   it("hydrates the per-member exposure cache on edit-mode cold-load (#69)", async () => {
     vi.spyOn(global, "fetch").mockImplementation(makeFetchMock());
     const qc = makeQc();
+    seedDraft42();
 
     renderEdit({ qc, initialPath: "/experiments/7/compare/42/edit" });
 
@@ -692,6 +773,7 @@ describe("ComparePageEdit — cold-cache exposure + sample hydration (#69)", () 
   it("renders gutter labels with sample label + filename, not 'Exposure #N' (#69)", async () => {
     vi.spyOn(global, "fetch").mockImplementation(makeFetchMock());
     const qc = makeQc();
+    seedDraft42();
 
     renderEdit({ qc, initialPath: "/experiments/7/compare/42/edit" });
 

@@ -93,6 +93,10 @@ describe("<MentionChip> — comparison", () => {
     forked_from_id: null,
     forked_at_hash: null,
     forked_from_title: null,
+    view_grouping_mode: null,
+    view_show_peak_ticks: null,
+    view_show_peak_labels: null,
+    last_event_at: null,
     members: [
       // Three members — count surfaces in the chip tooltip.
       makeMember(1), makeMember(2), makeMember(3),

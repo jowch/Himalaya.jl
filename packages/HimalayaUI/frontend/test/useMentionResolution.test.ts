@@ -67,6 +67,10 @@ describe("useMentionResolution", () => {
       forked_from_id: null,
       forked_at_hash: null,
       forked_from_title: null,
+      view_grouping_mode: null,
+      view_show_peak_ticks: null,
+      view_show_peak_labels: null,
+      last_event_at: null,
       members: [],
     };
     vi.spyOn(api, "getComparison").mockResolvedValue(COMP);

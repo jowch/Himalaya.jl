@@ -10,13 +10,52 @@
  *
  * Zustand wiring: edit-mode controls dispatch through `updateMember`.
  */
+import { useState } from "react";
 import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent, act, cleanup } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ComparisonMember } from "../src/api";
 import { MemberMetaRow } from "../src/components/MemberMetaRow";
+import type { MemberMetaRowProps } from "../src/components/MemberMetaRow";
 import { useAppState } from "../src/state";
 import { emptyDraft } from "../src/lib/comparison/draft";
+
+/**
+ * Compare UX E-2 — collapse/expand is a controlled prop on `MemberMetaRow`
+ * (the gutter owns the single-expanded invariant). This harness threads a
+ * local `expanded`/`onToggleExpand` pair so existing tests can mount the
+ * row directly. `startExpanded` opens the row immediately for tests that
+ * exercise the per-member control widgets (label / norm / q-window /
+ * color picker), which now live behind the `{expanded && …}` block.
+ */
+type RowMountProps = Omit<MemberMetaRowProps, "expanded" | "onToggleExpand">;
+function RowHarness({
+  startExpanded = false,
+  ...props
+}: RowMountProps & { startExpanded?: boolean }): JSX.Element {
+  const [expanded, setExpanded] = useState(startExpanded);
+  return (
+    <MemberMetaRow
+      {...props}
+      expanded={expanded}
+      onToggleExpand={() => setExpanded((e) => !e)}
+    />
+  );
+}
+
+/**
+ * Compare UX E-3 — the row-body expand affordance moved off `onClick`
+ * onto a pointerdown→up gesture gated by the 4px drag threshold. A
+ * zero-displacement gesture resolves to "click" → toggle expand.
+ * JSDOM's `PointerEvent` drops `clientX`/`clientY`; `MouseEvent` carries
+ * them and React's `onPointerDown/Up` listen by event *type*, so a
+ * `MouseEvent` typed `"pointerdown"`/`"pointerup"` triggers the handler.
+ * Dispatched via `fireEvent` so the React state update flushes in `act()`.
+ */
+function tapBody(el: Element): void {
+  fireEvent(el, new MouseEvent("pointerdown", { bubbles: true, clientX: 5, clientY: 5 }));
+  fireEvent(el, new MouseEvent("pointerup", { bubbles: true, clientX: 5, clientY: 5 }));
+}
 
 function makeMember(over: Partial<ComparisonMember> = {}): ComparisonMember {
   return {
@@ -52,13 +91,13 @@ function makeMember(over: Partial<ComparisonMember> = {}): ComparisonMember {
 
 describe("MemberMetaRow — review mode", () => {
   it("renders the testid + member id", () => {
-    render(<MemberMetaRow member={makeMember()} top={0} height={50} mode="review" displayLabel="row-label" />);
+    render(<RowHarness member={makeMember()} top={0} height={50} mode="review" displayLabel="row-label" />);
     const row = screen.getByTestId("member-meta-row");
     expect(row).toHaveAttribute("data-member-id", "1");
   });
 
   it("shows phase chip / d / R² / NGC for cubic phase", () => {
-    render(<MemberMetaRow member={makeMember()} top={0} height={50} mode="review" displayLabel="row-label" />);
+    render(<RowHarness member={makeMember()} top={0} height={50} mode="review" displayLabel="row-label" />);
     expect(screen.getByText("Pn3m")).toBeInTheDocument();
     // lattice d = 12.345 → toFixed(2) → "12.35"
     expect(screen.getByText(/12\.35/)).toBeInTheDocument();
@@ -78,7 +117,7 @@ describe("MemberMetaRow — review mode", () => {
         analysis_inputs_hash: "h",
       },
     });
-    render(<MemberMetaRow member={m} top={0} height={50} mode="review" displayLabel="row-label" />);
+    render(<RowHarness member={m} top={0} height={50} mode="review" displayLabel="row-label" />);
     expect(screen.queryByTestId("member-meta-ngc")).toBeNull();
   });
 
@@ -90,20 +129,20 @@ describe("MemberMetaRow — review mode", () => {
         analysis_inputs_hash: "h",
       },
     });
-    render(<MemberMetaRow member={m} top={0} height={50} mode="review" displayLabel="row-label" />);
+    render(<RowHarness member={m} top={0} height={50} mode="review" displayLabel="row-label" />);
     expect(screen.getByText(/no index/i)).toBeInTheDocument();
   });
 
   it("data-stale present when member.is_stale", () => {
     const m = makeMember({ is_stale: true });
-    render(<MemberMetaRow member={m} top={0} height={50} mode="review" displayLabel="row-label" />);
+    render(<RowHarness member={m} top={0} height={50} mode="review" displayLabel="row-label" />);
     expect(screen.getByTestId("member-meta-row")).toHaveAttribute("data-stale");
     // Inline stale indicator
     expect(screen.getByTestId("member-meta-stale-icon")).toBeInTheDocument();
   });
 
   it("data-stale absent when member.is_stale === false", () => {
-    render(<MemberMetaRow member={makeMember()} top={0} height={50} mode="review" displayLabel="row-label" />);
+    render(<RowHarness member={makeMember()} top={0} height={50} mode="review" displayLabel="row-label" />);
     expect(screen.getByTestId("member-meta-row")).not.toHaveAttribute("data-stale");
   });
 
@@ -111,13 +150,13 @@ describe("MemberMetaRow — review mode", () => {
     // The label_override fallback chain now lives in resolveDisplayLabels
     // (lib/comparison/labels.ts) — MemberMetaRow simply renders displayLabel.
     const m = makeMember({ label_override: "Sample A1 24h" });
-    render(<MemberMetaRow member={m} top={0} height={50} mode="review" displayLabel="Sample A1 24h" />);
+    render(<RowHarness member={m} top={0} height={50} mode="review" displayLabel="Sample A1 24h" />);
     expect(screen.getByTestId("member-meta-label").textContent).toContain("Sample A1 24h");
   });
 
   it("renders the displayLabel prop verbatim (no internal fallback chain)", () => {
     render(
-      <MemberMetaRow
+      <RowHarness
         member={makeMember()}
         top={0}
         height={50}
@@ -130,10 +169,10 @@ describe("MemberMetaRow — review mode", () => {
     );
   });
 
-  it("clicking the row expands a detail card overlay with peak count", () => {
-    render(<MemberMetaRow member={makeMember()} top={0} height={50} mode="review" displayLabel="row-label" />);
-    const row = screen.getByTestId("member-meta-row");
-    fireEvent.click(row);
+  it("clicking the row body expands a detail card overlay with peak count", () => {
+    render(<RowHarness member={makeMember()} top={0} height={50} mode="review" displayLabel="row-label" />);
+    // Compare UX E-2 — the disclosure affordance is the row body.
+    tapBody(screen.getByTestId("member-meta-row-body"));
     const detail = screen.getByTestId("member-meta-detail");
     expect(detail).toBeInTheDocument();
     expect(detail.textContent).toContain("2");  // 2 effective_peaks
@@ -141,14 +180,14 @@ describe("MemberMetaRow — review mode", () => {
   });
 
   it("positions the row at the supplied top + height", () => {
-    render(<MemberMetaRow member={makeMember()} top={120} height={45} mode="review" displayLabel="row-label" />);
+    render(<RowHarness member={makeMember()} top={120} height={45} mode="review" displayLabel="row-label" />);
     const row = screen.getByTestId("member-meta-row");
     expect(row.style.top).toBe("120px");
     expect(row.style.height).toBe("45px");
   });
 
   it("shows no edit-mode controls in review mode", () => {
-    render(<MemberMetaRow member={makeMember()} top={0} height={50} mode="review" displayLabel="row-label" />);
+    render(<RowHarness member={makeMember()} top={0} height={50} mode="review" displayLabel="row-label" />);
     expect(screen.queryByTestId("member-reorder-grip")).toBeNull();
     expect(screen.queryByTestId("member-meta-label-input")).toBeNull();
     expect(screen.queryByTestId("member-meta-normalization")).toBeNull();
@@ -181,14 +220,15 @@ describe("MemberMetaRow — edit mode", () => {
   });
 
   it("shows the drag handle", () => {
-    render(<MemberMetaRow member={makeMember()} top={0} height={50} mode="edit" memberIndex={0} displayLabel="row-label" />);
+    render(<RowHarness member={makeMember()} top={0} height={50} mode="edit" memberIndex={0} displayLabel="row-label" />);
     const grip = screen.getByTestId("member-reorder-grip");
     expect(grip).toBeInTheDocument();
     expect(grip).toHaveAttribute("data-member-id", "1");
   });
 
   it("label override input updates draft via updateMember", async () => {
-    render(<MemberMetaRow member={makeMember()} top={0} height={50} mode="edit" memberIndex={0} displayLabel="row-label" />);
+    // Compare UX E-2 — label-override input lives in the expanded block.
+    render(<RowHarness startExpanded member={makeMember()} top={0} height={50} mode="edit" memberIndex={0} displayLabel="row-label" />);
     const input = screen.getByTestId("member-meta-label-input") as HTMLInputElement;
     await userEvent.type(input, "My label");
     fireEvent.blur(input);
@@ -197,7 +237,8 @@ describe("MemberMetaRow — edit mode", () => {
   });
 
   it("normalization dropdown updates draft", () => {
-    render(<MemberMetaRow member={makeMember()} top={0} height={50} mode="edit" memberIndex={0} displayLabel="row-label" />);
+    // Compare UX E-2 — normalization dropdown lives in the expanded block.
+    render(<RowHarness startExpanded member={makeMember()} top={0} height={50} mode="edit" memberIndex={0} displayLabel="row-label" />);
     const sel = screen.getByTestId("member-meta-normalization") as HTMLSelectElement;
     fireEvent.change(sel, { target: { value: "max" } });
     const m = useAppState.getState().activeDraft!.members[0]!;
@@ -205,9 +246,12 @@ describe("MemberMetaRow — edit mode", () => {
   });
 
   it("q-window inputs commit on blur (focus-gated, mid-edit external state ignored)", () => {
+    // Compare UX E-2 — q-window inputs live behind the expanded block, so
+    // the harness mounts the row pre-expanded. `RowHarness` keeps the
+    // expand state across rerenders, so the input stays mounted.
     const m = makeMember({ q_window_min: 0.05, q_window_max: 0.5 });
     const { rerender } = render(
-      <MemberMetaRow member={m} top={0} height={50} mode="edit" memberIndex={0} displayLabel="row-label" />,
+      <RowHarness startExpanded member={m} top={0} height={50} mode="edit" memberIndex={0} displayLabel="row-label" />,
     );
     const minIn = screen.getByTestId("member-meta-qwindow-min") as HTMLInputElement;
     expect(minIn.value).toBe("0.050");
@@ -217,7 +261,8 @@ describe("MemberMetaRow — edit mode", () => {
     act(() => minIn.focus());
     fireEvent.change(minIn, { target: { value: "0.123" } });
     rerender(
-      <MemberMetaRow
+      <RowHarness
+        startExpanded
         member={makeMember({ q_window_min: 0.999, q_window_max: 0.5 })}
         top={0}
         height={50}
@@ -235,14 +280,16 @@ describe("MemberMetaRow — edit mode", () => {
   });
 
   it("'Reset color' button appears only when color_override is set", () => {
+    // Compare UX E-2 — the "Reset color" button lives in the expanded
+    // controls block, so the row is mounted pre-expanded.
     const m1 = makeMember({ color_override: null });
     const { rerender } = render(
-      <MemberMetaRow member={m1} top={0} height={50} mode="edit" memberIndex={0} displayLabel="row-label" />,
+      <RowHarness startExpanded member={m1} top={0} height={50} mode="edit" memberIndex={0} displayLabel="row-label" />,
     );
     expect(screen.queryByTestId("member-meta-reset-color")).toBeNull();
 
     const m2 = makeMember({ color_override: "#ff00aa" });
-    rerender(<MemberMetaRow member={m2} top={0} height={50} mode="edit" memberIndex={0} displayLabel="row-label" />);
+    rerender(<RowHarness startExpanded member={m2} top={0} height={50} mode="edit" memberIndex={0} displayLabel="row-label" />);
     expect(screen.getByTestId("member-meta-reset-color")).toBeInTheDocument();
   });
 
@@ -259,7 +306,8 @@ describe("MemberMetaRow — edit mode", () => {
       },
     });
     const m = makeMember({ color_override: "#ff00aa" });
-    render(<MemberMetaRow member={m} top={0} height={50} mode="edit" memberIndex={0} displayLabel="row-label" />);
+    // Compare UX E-2 — mount pre-expanded so the "Reset color" button shows.
+    render(<RowHarness startExpanded member={m} top={0} height={50} mode="edit" memberIndex={0} displayLabel="row-label" />);
     fireEvent.click(screen.getByTestId("member-meta-reset-color"));
     expect(useAppState.getState().activeDraft!.members[0]!.color_override).toBeUndefined();
   });
@@ -267,9 +315,9 @@ describe("MemberMetaRow — edit mode", () => {
   // ─── Color-override picker (Phase 9, Task 9.4) ────────────────────────
 
   it("color picker swatch grid renders with palette colors", () => {
-    render(<MemberMetaRow member={makeMember()} top={0} height={50} mode="edit" memberIndex={0} displayLabel="row-label" />);
-    // Expand the row first so the picker becomes visible.
-    fireEvent.click(screen.getByTestId("member-meta-row"));
+    render(<RowHarness member={makeMember()} top={0} height={50} mode="edit" memberIndex={0} displayLabel="row-label" />);
+    // Compare UX E-2 — expand via the row body (the disclosure affordance).
+    tapBody(screen.getByTestId("member-meta-row-body"));
     const grid = screen.getByTestId("member-color-picker-grid");
     expect(grid).toBeInTheDocument();
     const swatches = screen.getAllByTestId(/^member-color-picker-swatch-/);
@@ -278,8 +326,8 @@ describe("MemberMetaRow — edit mode", () => {
   });
 
   it("clicking a swatch sets color_override to that hex/oklch color", () => {
-    render(<MemberMetaRow member={makeMember()} top={0} height={50} mode="edit" memberIndex={0} displayLabel="row-label" />);
-    fireEvent.click(screen.getByTestId("member-meta-row"));
+    render(<RowHarness member={makeMember()} top={0} height={50} mode="edit" memberIndex={0} displayLabel="row-label" />);
+    tapBody(screen.getByTestId("member-meta-row-body"));
     const swatches = screen.getAllByTestId(/^member-color-picker-swatch-/);
     const first = swatches[0]!;
     const colorValue = first.getAttribute("data-color")!;
@@ -289,22 +337,22 @@ describe("MemberMetaRow — edit mode", () => {
   });
 
   it("color picker swatch grid is hidden in review mode", () => {
-    render(<MemberMetaRow member={makeMember()} top={0} height={50} mode="review" displayLabel="row-label" />);
+    render(<RowHarness member={makeMember()} top={0} height={50} mode="review" displayLabel="row-label" />);
     // Even when expanded, review mode does not render the swatch grid.
-    fireEvent.click(screen.getByTestId("member-meta-row"));
+    tapBody(screen.getByTestId("member-meta-row-body"));
     expect(screen.queryByTestId("member-color-picker-grid")).toBeNull();
   });
 
   it("active swatch (matching color_override) is marked", () => {
     // First swatch's data-color is what we'll claim is the override.
-    render(<MemberMetaRow member={makeMember()} top={0} height={50} mode="edit" memberIndex={0} displayLabel="row-label" />);
-    fireEvent.click(screen.getByTestId("member-meta-row"));
+    render(<RowHarness member={makeMember()} top={0} height={50} mode="edit" memberIndex={0} displayLabel="row-label" />);
+    tapBody(screen.getByTestId("member-meta-row-body"));
     const swatches = screen.getAllByTestId(/^member-color-picker-swatch-/);
     const targetColor = swatches[2]!.getAttribute("data-color")!;
     cleanup();
     // Re-render with that color set as override.
     render(
-      <MemberMetaRow
+      <RowHarness
         member={makeMember({ color_override: targetColor })}
         top={0}
         height={50}
@@ -313,7 +361,7 @@ describe("MemberMetaRow — edit mode", () => {
         displayLabel="row-label"
       />,
     );
-    fireEvent.click(screen.getByTestId("member-meta-row"));
+    tapBody(screen.getByTestId("member-meta-row-body"));
     const reSwatches = screen.getAllByTestId(/^member-color-picker-swatch-/);
     const target = reSwatches[2]!;
     expect(target).toHaveAttribute("data-active", "true");

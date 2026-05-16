@@ -16,7 +16,6 @@ import {
   memberFromNewExposure,
 } from "./lib/comparison/draftFactories";
 import { cyclePeakDisplay } from "./lib/comparison/peakCycle";
-import type { GroupingMode } from "./lib/comparison/coloring";
 import { emitReplaceNext } from "./lib/url/emitMode";
 
 export const LS_KEY = "himalaya-ui:state";
@@ -93,13 +92,6 @@ export interface AppState {
    * Tab close loses the draft, which is acceptable for v1 per the spec.
    */
   activeDraft: ActiveDraftSlot;
-
-  /**
-   * Compare-page review/edit-mode grouping mode for trace coloring (Plan
-   * §Phase 9, Task 9.2). Per-tab viewing preference — NOT persisted on the
-   * comparison and NOT mirrored to sessionStorage. Default `"bySample"`.
-   */
-  groupingMode: GroupingMode;
 
   /**
    * Compare-page review-mode annotation toggles (Plan §Phase 9, Task 9.3).
@@ -179,6 +171,15 @@ export interface AppState {
   loadDraftFromComparison: (comparison: Comparison, qc: QueryClient) => void;
   setDraftTitle: (title: string) => void;
   setDraftDescription: (description: string) => void;
+  /**
+   * Morph the active draft into a fork (Compare UX C-14). Called when a
+   * NON-author saves a draft on someone else's comparison: clears `id` +
+   * `baseHash` (so the next submit routes to the create path) and records
+   * the parent lineage (`forkedFromId` + `forkedAtHash`) plus the user's
+   * chosen fork title. View choices are preserved — the fork inherits the
+   * user's current view. No-op when no draft is active.
+   */
+  setDraftForkOf: (p: { newTitle: string; sourceId: number; sourceHash: string }) => void;
   addMember: (exposureId: number, qc: QueryClient) => void;
   removeMember: (index: number) => void;
   updateMember: (index: number, partial: Partial<DraftMember>) => void;
@@ -196,7 +197,13 @@ export interface AppState {
   discardDraft: () => void;
 
   // Compare-page Phase 9 review-mode UI actions
-  setGroupingMode: (mode: GroupingMode) => void;
+  /**
+   * Set the grouping mode on the active draft (C-4). Creates an empty draft
+   * if none is active so the viewer can toggle without entering full edit mode
+   * (spec §6.4 viewer escape hatch). effectiveGroupingMode(draft, comparison)
+   * then surfaces the value to consumers.
+   */
+  setDraftViewGroupingMode: (mode: ActiveDraft["viewGroupingMode"]) => void;
   setShowPeakTicks: (show: boolean) => void;
   setShowPeakLabels: (show: boolean) => void;
   setHighlightedCompareMemberId: (id: number | undefined) => void;
@@ -266,7 +273,6 @@ export const useAppState = create<AppState>()(
         activeDraft: loadDraftFromSession(),
 
         // Phase 9 — review-mode UI defaults. All per-tab; not persisted.
-        groupingMode: "bySample",
         showPeakTicks: true,
         showPeakLabels: true,
         highlightedCompareMemberId: undefined,
@@ -346,6 +352,22 @@ export const useAppState = create<AppState>()(
           const cur = get().activeDraft;
           if (cur === null) return;
           setDraft({ ...cur, description });
+        },
+        setDraftForkOf: (p) => {
+          const cur = get().activeDraft;
+          if (cur === null) return;
+          // Clearing `id` + `baseHash` flips the next submit onto the create
+          // path (POST /api/comparisons, no expected_content_hash). The
+          // `...cur` spread preserves members and view choices so the fork
+          // inherits the user's current state.
+          setDraft({
+            ...cur,
+            id: undefined,
+            baseHash: undefined,
+            forkedFromId: p.sourceId,
+            forkedAtHash: p.sourceHash,
+            title: p.newTitle,
+          });
         },
         addMember: (exposureId, qc) => {
           const cur = get().activeDraft;
@@ -432,8 +454,15 @@ export const useAppState = create<AppState>()(
         },
         discardDraft: () => setDraft(null),
 
-        // Phase 9 — review-mode UI actions
-        setGroupingMode: (groupingMode) => set({ groupingMode }),
+        // Phase 9 / C-4 — view-choice actions
+        setDraftViewGroupingMode: (mode) => {
+          const cur = get().activeDraft;
+          // Viewer escape hatch (spec §6.4): if no draft is active, create an
+          // empty one so the grouping preference can be carried without forcing
+          // the user into full edit mode.
+          const base = cur ?? emptyDraft();
+          setDraft({ ...base, viewGroupingMode: mode });
+        },
         setShowPeakTicks: (showPeakTicks) => set({ showPeakTicks }),
         setShowPeakLabels: (showPeakLabels) => set({ showPeakLabels }),
         setHighlightedCompareMemberId: (highlightedCompareMemberId) =>
