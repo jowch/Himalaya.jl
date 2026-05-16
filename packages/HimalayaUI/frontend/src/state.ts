@@ -171,6 +171,15 @@ export interface AppState {
   loadDraftFromComparison: (comparison: Comparison, qc: QueryClient) => void;
   setDraftTitle: (title: string) => void;
   setDraftDescription: (description: string) => void;
+  /**
+   * Morph the active draft into a fork (Compare UX C-14). Called when a
+   * NON-author saves a draft on someone else's comparison: clears `id` +
+   * `baseHash` (so the next submit routes to the create path) and records
+   * the parent lineage (`forkedFromId` + `forkedAtHash`) plus the user's
+   * chosen fork title. View choices are preserved — the fork inherits the
+   * user's current view. No-op when no draft is active.
+   */
+  setDraftForkOf: (p: { newTitle: string; sourceId: number; sourceHash: string }) => void;
   addMember: (exposureId: number, qc: QueryClient) => void;
   removeMember: (index: number) => void;
   updateMember: (index: number, partial: Partial<DraftMember>) => void;
@@ -343,6 +352,22 @@ export const useAppState = create<AppState>()(
           const cur = get().activeDraft;
           if (cur === null) return;
           setDraft({ ...cur, description });
+        },
+        setDraftForkOf: (p) => {
+          const cur = get().activeDraft;
+          if (cur === null) return;
+          // Clearing `id` + `baseHash` flips the next submit onto the create
+          // path (POST /api/comparisons, no expected_content_hash). The
+          // `...cur` spread preserves members and view choices so the fork
+          // inherits the user's current state.
+          setDraft({
+            ...cur,
+            id: undefined,
+            baseHash: undefined,
+            forkedFromId: p.sourceId,
+            forkedAtHash: p.sourceHash,
+            title: p.newTitle,
+          });
         },
         addMember: (exposureId, qc) => {
           const cur = get().activeDraft;

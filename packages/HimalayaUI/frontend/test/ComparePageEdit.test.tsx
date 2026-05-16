@@ -203,6 +203,16 @@ describe("ComparePageEdit", () => {
       last_event_at: null,
       members: [],
     };
+    // Compare UX C-14 — `handleSave` now branches on `useCompareMode`. Seed the
+    // comparison + users caches so authorship resolves: alice (id 1) === the
+    // comparison's `created_by`, giving mode `editing-mine` (normal submit path)
+    // rather than `editing-as-fork-of`.
+    qc.setQueryData(queryKeys.comparison(42), {
+      ...updated, content_hash: "h-existing",
+    });
+    qc.setQueryData(["users"] as const, [
+      { id: 1, username: "alice", first_name: null, last_name: null },
+    ]);
     const fetchSpy = vi.spyOn(global, "fetch").mockImplementation(async (input, init) => {
       const url = typeof input === "string" ? input : String(input);
       if (url === "/api/comparisons/42/submit" && init?.method === "POST") {

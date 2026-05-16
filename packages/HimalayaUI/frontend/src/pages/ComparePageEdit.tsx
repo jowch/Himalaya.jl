@@ -146,6 +146,15 @@ export function ComparePageEdit(): JSX.Element {
   const save = useSaveComparison();
   const pendingSubmitRef = useRef(false);
 
+  // ── Compare UX C-13/C-14 — `CompareMode` drives the SavePill copy variant
+  // and the fork-morph save branch. Declared above `handleSave` because that
+  // handler branches on `compareMode.kind === "editing-as-fork-of"`.
+  const currentUserId = useCurrentUserId();
+  const compareMode = useCompareMode({
+    comparison: comparisonQ.data,
+    currentUserId,
+  });
+
   const goToReview = useCallback(
     (newId: number) => {
       navigate(comparePath({ scope, eid, id: newId }));
@@ -176,31 +185,20 @@ export function ComparePageEdit(): JSX.Element {
     goToList();
   }, [discardDraft, goToList]);
 
-  const handleSave = useCallback(async () => {
-    if (draft === null) return;
-    if (draft.members.length === 0) return;
-    // Guard against duplicate triggers during the async prefetch window.
-    // save.isPending is false until save.mutate() fires, so a second
-    // Cmd+Enter while awaiting would start a parallel round. Set the
-    // in-flight ref early so the keyboard handler and button both reject.
-    if (pendingSubmitRef.current) return;
-    pendingSubmitRef.current = true;
-
-    // Warm the four cache keys computeMemberSnapshot reads (#49) before
-    // computing snapshots — without this, never-visited members land with
-    // analysis_inputs_hash = "" and the server marks them stale on the
-    // next view fold. Per-key cold detection (#93): each key is checked
-    // independently so an exposure with three warm keys and one cold key
-    // only refetches the missing one.
-    const exposureIds = draft.members
-      .map((m) => m.exposure_id)
-      .filter((id): id is number => id !== null);
-
-    try {
-      await prefetchColdMembers(exposureIds, qc);
-
+  // Build the save payload fresh from a draft snapshot. Kept as a pure
+  // function (not a closure over `draft`) so the C-14 fork flow can call it
+  // with the *morphed* draft re-read from the store — see handleSave.
+  //
+  // CRITICAL (idempotency): each `save.mutate()` call must receive its own
+  // freshly-built payload object. `useQueueMutation.mutationFn` mints a
+  // `client_op_id` per `mutate()` call; reusing a single stale payload would
+  // route the post-morph submission through the pre-morph `id` and the
+  // create-path route would never fire.
+  const buildSavePayload = useCallback(
+    (d: typeof draft): (SaveComparisonBody & { id?: number }) | null => {
+      if (d === null) return null;
       // Compute a fresh snapshot per member at submit time (Plan §Task 4.3).
-      const members: ComparisonMemberInput[] = draft.members.map((m) => {
+      const members: ComparisonMemberInput[] = d.members.map((m) => {
         const snapshot = m.exposure_id !== null
           ? computeMemberSnapshot(m.exposure_id, qc)
           : (m.snapshot ?? {
@@ -227,29 +225,106 @@ export function ComparePageEdit(): JSX.Element {
       // useSaveComparison flat-spreads the input into the SaveComparisonBody;
       // see saveComparison mutator's `request: (p) => api.saveComparison(...)`.
       const payload: SaveComparisonBody & { id?: number } = {
-        title: draft.title,
+        title: d.title,
         members,
       };
-      if (draft.id !== undefined) payload.id = draft.id;
-      if (draft.description !== "") payload.description = draft.description;
-      if (draft.baseHash !== undefined) payload.expected_content_hash = draft.baseHash;
+      if (d.id !== undefined) payload.id = d.id;
+      if (d.description !== "") payload.description = d.description;
+      if (d.baseHash !== undefined) payload.expected_content_hash = d.baseHash;
       // Phase 11 — fork lineage rides through to POST /api/comparisons. Both
       // fields ride together (or not at all) per backend contract; the UI
       // factory `fromComparisonAsFork` always sets both when populating a fork.
-      if (draft.forkedFromId !== undefined) payload.forked_from_id = draft.forkedFromId;
-      if (draft.forkedAtHash !== undefined) payload.forked_at_hash = draft.forkedAtHash;
+      if (d.forkedFromId !== undefined) payload.forked_from_id = d.forkedFromId;
+      if (d.forkedAtHash !== undefined) payload.forked_at_hash = d.forkedAtHash;
       // C-4 — forward author's view choices so the server persists them.
       // undefined (never set) ⇒ sent as null (backend clears / uses default);
       // a value ⇒ sent as-is (backend stores it).
-      payload.view_grouping_mode    = draft.viewGroupingMode    ?? null;
-      payload.view_show_peak_ticks  = draft.viewShowPeakTicks   ?? null;
-      payload.view_show_peak_labels = draft.viewShowPeakLabels  ?? null;
+      payload.view_grouping_mode    = d.viewGroupingMode    ?? null;
+      payload.view_show_peak_ticks  = d.viewShowPeakTicks   ?? null;
+      payload.view_show_peak_labels = d.viewShowPeakLabels  ?? null;
+      return payload;
+    },
+    [qc],
+  );
+
+  const setDraftForkOf = useAppState((s) => s.setDraftForkOf);
+
+  const handleSave = useCallback(async () => {
+    if (draft === null) return;
+    if (draft.members.length === 0) return;
+    // Guard against duplicate triggers during the async prefetch window.
+    // save.isPending is false until save.mutate() fires, so a second
+    // Cmd+Enter while awaiting would start a parallel round. Set the
+    // in-flight ref early so the keyboard handler and button both reject.
+    if (pendingSubmitRef.current) return;
+
+    // ── Compare UX C-14 — editing-as-fork-of save path ──────────────────
+    // A NON-author saving a draft on someone else's comparison must NOT
+    // overwrite the original. Prompt for a fork title, morph the draft into
+    // a fork (clear id/baseHash, set lineage), then submit via the create
+    // path. The morphed draft's `id === undefined` routes the mutator to
+    // POST /api/comparisons with no `expected_content_hash`.
+    if (compareMode.kind === "editing-as-fork-of") {
+      const baseTitle = comparisonQ.data?.title ?? "comparison";
+      // window.prompt note: Playwright auto-dismisses dialogs by default.
+      // Any e2e covering this flow MUST register a dialog handler before
+      // the gesture: page.on("dialog", d => d.accept("My fork")).
+      const proposed = window.prompt("Title for your fork:", `Copy of ${baseTitle}`);
+      if (proposed === null) return; // cancelled — leave the draft intact
+      setDraftForkOf({
+        newTitle: proposed.trim() === "" ? `Copy of ${baseTitle}` : proposed,
+        sourceId: compareMode.parentId,
+        sourceHash: draft.baseHash ?? "",
+      });
+      pendingSubmitRef.current = true;
+      // Re-read the MORPHED draft from the store before building the
+      // payload. Reusing a payload built from the pre-morph `draft` closure
+      // would carry the original id and the create-path route would never
+      // fire (and the two back-to-back ops would collide on one
+      // `idempotent_responses` row). Build fresh, post-morph.
+      const fresh = useAppState.getState().activeDraft;
+      const exposureIds = (fresh?.members ?? [])
+        .map((m) => m.exposure_id)
+        .filter((id): id is number => id !== null);
+      try {
+        await prefetchColdMembers(exposureIds, qc);
+        const payload = buildSavePayload(fresh);
+        if (payload === null) {
+          pendingSubmitRef.current = false;
+          return;
+        }
+        save.mutate(payload);
+      } catch {
+        pendingSubmitRef.current = false;
+      }
+      return;
+    }
+
+    pendingSubmitRef.current = true;
+
+    // Warm the four cache keys computeMemberSnapshot reads (#49) before
+    // computing snapshots — without this, never-visited members land with
+    // analysis_inputs_hash = "" and the server marks them stale on the
+    // next view fold. Per-key cold detection (#93): each key is checked
+    // independently so an exposure with three warm keys and one cold key
+    // only refetches the missing one.
+    const exposureIds = draft.members
+      .map((m) => m.exposure_id)
+      .filter((id): id is number => id !== null);
+
+    try {
+      await prefetchColdMembers(exposureIds, qc);
+      const payload = buildSavePayload(draft);
+      if (payload === null) {
+        pendingSubmitRef.current = false;
+        return;
+      }
       save.mutate(payload);
     } catch {
       // Prefetch or mutate failed — release the guard so the user can retry.
       pendingSubmitRef.current = false;
     }
-  }, [draft, qc, save]);
+  }, [draft, qc, save, compareMode, comparisonQ.data, setDraftForkOf, buildSavePayload]);
 
   // Post-success navigation. Reading `save.data` (the response) lets us
   // navigate to /experiments/:eid/compare/:newId for create flow. We gate
@@ -308,14 +383,7 @@ export function ComparePageEdit(): JSX.Element {
   // The edit header now uses the shared CompareTitleStrip / CompareStatusSurface
   // / CompareToolbar components plus a SavePill (issue #139), mirroring the
   // C-12 review-mode wiring in ComparePage.
-  const currentUserId = useCurrentUserId();
-  // `CompareMode` drives the SavePill's copy variant. For C-13 the
-  // author-editing case ("editing-mine") and the create case
-  // ("creating-blank") are what matter; the fork-morph flow is C-14.
-  const compareMode = useCompareMode({
-    comparison: comparisonQ.data,
-    currentUserId,
-  });
+  // `currentUserId` / `compareMode` are declared above `handleSave` (C-14).
   const forksQ = useComparisonForks(id);
   const deleteMut = useDeleteComparison();
 
