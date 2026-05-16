@@ -3,6 +3,7 @@ import { renderHook } from "@testing-library/react";
 import { useCompareMode } from "../src/hooks/useCompareMode";
 import { useAppState } from "../src/state";
 import type { Comparison } from "../src/api";
+import type { ActiveDraft } from "../src/lib/comparison/draft";
 
 const baseComparison: Comparison = {
   id: 1,
@@ -22,7 +23,7 @@ const baseComparison: Comparison = {
   members: [],
 };
 
-const blankDraft = {
+const blankDraft: ActiveDraft = {
   id: undefined,
   baseHash: undefined,
   title: "n",
@@ -33,9 +34,9 @@ const blankDraft = {
   viewGroupingMode: undefined,
   viewShowPeakTicks: undefined,
   viewShowPeakLabels: undefined,
-} as const;
+};
 
-const editingDraft = {
+const editingDraft: ActiveDraft = {
   id: 1,
   baseHash: "h",
   title: "x",
@@ -46,7 +47,7 @@ const editingDraft = {
   viewGroupingMode: undefined,
   viewShowPeakTicks: undefined,
   viewShowPeakLabels: undefined,
-} as const;
+};
 
 describe("useCompareMode — Compare UX C-5", () => {
   afterEach(() => {
