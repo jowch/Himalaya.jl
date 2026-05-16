@@ -49,6 +49,10 @@ export function MemberMetaGutter(props: MemberMetaGutterProps): JSX.Element {
   const reorderMembers = useAppState((s) => s.reorderMembers);
   const dragSourceIdxRef = useRef<number | null>(null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  // Compare UX E-2 — the single-expanded-at-a-time invariant lives here.
+  // Exactly one member id may be expanded; `null` means all collapsed.
+  // Threaded into each `MemberMetaRow` as a controlled `expanded` prop.
+  const [expandedMemberId, setExpandedMemberId] = useState<number | null>(null);
 
   const ratios = members.map((m) => m.band_height || 1);
   const yBands = computeYBands(ratios, panelHeight);
@@ -132,6 +136,13 @@ export function MemberMetaGutter(props: MemberMetaGutterProps): JSX.Element {
               // the `?? ""` is a TypeScript-narrowing safety net, never a
               // user-facing fallback (those all live in `labels.ts`, #73).
               displayLabel={displayLabelByMemberId.get(m.id) ?? ""}
+              // Compare UX E-2 — controlled collapse/expand. Toggling a row
+              // expands it (clearing any other), or collapses it if it was
+              // the expanded one.
+              expanded={expandedMemberId === m.id}
+              onToggleExpand={() =>
+                setExpandedMemberId((cur) => (cur === m.id ? null : m.id))
+              }
               {...(mode === "edit"
                 ? { onGripDragStart: (e: React.DragEvent) => handleDragStart(e, i) }
                 : {})}

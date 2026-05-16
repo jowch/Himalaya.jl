@@ -213,6 +213,7 @@ describe("MemberMetaRow — per-member data-stale", () => {
           is_stale: true, created_by: null, created_at: null,
         }}
         top={0} height={50} mode="review" displayLabel="row-label"
+        expanded={false} onToggleExpand={() => {}}
       />,
     );
     const row = screen.getByTestId("member-meta-row");
@@ -234,6 +235,7 @@ describe("MemberMetaRow — per-member data-stale", () => {
           is_stale: false, created_by: null, created_at: null,
         }}
         top={0} height={50} mode="review" displayLabel="row-label"
+        expanded={false} onToggleExpand={() => {}}
       />,
     );
     expect(screen.getByTestId("member-meta-row")).not.toHaveAttribute("data-stale");

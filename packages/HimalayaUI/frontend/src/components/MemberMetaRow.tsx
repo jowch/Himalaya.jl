@@ -24,6 +24,7 @@ import { useAppState } from "../state";
 import { phaseColor, CUBIC_PHASES } from "../phases";
 import { COMPARE_PALETTE } from "../lib/comparison/coloring";
 import type { DraftMemberNormalization } from "../lib/comparison/draft";
+import { RowActionZone } from "./RowActionZone";
 
 export interface MemberMetaRowProps {
   member: ComparisonMember;
@@ -44,6 +45,17 @@ export interface MemberMetaRowProps {
   onGripDragStart?: (e: React.DragEvent) => void;
   /** Pre-resolved display label from `resolveDisplayLabels` (lib/comparison/labels.ts). */
   displayLabel: string;
+  /**
+   * Compare UX E-2 — collapse/expand is CONTROLLED. The row never owns
+   * this state; the single-expanded-at-a-time invariant lives on
+   * `MemberMetaGutter` (one `expandedMemberId`). Collapsed rows show only
+   * label + meta + disclosure caret; the per-member control widgets
+   * (label / color / normalization / q-window / peaks) render only when
+   * `expanded` is true.
+   */
+  expanded: boolean;
+  /** Toggles this row's expansion (clears it if already expanded). */
+  onToggleExpand: () => void;
 }
 
 const NORMALIZATION_OPTIONS: DraftMemberNormalization[] = [
@@ -61,8 +73,13 @@ function formatKappa(k: number | null | undefined): string {
 }
 
 export function MemberMetaRow(props: MemberMetaRowProps): JSX.Element {
-  const { member, top, height, mode, memberIndex, onGripDragStart, displayLabel } = props;
-  const [expanded, setExpanded] = useState(false);
+  const {
+    member, top, height, mode, memberIndex, onGripDragStart, displayLabel,
+    expanded, onToggleExpand,
+  } = props;
+  // Compare UX E-2 — `expanded` is a controlled prop; the row owns no
+  // expansion state. The overflow menu's open/close stays local.
+  const [overflowOpen, setOverflowOpen] = useState(false);
 
   const updateMember = useAppState((s) => s.updateMember);
   const setHighlight = useAppState((s) => s.setHighlightedCompareMemberId);
@@ -166,16 +183,19 @@ export function MemberMetaRow(props: MemberMetaRowProps): JSX.Element {
     <div
       data-testid="member-meta-row"
       data-member-id={String(member.id)}
+      data-expanded={expanded ? "true" : "false"}
+      data-interactable="expand"
+      {...(overflowOpen ? { "data-overflow-open": "" } : {})}
       {...(member.is_stale ? { "data-stale": "" } : {})}
       {...(isPinned ? { "data-highlighted": "" } : {})}
       // Tab into the row only when there's a confirmed index to highlight —
       // otherwise pressing Tab past it is dead air.
       {...(canHighlight ? { tabIndex: 0 } : {})}
       onClick={() => {
-        // Click toggles both the expansion (always) and the pin (when
-        // hoverable). Pin lifecycle: click pins, click-again unpins. The
-        // expanded panel mirrors that — second click closes both.
-        setExpanded((e) => !e);
+        // Compare UX E-2 — the root click no longer toggles expansion
+        // (that moved to `member-meta-row-body`). It still drives the
+        // hover-pin lifecycle: click pins, click-again unpins. A body
+        // click bubbles here, so clicking the row both pins and expands.
         if (canHighlight) {
           if (isPinned) {
             setIsPinned(false);
@@ -201,8 +221,15 @@ export function MemberMetaRow(props: MemberMetaRowProps): JSX.Element {
       className="flex flex-col gap-0.5 px-2 py-1 text-xs hover:bg-bg-elevated/40 cursor-pointer
                  outline-0 focus-visible:ring-1 focus-visible:ring-accent"
     >
-      {/* Primary single line */}
-      <div className="flex items-center gap-2 min-w-0">
+      {/* Primary single line — the collapse/expand affordance. */}
+      <div
+        data-testid="member-meta-row-body"
+        className="flex items-center gap-2 min-w-0"
+        onClick={onToggleExpand}
+      >
+        <span aria-hidden="true" className="text-fg-dim shrink-0 select-none">
+          {expanded ? "▾" : "▸"}
+        </span>
         {mode === "edit" && (
           <span
             data-testid="member-reorder-grip"
@@ -271,94 +298,103 @@ export function MemberMetaRow(props: MemberMetaRowProps): JSX.Element {
         )}
       </div>
 
-      {/* Edit-mode controls row */}
-      {mode === "edit" && (
-        <div
-          className="flex items-center gap-1 flex-wrap"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <input
-            type="text"
-            data-testid="member-meta-label-input"
-            placeholder="Label override"
-            defaultValue={member.label_override ?? ""}
-            onBlur={(e) => onLabelCommit(e.currentTarget.value)}
-            className="bg-bg border border-border rounded px-1 py-0.5 text-fg text-xs
-                       outline-0 focus:border-accent w-[12ch]"
-          />
-          <select
-            data-testid="member-meta-normalization"
-            value={member.normalization}
-            onChange={(e) =>
-              onNormChange(e.currentTarget.value as DraftMemberNormalization)
-            }
-            className="bg-bg border border-border rounded px-1 py-0.5 text-fg text-xs"
-          >
-            {NORMALIZATION_OPTIONS.map((n) => (
-              <option key={n} value={n}>
-                {n}
-              </option>
-            ))}
-          </select>
-          <span className="text-fg-dim">q∈[</span>
-          <QWindowInput
-            value={member.q_window_min ?? null}
-            testId="member-meta-qwindow-min"
-            onCommit={onQWindowMin}
-          />
-          <span className="text-fg-dim">,</span>
-          <QWindowInput
-            value={member.q_window_max ?? null}
-            testId="member-meta-qwindow-max"
-            onCommit={onQWindowMax}
-          />
-          <span className="text-fg-dim">]</span>
-          {member.color_override != null && (
-            <button
-              type="button"
-              data-testid="member-meta-reset-color"
-              onClick={onResetColor}
-              className="text-fg-dim hover:text-fg text-xs underline"
-            >
-              Reset color
-            </button>
-          )}
-        </div>
-      )}
+      {/* Compare UX E-1/E-2 — overflow + drag-cue affordances. Always
+          visible (collapsed or expanded); stops propagation internally. */}
+      <RowActionZone onOverflow={() => setOverflowOpen((v) => !v)} />
 
-      {/* Expand-on-click detail card overlay (review + edit) */}
+      {/* Compare UX E-2 — per-member control widgets render only when the
+          row is expanded. Collapsed rows show just label + meta + caret. */}
       {expanded && (
-        <div
-          data-testid="member-meta-detail"
-          className="absolute z-10 left-2 top-full mt-1 bg-bg-elevated border border-border
-                     rounded shadow-md p-2 text-xs flex flex-col gap-2 min-w-[180px]"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div>
-            <span className="text-fg-dim">Peaks: </span>
-            <span className="tabular-nums">
-              {member.snapshot?.effective_peaks?.length ?? 0}
-            </span>
-          </div>
-          {ci !== null && (
-            <div>
-              <span className="text-fg-dim">Index id: </span>
-              <span className="tabular-nums">{ci.id}</span>
-            </div>
-          )}
-          {member.exposure_id !== null && (
-            <div>
-              <span className="text-fg-dim">Exposure: </span>
-              <span className="tabular-nums">#{member.exposure_id}</span>
-            </div>
-          )}
+        <>
+          {/* Edit-mode controls row */}
           {mode === "edit" && (
-            <ColorPickerSwatchGrid
-              activeColor={member.color_override ?? null}
-              onPick={onPickColor}
-            />
+            <div
+              className="flex items-center gap-1 flex-wrap"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <input
+                type="text"
+                data-testid="member-meta-label-input"
+                placeholder="Label override"
+                defaultValue={member.label_override ?? ""}
+                onBlur={(e) => onLabelCommit(e.currentTarget.value)}
+                className="bg-bg border border-border rounded px-1 py-0.5 text-fg text-xs
+                           outline-0 focus:border-accent w-[12ch]"
+              />
+              <select
+                data-testid="member-meta-normalization"
+                value={member.normalization}
+                onChange={(e) =>
+                  onNormChange(e.currentTarget.value as DraftMemberNormalization)
+                }
+                className="bg-bg border border-border rounded px-1 py-0.5 text-fg text-xs"
+              >
+                {NORMALIZATION_OPTIONS.map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+              <span className="text-fg-dim">q∈[</span>
+              <QWindowInput
+                value={member.q_window_min ?? null}
+                testId="member-meta-qwindow-min"
+                onCommit={onQWindowMin}
+              />
+              <span className="text-fg-dim">,</span>
+              <QWindowInput
+                value={member.q_window_max ?? null}
+                testId="member-meta-qwindow-max"
+                onCommit={onQWindowMax}
+              />
+              <span className="text-fg-dim">]</span>
+              {member.color_override != null && (
+                <button
+                  type="button"
+                  data-testid="member-meta-reset-color"
+                  onClick={onResetColor}
+                  className="text-fg-dim hover:text-fg text-xs underline"
+                >
+                  Reset color
+                </button>
+              )}
+            </div>
           )}
-        </div>
+
+          {/* Expanded detail card (review + edit): peak count + secondary
+              metadata, plus the color-picker swatch grid in edit mode. */}
+          <div
+            data-testid="member-meta-detail"
+            className="absolute z-10 left-2 top-full mt-1 bg-bg-elevated border border-border
+                       rounded shadow-md p-2 text-xs flex flex-col gap-2 min-w-[180px]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div>
+              <span className="text-fg-dim">Peaks: </span>
+              <span className="tabular-nums">
+                {member.snapshot?.effective_peaks?.length ?? 0}
+              </span>
+            </div>
+            {ci !== null && (
+              <div>
+                <span className="text-fg-dim">Index id: </span>
+                <span className="tabular-nums">{ci.id}</span>
+              </div>
+            )}
+            {member.exposure_id !== null && (
+              <div>
+                <span className="text-fg-dim">Exposure: </span>
+                <span className="tabular-nums">#{member.exposure_id}</span>
+              </div>
+            )}
+            {mode === "edit" && (
+              <ColorPickerSwatchGrid
+                activeColor={member.color_override ?? null}
+                onPick={onPickColor}
+              />
+            )}
+          </div>
+        </>
       )}
     </div>
   );
