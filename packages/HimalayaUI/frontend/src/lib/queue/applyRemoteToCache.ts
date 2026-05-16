@@ -1,8 +1,8 @@
 import type { QueryClient } from "@tanstack/react-query";
-import type { SseEvent } from "./types";
+import type { SseEvent, CurationPostState } from "./types";
 import type {
   Peak, GroupEntry, Exposure, Sample, SampleMessage,
-  ComparisonMessage, ComparisonSummary,
+  ComparisonMessage, ComparisonSummary, Comparison,
 } from "../../api";
 import { queryKeys } from "../../queries";
 import { peakQTol } from "./peakQTol";
@@ -17,11 +17,26 @@ import { peakQTol } from "./peakQTol";
  */
 export function applyPostStateOnly(remote: SseEvent, qc: QueryClient): void {
   if (!remote.post_state) return;
+  // `post_state` is a kind-keyed union (see SseEvent in types.ts): curation
+  // frames (peak_*, analyze_run) carry a CurationPostState; comparison frames
+  // (comparison_created/_submitted) carry a full Comparison. This function is
+  // called unconditionally for ALL kinds from replayCoordinator's own-tab
+  // paths (Case 1 deferred-match + self-echo guard), so an own-tab comparison
+  // submit DOES reach here. It only writes the curation caches, so bail
+  // unless the post_state actually is a CurationPostState — detected by its
+  // `indices` array. Without this guard the `as CurationPostState` cast reads
+  // `indices`/`analysis_inputs_hash` as `undefined` off a Comparison and
+  // clobbers `queryKeys.exposure(entity_id)`; comparison ids and exposure ids
+  // share the integer namespace, so a colliding cached exposure row would
+  // have its `analysis_inputs_hash` wiped (falsely tripping StaleIndicesBanner
+  // or breaking a later mutation's expected-hash check).
+  const ps = remote.post_state as CurationPostState;
+  if (!Array.isArray(ps.indices)) return;
   const id = remote.entity_id;
-  qc.setQueryData(queryKeys.indices(id), remote.post_state.indices);
+  qc.setQueryData(queryKeys.indices(id), ps.indices);
   qc.setQueryData(queryKeys.exposure(id), (old: Exposure | undefined) =>
     old
-      ? { ...old, analysis_inputs_hash: remote.post_state!.analysis_inputs_hash }
+      ? { ...old, analysis_inputs_hash: ps.analysis_inputs_hash }
       : old);
 }
 
@@ -206,16 +221,30 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
     }
     case "comparison_created":
     case "comparison_submitted": {
-      // Foreign tab created or re-submitted a comparison. Invalidate the
-      // entity caches so the next read fetches the canonical state.
-      // We don't try to splice from the payload because the response shape
-      // (with `is_stale`, `forked_from_title`, etc.) is computed server-side
-      // and replicating it here would drift; the comparison detail page is
-      // a low-frequency view, a refetch is cheap.
-      qc.invalidateQueries({ queryKey: queryKeys.comparison(id) });
-      qc.invalidateQueries({ queryKey: queryKeys.comparisonMembers(id) });
-      // Membership-derived listings change in either direction on any submit
-      // (members touch any experiment; the global "all" listing also moves).
+      // Foreign tab created or re-submitted a comparison. As of Compare UX
+      // A-5 Step 5b the SSE frame carries `post_state =
+      // fetch_comparison_with_members(db, id)` — the exact same projection
+      // `GET /api/comparisons/:id` returns, including server-computed
+      // `forked_from_title` and the persisted view_* fields. Splicing it
+      // straight into the cache is now both safe (no client-side
+      // re-derivation to drift) AND required (A-9: view_* must land without
+      // a refetch round-trip so the detail page reflects the author's view).
+      if (remote.post_state != null) {
+        const post = remote.post_state as Comparison;
+        qc.setQueryData(queryKeys.comparison(id), post);
+        if (Array.isArray(post.members)) {
+          qc.setQueryData(queryKeys.comparisonMembers(id), post.members);
+        }
+      } else {
+        // Fallback: a pre-A-5 frame without post_state. Keep the
+        // invalidate safety net so a partial deploy can't strand the cache.
+        qc.invalidateQueries({ queryKey: queryKeys.comparison(id) });
+        qc.invalidateQueries({ queryKey: queryKeys.comparisonMembers(id) });
+      }
+      // The listing cache always invalidates — too many denormalised
+      // projection fields (member_count, member_phases, last_event_at,
+      // has_stale_members) for a manual splice, and membership-derived
+      // listings change in either direction on any submit.
       qc.invalidateQueries({ queryKey: ["comparisons"] });
       break;
     }

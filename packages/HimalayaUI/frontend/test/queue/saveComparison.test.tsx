@@ -16,6 +16,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderHook, act, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { saveComparisonMutator } from "../../src/lib/queue/mutators/saveComparison";
+import { resolveMutator } from "../../src/lib/queue/mutatorRegistry";
 import { useQueueMutation } from "../../src/lib/queue/useQueueMutation";
 import { setToastImpl } from "../../src/lib/toast";
 import { pendingDeferreds } from "../../src/lib/queue/deferred";
@@ -378,5 +379,94 @@ describe("saveComparisonMutator — useQueueMutation suppresses toast on 409 Con
     expect(toastCalls).toHaveLength(1);
     expect(toastCalls[0]!.kind).toBe("error");
     expect(toastCalls[0]!.msg).toContain("Couldn't save comparison");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Compare UX A-10 — view_* fields ride the saveComparison mutator.
+//
+// Three layers of the six-layer contract (per docs/contract-testing.md):
+//  - request body: view_* survive `buildBody` onto the HTTP payload.
+//  - onSuccess (layer 6): the HTTP response writes view_* into BOTH cache
+//    keys — pins the HTTP-response-wins-race path (A-9 pins the SSE path).
+//  - registry: widening the input type does not break replay routing.
+// ---------------------------------------------------------------------------
+describe("saveComparison passes view_* into request body — Compare UX A-10", () => {
+  const originalFetch = globalThis.fetch;
+  afterEach(() => { globalThis.fetch = originalFetch; vi.restoreAllMocks(); });
+
+  it("forwards view_grouping_mode and friends", async () => {
+    const spy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({ id: 1, members: [], content_hash: "h" }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ));
+    await saveComparisonMutator.request(
+      { kind: "comparison_save", clientOpId: "op",
+        username: "alice", clientId: "tab",
+        id: 1, title: "t", members: [],
+        expected_content_hash: "h0",
+        view_grouping_mode: "byPhase",
+        view_show_peak_ticks: true,
+        view_show_peak_labels: false,
+        payload: {} } as any,
+      new AbortController().signal,
+    );
+    const init = spy.mock.calls[0]?.[1];
+    const body = JSON.parse(String(init?.body ?? "{}"));
+    expect(body.view_grouping_mode).toBe("byPhase");
+    expect(body.view_show_peak_ticks).toBe(true);
+    expect(body.view_show_peak_labels).toBe(false);
+  });
+});
+
+describe("saveComparison onSuccess reconciliation — Compare UX A-10", () => {
+  it("writes view_* fields AND members into both cache keys from the HTTP response", () => {
+    const qc = new QueryClient();
+    const fakeMembers = [{ exposure_id: 100, display_order: 0 }] as any;
+    const fakeResponse = {
+      id: 1, title: "t", description: null, content_hash: "h1",
+      created_by: 1, created_at: null, updated_at: null,
+      forked_from_id: null, forked_at_hash: null, forked_from_title: null,
+      view_grouping_mode: "byPhase",
+      view_show_peak_ticks: true,
+      view_show_peak_labels: false,
+      last_event_at: null, members: fakeMembers,
+    };
+    saveComparisonMutator.onSuccess(
+      { kind: "comparison_save", clientOpId: "op",
+        username: "alice", clientId: "tab",
+        id: 1, title: "t", members: [],
+        view_grouping_mode: "byPhase",
+        view_show_peak_ticks: true,
+        view_show_peak_labels: false,
+        payload: {} } as any,
+      fakeResponse as any,
+      qc,
+    );
+    // Layer-6 contract: BOTH cache keys must reflect the response.
+    const cachedComparison = qc.getQueryData(queryKeys.comparison(1)) as typeof fakeResponse;
+    expect(cachedComparison.view_grouping_mode).toBe("byPhase");
+    expect(cachedComparison.view_show_peak_ticks).toBe(true);
+    expect(cachedComparison.view_show_peak_labels).toBe(false);
+    expect(qc.getQueryData(queryKeys.comparisonMembers(1))).toEqual(fakeMembers);
+  });
+});
+
+describe("mutatorRegistry resolves saveComparison with view_* — Compare UX A-10", () => {
+  it("returns saveComparisonMutator for a comparison_save op carrying view_*", () => {
+    // The registry keys on OpKind (`comparison_save`), not the input shape —
+    // this pins that widening the input type with view_* does not break
+    // replay-as-rerun routing.
+    const op = {
+      kind: "comparison_save" as const,
+      payload: {
+        id: 1, title: "t", members: [],
+        view_grouping_mode: "byPhase",
+        view_show_peak_ticks: true,
+        view_show_peak_labels: false,
+      },
+    };
+    expect(resolveMutator(op)).toBe(saveComparisonMutator);
   });
 });

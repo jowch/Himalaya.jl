@@ -39,6 +39,7 @@ import {
 } from "../../src/lib/queue/mutators/trivial";
 import { saveComparisonMutator } from "../../src/lib/queue/mutators/saveComparison";
 import { deleteComparisonMutator } from "../../src/lib/queue/mutators/deleteComparison";
+import type { ComparisonSummary } from "../../src/api";
 import { queryKeys } from "../../src/queries";
 import { pendingDeferreds } from "../../src/lib/queue/deferred";
 
@@ -553,5 +554,65 @@ describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", ()
     const list = qc.getQueryData<unknown[]>(queryKeys.messages(10));
     expect(list).toHaveLength(1);
     assertKeys(list![0], SAMPLE_MESSAGE_KEYS, "postSampleMessage cache row");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Compare UX A-8 — ComparisonSummary listing projection shape.
+//
+// `_comparison_listing_rows` (backend, #137) emits denormalised projection
+// fields (author_username, member_count, member_phases, has_stale_members)
+// plus the persisted view-choice columns (view_*). These tests pin the shape
+// at the value layer — a compile-time `: ComparisonSummary` anchor only
+// catches a missing field, not a rename that leaves the old name aliased.
+// ---------------------------------------------------------------------------
+describe("comparison listing cache shape — Compare UX A-8", () => {
+  it("includes the new projection fields", () => {
+    const row: ComparisonSummary = {
+      id: 1,
+      title: "x",
+      description: null,
+      content_hash: "h",
+      created_by: 1,
+      created_at: null,
+      updated_at: null,
+      forked_from_id: null,
+      forked_at_hash: null,
+      view_grouping_mode: null,
+      view_show_peak_ticks: null,
+      view_show_peak_labels: null,
+      last_event_at: "2026-05-14T10:00:00Z",
+      author_username: "alice",
+      member_count: 3,
+      member_phases: ["Pn3m", "Hex"],
+      has_stale_members: false,
+    };
+    expect(row.member_count).toBe(3);
+    expect(row.member_phases).toEqual(["Pn3m", "Hex"]);
+    expect(row.author_username).toBe("alice");
+    // Pin each new view_* field at the value layer — protects against a
+    // future refactor that renames (e.g. viewGroupingMode) while leaving
+    // the old name aliased; compile-time-only checks slip through.
+    expect(row.view_grouping_mode).toBeNull();
+    expect(row.view_show_peak_ticks).toBeNull();
+    expect(row.view_show_peak_labels).toBeNull();
+    expect(row.last_event_at).toBe("2026-05-14T10:00:00Z");
+    expect(row.has_stale_members).toBe(false);
+  });
+
+  it("accepts populated view_* values too", () => {
+    const row: ComparisonSummary = {
+      id: 2, title: "y", description: null, content_hash: "h2",
+      created_by: 1, created_at: null, updated_at: null,
+      forked_from_id: null, forked_at_hash: null,
+      view_grouping_mode: "byPhase",
+      view_show_peak_ticks: true,
+      view_show_peak_labels: false,
+      last_event_at: null, author_username: null,
+      member_count: 0, member_phases: [], has_stale_members: false,
+    };
+    expect(row.view_grouping_mode).toBe("byPhase");
+    expect(row.view_show_peak_ticks).toBe(true);
+    expect(row.view_show_peak_labels).toBe(false);
   });
 });
