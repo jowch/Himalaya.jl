@@ -54,6 +54,7 @@ const PROJECTION_DEFAULTS = {
   author_username: "alice",
   member_count: 1,
   member_phases: [] as string[],
+  member_phase_count: 0,
   has_stale_members: false,
 };
 

@@ -26,16 +26,35 @@ import { HintText } from "./ui";
 import { useAppState } from "../state";
 
 /**
- * Phase-summary line for a sidebar row (Compare UX F-1). Shows up to three
- * distinct member phases, an "+N more" overflow, and the trace count:
- *   ["Pn3m","Hex","Lam"], 4 → "Pn3m · Hex · Lam · 4 traces"
- *   five phases,          5 → "Pn3m · Im3m · Ia3d · +2 more · 5 traces"
- *   [],                   2 → "2 traces"
+ * Phase-summary line for a sidebar row (Compare UX F-1). `phases` is the
+ * backend-capped top-3 list (`_topk_phases`); `phaseCount` is the true
+ * distinct-phase total, so the client can render a `+N more` overflow even
+ * though the list itself never exceeds three:
+ *   ["Pn3m","Hex","Lam"],            3, 4 → "Pn3m · Hex · Lam · 4 traces"
+ *   ["Pn3m","Im3m","Ia3d"],          5, 5 → "Pn3m · Im3m · Ia3d · +2 more · 5 traces"
+ *   [],                              0, 2 → "2 traces"
  */
-function formatPhaseSummary(phases: string[], total: number): string {
+function formatPhaseSummary(
+  phases: string[], total: number, phaseCount: number,
+): string {
   if (phases.length === 0) return `${total} traces`;
-  if (phases.length <= 3) return `${phases.join(" · ")} · ${total} traces`;
-  return `${phases.slice(0, 3).join(" · ")} · +${phases.length - 3} more · ${total} traces`;
+  const overflow = phaseCount > phases.length
+    ? ` · +${phaseCount - phases.length} more`
+    : "";
+  return `${phases.join(" · ")}${overflow} · ${total} traces`;
+}
+
+/**
+ * Normalizes a `last_event_at` value to a uniformly sortable
+ * `YYYY-MM-DDTHH:MM:SS` string. The projection mixes two formats:
+ * `MAX(user_actions.timestamp)` is space-separated with no `Z`
+ * (`2026-05-14 23:59:00`), while the `c.updated_at` COALESCE fallback is
+ * `T`-separated with a `Z` (`2026-05-14T08:00:00Z`) — see comparisons.jl.
+ * Both are UTC, so swapping the space for `T` and dropping the `Z`
+ * (slice to 19 chars) makes a lexicographic compare chronological.
+ */
+function normEventTs(s: string): string {
+  return s.replace(" ", "T").slice(0, 19);
 }
 
 // Mock fixture for boneyard layout capture. Renders a few canonical rows so
@@ -107,9 +126,10 @@ export function ComparisonSidebar({
   // Sort: pinned first (preserving the pin order from the API — most
   // recently pinned at top), then non-pinned by `last_event_at` desc
   // (spec §8.4 — replaces `updated_at`; `last_event_at` also covers chat
-  // activity). ISO strings from SQLite are canonical `YYYY-MM-DDTHH:MM:SSZ`,
-  // so lexicographic compare == chronological. Nulls sort LAST (a row with
-  // no events is conceptually older than any timestamped row).
+  // activity). `last_event_at` is NOT a uniformly sortable string (the
+  // projection mixes space- and `T`-separated formats — see comparisons.jl),
+  // so `normEventTs` normalizes both sides before comparing. Nulls sort LAST
+  // (a row with no events is conceptually older than any timestamped row).
   const sorted = useMemo(() => {
     const pinnedOrder = pinsQ.data ?? [];
     const pinnedIdx = new Map<number, number>(
@@ -122,7 +142,7 @@ export function ComparisonSidebar({
       if (at === null) return 1;   // a is null → after b
       if (bt === null) return -1;  // b is null → after a
       if (at === bt) return b.id - a.id;
-      return bt.localeCompare(at);
+      return normEventTs(bt).localeCompare(normEventTs(at));
     };
     const pinned: ComparisonSummary[] = [];
     const unpinned: ComparisonSummary[] = [];
@@ -347,7 +367,8 @@ export function ComparisonSidebar({
                       + (isDraft ? " (draft)" : "")}
                   </div>
                   <div className="text-xs text-fg-dim truncate">
-                    {formatPhaseSummary(c.member_phases, c.member_count)}
+                    {formatPhaseSummary(
+                      c.member_phases, c.member_count, c.member_phase_count)}
                   </div>
                   <div className="text-xs text-fg-dim truncate">
                     {isDraft
@@ -358,6 +379,8 @@ export function ComparisonSidebar({
                 {c.has_stale_members && (
                   <span
                     data-testid="sidebar-stale-warn"
+                    role="img"
+                    aria-label="Some members have stale indices"
                     title="Some members have stale indices"
                     className="absolute top-1 right-8 text-warning"
                   >

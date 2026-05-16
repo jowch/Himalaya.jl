@@ -35,6 +35,7 @@ const COMPARISON_ROW = {
   author_username: "alice",
   member_count: 3,
   member_phases: ["Pn3m", "Hex"],
+  member_phase_count: 2,
   has_stale_members: false,
 };
 

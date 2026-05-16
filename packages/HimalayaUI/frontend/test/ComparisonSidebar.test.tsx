@@ -154,6 +154,7 @@ const ROW_OLD: ComparisonSummary = {
   author_username: null,
   member_count: 3,
   member_phases: [],
+  member_phase_count: 0,
   has_stale_members: false,
 };
 

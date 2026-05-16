@@ -42,6 +42,7 @@ function makeRow(over: Partial<ComparisonSummary> = {}): ComparisonSummary {
     author_username: "alice",
     member_count: 4,
     member_phases: ["Pn3m", "Hex", "Lam"],
+    member_phase_count: 3,
     has_stale_members: false,
     ...over,
   };
@@ -123,12 +124,15 @@ describe("Sidebar row projection — Compare UX F-1", () => {
     expect(screen.queryByTestId("sidebar-stale-warn")).not.toBeInTheDocument();
   });
 
-  it("renders '+N more' for more than 3 phases", () => {
+  it("renders '+N more' when member_phase_count exceeds the shown phases", () => {
     const qc = makeQc();
+    // The backend caps `member_phases` at 3; `member_phase_count` carries
+    // the true distinct-phase total so the client can render the overflow.
     qc.setQueryData(
       queryKeys.comparisons(7),
       [makeRow({
-        member_phases: ["Pn3m", "Im3m", "Ia3d", "Hex", "Lam"],
+        member_phases: ["Pn3m", "Im3m", "Ia3d"],
+        member_phase_count: 5,
         member_count: 5,
       })],
     );
@@ -142,7 +146,7 @@ describe("Sidebar row projection — Compare UX F-1", () => {
     const qc = makeQc();
     qc.setQueryData(
       queryKeys.comparisons(7),
-      [makeRow({ member_phases: [], member_count: 2 })],
+      [makeRow({ member_phases: [], member_phase_count: 0, member_count: 2 })],
     );
     renderSidebar(qc);
     expect(screen.getByText(/^2 traces$/)).toBeInTheDocument();
@@ -183,6 +187,25 @@ describe("Sidebar sort key — Compare UX F-1 / spec §8.4", () => {
     expect(items[0]).toHaveTextContent("A"); // pinned first
     expect(items[1]).toHaveTextContent("B"); // last_event_at newest
     expect(items[2]).toHaveTextContent("C");
+  });
+
+  it("orders mixed-format last_event_at correctly (space-sep vs T-sep)", () => {
+    const qc = makeQc();
+    // `last_event_at` mixes string formats: `MAX(user_actions.timestamp)`
+    // is space-separated with no `Z`; the `c.updated_at` COALESCE fallback
+    // is `T`-separated with `Z` (see comparisons.jl). A naive `localeCompare`
+    // misorders them — the space-sep row here is the more recent one.
+    const rowOld = makeRow({
+      id: 1, title: "OldTsep", last_event_at: "2026-05-14T00:01:00Z",
+    });
+    const rowNew = makeRow({
+      id: 2, title: "NewSpace", last_event_at: "2026-05-14 23:59:00",
+    });
+    qc.setQueryData(queryKeys.comparisons(7), [rowOld, rowNew]);
+    renderSidebar(qc);
+    const items = screen.getAllByTestId("comparison-list-item");
+    expect(items[0]).toHaveTextContent("NewSpace");
+    expect(items[1]).toHaveTextContent("OldTsep");
   });
 
   it("sorts rows with null last_event_at last", () => {

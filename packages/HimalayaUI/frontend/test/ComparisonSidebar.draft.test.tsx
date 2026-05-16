@@ -31,7 +31,8 @@ function makeRow(over: Partial<ComparisonSummary> = {}): ComparisonSummary {
     view_grouping_mode: null, view_show_peak_ticks: null,
     view_show_peak_labels: null, last_event_at: "2026-05-14T11:00:00Z",
     author_username: "alice", member_count: 4,
-    member_phases: ["Pn3m", "Hex", "Lam"], has_stale_members: false,
+    member_phases: ["Pn3m", "Hex", "Lam"], member_phase_count: 3,
+    has_stale_members: false,
     ...over,
   };
 }

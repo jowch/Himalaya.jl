@@ -1472,6 +1472,17 @@ end
     end
 end
 
+@testset "_count_distinct_phases — Compare UX F" begin
+    f = HimalayaUI._count_distinct_phases
+    @test f("") == 0
+    @test f("Pn3m#0") == 1
+    @test f("Pn3m#0|Pn3m#1") == 1                       # dups collapse
+    @test f("Pn3m#0|Hex#1|Lam#2") == 3
+    @test f("Pn3m#0|Im3m#1|Ia3d#2|Hex#3|Lam#4") == 5    # exceeds the top-3 cap
+    @test f("Pn3m#0||Hex#1") == 2                        # empty token skipped
+    @test f("malformed") == 0                            # no '#' → skipped
+end
+
 @testset "listing projection — Compare UX A-3" begin
     mktempdir() do tmp
         db = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
@@ -1509,6 +1520,7 @@ end
         @test r[:author_username]    == "alice"
         @test r[:member_count]       == 1
         @test r[:member_phases]      == ["Pn3m"]
+        @test r[:member_phase_count] == 1
         @test r[:has_stale_members]  == false
         @test r[:last_event_at] isa Union{String, Nothing}
         close(db)
