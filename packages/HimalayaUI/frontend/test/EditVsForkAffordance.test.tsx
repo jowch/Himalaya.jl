@@ -18,7 +18,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { ComparePage } from "../src/pages/ComparePage";
+import { Compare } from "../src/pages/Compare";
 import { useAppState } from "../src/state";
 import type { Comparison } from "../src/api";
 
@@ -89,7 +89,7 @@ function renderReview(qc: QueryClient) {
       <MemoryRouter initialEntries={["/experiments/7/compare/42"]}>
         <LocationSpy />
         <Routes>
-          <Route path="/experiments/:eid/compare/:id" element={<ComparePage />} />
+          <Route path="/experiments/:eid/compare/:id" element={<Compare />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,

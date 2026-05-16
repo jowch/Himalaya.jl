@@ -18,7 +18,7 @@ import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { ComparePageEdit } from "../src/pages/ComparePageEdit";
+import { Compare } from "../src/pages/Compare";
 import { useAppState } from "../src/state";
 import { queryKeys } from "../src/queries";
 import type {
@@ -48,9 +48,9 @@ function renderEdit(opts: {
       <MemoryRouter initialEntries={[opts.initialPath]}>
         <Routes>
           <Route path="/experiments/:eid/compare" element={<><PathProbe /><div data-testid="list-page" /></>} />
-          <Route path="/experiments/:eid/compare/new" element={<><PathProbe /><ComparePageEdit /></>} />
+          <Route path="/experiments/:eid/compare/new" element={<><PathProbe /><Compare /></>} />
           <Route path="/experiments/:eid/compare/:id" element={<><PathProbe /><div data-testid="review-page" /></>} />
-          <Route path="/experiments/:eid/compare/:id/edit" element={<><PathProbe /><ComparePageEdit /></>} />
+          <Route path="/experiments/:eid/compare/:id/edit" element={<><PathProbe /><Compare /></>} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -622,6 +622,38 @@ describe("ComparePageEdit", () => {
 // MemberMetaGutter via the shared resolver in lib/comparison/labels.ts.
 
 describe("ComparePageEdit — cold-cache exposure + sample hydration (#69)", () => {
+  // Compare UX C-15: the unified `Compare` shell only mounts the edit body
+  // when a draft is active (or the URL ends `/new`). Seed a draft tied to
+  // comparison 42 so the edit body mounts — the hydration effect's
+  // `loadDraftFromComparison` then no-ops (draft id already matches) and the
+  // per-member exposure subscriptions fire, which is what this suite exercises.
+  function seedDraft42(): void {
+    useAppState.setState({
+      activeDraft: {
+        id: 42, baseHash: "h", title: "T", description: "",
+        members: [
+          {
+            id: 1, exposure_id: 100, display_order: 0,
+            band_height: 1, y_offset: 0, normalization: "none",
+            color_override: undefined, label_override: undefined,
+            q_window_min: undefined, q_window_max: undefined,
+            peak_display: undefined, snapshot: undefined,
+          },
+          {
+            id: 2, exposure_id: 200, display_order: 1,
+            band_height: 1, y_offset: 0, normalization: "none",
+            color_override: undefined, label_override: undefined,
+            q_window_min: undefined, q_window_max: undefined,
+            peak_display: undefined, snapshot: undefined,
+          },
+        ],
+        forkedFromId: undefined, forkedAtHash: undefined,
+        viewGroupingMode: undefined, viewShowPeakTicks: undefined,
+        viewShowPeakLabels: undefined,
+      },
+    });
+  }
+
   beforeEach(() => {
     vi.stubGlobal("ResizeObserver", vi.fn(() => ({
       observe: vi.fn((el: Element) => {
@@ -630,7 +662,7 @@ describe("ComparePageEdit — cold-cache exposure + sample hydration (#69)", () 
       disconnect: vi.fn(),
     })));
     // Reset Zustand draft so a previous test doesn't leak an in-progress
-    // draft past the URL hydration guard in ComparePageEdit (the
+    // draft past the URL hydration guard in the edit body (the
     // `loadDraftFromComparison` call no-ops if the active draft already
     // matches the comparison id).
     useAppState.getState().discardDraft();
@@ -717,6 +749,7 @@ describe("ComparePageEdit — cold-cache exposure + sample hydration (#69)", () 
   it("hydrates the per-member exposure cache on edit-mode cold-load (#69)", async () => {
     vi.spyOn(global, "fetch").mockImplementation(makeFetchMock());
     const qc = makeQc();
+    seedDraft42();
 
     renderEdit({ qc, initialPath: "/experiments/7/compare/42/edit" });
 
@@ -740,6 +773,7 @@ describe("ComparePageEdit — cold-cache exposure + sample hydration (#69)", () 
   it("renders gutter labels with sample label + filename, not 'Exposure #N' (#69)", async () => {
     vi.spyOn(global, "fetch").mockImplementation(makeFetchMock());
     const qc = makeQc();
+    seedDraft42();
 
     renderEdit({ qc, initialPath: "/experiments/7/compare/42/edit" });
 

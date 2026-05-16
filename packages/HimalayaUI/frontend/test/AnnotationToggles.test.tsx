@@ -166,7 +166,7 @@ describe("AnnotationToggles — page mount surface", () => {
   it("ComparePage (review mode) mounts the toggles", async () => {
     const { MemoryRouter, Routes, Route } = await import("react-router-dom");
     const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query");
-    const { ComparePage } = await import("../src/pages/ComparePage");
+    const { Compare } = await import("../src/pages/Compare");
     const qc = new QueryClient({
       defaultOptions: {
         queries: { retry: false, gcTime: Infinity, staleTime: 0 },
@@ -177,7 +177,7 @@ describe("AnnotationToggles — page mount surface", () => {
       <QueryClientProvider client={qc}>
         <MemoryRouter initialEntries={["/experiments/7/compare/42"]}>
           <Routes>
-            <Route path="/experiments/:eid/compare/:id" element={<ComparePage />} />
+            <Route path="/experiments/:eid/compare/:id" element={<Compare />} />
           </Routes>
         </MemoryRouter>
       </QueryClientProvider>,
@@ -188,7 +188,7 @@ describe("AnnotationToggles — page mount surface", () => {
   it("ComparePageEdit (edit mode) does NOT mount the toggles", async () => {
     const { MemoryRouter, Routes, Route } = await import("react-router-dom");
     const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query");
-    const { ComparePageEdit } = await import("../src/pages/ComparePageEdit");
+    const { Compare } = await import("../src/pages/Compare");
     const qc = new QueryClient({
       defaultOptions: {
         queries: { retry: false, gcTime: Infinity, staleTime: 0 },
@@ -199,7 +199,7 @@ describe("AnnotationToggles — page mount surface", () => {
       <QueryClientProvider client={qc}>
         <MemoryRouter initialEntries={["/experiments/7/compare/new"]}>
           <Routes>
-            <Route path="/experiments/:eid/compare/new" element={<ComparePageEdit />} />
+            <Route path="/experiments/:eid/compare/new" element={<Compare />} />
           </Routes>
         </MemoryRouter>
       </QueryClientProvider>,

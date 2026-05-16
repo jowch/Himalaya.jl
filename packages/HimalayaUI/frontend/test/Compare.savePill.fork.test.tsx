@@ -18,7 +18,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { ComparePageEdit } from "../src/pages/ComparePageEdit";
+import { Compare } from "../src/pages/Compare";
 import { useAppState } from "../src/state";
 import { queryKeys } from "../src/queries";
 import type { Peak, Exposure, Comparison, User } from "../src/api";
@@ -97,9 +97,9 @@ function renderEdit(opts: { qc: QueryClient; initialPath: string }) {
       <MemoryRouter initialEntries={[opts.initialPath]}>
         <Routes>
           <Route path="/experiments/:eid/compare" element={<div data-testid="list-page" />} />
-          <Route path="/experiments/:eid/compare/new" element={<ComparePageEdit />} />
+          <Route path="/experiments/:eid/compare/new" element={<Compare />} />
           <Route path="/experiments/:eid/compare/:id" element={<div data-testid="review-page" />} />
-          <Route path="/experiments/:eid/compare/:id/edit" element={<ComparePageEdit />} />
+          <Route path="/experiments/:eid/compare/:id/edit" element={<Compare />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,

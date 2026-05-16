@@ -12,7 +12,7 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { NeedsReviewBadge } from "../src/components/NeedsReviewBadge";
-import { ComparePage } from "../src/pages/ComparePage";
+import { Compare } from "../src/pages/Compare";
 import { useAppState } from "../src/state";
 import type { Comparison } from "../src/api";
 
@@ -111,7 +111,7 @@ describe("Compare review header — stale status surface via ComparePage", () =>
       <QueryClientProvider client={qc}>
         <MemoryRouter initialEntries={["/experiments/7/compare/42"]}>
           <Routes>
-            <Route path="/experiments/:eid/compare/:id" element={<ComparePage />} />
+            <Route path="/experiments/:eid/compare/:id" element={<Compare />} />
           </Routes>
         </MemoryRouter>
       </QueryClientProvider>,
@@ -153,7 +153,7 @@ describe("Compare review header — stale status surface via ComparePage", () =>
       <QueryClientProvider client={qc}>
         <MemoryRouter initialEntries={["/experiments/7/compare/42"]}>
           <Routes>
-            <Route path="/experiments/:eid/compare/:id" element={<ComparePage />} />
+            <Route path="/experiments/:eid/compare/:id" element={<Compare />} />
           </Routes>
         </MemoryRouter>
       </QueryClientProvider>,
@@ -202,7 +202,7 @@ describe("Compare review header — stale status surface via ComparePage", () =>
               `/edit` segment, so re-snapshot navigates to the bare URL. */}
           <LocationSpy />
           <Routes>
-            <Route path="/experiments/:eid/compare/:id" element={<ComparePage />} />
+            <Route path="/experiments/:eid/compare/:id" element={<Compare />} />
           </Routes>
         </MemoryRouter>
       </QueryClientProvider>,

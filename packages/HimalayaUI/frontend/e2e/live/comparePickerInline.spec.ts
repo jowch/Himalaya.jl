@@ -132,7 +132,7 @@ test.describe("Compare picker inline panel — live mode", () => {
     await expect(sampleRow).toBeVisible({ timeout: 8000 });
 
     // Before checking: the plot empty-state placeholder should be visible.
-    await expect(page.getByTestId("compare-edit-plot-empty")).toBeVisible();
+    await expect(page.getByTestId("compare-empty-state")).toBeVisible();
 
     // Click the checkbox.
     await sampleRow.getByTestId("sample-picker-row-checkbox").click();
@@ -144,7 +144,7 @@ test.describe("Compare picker inline panel — live mode", () => {
 
     // Adding a member replaces the empty-state with the plot + gutter.
     // The plot-empty placeholder should hide immediately on the next render.
-    await expect(page.getByTestId("compare-edit-plot-empty")).not.toBeVisible();
+    await expect(page.getByTestId("compare-empty-state")).not.toBeVisible();
 
     // The gutter renders inside the Skeleton wrapper that gates on `tracesLoading`,
     // so we wait long enough for the cold trace fetch to land. Live mode against
