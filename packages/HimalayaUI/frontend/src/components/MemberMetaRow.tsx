@@ -184,6 +184,19 @@ export function MemberMetaRow(props: MemberMetaRowProps): JSX.Element {
     },
     [canHighlight, member.id, setHighlight],
   );
+  // Root click drives the hover-pin lifecycle: click pins, click-again
+  // unpins. Expansion moved to `member-meta-row-body` in E-2; a body click
+  // bubbles here, so clicking the row both pins and expands.
+  const onRootClick = useCallback(() => {
+    if (!canHighlight) return;
+    if (isPinned) {
+      setIsPinned(false);
+      setHighlight(undefined);
+    } else {
+      setIsPinned(true);
+      setHighlight(member.id);
+    }
+  }, [canHighlight, isPinned, member.id, setHighlight]);
 
   // ── Compare UX E-3 — grab-anywhere drag-vs-click threshold ───────────
   // A pointer gesture on the row body is a CLICK (→ toggle expand) when it
@@ -258,21 +271,7 @@ export function MemberMetaRow(props: MemberMetaRowProps): JSX.Element {
       // Tab into the row only when there's a confirmed index to highlight —
       // otherwise pressing Tab past it is dead air.
       {...(canHighlight ? { tabIndex: 0 } : {})}
-      onClick={() => {
-        // Compare UX E-2 — the root click no longer toggles expansion
-        // (that moved to `member-meta-row-body`). It still drives the
-        // hover-pin lifecycle: click pins, click-again unpins. A body
-        // click bubbles here, so clicking the row both pins and expands.
-        if (canHighlight) {
-          if (isPinned) {
-            setIsPinned(false);
-            setHighlight(undefined);
-          } else {
-            setIsPinned(true);
-            setHighlight(member.id);
-          }
-        }
-      }}
+      onClick={onRootClick}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
       onFocus={onFocus}

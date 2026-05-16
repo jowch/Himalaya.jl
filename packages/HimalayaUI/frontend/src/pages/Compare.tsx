@@ -120,21 +120,13 @@ function useStaleAgainstHash(comparison: Comparison | undefined): {
     // own-op-rebase.
   }, [comparison?.content_hash, acked]);
 
-  // Own-op rebase. NOTE: in the current architecture this effect is
-  // defensive cover that does not fire — `ReviewBody` (and with it this
-  // hook) unmounts the instant a draft activates, so the non-null → null
-  // transition is never observed in-place. Pin (3)'s no-flash guarantee is
-  // actually delivered by the remount path: after the draft clears,
-  // `useStaleAgainstHash` re-mounts and the first-sighting branch above
-  // anchors `acked` to the post-save hash. Retained verbatim so the hook
-  // stays correct if it is ever hoisted above the ReviewBody/EditBody split.
-  const prevDraftRef = useRef<typeof draft>(draft);
-  useEffect(() => {
-    if (prevDraftRef.current !== null && draft === null && comparison !== undefined) {
-      setAcked(comparison.content_hash);
-    }
-    prevDraftRef.current = draft;
-  }, [draft, comparison?.content_hash]);
+  // Pin (3) — own-op no-flash — is delivered by the remount path, not an
+  // effect. `ReviewBody` (and with it this hook) unmounts the instant a
+  // draft activates and remounts once the draft clears, so the
+  // first-sighting branch above re-anchors `acked` to the post-save hash.
+  // An explicit non-null → null draft-rebase effect was dropped (Compare UX
+  // review): under the ReviewBody/EditBody split it could never fire
+  // in-place. Reinstate it if this hook is ever hoisted above that split.
 
   const acknowledge = useCallback(() => {
     if (comparison !== undefined) setAcked(comparison.content_hash);
