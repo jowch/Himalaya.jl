@@ -24,4 +24,15 @@ describe("dragThreshold — Compare UX C-1", () => {
     s.onPointerMove(3, 3);
     expect(s.onPointerUp(3, 3)).toBe("drag");
   });
+
+  it("reset() abandons the gesture — a later move without a fresh pointerDown is neutral", () => {
+    const s = makeDragThresholdState({ thresholdPx: 4 });
+    s.onPointerDown(10, 10);
+    s.reset();
+    expect(s.isDragging()).toBe(false);
+    // No fresh onPointerDown — a move past the threshold must NOT register
+    // as a drag because the machine is back to neutral (no down point).
+    expect(s.onPointerMove(100, 100)).toBe("below-threshold");
+    expect(s.isDragging()).toBe(false);
+  });
 });

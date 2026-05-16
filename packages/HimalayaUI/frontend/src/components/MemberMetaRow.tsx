@@ -18,12 +18,13 @@
  * the codebase convention used by `data-active`, `data-pinned`, etc.) plus
  * an inline warning icon.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ComparisonMember } from "../api";
 import { useAppState } from "../state";
 import { phaseColor, CUBIC_PHASES } from "../phases";
 import { COMPARE_PALETTE } from "../lib/comparison/coloring";
 import type { DraftMemberNormalization } from "../lib/comparison/draft";
+import { makeDragThresholdState } from "../lib/comparison/dragThreshold";
 import { RowActionZone } from "./RowActionZone";
 
 export interface MemberMetaRowProps {
@@ -56,6 +57,14 @@ export interface MemberMetaRowProps {
   expanded: boolean;
   /** Toggles this row's expansion (clears it if already expanded). */
   onToggleExpand: () => void;
+  /**
+   * Compare UX E-3 — grab-anywhere reorder. Invoked with the row's member
+   * id the moment a pointer gesture on the row body crosses the 4px
+   * drag threshold (`makeDragThresholdState`). The gutter owns reorder, so
+   * it maps the id back to a row index and primes its drag-source ref.
+   * Optional: review-mode rows pass nothing, so a stray drag is inert.
+   */
+  onDragStart?: (memberId: number) => void;
 }
 
 const NORMALIZATION_OPTIONS: DraftMemberNormalization[] = [
@@ -75,7 +84,7 @@ function formatKappa(k: number | null | undefined): string {
 export function MemberMetaRow(props: MemberMetaRowProps): JSX.Element {
   const {
     member, top, height, mode, memberIndex, onGripDragStart, displayLabel,
-    expanded, onToggleExpand,
+    expanded, onToggleExpand, onDragStart,
   } = props;
   // Compare UX E-2 — `expanded` is a controlled prop; the row owns no
   // expansion state. The overflow menu's open/close stays local.
@@ -176,6 +185,64 @@ export function MemberMetaRow(props: MemberMetaRowProps): JSX.Element {
     [canHighlight, member.id, setHighlight],
   );
 
+  // ── Compare UX E-3 — grab-anywhere drag-vs-click threshold ───────────
+  // A pointer gesture on the row body is a CLICK (→ toggle expand) when it
+  // moved ≤4px before release, or a DRAG (→ reorder) when it moved >4px.
+  // `makeDragThresholdState` (lib/comparison/dragThreshold.ts) owns the
+  // 4px / Manhattan-distance math; the ref persists one disambiguator
+  // instance per row across renders.
+  //
+  // Native-drag approach (A) — the row body keeps its HTML5 `draggable`
+  // attribute (edit mode only) so the gutter's existing `dragover`/`drop`
+  // listeners drive the actual reorder unchanged; the threshold gate adds
+  // nothing to that path. Its sole jobs here are (1) suppress the
+  // expand-toggle once a drag is in progress and (2) notify the gutter
+  // via `onDragStart(member.id)` so it can prime its drag-source ref even
+  // when the gesture started off the grip. This avoids the fragility of a
+  // fully-manual portal drag (approach B) and never touches the grip
+  // path that `MemberReorder.test.tsx` exercises.
+  const dragState = useRef(makeDragThresholdState({ thresholdPx: 4 }));
+  const onBodyPointerDown = useCallback((e: React.PointerEvent) => {
+    // Capture the pointer so `pointermove`/`pointerup`/`pointercancel`
+    // keep firing on this div even if the gesture wanders off the row —
+    // without capture, a drag that leaves the row drops the gesture and
+    // the threshold machine never gets its `pointerup` cleanup.
+    // `setPointerCapture` throws on invalid pointer ids and is absent in
+    // JSDOM, so guard with a feature check.
+    const el = e.currentTarget as Element;
+    if (typeof el.setPointerCapture === "function") {
+      try {
+        el.setPointerCapture(e.pointerId);
+      } catch {
+        // Invalid pointer id — capture is best-effort; the gesture still
+        // works as long as events keep landing on this div.
+      }
+    }
+    dragState.current.onPointerDown(e.clientX, e.clientY);
+  }, []);
+  const onBodyPointerMove = useCallback(
+    (e: React.PointerEvent) => {
+      if (dragState.current.onPointerMove(e.clientX, e.clientY) === "drag-start") {
+        onDragStart?.(member.id);
+      }
+    },
+    [onDragStart, member.id],
+  );
+  const onBodyPointerUp = useCallback(
+    (e: React.PointerEvent) => {
+      if (dragState.current.onPointerUp(e.clientX, e.clientY) === "click") {
+        onToggleExpand();
+      }
+    },
+    [onToggleExpand],
+  );
+  // `pointercancel` (native drag takeover, OS gesture, touch interruption)
+  // is NOT followed by a `pointerup`, so the threshold machine would be
+  // stranded mid-gesture. Reset it to neutral; do NOT toggle expand.
+  const onBodyPointerCancel = useCallback(() => {
+    dragState.current.reset();
+  }, []);
+
   const ci = member.snapshot?.confirmed_index ?? null;
   const isCubic = ci !== null && CUBIC_PHASES.has(ci.phase);
 
@@ -221,11 +288,27 @@ export function MemberMetaRow(props: MemberMetaRowProps): JSX.Element {
       className="flex flex-col gap-0.5 px-2 py-1 text-xs hover:bg-bg-elevated/40 cursor-pointer
                  outline-0 focus-visible:ring-1 focus-visible:ring-accent"
     >
-      {/* Primary single line — the collapse/expand affordance. */}
+      {/* Primary single line — the grab-anywhere collapse/expand +
+          reorder affordance. Compare UX E-3: pointer handlers run the
+          4px drag-threshold gate (click → expand, drag → reorder). The
+          body is HTML5-`draggable` in edit mode so the gutter's existing
+          dragover/drop reorder still fires; review-mode rows are inert. */}
       <div
         data-testid="member-meta-row-body"
         className="flex items-center gap-2 min-w-0"
-        onClick={onToggleExpand}
+        {...(mode === "edit" ? { draggable: true } : {})}
+        onPointerDown={onBodyPointerDown}
+        onPointerMove={onBodyPointerMove}
+        onPointerUp={onBodyPointerUp}
+        onPointerCancel={onBodyPointerCancel}
+        // This body-level `onDragStart` is the LOAD-BEARING binding for
+        // grab-anywhere reorder (a native `dragstart` anywhere on the row).
+        // The grip `<span>` below ALSO carries `onGripDragStart`; a grip
+        // `dragstart` bubbles here, so both fire — idempotent, no bug.
+        // Do not "fix" the duplication by removing this binding.
+        {...(mode === "edit" && onGripDragStart
+          ? { onDragStart: onGripDragStart }
+          : {})}
       >
         <span aria-hidden="true" className="text-fg-dim shrink-0 select-none">
           {expanded ? "▾" : "▸"}

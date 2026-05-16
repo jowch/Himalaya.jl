@@ -8,15 +8,36 @@
  * The single-expanded invariant lives on `MemberMetaGutter`, which holds
  * one `expandedMemberId` and threads `expanded` + `onToggleExpand` into
  * each row. Expanding row B collapses row A.
+ *
+ * Compare UX E-3 — the row body's expand affordance moved off a plain
+ * `onClick` onto a pointerdown→up gesture gated by the 4px drag
+ * threshold. A zero-displacement gesture (down + up at the same coords)
+ * resolves to "click" → toggle expand. `tapBody` reproduces that here;
+ * a bare `fireEvent.click` no longer dispatches the pointer events the
+ * handler now listens for.
  */
 import { useState } from "react";
 import { describe, it, expect } from "vitest";
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import { MemberMetaRow } from "../src/components/MemberMetaRow";
 import { MemberMetaGutter } from "../src/components/MemberMetaGutter";
 import { useAppState } from "../src/state";
 import { emptyDraft } from "../src/lib/comparison/draft";
 import type { ComparisonMember } from "../src/api";
+
+/**
+ * Compare UX E-3 — a zero-displacement pointer gesture on the row body.
+ * JSDOM's `PointerEvent` drops `clientX`/`clientY`, but `MouseEvent`
+ * carries them and React's `onPointerDown/Up` listen by event *type*, so
+ * a `MouseEvent` typed `"pointerdown"`/`"pointerup"` triggers the handler
+ * with real coords. Down == up coords → Manhattan distance 0 → "click".
+ * Dispatched via `fireEvent` so the resulting React state update flushes
+ * inside `act()` (a bare `dispatchEvent` would leave the re-render pending).
+ */
+function tapBody(el: Element): void {
+  fireEvent(el, new MouseEvent("pointerdown", { bubbles: true, clientX: 5, clientY: 5 }));
+  fireEvent(el, new MouseEvent("pointerup", { bubbles: true, clientX: 5, clientY: 5 }));
+}
 
 function makeMember(over: Partial<ComparisonMember> = {}): ComparisonMember {
   return {
@@ -85,7 +106,7 @@ describe("MemberMetaRow collapse/expand — Compare UX E-2", () => {
 
   it("expands when clicked on the row body", () => {
     render(<ControlledRow />);
-    fireEvent.click(screen.getByTestId("member-meta-row-body"));
+    tapBody(screen.getByTestId("member-meta-row-body"));
     expect(screen.getByTestId("member-meta-row")).toHaveAttribute(
       "data-expanded",
       "true",
@@ -94,8 +115,8 @@ describe("MemberMetaRow collapse/expand — Compare UX E-2", () => {
 
   it("collapses when clicked again", () => {
     render(<ControlledRow />);
-    fireEvent.click(screen.getByTestId("member-meta-row-body"));
-    fireEvent.click(screen.getByTestId("member-meta-row-body"));
+    tapBody(screen.getByTestId("member-meta-row-body"));
+    tapBody(screen.getByTestId("member-meta-row-body"));
     expect(screen.getByTestId("member-meta-row")).toHaveAttribute(
       "data-expanded",
       "false",
@@ -108,7 +129,7 @@ describe("MemberMetaRow collapse/expand — Compare UX E-2", () => {
     expect(screen.queryByTestId("member-meta-label-input")).toBeNull();
     expect(screen.queryByTestId("member-meta-detail")).toBeNull();
     // Expanding reveals them.
-    fireEvent.click(screen.getByTestId("member-meta-row-body"));
+    tapBody(screen.getByTestId("member-meta-row-body"));
     expect(screen.getByTestId("member-meta-label-input")).toBeInTheDocument();
   });
 
@@ -158,12 +179,12 @@ describe("MemberMetaRow collapse/expand — Compare UX E-2", () => {
     const bodyB = rowB.querySelector("[data-testid='member-meta-row-body']")!;
 
     // Expand A.
-    fireEvent.click(bodyA);
+    tapBody(bodyA);
     expect(rowA).toHaveAttribute("data-expanded", "true");
     expect(rowB).toHaveAttribute("data-expanded", "false");
 
     // Expand B — A must collapse (single-expanded invariant).
-    fireEvent.click(bodyB);
+    tapBody(bodyB);
     expect(rowA).toHaveAttribute("data-expanded", "false");
     expect(rowB).toHaveAttribute("data-expanded", "true");
   });

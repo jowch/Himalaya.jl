@@ -43,6 +43,20 @@ function RowHarness({
   );
 }
 
+/**
+ * Compare UX E-3 — the row-body expand affordance moved off `onClick`
+ * onto a pointerdown→up gesture gated by the 4px drag threshold. A
+ * zero-displacement gesture resolves to "click" → toggle expand.
+ * JSDOM's `PointerEvent` drops `clientX`/`clientY`; `MouseEvent` carries
+ * them and React's `onPointerDown/Up` listen by event *type*, so a
+ * `MouseEvent` typed `"pointerdown"`/`"pointerup"` triggers the handler.
+ * Dispatched via `fireEvent` so the React state update flushes in `act()`.
+ */
+function tapBody(el: Element): void {
+  fireEvent(el, new MouseEvent("pointerdown", { bubbles: true, clientX: 5, clientY: 5 }));
+  fireEvent(el, new MouseEvent("pointerup", { bubbles: true, clientX: 5, clientY: 5 }));
+}
+
 function makeMember(over: Partial<ComparisonMember> = {}): ComparisonMember {
   return {
     id: 1,
@@ -158,7 +172,7 @@ describe("MemberMetaRow — review mode", () => {
   it("clicking the row body expands a detail card overlay with peak count", () => {
     render(<RowHarness member={makeMember()} top={0} height={50} mode="review" displayLabel="row-label" />);
     // Compare UX E-2 — the disclosure affordance is the row body.
-    fireEvent.click(screen.getByTestId("member-meta-row-body"));
+    tapBody(screen.getByTestId("member-meta-row-body"));
     const detail = screen.getByTestId("member-meta-detail");
     expect(detail).toBeInTheDocument();
     expect(detail.textContent).toContain("2");  // 2 effective_peaks
@@ -303,7 +317,7 @@ describe("MemberMetaRow — edit mode", () => {
   it("color picker swatch grid renders with palette colors", () => {
     render(<RowHarness member={makeMember()} top={0} height={50} mode="edit" memberIndex={0} displayLabel="row-label" />);
     // Compare UX E-2 — expand via the row body (the disclosure affordance).
-    fireEvent.click(screen.getByTestId("member-meta-row-body"));
+    tapBody(screen.getByTestId("member-meta-row-body"));
     const grid = screen.getByTestId("member-color-picker-grid");
     expect(grid).toBeInTheDocument();
     const swatches = screen.getAllByTestId(/^member-color-picker-swatch-/);
@@ -313,7 +327,7 @@ describe("MemberMetaRow — edit mode", () => {
 
   it("clicking a swatch sets color_override to that hex/oklch color", () => {
     render(<RowHarness member={makeMember()} top={0} height={50} mode="edit" memberIndex={0} displayLabel="row-label" />);
-    fireEvent.click(screen.getByTestId("member-meta-row-body"));
+    tapBody(screen.getByTestId("member-meta-row-body"));
     const swatches = screen.getAllByTestId(/^member-color-picker-swatch-/);
     const first = swatches[0]!;
     const colorValue = first.getAttribute("data-color")!;
@@ -325,14 +339,14 @@ describe("MemberMetaRow — edit mode", () => {
   it("color picker swatch grid is hidden in review mode", () => {
     render(<RowHarness member={makeMember()} top={0} height={50} mode="review" displayLabel="row-label" />);
     // Even when expanded, review mode does not render the swatch grid.
-    fireEvent.click(screen.getByTestId("member-meta-row-body"));
+    tapBody(screen.getByTestId("member-meta-row-body"));
     expect(screen.queryByTestId("member-color-picker-grid")).toBeNull();
   });
 
   it("active swatch (matching color_override) is marked", () => {
     // First swatch's data-color is what we'll claim is the override.
     render(<RowHarness member={makeMember()} top={0} height={50} mode="edit" memberIndex={0} displayLabel="row-label" />);
-    fireEvent.click(screen.getByTestId("member-meta-row-body"));
+    tapBody(screen.getByTestId("member-meta-row-body"));
     const swatches = screen.getAllByTestId(/^member-color-picker-swatch-/);
     const targetColor = swatches[2]!.getAttribute("data-color")!;
     cleanup();
@@ -347,7 +361,7 @@ describe("MemberMetaRow — edit mode", () => {
         displayLabel="row-label"
       />,
     );
-    fireEvent.click(screen.getByTestId("member-meta-row-body"));
+    tapBody(screen.getByTestId("member-meta-row-body"));
     const reSwatches = screen.getAllByTestId(/^member-color-picker-swatch-/);
     const target = reSwatches[2]!;
     expect(target).toHaveAttribute("data-active", "true");

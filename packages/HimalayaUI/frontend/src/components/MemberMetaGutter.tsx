@@ -74,6 +74,19 @@ export function MemberMetaGutter(props: MemberMetaGutterProps): JSX.Element {
     [members],
   );
 
+  // Compare UX E-3 — grab-anywhere reorder. `MemberMetaRow` calls this the
+  // moment a pointer gesture crosses the 4px drag threshold (off the grip
+  // OR anywhere on the row body). It primes the same `dragSourceIdxRef`
+  // the grip's native `dragstart` sets, so the existing `dragover`/`drop`
+  // listeners below complete the reorder unchanged — no second drag path.
+  const handleRowDragStart = useCallback(
+    (memberId: number) => {
+      const fromIdx = members.findIndex((m) => m.id === memberId);
+      if (fromIdx >= 0) dragSourceIdxRef.current = fromIdx;
+    },
+    [members],
+  );
+
   const handleDragOver = useCallback((e: React.DragEvent, overIdx: number) => {
     if (dragSourceIdxRef.current === null) return;
     e.preventDefault();
@@ -144,7 +157,10 @@ export function MemberMetaGutter(props: MemberMetaGutterProps): JSX.Element {
                 setExpandedMemberId((cur) => (cur === m.id ? null : m.id))
               }
               {...(mode === "edit"
-                ? { onGripDragStart: (e: React.DragEvent) => handleDragStart(e, i) }
+                ? {
+                    onGripDragStart: (e: React.DragEvent) => handleDragStart(e, i),
+                    onDragStart: handleRowDragStart,
+                  }
                 : {})}
             />
           </div>
