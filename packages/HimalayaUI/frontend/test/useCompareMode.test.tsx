@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import { renderHook } from "@testing-library/react";
 import { useCompareMode } from "../src/hooks/useCompareMode";
 import { useAppState } from "../src/state";
@@ -49,6 +49,10 @@ const editingDraft = {
 } as const;
 
 describe("useCompareMode — Compare UX C-5", () => {
+  afterEach(() => {
+    useAppState.setState({ activeDraft: null });
+  });
+
   it("returns 'viewing' when no draft + no comparison", () => {
     useAppState.setState({ activeDraft: null });
     const { result } = renderHook(() =>
@@ -111,6 +115,15 @@ describe("useCompareMode — Compare UX C-5", () => {
     if (result.current.kind === "creating-from-fork") {
       expect(result.current.parentId).toBe(42);
     }
+  });
+
+  it("returns 'editing-as-fork-of' when draft has id but comparison is still loading (undefined)", () => {
+    useAppState.setState({ activeDraft: editingDraft });
+    const { result } = renderHook(() =>
+      useCompareMode({ comparison: undefined, currentUserId: 5 }),
+    );
+    // comparison undefined → author is null → isAuthor is false → falls through to editing-as-fork-of
+    expect(result.current.kind).toBe("editing-as-fork-of");
   });
 
   it("returns 'viewing-stale' when no draft and staleAgainstHash is set", () => {

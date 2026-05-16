@@ -1,9 +1,13 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import { renderHook } from "@testing-library/react";
 import { useCompareDraftDirty } from "../src/hooks/useCompareDraftDirty";
 import { useAppState } from "../src/state";
 
 describe("useCompareDraftDirty — Compare UX C-6", () => {
+  afterEach(() => {
+    useAppState.setState({ activeDraft: null });
+  });
+
   it("returns false when there is no draft", () => {
     useAppState.setState({ activeDraft: null });
     const { result } = renderHook(() => useCompareDraftDirty());
