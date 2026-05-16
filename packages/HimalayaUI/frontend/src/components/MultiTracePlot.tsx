@@ -611,25 +611,40 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
 /**
  * Per-member invisible plot overlay (Plan §"E2E selector and accessibility
  * strategy"). Carries `data-testid="member-trace"` + `data-member-id` for
- * E2E selectors, and — Compare UX E-4 — subscribes to `ActiveBandContext`
- * so a hovered/dragged inter-row resize gap tints the band ABOVE it: the
- * overlay gains `data-active-band` when its member id is the published
- * active band. Outside an `ActiveBandProvider` the context returns `null`,
- * so the attribute is simply never set.
+ * E2E selectors, and subscribes to `ActiveBandContext` for two distinct
+ * gutter-driven gestures:
+ *
+ *   - Compare UX E-4 — a hovered/dragged inter-row resize gap tints the
+ *     band ABOVE it: the overlay gains `data-active-band` when its member
+ *     id is the published active band.
+ *   - Compare UX E-5 — a pointer-drag reorder highlights the band the
+ *     dragged row would land in: the overlay gains `data-drop-target` when
+ *     its member id is the published drop target.
+ *
+ * Outside an `ActiveBandProvider` the context returns `null` for both, so
+ * neither attribute is ever set.
  */
 function MemberBandOverlay(props: {
   memberId: number;
   top: number;
   height: number;
 }): JSX.Element {
-  const { activeBandMemberId } = useActiveBand();
+  const { activeBandMemberId, dropTargetMemberId } = useActiveBand();
   const active = activeBandMemberId === props.memberId;
+  const dropTarget = dropTargetMemberId === props.memberId;
   return (
     <div
       data-testid="member-trace"
       data-member-id={String(props.memberId)}
       {...(active ? { "data-active-band": String(props.memberId) } : {})}
-      className={active ? "bg-accent/10" : undefined}
+      {...(dropTarget ? { "data-drop-target": "true" } : {})}
+      className={
+        dropTarget
+          ? "ring-1 ring-inset ring-accent bg-accent/15"
+          : active
+            ? "bg-accent/10"
+            : undefined
+      }
       style={{
         position: "absolute",
         left: 0,
