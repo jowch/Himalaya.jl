@@ -122,12 +122,14 @@ test("`.` key advances to the next sample", async ({ page }) => {
   await mockCore(page, [{ id: 1, username: "alice" }]);
   await page.goto("/");
 
-  // Wait until the first sample name is visible
-  await expect(page.getByTestId("plot-title")).toContainText("cubic_run03");
+  // Wait until the first sample is visible. PlotCard renders the sample's
+  // `display_name` ("D1"/"D2") — the editable label introduced by the
+  // stable-name refactor (8ac2bf6) — not the raw `name`.
+  await expect(page.getByTestId("plot-title")).toContainText("D1");
   await page.keyboard.press("."); // next
-  await expect(page.getByTestId("plot-title")).toContainText("hex_run01");
+  await expect(page.getByTestId("plot-title")).toContainText("D2");
   await page.keyboard.press(","); // back
-  await expect(page.getByTestId("plot-title")).toContainText("cubic_run03");
+  await expect(page.getByTestId("plot-title")).toContainText("D1");
 });
 
 test("chat posts a message via /api/samples/:id/messages", async ({ page }) => {

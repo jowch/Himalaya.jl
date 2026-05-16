@@ -92,9 +92,9 @@ export function CompareToolbar(p: Props): JSX.Element {
               )}
             </div>
             <div className="my-1 border-t border-border" />
-            <button type="button" onClick={() => { p.onCopyLink(); setOpen(false); }} className="w-full text-left px-2 py-1 hover:bg-bg-hover text-sm">Copy link</button>
-            <button type="button" onClick={() => { p.onFork(); setOpen(false); }} className="w-full text-left px-2 py-1 hover:bg-bg-hover text-sm">Fork</button>
-            <button type="button" onClick={() => { p.onDelete(); setOpen(false); }} className="w-full text-left px-2 py-1 hover:bg-bg-hover text-sm text-danger">Delete</button>
+            <button type="button" data-testid="compare-toolbar-copy-link" onClick={() => { p.onCopyLink(); setOpen(false); }} className="w-full text-left px-2 py-1 hover:bg-bg-hover text-sm">Copy link</button>
+            <button type="button" data-testid="compare-toolbar-fork" onClick={() => { p.onFork(); setOpen(false); }} className="w-full text-left px-2 py-1 hover:bg-bg-hover text-sm">Fork</button>
+            <button type="button" data-testid="compare-toolbar-delete" onClick={() => { p.onDelete(); setOpen(false); }} className="w-full text-left px-2 py-1 hover:bg-bg-hover text-sm text-danger">Delete</button>
             {p.onDiscardChanges !== null && (
               <button type="button" onClick={() => { p.onDiscardChanges!(); setOpen(false); }} className="w-full text-left px-2 py-1 hover:bg-bg-hover text-sm">Discard changes</button>
             )}

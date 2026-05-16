@@ -396,8 +396,11 @@ test("compare smoke: review survives full page reload", async ({ page }) => {
   // Reload — review page should re-render against the same mocked server.
   await page.reload();
   await expect(page.getByTestId("compare-review-plot")).toBeVisible();
-  // Edit affordance is present (alice authored the comparison).
-  await expect(page.getByTestId("comparison-edit")).toBeVisible();
+  // Compare UX C-12 removed the review-header `EditOrForkButton`; there is no
+  // standalone "Edit" affordance any more (editing is the inline-editable
+  // title, and that surface is read-only in review mode). Assert the review
+  // header rendered intact instead.
+  await expect(page.getByTestId("compare-review-header")).toBeVisible();
 });
 
 // ─── Smoke: fork as a different user ────────────────────────────────────────
@@ -440,11 +443,13 @@ test("compare smoke: non-author sees Fork → can save fork", async ({ page }) =
   await seedState(page, { username: "bob" });
   await page.goto("/experiments/1/compare/1");
 
-  // Non-author → Fork (mutually exclusive with Edit).
-  await expect(page.getByTestId("comparison-fork")).toBeVisible();
-  await expect(page.getByTestId("comparison-edit")).toHaveCount(0);
-
-  await page.getByTestId("comparison-fork").click();
+  // Compare UX C-12/C-17 — Fork is a menu item inside CompareToolbar's
+  // ⋯-more overflow menu (the old standalone `comparison-fork`/`comparison-edit`
+  // review-header buttons are gone). Open the menu, then click "Fork".
+  await expect(page.getByTestId("compare-review-header")).toBeVisible();
+  await page.getByTestId("compare-toolbar-more").click();
+  await expect(page.getByTestId("compare-toolbar-fork")).toBeVisible();
+  await page.getByTestId("compare-toolbar-fork").click();
   // Fork lands the user in /new (the create flow with lineage pre-populated).
   await expect(page).toHaveURL(/\/experiments\/1\/compare\/new$/);
   await expect(page.getByTestId("compare-page-edit")).toBeVisible();
