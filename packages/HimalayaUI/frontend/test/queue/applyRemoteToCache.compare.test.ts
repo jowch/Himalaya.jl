@@ -13,10 +13,12 @@
  */
 import { describe, it, expect } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
-import { applyRemoteToCache } from "../../src/lib/queue/applyRemoteToCache";
+import {
+  applyRemoteToCache, applyPostStateOnly,
+} from "../../src/lib/queue/applyRemoteToCache";
 import { queryKeys } from "../../src/queries";
 import type { SseEvent } from "../../src/lib/queue/types";
-import type { Comparison } from "../../src/api";
+import type { Comparison, Exposure } from "../../src/api";
 
 function baselineComparison(cid: number): Comparison {
   return {
@@ -131,6 +133,60 @@ describe("applyRemoteToCache: comparison_submitted view_* — Compare UX A-9", (
     expect(invalidated).toContainEqual(queryKeys.comparison(cid));
     expect(invalidated).toContainEqual(queryKeys.comparisonMembers(cid));
     expect(invalidated).toContainEqual(["comparisons"]);
+  });
+});
+
+describe("applyPostStateOnly: comparison post_state must not clobber the exposure cache — Compare UX A-9", () => {
+  // applyPostStateOnly runs unconditionally on replayCoordinator's own-tab
+  // paths (Case 1 deferred-match + self-echo guard). comparison_save is a
+  // queued mutator, so an own-tab comparison submit's comparison_submitted
+  // frame — carrying a full Comparison post_state — reaches here. It must
+  // NOT treat that Comparison as a CurationPostState.
+  it("ignores a Comparison post_state and leaves a colliding exposure row intact", () => {
+    const qc = new QueryClient();
+    const collidingId = 7;
+    // An exposure cached under the same integer id as the comparison.
+    const exposure = {
+      id: collidingId, analysis_inputs_hash: "h-real",
+    } as unknown as Exposure;
+    qc.setQueryData(queryKeys.exposure(collidingId), exposure);
+
+    const remote: SseEvent = {
+      id: 99, kind: "comparison_submitted",
+      entity_type: "comparison", entity_id: collidingId,
+      actor: "me", client_id: "tab1", client_op_id: "op1",
+      ts: "2026-05-14T10:00:00Z", payload: null,
+      post_state: baselineComparison(collidingId),
+    };
+    applyPostStateOnly(remote, qc);
+
+    expect(
+      qc.getQueryData<Exposure>(queryKeys.exposure(collidingId))?.analysis_inputs_hash,
+    ).toBe("h-real");
+    // And no phantom indices entry under the comparison id.
+    expect(qc.getQueryData(queryKeys.indices(collidingId))).toBeUndefined();
+  });
+
+  it("still applies a genuine curation post_state (indices array present)", () => {
+    const qc = new QueryClient();
+    const expId = 12;
+    qc.setQueryData(queryKeys.exposure(expId), {
+      id: expId, analysis_inputs_hash: "h-old",
+    } as unknown as Exposure);
+
+    const remote: SseEvent = {
+      id: 50, kind: "analyze_run",
+      entity_type: "exposure", entity_id: expId,
+      client_id: "tab1", client_op_id: "op9",
+      ts: "2026-05-14T10:00:00Z", payload: null,
+      post_state: { analysis_inputs_hash: "h-new", indices: [] },
+    };
+    applyPostStateOnly(remote, qc);
+
+    expect(
+      qc.getQueryData<Exposure>(queryKeys.exposure(expId))?.analysis_inputs_hash,
+    ).toBe("h-new");
+    expect(qc.getQueryData(queryKeys.indices(expId))).toEqual([]);
   });
 });
 

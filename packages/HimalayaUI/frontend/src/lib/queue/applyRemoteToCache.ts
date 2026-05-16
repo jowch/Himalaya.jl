@@ -17,10 +17,22 @@ import { peakQTol } from "./peakQTol";
  */
 export function applyPostStateOnly(remote: SseEvent, qc: QueryClient): void {
   if (!remote.post_state) return;
-  const id = remote.entity_id;
-  // Curation-frame consumers only (peak_*, analyze_run) — never reached for
-  // comparison kinds, so the post_state is always a CurationPostState here.
+  // `post_state` is a kind-keyed union (see SseEvent in types.ts): curation
+  // frames (peak_*, analyze_run) carry a CurationPostState; comparison frames
+  // (comparison_created/_submitted) carry a full Comparison. This function is
+  // called unconditionally for ALL kinds from replayCoordinator's own-tab
+  // paths (Case 1 deferred-match + self-echo guard), so an own-tab comparison
+  // submit DOES reach here. It only writes the curation caches, so bail
+  // unless the post_state actually is a CurationPostState — detected by its
+  // `indices` array. Without this guard the `as CurationPostState` cast reads
+  // `indices`/`analysis_inputs_hash` as `undefined` off a Comparison and
+  // clobbers `queryKeys.exposure(entity_id)`; comparison ids and exposure ids
+  // share the integer namespace, so a colliding cached exposure row would
+  // have its `analysis_inputs_hash` wiped (falsely tripping StaleIndicesBanner
+  // or breaking a later mutation's expected-hash check).
   const ps = remote.post_state as CurationPostState;
+  if (!Array.isArray(ps.indices)) return;
+  const id = remote.entity_id;
   qc.setQueryData(queryKeys.indices(id), ps.indices);
   qc.setQueryData(queryKeys.exposure(id), (old: Exposure | undefined) =>
     old
