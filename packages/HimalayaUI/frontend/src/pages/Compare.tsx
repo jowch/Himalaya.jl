@@ -336,6 +336,16 @@ function ReviewPlot({
   // `ForksPopover` callsites are gone (Compare UX C-12); the toolbar's
   // overflow menu + status surface now own these gestures.
   const forksQ = useComparisonForks(id);
+  // Pre-resolve each child fork to its review-page path so CompareToolbar
+  // stays a dumb leaf (Compare UX C-17 — the old ForksPopover's job).
+  const forksList = useMemo(
+    () => (forksQ.data ?? []).map((f) => ({
+      id: f.id,
+      title: f.title,
+      href: comparePath({ scope, eid, id: f.id }),
+    })),
+    [forksQ.data, scope, eid],
+  );
   const startFork = useAppState((s) => s.startForkDraft);
   const deleteMut = useDeleteComparison();
 
@@ -502,7 +512,7 @@ function ReviewPlot({
             />
           }
           annotationControl={<AnnotationToggles />}
-          forksCount={forksQ.data?.length ?? 0}
+          forksList={forksList}
           onCopyLink={handleCopyLink}
           onDelete={handleDelete}
           onDiscardChanges={null}
@@ -883,6 +893,15 @@ function EditBody(): JSX.Element {
   // C-12 review-mode wiring. `currentUserId` / `compareMode` are declared
   // above `handleSave` (C-14).
   const forksQ = useComparisonForks(id);
+  // Pre-resolved fork links for the toolbar's ⋯-more dropdown (C-17).
+  const forksList = useMemo(
+    () => (forksQ.data ?? []).map((f) => ({
+      id: f.id,
+      title: f.title,
+      href: comparePath({ scope, eid, id: f.id }),
+    })),
+    [forksQ.data, scope, eid],
+  );
   const deleteMut = useDeleteComparison();
 
   // Toolbar overflow-menu handlers. Edit mode has no live comparison id for
@@ -1125,7 +1144,7 @@ function EditBody(): JSX.Element {
               Reset heights
             </button>
           }
-          forksCount={forksQ.data?.length ?? 0}
+          forksList={forksList}
           onCopyLink={handleCopyLink}
           onDelete={handleDelete}
           onDiscardChanges={handleDiscard}
