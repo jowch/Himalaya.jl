@@ -39,6 +39,7 @@ import { ComparisonSidebar } from "../components/ComparisonSidebar";
 import { ComparisonPickerPanel } from "../components/ComparisonPickerPanel";
 import { MultiTracePlot } from "../components/MultiTracePlot";
 import { MemberMetaGutter } from "../components/MemberMetaGutter";
+import { ActiveBandProvider } from "../components/ActiveBandContext";
 import { GroupingModeToggle } from "../components/GroupingModeToggle";
 import { AnnotationToggles } from "../components/AnnotationToggles";
 import { CompareTitleStrip } from "../components/CompareTitleStrip";
@@ -1212,29 +1213,38 @@ function EditBody(): JSX.Element {
             fixture={editPlotFixture}
             fallback={<div className="flex-1 flex items-center justify-center"><HintText>Loading traces…</HintText></div>}
           >
-            <div ref={plotColRef} className="flex-1 min-w-0">
-              <MultiTracePlot
-                members={plotMembers}
-                traces={traces}
-                xDomain={xDomain}
-                onXDomain={setXDomain}
-                peakDisplayByMemberId={peakDisplayByMemberId}
-                onPeakClick={handlePeakClick}
-                groupingMode={groupingMode}
-                sampleIdFor={sampleIdFor}
-              />
-            </div>
-            <div
-              className="w-[320px] shrink-0 relative"
-              data-testid="compare-edit-gutter"
-            >
-              <MemberMetaGutter
-                members={plotMembers}
-                panelHeight={panelHeight}
-                mode="edit"
-                displayLabelByMemberId={displayLabelByMemberId}
-              />
-            </div>
+            {/*
+              Compare UX E-4 — the inter-row resize gaps in `MemberMetaGutter`
+              publish the band-above id; the per-band overlays in
+              `MultiTracePlot` subscribe to tint accent on hover/drag. The
+              two are otherwise unrelated siblings, so the coupling rides a
+              minimal context scoped to this edit-mode plot+gutter pair.
+            */}
+            <ActiveBandProvider>
+              <div ref={plotColRef} className="flex-1 min-w-0">
+                <MultiTracePlot
+                  members={plotMembers}
+                  traces={traces}
+                  xDomain={xDomain}
+                  onXDomain={setXDomain}
+                  peakDisplayByMemberId={peakDisplayByMemberId}
+                  onPeakClick={handlePeakClick}
+                  groupingMode={groupingMode}
+                  sampleIdFor={sampleIdFor}
+                />
+              </div>
+              <div
+                className="w-[320px] shrink-0 relative"
+                data-testid="compare-edit-gutter"
+              >
+                <MemberMetaGutter
+                  members={plotMembers}
+                  panelHeight={panelHeight}
+                  mode="edit"
+                  displayLabelByMemberId={displayLabelByMemberId}
+                />
+              </div>
+            </ActiveBandProvider>
           </Skeleton>
         )}
       </div>

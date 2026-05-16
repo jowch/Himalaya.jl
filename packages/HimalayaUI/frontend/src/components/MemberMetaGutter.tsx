@@ -23,7 +23,7 @@ import type { ComparisonMember } from "../api";
 import { useAppState } from "../state";
 import { computeYBands } from "../lib/comparison/yBands";
 import { MemberMetaRow } from "./MemberMetaRow";
-import { BandResizeDivider } from "./BandResizeDivider";
+import { BandResizeGap } from "./BandResizeDivider";
 
 export interface MemberMetaGutterProps {
   /** Members in render order (already sorted by display_order). */
@@ -40,12 +40,22 @@ export interface MemberMetaGutterProps {
    * re-introduce the drift seam #73 closed.
    */
   displayLabelByMemberId: Map<number, string>;
+  /**
+   * Compare UX E-4 — optional observer of an inter-row resize drag.
+   * Receives `{ dy }` (cumulative pointer delta) on every pointerMove and
+   * a final call on pointerUp carrying the total dy. The band-height
+   * mutation itself goes through the existing `resizeBands` Zustand action
+   * inside `BandResizeGap`; this callback is purely for parents that want
+   * to observe the gesture. Genuinely optional under
+   * `exactOptionalPropertyTypes` — most call sites omit it.
+   */
+  onResize?: (delta: { dy: number }) => void;
 }
 
 const DRAG_MIME = "application/x-himalaya-member-id";
 
 export function MemberMetaGutter(props: MemberMetaGutterProps): JSX.Element {
-  const { members, panelHeight, mode, displayLabelByMemberId } = props;
+  const { members, panelHeight, mode, displayLabelByMemberId, onResize } = props;
   const reorderMembers = useAppState((s) => s.reorderMembers);
   const dragSourceIdxRef = useRef<number | null>(null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
@@ -170,16 +180,17 @@ export function MemberMetaGutter(props: MemberMetaGutterProps): JSX.Element {
         members.slice(0, -1).map((m, i) => {
           const band = yBands[i];
           if (!band) return null;
-          const dividerY = band[1]; // bottom of band[i] = top of band[i+1]
+          const boundaryY = band[1]; // bottom of band[i] = top of band[i+1]
           const next = members[i + 1]!;
           return (
-            <BandResizeDivider
-              key={`divider-${m.id}-${next.id}`}
+            <BandResizeGap
+              key={`gap-${m.id}-${next.id}`}
               aboveId={m.id}
               belowId={next.id}
               memberIndex={i}
-              top={dividerY}
+              top={boundaryY}
               totalHeightPx={panelHeight}
+              {...(onResize ? { onResize } : {})}
             />
           );
         })}
