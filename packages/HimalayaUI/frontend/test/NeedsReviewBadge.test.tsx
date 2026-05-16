@@ -1,17 +1,17 @@
 /**
- * NeedsReviewBadge tests (Plan §Phase 9, Task 9.6).
+ * Compare stale-status tests (originally Plan §Phase 9, Task 9.6).
  *
- * - Author can click → navigates to the bare comparison URL.
- * - Non-author sees badge as informational; click is a no-op.
- * - Page-level mounting: visible when any member stale, hidden otherwise.
- * - Per-member `data-stale` attribute already covered by MemberMetaRow.test;
- *   here we verify the comparison-level disjunction at the ComparePage level.
+ * Compare UX C-16: the standalone `NeedsReviewBadge` component was deleted
+ * once C-12 folded the stale signal into `CompareStatusSurface`. The
+ * direct-render describe that exercised the deleted component is gone; what
+ * remains here is page-level coverage of the comparison-level stale
+ * disjunction (via `Compare` → `CompareStatusSurface`) and the per-member
+ * `data-stale` attribute (via `MemberMetaRow`).
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { NeedsReviewBadge } from "../src/components/NeedsReviewBadge";
 import { Compare } from "../src/pages/Compare";
 import { useAppState } from "../src/state";
 import type { Comparison } from "../src/api";
@@ -56,26 +56,6 @@ function makeComparison(over: Partial<Comparison> = {}): Comparison {
     ...over,
   };
 }
-
-describe("NeedsReviewBadge — direct render", () => {
-  beforeEach(() => {
-    useAppState.setState({ username: undefined });
-  });
-
-  it("non-author renders informational badge with data-clickable=false", () => {
-    render(
-      <MemoryRouter>
-        <QueryClientProvider client={makeQc()}>
-          <NeedsReviewBadge comparisonId={42} experimentId={7} authorUserId={7} />
-        </QueryClientProvider>
-      </MemoryRouter>,
-    );
-    const badge = screen.getByTestId("comparison-needs-review");
-    expect(badge).toBeInTheDocument();
-    expect(badge).toHaveAttribute("data-clickable", "false");
-    expect(badge.textContent).toContain("Needs Review");
-  });
-});
 
 // Compare UX C-12: the ComparePage review header no longer mounts
 // `NeedsReviewBadge`. The stale signal is now surfaced by
@@ -218,7 +198,7 @@ describe("Compare review header — stale status surface via ComparePage", () =>
   });
 });
 
-describe("NeedsReviewBadge — per-member data-stale", () => {
+describe("MemberMetaRow — per-member data-stale", () => {
   it("MemberMetaRow surfaces data-stale on stale members", async () => {
     const { MemberMetaRow } = await import("../src/components/MemberMetaRow");
     render(
