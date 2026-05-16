@@ -30,6 +30,7 @@ import { FigureExportControls } from "../components/FigureExportControls";
 import { HintText } from "../components/ui";
 import { buildMultiTraceExportSpec } from "../lib/figure-export/adapters/multiTraceAdapter";
 import { slugifyForFilename } from "../lib/figure-export/filename";
+import { effectiveGroupingMode } from "../lib/comparison/effectiveGroupingMode";
 import {
   useComparison,
   useMemberTraces,
@@ -158,7 +159,11 @@ function ReviewPlot({
   // below. Without that explicit subscription the cache never warms in
   // review mode (only the trace key is fetched), and every trace falls back
   // to ORPHAN_FALLBACK gray. See issue #61 + #52.
-  const groupingMode = useAppState((s) => s.groupingMode);
+  //
+  // C-4 Step 0: groupingMode is now resolved via effectiveGroupingMode so the
+  // draft's viewGroupingMode takes precedence over the server record.
+  const activeDraft = useAppState((s) => s.activeDraft);
+  const groupingMode = effectiveGroupingMode(activeDraft, compQ.data);
 
   // Phase 9.5 — hover/click-to-pin highlight state. `MemberTraceLayer`
   // reads this and recolors that member's confirmed_index peaks to the

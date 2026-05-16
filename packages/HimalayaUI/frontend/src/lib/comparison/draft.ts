@@ -65,6 +65,16 @@ export interface ActiveDraft {
    */
   forkedFromId: number | undefined;
   forkedAtHash: string | undefined;
+  /**
+   * Author's view choices (spec §6.4; Compare UX C-4).
+   * `undefined` = inherit from server record / default.
+   * These shadow the server's `view_grouping_mode`, `view_show_peak_ticks`,
+   * `view_show_peak_labels` while a draft is active; forwarded to the
+   * save payload so the server persists the author's latest preference.
+   */
+  viewGroupingMode: "bySample" | "byPhase" | "distinct" | undefined;
+  viewShowPeakTicks: boolean | undefined;
+  viewShowPeakLabels: boolean | undefined;
 }
 
 export type ActiveDraftSlot = ActiveDraft | null;
@@ -114,5 +124,8 @@ export function emptyDraft(): ActiveDraft {
     members: [],
     forkedFromId: undefined,
     forkedAtHash: undefined,
+    viewGroupingMode: undefined,
+    viewShowPeakTicks: undefined,
+    viewShowPeakLabels: undefined,
   };
 }

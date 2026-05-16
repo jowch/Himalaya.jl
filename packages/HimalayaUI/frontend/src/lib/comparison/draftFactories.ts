@@ -77,6 +77,9 @@ export function fromComparison(c: Comparison, qc: QueryClient): ActiveDraft {
     members: c.members.map((m) => memberFromSaved(m, qc)),
     forkedFromId: undefined,
     forkedAtHash: undefined,
+    viewGroupingMode:  (c.view_grouping_mode  as ActiveDraft["viewGroupingMode"])  ?? undefined,
+    viewShowPeakTicks:  c.view_show_peak_ticks  ?? undefined,
+    viewShowPeakLabels: c.view_show_peak_labels ?? undefined,
   };
 }
 
@@ -108,5 +111,10 @@ export function fromComparisonAsFork(c: Comparison, qc: QueryClient): ActiveDraf
     }),
     forkedFromId: c.id,
     forkedAtHash: c.content_hash,
+    // Carry view choices from the parent so the fork opens with the same
+    // visual defaults; the author can change them before saving.
+    viewGroupingMode:  (c.view_grouping_mode  as ActiveDraft["viewGroupingMode"])  ?? undefined,
+    viewShowPeakTicks:  c.view_show_peak_ticks  ?? undefined,
+    viewShowPeakLabels: c.view_show_peak_labels ?? undefined,
   };
 }

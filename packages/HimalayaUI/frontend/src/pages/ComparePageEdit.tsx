@@ -47,6 +47,7 @@ import { computeMemberSnapshot } from "../lib/comparison/snapshot";
 import { comparePath } from "../lib/comparison/routes";
 import { resolveDisplayLabels } from "../lib/comparison/labels";
 import { prefetchColdMembers } from "../lib/comparison/prefetchMembers";
+import { effectiveGroupingMode } from "../lib/comparison/effectiveGroupingMode";
 import type {
   Comparison, ComparisonMember, ComparisonMemberInput, SaveComparisonBody,
 } from "../api";
@@ -367,7 +368,10 @@ export function ComparePageEdit(): JSX.Element {
   // from the per-member exposures Map (hydrated by useMemberExposures
   // above) instead of `qc.getQueryData` so the resolver re-evaluates when
   // the cache settles — see issue #69.
-  const groupingMode = useAppState((s) => s.groupingMode);
+  //
+  // C-4 Step 0: groupingMode is now resolved via effectiveGroupingMode so the
+  // draft's viewGroupingMode takes precedence over the server record.
+  const groupingMode = effectiveGroupingMode(draft, comparisonQ.data);
   const sampleIdFor = useCallback(
     (m: ComparisonMember): number | null => {
       if (m.exposure_id === null) return null;
