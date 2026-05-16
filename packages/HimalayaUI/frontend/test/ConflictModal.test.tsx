@@ -65,6 +65,10 @@ function buildComparison(opts: {
     forked_from_id: null,
     forked_at_hash: null,
     forked_from_title: null,
+    view_grouping_mode: null,
+    view_show_peak_ticks: null,
+    view_show_peak_labels: null,
+    last_event_at: null,
     members: Array.from({ length: members }, (_, i) => ({
       id: 100 + i,
       comparison_id: id,
@@ -160,8 +164,19 @@ function seedWarmCachesForSeedDraft(qc: QueryClient, members: number): void {
   seedWarmCaches(qc, Array.from({ length: members }, (_, i) => 300 + i));
 }
 
-function seedDraft(opts: { title?: string; members?: number; id?: number; baseHash?: string }) {
-  const { title = "Local draft title", members = 3, id = 42, baseHash = "sha256:local" } = opts;
+function seedDraft(opts: {
+  title?: string;
+  members?: number;
+  id?: number;
+  baseHash?: string;
+  viewGroupingMode?: "bySample" | "byPhase" | "distinct";
+  viewShowPeakTicks?: boolean;
+  viewShowPeakLabels?: boolean;
+}) {
+  const {
+    title = "Local draft title", members = 3, id = 42, baseHash = "sha256:local",
+    viewGroupingMode = undefined, viewShowPeakTicks = undefined, viewShowPeakLabels = undefined,
+  } = opts;
   useAppState.setState({
     activeDraft: {
       id,
@@ -188,6 +203,9 @@ function seedDraft(opts: { title?: string; members?: number; id?: number; baseHa
       })),
       forkedFromId: undefined,
       forkedAtHash: undefined,
+      viewGroupingMode,
+      viewShowPeakTicks,
+      viewShowPeakLabels,
     },
   });
 }
@@ -255,7 +273,10 @@ describe("<ConflictModal>", () => {
   it("Overwrite re-submits with expected_content_hash = server's current_hash, then closes + navigates on success", async () => {
     const user = userEvent.setup();
     const server = buildComparison({ id: 42, hash: "sha256:server-v1" });
-    seedDraft({ title: "Local title", members: 1, id: 42, baseHash: "sha256:stale" });
+    seedDraft({
+      title: "Local title", members: 1, id: 42, baseHash: "sha256:stale",
+      viewGroupingMode: "bySample", viewShowPeakTicks: true, viewShowPeakLabels: false,
+    });
 
     const captured: { url: string; body: unknown }[] = [];
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -283,6 +304,9 @@ describe("<ConflictModal>", () => {
     expect(captured[0]!.body).toMatchObject({
       title: "Local title",
       expected_content_hash: "sha256:server-v1",
+      view_grouping_mode:    "bySample",
+      view_show_peak_ticks:  true,
+      view_show_peak_labels: false,
     });
 
     // Modal closes and navigates after success
@@ -577,6 +601,9 @@ describe("<ConflictModal>", () => {
         }],
         forkedFromId: undefined,
         forkedAtHash: undefined,
+        viewGroupingMode: undefined,
+        viewShowPeakTicks: undefined,
+        viewShowPeakLabels: undefined,
       },
     });
 
@@ -650,6 +677,7 @@ describe("<ConflictModal>", () => {
           snapshot: { effective_peaks: [], confirmed_index: null, analysis_inputs_hash: "" },
         }],
         forkedFromId: undefined, forkedAtHash: undefined,
+        viewGroupingMode: undefined, viewShowPeakTicks: undefined, viewShowPeakLabels: undefined,
       },
     });
 

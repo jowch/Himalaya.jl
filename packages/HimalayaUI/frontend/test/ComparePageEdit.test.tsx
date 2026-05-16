@@ -59,7 +59,7 @@ function renderEdit(opts: {
 
 function seedExposure(qc: QueryClient, exposureId: number): void {
   const peaks: Peak[] = [
-    { id: 1, exposure_id: exposureId, q: 0.10, intensity: 1.0, sharpness: 0.5, source: "auto", excluded: false },
+    { id: 1, exposure_id: exposureId, q: 0.10, intensity: 1.0, sharpness: 0.5, prominence: null, source: "auto", excluded: false },
   ];
   const exposure: Exposure = {
     id: exposureId,
@@ -120,6 +120,10 @@ describe("ComparePageEdit", () => {
       forked_from_id: null,
       forked_at_hash: null,
       forked_from_title: null,
+      view_grouping_mode: null,
+      view_show_peak_ticks: null,
+      view_show_peak_labels: null,
+      last_event_at: null,
       members: [],
     };
     const fetchSpy = vi.spyOn(global, "fetch").mockImplementation(async (input, init) => {
@@ -184,12 +188,17 @@ describe("ComparePageEdit", () => {
         }],
         forkedFromId: undefined,
         forkedAtHash: undefined,
+        viewGroupingMode: undefined,
+        viewShowPeakTicks: undefined,
+        viewShowPeakLabels: undefined,
       },
     });
     const updated: Comparison = {
       id: 42, title: "Existing", description: null, content_hash: "h-new",
       created_by: 1, created_at: null, updated_at: "2026-05-02T00:00:00Z",
       forked_from_id: null, forked_at_hash: null, forked_from_title: null,
+      view_grouping_mode: null, view_show_peak_ticks: null, view_show_peak_labels: null,
+      last_event_at: null,
       members: [],
     };
     const fetchSpy = vi.spyOn(global, "fetch").mockImplementation(async (input, init) => {
@@ -244,6 +253,9 @@ describe("ComparePageEdit", () => {
         members: [],
         forkedFromId: undefined,
         forkedAtHash: undefined,
+        viewGroupingMode: undefined,
+        viewShowPeakTicks: undefined,
+        viewShowPeakLabels: undefined,
       },
     });
     renderEdit({ qc, initialPath: "/experiments/7/compare/42/edit" });
@@ -333,6 +345,8 @@ describe("ComparePageEdit", () => {
       activeDraft: {
         id: 42, baseHash: "h", title: "T", description: "",
         members: [],
+        forkedFromId: undefined, forkedAtHash: undefined,
+        viewGroupingMode: undefined, viewShowPeakTicks: undefined, viewShowPeakLabels: undefined,
       },
     });
     renderEdit({ qc, initialPath: "/experiments/7/compare/42/edit" });
@@ -360,6 +374,10 @@ describe("ComparePageEdit", () => {
       forked_from_id: null,
       forked_at_hash: null,
       forked_from_title: null,
+      view_grouping_mode: null,
+      view_show_peak_ticks: null,
+      view_show_peak_labels: null,
+      last_event_at: null,
       members: [],
     };
     const fetchSpy = vi.spyOn(global, "fetch").mockImplementation(async (input, init) => {
@@ -396,7 +414,7 @@ describe("ComparePageEdit", () => {
     // observer must re-attach. Mirrors the review-mode #51 test pattern.
     const qc = makeQc();
     const peaks: Peak[] = [
-      { id: 1, exposure_id: 200, q: 0.10, intensity: 1.0, sharpness: 0.5, source: "auto", excluded: false },
+      { id: 1, exposure_id: 200, q: 0.10, intensity: 1.0, sharpness: 0.5, prominence: null, source: "auto", excluded: false },
     ];
     const exposure: Exposure = {
       id: 200, sample_id: 1, filename: "x.dat", kind: "file", selected: false,
@@ -420,6 +438,7 @@ describe("ComparePageEdit", () => {
           snapshot: { effective_peaks: [], confirmed_index: null, analysis_inputs_hash: "abcd" },
         }],
         forkedFromId: undefined, forkedAtHash: undefined,
+        viewGroupingMode: undefined, viewShowPeakTicks: undefined, viewShowPeakLabels: undefined,
       },
     });
 

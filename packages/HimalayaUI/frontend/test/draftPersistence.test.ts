@@ -202,6 +202,9 @@ describe("compare draft state + sessionStorage", () => {
         members: [],
         forkedFromId: undefined,
         forkedAtHash: undefined,
+        viewGroupingMode: undefined,
+        viewShowPeakTicks: undefined,
+        viewShowPeakLabels: undefined,
       },
     });
     useAppState.getState().startNewDraft();
@@ -222,6 +225,9 @@ describe("compare draft state + sessionStorage", () => {
         members: [],
         forkedFromId: undefined,
         forkedAtHash: undefined,
+        viewGroupingMode: undefined,
+        viewShowPeakTicks: undefined,
+        viewShowPeakLabels: undefined,
       },
     });
 
@@ -236,6 +242,10 @@ describe("compare draft state + sessionStorage", () => {
       forked_from_id: null,
       forked_at_hash: null,
       forked_from_title: null,
+      view_grouping_mode: null,
+      view_show_peak_ticks: null,
+      view_show_peak_labels: null,
+      last_event_at: null,
       members: [],
     };
 
@@ -255,6 +265,9 @@ describe("compare draft state + sessionStorage", () => {
         members: [],
         forkedFromId: undefined,
         forkedAtHash: undefined,
+        viewGroupingMode: undefined,
+        viewShowPeakTicks: undefined,
+        viewShowPeakLabels: undefined,
       },
     });
 
@@ -269,6 +282,10 @@ describe("compare draft state + sessionStorage", () => {
       forked_from_id: null,
       forked_at_hash: null,
       forked_from_title: null,
+      view_grouping_mode: null,
+      view_show_peak_ticks: null,
+      view_show_peak_labels: null,
+      last_event_at: null,
       members: [],
     };
 
@@ -291,6 +308,10 @@ describe("compare draft state + sessionStorage", () => {
       forked_from_id: null,
       forked_at_hash: null,
       forked_from_title: null,
+      view_grouping_mode: null,
+      view_show_peak_ticks: null,
+      view_show_peak_labels: null,
+      last_event_at: null,
       members: [],
     };
     useAppState.getState().loadDraftFromComparison(comparison, qc);
@@ -302,8 +323,8 @@ describe("compare draft state + sessionStorage", () => {
     const exposureId = 200;
     // Seed cache with peaks/indices/groups/exposure that determine the snapshot.
     const peaks: Peak[] = [
-      { id: 1, exposure_id: exposureId, q: 0.10, intensity: 1.0, sharpness: 0.5, source: "auto", excluded: false },
-      { id: 2, exposure_id: exposureId, q: 0.20, intensity: 0.8, sharpness: 0.3, source: "auto", excluded: false },
+      { id: 1, exposure_id: exposureId, q: 0.10, intensity: 1.0, sharpness: 0.5, prominence: null, source: "auto", excluded: false },
+      { id: 2, exposure_id: exposureId, q: 0.20, intensity: 0.8, sharpness: 0.3, prominence: null, source: "auto", excluded: false },
     ];
     const indices: IndexEntry[] = [];
     const groups: GroupEntry[] = [];
@@ -364,6 +385,10 @@ describe("compare draft state + sessionStorage", () => {
       forked_from_id: null,
       forked_at_hash: null,
       forked_from_title: null,
+      view_grouping_mode: null,
+      view_show_peak_ticks: null,
+      view_show_peak_labels: null,
+      last_event_at: null,
       members: [savedMember],
     };
 

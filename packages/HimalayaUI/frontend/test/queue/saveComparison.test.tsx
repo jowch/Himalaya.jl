@@ -47,6 +47,8 @@ function buildComparison(id: number, hash = "sha256:abc"): Comparison {
     created_by: 1, created_at: "2026-05-06T00:00:00Z",
     updated_at: "2026-05-06T00:00:00Z",
     forked_from_id: null, forked_at_hash: null, forked_from_title: null,
+    view_grouping_mode: null, view_show_peak_ticks: null, view_show_peak_labels: null,
+    last_event_at: null,
     members: [
       {
         id: 999, comparison_id: id, exposure_id: 100, display_order: 0,

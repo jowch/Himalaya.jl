@@ -488,10 +488,16 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
     qc.setQueryData<ComparisonSummary[]>(queryKeys.comparisons("all"), [
       { id: 42, title: "doomed", description: null, content_hash: "h",
         created_by: 1, created_at: null, updated_at: null,
-        forked_from_id: null, forked_at_hash: null },
+        forked_from_id: null, forked_at_hash: null,
+        view_grouping_mode: null, view_show_peak_ticks: null, view_show_peak_labels: null,
+        last_event_at: null, author_username: null, member_count: 0,
+        member_phases: [], member_phase_count: 0, has_stale_members: false },
       { id: 99, title: "kept", description: null, content_hash: "h",
         created_by: 1, created_at: null, updated_at: null,
-        forked_from_id: null, forked_at_hash: null },
+        forked_from_id: null, forked_at_hash: null,
+        view_grouping_mode: null, view_show_peak_ticks: null, view_show_peak_labels: null,
+        last_event_at: null, author_username: null, member_count: 0,
+        member_phases: [], member_phase_count: 0, has_stale_members: false },
     ]);
     let invalidated = false;
     const orig = qc.invalidateQueries.bind(qc);

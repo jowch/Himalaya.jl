@@ -14,8 +14,9 @@
  */
 import type { ActiveDraft } from "./draft";
 import type { Comparison } from "../../api";
+import type { GroupingMode } from "./coloring";
 
-export type GroupingMode = "bySample" | "byPhase" | "distinct";
+export type { GroupingMode };
 
 export function effectiveGroupingMode(
   draft: ActiveDraft | null,

@@ -2,8 +2,10 @@
  * GroupingModeToggle — text-link toggle for the Compare-page grouping mode
  * (Plan §Phase 9, Task 9.2; spec §Trace coloring).
  *
- * Three options: By sample / By phase / Distinct. Reads/writes Zustand
- * `groupingMode` (per-tab; not persisted on the comparison or in storage).
+ * Three options: By sample / By phase / Distinct. Accepts `mode` and
+ * `onChange` as props; the parent (ComparePage) resolves the effective mode
+ * via effectiveGroupingMode(draft, comparison) and routes the write to
+ * setDraftViewGroupingMode (Compare UX C-4).
  *
  * Spec selectors: container `data-testid="grouping-mode"` with
  * `data-mode={"bySample" | "byPhase" | "distinct"}` reflecting the
@@ -16,7 +18,6 @@
  * when active. No outer bordered wrapper, no leading "Color" cell — the
  * `aria-label="Trace grouping mode"` carries that semantic.
  */
-import { useAppState } from "../state";
 import type { GroupingMode } from "../lib/comparison/coloring";
 
 const OPTIONS: Array<{ value: GroupingMode; label: string }> = [
@@ -25,10 +26,15 @@ const OPTIONS: Array<{ value: GroupingMode; label: string }> = [
   { value: "distinct", label: "Distinct"  },
 ];
 
-export function GroupingModeToggle(): JSX.Element {
-  const mode = useAppState((s) => s.groupingMode);
-  const setMode = useAppState((s) => s.setGroupingMode);
+export interface GroupingModeToggleProps {
+  mode: GroupingMode;
+  onChange: (mode: GroupingMode) => void;
+}
 
+export function GroupingModeToggle({
+  mode,
+  onChange,
+}: GroupingModeToggleProps): JSX.Element {
   return (
     <div
       data-testid="grouping-mode"
@@ -47,7 +53,7 @@ export function GroupingModeToggle(): JSX.Element {
             aria-checked={active}
             data-active={active ? "true" : "false"}
             data-value={opt.value}
-            onClick={() => setMode(opt.value)}
+            onClick={() => onChange(opt.value)}
             className={[
               "px-1.5 py-0.5 rounded text-xs transition-colors",
               "border border-transparent hover:border-border",

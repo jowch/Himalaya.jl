@@ -66,7 +66,7 @@ function renderHarness(
 
 function seedExposure(qc: QueryClient, exposureId: number): void {
   const peaks: Peak[] = [
-    { id: 1, exposure_id: exposureId, q: 0.10, intensity: 1.0, sharpness: 0.5, source: "auto", excluded: false },
+    { id: 1, exposure_id: exposureId, q: 0.10, intensity: 1.0, sharpness: 0.5, prominence: null, source: "auto", excluded: false },
   ];
   const exposure: Exposure = {
     id: exposureId,
@@ -169,6 +169,9 @@ describe("WarmAddMenu", () => {
         }],
         forkedFromId: undefined,
         forkedAtHash: undefined,
+        viewGroupingMode: undefined,
+        viewShowPeakTicks: undefined,
+        viewShowPeakLabels: undefined,
       },
     });
 
@@ -208,6 +211,9 @@ describe("WarmAddMenu", () => {
         }],
         forkedFromId: undefined,
         forkedAtHash: undefined,
+        viewGroupingMode: undefined,
+        viewShowPeakTicks: undefined,
+        viewShowPeakLabels: undefined,
       },
     });
 
@@ -255,6 +261,9 @@ describe("WarmAddMenu", () => {
         }],
         forkedFromId: undefined,
         forkedAtHash: undefined,
+        viewGroupingMode: undefined,
+        viewShowPeakTicks: undefined,
+        viewShowPeakLabels: undefined,
       },
     });
 

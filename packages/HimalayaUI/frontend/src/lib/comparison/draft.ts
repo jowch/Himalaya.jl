@@ -24,6 +24,7 @@
  * file MUST stay free of any transitive `queries.ts` import.
  */
 import type { MemberSnapshot } from "../../api";
+import type { GroupingMode } from "./coloring";
 
 export type DraftMemberNormalization = "none" | "max" | "area" | "qwindow";
 
@@ -72,7 +73,7 @@ export interface ActiveDraft {
    * `view_show_peak_labels` while a draft is active; forwarded to the
    * save payload so the server persists the author's latest preference.
    */
-  viewGroupingMode: "bySample" | "byPhase" | "distinct" | undefined;
+  viewGroupingMode: GroupingMode | undefined;
   viewShowPeakTicks: boolean | undefined;
   viewShowPeakLabels: boolean | undefined;
 }

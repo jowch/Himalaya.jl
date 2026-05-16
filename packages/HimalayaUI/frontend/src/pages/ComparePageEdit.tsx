@@ -227,6 +227,12 @@ export function ComparePageEdit(): JSX.Element {
       // factory `fromComparisonAsFork` always sets both when populating a fork.
       if (draft.forkedFromId !== undefined) payload.forked_from_id = draft.forkedFromId;
       if (draft.forkedAtHash !== undefined) payload.forked_at_hash = draft.forkedAtHash;
+      // C-4 — forward author's view choices so the server persists them.
+      // undefined (never set) ⇒ sent as null (backend clears / uses default);
+      // a value ⇒ sent as-is (backend stores it).
+      payload.view_grouping_mode    = draft.viewGroupingMode    ?? null;
+      payload.view_show_peak_ticks  = draft.viewShowPeakTicks   ?? null;
+      payload.view_show_peak_labels = draft.viewShowPeakLabels  ?? null;
       save.mutate(payload);
     } catch {
       // Prefetch or mutate failed — release the guard so the user can retry.

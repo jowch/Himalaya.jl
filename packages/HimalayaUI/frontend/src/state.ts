@@ -16,7 +16,6 @@ import {
   memberFromNewExposure,
 } from "./lib/comparison/draftFactories";
 import { cyclePeakDisplay } from "./lib/comparison/peakCycle";
-import type { GroupingMode } from "./lib/comparison/coloring";
 import { emitReplaceNext } from "./lib/url/emitMode";
 
 export const LS_KEY = "himalaya-ui:state";
@@ -93,13 +92,6 @@ export interface AppState {
    * Tab close loses the draft, which is acceptable for v1 per the spec.
    */
   activeDraft: ActiveDraftSlot;
-
-  /**
-   * Compare-page review/edit-mode grouping mode for trace coloring (Plan
-   * §Phase 9, Task 9.2). Per-tab viewing preference — NOT persisted on the
-   * comparison and NOT mirrored to sessionStorage. Default `"bySample"`.
-   */
-  groupingMode: GroupingMode;
 
   /**
    * Compare-page review-mode annotation toggles (Plan §Phase 9, Task 9.3).
@@ -196,7 +188,13 @@ export interface AppState {
   discardDraft: () => void;
 
   // Compare-page Phase 9 review-mode UI actions
-  setGroupingMode: (mode: GroupingMode) => void;
+  /**
+   * Set the grouping mode on the active draft (C-4). Creates an empty draft
+   * if none is active so the viewer can toggle without entering full edit mode
+   * (spec §6.4 viewer escape hatch). effectiveGroupingMode(draft, comparison)
+   * then surfaces the value to consumers.
+   */
+  setDraftViewGroupingMode: (mode: ActiveDraft["viewGroupingMode"]) => void;
   setShowPeakTicks: (show: boolean) => void;
   setShowPeakLabels: (show: boolean) => void;
   setHighlightedCompareMemberId: (id: number | undefined) => void;
@@ -266,7 +264,6 @@ export const useAppState = create<AppState>()(
         activeDraft: loadDraftFromSession(),
 
         // Phase 9 — review-mode UI defaults. All per-tab; not persisted.
-        groupingMode: "bySample",
         showPeakTicks: true,
         showPeakLabels: true,
         highlightedCompareMemberId: undefined,
@@ -432,8 +429,15 @@ export const useAppState = create<AppState>()(
         },
         discardDraft: () => setDraft(null),
 
-        // Phase 9 — review-mode UI actions
-        setGroupingMode: (groupingMode) => set({ groupingMode }),
+        // Phase 9 / C-4 — view-choice actions
+        setDraftViewGroupingMode: (mode) => {
+          const cur = get().activeDraft;
+          // Viewer escape hatch (spec §6.4): if no draft is active, create an
+          // empty one so the grouping preference can be carried without forcing
+          // the user into full edit mode.
+          const base = cur ?? emptyDraft();
+          setDraft({ ...base, viewGroupingMode: mode });
+        },
         setShowPeakTicks: (showPeakTicks) => set({ showPeakTicks }),
         setShowPeakLabels: (showPeakLabels) => set({ showPeakLabels }),
         setHighlightedCompareMemberId: (highlightedCompareMemberId) =>

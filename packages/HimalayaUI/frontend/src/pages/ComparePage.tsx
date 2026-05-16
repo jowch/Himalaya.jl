@@ -160,9 +160,12 @@ function ReviewPlot({
   // review mode (only the trace key is fetched), and every trace falls back
   // to ORPHAN_FALLBACK gray. See issue #61 + #52.
   //
-  // C-4 Step 0: groupingMode is now resolved via effectiveGroupingMode so the
-  // draft's viewGroupingMode takes precedence over the server record.
+  // C-4: groupingMode is resolved via effectiveGroupingMode (draft →
+  // server record → default). Write goes through setDraftViewGroupingMode
+  // which auto-creates an empty draft when none is active (spec §6.4
+  // viewer escape hatch).
   const activeDraft = useAppState((s) => s.activeDraft);
+  const setDraftViewGroupingMode = useAppState((s) => s.setDraftViewGroupingMode);
   const groupingMode = effectiveGroupingMode(activeDraft, compQ.data);
 
   // Phase 9.5 — hover/click-to-pin highlight state. `MemberTraceLayer`
@@ -293,7 +296,7 @@ function ReviewPlot({
         data-testid="compare-review-header"
         className="flex items-center gap-3 flex-wrap"
       >
-        <GroupingModeToggle />
+        <GroupingModeToggle mode={groupingMode} onChange={setDraftViewGroupingMode} />
         <AnnotationToggles />
         {isStale && (
           <NeedsReviewBadge

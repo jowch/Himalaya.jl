@@ -41,6 +41,7 @@ function makeDraft(id: number | undefined): ActiveDraft {
   return {
     id, baseHash: undefined, title: "draft title", description: "",
     members: [], forkedFromId: undefined, forkedAtHash: undefined,
+    viewGroupingMode: undefined, viewShowPeakTicks: undefined, viewShowPeakLabels: undefined,
   };
 }
 
