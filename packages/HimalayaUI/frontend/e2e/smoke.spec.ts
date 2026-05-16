@@ -343,7 +343,9 @@ test("tab rocker switches to the Compare page", async ({ page }) => {
 
   await expect(page.getByTestId("index-page")).toBeVisible();
   await page.getByTestId("tab-compare").click();
-  await expect(page.getByTestId("compare-page")).toBeVisible();
+  // compare-page wrapper uses display:contents (no layout box); use
+  // toBeAttached() to confirm navigation landed, then assert a real child.
+  await expect(page.getByTestId("compare-page")).toBeAttached();
   // Sidebar is the persistent shell on the Compare page; assert it instead
   // of the long-since-removed "Coming soon" placeholder.
   await expect(page.getByTestId("comparison-sidebar")).toBeVisible();

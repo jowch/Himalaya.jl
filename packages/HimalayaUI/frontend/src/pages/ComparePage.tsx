@@ -65,7 +65,7 @@ export function ComparePage(): JSX.Element {
 
   return (
     <div
-      data-testid="compare-page"
+      data-testid="compare-page-body"
       data-scope={scope}
       {...(id !== undefined ? { "data-comparison-id": String(id) } : {})}
       className="flex-1 min-h-0 flex flex-col gap-3 px-4 pb-4 pt-2"

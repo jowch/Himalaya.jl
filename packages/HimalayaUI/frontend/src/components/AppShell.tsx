@@ -6,8 +6,7 @@ import { AppHeader } from "./AppHeader";
 import { TabRocker } from "./TabRocker";
 import { NavModal } from "./NavModal";
 import { IndexPage } from "../pages/IndexPage";
-import { ComparePage } from "../pages/ComparePage";
-import { ComparePageEdit } from "../pages/ComparePageEdit";
+import { Compare } from "../pages/Compare";
 import { InspectPage } from "../pages/InspectPage";
 import { ResolvingFallback } from "./ResolvingFallback";
 import { StaleUrlPage } from "./StaleUrlPage";
@@ -138,12 +137,12 @@ export function AppShell(): JSX.Element {
         />
       </div>
       <Routes>
-        <Route path="/experiments/:eid/compare" element={<ComparePage />} />
-        <Route path="/experiments/:eid/compare/new" element={<ComparePageEdit />} />
-        <Route path="/experiments/:eid/compare/:id" element={<ComparePage />} />
+        <Route path="/experiments/:eid/compare" element={<Compare />} />
+        <Route path="/experiments/:eid/compare/new" element={<Compare />} />
+        <Route path="/experiments/:eid/compare/:id" element={<Compare />} />
         {/* Phase B: `/edit` is gone — redirect old deep-links to the bare URL. */}
         <Route path="/experiments/:eid/compare/:id/edit" element={<EditToBareRedirect />} />
-        <Route path="/compare/all" element={<ComparePage />} />
+        <Route path="/compare/all" element={<Compare />} />
         {/*
           Global (experiment-less) deep-link routes — mirror the experiment-
           scoped review/edit/new triple so picking a comparison from
@@ -152,8 +151,8 @@ export function AppShell(): JSX.Element {
           association on the backend (comparisons aren't FK'd to experiments
           per spec); the global picker context applies.
         */}
-        <Route path="/compare/all/new" element={<ComparePageEdit />} />
-        <Route path="/compare/all/:id" element={<ComparePage />} />
+        <Route path="/compare/all/new" element={<Compare />} />
+        <Route path="/compare/all/:id" element={<Compare />} />
         {/* Phase B: `/edit` is gone — redirect old deep-links to the bare URL. */}
         <Route path="/compare/all/:id/edit" element={<EditToBareRedirect />} />
         {/* New permalink shapes — all render PageBody, which inspects Zustand

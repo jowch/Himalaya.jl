@@ -38,22 +38,23 @@ function renderAt(path: string) {
 describe("ComparePage shell", () => {
   it("renders empty state under /experiments/:eid/compare with no active id", () => {
     renderAt("/experiments/7/compare");
-    expect(screen.getByTestId("compare-page")).toBeInTheDocument();
+    expect(screen.getByTestId("compare-page-body")).toBeInTheDocument();
     // No comparison selected → empty state placeholder
     expect(screen.getByTestId("compare-empty-state")).toBeInTheDocument();
   });
 
   it("reads :id from URL when present (review mode placeholder)", () => {
     renderAt("/experiments/7/compare/42");
-    const page = screen.getByTestId("compare-page");
+    const page = screen.getByTestId("compare-page-body");
     expect(page).toBeInTheDocument();
     expect(page).toHaveAttribute("data-comparison-id", "42");
   });
 
   it("renders global listing scope under /compare/all", () => {
     renderAt("/compare/all");
-    expect(screen.getByTestId("compare-page")).toBeInTheDocument();
-    expect(screen.getByTestId("compare-page")).toHaveAttribute("data-scope", "all");
+    const body = screen.getByTestId("compare-page-body");
+    expect(body).toBeInTheDocument();
+    expect(body).toHaveAttribute("data-scope", "all");
   });
 });
 
