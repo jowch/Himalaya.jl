@@ -14,16 +14,16 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useLocation, useNavigate } from "react-router-dom";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Skeleton } from "boneyard-js/react";
 import { ComparisonSidebar } from "../components/ComparisonSidebar";
 import { MultiTracePlot } from "../components/MultiTracePlot";
 import { MemberMetaGutter } from "../components/MemberMetaGutter";
 import { GroupingModeToggle } from "../components/GroupingModeToggle";
 import { AnnotationToggles } from "../components/AnnotationToggles";
-import { NeedsReviewBadge } from "../components/NeedsReviewBadge";
-import { LineageBadge } from "../components/LineageBadge";
-import { ForksPopover } from "../components/ForksPopover";
+import { CompareTitleStrip } from "../components/CompareTitleStrip";
+import { CompareStatusSurface } from "../components/CompareStatusSurface";
+import { CompareToolbar } from "../components/CompareToolbar";
 import { ChatCard } from "../components/ChatCard";
 import { WorkspaceGrid } from "../components/WorkspaceGrid";
 import { FigureExportControls } from "../components/FigureExportControls";
@@ -33,17 +33,20 @@ import { slugifyForFilename } from "../lib/figure-export/filename";
 import { effectiveGroupingMode } from "../lib/comparison/effectiveGroupingMode";
 import {
   useComparison,
+  useComparisonForks,
   useMemberTraces,
   useMemberTracesLoading,
   useMemberExposures,
   useMemberSamples,
   useExperiment,
+  useDeleteComparison,
 } from "../queries";
 import { useAppState } from "../state";
 import { useCurrentUserId } from "../hooks/useCurrentUserId";
 import { comparePath, type CompareScope } from "../lib/comparison/routes";
 import { resolveDisplayLabels } from "../lib/comparison/labels";
-import type { Comparison, ComparisonMember } from "../api";
+import * as api from "../api";
+import type { ComparisonMember } from "../api";
 
 // Boneyard fixture for the compare-review-plot skeleton — a stand-in plot
 // pane + gutter so the captured bones reflect the dual-column geometry the
@@ -198,6 +201,66 @@ function ReviewPlot({
     return () => setHighlightedCompareMemberId(undefined);
   }, [setHighlightedCompareMemberId]);
 
+  // ── Compare UX C-12 — review-mode header wiring ──────────────────────────
+  // Author byline + isCurrentUserAuthor. `Comparison` carries only the
+  // numeric `created_by`; resolve the display name from the shared `["users"]`
+  // cache (same source `useCurrentUserId` reads). No dedicated `useUser`
+  // hook exists, so the lookup is inlined here.
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+  const currentUserId = useCurrentUserId();
+  const usersQ = useQuery({
+    queryKey: ["users"] as const,
+    queryFn: () => api.listUsers(),
+  });
+  const authorUsername = useMemo(() => {
+    if (authorUserId === null) return null;
+    return (usersQ.data ?? []).find((u) => u.id === authorUserId)?.username
+      ?? null;
+  }, [usersQ.data, authorUserId]);
+  const isCurrentUserAuthor =
+    authorUserId !== null
+    && currentUserId !== undefined
+    && currentUserId === authorUserId;
+
+  // Fork lineage — surface "forked from <title>" with a deep link to the
+  // parent's review page when the parent still exists.
+  const forkedFromId = compQ.data?.forked_from_id ?? null;
+  const forkedFromHref = forkedFromId !== null
+    ? comparePath({ scope, eid, id: forkedFromId })
+    : null;
+
+  // Toolbar action handlers. `EditOrForkButton` / `NeedsReviewBadge` /
+  // `ForksPopover` callsites are gone (Compare UX C-12); the toolbar's
+  // overflow menu + status surface now own these gestures.
+  const forksQ = useComparisonForks(id);
+  const startFork = useAppState((s) => s.startForkDraft);
+  const deleteMut = useDeleteComparison();
+
+  const handleCopyLink = useCallback(() => {
+    void navigator.clipboard?.writeText(window.location.href);
+  }, []);
+
+  const handleDelete = useCallback(() => {
+    deleteMut.mutate({ id });
+    navigate(comparePath({ scope, eid }));
+  }, [deleteMut, id, navigate, scope, eid]);
+
+  // Fork (was EditOrForkButton's non-author branch): seed a brand-new draft
+  // carrying the parent's lineage and navigate to the create flow.
+  const handleFork = useCallback(() => {
+    if (!compQ.data) return;
+    startFork(compQ.data, qc);
+    navigate(comparePath({ scope, eid, isNew: true }));
+  }, [compQ.data, startFork, qc, navigate, scope, eid]);
+
+  // Re-snapshot (was NeedsReviewBadge): the author navigates to the bare
+  // comparison URL — Compare UX Phase B made that the inline edit surface,
+  // where `loadDraftFromComparison` recomputes snapshots against the cache.
+  const handleReanalyze = useCallback(() => {
+    navigate(comparePath({ scope, eid, id }));
+  }, [navigate, scope, eid, id]);
+
   const exposureIds = useMemo(
     () => members.flatMap((m) => (m.exposure_id !== null ? [m.exposure_id] : [])),
     [members],
@@ -294,37 +357,49 @@ function ReviewPlot({
     <div className="flex-1 min-h-0 flex flex-col p-4 gap-3" data-testid="compare-review-plot">
       <div
         data-testid="compare-review-header"
-        className="flex items-center gap-3 flex-wrap"
+        className="flex flex-col gap-2"
       >
-        <GroupingModeToggle mode={groupingMode} onChange={setDraftViewGroupingMode} />
-        <AnnotationToggles />
-        {isStale && (
-          <NeedsReviewBadge
-            comparisonId={id}
-            experimentId={eid}
-            scope={scope}
-            authorUserId={authorUserId}
-          />
-        )}
-        {compQ.data && (
-          <EditOrForkButton
-            comparison={compQ.data}
-            experimentId={eid}
-            scope={scope}
-          />
-        )}
-        {compQ.data && (
-          <LineageBadge comparison={compQ.data} experimentId={eid} scope={scope} />
-        )}
-        <ForksPopover comparisonId={id} experimentId={eid} scope={scope} />
-        <span className="ml-auto inline-flex items-center gap-1">
-          <FigureExportControls
-            spec={exportSpec}
-            filenameStem={exportFilenameStem}
-            ariaContext="comparison plot"
-            disabled={exportDisabled}
-          />
-        </span>
+        <CompareTitleStrip
+          title={compQ.data?.title ?? ""}
+          description={compQ.data?.description ?? null}
+          memberCount={members.length}
+          authorUsername={authorUsername}
+          isCurrentUserAuthor={isCurrentUserAuthor}
+          lastEventAt={compQ.data?.last_event_at ?? null}
+          forkedFromTitle={compQ.data?.forked_from_title ?? null}
+          forkedFromHref={forkedFromHref}
+          onTitleChange={() => {}}
+          onDescChange={() => {}}
+          readOnly
+        />
+        <CompareStatusSurface
+          needsReview={isStale ? { onReanalyze: handleReanalyze } : null}
+          serverUpdate={null}
+          savedAt={null}
+        />
+        <CompareToolbar
+          groupingControl={
+            <GroupingModeToggle
+              mode={groupingMode}
+              onChange={setDraftViewGroupingMode}
+            />
+          }
+          annotationControl={<AnnotationToggles />}
+          forksCount={forksQ.data?.length ?? 0}
+          onCopyLink={handleCopyLink}
+          onDelete={handleDelete}
+          onDiscardChanges={null}
+          onFork={handleFork}
+          exportControl={
+            <FigureExportControls
+              spec={exportSpec}
+              filenameStem={exportFilenameStem}
+              ariaContext="comparison plot"
+              disabled={exportDisabled}
+            />
+          }
+          saveControl={null}
+        />
       </div>
       <Skeleton
         name="compare-review-plot"
@@ -361,72 +436,5 @@ function ReviewPlot({
         </div>
       </Skeleton>
     </div>
-  );
-}
-
-/**
- * Author-vs-fork affordance (Plan §Phase 11, Task 11.2). Mutually exclusive
- * — Edit when the current user authored the comparison, Fork otherwise. The
- * orphan-author case (`comparison.created_by === null`) shows Fork to ALL
- * users since no one matches null; combined with the backend's spec
- * §Authorship "fork-only" gate, this is the right fallback.
- *
- * Edit click navigates to the edit-mode shell and seeds the Zustand draft
- * via `loadDraftFromComparison` so the editor has the full saved state to
- * mutate. Fork click creates a brand-new draft pre-populated from the
- * parent's data + lineage (`forkedFromId` + `forkedAtHash`) and navigates
- * to the create flow; submit will POST /api/comparisons with the lineage
- * fields per Phase 3's `SaveComparisonBody` contract.
- */
-function EditOrForkButton({
-  comparison, experimentId, scope,
-}: {
-  comparison: Comparison;
-  experimentId: number | undefined;
-  scope: CompareScope;
-}): JSX.Element {
-  const navigate = useNavigate();
-  const qc = useQueryClient();
-  const currentUserId = useCurrentUserId();
-  const loadDraft = useAppState((s) => s.loadDraftFromComparison);
-  const startFork = useAppState((s) => s.startForkDraft);
-
-  const isAuthor =
-    comparison.created_by !== null
-    && currentUserId !== undefined
-    && currentUserId === comparison.created_by;
-
-  if (isAuthor) {
-    const onEdit = (): void => {
-      loadDraft(comparison, qc);
-      navigate(comparePath({ scope, eid: experimentId, id: comparison.id }));
-    };
-    return (
-      <button
-        type="button"
-        data-testid="comparison-edit"
-        onClick={onEdit}
-        className="px-1.5 py-0.5 rounded text-xs text-fg-dim hover:text-fg
-                   hover:bg-bg-hover border border-transparent hover:border-border"
-      >
-        Edit
-      </button>
-    );
-  }
-
-  const onFork = (): void => {
-    startFork(comparison, qc);
-    navigate(comparePath({ scope, eid: experimentId, isNew: true }));
-  };
-  return (
-    <button
-      type="button"
-      data-testid="comparison-fork"
-      onClick={onFork}
-      className="px-1.5 py-0.5 rounded text-xs text-fg-dim hover:text-fg
-                 hover:bg-bg-hover border border-transparent hover:border-border"
-    >
-      Fork
-    </button>
   );
 }

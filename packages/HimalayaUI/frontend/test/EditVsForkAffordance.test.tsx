@@ -1,15 +1,15 @@
 /**
- * Edit-vs-Fork affordance tests (Plan §Phase 11, Task 11.2).
+ * Fork affordance tests (Plan §Phase 11, Task 11.2; migrated by Compare UX
+ * C-12).
  *
- * Verifies the review-mode header gating:
- *   - Author of the comparison sees an "Edit" button (not Fork).
- *   - Non-author sees a "Fork" button (not Edit).
- *   - Orphaned-author comparison (`created_by === null`) shows Fork to all
- *     users — no user matches null, so the Edit affordance hides.
+ * Compare UX C-12 replaced the review-mode header's inline `EditOrForkButton`
+ * with the `CompareToolbar` overflow menu. The Edit gesture is deferred to the
+ * SavePill in C-12's successor (C-14); only the Fork action survives in the
+ * toolbar, and it is no longer author-gated — anyone can fork from the
+ * overflow menu.
  *
- * Plus action wiring:
- *   - Edit click navigates to the bare comparison URL (Compare UX Phase B
- *     dropped `/edit`) and `loadDraftFromComparison` seeds the Zustand draft.
+ * This file verifies the Fork action wiring through the new toolbar:
+ *   - Fork lives in the `⋯ more` overflow menu and is always present.
  *   - Fork click creates a brand-new draft (`id === undefined`) carrying
  *     `forkedFromId` + `forkedAtHash` from the parent, and navigates to
  *     /experiments/:eid/compare/new.
@@ -87,9 +87,6 @@ function renderReview(qc: QueryClient) {
   return render(
     <QueryClientProvider client={qc}>
       <MemoryRouter initialEntries={["/experiments/7/compare/42"]}>
-        {/* LocationSpy is an always-mounted sibling so navigation is
-            observable even when it lands on the same route ComparePage
-            owns — Compare UX Phase B made Edit navigate to the bare URL. */}
         <LocationSpy />
         <Routes>
           <Route path="/experiments/:eid/compare/:id" element={<ComparePage />} />
@@ -99,27 +96,29 @@ function renderReview(qc: QueryClient) {
   );
 }
 
-describe("Edit-vs-Fork affordance — visibility", () => {
+/** Open the toolbar overflow menu and return its `Fork` button. */
+async function openForkMenuItem(): Promise<HTMLElement> {
+  const more = await waitFor(() => screen.getByTestId("compare-toolbar-more"));
+  fireEvent.click(more);
+  return waitFor(() => screen.getByRole("button", { name: "Fork" }));
+}
+
+describe("Fork affordance — toolbar overflow menu", () => {
   beforeEach(() => {
     useAppState.setState({ username: undefined });
     useAppState.getState().discardDraft();
   });
 
-  it("author sees Edit button, not Fork", async () => {
+  it("Fork is reachable from the toolbar overflow menu", async () => {
     const qc = makeQc();
-    qc.setQueryData(["users"] as const, [
-      { id: 7, username: "alice", first_name: null, last_name: null },
-    ]);
     qc.setQueryData(["comparison", 42] as const, makeComparison({ created_by: 7 }));
-    useAppState.setState({ username: "alice" });
 
     renderReview(qc);
-    await waitFor(() => screen.getByTestId("compare-review-header"));
-    await waitFor(() => expect(screen.getByTestId("comparison-edit")).toBeInTheDocument());
-    expect(screen.queryByTestId("comparison-fork")).toBeNull();
+    const forkItem = await openForkMenuItem();
+    expect(forkItem).toBeInTheDocument();
   });
 
-  it("non-author sees Fork button, not Edit", async () => {
+  it("Fork is available regardless of authorship (non-author)", async () => {
     const qc = makeQc();
     qc.setQueryData(["users"] as const, [
       { id: 99, username: "bob", first_name: null, last_name: null },
@@ -128,71 +127,15 @@ describe("Edit-vs-Fork affordance — visibility", () => {
     useAppState.setState({ username: "bob" });
 
     renderReview(qc);
-    await waitFor(() => screen.getByTestId("compare-review-header"));
-    await waitFor(() => expect(screen.getByTestId("comparison-fork")).toBeInTheDocument());
-    expect(screen.queryByTestId("comparison-edit")).toBeNull();
-  });
-
-  it("orphan-author comparison (created_by === null) shows Fork to all users", async () => {
-    const qc = makeQc();
-    qc.setQueryData(["users"] as const, [
-      { id: 7, username: "alice", first_name: null, last_name: null },
-    ]);
-    // Original author is alice (id 7) but the comparison is orphan now.
-    qc.setQueryData(["comparison", 42] as const, makeComparison({ created_by: null }));
-    useAppState.setState({ username: "alice" });
-
-    renderReview(qc);
-    await waitFor(() => screen.getByTestId("compare-review-header"));
-    await waitFor(() => expect(screen.getByTestId("comparison-fork")).toBeInTheDocument());
-    expect(screen.queryByTestId("comparison-edit")).toBeNull();
-  });
-
-  it("hides both buttons when the current user has not been resolved yet", async () => {
-    const qc = makeQc();
-    // No `users` cache, no `username` set. The lookup returns undefined.
-    qc.setQueryData(["comparison", 42] as const, makeComparison({ created_by: 7 }));
-    renderReview(qc);
-    await waitFor(() => screen.getByTestId("compare-review-header"));
-    // We're not the author and we don't know who we are; Fork is the safe
-    // default (matches non-author). Edit must not be shown.
-    expect(screen.queryByTestId("comparison-edit")).toBeNull();
-    expect(screen.getByTestId("comparison-fork")).toBeInTheDocument();
+    const forkItem = await openForkMenuItem();
+    expect(forkItem).toBeInTheDocument();
   });
 });
 
-describe("Edit-vs-Fork affordance — actions", () => {
+describe("Fork affordance — action", () => {
   beforeEach(() => {
     useAppState.setState({ username: undefined });
     useAppState.getState().discardDraft();
-  });
-
-  it("Edit click navigates to the bare comparison URL and seeds the draft", async () => {
-    const qc = makeQc();
-    qc.setQueryData(["users"] as const, [
-      { id: 7, username: "alice", first_name: null, last_name: null },
-    ]);
-    qc.setQueryData(["comparison", 42] as const, makeComparison({ created_by: 7 }));
-    useAppState.setState({ username: "alice" });
-
-    renderReview(qc);
-    const editBtn = await waitFor(() => screen.getByTestId("comparison-edit"));
-    fireEvent.click(editBtn);
-    // Compare UX Phase B: `/edit` is gone — Edit stays on the bare URL and
-    // seeds the draft into Zustand (the edit surface is now inline).
-    await waitFor(() =>
-      expect(screen.getByTestId("current-location").textContent)
-        .toBe("/experiments/7/compare/42"),
-    );
-    // Draft was loaded against the parent; loadDraftFromComparison shape:
-    // - id matches, baseHash matches content_hash.
-    const draft = useAppState.getState().activeDraft;
-    expect(draft).not.toBeNull();
-    expect(draft?.id).toBe(42);
-    expect(draft?.baseHash).toBe("sha256:parent");
-    // Edit is NOT a fork — lineage stays empty.
-    expect(draft?.forkedFromId).toBeUndefined();
-    expect(draft?.forkedAtHash).toBeUndefined();
   });
 
   it("Fork click creates a fresh draft with parent lineage and navigates to /new", async () => {
@@ -208,8 +151,8 @@ describe("Edit-vs-Fork affordance — actions", () => {
     useAppState.setState({ username: "bob" });
 
     renderReview(qc);
-    const forkBtn = await waitFor(() => screen.getByTestId("comparison-fork"));
-    fireEvent.click(forkBtn);
+    const forkItem = await openForkMenuItem();
+    fireEvent.click(forkItem);
     await waitFor(() =>
       expect(screen.getByTestId("current-location").textContent)
         .toBe("/experiments/7/compare/new"),

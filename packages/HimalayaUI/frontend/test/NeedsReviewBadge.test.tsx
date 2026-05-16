@@ -77,12 +77,19 @@ describe("NeedsReviewBadge — direct render", () => {
   });
 });
 
-describe("NeedsReviewBadge — author clickability via ComparePage", () => {
+// Compare UX C-12: the ComparePage review header no longer mounts
+// `NeedsReviewBadge`. The stale signal is now surfaced by
+// `CompareStatusSurface` (`compare-status-surface` + a `compare-status-
+// resnapshot` button). The new banner is NOT author-gated — anyone viewing a
+// stale comparison sees the re-snapshot affordance, so the prior author/
+// non-author clickability split collapses. These tests migrate the
+// page-level assertions to the new selectors.
+describe("Compare review header — stale status surface via ComparePage", () => {
   beforeEach(() => {
     useAppState.setState({ username: undefined });
   });
 
-  it("does not render when no member is stale", async () => {
+  it("does not render the status surface when no member is stale", async () => {
     const qc = makeQc();
     qc.setQueryData(
       ["comparison", 42] as const,
@@ -110,10 +117,11 @@ describe("NeedsReviewBadge — author clickability via ComparePage", () => {
       </QueryClientProvider>,
     );
     await waitFor(() => screen.getByTestId("compare-review-plot"));
+    expect(screen.queryByTestId("compare-status-surface")).toBeNull();
     expect(screen.queryByTestId("comparison-needs-review")).toBeNull();
   });
 
-  it("renders when any member is stale", async () => {
+  it("renders the status surface when any member is stale", async () => {
     const qc = makeQc();
     qc.setQueryData(
       ["comparison", 42] as const,
@@ -150,14 +158,15 @@ describe("NeedsReviewBadge — author clickability via ComparePage", () => {
         </MemoryRouter>
       </QueryClientProvider>,
     );
-    await waitFor(() => screen.getByTestId("comparison-needs-review"));
-    const badge = screen.getByTestId("comparison-needs-review");
-    expect(badge).toBeInTheDocument();
+    const surface = await waitFor(() =>
+      screen.getByTestId("compare-status-surface"),
+    );
+    expect(surface).toBeInTheDocument();
+    expect(screen.getByTestId("compare-status-resnapshot")).toBeInTheDocument();
   });
 
-  it("author (created_by matches current user) → badge is clickable; navigates to the comparison", async () => {
+  it("re-snapshot click navigates to the bare comparison URL", async () => {
     const qc = makeQc();
-    // Pre-cache the users list so `useCurrentUserId` resolves synchronously.
     qc.setQueryData(["users"] as const, [
       { id: 7, username: "alice", first_name: null, last_name: null },
     ]);
@@ -190,7 +199,7 @@ describe("NeedsReviewBadge — author clickability via ComparePage", () => {
         <MemoryRouter initialEntries={["/experiments/7/compare/42"]}>
           {/* Always-mounted so navigation is observable even when it lands
               on the route ComparePage owns — Compare UX Phase B dropped the
-              `/edit` segment, so the author badge navigates to the bare URL. */}
+              `/edit` segment, so re-snapshot navigates to the bare URL. */}
           <LocationSpy />
           <Routes>
             <Route path="/experiments/:eid/compare/:id" element={<ComparePage />} />
@@ -198,62 +207,14 @@ describe("NeedsReviewBadge — author clickability via ComparePage", () => {
         </MemoryRouter>
       </QueryClientProvider>,
     );
-    const badge = await waitFor(() => screen.getByTestId("comparison-needs-review"));
-    await waitFor(() => expect(badge).toHaveAttribute("data-clickable", "true"));
-    fireEvent.click(badge);
+    const btn = await waitFor(() =>
+      screen.getByTestId("compare-status-resnapshot"),
+    );
+    fireEvent.click(btn);
     await waitFor(() =>
       expect(screen.getByTestId("current-location").textContent)
         .toBe("/experiments/7/compare/42"),
     );
-  });
-
-  it("non-author (created_by mismatches) → badge not clickable; click is a no-op", async () => {
-    const qc = makeQc();
-    qc.setQueryData(["users"] as const, [
-      { id: 99, username: "bob", first_name: null, last_name: null },
-    ]);
-    qc.setQueryData(
-      ["comparison", 42] as const,
-      makeComparison({
-        // Comparison created by user 7 (alice)
-        created_by: 7,
-        members: [
-          {
-            id: 1, comparison_id: 42, exposure_id: null,
-            display_order: 0, band_height: 1, y_offset: 0,
-            normalization: "qwindow",
-            color_override: null, label_override: null,
-            q_window_min: null, q_window_max: null, peak_display: null,
-            snapshot: { effective_peaks: [], confirmed_index: null, analysis_inputs_hash: "h" },
-            is_stale: true, created_by: null, created_at: null,
-          },
-        ],
-      }),
-    );
-    // ...but the current user is bob (id 99).
-    useAppState.setState({ username: "bob" });
-
-    function LocationSpy() {
-      const loc = useLocation();
-      return <div data-testid="current-location">{loc.pathname}</div>;
-    }
-
-    render(
-      <QueryClientProvider client={qc}>
-        <MemoryRouter initialEntries={["/experiments/7/compare/42"]}>
-          <LocationSpy />
-          <Routes>
-            <Route path="/experiments/:eid/compare/:id" element={<ComparePage />} />
-          </Routes>
-        </MemoryRouter>
-      </QueryClientProvider>,
-    );
-    const badge = await waitFor(() => screen.getByTestId("comparison-needs-review"));
-    expect(badge).toHaveAttribute("data-clickable", "false");
-    fireEvent.click(badge);
-    // Non-author click is a no-op — still on the bare comparison page.
-    expect(screen.getByTestId("current-location").textContent)
-      .toBe("/experiments/7/compare/42");
   });
 });
 
