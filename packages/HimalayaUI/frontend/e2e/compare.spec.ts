@@ -333,8 +333,10 @@ test("compare smoke: create → submit → review", async ({ page }) => {
   await expect(page).toHaveURL(/\/experiments\/1\/compare\/new$/);
   await expect(page.getByTestId("compare-page-edit")).toBeVisible();
 
-  // 3. Fill the title.
-  await page.getByTestId("compare-edit-title").fill("My first comparison");
+  // 3. Fill the title (Compare UX C-13 — title is now an InlineEditableText
+  // inside CompareTitleStrip; click the rest span to enter edit mode).
+  await page.getByTestId("compare-title").click();
+  await page.getByTestId("compare-title").fill("My first comparison");
 
   // 4. Inline picker panel is in the right slot (PR2). Tick each sample
   // row to immediate-commit add — no modal, no batch "Add N selected" footer.
@@ -348,7 +350,7 @@ test("compare smoke: create → submit → review", async ({ page }) => {
   // Both members are now in the draft (immediate-commit).
 
   // 5. Save — verify the request lands and we navigate to review.
-  await page.getByTestId("comparison-save").click();
+  await page.getByTestId("save-pill").click();
   // Server state must contain the new comparison.
   await expect(page).toHaveURL(/\/experiments\/1\/compare\/\d+$/);
   await expect(page.getByTestId("compare-review-plot")).toBeVisible();
@@ -447,9 +449,11 @@ test("compare smoke: non-author sees Fork → can save fork", async ({ page }) =
   await expect(page).toHaveURL(/\/experiments\/1\/compare\/new$/);
   await expect(page.getByTestId("compare-page-edit")).toBeVisible();
 
-  // Edit the title and save the fork.
-  await page.getByTestId("compare-edit-title").fill("Bob's fork");
-  await page.getByTestId("comparison-save").click();
+  // Edit the title and save the fork (Compare UX C-13 — InlineEditableText
+  // title + SavePill replace the legacy input + Save button).
+  await page.getByTestId("compare-title").click();
+  await page.getByTestId("compare-title").fill("Bob's fork");
+  await page.getByTestId("save-pill").click();
   // Lands on the new fork's review page (id=2 since nextComparisonId starts at 2).
   await expect(page).toHaveURL(/\/experiments\/1\/compare\/\d+$/);
   await expect(page.getByTestId("compare-review-plot")).toBeVisible();

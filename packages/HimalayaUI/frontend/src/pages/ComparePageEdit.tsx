@@ -36,13 +36,20 @@ import { ComparisonSidebar } from "../components/ComparisonSidebar";
 import { ComparisonPickerPanel } from "../components/ComparisonPickerPanel";
 import { MultiTracePlot } from "../components/MultiTracePlot";
 import { MemberMetaGutter } from "../components/MemberMetaGutter";
+import { GroupingModeToggle } from "../components/GroupingModeToggle";
+import { CompareTitleStrip } from "../components/CompareTitleStrip";
+import { CompareStatusSurface } from "../components/CompareStatusSurface";
+import { CompareToolbar } from "../components/CompareToolbar";
+import { SavePill } from "../components/SavePill";
 import { WorkspaceGrid } from "../components/WorkspaceGrid";
 import { HintText } from "../components/ui";
 import { useAppState } from "../state";
 import {
   useSaveComparison, useComparison, useMemberTraces, useMemberTracesLoading,
-  useMemberExposures, useMemberSamples,
+  useMemberExposures, useMemberSamples, useComparisonForks, useDeleteComparison,
 } from "../queries";
+import { useCurrentUserId } from "../hooks/useCurrentUserId";
+import { useCompareMode } from "../hooks/useCompareMode";
 import { computeMemberSnapshot } from "../lib/comparison/snapshot";
 import { comparePath } from "../lib/comparison/routes";
 import { resolveDisplayLabels } from "../lib/comparison/labels";
@@ -160,7 +167,11 @@ export function ComparePageEdit(): JSX.Element {
     }
   }, [navigate, id, scope, eid, goToList]);
 
+  // Compare UX C-13 — "Discard changes" now lives inside the toolbar's ⋯-more
+  // menu (a less-prominent gesture than the old standalone button). Guard it
+  // with a confirm so a stray menu click can't silently throw away the draft.
   const handleDiscard = useCallback(() => {
+    if (!window.confirm("Discard all unsaved changes to this comparison?")) return;
     discardDraft();
     goToList();
   }, [discardDraft, goToList]);
@@ -292,6 +303,51 @@ export function ComparePageEdit(): JSX.Element {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [handleCancel, handleSave, draft, save.isPending]);
+
+  // ── Compare UX C-13 — edit-mode header wiring ────────────────────────────
+  // The edit header now uses the shared CompareTitleStrip / CompareStatusSurface
+  // / CompareToolbar components plus a SavePill (issue #139), mirroring the
+  // C-12 review-mode wiring in ComparePage.
+  const currentUserId = useCurrentUserId();
+  // `CompareMode` drives the SavePill's copy variant. For C-13 the
+  // author-editing case ("editing-mine") and the create case
+  // ("creating-blank") are what matter; the fork-morph flow is C-14.
+  const compareMode = useCompareMode({
+    comparison: comparisonQ.data,
+    currentUserId,
+  });
+  const forksQ = useComparisonForks(id);
+  const deleteMut = useDeleteComparison();
+
+  // Toolbar overflow-menu handlers. Edit mode has no live comparison id for
+  // the create flow, so Copy-link / Fork / Delete only do meaningful work
+  // when editing an existing comparison.
+  const handleCopyLink = useCallback(() => {
+    void navigator.clipboard?.writeText(window.location.href);
+  }, []);
+
+  const handleDelete = useCallback(() => {
+    if (id === undefined) return;
+    deleteMut.mutate({ id });
+    discardDraft();
+    goToList();
+  }, [deleteMut, id, discardDraft, goToList]);
+
+  // Edit mode is itself the fork-authoring surface; "Fork" from here just
+  // returns to the create flow with the current draft intact.
+  const handleFork = useCallback(() => {
+    navigate(comparePath({ scope, eid, isNew: true }));
+  }, [navigate, scope, eid]);
+
+  // Grouping-mode write — mirrors ComparePage; auto-creates an empty draft
+  // when none is active (spec §6.4 viewer escape hatch).
+  const setDraftViewGroupingMode = useAppState((s) => s.setDraftViewGroupingMode);
+
+  // SavePill renders only when the draft is dirty + non-empty; the legacy
+  // Save button was disabled (not hidden) for an empty draft. Treat a draft
+  // with at least one member as "dirty" so the pill surfaces the save
+  // affordance, keeping C-13 behaviour-equivalent to the old button.
+  const saveDirty = (draft?.members.length ?? 0) > 0;
 
   // Phase 6 — wire MultiTracePlot. Members reflect the live draft (Zustand);
   // traces fetched in parallel via `useMemberTraces`. The q-axis zoom domain
@@ -432,61 +488,78 @@ export function ComparePageEdit(): JSX.Element {
   // because edit mode has no chat (#60 OOS for picker-as-panel work).
   const editCenter = (
     <div className="flex-1 min-h-0 flex flex-col p-4 gap-3">
-      <div className="flex items-center gap-2">
-        <input
-          data-testid="compare-edit-title"
-          type="text"
-          placeholder="Comparison title"
-          value={draft?.title ?? ""}
-          onChange={(e) => setDraftTitle(e.target.value)}
-          className="flex-1 bg-transparent border border-border rounded px-2 py-1 text-base"
+      <div data-testid="compare-edit-header" className="flex flex-col gap-2">
+        <CompareTitleStrip
+          title={draft?.title ?? ""}
+          // Editable (non-readonly): `""` keeps the description row visible
+          // with the "Add a description…" placeholder so it can be edited.
+          description={draft?.description ?? ""}
+          memberCount={draft?.members.length ?? 0}
+          // Editing your own draft — the byline reads "by you".
+          authorUsername={null}
+          isCurrentUserAuthor
+          lastEventAt={comparisonQ.data?.last_event_at ?? null}
+          forkedFromTitle={comparisonQ.data?.forked_from_title ?? null}
+          forkedFromHref={null}
+          onTitleChange={setDraftTitle}
+          onDescChange={setDraftDescription}
         />
-        <button
-          type="button"
-          data-testid="comparison-save"
-          onClick={handleSave}
-          disabled={(draft?.members.length ?? 0) === 0 || save.isPending}
-          title="Save (Cmd+Enter)"
-          className="px-3 py-1 rounded bg-accent text-bg disabled:opacity-50 text-sm font-medium"
-        >
-          {save.isPending ? "Saving…" : "Save"}
-        </button>
-        <button
-          type="button"
-          data-testid="comparison-cancel"
-          onClick={handleCancel}
-          title="Cancel (Esc)"
-          className="px-3 py-1 rounded border border-border text-sm"
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          data-testid="comparison-discard"
-          onClick={handleDiscard}
-          className="px-3 py-1 rounded border border-border text-fg-muted text-sm"
-        >
-          Discard draft
-        </button>
-        <button
-          type="button"
-          data-testid="compare-edit-reset-heights"
-          onClick={resetBandHeights}
-          disabled={(draft?.members.length ?? 0) === 0}
-          className="px-3 py-1 rounded border border-border text-fg-muted text-sm
-                     disabled:opacity-50"
-          title="Reset all band heights to default"
-        >
-          Reset heights
-        </button>
+        <CompareStatusSurface
+          needsReview={null}
+          serverUpdate={null}
+          savedAt={null}
+        />
+        <CompareToolbar
+          groupingControl={
+            <GroupingModeToggle
+              mode={groupingMode}
+              onChange={setDraftViewGroupingMode}
+            />
+          }
+          // Edit mode has never carried peak-annotation toggles (the edit
+          // plot doesn't read `showPeakTicks`/`showPeakLabels`); the
+          // annotation slot instead hosts the edit-only "Reset heights"
+          // control, which has no home in the shared component set.
+          annotationControl={
+            <button
+              type="button"
+              data-testid="compare-edit-reset-heights"
+              onClick={resetBandHeights}
+              disabled={(draft?.members.length ?? 0) === 0}
+              className="px-2 py-0.5 rounded border border-border text-fg-muted text-xs
+                         disabled:opacity-50"
+              title="Reset all band heights to default"
+            >
+              Reset heights
+            </button>
+          }
+          forksCount={forksQ.data?.length ?? 0}
+          onCopyLink={handleCopyLink}
+          onDelete={handleDelete}
+          onDiscardChanges={handleDiscard}
+          onFork={handleFork}
+          exportControl={null}
+          saveControl={
+            <span className="inline-flex items-center gap-2">
+              <button
+                type="button"
+                data-testid="compare-edit-cancel"
+                onClick={handleCancel}
+                title="Cancel (Esc)"
+                className="px-3 py-1 rounded border border-border text-sm"
+              >
+                Cancel
+              </button>
+              <SavePill
+                dirty={saveDirty}
+                mode={compareMode}
+                onSave={handleSave}
+                isSaving={save.isPending}
+              />
+            </span>
+          }
+        />
       </div>
-      <textarea
-        data-testid="compare-edit-description"
-        placeholder="Description (optional)"
-        value={draft?.description ?? ""}
-        onChange={(e) => setDraftDescription(e.target.value)}
-        className="bg-transparent border border-border rounded px-2 py-1 text-sm resize-none h-16"
-      />
       <div
         data-testid="compare-edit-plot-host"
         className="flex-1 min-h-0 flex flex-col gap-2"

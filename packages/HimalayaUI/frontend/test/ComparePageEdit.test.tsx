@@ -94,11 +94,13 @@ beforeEach(() => {
 });
 
 describe("ComparePageEdit", () => {
-  it("Save button is disabled when the draft has zero members", () => {
+  // Compare UX C-13 — the Save affordance is now the SavePill, which is
+  // *hidden* (not disabled-present) when the draft has no members.
+  it("Save pill is absent when the draft has zero members", () => {
     const qc = makeQc();
     useAppState.getState().startNewDraft();
     renderEdit({ qc, initialPath: "/experiments/7/compare/new" });
-    expect(screen.getByTestId("comparison-save")).toBeDisabled();
+    expect(screen.queryByTestId("save-pill")).toBeNull();
   });
 
   it("Save with members posts to /api/comparisons (create flow) and navigates to review", async () => {
@@ -137,7 +139,7 @@ describe("ComparePageEdit", () => {
     });
 
     renderEdit({ qc, initialPath: "/experiments/7/compare/new" });
-    await user.click(screen.getByTestId("comparison-save"));
+    await user.click(screen.getByTestId("save-pill"));
 
     await waitFor(() => {
       expect(fetchSpy).toHaveBeenCalled();
@@ -212,7 +214,7 @@ describe("ComparePageEdit", () => {
     });
 
     renderEdit({ qc, initialPath: "/experiments/7/compare/42/edit" });
-    await user.click(screen.getByTestId("comparison-save"));
+    await user.click(screen.getByTestId("save-pill"));
 
     await waitFor(() => {
       expect(fetchSpy).toHaveBeenCalled();
@@ -237,7 +239,7 @@ describe("ComparePageEdit", () => {
     const qc = makeQc();
     useAppState.getState().startNewDraft();
     renderEdit({ qc, initialPath: "/experiments/7/compare/new" });
-    await user.click(screen.getByTestId("comparison-cancel"));
+    await user.click(screen.getByTestId("compare-edit-cancel"));
     expect(screen.getByTestId("path-probe")).toHaveTextContent("/experiments/7/compare");
   });
 
@@ -259,19 +261,36 @@ describe("ComparePageEdit", () => {
       },
     });
     renderEdit({ qc, initialPath: "/experiments/7/compare/42/edit" });
-    await user.click(screen.getByTestId("comparison-cancel"));
+    await user.click(screen.getByTestId("compare-edit-cancel"));
     expect(screen.getByTestId("path-probe")).toHaveTextContent("/experiments/7/compare/42");
   });
 
-  it("Discard clears draft and navigates to list", async () => {
+  // Compare UX C-13 — "Discard changes" moved into the toolbar's ⋯-more menu
+  // and is now guarded by a window.confirm() pop-confirm.
+  it("Discard (via ⋯ menu, confirmed) clears draft and navigates to list", async () => {
     const user = userEvent.setup();
     const qc = makeQc();
     useAppState.getState().startNewDraft();
     useAppState.getState().setDraftTitle("Sticky");
+    vi.spyOn(window, "confirm").mockReturnValue(true);
     renderEdit({ qc, initialPath: "/experiments/7/compare/new" });
-    await user.click(screen.getByTestId("comparison-discard"));
+    await user.click(screen.getByTestId("compare-toolbar-more"));
+    await user.click(screen.getByText("Discard changes"));
     expect(useAppState.getState().activeDraft).toBeNull();
     expect(screen.getByTestId("path-probe")).toHaveTextContent("/experiments/7/compare");
+  });
+
+  it("Discard (via ⋯ menu, cancelled) keeps the draft intact", async () => {
+    const user = userEvent.setup();
+    const qc = makeQc();
+    useAppState.getState().startNewDraft();
+    useAppState.getState().setDraftTitle("Sticky");
+    vi.spyOn(window, "confirm").mockReturnValue(false);
+    renderEdit({ qc, initialPath: "/experiments/7/compare/new" });
+    await user.click(screen.getByTestId("compare-toolbar-more"));
+    await user.click(screen.getByText("Discard changes"));
+    expect(useAppState.getState().activeDraft).not.toBeNull();
+    expect(screen.getByTestId("path-probe")).toHaveTextContent("/experiments/7/compare/new");
   });
 
   it("right slot hosts ComparisonPickerPanel in edit mode", async () => {
@@ -545,7 +564,7 @@ describe("ComparePageEdit", () => {
     });
 
     renderEdit({ qc, initialPath: "/experiments/7/compare/new" });
-    await user.click(screen.getByTestId("comparison-save"));
+    await user.click(screen.getByTestId("save-pill"));
 
     await waitFor(() => {
       const calls = fetchSpy.mock.calls.map((c) =>
