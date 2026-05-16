@@ -477,7 +477,10 @@ export interface ComparisonSummary {
    */
   author_username: string | null;
   member_count: number;
+  /** Backend-capped top-3 distinct phases (`_topk_phases`). */
   member_phases: string[];
+  /** True distinct-phase total — drives the `+N more` overflow in the sidebar. */
+  member_phase_count: number;
   has_stale_members: boolean;
 }
 

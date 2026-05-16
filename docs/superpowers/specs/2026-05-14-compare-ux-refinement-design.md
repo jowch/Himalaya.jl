@@ -451,7 +451,8 @@ Added to the JSON returned by `GET /api/comparisons` and
 |---|---|---|
 | `author_username: string \| null` | `LEFT JOIN users ON users.id = comparisons.created_by` | Null when author deleted (FK SET NULL) |
 | `member_count: int` | `(SELECT COUNT(*) FROM comparison_members WHERE comparison_id = c.id)` | Bounded by N |
-| `member_phases: string[]` | `json_extract(comparison_members.snapshot, '$.confirmed_index.phase')`, aggregated | Up to 3 unique phases, ordered by frequency desc, ties broken by **first-seen `display_order` asc** (deterministic). Members without a confirmed index contribute nothing. Rest summarized as `+N more` client-side. |
+| `member_phases: string[]` | `json_extract(comparison_members.snapshot, '$.confirmed_index.phase')`, aggregated | Up to 3 unique phases, ordered by frequency desc, ties broken by **first-seen `display_order` asc** (deterministic). Members without a confirmed index contribute nothing. |
+| `member_phase_count: int` | Distinct phases in the same aggregate, **uncapped** | The displayed `member_phases` is capped at 3; this total lets the client render `· +N more` (`N = member_phase_count − member_phases.length`). |
 | `has_stale_members: bool` | `EXISTS(... snapshot_inputs_hash != e.analysis_inputs_hash)` | Same logic that drives the per-member `is_stale` flag |
 | `last_event_at: string \| null` | Already computed as a server sort key — now projected | Frontend uses it for the "edited X ago" display |
 

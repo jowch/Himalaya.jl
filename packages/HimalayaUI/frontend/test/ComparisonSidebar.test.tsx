@@ -147,6 +147,15 @@ const ROW_OLD: ComparisonSummary = {
   updated_at: "2026-04-01T00:00:00Z",
   forked_from_id: null,
   forked_at_hash: null,
+  view_grouping_mode: null,
+  view_show_peak_ticks: null,
+  view_show_peak_labels: null,
+  last_event_at: "2026-04-01T00:00:00Z",
+  author_username: null,
+  member_count: 3,
+  member_phases: [],
+  member_phase_count: 0,
+  has_stale_members: false,
 };
 
 const ROW_MID: ComparisonSummary = {
@@ -154,6 +163,7 @@ const ROW_MID: ComparisonSummary = {
   id: 2,
   title: "Mid comparison",
   updated_at: "2026-04-15T00:00:00Z",
+  last_event_at: "2026-04-15T00:00:00Z",
 };
 
 const ROW_NEW: ComparisonSummary = {
@@ -161,6 +171,7 @@ const ROW_NEW: ComparisonSummary = {
   id: 3,
   title: "Recent comparison",
   updated_at: "2026-05-01T00:00:00Z",
+  last_event_at: "2026-05-01T00:00:00Z",
 };
 
 describe("ComparisonSidebar", () => {
@@ -181,7 +192,7 @@ describe("ComparisonSidebar", () => {
     renderSidebar({
       qc, scope: "experiment", experimentId: 7, probe: true,
     });
-    const cta = screen.getByTestId("comparison-sidebar-empty-new");
+    const cta = screen.getByTestId("sidebar-empty-new");
     expect(cta).toBeEnabled();
     await user.click(cta);
     expect(screen.getByTestId("path-probe")).toHaveTextContent(
@@ -189,14 +200,19 @@ describe("ComparisonSidebar", () => {
     );
   });
 
-  it("empty state CTA is disabled when no experiment context", () => {
+  it("empty state CTA from global scope navigates to /compare/all/new", async () => {
+    const user = userEvent.setup();
     qc.setQueryData(queryKeys.comparisons("all"), []);
-    renderSidebar({ qc, scope: "all", experimentId: undefined });
-    const cta = screen.getByTestId("comparison-sidebar-empty-new");
-    expect(cta).toBeDisabled();
+    renderSidebar({
+      qc, scope: "all", experimentId: undefined, probe: true,
+    });
+    await user.click(screen.getByTestId("sidebar-empty-new"));
+    expect(screen.getByTestId("path-probe")).toHaveTextContent(
+      "/compare/all/new",
+    );
   });
 
-  it("sorts rows most-recent first by updated_at", () => {
+  it("sorts rows most-recent first by last_event_at", () => {
     qc.setQueryData(queryKeys.comparisons(7), [ROW_OLD, ROW_NEW, ROW_MID]);
     renderSidebar({ qc, scope: "experiment", experimentId: 7 });
     const rows = screen.getAllByTestId("comparison-list-item");

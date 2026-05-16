@@ -19,9 +19,43 @@ import {
   useComparisons, useComparisonPins, usePinComparison, useUnpinComparison,
 } from "../queries";
 import { comparePath } from "../lib/comparison/routes";
+import { relativeTime } from "../lib/comparison/relativeTime";
+import { useCurrentUserId } from "../hooks/useCurrentUserId";
 import type { ComparisonSummary } from "../api";
 import { HintText } from "./ui";
 import { useAppState } from "../state";
+
+/**
+ * Phase-summary line for a sidebar row (Compare UX F-1). `phases` is the
+ * backend-capped top-3 list (`_topk_phases`); `phaseCount` is the true
+ * distinct-phase total, so the client can render a `+N more` overflow even
+ * though the list itself never exceeds three:
+ *   ["Pn3m","Hex","Lam"],            3, 4 → "Pn3m · Hex · Lam · 4 traces"
+ *   ["Pn3m","Im3m","Ia3d"],          5, 5 → "Pn3m · Im3m · Ia3d · +2 more · 5 traces"
+ *   [],                              0, 2 → "2 traces"
+ */
+function formatPhaseSummary(
+  phases: string[], total: number, phaseCount: number,
+): string {
+  if (phases.length === 0) return `${total} traces`;
+  const overflow = phaseCount > phases.length
+    ? ` · +${phaseCount - phases.length} more`
+    : "";
+  return `${phases.join(" · ")}${overflow} · ${total} traces`;
+}
+
+/**
+ * Normalizes a `last_event_at` value to a uniformly sortable
+ * `YYYY-MM-DDTHH:MM:SS` string. The projection mixes two formats:
+ * `MAX(user_actions.timestamp)` is space-separated with no `Z`
+ * (`2026-05-14 23:59:00`), while the `c.updated_at` COALESCE fallback is
+ * `T`-separated with a `Z` (`2026-05-14T08:00:00Z`) — see comparisons.jl.
+ * Both are UTC, so swapping the space for `T` and dropping the `Z`
+ * (slice to 19 chars) makes a lexicographic compare chronological.
+ */
+function normEventTs(s: string): string {
+  return s.replace(" ", "T").slice(0, 19);
+}
 
 // Mock fixture for boneyard layout capture. Renders a few canonical rows so
 // the captured bones reflect the realistic geometry the user will see during
@@ -56,6 +90,10 @@ export function ComparisonSidebar({
 }: Props): JSX.Element {
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
+  const currentUserId = useCurrentUserId();
+  // Server id of the comparison currently open as an unsaved draft, if any.
+  // Undefined for a brand-new (never-saved) draft — it has no listing row.
+  const draftId = useAppState((s) => s.activeDraft?.id);
 
   // Fall back to the persisted Zustand experiment context when the URL has
   // no `:eid` (e.g. on `/compare/all`). Without this fallback the
@@ -86,26 +124,32 @@ export function ComparisonSidebar({
   const unpin = useUnpinComparison();
 
   // Sort: pinned first (preserving the pin order from the API — most
-  // recently pinned at top), then non-pinned by updated_at desc.
+  // recently pinned at top), then non-pinned by `last_event_at` desc
+  // (spec §8.4 — replaces `updated_at`; `last_event_at` also covers chat
+  // activity). `last_event_at` is NOT a uniformly sortable string (the
+  // projection mixes space- and `T`-separated formats — see comparisons.jl),
+  // so `normEventTs` normalizes both sides before comparing. Nulls sort LAST
+  // (a row with no events is conceptually older than any timestamped row).
   const sorted = useMemo(() => {
     const pinnedOrder = pinsQ.data ?? [];
     const pinnedIdx = new Map<number, number>(
       pinnedOrder.map((id, i) => [id, i] as const),
     );
-    const byUpdated = (a: ComparisonSummary, b: ComparisonSummary): number => {
-      const ai = a.updated_at ?? "";
-      const bi = b.updated_at ?? "";
-      if (ai === bi) return b.id - a.id;
-      if (ai === "") return 1;
-      if (bi === "") return -1;
-      return bi.localeCompare(ai);
+    const byLastEvent = (a: ComparisonSummary, b: ComparisonSummary): number => {
+      const at = a.last_event_at;
+      const bt = b.last_event_at;
+      if (at === null && bt === null) return b.id - a.id;
+      if (at === null) return 1;   // a is null → after b
+      if (bt === null) return -1;  // b is null → after a
+      if (at === bt) return b.id - a.id;
+      return normEventTs(bt).localeCompare(normEventTs(at));
     };
     const pinned: ComparisonSummary[] = [];
     const unpinned: ComparisonSummary[] = [];
     for (const c of rows) (pinSet.has(c.id) ? pinned : unpinned).push(c);
     pinned.sort((a, b) =>
       (pinnedIdx.get(a.id) ?? 0) - (pinnedIdx.get(b.id) ?? 0));
-    unpinned.sort(byUpdated);
+    unpinned.sort(byLastEvent);
     return [...pinned, ...unpinned];
   }, [rows, pinSet, pinsQ.data]);
 
@@ -232,33 +276,47 @@ export function ComparisonSidebar({
         fixture={COMPARISON_SIDEBAR_FIXTURE}
         fallback={<div className="p-3"><HintText>Loading comparisons…</HintText></div>}
       >
-      <ul className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-1">
-        {filtered.length === 0 ? (
-          <li
-            data-testid="comparison-sidebar-empty"
-            className="text-fg-muted text-sm p-4 text-center flex flex-col items-center gap-2"
+      {rows.length === 0 ? (
+        <div
+          data-testid="comparison-sidebar-empty"
+          className="px-4 py-8 text-center text-fg-muted
+                     flex flex-col items-center gap-3"
+        >
+          <p className="text-sm">
+            {scope === "experiment"
+              ? "No comparisons in this experiment yet."
+              : "No comparisons yet."}
+          </p>
+          <button
+            type="button"
+            data-testid="sidebar-empty-new"
+            onClick={onNew}
+            className="px-3 py-1 rounded border border-border text-fg
+                       hover:bg-bg-elevated text-sm"
           >
-            {rows.length === 0 ? (
-              <>
-                <span className="italic">No comparisons yet.</span>
-                <button
-                  type="button"
-                  data-testid="comparison-sidebar-empty-new"
-                  onClick={onNew}
-                  disabled={experimentId === undefined}
-                  className="px-3 py-1 rounded border border-border text-fg
-                             hover:bg-bg-elevated text-sm disabled:opacity-50
-                             disabled:cursor-not-allowed"
-                >
-                  + New comparison
-                </button>
-              </>
-            ) : (
-              <span>No matches.</span>
-            )}
-          </li>
-        ) : (
-          filtered.map((c) => {
+            + New comparison
+          </button>
+        </div>
+      ) : filtered.length === 0 ? (
+        <div
+          data-testid="comparison-sidebar-no-matches"
+          className="px-4 py-8 text-center text-fg-muted
+                     flex flex-col items-center gap-3"
+        >
+          <p className="text-sm">No matches for &ldquo;{search}&rdquo;.</p>
+          <button
+            type="button"
+            data-testid="sidebar-empty-clear"
+            onClick={() => setSearch("")}
+            className="px-3 py-1 rounded border border-border text-fg
+                       hover:bg-bg-elevated text-sm"
+          >
+            Clear search
+          </button>
+        </div>
+      ) : (
+        <ul className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-1">
+          {filtered.map((c) => {
             const active = c.id === activeComparisonId;
             const pinned = pinSet.has(c.id);
             const onTogglePin = (e: React.MouseEvent): void => {
@@ -266,6 +324,16 @@ export function ComparisonSidebar({
               if (pinned) unpin.mutate(c.id);
               else        pin.mutate(c.id);
             };
+            // Author byline: "by you" when the current user authored it,
+            // else "by <username>", else "by —" when the author is unknown.
+            const isMine = currentUserId !== undefined
+              && c.created_by === currentUserId;
+            const byline = isMine
+              ? "by you"
+              : c.author_username !== null ? `by ${c.author_username}` : "by —";
+            const rel = relativeTime(c.last_event_at, Date.now());
+            // This row has an unsaved draft open against it (F-2).
+            const isDraft = draftId !== undefined && draftId === c.id;
             return (
               <li
                 key={c.id}
@@ -273,7 +341,7 @@ export function ComparisonSidebar({
                 data-comparison-id={c.id}
                 {...(active ? { "data-active": "true" } : {})}
                 {...(pinned ? { "data-pinned": "true" } : {})}
-                className="group flex items-start gap-1"
+                className="group relative flex items-start gap-1"
               >
                 <button
                   type="button"
@@ -285,11 +353,40 @@ export function ComparisonSidebar({
                       : "text-fg-muted hover:text-fg hover:bg-bg-elevated")
                   }
                 >
-                  <div className="font-medium truncate">{c.title || `Comparison #${c.id}`}</div>
-                  {c.description && (
-                    <div className="text-xs text-fg-dim truncate">{c.description}</div>
-                  )}
+                  <div className="font-medium truncate">
+                    {isDraft && (
+                      <span
+                        data-testid="sidebar-draft-dot"
+                        aria-hidden="true"
+                        className="text-accent mr-1"
+                      >
+                        •
+                      </span>
+                    )}
+                    {(c.title || `Comparison #${c.id}`)
+                      + (isDraft ? " (draft)" : "")}
+                  </div>
+                  <div className="text-xs text-fg-dim truncate">
+                    {formatPhaseSummary(
+                      c.member_phases, c.member_count, c.member_phase_count)}
+                  </div>
+                  <div className="text-xs text-fg-dim truncate">
+                    {isDraft
+                      ? "by you · just now"
+                      : `${byline} · ${rel === null ? "—" : `edited ${rel}`}`}
+                  </div>
                 </button>
+                {c.has_stale_members && (
+                  <span
+                    data-testid="sidebar-stale-warn"
+                    role="img"
+                    aria-label="Some members have stale indices"
+                    title="Some members have stale indices"
+                    className="absolute top-1 right-8 text-warning"
+                  >
+                    ⚠
+                  </span>
+                )}
                 <button
                   type="button"
                   data-testid="comparison-pin-toggle"
@@ -309,9 +406,9 @@ export function ComparisonSidebar({
                 </button>
               </li>
             );
-          })
-        )}
-      </ul>
+          })}
+        </ul>
+      )}
       </Skeleton>
     </div>
   );

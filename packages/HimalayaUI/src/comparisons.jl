@@ -698,6 +698,7 @@ function _comparison_listing_rows(rows)::Vector{Dict{Symbol, Any}}
             :author_username       => ismissing(r.author_username) ? nothing : String(r.author_username),
             :member_count          => Int(r.member_count),
             :member_phases         => member_phases,
+            :member_phase_count    => _count_distinct_phases(phases_str),
             :has_stale_members     => Bool(r.has_stale_members),
         )
     end
@@ -734,6 +735,27 @@ function _topk_phases(concat::AbstractString, k::Integer)::Vector{String}
     phases = collect(keys(counts))
     sort!(phases, by = p -> (-counts[p], first_seen_do[p]))
     return phases[1:min(k, length(phases))]
+end
+
+"""
+    _count_distinct_phases(concat) -> Int
+
+Counts the distinct phases in a `|`-joined list of `"<phase>#<display_order>"`
+tokens — the same input [`_topk_phases`](@ref) consumes. The listing
+projection caps the displayed `member_phases` at three; this total lets the
+client render the `+N more` overflow (spec §8.1). Empty / missing input → 0;
+malformed tokens (no `#`) are skipped.
+"""
+function _count_distinct_phases(concat::AbstractString)::Int
+    isempty(concat) && return 0
+    seen = Set{String}()
+    for p in filter(!isempty, split(concat, '|'))
+        s_token = String(p)
+        idx = findlast(==('#'), s_token)
+        idx === nothing && continue  # malformed; skip
+        push!(seen, s_token[1:idx-1])
+    end
+    return length(seen)
 end
 
 """
