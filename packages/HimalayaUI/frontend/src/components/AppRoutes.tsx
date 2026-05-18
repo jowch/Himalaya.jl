@@ -1,7 +1,9 @@
 import { useEffect } from "react";
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { useAppState } from "../state";
-import { useSamples } from "../queries";
+import { queryKeys } from "../queries";
+import * as api from "../api";
 import { useGlobalShortcuts } from "../hooks/useGlobalShortcuts";
 import { CorpusShell } from "./CorpusShell";
 import { SamplesPage } from "../pages/SamplesPage";
@@ -72,13 +74,23 @@ export function AppRoutes(): JSX.Element {
   }, [theme]);
 
   // Global keyboard shortcuts — hoisted above both shell bodies so they work
-  // under either. `useSamples(experimentId ?? 0)` matches the prior AppShell
-  // call site; the `,`/`.` sample-step shortcut needs the active
+  // under either; the `,`/`.` sample-step shortcut needs the active
   // experiment's samples. These shortcuts are now genuinely app-wide: they
   // fire under the corpus shell too (e.g. on /samples). #160 (contact sheet)
   // should be aware of this when landing — shortcuts may need guarding there.
-  const samplesQ = useSamples(experimentId ?? 0);
-  useGlobalShortcuts(experimentId === undefined ? undefined : samplesQ.data);
+  //
+  // Gated on an active experiment via `useQuery` directly (the precedent in
+  // useUrlFromState.ts) — `useSamples` exposes no `enabled` option, and
+  // without the gate this fires GET /api/samples?experiment=0 on every cold
+  // mount before an experiment is picked.
+  const samplesQuery = useQuery({
+    queryKey: queryKeys.samples(experimentId),
+    queryFn: () => api.listSamples(experimentId as number),
+    enabled: experimentId !== undefined,
+  });
+  useGlobalShortcuts(
+    experimentId === undefined ? undefined : samplesQuery.data,
+  );
 
   return (
     <Routes>
