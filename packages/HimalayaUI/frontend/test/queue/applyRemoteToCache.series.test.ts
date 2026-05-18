@@ -11,6 +11,7 @@ import { QueryClient } from "@tanstack/react-query";
 import { applyRemoteToCache } from "../../src/lib/queue/applyRemoteToCache";
 import { queryKeys } from "../../src/queries";
 import type { SseEvent } from "../../src/lib/queue/types";
+import type { Series } from "../../src/api";
 
 describe("applyRemoteToCache: series #166 kinds", () => {
   it("series_created invalidates the detail + listing caches", () => {
@@ -48,5 +49,27 @@ describe("applyRemoteToCache: series #166 kinds", () => {
     applyRemoteToCache(remote, qc);
     expect(qc.getQueryData(queryKeys.series(5))).toBeUndefined();
     expect(qc.getQueryData(queryKeys.seriesList)).toEqual([{ id: 6 }]);
+  });
+
+  it("series_plate_committed splices post_state into the detail cache", () => {
+    const qc = new QueryClient();
+    // A structurally-complete Series — post_state IS the full
+    // fetch_series_with_plate projection, so the cache write is a real
+    // round-trip, not a partial-object cast.
+    const post: Series = {
+      id: 5, title: "S", description: null, content_hash: "sha256:x",
+      created_by: 1, created_at: null, updated_at: null,
+      forked_from_id: null, forked_at_hash: null, forked_from_title: null,
+      view_grouping_mode: null, view_show_peak_ticks: null,
+      view_show_peak_labels: null, ordering_variable: null,
+      order_rule: "manual", state: "committed", members: [], samples: [],
+    };
+    const remote: SseEvent = {
+      id: 4, kind: "series_plate_committed", entity_type: "series", entity_id: 5,
+      payload: { members: [] },
+      post_state: post,
+    };
+    applyRemoteToCache(remote, qc);
+    expect(qc.getQueryData(queryKeys.series(5))).toEqual(post);
   });
 });

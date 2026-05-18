@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import { saveSeriesMutator } from "../../src/lib/queue/mutators/saveSeries";
 import { deleteSeriesMutator } from "../../src/lib/queue/mutators/deleteSeries";
+import { commitSeriesPlateMutator } from "../../src/lib/queue/mutators/commitSeriesPlate";
 import { queryKeys } from "../../src/queries";
 import type { Series } from "../../src/api";
 
@@ -49,5 +50,18 @@ describe("deleteSeriesMutator", () => {
       { id: 7, deleted: true, event_id: 99 }, qc);
     expect(qc.getQueryData(queryKeys.series(7))).toBeUndefined();
     expect(qc.getQueryData(queryKeys.seriesList)).toEqual([{ id: 8 }]);
+  });
+});
+
+describe("commitSeriesPlateMutator", () => {
+  it("synthesizeFromSse builds a full Series from the post_state envelope", () => {
+    const post = fullSeries(7);
+    post.state = "committed";
+    const synth = commitSeriesPlateMutator.synthesizeFromSse?.(
+      { id: 99, kind: "series_plate_committed", entity_type: "series",
+        entity_id: 7, payload: { members: [] }, post_state: post },
+      { event_id: 99, client_op_id: "op1", analysis_inputs_hash: undefined });
+    expect(synth?.state).toBe("committed");
+    expect(synth?.id).toBe(7);
   });
 });

@@ -29,6 +29,7 @@ import { saveComparisonMutator } from "./mutators/saveComparison";
 import { deleteComparisonMutator } from "./mutators/deleteComparison";
 import { saveSeriesMutator } from "./mutators/saveSeries";
 import { deleteSeriesMutator } from "./mutators/deleteSeries";
+import { commitSeriesPlateMutator } from "./mutators/commitSeriesPlate";
 
 /**
  * Minimal shape required by the resolver: just enough of a persisted op to
@@ -114,6 +115,8 @@ export function resolveMutator(
       return saveSeriesMutator;
     case "series_delete":
       return deleteSeriesMutator;
+    case "series_commit":
+      return commitSeriesPlateMutator;
     default:
       return undefined;
   }
@@ -154,6 +157,8 @@ export function resolveMutatorForEvent(
       return saveSeriesMutator;
     case "series_deleted":
       return deleteSeriesMutator;
+    case "series_plate_committed":
+      return commitSeriesPlateMutator;
     case "update_sample":       return updateSampleMutator;
     case "set_exposure_status": return setExposureStatusMutator;
     case "select_exposure":     return selectExposureMutator;

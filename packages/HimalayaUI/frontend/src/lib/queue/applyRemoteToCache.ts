@@ -2,7 +2,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import type { SseEvent, CurationPostState } from "./types";
 import type {
   Peak, GroupEntry, Exposure, Sample, SampleMessage,
-  ComparisonMessage, ComparisonSummary, Comparison,
+  ComparisonMessage, ComparisonSummary, Comparison, Series,
 } from "../../api";
 import { queryKeys } from "../../queries";
 import { peakQTol } from "./peakQTol";
@@ -294,6 +294,19 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
         { queryKey: queryKeys.seriesList },
         (old) => (old ? old.filter((s) => s.id !== id) : old),
       );
+      break;
+    }
+    case "series_plate_committed": {
+      // The one series event carrying a post_state envelope (master plan
+      // §5.2): post_state IS the fetch_series_with_plate projection. Splice it
+      // straight into the detail cache; invalidate the listing (denormalised
+      // member_count / has_stale_members / last_event_at fields).
+      if (remote.post_state != null) {
+        qc.setQueryData(queryKeys.series(id), remote.post_state as Series);
+      } else {
+        qc.invalidateQueries({ queryKey: queryKeys.series(id) });
+      }
+      qc.invalidateQueries({ queryKey: queryKeys.seriesList });
       break;
     }
     case "add_tag":
