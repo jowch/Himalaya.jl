@@ -231,3 +231,90 @@ function fetch_series_with_plate(db::SQLite.DB, series_id::Integer)
         :samples               => samples,
     )
 end
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Mutating-route helpers (I2.2, Task 5)
+# ─────────────────────────────────────────────────────────────────────────────
+
+"""
+    series_exists(db, series_id) -> Bool
+
+The 404 existence probe for the mutating routes. A dedicated probe is required
+because a draft series carries `content_hash IS NULL` by design, so a NULL hash
+cannot distinguish "missing" from "draft" — see `current_series_content_hash`.
+"""
+function series_exists(db::SQLite.DB, series_id::Integer)::Bool
+    rows = Tables.rowtable(DBInterface.execute(db,
+        "SELECT 1 AS one FROM series WHERE id = ?", [Int(series_id)]))
+    !isempty(rows)
+end
+
+"""
+    current_series_content_hash(db, series_id) -> Union{String, Nothing}
+
+The stored `content_hash`. Returns `nothing` for a missing series AND for an
+uncommitted draft (drafts have NULL `content_hash`). Used only for the `commit`
+409 optimistic-concurrency check — never as the existence probe (that is
+`series_exists`).
+"""
+function current_series_content_hash(db::SQLite.DB, series_id::Integer)::Union{String, Nothing}
+    rows = Tables.rowtable(DBInterface.execute(db,
+        "SELECT content_hash FROM series WHERE id = ?", [Int(series_id)]))
+    isempty(rows) && return nothing
+    ismissing(rows[1].content_hash) ? nothing : String(rows[1].content_hash)
+end
+
+"""
+    compute_series_content_hash(db, series_id) -> String
+
+`sha256:`-prefixed hash of the series **plate** — title, description, and the
+`series_members` rows. The recipe (`series_samples`) is deliberately excluded
+(master plan §5.1): `content_hash` reflects the committed plate only, so
+`series_recipe_updated` never touches it.
+"""
+function compute_series_content_hash(db::SQLite.DB, series_id::Integer)::String
+    s_rows = Tables.rowtable(DBInterface.execute(db,
+        "SELECT title, description FROM series WHERE id = ?", [Int(series_id)]))
+    isempty(s_rows) && error("compute_series_content_hash: series $series_id not found")
+    s = s_rows[1]
+    # series.title is nullable (a degenerate draft placeholder can carry NULL);
+    # "" is the sentinel. compute_content_hash for comparisons has no guard
+    # here because comparison titles are always set.
+    title = ismissing(s.title) ? "" : String(s.title)
+    description = ismissing(s.description) ? nothing : String(s.description)
+
+    member_rows = Tables.rowtable(DBInterface.execute(db,
+        """SELECT id, exposure_id, display_order, band_height, y_offset,
+                  normalization, color_override, label_override,
+                  q_window_min, q_window_max, peak_display, snapshot
+           FROM series_members
+           WHERE series_id = ?
+           ORDER BY display_order ASC, id ASC""", [Int(series_id)]))
+    members = Vector{Any}(undef, length(member_rows))
+    for (i, m) in enumerate(member_rows)
+        # Already-canonical JSON columns are re-parsed so the encoded form
+        # is structural (a nested object) rather than a quoted string.
+        # `canonical_json` re-sorts keys, so re-parse drift is impossible.
+        snap_obj = ismissing(m.snapshot) ? nothing : JSON3.read(String(m.snapshot))
+        peak_obj = ismissing(m.peak_display) ? nothing : JSON3.read(String(m.peak_display))
+        members[i] = Dict{Symbol,Any}(
+            :exposure_id    => ismissing(m.exposure_id)    ? nothing : Int(m.exposure_id),
+            :display_order  => Int(m.display_order),
+            :band_height    => Float64(m.band_height),
+            :y_offset       => Float64(m.y_offset),
+            :normalization  => String(m.normalization),
+            :color_override => ismissing(m.color_override) ? nothing : String(m.color_override),
+            :label_override => ismissing(m.label_override) ? nothing : String(m.label_override),
+            :q_window_min   => ismissing(m.q_window_min)   ? nothing : Float64(m.q_window_min),
+            :q_window_max   => ismissing(m.q_window_max)   ? nothing : Float64(m.q_window_max),
+            :peak_display   => peak_obj,
+            :snapshot       => snap_obj,
+        )
+    end
+    payload = Dict{Symbol,Any}(
+        :title       => title,
+        :description => description,
+        :members     => members,
+    )
+    "sha256:" * bytes2hex(SHA.sha256(canonical_json(payload)))
+end

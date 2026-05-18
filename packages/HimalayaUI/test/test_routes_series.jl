@@ -136,4 +136,34 @@ end
         end
     end
 
+    @testset "content-hash + existence helpers" begin
+        mktempdir() do tmp
+            db = _series_test_db(tmp)
+            # series_exists / current_series_content_hash on a missing id.
+            @test HimalayaUI.series_exists(db, 404) == false
+            @test HimalayaUI.current_series_content_hash(db, 404) === nothing
+
+            # A draft series: it exists, but its content_hash is NULL — the
+            # reason series_exists must be a separate probe (spec §4).
+            DBInterface.execute(db, """INSERT INTO series (id, title, state)
+                VALUES (3, 'draft-s', 'draft')""")
+            @test HimalayaUI.series_exists(db, 3) == true
+            @test HimalayaUI.current_series_content_hash(db, 3) === nothing
+
+            # compute_series_content_hash is plate-only: adding a recipe row
+            # (series_samples) must NOT change the hash; adding a plate member
+            # (series_members) must.
+            h_empty = HimalayaUI.compute_series_content_hash(db, 3)
+            DBInterface.execute(db, """INSERT INTO series_samples
+                (series_id, sample_id, position) VALUES (3, 100, 0)""")
+            @test HimalayaUI.compute_series_content_hash(db, 3) == h_empty
+            DBInterface.execute(db, """INSERT INTO series_members
+                (series_id, exposure_id, display_order, snapshot, created_at)
+                VALUES (3, 1000, 0, '{"effective_peaks":[],"confirmed_index":null,"analysis_inputs_hash":null}', '2026-05-01T00:00:00.000Z')""")
+            @test HimalayaUI.compute_series_content_hash(db, 3) != h_empty
+
+            close(db)
+        end
+    end
+
 end
