@@ -126,3 +126,72 @@ describe("LoupePage — composition", () => {
     expect(screen.getByTestId("samples-marker")).toBeInTheDocument();
   });
 });
+
+describe("LoupePage — interactions", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    h.corpusQ = { data: [sample()], isLoading: false };
+    h.exposuresQ = {
+      data: [
+        exposure({ id: 100, status: "accepted" }),
+        exposure({ id: 101, status: null }),
+      ],
+      isLoading: false,
+    };
+    h.experimentQ = { data: { id: 3, name: "Beamtime March", path: "/x" } };
+  });
+
+  it("drops a kept exposure via the verdict toggle", () => {
+    renderAt("/samples/loupe/7"); // default active = 100 (accepted)
+    fireEvent.click(screen.getByTestId("loupe-drop-toggle"));
+    expect(h.setStatusMutate).toHaveBeenCalledWith({
+      exposureId: 100, status: "rejected",
+    });
+  });
+
+  it("restores a dropped exposure via the verdict toggle", () => {
+    h.exposuresQ = {
+      data: [exposure({ id: 100, status: "rejected" })],
+      isLoading: false,
+    };
+    renderAt("/samples/loupe/7");
+    fireEvent.click(screen.getByTestId("loupe-drop-toggle"));
+    expect(h.setStatusMutate).toHaveBeenCalledWith({
+      exposureId: 100, status: null,
+    });
+  });
+
+  it("sets the representative via the rep button", () => {
+    renderAt("/samples/loupe/7");
+    fireEvent.click(screen.getByTestId("loupe-set-representative"));
+    expect(h.setRepMutate).toHaveBeenCalledWith(100);
+  });
+
+  it("flips frames with the arrow keys", () => {
+    renderAt("/samples/loupe/7"); // default active = 100
+    fireEvent.keyDown(document.body, { key: "ArrowRight" });
+    expect(screen.getByTestId("loupe-meta-frame")).toHaveTextContent("2 of 2");
+    fireEvent.keyDown(document.body, { key: "ArrowLeft" });
+    expect(screen.getByTestId("loupe-meta-frame")).toHaveTextContent("1 of 2");
+  });
+
+  it("drops the active exposure with the X key", () => {
+    renderAt("/samples/loupe/7");
+    fireEvent.keyDown(document.body, { key: "x" });
+    expect(h.setStatusMutate).toHaveBeenCalledWith({
+      exposureId: 100, status: "rejected",
+    });
+  });
+
+  it("sets the representative with the R key", () => {
+    renderAt("/samples/loupe/7");
+    fireEvent.keyDown(document.body, { key: "r" });
+    expect(h.setRepMutate).toHaveBeenCalledWith(100);
+  });
+
+  it("goes back to /samples with the Escape key", () => {
+    renderAt("/samples/loupe/7");
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(screen.getByTestId("samples-marker")).toBeInTheDocument();
+  });
+});

@@ -1,6 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { useCorpusSamples, useExposures, useExperiment } from "../queries";
+import {
+  useCorpusSamples,
+  useExposures,
+  useExperiment,
+  useSetExposureStatus,
+  useSelectExposure,
+} from "../queries";
 import { LoupeFrame } from "../components/LoupeFrame";
 import { LoupeSidebar } from "../components/LoupeSidebar";
 import type { Exposure } from "../api";
@@ -56,9 +62,52 @@ export function LoupePage(): JSX.Element {
   }, [activeId, computedDefault]);
   const activeExposure = exposures.find((e) => e.id === activeId);
 
-  function goBack(): void {
+  const setStatus = useSetExposureStatus(hasValidId ? sampleId : 0);
+  const setRepresentative = useSelectExposure(hasValidId ? sampleId : 0);
+
+  const handleDropToggle = useCallback(() => {
+    if (!activeExposure) return;
+    setStatus.mutate({
+      exposureId: activeExposure.id,
+      status: activeExposure.status === "rejected" ? null : "rejected",
+    });
+  }, [activeExposure, setStatus]);
+
+  const handleSetRepresentative = useCallback(() => {
+    if (!activeExposure) return;
+    setRepresentative.mutate(activeExposure.id);
+  }, [activeExposure, setRepresentative]);
+
+  const flip = useCallback(
+    (delta: number) => {
+      if (activeId === undefined || exposures.length === 0) return;
+      const idx = exposures.findIndex((e) => e.id === activeId);
+      if (idx < 0) return;
+      const next = Math.min(Math.max(idx + delta, 0), exposures.length - 1);
+      setActiveId(exposures[next].id);
+    },
+    [activeId, exposures],
+  );
+
+  const goBack = useCallback(() => {
     navigate("/samples");
-  }
+  }, [navigate]);
+
+  // Loupe keyboard shortcuts. The input/textarea guard is in from the start
+  // so it survives #159 adding tag-edit inputs to the sidebar.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent): void {
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      if (e.key === "ArrowLeft") flip(-1);
+      else if (e.key === "ArrowRight") flip(1);
+      else if (e.key === "x" || e.key === "X") handleDropToggle();
+      else if (e.key === "r" || e.key === "R") handleSetRepresentative();
+      else if (e.key === "Escape") goBack();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [flip, handleDropToggle, handleSetRepresentative, goBack]);
 
   if (!corpusQ.isLoading && !sample) {
     return (
@@ -110,8 +159,8 @@ export function LoupePage(): JSX.Element {
               exposure={activeExposure}
               exposures={exposures}
               sample={sample}
-              onDropToggle={() => {}}
-              onSetRepresentative={() => {}}
+              onDropToggle={handleDropToggle}
+              onSetRepresentative={handleSetRepresentative}
             />
           </>
         ) : (
