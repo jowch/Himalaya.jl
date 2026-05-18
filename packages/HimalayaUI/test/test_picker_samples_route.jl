@@ -195,3 +195,30 @@ end
         end
     end
 end
+
+@testset "GET /api/picker-samples (corpus)" begin
+    mktempdir() do tmp
+        db = open_db(joinpath(tmp, "h.db"))
+        DBInterface.execute(db, "INSERT INTO experiments (id, name, path, data_dir, analysis_dir) VALUES (1, 'A', '/tmp/a', '/tmp/a/data', '/tmp/a/analysis')")
+        DBInterface.execute(db, "INSERT INTO experiments (id, name, path, data_dir, analysis_dir) VALUES (2, 'B', '/tmp/b', '/tmp/b/data', '/tmp/b/analysis')")
+        DBInterface.execute(db, "INSERT INTO samples (id, experiment_id, name) VALUES (10, 1, 'A1')")
+        DBInterface.execute(db, "INSERT INTO samples (id, experiment_id, name) VALUES (20, 2, 'B1')")  # zero-exposure
+        DBInterface.execute(db, "INSERT INTO exposures (id, sample_id, filename, selected) VALUES (100, 10, 'f1', 1)")
+
+        with_test_server(db) do port, base
+            r = HTTP.get("$base/api/picker-samples")
+            @test r.status == 200
+            body = JSON3.read(String(r.body))
+            @test length(body) == 2                          # samples from both experiments
+            @test [b.sample.id for b in body] == [10, 20]     # ORDER BY experiment_id, id
+
+            row10 = first(filter(b -> b.sample.id == 10, collect(body)))
+            @test row10.indexing_exposure_id == 100
+            @test row10.all_exposures[1].selected === true    # JSON-shape: bool, not 1
+
+            row20 = first(filter(b -> b.sample.id == 20, collect(body)))
+            @test row20.indexing_exposure_id === nothing      # zero-exposure → null
+            @test haskey(row20, :indexing_exposure_id)        # null vs absent key
+        end
+    end
+end
