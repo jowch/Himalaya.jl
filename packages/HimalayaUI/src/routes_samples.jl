@@ -20,7 +20,8 @@ function register_samples_routes!()
     # Corpus-wide sample listing — every sample across all experiments, each
     # carrying its `tags` and a `q_units` sourced from the owning experiment's
     # config. Optional `?experiment_id=` narrows to one experiment, so this
-    # route subsumes the experiment-scoped `/api/experiments/{id}/samples`.
+    # route can stand in for the experiment-scoped `/api/experiments/{id}/samples`
+    # (which remains in place).
     #
     # Three queries total, never N+1: samples, experiment configs, and one
     # batched tag query grouped in memory.
@@ -71,7 +72,10 @@ function register_samples_routes!()
         out = map(samples) do sm
             d          = row_to_json(sm)
             d[:tags]   = get(tags_by_sample, Int(sm.id), Any[])
-            d[:q_units] = get(qunits_by_exp, Int(sm.experiment_id), "A-1")
+            # experiment_id is a nullable FK column; tolerate a SQL NULL
+            # (e.g. a future ON DELETE SET NULL) rather than throwing in Int().
+            d[:q_units] = ismissing(sm.experiment_id) ? "A-1" :
+                get(qunits_by_exp, Int(sm.experiment_id), "A-1")
             d
         end
         HTTP.Response(200, ["Content-Type" => "application/json"],

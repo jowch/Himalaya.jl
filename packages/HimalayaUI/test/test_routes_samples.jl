@@ -173,3 +173,24 @@ end
         @test r.status == 400
     end
 end
+
+@testset "corpus samples route tolerates NULL experiment_id" begin
+    db = SQLite.DB()
+    HimalayaUI.create_schema!(db)
+
+    # `samples.experiment_id` is a nullable FK. A sample with no owning
+    # experiment (a SQL NULL) must not 500 the corpus route — its q_units
+    # falls back to the default rather than throwing in `Int(...)`.
+    DBInterface.execute(db,
+        "INSERT INTO samples (experiment_id, name, display_name)
+         VALUES (NULL, 'orphan', 'Orphan')")
+
+    with_test_server(db) do port, base
+        r = HTTP.get("$base/api/samples")
+        @test r.status == 200
+        rows = JSON3.read(String(r.body))
+        @test length(rows) == 1
+        @test rows[1].q_units == "A-1"
+        @test rows[1].tags == []
+    end
+end
