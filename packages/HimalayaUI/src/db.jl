@@ -367,6 +367,13 @@ function migrate_schema!(db::SQLite.DB)
     # on the comparison so they round-trip across viewers.
     migrate_compare_view_choices!(db)
 
+    # Series model (#164, master plan §5.1): new `series*` tables + the
+    # `schema_migrations` sentinel. Placed after the compare migrations so
+    # the compare/series schema stays grouped and #171's
+    # `migrate_comparisons_to_series!` has a natural slot after this. New
+    # tables only — the `comparison*` tables are never renamed (§2.1).
+    migrate_series!(db)
+
     # PR #107 left the on-disk experiment.toml AND the in-DB experiments.config
     # blob using the legacy `[manifest].label/name` shape. The deprecation
     # error in `_build_config` (config.jl) hard-fails any route that calls
@@ -660,6 +667,162 @@ function migrate_compare_view_choices!(db::SQLite.DB)
             occursin("duplicate column name", lowercase(msg)) || rethrow()
         end
     end
+end
+
+"""
+    migrate_series!(db)
+
+Install the Series-model tables (`series`, `series_members`, `series_samples`,
+`series_messages`, `series_pins`) and the `schema_migrations` sentinel table.
+Idempotent — every statement is `IF NOT EXISTS`-guarded, so reopening an
+already-migrated DB is a no-op.
+
+The `series` model is a *new* table set, never a rename of `comparison*`:
+`rebuild_views_from_log!` re-folds historical events through dispatcher
+branches that `INSERT INTO` the named `comparison*` tables, so renaming them
+would break event-log replay on every existing DB (master plan §2.1). The
+`comparison*` tables therefore stay permanently as replay machinery; series
+data is copied forward later by `migrate_comparisons_to_series!` (#171).
+
+Each table is created in its final shape in one `CREATE TABLE` — unlike the
+`comparison*` tables, which reached their shape through three migrations.
+
+Why each FK action:
+- `series.created_by ON DELETE SET NULL` / `series_members.created_by` /
+  `series_messages.author_id` — user-FK rule.
+- `series.forked_from_id ON DELETE SET NULL` — forks survive parent deletion
+  as independent artifacts (the `comparisons.forked_from_id` precedent).
+- `series_members.exposure_id ON DELETE SET NULL` — exposure deletion leaves
+  a visible orphan placeholder rather than silently mutating the figure
+  (the `comparison_members.exposure_id` precedent).
+- All four child tables `… series_id … ON DELETE CASCADE` — children are
+  part of the artifact; deleting the series drops them, so the future
+  `series_deleted` dispatcher branch stays a one-line `DELETE FROM series`.
+- `series_samples.sample_id ON DELETE CASCADE` (not `SET NULL`) — a
+  `series_samples` row is a pure pointer with no snapshot, so a NULL
+  `sample_id` is unrenderable (master plan §5.1).
+
+`series.id` is `INTEGER PRIMARY KEY AUTOINCREMENT` because series are
+`@`-mention targets (mention-target rule, see CLAUDE.md), exactly as
+`comparisons.id` is. The child tables use plain `INTEGER PRIMARY KEY` —
+none is `@`-mentioned, and `series_samples.id` is replay-volatile (master
+plan §11): never key client state on it.
+
+`schema_migrations` is created empty. The `migrate_comparisons_to_series!`
+copy (#171) writes its marker row last, inside its own transaction.
+
+Timestamp caveat (inherited from `comparison_messages`, issue #76):
+`series_messages.created_at` is `DATETIME DEFAULT CURRENT_TIMESTAMP`, which
+yields the space-separated `YYYY-MM-DD HH:MM:SS` form — NOT the ISO
+`yyyy-mm-ddTHH:MM:SS.sssZ` form that `series.created_at` carries when a
+route writes it via `comparison_now_iso()`. A future series route or
+dispatcher must not string-sort `series_messages.created_at` against the
+`series`/`series_members` timestamps; sort `series_messages` on its own
+column only.
+"""
+function migrate_series!(db::SQLite.DB)
+    # `series`: the comparison columns (nullable, post-#67 shape) + the
+    # view-choice columns + the recipe columns (`ordering_variable`,
+    # `order_rule`, `state`). `content_hash` is NULL while `state='draft'`.
+    DBInterface.execute(db, """
+        CREATE TABLE IF NOT EXISTS series (
+            id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+            title                 TEXT,
+            description           TEXT,
+            content_hash          TEXT,
+            created_by            INTEGER REFERENCES users(id)  ON DELETE SET NULL,
+            created_at            TEXT,
+            updated_at            TEXT,
+            forked_from_id        INTEGER REFERENCES series(id) ON DELETE SET NULL,
+            forked_at_hash        TEXT,
+            view_grouping_mode    TEXT,
+            view_show_peak_ticks  INTEGER,
+            view_show_peak_labels INTEGER,
+            ordering_variable     TEXT,
+            order_rule            TEXT NOT NULL DEFAULT 'manual'
+                                    CHECK (order_rule IN ('ascending','descending','manual')),
+            state                 TEXT NOT NULL DEFAULT 'committed'
+                                    CHECK (state IN ('draft','committed'))
+        )""")
+    DBInterface.execute(db, """
+        CREATE INDEX IF NOT EXISTS idx_series_forked_from
+            ON series(forked_from_id)""")
+
+    # `series_members` — the plate. The `comparison_members` shape with
+    # `comparison_id` renamed to `series_id` (CASCADE). `exposure_id` keeps
+    # `ON DELETE SET NULL` (orphan-placeholder rule).
+    DBInterface.execute(db, """
+        CREATE TABLE IF NOT EXISTS series_members (
+            id              INTEGER PRIMARY KEY,
+            series_id       INTEGER NOT NULL REFERENCES series(id)    ON DELETE CASCADE,
+            exposure_id     INTEGER          REFERENCES exposures(id) ON DELETE SET NULL,
+            display_order   INTEGER NOT NULL,
+            band_height     REAL    NOT NULL DEFAULT 1.0,
+            y_offset        REAL    NOT NULL DEFAULT 0,
+            normalization   TEXT    NOT NULL DEFAULT 'none',
+            color_override  TEXT,
+            label_override  TEXT,
+            q_window_min    REAL,
+            q_window_max    REAL,
+            peak_display    TEXT    CHECK (peak_display IS NULL OR json_valid(peak_display)),
+            snapshot        TEXT    NOT NULL CHECK (json_valid(snapshot)),
+            created_by      INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            created_at      TEXT    NOT NULL
+        )""")
+    DBInterface.execute(db, """
+        CREATE INDEX IF NOT EXISTS idx_series_members_by_series
+            ON series_members(series_id, display_order)""")
+
+    # `series_samples` — the recipe membership: an explicit ordered sample
+    # list. `series_id`/`sample_id` are both NOT NULL (a pointer row with a
+    # NULL target is unrenderable; #164 spec text omits NOT NULL — see plan
+    # preamble). `UNIQUE(series_id, position)` also serves ordered reads, so
+    # no separate index is created.
+    DBInterface.execute(db, """
+        CREATE TABLE IF NOT EXISTS series_samples (
+            id          INTEGER PRIMARY KEY,
+            series_id   INTEGER NOT NULL REFERENCES series(id)  ON DELETE CASCADE,
+            sample_id   INTEGER NOT NULL REFERENCES samples(id) ON DELETE CASCADE,
+            position    INTEGER NOT NULL,
+            pinned      INTEGER NOT NULL DEFAULT 0 CHECK (pinned   IN (0,1)),
+            excluded    INTEGER NOT NULL DEFAULT 0 CHECK (excluded IN (0,1)),
+            UNIQUE(series_id, position)
+        )""")
+
+    # `series_messages` — the `comparison_messages` shape, `series_id` (CASCADE).
+    DBInterface.execute(db, """
+        CREATE TABLE IF NOT EXISTS series_messages (
+            id         INTEGER PRIMARY KEY,
+            series_id  INTEGER NOT NULL REFERENCES series(id) ON DELETE CASCADE,
+            author_id  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            body       TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )""")
+    DBInterface.execute(db, """
+        CREATE INDEX IF NOT EXISTS idx_series_messages_by_series
+            ON series_messages(series_id, created_at)""")
+
+    # `series_pins` — the `comparison_pins` shape. Composite PK enforces one
+    # pin per (user, series); both FKs CASCADE.
+    DBInterface.execute(db, """
+        CREATE TABLE IF NOT EXISTS series_pins (
+            user_id    INTEGER NOT NULL REFERENCES users(id)  ON DELETE CASCADE,
+            series_id  INTEGER NOT NULL REFERENCES series(id) ON DELETE CASCADE,
+            pinned_at  TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (user_id, series_id)
+        )""")
+    DBInterface.execute(db, """
+        CREATE INDEX IF NOT EXISTS idx_series_pins_by_user
+            ON series_pins(user_id, pinned_at DESC)""")
+
+    # Migration-version sentinel. No such table exists today; #171's copy
+    # needs a real marker. Created empty here — #164 writes no rows.
+    DBInterface.execute(db, """
+        CREATE TABLE IF NOT EXISTS schema_migrations (
+            name        TEXT PRIMARY KEY,
+            applied_at  TEXT
+        )""")
+    nothing
 end
 
 # Heal FK references in `sqlite_master.sql` that point at `_migrate_old_<entity>`

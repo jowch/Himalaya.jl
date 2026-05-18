@@ -312,3 +312,87 @@ end
         @test n_tags == 0
     end
 end
+
+@testset "corpus samples route" begin
+    db = SQLite.DB()
+    HimalayaUI.create_schema!(db)
+
+    e1 = HimalayaUI.init_experiment!(db; name="E1", path="/e1",
+        data_dir="/e1/d", analysis_dir="/e1/a")
+    e2 = HimalayaUI.init_experiment!(db; name="E2", path="/e2",
+        data_dir="/e2/d", analysis_dir="/e2/a")
+
+    # Distinct q_units per experiment, written straight into the config blob.
+    # e1 gets an explicit nm-1; e2 is left config-less so it falls back to A-1.
+    DBInterface.execute(db,
+        "UPDATE experiments SET config = ? WHERE id = ?",
+        ["[beamline]\nq_units = \"nm-1\"\n", e1])
+
+    s1 = HimalayaUI.create_sample!(db; experiment_id=e1, name="A1", display_name="UX-A1")
+    s2 = HimalayaUI.create_sample!(db; experiment_id=e1, name="A2", display_name="UX-A2")
+    s3 = HimalayaUI.create_sample!(db; experiment_id=e2, name="B1", display_name="UX-B1")
+
+    # One tag on s1, so the projection's bundled `tags` array is exercised.
+    DBInterface.execute(db,
+        "INSERT INTO sample_tags (sample_id, key, value, source)
+         VALUES (?, 'lipid', 'DOPC', 'manual')", [s1])
+
+    with_test_server(db) do port, base
+        # Full corpus: every sample across both experiments.
+        r = HTTP.get("$base/api/samples")
+        @test r.status == 200
+        all = JSON3.read(String(r.body))
+        @test length(all) == 3
+        @test Set(s.name for s in all) == Set(["A1", "A2", "B1"])
+
+        by_name = Dict(String(s.name) => s for s in all)
+
+        # q_units sourced from each sample's owning experiment.
+        @test by_name["A1"].q_units == "nm-1"
+        @test by_name["A2"].q_units == "nm-1"
+        @test by_name["B1"].q_units == "A-1"   # e2 has no config → default
+
+        # tags bundled in the projection.
+        @test length(by_name["A1"].tags) == 1
+        @test by_name["A1"].tags[1].key   == "lipid"
+        @test by_name["A1"].tags[1].value == "DOPC"
+        @test by_name["A2"].tags == []
+
+        # ?experiment_id= filter narrows to one experiment.
+        r = HTTP.get("$base/api/samples?experiment_id=$e1")
+        @test r.status == 200
+        filtered = JSON3.read(String(r.body))
+        @test length(filtered) == 2
+        @test Set(s.name for s in filtered) == Set(["A1", "A2"])
+
+        # Nonexistent experiment id → empty array (SQL gives this for free).
+        r = HTTP.get("$base/api/samples?experiment_id=999999")
+        @test r.status == 200
+        @test JSON3.read(String(r.body)) == []
+
+        # Malformed experiment_id → 400, not a silent ignore.
+        r = HTTP.get("$base/api/samples?experiment_id=abc"; status_exception=false)
+        @test r.status == 400
+    end
+end
+
+@testset "corpus samples route tolerates NULL experiment_id" begin
+    db = SQLite.DB()
+    HimalayaUI.create_schema!(db)
+
+    # `samples.experiment_id` is a nullable FK. A sample with no owning
+    # experiment (a SQL NULL) must not 500 the corpus route — its q_units
+    # falls back to the default rather than throwing in `Int(...)`.
+    DBInterface.execute(db,
+        "INSERT INTO samples (experiment_id, name, display_name)
+         VALUES (NULL, 'orphan', 'Orphan')")
+
+    with_test_server(db) do port, base
+        r = HTTP.get("$base/api/samples")
+        @test r.status == 200
+        rows = JSON3.read(String(r.body))
+        @test length(rows) == 1
+        @test rows[1].q_units == "A-1"
+        @test rows[1].tags == []
+    end
+end

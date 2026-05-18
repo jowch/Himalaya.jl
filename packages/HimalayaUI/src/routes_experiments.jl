@@ -1,21 +1,30 @@
 using HTTP, JSON3, DBInterface, Tables, Oxygen
 
-function _experiment_row_to_json(row::NamedTuple)
-    d = row_to_json(row)
-    cfg_text = get(d, :config, nothing)
-    # Defensive: malformed TOML in a single row must not 500 the list endpoint.
-    # Fall back to the ASCII default; the UI prettifies it to "Å⁻¹".
-    q_units = if cfg_text isa AbstractString && !isempty(cfg_text)
+"""
+    _q_units_from_config(cfg_text) -> String
+
+Extract `beamline.q_units` from an experiment's stored config TOML.
+
+Accepts anything (a `String`, `missing`, `nothing`): a non-string, an empty
+string, or malformed TOML all fall back to the ASCII default `"A-1"` — the UI
+prettifies that to "Å⁻¹". Defensive by design: one experiment's malformed
+config must never 500 a list endpoint.
+"""
+function _q_units_from_config(cfg_text)::String
+    if cfg_text isa AbstractString && !isempty(cfg_text)
         try
             bl = get(TOML.parse(cfg_text), "beamline", Dict())
-            get(bl, "q_units", "A-1")
+            return get(bl, "q_units", "A-1")
         catch
-            "A-1"
+            return "A-1"
         end
-    else
-        "A-1"
     end
-    d[:q_units] = q_units
+    return "A-1"
+end
+
+function _experiment_row_to_json(row::NamedTuple)
+    d = row_to_json(row)
+    d[:q_units] = _q_units_from_config(get(d, :config, nothing))
     d
 end
 

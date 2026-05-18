@@ -7,10 +7,10 @@
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import { render } from "@testing-library/react";
-import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useAppState } from "../src/state";
-import { AppShell } from "../src/components/AppShell";
+import { AppRoutes } from "../src/components/AppRoutes";
 
 function makeQc() {
   return new QueryClient({
@@ -31,17 +31,8 @@ function renderShell(initialPath: string) {
   return render(
     <QueryClientProvider client={qc}>
       <MemoryRouter initialEntries={[initialPath]}>
-        <Routes>
-          <Route
-            path="*"
-            element={
-              <>
-                <LocationProbe />
-                <AppShell />
-              </>
-            }
-          />
-        </Routes>
+        <LocationProbe />
+        <AppRoutes />
       </MemoryRouter>
     </QueryClientProvider>,
   );
