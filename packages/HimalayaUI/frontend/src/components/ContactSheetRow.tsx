@@ -1,5 +1,6 @@
 import { useExposures } from "../queries";
 import type { CorpusSample, Exposure } from "../api";
+import { sampleDisplayName } from "../lib/sample/displayName";
 import { DetectorImage } from "./DetectorImage";
 
 /**
@@ -77,7 +78,9 @@ export function ContactSheetRow({ sample }: Props): JSX.Element {
   const kept = exposures.filter((e) => e.status !== "rejected").length;
   const dropped = total - kept;
 
-  const name = sample.display_name ?? sample.name ?? `#${sample.id}`;
+  // Route through the shared helper — `||` semantics (empty-string-safe)
+  // and one source of truth for "what string do we render for a sample".
+  const name = sampleDisplayName(sample);
 
   return (
     <div
