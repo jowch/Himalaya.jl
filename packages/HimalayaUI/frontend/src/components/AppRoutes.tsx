@@ -7,6 +7,7 @@ import * as api from "../api";
 import { useGlobalShortcuts } from "../hooks/useGlobalShortcuts";
 import { CorpusShell } from "./CorpusShell";
 import { SamplesPage } from "../pages/SamplesPage";
+import { LoupePage } from "../pages/LoupePage";
 import { AppShell } from "./AppShell";
 import { IndexPage } from "../pages/IndexPage";
 import { InspectPage } from "../pages/InspectPage";
@@ -96,6 +97,7 @@ export function AppRoutes(): JSX.Element {
     <Routes>
       <Route element={<CorpusShell />}>
         <Route path="/samples" element={<SamplesPage />} />
+        <Route path="/samples/loupe/:sampleId" element={<LoupePage />} />
       </Route>
       <Route element={<AppShell />}>
         <Route path="/" element={<PageBody />} />
