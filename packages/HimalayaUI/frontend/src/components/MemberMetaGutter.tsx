@@ -19,7 +19,7 @@
  *     BandResizeDivider).
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ComparisonMember } from "../api";
+import type { SeriesMember } from "../api";
 import { useAppState } from "../state";
 import { computeYBands } from "../lib/comparison/yBands";
 import { useActiveBand } from "./ActiveBandContext";
@@ -28,7 +28,7 @@ import { BandResizeGap } from "./BandResizeDivider";
 
 export interface MemberMetaGutterProps {
   /** Members in render order (already sorted by display_order). */
-  members: ComparisonMember[];
+  members: SeriesMember[];
   /** Panel height in pixels — drives the y-band envelopes. */
   panelHeight: number;
   mode: "review" | "edit";

@@ -20,7 +20,7 @@ import { useAppState } from "../src/state";
 import { emptyDraft } from "../src/lib/comparison/draft";
 import { MemberMetaGutter } from "../src/components/MemberMetaGutter";
 import { computeYBands } from "../src/lib/comparison/yBands";
-import type { ComparisonMember } from "../src/api";
+import type { SeriesMember } from "../src/api";
 
 function seedDraft(memberCount: number) {
   useAppState.setState({
@@ -44,10 +44,10 @@ function seedDraft(memberCount: number) {
   });
 }
 
-function makeMembers(memberCount: number): ComparisonMember[] {
+function makeMembers(memberCount: number): SeriesMember[] {
   return Array.from({ length: memberCount }, (_, i) => ({
     id: i + 1,
-    comparison_id: 100,
+    series_id: 100,
     exposure_id: 100 + i,
     display_order: i,
     band_height: 1,

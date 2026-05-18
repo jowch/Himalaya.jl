@@ -40,7 +40,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, fireEvent } from "@testing-library/react";
 import { useAppState } from "../src/state";
 import { emptyDraft } from "../src/lib/comparison/draft";
-import type { ComparisonMember } from "../src/api";
+import type { SeriesMember } from "../src/api";
 import { MemberMetaGutter } from "../src/components/MemberMetaGutter";
 import {
   ActiveBandProvider,
@@ -81,10 +81,10 @@ function makeDataTransfer(): Record<string, unknown> {
 }
 
 /** Three-member fixture — three equal 100px bands on a 300px panel. */
-function makeMembers(): ComparisonMember[] {
-  const base = (over: Partial<ComparisonMember>): ComparisonMember => ({
+function makeMembers(): SeriesMember[] {
+  const base = (over: Partial<SeriesMember>): SeriesMember => ({
     id: 0,
-    comparison_id: 100,
+    series_id: 100,
     exposure_id: 0,
     display_order: 0,
     band_height: 1,
@@ -131,7 +131,7 @@ function MemberBandOverlay(props: { memberId: number }): JSX.Element {
   );
 }
 
-function seedDraft(members: ComparisonMember[]): void {
+function seedDraft(members: SeriesMember[]): void {
   useAppState.setState({
     activeDraft: {
       ...emptyDraft(),
