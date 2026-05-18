@@ -184,4 +184,54 @@ function register_series_routes!()
             HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(out))
         end
     end
+
+    # ── Commit the plate (the old "submit") ─────────────────────────────────
+
+    @post "/api/series/{id}/commit" function(req::HTTP.Request, id::Int)
+        db   = current_db()
+        body = json(req)
+        if !haskey(body, :members) || !(body.members isa AbstractVector)
+            return _json_error(400, "members must be an array")
+        end
+        expected_hash = haskey(body, :expected_content_hash) &&
+                        body.expected_content_hash !== nothing ?
+                        String(body.expected_content_hash) : nothing
+
+        return with_idempotency(db, req) do
+            # Existence (404) before the conflict check (409) — HTTP semantics.
+            # No author gate (architecture decision 3).
+            if !series_exists(db, id)
+                return _json_error(404, "series not found")
+            end
+            # Optimistic-concurrency check (NOT the author gate): the stored
+            # hash must match the client's expected_content_hash, else 409.
+            current_hash = current_series_content_hash(db, id)
+            if expected_hash !== nothing && current_hash !== expected_hash
+                current_state = fetch_series_with_plate(db, id)
+                return HTTP.Response(409, ["Content-Type" => "application/json"],
+                    JSON3.write(Dict(
+                        :error         => "conflict",
+                        :current_hash  => current_hash,
+                        :current_state => current_state,
+                    )))
+            end
+
+            members_payload = [_series_member_payload(db, m) for m in body.members]
+            payload = Dict{Symbol, Any}(:members => members_payload)
+            result = apply_event!(InTransaction(), db, req;
+                kind        = "series_plate_committed",
+                entity_type = "series",
+                entity_id   = id,
+                payload     = payload)
+
+            out = fetch_series_with_plate(db, id)
+            out === nothing && error(
+                "post-write fetch_series_with_plate returned nothing for id=$(id)")
+            # series_plate_committed is the one series event carrying a
+            # post_state envelope (master-plan §5.2).
+            _enqueue_broadcast_from_result!(result, "series_plate_committed",
+                                            "series", id; post_state = out)
+            HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(out))
+        end
+    end
 end

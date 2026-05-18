@@ -339,3 +339,47 @@ function _series_sample_payload(m_in)
         :excluded  => haskey(m_in, :excluded) ? Bool(m_in[:excluded]) : false,
     )
 end
+
+"""
+    _series_member_payload(db, m_in) -> Dict{Symbol, Any}
+
+Normalize one plate-member entry from a request body into the payload shape the
+`series_plate_committed` dispatcher expects. Fills `snapshot` from
+`compute_member_snapshot(db, …)` when the client omitted it AND an
+`exposure_id` is present; an orphan member (no `exposure_id`) with no snapshot
+gets a minimal one so the `NOT NULL` `json_valid` CHECK on
+`series_members.snapshot` is satisfied. Adapted verbatim from
+`_comparison_member_payload` (the `series_members` and `comparison_members`
+column shapes are identical).
+"""
+function _series_member_payload(db::SQLite.DB, m_in)
+    eid = haskey(m_in, :exposure_id) ? m_in[:exposure_id] : nothing
+    snap_in = haskey(m_in, :snapshot) ? m_in[:snapshot] : nothing
+    snap = if snap_in !== nothing
+        snap_in
+    elseif eid !== nothing
+        compute_member_snapshot(db, Int(eid))
+    else
+        # Orphan member (no exposure_id) — minimal stub so the NOT NULL
+        # json_valid CHECK on series_members.snapshot is satisfied.
+        Dict{Symbol, Any}(
+            :effective_peaks      => Any[],
+            :confirmed_index      => nothing,
+            :analysis_inputs_hash => nothing,
+        )
+    end
+    Dict{Symbol, Any}(
+        :id             => haskey(m_in, :id) ? m_in[:id] : nothing,
+        :exposure_id    => eid,
+        :display_order  => haskey(m_in, :display_order) ? Int(m_in[:display_order]) : 0,
+        :band_height    => haskey(m_in, :band_height)   ? Float64(m_in[:band_height]) : 1.0,
+        :y_offset       => haskey(m_in, :y_offset)      ? Float64(m_in[:y_offset])    : 0.0,
+        :normalization  => haskey(m_in, :normalization) ? String(m_in[:normalization]) : "none",
+        :color_override => haskey(m_in, :color_override) ? m_in[:color_override] : nothing,
+        :label_override => haskey(m_in, :label_override) ? m_in[:label_override] : nothing,
+        :q_window_min   => haskey(m_in, :q_window_min)   ? m_in[:q_window_min]   : nothing,
+        :q_window_max   => haskey(m_in, :q_window_max)   ? m_in[:q_window_max]   : nothing,
+        :peak_display   => haskey(m_in, :peak_display)   ? m_in[:peak_display]   : nothing,
+        :snapshot       => snap,
+    )
+end

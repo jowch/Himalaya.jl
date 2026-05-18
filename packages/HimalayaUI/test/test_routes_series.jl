@@ -271,4 +271,53 @@ end
         end
     end
 
+    @testset "POST /api/series/{id}/commit (smoke + no gate + 409)" begin
+        mktempdir() do tmp
+            db = _series_test_db(tmp)
+            with_test_server(db) do port, base
+                _member = Dict(:exposure_id => 1000, :display_order => 0,
+                               :snapshot => Dict(:effective_peaks => Any[],
+                                                 :confirmed_index => nothing,
+                                                 :analysis_inputs_hash => nothing))
+
+                # Missing series → 404.
+                resp404 = HTTP.post("$base/api/series/999/commit",
+                    ["X-Username" => "alice", "Content-Type" => "application/json"],
+                    JSON3.write(Dict(:members => [_member]));
+                    status_exception = false)
+                @test resp404.status == 404
+
+                # Seed a committed series authored by alice (id 1), with a
+                # stored content_hash so the 409 path can be exercised.
+                DBInterface.execute(db, "INSERT INTO users (id, username) VALUES (1, 'alice')")
+                DBInterface.execute(db, """INSERT INTO series
+                    (id, title, state, created_by, content_hash)
+                    VALUES (20, 'committed-s', 'committed', 1, 'sha256:deadbeef')""")
+
+                # No is_author gate: bob (not the author) commits → NOT 403.
+                resp = HTTP.post("$base/api/series/20/commit",
+                    ["X-Username" => "bob", "Content-Type" => "application/json"],
+                    JSON3.write(Dict(:members => [_member]));
+                    status_exception = false)
+                @test resp.status != 403
+                @test resp.status == 200
+                ev = Tables.rowtable(DBInterface.execute(db,
+                    "SELECT action FROM user_actions WHERE entity_type='series' AND entity_id=20"))
+                @test any(r -> r.action == "series_plate_committed", ev)
+
+                # Conflict: a wrong expected_content_hash → 409.
+                resp409 = HTTP.post("$base/api/series/20/commit",
+                    ["X-Username" => "alice", "Content-Type" => "application/json"],
+                    JSON3.write(Dict(:members => [_member],
+                                     :expected_content_hash => "sha256:WRONG"));
+                    status_exception = false)
+                @test resp409.status == 409
+                conflict = JSON3.read(resp409.body, Dict{Symbol, Any})
+                @test conflict[:error] == "conflict"
+                @test conflict[:current_hash] == "sha256:deadbeef"
+            end
+            close(db)
+        end
+    end
+
 end
