@@ -27,6 +27,8 @@ import { createSpeculativeMutator } from "./mutators/createSpeculative";
 import { reanalyzeExposureMutator } from "./mutators/reanalyzeExposure";
 import { saveComparisonMutator } from "./mutators/saveComparison";
 import { deleteComparisonMutator } from "./mutators/deleteComparison";
+import { saveSeriesMutator } from "./mutators/saveSeries";
+import { deleteSeriesMutator } from "./mutators/deleteSeries";
 
 /**
  * Minimal shape required by the resolver: just enough of a persisted op to
@@ -108,6 +110,10 @@ export function resolveMutator(
       return saveComparisonMutator;
     case "comparison_delete":
       return deleteComparisonMutator;
+    case "series_save":
+      return saveSeriesMutator;
+    case "series_delete":
+      return deleteSeriesMutator;
     default:
       return undefined;
   }
@@ -143,6 +149,11 @@ export function resolveMutatorForEvent(
     case "comparison_submitted":
       return saveComparisonMutator;
     case "comparison_deleted":  return deleteComparisonMutator;
+    case "series_created":
+    case "series_recipe_updated":
+      return saveSeriesMutator;
+    case "series_deleted":
+      return deleteSeriesMutator;
     case "update_sample":       return updateSampleMutator;
     case "set_exposure_status": return setExposureStatusMutator;
     case "select_exposure":     return selectExposureMutator;
