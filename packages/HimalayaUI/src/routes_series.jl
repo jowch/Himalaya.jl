@@ -317,4 +317,70 @@ function register_series_routes!()
                 JSON3.write(msg_json))
         end
     end
+
+    # ── Pins ────────────────────────────────────────────────────────────────
+    #
+    # Per-user pinned series. Pin/unpin events are stored with
+    # `entity_type='user'`, `entity_id=user_id` (the `comparison_pinned`
+    # precedent) — the affected series rides in the payload as `series_id`.
+    # The dispatcher branches land in #168; until then these routes write a
+    # `user_actions` row but no `series_pins` row.
+
+    @get "/api/users/me/series-pins" function(req::HTTP.Request)
+        db = current_db()
+        user_id = get_user_id_for_request(db, req)
+        if user_id === nothing
+            return _json_error(401, "X-Username header required")
+        end
+        # Most-recently-pinned first.
+        rows = Tables.rowtable(DBInterface.execute(db, """
+            SELECT series_id FROM series_pins
+            WHERE user_id = ?
+            ORDER BY pinned_at DESC, series_id DESC
+        """, [user_id]))
+        ids = Int[Int(r.series_id) for r in rows]
+        HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(ids))
+    end
+
+    @post "/api/series/{id}/pin" function(req::HTTP.Request, id::Int)
+        db = current_db()
+        user_id = get_user_id_for_request(db, req)
+        if user_id === nothing
+            return _json_error(401, "X-Username header required")
+        end
+        return with_idempotency(db, req) do
+            if !series_exists(db, id)
+                return _json_error(404, "series not found")
+            end
+            result = apply_event!(InTransaction(), db, req;
+                kind        = "series_pinned",
+                entity_type = "user",
+                entity_id   = user_id,
+                payload     = Dict{Symbol, Any}(:series_id => id))
+            _enqueue_broadcast_from_result!(result, "series_pinned", "user", user_id)
+            HTTP.Response(200, ["Content-Type" => "application/json"],
+                JSON3.write(Dict(:series_id => id, :pinned => true)))
+        end
+    end
+
+    @delete "/api/series/{id}/pin" function(req::HTTP.Request, id::Int)
+        db = current_db()
+        user_id = get_user_id_for_request(db, req)
+        if user_id === nothing
+            return _json_error(401, "X-Username header required")
+        end
+        return with_idempotency(db, req) do
+            # Idempotent at the SQL layer once #168 lands — unpinning a
+            # never-pinned series is a no-op DELETE. The event is still
+            # recorded so the cross-tab broadcast fires either way.
+            result = apply_event!(InTransaction(), db, req;
+                kind        = "series_unpinned",
+                entity_type = "user",
+                entity_id   = user_id,
+                payload     = Dict{Symbol, Any}(:series_id => id))
+            _enqueue_broadcast_from_result!(result, "series_unpinned", "user", user_id)
+            HTTP.Response(200, ["Content-Type" => "application/json"],
+                JSON3.write(Dict(:series_id => id, :pinned => false)))
+        end
+    end
 end

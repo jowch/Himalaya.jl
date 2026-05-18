@@ -395,4 +395,48 @@ end
         end
     end
 
+    @testset "series pins (smoke)" begin
+        mktempdir() do tmp
+            db = _series_test_db(tmp)
+            with_test_server(db) do port, base
+                # series-pins without X-Username → 401.
+                resp401 = HTTP.get("$base/api/users/me/series-pins";
+                                   status_exception = false)
+                @test resp401.status == 401
+
+                # Fresh user → empty pin list.
+                resp0 = HTTP.get("$base/api/users/me/series-pins", ["X-Username" => "alice"])
+                @test resp0.status == 200
+                @test JSON3.read(resp0.body) == []
+
+                # Pin a missing series → 404.
+                resp404 = HTTP.post("$base/api/series/999/pin", ["X-Username" => "alice"];
+                                    status_exception = false)
+                @test resp404.status == 404
+
+                # Pin an existing series → 200, a user_actions row written.
+                DBInterface.execute(db, """INSERT INTO series (id, title, state)
+                    VALUES (50, 'pin-me', 'committed')""")
+                respPin = HTTP.post("$base/api/series/50/pin", ["X-Username" => "alice"])
+                @test respPin.status == 200
+                pinned = JSON3.read(respPin.body, Dict{Symbol, Any})
+                @test pinned[:series_id] == 50
+                @test pinned[:pinned] == true
+                evP = Tables.rowtable(DBInterface.execute(db,
+                    "SELECT action FROM user_actions WHERE entity_type='user'"))
+                @test any(r -> r.action == "series_pinned", evP)
+
+                # Unpin → 200.
+                respUnpin = HTTP.delete("$base/api/series/50/pin", ["X-Username" => "alice"])
+                @test respUnpin.status == 200
+                unpinned = JSON3.read(respUnpin.body, Dict{Symbol, Any})
+                @test unpinned[:pinned] == false
+                evU = Tables.rowtable(DBInterface.execute(db,
+                    "SELECT action FROM user_actions WHERE entity_type='user'"))
+                @test any(r -> r.action == "series_unpinned", evU)
+            end
+            close(db)
+        end
+    end
+
 end
