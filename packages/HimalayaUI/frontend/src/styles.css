@@ -25,7 +25,9 @@
   /* "The Print" palette — the corpus-redesign light aesthetic (redesign
      master plan §4.1). Consumed by the new CorpusShell topbar. The redesign
      is light-first, so these are single-valued (no theme-light override).
-     Values from docs/redesign-mockups/sample-table.html. */
+     Values from docs/redesign-mockups/sample-table.html.
+     `--color-print-accent` is deliberately prefixed — it is a distinct hue
+     from the app-wide `--color-accent` above and must not collide with it. */
   --color-paper:        oklch(0.978 0.006 85);
   --color-paper-sunk:   oklch(0.951 0.008 84);
   --color-plate:        oklch(0.992 0.004 90);
