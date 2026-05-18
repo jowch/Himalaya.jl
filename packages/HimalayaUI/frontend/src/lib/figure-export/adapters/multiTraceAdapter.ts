@@ -10,7 +10,7 @@ import { colorFor, ORPHAN_FALLBACK, type GroupingMode } from "../../comparison/c
 import { phaseColor } from "../../../phases";
 
 export interface MultiTraceAdapterArgs {
-  members: SeriesMember[];      // sorted by display_order
+  members: SeriesMember[];          // sorted by display_order
   traces: Map<number, Trace>;
   comparisonTitle: string;
   experimentName?: string;          // omit in /compare/all global scope

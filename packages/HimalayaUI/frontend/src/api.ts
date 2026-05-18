@@ -445,6 +445,10 @@ export interface ComparisonMember {
  * Mirrors `fetch_series_with_plate` (packages/HimalayaUI/src/series.jl).
  * Field-for-field identical to `ComparisonMember` except `comparison_id` →
  * `series_id`. This is the render pipeline's going-forward input type.
+ *
+ * The two types are intentionally twinned until `ComparisonMember` is retired
+ * (I3.6 / I5.3) — tighten a shared field (e.g. `peak_display: unknown`) in
+ * both, or the render pipeline and Compare diverge.
  */
 export interface SeriesMember {
   id: number;
