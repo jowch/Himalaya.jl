@@ -369,19 +369,20 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
     expect(qc.getQueryData<SampleMessage[]>(queryKeys.messages(10))!).toHaveLength(1);
   });
 
-  it("add_tag (sample) invalidates the experiment's samples list (uses experiment_id)", () => {
-    let invalidated: unknown = null;
+  it("add_tag (sample) invalidates BOTH the experiment samples list and the corpus list", () => {
+    const invalidated: unknown[] = [];
     qc.invalidateQueries = ((arg: { queryKey: unknown }) => {
-      invalidated = arg.queryKey; return Promise.resolve();
+      invalidated.push(arg.queryKey); return Promise.resolve();
     }) as typeof qc.invalidateQueries;
-    // Mirrors routes_samples.jl POST: payload includes experiment_id (the
-    // parent invalidation key).
+    // Mirrors routes_samples.jl POST: payload always includes experiment_id.
+    // A sample tag lives in two cached projections — the per-experiment list
+    // and the corpus contact-sheet list — so both keys must invalidate.
     const evt: SseEvent = {
       id: 99, kind: "add_tag", entity_type: "sample", entity_id: 10,
       payload: { key: "k", value: "v", tag_id: 50, experiment_id: 1 },
     };
     applyRemoteToCache(evt, qc);
-    expect(invalidated).toEqual(queryKeys.samples(1));
+    expect(invalidated).toEqual([queryKeys.samples(1), queryKeys.corpusSamples]);
   });
 
   it("add_tag (exposure) invalidates the sample's exposures list (uses sample_id)", () => {
@@ -398,17 +399,17 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
     expect(invalidated).toEqual(queryKeys.exposures(1));
   });
 
-  it("remove_tag (sample) invalidates the experiment's samples list", () => {
-    let invalidated: unknown = null;
+  it("remove_tag (sample) invalidates BOTH the experiment samples list and the corpus list", () => {
+    const invalidated: unknown[] = [];
     qc.invalidateQueries = ((arg: { queryKey: unknown }) => {
-      invalidated = arg.queryKey; return Promise.resolve();
+      invalidated.push(arg.queryKey); return Promise.resolve();
     }) as typeof qc.invalidateQueries;
     const evt: SseEvent = {
       id: 99, kind: "remove_tag", entity_type: "sample", entity_id: 10,
       payload: { tag_id: 50, experiment_id: 1 },
     };
     applyRemoteToCache(evt, qc);
-    expect(invalidated).toEqual(queryKeys.samples(1));
+    expect(invalidated).toEqual([queryKeys.samples(1), queryKeys.corpusSamples]);
   });
 
   it("delete_index falls through to default (invalidates peaks+indices+groups)", () => {
