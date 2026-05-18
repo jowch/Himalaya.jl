@@ -125,4 +125,63 @@ function register_series_routes!()
             HTTP.Response(201, ["Content-Type" => "application/json"], JSON3.write(out))
         end
     end
+
+    # ── Recipe edit ─────────────────────────────────────────────────────────
+
+    @patch "/api/series/{id}" function(req::HTTP.Request, id::Int)
+        db   = current_db()
+        body = json(req)
+        # Recipe-only edit: `samples` + `ordering_variable` + `order_rule`.
+        # View-choice fields are NOT part of the recipe-edit contract (they are
+        # set by POST /api/series and POST /api/series/{id}/commit), so there is
+        # deliberately no `_view_fields_error` guard here.
+        if haskey(body, :samples) && body.samples !== nothing
+            if !(body.samples isa AbstractVector)
+                return _json_error(400, "samples must be an array")
+            end
+            # `sample_id` is required per entry — `_series_sample_payload`
+            # indexes it unconditionally, and a recipe row with no target is
+            # unrenderable. Reject here so a bad entry is an uncached 400, not
+            # a 500 cached inside with_idempotency.
+            for m in body.samples
+                if !(m isa AbstractDict || m isa JSON3.Object) ||
+                        !haskey(m, :sample_id) || m.sample_id === nothing
+                    return _json_error(400, "each samples entry requires sample_id")
+                end
+            end
+        end
+        ordering_variable = haskey(body, :ordering_variable) && body.ordering_variable !== nothing ?
+                            String(body.ordering_variable) : nothing
+        order_rule = haskey(body, :order_rule) && body.order_rule !== nothing ?
+                     String(body.order_rule) : nothing
+        samples_in = haskey(body, :samples) && body.samples !== nothing ? body.samples : ()
+
+        return with_idempotency(db, req) do
+            # No author gate (architecture decision 3). `series_exists` — not
+            # `current_series_content_hash` — is the existence probe: a draft
+            # has a NULL content_hash by design.
+            if !series_exists(db, id)
+                return _json_error(404, "series not found")
+            end
+            samples_payload = [_series_sample_payload(m) for m in samples_in]
+            payload = Dict{Symbol, Any}(
+                :ordering_variable => ordering_variable,
+                :order_rule        => order_rule,
+                :samples           => samples_payload,
+            )
+            result = apply_event!(InTransaction(), db, req;
+                kind        = "series_recipe_updated",
+                entity_type = "series",
+                entity_id   = id,
+                payload     = payload)
+
+            out = fetch_series_with_plate(db, id)
+            out === nothing && error(
+                "post-write fetch_series_with_plate returned nothing for id=$(id)")
+            # No post_state envelope (master-plan §5.2).
+            _enqueue_broadcast_from_result!(result, "series_recipe_updated",
+                                            "series", id)
+            HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(out))
+        end
+    end
 end

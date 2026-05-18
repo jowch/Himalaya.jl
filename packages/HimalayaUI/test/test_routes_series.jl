@@ -225,4 +225,50 @@ end
         end
     end
 
+    @testset "PATCH /api/series/{id} — recipe edit (smoke)" begin
+        mktempdir() do tmp
+            db = _series_test_db(tmp)
+            with_test_server(db) do port, base
+                # Missing series → 404.
+                resp404 = HTTP.patch("$base/api/series/999",
+                    ["X-Username" => "alice", "Content-Type" => "application/json"],
+                    JSON3.write(Dict(:samples => []));
+                    status_exception = false)
+                @test resp404.status == 404
+
+                # samples not an array → 400.
+                DBInterface.execute(db, """INSERT INTO series (id, title, state)
+                    VALUES (12, 'edit-me', 'draft')""")
+                resp400 = HTTP.patch("$base/api/series/12",
+                    ["X-Username" => "alice", "Content-Type" => "application/json"],
+                    JSON3.write(Dict(:samples => "nope"));
+                    status_exception = false)
+                @test resp400.status == 400
+
+                # A samples entry missing sample_id → uncached 400.
+                resp400b = HTTP.patch("$base/api/series/12",
+                    ["X-Username" => "alice", "Content-Type" => "application/json"],
+                    JSON3.write(Dict(:samples => [Dict(:position => 0)]));
+                    status_exception = false)
+                @test resp400b.status == 400
+
+                # Well-formed recipe edit → 200; a user_actions row written.
+                resp = HTTP.patch("$base/api/series/12",
+                    ["X-Username" => "alice", "Content-Type" => "application/json"],
+                    JSON3.write(Dict(
+                        :order_rule => "descending",
+                        :samples => [Dict(:sample_id => 100, :position => 0)])))
+                @test resp.status == 200
+                # Degenerate until #166: the dispatcher no-ops, so the recipe
+                # is not applied — only assert the body is series 12's projection.
+                @test JSON3.read(resp.body, Dict{Symbol, Any})[:id] == 12
+                ev = Tables.rowtable(DBInterface.execute(db,
+                    "SELECT action FROM user_actions WHERE entity_type='series' AND entity_id=12"))
+                @test length(ev) == 1
+                @test ev[1].action == "series_recipe_updated"
+            end
+            close(db)
+        end
+    end
+
 end
