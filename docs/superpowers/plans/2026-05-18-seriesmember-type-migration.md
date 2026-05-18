@@ -13,9 +13,9 @@
 ## Conventions for every task
 
 - **All commands run from `packages/HimalayaUI/frontend/`.**
-- **Typecheck:** `npx tsc --noEmit` (uses `tsconfig.json`, which includes `test/`).
+- **Enforced typecheck gate:** `npm run build` (`tsc --noEmit -p tsconfig.build.json` over `src/` only, then `vite build`). Bare `npx tsc --noEmit` (`tsconfig.json`, includes `test/`) is **not** green even on `main`: `test/` carries ~183 pre-existing errors (Vitest globals `test`/`expect`/`describe` are never wired into `tsconfig.json`, plus some stale fixtures). The repo never typechecks `test/` with `tsc`.
 - **Unit tests:** `npm test -- <pattern>` runs Vitest one-shot (the repo's settings hook supplies `--run`).
-- **`tsc --noEmit` is RED from Task 2 through Task 9 — this is expected.** A type migration cannot keep `tsc` green between every step: the moment a component is retyped, its not-yet-migrated consumers fail to typecheck. Per-task safety comes from **Vitest**, which strips types without checking them — a green Vitest run after each task proves render *behaviour* is unchanged. `tsc --noEmit` is the gate in **Task 10**, after every file is consistent.
+- **`tsc` is not a per-task gate.** A type migration cannot keep `tsc` green mid-flight anyway — the moment a component is retyped, its not-yet-migrated consumers fail; and bare `tsc` is never green here regardless. Per-task safety comes from **Vitest**, which strips types without checking them: a green Vitest run after each task proves render *behaviour* is unchanged. The typecheck gate is **Task 10** — `npm run build` must pass, and bare `tsc`'s error count must not rise above the pre-existing ~183.
 - The nine source modules contain **zero references to `comparison_id`** (verified by grep). In those modules, replacing the identifier `ComparisonMember` with `SeriesMember` is the entire change.
 
 ## File map
@@ -85,10 +85,10 @@ export interface SeriesMember {
 }
 ```
 
-- [ ] **Step 2: Verify the typecheck is still green**
+- [ ] **Step 2: Verify no new typecheck errors**
 
-Run: `npx tsc --noEmit`
-Expected: PASS (the addition is purely additive — nothing consumes `SeriesMember` yet).
+Run: `npx tsc --noEmit 2>&1 | grep -c 'error TS'`
+Expected: `183` — unchanged from base. Bare `tsc --noEmit` is **not** green on this repo (`tsconfig.json` includes `test/`, which has ~183 pre-existing errors — Vitest globals not wired up, plus stale fixtures). This task is purely additive, so the count must not move. The enforced gate is `npm run build` (Task 10); confirm the count is flat here and proceed. Commit even though `tsc` exits non-zero — that is the repo's normal state.
 
 - [ ] **Step 3: Commit**
 
@@ -443,22 +443,22 @@ git commit -m "Bridge Compare.tsx onto the SeriesMember render pipeline (I3.2)"
 **Files:**
 - (verification only)
 
-- [ ] **Step 1: Run the full typecheck**
+- [ ] **Step 1: Confirm bare `tsc` added no new errors**
 
-Run: `npx tsc --noEmit`
-Expected: PASS — every consumer is now consistent on `SeriesMember`.
+Run: `npx tsc --noEmit 2>&1 | grep -c 'error TS'`
+Expected: `183` — the exact pre-existing count. Bare `tsc --noEmit` is **not** green on this repo: `tsconfig.json` includes `test/`, and `test/` carries ~183 pre-existing errors unrelated to this migration (Vitest globals `test`/`expect`/`describe` are never wired into `tsconfig.json`; some stale fixtures). This step proves the migration *added* nothing.
 
-If any error remains, it points at a file with a stray `ComparisonMember` fixture passed to a migrated component (or a `comparison_id` field still in such a fixture). Apply the same rename — `ComparisonMember` → `SeriesMember`, `comparison_id` → `series_id` — to that file and re-run. Do **not** touch `test/draftPersistence.test.ts`, `test/MentionChip.test.tsx`, or `test/queue/saveComparison.test.tsx`: those legitimately keep `ComparisonMember` (they do not feed a migrated component) and should not appear in the error list.
+If the count is **above 183**, a migrated component's test fixture was left on `ComparisonMember` (or kept a `comparison_id` field). Find it: `npx tsc --noEmit 2>&1 | grep -E 'series_id|comparison_id|SeriesMember'` — apply the same rename (`ComparisonMember` → `SeriesMember`, `comparison_id` → `series_id`) to that test file and re-run. Do **not** touch `test/draftPersistence.test.ts`, `test/MentionChip.test.tsx`, or `test/queue/saveComparison.test.tsx`: those legitimately keep `ComparisonMember` (they do not feed a migrated component).
 
 - [ ] **Step 2: Run the full unit-test suite**
 
 Run: `npm test`
 Expected: PASS — no behavioural change anywhere.
 
-- [ ] **Step 3: Run the production build**
+- [ ] **Step 3: Run the production build — the enforced typecheck gate**
 
 Run: `npm run build`
-Expected: PASS. (`npm run build` runs `tsc --noEmit -p tsconfig.build.json && vite build`; `tsconfig.build.json` excludes `test/`, so this typechecks `src/` only — the test fixtures were already covered by Step 1's bare `tsc --noEmit`.)
+Expected: PASS. `npm run build` runs `tsc --noEmit -p tsconfig.build.json && vite build`; `tsconfig.build.json` excludes `test/`, so this typechecks `src/` only. **This is the repo's actual enforced typecheck gate** — bare `tsc` is not gated. Every migrated `src/` consumer plus the two bridges must leave it green.
 
 - [ ] **Step 4: Confirm `yBands.ts` is untouched**
 
@@ -481,7 +481,7 @@ If Step 1 passed with no residual fix, skip this commit.
 - [ ] `SeriesMember` is defined as a standalone interface in `api.ts`, mirroring the I2.2 route response; optional fields modelled `T | null`.
 - [ ] The nine listed modules are retyped onto `SeriesMember`.
 - [ ] `lib/comparison/yBands.ts` is unchanged.
-- [ ] `tsc --noEmit` passes.
+- [ ] `npm run build` passes (the enforced `src/`-only typecheck gate + `vite build`); bare `tsc --noEmit` adds no errors beyond the ~183 pre-existing.
 - [ ] The render pipeline's existing Vitest passes unchanged.
 
 ## Coordination note
