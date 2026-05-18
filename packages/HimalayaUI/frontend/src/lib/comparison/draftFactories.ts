@@ -13,12 +13,12 @@
  * truth" — see Plan §Task 4.3 and the spec's stale-comparison flow.
  */
 import type { QueryClient } from "@tanstack/react-query";
-import type { Comparison, ComparisonMember, MemberSnapshot } from "../../api";
+import type { Comparison, MemberSnapshot, SeriesMember } from "../../api";
 import { computeMemberSnapshot } from "./snapshot";
 import type { ActiveDraft, DraftMember, DraftMemberNormalization } from "./draft";
 
 export function memberFromSaved(
-  saved: ComparisonMember,
+  saved: SeriesMember,
   qc: QueryClient,
 ): DraftMember {
   const fresh: MemberSnapshot | undefined =
@@ -74,7 +74,9 @@ export function fromComparison(c: Comparison, qc: QueryClient): ActiveDraft {
     baseHash: c.content_hash,
     title: c.title ?? "",
     description: c.description ?? "",
-    members: c.members.map((m) => memberFromSaved(m, qc)),
+    // I3.2 bridge — comparison members lack series_id; the render pipeline
+    // never reads it. Deleted with this factory at I3.6.
+    members: c.members.map((m) => memberFromSaved({ ...m, series_id: 0 }, qc)),
     forkedFromId: undefined,
     forkedAtHash: undefined,
     viewGroupingMode:  (c.view_grouping_mode  as ActiveDraft["viewGroupingMode"])  ?? undefined,
@@ -104,7 +106,7 @@ export function fromComparisonAsFork(c: Comparison, qc: QueryClient): ActiveDraf
     title: `Fork of ${c.title ?? "comparison"}`,
     description: c.description ?? "",
     members: c.members.map((m) => {
-      const dm = memberFromSaved(m, qc);
+      const dm = memberFromSaved({ ...m, series_id: 0 }, qc); // I3.2 bridge — see fromComparison
       // Drop server id — each member becomes an INSERT on the new
       // comparison. memberFromSaved already recomputed the snapshot.
       return { ...dm, id: undefined };
