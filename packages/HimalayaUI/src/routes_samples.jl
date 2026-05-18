@@ -130,4 +130,75 @@ function register_samples_routes!()
         d[:tags] = rows_to_json(tags)
         HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(d))
     end
+
+    # Batch sample-tag insert (I2.6). One `with_idempotency` transaction, N
+    # `sample_tags` rows + N `add_tag` events — the atomic boundary the
+    # series scoping step needs (N single `add_tag` calls have none; a
+    # mid-batch reload would leave a half-confirmed recipe). Reuses the
+    # existing `add_tag` event kind — `source` defaults to 'manual', the
+    # scoping step passes 'scoping'.
+    @post "/api/samples/tags/batch" function(req::HTTP.Request)
+        db   = current_db()
+        body = json(req)
+
+        # Validate request shape BEFORE opening the transaction, so a
+        # malformed request is a clean 400 with nothing written.
+        if !haskey(body, :key)
+            return HTTP.Response(400, ["Content-Type" => "application/json"],
+                JSON3.write(Dict(:error => "missing required field: key")))
+        end
+        if !haskey(body, :tags) || isempty(body.tags)
+            return HTTP.Response(400, ["Content-Type" => "application/json"],
+                JSON3.write(Dict(:error => "missing or empty required field: tags")))
+        end
+        for t in body.tags
+            if !haskey(t, :sample_id) || !haskey(t, :value)
+                return HTTP.Response(400,
+                    ["Content-Type" => "application/json"],
+                    JSON3.write(Dict(:error =>
+                        "each tag requires sample_id and value")))
+            end
+        end
+
+        key     = String(body.key)
+        source  = haskey(body, :source) ? String(body.source) : "manual"
+        entries = body.tags
+
+        return with_idempotency(db, req) do
+            # `with_idempotency` supplies the single enclosing transaction —
+            # every insert + event below commits or rolls back together.
+            created = Vector{Dict{Symbol, Any}}()
+            for t in entries
+                sample_id = Int(t.sample_id)
+                value     = String(t.value)
+                res = DBInterface.execute(db,
+                    "INSERT INTO sample_tags (sample_id, key, value, source)
+                     VALUES (?, ?, ?, ?)",
+                    [sample_id, key, value, source])
+                tag_id = Int(DBInterface.lastrowid(res))
+
+                # Parent experiment_id lets the frontend invalidate the right
+                # samples cache key — matches the single-tag route's payload.
+                srows = Tables.rowtable(DBInterface.execute(db,
+                    "SELECT experiment_id FROM samples WHERE id = ?", [sample_id]))
+                exp_id = isempty(srows) ? nothing : Int(srows[1].experiment_id)
+
+                result = apply_event!(InTransaction(), db, req;
+                    kind = "add_tag",
+                    entity_type = "sample", entity_id = sample_id,
+                    payload = Dict(:key => key, :value => value,
+                                   :tag_id => tag_id, :experiment_id => exp_id))
+                _enqueue_broadcast_from_result!(result, "add_tag",
+                                                "sample", sample_id)
+
+                # Each entry is a full SampleTag plus the explicit sample_id —
+                # there is no URL param to make the parent FK implicit here.
+                push!(created, Dict(:id => tag_id, :sample_id => sample_id,
+                                    :key => key, :value => value,
+                                    :source => source))
+            end
+            HTTP.Response(201, ["Content-Type" => "application/json"],
+                JSON3.write(created))
+        end
+    end
 end
