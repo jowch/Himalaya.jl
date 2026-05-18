@@ -44,9 +44,9 @@ layer (#156 / I1.2). **Blocks:** the Phase 1 cutover (#163).
 - The corpus sample-tag add/remove round-trip (#159) — the loupe's Sample-tags section is
   **read-only display** in this issue; #159 wires editing.
 - Inspect deletion (#163).
-- Sample `display_name` / `notes` editing — moves to the focus workspace (#179); the loupe
-  is read-only for sample-level identity.
-- "Index this exposure" navigation — a focus-workspace concern (#179).
+- Sample `display_name` / `notes` editing — moves to the focus workspace (#179 / I4.2, a
+  Phase 4 issue, not a Phase 1 sibling); the loupe is read-only for sample-level identity.
+- "Index this exposure" navigation — a focus-workspace concern (#179 / I4.2, Phase 4).
 - A reject-reason picker — the loupe uses the mockup's plain drop/restore toggle (§6).
 
 ## 3. Why "Full" interaction scope
@@ -58,6 +58,12 @@ frame-flipping; I1.6 (#162) owns culling but its card and acceptance criteria ar
 lives in the table"). The loupe's *own* per-exposure controls are therefore claimed by no
 other issue. Building them here completes the mockup and is the natural reading of
 "absorbs `DetectorImageCard` internals" (that card already owns status mutation).
+
+Representative-pick (`useSelectExposure`) does appear in master plan §4.2's culling
+bullet, which I1.6 implements — but I1.6 wires it into *contact-sheet rows* and the loupe
+wires it into the *loupe sidebar*. These are per-surface controls over the same hook by
+design, not a contradiction: each surface owns its own affordance, neither owns the
+other's.
 
 The exposure hooks (`useSetExposureStatus`, `useSelectExposure`) key their cache writes on
 `sampleId` — the same key `useExposures(sampleId)` reads — so drop/restore and
@@ -73,7 +79,7 @@ Three new files; one existing file modified.
 | `src/pages/LoupePage.tsx` (new) | Route entry. Reads `:sampleId` via `useParams`; fetches data; owns active-exposure state, keyboard handling, and back-nav; renders loading / not-found; lays out the plate. |
 | `src/components/LoupeFrame.tsx` (new) | The big `DetectorImage size="full"` with a "Dropped" overlay when the exposure is rejected, plus the centered exposure-thumbnail strip (reusing `ThumbnailGallery`). |
 | `src/components/LoupeSidebar.tsx` (new) | The sidebar: "This exposure" meta-list, Verdict box, Representative box, read-only Sample-tags section, keyboard legend. |
-| `src/components/AppRoutes.tsx` (modify) | Add `<Route path="/samples/loupe/:sampleId" element={<LoupePage />} />` inside the existing `<CorpusShell>` route group. |
+| `src/components/AppRoutes.tsx` (modify) | Add `<Route path="/samples/loupe/:sampleId" element={<LoupePage />} />` inside the existing `<CorpusShell>` route group. This is the hoisted route table I1.1 (#155) created for later issues to register slots into — an append-only one-line add, not flagged in issue-map §3 shared-file contention. |
 | `src/bones/loupe.bones.json` (new) | Boneyard skeleton fixture for the loupe plate (captured per the boneyard workflow). |
 
 The loupe is **URL-owned**: `sampleId` comes from `useParams`, never from the Zustand
