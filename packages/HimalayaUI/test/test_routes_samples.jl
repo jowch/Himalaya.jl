@@ -396,3 +396,45 @@ end
         @test rows[1].tags == []
     end
 end
+
+@testset "POST /api/samples/:id/tags — source defaults to manual, accepts an explicit value, rejects non-string" begin
+    db = SQLite.DB()
+    HimalayaUI.create_schema!(db)
+    exp_id = HimalayaUI.init_experiment!(db; path="/tsrc", data_dir="/tsrc/d",
+                                             analysis_dir="/tsrc/a")
+    s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1", display_name="UX1")
+
+    with_test_server(db) do port, base
+        hdrs = ["Content-Type" => "application/json", "X-Username" => "alice"]
+
+        # No source field → defaults to 'manual'.
+        r = HTTP.post("$base/api/samples/$s_id/tags";
+            body = JSON3.write(Dict(:key => "lipid", :value => "DOPC")),
+            headers = hdrs)
+        @test r.status == 201
+        @test JSON3.read(String(r.body)).source == "manual"
+
+        # Explicit source is honored end to end.
+        r = HTTP.post("$base/api/samples/$s_id/tags";
+            body = JSON3.write(Dict(:key => "temp", :value => "25C",
+                                    :source => "scoping")),
+            headers = hdrs)
+        @test r.status == 201
+        @test JSON3.read(String(r.body)).source == "scoping"
+
+        # Non-string source → 400, nothing written.
+        r = HTTP.request("POST", "$base/api/samples/$s_id/tags",
+            ["Content-Type" => "application/json", "X-Username" => "alice"],
+            JSON3.write(Dict(:key => "x", :value => "y", :source => 42));
+            status_exception = false)
+        @test r.status == 400
+
+        # Exactly the two successful inserts persisted, with the right source.
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT key, source FROM sample_tags WHERE sample_id = ? ORDER BY id",
+            [s_id]))
+        @test length(rows) == 2
+        @test rows[1].source == "manual"
+        @test rows[2].source == "scoping"
+    end
+end
