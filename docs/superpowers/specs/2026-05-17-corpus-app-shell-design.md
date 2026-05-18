@@ -21,13 +21,16 @@ dual model.
 
 ## 2. Architecture — one `<Routes>`, two layout routes
 
-A single hoisted top-level `<Routes>` lives in `App.tsx`. It uses **react-router v6
-layout routes** (a pathless parent `<Route>` whose element renders `<Outlet/>`) so each
-body keeps its own chrome:
+A single hoisted top-level `<Routes>` lives in a dedicated `AppRoutes.tsx` (rendered by
+`App.tsx`) — splitting the route table into its own file keeps it independently testable
+without `App.tsx`'s queue/SSE/`EventSource` effects. It uses **react-router v6 layout
+routes** (a pathless parent `<Route>` whose element renders `<Outlet/>`) so each body
+keeps its own chrome:
 
 ```
-App.tsx  — root concerns: queue/SSE/persistence effects, theme effect, useGlobalShortcuts
-└── <Routes>                                    ← the single hoisted route table
+App.tsx     — root concerns: queue/SSE/persistence effects; renders <AppRoutes/>
+└── AppRoutes.tsx — theme effect + useGlobalShortcuts (above both bodies)
+    └── <Routes>                                ← the single hoisted route table
     ├── <Route element={<CorpusShell/>}>         new shell: topbar + <Outlet/>
     │     └── <Route path="/samples" element={<SamplesPage/>}/>   ← #160 fills the stub
     └── <Route element={<AppShell/>}>            legacy shell: AppHeader + TabRocker + <Outlet/>
@@ -74,8 +77,9 @@ call site moves.
 `if (isCorpusRoute(pathname)) return` early-return. Rejected — it edits the internals of
 fragile hooks; the layout-route relocation achieves the same isolation structurally.
 
-`useGlobalShortcuts` and the `<html>` theme effect move **up** to `App.tsx` (above the
-`<Routes>`) so both bodies share them, per master plan §4.1.
+`useGlobalShortcuts` and the `<html>` theme effect move **up** into `AppRoutes.tsx`
+(above the `<Routes>`, so both bodies share them) — out of `AppShell`, per master plan
+§4.1.
 
 ## 4. Stale-`activePage` coercion — `state.ts`
 
@@ -116,10 +120,11 @@ as each legacy surface is retired and have coercion fire automatically.
 | `components/CorpusShell.tsx` | New layout route — renders `CorpusTopbar` + `<Outlet/>`. |
 | `components/CorpusTopbar.tsx` | Topbar: `Himalaya · SAXS` wordmark; three stage-tabs; Beamtime facet chip. |
 | `pages/SamplesPage.tsx` | Placeholder stub at `/samples`; #160 builds the contact sheet into it. |
-| `App.tsx` | Hosts the single `<Routes>`; gains the theme effect + `useGlobalShortcuts`; loses the two URL-sync hooks (moved to `AppShell`). |
+| `components/AppRoutes.tsx` | **New.** The single hoisted `<Routes>`; theme effect + `useGlobalShortcuts` above both bodies; hosts `PageBody` + `EditToBareRedirect`. |
+| `App.tsx` | Renders `<AppRoutes/>`; loses the two URL-sync hooks (moved to `AppShell`). |
 | `components/AppShell.tsx` | Refactored to a layout route: internal `<Routes>` removed, renders `<Outlet/>`, hosts the relocated URL-sync hooks + compare-sync effects. |
-| `state.ts` | `coerceActivePage` + `VALID_PAGE_IDS` exports; `persist` `merge` callback. |
-| `styles.css` | "The Print" palette tokens added to `@theme` + `:root.theme-light`. |
+| `state.ts` | `coerceActivePage` + `VALID_PAGE_IDS` exports; `mergePersistedState` wired as the `persist` `merge` callback. |
+| `styles.css` | "The Print" palette tokens added to `@theme`. |
 
 ### 5.1 Stage-tabs during the migration window
 
@@ -135,9 +140,10 @@ query state to #160's `/samples` route; #155 only places the chip in the topbar.
 
 ### 5.3 "The Print" palette
 
-New palette tokens are added to the existing `@theme` block with `:root.theme-light`
-overrides, following the established two-block dark-default / light-override pattern. The
-topbar is theme-aware; the redesign mockups are light-first.
+New palette tokens are added to the existing `@theme` block as **single-valued** tokens
+(no `:root.theme-light` override). The redesign is light-first and "The Print" is
+inherently a paper aesthetic, so the corpus topbar renders light in both theme modes; a
+dark treatment of the new surfaces is a later, post-#155 concern.
 
 ## 6. Testing (Vitest + build)
 
