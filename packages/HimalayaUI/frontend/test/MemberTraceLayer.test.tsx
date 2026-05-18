@@ -12,7 +12,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import * as Plot from "@observablehq/plot";
-import type { ComparisonMember } from "../src/api";
+import type { SeriesMember } from "../src/api";
 import { buildMemberMarks } from "../src/components/MemberTraceLayer";
 import { phaseColor } from "../src/phases";
 import {
@@ -34,10 +34,10 @@ beforeEach(() => {
 });
 
 // Convenience builders.
-function makeMember(over: Partial<ComparisonMember> = {}): ComparisonMember {
+function makeMember(over: Partial<SeriesMember> = {}): SeriesMember {
   return {
     id: 1,
-    comparison_id: 100,
+    series_id: 100,
     exposure_id: 42,
     display_order: 0,
     band_height: 1,
@@ -262,7 +262,7 @@ describe("buildMemberMarks line stroke (Phase 9 grouping-mode wiring)", () => {
   it("bySample: two members with the same sample_id render the same stroke", () => {
     const a = makeMember({ id: 1, exposure_id: 10, display_order: 0, snapshot: null });
     const b = makeMember({ id: 2, exposure_id: 11, display_order: 1, snapshot: null });
-    const sampleIdFor = (m: ComparisonMember) =>
+    const sampleIdFor = (m: SeriesMember) =>
       m.exposure_id === 10 ? 7 : m.exposure_id === 11 ? 7 : null;
     const ctx = { allMembers: [a, b], sampleIdFor };
 
