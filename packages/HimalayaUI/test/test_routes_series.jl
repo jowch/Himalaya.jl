@@ -667,4 +667,40 @@ end
         end
     end
 
+    @testset "POST/DELETE /api/series/{id}/pin — series pins" begin
+        mktempdir() do tmp
+            db = _series_test_db(tmp)
+            DBInterface.execute(db, "INSERT INTO series (id, title, state) VALUES (5, 'S5', 'draft')")
+            with_test_server(db) do port, base
+                # Pin → series_pins row written; GET reflects it.
+                respPin = HTTP.post("$base/api/series/5/pin", ["X-Username" => "alice"])
+                @test respPin.status == 200
+                pins = JSON3.read(HTTP.get("$base/api/users/me/series-pins",
+                    ["X-Username" => "alice"]).body)
+                @test pins == [5]
+
+                # Unpin → series_pins row removed.
+                respUnpin = HTTP.delete("$base/api/series/5/pin", ["X-Username" => "alice"])
+                @test respUnpin.status == 200
+                pins2 = JSON3.read(HTTP.get("$base/api/users/me/series-pins",
+                    ["X-Username" => "alice"]).body)
+                @test pins2 == []
+
+                # rebuild_views_from_log! round-trip: pin events live on
+                # entity_type='user'. Re-fold for the user → series_pins
+                # rebuilt. (Pin then unpin → empty; pin again to assert a row.)
+                HTTP.post("$base/api/series/5/pin", ["X-Username" => "alice"])
+                uid = Tables.rowtable(DBInterface.execute(db,
+                    "SELECT id FROM users WHERE username = 'alice'"))[1].id
+                DBInterface.execute(db, "DELETE FROM series_pins WHERE user_id = ?", [uid])
+                HimalayaUI.rebuild_views_from_log!(db, uid; entity_type = "user")
+                refold = Tables.rowtable(DBInterface.execute(db,
+                    "SELECT series_id FROM series_pins WHERE user_id = ?", [uid]))
+                @test length(refold) == 1
+                @test refold[1].series_id == 5
+            end
+            close(db)
+        end
+    end
+
 end

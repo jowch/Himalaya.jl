@@ -441,6 +441,28 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
         return _update_view_for_series_plate_committed!(db, entity_id, payload, event_id)
     end
 
+    # Per-user series pins (#168 / I2.5). Stored with entity_type='user',
+    # entity_id=user_id (the comparison_pinned precedent) — the affected series
+    # rides in the payload as `series_id`. Five-layer: no post_state, no
+    # mutator. The dispatcher derives user_id by joining user_actions on
+    # event_id, exactly as the comparison pin branches do.
+    if kind == "series_pinned"
+        DBInterface.execute(db,
+            """INSERT OR REPLACE INTO series_pins (user_id, series_id, pinned_at)
+               VALUES ((SELECT user_id FROM user_actions WHERE id = ?),
+                       ?, CURRENT_TIMESTAMP)""",
+            [event_id, Int(payload.series_id)])
+        return nothing
+    end
+    if kind == "series_unpinned"
+        DBInterface.execute(db,
+            """DELETE FROM series_pins
+               WHERE user_id = (SELECT user_id FROM user_actions WHERE id = ?)
+                 AND series_id = ?""",
+            [event_id, Int(payload.series_id)])
+        return nothing
+    end
+
     # Scaffolding / legacy:
     kind == "noop_test" && return nothing
     # default: no view update
