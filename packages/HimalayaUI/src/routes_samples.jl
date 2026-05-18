@@ -128,13 +128,23 @@ function register_samples_routes!()
                 ["Content-Type" => "application/json"],
                 JSON3.write(Dict(:error => "missing required fields: key, value")))
         end
-        key   = String(body.key)
-        value = String(body.value)
+        # `source` is optional and defaults to 'manual'. Validated BEFORE the
+        # transaction opens so a malformed request is a clean 400 (mirrors the
+        # batch route's validation discipline). The series-scoping path passes
+        # an explicit non-'manual' source.
+        if haskey(body, :source) && !(body.source isa AbstractString)
+            return HTTP.Response(400,
+                ["Content-Type" => "application/json"],
+                JSON3.write(Dict(:error => "source must be a string")))
+        end
+        key    = String(body.key)
+        value  = String(body.value)
+        source = haskey(body, :source) ? String(body.source) : "manual"
         return with_idempotency(db, req) do
             res   = DBInterface.execute(db,
                 "INSERT INTO sample_tags (sample_id, key, value, source)
-                 VALUES (?, ?, ?, 'manual')",
-                [id, key, value])
+                 VALUES (?, ?, ?, ?)",
+                [id, key, value, source])
             tag_id = Int(DBInterface.lastrowid(res))
 
             # Look up parent experiment_id so the frontend can invalidate the
@@ -155,7 +165,7 @@ function register_samples_routes!()
             # cache pollution if the frontend spread the response wholesale.
             HTTP.Response(201, ["Content-Type" => "application/json"],
                 JSON3.write(Dict(:id => tag_id,
-                                 :key => key, :value => value, :source => "manual")))
+                                 :key => key, :value => value, :source => source)))
         end
     end
 

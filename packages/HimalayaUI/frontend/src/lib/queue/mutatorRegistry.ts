@@ -5,6 +5,8 @@ import {
   removeSampleTagMutator,
   addExposureTagMutator,
   removeExposureTagMutator,
+  addCorpusSampleTagMutator,
+  removeCorpusSampleTagMutator,
   postSampleMessageMutator,
   postComparisonMessageMutator,
   setExposureStatusMutator,
@@ -62,13 +64,18 @@ export function resolveMutator(
     case "update_sample":
       return updateSampleMutator;
     case "add_tag":
+      // Tri-scope (#159). Peel exposure off FIRST: an exposure-tag op carries
+      // {sampleId, exposureId} and — like a corpus-tag op — has no
+      // experimentId, so the two collide unless exposureId is tested first.
+      if (p?.exposureId !== undefined) return addExposureTagMutator;
       return p?.experimentId !== undefined
         ? addSampleTagMutator
-        : addExposureTagMutator;
+        : addCorpusSampleTagMutator;
     case "remove_tag":
+      if (p?.exposureId !== undefined) return removeExposureTagMutator;
       return p?.experimentId !== undefined
         ? removeSampleTagMutator
-        : removeExposureTagMutator;
+        : removeCorpusSampleTagMutator;
     case "post_message":
       return p?.comparisonId !== undefined
         ? postComparisonMessageMutator
@@ -139,6 +146,20 @@ export function resolveMutatorForEvent(
     case "update_sample":       return updateSampleMutator;
     case "set_exposure_status": return setExposureStatusMutator;
     case "select_exposure":     return selectExposureMutator;
+    // add_tag / remove_tag stay 2-arm here — deliberately NOT tri-scope like
+    // resolveMutator above. Verified (#159): a corpus-originated and an
+    // experiment-originated sample tag are byte-identical on the SSE wire
+    // (same entity_type="sample", same payload — the route always resolves
+    // experiment_id from the sample row). There is no corpus-vs-experiment
+    // discriminator to key on, and none is needed: this function only picks a
+    // synthesizeFromSse for the own-op SSE-confirmation *response shape*.
+    // addSampleTagMutator.synthesizeFromSse yields a SampleTag, which the
+    // corpus mutator's own onSuccess consumes; the cache patch is done by the
+    // pending mutation's own onSuccess (the corpus mutator). A literal third
+    // arm would be unreachable dead code. This is a conscious, plan-aware
+    // deviation from the literal "convert both to tri-scope" wording of #159
+    // / master plan §11. See
+    // docs/superpowers/specs/2026-05-18-corpus-sample-tag-mutations-design.md.
     case "add_tag":
       return entityType === "sample" ? addSampleTagMutator : addExposureTagMutator;
     case "remove_tag":

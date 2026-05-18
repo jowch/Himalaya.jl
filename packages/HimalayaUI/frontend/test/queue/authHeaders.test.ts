@@ -34,6 +34,7 @@ import { deleteComparisonMutator } from "../../src/lib/queue/mutators/deleteComp
 import {
   updateSampleMutator,
   addSampleTagMutator, removeSampleTagMutator,
+  addCorpusSampleTagMutator, removeCorpusSampleTagMutator,
   addExposureTagMutator, removeExposureTagMutator,
   postSampleMessageMutator,
   setExposureStatusMutator, selectExposureMutator,
@@ -175,6 +176,22 @@ const SPECS: Spec[] = [
       { ...FLAT_BASE, kind: "remove_tag",
         payload: { tagId: 1 },
         sampleId: 10, experimentId: 1, tagId: 1 } as any,
+      new AbortController().signal),
+  },
+  {
+    name: "addCorpusSampleTag",
+    run: (qc) => addCorpusSampleTagMutator.request(
+      { ...FLAT_BASE, kind: "add_tag",
+        payload: { key: "k", value: "v" },
+        sampleId: 10, key: "k", value: "v" } as any,
+      new AbortController().signal),
+  },
+  {
+    name: "removeCorpusSampleTag",
+    run: (qc) => removeCorpusSampleTagMutator.request(
+      { ...FLAT_BASE, kind: "remove_tag",
+        payload: { tagId: 1 },
+        sampleId: 10, tagId: 1 } as any,
       new AbortController().signal),
   },
   {

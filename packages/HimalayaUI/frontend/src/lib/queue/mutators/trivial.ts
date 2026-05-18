@@ -13,7 +13,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import * as api from "../../../api";
 import type {
   Sample, SampleTag, Exposure, ExposureTag, SampleMessage, ComparisonMessage,
-  AuthOpts,
+  AuthOpts, CorpusSample,
 } from "../../../api";
 import { queryKeys } from "../../../queries";
 import { authOpts } from "../../authOpts";
@@ -164,6 +164,12 @@ export const addSampleTagMutator: Mutator<AddSampleTagInput, AddSampleTagScope, 
       id: payload.tag_id as number,
       key: payload.key as string,
       value: payload.value as string,
+      // Hardcoded: the `add_tag` SSE payload omits `source`. The single-tag
+      // route now accepts a non-`manual` source, so a non-`manual` tag
+      // confirmed via the SSE-wins race would cache a stale `source` until a
+      // refetch. Safe today — the only non-`manual` writer (the batch route)
+      // does not flow through this mutator. A future caller that does must
+      // add `source` to the event payload and read it here.
       source: "manual",
     } as SampleTag;
   },
@@ -280,6 +286,103 @@ export const removeExposureTagMutator: Mutator<RemoveExposureTagInput, RemoveExp
     };
   },
   request: (p) => api.removeExposureTag(p.exposureId, p.tagId, buildAuthOpts(p)),
+  onSuccess: () => {},
+  // 404 = the tag is already gone → desired end state.
+  treats404AsSuccess: true,
+};
+
+// ---------------------------------------------------------------------------
+// add_tag / remove_tag (corpus sample) — #159
+// ---------------------------------------------------------------------------
+// The corpus contact sheet reads queryKeys.corpusSamples (a CorpusSample[]),
+// not the per-experiment queryKeys.samples(experimentId). These mutators are
+// separate from addSampleTagMutator/removeSampleTagMutator so the existing
+// experiment-scoped path is untouched. The op scope carries `sampleId` only —
+// no `experimentId` and no `exposureId` — which is how the tri-scope
+// `resolveMutator` discriminator routes such an op here (it tests exposure
+// first, then experiment, then falls through to corpus). They define no
+// `synthesizeFromSse`: the own-op
+// SSE-wins response shape is produced by addSampleTagMutator.synthesizeFromSse
+// via resolveMutatorForEvent (shared SampleTag shape) — see the comment in
+// mutatorRegistry.ts.
+
+export type AddCorpusSampleTagInput = { key: string; value: string };
+type AddCorpusSampleTagScope = BaseScope & { sampleId: number };
+
+export const addCorpusSampleTagMutator: Mutator<
+  AddCorpusSampleTagInput, AddCorpusSampleTagScope, SampleTag
+> = {
+  kind: "add_tag",
+  onMutate: (p, qc): RollbackContext => {
+    const key = queryKeys.corpusSamples;
+    const prev = qc.getQueryData<CorpusSample[]>(key);
+    const placeholderId = nextOptimisticId();
+    if (prev) {
+      qc.setQueryData<CorpusSample[]>(key, prev.map((s) =>
+        s.id === p.sampleId
+          ? { ...s, tags: [...s.tags, {
+              id: placeholderId, key: p.key, value: p.value, source: "manual",
+            }] }
+          : s,
+      ));
+    }
+    return {
+      restore: () => {
+        if (prev !== undefined) qc.setQueryData(key, prev);
+      },
+    };
+  },
+  request: (p) => api.addSampleTag(p.sampleId, p.key, p.value, buildAuthOpts(p)),
+  onSuccess: (p, response, qc) => {
+    // Route emits {id, sample_id, key, value, source}; SampleTag omits
+    // sample_id. Strip it so the cached row matches the type.
+    const tag: SampleTag = {
+      id: response.id, key: response.key, value: response.value,
+      source: response.source,
+    };
+    const key = queryKeys.corpusSamples;
+    qc.setQueryData<CorpusSample[]>(key, (list) => {
+      if (!list) return list;
+      return list.map((s) =>
+        s.id !== p.sampleId
+          ? s
+          : {
+              ...s,
+              tags: replacePlaceholder(
+                s.tags,
+                tag,
+                (t) => t.key === p.key && t.value === p.value,
+              ),
+            },
+      );
+    });
+  },
+};
+
+export type RemoveCorpusSampleTagInput = { tagId: number };
+type RemoveCorpusSampleTagScope = BaseScope & { sampleId: number };
+
+export const removeCorpusSampleTagMutator: Mutator<
+  RemoveCorpusSampleTagInput, RemoveCorpusSampleTagScope, void
+> = {
+  kind: "remove_tag",
+  onMutate: (p, qc): RollbackContext => {
+    const key = queryKeys.corpusSamples;
+    const prev = qc.getQueryData<CorpusSample[]>(key);
+    if (prev) {
+      qc.setQueryData<CorpusSample[]>(key, prev.map((s) =>
+        s.id === p.sampleId
+          ? { ...s, tags: s.tags.filter((t) => t.id !== p.tagId) }
+          : s,
+      ));
+    }
+    return {
+      restore: () => {
+        if (prev !== undefined) qc.setQueryData(key, prev);
+      },
+    };
+  },
+  request: (p) => api.removeSampleTag(p.sampleId, p.tagId, buildAuthOpts(p)),
   onSuccess: () => {},
   // 404 = the tag is already gone → desired end state.
   treats404AsSuccess: true,
