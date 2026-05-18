@@ -739,6 +739,73 @@ function migrate_series!(db::SQLite.DB)
         CREATE INDEX IF NOT EXISTS idx_series_forked_from
             ON series(forked_from_id)""")
 
+    # `series_members` — the plate. The `comparison_members` shape with
+    # `comparison_id` renamed to `series_id` (CASCADE). `exposure_id` keeps
+    # `ON DELETE SET NULL` (orphan-placeholder rule).
+    DBInterface.execute(db, """
+        CREATE TABLE IF NOT EXISTS series_members (
+            id              INTEGER PRIMARY KEY,
+            series_id       INTEGER NOT NULL REFERENCES series(id)    ON DELETE CASCADE,
+            exposure_id     INTEGER          REFERENCES exposures(id) ON DELETE SET NULL,
+            display_order   INTEGER NOT NULL,
+            band_height     REAL    NOT NULL DEFAULT 1.0,
+            y_offset        REAL    NOT NULL DEFAULT 0,
+            normalization   TEXT    NOT NULL DEFAULT 'none',
+            color_override  TEXT,
+            label_override  TEXT,
+            q_window_min    REAL,
+            q_window_max    REAL,
+            peak_display    TEXT    CHECK (peak_display IS NULL OR json_valid(peak_display)),
+            snapshot        TEXT    NOT NULL CHECK (json_valid(snapshot)),
+            created_by      INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            created_at      TEXT    NOT NULL
+        )""")
+    DBInterface.execute(db, """
+        CREATE INDEX IF NOT EXISTS idx_series_members_by_series
+            ON series_members(series_id, display_order)""")
+
+    # `series_samples` — the recipe membership: an explicit ordered sample
+    # list. `series_id`/`sample_id` are both NOT NULL (a pointer row with a
+    # NULL target is unrenderable; #164 spec text omits NOT NULL — see plan
+    # preamble). `UNIQUE(series_id, position)` also serves ordered reads, so
+    # no separate index is created.
+    DBInterface.execute(db, """
+        CREATE TABLE IF NOT EXISTS series_samples (
+            id          INTEGER PRIMARY KEY,
+            series_id   INTEGER NOT NULL REFERENCES series(id)  ON DELETE CASCADE,
+            sample_id   INTEGER NOT NULL REFERENCES samples(id) ON DELETE CASCADE,
+            position    INTEGER NOT NULL,
+            pinned      INTEGER NOT NULL DEFAULT 0 CHECK (pinned   IN (0,1)),
+            excluded    INTEGER NOT NULL DEFAULT 0 CHECK (excluded IN (0,1)),
+            UNIQUE(series_id, position)
+        )""")
+
+    # `series_messages` — the `comparison_messages` shape, `series_id` (CASCADE).
+    DBInterface.execute(db, """
+        CREATE TABLE IF NOT EXISTS series_messages (
+            id         INTEGER PRIMARY KEY,
+            series_id  INTEGER NOT NULL REFERENCES series(id) ON DELETE CASCADE,
+            author_id  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            body       TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )""")
+    DBInterface.execute(db, """
+        CREATE INDEX IF NOT EXISTS idx_series_messages_by_series
+            ON series_messages(series_id, created_at)""")
+
+    # `series_pins` — the `comparison_pins` shape. Composite PK enforces one
+    # pin per (user, series); both FKs CASCADE.
+    DBInterface.execute(db, """
+        CREATE TABLE IF NOT EXISTS series_pins (
+            user_id    INTEGER NOT NULL REFERENCES users(id)  ON DELETE CASCADE,
+            series_id  INTEGER NOT NULL REFERENCES series(id) ON DELETE CASCADE,
+            pinned_at  TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (user_id, series_id)
+        )""")
+    DBInterface.execute(db, """
+        CREATE INDEX IF NOT EXISTS idx_series_pins_by_user
+            ON series_pins(user_id, pinned_at DESC)""")
+
     # Migration-version sentinel. No such table exists today; #171's copy
     # needs a real marker. Created empty here — #164 writes no rows.
     DBInterface.execute(db, """

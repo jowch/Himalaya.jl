@@ -1677,3 +1677,74 @@ end
 
     migrate_schema!(db)  # second run is idempotent
 end
+
+@testset "migrate_series! creates the four series child tables" begin
+    db = SQLite.DB()
+    create_schema!(db)
+    migrate_series!(db)
+
+    tables = Set(r.name for r in Tables.rowtable(DBInterface.execute(db,
+        "SELECT name FROM sqlite_master WHERE type='table'")))
+    for t in ("series_members", "series_samples", "series_messages", "series_pins")
+        @test t in tables
+    end
+
+    # series_samples CHECK constraints on pinned / excluded.
+    DBInterface.execute(db, "INSERT INTO series DEFAULT VALUES")
+    DBInterface.execute(db, """
+        INSERT INTO series_samples (series_id, sample_id, position)
+        VALUES (1, 1, 0)""")  # defaults: pinned=0, excluded=0 — pass CHECK
+    @test_throws SQLite.SQLiteException DBInterface.execute(db, """
+        INSERT INTO series_samples (series_id, sample_id, position, pinned)
+        VALUES (1, 1, 1, 2)""")
+    @test_throws SQLite.SQLiteException DBInterface.execute(db, """
+        INSERT INTO series_samples (series_id, sample_id, position, excluded)
+        VALUES (1, 1, 2, 9)""")
+
+    # UNIQUE(series_id, position) — position 0 is already taken above.
+    @test_throws SQLite.SQLiteException DBInterface.execute(db, """
+        INSERT INTO series_samples (series_id, sample_id, position)
+        VALUES (1, 1, 0)""")
+
+    # series_members.snapshot must be valid JSON.
+    @test_throws SQLite.SQLiteException DBInterface.execute(db, """
+        INSERT INTO series_members (series_id, display_order, snapshot, created_at)
+        VALUES (1, 0, 'not-json', '2026-05-17T00:00:00.000Z')""")
+
+    migrate_series!(db)  # idempotent re-run
+end
+
+@testset "series child tables cascade-delete with the series" begin
+    mktempdir() do dir
+        db = HimalayaUI.open_db(joinpath(dir, "h.db"))  # FK enforcement ON
+        exp_id  = create_experiment!(db; path="/tmp", data_dir="/tmp", analysis_dir="/tmp")
+        samp_id = create_sample!(db; experiment_id=exp_id, name="s1")
+
+        DBInterface.execute(db, "INSERT INTO series DEFAULT VALUES")
+        sid = only(Tables.rowtable(DBInterface.execute(db,
+            "SELECT last_insert_rowid() AS id"))).id
+
+        DBInterface.execute(db, """
+            INSERT INTO series_samples (series_id, sample_id, position)
+            VALUES (?, ?, 0)""", [sid, samp_id])
+        DBInterface.execute(db, """
+            INSERT INTO series_members (series_id, display_order, snapshot, created_at)
+            VALUES (?, 0, '{}', '2026-05-17T00:00:00.000Z')""", [sid])
+        DBInterface.execute(db, """
+            INSERT INTO series_messages (series_id, body) VALUES (?, 'hi')""", [sid])
+
+        # series_pins.user_id FK requires a real user row (CASCADE, not SET NULL).
+        user_id = HimalayaUI.get_or_create_user!(db, "alice")
+        DBInterface.execute(db, """
+            INSERT INTO series_pins (user_id, series_id, pinned_at)
+            VALUES (?, ?, '2026-05-17T00:00:00.000Z')""", [user_id, sid])
+
+        DBInterface.execute(db, "DELETE FROM series WHERE id = ?", [sid])
+
+        for t in ("series_samples", "series_members", "series_messages", "series_pins")
+            n = only(Tables.rowtable(DBInterface.execute(db,
+                "SELECT COUNT(*) AS n FROM $t WHERE series_id = ?", [sid]))).n
+            @test n == 0
+        end
+    end
+end
