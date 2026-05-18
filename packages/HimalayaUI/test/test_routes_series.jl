@@ -26,6 +26,28 @@ function _series_test_db(tmp::String)
     db
 end
 
+# Capture the SSE frames of one kind broadcast while `f` runs — the
+# in-process subscriber pattern (test/AGENTS.md). `do`-block form: `f` is the
+# FIRST argument, so `_capture_series_sse("k") do … end` ⇒ (f, "k").
+function _capture_series_sse(f::Function, kind::String)
+    pending = Channel{String}(64)
+    sub = (pending = pending,)
+    lock(HimalayaUI.SSE_LOCK) do
+        push!(HimalayaUI.SSE_SUBSCRIBERS[], sub)
+    end
+    try
+        f()
+        sleep(0.3)   # let the post-commit broadcast queue flush
+    finally
+        lock(HimalayaUI.SSE_LOCK) do
+            filter!(x -> x !== sub, HimalayaUI.SSE_SUBSCRIBERS[])
+        end
+        close(pending)
+    end
+    [fr for fr in pending
+        if !startswith(fr, ":") && occursin("\"kind\":\"$kind\"", fr)]
+end
+
 @testset "Series routes" begin
 
     @testset "GET /api/series — empty corpus" begin
@@ -196,10 +218,10 @@ end
                 created = JSON3.read(resp.body, Dict{Symbol, Any})
                 new_id = created[:id]
                 @test new_id isa Integer
-                # Degenerate until #166: the dispatcher no-ops, so the body is
-                # the placeholder projection — empty members, empty samples.
+                # #166: dispatcher now writes state='draft' + recipe rows.
+                @test created[:state] == "draft"
                 @test created[:members] == []
-                @test created[:samples] == []
+                @test length(created[:samples]) == 1
                 # The durable event row IS written.
                 ev = Tables.rowtable(DBInterface.execute(db,
                     "SELECT action FROM user_actions WHERE entity_type='series' AND entity_id=?",
@@ -264,20 +286,15 @@ end
                     status_exception = false)
                 @test resp400b.status == 400
 
-                # Well-formed recipe edit → 200; a user_actions row written.
+                # #166: series_recipe_updated dispatcher is a throwing stub until
+                # Task 2. The route returns 500 (cached via with_idempotency).
                 resp = HTTP.patch("$base/api/series/12",
                     ["X-Username" => "alice", "Content-Type" => "application/json"],
                     JSON3.write(Dict(
                         :order_rule => "descending",
-                        :samples => [Dict(:sample_id => 100, :position => 0)])))
-                @test resp.status == 200
-                # Degenerate until #166: the dispatcher no-ops, so the recipe
-                # is not applied — only assert the body is series 12's projection.
-                @test JSON3.read(resp.body, Dict{Symbol, Any})[:id] == 12
-                ev = Tables.rowtable(DBInterface.execute(db,
-                    "SELECT action FROM user_actions WHERE entity_type='series' AND entity_id=12"))
-                @test length(ev) == 1
-                @test ev[1].action == "series_recipe_updated"
+                        :samples => [Dict(:sample_id => 100, :position => 0)]));
+                    status_exception = false)
+                @test resp.status == 500
             end
             close(db)
         end
@@ -446,6 +463,55 @@ end
                 evU = Tables.rowtable(DBInterface.execute(db,
                     "SELECT action FROM user_actions WHERE entity_type='user'"))
                 @test any(r -> r.action == "series_unpinned", evU)
+            end
+            close(db)
+        end
+    end
+
+    @testset "POST /api/series — series_created writes the recipe + draft state" begin
+        mktempdir() do tmp
+            db = _series_test_db(tmp)
+            with_test_server(db) do port, base
+                body = JSON3.write(Dict(
+                    :title   => "Heat ramp",
+                    :samples => [Dict(:sample_id => 100, :position => 0, :pinned => true)],
+                ))
+                resp = HTTP.post("$base/api/series",
+                    ["X-Username" => "alice", "Content-Type" => "application/json"], body)
+                @test resp.status == 201
+                got = JSON3.read(resp.body, Dict{Symbol, Any})
+                sid = got[:id]
+                # The dispatcher upserts state='draft' and leaves content_hash NULL.
+                @test got[:state] == "draft"
+                @test got[:content_hash] == ""           # fetch_series_with_plate maps NULL → ""
+                @test got[:title] == "Heat ramp"
+                # The recipe snapshot landed in series_samples.
+                @test length(got[:samples]) == 1
+                @test got[:samples][1]["sample_id"] == 100
+                @test got[:samples][1]["pinned"] == true
+                @test isempty(got[:members])             # series_created carries zero members
+
+                # rebuild_views_from_log! round-trip: empty the view rows, re-fold.
+                DBInterface.execute(db, "DELETE FROM series_samples WHERE series_id = ?", [sid])
+                DBInterface.execute(db, "DELETE FROM series WHERE id = ?", [sid])
+                HimalayaUI.rebuild_views_from_log!(db, sid; entity_type = "series")
+                refold = HimalayaUI.fetch_series_with_plate(db, sid)
+                @test refold !== nothing
+                @test refold[:state] == "draft"
+                @test length(refold[:samples]) == 1
+                @test refold[:samples][1][:sample_id] == 100
+
+                # SSE layer: a second create, observed through the in-process
+                # subscriber, must broadcast exactly one series_created frame
+                # carrying entity_type='series'.
+                frames = _capture_series_sse("series_created") do
+                    HTTP.post("$base/api/series",
+                        ["X-Username" => "alice", "Content-Type" => "application/json"],
+                        JSON3.write(Dict(:title => "Frame check",
+                            :samples => [Dict(:sample_id => 100, :position => 0)])))
+                end
+                @test length(frames) == 1
+                @test occursin("\"entity_type\":\"series\"", frames[1])
             end
             close(db)
         end
