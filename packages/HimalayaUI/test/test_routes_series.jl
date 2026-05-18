@@ -571,4 +571,33 @@ end
         end
     end
 
+    @testset "DELETE /api/series/{id} — series_deleted cascades + folds to absent" begin
+        mktempdir() do tmp
+            db = _series_test_db(tmp)
+            with_test_server(db) do port, base
+                createBody = JSON3.write(Dict(
+                    :title   => "Doomed",
+                    :samples => [Dict(:sample_id => 100, :position => 0)],
+                ))
+                sid = JSON3.read(HTTP.post("$base/api/series",
+                    ["X-Username" => "alice", "Content-Type" => "application/json"],
+                    createBody).body, Dict{Symbol, Any})[:id]
+
+                resp = HTTP.delete("$base/api/series/$sid", ["X-Username" => "alice"])
+                @test resp.status == 200
+                # Four-table cascade: the series row and its recipe rows are gone.
+                @test HimalayaUI.fetch_series_with_plate(db, sid) === nothing
+                remaining = Tables.rowtable(DBInterface.execute(db,
+                    "SELECT COUNT(*) AS n FROM series_samples WHERE series_id = ?", [sid]))
+                @test remaining[1].n == 0
+
+                # rebuild_views_from_log! round-trip: fold series_created THEN
+                # series_deleted from empty → series stays absent.
+                HimalayaUI.rebuild_views_from_log!(db, sid; entity_type = "series")
+                @test HimalayaUI.fetch_series_with_plate(db, sid) === nothing
+            end
+            close(db)
+        end
+    end
+
 end
