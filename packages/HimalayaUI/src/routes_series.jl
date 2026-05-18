@@ -234,4 +234,26 @@ function register_series_routes!()
             HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(out))
         end
     end
+
+    # ── Delete ──────────────────────────────────────────────────────────────
+
+    @delete "/api/series/{id}" function(req::HTTP.Request, id::Int)
+        db = current_db()
+        return with_idempotency(db, req) do
+            # No author gate (architecture decision 3).
+            if !series_exists(db, id)
+                return _json_error(404, "series not found")
+            end
+            result = apply_event!(InTransaction(), db, req;
+                kind        = "series_deleted",
+                entity_type = "series",
+                entity_id   = id,
+                payload     = Dict{Symbol, Any}(:id => id))
+            # No post_state envelope (master-plan §5.2).
+            _enqueue_broadcast_from_result!(result, "series_deleted", "series", id)
+            HTTP.Response(200, ["Content-Type" => "application/json"],
+                JSON3.write(Dict(:id => id, :deleted => true,
+                                 :event_id => result.event_id)))
+        end
+    end
 end

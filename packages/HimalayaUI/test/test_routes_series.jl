@@ -320,4 +320,34 @@ end
         end
     end
 
+    @testset "DELETE /api/series/{id} (smoke + no gate)" begin
+        mktempdir() do tmp
+            db = _series_test_db(tmp)
+            with_test_server(db) do port, base
+                # Missing series → 404.
+                resp404 = HTTP.delete("$base/api/series/999", ["X-Username" => "alice"];
+                                      status_exception = false)
+                @test resp404.status == 404
+
+                # Series authored by alice; bob (not the author) deletes it —
+                # no is_author gate, so NOT 403.
+                DBInterface.execute(db, "INSERT INTO users (id, username) VALUES (1, 'alice')")
+                DBInterface.execute(db, """INSERT INTO series
+                    (id, title, state, created_by) VALUES (30, 'doomed', 'committed', 1)""")
+                resp = HTTP.delete("$base/api/series/30", ["X-Username" => "bob"];
+                                   status_exception = false)
+                @test resp.status != 403
+                @test resp.status == 200
+                deleted = JSON3.read(resp.body, Dict{Symbol, Any})
+                @test deleted[:id] == 30
+                @test deleted[:deleted] == true
+                @test deleted[:event_id] isa Integer && deleted[:event_id] > 0
+                ev = Tables.rowtable(DBInterface.execute(db,
+                    "SELECT action FROM user_actions WHERE entity_type='series' AND entity_id=30"))
+                @test any(r -> r.action == "series_deleted", ev)
+            end
+            close(db)
+        end
+    end
+
 end
