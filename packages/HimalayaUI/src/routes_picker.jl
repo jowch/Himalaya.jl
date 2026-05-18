@@ -19,7 +19,13 @@ using HTTP, JSON3, DBInterface, Tables, Oxygen
 #       options. The picker treats each (key, value) as an independent
 #       filter chip per the spec.
 #
-# Both routes are read-only — no `with_idempotency`, no SSE, no event-log
+#   GET /api/sample-tags
+#       Corpus-wide sibling of the route above: distinct (key, value) pairs
+#       across every sample in the whole database, with no experiment
+#       scoping. Feeds the redesign's corpus-level series scoping step
+#       (issue map I0.2). Same (key, value) distinct contract.
+#
+# All three routes are read-only — no `with_idempotency`, no SSE, no event-log
 # row. Callers are not expected to mutate state through these endpoints.
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -63,6 +69,22 @@ function register_picker_routes!()
                JOIN samples s ON s.id = t.sample_id
                WHERE s.experiment_id = ?
                ORDER BY t.key, t.value""", [eid]))
+
+        out = [Dict(:key => String(r.key), :value => String(r.value)) for r in rows]
+        HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(out))
+    end
+
+    @get "/api/sample-tags" function(req::HTTP.Request)
+        db = current_db()
+        # Corpus-wide sibling of the experiment-scoped route above: every
+        # distinct (key, value) tag across the whole database, with no
+        # experiment filter — so no JOIN to `samples` is needed. DISTINCT
+        # collapses on the (key, value) pair, matching the per-experiment
+        # route's contract.
+        rows = Tables.rowtable(DBInterface.execute(db,
+            """SELECT DISTINCT key, value
+               FROM sample_tags
+               ORDER BY key, value"""))
 
         out = [Dict(:key => String(r.key), :value => String(r.value)) for r in rows]
         HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(out))
