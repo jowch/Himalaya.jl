@@ -317,7 +317,7 @@ git commit -m "Migrate MemberMetaGutter to SeriesMember (I3.2)"
 - Modify: `src/lib/comparison/draftFactories.ts` (import line 16; `memberFromSaved` signature line 21; `memberFromSaved` call sites at line 77 and line 107)
 - Test: `test/lib/comparison/draft.test.ts` (exercises these factories)
 
-`memberFromSaved` is the reusable, render-adjacent helper — it migrates to `SeriesMember`. `fromComparison` / `fromComparisonAsFork` are comparison-only factories (parameter type `Comparison`) that I3.6 deletes; they keep taking `Comparison` and bridge the now-`SeriesMember`-typed `memberFromSaved` call. `memberFromNewExposure` has no member-type parameter — leave it alone.
+`memberFromSaved` is the reusable saved-member → draft helper that the Phase 3 series builder (I3.5b) will reuse — it migrates to `SeriesMember`. `fromComparison` / `fromComparisonAsFork` are comparison-only factories (parameter type `Comparison`) that I3.6 deletes; they keep taking `Comparison` and bridge the now-`SeriesMember`-typed `memberFromSaved` call. `memberFromNewExposure` has no member-type parameter — leave it alone.
 
 - [ ] **Step 1: Update the import**
 
@@ -458,7 +458,7 @@ Expected: PASS — no behavioural change anywhere.
 - [ ] **Step 3: Run the production build**
 
 Run: `npm run build`
-Expected: PASS (`tsc --noEmit` + `vite build` both green).
+Expected: PASS. (`npm run build` runs `tsc --noEmit -p tsconfig.build.json && vite build`; `tsconfig.build.json` excludes `test/`, so this typechecks `src/` only — the test fixtures were already covered by Step 1's bare `tsc --noEmit`.)
 
 - [ ] **Step 4: Confirm `yBands.ts` is untouched**
 

@@ -81,27 +81,41 @@ the modules the issue lists:
 - `components/MemberMetaRow.tsx`
 - `lib/comparison/coloring.ts`
 - `lib/comparison/labels.ts`
-- `lib/comparison/draftFactories.ts` — see the bridge note below.
+- `lib/comparison/draftFactories.ts` — partial; see below and the bridge note.
 
 **Excluded:** `lib/comparison/yBands.ts` — a pure numeric module with no
 `ComparisonMember` type; carries over unchanged.
 
-The render pipeline never reads the member's foreign key (`comparison_id` /
-`series_id`) — verified by grep across all listed modules. The migration is
-therefore a pure annotation swap with no behavioural change. The detailed plan
-confirms, per module, that no other comparison-specific field or import is
-touched.
+The first eight modules are the render pipeline proper; it never reads the
+member's foreign key (`comparison_id` / `series_id`) — verified by grep across
+all eight — so the migration there is a pure annotation swap with no behavioural
+change.
+
+`draftFactories.ts` is listed by issue #172 and master plan §2.2/§6.2, and
+belongs in scope for a forward-looking reason rather than a render one: its
+`memberFromSaved` is the reusable saved-member → draft helper (it recomputes the
+snapshot against the live cache), and the Phase 3 series builder (I3.5b) will
+reuse it. Migrating its parameter to `SeriesMember` now readies it for that
+reuse — the same rationale that migrates the render modules. **Only
+`memberFromSaved` migrates**; the comparison-only factory wrappers
+(`fromComparison` / `fromComparisonAsFork`) keep their `Comparison` parameter and
+`memberFromNewExposure` has no member-type parameter — none of those three
+migrate (see the bridge below). The detailed plan confirms, per module, that no
+other comparison-specific field or import is touched.
 
 ### Test fixtures
 
-`tsc --noEmit` runs against `tsconfig.json`, whose `include` covers `test/`.
-The render-module Vitest suites build their own `ComparisonMember`-typed member
-fixtures inline (no shared fixture module) and pass them to the migrated
-components. Those fixtures must therefore retype to `SeriesMember`
-(`comparison_id` → `series_id`) for `tsc` to pass — a mechanical change, not a
-behavioural one. Test files that reference `ComparisonMember` but do **not**
-feed a migrated component (`draftPersistence`, `MentionChip`,
-`queue/saveComparison`) stay on `ComparisonMember`.
+The issue's acceptance gate is the bare command `tsc --noEmit`, which resolves
+to `tsconfig.json` — whose `include` covers `test/`. (The `npm run build` script
+typechecks with `tsconfig.build.json`, which *excludes* `test/`; the bare
+command is the stricter, contractual gate.) The render-module Vitest suites
+build their own `ComparisonMember`-typed member fixtures inline (no shared
+fixture module) and pass them to the migrated components. Those fixtures must
+therefore retype to `SeriesMember` (`comparison_id` → `series_id`) for the bare
+`tsc --noEmit` to pass — a mechanical change, not a behavioural one. Test files
+that reference `ComparisonMember` but do **not** feed a migrated component
+(`draftPersistence`, `MentionChip`, `queue/saveComparison`) stay on
+`ComparisonMember`.
 
 ## The Compare-era bridge
 
@@ -117,12 +131,14 @@ deleted wholesale at I3.6, and neither changes render behaviour:
    return type and the two `sampleIdFor` annotations retarget to `SeriesMember`;
    `draftToMember` supplies a placeholder `series_id` (consistent with the
    placeholder `id` it already fabricates for unsaved drafts).
-2. **`draftFactories.ts`** — `fromComparison` / `fromComparisonAsFork` are
-   comparison-only factories (parameter type `Comparison`) that map
-   `Comparison.members` (`ComparisonMember[]`) into the now-`SeriesMember`-typed
-   `memberFromSaved`. Those call sites get a localized cast. `memberFromSaved`
-   itself migrates cleanly (it reads only shared fields); `memberFromNewExposure`
-   has no member-type parameter and is untouched.
+2. **`draftFactories.ts`** — once `memberFromSaved` is retyped to `SeriesMember`
+   (see Scope above), its comparison-only callers `fromComparison` /
+   `fromComparisonAsFork` (parameter type `Comparison`) still map
+   `Comparison.members` (`ComparisonMember[]`) into it. Each call site bridges by
+   spreading in a placeholder `series_id` (`{ ...m, series_id: 0 }`) — the
+   spread-introduced `comparison_id` is exempt from excess-property checking, and
+   `memberFromSaved` never reads `series_id`. `memberFromNewExposure` has no
+   member-type parameter and is untouched.
 
 The bridge is throwaway by construction: every bridge site lives in a file I3.6
 deletes. No `RenderMember` base type is introduced — the master plan describes a
@@ -148,8 +164,9 @@ scope the plan does not sanction.
   I2.2 route response; optional fields modelled `T | null`.
 - The listed modules are retyped onto `SeriesMember`.
 - `lib/comparison/yBands.ts` is unchanged.
-- `tsc --noEmit` passes (the Compare-era bridge keeps `Compare.tsx` and
-  `draftFactories.ts` compiling).
+- The bare `tsc --noEmit` (resolving to `tsconfig.json`, which includes `test/`)
+  passes — the Compare-era bridge and the retyped test fixtures keep
+  `Compare.tsx`, `draftFactories.ts`, and the render-module suites compiling.
 - The render pipeline's existing Vitest passes unchanged — no behavioural change.
 
 ## Out of scope
