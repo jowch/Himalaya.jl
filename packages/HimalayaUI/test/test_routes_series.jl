@@ -40,4 +40,37 @@ end
         end
     end
 
+    @testset "series_listing — last_event_at sort is recency-correct (#76)" begin
+        mktempdir() do tmp
+            db = _series_test_db(tmp)
+            # Series A (id 1): updated_at is a T-separated ISO string with a Z
+            # suffix; no events. Series B (id 2): an older updated_at, but a
+            # `user_actions` event whose space-separated timestamp is MORE
+            # recent than A's updated_at. True recency order: B before A.
+            DBInterface.execute(db, """INSERT INTO series (id, title, updated_at, state)
+                VALUES (1, 'A', '2026-05-01T00:00:00.000Z', 'committed')""")
+            DBInterface.execute(db, """INSERT INTO series (id, title, updated_at, state)
+                VALUES (2, 'B', '2026-04-01T00:00:00.000Z', 'committed')""")
+            DBInterface.execute(db, """INSERT INTO user_actions
+                (action, entity_type, entity_id, timestamp)
+                VALUES ('series_recipe_updated', 'series', 2, '2026-05-10 12:00:00')""")
+
+            listing = HimalayaUI.series_listing(db)
+            @test length(listing) == 2
+            # Bug #76: lexical sort would put A first ('T' > ' '). The
+            # datetime() wrapper sorts by true recency — B first.
+            @test listing[1][:id] == 2
+            @test listing[2][:id] == 1
+            # The projected last_event_at is normalised (no 'T'/'Z'), so it is
+            # itself a valid client sort key — the bug is closed end-to-end.
+            @test !occursin('T', listing[1][:last_event_at])
+            @test !occursin('Z', listing[1][:last_event_at])
+            # Series A's last_event_at comes from the T-separated, Z-suffixed
+            # updated_at — assert datetime() normalised that path too.
+            @test !occursin('T', listing[2][:last_event_at])
+            @test !occursin('Z', listing[2][:last_event_at])
+            close(db)
+        end
+    end
+
 end
