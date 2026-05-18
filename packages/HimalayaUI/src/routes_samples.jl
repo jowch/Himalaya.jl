@@ -17,6 +17,67 @@ function register_samples_routes!()
             JSON3.write(out))
     end
 
+    # Corpus-wide sample listing — every sample across all experiments, each
+    # carrying its `tags` and a `q_units` sourced from the owning experiment's
+    # config. Optional `?experiment_id=` narrows to one experiment, so this
+    # route subsumes the experiment-scoped `/api/experiments/{id}/samples`.
+    #
+    # Three queries total, never N+1: samples, experiment configs, and one
+    # batched tag query grouped in memory.
+    @get "/api/samples" function(req::HTTP.Request)
+        db     = current_db()
+        params = HTTP.queryparams(HTTP.URI(req.target))
+
+        # Optional ?experiment_id= filter. A non-integer value is a client
+        # error, not something to silently ignore.
+        exp_filter = nothing
+        if haskey(params, "experiment_id")
+            exp_filter = tryparse(Int, params["experiment_id"])
+            exp_filter === nothing && return HTTP.Response(400,
+                ["Content-Type" => "application/json"],
+                JSON3.write(Dict(:error => "experiment_id must be an integer")))
+        end
+
+        samples = exp_filter === nothing ?
+            Tables.rowtable(DBInterface.execute(db,
+                "SELECT * FROM samples ORDER BY id")) :
+            Tables.rowtable(DBInterface.execute(db,
+                "SELECT * FROM samples WHERE experiment_id = ? ORDER BY id",
+                [exp_filter]))
+
+        # experiment_id -> q_units, one TOML parse per experiment (not per sample).
+        qunits_by_exp = Dict{Int, String}()
+        for er in Tables.rowtable(DBInterface.execute(db,
+                "SELECT id, config FROM experiments"))
+            qunits_by_exp[Int(er.id)] = _q_units_from_config(er.config)
+        end
+
+        # One batched tag query, grouped by sample_id. Skipped entirely when
+        # there are no samples — an empty `IN ()` is invalid SQL.
+        tags_by_sample = Dict{Int, Vector{Any}}()
+        if !isempty(samples)
+            ids          = [Int(sm.id) for sm in samples]
+            placeholders = join(fill("?", length(ids)), ", ")
+            tagrows = Tables.rowtable(DBInterface.execute(db,
+                "SELECT id, sample_id, key, value, source FROM sample_tags
+                 WHERE sample_id IN ($placeholders) ORDER BY id", ids))
+            for tr in tagrows
+                push!(get!(tags_by_sample, Int(tr.sample_id), Any[]),
+                      Dict(:id     => Int(tr.id), :key   => tr.key,
+                           :value  => tr.value,   :source => tr.source))
+            end
+        end
+
+        out = map(samples) do sm
+            d          = row_to_json(sm)
+            d[:tags]   = get(tags_by_sample, Int(sm.id), Any[])
+            d[:q_units] = get(qunits_by_exp, Int(sm.experiment_id), "A-1")
+            d
+        end
+        HTTP.Response(200, ["Content-Type" => "application/json"],
+            JSON3.write(out))
+    end
+
     @patch "/api/samples/{id}" function(req::HTTP.Request, id::Int)
         db   = current_db()
         body = json(req)
