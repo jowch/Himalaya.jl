@@ -489,19 +489,24 @@ end
 
 """
     picker_samples(db, experiment_id) -> Vector{Dict{Symbol, Any}}
+    picker_samples(db)                -> Vector{Dict{Symbol, Any}}
 
 Picker primary list per spec §"PR1 — sample-first picker → Backend".
 
-For each sample in `experiment_id`, returns:
+The two-argument method is experiment-scoped. The one-argument method returns
+the projection for every sample in the corpus, ordered by `(experiment_id, id)`
+— used by the corpus-wide `GET /api/picker-samples` route.
+
+For each sample, returns:
   :sample              => sample row (Symbol-keyed Dict, with :tags vector)
   :indexing_exposure_id => Int or nothing — `selected = 1` else MAX(id) else nothing
   :all_exposures       => Vector of {:id, :filename, :selected::Bool}, ORDER BY id ASC
 
 Three bulk queries (no JOIN'd Cartesian flatten, no per-sample N+1):
-(1) `WHERE experiment_id = ?` for samples,
+(1) samples (scoped to one experiment, or the whole corpus),
 (2) `WHERE sample_id IN (...)` for exposures,
 (3) `WHERE sample_id IN (...)` for sample_tags.
-Empty experiment ⇒ [].
+Empty result ⇒ [].
 """
 function picker_samples(db::SQLite.DB, experiment_id::Integer)::Vector{Dict{Symbol, Any}}
     # Explicit column list (PR #96 review): keep the picker JSON shape
@@ -511,6 +516,24 @@ function picker_samples(db::SQLite.DB, experiment_id::Integer)::Vector{Dict{Symb
         "SELECT id, experiment_id, name, display_name, notes
          FROM samples WHERE experiment_id = ? ORDER BY id",
         [Int(experiment_id)]))
+    _picker_samples_projection(db, samples)
+end
+
+function picker_samples(db::SQLite.DB)::Vector{Dict{Symbol, Any}}
+    # Corpus-wide: every sample, ORDER BY (experiment_id, id) for stable,
+    # experiment-grouped output. `experiment_id` is in the column list so a
+    # consumer can group client-side. Same explicit column list as the
+    # scoped method — the JSON shape must not diverge.
+    samples = Tables.rowtable(DBInterface.execute(db,
+        "SELECT id, experiment_id, name, display_name, notes
+         FROM samples ORDER BY experiment_id, id"))
+    _picker_samples_projection(db, samples)
+end
+
+# Shared body: everything downstream of the `samples` fetch is driven purely
+# by sample_ids and is experiment-agnostic. `samples` is the row table from
+# either picker_samples method above.
+function _picker_samples_projection(db::SQLite.DB, samples)::Vector{Dict{Symbol, Any}}
     isempty(samples) && return Dict{Symbol, Any}[]
 
     sample_ids   = [Int(s.id) for s in samples]
