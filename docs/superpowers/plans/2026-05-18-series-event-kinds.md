@@ -24,6 +24,18 @@ That file list is incomplete. The `Mutator` interface (`lib/queue/types.ts:159`)
 
 ---
 
+## Post-review revisions
+
+This plan was reviewed by four agents (himalaya-reviewer, queue-reviewer, frontend-reviewer, a spec-fidelity reviewer). Changes folded in from that pass:
+
+- **`commitSeriesPlate.synthesizeFromSse` returns `post_state` raw** — no `{...base, ...post_state}` merge. The merge would spread `QueueResponseMeta` (`event_id` / `client_op_id` / `analysis_inputs_hash`) into the object `onSuccess` writes to the detail cache via `setQueryData`, polluting the cached `Series` row and diverging from the clean `post_state` splice in `applyRemoteToCache` (Task 8). This is the `GroupMutationResponse` anti-pattern (`api.ts:322`).
+- **`series_created` live-path `UPDATE` sets `content_hash = NULL` explicitly** (Task 1) — hardens the draft invariant against a defensive re-fold onto an already-committed row.
+- **SSE-broadcast layer is now asserted** — Task 1 adds a `_capture_series_sse` in-process-subscriber helper and asserts a `series_created` frame; Task 7 asserts a `series_plate_committed` frame carries `post_state`. The six-layer rule names SSE broadcast as a distinct layer; it was previously assumed-wired, not tested.
+- **`commitSeriesPlate.request` uses the shared `CommitSeriesPlateBody` type** rather than re-declaring it inline (Task 8); test files use `as any` (the established convention) not `as never`; the Task 8 cache test uses a complete typed `Series` fixture (Task 8).
+- **Verified-and-kept:** the himalaya-reviewer flagged the Task 1 replay-path `INSERT` as having a column/placeholder count mismatch — this was re-counted and is **correct** (15 columns, 13 `?` + `NULL` + `'draft'` = 15 value slots, 13 binds). No change. `applyPostStateOnly`'s `Array.isArray(post_state.indices)` guard remains safe after `SseEvent.post_state` is widened to include `Series` — a `Series` has no `indices` field, so the guard bails correctly.
+
+---
+
 ## Background facts (verified against the worktree)
 
 - **Routes already wired.** `routes_series.jl` POST/PATCH/DELETE/commit/pin/unpin already call `apply_event!(InTransaction(), …)` with the correct `kind` / `entity_type` and (for commit) `post_state = out`. **This plan does not modify `routes_series.jl` or `series.jl`.**
@@ -91,7 +103,35 @@ Series dispatcher helpers live in `events.jl` next to `_update_view_for_comparis
 - Modify: `packages/HimalayaUI/src/events.jl` — add branch in `update_view_for_event!` (after line 422); add `_update_view_for_series_created!` and `_insert_series_sample!` (after `_insert_comparison_member!`, ~line 681).
 - Test: `packages/HimalayaUI/test/test_routes_series.jl`
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Add the SSE-capture helper**
+
+The "SSE `broadcast_event!`" layer is one of the six layers and must be asserted, not assumed. Add this helper to `test_routes_series.jl` at top level, just after the `_series_test_db` function (before `@testset "Series routes"`). It is the in-process subscriber pattern from `test/AGENTS.md` (a self-contained local copy of `test_idempotency_replay_invariant.jl::_capture_sse_during`, so `test_routes_series.jl` has no cross-file include-order dependency):
+
+```julia
+# Capture the SSE frames of one kind broadcast while `f` runs — the
+# in-process subscriber pattern (test/AGENTS.md). `do`-block form: `f` is the
+# FIRST argument, so `_capture_series_sse("k") do … end` ⇒ (f, "k").
+function _capture_series_sse(f::Function, kind::String)
+    pending = Channel{String}(64)
+    sub = (pending = pending,)
+    lock(HimalayaUI.SSE_LOCK) do
+        push!(HimalayaUI.SSE_SUBSCRIBERS[], sub)
+    end
+    try
+        f()
+        sleep(0.3)   # let the post-commit broadcast queue flush
+    finally
+        lock(HimalayaUI.SSE_LOCK) do
+            filter!(x -> x !== sub, HimalayaUI.SSE_SUBSCRIBERS[])
+        end
+        close(pending)
+    end
+    [fr for fr in pending
+        if !startswith(fr, ":") && occursin("\"kind\":\"$kind\"", fr)]
+end
+```
+
+- [ ] **Step 2: Write the failing test**
 
 Add this testset inside the `@testset "Series routes" begin … end` block in `test_routes_series.jl` (e.g. after the `GET /api/series/{id}` testset):
 
@@ -128,17 +168,29 @@ Add this testset inside the `@testset "Series routes" begin … end` block in `t
                 @test refold[:state] == "draft"
                 @test length(refold[:samples]) == 1
                 @test refold[:samples][1][:sample_id] == 100
+
+                # SSE layer: a second create, observed through the in-process
+                # subscriber, must broadcast exactly one series_created frame
+                # carrying entity_type='series'.
+                frames = _capture_series_sse("series_created") do
+                    HTTP.post("$base/api/series",
+                        ["X-Username" => "alice", "Content-Type" => "application/json"],
+                        JSON3.write(Dict(:title => "Frame check",
+                            :samples => [Dict(:sample_id => 100, :position => 0)])))
+                end
+                @test length(frames) == 1
+                @test occursin("\"entity_type\":\"series\"", frames[1])
             end
             close(db)
         end
     end
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [ ] **Step 3: Run the test to verify it fails**
 
 Run the focused backend command (see "Running tests"). Expected: FAIL — `got[:state]` is `"committed"` (schema default on the degenerate placeholder) and `got[:samples]` is empty, because no `series_created` dispatcher branch exists.
 
-- [ ] **Step 3: Add the dispatcher branch**
+- [ ] **Step 4: Add the dispatcher branch**
 
 In `events.jl`, inside `update_view_for_event!`, immediately after the `comparison_unpinned` branch (after line 422) and before the `noop_test` line, insert:
 
@@ -161,7 +213,7 @@ In `events.jl`, inside `update_view_for_event!`, immediately after the `comparis
     end
 ```
 
-- [ ] **Step 4: Add the helper functions**
+- [ ] **Step 5: Add the helper functions**
 
 In `events.jl`, after `_insert_comparison_member!` (ends ~line 681), add:
 
@@ -231,10 +283,15 @@ function _update_view_for_series_created!(db, entity_id, payload, event_id)
              ordering_var, order_rule])
     else
         # Live path: the route's `INSERT … DEFAULT VALUES` placeholder exists.
-        # COALESCE stamps created_at on first fold; a prior fold's value survives.
+        # COALESCE stamps created_at on first fold; a prior fold's value
+        # survives. `content_hash = NULL` is set explicitly (not just relied on
+        # from the placeholder default) so the draft invariant — a draft has a
+        # NULL content_hash (master plan §5.1) — holds even on a defensive
+        # re-fold onto a row left committed by a prior `series_plate_committed`.
         DBInterface.execute(db,
             """UPDATE series
-               SET title = ?, description = ?, created_by = ?,
+               SET title = ?, description = ?, content_hash = NULL,
+                   created_by = ?,
                    created_at = COALESCE(created_at, ?), updated_at = ?,
                    forked_from_id = ?, forked_at_hash = ?,
                    view_grouping_mode = ?, view_show_peak_ticks = ?,
@@ -265,16 +322,16 @@ function _update_view_for_series_recipe_updated!(db, entity_id, payload, event_i
 end
 ```
 
-- [ ] **Step 5: Run the test to verify it passes**
+- [ ] **Step 6: Run the test to verify it passes**
 
-Run the focused backend command. Expected: PASS — the new `POST /api/series` testset is green.
+Run the focused backend command. Expected: PASS — the new `POST /api/series` testset (route round-trip, fold-from-empty, and SSE-frame assertions) is green.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add packages/HimalayaUI/src/events.jl packages/HimalayaUI/test/test_routes_series.jl
 git commit -m "$(cat <<'EOF'
-Add the series_created dispatcher branch (#166)
+Add the series_created dispatcher branch + SSE-capture helper (#166)
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 EOF
@@ -717,9 +774,11 @@ describe("saveSeriesMutator", () => {
   it("onSuccess writes a full Series response into the detail cache", () => {
     const qc = new QueryClient();
     const resp = fullSeries(7);
+    // `as any` for the flat-payload arg — the established test convention
+    // (see deleteComparison.test.tsx); a precise FlatPayload literal is noise.
     saveSeriesMutator.onSuccess(
       { kind: "series_save", payload: {}, clientOpId: "op1",
-        title: "S", samples: [], username: "alice", clientId: "c1" } as never,
+        title: "S", samples: [], username: "alice", clientId: "c1" } as any,
       resp, qc);
     expect(qc.getQueryData<Series>(queryKeys.series(7))).toEqual(resp);
   });
@@ -740,7 +799,7 @@ describe("deleteSeriesMutator", () => {
     qc.setQueryData(queryKeys.seriesList, [{ id: 7 }, { id: 8 }]);
     deleteSeriesMutator.onSuccess(
       { kind: "series_delete", payload: {}, clientOpId: "op1",
-        id: 7, username: "alice", clientId: "c1" } as never,
+        id: 7, username: "alice", clientId: "c1" } as any,
       { id: 7, deleted: true, event_id: 99 }, qc);
     expect(qc.getQueryData(queryKeys.series(7))).toBeUndefined();
     expect(qc.getQueryData(queryKeys.seriesList)).toEqual([{ id: 8 }]);
@@ -1127,6 +1186,28 @@ Add this testset inside `@testset "Series routes"`:
                 @test refold[:state] == "committed"
                 @test length(refold[:members]) == 1
                 @test refold[:content_hash] == got[:content_hash]   # hash is fold-stable
+
+                # SSE layer: series_plate_committed is the one series event
+                # carrying a post_state envelope. Create + commit a fresh
+                # series through the in-process subscriber and assert the
+                # frame carries entity_type='series' and a post_state field.
+                sid2 = JSON3.read(HTTP.post("$base/api/series",
+                    ["X-Username" => "alice", "Content-Type" => "application/json"],
+                    JSON3.write(Dict(:title => "Frame check",
+                        :samples => [Dict(:sample_id => 100, :position => 0)]))
+                    ).body, Dict{Symbol, Any})[:id]
+                frames = _capture_series_sse("series_plate_committed") do
+                    HTTP.post("$base/api/series/$sid2/commit",
+                        ["X-Username" => "alice", "Content-Type" => "application/json"],
+                        JSON3.write(Dict(:members => [
+                            Dict(:exposure_id => 1000, :display_order => 0,
+                                 :snapshot => Dict(:effective_peaks => [],
+                                                   :confirmed_index => nothing,
+                                                   :analysis_inputs_hash => nothing))])))
+                end
+                @test length(frames) == 1
+                @test occursin("\"entity_type\":\"series\"", frames[1])
+                @test occursin("\"post_state\"", frames[1])
             end
             close(db)
         end
@@ -1259,19 +1340,32 @@ describe("commitSeriesPlateMutator", () => {
 });
 ```
 
-Append to `frontend/test/queue/applyRemoteToCache.series.test.ts`, inside the `describe` block:
+First add a `Series` type import at the top of `frontend/test/queue/applyRemoteToCache.series.test.ts` (alongside the existing `SseEvent` import):
+
+```typescript
+import type { Series } from "../../src/api";
+```
+
+Then append, inside the `describe` block:
 
 ```typescript
   it("series_plate_committed splices post_state into the detail cache", () => {
     const qc = new QueryClient();
-    const post = {
-      id: 5, title: "S", state: "committed", content_hash: "sha256:x",
-      members: [], samples: [],
+    // A structurally-complete Series — post_state IS the full
+    // fetch_series_with_plate projection, so the cache write is a real
+    // round-trip, not a partial-object cast.
+    const post: Series = {
+      id: 5, title: "S", description: null, content_hash: "sha256:x",
+      created_by: 1, created_at: null, updated_at: null,
+      forked_from_id: null, forked_at_hash: null, forked_from_title: null,
+      view_grouping_mode: null, view_show_peak_ticks: null,
+      view_show_peak_labels: null, ordering_variable: null,
+      order_rule: "manual", state: "committed", members: [], samples: [],
     };
     const remote: SseEvent = {
       id: 4, kind: "series_plate_committed", entity_type: "series", entity_id: 5,
       payload: { members: [] },
-      post_state: post as unknown as SseEvent["post_state"],
+      post_state: post,
     };
     applyRemoteToCache(remote, qc);
     expect(qc.getQueryData(queryKeys.series(5))).toEqual(post);
@@ -1302,7 +1396,9 @@ Create `frontend/src/lib/queue/mutators/commitSeriesPlate.ts`:
  * conflict modal is I3.5b's concern.
  */
 import * as api from "../../../api";
-import type { AuthOpts, Series, SeriesMemberInput } from "../../../api";
+import type {
+  AuthOpts, Series, SeriesMemberInput, CommitSeriesPlateBody,
+} from "../../../api";
 import { queryKeys } from "../../../queries";
 import { authOpts } from "../../authOpts";
 import type { Mutator, RollbackContext } from "../types";
@@ -1326,9 +1422,9 @@ export const commitSeriesPlateMutator: Mutator<CommitSeriesPlateInput, CommitSer
   kind: "series_commit",
   onMutate: (): RollbackContext => ({ restore: () => {} }),
   request: (p) => {
-    const body: { members: SeriesMemberInput[]; expected_content_hash?: string } = {
-      members: p.members,
-    };
+    // Annotate with the shared CommitSeriesPlateBody type — do not re-declare
+    // it inline (drift risk).
+    const body: CommitSeriesPlateBody = { members: p.members };
     if (p.expected_content_hash !== undefined) {
       body.expected_content_hash = p.expected_content_hash;
     }
@@ -1344,11 +1440,16 @@ export const commitSeriesPlateMutator: Mutator<CommitSeriesPlateInput, CommitSer
     }
     qc.invalidateQueries({ queryKey: queryKeys.seriesList });
   },
-  synthesizeFromSse: (remote, base) => {
+  synthesizeFromSse: (remote, _base) => {
     // post_state IS the full fetch_series_with_plate projection (master plan
-    // §5.2) — return it directly so `onSuccess` takes the full-shape branch.
+    // §5.2). Return it RAW — do NOT spread `_base` (QueueResponseMeta) in:
+    // `onSuccess`'s looksFull branch writes this object straight to the detail
+    // cache via setQueryData, and merging event_id / client_op_id /
+    // analysis_inputs_hash would pollute the cached Series row and diverge
+    // from the clean post_state splice in the applyRemoteToCache arm. `_base`
+    // is intentionally unused (underscore-prefixed for noUnusedParameters).
     if (remote.post_state != null) {
-      return { ...base, ...(remote.post_state as Series) } as Series;
+      return remote.post_state as Series;
     }
     return undefined;
   },
@@ -1632,6 +1733,7 @@ EOF
 - [ ] **#168** — `series_pinned` / `series_unpinned` write `series_pins` under `entity_type='user'`; five-layer (no mutator, no post_state); pins replay correctly under `entity_type='user'` (Task 9 round-trip).
 - [ ] `resolveMutatorForEvent` has a case for every non-pin series kind; pins fall through to `undefined`.
 - [ ] Recipe rows are keyed on `(series_id, position)`, never `series_samples.id` (master plan §11) — the frontend handlers are invalidate-only / post_state-splice, never id-splice.
+- [ ] The SSE `broadcast_event!` layer is asserted, not assumed — `series_created` and `series_plate_committed` frames are captured via the in-process subscriber (Tasks 1, 7).
 - [ ] Full Julia suite + `npm run build` + Vitest green (Task 10).
 
 ## Out of scope
