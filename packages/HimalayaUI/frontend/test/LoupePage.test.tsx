@@ -120,6 +120,12 @@ describe("LoupePage — composition", () => {
     expect(screen.queryByTestId("loupe-frame")).not.toBeInTheDocument();
   });
 
+  it("shows the not-found panel for a non-numeric sample id", () => {
+    renderAt("/samples/loupe/abc");
+    expect(screen.getByTestId("loupe-not-found")).toBeInTheDocument();
+    expect(screen.queryByTestId("loupe-frame")).not.toBeInTheDocument();
+  });
+
   it("navigates back to /samples when the back button is clicked", () => {
     renderAt("/samples/loupe/7");
     fireEvent.click(screen.getByTestId("loupe-back"));
