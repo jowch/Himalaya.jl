@@ -33,7 +33,11 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import { createSpeculativeMutator } from "../../src/lib/queue/mutators/createSpeculative";
-import { updateSampleMutator } from "../../src/lib/queue/mutators/trivial";
+import {
+  updateSampleMutator,
+  addSampleTagMutator,
+  addCorpusSampleTagMutator,
+} from "../../src/lib/queue/mutators/trivial";
 import {
   peakExcludeMutator,
   peakUnexcludeMutator,
@@ -388,6 +392,52 @@ describe("mutator onSuccess on SSE-wins synthetic responses", () => {
     expect(qc.getQueryState(queryKeys.comparison(42))).toBeUndefined();
     const listing = qc.getQueryData<{ id: number }[]>(queryKeys.comparisons("all"))!;
     expect(listing).toEqual([]);
+  });
+
+  it("corpus add_tag SSE-wins: addSampleTagMutator synth feeds the corpus onSuccess", () => {
+    // Own corpus add_tag confirmed by SSE before HTTP returns.
+    // synthesizeResponseFromSse picks the synth via
+    // resolveMutatorForEvent("add_tag","sample") -> addSampleTagMutator,
+    // but the pending mutation is the CORPUS mutator, so ITS onSuccess
+    // consumes that synth. Pin this cross-mutator handoff.
+    const sample = {
+      id: 10, experiment_id: 1, name: "n", display_name: "D1", notes: null,
+      q_units: "nm^-1",
+      tags: [{ id: -1, key: "lipid", value: "DOPC", source: "manual" }],
+    };
+    qc.setQueryData(queryKeys.corpusSamples, [sample]);
+
+    // The SSE frame the server broadcasts for this tag.
+    const remote = {
+      id: 77, kind: "add_tag", entity_type: "sample", entity_id: 10,
+      client_op_id: "op-corpus-1",
+      payload: { tag_id: 500, key: "lipid", value: "DOPC", experiment_id: 1 },
+    } as any;
+    const base = {
+      event_id: 77, client_op_id: "op-corpus-1",
+      analysis_inputs_hash: undefined,
+    };
+    // synthesizeResponseFromSse routes through addSampleTagMutator's synth.
+    const synth = addSampleTagMutator.synthesizeFromSse!(remote, base as any);
+    expect(synth).toMatchObject({
+      id: 500, key: "lipid", value: "DOPC", source: "manual",
+    });
+
+    // The pending mutation is the corpus mutator — its onSuccess runs.
+    addCorpusSampleTagMutator.onSuccess(
+      { sampleId: 10, key: "lipid", value: "DOPC",
+        username: "u", clientId: "c", clientOpId: "op-corpus-1" } as any,
+      synth as any,
+      qc,
+    );
+
+    const list = qc.getQueryData<any[]>(queryKeys.corpusSamples);
+    // The optimistic placeholder (id: -1) is replaced by the canonical row.
+    expect(list![0].tags).toEqual([
+      { id: 500, key: "lipid", value: "DOPC", source: "manual" },
+    ]);
+    // q_units preserved — the mutator never reconstructs the CorpusSample row.
+    expect(list![0].q_units).toBe("nm^-1");
   });
 
   it("updateSample.onSuccess skips undefined fields (SSE-wins diff payload)", () => {
