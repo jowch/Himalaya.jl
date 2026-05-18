@@ -95,4 +95,13 @@ function register_picker_routes!()
         rows = picker_samples(db, eid)
         HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(rows))
     end
+
+    @get "/api/picker-samples" function(req::HTTP.Request)
+        # Corpus-wide sibling of the experiment-scoped picker-samples route.
+        # Read-only — no with_idempotency, no SSE, no event-log row, matching
+        # the other picker routes.
+        db = current_db()
+        rows = picker_samples(db)
+        HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(rows))
+    end
 end
