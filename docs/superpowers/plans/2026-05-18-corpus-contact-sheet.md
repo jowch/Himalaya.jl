@@ -22,7 +22,10 @@
   - `useExperiments()` (`src/queries.ts:106`) returns `Experiment[]`; `Experiment` (`src/api.ts:10`) has `id, name, path, …, q_units`.
   - `SampleTag` (`src/api.ts:21`) = `{ id, key, value, source }`.
   - `DetectorImage` (`src/components/DetectorImage.tsx`) props: `exposureId`, `imagePath`, `imageVersion`, `size: "thumb" | "full"`, `className?`.
-  - The boneyard `<Skeleton>` is imported from `boneyard-js/react`; gate on `query.isLoading` (boneyard.md Rule 1).
+  - `DetectorImage` with a falsy `imagePath` returns its `data-testid="detector-image-placeholder"` element and issues **no image fetch / no `createImageBitmap` / no `OffscreenCanvas`** (`DetectorImage.tsx:157-166`). Every contact-sheet test below uses `image_path: null` exposures, so `DetectorImage` always renders the placeholder — **no JSDOM canvas stubs are needed** in `contact-sheet.test.tsx`.
+  - The exposure strip is built directly from `DetectorImage size="thumb"` and deliberately does **not** reuse `ThumbnailGallery` — a conscious spec decision (spec "Design" §2: `ThumbnailGallery`'s single-select viewer semantics belong to the loupe). Issue #160 and master plan §4.2 mention `ThumbnailGallery`; do **not** "correct" this plan to use it.
+  - The boneyard `<Skeleton>` is imported from `boneyard-js/react`; gate on `query.isLoading` (boneyard.md Rule 1). The `fallback` (rendered when no captured `*.bones.json` exists for the `name`) should be an italic `HintText` (`src/components/ui/HintText.tsx`) per boneyard.md Rule 3.
+  - **Bones capture is deferred.** This plan does not commit a `src/bones/contact-sheet.bones.json` (boneyard.md Rule 6 — an organic `npm run dev` capture). The gated `<Skeleton>` + `HintText` fallback satisfies the acceptance criterion ("a boneyard skeleton shows while the corpus query is loading"); a captured layout-aware skeleton is a polish follow-up.
   - `data-testid="samples-page"` on the `SamplesPage` root is asserted by `test/AppRoutes.test.tsx` and `test/CorpusShell.test.tsx` — **it must survive the rewrite.**
   - "The Print" palette tokens (`src/styles.css`): `paper`, `paper-sunk`, `plate`, `ink`, `ink-soft`, `ink-faint`, `hair`, `hair-strong`, `print-accent` → Tailwind classes `bg-paper`, `text-ink`, `border-hair`, `text-print-accent`, etc.
 
@@ -535,6 +538,7 @@ Replace the entire contents of `src/pages/SamplesPage.tsx`:
 import { useSearchParams } from "react-router-dom";
 import { Skeleton } from "boneyard-js/react";
 import { useCorpusSamples, useExperiments } from "../queries";
+import { HintText } from "../components/ui/HintText";
 import {
   ContactSheetRow,
   CONTACT_SHEET_COLS,
@@ -623,9 +627,7 @@ export function SamplesPage(): JSX.Element {
           stagger={50}
           transition={200}
           fixture={CONTACT_SHEET_FIXTURE}
-          fallback={
-            <div data-testid="contact-sheet-skeleton" className="px-4 py-8" />
-          }
+          fallback={<HintText>Loading samples…</HintText>}
         >
           <div data-testid="contact-sheet-rows">
             {filtered.map((s) => (
@@ -635,6 +637,9 @@ export function SamplesPage(): JSX.Element {
         </Skeleton>
       )}
 
+      {/* Provisional preview copy from the sample-table.html mockup. These
+          keybindings are wired by culling (#162) and the loupe (#161), not
+          #160 — the strip is static legend text here. */}
       <div className="flex gap-4 px-4 text-xs text-ink-faint">
         <span>click — select a frame</span>
         <span>X — drop the selected frames</span>
@@ -800,10 +805,9 @@ describe("CorpusTopbar", () => {
   it("renders three stage-tabs; Samples is active and links to /samples", () => {
     mockExperiments();
     renderTopbar();
-    expect(screen.getByTestId("stage-tab-samples")).toHaveAttribute(
-      "href",
-      "/samples",
-    );
+    const samples = screen.getByTestId("stage-tab-samples");
+    expect(samples).toHaveAttribute("href", "/samples");
+    expect(samples).toHaveAttribute("data-active", "true");
     expect(screen.getByTestId("stage-tab-index")).toBeDisabled();
     expect(screen.getByTestId("stage-tab-series")).toBeDisabled();
   });
@@ -842,7 +846,10 @@ describe("CorpusTopbar", () => {
     mockExperiments();
     renderTopbar("/samples?beamtime=1");
     await screen.findByRole("option", { name: "SSRL Apr 2026" });
-    expect(screen.getByTestId<HTMLSelectElement>("beamtime-chip").value).toBe("1");
+    // getByTestId returns HTMLElement (not generic); cast to read `.value`.
+    expect(
+      (screen.getByTestId("beamtime-chip") as HTMLSelectElement).value,
+    ).toBe("1");
   });
 });
 ```
