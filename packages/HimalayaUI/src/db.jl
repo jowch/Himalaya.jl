@@ -710,6 +710,15 @@ plan §11): never key client state on it.
 
 `schema_migrations` is created empty. The `migrate_comparisons_to_series!`
 copy (#171) writes its marker row last, inside its own transaction.
+
+Timestamp caveat (inherited from `comparison_messages`, issue #76):
+`series_messages.created_at` is `DATETIME DEFAULT CURRENT_TIMESTAMP`, which
+yields the space-separated `YYYY-MM-DD HH:MM:SS` form — NOT the ISO
+`yyyy-mm-ddTHH:MM:SS.sssZ` form that `series.created_at` carries when a
+route writes it via `comparison_now_iso()`. A future series route or
+dispatcher must not string-sort `series_messages.created_at` against the
+`series`/`series_members` timestamps; sort `series_messages` on its own
+column only.
 """
 function migrate_series!(db::SQLite.DB)
     # `series`: the comparison columns (nullable, post-#67 shape) + the
