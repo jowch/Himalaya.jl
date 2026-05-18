@@ -222,3 +222,14 @@ end
         end
     end
 end
+
+@testset "GET /api/picker-samples (corpus) — empty corpus" begin
+    mktempdir() do tmp
+        db = open_db(joinpath(tmp, "h.db"))
+        with_test_server(db) do port, base
+            r = HTTP.get("$base/api/picker-samples")
+            @test r.status == 200
+            @test length(JSON3.read(String(r.body))) == 0   # empty corpus → [] over HTTP
+        end
+    end
+end

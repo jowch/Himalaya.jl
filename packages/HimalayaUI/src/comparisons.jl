@@ -533,7 +533,7 @@ end
 # Shared body: everything downstream of the `samples` fetch is driven purely
 # by sample_ids and is experiment-agnostic. `samples` is the row table from
 # either picker_samples method above.
-function _picker_samples_projection(db::SQLite.DB, samples)::Vector{Dict{Symbol, Any}}
+function _picker_samples_projection(db::SQLite.DB, samples::AbstractVector)::Vector{Dict{Symbol, Any}}
     isempty(samples) && return Dict{Symbol, Any}[]
 
     sample_ids   = [Int(s.id) for s in samples]

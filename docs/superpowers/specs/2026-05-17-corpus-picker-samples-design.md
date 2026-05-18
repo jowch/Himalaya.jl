@@ -30,6 +30,11 @@ Append-only: no schema change, no events, no migration.
 - The scoping picker UI (#174).
 - Any frontend change. `picker-samples` has no frontend consumer today
   (api.ts / queries.ts do not reference it); the running frontend is unaffected.
+- Chunked-`IN` / temp-table pagination of the corpus query. The exposures and
+  `sample_tags` bulk queries bind one placeholder per sample, so a corpus
+  exceeding `SQLITE_MAX_VARIABLE_NUMBER` (999 on pre-3.32 SQLite, 32766 after)
+  would throw. This is not a concern at realistic SAXS corpus sizes; chunking is
+  deferred until a deployment approaches that bound.
 
 ## Design
 
