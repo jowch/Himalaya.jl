@@ -1,4 +1,5 @@
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
+import { useExperiments } from "../queries";
 
 interface Stage {
   id: "samples" | "index" | "series";
@@ -18,13 +19,28 @@ const STAGES: readonly Stage[] = [
 
 /**
  * CorpusTopbar — the topbar for the redesigned corpus-scoped shell: a
- * corpus-level wordmark (experiment is a facet now, not the crumb), the
- * three workflow stage-tabs, and the Beamtime facet chip.
+ * corpus-level wordmark, the three workflow stage-tabs, and the Beamtime
+ * facet chip.
  *
- * The Beamtime chip is a presentational placeholder in #155 — `?beamtime=`
- * URL query state is owned by the `/samples` route (#160).
+ * The Beamtime chip is an experiment picker: it reads and writes the
+ * `?beamtime=<experiment_id>` URL query that the /samples contact sheet
+ * (#160) filters on. The URL is the only channel — no prop coupling.
  */
 export function CorpusTopbar(): JSX.Element {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const experimentsQuery = useExperiments();
+  const beamtime = searchParams.get("beamtime") ?? "";
+
+  function handlePick(event: React.ChangeEvent<HTMLSelectElement>): void {
+    const value = event.target.value;
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (value === "") next.delete("beamtime");
+      else next.set("beamtime", value);
+      return next;
+    });
+  }
+
   return (
     <header
       data-testid="corpus-topbar"
@@ -78,18 +94,21 @@ export function CorpusTopbar(): JSX.Element {
         })}
       </nav>
 
-      <button
-        type="button"
+      <select
         data-testid="beamtime-chip"
-        title="Filter to a beamtime (coming soon)"
-        className="flex items-center gap-1.5 rounded-full border border-hair-strong
-                   bg-plate px-2.5 py-1 text-xs font-semibold text-ink"
+        aria-label="Filter to a beamtime"
+        value={beamtime}
+        onChange={handlePick}
+        className="rounded-full border border-hair-strong bg-plate px-2.5 py-1
+                   text-xs font-semibold text-ink"
       >
-        <span>Beamtime</span>
-        <span aria-hidden="true" className="text-ink-faint">
-          ▾
-        </span>
-      </button>
+        <option value="">Beamtime — all experiments</option>
+        {(experimentsQuery.data ?? []).map((exp) => (
+          <option key={exp.id} value={exp.id}>
+            {exp.name ?? `Experiment ${exp.id}`}
+          </option>
+        ))}
+      </select>
 
       <span className="flex-1" />
     </header>
