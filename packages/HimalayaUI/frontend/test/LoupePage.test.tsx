@@ -195,3 +195,20 @@ describe("LoupePage — interactions", () => {
     expect(screen.getByTestId("samples-marker")).toBeInTheDocument();
   });
 });
+
+describe("LoupePage — loading", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    h.corpusQ = { isLoading: true };
+    h.exposuresQ = { isLoading: true };
+    h.experimentQ = {};
+  });
+
+  it("shows the loupe skeleton while data is loading", () => {
+    renderAt("/samples/loupe/7");
+    expect(screen.getByTestId("loupe-skeleton")).toBeInTheDocument();
+    // Body content must not render while loading.
+    expect(screen.queryByTestId("loupe-frame")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("loupe-not-found")).not.toBeInTheDocument();
+  });
+});

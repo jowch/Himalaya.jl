@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { Skeleton } from "boneyard-js/react";
 import {
   useCorpusSamples,
   useExposures,
@@ -24,6 +25,37 @@ function defaultExposureId(exposures: Exposure[]): number | undefined {
   return exposures[0]?.id;
 }
 
+// Fixture for boneyard's headless capture — a real render with mock props so
+// the capture CLI can measure the loupe body layout (docs/boneyard.md Rule 2).
+// image_path: null makes DetectorImage take its placeholder branch; the
+// captured detector-frame bone is then a plain rectangle sized by LoupeFrame's
+// aspect-square wrapper — correct geometry for a fixed-aspect frame.
+const LOUPE_FIXTURE_EXPOSURE = {
+  id: 0, sample_id: 0, filename: "JC000-001.dat", kind: "file" as const,
+  selected: false, status: "accepted" as const, image_path: null,
+  image_version: "", tags: [], sources: [],
+  trace_hash: null, analysis_inputs_hash: null,
+};
+const LOUPE_FIXTURE = (
+  <div className="grid grid-cols-[1fr_286px] gap-7">
+    <LoupeFrame
+      exposure={LOUPE_FIXTURE_EXPOSURE}
+      exposures={[LOUPE_FIXTURE_EXPOSURE]}
+      onSelectExposure={() => {}}
+    />
+    <LoupeSidebar
+      exposure={LOUPE_FIXTURE_EXPOSURE}
+      exposures={[LOUPE_FIXTURE_EXPOSURE]}
+      sample={{
+        id: 0, experiment_id: 0, name: "JC000", display_name: "Sample",
+        notes: null, tags: [], q_units: "A-1",
+      }}
+      onDropToggle={() => {}}
+      onSetRepresentative={() => {}}
+    />
+  </div>
+);
+
 /**
  * LoupePage — the sample loupe at /samples/loupe/:sampleId. A focused
  * single-sample inspection surface: full detector image, exposure strip,
@@ -47,6 +79,8 @@ export function LoupePage(): JSX.Element {
     experimentQ.data?.name ?? experimentQ.data?.path ?? undefined;
 
   const exposures = useMemo(() => exposuresQ.data ?? [], [exposuresQ.data]);
+
+  const isLoading = corpusQ.isLoading || exposuresQ.isLoading;
 
   // Active exposure — local state, defaulted by `defaultExposureId`. Reset
   // when the sample changes so the next sample picks its own default.
@@ -147,28 +181,45 @@ export function LoupePage(): JSX.Element {
         </p>
       </header>
 
-      <div className="grid grid-cols-[1fr_286px] gap-7">
-        {sample && activeExposure ? (
-          <>
-            <LoupeFrame
-              exposure={activeExposure}
-              exposures={exposures}
-              onSelectExposure={setActiveId}
-            />
-            <LoupeSidebar
-              exposure={activeExposure}
-              exposures={exposures}
-              sample={sample}
-              onDropToggle={handleDropToggle}
-              onSetRepresentative={handleSetRepresentative}
-            />
-          </>
-        ) : (
-          <div className="col-span-2 p-8 text-sm text-ink-faint">
-            This sample has no exposures.
+      <Skeleton
+        name="loupe"
+        className="block"
+        loading={isLoading}
+        stagger={50}
+        transition={200}
+        fixture={LOUPE_FIXTURE}
+        fallback={
+          <div
+            data-testid="loupe-skeleton"
+            className="p-8 text-sm italic text-ink-faint"
+          >
+            Loading sample…
           </div>
-        )}
-      </div>
+        }
+      >
+        <div className="grid grid-cols-[1fr_286px] gap-7">
+          {sample && activeExposure ? (
+            <>
+              <LoupeFrame
+                exposure={activeExposure}
+                exposures={exposures}
+                onSelectExposure={setActiveId}
+              />
+              <LoupeSidebar
+                exposure={activeExposure}
+                exposures={exposures}
+                sample={sample}
+                onDropToggle={handleDropToggle}
+                onSetRepresentative={handleSetRepresentative}
+              />
+            </>
+          ) : (
+            <div className="col-span-2 p-8 text-sm text-ink-faint">
+              This sample has no exposures.
+            </div>
+          )}
+        </div>
+      </Skeleton>
     </div>
   );
 }
