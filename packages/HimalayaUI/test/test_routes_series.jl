@@ -336,6 +336,8 @@ end
                 ev = Tables.rowtable(DBInterface.execute(db,
                     "SELECT action FROM user_actions WHERE entity_type='series' AND entity_id=20"))
                 @test any(r -> r.action == "series_plate_committed", ev)
+                # Capture the hash the dispatcher just wrote (plate-based, not the seed).
+                committed_hash = JSON3.read(resp.body, Dict{Symbol, Any})[:content_hash]
 
                 # Conflict: a wrong expected_content_hash → 409.
                 resp409 = HTTP.post("$base/api/series/20/commit",
@@ -346,7 +348,7 @@ end
                 @test resp409.status == 409
                 conflict = JSON3.read(resp409.body, Dict{Symbol, Any})
                 @test conflict[:error] == "conflict"
-                @test conflict[:current_hash] == "sha256:deadbeef"
+                @test conflict[:current_hash] == committed_hash
             end
             close(db)
         end
@@ -595,6 +597,71 @@ end
                 # series_deleted from empty → series stays absent.
                 HimalayaUI.rebuild_views_from_log!(db, sid; entity_type = "series")
                 @test HimalayaUI.fetch_series_with_plate(db, sid) === nothing
+            end
+            close(db)
+        end
+    end
+
+    @testset "POST /api/series/{id}/commit — series_plate_committed commits the plate" begin
+        mktempdir() do tmp
+            db = _series_test_db(tmp)
+            with_test_server(db) do port, base
+                sid = JSON3.read(HTTP.post("$base/api/series",
+                    ["X-Username" => "alice", "Content-Type" => "application/json"],
+                    JSON3.write(Dict(:title => "Ramp",
+                                     :samples => [Dict(:sample_id => 100, :position => 0)]))
+                    ).body, Dict{Symbol, Any})[:id]
+
+                # Pass an explicit snapshot so the route's _series_member_payload
+                # uses it directly (no dependence on compute_member_snapshot
+                # succeeding against the unanalyzed exposure fixture).
+                commitBody = JSON3.write(Dict(:members => [
+                    Dict(:exposure_id => 1000, :display_order => 0,
+                         :snapshot => Dict(:effective_peaks => [],
+                                           :confirmed_index => nothing,
+                                           :analysis_inputs_hash => nothing)),
+                ]))
+                resp = HTTP.post("$base/api/series/$sid/commit",
+                    ["X-Username" => "alice", "Content-Type" => "application/json"], commitBody)
+                @test resp.status == 200
+                got = JSON3.read(resp.body, Dict{Symbol, Any})
+                @test got[:state] == "committed"
+                @test startswith(got[:content_hash], "sha256:")   # hashed from the plate
+                @test length(got[:members]) == 1
+                @test got[:members][1]["exposure_id"] == 1000
+                @test length(got[:samples]) == 1                  # recipe untouched
+
+                # rebuild_views_from_log! round-trip from empty.
+                DBInterface.execute(db, "DELETE FROM series_members WHERE series_id = ?", [sid])
+                DBInterface.execute(db, "DELETE FROM series_samples WHERE series_id = ?", [sid])
+                DBInterface.execute(db, "DELETE FROM series WHERE id = ?", [sid])
+                HimalayaUI.rebuild_views_from_log!(db, sid; entity_type = "series")
+                refold = HimalayaUI.fetch_series_with_plate(db, sid)
+                @test refold[:state] == "committed"
+                @test length(refold[:members]) == 1
+                @test refold[:content_hash] == got[:content_hash]   # hash is fold-stable
+
+                # SSE layer: series_plate_committed is the one series event
+                # carrying a post_state envelope. Create + commit a fresh
+                # series through the in-process subscriber and assert the
+                # frame carries entity_type='series' and a post_state field.
+                sid2 = JSON3.read(HTTP.post("$base/api/series",
+                    ["X-Username" => "alice", "Content-Type" => "application/json"],
+                    JSON3.write(Dict(:title => "Frame check",
+                        :samples => [Dict(:sample_id => 100, :position => 0)]))).body,
+                    Dict{Symbol, Any})[:id]
+                frames = _capture_series_sse("series_plate_committed") do
+                    HTTP.post("$base/api/series/$sid2/commit",
+                        ["X-Username" => "alice", "Content-Type" => "application/json"],
+                        JSON3.write(Dict(:members => [
+                            Dict(:exposure_id => 1000, :display_order => 0,
+                                 :snapshot => Dict(:effective_peaks => [],
+                                                   :confirmed_index => nothing,
+                                                   :analysis_inputs_hash => nothing))])))
+                end
+                @test length(frames) == 1
+                @test occursin("\"entity_type\":\"series\"", frames[1])
+                @test occursin("\"post_state\"", frames[1])
             end
             close(db)
         end

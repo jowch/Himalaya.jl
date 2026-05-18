@@ -437,6 +437,9 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
         # series_samples, series_messages and series_pins automatically.
         return nothing
     end
+    if kind == "series_plate_committed"
+        return _update_view_for_series_plate_committed!(db, entity_id, payload, event_id)
+    end
 
     # Scaffolding / legacy:
     kind == "noop_test" && return nothing
@@ -823,6 +826,65 @@ function _update_view_for_series_recipe_updated!(db, entity_id, payload, event_i
     for s in samples
         _insert_series_sample!(db, sid, s)
     end
+    return nothing
+end
+
+# Helper: INSERT one series_members row. Mirrors `_insert_comparison_member!`
+# (the series_members and comparison_members column shapes are identical) —
+# reuses `_member_field` / `_member_json`. Members in a series_plate_committed
+# payload carry NO ids; the dispatcher mints fresh PKs.
+function _insert_series_member!(db, series_id, m, user_id, now_str)
+    snap = _member_json(m, :snapshot)
+    snap === nothing &&
+        error("series member missing required `snapshot` field")
+    DBInterface.execute(db,
+        """INSERT INTO series_members
+             (series_id, exposure_id, display_order, band_height, y_offset,
+              normalization, color_override, label_override,
+              q_window_min, q_window_max, peak_display, snapshot,
+              created_by, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        [Int(series_id),
+         _member_field(m, :exposure_id),
+         Int(_member_field(m, :display_order)),
+         Float64(_member_field(m, :band_height; default=1.0)),
+         Float64(_member_field(m, :y_offset; default=0.0)),
+         String(_member_field(m, :normalization; default="none")),
+         _member_field(m, :color_override),
+         _member_field(m, :label_override),
+         _member_field(m, :q_window_min),
+         _member_field(m, :q_window_max),
+         _member_json(m, :peak_display),
+         snap,
+         user_id, now_str])
+    nothing
+end
+
+"""
+    _update_view_for_series_plate_committed!(db, entity_id, payload, event_id)
+
+`series_plate_committed` dispatcher (#167). Pure-replace the plate:
+`DELETE` every `series_members` row, then `INSERT` the full payload member
+list (members carry no ids — `_insert_series_member!` mints them). Sets
+`state='committed'` and computes `content_hash` from the plate via
+`compute_series_content_hash` (which excludes the recipe — master plan §5.1).
+Never touches `series_samples`.
+"""
+function _update_view_for_series_plate_committed!(db, entity_id, payload, event_id)
+    sid     = Int(entity_id)
+    user_id = user_id_for_event(db, event_id)
+    now_str = comparison_now_iso()
+
+    DBInterface.execute(db, "DELETE FROM series_members WHERE series_id = ?", [sid])
+    members = haskey(payload, :members) ? payload.members : []
+    for m in members
+        _insert_series_member!(db, sid, m, user_id, now_str)
+    end
+
+    new_hash = compute_series_content_hash(db, sid)
+    DBInterface.execute(db,
+        "UPDATE series SET content_hash = ?, state = 'committed', updated_at = ? WHERE id = ?",
+        [new_hash, now_str, sid])
     return nothing
 end
 
