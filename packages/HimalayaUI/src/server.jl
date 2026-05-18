@@ -127,6 +127,7 @@ function register_routes!()
     register_analysis_routes!()
     register_export_routes!()
     register_comparisons_routes!()
+    register_series_routes!()
     register_picker_routes!()
     register_resolve_routes!()
 end
