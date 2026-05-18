@@ -10,7 +10,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useAppState } from "../src/state";
-import { AppShell } from "../src/components/AppShell";
+import { AppRoutes } from "../src/components/AppRoutes";
 
 function makeQc() {
   return new QueryClient({
@@ -26,7 +26,7 @@ function renderShell(initialPath: string) {
   return render(
     <QueryClientProvider client={qc}>
       <MemoryRouter initialEntries={[initialPath]}>
-        <AppShell />
+        <AppRoutes />
       </MemoryRouter>
     </QueryClientProvider>,
   );
