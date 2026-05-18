@@ -481,6 +481,22 @@ describe("LoupeSidebar — verdict", () => {
     render(<LoupeSidebar {...props} exposure={exposure({ status: "rejected" })} />);
     expect(screen.getByTestId("loupe-drop-toggle")).toHaveTextContent("Restore");
   });
+
+  it("displays an existing rejection reason for a dropped exposure", () => {
+    const props = defaultProps();
+    render(
+      <LoupeSidebar
+        {...props}
+        exposure={exposure({
+          status: "rejected",
+          tags: [
+            { id: 5, key: "rejection_reason", value: "Beam flare", source: "manual" },
+          ],
+        })}
+      />,
+    );
+    expect(screen.getByTestId("loupe-verdict")).toHaveTextContent("Beam flare");
+  });
 });
 
 describe("LoupeSidebar — representative", () => {
@@ -589,6 +605,12 @@ export function LoupeSidebar({
   const frameIndex = exposures.findIndex((e) => e.id === exposure.id);
   const frameLabel =
     frameIndex >= 0 ? `${frameIndex + 1} of ${exposures.length}` : "—";
+  // Display an existing rejection reason if one was authored elsewhere (the
+  // Inspect card / a future culling surface). The loupe never *authors* a
+  // reason — its drop is a plain status toggle (spec §6).
+  const rejectionReason = exposure.tags.find(
+    (t) => t.key === "rejection_reason",
+  )?.value;
 
   return (
     <aside data-testid="loupe-sidebar" className="flex flex-col gap-5">
@@ -627,7 +649,9 @@ export function LoupeSidebar({
             {isRejected ? "Dropped" : "Kept"}
           </div>
           <div className="text-[10.5px] text-ink-faint">
-            Everything is kept until you drop it.
+            {isRejected
+              ? (rejectionReason ?? "Dropped from this sample.")
+              : "Everything is kept until you drop it."}
           </div>
         </div>
         <button
@@ -1067,6 +1091,8 @@ import {
 } from "../queries";
 ```
 
+**Hook-ordering rule — load-bearing.** Every hook added in this task — `useSetExposureStatus`, `useSelectExposure`, the three `useCallback`s, the `useCallback` form of `goBack`, and the keyboard `useEffect` — must appear **above** the `if (!corpusQ.isLoading && !sample) return (…)` early return. The not-found branch returns before the JSX; if any hook is placed after it, React throws "rendered more hooks than during the previous render" on the not-found path. The insertion points below all sit above that early return — keep them there.
+
 Then, inside the component, after the `activeExposure` line:
 
 ```tsx
@@ -1139,6 +1165,8 @@ Then add the keyboard effect immediately after `goBack`:
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [flip, handleDropToggle, handleSetRepresentative, goBack]);
 ```
+
+**Known benign overlap with `useGlobalShortcuts`.** `useGlobalShortcuts` (mounted in `AppRoutes`, app-wide) also binds `ArrowLeft`/`ArrowRight` — to legacy page-tab switching via `setActivePage`. On a corpus route both `window` listeners fire, so an arrow press flips the loupe exposure *and* mutates the Zustand `activePage`. This is harmless: `setActivePage` is a pure state write, and the URL-sync hook (`useUrlFromState`) is mounted only inside the legacy `AppShell` — it does **not** run on `/samples/loupe/*`, so no navigation occurs. The `activePage` drift is coerced by the Phase 1 nav-bridge. No guard is needed in #161; scoping `useGlobalShortcuts` to legacy routes is a dual-nav-retirement concern (Phase 5), not this issue.
 
 Finally, wire the two handlers into `LoupeSidebar` — change:
 
@@ -1231,6 +1259,8 @@ import { Skeleton } from "boneyard-js/react";
 ```
 
 Add a module-level loading flag and a skeleton fixture. Place this `LOUPE_FIXTURE` constant above the `LoupePage` function, after the imports:
+
+The fixture's exposure has `image_path: null`, so `DetectorImage` takes its placeholder branch — the captured detector-frame bone is a plain rectangle sized by `LoupeFrame`'s `aspect-square` wrapper rather than a measured image. That is the correct skeleton geometry (the frame is a fixed-aspect box regardless of image content), so leaving `image_path: null` is deliberate.
 
 ```tsx
 // Fixture for boneyard's headless capture — a real render with mock props so
