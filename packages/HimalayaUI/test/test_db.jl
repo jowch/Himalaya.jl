@@ -1,7 +1,7 @@
 using Test, SQLite, DBInterface, Tables, Logging
 using HimalayaUI: create_schema!, migrate_schema!, create_experiment!, create_sample!,
                   create_exposure!, get_experiment, get_samples, get_exposures,
-                  migrate_r2_split_peaks!
+                  migrate_r2_split_peaks!, migrate_series!
 
 @testset "db schema" begin
     db = SQLite.DB()  # in-memory
@@ -1620,4 +1620,60 @@ end
         @test "view_grouping_mode" in cols
         close(db)
     end
+end
+
+@testset "migrate_series! creates series + schema_migrations" begin
+    db = SQLite.DB()  # in-memory
+    create_schema!(db)
+    migrate_series!(db)
+
+    tables = Set(r.name for r in Tables.rowtable(DBInterface.execute(db,
+        "SELECT name FROM sqlite_master WHERE type='table'")))
+    @test "series" in tables
+    @test "schema_migrations" in tables
+
+    cols = Set(r.name for r in Tables.rowtable(DBInterface.execute(db,
+        "PRAGMA table_info(series)")))
+    # comparison columns + view-choice columns + recipe columns
+    for c in ("id", "title", "description", "content_hash", "created_by",
+              "created_at", "updated_at", "forked_from_id", "forked_at_hash",
+              "view_grouping_mode", "view_show_peak_ticks", "view_show_peak_labels",
+              "ordering_variable", "order_rule", "state")
+        @test c in cols
+    end
+
+    # schema_migrations ships empty — #171 writes the marker row, not #164.
+    @test only(Tables.rowtable(DBInterface.execute(db,
+        "SELECT COUNT(*) AS n FROM schema_migrations"))).n == 0
+
+    # order_rule / state CHECK constraints reject bad values.
+    DBInterface.execute(db, "INSERT INTO series DEFAULT VALUES")  # defaults pass CHECK
+    @test_throws SQLite.SQLiteException DBInterface.execute(db,
+        "INSERT INTO series (order_rule) VALUES ('sideways')")
+    @test_throws SQLite.SQLiteException DBInterface.execute(db,
+        "INSERT INTO series (state) VALUES ('archived')")
+
+    # Idempotent re-run.
+    migrate_series!(db)
+    @test "series" in Set(r.name for r in Tables.rowtable(DBInterface.execute(db,
+        "SELECT name FROM sqlite_master WHERE type='table'")))
+end
+
+@testset "migrate_schema! installs series tables on a legacy DB" begin
+    db = SQLite.DB()
+    create_schema!(db)
+    migrate_schema!(db)  # migrate_series! is registered in the sequence
+
+    tables = Set(r.name for r in Tables.rowtable(DBInterface.execute(db,
+        "SELECT name FROM sqlite_master WHERE type='table'")))
+    @test "series" in tables
+    @test "schema_migrations" in tables
+
+    # The comparison* tables are untouched by this change.
+    for c in ("comparisons", "comparison_members", "comparison_messages",
+              "comparison_pins")
+        @test c in tables
+    end
+
+    migrate_schema!(db)  # second run is idempotent
 end
