@@ -96,6 +96,11 @@ export const queryKeys = {
   // Phase 13 — comparison pins, scoped per-user via the X-Username header
   // (no userId in the key — the cache row is implicitly per-tab/per-username).
   comparisonPins: ["comparison-pins"] as const,
+  // Corpus-wide sample listing (redesign Phase 1, #156). Distinct
+  // ["corpus", ...] namespace so corpus add_tag (#159) patches and
+  // invalidations never collide with the per-experiment
+  // ["experiment", id, "samples"] entries that `samples` produces.
+  corpusSamples: ["corpus", "samples"] as const,
 };
 
 export function useExperiments() {
@@ -120,6 +125,20 @@ export function useSamples(experimentId: number) {
   return useQuery({
     queryKey: queryKeys.samples(experimentId),
     queryFn: () => api.listSamples(experimentId),
+  });
+}
+
+/**
+ * Corpus-wide sample list — every sample across all experiments, each with
+ * its tags and a q_units from the owning experiment's config. Backs the
+ * Phase 1 contact sheet (#160) and sample loupe (#161). Distinct from the
+ * per-experiment useSamples(experimentId): no parameter, so no `enabled`
+ * gate — the fetch runs unconditionally.
+ */
+export function useCorpusSamples() {
+  return useQuery({
+    queryKey: queryKeys.corpusSamples,
+    queryFn: () => api.listCorpusSamples(),
   });
 }
 

@@ -34,6 +34,13 @@ export interface Sample {
   tags: SampleTag[];
 }
 
+// Corpus samples carry q_units (resolved from the owning experiment's
+// config) — the per-experiment Sample does not. Phase 3 normalization
+// reads this field. Returned by the corpus-wide GET /api/samples route.
+export interface CorpusSample extends Sample {
+  q_units: string;
+}
+
 export class ApiError extends Error {
   constructor(public status: number, message: string, public body: unknown) {
     super(message);
@@ -102,6 +109,8 @@ export const updateExperiment = (
 // Samples
 export const listSamples    = (experiment_id: number) =>
   request<Sample[]>("GET", `/api/experiments/${experiment_id}/samples`);
+export const listCorpusSamples = (): Promise<CorpusSample[]> =>
+  request<CorpusSample[]>("GET", "/api/samples");
 export const updateSample   = (id: number, patch: { display_name?: string; notes?: string }, opts?: AuthOpts) =>
   request<Sample>("PATCH", `/api/samples/${id}`, patch, opts);
 export const addSampleTag   = (id: number, key: string, value: string, opts?: AuthOpts) =>
