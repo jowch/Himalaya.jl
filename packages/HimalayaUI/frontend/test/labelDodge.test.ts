@@ -124,7 +124,7 @@ describe("layoutPeakLabels (Phase 8.2)", () => {
 
   it("integration: buildMemberMarks emits Plot.link marks for crowded labels with xScale", () => {
     const member = {
-      id: 1, comparison_id: 1, exposure_id: 42, display_order: 0,
+      id: 1, series_id: 1, exposure_id: 42, display_order: 0,
       band_height: 1, y_offset: 0, normalization: "qwindow" as const,
       color_override: null, label_override: null,
       q_window_min: null, q_window_max: null, peak_display: null,
@@ -161,7 +161,7 @@ describe("layoutPeakLabels (Phase 8.2)", () => {
 
   it("integration: buildMemberMarks does NOT emit a link mark for sparse labels", () => {
     const member = {
-      id: 1, comparison_id: 1, exposure_id: 42, display_order: 0,
+      id: 1, series_id: 1, exposure_id: 42, display_order: 0,
       band_height: 1, y_offset: 0, normalization: "qwindow" as const,
       color_override: null, label_override: null,
       q_window_min: null, q_window_max: null, peak_display: null,

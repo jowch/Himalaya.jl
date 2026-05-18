@@ -204,7 +204,7 @@ describe("MemberMetaRow — per-member data-stale", () => {
     render(
       <MemberMetaRow
         member={{
-          id: 1, comparison_id: 42, exposure_id: null,
+          id: 1, series_id: 42, exposure_id: null,
           display_order: 0, band_height: 1, y_offset: 0,
           normalization: "qwindow",
           color_override: null, label_override: null,
@@ -226,7 +226,7 @@ describe("MemberMetaRow — per-member data-stale", () => {
     render(
       <MemberMetaRow
         member={{
-          id: 1, comparison_id: 42, exposure_id: null,
+          id: 1, series_id: 42, exposure_id: null,
           display_order: 0, band_height: 1, y_offset: 0,
           normalization: "qwindow",
           color_override: null, label_override: null,

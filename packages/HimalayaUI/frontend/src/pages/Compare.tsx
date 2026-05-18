@@ -236,9 +236,13 @@ function ReviewPlot({
     [setCompareXDomain, id],
   );
 
-  const members = useMemo(() => {
+  const members = useMemo<SeriesMember[]>(() => {
     if (!compQ.data) return [];
-    return [...compQ.data.members].sort((a, b) => a.display_order - b.display_order);
+    // I3.2 bridge — comparison members lack series_id; the render pipeline
+    // never reads it. Deleted with this page at I3.6.
+    return [...compQ.data.members]
+      .sort((a, b) => a.display_order - b.display_order)
+      .map((m) => ({ ...m, series_id: 0 }));
   }, [compQ.data]);
 
   // Phase 9.6 — comparison-level stale flag is the disjunction of per-member
