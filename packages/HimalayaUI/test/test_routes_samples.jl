@@ -279,6 +279,33 @@ end
         @test post(Dict(:key => "temperature",
                         :tags => [Dict(:value => "x")])).status == 400
 
+        # Wrong-typed fields must be a clean 400, never an unguarded-
+        # conversion 500 (test_route_validation_routing.jl's invariant).
+        # Non-array tags.
+        @test post(Dict(:key => "temperature", :tags => 5)).status == 400
+        # Non-string key.
+        @test post(Dict(:key => 5,
+                        :tags => [Dict(:sample_id => sA, :value => "x")])).status == 400
+        # Non-integer sample_id (string and fractional).
+        @test post(Dict(:key => "temperature",
+                        :tags => [Dict(:sample_id => "abc", :value => "x")])).status == 400
+        @test post(Dict(:key => "temperature",
+                        :tags => [Dict(:sample_id => 5.5, :value => "x")])).status == 400
+        # Non-string value.
+        @test post(Dict(:key => "temperature",
+                        :tags => [Dict(:sample_id => sA, :value => 5)])).status == 400
+        # Non-string source.
+        @test post(Dict(:key => "temperature", :source => 5,
+                        :tags => [Dict(:sample_id => sA, :value => "x")])).status == 400
+
+        # Duplicate sample_id in one batch is rejected: every event shares one
+        # client_op_id, so a repeated sample_id would collide on
+        # idx_events_unique_op and leave a tag row with no durable add_tag
+        # event. Reject it up front instead.
+        @test post(Dict(:key => "temperature",
+                        :tags => [Dict(:sample_id => sA, :value => "25C"),
+                                  Dict(:sample_id => sA, :value => "30C")])).status == 400
+
         # None of the rejected requests wrote anything.
         n_tags = first(Tables.rowtable(DBInterface.execute(db,
             "SELECT COUNT(*) AS c FROM sample_tags"))).c

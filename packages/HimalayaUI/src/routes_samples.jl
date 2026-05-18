@@ -141,23 +141,40 @@ function register_samples_routes!()
         db   = current_db()
         body = json(req)
 
-        # Validate request shape BEFORE opening the transaction, so a
-        # malformed request is a clean 400 with nothing written.
-        if !haskey(body, :key)
-            return HTTP.Response(400, ["Content-Type" => "application/json"],
-                JSON3.write(Dict(:error => "missing required field: key")))
+        # All shape + type validation runs BEFORE the transaction opens, so a
+        # malformed request is a clean 400 (never an unguarded-conversion 500)
+        # with nothing written — test_route_validation_routing.jl pins this.
+        _bad(msg) = HTTP.Response(400, ["Content-Type" => "application/json"],
+                                  JSON3.write(Dict(:error => msg)))
+
+        body isa AbstractDict ||
+            return _bad("request body must be a JSON object")
+        (haskey(body, :key) && body.key isa AbstractString) ||
+            return _bad("missing or non-string required field: key")
+        (haskey(body, :tags) && body.tags isa AbstractVector && !isempty(body.tags)) ||
+            return _bad("missing or empty required field: tags")
+        if haskey(body, :source) && !(body.source isa AbstractString)
+            return _bad("source must be a string")
         end
-        if !haskey(body, :tags) || isempty(body.tags)
-            return HTTP.Response(400, ["Content-Type" => "application/json"],
-                JSON3.write(Dict(:error => "missing or empty required field: tags")))
-        end
+
+        # Each entry must be a {sample_id::Int, value::String} object. A
+        # duplicate sample_id is rejected here: every event the batch emits
+        # shares one client_op_id, so two entries with the same sample_id
+        # would collide on idx_events_unique_op (client_op_id, action,
+        # entity_id) — the second add_tag INSERT is swallowed as an
+        # idempotent retry, leaving a tag row with no durable event.
+        seen = Set{Int}()
         for t in body.tags
-            if !haskey(t, :sample_id) || !haskey(t, :value)
-                return HTTP.Response(400,
-                    ["Content-Type" => "application/json"],
-                    JSON3.write(Dict(:error =>
-                        "each tag requires sample_id and value")))
-            end
+            (t isa AbstractDict && haskey(t, :sample_id) && haskey(t, :value)) ||
+                return _bad("each tag requires sample_id and value")
+            sid = t.sample_id
+            (sid isa Integer || (sid isa AbstractFloat && isinteger(sid))) ||
+                return _bad("each tag sample_id must be an integer")
+            t.value isa AbstractString ||
+                return _bad("each tag value must be a string")
+            sid_int = Int(sid)
+            sid_int in seen && return _bad("duplicate sample_id in batch: $sid_int")
+            push!(seen, sid_int)
         end
 
         key     = String(body.key)
@@ -181,7 +198,8 @@ function register_samples_routes!()
                 # samples cache key — matches the single-tag route's payload.
                 srows = Tables.rowtable(DBInterface.execute(db,
                     "SELECT experiment_id FROM samples WHERE id = ?", [sample_id]))
-                exp_id = isempty(srows) ? nothing : Int(srows[1].experiment_id)
+                exp_id = (isempty(srows) || ismissing(srows[1].experiment_id)) ?
+                         nothing : Int(srows[1].experiment_id)
 
                 result = apply_event!(InTransaction(), db, req;
                     kind = "add_tag",
