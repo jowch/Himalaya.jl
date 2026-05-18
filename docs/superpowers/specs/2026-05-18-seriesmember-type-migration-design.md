@@ -136,12 +136,17 @@ structurally assignable to it. Between this issue (Wave C) and I3.6 (Wave E),
 render pipeline. Two bridge sites are needed; both are localized, both are
 deleted wholesale at I3.6, and neither changes render behaviour:
 
-1. **`Compare.tsx`** builds `plotMembers` through its own local
-   `draftToMember(d): ComparisonMember` converter and passes the result to
-   `MultiTracePlot` / `MemberMetaGutter` / the export adapter. The converter's
-   return type and the two `sampleIdFor` annotations retarget to `SeriesMember`;
-   `draftToMember` supplies a placeholder `series_id` (consistent with the
-   placeholder `id` it already fabricates for unsaved drafts).
+1. **`Compare.tsx`** drives *two* member arrays into the retyped pipeline. In
+   **edit mode** it builds `plotMembers` through its local
+   `draftToMember(d): ComparisonMember` converter. In **review mode** it sorts
+   `compQ.data.members` (a `ComparisonMember[]`) into a `members` memo. Both
+   arrays feed `MultiTracePlot` / `MemberMetaGutter` / `resolveDisplayLabels` /
+   `buildMultiTraceExportSpec`. The `draftToMember` return type, the review-mode
+   `members` memo's element type, and the two `sampleIdFor` annotations all
+   retarget to `SeriesMember`. `draftToMember` already fabricates a placeholder
+   foreign key; the review-mode memo spreads `{ ...m, series_id: 0 }` per member
+   — the same value-irrelevant bridge as `draftFactories.ts`, since the pipeline
+   never reads the key.
 2. **`draftFactories.ts`** — once `memberFromSaved` is retyped to `SeriesMember`
    (see Scope above), its comparison-only callers `fromComparison` /
    `fromComparisonAsFork` (parameter type `Comparison`) still map

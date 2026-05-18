@@ -43,6 +43,7 @@ Modified — tests (`test/`), fixtures retyped to `SeriesMember`:
 - `test/MultiTracePlot.test.tsx`, `test/peakTooltip.test.tsx`
 - `test/MemberMetaRow.test.tsx`, `test/MemberMetaRow.collapse.test.tsx`, `test/MemberMetaRow.drag.test.tsx`, `test/hoverPhaseColoring.test.tsx`
 - `test/MemberMetaGutter.reorder.test.tsx`, `test/MemberMetaGutter.resize.test.tsx`, `test/MemberReorder.test.tsx`
+- `test/Compare.stale-status.test.tsx` (only the `MemberMetaRow` prop fixtures), `test/labelDodge.test.ts` (the `buildMemberMarks` fixtures) — see Task 9 Step 3c
 
 Untouched (verified): `lib/comparison/yBands.ts`; `test/draftPersistence.test.ts`, `test/MentionChip.test.tsx`, `test/queue/saveComparison.test.tsx` (these reference `ComparisonMember` but do not import a migrated module — they stay on `ComparisonMember`).
 
@@ -384,7 +385,7 @@ git commit -m "Migrate memberFromSaved to SeriesMember with the I3.6-scoped brid
 **Files:**
 - Modify: `src/pages/Compare.tsx` (import lines 75-77; `ComparisonMember` at lines 399, 571, 978, 1050; `comparison_id` at line 574)
 
-`Compare.tsx` is deleted at I3.6 (#177). Until then, it feeds the retyped render pipeline. The only render-bound member array is `plotMembers`, built fresh by the local `draftToMember` converter — `draftToMember` already fabricates a placeholder foreign key (`comparison_id: 0`), so this is a pure rename, no cast needed.
+`Compare.tsx` is deleted at I3.6 (#177). Until then, it feeds the retyped render pipeline through **two** member arrays: edit mode's `plotMembers` (built by the local `draftToMember` converter, which already fabricates a placeholder foreign key) and review mode's `members` memo (sorts `compQ.data.members`, a raw `ComparisonMember[]`). The `draftToMember` path is a pure rename; the review-mode memo needs the `{ ...m, series_id: 0 }` spread bridge. Both also feed `resolveDisplayLabels` and `buildMultiTraceExportSpec`, so retyping the two arrays fixes those call sites too.
 
 - [ ] **Step 1: Update the api import block**
 
@@ -418,11 +419,31 @@ On line 574, change the placeholder field `    comparison_id: 0,` to:
     series_id: 0,
 ```
 
-- [ ] **Step 3: Retype the two `sampleIdFor` callbacks and the `plotMembers` memo**
+- [ ] **Step 3: Retype the two `sampleIdFor` callbacks and the edit-mode `plotMembers` memo**
 
-- Line 399: change `(m: ComparisonMember): number | null =>` to `(m: SeriesMember): number | null =>`.
-- Line 1050: change `(m: ComparisonMember): number | null =>` to `(m: SeriesMember): number | null =>`.
-- Line 978: change `useMemo<ComparisonMember[]>` to `useMemo<SeriesMember[]>`.
+- Change each `sampleIdFor`-style callback annotation `(m: ComparisonMember): number | null =>` to `(m: SeriesMember): number | null =>` (two of them).
+- Change `useMemo<ComparisonMember[]>` (the edit-mode `plotMembers` memo) to `useMemo<SeriesMember[]>`.
+
+- [ ] **Step 3b: Bridge the review-mode `members` memo**
+
+`Compare.tsx` also has a review-mode `members` memo that sorts `compQ.data.members` (a raw `ComparisonMember[]`) and feeds it to `MultiTracePlot`, `MemberMetaGutter`, `resolveDisplayLabels`, and `buildMultiTraceExportSpec` — all now `SeriesMember`-typed. Retype the memo and bridge each element:
+
+```ts
+  const members = useMemo<SeriesMember[]>(() => {
+    if (!compQ.data) return [];
+    // I3.2 bridge — comparison members lack series_id; the render pipeline
+    // never reads it. Deleted with this page at I3.6.
+    return [...compQ.data.members]
+      .sort((a, b) => a.display_order - b.display_order)
+      .map((m) => ({ ...m, series_id: 0 }));
+  }, [compQ.data]);
+```
+
+- [ ] **Step 3c: Retype the test fixtures that feed migrated components**
+
+Two test files build member fixtures consumed by now-migrated components and must retype `comparison_id` → `series_id` in *those* fixtures only:
+- `test/Compare.stale-status.test.tsx` — the `<MemberMetaRow member={{…}}>` props (NOT the `makeComparison({ members: [...] })` entries — those stay `comparison_id`, since `Comparison.members` is still `ComparisonMember[]`).
+- `test/labelDodge.test.ts` — the member fixtures passed to `buildMemberMarks`.
 
 - [ ] **Step 4: Run the Compare Vitest suite**
 
