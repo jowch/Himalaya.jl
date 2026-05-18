@@ -163,7 +163,9 @@ export function LoupeSidebar({
       <section>
         <SectionHeading>Keys</SectionHeading>
         <div className="flex flex-col gap-1 text-[11px] text-ink-faint">
-          <div><kbd className="font-mono">← →</kbd> flip frames</div>
+          <div>
+            <kbd className="font-mono">←</kbd> <kbd className="font-mono">→</kbd> flip frames
+          </div>
           <div><kbd className="font-mono">X</kbd> drop / restore</div>
           <div><kbd className="font-mono">R</kbd> set representative</div>
           <div><kbd className="font-mono">Esc</kbd> back to the sheet</div>

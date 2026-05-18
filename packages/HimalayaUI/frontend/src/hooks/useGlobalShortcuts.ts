@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { useLocation } from "react-router-dom";
 import { useAppState, type PageId } from "../state";
 import type { Sample } from "../api";
 
@@ -15,6 +16,7 @@ const TAB_ORDER: PageId[] = ["inspect", "index", "compare"];
  * owns its own Esc/Enter/Backspace behavior; we don't touch them here.
  */
 export function useGlobalShortcuts(samplesInExperiment: Sample[] | undefined): void {
+  const location = useLocation();
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
       const t = e.target as HTMLElement | null;
@@ -52,6 +54,11 @@ export function useGlobalShortcuts(samplesInExperiment: Sample[] | undefined): v
           !e.metaKey && !e.ctrlKey && !e.altKey) {
         const insideDialog = (e.target as HTMLElement)?.closest('[role="dialog"]') != null;
         if (insideDialog) return;
+        // Corpus surfaces (/samples* — contact sheet, loupe) bind the arrow
+        // keys to their own in-page navigation; the legacy page-tab step must
+        // not also fire there, or it silently mutates `activePage` out from
+        // under the user. Future corpus routes (/sample/, /series) extend this.
+        if (location.pathname.startsWith("/samples")) return;
         const s   = useAppState.getState();
         const cur = TAB_ORDER.indexOf(s.activePage);
         const step = e.key === "ArrowRight" ? 1 : -1;
@@ -80,5 +87,5 @@ export function useGlobalShortcuts(samplesInExperiment: Sample[] | undefined): v
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [samplesInExperiment]);
+  }, [samplesInExperiment, location.pathname]);
 }

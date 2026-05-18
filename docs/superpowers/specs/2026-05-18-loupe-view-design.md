@@ -80,7 +80,7 @@ Three new files; one existing file modified.
 | `src/components/LoupeFrame.tsx` (new) | The big `DetectorImage size="full"` with a "Dropped" overlay when the exposure is rejected, plus the centered exposure-thumbnail strip (reusing `ThumbnailGallery`). |
 | `src/components/LoupeSidebar.tsx` (new) | The sidebar: "This exposure" meta-list, Verdict box, Representative box, read-only Sample-tags section, keyboard legend. |
 | `src/components/AppRoutes.tsx` (modify) | Add `<Route path="/samples/loupe/:sampleId" element={<LoupePage />} />` inside the existing `<CorpusShell>` route group. This is the hoisted route table I1.1 (#155) created for later issues to register slots into — an append-only one-line add, not flagged in issue-map §3 shared-file contention. |
-| `src/bones/loupe.bones.json` (new) | Boneyard skeleton fixture for the loupe plate (captured per the boneyard workflow). |
+| `src/bones/loupe.bones.json` | Boneyard skeleton geometry — **deferred to organic dev capture** (the Vite HMR plugin captures it during a dev session); `<Skeleton>` falls through to its `fallback` until then. |
 
 The loupe is **URL-owned**: `sampleId` comes from `useParams`, never from the Zustand
 `activeSampleId` (master plan §2.3 — new surfaces own their URL via `useParams`/`useNavigate`).
@@ -156,11 +156,15 @@ exposure list, not from files.
 
 ## 8. Skeleton loading
 
-A new `src/bones/loupe.bones.json` fixture captures the loupe plate skeleton, registered
-through the boneyard registry and rendered via `<Skeleton>` gated on the load state
-(`corpusSamplesQ.isLoading || exposuresQ.isLoading`) — the same pattern InspectPage uses
-for its cards. The exact capture follows the boneyard workflow
-(`packages/HimalayaUI/docs/boneyard.md`); the detailed plan pins the capture step.
+The loupe body is wrapped in `<Skeleton name="loupe">` from `boneyard-js/react`, gated on
+the load state (`corpusSamplesQ.isLoading || exposuresQ.isLoading`) — the same pattern
+InspectPage uses for its cards — with a real-component `fixture` and an italic `fallback`.
+
+The captured `src/bones/loupe.bones.json` geometry file is **deferred to organic dev
+capture**: per `packages/HimalayaUI/docs/boneyard.md` Rule 6, bones are captured by the
+Vite HMR plugin during a real dev session and committed deliberately. Until that capture
+lands, `<Skeleton>` falls through to its `fallback` — the documented no-bones behaviour,
+matching `chat-card` / `phase-panel`, which also ship without committed bones.
 
 ## 9. Testing (Vitest)
 
