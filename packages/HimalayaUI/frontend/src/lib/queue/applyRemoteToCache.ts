@@ -2,7 +2,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import type { SseEvent, CurationPostState } from "./types";
 import type {
   Peak, GroupEntry, Exposure, Sample, SampleMessage,
-  ComparisonMessage, ComparisonSummary, Comparison,
+  ComparisonMessage, ComparisonSummary, Comparison, Series,
 } from "../../api";
 import { queryKeys } from "../../queries";
 import { peakQTol } from "./peakQTol";
@@ -274,6 +274,48 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
       // user_id mismatches and the route's per-user filter excludes them
       // on read. Invalidating in that case is a harmless no-op refetch.
       qc.invalidateQueries({ queryKey: queryKeys.comparisonPins });
+      break;
+    }
+    case "series_created":
+    case "series_recipe_updated": {
+      // Neither kind carries post_state (master plan §5.2); the SSE payload's
+      // series_samples entries are id-less and series_samples.id is
+      // replay-volatile (§11), so there is no safe surgical splice.
+      // Invalidate-only — the next read refetches the canonical projection.
+      qc.invalidateQueries({ queryKey: queryKeys.series(id) });
+      qc.invalidateQueries({ queryKey: queryKeys.seriesList });
+      break;
+    }
+    case "series_deleted": {
+      // Remove the detail cache — refetching a deleted resource 404s and
+      // leaves stale `isError` state. Filter the id out of the listing.
+      qc.removeQueries({ queryKey: queryKeys.series(id) });
+      qc.setQueriesData<{ id: number }[]>(
+        { queryKey: queryKeys.seriesList },
+        (old) => (old ? old.filter((s) => s.id !== id) : old),
+      );
+      break;
+    }
+    case "series_plate_committed": {
+      // The one series event carrying a post_state envelope (master plan
+      // §5.2): post_state IS the fetch_series_with_plate projection. Splice it
+      // straight into the detail cache; invalidate the listing (denormalised
+      // member_count / has_stale_members / last_event_at fields).
+      if (remote.post_state != null) {
+        qc.setQueryData(queryKeys.series(id), remote.post_state as Series);
+      } else {
+        qc.invalidateQueries({ queryKey: queryKeys.series(id) });
+      }
+      qc.invalidateQueries({ queryKey: queryKeys.seriesList });
+      break;
+    }
+    case "series_pinned":
+    case "series_unpinned": {
+      // Pin/unpin fan out cross-tab. The seriesPins cache is global per-tab
+      // (the current user's pin set); the SSE self-echo filter discards the
+      // originating tab's own frame. Invalidate so the next read gets the
+      // canonical list — mirrors comparison_pinned / comparison_unpinned.
+      qc.invalidateQueries({ queryKey: queryKeys.seriesPins });
       break;
     }
     case "add_tag":

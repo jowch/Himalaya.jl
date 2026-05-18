@@ -421,6 +421,54 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
         return nothing
     end
 
+    # Series event kinds (#166 / I2.3). The view-producing branches are
+    # pure-replace: parent upsert + child DELETE-by-series_id + INSERT-all from
+    # a full-snapshot payload — explicitly NOT comparison_submitted-shaped, so
+    # every fold is idempotent and order-independent (folds from an empty view).
+    if kind == "series_created"
+        return _update_view_for_series_created!(db, entity_id, payload, event_id)
+    end
+    if kind == "series_recipe_updated"
+        return _update_view_for_series_recipe_updated!(db, entity_id, payload, event_id)
+    end
+    if kind == "series_deleted"
+        DBInterface.execute(db, "DELETE FROM series WHERE id = ?", [Int(entity_id)])
+        # The schema's four ON DELETE CASCADE clauses drop series_members,
+        # series_samples, series_messages and series_pins automatically.
+        return nothing
+    end
+    if kind == "series_plate_committed"
+        return _update_view_for_series_plate_committed!(db, entity_id, payload, event_id)
+    end
+
+    # Per-user series pins (#168 / I2.5). Stored with entity_type='user',
+    # entity_id=user_id (the comparison_pinned precedent) — the affected series
+    # rides in the payload as `series_id`. Five-layer: no post_state, no
+    # mutator. The dispatcher derives user_id by joining user_actions on
+    # event_id, exactly as the comparison pin branches do.
+    if kind == "series_pinned"
+        # Guard the pin on series existence: a rebuild that folds this event
+        # after the series was deleted would otherwise FK-throw and abort the
+        # whole rebuild. INSERT … SELECT … WHERE EXISTS makes the fold a no-op
+        # in that case. (Deliberately stricter than the unguarded
+        # comparison_pinned branch, which carries the same latent issue.)
+        DBInterface.execute(db,
+            """INSERT OR REPLACE INTO series_pins (user_id, series_id, pinned_at)
+               SELECT (SELECT user_id FROM user_actions WHERE id = ?),
+                      ?, CURRENT_TIMESTAMP
+               WHERE EXISTS (SELECT 1 FROM series WHERE id = ?)""",
+            [event_id, Int(payload.series_id), Int(payload.series_id)])
+        return nothing
+    end
+    if kind == "series_unpinned"
+        DBInterface.execute(db,
+            """DELETE FROM series_pins
+               WHERE user_id = (SELECT user_id FROM user_actions WHERE id = ?)
+                 AND series_id = ?""",
+            [event_id, Int(payload.series_id)])
+        return nothing
+    end
+
     # Scaffolding / legacy:
     kind == "noop_test" && return nothing
     # default: no view update
@@ -678,6 +726,198 @@ function _insert_comparison_member!(db, comparison_id, m, user_id, now_str)
          snap,
          user_id, now_str])
     nothing
+end
+
+# Helper: INSERT one series_samples row from a recipe payload entry. The
+# payload entry is a JSON3.Object from `_series_sample_payload` —
+# `{sample_id, position, pinned, excluded}`. `pinned`/`excluded` are coerced
+# to 0/1 for the CHECK (… IN (0,1)) columns.
+function _insert_series_sample!(db, series_id, s)
+    pinned   = (haskey(s, :pinned)   && s.pinned   == true) ? 1 : 0
+    excluded = (haskey(s, :excluded) && s.excluded == true) ? 1 : 0
+    DBInterface.execute(db,
+        """INSERT INTO series_samples
+             (series_id, sample_id, position, pinned, excluded)
+           VALUES (?, ?, ?, ?, ?)""",
+        [Int(series_id), Int(s.sample_id), Int(s.position), pinned, excluded])
+    nothing
+end
+
+"""
+    _update_view_for_series_created!(db, entity_id, payload, event_id)
+
+`series_created` dispatcher (#166). Upserts the `series` row at `entity_id`
+(the route mints it with `INSERT INTO series DEFAULT VALUES` to capture the
+AUTOINCREMENT id; a plain INSERT would collide on the live path — so this
+SELECTs and UPDATEs an existing row, else INSERTs with an explicit id for the
+replay-from-empty path). Sets `state='draft'`; `content_hash` stays NULL (a
+draft has no committed plate — master plan §5.1). Then pure-replaces
+`series_samples` from the full payload snapshot. Touches no `series_members`.
+"""
+function _update_view_for_series_created!(db, entity_id, payload, event_id)
+    sid     = Int(entity_id)
+    user_id = user_id_for_event(db, event_id)
+    now_str = comparison_now_iso()
+
+    title          = haskey(payload, :title) && payload.title !== nothing ?
+                     String(payload.title) : nothing
+    description    = haskey(payload, :description) && payload.description !== nothing ?
+                     String(payload.description) : nothing
+    forked_from_id = haskey(payload, :forked_from_id) && payload.forked_from_id !== nothing ?
+                     Int(payload.forked_from_id) : nothing
+    forked_at_hash = haskey(payload, :forked_at_hash) && payload.forked_at_hash !== nothing ?
+                     String(payload.forked_at_hash) : nothing
+    ordering_var   = haskey(payload, :ordering_variable) && payload.ordering_variable !== nothing ?
+                     String(payload.ordering_variable) : nothing
+    order_rule     = haskey(payload, :order_rule) && payload.order_rule !== nothing ?
+                     String(payload.order_rule) : "manual"
+    vgm  = haskey(payload, :view_grouping_mode) && payload.view_grouping_mode !== nothing ?
+           String(payload.view_grouping_mode) : nothing
+    vspt = haskey(payload, :view_show_peak_ticks)  ? payload.view_show_peak_ticks  : nothing
+    vspl = haskey(payload, :view_show_peak_labels) ? payload.view_show_peak_labels : nothing
+
+    existing = Tables.rowtable(DBInterface.execute(db,
+        "SELECT id FROM series WHERE id = ?", [sid]))
+    if isempty(existing)
+        # Replay path: the original row was deleted. INSERT with an explicit id;
+        # SQLite's AUTOINCREMENT counter advances past it automatically.
+        DBInterface.execute(db,
+            """INSERT INTO series
+               (id, title, description, content_hash, created_by, created_at,
+                updated_at, forked_from_id, forked_at_hash,
+                view_grouping_mode, view_show_peak_ticks, view_show_peak_labels,
+                ordering_variable, order_rule, state)
+               VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft')""",
+            [sid, title, description, user_id, now_str, now_str,
+             forked_from_id, forked_at_hash, vgm, vspt, vspl,
+             ordering_var, order_rule])
+    else
+        # Live path: the route's `INSERT … DEFAULT VALUES` placeholder exists.
+        # COALESCE stamps created_at on first fold; a prior fold's value
+        # survives. `content_hash = NULL` is set explicitly so the draft
+        # invariant holds even on a defensive re-fold onto an already-committed
+        # row.
+        DBInterface.execute(db,
+            """UPDATE series
+               SET title = ?, description = ?, content_hash = NULL,
+                   created_by = ?,
+                   created_at = COALESCE(created_at, ?), updated_at = ?,
+                   forked_from_id = ?, forked_at_hash = ?,
+                   view_grouping_mode = ?, view_show_peak_ticks = ?,
+                   view_show_peak_labels = ?,
+                   ordering_variable = ?, order_rule = ?, state = 'draft'
+               WHERE id = ?""",
+            [title, description, user_id, now_str, now_str,
+             forked_from_id, forked_at_hash, vgm, vspt, vspl,
+             ordering_var, order_rule, sid])
+    end
+
+    # Pure-replace the recipe rows from the full-snapshot payload.
+    DBInterface.execute(db, "DELETE FROM series_samples WHERE series_id = ?", [sid])
+    samples = haskey(payload, :samples) ? payload.samples : []
+    for s in samples
+        _insert_series_sample!(db, sid, s)
+    end
+    return sid
+end
+
+"""
+    _update_view_for_series_recipe_updated!(db, entity_id, payload, event_id)
+
+`series_recipe_updated` dispatcher (#166). Pure-replace: updates the recipe
+scalars (`ordering_variable`, `order_rule`) on the `series` row, then
+`DELETE`s every `series_samples` row for the series and re-`INSERT`s the full
+payload snapshot. Never touches `content_hash` (recipe is excluded from the
+hash — master plan §5.1), `state`, or `series_members`. `ordering_variable`
+is a bare write (a PATCH is a full recipe replace, so an omitted field nulls
+it); `order_rule` is `COALESCE`d because the column is `NOT NULL` and
+`CHECK`-constrained.
+"""
+function _update_view_for_series_recipe_updated!(db, entity_id, payload, event_id)
+    sid     = Int(entity_id)
+    now_str = comparison_now_iso()
+    ordering_var = haskey(payload, :ordering_variable) && payload.ordering_variable !== nothing ?
+                   String(payload.ordering_variable) : nothing
+    order_rule   = haskey(payload, :order_rule) && payload.order_rule !== nothing ?
+                   String(payload.order_rule) : nothing
+
+    # Bare UPDATE — assumes `series_created` has already folded this row.
+    # Guaranteed by event-log ordering (a recipe edit cannot precede its
+    # create); silently no-ops if folded standalone, which is acceptable
+    # because `rebuild_views_from_log!` always replays the create first.
+    DBInterface.execute(db,
+        """UPDATE series
+           SET ordering_variable = ?,
+               order_rule = COALESCE(?, order_rule),
+               updated_at = ?
+           WHERE id = ?""",
+        [ordering_var, order_rule, now_str, sid])
+
+    DBInterface.execute(db, "DELETE FROM series_samples WHERE series_id = ?", [sid])
+    samples = haskey(payload, :samples) ? payload.samples : []
+    for s in samples
+        _insert_series_sample!(db, sid, s)
+    end
+    return nothing
+end
+
+# Helper: INSERT one series_members row. Mirrors `_insert_comparison_member!`
+# (the series_members and comparison_members column shapes are identical) —
+# reuses `_member_field` / `_member_json`. Members in a series_plate_committed
+# payload carry NO ids; the dispatcher mints fresh PKs.
+function _insert_series_member!(db, series_id, m, user_id, now_str)
+    snap = _member_json(m, :snapshot)
+    snap === nothing &&
+        error("series member missing required `snapshot` field")
+    DBInterface.execute(db,
+        """INSERT INTO series_members
+             (series_id, exposure_id, display_order, band_height, y_offset,
+              normalization, color_override, label_override,
+              q_window_min, q_window_max, peak_display, snapshot,
+              created_by, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        [Int(series_id),
+         _member_field(m, :exposure_id),
+         Int(_member_field(m, :display_order)),
+         Float64(_member_field(m, :band_height; default=1.0)),
+         Float64(_member_field(m, :y_offset; default=0.0)),
+         String(_member_field(m, :normalization; default="none")),
+         _member_field(m, :color_override),
+         _member_field(m, :label_override),
+         _member_field(m, :q_window_min),
+         _member_field(m, :q_window_max),
+         _member_json(m, :peak_display),
+         snap,
+         user_id, now_str])
+    nothing
+end
+
+"""
+    _update_view_for_series_plate_committed!(db, entity_id, payload, event_id)
+
+`series_plate_committed` dispatcher (#167). Pure-replace the plate:
+`DELETE` every `series_members` row, then `INSERT` the full payload member
+list (members carry no ids — `_insert_series_member!` mints them). Sets
+`state='committed'` and computes `content_hash` from the plate via
+`compute_series_content_hash` (which excludes the recipe — master plan §5.1).
+Never touches `series_samples`.
+"""
+function _update_view_for_series_plate_committed!(db, entity_id, payload, event_id)
+    sid     = Int(entity_id)
+    user_id = user_id_for_event(db, event_id)
+    now_str = comparison_now_iso()
+
+    DBInterface.execute(db, "DELETE FROM series_members WHERE series_id = ?", [sid])
+    members = haskey(payload, :members) ? payload.members : []
+    for m in members
+        _insert_series_member!(db, sid, m, user_id, now_str)
+    end
+
+    new_hash = compute_series_content_hash(db, sid)
+    DBInterface.execute(db,
+        "UPDATE series SET content_hash = ?, state = 'committed', updated_at = ? WHERE id = ?",
+        [new_hash, now_str, sid])
+    return nothing
 end
 
 """
