@@ -5,6 +5,8 @@ import {
   removeSampleTagMutator,
   addExposureTagMutator,
   removeExposureTagMutator,
+  addCorpusSampleTagMutator,
+  removeCorpusSampleTagMutator,
   updateSampleMutator,
   postSampleMessageMutator,
   postComparisonMessageMutator,
@@ -58,6 +60,21 @@ describe("resolveMutator", () => {
     ).toBe(removeExposureTagMutator);
   });
 
+  it("dispatches a corpus sample-tag op (no experimentId, no exposureId) to the corpus mutator", () => {
+    expect(
+      resolveMutator({
+        kind: "add_tag",
+        payload: { sampleId: 10, key: "k", value: "v" },
+      }),
+    ).toBe(addCorpusSampleTagMutator);
+    expect(
+      resolveMutator({
+        kind: "remove_tag",
+        payload: { sampleId: 10, tagId: 7 },
+      }),
+    ).toBe(removeCorpusSampleTagMutator);
+  });
+
   it("returns the canonical mutator for non-dual kinds", () => {
     expect(resolveMutator({ kind: "peak_added", payload: {} })).toBe(
       peakAddMutator,
@@ -106,13 +123,13 @@ describe("resolveMutator", () => {
     ).toBeUndefined();
   });
 
-  it("tolerates undefined/null payload by treating add_tag as exposure-scoped", () => {
-    // No experimentId means exposure-scoped fallback. This should not throw.
+  it("tolerates undefined/null payload by treating add_tag as corpus-scoped", () => {
+    // No exposureId and no experimentId → corpus fallthrough. Must not throw.
     expect(
       resolveMutator({ kind: "add_tag", payload: undefined }),
-    ).toBe(addExposureTagMutator);
+    ).toBe(addCorpusSampleTagMutator);
     expect(resolveMutator({ kind: "add_tag", payload: null })).toBe(
-      addExposureTagMutator,
+      addCorpusSampleTagMutator,
     );
   });
 });
