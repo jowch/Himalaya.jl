@@ -33,7 +33,7 @@
  * declarative wrapper, but it just wraps `buildMemberMarks`.
  */
 import * as Plot from "@observablehq/plot";
-import type { Trace, ComparisonMember, MemberSnapshotPeak } from "../api";
+import type { Trace, SeriesMember, MemberSnapshotPeak } from "../api";
 import { phaseColor } from "../phases";
 import {
   applyNormalization,
@@ -64,7 +64,7 @@ const LABEL_OFFSET_PX = 12;
 const DEFAULT_LABEL_WIDTH_PX = 32;
 
 export interface MemberMarksProps {
-  member: ComparisonMember;
+  member: SeriesMember;
   /**
    * Live `(q, I)` trace from `useTrace(exposureId)`. May be undefined while
    * the trace is loading; in that case no marks are emitted.
@@ -115,14 +115,14 @@ export interface MemberMarksProps {
    * `bySample` and `distinct` palette indexing in `colorFor`. Ignored
    * when `groupingMode` is undefined.
    */
-  allMembers?: ReadonlyArray<ComparisonMember>;
+  allMembers?: ReadonlyArray<SeriesMember>;
   /**
    * Sample-id resolver supplied by the caller (typically wired against the
    * TanStack exposure cache at the page level). Returns `null` when the
    * exposure is unknown (cache miss / orphan). Ignored when `groupingMode`
    * is undefined.
    */
-  sampleIdFor?: (m: ComparisonMember) => number | null;
+  sampleIdFor?: (m: SeriesMember) => number | null;
 }
 
 /**

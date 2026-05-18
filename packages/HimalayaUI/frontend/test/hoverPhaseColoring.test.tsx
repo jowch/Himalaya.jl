@@ -16,12 +16,12 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { MemberMetaRow } from "../src/components/MemberMetaRow";
 import { useAppState } from "../src/state";
-import type { ComparisonMember } from "../src/api";
+import type { SeriesMember } from "../src/api";
 
-function makeMember(over: Partial<ComparisonMember> = {}): ComparisonMember {
+function makeMember(over: Partial<SeriesMember> = {}): SeriesMember {
   return {
     id: 1,
-    comparison_id: 100,
+    series_id: 100,
     exposure_id: 42,
     display_order: 0,
     band_height: 1,

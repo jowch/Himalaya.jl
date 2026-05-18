@@ -19,7 +19,7 @@ import {
   MIN_PLOT_WIDTH,
   COMPARE_PLOT_ASPECT,
 } from "../src/components/MultiTracePlot";
-import type { ComparisonMember } from "../src/api";
+import type { SeriesMember } from "../src/api";
 
 let lastPlotElement: HTMLElement | null = null;
 
@@ -91,9 +91,9 @@ describe("computeMaxPlotWidth", () => {
 
 // ── MultiTracePlot ───────────────────────────────────────────────────────────
 
-function makeMember(over: Partial<ComparisonMember> = {}): ComparisonMember {
+function makeMember(over: Partial<SeriesMember> = {}): SeriesMember {
   return {
-    id: 1, comparison_id: 100, exposure_id: 42, display_order: 0,
+    id: 1, series_id: 100, exposure_id: 42, display_order: 0,
     band_height: 1, y_offset: 0, normalization: "qwindow",
     color_override: null, label_override: null,
     q_window_min: null, q_window_max: null, peak_display: null,

@@ -26,7 +26,7 @@
  * changing call sites — the API takes a member + context and returns a
  * resolved color.
  */
-import type { ComparisonMember } from "../../api";
+import type { SeriesMember } from "../../api";
 import { phaseColor } from "../../phases";
 
 export type GroupingMode = "bySample" | "byPhase" | "distinct";
@@ -70,13 +70,13 @@ export const ORPHAN_FALLBACK = "oklch(0.65 0.02 270)";
  */
 export interface ColorContext {
   /** All members in the same comparison, in display order. */
-  allMembers: ReadonlyArray<ComparisonMember>;
+  allMembers: ReadonlyArray<SeriesMember>;
   /**
    * Resolve a member's `sample_id`. Returns `null` when the exposure is
    * unknown (cache miss / orphan). Caller wires this against the TanStack
    * exposure cache or another lookup source.
    */
-  sampleIdFor: (m: ComparisonMember) => number | null;
+  sampleIdFor: (m: SeriesMember) => number | null;
 }
 
 /**
@@ -86,7 +86,7 @@ export interface ColorContext {
  * which is supplied by the caller. Suitable for use in a render path.
  */
 export function colorFor(
-  member: ComparisonMember,
+  member: SeriesMember,
   mode: GroupingMode,
   palette: readonly string[],
   context: ColorContext,
@@ -111,7 +111,7 @@ export function colorFor(
 }
 
 function defaultBySample(
-  member: ComparisonMember,
+  member: SeriesMember,
   palette: readonly string[],
   context: ColorContext,
 ): string {
@@ -148,14 +148,14 @@ function hashSampleId(id: number): number {
   return h & 0x7fffffff;
 }
 
-function defaultByPhase(member: ComparisonMember): string {
+function defaultByPhase(member: SeriesMember): string {
   const phase = member.snapshot?.confirmed_index?.phase;
   if (!phase) return ORPHAN_FALLBACK;
   return phaseColor(phase);
 }
 
 function defaultDistinct(
-  member: ComparisonMember,
+  member: SeriesMember,
   palette: readonly string[],
   context: ColorContext,
 ): string {

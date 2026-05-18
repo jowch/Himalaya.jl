@@ -11,7 +11,7 @@
  *   distinct  — palette walked by display_order; cycles when N > palette.length
  */
 import { describe, it, expect } from "vitest";
-import type { ComparisonMember } from "../src/api";
+import type { SeriesMember } from "../src/api";
 import {
   colorFor,
   COMPARE_PALETTE,
@@ -20,10 +20,10 @@ import {
 } from "../src/lib/comparison/coloring";
 import { phaseColor, PHASE_PALETTE } from "../src/phases";
 
-function makeMember(over: Partial<ComparisonMember> = {}): ComparisonMember {
+function makeMember(over: Partial<SeriesMember> = {}): SeriesMember {
   return {
     id: 1,
-    comparison_id: 100,
+    series_id: 100,
     exposure_id: 1,
     display_order: 0,
     band_height: 1,
@@ -50,7 +50,7 @@ function makeMember(over: Partial<ComparisonMember> = {}): ComparisonMember {
 }
 
 /** Trivial id-based sample resolver for tests: maps exposure_id to sample_id. */
-function sampleIdResolver(map: Record<number, number>): (m: ComparisonMember) => number | null {
+function sampleIdResolver(map: Record<number, number>): (m: SeriesMember) => number | null {
   return (m) => (m.exposure_id !== null ? map[m.exposure_id] ?? null : null);
 }
 

@@ -14,10 +14,10 @@
  * ComparePageEdit.tsx (edit). Drift between the two surfaces the same
  * regression class that needed `comparisonHash8()` to fix #62.
  */
-import type { ComparisonMember, Exposure, Sample } from "../../api";
+import type { SeriesMember, Exposure, Sample } from "../../api";
 
 export function resolveDisplayLabels(
-  members: readonly ComparisonMember[],
+  members: readonly SeriesMember[],
   exposures: ReadonlyMap<number, Exposure>,
   samples: ReadonlyMap<number, Sample>,
 ): Map<number, string> {

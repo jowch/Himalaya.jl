@@ -73,7 +73,7 @@ import { useCurrentUserId } from "../hooks/useCurrentUserId";
 import { useCompareMode } from "../hooks/useCompareMode";
 import * as api from "../api";
 import type {
-  Comparison, ComparisonMember, ComparisonMemberInput, SaveComparisonBody,
+  Comparison, ComparisonMemberInput, SaveComparisonBody, SeriesMember,
 } from "../api";
 import type { DraftMember } from "../lib/comparison/draft";
 
@@ -236,9 +236,13 @@ function ReviewPlot({
     [setCompareXDomain, id],
   );
 
-  const members = useMemo(() => {
+  const members = useMemo<SeriesMember[]>(() => {
     if (!compQ.data) return [];
-    return [...compQ.data.members].sort((a, b) => a.display_order - b.display_order);
+    // I3.2 bridge — comparison members lack series_id; the render pipeline
+    // never reads it. Deleted with this page at I3.6.
+    return [...compQ.data.members]
+      .sort((a, b) => a.display_order - b.display_order)
+      .map((m) => ({ ...m, series_id: 0 }));
   }, [compQ.data]);
 
   // Phase 9.6 — comparison-level stale flag is the disjunction of per-member
@@ -396,7 +400,7 @@ function ReviewPlot({
   const samples = useMemberSamples(sampleIds);
 
   const sampleIdFor = useCallback(
-    (m: ComparisonMember): number | null => {
+    (m: SeriesMember): number | null => {
       if (m.exposure_id === null) return null;
       return exposures.get(m.exposure_id)?.sample_id ?? null;
     },
@@ -562,16 +566,16 @@ function ReviewPlot({
 // ── Edit body (was ComparePageEdit) ─────────────────────────────────────────
 
 /**
- * Convert a draft member into a ComparisonMember-shaped object suitable for
+ * Convert a draft member into a SeriesMember-shaped object suitable for
  * `MultiTracePlot`. Unsaved drafts have `id = undefined`; we substitute a
  * stable negative synthetic id keyed by display_order so the plot's per-member
  * keying stays consistent across re-renders. Snapshot can also be undefined
  * mid-edit; the plot tolerates a null snapshot (no peaks rendered).
  */
-function draftToMember(d: DraftMember): ComparisonMember {
+function draftToMember(d: DraftMember): SeriesMember {
   return {
     id: d.id ?? -(d.display_order + 1),
-    comparison_id: 0,
+    series_id: 0,
     exposure_id: d.exposure_id,
     display_order: d.display_order,
     band_height: d.band_height,
@@ -975,7 +979,7 @@ function EditBody(): JSX.Element {
     (d: [number, number] | null) => setCompareXDomain(xDomainKey, d),
     [setCompareXDomain, xDomainKey],
   );
-  const plotMembers = useMemo<ComparisonMember[]>(
+  const plotMembers = useMemo<SeriesMember[]>(
     () => (draft?.members ?? []).map(draftToMember),
     [draft?.members],
   );
@@ -1047,7 +1051,7 @@ function EditBody(): JSX.Element {
   // draft's viewGroupingMode takes precedence over the server record.
   const groupingMode = effectiveGroupingMode(draft, comparisonQ.data);
   const sampleIdFor = useCallback(
-    (m: ComparisonMember): number | null => {
+    (m: SeriesMember): number | null => {
       if (m.exposure_id === null) return null;
       return exposures.get(m.exposure_id)?.sample_id ?? null;
     },

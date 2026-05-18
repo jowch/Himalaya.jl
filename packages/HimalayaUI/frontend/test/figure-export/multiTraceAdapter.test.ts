@@ -1,11 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { buildMultiTraceExportSpec } from "../../src/lib/figure-export/adapters/multiTraceAdapter";
 import { COMPARE_DIMS } from "../../src/lib/figure-export/presets";
-import type { ComparisonMember, Trace } from "../../src/api";
+import type { SeriesMember, Trace } from "../../src/api";
 
-function makeMember(over: Partial<ComparisonMember> = {}): ComparisonMember {
+function makeMember(over: Partial<SeriesMember> = {}): SeriesMember {
   return {
-    id: 1, comparison_id: 1, exposure_id: 100, display_order: 0,
+    id: 1, series_id: 1, exposure_id: 100, display_order: 0,
     band_height: 1, y_offset: 0, normalization: "none",
     color_override: null, label_override: null,
     q_window_min: null, q_window_max: null, peak_display: null,
@@ -19,7 +19,7 @@ const trace: Trace = {
 };
 
 const traces = new Map<number, Trace>([[100, trace], [101, trace], [102, trace]]);
-const sampleIdFor = (m: ComparisonMember): number | null => {
+const sampleIdFor = (m: SeriesMember): number | null => {
   if (m.exposure_id === 100) return 1;
   if (m.exposure_id === 101) return 2;
   if (m.exposure_id === 102) return 3;
@@ -98,7 +98,7 @@ describe("buildMultiTraceExportSpec", () => {
           r_squared: 0.99, lattice_d: 100, ngc: 1.5, status: "candidate",
           kind: "auto", inputs_hash: "h", peaks: [], predicted_q: [0.18],
         },
-      } as unknown as ComparisonMember["snapshot"],
+      } as unknown as SeriesMember["snapshot"],
     });
     const orphanMember = makeMember({ id: 11, exposure_id: 101, snapshot: null });
 
@@ -160,7 +160,7 @@ describe("buildMultiTraceExportSpec", () => {
     // contrast and (b) the legend's color-equality check detects them.
     const m1 = makeMember({ id: 1, exposure_id: 100 });
     const orphanByNullSample = makeMember({ id: 2, exposure_id: 999 });
-    const noSampleResolver = (m: ComparisonMember): number | null =>
+    const noSampleResolver = (m: SeriesMember): number | null =>
       m.exposure_id === 100 ? 1 : null;
     const spec = buildMultiTraceExportSpec({
       members: [m1, orphanByNullSample],

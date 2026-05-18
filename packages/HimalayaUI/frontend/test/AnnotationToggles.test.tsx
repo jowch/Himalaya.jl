@@ -14,7 +14,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { AnnotationToggles } from "../src/components/AnnotationToggles";
 import { useAppState } from "../src/state";
 import { buildMemberMarks } from "../src/components/MemberTraceLayer";
-import type { ComparisonMember } from "../src/api";
+import type { SeriesMember } from "../src/api";
 
 vi.mock("@observablehq/plot", () => ({
   // Stub Plot.plot for the ComparePage mount tests (MultiTracePlot calls it).
@@ -75,9 +75,9 @@ describe("AnnotationToggles — render + Zustand wiring", () => {
 
 // Mark-level integration: the toggles control mark emission via
 // `buildMemberMarks`, not the rendered DOM (Observable Plot is mocked).
-function makeMember(): ComparisonMember {
+function makeMember(): SeriesMember {
   return {
-    id: 1, comparison_id: 100, exposure_id: 42,
+    id: 1, series_id: 100, exposure_id: 42,
     display_order: 0, band_height: 1, y_offset: 0,
     normalization: "qwindow",
     color_override: null, label_override: null,
