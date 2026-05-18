@@ -664,7 +664,14 @@ function renderRoutes(initialPath: string, initialIndex?: number) {
 
 describe("AppRoutes — nav-bridge shell selection", () => {
   beforeEach(() => {
-    useAppState.setState({ activePage: "index", activeExperimentId: undefined });
+    // Reset the ephemeral URL-resolution fields too — a prior test that
+    // parked the store on a stale path must not leak into the next.
+    useAppState.setState({
+      activePage: "index",
+      activeExperimentId: undefined,
+      staleUrlContext: null,
+      resolving: false,
+    });
   });
 
   it("mounts the corpus shell (not AppShell) at /samples", async () => {
@@ -691,7 +698,14 @@ describe("AppRoutes — nav-bridge shell selection", () => {
 
 describe("AppRoutes — Zustand → URL compare-sync (#77)", () => {
   beforeEach(() => {
-    useAppState.setState({ activePage: "index", activeExperimentId: undefined });
+    // Reset the ephemeral URL-resolution fields too — a prior test that
+    // parked the store on a stale path must not leak into the next.
+    useAppState.setState({
+      activePage: "index",
+      activeExperimentId: undefined,
+      staleUrlContext: null,
+      resolving: false,
+    });
   });
 
   it("activePage='compare' + URL '/' navigates to /compare/all", async () => {
@@ -1048,7 +1062,19 @@ with:
 import { AppRoutes } from "../src/components/AppRoutes";
 ```
 
-(b) Replace the entire `renderShell` helper. The old helper wrapped `<AppShell/>` in its own `<Routes><Route path="*">` — `AppRoutes` now owns the `<Routes>`, so `LocationProbe` becomes a plain sibling under `MemoryRouter`:
+(b) Fix the `react-router-dom` import (line 10). After this task `renderShell` no longer uses `Routes`/`Route` — and this repo's `tsconfig` has `noUnusedLocals`, so leaving them in fails the Step 11 build. Replace:
+
+```tsx
+import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
+```
+
+with:
+
+```tsx
+import { MemoryRouter, useLocation } from "react-router-dom";
+```
+
+(c) Replace the entire `renderShell` helper. The old helper wrapped `<AppShell/>` in its own `<Routes><Route path="*">` — `AppRoutes` now owns the `<Routes>`, so `LocationProbe` becomes a plain sibling under `MemoryRouter`:
 
 ```tsx
 function renderShell(initialPath: string) {
@@ -1063,8 +1089,6 @@ function renderShell(initialPath: string) {
   );
 }
 ```
-
-The unused `Routes` and `Route` imports from `react-router-dom` can stay or be removed; if `tsc` (Step 11) flags them as unused, remove them from the import on line 10, leaving `import { MemoryRouter, useLocation } from "react-router-dom";`.
 
 - [ ] **Step 9: Run the new and updated routing tests**
 
