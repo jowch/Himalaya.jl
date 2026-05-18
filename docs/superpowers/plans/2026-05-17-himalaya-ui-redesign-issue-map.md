@@ -233,7 +233,7 @@ I2.1 → I2.2 → I2.3 → I2.7 → I3.1 → I3.6 → I5.1 → I5.2 → I5.3
 - **Detailed plan:** **needed** — new surface.
 
 #### I3.4 — Scoping UI
-- **Wave E (Track 3)** · **Depends on:** I3.2, I2.6 · **Unblocks:** I3.6
+- **Wave E (Track 3)** · **Depends on:** I3.2, I2.6, I0.2, I0.3 · **Unblocks:** I3.6
 - **Files:** create `/series/new` scoping view; `useFocusTrap` on the scoping modal.
 - **Deliverable:** machine-proposed ordering variable + confirm-and-build gate; confirmations write `sample_tags` via the batch route with `source='scoping'`, stored as a structured `(key,value)` pair (master plan §6.2).
 - **Acceptance:** scoping proposes → confirms → writes structured tags; Vitest + Playwright mocked spec.
@@ -374,3 +374,4 @@ Write the **detailed file-level plans** for the two widest fan-out unblockers �
   - **§3 missed `queries.ts`/`api.ts` Wave-E contention** (frontend; decomposition-logic): added.
   - Smaller fixes: wave table now shows effective concurrency (I2.2 intra-wave gate, I1.6→I1.7 serial); `migrate_schema!` sequence-edit noted on I3.1; series mutators noted as new files; I5.2's behavioral dependency on I3.6 noted; I3.5b's intentional non-edge to I3.4 stated; the cross-cutting sample-delete constraint recorded in §3.
 - **v2 confirmation round:** the decomposition-logic reviewer independently re-derived the full edge list, confirmed the graph acyclic, recomputed the longest chain at exactly 9 (both claimed critical paths real and co-equal), and verified the `I2.7→I3.1` edge, the I3.5 split, whole-graph edge/reverse-edge symmetry, the §3 additions, and the 18/13/31 detailed-plan count. **v2 confirmed clean** — ready to dispatch.
+- **v2.1 (issue-creation pass):** while expanding the cards into GitHub issues, one asymmetric edge surfaced — I0.2 and I0.3 list `Unblocks: I3.4` but I3.4's card listed only `Depends on: I3.2, I2.6`. Scoping genuinely reads the corpus tag and picker routes, so I3.4's `Depends on` is corrected to `I3.2, I2.6, I0.2, I0.3` (no critical-path change — I3.4 stays depth 4). The 31 issues are filed under GitHub milestone *HimalayaUI workflow-driven redesign* (#154–#184) with native blocked-by/blocks relations encoding this DAG.
