@@ -4,12 +4,13 @@ using HimalayaUI
 # ─────────────────────────────────────────────────────────────────────────────
 # Phase 5 Task 5.2 — picker support routes.
 #
-# Two GET endpoints feed the picker modal with a "Recently used" section
+# Three GET endpoints feed the picker modal with a "Recently used" section
 # and a tag filter dropdown:
 #   GET /api/users/:id/recently-picked-exposures?limit=20
 #   GET /api/experiments/:eid/sample-tags
+#   GET /api/sample-tags              (corpus-wide sibling of the route above)
 #
-# Both are read-only — no with_idempotency, no SSE, no event log row.
+# All are read-only — no with_idempotency, no SSE, no event log row.
 # ─────────────────────────────────────────────────────────────────────────────
 
 @testset "picker routes" begin
@@ -161,6 +162,12 @@ using HimalayaUI
             DBInterface.execute(ctx.db,
                 "INSERT INTO sample_tags (sample_id, key, value, source) VALUES (?, ?, ?, 'manual')",
                 [s_other, "buffer", "PBS"])
+            # Same VALUE "DOPC" as the lipid tag above but a different KEY.
+            # DISTINCT collapses on the (key, value) PAIR, not on value alone,
+            # so this must surface as its own corpus entry.
+            DBInterface.execute(ctx.db,
+                "INSERT INTO sample_tags (sample_id, key, value, source) VALUES (?, ?, ?, 'manual')",
+                [s_other, "buffer", "DOPC"])
             # A duplicate (key, value) on a third sample in experiment 1 —
             # DISTINCT must collapse it to a single corpus entry.
             s3 = HimalayaUI.create_sample!(ctx.db; experiment_id=ctx.experiment_id, name="D3")
@@ -176,8 +183,11 @@ using HimalayaUI
                 # Tags from BOTH experiments are present.
                 @test ("lipid", "DOPC") in pairs
                 @test ("buffer", "PBS") in pairs
+                # Same value, different key → surfaces separately; DISTINCT is
+                # on the (key, value) pair, matching the docstring contract.
+                @test ("buffer", "DOPC") in pairs
                 # DISTINCT: the duplicate (lipid, DOPC) collapses to one entry.
-                @test length(tags) == 2
+                @test length(tags) == 3
             end
         end
     end
