@@ -1,5 +1,5 @@
 import type { QueryClient } from "@tanstack/react-query";
-import type { Comparison } from "../../api";
+import type { Comparison, Series } from "../../api";
 
 // ---------------------------------------------------------------------------
 // Optimistic-id invariant
@@ -49,7 +49,12 @@ export type OpKind =
   // (`comparison_created`, `comparison_submitted`) diverge from the OpKind
   // because a single user gesture (Save) can map to either event.
   // `comparison_delete` maps 1:1 with `comparison_deleted`.
-  | "comparison_save" | "comparison_delete";
+  | "comparison_save" | "comparison_delete"
+  // Series (#166/#167/#168). `series_save` covers create (POST /api/series)
+  // AND recipe edit (PATCH /api/series/:id) — `payload.id` discriminates,
+  // mirroring `comparison_save`. `series_commit` → `series_plate_committed`.
+  // `series_delete` → `series_deleted`.
+  | "series_save" | "series_commit" | "series_delete";
 
 /**
  * A queued operation: its kind, its per-call client_op_id (Stripe-style
@@ -116,7 +121,7 @@ export interface SseEvent {
   client_op_id?: string | null;
   ts?: string;
   payload?: unknown;
-  post_state?: CurationPostState | Comparison;
+  post_state?: CurationPostState | Comparison | Series;
 }
 
 /**

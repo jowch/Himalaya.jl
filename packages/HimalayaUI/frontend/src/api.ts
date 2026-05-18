@@ -665,6 +665,134 @@ export const unpinComparison = (id: number, opts?: AuthOpts) =>
   request<{ comparison_id: number; pinned: boolean }>(
     "DELETE", `/api/comparisons/${id}/pin`, undefined, opts);
 
+// ─── Series (#166 / #167 / #168 — series event-kind cluster) ────────────────
+//
+// Minimal queue-side scaffolding only — the read hooks (useSeriesList /
+// useSeries) and the listing summary type belong to I3.3 (folio UI). See the
+// Decision Record in docs/superpowers/plans/2026-05-18-series-event-kinds.md.
+// Shapes mirror `fetch_series_with_plate` in series.jl.
+
+/** The recipe membership — one `series_samples` row. */
+export interface SeriesSample {
+  id: number;
+  series_id: number;
+  sample_id: number;
+  position: number;
+  pinned: boolean;
+  excluded: boolean;
+}
+
+/** The plate — one `series_members` row. Mirrors `ComparisonMember`. */
+export interface SeriesMember {
+  id: number;
+  series_id: number;
+  exposure_id: number | null;
+  display_order: number;
+  band_height: number;
+  y_offset: number;
+  normalization: string;
+  color_override: string | null;
+  label_override: string | null;
+  q_window_min: number | null;
+  q_window_max: number | null;
+  peak_display: unknown;
+  snapshot: MemberSnapshot | null;
+  is_stale: boolean;
+  created_by: number | null;
+  created_at: string | null;
+}
+
+/** Full nested response from `GET/POST/PATCH /api/series*`. */
+export interface Series {
+  id: number;
+  title: string;
+  description: string | null;
+  content_hash: string;
+  created_by: number | null;
+  created_at: string | null;
+  updated_at: string | null;
+  forked_from_id: number | null;
+  forked_at_hash: string | null;
+  forked_from_title: string | null;
+  view_grouping_mode: string | null;
+  view_show_peak_ticks: boolean | null;
+  view_show_peak_labels: boolean | null;
+  ordering_variable: string | null;
+  order_rule: string;
+  state: string;
+  members: SeriesMember[];
+  samples: SeriesSample[];
+}
+
+/** Per-recipe-row input for `POST /api/series` and `PATCH /api/series/:id`. */
+export interface SeriesSampleInput {
+  sample_id: number;
+  position?: number;
+  pinned?: boolean;
+  excluded?: boolean;
+}
+
+/** Per-plate-member input for `POST /api/series/:id/commit`. Members carry no
+ *  id — the dispatcher mints them. `snapshot` is server-filled when omitted. */
+export interface SeriesMemberInput {
+  exposure_id: number | null;
+  display_order: number;
+  band_height?: number;
+  y_offset?: number;
+  normalization?: string;
+  color_override?: string | null;
+  label_override?: string | null;
+  q_window_min?: number | null;
+  q_window_max?: number | null;
+  peak_display?: unknown;
+  snapshot?: MemberSnapshot;
+}
+
+/** Body for `POST /api/series` (create) and `PATCH /api/series/:id` (recipe). */
+export interface SaveSeriesBody {
+  title: string;
+  description?: string | null;
+  samples: SeriesSampleInput[];
+  ordering_variable?: string | null;
+  order_rule?: "ascending" | "descending" | "manual";
+  forked_from_id?: number | null;
+  forked_at_hash?: string | null;
+  view_grouping_mode?: string | null;
+  view_show_peak_ticks?: boolean | null;
+  view_show_peak_labels?: boolean | null;
+}
+
+/** Body for `POST /api/series/:id/commit`. */
+export interface CommitSeriesPlateBody {
+  members: SeriesMemberInput[];
+  expected_content_hash?: string;
+}
+
+/**
+ * Save a series — create (no id ⇒ `POST /api/series`) or recipe-edit
+ * (id present ⇒ `PATCH /api/series/:id`). Branches on id so the queue
+ * mutator's `request` stays a single-payload call (mirrors `saveComparison`).
+ */
+export async function saveSeries(
+  body: SaveSeriesBody,
+  seriesId: number | undefined,
+  opts?: AuthOpts,
+): Promise<Series> {
+  return seriesId === undefined
+    ? request<Series>("POST", "/api/series", body, opts)
+    : request<Series>("PATCH", `/api/series/${seriesId}`, body, opts);
+}
+
+/** Commit the plate (the old "submit"). A 409 surfaces as a generic `ApiError`;
+ *  the typed conflict modal is I3.5b's concern, not the cluster's. */
+export const commitSeriesPlate = (
+  id: number, body: CommitSeriesPlateBody, opts?: AuthOpts,
+) => request<Series>("POST", `/api/series/${id}/commit`, body, opts);
+
+export const deleteSeries = (id: number, opts?: AuthOpts) =>
+  request<{ id: number; deleted: boolean; event_id: number }>(
+    "DELETE", `/api/series/${id}`, undefined, opts);
+
 // ─── Permalink resolve (Plan §Task 8) ───────────────────────────────────────
 
 export interface ResolveSuccess {

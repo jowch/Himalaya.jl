@@ -86,6 +86,13 @@ export const queryKeys = {
     ["comparison", id ?? "none", "forks"] as const,
   comparisonMessages: (id: number | undefined) =>
     ["comparison", id ?? "none", "messages"] as const,
+  // Series (#166/#167/#168). Detail root `["series", id]`, listing root
+  // `["series-list"]` — distinct roots so a listing invalidation never
+  // clobbers a detail entry (mirrors the comparison/comparisons split). Read
+  // hooks (useSeriesList / useSeries) are added by I3.3.
+  series:     (id: number | undefined) => ["series", id ?? "none"] as const,
+  seriesList: ["series-list"] as const,
+  seriesPins: ["series-pins"] as const,
   // Picker support routes (Plan §Phase 5, Task 5.2). Both are read-only —
   // `recentlyPickedExposures` is per-user across all experiments; `sampleTags`
   // is per-experiment (distinct (key, value) pairs).
