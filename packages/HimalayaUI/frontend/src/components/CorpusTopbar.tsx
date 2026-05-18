@@ -37,7 +37,7 @@ export function CorpusTopbar(): JSX.Element {
         Himalaya <span className="font-semibold text-ink-faint">· SAXS</span>
       </span>
 
-      <nav data-testid="stage-tabs" className="flex gap-0.5">
+      <nav data-testid="stage-tabs" aria-label="Workflow stages" className="flex gap-0.5">
         {STAGES.map((s) => {
           const dot = (
             <span
@@ -53,6 +53,8 @@ export function CorpusTopbar(): JSX.Element {
               key={s.id}
               to={s.to}
               data-testid={`stage-tab-${s.id}`}
+              // Always active in #155 — Samples is the only live stage-tab.
+              // When Index/Series go live (#3.x/#4.x), derive this from the route.
               data-active="true"
               className="px-2.5 py-1.5 rounded text-xs font-semibold uppercase
                          tracking-wide text-ink bg-paper-sunk no-underline"
