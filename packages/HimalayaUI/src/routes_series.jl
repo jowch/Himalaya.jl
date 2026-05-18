@@ -32,4 +32,10 @@ function register_series_routes!()
         out === nothing && return _json_error(404, "series not found")
         HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(out))
     end
+
+    @get "/api/series/{id}/forks" function(req::HTTP.Request, id::Int)
+        db = current_db()
+        rows = forks_of_series(db, id)
+        HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(rows))
+    end
 end

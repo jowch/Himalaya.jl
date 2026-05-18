@@ -91,6 +91,46 @@ function _series_listing_rows(rows)::Vector{Dict{Symbol, Any}}
 end
 
 """
+    forks_of_series(db, series_id) -> Vector{Dict}
+
+Series whose `forked_from_id` points at this id. Same row shape as
+`series_listing`; same `datetime()` `last_event_at` fix (#76).
+"""
+function forks_of_series(db::SQLite.DB, series_id::Integer)::Vector{Dict{Symbol, Any}}
+    rows = Tables.rowtable(DBInterface.execute(db,
+        """SELECT s.id, s.title, s.description, s.content_hash,
+                  s.created_by, s.created_at, s.updated_at,
+                  s.forked_from_id, s.forked_at_hash,
+                  s.view_grouping_mode, s.view_show_peak_ticks, s.view_show_peak_labels,
+                  datetime(COALESCE((SELECT MAX(ua.timestamp) FROM user_actions ua
+                                     WHERE ua.entity_type = 'series'
+                                       AND ua.entity_id = s.id), s.updated_at))
+                      AS last_event_at,
+                  u.username AS author_username,
+                  (SELECT COUNT(*) FROM series_members sm
+                   WHERE sm.series_id = s.id) AS member_count,
+                  (SELECT GROUP_CONCAT(json_extract(sm.snapshot, '\$.confirmed_index.phase')
+                                       || '#' || sm.display_order, '|')
+                   FROM series_members sm
+                   WHERE sm.series_id = s.id
+                     AND json_extract(sm.snapshot, '\$.confirmed_index.phase') IS NOT NULL)
+                      AS member_phases_concat,
+                  EXISTS (
+                    SELECT 1 FROM series_members sm
+                    JOIN exposures e ON e.id = sm.exposure_id
+                    WHERE sm.series_id = s.id
+                      AND sm.exposure_id IS NOT NULL
+                      AND json_extract(sm.snapshot, '\$.analysis_inputs_hash')
+                          IS NOT e.analysis_inputs_hash
+                  ) AS has_stale_members
+           FROM series s
+           LEFT JOIN users u ON u.id = s.created_by
+           WHERE s.forked_from_id = ?
+           ORDER BY last_event_at DESC, s.id DESC""", [Int(series_id)]))
+    _series_listing_rows(rows)
+end
+
+"""
     fetch_series_with_plate(db, series_id) -> Union{Dict, Nothing}
 
 Full nested response shape for `GET /api/series/:id` and the `series_plate_committed`

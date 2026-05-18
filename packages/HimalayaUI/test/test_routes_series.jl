@@ -110,4 +110,30 @@ end
         end
     end
 
+    @testset "GET /api/series/{id}/forks" begin
+        mktempdir() do tmp
+            db = _series_test_db(tmp)
+            with_test_server(db) do port, base
+                # An existing series with no forks → empty array.
+                DBInterface.execute(db, """INSERT INTO series (id, title, state)
+                    VALUES (7, 'parent', 'committed')""")
+                resp0 = HTTP.get("$base/api/series/7/forks", ["X-Username" => "alice"])
+                @test resp0.status == 200
+                @test JSON3.read(resp0.body) == []
+
+                # Add a fork (id 8, forked_from_id = 7) → it now appears.
+                DBInterface.execute(db, """INSERT INTO series
+                    (id, title, state, forked_from_id)
+                    VALUES (8, 'child', 'committed', 7)""")
+                resp = HTTP.get("$base/api/series/7/forks", ["X-Username" => "alice"])
+                @test resp.status == 200
+                forks = JSON3.read(resp.body, Vector{Dict{Symbol, Any}})
+                @test length(forks) == 1
+                @test forks[1][:id] == 8
+                @test forks[1][:forked_from_id] == 7
+            end
+            close(db)
+        end
+    end
+
 end
