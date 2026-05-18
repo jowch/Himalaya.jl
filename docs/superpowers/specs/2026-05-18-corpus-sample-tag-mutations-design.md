@@ -82,6 +82,15 @@ comment recording this verification so a reviewer does not flag it as an
 incomplete conversion. The corpus mutators **do not define
 `synthesizeFromSse`** — it would be unreachable dead code.
 
+This is a **conscious, plan-aware deviation** from the literal wording of
+issue #159 and master plan §11 Phase 1 ("convert `resolveMutator` *and*
+`resolveMutatorForEvent` to tri-scope consistently"). The deviation satisfies
+the *intent* — both functions remain correct for the corpus scope — while a
+literal third arm in `resolveMutatorForEvent` would be wrong code (an
+unreachable branch keyed on a distinction absent from the wire). The
+implementation comment must state this explicitly so the implementation
+reviewer sees the deviation was deliberate and verified, not missed.
+
 ## Design — the six layers
 
 ### Layer 1 — Route emit (`routes_samples.jl`)
@@ -174,7 +183,9 @@ new behaviour that refreshes the contact sheet from a foreign tab.
 
 `CorpusSample extends Sample`, so `tags: SampleTag[]` is already the cache row
 shape; the corpus mutators write the same `SampleTag` shape the experiment
-mutators do. No new type.
+mutators do. No new type. The mutators **mutate the cached sample's `tags`
+array in place** (append / filter) and never reconstruct a `CorpusSample`
+row, so the inherited `q_units` field is preserved untouched.
 
 ## Testing — six-layer contract coverage
 
@@ -182,14 +193,19 @@ Per `docs/contract-testing.md`'s paired-file convention:
 
 | Layer | Test file | Assertion |
 |---|---|---|
-| 1 Route emit | `test/test_routes_samples.jl` | `POST .../tags` with explicit `source`, with default `source`, non-string `source` → 400 |
+| 1 Route emit | `test/test_routes_samples.jl` | `POST .../tags` with explicit `source`, with default `source`, non-string `source` → 400; the emitted `add_tag` event payload is still `{key,value,tag_id,experiment_id}` (regression: payload unchanged) |
 | 1 Response shape | `test/test_route_response_shapes.jl` | 201 body carries the resolved `source` |
-| 2 SSE payload | `frontend/test/queue/sseEventPayload.contract.test.ts` | `add_tag` sample frame still has `{key,value,tag_id,experiment_id}` (regression: payload unchanged) |
-| 3 Foreign merge | `frontend/test/queue/sseEventPayload.contract.test.ts` (or sibling) | foreign `add_tag` / `remove_tag` `entity_type="sample"` frame invalidates **both** `corpusSamples` and `samples(experiment_id)` |
+| 2–4 Foreign merge | `frontend/test/queue/sseEventPayload.contract.test.ts` | foreign `add_tag` / `remove_tag` `entity_type="sample"` frame invalidates **both** `corpusSamples` and `samples(experiment_id)` |
 | — Resolver | `frontend/test/queue/mutatorRegistry.test.ts` | tri-way `resolveMutator` split: `{sampleId}`→corpus, `{experimentId,sampleId}`→experiment, `{sampleId,exposureId}`→exposure, for `add_tag` and `remove_tag` |
 | 5 `onMutate` | `frontend/test/queue/rollbackSymmetry.test.ts` | corpus `onMutate` snapshot ↔ `restore` inverse on the `corpusSamples` cache |
 | 6 `onSuccess` | `frontend/test/queue/cache-shape.test.ts` | corpus `onSuccess` replaces the optimistic placeholder with the canonical `SampleTag` |
+| 5–6 SSE-wins race | `frontend/test/queue/mutatorOnSseWins.test.ts` | corpus `add_tag` own-op confirmed by an SSE frame before HTTP returns: the synth is shaped by `addSampleTagMutator.synthesizeFromSse` (→ `SampleTag`) and the **corpus** mutator's `onSuccess` replaces the placeholder. This cross-mutator synth/`onSuccess` handoff is novel to this issue — no existing kind splits synth and `onSuccess` across two mutators — so it must be pinned. |
 | Auth | `frontend/test/queue/authHeaders.test.ts` | `X-Username` / `X-Client-Id` / `X-Client-Op-Id` propagate through the two new mutators |
+
+The "regression: payload unchanged" assertion lives at the route layer (a
+Julia route test), not in `sseEventPayload.contract.test.ts` — there is no
+pure-Layer-2 frontend test; that file exercises layers 2–4 via
+`applyRemoteToCache`.
 
 ## Acceptance criteria (from #159)
 
