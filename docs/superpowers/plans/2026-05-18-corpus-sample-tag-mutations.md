@@ -633,6 +633,8 @@ Then **replace** the existing `"tolerates undefined/null payload by treating add
   });
 ```
 
+> **Do NOT** add the corpus mutators to the `describe("resolveMutator ↔ resolveMutatorForEvent consistency")` `cases` array at the bottom of this file. That array round-trips every mutator through `resolveMutatorForEvent`, which deliberately stays 2-arm and **never** returns a corpus mutator (it returns `addSampleTagMutator` for `add_tag`/`sample`). A corpus row there would assert `resolveMutatorForEvent("add_tag","sample") === addCorpusSampleTagMutator` and fail. The corpus mutators are intentionally absent from that cross-check — leave the array as it is.
+
 - [ ] **Step 2: Run the test to verify it fails**
 
 Run (from `packages/HimalayaUI/frontend/`): `npm test -- test/queue/mutatorRegistry.test.ts`
