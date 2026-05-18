@@ -15,6 +15,56 @@ using HTTP, JSON3, DBInterface, Tables, Oxygen, SQLite
 # (same module). Phase 3 (#175 / I3.6) relocates them when it deletes that file.
 # ─────────────────────────────────────────────────────────────────────────────
 
+"""
+    _series_samples_error(body) -> Union{HTTP.Response, Nothing}
+
+Type-guard the optional `samples` recipe field shared by `POST /api/series`
+and `PATCH /api/series/{id}`. Returns a 400 `HTTP.Response` when `samples` is
+present-and-non-null but not an array, or when any entry is not an object or
+lacks a non-null `sample_id` (`_series_sample_payload` indexes `sample_id`
+unconditionally — a bad entry must be an uncached 400, not a 500 cached inside
+`with_idempotency`). Returns `nothing` when the field is absent, null, or valid.
+"""
+function _series_samples_error(body)
+    (haskey(body, :samples) && body.samples !== nothing) || return nothing
+    if !(body.samples isa AbstractVector)
+        return _json_error(400, "samples must be an array")
+    end
+    for m in body.samples
+        if !(m isa AbstractDict || m isa JSON3.Object) ||
+                !haskey(m, :sample_id) || m.sample_id === nothing
+            return _json_error(400, "each samples entry requires sample_id")
+        end
+    end
+    nothing
+end
+
+"""
+    _series_recipe_fields_error(body) -> Union{HTTP.Response, Nothing}
+
+Type-guard the optional recipe scalar fields `ordering_variable` and
+`order_rule`, shared by `POST /api/series` and `PATCH /api/series/{id}`. Both
+must be strings when present; `order_rule` must additionally be one of the
+`series.order_rule` CHECK values. Guarding here — before `with_idempotency` and
+before any `String(...)` coercion — keeps a bad type/value an uncached 400
+rather than a `MethodError` 500.
+"""
+function _series_recipe_fields_error(body)
+    if haskey(body, :ordering_variable) && body.ordering_variable !== nothing &&
+            !(body.ordering_variable isa AbstractString)
+        return _json_error(400, "ordering_variable must be a string")
+    end
+    if haskey(body, :order_rule) && body.order_rule !== nothing
+        if !(body.order_rule isa AbstractString)
+            return _json_error(400, "order_rule must be a string")
+        end
+        if !(String(body.order_rule) in ("ascending", "descending", "manual"))
+            return _json_error(400, "order_rule must be ascending, descending, or manual")
+        end
+    end
+    nothing
+end
+
 function register_series_routes!()
     # ── Listing ─────────────────────────────────────────────────────────────
 
@@ -50,21 +100,10 @@ function register_series_routes!()
         if !haskey(body, :title)
             return _json_error(400, "missing required field: title")
         end
-        if haskey(body, :samples) && body.samples !== nothing
-            if !(body.samples isa AbstractVector)
-                return _json_error(400, "samples must be an array")
-            end
-            # `sample_id` is required per entry — `_series_sample_payload`
-            # indexes it unconditionally, and a recipe row with no target is
-            # unrenderable. Reject here so a bad entry is an uncached 400, not
-            # a 500 cached inside with_idempotency.
-            for m in body.samples
-                if !(m isa AbstractDict || m isa JSON3.Object) ||
-                        !haskey(m, :sample_id) || m.sample_id === nothing
-                    return _json_error(400, "each samples entry requires sample_id")
-                end
-            end
-        end
+        serr = _series_samples_error(body)
+        serr === nothing || return serr
+        rerr = _series_recipe_fields_error(body)
+        rerr === nothing || return rerr
         verr = _view_fields_error(body)
         verr === nothing || return verr
 
@@ -96,7 +135,7 @@ function register_series_routes!()
             res = DBInterface.execute(db, "INSERT INTO series DEFAULT VALUES")
             new_id = Int(DBInterface.lastrowid(res))
 
-            samples_payload = [_series_sample_payload(m) for m in samples_in]
+            samples_payload = [_series_sample_payload(m, i - 1) for (i, m) in enumerate(samples_in)]
             payload = Dict{Symbol, Any}(
                 :title                 => title,
                 :description           => description,
@@ -135,21 +174,10 @@ function register_series_routes!()
         # View-choice fields are NOT part of the recipe-edit contract (they are
         # set by POST /api/series and POST /api/series/{id}/commit), so there is
         # deliberately no `_view_fields_error` guard here.
-        if haskey(body, :samples) && body.samples !== nothing
-            if !(body.samples isa AbstractVector)
-                return _json_error(400, "samples must be an array")
-            end
-            # `sample_id` is required per entry — `_series_sample_payload`
-            # indexes it unconditionally, and a recipe row with no target is
-            # unrenderable. Reject here so a bad entry is an uncached 400, not
-            # a 500 cached inside with_idempotency.
-            for m in body.samples
-                if !(m isa AbstractDict || m isa JSON3.Object) ||
-                        !haskey(m, :sample_id) || m.sample_id === nothing
-                    return _json_error(400, "each samples entry requires sample_id")
-                end
-            end
-        end
+        serr = _series_samples_error(body)
+        serr === nothing || return serr
+        rerr = _series_recipe_fields_error(body)
+        rerr === nothing || return rerr
         ordering_variable = haskey(body, :ordering_variable) && body.ordering_variable !== nothing ?
                             String(body.ordering_variable) : nothing
         order_rule = haskey(body, :order_rule) && body.order_rule !== nothing ?
@@ -163,7 +191,7 @@ function register_series_routes!()
             if !series_exists(db, id)
                 return _json_error(404, "series not found")
             end
-            samples_payload = [_series_sample_payload(m) for m in samples_in]
+            samples_payload = [_series_sample_payload(m, i - 1) for (i, m) in enumerate(samples_in)]
             payload = Dict{Symbol, Any}(
                 :ordering_variable => ordering_variable,
                 :order_rule        => order_rule,

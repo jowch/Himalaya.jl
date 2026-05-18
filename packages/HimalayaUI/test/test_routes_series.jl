@@ -207,6 +207,18 @@ end
                 @test length(ev) == 1
                 @test ev[1].action == "series_created"
 
+                # Lock the _series_sample_payload shape in the durable event
+                # payload — #166 builds its dispatcher against this shape.
+                evrow = Tables.rowtable(DBInterface.execute(db,
+                    "SELECT payload FROM user_actions WHERE entity_type='series' AND entity_id=?",
+                    [new_id]))[1]
+                evpayload = JSON3.read(String(evrow.payload))
+                @test length(evpayload.samples) == 1
+                @test evpayload.samples[1].sample_id == 100
+                @test evpayload.samples[1].position == 0
+                @test evpayload.samples[1].pinned == false
+                @test evpayload.samples[1].excluded == false
+
                 # An empty samples array is a valid draft — the deliberate
                 # departure from comparisons, which rejects empty members.
                 respEmpty = HTTP.post("$base/api/series",

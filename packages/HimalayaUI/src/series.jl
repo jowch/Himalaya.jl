@@ -324,17 +324,19 @@ end
 # ─────────────────────────────────────────────────────────────────────────────
 
 """
-    _series_sample_payload(m_in) -> Dict{Symbol, Any}
+    _series_sample_payload(m_in, default_position) -> Dict{Symbol, Any}
 
 Normalize one recipe entry from a request body into the `series_samples`
 payload shape. `sample_id` is required (a recipe row with no target is
-unrenderable); `position` / `pinned` / `excluded` default to `0` / `false` /
-`false`.
+unrenderable). `position` defaults to `default_position` — the caller passes
+the entry's 0-based index, so a `samples` array with omitted positions yields
+sequential positions rather than every entry colliding on `position = 0`
+(`UNIQUE(series_id, position)`). `pinned` / `excluded` default to `false`.
 """
-function _series_sample_payload(m_in)
+function _series_sample_payload(m_in, default_position::Integer)
     Dict{Symbol, Any}(
         :sample_id => Int(m_in[:sample_id]),
-        :position  => haskey(m_in, :position) ? Int(m_in[:position]) : 0,
+        :position  => haskey(m_in, :position) ? Int(m_in[:position]) : Int(default_position),
         :pinned    => haskey(m_in, :pinned)   ? Bool(m_in[:pinned])   : false,
         :excluded  => haskey(m_in, :excluded) ? Bool(m_in[:excluded]) : false,
     )
