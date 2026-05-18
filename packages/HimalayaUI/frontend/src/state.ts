@@ -21,6 +21,25 @@ import { emitReplaceNext } from "./lib/url/emitMode";
 export const LS_KEY = "himalaya-ui:state";
 
 export type PageId = "index" | "compare" | "inspect";
+
+/** The set of `activePage` values that name a live legacy surface. As each
+ *  surface is retired (#1.7 Inspect, #3.6 Compare, #4.4 Index), shrink this
+ *  set — `coerceActivePage` then redirects a stale persisted value. */
+export const VALID_PAGE_IDS: ReadonlySet<PageId> = new Set<PageId>([
+  "index",
+  "inspect",
+  "compare",
+]);
+
+/** Coerce an arbitrary persisted value to a valid `PageId`. A value naming a
+ *  surface that no longer exists (or a non-string) falls back to "index", so
+ *  it can never strand the user on an empty `PageBody` (issue-#77 class). */
+export function coerceActivePage(raw: unknown): PageId {
+  return typeof raw === "string" && VALID_PAGE_IDS.has(raw as PageId)
+    ? (raw as PageId)
+    : "index";
+}
+
 export type ThemeId = "dark" | "light";
 export type NavModalStep = "experiment" | "sample";
 
@@ -526,6 +545,19 @@ export const useAppState = create<AppState>()(
         tutorialSeen: s.tutorialSeen,
         theme: s.theme,
       }),
+      merge: mergePersistedState,
     },
   ),
 );
+
+/** persist `merge` — replicates zustand's default shallow merge
+ *  ({ ...current, ...persisted }), then coerces a stale persisted
+ *  `activePage` so it never enters the store. Adding a `merge` callback is
+ *  NOT a `persist` version bump — `version` stays 3. */
+export function mergePersistedState(
+  persisted: unknown,
+  current: AppState,
+): AppState {
+  const merged = { ...current, ...(persisted as Partial<AppState> | undefined) };
+  return { ...merged, activePage: coerceActivePage(merged.activePage) };
+}
