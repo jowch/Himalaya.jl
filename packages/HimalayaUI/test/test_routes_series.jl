@@ -40,6 +40,43 @@ end
         end
     end
 
+    @testset "GET /api/series/{id}" begin
+        mktempdir() do tmp
+            db = _series_test_db(tmp)
+            with_test_server(db) do port, base
+                # Missing series → 404.
+                resp404 = HTTP.get("$base/api/series/999", ["X-Username" => "alice"];
+                                   status_exception = false)
+                @test resp404.status == 404
+
+                # Seed a series with one recipe row and one plate member.
+                DBInterface.execute(db, """INSERT INTO series
+                    (id, title, state) VALUES (5, 'S5', 'draft')""")
+                DBInterface.execute(db, """INSERT INTO series_samples
+                    (series_id, sample_id, position, pinned, excluded)
+                    VALUES (5, 100, 0, 1, 0)""")
+                DBInterface.execute(db, """INSERT INTO series_members
+                    (series_id, exposure_id, display_order, snapshot, created_at)
+                    VALUES (5, 1000, 0, '{"effective_peaks":[],"confirmed_index":null,"analysis_inputs_hash":null}', '2026-05-01T00:00:00.000Z')""")
+
+                resp = HTTP.get("$base/api/series/5", ["X-Username" => "alice"])
+                @test resp.status == 200
+                got = JSON3.read(resp.body, Dict{Symbol, Any})
+                @test got[:id] == 5
+                @test got[:title] == "S5"
+                @test got[:state] == "draft"
+                @test length(got[:members]) == 1
+                @test got[:members][1]["exposure_id"] == 1000
+                @test length(got[:samples]) == 1
+                @test got[:samples][1]["sample_id"] == 100
+                @test got[:samples][1]["pinned"] == true
+                @test got[:order_rule] == "manual"
+                @test got[:members][1]["is_stale"] == false
+            end
+            close(db)
+        end
+    end
+
     @testset "series_listing — last_event_at sort is recency-correct (#76)" begin
         mktempdir() do tmp
             db = _series_test_db(tmp)

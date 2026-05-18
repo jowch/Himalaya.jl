@@ -23,4 +23,13 @@ function register_series_routes!()
         rows = series_listing(db)
         HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(rows))
     end
+
+    # ── Detail ──────────────────────────────────────────────────────────────
+
+    @get "/api/series/{id}" function(req::HTTP.Request, id::Int)
+        db = current_db()
+        out = fetch_series_with_plate(db, id)
+        out === nothing && return _json_error(404, "series not found")
+        HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(out))
+    end
 end
