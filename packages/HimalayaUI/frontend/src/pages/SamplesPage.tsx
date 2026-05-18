@@ -92,11 +92,22 @@ export function SamplesPage(): JSX.Element {
           fixture={CONTACT_SHEET_FIXTURE}
           fallback={<HintText>Loading samples…</HintText>}
         >
-          <div data-testid="contact-sheet-rows">
-            {filtered.map((s) => (
-              <ContactSheetRow key={s.id} sample={s} />
-            ))}
-          </div>
+          {filtered.length === 0 ? (
+            <div
+              data-testid="samples-empty"
+              className="px-4 py-8 text-sm text-ink-faint"
+            >
+              {beamtime === undefined
+                ? "No samples in the corpus yet."
+                : "No samples in this beamtime."}
+            </div>
+          ) : (
+            <div data-testid="contact-sheet-rows">
+              {filtered.map((s) => (
+                <ContactSheetRow key={s.id} sample={s} />
+              ))}
+            </div>
+          )}
         </Skeleton>
       )}
 

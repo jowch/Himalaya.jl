@@ -267,6 +267,13 @@ describe("SamplesPage", () => {
     renderSamplesPage();
     expect(await screen.findByTestId("samples-error")).toBeInTheDocument();
   });
+
+  it("shows an empty state when the beamtime filter matches no samples", async () => {
+    mockFetch(corpusRoutes());
+    renderSamplesPage("/samples?beamtime=999");
+    expect(await screen.findByTestId("samples-empty")).toBeInTheDocument();
+    expect(screen.queryByTestId("contact-sheet-rows")).toBeNull();
+  });
 });
 
 describe("contact sheet — ?beamtime= round-trip", () => {
