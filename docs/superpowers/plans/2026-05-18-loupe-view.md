@@ -21,7 +21,7 @@
 - **Skeleton gating:** always `query.isLoading`, never `isPending` (`docs/boneyard.md` Rule 1).
 - **TypeScript:** optional props are modelled `T | null` or with explicit `undefined` in the union (`exactOptionalPropertyTypes` is on).
 - **Palette:** the loupe mounts under `CorpusShell` — style it with the corpus "Print" palette (`paper`, `paper-sunk`, `ink`, `ink-soft`, `ink-faint`) plus the shared `accent` / `success` / `border` tokens, mirroring `CorpusShell.tsx` / `SamplesPage.tsx`. The Tailwind classes in each task are a working starting point; tests assert on `data-testid` / text, never class strings, so palette refinement never breaks a test.
-- Run `npx tsc --noEmit` before each commit; it must be clean.
+- **Type-check:** run `npx tsc --noEmit` before each commit. The project has *pre-existing* errors in legacy test files that rely on vitest globals (`Cannot find name 'test'/'expect'`) — these are unrelated to this feature. Where a task step says `npx tsc --noEmit` → "Expected: clean", read it as **"no error line references a file this task creates or modifies"** (`LoupePage.tsx`, `LoupeFrame.tsx`, `LoupeSidebar.tsx`, `AppRoutes.tsx`, `LoupePage.test.tsx`, `LoupeFrame.test.tsx`, `LoupeSidebar.test.tsx`). The loupe test files use explicit `import { … } from "vitest"`, so they stay error-free. Task 8's `npm run build` (`tsc -p tsconfig.build.json`, src-scoped) is the real build gate.
 
 ## File structure
 
