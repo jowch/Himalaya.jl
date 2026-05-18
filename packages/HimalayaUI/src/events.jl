@@ -790,9 +790,40 @@ function _update_view_for_series_created!(db, entity_id, payload, event_id)
     return sid
 end
 
-# Stub — full implementation lands in Task 2 (#166, series_recipe_updated).
+"""
+    _update_view_for_series_recipe_updated!(db, entity_id, payload, event_id)
+
+`series_recipe_updated` dispatcher (#166). Pure-replace: updates the recipe
+scalars (`ordering_variable`, `order_rule`) on the `series` row, then
+`DELETE`s every `series_samples` row for the series and re-`INSERT`s the full
+payload snapshot. Never touches `content_hash` (recipe is excluded from the
+hash — master plan §5.1), `state`, or `series_members`. `ordering_variable`
+is a bare write (a PATCH is a full recipe replace, so an omitted field nulls
+it); `order_rule` is `COALESCE`d because the column is `NOT NULL` and
+`CHECK`-constrained.
+"""
 function _update_view_for_series_recipe_updated!(db, entity_id, payload, event_id)
-    error("series_recipe_updated dispatcher not yet implemented")
+    sid     = Int(entity_id)
+    now_str = comparison_now_iso()
+    ordering_var = haskey(payload, :ordering_variable) && payload.ordering_variable !== nothing ?
+                   String(payload.ordering_variable) : nothing
+    order_rule   = haskey(payload, :order_rule) && payload.order_rule !== nothing ?
+                   String(payload.order_rule) : nothing
+
+    DBInterface.execute(db,
+        """UPDATE series
+           SET ordering_variable = ?,
+               order_rule = COALESCE(?, order_rule),
+               updated_at = ?
+           WHERE id = ?""",
+        [ordering_var, order_rule, now_str, sid])
+
+    DBInterface.execute(db, "DELETE FROM series_samples WHERE series_id = ?", [sid])
+    samples = haskey(payload, :samples) ? payload.samples : []
+    for s in samples
+        _insert_series_sample!(db, sid, s)
+    end
+    return nothing
 end
 
 """

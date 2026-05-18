@@ -286,15 +286,18 @@ end
                     status_exception = false)
                 @test resp400b.status == 400
 
-                # #166: series_recipe_updated dispatcher is a throwing stub until
-                # Task 2. The route returns 500 (cached via with_idempotency).
+                # Well-formed recipe edit → 200; a user_actions row written.
                 resp = HTTP.patch("$base/api/series/12",
                     ["X-Username" => "alice", "Content-Type" => "application/json"],
                     JSON3.write(Dict(
                         :order_rule => "descending",
-                        :samples => [Dict(:sample_id => 100, :position => 0)]));
-                    status_exception = false)
-                @test resp.status == 500
+                        :samples => [Dict(:sample_id => 100, :position => 0)])))
+                @test resp.status == 200
+                @test JSON3.read(resp.body, Dict{Symbol, Any})[:id] == 12
+                ev = Tables.rowtable(DBInterface.execute(db,
+                    "SELECT action FROM user_actions WHERE entity_type='series' AND entity_id=12"))
+                @test length(ev) == 1
+                @test ev[1].action == "series_recipe_updated"
             end
             close(db)
         end
@@ -512,6 +515,57 @@ end
                 end
                 @test length(frames) == 1
                 @test occursin("\"entity_type\":\"series\"", frames[1])
+            end
+            close(db)
+        end
+    end
+
+    @testset "PATCH /api/series/{id} — series_recipe_updated pure-replaces the recipe" begin
+        mktempdir() do tmp
+            db = _series_test_db(tmp)
+            DBInterface.execute(db,
+                "INSERT INTO samples (id, experiment_id, name) VALUES (101, 10, 'sB')")
+            with_test_server(db) do port, base
+                # Create a draft with one recipe row.
+                createBody = JSON3.write(Dict(
+                    :title   => "Ramp",
+                    :samples => [Dict(:sample_id => 100, :position => 0)],
+                ))
+                created = JSON3.read(HTTP.post("$base/api/series",
+                    ["X-Username" => "alice", "Content-Type" => "application/json"],
+                    createBody).body, Dict{Symbol, Any})
+                sid = created[:id]
+
+                # PATCH with a completely different recipe — pure-replace, not a diff.
+                patchBody = JSON3.write(Dict(
+                    :ordering_variable => "temperature",
+                    :order_rule        => "ascending",
+                    :samples           => [
+                        Dict(:sample_id => 101, :position => 0),
+                        Dict(:sample_id => 100, :position => 1),
+                    ],
+                ))
+                resp = HTTP.patch("$base/api/series/$sid",
+                    ["X-Username" => "alice", "Content-Type" => "application/json"], patchBody)
+                @test resp.status == 200
+                got = JSON3.read(resp.body, Dict{Symbol, Any})
+                @test got[:ordering_variable] == "temperature"
+                @test got[:order_rule] == "ascending"
+                @test length(got[:samples]) == 2
+                @test got[:samples][1]["sample_id"] == 101   # ordered by position
+                @test got[:samples][2]["sample_id"] == 100
+                @test got[:state] == "draft"                  # recipe edit never commits
+                @test got[:content_hash] == ""                # recipe edit never hashes
+
+                # rebuild_views_from_log! round-trip: fold series_created THEN
+                # series_recipe_updated from empty; final state == post-PATCH.
+                DBInterface.execute(db, "DELETE FROM series_samples WHERE series_id = ?", [sid])
+                DBInterface.execute(db, "DELETE FROM series WHERE id = ?", [sid])
+                HimalayaUI.rebuild_views_from_log!(db, sid; entity_type = "series")
+                refold = HimalayaUI.fetch_series_with_plate(db, sid)
+                @test length(refold[:samples]) == 2
+                @test refold[:samples][1][:sample_id] == 101
+                @test refold[:ordering_variable] == "temperature"
             end
             close(db)
         end
