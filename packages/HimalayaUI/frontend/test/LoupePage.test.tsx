@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { makeClient } from "./test-utils";
@@ -26,6 +26,12 @@ vi.mock("../src/queries", () => ({
   useSelectExposure: () => ({
     mutate: h.setRepMutate, isPending: false, error: null, reset: () => {},
   }),
+}));
+
+// DetectorImage touches fetch / createImageBitmap / OffscreenCanvas (absent in
+// JSDOM); mock it — LoupePage's behaviour does not depend on its render.
+vi.mock("../src/components/DetectorImage", () => ({
+  DetectorImage: () => <div data-testid="mock-detector-image" />,
 }));
 
 function sample(over: Partial<CorpusSample> = {}): CorpusSample {
@@ -71,5 +77,52 @@ describe("LoupePage — identity", () => {
     expect(screen.getByTestId("loupe-page")).toBeInTheDocument();
     expect(screen.getByText("DOPE 80%")).toBeInTheDocument();
     expect(screen.getByText(/Beamtime March/)).toBeInTheDocument();
+  });
+});
+
+describe("LoupePage — composition", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    h.corpusQ = { data: [sample()], isLoading: false };
+    h.exposuresQ = {
+      data: [
+        exposure({ id: 100, status: "accepted" }),
+        exposure({ id: 101, status: "rejected" }),
+      ],
+      isLoading: false,
+    };
+    h.experimentQ = { data: { id: 3, name: "Beamtime March", path: "/x" } };
+  });
+
+  it("renders the frame and sidebar for a known sample", () => {
+    renderAt("/samples/loupe/7");
+    expect(screen.getByTestId("loupe-frame")).toBeInTheDocument();
+    expect(screen.getByTestId("loupe-sidebar")).toBeInTheDocument();
+  });
+
+  it("default-selects the first accepted exposure", () => {
+    renderAt("/samples/loupe/7");
+    // Exposure 100 is accepted, 101 rejected → 100 is the default.
+    expect(screen.getByTestId("loupe-meta-frame")).toHaveTextContent("1 of 2");
+    expect(screen.getByTestId("loupe-meta-status")).toHaveTextContent("accepted");
+  });
+
+  it("flips the active exposure when a strip thumbnail is clicked", () => {
+    renderAt("/samples/loupe/7");
+    fireEvent.click(screen.getByTestId("thumb-cell-101"));
+    expect(screen.getByTestId("loupe-meta-frame")).toHaveTextContent("2 of 2");
+    expect(screen.getByTestId("loupe-meta-status")).toHaveTextContent("rejected");
+  });
+
+  it("shows a not-found panel for a sample id absent from the corpus", () => {
+    renderAt("/samples/loupe/999");
+    expect(screen.getByTestId("loupe-not-found")).toBeInTheDocument();
+    expect(screen.queryByTestId("loupe-frame")).not.toBeInTheDocument();
+  });
+
+  it("navigates back to /samples when the back button is clicked", () => {
+    renderAt("/samples/loupe/7");
+    fireEvent.click(screen.getByTestId("loupe-back"));
+    expect(screen.getByTestId("samples-marker")).toBeInTheDocument();
   });
 });
