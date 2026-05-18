@@ -67,14 +67,16 @@ export function AppRoutes(): JSX.Element {
     document.documentElement.className =
       theme === "light" ? "theme-light" : "";
     return () => {
-      document.documentElement.className = "";
+      document.documentElement.className = ""; // defensive: StrictMode double-invoke / symmetry; not load-bearing
     };
   }, [theme]);
 
   // Global keyboard shortcuts — hoisted above both shell bodies so they work
   // under either. `useSamples(experimentId ?? 0)` matches the prior AppShell
   // call site; the `,`/`.` sample-step shortcut needs the active
-  // experiment's samples.
+  // experiment's samples. These shortcuts are now genuinely app-wide: they
+  // fire under the corpus shell too (e.g. on /samples). #160 (contact sheet)
+  // should be aware of this when landing — shortcuts may need guarding there.
   const samplesQ = useSamples(experimentId ?? 0);
   useGlobalShortcuts(experimentId === undefined ? undefined : samplesQ.data);
 

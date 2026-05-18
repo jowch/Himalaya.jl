@@ -5,8 +5,8 @@
  * (formerly AppShell.test.tsx — AppShell is no longer a router).
  */
 import { describe, it, expect, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { MemoryRouter, useNavigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useAppState } from "../src/state";
 import { AppRoutes } from "../src/components/AppRoutes";
@@ -65,6 +65,48 @@ describe("AppRoutes — nav-bridge shell selection", () => {
     renderRoutes("/samples");
     await screen.findByTestId("corpus-shell");
     expect(useAppState.getState().staleUrlContext).toBeNull();
+  });
+
+  it("remounts the correct shell when navigating across the corpus/legacy boundary", async () => {
+    // Headline structural invariant: AppShell unmounts when you cross to a
+    // corpus route, and remounts when you cross back to a legacy route.
+    function NavButtons(): JSX.Element {
+      const navigate = useNavigate();
+      return (
+        <>
+          <button data-testid="go-samples" onClick={() => navigate("/samples")}>samples</button>
+          <button data-testid="go-index" onClick={() => navigate("/index")}>index</button>
+        </>
+      );
+    }
+
+    const qc = makeQc();
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={["/samples"]}>
+          <NavButtons />
+          <AppRoutes />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    // Start: corpus shell is up, legacy shell is absent.
+    expect(await screen.findByTestId("corpus-shell")).toBeInTheDocument();
+    expect(screen.queryByTestId("app-shell")).toBeNull();
+
+    // Cross to a legacy route — AppShell should mount, CorpusShell should unmount.
+    fireEvent.click(screen.getByTestId("go-index"));
+    await waitFor(() => {
+      expect(screen.getByTestId("app-shell")).toBeInTheDocument();
+      expect(screen.queryByTestId("corpus-shell")).toBeNull();
+    });
+
+    // Cross back to corpus route — CorpusShell should remount, AppShell should unmount.
+    fireEvent.click(screen.getByTestId("go-samples"));
+    await waitFor(() => {
+      expect(screen.getByTestId("corpus-shell")).toBeInTheDocument();
+      expect(screen.queryByTestId("app-shell")).toBeNull();
+    });
   });
 });
 
