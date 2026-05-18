@@ -35,6 +35,7 @@ import { deleteComparisonMutator } from "../../src/lib/queue/mutators/deleteComp
 import {
   updateSampleMutator,
   addSampleTagMutator, removeSampleTagMutator,
+  addCorpusSampleTagMutator, removeCorpusSampleTagMutator,
   addExposureTagMutator, removeExposureTagMutator,
   postSampleMessageMutator,
   setExposureStatusMutator, selectExposureMutator,
@@ -249,6 +250,34 @@ const SPECS: Spec[] = [
         kind: "remove_tag", clientOpId: "op",
         payload: { tagId: 1 },
         sampleId: 10, experimentId: 1, username: "alice", clientId: "tab",
+        tagId: 1,
+      } as any, qc);
+      ctx.restore();
+    },
+  },
+  {
+    name: "addCorpusSampleTag",
+    keys: [queryKeys.corpusSamples],
+    seed: (qc) => qc.setQueryData(queryKeys.corpusSamples, [SAMPLE]),
+    run: (qc) => {
+      const ctx = addCorpusSampleTagMutator.onMutate({
+        kind: "add_tag", clientOpId: "op",
+        payload: { key: "x", value: "y" },
+        sampleId: 10, username: "alice", clientId: "tab",
+        key: "x", value: "y",
+      } as any, qc);
+      ctx.restore();
+    },
+  },
+  {
+    name: "removeCorpusSampleTag",
+    keys: [queryKeys.corpusSamples],
+    seed: (qc) => qc.setQueryData(queryKeys.corpusSamples, [SAMPLE]),
+    run: (qc) => {
+      const ctx = removeCorpusSampleTagMutator.onMutate({
+        kind: "remove_tag", clientOpId: "op",
+        payload: { tagId: 1 },
+        sampleId: 10, username: "alice", clientId: "tab",
         tagId: 1,
       } as any, qc);
       ctx.restore();
