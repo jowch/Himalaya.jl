@@ -1739,6 +1739,16 @@ end
             INSERT INTO series_pins (user_id, series_id, pinned_at)
             VALUES (?, ?, '2026-05-17T00:00:00.000Z')""", [user_id, sid])
 
+        # series_messages.created_at uses DATETIME DEFAULT CURRENT_TIMESTAMP —
+        # the space-separated `YYYY-MM-DD HH:MM:SS` form, never the ISO
+        # `…THH:MM:SS.sssZ` form series.created_at carries (issue #76 caveat,
+        # documented on migrate_series!; locked here so a future column-type
+        # change is caught).
+        msg_ts = String(only(Tables.rowtable(DBInterface.execute(db,
+            "SELECT created_at FROM series_messages WHERE series_id = ?",
+            [sid]))).created_at)
+        @test occursin(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$", msg_ts)
+
         DBInterface.execute(db, "DELETE FROM series WHERE id = ?", [sid])
 
         for t in ("series_samples", "series_members", "series_messages", "series_pins")
