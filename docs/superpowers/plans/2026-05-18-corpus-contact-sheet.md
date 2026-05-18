@@ -512,8 +512,13 @@ describe("SamplesPage", () => {
   it("names the active experiment in the header when filtered", async () => {
     mockFetch(corpusRoutes());
     renderSamplesPage("/samples?beamtime=2");
-    expect(await screen.findByTestId("samples-scope")).toHaveTextContent(
-      "APS Jul 2026",
+    // waitFor (not findByTestId): the element exists immediately with the
+    // `experiment 2` fallback; we must poll until the experiments query
+    // resolves and the header text updates to the real name.
+    await waitFor(() =>
+      expect(screen.getByTestId("samples-scope")).toHaveTextContent(
+        "APS Jul 2026",
+      ),
     );
   });
 
