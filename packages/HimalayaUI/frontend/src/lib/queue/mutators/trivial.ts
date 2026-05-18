@@ -292,10 +292,10 @@ export const removeExposureTagMutator: Mutator<RemoveExposureTagInput, RemoveExp
 // not the per-experiment queryKeys.samples(experimentId). These mutators are
 // separate from addSampleTagMutator/removeSampleTagMutator so the existing
 // experiment-scoped path is untouched. The op scope carries `sampleId` only —
-// no `experimentId` and no `exposureId`. The tri-scope `resolveMutator`
-// discriminator that routes such an op to these mutators is wired in a later
-// task of #159; until then these mutators are reachable only via their
-// `useQueueMutation` hooks. They define no `synthesizeFromSse`: the own-op
+// no `experimentId` and no `exposureId` — which is how the tri-scope
+// `resolveMutator` discriminator routes such an op here (it tests exposure
+// first, then experiment, then falls through to corpus). They define no
+// `synthesizeFromSse`: the own-op
 // SSE-wins response shape is produced by addSampleTagMutator.synthesizeFromSse
 // via resolveMutatorForEvent (shared SampleTag shape) — see the comment in
 // mutatorRegistry.ts.
