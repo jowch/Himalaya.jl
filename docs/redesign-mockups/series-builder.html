@@ -1,0 +1,964 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Series builder ("The Print")</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet" />
+<style>
+  /*
+   * Series builder — the consolidated mockup. North star: "The Print."
+   * The darkroom (triage + indexing) develops the signal; this surface is
+   * where the developed result is printed. Light, paper, the figure as the
+   * object. Phase colour carries the surface; UI chrome stays in ink.
+   *
+   * Consolidates three earlier exploration files. The offset waterfall is
+   * the default; the heatmap is a representation toggle; full-bleed is the
+   * rail's collapsed state (not a separate variant); peak tracking is an
+   * optional annotation layer. The "drenched" colour-field treatment was
+   * dropped — phase colour already carries the plate without it.
+   */
+  :root {
+    /* Paper + ink. Warm neutrals, tinted to hue ~80. Never #fff / #000. */
+    --paper:        oklch(0.978 0.006 85);
+    --paper-sunk:   oklch(0.951 0.008 84);   /* rail, recessed wells */
+    --plate:        oklch(0.992 0.004 90);   /* the figure plate itself */
+    --ink:          oklch(0.265 0.013 68);
+    --ink-soft:     oklch(0.467 0.012 70);
+    --ink-faint:    oklch(0.640 0.010 74);
+    --hair:         oklch(0.882 0.008 80);
+    --hair-strong:  oklch(0.806 0.010 78);
+
+    /* ── Shared phase palette ──────────────────────────────────────────
+       Byte-identical across all surface mockups (sample-table,
+       focus-workspace, series-builder, folio, scoping). The JS COL map
+       below mirrors these literals for SVG fills, where color-mix needs
+       a concrete value. */
+    --pn3m:  oklch(0.585 0.150 58);    /* amber */
+    --lam:   oklch(0.505 0.150 264);   /* periwinkle-indigo */
+    --im3m:  oklch(0.520 0.120 162);   /* sage */
+    --hex:   oklch(0.540 0.130 350);   /* rose */
+
+    /* One UI accent: a terracotta clear of every phase hue. Interaction only. */
+    --accent: oklch(0.555 0.150 38);
+
+    --radius: 7px;
+    --rail-w: 336px;
+    --ease:   cubic-bezier(.22,1,.36,1);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+    font-size: 13px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+
+  .app { height: 100%; display: flex; flex-direction: column; }
+
+  /* ── Top bar ───────────────────────────────────────────────────────── */
+  .topbar {
+    height: 56px; flex-shrink: 0;
+    display: flex; align-items: center; gap: 16px;
+    padding: 0 24px;
+    border-bottom: 1px solid var(--hair);
+  }
+  /* corpus-level wordmark — experiment is a facet now, not the crumb */
+  .wordmark {
+    font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase;
+    font-weight: 700; color: var(--ink);
+  }
+  .wordmark .tail { color: var(--ink-faint); font-weight: 600; }
+  .topbar .spacer { flex: 1; }
+  .stage-tabs { display: flex; gap: 2px; }
+  .stage-tab {
+    font-size: 11px; letter-spacing: 0.04em; font-weight: 600;
+    text-transform: uppercase; color: var(--ink-faint);
+    padding: 6px 11px; border-radius: 5px; cursor: pointer;
+    border: none; background: none;
+  }
+  .stage-tab.is-active { color: var(--ink); background: var(--paper-sunk); }
+  .stage-tab .dot {
+    display: inline-block; width: 5px; height: 5px; border-radius: 50%;
+    background: var(--hair-strong); margin-right: 6px; vertical-align: 1px;
+  }
+  .stage-tab.is-active .dot { background: var(--accent); }
+  .btn {
+    font-family: inherit; font-size: 12px; font-weight: 600;
+    border-radius: 6px; cursor: pointer; padding: 7px 13px;
+    border: 1px solid var(--hair-strong); background: var(--plate);
+    color: var(--ink); transition: background-color 130ms var(--ease);
+  }
+  .btn:hover { background: var(--paper-sunk); }
+  .btn-solid { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+  .btn-solid:hover { background: oklch(0.36 0.013 68); }
+
+  /* ── Main split ────────────────────────────────────────────────────── */
+  .main {
+    flex: 1; display: grid;
+    grid-template-columns: 1fr var(--rail-w); min-height: 0;
+    transition: grid-template-columns 240ms var(--ease);
+  }
+  /* full-bleed: the rail folds away and the plate owns the screen */
+  .app.railup .main { grid-template-columns: 1fr 0px; }
+
+  /* ── The stage: the figure as a printed plate ──────────────────────── */
+  .stage {
+    overflow: auto; padding: 40px 48px 56px;
+    display: flex; flex-direction: column; align-items: center;
+  }
+  .plate {
+    width: 100%; max-width: 1180px;
+    background: var(--plate);
+    border: 1px solid var(--hair);
+    border-radius: 4px;
+    box-shadow: 0 1px 1px rgba(60,52,40,.04), 0 18px 40px -20px rgba(60,52,40,.22);
+    padding: 34px 40px 26px;
+    transition: max-width 240ms var(--ease);
+  }
+  .app.railup .plate { max-width: 1336px; }
+  .fig-kicker {
+    display: flex; align-items: baseline; gap: 12px; margin-bottom: 7px;
+  }
+  .fig-num {
+    font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
+    font-weight: 700; color: var(--accent);
+  }
+  .fig-tags { display: flex; gap: 6px; }
+  .fig-tag {
+    font-size: 10.5px; letter-spacing: 0.04em; color: var(--ink-faint);
+    border: 1px solid var(--hair); border-radius: 999px; padding: 1px 9px;
+  }
+  .fig-tag.hidden { display: none; }
+  .fig-title {
+    font-family: "Newsreader", Georgia, serif;
+    font-size: 33px; line-height: 1.13; font-weight: 500;
+    letter-spacing: -0.005em; color: var(--ink); max-width: 26ch;
+  }
+  .fig-title .editable {
+    border-bottom: 1.5px dotted var(--hair-strong); padding-bottom: 1px;
+  }
+  .fig-sub {
+    margin-top: 9px; font-size: 13.5px; color: var(--ink-soft);
+    max-width: 64ch;
+  }
+  .fig-sub em { font-style: normal; color: var(--pn3m); font-weight: 600; }
+  .fig-sub em.b { color: var(--lam); font-weight: 600; }
+
+  .plot-wrap { margin: 16px 0 4px; }
+  svg .axis-line { stroke: var(--hair-strong); stroke-width: 1; }
+  svg .tick { stroke: var(--hair); stroke-width: 1; }
+  svg .tick-txt { fill: var(--ink-faint); font-size: 11px; }
+  svg .tick-txt.mono { font-family: ui-monospace, Menlo, monospace; }
+  svg .axis-title { fill: var(--ink-soft); font-size: 12px; font-weight: 600; }
+  svg .trace-fill { opacity: 0.085; }
+  svg .trace-line { fill: none; stroke-width: 1.9; stroke-linejoin: round; }
+  svg .trace-base { stroke: var(--hair); stroke-width: 1; stroke-dasharray: 2 3; }
+  svg .dose-lab { fill: var(--ink); font-size: 12.5px; font-weight: 600; }
+  svg .dose-sub {
+    fill: var(--ink-faint); font-size: 10.5px;
+    font-family: ui-monospace, Menlo, monospace;
+  }
+  svg .peak-tick { stroke-width: 1.5; stroke-linecap: round; }
+  svg .miller { font-size: 9px; font-family: ui-monospace, Menlo, monospace; }
+  svg .track-line { fill: none; stroke-width: 1; stroke-dasharray: 1 3; }
+  svg .track-lab {
+    font-size: 9.5px; font-weight: 600;
+    font-family: ui-monospace, Menlo, monospace;
+  }
+  svg .hm-cell { shape-rendering: crispEdges; }
+  svg .trace-grp { transition: opacity 120ms ease-out; }
+  svg.dim-others .trace-grp:not(.hot) { opacity: 0.26; }
+  svg .region-rule { stroke-width: 2.5; stroke-linecap: round; }
+  svg .region-lab {
+    font-size: 10.5px; font-weight: 700;
+    letter-spacing: 0.06em; text-transform: uppercase;
+  }
+  svg .phase-chip-tx { font-size: 11px; font-weight: 700; font-family: ui-monospace, Menlo, monospace; }
+
+  .fig-caption {
+    margin-top: 12px; padding-top: 13px; border-top: 1px solid var(--hair);
+    font-size: 12px; color: var(--ink-soft); line-height: 1.55;
+    display: flex; gap: 7px;
+  }
+  .fig-caption .cap-n { font-weight: 700; color: var(--ink); }
+  .fig-caption .illus { color: var(--ink-faint); }
+
+  /* ── The rail: quiet editing margin ────────────────────────────────── */
+  .rail {
+    background: var(--paper-sunk);
+    border-left: 1px solid var(--hair);
+    overflow-y: auto; overflow-x: hidden; padding: 18px 20px 28px;
+    display: flex; flex-direction: column; gap: 20px;
+  }
+  .app.railup .rail { border-left-color: transparent; }
+  .rail-head {
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .rail-head .rh-t {
+    font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase;
+    font-weight: 700; color: var(--ink-faint);
+  }
+  .railtog {
+    font-family: inherit; cursor: pointer; line-height: 1;
+    border: 1px solid var(--hair-strong); background: var(--plate);
+    color: var(--ink-soft); border-radius: 5px;
+    width: 24px; height: 24px; font-size: 13px;
+    transition: color 120ms var(--ease), background-color 120ms var(--ease);
+  }
+  .railtog:hover { color: var(--ink); background: var(--paper-sunk); }
+  /* floating tab to bring the rail back when collapsed */
+  .railback {
+    display: none; position: fixed; right: 0; top: 50%;
+    transform: translateY(-50%);
+    background: var(--plate); border: 1px solid var(--hair-strong);
+    border-right: none; border-radius: 8px 0 0 8px;
+    padding: 15px 8px; cursor: pointer; z-index: 6;
+    color: var(--ink-soft); font-size: 13px;
+    box-shadow: -4px 0 16px -10px rgba(60,52,40,.4);
+  }
+  .app.railup .railback { display: flex; align-items: center; gap: 7px; }
+  .railback:hover { color: var(--ink); }
+  .railback .rb-t {
+    font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase;
+    font-weight: 700; writing-mode: vertical-rl;
+  }
+
+  .rail-sec { display: flex; flex-direction: column; gap: 9px; }
+  .rail-h {
+    font-size: 10.5px; letter-spacing: 0.09em; text-transform: uppercase;
+    font-weight: 700; color: var(--ink-faint);
+  }
+  /* The confident-expert auto-group note */
+  .autogroup {
+    background: var(--plate); border: 1px solid var(--hair);
+    border-radius: var(--radius); padding: 13px 14px;
+  }
+  .autogroup .ag-top {
+    display: flex; align-items: center; gap: 7px; margin-bottom: 6px;
+  }
+  .autogroup .ag-spark { width: 15px; height: 15px; flex-shrink: 0; }
+  .autogroup .ag-title { font-size: 12px; font-weight: 700; color: var(--ink); }
+  .autogroup .ag-body { font-size: 12px; color: var(--ink-soft); line-height: 1.5; }
+  .autogroup .ag-body b { color: var(--ink); font-weight: 600; }
+  .autogroup .ag-act { margin-top: 9px; display: flex; gap: 12px; }
+  .link-btn {
+    font-family: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer;
+    background: none; border: none; padding: 0; color: var(--accent);
+  }
+  .link-btn.muted { color: var(--ink-faint); }
+  .link-btn:hover { text-decoration: underline; }
+
+  .field {
+    background: var(--plate); border: 1px solid var(--hair-strong);
+    border-radius: 6px; padding: 8px 11px;
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 12.5px; font-weight: 600; cursor: pointer;
+  }
+  .field .chev { color: var(--ink-faint); }
+  .field .val { color: var(--ink); }
+
+  .slider-row { display: flex; flex-direction: column; gap: 7px; }
+  .slider-top { display: flex; justify-content: space-between; align-items: baseline; }
+  .slider-top .v { font-size: 12px; font-weight: 600; color: var(--ink); }
+  input[type=range] {
+    -webkit-appearance: none; appearance: none; width: 100%; height: 3px;
+    background: var(--hair-strong); border-radius: 999px; outline: none;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 16px; height: 16px; border-radius: 50%;
+    background: var(--accent); cursor: pointer;
+    border: 2.5px solid var(--plate);
+    box-shadow: 0 0 0 1px var(--hair-strong);
+  }
+  .seg {
+    display: flex; background: var(--plate);
+    border: 1px solid var(--hair-strong); border-radius: 6px; overflow: hidden;
+  }
+  .seg button {
+    flex: 1; font-family: inherit; font-size: 11.5px; font-weight: 600;
+    padding: 6px 0; border: none; background: none; cursor: pointer;
+    color: var(--ink-faint);
+    transition: background-color 120ms var(--ease), color 120ms var(--ease);
+  }
+  .seg button.on { background: var(--ink); color: var(--paper); }
+
+  /* The annotation toggle — a quiet switch, not a checkbox */
+  .check { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+  .check input {
+    -webkit-appearance: none; appearance: none;
+    width: 32px; height: 18px; border-radius: 999px; flex-shrink: 0;
+    background: var(--hair-strong); position: relative; cursor: pointer;
+    transition: background-color 130ms var(--ease);
+  }
+  .check input::after {
+    content: ""; position: absolute; width: 14px; height: 14px;
+    border-radius: 50%; background: var(--plate); top: 2px; left: 2px;
+    box-shadow: 0 1px 2px rgba(60,52,40,.3);
+    transition: transform 130ms var(--ease);
+  }
+  .check input:checked { background: var(--accent); }
+  .check input:checked::after { transform: translateX(14px); }
+  .check .ck-lab { font-size: 12.5px; font-weight: 600; color: var(--ink); }
+  .row-hide { display: none !important; }
+
+  /* Trace list */
+  .tlist { display: flex; flex-direction: column; gap: 3px; }
+  .trow {
+    display: flex; align-items: center; gap: 9px;
+    padding: 7px 8px; border-radius: 6px; cursor: grab;
+    border: 1px solid transparent;
+  }
+  .trow:hover { background: var(--plate); border-color: var(--hair); }
+  .grip {
+    color: var(--hair-strong); font-size: 13px; line-height: 1;
+    letter-spacing: -2px; flex-shrink: 0;
+  }
+  .trow:hover .grip { color: var(--ink-faint); }
+  .tdot { width: 9px; height: 9px; border-radius: 2.5px; flex-shrink: 0; }
+  .tinfo { flex: 1; min-width: 0; }
+  .tname { font-size: 12px; font-weight: 600; color: var(--ink); }
+  .tdose {
+    font-size: 10.5px; color: var(--ink-faint);
+    font-family: ui-monospace, Menlo, monospace;
+  }
+  .tphase {
+    font-size: 10px; font-weight: 700; font-family: ui-monospace, Menlo, monospace;
+    padding: 1px 6px; border-radius: 4px;
+  }
+  .rail-foot { margin-top: 2px; display: flex; gap: 8px; }
+  .rail-foot .btn { flex: 1; text-align: center; }
+  .hint { font-size: 11px; color: var(--ink-faint); line-height: 1.5; }
+
+  /* Floating offset dock — the one live control kept reachable in full-bleed */
+  .dock {
+    display: none; position: fixed; right: 26px; bottom: 24px;
+    background: var(--plate); border: 1px solid var(--hair-strong);
+    border-radius: 11px; padding: 12px 16px;
+    box-shadow: 0 8px 26px -10px rgba(60,52,40,.34);
+    align-items: center; gap: 14px; z-index: 5;
+  }
+  .dock.show { display: flex; }
+  .dock .d-lab {
+    font-size: 10px; letter-spacing: 0.08em;
+    text-transform: uppercase; font-weight: 700; color: var(--ink-faint);
+  }
+  .dock input[type=range] { width: 128px; }
+  .dock .d-val {
+    font-size: 11.5px; font-weight: 700;
+    font-family: ui-monospace, Menlo, monospace; min-width: 40px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition-duration: 1ms !important; }
+  }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+
+  <!-- ── Top bar ─────────────────────────────────────────────────────── -->
+  <div class="topbar">
+    <span class="wordmark">Himalaya <span class="tail">· SAXS</span></span>
+    <div class="stage-tabs">
+      <button class="stage-tab"><span class="dot"></span>Samples</button>
+      <button class="stage-tab"><span class="dot"></span>Index</button>
+      <button class="stage-tab is-active"><span class="dot"></span>Series</button>
+    </div>
+    <span class="spacer"></span>
+    <button class="btn">Duplicate series</button>
+    <button class="btn btn-solid">Export figure</button>
+  </div>
+
+  <div class="main">
+    <!-- ── The figure plate ──────────────────────────────────────────── -->
+    <div class="stage">
+      <div class="plate">
+        <div class="fig-kicker">
+          <span class="fig-num">Series</span>
+          <div class="fig-tags">
+            <span class="fig-tag">SSRL Apr 2026</span>
+            <span class="fig-tag">6 samples</span>
+            <span class="fig-tag" id="tag-scale">log q</span>
+            <span class="fig-tag" id="tag-repr">offset waterfall</span>
+            <span class="fig-tag hidden" id="tag-track">tracked</span>
+          </div>
+        </div>
+        <h1 class="fig-title"><span class="editable">LL37 titration of lipid 1&#8209;2</span></h1>
+        <p class="fig-sub">
+          Integration traces stacked by peptide:lipid ratio. Adding LL37 drives a
+          <em>Pn3m</em> cubic phase through coexistence into a
+          <em class="b">lamellar</em> phase.
+        </p>
+
+        <div class="plot-wrap">
+          <svg id="plot" viewBox="0 0 1200 792" width="100%" role="img"
+               aria-label="Series of six SAXS integration traces ordered by LL37 ratio"></svg>
+        </div>
+
+        <div class="fig-caption">
+          <span class="cap-n">Fig.</span>
+          <span id="caption"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── The editing rail ──────────────────────────────────────────── -->
+    <aside class="rail">
+
+      <div class="rail-head">
+        <span class="rh-t">Compose</span>
+        <button class="railtog" id="railtog" title="Collapse the rail — full-bleed">&#8250;</button>
+      </div>
+
+      <div class="autogroup">
+        <div class="ag-top">
+          <svg class="ag-spark" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M8 1.4l1.7 4.2 4.5.3-3.5 2.9 1.2 4.4L8 10.9 4.1 13.2l1.2-4.4L1.8 5.9l4.5-.3z"
+                  fill="var(--accent)"/>
+          </svg>
+          <span class="ag-title">Auto-grouped</span>
+        </div>
+        <div class="ag-body">
+          Himalaya read <b>6 samples</b> as one series from their names, ordered by
+          <b>LL37 : lipid ratio</b>.
+        </div>
+        <div class="ag-act">
+          <button class="link-btn">Confirm series</button>
+          <button class="link-btn muted">Adjust</button>
+        </div>
+      </div>
+
+      <div class="rail-sec">
+        <div class="rail-h">Ordering variable</div>
+        <div class="field"><span class="val">LL37 : lipid ratio</span><span class="chev">&#9662;</span></div>
+        <div class="hint">Confirmed once, then reused by every series that needs it.</div>
+      </div>
+
+      <div class="rail-sec">
+        <div class="rail-h">Representation</div>
+        <div class="seg" id="repr-seg">
+          <button data-repr="waterfall" class="on">Waterfall</button>
+          <button data-repr="heatmap">Heatmap</button>
+        </div>
+        <div class="hint" id="repr-hint">Traces stacked with an offset — the publication figure.</div>
+      </div>
+
+      <div class="rail-sec">
+        <div class="rail-h">Display</div>
+        <div class="slider-row" id="offset-row">
+          <div class="slider-top">
+            <span>Trace offset</span>
+            <span class="v"><span id="offset-val">1.20</span>&times;</span>
+          </div>
+          <input type="range" id="offset" min="0.4" max="1.4" step="0.05" value="1.2" />
+        </div>
+        <div class="seg" id="scale-seg">
+          <button data-scale="log" class="on">log q</button>
+          <button data-scale="lin">linear q</button>
+        </div>
+        <label class="check" id="track-row">
+          <input type="checkbox" id="track" />
+          <span class="ck-lab">Track reflections</span>
+        </label>
+        <div class="hint row-hide" id="track-hint">
+          Links each Miller order across the traces that carry it — reads best when peaks align.
+        </div>
+      </div>
+
+      <div class="rail-sec">
+        <div class="rail-h">Traces &mdash; drag to reorder</div>
+        <div class="tlist" id="tlist"></div>
+      </div>
+
+      <div class="rail-foot">
+        <button class="btn">+ Add sample</button>
+        <button class="btn">Copy as PNG</button>
+      </div>
+      <div class="hint">
+        The plate above is the figure as it will export. What you compose is what you publish.
+      </div>
+
+    </aside>
+  </div>
+
+  <!-- floating tab: restore the rail from full-bleed -->
+  <div class="railback" id="railback" title="Show the editing rail">
+    <span>&#8249;</span><span class="rb-t">Compose</span>
+  </div>
+
+  <!-- floating dock: keep offset reachable while reading full-bleed -->
+  <div class="dock" id="dock">
+    <span class="d-lab">Offset</span>
+    <input type="range" id="offset-dock" min="0.4" max="1.4" step="0.05" value="1.2" />
+    <span class="d-val" id="offset-dock-val">1.20&times;</span>
+  </div>
+</div>
+
+<script>
+/* ── Phase palette literals ───────────────────────────────────────────────
+   Mirror of the :root phase vars. SVG fills built with color-mix need a
+   concrete colour value, so the renderers read from here, not from var(). */
+const COL = {
+  pn3m:  'oklch(0.585 0.150 58)',
+  lam:   'oklch(0.505 0.150 264)',
+  im3m:  'oklch(0.520 0.120 162)',
+  hex:   'oklch(0.540 0.130 350)',
+  plate: 'oklch(0.992 0.004 90)',
+  faint: 'oklch(0.640 0.010 74)',
+};
+
+/* ── Phase reflection ratios (q relative to the first peak) ───────────── */
+const PHASES = {
+  Pn3m:     { ratios: [1, 1.2247, 1.4142, 1.7321, 2.0],
+              miller: ['110','111','200','211','220'],
+              color: COL.pn3m },
+  Lamellar: { ratios: [1, 2, 3, 4, 5],
+              miller: ['001','002','003','004','005'],
+              color: COL.lam },
+};
+const PHASE_LABEL = { Pn3m: 'Pn3m', Lamellar: 'Lamellar' };
+const PHASE_SHORT = { Pn3m: 'Pn3m', Lamellar: 'Lam' };
+
+/* ── The series: bottom (no peptide) to top (most peptide) ────────────── */
+/* Sample ids are the same nine-sample LL37 titration the sample table and
+   focus workspace use — clicking Samples → Index → Series stays one
+   corpus. This series is the six samples on the 1-2 lipid line. */
+const SERIES = [
+  { sample: 'smp_04', dose: '1 : 0',    name: 'Lipid 1-2, no LL37',
+    comps: [{ phase:'Pn3m', q0:0.0444, amp:1.00 }] },
+  { sample: 'smp_07', dose: '1 : 0.25', name: 'Lipid 1-2 + LL37 1:0.25',
+    comps: [{ phase:'Pn3m', q0:0.0447, amp:0.86 }] },
+  { sample: 'smp_09', dose: '1 : 0.5',  name: 'Lipid 1-2 + LL37 1:0.5',
+    comps: [{ phase:'Pn3m', q0:0.0451, amp:0.52 },
+            { phase:'Lamellar', q0:0.1030, amp:0.34 }] },
+  { sample: 'smp_12', dose: '1 : 1',    name: 'Lipid 1-2 + LL37 1:1',
+    comps: [{ phase:'Pn3m', q0:0.0455, amp:0.21 },
+            { phase:'Lamellar', q0:0.1042, amp:0.72 }] },
+  { sample: 'smp_15', dose: '1 : 2',    name: 'Lipid 1-2 + LL37 1:2',
+    comps: [{ phase:'Lamellar', q0:0.1050, amp:0.94 }] },
+  { sample: 'smp_18', dose: '1 : 4',    name: 'Lipid 1-2 + LL37 1:4',
+    comps: [{ phase:'Lamellar', q0:0.1056, amp:1.00 }] },
+];
+/* dominant + minor phase per trace, sorted by amplitude */
+SERIES.forEach(t => {
+  const s = t.comps.slice().sort((a,b)=>b.amp-a.amp);
+  t.dom = s[0].phase;
+  t.coexist = s.length > 1;
+  t.chip = t.coexist
+    ? PHASE_SHORT[s[0].phase] + ' + ' + PHASE_SHORT[s[1].phase]
+    : PHASE_LABEL[t.dom];
+});
+
+/* ── Plot geometry ────────────────────────────────────────────────────── */
+const VB = { w: 1200, h: 792 };
+const M  = { l: 196, r: 156, t: 30, b: 66 };
+const PW = VB.w - M.l - M.r;
+const PH = VB.h - M.t - M.b;
+const Q  = { min: 0.014, max: 0.46 };
+const AMP = 72;          /* curve amplitude, px */
+const STEP_BASE = 80;    /* baseline gap at offset 1.0 */
+
+/* ── View state ───────────────────────────────────────────────────────── */
+let repr      = 'waterfall';   /* 'waterfall' | 'heatmap' */
+let scaleMode = 'log';         /* 'log' | 'lin' */
+let trackOn   = false;
+
+/* q ↔ x in the current scale; one mapping, both representations use it */
+const xOf = q => scaleMode === 'log'
+  ? M.l + (Math.log(q) - Math.log(Q.min)) /
+          (Math.log(Q.max) - Math.log(Q.min)) * PW
+  : M.l + (q - Q.min) / (Q.max - Q.min) * PW;
+const qAtFrac = f => scaleMode === 'log'
+  ? Math.exp(Math.log(Q.min) + f * (Math.log(Q.max) - Math.log(Q.min)))
+  : Q.min + f * (Q.max - Q.min);
+
+/* intensity model: gently decaying background + sharp Bragg peaks.
+   peaksOnly drops the form-factor decay (the heatmap maps peaks, not slope). */
+function intensity(q, comps, peaksOnly) {
+  let v = peaksOnly ? 0 : 0.30 * Math.pow(Q.min / q, 0.92);
+  for (const c of comps) {
+    const P = PHASES[c.phase];
+    P.ratios.forEach((r, i) => {
+      const qp = c.q0 * r;
+      const h  = c.amp * Math.pow(0.58, i);
+      const sg = 0.028 * qp + 0.0005;
+      v += h * Math.exp(-0.5 * Math.pow((q - qp) / sg, 2));
+    });
+  }
+  return v;
+}
+
+const NS = 'http://www.w3.org/2000/svg';
+const el = (n, a) => { const e = document.createElementNS(NS, n);
+  for (const k in a) e.setAttribute(k, a[k]); return e; };
+
+/* ── Shared q-axis ────────────────────────────────────────────────────── */
+function drawQAxis(svg) {
+  const axisY = M.t + PH;
+  svg.appendChild(el('line', { class:'axis-line',
+    x1:M.l, y1:axisY, x2:M.l+PW, y2:axisY }));
+  const ticks = scaleMode === 'log'
+    ? [0.02,0.03,0.05,0.07,0.1,0.15,0.2,0.3,0.4]
+    : [0.05,0.1,0.15,0.2,0.25,0.3,0.35,0.4,0.45];
+  ticks.forEach(q => {
+    if (q < Q.min || q > Q.max) return;
+    const x = xOf(q);
+    svg.appendChild(el('line', { class:'tick', x1:x, y1:M.t, x2:x, y2:axisY }));
+    const tx = el('text', { class:'tick-txt mono', x:x, y:axisY+18,
+      'text-anchor':'middle' });
+    tx.textContent = q.toString();
+    svg.appendChild(tx);
+  });
+  const at = el('text', { class:'axis-title', x:M.l+PW, y:axisY+40,
+    'text-anchor':'end' });
+  at.textContent = 'scattering vector  q  (Å⁻¹)';
+  svg.appendChild(at);
+}
+
+/* ── Waterfall: the offset stack, the default and the export figure ───── */
+function renderWaterfall(svg) {
+  const offset = parseFloat(document.getElementById('offset').value);
+  const step   = STEP_BASE * offset;
+  const baseY  = i => (M.t + PH - 54) - i * step;
+
+  /* sample each trace; share one normaliser so heights are comparable */
+  const NSAMP = 480;
+  const qs = [];
+  for (let s = 0; s <= NSAMP; s++) qs.push(qAtFrac(s / NSAMP));
+  let gmax = 0;
+  const curves = SERIES.map(t => {
+    const ys = qs.map(q => intensity(q, t.comps, false));
+    gmax = Math.max(gmax, ...ys);
+    return ys;
+  });
+  const hScale = AMP / gmax;
+
+  drawQAxis(svg);
+
+  /* transition bracket (left margin) */
+  [{lab:'Pn3m',        from:0, to:1, color:COL.pn3m},
+   {lab:'coexistence', from:2, to:3, color:COL.faint},
+   {lab:'Lamellar',    from:4, to:5, color:COL.lam}].forEach(rg => {
+    const yTop = baseY(rg.to) - AMP * 0.72;
+    const yBot = baseY(rg.from) + 8;
+    const x = M.l - 152;
+    svg.appendChild(el('line', { class:'region-rule',
+      x1:x, y1:yTop, x2:x, y2:yBot, stroke:rg.color }));
+    const my = (yTop + yBot) / 2;
+    const lab = el('text', { class:'region-lab',
+      x:x-9, y:my, fill:rg.color, 'text-anchor':'middle',
+      transform:`rotate(-90 ${x-9} ${my})` });
+    lab.textContent = rg.lab;
+    svg.appendChild(lab);
+  });
+
+  /* traces, bottom to top */
+  SERIES.forEach((t, i) => {
+    const y0 = baseY(i);
+    const ys = curves[i];
+    const g  = el('g', { class:'trace-grp' });
+    const col = PHASES[t.dom].color;     /* line follows the dominant phase */
+
+    g.appendChild(el('line', { class:'trace-base',
+      x1:M.l, y1:y0, x2:M.l+PW, y2:y0 }));
+
+    let d = '';
+    qs.forEach((q, s) => {
+      const x = xOf(q), y = y0 - ys[s] * hScale;
+      d += (s === 0 ? 'M' : 'L') + x.toFixed(1) + ' ' + y.toFixed(1) + ' ';
+    });
+    g.appendChild(el('path', { class:'trace-fill',
+      d: d + `L${M.l+PW} ${y0} L${M.l} ${y0} Z`, fill: col }));
+    g.appendChild(el('path', { class:'trace-line', d:d, stroke:col }));
+
+    /* peak ticks; Miller on the top (lamellar) trace only */
+    const showMiller = (i === SERIES.length - 1);
+    t.comps.forEach(c => {
+      const P = PHASES[c.phase];
+      P.ratios.forEach((r, k) => {
+        if (k >= 4) return;
+        const qp = c.q0 * r;
+        if (qp < Q.min || qp > Q.max) return;
+        const x = xOf(qp);
+        const th = 5 + 4 * Math.pow(0.6, k);
+        g.appendChild(el('line', { class:'peak-tick',
+          x1:x, y1:y0+2, x2:x, y2:y0+2+th, stroke:P.color,
+          opacity: 0.55 + 0.4 * Math.pow(0.72, k) }));
+        if (showMiller) {
+          const ml = el('text', { class:'miller', x:x, y:y0+2+th+10,
+            'text-anchor':'middle', fill:P.color });
+          ml.textContent = P.miller[k];
+          g.appendChild(ml);
+        }
+      });
+    });
+
+    /* left: dose label + sample id */
+    const dl = el('text', { class:'dose-lab', x:M.l-22, y:y0-1,
+      'text-anchor':'end' });
+    dl.textContent = t.dose;
+    g.appendChild(dl);
+    const ds = el('text', { class:'dose-sub', x:M.l-22, y:y0+13,
+      'text-anchor':'end' });
+    ds.textContent = t.sample;
+    g.appendChild(ds);
+
+    /* right: phase chip */
+    appendChip(g, t, M.l + PW + 16, y0 - 9);
+
+    g.addEventListener('mouseenter', () => {
+      svg.classList.add('dim-others'); g.classList.add('hot');
+    });
+    g.addEventListener('mouseleave', () => {
+      svg.classList.remove('dim-others'); g.classList.remove('hot');
+    });
+    svg.appendChild(g);
+  });
+
+  /* optional annotation layer: link each reflection across the traces that
+     carry its phase, so its migration with dose reads as a line. */
+  if (trackOn) {
+    ['Pn3m','Lamellar'].forEach(phase => {
+      const rows = SERIES.map((t,i)=>({t,i,c:t.comps.find(c=>c.phase===phase)}))
+                         .filter(r => r.c);
+      if (rows.length < 2) return;
+      PHASES[phase].ratios.forEach((r, k) => {
+        if (k >= 4) return;
+        const pts = rows.map(({i,c}) => {
+          const qp = c.q0 * r;
+          if (qp < Q.min || qp > Q.max) return null;
+          return xOf(qp).toFixed(1) + ' ' + (baseY(i)+2).toFixed(1);
+        }).filter(Boolean);
+        if (pts.length < 2) return;
+        svg.appendChild(el('polyline', { class:'track-line',
+          points:pts.join(' '), stroke:PHASES[phase].color, opacity:0.72 }));
+      });
+      /* d-spacing callout at the phase's strongest trace */
+      const strong = rows.slice().sort((a,b)=>b.c.amp-a.c.amp)[0];
+      const dsp = 2 * Math.PI / strong.c.q0;
+      const tl = el('text', { class:'track-lab',
+        x:xOf(strong.c.q0), y:baseY(strong.i)-AMP-4, 'text-anchor':'middle',
+        fill:PHASES[phase].color });
+      tl.textContent = 'd ≈ ' + dsp.toFixed(0) + ' Å';
+      svg.appendChild(tl);
+    });
+  }
+}
+
+/* ── Heatmap: the same series as a q–ratio intensity map ──────────────── */
+function renderHeatmap(svg) {
+  const rowH = PH / SERIES.length;
+  const NB = 200;
+
+  /* bin in scale-space so cells are equal width; share one normaliser */
+  let gmax = 0;
+  const rows = SERIES.map(t => {
+    const cells = [];
+    for (let b = 0; b < NB; b++) {
+      const f0 = b/NB, f1 = (b+1)/NB;
+      const v = intensity(qAtFrac((f0+f1)/2), t.comps, true);
+      gmax = Math.max(gmax, v);
+      cells.push({ f0, f1, v });
+    }
+    return cells;
+  });
+
+  drawQAxis(svg);
+
+  SERIES.forEach((t, i) => {
+    const yTop = M.t + (SERIES.length - 1 - i) * rowH;   /* sample 0 at bottom */
+    const col = PHASES[t.dom].color;
+    const g = el('g', { class:'trace-grp' });
+
+    rows[i].forEach(cell => {
+      const x0 = M.l + cell.f0 * PW, x1 = M.l + cell.f1 * PW;
+      const frac = Math.pow(cell.v / gmax, 0.62);
+      g.appendChild(el('rect', { class:'hm-cell', x:x0, y:yTop+2,
+        width:(x1-x0)+0.6, height:rowH-4,
+        fill:`color-mix(in oklab, ${col} ${(6+frac*94).toFixed(0)}%, ${COL.plate})` }));
+    });
+    /* row keyline */
+    g.appendChild(el('rect', { x:M.l, y:yTop+2, width:PW, height:rowH-4,
+      fill:'none', stroke:'var(--hair)', 'stroke-width':1 }));
+
+    /* left: dose label + sample id */
+    const cy = yTop + rowH/2;
+    const dl = el('text', { class:'dose-lab', x:M.l-22, y:cy-1,
+      'text-anchor':'end' });
+    dl.textContent = t.dose;
+    g.appendChild(dl);
+    const ds = el('text', { class:'dose-sub', x:M.l-22, y:cy+13,
+      'text-anchor':'end' });
+    ds.textContent = t.sample;
+    g.appendChild(ds);
+
+    /* right: phase chip */
+    appendChip(g, t, M.l + PW + 16, cy - 9);
+
+    g.addEventListener('mouseenter', () => {
+      svg.classList.add('dim-others'); g.classList.add('hot');
+    });
+    g.addEventListener('mouseleave', () => {
+      svg.classList.remove('dim-others'); g.classList.remove('hot');
+    });
+    svg.appendChild(g);
+  });
+
+  /* ordering-variable axis, up the left margin */
+  const oy = M.t + PH/2;
+  const ol = el('text', { class:'axis-title', x:M.l-128, y:oy,
+    'text-anchor':'middle', transform:`rotate(-90 ${M.l-128} ${oy})` });
+  ol.textContent = 'LL37 : lipid ratio  →';
+  svg.appendChild(ol);
+}
+
+/* phase chip — drawn the same way in both representations */
+function appendChip(g, t, cx, cy) {
+  const col = PHASES[t.dom].color;
+  const chipW = t.chip.length * 6.7 + 16;
+  g.appendChild(el('rect', { x:cx, y:cy, width:chipW, height:18, rx:4,
+    fill:col, opacity:0.12 }));
+  g.appendChild(el('rect', { x:cx, y:cy, width:chipW, height:18, rx:4,
+    fill:'none', stroke:col, 'stroke-width':1, opacity:0.5 }));
+  const ct = el('text', { class:'phase-chip-tx', x:cx+chipW/2, y:cy+13,
+    'text-anchor':'middle', fill:col });
+  ct.textContent = t.chip;
+  g.appendChild(ct);
+}
+
+/* ── Compose ──────────────────────────────────────────────────────────── */
+const CAP = {
+  waterfall: offset =>
+    `Six 1D integrations, vertically offset by ${offset.toFixed(2)}× the band height, ` +
+    `ordered by LL37:lipid ratio. Peak ticks coloured by indexed phase; ` +
+    `Miller indices labelled on the lamellar trace.` +
+    (trackOn ? ` Tracking lines follow each reflection as it migrates with dose.` : ``),
+  heatmap: () =>
+    `The same six samples as a q–ratio intensity map: each row is one sample in its ` +
+    `phase hue, brightness is scattered intensity, so peak migration reads as a streak.`,
+};
+const ILLUS = ` <span class="illus">Ratios 1:0 and 1:1 are measured (smp_04, smp_12); ` +
+  `intermediate ratios shown illustratively.</span>`;
+
+function render() {
+  const svg = document.getElementById('plot');
+  svg.innerHTML = '';
+  const offset = parseFloat(document.getElementById('offset').value);
+
+  if (repr === 'heatmap') renderHeatmap(svg);
+  else renderWaterfall(svg);
+
+  /* figure tags */
+  document.getElementById('tag-scale').textContent =
+    scaleMode === 'log' ? 'log q' : 'linear q';
+  document.getElementById('tag-repr').textContent =
+    repr === 'heatmap' ? 'intensity map' : 'offset waterfall';
+  document.getElementById('tag-track').classList.toggle('hidden',
+    !(repr === 'waterfall' && trackOn));
+
+  /* caption */
+  document.getElementById('caption').innerHTML =
+    (repr === 'heatmap' ? CAP.heatmap() : CAP.waterfall(offset)) + ILLUS;
+}
+
+/* ── Rail: trace list (top of the waterfall first) ────────────────────── */
+function buildList() {
+  const tl = document.getElementById('tlist');
+  tl.innerHTML = '';
+  SERIES.slice().reverse().forEach(t => {
+    const row = document.createElement('div');
+    row.className = 'trow';
+    const color = PHASES[t.dom].color;
+    row.innerHTML =
+      '<span class="grip">&#8942;&#8942;</span>' +
+      '<span class="tdot" style="background:'+color+'"></span>' +
+      '<span class="tinfo"><div class="tname">'+t.name+'</div>' +
+      '<div class="tdose">'+t.sample+' &middot; '+t.dose+'</div></span>' +
+      '<span class="tphase" style="color:'+color+';background:color-mix(in oklch,'+
+        color+' 13%,transparent)">'+t.chip+'</span>';
+    tl.appendChild(row);
+  });
+}
+
+/* ── Wiring ───────────────────────────────────────────────────────────── */
+const app = document.getElementById('app');
+
+/* representation toggle — waterfall-only controls fold away for the heatmap */
+function setRepr(name) {
+  repr = name;
+  document.querySelectorAll('#repr-seg button').forEach(b =>
+    b.classList.toggle('on', b.dataset.repr === name));
+  const wf = (name === 'waterfall');
+  document.getElementById('offset-row').classList.toggle('row-hide', !wf);
+  document.getElementById('track-row').classList.toggle('row-hide', !wf);
+  document.getElementById('track-hint').classList.toggle('row-hide', !(wf && trackOn));
+  document.getElementById('repr-hint').textContent = wf
+    ? 'Traces stacked with an offset — the publication figure.'
+    : 'One row per sample; brightness is intensity. Good for weak peaks.';
+  syncDock();
+  render();
+}
+document.getElementById('repr-seg').addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (b) setRepr(b.dataset.repr);
+});
+
+/* offset — rail slider and full-bleed dock kept in sync */
+function syncOffset(v) {
+  document.getElementById('offset').value = v;
+  document.getElementById('offset-dock').value = v;
+  document.getElementById('offset-val').textContent = (+v).toFixed(2);
+  document.getElementById('offset-dock-val').innerHTML = (+v).toFixed(2) + '&times;';
+}
+['offset','offset-dock'].forEach(id => {
+  document.getElementById(id).addEventListener('input', e => {
+    syncOffset(e.target.value); render();
+  });
+});
+
+/* scale toggle — applies to both representations */
+document.querySelectorAll('#scale-seg button').forEach(b => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('#scale-seg button').forEach(x => x.classList.remove('on'));
+    b.classList.add('on');
+    scaleMode = b.dataset.scale;
+    render();
+  });
+});
+
+/* peak-tracking annotation layer */
+document.getElementById('track').addEventListener('change', e => {
+  trackOn = e.target.checked;
+  document.getElementById('track-hint').classList.toggle('row-hide',
+    !(repr === 'waterfall' && trackOn));
+  render();
+});
+
+/* full-bleed: collapse the rail, the plate owns the screen */
+function syncDock() {
+  /* the dock surfaces the one live control worth keeping while reading */
+  document.getElementById('dock').classList.toggle('show',
+    app.classList.contains('railup') && repr === 'waterfall');
+}
+document.getElementById('railtog').addEventListener('click', () => {
+  app.classList.add('railup'); syncDock();
+});
+document.getElementById('railback').addEventListener('click', () => {
+  app.classList.remove('railup'); syncDock();
+});
+
+buildList();
+setRepr('waterfall');
+</script>
+</body>
+</html>
