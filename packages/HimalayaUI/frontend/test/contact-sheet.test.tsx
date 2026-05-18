@@ -1,12 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router-dom";
+import { Routes, Route } from "react-router-dom";
 import { makeClient } from "./test-utils";
 import { ContactSheetRow } from "../src/components/ContactSheetRow";
 import type { CorpusSample, Exposure } from "../src/api";
 import { SamplesPage } from "../src/pages/SamplesPage";
+import { CorpusShell } from "../src/components/CorpusShell";
 
 /** Route fetch by path so per-sample exposure fan-out is order-independent. */
 function mockFetch(routes: Record<string, unknown>): void {
@@ -264,5 +266,44 @@ describe("SamplesPage", () => {
     mockFetch({}); // every path → 404
     renderSamplesPage();
     expect(await screen.findByTestId("samples-error")).toBeInTheDocument();
+  });
+});
+
+describe("contact sheet — ?beamtime= round-trip", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("picking a beamtime in the topbar filters the table", async () => {
+    mockFetch(corpusRoutes());
+    render(
+      <QueryClientProvider client={makeClient()}>
+        <MemoryRouter initialEntries={["/samples"]}>
+          <Routes>
+            <Route element={<CorpusShell />}>
+              <Route path="/samples" element={<SamplesPage />} />
+            </Route>
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    // All three corpus rows render unfiltered.
+    await waitFor(() =>
+      expect(screen.getByTestId("sample-row-12")).toBeInTheDocument(),
+    );
+    expect(screen.getByTestId("sample-row-10")).toBeInTheDocument();
+
+    // Pick experiment 2 in the topbar chip.
+    fireEvent.change(screen.getByTestId("beamtime-chip"), {
+      target: { value: "2" },
+    });
+
+    // The table now shows only experiment 2's sample.
+    await waitFor(() =>
+      expect(screen.queryByTestId("sample-row-10")).toBeNull(),
+    );
+    expect(screen.queryByTestId("sample-row-11")).toBeNull();
+    expect(screen.getByTestId("sample-row-12")).toBeInTheDocument();
   });
 });
