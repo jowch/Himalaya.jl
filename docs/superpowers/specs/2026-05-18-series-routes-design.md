@@ -141,9 +141,17 @@ Adapted from `comparisons.jl`. New series-specific functions:
   per master plan §5.1. `content_hash` is NULL while `state='draft'` and is
   computed on `series_plate_committed`.
 
+- **`series_exists(db, id) -> Bool`** — `SELECT 1 FROM series WHERE id = ?`.
+  The 404 existence probe for the mutating routes. A dedicated probe is
+  required because a series draft has `content_hash IS NULL` by design (§5.1),
+  so a NULL-hash result cannot distinguish "missing" from "draft" — unlike
+  comparisons, which always carry a hash post-create.
+
 - **`current_series_content_hash(db, id)`** — adapted from
-  `current_content_hash`. Existence probe + stored hash; returns `nothing` for a
-  missing series. Used by the mutating routes for the 404 existence check.
+  `current_content_hash`. Reads the stored `content_hash`; returns `nothing`
+  for a missing series **and** for an uncommitted draft. Used **only** for the
+  `commit` 409 optimistic-concurrency comparison — never as the existence
+  probe (that is `series_exists`).
 
 - Projection / normalization helpers, adapted from their comparison equivalents:
   - `_series_listing_rows(rows)` — the lightweight per-row listing shape.
@@ -218,9 +226,11 @@ Inside `with_idempotency`:
   fields. Zero members.
 - `apply_event!(InTransaction(), …; kind="series_created", entity_type="series",
   entity_id=new_id, payload)`.
-- Project once with `fetch_series_with_plate(db, new_id)` — this is both the SSE
-  `post_state` envelope and the HTTP body (identical shapes, so an HTTP-wins /
-  SSE-wins race converges). Enqueue the post-commit broadcast.
+- Project once with `fetch_series_with_plate(db, new_id)` for the `201` HTTP body.
+- Enqueue the post-commit broadcast **without a `post_state` envelope** —
+  master-plan §5.2 marks `series_created` as no-`post_state`; foreign tabs
+  reconcile via replay-as-rerun (#166). Only `series_plate_committed` carries
+  `post_state` (§5.6).
 - `201` with the projection.
 
 ### 5.3 `GET /api/series/{id}`
@@ -234,20 +244,22 @@ Edits the recipe (`series_samples`). The payload carries the **full** `samples`
 snapshot — never a delta (the dispatcher pure-replaces). May also carry the
 recipe fields `ordering_variable` / `order_rule`.
 
-- 404 if `current_series_content_hash(db, id) === nothing`.
+- 404 if `series_exists(db, id)` is false.
 - No author gate.
 - `apply_event!(…; kind="series_recipe_updated", entity_type="series",
   entity_id=id, payload)`; the payload `samples` entries normalized by
   `_series_sample_payload`.
-- Project with `fetch_series_with_plate`; broadcast; `200`.
+- Project with `fetch_series_with_plate` for the `200` HTTP body; enqueue the
+  broadcast **without a `post_state` envelope** (master-plan §5.2 marks
+  `series_recipe_updated` as no-`post_state`).
 
 ### 5.6 `POST /api/series/{id}/commit` — commit the plate (`series_plate_committed`)
 The series equivalent of the old comparison `submit`. The payload carries the
 **full member list** (the plate); members carry **no ids** (the dispatcher mints
 them). Sets `state='committed'` and computes `content_hash` from the plate.
 
-- 404 if `current_series_content_hash(db, id) === nothing` (existence before any
-  other check — HTTP requires 404 before 409).
+- 404 if `series_exists(db, id)` is false (existence before any other check —
+  HTTP requires 404 before 409).
 - **Optimistic-concurrency check (kept):** if the body carries
   `expected_content_hash` and it does not match
   `current_series_content_hash(db, id)`, return `409` with
@@ -256,11 +268,14 @@ them). Sets `state='committed'` and computes `content_hash` from the plate.
   carries, and the Phase 3 series builder reuses `ConflictModal` against it.
 - `apply_event!(…; kind="series_plate_committed", entity_type="series",
   entity_id=id, payload)`; members normalized by `_series_member_payload`.
-- Project with `fetch_series_with_plate` — the `post_state` envelope and HTTP
-  body. Broadcast; `200`.
+- Project with `fetch_series_with_plate`; enqueue the broadcast **with a
+  `post_state` envelope** — `series_plate_committed` is the one series event
+  that carries `post_state` (master-plan §5.2: its payload is an id-less member
+  list, not the route response shape, so foreign tabs need the envelope).
+  `200` with the projection.
 
 ### 5.7 `DELETE /api/series/{id}` (`series_deleted`)
-- 404 if `current_series_content_hash(db, id) === nothing`.
+- 404 if `series_exists(db, id)` is false.
 - No author gate.
 - `apply_event!(…; kind="series_deleted", entity_type="series", entity_id=id,
   payload=Dict(:id => id))`. The dispatcher (#166) is a one-line
@@ -290,7 +305,7 @@ the affected series rides in the payload as `series_id`.
   `SELECT series_id FROM series_pins WHERE user_id = ? ORDER BY pinned_at DESC,
   series_id DESC` → array of ids. **Fully functional in I2.2.**
 - `POST /api/series/{id}/pin` — 401 without a user; inside `with_idempotency`,
-  404 if the series does not exist; `apply_event!(…; kind="series_pinned",
+  404 if `series_exists(db, id)` is false; `apply_event!(…; kind="series_pinned",
   entity_type="user", entity_id=user_id, payload=Dict(:series_id => id))`;
   broadcast; `200` with `{series_id, pinned:true}`. Degenerate until #168.
 - `DELETE /api/series/{id}/pin` — symmetric; `kind="series_unpinned"`; idempotent
