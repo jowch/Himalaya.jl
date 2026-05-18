@@ -164,6 +164,12 @@ export const addSampleTagMutator: Mutator<AddSampleTagInput, AddSampleTagScope, 
       id: payload.tag_id as number,
       key: payload.key as string,
       value: payload.value as string,
+      // Hardcoded: the `add_tag` SSE payload omits `source`. The single-tag
+      // route now accepts a non-`manual` source, so a non-`manual` tag
+      // confirmed via the SSE-wins race would cache a stale `source` until a
+      // refetch. Safe today — the only non-`manual` writer (the batch route)
+      // does not flow through this mutator. A future caller that does must
+      // add `source` to the event payload and read it here.
       source: "manual",
     } as SampleTag;
   },
