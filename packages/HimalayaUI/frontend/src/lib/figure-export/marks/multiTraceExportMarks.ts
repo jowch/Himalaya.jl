@@ -2,7 +2,7 @@
 // Stacked traces in display_order, per-member labels at each band's
 // y-position, peak ticks/labels gated on showPeakTicks / showPeakLabels.
 import * as Plot from "@observablehq/plot";
-import type { ComparisonMember } from "../../../api";
+import type { SeriesMember } from "../../../api";
 import type { Trace } from "../../../api";
 import { computeYBands } from "../../comparison/yBands";
 import {
@@ -13,7 +13,7 @@ import {
 
 export interface MultiTraceMarksArgs {
   /** Already filtered (null-exposure_id removed) and sorted by display_order. */
-  members: ComparisonMember[];
+  members: SeriesMember[];
   traces: Map<number, Trace>;
   /** Pre-resolved member labels (post-#73 contract). */
   displayLabelByMemberId: Map<number, string>;

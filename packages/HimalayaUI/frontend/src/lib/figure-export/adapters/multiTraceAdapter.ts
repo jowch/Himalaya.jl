@@ -1,5 +1,5 @@
 // multiTraceAdapter.ts — MultiTracePlot state → ExportSpec.
-import type { ComparisonMember, Trace } from "../../../api";
+import type { SeriesMember, Trace } from "../../../api";
 import type { ExportSpec, LegendRow } from "../types";
 import {
   COMPARE_DIMS, COMPARE_PALETTE_LIGHT, ORPHAN_FALLBACK_LIGHT,
@@ -10,7 +10,7 @@ import { colorFor, ORPHAN_FALLBACK, type GroupingMode } from "../../comparison/c
 import { phaseColor } from "../../../phases";
 
 export interface MultiTraceAdapterArgs {
-  members: ComparisonMember[];      // sorted by display_order
+  members: SeriesMember[];      // sorted by display_order
   traces: Map<number, Trace>;
   comparisonTitle: string;
   experimentName?: string;          // omit in /compare/all global scope
@@ -18,7 +18,7 @@ export interface MultiTraceAdapterArgs {
   showPeakTicks: boolean;
   showPeakLabels: boolean;
   groupingMode: GroupingMode;
-  sampleIdFor: (m: ComparisonMember) => number | null;
+  sampleIdFor: (m: SeriesMember) => number | null;
   /** Pre-resolved labels via lib/comparison/labels.resolveDisplayLabels.
    *  Falls back to "Exposure #${exposure_id}" when missing. */
   displayLabelByMemberId?: Map<number, string>;
@@ -118,10 +118,10 @@ export function buildMultiTraceExportSpec(args: MultiTraceAdapterArgs): ExportSp
 }
 
 function buildLegendRows(
-  unfilteredMembers: ComparisonMember[],
-  filteredMembers: ComparisonMember[],
+  unfilteredMembers: SeriesMember[],
+  filteredMembers: SeriesMember[],
   mode: GroupingMode,
-  sampleIdFor: (m: ComparisonMember) => number | null,
+  sampleIdFor: (m: SeriesMember) => number | null,
   colorByMember: Map<number, string>,
 ): LegendRow[] {
   if (mode === "distinct") return [];
