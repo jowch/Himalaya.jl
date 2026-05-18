@@ -702,11 +702,17 @@ export interface SeriesMember {
   created_at: string | null;
 }
 
+/** How a series orders its samples. Shared by `Series`, `SaveSeriesBody`, and
+ *  the `saveSeries` mutator input so the literal union has one source. */
+export type OrderRule = "ascending" | "descending" | "manual";
+
 /** Full nested response from `GET/POST/PATCH /api/series*`. */
 export interface Series {
   id: number;
   title: string;
   description: string | null;
+  /** Empty string `""` is the draft sentinel: `fetch_series_with_plate`
+   *  projects a NULL `content_hash` (an uncommitted draft) to `""`. */
   content_hash: string;
   created_by: number | null;
   created_at: string | null;
@@ -722,6 +728,21 @@ export interface Series {
   state: string;
   members: SeriesMember[];
   samples: SeriesSample[];
+}
+
+/**
+ * Structural type-guard: is `x` a full `Series` projection (both nested
+ * arrays + `state`), as opposed to the partial shape `saveSeries`'s
+ * `synthesizeFromSse` yields on the SSE-wins path? Used by the series
+ * mutators' `onSuccess` to choose between a cache splice and an invalidate.
+ */
+export function isFullSeries(x: unknown): x is Series {
+  if (typeof x !== "object" || x === null) return false;
+  const o = x as Record<string, unknown>;
+  return typeof o.id === "number"
+    && typeof o.state === "string"
+    && Array.isArray(o.members)
+    && Array.isArray(o.samples);
 }
 
 /** Per-recipe-row input for `POST /api/series` and `PATCH /api/series/:id`. */
@@ -754,7 +775,7 @@ export interface SaveSeriesBody {
   description?: string | null;
   samples: SeriesSampleInput[];
   ordering_variable?: string | null;
-  order_rule?: "ascending" | "descending" | "manual";
+  order_rule?: OrderRule;
   forked_from_id?: number | null;
   forked_at_hash?: string | null;
   view_grouping_mode?: string | null;

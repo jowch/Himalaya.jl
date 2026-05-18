@@ -10,7 +10,9 @@
  * routed to invalidate-fallback.
  */
 import * as api from "../../../api";
-import type { AuthOpts, Series, SaveSeriesBody, SeriesSampleInput } from "../../../api";
+import type {
+  AuthOpts, Series, SaveSeriesBody, SeriesSampleInput, OrderRule,
+} from "../../../api";
 import { queryKeys } from "../../../queries";
 import { authOpts } from "../../authOpts";
 import type { Mutator, RollbackContext } from "../types";
@@ -22,7 +24,7 @@ export interface SaveSeriesInput {
   description?: string | null;
   samples: SeriesSampleInput[];
   ordering_variable?: string | null;
-  order_rule?: "ascending" | "descending" | "manual";
+  order_rule?: OrderRule;
   forked_from_id?: number | null;
   forked_at_hash?: string | null;
   view_grouping_mode?: string | null;
@@ -57,15 +59,18 @@ export const saveSeriesMutator: Mutator<SaveSeriesInput, SaveSeriesScope, Series
   onMutate: (): RollbackContext => ({ restore: () => {} }),
   request: (p) => api.saveSeries(buildBody(p), p.id, buildAuthOpts(p)),
   onSuccess: (_p, response, qc) => {
-    // SSE-wins path: `synthesizeFromSse` yields a partial shape (no `samples`
-    // array, no `state`). Probe for the full Series shape; fall back to
-    // invalidate so the next read fetches the canonical projection.
-    const looksFull = Array.isArray((response as { samples?: unknown }).samples)
-      && typeof (response as { state?: unknown }).state === "string";
-    if (looksFull) {
+    // SSE-wins path: `synthesizeFromSse` yields a partial shape (no `members`
+    // array, no `state`) the `TResponse = Series` type cannot express.
+    // `api.isFullSeries` distinguishes it; fall back to invalidate so the next
+    // read fetches the canonical projection. The else branch reads `id` via an
+    // explicit cast — the guard narrows `response` to `never` there.
+    if (api.isFullSeries(response)) {
       qc.setQueryData(queryKeys.series(response.id), response);
-    } else if (typeof response?.id === "number") {
-      qc.invalidateQueries({ queryKey: queryKeys.series(response.id) });
+    } else {
+      const id = (response as { id?: unknown }).id;
+      if (typeof id === "number") {
+        qc.invalidateQueries({ queryKey: queryKeys.series(id) });
+      }
     }
     qc.invalidateQueries({ queryKey: queryKeys.seriesList });
   },

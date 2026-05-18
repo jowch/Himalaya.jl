@@ -44,12 +44,17 @@ export const commitSeriesPlateMutator: Mutator<CommitSeriesPlateInput, CommitSer
     return api.commitSeriesPlate(p.id, body, buildAuthOpts(p));
   },
   onSuccess: (_p, response, qc) => {
-    const looksFull = Array.isArray((response as { members?: unknown }).members)
-      && typeof (response as { state?: unknown }).state === "string";
-    if (looksFull) {
+    // `api.isFullSeries` distinguishes a real HTTP Series from the partial
+    // SSE-wins shape; fall back to invalidate when the shape is incomplete.
+    // The else branch reads `id` via an explicit cast — the guard narrows
+    // `response` to `never` there.
+    if (api.isFullSeries(response)) {
       qc.setQueryData(queryKeys.series(response.id), response);
-    } else if (typeof response?.id === "number") {
-      qc.invalidateQueries({ queryKey: queryKeys.series(response.id) });
+    } else {
+      const id = (response as { id?: unknown }).id;
+      if (typeof id === "number") {
+        qc.invalidateQueries({ queryKey: queryKeys.series(id) });
+      }
     }
     qc.invalidateQueries({ queryKey: queryKeys.seriesList });
   },

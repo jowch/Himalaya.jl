@@ -585,8 +585,16 @@ end
                     ["X-Username" => "alice", "Content-Type" => "application/json"],
                     createBody).body, Dict{Symbol, Any})[:id]
 
-                resp = HTTP.delete("$base/api/series/$sid", ["X-Username" => "alice"])
-                @test resp.status == 200
+                # SSE layer: the DELETE route, like every event route, must
+                # broadcast exactly one series_deleted frame carrying
+                # entity_type='series' — cheap insurance against a future
+                # _enqueue_broadcast_from_result! regression.
+                frames = _capture_series_sse("series_deleted") do
+                    resp = HTTP.delete("$base/api/series/$sid", ["X-Username" => "alice"])
+                    @test resp.status == 200
+                end
+                @test length(frames) == 1
+                @test occursin("\"entity_type\":\"series\"", frames[1])
                 # Four-table cascade: the series row and its recipe rows are gone.
                 @test HimalayaUI.fetch_series_with_plate(db, sid) === nothing
                 remaining = Tables.rowtable(DBInterface.execute(db,

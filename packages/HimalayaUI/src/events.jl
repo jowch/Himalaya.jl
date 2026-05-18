@@ -447,11 +447,17 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
     # mutator. The dispatcher derives user_id by joining user_actions on
     # event_id, exactly as the comparison pin branches do.
     if kind == "series_pinned"
+        # Guard the pin on series existence: a rebuild that folds this event
+        # after the series was deleted would otherwise FK-throw and abort the
+        # whole rebuild. INSERT … SELECT … WHERE EXISTS makes the fold a no-op
+        # in that case. (Deliberately stricter than the unguarded
+        # comparison_pinned branch, which carries the same latent issue.)
         DBInterface.execute(db,
             """INSERT OR REPLACE INTO series_pins (user_id, series_id, pinned_at)
-               VALUES ((SELECT user_id FROM user_actions WHERE id = ?),
-                       ?, CURRENT_TIMESTAMP)""",
-            [event_id, Int(payload.series_id)])
+               SELECT (SELECT user_id FROM user_actions WHERE id = ?),
+                      ?, CURRENT_TIMESTAMP
+               WHERE EXISTS (SELECT 1 FROM series WHERE id = ?)""",
+            [event_id, Int(payload.series_id), Int(payload.series_id)])
         return nothing
     end
     if kind == "series_unpinned"
@@ -835,6 +841,10 @@ function _update_view_for_series_recipe_updated!(db, entity_id, payload, event_i
     order_rule   = haskey(payload, :order_rule) && payload.order_rule !== nothing ?
                    String(payload.order_rule) : nothing
 
+    # Bare UPDATE — assumes `series_created` has already folded this row.
+    # Guaranteed by event-log ordering (a recipe edit cannot precede its
+    # create); silently no-ops if folded standalone, which is acceptable
+    # because `rebuild_views_from_log!` always replays the create first.
     DBInterface.execute(db,
         """UPDATE series
            SET ordering_variable = ?,
