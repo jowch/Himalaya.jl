@@ -92,6 +92,17 @@ therefore a pure annotation swap with no behavioural change. The detailed plan
 confirms, per module, that no other comparison-specific field or import is
 touched.
 
+### Test fixtures
+
+`tsc --noEmit` runs against `tsconfig.json`, whose `include` covers `test/`.
+The render-module Vitest suites build their own `ComparisonMember`-typed member
+fixtures inline (no shared fixture module) and pass them to the migrated
+components. Those fixtures must therefore retype to `SeriesMember`
+(`comparison_id` → `series_id`) for `tsc` to pass — a mechanical change, not a
+behavioural one. Test files that reference `ComparisonMember` but do **not**
+feed a migrated component (`draftPersistence`, `MentionChip`,
+`queue/saveComparison`) stay on `ComparisonMember`.
+
 ## The Compare-era bridge
 
 `SeriesMember` carries a required `series_id`, so `ComparisonMember` is **not**
