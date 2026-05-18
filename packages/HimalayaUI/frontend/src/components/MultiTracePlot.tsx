@@ -28,7 +28,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as Plot from "@observablehq/plot";
-import type { Trace, ComparisonMember } from "../api";
+import type { Trace, SeriesMember } from "../api";
 import { buildMemberMarks, buildMemberPeakRows } from "./MemberTraceLayer";
 import type { PeakRow } from "./MemberTraceLayer";
 import { invertQ, applyQ } from "../lib/plot/invertQ";
@@ -125,7 +125,7 @@ type Scale = { invert?: (v: number) => number; apply?: (v: number) => number } |
 
 export interface MultiTracePlotProps {
   /** Members in render order (top → bottom). Caller sorts by `display_order`. */
-  members: ComparisonMember[];
+  members: SeriesMember[];
   /** Live traces keyed by exposure_id. Members without a trace render no line. */
   traces: Map<number, Trace>;
   /** Visible q-range. null = full data range. */
@@ -174,7 +174,7 @@ export interface MultiTracePlotProps {
    * the TanStack exposure cache). `colorFor` consults this in `bySample`
    * mode. Required when `groupingMode` is set; ignored otherwise.
    */
-  sampleIdFor?: (m: ComparisonMember) => number | null;
+  sampleIdFor?: (m: SeriesMember) => number | null;
 }
 
 export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
