@@ -10,6 +10,8 @@ import {
   updateSampleMutator,
   addSampleTagMutator,
   removeSampleTagMutator,
+  addCorpusSampleTagMutator,
+  removeCorpusSampleTagMutator,
   addExposureTagMutator,
   removeExposureTagMutator,
   postSampleMessageMutator,
@@ -462,6 +464,31 @@ export function useRemoveSampleTag(experimentId: number, sampleId: number) {
   const inner = useQueueMutation(
     removeSampleTagMutator,
     { experimentId, sampleId, username, clientId: CLIENT_ID },
+  );
+  return {
+    ...inner,
+    mutate: (tagId: number) => inner.mutate({ tagId }),
+  };
+}
+
+/**
+ * Corpus contact-sheet sample tagging (#159). Scope carries `sampleId` only —
+ * NO `experimentId` — which is how resolveMutator routes the op to the
+ * corpus mutator rather than the experiment-scoped or exposure mutator.
+ */
+export function useAddCorpusSampleTag(sampleId: number) {
+  const username = useAppState((s) => s.username);
+  return useQueueMutation(
+    addCorpusSampleTagMutator,
+    { sampleId, username, clientId: CLIENT_ID },
+  );
+}
+
+export function useRemoveCorpusSampleTag(sampleId: number) {
+  const username = useAppState((s) => s.username);
+  const inner = useQueueMutation(
+    removeCorpusSampleTagMutator,
+    { sampleId, username, clientId: CLIENT_ID },
   );
   return {
     ...inner,
