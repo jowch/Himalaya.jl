@@ -318,3 +318,24 @@ function compute_series_content_hash(db::SQLite.DB, series_id::Integer)::String
     )
     "sha256:" * bytes2hex(SHA.sha256(canonical_json(payload)))
 end
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Mutating-route helpers (I2.2, Task 6)
+# ─────────────────────────────────────────────────────────────────────────────
+
+"""
+    _series_sample_payload(m_in) -> Dict{Symbol, Any}
+
+Normalize one recipe entry from a request body into the `series_samples`
+payload shape. `sample_id` is required (a recipe row with no target is
+unrenderable); `position` / `pinned` / `excluded` default to `0` / `false` /
+`false`.
+"""
+function _series_sample_payload(m_in)
+    Dict{Symbol, Any}(
+        :sample_id => Int(m_in[:sample_id]),
+        :position  => haskey(m_in, :position) ? Int(m_in[:position]) : 0,
+        :pinned    => haskey(m_in, :pinned)   ? Bool(m_in[:pinned])   : false,
+        :excluded  => haskey(m_in, :excluded) ? Bool(m_in[:excluded]) : false,
+    )
+end

@@ -166,4 +166,63 @@ end
         end
     end
 
+    @testset "POST /api/series — create draft (smoke)" begin
+        mktempdir() do tmp
+            db = _series_test_db(tmp)
+            with_test_server(db) do port, base
+                # Missing title → 400 (uncached validation error).
+                resp400 = HTTP.post("$base/api/series",
+                    ["X-Username" => "alice", "Content-Type" => "application/json"],
+                    JSON3.write(Dict(:samples => []));
+                    status_exception = false)
+                @test resp400.status == 400
+
+                # samples present but not an array → 400.
+                resp400b = HTTP.post("$base/api/series",
+                    ["X-Username" => "alice", "Content-Type" => "application/json"],
+                    JSON3.write(Dict(:title => "t", :samples => "nope"));
+                    status_exception = false)
+                @test resp400b.status == 400
+
+                # Well-formed create → 201; a series row + a user_actions row.
+                resp = HTTP.post("$base/api/series",
+                    ["X-Username" => "alice", "Content-Type" => "application/json"],
+                    JSON3.write(Dict(
+                        :title => "My series",
+                        :order_rule => "ascending",
+                        :samples => [Dict(:sample_id => 100, :position => 0,
+                                          :pinned => false, :excluded => false)])))
+                @test resp.status == 201
+                created = JSON3.read(resp.body, Dict{Symbol, Any})
+                new_id = created[:id]
+                @test new_id isa Integer
+                # Degenerate until #166: the dispatcher no-ops, so the body is
+                # the placeholder projection — empty members, empty samples.
+                @test created[:members] == []
+                @test created[:samples] == []
+                # The durable event row IS written.
+                ev = Tables.rowtable(DBInterface.execute(db,
+                    "SELECT action FROM user_actions WHERE entity_type='series' AND entity_id=?",
+                    [new_id]))
+                @test length(ev) == 1
+                @test ev[1].action == "series_created"
+
+                # An empty samples array is a valid draft — the deliberate
+                # departure from comparisons, which rejects empty members.
+                respEmpty = HTTP.post("$base/api/series",
+                    ["X-Username" => "alice", "Content-Type" => "application/json"],
+                    JSON3.write(Dict(:title => "empty draft", :samples => [])))
+                @test respEmpty.status == 201
+
+                # A samples entry missing sample_id → uncached 400.
+                resp400c = HTTP.post("$base/api/series",
+                    ["X-Username" => "alice", "Content-Type" => "application/json"],
+                    JSON3.write(Dict(:title => "t", :samples => [Dict(:position => 0)]));
+                    status_exception = false)
+                @test resp400c.status == 400
+            end
+            close(db)
+        end
+    end
+
 end
