@@ -440,6 +440,31 @@ export interface ComparisonMember {
   created_at: string | null;
 }
 
+/**
+ * Per-member shape returned by the series GET / POST endpoints.
+ * Mirrors `fetch_series_with_plate` (packages/HimalayaUI/src/series.jl).
+ * Field-for-field identical to `ComparisonMember` except `comparison_id` →
+ * `series_id`. This is the render pipeline's going-forward input type.
+ */
+export interface SeriesMember {
+  id: number;
+  series_id: number;
+  exposure_id: number | null;
+  display_order: number;
+  band_height: number;
+  y_offset: number;
+  normalization: string;
+  color_override: string | null;
+  label_override: string | null;
+  q_window_min: number | null;
+  q_window_max: number | null;
+  peak_display: unknown;
+  snapshot: MemberSnapshot | null;
+  is_stale: boolean;
+  created_by: number | null;
+  created_at: string | null;
+}
+
 export interface Comparison {
   id: number;
   title: string;
