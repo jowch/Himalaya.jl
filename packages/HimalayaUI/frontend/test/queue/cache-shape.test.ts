@@ -34,6 +34,7 @@ import { reanalyzeExposureMutator } from "../../src/lib/queue/mutators/reanalyze
 import {
   updateSampleMutator,
   addSampleTagMutator,
+  addCorpusSampleTagMutator,
   addExposureTagMutator,
   postSampleMessageMutator,
 } from "../../src/lib/queue/mutators/trivial";
@@ -369,6 +370,33 @@ describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", ()
     const list = qc.getQueryData<{ tags: unknown[] }[]>(queryKeys.samples(1));
     const tag = list![0]!.tags[0];
     assertKeys(tag, SAMPLE_TAG_KEYS, "addSampleTag cache row");
+  });
+
+  it("addCorpusSampleTag inserts a SampleTag with exactly 4 keys into the corpus cache", async () => {
+    // Corpus contact sheet path: the op carries no experimentId; the mutator
+    // patches queryKeys.corpusSamples, not queryKeys.samples(experimentId).
+    const initialSample = {
+      id: 10, experiment_id: 1, display_name: "D1", name: "n", notes: null,
+      q_units: "nm^-1", tags: [],
+    };
+    qc.setQueryData(queryKeys.corpusSamples, [initialSample]);
+    mockFetchOnce({
+      id: 50, sample_id: 10, key: "color", value: "red", source: "manual",
+    }, 201);
+    await runMutator(qc, addCorpusSampleTagMutator, {
+      kind: "add_tag",
+      clientOpId: "op-corpus-shape-1",
+      sampleId: 10, username: "alice", clientId: "tab-1",
+      key: "color", value: "red",
+      payload: { key: "color", value: "red" },
+    });
+    const list = qc.getQueryData<{ tags: unknown[]; q_units: string }[]>(
+      queryKeys.corpusSamples);
+    const tag = list![0]!.tags[0];
+    assertKeys(tag, SAMPLE_TAG_KEYS, "addCorpusSampleTag cache row");
+    // The onSuccess spread ({ ...s }) copies q_units forward untouched —
+    // the mutator never reconstructs the CorpusSample row.
+    expect(list![0]!.q_units).toBe("nm^-1");
   });
 
   it("addExposureTag inserts an ExposureTag with exactly 4 keys (no exposure_id leak)", async () => {
