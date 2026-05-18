@@ -276,6 +276,26 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
       qc.invalidateQueries({ queryKey: queryKeys.comparisonPins });
       break;
     }
+    case "series_created":
+    case "series_recipe_updated": {
+      // Neither kind carries post_state (master plan §5.2); the SSE payload's
+      // series_samples entries are id-less and series_samples.id is
+      // replay-volatile (§11), so there is no safe surgical splice.
+      // Invalidate-only — the next read refetches the canonical projection.
+      qc.invalidateQueries({ queryKey: queryKeys.series(id) });
+      qc.invalidateQueries({ queryKey: queryKeys.seriesList });
+      break;
+    }
+    case "series_deleted": {
+      // Remove the detail cache — refetching a deleted resource 404s and
+      // leaves stale `isError` state. Filter the id out of the listing.
+      qc.removeQueries({ queryKey: queryKeys.series(id) });
+      qc.setQueriesData<{ id: number }[]>(
+        { queryKey: queryKeys.seriesList },
+        (old) => (old ? old.filter((s) => s.id !== id) : old),
+      );
+      break;
+    }
     case "add_tag":
     case "remove_tag": {
       if (remote.entity_type === "sample") {
