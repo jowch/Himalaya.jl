@@ -14,7 +14,7 @@ import { useState } from "react";
 import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent, act, cleanup } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { ComparisonMember } from "../src/api";
+import type { SeriesMember } from "../src/api";
 import { MemberMetaRow } from "../src/components/MemberMetaRow";
 import type { MemberMetaRowProps } from "../src/components/MemberMetaRow";
 import { useAppState } from "../src/state";
@@ -57,10 +57,10 @@ function tapBody(el: Element): void {
   fireEvent(el, new MouseEvent("pointerup", { bubbles: true, clientX: 5, clientY: 5 }));
 }
 
-function makeMember(over: Partial<ComparisonMember> = {}): ComparisonMember {
+function makeMember(over: Partial<SeriesMember> = {}): SeriesMember {
   return {
     id: 1,
-    comparison_id: 100,
+    series_id: 100,
     exposure_id: 42,
     display_order: 0,
     band_height: 1,

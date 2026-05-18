@@ -19,7 +19,7 @@
  * an inline warning icon.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ComparisonMember } from "../api";
+import type { SeriesMember } from "../api";
 import { useAppState } from "../state";
 import { phaseColor, CUBIC_PHASES } from "../phases";
 import { COMPARE_PALETTE } from "../lib/comparison/coloring";
@@ -28,7 +28,7 @@ import { makeDragThresholdState } from "../lib/comparison/dragThreshold";
 import { RowActionZone } from "./RowActionZone";
 
 export interface MemberMetaRowProps {
-  member: ComparisonMember;
+  member: SeriesMember;
   /** y-band envelope top in pixels (derived from `computeYBands`). */
   top: number;
   /** y-band envelope height in pixels. */

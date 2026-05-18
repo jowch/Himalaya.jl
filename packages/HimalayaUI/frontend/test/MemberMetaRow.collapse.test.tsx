@@ -23,7 +23,7 @@ import { MemberMetaRow } from "../src/components/MemberMetaRow";
 import { MemberMetaGutter } from "../src/components/MemberMetaGutter";
 import { useAppState } from "../src/state";
 import { emptyDraft } from "../src/lib/comparison/draft";
-import type { ComparisonMember } from "../src/api";
+import type { SeriesMember } from "../src/api";
 
 /**
  * Compare UX E-3 — a zero-displacement pointer gesture on the row body.
@@ -39,10 +39,10 @@ function tapBody(el: Element): void {
   fireEvent(el, new MouseEvent("pointerup", { bubbles: true, clientX: 5, clientY: 5 }));
 }
 
-function makeMember(over: Partial<ComparisonMember> = {}): ComparisonMember {
+function makeMember(over: Partial<SeriesMember> = {}): SeriesMember {
   return {
     id: 1,
-    comparison_id: 100,
+    series_id: 100,
     exposure_id: 42,
     display_order: 0,
     band_height: 1,
@@ -76,7 +76,7 @@ function makeMember(over: Partial<ComparisonMember> = {}): ComparisonMember {
  * invariant for direct `MemberMetaRow` mounts that don't need the full
  * gutter (drag wiring, y-bands, etc.).
  */
-function ControlledRow(props: { member?: ComparisonMember; mode?: "review" | "edit" }) {
+function ControlledRow(props: { member?: SeriesMember; mode?: "review" | "edit" }) {
   const member = props.member ?? makeMember();
   const [expandedId, setExpandedId] = useState<number | null>(null);
   return (
@@ -157,7 +157,7 @@ describe("MemberMetaRow collapse/expand — Compare UX E-2", () => {
         ],
       },
     });
-    const members: ComparisonMember[] = [
+    const members: SeriesMember[] = [
       makeMember({ id: 1, exposure_id: 100 }),
       makeMember({ id: 2, exposure_id: 200 }),
     ];

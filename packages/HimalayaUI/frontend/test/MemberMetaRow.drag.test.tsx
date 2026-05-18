@@ -23,7 +23,7 @@ import { useState } from "react";
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { MemberMetaRow } from "../src/components/MemberMetaRow";
-import type { ComparisonMember } from "../src/api";
+import type { SeriesMember } from "../src/api";
 
 /**
  * Dispatch a pointer-typed event carrying real clientX/Y (see JSDOM note).
@@ -43,10 +43,10 @@ function pointer(
   );
 }
 
-function makeMember(over: Partial<ComparisonMember> = {}): ComparisonMember {
+function makeMember(over: Partial<SeriesMember> = {}): SeriesMember {
   return {
     id: 7,
-    comparison_id: 100,
+    series_id: 100,
     exposure_id: 42,
     display_order: 0,
     band_height: 1,
@@ -82,7 +82,7 @@ function makeMember(over: Partial<ComparisonMember> = {}): ComparisonMember {
 function DragRow(props: {
   onToggleExpand: () => void;
   onDragStart: (memberId: number) => void;
-  member?: ComparisonMember;
+  member?: SeriesMember;
 }): JSX.Element {
   const [expanded, setExpanded] = useState(false);
   return (
