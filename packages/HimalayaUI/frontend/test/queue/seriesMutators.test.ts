@@ -64,4 +64,12 @@ describe("commitSeriesPlateMutator", () => {
     expect(synth?.state).toBe("committed");
     expect(synth?.id).toBe(7);
   });
+
+  it("synthesizeFromSse returns undefined when the event carries no post_state", () => {
+    const synth = commitSeriesPlateMutator.synthesizeFromSse?.(
+      { id: 99, kind: "series_plate_committed", entity_type: "series",
+        entity_id: 7, payload: { members: [] } },
+      { event_id: 99, client_op_id: "op1", analysis_inputs_hash: undefined });
+    expect(synth).toBeUndefined();
+  });
 });
