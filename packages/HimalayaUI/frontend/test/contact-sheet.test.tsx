@@ -2,9 +2,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
+import { MemoryRouter } from "react-router-dom";
 import { makeClient } from "./test-utils";
 import { ContactSheetRow } from "../src/components/ContactSheetRow";
 import type { CorpusSample, Exposure } from "../src/api";
+import { SamplesPage } from "../src/pages/SamplesPage";
 
 /** Route fetch by path so per-sample exposure fan-out is order-independent. */
 function mockFetch(routes: Record<string, unknown>): void {
@@ -168,5 +170,99 @@ describe("ContactSheetRow", () => {
     expect(await screen.findByTestId("status-cell")).toHaveTextContent(
       "Not indexed",
     );
+  });
+});
+
+const EXPERIMENTS = [
+  { id: 1, name: "SSRL Apr 2026", path: "/e1", data_dir: "/d1",
+    analysis_dir: "/a1", manifest_path: null, created_at: "2026-04-01",
+    q_units: "A-1" },
+  { id: 2, name: "APS Jul 2026", path: "/e2", data_dir: "/d2",
+    analysis_dir: "/a2", manifest_path: null, created_at: "2026-07-01",
+    q_units: "A-1" },
+];
+
+/** Corpus of 3 samples: ids 10,11 in experiment 1; id 12 in experiment 2. */
+const CORPUS = [
+  makeSample({ id: 10, experiment_id: 1, name: "alpha" }),
+  makeSample({ id: 11, experiment_id: 1, name: "beta" }),
+  makeSample({ id: 12, experiment_id: 2, name: "gamma" }),
+];
+
+/** Route map covering the corpus query, experiments, and per-row fan-out. */
+function corpusRoutes(): Record<string, unknown> {
+  return {
+    "/api/samples": CORPUS,
+    "/api/experiments": EXPERIMENTS,
+    "/api/samples/10/exposures": [makeExposure({ id: 1, sample_id: 10 })],
+    "/api/samples/11/exposures": [makeExposure({ id: 2, sample_id: 11 })],
+    "/api/samples/12/exposures": [makeExposure({ id: 3, sample_id: 12 })],
+  };
+}
+
+function renderSamplesPage(initialPath = "/samples") {
+  const client = makeClient();
+  return render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={[initialPath]}>
+        <SamplesPage />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
+describe("SamplesPage", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("keeps the samples-page test id", async () => {
+    mockFetch(corpusRoutes());
+    renderSamplesPage();
+    expect(await screen.findByTestId("samples-page")).toBeInTheDocument();
+  });
+
+  it("renders one row per corpus sample", async () => {
+    mockFetch(corpusRoutes());
+    renderSamplesPage();
+    await waitFor(() => {
+      expect(screen.getByTestId("sample-row-10")).toBeInTheDocument();
+      expect(screen.getByTestId("sample-row-11")).toBeInTheDocument();
+      expect(screen.getByTestId("sample-row-12")).toBeInTheDocument();
+    });
+  });
+
+  it("shows the boneyard skeleton while the corpus query loads", async () => {
+    // A fetch that never resolves keeps the query in isLoading.
+    vi.spyOn(global, "fetch").mockReturnValue(new Promise(() => {}));
+    renderSamplesPage();
+    expect(screen.getByTestId("samples-page")).toBeInTheDocument();
+    expect(screen.queryByTestId("contact-sheet-rows")).toBeNull();
+  });
+
+  it("filters to one experiment when ?beamtime= is set", async () => {
+    mockFetch(corpusRoutes());
+    renderSamplesPage("/samples?beamtime=1");
+    await waitFor(() =>
+      expect(screen.getByTestId("sample-row-10")).toBeInTheDocument(),
+    );
+    expect(screen.getByTestId("sample-row-11")).toBeInTheDocument();
+    expect(screen.queryByTestId("sample-row-12")).toBeNull();
+  });
+
+  it("names the active experiment in the header when filtered", async () => {
+    mockFetch(corpusRoutes());
+    renderSamplesPage("/samples?beamtime=2");
+    await waitFor(() =>
+      expect(screen.getByTestId("samples-scope")).toHaveTextContent(
+        "APS Jul 2026",
+      ),
+    );
+  });
+
+  it("shows an error state when the corpus query fails", async () => {
+    mockFetch({}); // every path → 404
+    renderSamplesPage();
+    expect(await screen.findByTestId("samples-error")).toBeInTheDocument();
   });
 });
