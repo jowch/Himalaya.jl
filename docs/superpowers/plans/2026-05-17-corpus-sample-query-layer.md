@@ -36,7 +36,7 @@ All commands below run from `packages/HimalayaUI/frontend/`.
 ### Task 1: `CorpusSample` type and `listCorpusSamples` fetcher
 
 **Files:**
-- Modify: `packages/HimalayaUI/frontend/src/api.ts` (after the `Sample` interface, line 35; and in the `// Samples` section after `listSamples`, line 105)
+- Modify: `packages/HimalayaUI/frontend/src/api.ts` (after the `Sample` interface, line 35; and in the `// Samples` section after `listSamples`, which ends at line 104)
 
 This task has no standalone test — the fetcher is exercised through the hook test in Task 2. It is committed separately so Task 2 starts from a compiling tree.
 
@@ -55,7 +55,7 @@ export interface CorpusSample extends Sample {
 
 - [ ] **Step 2: Add the `listCorpusSamples` fetcher**
 
-In the `// Samples` section of `api.ts`, immediately after the `listSamples` declaration (it ends at line 105 with the `request<Sample[]>(...)` call), add:
+In the `// Samples` section of `api.ts`, immediately after the `listSamples` declaration (it spans lines 103-104, ending with the `request<Sample[]>(...)` call; line 105 begins `updateSample`), add:
 
 ```ts
 export const listCorpusSamples = (): Promise<CorpusSample[]> =>
