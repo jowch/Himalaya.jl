@@ -1,7 +1,7 @@
 using Test, SQLite, DBInterface, Tables, Logging
 using HimalayaUI: create_schema!, migrate_schema!, create_experiment!, create_sample!,
                   create_exposure!, get_experiment, get_samples, get_exposures,
-                  migrate_r2_split_peaks!
+                  migrate_r2_split_peaks!, migrate_series!
 
 @testset "db schema" begin
     db = SQLite.DB()  # in-memory
@@ -1619,5 +1619,142 @@ end
                 "PRAGMA table_info(comparisons)")))
         @test "view_grouping_mode" in cols
         close(db)
+    end
+end
+
+@testset "migrate_series! creates series + schema_migrations" begin
+    db = SQLite.DB()  # in-memory
+    create_schema!(db)
+    migrate_series!(db)
+
+    tables = Set(r.name for r in Tables.rowtable(DBInterface.execute(db,
+        "SELECT name FROM sqlite_master WHERE type='table'")))
+    @test "series" in tables
+    @test "schema_migrations" in tables
+
+    cols = Set(r.name for r in Tables.rowtable(DBInterface.execute(db,
+        "PRAGMA table_info(series)")))
+    # comparison columns + view-choice columns + recipe columns
+    for c in ("id", "title", "description", "content_hash", "created_by",
+              "created_at", "updated_at", "forked_from_id", "forked_at_hash",
+              "view_grouping_mode", "view_show_peak_ticks", "view_show_peak_labels",
+              "ordering_variable", "order_rule", "state")
+        @test c in cols
+    end
+
+    # schema_migrations ships empty — #171 writes the marker row, not #164.
+    @test only(Tables.rowtable(DBInterface.execute(db,
+        "SELECT COUNT(*) AS n FROM schema_migrations"))).n == 0
+
+    # order_rule / state CHECK constraints reject bad values.
+    DBInterface.execute(db, "INSERT INTO series DEFAULT VALUES")  # defaults pass CHECK
+    @test_throws SQLite.SQLiteException DBInterface.execute(db,
+        "INSERT INTO series (order_rule) VALUES ('sideways')")
+    @test_throws SQLite.SQLiteException DBInterface.execute(db,
+        "INSERT INTO series (state) VALUES ('archived')")
+
+    # Idempotent re-run.
+    migrate_series!(db)
+    @test "series" in Set(r.name for r in Tables.rowtable(DBInterface.execute(db,
+        "SELECT name FROM sqlite_master WHERE type='table'")))
+end
+
+@testset "migrate_schema! installs series tables on a legacy DB" begin
+    db = SQLite.DB()
+    create_schema!(db)
+    migrate_schema!(db)  # migrate_series! is registered in the sequence
+
+    tables = Set(r.name for r in Tables.rowtable(DBInterface.execute(db,
+        "SELECT name FROM sqlite_master WHERE type='table'")))
+    @test "series" in tables
+    @test "schema_migrations" in tables
+
+    # The comparison* tables are untouched by this change.
+    for c in ("comparisons", "comparison_members", "comparison_messages",
+              "comparison_pins")
+        @test c in tables
+    end
+
+    migrate_schema!(db)  # second run is idempotent
+end
+
+@testset "migrate_series! creates the four series child tables" begin
+    db = SQLite.DB()
+    create_schema!(db)
+    migrate_series!(db)
+
+    tables = Set(r.name for r in Tables.rowtable(DBInterface.execute(db,
+        "SELECT name FROM sqlite_master WHERE type='table'")))
+    for t in ("series_members", "series_samples", "series_messages", "series_pins")
+        @test t in tables
+    end
+
+    # series_samples CHECK constraints on pinned / excluded.
+    DBInterface.execute(db, "INSERT INTO series DEFAULT VALUES")
+    DBInterface.execute(db, """
+        INSERT INTO series_samples (series_id, sample_id, position)
+        VALUES (1, 1, 0)""")  # defaults: pinned=0, excluded=0 — pass CHECK
+    @test_throws SQLite.SQLiteException DBInterface.execute(db, """
+        INSERT INTO series_samples (series_id, sample_id, position, pinned)
+        VALUES (1, 1, 1, 2)""")
+    @test_throws SQLite.SQLiteException DBInterface.execute(db, """
+        INSERT INTO series_samples (series_id, sample_id, position, excluded)
+        VALUES (1, 1, 2, 9)""")
+
+    # UNIQUE(series_id, position) — position 0 is already taken above.
+    @test_throws SQLite.SQLiteException DBInterface.execute(db, """
+        INSERT INTO series_samples (series_id, sample_id, position)
+        VALUES (1, 1, 0)""")
+
+    # series_members.snapshot must be valid JSON.
+    @test_throws SQLite.SQLiteException DBInterface.execute(db, """
+        INSERT INTO series_members (series_id, display_order, snapshot, created_at)
+        VALUES (1, 0, 'not-json', '2026-05-17T00:00:00.000Z')""")
+
+    migrate_series!(db)  # idempotent re-run
+end
+
+@testset "series child tables cascade-delete with the series" begin
+    mktempdir() do dir
+        db = HimalayaUI.open_db(joinpath(dir, "h.db"))  # FK enforcement ON
+        exp_id  = create_experiment!(db; path="/tmp", data_dir="/tmp", analysis_dir="/tmp")
+        samp_id = create_sample!(db; experiment_id=exp_id, name="s1")
+
+        DBInterface.execute(db, "INSERT INTO series DEFAULT VALUES")
+        sid = only(Tables.rowtable(DBInterface.execute(db,
+            "SELECT last_insert_rowid() AS id"))).id
+
+        DBInterface.execute(db, """
+            INSERT INTO series_samples (series_id, sample_id, position)
+            VALUES (?, ?, 0)""", [sid, samp_id])
+        DBInterface.execute(db, """
+            INSERT INTO series_members (series_id, display_order, snapshot, created_at)
+            VALUES (?, 0, '{}', '2026-05-17T00:00:00.000Z')""", [sid])
+        DBInterface.execute(db, """
+            INSERT INTO series_messages (series_id, body) VALUES (?, 'hi')""", [sid])
+
+        # series_pins.user_id FK requires a real user row (CASCADE, not SET NULL).
+        user_id = HimalayaUI.get_or_create_user!(db, "alice")
+        DBInterface.execute(db, """
+            INSERT INTO series_pins (user_id, series_id, pinned_at)
+            VALUES (?, ?, '2026-05-17T00:00:00.000Z')""", [user_id, sid])
+
+        # series_messages.created_at uses DATETIME DEFAULT CURRENT_TIMESTAMP —
+        # the space-separated `YYYY-MM-DD HH:MM:SS` form, never the ISO
+        # `…THH:MM:SS.sssZ` form series.created_at carries (issue #76 caveat,
+        # documented on migrate_series!; locked here so a future column-type
+        # change is caught).
+        msg_ts = String(only(Tables.rowtable(DBInterface.execute(db,
+            "SELECT created_at FROM series_messages WHERE series_id = ?",
+            [sid]))).created_at)
+        @test occursin(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$", msg_ts)
+
+        DBInterface.execute(db, "DELETE FROM series WHERE id = ?", [sid])
+
+        for t in ("series_samples", "series_members", "series_messages", "series_pins")
+            n = only(Tables.rowtable(DBInterface.execute(db,
+                "SELECT COUNT(*) AS n FROM $t WHERE series_id = ?", [sid]))).n
+            @test n == 0
+        end
     end
 end
