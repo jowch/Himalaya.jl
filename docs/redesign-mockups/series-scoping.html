@@ -1,0 +1,596 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Series scoping — "The Print"</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet" />
+<style>
+  /*
+   * The series-scoping step — the surface between the sample table and
+   * the series builder, the front door to a new series shared with the
+   * folio. Its job: confirm the machine's grouping and let the ordering
+   * metadata become structured data as a byproduct.
+   *
+   * It is a REVIEW surface, not a form. You arrive with samples already
+   * selected; Himalaya has grouped them, read the ordering variable from
+   * their names, and parsed each value. You glance, fix what it flags,
+   * and confirm — and confirming is what records the metadata. The
+   * machine proposes; the human confirms; the confirmation becomes data.
+   */
+  :root {
+    --paper:        oklch(0.978 0.006 85);
+    --paper-sunk:   oklch(0.951 0.008 84);
+    --plate:        oklch(0.992 0.004 90);
+    --ink:          oklch(0.265 0.013 68);
+    --ink-soft:     oklch(0.467 0.012 70);
+    --ink-faint:    oklch(0.640 0.010 74);
+    --hair:         oklch(0.882 0.008 80);
+    --hair-strong:  oklch(0.806 0.010 78);
+
+    /* ── Shared phase palette ──────────────────────────────────────────
+       Byte-identical across all surface mockups. Light-paper tuning. */
+    --pn3m:  oklch(0.585 0.150 58);    /* amber */
+    --lam:   oklch(0.505 0.150 264);   /* periwinkle-indigo */
+    --im3m:  oklch(0.520 0.120 162);   /* sage */
+    --hex:   oklch(0.540 0.130 350);   /* rose */
+
+    --accent: oklch(0.555 0.150 38);
+    --unindexed: oklch(0.660 0.012 76);
+
+    --radius: 7px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--paper); color: var(--ink);
+    font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+    font-size: 13px; line-height: 1.5;
+    -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+  }
+  .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+  .app { height: 100%; display: flex; flex-direction: column; }
+
+  /* ── Top bar ───────────────────────────────────────────────────────── */
+  .topbar {
+    height: 56px; flex-shrink: 0;
+    display: flex; align-items: center; gap: 16px;
+    padding: 0 24px; border-bottom: 1px solid var(--hair);
+  }
+  .wordmark {
+    font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase;
+    font-weight: 700; color: var(--ink);
+  }
+  .wordmark .tail { color: var(--ink-faint); font-weight: 600; }
+  .topbar .spacer { flex: 1; }
+  .stage-tabs { display: flex; gap: 2px; }
+  .stage-tab {
+    font-size: 11px; letter-spacing: 0.04em; font-weight: 600;
+    text-transform: uppercase; color: var(--ink-faint);
+    padding: 6px 11px; border-radius: 5px; cursor: pointer;
+    border: none; background: none;
+  }
+  .stage-tab.is-active { color: var(--ink); background: var(--paper-sunk); }
+  .stage-tab .dot {
+    display: inline-block; width: 5px; height: 5px; border-radius: 50%;
+    background: var(--hair-strong); margin-right: 6px; vertical-align: 1px;
+  }
+  .stage-tab.is-active .dot { background: var(--accent); }
+  .btn {
+    font-family: inherit; font-size: 12px; font-weight: 600;
+    border-radius: 6px; cursor: pointer; padding: 7px 13px;
+    border: 1px solid var(--hair-strong); background: var(--plate);
+    color: var(--ink);
+  }
+  .btn:hover { background: var(--paper-sunk); }
+  .ghost-btn {
+    font-family: inherit; font-size: 12px; font-weight: 600;
+    border: none; background: none; cursor: pointer; color: var(--ink-faint);
+    padding: 7px 4px;
+  }
+  .ghost-btn:hover { color: var(--ink); }
+
+  /* ── Stage: a centred worksheet plate ──────────────────────────────── */
+  .stage {
+    flex: 1; overflow: auto; padding: 40px 40px 80px;
+    display: flex; flex-direction: column; align-items: center;
+  }
+  .scope-plate {
+    width: 100%; max-width: 760px;
+    background: var(--plate); border: 1px solid var(--hair);
+    border-radius: 5px;
+    box-shadow: 0 1px 1px rgba(60,52,40,.04), 0 18px 40px -22px rgba(60,52,40,.22);
+    padding: 30px 34px 26px;
+  }
+
+  .kicker {
+    font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
+    font-weight: 700; color: var(--accent); margin-bottom: 7px;
+  }
+  .scope-title {
+    font-family: "Newsreader", Georgia, serif;
+    font-size: 29px; line-height: 1.14; font-weight: 500;
+    letter-spacing: -0.005em; color: var(--ink);
+  }
+  .scope-title .ed {
+    border-bottom: 1.5px dotted var(--hair-strong); padding-bottom: 1px;
+    cursor: text;
+  }
+
+  /* the machine's grouping summary — confident, one breath */
+  .autogroup {
+    margin-top: 16px;
+    display: flex; gap: 9px; align-items: flex-start;
+    background: var(--paper-sunk); border: 1px solid var(--hair);
+    border-radius: var(--radius); padding: 11px 13px;
+  }
+  .ag-spark { width: 15px; height: 15px; flex-shrink: 0; margin-top: 1px; }
+  .ag-text { font-size: 12px; color: var(--ink-soft); line-height: 1.5; }
+  .ag-text b { color: var(--ink); font-weight: 600; }
+
+  /* the ordering variable — the one real decision on this surface */
+  .field-label {
+    margin-top: 22px; margin-bottom: 7px;
+    font-size: 10.5px; letter-spacing: 0.09em; text-transform: uppercase;
+    font-weight: 700; color: var(--ink-faint);
+  }
+  .order-field {
+    display: flex; align-items: center; justify-content: space-between;
+    background: var(--plate); border: 1px solid var(--hair-strong);
+    border-radius: 7px; padding: 11px 14px; cursor: pointer;
+  }
+  .order-field:hover { border-color: var(--ink-faint); }
+  .of-val { font-size: 15px; font-weight: 600; color: var(--ink); }
+  .of-chev { color: var(--ink-faint); font-size: 12px; }
+  .of-note { margin-top: 6px; font-size: 11px; color: var(--ink-faint); }
+
+  /* the samples — ordered, each carrying its parsed value */
+  .samples-head {
+    margin-top: 24px; margin-bottom: 3px;
+    display: flex; align-items: baseline; justify-content: space-between;
+  }
+  .samples-head .sh-l {
+    font-size: 10.5px; letter-spacing: 0.09em; text-transform: uppercase;
+    font-weight: 700; color: var(--ink-faint);
+  }
+  .samples-head .sh-r {
+    font-size: 10.5px; color: var(--ink-faint);
+    font-family: ui-monospace, Menlo, monospace;
+  }
+  .sh-right { display: flex; align-items: baseline; gap: 14px; }
+  .sh-undo {
+    font-family: inherit; font-size: 11px; font-weight: 600;
+    color: var(--accent); border: none; background: none; cursor: pointer;
+    padding: 0;
+  }
+  .sh-undo:hover { text-decoration: underline; }
+  .sh-undo[hidden] { display: none; }
+
+  .srow {
+    display: flex; align-items: center; gap: 12px;
+    padding: 9px 8px; border-bottom: 1px solid var(--hair);
+  }
+  .srow:last-of-type { border-bottom: none; }
+  .srow.flagged { background: color-mix(in oklab, var(--accent) 5%, transparent); }
+  .grip {
+    color: var(--hair-strong); font-size: 13px; line-height: 1;
+    letter-spacing: -2px; cursor: grab; flex-shrink: 0;
+  }
+  .srow:hover .grip { color: var(--ink-faint); }
+  .spark {
+    width: 76px; height: 28px; flex-shrink: 0;
+    border-radius: 3px; background: var(--paper-sunk);
+    border: 1px solid var(--hair); overflow: hidden;
+  }
+  .spark svg { display: block; width: 100%; height: 100%; }
+  .s-text { flex: 1; min-width: 0; }
+  .s-name { font-size: 13px; font-weight: 600; color: var(--ink); }
+  .s-id {
+    font-size: 10.5px; color: var(--ink-faint);
+    font-family: ui-monospace, Menlo, monospace;
+  }
+  /* the parsed value for the ordering variable */
+  .s-val {
+    flex-shrink: 0; font-family: ui-monospace, Menlo, monospace;
+    font-size: 13px; font-weight: 700; color: var(--ink);
+    text-align: right; min-width: 92px;
+  }
+  /* a value Himalaya is unsure it parsed right — the only thing asking
+     for your attention. Clicking it accepts the read. */
+  .s-val.flag {
+    color: var(--accent); cursor: pointer;
+  }
+  .s-val.flag .v {
+    border-bottom: 1.5px dashed color-mix(in oklab, var(--accent) 55%, var(--hair));
+    padding-bottom: 1px;
+  }
+  .s-val .check {
+    display: block; font-size: 9px; font-weight: 700; letter-spacing: 0.04em;
+    text-transform: uppercase; color: var(--accent); margin-top: 3px;
+    font-family: "Plus Jakarta Sans", sans-serif;
+  }
+  /* every value stays re-openable — including one resolved by mistake.
+     hover reveals the dotted editable affordance; clicking re-opens it. */
+  .s-val.ok { cursor: pointer; }
+  .s-val.ok .v {
+    color: var(--ink); padding-bottom: 1px;
+    border-bottom: 1.5px dotted transparent;
+  }
+  .s-val.ok:hover .v { border-bottom-color: var(--hair-strong); }
+
+  /* the candidates Himalaya found but did not assume into the series */
+  .candidates {
+    margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--hair);
+  }
+  .cand-h {
+    font-size: 10.5px; letter-spacing: 0.09em; text-transform: uppercase;
+    font-weight: 700; color: var(--ink-faint); margin-bottom: 9px;
+  }
+  .cand-row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 9px 8px; border: 1px dashed var(--hair-strong);
+    border-radius: var(--radius);
+  }
+  .cand-row .spark { opacity: 0.7; }
+  .cand-info { flex: 1; min-width: 0; }
+  .cand-name { font-size: 12.5px; font-weight: 600; color: var(--ink-soft); }
+  .cand-why { font-size: 11px; color: var(--ink-faint); margin-top: 1px; }
+  .cand-why .warn { color: var(--accent); font-weight: 600; }
+  .cand-add {
+    font-family: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer;
+    border: 1px solid var(--hair-strong); background: var(--plate);
+    border-radius: 6px; padding: 6px 11px; color: var(--ink); flex-shrink: 0;
+  }
+  .cand-add:hover { background: var(--paper-sunk); }
+  .cand-empty { font-size: 11.5px; color: var(--ink-faint); font-style: italic; }
+
+  /* the preview — the phase story this order will print */
+  .preview { margin-top: 22px; }
+  .ps { display: flex; gap: 2px; height: 8px; }
+  .ps-seg { flex: 1; border-radius: 1.5px; }
+  .ps-cap {
+    margin-top: 7px; font-size: 11.5px; color: var(--ink-soft);
+    display: flex; align-items: center; gap: 5px;
+  }
+  .ps-cap .arr { color: var(--ink-faint); }
+  .ps-cap .ph { font-weight: 600; }
+
+  /* the foot — confirmation state + the one action */
+  .scope-foot {
+    margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--hair);
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 20px;
+  }
+  .foot-state { display: flex; flex-direction: column; gap: 3px; }
+  .fs-line { display: flex; align-items: center; gap: 7px; font-size: 12.5px; }
+  .fs-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .fs-line.warn .fs-dot { background: var(--accent); }
+  .fs-line.warn { color: var(--accent); font-weight: 600; }
+  .fs-line.ready .fs-dot { background: var(--im3m); }
+  .fs-line.ready { color: var(--ink); font-weight: 600; }
+  .foot-note { font-size: 10.5px; color: var(--ink-faint); max-width: 42ch; }
+  .build-btn {
+    font-family: inherit; font-size: 13px; font-weight: 600;
+    border: 1px solid var(--ink); background: var(--ink); color: var(--paper);
+    border-radius: 7px; padding: 11px 18px; cursor: pointer; flex-shrink: 0;
+    transition: background-color 130ms ease-out;
+  }
+  .build-btn:not(:disabled):hover { background: oklch(0.36 0.013 68); }
+  /* gated: an uncertain parse cannot be rubber-stamped into the series */
+  .build-btn:disabled {
+    background: var(--paper-sunk); color: var(--ink-faint);
+    border-color: var(--hair-strong); cursor: not-allowed;
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ── Top bar ─────────────────────────────────────────────────────── -->
+  <div class="topbar">
+    <span class="wordmark">Himalaya <span class="tail">· SAXS</span></span>
+    <div class="stage-tabs">
+      <button class="stage-tab"><span class="dot"></span>Samples</button>
+      <button class="stage-tab"><span class="dot"></span>Index</button>
+      <button class="stage-tab is-active"><span class="dot"></span>Series</button>
+    </div>
+    <span class="spacer"></span>
+    <button class="ghost-btn">Discard</button>
+  </div>
+
+  <div class="stage">
+    <div class="scope-plate">
+
+      <div class="kicker">New series</div>
+      <h1 class="scope-title"><span class="ed">LL37 titration of lipid 1&#8209;2</span></h1>
+
+      <!-- the machine's grouping proposal -->
+      <div class="autogroup">
+        <svg class="ag-spark" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path d="M8 1.4l1.7 4.2 4.5.3-3.5 2.9 1.2 4.4L8 10.9 4.1 13.2l1.2-4.4L1.8 5.9l4.5-.3z"
+                fill="var(--accent)"/>
+        </svg>
+        <div class="ag-text">
+          You selected <b>6 samples</b> on the contact sheet. Himalaya grouped
+          them from their names and read the order from the <b>LL37 : lipid
+          ratio</b> &mdash; five ratios parsed cleanly, one needs a look.
+        </div>
+      </div>
+
+      <!-- the ordering variable: the one decision -->
+      <div class="field-label">Ordered by</div>
+      <div class="order-field">
+        <span class="of-val">LL37 : lipid ratio</span>
+        <span class="of-chev">&#9662;</span>
+      </div>
+      <div class="of-note">Read from the sample names. Change it to time, dose,
+        temperature, or define your own.</div>
+
+      <!-- the samples, in order -->
+      <div class="samples-head">
+        <span class="sh-l">The series</span>
+        <span class="sh-right">
+          <button class="sh-undo" id="sh-undo" hidden>&#8634; Undo last change</button>
+          <span class="sh-r" id="samples-count">6 samples &middot; low to high</span>
+        </span>
+      </div>
+      <div id="rows"></div>
+
+      <!-- what the machine found but did not assume -->
+      <div class="candidates">
+        <div class="cand-h">Himalaya also found</div>
+        <div id="cand-list"></div>
+      </div>
+
+      <!-- the phase story this order prints -->
+      <div class="preview">
+        <div class="field-label" style="margin-top:0">Preview &mdash; phase across the series</div>
+        <div class="ps" id="ps"></div>
+        <div class="ps-cap" id="ps-cap"></div>
+      </div>
+
+      <!-- confirmation -->
+      <div class="scope-foot">
+        <div class="foot-state">
+          <div class="fs-line" id="fs-line"><span class="fs-dot"></span>
+            <span id="fs-text"></span></div>
+          <div class="foot-note">Confirming records the LL37 : lipid ratio on
+            every sample &mdash; the next series that needs it already knows.</div>
+        </div>
+        <button class="build-btn" id="build-btn">Confirm &amp; build &rarr;</button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+/* ════════════════════════════════════════════════════════════════════
+ * The samples carried in from a contact-sheet multi-select — the same
+ * LL37 titration the other surfaces use. Each holds the phase(s) present
+ * (for the trace sparkline) and the value Himalaya parsed for the
+ * ordering variable, with `flagged` set where the parse is uncertain.
+ * ════════════════════════════════════════════════════════════════════ */
+
+const PHASES = {
+  Pn3m:     { ratios: [1, 1.2247, 1.4142, 1.7321], color: 'var(--pn3m)' },
+  Lamellar: { ratios: [1, 2, 3, 4],                color: 'var(--lam)' },
+};
+const PHASE_COLOR = { Pn3m:'var(--pn3m)', Lamellar:'var(--lam)' };
+const P = (q0, amp) => ({ phase:'Pn3m', q0, amp });
+const L = (q0, amp) => ({ phase:'Lamellar', q0, amp });
+
+/* the selected samples — `key` is the numeric sort key behind the ratio */
+let SERIES = [
+  { id:'smp_04', name:'Lipid 1-2, no LL37',       value:'1 : 0',    key:0,
+    flagged:true,  comps:[P(0.0444,1.00)] },
+  { id:'smp_07', name:'Lipid 1-2 + LL37 1:0.25',  value:'1 : 0.25', key:0.25,
+    flagged:false, comps:[P(0.0447,0.86)] },
+  { id:'smp_09', name:'Lipid 1-2 + LL37 1:0.5',   value:'1 : 0.5',  key:0.5,
+    flagged:false, comps:[P(0.0451,0.52), L(0.1030,0.34)] },
+  { id:'smp_12', name:'Lipid 1-2 + LL37 1:1',     value:'1 : 1',    key:1,
+    flagged:false, comps:[P(0.0455,0.21), L(0.1042,0.72)] },
+  { id:'smp_15', name:'Lipid 1-2 + LL37 1:2',     value:'1 : 2',    key:2,
+    flagged:false, comps:[L(0.1050,0.94)] },
+  { id:'smp_18', name:'Lipid 1-2 + LL37 1:4',     value:'1 : 4',    key:4,
+    flagged:false, comps:[L(0.1056,1.00)] },
+];
+
+/* samples the machine noticed but would not assume — coherence is the
+   human's call. smp_21 has LL37, but it is the 1-1 lipid line. */
+let CANDIDATES = [
+  { id:'smp_21', name:'Lipid 1-1 + LL37 1:1', value:'1 : 1', key:1,
+    flagged:false, comps:[P(0.0461,0.55), L(0.1071,0.50)],
+    why:'has LL37, but the <span class="warn">1-1 lipid line</span> — its own series?' },
+];
+
+/* ── intensity model + the trace sparkline ────────────────────────────── */
+const Q = { min: 0.02, max: 0.42 };
+function intensity(q, comps) {
+  let v = 0.26 * Math.pow(Q.min / q, 0.9);
+  for (const c of comps) {
+    PHASES[c.phase].ratios.forEach((r, i) => {
+      const qp = c.q0 * r, h = c.amp * Math.pow(0.6, i), sg = 0.03 * qp + 0.0006;
+      v += h * Math.exp(-0.5 * Math.pow((q - qp) / sg, 2));
+    });
+  }
+  return v;
+}
+function domPhase(comps) {
+  if (!comps.length) return null;
+  return comps.slice().sort((a,b) => b.amp - a.amp)[0].phase;
+}
+function sparkline(comps) {
+  const W = 76, H = 28, padX = 4, padB = 4, amp = 17;
+  const xOf = q => padX + (Math.log(q) - Math.log(Q.min)) /
+                          (Math.log(Q.max) - Math.log(Q.min)) * (W - 2*padX);
+  const N = 90, qs = [];
+  for (let i = 0; i <= N; i++) {
+    const f = i / N;
+    qs.push(Math.exp(Math.log(Q.min) + f * (Math.log(Q.max) - Math.log(Q.min))));
+  }
+  const ys = qs.map(q => intensity(q, comps));
+  const hS = amp / Math.max(...ys, 1e-6), y0 = H - padB;
+  let d = '';
+  qs.forEach((q, i) => {
+    d += (i ? 'L' : 'M') + xOf(q).toFixed(1) + ' ' + (y0 - ys[i]*hS).toFixed(1) + ' ';
+  });
+  const col = domPhase(comps) ? PHASE_COLOR[domPhase(comps)] : 'var(--unindexed)';
+  return `<svg viewBox="0 0 ${W} ${H}" aria-hidden="true">
+    <line x1="${padX}" y1="${y0}" x2="${W-padX}" y2="${y0}"
+      stroke="var(--hair)" stroke-width="1"/>
+    <path d="${d}L${W-padX} ${y0} L${padX} ${y0} Z" fill="${col}" opacity="0.1"/>
+    <path d="${d}" fill="none" stroke="${col}" stroke-width="1.4"
+      stroke-linejoin="round"/>
+  </svg>`;
+}
+
+/* ── render ───────────────────────────────────────────────────────────── */
+function rowHTML(s) {
+  const val = s.flagged
+    ? `<div class="s-val flag" data-id="${s.id}">
+         <span class="v">${s.value}</span>
+         <span class="check">&#9656; check the read</span>
+       </div>`
+    : `<div class="s-val ok" data-id="${s.id}" title="Click to re-open this value">
+         <span class="v">${s.value}</span>
+       </div>`;
+  return `<div class="srow ${s.flagged ? 'flagged' : ''}">
+    <span class="grip">&#8942;&#8942;</span>
+    <span class="spark">${sparkline(s.comps)}</span>
+    <span class="s-text">
+      <div class="s-name">${s.name}</div>
+      <div class="s-id">${s.id}</div>
+    </span>
+    ${val}
+  </div>`;
+}
+
+function candHTML(c) {
+  return `<div class="cand-row">
+    <span class="spark">${sparkline(c.comps)}</span>
+    <div class="cand-info">
+      <div class="cand-name">${c.name}</div>
+      <div class="cand-why">${c.why}</div>
+    </div>
+    <button class="cand-add" data-id="${c.id}">+ Add to series</button>
+  </div>`;
+}
+
+function phaseStripHTML() {
+  const segs = SERIES.map(s => {
+    const d = domPhase(s.comps);
+    if (s.comps.length > 1) {
+      const a = PHASE_COLOR[s.comps[0].phase], b = PHASE_COLOR[s.comps[1].phase];
+      return `<div class="ps-seg" style="background:linear-gradient(` +
+             `100deg, ${a} 42%, ${b} 58%)"></div>`;
+    }
+    return `<div class="ps-seg" style="background:${PHASE_COLOR[d]}"></div>`;
+  }).join('');
+  const first = domPhase(SERIES[0].comps);
+  const last  = domPhase(SERIES[SERIES.length-1].comps);
+  const cap = first === last
+    ? `<span class="ph" style="color:${PHASE_COLOR[first]}">${first}</span>` +
+      `<span class="arr">throughout</span>`
+    : `<span class="ph" style="color:${PHASE_COLOR[first]}">${first}</span>` +
+      `<span class="arr">&rarr;</span>` +
+      `<span class="ph" style="color:${PHASE_COLOR[last]}">${last}</span>`;
+  return { segs, cap };
+}
+
+function render() {
+  SERIES.sort((a,b) => a.key - b.key);
+  document.getElementById('rows').innerHTML = SERIES.map(rowHTML).join('');
+  document.getElementById('samples-count').textContent =
+    `${SERIES.length} samples · low to high`;
+
+  document.getElementById('cand-list').innerHTML = CANDIDATES.length
+    ? CANDIDATES.map(candHTML).join('')
+    : `<div class="cand-empty">Nothing else in the corpus matches this grouping.</div>`;
+
+  const ps = phaseStripHTML();
+  document.getElementById('ps').innerHTML = ps.segs;
+  document.getElementById('ps-cap').innerHTML = ps.cap;
+
+  const flags = SERIES.filter(s => s.flagged).length;
+  const line = document.getElementById('fs-line');
+  const text = document.getElementById('fs-text');
+  const buildBtn = document.getElementById('build-btn');
+  if (flags > 0) {
+    const n = `${flags} value${flags === 1 ? '' : 's'}`;
+    line.className = 'fs-line warn';
+    text.textContent = `${n} to check before you can build`;
+    /* the gate: a flagged parse cannot be rubber-stamped into the series */
+    buildBtn.disabled = true;
+    buildBtn.title = `Check the flagged value${flags === 1 ? '' : 's'} above before building`;
+  } else {
+    line.className = 'fs-line ready';
+    text.textContent = `All ${SERIES.length} values confirmed — ready to build`;
+    buildBtn.disabled = false;
+    buildBtn.title = '';
+  }
+
+  const undoBtn = document.getElementById('sh-undo');
+  undoBtn.hidden = history.length === 0;
+  if (history.length) undoBtn.title = `Step back: ${history[history.length-1].label}`;
+}
+
+/* ── interactions ─────────────────────────────────────────────────────── */
+/* ── reversible: nothing here is durable until "Confirm & build", and
+   every change steps back, in-session, with Undo or ⌘Z. After build, a
+   confirmation is a sample_tag written through the event log — reversible
+   there the same way every other mutation is. ───────────────────────── */
+let history = [];
+
+function undo() {
+  const e = history.pop();
+  if (!e) return;
+  if (e.type === 'flag') {
+    const s = SERIES.find(x => x.id === e.id);
+    if (s) s.flagged = e.prev;
+  } else if (e.type === 'add') {
+    const i = SERIES.findIndex(x => x.id === e.id);
+    if (i >= 0) CANDIDATES.push(SERIES.splice(i, 1)[0]);
+  }
+  render();
+}
+
+/* clicking any value toggles whether it still needs a look — resolving a
+   flag, or re-opening a value (including one resolved by mistake) */
+document.getElementById('rows').addEventListener('click', e => {
+  const v = e.target.closest('.s-val');
+  if (!v) return;
+  const s = SERIES.find(x => x.id === v.dataset.id);
+  if (!s) return;
+  history.push({ type:'flag', id:s.id, prev:s.flagged,
+    label:(s.flagged ? 'resolved ' : 're-opened ') + s.id });
+  s.flagged = !s.flagged;
+  render();
+});
+
+/* adding a candidate folds it into the series and re-sorts by value */
+document.getElementById('cand-list').addEventListener('click', e => {
+  const btn = e.target.closest('.cand-add');
+  if (!btn) return;
+  const i = CANDIDATES.findIndex(c => c.id === btn.dataset.id);
+  if (i < 0) return;
+  const c = CANDIDATES.splice(i, 1)[0];
+  SERIES.push(c);
+  history.push({ type:'add', id:c.id, label:'added ' + c.id });
+  render();
+});
+
+document.getElementById('sh-undo').addEventListener('click', undo);
+document.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
+    e.preventDefault(); undo();
+  }
+});
+
+render();
+</script>
+</body>
+</html>

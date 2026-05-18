@@ -1,0 +1,959 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Focus workspace — "The Print"</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet" />
+<style>
+  /*
+   * The focus workspace — indexing one sample, in "The Print" language.
+   * The trace is the hero. The detector image is co-resident and linked to
+   * the trace by q: a peak in the integration is a ring in the image.
+   *
+   * A sample can hold MORE THAN ONE phase. Peaks are partitioned among
+   * coexisting phases (auto_group / remove_subsets in the core): the phase
+   * call is the *set* of phases present, and the candidate indexings are a
+   * multi-select active set, not radio buttons. Independent phases coexist;
+   * phases that explain the same peaks swap.
+   * Interactions (peak edit, active-set semantics) are validated — this is
+   * layout and visual hierarchy only.
+   */
+  :root {
+    --paper:        oklch(0.978 0.006 85);
+    --paper-sunk:   oklch(0.951 0.008 84);
+    --plate:        oklch(0.992 0.004 90);
+    --ink:          oklch(0.265 0.013 68);
+    --ink-soft:     oklch(0.467 0.012 70);
+    --ink-faint:    oklch(0.640 0.010 74);
+    --hair:         oklch(0.882 0.008 80);
+    --hair-strong:  oklch(0.806 0.010 78);
+
+    /* ── Shared phase palette ──────────────────────────────────────────
+       Byte-identical across all three surface mockups (sample-table,
+       focus-workspace, series-builder). Light-paper tuning: darker, a
+       touch more chroma than DESIGN.md's dark values, so each reads at
+       AA on --plate. The full eight-phase set extends from here. */
+    --pn3m:  oklch(0.585 0.150 58);    /* amber */
+    --lam:   oklch(0.505 0.150 264);   /* periwinkle-indigo */
+    --im3m:  oklch(0.520 0.120 162);   /* sage */
+    --hex:   oklch(0.540 0.130 350);   /* rose */
+
+    --accent: oklch(0.555 0.150 38);
+    --frame-edge: oklch(0.150 0.010 55);
+    --unindexed: oklch(0.660 0.012 76);
+
+    --radius: 7px;
+
+    /* the detector square is the single source of truth for the lower row.
+       both panels derive their height from it, so a long reflections table
+       can only scroll within that height, never stretch it. */
+    --det-size: 356px;
+    --panel-chrome: 84px;   /* panel padding + head + hint, above the square */
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--paper); color: var(--ink);
+    font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+    font-size: 13px; line-height: 1.5;
+    -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+  }
+  .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+  .app { height: 100%; display: flex; flex-direction: column; }
+
+  /* ── Top bar ───────────────────────────────────────────────────────── */
+  .topbar {
+    height: 56px; flex-shrink: 0;
+    display: flex; align-items: center; gap: 16px;
+    padding: 0 24px; border-bottom: 1px solid var(--hair);
+  }
+  /* corpus-level wordmark — experiment is a facet now, not the crumb */
+  .wordmark {
+    font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase;
+    font-weight: 700; color: var(--ink);
+  }
+  .wordmark .tail { color: var(--ink-faint); font-weight: 600; }
+  .topbar .spacer { flex: 1; }
+  .stage-tabs { display: flex; gap: 2px; }
+  .stage-tab {
+    font-size: 11px; letter-spacing: 0.04em; font-weight: 600;
+    text-transform: uppercase; color: var(--ink-faint);
+    padding: 6px 11px; border-radius: 5px; cursor: pointer;
+    border: none; background: none;
+  }
+  .stage-tab.is-active { color: var(--ink); background: var(--paper-sunk); }
+  .stage-tab .dot {
+    display: inline-block; width: 5px; height: 5px; border-radius: 50%;
+    background: var(--hair-strong); margin-right: 6px; vertical-align: 1px;
+  }
+  .stage-tab.is-active .dot { background: var(--accent); }
+
+  .stepper { display: flex; align-items: center; gap: 2px; }
+  .stepper button {
+    font-family: inherit; font-size: 13px; color: var(--ink-faint);
+    border: none; background: none; cursor: pointer; padding: 4px 7px;
+    border-radius: 5px;
+  }
+  .stepper button:hover { background: var(--paper-sunk); color: var(--ink); }
+  .stepper .who {
+    font-size: 12px; font-weight: 600; color: var(--ink);
+    padding: 0 6px; min-width: 184px; text-align: center;
+  }
+  .stepper .who small {
+    display: block; font-size: 9.5px; font-weight: 600; color: var(--ink-faint);
+    letter-spacing: 0.05em; text-transform: uppercase;
+  }
+  .btn {
+    font-family: inherit; font-size: 12px; font-weight: 600;
+    border-radius: 6px; cursor: pointer; padding: 7px 13px;
+    border: 1px solid var(--hair-strong); background: var(--plate);
+    color: var(--ink);
+  }
+  .btn:hover { background: var(--paper-sunk); }
+  .btn .badge {
+    font-family: ui-monospace, Menlo, monospace; font-size: 10px;
+    color: var(--ink-faint); margin-left: 5px;
+  }
+
+  /* ── Main split ────────────────────────────────────────────────────── */
+  /* [ work | rail | notes margin ] — the notes margin is the first column
+     to yield as width shrinks; below the breakpoint it collapses to the
+     topbar toggle, with no middle "reflow" state. */
+  .main {
+    flex: 1; display: grid;
+    grid-template-columns: 1fr 348px 250px; min-height: 0;
+  }
+  .work { overflow: auto; padding: 30px 34px 56px; }
+  .work-inner {
+    max-width: 1160px; margin: 0 auto;
+    display: flex; flex-direction: column; gap: 20px;
+  }
+
+  /* ── The trace plate (the hero) ────────────────────────────────────── */
+  .plate {
+    background: var(--plate); border: 1px solid var(--hair);
+    border-radius: 4px;
+    box-shadow: 0 1px 1px rgba(60,52,40,.04), 0 16px 36px -24px rgba(60,52,40,.20);
+    padding: 22px 26px 18px;
+  }
+  .plate-head {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 20px; margin-bottom: 4px;
+  }
+  .kicker {
+    font-size: 11px; letter-spacing: 0.13em; text-transform: uppercase;
+    font-weight: 700; color: var(--accent); margin-bottom: 6px;
+  }
+  .plate-head h1 {
+    font-family: "Newsreader", Georgia, serif;
+    font-size: 27px; line-height: 1.1; font-weight: 500;
+    letter-spacing: -0.005em; color: var(--ink);
+  }
+  .plate-head .h-sub {
+    margin-top: 5px; font-size: 12px; color: var(--ink-faint);
+    font-family: ui-monospace, Menlo, monospace;
+  }
+  .tools { display: flex; gap: 7px; align-items: center; flex-shrink: 0; }
+  .seg {
+    display: flex; background: var(--plate);
+    border: 1px solid var(--hair-strong); border-radius: 6px; overflow: hidden;
+  }
+  .seg button {
+    font-family: inherit; font-size: 11px; font-weight: 600;
+    padding: 5px 10px; border: none; background: none; cursor: pointer;
+    color: var(--ink-faint);
+  }
+  .seg button.on { background: var(--ink); color: var(--paper); }
+  .tool-btn {
+    font-family: inherit; font-size: 11px; font-weight: 600;
+    border: 1px solid var(--hair-strong); background: var(--plate);
+    border-radius: 6px; padding: 5px 10px; cursor: pointer; color: var(--ink);
+  }
+  .tool-btn:hover { background: var(--paper-sunk); }
+  .tool-btn.armed { background: var(--accent); color: oklch(0.99 0.005 85);
+    border-color: var(--accent); }
+
+  /* trace SVG */
+  svg .axis-line { stroke: var(--hair-strong); stroke-width: 1; }
+  svg .tick { stroke: var(--hair); stroke-width: 1; }
+  svg .tick-txt { fill: var(--ink-faint); font-size: 10.5px;
+    font-family: ui-monospace, Menlo, monospace; }
+  svg .axis-title { fill: var(--ink-soft); font-size: 11.5px; font-weight: 600; }
+  svg .trace-fill { opacity: 0.07; }
+  svg .trace-line { fill: none; stroke-width: 1.9; stroke-linejoin: round;
+    stroke: var(--ink-soft); }
+  svg .pk-qline { stroke-dasharray: 2 3; stroke-width: 1; opacity: 0;
+    transition: opacity 90ms ease-out; }
+  svg .pk-dot { stroke: var(--plate); stroke-width: 1.5; transition: r 90ms ease-out; }
+  svg .pk-label { font-size: 11px; font-weight: 700;
+    font-family: ui-monospace, Menlo, monospace; }
+  svg .pk-hit { fill: transparent; cursor: pointer; }
+  svg .pk.hot .pk-qline { opacity: 0.7; }
+  svg .pk.hot .pk-dot { stroke: var(--accent); stroke-width: 2; }
+  /* candidate hover-preview: the phase's own colour, not the accent.
+     accent = a cross-reference between views; phase colour = a proposed
+     assignment. --pc is set per element by setPreview(). */
+  svg .pk.preview .pk-qline { opacity: 0.85; stroke: var(--pc); }
+  svg .pk.preview .pk-dot   { stroke: var(--pc); stroke-width: 2.6; }
+  svg .pk.losing .pk-dot    { opacity: 0.3; }
+  svg .pk.losing .pk-label  { opacity: 0.3; }
+  svg .pk.losing .pk-qline  { opacity: 0.4; stroke-dasharray: 1 3; }
+
+  /* ── Lower row: detector + reflections ─────────────────────────────── */
+  /* both panels are exactly one detector-square tall, so the image and the
+     table share a baseline; the table scrolls inside that height. */
+  .lower {
+    display: grid;
+    grid-template-columns: calc(var(--det-size) + 34px) minmax(0, 1fr);
+    gap: 20px;
+  }
+  .panel {
+    background: var(--plate); border: 1px solid var(--hair);
+    border-radius: 4px; padding: 15px 17px 17px;
+  }
+  .lower .panel {
+    height: calc(var(--det-size) + var(--panel-chrome));
+    display: flex; flex-direction: column; min-height: 0;
+  }
+  .panel-head {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 11px;
+  }
+  .panel-h {
+    font-size: 10.5px; letter-spacing: 0.09em; text-transform: uppercase;
+    font-weight: 700; color: var(--ink-faint);
+  }
+  .expo { display: flex; align-items: center; gap: 5px; }
+  .expo .e-label { font-size: 10px; color: var(--ink-faint); margin-right: 2px; }
+  .e-thumb {
+    width: 32px; height: 32px; border-radius: 3px; padding: 0; cursor: pointer;
+    border: 1px solid var(--frame-edge); overflow: hidden; position: relative;
+    background: var(--frame-edge);
+  }
+  .e-thumb svg { display: block; width: 100%; height: 100%; }
+  .e-thumb.on { box-shadow: 0 0 0 2px var(--accent); }
+  .e-thumb .e-rep {
+    position: absolute; top: 1px; right: 1px; width: 6px; height: 6px;
+    border-radius: 50%; background: var(--accent); border: 1px solid var(--plate);
+    display: none;
+  }
+  .e-thumb.rep .e-rep { display: block; }
+
+  .det-box {
+    width: var(--det-size); height: var(--det-size); flex-shrink: 0;
+    border-radius: 4px; overflow: hidden; margin: 0 auto;
+    background: var(--frame-edge); border: 1px solid var(--frame-edge);
+  }
+  .det-box svg { display: block; width: 100%; height: 100%; }
+  svg .ring { cursor: pointer; }
+  svg .ring-sharp { transition: stroke-width 90ms ease-out; }
+  svg .ring.hot .ring-sharp { stroke: var(--accent) !important; stroke-width: 2.4; }
+  svg .ring.hot .ring-glow { stroke: var(--accent) !important; }
+  svg .ring.preview .ring-sharp { stroke: var(--pc) !important; stroke-width: 2.2; }
+  svg .ring.preview .ring-glow  { stroke: var(--pc) !important; opacity: 0.55; }
+  svg .ring.losing .ring-sharp  { opacity: 0.2; }
+  svg .ring.losing .ring-glow   { opacity: 0.1; }
+  .det-hint { margin-top: 9px; font-size: 11px; color: var(--ink-faint);
+    flex-shrink: 0; }
+
+  /* reflections table — scrolls inside the panel when peaks are many,
+     so peak count never changes the row height */
+  .refl-scroll { flex: 1 1 0; min-height: 0; overflow-y: auto; }
+  .refl { width: 100%; border-collapse: collapse; }
+  .refl th {
+    text-align: left; font-size: 9.5px; letter-spacing: 0.07em;
+    text-transform: uppercase; font-weight: 700; color: var(--ink-faint);
+    padding: 4px 8px 7px; border-bottom: 1px solid var(--hair-strong);
+    position: sticky; top: 0; background: var(--plate);
+  }
+  .refl th.num, .refl td.num { text-align: right;
+    font-family: ui-monospace, Menlo, monospace; }
+  .refl td {
+    padding: 8px; border-bottom: 1px solid var(--hair);
+    font-size: 12px; color: var(--ink);
+  }
+  .refl tr:last-child td { border-bottom: none; }
+  .refl tbody tr { cursor: pointer; transition: background-color 80ms ease-out; }
+  .refl tbody tr.hot { background: color-mix(in oklab, var(--accent) 9%, transparent); }
+  /* candidate hover-preview — phase-coloured, distinct from the accent q-link */
+  .refl tbody tr.preview { background: color-mix(in oklab, var(--pc) 13%, transparent); }
+  .refl tbody tr.preview td { color: var(--ink); }
+  .refl tbody tr.losing td { opacity: 0.4; }
+  .refl .r-dot {
+    display: inline-block; width: 9px; height: 9px; border-radius: 50%;
+    vertical-align: -1px;
+  }
+  .refl .r-phase {
+    font-size: 9.5px; font-weight: 700; letter-spacing: 0.03em;
+  }
+  .refl .r-hkl { font-family: ui-monospace, Menlo, monospace; font-weight: 700; }
+  .refl .r-hkl.none { color: var(--unindexed); font-weight: 500; }
+  .refl tr.unindexed td { color: var(--ink-faint); }
+  .refl-foot {
+    margin-top: 11px; padding-top: 10px; flex-shrink: 0;
+    border-top: 1px solid var(--hair);
+    font-size: 11px; color: var(--ink-faint);
+  }
+
+  /* ── Rail: the output ──────────────────────────────────────────────── */
+  .rail {
+    background: var(--paper-sunk); border-left: 1px solid var(--hair);
+    overflow-y: auto; padding: 22px 20px 28px;
+    display: flex; flex-direction: column; gap: 20px;
+  }
+  .rail-sec { display: flex; flex-direction: column; gap: 10px; }
+  .rail-h {
+    font-size: 10.5px; letter-spacing: 0.09em; text-transform: uppercase;
+    font-weight: 700; color: var(--ink-faint);
+  }
+
+  /* the phase call — one block per phase present */
+  .phasecall {
+    background: var(--plate); border: 1px solid var(--hair);
+    border-radius: var(--radius); overflow: hidden;
+  }
+  .pc-tag {
+    font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
+    font-weight: 700; color: var(--ink-faint);
+    padding: 9px 15px 0;
+  }
+  .pc-block { padding: 11px 15px 13px; }
+  .pc-block + .pc-block { border-top: 1px solid var(--hair); }
+  .pcb-top {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+  }
+  .pcb-name {
+    font-family: "Newsreader", Georgia, serif; font-weight: 500;
+    font-size: 23px; line-height: 1; letter-spacing: -0.01em;
+  }
+  .pcb-val {
+    font-size: 12px; font-weight: 700; font-family: ui-monospace, Menlo, monospace;
+  }
+  .pcb-meta {
+    margin-top: 5px; font-size: 11px; color: var(--ink-soft);
+    font-family: ui-monospace, Menlo, monospace;
+  }
+  .pcb-bar {
+    margin-top: 8px; height: 4px; border-radius: 999px;
+    background: var(--hair); overflow: hidden;
+  }
+  .pcb-bar i { display: block; height: 100%; }
+  .pcb-series {
+    margin-top: 7px; font-size: 10.5px; color: var(--ink-faint);
+  }
+  .pcb-series .sr {
+    font-family: ui-monospace, Menlo, monospace; color: var(--ink-soft);
+    font-weight: 600;
+  }
+  .pc-empty { padding: 15px; font-size: 12px; color: var(--ink-faint); }
+
+  /* candidate indexings — a multi-select active set */
+  .cand {
+    display: flex; align-items: center; gap: 11px;
+    padding: 10px 12px; border-radius: var(--radius); cursor: pointer;
+    border: 1px solid var(--hair); background: var(--plate);
+  }
+  .cand:hover {
+    border-color: color-mix(in oklab, var(--pc) 50%, var(--hair));
+    background: color-mix(in oklab, var(--pc) 5%, var(--plate));
+  }
+  .cand.in {
+    border-color: color-mix(in oklab, var(--accent) 42%, var(--hair));
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 20%, transparent);
+  }
+  .cand .c-mark {
+    width: 16px; height: 16px; border-radius: 4px; flex-shrink: 0;
+    border: 1.5px solid var(--hair-strong);
+  }
+  .cand.in .c-mark {
+    border-color: var(--accent); background: var(--accent);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 8.2l2.7 2.7 5.2-5.6' fill='none' stroke='%23fdf9f1' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  }
+  .cand .c-body { flex: 1; min-width: 0; }
+  .cand .c-name {
+    font-size: 13px; font-weight: 700; font-family: ui-monospace, Menlo, monospace;
+  }
+  .cand .c-cover { font-size: 10.5px; color: var(--ink-faint); margin-top: 2px; }
+  .cand .c-score { text-align: right; font-family: ui-monospace, Menlo, monospace; }
+  .cand .c-score .cs-v { font-size: 13px; font-weight: 700; color: var(--ink); }
+  .cand .c-score .cs-bar {
+    width: 46px; height: 3.5px; border-radius: 999px; margin-top: 4px;
+    background: var(--hair); overflow: hidden;
+  }
+  .cand .c-score .cs-bar i { display: block; height: 100%; }
+
+  .rail-note { font-size: 11px; color: var(--ink-faint); line-height: 1.55; }
+
+  /* ── Notes: a margin, not a card ───────────────────────────────────── */
+  /* The marginalia of the plate — a quiet ruled column on wide viewports.
+     Deliberately not a card: it must not re-import the "co-equal cards for
+     unequal work" failure. It is the first column to yield as width drops. */
+  .notes-margin {
+    border-left: 1px solid var(--hair); background: var(--paper);
+    overflow-y: auto; padding: 22px 19px 26px;
+    display: flex; flex-direction: column; gap: 15px;
+  }
+  .nm-head { display: flex; align-items: baseline; gap: 7px; }
+  .nm-h {
+    font-size: 10.5px; letter-spacing: 0.09em; text-transform: uppercase;
+    font-weight: 700; color: var(--ink-faint);
+  }
+  .nm-count {
+    font-size: 10px; font-weight: 700; color: var(--ink-faint);
+    font-family: ui-monospace, Menlo, monospace;
+  }
+  .note {
+    font-size: 12px; line-height: 1.6; color: var(--ink-soft);
+    padding-bottom: 14px; border-bottom: 1px solid var(--hair);
+  }
+  .note:last-of-type { border-bottom: none; }
+  .note .n-meta {
+    font-size: 9.5px; letter-spacing: 0.05em; text-transform: uppercase;
+    font-weight: 700; color: var(--ink-faint); margin-bottom: 5px;
+  }
+  .note .n-meta b { color: var(--accent); font-weight: 700; }
+  .note .n-ref {
+    font-family: ui-monospace, Menlo, monospace; font-weight: 600;
+    color: var(--ink-soft);
+  }
+  .nm-add {
+    margin-top: auto; padding-top: 6px;
+    font-size: 12px; color: var(--ink-faint);
+    border-bottom: 1px dashed var(--hair-strong); padding-bottom: 7px;
+    cursor: text;
+  }
+  .nm-add::before { content: "✎ "; color: var(--accent); }
+
+  /* Below the breakpoint the margin yields to the topbar Notes toggle.
+     No middle "reflow" state — the column is present or it is the button. */
+  #notes-btn { display: none; }
+  @media (max-width: 1320px) {
+    .main { grid-template-columns: 1fr 348px; }
+    .notes-margin { display: none; }
+    #notes-btn { display: inline-block; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ── Top bar ─────────────────────────────────────────────────────── -->
+  <div class="topbar">
+    <span class="wordmark">Himalaya <span class="tail">· SAXS</span></span>
+    <div class="stage-tabs">
+      <button class="stage-tab"><span class="dot"></span>Samples</button>
+      <button class="stage-tab is-active"><span class="dot"></span>Index</button>
+      <button class="stage-tab"><span class="dot"></span>Series</button>
+    </div>
+    <span class="spacer"></span>
+    <div class="stepper">
+      <button title="previous sample">&#8249;</button>
+      <span class="who">Lipid 1&#8209;2 + LL37 1:0.5<small>sample 4 of 9</small></span>
+      <button title="next sample">&#8250;</button>
+    </div>
+    <button class="btn" id="notes-btn">Notes <span class="badge">1</span></button>
+  </div>
+
+  <div class="main">
+    <!-- ── Work area ──────────────────────────────────────────────────── -->
+    <div class="work">
+      <div class="work-inner">
+
+        <!-- the trace: hero plate -->
+        <div class="plate">
+          <div class="plate-head">
+            <div>
+              <div class="kicker">Integration</div>
+              <h1>Lipid 1&#8209;2 + LL37 1:0.5</h1>
+              <div class="h-sub">smp_09 &nbsp;·&nbsp; SSRL Apr 2026 &nbsp;·&nbsp; representative exposure smp_09_e03</div>
+            </div>
+            <div class="tools">
+              <div class="seg" id="scale-seg">
+                <button data-scale="log" class="on">log q</button>
+                <button data-scale="lin">linear q</button>
+              </div>
+              <button class="tool-btn" id="autofit">Auto-fit</button>
+              <button class="tool-btn" id="addpeak">+ Peak</button>
+            </div>
+          </div>
+          <svg id="trace" viewBox="0 0 1180 432" width="100%" role="img"
+               aria-label="1D integration trace with peaks from two coexisting phases"></svg>
+        </div>
+
+        <!-- detector image + reflections -->
+        <div class="lower">
+          <div class="panel">
+            <div class="panel-head">
+              <span class="panel-h">Detector image</span>
+              <div class="expo" id="expo"><span class="e-label">exposure</span></div>
+            </div>
+            <div class="det-box"><svg id="detector" viewBox="0 0 100 100"
+              aria-label="Detector image with Debye-Scherrer rings"></svg></div>
+            <div class="det-hint">Hover a peak, a ring, or a reflection &mdash; the matched
+              pair lights up.</div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-head"><span class="panel-h">Reflections</span></div>
+            <div class="refl-scroll">
+              <table class="refl">
+                <thead><tr>
+                  <th>phase</th>
+                  <th>hkl</th>
+                  <th class="num">q (&#8491;&#8315;&#185;)</th>
+                  <th class="num">d (&#8491;)</th>
+                </tr></thead>
+                <tbody id="refl-body"></tbody>
+              </table>
+            </div>
+            <div class="refl-foot" id="refl-foot"></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ── Rail: the output ───────────────────────────────────────────── -->
+    <aside class="rail">
+      <div class="rail-sec">
+        <div class="rail-h">Phase call</div>
+        <div class="phasecall" id="phasecall"></div>
+      </div>
+
+      <div class="rail-sec">
+        <div class="rail-h">Candidate indexings</div>
+        <div id="cand-list" style="display:flex;flex-direction:column;gap:7px"></div>
+        <div class="rail-note">
+          Check every phase that is present &mdash; a sample can hold more than one.
+          Candidates that explain the same peaks swap; independent phases coexist.
+        </div>
+      </div>
+    </aside>
+
+    <!-- ── Notes: the margin of the plate ─────────────────────────────── -->
+    <aside class="notes-margin">
+      <div class="nm-head">
+        <span class="nm-h">Notes</span>
+        <span class="nm-count">1</span>
+      </div>
+      <div class="note">
+        <div class="n-meta"><b>JC</b> &nbsp;·&nbsp; 2 days ago</div>
+        Weak shoulder at <span class="n-ref">q ≈ 0.064</span> — checked the e05
+        image, the ring is crisp, not a flare. Indexing it as Pn3m
+        <span class="n-ref">200</span>.
+      </div>
+      <div class="nm-add">Add a note…</div>
+    </aside>
+  </div>
+</div>
+
+<script>
+/* ════════════════════════════════════════════════════════════════════
+ * Sample smp_09 — lipid 1-2 + LL37 1:0.5. Mid-titration: a Pn3m cubic
+ * phase and a lamellar phase coexist. Six Bragg peaks in the integration
+ * — three from each phase. Each peak is one reflection; in the 2D image
+ * it is a ring at a radius proportional to q.
+ * ════════════════════════════════════════════════════════════════════ */
+
+const PEAKS = [
+  { q: 0.0451, amp: 0.62 },   /* 0  Pn3m 110 */
+  { q: 0.0552, amp: 0.34 },   /* 1  Pn3m 111 */
+  { q: 0.0638, amp: 0.20 },   /* 2  Pn3m 200 */
+  { q: 0.1030, amp: 1.00 },   /* 3  Lamellar 001 */
+  { q: 0.2060, amp: 0.46 },   /* 4  Lamellar 002 */
+  { q: 0.3090, amp: 0.22 },   /* 5  Lamellar 003 */
+];
+const QLO = PEAKS[0].q, QHI = PEAKS[5].q;
+PEAKS.forEach((p, i) => {
+  p.i = i;
+  p.d = 2 * Math.PI / p.q;
+  /* detector ring radius — proportional to q, lifted clear of the beamstop */
+  p.rr = 12 + (p.q - QLO) / (QHI - QLO) * 33;
+});
+
+/* candidate indexings. peaks[] = which peaks this candidate claims;
+   labels[] runs parallel. Several may be active at once, as long as they
+   do not claim the same peak. */
+const CANDIDATES = [
+  { name: 'Pn3m', color: 'var(--pn3m)', score: 0.89, lattice: 'a = 197 Å',
+    series: '√2 : √3 : √4',
+    peaks: [0, 1, 2], labels: ['110', '111', '200'] },
+  { name: 'Lamellar', color: 'var(--lam)', score: 0.96, lattice: 'd = 61 Å',
+    series: '1 : 2 : 3',
+    peaks: [3, 4, 5], labels: ['001', '002', '003'] },
+  { name: 'Hexagonal', color: 'var(--hex)', score: 0.41, lattice: 'a = 70 Å',
+    series: '1 : √3 : 2',
+    peaks: [3, 5], labels: ['10', '11'] },     /* competes with Lamellar */
+];
+const byName = n => CANDIDATES.find(c => c.name === n);
+
+/* the active set — the phases currently in the call */
+let activeSet = new Set(['Pn3m', 'Lamellar']);
+
+/* which active candidate claims peak i (null if unindexed) */
+function claimOf(i) {
+  for (const c of CANDIDATES)
+    if (activeSet.has(c.name) && c.peaks.includes(i)) return c;
+  return null;
+}
+function labelOf(cand, i) { return cand.labels[cand.peaks.indexOf(i)]; }
+
+/* toggle a candidate; turning one on evicts any active candidate that
+   explains the same peaks (remove_subsets in miniature) */
+function toggleCandidate(name) {
+  if (activeSet.has(name)) { activeSet.delete(name); return; }
+  const cand = byName(name);
+  for (const other of [...activeSet]) {
+    if (byName(other).peaks.some(p => cand.peaks.includes(p))) activeSet.delete(other);
+  }
+  activeSet.add(name);
+}
+
+/* representative-exposure choices for the switcher */
+const EXPOSURES = [
+  { n: 1, b: 0.60 }, { n: 2, b: 0.78 }, { n: 3, b: 0.95, rep: true },
+  { n: 4, b: 0.82 }, { n: 5, b: 0.66 }, { n: 6, b: 0.70 },
+];
+let curExp = 2;
+
+/* ── geometry / helpers ───────────────────────────────────────────────── */
+const NS = 'http://www.w3.org/2000/svg';
+const el = (n, a) => { const e = document.createElementNS(NS, n);
+  for (const k in a) e.setAttribute(k, a[k]); return e; };
+
+const VB = { w: 1180, h: 432 };
+const M  = { l: 70, r: 54, t: 26, b: 58 };
+const PW = VB.w - M.l - M.r;
+const PH = VB.h - M.t - M.b;
+const Q  = { min: 0.026, max: 0.400 };
+
+let scaleMode = 'log';
+const xOf = q => scaleMode === 'log'
+  ? M.l + (Math.log(q) - Math.log(Q.min)) /
+          (Math.log(Q.max) - Math.log(Q.min)) * PW
+  : M.l + (q - Q.min) / (Q.max - Q.min) * PW;
+
+function intensity(q) {
+  let v = 0.30 * Math.pow(Q.min / q, 0.80);
+  for (const p of PEAKS) {
+    const sg = 0.020 * p.q + 0.0008;
+    v += p.amp * Math.exp(-0.5 * Math.pow((q - p.q) / sg, 2));
+  }
+  return v;
+}
+
+/* ── hover linkage: peak <-> ring <-> reflection row ──────────────────── */
+/* the q-link channel: one peak/ring/row triple, highlighted in the accent */
+function setHot(i) {
+  document.querySelectorAll('[data-peak]').forEach(node => {
+    node.classList.toggle('hot', i != null && +node.dataset.peak === i);
+  });
+}
+
+/* ── candidate hover-preview: phase-coloured, ephemeral ───────────────── */
+/* Hovering a candidate previews the peaks it would claim, in the phase's
+   own colour — committed only on click. For a swap (a candidate that
+   competes with an active one), peaks the swap would orphan are marked
+   "losing", so the cost is visible before the click. */
+function setPreview(name) {
+  document.querySelectorAll('.preview, .losing').forEach(n => {
+    n.classList.remove('preview', 'losing');
+    n.style.removeProperty('--pc');
+  });
+  if (!name) return;
+  const cand = byName(name);
+  const claim = new Set(cand.peaks);
+  const lost = new Set();
+  if (!activeSet.has(name)) {
+    for (const other of activeSet) {
+      if (other === name) continue;
+      const o = byName(other);
+      if (o.peaks.some(p => claim.has(p)))
+        o.peaks.forEach(p => { if (!claim.has(p)) lost.add(p); });
+    }
+  }
+  document.querySelectorAll('[data-peak]').forEach(node => {
+    const i = +node.dataset.peak;
+    if (claim.has(i)) {
+      node.classList.add('preview');
+      node.style.setProperty('--pc', cand.color);
+    } else if (lost.has(i)) {
+      node.classList.add('losing');
+    }
+  });
+}
+
+/* ════════════ the trace ════════════ */
+function renderTrace() {
+  const svg = document.getElementById('trace');
+  svg.innerHTML = '';
+  const baseY = M.t + PH;
+
+  const N = 640, xs = [], ys = [];
+  for (let s = 0; s <= N; s++) {
+    const f = s / N;
+    const q = scaleMode === 'log'
+      ? Math.exp(Math.log(Q.min) + f * (Math.log(Q.max) - Math.log(Q.min)))
+      : Q.min + f * (Q.max - Q.min);
+    xs.push(q); ys.push(intensity(q));
+  }
+  const gmax = Math.max(...ys);
+  const hScale = (PH - 48) / gmax;
+  const yOf = v => baseY - v * hScale;
+
+  /* x-axis */
+  svg.appendChild(el('line', { class: 'axis-line',
+    x1: M.l, y1: baseY, x2: M.l + PW, y2: baseY }));
+  const ticks = scaleMode === 'log'
+    ? [0.03, 0.05, 0.07, 0.1, 0.15, 0.2, 0.3, 0.4]
+    : [0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4];
+  ticks.forEach(q => {
+    if (q < Q.min || q > Q.max) return;
+    const x = xOf(q);
+    svg.appendChild(el('line', { class: 'tick', x1: x, y1: M.t, x2: x, y2: baseY }));
+    const t = el('text', { class: 'tick-txt', x: x, y: baseY + 17,
+      'text-anchor': 'middle' });
+    t.textContent = q; svg.appendChild(t);
+  });
+  const at = el('text', { class: 'axis-title', x: M.l + PW, y: baseY + 40,
+    'text-anchor': 'end' });
+  at.textContent = 'scattering vector  q  (Å⁻¹)';
+  svg.appendChild(at);
+  const yt = el('text', { class: 'axis-title', x: M.l - 52, y: M.t + PH / 2,
+    'text-anchor': 'middle', transform: `rotate(-90 ${M.l - 52} ${M.t + PH / 2})` });
+  yt.textContent = 'intensity  (a.u.)';
+  svg.appendChild(yt);
+
+  /* the curve */
+  let d = '';
+  xs.forEach((q, s) => {
+    d += (s === 0 ? 'M' : 'L') + xOf(q).toFixed(1) + ' ' + yOf(ys[s]).toFixed(1) + ' ';
+  });
+  svg.appendChild(el('path', { class: 'trace-fill',
+    d: d + `L${M.l + PW} ${baseY} L${M.l} ${baseY} Z`, fill: 'var(--ink)' }));
+  svg.appendChild(el('path', { class: 'trace-line', d: d }));
+
+  /* peak markers — coloured by the phase that claims the peak */
+  PEAKS.forEach(p => {
+    const cand = claimOf(p.i);
+    const color = cand ? cand.color : 'var(--unindexed)';
+    const x = xOf(p.q), apexY = yOf(intensity(p.q));
+
+    const g = el('g', { class: 'pk', 'data-peak': p.i });
+    g.appendChild(el('line', { class: 'pk-qline',
+      x1: x, y1: apexY - 6, x2: x, y2: baseY, stroke: color }));
+    g.appendChild(el('circle', { class: 'pk-dot',
+      cx: x, cy: apexY, r: 4.6, fill: color }));
+    const lab = el('text', { class: 'pk-label', x: x, y: apexY - 13,
+      'text-anchor': 'middle', fill: color });
+    lab.textContent = cand ? labelOf(cand, p.i) : '?';
+    g.appendChild(lab);
+    g.appendChild(el('rect', { class: 'pk-hit',
+      x: x - 13, y: M.t, width: 26, height: PH }));
+    g.addEventListener('mouseenter', () => setHot(p.i));
+    g.addEventListener('mouseleave', () => setHot(null));
+    svg.appendChild(g);
+  });
+}
+
+/* ════════════ the detector image ════════════ */
+function renderDetector() {
+  const svg = document.getElementById('detector');
+  const b = EXPOSURES[curExp].b;
+  /* detector constants (gradient / glow) are the canonical set, shared
+     with the sample table's detectorSVG and the mini thumbnails below. */
+  svg.innerHTML = `
+    <defs>
+      <radialGradient id="detbg">
+        <stop offset="0%"  stop-color="oklch(${(0.30 + 0.16 * b).toFixed(3)} 0.03 62)"/>
+        <stop offset="52%" stop-color="oklch(0.205 0.013 58)"/>
+        <stop offset="100%" stop-color="oklch(0.135 0.009 55)"/>
+      </radialGradient>
+      <filter id="detglow" x="-40%" y="-40%" width="180%" height="180%">
+        <feGaussianBlur stdDeviation="1.5"/>
+      </filter>
+    </defs>`;
+  svg.appendChild(el('rect', { width: 100, height: 100, fill: 'url(#detbg)' }));
+
+  PEAKS.forEach(p => {
+    const cand = claimOf(p.i);
+    const indexed = !!cand;
+    const color = indexed ? cand.color : 'var(--unindexed)';
+    const op = (indexed ? 0.78 : 0.32) * (0.5 + 0.5 * b) * (0.46 + 0.54 * p.amp);
+    const g = el('g', { class: 'ring', 'data-peak': p.i });
+    g.appendChild(el('circle', { class: 'ring-glow', cx: 50, cy: 50, r: p.rr,
+      fill: 'none', stroke: color, 'stroke-width': 2.4,
+      opacity: op * 0.5, filter: 'url(#detglow)' }));
+    g.appendChild(el('circle', { class: 'ring-sharp', cx: 50, cy: 50, r: p.rr,
+      fill: 'none', stroke: indexed ? color : 'var(--unindexed)',
+      'stroke-width': 1.0, opacity: Math.min(0.95, op + 0.16) }));
+    g.appendChild(el('circle', { cx: 50, cy: 50, r: p.rr, fill: 'none',
+      stroke: 'transparent', 'stroke-width': 5 }));
+    g.addEventListener('mouseenter', () => setHot(p.i));
+    g.addEventListener('mouseleave', () => setHot(null));
+    svg.appendChild(g);
+  });
+
+  svg.appendChild(el('rect', { x: 48.7, y: 0, width: 2.6, height: 50,
+    fill: 'oklch(0.115 0.007 55)' }));
+  svg.appendChild(el('circle', { cx: 50, cy: 50, r: 5.5,
+    fill: 'oklch(0.1 0.006 55)' }));
+}
+
+/* exposure thumbnails speak the same detector language as the sample
+   table: the real ring radii, in phase-neutral gold. The strip is an
+   exposure switcher — phase colour belongs to the big detector, where
+   the question is identity; here the question is only image quality. */
+let UID = 0;
+function miniDetector(b) {
+  const u = 'm' + (UID++);
+  const rings = PEAKS.map(p => {
+    const op = Math.min(0.9, (0.42 + 0.5 * p.amp) * (0.5 + 0.5 * b));
+    return `<circle cx="50" cy="50" r="${p.rr}" fill="none"
+        stroke="oklch(0.9 0.045 80)" stroke-width="2.2"
+        opacity="${(op * 0.5).toFixed(2)}" filter="url(#${u}g)"/>
+      <circle cx="50" cy="50" r="${p.rr}" fill="none"
+        stroke="oklch(0.97 0.022 86)" stroke-width="0.9"
+        opacity="${op.toFixed(2)}"/>`;
+  }).join('');
+  return `<svg viewBox="0 0 100 100" aria-hidden="true">
+    <defs>
+      <radialGradient id="${u}bg">
+        <stop offset="0%"  stop-color="oklch(${(0.30 + 0.16 * b).toFixed(3)} 0.03 62)"/>
+        <stop offset="52%" stop-color="oklch(0.205 0.013 58)"/>
+        <stop offset="100%" stop-color="oklch(0.135 0.009 55)"/>
+      </radialGradient>
+      <filter id="${u}g" x="-40%" y="-40%" width="180%" height="180%">
+        <feGaussianBlur stdDeviation="1.5"/>
+      </filter>
+    </defs>
+    <rect width="100" height="100" fill="url(#${u}bg)"/>
+    ${rings}
+    <rect x="48.7" y="0" width="2.6" height="50" fill="oklch(0.115 0.007 55)"/>
+    <circle cx="50" cy="50" r="5.5" fill="oklch(0.1 0.006 55)"/>
+  </svg>`;
+}
+function renderExposures() {
+  const box = document.getElementById('expo');
+  box.querySelectorAll('.e-thumb').forEach(n => n.remove());
+  EXPOSURES.forEach((e, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'e-thumb' + (i === curExp ? ' on' : '') + (e.rep ? ' rep' : '');
+    btn.title = 'exposure ' + e.n + (e.rep ? ' — representative' : '');
+    btn.innerHTML = miniDetector(e.b) + '<span class="e-rep"></span>';
+    btn.addEventListener('click', () => { curExp = i; renderExposures(); renderDetector(); });
+    box.appendChild(btn);
+  });
+}
+
+/* ════════════ reflections table ════════════ */
+function renderReflections() {
+  const body = document.getElementById('refl-body');
+  body.innerHTML = '';
+  PEAKS.forEach(p => {
+    const cand = claimOf(p.i);
+    const indexed = !!cand;
+    const color = indexed ? cand.color : 'var(--unindexed)';
+    const tr = document.createElement('tr');
+    tr.dataset.peak = p.i;
+    if (!indexed) tr.classList.add('unindexed');
+    tr.innerHTML =
+      `<td><span class="r-dot" style="background:${color}"></span>&nbsp;
+         <span class="r-phase" style="color:${color}">${indexed ? cand.name : 'unindexed'}</span></td>` +
+      `<td><span class="r-hkl${indexed ? '' : ' none'}">${indexed ? labelOf(cand, p.i) : '—'}</span></td>` +
+      `<td class="num">${p.q.toFixed(4)}</td>` +
+      `<td class="num">${p.d.toFixed(1)}</td>`;
+    tr.addEventListener('mouseenter', () => setHot(p.i));
+    tr.addEventListener('mouseleave', () => setHot(null));
+    body.appendChild(tr);
+  });
+  const covered = PEAKS.filter(p => claimOf(p.i)).length;
+  const np = activeSet.size;
+  document.getElementById('refl-foot').innerHTML =
+    `<span style="color:var(--ink-soft);font-weight:600">${covered} of ${PEAKS.length}</span>`
+    + ` peaks indexed across <span style="color:var(--ink-soft);font-weight:600">`
+    + `${np} phase${np === 1 ? '' : 's'}</span>.`;
+}
+
+/* ════════════ rail: phase call + candidates ════════════ */
+function renderRail() {
+  /* active phases, ordered by their lowest-q peak */
+  const phases = CANDIDATES.filter(c => activeSet.has(c.name))
+    .sort((a, b) => Math.min(...a.peaks) - Math.min(...b.peaks));
+
+  const pc = document.getElementById('phasecall');
+  if (phases.length === 0) {
+    pc.innerHTML = `<div class="pc-empty">No phase assigned &mdash; every peak is
+      unindexed. Check a candidate below.</div>`;
+  } else {
+    let html = phases.length > 1
+      ? `<div class="pc-tag">Coexistence &middot; ${phases.length} phases</div>` : '';
+    html += phases.map(c => `
+      <div class="pc-block">
+        <div class="pcb-top">
+          <span class="pcb-name" style="color:${c.color}">${c.name}</span>
+          <span class="pcb-val" style="color:${c.color}">${c.score.toFixed(2)}</span>
+        </div>
+        <div class="pcb-meta">${c.lattice}&nbsp; ·&nbsp; ${c.peaks.length} peaks</div>
+        <div class="pcb-bar"><i style="width:${(c.score*100).toFixed(0)}%;
+          background:${c.color}"></i></div>
+        <div class="pcb-series">series&nbsp;&nbsp;<span class="sr">${c.series}</span></div>
+      </div>`).join('');
+    pc.innerHTML = html;
+  }
+
+  const list = document.getElementById('cand-list');
+  list.innerHTML = '';
+  CANDIDATES.forEach(c => {
+    const inSet = activeSet.has(c.name);
+    const row = document.createElement('div');
+    row.className = 'cand' + (inSet ? ' in' : '');
+    row.style.setProperty('--pc', c.color);
+    row.innerHTML = `
+      <span class="c-mark"></span>
+      <div class="c-body">
+        <div class="c-name" style="color:${c.color}">${c.name}</div>
+        <div class="c-cover">explains ${c.peaks.length} peaks${
+          inSet ? ' · in the call' : ''}</div>
+      </div>
+      <div class="c-score">
+        <div class="cs-v">${c.score.toFixed(2)}</div>
+        <div class="cs-bar"><i style="width:${(c.score*100).toFixed(0)}%;
+          background:${c.color}"></i></div>
+      </div>`;
+    row.addEventListener('mouseenter', () => setPreview(c.name));
+    row.addEventListener('mouseleave', () => setPreview(null));
+    row.addEventListener('click', () => { toggleCandidate(c.name); renderAll(); });
+    list.appendChild(row);
+  });
+}
+
+function renderAll() {
+  renderTrace();
+  renderDetector();
+  renderReflections();
+  renderRail();
+}
+
+/* ── controls ─────────────────────────────────────────────────────────── */
+document.querySelectorAll('#scale-seg button').forEach(b => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('#scale-seg button').forEach(x => x.classList.remove('on'));
+    b.classList.add('on');
+    scaleMode = b.dataset.scale;
+    renderTrace();
+  });
+});
+document.getElementById('addpeak').addEventListener('click', e => {
+  e.currentTarget.classList.toggle('armed');
+});
+
+renderExposures();
+renderAll();
+</script>
+</body>
+</html>
