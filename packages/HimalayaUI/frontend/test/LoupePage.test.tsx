@@ -212,3 +212,42 @@ describe("LoupePage — loading", () => {
     expect(screen.queryByTestId("loupe-not-found")).not.toBeInTheDocument();
   });
 });
+
+describe("LoupePage — not file-per-exposure", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    h.corpusQ = { data: [sample()], isLoading: false };
+    h.experimentQ = { data: { id: 3, name: "Beamtime March", path: "/x" } };
+  });
+
+  it("renders and flips every exposure regardless of kind or missing filename", () => {
+    // A file exposure, an averaged exposure with no filename, and a
+    // background-subtracted exposure — the loupe keys off exposure id, never
+    // off a non-null filename.
+    h.exposuresQ = {
+      data: [
+        exposure({ id: 200, kind: "file", filename: "JC042-001.dat" }),
+        exposure({ id: 201, kind: "averaged", filename: null }),
+        exposure({ id: 202, kind: "background_subtracted", filename: null }),
+      ],
+      isLoading: false,
+    };
+    renderAt("/samples/loupe/7");
+
+    // All three render in the strip.
+    expect(screen.getByTestId("thumb-cell-200")).toBeInTheDocument();
+    expect(screen.getByTestId("thumb-cell-201")).toBeInTheDocument();
+    expect(screen.getByTestId("thumb-cell-202")).toBeInTheDocument();
+
+    // The filename-less averaged exposure is flippable and renders cleanly.
+    fireEvent.click(screen.getByTestId("thumb-cell-201"));
+    expect(screen.getByTestId("loupe-meta-kind")).toHaveTextContent("averaged");
+    expect(screen.getByTestId("loupe-meta-filename")).toHaveTextContent("—");
+    expect(screen.getByTestId("loupe-meta-frame")).toHaveTextContent("2 of 3");
+
+    // And the background-subtracted one too.
+    fireEvent.click(screen.getByTestId("thumb-cell-202"));
+    expect(screen.getByTestId("loupe-meta-kind"))
+      .toHaveTextContent("background_subtracted");
+  });
+});
