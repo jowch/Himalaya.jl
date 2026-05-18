@@ -145,4 +145,51 @@ using HimalayaUI
             end
         end
     end
+
+    @testset "GET /api/sample-tags: corpus-wide tags across experiments" begin
+        mktempdir() do tmp
+            ctx = _setup_analyzed_exposure(tmp)
+            # Second experiment with its own sample + tag. The corpus route
+            # MUST include it — this is the inverse of the experiment-scoped
+            # route's "only tags in scope" test.
+            e2_id = HimalayaUI.init_experiment!(ctx.db; path=tmp * "/e2",
+                data_dir=tmp * "/e2/data", analysis_dir=tmp * "/e2/analysis")
+            s_other = HimalayaUI.create_sample!(ctx.db; experiment_id=e2_id, name="OTHER")
+            DBInterface.execute(ctx.db,
+                "INSERT INTO sample_tags (sample_id, key, value, source) VALUES (?, ?, ?, 'manual')",
+                [ctx.sample_id, "lipid", "DOPC"])
+            DBInterface.execute(ctx.db,
+                "INSERT INTO sample_tags (sample_id, key, value, source) VALUES (?, ?, ?, 'manual')",
+                [s_other, "buffer", "PBS"])
+            # A duplicate (key, value) on a third sample in experiment 1 —
+            # DISTINCT must collapse it to a single corpus entry.
+            s3 = HimalayaUI.create_sample!(ctx.db; experiment_id=ctx.experiment_id, name="D3")
+            DBInterface.execute(ctx.db,
+                "INSERT INTO sample_tags (sample_id, key, value, source) VALUES (?, ?, ?, 'manual')",
+                [s3, "lipid", "DOPC"])
+
+            with_test_server(ctx.db) do port, base
+                r = HTTP.get("$base/api/sample-tags")
+                @test r.status == 200
+                tags = JSON3.read(String(r.body))
+                pairs = Set([(String(t.key), String(t.value)) for t in tags])
+                # Tags from BOTH experiments are present.
+                @test ("lipid", "DOPC") in pairs
+                @test ("buffer", "PBS") in pairs
+                # DISTINCT: the duplicate (lipid, DOPC) collapses to one entry.
+                @test length(tags) == 2
+            end
+        end
+    end
+
+    @testset "GET /api/sample-tags: empty list when no tags" begin
+        mktempdir() do tmp
+            ctx = _setup_analyzed_exposure(tmp)
+            with_test_server(ctx.db) do port, base
+                r = HTTP.get("$base/api/sample-tags")
+                @test r.status == 200
+                @test JSON3.read(String(r.body)) == []
+            end
+        end
+    end
 end
