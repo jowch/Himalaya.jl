@@ -39,6 +39,16 @@ The dependencies are merged and the route slot exists:
 - **`CorpusTopbar.tsx`** renders an inert "Beamtime" chip. Its own comment
   states `?beamtime=` URL query state is "owned by the `/samples` route (#160)."
 
+A scope note on the file set: the I1.4 issue-map card lists only "create the
+contact-sheet view + row component" and does not name `CorpusTopbar.tsx`, and
+issue-map §3 flags no contention on it. This spec nonetheless modifies it —
+that is not scope creep but the **completion of #155's deliverable**: #155
+shipped the chip as a placeholder whose own comment hands `?beamtime=`
+ownership to `/samples`. The chip being functional is a Phase-1 deliverable
+(master plan §4.1 / §11); it was simply never assigned a clean issue card.
+The edit is merge-safe — #155 is already merged, so there is no concurrent
+writer.
+
 Consequences that shape the design:
 
 1. **The exposure strip and Kept count need a second data source.** `CorpusSample`
@@ -111,6 +121,10 @@ than reusing `ThumbnailGallery` wholesale: `ThumbnailGallery`'s
 not the multi-select cull strip (#162). The thumbnail-select affordance and the
 Tags `+` button render as **inert placeholders** — full visual structure, no
 wiring — so #162 and #159 add behaviour with minimal rework.
+
+Styling translates the `sample-table.html` mockup using the existing Tailwind
+`@theme` "The Print" palette tokens (master plan §11 Phase-1 constraint) — no
+new colour tokens.
 
 ### 3. `CorpusTopbar` — functional Beamtime chip
 
