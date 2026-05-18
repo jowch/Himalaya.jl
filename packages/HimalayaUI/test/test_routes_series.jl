@@ -350,4 +350,49 @@ end
         end
     end
 
+    @testset "series messages — full round-trip" begin
+        mktempdir() do tmp
+            db = _series_test_db(tmp)
+            with_test_server(db) do port, base
+                DBInterface.execute(db, """INSERT INTO series (id, title, state)
+                    VALUES (40, 'chatty', 'committed')""")
+
+                # Empty thread.
+                resp0 = HTTP.get("$base/api/series/40/messages", ["X-Username" => "alice"])
+                @test resp0.status == 200
+                @test JSON3.read(resp0.body) == []
+
+                # POST without X-Username → 401.
+                resp401 = HTTP.post("$base/api/series/40/messages",
+                    ["Content-Type" => "application/json"],
+                    JSON3.write(Dict(:body => "hi"));
+                    status_exception = false)
+                @test resp401.status == 401
+
+                # POST with an empty body → 400.
+                resp400 = HTTP.post("$base/api/series/40/messages",
+                    ["X-Username" => "alice", "Content-Type" => "application/json"],
+                    JSON3.write(Dict(:body => "   "));
+                    status_exception = false)
+                @test resp400.status == 400
+
+                # POST a real message → 201, then GET sees it.
+                resp = HTTP.post("$base/api/series/40/messages",
+                    ["X-Username" => "alice", "Content-Type" => "application/json"],
+                    JSON3.write(Dict(:body => "first post")))
+                @test resp.status == 201
+                msg = JSON3.read(resp.body, Dict{Symbol, Any})
+                @test msg[:body] == "first post"
+                @test msg[:series_id] == 40
+
+                resp2 = HTTP.get("$base/api/series/40/messages", ["X-Username" => "alice"])
+                thread = JSON3.read(resp2.body, Vector{Dict{Symbol, Any}})
+                @test length(thread) == 1
+                @test thread[1][:body] == "first post"
+                @test thread[1][:author] == "alice"
+            end
+            close(db)
+        end
+    end
+
 end

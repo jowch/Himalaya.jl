@@ -256,4 +256,65 @@ function register_series_routes!()
                                  :event_id => result.event_id)))
         end
     end
+
+    # ── Chat thread ─────────────────────────────────────────────────────────
+
+    @get "/api/series/{id}/messages" function(req::HTTP.Request, id::Int)
+        db   = current_db()
+        rows = Tables.rowtable(DBInterface.execute(db, """
+            SELECT m.id, m.series_id, m.author_id,
+                   u.username AS author,
+                   m.body, m.created_at
+            FROM series_messages m
+            LEFT JOIN users u ON u.id = m.author_id
+            WHERE m.series_id = ?
+            ORDER BY m.created_at ASC, m.id ASC
+        """, [id]))
+        HTTP.Response(200, ["Content-Type" => "application/json"],
+            JSON3.write(rows_to_json(rows)))
+    end
+
+    @post "/api/series/{id}/messages" function(req::HTTP.Request, id::Int)
+        db       = current_db()
+        username = get_username(req)
+        if username === nothing
+            return _json_error(401, "X-Username header required")
+        end
+        body = json(req)
+        text = haskey(body, :body) ? strip(String(body.body)) : ""
+        if isempty(text)
+            return _json_error(400, "message body required")
+        end
+
+        return with_idempotency(db, req) do
+            # The route writes the message row directly; the dispatcher is a
+            # no-op for `post_message`. `entity_type='series_message'`
+            # differentiates it from the comparison / sample message paths.
+            author_id = get_or_create_user!(db, username)
+            res = DBInterface.execute(db,
+                "INSERT INTO series_messages (series_id, author_id, body) VALUES (?, ?, ?)",
+                [id, author_id, text])
+            msg_id = Int(DBInterface.lastrowid(res))
+
+            row = Tables.rowtable(DBInterface.execute(db, """
+                SELECT m.id, m.series_id, m.author_id,
+                       u.username AS author,
+                       m.body, m.created_at
+                FROM series_messages m
+                LEFT JOIN users u ON u.id = m.author_id
+                WHERE m.id = ?
+            """, [msg_id]))[1]
+            msg_json = row_to_json(row)
+
+            result = apply_event!(InTransaction(), db, req;
+                kind        = "post_message",
+                entity_type = "series_message",
+                entity_id   = msg_id,
+                payload     = msg_json)
+            _enqueue_broadcast_from_result!(result, "post_message",
+                                            "series_message", msg_id)
+            HTTP.Response(201, ["Content-Type" => "application/json"],
+                JSON3.write(msg_json))
+        end
+    end
 end
