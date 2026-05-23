@@ -74,29 +74,16 @@ function savitzky_golay(m, n, y; order = 0)
     orders = order isa AbstractVector ? collect(order) : [order]
     Y = zeros(num_y, length(orders))
     for (j, o) in enumerate(orders)
+        col = view(Y, :, j)
         # Interior: centred window (t=0). `wc` is a concrete Vector, so the
         # allocation-free convolution runs behind a function barrier (#128).
         wc = P * _sg_deriv_covector(n, o, 0)
-        _sg_interior!(view(Y, :, j), wc, y, m, num_y)
-        # Left boundary: fixed window y[1:2m+1]; sample i sits at offset i-(m+1).
-        @inbounds for i in 1:m
-            w = P * _sg_deriv_covector(n, o, i - m - 1)
-            acc = 0.0
-            for k in 1:(2m + 1)
-                acc += w[k] * y[k]
-            end
-            Y[i, j] = acc
-        end
-        # Right boundary: fixed window y[num_y-2m:num_y]; offset i-(num_y-m).
-        base = num_y - 2m - 1
-        @inbounds for i in (num_y - m + 1):num_y
-            w = P * _sg_deriv_covector(n, o, i - (num_y - m))
-            acc = 0.0
-            for k in 1:(2m + 1)
-                acc += w[k] * y[base + k]
-            end
-            Y[i, j] = acc
-        end
+        _sg_interior!(col, wc, y, m, num_y)
+        # Boundaries: each fixed window evaluates the fit at the sample's offset
+        # `i - ref` from the window centre. Left window y[1:2m+1] (base 0, centre
+        # m+1); right window y[num_y-2m:num_y] (base num_y-2m-1, centre num_y-m).
+        _sg_boundary!(col, P, n, o, y, 1:m, m + 1, 0)
+        _sg_boundary!(col, P, n, o, y, (num_y - m + 1):num_y, num_y - m, num_y - 2m - 1)
     end
     length(orders) == 1 ? Y[:, 1] : Y
 end
@@ -123,6 +110,25 @@ function _sg_interior!(col, wc, y, m, num_y)
         acc = 0.0
         for k in 1:win
             acc += wc[k] * y[i - m - 1 + k]
+        end
+        col[i] = acc
+    end
+    col
+end
+
+# Boundary convolution for the first/last `m` samples. Every sample in `irange`
+# reuses the same fixed window `y[base+1 : base+2m+1]`, but the weights `P·g`
+# are recomputed per sample to evaluate the fit at that sample's offset
+# `i - ref` from the window centre (off-centre, hence not a single shared
+# kernel). Only 2m samples total, so the per-sample weight allocation does not
+# scale with the trace length (#128 measures the marginal cost).
+function _sg_boundary!(col, P, n, order, y, irange, ref, base)
+    win = size(P, 1)   # == 2m+1 (P is (2m+1)×(n+1))
+    for i in irange
+        w = P * _sg_deriv_covector(n, order, i - ref)
+        acc = 0.0
+        @inbounds for k in 1:win
+            acc += w[k] * y[base + k]
         end
         col[i] = acc
     end

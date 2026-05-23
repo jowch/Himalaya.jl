@@ -30,9 +30,11 @@ const RECALL_FLOOR = Dict(
     # 7 was a kneedle accident: a post-trimmed high-q noise candidate (idx 921)
     # held a near-zero sharpness under mirror padding, anchoring the bottom of
     # the sorted-sharpness curve and dragging the elbow below the natural
-    # 5.4→1.6 cliff — which admitted a borderline peak (idx 274, sharpness 1.61)
-    # on noise rather than merit. Interp gives that candidate its honest value,
-    # the elbow snaps to the cliff (5.40), and 6/10 is the principled recall.
+    # 5.4→1.6 cliff. That admitted a real but weak labeled peak (idx 274,
+    # sharpness 1.61) whose recovery depended on the padding artifact rather
+    # than on clearing the honest threshold. Interp gives idx 921 its honest
+    # value, the elbow snaps to the cliff (5.40), and 6/10 is the principled
+    # recall (idx 274 now falls below the floor; spurious stays 0).
     "example_tot.dat"     => 6,   # current: 6/10
     "cubic_tot.dat"       => 8,   # current: 8/23 — below production quality; TODO: iterate on sharpness method / CWT scale bank / normalize_by_σ default (see spec §Open Issues)
     "form-factor_tot.dat" => 0,   # no peaks expected
