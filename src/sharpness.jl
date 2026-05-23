@@ -38,66 +38,95 @@ we flip sign — large positive output = sharply peaked.
 """
 sharpness_savgol(y, m) = -savitzky_golay(m, 4, y; order = 2)
 
-# `savitzky_golay(m, n, y; order)` — general-purpose SG: any window,
-# polynomial order, derivative order. Originally from v0.4.5
-# src/peakfinding.jl (commit fddd611); the per-sample convolution was
-# rewritten allocation-free for issue #128.
+# `savitzky_golay(m, n, y; order)` — general-purpose SG: any window, polynomial
+# order, derivative order. Originally from v0.4.5 src/peakfinding.jl (commit
+# fddd611); the per-sample convolution was rewritten allocation-free for issue
+# #128.
+#
+# Edges use the "interp" boundary scheme (as in scipy.signal.savgol_filter):
+# interior samples convolve a *centred* window, but the first/last `m` samples
+# reuse the nearest full boundary window and evaluate the fitted degree-`n`
+# polynomial's derivative at the sample's true offset within it. That is exact
+# for polynomials up to degree `n` at *every* sample — unlike mirror padding,
+# which folds the signal at the edge and injects spurious curvature ∝ the true
+# boundary slope. (Earlier versions reflected; that was both inexact at edges
+# and, on the left, off-by-one — see git history.)
 function savitzky_golay(m, n, y; order = 0)
     num_y = length(y)
-    # Precondition for `_sg_convolve!`: the edge-reflection index math only
-    # stays within `1:num_y` when the window fits inside the trace. Guarding
-    # here lets the convolution loop keep its `@inbounds` annotation.
+    # The boundary windows span y[1:2m+1] and y[num_y-2m:num_y]; both fit only
+    # when the window fits inside the trace. Guarding here keeps every inner
+    # loop `@inbounds`.
     num_y >= 2m + 1 ||
         throw(ArgumentError("trace length $num_y is shorter than the SG window $(2m + 1)"))
     z = -m:m
     J = zeros(2m + 1, n + 1)
-
     for i = 0:n
         @inbounds J[:, i + 1] .= z .^ i
     end
 
-    # The convolution term matrix — depends only on window size + order, so it
-    # is built once here and reused for every sample.
-    C = J' \ I(n .+ 1)[:, order .+ 1]   # = pinv(J) picking out the requested order(s)
-    Y = zeros(num_y, length(order))
+    # P = pinv(J)'  (size (2m+1)×(n+1)). For a window `d`, the least-squares
+    # polynomial coefficients are a = pinv(J)·d, so the order-th derivative at
+    # window position `t` is gᵀ·a = (P·g)ᵀ·d, where `g = _sg_deriv_covector`.
+    # Thus `P·g(t)` is the length-(2m+1) convolution weight vector for that
+    # position. Built once; reused for every sample.
+    P = J' \ Matrix{Float64}(I, n + 1, n + 1)
 
-    # The `\` solve leaves `C`'s type un-inferrable here, so the convolution
-    # runs behind a function barrier — `_sg_convolve!` specialises on the
-    # concrete types of `C` and `y`, keeping its inner loop allocation-free.
-    _sg_convolve!(Y, C, y, m, num_y, order)
-
-    # SG extracts polynomial coefficients c_k; the k-th derivative is k! * c_k.
-    fac = factorial.(order)
-    for j in eachindex(order)
-        Y[:, j] .*= fac[j]
-    end
-
-    length(order) == 1 ? Y[:, 1] : Y
-end
-
-# Per-sample convolution: each output sample is a dot product of a column of
-# `C` against an edge-reflected window of `y`. The window index is computed
-# inline so the inner loop allocates nothing.
-function _sg_convolve!(Y, C, y, m, num_y, order)
-    win = 2m + 1
-    @inbounds for i in 1:num_y
-        for j in eachindex(order)
+    orders = order isa AbstractVector ? collect(order) : [order]
+    Y = zeros(num_y, length(orders))
+    for (j, o) in enumerate(orders)
+        # Interior: centred window (t=0). `wc` is a concrete Vector, so the
+        # allocation-free convolution runs behind a function barrier (#128).
+        wc = P * _sg_deriv_covector(n, o, 0)
+        _sg_interior!(view(Y, :, j), wc, y, m, num_y)
+        # Left boundary: fixed window y[1:2m+1]; sample i sits at offset i-(m+1).
+        @inbounds for i in 1:m
+            w = P * _sg_deriv_covector(n, o, i - m - 1)
             acc = 0.0
-            for k in 1:win
-                zk = k - m - 1
-                widx = if i <= m
-                    abs(zk + i) + 1
-                elseif i > num_y - m
-                    -abs(zk + i - num_y) + num_y
-                else
-                    zk + i
-                end
-                acc += C[k, j] * y[widx]
+            for k in 1:(2m + 1)
+                acc += w[k] * y[k]
+            end
+            Y[i, j] = acc
+        end
+        # Right boundary: fixed window y[num_y-2m:num_y]; offset i-(num_y-m).
+        base = num_y - 2m - 1
+        @inbounds for i in (num_y - m + 1):num_y
+            w = P * _sg_deriv_covector(n, o, i - (num_y - m))
+            acc = 0.0
+            for k in 1:(2m + 1)
+                acc += w[k] * y[base + k]
             end
             Y[i, j] = acc
         end
     end
-    Y
+    length(orders) == 1 ? Y[:, 1] : Y
+end
+
+# Covector `g` such that `g·a` is the `order`-th derivative, evaluated at window
+# position `t`, of the polynomial p(z)=Σ aₖ zᵏ. The k-th term contributes
+# dᵒʳᵈᵉʳ/dtᵒʳᵈᵉʳ (tᵏ) = k!/(k-order)! · t^(k-order); `prod` avoids factorial
+# overflow and yields 1 for the empty range (order=0). This already folds in the
+# derivative factor, so no separate k!·cₖ scaling is needed downstream.
+function _sg_deriv_covector(n, order, t)
+    g = zeros(n + 1)
+    for k in order:n
+        g[k + 1] = prod((k - order + 1):k) * float(t)^(k - order)
+    end
+    g
+end
+
+# Interior convolution: each output sample is a centred dot product of `wc`
+# against `y`. Function-barriered so it specialises on the concrete element
+# types and keeps the inner loop allocation-free.
+function _sg_interior!(col, wc, y, m, num_y)
+    win = 2m + 1
+    @inbounds for i in (m + 1):(num_y - m)
+        acc = 0.0
+        for k in 1:win
+            acc += wc[k] * y[i - m - 1 + k]
+        end
+        col[i] = acc
+    end
+    col
 end
 
 # ---------------------------------------------------------------------------

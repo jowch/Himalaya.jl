@@ -22,10 +22,56 @@ end
     xs = collect(-10.0:10.0)
     y = xs.^3
     d2 = Himalaya.savitzky_golay(5, 4, y; order = 2)
-    # d²/dx² x³ = 6x; check interior points (away from edges).
-    for i in 6:16
+    # d²/dx² x³ = 6x. The cubic has degree ≤ n=4, so the "interp" boundary
+    # scheme is exact at EVERY sample, edges included (mirror padding was not).
+    for i in eachindex(xs)
         @test isapprox(d2[i], 6 * xs[i]; atol = 1e-6)
     end
+end
+
+@testset "savitzky_golay: interp edges are exact for degree ≤ n polynomials" begin
+    # Acceptance test for the "interp" boundary scheme: for a polynomial of
+    # degree ≤ n, the order-d derivative estimate must be exact at every sample
+    # including the first/last m — there is no reflection assumption to violate.
+    x = collect(1.0:1.0:30.0)
+    c = [1.0, 2.0, -0.5, 0.05, 0.001]                     # a₀..a₄, degree 4 = n
+    y  = [sum(c[k + 1] * xi^k for k in 0:4) for xi in x]
+    d0 = y                                                 # order 0 ⇒ smoothed == input
+    d1 = [sum(k * c[k + 1] * xi^(k - 1) for k in 1:4) for xi in x]
+    d2 = [sum(k * (k - 1) * c[k + 1] * xi^(k - 2) for k in 2:4) for xi in x]
+    for (o, truth) in ((0, d0), (1, d1), (2, d2))
+        est = Himalaya.savitzky_golay(5, 4, y; order = o)
+        for i in eachindex(x)                              # edges included
+            @test isapprox(est[i], truth[i]; atol = 1e-6)
+        end
+    end
+end
+
+@testset "savitzky_golay: edge handling preserves input symmetry" begin
+    # A signal symmetric about its midpoint must produce a symmetric second
+    # derivative — a convention-agnostic correctness property, not a pinned
+    # magic number. Regression guard against asymmetric edge handling: an
+    # earlier mirror-padding version mis-centred the left window (folding
+    # half-sample about 0.5) and shifted the first m outputs one sample left,
+    # breaking this symmetry. The interp scheme treats both edges identically.
+    xs = collect(-15.0:1.0:15.0)   # 31 points, even count flanking the centre
+    y = 3 .* xs .^ 2               # even function ⇒ samples symmetric about i=16
+    d2 = Himalaya.savitzky_golay(5, 4, y; order = 2)
+    n = length(d2)
+    for i in 1:n
+        @test isapprox(d2[i], d2[n + 1 - i]; atol = 1e-9)
+    end
+end
+
+@testset "savitzky_golay: left edge stays centred on its own sample" begin
+    # Regression guard: an earlier off-by-one made output[m] == output[m+1]
+    # exactly (the first m samples were the interior values shifted one index
+    # left). On a strictly-curved monotone signal the seam between the boundary
+    # samples (i ≤ m) and the interior (i > m) must not duplicate a sample.
+    m = 5
+    y = collect(1.0:1.0:40.0) .^ 2
+    d2 = Himalaya.savitzky_golay(m, 4, y; order = 2)
+    @test d2[m] != d2[m + 1]
 end
 
 @testset "sharpness: :savgol picks up a Gaussian peak" begin
@@ -86,20 +132,22 @@ end
     s = Himalaya.sharpness(intensity; method = :savgol, m = 5)
     @test length(s) == 922
     # Pinned values spanning boundary-low, interior, and boundary-high regions.
+    # The boundary pins (1, 2, 921, 922) are the "interp" boundary values; the
+    # interior pins (6 ≤ idx ≤ 917) are convention-independent and unchanged.
     pinned = Dict(
-        1   => 3579.4866724945023,
-        2   => 954.0417132869541,
+        1   => -2122.6039906770857,
+        2   => -1821.240713287396,
         6   => -792.756275058146,
         11  => -209.51359498828796,
         100 => -0.4906289510479224,
         461 => 0.026168164336535318,
         800 => 0.10356053613089689,
         917 => -0.2534995337991986,
-        921 => -0.009534947552105598,
-        922 => -0.14693493006959005,
+        921 => 1.0763154778542567,
+        922 => 1.7567832167810487,
     )
     for (idx, val) in pinned
         @test isapprox(s[idx], val; rtol = 1e-12)
     end
-    @test isapprox(sum(s), -3113.2448241053053; rtol = 1e-12)
+    @test isapprox(sum(s), -11117.585612599207; rtol = 1e-12)
 end
