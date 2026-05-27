@@ -39,30 +39,21 @@ function filenameForExposure(list: Exposure[] | undefined,
 }
 
 function buildUrl(
-  page: "index" | "inspect" | "compare",
-  experiment: string | undefined,
-  sample: string | undefined,
-  exposure: string | undefined,
+  page: "compare",
+  _experiment: string | undefined,
+  _sample: string | undefined,
+  _exposure: string | undefined,
   current: string,
 ): string {
-  const enc = (s: string) => encodeURIComponent(s);
-  if (page === "compare") {
-    // Don't try to re-emit a Compare URL — Compare uses numeric ids that
-    // useStateFromUrl doesn't track in Zustand. ComparePage handles its
-    // own URL via useNavigate. Returning current keeps the equality guard
-    // happy and prevents accidental redirect.
-    return current;
-  }
-  const parts = [`/${page}`];
-  if (experiment !== undefined) {
-    parts.push(enc(experiment));
-    if (sample !== undefined) parts.push(enc(sample));
-  }
-  let url = parts.join("/");
-  if (page === "inspect" && exposure !== undefined && sample !== undefined) {
-    url += `?exposure=${enc(exposure)}`;
-  }
-  return url;
+  // I4.4 (#181) / I1.7 (#163): Index and Inspect are retired, so `activePage`
+  // — the only caller's `page` arg — can only be "compare". Compare uses
+  // numeric ids that useStateFromUrl doesn't track in Zustand; ComparePage
+  // owns its own URL via useNavigate. Returning `current` keeps the equality
+  // guard happy and prevents an accidental redirect, so this hook never emits
+  // a Zustand-derived URL anymore. (The hook + the whole Zustand→URL bridge
+  // retire with the dual-nav model in I5.1.)
+  void page; void _experiment; void _sample; void _exposure;
+  return current;
 }
 
 export function useUrlFromState(): void {
