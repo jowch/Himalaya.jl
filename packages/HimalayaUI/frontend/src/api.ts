@@ -696,10 +696,45 @@ export const unpinComparison = (id: number, opts?: AuthOpts) =>
 
 // ─── Series (#166 / #167 / #168 — series event-kind cluster) ────────────────
 //
-// Minimal queue-side scaffolding only — the read hooks (useSeriesList /
-// useSeries) and the listing summary type belong to I3.3 (folio UI). See the
-// Decision Record in docs/superpowers/plans/2026-05-18-series-event-kinds.md.
-// Shapes mirror `fetch_series_with_plate` in series.jl.
+// Queue-side scaffolding (#198) + the folio read layer (#173 / I3.3): the
+// listing summary type `SeriesSummary` and the read fetchers
+// (listSeries / getSeries / forksOfSeries) below back the read hooks
+// useSeriesList / useSeries in queries.ts. See the Decision Record in
+// docs/superpowers/plans/2026-05-18-series-event-kinds.md.
+// Shapes mirror `fetch_series_with_plate` / `_series_listing_rows` in series.jl.
+
+/**
+ * Lightweight summary row returned by GET /api/series (the corpus listing).
+ * Mirrors `_series_listing_rows` in packages/HimalayaUI/src/series.jl — keep
+ * the field set in lockstep with that projection. NOT the full `Series` type
+ * (that is the GET-detail shape with nested members/samples).
+ *
+ * `content_hash === ""` is the draft sentinel (an uncommitted series), the
+ * same convention the full `Series` type documents.
+ */
+export interface SeriesSummary {
+  id: number;
+  title: string;
+  description: string | null;
+  content_hash: string;
+  created_by: number | null;
+  created_at: string | null;
+  updated_at: string | null;
+  forked_from_id: number | null;
+  forked_at_hash: string | null;
+  view_grouping_mode: string | null;
+  view_show_peak_ticks: boolean | null;
+  view_show_peak_labels: boolean | null;
+  /** Normalised (SQLite `datetime()`) recency sort key; backend sorts DESC. */
+  last_event_at: string | null;
+  author_username: string | null;
+  member_count: number;
+  /** Backend-capped top-3 distinct phases (`_topk_phases`). */
+  member_phases: string[];
+  /** True distinct-phase total — for a `+N more` overflow if shown. */
+  member_phase_count: number;
+  has_stale_members: boolean;
+}
 
 /** The recipe membership — one `series_samples` row. */
 export interface SeriesSample {
@@ -842,6 +877,20 @@ export const commitSeriesPlate = (
 export const deleteSeries = (id: number, opts?: AuthOpts) =>
   request<{ id: number; deleted: boolean; event_id: number }>(
     "DELETE", `/api/series/${id}`, undefined, opts);
+
+// ── Series read fetchers (#173 / I3.3 — the folio read layer) ──
+
+/** Corpus-wide listing for the series folio (#173). GET /api/series. */
+export const listSeries = () =>
+  request<SeriesSummary[]>("GET", "/api/series");
+
+/** Full nested detail for one series (#175 builder reuses this). */
+export const getSeries = (id: number) =>
+  request<Series>("GET", `/api/series/${id}`);
+
+/** Forks of one series — same SeriesSummary[] shape as the listing. */
+export const forksOfSeries = (id: number) =>
+  request<SeriesSummary[]>("GET", `/api/series/${id}/forks`);
 
 // ─── Permalink resolve (Plan §Task 8) ───────────────────────────────────────
 
