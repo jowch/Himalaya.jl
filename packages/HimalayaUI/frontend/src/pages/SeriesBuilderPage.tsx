@@ -12,6 +12,7 @@ import { AnnotationToggles } from "../components/AnnotationToggles";
 import { ActiveBandProvider } from "../components/ActiveBandContext";
 import { FigureExportControls } from "../components/FigureExportControls";
 import { SeriesBuilderRail } from "../components/SeriesBuilderRail";
+import { SeriesRecipeEditor } from "../components/SeriesRecipeEditor";
 import { HintText } from "../components/ui";
 import type { Representation } from "../components/RepresentationToggle";
 import { resolveDisplayLabels } from "../lib/comparison/labels";
@@ -70,6 +71,14 @@ export function SeriesBuilderPage(): JSX.Element {
   const s = query.data;
   const title = s && s.title.trim() !== "" ? s.title : "Untitled series";
 
+  // I3.5b — edit-mode gate. A draft for THIS series being active flips the
+  // builder into edit mode (the recipe editor injects into the rail). The
+  // Edit button seeds the draft; entering edit mode is draft-driven on the
+  // bare /series/:id URL (no /edit segment), mirroring Compare.
+  const seriesDraft = useAppState((st) => st.seriesDraft);
+  const startSeriesDraft = useAppState((st) => st.startSeriesDraftFromSeries);
+  const editing = s !== undefined && seriesDraft !== null && seriesDraft.id === s.id;
+
   return (
     <div data-testid="series-builder-page" className="flex h-full min-h-0 flex-col">
       <Skeleton
@@ -85,11 +94,31 @@ export function SeriesBuilderPage(): JSX.Element {
       >
         {s && (
           <>
-            <header data-testid="series-builder-header" className="shrink-0 px-6 pt-5">
-              <div className="text-xs font-semibold uppercase tracking-wide text-print-accent">
-                Series
+            <header
+              data-testid="series-builder-header"
+              data-editing={String(editing)}
+              className="shrink-0 flex items-start justify-between px-6 pt-5"
+            >
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-wide text-print-accent">
+                  Series
+                </div>
+                <h1 className="font-medium text-ink">{title}</h1>
               </div>
-              <h1 className="font-medium text-ink">{title}</h1>
+              {editing ? (
+                <span data-testid="series-builder-editing-badge" className="text-xs text-ink-faint">
+                  Editing
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  data-testid="series-builder-edit"
+                  onClick={() => startSeriesDraft(s)}
+                  className="rounded border border-hair px-2 py-1 text-sm text-ink hover:bg-paper-sunk"
+                >
+                  Edit
+                </button>
+              )}
             </header>
             {s.members.length === 0 ? (
               <div
@@ -99,7 +128,7 @@ export function SeriesBuilderPage(): JSX.Element {
                 This series has no members yet.
               </div>
             ) : (
-              <SeriesBuilderBody series={s} />
+              <SeriesBuilderBody series={s} editing={editing} />
             )}
           </>
         )}
@@ -115,7 +144,9 @@ export function SeriesBuilderPage(): JSX.Element {
  * groupingMode/xDomain (no draft, no Zustand comparison-keyed domain — a
  * read surface's coloring + pan/zoom are local UI concerns).
  */
-function SeriesBuilderBody({ series: s }: { series: Series }): JSX.Element {
+function SeriesBuilderBody(
+  { series: s, editing }: { series: Series; editing: boolean },
+): JSX.Element {
   // Members arrive sorted by display_order from the route; keep that order.
   const members: SeriesMember[] = s.members;
   const exposureIds = useMemo(
@@ -262,6 +293,9 @@ function SeriesBuilderBody({ series: s }: { series: Series }): JSX.Element {
               disabled={exportDisabled}
             />
           }
+          {...(editing
+            ? { editControls: <SeriesRecipeEditor seriesId={s.id} members={members} /> }
+            : {})}
         />
       </div>
     </ActiveBandProvider>
