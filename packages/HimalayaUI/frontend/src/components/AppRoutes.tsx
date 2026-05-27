@@ -10,6 +10,7 @@ import { SamplesPage } from "../pages/SamplesPage";
 import { LoupePage } from "../pages/LoupePage";
 import { FocusWorkspacePage } from "../pages/FocusWorkspacePage";
 import { SeriesFolioPage } from "../pages/SeriesFolioPage";
+import { SeriesBuilderPage } from "../pages/SeriesBuilderPage";
 import { AppShell } from "./AppShell";
 import { IndexPage } from "../pages/IndexPage";
 import { Compare } from "../pages/Compare";
@@ -102,6 +103,8 @@ export function AppRoutes(): JSX.Element {
         <Route path="/sample/:sampleId" element={<FocusWorkspacePage />} />
         {/* I3.3 (#173): series folio — corpus-wide masonry of saved series. */}
         <Route path="/series" element={<SeriesFolioPage />} />
+        {/* I3.5a (#175): series builder — read-only visual surface. */}
+        <Route path="/series/:id" element={<SeriesBuilderPage />} />
         {/* I1.7 (#163): Inspect retired. Old /inspect* deep-links land on the
             contact sheet. Splat covers /inspect, /inspect/:exp, /inspect/:exp/:sample. */}
         <Route path="/inspect/*" element={<Navigate to="/samples" replace />} />
