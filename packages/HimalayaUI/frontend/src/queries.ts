@@ -89,7 +89,7 @@ export const queryKeys = {
   // Series (#166/#167/#168). Detail root `["series", id]`, listing root
   // `["series-list"]` — distinct roots so a listing invalidation never
   // clobbers a detail entry (mirrors the comparison/comparisons split). Read
-  // hooks (useSeriesList / useSeries) are added by I3.3.
+  // hooks (useSeriesList / useSeries) — see below (I3.3).
   series:     (id: number | undefined) => ["series", id ?? "none"] as const,
   seriesList: ["series-list"] as const,
   seriesPins: ["series-pins"] as const,
@@ -606,6 +606,35 @@ export function useComparisonForks(id: number | undefined) {
     queryKey: queryKeys.comparisonForks(id),
     queryFn: () => api.getComparisonForks(id as number),
     enabled: id !== undefined,
+  });
+}
+
+/**
+ * Corpus-wide series listing — every saved series across all experiments,
+ * sorted by recency (backend `last_event_at DESC`). Backs the series folio
+ * (#173 / I3.3). No parameter, so no `enabled` gate — fetches unconditionally,
+ * exactly like useCorpusSamples().
+ */
+export function useSeriesList() {
+  return useQuery({
+    queryKey: queryKeys.seriesList,
+    queryFn: () => api.listSeries(),
+  });
+}
+
+/**
+ * One series' full nested detail (members + samples). Gated on a defined id
+ * so an undefined route param doesn't fire GET /api/series/undefined. Backs
+ * the builder (#175) and any folio→detail prefetch.
+ */
+export function useSeries(id: number | undefined) {
+  return useQuery({
+    queryKey: queryKeys.series(id),
+    queryFn: () => api.getSeries(id as number),
+    enabled: id !== undefined,
+    // Parity with useComparison (above): a missing/draft series should error
+    // fast rather than retry 3× — the I3.5a builder reuses this.
+    retry: false,
   });
 }
 
