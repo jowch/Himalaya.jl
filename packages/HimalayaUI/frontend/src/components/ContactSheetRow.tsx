@@ -1,4 +1,5 @@
-import { useExposures } from "../queries";
+import { useCallback } from "react";
+import { useExposures, useSetExposureStatus } from "../queries";
 import type { CorpusSample, Exposure } from "../api";
 import { sampleDisplayName } from "../lib/sample/displayName";
 import { DetectorImage } from "./DetectorImage";
@@ -20,8 +21,14 @@ interface Props {
   sample: CorpusSample;
 }
 
-/** One exposure thumbnail — inert in #160 (culling wiring is #162). */
-function ExposureThumb({ exposure }: { exposure: Exposure }): JSX.Element {
+/** One exposure thumbnail with culling affordances (#162). */
+function ExposureThumb({
+  exposure,
+  onToggleReject,
+}: {
+  exposure: Exposure;
+  onToggleReject: (exp: Exposure) => void;
+}): JSX.Element {
   const isRejected = exposure.status === "rejected";
   const isRepresentative = exposure.selected;
   return (
@@ -55,6 +62,16 @@ function ExposureThumb({ exposure }: { exposure: Exposure }): JSX.Element {
           ✕
         </span>
       )}
+      <button
+        type="button"
+        data-testid={`exposure-reject-${exposure.id}`}
+        title={isRejected ? "Un-reject exposure" : "Reject exposure"}
+        onClick={() => onToggleReject(exposure)}
+        className="absolute bottom-0 right-0 m-0.5 rounded bg-paper/80 px-1
+                   text-[10px] leading-none text-print-accent"
+      >
+        {isRejected ? "↺" : "✕"}
+      </button>
     </div>
   );
 }
@@ -73,6 +90,20 @@ function ExposureThumb({ exposure }: { exposure: Exposure }): JSX.Element {
 export function ContactSheetRow({ sample }: Props): JSX.Element {
   const exposuresQuery = useExposures(sample.id);
   const exposures = exposuresQuery.data ?? [];
+
+  const setStatus = useSetExposureStatus(sample.id);
+
+  // Single-exposure reject toggle. Un-reject sets status to null (matches
+  // LoupePage's `status === "rejected" ? null : "rejected"` convention).
+  const handleToggleReject = useCallback(
+    (exp: Exposure) => {
+      setStatus.mutate({
+        exposureId: exp.id,
+        status: exp.status === "rejected" ? null : "rejected",
+      });
+    },
+    [setStatus],
+  );
 
   const total = exposures.length;
   const kept = exposures.filter((e) => e.status !== "rejected").length;
@@ -103,7 +134,13 @@ export function ContactSheetRow({ sample }: Props): JSX.Element {
             Loading frames…
           </span>
         ) : (
-          exposures.map((e) => <ExposureThumb key={e.id} exposure={e} />)
+          exposures.map((e) => (
+            <ExposureThumb
+              key={e.id}
+              exposure={e}
+              onToggleReject={handleToggleReject}
+            />
+          ))
         )}
       </div>
 

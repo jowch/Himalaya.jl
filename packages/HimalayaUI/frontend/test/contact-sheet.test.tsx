@@ -314,3 +314,62 @@ describe("contact sheet — ?beamtime= round-trip", () => {
     expect(screen.getByTestId("sample-row-12")).toBeInTheDocument();
   });
 });
+
+// I1.6 (#162) — culling wiring. These tests prove the optimistic cache patch
+// plus the outbound HTTP request through the real useQueueMutation → mutator →
+// api → fetch path. They do NOT exercise the full queue lifecycle (no SSE
+// confirmation / clearDeferred / replay) — that is covered by the queue suite.
+describe("ContactSheetRow — culling", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("rejects a single exposure (optimistic patch + PATCH status request)", async () => {
+    const patched: Array<{ url: string; body: unknown }> = [];
+    vi.spyOn(global, "fetch").mockImplementation(
+      (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === "string" ? input : (input as Request).url;
+        if (url === "/api/samples/7/exposures") {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify([
+                makeExposure({ id: 1, sample_id: 7, status: "accepted" }),
+              ]),
+              { status: 200, headers: { "Content-Type": "application/json" } },
+            ),
+          );
+        }
+        if (/\/api\/exposures\/1\/status$/.test(url)) {
+          patched.push({
+            url,
+            body: init?.body ? JSON.parse(String(init.body)) : null,
+          });
+          return Promise.resolve(
+            new Response(JSON.stringify({ id: 1, status: "rejected" }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            }),
+          );
+        }
+        return Promise.resolve(new Response("not found", { status: 404 }));
+      },
+    );
+
+    renderRow(makeSample({ id: 7 }));
+    const reject = await screen.findByTestId("exposure-reject-1");
+    fireEvent.click(reject);
+
+    await waitFor(() =>
+      expect(
+        patched.some((p) => /\/api\/exposures\/1\/status$/.test(p.url)),
+      ).toBe(true),
+    );
+    expect(patched[0].body).toMatchObject({ status: "rejected" });
+    await waitFor(() =>
+      expect(screen.getByTestId("exposure-thumb-1")).toHaveAttribute(
+        "data-rejected",
+        "true",
+      ),
+    );
+  });
+});
