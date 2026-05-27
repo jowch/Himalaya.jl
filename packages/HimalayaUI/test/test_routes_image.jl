@@ -5,6 +5,12 @@ using Test, HTTP, JSON3, SQLite, DBInterface, FileIO, ImageCore, TiffImages
     test_img = Gray.(rand(Float32, 512, 384))  # larger than 128px so thumb is actually smaller
     save(tiff_path, test_img)
 
+    # image_path points at a file that does not exist on disk (e.g. the source
+    # TIFF was moved/deleted after ingest). The route must 404 gracefully, like
+    # the trace route does for a missing .dat — not throw an unhandled
+    # ArgumentError into a 500 (finding BE-1 / L-2, issue #233).
+    missing_path = tempname() * ".tiff"
+
     db      = SQLite.DB()
     HimalayaUI.create_schema!(db)
     HimalayaUI.migrate_schema!(db)
@@ -12,6 +18,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, FileIO, ImageCore, TiffImages
     samp_id = HimalayaUI.create_sample!(db; experiment_id=exp_id)
     eid     = HimalayaUI.create_exposure!(db; sample_id=samp_id, image_path=tiff_path)
     eid_noi = HimalayaUI.create_exposure!(db; sample_id=samp_id)  # no image
+    eid_gone = HimalayaUI.create_exposure!(db; sample_id=samp_id, image_path=missing_path)  # path set, file missing
 
     with_test_server(db) do port, base
         # Full image
@@ -32,6 +39,13 @@ using Test, HTTP, JSON3, SQLite, DBInterface, FileIO, ImageCore, TiffImages
         # nonexistent exposure → 404
         r404b = HTTP.get("$base/api/exposures/9999/image"; status_exception=false)
         @test r404b.status == 404
+
+        # image_path set but source file missing → graceful 404, not 500
+        r404c = HTTP.get("$base/api/exposures/$eid_gone/image"; status_exception=false)
+        @test r404c.status == 404
+        # thumb variant of a missing source must also 404, not 500
+        r404d = HTTP.get("$base/api/exposures/$eid_gone/image?thumb=1"; status_exception=false)
+        @test r404d.status == 404
     end
 
     rm(tiff_path; force=true)
