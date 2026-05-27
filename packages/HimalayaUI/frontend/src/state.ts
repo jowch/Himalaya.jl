@@ -38,10 +38,9 @@ export const LS_KEY = "himalaya-ui:state";
 // surface (Inspect #163, Index #181, Compare #177) is retired and the app is a
 // single URL-routed shell, so nothing renders off `activePage` anymore. The
 // `activePage: s.activePage` line is also removed from `partialize` (forced by
-// the field deletion). NOTE: the persist `version` is deliberately NOT bumped
-// here — a pre-cutover blob's stale `activePage` key lands as an inert extra
-// property after the shallow `merge` and ages out on the next write. The
-// deliberate version-bump + `migrate` that formally strips it is #183 (I5.2).
+// the field deletion). I5.2 (#183) then bumped the persist `version` 3 → 4 with
+// the `migrate` below, which formally strips any lingering `activePage` key from
+// a pre-cutover blob while preserving every surviving pref.
 
 export type ThemeId = "dark" | "light";
 export type NavModalStep = "experiment" | "sample";
@@ -652,13 +651,13 @@ export const useAppState = create<AppState>()(
     },
     {
       name: LS_KEY,
-      // I5.1 (#182): `activePage` dropped from partialize (its field is gone).
-      // `version` stays 3 — NOT bumped here. A pre-cutover blob still carrying
-      // an `activePage` key is harmless: the shallow `merge` leaves it as an
-      // inert extra property that no field reads and partialize never
-      // re-persists, so it ages out on the next write. The deliberate
-      // version-bump + `migrate` that formally strips it is #183 (I5.2).
-      version: 3,
+      // I5.1 (#182) dropped `activePage` from partialize (its field is gone).
+      // I5.2 (#183) bumps `version` 3 → 4 WITH the `migrate` below, which
+      // formally strips any lingering `activePage` key from a pre-cutover blob.
+      // A version bump WITHOUT a migrate would make Zustand discard the whole
+      // persisted blob — the wipe risk; the migrate preserves every surviving
+      // pref (username/theme/tutorialSeen/…).
+      version: 4,
       partialize: (s) => ({
         username: s.username,
         firstName: s.firstName,
@@ -669,6 +668,25 @@ export const useAppState = create<AppState>()(
         tutorialSeen: s.tutorialSeen,
         theme: s.theme,
       }),
+      // I5.2 (#183): runs BEFORE `merge` on rehydrate (zustand v4 order is
+      // migrate → merge). Returns persisted DATA only — `merge`
+      // (mergePersistedState) re-attaches the store actions afterward via
+      // `...current`. The only transform across every prior version is "drop
+      // the dead `activePage` key", so there is no `switch (version)`.
+      migrate: (persisted, _version) => {
+        // WIPE-GUARD: a non-object / malformed blob is returned UNTOUCHED —
+        // never `{}`/`undefined`. Handing `{}` here would be the only way this
+        // migrate could itself partial-wipe prefs; returning the original lets
+        // `merge` fold whatever survived (or fall back to defaults).
+        if (persisted && typeof persisted === "object") {
+          const { activePage: _activePage, ...rest } = persisted as Record<
+            string,
+            unknown
+          >;
+          return rest as unknown as AppState;
+        }
+        return persisted as AppState;
+      },
       merge: mergePersistedState,
     },
   ),
@@ -677,8 +695,9 @@ export const useAppState = create<AppState>()(
 /** persist `merge` — replicates zustand's default shallow merge
  *  ({ ...current, ...persisted }). Kept (rather than relying on zustand's
  *  default) so the merge strategy is explicit and unit-testable. The former
- *  `activePage` coercion is gone with the dual-nav model (I5.1, #182). Adding
- *  a `merge` callback is NOT a `persist` version bump — `version` stays 3. */
+ *  `activePage` coercion is gone with the dual-nav model (I5.1, #182). This
+ *  merge runs AFTER `migrate` on rehydrate (zustand v4) and is unchanged by
+ *  the I5.2 (#183) `version` 3 → 4 bump — the strip happens in `migrate`. */
 export function mergePersistedState(
   persisted: unknown,
   current: AppState,

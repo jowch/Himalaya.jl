@@ -9,6 +9,8 @@ import {
 } from "../../src/lib/queue/persistence";
 import type { Mutator, OpKind } from "../../src/lib/queue/types";
 import { makeFakeMutation } from "./helpers";
+import { resolveMutator } from "../../src/lib/queue/mutatorRegistry";
+import { saveComparisonMutator } from "../../src/lib/queue/mutators/saveComparison";
 
 describe("persistence: mirrorToSessionStorage", () => {
   beforeEach(() => {
@@ -260,5 +262,58 @@ describe("persistence: rehydrate", () => {
     expect(result.failed).toBe(1);
     expect(result.replayed).toBe(0);
     expect(result.dropped).toBe(0);
+  });
+});
+
+// I5.2 (#183): SCHEMA_VERSION bumped 2 → 3 because Compare routes were retired
+// (I3.6 #177). A pre-cutover queued `comparison_*` op (persisted as schemaVersion
+// 2) must DROP at the version guard on rehydrate — NOT replay into its (kept)
+// mutator and fire a request that 404s against the dead route. The kept
+// comparison machinery (mutator arms in mutatorRegistry, applyRemoteToCache)
+// stays FOREVER for historical/migrated SSE logs; only the locally-queued op is
+// dropped.
+describe("persistence: stale comparison_* op drop (#183)", () => {
+  beforeEach(() => {
+    sessionStorage.clear();
+  });
+
+  it("drops a pre-cutover (schemaVersion 2) comparison_save op without replaying it", async () => {
+    // Spy so we can prove the kept saveComparison mutator's request is never
+    // fired — the op must drop at the version guard, not replay-then-404.
+    const requestSpy = vi.spyOn(saveComparisonMutator, "request");
+
+    sessionStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify([
+        {
+          schemaVersion: 2, // pre-cutover; current SCHEMA_VERSION is 3
+          kind: "comparison_save",
+          clientOpId: "op-stale-cmp",
+          payload: { title: "stale draft", members: [] },
+        },
+      ]),
+    );
+
+    const qc = new QueryClient();
+    const result = await rehydrate(qc, resolveMutator);
+
+    expect(result.dropped).toBe(1);
+    expect(result.replayed).toBe(0);
+    expect(result.failed).toBe(0);
+    expect(requestSpy).not.toHaveBeenCalled();
+
+    requestSpy.mockRestore();
+  });
+
+  it("keeps the comparison_save mutator resolvable (frozen machinery)", () => {
+    // The bump must NOT delete the kept comparison_* machinery — a current
+    // comparison_save op still resolves to its mutator (master plan §2.1:
+    // comparison* branches frozen forever). Cheapest possible regression guard
+    // against an over-eager future deletion.
+    const mutator = resolveMutator({
+      kind: "comparison_save",
+      payload: { title: "x", members: [] },
+    });
+    expect(mutator).toBe(saveComparisonMutator);
   });
 });
