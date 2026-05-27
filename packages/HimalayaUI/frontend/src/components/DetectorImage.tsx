@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import { decideOrient } from "../lib/detectorOrient";
 
 interface Props {
   exposureId: number;
@@ -33,17 +34,9 @@ interface Layout {
   caps: { maxW: number; maxH: number } | null;
 }
 
-// Rotate when the container is meaningfully wider than the image's natural
-// aspect — keeps near-square images upright unless space really wants landscape.
-const ROTATE_THRESHOLD = 1.25;
-
-// Auto-rotate is gated to viewports ≥ this width. Below the WorkspaceGrid
-// breakpoint the layout stacks into a single column where the image card is
-// wider than tall by default — but at that breakpoint the user has chosen a
-// portrait-friendly layout, so we keep the exposure upright and let the image
-// fit by width. Matching the WorkspaceGrid breakpoint keeps the two decisions
-// synchronized: one CSS source of truth for "small layout."
-const ROTATE_MIN_VIEWPORT = 1400;
+// The orient decision (thresholds, viewport gate, caps swap) lives in the
+// shared `decideOrient` helper so DetectorRingOverlay (#180) can rotate in
+// lockstep with this canvas.
 
 export function DetectorImage({
   exposureId,
@@ -62,27 +55,20 @@ export function DetectorImage({
   const evaluateOrient = useCallback(() => {
     const wrapper = wrapperRef.current;
     const canvas = canvasRef.current;
+    // Preserve prior layout on a transient zero-size — do NOT setLayout here
+    // (a later observe corrects it). decideOrient's own zero-guard would
+    // instead clobber to {portrait,null}, so the skip must stay in the caller.
     if (!wrapper || !canvas || !canvas.width || !canvas.height) return;
     const cw = wrapper.clientWidth;
     const ch = wrapper.clientHeight;
     if (cw === 0 || ch === 0) return;
-    // Below the small-screen breakpoint, force portrait — the stacked layout
-    // gives the image card a wide-but-shallow slot, so rotating to landscape
-    // would make the diffraction pattern read sideways for no real gain.
-    const viewportW = typeof window !== "undefined" ? window.innerWidth : 0;
-    if (viewportW < ROTATE_MIN_VIEWPORT) {
-      setLayout({ orient: "portrait", caps: null });
-      return;
-    }
-    const containerAspect = cw / ch;
-    const imageAspect = canvas.width / canvas.height;
-    if (containerAspect > imageAspect * ROTATE_THRESHOLD) {
-      // Pre-rotation max-width must be capped by container HEIGHT (becomes
-      // visual height after rotation), and max-height by container WIDTH.
-      setLayout({ orient: "landscape", caps: { maxW: ch, maxH: cw } });
-    } else {
-      setLayout({ orient: "portrait", caps: null });
-    }
+    setLayout(decideOrient({
+      containerW: cw,
+      containerH: ch,
+      imageW: canvas.width,
+      imageH: canvas.height,
+      viewportW: typeof window !== "undefined" ? window.innerWidth : 0,
+    }));
   }, []);
 
   const renderImage = useCallback(async () => {
