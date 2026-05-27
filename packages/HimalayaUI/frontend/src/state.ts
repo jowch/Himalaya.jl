@@ -38,10 +38,9 @@ export const LS_KEY = "himalaya-ui:state";
 // surface (Inspect #163, Index #181, Compare #177) is retired and the app is a
 // single URL-routed shell, so nothing renders off `activePage` anymore. The
 // `activePage: s.activePage` line is also removed from `partialize` (forced by
-// the field deletion). NOTE: the persist `version` is deliberately NOT bumped
-// here — a pre-cutover blob's stale `activePage` key lands as an inert extra
-// property after the shallow `merge` and ages out on the next write. The
-// deliberate version-bump + `migrate` that formally strips it is #183 (I5.2).
+// the field deletion). I5.2 (#183) then bumped the persist `version` 3 → 4 with
+// the `migrate` below, which formally strips any lingering `activePage` key from
+// a pre-cutover blob while preserving every surviving pref.
 
 export type ThemeId = "dark" | "light";
 export type NavModalStep = "experiment" | "sample";
