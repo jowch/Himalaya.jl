@@ -1,8 +1,9 @@
 import { useNavigate } from "react-router-dom";
 import { useAppState, type PageId } from "../state";
 
+// I4.4 (#181): Index retired (Inspect retired #163) — only Compare remains.
+// The rocker (and the whole dual-nav model) is deleted in I5.1.
 const TABS: readonly { id: PageId; label: string }[] = [
-  { id: "index",   label: "Index"   },
   { id: "compare", label: "Compare" },
 ];
 
@@ -24,8 +25,8 @@ interface Props {
  * Shared across all pages; lives in AppHeader.
  *
  * Hybrid navigation: clicking "Compare" navigates to a URL (so :eid/:id
- * params survive reloads); clicking Index/Inspect updates `activePage` and
- * lets the parent shell route back to "/" if needed.
+ * params survive reloads). The Index/Inspect tabs (which updated `activePage`
+ * and let the parent shell route back to "/") are retired (#181 / #163).
  */
 export function TabRocker({ experimentId, onNavigateAway }: Props): JSX.Element {
   const activePage = useAppState((s) => s.activePage);

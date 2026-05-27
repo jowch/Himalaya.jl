@@ -3,7 +3,10 @@ import { useLocation } from "react-router-dom";
 import { useAppState, type PageId } from "../state";
 import type { Sample } from "../api";
 
-const TAB_ORDER: PageId[] = ["index", "compare"];
+// I4.4 (#181): Index retired → only "compare" remains. With a single-element
+// TAB_ORDER the ArrowLeft/Right page-step clamps to the current tab (no-op).
+// The whole page-tab step retires with the dual-nav model in I5.1.
+const TAB_ORDER: PageId[] = ["compare"];
 
 /**
  * useGlobalShortcuts — wires the keyboard shortcuts described in the plan.

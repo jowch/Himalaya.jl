@@ -6,27 +6,30 @@ import {
 } from "../src/state";
 
 describe("coerceActivePage", () => {
-  it("passes valid PageIds through unchanged", () => {
-    expect(coerceActivePage("index")).toBe("index");
+  it("passes the sole valid PageId 'compare' through unchanged", () => {
     expect(coerceActivePage("compare")).toBe("compare");
   });
 
-  it("coerces a stale 'inspect' to 'index' after Inspect retirement (#163)", () => {
-    // Inspect is retired; a persisted activePage:"inspect" must not strand the
+  it("coerces a stale 'index' to 'compare' after Index retirement (#181)", () => {
+    // Index is retired; a persisted activePage:"index" must not strand the
     // user on an empty PageBody — coerceActivePage rewrites it to a live page.
-    expect(coerceActivePage("inspect")).toBe("index");
+    expect(coerceActivePage("index")).toBe("compare");
   });
 
-  it("coerces an unknown surface name to 'index'", () => {
-    expect(coerceActivePage("loupe")).toBe("index");
-    expect(coerceActivePage("samples")).toBe("index");
-    expect(coerceActivePage("")).toBe("index");
+  it("coerces a stale 'inspect' to 'compare' after Inspect retirement (#163)", () => {
+    expect(coerceActivePage("inspect")).toBe("compare");
   });
 
-  it("coerces non-string / missing values to 'index'", () => {
-    expect(coerceActivePage(undefined)).toBe("index");
-    expect(coerceActivePage(null)).toBe("index");
-    expect(coerceActivePage(42)).toBe("index");
+  it("coerces an unknown surface name to 'compare'", () => {
+    expect(coerceActivePage("loupe")).toBe("compare");
+    expect(coerceActivePage("samples")).toBe("compare");
+    expect(coerceActivePage("")).toBe("compare");
+  });
+
+  it("coerces non-string / missing values to 'compare'", () => {
+    expect(coerceActivePage(undefined)).toBe("compare");
+    expect(coerceActivePage(null)).toBe("compare");
+    expect(coerceActivePage(42)).toBe("compare");
   });
 });
 
@@ -37,7 +40,7 @@ describe("mergePersistedState (persist merge)", () => {
       { activePage: "ghost", theme: "light" },
       current,
     );
-    expect(merged.activePage).toBe("index");
+    expect(merged.activePage).toBe("compare");
   });
 
   it("keeps a valid persisted activePage and other persisted keys", () => {
@@ -59,6 +62,6 @@ describe("mergePersistedState (persist merge)", () => {
   it("handles undefined persisted state (first run)", () => {
     const current = useAppState.getState();
     const merged = mergePersistedState(undefined, current);
-    expect(merged.activePage).toBe("index");
+    expect(merged.activePage).toBe("compare");
   });
 });

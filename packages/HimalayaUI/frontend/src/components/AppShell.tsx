@@ -31,6 +31,8 @@ export function AppShell(): JSX.Element {
   const experimentId = useAppState((s) => s.activeExperimentId);
   const setActivePage = useAppState((s) => s.setActivePage);
   const activePage = useAppState((s) => s.activePage);
+  const staleUrlContext = useAppState((s) => s.staleUrlContext);
+  const resolving = useAppState((s) => s.resolving);
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -47,15 +49,28 @@ export function AppShell(): JSX.Element {
   // path, navigate so the URL-routed Compare page mounts. Without this, a
   // reload at "/" with persisted activePage='compare' renders the rocker but
   // no page body (issue #77).
+  //
+  // I4.4 (#181): with PageId narrowed to "compare", activePage is now ALWAYS
+  // "compare", so this bridge would fire on the catch-all `*` route too and
+  // bounce a typo'd/dead URL to /compare/all before PageBody can render
+  // StaleUrlPage ("Page not found"). Stand the bridge down whenever the URL is
+  // stale or mid-resolve — those are useStateFromUrl's to own, and PageBody
+  // renders the stale/resolving view for them. We re-read both flags via
+  // getState() because useStateFromUrl (called first, above) sets them
+  // synchronously inside its effect; the selector-subscribed values won't
+  // reflect that until the next render commit, but getState() sees it now.
   useEffect(() => {
     if (activePage !== "compare") return;
     if (onComparePath) return;
+    const s = useAppState.getState();
+    if (s.staleUrlContext !== null || s.resolving) return;
+    if (staleUrlContext !== null || resolving) return;
     const url =
       experimentId !== undefined
         ? `/experiments/${experimentId}/compare`
         : "/compare/all";
     navigate(url, { replace: true });
-  }, [activePage, onComparePath, experimentId, navigate]);
+  }, [activePage, onComparePath, experimentId, navigate, staleUrlContext, resolving]);
 
   return (
     <div

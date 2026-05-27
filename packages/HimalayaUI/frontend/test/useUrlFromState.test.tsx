@@ -10,6 +10,12 @@ import { _resetEmitMode } from "../src/lib/url/emitMode";
 import type { Experiment, Sample } from "../src/api";
 
 // Spec §4.3
+//
+// I4.4 (#181) + I1.7 (#163): Index and Inspect are retired. `activePage` can
+// only be "compare", for which `buildUrl` returns `current` — so this hook no
+// longer emits any Zustand-derived URL. Compare owns its own URL via
+// useNavigate/ComparePage. The remaining contract is purely "never tug the
+// URL away from a Compare surface, and bail while resolving / stale".
 
 function makeWrapper() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -20,9 +26,6 @@ function makeWrapper() {
   qc.setQueryData<Sample[]>(queryKeys.samples(17), [
     { id: 42, experiment_id: 17, name: "JC001", display_name: null, notes: null, tags: [] },
   ]);
-  // BrowserRouter reads from `window.history` / `window.location`, which is
-  // what the tests manipulate via `history.replaceState`. Mirrors the
-  // wrapper used in `useStateFromUrl.test.tsx`.
   const Wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={qc}>
       <BrowserRouter>{children}</BrowserRouter>
@@ -35,29 +38,31 @@ beforeEach(() => {
   history.replaceState(null, "", "/");
   _resetEmitMode();
   useAppState.setState({
-    activePage: "index",
+    activePage: "compare",
     activeExperimentId: undefined, activeSampleId: undefined, activeExposureId: undefined,
     staleUrlContext: null, resolving: false,
   });
 });
 
 describe("useUrlFromState", () => {
-  it("active sample → /index/<exp>/<sample>", () => {
+  it("does not tug a Compare URL away (buildUrl returns current → no emit)", () => {
     const { Wrapper } = makeWrapper();
-    useAppState.setState({ activePage: "index", activeExperimentId: 17, activeSampleId: 42 });
+    history.replaceState(null, "", "/experiments/17/compare");
+    useAppState.setState({ activePage: "compare", activeExperimentId: 17, activeSampleId: 42 });
+    const pushSpy = vi.spyOn(history, "pushState");
+    const replaceSpy = vi.spyOn(history, "replaceState");
     renderHook(() => useUrlFromState(), { wrapper: Wrapper });
-    expect(location.pathname).toBe("/index/lipid-screen/JC001");
+    const hookPushes = pushSpy.mock.calls.filter((c) => typeof c[2] === "string");
+    const hookReplaces = replaceSpy.mock.calls.filter((c) => typeof c[2] === "string");
+    expect(hookPushes).toHaveLength(0);
+    expect(hookReplaces).toHaveLength(0);
+    expect(location.pathname).toBe("/experiments/17/compare");
   });
-
-  // I1.7 (#163): the "page change → push (/inspect)" and "exposure-only
-  // change → replace (?exposure=)" tests are retired with Inspect — it was
-  // the only legacy tab that emitted a navigable slug distinct from Index and
-  // the only surface whose URL carried ?exposure=.
 
   it("equality guard: identical URL does not emit", () => {
     const { Wrapper } = makeWrapper();
-    history.replaceState(null, "", "/index/lipid-screen/JC001");
-    useAppState.setState({ activePage: "index", activeExperimentId: 17, activeSampleId: 42 });
+    history.replaceState(null, "", "/compare/all");
+    useAppState.setState({ activePage: "compare", activeExperimentId: 17, activeSampleId: 42 });
     const pushSpy = vi.spyOn(history, "pushState");
     const replaceSpy = vi.spyOn(history, "replaceState");
     const { rerender } = renderHook(() => useUrlFromState(), { wrapper: Wrapper });
@@ -67,57 +72,34 @@ describe("useUrlFromState", () => {
     expect(replaceSpy).not.toHaveBeenCalled();
   });
 
-  it("does not emit while experiments cache is unhydrated (deep-link race)", () => {
-    // Cold-mount race: applySuccess populated activeExperimentId / activeSampleId
-    // before useExperiments() finished. If the hook emitted now, buildUrl
-    // would resolve to /index (no slugs) and useStateFromUrl would wipe the
-    // just-populated active ids. The cache-hydration gate prevents that.
-    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    // Deliberately do NOT setQueryData — simulate cache loading.
-    const Wrapper = ({ children }: { children: ReactNode }) => (
-      <QueryClientProvider client={qc}>
-        <BrowserRouter>{children}</BrowserRouter>
-      </QueryClientProvider>
-    );
-    history.replaceState(null, "", "/index/lipid-screen/JC001");
+  it("bails (no emit) while resolving", () => {
+    const { Wrapper } = makeWrapper();
+    history.replaceState(null, "", "/compare/all");
     useAppState.setState({
-      activePage: "index", activeExperimentId: 17, activeSampleId: 42,
+      activePage: "compare", activeExperimentId: 17, activeSampleId: 42, resolving: true,
     });
     const pushSpy = vi.spyOn(history, "pushState");
     const replaceSpy = vi.spyOn(history, "replaceState");
     renderHook(() => useUrlFromState(), { wrapper: Wrapper });
-    // Effect runs but should bail because experiments cache is empty.
-    // BrowserRouter's mount calls history.replaceState(state, "") with two
-    // args to inject its own internal `{ idx: 0 }` marker — filter for
-    // hook-driven navigations (which pass a URL string as the 3rd arg).
     const hookPushes = pushSpy.mock.calls.filter((c) => typeof c[2] === "string");
     const hookReplaces = replaceSpy.mock.calls.filter((c) => typeof c[2] === "string");
     expect(hookPushes).toHaveLength(0);
     expect(hookReplaces).toHaveLength(0);
-    // URL must remain the deep link — the bug would have rewritten it to /index.
-    expect(location.pathname).toBe("/index/lipid-screen/JC001");
   });
 
-  // I1.7 (#163): the exposures-cache-unhydrated deep-link race test is retired
-  // with Inspect — no URL carries ?exposure= and useUrlFromState no longer
-  // subscribes to the exposures cache.
-
-  it("replay-as-rerun: identical optimistic + confirmed slug → no spurious emit", () => {
-    // Simulate the trivial replay case: cache row gets replaced (foreign event)
-    // but the same id-name mapping holds. URL recompute should see the same
-    // slug and not emit.
-    const { qc, Wrapper } = makeWrapper();
-    history.replaceState(null, "", "/index/lipid-screen/JC001");
-    useAppState.setState({ activePage: "index", activeExperimentId: 17, activeSampleId: 42 });
+  it("bails (no emit) while a stale URL context is parked", () => {
+    const { Wrapper } = makeWrapper();
+    history.replaceState(null, "", "/foo/bar");
+    useAppState.setState({
+      activePage: "compare", activeExperimentId: 17, activeSampleId: 42,
+      staleUrlContext: { kind: "unknown_path", raw: "/foo/bar" },
+    });
+    const pushSpy = vi.spyOn(history, "pushState");
     const replaceSpy = vi.spyOn(history, "replaceState");
-    const { rerender } = renderHook(() => useUrlFromState(), { wrapper: Wrapper });
-    replaceSpy.mockClear();
-    // Simulate applyRemoteToCache rewriting samples in place.
-    qc.setQueryData<Sample[]>(queryKeys.samples(17), [
-      { id: 42, experiment_id: 17, name: "JC001", display_name: "JC001 (touched)",
-        notes: null, tags: [] },
-    ]);
-    rerender();
-    expect(replaceSpy).not.toHaveBeenCalled();
+    renderHook(() => useUrlFromState(), { wrapper: Wrapper });
+    const hookPushes = pushSpy.mock.calls.filter((c) => typeof c[2] === "string");
+    const hookReplaces = replaceSpy.mock.calls.filter((c) => typeof c[2] === "string");
+    expect(hookPushes).toHaveLength(0);
+    expect(hookReplaces).toHaveLength(0);
   });
 });

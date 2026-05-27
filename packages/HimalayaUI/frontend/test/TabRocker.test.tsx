@@ -15,32 +15,30 @@ const renderInRouter = (ui: React.ReactElement) =>
 beforeEach(() => {
   localStorage.clear();
   useAppState.setState({
-    activePage: "index",
+    activePage: "compare",
     username: "tester",
     theme: "dark",
   });
 });
 
 describe("<TabRocker>", () => {
-  it("renders the Index and Compare tabs (Inspect retired, #163)", () => {
+  it("renders only the Compare tab (Index retired #181, Inspect retired #163)", () => {
     renderInRouter(<TabRocker />);
     const tabs = screen.getAllByRole("tab");
-    expect(tabs).toHaveLength(2);
-    expect(tabs[0]).toHaveTextContent("Index");
-    expect(tabs[1]).toHaveTextContent("Compare");
+    expect(tabs).toHaveLength(1);
+    expect(tabs[0]).toHaveTextContent("Compare");
+    expect(screen.queryByTestId("tab-index")).toBeNull();
     expect(screen.queryByTestId("tab-inspect")).toBeNull();
   });
 
-  it("renders both tabs with the active page marked", () => {
+  it("marks the Compare tab active", () => {
     renderInRouter(<TabRocker />);
-    const idx = screen.getByTestId("tab-index");
     const cmp = screen.getByTestId("tab-compare");
-    expect(idx).toHaveAttribute("aria-selected", "true");
-    expect(idx).toHaveAttribute("data-active", "true");
-    expect(cmp).toHaveAttribute("aria-selected", "false");
+    expect(cmp).toHaveAttribute("aria-selected", "true");
+    expect(cmp).toHaveAttribute("data-active", "true");
   });
 
-  it("clicking a tab updates activePage in the store", async () => {
+  it("clicking the Compare tab keeps activePage 'compare'", async () => {
     const user = userEvent.setup();
     renderInRouter(<TabRocker />);
     await user.click(screen.getByTestId("tab-compare"));

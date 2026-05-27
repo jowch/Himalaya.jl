@@ -8,6 +8,7 @@ describe("useAppState", () => {
       username: undefined,
       activeSampleId: undefined,
       activeExposureId: undefined,
+      activePage: "compare",
     });
   });
 
@@ -70,8 +71,10 @@ describe("useAppState", () => {
     expect(s.activeExposureId).toBeUndefined();
   });
 
-  it("activePage defaults to 'index' and can switch to 'compare'", () => {
-    expect(useAppState.getState().activePage).toBe("index");
+  it("activePage is 'compare' — the sole PageId after the Index cutover (#181)", () => {
+    // "index" was retired in #181; "compare" is the only surviving PageId
+    // until #3.6 empties the union and #5.1 deletes the activePage model.
+    expect(useAppState.getState().activePage).toBe("compare");
     useAppState.getState().setActivePage("compare");
     expect(useAppState.getState().activePage).toBe("compare");
   });

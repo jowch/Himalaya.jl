@@ -6,14 +6,16 @@ import { useAppState } from "../src/state";
 import { renderWithProviders } from "./test-utils";
 
 // Plan §Phase 4 introduced URL routing for Compare. Wrap App renders in a
-// MemoryRouter so route hooks resolve. We start at "/" so the existing
-// Zustand-driven IndexPage smoke assertions still pass.
-const renderApp = () =>
+// MemoryRouter so route hooks resolve. I4.4 (#181): the Index surface at "/"
+// is retired — "/" redirects to the corpus contact sheet (/samples). Tests
+// pass an explicit entry so they land where they assert.
+const renderAppAt = (path: string) =>
   renderWithProviders(
-    <MemoryRouter initialEntries={["/"]}>
+    <MemoryRouter initialEntries={[path]}>
       <App />
     </MemoryRouter>,
   );
+const renderApp = () => renderAppAt("/");
 
 function mockFetch(map: Record<string, unknown>): void {
   vi.spyOn(global, "fetch").mockImplementation(async (input) => {
@@ -37,7 +39,7 @@ describe("App smoke", () => {
       activeExperimentId: 1,
       activeSampleId: 10,
       activeExposureId: undefined,
-      activePage: "index",
+      activePage: "compare",
       tutorialSeen: true,
       theme: "dark",
       hoveredIndexId: undefined,
@@ -57,6 +59,10 @@ describe("App smoke", () => {
       "/api/experiments/1/samples": [
         { id: 10, experiment_id: 1, display_name: null, name: "s1", notes: null, tags: [] },
       ],
+      // Corpus list — "/" now lands on the /samples contact sheet (#181).
+      "/api/samples": [
+        { id: 10, experiment_id: 1, display_name: null, name: "s1", notes: null, tags: [] },
+      ],
       "/api/samples/10/exposures": [],
       "/api/samples/10/messages": [],
       // Cold-mount root redirect path: useStateFromUrl falls through to
@@ -68,26 +74,23 @@ describe("App smoke", () => {
         sample_id: 10, sample_name: "s1",
         exposure_id: undefined, exposure_filename: undefined,
       },
+      // Compare sidebar listing (the surviving-surface test mounts Compare).
+      "/api/experiments/1/comparisons": [],
+      "/api/users/me/comparison-pins": [],
     });
   });
 
-  it("renders the three-card index page when user + scope are set", async () => {
+  it("redirects '/' to the corpus contact sheet (Index retired, #181)", async () => {
+    // I4.4 (#181): the three-card Index at "/" is gone. A cold "/" lands on
+    // the corpus contact sheet (/samples) per §4.1 — no workspace grid / plot
+    // title / tab rocker.
     renderApp();
-    // Three-card grid + title button should all appear once the URL→state
-    // resolve finishes. Cold-mount path goes through ResolvingFallback
-    // briefly because the TanStack cache is empty when useStateFromUrl
-    // first fires; we wait for the resolve to land before asserting.
     await waitFor(() =>
-      expect(screen.getByTestId("workspace-grid")).toBeInTheDocument(),
+      expect(screen.getByTestId("samples-page")).toBeInTheDocument(),
       { timeout: 3000 },
     );
-    expect(screen.getByTestId("plot-title")).toBeInTheDocument();
-    expect(screen.getByTestId("tab-rocker")).toBeInTheDocument();
-    // Title should include the experiment and sample name once the queries resolve
-    await waitFor(() => expect(screen.getByText(/demo/)).toBeInTheDocument(),
-      { timeout: 3000 });
-    await waitFor(() => expect(screen.getByText("s1")).toBeInTheDocument(),
-      { timeout: 3000 });
+    expect(screen.queryByTestId("workspace-grid")).toBeNull();
+    expect(screen.queryByTestId("tab-rocker")).toBeNull();
   });
 
   it("shows the onboarding overlay when no user is set", () => {
@@ -96,10 +99,9 @@ describe("App smoke", () => {
     expect(screen.getByTestId("onboarding-overlay")).toBeInTheDocument();
   });
 
-  it("switching the tab rocker changes the active page to Compare", async () => {
-    renderApp();
-    const cmpTab = await screen.findByTestId("tab-compare");
-    cmpTab.click();
-    await waitFor(() => expect(screen.getByTestId("compare-page")).toBeInTheDocument());
+  it("the Compare page mounts at its own URL (surviving AppShell surface, #181)", async () => {
+    renderAppAt("/experiments/1/compare");
+    await waitFor(() => expect(screen.getByTestId("compare-page")).toBeInTheDocument(),
+      { timeout: 3000 });
   });
 });

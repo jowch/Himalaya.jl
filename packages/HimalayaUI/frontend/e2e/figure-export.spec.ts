@@ -29,6 +29,12 @@ async function mockApi(page: import("@playwright/test").Page): Promise<void> {
     r.fulfill({ json: { id: 7, name: "JC23", path: "/x", data_dir: "/x", analysis_dir: "/x", manifest_path: null, created_at: "2026", q_units: "A-1" } }));
   await page.route("**/api/experiments/7/samples", (r) =>
     r.fulfill({ json: [{ id: 10, experiment_id: 7, display_name: "S4", name: "Sample 4", notes: null, tags: [] }] }));
+  // Corpus list — the focus workspace (/sample/:id, I4.4) learns sample 10's
+  // experiment_id from here.
+  await page.route("**/api/samples", (r) =>
+    r.fulfill({ json: [{ id: 10, experiment_id: 7, display_name: "S4", name: "Sample 4", notes: null, tags: [] }] }));
+  await page.route("**/api/samples/10/messages", (r) =>
+    r.fulfill({ json: [] }));
   await page.route("**/api/samples/10/exposures*", (r) =>
     r.fulfill({ json: [SAMPLE_FIXTURE.exposure] }));
   await page.route("**/api/exposures/1/trace", (r) =>
@@ -51,7 +57,7 @@ async function seedState(page: import("@playwright/test").Page): Promise<void> {
         activeExperimentId: 7,
         activeSampleId: 10,
         activeExposureId: 1,
-        activePage: "index",
+        activePage: "compare",
         theme: "dark",
         // Other Zustand fields fall back to defaults from state.ts.
       },
@@ -66,12 +72,12 @@ async function seedState(page: import("@playwright/test").Page): Promise<void> {
 // Download tests don't need permissions but inheriting them is harmless.
 test.use({ permissions: ["clipboard-read", "clipboard-write"] });
 
-test.describe("Figure export — Index page (TraceViewer)", () => {
+test.describe("Figure export — focus workspace TraceViewer (#181)", () => {
   test("Copy puts a PNG on the clipboard (Chromium)", async ({ page, browserName }) => {
     test.skip(browserName !== "chromium", "Clipboard read requires Chromium permissions");
     await mockApi(page);
     await seedState(page);
-    await page.goto("/");
+    await page.goto("/sample/10");
 
     const copyBtn = page.getByRole("button", { name: /copy trace plot to clipboard/i });
     await expect(copyBtn).toBeEnabled();
@@ -93,7 +99,7 @@ test.describe("Figure export — Index page (TraceViewer)", () => {
   test("Download → PNG file lands with himalaya-trace-… filename", async ({ page }) => {
     await mockApi(page);
     await seedState(page);
-    await page.goto("/");
+    await page.goto("/sample/10");
 
     const dlBtn = page.getByRole("button", { name: /download trace plot as png/i });
     await expect(dlBtn).toBeEnabled();
@@ -108,7 +114,7 @@ test.describe("Figure export — Index page (TraceViewer)", () => {
   test("Download → SVG via chevron menu", async ({ page }) => {
     await mockApi(page);
     await seedState(page);
-    await page.goto("/");
+    await page.goto("/sample/10");
 
     const chevron = page.getByRole("button", { name: /other download formats/i });
     await chevron.click();

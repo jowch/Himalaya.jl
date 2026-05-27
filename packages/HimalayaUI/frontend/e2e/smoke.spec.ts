@@ -59,6 +59,11 @@ async function mockCore(page: Page, users: { id: number; username: string }[] = 
   await page.route("**/api/experiments/1/samples", (r) =>
     r.fulfill({ status: 200, contentType: "application/json",
       body: JSON.stringify(SAMPLES) }));
+  // Corpus sample list — the focus workspace (/sample/:id, I4.4) learns each
+  // sample's experiment_id from here. Keyed by sample id alone.
+  await page.route("**/api/samples", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json",
+      body: JSON.stringify(SAMPLES) }));
   for (const s of SAMPLES) {
     // Trailing `*` covers any future query string; without it requests fall through Vite proxy to whatever's on :8080.
     await page.route(`**/api/samples/${s.id}/exposures*`, (r) =>
@@ -74,7 +79,7 @@ async function seedState(page: Page, extra: Record<string, unknown>): Promise<vo
       "himalaya-ui:state",
       JSON.stringify({ state, version: 3 }),
     );
-  }, { username: "alice", activePage: "index", tutorialSeen: true, theme: "dark", ...extra });
+  }, { username: "alice", activePage: "compare", tutorialSeen: true, theme: "dark", ...extra });
 }
 
 test.beforeEach(async ({ page }) => {
@@ -90,7 +95,10 @@ test("first-run onboarding overlay is shown when no username", async ({ page }) 
 
 test("picking a new user triggers the tutorial and dismisses with 'Got it'", async ({ page }) => {
   await mockCore(page);
-  await page.goto("/");
+  // I4.4 (#181): the three-card Index at `/` is retired; the focus workspace
+  // (/sample/:id) is the surface that renders the trace plot. Onboarding shows
+  // over it when no username is set.
+  await page.goto("/sample/10");
 
   await expect(page.getByTestId("onboarding-name")).toBeVisible();
   await page.getByTestId("onboarding-new-handle").fill("alice");
@@ -106,57 +114,15 @@ test("picking a new user triggers the tutorial and dismisses with 'Got it'", asy
   await expect(page.getByTestId("plot-title")).toBeVisible();
 });
 
-test("plot-title opens the nav modal at sample step when experiment is set", async ({ page }) => {
-  await seedState(page, { activeExperimentId: 1, activeSampleId: 10 });
-  await mockCore(page, [{ id: 1, username: "alice" }]);
-  await page.goto("/");
-
-  await expect(page.getByTestId("plot-title")).toBeVisible();
-  await page.getByTestId("plot-title").click();
-  await expect(page.getByTestId("nav-modal")).toBeVisible();
-  await expect(page.getByTestId("nav-chip-experiment")).toHaveText(/SSRL May 2026/);
-});
-
-test("`.` key advances to the next sample", async ({ page }) => {
-  await seedState(page, { activeExperimentId: 1, activeSampleId: 10 });
-  await mockCore(page, [{ id: 1, username: "alice" }]);
-  await page.goto("/");
-
-  // Wait until the first sample is visible. PlotCard renders the sample's
-  // `display_name` ("D1"/"D2") — the editable label introduced by the
-  // stable-name refactor (8ac2bf6) — not the raw `name`.
-  await expect(page.getByTestId("plot-title")).toContainText("D1");
-  await page.keyboard.press("."); // next
-  await expect(page.getByTestId("plot-title")).toContainText("D2");
-  await page.keyboard.press(","); // back
-  await expect(page.getByTestId("plot-title")).toContainText("D1");
-});
-
-test("chat posts a message via /api/samples/:id/messages", async ({ page }) => {
-  let posted: { body: string } | null = null;
-  await seedState(page, { activeExperimentId: 1, activeSampleId: 10 });
-  await mockCore(page, [{ id: 1, username: "alice" }]);
-  await page.route("**/api/samples/10/messages", async (route) => {
-    const req = route.request();
-    if (req.method() === "POST") {
-      posted = req.postDataJSON() as { body: string };
-      return route.fulfill({
-        status: 201, contentType: "application/json",
-        body: JSON.stringify({
-          id: 1, sample_id: 10, author_id: 1, author: "alice", body: posted.body,
-          created_at: "2026-04-24 10:00:00",
-        }),
-      });
-    }
-    return route.fulfill({ status: 200, contentType: "application/json", body: "[]" });
-  });
-
-  await page.goto("/");
-  const compose = page.getByTestId("chat-compose");
-  await compose.fill("looks cubic to me");
-  await compose.press("Enter");
-  await expect.poll(() => posted?.body, { timeout: 2000 }).toBe("looks cubic to me");
-});
+// I4.4 (#181): the legacy three-card Index's shell affordances — opening the
+// NavModal from the plot title, the `,`/`.` Zustand-driven sample-step, and
+// the in-Index ChatCard — are retired with the Index surface. The focus
+// workspace (/sample/:id) is URL-routed (sample stepping happens via the
+// corpus picker / URL, not a Zustand keyboard step) and does not host the
+// NavModal or the chat card. Those interactions are covered on the focus
+// surface by FocusWorkspacePage.*.test.tsx + qlink.spec.ts, so the three
+// legacy-Index E2E cases that exercised them are removed here rather than
+// repointed (they have no equivalent on the replacement surface).
 
 test("curate: clicking + adds a candidate to the active set", async ({ page }) => {
   const EXPOSURE = {
@@ -207,7 +173,7 @@ test("curate: clicking + adds a candidate to the active set", async ({ page }) =
       body: JSON.stringify({ ...BASE_GROUP, members: groupMembers }) });
   });
 
-  await page.goto("/");
+  await page.goto("/sample/10");
 
   // Wait for PhasePanel to show the Pn3m candidate.
   await expect(page.getByText("Pn3m")).toBeVisible();
@@ -263,7 +229,7 @@ test("reanalyze: stale-indices banner fires POST /analyze when clicked", async (
       body: JSON.stringify({ id: 5, analyzed: true }) });
   });
 
-  await page.goto("/");
+  await page.goto("/sample/10");
 
   // StaleIndicesBanner should appear because the index has status "stale".
   await expect(page.getByRole("alert")).toBeVisible();
@@ -317,7 +283,7 @@ test("curate → reanalyze: active-set membership survives a reanalysis round-tr
       body: JSON.stringify({ id: 5, analyzed: true }) });
   });
 
-  await page.goto("/");
+  await page.goto("/sample/10");
 
   // Index 1 is active (curated) but stale — banner must appear.
   await expect(page.locator('[data-index-id="1"][data-active]')).toBeVisible();
@@ -333,7 +299,11 @@ test("curate → reanalyze: active-set membership survives a reanalysis round-tr
   await expect(page.getByRole("alert")).not.toBeVisible();
 });
 
-test("tab rocker switches to the Compare page", async ({ page }) => {
+test("the Compare page is reachable by URL (surviving AppShell surface, #181)", async ({ page }) => {
+  // I4.4 (#181): the three-card Index and the Index↔Compare tab toggle are
+  // retired. Compare is the surviving legacy (AppShell) surface; it's URL-owned
+  // (`/experiments/:eid/compare`), so we assert it directly rather than via the
+  // (now single-tab) rocker.
   await seedState(page, { activeExperimentId: 1, activeSampleId: 10 });
   await mockCore(page, [{ id: 1, username: "alice" }]);
   // The Compare sidebar fetches its scoped listing on mount.
@@ -341,14 +311,11 @@ test("tab rocker switches to the Compare page", async ({ page }) => {
     r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
   await page.route("**/api/users/me/comparison-pins", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
-  await page.goto("/");
+  await page.goto("/experiments/1/compare");
 
-  await expect(page.getByTestId("index-page")).toBeVisible();
-  await page.getByTestId("tab-compare").click();
   // compare-page wrapper uses display:contents (no layout box); use
   // toBeAttached() to confirm navigation landed, then assert a real child.
   await expect(page.getByTestId("compare-page")).toBeAttached();
-  // Sidebar is the persistent shell on the Compare page; assert it instead
-  // of the long-since-removed "Coming soon" placeholder.
+  // Sidebar is the persistent shell on the Compare page.
   await expect(page.getByTestId("comparison-sidebar")).toBeVisible();
 });

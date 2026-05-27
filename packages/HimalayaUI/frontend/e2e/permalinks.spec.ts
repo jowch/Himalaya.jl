@@ -1,37 +1,29 @@
 import { test, expect, type Page } from "@playwright/test";
 
-// Spec §8.2 — Playwright mocked. /api/* is intercepted so this runs
-// without a backend.
+// Spec §8.2 — Playwright mocked. /api/* is intercepted so this runs without a
+// backend.
 //
-// Forced-enabler additions vs. plan verbatim (lines 2806–2905):
-//   - Seed username/tutorialSeen in localStorage for tests 1–3 so the
-//     onboarding overlay (which gates on `username === undefined`) doesn't
-//     intercept clicks on the rocker / stale-url CTA. The plan code didn't
-//     seed it; the overlay covers the page until dismissed.
-//   - Use a regex URL matcher for `/api/resolve` rather than the glob
-//     `**/api/resolve?**`. Playwright globs are micromatch-style and `?`
-//     is "match any single char" — the literal query-string `?` either
-//     under- or over-matches depending on encoding. Regex sidesteps it.
-//   - Add `/api/resolve` mock to test 4. Cold-mount with seeded ids has
-//     an empty TanStack cache, so `useStateFromUrl`'s root branch falls
-//     through to `api.resolve({experiment_id, sample_id})` to recover
-//     the slug names. Without the mock, the catch redirects to /index.
-//   - Add a small delay to test 1's resolve mock so the ResolvingFallback
-//     (`data-testid='resolving'`) is observable. With instant fulfill the
-//     transition window is microseconds and `toBeAttached()` polls miss it.
+// I4.4 (#181): the Index surface is retired. Old `/index/<exp>/<sample>`
+// permalink deep-links are PRESERVED but now redirect to the focus workspace
+// (`/sample/:id`) via IndexSlugRedirect, which resolves the slug pair through
+// `/api/resolve`. Sampleless `/index*` and bare `/` redirect to the corpus
+// contact sheet (`/samples`). A failed resolve also lands on `/samples`.
 
 const RESOLVE_RE = /\/api\/resolve\?/;
 
+const SAMPLE = {
+  id: 42, experiment_id: 17, display_name: "D1", name: "JC001",
+  notes: null, tags: [], q_units: "A-1",
+};
+
 async function seedSession(page: Page): Promise<void> {
-  // Match the smoke spec pattern: clear localStorage, then seed minimal
-  // identity + tutorial-seen so OnboardingFlow stays mounted-but-hidden.
   await page.addInitScript(() => {
     localStorage.clear();
     localStorage.setItem("himalaya-ui:state", JSON.stringify({
       state: {
         username: "alice", firstName: undefined, lastName: undefined,
         tutorialSeen: true, theme: "dark",
-        activePage: "index",
+        activePage: "compare",
         activeExperimentId: undefined,
         activeSampleId: undefined,
         activeExposureId: undefined,
@@ -42,7 +34,6 @@ async function seedSession(page: Page): Promise<void> {
 }
 
 test.beforeEach(async ({ page }) => {
-  // Common stubs: list experiments, list samples for the relevant experiment.
   await page.route("**/api/experiments", (route) => {
     route.fulfill({
       status: 200, contentType: "application/json",
@@ -52,17 +43,19 @@ test.beforeEach(async ({ page }) => {
       ]),
     });
   });
+  await page.route("**/api/experiments/17", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json",
+      body: JSON.stringify({ id: 17, name: "lipid", path: "", data_dir: "",
+        analysis_dir: "", manifest_path: null, created_at: "", q_units: null }) }));
   await page.route("**/api/experiments/17/samples", (route) => {
     route.fulfill({
       status: 200, contentType: "application/json",
-      body: JSON.stringify([
-        { id: 42, experiment_id: 17, name: "JC001", display_name: null,
-          notes: null, tags: [] },
-      ]),
+      body: JSON.stringify([SAMPLE]),
     });
   });
-  // Catch-all guards so unmocked API calls don't fall through to a real
-  // backend (Vite proxy → :8080) or hang.
+  // Corpus list — the focus workspace learns the sample's experiment from here.
+  await page.route("**/api/samples", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([SAMPLE]) }));
   await page.route("**/api/users", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
   await page.route("**/api/samples/42/exposures*", (r) =>
@@ -71,13 +64,9 @@ test.beforeEach(async ({ page }) => {
     r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
 });
 
-test("paste deep URL: lands on right page, no flash of wrong content", async ({ page }) => {
+test("legacy /index/<exp>/<sample> deep-link resolves the slug and redirects to the focus workspace", async ({ page }) => {
   await seedSession(page);
-  await page.route(RESOLVE_RE, async (route) => {
-    // Tiny delay so ResolvingFallback is observable. Without it the route
-    // fulfills synchronously and React commits resolving:true→false in one
-    // microtask window, missing Playwright's polling.
-    await new Promise((r) => setTimeout(r, 150));
+  await page.route(RESOLVE_RE, (route) => {
     route.fulfill({
       status: 200, contentType: "application/json",
       body: JSON.stringify({
@@ -88,14 +77,12 @@ test("paste deep URL: lands on right page, no flash of wrong content", async ({ 
     });
   });
   await page.goto("/index/lipid/JC001");
-  // ResolvingFallback should appear briefly (or already past); page must not
-  // show a different sample's content.
-  await expect(page.locator("[data-testid='resolving']")).toBeAttached();
-  // After resolve, page should be at the right sample.
-  await expect(page).toHaveURL(/\/index\/lipid\/JC001$/);
+  // IndexSlugRedirect resolves the slug → /sample/42 (the focus workspace).
+  await expect(page).toHaveURL(/\/sample\/42$/);
+  await expect(page.getByTestId("focus-workspace-page")).toBeVisible();
 });
 
-test("paste stale URL: 404 page → CTA opens NavModal at right step", async ({ page }) => {
+test("legacy /index deep-link whose slug 404s falls back to the corpus contact sheet", async ({ page }) => {
   await seedSession(page);
   await page.route(RESOLVE_RE, (route) => {
     route.fulfill({
@@ -107,39 +94,22 @@ test("paste stale URL: 404 page → CTA opens NavModal at right step", async ({ 
     });
   });
   await page.goto("/index/lipid-typo/JC001");
-  await expect(page.locator("[data-testid='stale-url-page']")).toBeVisible();
-  await expect(page.locator("[data-testid='stale-url-page']")).toHaveAttribute("data-missing", "experiment");
-  await page.locator("[data-testid='stale-url-cta']").click();
-  await expect(page.locator("[data-testid='nav-modal']")).toBeVisible();
+  await expect(page).toHaveURL(/\/samples$/);
+  await expect(page.getByTestId("samples-page")).toBeVisible();
 });
 
-test("TabRocker: the Index tab holds the /<page>/<exp>/<sample> slug URL", async ({ page }) => {
-  // I1.7 (#163): Inspect is retired, so the old index→inspect→back continuity
-  // leg is gone (Compare emits no slug URL — it returns `current`). This now
-  // just pins that the Index tab keeps the resolved slug URL.
+test("sampleless /index redirects to the corpus contact sheet", async ({ page }) => {
   await seedSession(page);
-  await page.route(RESOLVE_RE, (route) => {
-    route.fulfill({
-      status: 200, contentType: "application/json",
-      body: JSON.stringify({
-        experiment_id: 17, experiment_name: "lipid",
-        sample_id: 42, sample_name: "JC001",
-        exposure_id: undefined, exposure_filename: undefined,
-      }),
-    });
-  });
-  await page.goto("/index/lipid/JC001");
-  await expect(page.locator("[data-testid='tab-index']")).toBeVisible();
-  await expect(page).toHaveURL(/\/index\/lipid\/JC001$/);
-  // The retired Inspect tab must no longer render.
-  await expect(page.locator("[data-testid='tab-inspect']")).toHaveCount(0);
+  await page.goto("/index");
+  await expect(page).toHaveURL(/\/samples$/);
+  await expect(page.getByTestId("samples-page")).toBeVisible();
 });
 
-test("/ cold-mount: replaces to last-active slug URL", async ({ page }) => {
+test("bare / cold-mount redirects to the corpus contact sheet (§4.1)", async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem("himalaya-ui:state", JSON.stringify({
       state: {
-        activePage: "index",
+        activePage: "compare",
         activeExperimentId: 17,
         activeSampleId: 42,
         username: "test", firstName: undefined, lastName: undefined,
@@ -149,17 +119,7 @@ test("/ cold-mount: replaces to last-active slug URL", async ({ page }) => {
       version: 3,
     }));
   });
-  // Cold-mount root-redirect path: empty TanStack cache → resolve-by-id.
-  await page.route(RESOLVE_RE, (route) => {
-    route.fulfill({
-      status: 200, contentType: "application/json",
-      body: JSON.stringify({
-        experiment_id: 17, experiment_name: "lipid",
-        sample_id: 42, sample_name: "JC001",
-        exposure_id: undefined, exposure_filename: undefined,
-      }),
-    });
-  });
   await page.goto("/");
-  await expect(page).toHaveURL(/\/index\/lipid\/JC001$/);
+  await expect(page).toHaveURL(/\/samples$/);
+  await expect(page.getByTestId("samples-page")).toBeVisible();
 });
