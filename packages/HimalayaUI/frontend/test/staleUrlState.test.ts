@@ -42,7 +42,7 @@ describe("Zustand state — permalink slots", () => {
     ["setActiveExperiment", (id: number) => useAppState.getState().setActiveExperiment(id)],
     ["setActiveSample",     (id: number) => useAppState.getState().setActiveSample(id)],
     ["setActiveExposure",   (id: number) => useAppState.getState().setActiveExposure(id)],
-    ["setActivePage",       () => useAppState.getState().setActivePage("inspect")],
+    ["setActivePage",       () => useAppState.getState().setActivePage("compare")],
   ])("%s clears staleUrlContext", (_label, fn) => {
     useAppState.getState().setStaleUrlContext({
       kind: "unknown_path", raw: "/foo/bar",
@@ -121,7 +121,7 @@ describe("Zustand state — permalink slots", () => {
     // never arms replace, so a sample-switch's PUSH mode is never clobbered.
     const { _resetEmitMode, consumeEmitMode } = await import("../src/lib/url/emitMode");
     _resetEmitMode();
-    useAppState.setState({ activeExposureId: 100, activePage: "index" });
+    useAppState.setState({ activeExposureId: 100, activePage: "compare" });
     useAppState.getState().setActiveExposure(200);
     expect(consumeEmitMode()).toBe("push");
   });
@@ -132,13 +132,13 @@ describe("Zustand state — permalink slots", () => {
     useAppState.getState().setResolving(true);
     useAppState.getState().setStaleUrlContext({ kind: "unknown_path", raw: "/x" });
     useAppState.getState().setResolveSuccess({
-      page: "index",
+      page: "compare",
       experimentId: 7,
       sampleId: 11,
       exposureId: 22,
     });
     const s = useAppState.getState();
-    expect(s.activePage).toBe("index");
+    expect(s.activePage).toBe("compare");
     expect(s.activeExperimentId).toBe(7);
     expect(s.activeSampleId).toBe(11);
     expect(s.activeExposureId).toBe(22);

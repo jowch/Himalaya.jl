@@ -1,7 +1,7 @@
 import { useEffect } from "react";
+import { useNavigate, type NavigateFunction } from "react-router-dom";
 import { useAppState } from "../state";
 import type { StaleUrlContext } from "../state";
-import { emitReplaceNext } from "../lib/url/emitMode";
 
 interface Props {
   staleUrlContext: StaleUrlContext;
@@ -14,18 +14,22 @@ interface VariantUI {
   onPick: () => void;
 }
 
-function uiFor(ctx: StaleUrlContext, store: ReturnType<typeof useAppState.getState>): VariantUI {
+function uiFor(
+  ctx: StaleUrlContext,
+  store: ReturnType<typeof useAppState.getState>,
+  navigate: NavigateFunction,
+): VariantUI {
   if (ctx.kind === "unknown_path") {
     return {
       dataMissing: "path",
       header: "Page not found.",
-      ctaLabel: "Go to Index",
-      // Arm replace so the back button doesn't loop back to /foo/bar →
-      // re-render StaleUrlPage. Without emitReplaceNext, useUrlFromState
-      // emits a push and traps the user.
+      ctaLabel: "Go to Samples",
+      // I4.4 (#181): Index is retired, so the unknown-path escape hatch now
+      // lands on the corpus contact sheet (/samples) instead of setting
+      // activePage:"index". Replace mode so the back button doesn't loop back
+      // to /foo/bar → re-render StaleUrlPage and trap the user.
       onPick: () => {
-        emitReplaceNext();
-        store.setActivePage("index");
+        navigate("/samples", { replace: true });
       },
     };
   }
@@ -74,7 +78,8 @@ function uiFor(ctx: StaleUrlContext, store: ReturnType<typeof useAppState.getSta
 
 export function StaleUrlPage({ staleUrlContext }: Props): JSX.Element {
   const store = useAppState.getState();
-  const ui = uiFor(staleUrlContext, store);
+  const navigate = useNavigate();
+  const ui = uiFor(staleUrlContext, store, navigate);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

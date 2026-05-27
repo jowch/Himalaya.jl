@@ -1,20 +1,40 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
+import { MemoryRouter, useLocation } from "react-router-dom";
+import type { ReactNode } from "react";
 import { StaleUrlPage } from "../src/components/StaleUrlPage";
 import { useAppState } from "../src/state";
 import type { StaleUrlContext } from "../src/state";
-import { _resetEmitMode, consumeEmitMode } from "../src/lib/url/emitMode";
+import { _resetEmitMode } from "../src/lib/url/emitMode";
+
+// StaleUrlPage uses useNavigate (its unknown-path CTA navigates to /samples
+// since the Index surface was retired in #181), so renders need a Router.
+let lastLocation = "";
+function LocationProbe(): null {
+  lastLocation = useLocation().pathname;
+  return null;
+}
+function renderStale(ctx: StaleUrlContext, initialPath = "/foo/bar"): ReturnType<typeof render> {
+  const wrap = (children: ReactNode) => (
+    <MemoryRouter initialEntries={[initialPath]}>
+      {children}
+      <LocationProbe />
+    </MemoryRouter>
+  );
+  return render(wrap(<StaleUrlPage staleUrlContext={ctx} />));
+}
 
 describe("StaleUrlPage", () => {
   beforeEach(() => {
     _resetEmitMode();
+    lastLocation = "";
     useAppState.setState({
       staleUrlContext: null,
       activeExperimentId: undefined,
       activeSampleId: undefined,
       navModalOpen: false,
       navModalStep: "experiment",
-      activePage: "index",
+      activePage: "compare",
     });
   });
 
@@ -23,7 +43,7 @@ describe("StaleUrlPage", () => {
       kind: "not_found", missing: "experiment", missing_value: "lipid-typo",
       experiment_resolved: undefined, sample_resolved: undefined,
     };
-    render(<StaleUrlPage staleUrlContext={ctx} />);
+    renderStale(ctx);
     expect(screen.getByTestId("stale-url-page")).toHaveAttribute("data-missing", "experiment");
     expect(screen.getByRole("heading")).toHaveTextContent(/Experiment 'lipid-typo' not found\./);
     fireEvent.click(screen.getByTestId("stale-url-cta"));
@@ -38,7 +58,7 @@ describe("StaleUrlPage", () => {
       experiment_resolved: { id: 17, name: "lipid-screen" },
       sample_resolved: undefined,
     };
-    render(<StaleUrlPage staleUrlContext={ctx} />);
+    renderStale(ctx);
     expect(screen.getByTestId("stale-url-page")).toHaveAttribute("data-missing", "sample");
     expect(screen.getByRole("heading")).toHaveTextContent(/Sample 'JC001' not found in 'lipid-screen'\./);
     fireEvent.click(screen.getByTestId("stale-url-cta"));
@@ -54,7 +74,7 @@ describe("StaleUrlPage", () => {
       experiment_resolved: { id: 17, name: "lipid-screen" },
       sample_resolved: { id: 42, name: "JC001" },
     };
-    render(<StaleUrlPage staleUrlContext={ctx} />);
+    renderStale(ctx);
     expect(screen.getByTestId("stale-url-page")).toHaveAttribute("data-missing", "exposure");
     fireEvent.click(screen.getByTestId("stale-url-cta"));
     const s = useAppState.getState();
@@ -63,24 +83,14 @@ describe("StaleUrlPage", () => {
     expect(s.navModalOpen).toBe(false);
   });
 
-  it("unknown_path — Page not found, CTA dispatches setActivePage", () => {
+  it("unknown_path — Page not found, CTA navigates to /samples (#181)", () => {
     const ctx: StaleUrlContext = { kind: "unknown_path", raw: "/foo/bar" };
-    render(<StaleUrlPage staleUrlContext={ctx} />);
+    renderStale(ctx);
     expect(screen.getByTestId("stale-url-page")).toHaveAttribute("data-missing", "path");
     expect(screen.getByRole("heading")).toHaveTextContent(/Page not found\./);
+    expect(screen.getByTestId("stale-url-cta")).toHaveTextContent("Go to Samples");
     fireEvent.click(screen.getByTestId("stale-url-cta"));
-    expect(useAppState.getState().activePage).toBe("index");
-    expect(useAppState.getState().staleUrlContext).toBeNull();
-  });
-
-  it("unknown_path CTA arms emitReplaceNext (avoids back-button trap)", () => {
-    // Without arming replace, useUrlFromState emits a push and back-button
-    // takes the user back to /foo/bar → re-renders StaleUrlPage. Trapped.
-    _resetEmitMode();
-    const ctx: StaleUrlContext = { kind: "unknown_path", raw: "/foo/bar" };
-    render(<StaleUrlPage staleUrlContext={ctx} />);
-    fireEvent.click(screen.getByTestId("stale-url-cta"));
-    expect(consumeEmitMode()).toBe("replace");
+    expect(lastLocation).toBe("/samples");
   });
 
   it("/ keypress triggers CTA", () => {
@@ -88,7 +98,7 @@ describe("StaleUrlPage", () => {
       kind: "not_found", missing: "experiment", missing_value: "x",
       experiment_resolved: undefined, sample_resolved: undefined,
     };
-    render(<StaleUrlPage staleUrlContext={ctx} />);
+    renderStale(ctx);
     fireEvent.keyDown(window, { key: "/" });
     expect(useAppState.getState().navModalOpen).toBe(true);
   });
@@ -98,7 +108,7 @@ describe("StaleUrlPage", () => {
       kind: "not_found", missing: "experiment", missing_value: "x",
       experiment_resolved: undefined, sample_resolved: undefined,
     };
-    render(<StaleUrlPage staleUrlContext={ctx} />);
+    renderStale(ctx);
     // Mount an input and dispatch keydown FROM that input as target.
     const input = document.createElement("input");
     document.body.appendChild(input);
