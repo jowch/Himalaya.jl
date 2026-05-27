@@ -12,15 +12,14 @@ import { FocusWorkspacePage } from "../pages/FocusWorkspacePage";
 import { SeriesFolioPage } from "../pages/SeriesFolioPage";
 import { AppShell } from "./AppShell";
 import { IndexPage } from "../pages/IndexPage";
-import { InspectPage } from "../pages/InspectPage";
 import { Compare } from "../pages/Compare";
 import { ResolvingFallback } from "./ResolvingFallback";
 import { StaleUrlPage } from "./StaleUrlPage";
 
 /**
- * PageBody — the legacy Index/Inspect body switcher, driven by Zustand
- * `activePage`. Compare URLs are matched by their explicit <Route> entries
- * below, so activePage === "compare" never reaches here.
+ * PageBody — the legacy Index body, driven by Zustand `activePage`. Compare
+ * URLs are matched by their explicit <Route> entries below, so
+ * activePage === "compare" never reaches here. (Inspect retired in #163.)
  */
 function PageBody(): JSX.Element {
   const activePage = useAppState((s) => s.activePage);
@@ -32,7 +31,6 @@ function PageBody(): JSX.Element {
     return <StaleUrlPage staleUrlContext={staleUrlContext} />;
   }
   if (activePage === "index") return <IndexPage />;
-  if (activePage === "inspect") return <InspectPage />;
   return <></>;
 }
 
@@ -58,7 +56,7 @@ function EditToBareRedirect(): JSX.Element {
  * root effects (theme, global shortcuts) that sit above both shell bodies.
  *
  * Two pathless layout routes: <CorpusShell> for new corpus surfaces and
- * <AppShell> for the legacy Index/Inspect/Compare surfaces. Later redesign
+ * <AppShell> for the legacy Index/Compare surfaces. Later redesign
  * issues register their route slot under the corpus layout route (#161 the
  * loupe, #179 the focus workspace).
  */
@@ -104,15 +102,15 @@ export function AppRoutes(): JSX.Element {
         <Route path="/sample/:sampleId" element={<FocusWorkspacePage />} />
         {/* I3.3 (#173): series folio — corpus-wide masonry of saved series. */}
         <Route path="/series" element={<SeriesFolioPage />} />
+        {/* I1.7 (#163): Inspect retired. Old /inspect* deep-links land on the
+            contact sheet. Splat covers /inspect, /inspect/:exp, /inspect/:exp/:sample. */}
+        <Route path="/inspect/*" element={<Navigate to="/samples" replace />} />
       </Route>
       <Route element={<AppShell />}>
         <Route path="/" element={<PageBody />} />
         <Route path="/index" element={<PageBody />} />
         <Route path="/index/:experiment" element={<PageBody />} />
         <Route path="/index/:experiment/:sample" element={<PageBody />} />
-        <Route path="/inspect" element={<PageBody />} />
-        <Route path="/inspect/:experiment" element={<PageBody />} />
-        <Route path="/inspect/:experiment/:sample" element={<PageBody />} />
         <Route path="/experiments/:eid/compare" element={<Compare />} />
         <Route path="/experiments/:eid/compare/new" element={<Compare />} />
         <Route path="/experiments/:eid/compare/:id" element={<Compare />} />
