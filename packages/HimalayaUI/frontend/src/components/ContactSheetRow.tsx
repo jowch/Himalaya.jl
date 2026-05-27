@@ -1,4 +1,9 @@
-import { useExposures } from "../queries";
+import { useCallback, useState } from "react";
+import {
+  useExposures,
+  useSetExposureStatus,
+  useSelectExposure,
+} from "../queries";
 import type { CorpusSample, Exposure } from "../api";
 import { sampleDisplayName } from "../lib/sample/displayName";
 import { DetectorImage } from "./DetectorImage";
@@ -20,8 +25,20 @@ interface Props {
   sample: CorpusSample;
 }
 
-/** One exposure thumbnail — inert in #160 (culling wiring is #162). */
-function ExposureThumb({ exposure }: { exposure: Exposure }): JSX.Element {
+/** One exposure thumbnail with culling affordances (#162). */
+function ExposureThumb({
+  exposure,
+  selectedForBatch,
+  onToggleReject,
+  onToggleSelected,
+  onPickRepresentative,
+}: {
+  exposure: Exposure;
+  selectedForBatch: boolean;
+  onToggleReject: (exp: Exposure) => void;
+  onToggleSelected: (id: number) => void;
+  onPickRepresentative: (exp: Exposure) => void;
+}): JSX.Element {
   const isRejected = exposure.status === "rejected";
   const isRepresentative = exposure.selected;
   return (
@@ -29,9 +46,10 @@ function ExposureThumb({ exposure }: { exposure: Exposure }): JSX.Element {
       data-testid={`exposure-thumb-${exposure.id}`}
       data-rejected={isRejected ? "true" : undefined}
       data-representative={isRepresentative ? "true" : undefined}
+      data-batch-selected={selectedForBatch ? "true" : undefined}
       className={[
         "relative w-12 shrink-0 aspect-[3/4] overflow-hidden rounded",
-        "ring-1 ring-hair",
+        selectedForBatch ? "ring-2 ring-accent" : "ring-1 ring-hair",
         isRejected ? "opacity-40 grayscale" : "",
       ].join(" ")}
     >
@@ -41,6 +59,19 @@ function ExposureThumb({ exposure }: { exposure: Exposure }): JSX.Element {
         imageVersion={exposure.image_version}
         size="thumb"
         className="h-full w-full"
+      />
+      <button
+        type="button"
+        data-testid={`exposure-select-${exposure.id}`}
+        aria-pressed={selectedForBatch}
+        title="Select for batch action"
+        onClick={() => onToggleSelected(exposure.id)}
+        className={[
+          "absolute left-0 top-0 m-0.5 h-3 w-3 rounded-sm border",
+          selectedForBatch
+            ? "border-accent bg-accent"
+            : "border-hair-strong bg-paper/80",
+        ].join(" ")}
       />
       {isRepresentative && (
         <span
@@ -55,6 +86,28 @@ function ExposureThumb({ exposure }: { exposure: Exposure }): JSX.Element {
           ✕
         </span>
       )}
+      {!isRepresentative && (
+        <button
+          type="button"
+          data-testid={`exposure-represent-${exposure.id}`}
+          title="Make representative"
+          onClick={() => onPickRepresentative(exposure)}
+          className="absolute bottom-0 left-0 m-0.5 rounded bg-paper/80 px-1
+                     text-[10px] leading-none text-ink-faint"
+        >
+          ⊙
+        </button>
+      )}
+      <button
+        type="button"
+        data-testid={`exposure-reject-${exposure.id}`}
+        title={isRejected ? "Un-reject exposure" : "Reject exposure"}
+        onClick={() => onToggleReject(exposure)}
+        className="absolute bottom-0 right-0 m-0.5 rounded bg-paper/80 px-1
+                   text-[10px] leading-none text-print-accent"
+      >
+        {isRejected ? "↺" : "✕"}
+      </button>
     </div>
   );
 }
@@ -66,13 +119,67 @@ function ExposureThumb({ exposure }: { exposure: Exposure }): JSX.Element {
  * in row-by-row. The same queryKeys.exposures(sampleId) cache entry is
  * reused by culling (#162) and the loupe (#161).
  *
- * Inert affordances: the thumbnails carry no onClick and the tag-add
- * button is disabled — selection (#162) and tag mutation (#159) wire in
- * separately.
+ * Culling is wired here (#162): per-thumb reject toggle, multi-select batch
+ * reject, and representative pick, all through the existing exposure queue
+ * hooks. The tag-add button remains inert — sample-tag mutation is #159.
  */
 export function ContactSheetRow({ sample }: Props): JSX.Element {
   const exposuresQuery = useExposures(sample.id);
   const exposures = exposuresQuery.data ?? [];
+
+  const setStatus = useSetExposureStatus(sample.id);
+  const setRepresentative = useSelectExposure(sample.id);
+
+  // Representative pick. selectExposureMutator's onMutate writes
+  // `selected: e.id === exposureId` across the list, so the pick is
+  // mutually exclusive (one representative per sample) for free.
+  const handlePickRepresentative = useCallback(
+    (exp: Exposure) => {
+      setRepresentative.mutate(exp.id);
+    },
+    [setRepresentative],
+  );
+
+  // Single-exposure reject toggle. Un-reject sets status to null (matches
+  // LoupePage's `status === "rejected" ? null : "rejected"` convention).
+  const handleToggleReject = useCallback(
+    (exp: Exposure) => {
+      setStatus.mutate({
+        exposureId: exp.id,
+        status: exp.status === "rejected" ? null : "rejected",
+      });
+    },
+    [setStatus],
+  );
+
+  // Multi-select state — local to this row (selection never crosses samples,
+  // matching the per-sample query fan-out). Stale ids are harmless: the batch
+  // handler filters to currently-present, non-rejected exposures.
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<number>>(
+    () => new Set(),
+  );
+  const toggleSelected = useCallback((id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+  const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
+
+  // Batch reject — N independent ops, one per currently-kept selected
+  // exposure. Each setStatus.mutate() mints its own client_op_id and applies
+  // its own optimistic patch to the shared exposures cache, so the patches
+  // compose without a batch mutator.
+  const handleBatchReject = useCallback(() => {
+    for (const exp of exposures) {
+      if (selectedIds.has(exp.id) && exp.status !== "rejected") {
+        setStatus.mutate({ exposureId: exp.id, status: "rejected" });
+      }
+    }
+    clearSelection();
+  }, [exposures, selectedIds, setStatus, clearSelection]);
 
   const total = exposures.length;
   const kept = exposures.filter((e) => e.status !== "rejected").length;
@@ -93,17 +200,52 @@ export function ContactSheetRow({ sample }: Props): JSX.Element {
         <span className="text-xs text-ink-faint">#{sample.id}</span>
       </div>
 
-      {/* Exposures — thumbnail strip. */}
-      <div
-        data-testid="exposures-cell"
-        className="flex h-16 flex-row gap-2 overflow-x-auto"
-      >
-        {exposuresQuery.isLoading ? (
-          <span className="self-center text-xs text-ink-faint">
-            Loading frames…
-          </span>
-        ) : (
-          exposures.map((e) => <ExposureThumb key={e.id} exposure={e} />)
+      {/* Exposures — thumbnail strip + (when a selection exists) an action
+          bar. The strip is a fixed-height horizontal scroller; the action bar
+          is a flex-col SIBLING below it, never a clipped child of the
+          overflow-x-auto strip. */}
+      <div data-testid="exposures-cell" className="flex flex-col gap-1.5">
+        <div className="flex h-16 flex-row gap-2 overflow-x-auto">
+          {exposuresQuery.isLoading ? (
+            <span className="self-center text-xs text-ink-faint">
+              Loading frames…
+            </span>
+          ) : (
+            exposures.map((e) => (
+              <ExposureThumb
+                key={e.id}
+                exposure={e}
+                selectedForBatch={selectedIds.has(e.id)}
+                onToggleReject={handleToggleReject}
+                onToggleSelected={toggleSelected}
+                onPickRepresentative={handlePickRepresentative}
+              />
+            ))
+          )}
+        </div>
+        {selectedIds.size > 0 && (
+          <div
+            data-testid="contact-sheet-actionbar"
+            className="flex items-center gap-2"
+          >
+            <button
+              type="button"
+              data-testid="batch-reject"
+              onClick={handleBatchReject}
+              className="rounded border border-print-accent px-1.5 py-0.5
+                         text-xs text-print-accent"
+            >
+              Reject {selectedIds.size} selected
+            </button>
+            <button
+              type="button"
+              data-testid="batch-clear"
+              onClick={clearSelection}
+              className="text-xs text-ink-faint hover:underline"
+            >
+              Clear
+            </button>
+          </div>
         )}
       </div>
 
