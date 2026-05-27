@@ -12,6 +12,7 @@ import { AnnotationToggles } from "../components/AnnotationToggles";
 import { ActiveBandProvider } from "../components/ActiveBandContext";
 import { FigureExportControls } from "../components/FigureExportControls";
 import { SeriesBuilderRail } from "../components/SeriesBuilderRail";
+import { HintText } from "../components/ui";
 import type { Representation } from "../components/RepresentationToggle";
 import { resolveDisplayLabels } from "../lib/comparison/labels";
 import { buildMultiTraceExportSpec } from "../lib/figure-export/adapters/multiTraceAdapter";
@@ -29,6 +30,20 @@ const BUILDER_FIXTURE = (
     </div>
   </div>
 );
+
+const GROUPING_MODES: readonly GroupingMode[] = ["bySample", "byPhase", "distinct"];
+
+/**
+ * Validate the series' persisted (intentionally-loose `string | null`)
+ * view_grouping_mode against the GroupingMode union, falling back to
+ * "bySample" (effectiveGroupingMode's hard default). A membership guard, not
+ * a blind cast — a stored value outside the union can't slip through.
+ */
+function coerceGroupingMode(value: string | null): GroupingMode {
+  return GROUPING_MODES.includes(value as GroupingMode)
+    ? (value as GroupingMode)
+    : "bySample";
+}
 
 /**
  * SeriesBuilderPage — the series builder visual surface at /series/:id
@@ -62,6 +77,11 @@ export function SeriesBuilderPage(): JSX.Element {
         className="flex-1 min-h-0 flex flex-col"
         loading={query.isLoading}
         fixture={BUILDER_FIXTURE}
+        fallback={
+          <div className="flex-1 flex items-center justify-center">
+            <HintText>Loading series…</HintText>
+          </div>
+        }
       >
         {s && (
           <>
@@ -121,7 +141,7 @@ function SeriesBuilderBody({ series: s }: { series: Series }): JSX.Element {
   // is not reused: it is Comparison-typed and draft-aware, and this read
   // surface has no draft (persistence is a recipe edit → I3.5b). Local state.
   const [groupingMode, setGroupingMode] = useState<GroupingMode>(
-    (s.view_grouping_mode as GroupingMode | null) ?? "bySample",
+    coerceGroupingMode(s.view_grouping_mode),
   );
 
   // Pan/zoom q-domain. MultiTracePlot requires non-optional xDomain +
@@ -214,6 +234,8 @@ function SeriesBuilderBody({ series: s }: { series: Series }): JSX.Element {
                 onXDomain={setXDomain}
                 groupingMode={groupingMode}
                 sampleIdFor={sampleIdFor}
+                showPeakTicks={showPeakTicks}
+                showPeakLabels={showPeakLabels}
               />
             </div>
             <div className="w-[280px] shrink-0" data-testid="series-builder-gutter">

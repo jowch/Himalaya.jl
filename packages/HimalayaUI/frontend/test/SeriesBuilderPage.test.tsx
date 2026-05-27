@@ -5,9 +5,14 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { makeClient } from "./test-utils";
 import type { Series, SeriesMember } from "../src/api";
 import { SeriesBuilderPage } from "../src/pages/SeriesBuilderPage";
+import { useAppState } from "../src/state";
 
 const h = vi.hoisted(() => ({
-  seriesQ: {} as { data?: Series; isLoading: boolean; isError: boolean },
+  seriesQ: {} as { data: Series | undefined; isLoading: boolean; isError: boolean },
+  // Captures the most recent props passed to the on-screen MultiTracePlot so a
+  // test can assert the annotation toggles are forwarded to the plot (not just
+  // the export spec) — the regression guard for the round-2 blocking bug.
+  lastPlotProps: undefined as undefined | { showPeakTicks?: boolean; showPeakLabels?: boolean },
 }));
 vi.mock("../src/queries", () => ({
   useSeries: () => h.seriesQ,
@@ -16,10 +21,19 @@ vi.mock("../src/queries", () => ({
   useMemberExposures: () => new Map(),
   useMemberSamples: () => new Map(),
 }));
-// MultiTracePlot touches Observable Plot / ResizeObserver; stub it — the
-// page's read/state behavior does not depend on its internal render.
+// MultiTracePlot touches Observable Plot / ResizeObserver; stub it — but the
+// stub records the props it receives so we can assert prop forwarding.
 vi.mock("../src/components/MultiTracePlot", () => ({
-  MultiTracePlot: () => <div data-testid="mock-multi-trace-plot" />,
+  MultiTracePlot: (props: { showPeakTicks?: boolean; showPeakLabels?: boolean }) => {
+    h.lastPlotProps = props;
+    return (
+      <div
+        data-testid="mock-multi-trace-plot"
+        data-show-peak-ticks={String(props.showPeakTicks)}
+        data-show-peak-labels={String(props.showPeakLabels)}
+      />
+    );
+  },
   COMPARE_PLOT_ASPECT: 0.3,
 }));
 
@@ -115,6 +129,22 @@ describe("SeriesBuilderPage — read + states", () => {
     fireEvent.click(screen.getByTestId("rail-collapse-toggle"));
     expect(screen.getByTestId("rail-restore")).toBeInTheDocument();
     expect(screen.queryByTestId("series-builder-rail")).not.toBeInTheDocument();
+  });
+
+  it("forwards the annotation toggles to the on-screen MultiTracePlot (round-2 regression)", () => {
+    // Known starting point: both annotation flags on.
+    useAppState.setState({ showPeakTicks: true, showPeakLabels: true });
+    h.seriesQ = { data: series({ members: [member()] }), isLoading: false, isError: false };
+    renderAt();
+    // Initially forwarded as true.
+    expect(screen.getByTestId("mock-multi-trace-plot"))
+      .toHaveAttribute("data-show-peak-ticks", "true");
+    // Toggling "Peak ticks" off must flow into the PLOT, not just the export
+    // spec — the bug was the on-screen plot omitting the prop (defaulting true).
+    fireEvent.click(screen.getByTestId("annotation-toggle-peaks"));
+    expect(h.lastPlotProps?.showPeakTicks).toBe(false);
+    expect(screen.getByTestId("mock-multi-trace-plot"))
+      .toHaveAttribute("data-show-peak-ticks", "false");
   });
 
   it("changes the coloring mode via GroupingModeToggle (setGroupingMode wired)", () => {
