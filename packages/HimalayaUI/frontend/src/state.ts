@@ -123,9 +123,9 @@ export interface AppState {
   // `discardDraft`, `setCompareXDomain`, `resetBandHeights`,
   // `cyclePeakDisplayForMember`, …). Pruning only that subset is interconnected
   // and type-shared (`ActiveDraft`) and risks the series builder's draft-backed
-  // editing; it is DELIBERATELY DEFERRED to I5.1/I5.3's dead-code sweep, which
-  // runs against a stable post-cutover tree. I3.6 narrows the `activePage` union
-  // (above) but leaves this slice intact. (See the PR's coordination note.)
+  // editing; it is DELIBERATELY DEFERRED to I5.3's (#184) dead-code sweep, which
+  // runs against a stable post-cutover tree. I5.1 (#182) deleted the `activePage`
+  // model but leaves this draft slice intact. (See the PR's coordination note.)
   /**
    * Compare-page q-axis zoom domains, keyed per comparison id. Per-tab UI
    * state — not persisted. Missing entry / `null` value = full data range.

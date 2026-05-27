@@ -4,7 +4,8 @@
 
 /** Rotate when the container is meaningfully wider than the image's aspect. */
 export const ROTATE_THRESHOLD = 1.25;
-/** Auto-rotate is gated to viewports >= this width (matches WorkspaceGrid). */
+/** Auto-rotate is gated to viewports >= this width (the 1400px three-column
+ *  breakpoint that the retired WorkspaceGrid used; kept as the shared cutoff). */
 export const ROTATE_MIN_VIEWPORT = 1400;
 
 export interface OrientInput {
