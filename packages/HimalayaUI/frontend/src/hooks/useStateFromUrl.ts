@@ -41,6 +41,13 @@ export function useStateFromUrl(): void {
     // parsed.kind === "root". §4.1: the app home is the corpus contact sheet.
     // Index is retired (#181) and Compare is URL-owned, so a cold `/` has
     // nothing to reflect from Zustand — send the user to the corpus.
+    //
+    // NOTE: this arm is effectively test-only in production. Bare `/` is
+    // intercepted by the standalone `<Route path="/">` redirect in AppRoutes
+    // (registered OUTSIDE the AppShell layout that hosts this hook), so a real
+    // browser never mounts AppShell at `/` and `parseLocation` never returns
+    // `root` here. It's exercised by useStateFromUrl's unit tests, and kept as
+    // a correct belt-and-suspenders fallback should the route ever change.
     navigate("/samples", { replace: true });
   }, [location.pathname, location.search, navigate]);
 }

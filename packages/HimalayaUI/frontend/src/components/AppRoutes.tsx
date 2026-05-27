@@ -19,24 +19,29 @@ import { ResolvingFallback } from "./ResolvingFallback";
 import { StaleUrlPage } from "./StaleUrlPage";
 
 /**
- * PageBody — the legacy catch-all body under AppShell. The Index surface is
- * retired (#181; Inspect retired in #163), so this no longer renders a page
- * for any `activePage`: it just handles the in-flight (`resolving`) and stale
- * (`staleUrlContext`) URL states, and otherwise redirects to the corpus
- * contact sheet. Compare URLs match their explicit <Route> entries below, so
- * activePage === "compare" never reaches here. (Full PageBody/AppShell removal
- * is I5.1's scope.)
+ * PageBody — the legacy catch-all (`*`) body under AppShell. The Index surface
+ * is retired (#181; Inspect retired in #163), so this no longer renders a page
+ * for any `activePage`: it renders the in-flight (`resolving`) and stale
+ * (`staleUrlContext`) URL states only. Compare URLs match their explicit
+ * <Route> entries below, so activePage === "compare" never reaches here.
+ * (Full PageBody/AppShell removal is I5.1's scope.)
+ *
+ * Any path that reaches the `*` catch-all is, by definition, one no other
+ * route matched — `useStateFromUrl` classifies it as a stale unknown_path and
+ * sets `staleUrlContext` inside its effect. On the first render that effect
+ * hasn't run yet (so `staleUrlContext` is still null); we render the neutral
+ * ResolvingFallback for that one frame rather than `<Navigate to="/samples">`.
+ * Navigating away on the bare fallback raced the stale dispatch and bounced
+ * typo'd/dead URLs off the "Page not found" view (the #181 regression).
  */
 function PageBody(): JSX.Element {
-  const resolving = useAppState((s) => s.resolving);
   const staleUrlContext = useAppState((s) => s.staleUrlContext);
 
-  if (resolving) return <ResolvingFallback />;
   if (staleUrlContext !== null) {
     return <StaleUrlPage staleUrlContext={staleUrlContext} />;
   }
-  // Index retired (#181); nothing else renders here. Catch-all → corpus home.
-  return <Navigate to="/samples" replace />;
+  // `resolving`, or the one pre-effect frame before useStateFromUrl sets stale.
+  return <ResolvingFallback />;
 }
 
 /**

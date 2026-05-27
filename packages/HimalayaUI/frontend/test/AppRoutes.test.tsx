@@ -173,6 +173,16 @@ describe("AppRoutes — I4.4 index cutover redirects", () => {
     renderRoutes("/index/lipid/JC404");
     expect(await screen.findByTestId("samples-page")).toBeInTheDocument();
   });
+
+  it("an unknown path renders StaleUrlPage, not a bounce to Compare (#181 regression)", async () => {
+    // With PageId narrowed to "compare", the AppShell compare nav-bridge would
+    // otherwise fire on every non-compare path and bounce a typo'd URL to
+    // /compare/all before the catch-all PageBody can render "Page not found".
+    // The bridge must stand down while a stale URL context is present.
+    renderRoutes("/foo/bar");
+    expect(await screen.findByTestId("stale-url-page")).toBeInTheDocument();
+    expect(screen.queryByTestId("compare-page")).toBeNull();
+  });
 });
 
 describe("AppRoutes — bare / always lands on the corpus (#77 / I4.4)", () => {
