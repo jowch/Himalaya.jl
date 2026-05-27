@@ -10,6 +10,12 @@ const EXPOSURES = [
     image_path: "/img/5.png", image_version: "v1", tags: [], sources: [],
     trace_hash: null, analysis_inputs_hash: null },
 ];
+const PEAKS = [
+  { id: 1, exposure_id: 5, q: 0.045, intensity: 100, prominence: 50,
+    sharpness: 1.2, source: "auto" as const, excluded: false },
+  { id: 2, exposure_id: 5, q: 0.103, intensity: 80, prominence: 40,
+    sharpness: 1.1, source: "auto" as const, excluded: false },
+];
 
 beforeEach(() => {
   localStorage.clear();
@@ -21,13 +27,17 @@ beforeEach(() => {
     observe() {} unobserve() {} disconnect() {}
   });
   vi.stubGlobal("fetch", vi.fn(async (url: string) => {
-    if (String(url).includes("/exposures")) {
-      return new Response(JSON.stringify(EXPOSURES), {
-        status: 200, headers: { "content-type": "application/json" },
-      });
-    }
-    return new Response("[]", { status: 200,
-      headers: { "content-type": "application/json" } });
+    const u = String(url);
+    const json = (b: unknown) => new Response(JSON.stringify(b), {
+      status: 200, headers: { "content-type": "application/json" } });
+    // The detector PNG route: return non-ok so DetectorImage.renderImage bails
+    // at `if (!res.ok) return;` BEFORE calling createImageBitmap (absent in
+    // JSDOM). We assert the ring overlay, not the rendered canvas pixels.
+    if (u.includes("/image")) return new Response(null, { status: 404 });
+    // /peaks (/api/exposures/:id/peaks) before the looser /exposures check.
+    if (u.includes("/peaks")) return json(PEAKS);
+    if (u.includes("/exposures")) return json(EXPOSURES);
+    return json([]);
   }));
 });
 
@@ -50,5 +60,10 @@ describe("FocusDetectorPanel", () => {
     useAppState.setState({ activeSampleId: undefined, activeExposureId: undefined });
     renderPanel();
     expect(await screen.findByTestId("focus-detector-empty")).toBeInTheDocument();
+  });
+
+  it("renders the q-link ring overlay over the detector image", async () => {
+    renderPanel();
+    expect(await screen.findByTestId("detector-ring-overlay")).toBeInTheDocument();
   });
 });

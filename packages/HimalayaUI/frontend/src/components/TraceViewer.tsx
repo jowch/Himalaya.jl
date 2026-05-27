@@ -13,6 +13,13 @@ export interface TraceViewerProps {
 	hoveredIndex: IndexEntry | undefined;
 	/** When set, the matching peak triangle gets a highlight ring (drives the chat-mention peak chip hover effect). */
 	hoveredPeakId?: number | undefined;
+	/** q-link (#180): the hovered q-value. The peak triangle whose q is within
+	 *  tolerance gets the same hover halo as `hoveredPeakId`. Optional — the
+	 *  legacy Index path passes neither this nor `onHoverQ`. */
+	hoveredQ?: number | undefined;
+	/** q-link (#180): fired on cursor move with the (peak-snapped) q, and with
+	 *  `null` on leave. Drives the ephemeral `hoveredQ` Zustand field. */
+	onHoverQ?: (q: number | null) => void;
 	onAddPeak: (q: number) => void;
 	onRemovePeak: (peakId: number) => void;
 	onTogglePeakExclusion: (peakId: number, excluded: boolean) => void;
@@ -33,6 +40,11 @@ export interface TraceViewerProps {
 
 /** Click within this many pixels of a peak triangle to act on it. */
 const PEAK_HIT_PX = 10;
+
+/** q-link (#180): relative tolerance for matching `hoveredQ` to a peak's q
+ *  when lighting the trace halo (a hovered detector ring carries a peak's
+ *  exact q, so this only needs to absorb float noise). */
+const Q_LINK_REL_TOL = 0.01;
 
 /** Pixel offset of a peak triangle above the trace. ~half of the previous log-space lift. */
 const PEAK_OFFSET_PX = 7;
@@ -144,6 +156,8 @@ export function TraceViewer({
 	activeGroupIndices,
 	hoveredIndex,
 	hoveredPeakId,
+	hoveredQ,
+	onHoverQ,
 	onAddPeak,
 	onRemovePeak,
 	onTogglePeakExclusion,
@@ -417,7 +431,13 @@ export function TraceViewer({
 			// Hover ring: a faint pulse halo behind the triangle when this peak is
 			// hovered elsewhere (chat mention chip). Drawn first so the triangle
 			// sits on top.
-			if (hoveredPeakId === peak.id) {
+			// Hover halo: lit by the chat-mention peak chip (`hoveredPeakId`) OR
+			// by the q-link (#180) when `hoveredQ` lands on this peak's q. Both
+			// channels share the same visual.
+			const litByPeakId = hoveredPeakId === peak.id;
+			const litByQ = hoveredQ !== undefined
+				&& Math.abs(peak.q - hoveredQ) <= peak.q * Q_LINK_REL_TOL;
+			if (litByPeakId || litByQ) {
 				const halo = document.createElementNS(
 					"http://www.w3.org/2000/svg",
 					"circle",
@@ -580,7 +600,7 @@ export function TraceViewer({
 				drawTrackTick(t, { strong: true, faded: false, matched });
 			}
 		}
-	}, [peaks, trace, hoveredIndex, hoveredPeakId, activeGroupIndices, xDomain]);
+	}, [peaks, trace, hoveredIndex, hoveredPeakId, hoveredQ, activeGroupIndices, xDomain]);
 
 	// Re-render overlay whenever anything that affects it changes.
 	useEffect(() => {
@@ -625,6 +645,21 @@ export function TraceViewer({
 
 			const q = invertQ(plotEl, relX);
 			if (q === null) return;
+
+			// q-link (#180): emit the hovered q. Peak-snap — if the cursor is
+			// within PEAK_HIT_PX of a peak triangle, emit that peak's exact q;
+			// otherwise the raw cursor q. nearestClickablePeak takes a PIXEL
+			// clickX + a q->px mapper (the x-scale's apply), not an inverted q.
+			if (onHoverQ) {
+				const xScale: Scale = (
+					plotEl as unknown as { scale: (n: string) => Scale }
+				).scale("x");
+				const snapped = xScale?.apply
+					? nearestClickablePeak(peaks, relX, xScale.apply, PEAK_HIT_PX)
+					: null;
+				onHoverQ(snapped ? snapped.q : q);
+			}
+
 			const Iv = interpolateI(q, trace);
 			const py = yScale.apply(Iv);
 
@@ -651,6 +686,7 @@ export function TraceViewer({
 		}
 		function onLeave(): void {
 			if (rafId) cancelAnimationFrame(rafId);
+			onHoverQ?.(null); // q-link: clear the cross-highlight on leave
 			const line = overlay!.querySelector<SVGLineElement>(
 				"[data-role=cursor-line]",
 			)!;
@@ -672,7 +708,7 @@ export function TraceViewer({
 			host.removeEventListener("mouseleave", onLeave);
 			if (rafId) cancelAnimationFrame(rafId);
 		};
-	}, [trace]);
+	}, [trace, peaks, onHoverQ]);
 
 	return (
 		<div
