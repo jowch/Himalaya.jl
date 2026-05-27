@@ -27,10 +27,12 @@ describe("DetectorRingOverlay", () => {
 
   it("sets hoveredQ when a ring is hovered, clears on leave", () => {
     render(<DetectorRingOverlay peakQs={PEAK_QS} />);
-    const ring = screen.getByTestId("detector-ring-q-0.206");
-    fireEvent.mouseEnter(ring);
+    // The wide transparent hit-ring carries the hover handlers (the thin
+    // visible ring is pointer-events:none so the pointer reliably lands).
+    const hit = screen.getByTestId("detector-ring-hit-0.206");
+    fireEvent.mouseEnter(hit);
     expect(useAppState.getState().hoveredQ).toBe(0.206);
-    fireEvent.mouseLeave(ring);
+    fireEvent.mouseLeave(hit);
     expect(useAppState.getState().hoveredQ).toBeUndefined();
   });
 

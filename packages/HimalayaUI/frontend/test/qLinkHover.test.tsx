@@ -17,7 +17,8 @@ beforeEach(() => {
 describe("q-link hover contract", () => {
   it("ring hover -> hoveredQ -> matching ring lights", () => {
     render(<DetectorRingOverlay peakQs={[0.045, 0.103]} />);
-    fireEvent.mouseEnter(screen.getByTestId("detector-ring-q-0.045"));
+    // Hover lands on the wide transparent hit-ring; the visible ring lights.
+    fireEvent.mouseEnter(screen.getByTestId("detector-ring-hit-0.045"));
     expect(useAppState.getState().hoveredQ).toBe(0.045);
     expect(screen.getByTestId("detector-ring-q-0.045"))
       .toHaveAttribute("data-hot", "true");

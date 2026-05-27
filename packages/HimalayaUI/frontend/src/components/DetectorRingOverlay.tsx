@@ -76,7 +76,7 @@ export function DetectorRingOverlay({
   };
 
   return (
-    <div ref={wrapperRef} className="pointer-events-none absolute inset-0">
+    <div ref={wrapperRef} className="pointer-events-none absolute inset-0 z-10">
       <svg
         data-testid="detector-ring-overlay"
         data-orient={orient}
@@ -88,21 +88,36 @@ export function DetectorRingOverlay({
           const r = qToRadius(q, qLo, qHi);
           const hot = matched !== undefined && q === matched;
           return (
-            <circle
-              key={q}
-              data-testid={`detector-ring-q-${q}`}
-              data-hot={hot ? "true" : "false"}
-              cx={CENTER}
-              cy={CENTER}
-              r={r}
-              fill="none"
-              stroke={hot ? "var(--color-accent)" : "var(--color-fg-dim)"}
-              strokeWidth={hot ? 1.6 : 0.8}
-              opacity={hot ? 0.95 : 0.5}
-              style={{ pointerEvents: "stroke", cursor: "pointer" }}
-              onMouseEnter={() => setHoveredQ(q)}
-              onMouseLeave={() => setHoveredQ(undefined)}
-            />
+            <g key={q}>
+              {/* Visible ring. */}
+              <circle
+                data-testid={`detector-ring-q-${q}`}
+                data-hot={hot ? "true" : "false"}
+                cx={CENTER}
+                cy={CENTER}
+                r={r}
+                fill="none"
+                stroke={hot ? "var(--color-accent)" : "var(--color-fg-dim)"}
+                strokeWidth={hot ? 1.6 : 0.8}
+                opacity={hot ? 0.95 : 0.5}
+                style={{ pointerEvents: "none" }}
+              />
+              {/* Wide transparent hit-ring (mockup parity) so the thin visible
+                  stroke isn't a hard hover target and the pointer lands even
+                  over the canvas. */}
+              <circle
+                data-testid={`detector-ring-hit-${q}`}
+                cx={CENTER}
+                cy={CENTER}
+                r={r}
+                fill="none"
+                stroke="transparent"
+                strokeWidth={5}
+                style={{ pointerEvents: "stroke", cursor: "pointer" }}
+                onMouseEnter={() => setHoveredQ(q)}
+                onMouseLeave={() => setHoveredQ(undefined)}
+              />
+            </g>
           );
         })}
       </svg>
