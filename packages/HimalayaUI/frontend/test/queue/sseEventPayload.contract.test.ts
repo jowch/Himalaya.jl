@@ -369,20 +369,25 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
     expect(qc.getQueryData<SampleMessage[]>(queryKeys.messages(10))!).toHaveLength(1);
   });
 
-  it("add_tag (sample) invalidates BOTH the experiment samples list and the corpus list", () => {
+  it("add_tag (sample) invalidates the experiment + corpus samples lists AND the scoping caches", () => {
     const invalidated: unknown[] = [];
     qc.invalidateQueries = ((arg: { queryKey: unknown }) => {
       invalidated.push(arg.queryKey); return Promise.resolve();
     }) as typeof qc.invalidateQueries;
     // Mirrors routes_samples.jl POST: payload always includes experiment_id.
-    // A sample tag lives in two cached projections — the per-experiment list
-    // and the corpus contact-sheet list — so both keys must invalidate.
+    // A sample tag lives in four cached projections — the per-experiment list,
+    // the corpus contact-sheet list, and (I3.4 #174) the corpus tag proposal +
+    // picker projection the /series/new scoping surface reads — so all four
+    // keys must invalidate on a foreign tag write.
     const evt: SseEvent = {
       id: 99, kind: "add_tag", entity_type: "sample", entity_id: 10,
       payload: { key: "k", value: "v", tag_id: 50, experiment_id: 1 },
     };
     applyRemoteToCache(evt, qc);
-    expect(invalidated).toEqual([queryKeys.samples(1), queryKeys.corpusSamples]);
+    expect(invalidated).toEqual([
+      queryKeys.samples(1), queryKeys.corpusSamples,
+      queryKeys.corpusSampleTags, queryKeys.corpusPickerSamples,
+    ]);
   });
 
   it("add_tag (exposure) invalidates the sample's exposures list (uses sample_id)", () => {
@@ -399,17 +404,22 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
     expect(invalidated).toEqual(queryKeys.exposures(1));
   });
 
-  it("remove_tag (sample) invalidates BOTH the experiment samples list and the corpus list", () => {
+  it("remove_tag (sample) invalidates the experiment + corpus samples lists AND the scoping caches", () => {
     const invalidated: unknown[] = [];
     qc.invalidateQueries = ((arg: { queryKey: unknown }) => {
       invalidated.push(arg.queryKey); return Promise.resolve();
     }) as typeof qc.invalidateQueries;
+    // remove_tag shares the add_tag(sample) branch, so it fans out to the same
+    // four keys (I3.4 #174 added the two corpus-scoping caches).
     const evt: SseEvent = {
       id: 99, kind: "remove_tag", entity_type: "sample", entity_id: 10,
       payload: { tag_id: 50, experiment_id: 1 },
     };
     applyRemoteToCache(evt, qc);
-    expect(invalidated).toEqual([queryKeys.samples(1), queryKeys.corpusSamples]);
+    expect(invalidated).toEqual([
+      queryKeys.samples(1), queryKeys.corpusSamples,
+      queryKeys.corpusSampleTags, queryKeys.corpusPickerSamples,
+    ]);
   });
 
   it("delete_index falls through to default (invalidates peaks+indices+groups)", () => {

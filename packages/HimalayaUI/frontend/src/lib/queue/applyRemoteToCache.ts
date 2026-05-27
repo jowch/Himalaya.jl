@@ -330,6 +330,15 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
           queryKey: queryKeys.samples(payload?.experiment_id as number),
         });
         qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
+        // I3.4 (#174): the scoping surface (/series/new) reads two more corpus
+        // projections off the same tags — the distinct (key,value) proposal
+        // source and the picker projection (which carries per-sample tags). A
+        // foreign scoping write must refresh both so a peer's proposal isn't
+        // stale (master plan §11 — add_tag fan-out re-audit). Tri-scope-safe:
+        // this is inside the `entity_type === "sample"` arm, so exposure/corpus
+        // tag routing is untouched.
+        qc.invalidateQueries({ queryKey: queryKeys.corpusSampleTags });
+        qc.invalidateQueries({ queryKey: queryKeys.corpusPickerSamples });
       } else {
         qc.invalidateQueries({
           queryKey: queryKeys.exposures(payload?.sample_id as number),
