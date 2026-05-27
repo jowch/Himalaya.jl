@@ -57,7 +57,7 @@ function contrastRatio(a: string, b: string): number {
 
 // DESIGN.md `colors:` block — the authoritative paper-tuned phase palette.
 const DESIGN_PHASE_VALUES: Record<string, string> = {
-  Pn3m: "oklch(0.585 0.150 58)",
+  Pn3m: "oklch(0.570 0.150 58)",
   Im3m: "oklch(0.520 0.120 162)",
   Ia3d: "oklch(0.520 0.130 300)",
   Fm3m: "oklch(0.550 0.140 18)",
