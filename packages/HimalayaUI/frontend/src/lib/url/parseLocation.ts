@@ -6,27 +6,21 @@
 // ids are not tracked in Zustand.
 export type ParsedUrl =
   | { kind: "root" }
-  | { kind: "index";   experiment: string | undefined; sample: string | undefined }
   | { kind: "compare"; view: "list" }
   | { kind: "stale"; raw: string };
-
-const safeDecode = (s: string): string => {
-  try { return decodeURIComponent(s); } catch { return s; }
-};
 
 export function parseLocation(pathname: string, search: string): ParsedUrl {
   // Normalize trailing slash and leading slash.
   const segs = pathname.replace(/\/+$/, "").split("/").filter(Boolean);
   if (segs.length === 0) return { kind: "root" };
 
-  const [page, a, b, _c] = segs;
-  const decode = (s: string | undefined): string | undefined =>
-    s === undefined ? undefined : safeDecode(s);
+  const [page, a] = segs;
 
-  if (page === "index" && segs.length <= 3) {
-    return { kind: "index", experiment: decode(a), sample: decode(b) };
-  }
-
+  // I4.4 (#181): Index is retired. `/index*` is redirected by the router
+  // (sampleless → `/samples`; a slug-bearing `/index/:exp/:sample` →
+  // `/sample/:id` via `IndexSlugRedirect`) before this parser runs, so there
+  // is no `index` parse arm — any stray /index path falls through to `stale`.
+  //
   // I1.7 (#163): Inspect is retired. `/inspect*` is redirected to `/samples`
   // by the router before this parser runs, so there is no `inspect` parse arm
   // — any stray /inspect path falls through to `stale`.

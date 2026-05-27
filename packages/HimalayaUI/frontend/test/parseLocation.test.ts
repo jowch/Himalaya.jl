@@ -9,21 +9,25 @@ describe("parseLocation", () => {
     expect(parseLocation("", "")).toEqual({ kind: "root" });
   });
 
-  it("/index → empty index", () => {
+  // I4.4 (#181): Index is retired. /index* is redirected (to /samples or, for
+  // a slug-bearing /index/<exp>/<sample>, to /sample/:id via IndexSlugRedirect)
+  // at the router layer, so parseLocation never legitimately sees it; the parse
+  // arm is gone and any /index path now falls through to `stale`.
+  it("/index is no longer parsed (falls through to stale)", () => {
     expect(parseLocation("/index", "")).toEqual({
-      kind: "index", experiment: undefined, sample: undefined,
+      kind: "stale", raw: "/index",
     });
   });
 
-  it("/index/<exp> → experiment chosen", () => {
+  it("/index/<exp> is no longer parsed (falls through to stale)", () => {
     expect(parseLocation("/index/lipid-screen", "")).toEqual({
-      kind: "index", experiment: "lipid-screen", sample: undefined,
+      kind: "stale", raw: "/index/lipid-screen",
     });
   });
 
-  it("/index/<exp>/<sample> → full", () => {
+  it("/index/<exp>/<sample> is no longer parsed (falls through to stale)", () => {
     expect(parseLocation("/index/lipid-screen/JC001", "")).toEqual({
-      kind: "index", experiment: "lipid-screen", sample: "JC001",
+      kind: "stale", raw: "/index/lipid-screen/JC001",
     });
   });
 
@@ -66,15 +70,9 @@ describe("parseLocation", () => {
     if (r.kind === "stale") expect(r.raw).toBe("/foo/bar?x=1");
   });
 
-  it("decodes percent-encoded slugs", () => {
-    expect(parseLocation("/index/lipid%20screen/JC%20001", "")).toEqual({
-      kind: "index", experiment: "lipid screen", sample: "JC 001",
-    });
-  });
-
-  it("trailing slash tolerant", () => {
+  it("trailing slash tolerant (/index/ → stale, normalized)", () => {
     expect(parseLocation("/index/", "")).toEqual({
-      kind: "index", experiment: undefined, sample: undefined,
+      kind: "stale", raw: "/index/",
     });
   });
 });
