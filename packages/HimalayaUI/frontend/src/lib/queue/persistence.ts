@@ -4,7 +4,11 @@ import type { PersistedOpForResolution } from "./mutatorRegistry";
 
 export const STORAGE_KEY = "himalaya-ui:queue";
 // Bumped 1 → 2 in issue #88: sample.label dropped, payload.name → payload.display_name.
-export const SCHEMA_VERSION = 2;
+// Bumped 2 → 3 in issue #183 (I5.2): Compare routes retired (I3.6 #177) — any
+// pre-cutover queued comparison_* op in sessionStorage must DROP on rehydrate
+// (warning toast) instead of replaying into a 404 against the dead route. This
+// counter is independent of the Zustand `persist` `version` in state.ts.
+export const SCHEMA_VERSION = 3;
 
 interface PersistedOp {
   schemaVersion: number;
