@@ -1,8 +1,8 @@
 /**
- * AppRoutes — the single hoisted route table. Tests the nav-bridge: new
- * routes mount the corpus shell, legacy routes mount AppShell, and the two
- * nav models do not desync. Includes the relocated #77 compare-sync tests
- * (formerly AppShell.test.tsx — AppShell is no longer a router).
+ * AppRoutes — the single hoisted route table. After I5.1 (#182) there is a
+ * SINGLE shell (CorpusShell): every route — including the `*` stale catch-all —
+ * mounts under it. The legacy AppShell + dual-nav model are retired. Includes
+ * the relocated #77 compare-sync tests (formerly AppShell.test.tsx).
  */
 import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
@@ -35,32 +35,31 @@ function renderRoutes(initialPath: string, initialIndex?: number) {
   );
 }
 
-describe("AppRoutes — nav-bridge shell selection", () => {
+describe("AppRoutes — single-shell route table", () => {
   beforeEach(() => {
     // Reset the ephemeral URL-resolution fields too — a prior test that
     // parked the store on a stale path must not leak into the next.
     useAppState.setState({
-      activePage: "none",
       activeExperimentId: undefined,
       staleUrlContext: null,
       resolving: false,
     });
   });
 
-  it("mounts the corpus shell (not AppShell) at /samples", async () => {
+  it("mounts the corpus shell at /samples", async () => {
     renderRoutes("/samples");
     expect(await screen.findByTestId("corpus-shell")).toBeInTheDocument();
     expect(screen.getByTestId("samples-page")).toBeInTheDocument();
     expect(screen.queryByTestId("app-shell")).toBeNull();
   });
 
-  it("mounts AppShell (not the corpus shell) at the stale catch-all", async () => {
-    // I3.6 (#177): Compare is retired, so the only AppShell route left is the
-    // `*` catch-all (stale/unknown paths). An unknown path mounts AppShell and
-    // renders the StaleUrlPage body; corpus surfaces stay on CorpusShell.
+  it("mounts the corpus shell at the stale catch-all (I5.1: single shell)", async () => {
+    // I5.1 (#182): AppShell is retired. The `*` catch-all now mounts under
+    // CorpusShell and renders the StaleUrlPage body — there is no second shell.
     renderRoutes("/totally/unknown");
-    expect(await screen.findByTestId("app-shell")).toBeInTheDocument();
-    expect(screen.queryByTestId("corpus-shell")).toBeNull();
+    expect(await screen.findByTestId("corpus-shell")).toBeInTheDocument();
+    expect(await screen.findByTestId("stale-url-page")).toBeInTheDocument();
+    expect(screen.queryByTestId("app-shell")).toBeNull();
   });
 
   it("redirects a /compare* URL to the series folio (Compare retired, #177)", async () => {
@@ -77,24 +76,22 @@ describe("AppRoutes — nav-bridge shell selection", () => {
   });
 
   it("does not flag /samples as a stale path", async () => {
-    // The legacy URL-sync hooks live in AppShell, which is not mounted on a
-    // corpus route — so /samples cannot be parsed as a stale path.
+    // The stale classifier (useStateFromUrl) runs only inside the `*`
+    // catch-all body (PageBody) — a matched corpus route never mounts it, so
+    // /samples cannot be parsed as a stale path.
     renderRoutes("/samples");
     await screen.findByTestId("corpus-shell");
     expect(useAppState.getState().staleUrlContext).toBeNull();
   });
 
-  it("remounts the correct shell when navigating across the corpus/legacy boundary", async () => {
-    // Headline structural invariant: AppShell unmounts when you cross to a
-    // corpus route, and remounts when you cross back to a legacy route.
+  it("keeps the single corpus shell mounted across the samples↔stale boundary", async () => {
+    // I5.1 (#182): one shell. CorpusShell stays mounted whether the route is a
+    // matched corpus surface or the `*` stale catch-all; only the body swaps.
     function NavButtons(): JSX.Element {
       const navigate = useNavigate();
       return (
         <>
           <button data-testid="go-samples" onClick={() => navigate("/samples")}>samples</button>
-          {/* I3.6 (#177): Compare is retired (redirects out), so the only
-              surviving AppShell surface is the `*` catch-all (stale/unknown
-              paths). Cross to a stale path to exercise the AppShell boundary. */}
           <button data-testid="go-stale" onClick={() => navigate("/totally/unknown")}>stale</button>
         </>
       );
@@ -110,30 +107,32 @@ describe("AppRoutes — nav-bridge shell selection", () => {
       </QueryClientProvider>,
     );
 
-    // Start: corpus shell is up, legacy shell is absent.
+    // Start: corpus shell up, samples body rendered, no legacy shell.
     expect(await screen.findByTestId("corpus-shell")).toBeInTheDocument();
+    expect(screen.getByTestId("samples-page")).toBeInTheDocument();
     expect(screen.queryByTestId("app-shell")).toBeNull();
 
-    // Cross to the legacy catch-all — AppShell mounts, CorpusShell unmounts.
+    // Cross to the stale catch-all — corpus shell stays; body becomes StaleUrlPage.
     fireEvent.click(screen.getByTestId("go-stale"));
     await waitFor(() => {
-      expect(screen.getByTestId("app-shell")).toBeInTheDocument();
-      expect(screen.queryByTestId("corpus-shell")).toBeNull();
+      expect(screen.getByTestId("corpus-shell")).toBeInTheDocument();
+      expect(screen.getByTestId("stale-url-page")).toBeInTheDocument();
     });
+    expect(screen.queryByTestId("app-shell")).toBeNull();
 
-    // Cross back to corpus route — CorpusShell should remount, AppShell should unmount.
+    // Cross back to corpus route — samples body returns under the same shell.
     fireEvent.click(screen.getByTestId("go-samples"));
     await waitFor(() => {
       expect(screen.getByTestId("corpus-shell")).toBeInTheDocument();
-      expect(screen.queryByTestId("app-shell")).toBeNull();
+      expect(screen.getByTestId("samples-page")).toBeInTheDocument();
     });
+    expect(screen.queryByTestId("app-shell")).toBeNull();
   });
 });
 
 describe("AppRoutes — I4.4 index cutover redirects", () => {
   beforeEach(() => {
     useAppState.setState({
-      activePage: "none",
       activeExperimentId: undefined,
       activeSampleId: undefined,
       staleUrlContext: null,
@@ -190,9 +189,8 @@ describe("AppRoutes — I4.4 index cutover redirects", () => {
   });
 
   it("an unknown path renders StaleUrlPage (#181 regression, #177)", async () => {
-    // The Compare nav-bridge that used to bounce typo'd URLs is gone with the
-    // Compare page (#177); a stale path now cleanly renders "Page not found"
-    // via the AppShell catch-all PageBody.
+    // A stale path cleanly renders "Page not found" via the `*` catch-all
+    // PageBody, now mounted under the single CorpusShell (I5.1, #182).
     renderRoutes("/foo/bar");
     expect(await screen.findByTestId("stale-url-page")).toBeInTheDocument();
     expect(screen.queryByTestId("compare-page")).toBeNull();
@@ -202,7 +200,6 @@ describe("AppRoutes — I4.4 index cutover redirects", () => {
 describe("AppRoutes — bare / always lands on the corpus (#77 / I4.4)", () => {
   beforeEach(() => {
     useAppState.setState({
-      activePage: "none",
       activeExperimentId: undefined,
       staleUrlContext: null,
       resolving: false,
@@ -210,27 +207,26 @@ describe("AppRoutes — bare / always lands on the corpus (#77 / I4.4)", () => {
   });
 
   // I4.4 (#181): the #77 "empty PageBody at /" risk is eliminated differently
-  // now. Bare `/` is a standalone redirect to /samples (outside AppShell), so
-  // a cold `/` can never strand the user on an empty body — regardless of the
-  // persisted `activePage`. The old "activePage='compare' + / bounces to a
-  // compare URL" bridge is retired with the Index surface.
+  // now. Bare `/` is a standalone redirect to /samples, so a cold `/` can never
+  // strand the user on an empty body. (I5.1, #182: the dual-nav `activePage`
+  // model that the old "/ bounces to a compare URL" bridge relied on is gone.)
 
-  it("bare / lands on the corpus contact sheet even when activePage='compare'", async () => {
-    useAppState.setState({ activePage: "none", activeExperimentId: undefined });
+  it("bare / lands on the corpus contact sheet", async () => {
+    useAppState.setState({ activeExperimentId: undefined });
     renderRoutes("/");
     expect(await screen.findByTestId("samples-page")).toBeInTheDocument();
     expect(screen.queryByTestId("compare-page")).toBeNull();
   });
 
   it("bare / lands on the corpus even with an active experiment set", async () => {
-    useAppState.setState({ activePage: "none", activeExperimentId: 7 });
+    useAppState.setState({ activeExperimentId: 7 });
     renderRoutes("/");
     expect(await screen.findByTestId("samples-page")).toBeInTheDocument();
     expect(screen.queryByTestId("compare-page")).toBeNull();
   });
 
   it("a compare URL redirects to the series folio (Compare retired, #177)", async () => {
-    useAppState.setState({ activePage: "none", activeExperimentId: 7 });
+    useAppState.setState({ activeExperimentId: 7 });
     renderRoutes("/experiments/7/compare/123");
     await waitFor(() => {
       expect(screen.getByTestId("series-folio-page")).toBeInTheDocument();

@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { AppRoutes } from "./components/AppRoutes";
 import { OnboardingFlow } from "./components/OnboardingFlow";
+import { NavModal } from "./components/NavModal";
 import { ToastContainer } from "./components/ui/Toast";
 import { InfrastructureBanner } from "./components/InfrastructureBanner";
 import { SeriesCommitConflictModal } from "./components/SeriesCommitConflictModal";
@@ -92,6 +93,10 @@ export function App(): JSX.Element {
     <>
       <AppRoutes />
       <OnboardingFlow />
+      {/* I5.1 (#182): NavModal was mounted in the retired AppShell. It must
+          stay mounted app-wide so the `/` + ⌘K shortcuts and StaleUrlPage
+          recovery can open it from any surface. */}
+      <NavModal />
       <SeriesCommitConflictModal />
       <ToastContainer />
       <InfrastructureBanner />
