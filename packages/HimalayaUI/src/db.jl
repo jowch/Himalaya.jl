@@ -865,13 +865,14 @@ function _series_created_payload_from_comparison(db::SQLite.DB, cmp)
         # CRITICAL (P1 — id-space mismatch): NULL the fork lineage on migrated series.
         # `comparisons.forked_from_id` references comparisons(id); `series.forked_from_id`
         # references series(id) — DIFFERENT id-spaces. Copying the comparison's id straight
-        # through writes a dangling reference (an arbitrary/nonexistent series id). It would
-        # insert SILENTLY because migrate_schema! runs with FK enforcement OFF — open_db
-        # enables `PRAGMA foreign_keys=ON` AFTER migrate_schema! — but `PRAGMA
-        # foreign_key_check` and any fork-tree read would later surface it. A
-        # comparison_id→series_id remap is unsafe (id-order does NOT guarantee
-        # parent.id < child.id). Fork lineage across the comparison→series cutover is not
-        # meaningful, so drop it: BOTH fields NULL. (Human-approved option a.)
+        # through would write a dangling reference (an arbitrary/nonexistent series id). FK
+        # enforcement is ON at this point (migrate_compare_relax_nullability!'s `finally`
+        # re-enabled `PRAGMA foreign_keys=ON` before this migration runs), so such a write
+        # would FK-throw at INSERT and abort the migration; the `PRAGMA foreign_key_check`
+        # test confirms the copy leaves no dangling ref. A comparison_id→series_id remap is
+        # unsafe (id-order does NOT guarantee parent.id < child.id). Fork lineage across the
+        # comparison→series cutover is not meaningful, so drop it: BOTH fields NULL.
+        # (Human-approved option a.)
         :forked_from_id        => nothing,
         :forked_at_hash        => nothing,
         :ordering_variable     => nothing,   # comparisons have no recipe ordering
