@@ -113,7 +113,10 @@ test("paste stale URL: 404 page → CTA opens NavModal at right step", async ({ 
   await expect(page.locator("[data-testid='nav-modal']")).toBeVisible();
 });
 
-test("TabRocker continuity: switch pages, URL is /<page>/<exp>/<sample>", async ({ page }) => {
+test("TabRocker: the Index tab holds the /<page>/<exp>/<sample> slug URL", async ({ page }) => {
+  // I1.7 (#163): Inspect is retired, so the old index→inspect→back continuity
+  // leg is gone (Compare emits no slug URL — it returns `current`). This now
+  // just pins that the Index tab keeps the resolved slug URL.
   await seedSession(page);
   await page.route(RESOLVE_RE, (route) => {
     route.fulfill({
@@ -126,10 +129,10 @@ test("TabRocker continuity: switch pages, URL is /<page>/<exp>/<sample>", async 
     });
   });
   await page.goto("/index/lipid/JC001");
-  await page.locator("[data-testid='tab-inspect']").click();
-  await expect(page).toHaveURL(/\/inspect\/lipid\/JC001$/);
-  await page.goBack();
+  await expect(page.locator("[data-testid='tab-index']")).toBeVisible();
   await expect(page).toHaveURL(/\/index\/lipid\/JC001$/);
+  // The retired Inspect tab must no longer render.
+  await expect(page.locator("[data-testid='tab-inspect']")).toHaveCount(0);
 });
 
 test("/ cold-mount: replaces to last-active slug URL", async ({ page }) => {
