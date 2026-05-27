@@ -20,23 +20,27 @@ import { emitReplaceNext } from "./lib/url/emitMode";
 
 export const LS_KEY = "himalaya-ui:state";
 
-export type PageId = "index" | "compare";
+export type PageId = "compare";
 
 /** The set of `activePage` values that name a live legacy surface. As each
- *  surface is retired (#1.7 Inspect done, #3.6 Compare, #4.4 Index), shrink
- *  this set — `coerceActivePage` then redirects a stale persisted value. */
+ *  surface is retired (#1.7 Inspect done, #4.4 Index done, #3.6 Compare next),
+ *  shrink this set — `coerceActivePage` then redirects a stale persisted
+ *  value. I4.4 (#181) dropped "index"; only "compare" remains until I3.6
+ *  empties the union (and I5.1 deletes the whole activePage model). */
 export const VALID_PAGE_IDS: ReadonlySet<PageId> = new Set<PageId>([
-  "index",
   "compare",
 ]);
 
 /** Coerce an arbitrary persisted value to a valid `PageId`. A value naming a
- *  surface that no longer exists (or a non-string) falls back to "index", so
- *  it can never strand the user on an empty `PageBody` (issue-#77 class). */
+ *  surface that no longer exists (or a non-string) falls back to "compare"
+ *  (the sole surviving member post-#181), so it can never strand the user on
+ *  an empty `PageBody` (issue-#77 class). Note: with bare `/` redirecting to
+ *  `/samples` (#181), this fallback is a pure type artifact — no user lands on
+ *  a page driven by it. */
 export function coerceActivePage(raw: unknown): PageId {
   return typeof raw === "string" && VALID_PAGE_IDS.has(raw as PageId)
     ? (raw as PageId)
-    : "index";
+    : "compare";
 }
 
 export type ThemeId = "dark" | "light";
@@ -286,7 +290,9 @@ export const useAppState = create<AppState>()(
         activeExperimentId: undefined,
         activeSampleId: undefined,
         activeExposureId: undefined,
-        activePage: "index",
+        // I4.4 (#181): "index" retired; "compare" is the only PageId. This
+        // default is never user-observed — bare `/` redirects to `/samples`.
+        activePage: "compare",
         tutorialSeen: false,
         theme: "dark",
 
