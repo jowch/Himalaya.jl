@@ -1,15 +1,17 @@
 import { Skeleton } from "boneyard-js/react";
 import { useAppState } from "../state";
-import { useExposures } from "../queries";
+import { useExposures, usePeaks } from "../queries";
 import { DetectorImage } from "./DetectorImage";
+import { DetectorRingOverlay } from "./DetectorRingOverlay";
 import { HintText } from "./ui";
 
 /**
  * FocusDetectorPanel — the co-resident detector image on the focus workspace.
  *
- * Read-only: it shows the active exposure's diffraction image next to the
- * trace hero, in a fixed-aspect square (the mockup's `.det-box`). The q-link
- * cross-highlight (hover a peak -> light its ring) is I4.3 (#180), not here.
+ * Read-only image, with the q-link ring overlay layered on top (I4.3 / #180):
+ * one ring per peak q, the ring matching `hoveredQ` lights, and hovering a
+ * ring sets `hoveredQ` (cross-highlighting the trace peak). The ring overlay
+ * is rotation-aware via the shared `decideOrient` rule.
  *
  * Reuses `DetectorImage` unchanged. We deliberately do NOT reuse the Inspect
  * `DetectorImageCard` — that bundles reject/tag/representative controls; the
@@ -19,6 +21,8 @@ export function FocusDetectorPanel(): JSX.Element {
   const activeSampleId   = useAppState((s) => s.activeSampleId);
   const activeExposureId = useAppState((s) => s.activeExposureId);
   const exposuresQ = useExposures(activeSampleId);
+  const peaksQ = usePeaks(activeExposureId);
+  const peakQs = (peaksQ.data ?? []).map((p) => p.q);
 
   const exposure = activeExposureId !== undefined
     ? exposuresQ.data?.find((e) => e.id === activeExposureId)
@@ -53,6 +57,7 @@ export function FocusDetectorPanel(): JSX.Element {
           size="full"
           className="h-full w-full"
         />
+        {peakQs.length > 0 && <DetectorRingOverlay peakQs={peakQs} />}
       </div>
     );
   })();
