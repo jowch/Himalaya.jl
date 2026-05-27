@@ -417,4 +417,49 @@ describe("ContactSheetRow — culling", () => {
       expect(screen.queryByTestId("batch-reject")).toBeNull(),
     );
   });
+
+  it("picks a representative exposure (optimistic mutual exclusion + PATCH select)", async () => {
+    let repUrl = "";
+    vi.spyOn(global, "fetch").mockImplementation((input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : (input as Request).url;
+      if (url === "/api/samples/7/exposures") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify([
+              makeExposure({ id: 1, sample_id: 7, selected: true }),
+              makeExposure({ id: 2, sample_id: 7, selected: false }),
+            ]),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      }
+      if (/\/api\/exposures\/2\/select$/.test(url)) {
+        repUrl = url;
+        return Promise.resolve(
+          new Response(JSON.stringify({ id: 2, selected: true }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      return Promise.resolve(new Response("not found", { status: 404 }));
+    });
+
+    renderRow(makeSample({ id: 7 }));
+    fireEvent.click(await screen.findByTestId("exposure-represent-2"));
+
+    await waitFor(() =>
+      expect(repUrl).toMatch(/\/api\/exposures\/2\/select$/),
+    );
+    // Optimistic mutual exclusion: 2 becomes representative, 1 stops being it.
+    await waitFor(() =>
+      expect(screen.getByTestId("exposure-thumb-2")).toHaveAttribute(
+        "data-representative",
+        "true",
+      ),
+    );
+    expect(screen.getByTestId("exposure-thumb-1")).not.toHaveAttribute(
+      "data-representative",
+    );
+  });
 });

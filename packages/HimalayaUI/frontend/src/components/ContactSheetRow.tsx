@@ -1,5 +1,9 @@
 import { useCallback, useState } from "react";
-import { useExposures, useSetExposureStatus } from "../queries";
+import {
+  useExposures,
+  useSetExposureStatus,
+  useSelectExposure,
+} from "../queries";
 import type { CorpusSample, Exposure } from "../api";
 import { sampleDisplayName } from "../lib/sample/displayName";
 import { DetectorImage } from "./DetectorImage";
@@ -27,11 +31,13 @@ function ExposureThumb({
   selectedForBatch,
   onToggleReject,
   onToggleSelected,
+  onPickRepresentative,
 }: {
   exposure: Exposure;
   selectedForBatch: boolean;
   onToggleReject: (exp: Exposure) => void;
   onToggleSelected: (id: number) => void;
+  onPickRepresentative: (exp: Exposure) => void;
 }): JSX.Element {
   const isRejected = exposure.status === "rejected";
   const isRepresentative = exposure.selected;
@@ -80,6 +86,18 @@ function ExposureThumb({
           ✕
         </span>
       )}
+      {!isRepresentative && (
+        <button
+          type="button"
+          data-testid={`exposure-represent-${exposure.id}`}
+          title="Make representative"
+          onClick={() => onPickRepresentative(exposure)}
+          className="absolute bottom-0 left-0 m-0.5 rounded bg-paper/80 px-1
+                     text-[10px] leading-none text-ink-faint"
+        >
+          ⊙
+        </button>
+      )}
       <button
         type="button"
         data-testid={`exposure-reject-${exposure.id}`}
@@ -101,15 +119,26 @@ function ExposureThumb({
  * in row-by-row. The same queryKeys.exposures(sampleId) cache entry is
  * reused by culling (#162) and the loupe (#161).
  *
- * Inert affordances: the thumbnails carry no onClick and the tag-add
- * button is disabled — selection (#162) and tag mutation (#159) wire in
- * separately.
+ * Culling is wired here (#162): per-thumb reject toggle, multi-select batch
+ * reject, and representative pick, all through the existing exposure queue
+ * hooks. The tag-add button remains inert — sample-tag mutation is #159.
  */
 export function ContactSheetRow({ sample }: Props): JSX.Element {
   const exposuresQuery = useExposures(sample.id);
   const exposures = exposuresQuery.data ?? [];
 
   const setStatus = useSetExposureStatus(sample.id);
+  const setRepresentative = useSelectExposure(sample.id);
+
+  // Representative pick. selectExposureMutator's onMutate writes
+  // `selected: e.id === exposureId` across the list, so the pick is
+  // mutually exclusive (one representative per sample) for free.
+  const handlePickRepresentative = useCallback(
+    (exp: Exposure) => {
+      setRepresentative.mutate(exp.id);
+    },
+    [setRepresentative],
+  );
 
   // Single-exposure reject toggle. Un-reject sets status to null (matches
   // LoupePage's `status === "rejected" ? null : "rejected"` convention).
@@ -189,6 +218,7 @@ export function ContactSheetRow({ sample }: Props): JSX.Element {
                 selectedForBatch={selectedIds.has(e.id)}
                 onToggleReject={handleToggleReject}
                 onToggleSelected={toggleSelected}
+                onPickRepresentative={handlePickRepresentative}
               />
             ))
           )}
