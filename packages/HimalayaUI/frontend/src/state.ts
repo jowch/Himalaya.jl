@@ -20,14 +20,13 @@ import { emitReplaceNext } from "./lib/url/emitMode";
 
 export const LS_KEY = "himalaya-ui:state";
 
-export type PageId = "index" | "compare" | "inspect";
+export type PageId = "index" | "compare";
 
 /** The set of `activePage` values that name a live legacy surface. As each
- *  surface is retired (#1.7 Inspect, #3.6 Compare, #4.4 Index), shrink this
- *  set — `coerceActivePage` then redirects a stale persisted value. */
+ *  surface is retired (#1.7 Inspect done, #3.6 Compare, #4.4 Index), shrink
+ *  this set — `coerceActivePage` then redirects a stale persisted value. */
 export const VALID_PAGE_IDS: ReadonlySet<PageId> = new Set<PageId>([
   "index",
-  "inspect",
   "compare",
 ]);
 

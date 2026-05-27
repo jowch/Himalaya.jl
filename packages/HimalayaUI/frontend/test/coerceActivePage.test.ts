@@ -8,13 +8,16 @@ import {
 describe("coerceActivePage", () => {
   it("passes valid PageIds through unchanged", () => {
     expect(coerceActivePage("index")).toBe("index");
-    expect(coerceActivePage("inspect")).toBe("inspect");
     expect(coerceActivePage("compare")).toBe("compare");
   });
 
+  it("coerces a stale 'inspect' to 'index' after Inspect retirement (#163)", () => {
+    // Inspect is retired; a persisted activePage:"inspect" must not strand the
+    // user on an empty PageBody — coerceActivePage rewrites it to a live page.
+    expect(coerceActivePage("inspect")).toBe("index");
+  });
+
   it("coerces an unknown surface name to 'index'", () => {
-    // Forward-looking: when #1.7 retires Inspect, a persisted "inspect"
-    // would land here. Today any non-PageId string exercises the path.
     expect(coerceActivePage("loupe")).toBe("index");
     expect(coerceActivePage("samples")).toBe("index");
     expect(coerceActivePage("")).toBe("index");

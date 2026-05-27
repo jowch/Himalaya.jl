@@ -3,7 +3,7 @@ import { useLocation } from "react-router-dom";
 import { useAppState, type PageId } from "../state";
 import type { Sample } from "../api";
 
-const TAB_ORDER: PageId[] = ["inspect", "index", "compare"];
+const TAB_ORDER: PageId[] = ["index", "compare"];
 
 /**
  * useGlobalShortcuts — wires the keyboard shortcuts described in the plan.
