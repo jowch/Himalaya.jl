@@ -161,6 +161,27 @@ describe("SeriesScopingPage", () => {
     await waitFor(() => expect(screen.getByTestId("folio-stub")).toBeInTheDocument());
   });
 
+  it("does NOT navigate when the batch write fails (no silent data loss)", async () => {
+    vi.spyOn(global, "fetch").mockImplementation((input) => {
+      const url = typeof input === "string" ? input : (input as Request).url;
+      if (url.endsWith("/api/sample-tags")) return Promise.resolve(jsonRes([{ key: "ratio", value: "1:1" }]));
+      if (url.endsWith("/api/picker-samples")) return Promise.resolve(jsonRes([pickerRow(10, "A", "1:1")]));
+      if (url.endsWith("/api/samples/tags/batch"))
+        // 400 = validation error → not retried (settles to .error immediately),
+        // unlike a 5xx which the queue retries. Mirrors a route-rejected batch.
+        return Promise.resolve(jsonRes({ error: "bad batch" }, 400));
+      return Promise.resolve(jsonRes([]));
+    });
+    renderScoping();
+    await waitFor(() =>
+      expect(screen.getByTestId("scoping-open-confirm")).not.toBeDisabled());
+    fireEvent.click(screen.getByTestId("scoping-open-confirm"));
+    fireEvent.click(await screen.findByTestId("scoping-confirm-build"));
+    // The mutation settles to error; navigation must NOT fire (no data loss).
+    await waitFor(() => expect(screen.getByTestId("scoping-error-banner")).toBeInTheDocument());
+    expect(screen.queryByTestId("folio-stub")).toBeNull();
+  });
+
   it("D5: an excluded (unchecked) member is omitted from the batch", async () => {
     const posted: any[] = [];
     vi.spyOn(global, "fetch").mockImplementation((input, init) => {

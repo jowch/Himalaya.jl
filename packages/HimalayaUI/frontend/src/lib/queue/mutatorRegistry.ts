@@ -30,6 +30,7 @@ import { deleteComparisonMutator } from "./mutators/deleteComparison";
 import { saveSeriesMutator } from "./mutators/saveSeries";
 import { deleteSeriesMutator } from "./mutators/deleteSeries";
 import { commitSeriesPlateMutator } from "./mutators/commitSeriesPlate";
+import { scopeSeriesMutator } from "./mutators/scopeSeries";
 
 /**
  * Minimal shape required by the resolver: just enough of a persisted op to
@@ -61,15 +62,23 @@ export function resolveMutator(
     | {
         experimentId?: number; sampleId?: number;
         exposureId?: number; comparisonId?: number;
+        tags?: unknown;
       }
     | undefined;
   switch (op.kind) {
     case "update_sample":
       return updateSampleMutator;
     case "add_tag":
-      // Tri-scope (#159). Peel exposure off FIRST: an exposure-tag op carries
-      // {sampleId, exposureId} and — like a corpus-tag op — has no
-      // experimentId, so the two collide unless exposureId is tested first.
+      // Quad-scope (#159 tri-scope + #174 scoping batch). Peel the scoping
+      // BATCH off FIRST: a persisted scoping op (add_tag + clientOpId, mirrored
+      // by persistence.ts) carries the batch shape {key, tags} — no sampleId/
+      // exposureId/experimentId — so it would otherwise fall through to the
+      // corpus single-tag mutator and replay a malformed POST with undefined
+      // sampleId/value. The `tags` array is the unique discriminator.
+      if (Array.isArray(p?.tags)) return scopeSeriesMutator;
+      // Then exposure: an exposure-tag op carries {sampleId, exposureId} and —
+      // like a corpus-tag op — has no experimentId, so the two collide unless
+      // exposureId is tested before the experimentId split.
       if (p?.exposureId !== undefined) return addExposureTagMutator;
       return p?.experimentId !== undefined
         ? addSampleTagMutator

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Skeleton } from "boneyard-js/react";
 import {
@@ -59,7 +59,8 @@ export function SeriesScopingPage(): JSX.Element {
 
   const included = rows.filter((r) => r.include && !r.flagged);
   // Build gate: every INCLUDED row must be non-flagged, and there must be at
-  // least one included row to write.
+  // least one included row — the batch route 400s on an empty `tags` array, so
+  // the gate must not let an empty batch through.
   const canBuild =
     proposal.orderingKey !== undefined &&
     included.length > 0 &&
@@ -78,17 +79,36 @@ export function SeriesScopingPage(): JSX.Element {
     );
   }
 
+  // Defer navigation until the batch write actually succeeds — fire-and-forget
+  // navigate() would (a) land the user on the folio with a failed write
+  // silently lost and (b) unmount the page before the deferred settles,
+  // tearing down the mutation's onSuccess cache invalidation. Mirror
+  // Compare.tsx: gate the nav on isSuccess via a pending ref. (#212 review.)
+  const pendingBuildRef = useRef(false);
+
   function handleConfirm(): void {
     if (proposal.orderingKey === undefined) return;
+    pendingBuildRef.current = true;
     scopeSeries.mutate({
       key: proposal.orderingKey,
       tags: included.map((r) => ({ sampleId: r.sampleId, value: r.value })),
     });
     setConfirmOpen(false);
+  }
+
+  useEffect(() => {
+    if (!scopeSeries.isSuccess || !pendingBuildRef.current) return;
+    pendingBuildRef.current = false;
     // D1: land on the folio (exists since I3.3). I3.6 upgrades this to create
     // + open the new series builder (folio→scoping→builder stitch).
     navigate("/series");
-  }
+  }, [scopeSeries.isSuccess, navigate]);
+
+  // Release the guard on error so the user stays on the page (with the error
+  // banner below) and can retry — the write was NOT lost-then-navigated-away.
+  useEffect(() => {
+    if (scopeSeries.error) pendingBuildRef.current = false;
+  }, [scopeSeries.error]);
 
   return (
     <div data-testid="scoping-page" className="mx-auto flex max-w-[900px] flex-col gap-5 px-8 py-7">
@@ -103,6 +123,17 @@ export function SeriesScopingPage(): JSX.Element {
           </span>
         </p>
       </header>
+
+      {scopeSeries.error ? (
+        <div
+          data-testid="scoping-error-banner"
+          role="alert"
+          className="rounded border border-print-accent bg-paper-sunk px-4 py-2 text-sm text-print-accent"
+        >
+          Could not write the scoping tags. Nothing was saved — adjust and try
+          Confirm &amp; build again.
+        </div>
+      ) : null}
 
       {isError ? (
         <div data-testid="scoping-error" className="px-4 py-8 text-sm text-ink-soft">
