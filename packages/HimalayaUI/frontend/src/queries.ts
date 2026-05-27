@@ -33,6 +33,7 @@ import { createSpeculativeMutator } from "./lib/queue/mutators/createSpeculative
 import { reanalyzeExposureMutator } from "./lib/queue/mutators/reanalyzeExposure";
 import { saveComparisonMutator } from "./lib/queue/mutators/saveComparison";
 import { deleteComparisonMutator } from "./lib/queue/mutators/deleteComparison";
+import { scopeSeriesMutator } from "./lib/queue/mutators/scopeSeries";
 import { useExposureHasPendingPeakOps } from "./lib/queue/hooks";
 
 const CLIENT_ID = getClientId();
@@ -643,6 +644,18 @@ export function useCorpusPickerSamples() {
     queryKey: queryKeys.corpusPickerSamples,
     queryFn: () => api.getCorpusPickerSamples(),
   });
+}
+
+/** Scoping confirm-and-build write: one batch of (key,value) sample_tags with
+ *  source='scoping', through the queue (no-op optimistic; SSE-confirmed). */
+export function useScopeSeries() {
+  const username = useAppState((s) => s.username);
+  const inner = useQueueMutation(scopeSeriesMutator, { username, clientId: CLIENT_ID });
+  return {
+    ...inner,
+    mutate: (input: { key: string; tags: { sampleId: number; value: string }[] }) =>
+      inner.mutate(input),
+  };
 }
 
 /**
