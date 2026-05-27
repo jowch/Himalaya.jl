@@ -79,7 +79,7 @@ async function seedState(page: Page, extra: Record<string, unknown>): Promise<vo
       "himalaya-ui:state",
       JSON.stringify({ state, version: 3 }),
     );
-  }, { username: "alice", activePage: "none", tutorialSeen: true, theme: "dark", ...extra });
+  }, { username: "alice", tutorialSeen: true, theme: "dark", ...extra });
 }
 
 test.beforeEach(async ({ page }) => {

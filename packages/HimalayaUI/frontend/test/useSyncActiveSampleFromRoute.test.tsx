@@ -18,7 +18,6 @@ beforeEach(() => {
   useAppState.setState({
     activeSampleId: undefined,
     activeExposureId: undefined,
-    activePage: "index",
     username: "tester",
     theme: "dark",
   });

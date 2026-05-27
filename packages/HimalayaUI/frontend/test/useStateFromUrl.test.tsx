@@ -10,13 +10,13 @@ import { _resetEmitMode } from "../src/lib/url/emitMode";
 // BrowserRouter reads from `window.history` / `window.location`, which is
 // what the tests manipulate via `history.replaceState`.
 //
-// I4.4 (#181): the Index surface is retired. `parseLocation` no longer returns
-// a slug-bearing `index` kind, so useStateFromUrl no longer resolves
-// `/index/<exp>/<sample>` URLs into Zustand active ids (the router redirects
-// them via IndexSlugRedirect). The surviving behaviors:
-//   - `compare`  → activePage="compare", resolving cleared.
+// I4.4 (#181) / I3.6 (#177) / I5.1 (#182): Index, Inspect, and Compare are all
+// retired and the dual-nav `activePage` model is deleted. `parseLocation` only
+// returns `root` or `stale`, so useStateFromUrl no longer resolves any slug URL
+// into Zustand (the router redirects /index*, /compare*, /inspect*). Surviving
+// behaviors:
 //   - `root` (/) → redirect to /samples (§4.1 corpus home).
-//   - `stale`    → setStaleUnknownPath.
+//   - `stale`    → setStaleUnknownPath (the user lands on StaleUrlPage).
 function wrapper({ children }: { children: ReactNode }) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return (
@@ -32,7 +32,6 @@ beforeEach(() => {
   useAppState.setState({
     staleUrlContext: null, resolving: false,
     activeExperimentId: undefined, activeSampleId: undefined, activeExposureId: undefined,
-    activePage: "compare",
   });
   history.replaceState(null, "", "/");
   _resetEmitMode();
@@ -62,13 +61,14 @@ describe("useStateFromUrl", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it("compare URL: sets activePage='compare', clears resolving, no fetch", () => {
+  it("I3.6: a stray /compare path is now a stale unknown_path (no resolve)", () => {
+    // /compare* is redirected to /series at the router; if the parser ever sees
+    // it, it is classified stale rather than triggering a resolve fetch. (The
+    // old `activePage='compare'` outcome is gone with the dual-nav model, #182.)
     history.replaceState(null, "", "/compare/all");
-    useAppState.setState({ resolving: true });
     const fetchSpy = vi.spyOn(global, "fetch");
     renderHook(() => useStateFromUrl(), { wrapper });
-    expect(useAppState.getState().activePage).toBe("compare");
-    expect(useAppState.getState().resolving).toBe(false);
+    expect(useAppState.getState().staleUrlContext?.kind).toBe("unknown_path");
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 });
@@ -90,7 +90,7 @@ describe("useStateFromUrl — / redirect (§4.1 corpus home)", () => {
   it("bare / redirects to /samples regardless of persisted state, no fetch", async () => {
     history.replaceState(null, "", "/");
     useAppState.setState({
-      activePage: "compare", activeExperimentId: 17, activeSampleId: 42,
+      activeExperimentId: 17, activeSampleId: 42,
     });
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const Wrapper = makeRedirectWrapper(qc);

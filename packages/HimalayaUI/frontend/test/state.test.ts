@@ -8,7 +8,6 @@ describe("useAppState", () => {
       username: undefined,
       activeSampleId: undefined,
       activeExposureId: undefined,
-      activePage: "compare",
     });
   });
 
@@ -71,13 +70,8 @@ describe("useAppState", () => {
     expect(s.activeExposureId).toBeUndefined();
   });
 
-  it("activePage is 'compare' — the sole PageId after the Index cutover (#181)", () => {
-    // "index" was retired in #181; "compare" is the only surviving PageId
-    // until #3.6 empties the union and #5.1 deletes the activePage model.
-    expect(useAppState.getState().activePage).toBe("compare");
-    useAppState.getState().setActivePage("compare");
-    expect(useAppState.getState().activePage).toBe("compare");
-  });
+  // I5.1 (#182): the `activePage` field + `setActivePage` are deleted with the
+  // dual-nav model. The dedicated activePage test is removed (no field to test).
 
   it("tutorialSeen defaults to false and can be set true", () => {
     expect(useAppState.getState().tutorialSeen).toBe(false);
@@ -105,7 +99,6 @@ describe("useAppState", () => {
     useAppState.getState().setUsername("alice");
     useAppState.getState().setActiveExperiment(4);
     useAppState.setState({ activeSampleId: 12 });
-    useAppState.getState().setActivePage("compare");
     useAppState.getState().setTutorialSeen(true);
     useAppState.getState().setTheme("light");
     const raw = localStorage.getItem(LS_KEY);
@@ -113,7 +106,8 @@ describe("useAppState", () => {
     expect(parsed.state.username).toBe("alice");
     expect(parsed.state.activeExperimentId).toBe(4);
     expect(parsed.state.activeSampleId).toBe(12);
-    expect(parsed.state.activePage).toBe("compare");
+    // I5.1 (#182): `activePage` is no longer in the persisted partition.
+    expect(parsed.state.activePage).toBeUndefined();
     expect(parsed.state.tutorialSeen).toBe(true);
     expect(parsed.state.theme).toBe("light");
   });

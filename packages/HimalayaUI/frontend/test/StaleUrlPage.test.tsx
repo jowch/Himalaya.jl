@@ -34,7 +34,6 @@ describe("StaleUrlPage", () => {
       activeSampleId: undefined,
       navModalOpen: false,
       navModalStep: "experiment",
-      activePage: "compare",
     });
   });
 

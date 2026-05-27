@@ -32,32 +32,16 @@ import type { OrderRule, Series } from "./api";
 
 export const LS_KEY = "himalaya-ui:state";
 
-/** All three legacy AppShell surfaces are now retired — Inspect (#163),
- *  Index (#181), and Compare (#177). The `activePage` model is therefore
- *  fully vestigial: no live surface renders off it. Rather than make `PageId`
- *  a zero-member `never` union (which makes `coerceActivePage`'s return type
- *  `never` and the `Set<PageId>` uninhabitable / uncompilable), I3.6 narrows
- *  it to a single inert `"none"` sentinel. I5.1 (#182) deletes the whole
- *  `activePage` model + the nav-bridge; I5.2 (#183) drops it from `partialize`
- *  with a real `migrate`. Do NOT bump the persist version here. */
-export type PageId = "none";
-
-/** The set of valid `activePage` values. Now just the inert `"none"` sentinel
- *  (Inspect #163, Index #181, Compare #177 all retired). `coerceActivePage`
- *  maps any stale persisted value onto it. */
-export const VALID_PAGE_IDS: ReadonlySet<PageId> = new Set<PageId>([
-  "none",
-]);
-
-/** Coerce an arbitrary persisted value to a valid `PageId`. With every legacy
- *  surface retired, this always resolves to the inert `"none"` sentinel — a
- *  pure type artifact (bare `/` redirects to `/samples`, no user lands on a
- *  page driven by `activePage`). Kept type-valid until I5.1 deletes the model. */
-export function coerceActivePage(raw: unknown): PageId {
-  return typeof raw === "string" && VALID_PAGE_IDS.has(raw as PageId)
-    ? (raw as PageId)
-    : "none";
-}
+// I5.1 (#182): the dual-nav `activePage` model — `PageId`, `VALID_PAGE_IDS`,
+// `coerceActivePage`, the `activePage` store field + `setActivePage`, and the
+// `page` slot of `ResolveSuccessSlots` — is deleted. Every legacy AppShell
+// surface (Inspect #163, Index #181, Compare #177) is retired and the app is a
+// single URL-routed shell, so nothing renders off `activePage` anymore. The
+// `activePage: s.activePage` line is also removed from `partialize` (forced by
+// the field deletion). NOTE: the persist `version` is deliberately NOT bumped
+// here — a pre-cutover blob's stale `activePage` key lands as an inert extra
+// property after the shallow `merge` and ages out on the next write. The
+// deliberate version-bump + `migrate` that formally strips it is #183 (I5.2).
 
 export type ThemeId = "dark" | "light";
 export type NavModalStep = "experiment" | "sample";
@@ -80,7 +64,6 @@ export type RecoverOpts = {
 };
 
 export type ResolveSuccessSlots = {
-  page: PageId;
   experimentId: number | undefined;
   sampleId: number | undefined;
   exposureId: number | undefined;
@@ -94,7 +77,6 @@ export interface AppState {
   activeExperimentId: number | undefined;
   activeSampleId: number | undefined;
   activeExposureId: number | undefined;
-  activePage: PageId;
   tutorialSeen: boolean;
   theme: ThemeId;
 
@@ -141,9 +123,9 @@ export interface AppState {
   // `discardDraft`, `setCompareXDomain`, `resetBandHeights`,
   // `cyclePeakDisplayForMember`, …). Pruning only that subset is interconnected
   // and type-shared (`ActiveDraft`) and risks the series builder's draft-backed
-  // editing; it is DELIBERATELY DEFERRED to I5.1/I5.3's dead-code sweep, which
-  // runs against a stable post-cutover tree. I3.6 narrows the `activePage` union
-  // (above) but leaves this slice intact. (See the PR's coordination note.)
+  // editing; it is DELIBERATELY DEFERRED to I5.3's (#184) dead-code sweep, which
+  // runs against a stable post-cutover tree. I5.1 (#182) deleted the `activePage`
+  // model but leaves this draft slice intact. (See the PR's coordination note.)
   /**
    * Compare-page q-axis zoom domains, keyed per comparison id. Per-tab UI
    * state — not persisted. Missing entry / `null` value = full data range.
@@ -232,7 +214,6 @@ export interface AppState {
   setHoveredIndex: (id: number | undefined) => void;
   setHoveredPeak: (id: number | undefined) => void;
   setHoveredQ: (q: number | undefined) => void;
-  setActivePage: (page: PageId) => void;
   setTutorialSeen: (seen: boolean) => void;
   setTheme: (theme: ThemeId) => void;
   openNavModal: (step?: NavModalStep) => void;
@@ -375,10 +356,6 @@ export const useAppState = create<AppState>()(
         activeExperimentId: undefined,
         activeSampleId: undefined,
         activeExposureId: undefined,
-        // All legacy surfaces retired (#163/#181/#177): `activePage` is inert.
-        // Initial value is the `"none"` sentinel; never user-observed — bare
-        // `/` redirects to `/samples`. I5.1 deletes this model entirely.
-        activePage: "none",
         tutorialSeen: false,
         theme: "dark",
 
@@ -429,7 +406,6 @@ export const useAppState = create<AppState>()(
         setHoveredIndex: (hoveredIndexId) => set({ hoveredIndexId }),
         setHoveredPeak: (hoveredPeakId) => set({ hoveredPeakId }),
         setHoveredQ: (hoveredQ) => set({ hoveredQ }),
-        setActivePage: (activePage) => set({ activePage, staleUrlContext: null }),
         setTutorialSeen: (tutorialSeen) => set({ tutorialSeen }),
         setTheme: (theme) => set({ theme }),
         openNavModal: (step) =>
@@ -652,10 +628,9 @@ export const useAppState = create<AppState>()(
             navModalStep: opts.step,
           }));
         },
-        setResolveSuccess: ({ page, experimentId, sampleId, exposureId }) => {
+        setResolveSuccess: ({ experimentId, sampleId, exposureId }) => {
           emitReplaceNext();
           set({
-            activePage: page,
             activeExperimentId: experimentId,
             activeSampleId: sampleId,
             activeExposureId: exposureId,
@@ -677,6 +652,12 @@ export const useAppState = create<AppState>()(
     },
     {
       name: LS_KEY,
+      // I5.1 (#182): `activePage` dropped from partialize (its field is gone).
+      // `version` stays 3 — NOT bumped here. A pre-cutover blob still carrying
+      // an `activePage` key is harmless: the shallow `merge` leaves it as an
+      // inert extra property that no field reads and partialize never
+      // re-persists, so it ages out on the next write. The deliberate
+      // version-bump + `migrate` that formally strips it is #183 (I5.2).
       version: 3,
       partialize: (s) => ({
         username: s.username,
@@ -685,7 +666,6 @@ export const useAppState = create<AppState>()(
         activeExperimentId: s.activeExperimentId,
         activeSampleId: s.activeSampleId,
         activeExposureId: s.activeExposureId,
-        activePage: s.activePage,
         tutorialSeen: s.tutorialSeen,
         theme: s.theme,
       }),
@@ -695,13 +675,13 @@ export const useAppState = create<AppState>()(
 );
 
 /** persist `merge` — replicates zustand's default shallow merge
- *  ({ ...current, ...persisted }), then coerces a stale persisted
- *  `activePage` so it never enters the store. Adding a `merge` callback is
- *  NOT a `persist` version bump — `version` stays 3. */
+ *  ({ ...current, ...persisted }). Kept (rather than relying on zustand's
+ *  default) so the merge strategy is explicit and unit-testable. The former
+ *  `activePage` coercion is gone with the dual-nav model (I5.1, #182). Adding
+ *  a `merge` callback is NOT a `persist` version bump — `version` stays 3. */
 export function mergePersistedState(
   persisted: unknown,
   current: AppState,
 ): AppState {
-  const merged = { ...current, ...(persisted as Partial<AppState> | undefined) };
-  return { ...merged, activePage: coerceActivePage(merged.activePage) };
+  return { ...current, ...(persisted as Partial<AppState> | undefined) };
 }

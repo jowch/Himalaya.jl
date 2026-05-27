@@ -38,11 +38,12 @@ describe("Zustand state — permalink slots", () => {
     expect(useAppState.getState().resolving).toBe(true);
   });
 
+  // I5.1 (#182): setActivePage is deleted with the dual-nav model; the
+  // setActive{Experiment,Sample,Exposure} setters still clear staleUrlContext.
   it.each([
     ["setActiveExperiment", (id: number) => useAppState.getState().setActiveExperiment(id)],
     ["setActiveSample",     (id: number) => useAppState.getState().setActiveSample(id)],
     ["setActiveExposure",   (id: number) => useAppState.getState().setActiveExposure(id)],
-    ["setActivePage",       () => useAppState.getState().setActivePage("compare")],
   ])("%s clears staleUrlContext", (_label, fn) => {
     useAppState.getState().setStaleUrlContext({
       kind: "unknown_path", raw: "/foo/bar",
@@ -121,24 +122,24 @@ describe("Zustand state — permalink slots", () => {
     // never arms replace, so a sample-switch's PUSH mode is never clobbered.
     const { _resetEmitMode, consumeEmitMode } = await import("../src/lib/url/emitMode");
     _resetEmitMode();
-    useAppState.setState({ activeExposureId: 100, activePage: "compare" });
+    useAppState.setState({ activeExposureId: 100 });
     useAppState.getState().setActiveExposure(200);
     expect(consumeEmitMode()).toBe("push");
   });
 
-  it("setResolveSuccess commits page+ids atomically and arms replace", async () => {
+  it("setResolveSuccess commits ids atomically and arms replace", async () => {
+    // I5.1 (#182): the `page` slot is gone with the dual-nav model; the setter
+    // now commits only the active ids (+ clears stale, arms replace).
     const { _resetEmitMode, consumeEmitMode } = await import("../src/lib/url/emitMode");
     _resetEmitMode();
     useAppState.getState().setResolving(true);
     useAppState.getState().setStaleUrlContext({ kind: "unknown_path", raw: "/x" });
     useAppState.getState().setResolveSuccess({
-      page: "compare",
       experimentId: 7,
       sampleId: 11,
       exposureId: 22,
     });
     const s = useAppState.getState();
-    expect(s.activePage).toBe("compare");
     expect(s.activeExperimentId).toBe(7);
     expect(s.activeSampleId).toBe(11);
     expect(s.activeExposureId).toBe(22);

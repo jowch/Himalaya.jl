@@ -23,7 +23,6 @@ async function seedSession(page: Page): Promise<void> {
       state: {
         username: "alice", firstName: undefined, lastName: undefined,
         tutorialSeen: true, theme: "dark",
-        activePage: "compare",
         activeExperimentId: undefined,
         activeSampleId: undefined,
         activeExposureId: undefined,
@@ -109,7 +108,6 @@ test("bare / cold-mount redirects to the corpus contact sheet (§4.1)", async ({
   await page.addInitScript(() => {
     localStorage.setItem("himalaya-ui:state", JSON.stringify({
       state: {
-        activePage: "compare",
         activeExperimentId: 17,
         activeSampleId: 42,
         username: "test", firstName: undefined, lastName: undefined,

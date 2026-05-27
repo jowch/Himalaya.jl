@@ -187,7 +187,6 @@ async function seedSession(page: Page, username: string): Promise<void> {
     localStorage.setItem("himalaya-ui:state", JSON.stringify({
       state: {
         username: u,
-        activePage: "compare",
         tutorialSeen: true,
         theme: "dark",
         activeExperimentId: 1,

@@ -1,13 +1,6 @@
 import { useEffect } from "react";
-import { useLocation } from "react-router-dom";
-import { useAppState, type PageId } from "../state";
+import { useAppState } from "../state";
 import type { Sample } from "../api";
-
-// I3.6 (#177): Compare retired (Index #181, Inspect #163 before it). The only
-// PageId left is the inert "none" sentinel, so the ArrowLeft/Right page-step
-// clamps to it and is always a no-op. The whole page-tab step retires with the
-// dual-nav model in I5.1.
-const TAB_ORDER: PageId[] = ["none"];
 
 /**
  * useGlobalShortcuts — wires the keyboard shortcuts described in the plan.
@@ -18,9 +11,13 @@ const TAB_ORDER: PageId[] = ["none"];
  *
  * Shortcuts are suppressed when typing in an input/textarea. The modal itself
  * owns its own Esc/Enter/Backspace behavior; we don't touch them here.
+ *
+ * I5.1 (#182): the ArrowLeft/Right "page-tab step" is gone with the dual-nav
+ * `activePage` model — there are no legacy page tabs left to step between, so
+ * the arrow keys are no longer bound here (corpus surfaces like the loupe own
+ * them outright). `useLocation` is no longer needed.
  */
 export function useGlobalShortcuts(samplesInExperiment: Sample[] | undefined): void {
-  const location = useLocation();
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
       const t = e.target as HTMLElement | null;
@@ -53,27 +50,6 @@ export function useGlobalShortcuts(samplesInExperiment: Sample[] | undefined): v
         return;
       }
 
-      // ← / → → prev / next page tab (no wrap; dialogs handle their own arrows)
-      if ((e.key === "ArrowLeft" || e.key === "ArrowRight") &&
-          !e.metaKey && !e.ctrlKey && !e.altKey) {
-        const insideDialog = (e.target as HTMLElement)?.closest('[role="dialog"]') != null;
-        if (insideDialog) return;
-        // Corpus surfaces (/samples* — contact sheet, loupe) bind the arrow
-        // keys to their own in-page navigation; the legacy page-tab step must
-        // not also fire there, or it silently mutates `activePage` out from
-        // under the user. Future corpus routes (/sample/, /series) extend this.
-        if (location.pathname.startsWith("/samples")) return;
-        const s   = useAppState.getState();
-        const cur = TAB_ORDER.indexOf(s.activePage);
-        const step = e.key === "ArrowRight" ? 1 : -1;
-        const next = Math.max(0, Math.min(TAB_ORDER.length - 1, cur + step));
-        if (next !== cur) {
-          e.preventDefault();
-          s.setActivePage(TAB_ORDER[next]!);
-        }
-        return;
-      }
-
       // `,` / `.` → prev / next sample within experiment (no wrap)
       if ((e.key === "," || e.key === ".") && !e.metaKey && !e.ctrlKey && !e.altKey) {
         const samples = samplesInExperiment ?? [];
@@ -91,5 +67,5 @@ export function useGlobalShortcuts(samplesInExperiment: Sample[] | undefined): v
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [samplesInExperiment, location.pathname]);
+  }, [samplesInExperiment]);
 }

@@ -11,36 +11,45 @@ function wrapperAt(path: string) {
   };
 }
 
-// Regression guard (#161): the loupe (a corpus surface) binds the arrow keys
-// to exposure-flipping. `useGlobalShortcuts` is hoisted app-wide and also
-// binds the arrows to a legacy page-tab step (`setActivePage`). Both listeners
-// sit on `window`, so the loupe cannot defend itself with stopPropagation —
-// the page-tab step must be gated out of corpus routes here instead.
-describe("useGlobalShortcuts — arrow-key page-tab step gating", () => {
+// I5.1 (#182): the dual-nav `activePage` model + its ArrowLeft/Right page-tab
+// step are deleted. The arrow keys are no longer bound by useGlobalShortcuts,
+// so corpus surfaces (e.g. the loupe at /samples/loupe/:id) own them outright.
+// These tests guard against a regression that re-binds them globally.
+describe("useGlobalShortcuts — arrow keys are unbound (no page-tab step)", () => {
   beforeEach(() => {
-    useAppState.setState({ activePage: "none" });
+    useAppState.setState({ theme: "dark", activeSampleId: undefined });
   });
 
-  it("does not step activePage on a corpus route (the loupe owns the arrows there)", () => {
+  it("does not mutate any nav state on a corpus route (loupe owns the arrows)", () => {
+    const before = useAppState.getState();
     renderHook(() => useGlobalShortcuts(undefined), {
       wrapper: wrapperAt("/samples/loupe/7"),
     });
     fireEvent.keyDown(document.body, { key: "ArrowRight" });
-    expect(useAppState.getState().activePage).toBe("none");
+    fireEvent.keyDown(document.body, { key: "ArrowLeft" });
+    const after = useAppState.getState();
+    // The hook must not touch the active ids on an arrow press.
+    expect(after.activeSampleId).toBe(before.activeSampleId);
+    expect(after.activeExperimentId).toBe(before.activeExperimentId);
   });
 
-  it("arrow keys are a no-op on a legacy route now that every surface is retired (#177)", () => {
-    // I3.6 (#177): Compare retired (Index #181 / Inspect #163 before it). The
-    // only PageId left is the inert "none" sentinel → TAB_ORDER = ["none"], so
-    // ArrowRight/ArrowLeft clamp to it and never step. (The page-tab step + the
-    // whole dual-nav model retire in I5.1.) A stale `/compare/all` URL also
-    // redirects to /series at the router, so it never mounts AppShell anyway.
+  it("is a no-op on a non-corpus route too (no global arrow binding remains)", () => {
     renderHook(() => useGlobalShortcuts(undefined), {
-      wrapper: wrapperAt("/compare/all"),
+      wrapper: wrapperAt("/totally/unknown"),
     });
-    fireEvent.keyDown(document.body, { key: "ArrowRight" });
-    expect(useAppState.getState().activePage).toBe("none");
-    fireEvent.keyDown(document.body, { key: "ArrowLeft" });
-    expect(useAppState.getState().activePage).toBe("none");
+    // Should neither throw nor mutate state.
+    expect(() => {
+      fireEvent.keyDown(document.body, { key: "ArrowRight" });
+      fireEvent.keyDown(document.body, { key: "ArrowLeft" });
+    }).not.toThrow();
+  });
+
+  it("still toggles theme on T (kept shortcut)", () => {
+    renderHook(() => useGlobalShortcuts(undefined), {
+      wrapper: wrapperAt("/samples"),
+    });
+    expect(useAppState.getState().theme).toBe("dark");
+    fireEvent.keyDown(document.body, { key: "T" });
+    expect(useAppState.getState().theme).toBe("light");
   });
 });

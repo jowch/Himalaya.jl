@@ -39,7 +39,6 @@ describe("App smoke", () => {
       activeExperimentId: 1,
       activeSampleId: 10,
       activeExposureId: undefined,
-      activePage: "none",
       tutorialSeen: true,
       theme: "dark",
       hoveredIndexId: undefined,
@@ -79,17 +78,19 @@ describe("App smoke", () => {
     });
   });
 
-  it("redirects '/' to the corpus contact sheet (Index retired, #181)", async () => {
-    // I4.4 (#181): the three-card Index at "/" is gone. A cold "/" lands on
-    // the corpus contact sheet (/samples) per §4.1 — no workspace grid / plot
-    // title / tab rocker.
+  it("redirects '/' to the corpus contact sheet under the single shell (#181/#182)", async () => {
+    // I4.4 (#181): the three-card Index at "/" is gone — a cold "/" lands on
+    // the corpus contact sheet (/samples) per §4.1. I5.1 (#182): there is now a
+    // single shell — assert the CorpusShell is mounted (the retired AppShell's
+    // workspace-grid / tab-rocker were deleted, so null-checks on them would be
+    // vacuous; assert the surviving shell instead).
     renderApp();
     await waitFor(() =>
       expect(screen.getByTestId("samples-page")).toBeInTheDocument(),
       { timeout: 3000 },
     );
-    expect(screen.queryByTestId("workspace-grid")).toBeNull();
-    expect(screen.queryByTestId("tab-rocker")).toBeNull();
+    expect(screen.getByTestId("corpus-shell")).toBeInTheDocument();
+    expect(screen.queryByTestId("app-shell")).toBeNull();
   });
 
   it("shows the onboarding overlay when no user is set", () => {

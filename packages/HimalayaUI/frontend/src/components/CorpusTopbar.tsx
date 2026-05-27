@@ -20,12 +20,20 @@ const STAGES: readonly Stage[] = [
 
 /**
  * CorpusTopbar — the topbar for the redesigned corpus-scoped shell: a
- * corpus-level wordmark, the three workflow stage-tabs, and the Beamtime
- * facet chip.
+ * corpus-level wordmark, the three workflow stage-tabs, and the Beamtime facet
+ * chip. This matches the corpus-app-shell mockup exactly (spec
+ * 2026-05-17-corpus-app-shell-design.md:121) — no utility controls.
  *
  * The Beamtime chip is an experiment picker: it reads and writes the
  * `?beamtime=<experiment_id>` URL query that the /samples contact sheet
  * (#160) filters on. The URL is the only channel — no prop coupling.
+ *
+ * I5.1 (#182): the legacy AppHeader/UtilityCluster (theme toggle + switch-user
+ * avatar) are retired with the dual-nav shell, and are NOT re-homed here — the
+ * mockup omits them. The `T` theme shortcut (useGlobalShortcuts) still toggles
+ * theme; the `username` identity state + persist survive untouched. A
+ * multiplayer switch-user control + the theme-toggle button are deferred to a
+ * follow-up issue (UI relocation, not in I5.1 scope).
  */
 export function CorpusTopbar(): JSX.Element {
   const [searchParams, setSearchParams] = useSearchParams();

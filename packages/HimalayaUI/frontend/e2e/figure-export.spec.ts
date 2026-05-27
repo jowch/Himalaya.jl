@@ -57,7 +57,6 @@ async function seedState(page: import("@playwright/test").Page): Promise<void> {
         activeExperimentId: 7,
         activeSampleId: 10,
         activeExposureId: 1,
-        activePage: "compare",
         theme: "dark",
         // Other Zustand fields fall back to defaults from state.ts.
       },
