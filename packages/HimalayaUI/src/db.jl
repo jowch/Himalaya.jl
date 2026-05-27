@@ -1,6 +1,9 @@
 using SQLite, DBInterface, Tables
 using Dates: now, UTC, format, @dateformat_str
 
+# Sentinel marker name for the I3.1 comparison→series data migration (#171).
+const MIGRATION_COMPARISONS_TO_SERIES = "comparisons_to_series"
+
 const SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
     id         INTEGER PRIMARY KEY,
@@ -373,6 +376,12 @@ function migrate_schema!(db::SQLite.DB)
     # `migrate_comparisons_to_series!` has a natural slot after this. New
     # tables only — the `comparison*` tables are never renamed (§2.1).
     migrate_series!(db)
+
+    # I3.1 (#171): copy the comparison corpus into the series* tables. MUST run
+    # after migrate_series! (tables + schema_migrations sentinel exist) and after
+    # the two compare migrations above (reads their columns). Own transaction;
+    # sentinel-gated; raw-INSERT user_actions, never apply_event! (no broadcast).
+    migrate_comparisons_to_series!(db)
 
     # PR #107 left the on-disk experiment.toml AND the in-DB experiments.config
     # blob using the legacy `[manifest].label/name` shape. The deprecation
@@ -822,6 +831,42 @@ function migrate_series!(db::SQLite.DB)
             name        TEXT PRIMARY KEY,
             applied_at  TEXT
         )""")
+    nothing
+end
+
+"""
+    migrate_comparisons_to_series!(db)
+
+Event-sourced copy of every `comparisons` row into the `series*` tables
+(master plan §6.1, issue #171). Runs at `migrate_schema!` time, after
+`migrate_series!` (so the `series*` tables and `schema_migrations` sentinel
+exist) and after `migrate_compare_view_choices!`/`migrate_compare_relax_nullability!`
+(it reads the columns those add). Wrapped in its own `SQLite.transaction`.
+
+Idempotent via the `schema_migrations` sentinel (gate at start, marker row
+written LAST inside the same transaction — the gate flips only on a fully
+committed copy). NEVER calls `apply_event!` (its public method broadcasts; a
+migration must not fan out N replay-as-reruns). Raw-`INSERT`s `user_actions`
+rows with `client_op_id`/`client_id` NULL — so no `idempotent_responses` cache
+rows are written and the partial unique index does not apply.
+"""
+function migrate_comparisons_to_series!(db::SQLite.DB)
+    # Gate: skip if already applied. A single read before the transaction is
+    # sufficient — migrate_schema! runs single-threaded inside open_db, before
+    # serve accepts connections, so there is no concurrent opener to race.
+    already = Tables.rowtable(DBInterface.execute(db,
+        "SELECT 1 FROM schema_migrations WHERE name = ?",
+        [MIGRATION_COMPARISONS_TO_SERIES]))
+    isempty(already) || return nothing
+
+    SQLite.transaction(db) do
+        # (Task 2 fills in the per-comparison copy loop here.)
+
+        # Sentinel marker LAST, inside the same transaction.
+        DBInterface.execute(db,
+            "INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)",
+            [MIGRATION_COMPARISONS_TO_SERIES, comparison_now_iso()])
+    end
     nothing
 end
 
