@@ -14,7 +14,7 @@ React 18 + Vite + TypeScript strict + TailwindCSS 4. TanStack Query for server s
 | Phase palette | `phases.ts` | phase → color mapping |
 | Tailwind theme | `styles.css` | `@theme { --color-* … }` |
 | Components | `components/` | See [components/AGENTS.md](components/AGENTS.md) |
-| Pages | `pages/` | `ComparePage`, `ComparePageEdit` (Index/Inspect inline into AppShell) |
+| Pages | `pages/` | `SamplesPage`, `LoupePage`, `FocusWorkspacePage`, `SeriesFolioPage`, `SeriesScopingPage`, `SeriesBuilderPage` (all under the single `CorpusShell`; legacy Index/Inspect/Compare pages + `AppShell` retired in Phases 3–5) |
 | Hooks | `hooks/` | `useFocusTrap`, `useGlobalShortcuts`, `useStateFromUrl`, … |
 | Library | `lib/` | URL helpers, plot helpers, comparison helpers, figure export |
 | Mutation queue | `lib/queue/` | See [lib/queue/AGENTS.md](lib/queue/AGENTS.md) |
