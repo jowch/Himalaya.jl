@@ -2,9 +2,10 @@ import type { MutationCache } from "@tanstack/react-query";
 import { ConflictError } from "../../api";
 
 /**
- * Single-source-of-truth bridge from `comparison_save` mutation errors to
- * the Zustand `pendingConflict` slot (Phase 12 follow-up; queue-reviewer
- * Fix 1 + Fix 2).
+ * Single-source-of-truth bridge from conflict-bearing mutation errors
+ * (`comparison_save` submit, `series_commit` plate-commit) to the Zustand
+ * `pendingConflict` slot (Phase 12 follow-up; queue-reviewer Fix 1 + Fix 2;
+ * series-commit widening I3.5b).
  *
  * Why a MutationCache subscriber, not a hook
  * ------------------------------------------
@@ -38,6 +39,14 @@ import { ConflictError } from "../../api";
  */
 
 const COMPARISON_SAVE_KIND = "comparison_save";
+// I3.5b — series plate-commit is the only series mutation that can 409
+// (recipe-save `series_save` never reads `expected_content_hash`). The bridge
+// accepts both conflict-bearing kinds; `series_save` is deliberately excluded.
+const SERIES_COMMIT_KIND = "series_commit";
+const CONFLICT_KINDS: ReadonlySet<string> = new Set([
+  COMPARISON_SAVE_KIND,
+  SERIES_COMMIT_KIND,
+]);
 
 /** mutationIds we have already bridged to the slot. Module-scoped so detach
  *  + re-attach (StrictMode, HMR) does not re-fire on a still-cached error. */
@@ -71,9 +80,10 @@ export function attachConflictBridge(
     const mutation = event.mutation;
     if (mutation.state.status !== "error") return;
     const key = mutation.options.mutationKey;
-    // mutationKey is `[mutator.kind]` — see useQueueMutation. The
-    // saveComparison mutator's kind is "comparison_save".
-    if (!Array.isArray(key) || key[0] !== COMPARISON_SAVE_KIND) return;
+    // mutationKey is `[mutator.kind]` — see useQueueMutation. Conflict-bearing
+    // kinds: "comparison_save" (submit) and "series_commit" (plate commit).
+    // "series_save" (recipe-save PATCH) is excluded — it never 409s.
+    if (!Array.isArray(key) || typeof key[0] !== "string" || !CONFLICT_KINDS.has(key[0])) return;
     const err = mutation.state.error;
     if (!(err instanceof ConflictError)) return;
     // Dedupe: each `Mutation` instance has a stable `mutationId`. We bridge
