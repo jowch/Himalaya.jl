@@ -59,8 +59,12 @@ describe("CorpusTopbar", () => {
     const samples = screen.getByTestId("stage-tab-samples");
     expect(samples).toHaveAttribute("href", "/samples");
     expect(samples).toHaveAttribute("data-active", "true");
+    // Index remains inert until Phase 4; Series is now a live link (#173 / I3.3)
+    // but inactive on /samples.
     expect(screen.getByTestId("stage-tab-index")).toBeDisabled();
-    expect(screen.getByTestId("stage-tab-series")).toBeDisabled();
+    const series = screen.getByTestId("stage-tab-series");
+    expect(series).toHaveAttribute("href", "/series");
+    expect(series).not.toHaveAttribute("data-active");
   });
 
   it("lists experiments in the Beamtime chip once they load", async () => {

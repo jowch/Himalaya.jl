@@ -1,4 +1,4 @@
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { useExperiments } from "../queries";
 
 interface Stage {
@@ -8,13 +8,14 @@ interface Stage {
   to?: string;
 }
 
-// During the Phase-1 migration only the Samples surface exists in the new
-// shell. Index and Series are inert tabs until Phases 4 and 3 build those
-// surfaces (redesign master plan §2.4).
+// Samples (#160) and Series (#173) are live surfaces. Index stays inert until
+// Phase 4 builds the focus workspace under a corpus path (redesign master
+// plan §2.4). A tab with a `to` renders as a Link and derives its active state
+// from the current route; a tab without one renders as a disabled button.
 const STAGES: readonly Stage[] = [
   { id: "samples", label: "Samples", to: "/samples" },
   { id: "index", label: "Index" },
-  { id: "series", label: "Series" },
+  { id: "series", label: "Series", to: "/series" },
 ];
 
 /**
@@ -28,6 +29,7 @@ const STAGES: readonly Stage[] = [
  */
 export function CorpusTopbar(): JSX.Element {
   const [searchParams, setSearchParams] = useSearchParams();
+  const { pathname } = useLocation();
   const experimentsQuery = useExperiments();
   const beamtime = searchParams.get("beamtime") ?? "";
 
@@ -64,16 +66,21 @@ export function CorpusTopbar(): JSX.Element {
               }
             />
           );
+          // Active = this tab's path is the current route's prefix. Derived
+          // from the router (not hardcoded) now that multiple stages are live.
+          const isActive = s.to !== undefined && pathname.startsWith(s.to);
           return s.to !== undefined ? (
             <Link
               key={s.id}
               to={s.to}
               data-testid={`stage-tab-${s.id}`}
-              // Always active in #155 — Samples is the only live stage-tab.
-              // When Index/Series go live (#3.x/#4.x), derive this from the route.
-              data-active="true"
-              className="px-2.5 py-1.5 rounded text-xs font-semibold uppercase
-                         tracking-wide text-ink bg-paper-sunk no-underline"
+              data-active={isActive ? "true" : undefined}
+              aria-current={isActive ? "page" : undefined}
+              className={
+                "px-2.5 py-1.5 rounded text-xs font-semibold uppercase " +
+                "tracking-wide no-underline " +
+                (isActive ? "text-ink bg-paper-sunk" : "text-ink-faint")
+              }
             >
               {dot}
               {s.label}
