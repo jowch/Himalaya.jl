@@ -79,10 +79,13 @@ describe("useAppState", () => {
     expect(useAppState.getState().tutorialSeen).toBe(true);
   });
 
-  it("theme defaults to 'dark' and can toggle", () => {
-    expect(useAppState.getState().theme).toBe("dark");
-    useAppState.getState().setTheme("light");
-    expect(useAppState.getState().theme).toBe("light");
+  // R0a (#221): "The Print" is the single identity. The `theme` field,
+  // `setTheme`, and `ThemeId` were removed; the app renders Print by default
+  // with no toggle. Guard against a regression that re-adds the field.
+  it("has no `theme` field or `setTheme` action (Print is the single identity)", () => {
+    const s = useAppState.getState() as Record<string, unknown>;
+    expect("theme" in s).toBe(false);
+    expect("setTheme" in s).toBe(false);
   });
 
   it("navModal state is ephemeral — open/close + step transitions", () => {
@@ -100,7 +103,6 @@ describe("useAppState", () => {
     useAppState.getState().setActiveExperiment(4);
     useAppState.setState({ activeSampleId: 12 });
     useAppState.getState().setTutorialSeen(true);
-    useAppState.getState().setTheme("light");
     const raw = localStorage.getItem(LS_KEY);
     const parsed = JSON.parse(raw!);
     expect(parsed.state.username).toBe("alice");
@@ -109,7 +111,8 @@ describe("useAppState", () => {
     // I5.1 (#182): `activePage` is no longer in the persisted partition.
     expect(parsed.state.activePage).toBeUndefined();
     expect(parsed.state.tutorialSeen).toBe(true);
-    expect(parsed.state.theme).toBe("light");
+    // R0a (#221): `theme` is no longer persisted (field removed).
+    expect(parsed.state.theme).toBeUndefined();
   });
 
   it("does NOT persist ephemeral UI fields (navModal*, hoveredIndexId)", () => {

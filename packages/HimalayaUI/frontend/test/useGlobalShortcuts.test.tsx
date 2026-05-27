@@ -17,7 +17,7 @@ function wrapperAt(path: string) {
 // These tests guard against a regression that re-binds them globally.
 describe("useGlobalShortcuts — arrow keys are unbound (no page-tab step)", () => {
   beforeEach(() => {
-    useAppState.setState({ theme: "dark", activeSampleId: undefined });
+    useAppState.setState({ activeSampleId: undefined });
   });
 
   it("does not mutate any nav state on a corpus route (loupe owns the arrows)", () => {
@@ -44,12 +44,19 @@ describe("useGlobalShortcuts — arrow keys are unbound (no page-tab step)", () 
     }).not.toThrow();
   });
 
-  it("still toggles theme on T (kept shortcut)", () => {
+  // R0a (#221): the `T` theme-toggle shortcut is retired with the dark theme.
+  // Pressing T must no longer mutate any store state (no `theme` field exists).
+  it("does not bind T (theme toggle retired with the dark theme)", () => {
     renderHook(() => useGlobalShortcuts(undefined), {
       wrapper: wrapperAt("/samples"),
     });
-    expect(useAppState.getState().theme).toBe("dark");
-    fireEvent.keyDown(document.body, { key: "T" });
-    expect(useAppState.getState().theme).toBe("light");
+    const before = useAppState.getState();
+    expect("theme" in (before as Record<string, unknown>)).toBe(false);
+    expect(() => {
+      fireEvent.keyDown(document.body, { key: "T" });
+      fireEvent.keyDown(document.body, { key: "t" });
+    }).not.toThrow();
+    // No store mutation from T.
+    expect(useAppState.getState().activeSampleId).toBe(before.activeSampleId);
   });
 });
