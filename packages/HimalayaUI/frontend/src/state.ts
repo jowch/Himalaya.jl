@@ -17,6 +17,18 @@ import {
 } from "./lib/comparison/draftFactories";
 import { cyclePeakDisplay } from "./lib/comparison/peakCycle";
 import { emitReplaceNext } from "./lib/url/emitMode";
+import {
+  loadSeriesDraftFromSession,
+  persistSeriesDraftToSession,
+  type SeriesDraftSlot,
+} from "./lib/series/seriesDraft";
+import {
+  fromSeries,
+  addSampleToRecipe,
+  removeRecipeRow,
+  reorderRecipe,
+} from "./lib/series/seriesDraftFactories";
+import type { OrderRule, Series } from "./api";
 
 export const LS_KEY = "himalaya-ui:state";
 
@@ -119,6 +131,16 @@ export interface AppState {
    * Tab close loses the draft, which is acceptable for v1 per the spec.
    */
   activeDraft: ActiveDraftSlot;
+
+  /**
+   * Series-builder draft slot (I3.5b). A SEPARATE namespace from `activeDraft`
+   * — a series recipe edits `series_samples` membership, a different shape from
+   * a comparison's plate, and overloading one slot would let the two flows
+   * clobber each other across tabs. Single slot (one series in edit mode per
+   * tab); mirrored to sessionStorage with its own schema key (see
+   * `lib/series/seriesDraft.ts`); NOT persisted in localStorage / partialize.
+   */
+  seriesDraft: SeriesDraftSlot;
 
   /**
    * Compare-page review-mode annotation toggles (Plan §Phase 9, Task 9.3).
@@ -224,6 +246,25 @@ export interface AppState {
   cyclePeakDisplayForMember: (memberIdx: number, peakId: number, altKey: boolean) => void;
   discardDraft: () => void;
 
+  // ── Series-builder draft actions (I3.5b) ───────────────────────────────
+  /**
+   * Seed the series draft from a loaded series. Idempotent: a no-op when a
+   * draft for the same series id is already active (so a hydration effect can
+   * re-run without clobbering an in-progress edit).
+   */
+  startSeriesDraftFromSeries: (series: Series) => void;
+  discardSeriesDraft: () => void;
+  setSeriesDraftTitle: (title: string) => void;
+  setSeriesDraftDescription: (description: string) => void;
+  setSeriesOrderingVariable: (value: string | null) => void;
+  setSeriesOrderRule: (rule: OrderRule) => void;
+  /** Append a sample to the recipe (negative placeholder id). No-op if no draft. */
+  addSeriesSample: (sampleId: number) => void;
+  /** Remove a recipe row by its local id. No-op if no draft. */
+  removeSeriesSample: (rowId: number) => void;
+  /** Move a recipe row from index `from` to index `to`. No-op if no draft. */
+  reorderSeriesSample: (from: number, to: number) => void;
+
   // Compare-page Phase 9 review-mode UI actions
   /**
    * Set the grouping mode on the active draft (C-4). Creates an empty draft
@@ -275,10 +316,23 @@ function withDraftMirror(
   };
 }
 
+/**
+ * Series-draft equivalent of `withDraftMirror` (I3.5b) — mirrors every
+ * `seriesDraft` change to sessionStorage under its own schema key, for the
+ * same reasons (sessionStorage + separate version).
+ */
+function withSeriesDraftMirror(set: (partial: Partial<AppState>) => void) {
+  return (next: SeriesDraftSlot): void => {
+    set({ seriesDraft: next });
+    persistSeriesDraftToSession(next);
+  };
+}
+
 export const useAppState = create<AppState>()(
   persist(
     (set, get) => {
       const setDraft = withDraftMirror(set, get);
+      const setSeriesDraft = withSeriesDraftMirror(set);
       return {
         username: undefined,
         firstName: undefined,
@@ -300,6 +354,8 @@ export const useAppState = create<AppState>()(
         // Rehydrate the draft from sessionStorage at module-init time so
         // a tab reload restores edit-in-progress.
         activeDraft: loadDraftFromSession(),
+        // I3.5b — same rehydration for the series-builder draft.
+        seriesDraft: loadSeriesDraftFromSession(),
 
         // Phase 9 — review-mode UI defaults. All per-tab; not persisted.
         showPeakTicks: true,
@@ -478,6 +534,50 @@ export const useAppState = create<AppState>()(
           setDraft({ ...cur, members });
         },
         discardDraft: () => setDraft(null),
+
+        // ── Series-builder draft actions (I3.5b) ─────────────────────────
+        startSeriesDraftFromSeries: (series) => {
+          const cur = get().seriesDraft;
+          // Idempotent: keep an in-progress edit for the same series id.
+          if (cur !== null && cur.id === series.id) return;
+          setSeriesDraft(fromSeries(series));
+        },
+        discardSeriesDraft: () => setSeriesDraft(null),
+        setSeriesDraftTitle: (title) => {
+          const cur = get().seriesDraft;
+          if (cur === null) return;
+          setSeriesDraft({ ...cur, title });
+        },
+        setSeriesDraftDescription: (description) => {
+          const cur = get().seriesDraft;
+          if (cur === null) return;
+          setSeriesDraft({ ...cur, description });
+        },
+        setSeriesOrderingVariable: (value) => {
+          const cur = get().seriesDraft;
+          if (cur === null) return;
+          setSeriesDraft({ ...cur, orderingVariable: value });
+        },
+        setSeriesOrderRule: (rule) => {
+          const cur = get().seriesDraft;
+          if (cur === null) return;
+          setSeriesDraft({ ...cur, orderRule: rule });
+        },
+        addSeriesSample: (sampleId) => {
+          const cur = get().seriesDraft;
+          if (cur === null) return;
+          setSeriesDraft(addSampleToRecipe(cur, sampleId));
+        },
+        removeSeriesSample: (rowId) => {
+          const cur = get().seriesDraft;
+          if (cur === null) return;
+          setSeriesDraft(removeRecipeRow(cur, rowId));
+        },
+        reorderSeriesSample: (from, to) => {
+          const cur = get().seriesDraft;
+          if (cur === null) return;
+          setSeriesDraft(reorderRecipe(cur, from, to));
+        },
 
         // Phase 9 / C-4 — view-choice actions
         setDraftViewGroupingMode: (mode) => {
