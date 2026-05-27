@@ -27,7 +27,9 @@ const ORDER_CLASS: Record<Slot, Record<number, string>> = {
 };
 
 /**
- * WorkspaceGrid — shared three-column layout for IndexPage and InspectPage.
+ * WorkspaceGrid — shared three-column layout. Its original IndexPage /
+ * InspectPage consumers are retired (#181 / #163); Compare is the surviving
+ * consumer (this component itself is swept with the dual-nav model in I5.1).
  *
  *   < 1400px  — single column stacked. Order controlled by `mobileOrder`.
  *   ≥ 1400px  — three columns: minmax(320px, 22fr) | 56fr | minmax(320px, 22fr)
