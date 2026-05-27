@@ -318,16 +318,16 @@ describe("saveComparisonMutator — useQueueMutation suppresses toast on 409 Con
     expect(result.current.error).toBeInstanceOf(ConflictError);
   });
 
-  it("on 409, the App-level conflictBridge populates Zustand `pendingConflict` (Phase 12 bridge)", async () => {
+  it("on 409, the conflictBridge does NOT populate `pendingConflict` (Compare retired, #177)", async () => {
+    // I3.6: the Compare page is gone, so the bridge's `comparison_save` arm
+    // was removed. The mutator still THROWS a typed ConflictError on 409 (it
+    // remains registered for foreign-event replay), and the toast is still
+    // suppressed — but a comparison_save 409 no longer reaches `pendingConflict`
+    // (no Compare modal to open). Only `series_commit` bridges now.
     const { client, wrapper } = withClient();
     mockFetch409();
-    // Reset slot + bridge state in case other tests left them set.
     useAppState.setState({ pendingConflict: null });
     _resetConflictBridgeForTest();
-    // Mount the bridge for this test, mirroring App.tsx. Lifting it out of
-    // useSaveComparison removed the per-hook race; the contract pinned here
-    // is "a 409 on a comparison_save mutation lands in the slot via the
-    // App-level subscriber" — independent of how many places mount the hook.
     const detachBridge = attachConflictBridge(
       client.getMutationCache(),
       useAppState.getState().setPendingConflict,
@@ -340,17 +340,12 @@ describe("saveComparisonMutator — useQueueMutation suppresses toast on 409 Con
       });
     });
     await waitFor(() => expect(result.current.isPending).toBe(false));
-    // Bridge fired: the typed throw is now in Zustand for the modal to read.
-    await waitFor(() => {
-      const slot = useAppState.getState().pendingConflict;
-      expect(slot).toBeInstanceOf(ConflictError);
-    });
-    const slot = useAppState.getState().pendingConflict;
-    expect(slot?.current_hash).toBe("sha256:server");
-    expect(slot?.current_state?.id).toBe(42);
-    // Toast still suppressed (regression on Phase 3 follow-up).
+    // The typed ConflictError still surfaces on the mutation result …
+    expect(result.current.error).toBeInstanceOf(ConflictError);
+    // … but the bridge does not route it to the slot (Compare arm removed).
+    expect(useAppState.getState().pendingConflict).toBeNull();
+    // Toast still suppressed (409 is not a validation-class error).
     expect(toastCalls).toEqual([]);
-    // Cleanup so subsequent tests start clean.
     detachBridge();
     useAppState.setState({ pendingConflict: null });
   });

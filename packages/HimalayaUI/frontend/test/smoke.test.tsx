@@ -39,7 +39,7 @@ describe("App smoke", () => {
       activeExperimentId: 1,
       activeSampleId: 10,
       activeExposureId: undefined,
-      activePage: "compare",
+      activePage: "none",
       tutorialSeen: true,
       theme: "dark",
       hoveredIndexId: undefined,
@@ -74,9 +74,8 @@ describe("App smoke", () => {
         sample_id: 10, sample_name: "s1",
         exposure_id: undefined, exposure_filename: undefined,
       },
-      // Compare sidebar listing (the surviving-surface test mounts Compare).
-      "/api/experiments/1/comparisons": [],
-      "/api/users/me/comparison-pins": [],
+      // Series folio listing — a /compare* URL now redirects here (#177).
+      "/api/series": [],
     });
   });
 
@@ -99,9 +98,10 @@ describe("App smoke", () => {
     expect(screen.getByTestId("onboarding-overlay")).toBeInTheDocument();
   });
 
-  it("the Compare page mounts at its own URL (surviving AppShell surface, #181)", async () => {
+  it("a /compare* URL redirects to the series folio (Compare retired, #177)", async () => {
     renderAppAt("/experiments/1/compare");
-    await waitFor(() => expect(screen.getByTestId("compare-page")).toBeInTheDocument(),
+    await waitFor(() => expect(screen.getByTestId("series-folio-page")).toBeInTheDocument(),
       { timeout: 3000 });
+    expect(screen.queryByTestId("compare-page")).toBeNull();
   });
 });

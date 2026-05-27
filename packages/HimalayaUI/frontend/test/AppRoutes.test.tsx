@@ -40,7 +40,7 @@ describe("AppRoutes — nav-bridge shell selection", () => {
     // Reset the ephemeral URL-resolution fields too — a prior test that
     // parked the store on a stale path must not leak into the next.
     useAppState.setState({
-      activePage: "compare",
+      activePage: "none",
       activeExperimentId: undefined,
       staleUrlContext: null,
       resolving: false,
@@ -54,12 +54,26 @@ describe("AppRoutes — nav-bridge shell selection", () => {
     expect(screen.queryByTestId("app-shell")).toBeNull();
   });
 
-  it("mounts AppShell (not the corpus shell) at a compare URL", async () => {
-    // I4.4 (#181): /index* is retired (redirects out). A compare URL is the
-    // surviving legacy surface that mounts AppShell.
-    renderRoutes("/compare/all");
+  it("mounts AppShell (not the corpus shell) at the stale catch-all", async () => {
+    // I3.6 (#177): Compare is retired, so the only AppShell route left is the
+    // `*` catch-all (stale/unknown paths). An unknown path mounts AppShell and
+    // renders the StaleUrlPage body; corpus surfaces stay on CorpusShell.
+    renderRoutes("/totally/unknown");
     expect(await screen.findByTestId("app-shell")).toBeInTheDocument();
     expect(screen.queryByTestId("corpus-shell")).toBeNull();
+  });
+
+  it("redirects a /compare* URL to the series folio (Compare retired, #177)", async () => {
+    renderRoutes("/compare/all");
+    expect(await screen.findByTestId("series-folio-page")).toBeInTheDocument();
+    expect(screen.queryByTestId("app-shell")).toBeNull();
+    expect(screen.queryByTestId("compare-page")).toBeNull();
+  });
+
+  it("redirects an experiment-scoped /compare URL to the series folio (#177)", async () => {
+    renderRoutes("/experiments/7/compare/123");
+    expect(await screen.findByTestId("series-folio-page")).toBeInTheDocument();
+    expect(screen.queryByTestId("compare-page")).toBeNull();
   });
 
   it("does not flag /samples as a stale path", async () => {
@@ -78,9 +92,10 @@ describe("AppRoutes — nav-bridge shell selection", () => {
       return (
         <>
           <button data-testid="go-samples" onClick={() => navigate("/samples")}>samples</button>
-          {/* I4.4 (#181): /index is retired; a compare URL is the surviving
-              legacy (AppShell) surface to cross to. */}
-          <button data-testid="go-compare" onClick={() => navigate("/compare/all")}>compare</button>
+          {/* I3.6 (#177): Compare is retired (redirects out), so the only
+              surviving AppShell surface is the `*` catch-all (stale/unknown
+              paths). Cross to a stale path to exercise the AppShell boundary. */}
+          <button data-testid="go-stale" onClick={() => navigate("/totally/unknown")}>stale</button>
         </>
       );
     }
@@ -99,8 +114,8 @@ describe("AppRoutes — nav-bridge shell selection", () => {
     expect(await screen.findByTestId("corpus-shell")).toBeInTheDocument();
     expect(screen.queryByTestId("app-shell")).toBeNull();
 
-    // Cross to a legacy route — AppShell should mount, CorpusShell should unmount.
-    fireEvent.click(screen.getByTestId("go-compare"));
+    // Cross to the legacy catch-all — AppShell mounts, CorpusShell unmounts.
+    fireEvent.click(screen.getByTestId("go-stale"));
     await waitFor(() => {
       expect(screen.getByTestId("app-shell")).toBeInTheDocument();
       expect(screen.queryByTestId("corpus-shell")).toBeNull();
@@ -118,7 +133,7 @@ describe("AppRoutes — nav-bridge shell selection", () => {
 describe("AppRoutes — I4.4 index cutover redirects", () => {
   beforeEach(() => {
     useAppState.setState({
-      activePage: "compare",
+      activePage: "none",
       activeExperimentId: undefined,
       activeSampleId: undefined,
       staleUrlContext: null,
@@ -174,11 +189,10 @@ describe("AppRoutes — I4.4 index cutover redirects", () => {
     expect(await screen.findByTestId("samples-page")).toBeInTheDocument();
   });
 
-  it("an unknown path renders StaleUrlPage, not a bounce to Compare (#181 regression)", async () => {
-    // With PageId narrowed to "compare", the AppShell compare nav-bridge would
-    // otherwise fire on every non-compare path and bounce a typo'd URL to
-    // /compare/all before the catch-all PageBody can render "Page not found".
-    // The bridge must stand down while a stale URL context is present.
+  it("an unknown path renders StaleUrlPage (#181 regression, #177)", async () => {
+    // The Compare nav-bridge that used to bounce typo'd URLs is gone with the
+    // Compare page (#177); a stale path now cleanly renders "Page not found"
+    // via the AppShell catch-all PageBody.
     renderRoutes("/foo/bar");
     expect(await screen.findByTestId("stale-url-page")).toBeInTheDocument();
     expect(screen.queryByTestId("compare-page")).toBeNull();
@@ -188,7 +202,7 @@ describe("AppRoutes — I4.4 index cutover redirects", () => {
 describe("AppRoutes — bare / always lands on the corpus (#77 / I4.4)", () => {
   beforeEach(() => {
     useAppState.setState({
-      activePage: "compare",
+      activePage: "none",
       activeExperimentId: undefined,
       staleUrlContext: null,
       resolving: false,
@@ -202,24 +216,25 @@ describe("AppRoutes — bare / always lands on the corpus (#77 / I4.4)", () => {
   // compare URL" bridge is retired with the Index surface.
 
   it("bare / lands on the corpus contact sheet even when activePage='compare'", async () => {
-    useAppState.setState({ activePage: "compare", activeExperimentId: undefined });
+    useAppState.setState({ activePage: "none", activeExperimentId: undefined });
     renderRoutes("/");
     expect(await screen.findByTestId("samples-page")).toBeInTheDocument();
     expect(screen.queryByTestId("compare-page")).toBeNull();
   });
 
   it("bare / lands on the corpus even with an active experiment set", async () => {
-    useAppState.setState({ activePage: "compare", activeExperimentId: 7 });
+    useAppState.setState({ activePage: "none", activeExperimentId: 7 });
     renderRoutes("/");
     expect(await screen.findByTestId("samples-page")).toBeInTheDocument();
     expect(screen.queryByTestId("compare-page")).toBeNull();
   });
 
-  it("a compare URL still mounts the Compare page (AppShell surface survives)", async () => {
-    useAppState.setState({ activePage: "compare", activeExperimentId: 7 });
+  it("a compare URL redirects to the series folio (Compare retired, #177)", async () => {
+    useAppState.setState({ activePage: "none", activeExperimentId: 7 });
     renderRoutes("/experiments/7/compare/123");
     await waitFor(() => {
-      expect(screen.getByTestId("compare-page")).toBeInTheDocument();
+      expect(screen.getByTestId("series-folio-page")).toBeInTheDocument();
     });
+    expect(screen.queryByTestId("compare-page")).toBeNull();
   });
 });

@@ -87,11 +87,14 @@ describe("attachConflictBridge — series_commit", () => {
     detach();
   });
 
-  it("still bridges comparison_save (regression guard)", async () => {
+  it("does NOT bridge comparison_save (Compare retired, #177)", async () => {
+    // I3.6: the Compare page is gone, so the `comparison_save` arm was removed
+    // from the bridge. A ConflictError on a (replay-only) comparison_save
+    // mutation must NOT reach the slot — only `series_commit` does.
     const detach = attachConflictBridge(mc, setPendingConflict);
     const err = new ConflictError("sha256:server", buildComparison(42));
     await runFailingMutation(qc, ["comparison_save"], err);
-    expect(calls.filter((c) => c instanceof ConflictError)).toHaveLength(1);
+    expect(calls.filter((c) => c instanceof ConflictError)).toHaveLength(0);
     detach();
   });
 });
