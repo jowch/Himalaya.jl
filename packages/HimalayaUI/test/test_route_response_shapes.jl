@@ -180,7 +180,9 @@ end
 
                 r2 = HTTP.get("$base/api/exposures/$(ctx.exposure_id)/indices")
                 indices = JSON3.read(String(r2.body))
-                idx = first(filter(i -> !(i.id in groups[1].members), indices))
+                # The route adds to the custom group, independent of auto-group
+                # membership, so any candidate index exercises the mutation.
+                idx = first(indices)
 
                 r3 = HTTP.post("$base/api/groups/$gid/members";
                     body = JSON3.write(Dict(:index_id => idx.id)),
