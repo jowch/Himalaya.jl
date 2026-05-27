@@ -116,4 +116,19 @@ describe("SeriesBuilderPage — read + states", () => {
     expect(screen.getByTestId("rail-restore")).toBeInTheDocument();
     expect(screen.queryByTestId("series-builder-rail")).not.toBeInTheDocument();
   });
+
+  it("changes the coloring mode via GroupingModeToggle (setGroupingMode wired)", () => {
+    h.seriesQ = {
+      data: series({ view_grouping_mode: null, members: [member()] }),
+      isLoading: false, isError: false,
+    };
+    renderAt();
+    // Default seeds to "bySample" (matches effectiveGroupingMode's hard default).
+    expect(screen.getByTestId("grouping-mode")).toHaveAttribute("data-mode", "bySample");
+    fireEvent.click(screen.getByRole("radio", { name: /by phase/i }));
+    // setGroupingMode is wired: the container reflects the new local mode and
+    // the plot stays mounted (no crash on re-render with a new groupingMode).
+    expect(screen.getByTestId("grouping-mode")).toHaveAttribute("data-mode", "byPhase");
+    expect(screen.getByTestId("mock-multi-trace-plot")).toBeInTheDocument();
+  });
 });

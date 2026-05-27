@@ -17,7 +17,7 @@ export function RepresentationToggle({ value, onChange }: RepresentationTogglePr
   return (
     <div
       data-testid="representation-toggle"
-      role="radiogroup"
+      role="group"
       aria-label="Plot representation"
       className="inline-flex overflow-hidden rounded border border-hair-strong"
     >
