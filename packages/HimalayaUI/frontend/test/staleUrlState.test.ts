@@ -115,24 +115,6 @@ describe("Zustand state — permalink slots", () => {
     expect(persisted.state?.staleUrlContext).toBeUndefined();
   });
 
-  it("setResolveSuccess commits ids atomically", () => {
-    // I5.1 (#182): the `page` slot is gone with the dual-nav model; the setter
-    // now commits only the active ids (+ clears stale).
-    useAppState.getState().setResolving(true);
-    useAppState.getState().setStaleUrlContext({ kind: "unknown_path", raw: "/x" });
-    useAppState.getState().setResolveSuccess({
-      experimentId: 7,
-      sampleId: 11,
-      exposureId: 22,
-    });
-    const s = useAppState.getState();
-    expect(s.activeExperimentId).toBe(7);
-    expect(s.activeSampleId).toBe(11);
-    expect(s.activeExposureId).toBe(22);
-    expect(s.staleUrlContext).toBeNull();
-    expect(s.resolving).toBe(false);
-  });
-
   it("setStaleUnknownPath stores raw + clears resolving", () => {
     useAppState.getState().setResolving(true);
     useAppState.getState().setStaleUnknownPath("/foo/bar/baz");

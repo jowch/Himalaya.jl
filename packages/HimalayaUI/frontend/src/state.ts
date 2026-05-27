@@ -32,8 +32,9 @@ import type { OrderRule, Series } from "./api";
 export const LS_KEY = "himalaya-ui:state";
 
 // I5.1 (#182): the dual-nav `activePage` model — `PageId`, `VALID_PAGE_IDS`,
-// `coerceActivePage`, the `activePage` store field + `setActivePage`, and the
-// `page` slot of `ResolveSuccessSlots` — is deleted. Every legacy AppShell
+// `coerceActivePage`, the `activePage` store field + `setActivePage` — is
+// deleted. (The resolve setter's former `page` slot went with it; I5.3 (#184)
+// then removed the now-unreachable `setResolveSuccess` action entirely.) Every legacy AppShell
 // surface (Inspect #163, Index #181, Compare #177) is retired and the app is a
 // single URL-routed shell, so nothing renders off `activePage` anymore. The
 // `activePage: s.activePage` line is also removed from `partialize` (forced by
@@ -59,12 +60,6 @@ export type RecoverOpts = {
   experimentId: number | undefined;
   sampleId: number | undefined;
   openModal?: boolean; // default true; row "exposure" passes false
-};
-
-export type ResolveSuccessSlots = {
-  experimentId: number | undefined;
-  sampleId: number | undefined;
-  exposureId: number | undefined;
 };
 
 export interface AppState {
@@ -298,11 +293,6 @@ export interface AppState {
   setStaleUrlContext: (ctx: StaleUrlContext | null) => void;
   setResolving: (v: boolean) => void;
   recoverFromStaleUrl: (opts: RecoverOpts) => void;
-  /**
-   * Atomic commit of a `/api/resolve` 200 response. Single setState so
-   * `useUrlFromState` recomputes once — no cascading partial URL emits.
-   */
-  setResolveSuccess: (slots: ResolveSuccessSlots) => void;
   /** Mark the URL as an unknown frontend path (renders StaleUrlPage). */
   setStaleUnknownPath: (raw: string) => void;
   /** Atomic commit of a `/api/resolve` 404 response. Renders StaleUrlPage. */
@@ -623,15 +613,6 @@ export const useAppState = create<AppState>()(
             navModalOpen: opts.openModal ?? true,
             navModalStep: opts.step,
           }));
-        },
-        setResolveSuccess: ({ experimentId, sampleId, exposureId }) => {
-          set({
-            activeExperimentId: experimentId,
-            activeSampleId: sampleId,
-            activeExposureId: exposureId,
-            staleUrlContext: null,
-            resolving: false,
-          });
         },
         setStaleUnknownPath: (raw) =>
           set({
