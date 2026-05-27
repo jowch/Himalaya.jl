@@ -675,6 +675,33 @@ export const getPickerSamples = (
   request<PickerSampleRow[]>(
     "GET", `/api/experiments/${experiment_id}/picker-samples`);
 
+// ─── Corpus scoping reads (I0.2 / I0.3 corpus siblings; I3.4 consumer) ──────
+/** Corpus-wide distinct (key,value) tag pairs — GET /api/sample-tags. Reuses
+ *  the existing SampleTagPair shape (same {key,value} contract). */
+export const getCorpusSampleTags = (): Promise<SampleTagPair[]> =>
+  request<SampleTagPair[]>("GET", "/api/sample-tags");
+
+/** Corpus-wide picker projection — GET /api/picker-samples. Same PickerSampleRow
+ *  shape as the experiment-scoped getPickerSamples. */
+export const getCorpusPickerSamples = (): Promise<PickerSampleRow[]> =>
+  request<PickerSampleRow[]>("GET", "/api/picker-samples");
+
+// ─── Series scoping batch write (I2.6 route, source='scoping') ──────────────
+export interface BatchSampleTagEntry { sample_id: number; value: string }
+export interface BatchSampleTagResult {
+  id: number; sample_id: number; key: string; value: string; source: string;
+}
+/** Batch sample-tag insert — POST /api/samples/tags/batch. One `key`, N
+ *  {sample_id,value}, one `source`. Used by scoping with source='scoping'. */
+export const batchSampleTags = (
+  key: string,
+  tags: BatchSampleTagEntry[],
+  source: string,
+  opts?: AuthOpts,
+): Promise<BatchSampleTagResult[]> =>
+  request<BatchSampleTagResult[]>(
+    "POST", "/api/samples/tags/batch", { key, tags, source }, opts);
+
 // ─── Comparison pins (Plan §Phase 13, Task 13.2) ────────────────────────────
 //
 // Per-user pinned comparisons surface at the top of the sidebar. Pin/unpin

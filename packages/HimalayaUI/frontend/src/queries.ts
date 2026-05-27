@@ -93,6 +93,12 @@ export const queryKeys = {
   series:     (id: number | undefined) => ["series", id ?? "none"] as const,
   seriesList: ["series-list"] as const,
   seriesPins: ["series-pins"] as const,
+  // Corpus scoping reads (I3.4 #174): the ordering-variable proposal source
+  // and the corpus picker projection. Foreign add_tag replay invalidates both
+  // (applyRemoteToCache add_tag/sample branch) so a peer's scoping write
+  // refreshes the /series/new proposal.
+  corpusSampleTags:    ["corpus-sample-tags"] as const,
+  corpusPickerSamples: ["corpus-picker-samples"] as const,
   // Picker support routes (Plan §Phase 5, Task 5.2). Both are read-only —
   // `recentlyPickedExposures` is per-user across all experiments; `sampleTags`
   // is per-experiment (distinct (key, value) pairs).
@@ -619,6 +625,23 @@ export function useSeriesList() {
   return useQuery({
     queryKey: queryKeys.seriesList,
     queryFn: () => api.listSeries(),
+  });
+}
+
+/** Corpus distinct tag pairs — scoping reads these to propose the ordering
+ *  variable. May be empty on a cold corpus (accepted by design, #174). */
+export function useCorpusSampleTags() {
+  return useQuery({
+    queryKey: queryKeys.corpusSampleTags,
+    queryFn: () => api.getCorpusSampleTags(),
+  });
+}
+
+/** Corpus picker projection — scoping's candidate member samples. */
+export function useCorpusPickerSamples() {
+  return useQuery({
+    queryKey: queryKeys.corpusPickerSamples,
+    queryFn: () => api.getCorpusPickerSamples(),
   });
 }
 
