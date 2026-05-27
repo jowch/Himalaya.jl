@@ -63,6 +63,8 @@ export function PlotCard(): JSX.Element {
   const activeExposureId   = useAppState((s) => s.activeExposureId);
   const hoveredIndexId     = useAppState((s) => s.hoveredIndexId);
   const hoveredPeakId      = useAppState((s) => s.hoveredPeakId);
+  const hoveredQ           = useAppState((s) => s.hoveredQ);
+  const setHoveredQ        = useAppState((s) => s.setHoveredQ);
   const openNavModal       = useAppState((s) => s.openNavModal);
 
   const experimentQ = useExperiment(activeExperimentId ?? 0);
@@ -100,6 +102,14 @@ export function PlotCard(): JSX.Element {
   // (test/sampleSwitchKeypress.test.tsx) subscribes to the same hook so
   // there's no manual mirror to drift.
   useAutoPickExposure(activeSampleId);
+
+  // q-link (#180): stable adapter so the TraceViewer cursor effect (dep
+  // [trace, peaks, onHoverQ]) doesn't tear down + re-add its mousemove
+  // listeners every render. `setHoveredQ` is a stable Zustand action ref.
+  const handleHoverQ = useCallback(
+    (q: number | null) => setHoveredQ(q ?? undefined),
+    [setHoveredQ],
+  );
 
   // Reset the q-range when the sample or exposure changes — the previous
   // zoom almost never applies to a different trace.
@@ -273,6 +283,8 @@ export function PlotCard(): JSX.Element {
         activeGroupIndices={activeGroupIndices}
         hoveredIndex={hoveredIndex}
         hoveredPeakId={hoveredPeakId}
+        hoveredQ={hoveredQ}
+        onHoverQ={handleHoverQ}
         onAddPeak={(q) => addPeak.mutate(q)}
         onRemovePeak={(peakId) => removePeak.mutate(peakId)}
         onTogglePeakExclusion={(peakId, excluded) =>
