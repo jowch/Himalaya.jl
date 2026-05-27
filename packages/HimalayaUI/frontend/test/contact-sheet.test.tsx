@@ -372,4 +372,49 @@ describe("ContactSheetRow — culling", () => {
       ),
     );
   });
+
+  it("batch-rejects multiple selected exposures (N independent status requests)", async () => {
+    const patched: string[] = [];
+    vi.spyOn(global, "fetch").mockImplementation((input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : (input as Request).url;
+      if (url === "/api/samples/7/exposures") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify([
+              makeExposure({ id: 1, sample_id: 7, status: "accepted" }),
+              makeExposure({ id: 2, sample_id: 7, status: "accepted" }),
+              makeExposure({ id: 3, sample_id: 7, status: "accepted" }),
+            ]),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      }
+      const m = url.match(/\/api\/exposures\/(\d+)\/status$/);
+      if (m) {
+        patched.push(m[1]);
+        return Promise.resolve(
+          new Response(JSON.stringify({ id: Number(m[1]), status: "rejected" }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      return Promise.resolve(new Response("not found", { status: 404 }));
+    });
+
+    renderRow(makeSample({ id: 7 }));
+    // Select exposures 1 and 3 for batch action.
+    fireEvent.click(await screen.findByTestId("exposure-select-1"));
+    fireEvent.click(screen.getByTestId("exposure-select-3"));
+    // Action bar appears; reject the selection.
+    fireEvent.click(screen.getByTestId("batch-reject"));
+
+    await waitFor(() => expect(patched.slice().sort()).toEqual(["1", "3"]));
+    // Exposure 2 was NOT selected → no op.
+    expect(patched).not.toContain("2");
+    // Selection clears after the batch.
+    await waitFor(() =>
+      expect(screen.queryByTestId("batch-reject")).toBeNull(),
+    );
+  });
 });
