@@ -48,6 +48,13 @@ async function mockCore(page: Page): Promise<void> {
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(EXPOSURE) }));
   await page.route("**/api/samples/10", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(SAMPLE) }));
+  // Corpus sample list — the recipe editor's "Add sample" dropdown source.
+  await page.route("**/api/samples", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([
+      { ...SAMPLE },
+      { id: 20, experiment_id: 1, name: "JC050", display_name: "DOPE 90%",
+        notes: null, tags: [], q_units: "A-1" },
+    ]) }));
   // SSE endpoint — drain immediately so the multiplayer EventSource doesn't
   // hang the page (see e2e/AGENTS.md + compare.spec.ts).
   await page.route("**/api/events", (r) =>
@@ -108,5 +115,88 @@ test.describe("series builder", () => {
     await expect(page.getByTestId("rail-restore")).toBeVisible();
     await page.getByTestId("rail-restore").click();
     await expect(page.getByTestId("series-builder-rail")).toBeVisible();
+  });
+
+  test("build → edit → commit → export round-trips", async ({ page }) => {
+    await mockCore(page);
+    await seedState(page);
+
+    // Capture the recipe-save PATCH + the commit POST bodies.
+    let patchBody: unknown = null;
+    let commitBody: unknown = null;
+    await page.route("**/api/series/5", async (route) => {
+      const req = route.request();
+      if (req.method() === "PATCH") {
+        patchBody = req.postDataJSON();
+        await route.fulfill({ status: 200, contentType: "application/json",
+          body: JSON.stringify(SERIES) });
+        return;
+      }
+      await route.fulfill({ status: 200, contentType: "application/json",
+        body: JSON.stringify(SERIES) });
+    });
+    await page.route("**/api/series/5/commit", async (route) => {
+      commitBody = route.request().postDataJSON();
+      await route.fulfill({ status: 200, contentType: "application/json",
+        body: JSON.stringify({ ...SERIES, content_hash: "h2" }) });
+    });
+
+    await page.goto("/series/5");
+    await expect(page.getByTestId("series-builder-page")).toBeVisible();
+
+    // Enter edit mode → the recipe editor appears.
+    await page.getByTestId("series-builder-edit").click();
+    await expect(page.getByTestId("series-recipe-editor")).toBeVisible();
+
+    // Add a sample → an optimistic placeholder row appears immediately.
+    await page.getByTestId("recipe-add-sample").selectOption("20");
+    await expect(page.getByTestId("recipe-row")).toHaveCount(1); // SERIES.samples is empty; the add is the first row
+
+    // Save the recipe (optimistic → PATCH).
+    await page.getByTestId("recipe-save").click();
+    await expect.poll(() => patchBody).not.toBeNull();
+    expect(JSON.stringify(patchBody)).not.toContain("expected_content_hash");
+
+    // Commit the plate (spinner → POST commit, carries expected_content_hash).
+    await page.getByTestId("recipe-commit").click();
+    await expect.poll(() => commitBody).not.toBeNull();
+
+    // After commit success the editor tears down (back to read mode).
+    await expect(page.getByTestId("series-builder-edit")).toBeVisible();
+
+    // Export still works (figure-export round-trip) — the control is enabled.
+    await expect(
+      page.getByRole("button", { name: /copy series figure to clipboard/i }),
+    ).toBeEnabled();
+  });
+
+  test("commit 409 opens the series conflict modal", async ({ page }) => {
+    await mockCore(page);
+    await seedState(page);
+    await page.route("**/api/series/5/commit", (route) =>
+      route.fulfill({ status: 409, contentType: "application/json",
+        body: JSON.stringify({ current_hash: "h2", current_state: { ...SERIES, content_hash: "h2" } }) }));
+
+    await page.goto("/series/5");
+    await page.getByTestId("series-builder-edit").click();
+    await page.getByTestId("recipe-commit").click();
+
+    // The series-commit conflict modal opens (shared chrome, series semantics).
+    await expect(page.getByTestId("conflict-modal")).toBeVisible();
+    await expect(page.getByText(/Series changed while you were editing/)).toBeVisible();
+    // No Fork action on the series modal.
+    await expect(page.getByTestId("conflict-fork")).toHaveCount(0);
+  });
+
+  test("permalink: /series/5 is a URL-owned deep link that re-renders on reload", async ({ page }) => {
+    await mockCore(page);
+    await seedState(page);
+    await page.goto("/series/5");
+    await expect(page.getByTestId("series-builder-page")).toBeVisible();
+    // Reload the same URL — the page re-fetches via useSeries (react-router
+    // owns the id; no slug round-trip, no stale flag).
+    await page.reload();
+    await expect(page.getByTestId("series-builder-page")).toBeVisible();
+    await expect(page).toHaveURL(/\/series\/5$/);
   });
 });
