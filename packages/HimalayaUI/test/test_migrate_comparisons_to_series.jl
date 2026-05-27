@@ -119,4 +119,40 @@ using HimalayaUI: create_schema!, migrate_schema!, migrate_comparisons_to_series
 
         close(db)
     end
+
+    @testset "messages and pins copy forward" begin
+        db = SQLite.DB()
+        create_schema!(db)
+        migrate_schema!(db)
+
+        DBInterface.execute(db, "INSERT INTO users (id, username) VALUES (5, 'alice'), (6, 'bob')")
+        DBInterface.execute(db, """INSERT INTO comparisons
+            (id, title, created_by, created_at, updated_at)
+            VALUES (1, 'Cmp A', 5, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')""")
+        DBInterface.execute(db, """INSERT INTO comparison_messages
+            (comparison_id, author_id, body, created_at)
+            VALUES (1, 5, 'hello', '2026-01-03T00:00:00.000Z'),
+                   (1, 6, 'world', '2026-01-04T00:00:00.000Z')""")
+        DBInterface.execute(db, """INSERT INTO comparison_pins (user_id, comparison_id, pinned_at)
+            VALUES (5, 1, '2026-01-05T00:00:00.000Z')""")
+
+        DBInterface.execute(db, "DELETE FROM schema_migrations WHERE name = ?",
+            [MIGRATION_COMPARISONS_TO_SERIES])
+        migrate_comparisons_to_series!(db)
+
+        sid = Int(Tables.rowtable(DBInterface.execute(db, "SELECT id FROM series"))[1].id)
+
+        msgs = Tables.rowtable(DBInterface.execute(db,
+            "SELECT author_id, body, created_at FROM series_messages WHERE series_id = ? ORDER BY created_at", [sid]))
+        @test [String(m.body) for m in msgs] == ["hello", "world"]
+        @test String(msgs[1].created_at) == "2026-01-03T00:00:00.000Z"   # carried, not now()
+        @test Int(msgs[2].author_id) == 6
+
+        pins = Tables.rowtable(DBInterface.execute(db,
+            "SELECT user_id, pinned_at FROM series_pins WHERE series_id = ?", [sid]))
+        @test length(pins) == 1
+        @test Int(pins[1].user_id) == 5
+        @test String(pins[1].pinned_at) == "2026-01-05T00:00:00.000Z"    # carried
+        close(db)
+    end
 end

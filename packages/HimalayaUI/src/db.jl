@@ -988,7 +988,22 @@ function migrate_comparisons_to_series!(db::SQLite.DB)
             plate_payload = _series_plate_committed_payload_from_comparison(db, cmp)
             _synthesize_series_event!(db, "series_plate_committed", new_id, plate_payload, uid, ts)
 
-            # (Task 3 adds the messages/pins copy here, keyed by cmp.id → new_id.)
+            # Messages: carry author_id + body + created_at (don't let the
+            # DEFAULT CURRENT_TIMESTAMP overwrite history). series_messages.id
+            # auto-assigns.
+            DBInterface.execute(db,
+                """INSERT INTO series_messages (series_id, author_id, body, created_at)
+                   SELECT ?, author_id, body, created_at
+                   FROM comparison_messages WHERE comparison_id = ?
+                   ORDER BY created_at ASC, id ASC""", [new_id, Int(cmp.id)])
+
+            # Pins: carry user_id + pinned_at. OR IGNORE defends against a dup
+            # (user, series) PK (can't actually occur — comparison_pins PK is
+            # (user, comparison) and one comparison maps to one series).
+            DBInterface.execute(db,
+                """INSERT OR IGNORE INTO series_pins (user_id, series_id, pinned_at)
+                   SELECT user_id, ?, pinned_at
+                   FROM comparison_pins WHERE comparison_id = ?""", [new_id, Int(cmp.id)])
         end
 
         # Sentinel marker LAST, inside the same transaction.
