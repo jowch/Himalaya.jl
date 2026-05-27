@@ -40,7 +40,6 @@ using Test
     include("test_concurrent_writes.jl")
     include("test_idempotency_sse_suppression.jl")
     include("test_comparisons.jl")
-    include("test_routes_comparisons.jl")
     include("test_routes_series.jl")
     include("test_picker_routes.jl")
     include("test_picker_samples_route.jl")

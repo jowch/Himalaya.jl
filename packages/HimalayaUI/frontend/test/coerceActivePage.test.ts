@@ -5,31 +5,39 @@ import {
   useAppState,
 } from "../src/state";
 
+// I3.6 (#177): every legacy AppShell surface is retired — Inspect (#163),
+// Index (#181), Compare (#177) — so `PageId` is narrowed to the inert "none"
+// sentinel. `coerceActivePage` always resolves to "none"; it is a pure type
+// artifact (bare `/` redirects to `/samples`, no user lands on a page driven
+// by `activePage`). I5.1 deletes the whole model.
+
 describe("coerceActivePage", () => {
-  it("passes the sole valid PageId 'compare' through unchanged", () => {
-    expect(coerceActivePage("compare")).toBe("compare");
+  it("passes the sole valid PageId 'none' through unchanged", () => {
+    expect(coerceActivePage("none")).toBe("none");
   });
 
-  it("coerces a stale 'index' to 'compare' after Index retirement (#181)", () => {
-    // Index is retired; a persisted activePage:"index" must not strand the
-    // user on an empty PageBody — coerceActivePage rewrites it to a live page.
-    expect(coerceActivePage("index")).toBe("compare");
+  it("coerces a stale 'compare' to 'none' after Compare retirement (#177)", () => {
+    expect(coerceActivePage("compare")).toBe("none");
   });
 
-  it("coerces a stale 'inspect' to 'compare' after Inspect retirement (#163)", () => {
-    expect(coerceActivePage("inspect")).toBe("compare");
+  it("coerces a stale 'index' to 'none' after Index retirement (#181)", () => {
+    expect(coerceActivePage("index")).toBe("none");
   });
 
-  it("coerces an unknown surface name to 'compare'", () => {
-    expect(coerceActivePage("loupe")).toBe("compare");
-    expect(coerceActivePage("samples")).toBe("compare");
-    expect(coerceActivePage("")).toBe("compare");
+  it("coerces a stale 'inspect' to 'none' after Inspect retirement (#163)", () => {
+    expect(coerceActivePage("inspect")).toBe("none");
   });
 
-  it("coerces non-string / missing values to 'compare'", () => {
-    expect(coerceActivePage(undefined)).toBe("compare");
-    expect(coerceActivePage(null)).toBe("compare");
-    expect(coerceActivePage(42)).toBe("compare");
+  it("coerces an unknown surface name to 'none'", () => {
+    expect(coerceActivePage("loupe")).toBe("none");
+    expect(coerceActivePage("samples")).toBe("none");
+    expect(coerceActivePage("")).toBe("none");
+  });
+
+  it("coerces non-string / missing values to 'none'", () => {
+    expect(coerceActivePage(undefined)).toBe("none");
+    expect(coerceActivePage(null)).toBe("none");
+    expect(coerceActivePage(42)).toBe("none");
   });
 });
 
@@ -40,16 +48,16 @@ describe("mergePersistedState (persist merge)", () => {
       { activePage: "ghost", theme: "light" },
       current,
     );
-    expect(merged.activePage).toBe("compare");
+    expect(merged.activePage).toBe("none");
   });
 
-  it("keeps a valid persisted activePage and other persisted keys", () => {
+  it("keeps the valid persisted activePage and other persisted keys", () => {
     const current = useAppState.getState();
     const merged = mergePersistedState(
-      { activePage: "compare", theme: "light" },
+      { activePage: "none", theme: "light" },
       current,
     );
-    expect(merged.activePage).toBe("compare");
+    expect(merged.activePage).toBe("none");
     expect(merged.theme).toBe("light");
   });
 
@@ -62,6 +70,6 @@ describe("mergePersistedState (persist merge)", () => {
   it("handles undefined persisted state (first run)", () => {
     const current = useAppState.getState();
     const merged = mergePersistedState(undefined, current);
-    expect(merged.activePage).toBe("compare");
+    expect(merged.activePage).toBe("none");
   });
 });

@@ -3,22 +3,26 @@ import { ConflictError } from "../../api";
 
 /**
  * Single-source-of-truth bridge from conflict-bearing mutation errors
- * (`comparison_save` submit, `series_commit` plate-commit) to the Zustand
- * `pendingConflict` slot (Phase 12 follow-up; queue-reviewer Fix 1 + Fix 2;
- * series-commit widening I3.5b).
+ * (`series_commit` plate-commit) to the Zustand `pendingConflict` slot
+ * (Phase 12 follow-up; queue-reviewer Fix 1 + Fix 2; series-commit widening
+ * I3.5b).
+ *
+ * I3.6 (#177): Compare is retired, so the `comparison_save` arm is gone — only
+ * `series_commit` remains. The bridge + the `pendingConflict` slot are KEPT:
+ * `SeriesCommitConflictModal` reads the slot.
  *
  * Why a MutationCache subscriber, not a hook
  * ------------------------------------------
- * `useSaveComparison()` is mounted at TWO sites (`ComparePageEdit` for the
- * edit-mode Save button; `ConflictModal` for the Overwrite re-submit).
- * Each call instantiates its own `useMutation` registration with its own
- * `result.error`. If the bridge lives inside the hook's `useEffect`, both
- * effects race to write the same Zustand slot — the second-409 race could
- * flip-flop `current_state` based on render ordering.
+ * A 409-bearing mutation hook can be mounted at more than one site (e.g. the
+ * commit button and the modal's Overwrite re-submit). Each call instantiates
+ * its own `useMutation` registration with its own `result.error`. If the
+ * bridge lived inside the hook's `useEffect`, the effects would race to write
+ * the same Zustand slot — the second-409 race could flip-flop `current_state`
+ * based on render ordering.
  *
  * Lifting the bridge to a single MutationCache subscriber gives us:
  *   - one writer to `pendingConflict`, regardless of how many components
- *     call `useSaveComparison`,
+ *     register the commit mutation,
  *   - last-seen `mutationId` tracking so a remount/re-subscribe (StrictMode
  *     double-invocation, App-level remount, HMR) does NOT re-pop the modal
  *     on a stale terminal-error mutation that's still in the cache.
@@ -30,7 +34,7 @@ import { ConflictError } from "../../api";
  * The MutationCache is the same one used by `replayCoordinator` and
  * `attachPersistence` — its `subscribe` callback fires on every cache event
  * (added, updated, removed, observer*). We filter by `type === "updated"` +
- * terminal `error` state + `mutationKey === ["comparison_save"]` +
+ * terminal `error` state + `mutationKey === ["series_commit"]` +
  * `error instanceof ConflictError`.
  *
  * Usage: mount once at App startup
@@ -38,13 +42,12 @@ import { ConflictError } from "../../api";
  *   useEffect(() => attachConflictBridge(mc, setPendingConflict), [mc]);
  */
 
-const COMPARISON_SAVE_KIND = "comparison_save";
 // I3.5b — series plate-commit is the only series mutation that can 409
-// (recipe-save `series_save` never reads `expected_content_hash`). The bridge
-// accepts both conflict-bearing kinds; `series_save` is deliberately excluded.
+// (recipe-save `series_save` never reads `expected_content_hash`); it is
+// deliberately excluded. Compare's `comparison_save` was the other arm,
+// removed in I3.6 (#177) when the Compare page was retired.
 const SERIES_COMMIT_KIND = "series_commit";
 const CONFLICT_KINDS: ReadonlySet<string> = new Set([
-  COMPARISON_SAVE_KIND,
   SERIES_COMMIT_KIND,
 ]);
 
@@ -61,9 +64,9 @@ export function _resetConflictBridgeForTest(): void {
 }
 
 /**
- * Subscribe to the MutationCache, bridging ConflictError on
- * `comparison_save` mutations to `setPendingConflict`. Returns an
- * unsubscribe function.
+ * Subscribe to the MutationCache, bridging a ConflictError on a
+ * `series_commit` mutation to `setPendingConflict`. Returns an unsubscribe
+ * function.
  *
  * Idempotent re-attach: the module-scoped `bridged` set persists across
  * detach/re-attach so a stale error in the cache does not re-pop the modal.
@@ -80,9 +83,10 @@ export function attachConflictBridge(
     const mutation = event.mutation;
     if (mutation.state.status !== "error") return;
     const key = mutation.options.mutationKey;
-    // mutationKey is `[mutator.kind]` — see useQueueMutation. Conflict-bearing
-    // kinds: "comparison_save" (submit) and "series_commit" (plate commit).
-    // "series_save" (recipe-save PATCH) is excluded — it never 409s.
+    // mutationKey is `[mutator.kind]` — see useQueueMutation. The only
+    // conflict-bearing kind is "series_commit" (plate commit). "series_save"
+    // (recipe-save PATCH) never 409s; Compare's "comparison_save" is retired
+    // (I3.6 #177).
     if (!Array.isArray(key) || typeof key[0] !== "string" || !CONFLICT_KINDS.has(key[0])) return;
     const err = mutation.state.error;
     if (!(err instanceof ConflictError)) return;

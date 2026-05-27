@@ -1,50 +1,29 @@
-import { useNavigate } from "react-router-dom";
-import { useAppState, type PageId } from "../state";
+import type { PageId } from "../state";
 
-// I4.4 (#181): Index retired (Inspect retired #163) — only Compare remains.
-// The rocker (and the whole dual-nav model) is deleted in I5.1.
-const TABS: readonly { id: PageId; label: string }[] = [
-  { id: "compare", label: "Compare" },
-];
+// I3.6 (#177): Compare retired (Index #181, Inspect #163 before it) — there are
+// no legacy page tabs left, so the rocker renders nothing. The component (and
+// the whole dual-nav model) is deleted in I5.1; kept as an inert stub until
+// then so AppShell's layout doesn't need restructuring twice.
+const TABS: readonly { id: PageId; label: string }[] = [];
 
 interface Props {
-  /**
-   * Active experiment id (when set), used to build the Compare URL.
-   * `/experiments/:eid/compare` if set, `/compare/all` otherwise.
-   */
+  /** Active experiment id — unused now that no tab builds a legacy URL.
+   *  Retained until I5.1 deletes the shell + rocker together. */
   experimentId?: number | undefined;
-  /**
-   * Called when the user clicks a tab other than the current Compare tab
-   * while on a Compare URL — lets the AppShell navigate back to "/".
-   */
+  /** Called when the user leaves the (now-empty) rocker. Unused while TABS is
+   *  empty; retained for the I5.1 deletion seam. */
   onNavigateAway?: (target: PageId) => void;
 }
 
 /**
  * TabRocker — pill-style segmented control for app-level page switching.
- * Shared across all pages; lives in AppHeader.
- *
- * Hybrid navigation: clicking "Compare" navigates to a URL (so :eid/:id
- * params survive reloads). The Index/Inspect tabs (which updated `activePage`
- * and let the parent shell route back to "/") are retired (#181 / #163).
+ * With every legacy surface retired (#163/#181/#177) there are no tabs to
+ * render; this is an inert stub that I5.1 deletes along with the dual-nav
+ * model. Props are kept so AppShell needn't change twice.
  */
 export function TabRocker({ experimentId, onNavigateAway }: Props): JSX.Element {
-  const activePage = useAppState((s) => s.activePage);
-  const setPage    = useAppState((s) => s.setActivePage);
-  const navigate   = useNavigate();
-
-  const handleClick = (target: PageId): void => {
-    setPage(target);
-    if (target === "compare") {
-      const url = experimentId !== undefined
-        ? `/experiments/${experimentId}/compare`
-        : "/compare/all";
-      navigate(url);
-    } else {
-      onNavigateAway?.(target);
-    }
-  };
-
+  void experimentId;
+  void onNavigateAway;
   return (
     <div
       role="tablist"
@@ -52,27 +31,16 @@ export function TabRocker({ experimentId, onNavigateAway }: Props): JSX.Element 
       className="inline-flex items-center gap-0.5 p-0.5
                  bg-bg-elevated border border-border rounded-full"
     >
-      {TABS.map((t) => {
-        const active = t.id === activePage;
-        return (
-          <button
-            key={t.id}
-            role="tab"
-            aria-selected={active}
-            data-testid={`tab-${t.id}`}
-            data-active={active || undefined}
-            onClick={() => handleClick(t.id)}
-            className={
-              "px-3.5 py-1 rounded-full font-sans text-sm font-medium " +
-              (active
-                ? "bg-accent/15 text-accent"
-                : "text-fg-muted hover:text-fg")
-            }
-          >
-            {t.label}
-          </button>
-        );
-      })}
+      {TABS.map((t) => (
+        <button
+          key={t.id}
+          role="tab"
+          data-testid={`tab-${t.id}`}
+          className="px-3.5 py-1 rounded-full font-sans text-sm font-medium text-fg-muted"
+        >
+          {t.label}
+        </button>
+      ))}
     </div>
   );
 }

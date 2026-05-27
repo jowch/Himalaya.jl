@@ -6,43 +6,30 @@ import { TabRocker } from "../src/components/TabRocker";
 import { AppHeader } from "../src/components/AppHeader";
 import { useAppState } from "../src/state";
 
-// TabRocker uses `useNavigate()` (Plan §Phase 4: hybrid Zustand/router model
-// — Compare nav goes through URL, Index/Inspect through Zustand). Wrap in
-// MemoryRouter so tests have a routing context.
+// Wrap in MemoryRouter so the component has a routing context.
 const renderInRouter = (ui: React.ReactElement) =>
   render(<MemoryRouter>{ui}</MemoryRouter>);
 
 beforeEach(() => {
   localStorage.clear();
   useAppState.setState({
-    activePage: "compare",
+    activePage: "none",
     username: "tester",
     theme: "dark",
   });
 });
 
 describe("<TabRocker>", () => {
-  it("renders only the Compare tab (Index retired #181, Inspect retired #163)", () => {
+  // I3.6 (#177): Compare retired (Index #181, Inspect #163 before it). No legacy
+  // page tabs remain, so the rocker renders an empty tablist. The component +
+  // the whole dual-nav model are deleted in I5.1.
+  it("renders no tabs (all legacy surfaces retired)", () => {
     renderInRouter(<TabRocker />);
-    const tabs = screen.getAllByRole("tab");
-    expect(tabs).toHaveLength(1);
-    expect(tabs[0]).toHaveTextContent("Compare");
+    expect(screen.getByTestId("tab-rocker")).toBeInTheDocument();
+    expect(screen.queryAllByRole("tab")).toHaveLength(0);
+    expect(screen.queryByTestId("tab-compare")).toBeNull();
     expect(screen.queryByTestId("tab-index")).toBeNull();
     expect(screen.queryByTestId("tab-inspect")).toBeNull();
-  });
-
-  it("marks the Compare tab active", () => {
-    renderInRouter(<TabRocker />);
-    const cmp = screen.getByTestId("tab-compare");
-    expect(cmp).toHaveAttribute("aria-selected", "true");
-    expect(cmp).toHaveAttribute("data-active", "true");
-  });
-
-  it("clicking the Compare tab keeps activePage 'compare'", async () => {
-    const user = userEvent.setup();
-    renderInRouter(<TabRocker />);
-    await user.click(screen.getByTestId("tab-compare"));
-    expect(useAppState.getState().activePage).toBe("compare");
   });
 });
 

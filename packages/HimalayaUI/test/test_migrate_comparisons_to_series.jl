@@ -203,11 +203,26 @@ using HimalayaUI: create_schema!, migrate_schema!, migrate_comparisons_to_series
         @test String(hash_after) == String(hash_before)
         @test [Int(m.exposure_id) for m in members_after] == [Int(m.exposure_id) for m in members_before]
         @test [Int(r.sample_id) for r in recipe_after] == [Int(r.sample_id) for r in recipe_before]
-        # NOTE: do NOT assert series_messages/series_pins survive this round-trip.
-        # They are NOT event-sourced (copied by raw INSERT in Task 3); the
-        # DELETE FROM series CASCADE drops them and rebuild_views_from_log!
-        # (which folds only series_created/series_plate_committed) does not
-        # restore them. That is correct and matches native series.
+        @test [Int(r.position) for r in recipe_after] == [Int(r.position) for r in recipe_before]
+        @test length(members_after) == length(members_before)
+        # I3.6 (#177) cutover pin: the synthesized event log is the SOLE source
+        # of truth for the rebuild — it is untouched by the empty+refold cycle,
+        # so a migrated series re-folds identically even after the Compare REST
+        # routes are deleted (the fold path touches no route code). Assert the
+        # two synthesized events are still exactly created→committed.
+        ev_after = Tables.rowtable(DBInterface.execute(db,
+            """SELECT action FROM user_actions
+               WHERE entity_type = 'series' AND entity_id = ? ORDER BY id""", [sid]))
+        @test [String(e.action) for e in ev_after] ==
+              ["series_created", "series_plate_committed"]
+        # NOTE: do NOT assert on series_messages/series_pins in this round-trip.
+        # The empty+refold cycle above deletes ONLY series/series_members/
+        # series_samples — it never touches series_messages or series_pins. Those
+        # are NOT event-sourced (the migration copies them by raw INSERT, it does
+        # not synthesize series_pinned / message events), so rebuild_views_from_log!
+        # (which folds only series_created/series_plate_committed) would not restore
+        # them if they were emptied. Leaving them untouched is correct and matches
+        # native series.
         close(db)
     end
 

@@ -32,27 +32,31 @@ import type { OrderRule, Series } from "./api";
 
 export const LS_KEY = "himalaya-ui:state";
 
-export type PageId = "compare";
+/** All three legacy AppShell surfaces are now retired — Inspect (#163),
+ *  Index (#181), and Compare (#177). The `activePage` model is therefore
+ *  fully vestigial: no live surface renders off it. Rather than make `PageId`
+ *  a zero-member `never` union (which makes `coerceActivePage`'s return type
+ *  `never` and the `Set<PageId>` uninhabitable / uncompilable), I3.6 narrows
+ *  it to a single inert `"none"` sentinel. I5.1 (#182) deletes the whole
+ *  `activePage` model + the nav-bridge; I5.2 (#183) drops it from `partialize`
+ *  with a real `migrate`. Do NOT bump the persist version here. */
+export type PageId = "none";
 
-/** The set of `activePage` values that name a live legacy surface. As each
- *  surface is retired (#1.7 Inspect done, #4.4 Index done, #3.6 Compare next),
- *  shrink this set — `coerceActivePage` then redirects a stale persisted
- *  value. I4.4 (#181) dropped "index"; only "compare" remains until I3.6
- *  empties the union (and I5.1 deletes the whole activePage model). */
+/** The set of valid `activePage` values. Now just the inert `"none"` sentinel
+ *  (Inspect #163, Index #181, Compare #177 all retired). `coerceActivePage`
+ *  maps any stale persisted value onto it. */
 export const VALID_PAGE_IDS: ReadonlySet<PageId> = new Set<PageId>([
-  "compare",
+  "none",
 ]);
 
-/** Coerce an arbitrary persisted value to a valid `PageId`. A value naming a
- *  surface that no longer exists (or a non-string) falls back to "compare"
- *  (the sole surviving member post-#181), so it can never strand the user on
- *  an empty `PageBody` (issue-#77 class). Note: with bare `/` redirecting to
- *  `/samples` (#181), this fallback is a pure type artifact — no user lands on
- *  a page driven by it. */
+/** Coerce an arbitrary persisted value to a valid `PageId`. With every legacy
+ *  surface retired, this always resolves to the inert `"none"` sentinel — a
+ *  pure type artifact (bare `/` redirects to `/samples`, no user lands on a
+ *  page driven by `activePage`). Kept type-valid until I5.1 deletes the model. */
 export function coerceActivePage(raw: unknown): PageId {
   return typeof raw === "string" && VALID_PAGE_IDS.has(raw as PageId)
     ? (raw as PageId)
-    : "compare";
+    : "none";
 }
 
 export type ThemeId = "dark" | "light";
@@ -113,6 +117,33 @@ export interface AppState {
   // SpeculativeBuilder component — only the open/close gate lives in store
   // because PhasePanel needs to mount/unmount the modal.
   speculativeBuilder: { exposureId: number } | null;
+
+  // ── Compare-era draft / view slice — KEPT (I3.6 #177 deviation; see below) ──
+  //
+  // The I3.6 plan (§3.2 / §8) resolved to REMOVE this slice when the Compare
+  // page was retired. That resolution was written against the PRE-I3.5b tree;
+  // it is unsafe against the tree this PR actually rebases onto. I3.5b built the
+  // series builder ON TOP OF this slice, so a chunk of it is now live, shared
+  // infrastructure — NOT dead Compare-only state. grep-verified surviving
+  // (non-test, non-Compare) consumers:
+  //   - `showPeakTicks` / `showPeakLabels` (+ setters): read directly by
+  //     `SeriesBuilderPage.tsx`, `AnnotationToggles`, `MultiTracePlot`,
+  //     `MemberTraceLayer`, and the figure-export adapters/marks.
+  //   - `compareXDomains`: read by `SeriesBuilderPage.tsx`.
+  //   - `activeDraft` + `updateMember` / `reorderMembers` / `resizeBands` /
+  //     `setDraftViewGroupingMode` / `highlightedCompareMemberId` (+ setter):
+  //     read by the shared render components the series builder mounts
+  //     (`MemberMetaRow`, `MemberMetaGutter`, `BandResizeDivider`,
+  //     `GroupingModeToggle`).
+  // A genuinely-dead SUBSET remains (the create/fork/membership actions only the
+  // deleted Compare page drove: `startNewDraft`, `startForkDraft`,
+  // `loadDraftFromComparison`, `setDraftForkOf`, `addMember`, `removeMember`,
+  // `discardDraft`, `setCompareXDomain`, `resetBandHeights`,
+  // `cyclePeakDisplayForMember`, …). Pruning only that subset is interconnected
+  // and type-shared (`ActiveDraft`) and risks the series builder's draft-backed
+  // editing; it is DELIBERATELY DEFERRED to I5.1/I5.3's dead-code sweep, which
+  // runs against a stable post-cutover tree. I3.6 narrows the `activePage` union
+  // (above) but leaves this slice intact. (See the PR's coordination note.)
   /**
    * Compare-page q-axis zoom domains, keyed per comparison id. Per-tab UI
    * state — not persisted. Missing entry / `null` value = full data range.
@@ -344,9 +375,10 @@ export const useAppState = create<AppState>()(
         activeExperimentId: undefined,
         activeSampleId: undefined,
         activeExposureId: undefined,
-        // I4.4 (#181): "index" retired; "compare" is the only PageId. This
-        // default is never user-observed — bare `/` redirects to `/samples`.
-        activePage: "compare",
+        // All legacy surfaces retired (#163/#181/#177): `activePage` is inert.
+        // Initial value is the `"none"` sentinel; never user-observed — bare
+        // `/` redirects to `/samples`. I5.1 deletes this model entirely.
+        activePage: "none",
         tutorialSeen: false,
         theme: "dark",
 

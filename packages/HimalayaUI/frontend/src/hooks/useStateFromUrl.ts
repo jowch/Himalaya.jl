@@ -6,12 +6,12 @@ import { parseLocation } from "../lib/url/parseLocation";
 // Spec §4.2 — URL → Zustand. Reads `useLocation()` so popstate AND
 // useNavigate both flow through the hook.
 //
-// I4.4 (#181) + I1.7 (#163): the Index and Inspect surfaces are retired.
-// `parseLocation` no longer returns a slug-bearing `index`/`inspect` kind, so
-// this hook no longer resolves slug URLs into Zustand active ids — those URLs
-// are redirected at the router (Index → /samples or /sample/:id; Inspect →
-// /samples). What remains:
-//   - `compare`  → reflect activePage="compare" (ComparePage owns its own URL).
+// I4.4 (#181) + I1.7 (#163) + I3.6 (#177): the Index, Inspect, and Compare
+// surfaces are all retired. `parseLocation` no longer returns a slug-bearing
+// `index`/`inspect`/`compare` kind, so this hook no longer resolves slug URLs
+// into Zustand active ids — those URLs are redirected at the router (Index →
+// /samples or /sample/:id; Inspect → /samples; Compare → /series). What
+// remains:
 //   - `root` (/) → redirect to the corpus contact sheet (/samples) per §4.1.
 //   - `stale`    → park the user on StaleUrlPage.
 
@@ -24,17 +24,6 @@ export function useStateFromUrl(): void {
 
     if (parsed.kind === "stale") {
       useAppState.getState().setStaleUnknownPath(parsed.raw);
-      return;
-    }
-
-    if (parsed.kind === "compare") {
-      // Compare uses numeric ids resolved by react-router useParams in the
-      // ComparePage component itself; just set the active page + clear
-      // resolving. `setActivePage` already clears `staleUrlContext` as a
-      // side effect, so we don't need a separate call for that.
-      const a = useAppState.getState();
-      a.setActivePage("compare");
-      a.setResolving(false);
       return;
     }
 

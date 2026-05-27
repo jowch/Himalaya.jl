@@ -162,48 +162,8 @@ describe("AnnotationToggles — buildMemberMarks honors flags", () => {
   });
 });
 
-describe("AnnotationToggles — page mount surface", () => {
-  it("ComparePage (review mode) mounts the toggles", async () => {
-    const { MemoryRouter, Routes, Route } = await import("react-router-dom");
-    const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query");
-    const { Compare } = await import("../src/pages/Compare");
-    const qc = new QueryClient({
-      defaultOptions: {
-        queries: { retry: false, gcTime: Infinity, staleTime: 0 },
-        mutations: { retry: false },
-      },
-    });
-    render(
-      <QueryClientProvider client={qc}>
-        <MemoryRouter initialEntries={["/experiments/7/compare/42"]}>
-          <Routes>
-            <Route path="/experiments/:eid/compare/:id" element={<Compare />} />
-          </Routes>
-        </MemoryRouter>
-      </QueryClientProvider>,
-    );
-    expect(screen.getByTestId("annotation-toggles")).toBeInTheDocument();
-  });
-
-  it("ComparePageEdit (edit mode) does NOT mount the toggles", async () => {
-    const { MemoryRouter, Routes, Route } = await import("react-router-dom");
-    const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query");
-    const { Compare } = await import("../src/pages/Compare");
-    const qc = new QueryClient({
-      defaultOptions: {
-        queries: { retry: false, gcTime: Infinity, staleTime: 0 },
-        mutations: { retry: false },
-      },
-    });
-    render(
-      <QueryClientProvider client={qc}>
-        <MemoryRouter initialEntries={["/experiments/7/compare/new"]}>
-          <Routes>
-            <Route path="/experiments/:eid/compare/new" element={<Compare />} />
-          </Routes>
-        </MemoryRouter>
-      </QueryClientProvider>,
-    );
-    expect(screen.queryByTestId("annotation-toggles")).toBeNull();
-  });
-});
+// I3.6 (#177): the "page mount surface" describe block mounted the deleted
+// Compare page to assert the toggle renders in review mode but not edit mode.
+// AnnotationToggles itself is KEPT (the series builder uses it); its component
+// + buildMemberMarks behavior stays covered by the describe blocks above. The
+// series builder's own mount surface is covered by the series builder specs.

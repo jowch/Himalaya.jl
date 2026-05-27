@@ -40,28 +40,33 @@ describe("parseLocation", () => {
     });
   });
 
-  it("/compare (legacy list) → compare:list", () => {
-    expect(parseLocation("/compare", "")).toEqual({ kind: "compare", view: "list" });
+  // I3.6 (#177): Compare is retired. /compare* (both the global /compare/all
+  // root and the experiment-scoped /experiments/:eid/compare root, incl.
+  // /new, /:id, /:id/edit) is redirected to /series at the router layer, so
+  // parseLocation never legitimately sees it; the parse arm is gone and any
+  // /compare path now falls through to `stale`.
+  it("/compare (legacy list) → stale", () => {
+    expect(parseLocation("/compare", "")).toEqual({ kind: "stale", raw: "/compare" });
   });
 
-  it("/compare/all → compare:list", () => {
-    expect(parseLocation("/compare/all", "")).toEqual({ kind: "compare", view: "list" });
+  it("/compare/all → stale", () => {
+    expect(parseLocation("/compare/all", "")).toEqual({ kind: "stale", raw: "/compare/all" });
   });
 
-  it("/compare/all/42 → compare:list (ComparePage handles numeric id)", () => {
-    expect(parseLocation("/compare/all/42", "")).toEqual({ kind: "compare", view: "list" });
+  it("/compare/all/42 → stale", () => {
+    expect(parseLocation("/compare/all/42", "")).toEqual({ kind: "stale", raw: "/compare/all/42" });
   });
 
-  it("/compare/all/42/edit → compare:list", () => {
-    expect(parseLocation("/compare/all/42/edit", "")).toEqual({ kind: "compare", view: "list" });
+  it("/compare/all/42/edit → stale", () => {
+    expect(parseLocation("/compare/all/42/edit", "")).toEqual({ kind: "stale", raw: "/compare/all/42/edit" });
   });
 
-  it("/experiments/17/compare → compare:list", () => {
-    expect(parseLocation("/experiments/17/compare", "")).toEqual({ kind: "compare", view: "list" });
+  it("/experiments/17/compare → stale", () => {
+    expect(parseLocation("/experiments/17/compare", "")).toEqual({ kind: "stale", raw: "/experiments/17/compare" });
   });
 
-  it("/experiments/17/compare/42 → compare:list", () => {
-    expect(parseLocation("/experiments/17/compare/42", "")).toEqual({ kind: "compare", view: "list" });
+  it("/experiments/17/compare/42 → stale", () => {
+    expect(parseLocation("/experiments/17/compare/42", "")).toEqual({ kind: "stale", raw: "/experiments/17/compare/42" });
   });
 
   it("/foo/bar → stale", () => {
