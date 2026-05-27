@@ -6,6 +6,7 @@ import { OnboardingFlow } from "./components/OnboardingFlow";
 import { ToastContainer } from "./components/ui/Toast";
 import { InfrastructureBanner } from "./components/InfrastructureBanner";
 import { ConflictModal } from "./components/ConflictModal";
+import { SeriesCommitConflictModal } from "./components/SeriesCommitConflictModal";
 import { handleRemoteEvent } from "./lib/queue/replayCoordinator";
 import { attachPersistence, rehydrate } from "./lib/queue/persistence";
 import { attachConflictBridge } from "./lib/queue/conflictBridge";
@@ -90,6 +91,7 @@ export function App(): JSX.Element {
       <AppRoutes />
       <OnboardingFlow />
       <ConflictModal />
+      <SeriesCommitConflictModal />
       <ToastContainer />
       <InfrastructureBanner />
     </>

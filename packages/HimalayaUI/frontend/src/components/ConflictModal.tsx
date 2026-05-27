@@ -37,12 +37,13 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAppState } from "../state";
-import { useFocusTrap } from "../hooks/useFocusTrap";
+import { ConflictModalShell } from "./ConflictModalShell";
 import { useSaveComparison } from "../queries";
 import { computeMemberSnapshot } from "../lib/comparison/snapshot";
 import { comparePath, type CompareScope } from "../lib/comparison/routes";
 import { prefetchColdMembers } from "../lib/comparison/prefetchMembers";
 import { showToast } from "../lib/toast";
+import { isFullSeries } from "../api";
 import type {
   Comparison, ComparisonMemberInput, SaveComparisonBody,
 } from "../api";
@@ -141,11 +142,16 @@ export function ConflictModal(): JSX.Element | null {
   const qc                 = useQueryClient();
   const save               = useSaveComparison();
 
-  const dialogRef = useRef<HTMLDivElement>(null);
   const isOpen    = conflict !== null;
-  useFocusTrap(dialogRef, isOpen);
 
-  const serverState: Comparison | null = conflict?.current_state ?? null;
+  // current_state is now `Comparison | Series | null` (I3.5b widening). Both
+  // conflict modals read the SAME `pendingConflict` slot, so each must render
+  // ONLY for its own entity kind. A series-commit 409 carries a `Series`
+  // (`isFullSeries` — has `samples` + `state`); bail to null so this
+  // comparison modal stays closed and `SeriesCommitConflictModal` handles it.
+  const rawState = conflict?.current_state ?? null;
+  const serverState: Comparison | null =
+    rawState !== null && !isFullSeries(rawState) ? (rawState as Comparison) : null;
   const serverHash:  string | null     = conflict?.current_hash  ?? null;
 
   const eid = useMemo(() => extractEid(location.pathname), [location.pathname]);
@@ -164,24 +170,11 @@ export function ConflictModal(): JSX.Element | null {
 
   // Esc and outside-click both close the modal WITHOUT committing — the
   // local draft is preserved. This matches the design call (non-destructive
-  // dismiss); Discard is the explicit "I give up" path.
+  // dismiss); Discard is the explicit "I give up" path. The shell owns the
+  // Esc / outside-click wiring; this is the handler it calls.
   const closeWithoutAction = useCallback(() => {
     setPendingConflict(null);
   }, [setPendingConflict]);
-
-  // Esc handler — bound at document level so it works even when focus is
-  // briefly outside the dialog (e.g. after a focus restore between renders).
-  useEffect(() => {
-    if (!isOpen) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        closeWithoutAction();
-      }
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [isOpen, closeWithoutAction]);
 
   // Discard: drop our draft, go to the server's current state, clear slot.
   const handleDiscard = useCallback(() => {
@@ -274,134 +267,43 @@ export function ConflictModal(): JSX.Element | null {
 
   if (!isOpen || serverState === null) return null;
 
-  const localMemberCount  = draft?.members.length ?? 0;
-  const serverMemberCount = serverState.members.length;
-  const localTitle  = draft?.title ?? "(no title)";
-  const serverTitle = serverState.title;
-
   return (
-    <div
-      data-testid="conflict-modal"
-      className="fixed inset-0 z-50 flex items-center justify-center
-                 bg-[oklch(0.05_0_0/0.65)] backdrop-blur-sm
-                 anim-pal-in"
-      role="presentation"
-      onClick={(e) => { if (e.target === e.currentTarget) closeWithoutAction(); }}
-    >
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="conflict-title"
-        aria-describedby="conflict-subtitle"
-        className="w-[min(820px,calc(100vw-48px))] max-h-[80vh]
-                   bg-bg-elevated border border-border rounded-xl shadow-2xl
-                   flex flex-col overflow-hidden anim-pal-scale"
-      >
-        <header className="px-5 py-4 border-b border-border">
-          <h2 id="conflict-title" className="text-fg text-lg font-medium">
-            Comparison changed while you were editing
-          </h2>
-          <p id="conflict-subtitle" className="text-fg-muted text-sm mt-1">
-            Someone else submitted updates since you entered edit mode.
-            Choose how to resolve.
-          </p>
-        </header>
-
-        <div className="flex-1 min-h-0 overflow-y-auto grid grid-cols-2 gap-3 p-5">
-          <Panel
-            label="Server (current)"
-            testId="conflict-panel-server"
-            title={serverTitle}
-            memberCount={serverMemberCount}
-            description={serverState.description}
-            updatedAt={serverState.updated_at}
-          />
-          <Panel
-            label="Your draft"
-            testId="conflict-panel-local"
-            title={localTitle}
-            memberCount={localMemberCount}
-            description={draft?.description ?? null}
-            updatedAt={null}
-          />
-        </div>
-
-        <footer className="flex items-center gap-2 px-5 py-3 border-t border-border">
-          <button
-            type="button"
-            data-testid="conflict-discard"
-            onClick={handleDiscard}
-            className="px-3 py-1.5 rounded border border-border text-fg text-sm
-                       hover:bg-bg-hover"
-          >
-            Discard my changes
-          </button>
-          <button
-            type="button"
-            data-testid="conflict-fork"
-            onClick={handleFork}
-            className="px-3 py-1.5 rounded border border-border text-fg text-sm
-                       hover:bg-bg-hover"
-          >
-            Fork to a new comparison
-          </button>
-          <span className="flex-1" />
-          <button
-            type="button"
-            data-testid="conflict-overwrite"
-            onClick={handleOverwrite}
-            disabled={save.isPending}
-            className="px-3 py-1.5 rounded border border-accent bg-accent
-                       text-bg text-sm disabled:opacity-60"
-          >
-            {save.isPending ? "Saving…" : "Overwrite with mine"}
-          </button>
-        </footer>
-      </div>
-    </div>
-  );
-}
-
-interface PanelProps {
-  label: string;
-  testId: string;
-  title: string;
-  memberCount: number;
-  description: string | null;
-  updatedAt: string | null;
-}
-
-function Panel({
-  label, testId, title, memberCount, description, updatedAt,
-}: PanelProps): JSX.Element {
-  return (
-    <section
-      data-testid={testId}
-      className="border border-border rounded-md p-3 flex flex-col gap-2 min-w-0"
-    >
-      <header className="text-xs uppercase tracking-wide text-fg-dim">
-        {label}
-      </header>
-      <div className="text-fg font-medium truncate" data-testid={`${testId}-title`}>
-        {title || "(no title)"}
-      </div>
-      <div className="text-fg-muted text-sm" data-testid={`${testId}-members`}>
-        {memberCount} {memberCount === 1 ? "member" : "members"}
-      </div>
-      {description && (
-        <div
-          className="text-fg-muted text-sm whitespace-pre-wrap"
-          data-testid={`${testId}-description`}
+    <ConflictModalShell
+      open
+      heading="Comparison changed while you were editing"
+      subtitle="Someone else submitted updates since you entered edit mode. Choose how to resolve."
+      serverPanel={{
+        label: "Server (current)",
+        testId: "conflict-panel-server",
+        title: serverState.title,
+        memberCount: serverState.members.length,
+        description: serverState.description,
+        updatedAt: serverState.updated_at,
+      }}
+      localPanel={{
+        label: "Your draft",
+        testId: "conflict-panel-local",
+        title: draft?.title ?? "(no title)",
+        memberCount: draft?.members.length ?? 0,
+        description: draft?.description ?? null,
+        updatedAt: null,
+      }}
+      onClose={closeWithoutAction}
+      onDiscard={handleDiscard}
+      discardLabel="Discard my changes"
+      onOverwrite={handleOverwrite}
+      overwriteBusy={save.isPending}
+      extraAction={
+        <button
+          type="button"
+          data-testid="conflict-fork"
+          onClick={handleFork}
+          className="px-3 py-1.5 rounded border border-border text-fg text-sm
+                     hover:bg-bg-hover"
         >
-          {description}
-        </div>
-      )}
-      {updatedAt && (
-        <div className="text-fg-dim text-xs mt-auto" data-testid={`${testId}-updated`}>
-          Updated {updatedAt}
-        </div>
-      )}
-    </section>
+          Fork to a new comparison
+        </button>
+      }
+    />
   );
 }

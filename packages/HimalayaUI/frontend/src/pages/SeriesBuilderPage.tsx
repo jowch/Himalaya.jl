@@ -12,6 +12,7 @@ import { AnnotationToggles } from "../components/AnnotationToggles";
 import { ActiveBandProvider } from "../components/ActiveBandContext";
 import { FigureExportControls } from "../components/FigureExportControls";
 import { SeriesBuilderRail } from "../components/SeriesBuilderRail";
+import { SeriesRecipeEditor } from "../components/SeriesRecipeEditor";
 import { HintText } from "../components/ui";
 import type { Representation } from "../components/RepresentationToggle";
 import { resolveDisplayLabels } from "../lib/comparison/labels";
@@ -70,6 +71,14 @@ export function SeriesBuilderPage(): JSX.Element {
   const s = query.data;
   const title = s && s.title.trim() !== "" ? s.title : "Untitled series";
 
+  // I3.5b — edit-mode gate. A draft for THIS series being active flips the
+  // builder into edit mode (the recipe editor injects into the rail). The
+  // Edit button seeds the draft; entering edit mode is draft-driven on the
+  // bare /series/:id URL (no /edit segment), mirroring Compare.
+  const seriesDraft = useAppState((st) => st.seriesDraft);
+  const startSeriesDraft = useAppState((st) => st.startSeriesDraftFromSeries);
+  const editing = s !== undefined && seriesDraft !== null && seriesDraft.id === s.id;
+
   return (
     <div data-testid="series-builder-page" className="flex h-full min-h-0 flex-col">
       <Skeleton
@@ -85,22 +94,33 @@ export function SeriesBuilderPage(): JSX.Element {
       >
         {s && (
           <>
-            <header data-testid="series-builder-header" className="shrink-0 px-6 pt-5">
-              <div className="text-xs font-semibold uppercase tracking-wide text-print-accent">
-                Series
+            <header
+              data-testid="series-builder-header"
+              data-editing={String(editing)}
+              className="shrink-0 flex items-start justify-between px-6 pt-5"
+            >
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-wide text-print-accent">
+                  Series
+                </div>
+                <h1 className="font-medium text-ink">{title}</h1>
               </div>
-              <h1 className="font-medium text-ink">{title}</h1>
+              {editing ? (
+                <span data-testid="series-builder-editing-badge" className="text-xs text-ink-faint">
+                  Editing
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  data-testid="series-builder-edit"
+                  onClick={() => startSeriesDraft(s)}
+                  className="rounded border border-hair px-2 py-1 text-sm text-ink hover:bg-paper-sunk"
+                >
+                  Edit
+                </button>
+              )}
             </header>
-            {s.members.length === 0 ? (
-              <div
-                data-testid="series-builder-empty"
-                className="flex-1 grid place-items-center text-sm text-ink-faint"
-              >
-                This series has no members yet.
-              </div>
-            ) : (
-              <SeriesBuilderBody series={s} />
-            )}
+            <SeriesBuilderBody series={s} editing={editing} />
           </>
         )}
       </Skeleton>
@@ -115,7 +135,9 @@ export function SeriesBuilderPage(): JSX.Element {
  * groupingMode/xDomain (no draft, no Zustand comparison-keyed domain — a
  * read surface's coloring + pan/zoom are local UI concerns).
  */
-function SeriesBuilderBody({ series: s }: { series: Series }): JSX.Element {
+function SeriesBuilderBody(
+  { series: s, editing }: { series: Series; editing: boolean },
+): JSX.Element {
   // Members arrive sorted by display_order from the route; keep that order.
   const members: SeriesMember[] = s.members;
   const exposureIds = useMemo(
@@ -221,32 +243,48 @@ function SeriesBuilderBody({ series: s }: { series: Series }): JSX.Element {
     <ActiveBandProvider>
       <div className="flex-1 min-h-0 flex flex-row" data-testid="series-builder-body">
         <div className="flex-1 min-h-0 flex flex-col p-4 gap-3" data-testid="series-builder-plot">
-          <div className="flex items-center gap-3" data-testid="series-builder-controls">
-            <GroupingModeToggle mode={groupingMode} onChange={setGroupingMode} />
-            <AnnotationToggles />
-          </div>
-          <div className="flex-1 min-h-0 flex flex-row gap-2">
-            <div ref={plotColRef} className="flex-1 min-w-0">
-              <MultiTracePlot
-                members={members}
-                traces={traces}
-                xDomain={xDomain}
-                onXDomain={setXDomain}
-                groupingMode={groupingMode}
-                sampleIdFor={sampleIdFor}
-                showPeakTicks={showPeakTicks}
-                showPeakLabels={showPeakLabels}
-              />
+          {members.length === 0 ? (
+            // Empty plate — the placeholder lives in the PLOT area so the rail
+            // (and, in edit mode, the recipe editor) still mounts. A
+            // zero-member series is reachable from the folio, and adding the
+            // first sample is exactly the I3.5b recipe-edit flow; gating the
+            // editor out of the empty case would lock that flow out.
+            <div
+              data-testid="series-builder-empty"
+              className="flex-1 grid place-items-center text-sm text-ink-faint"
+            >
+              This series has no members yet.
             </div>
-            <div className="w-[280px] shrink-0" data-testid="series-builder-gutter">
-              <MemberMetaGutter
-                members={members}
-                panelHeight={panelHeight}
-                mode="review"
-                displayLabelByMemberId={displayLabelByMemberId}
-              />
-            </div>
-          </div>
+          ) : (
+            <>
+              <div className="flex items-center gap-3" data-testid="series-builder-controls">
+                <GroupingModeToggle mode={groupingMode} onChange={setGroupingMode} />
+                <AnnotationToggles />
+              </div>
+              <div className="flex-1 min-h-0 flex flex-row gap-2">
+                <div ref={plotColRef} className="flex-1 min-w-0">
+                  <MultiTracePlot
+                    members={members}
+                    traces={traces}
+                    xDomain={xDomain}
+                    onXDomain={setXDomain}
+                    groupingMode={groupingMode}
+                    sampleIdFor={sampleIdFor}
+                    showPeakTicks={showPeakTicks}
+                    showPeakLabels={showPeakLabels}
+                  />
+                </div>
+                <div className="w-[280px] shrink-0" data-testid="series-builder-gutter">
+                  <MemberMetaGutter
+                    members={members}
+                    panelHeight={panelHeight}
+                    mode="review"
+                    displayLabelByMemberId={displayLabelByMemberId}
+                  />
+                </div>
+              </div>
+            </>
+          )}
         </div>
         <SeriesBuilderRail
           collapsed={collapsed}
@@ -262,6 +300,9 @@ function SeriesBuilderBody({ series: s }: { series: Series }): JSX.Element {
               disabled={exportDisabled}
             />
           }
+          {...(editing
+            ? { editControls: <SeriesRecipeEditor seriesId={s.id} members={members} /> }
+            : {})}
         />
       </div>
     </ActiveBandProvider>

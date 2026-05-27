@@ -34,6 +34,9 @@ import { reanalyzeExposureMutator } from "./lib/queue/mutators/reanalyzeExposure
 import { saveComparisonMutator } from "./lib/queue/mutators/saveComparison";
 import { deleteComparisonMutator } from "./lib/queue/mutators/deleteComparison";
 import { scopeSeriesMutator } from "./lib/queue/mutators/scopeSeries";
+import { saveSeriesMutator } from "./lib/queue/mutators/saveSeries";
+import { commitSeriesPlateMutator } from "./lib/queue/mutators/commitSeriesPlate";
+import { deleteSeriesMutator } from "./lib/queue/mutators/deleteSeries";
 import { useExposureHasPendingPeakOps } from "./lib/queue/hooks";
 
 const CLIENT_ID = getClientId();
@@ -656,6 +659,35 @@ export function useScopeSeries() {
     mutate: (input: { key: string; tags: { sampleId: number; value: string }[] }) =>
       inner.mutate(input),
   };
+}
+
+/**
+ * Series recipe-save (I3.5b). `series_save` → POST /api/series (create) or
+ * PATCH /api/series/:id (recipe edit; `payload.id` discriminates). Optimistic
+ * surface is the `seriesDraft`; the mutator does no optimistic cache write.
+ * Recipe save never 409s (PATCH does not read `expected_content_hash`).
+ */
+export function useSaveSeries() {
+  const username = useAppState((s) => s.username);
+  return useQueueMutation(saveSeriesMutator, { username, clientId: CLIENT_ID });
+}
+
+/**
+ * Series plate-commit (I3.5b). `series_commit` → POST /api/series/:id/commit.
+ * Spinner (no optimistic write). On 409 the fetcher throws `ConflictError`,
+ * which the App-level `attachConflictBridge` routes to `pendingConflict`
+ * (kind `series_commit`) — bridge-free here, single writer, mirroring
+ * `useSaveComparison`.
+ */
+export function useCommitSeriesPlate() {
+  const username = useAppState((s) => s.username);
+  return useQueueMutation(commitSeriesPlateMutator, { username, clientId: CLIENT_ID });
+}
+
+/** Series delete (I3.5b). `series_delete` → DELETE /api/series/:id. */
+export function useDeleteSeries() {
+  const username = useAppState((s) => s.username);
+  return useQueueMutation(deleteSeriesMutator, { username, clientId: CLIENT_ID });
 }
 
 /**
