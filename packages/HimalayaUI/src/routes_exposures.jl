@@ -35,10 +35,20 @@ function register_exposures_routes!()
             ["Content-Type" => "application/json"],
             JSON3.write(Dict(:error => "no image for this exposure")))
 
+        # The DB stores image_path at ingest, but the source TIFF may have been
+        # moved or deleted since. Guard before load_and_lognormalize, which
+        # would otherwise throw an unhandled ArgumentError → HTTP 500. Fail
+        # gracefully with a 404 like the trace route does for a missing .dat
+        # (issue #233, finding BE-1).
+        path = String(ip)
+        isfile(path) || return HTTP.Response(404,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:error => "image source file not found: $path")))
+
         params   = HTTP.queryparams(req)
         is_thumb = get(params, "thumb", "0") == "1"
 
-        img = load_and_lognormalize(String(ip))
+        img = load_and_lognormalize(path)
         if is_thumb
             img = resize_to_fit(img, 128)
         end
