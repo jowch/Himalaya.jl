@@ -13,18 +13,21 @@ import { SeriesFolioPage } from "../pages/SeriesFolioPage";
 import { SeriesBuilderPage } from "../pages/SeriesBuilderPage";
 import { SeriesScopingPage } from "../pages/SeriesScopingPage";
 import { AppShell } from "./AppShell";
-import { IndexPage } from "../pages/IndexPage";
+import { IndexSlugRedirect } from "./IndexSlugRedirect";
 import { Compare } from "../pages/Compare";
 import { ResolvingFallback } from "./ResolvingFallback";
 import { StaleUrlPage } from "./StaleUrlPage";
 
 /**
- * PageBody — the legacy Index body, driven by Zustand `activePage`. Compare
- * URLs are matched by their explicit <Route> entries below, so
- * activePage === "compare" never reaches here. (Inspect retired in #163.)
+ * PageBody — the legacy catch-all body under AppShell. The Index surface is
+ * retired (#181; Inspect retired in #163), so this no longer renders a page
+ * for any `activePage`: it just handles the in-flight (`resolving`) and stale
+ * (`staleUrlContext`) URL states, and otherwise redirects to the corpus
+ * contact sheet. Compare URLs match their explicit <Route> entries below, so
+ * activePage === "compare" never reaches here. (Full PageBody/AppShell removal
+ * is I5.1's scope.)
  */
 function PageBody(): JSX.Element {
-  const activePage = useAppState((s) => s.activePage);
   const resolving = useAppState((s) => s.resolving);
   const staleUrlContext = useAppState((s) => s.staleUrlContext);
 
@@ -32,8 +35,8 @@ function PageBody(): JSX.Element {
   if (staleUrlContext !== null) {
     return <StaleUrlPage staleUrlContext={staleUrlContext} />;
   }
-  if (activePage === "index") return <IndexPage />;
-  return <></>;
+  // Index retired (#181); nothing else renders here. Catch-all → corpus home.
+  return <Navigate to="/samples" replace />;
 }
 
 /**
@@ -114,11 +117,18 @@ export function AppRoutes(): JSX.Element {
             contact sheet. Splat covers /inspect, /inspect/:exp, /inspect/:exp/:sample. */}
         <Route path="/inspect/*" element={<Navigate to="/samples" replace />} />
       </Route>
+      {/* I4.4 (#181): Index retired. These redirects sit OUTSIDE both layout
+          shells so neither the corpus nor the legacy AppShell chrome (and,
+          crucially, AppShell's `activePage==="compare"` nav-bridge effect)
+          mounts under them and races the redirect. Bare `/` and the sampleless
+          legacy Index URLs land on the corpus contact sheet; a slug-bearing
+          `/index/:exp/:sample` resolves to the focus workspace via
+          IndexSlugRedirect (preserving old permalink deep-links). */}
+      <Route path="/" element={<Navigate to="/samples" replace />} />
+      <Route path="/index" element={<Navigate to="/samples" replace />} />
+      <Route path="/index/:experiment" element={<Navigate to="/samples" replace />} />
+      <Route path="/index/:experiment/:sample" element={<IndexSlugRedirect />} />
       <Route element={<AppShell />}>
-        <Route path="/" element={<PageBody />} />
-        <Route path="/index" element={<PageBody />} />
-        <Route path="/index/:experiment" element={<PageBody />} />
-        <Route path="/index/:experiment/:sample" element={<PageBody />} />
         <Route path="/experiments/:eid/compare" element={<Compare />} />
         <Route path="/experiments/:eid/compare/new" element={<Compare />} />
         <Route path="/experiments/:eid/compare/:id" element={<Compare />} />
