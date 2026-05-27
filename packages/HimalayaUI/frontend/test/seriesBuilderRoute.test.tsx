@@ -18,7 +18,7 @@ beforeEach(() => {
   localStorage.clear();
   useAppState.setState({
     activeSampleId: undefined, activeExposureId: undefined,
-    activePage: "index", activeExperimentId: undefined,
+    activeExperimentId: undefined,
     username: "tester", theme: "dark",
   });
   vi.stubGlobal("fetch", vi.fn(async (url: string) => {
