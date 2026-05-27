@@ -81,6 +81,15 @@ export interface AppState {
   // ephemeral (not persisted to localStorage)
   hoveredIndexId: number | undefined;
   hoveredPeakId: number | undefined;
+  /** Ephemeral q-link hover (focus workspace, #180). The hovered q-value that
+   *  cross-highlights the trace peak and the detector ring.
+   *
+   *  NOT persisted — deliberately omitted from `partialize`, like the other
+   *  hovered* fields; a hovered q is a momentary, tab-local UI cue that would
+   *  be meaningless to replay across reloads. It is also invisible to the
+   *  mutation queue and never reaches a server payload — pure client hover
+   *  state (mirrors the `pendingConflict` non-persist rationale below). */
+  hoveredQ: number | undefined;
   navModalOpen: boolean;
   navModalStep: NavModalStep;
   // Speculative builder: when non-null, the modal is open for this exposure.
@@ -165,6 +174,7 @@ export interface AppState {
   setActiveExposure: (id: number | undefined) => void;
   setHoveredIndex: (id: number | undefined) => void;
   setHoveredPeak: (id: number | undefined) => void;
+  setHoveredQ: (q: number | undefined) => void;
   setActivePage: (page: PageId) => void;
   setTutorialSeen: (seen: boolean) => void;
   setTheme: (theme: ThemeId) => void;
@@ -282,6 +292,7 @@ export const useAppState = create<AppState>()(
 
         hoveredIndexId: undefined,
         hoveredPeakId: undefined,
+        hoveredQ: undefined,
         navModalOpen: false,
         navModalStep: "experiment",
         speculativeBuilder: null,
@@ -323,6 +334,7 @@ export const useAppState = create<AppState>()(
         },
         setHoveredIndex: (hoveredIndexId) => set({ hoveredIndexId }),
         setHoveredPeak: (hoveredPeakId) => set({ hoveredPeakId }),
+        setHoveredQ: (hoveredQ) => set({ hoveredQ }),
         setActivePage: (activePage) => set({ activePage, staleUrlContext: null }),
         setTutorialSeen: (tutorialSeen) => set({ tutorialSeen }),
         setTheme: (theme) => set({ theme }),
