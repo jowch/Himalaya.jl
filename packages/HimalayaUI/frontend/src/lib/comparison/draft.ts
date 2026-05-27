@@ -17,11 +17,11 @@
  * successful submit the draft is normally discarded; subsequent edits
  * load with `baseHash` set to the server's `content_hash`.
  *
- * **Module structure note:** the snapshot-deriving factories live in
- * `draftFactories.ts` to avoid the import cycle
- *   state.ts → draft.ts → snapshot.ts → queries.ts → state.ts.
- * `state.ts` calls `loadDraftFromSession()` at module-init time, so this
- * file MUST stay free of any transitive `queries.ts` import.
+ * **Module structure note:** `state.ts` calls `loadDraftFromSession()` at
+ * module-init time, so this file MUST stay free of any transitive `queries.ts`
+ * import. (I5.3 #184 removed the Compare-only `draftFactories.ts`/`snapshot.ts`
+ * factories that this note used to warn about; the constraint stands for the
+ * kept slice the series builder shares.)
  */
 import type { MemberSnapshot } from "../../api";
 import type { GroupingMode } from "./coloring";
@@ -43,9 +43,9 @@ export interface DraftMember {
   q_window_max: number | undefined;
   peak_display: { hidden: number[]; labeled: number[] } | undefined;
   /**
-   * Computed at submit time via `computeMemberSnapshot`; undefined during
-   * editing. Stored only after `loadDraftFromComparison` recovery so the
-   * UI has something to render before the next mutation.
+   * Server-filled member snapshot; undefined during editing. (The Compare-era
+   * client-side snapshot derivation was removed in I5.3 #184 with the retired
+   * Compare page.)
    */
   snapshot: MemberSnapshot | undefined;
 }

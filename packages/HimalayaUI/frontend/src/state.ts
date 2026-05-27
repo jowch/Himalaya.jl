@@ -86,37 +86,28 @@ export interface AppState {
   // because PhasePanel needs to mount/unmount the modal.
   speculativeBuilder: { exposureId: number } | null;
 
-  // ── Compare-era draft / view slice — KEPT (I3.6 #177 deviation; see below) ──
+  // ── Compare-era draft / view slice — KEPT, shared by the series builder ──
   //
-  // The I3.6 plan (§3.2 / §8) resolved to REMOVE this slice when the Compare
-  // page was retired. That resolution was written against the PRE-I3.5b tree;
-  // it is unsafe against the tree this PR actually rebases onto. I3.5b built the
-  // series builder ON TOP OF this slice, so a chunk of it is now live, shared
-  // infrastructure — NOT dead Compare-only state. grep-verified surviving
-  // (non-test, non-Compare) consumers:
-  //   - `showPeakTicks` / `showPeakLabels` (+ setters): read directly by
-  //     `SeriesBuilderPage.tsx`, `AnnotationToggles`, `MultiTracePlot`,
-  //     `MemberTraceLayer`, and the figure-export adapters/marks.
-  //   - `compareXDomains`: read by `SeriesBuilderPage.tsx`.
+  // I3.5b built the series builder ON TOP OF this slice, so the surviving
+  // members are live, shared infrastructure — not dead Compare-only state.
+  // grep-verified (non-test) consumers:
+  //   - `showPeakTicks` / `showPeakLabels` (+ setters): `SeriesBuilderPage.tsx`,
+  //     `AnnotationToggles`, `MultiTracePlot`, `MemberTraceLayer`, and the
+  //     figure-export adapters/marks.
   //   - `activeDraft` + `updateMember` / `reorderMembers` / `resizeBands` /
   //     `setDraftViewGroupingMode` / `highlightedCompareMemberId` (+ setter):
-  //     read by the shared render components the series builder mounts
-  //     (`MemberMetaRow`, `MemberMetaGutter`, `BandResizeDivider`,
-  //     `GroupingModeToggle`).
-  // A genuinely-dead SUBSET remains (the create/fork/membership actions only the
-  // deleted Compare page drove: `startNewDraft`, `startForkDraft`,
-  // `loadDraftFromComparison`, `setDraftForkOf`, `addMember`, `removeMember`,
-  // `discardDraft`, `setCompareXDomain`, `resetBandHeights`,
-  // `cyclePeakDisplayForMember`, …). Pruning only that subset is interconnected
-  // and type-shared (`ActiveDraft`) and risks the series builder's draft-backed
-  // editing; it is DELIBERATELY DEFERRED to I5.3's (#184) dead-code sweep, which
-  // runs against a stable post-cutover tree. I5.1 (#182) deleted the `activePage`
-  // model but leaves this draft slice intact. (See the PR's coordination note.)
+  //     the shared render components the series builder mounts (`MemberMetaRow`,
+  //     `MemberMetaGutter`, `BandResizeDivider`, `GroupingModeToggle`).
+  // I5.3 (#184) pruned the genuinely-dead Compare-only subset that the retired
+  // Compare page drove (the create/fork/membership/zoom actions:
+  // `startNewDraft`, `startForkDraft`, `loadDraftFromComparison`,
+  // `setDraftForkOf`, `addMember`, `removeMember`, `discardDraft`,
+  // `setCompareXDomain` + the `compareXDomains` field, `resetBandHeights`,
+  // `cyclePeakDisplayForMember`) along with their now-orphaned factory modules.
   /**
-   * Compare-page draft slot (Plan §Phase 4, Task 4.3). Single slot — only
-   * one comparison can be in edit mode at a time per tab. Mirrored to
-   * sessionStorage with a schema version (see `lib/comparison/draft.ts`).
-   * Tab close loses the draft, which is acceptable for v1 per the spec.
+   * Compare-era draft slot (Plan §Phase 4, Task 4.3). Single slot. Mirrored to
+   * sessionStorage with a schema version (see `lib/comparison/draft.ts`). Now
+   * driven only by the kept member-edit actions the series builder shares.
    */
   activeDraft: ActiveDraftSlot;
 
