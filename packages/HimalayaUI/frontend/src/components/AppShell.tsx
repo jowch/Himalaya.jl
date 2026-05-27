@@ -1,5 +1,4 @@
-import { useEffect } from "react";
-import { Outlet, useLocation, useNavigate } from "react-router-dom";
+import { Outlet, useNavigate } from "react-router-dom";
 import { useAppState } from "../state";
 import { AppHeader } from "./AppHeader";
 import { TabRocker } from "./TabRocker";
@@ -9,16 +8,18 @@ import { useUrlFromState } from "../hooks/useUrlFromState";
 
 /**
  * AppShell — the legacy layout: the grain background, the app header, the
- * page-nav rocker, and an <Outlet/> for the matched legacy route (Index /
- * Inspect / Compare). Registered as a pathless layout route in `AppRoutes`.
+ * page-nav rocker, and an <Outlet/> for the surviving catch-all route. All
+ * legacy surfaces are retired — Inspect (#163), Index (#181), Compare (#177) —
+ * so AppShell now mounts only for the `*` catch-all (the stale/resolving body).
  *
- * Phase 5 (#182) deletes this; until then it is the migration rollback path.
+ * Phase 5 (#182) deletes this whole shell + the `activePage` model; until then
+ * it is the migration rollback path.
  *
  * Routing model: AppShell is the element of the *legacy* layout route, so it
- * mounts only when a legacy URL matches. The URL↔Zustand sync hooks live
- * here (not at the app root) precisely so they never run on a corpus route —
- * the new shell owns its own URL and the legacy stale-path logic cannot
- * strand the user there.
+ * mounts only when no other (corpus/redirect) route matches. The URL↔Zustand
+ * sync hooks live here (not at the app root) precisely so they never run on a
+ * corpus route — the new shell owns its own URL and the legacy stale-path
+ * logic cannot strand the user there.
  */
 export function AppShell(): JSX.Element {
   // URL ↔ Zustand sync, relocated from App.tsx. Order matters:
@@ -29,48 +30,13 @@ export function AppShell(): JSX.Element {
   useUrlFromState();
 
   const experimentId = useAppState((s) => s.activeExperimentId);
-  const setActivePage = useAppState((s) => s.setActivePage);
-  const activePage = useAppState((s) => s.activePage);
-  const staleUrlContext = useAppState((s) => s.staleUrlContext);
-  const resolving = useAppState((s) => s.resolving);
-  const location = useLocation();
   const navigate = useNavigate();
 
-  // Sync URL → Zustand activePage. When the URL is a compare path, mark the
-  // page tab as "compare". On other paths we leave activePage alone.
-  const onComparePath =
-    location.pathname.startsWith("/compare") ||
-    /^\/experiments\/\d+\/compare(\/|$)/.test(location.pathname);
-  useEffect(() => {
-    if (onComparePath) setActivePage("compare");
-  }, [onComparePath, setActivePage]);
-
-  // Symmetric: when activePage is "compare" but the URL isn't on a compare
-  // path, navigate so the URL-routed Compare page mounts. Without this, a
-  // reload at "/" with persisted activePage='compare' renders the rocker but
-  // no page body (issue #77).
-  //
-  // I4.4 (#181): with PageId narrowed to "compare", activePage is now ALWAYS
-  // "compare", so this bridge would fire on the catch-all `*` route too and
-  // bounce a typo'd/dead URL to /compare/all before PageBody can render
-  // StaleUrlPage ("Page not found"). Stand the bridge down whenever the URL is
-  // stale or mid-resolve — those are useStateFromUrl's to own, and PageBody
-  // renders the stale/resolving view for them. We re-read both flags via
-  // getState() because useStateFromUrl (called first, above) sets them
-  // synchronously inside its effect; the selector-subscribed values won't
-  // reflect that until the next render commit, but getState() sees it now.
-  useEffect(() => {
-    if (activePage !== "compare") return;
-    if (onComparePath) return;
-    const s = useAppState.getState();
-    if (s.staleUrlContext !== null || s.resolving) return;
-    if (staleUrlContext !== null || resolving) return;
-    const url =
-      experimentId !== undefined
-        ? `/experiments/${experimentId}/compare`
-        : "/compare/all";
-    navigate(url, { replace: true });
-  }, [activePage, onComparePath, experimentId, navigate, staleUrlContext, resolving]);
+  // I3.6 (#177): Compare is retired. The `/compare*` URLs redirect to /series
+  // at the router (outside this shell), so AppShell never mounts on a compare
+  // path and `activePage` is the inert "none" sentinel. The two former
+  // URL↔activePage nav-bridge effects (and the `onComparePath` detection) are
+  // gone with the Compare page; the dual-nav model retires entirely in I5.1.
 
   return (
     <div
@@ -83,10 +49,10 @@ export function AppShell(): JSX.Element {
       <div className="shrink-0 flex justify-center pt-1 pb-2">
         <TabRocker
           experimentId={experimentId}
-          onNavigateAway={(target) => {
-            // Leaving Compare → return to "/" so the legacy body renders the
-            // chosen page.
-            if (onComparePath && target !== "compare") navigate("/");
+          onNavigateAway={() => {
+            // No legacy surface remains to navigate away from; return to the
+            // corpus home. (TabRocker + this shell retire in I5.1.)
+            navigate("/samples");
           }}
         />
       </div>

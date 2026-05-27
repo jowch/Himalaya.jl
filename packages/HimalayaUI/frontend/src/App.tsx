@@ -5,7 +5,6 @@ import { AppRoutes } from "./components/AppRoutes";
 import { OnboardingFlow } from "./components/OnboardingFlow";
 import { ToastContainer } from "./components/ui/Toast";
 import { InfrastructureBanner } from "./components/InfrastructureBanner";
-import { ConflictModal } from "./components/ConflictModal";
 import { SeriesCommitConflictModal } from "./components/SeriesCommitConflictModal";
 import { handleRemoteEvent } from "./lib/queue/replayCoordinator";
 import { attachPersistence, rehydrate } from "./lib/queue/persistence";
@@ -50,13 +49,16 @@ export function App(): JSX.Element {
     return attachPersistence(mc);
   }, [mc]);
 
-  // Single-source-of-truth bridge: ConflictError on `comparison_save`
-  // mutations → Zustand `pendingConflict`. Mounted once at App startup so
-  // multiple `useSaveComparison()` mount sites (ComparePageEdit's Save +
-  // ConflictModal's Overwrite) cannot race on the slot. Module-scoped
-  // last-seen tracking keeps remount/HMR from re-popping the modal on a
-  // stale terminal-error mutation still in the cache. See
-  // `lib/queue/conflictBridge.ts`.
+  // Single-source-of-truth bridge: a ConflictError on a `series_commit`
+  // mutation → Zustand `pendingConflict` (the slot the
+  // `SeriesCommitConflictModal` reads). Mounted once at App startup so the
+  // mount sites can't race on the slot. Module-scoped last-seen tracking keeps
+  // remount/HMR from re-popping the modal on a stale terminal-error mutation
+  // still in the cache. See `lib/queue/conflictBridge.ts`.
+  //
+  // I3.6 (#177): Compare is retired, so the `comparison_save` arm of the
+  // bridge is gone; only `series_commit` remains. The bridge + slot are KEPT
+  // (series uses them).
   useEffect(() => {
     const setPendingConflict = useAppState.getState().setPendingConflict;
     return attachConflictBridge(mc, setPendingConflict);
@@ -90,7 +92,6 @@ export function App(): JSX.Element {
     <>
       <AppRoutes />
       <OnboardingFlow />
-      <ConflictModal />
       <SeriesCommitConflictModal />
       <ToastContainer />
       <InfrastructureBanner />

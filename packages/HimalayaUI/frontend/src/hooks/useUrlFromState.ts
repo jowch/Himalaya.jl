@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
-import { useAppState } from "../state";
+import { useAppState, type PageId } from "../state";
 import { useExperiments, queryKeys } from "../queries";
 import * as api from "../api";
 import type { Experiment, Sample, Exposure } from "../api";
@@ -39,19 +39,18 @@ function filenameForExposure(list: Exposure[] | undefined,
 }
 
 function buildUrl(
-  page: "compare",
+  page: PageId,
   _experiment: string | undefined,
   _sample: string | undefined,
   _exposure: string | undefined,
   current: string,
 ): string {
-  // I4.4 (#181) / I1.7 (#163): Index and Inspect are retired, so `activePage`
-  // — the only caller's `page` arg — can only be "compare". Compare uses
-  // numeric ids that useStateFromUrl doesn't track in Zustand; ComparePage
-  // owns its own URL via useNavigate. Returning `current` keeps the equality
-  // guard happy and prevents an accidental redirect, so this hook never emits
-  // a Zustand-derived URL anymore. (The hook + the whole Zustand→URL bridge
-  // retire with the dual-nav model in I5.1.)
+  // Every legacy AppShell surface is retired — Inspect (#163), Index (#181),
+  // Compare (#177) — so `activePage` is the inert `"none"` sentinel and there
+  // is no Zustand-derived URL to emit. Returning `current` keeps the equality
+  // guard happy and prevents an accidental redirect, so this hook never emits.
+  // (The hook + the whole Zustand→URL bridge retire with the dual-nav model in
+  // I5.1.)
   void page; void _experiment; void _sample; void _exposure;
   return current;
 }

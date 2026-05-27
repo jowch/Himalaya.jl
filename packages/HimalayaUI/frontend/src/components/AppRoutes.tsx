@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useAppState } from "../state";
 import { queryKeys } from "../queries";
@@ -14,17 +14,15 @@ import { SeriesBuilderPage } from "../pages/SeriesBuilderPage";
 import { SeriesScopingPage } from "../pages/SeriesScopingPage";
 import { AppShell } from "./AppShell";
 import { IndexSlugRedirect } from "./IndexSlugRedirect";
-import { Compare } from "../pages/Compare";
 import { ResolvingFallback } from "./ResolvingFallback";
 import { StaleUrlPage } from "./StaleUrlPage";
 
 /**
- * PageBody — the legacy catch-all (`*`) body under AppShell. The Index surface
- * is retired (#181; Inspect retired in #163), so this no longer renders a page
- * for any `activePage`: it renders the in-flight (`resolving`) and stale
- * (`staleUrlContext`) URL states only. Compare URLs match their explicit
- * <Route> entries below, so activePage === "compare" never reaches here.
- * (Full PageBody/AppShell removal is I5.1's scope.)
+ * PageBody — the legacy catch-all (`*`) body under AppShell. Index (#181),
+ * Inspect (#163), and Compare (#177) are all retired, so this no longer
+ * renders a page for any `activePage`: it renders the in-flight (`resolving`)
+ * and stale (`staleUrlContext`) URL states only. (Full PageBody/AppShell
+ * removal is I5.1's scope.)
  *
  * Any path that reaches the `*` catch-all is, by definition, one no other
  * route matched — `useStateFromUrl` classifies it as a stale unknown_path and
@@ -45,30 +43,13 @@ function PageBody(): JSX.Element {
 }
 
 /**
- * EditToBareRedirect — the `/edit` URL segment is gone (Compare UX Phase B).
- * Old `/edit` deep-links resolve by redirecting to the bare path. Reads
- * `useLocation()` (the router store), not `window.location` — under
- * MemoryRouter the latter stays at "/".
- */
-function EditToBareRedirect(): JSX.Element {
-  const loc = useLocation();
-  const pathname = loc.pathname.replace(/\/edit\/?$/, "");
-  return (
-    <Navigate
-      to={{ pathname, search: loc.search, hash: loc.hash }}
-      replace
-    />
-  );
-}
-
-/**
  * AppRoutes — the single hoisted top-level <Routes> table, plus the shared
  * root effects (theme, global shortcuts) that sit above both shell bodies.
  *
  * Two pathless layout routes: <CorpusShell> for new corpus surfaces and
- * <AppShell> for the legacy Index/Compare surfaces. Later redesign
- * issues register their route slot under the corpus layout route (#161 the
- * loupe, #179 the focus workspace).
+ * <AppShell> for the surviving legacy catch-all body (the Index/Inspect/Compare
+ * surfaces are all retired; I5.1 deletes the AppShell + dual-nav model). Later
+ * redesign issues register their route slot under the corpus layout route.
  */
 export function AppRoutes(): JSX.Element {
   const theme = useAppState((s) => s.theme);
@@ -123,28 +104,25 @@ export function AppRoutes(): JSX.Element {
         <Route path="/inspect/*" element={<Navigate to="/samples" replace />} />
       </Route>
       {/* I4.4 (#181): Index retired. These redirects sit OUTSIDE both layout
-          shells so neither the corpus nor the legacy AppShell chrome (and,
-          crucially, AppShell's `activePage==="compare"` nav-bridge effect)
-          mounts under them and races the redirect. Bare `/` and the sampleless
-          legacy Index URLs land on the corpus contact sheet; a slug-bearing
+          shells so neither the corpus nor the legacy AppShell chrome mounts
+          under them and races the redirect. Bare `/` and the sampleless legacy
+          Index URLs land on the corpus contact sheet; a slug-bearing
           `/index/:exp/:sample` resolves to the focus workspace via
           IndexSlugRedirect (preserving old permalink deep-links). */}
       <Route path="/" element={<Navigate to="/samples" replace />} />
       <Route path="/index" element={<Navigate to="/samples" replace />} />
       <Route path="/index/:experiment" element={<Navigate to="/samples" replace />} />
       <Route path="/index/:experiment/:sample" element={<IndexSlugRedirect />} />
+      {/* I3.6 (#177): Compare retired. The series stage replaces it; all
+          `/compare*` deep-links (both the experiment-scoped and the global
+          `/compare/all` roots, incl. `/new`, `/:id`, `/:id/edit`) redirect to
+          the series folio. Placed OUTSIDE both layout shells for the same
+          reason as the Index redirects above. The `comparison*` tables +
+          dispatcher branches stay forever for event replay; only the UI +
+          routes are gone. */}
+      <Route path="/experiments/:eid/compare/*" element={<Navigate to="/series" replace />} />
+      <Route path="/compare/all/*" element={<Navigate to="/series" replace />} />
       <Route element={<AppShell />}>
-        <Route path="/experiments/:eid/compare" element={<Compare />} />
-        <Route path="/experiments/:eid/compare/new" element={<Compare />} />
-        <Route path="/experiments/:eid/compare/:id" element={<Compare />} />
-        <Route
-          path="/experiments/:eid/compare/:id/edit"
-          element={<EditToBareRedirect />}
-        />
-        <Route path="/compare/all" element={<Compare />} />
-        <Route path="/compare/all/new" element={<Compare />} />
-        <Route path="/compare/all/:id" element={<Compare />} />
-        <Route path="/compare/all/:id/edit" element={<EditToBareRedirect />} />
         <Route path="*" element={<PageBody />} />
       </Route>
     </Routes>
