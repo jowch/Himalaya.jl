@@ -101,7 +101,7 @@ describe("useStateFromUrl", () => {
     expect(useAppState.getState().resolving).toBe(true);
 
     // Simulate user navigating mid-flight via TabRocker (Zustand mutation, no popstate).
-    history.replaceState(null, "", "/inspect/other/SAMPLE");
+    history.replaceState(null, "", "/index/other/SAMPLE");
     // Now satisfy the original fetch — its origin tag should mismatch.
     resolveFetch?.({
       ok: true, status: 200,
@@ -160,14 +160,6 @@ describe("useStateFromUrl — slug-equality fast path", () => {
     ]);
   }
 
-  function seedExposure(qc: QueryClient) {
-    qc.setQueryData(queryKeys.exposures(42), [
-      { id: 99, sample_id: 42, filename: "img001.tif", kind: "file",
-        selected: true, status: null, image_path: null, image_version: "",
-        tags: [], sources: [], trace_hash: null, analysis_inputs_hash: null },
-    ]);
-  }
-
   it("Index URL: slugs match cache+activeIds → no fetch, resolving stays false", () => {
     history.replaceState(null, "", "/index/lipid/JC001");
     useAppState.setState({
@@ -183,33 +175,10 @@ describe("useStateFromUrl — slug-equality fast path", () => {
     expect(useAppState.getState().activeSampleId).toBe(42);
   });
 
-  it("Inspect URL: slugs+exposure match cache+activeIds → no fetch", () => {
-    history.replaceState(null, "", "/inspect/lipid/JC001?exposure=img001.tif");
-    useAppState.setState({
-      activePage: "inspect", activeExperimentId: 17, activeSampleId: 42, activeExposureId: 99,
-    });
-    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    seedExperimentSample(qc);
-    seedExposure(qc);
-    const fetchSpy = vi.spyOn(global, "fetch");
-    renderHook(() => useStateFromUrl(), { wrapper: makeFastPathWrapper(qc) });
-    expect(fetchSpy).not.toHaveBeenCalled();
-    expect(useAppState.getState().resolving).toBe(false);
-    expect(useAppState.getState().activeExposureId).toBe(99);
-  });
-
-  it("URL kind differs from activePage but slugs match → no fetch, activePage flips", () => {
-    history.replaceState(null, "", "/inspect/lipid/JC001");
-    useAppState.setState({
-      activePage: "index", activeExperimentId: 17, activeSampleId: 42, activeExposureId: undefined,
-    });
-    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    seedExperimentSample(qc);
-    const fetchSpy = vi.spyOn(global, "fetch");
-    renderHook(() => useStateFromUrl(), { wrapper: makeFastPathWrapper(qc) });
-    expect(fetchSpy).not.toHaveBeenCalled();
-    expect(useAppState.getState().activePage).toBe("inspect");
-  });
+  // I1.7 (#163): the "Inspect URL: slugs+exposure match → no fetch" and
+  // "URL kind differs → activePage flips to inspect" fast-path cases are
+  // retired with Inspect — no surface carries an exposure in the URL or
+  // resolves to activePage:"inspect" anymore.
 
   it("cold mount with empty cache → still fetches /api/resolve", async () => {
     history.replaceState(null, "", "/index/lipid/JC001");
@@ -254,14 +223,13 @@ describe("useStateFromUrl — slug-equality fast path", () => {
   });
 
   it("Index URL with stale activeExposureId in state → fast-path clears it (matches slow path)", () => {
-    // Inspect→Index transition: state still carries activeExposureId from
-    // the previous Inspect page. Slow path's setResolveSuccess clears it
-    // by writing exposureId:undefined for Index URLs; the fast path must
-    // do the same so consumers (PlotCard etc.) don't see a stale exposure
-    // selection bleed across the page swap.
+    // A persisted activeExposureId can linger from a pre-#163 session. The
+    // slow path's setResolveSuccess clears it by writing exposureId:undefined
+    // for Index URLs; the fast path must do the same so consumers (PlotCard
+    // etc.) don't see a stale exposure selection.
     history.replaceState(null, "", "/index/lipid/JC001");
     useAppState.setState({
-      activePage: "inspect", activeExperimentId: 17, activeSampleId: 42, activeExposureId: 99,
+      activePage: "index", activeExperimentId: 17, activeSampleId: 42, activeExposureId: 99,
     });
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     seedExperimentSample(qc);
@@ -272,29 +240,8 @@ describe("useStateFromUrl — slug-equality fast path", () => {
     expect(useAppState.getState().activeExposureId).toBeUndefined();
   });
 
-  it("Inspect URL with mismatched exposure filename → falls through to fetch", async () => {
-    // Active exposure id 99 is in cache as "img001.tif" but URL asks for
-    // a different filename. Cache says "the activeId would slug to X but
-    // URL says Y" — must defer to /api/resolve to pick up the right id.
-    history.replaceState(null, "", "/inspect/lipid/JC001?exposure=other.tif");
-    useAppState.setState({
-      activePage: "inspect", activeExperimentId: 17, activeSampleId: 42, activeExposureId: 99,
-    });
-    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    seedExperimentSample(qc);
-    seedExposure(qc);  // exposure id=99, filename="img001.tif"
-    const fetchSpy = vi.spyOn(global, "fetch").mockImplementation(() =>
-      ok({
-        experiment_id: 17, experiment_name: "lipid",
-        sample_id: 42, sample_name: "JC001",
-        exposure_id: 100, exposure_filename: "other.tif",
-      }),
-    );
-    renderHook(() => useStateFromUrl(), { wrapper: makeFastPathWrapper(qc) });
-    await waitFor(() => {
-      expect(fetchSpy).toHaveBeenCalledOnce();
-    });
-  });
+  // I1.7 (#163): the "Inspect URL with mismatched exposure filename → fetch"
+  // case is retired with Inspect — no URL carries ?exposure= anymore.
 
   it("composed with useUrlFromState: emitReplaceNext armed by fast path is consumed harmlessly", () => {
     // The fast path calls setResolveSuccess which arms emitReplaceNext().

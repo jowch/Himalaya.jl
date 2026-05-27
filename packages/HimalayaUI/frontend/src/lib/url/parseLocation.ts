@@ -7,7 +7,6 @@
 export type ParsedUrl =
   | { kind: "root" }
   | { kind: "index";   experiment: string | undefined; sample: string | undefined }
-  | { kind: "inspect"; experiment: string | undefined; sample: string | undefined; exposure: string | undefined }
   | { kind: "compare"; view: "list" }
   | { kind: "stale"; raw: string };
 
@@ -28,17 +27,9 @@ export function parseLocation(pathname: string, search: string): ParsedUrl {
     return { kind: "index", experiment: decode(a), sample: decode(b) };
   }
 
-  if (page === "inspect" && segs.length <= 3) {
-    const experiment = decode(a);
-    const sample = decode(b);
-    let exposure: string | undefined = undefined;
-    if (experiment !== undefined && sample !== undefined && search) {
-      const params = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
-      const e = params.get("exposure");
-      if (e !== null && e !== "") exposure = e;
-    }
-    return { kind: "inspect", experiment, sample, exposure };
-  }
+  // I1.7 (#163): Inspect is retired. `/inspect*` is redirected to `/samples`
+  // by the router before this parser runs, so there is no `inspect` parse arm
+  // — any stray /inspect path falls through to `stale`.
 
   // Compare URLs in the actual app live under two roots:
   //   /experiments/:eid/compare(/new|/:id|/:id/edit)

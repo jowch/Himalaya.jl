@@ -22,12 +22,13 @@ beforeEach(() => {
 });
 
 describe("<TabRocker>", () => {
-  it("renders all three tabs with Inspect first", () => {
+  it("renders the Index and Compare tabs (Inspect retired, #163)", () => {
     renderInRouter(<TabRocker />);
     const tabs = screen.getAllByRole("tab");
-    expect(tabs[0]).toHaveTextContent("Inspect");
-    expect(tabs[1]).toHaveTextContent("Index");
-    expect(tabs[2]).toHaveTextContent("Compare");
+    expect(tabs).toHaveLength(2);
+    expect(tabs[0]).toHaveTextContent("Index");
+    expect(tabs[1]).toHaveTextContent("Compare");
+    expect(screen.queryByTestId("tab-inspect")).toBeNull();
   });
 
   it("renders both tabs with the active page marked", () => {

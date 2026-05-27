@@ -20,14 +20,13 @@ import { emitReplaceNext } from "./lib/url/emitMode";
 
 export const LS_KEY = "himalaya-ui:state";
 
-export type PageId = "index" | "compare" | "inspect";
+export type PageId = "index" | "compare";
 
 /** The set of `activePage` values that name a live legacy surface. As each
- *  surface is retired (#1.7 Inspect, #3.6 Compare, #4.4 Index), shrink this
- *  set — `coerceActivePage` then redirects a stale persisted value. */
+ *  surface is retired (#1.7 Inspect done, #3.6 Compare, #4.4 Index), shrink
+ *  this set — `coerceActivePage` then redirects a stale persisted value. */
 export const VALID_PAGE_IDS: ReadonlySet<PageId> = new Set<PageId>([
   "index",
-  "inspect",
   "compare",
 ]);
 
@@ -316,15 +315,10 @@ export const useAppState = create<AppState>()(
         setActiveSample: (activeSampleId) =>
           set({ activeSampleId, activeExposureId: undefined, staleUrlContext: null }),
         setActiveExposure: (activeExposureId) => {
-          // Only arm replace when (a) the value actually changes and (b) we're
-          // on the Inspect page where the URL includes `?exposure=`. On Index,
-          // the exposure isn't in the URL — PlotCard's auto-pick effect would
-          // otherwise clobber the PUSH mode armed by an in-flight sample switch
-          // (`,`/`.` keypress), breaking back-button history (issue #118).
-          const s = get();
-          if (s.activeExposureId !== activeExposureId && s.activePage === "inspect") {
-            emitReplaceNext();
-          }
+          // Inspect — the only surface that put the exposure in the URL via
+          // `?exposure=` — is retired (#163). The replace-mode arming guarded
+          // on `activePage === "inspect"` (issue #118) goes with it; no live
+          // surface carries the exposure in the URL, so just set the value.
           set({ activeExposureId, staleUrlContext: null });
         },
         setHoveredIndex: (hoveredIndexId) => set({ hoveredIndexId }),

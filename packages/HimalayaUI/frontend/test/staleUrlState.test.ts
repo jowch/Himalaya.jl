@@ -114,24 +114,14 @@ describe("Zustand state — permalink slots", () => {
     expect(persisted.state?.staleUrlContext).toBeUndefined();
   });
 
-  it("setActiveExposure on Inspect: no-op leaves push; change arms replace", async () => {
-    const { _resetEmitMode, consumeEmitMode } = await import("../src/lib/url/emitMode");
-    _resetEmitMode();
-    useAppState.setState({ activeExposureId: 100, activePage: "inspect" });
-    // No-op (same value) — flag stays unset.
-    useAppState.getState().setActiveExposure(100);
-    expect(consumeEmitMode()).toBe("push");
-    // Value change on Inspect — exposure is in the URL, so replace mode is correct.
-    useAppState.getState().setActiveExposure(200);
-    expect(consumeEmitMode()).toBe("replace");
-  });
-
-  it("setActiveExposure on Index: even a value change does NOT arm replace (issue #118)", async () => {
+  it("setActiveExposure never arms replace (Inspect retired, #163; issue #118)", async () => {
+    // Inspect was the only surface that carried the exposure in the URL and
+    // thus armed replace-mode on an exposure change (#118). With Inspect gone
+    // (#163), no surface emits the exposure into the URL — setActiveExposure
+    // never arms replace, so a sample-switch's PUSH mode is never clobbered.
     const { _resetEmitMode, consumeEmitMode } = await import("../src/lib/url/emitMode");
     _resetEmitMode();
     useAppState.setState({ activeExposureId: 100, activePage: "index" });
-    // On Index, the exposure isn't part of the URL — auto-pick (PlotCard) must
-    // not clobber a sample-switch's PUSH mode with a stray REPLACE.
     useAppState.getState().setActiveExposure(200);
     expect(consumeEmitMode()).toBe("push");
   });
@@ -142,13 +132,13 @@ describe("Zustand state — permalink slots", () => {
     useAppState.getState().setResolving(true);
     useAppState.getState().setStaleUrlContext({ kind: "unknown_path", raw: "/x" });
     useAppState.getState().setResolveSuccess({
-      page: "inspect",
+      page: "index",
       experimentId: 7,
       sampleId: 11,
       exposureId: 22,
     });
     const s = useAppState.getState();
-    expect(s.activePage).toBe("inspect");
+    expect(s.activePage).toBe("index");
     expect(s.activeExperimentId).toBe(7);
     expect(s.activeSampleId).toBe(11);
     expect(s.activeExposureId).toBe(22);
