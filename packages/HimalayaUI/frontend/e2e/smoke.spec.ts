@@ -79,7 +79,7 @@ async function seedState(page: Page, extra: Record<string, unknown>): Promise<vo
       "himalaya-ui:state",
       JSON.stringify({ state, version: 3 }),
     );
-  }, { username: "alice", activePage: "compare", tutorialSeen: true, theme: "dark", ...extra });
+  }, { username: "alice", activePage: "none", tutorialSeen: true, theme: "dark", ...extra });
 }
 
 test.beforeEach(async ({ page }) => {
@@ -299,23 +299,18 @@ test("curate → reanalyze: active-set membership survives a reanalysis round-tr
   await expect(page.getByRole("alert")).not.toBeVisible();
 });
 
-test("the Compare page is reachable by URL (surviving AppShell surface, #181)", async ({ page }) => {
-  // I4.4 (#181): the three-card Index and the Index↔Compare tab toggle are
-  // retired. Compare is the surviving legacy (AppShell) surface; it's URL-owned
-  // (`/experiments/:eid/compare`), so we assert it directly rather than via the
-  // (now single-tab) rocker.
+test("a /compare* URL redirects to the series folio (Compare retired, #177)", async ({ page }) => {
+  // I3.6 (#177): Compare is retired and replaced by the series stage. Every
+  // /compare* deep-link now redirects to the series folio (/series); the old
+  // Compare page + sidebar are gone.
   await seedState(page, { activeExperimentId: 1, activeSampleId: 10 });
   await mockCore(page, [{ id: 1, username: "alice" }]);
-  // The Compare sidebar fetches its scoped listing on mount.
-  await page.route("**/api/experiments/1/comparisons", (r) =>
-    r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
-  await page.route("**/api/users/me/comparison-pins", (r) =>
+  // The series folio fetches its corpus-wide listing on mount.
+  await page.route("**/api/series", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
   await page.goto("/experiments/1/compare");
 
-  // compare-page wrapper uses display:contents (no layout box); use
-  // toBeAttached() to confirm navigation landed, then assert a real child.
-  await expect(page.getByTestId("compare-page")).toBeAttached();
-  // Sidebar is the persistent shell on the Compare page.
-  await expect(page.getByTestId("comparison-sidebar")).toBeVisible();
+  await expect(page).toHaveURL(/\/series$/);
+  await expect(page.getByTestId("series-folio-page")).toBeVisible();
+  await expect(page.getByTestId("compare-page")).toHaveCount(0);
 });
