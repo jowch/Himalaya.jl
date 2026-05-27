@@ -4,7 +4,7 @@ React components for the three-card Index workspace, Inspect page, Compare page,
 
 ## Where things live
 
-- **Shell + chrome**: `CorpusShell` (the single layout shell), `CorpusTopbar` (wordmark + stage-tabs + Beamtime chip + `UtilityCluster`), `UtilityCluster` (theme toggle + user avatar), `TitleButton`, `BandResizeDivider`, `AnnotationToggles`. (I5.1 #182 retired the dual-nav `AppShell` / `AppHeader` / `TabRocker` / `WorkspaceGrid`.)
+- **Shell + chrome**: `CorpusShell` (the single layout shell), `CorpusTopbar` (wordmark + 3 stage-tabs + Beamtime chip — matches the mockup, no utilities), `TitleButton`, `BandResizeDivider`, `AnnotationToggles`. (I5.1 #182 retired the dual-nav `AppShell` / `AppHeader` / `TabRocker` / `WorkspaceGrid` / `UtilityCluster`; the theme-toggle button + switch-user avatar are deferred to a follow-up issue — the `T` theme shortcut still works.)
 - **Index workspace cards**: `ChatCard`, `PlotCard` + `TraceViewer`, `IndicesCard`, `PhasePanel`, `StaleIndicesBanner`, `SpeculativeBuilder`, `MillerPlot`, `Pn3mIcon`.
 - **Inspect**: `DetectorImage`, `DetectorImageCard`, `ThumbnailGallery`, `SampleMetadataCard`.
 - **Mentions**: `MentionChip`, `MentionCompose`, `MentionPicker`.
