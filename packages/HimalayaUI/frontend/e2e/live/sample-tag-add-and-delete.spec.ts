@@ -50,7 +50,6 @@ async function seedInspectPage(page: Page, fx: Fixture): Promise<void> {
         username: args.username, firstName: args.username, lastName: "tester",
         activeExperimentId: args.expId,
         activeSampleId: args.sampId,
-        activePage: "inspect",
         tutorialSeen: true,
         theme: "dark",
       },

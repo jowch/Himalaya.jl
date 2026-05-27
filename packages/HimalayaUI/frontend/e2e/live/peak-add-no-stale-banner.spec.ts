@@ -72,7 +72,6 @@ async function seedAndOpen(page: Page, fx: Fixture): Promise<void> {
         activeExperimentId: args.expId,
         activeSampleId: args.sampId,
         activeExposureId: args.expoId,
-        activePage: "index",
         tutorialSeen: true,
         theme: "dark",
       },
