@@ -8,6 +8,7 @@ import { useGlobalShortcuts } from "../hooks/useGlobalShortcuts";
 import { CorpusShell } from "./CorpusShell";
 import { SamplesPage } from "../pages/SamplesPage";
 import { LoupePage } from "../pages/LoupePage";
+import { FocusWorkspacePage } from "../pages/FocusWorkspacePage";
 import { AppShell } from "./AppShell";
 import { IndexPage } from "../pages/IndexPage";
 import { InspectPage } from "../pages/InspectPage";
@@ -98,6 +99,8 @@ export function AppRoutes(): JSX.Element {
       <Route element={<CorpusShell />}>
         <Route path="/samples" element={<SamplesPage />} />
         <Route path="/samples/loupe/:sampleId" element={<LoupePage />} />
+        {/* I4.1 (#178): focus workspace. I4.4 (#181) redirects /index* here. */}
+        <Route path="/sample/:sampleId" element={<FocusWorkspacePage />} />
       </Route>
       <Route element={<AppShell />}>
         <Route path="/" element={<PageBody />} />
