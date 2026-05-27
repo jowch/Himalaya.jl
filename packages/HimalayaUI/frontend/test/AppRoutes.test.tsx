@@ -4,12 +4,13 @@
  * nav models do not desync. Includes the relocated #77 compare-sync tests
  * (formerly AppShell.test.tsx — AppShell is no longer a router).
  */
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { MemoryRouter, useNavigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useAppState } from "../src/state";
 import { AppRoutes } from "../src/components/AppRoutes";
+import type { ResolveSuccess } from "../src/api";
 
 function makeQc() {
   return new QueryClient({
@@ -107,6 +108,66 @@ describe("AppRoutes — nav-bridge shell selection", () => {
       expect(screen.getByTestId("corpus-shell")).toBeInTheDocument();
       expect(screen.queryByTestId("app-shell")).toBeNull();
     });
+  });
+});
+
+describe("AppRoutes — I4.4 index cutover redirects", () => {
+  beforeEach(() => {
+    useAppState.setState({
+      activePage: "compare",
+      activeExperimentId: undefined,
+      activeSampleId: undefined,
+      staleUrlContext: null,
+      resolving: false,
+    });
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("bare / redirects to the corpus contact sheet (/samples)", async () => {
+    renderRoutes("/");
+    expect(await screen.findByTestId("samples-page")).toBeInTheDocument();
+    expect(screen.queryByTestId("app-shell")).toBeNull();
+  });
+
+  it("/index redirects to /samples", async () => {
+    renderRoutes("/index");
+    expect(await screen.findByTestId("samples-page")).toBeInTheDocument();
+  });
+
+  it("/index/:experiment (no sample) redirects to /samples", async () => {
+    renderRoutes("/index/lipid");
+    expect(await screen.findByTestId("samples-page")).toBeInTheDocument();
+  });
+
+  it("/index/:experiment/:sample resolves the slug then redirects to /sample/:id", async () => {
+    const body: ResolveSuccess = {
+      experiment_id: 1, experiment_name: "lipid",
+      sample_id: 10, sample_name: "JC001",
+      exposure_id: undefined, exposure_filename: undefined,
+    };
+    vi.spyOn(global, "fetch").mockImplementation(() =>
+      Promise.resolve({
+        ok: true, status: 200, json: () => Promise.resolve(body),
+      } as Response),
+    );
+    renderRoutes("/index/lipid/JC001");
+    expect(await screen.findByTestId("focus-workspace-page")).toBeInTheDocument();
+  });
+
+  it("/index/:experiment/:sample falls back to /samples when resolve 404s", async () => {
+    vi.spyOn(global, "fetch").mockImplementation(() =>
+      Promise.resolve({
+        ok: false, status: 404,
+        json: () => Promise.resolve({
+          error: "not_found", missing: "sample", missing_value: "JC404",
+          experiment_resolved: { id: 1, name: "lipid" }, sample_resolved: undefined,
+        }),
+      } as Response),
+    );
+    renderRoutes("/index/lipid/JC404");
+    expect(await screen.findByTestId("samples-page")).toBeInTheDocument();
   });
 });
 
