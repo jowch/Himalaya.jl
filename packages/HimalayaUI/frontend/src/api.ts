@@ -374,11 +374,11 @@ export const getSample   = (id: number) => request<Sample>("GET", `/api/samples/
 // ─── Comparisons (Plan §Phase 3) ────────────────────────────────────────────
 //
 // Shapes mirror the Julia route emit / `fetch_comparison_with_members` in
-// `comparisons.jl`. The `MemberSnapshot` type lives here (not in
-// `lib/comparison/snapshot.ts`) because it must be the single source of
-// truth for both the HTTP response parser AND the SSE `applyRemoteToCache`
-// handler — both paths must produce the same parsed shape to avoid cache
-// divergence during reconciliation.
+// `comparisons.jl`. The `MemberSnapshot` type lives here because it must be
+// the single source of truth for both the HTTP response parser AND the SSE
+// `applyRemoteToCache` handler — both paths must produce the same parsed
+// shape to avoid cache divergence during reconciliation. (The Compare-era
+// client-side `lib/comparison/snapshot.ts` deriver was removed in I5.3 #184.)
 
 export interface MemberSnapshotPeak {
   id: number;
