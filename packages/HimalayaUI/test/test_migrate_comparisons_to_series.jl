@@ -155,4 +155,86 @@ using HimalayaUI: create_schema!, migrate_schema!, migrate_comparisons_to_series
         @test String(pins[1].pinned_at) == "2026-01-05T00:00:00.000Z"    # carried
         close(db)
     end
+
+    @testset "migrated series survives a rebuild_views_from_log! round-trip" begin
+        db = SQLite.DB()
+        create_schema!(db)
+        migrate_schema!(db)
+        DBInterface.execute(db, """INSERT INTO experiments
+            (id, name, path, data_dir, analysis_dir)
+            VALUES (1, 'exp', '/x', '/x/data', '/x/analysis')""")
+        DBInterface.execute(db, "INSERT INTO samples (id, experiment_id) VALUES (10, 1)")
+        DBInterface.execute(db, "INSERT INTO exposures (id, sample_id) VALUES (100, 10)")
+        DBInterface.execute(db, """INSERT INTO comparisons
+            (id, title, created_by, created_at, updated_at)
+            VALUES (1, 'Cmp A', NULL, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')""")
+        snap = JSON3.write(Dict(:effective_peaks => [], :confirmed_index => nothing,
+                                :analysis_inputs_hash => nothing))
+        DBInterface.execute(db, """INSERT INTO comparison_members
+            (comparison_id, exposure_id, display_order, band_height, y_offset,
+             normalization, snapshot, created_at)
+            VALUES (1, 100, 0, 1.0, 0.0, 'none', ?, '2026-01-01T00:00:00.000Z')""", [snap])
+        DBInterface.execute(db, "DELETE FROM schema_migrations WHERE name = ?",
+            [MIGRATION_COMPARISONS_TO_SERIES])
+        migrate_comparisons_to_series!(db)
+
+        sid = Int(Tables.rowtable(DBInterface.execute(db, "SELECT id FROM series"))[1].id)
+        hash_before = Tables.rowtable(DBInterface.execute(db,
+            "SELECT content_hash FROM series WHERE id = ?", [sid]))[1].content_hash
+        members_before = Tables.rowtable(DBInterface.execute(db,
+            "SELECT exposure_id, display_order FROM series_members WHERE series_id = ? ORDER BY display_order", [sid]))
+        recipe_before = Tables.rowtable(DBInterface.execute(db,
+            "SELECT sample_id, position FROM series_samples WHERE series_id = ? ORDER BY position", [sid]))
+
+        # Empty the view rows, then re-fold the synthesized log (exercises the
+        # MIGRATED path, not only native series — master plan §6.3).
+        DBInterface.execute(db, "DELETE FROM series_members WHERE series_id = ?", [sid])
+        DBInterface.execute(db, "DELETE FROM series_samples WHERE series_id = ?", [sid])
+        DBInterface.execute(db, "DELETE FROM series WHERE id = ?", [sid])
+        HimalayaUI.rebuild_views_from_log!(db, sid; entity_type = "series")
+
+        hash_after = Tables.rowtable(DBInterface.execute(db,
+            "SELECT content_hash FROM series WHERE id = ?", [sid]))[1].content_hash
+        members_after = Tables.rowtable(DBInterface.execute(db,
+            "SELECT exposure_id, display_order FROM series_members WHERE series_id = ? ORDER BY display_order", [sid]))
+        recipe_after = Tables.rowtable(DBInterface.execute(db,
+            "SELECT sample_id, position FROM series_samples WHERE series_id = ? ORDER BY position", [sid]))
+
+        @test String(hash_after) == String(hash_before)
+        @test [Int(m.exposure_id) for m in members_after] == [Int(m.exposure_id) for m in members_before]
+        @test [Int(r.sample_id) for r in recipe_after] == [Int(r.sample_id) for r in recipe_before]
+        # NOTE: do NOT assert series_messages/series_pins survive this round-trip.
+        # They are NOT event-sourced (copied by raw INSERT in Task 3); the
+        # DELETE FROM series CASCADE drops them and rebuild_views_from_log!
+        # (which folds only series_created/series_plate_committed) does not
+        # restore them. That is correct and matches native series.
+        close(db)
+    end
+
+    @testset "second migrate_schema! run is a gated no-op (no duplicate series)" begin
+        mktempdir() do tmp
+            path = joinpath(tmp, "himalaya.db")
+            db = HimalayaUI.open_db(path)
+            DBInterface.execute(db, "INSERT INTO users (id, username) VALUES (5, 'alice')")
+            DBInterface.execute(db, """INSERT INTO comparisons
+                (id, title, created_by, created_at, updated_at)
+                VALUES (1, 'Cmp A', 5, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')""")
+            # Simulate the real cutover: the comparison was created AFTER the
+            # empty-DB migration already wrote the sentinel. Clear it so the
+            # first "real" copy runs, then re-open to prove idempotency.
+            DBInterface.execute(db, "DELETE FROM schema_migrations WHERE name = ?",
+                [MIGRATION_COMPARISONS_TO_SERIES])
+            HimalayaUI.migrate_comparisons_to_series!(db)
+            n1 = Tables.rowtable(DBInterface.execute(db, "SELECT COUNT(*) AS n FROM series"))[1].n
+            close(db)
+
+            # Re-open → migrate_schema! runs migrate_comparisons_to_series! again;
+            # sentinel is now present, so it must be a no-op (no second series).
+            db2 = HimalayaUI.open_db(path)
+            n2 = Tables.rowtable(DBInterface.execute(db2, "SELECT COUNT(*) AS n FROM series"))[1].n
+            @test n1 == 1
+            @test n2 == 1   # no duplicate copy on re-open
+            close(db2)
+        end
+    end
 end
