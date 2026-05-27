@@ -16,7 +16,6 @@ import {
   memberFromNewExposure,
 } from "./lib/comparison/draftFactories";
 import { cyclePeakDisplay } from "./lib/comparison/peakCycle";
-import { emitReplaceNext } from "./lib/url/emitMode";
 import {
   loadSeriesDraftFromSession,
   persistSeriesDraftToSession,
@@ -302,7 +301,6 @@ export interface AppState {
   /**
    * Atomic commit of a `/api/resolve` 200 response. Single setState so
    * `useUrlFromState` recomputes once — no cascading partial URL emits.
-   * Arms `emitReplaceNext()` so the resulting state→URL emit is replace.
    */
   setResolveSuccess: (slots: ResolveSuccessSlots) => void;
   /** Mark the URL as an unknown frontend path (renders StaleUrlPage). */
@@ -617,7 +615,6 @@ export const useAppState = create<AppState>()(
         setStaleUrlContext: (staleUrlContext) => set({ staleUrlContext }),
         setResolving: (resolving) => set({ resolving }),
         recoverFromStaleUrl: (opts) => {
-          emitReplaceNext();
           set((s) => ({
             staleUrlContext: null,
             activeExperimentId: opts.experimentId ?? s.activeExperimentId,
@@ -628,7 +625,6 @@ export const useAppState = create<AppState>()(
           }));
         },
         setResolveSuccess: ({ experimentId, sampleId, exposureId }) => {
-          emitReplaceNext();
           set({
             activeExperimentId: experimentId,
             activeSampleId: sampleId,
