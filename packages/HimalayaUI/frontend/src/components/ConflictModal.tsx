@@ -43,6 +43,7 @@ import { computeMemberSnapshot } from "../lib/comparison/snapshot";
 import { comparePath, type CompareScope } from "../lib/comparison/routes";
 import { prefetchColdMembers } from "../lib/comparison/prefetchMembers";
 import { showToast } from "../lib/toast";
+import { isFullSeries } from "../api";
 import type {
   Comparison, ComparisonMemberInput, SaveComparisonBody,
 } from "../api";
@@ -143,12 +144,14 @@ export function ConflictModal(): JSX.Element | null {
 
   const isOpen    = conflict !== null;
 
-  // current_state is now `Comparison | Series | null` (I3.5b widening). The
-  // comparison ConflictModal is only ever populated from a `comparison_save`
-  // 409, so the state here is always a Comparison — cast for the comparison-
-  // shaped reads (members, forked-from lineage) below.
+  // current_state is now `Comparison | Series | null` (I3.5b widening). Both
+  // conflict modals read the SAME `pendingConflict` slot, so each must render
+  // ONLY for its own entity kind. A series-commit 409 carries a `Series`
+  // (`isFullSeries` — has `samples` + `state`); bail to null so this
+  // comparison modal stays closed and `SeriesCommitConflictModal` handles it.
+  const rawState = conflict?.current_state ?? null;
   const serverState: Comparison | null =
-    (conflict?.current_state as Comparison | null) ?? null;
+    rawState !== null && !isFullSeries(rawState) ? (rawState as Comparison) : null;
   const serverHash:  string | null     = conflict?.current_hash  ?? null;
 
   const eid = useMemo(() => extractEid(location.pathname), [location.pathname]);
