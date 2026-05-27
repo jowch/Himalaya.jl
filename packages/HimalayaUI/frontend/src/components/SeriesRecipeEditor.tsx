@@ -35,6 +35,8 @@ export function SeriesRecipeEditor({
   const addSample = useAppState((s) => s.addSeriesSample);
   const removeSample = useAppState((s) => s.removeSeriesSample);
   const reorderSample = useAppState((s) => s.reorderSeriesSample);
+  const setTitle = useAppState((s) => s.setSeriesDraftTitle);
+  const setDescription = useAppState((s) => s.setSeriesDraftDescription);
   const setOrderingVariable = useAppState((s) => s.setSeriesOrderingVariable);
   const setOrderRule = useAppState((s) => s.setSeriesOrderRule);
   const discardSeriesDraft = useAppState((s) => s.discardSeriesDraft);
@@ -104,6 +106,28 @@ export function SeriesRecipeEditor({
 
   return (
     <div data-testid="series-recipe-editor" className="flex flex-col gap-3">
+      <label className="flex flex-col gap-1">
+        <span className="text-xs font-semibold text-ink-faint">Title</span>
+        <input
+          data-testid="recipe-title"
+          type="text"
+          value={draft.title}
+          onChange={(e) => setTitle(e.target.value)}
+          className="rounded border border-hair bg-paper px-2 py-1 text-sm text-ink"
+        />
+      </label>
+
+      <label className="flex flex-col gap-1">
+        <span className="text-xs font-semibold text-ink-faint">Description</span>
+        <textarea
+          data-testid="recipe-description"
+          value={draft.description}
+          onChange={(e) => setDescription(e.target.value)}
+          rows={2}
+          className="rounded border border-hair bg-paper px-2 py-1 text-sm text-ink"
+        />
+      </label>
+
       <div className="text-xs font-semibold uppercase tracking-wide text-ink">Recipe</div>
 
       <ol data-testid="recipe-list" className="flex flex-col gap-1">
@@ -220,7 +244,14 @@ export function SeriesRecipeEditor({
           type="button"
           data-testid="recipe-commit"
           onClick={handleCommit}
-          disabled={commit.isPending}
+          // Disable while a recipe save is in flight: the commit body is built
+          // from the loaded `members` (the server-resolved plate), NOT from the
+          // edited `draft.recipe`, and the backend commits verbatim with no
+          // re-resolution (routes_series.jl:247 → series.jl). Committing during
+          // the save round-trip would freeze the STALE plate. Blocking the
+          // window closes that foot-gun (round-1 nit).
+          disabled={commit.isPending || save.isPending}
+          title={save.isPending ? "Finish saving the recipe before committing" : undefined}
           className="rounded border border-print-accent bg-print-accent px-2 py-1 text-sm text-paper disabled:opacity-50"
         >
           {commit.isPending ? "Committing…" : "Commit plate"}

@@ -150,4 +150,35 @@ describe("SeriesBuilderPage — edit mode (I3.5b)", () => {
     fireEvent.click(screen.getByTestId("series-builder-edit"));
     expect(screen.getByTestId("rail-export")).toBeInTheDocument();
   });
+
+  it("a zero-member series is editable: the recipe editor mounts and the first sample can be added", () => {
+    // Round-1 blocking fix: the empty-plate placeholder must not lock out edit
+    // mode. Edit is reachable, the editor mounts, and the first sample adds.
+    h.seriesQ = { data: series({ members: [], samples: [] }), isLoading: false, isError: false };
+    renderPage();
+    expect(screen.getByTestId("series-builder-empty")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("series-builder-edit"));
+    expect(screen.getByTestId("series-recipe-editor")).toBeInTheDocument();
+    // The placeholder persists in the plot area while editing.
+    expect(screen.getByTestId("series-builder-empty")).toBeInTheDocument();
+    fireEvent.change(screen.getByTestId("recipe-add-sample"), { target: { value: "20" } });
+    expect(screen.getAllByTestId("recipe-row")).toHaveLength(1);
+  });
+
+  it("Commit is disabled while a recipe save is in flight (stale-plate guard)", () => {
+    h.save = { mutate: vi.fn(), isPending: true, isSuccess: false, error: null };
+    renderPage();
+    fireEvent.click(screen.getByTestId("series-builder-edit"));
+    expect(screen.getByTestId("recipe-commit")).toBeDisabled();
+  });
+
+  it("title + description inputs drive the draft (surfacing the previously-dead setters)", () => {
+    renderPage();
+    fireEvent.click(screen.getByTestId("series-builder-edit"));
+    fireEvent.change(screen.getByTestId("recipe-title"), { target: { value: "Renamed" } });
+    fireEvent.change(screen.getByTestId("recipe-description"), { target: { value: "Notes" } });
+    const d = useAppState.getState().seriesDraft!;
+    expect(d.title).toBe("Renamed");
+    expect(d.description).toBe("Notes");
+  });
 });

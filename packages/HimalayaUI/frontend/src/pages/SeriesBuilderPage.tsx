@@ -120,16 +120,7 @@ export function SeriesBuilderPage(): JSX.Element {
                 </button>
               )}
             </header>
-            {s.members.length === 0 ? (
-              <div
-                data-testid="series-builder-empty"
-                className="flex-1 grid place-items-center text-sm text-ink-faint"
-              >
-                This series has no members yet.
-              </div>
-            ) : (
-              <SeriesBuilderBody series={s} editing={editing} />
-            )}
+            <SeriesBuilderBody series={s} editing={editing} />
           </>
         )}
       </Skeleton>
@@ -252,32 +243,48 @@ function SeriesBuilderBody(
     <ActiveBandProvider>
       <div className="flex-1 min-h-0 flex flex-row" data-testid="series-builder-body">
         <div className="flex-1 min-h-0 flex flex-col p-4 gap-3" data-testid="series-builder-plot">
-          <div className="flex items-center gap-3" data-testid="series-builder-controls">
-            <GroupingModeToggle mode={groupingMode} onChange={setGroupingMode} />
-            <AnnotationToggles />
-          </div>
-          <div className="flex-1 min-h-0 flex flex-row gap-2">
-            <div ref={plotColRef} className="flex-1 min-w-0">
-              <MultiTracePlot
-                members={members}
-                traces={traces}
-                xDomain={xDomain}
-                onXDomain={setXDomain}
-                groupingMode={groupingMode}
-                sampleIdFor={sampleIdFor}
-                showPeakTicks={showPeakTicks}
-                showPeakLabels={showPeakLabels}
-              />
+          {members.length === 0 ? (
+            // Empty plate — the placeholder lives in the PLOT area so the rail
+            // (and, in edit mode, the recipe editor) still mounts. A
+            // zero-member series is reachable from the folio, and adding the
+            // first sample is exactly the I3.5b recipe-edit flow; gating the
+            // editor out of the empty case would lock that flow out.
+            <div
+              data-testid="series-builder-empty"
+              className="flex-1 grid place-items-center text-sm text-ink-faint"
+            >
+              This series has no members yet.
             </div>
-            <div className="w-[280px] shrink-0" data-testid="series-builder-gutter">
-              <MemberMetaGutter
-                members={members}
-                panelHeight={panelHeight}
-                mode="review"
-                displayLabelByMemberId={displayLabelByMemberId}
-              />
-            </div>
-          </div>
+          ) : (
+            <>
+              <div className="flex items-center gap-3" data-testid="series-builder-controls">
+                <GroupingModeToggle mode={groupingMode} onChange={setGroupingMode} />
+                <AnnotationToggles />
+              </div>
+              <div className="flex-1 min-h-0 flex flex-row gap-2">
+                <div ref={plotColRef} className="flex-1 min-w-0">
+                  <MultiTracePlot
+                    members={members}
+                    traces={traces}
+                    xDomain={xDomain}
+                    onXDomain={setXDomain}
+                    groupingMode={groupingMode}
+                    sampleIdFor={sampleIdFor}
+                    showPeakTicks={showPeakTicks}
+                    showPeakLabels={showPeakLabels}
+                  />
+                </div>
+                <div className="w-[280px] shrink-0" data-testid="series-builder-gutter">
+                  <MemberMetaGutter
+                    members={members}
+                    panelHeight={panelHeight}
+                    mode="review"
+                    displayLabelByMemberId={displayLabelByMemberId}
+                  />
+                </div>
+              </div>
+            </>
+          )}
         </div>
         <SeriesBuilderRail
           collapsed={collapsed}
