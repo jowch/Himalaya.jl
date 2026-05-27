@@ -18,7 +18,7 @@ function wrapperAt(path: string) {
 // the page-tab step must be gated out of corpus routes here instead.
 describe("useGlobalShortcuts — arrow-key page-tab step gating", () => {
   beforeEach(() => {
-    useAppState.setState({ activePage: "index" });
+    useAppState.setState({ activePage: "compare" });
   });
 
   it("does not step activePage on a corpus route (the loupe owns the arrows there)", () => {
@@ -26,15 +26,18 @@ describe("useGlobalShortcuts — arrow-key page-tab step gating", () => {
       wrapper: wrapperAt("/samples/loupe/7"),
     });
     fireEvent.keyDown(document.body, { key: "ArrowRight" });
-    expect(useAppState.getState().activePage).toBe("index");
+    expect(useAppState.getState().activePage).toBe("compare");
   });
 
-  it("still steps activePage on a legacy route", () => {
+  it("arrow keys are a no-op on a legacy route now that TAB_ORDER is single-tab (#181)", () => {
+    // I4.4 (#181): Index retired → TAB_ORDER = ["compare"]. With one tab,
+    // ArrowRight/ArrowLeft clamp to the current tab — nothing to step to.
     renderHook(() => useGlobalShortcuts(undefined), {
-      wrapper: wrapperAt("/index"),
+      wrapper: wrapperAt("/compare/all"),
     });
-    // TAB_ORDER is ["inspect","index","compare"] → ArrowRight: index → compare.
     fireEvent.keyDown(document.body, { key: "ArrowRight" });
+    expect(useAppState.getState().activePage).toBe("compare");
+    fireEvent.keyDown(document.body, { key: "ArrowLeft" });
     expect(useAppState.getState().activePage).toBe("compare");
   });
 });
