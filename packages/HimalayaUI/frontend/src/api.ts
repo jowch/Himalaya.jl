@@ -566,10 +566,14 @@ export class ConflictError extends Error {
   status = 409 as const;
   constructor(
     public current_hash: string | null,
-    public current_state: Comparison | null,
+    // I3.5b — widened from `Comparison | null`. A comparison-submit 409 carries
+    // a `Comparison`; a series-commit 409 (`commitSeriesPlate`) carries a
+    // `Series`. No discriminator: each conflict wrapper (ConflictModal /
+    // SeriesCommitConflictModal) knows its own kind by where it is mounted.
+    public current_state: Comparison | Series | null,
     message?: string,
   ) {
-    super(message ?? "comparison content_hash conflict");
+    super(message ?? "content_hash conflict");
     this.name = "ConflictError";
   }
 }
@@ -895,11 +899,33 @@ export async function saveSeries(
     : request<Series>("PATCH", `/api/series/${seriesId}`, body, opts);
 }
 
-/** Commit the plate (the old "submit"). A 409 surfaces as a generic `ApiError`;
- *  the typed conflict modal is I3.5b's concern, not the cluster's. */
-export const commitSeriesPlate = (
+/**
+ * Commit the plate (the old "submit"). On 409 (content_hash drift) throws the
+ * typed `ConflictError` carrying the server's `current_hash` + `current_state`
+ * (a `Series`), mirroring `saveComparison` (I3.5b). This is the ONLY series
+ * fetcher that throws `ConflictError`: recipe-save (`PATCH /api/series/:id`)
+ * never reads `expected_content_hash` and never 409s, so `saveSeries` is left
+ * untouched.
+ */
+export async function commitSeriesPlate(
   id: number, body: CommitSeriesPlateBody, opts?: AuthOpts,
-) => request<Series>("POST", `/api/series/${id}/commit`, body, opts);
+): Promise<Series> {
+  try {
+    return await request<Series>("POST", `/api/series/${id}/commit`, body, opts);
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 409) {
+      const b = err.body as
+        | { current_hash?: string; current_state?: Series }
+        | null;
+      throw new ConflictError(
+        b?.current_hash ?? null,
+        b?.current_state ?? null,
+        err.message,
+      );
+    }
+    throw err;
+  }
+}
 
 export const deleteSeries = (id: number, opts?: AuthOpts) =>
   request<{ id: number; deleted: boolean; event_id: number }>(
