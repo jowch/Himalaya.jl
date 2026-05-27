@@ -167,10 +167,11 @@ function SeriesBuilderBody(
   );
 
   // Pan/zoom q-domain. MultiTracePlot requires non-optional xDomain +
-  // onXDomain. Compare keeps this in Zustand `compareXDomains[comparisonId]`,
-  // but that Record is keyed by COMPARISON id — reusing it for a series id
-  // would namespace-collide. A read surface's pan/zoom is local, so hold it
-  // in local useState. null = full data range.
+  // onXDomain. The builder is a read surface, so its pan/zoom is local —
+  // held in local useState rather than Zustand. null = full data range.
+  // (Compare's per-comparison-id `compareXDomains` Zustand record was removed
+  // with the Compare page in I5.3 #184; a series-id reuse would have
+  // namespace-collided anyway.)
   const [xDomain, setXDomain] = useState<[number, number] | null>(null);
 
   // sampleIdFor: exact signature from MultiTracePlotProps / Compare.tsx —

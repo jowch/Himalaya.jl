@@ -19,7 +19,7 @@ describe("mergePersistedState (persist merge)", () => {
     const current = useAppState.getState();
     const merged = mergePersistedState({ theme: "light" }, current);
     expect(typeof merged.setTheme).toBe("function");
-    expect(typeof merged.setResolveSuccess).toBe("function");
+    expect(typeof merged.recoverFromStaleUrl).toBe("function");
   });
 
   it("handles undefined persisted state (first run) without dropping defaults", () => {

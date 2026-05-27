@@ -5,7 +5,6 @@ import type { ReactNode } from "react";
 import { StaleUrlPage } from "../src/components/StaleUrlPage";
 import { useAppState } from "../src/state";
 import type { StaleUrlContext } from "../src/state";
-import { _resetEmitMode } from "../src/lib/url/emitMode";
 
 // StaleUrlPage uses useNavigate (its unknown-path CTA navigates to /samples
 // since the Index surface was retired in #181), so renders need a Router.
@@ -26,7 +25,6 @@ function renderStale(ctx: StaleUrlContext, initialPath = "/foo/bar"): ReturnType
 
 describe("StaleUrlPage", () => {
   beforeEach(() => {
-    _resetEmitMode();
     lastLocation = "";
     useAppState.setState({
       staleUrlContext: null,

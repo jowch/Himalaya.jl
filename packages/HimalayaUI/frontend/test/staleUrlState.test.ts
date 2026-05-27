@@ -115,39 +115,6 @@ describe("Zustand state — permalink slots", () => {
     expect(persisted.state?.staleUrlContext).toBeUndefined();
   });
 
-  it("setActiveExposure never arms replace (Inspect retired, #163; issue #118)", async () => {
-    // Inspect was the only surface that carried the exposure in the URL and
-    // thus armed replace-mode on an exposure change (#118). With Inspect gone
-    // (#163), no surface emits the exposure into the URL — setActiveExposure
-    // never arms replace, so a sample-switch's PUSH mode is never clobbered.
-    const { _resetEmitMode, consumeEmitMode } = await import("../src/lib/url/emitMode");
-    _resetEmitMode();
-    useAppState.setState({ activeExposureId: 100 });
-    useAppState.getState().setActiveExposure(200);
-    expect(consumeEmitMode()).toBe("push");
-  });
-
-  it("setResolveSuccess commits ids atomically and arms replace", async () => {
-    // I5.1 (#182): the `page` slot is gone with the dual-nav model; the setter
-    // now commits only the active ids (+ clears stale, arms replace).
-    const { _resetEmitMode, consumeEmitMode } = await import("../src/lib/url/emitMode");
-    _resetEmitMode();
-    useAppState.getState().setResolving(true);
-    useAppState.getState().setStaleUrlContext({ kind: "unknown_path", raw: "/x" });
-    useAppState.getState().setResolveSuccess({
-      experimentId: 7,
-      sampleId: 11,
-      exposureId: 22,
-    });
-    const s = useAppState.getState();
-    expect(s.activeExperimentId).toBe(7);
-    expect(s.activeSampleId).toBe(11);
-    expect(s.activeExposureId).toBe(22);
-    expect(s.staleUrlContext).toBeNull();
-    expect(s.resolving).toBe(false);
-    expect(consumeEmitMode()).toBe("replace");
-  });
-
   it("setStaleUnknownPath stores raw + clears resolving", () => {
     useAppState.getState().setResolving(true);
     useAppState.getState().setStaleUnknownPath("/foo/bar/baz");
