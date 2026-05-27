@@ -1,5 +1,6 @@
 import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { useExperiments } from "../queries";
+import { UtilityCluster } from "./UtilityCluster";
 
 interface Stage {
   id: "samples" | "index" | "series";
@@ -20,12 +21,16 @@ const STAGES: readonly Stage[] = [
 
 /**
  * CorpusTopbar — the topbar for the redesigned corpus-scoped shell: a
- * corpus-level wordmark, the three workflow stage-tabs, and the Beamtime
- * facet chip.
+ * corpus-level wordmark, the three workflow stage-tabs, the Beamtime facet
+ * chip, and (top-right) the UtilityCluster (theme toggle + user avatar).
  *
  * The Beamtime chip is an experiment picker: it reads and writes the
  * `?beamtime=<experiment_id>` URL query that the /samples contact sheet
  * (#160) filters on. The URL is the only channel — no prop coupling.
+ *
+ * I5.1 (#182): UtilityCluster moved here from the retired AppHeader/AppShell.
+ * It is the corpus app's only theme-toggle + user-switch affordance, so it
+ * must live in the single surviving topbar.
  */
 export function CorpusTopbar(): JSX.Element {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -118,6 +123,8 @@ export function CorpusTopbar(): JSX.Element {
       </select>
 
       <span className="flex-1" />
+
+      <UtilityCluster />
     </header>
   );
 }
