@@ -4,7 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useAppState } from "../state";
 import { parseLocation } from "../lib/url/parseLocation";
 import * as api from "../api";
-import type { ResolveSuccess, Experiment, Sample, Exposure } from "../api";
+import type { ResolveSuccess, Experiment, Sample } from "../api";
 import { queryKeys } from "../queries";
 
 // Spec §4.2 — URL → Zustand. Reads `useLocation()` so popstate AND
@@ -12,7 +12,7 @@ import { queryKeys } from "../queries";
 // the Zustand-mid-flight race (Zustand mutations don't change `location`,
 // so AbortController alone is insufficient).
 
-const VALID_PAGES = new Set(["index", "inspect", "compare"]);
+const VALID_PAGES = new Set(["index", "compare"]);
 
 export function useStateFromUrl(): void {
   const location = useLocation();
@@ -114,9 +114,9 @@ export function useStateFromUrl(): void {
       };
     }
 
-    // index or inspect — fetch /api/resolve with whichever slugs are present.
+    // index — fetch /api/resolve with whichever slugs are present.
     if (parsed.experiment === undefined) {
-      // Bare /index or /inspect — clear active selection atomically.
+      // Bare /index — clear active selection atomically.
       useAppState.getState().setResolveSuccess({
         page: parsed.kind,
         experimentId: undefined,
@@ -152,22 +152,11 @@ export function useStateFromUrl(): void {
         const sampleCacheName = a.activeSampleId !== undefined
           ? samples.find((s) => s.id === a.activeSampleId)?.name : undefined;
 
-        let exposureMatches = true;
-        let exposureForState: number | undefined = undefined;
-        if (parsed.kind === "inspect") {
-          if (parsed.exposure === undefined) {
-            exposureMatches = a.activeExposureId === undefined;
-          } else if (a.activeExposureId !== undefined && a.activeSampleId !== undefined) {
-            const exposures = qc.getQueryData<Exposure[]>(
-              queryKeys.exposures(a.activeSampleId),
-            ) ?? [];
-            const expoCacheName = exposures.find((e) => e.id === a.activeExposureId)?.filename;
-            exposureMatches = expoCacheName === parsed.exposure;
-            if (exposureMatches) exposureForState = a.activeExposureId;
-          } else {
-            exposureMatches = false;
-          }
-        }
+        // I1.7 (#163): Inspect retired — the only surface that carried an
+        // exposure in the URL. Index/Compare never match on exposure, so the
+        // exposure-match clause is unconditionally satisfied.
+        const exposureMatches = true;
+        const exposureForState: number | undefined = undefined;
 
         if (expCacheName === parsed.experiment &&
             sampleCacheName === parsed.sample &&
@@ -209,9 +198,6 @@ export function useStateFromUrl(): void {
     const ctl = new AbortController();
     const q: api.ResolveQuery = { experiment: parsed.experiment };
     if (parsed.sample !== undefined) q.sample = parsed.sample;
-    if (parsed.kind === "inspect" && parsed.exposure !== undefined) {
-      q.exposure = parsed.exposure;
-    }
 
     (async () => {
       let body;

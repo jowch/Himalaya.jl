@@ -49,44 +49,10 @@ describe("useUrlFromState", () => {
     expect(location.pathname).toBe("/index/lipid-screen/JC001");
   });
 
-  it("page change → push", () => {
-    const { Wrapper } = makeWrapper();
-    history.replaceState(null, "", "/index/lipid-screen/JC001");
-    useAppState.setState({ activePage: "index", activeExperimentId: 17, activeSampleId: 42 });
-    const pushSpy = vi.spyOn(history, "pushState");
-    const replaceSpy = vi.spyOn(history, "replaceState");
-    const { rerender } = renderHook(() => useUrlFromState(), { wrapper: Wrapper });
-    pushSpy.mockClear(); replaceSpy.mockClear();
-    useAppState.setState({ activePage: "inspect" });
-    rerender();
-    // react-router's BrowserRouter calls pushState with a state object (not
-    // raw null) and the resolved URL as the third arg. Assert push (not
-    // replace) was invoked with the expected URL.
-    expect(pushSpy).toHaveBeenCalled();
-    expect(replaceSpy).not.toHaveBeenCalled();
-    expect(pushSpy.mock.calls[0]?.[2]).toBe("/inspect/lipid-screen/JC001");
-  });
-
-  it("exposure-only change → replace", () => {
-    const { qc, Wrapper } = makeWrapper();
-    qc.setQueryData(queryKeys.exposures(42), [
-      { id: 100, sample_id: 42, filename: "JC001-007", kind: "simple", selected: 1 },
-    ]);
-    history.replaceState(null, "", "/inspect/lipid-screen/JC001");
-    useAppState.setState({ activePage: "inspect", activeExperimentId: 17, activeSampleId: 42 });
-    const pushSpy = vi.spyOn(history, "pushState");
-    const replaceSpy = vi.spyOn(history, "replaceState");
-    const { rerender } = renderHook(() => useUrlFromState(), { wrapper: Wrapper });
-    pushSpy.mockClear(); replaceSpy.mockClear();
-    // Use the action (not raw setState) so emitReplaceNext fires; that's
-    // the contract — exposure-only changes that route through
-    // setActiveExposure must replace, not push.
-    useAppState.getState().setActiveExposure(100);
-    rerender();
-    expect(replaceSpy).toHaveBeenCalled();
-    expect(pushSpy).not.toHaveBeenCalled();
-    expect(location.search).toBe("?exposure=JC001-007");
-  });
+  // I1.7 (#163): the "page change → push (/inspect)" and "exposure-only
+  // change → replace (?exposure=)" tests are retired with Inspect — it was
+  // the only legacy tab that emitted a navigable slug distinct from Index and
+  // the only surface whose URL carried ?exposure=.
 
   it("equality guard: identical URL does not emit", () => {
     const { Wrapper } = makeWrapper();
@@ -132,39 +98,9 @@ describe("useUrlFromState", () => {
     expect(location.pathname).toBe("/index/lipid-screen/JC001");
   });
 
-  it("does not emit while exposures cache is unhydrated (deep-link race for ?exposure=)", () => {
-    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    qc.setQueryData<Experiment[]>(queryKeys.experiments, [
-      { id: 17, name: "lipid-screen", path: "", data_dir: "", analysis_dir: "",
-        manifest_path: null, created_at: "", q_units: null },
-    ]);
-    qc.setQueryData<Sample[]>(queryKeys.samples(17), [
-      { id: 42, experiment_id: 17, name: "JC001", display_name: null, notes: null, tags: [] },
-    ]);
-    // Deliberately do NOT setQueryData for exposures(42) — simulates cold-mount race.
-    history.replaceState(null, "", "/inspect/lipid-screen/JC001?exposure=JC001-007");
-    useAppState.setState({
-      activePage: "inspect",
-      activeExperimentId: 17, activeSampleId: 42, activeExposureId: 100,
-    });
-    const Wrapper = ({ children }: { children: ReactNode }) => (
-      <QueryClientProvider client={qc}>
-        <BrowserRouter>{children}</BrowserRouter>
-      </QueryClientProvider>
-    );
-    const pushSpy = vi.spyOn(history, "pushState");
-    const replaceSpy = vi.spyOn(history, "replaceState");
-    renderHook(() => useUrlFromState(), { wrapper: Wrapper });
-    // Effect runs but should bail because exposures cache is empty.
-    // The /api/exposures/42 request will fire (because of the new useQuery
-    // subscription), but the URL emit must NOT happen until hydration.
-    expect(pushSpy).not.toHaveBeenCalled();
-    // Allow ONE replaceState call from BrowserRouter init/initial idx-bump,
-    // but not from useUrlFromState — verify no /inspect URL without ?exposure=
-    // was emitted as a navigation target.
-    const urlsEmitted = replaceSpy.mock.calls.map((c) => String(c[2] ?? ""));
-    expect(urlsEmitted.every((u) => !u.startsWith("/inspect/lipid-screen/JC001") || u.includes("exposure="))).toBe(true);
-  });
+  // I1.7 (#163): the exposures-cache-unhydrated deep-link race test is retired
+  // with Inspect — no URL carries ?exposure= and useUrlFromState no longer
+  // subscribes to the exposures cache.
 
   it("replay-as-rerun: identical optimistic + confirmed slug → no spurious emit", () => {
     // Simulate the trivial replay case: cache row gets replaced (foreign event)

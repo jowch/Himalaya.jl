@@ -89,11 +89,10 @@ export function useUrlFromState(): void {
     enabled: activeExperimentId !== undefined,
   });
   const samples = activeExperimentId !== undefined ? samplesQuery.data : undefined;
-  // Only Inspect URLs include `?exposure=`. Gating on `activePage === "inspect"`
-  // avoids a wasted GET on every Index landing where Inspect was never visited
-  // (cache is shared with InspectPage; Inspect re-mounts trigger the fetch
-  // there anyway).
-  const exposuresEnabled = activeSampleId !== undefined && activePage === "inspect";
+  // I1.7 (#163): Inspect — the only surface whose URL carried `?exposure=` —
+  // is retired. No live surface emits the exposure into the URL, so the
+  // exposure cache is never needed here and the query stays disabled.
+  const exposuresEnabled = false;
   const exposuresQuery = useQuery({
     queryKey: queryKeys.exposures(activeSampleId),
     queryFn: () => api.listExposures(activeSampleId as number),
@@ -161,12 +160,12 @@ export function useUrlFromState(): void {
     // returns undefined; buildUrl emits /index; useStateFromUrl re-parses
     // /index and wipes the just-populated active ids.
     //
-    // Exposures only matter on Inspect (the URL only includes `?exposure=`
-    // there); on other pages we don't need to wait for that cache to hydrate.
+    // (Exposures used to gate this on Inspect; Inspect is retired (#163) and
+    // no surface emits the exposure into the URL, so there's nothing to wait
+    // for on that axis.)
     const cacheReady =
       (activeExperimentId === undefined || experiments !== undefined) &&
-      (activeSampleId === undefined || samples !== undefined) &&
-      (activeExposureId === undefined || activePage !== "inspect" || exposures !== undefined);
+      (activeSampleId === undefined || samples !== undefined);
     if (!cacheReady) return;
 
     // Consume the emit-mode flag BEFORE the equality guard. Otherwise a

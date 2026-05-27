@@ -27,21 +27,12 @@ describe("parseLocation", () => {
     });
   });
 
-  it("/inspect with ?exposure=", () => {
+  // I1.7 (#163): Inspect is retired. /inspect* is redirected to /samples at
+  // the router layer, so parseLocation never legitimately sees it; the parse
+  // arm is gone and any /inspect path now falls through to `stale`.
+  it("/inspect is no longer parsed (falls through to stale)", () => {
     expect(parseLocation("/inspect/lipid/JC001", "?exposure=JC001-007")).toEqual({
-      kind: "inspect", experiment: "lipid", sample: "JC001", exposure: "JC001-007",
-    });
-  });
-
-  it("/inspect ignores ?exposure when sample missing", () => {
-    expect(parseLocation("/inspect/lipid", "?exposure=JC001-007")).toEqual({
-      kind: "inspect", experiment: "lipid", sample: undefined, exposure: undefined,
-    });
-  });
-
-  it("/inspect with empty ?exposure= treats as undefined", () => {
-    expect(parseLocation("/inspect/lipid/JC001", "?exposure=")).toEqual({
-      kind: "inspect", experiment: "lipid", sample: "JC001", exposure: undefined,
+      kind: "stale", raw: "/inspect/lipid/JC001?exposure=JC001-007",
     });
   });
 
