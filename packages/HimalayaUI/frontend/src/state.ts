@@ -117,6 +117,33 @@ export interface AppState {
   // SpeculativeBuilder component — only the open/close gate lives in store
   // because PhasePanel needs to mount/unmount the modal.
   speculativeBuilder: { exposureId: number } | null;
+
+  // ── Compare-era draft / view slice — KEPT (I3.6 #177 deviation; see below) ──
+  //
+  // The I3.6 plan (§3.2 / §8) resolved to REMOVE this slice when the Compare
+  // page was retired. That resolution was written against the PRE-I3.5b tree;
+  // it is unsafe against the tree this PR actually rebases onto. I3.5b built the
+  // series builder ON TOP OF this slice, so a chunk of it is now live, shared
+  // infrastructure — NOT dead Compare-only state. grep-verified surviving
+  // (non-test, non-Compare) consumers:
+  //   - `showPeakTicks` / `showPeakLabels` (+ setters): read directly by
+  //     `SeriesBuilderPage.tsx`, `AnnotationToggles`, `MultiTracePlot`,
+  //     `MemberTraceLayer`, and the figure-export adapters/marks.
+  //   - `compareXDomains`: read by `SeriesBuilderPage.tsx`.
+  //   - `activeDraft` + `updateMember` / `reorderMembers` / `resizeBands` /
+  //     `setDraftViewGroupingMode` / `highlightedCompareMemberId` (+ setter):
+  //     read by the shared render components the series builder mounts
+  //     (`MemberMetaRow`, `MemberMetaGutter`, `BandResizeDivider`,
+  //     `GroupingModeToggle`).
+  // A genuinely-dead SUBSET remains (the create/fork/membership actions only the
+  // deleted Compare page drove: `startNewDraft`, `startForkDraft`,
+  // `loadDraftFromComparison`, `setDraftForkOf`, `addMember`, `removeMember`,
+  // `discardDraft`, `setCompareXDomain`, `resetBandHeights`,
+  // `cyclePeakDisplayForMember`, …). Pruning only that subset is interconnected
+  // and type-shared (`ActiveDraft`) and risks the series builder's draft-backed
+  // editing; it is DELIBERATELY DEFERRED to I5.1/I5.3's dead-code sweep, which
+  // runs against a stable post-cutover tree. I3.6 narrows the `activePage` union
+  // (above) but leaves this slice intact. (See the PR's coordination note.)
   /**
    * Compare-page q-axis zoom domains, keyed per comparison id. Per-tab UI
    * state — not persisted. Missing entry / `null` value = full data range.

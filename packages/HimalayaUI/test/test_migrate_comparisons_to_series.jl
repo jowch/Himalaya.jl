@@ -215,11 +215,14 @@ using HimalayaUI: create_schema!, migrate_schema!, migrate_comparisons_to_series
                WHERE entity_type = 'series' AND entity_id = ? ORDER BY id""", [sid]))
         @test [String(e.action) for e in ev_after] ==
               ["series_created", "series_plate_committed"]
-        # NOTE: do NOT assert series_messages/series_pins survive this round-trip.
-        # They are NOT event-sourced (copied by raw INSERT in Task 3); the
-        # DELETE FROM series CASCADE drops them and rebuild_views_from_log!
-        # (which folds only series_created/series_plate_committed) does not
-        # restore them. That is correct and matches native series.
+        # NOTE: do NOT assert on series_messages/series_pins in this round-trip.
+        # The empty+refold cycle above deletes ONLY series/series_members/
+        # series_samples — it never touches series_messages or series_pins. Those
+        # are NOT event-sourced (the migration copies them by raw INSERT, it does
+        # not synthesize series_pinned / message events), so rebuild_views_from_log!
+        # (which folds only series_created/series_plate_committed) would not restore
+        # them if they were emptied. Leaving them untouched is correct and matches
+        # native series.
         close(db)
     end
 

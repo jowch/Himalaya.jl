@@ -11,8 +11,9 @@ using HTTP, JSON3, DBInterface, Tables, Oxygen, SQLite
 # No route carries an `is_author` / 403 gate (architecture decision 3).
 # Existence (404) and optimistic-concurrency (409) checks remain.
 #
-# `_json_error` and `_view_fields_error` are reused from `routes_comparisons.jl`
-# (same module). Phase 3 (#175 / I3.6) relocates them when it deletes that file.
+# `_json_error` and `_view_fields_error` are shared route helpers defined in
+# `json.jl` (same module). I3.6 (#177) relocated them there from the now-deleted
+# `routes_comparisons.jl`.
 # ─────────────────────────────────────────────────────────────────────────────
 
 """
