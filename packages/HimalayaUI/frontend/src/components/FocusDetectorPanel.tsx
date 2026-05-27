@@ -21,6 +21,11 @@ export function FocusDetectorPanel(): JSX.Element {
   const activeSampleId   = useAppState((s) => s.activeSampleId);
   const activeExposureId = useAppState((s) => s.activeExposureId);
   const exposuresQ = useExposures(activeSampleId);
+  // Deliberately NOT gated by `useExposureHasPendingPeakOps` (src/AGENTS.md):
+  // the rings are presentational and keyed by q, so a transient optimistic
+  // peak landing mid-mutation just draws a brief extra ring — there's no
+  // derived/aggregate value to hide. Gating here would needlessly blank the
+  // q-link rings during every peak edit. Left ungated on purpose.
   const peaksQ = usePeaks(activeExposureId);
   const peakQs = (peaksQ.data ?? []).map((p) => p.q);
 

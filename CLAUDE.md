@@ -146,7 +146,7 @@ Module-specific conventions and anti-patterns live in the AGENTS.md file nearest
   - **Plan 7 — Multiplayer + Instrumentation:** Auto/curation peak split, diff-update preserves auto peak IDs, content-hash memoization, structured `user_actions` log via `apply_event!`, SSE multiplayer at `GET /api/events`. R5b (If-Match conflict resolution) deferred behind R4 instrumentation gate.
   - **Plan 8 — Mutation queue + idempotency:** Per-mutation `client_op_id` keys both the backend `with_idempotency` cache and the frontend `pendingDeferreds` registry. Frontend `useQueueMutation` + `handleRemoteEvent` implement own-op confirmation and foreign-event replay-as-rerun. `analyze_run` no-op fast path suppresses both the SSE frame and the durable `user_actions` row.
   - **Compare + picker + figure export + permalinks:** `ComparePage` / `ComparePageEdit` renders multi-trace overlays with sample-first picker, conflict resolution modal, and PNG/SVG copy/save. Slug-based permalink URLs round-trip through `useStateFromUrl` / `useUrlFromState`.
-  - **Test coverage:** ~1000 Julia (HimalayaUI) · ~100 Julia (core) · ~100 Vitest files · 7 Playwright E2E spec files (mocked) + 6 Playwright live-integration specs.
+  - **Test coverage:** ~1000 Julia (HimalayaUI) · ~100 Julia (core) · ~100 Vitest files · 10 Playwright E2E spec files (mocked) + 6 Playwright live-integration specs.
 - Deferred: Phase panel Recent section, export UI, per-user audit view, derived-exposure construction. See [docs/future-feature-ideas.md](docs/future-feature-ideas.md).
 
 ## Further reading

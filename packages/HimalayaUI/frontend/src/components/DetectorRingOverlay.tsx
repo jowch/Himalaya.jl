@@ -39,6 +39,16 @@ export function DetectorRingOverlay({
   const setHoveredQ = useAppState((s) => s.setHoveredQ);
 
   // Self-observe only when the parent doesn't drive orient.
+  //
+  // Defensive / rotation-aware-by-contract: I4.3 (#180) requires a
+  // rotation-aware overlay. In the current FocusDetectorPanel composition the
+  // detector sits in an `aspect-square` box (containerAspect ~ 1), so
+  // `decideOrient` never selects landscape and this stays portrait — and even
+  // if it flipped, concentric rings are rotation-invariant so `rotate(90deg)`
+  // is a visual no-op. We keep it (rather than hardcoding portrait) so the
+  // overlay remains correct if a future layout gives the detector a
+  // non-square slot, matching DetectorImage's own rotation contract via the
+  // shared `decideOrient` rule.
   useEffect(() => {
     if (orientProp !== undefined) return;
     const wrapper = wrapperRef.current;
@@ -115,7 +125,15 @@ export function DetectorRingOverlay({
                 strokeWidth={5}
                 style={{ pointerEvents: "stroke", cursor: "pointer" }}
                 onMouseEnter={() => setHoveredQ(q)}
-                onMouseLeave={() => setHoveredQ(undefined)}
+                // Guarded clear: crossing ring A -> B fires enter(B) before
+                // leave(A); an unconditional clear here would clobber B's
+                // highlight back to undefined. Only clear if we're still the
+                // active q (a real leave, not a hand-off to a neighbour).
+                onMouseLeave={() =>
+                  setHoveredQ(
+                    useAppState.getState().hoveredQ === q ? undefined
+                      : useAppState.getState().hoveredQ,
+                  )}
               />
             </g>
           );
