@@ -1,7 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { QueryClient } from "@tanstack/react-query";
-import type { Comparison, ConflictError } from "./api";
+import type { ConflictError } from "./api";
 import {
   emptyDraft,
   loadDraftFromSession,
@@ -10,12 +9,6 @@ import {
   type ActiveDraftSlot,
   type DraftMember,
 } from "./lib/comparison/draft";
-import {
-  fromComparison,
-  fromComparisonAsFork,
-  memberFromNewExposure,
-} from "./lib/comparison/draftFactories";
-import { cyclePeakDisplay } from "./lib/comparison/peakCycle";
 import {
   loadSeriesDraftFromSession,
   persistSeriesDraftToSession,
@@ -120,21 +113,6 @@ export interface AppState {
   // runs against a stable post-cutover tree. I5.1 (#182) deleted the `activePage`
   // model but leaves this draft slice intact. (See the PR's coordination note.)
   /**
-   * Compare-page q-axis zoom domains, keyed per comparison id. Per-tab UI
-   * state — not persisted. Missing entry / `null` value = full data range.
-   *
-   * Keying per-comparison preserves zoom across review/edit toggles for
-   * the SAME comparison while isolating different comparisons (different
-   * comparisons can have q-ranges differing by orders of magnitude — a
-   * shared single slot caused B to inherit A's zoom and look broken).
-   *
-   * The unsaved-draft case (create flow, no id yet) uses key `0` as a
-   * sentinel — autoincrement comparison ids start at 1, so collision is
-   * impossible.
-   */
-  compareXDomains: Record<number, [number, number] | null>;
-
-  /**
    * Compare-page draft slot (Plan §Phase 4, Task 4.3). Single slot — only
    * one comparison can be in edit mode at a time per tab. Mirrored to
    * sessionStorage with a schema version (see `lib/comparison/draft.ts`).
@@ -215,45 +193,13 @@ export interface AppState {
   clearUsername: () => void;
   openSpeculativeBuilder: (exposureId: number) => void;
   closeSpeculativeBuilder: () => void;
-  setCompareXDomain: (id: number, d: [number, number] | null) => void;
 
-  // Compare-draft actions
-  startNewDraft: () => void;
-  /**
-   * Start a fork-flavored draft pre-populated from a parent comparison
-   * (Plan §Phase 11, Task 11.2). Members come from the parent (with ids
-   * dropped so they INSERT under the new comparison) and the parent's
-   * lineage rides on the draft so the eventual `POST /api/comparisons`
-   * carries `forked_from_id` + `forked_at_hash`.
-   */
-  startForkDraft: (comparison: Comparison, qc: QueryClient) => void;
-  loadDraftFromComparison: (comparison: Comparison, qc: QueryClient) => void;
-  setDraftTitle: (title: string) => void;
-  setDraftDescription: (description: string) => void;
-  /**
-   * Morph the active draft into a fork (Compare UX C-14). Called when a
-   * NON-author saves a draft on someone else's comparison: clears `id` +
-   * `baseHash` (so the next submit routes to the create path) and records
-   * the parent lineage (`forkedFromId` + `forkedAtHash`) plus the user's
-   * chosen fork title. View choices are preserved — the fork inherits the
-   * user's current view. No-op when no draft is active.
-   */
-  setDraftForkOf: (p: { newTitle: string; sourceId: number; sourceHash: string }) => void;
-  addMember: (exposureId: number, qc: QueryClient) => void;
-  removeMember: (index: number) => void;
+  // Compare-era draft actions — KEPT (consumed by the shared series-builder
+  // render core: MemberMetaRow / MemberMetaGutter / BandResizeDivider). The
+  // Compare-only create/fork/membership sub-actions were removed in I5.3 (#184).
   updateMember: (index: number, partial: Partial<DraftMember>) => void;
   reorderMembers: (newOrder: number[]) => void;
   resizeBands: (memberIdx: number, deltaPx: number, totalHeightPx: number) => void;
-  resetBandHeights: () => void;
-  /**
-   * Cycle one peak's display state on a draft member (Plan §Phase 8.1):
-   *   shown → labeled → hidden → shown (regular click)
-   *   any   → hidden                  (alt+click)
-   *
-   * No-op when there's no active draft or `memberIdx` is out of range.
-   */
-  cyclePeakDisplayForMember: (memberIdx: number, peakId: number, altKey: boolean) => void;
-  discardDraft: () => void;
 
   // ── Series-builder draft actions (I3.5b) ───────────────────────────────
   /**
@@ -352,7 +298,6 @@ export const useAppState = create<AppState>()(
         navModalOpen: false,
         navModalStep: "experiment",
         speculativeBuilder: null,
-        compareXDomains: {},
         // Rehydrate the draft from sessionStorage at module-init time so
         // a tab reload restores edit-in-progress.
         activeDraft: loadDraftFromSession(),
@@ -403,74 +348,11 @@ export const useAppState = create<AppState>()(
         openSpeculativeBuilder: (exposureId) =>
           set({ speculativeBuilder: { exposureId } }),
         closeSpeculativeBuilder: () => set({ speculativeBuilder: null }),
-        setCompareXDomain: (id, d) =>
-          set({ compareXDomains: { ...get().compareXDomains, [id]: d } }),
 
-        // ── Compare-draft actions ──────────────────────────────────────
-        // Guard: re-calling on an already-new draft (id undefined) is a
-        // no-op so the ComparePageEdit hydration effect can re-run without
-        // clobbering an in-progress draft. Keeps the effect's deps array
-        // exhaustive (no `draft` read inside the effect → no eslint-disable).
-        startNewDraft: () => {
-          const cur = get().activeDraft;
-          if (cur !== null && cur.id === undefined) return;
-          setDraft(emptyDraft());
-        },
-        startForkDraft: (comparison, qc) =>
-          setDraft(fromComparisonAsFork(comparison, qc)),
-        // Guard: re-loading the same comparison id is a no-op (don't clobber
-        // an in-progress edit) — see startNewDraft above for rationale.
-        loadDraftFromComparison: (comparison, qc) => {
-          const cur = get().activeDraft;
-          if (cur !== null && cur.id === comparison.id) return;
-          setDraft(fromComparison(comparison, qc));
-        },
-        setDraftTitle: (title) => {
-          const cur = get().activeDraft;
-          if (cur === null) return;
-          setDraft({ ...cur, title });
-        },
-        setDraftDescription: (description) => {
-          const cur = get().activeDraft;
-          if (cur === null) return;
-          setDraft({ ...cur, description });
-        },
-        setDraftForkOf: (p) => {
-          const cur = get().activeDraft;
-          if (cur === null) return;
-          // Clearing `id` + `baseHash` flips the next submit onto the create
-          // path (POST /api/comparisons, no expected_content_hash). The
-          // `...cur` spread preserves members and view choices so the fork
-          // inherits the user's current state.
-          setDraft({
-            ...cur,
-            id: undefined,
-            baseHash: undefined,
-            forkedFromId: p.sourceId,
-            forkedAtHash: p.sourceHash,
-            title: p.newTitle,
-          });
-        },
-        addMember: (exposureId, qc) => {
-          const cur = get().activeDraft;
-          if (cur === null) return;
-          const next: ActiveDraft = {
-            ...cur,
-            members: [
-              ...cur.members,
-              memberFromNewExposure(exposureId, cur.members.length, qc),
-            ],
-          };
-          setDraft(next);
-        },
-        removeMember: (index) => {
-          const cur = get().activeDraft;
-          if (cur === null) return;
-          const filtered = cur.members.filter((_, i) => i !== index);
-          // Renumber display_order so the contiguous range stays intact.
-          const renumbered = filtered.map((m, i) => ({ ...m, display_order: i }));
-          setDraft({ ...cur, members: renumbered });
-        },
+        // ── Compare-era draft actions — KEPT ───────────────────────────
+        // Consumed by the shared series-builder render core (MemberMetaRow,
+        // MemberMetaGutter, BandResizeDivider). The Compare-only create/fork/
+        // membership sub-actions were removed in I5.3 (#184).
         updateMember: (index, partial) => {
           const cur = get().activeDraft;
           if (cur === null) return;
@@ -518,23 +400,6 @@ export const useAppState = create<AppState>()(
           members[memberIdx + 1] = { ...b, band_height: adjustedB === newB ? newB : adjustedB };
           setDraft({ ...cur, members });
         },
-        resetBandHeights: () => {
-          const cur = get().activeDraft;
-          if (cur === null) return;
-          const members = cur.members.map((m) => ({ ...m, band_height: 1 }));
-          setDraft({ ...cur, members });
-        },
-        cyclePeakDisplayForMember: (memberIdx, peakId, altKey) => {
-          const cur = get().activeDraft;
-          if (cur === null) return;
-          if (memberIdx < 0 || memberIdx >= cur.members.length) return;
-          const target = cur.members[memberIdx]!;
-          const next = cyclePeakDisplay(target.peak_display, peakId, altKey);
-          const members = cur.members.slice();
-          members[memberIdx] = { ...target, peak_display: next };
-          setDraft({ ...cur, members });
-        },
-        discardDraft: () => setDraft(null),
 
         // ── Series-builder draft actions (I3.5b) ─────────────────────────
         startSeriesDraftFromSeries: (series) => {
