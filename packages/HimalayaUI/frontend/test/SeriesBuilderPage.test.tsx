@@ -106,4 +106,14 @@ describe("SeriesBuilderPage — read + states", () => {
     expect(screen.getByTestId("series-builder-empty")).toBeInTheDocument();
     expect(screen.queryByTestId("mock-multi-trace-plot")).not.toBeInTheDocument();
   });
+
+  it("mounts the rail and toggles full-bleed collapse", () => {
+    h.seriesQ = { data: series({ members: [member()] }), isLoading: false, isError: false };
+    renderAt();
+    expect(screen.getByTestId("series-builder-rail")).toBeInTheDocument();
+    expect(screen.getByTestId("representation-toggle")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("rail-collapse-toggle"));
+    expect(screen.getByTestId("rail-restore")).toBeInTheDocument();
+    expect(screen.queryByTestId("series-builder-rail")).not.toBeInTheDocument();
+  });
 });

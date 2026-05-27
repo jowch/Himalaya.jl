@@ -10,7 +10,13 @@ import { MemberMetaGutter } from "../components/MemberMetaGutter";
 import { GroupingModeToggle } from "../components/GroupingModeToggle";
 import { AnnotationToggles } from "../components/AnnotationToggles";
 import { ActiveBandProvider } from "../components/ActiveBandContext";
+import { FigureExportControls } from "../components/FigureExportControls";
+import { SeriesBuilderRail } from "../components/SeriesBuilderRail";
+import type { Representation } from "../components/RepresentationToggle";
 import { resolveDisplayLabels } from "../lib/comparison/labels";
+import { buildMultiTraceExportSpec } from "../lib/figure-export/adapters/multiTraceAdapter";
+import { slugifyForFilename } from "../lib/figure-export/filename";
+import { useAppState } from "../state";
 import type { GroupingMode } from "../lib/comparison/coloring";
 import type { Series, SeriesMember } from "../api";
 
@@ -141,6 +147,41 @@ function SeriesBuilderBody({ series: s }: { series: Series }): JSX.Element {
     [members, exposures, samples],
   );
 
+  // Local UI state for the rail: collapse (full-bleed) + representation
+  // (waterfall live; heatmap deferred to #208).
+  const [collapsed, setCollapsed] = useState(false);
+  const [representation, setRepresentation] = useState<Representation>("waterfall");
+
+  // Annotation toggles live in Zustand (shared with AnnotationToggles); the
+  // export spec must reflect their current value so the figure matches the
+  // on-screen plot.
+  const showPeakTicks = useAppState((st) => st.showPeakTicks);
+  const showPeakLabels = useAppState((st) => st.showPeakLabels);
+
+  // Figure export — mirror Compare's spec thunk (evaluated at click time so
+  // it captures fresh xDomain / toggles). No experiment scope on this surface,
+  // so experimentName is omitted and the filename stem uses the series title.
+  const exportFilenameStem = `himalaya-series-${slugifyForFilename(s.title || String(s.id))}`;
+  const exportSpec = useCallback(() => buildMultiTraceExportSpec({
+    members,
+    traces,
+    comparisonTitle: s.title,
+    xDomain,
+    showPeakTicks,
+    showPeakLabels,
+    groupingMode,
+    sampleIdFor,
+    displayLabelByMemberId,
+  }), [
+    members, traces, s.title, xDomain, showPeakTicks, showPeakLabels,
+    groupingMode, sampleIdFor, displayLabelByMemberId,
+  ]);
+  const exportDisabled =
+    tracesLoading
+    || members.length === 0
+    || traces.size === 0
+    || members.every((m) => m.exposure_id === null);
+
   // Track the plot column height so the gutter rows align with the y-bands
   // (both consumers share computeYBands). Mirrors Compare's ResizeObserver.
   const plotColRef = useRef<HTMLDivElement>(null);
@@ -158,31 +199,48 @@ function SeriesBuilderBody({ series: s }: { series: Series }): JSX.Element {
 
   return (
     <ActiveBandProvider>
-      <div className="flex-1 min-h-0 flex flex-col p-4 gap-3" data-testid="series-builder-plot">
-        <div className="flex items-center gap-3" data-testid="series-builder-controls">
-          <GroupingModeToggle mode={groupingMode} onChange={setGroupingMode} />
-          <AnnotationToggles />
-        </div>
-        <div className="flex-1 min-h-0 flex flex-row gap-2">
-          <div ref={plotColRef} className="flex-1 min-w-0">
-            <MultiTracePlot
-              members={members}
-              traces={traces}
-              xDomain={xDomain}
-              onXDomain={setXDomain}
-              groupingMode={groupingMode}
-              sampleIdFor={sampleIdFor}
-            />
+      <div className="flex-1 min-h-0 flex flex-row" data-testid="series-builder-body">
+        <div className="flex-1 min-h-0 flex flex-col p-4 gap-3" data-testid="series-builder-plot">
+          <div className="flex items-center gap-3" data-testid="series-builder-controls">
+            <GroupingModeToggle mode={groupingMode} onChange={setGroupingMode} />
+            <AnnotationToggles />
           </div>
-          <div className="w-[280px] shrink-0" data-testid="series-builder-gutter">
-            <MemberMetaGutter
-              members={members}
-              panelHeight={panelHeight}
-              mode="review"
-              displayLabelByMemberId={displayLabelByMemberId}
-            />
+          <div className="flex-1 min-h-0 flex flex-row gap-2">
+            <div ref={plotColRef} className="flex-1 min-w-0">
+              <MultiTracePlot
+                members={members}
+                traces={traces}
+                xDomain={xDomain}
+                onXDomain={setXDomain}
+                groupingMode={groupingMode}
+                sampleIdFor={sampleIdFor}
+              />
+            </div>
+            <div className="w-[280px] shrink-0" data-testid="series-builder-gutter">
+              <MemberMetaGutter
+                members={members}
+                panelHeight={panelHeight}
+                mode="review"
+                displayLabelByMemberId={displayLabelByMemberId}
+              />
+            </div>
           </div>
         </div>
+        <SeriesBuilderRail
+          collapsed={collapsed}
+          onToggleCollapsed={() => setCollapsed((c) => !c)}
+          representation={representation}
+          onRepresentationChange={setRepresentation}
+          orderingVariable={s.ordering_variable}
+          exportControls={
+            <FigureExportControls
+              spec={exportSpec}
+              filenameStem={exportFilenameStem}
+              ariaContext="series figure"
+              disabled={exportDisabled}
+            />
+          }
+        />
       </div>
     </ActiveBandProvider>
   );
