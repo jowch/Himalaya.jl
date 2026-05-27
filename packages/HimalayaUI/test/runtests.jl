@@ -3,6 +3,7 @@ using Test
 @testset "HimalayaUI" begin
     include("test_config.jl")
     include("test_db.jl")
+    include("test_migrate_comparisons_to_series.jl")
     include("test_datfile.jl")
     include("test_manifest.jl")
     include("test_hash.jl")

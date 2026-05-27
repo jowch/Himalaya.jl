@@ -1,6 +1,9 @@
 using SQLite, DBInterface, Tables
 using Dates: now, UTC, format, @dateformat_str
 
+# Sentinel marker name for the I3.1 comparison→series data migration (#171).
+const MIGRATION_COMPARISONS_TO_SERIES = "comparisons_to_series"
+
 const SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
     id         INTEGER PRIMARY KEY,
@@ -373,6 +376,12 @@ function migrate_schema!(db::SQLite.DB)
     # `migrate_comparisons_to_series!` has a natural slot after this. New
     # tables only — the `comparison*` tables are never renamed (§2.1).
     migrate_series!(db)
+
+    # I3.1 (#171): copy the comparison corpus into the series* tables. MUST run
+    # after migrate_series! (tables + schema_migrations sentinel exist) and after
+    # the two compare migrations above (reads their columns). Own transaction;
+    # sentinel-gated; raw-INSERT user_actions, never apply_event! (no broadcast).
+    migrate_comparisons_to_series!(db)
 
     # PR #107 left the on-disk experiment.toml AND the in-DB experiments.config
     # blob using the legacy `[manifest].label/name` shape. The deprecation
@@ -822,6 +831,187 @@ function migrate_series!(db::SQLite.DB)
             name        TEXT PRIMARY KEY,
             applied_at  TEXT
         )""")
+    nothing
+end
+
+# Build the `series_created` recipe-snapshot payload for one comparison.
+# Recipe samples are the DISTINCT, non-NULL sample_ids of the comparison's
+# members' exposures, in first-seen display_order, at sequential 0-based
+# positions. Orphan members (NULL exposure_id) and exposures with NULL
+# sample_id contribute no recipe row. Master plan §6.1 step 2.
+function _series_created_payload_from_comparison(db::SQLite.DB, cmp)
+    sample_rows = Tables.rowtable(DBInterface.execute(db,
+        """SELECT e.sample_id AS sample_id
+           FROM comparison_members cm
+           JOIN exposures e ON e.id = cm.exposure_id
+           WHERE cm.comparison_id = ? AND e.sample_id IS NOT NULL
+           ORDER BY cm.display_order ASC, cm.id ASC""", [Int(cmp.id)]))
+    seen = Set{Int}()
+    samples = Vector{Dict{Symbol,Any}}()
+    for r in sample_rows
+        sid = Int(r.sample_id)
+        sid in seen && continue
+        push!(seen, sid)
+        push!(samples, Dict{Symbol,Any}(
+            :sample_id => sid,
+            :position  => length(samples),
+            :pinned    => false,
+            :excluded  => false,
+        ))
+    end
+    Dict{Symbol,Any}(
+        :title                 => ismissing(cmp.title) ? nothing : String(cmp.title),
+        :description           => ismissing(cmp.description) ? nothing : String(cmp.description),
+        # CRITICAL (P1 — id-space mismatch): NULL the fork lineage on migrated series.
+        # `comparisons.forked_from_id` references comparisons(id); `series.forked_from_id`
+        # references series(id) — DIFFERENT id-spaces. Copying the comparison's id straight
+        # through would write a dangling reference (an arbitrary/nonexistent series id). FK
+        # enforcement is ON at this point (migrate_compare_relax_nullability!'s `finally`
+        # re-enabled `PRAGMA foreign_keys=ON` before this migration runs), so such a write
+        # would FK-throw at INSERT and abort the migration; the `PRAGMA foreign_key_check`
+        # test confirms the copy leaves no dangling ref. A comparison_id→series_id remap is
+        # unsafe (id-order does NOT guarantee parent.id < child.id). Fork lineage across the
+        # comparison→series cutover is not meaningful, so drop it: BOTH fields NULL.
+        # (Human-approved option a.)
+        :forked_from_id        => nothing,
+        :forked_at_hash        => nothing,
+        :ordering_variable     => nothing,   # comparisons have no recipe ordering
+        :order_rule            => nothing,   # dispatcher COALESCEs to 'manual'
+        :view_grouping_mode    => ismissing(cmp.view_grouping_mode) ? nothing : String(cmp.view_grouping_mode),
+        :view_show_peak_ticks  => ismissing(cmp.view_show_peak_ticks) ? nothing : cmp.view_show_peak_ticks,
+        :view_show_peak_labels => ismissing(cmp.view_show_peak_labels) ? nothing : cmp.view_show_peak_labels,
+        :samples               => samples,
+    )
+end
+
+# Build the `series_plate_committed` member-list payload for one comparison.
+# Members carry NO ids (the dispatcher mints fresh PKs). Field shape matches
+# `_series_member_payload` output. Master plan §6.1 step 2.
+function _series_plate_committed_payload_from_comparison(db::SQLite.DB, cmp)
+    member_rows = Tables.rowtable(DBInterface.execute(db,
+        """SELECT exposure_id, display_order, band_height, y_offset, normalization,
+                  color_override, label_override, q_window_min, q_window_max,
+                  peak_display, snapshot
+           FROM comparison_members WHERE comparison_id = ?
+           ORDER BY display_order ASC, id ASC""", [Int(cmp.id)]))
+    members = Vector{Dict{Symbol,Any}}()
+    for m in member_rows
+        push!(members, Dict{Symbol,Any}(
+            :id             => nothing,
+            :exposure_id    => ismissing(m.exposure_id)    ? nothing : Int(m.exposure_id),
+            :display_order  => Int(m.display_order),
+            :band_height    => Float64(m.band_height),
+            :y_offset       => Float64(m.y_offset),
+            :normalization  => String(m.normalization),
+            :color_override => ismissing(m.color_override) ? nothing : String(m.color_override),
+            :label_override => ismissing(m.label_override) ? nothing : String(m.label_override),
+            :q_window_min   => ismissing(m.q_window_min)   ? nothing : Float64(m.q_window_min),
+            :q_window_max   => ismissing(m.q_window_max)   ? nothing : Float64(m.q_window_max),
+            # peak_display/snapshot are stored JSON text; parse so the payload
+            # round-trips as structured JSON (matches the route's parsed shape).
+            :peak_display   => ismissing(m.peak_display) ? nothing : JSON3.read(String(m.peak_display)),
+            :snapshot       => JSON3.read(String(m.snapshot)),
+        ))
+    end
+    Dict{Symbol,Any}(:members => members)
+end
+
+# Raw-INSERT one synthesized user_actions row (no broadcast, NULL client ids,
+# carrying the comparison's user_id + historical timestamp), then fold its
+# payload through the live dispatcher. Returns the new event_id.
+# NOTE: the timestamp column is named `timestamp`, NOT `created_at`.
+function _synthesize_series_event!(db::SQLite.DB, kind::String, series_id::Integer,
+                                   payload::Dict, user_id, ts)
+    payload_json = JSON3.write(payload)
+    res = DBInterface.execute(db,
+        """INSERT INTO user_actions
+             (user_id, action, entity_type, entity_id, payload,
+              undoes_event_id, client_id, client_op_id, timestamp)
+           VALUES (?, ?, 'series', ?, ?, NULL, NULL, NULL, ?)""",
+        [user_id, kind, Int(series_id), payload_json, ts])
+    event_id = Int(DBInterface.lastrowid(res))
+    # Canonicalize exactly as apply_event! does so the dispatcher branches see a
+    # JSON3.Object, not a Dict.
+    payload_canonical = JSON3.read(payload_json)
+    update_view_for_event!(db, kind, Int(series_id), payload_canonical, event_id)
+    event_id
+end
+
+"""
+    migrate_comparisons_to_series!(db)
+
+Event-sourced copy of every `comparisons` row into the `series*` tables
+(master plan §6.1, issue #171). Runs at `migrate_schema!` time, after
+`migrate_series!` (so the `series*` tables and `schema_migrations` sentinel
+exist) and after `migrate_compare_view_choices!`/`migrate_compare_relax_nullability!`
+(it reads the columns those add). Wrapped in its own `SQLite.transaction`.
+
+Idempotent via the `schema_migrations` sentinel (gate at start, marker row
+written LAST inside the same transaction — the gate flips only on a fully
+committed copy). NEVER calls `apply_event!` (its public method broadcasts; a
+migration must not fan out N replay-as-reruns). Raw-`INSERT`s `user_actions`
+rows with `client_op_id`/`client_id` NULL — so no `idempotent_responses` cache
+rows are written and the partial unique index does not apply.
+"""
+function migrate_comparisons_to_series!(db::SQLite.DB)
+    # Gate: skip if already applied. A single read before the transaction is
+    # sufficient — migrate_schema! runs single-threaded inside open_db, before
+    # serve accepts connections, so there is no concurrent opener to race.
+    already = Tables.rowtable(DBInterface.execute(db,
+        "SELECT 1 FROM schema_migrations WHERE name = ?",
+        [MIGRATION_COMPARISONS_TO_SERIES]))
+    isempty(already) || return nothing
+
+    SQLite.transaction(db) do
+        # NOTE: `forked_from_id`/`forked_at_hash` are deliberately NOT selected —
+        # the migrated series always NULLs its fork lineage (id-space mismatch; see
+        # `_series_created_payload_from_comparison`). Selecting them would be a dead read.
+        cmps = Tables.rowtable(DBInterface.execute(db,
+            """SELECT id, title, description, content_hash, created_by, created_at,
+                      updated_at,
+                      view_grouping_mode, view_show_peak_ticks, view_show_peak_labels
+               FROM comparisons ORDER BY id ASC"""))
+
+        for cmp in cmps
+            uid = ismissing(cmp.created_by) ? nothing : Int(cmp.created_by)
+            # Historical timestamp carried onto the synthesized event rows'
+            # `timestamp` column. Falls back to now() only if the comparison
+            # somehow has a NULL created_at (post-#67 it is nullable).
+            ts  = ismissing(cmp.created_at) ? comparison_now_iso() : String(cmp.created_at)
+
+            # Mint the series id exactly as the live route does.
+            res = DBInterface.execute(db, "INSERT INTO series DEFAULT VALUES")
+            new_id = Int(DBInterface.lastrowid(res))
+
+            created_payload = _series_created_payload_from_comparison(db, cmp)
+            _synthesize_series_event!(db, "series_created", new_id, created_payload, uid, ts)
+
+            plate_payload = _series_plate_committed_payload_from_comparison(db, cmp)
+            _synthesize_series_event!(db, "series_plate_committed", new_id, plate_payload, uid, ts)
+
+            # Messages: carry author_id + body + created_at (don't let the
+            # DEFAULT CURRENT_TIMESTAMP overwrite history). series_messages.id
+            # auto-assigns.
+            DBInterface.execute(db,
+                """INSERT INTO series_messages (series_id, author_id, body, created_at)
+                   SELECT ?, author_id, body, created_at
+                   FROM comparison_messages WHERE comparison_id = ?
+                   ORDER BY created_at ASC, id ASC""", [new_id, Int(cmp.id)])
+
+            # Pins: carry user_id + pinned_at. OR IGNORE defends against a dup
+            # (user, series) PK (can't actually occur — comparison_pins PK is
+            # (user, comparison) and one comparison maps to one series).
+            DBInterface.execute(db,
+                """INSERT OR IGNORE INTO series_pins (user_id, series_id, pinned_at)
+                   SELECT user_id, ?, pinned_at
+                   FROM comparison_pins WHERE comparison_id = ?""", [new_id, Int(cmp.id)])
+        end
+
+        # Sentinel marker LAST, inside the same transaction.
+        DBInterface.execute(db,
+            "INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)",
+            [MIGRATION_COMPARISONS_TO_SERIES, comparison_now_iso()])
+    end
     nothing
 end
 
