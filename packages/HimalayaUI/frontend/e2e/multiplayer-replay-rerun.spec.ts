@@ -116,6 +116,10 @@ async function mockBackend(page: Page, state: MockState, username: string): Prom
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(exp) }));
   await page.route("**/api/experiments/1/samples", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([sample]) }));
+  // Corpus list — the focus workspace (/sample/:id, I4.4) learns the sample's
+  // experiment_id from here.
+  await page.route("**/api/samples", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([sample]) }));
   await page.route(`**/api/samples/${SAMPLE_ID}/exposures*`, (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([exposure]) }));
   await page.route(`**/api/samples/${SAMPLE_ID}/messages`, (r) =>
@@ -183,7 +187,7 @@ async function seedSession(page: Page, username: string): Promise<void> {
     localStorage.setItem("himalaya-ui:state", JSON.stringify({
       state: {
         username: u,
-        activePage: "index",
+        activePage: "compare",
         tutorialSeen: true,
         theme: "dark",
         activeExperimentId: 1,
@@ -202,7 +206,7 @@ async function setupTab(
   await injectFakeEventSource(page);
   await mockBackend(page, state, username);
   await seedSession(page, username);
-  await page.goto("/");
+  await page.goto(`/sample/${SAMPLE_ID}`);
   // Wait for the test helpers to attach (App's useEffect runs after mount).
   await page.waitForFunction(() => Boolean((window as unknown as {
     __himalayaTest?: unknown;

@@ -97,6 +97,8 @@ async function mockApi(page: Page, state: ServerState): Promise<void> {
   await page.route("**/api/experiments", (r) => jsonOK(r, [EXPERIMENT]));
   await page.route("**/api/experiments/1", (r) => jsonOK(r, EXPERIMENT));
   await page.route("**/api/experiments/1/samples", (r) => jsonOK(r, SAMPLES));
+  // Corpus list — the /samples contact sheet (now the cold-`/` landing post-#181).
+  await page.route("**/api/samples", (r) => jsonOK(r, SAMPLES));
   await page.route("**/api/experiments/1/exposures*", (r) =>
     jsonOK(r, EXPOSURES));
   await page.route("**/api/experiments/1/sample-tags", (r) => jsonOK(r, []));
@@ -285,46 +287,32 @@ test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => { localStorage.clear(); sessionStorage.clear(); });
 });
 
-// ─── #77: cold-load with persisted activePage='compare' ────────────────────
+// ─── #77 / I4.4 (#181): cold-load at '/' lands on the corpus contact sheet ──
+//
+// Pre-#181, a persisted activePage='compare' at URL '/' bounced to a compare
+// URL (the #77 empty-PageBody fix). After the Index cutover, bare '/' is a
+// standalone redirect to /samples (§4.1 corpus home) regardless of the
+// persisted activePage — so the #77 stranding risk is eliminated differently.
+// The Compare surface remains reachable by its own URL (asserted below).
 
-test("#77 cold-load with persisted activePage='compare' + URL '/' mounts Compare", async ({ page }) => {
+test("#181 cold-load at '/' redirects to the corpus contact sheet (not Compare)", async ({ page }) => {
   const state = makeState();
   await mockApi(page, state);
   // seedState defaults: activePage='compare', activeExperimentId=1.
   await seedState(page);
   await page.goto("/");
 
-  // Zustand → URL sync effect must redirect to /experiments/1/compare.
-  await expect(page).toHaveURL(/\/experiments\/1\/compare(\/|$)/);
-  await expect(page.getByTestId("comparison-sidebar")).toBeVisible();
+  await expect(page).toHaveURL(/\/samples$/);
+  await expect(page.getByTestId("samples-page")).toBeVisible();
 });
 
-test("#77 cold-load with no active experiment redirects to /compare/all", async ({ page }) => {
+test("a Compare URL still mounts the Compare sidebar (surviving surface)", async ({ page }) => {
   const state = makeState();
   await mockApi(page, state);
-  // Inline the localStorage write rather than going through `seedState`:
-  // Playwright serializes `addInitScript` args via structured clone, which
-  // strips `undefined` values — so passing `{ activeExperimentId: undefined }`
-  // to seedState's `extra` would NOT override the default `activeExperimentId: 1`.
-  // Build the persisted state explicitly to omit the key.
-  await page.addInitScript(() => {
-    localStorage.setItem(
-      "himalaya-ui:state",
-      JSON.stringify({
-        state: {
-          username: "alice",
-          activePage: "compare",
-          tutorialSeen: true,
-          theme: "dark",
-          // activeExperimentId intentionally absent → Zustand default (undefined).
-        },
-        version: 3,
-      }),
-    );
-  });
-  await page.goto("/");
+  await seedState(page);
+  await page.goto("/experiments/1/compare");
 
-  await expect(page).toHaveURL(/\/compare\/all$/);
+  await expect(page).toHaveURL(/\/experiments\/1\/compare(\/|$)/);
   await expect(page.getByTestId("comparison-sidebar")).toBeVisible();
 });
 
