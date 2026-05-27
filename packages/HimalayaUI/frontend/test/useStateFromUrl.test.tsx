@@ -5,7 +5,6 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { useStateFromUrl } from "../src/hooks/useStateFromUrl";
 import { useAppState } from "../src/state";
-import { _resetEmitMode } from "../src/lib/url/emitMode";
 
 // BrowserRouter reads from `window.history` / `window.location`, which is
 // what the tests manipulate via `history.replaceState`.
@@ -34,7 +33,6 @@ beforeEach(() => {
     activeExperimentId: undefined, activeSampleId: undefined, activeExposureId: undefined,
   });
   history.replaceState(null, "", "/");
-  _resetEmitMode();
 });
 
 afterEach(() => {
