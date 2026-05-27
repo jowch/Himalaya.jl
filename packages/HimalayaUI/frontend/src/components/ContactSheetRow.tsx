@@ -75,14 +75,14 @@ function ExposureThumb({
       />
       {isRepresentative && (
         <span
-          className="absolute left-0.5 top-0.5 text-[10px] text-print-accent"
+          className="pointer-events-none absolute left-0.5 top-0.5 text-[10px] text-print-accent"
           title="representative exposure"
         >
           ⊙
         </span>
       )}
       {isRejected && (
-        <span className="absolute inset-0 flex items-center justify-center text-print-accent">
+        <span className="pointer-events-none absolute inset-0 flex items-center justify-center text-print-accent">
           ✕
         </span>
       )}
