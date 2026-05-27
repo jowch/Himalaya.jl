@@ -1,7 +1,9 @@
 # "The Print" unification + fidelity remediation — plan
 
 **Date:** 2026-05-27 · validates `main` @ `c5591c1` (redesign fully merged)
-**Inputs:** the code-level gap report (`docs/2026-05-27-redesign-gap-report.md`), a live impeccable visual pass (app run against the dev-copy DB, Playwright over all 5 surfaces + focus workspace), and three parallel shipped-vs-mockup fidelity audits (one per workflow stage). Source of truth: `docs/redesign-mockups/*.html` + `docs/redesign-notes.md` (NOT the stale `DESIGN.md`).
+**Inputs:** the code-level gap report (`docs/2026-05-27-redesign-gap-report.md`), a live impeccable visual pass (app run against the dev-copy DB, Playwright over all 5 surfaces + focus workspace), and three parallel shipped-vs-mockup fidelity audits (one per workflow stage). Source of truth: `docs/redesign-mockups/*.html` + `docs/redesign-notes.md`.
+
+**The agent kit (everything an issue-agent needs).** Each remediation issue (#221–#233) should be plannable from: (1) its **mockup** (`docs/redesign-mockups/*.html`, the pixel target); (2) the **consolidated findings inventory** `docs/2026-05-27-the-print-fidelity-findings.md` (the evidence base, every finding ID the issues cite, resolves there, scoped by surface); (3) the canonical **design reference** `DESIGN.md` (now "The Print", authored up front from the mockups, the token/type/component spec the work builds to); and (4) the shipped source on `main`.
 **Decision driving this plan:** "The Print" (light warm paper, terracotta accent hue 38, Newsreader serif) is the app's single identity. **The dark "Darkroom" theme is retired.**
 
 ---
@@ -50,8 +52,8 @@ Surface `proposeOrdering`'s output (the plumbing + build-gate already exist): au
 ### R8 — Series builder (P2)
 B-F **offset slider + log/linear scale toggle** (core compose controls, currently absent), B-G floating offset dock in full-bleed, B-J figure-as-plate container, B-H kicker tag-row + auto figure caption, B-I autogroup read-rail card. Heatmap + peak-tracking → **#208**.
 
-### R9 — Docs: regenerate DESIGN.md (P2) — M-1
-Regenerate `DESIGN.md` to "The Print" from the unified token system (after R0) via `impeccable document`. Retire the Darkroom description.
+### R9 — Docs: verify DESIGN.md against shipped tokens (P2) — DOC-1
+`DESIGN.md` has been **authored up front** to "The Print" (from the mockups) so it is the spec R0a builds to, not a doc regenerated after. R9 is therefore a final **verification**: after R0a/R0b land, confirm the shipped tokens (incl. the finalized 8-phase palette and the provisional status/manual-peak values) match `DESIGN.md`, reconcile any reviewed drift, and run `impeccable document` as a cross-check. The dependency on R0a/R0b is for the *verification* (cannot verify until the code lands), not for authoring.
 
 ### R10 — Backend: image route robustness (P2) — L-2
 `GET /api/exposures/:id/image` should return a graceful 404 (or placeholder) when the source TIFF is missing, not an unhandled `ArgumentError`→500.
