@@ -7,7 +7,9 @@ import type { Sample } from "../api";
  *
  *   `/`, `⌘K`  — open the nav modal (experiment step if none selected, else sample)
  *   `,`, `.`   — previous / next sample within the current experiment
- *   `T`        — toggle theme
+ *
+ * R0a (#221): the `T` theme-toggle shortcut is retired with the dark theme —
+ * "The Print" is the single identity, so there is no theme to toggle.
  *
  * Shortcuts are suppressed when typing in an input/textarea. The modal itself
  * owns its own Esc/Enter/Backspace behavior; we don't touch them here.
@@ -40,13 +42,6 @@ export function useGlobalShortcuts(samplesInExperiment: Sample[] | undefined): v
         const s = useAppState.getState();
         const step = s.activeExperimentId === undefined ? "experiment" : "sample";
         s.openNavModal(step);
-        return;
-      }
-
-      // T → theme toggle
-      if ((e.key === "t" || e.key === "T") && !e.metaKey && !e.ctrlKey && !e.altKey) {
-        const s = useAppState.getState();
-        s.setTheme(s.theme === "dark" ? "light" : "dark");
         return;
       }
 

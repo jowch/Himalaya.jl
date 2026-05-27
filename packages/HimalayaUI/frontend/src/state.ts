@@ -35,7 +35,6 @@ export const LS_KEY = "himalaya-ui:state";
 // the `migrate` below, which formally strips any lingering `activePage` key from
 // a pre-cutover blob while preserving every surviving pref.
 
-export type ThemeId = "dark" | "light";
 export type NavModalStep = "experiment" | "sample";
 
 export type StaleUrlContext =
@@ -64,7 +63,6 @@ export interface AppState {
   activeSampleId: number | undefined;
   activeExposureId: number | undefined;
   tutorialSeen: boolean;
-  theme: ThemeId;
 
   // ephemeral (not persisted to localStorage)
   hoveredIndexId: number | undefined;
@@ -177,7 +175,6 @@ export interface AppState {
   setHoveredPeak: (id: number | undefined) => void;
   setHoveredQ: (q: number | undefined) => void;
   setTutorialSeen: (seen: boolean) => void;
-  setTheme: (theme: ThemeId) => void;
   openNavModal: (step?: NavModalStep) => void;
   closeNavModal: () => void;
   setNavModalStep: (step: NavModalStep) => void;
@@ -281,7 +278,6 @@ export const useAppState = create<AppState>()(
         activeSampleId: undefined,
         activeExposureId: undefined,
         tutorialSeen: false,
-        theme: "dark",
 
         hoveredIndexId: undefined,
         hoveredPeakId: undefined,
@@ -330,7 +326,6 @@ export const useAppState = create<AppState>()(
         setHoveredPeak: (hoveredPeakId) => set({ hoveredPeakId }),
         setHoveredQ: (hoveredQ) => set({ hoveredQ }),
         setTutorialSeen: (tutorialSeen) => set({ tutorialSeen }),
-        setTheme: (theme) => set({ theme }),
         openNavModal: (step) =>
           set(step ? { navModalOpen: true, navModalStep: step } : { navModalOpen: true }),
         closeNavModal: () => set({ navModalOpen: false }),
@@ -485,12 +480,15 @@ export const useAppState = create<AppState>()(
     {
       name: LS_KEY,
       // I5.1 (#182) dropped `activePage` from partialize (its field is gone).
-      // I5.2 (#183) bumps `version` 3 → 4 WITH the `migrate` below, which
+      // I5.2 (#183) bumped `version` 3 → 4 WITH the `migrate` below, which
       // formally strips any lingering `activePage` key from a pre-cutover blob.
-      // A version bump WITHOUT a migrate would make Zustand discard the whole
-      // persisted blob — the wipe risk; the migrate preserves every surviving
-      // pref (username/theme/tutorialSeen/…).
-      version: 4,
+      // R0a (#221): "The Print" is the single identity — the dark `theme` field
+      // is gone, so it leaves partialize and `version` bumps 4 → 5; the migrate
+      // now ALSO strips a lingering `theme` key. A version bump WITHOUT a
+      // migrate would make Zustand discard the whole persisted blob — the wipe
+      // risk; the migrate preserves every surviving pref
+      // (username/tutorialSeen/active*/…).
+      version: 5,
       partialize: (s) => ({
         username: s.username,
         firstName: s.firstName,
@@ -499,23 +497,25 @@ export const useAppState = create<AppState>()(
         activeSampleId: s.activeSampleId,
         activeExposureId: s.activeExposureId,
         tutorialSeen: s.tutorialSeen,
-        theme: s.theme,
       }),
       // I5.2 (#183): runs BEFORE `merge` on rehydrate (zustand v4 order is
       // migrate → merge). Returns persisted DATA only — `merge`
       // (mergePersistedState) re-attaches the store actions afterward via
-      // `...current`. The only transform across every prior version is "drop
-      // the dead `activePage` key", so there is no `switch (version)`.
+      // `...current`. The transforms across every prior version are "drop the
+      // dead `activePage` key" (I5.2 #183) and "drop the retired `theme` key"
+      // (R0a #221) — both are unconditional key-strips, so there is no
+      // `switch (version)`.
       migrate: (persisted, _version) => {
         // WIPE-GUARD: a non-object / malformed blob is returned UNTOUCHED —
         // never `{}`/`undefined`. Handing `{}` here would be the only way this
         // migrate could itself partial-wipe prefs; returning the original lets
         // `merge` fold whatever survived (or fall back to defaults).
         if (persisted && typeof persisted === "object") {
-          const { activePage: _activePage, ...rest } = persisted as Record<
-            string,
-            unknown
-          >;
+          const {
+            activePage: _activePage,
+            theme: _theme,
+            ...rest
+          } = persisted as Record<string, unknown>;
           return rest as unknown as AppState;
         }
         return persisted as AppState;

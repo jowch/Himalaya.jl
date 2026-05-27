@@ -1,4 +1,3 @@
-import { useEffect } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useAppState } from "../state";
@@ -51,7 +50,7 @@ function PageBody(): JSX.Element {
 
 /**
  * AppRoutes — the single hoisted top-level <Routes> table, plus the shared
- * root effects (theme, global shortcuts).
+ * root effects (global shortcuts).
  *
  * I5.1 (#182): one layout route, <CorpusShell>, hosts every surface — the
  * corpus pages AND the `*` stale catch-all (PageBody). The legacy AppShell +
@@ -60,18 +59,11 @@ function PageBody(): JSX.Element {
  * under them and races the redirect.
  */
 export function AppRoutes(): JSX.Element {
-  const theme = useAppState((s) => s.theme);
   const experimentId = useAppState((s) => s.activeExperimentId);
 
-  // Apply theme to <html> so CSS can key off `html.theme-light`. Hoisted
-  // here (above the shell) so the theme works app-wide.
-  useEffect(() => {
-    document.documentElement.className =
-      theme === "light" ? "theme-light" : "";
-    return () => {
-      document.documentElement.className = ""; // defensive: StrictMode double-invoke / symmetry; not load-bearing
-    };
-  }, [theme]);
+  // R0a (#221): the theme-class effect is gone. "The Print" is the single
+  // identity defined statically in styles.css `@theme`; there is no
+  // `theme-light` class to toggle on <html>.
 
   // Global keyboard shortcuts — hoisted above the shell so they work app-wide;
   // the `,`/`.` sample-step shortcut needs the active experiment's samples.

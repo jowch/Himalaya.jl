@@ -2,32 +2,48 @@
 @import "@fontsource/plus-jakarta-sans/400.css";
 @import "@fontsource/plus-jakarta-sans/500.css";
 @import "@fontsource/plus-jakarta-sans/600.css";
+@import "@fontsource/newsreader/400.css";
+@import "@fontsource/newsreader/500.css";
+@import "@fontsource/newsreader/600.css";
 
 @theme {
-  --color-bg: oklch(0.095 0.004 250);
-  --color-bg-elevated: oklch(0.145 0.006 250);
-  --color-bg-hover: oklch(0.185 0.007 250);
-  --color-bg-subtle: oklch(0.168 0.007 250);
-  --color-fg: oklch(0.95 0.005 250);
-  --color-fg-muted: oklch(0.64 0.009 250);
-  --color-fg-dim: oklch(0.46 0.009 250);
-  --color-border: oklch(0.27 0.008 250);
-  --color-border-soft: oklch(0.21 0.007 250);
-  --color-accent: oklch(0.82 0.08 220);
+  /*
+   * "The Print" is the single identity (R0a, #221). The dark "Darkroom"
+   * `@theme` defaults, the `:root.theme-light` override, `color-scheme:dark`,
+   * and the fractal-grain overlay are retired. The neutral-ramp utility NAMES
+   * (`bg-bg*`, `text-fg*`, `border-border*`, `accent`) are kept — only their
+   * VALUES are remapped to Print, so every legacy component that consumes them
+   * inherits the paper/ink/hairline/terracotta look with no per-component edit.
+   *
+   * Mapping (DESIGN.md §3.1): bg→paper, bg-subtle/hover→paper-sunk,
+   * bg-elevated→plate, fg→ink, fg-muted→ink-soft, fg-dim→ink-faint,
+   * border→hair-strong, border-soft→hair, accent→terracotta (hue 38).
+   * Values are the canonical Print tokens (DESIGN.md `colors:` block).
+   */
+  --color-bg: oklch(0.978 0.006 85);          /* paper */
+  --color-bg-elevated: oklch(0.992 0.004 90); /* plate */
+  --color-bg-hover: oklch(0.951 0.008 84);    /* paper-sunk */
+  --color-bg-subtle: oklch(0.951 0.008 84);   /* paper-sunk */
+  --color-fg: oklch(0.265 0.013 68);          /* ink */
+  --color-fg-muted: oklch(0.467 0.012 70);    /* ink-soft */
+  --color-fg-dim: oklch(0.640 0.010 74);      /* ink-faint */
+  --color-border: oklch(0.806 0.010 78);      /* hair-strong */
+  --color-border-soft: oklch(0.882 0.008 80); /* hair */
+  --color-accent: oklch(0.555 0.150 38);      /* terracotta */
   --color-success: oklch(0.72 0.08 155);
   --color-warning: oklch(0.76 0.11 75);
   --color-error: oklch(0.70 0.14 28);
-  /* Manual (user-added) peak marker. Bright/neon — peaks are the active
-     workflow edit. Hue 340 (magenta) keeps it well clear of the auto-peak
-     ice blue (--color-accent, ~220) and every earthy index hue in phases.ts. */
+  /* Manual (user-added) peak marker. Hue 340 (magenta) keeps it well clear of
+     the terracotta accent (hue 38) and every index hue in phases.ts. (Paper
+     re-tune to AA on plate is R0c.) */
   --color-peak-manual: oklch(0.78 0.22 340);
 
-  /* "The Print" palette — the corpus-redesign light aesthetic (redesign
-     master plan §4.1). Consumed by the new CorpusShell topbar. The redesign
-     is light-first, so these are single-valued (no theme-light override).
-     Values from docs/redesign-mockups/sample-table.html.
-     `--color-print-accent` is deliberately prefixed — it is a distinct hue
-     from the app-wide `--color-accent` above and must not collide with it. */
+  /* "The Print" palette — the canonical light aesthetic (DESIGN.md `colors:`).
+     Consumed directly by the new corpus surfaces via the `bg-paper`/`text-ink`/
+     `border-hair`/`text-print-accent` utilities. `--color-accent` above is now
+     remapped to the SAME terracotta hue 38 — the dark↔Print seam is closed, so
+     the two no longer diverge. Kept as a named token for the explicit Print
+     utilities the redesign surfaces already use. */
   --color-paper:        oklch(0.978 0.006 85);
   --color-paper-sunk:   oklch(0.951 0.008 84);
   --color-plate:        oklch(0.992 0.004 90);
@@ -37,9 +53,13 @@
   --color-hair:         oklch(0.882 0.008 80);
   --color-hair-strong:  oklch(0.806 0.010 78);
   --color-print-accent: oklch(0.555 0.150 38);
+  /* Warm near-black backing for detector images — the dark window set into
+     the paper (DESIGN.md §3.1 frame-edge). */
+  --color-frame-edge:   oklch(0.150 0.010 55);
 
   --radius: 6px;
   --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Newsreader", Georgia, ui-serif, serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 
   /*
@@ -59,38 +79,28 @@
   --text-base:  13px;
   --text-lg:    15px;
   --text-xl:    19px;
+  /* Serif display step (R0a, #221). Newsreader hero/figure/sample title — the
+     plate's name (DESIGN.md typography `display`). Set via the `.text-display`
+     role below, not by inlining `text-display`. */
+  --text-display: 27px;
 
   --text-xs--line-height:   1.4;
   --text-sm--line-height:   1.4;
   --text-base--line-height: 1.5;
   --text-lg--line-height:   1.3;
   --text-xl--line-height:   1.2;
-}
-
-:root.theme-light {
-  --color-bg: oklch(0.985 0.003 250);
-  --color-bg-elevated: oklch(0.995 0.002 250);
-  --color-bg-hover: oklch(0.955 0.005 250);
-  --color-bg-subtle: oklch(0.965 0.004 250);
-  --color-fg: oklch(0.22 0.010 250);
-  --color-fg-muted: oklch(0.46 0.010 250);
-  --color-fg-dim: oklch(0.62 0.010 250);
-  --color-border: oklch(0.85 0.007 250);
-  --color-border-soft: oklch(0.91 0.006 250);
-  --color-accent: oklch(0.55 0.09 220);
+  --text-display--line-height: 1.15;
 }
 
 @layer base {
   html, body, #app { height: 100%; }
   /*
-   * Hint to the UA that our default surface is dark — this re-themes native
-   * form controls (number-input spinner buttons, scrollbars, focus rings)
-   * to the dark variant without us hand-styling each pseudo-element.
-   * The light theme overrides this on the matching `:root.theme-light`
-   * selector below.
+   * "The Print" is a single light identity (R0a, #221). `color-scheme: light`
+   * re-themes native form controls (number-input spinners, scrollbars, focus
+   * rings) to the light variant. The dark default + the `:root.theme-light`
+   * override are gone.
    */
-  :root          { color-scheme: dark;  }
-  :root.theme-light { color-scheme: light; }
+  :root { color-scheme: light; }
   body {
     background: var(--color-bg);
     color: var(--color-fg);
@@ -100,18 +110,6 @@
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
     position: relative;
-  }
-  /* Subtle grain overlay — fractal noise @ low opacity, blended. */
-  body::before {
-    content: "";
-    position: fixed;
-    inset: 0;
-    background-image:
-      url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 0 0.55 0 0 0 0.5 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.12'/></svg>");
-    mix-blend-mode: overlay;
-    opacity: 0.3;
-    pointer-events: none;
-    z-index: 0;
   }
   *, *::before, *::after {
     transition-property: color, background-color, border-color, opacity;
@@ -132,20 +130,19 @@
     display: flex;
     align-items: center;
   }
-  /* Card surface — shared across all three floating cards. */
+  /* Card surface — shared across all three floating cards. The "Plate Lift":
+     on warm paper, a card is the one elevated object, so a soft shadow lifts it
+     off the page (DESIGN.md §Elevation). The dark-era shadow + the
+     `:root.theme-light .card` override are folded into this single light
+     treatment (R0a, #221). */
   .card {
     background: var(--color-bg-elevated);
     border: 0.5px solid var(--color-border-soft);
     border-radius: 12px;
     box-shadow:
-      0 1px 0 rgba(255, 255, 255, .03) inset,
-      0 12px 36px -10px rgba(0, 0, 0, .7);
-    position: relative;
-  }
-  :root.theme-light .card {
-    box-shadow:
       0 1px 0 rgba(255, 255, 255, .6) inset,
       0 6px 24px -8px rgba(20, 24, 40, .15);
+    position: relative;
   }
 
   /*
@@ -192,8 +189,10 @@
 
 /*
  * Semantic typography roles. Components consume these instead of mixing
- * size/weight/color triples. Six roles cover the surface area of the app:
+ * size/weight/color triples. The roles below cover the surface area of the app:
  *
+ *   text-display      Newsreader serif hero — figure/sample/series title (R0a)
+ *   text-headline     Newsreader serif section title — folio/scoping (R0a)
  *   text-caption      microcopy: timestamps, hints, "no items" placeholders
  *   text-label        form / section labels — uppercase, tracked, dim
  *   text-meta         inline labels (non-uppercase): author names, tag keys
@@ -202,10 +201,17 @@
  *   text-data         numerical / monospace values — q, score, lattice
  *   text-data-strong  monospace badge — phase chip, indexing chip
  *
+ * The Serif-Means-Title Rule (DESIGN.md): Newsreader (text-display/text-headline)
+ * is for titles on a plate only — never prose or chrome.
+ *
  * Adding `font-mono` etc. on top of a role is fine if context demands it,
  * but try to express the semantic first.
  */
 @layer components {
+  .text-display     { font-family: var(--font-serif); font-size: var(--text-display);
+                      line-height: 1.15; font-weight: 500; color: var(--color-fg); }
+  .text-headline    { font-family: var(--font-serif); font-size: var(--text-xl);
+                      line-height: 1.2;  font-weight: 500; color: var(--color-fg); }
   .text-caption     { font-size: var(--text-xs);  line-height: 1.4;
                       color: var(--color-fg-muted); }
   .text-label       { font-size: var(--text-sm);  line-height: 1.4;

@@ -26,7 +26,7 @@ React 18 + Vite + TypeScript strict + TailwindCSS 4. TanStack Query for server s
 
 ## Zustand — named actions
 
-Use the store's named actions (`clearUsername`, `setTheme`, `openNavModal`, …). Avoid `useAppState.setState({ ... })` — direct setState bypasses encapsulation and triggers lint warnings. New state transitions go in `state.ts` as named actions.
+Use the store's named actions (`clearUsername`, `setTutorialSeen`, `openNavModal`, …). Avoid `useAppState.setState({ ... })` — direct setState bypasses encapsulation and triggers lint warnings. New state transitions go in `state.ts` as named actions.
 
 ## State split (load-bearing)
 
@@ -44,7 +44,7 @@ Wrap any function that is both defined inside a component AND used as a `useEffe
 
 ## Tailwind v4 theming
 
-The dark palette is defined once in `styles.css` via `@theme { --color-* ... }`. Component files use utility classes (`bg-bg`, `text-fg-muted`, `border-accent`). To add a new color, add it to `@theme` first.
+"The Print" palette (light warm paper, terracotta accent hue 38, Newsreader serif) is defined once in `styles.css` via `@theme { --color-* ... }` — a single identity, no theme toggle (R0a, #221). The neutral-ramp utility names are kept (`bg-bg`, `text-fg-muted`, `border-border`) but their VALUES resolve to Print paper/ink/hairline; `accent` is terracotta. Component files use utility classes (`bg-bg`, `text-fg-muted`, `border-accent`, or the explicit Print utilities `bg-paper`/`text-ink`/`border-hair`/`text-print-accent`). Serif titles use the `text-display`/`text-headline` roles. To add a new color, add it to `@theme` first.
 
 ## Skeleton loading via boneyard-js
 
