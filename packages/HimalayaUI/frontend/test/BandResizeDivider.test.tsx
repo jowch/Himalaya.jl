@@ -132,12 +132,7 @@ describe("BandResizeDivider — push semantics", () => {
     expect(m[1]!.band_height).toBeCloseTo(1.25, 2);
   });
 
-  it("resetBandHeights restores all band_heights to 1.0", () => {
-    seedDraft([0.5, 2.0, 1.5]);
-    useAppState.getState().resetBandHeights();
-    const m = useAppState.getState().activeDraft!.members;
-    expect(m.map((x) => x.band_height)).toEqual([1, 1, 1]);
-  });
+  // I5.3 (#184): the resetBandHeights action was removed (Compare-only).
 
   it("does NOT snap when outside the dead zone", () => {
     seedDraft([1.0, 1.0]);
