@@ -1,6 +1,18 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { Skeleton } from "boneyard-js/react";
-import { useSeries } from "../queries";
+import {
+  useSeries, useMemberTraces, useMemberTracesLoading,
+  useMemberExposures, useMemberSamples,
+} from "../queries";
+import { MultiTracePlot } from "../components/MultiTracePlot";
+import { MemberMetaGutter } from "../components/MemberMetaGutter";
+import { GroupingModeToggle } from "../components/GroupingModeToggle";
+import { AnnotationToggles } from "../components/AnnotationToggles";
+import { ActiveBandProvider } from "../components/ActiveBandContext";
+import { resolveDisplayLabels } from "../lib/comparison/labels";
+import type { GroupingMode } from "../lib/comparison/coloring";
+import type { Series, SeriesMember } from "../api";
 
 /** Static skeleton for boneyard's headless capture: the plate area + a rail. */
 const BUILDER_FIXTURE = (
@@ -15,9 +27,9 @@ const BUILDER_FIXTURE = (
 /**
  * SeriesBuilderPage — the series builder visual surface at /series/:id
  * (#175 / I3.5a). Read-only: reads one series via useSeries(id) and composes
- * the existing MultiTracePlot render core (see Task 3+). Mutations (recipe
- * edits, plate commit, permalink) are I3.5b — NOT here. Mounted under the
- * CorpusShell layout route, the destination the I3.3 folio card links to.
+ * the existing MultiTracePlot render core. Mutations (recipe edits, plate
+ * commit, permalink) are I3.5b — NOT here. Mounted under the CorpusShell
+ * layout route, the destination the I3.3 folio card links to.
  *
  * URL-owned: the series id comes from the route param, never Zustand.
  */
@@ -46,15 +58,132 @@ export function SeriesBuilderPage(): JSX.Element {
         fixture={BUILDER_FIXTURE}
       >
         {s && (
-          <header data-testid="series-builder-header" className="shrink-0 px-6 pt-5">
-            <div className="text-xs font-semibold uppercase tracking-wide text-print-accent">
-              Series
-            </div>
-            <h1 className="font-medium text-ink">{title}</h1>
-          </header>
+          <>
+            <header data-testid="series-builder-header" className="shrink-0 px-6 pt-5">
+              <div className="text-xs font-semibold uppercase tracking-wide text-print-accent">
+                Series
+              </div>
+              <h1 className="font-medium text-ink">{title}</h1>
+            </header>
+            {s.members.length === 0 ? (
+              <div
+                data-testid="series-builder-empty"
+                className="flex-1 grid place-items-center text-sm text-ink-faint"
+              >
+                This series has no members yet.
+              </div>
+            ) : (
+              <SeriesBuilderBody series={s} />
+            )}
+          </>
         )}
-        {/* Plot + rail composed in Task 3+. */}
       </Skeleton>
     </div>
+  );
+}
+
+/**
+ * Loaded body — composes the render core once `series` is present. Mirrors
+ * Compare.tsx's review body wiring (the single source of truth for prop
+ * shapes); the only differences are the Series input type and the local-state
+ * groupingMode/xDomain (no draft, no Zustand comparison-keyed domain — a
+ * read surface's coloring + pan/zoom are local UI concerns).
+ */
+function SeriesBuilderBody({ series: s }: { series: Series }): JSX.Element {
+  // Members arrive sorted by display_order from the route; keep that order.
+  const members: SeriesMember[] = s.members;
+  const exposureIds = useMemo(
+    () => members.flatMap((m) => (m.exposure_id !== null ? [m.exposure_id] : [])),
+    [members],
+  );
+
+  // Hydrate per-member trace / exposure / sample rows via the existing hooks.
+  // Each hook is called exactly once at top level (Rules of Hooks).
+  const traces = useMemberTraces(exposureIds);
+  const tracesLoading = useMemberTracesLoading(exposureIds);
+  const exposures = useMemberExposures(exposureIds);
+  const sampleIds = useMemo(() => {
+    const ids = new Set<number>();
+    for (const e of exposures.values()) ids.add(e.sample_id);
+    return Array.from(ids).sort((a, b) => a - b);
+  }, [exposures]);
+  const samples = useMemberSamples(sampleIds);
+
+  // Coloring mode: seed from the series' persisted view default, else
+  // "bySample" — matching effectiveGroupingMode's hard default so the
+  // builder's default coloring is identical to Compare's. The helper itself
+  // is not reused: it is Comparison-typed and draft-aware, and this read
+  // surface has no draft (persistence is a recipe edit → I3.5b). Local state.
+  const [groupingMode, setGroupingMode] = useState<GroupingMode>(
+    (s.view_grouping_mode as GroupingMode | null) ?? "bySample",
+  );
+
+  // Pan/zoom q-domain. MultiTracePlot requires non-optional xDomain +
+  // onXDomain. Compare keeps this in Zustand `compareXDomains[comparisonId]`,
+  // but that Record is keyed by COMPARISON id — reusing it for a series id
+  // would namespace-collide. A read surface's pan/zoom is local, so hold it
+  // in local useState. null = full data range.
+  const [xDomain, setXDomain] = useState<[number, number] | null>(null);
+
+  // sampleIdFor: exact signature from MultiTracePlotProps / Compare.tsx —
+  // `(m: SeriesMember) => number | null` (null, not a -1 sentinel).
+  const sampleIdFor = useCallback(
+    (m: SeriesMember): number | null => {
+      if (m.exposure_id === null) return null;
+      return exposures.get(m.exposure_id)?.sample_id ?? null;
+    },
+    [exposures],
+  );
+
+  // arg order: resolveDisplayLabels(members, exposures, samples).
+  const displayLabelByMemberId = useMemo(
+    () => resolveDisplayLabels(members, exposures, samples),
+    [members, exposures, samples],
+  );
+
+  // Track the plot column height so the gutter rows align with the y-bands
+  // (both consumers share computeYBands). Mirrors Compare's ResizeObserver.
+  const plotColRef = useRef<HTMLDivElement>(null);
+  const [panelHeight, setPanelHeight] = useState(0);
+  useEffect(() => {
+    const el = plotColRef.current;
+    if (!el) return;
+    setPanelHeight(el.clientHeight);
+    const obs = new ResizeObserver(() => {
+      if (plotColRef.current) setPanelHeight(plotColRef.current.clientHeight);
+    });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [tracesLoading]);
+
+  return (
+    <ActiveBandProvider>
+      <div className="flex-1 min-h-0 flex flex-col p-4 gap-3" data-testid="series-builder-plot">
+        <div className="flex items-center gap-3" data-testid="series-builder-controls">
+          <GroupingModeToggle mode={groupingMode} onChange={setGroupingMode} />
+          <AnnotationToggles />
+        </div>
+        <div className="flex-1 min-h-0 flex flex-row gap-2">
+          <div ref={plotColRef} className="flex-1 min-w-0">
+            <MultiTracePlot
+              members={members}
+              traces={traces}
+              xDomain={xDomain}
+              onXDomain={setXDomain}
+              groupingMode={groupingMode}
+              sampleIdFor={sampleIdFor}
+            />
+          </div>
+          <div className="w-[280px] shrink-0" data-testid="series-builder-gutter">
+            <MemberMetaGutter
+              members={members}
+              panelHeight={panelHeight}
+              mode="review"
+              displayLabelByMemberId={displayLabelByMemberId}
+            />
+          </div>
+        </div>
+      </div>
+    </ActiveBandProvider>
   );
 }

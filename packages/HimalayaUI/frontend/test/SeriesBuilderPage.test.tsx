@@ -87,4 +87,23 @@ describe("SeriesBuilderPage — read + states", () => {
     renderAt();
     expect(screen.getByText(/untitled series/i)).toBeInTheDocument();
   });
+
+  it("composes MultiTracePlot with the series members once loaded", () => {
+    h.seriesQ = {
+      data: series({ members: [member()] }),
+      isLoading: false, isError: false,
+    };
+    renderAt();
+    expect(screen.getByTestId("mock-multi-trace-plot")).toBeInTheDocument();
+    // grouping-mode + annotation toggles compose alongside the plot
+    expect(screen.getByTestId("grouping-mode")).toBeInTheDocument();
+    expect(screen.getByTestId("annotation-toggles")).toBeInTheDocument();
+  });
+
+  it("shows the empty-plate state when the series has no members", () => {
+    h.seriesQ = { data: series({ members: [] }), isLoading: false, isError: false };
+    renderAt();
+    expect(screen.getByTestId("series-builder-empty")).toBeInTheDocument();
+    expect(screen.queryByTestId("mock-multi-trace-plot")).not.toBeInTheDocument();
+  });
 });
