@@ -108,6 +108,10 @@ export function PlotCard({ headerSlot }: PlotCardProps = {}): JSX.Element {
   const [yDomain, setYDomain] = useState<[number, number] | null>(null);
   // X-axis scale: log (SAXS convention) or linear.
   const [xType, setXType] = useState<"log" | "linear">("log");
+  // R3-F03: "place a peak" armed mode. Presentational only — empty-area click
+  // on the trace already adds a manual peak unconditionally; arming carries the
+  // visible affordance + the `+ Peak` toggle state. Reset on exposure change.
+  const [addArmed, setAddArmed] = useState(false);
 
   // Auto-pick the active exposure when the active sample changes — see the
   // hook for the full priority order. The regression test for issue #118
@@ -125,7 +129,7 @@ export function PlotCard({ headerSlot }: PlotCardProps = {}): JSX.Element {
 
   // Reset the q-range when the sample or exposure changes — the previous
   // zoom almost never applies to a different trace.
-  useEffect(() => { setXDomain(null); setYDomain(null); }, [activeExposureId]);
+  useEffect(() => { setXDomain(null); setYDomain(null); setAddArmed(false); }, [activeExposureId]);
 
   // Compute a y-domain (and tightened x-domain when peaks exist) that focuses
   // on the diffraction features rather than the dominating beam decay.
@@ -287,11 +291,6 @@ export function PlotCard({ headerSlot }: PlotCardProps = {}): JSX.Element {
 
   const exportDisabled = !traceQ.data || !peaksQ.data;
 
-  const fullQRange: [number, number] | null = traceQ.data?.q?.length
-    ? [traceQ.data.q[0]!, traceQ.data.q[traceQ.data.q.length - 1]!]
-    : null;
-  const effectiveDomain = xDomain ?? fullQRange;
-
   const body = (() => {
     if (activeSampleId === undefined) {
       return (
@@ -326,6 +325,8 @@ export function PlotCard({ headerSlot }: PlotCardProps = {}): JSX.Element {
         yDomain={yDomain}
         xType={xType}
         onReset={resetDomain}
+        addArmed={addArmed}
+        onToggleAddArmed={() => setAddArmed((v) => !v)}
         {...(experimentQ.data?.q_units ? { qUnits: experimentQ.data.q_units } : {})}
       />
     );
@@ -349,13 +350,13 @@ export function PlotCard({ headerSlot }: PlotCardProps = {}): JSX.Element {
         experimentName={experimentName}
         sampleName={sampleName}
         onTitleClick={() => openNavModal(titleStep)}
-        xDomain={effectiveDomain}
-        fullRange={fullQRange}
-        onXDomain={setXDomain}
         xType={xType}
         onSetXType={setXType}
         onFitFeatures={fitFeatures}
         canFit={traceQ.data !== undefined}
+        isZoomed={xDomain !== null}
+        addArmed={addArmed}
+        onToggleAddPeak={() => setAddArmed((v) => !v)}
         exportSpec={exportSpec}
         exportFilenameStem={filenameStem}
         exportDisabled={exportDisabled}
@@ -389,13 +390,15 @@ interface TitleStripProps {
   experimentName: string | undefined;
   sampleName:     string | undefined;
   onTitleClick:   () => void;
-  xDomain:  [number, number] | null;
-  fullRange: [number, number] | null;
-  onXDomain: (d: [number, number] | null) => void;
   xType: "log" | "linear";
   onSetXType: (t: "log" | "linear") => void;
   onFitFeatures: () => void;
   canFit: boolean;
+  /** U-4: visible x-range is off the full trace (PlotCard's `xDomain !== null`). */
+  isZoomed: boolean;
+  /** R3-F03: `+ Peak` armed state + toggle. */
+  addArmed: boolean;
+  onToggleAddPeak: () => void;
   exportSpec: () => import("../lib/figure-export/types").ExportSpec;
   exportFilenameStem: string;
   exportDisabled: boolean;
@@ -413,8 +416,8 @@ interface TitleStripProps {
  * the top of the workspace.
  */
 function TitleStrip({
-  headerSlot, experimentName, sampleName, onTitleClick, xDomain, fullRange, onXDomain,
-  xType, onSetXType, onFitFeatures, canFit,
+  headerSlot, experimentName, sampleName, onTitleClick,
+  xType, onSetXType, onFitFeatures, canFit, isZoomed, addArmed, onToggleAddPeak,
   exportSpec, exportFilenameStem, exportDisabled,
 }: TitleStripProps): JSX.Element {
   const hasExp    = experimentName !== undefined;
@@ -472,22 +475,44 @@ function TitleStrip({
       </button>
       )}
       <div className="shrink-0 flex items-center gap-2">
+        {/* U-4: zoom-state indicator — only shows when the trace is off its
+            full q-range; clicking it auto-fits (pairs with Auto-fit below). */}
+        <ZoomIndicator zoomed={isZoomed} onReset={onFitFeatures} />
+        <XScaleToggle xType={xType} onSetXType={onSetXType} />
+        {/* R3-F03: the mockup's `.tools` cluster — Auto-fit + `+ Peak` ghost
+            buttons replacing the numeric q-range input pair (anti-reference:
+            "legacy scientific software" toolbar). Both are ghost `tool-btn`s
+            matching the segmented scale toggle's text-xs scale. */}
         <button
           type="button"
           onClick={onFitFeatures}
           disabled={!canFit}
-          data-testid="fit-features"
+          data-testid="tool-autofit"
           title="Auto-zoom to peaks (or post-beam region)"
-          className="text-xs px-1.5 py-0.5 rounded text-fg-dim hover:text-fg
-                     hover:bg-bg-hover disabled:opacity-40 disabled:cursor-default
-                     border border-transparent hover:border-border whitespace-nowrap"
+          className="rounded-md border border-hair-strong bg-plate px-2.5 py-1
+                     text-xs font-semibold text-ink hover:bg-paper-sunk
+                     disabled:opacity-40 disabled:cursor-default whitespace-nowrap"
         >
-          fit features
+          Auto-fit
         </button>
-        <XScaleToggle xType={xType} onSetXType={onSetXType} />
-        <QRange xDomain={xDomain} fullRange={fullRange} onXDomain={onXDomain} />
+        <button
+          type="button"
+          onClick={onToggleAddPeak}
+          data-testid="tool-add-peak"
+          data-armed={addArmed ? "true" : "false"}
+          aria-pressed={addArmed}
+          title="Click the trace to place a peak"
+          className={[
+            "rounded-md border px-2.5 py-1 text-xs font-semibold whitespace-nowrap transition-colors",
+            addArmed
+              ? "bg-print-accent border-print-accent text-paper"
+              : "border-hair-strong bg-plate text-ink hover:bg-paper-sunk",
+          ].join(" ")}
+        >
+          + Peak
+        </button>
         {/* Thin divider before the export cluster. */}
-        <span className="w-px h-4 bg-border" aria-hidden="true" />
+        <span className="w-px h-4 bg-hair-strong" aria-hidden="true" />
         <FigureExportControls
           spec={exportSpec}
           filenameStem={exportFilenameStem}
@@ -533,54 +558,26 @@ function XScaleToggle({ xType, onSetXType }: XScaleToggleProps): JSX.Element {
   );
 }
 
-interface QRangeProps {
-  xDomain: [number, number] | null;
-  fullRange: [number, number] | null;
-  onXDomain: (d: [number, number] | null) => void;
-}
-
-function QRange({ xDomain, fullRange, onXDomain }: QRangeProps): JSX.Element | null {
-  if (!fullRange) return null;
-  const [qmin, qmax] = xDomain ?? fullRange;
-  const isFull = !xDomain;
-
-  const commit = (nextMin: number, nextMax: number): void => {
-    const lo = Math.max(fullRange[0], Math.min(nextMin, nextMax));
-    const hi = Math.min(fullRange[1], Math.max(nextMin, nextMax));
-    if (hi - lo < (fullRange[1] - fullRange[0]) * 1e-4) return;
-    onXDomain([lo, hi]);
-  };
-
+/**
+ * ZoomIndicator (U-4) — a quiet terracotta ghost button shown in the TitleStrip
+ * only when the trace is zoomed off its full q-range. Clicking it auto-fits
+ * (the parent passes `onFitFeatures`), so the chart "knows it's zoomed and
+ * offers to reset" — pairing with the Auto-fit tool button.
+ */
+export function ZoomIndicator(
+  { zoomed, onReset }: { zoomed: boolean; onReset: () => void },
+): JSX.Element | null {
+  if (!zoomed) return null;
   return (
-    <span
-      className="flex items-center gap-1.5 whitespace-nowrap"
-      data-testid="q-range-controls"
+    <button
+      type="button"
+      data-testid="zoom-indicator"
+      onClick={onReset}
+      title="Reset to full q-range"
+      className="text-meta text-print-accent hover:underline whitespace-nowrap"
     >
-      <span className="text-fg-dim uppercase tracking-wider text-xs">q</span>
-      <QNumInput
-        value={qmin}
-        onCommit={(v) => commit(v, qmax)}
-        testId="q-range-min"
-      />
-      <span className="text-fg-dim">–</span>
-      <QNumInput
-        value={qmax}
-        onCommit={(v) => commit(qmin, v)}
-        testId="q-range-max"
-      />
-      <button
-        type="button"
-        onClick={() => onXDomain(null)}
-        disabled={isFull}
-        data-testid="q-range-reset"
-        title="Reset q-range (double-click plot)"
-        className="ml-1 px-1.5 py-0.5 rounded text-fg-dim hover:text-fg
-                   hover:bg-bg-hover disabled:opacity-40 disabled:cursor-default
-                   border border-transparent hover:border-border"
-      >
-        reset
-      </button>
-    </span>
+      zoomed · reset
+    </button>
   );
 }
 
@@ -590,6 +587,13 @@ export interface QNumInputProps {
   testId: string;
 }
 
+/**
+ * QNumInput — a focus-gated numeric q input. R3-F03 retired the always-visible
+ * `<QRange>` numeric pair from the trace tools cluster (it read as legacy
+ * scientific-software toolbar soup); this component is retained, exported, and
+ * unit-tested for a future scale-toggle popover that folds numeric q-range
+ * editing back in off the segmented control. Not currently mounted.
+ */
 export function QNumInput({ value, onCommit, testId }: QNumInputProps): JSX.Element {
   const [draft, setDraft] = useState(value.toFixed(3));
   const [focused, setFocused] = useState(false);
