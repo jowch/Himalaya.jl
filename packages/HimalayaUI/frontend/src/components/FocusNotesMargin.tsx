@@ -81,7 +81,7 @@ export function FocusNotesMargin({ sample, onSaveNotes }: Props): JSX.Element {
         {hasNote && (
           <span
             data-testid="focus-notes-count"
-            className="font-mono text-[10px] font-bold text-ink-faint"
+            className="font-mono text-meta font-bold text-ink-faint"
           >
             1
           </span>
