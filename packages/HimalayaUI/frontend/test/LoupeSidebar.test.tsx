@@ -65,6 +65,26 @@ describe("LoupeSidebar — verdict", () => {
     expect(screen.getByTestId("loupe-drop-toggle")).toHaveTextContent("Restore");
   });
 
+  // T-4: the kept verdict dot is SAGE (the success status token), not the
+  // terracotta interaction accent. DESIGN.md status block pins success = sage.
+  it("paints the kept-dot with the sage success token (not the accent)", () => {
+    render(<LoupeSidebar {...defaultProps()} />);
+    const dot = screen.getByTestId("loupe-kept-dot");
+    expect(dot.className).toContain("bg-success");
+    expect(dot.className).not.toContain("bg-accent");
+    expect(dot.className).not.toContain("bg-print-accent");
+  });
+
+  // T-5 boundary: a dropped exposure's dot uses the terracotta accent.
+  it("paints the dropped-dot with the print accent", () => {
+    render(
+      <LoupeSidebar {...defaultProps()} exposure={exposure({ status: "rejected" })} />,
+    );
+    const dot = screen.getByTestId("loupe-kept-dot");
+    expect(dot.className).toContain("bg-print-accent");
+    expect(dot.className).not.toContain("bg-success");
+  });
+
   it("displays an existing rejection reason for a dropped exposure", () => {
     const props = defaultProps();
     render(

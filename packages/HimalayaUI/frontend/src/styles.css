@@ -30,13 +30,18 @@
   --color-border: oklch(0.806 0.010 78);      /* hair-strong */
   --color-border-soft: oklch(0.882 0.008 80); /* hair */
   --color-accent: oklch(0.555 0.150 38);      /* terracotta */
-  --color-success: oklch(0.72 0.08 155);
-  --color-warning: oklch(0.76 0.11 75);
-  --color-error: oklch(0.70 0.14 28);
+  /* Status tokens, paper-tuned for AA on plate (DESIGN.md `colors:` /
+     §Status). R0c (#223) corrected `success` from the drifted mint
+     (oklch(0.72 0.08 155)) to the canonical sage — the same value the loupe
+     "kept" verdict dot reads through `bg-success` (T-4). */
+  --color-success: oklch(0.520 0.120 162);    /* sage */
+  --color-warning: oklch(0.620 0.130 70);     /* amber */
+  --color-error:   oklch(0.520 0.170 28);     /* red */
   /* Manual (user-added) peak marker. Hue 340 (magenta) keeps it well clear of
-     the terracotta accent (hue 38) and every index hue in phases.ts. (Paper
-     re-tune to AA on plate is R0c.) */
-  --color-peak-manual: oklch(0.78 0.22 340);
+     the terracotta accent (hue 38) and every index hue in phases.ts. R0c
+     (#223) paper-re-tuned it from the dark-era L 0.78 to the DESIGN.md value
+     for AA on plate. */
+  --color-peak-manual: oklch(0.550 0.200 340);
 
   /* "The Print" palette — the canonical light aesthetic (DESIGN.md `colors:`).
      Consumed directly by the new corpus surfaces via the `bg-paper`/`text-ink`/
@@ -56,6 +61,10 @@
   /* Warm near-black backing for detector images — the dark window set into
      the paper (DESIGN.md §3.1 frame-edge). */
   --color-frame-edge:   oklch(0.150 0.010 55);
+  /* Light caption tint for mono labels set OVER the dark frame-edge (the
+     loupe frame-tag). R0c (#223, T-8): the prior `text-ink-faint` caption was
+     dark-on-dark on the detector frame; this is the mockup's `.frame-tag`. */
+  --color-frame-tag:    oklch(0.82 0.01 80);
 
   --radius: 6px;
   --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;

@@ -86,9 +86,11 @@ export function LoupeSidebar({
         className="flex items-center gap-3 rounded border border-border bg-bg-subtle p-3"
       >
         <span
+          data-testid="loupe-kept-dot"
           className={[
             "h-2.5 w-2.5 shrink-0 rounded-full",
-            isRejected ? "bg-accent" : "bg-success",
+            // T-4/T-5: kept = sage success token; dropped = terracotta accent.
+            isRejected ? "bg-print-accent" : "bg-success",
           ].join(" ")}
         />
         <div className="flex-1">
@@ -117,8 +119,8 @@ export function LoupeSidebar({
         className="rounded border border-border p-3"
       >
         {isRepresentative ? (
-          <div className="flex items-center gap-2 text-xs font-bold text-accent">
-            <span className="h-2 w-2 rounded-full bg-accent" />
+          <div className="flex items-center gap-2 text-xs font-bold text-print-accent">
+            <span className="h-2 w-2 rounded-full bg-print-accent" />
             Representative for indexing
           </div>
         ) : (
