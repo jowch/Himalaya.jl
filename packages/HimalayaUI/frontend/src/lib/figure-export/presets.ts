@@ -48,6 +48,12 @@ export const LIGHT_PALETTE = {
  * If the implementer sees a hue here that fails contrast against #fff during
  * step 3 wiring, adjust THIS constant — keep on-screen → export hue mapping
  * stable.
+ *
+ * **Phase-offset parity (PR #251 r1).** Entry [8] was relocated from hue 315
+ * to 285 to keep parity with `COMPARE_PALETTE`'s same-index fix (3° collision
+ * with Fd3m 318). Several other entries in this light variant — 175, 263,
+ * 295, 3 — sit closer to phase hues than the on-screen ≥13° floor; tracked
+ * but out of scope for #208 (issue covers the on-screen render-core).
  */
 export const COMPARE_PALETTE_LIGHT: readonly string[] = [
   "oklch(0.55 0.16  33)", // warm coral
@@ -58,7 +64,7 @@ export const COMPARE_PALETTE_LIGHT: readonly string[] = [
   "oklch(0.54 0.13 220)", // azure
   "oklch(0.55 0.12 263)", // lavender
   "oklch(0.50 0.14 295)", // purple
-  "oklch(0.50 0.14 315)", // magenta-purple
+  "oklch(0.50 0.14 285)", // violet-purple (was 315 = 3° from Fd3m 318; #251 r1)
   "oklch(0.50 0.14 333)", // raspberry
   "oklch(0.55 0.14   3)", // pink-red
   "oklch(0.58 0.12 105)", // chartreuse

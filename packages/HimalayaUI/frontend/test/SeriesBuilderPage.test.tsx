@@ -15,6 +15,8 @@ const h = vi.hoisted(() => ({
   lastPlotProps: undefined as undefined | {
     showPeakTicks?: boolean; showPeakLabels?: boolean;
     xType?: "log" | "linear"; workingBandFraction?: number;
+    representation?: "waterfall" | "heatmap";
+    showCrossTraceTracking?: boolean;
   },
 }));
 vi.mock("../src/queries", () => ({
@@ -30,6 +32,8 @@ vi.mock("../src/components/MultiTracePlot", () => ({
   MultiTracePlot: (props: {
     showPeakTicks?: boolean; showPeakLabels?: boolean;
     xType?: "log" | "linear"; workingBandFraction?: number;
+    representation?: "waterfall" | "heatmap";
+    showCrossTraceTracking?: boolean;
   }) => {
     h.lastPlotProps = props;
     return (
@@ -38,6 +42,8 @@ vi.mock("../src/components/MultiTracePlot", () => ({
         data-show-peak-ticks={String(props.showPeakTicks)}
         data-show-peak-labels={String(props.showPeakLabels)}
         data-x-type={String(props.xType)}
+        data-representation={String(props.representation)}
+        data-cross-trace-tracking={String(props.showCrossTraceTracking)}
       />
     );
   },
@@ -166,6 +172,24 @@ describe("SeriesBuilderPage — read + states", () => {
     expect(screen.getByTestId("fig-caption")).toBeInTheDocument();
   });
 
+  it("renders only the plate header — the outer page header is retired (R8-N1)", () => {
+    // Round-2 finding R8-N1: the outer `<header>` at `SeriesBuilderPage.tsx:99-124`
+    // duplicated the figure-plate kicker+title at `:284-301`, diluting the
+    // figure-as-plate metaphor (~80px of redundant stack). Mockup
+    // `series-builder.html:386-396` has only the plate header.
+    h.seriesQ = { data: series({ members: [member()] }), isLoading: false, isError: false };
+    renderAt();
+    expect(screen.queryByTestId("series-builder-header")).not.toBeInTheDocument();
+    // Title still renders, but on the plate (not in a separate outer header).
+    const title = screen.getByText("LL37 titration");
+    expect(title.closest('[data-testid="series-builder-plate"]')).not.toBeNull();
+    // Edit button still discoverable in read mode (re-homed into the kicker row).
+    expect(screen.getByTestId("series-builder-edit")).toBeInTheDocument();
+    // And it lives inside the plate kicker row, not in a separate header strip.
+    expect(screen.getByTestId("series-builder-edit").closest('[data-testid="series-builder-plate"]'))
+      .not.toBeNull();
+  });
+
   it("forwards the default scale (log) and offset to the plot", () => {
     h.seriesQ = { data: series({ members: [member()] }), isLoading: false, isError: false };
     renderAt();
@@ -194,6 +218,33 @@ describe("SeriesBuilderPage — read + states", () => {
     expect(screen.queryByTestId("offset-dock")).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId("rail-collapse-toggle"));
     expect(screen.getByTestId("offset-dock")).toBeInTheDocument();
+  });
+
+  it("forwards the default representation 'waterfall' to MultiTracePlot", () => {
+    h.seriesQ = { data: series({ members: [member()] }), isLoading: false, isError: false };
+    renderAt();
+    expect(screen.getByTestId("mock-multi-trace-plot"))
+      .toHaveAttribute("data-representation", "waterfall");
+  });
+
+  it("flips MultiTracePlot to heatmap when the heatmap toggle is clicked (#208 wiring)", () => {
+    h.seriesQ = { data: series({ members: [member()] }), isLoading: false, isError: false };
+    renderAt();
+    expect(screen.getByTestId("repr-heatmap")).not.toBeDisabled();
+    fireEvent.click(screen.getByTestId("repr-heatmap"));
+    expect(h.lastPlotProps?.representation).toBe("heatmap");
+    expect(screen.getByTestId("mock-multi-trace-plot"))
+      .toHaveAttribute("data-representation", "heatmap");
+    // The figure-tag also follows the representation.
+    expect(screen.getByTestId("fig-tags")).toHaveTextContent("intensity map");
+  });
+
+  it("toggles cross-trace tracking when the Track-reflections checkbox is clicked (#208 wiring)", () => {
+    h.seriesQ = { data: series({ members: [member()] }), isLoading: false, isError: false };
+    renderAt();
+    expect(h.lastPlotProps?.showCrossTraceTracking).toBe(false);
+    fireEvent.click(screen.getByTestId("track-toggle-input"));
+    expect(h.lastPlotProps?.showCrossTraceTracking).toBe(true);
   });
 
   it("changes the coloring mode via GroupingModeToggle (setGroupingMode wired)", () => {

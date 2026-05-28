@@ -16,6 +16,9 @@ interface SeriesBuilderRailProps {
   /** log/linear q-axis scale (B-F). */
   scaleMode: ScaleMode;
   onScaleModeChange: (next: ScaleMode) => void;
+  /** Cross-trace peak-tracking annotation (#208). Mockup `series-builder.html:469-476`. */
+  trackOn: boolean;
+  onTrackOnChange: (next: boolean) => void;
   /** Autogroup card (B-I): how many samples Himalaya read as this series. */
   sampleCount: number;
   onConfirmSeries: () => void;
@@ -51,6 +54,7 @@ interface SeriesBuilderRailProps {
 export function SeriesBuilderRail({
   collapsed, onToggleCollapsed, representation, onRepresentationChange,
   orderingVariable, offset, onOffsetChange, scaleMode, onScaleModeChange,
+  trackOn, onTrackOnChange,
   sampleCount, onConfirmSeries, onAdjustSeries, exportControls, editControls,
 }: SeriesBuilderRailProps): JSX.Element {
   if (collapsed) {
@@ -112,6 +116,27 @@ export function SeriesBuilderRail({
         <div className="text-xs font-semibold text-ink-faint">Display</div>
         <OffsetSlider value={offset} onChange={onOffsetChange} />
         <ScaleToggle value={scaleMode} onChange={onScaleModeChange} />
+        {/*
+          Cross-trace peak-tracking (#208). The mockup gates this behind a
+          checkbox: it reads best when the user already has a phase call and
+          wants to see migration. Default off so it never crowds an unindexed
+          stack. Waterfall-only in the mockup; we let it render in heatmap
+          too because the y-band envelope is the same, but hide the row when
+          there's nothing to connect (the layer self-empties).
+        */}
+        <label
+          data-testid="track-toggle"
+          className="flex items-center gap-2 text-xs text-ink-soft"
+        >
+          <input
+            type="checkbox"
+            data-testid="track-toggle-input"
+            checked={trackOn}
+            onChange={(e) => onTrackOnChange(e.target.checked)}
+            className="rounded border-hair"
+          />
+          Track reflections
+        </label>
       </section>
 
       <section className="flex flex-col gap-1.5" data-testid="rail-export">

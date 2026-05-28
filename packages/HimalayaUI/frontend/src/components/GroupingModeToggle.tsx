@@ -2,9 +2,11 @@
  * GroupingModeToggle — text-link toggle for the Compare-page grouping mode
  * (Plan §Phase 9, Task 9.2; spec §Trace coloring).
  *
- * Three options: By sample / By phase / Distinct. Accepts `mode` and
- * `onChange` as props; the parent (ComparePage) resolves the effective mode
- * via effectiveGroupingMode(draft, comparison) and routes the write to
+ * Three options: By sample / By phase / Distinct. Accepts `value` and
+ * `onChange` as props (unified with the sibling segmented controls
+ * `ScaleToggle` and `RepresentationToggle` after PR #251 round 1); the parent
+ * (ComparePage) resolves the effective mode via
+ * effectiveGroupingMode(draft, comparison) and routes the write to
  * setDraftViewGroupingMode (Compare UX C-4).
  *
  * Spec selectors: container `data-testid="grouping-mode"` with
@@ -27,24 +29,24 @@ const OPTIONS: Array<{ value: GroupingMode; label: string }> = [
 ];
 
 export interface GroupingModeToggleProps {
-  mode: GroupingMode;
-  onChange: (mode: GroupingMode) => void;
+  value: GroupingMode;
+  onChange: (next: GroupingMode) => void;
 }
 
 export function GroupingModeToggle({
-  mode,
+  value,
   onChange,
 }: GroupingModeToggleProps): JSX.Element {
   return (
     <div
       data-testid="grouping-mode"
-      data-mode={mode}
+      data-mode={value}
       role="radiogroup"
       aria-label="Trace grouping mode"
       className="inline-flex items-center gap-1"
     >
       {OPTIONS.map((opt) => {
-        const active = opt.value === mode;
+        const active = opt.value === value;
         return (
           <button
             key={opt.value}

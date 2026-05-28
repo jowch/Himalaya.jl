@@ -8,6 +8,7 @@ import {
 import { buildMultiTraceExportMarks } from "../marks/multiTraceExportMarks";
 import { colorFor, ORPHAN_FALLBACK, type GroupingMode } from "../../comparison/coloring";
 import { phaseColor } from "../../../phases";
+import type { Representation } from "../../../components/RepresentationToggle";
 
 export interface MultiTraceAdapterArgs {
   members: SeriesMember[];          // sorted by display_order
@@ -22,6 +23,14 @@ export interface MultiTraceAdapterArgs {
   /** Pre-resolved labels via lib/comparison/labels.resolveDisplayLabels.
    *  Falls back to "Exposure #${exposure_id}" when missing. */
   displayLabelByMemberId?: Map<number, string>;
+  /** Render mode the on-screen plot is in — `"waterfall"` (default) or
+   *  `"heatmap"`. Threaded through to the marks builder so the exported PNG/
+   *  SVG matches the live figure (#251 r1 / B1). */
+  representation?: Representation;
+  /** Whether the cross-trace tracking layer is enabled on-screen. When true,
+   *  the export emits the same per-(phase, Miller-order) polylines on top of
+   *  the trace/heatmap marks (#251 r1 / B1). */
+  showCrossTraceTracking?: boolean;
 }
 
 export function buildMultiTraceExportSpec(args: MultiTraceAdapterArgs): ExportSpec {
@@ -29,6 +38,8 @@ export function buildMultiTraceExportSpec(args: MultiTraceAdapterArgs): ExportSp
     members, traces, comparisonTitle, experimentName,
     xDomain, showPeakTicks, showPeakLabels,
     groupingMode, sampleIdFor, displayLabelByMemberId,
+    representation = "waterfall",
+    showCrossTraceTracking = false,
   } = args;
 
   // Critical ordering (spec §MultiTracePlot export "Critical"): compute
@@ -76,6 +87,9 @@ export function buildMultiTraceExportSpec(args: MultiTraceAdapterArgs): ExportSp
     colorByMember,
     showPeakTicks, showPeakLabels,
     panelHeight,
+    representation,
+    showCrossTraceTracking,
+    xDomain,
   });
 
   // Legend per grouping mode.

@@ -53,6 +53,8 @@ vi.mock("@observablehq/plot", () => ({
   line: vi.fn((data: unknown, opts: unknown) => ({ _kind: "line", data, opts })),
   dot:  vi.fn((data: unknown, opts: unknown) => ({ _kind: "dot",  data, opts })),
   text: vi.fn((data: unknown, opts: unknown) => ({ _kind: "text", data, opts })),
+  link: vi.fn((data: unknown, opts: unknown) => ({ _kind: "link", data, opts })),
+  rect: vi.fn((data: unknown, opts: unknown) => ({ _kind: "rect", data, opts })),
 }));
 
 beforeEach(() => {
@@ -465,5 +467,144 @@ describe("<MultiTracePlot>", () => {
 
     // Plot.plot should have been re-invoked because props changed.
     expect((Plot.plot as unknown as { mock: { calls: unknown[][] } }).mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("dispatches to heatmap marks (Plot.rect, no line/dot) when representation='heatmap'", async () => {
+    const Plot = await import("@observablehq/plot");
+    (Plot.plot as unknown as { mockClear: () => void }).mockClear();
+    (Plot.line as unknown as { mockClear: () => void }).mockClear();
+    (Plot.dot  as unknown as { mockClear: () => void }).mockClear();
+    (Plot.rect as unknown as { mockClear: () => void }).mockClear();
+
+    const m1 = makeMember({ id: 1, exposure_id: 10, display_order: 0 });
+    const m2 = makeMember({ id: 2, exposure_id: 20, display_order: 1 });
+    const trace = { q: [0.1, 0.2, 0.3], I: [10, 20, 30], sigma: [0, 0, 0] };
+
+    render(
+      <MultiTracePlot
+        members={[m1, m2]}
+        traces={new Map([[10, trace], [20, trace]])}
+        xDomain={[0.1, 0.3]}
+        onXDomain={() => {}}
+        representation="heatmap"
+      />,
+    );
+
+    // One Plot.rect call per member; no waterfall line/dot marks for the
+    // heatmap representation.
+    expect(Plot.rect).toHaveBeenCalledTimes(2);
+    expect(Plot.line).not.toHaveBeenCalled();
+    expect(Plot.dot).not.toHaveBeenCalled();
+  });
+
+  it("defaults to waterfall when `representation` is omitted (backwards compatibility)", async () => {
+    const Plot = await import("@observablehq/plot");
+    (Plot.line as unknown as { mockClear: () => void }).mockClear();
+    (Plot.rect as unknown as { mockClear: () => void }).mockClear();
+
+    const m1 = makeMember({ id: 1, exposure_id: 10, display_order: 0 });
+    const trace = { q: [0.1, 0.2, 0.3], I: [10, 20, 30], sigma: [0, 0, 0] };
+
+    render(
+      <MultiTracePlot
+        members={[m1]}
+        traces={new Map([[10, trace]])}
+        xDomain={null}
+        onXDomain={() => {}}
+      />,
+    );
+    expect(Plot.line).toHaveBeenCalledTimes(1);
+    expect(Plot.rect).not.toHaveBeenCalled();
+  });
+
+  it("emits cross-trace tracking polyline marks when showCrossTraceTracking is enabled and a phase is shared", async () => {
+    const Plot = await import("@observablehq/plot");
+    (Plot.line as unknown as { mockClear: () => void }).mockClear();
+    const trace = { q: [0.1, 0.2, 0.3], I: [10, 20, 30], sigma: [0, 0, 0] };
+    const sharedSnap = (id: number) => ({
+      effective_peaks: [
+        { id, q: 0.10, intensity: 50, sharpness: 1, source: "auto" as const },
+        { id: id + 1, q: 0.20, intensity: 50, sharpness: 1, source: "auto" as const },
+      ],
+      confirmed_index: {
+        id, phase: "Pn3m", lattice_d: 12, r_squared: 0.99, ngc: -1.5,
+        peak_ids: [id, id + 1],
+      },
+      analysis_inputs_hash: "h",
+    });
+    const m1 = makeMember({ id: 1, exposure_id: 10, snapshot: sharedSnap(11) });
+    const m2 = makeMember({ id: 2, exposure_id: 20, snapshot: sharedSnap(21) });
+    render(
+      <MultiTracePlot
+        members={[m1, m2]}
+        traces={new Map([[10, trace], [20, trace]])}
+        xDomain={null}
+        onXDomain={() => {}}
+        showCrossTraceTracking
+      />,
+    );
+    // Two member traces (line) + one cross-trace tracking line = 3 line calls.
+    expect((Plot.line as unknown as { mock: { calls: unknown[][] } }).mock.calls.length).toBe(3);
+    // The last line call carries the z-grouped tracking vertices.
+    const lastCall = (Plot.line as unknown as { mock: { calls: unknown[][] } })
+      .mock.calls.at(-1)!;
+    expect((lastCall[1] as { z?: string }).z).toBe("key");
+  });
+
+  it("does NOT emit the tracking layer when showCrossTraceTracking is false (default)", async () => {
+    const Plot = await import("@observablehq/plot");
+    (Plot.line as unknown as { mockClear: () => void }).mockClear();
+    const trace = { q: [0.1, 0.2, 0.3], I: [10, 20, 30], sigma: [0, 0, 0] };
+    const sharedSnap = (id: number) => ({
+      effective_peaks: [
+        { id, q: 0.10, intensity: 50, sharpness: 1, source: "auto" as const },
+        { id: id + 1, q: 0.20, intensity: 50, sharpness: 1, source: "auto" as const },
+      ],
+      confirmed_index: {
+        id, phase: "Pn3m", lattice_d: 12, r_squared: 0.99, ngc: -1.5,
+        peak_ids: [id, id + 1],
+      },
+      analysis_inputs_hash: "h",
+    });
+    const m1 = makeMember({ id: 1, exposure_id: 10, snapshot: sharedSnap(11) });
+    const m2 = makeMember({ id: 2, exposure_id: 20, snapshot: sharedSnap(21) });
+    render(
+      <MultiTracePlot
+        members={[m1, m2]}
+        traces={new Map([[10, trace], [20, trace]])}
+        xDomain={null}
+        onXDomain={() => {}}
+      />,
+    );
+    // Two member traces only — no tracking polyline.
+    expect((Plot.line as unknown as { mock: { calls: unknown[][] } }).mock.calls.length).toBe(2);
+    // No tracking-style `z: "key"` line was emitted.
+    const hadTrackingLine = (Plot.line as unknown as { mock: { calls: unknown[][] } })
+      .mock.calls.some((c) => (c[1] as { z?: string }).z === "key");
+    expect(hadTrackingLine).toBe(false);
+  });
+
+  it("tags the host with data-representation so consumers can scope styles/tests", () => {
+    const { container, rerender } = render(
+      <MultiTracePlot
+        members={[]}
+        traces={new Map()}
+        xDomain={null}
+        onXDomain={() => {}}
+      />,
+    );
+    expect(container.querySelector('[data-testid="multi-trace-plot"]'))
+      .toHaveAttribute("data-representation", "waterfall");
+    rerender(
+      <MultiTracePlot
+        members={[]}
+        traces={new Map()}
+        xDomain={null}
+        onXDomain={() => {}}
+        representation="heatmap"
+      />,
+    );
+    expect(container.querySelector('[data-testid="multi-trace-plot"]'))
+      .toHaveAttribute("data-representation", "heatmap");
   });
 });
