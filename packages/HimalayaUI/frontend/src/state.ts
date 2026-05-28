@@ -78,6 +78,14 @@ export interface AppState {
   hoveredQ: number | undefined;
   navModalOpen: boolean;
   navModalStep: NavModalStep;
+  /**
+   * R5 (#228, F-12): the focus-workspace Notes drawer toggle. Below the `xl`
+   * breakpoint the Notes margin column yields to a topbar button + drawer
+   * (mockup `#notes-btn` + `@media(max-width:1320px)`); this flag gates the
+   * drawer. Ephemeral (per-tab UI state, not persisted) and closed whenever
+   * the active sample changes so it never strands open over a new sample.
+   */
+  notesDrawerOpen: boolean;
   // Speculative builder: when non-null, the modal is open for this exposure.
   // All builder form state (phase, anchor peak, ratio) is local to the
   // SpeculativeBuilder component — only the open/close gate lives in store
@@ -177,6 +185,9 @@ export interface AppState {
   setTutorialSeen: (seen: boolean) => void;
   openNavModal: (step?: NavModalStep) => void;
   closeNavModal: () => void;
+  openNotesDrawer: () => void;
+  closeNotesDrawer: () => void;
+  toggleNotesDrawer: () => void;
   setNavModalStep: (step: NavModalStep) => void;
   clearUsername: () => void;
   openSpeculativeBuilder: (exposureId: number) => void;
@@ -284,6 +295,7 @@ export const useAppState = create<AppState>()(
         hoveredQ: undefined,
         navModalOpen: false,
         navModalStep: "experiment",
+        notesDrawerOpen: false,
         speculativeBuilder: null,
         // Rehydrate the draft from sessionStorage at module-init time so
         // a tab reload restores edit-in-progress.
@@ -314,7 +326,13 @@ export const useAppState = create<AppState>()(
             staleUrlContext: null,
           }),
         setActiveSample: (activeSampleId) =>
-          set({ activeSampleId, activeExposureId: undefined, staleUrlContext: null }),
+          set({
+            activeSampleId,
+            activeExposureId: undefined,
+            staleUrlContext: null,
+            // F-12: never strand the Notes drawer open across a sample switch.
+            notesDrawerOpen: false,
+          }),
         setActiveExposure: (activeExposureId) => {
           // Inspect — the only surface that put the exposure in the URL via
           // `?exposure=` — is retired (#163). The replace-mode arming guarded
@@ -329,6 +347,9 @@ export const useAppState = create<AppState>()(
         openNavModal: (step) =>
           set(step ? { navModalOpen: true, navModalStep: step } : { navModalOpen: true }),
         closeNavModal: () => set({ navModalOpen: false }),
+        openNotesDrawer: () => set({ notesDrawerOpen: true }),
+        closeNotesDrawer: () => set({ notesDrawerOpen: false }),
+        toggleNotesDrawer: () => set({ notesDrawerOpen: !get().notesDrawerOpen }),
         setNavModalStep: (navModalStep) => set({ navModalStep }),
         clearUsername: () => set({ username: undefined, firstName: undefined, lastName: undefined }),
         openSpeculativeBuilder: (exposureId) =>

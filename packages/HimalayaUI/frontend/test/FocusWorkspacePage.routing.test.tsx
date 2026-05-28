@@ -27,6 +27,14 @@ beforeEach(() => {
           status: 200, headers: { "content-type": "application/json" },
         });
       }
+      // A trace is an object ({q, I, sigma}), never a bare array — return a
+      // valid empty-but-shaped trace so PlotCard/TraceViewer never read fields
+      // off an array.
+      if (u.includes("/trace")) {
+        return new Response(JSON.stringify({ q: [], I: [], sigma: [] }), {
+          status: 200, headers: { "content-type": "application/json" },
+        });
+      }
       // exposures / experiments / everything else: empty but valid
       return new Response("[]", {
         status: 200, headers: { "content-type": "application/json" },

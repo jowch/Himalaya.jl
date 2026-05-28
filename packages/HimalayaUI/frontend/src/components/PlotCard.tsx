@@ -287,7 +287,7 @@ export function PlotCard({ headerSlot }: PlotCardProps = {}): JSX.Element {
 
   const exportDisabled = !traceQ.data || !peaksQ.data;
 
-  const fullQRange: [number, number] | null = traceQ.data && traceQ.data.q.length > 0
+  const fullQRange: [number, number] | null = traceQ.data?.q?.length
     ? [traceQ.data.q[0]!, traceQ.data.q[traceQ.data.q.length - 1]!]
     : null;
   const effectiveDomain = xDomain ?? fullQRange;

@@ -88,6 +88,32 @@ describe("useAppState", () => {
     expect("setTheme" in s).toBe(false);
   });
 
+  // R5 (#228, F-12): the Notes drawer toggle for the focus workspace below the
+  // xl breakpoint. Ephemeral; closed on sample switch.
+  it("notesDrawer state is ephemeral — open/close/toggle", () => {
+    expect(useAppState.getState().notesDrawerOpen).toBe(false);
+    useAppState.getState().openNotesDrawer();
+    expect(useAppState.getState().notesDrawerOpen).toBe(true);
+    useAppState.getState().closeNotesDrawer();
+    expect(useAppState.getState().notesDrawerOpen).toBe(false);
+    useAppState.getState().toggleNotesDrawer();
+    expect(useAppState.getState().notesDrawerOpen).toBe(true);
+    useAppState.getState().toggleNotesDrawer();
+    expect(useAppState.getState().notesDrawerOpen).toBe(false);
+  });
+
+  it("switching samples closes the Notes drawer", () => {
+    useAppState.getState().openNotesDrawer();
+    useAppState.getState().setActiveSample(42);
+    expect(useAppState.getState().notesDrawerOpen).toBe(false);
+  });
+
+  it("notesDrawerOpen is NOT in the persisted partition", () => {
+    useAppState.getState().openNotesDrawer();
+    const raw = localStorage.getItem(LS_KEY);
+    expect(raw ?? "").not.toContain("notesDrawerOpen");
+  });
+
   it("navModal state is ephemeral — open/close + step transitions", () => {
     expect(useAppState.getState().navModalOpen).toBe(false);
     useAppState.getState().openNavModal();

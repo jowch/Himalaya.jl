@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -86,6 +86,37 @@ describe("focus workspace layout", () => {
     // Notes margin renders only once the experiment-scoped sample resolves —
     // its presence proves the corpus->experiment_id->useSamples chain works.
     expect(await screen.findByTestId("focus-notes-margin")).toBeInTheDocument();
+  });
+
+  // F-12: below the xl breakpoint the Notes margin yields to a topbar-toggled
+  // drawer so Notes stays reachable at every width. The drawer renders only
+  // when notesDrawerOpen is set, and hosts the same FocusNotesMargin body.
+  it("renders no Notes drawer until the toggle opens it", async () => {
+    renderAt("/sample/1");
+    await screen.findByTestId("focus-workspace-page");
+    expect(screen.queryByTestId("focus-notes-drawer")).not.toBeInTheDocument();
+  });
+
+  it("renders the Notes drawer (with the notes body) when opened", async () => {
+    renderAt("/sample/1");
+    // The margin proves the corpus->experiment_id->useSamples chain settled.
+    await screen.findByTestId("focus-notes-margin");
+    await act(async () => { useAppState.getState().openNotesDrawer(); });
+    const drawer = await screen.findByTestId("focus-notes-drawer");
+    expect(drawer).toBeInTheDocument();
+    // The drawer hosts a notes textarea (a second instance of the margin body).
+    expect(drawer.querySelector('[data-testid="focus-notes-input"]')).not.toBeNull();
+  });
+
+  it("clicking the drawer scrim/close clears notesDrawerOpen", async () => {
+    renderAt("/sample/1");
+    await screen.findByTestId("focus-notes-margin");
+    await act(async () => { useAppState.getState().openNotesDrawer(); });
+    const scrim = await screen.findByTestId("focus-notes-drawer-scrim");
+    await act(async () => { scrim.click(); });
+    await waitFor(() =>
+      expect(useAppState.getState().notesDrawerOpen).toBe(false),
+    );
   });
 
   // BLOCKING-review regression: the notes textarea must read from the SAME

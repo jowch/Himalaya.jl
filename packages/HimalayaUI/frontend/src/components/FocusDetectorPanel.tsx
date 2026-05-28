@@ -1,6 +1,6 @@
 import { Skeleton } from "boneyard-js/react";
 import { useAppState } from "../state";
-import { useExposures, usePeaks } from "../queries";
+import { useExposures, usePeaks, useSelectExposure } from "../queries";
 import { DetectorImage } from "./DetectorImage";
 import { DetectorRingOverlay } from "./DetectorRingOverlay";
 import { HintText } from "./ui";
@@ -14,13 +14,23 @@ import { HintText } from "./ui";
  * is rotation-aware via the shared `decideOrient` rule.
  *
  * Reuses `DetectorImage` unchanged. We deliberately do NOT reuse the Inspect
- * `DetectorImageCard` — that bundles reject/tag/representative controls; the
- * focus surface's detector is a read-only companion to the trace.
+ * `DetectorImageCard` — that bundles reject/tag controls; the focus surface's
+ * detector is a read-only companion to the trace.
+ *
+ * R5 (#228, F-11): the panel carries a representative-exposure switcher — a
+ * strip of mini DetectorImage thumbnails, one per exposure. Clicking a thumb
+ * switches the VIEWED exposure (local view state via `setActiveExposure`);
+ * "Set representative" PERSISTS the choice (`useSelectExposure` →
+ * `PATCH /exposures/:id/select`, the same mechanism the Inspect loupe uses).
+ * The persisted representative is the `selected` exposure (rep marker). The
+ * strip is suppressed when a sample has only one exposure (nothing to switch).
  */
 export function FocusDetectorPanel(): JSX.Element {
-  const activeSampleId   = useAppState((s) => s.activeSampleId);
-  const activeExposureId = useAppState((s) => s.activeExposureId);
+  const activeSampleId    = useAppState((s) => s.activeSampleId);
+  const activeExposureId  = useAppState((s) => s.activeExposureId);
+  const setActiveExposure = useAppState((s) => s.setActiveExposure);
   const exposuresQ = useExposures(activeSampleId);
+  const setRepresentative = useSelectExposure(activeSampleId ?? 0);
   // Deliberately NOT gated by `useExposureHasPendingPeakOps` (src/AGENTS.md):
   // the rings are presentational and keyed by q, so a transient optimistic
   // peak landing mid-mutation just draws a brief extra ring — there's no
@@ -29,9 +39,16 @@ export function FocusDetectorPanel(): JSX.Element {
   const peaksQ = usePeaks(activeExposureId);
   const peakQs = (peaksQ.data ?? []).map((p) => p.q);
 
+  const exposures = exposuresQ.data ?? [];
   const exposure = activeExposureId !== undefined
-    ? exposuresQ.data?.find((e) => e.id === activeExposureId)
+    ? exposures.find((e) => e.id === activeExposureId)
     : undefined;
+
+  // F-11: the switcher only earns its space when there's more than one
+  // exposure to switch between. The viewed exposure is `exposure`; the
+  // persisted representative is whichever exposure has `selected: true`.
+  const showSwitcher = exposures.length > 1;
+  const viewedIsRep = exposure?.selected === true;
 
   const body = (() => {
     if (activeSampleId === undefined) {
@@ -74,8 +91,67 @@ export function FocusDetectorPanel(): JSX.Element {
     <section data-testid="focus-detector-panel"
              className="flex min-h-0 flex-col rounded border border-hair
                         bg-plate p-4">
-      <div className="card-header">
+      <div className="card-header flex items-center justify-between gap-3">
         <span className="text-meta uppercase tracking-wider">Detector image</span>
+        {showSwitcher && (
+          <div
+            data-testid="exposure-switcher"
+            className="flex items-center gap-1.5"
+          >
+            {exposures.map((e) => {
+              const isViewed = e.id === activeExposureId;
+              return (
+                <button
+                  key={e.id}
+                  type="button"
+                  data-testid={`exposure-thumb-${e.id}`}
+                  data-rep={e.selected ? "true" : undefined}
+                  data-viewed={isViewed ? "true" : undefined}
+                  title={
+                    (e.filename ?? `exposure ${e.id}`) +
+                    (e.selected ? " — representative" : "")
+                  }
+                  onClick={() => setActiveExposure(e.id)}
+                  className={
+                    "relative h-8 w-8 overflow-hidden rounded-sm border " +
+                    "border-frame-edge bg-frame-edge " +
+                    (isViewed ? "ring-2 ring-print-accent" : "")
+                  }
+                >
+                  {e.image_path ? (
+                    <DetectorImage
+                      exposureId={e.id}
+                      imagePath={e.image_path}
+                      imageVersion={e.image_version}
+                      size="thumb"
+                      className="h-full w-full"
+                    />
+                  ) : (
+                    <span className="block h-full w-full" />
+                  )}
+                  {e.selected && (
+                    <span
+                      aria-hidden="true"
+                      className="absolute right-0.5 top-0.5 h-1.5 w-1.5
+                                 rounded-full border border-plate bg-print-accent"
+                    />
+                  )}
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              data-testid="exposure-set-rep"
+              disabled={viewedIsRep || exposure === undefined}
+              onClick={() => exposure && setRepresentative.mutate(exposure.id)}
+              className="rounded border border-hair-strong px-1.5 py-0.5 text-[10px]
+                         font-semibold uppercase tracking-wide text-ink
+                         disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {viewedIsRep ? "Representative" : "Set rep"}
+            </button>
+          </div>
+        )}
       </div>
       <Skeleton
         name="focus-detector"
