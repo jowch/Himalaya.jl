@@ -16,7 +16,7 @@ colors:
   warning: "oklch(0.620 0.130 70)"
   error: "oklch(0.520 0.170 28)"
   peak-manual: "oklch(0.550 0.200 340)"
-  phase-pn3m: "oklch(0.585 0.150 58)"
+  phase-pn3m: "oklch(0.570 0.150 58)"
   phase-im3m: "oklch(0.520 0.120 162)"
   phase-ia3d: "oklch(0.520 0.130 300)"
   phase-fm3m: "oklch(0.550 0.140 18)"
@@ -152,9 +152,9 @@ A warm paper-and-ink system (every neutral tinted to hue ~70–85) carrying one 
 
 ### Phase palette (paper-tuned, AA on plate)
 Eight semantic data colours, one per liquid-crystalline phase, used for index/peak colour, trace overlays, folio phase strips, and Compare/series. All sit at luminance ~0.50–0.58 and chroma ~0.12–0.15, darker and a touch more chromatic than the dark-era values so each reads at WCAG AA on `plate`. Hue spacing clears a ~20° exclusion zone around the terracotta accent (38).
-- **Pn3m Amber** (0.585 0.150 58) · **Im3m Sage** (0.520 0.120 162) · **Ia3d Violet** (0.520 0.130 300) · **Fm3m Coral** (0.550 0.140 18) · **Fd3m Rose-Purple** (0.520 0.120 318) · **Hexagonal Rose** (0.540 0.130 350) · **Lamellar Periwinkle-Indigo** (0.505 0.150 264) · **Square Chartreuse** (0.550 0.130 132).
+- **Pn3m Amber** (0.570 0.150 58) · **Im3m Sage** (0.520 0.120 162) · **Ia3d Violet** (0.520 0.130 300) · **Fm3m Coral** (0.550 0.140 18) · **Fd3m Rose-Purple** (0.520 0.120 318) · **Hexagonal Rose** (0.540 0.130 350) · **Lamellar Periwinkle-Indigo** (0.505 0.150 264) · **Square Chartreuse** (0.550 0.130 132).
 
-> Pn3m / Im3m / Hexagonal / Lamellar are taken verbatim from the mockups (`:root`, byte-identical across all five). The other four (Ia3d / Fm3m / Fd3m / Square) are **provisional** values in the same L/chroma band, pending finalization + AA verification in R0b (#222).
+> Im3m / Hexagonal / Lamellar are taken verbatim from the mockups (`:root`, byte-identical). Pn3m was also mockup-verbatim at L 0.585, but AA verification in R0b (#222) measured it at 4.29:1 on `plate` — below the 4.5:1 floor — so its luminance was nudged 0.585 → 0.570 (same chroma 0.150 + hue 58), which clears AA at 4.57:1 with no perceptible hue shift. The other four (Ia3d / Fm3m / Fd3m / Square) were **provisional** values in the same L/chroma band; R0b (#222) finalized them and confirmed all eight clear WCAG AA on `plate` (Square is the tightest of the rest at 4.54:1). See `phases.ts` and `test/phases.test.ts` for the pinned values + per-phase AA assertion.
 
 ### Status
 - **Success** (oklch 0.520 0.120 162, sage), **Warning** (0.620 0.130 70, amber), **Error** (0.520 0.170 28, red). Paper-tuned for AA. Status-only; never decoration. (Note: the contact-sheet "kept" verdict dot is sage, not a generic green, T-4.)
