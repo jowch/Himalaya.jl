@@ -681,7 +681,6 @@ function PlotLegend({ peaks, hoveredIndex }: PlotLegendProps): JSX.Element {
   return (
     <div className="flex items-center gap-4 px-4 py-1.5 border-t border-border-soft
                     font-mono text-xs text-fg-dim flex-wrap">
-      <LegendItem symbol={<TriangleSvg color="var(--color-accent)" />} label="auto peak" />
       {hasManualPeaks && (
         <LegendItem symbol={<TriangleSvg color="var(--color-peak-manual)" />} label="manual peak" />
       )}
