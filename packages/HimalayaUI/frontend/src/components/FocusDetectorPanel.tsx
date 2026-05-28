@@ -53,8 +53,9 @@ export function FocusDetectorPanel(): JSX.Element {
     return (
       // Frame classes copied from LoupeFrame (the proven detector wrapper):
       // DetectorImage owns its own rotation via JS, so we only give it a box.
+      // T-8 (R0c): the detector frame is the dark `frame-edge` window, not paper.
       <div className="relative mx-auto aspect-square w-full max-w-[420px]
-                      overflow-hidden rounded border border-border bg-bg">
+                      overflow-hidden rounded border border-frame-edge bg-frame-edge">
         <DetectorImage
           exposureId={exposure.id}
           imagePath={exposure.image_path}
