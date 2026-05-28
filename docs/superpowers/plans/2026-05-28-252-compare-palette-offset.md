@@ -1,5 +1,11 @@
 # COMPARE_PALETTE_LIGHT phase-offset ≥13° invariant Implementation Plan
 
+> **GATE AMENDMENTS (human-ratified at approval).** Shipped code reflects these, overriding the body where they differ:
+> 1. Slot [6] re-tuned to **249** (exact on-screen `COMPARE_PALETTE[6]` mirror, 15° from Lamellar 264), NOT 251. The `color-distance.test.ts` anchor asserts `angularHueDistance(249, 264) === 15`.
+> 2. Slot [7] → **279** (as the body already proposed; confirmed correct — the issue's literal 285 was a transcription bug that would duplicate slot [8]).
+> 3. Task 2 verification uses a dynamic pre/post `coloring.test.ts` count comparison (both 22), not a hardcoded "22 tests" assertion.
+
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Re-tune the two `COMPARE_PALETTE_LIGHT` hues that violate the ≥13° phase-offset floor (263→251, 295→279), factor the shared `angularHueDistance` helper into `lib/color-distance.ts`, and add a `presets.test.ts` that enforces the floor against the light palette — so the next palette nudge can't silently re-introduce a phase/member color conflation in figure export (especially the #208 heatmap fill surface).
