@@ -35,6 +35,12 @@ progress numeral" explicitly as a serif/title use, and `text-headline-lg` is the
 Test files: `test/contact-sheet.test.tsx`, `test/LoupeSidebar.test.tsx`,
 `test/DetectorImage.test.tsx` (all exist).
 
+**R3-S06 scope (team-lead amendment 2):** R3-S06 (`DetectorImage.tsx:197`, the legacy
+`text-fg-muted` "No image" survivor) is NOT in #256's issue body (verified: 0 matches).
+The findings-doc recommended-actions table assigns it to Issue B (detector-window warmth).
+I leave it untouched and note it DEFERRED to B in the PR -- even though I am in DetectorImage
+for the portrait lock, touching it would cross the wave-disjointness boundary.
+
 ## Test-strategy constraints (frontend/test/AGENTS.md)
 
 - **Never assert Tailwind class strings.** Visual findings -> stable `data-*` attributes
@@ -61,8 +67,19 @@ Change:
 - Add `focus-visible:ring-2 focus-visible:ring-print-accent focus-visible:ring-offset-1`
   to the className (the selection ring uses `ring-2 ring-print-accent` already; the
   focus-visible variant is additive and only paints on keyboard focus).
-- Wire `onKeyDown` for Enter/Space -> `onOpenLoupe()` (the keyboard analogue of
-  double-click = open loupe). preventDefault on Space so the page does not scroll.
+- Keyboard semantics (team-lead amendment 3 -- resolve the double-bind explicitly):
+  a native `<button>`'s default activation fires `onClick` (= `onSelect`) on Enter/Space.
+  The issue body prescribes Enter/Space -> `onOpenLoupe`. To honor that WITHOUT a
+  double-action (select AND open on the same key), the `onKeyDown` handler for Enter/Space
+  calls `e.preventDefault()` (suppresses the synthesized activation click, so `onSelect`
+  does NOT also fire) then `onOpenLoupe()`. Net coherent model:
+    * mouse single-click  -> select (toggle batch selection)
+    * mouse double-click  -> open loupe
+    * keyboard Enter/Space -> open loupe (the navigation affordance an AT user needs to
+      screen a sample; matches the double-click = open analogue, since there is no clean
+      single-key analogue of "double-click").
+  This is asserted in the test: Enter opens the loupe AND the thumb is NOT left
+  batch-selected (proving the auto-click select was suppressed).
 - aria-label so AT announces the frame: `Frame ${frameNo}` (+ " (dropped)" when rejected).
 - Add `appearance-none` defensively to neutralize UA button chrome (existing box classes
   already specify size/border/bg).
@@ -70,8 +87,9 @@ Change:
 Tests (behavioral, not class):
 - `exposure-thumb-N` is a `<button>` element (tagName === "BUTTON").
 - keyDown Enter on the thumb navigates to the loupe (assert `loupe-stub`, reuse
-  `renderRowRouted`).
-- keyDown Space also opens the loupe.
+  `renderRowRouted`) AND the thumb is NOT batch-selected afterward (preventDefault
+  suppressed the auto-click select -> no double-action).
+- keyDown Space also opens the loupe (same no-double-select assertion).
 - Regression: existing click-select, shift-range, double-click-loupe tests stay green.
 
 ### R3-S02 (P2) -- Loupe meta-list: Filename/Kind -> Integration/Collected
@@ -214,9 +232,12 @@ Plus visual Done-whens (below). Then request-pr-review.
 - Meta-list labels (R3-S02): rendered-text assertions (integration/collected lowercase
   present, filename/kind absent) -- text, not class.
 - Verdict Drop X keycap (R3-S03): rendered-text + structural (X in a distinct mono span).
-- Zero inline text-[Npx] (R3-S04 Done-when): `grep -rnE "text-\[[0-9.]+px\]"` over the three
-  target files at the verify gate returns only the issue-prescribed R3-S03 `text-[10px]`
-  keycap literal. I will report the grep output in the PR.
+- text-[Npx] gate (R3-S04 Done-when, NARROWED per team-lead amendment 1): the three target
+  files already carry ~25 PRE-EXISTING pixel literals (text-[10.5px], text-[11.5px], ...)
+  that belong to F/#259's project-wide Fixed-Scale sweep and are OUT of #256 scope -- do NOT
+  remove them. The gate is: (i) the R3-S04 `text-[25px]` survivor is GONE, and (ii) no NEW
+  pixel literal is introduced beyond the issue-prescribed R3-S03 `text-[10px]` keycap. Verified
+  by diffing the literal set before/after; I report the diff in the PR.
 - Thumbs uniformly portrait (U-3): data-orient="portrait" + no rotate transform -- automated.
 - Accent demote / focus rings / opacity gate (R3-S05/S07/S08): CSS-only visual treatments
   JSDOM cannot compute; verified by `npm run build` green + visual check; the behavioral
