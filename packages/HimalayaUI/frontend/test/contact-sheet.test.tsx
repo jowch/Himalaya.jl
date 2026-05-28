@@ -166,12 +166,88 @@ describe("ContactSheetRow", () => {
     expect(await screen.findByTestId("tag-add")).toBeDisabled();
   });
 
-  it("renders a 'Not indexed' status", async () => {
+  it("renders a 'Not indexed' status with a leading hollow dot", async () => {
     mockFetch({ "/api/samples/7/exposures": [] });
     renderRow(makeSample({ id: 7 }));
-    expect(await screen.findByTestId("status-cell")).toHaveTextContent(
-      "Not indexed",
+    const cell = await screen.findByTestId("status-cell");
+    expect(cell).toHaveTextContent("Not indexed");
+    // M-6: the unset status carries a hollow dot, not just bare text.
+    expect(cell.querySelector('[data-testid="status-dot"]')).toBeTruthy();
+  });
+
+  it("renders a phase chip when the sample carries a phase (M-6)", async () => {
+    mockFetch({ "/api/samples/7/exposures": [] });
+    renderRow(makeSample({ id: 7, phase: "Pn3m" }));
+    const cell = await screen.findByTestId("status-cell");
+    const chip = cell.querySelector('[data-testid="phase-chip"]');
+    expect(chip).toBeTruthy();
+    expect(chip).toHaveTextContent("Pn3m");
+    expect(cell).not.toHaveTextContent("Not indexed");
+  });
+
+  // M-2: per-sample screened mark + unscreened-row tint.
+  it("renders a filled screened mark for a screened sample", async () => {
+    mockFetch({ "/api/samples/7/exposures": [] });
+    renderRow(makeSample({ id: 7, screened: true }));
+    const mark = await screen.findByTestId("screened-mark");
+    expect(mark).toHaveAttribute("data-screened", "true");
+  });
+
+  it("renders a hollow screened mark and tints an unscreened row", async () => {
+    mockFetch({ "/api/samples/7/exposures": [] });
+    renderRow(makeSample({ id: 7, screened: false }));
+    const mark = await screen.findByTestId("screened-mark");
+    expect(mark).not.toHaveAttribute("data-screened", "true");
+    expect(screen.getByTestId("sample-row-7")).toHaveAttribute(
+      "data-unscreened",
+      "true",
     );
+  });
+
+  it("derives screened from all exposures being triaged when no flag is set", async () => {
+    // No explicit `screened` flag: a sample whose every exposure has a
+    // non-null status reads as screened (M-2 derivation pending #162 backend).
+    mockFetch({
+      "/api/samples/7/exposures": [
+        makeExposure({ id: 1, sample_id: 7, status: "accepted" }),
+        makeExposure({ id: 2, sample_id: 7, status: "rejected" }),
+      ],
+    });
+    renderRow(makeSample({ id: 7 }));
+    await waitFor(() =>
+      expect(screen.getByTestId("screened-mark")).toHaveAttribute(
+        "data-screened",
+        "true",
+      ),
+    );
+  });
+
+  // M-7: zero-padded frame-number badge on each thumbnail.
+  it("renders a zero-padded frame number badge on thumbnails", async () => {
+    mockFetch({
+      "/api/samples/7/exposures": [
+        makeExposure({ id: 1, sample_id: 7 }),
+        makeExposure({ id: 2, sample_id: 7 }),
+      ],
+    });
+    renderRow(makeSample({ id: 7 }));
+    const badge = await screen.findByTestId("frame-no-1");
+    expect(badge).toHaveTextContent("01");
+    expect(await screen.findByTestId("frame-no-2")).toHaveTextContent("02");
+  });
+
+  // M-10: grease-pencil X mark renders on a rejected frame.
+  it("renders the grease-pencil X mark on a rejected thumbnail", async () => {
+    mockFetch({
+      "/api/samples/7/exposures": [
+        makeExposure({ id: 1, sample_id: 7, status: "rejected" }),
+      ],
+    });
+    renderRow(makeSample({ id: 7 }));
+    const thumb = await screen.findByTestId("exposure-thumb-1");
+    expect(
+      thumb.querySelector('[data-testid="reject-xmark"]'),
+    ).toBeTruthy();
   });
 });
 
@@ -273,6 +349,39 @@ describe("SamplesPage", () => {
     renderSamplesPage("/samples?beamtime=999");
     expect(await screen.findByTestId("samples-empty")).toBeInTheDocument();
     expect(screen.queryByTestId("contact-sheet-rows")).toBeNull();
+  });
+
+  // L-3: beamtime serif h1 + descriptive sub.
+  it("renders a beamtime title and a descriptive sub", async () => {
+    mockFetch(corpusRoutes());
+    renderSamplesPage("/samples?beamtime=2");
+    await waitFor(() =>
+      expect(screen.getByTestId("samples-title")).toHaveTextContent(
+        "APS Jul 2026",
+      ),
+    );
+    expect(screen.getByTestId("samples-sub")).toBeInTheDocument();
+  });
+
+  // M-1: "N / M screened" progress block + terracotta bar.
+  it("renders a screened-progress count and bar", async () => {
+    mockFetch(corpusRoutes());
+    renderSamplesPage();
+    const progress = await screen.findByTestId("screened-progress");
+    // 3 corpus samples, each with exposures that have no status → 0 screened.
+    await waitFor(() =>
+      expect(progress).toHaveTextContent("/ 3"),
+    );
+    expect(screen.getByTestId("screened-progress-bar")).toBeInTheDocument();
+  });
+
+  // L-5/L-8/L-11: keycap-chip legend with the 5 hints (incl. shift-click range).
+  it("renders the keyboard legend with a shift-click range hint", async () => {
+    mockFetch(corpusRoutes());
+    renderSamplesPage();
+    const legend = await screen.findByTestId("kb-legend");
+    expect(legend).toHaveTextContent("extend the range");
+    expect(legend.querySelectorAll("[data-kb-key]").length).toBe(5);
   });
 });
 
