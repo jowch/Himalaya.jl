@@ -10,6 +10,27 @@ import type { CorpusSample, Exposure } from "../src/api";
 import { SamplesPage } from "../src/pages/SamplesPage";
 import { CorpusShell } from "../src/components/CorpusShell";
 
+/** Render a row inside a router so loupe navigation can be asserted on. */
+function renderRowRouted(sample: CorpusSample, initialPath = "/samples") {
+  const client = makeClient();
+  return render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={[initialPath]}>
+        <Routes>
+          <Route
+            path="/samples"
+            element={<ContactSheetRow sample={sample} />}
+          />
+          <Route
+            path="/samples/loupe/:sampleId"
+            element={<div data-testid="loupe-stub" />}
+          />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
 /** Route fetch by path so per-sample exposure fan-out is order-independent. */
 function mockFetch(routes: Record<string, unknown>): void {
   vi.spyOn(global, "fetch").mockImplementation((input: RequestInfo | URL) => {
@@ -60,7 +81,9 @@ function makeSample(over: Partial<CorpusSample> & { id: number }): CorpusSample 
 function renderRow(sample: CorpusSample) {
   const client = makeClient();
   const wrapper = ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    <QueryClientProvider client={client}>
+      <MemoryRouter>{children}</MemoryRouter>
+    </QueryClientProvider>
   );
   return render(<ContactSheetRow sample={sample} />, { wrapper });
 }
@@ -166,12 +189,88 @@ describe("ContactSheetRow", () => {
     expect(await screen.findByTestId("tag-add")).toBeDisabled();
   });
 
-  it("renders a 'Not indexed' status", async () => {
+  it("renders a 'Not indexed' status with a leading hollow dot", async () => {
     mockFetch({ "/api/samples/7/exposures": [] });
     renderRow(makeSample({ id: 7 }));
-    expect(await screen.findByTestId("status-cell")).toHaveTextContent(
-      "Not indexed",
+    const cell = await screen.findByTestId("status-cell");
+    expect(cell).toHaveTextContent("Not indexed");
+    // M-6: the unset status carries a hollow dot, not just bare text.
+    expect(cell.querySelector('[data-testid="status-dot"]')).toBeTruthy();
+  });
+
+  it("renders a phase chip when the sample carries a phase (M-6)", async () => {
+    mockFetch({ "/api/samples/7/exposures": [] });
+    renderRow(makeSample({ id: 7, phase: "Pn3m" }));
+    const cell = await screen.findByTestId("status-cell");
+    const chip = cell.querySelector('[data-testid="phase-chip"]');
+    expect(chip).toBeTruthy();
+    expect(chip).toHaveTextContent("Pn3m");
+    expect(cell).not.toHaveTextContent("Not indexed");
+  });
+
+  // M-2: per-sample screened mark + unscreened-row tint.
+  it("renders a filled screened mark for a screened sample", async () => {
+    mockFetch({ "/api/samples/7/exposures": [] });
+    renderRow(makeSample({ id: 7, screened: true }));
+    const mark = await screen.findByTestId("screened-mark");
+    expect(mark).toHaveAttribute("data-screened", "true");
+  });
+
+  it("renders a hollow screened mark and tints an unscreened row", async () => {
+    mockFetch({ "/api/samples/7/exposures": [] });
+    renderRow(makeSample({ id: 7, screened: false }));
+    const mark = await screen.findByTestId("screened-mark");
+    expect(mark).not.toHaveAttribute("data-screened", "true");
+    expect(screen.getByTestId("sample-row-7")).toHaveAttribute(
+      "data-unscreened",
+      "true",
     );
+  });
+
+  it("derives screened from all exposures being triaged when no flag is set", async () => {
+    // No explicit `screened` flag: a sample whose every exposure has a
+    // non-null status reads as screened (M-2 derivation pending #162 backend).
+    mockFetch({
+      "/api/samples/7/exposures": [
+        makeExposure({ id: 1, sample_id: 7, status: "accepted" }),
+        makeExposure({ id: 2, sample_id: 7, status: "rejected" }),
+      ],
+    });
+    renderRow(makeSample({ id: 7 }));
+    await waitFor(() =>
+      expect(screen.getByTestId("screened-mark")).toHaveAttribute(
+        "data-screened",
+        "true",
+      ),
+    );
+  });
+
+  // M-7: zero-padded frame-number badge on each thumbnail.
+  it("renders a zero-padded frame number badge on thumbnails", async () => {
+    mockFetch({
+      "/api/samples/7/exposures": [
+        makeExposure({ id: 1, sample_id: 7 }),
+        makeExposure({ id: 2, sample_id: 7 }),
+      ],
+    });
+    renderRow(makeSample({ id: 7 }));
+    const badge = await screen.findByTestId("frame-no-1");
+    expect(badge).toHaveTextContent("01");
+    expect(await screen.findByTestId("frame-no-2")).toHaveTextContent("02");
+  });
+
+  // M-10: grease-pencil X mark renders on a rejected frame.
+  it("renders the grease-pencil X mark on a rejected thumbnail", async () => {
+    mockFetch({
+      "/api/samples/7/exposures": [
+        makeExposure({ id: 1, sample_id: 7, status: "rejected" }),
+      ],
+    });
+    renderRow(makeSample({ id: 7 }));
+    const thumb = await screen.findByTestId("exposure-thumb-1");
+    expect(
+      thumb.querySelector('[data-testid="reject-xmark"]'),
+    ).toBeTruthy();
   });
 });
 
@@ -273,6 +372,39 @@ describe("SamplesPage", () => {
     renderSamplesPage("/samples?beamtime=999");
     expect(await screen.findByTestId("samples-empty")).toBeInTheDocument();
     expect(screen.queryByTestId("contact-sheet-rows")).toBeNull();
+  });
+
+  // L-3: beamtime serif h1 + descriptive sub.
+  it("renders a beamtime title and a descriptive sub", async () => {
+    mockFetch(corpusRoutes());
+    renderSamplesPage("/samples?beamtime=2");
+    await waitFor(() =>
+      expect(screen.getByTestId("samples-title")).toHaveTextContent(
+        "APS Jul 2026",
+      ),
+    );
+    expect(screen.getByTestId("samples-sub")).toBeInTheDocument();
+  });
+
+  // M-1: "N / M screened" progress block + terracotta bar.
+  it("renders a screened-progress count and bar", async () => {
+    mockFetch(corpusRoutes());
+    renderSamplesPage();
+    const progress = await screen.findByTestId("screened-progress");
+    // 3 corpus samples, each with exposures that have no status → 0 screened.
+    await waitFor(() =>
+      expect(progress).toHaveTextContent("/ 3"),
+    );
+    expect(screen.getByTestId("screened-progress-bar")).toBeInTheDocument();
+  });
+
+  // L-5/L-8/L-11: keycap-chip legend with the 5 hints (incl. shift-click range).
+  it("renders the keyboard legend with a shift-click range hint", async () => {
+    mockFetch(corpusRoutes());
+    renderSamplesPage();
+    const legend = await screen.findByTestId("kb-legend");
+    expect(legend).toHaveTextContent("extend the range");
+    expect(legend.querySelectorAll("[data-kb-key]").length).toBe(5);
   });
 });
 
@@ -461,5 +593,150 @@ describe("ContactSheetRow — culling", () => {
     expect(screen.getByTestId("exposure-thumb-1")).not.toHaveAttribute(
       "data-representative",
     );
+  });
+});
+
+// R1 round 2 — the keyboard/pointer affordances the footer legend + CullBar
+// advertise must actually be wired (no silent no-ops). Selection stays
+// per-sample (a keydown/range-select never crosses rows).
+describe("ContactSheetRow — advertised affordances", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("selects a frame by clicking the thumbnail body (not just the checkbox)", async () => {
+    mockFetch({
+      "/api/samples/7/exposures": [makeExposure({ id: 1, sample_id: 7 })],
+    });
+    renderRowRouted(makeSample({ id: 7 }));
+    const thumb = await screen.findByTestId("exposure-thumb-1");
+    fireEvent.click(thumb);
+    expect(thumb).toHaveAttribute("data-batch-selected", "true");
+    expect(screen.getByTestId("cull-bar")).toBeInTheDocument();
+  });
+
+  it("clears the selection on Esc", async () => {
+    mockFetch({
+      "/api/samples/7/exposures": [makeExposure({ id: 1, sample_id: 7 })],
+    });
+    renderRowRouted(makeSample({ id: 7 }));
+    fireEvent.click(await screen.findByTestId("exposure-select-1"));
+    expect(screen.getByTestId("cull-bar")).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByTestId("cull-bar")).toBeNull());
+  });
+
+  it("batch-rejects the selection on X", async () => {
+    const patched: string[] = [];
+    vi.spyOn(global, "fetch").mockImplementation((input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : (input as Request).url;
+      if (url === "/api/samples/7/exposures") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify([
+              makeExposure({ id: 1, sample_id: 7, status: "accepted" }),
+              makeExposure({ id: 2, sample_id: 7, status: "accepted" }),
+            ]),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      }
+      const m = url.match(/\/api\/exposures\/(\d+)\/status$/);
+      if (m) {
+        patched.push(m[1]);
+        return Promise.resolve(
+          new Response(JSON.stringify({ id: Number(m[1]), status: "rejected" }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      return Promise.resolve(new Response("not found", { status: 404 }));
+    });
+
+    renderRowRouted(makeSample({ id: 7 }));
+    fireEvent.click(await screen.findByTestId("exposure-select-1"));
+    fireEvent.keyDown(window, { key: "x" });
+
+    await waitFor(() => expect(patched).toEqual(["1"]));
+    // Selection clears after the batch (cull bar gone).
+    await waitFor(() => expect(screen.queryByTestId("cull-bar")).toBeNull());
+  });
+
+  it("does not bind X / Esc when there is no selection", async () => {
+    const patched: string[] = [];
+    vi.spyOn(global, "fetch").mockImplementation((input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : (input as Request).url;
+      if (url === "/api/samples/7/exposures") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify([
+              makeExposure({ id: 1, sample_id: 7, status: "accepted" }),
+            ]),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      }
+      const m = url.match(/\/api\/exposures\/(\d+)\/status$/);
+      if (m) {
+        patched.push(m[1]);
+        return Promise.resolve(
+          new Response(JSON.stringify({ id: Number(m[1]), status: "rejected" }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      return Promise.resolve(new Response("not found", { status: 404 }));
+    });
+
+    renderRowRouted(makeSample({ id: 7 }));
+    await screen.findByTestId("exposure-thumb-1");
+    // No selection: X is inert (no batch reject fires).
+    fireEvent.keyDown(window, { key: "x" });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(patched).toEqual([]);
+  });
+
+  it("extends a contiguous range on shift-click", async () => {
+    mockFetch({
+      "/api/samples/7/exposures": [
+        makeExposure({ id: 1, sample_id: 7 }),
+        makeExposure({ id: 2, sample_id: 7 }),
+        makeExposure({ id: 3, sample_id: 7 }),
+        makeExposure({ id: 4, sample_id: 7 }),
+      ],
+    });
+    renderRowRouted(makeSample({ id: 7 }));
+    // Anchor on frame 1, then shift-click frame 3 → 1,2,3 selected; 4 not.
+    fireEvent.click(await screen.findByTestId("exposure-thumb-1"));
+    fireEvent.click(screen.getByTestId("exposure-thumb-3"), { shiftKey: true });
+    await waitFor(() => {
+      expect(screen.getByTestId("exposure-thumb-1")).toHaveAttribute(
+        "data-batch-selected",
+        "true",
+      );
+      expect(screen.getByTestId("exposure-thumb-2")).toHaveAttribute(
+        "data-batch-selected",
+        "true",
+      );
+      expect(screen.getByTestId("exposure-thumb-3")).toHaveAttribute(
+        "data-batch-selected",
+        "true",
+      );
+    });
+    expect(screen.getByTestId("exposure-thumb-4")).not.toHaveAttribute(
+      "data-batch-selected",
+    );
+  });
+
+  it("opens the loupe on double-click of a thumbnail", async () => {
+    mockFetch({
+      "/api/samples/7/exposures": [makeExposure({ id: 1, sample_id: 7 })],
+    });
+    renderRowRouted(makeSample({ id: 7 }));
+    const thumb = await screen.findByTestId("exposure-thumb-1");
+    fireEvent.doubleClick(thumb);
+    expect(await screen.findByTestId("loupe-stub")).toBeInTheDocument();
   });
 });

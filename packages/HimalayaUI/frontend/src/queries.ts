@@ -6,6 +6,7 @@ import { useAppState } from "./state";
 import { getClientId } from "./lib/clientId";
 import { newClientOpId } from "./lib/clientOpId";
 import { useQueueMutation } from "./lib/queue/useQueueMutation";
+import { isSampleScreened } from "./lib/sample/screened";
 import {
   updateSampleMutator,
   addSampleTagMutator,
@@ -167,6 +168,32 @@ export function useExposures(sampleId: number | undefined) {
     queryFn: () => api.listExposures(sampleId as number),
     enabled: sampleId !== undefined,
   });
+}
+
+/**
+ * Page-level screened-progress aggregate for the contact-sheet header (M-1):
+ * "N / M samples screened". Runs `useQueries` over the visible samples,
+ * sharing the exact `queryKeys.exposures(id)` cache rows each ContactSheetRow
+ * fetches — no double-fetch. `screened` is derived per-sample by the shared
+ * helper (lib/sample/screened.ts), so it tracks #162's flag when that lands.
+ *
+ * `total` is the number of samples passed in; `screened` counts those whose
+ * derivation resolves true once their exposures have loaded.
+ */
+export function useScreenedProgress(
+  samples: readonly api.CorpusSample[],
+): { screened: number; total: number } {
+  const queries = useQueries({
+    queries: samples.map((s) => ({
+      queryKey: queryKeys.exposures(s.id),
+      queryFn: () => api.listExposures(s.id),
+    })),
+  });
+  const screened = samples.reduce(
+    (n, s, i) => (isSampleScreened(s, queries[i]?.data) ? n + 1 : n),
+    0,
+  );
+  return { screened, total: samples.length };
 }
 
 export function useTrace(exposureId: number | undefined) {
