@@ -334,8 +334,16 @@ export function PlotCard({ headerSlot }: PlotCardProps = {}): JSX.Element {
   const titleStep: "experiment" | "sample" =
     activeExperimentId === undefined ? "experiment" : "sample";
 
+  // R3-N3 (#209): the trace plate is the hero — the one elevated object in
+  // The Print's "flat-except-the-plate" rule (DESIGN.md §Elevation). Apply
+  // `.card` (Plate Lift shadow + bg-plate + hairline + radius) to the outer
+  // in the focus variant so the figure floats above the warm paper. Gated on
+  // `headerSlot` so prop-less PlotCard (any non-focus consumer) is unaffected.
+  const outerClass = headerSlot
+    ? "card flex flex-col h-full min-h-0 overflow-hidden"
+    : "flex flex-col h-full min-h-0 overflow-hidden";
   return (
-    <div data-testid="plot-card" className="flex flex-col h-full min-h-0 overflow-hidden">
+    <div data-testid="plot-card" className={outerClass}>
       <TitleStrip
         {...(headerSlot ? { headerSlot } : {})}
         experimentName={experimentName}

@@ -52,6 +52,17 @@ describe("PlotCard headerSlot (focus variant)", () => {
     expect(strip.className).toContain("card-header--slotted");
   });
 
+  it("R3-N3 (#209): the focus variant applies the Plate Lift `.card` to the outer", () => {
+    // Round-2 finding R3-N3: PlotCard's outer shipped without `.card`, so
+    // the trace plate read as a flat rectangle against the warm paper.
+    // DESIGN.md §Elevation: the figure plate is the one elevated object.
+    renderWithProviders(
+      <PlotCard headerSlot={<div data-testid="custom-header">Custom</div>} />,
+    );
+    const outer = screen.getByTestId("plot-card");
+    expect(outer.className).toContain("card");
+  });
+
   it("keeps the base card-header (no slotted variant) on the Index page", () => {
     // Sibling guardrail: prop-less PlotCard MUST keep the base card-header to
     // preserve top-edge alignment with the PhasePanel header on the Index page.

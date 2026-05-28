@@ -86,11 +86,14 @@ export function FocusDetectorPanel(): JSX.Element {
   })();
 
   return (
-    // Card chrome mirrors the index cards: a bordered plate surface. `.panel`
-    // is NOT an existing utility class — use explicit Tailwind/token classes.
+    // R3-N3 (#209): the detector panel is plate-like and belongs to the
+    // "Plate Lift" family — DESIGN.md §Elevation says the figure plate and
+    // plate-like cards are the one elevated object. Promote the explicit
+    // `rounded border bg-plate` triple to the canonical `.card` rule so the
+    // panel floats above the paper with the same warm shadow as the trace
+    // plate. Keep `p-4` for body padding.
     <section data-testid="focus-detector-panel"
-             className="flex min-h-0 flex-col rounded border border-hair
-                        bg-plate p-4">
+             className="card flex min-h-0 flex-col p-4">
       <div className="card-header flex items-center justify-between gap-3">
         <span className="text-meta uppercase tracking-wider">Detector image</span>
         {showSwitcher && (
