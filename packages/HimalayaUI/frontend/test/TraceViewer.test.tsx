@@ -297,6 +297,41 @@ describe("<TraceViewer>", () => {
 		// The non-excluded one stays bright (>= 0.9)
 		expect(Math.max(...opacities)).toBeGreaterThanOrEqual(0.9);
 	});
+
+	it("dims peaks in losingPeakIds (candidate-swap preview, R4 L-11)", () => {
+		const trace = { q: [0.1, 0.2, 0.3], I: [10, 20, 30], sigma: [1, 1, 1] };
+		const peaks = [
+			{ id: 1, exposure_id: 1, q: 0.1, intensity: null, prominence: null,
+			  sharpness: null, source: "auto" as const, excluded: false },
+			{ id: 2, exposure_id: 1, q: 0.2, intensity: null, prominence: null,
+			  sharpness: null, source: "auto" as const, excluded: false },
+		];
+		const { container } = render(
+			<TraceViewer
+				trace={trace}
+				peaks={peaks}
+				activeGroupIndices={[]}
+				hoveredIndex={undefined}
+				losingPeakIds={new Set([1])}
+				{...defaultProps}
+			/>,
+		);
+		const losing = container.querySelector(
+			'[data-role="peak-root"] polygon[data-peak-id="1"]',
+		);
+		const kept = container.querySelector(
+			'[data-role="peak-root"] polygon[data-peak-id="2"]',
+		);
+		expect(losing).not.toBeNull();
+		expect(kept).not.toBeNull();
+		expect(losing!.getAttribute("data-losing")).toBe("true");
+		expect(parseFloat(losing!.getAttribute("fill-opacity") ?? "1"))
+			.toBeLessThan(0.4);
+		// The peak NOT being orphaned stays bright.
+		expect(kept!.hasAttribute("data-losing")).toBe(false);
+		expect(parseFloat(kept!.getAttribute("fill-opacity") ?? "1"))
+			.toBeGreaterThanOrEqual(0.9);
+	});
 });
 
 describe("<TraceViewer> — overlay ticks", () => {

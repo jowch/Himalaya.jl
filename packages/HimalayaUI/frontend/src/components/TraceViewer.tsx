@@ -20,6 +20,10 @@ export interface TraceViewerProps {
 	/** q-link (#180): fired on cursor move with the (peak-snapped) q, and with
 	 *  `null` on leave. Drives the ephemeral `hoveredQ` Zustand field. */
 	onHoverQ?: (q: number | null) => void;
+	/** R4 candidate-swap preview (L-11): peak ids the hovered candidate would
+	 *  orphan if committed (it claims an overlapping peak of an active phase).
+	 *  Those triangles dim so the cost of the swap is visible before the click. */
+	losingPeakIds?: Set<number> | undefined;
 	onAddPeak: (q: number) => void;
 	onRemovePeak: (peakId: number) => void;
 	onTogglePeakExclusion: (peakId: number, excluded: boolean) => void;
@@ -158,6 +162,7 @@ export function TraceViewer({
 	hoveredPeakId,
 	hoveredQ,
 	onHoverQ,
+	losingPeakIds,
 	onAddPeak,
 	onRemovePeak,
 	onTogglePeakExclusion,
@@ -412,7 +417,14 @@ export function TraceViewer({
 			let fill: string;
 			let opacity: number;
 			const excludedAuto = isAuto && peak.excluded;
-			if (excludedAuto) {
+			// R4 (L-11): a previewed candidate would orphan this peak on a swap.
+			// Dim it (and desaturate) so the cost of committing the swap is
+			// visible before the click. Takes precedence over the dimOthers fade.
+			const losing = losingPeakIds?.has(peak.id) ?? false;
+			if (losing) {
+				fill = "var(--color-fg-dim)";
+				opacity = 0.3;
+			} else if (excludedAuto) {
 				// Excluded auto peaks keep their identity (ice blue, ghosted) — they
 				// are user curation, not "context to fade away."
 				fill = baseColor;
@@ -478,6 +490,8 @@ export function TraceViewer({
 				tri.setAttribute("stroke", "var(--color-bg)");
 				tri.setAttribute("stroke-width", "0.75");
 			}
+			tri.setAttribute("data-peak-id", String(peak.id));
+			if (losing) tri.setAttribute("data-losing", "true");
 			peakRoot.appendChild(tri);
 		}
 
@@ -600,7 +614,7 @@ export function TraceViewer({
 				drawTrackTick(t, { strong: true, faded: false, matched });
 			}
 		}
-	}, [peaks, trace, hoveredIndex, hoveredPeakId, hoveredQ, activeGroupIndices, xDomain]);
+	}, [peaks, trace, hoveredIndex, hoveredPeakId, hoveredQ, losingPeakIds, activeGroupIndices, xDomain]);
 
 	// Re-render overlay whenever anything that affects it changes.
 	useEffect(() => {
