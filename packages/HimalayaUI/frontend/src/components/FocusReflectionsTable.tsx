@@ -106,22 +106,22 @@ export function FocusReflectionsTable(): JSX.Element {
             <thead>
               <tr>
                 <th className="sticky top-0 bg-plate border-b border-hair-strong
-                               px-2 pb-1.5 pt-1 text-left text-[9.5px] font-bold
+                               px-2 pb-1.5 pt-1 text-left text-meta font-bold
                                uppercase tracking-[0.07em] text-ink-faint">
                   phase
                 </th>
                 <th className="sticky top-0 bg-plate border-b border-hair-strong
-                               px-2 pb-1.5 pt-1 text-left text-[9.5px] font-bold
+                               px-2 pb-1.5 pt-1 text-left text-meta font-bold
                                uppercase tracking-[0.07em] text-ink-faint">
                   order
                 </th>
                 <th className="sticky top-0 bg-plate border-b border-hair-strong
-                               px-2 pb-1.5 pt-1 text-right text-[9.5px] font-bold
+                               px-2 pb-1.5 pt-1 text-right text-meta font-bold
                                uppercase tracking-[0.07em] text-ink-faint font-mono">
                   q (Å⁻¹)
                 </th>
                 <th className="sticky top-0 bg-plate border-b border-hair-strong
-                               px-2 pb-1.5 pt-1 text-right text-[9.5px] font-bold
+                               px-2 pb-1.5 pt-1 text-right text-meta font-bold
                                uppercase tracking-[0.07em] text-ink-faint font-mono">
                   d (Å)
                 </th>
@@ -144,8 +144,13 @@ export function FocusReflectionsTable(): JSX.Element {
                     data-testid={`reflection-row-${peak.id}`}
                     data-peak-q={peak.q}
                     data-hot={hot ? "true" : "false"}
-                    className="cursor-pointer border-b border-hair last:border-b-0
-                               transition-colors"
+                    data-indexed={indexed ? "true" : "false"}
+                    // R3-F10: an unindexed row dims as a WHOLE (mockup
+                    // `.refl tr.unindexed`), not just its phase + dash cells.
+                    className={[
+                      "cursor-pointer border-b border-hair last:border-b-0 transition-colors",
+                      indexed ? "" : "opacity-55",
+                    ].join(" ")}
                     style={{
                       background: hot
                         ? "color-mix(in oklab, var(--color-accent) 9%, transparent)"
@@ -223,6 +228,15 @@ export function FocusReflectionsTable(): JSX.Element {
     >
       <div className="card-header flex items-center justify-between gap-3">
         <span className="text-meta uppercase tracking-wider">Reflections</span>
+        {/* R3-F07: right-side cluster mirrors the detector panel's `.panel-head`
+            (label | exposure) symmetry — the N-of-M coverage summary lifted from
+            the footer so the lower-row panels read as a matched pair. */}
+        <span
+          data-testid="focus-reflections-head-summary"
+          className="text-meta tabular-nums text-ink-faint"
+        >
+          {covered} / {peaks.length}
+        </span>
       </div>
       <Skeleton
         name="focus-reflections"

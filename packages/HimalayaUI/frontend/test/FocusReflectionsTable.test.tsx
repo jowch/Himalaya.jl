@@ -65,6 +65,37 @@ describe("FocusReflectionsTable (#209)", () => {
     expect(panel.textContent).toMatch(/Reflections/);
   });
 
+  it("R3-F09: column headers use the text-meta scale token, not an inline px size", async () => {
+    renderTable();
+    await screen.findByTestId("focus-reflections");
+    const ths = document.querySelectorAll('[data-testid="focus-reflections"] thead th');
+    expect(ths.length).toBe(4);
+    for (const th of ths) {
+      // Fixed-Scale Rule: no inline text-[Npx] on the sticky header.
+      expect(th.className).not.toMatch(/text-\[\d/);
+      expect(th.className).toContain("text-meta");
+    }
+  });
+
+  it("R3-F10: unindexed row is flagged data-indexed='false' and dimmed as a whole", async () => {
+    renderTable();
+    const row3 = await screen.findByTestId("reflection-row-3"); // unclaimed peak
+    const row1 = screen.getByTestId("reflection-row-1");        // Pn3m-claimed
+    expect(row3).toHaveAttribute("data-indexed", "false");
+    expect(row1).toHaveAttribute("data-indexed", "true");
+    // Whole-row dim (mockup `.refl tr.unindexed`), not just the phase cell.
+    expect(row3.className).toMatch(/opacity-55/);
+    expect(row1.className).not.toMatch(/opacity-55/);
+  });
+
+  it("R3-F07: reflections panel-head carries a right-side N-of-M summary cluster", async () => {
+    renderTable();
+    await screen.findByTestId("focus-reflections");
+    const cluster = screen.getByTestId("focus-reflections-head-summary");
+    // 2 of 3 peaks claimed in the fixture.
+    expect(cluster).toHaveTextContent("2 / 3");
+  });
+
   it("renders one row per peak, sorted low-q first", async () => {
     renderTable();
     expect(await screen.findByTestId("reflection-row-1")).toBeInTheDocument();
