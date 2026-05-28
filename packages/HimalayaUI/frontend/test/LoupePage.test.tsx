@@ -12,6 +12,7 @@ const h = vi.hoisted(() => ({
   corpusQ: {} as { data?: CorpusSample[]; isLoading: boolean },
   exposuresQ: {} as { data?: Exposure[]; isLoading: boolean },
   experimentQ: {} as { data?: { id: number; name: string | null; path: string } },
+  peaksQ: {} as { data?: { id: number }[] },
   setStatusMutate: vi.fn(),
   setRepMutate: vi.fn(),
 }));
@@ -20,6 +21,7 @@ vi.mock("../src/queries", () => ({
   useCorpusSamples: () => h.corpusQ,
   useExposures: () => h.exposuresQ,
   useExperiment: () => h.experimentQ,
+  usePeaks: () => h.peaksQ,
   useSetExposureStatus: () => ({
     mutate: h.setStatusMutate, isPending: false, error: null, reset: () => {},
   }),
@@ -70,13 +72,60 @@ describe("LoupePage — identity", () => {
     h.corpusQ = { data: [sample()], isLoading: false };
     h.exposuresQ = { data: [exposure()], isLoading: false };
     h.experimentQ = { data: { id: 3, name: "Beamtime March", path: "/x" } };
+    h.peaksQ = { data: [] };
   });
 
   it("renders the sample identified by the :sampleId route param", () => {
     renderAt("/samples/loupe/7");
     expect(screen.getByTestId("loupe-page")).toBeInTheDocument();
     expect(screen.getByText("DOPE 80%")).toBeInTheDocument();
-    expect(screen.getByText(/Beamtime March/)).toBeInTheDocument();
+    // L-9: the subtitle is sample-id · exposure N of M (not the experiment).
+    expect(screen.getByTestId("loupe-subtitle")).toHaveTextContent("JC042");
+  });
+});
+
+describe("LoupePage — subtitle (L-9)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    h.corpusQ = { data: [sample()], isLoading: false };
+    h.exposuresQ = {
+      data: [exposure({ id: 100 }), exposure({ id: 101 })],
+      isLoading: false,
+    };
+    h.experimentQ = { data: { id: 3, name: "Beamtime March", path: "/x" } };
+    h.peaksQ = { data: [] };
+  });
+
+  it("shows sample-id · exposure N of M", () => {
+    renderAt("/samples/loupe/7");
+    const sub = screen.getByTestId("loupe-subtitle");
+    expect(sub).toHaveTextContent("JC042");
+    expect(sub).toHaveTextContent("exposure 1 of 2");
+  });
+
+  it("updates the exposure position when frames are flipped", () => {
+    renderAt("/samples/loupe/7");
+    fireEvent.keyDown(document.body, { key: "ArrowRight" });
+    expect(screen.getByTestId("loupe-subtitle")).toHaveTextContent(
+      "exposure 2 of 2",
+    );
+  });
+});
+
+describe("LoupePage — signal meter (M-8)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    h.corpusQ = { data: [sample()], isLoading: false };
+    h.exposuresQ = { data: [exposure({ id: 100 })], isLoading: false };
+    h.experimentQ = { data: { id: 3, name: "Beamtime March", path: "/x" } };
+    h.peaksQ = { data: [{ id: 1 }, { id: 2 }, { id: 3 }] };
+  });
+
+  it("fills the meter from the active exposure's peak count", () => {
+    renderAt("/samples/loupe/7");
+    expect(
+      screen.getByTestId("loupe-meta-signal").querySelectorAll('[data-bar="on"]'),
+    ).toHaveLength(3);
   });
 });
 
@@ -92,6 +141,7 @@ describe("LoupePage — composition", () => {
       isLoading: false,
     };
     h.experimentQ = { data: { id: 3, name: "Beamtime March", path: "/x" } };
+    h.peaksQ = { data: [] };
   });
 
   it("renders the frame and sidebar for a known sample", () => {
@@ -145,6 +195,7 @@ describe("LoupePage — interactions", () => {
       isLoading: false,
     };
     h.experimentQ = { data: { id: 3, name: "Beamtime March", path: "/x" } };
+    h.peaksQ = { data: [] };
   });
 
   it("drops a kept exposure via the verdict toggle", () => {
@@ -208,6 +259,7 @@ describe("LoupePage — loading", () => {
     h.corpusQ = { isLoading: true };
     h.exposuresQ = { isLoading: true };
     h.experimentQ = {};
+    h.peaksQ = { data: [] };
   });
 
   it("shows the loupe skeleton while data is loading", () => {
@@ -224,6 +276,7 @@ describe("LoupePage — not file-per-exposure", () => {
     vi.clearAllMocks();
     h.corpusQ = { data: [sample()], isLoading: false };
     h.experimentQ = { data: { id: 3, name: "Beamtime March", path: "/x" } };
+    h.peaksQ = { data: [] };
   });
 
   it("renders and flips every exposure regardless of kind or missing filename", () => {
