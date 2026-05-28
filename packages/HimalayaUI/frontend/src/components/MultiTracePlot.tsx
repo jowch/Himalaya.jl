@@ -590,8 +590,8 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
         <div
           data-testid="peak-tooltip"
           role="tooltip"
-          className="absolute pointer-events-none rounded border border-border
-                     bg-bg-elevated text-fg text-xs px-2 py-1 shadow"
+          className="absolute pointer-events-none rounded border border-hair
+                     bg-plate text-ink text-xs px-2 py-1 shadow"
           style={{
             // Offset above-and-right of the cursor so the tooltip doesn't
             // sit under the pointer (which would block subsequent clicks).
@@ -601,7 +601,7 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
           }}
         >
           q = {tooltip.q.toPrecision(3)}
-          {showPeakIds ? <span className="text-fg-muted ml-2">id={tooltip.peakId}</span> : null}
+          {showPeakIds ? <span className="text-ink-soft ml-2">id={tooltip.peakId}</span> : null}
         </div>
       )}
     </div>
@@ -640,9 +640,9 @@ function MemberBandOverlay(props: {
       {...(dropTarget ? { "data-drop-target": "true" } : {})}
       className={
         dropTarget
-          ? "ring-1 ring-inset ring-accent bg-accent/15"
+          ? "ring-1 ring-inset ring-print-accent bg-print-accent/15"
           : active
-            ? "bg-accent/10"
+            ? "bg-print-accent/10"
             : undefined
       }
       style={{

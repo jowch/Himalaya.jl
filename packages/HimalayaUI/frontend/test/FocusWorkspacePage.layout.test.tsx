@@ -28,12 +28,12 @@ const TRACE = { q: [0.04, 0.1, 0.3], I: [10, 80, 20], sigma: [1, 1, 1] };
 
 beforeEach(() => {
   localStorage.clear();
-  // Seed NOTHING but username/theme: the route shim seeds activeSampleId,
+  // Seed NOTHING but username: the route shim seeds activeSampleId,
   // and activeExperimentId is intentionally left undefined to mirror the real
   // /sample/:sampleId route (the I4.1 shim does not seed it).
   useAppState.setState({
     activeSampleId: undefined, activeExposureId: undefined,
-    activeExperimentId: undefined, username: "tester", theme: "dark",
+    activeExperimentId: undefined, username: "tester",
   });
   vi.stubGlobal("ResizeObserver", class {
     observe() {} unobserve() {} disconnect() {}

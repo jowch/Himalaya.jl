@@ -298,7 +298,7 @@ export function MemberMetaGutter(props: MemberMetaGutterProps): JSX.Element {
               top: `${top}px`,
               height: `${height}px`,
             }}
-            className={isHover ? "ring-1 ring-accent/50 rounded" : undefined}
+            className={isHover ? "ring-1 ring-print-accent/50 rounded" : undefined}
           >
             <MemberMetaRow
               member={m}
@@ -352,7 +352,7 @@ export function MemberMetaGutter(props: MemberMetaGutterProps): JSX.Element {
         <div
           data-testid="drop-indicator"
           aria-hidden="true"
-          className="absolute left-0 right-0 z-20 bg-accent rounded-full pointer-events-none"
+          className="absolute left-0 right-0 z-20 bg-print-accent rounded-full pointer-events-none"
           style={{
             top: `${dropIndicatorY - 1}px`,
             height: "2px",

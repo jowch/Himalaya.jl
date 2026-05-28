@@ -40,7 +40,6 @@ describe("App smoke", () => {
       activeSampleId: 10,
       activeExposureId: undefined,
       tutorialSeen: true,
-      theme: "dark",
       hoveredIndexId: undefined,
       navModalOpen: false,
     });

@@ -32,7 +32,9 @@ export function LoupeFrame({
       <div
         className={[
           "relative mx-auto aspect-square w-full max-w-[500px]",
-          "overflow-hidden rounded border border-border bg-bg",
+          // T-1/T-8: the detector frame is the dark window set into the paper
+          // (mockup `.big-frame` = frame-edge), not light paper.
+          "overflow-hidden rounded border border-frame-edge bg-frame-edge",
         ].join(" ")}
       >
         <DetectorImage
@@ -45,13 +47,14 @@ export function LoupeFrame({
         {isRejected && (
           <span
             data-testid="loupe-dropped-badge"
-            className="absolute left-3 top-3 rounded bg-accent px-2 py-0.5
-                       text-[10px] font-bold uppercase tracking-wide text-bg"
+            className="absolute left-3 top-3 rounded bg-print-accent px-2 py-0.5
+                       text-[10px] font-bold uppercase tracking-wide text-paper"
           >
             Dropped
           </span>
         )}
-        <span className="absolute bottom-2 left-3 font-mono text-[11px] text-ink-faint">
+        {/* T-8: light caption over the dark frame (was dark `text-ink-faint`). */}
+        <span className="absolute bottom-2 left-3 font-mono text-[11px] text-frame-tag">
           {caption}
         </span>
       </div>

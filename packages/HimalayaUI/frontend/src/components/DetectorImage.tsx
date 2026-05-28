@@ -121,15 +121,9 @@ export function DetectorImage({
     renderImage();
   }, [renderImage]);
 
-  // Re-apply colormap when theme changes (AppShell toggles class on <html>)
-  useEffect(() => {
-    const observer = new MutationObserver(() => renderImage());
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ["class"],
-    });
-    return () => observer.disconnect();
-  }, [renderImage]);
+  // (R0c #223) The `<html>` theme-class MutationObserver was removed: R0a
+  // retired the dark↔light theme toggle, so nothing ever mutates the class
+  // and the observer never fired — dead scaffolding.
 
   // Watch wrapper size — rotate when container becomes much wider than image.
   useEffect(() => {

@@ -35,7 +35,7 @@ export const PHASE_PALETTE: Readonly<Record<KnownPhase, string>> = {
   Ia3d:      "oklch(0.520 0.130 300)", // violet
   Fm3m:      "oklch(0.550 0.140 18)",  // coral
   Fd3m:      "oklch(0.520 0.120 318)", // rose-purple
-  Hexagonal: "oklch(0.540 0.130 350)", // magenta-rose
+  Hexagonal: "oklch(0.540 0.130 350)", // rose
   Lamellar:  "oklch(0.505 0.150 264)", // indigo
   Square:    "oklch(0.550 0.130 132)", // green
 };

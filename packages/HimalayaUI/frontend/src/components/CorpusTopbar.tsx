@@ -30,10 +30,10 @@ const STAGES: readonly Stage[] = [
  *
  * I5.1 (#182): the legacy AppHeader/UtilityCluster (theme toggle + switch-user
  * avatar) are retired with the dual-nav shell, and are NOT re-homed here — the
- * mockup omits them. The `T` theme shortcut (useGlobalShortcuts) still toggles
- * theme; the `username` identity state + persist survive untouched. A
- * multiplayer switch-user control + the theme-toggle button are deferred to a
- * follow-up issue (UI relocation, not in I5.1 scope).
+ * mockup omits them. R0a (#221) then retired the dark theme entirely, so the
+ * `T` theme shortcut is gone too ("The Print" is the single identity). The
+ * `username` identity state + persist survive untouched. A multiplayer
+ * switch-user control is deferred to a follow-up issue.
  */
 export function CorpusTopbar(): JSX.Element {
   const [searchParams, setSearchParams] = useSearchParams();
