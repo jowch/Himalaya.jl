@@ -21,7 +21,7 @@ beforeEach(() => {
   localStorage.clear();
   useAppState.setState({
     activeSampleId: 1, activeExposureId: 5,
-    username: "tester", theme: "dark",
+    username: "tester",
   });
   vi.stubGlobal("ResizeObserver", class {
     observe() {} unobserve() {} disconnect() {}

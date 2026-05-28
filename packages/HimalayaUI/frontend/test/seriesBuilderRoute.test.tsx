@@ -19,7 +19,7 @@ beforeEach(() => {
   useAppState.setState({
     activeSampleId: undefined, activeExposureId: undefined,
     activeExperimentId: undefined,
-    username: "tester", theme: "dark",
+    username: "tester",
   });
   vi.stubGlobal("fetch", vi.fn(async (url: string) => {
     const u = String(url);

@@ -19,7 +19,6 @@ beforeEach(() => {
     activeSampleId: undefined,
     activeExposureId: undefined,
     username: "tester",
-    theme: "dark",
   });
   vi.stubGlobal(
     "fetch",
