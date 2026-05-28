@@ -164,6 +164,23 @@ export function buildMemberHeatmapMarks(props: MemberHeatmapMarksProps): unknown
     }),
   );
 
+  // Outer hair keyline framing the row (R3-Y06, #258). Without it adjacent
+  // rows read as "two coloured boxes"; the frame makes them "intensity rows
+  // in a frame", matching the mockup's per-row keyline
+  // (series-builder.html:791-792). A single full-span cell at the row's inset
+  // bounds, no fill, hair stroke — drawn on top of the cells.
+  marks.push(
+    Plot.rect([{ x1: qDomain[0], x2: qDomain[1] }], {
+      x1: "x1",
+      x2: "x2",
+      y1: y1,
+      y2: y2,
+      fill: "none",
+      stroke: "var(--color-hair)",
+      strokeWidth: 1,
+    }),
+  );
+
   return marks;
 }
 

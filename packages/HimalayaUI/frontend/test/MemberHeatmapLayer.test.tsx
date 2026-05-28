@@ -82,16 +82,21 @@ describe("buildMemberHeatmapMarks", () => {
     })).toEqual([]);
   });
 
-  it("emits a single rect mark with HEATMAP_BIN_COUNT cells across the q-domain", () => {
+  it("emits cells + an outer keyline rect (HEATMAP_BIN_COUNT cells across the q-domain)", () => {
     buildMemberHeatmapMarks({
       member: makeMember(),
       trace,
       yBand: [0, 50],
       qDomain: [0, 1],
     });
-    expect(Plot.rect).toHaveBeenCalledTimes(1);
-    const [data] = (Plot.rect as unknown as { mock: { calls: unknown[][] } }).mock.calls[0]!;
-    const cells = data as Array<{ x1: number; x2: number; fill: string; memberId: number }>;
+    // Two rect marks now: the binned cells + the framing keyline (R3-Y06).
+    expect(Plot.rect).toHaveBeenCalledTimes(2);
+    const calls = (Plot.rect as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+    // The cells call is the one WITHOUT `fill:"none"` (the keyline has it).
+    const cellsCall = calls.find(
+      (c) => (c[1] as { fill?: unknown }).fill !== "none",
+    )!;
+    const cells = cellsCall[0] as Array<{ x1: number; x2: number; fill: string; memberId: number }>;
     expect(cells).toHaveLength(HEATMAP_BIN_COUNT);
     // First cell starts at qDomain[0], last cell ends at qDomain[1].
     expect(cells[0]!.x1).toBeCloseTo(0, 6);
@@ -102,6 +107,29 @@ describe("buildMemberHeatmapMarks", () => {
     }
     // memberId tag survives so a downstream hover layer can identify the row.
     expect(new Set(cells.map((c) => c.memberId))).toEqual(new Set([1]));
+  });
+
+  it("emits an outer hair keyline rect framing each row (R3-Y06)", () => {
+    const marks = buildMemberHeatmapMarks({
+      member: makeMember(),
+      trace,
+      yBand: [10, 30],
+      qDomain: [0.05, 0.9],
+      groupingMode: "byPhase",
+      allMembers: [makeMember()],
+      sampleIdFor: () => 1,
+    });
+    // Two rect marks: the binned cells + the framing keyline.
+    expect(marks.length).toBe(2);
+    const calls = (Plot.rect as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+    // The keyline is the call with fill:none + a hair stroke.
+    const keyline = calls.find(
+      (c) => (c[1] as { fill?: unknown }).fill === "none",
+    );
+    expect(keyline).toBeDefined();
+    const opts = keyline![1] as { stroke: string; strokeWidth: number };
+    expect(opts.stroke).toBe("var(--color-hair)");
+    expect(opts.strokeWidth).toBe(1);
   });
 
   it("colours each cell against the resolved group/phase hue", () => {
