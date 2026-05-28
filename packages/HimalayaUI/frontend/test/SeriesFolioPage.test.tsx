@@ -12,6 +12,9 @@ const h = vi.hoisted(() => ({
 
 vi.mock("../src/queries", () => ({
   useSeriesList: () => h.listQ,
+  // The card pulls per-series detail; keep it inert so the page renders the
+  // swatch fallback without network.
+  useSeries: () => ({ data: undefined, isLoading: false }),
 }));
 
 function summary(over: Partial<SeriesSummary> = {}): SeriesSummary {
@@ -31,6 +34,7 @@ function renderAt(path = "/series") {
       <MemoryRouter initialEntries={[path]}>
         <Routes>
           <Route path="/series" element={<SeriesFolioPage />} />
+          <Route path="/series/new" element={<div data-testid="scoping-marker" />} />
           <Route path="/series/:id" element={<div data-testid="builder-marker" />} />
         </Routes>
       </MemoryRouter>
@@ -56,14 +60,15 @@ describe("SeriesFolioPage", () => {
     expect(screen.getByTestId("series-folio-count")).toHaveTextContent("2");
   });
 
+  it("renders a serif folio heading", () => {
+    h.listQ = { data: [summary()], isLoading: false, isError: false };
+    renderAt();
+    expect(screen.getByTestId("series-folio-heading")).toBeInTheDocument();
+  });
+
   it("shows the boneyard skeleton while loading", () => {
     h.listQ = { data: undefined, isLoading: true, isError: false };
     const { container } = renderAt();
-    // While loading, boneyard mounts its wrapper [data-boneyard=<name>] and
-    // hides the real children inside [data-boneyard-content] (it overlays
-    // measured bones in a real browser; JSDOM has no layout so it emits the
-    // wrapper but zero bone divs). Assert the wrapper is present and that no
-    // real card has rendered — the page is in its cold-fetch state.
     expect(container.querySelector('[data-boneyard="series-folio"]')).not.toBeNull();
     expect(screen.queryByTestId("series-card-1")).not.toBeInTheDocument();
   });
@@ -89,6 +94,41 @@ describe("SeriesFolioPage", () => {
     fireEvent.change(screen.getByTestId("series-folio-search"), { target: { value: "beta" } });
     expect(screen.queryByTestId("series-card-1")).not.toBeInTheDocument();
     expect(screen.getByTestId("series-card-2")).toBeInTheDocument();
+  });
+
+  it("filters to multi-phase series via the 'Has transition' chip", () => {
+    h.listQ = {
+      data: [
+        summary({ id: 1, title: "Single", member_phase_count: 1 }),
+        summary({ id: 2, title: "Multi", member_phase_count: 3 }),
+      ],
+      isLoading: false, isError: false,
+    };
+    renderAt();
+    fireEvent.click(screen.getByTestId("series-folio-chip-transition"));
+    expect(screen.queryByTestId("series-card-1")).not.toBeInTheDocument();
+    expect(screen.getByTestId("series-card-2")).toBeInTheDocument();
+  });
+
+  it("orders by member count via the 'Largest' sort", () => {
+    h.listQ = {
+      data: [
+        summary({ id: 1, title: "Small", member_count: 2 }),
+        summary({ id: 2, title: "Big", member_count: 9 }),
+      ],
+      isLoading: false, isError: false,
+    };
+    renderAt();
+    fireEvent.click(screen.getByTestId("series-folio-sort-size"));
+    const cards = screen.getAllByTestId(/^series-card-\d+$/);
+    expect(cards[0]).toHaveAttribute("data-testid", "series-card-2");
+  });
+
+  it("links the '+ New series' action to the scoping flow", () => {
+    h.listQ = { data: [summary()], isLoading: false, isError: false };
+    renderAt();
+    fireEvent.click(screen.getByTestId("series-folio-new"));
+    expect(screen.getByTestId("scoping-marker")).toBeInTheDocument();
   });
 
   it("navigates to /series/:id when a card is opened", () => {

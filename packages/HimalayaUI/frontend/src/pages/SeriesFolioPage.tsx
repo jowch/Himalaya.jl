@@ -3,8 +3,11 @@ import { useNavigate } from "react-router-dom";
 import { Skeleton } from "boneyard-js/react";
 import { useSeriesList } from "../queries";
 import { SeriesFolioCard } from "../components/SeriesFolioCard";
-
-type SortMode = "recency" | "title";
+import {
+  filterSort,
+  type FolioFilter,
+  type FolioSort,
+} from "../lib/series/folioFilter";
 
 // Static skeleton shape for boneyard's headless capture (docs/boneyard.md
 // Rule 2): a few placeholder cards in the same CSS-columns masonry the live
@@ -23,87 +26,125 @@ const FOLIO_FIXTURE = (
   </div>
 );
 
+const FILTER_CHIPS: { value: FolioFilter; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "transition", label: "Has transition" },
+  { value: "cross", label: "Cross-experiment" },
+];
+
+const SORT_OPTIONS: { value: FolioSort; label: string }[] = [
+  { value: "recent", label: "Recent" },
+  { value: "variable", label: "Variable" },
+  { value: "size", label: "Largest" },
+];
+
 /**
- * SeriesFolioPage — the series folio at /series (#173 / I3.3). A corpus-wide
- * masonry of saved series, the landing surface of the Series stage. Mounted
- * under the CorpusShell layout route, like SamplesPage/LoupePage.
+ * SeriesFolioPage — the series folio at /series (#173 / I3.3; R6 #229). A
+ * corpus-wide masonry of saved series, the landing surface of the Series
+ * stage. Mounted under the CorpusShell layout route.
  *
- * Read-only: owns the corpus useSeriesList() query, a client-side title
- * search, and a recency/title sort toggle. The listing is small and fully
- * client-held, so search/sort are local (no refetch). Recency is the default
- * (the backend already returns last_event_at DESC). Beamtime/phase filter
- * chips from the mockup are deferred (#173 scope note).
+ * Read-only: owns the corpus useSeriesList() query plus client-side
+ * search / filter chips / 3-way sort (the listing is small and fully
+ * client-held, so no refetch). Recipe-match and cross-experiment facets are
+ * present but data-starved on the current corpus — see `folioFilter.ts`.
  */
 export function SeriesFolioPage(): JSX.Element {
   const navigate = useNavigate();
   const query = useSeriesList();
   const [search, setSearch] = useState("");
-  const [sort, setSort] = useState<SortMode>("recency");
+  const [filter, setFilter] = useState<FolioFilter>("all");
+  const [sort, setSort] = useState<FolioSort>("recent");
 
   const series = query.data ?? [];
 
-  const visible = useMemo(() => {
-    const needle = search.trim().toLowerCase();
-    const filtered =
-      needle === ""
-        ? series
-        : series.filter((s) => s.title.toLowerCase().includes(needle));
-    if (sort === "title") {
-      return [...filtered].sort((a, b) => a.title.localeCompare(b.title));
-    }
-    // recency: backend order is already last_event_at DESC; preserve it.
-    return filtered;
-  }, [series, search, sort]);
+  const visible = useMemo(
+    () => filterSort(series, { search, filter, sort }),
+    [series, search, filter, sort],
+  );
+
+  const isFiltered = search.trim() !== "" || filter !== "all";
 
   return (
-    <div data-testid="series-folio-page" className="flex flex-col gap-4 p-6">
-      <header className="flex items-end justify-between gap-6">
+    <div data-testid="series-folio-page" className="mx-auto flex max-w-[1380px] flex-col gap-4 p-6">
+      <header className="flex items-end justify-between gap-8">
         <div className="flex flex-col gap-1">
-          <div className="text-xs font-semibold uppercase tracking-wide text-print-accent">
-            Series
+          <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-print-accent">
+            Folio
           </div>
-          <p className="text-sm text-ink-faint">
-            Every comparison you've built, across all beamtimes.
+          <h1 data-testid="series-folio-heading" className="text-headline text-ink">
+            Saved series
+          </h1>
+          <p className="mt-1 max-w-[60ch] text-sm text-ink-soft">
+            Every comparison you've built, across all beamtimes. Pick one up where you
+            left off — or start a new one from the contact sheet.
           </p>
         </div>
-        <div className="text-right">
-          <div data-testid="series-folio-count" className="text-2xl font-medium text-ink">
-            {series.length}
+        <div className="flex shrink-0 items-end gap-5">
+          <div className="text-right">
+            <div data-testid="series-folio-count" className="text-display leading-none text-ink">
+              {visible.length}
+            </div>
+            <div className="mt-1 text-[10.5px] font-bold uppercase tracking-[0.08em] text-ink-faint">
+              {isFiltered ? `of ${series.length} shown` : "series in the folio"}
+            </div>
           </div>
-          <div className="text-[10px] uppercase tracking-wide text-ink-faint">
-            in the folio
-          </div>
+          <button
+            type="button"
+            data-testid="series-folio-new"
+            onClick={() => navigate("/series/new")}
+            className="rounded-md border border-ink bg-ink px-3 py-1.5 text-xs font-semibold text-paper hover:opacity-90"
+          >
+            + New series
+          </button>
         </div>
       </header>
 
-      <div className="flex items-center gap-3 border-b border-hair pb-3">
+      <div className="flex flex-wrap items-center gap-3.5 border-b border-hair pb-4">
         <input
           data-testid="series-folio-search"
           type="search"
           placeholder="Search series…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="rounded border border-hair-strong bg-plate px-3 py-1.5 text-sm text-ink"
+          className="min-w-[230px] rounded-md border border-hair-strong bg-plate px-3 py-1.5 text-sm text-ink"
         />
-        <div className="ml-auto flex overflow-hidden rounded border border-hair-strong">
-          <button
-            type="button"
-            data-testid="series-folio-sort-recency"
-            aria-pressed={sort === "recency"}
-            onClick={() => setSort("recency")}
-            className={`px-3 py-1.5 text-xs ${sort === "recency" ? "bg-ink text-paper" : "text-ink-faint"}`}
-          >
-            Recent
-          </button>
-          <button
-            type="button"
-            data-testid="series-folio-sort-title"
-            aria-pressed={sort === "title"}
-            onClick={() => setSort("title")}
-            className={`px-3 py-1.5 text-xs ${sort === "title" ? "bg-ink text-paper" : "text-ink-faint"}`}
-          >
-            Title
-          </button>
+        <div className="flex gap-1.5">
+          {FILTER_CHIPS.map((c) => (
+            <button
+              key={c.value}
+              type="button"
+              data-testid={`series-folio-chip-${c.value}`}
+              aria-pressed={filter === c.value}
+              onClick={() => setFilter(c.value)}
+              className={[
+                "rounded-full border px-3 py-1 text-[11.5px] font-semibold",
+                filter === c.value
+                  ? "border-ink bg-ink text-paper"
+                  : "border-hair-strong bg-plate text-ink-soft hover:border-ink-faint",
+              ].join(" ")}
+            >
+              {c.label}
+            </button>
+          ))}
+        </div>
+        <span className="ml-auto text-[10.5px] font-bold uppercase tracking-[0.07em] text-ink-faint">
+          Sort
+        </span>
+        <div className="flex overflow-hidden rounded-md border border-hair-strong">
+          {SORT_OPTIONS.map((s) => (
+            <button
+              key={s.value}
+              type="button"
+              data-testid={`series-folio-sort-${s.value}`}
+              aria-pressed={sort === s.value}
+              onClick={() => setSort(s.value)}
+              className={`px-3 py-1.5 text-[11.5px] font-semibold ${
+                sort === s.value ? "bg-ink text-paper" : "text-ink-faint"
+              }`}
+            >
+              {s.label}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -124,10 +165,19 @@ export function SeriesFolioPage(): JSX.Element {
             <div data-testid="series-folio-empty" className="px-4 py-12 text-center text-sm text-ink-faint">
               No series yet. Select samples on the contact sheet to start one.
             </div>
+          ) : visible.length === 0 ? (
+            <div data-testid="series-folio-no-match" className="px-4 py-12 text-center text-sm text-ink-faint">
+              No series match. Clear the search or filter to see the whole folio.
+            </div>
           ) : (
             <div className="[column-count:1] sm:[column-count:2] lg:[column-count:3] [column-gap:1.25rem]">
-              {visible.map((s) => (
-                <SeriesFolioCard key={s.id} series={s} onOpen={(id) => navigate(`/series/${id}`)} />
+              {visible.map((s, i) => (
+                <SeriesFolioCard
+                  key={s.id}
+                  series={s}
+                  figNumber={i + 1}
+                  onOpen={(id) => navigate(`/series/${id}`)}
+                />
               ))}
             </div>
           )}
