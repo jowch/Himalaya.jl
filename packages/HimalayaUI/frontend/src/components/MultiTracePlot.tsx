@@ -123,6 +123,18 @@ const MARGIN_BOTTOM = 32;
 
 type Scale = { invert?: (v: number) => number; apply?: (v: number) => number } | undefined;
 
+/**
+ * Map the builder's trace-offset slider (0.4..1.4, mockup default 1.2) to the
+ * working-band fraction consumed by `applyNormalization` (R8, #231). A larger
+ * offset = taller traces filling more of each band = a tighter waterfall.
+ * Clamped so the slider can never collapse a band (min 0.45) or overflow it
+ * (max 0.95).
+ */
+export function offsetToBandFraction(offset: number): number {
+  const t = Math.min(1, Math.max(0, (offset - 0.4) / (1.4 - 0.4)));
+  return 0.45 + t * (0.95 - 0.45);
+}
+
 export interface MultiTracePlotProps {
   /** Members in render order (top → bottom). Caller sorts by `display_order`. */
   members: SeriesMember[];
@@ -175,6 +187,12 @@ export interface MultiTracePlotProps {
    * mode. Required when `groupingMode` is set; ignored otherwise.
    */
   sampleIdFor?: (m: SeriesMember) => number | null;
+  /**
+   * Working-band fraction for the waterfall offset slider (R8, #231). When
+   * omitted the layer falls back to `DEFAULT_WORKING_BAND_FRACTION`. The page
+   * derives this from its offset slider via `offsetToBandFraction`.
+   */
+  workingBandFraction?: number;
 }
 
 export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
@@ -185,6 +203,7 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
     onPeakClick,
     showPeakTicks = true, showPeakLabels = true,
     groupingMode, sampleIdFor,
+    workingBandFraction,
   } = props;
 
   const hostRef       = useRef<HTMLDivElement>(null);
@@ -298,6 +317,7 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
         ...(groupingMode !== undefined && sampleIdFor !== undefined
           ? { groupingMode, allMembers: members, sampleIdFor }
           : {}),
+        ...(workingBandFraction !== undefined ? { workingBandFraction } : {}),
       };
       const memberMarks = buildMemberMarks(layerProps);
       for (const mk of memberMarks) allMarks.push(mk);
@@ -512,6 +532,7 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
     onXDomain, qExtent, onPeakClick,
     showPeakTicks, showPeakLabels,
     groupingMode, sampleIdFor,
+    workingBandFraction,
   ]);
 
   useEffect(() => {

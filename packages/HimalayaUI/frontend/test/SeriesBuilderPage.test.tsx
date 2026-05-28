@@ -12,7 +12,10 @@ const h = vi.hoisted(() => ({
   // Captures the most recent props passed to the on-screen MultiTracePlot so a
   // test can assert the annotation toggles are forwarded to the plot (not just
   // the export spec) — the regression guard for the round-2 blocking bug.
-  lastPlotProps: undefined as undefined | { showPeakTicks?: boolean; showPeakLabels?: boolean },
+  lastPlotProps: undefined as undefined | {
+    showPeakTicks?: boolean; showPeakLabels?: boolean;
+    xType?: "log" | "linear"; workingBandFraction?: number;
+  },
 }));
 vi.mock("../src/queries", () => ({
   useSeries: () => h.seriesQ,
@@ -24,17 +27,25 @@ vi.mock("../src/queries", () => ({
 // MultiTracePlot touches Observable Plot / ResizeObserver; stub it — but the
 // stub records the props it receives so we can assert prop forwarding.
 vi.mock("../src/components/MultiTracePlot", () => ({
-  MultiTracePlot: (props: { showPeakTicks?: boolean; showPeakLabels?: boolean }) => {
+  MultiTracePlot: (props: {
+    showPeakTicks?: boolean; showPeakLabels?: boolean;
+    xType?: "log" | "linear"; workingBandFraction?: number;
+  }) => {
     h.lastPlotProps = props;
     return (
       <div
         data-testid="mock-multi-trace-plot"
         data-show-peak-ticks={String(props.showPeakTicks)}
         data-show-peak-labels={String(props.showPeakLabels)}
+        data-x-type={String(props.xType)}
       />
     );
   },
   COMPARE_PLOT_ASPECT: 0.3,
+  // The page imports offsetToBandFraction from the same module; keep the real
+  // implementation so the workingBandFraction assertions exercise the mapping.
+  offsetToBandFraction: (offset: number) =>
+    0.45 + Math.min(1, Math.max(0, (offset - 0.4) / 1)) * 0.5,
 }));
 
 function member(over: Partial<SeriesMember> = {}): SeriesMember {
@@ -145,6 +156,44 @@ describe("SeriesBuilderPage — read + states", () => {
     expect(h.lastPlotProps?.showPeakTicks).toBe(false);
     expect(screen.getByTestId("mock-multi-trace-plot"))
       .toHaveAttribute("data-show-peak-ticks", "false");
+  });
+
+  it("renders the figure-as-plate container with kicker tags and a caption", () => {
+    h.seriesQ = { data: series({ members: [member()] }), isLoading: false, isError: false };
+    renderAt();
+    expect(screen.getByTestId("series-builder-plate")).toBeInTheDocument();
+    expect(screen.getByTestId("fig-tags")).toBeInTheDocument();
+    expect(screen.getByTestId("fig-caption")).toBeInTheDocument();
+  });
+
+  it("forwards the default scale (log) and offset to the plot", () => {
+    h.seriesQ = { data: series({ members: [member()] }), isLoading: false, isError: false };
+    renderAt();
+    expect(screen.getByTestId("mock-multi-trace-plot")).toHaveAttribute("data-x-type", "log");
+    expect(h.lastPlotProps?.workingBandFraction).toBeCloseTo(0.85, 2);
+  });
+
+  it("flips the plot to linear when the scale toggle is switched", () => {
+    h.seriesQ = { data: series({ members: [member()] }), isLoading: false, isError: false };
+    renderAt();
+    fireEvent.click(screen.getByTestId("scale-linear"));
+    expect(h.lastPlotProps?.xType).toBe("linear");
+    expect(screen.getByTestId("fig-tags")).toHaveTextContent("linear q");
+  });
+
+  it("changes the plot offset (workingBandFraction) when the slider moves", () => {
+    h.seriesQ = { data: series({ members: [member()] }), isLoading: false, isError: false };
+    renderAt();
+    fireEvent.change(screen.getByTestId("offset-slider"), { target: { value: "0.4" } });
+    expect(h.lastPlotProps?.workingBandFraction).toBeCloseTo(0.45, 5);
+  });
+
+  it("shows the floating offset dock only when the rail is collapsed", () => {
+    h.seriesQ = { data: series({ members: [member()] }), isLoading: false, isError: false };
+    renderAt();
+    expect(screen.queryByTestId("offset-dock")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("rail-collapse-toggle"));
+    expect(screen.getByTestId("offset-dock")).toBeInTheDocument();
   });
 
   it("changes the coloring mode via GroupingModeToggle (setGroupingMode wired)", () => {

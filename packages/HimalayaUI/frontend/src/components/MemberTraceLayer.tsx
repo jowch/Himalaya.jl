@@ -123,6 +123,14 @@ export interface MemberMarksProps {
    * is undefined.
    */
   sampleIdFor?: (m: SeriesMember) => number | null;
+  /**
+   * Fraction of each total band occupied by the working band (R8 offset
+   * slider, #231). Forwarded to `applyNormalization`; when omitted the
+   * library default (DEFAULT_WORKING_BAND_FRACTION = 0.7) applies. A larger
+   * value makes traces taller within their band — the "tighter waterfall"
+   * the builder's offset slider composes.
+   */
+  workingBandFraction?: number;
 }
 
 /**
@@ -151,7 +159,7 @@ export function buildMemberPeakRows(props: MemberMarksProps): {
   peaks: PeakRow[];
   linePoints: Array<{ q: number; y: number }>;
 } {
-  const { member, trace, yBand, peakDisplay, highlightedIndexId } = props;
+  const { member, trace, yBand, peakDisplay, highlightedIndexId, workingBandFraction } = props;
 
   if (!trace || trace.q.length === 0) return { peaks: [], linePoints: [] };
 
@@ -173,6 +181,7 @@ export function buildMemberPeakRows(props: MemberMarksProps): {
     { q: trace.q, I: trace.I },
     reference,
     yBand,
+    workingBandFraction,
   );
 
   if (!snapshot || peaks.length === 0) return { peaks: [], linePoints };
