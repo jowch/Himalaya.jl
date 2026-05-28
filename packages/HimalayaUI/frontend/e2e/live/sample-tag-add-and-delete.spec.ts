@@ -15,9 +15,13 @@
  * The user flow is "add a tag, then delete it from the same UI." If the cache
  * carries a real id, deletion succeeds and the tag disappears.
  *
- * Lives on the Inspect page (SampleMetadataCard). Sample-scoped tags exercise
- * the same mutator code path as exposure-scoped tags (the bug class is the
- * synth shape, not the entity), so testing one suffices.
+ * Repointed (#207): post-#163 the Inspect page is gone; the corpus contact
+ * sheet (`/samples`) is the canonical home for sample-scoped tag editing. Each
+ * row carries a `+ tag` invite + inline form, and every chip has a remove ✕.
+ * The mutator code path (`addCorpusSampleTagMutator` → backend's `add_tag`
+ * route) reuses the same synth shape the original bug class lived in, so this
+ * spec still exercises the regression — through the corpus cache key instead
+ * of the per-experiment one.
  */
 import { test, expect, type Page } from "@playwright/test";
 
@@ -43,22 +47,25 @@ async function findFixture(): Promise<Fixture> {
   throw new Error(`No sample at ${BACKEND_BASE}.`);
 }
 
-async function seedInspectPage(page: Page, fx: Fixture): Promise<void> {
+async function seedCorpusSheet(page: Page, fx: Fixture): Promise<void> {
   await page.addInitScript((args) => {
     localStorage.setItem("himalaya-ui:state", JSON.stringify({
       state: {
         username: args.username, firstName: args.username, lastName: "tester",
-        activeExperimentId: args.expId,
-        activeSampleId: args.sampId,
+        // The corpus surface owns its own URL; we seed username only.
         tutorialSeen: true,
         theme: "dark",
       },
       version: 3,
     }));
-  }, { username: "tag-tester", expId: fx.experimentId, sampId: fx.sampleId });
-  await page.goto("/");
-  // SampleMetadataCard renders the "+ tag" affordance once the sample loads.
-  await expect(page.getByRole("button", { name: "+ tag" })).toBeVisible();
+  }, { username: "tag-tester" });
+  // Filter the contact sheet to the fixture's beamtime so only the right rows
+  // paint. The corpus surface still mounts every row globally, but a smaller
+  // working set makes the row lookup deterministic.
+  await page.goto(`/samples?beamtime=${fx.experimentId}`);
+  // The row's identity (data-testid="sample-row-<id>") is the canonical
+  // anchor for "the corpus sheet is ready and the row I want is in the DOM".
+  await expect(page.getByTestId(`sample-row-${fx.sampleId}`)).toBeVisible();
 }
 
 async function getSampleTags(sampleId: number): Promise<{ id: number; key: string; value: string }[]> {
@@ -76,7 +83,7 @@ test.describe("issue #35 sample-tag add-then-delete reconciliation (Bug 4)", () 
   });
 
   test("add a tag, then delete it from the same UI", async ({ page }) => {
-    await seedInspectPage(page, fx);
+    await seedCorpusSheet(page, fx);
 
     // Unique-ish key so re-runs against a non-reset DB don't collide.
     const tagKey = `pr36-test-${Date.now()}`;
@@ -84,18 +91,23 @@ test.describe("issue #35 sample-tag add-then-delete reconciliation (Bug 4)", () 
 
     const beforeIds = new Set((await getSampleTags(fx.sampleId)).map(t => t.id));
 
-    // Open the inline tag form.
-    await page.getByRole("button", { name: "+ tag" }).click();
-    const keyInput = page.getByPlaceholder("key");
-    const valInput = page.getByPlaceholder("value");
+    // The contact-sheet `+ tag` button lives inside this row's tags cell.
+    // (Empty-state rows show the full "+ tag" copy; rows with chips show "+".
+    // Either way the testid is "tag-add".) The hover-only `opacity-0` variant
+    // is still in the DOM + clickable; Playwright's click flow moves the
+    // cursor into the row before dispatching, so no explicit hover is needed.
+    const row = page.getByTestId(`sample-row-${fx.sampleId}`);
+    await row.getByTestId("tag-add").click();
+    const keyInput = row.getByPlaceholder("key");
+    const valInput = row.getByPlaceholder("value");
     await expect(keyInput).toBeVisible();
     await keyInput.fill(tagKey);
     await valInput.fill(tagVal);
-    await page.getByRole("button", { name: "Add" }).click();
+    await row.getByRole("button", { name: "Add" }).click();
 
     // The new tag chip should appear, with a × delete button identified by
     // aria-label "Remove ${key} tag".
-    const removeBtn = page.getByRole("button", { name: `Remove ${tagKey} tag` });
+    const removeBtn = row.getByRole("button", { name: `Remove ${tagKey} tag` });
     await expect(removeBtn).toBeVisible({ timeout: 8000 });
 
     // Backend sanity: poll for the tag landing — the optimistic update fires

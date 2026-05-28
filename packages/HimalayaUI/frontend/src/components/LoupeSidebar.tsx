@@ -1,11 +1,13 @@
+import { useCallback, useState } from "react";
 import type { CorpusSample, Exposure } from "../api";
+import { useAddCorpusSampleTag, useRemoveCorpusSampleTag } from "../queries";
 
 interface Props {
   /** The active exposure. */
   exposure: Exposure;
   /** All exposures for the sample — drives the "frame N of M" position. */
   exposures: Exposure[];
-  /** The sample, for the read-only tags section. */
+  /** The sample, for the tags section + corpus-tag mutations (#159). */
   sample: CorpusSample;
   /**
    * Signal-strength level, 0–5, for the meta-list meter (M-8). Derived by the
@@ -62,12 +64,143 @@ function SectionHeading({ children }: { children: string }): JSX.Element {
 }
 
 /**
+ * LoupeTagsEditor — the read-write tag chip rail for the loupe sidebar
+ * (#159 / #207). Each chip carries an inline remove ✕ (aria-label
+ * "Remove <key> tag"), and the trailing `+ tag` button reveals a tiny
+ * inline form (placeholder "key" + "value", Add). Mutations route through
+ * `useAddCorpusSampleTag` / `useRemoveCorpusSampleTag` — the same queue
+ * mutators the contact sheet wires to. The corpus cache row is the single
+ * source of truth, so an add here is visible on the next contact-sheet
+ * paint without a refetch round-trip.
+ */
+function LoupeTagsEditor({ sample }: { sample: CorpusSample }): JSX.Element {
+  const add = useAddCorpusSampleTag(sample.id);
+  const remove = useRemoveCorpusSampleTag(sample.id);
+  const [editing, setEditing] = useState(false);
+  const [keyDraft, setKeyDraft] = useState("");
+  const [valDraft, setValDraft] = useState("");
+
+  const reset = useCallback(() => {
+    setKeyDraft("");
+    setValDraft("");
+    setEditing(false);
+  }, []);
+
+  const submit = useCallback(() => {
+    const v = valDraft.trim();
+    // The value carries the user-visible token; key is optional metadata
+    // (`""` when absent, mirroring SampleMetadataCard's contract).
+    if (v === "") return;
+    add.mutate({ key: keyDraft.trim(), value: v });
+    reset();
+  }, [add, keyDraft, valDraft, reset]);
+
+  return (
+    <div data-testid="loupe-tags" className="flex flex-wrap items-center gap-1.5">
+      {sample.tags.length === 0 && !editing ? (
+        <button
+          type="button"
+          data-testid="loupe-tag-add"
+          onClick={() => setEditing(true)}
+          className="rounded-full border border-dashed border-hair-strong px-2 py-0.5
+                     text-[10.5px] font-semibold text-ink-faint
+                     hover:border-print-accent hover:text-print-accent"
+        >
+          + tag
+        </button>
+      ) : (
+        <>
+          {sample.tags.map((tag) => (
+            <span
+              key={tag.id}
+              className="inline-flex items-center gap-1 rounded-full border border-hair
+                         bg-plate px-2 py-0.5 text-[10.5px] font-semibold text-ink-soft"
+            >
+              {tag.value}
+              <button
+                type="button"
+                aria-label={`Remove ${tag.key || tag.value} tag`}
+                onClick={() => remove.mutate(tag.id)}
+                className="text-ink-faint hover:text-print-accent"
+              >
+                ×
+              </button>
+            </span>
+          ))}
+          {editing ? (
+            <span
+              data-testid="loupe-tag-form"
+              className="inline-flex items-center gap-1 rounded-full border border-hair-strong
+                         bg-plate px-1.5 py-0.5"
+            >
+              <input
+                aria-label="tag key"
+                placeholder="key"
+                value={keyDraft}
+                onChange={(e) => setKeyDraft(e.target.value)}
+                className="w-12 bg-transparent text-[10.5px] text-ink outline-none
+                           placeholder:text-ink-faint"
+              />
+              <span className="text-ink-faint">:</span>
+              <input
+                aria-label="tag value"
+                placeholder="value"
+                value={valDraft}
+                onChange={(e) => setValDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") submit();
+                  else if (e.key === "Escape") reset();
+                }}
+                autoFocus
+                className="w-16 bg-transparent text-[10.5px] text-ink outline-none
+                           placeholder:text-ink-faint"
+              />
+              <button
+                type="button"
+                onClick={submit}
+                className="text-[10.5px] font-semibold text-print-accent
+                           hover:underline"
+              >
+                Add
+              </button>
+              <button
+                type="button"
+                aria-label="cancel adding tag"
+                onClick={reset}
+                className="text-ink-faint hover:text-print-accent"
+              >
+                ×
+              </button>
+            </span>
+          ) : (
+            <button
+              type="button"
+              data-testid="loupe-tag-add"
+              onClick={() => setEditing(true)}
+              title="add a tag"
+              className="rounded-full border border-dashed border-hair-strong px-2 py-0.5
+                         text-[10.5px] font-semibold text-ink-faint
+                         hover:border-print-accent hover:text-print-accent"
+            >
+              +
+            </button>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
  * LoupeSidebar — the right column of the loupe. Per-exposure facts, a
- * keep/drop verdict, the indexing-representative control, a read-only
- * sample-tags section, and a keyboard legend.
+ * keep/drop verdict, the indexing-representative control, the sample-tags
+ * read+write rail (#159 / #207), and a keyboard legend.
  *
- * The tags section is intentionally read-only: the corpus sample-tag
- * add/remove round-trip is #159 (I1.3), out of scope for #161.
+ * Tag editing lives here because single-sample tagging is loupe-scoped in the
+ * mockup (`sample-table.html:914-917`). The corpus contact sheet keeps the
+ * inert `+ tag` placeholder — its `loupe-tag-add` analogue is intentionally
+ * the only on-ramp until the contact-sheet tag rail gets its own affordance
+ * (out of scope for #207).
  */
 export function LoupeSidebar({
   exposure,
@@ -91,7 +224,10 @@ export function LoupeSidebar({
 
   return (
     <aside data-testid="loupe-sidebar" className="flex flex-col gap-5">
-      {/* This exposure */}
+      {/* This exposure (R2-M13: the redundant Status row drops; the verdict
+          card below carries the same fact. Kind stays — it disambiguates
+          file / averaged / background_subtracted exposures, which the verdict
+          dot does not.) */}
       <section>
         <SectionHeading>This exposure</SectionHeading>
         <div className="flex flex-col gap-1.5">
@@ -102,11 +238,6 @@ export function LoupeSidebar({
           />
           <MetaRow label="Kind" value={exposure.kind} testid="loupe-meta-kind" />
           <MetaRow label="Frame" value={frameLabel} testid="loupe-meta-frame" />
-          <MetaRow
-            label="Status"
-            value={exposure.status ?? "pending"}
-            testid="loupe-meta-status"
-          />
           {/* M-8: signal-strength meter — peak-count proxy (see Props). */}
           <div className="flex items-center justify-between font-mono text-[11.5px]">
             <span className="text-ink-faint">Signal</span>
@@ -118,7 +249,7 @@ export function LoupeSidebar({
       {/* Verdict */}
       <section
         data-testid="loupe-verdict"
-        className="flex items-center gap-3 rounded border border-border bg-bg-subtle p-3"
+        className="flex items-center gap-3 rounded border border-hair-strong bg-paper-sunk p-3"
       >
         <span
           data-testid="loupe-kept-dot"
@@ -129,7 +260,7 @@ export function LoupeSidebar({
           ].join(" ")}
         />
         <div className="flex-1">
-          <div className="text-[13px] font-bold text-ink">
+          <div data-testid="loupe-verdict-state" className="text-[13px] font-bold text-ink">
             {isRejected ? "Dropped" : "Kept"}
           </div>
           <div className="text-[10.5px] text-ink-faint">
@@ -141,17 +272,22 @@ export function LoupeSidebar({
         <button
           data-testid="loupe-drop-toggle"
           onClick={onDropToggle}
-          className="rounded border border-border bg-paper px-2.5 py-1.5
-                     text-[11.5px] font-semibold text-ink hover:bg-bg-subtle"
+          className="rounded border border-hair-strong bg-paper px-2.5 py-1.5
+                     text-[11.5px] font-semibold text-ink hover:bg-paper-sunk"
         >
           {isRejected ? "Restore" : "Drop"}
         </button>
       </section>
 
-      {/* Representative */}
+      {/* Representative (R2-M12: when active, swap the neutral hair border for
+          a terracotta-tinged border per the mockup's `.rep-box.is-rep`). */}
       <section
         data-testid="loupe-rep"
-        className="rounded border border-border p-3"
+        data-is-rep={isRepresentative ? "true" : undefined}
+        className={[
+          "rounded border p-3",
+          isRepresentative ? "border-print-accent/40" : "border-hair-strong",
+        ].join(" ")}
       >
         {isRepresentative ? (
           <div className="flex items-center gap-2 text-xs font-bold text-print-accent">
@@ -167,8 +303,8 @@ export function LoupeSidebar({
             <button
               data-testid="loupe-set-representative"
               onClick={onSetRepresentative}
-              className="mt-2 rounded border border-border bg-paper px-2.5 py-1.5
-                         text-[11.5px] font-semibold text-ink hover:bg-bg-subtle"
+              className="mt-2 rounded border border-hair-strong bg-paper px-2.5 py-1.5
+                         text-[11.5px] font-semibold text-ink hover:bg-paper-sunk"
             >
               Set as representative
             </button>
@@ -176,24 +312,10 @@ export function LoupeSidebar({
         )}
       </section>
 
-      {/* Sample tags — read-only (editing is #159) */}
+      {/* Sample tags — read+write, routes through the corpus tag mutators. */}
       <section>
         <SectionHeading>Sample tags</SectionHeading>
-        <div data-testid="loupe-tags" className="flex flex-wrap gap-1">
-          {sample.tags.length === 0 ? (
-            <span className="text-[11.5px] text-ink-faint">No tags yet</span>
-          ) : (
-            sample.tags.map((tag) => (
-              <span
-                key={tag.id}
-                className="inline-flex items-center rounded-full border border-border
-                           bg-bg-subtle px-2 py-0.5 text-xs text-ink-soft"
-              >
-                {tag.value}
-              </span>
-            ))
-          )}
-        </div>
+        <LoupeTagsEditor sample={sample} />
       </section>
 
       {/* Keyboard legend */}

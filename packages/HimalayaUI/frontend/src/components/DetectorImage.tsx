@@ -51,6 +51,28 @@ export function DetectorImage({
     orient: "portrait",
     caps: null,
   });
+  /**
+   * R2-M14 (#207): contact-sheet thumbs only fetch their PNG once on-screen.
+   * The corpus has 139 samples × ~4 exposures ≈ 556 thumbs; an eager fetch on
+   * every row mount blew past Chromium's 6-per-host HTTP/1.1 limit on the
+   * live surface (`ERR_INSUFFICIENT_RESOURCES`, rows 2-7+ stuck at "Loading
+   * frames…"). The IntersectionObserver gate keeps the request volume to
+   * what's actually visible during a scroll.
+   *
+   * The gate is skipped (auto-visible) for `size === "full"` — the loupe big
+   * frame is always rendered above-the-fold, and gating the loupe would make
+   * its bones visible to JSDOM (which has no IntersectionObserver), regressing
+   * existing unit tests.
+   *
+   * IntersectionObserver is absent in JSDOM, so we degrade-to-eager when the
+   * constructor is undefined — the existing thumb tests keep painting.
+   */
+  const [hasIntersected, setHasIntersected] = useState<boolean>(
+    () =>
+      size === "full" ||
+      typeof window === "undefined" ||
+      typeof window.IntersectionObserver !== "function",
+  );
 
   const evaluateOrient = useCallback(() => {
     const wrapper = wrapperRef.current;
@@ -74,6 +96,11 @@ export function DetectorImage({
   const renderImage = useCallback(async () => {
     const canvas = canvasRef.current;
     if (!canvas || !imagePath) return;
+    // R2-M14: thumb scroll-gating. The component still mounts (so its
+    // wrapper occupies layout space and the observer can detect it), but
+    // we skip the actual fetch+decode work until the wrapper enters the
+    // viewport.
+    if (!hasIntersected) return;
 
     // The `?v=<imageVersion>` token makes the URL unique per (TIFF mtime,
     // IMAGE_PROCESSING_VERSION) pair so the browser can cache the PNG
@@ -115,11 +142,40 @@ export function DetectorImage({
 
     // New intrinsic dims may flip the orient decision.
     evaluateOrient();
-  }, [exposureId, imagePath, size, evaluateOrient]);
+  }, [exposureId, imagePath, size, hasIntersected, evaluateOrient]);
 
   useEffect(() => {
     renderImage();
   }, [renderImage]);
+
+  // R2-M14: latch hasIntersected when the wrapper enters the viewport.
+  // One-shot — once a thumb is decoded, we keep it (so scrolling back doesn't
+  // re-fetch). A small rootMargin warms thumbs just outside the viewport so
+  // the scroll feels live, not staggered.
+  useEffect(() => {
+    if (hasIntersected) return;
+    const wrapper = wrapperRef.current;
+    if (!wrapper) return;
+    if (typeof window === "undefined" ||
+        typeof window.IntersectionObserver !== "function") {
+      setHasIntersected(true);
+      return;
+    }
+    const io = new window.IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            setHasIntersected(true);
+            io.disconnect();
+            break;
+          }
+        }
+      },
+      { rootMargin: "200px 0px" },
+    );
+    io.observe(wrapper);
+    return () => io.disconnect();
+  }, [hasIntersected]);
 
   // (R0c #223) The `<html>` theme-class MutationObserver was removed: R0a
   // retired the dark↔light theme toggle, so nothing ever mutates the class

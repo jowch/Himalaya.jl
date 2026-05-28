@@ -183,10 +183,33 @@ describe("ContactSheetRow", () => {
     expect(tags).toHaveTextContent("LL37");
   });
 
-  it("renders an inert (disabled) tag-add button", async () => {
+  // R2-M11 / #207 + #159: the tag-add button is live, opening an inline form.
+  it("renders a live `+ tag` button that opens an add form", async () => {
     mockFetch({ "/api/samples/7/exposures": [] });
     renderRow(makeSample({ id: 7 }));
-    expect(await screen.findByTestId("tag-add")).toBeDisabled();
+    const btn = await screen.findByTestId("tag-add");
+    expect(btn).toBeEnabled();
+    fireEvent.click(btn);
+    expect(await screen.findByTestId("tag-form")).toBeInTheDocument();
+  });
+
+  // R2-M11: the three permanent thumb-overlay buttons are stripped — the
+  // selection ring + the floating CullBar + the R/X keystrokes cover the
+  // function, and rest-state chips no longer bleed across every detector
+  // window (sample-table.html `.thumb` has zero rest-state chrome).
+  it("renders no per-thumb checkbox / rep / reject overlay buttons", async () => {
+    mockFetch({
+      "/api/samples/7/exposures": [
+        makeExposure({ id: 1, sample_id: 7 }),
+        makeExposure({ id: 2, sample_id: 7, status: "rejected" }),
+      ],
+    });
+    renderRow(makeSample({ id: 7 }));
+    await screen.findByTestId("exposure-thumb-1");
+    expect(screen.queryByTestId("exposure-select-1")).toBeNull();
+    expect(screen.queryByTestId("exposure-represent-1")).toBeNull();
+    expect(screen.queryByTestId("exposure-reject-1")).toBeNull();
+    expect(screen.queryByTestId("exposure-reject-2")).toBeNull();
   });
 
   it("renders a 'Not indexed' status with a leading hollow dot", async () => {
@@ -451,12 +474,17 @@ describe("contact sheet — ?beamtime= round-trip", () => {
 // plus the outbound HTTP request through the real useQueueMutation → mutator →
 // api → fetch path. They do NOT exercise the full queue lifecycle (no SSE
 // confirmation / clearDeferred / replay) — that is covered by the queue suite.
+//
+// R2-M11 / #207: with the per-thumb reject ✕ stripped, single-thumb reject is
+// now "click-to-select, then X". Batch-reject and the floating CullBar still
+// exercise the same mutator path. Representative pick moved to the loupe
+// (verified in LoupePage tests).
 describe("ContactSheetRow — culling", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
   });
 
-  it("rejects a single exposure (optimistic patch + PATCH status request)", async () => {
+  it("rejects a selected exposure via the X keystroke (PATCH status request)", async () => {
     const patched: Array<{ url: string; body: unknown }> = [];
     vi.spyOn(global, "fetch").mockImplementation(
       (input: RequestInfo | URL, init?: RequestInit) => {
@@ -487,9 +515,10 @@ describe("ContactSheetRow — culling", () => {
       },
     );
 
-    renderRow(makeSample({ id: 7 }));
-    const reject = await screen.findByTestId("exposure-reject-1");
-    fireEvent.click(reject);
+    renderRowRouted(makeSample({ id: 7 }));
+    // Select the thumb body (no per-thumb checkbox after R2-M11).
+    fireEvent.click(await screen.findByTestId("exposure-thumb-1"));
+    fireEvent.keyDown(window, { key: "x" });
 
     await waitFor(() =>
       expect(
@@ -534,11 +563,11 @@ describe("ContactSheetRow — culling", () => {
       return Promise.resolve(new Response("not found", { status: 404 }));
     });
 
-    renderRow(makeSample({ id: 7 }));
-    // Select exposures 1 and 3 for batch action.
-    fireEvent.click(await screen.findByTestId("exposure-select-1"));
-    fireEvent.click(screen.getByTestId("exposure-select-3"));
-    // Action bar appears; reject the selection.
+    renderRowRouted(makeSample({ id: 7 }));
+    // Click-select exposures 1 and 3 (no per-thumb checkbox after R2-M11).
+    fireEvent.click(await screen.findByTestId("exposure-thumb-1"));
+    fireEvent.click(screen.getByTestId("exposure-thumb-3"));
+    // Floating cull-bar's Drop button.
     fireEvent.click(screen.getByTestId("batch-reject"));
 
     await waitFor(() => expect(patched.slice().sort()).toEqual(["1", "3"]));
@@ -547,51 +576,6 @@ describe("ContactSheetRow — culling", () => {
     // Selection clears after the batch.
     await waitFor(() =>
       expect(screen.queryByTestId("batch-reject")).toBeNull(),
-    );
-  });
-
-  it("picks a representative exposure (optimistic mutual exclusion + PATCH select)", async () => {
-    let repUrl = "";
-    vi.spyOn(global, "fetch").mockImplementation((input: RequestInfo | URL) => {
-      const url = typeof input === "string" ? input : (input as Request).url;
-      if (url === "/api/samples/7/exposures") {
-        return Promise.resolve(
-          new Response(
-            JSON.stringify([
-              makeExposure({ id: 1, sample_id: 7, selected: true }),
-              makeExposure({ id: 2, sample_id: 7, selected: false }),
-            ]),
-            { status: 200, headers: { "Content-Type": "application/json" } },
-          ),
-        );
-      }
-      if (/\/api\/exposures\/2\/select$/.test(url)) {
-        repUrl = url;
-        return Promise.resolve(
-          new Response(JSON.stringify({ id: 2, selected: true }), {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          }),
-        );
-      }
-      return Promise.resolve(new Response("not found", { status: 404 }));
-    });
-
-    renderRow(makeSample({ id: 7 }));
-    fireEvent.click(await screen.findByTestId("exposure-represent-2"));
-
-    await waitFor(() =>
-      expect(repUrl).toMatch(/\/api\/exposures\/2\/select$/),
-    );
-    // Optimistic mutual exclusion: 2 becomes representative, 1 stops being it.
-    await waitFor(() =>
-      expect(screen.getByTestId("exposure-thumb-2")).toHaveAttribute(
-        "data-representative",
-        "true",
-      ),
-    );
-    expect(screen.getByTestId("exposure-thumb-1")).not.toHaveAttribute(
-      "data-representative",
     );
   });
 });
@@ -620,7 +604,8 @@ describe("ContactSheetRow — advertised affordances", () => {
       "/api/samples/7/exposures": [makeExposure({ id: 1, sample_id: 7 })],
     });
     renderRowRouted(makeSample({ id: 7 }));
-    fireEvent.click(await screen.findByTestId("exposure-select-1"));
+    // R2-M11: no per-thumb checkbox; select by clicking the thumb body.
+    fireEvent.click(await screen.findByTestId("exposure-thumb-1"));
     expect(screen.getByTestId("cull-bar")).toBeInTheDocument();
     fireEvent.keyDown(window, { key: "Escape" });
     await waitFor(() => expect(screen.queryByTestId("cull-bar")).toBeNull());
@@ -655,7 +640,8 @@ describe("ContactSheetRow — advertised affordances", () => {
     });
 
     renderRowRouted(makeSample({ id: 7 }));
-    fireEvent.click(await screen.findByTestId("exposure-select-1"));
+    // R2-M11: no per-thumb checkbox; click the thumb body to select.
+    fireEvent.click(await screen.findByTestId("exposure-thumb-1"));
     fireEvent.keyDown(window, { key: "x" });
 
     await waitFor(() => expect(patched).toEqual(["1"]));

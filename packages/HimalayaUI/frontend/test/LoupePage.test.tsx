@@ -28,6 +28,16 @@ vi.mock("../src/queries", () => ({
   useSelectExposure: () => ({
     mutate: h.setRepMutate, isPending: false, error: null, reset: () => {},
   }),
+  // R2-M13 / #207: LoupeSidebar now hosts the corpus tag editor. The mock
+  // returns inert mutators so the sidebar mounts without a QueryClient — the
+  // tag-add wiring itself is exercised in test/LoupeSidebar.test.tsx, which
+  // sets up the real provider + a stub fetch.
+  useAddCorpusSampleTag: () => ({
+    mutate: vi.fn(), isPending: false, error: null, reset: () => {},
+  }),
+  useRemoveCorpusSampleTag: () => ({
+    mutate: vi.fn(), isPending: false, error: null, reset: () => {},
+  }),
 }));
 
 // DetectorImage touches fetch / createImageBitmap / OffscreenCanvas (absent in
@@ -154,14 +164,17 @@ describe("LoupePage — composition", () => {
     renderAt("/samples/loupe/7");
     // Exposure 100 is accepted, 101 rejected → 100 is the default.
     expect(screen.getByTestId("loupe-meta-frame")).toHaveTextContent("1 of 2");
-    expect(screen.getByTestId("loupe-meta-status")).toHaveTextContent("accepted");
+    // R2-M13: the Status meta row is gone; the verdict card carries the
+    // kept/dropped fact. A kept exposure paints the verdict as "Kept".
+    expect(screen.getByTestId("loupe-verdict-state")).toHaveTextContent("Kept");
   });
 
   it("flips the active exposure when a strip thumbnail is clicked", () => {
     renderAt("/samples/loupe/7");
     fireEvent.click(screen.getByTestId("thumb-cell-101"));
     expect(screen.getByTestId("loupe-meta-frame")).toHaveTextContent("2 of 2");
-    expect(screen.getByTestId("loupe-meta-status")).toHaveTextContent("rejected");
+    // The verdict card carries the dropped state (R2-M13).
+    expect(screen.getByTestId("loupe-verdict-state")).toHaveTextContent("Dropped");
   });
 
   it("shows a not-found panel for a sample id absent from the corpus", () => {
@@ -303,6 +316,9 @@ describe("LoupePage — not file-per-exposure", () => {
     expect(screen.getByTestId("loupe-meta-kind")).toHaveTextContent("averaged");
     expect(screen.getByTestId("loupe-meta-filename")).toHaveTextContent("—");
     expect(screen.getByTestId("loupe-meta-frame")).toHaveTextContent("2 of 3");
+    // R2-M13: the verdict card paints the kept state in place of the dropped
+    // Status row.
+    expect(screen.getByTestId("loupe-verdict-state")).toHaveTextContent("Kept");
 
     // And the background-subtracted one too.
     fireEvent.click(screen.getByTestId("thumb-cell-202"));

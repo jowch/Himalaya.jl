@@ -2,6 +2,7 @@ import { useSearchParams } from "react-router-dom";
 import { Skeleton } from "boneyard-js/react";
 import {
   useCorpusSamples,
+  useCorpusExposures,
   useExperiments,
   useScreenedProgress,
 } from "../queries";
@@ -76,6 +77,13 @@ export function SamplesPage(): JSX.Element {
   // M-1: screened-progress aggregate over the visible samples.
   const { screened, total } = useScreenedProgress(filtered);
   const pct = total === 0 ? 0 : Math.round((screened / total) * 100);
+
+  // R2-M14: one bulk hook drives every row's exposures, so the page-level
+  // observer count is O(1) instead of O(samples) — no `ERR_INSUFFICIENT_
+  // RESOURCES` from the 139× JSON fan-out. The cache rows are the same
+  // `queryKeys.exposures(id)` slots `useExposures` reads from, so loupe +
+  // mutator paths inherit these rows for free (no double-fetch).
+  const corpusExposures = useCorpusExposures(filtered);
 
   return (
     <div data-testid="samples-page" className="flex flex-col gap-4 p-6">
@@ -164,7 +172,14 @@ export function SamplesPage(): JSX.Element {
           ) : (
             <div data-testid="contact-sheet-rows">
               {filtered.map((s) => (
-                <ContactSheetRow key={s.id} sample={s} />
+                <ContactSheetRow
+                  key={s.id}
+                  sample={s}
+                  exposures={corpusExposures.byId.get(s.id)}
+                  exposuresLoading={
+                    !corpusExposures.byId.has(s.id) && corpusExposures.isLoading
+                  }
+                />
               ))}
             </div>
           )}
@@ -175,10 +190,17 @@ export function SamplesPage(): JSX.Element {
           control on each ContactSheetRow: click / shift-click select &
           extend a contiguous range over a sample's frames, double-click
           opens that sample's loupe, and while a selection exists X
-          batch-rejects it and Esc clears it. */}
+          batch-rejects it and Esc clears it.
+
+          R2-M15: sticky-bottom so the legend stays in view on long scrolls
+          (the corpus has ~139 samples). The CullBar already carries the X /
+          Esc keycaps for live selections, so this legend is purely the
+          rest-state "what you can do here" anchor. */}
       <div
         data-testid="kb-legend"
-        className="flex flex-wrap gap-5 px-4 text-[11.5px] text-ink-faint"
+        className="sticky bottom-0 z-10 -mx-6 -mb-6 mt-2 flex flex-wrap gap-5
+                   border-t border-hair bg-paper/90 px-10 py-2 text-[11.5px]
+                   text-ink-faint backdrop-blur-sm"
       >
         {KB_HINTS.map((h) => (
           <span key={h.label}>
