@@ -115,3 +115,85 @@ test("thumb URL preserves `thumb=1` alongside the version param", async () => {
   await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
   expect(fetchSpy.mock.calls[0][0]).toBe("/api/exposures/7/image?thumb=1&v=v1-42");
 });
+
+/**
+ * U-3 (#256): drive the orient decision toward landscape (wide container, tall
+ * viewport, square image) and assert a THUMB stays locked to portrait while a
+ * FULL frame still rotates. JSDOM has no layout, so clientWidth/clientHeight
+ * are stubbed via getters; window.innerWidth is forced past ROTATE_MIN_VIEWPORT.
+ */
+function forceWideGeometry(): () => void {
+  const protoW = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype, "clientWidth",
+  );
+  const protoH = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype, "clientHeight",
+  );
+  Object.defineProperty(HTMLElement.prototype, "clientWidth", {
+    configurable: true, get() { return 400; },
+  });
+  Object.defineProperty(HTMLElement.prototype, "clientHeight", {
+    configurable: true, get() { return 40; },
+  });
+  const origInner = window.innerWidth;
+  Object.defineProperty(window, "innerWidth", {
+    configurable: true, value: 1600,
+  });
+  return () => {
+    if (protoW) Object.defineProperty(HTMLElement.prototype, "clientWidth", protoW);
+    if (protoH) Object.defineProperty(HTMLElement.prototype, "clientHeight", protoH);
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true, value: origInner,
+    });
+  };
+}
+
+test("U-3: a thumb stays portrait even when geometry would rotate a full frame", async () => {
+  // 8×8 (square) image, container 400×40 (10:1) → decideOrient would pick
+  // landscape for a full frame. A thumb must IGNORE that and lock portrait.
+  global.createImageBitmap = vi.fn().mockResolvedValue({
+    width: 8, height: 8, close: vi.fn(),
+  } as unknown as ImageBitmap);
+  const restore = forceWideGeometry();
+  try {
+    render(
+      <DetectorImage exposureId={9} imagePath="/tmp/x.tiff"
+        imageVersion="v1-9" size="thumb" />,
+    );
+    const wrapper = await waitFor(() => {
+      const el = screen
+        .getByRole("img", { hidden: true })
+        .closest("[data-orient]") as HTMLElement;
+      expect(el).toBeTruthy();
+      return el;
+    });
+    // The gate holds: a thumb never flips to landscape.
+    expect(wrapper).toHaveAttribute("data-orient", "portrait");
+    const canvas = screen.getByRole("img", { hidden: true }) as HTMLCanvasElement;
+    expect(canvas.style.transform).toBe("");
+  } finally {
+    restore();
+  }
+});
+
+test("U-3 regression: a full frame still rotates under the same wide geometry", async () => {
+  // Same geometry as the thumb test, but size="full" → the auto-rotate path is
+  // untouched, so the canvas carries a rotate transform. Proves the gate is
+  // size-scoped, not a blanket disable.
+  global.createImageBitmap = vi.fn().mockResolvedValue({
+    width: 8, height: 8, close: vi.fn(),
+  } as unknown as ImageBitmap);
+  const restore = forceWideGeometry();
+  try {
+    render(
+      <DetectorImage exposureId={9} imagePath="/tmp/x.tiff"
+        imageVersion="v1-9" size="full" />,
+    );
+    await waitFor(() => {
+      const canvas = screen.getByRole("img", { hidden: true }) as HTMLCanvasElement;
+      expect(canvas.style.transform).toContain("rotate(90deg)");
+    });
+  } finally {
+    restore();
+  }
+});

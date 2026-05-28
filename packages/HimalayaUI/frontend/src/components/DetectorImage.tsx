@@ -81,6 +81,17 @@ export function DetectorImage({
     // (a later observe corrects it). decideOrient's own zero-guard would
     // instead clobber to {portrait,null}, so the skip must stay in the caller.
     if (!wrapper || !canvas || !canvas.width || !canvas.height) return;
+    // U-3 (#256): contact-sheet thumbs lock portrait so the sheet reads as a
+    // uniform grid of windows — the eye compares the *content* of each window,
+    // not its orientation. Only the loupe/focus `size="full"` frame rotates, to
+    // maximise the data area on a wide canvas. The shared `decideOrient` helper
+    // (also driving DetectorRingOverlay, #180) is intentionally NOT consulted
+    // here; the overlay only renders on the `full` frame, so locking thumbs has
+    // no cross-effect on ring rotation.
+    if (size === "thumb") {
+      setLayout({ orient: "portrait", caps: null });
+      return;
+    }
     const cw = wrapper.clientWidth;
     const ch = wrapper.clientHeight;
     if (cw === 0 || ch === 0) return;
@@ -91,7 +102,7 @@ export function DetectorImage({
       imageH: canvas.height,
       viewportW: typeof window !== "undefined" ? window.innerWidth : 0,
     }));
-  }, []);
+  }, [size]);
 
   const renderImage = useCallback(async () => {
     const canvas = canvasRef.current;

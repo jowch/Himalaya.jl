@@ -73,21 +73,40 @@ function ExposureThumb({
   const isRejected = exposure.status === "rejected";
   const isRepresentative = exposure.selected;
   return (
-    <div
+    <button
+      type="button"
       data-testid={`exposure-thumb-${exposure.id}`}
       data-rejected={isRejected ? "true" : undefined}
       data-representative={isRepresentative ? "true" : undefined}
       data-batch-selected={selectedForBatch ? "true" : undefined}
+      // R3-S01 (#256, P1 a11y): the thumb root is a real <button> so the
+      // contact sheet is keyboard-operable. R2-M11 stripped the per-thumb
+      // overlay buttons — the thumb's only keyboard-reachable focus targets —
+      // so the window body itself becomes the focusable control.
+      aria-label={`Frame ${frameNo}${isRejected ? " (dropped)" : ""}`}
       // L-5 legend "click — select a frame" / "⇧ click — extend the range":
       // the whole thumb body is the click target (shiftKey extends the range).
       // double-click opens the loupe (L-8). With R2-M11 the per-thumb buttons
       // are retired, so no inner controls need stopPropagation.
       onClick={(e) => onSelect(exposure.id, e.shiftKey)}
       onDoubleClick={onOpenLoupe}
+      // Keyboard Enter/Space → open the loupe (the navigation affordance an AT
+      // user needs to screen a sample; the keyboard analogue of double-click,
+      // since there is no single-key analogue of "double-click"). preventDefault
+      // suppresses the <button>'s synthesized activation click so onSelect does
+      // NOT also fire — one key, one action.
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onOpenLoupe();
+        }
+      }}
       className={[
-        // square dark window (62px) — L-4
-        "relative h-[62px] w-[62px] shrink-0 cursor-pointer overflow-hidden rounded-[3px]",
-        "border border-frame-edge bg-frame-edge",
+        // square dark window (62px) — L-4. appearance-none + p-0 neutralise UA
+        // button chrome; the box is fully specified by the size/border classes.
+        "relative h-[62px] w-[62px] shrink-0 cursor-pointer appearance-none p-0",
+        "overflow-hidden rounded-[3px] border border-frame-edge bg-frame-edge",
+        "focus-visible:ring-2 focus-visible:ring-print-accent focus-visible:ring-offset-1",
         selectedForBatch ? "ring-2 ring-print-accent" : "ring-0",
       ].join(" ")}
     >
@@ -121,7 +140,7 @@ function ExposureThumb({
       )}
       {/* M-10: the grease-pencil reject mark */}
       {isRejected && <RejectXMark />}
-    </div>
+    </button>
   );
 }
 
@@ -376,8 +395,10 @@ export function ContactSheetRow({
               <span className="text-ink-faint"> / {total}</span>
             </span>
             {dropped > 0 && (
-              <span className="font-sans text-[10px] font-semibold text-print-accent">
-                {dropped} dropped
+              // R3-S05 (#256): a passive count — off the grease-pencil accent
+              // (text-ink-soft) and parenthesised so it reads as a quiet fact.
+              <span className="font-sans text-[10px] font-semibold text-ink-soft">
+                ({dropped} dropped)
               </span>
             )}
           </>
@@ -422,8 +443,9 @@ export function ContactSheetRow({
               placeholder="key"
               value={tagKeyDraft}
               onChange={(e) => setTagKeyDraft(e.target.value)}
-              className="w-12 bg-transparent text-[10.5px] text-ink outline-none
-                         placeholder:text-ink-faint"
+              className="w-12 rounded-sm bg-transparent text-[10.5px] text-ink outline-none
+                         placeholder:text-ink-faint
+                         focus:ring-1 focus:ring-print-accent/40"
             />
             <span className="text-ink-faint">:</span>
             <input
@@ -436,8 +458,9 @@ export function ContactSheetRow({
                 else if (e.key === "Escape") resetTagForm();
               }}
               autoFocus
-              className="w-16 bg-transparent text-[10.5px] text-ink outline-none
-                         placeholder:text-ink-faint"
+              className="w-16 rounded-sm bg-transparent text-[10.5px] text-ink outline-none
+                         placeholder:text-ink-faint
+                         focus:ring-1 focus:ring-print-accent/40"
             />
             <button
               type="button"
@@ -467,9 +490,12 @@ export function ContactSheetRow({
               "text-[10.5px] font-semibold text-ink-faint",
               "hover:border-print-accent hover:text-print-accent",
               // Hover-revealed when chips exist; always-visible invite when empty.
+              // R3-S08 (#256): reveal on row hover OR when any descendant takes
+              // focus, so keyboard users can tab to the `+` (the old `focus:`
+              // could never fire on an opacity-0 button).
               sample.tags.length === 0
                 ? ""
-                : "opacity-0 group-hover:opacity-100 focus:opacity-100",
+                : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
             ].join(" ")}
           >
             {sample.tags.length === 0 ? "+ tag" : "+"}

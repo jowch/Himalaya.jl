@@ -312,17 +312,17 @@ describe("LoupePage — not file-per-exposure", () => {
     expect(screen.getByTestId("thumb-cell-202")).toBeInTheDocument();
 
     // The filename-less averaged exposure is flippable and renders cleanly.
+    // R3-S02 (#256): the meta-list no longer surfaces kind/filename (schema
+    // nouns) — flip success is proven by the frame-position row updating and
+    // the verdict card painting, independent of kind or a null filename.
     fireEvent.click(screen.getByTestId("thumb-cell-201"));
-    expect(screen.getByTestId("loupe-meta-kind")).toHaveTextContent("averaged");
-    expect(screen.getByTestId("loupe-meta-filename")).toHaveTextContent("—");
     expect(screen.getByTestId("loupe-meta-frame")).toHaveTextContent("2 of 3");
     // R2-M13: the verdict card paints the kept state in place of the dropped
     // Status row.
     expect(screen.getByTestId("loupe-verdict-state")).toHaveTextContent("Kept");
 
-    // And the background-subtracted one too.
+    // And the background-subtracted one too (id 202 → frame 3 of 3).
     fireEvent.click(screen.getByTestId("thumb-cell-202"));
-    expect(screen.getByTestId("loupe-meta-kind"))
-      .toHaveTextContent("background_subtracted");
+    expect(screen.getByTestId("loupe-meta-frame")).toHaveTextContent("3 of 3");
   });
 });

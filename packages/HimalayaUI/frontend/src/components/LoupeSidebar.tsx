@@ -138,8 +138,9 @@ function LoupeTagsEditor({ sample }: { sample: CorpusSample }): JSX.Element {
                 placeholder="key"
                 value={keyDraft}
                 onChange={(e) => setKeyDraft(e.target.value)}
-                className="w-12 bg-transparent text-[10.5px] text-ink outline-none
-                           placeholder:text-ink-faint"
+                className="w-12 rounded-sm bg-transparent text-[10.5px] text-ink outline-none
+                           placeholder:text-ink-faint
+                           focus:ring-1 focus:ring-print-accent/40"
               />
               <span className="text-ink-faint">:</span>
               <input
@@ -152,8 +153,9 @@ function LoupeTagsEditor({ sample }: { sample: CorpusSample }): JSX.Element {
                   else if (e.key === "Escape") reset();
                 }}
                 autoFocus
-                className="w-16 bg-transparent text-[10.5px] text-ink outline-none
-                           placeholder:text-ink-faint"
+                className="w-16 rounded-sm bg-transparent text-[10.5px] text-ink outline-none
+                           placeholder:text-ink-faint
+                           focus:ring-1 focus:ring-print-accent/40"
               />
               <button
                 type="button"
@@ -224,23 +226,23 @@ export function LoupeSidebar({
 
   return (
     <aside data-testid="loupe-sidebar" className="flex flex-col gap-5">
-      {/* This exposure (R2-M13: the redundant Status row drops; the verdict
-          card below carries the same fact. Kind stays — it disambiguates
-          file / averaged / background_subtracted exposures, which the verdict
-          dot does not.) */}
+      {/* This exposure — R3-S02 (#256): the meta-list is instrument-facing,
+          mirroring the mockup's `frame / integration / collected / signal`
+          (lowercase). The schema nouns "Filename" + "Kind"
+          (averaged/background_subtracted) are gone — they leaked SQLite at a
+          user who thinks in "2s exposure at 14:23". `integration` + `collected`
+          stub to "—" until the backend fields are plumbed (mockup ships mock
+          data here too). R2-M13: the redundant Status row stays dropped — the
+          verdict card below carries that fact. */}
       <section>
         <SectionHeading>This exposure</SectionHeading>
         <div className="flex flex-col gap-1.5">
-          <MetaRow
-            label="Filename"
-            value={exposure.filename ?? "—"}
-            testid="loupe-meta-filename"
-          />
-          <MetaRow label="Kind" value={exposure.kind} testid="loupe-meta-kind" />
-          <MetaRow label="Frame" value={frameLabel} testid="loupe-meta-frame" />
+          <MetaRow label="frame" value={frameLabel} testid="loupe-meta-frame" />
+          <MetaRow label="integration" value="—" testid="loupe-meta-integration" />
+          <MetaRow label="collected" value="—" testid="loupe-meta-collected" />
           {/* M-8: signal-strength meter — peak-count proxy (see Props). */}
           <div className="flex items-center justify-between font-mono text-[11.5px]">
-            <span className="text-ink-faint">Signal</span>
+            <span className="text-ink-faint">signal</span>
             <SignalMeter level={signalLevel} />
           </div>
         </div>
@@ -276,6 +278,15 @@ export function LoupeSidebar({
                      text-[11.5px] font-semibold text-ink hover:bg-paper-sunk"
         >
           {isRejected ? "Restore" : "Drop"}
+          {/* R3-S03 (#256): the mono X keycap surfaces the drop/restore
+              keyboard shortcut from the right rail, matching CullBar's
+              "Drop X" and the footer-legend keycap idiom. */}
+          <span
+            data-testid="loupe-drop-keycap"
+            className="ml-1 font-mono text-[10px] opacity-60"
+          >
+            X
+          </span>
         </button>
       </section>
 
