@@ -4,6 +4,8 @@ import {
   useExposures,
   useSetExposureStatus,
   useSelectExposure,
+  useAddCorpusSampleTag,
+  useRemoveCorpusSampleTag,
 } from "../queries";
 import type { CorpusSample, Exposure } from "../api";
 import { sampleDisplayName } from "../lib/sample/displayName";
@@ -32,12 +34,26 @@ export const CONTACT_SHEET_COLS =
 
 interface Props {
   sample: CorpusSample;
+  /**
+   * Pre-fetched exposures from the parent's bulk hook (R2-M14). Optional —
+   * when omitted, the row falls back to its own `useExposures(sample.id)`
+   * subscription (the legacy fan-out path) so unit tests and any non-bulk
+   * caller keep working. The bulk path's `undefined` value distinguishes
+   * "not yet fetched" (the loading skeleton) from "fetched, empty" ([]).
+   */
+  exposures?: Exposure[] | undefined;
+  exposuresLoading?: boolean;
 }
 
 /**
- * One exposure thumbnail with culling affordances (#162) in the contact-sheet
- * idiom (R1): a square 62px dark window (L-4), a zero-padded frame badge in the
- * corner (M-7), and the grease-pencil ✕ over rejected frames (M-10).
+ * One exposure thumbnail in the contact-sheet idiom (R1): a square 62px dark
+ * window (L-4), a zero-padded frame badge in the corner (M-7), and the
+ * grease-pencil ✕ over rejected frames (M-10).
+ *
+ * R2-M11: the three permanent overlay buttons (checkbox / rep ⊙ / reject ✕)
+ * are gone — the existing `ring-print-accent` selection ring, the floating
+ * CullBar, and the `R` / `X` keystrokes already cover the function. The rep
+ * dot remains as a corner state badge on `is-rep` (mockup `.thumb.is-rep .rep`).
  *
  * `frameNo` is the 1-based position of the exposure in its sample's strip.
  */
@@ -45,19 +61,15 @@ function ExposureThumb({
   exposure,
   frameNo,
   selectedForBatch,
-  onToggleReject,
   onSelect,
   onOpenLoupe,
-  onPickRepresentative,
 }: {
   exposure: Exposure;
   frameNo: number;
   selectedForBatch: boolean;
-  onToggleReject: (exp: Exposure) => void;
-  /** Body / checkbox click. `extend` is the shift-click range modifier. */
+  /** Body click. `extend` is the shift-click range modifier. */
   onSelect: (id: number, extend: boolean) => void;
   onOpenLoupe: () => void;
-  onPickRepresentative: (exp: Exposure) => void;
 }): JSX.Element {
   const isRejected = exposure.status === "rejected";
   const isRepresentative = exposure.selected;
@@ -69,8 +81,8 @@ function ExposureThumb({
       data-batch-selected={selectedForBatch ? "true" : undefined}
       // L-5 legend "click — select a frame" / "⇧ click — extend the range":
       // the whole thumb body is the click target (shiftKey extends the range).
-      // double-click opens the loupe (L-8). The inner action buttons stop
-      // propagation so they don't also toggle selection.
+      // double-click opens the loupe (L-8). With R2-M11 the per-thumb buttons
+      // are retired, so no inner controls need stopPropagation.
       onClick={(e) => onSelect(exposure.id, e.shiftKey)}
       onDoubleClick={onOpenLoupe}
       className={[
@@ -97,23 +109,9 @@ function ExposureThumb({
       >
         {String(frameNo).padStart(2, "0")}
       </span>
-      <button
-        type="button"
-        data-testid={`exposure-select-${exposure.id}`}
-        aria-pressed={selectedForBatch}
-        title="Select for batch action"
-        onClick={(e) => {
-          e.stopPropagation();
-          onSelect(exposure.id, e.shiftKey);
-        }}
-        className={[
-          "absolute left-0 top-0 m-0.5 h-3 w-3 rounded-sm border",
-          selectedForBatch
-            ? "border-print-accent bg-print-accent"
-            : "border-hair-strong bg-paper/80",
-        ].join(" ")}
-      />
-      {/* representative pick — the frame that goes on to indexing */}
+      {/* representative pick — the frame that goes on to indexing (mockup
+          `.thumb.is-rep .rep`). Rendered as a pure state badge; the rep pick
+          itself happens in the loupe or by the implicit default-selection. */}
       {isRepresentative && (
         <span
           data-testid={`exposure-rep-dot-${exposure.id}`}
@@ -124,34 +122,6 @@ function ExposureThumb({
       )}
       {/* M-10: the grease-pencil reject mark */}
       {isRejected && <RejectXMark />}
-      {!isRepresentative && (
-        <button
-          type="button"
-          data-testid={`exposure-represent-${exposure.id}`}
-          title="Make representative"
-          onClick={(e) => {
-            e.stopPropagation();
-            onPickRepresentative(exposure);
-          }}
-          className="absolute bottom-0 left-0 m-0.5 rounded bg-paper/80 px-1
-                     text-[10px] leading-none text-ink-faint"
-        >
-          ⊙
-        </button>
-      )}
-      <button
-        type="button"
-        data-testid={`exposure-reject-${exposure.id}`}
-        title={isRejected ? "Un-reject exposure" : "Reject exposure"}
-        onClick={(e) => {
-          e.stopPropagation();
-          onToggleReject(exposure);
-        }}
-        className="absolute bottom-0 right-0 m-0.5 rounded bg-paper/80 px-1
-                   text-[10px] leading-none text-print-accent"
-      >
-        {isRejected ? "↺" : "✕"}
-      </button>
     </div>
   );
 }
@@ -159,50 +129,58 @@ function ExposureThumb({
 /**
  * ContactSheetRow — one sample row of the corpus contact sheet (#160).
  *
- * Owns its own useExposures query (per-sample fan-out) so the table fills
- * in row-by-row. The same queryKeys.exposures(sampleId) cache entry is
- * reused by culling (#162) and the loupe (#161).
+ * R2-M14 (#207): when the parent passes `exposures` from the bulk
+ * `useCorpusExposures()` hook, no per-row query observer is mounted — that
+ * was the 139× JSON fan-out behind the `ERR_INSUFFICIENT_RESOURCES` on the
+ * live surface. The row still owns its own observer when called without the
+ * prop (the historical path, kept for backward-compatible callers + tests).
  *
- * Culling is wired here (#162): per-thumb reject toggle, multi-select batch
- * reject, and representative pick, all through the existing exposure queue
- * hooks. The tag-add button remains inert — sample-tag mutation is #159.
+ * Culling is wired here (#162): per-thumb selection via click / shift-click,
+ * batch-reject through the floating CullBar + `X` keystroke. The rep pick
+ * lives in the loupe (R2-M11 stripped the thumb-overlay rep ⊙ button).
  *
- * The footer-legend affordances are all live here (R1 round 2): click /
- * shift-click select & extend a contiguous range over this sample's frames,
- * double-click opens the loupe, and while a selection exists `X` batch-rejects
- * it and `Esc` clears it. The keydown listener is row-scoped and only mounts
- * when this row owns the live selection, so the per-sample model holds (a
+ * Corpus tag add/delete is wired here (#159 / #207): the `+ tag` chip opens
+ * a tiny inline form on the row; existing chips carry a remove ✕. Mutations
+ * route through `useAddCorpusSampleTag` / `useRemoveCorpusSampleTag`, so the
+ * loupe and the sheet share one cache row.
+ *
+ * The footer-legend affordances are all live here: click / shift-click
+ * select & extend a contiguous range over this sample's frames, double-click
+ * opens the loupe, and while a selection exists `X` batch-rejects it and
+ * `Esc` clears it. The keydown listener is row-scoped and only mounts when
+ * this row owns the live selection, so the per-sample model holds (a
  * keyboard action never touches another row's frames).
  */
-export function ContactSheetRow({ sample }: Props): JSX.Element {
+export function ContactSheetRow({
+  sample,
+  exposures: bulkExposures,
+  exposuresLoading: bulkLoading,
+}: Props): JSX.Element {
   const navigate = useNavigate();
-  const exposuresQuery = useExposures(sample.id);
-  const exposures = exposuresQuery.data ?? [];
+
+  // R2-M14: bulk-fed rows skip the per-row observer entirely. The `enabled`
+  // gate flips false when bulk data is in, so the legacy `useExposures` hook
+  // doesn't mount a duplicate subscription. The cache row itself is shared
+  // (same queryKey), so a bulk-fed row still picks up mutator-side patches.
+  const useBulk = bulkExposures !== undefined;
+  const exposuresQuery = useExposures(useBulk ? undefined : sample.id);
+  const exposures: Exposure[] = useBulk
+    ? bulkExposures!
+    : (exposuresQuery.data ?? []);
+  const exposuresLoading = useBulk
+    ? (bulkLoading ?? false)
+    : exposuresQuery.isLoading;
 
   const setStatus = useSetExposureStatus(sample.id);
   const setRepresentative = useSelectExposure(sample.id);
+  const addTag = useAddCorpusSampleTag(sample.id);
+  const removeTag = useRemoveCorpusSampleTag(sample.id);
 
-  // Representative pick. selectExposureMutator's onMutate writes
-  // `selected: e.id === exposureId` across the list, so the pick is
-  // mutually exclusive (one representative per sample) for free.
-  const handlePickRepresentative = useCallback(
-    (exp: Exposure) => {
-      setRepresentative.mutate(exp.id);
-    },
-    [setRepresentative],
-  );
-
-  // Single-exposure reject toggle. Un-reject sets status to null (matches
-  // LoupePage's `status === "rejected" ? null : "rejected"` convention).
-  const handleToggleReject = useCallback(
-    (exp: Exposure) => {
-      setStatus.mutate({
-        exposureId: exp.id,
-        status: exp.status === "rejected" ? null : "rejected",
-      });
-    },
-    [setStatus],
-  );
+  // (R2-M11) representative pick / single-thumb reject toggle moved to the
+  // loupe. The `setRepresentative` mutator is retained because the per-row
+  // useExposures fan-out's optimistic mutual exclusion still flows through
+  // this hook when the loupe writes — keeping the wiring local + symmetric.
+  void setRepresentative;
 
   // Multi-select state — local to this row (selection never crosses samples,
   // matching the per-sample query fan-out). Stale ids are harmless: the batch
@@ -300,11 +278,29 @@ export function ContactSheetRow({ sample }: Props): JSX.Element {
   // and one source of truth for "what string do we render for a sample".
   const name = sampleDisplayName(sample);
 
+  // Tag add/delete UI state — the row keeps its own inline form when the user
+  // taps `+`. The submit routes through useAddCorpusSampleTag (which is the
+  // same mutator the loupe uses, so an add here is visible there immediately).
+  const [tagFormOpen, setTagFormOpen] = useState(false);
+  const [tagKeyDraft, setTagKeyDraft] = useState("");
+  const [tagValDraft, setTagValDraft] = useState("");
+  const resetTagForm = useCallback(() => {
+    setTagKeyDraft("");
+    setTagValDraft("");
+    setTagFormOpen(false);
+  }, []);
+  const submitTag = useCallback(() => {
+    const v = tagValDraft.trim();
+    if (v === "") return;
+    addTag.mutate({ key: tagKeyDraft.trim(), value: v });
+    resetTagForm();
+  }, [addTag, tagKeyDraft, tagValDraft, resetTagForm]);
+
   return (
     <div
       data-testid={`sample-row-${sample.id}`}
       data-unscreened={screened ? undefined : "true"}
-      className={`${CONTACT_SHEET_COLS} border-b border-hair px-4
+      className={`group ${CONTACT_SHEET_COLS} border-b border-hair px-4
                   ${screened ? "" : "bg-paper-sunk/60"}`}
     >
       {/* Sample — screened mark (M-2) + identity. The mark top-aligns in the
@@ -355,7 +351,7 @@ export function ContactSheetRow({ sample }: Props): JSX.Element {
         className="flex min-h-[92px] items-center py-[13px]"
       >
         <div className="flex flex-row flex-nowrap gap-[7px] overflow-x-auto">
-          {exposuresQuery.isLoading ? (
+          {exposuresLoading ? (
             <span className="self-center text-xs text-ink-faint">
               Loading frames…
             </span>
@@ -366,10 +362,8 @@ export function ContactSheetRow({ sample }: Props): JSX.Element {
                 exposure={e}
                 frameNo={i + 1}
                 selectedForBatch={selectedIds.has(e.id)}
-                onToggleReject={handleToggleReject}
                 onSelect={handleSelect}
                 onOpenLoupe={openLoupe}
-                onPickRepresentative={handlePickRepresentative}
               />
             ))
           )}
@@ -381,7 +375,7 @@ export function ContactSheetRow({ sample }: Props): JSX.Element {
         data-testid="kept-cell"
         className="flex min-h-[92px] flex-col justify-center font-mono text-sm"
       >
-        {exposuresQuery.isLoading ? (
+        {exposuresLoading ? (
           <span className="text-ink-faint">—</span>
         ) : (
           <>
@@ -398,7 +392,10 @@ export function ContactSheetRow({ sample }: Props): JSX.Element {
         )}
       </div>
 
-      {/* Tags — read-only chips + inert add button (mutation is #159). */}
+      {/* Tags — chips with inline remove + `+ tag` invite that opens a tiny
+          add form. The `+ tag` invite shows always when the row is empty;
+          when chips exist, the `+` is hover-revealed (mockup `.tags .tag-add
+          :not(.invite)` opacity rule). #159 corpus tag mutators are wired. */}
       <div
         data-testid="tags-cell"
         className="flex min-h-[92px] flex-wrap items-center gap-1"
@@ -407,21 +404,85 @@ export function ContactSheetRow({ sample }: Props): JSX.Element {
           <span
             key={t.id}
             title={t.key || undefined}
-            className="rounded bg-paper-sunk px-1.5 py-0.5 text-xs text-ink-soft"
+            data-testid={`sample-tag-${t.id}`}
+            className="inline-flex items-center gap-1 rounded-full border border-hair
+                       bg-plate px-2 py-0.5 text-[10.5px] font-semibold text-ink-soft"
           >
             {t.value}
+            <button
+              type="button"
+              aria-label={`Remove ${t.key || t.value} tag`}
+              onClick={() => removeTag.mutate(t.id)}
+              className="text-ink-faint hover:text-print-accent"
+            >
+              ×
+            </button>
           </span>
         ))}
-        <button
-          type="button"
-          data-testid="tag-add"
-          disabled
-          title="Add a tag (coming soon)"
-          className="rounded border border-dashed border-hair-strong px-1.5
-                     py-0.5 text-xs text-ink-faint"
-        >
-          + tag
-        </button>
+        {tagFormOpen ? (
+          <span
+            data-testid="tag-form"
+            className="inline-flex items-center gap-1 rounded-full border border-hair-strong
+                       bg-plate px-1.5 py-0.5"
+          >
+            <input
+              aria-label="tag key"
+              placeholder="key"
+              value={tagKeyDraft}
+              onChange={(e) => setTagKeyDraft(e.target.value)}
+              className="w-12 bg-transparent text-[10.5px] text-ink outline-none
+                         placeholder:text-ink-faint"
+            />
+            <span className="text-ink-faint">:</span>
+            <input
+              aria-label="tag value"
+              placeholder="value"
+              value={tagValDraft}
+              onChange={(e) => setTagValDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") submitTag();
+                else if (e.key === "Escape") resetTagForm();
+              }}
+              autoFocus
+              className="w-16 bg-transparent text-[10.5px] text-ink outline-none
+                         placeholder:text-ink-faint"
+            />
+            <button
+              type="button"
+              onClick={submitTag}
+              className="text-[10.5px] font-semibold text-print-accent
+                         hover:underline"
+            >
+              Add
+            </button>
+            <button
+              type="button"
+              aria-label="cancel adding tag"
+              onClick={resetTagForm}
+              className="text-ink-faint hover:text-print-accent"
+            >
+              ×
+            </button>
+          </span>
+        ) : (
+          <button
+            type="button"
+            data-testid="tag-add"
+            onClick={() => setTagFormOpen(true)}
+            title="Add a tag"
+            className={[
+              "rounded-full border border-dashed border-hair-strong px-2 py-0.5",
+              "text-[10.5px] font-semibold text-ink-faint",
+              "hover:border-print-accent hover:text-print-accent",
+              // Hover-revealed when chips exist; always-visible invite when empty.
+              sample.tags.length === 0
+                ? ""
+                : "opacity-0 group-hover:opacity-100 focus:opacity-100",
+            ].join(" ")}
+          >
+            {sample.tags.length === 0 ? "+ tag" : "+"}
+          </button>
+        )}
       </div>
 
       {/* Status — phase chip when a phase is present (M-6), else the hollow-dot

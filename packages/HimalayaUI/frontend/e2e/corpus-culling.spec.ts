@@ -60,7 +60,10 @@ test.beforeEach(async ({ page }) => {
   );
 });
 
-test("cull: rejecting an exposure dims its thumbnail and PATCHes status", async ({ page }) => {
+test("cull: rejecting a selected exposure via X dims its thumbnail and PATCHes status", async ({ page }) => {
+  // R2-M11 (#207): the per-thumb reject ✕ button is gone — single-thumb
+  // reject is now "click-to-select, then X" (the same path the cull-bar's
+  // Drop button exercises, but driven from the keyboard).
   let patchedBody: unknown = null;
   await mockCorpus(page);
   await page.route("**/api/exposures/1/status", async (route) => {
@@ -73,13 +76,15 @@ test("cull: rejecting an exposure dims its thumbnail and PATCHes status", async 
 
   await page.goto("/samples");
   await expect(page.getByTestId("sample-row-10")).toBeVisible();
-  await page.getByTestId("exposure-reject-1").click();
+  await page.getByTestId("exposure-thumb-1").click();
+  await page.keyboard.press("x");
 
   await expect(page.getByTestId("exposure-thumb-1")).toHaveAttribute("data-rejected", "true");
   await expect.poll(() => patchedBody).toMatchObject({ status: "rejected" });
 });
 
 test("batch-reject: multi-select then reject PATCHes each selected exposure", async ({ page }) => {
+  // R2-M11: no per-thumb checkbox; click the thumb body to select.
   const patched: string[] = [];
   await mockCorpus(page);
   await page.route(/\/api\/exposures\/\d+\/status$/, async (route) => {
@@ -92,8 +97,8 @@ test("batch-reject: multi-select then reject PATCHes each selected exposure", as
 
   await page.goto("/samples");
   await expect(page.getByTestId("sample-row-10")).toBeVisible();
-  await page.getByTestId("exposure-select-1").click();
-  await page.getByTestId("exposure-select-3").click();
+  await page.getByTestId("exposure-thumb-1").click();
+  await page.getByTestId("exposure-thumb-3").click();
   await page.getByTestId("batch-reject").click();
 
   await expect.poll(() => patched.length).toBe(2);
@@ -103,7 +108,11 @@ test("batch-reject: multi-select then reject PATCHes each selected exposure", as
   expect(patched.some((p) => p.endsWith("/exposures/2/status"))).toBe(false);
 });
 
-test("representative: picking a representative PATCHes select and marks the thumb", async ({ page }) => {
+test("representative: picking a representative in the loupe PATCHes select", async ({ page }) => {
+  // R2-M11 (#207): the per-thumb rep ⊙ button is gone — representative pick
+  // lives in the loupe sidebar's "Set as representative" affordance (and the
+  // `R` keystroke). Cover the loupe path here so the contact-sheet spec keeps
+  // exercising the underlying selectExposure mutator.
   let selected = false;
   await mockCorpus(page);
   await page.route("**/api/exposures/2/select", async (route) => {
@@ -114,12 +123,13 @@ test("representative: picking a representative PATCHes select and marks the thum
     });
   });
 
-  await page.goto("/samples");
-  await expect(page.getByTestId("sample-row-10")).toBeVisible();
-  await page.getByTestId("exposure-represent-2").click();
+  await page.goto("/samples/loupe/10");
+  await expect(page.getByTestId("loupe-page")).toBeVisible();
+  // Open the loupe on exposure 2 by clicking its strip thumbnail.
+  await page.getByTestId("thumb-cell-2").click();
+  await page.getByTestId("loupe-set-representative").click();
 
   await expect.poll(() => selected).toBe(true);
-  await expect(page.getByTestId("exposure-thumb-2")).toHaveAttribute("data-representative", "true");
 });
 
 test("loupe-flip: arrow keys move between exposures in the loupe", async ({ page }) => {
