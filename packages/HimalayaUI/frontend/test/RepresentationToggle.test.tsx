@@ -20,11 +20,17 @@ describe("RepresentationToggle", () => {
     expect(onChange).toHaveBeenCalledWith("waterfall");
   });
 
-  it("renders heatmap as a disabled, not-yet-available option (deferred to #208)", () => {
+  it("calls onChange with 'heatmap' when the heatmap button is clicked (live after #208)", () => {
     const { onChange } = setup("waterfall");
     const heatmap = screen.getByTestId("repr-heatmap");
-    expect(heatmap).toBeDisabled();
+    expect(heatmap).not.toBeDisabled();
     fireEvent.click(heatmap);
-    expect(onChange).not.toHaveBeenCalled();
+    expect(onChange).toHaveBeenCalledWith("heatmap");
+  });
+
+  it("marks heatmap with aria-pressed=true when value='heatmap'", () => {
+    setup("heatmap");
+    expect(screen.getByTestId("repr-heatmap")).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("repr-waterfall")).toHaveAttribute("aria-pressed", "false");
   });
 });

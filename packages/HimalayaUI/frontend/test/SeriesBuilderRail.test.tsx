@@ -13,6 +13,8 @@ function setup(over: Partial<React.ComponentProps<typeof SeriesBuilderRail>> = {
     onOffsetChange: vi.fn(),
     scaleMode: "log" as const,
     onScaleModeChange: vi.fn(),
+    trackOn: false,
+    onTrackOnChange: vi.fn(),
     sampleCount: 6,
     onConfirmSeries: vi.fn(),
     onAdjustSeries: vi.fn(),
@@ -74,5 +76,19 @@ describe("SeriesBuilderRail", () => {
     expect(screen.getByTestId("mock-edit")).toBeInTheDocument();
     // compose controls stay available in edit mode (they shape the figure too)
     expect(screen.getByTestId("offset-slider")).toBeInTheDocument();
+  });
+
+  it("renders the Track-reflections checkbox in the Display section and forwards toggles", () => {
+    const props = setup();
+    const toggle = screen.getByTestId("track-toggle-input") as HTMLInputElement;
+    expect(toggle).toBeInTheDocument();
+    expect(toggle.checked).toBe(false);
+    fireEvent.click(toggle);
+    expect(props.onTrackOnChange).toHaveBeenCalledWith(true);
+  });
+
+  it("reflects trackOn=true as a checked checkbox", () => {
+    setup({ trackOn: true });
+    expect((screen.getByTestId("track-toggle-input") as HTMLInputElement).checked).toBe(true);
   });
 });

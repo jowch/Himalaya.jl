@@ -15,6 +15,8 @@ const h = vi.hoisted(() => ({
   lastPlotProps: undefined as undefined | {
     showPeakTicks?: boolean; showPeakLabels?: boolean;
     xType?: "log" | "linear"; workingBandFraction?: number;
+    representation?: "waterfall" | "heatmap";
+    showCrossTraceTracking?: boolean;
   },
 }));
 vi.mock("../src/queries", () => ({
@@ -30,6 +32,8 @@ vi.mock("../src/components/MultiTracePlot", () => ({
   MultiTracePlot: (props: {
     showPeakTicks?: boolean; showPeakLabels?: boolean;
     xType?: "log" | "linear"; workingBandFraction?: number;
+    representation?: "waterfall" | "heatmap";
+    showCrossTraceTracking?: boolean;
   }) => {
     h.lastPlotProps = props;
     return (
@@ -38,6 +42,8 @@ vi.mock("../src/components/MultiTracePlot", () => ({
         data-show-peak-ticks={String(props.showPeakTicks)}
         data-show-peak-labels={String(props.showPeakLabels)}
         data-x-type={String(props.xType)}
+        data-representation={String(props.representation)}
+        data-cross-trace-tracking={String(props.showCrossTraceTracking)}
       />
     );
   },
@@ -212,6 +218,33 @@ describe("SeriesBuilderPage — read + states", () => {
     expect(screen.queryByTestId("offset-dock")).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId("rail-collapse-toggle"));
     expect(screen.getByTestId("offset-dock")).toBeInTheDocument();
+  });
+
+  it("forwards the default representation 'waterfall' to MultiTracePlot", () => {
+    h.seriesQ = { data: series({ members: [member()] }), isLoading: false, isError: false };
+    renderAt();
+    expect(screen.getByTestId("mock-multi-trace-plot"))
+      .toHaveAttribute("data-representation", "waterfall");
+  });
+
+  it("flips MultiTracePlot to heatmap when the heatmap toggle is clicked (#208 wiring)", () => {
+    h.seriesQ = { data: series({ members: [member()] }), isLoading: false, isError: false };
+    renderAt();
+    expect(screen.getByTestId("repr-heatmap")).not.toBeDisabled();
+    fireEvent.click(screen.getByTestId("repr-heatmap"));
+    expect(h.lastPlotProps?.representation).toBe("heatmap");
+    expect(screen.getByTestId("mock-multi-trace-plot"))
+      .toHaveAttribute("data-representation", "heatmap");
+    // The figure-tag also follows the representation.
+    expect(screen.getByTestId("fig-tags")).toHaveTextContent("intensity map");
+  });
+
+  it("toggles cross-trace tracking when the Track-reflections checkbox is clicked (#208 wiring)", () => {
+    h.seriesQ = { data: series({ members: [member()] }), isLoading: false, isError: false };
+    renderAt();
+    expect(h.lastPlotProps?.showCrossTraceTracking).toBe(false);
+    fireEvent.click(screen.getByTestId("track-toggle-input"));
+    expect(h.lastPlotProps?.showCrossTraceTracking).toBe(true);
   });
 
   it("changes the coloring mode via GroupingModeToggle (setGroupingMode wired)", () => {

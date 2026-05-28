@@ -6,12 +6,18 @@ interface RepresentationToggleProps {
 }
 
 /**
- * Representation segment for the series builder (#175). Waterfall is the only
- * representation the render core (MultiTracePlot) supports today; "Heatmap" is
- * shown disabled because rendering it requires MultiTracePlot/MemberTraceLayer
- * internals, which #175 explicitly carves out to the I3.2 render-core
- * follow-up (#208). The toggle ships so the surface is structurally complete
- * and the heatmap option drops in (enabled) once #208 lands.
+ * Representation segment for the series builder. Picks the plot's layout
+ * vocabulary in `MultiTracePlot` (#208):
+ *
+ *   - `waterfall` — stacked 1-D traces (the legacy, the publication figure)
+ *   - `heatmap`   — q-binned intensity rows (peaks-only; surfaces migration)
+ *
+ * "Coloring vs layout" stays separate: this is the layout axis; coloring
+ * lives in `GroupingModeToggle`. They compose: a heatmap can be byPhase or
+ * bySample, a waterfall can be either.
+ *
+ * Originally shipped with the heatmap button disabled (#175 carved out the
+ * render-core work to #208); both modes are now live.
  */
 export function RepresentationToggle({ value, onChange }: RepresentationToggleProps): JSX.Element {
   return (
@@ -33,9 +39,9 @@ export function RepresentationToggle({ value, onChange }: RepresentationTogglePr
       <button
         type="button"
         data-testid="repr-heatmap"
-        disabled
-        title="Heatmap representation is coming soon (#208)"
-        className="px-3 py-1.5 text-xs text-ink-faint opacity-50 cursor-not-allowed"
+        aria-pressed={value === "heatmap"}
+        onClick={() => onChange("heatmap")}
+        className={`px-3 py-1.5 text-xs ${value === "heatmap" ? "bg-ink text-paper" : "text-ink-faint"}`}
       >
         Heatmap
       </button>

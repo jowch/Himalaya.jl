@@ -182,9 +182,15 @@ function SeriesBuilderBody(
   );
 
   // Local UI state for the rail: collapse (full-bleed) + representation
-  // (waterfall live; heatmap deferred to #208).
+  // (waterfall + heatmap, both live in the shared render core, #208).
   const [collapsed, setCollapsed] = useState(false);
   const [representation, setRepresentation] = useState<Representation>("waterfall");
+
+  // Cross-trace peak-tracking layer (#208). Off by default; mockup
+  // `series-builder.html:474-476` describes it as a Display option that
+  // "links each Miller order across the traces that carry it — reads best
+  // when peaks align." Local UI state; persisting it is a future view-pref.
+  const [trackOn, setTrackOn] = useState(false);
 
   // Compose controls (R8 / B-F): the trace-offset slider and the log/linear
   // q-axis scale. Local UI state — a read surface's composition is a local
@@ -346,6 +352,8 @@ function SeriesBuilderBody(
                         showPeakLabels={showPeakLabels}
                         xType={scaleMode}
                         workingBandFraction={workingBandFraction}
+                        representation={representation}
+                        showCrossTraceTracking={trackOn}
                       />
                     </div>
                     <div className="w-[280px] shrink-0" data-testid="series-builder-gutter">
@@ -385,6 +393,8 @@ function SeriesBuilderBody(
           onOffsetChange={setOffset}
           scaleMode={scaleMode}
           onScaleModeChange={setScaleMode}
+          trackOn={trackOn}
+          onTrackOnChange={setTrackOn}
           sampleCount={s.samples.length || members.length}
           onConfirmSeries={() => { /* read surface: Confirm is a visual affordance; recipe edit deferred */ }}
           onAdjustSeries={onStartEdit}
