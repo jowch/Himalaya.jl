@@ -135,15 +135,23 @@ export function DetectorImage({
     bitmap.close();
     const imageData = offCtx.getImageData(0, 0, width, height);
 
-    // Build LUT: bg color (intensity 0) → fg color (intensity 255)
-    const [br, bg, bb] = getCssColor("--color-bg");
-    const [fr, fg, fb] = getCssColor("--color-fg");
+    // U-1 (#255): warm the detector LUT. The endpoints are the detector-window
+    // tokens, not the page bg/fg: intensity 0 (background / window backing) maps
+    // to `frame-edge` (warm near-black, the dark window set into the paper) and
+    // intensity 255 (bright signal) maps to `frame-signal` (warm off-white). This
+    // is NON-inverting — the brightest pixels are the lightest output — so Bragg
+    // rings read as "ink on dark paper" inside the warm window and bridge to the
+    // surrounding `frame-edge` border, instead of the prior paper->ink ramp that
+    // rendered the image cold (light) against the dark frame. The backend PNG
+    // stays grayscale; only this display ramp moved (the chroma is applied here).
+    const [er, eg, eb] = getCssColor("--color-frame-edge");
+    const [sr, sg, sb] = getCssColor("--color-frame-signal");
     const data = imageData.data;
     for (let i = 0; i < data.length; i += 4) {
       const t = data[i] / 255;
-      data[i]     = Math.round(br + t * (fr - br));
-      data[i + 1] = Math.round(bg + t * (fg - bg));
-      data[i + 2] = Math.round(bb + t * (fb - bb));
+      data[i]     = Math.round(er + t * (sr - er));
+      data[i + 1] = Math.round(eg + t * (sg - eg));
+      data[i + 2] = Math.round(eb + t * (sb - eb));
       data[i + 3] = 255;
     }
 
@@ -202,10 +210,15 @@ export function DetectorImage({
   }, [evaluateOrient]);
 
   if (!imagePath) {
+    // U-2 / R3-S06 (#255): the missing-image placeholder is a `frame-edge`
+    // window (matching the live detector treatment) with a `frame-tag` mono
+    // caption — not light `text-fg-muted` text on paper. Empty states are where
+    // The Print is most exposed, so the dark window persists when data is absent.
     return (
       <div
         data-testid="detector-image-placeholder"
-        className={`flex items-center justify-center text-fg-muted text-xs ${className ?? ""}`}
+        data-variant="frame-window"
+        className={`flex items-center justify-center bg-frame-edge text-frame-tag font-mono text-[11px] tracking-wide ${className ?? ""}`}
       >
         No image
       </div>

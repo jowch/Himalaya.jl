@@ -197,3 +197,111 @@ test("U-3 regression: a full frame still rotates under the same wide geometry", 
     restore();
   }
 });
+
+/**
+ * B.1 / U-1 (#255): the detector LUT must warm the image to the detector-window
+ * tokens AND stay NON-INVERTING — the brightest input pixel maps to the LIGHTER
+ * (signal) output endpoint, the darkest to the near-black window backing. The
+ * sign of that ramp is the actual perceptual fix (saxs test-pin) and the thing
+ * most likely to silently regress.
+ */
+test("B.1: LUT is non-inverting — brighter intensity → lighter output", async () => {
+  // Two source pixels: a dark one (intensity 0) and a bright one (intensity 255).
+  // The component reads the R channel as t and rebuilds RGB in place; we capture
+  // the buffer handed to putImageData.
+  const srcData = new Uint8ClampedArray([
+    0, 0, 0, 255, // intensity 0  → window backing (darkest)
+    255, 255, 255, 255, // intensity 255 → signal (lightest)
+  ]);
+  const mockOffscreen = {
+    getContext: () => ({
+      drawImage: vi.fn(),
+      getImageData: () => ({ data: srcData }),
+    }),
+  };
+  // @ts-expect-error JSDOM stub
+  global.OffscreenCanvas = vi.fn().mockImplementation(() => mockOffscreen);
+
+  // Stub getComputedStyle so getCssColor resolves the two warm endpoints to
+  // known sRGB triples without depending on JSDOM oklch support. frame-edge is
+  // near-black; frame-signal is warm off-white.
+  const realGCS = window.getComputedStyle;
+  vi.spyOn(window, "getComputedStyle").mockImplementation(((el: Element) => {
+    if (el === document.documentElement) {
+      return {
+        getPropertyValue: (name: string) =>
+          name === "--color-frame-edge"
+            ? "rgb(20, 18, 14)"
+            : name === "--color-frame-signal"
+              ? "rgb(238, 236, 228)"
+              : "",
+      } as CSSStyleDeclaration;
+    }
+    return realGCS(el);
+  }) as typeof window.getComputedStyle);
+
+  global.createImageBitmap = vi.fn().mockResolvedValue({
+    width: 2, height: 1, close: vi.fn(),
+  } as unknown as ImageBitmap);
+
+  let captured: Uint8ClampedArray | null = null;
+  // getCssColor() creates its OWN 1x1 canvas, sets fillStyle to the resolved CSS
+  // string, fills, then reads back the pixel to parse it to RGB. JSDOM's 2d
+  // context lacks these, so the stub doubles as a tiny rgb() parser: getImageData
+  // returns the channels from the last `rgb(r, g, b)` fillStyle. The on-screen
+  // canvas's putImageData is captured for the LUT assertion.
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(function () {
+    let lastFill = "rgb(0, 0, 0)";
+    return {
+      set fillStyle(v: string) { lastFill = v; },
+      get fillStyle() { return lastFill; },
+      fillRect: () => {},
+      drawImage: () => {},
+      getImageData: () => {
+        const m = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(lastFill);
+        const [r, g, b] = m ? [+m[1], +m[2], +m[3]] : [0, 0, 0];
+        return { data: new Uint8ClampedArray([r, g, b, 255]) };
+      },
+      putImageData: (imgData: ImageData) => {
+        captured = imgData.data;
+      },
+    } as unknown as CanvasRenderingContext2D;
+  } as typeof HTMLCanvasElement.prototype.getContext);
+
+  try {
+    render(
+      <DetectorImage exposureId={1} imagePath="/tmp/x.tiff"
+        imageVersion="v3-1" size="full" />,
+    );
+    await waitFor(() => expect(captured).not.toBeNull());
+    const d = captured as unknown as Uint8ClampedArray;
+    const darkSum = d[0] + d[1] + d[2];
+    const brightSum = d[4] + d[5] + d[6];
+    // Non-inverting: the bright input is lighter than the dark input.
+    expect(brightSum).toBeGreaterThan(darkSum);
+    // Warm endpoints: t=0 lands on frame-edge (near-black), t=255 on frame-signal.
+    expect(d[0]).toBe(20); expect(d[1]).toBe(18); expect(d[2]).toBe(14);
+    expect(d[4]).toBe(238); expect(d[5]).toBe(236); expect(d[6]).toBe(228);
+  } finally {
+    vi.restoreAllMocks();
+  }
+});
+
+/**
+ * B.4 / U-2 / R3-S06 (#255): the missing-image placeholder renders as a
+ * `frame-edge` window with a `frame-tag` mono caption — not light `text-fg-muted`
+ * text on paper. data-* + class-list assertions (no class-string matching of the
+ * positive utilities; we assert the dark-era survivor is GONE).
+ */
+test("B.4: missing-image placeholder is a frame-edge window, no text-fg-* survivor", () => {
+  render(<DetectorImage exposureId={1} imagePath={null}
+    imageVersion="" size="full" />);
+  const ph = screen.getByTestId("detector-image-placeholder");
+  expect(ph).toHaveAttribute("data-variant", "frame-window");
+  // The dark window treatment + frame-tag caption.
+  expect(ph.className).toContain("bg-frame-edge");
+  expect(ph.className).toContain("text-frame-tag");
+  // R3-S06: the last legacy survivor is removed.
+  expect(ph.className).not.toContain("text-fg-muted");
+  expect(ph.className).not.toContain("text-fg-");
+});

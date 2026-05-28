@@ -65,6 +65,14 @@
      loupe frame-tag). R0c (#223, T-8): the prior `text-ink-faint` caption was
      dark-on-dark on the detector frame; this is the mockup's `.frame-tag`. */
   --color-frame-tag:    oklch(0.82 0.01 80);
+  /* Bright signal endpoint for the detector-image LUT (U-1, #255). The
+     in-browser LUT in DetectorImage.tsx maps grayscale intensity t=0..1 onto
+     frame-edge (window backing) -> frame-signal (bright signal). A warm
+     off-white (hue ~80, same family as paper) so bright Bragg rings read as
+     "ink on dark paper" inside the warm dark window, bridging to the
+     surrounding frame-edge border rather than sitting cold as the prior
+     paper->ink ramp did. NON-inverting: max intensity -> this lighter endpoint. */
+  --color-frame-signal: oklch(0.92 0.02 80);
 
   --radius: 6px;
   --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
