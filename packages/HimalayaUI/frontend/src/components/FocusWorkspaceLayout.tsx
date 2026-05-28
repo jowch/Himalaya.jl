@@ -8,6 +8,7 @@ import { PlotCard } from "./PlotCard";
 import { FocusPlotHeader } from "./FocusPlotHeader";
 import { IndicesCard } from "./IndicesCard";
 import { FocusDetectorPanel } from "./FocusDetectorPanel";
+import { FocusReflectionsTable } from "./FocusReflectionsTable";
 import { FocusNotesMargin } from "./FocusNotesMargin";
 
 /**
@@ -19,6 +20,8 @@ import { FocusNotesMargin } from "./FocusNotesMargin";
  *   - trace hero  = <PlotCard/>      (also drives useAutoPickExposure)
  *   - rail        = <IndicesCard/>   (PhasePanel phase call + candidates + Miller)
  *   - detector    = <FocusDetectorPanel/> (read-only DetectorImage; q-link is I4.3)
+ *   - reflections = <FocusReflectionsTable/> (the q-link triple's third surface;
+ *                   row hover ↔ peak ↔ ring via the shipped `hoveredQ` channel)
  *   - notes       = <FocusNotesMargin/>
  *
  * The notes margin is the first column to yield: it collapses below the
@@ -89,12 +92,22 @@ export function FocusWorkspaceLayout(): JSX.Element {
       data-testid="focus-workspace-layout"
       className="grid min-h-0 flex-1 grid-cols-1 xl:grid-cols-[1fr_348px_250px]"
     >
-      {/* work area: trace hero stacked over the co-resident detector */}
+      {/* work area: trace hero (top) stacked over the lower row.
+          Lower row is [detector | reflections] — mockup `.lower` grid, both
+          panels keyed to the detector height so a long peak list scrolls
+          inside the reflections panel and never stretches the row. The
+          reflections column collapses below `lg` so narrow viewports keep
+          the trace + detector visible. */}
       <div className="flex min-h-0 flex-col gap-5 overflow-auto p-6">
         <div className="min-h-[420px]">
           <PlotCard {...(focusHeader ? { headerSlot: focusHeader } : {})} />
         </div>
-        <FocusDetectorPanel />
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+          <FocusDetectorPanel />
+          <div className="hidden lg:flex min-h-0 flex-col">
+            <FocusReflectionsTable />
+          </div>
+        </div>
       </div>
 
       {/* rail: the phase call + candidates */}
