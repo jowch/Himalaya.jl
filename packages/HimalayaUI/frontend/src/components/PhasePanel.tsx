@@ -1,168 +1,183 @@
+import type { ReactNode } from "react";
 import { Skeleton } from "boneyard-js/react";
 import { useIndices, useGroups, useAddIndexToGroup, useRemoveIndexFromGroup, useDeleteIndex, useExperiment } from "../queries";
 import { useAppState } from "../state";
-import { phaseColor, CUBIC_PHASES } from "../phases";
+import { phaseColor } from "../phases";
 import { HintText } from "./ui";
 import { StaleIndicesBanner } from "./StaleIndicesBanner";
 import { SpeculativeBuilder } from "./SpeculativeBuilder";
-import { latticeUnitFromQUnits, inverseSquareUnits, formatKappa } from "../lib/units";
+import { latticeUnitFromQUnits } from "../lib/units";
+import { seriesRatio } from "../lib/seriesRatio";
 import type { GroupEntry, IndexEntry } from "../api";
-
-const R2_THRESHOLD = 0.98;
 
 function activeGroup(groups: GroupEntry[]): GroupEntry | undefined {
   return groups.find((g) => g.active);
-}
-
-function formatLattice(d: number | null): string {
-  return d != null ? d.toFixed(2) : "—";
-}
-
-function formatR2(r: number | null): string {
-  return r != null ? r.toFixed(3) : "—";
 }
 
 function formatScore(s: number | null | undefined): string {
   return s != null ? s.toFixed(2) : "—";
 }
 
-// ── Individual index card ────────────────────────────────────────────────────
-
-interface IndexCardProps {
-  index: IndexEntry;
-  isActive: boolean;
-  onAction: () => void;
-  onDelete?: () => void;
-  onHover?: () => void;
-  onLeave?: () => void;
-  /** Lattice unit derived from the experiment's q_units (e.g. "Å", "nm"). */
-  latticeUnit: string;
-  /** Inverse-square form for κ display (e.g. "Å⁻²", "nm⁻²"). */
-  curvatureUnit: string;
-  /** Forwarded to the li for E2E selectors */
-  "data-alternative-id"?: number;
+function ratioOf(index: IndexEntry): string {
+  return seriesRatio(index.phase, index.peaks.map((p) => p.ratio_position));
 }
 
-function IndexCard({ index, isActive, onAction, onDelete, onHover, onLeave, latticeUnit, curvatureUnit, "data-alternative-id": altId }: IndexCardProps): JSX.Element {
+// ── Phase-call output block (R4 L-9) ─────────────────────────────────────────
+// One card per phase currently in the active set: serif phase name + mono
+// score, lattice + peak count, a score bar tinted in the phase colour, and the
+// √N ratio series. Mirrors mockup `.phasecall` / `.pc-block`.
+
+interface PhaseCallBlockProps {
+  index: IndexEntry;
+  latticeUnit: string;
+}
+
+function PhaseCallBlock({ index, latticeUnit }: PhaseCallBlockProps): JSX.Element {
   const color = phaseColor(index.phase);
-  const isSpeculative = index.kind === "speculative";
-  // R²-gate dimming: speculative indices bypass the gate entirely (a 2-peak fit
-  // is R²=1 by construction, so the gate is meaningless — the "speculative"
-  // label is the warning instead).
-  const lowR2 = !isActive && !isSpeculative && index.r_squared != null && index.r_squared < R2_THRESHOLD;
-
+  const score = index.score ?? 0;
+  const ratio = ratioOf(index);
   return (
-    <li
-      data-index-id={index.id}
-      data-alternative-id={altId}
-      data-active={isActive || undefined}
-      data-low-r2={lowR2 || undefined}
-      data-speculative={isSpeculative || undefined}
-      className={[
-        "grid items-stretch rounded-lg overflow-hidden transition-all",
-        isSpeculative
-          ? "border border-dashed border-border-soft"
-          : "border border-border-soft",
-        lowR2 ? "opacity-40" : "",
-      ].join(" ")}
-      style={{
-        gridTemplateColumns: "3px 1fr auto",
-        background: isActive
-          ? `color-mix(in oklab, ${color} 6%, transparent)`
-          : undefined,
-        borderColor: isActive ? `color-mix(in oklab, ${color} 28%, var(--color-border-soft))` : undefined,
-      }}
-      onMouseEnter={onHover}
-      onMouseLeave={onLeave}
-    >
-      {/* Left color bar */}
-      <div style={{ background: color }} />
-
-      {/* Main content */}
-      <div className="px-2.5 py-2 flex flex-col gap-1 min-w-0">
-        {/* Primary row: phase chip + lattice param */}
-        <div className="flex items-center gap-2 min-w-0">
-          <span
-            className="text-data-strong px-1.5 py-0.5 rounded-sm border shrink-0"
-            style={{
-              color,
-              background: `color-mix(in oklab, ${color} 10%, transparent)`,
-              borderColor: `color-mix(in oklab, ${color} 35%, transparent)`,
-            }}
-          >
-            {index.phase}
-          </span>
-          {index.lattice_d != null && (
-            <span className="text-data truncate min-w-0">
-              <span className="text-fg-dim">a =</span>{" "}
-              {formatLattice(index.lattice_d)}{" "}
-              <span className="text-fg-dim text-xs">{latticeUnit}</span>
-            </span>
-          )}
-          <span className="ml-auto px-1.5 py-0.5 border border-border-soft rounded-full text-xs text-fg-dim shrink-0">
-            {index.peaks.length} peaks
-          </span>
-        </div>
-
-        {/* Secondary row: score bar + R² + κ (cubic phases only) */}
-        <div className="flex items-center gap-3 font-mono text-xs text-fg-dim">
-          <span>
-            score{" "}
-            <span className="text-fg-muted tabular-nums">{formatScore(index.score)}</span>
-          </span>
-          <span>
-            R²{" "}
-            <span className={index.r_squared != null && index.r_squared >= R2_THRESHOLD
-              ? "text-fg-muted" : "text-fg-dim"}>
-              {formatR2(index.r_squared)}
-            </span>
-          </span>
-          {CUBIC_PHASES.has(index.phase) && index.ngc != null && (
-            <span data-testid={`ngc-${index.id}`} className="ml-auto">
-              κ{" "}
-              <span className="text-fg-muted tabular-nums">
-                {formatKappa(index.ngc)}
-              </span>{" "}
-              <span className="text-fg-dim">{curvatureUnit}</span>
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* Add / remove button + (speculative) delete */}
-      <div className="flex flex-col border-l border-border-soft">
-        <button
-          className="flex-1 w-[34px] bg-transparent text-fg-dim hover:text-fg hover:bg-bg-hover transition-colors text-base font-semibold"
-          onClick={onAction}
-          aria-label={isActive ? `Remove index ${index.id}` : `Add index ${index.id}`}
+    <div data-testid={`phase-call-block-${index.id}`} className="px-4 py-3">
+      <div className="flex items-baseline justify-between gap-2">
+        <span
+          className="font-serif font-medium leading-none tracking-tight text-[23px]"
+          style={{ color }}
         >
-          {isActive ? "−" : "+"}
-        </button>
-        {onDelete && (
-          <button
-            className="flex-1 w-[34px] bg-transparent text-fg-dim hover:text-error hover:bg-bg-hover transition-colors text-xs border-t border-border-soft"
-            onClick={onDelete}
-            aria-label={`Delete speculative index ${index.id}`}
-            data-testid={`spec-delete-${index.id}`}
-            title="Delete this speculative index"
-          >
-            🗑
-          </button>
-        )}
+          {index.phase}
+        </span>
+        <span className="font-mono text-xs font-bold tabular-nums" style={{ color }}>
+          {formatScore(index.score)}
+        </span>
       </div>
-    </li>
+      <div className="mt-1.5 font-mono text-[11px] text-ink-soft">
+        {index.lattice_d != null && (
+          <>{`a = ${index.lattice_d.toFixed(0)} ${latticeUnit}`}&nbsp; ·&nbsp; </>
+        )}
+        {index.peaks.length} peaks
+      </div>
+      <div className="mt-2 h-1 overflow-hidden rounded-full bg-hair">
+        <i
+          className="block h-full"
+          style={{ width: `${Math.round(score * 100)}%`, background: color }}
+        />
+      </div>
+      {ratio && (
+        <div className="mt-1.5 text-[10.5px] text-ink-faint">
+          series&nbsp;&nbsp;
+          <span className="font-mono font-semibold text-ink-soft">{ratio}</span>
+        </div>
+      )}
+    </div>
   );
 }
 
-// ── Group heading ────────────────────────────────────────────────────────────
+// ── Candidate row (R4 L-10) ──────────────────────────────────────────────────
+// A multi-select checkbox row: the active set is a SET, not a single pick.
+// Clicking toggles membership; hovering previews on the trace (phase colour,
+// L-11). Mirrors mockup `.cand` / `.c-mark`.
 
-function GroupHead({ label, count }: { label: string; count: number }): JSX.Element {
+interface CandidateRowProps {
+  index: IndexEntry;
+  inCall: boolean;
+  onToggle: () => void;
+  onHover: () => void;
+  onLeave: () => void;
+  onDelete?: () => void;
+}
+
+function CandidateRow({ index, inCall, onToggle, onHover, onLeave, onDelete }: CandidateRowProps): JSX.Element {
+  const color = phaseColor(index.phase);
+  const ratio = ratioOf(index);
+  const score = index.score ?? 0;
   return (
-    <div className="flex items-center justify-between mb-2 px-1">
-      <span className="text-xs uppercase tracking-widest text-fg-dim font-semibold">
-        {label}
+    <div
+      data-testid={`candidate-row-${index.id}`}
+      data-alternative-id={index.id}
+      data-active={inCall || undefined}
+      className="group flex items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors cursor-pointer"
+      style={{
+        // Hover-preview is phase-coloured (L-11): tint the border in the
+        // phase's own hue on hover; membership uses the terracotta accent.
+        borderColor: inCall
+          ? `color-mix(in oklab, var(--color-accent) 42%, var(--color-hair))`
+          : `var(--color-hair)`,
+        background: inCall
+          ? `color-mix(in oklab, var(--color-accent) 6%, var(--color-plate))`
+          : `var(--color-plate)`,
+        ["--pc" as string]: color,
+      }}
+      role="checkbox"
+      aria-checked={inCall}
+      aria-label={index.phase}
+      tabIndex={0}
+      onClick={onToggle}
+      onKeyDown={(e) => {
+        if (e.key === " " || e.key === "Enter") { e.preventDefault(); onToggle(); }
+      }}
+      onMouseEnter={onHover}
+      onMouseLeave={onLeave}
+      onFocus={onHover}
+      onBlur={onLeave}
+    >
+      {/* checkbox mark */}
+      <span
+        aria-hidden
+        className="flex h-4 w-4 shrink-0 items-center justify-center rounded border-[1.5px] text-paper"
+        style={{
+          borderColor: inCall ? "var(--color-accent)" : "var(--color-hair-strong)",
+          background: inCall ? "var(--color-accent)" : "transparent",
+        }}
+      >
+        {inCall && (
+          <svg viewBox="0 0 16 16" className="h-3 w-3">
+            <path d="M4 8.2l2.7 2.7 5.2-5.6" fill="none" stroke="currentColor"
+                  strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        )}
       </span>
-      <span className="text-xs text-fg-dim">{count}</span>
+
+      {/* body */}
+      <div className="min-w-0 flex-1">
+        <div className="font-mono text-[13px] font-bold" style={{ color }}>
+          {index.phase}
+        </div>
+        <div className="mt-0.5 text-[10.5px] text-ink-faint">
+          explains {index.peaks.length} peaks{inCall ? " · in the call" : ""}
+          {ratio && <span className="font-mono"> · {ratio}</span>}
+        </div>
+      </div>
+
+      {/* score */}
+      <div className="text-right font-mono">
+        <div className="text-[13px] font-bold text-ink tabular-nums">{formatScore(index.score)}</div>
+        <div className="mt-1 h-[3.5px] w-[46px] overflow-hidden rounded-full bg-hair">
+          <i className="block h-full" style={{ width: `${Math.round(score * 100)}%`, background: color }} />
+        </div>
+      </div>
+
+      {/* speculative delete */}
+      {onDelete && (
+        <button
+          type="button"
+          data-testid={`spec-delete-${index.id}`}
+          className="shrink-0 rounded p-1 text-ink-faint transition-colors hover:text-error"
+          title="Delete this speculative index"
+          aria-label={`Delete speculative index ${index.id}`}
+          onClick={(e) => { e.stopPropagation(); onDelete(); }}
+        >
+          🗑
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ── Rail section heading ─────────────────────────────────────────────────────
+
+function RailHead({ children }: { children: ReactNode }): JSX.Element {
+  return (
+    <div className="text-[10.5px] font-bold uppercase tracking-[0.09em] text-ink-faint">
+      {children}
     </div>
   );
 }
@@ -171,37 +186,31 @@ function GroupHead({ label, count }: { label: string; count: number }): JSX.Elem
 
 const FIXTURE_INDICES: IndexEntry[] = [
   { id:1, exposure_id:0, phase:"Pn3m",     basis:0.15, score:0.91, r_squared:0.995,
-    lattice_d:64.2, ngc:-1.51, status:"candidate", kind:"auto", inputs_hash:null,
-    peaks:[{ peak_id:1, ratio_position:1, residual:0.001, q_observed:0.15 },
-           { peak_id:2, ratio_position:2, residual:0.002, q_observed:0.21 }],
-    predicted_q:[0.15,0.21,0.26] },
-  { id:2, exposure_id:0, phase:"Im3m",     basis:0.14, score:0.72, r_squared:0.981,
-    lattice_d:57.1, ngc:-2.06, status:"candidate", kind:"auto", inputs_hash:null,
-    peaks:[{ peak_id:1, ratio_position:1, residual:0.003, q_observed:0.15 }],
-    predicted_q:[0.15,0.22] },
-  { id:3, exposure_id:0, phase:"Lamellar", basis:0.12, score:0.55, r_squared:0.960,
-    lattice_d:52.4, ngc:null, status:"candidate", kind:"auto", inputs_hash:null,
-    peaks:[{ peak_id:2, ratio_position:1, residual:0.004, q_observed:0.21 }],
-    predicted_q:[0.21,0.42] },
+    lattice_d:197, ngc:-1.51, status:"candidate", kind:"auto", inputs_hash:null,
+    peaks:[{ peak_id:1, ratio_position:1, residual:0.001, q_observed:0.045 },
+           { peak_id:2, ratio_position:2, residual:0.002, q_observed:0.055 },
+           { peak_id:3, ratio_position:3, residual:0.002, q_observed:0.064 }],
+    predicted_q:[0.045,0.055,0.064] },
+  { id:2, exposure_id:0, phase:"Lamellar", basis:0.12, score:0.55, r_squared:0.960,
+    lattice_d:61, ngc:null, status:"candidate", kind:"auto", inputs_hash:null,
+    peaks:[{ peak_id:4, ratio_position:1, residual:0.004, q_observed:0.103 }],
+    predicted_q:[0.103,0.206] },
 ];
 
 const PHASE_PANEL_FIXTURE = (
-  <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-4">
-    <div>
-      <GroupHead label="Active set" count={1} />
-      <ul className="flex flex-col gap-1.5">
-        <IndexCard key={1} index={FIXTURE_INDICES[0]!} isActive
-                   latticeUnit="Å" curvatureUnit="Å⁻²" onAction={() => {}} />
-      </ul>
+  <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-5">
+    <div className="flex flex-col gap-2.5">
+      <RailHead>Phase call</RailHead>
+      <div className="overflow-hidden rounded-lg border border-hair bg-plate">
+        <PhaseCallBlock index={FIXTURE_INDICES[0]!} latticeUnit="Å" />
+      </div>
     </div>
-    <div>
-      <GroupHead label="Candidates" count={2} />
-      <ul className="flex flex-col gap-1.5">
-        <IndexCard key={2} index={FIXTURE_INDICES[1]!} isActive={false}
-                   latticeUnit="Å" curvatureUnit="Å⁻²" onAction={() => {}} />
-        <IndexCard key={3} index={FIXTURE_INDICES[2]!} isActive={false}
-                   latticeUnit="Å" curvatureUnit="Å⁻²" onAction={() => {}} />
-      </ul>
+    <div className="flex flex-col gap-2.5">
+      <RailHead>Candidate indexings</RailHead>
+      <div className="flex flex-col gap-[7px]">
+        <CandidateRow index={FIXTURE_INDICES[0]!} inCall onToggle={() => {}} onHover={() => {}} onLeave={() => {}} />
+        <CandidateRow index={FIXTURE_INDICES[1]!} inCall={false} onToggle={() => {}} onHover={() => {}} onLeave={() => {}} />
+      </div>
     </div>
   </div>
 );
@@ -226,7 +235,6 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
 
   const qUnits        = experimentQ.data?.q_units ?? null;
   const latticeUnit   = latticeUnitFromQUnits(qUnits);
-  const curvatureUnit = inverseSquareUnits(qUnits);
 
   if (exposureId === undefined) {
     return (
@@ -242,8 +250,18 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
   const memberIds       = new Set(active?.members ?? []);
   const speculatives    = indices.filter((ix) => ix.kind === "speculative");
   const auto            = indices.filter((ix) => ix.kind !== "speculative");
-  const activeMembers   = indices.filter((ix) =>  memberIds.has(ix.id));
-  const alternatives    = auto.filter((ix) => !memberIds.has(ix.id));
+  // Phase call = the active set, ordered by lowest claimed q (mockup ordering).
+  const inCall = indices.filter((ix) => memberIds.has(ix.id)).sort((a, b) => {
+    const aq = Math.min(...a.peaks.map((p) => p.q_observed), Infinity);
+    const bq = Math.min(...b.peaks.map((p) => p.q_observed), Infinity);
+    return aq - bq;
+  });
+
+  const toggle = (ix: IndexEntry): void => {
+    if (!active) return;
+    if (memberIds.has(ix.id)) removeMember.mutate(ix.id);
+    else addMember.mutate(ix.id);
+  };
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -253,7 +271,7 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
         <div className="flex flex-col justify-center min-w-0">
           <div className="text-title tracking-tight">Index choices</div>
           <div className="text-xs text-fg-dim leading-tight">
-            Hover a candidate to preview peaks
+            Check every phase that is present — a sample can hold more than one
           </div>
         </div>
       </div>
@@ -263,7 +281,7 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
         <StaleIndicesBanner exposureId={exposureId} />
       </div>
 
-      {/* ── Scrollable list ── */}
+      {/* ── Scrollable rail ── */}
       <Skeleton
         name="phase-panel"
         className="flex-1 min-h-0 flex flex-col"
@@ -273,88 +291,83 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
         fixture={PHASE_PANEL_FIXTURE}
         fallback={<div className="p-4"><HintText>Loading phase assignments…</HintText></div>}
       >
-        <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-4">
+        <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-5">
 
-          {/* Active set */}
-          <div>
-            <GroupHead label="Active set" count={activeMembers.length} />
-            {activeMembers.length === 0 ? (
-              <HintText>No indices in the active set.</HintText>
-            ) : (
-              <ul className="flex flex-col gap-1.5">
-                {activeMembers.map((ix) => (
-                  <IndexCard
-                    key={ix.id}
-                    index={ix}
-                    isActive
-                    latticeUnit={latticeUnit}
-                    curvatureUnit={curvatureUnit}
-                    onAction={() => { if (active) removeMember.mutate(ix.id); }}
-                    onHover={() => setHoveredIndex(ix.id)}
-                    onLeave={() => setHoveredIndex(undefined)}
-                  />
-                ))}
-              </ul>
-            )}
+          {/* Phase call — the output */}
+          <div className="flex flex-col gap-2.5">
+            <RailHead>Phase call</RailHead>
+            <div className="overflow-hidden rounded-lg border border-hair bg-plate">
+              {inCall.length === 0 ? (
+                <div data-testid="phase-call-empty" className="px-4 py-4 text-xs text-ink-faint">
+                  No phase assigned — every peak is unindexed. Check a candidate below.
+                </div>
+              ) : (
+                <>
+                  {inCall.length > 1 && (
+                    <div
+                      data-testid="coexistence-tag"
+                      className="px-4 pt-2.5 text-[10px] font-bold uppercase tracking-[0.08em] text-ink-faint"
+                    >
+                      Coexistence · {inCall.length} phases
+                    </div>
+                  )}
+                  <div className="divide-y divide-hair">
+                    {inCall.map((ix) => (
+                      <PhaseCallBlock key={ix.id} index={ix} latticeUnit={latticeUnit} />
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
           </div>
 
-          {/* Candidates */}
-          <div>
-            <GroupHead label="Candidates" count={alternatives.length} />
-            {alternatives.length === 0 ? (
-              <HintText>No alternatives.</HintText>
+          {/* Candidate indexings — the multi-select active set */}
+          <div className="flex flex-col gap-2.5">
+            <RailHead>Candidate indexings</RailHead>
+            {auto.length === 0 ? (
+              <HintText>No candidate indexings.</HintText>
             ) : (
-              <ul className="flex flex-col gap-1.5">
-                {alternatives.map((ix) => (
-                  <IndexCard
+              <div className="flex flex-col gap-[7px]">
+                {auto.map((ix) => (
+                  <CandidateRow
                     key={ix.id}
                     index={ix}
-                    isActive={false}
-                    latticeUnit={latticeUnit}
-                    curvatureUnit={curvatureUnit}
-                    data-alternative-id={ix.id}
-                    onAction={() => addMember.mutate(ix.id)}
+                    inCall={memberIds.has(ix.id)}
+                    onToggle={() => toggle(ix)}
                     onHover={() => setHoveredIndex(ix.id)}
                     onLeave={() => setHoveredIndex(undefined)}
                   />
                 ))}
-              </ul>
+              </div>
             )}
+            <p className="text-[11px] leading-[1.55] text-ink-faint">
+              Check every phase that is present — a sample can hold more than one.
+              Candidates that explain the same peaks swap; independent phases coexist.
+            </p>
           </div>
 
           {/* Speculative — user-built sub-minpeaks indices */}
-          <div>
-            <GroupHead label="Speculative" count={speculatives.length} />
-            {speculatives.length === 0 ? (
-              <HintText>No speculative indices yet.</HintText>
-            ) : (
-              <ul className="flex flex-col gap-1.5">
-                {speculatives.map((ix) => {
-                  const inActive = memberIds.has(ix.id);
-                  return (
-                    <IndexCard
-                      key={ix.id}
-                      index={ix}
-                      isActive={inActive}
-                      latticeUnit={latticeUnit}
-                      curvatureUnit={curvatureUnit}
-                      onAction={() =>
-                        inActive
-                          ? active && removeMember.mutate(ix.id)
-                          : active && addMember.mutate(ix.id)
-                      }
-                      onDelete={() => deleteIndex.mutate(ix.id)}
-                      onHover={() => setHoveredIndex(ix.id)}
-                      onLeave={() => setHoveredIndex(undefined)}
-                    />
-                  );
-                })}
-              </ul>
+          <div className="flex flex-col gap-2.5">
+            <RailHead>Speculative</RailHead>
+            {speculatives.length > 0 && (
+              <div className="flex flex-col gap-[7px]">
+                {speculatives.map((ix) => (
+                  <CandidateRow
+                    key={ix.id}
+                    index={ix}
+                    inCall={memberIds.has(ix.id)}
+                    onToggle={() => toggle(ix)}
+                    onHover={() => setHoveredIndex(ix.id)}
+                    onLeave={() => setHoveredIndex(undefined)}
+                    onDelete={() => deleteIndex.mutate(ix.id)}
+                  />
+                ))}
+              </div>
             )}
             <button
               type="button"
               data-testid="add-speculative-button"
-              className="mt-2 w-full text-xs text-fg-dim border border-dashed border-border-soft rounded-md py-1.5 hover:text-fg hover:bg-bg-hover transition-colors"
+              className="w-full text-xs text-ink-faint border border-dashed border-hair rounded-md py-1.5 hover:text-ink hover:bg-paper-sunk transition-colors"
               onClick={() => openBuilder(exposureId)}
             >
               + Add speculative

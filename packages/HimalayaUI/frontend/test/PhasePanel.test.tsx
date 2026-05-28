@@ -26,195 +26,188 @@ function mockAll(indices: unknown[], groups: unknown[]): void {
   });
 }
 
-describe("<PhasePanel> — active group", () => {
+describe("<PhasePanel> — base", () => {
   it("renders a hint when no exposure is active", () => {
     renderWithProviders(<PhasePanel exposureId={undefined} />);
     expect(screen.getByText(/no exposure selected/i)).toBeInTheDocument();
   });
-
-  it("renders each active-group index with phase, lattice, R² and a remove button", async () => {
-    mockAll(
-      [
-        { id: 10, exposure_id: 42, phase: "Pn3m", basis: 0.5, score: 1.0,
-          r_squared: 0.998, lattice_d: 12.5, status: "candidate",
-          predicted_q: [0.7, 0.9], peaks: [] },
-        { id: 11, exposure_id: 42, phase: "Im3m", basis: 0.3, score: 0.6,
-          r_squared: 0.71, lattice_d: 9.1, status: "candidate",
-          predicted_q: [0.4, 0.6], peaks: [] },
-      ],
-      [{ id: 1, exposure_id: 42, kind: "auto", active: true, members: [10] }],
-    );
-    renderWithProviders(<PhasePanel exposureId={42} />);
-    await waitFor(() => expect(screen.getByText("Pn3m")).toBeInTheDocument());
-    expect(screen.getByText(/12\.50/)).toBeInTheDocument();
-    expect(screen.getByText(/0\.998/)).toBeInTheDocument();
-    const rm = screen.getByRole("button", { name: /remove index 10/i });
-    expect(rm).toBeInTheDocument();
-  });
-
-  it("clicking remove calls DELETE /api/groups/:gid/members/:indexId", async () => {
-    mockAll(
-      [
-        { id: 10, exposure_id: 42, phase: "Pn3m", basis: 0.5, score: 1.0,
-          r_squared: 0.998, lattice_d: 12.5, status: "candidate",
-          predicted_q: [0.7, 0.9], peaks: [] },
-      ],
-      [{ id: 2, exposure_id: 42, kind: "custom", active: true, members: [10] }],
-    );
-    renderWithProviders(<PhasePanel exposureId={42} />);
-    const rm = await screen.findByRole("button", { name: /remove index 10/i });
-    fireEvent.click(rm);
-    await waitFor(() => {
-      const spy = global.fetch as unknown as { mock: { calls: unknown[][] } };
-      const urls = spy.mock.calls.map((c) =>
-        typeof c[0] === "string" ? c[0] : (c[0] as Request).url);
-      expect(urls.some((u) => u === "/api/groups/2/members/10")).toBe(true);
-    });
-  });
 });
 
-// Score bars were removed in favour of a numeric-only score; the visual
-// width assertion no longer applies. Keeping the describe block as a
-// stub so the file's structure stays self-documenting.
-// describe("<PhasePanel> — score bars", () => { ... });
-
-describe("<PhasePanel> — alternatives", () => {
-  it("renders alternative indices with a + button", async () => {
+describe("<PhasePanel> — phase-call output block (R4 L-9/L-10)", () => {
+  it("renders a Phase call block per active-set phase with serif name, score and series ratio", async () => {
     mockAll(
       [
-        { id: 10, exposure_id: 42, phase: "Pn3m", basis: 0.5, score: 1.0,
-          r_squared: 0.998, lattice_d: 12.5, status: "candidate",
-          predicted_q: [0.7, 0.9], peaks: [] },
-        { id: 11, exposure_id: 42, phase: "Im3m", basis: 0.3, score: 0.6,
-          r_squared: 0.71, lattice_d: 9.1, status: "candidate",
-          predicted_q: [0.4, 0.6], peaks: [] },
+        { id: 10, exposure_id: 42, phase: "Pn3m", basis: 0.5, score: 0.89,
+          r_squared: 0.998, lattice_d: 197, ngc: -1.5, status: "candidate", kind: "auto",
+          predicted_q: [0.045, 0.055, 0.064],
+          peaks: [
+            { peak_id: 1, ratio_position: 1, residual: 0, q_observed: 0.045 },
+            { peak_id: 2, ratio_position: 2, residual: 0, q_observed: 0.055 },
+            { peak_id: 3, ratio_position: 3, residual: 0, q_observed: 0.064 },
+          ] },
       ],
       [{ id: 1, exposure_id: 42, kind: "auto", active: true, members: [10] }],
     );
     renderWithProviders(<PhasePanel exposureId={42} />);
-    await waitFor(() => expect(screen.getByText("Im3m")).toBeInTheDocument());
-    expect(screen.getByRole("button", { name: /add index 11/i })).toBeInTheDocument();
+    const block = await screen.findByTestId("phase-call-block-10");
+    expect(block).toHaveTextContent("Pn3m");
+    expect(block).toHaveTextContent("0.89");
+    expect(block).toHaveTextContent("197");
+    expect(block).toHaveTextContent("√2 : √3 : 2");
   });
 
-  it("dims alternatives with r_squared below 0.98", async () => {
+  it("shows a Coexistence header when two phases are in the call", async () => {
     mockAll(
       [
-        { id: 10, exposure_id: 42, phase: "Pn3m", basis: 0.5, score: 0.8,
-          r_squared: 0.998, lattice_d: 12.5, status: "candidate",
-          predicted_q: [0.7, 0.9], peaks: [] },
-        { id: 11, exposure_id: 42, phase: "Im3m", basis: 0.3, score: 0.6,
-          r_squared: 0.71, lattice_d: 9.1, status: "candidate",
-          predicted_q: [0.4, 0.6], peaks: [] },
+        { id: 10, exposure_id: 42, phase: "Pn3m", basis: 0.5, score: 0.89,
+          r_squared: 0.99, lattice_d: 197, ngc: -1.5, status: "candidate", kind: "auto",
+          predicted_q: [0.045], peaks: [{ peak_id: 1, ratio_position: 1, residual: 0, q_observed: 0.045 }] },
+        { id: 11, exposure_id: 42, phase: "Lamellar", basis: 0.3, score: 0.96,
+          r_squared: 0.99, lattice_d: 61, ngc: null, status: "candidate", kind: "auto",
+          predicted_q: [0.103], peaks: [{ peak_id: 4, ratio_position: 1, residual: 0, q_observed: 0.103 }] },
       ],
-      [{ id: 1, exposure_id: 42, kind: "auto", active: true, members: [10] }],
+      [{ id: 1, exposure_id: 42, kind: "auto", active: true, members: [10, 11] }],
     );
     renderWithProviders(<PhasePanel exposureId={42} />);
-    await waitFor(() => expect(screen.getByText("Im3m")).toBeInTheDocument());
-
-    const im3mText = screen.getByText("Im3m");
-    const li = im3mText.closest("li");
-    expect(li).not.toBeNull();
-    expect(li).toHaveAttribute("data-low-r2", "true");
-    expect(li!.className).toMatch(/opacity-40/);
-
-    // id:10 is in the active group (members: [10]), not alternatives
-    expect(document.querySelector('[data-alternative-id="10"]')).toBeNull();
+    await screen.findByTestId("phase-call-block-10");
+    expect(screen.getByTestId("coexistence-tag")).toHaveTextContent(/Coexistence.*2 phases/i);
   });
 
-  it("does not dim alternatives with null r_squared", async () => {
+  it("shows an empty phase-call message when no index is in the call", async () => {
     mockAll(
       [
         { id: 11, exposure_id: 42, phase: "Im3m", basis: 0.3, score: 0.6,
-          r_squared: null, lattice_d: 9.1, status: "candidate",
-          predicted_q: [0.4, 0.6], peaks: [] },
+          r_squared: 0.71, lattice_d: 9.1, ngc: null, status: "candidate", kind: "auto",
+          predicted_q: [0.4], peaks: [{ peak_id: 1, ratio_position: 1, residual: 0, q_observed: 0.4 }] },
       ],
       [{ id: 1, exposure_id: 42, kind: "auto", active: true, members: [] }],
     );
     renderWithProviders(<PhasePanel exposureId={42} />);
-    await waitFor(() => expect(screen.getByText("Im3m")).toBeInTheDocument());
-    expect(document.querySelector('[data-low-r2="true"]')).toBeNull();
+    expect(await screen.findByTestId("phase-call-empty")).toBeInTheDocument();
   });
+});
 
-  it("hovering an alternative sets hoveredIndexId; leaving clears it", async () => {
-    useAppState.setState({ hoveredIndexId: undefined });
+describe("<PhasePanel> — candidate multi-select (R4 L-10)", () => {
+  it("renders candidates as checkboxes reflecting active-set membership", async () => {
     mockAll(
       [
-        { id: 10, exposure_id: 42, phase: "Pn3m", basis: 0.5, score: 1.0,
-          r_squared: 0.998, lattice_d: 12.5, status: "candidate",
-          predicted_q: [0.7], peaks: [] },
+        { id: 10, exposure_id: 42, phase: "Pn3m", basis: 0.5, score: 0.89,
+          r_squared: 0.99, lattice_d: 197, ngc: -1.5, status: "candidate", kind: "auto",
+          predicted_q: [0.045], peaks: [{ peak_id: 1, ratio_position: 1, residual: 0, q_observed: 0.045 }] },
         { id: 11, exposure_id: 42, phase: "Im3m", basis: 0.3, score: 0.6,
-          r_squared: 0.71, lattice_d: 9.1, status: "candidate",
-          predicted_q: [0.4], peaks: [] },
+          r_squared: 0.71, lattice_d: 9.1, ngc: null, status: "candidate", kind: "auto",
+          predicted_q: [0.4], peaks: [{ peak_id: 2, ratio_position: 1, residual: 0, q_observed: 0.4 }] },
       ],
       [{ id: 1, exposure_id: 42, kind: "auto", active: true, members: [10] }],
     );
     renderWithProviders(<PhasePanel exposureId={42} />);
-    const row = await waitFor(() =>
-      document.querySelector<HTMLElement>('[data-alternative-id="11"]') ?? (() => { throw new Error("not found"); })(),
+    const inCall = await screen.findByRole("checkbox", { name: /Pn3m/i });
+    expect(inCall).toBeChecked();
+    const candidate = screen.getByRole("checkbox", { name: /Im3m/i });
+    expect(candidate).not.toBeChecked();
+  });
+
+  it("surfaces the series ratio on a candidate row", async () => {
+    mockAll(
+      [
+        { id: 11, exposure_id: 42, phase: "Lamellar", basis: 0.3, score: 0.6,
+          r_squared: 0.99, lattice_d: 61, ngc: null, status: "candidate", kind: "auto",
+          predicted_q: [0.103, 0.206],
+          peaks: [
+            { peak_id: 1, ratio_position: 1, residual: 0, q_observed: 0.103 },
+            { peak_id: 2, ratio_position: 2, residual: 0, q_observed: 0.206 },
+          ] },
+      ],
+      [{ id: 1, exposure_id: 42, kind: "auto", active: true, members: [] }],
     );
+    renderWithProviders(<PhasePanel exposureId={42} />);
+    const row = await screen.findByTestId("candidate-row-11");
+    expect(row).toHaveTextContent("1 : 2");
+  });
+
+  it("toggling an unchecked candidate posts add-to-group", async () => {
+    vi.spyOn(global, "fetch").mockImplementation(async (input) => {
+      const u = typeof input === "string" ? input : (input as Request).url;
+      if (u.endsWith("/indices")) return new Response(JSON.stringify([
+        { id: 10, exposure_id: 42, phase: "Pn3m", basis: 0.5, score: 0.89, r_squared: 0.99,
+          lattice_d: 197, ngc: -1.5, status: "candidate", kind: "auto", predicted_q: [0.045],
+          peaks: [{ peak_id: 1, ratio_position: 1, residual: 0, q_observed: 0.045 }] },
+        { id: 11, exposure_id: 42, phase: "Im3m", basis: 0.3, score: 0.6, r_squared: 0.71,
+          lattice_d: 9.1, ngc: null, status: "candidate", kind: "auto", predicted_q: [0.4],
+          peaks: [{ peak_id: 2, ratio_position: 1, residual: 0, q_observed: 0.4 }] },
+      ]), { status: 200, headers: { "Content-Type": "application/json" } });
+      if (u.endsWith("/groups")) return new Response(JSON.stringify([
+        { id: 2, exposure_id: 42, kind: "custom", active: true, members: [10] },
+      ]), { status: 200, headers: { "Content-Type": "application/json" } });
+      if (u.endsWith("/api/groups/2/members")) return new Response(JSON.stringify({
+        id: 2, exposure_id: 42, kind: "custom", active: true, members: [10, 11],
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+      return new Response("not found", { status: 404 });
+    });
+    renderWithProviders(<PhasePanel exposureId={42} />);
+    const candidate = await screen.findByRole("checkbox", { name: /Im3m/i });
+    fireEvent.click(candidate);
+    await waitFor(() => {
+      const spy = global.fetch as unknown as { mock: { calls: unknown[][] } };
+      const urls = spy.mock.calls.map((c) => typeof c[0] === "string" ? c[0] : (c[0] as Request).url);
+      expect(urls).toContain("/api/groups/2/members");
+    });
+  });
+
+  it("toggling a checked candidate posts remove-from-group", async () => {
+    mockAll(
+      [
+        { id: 10, exposure_id: 42, phase: "Pn3m", basis: 0.5, score: 0.89, r_squared: 0.99,
+          lattice_d: 197, ngc: -1.5, status: "candidate", kind: "auto", predicted_q: [0.045],
+          peaks: [{ peak_id: 1, ratio_position: 1, residual: 0, q_observed: 0.045 }] },
+      ],
+      [{ id: 2, exposure_id: 42, kind: "custom", active: true, members: [10] }],
+    );
+    renderWithProviders(<PhasePanel exposureId={42} />);
+    const checked = await screen.findByRole("checkbox", { name: /Pn3m/i });
+    fireEvent.click(checked);
+    await waitFor(() => {
+      const spy = global.fetch as unknown as { mock: { calls: unknown[][] } };
+      const urls = spy.mock.calls.map((c) => typeof c[0] === "string" ? c[0] : (c[0] as Request).url);
+      expect(urls.some((u) => u === "/api/groups/2/members/10")).toBe(true);
+    });
+  });
+
+  it("hovering a candidate sets hoveredIndexId; leaving clears it", async () => {
+    useAppState.setState({ hoveredIndexId: undefined });
+    mockAll(
+      [
+        { id: 11, exposure_id: 42, phase: "Im3m", basis: 0.3, score: 0.6, r_squared: 0.71,
+          lattice_d: 9.1, ngc: null, status: "candidate", kind: "auto", predicted_q: [0.4],
+          peaks: [{ peak_id: 2, ratio_position: 1, residual: 0, q_observed: 0.4 }] },
+      ],
+      [{ id: 1, exposure_id: 42, kind: "auto", active: true, members: [] }],
+    );
+    renderWithProviders(<PhasePanel exposureId={42} />);
+    const row = await screen.findByTestId("candidate-row-11");
     fireEvent.mouseEnter(row);
     expect(useAppState.getState().hoveredIndexId).toBe(11);
     fireEvent.mouseLeave(row);
     expect(useAppState.getState().hoveredIndexId).toBeUndefined();
   });
+});
 
-  it("clicking + on an alternative posts to /api/groups/:gid/members", async () => {
-    vi.spyOn(global, "fetch").mockImplementation(async (input) => {
-      const u = typeof input === "string" ? input : (input as Request).url;
-      if (u.endsWith("/indices")) {
-        return new Response(JSON.stringify([
-          { id: 10, exposure_id: 42, phase: "Pn3m", basis: 0.5, score: 1.0,
-            r_squared: 0.998, lattice_d: 12.5, status: "candidate",
-            predicted_q: [0.7], peaks: [] },
-          { id: 11, exposure_id: 42, phase: "Im3m", basis: 0.3, score: 0.6,
-            r_squared: 0.71, lattice_d: 9.1, status: "candidate",
-            predicted_q: [0.4], peaks: [] },
-        ]), { status: 200, headers: { "Content-Type": "application/json" } });
-      }
-      if (u.endsWith("/groups")) {
-        return new Response(JSON.stringify([
-          { id: 2, exposure_id: 42, kind: "custom", active: true, members: [10] },
-        ]), { status: 200, headers: { "Content-Type": "application/json" } });
-      }
-      if (u.endsWith("/api/groups/2/members")) {
-        return new Response(JSON.stringify({
-          id: 2, exposure_id: 42, kind: "custom", active: true, members: [10, 11],
-        }), { status: 200, headers: { "Content-Type": "application/json" } });
-      }
-      return new Response("not found", { status: 404 });
-    });
-
-    renderWithProviders(<PhasePanel exposureId={42} />);
-    const addBtn = await screen.findByRole("button", { name: /add index 11/i });
-    fireEvent.click(addBtn);
-    await waitFor(() => {
-      const spy = global.fetch as unknown as { mock: { calls: unknown[][] } };
-      const urls = spy.mock.calls.map((c) =>
-        typeof c[0] === "string" ? c[0] : (c[0] as Request).url);
-      expect(urls).toContain("/api/groups/2/members");
-    });
-  });
-
-  it("renders κ for cubic phases when ngc is present, omits it otherwise", async () => {
+describe("<PhasePanel> — speculative", () => {
+  it("renders speculative indices as candidate rows with a delete affordance + add button", async () => {
     mockAll(
       [
-        { id: 10, exposure_id: 42, phase: "Pn3m", basis: 0.5, score: 1.0,
-          r_squared: 0.998, lattice_d: 12.5, ngc: -1.51, status: "candidate",
-          predicted_q: [0.7], peaks: [] },
-        { id: 11, exposure_id: 42, phase: "Lamellar", basis: 0.3, score: 0.6,
-          r_squared: 0.99, lattice_d: 9.1, ngc: null, status: "candidate",
-          predicted_q: [0.4], peaks: [] },
+        { id: 20, exposure_id: 42, phase: "Lamellar", basis: 0.3, score: 0.55, r_squared: 1.0,
+          lattice_d: 52, ngc: null, status: "candidate", kind: "speculative", predicted_q: [0.21, 0.42],
+          peaks: [
+            { peak_id: 5, ratio_position: 1, residual: 0, q_observed: 0.21 },
+            { peak_id: 6, ratio_position: 2, residual: 0, q_observed: 0.42 },
+          ] },
       ],
-      [{ id: 1, exposure_id: 42, kind: "auto", active: true, members: [10, 11] }],
+      [{ id: 1, exposure_id: 42, kind: "auto", active: true, members: [] }],
     );
     renderWithProviders(<PhasePanel exposureId={42} />);
-    await waitFor(() => expect(screen.getByText("Pn3m")).toBeInTheDocument());
-
-    const cubic = screen.getByTestId("ngc-10");
-    expect(cubic).toHaveTextContent("κ");
-    expect(cubic).toHaveTextContent("-1.510");
-    // No experiment mock → q_units null → lattice unit defaults to Å
-    expect(cubic).toHaveTextContent("Å⁻²");
-    expect(screen.queryByTestId("ngc-11")).toBeNull();
+    expect(await screen.findByTestId("candidate-row-20")).toBeInTheDocument();
+    expect(screen.getByTestId("spec-delete-20")).toBeInTheDocument();
+    expect(screen.getByTestId("add-speculative-button")).toBeInTheDocument();
   });
 });
