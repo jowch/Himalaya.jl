@@ -225,7 +225,7 @@
                       color: var(--color-fg-muted); }
   .text-label       { font-size: var(--text-sm);  line-height: 1.4;
                       font-weight: 500; text-transform: uppercase;
-                      letter-spacing: 0.04em; color: var(--color-fg-muted); }
+                      letter-spacing: 0.06em; color: var(--color-fg-muted); }
   .text-meta        { font-size: var(--text-sm);  line-height: 1.4;
                       font-weight: 500; color: var(--color-fg); }
   .text-body        { font-size: var(--text-base); line-height: 1.5;
