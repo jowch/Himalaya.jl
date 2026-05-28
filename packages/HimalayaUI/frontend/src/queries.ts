@@ -247,6 +247,19 @@ export function useMemberTraces(exposureIds: number[]): Map<number, api.Trace> {
 }
 
 /**
+ * Sibling of `useMemberTraces`: fetch candidate indices for a variable list of
+ * exposure ids in parallel for the scoping worksheet's phase reads (sparkline
+ * colour + preview strip). Cache keys mirror `useIndices` so single-exposure
+ * pages and scoping share one cache row. Returns `Map<exposure_id, IndexEntry[]>`.
+ */
+export function useMemberIndices(exposureIds: number[]): Map<number, api.IndexEntry[]> {
+  return useStableQueryMap(exposureIds, (id) => ({
+    queryKey: queryKeys.indices(id),
+    queryFn: () => api.listIndices(id),
+  }));
+}
+
+/**
  * Sibling of `useMemberTraces` that surfaces a single boolean — true when
  * any underlying trace fetch is in its cold-loading state. Used by the
  * Compare-page skeleton wrappers to gate plot + gutter.
