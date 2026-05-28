@@ -116,6 +116,13 @@ export function buildCrossTraceTrackingMarks(
   const vertices: TrackVertex[] = [];
   for (const [phase, rows] of phaseRows) {
     if (rows.length < 2) continue;
+    // Phase colour, NOT terracotta. The migration polyline is a *phase
+    // relation* (the same reflection tracked across members of one phase),
+    // not an interaction mark — so it carries the phase hue, like every other
+    // phase-coloured mark on the surface. DESIGN.md §2 Phase-Carries-the-
+    // Surface Rule reserves terracotta (the grease pencil) for interaction
+    // (reject ✕, primary action, q-link cross-highlight). Do not "fix" this to
+    // the accent (cf. R3-F01: terracotta over-use is the recurring miss).
     const stroke = phaseColor(phase);
     // The longest peak_ids array bounds how many Miller orders we can connect
     // — orders k where fewer than 2 members carry a k-th peak are dropped.
