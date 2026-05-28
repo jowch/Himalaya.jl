@@ -73,21 +73,40 @@ function ExposureThumb({
   const isRejected = exposure.status === "rejected";
   const isRepresentative = exposure.selected;
   return (
-    <div
+    <button
+      type="button"
       data-testid={`exposure-thumb-${exposure.id}`}
       data-rejected={isRejected ? "true" : undefined}
       data-representative={isRepresentative ? "true" : undefined}
       data-batch-selected={selectedForBatch ? "true" : undefined}
+      // R3-S01 (#256, P1 a11y): the thumb root is a real <button> so the
+      // contact sheet is keyboard-operable. R2-M11 stripped the per-thumb
+      // overlay buttons — the thumb's only keyboard-reachable focus targets —
+      // so the window body itself becomes the focusable control.
+      aria-label={`Frame ${frameNo}${isRejected ? " (dropped)" : ""}`}
       // L-5 legend "click — select a frame" / "⇧ click — extend the range":
       // the whole thumb body is the click target (shiftKey extends the range).
       // double-click opens the loupe (L-8). With R2-M11 the per-thumb buttons
       // are retired, so no inner controls need stopPropagation.
       onClick={(e) => onSelect(exposure.id, e.shiftKey)}
       onDoubleClick={onOpenLoupe}
+      // Keyboard Enter/Space → open the loupe (the navigation affordance an AT
+      // user needs to screen a sample; the keyboard analogue of double-click,
+      // since there is no single-key analogue of "double-click"). preventDefault
+      // suppresses the <button>'s synthesized activation click so onSelect does
+      // NOT also fire — one key, one action.
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onOpenLoupe();
+        }
+      }}
       className={[
-        // square dark window (62px) — L-4
-        "relative h-[62px] w-[62px] shrink-0 cursor-pointer overflow-hidden rounded-[3px]",
-        "border border-frame-edge bg-frame-edge",
+        // square dark window (62px) — L-4. appearance-none + p-0 neutralise UA
+        // button chrome; the box is fully specified by the size/border classes.
+        "relative h-[62px] w-[62px] shrink-0 cursor-pointer appearance-none p-0",
+        "overflow-hidden rounded-[3px] border border-frame-edge bg-frame-edge",
+        "focus-visible:ring-2 focus-visible:ring-print-accent focus-visible:ring-offset-1",
         selectedForBatch ? "ring-2 ring-print-accent" : "ring-0",
       ].join(" ")}
     >
@@ -121,7 +140,7 @@ function ExposureThumb({
       )}
       {/* M-10: the grease-pencil reject mark */}
       {isRejected && <RejectXMark />}
-    </div>
+    </button>
   );
 }
 

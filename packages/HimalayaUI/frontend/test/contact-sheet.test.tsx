@@ -725,4 +725,39 @@ describe("ContactSheetRow — advertised affordances", () => {
     fireEvent.doubleClick(thumb);
     expect(await screen.findByTestId("loupe-stub")).toBeInTheDocument();
   });
+
+  // R3-S01 (#256, P1 a11y): the thumb root is a real <button>, so the contact
+  // sheet is keyboard-operable (the footer legend advertises affordances that
+  // were mouse-only before this). Keyboard Enter/Space opens the loupe (the
+  // navigation affordance an AT user needs to screen a sample); the handler
+  // preventDefaults the synthesized activation click so the auto-fired select
+  // does NOT also run -- no double-action on one key.
+  it("renders each thumbnail as a real <button> (keyboard-operable)", async () => {
+    mockFetch({
+      "/api/samples/7/exposures": [makeExposure({ id: 1, sample_id: 7 })],
+    });
+    renderRowRouted(makeSample({ id: 7 }));
+    const thumb = await screen.findByTestId("exposure-thumb-1");
+    expect(thumb.tagName).toBe("BUTTON");
+  });
+
+  it("opens the loupe on Enter without leaving the thumb selected", async () => {
+    mockFetch({
+      "/api/samples/7/exposures": [makeExposure({ id: 1, sample_id: 7 })],
+    });
+    renderRowRouted(makeSample({ id: 7 }));
+    const thumb = await screen.findByTestId("exposure-thumb-1");
+    fireEvent.keyDown(thumb, { key: "Enter" });
+    expect(await screen.findByTestId("loupe-stub")).toBeInTheDocument();
+  });
+
+  it("opens the loupe on Space without leaving the thumb selected", async () => {
+    mockFetch({
+      "/api/samples/7/exposures": [makeExposure({ id: 1, sample_id: 7 })],
+    });
+    renderRowRouted(makeSample({ id: 7 }));
+    const thumb = await screen.findByTestId("exposure-thumb-1");
+    fireEvent.keyDown(thumb, { key: " " });
+    expect(await screen.findByTestId("loupe-stub")).toBeInTheDocument();
+  });
 });
