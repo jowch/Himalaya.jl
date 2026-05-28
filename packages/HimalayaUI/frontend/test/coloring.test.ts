@@ -70,10 +70,77 @@ describe("colorFor — palette + fallback", () => {
     // `PHASE_PALETTE`), while `bySample` and `distinct` walk `COMPARE_PALETTE`.
     // If any entry overlaps, two members chosen under different rules would
     // render identically — visually conflating sample- and phase-colorings.
-    // See coloring.ts doc-comment lines 19–22.
+    // See coloring.ts doc-comment.
     const phaseColors = new Set(Object.values(PHASE_PALETTE));
     for (const c of COMPARE_PALETTE) {
       expect(phaseColors.has(c)).toBe(false);
+    }
+  });
+});
+
+// --- Paper-tune verification (R8-N2 / round-2 finding) ----------------------
+// Mirrors the methodology used in `phases.test.ts` for the R0b PHASE_PALETTE
+// retune (#222 / #236): self-contained OKLCH→linear-sRGB→WCAG helper, then
+// assert every palette entry clears AA (≥ 4.5:1) against `--plate`.
+//
+// The pre-R8-N2 palette was dark-tuned (L 0.76–0.80) for the retired dark
+// surface; on the warm paper plate the bySample/distinct traces washed out.
+// This block is what flips when the palette is retuned.
+
+const PLATE = "oklch(0.992 0.004 90)";
+
+function parseOklch(s: string): { L: number; C: number; h: number } {
+  const m = /oklch\(\s*([\d.]+)\s+([\d.]+)\s+([\d.-]+)\s*\)/i.exec(s);
+  if (!m) throw new Error(`not an oklch() string: ${s}`);
+  return { L: parseFloat(m[1]!), C: parseFloat(m[2]!), h: parseFloat(m[3]!) };
+}
+
+function oklchToLinearSrgb({ L, C, h }: { L: number; C: number; h: number }): [number, number, number] {
+  const hr = (h * Math.PI) / 180;
+  const a = C * Math.cos(hr);
+  const b = C * Math.sin(hr);
+  const l_ = L + 0.3963377774 * a + 0.2158037573 * b;
+  const m_ = L - 0.1055613458 * a - 0.0638541728 * b;
+  const s_ = L - 0.0894841775 * a - 1.291485548 * b;
+  const l = l_ * l_ * l_;
+  const m = m_ * m_ * m_;
+  const s = s_ * s_ * s_;
+  return [
+    +4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+  ];
+}
+
+function relativeLuminance(s: string): number {
+  const [r, g, b] = oklchToLinearSrgb(parseOklch(s)).map((c) => Math.min(1, Math.max(0, c)));
+  return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+}
+
+function contrastRatio(a: string, b: string): number {
+  const la = relativeLuminance(a);
+  const lb = relativeLuminance(b);
+  const lighter = Math.max(la, lb);
+  const darker = Math.min(la, lb);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+describe("COMPARE_PALETTE — paper-tuned (R8-N2, round-2 finding)", () => {
+  it("every palette colour passes WCAG AA (>= 4.5:1) on --plate", () => {
+    for (const c of COMPARE_PALETTE) {
+      const ratio = contrastRatio(c, PLATE);
+      expect(ratio, `${c} on --plate`).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it("every palette colour sits in the paper-tune luminance band (0.50 ≤ L ≤ 0.58)", () => {
+    // Same band the R0b PHASE_PALETTE retune (#222) sits in. A dark-tuned
+    // entry (L 0.76–0.80) drifting in here is the exact regression R8-N2
+    // calls out — fail loudly rather than wash out on paper.
+    for (const c of COMPARE_PALETTE) {
+      const { L } = parseOklch(c);
+      expect(L, `${c} luminance out of paper-tune band`).toBeGreaterThanOrEqual(0.5);
+      expect(L, `${c} luminance out of paper-tune band`).toBeLessThanOrEqual(0.58);
     }
   });
 });
