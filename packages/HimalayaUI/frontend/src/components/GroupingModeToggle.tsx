@@ -14,10 +14,11 @@
  * active option (used by E2E tests). Each option carries `data-value` and
  * `data-active` for assertions.
  *
- * **Styling — text-link parity with PlotCard.** Mirrors the q-range-reset /
- * XScaleToggle vocabulary used by the Index page: `text-fg-dim` at rest,
- * `text-fg + bg-bg-hover + border-border` on hover, `bg-bg-subtle text-fg`
- * when active. No outer bordered wrapper, no leading "Color" cell — the
+ * Styling mirrors the canonical sibling toggles (`ScaleToggle`,
+ * `RepresentationToggle`): `bg-ink text-paper` active, `text-ink-faint` at
+ * rest, ghost hover (`hover:text-ink hover:bg-paper-sunk`). Print vocabulary
+ * only — no dark-era `bg-bg-*`/`text-fg-*`/`border-border` tokens (DESIGN.md §6).
+ * No outer bordered wrapper, no leading "Color" cell — the
  * `aria-label="Trace grouping mode"` carries that semantic.
  */
 import type { GroupingMode } from "../lib/comparison/coloring";
@@ -58,10 +59,10 @@ export function GroupingModeToggle({
             onClick={() => onChange(opt.value)}
             className={[
               "px-1.5 py-0.5 rounded text-xs transition-colors",
-              "border border-transparent hover:border-border",
+              "border border-transparent",
               active
-                ? "bg-bg-subtle text-fg"
-                : "text-fg-dim hover:text-fg hover:bg-bg-hover",
+                ? "bg-ink text-paper"
+                : "text-ink-faint hover:text-ink hover:bg-paper-sunk",
             ].join(" ")}
           >
             {opt.label}
