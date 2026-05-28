@@ -57,7 +57,19 @@ const PLOT_CARD_FIXTURE = (
  * Auto-selects the first exposure when a sample is chosen (per the redesign plan
  * — exposure selection UI is deferred to a future triage page).
  */
-export function PlotCard(): JSX.Element {
+export interface PlotCardProps {
+  /**
+   * Opt-in focus-variant header (R3 / #226). When supplied, the title strip
+   * renders this node on the left in place of the legacy experiment-picker
+   * button — dropping the `onTitleClick → openNavModal` affordance that, in
+   * the focus context (route seeds only the sample), would otherwise fall to
+   * the "pick an experiment" placeholder. The right-side q-controls / export
+   * cluster is unchanged. Prop-less PlotCard keeps the picker (Index page).
+   */
+  headerSlot?: JSX.Element;
+}
+
+export function PlotCard({ headerSlot }: PlotCardProps = {}): JSX.Element {
   const activeExperimentId = useAppState((s) => s.activeExperimentId);
   const activeSampleId     = useAppState((s) => s.activeSampleId);
   const activeExposureId   = useAppState((s) => s.activeExposureId);
@@ -305,6 +317,7 @@ export function PlotCard(): JSX.Element {
   return (
     <div data-testid="plot-card" className="flex flex-col h-full min-h-0 overflow-hidden">
       <TitleStrip
+        headerSlot={headerSlot}
         experimentName={experimentName}
         sampleName={sampleName}
         onTitleClick={() => openNavModal(titleStep)}
@@ -343,6 +356,8 @@ export function PlotCard(): JSX.Element {
 }
 
 interface TitleStripProps {
+  /** Focus-variant header (R3 / #226); replaces the picker when supplied. */
+  headerSlot?:    JSX.Element;
   experimentName: string | undefined;
   sampleName:     string | undefined;
   onTitleClick:   () => void;
@@ -370,7 +385,7 @@ interface TitleStripProps {
  * the top of the workspace.
  */
 function TitleStrip({
-  experimentName, sampleName, onTitleClick, xDomain, fullRange, onXDomain,
+  headerSlot, experimentName, sampleName, onTitleClick, xDomain, fullRange, onXDomain,
   xType, onSetXType, onFitFeatures, canFit,
   exportSpec, exportFilenameStem, exportDisabled,
 }: TitleStripProps): JSX.Element {
@@ -381,6 +396,10 @@ function TitleStrip({
       data-testid="plot-stat-strip"
       className="card-header justify-between gap-3"
     >
+      {/* Focus variant (R3 / #226): render the supplied header and drop the
+          experiment-picker button entirely. The picker only makes sense on the
+          Index page, where both experiment and sample are picked globally. */}
+      {headerSlot ?? (
       <button
         type="button"
         data-testid="plot-title"
@@ -414,6 +433,7 @@ function TitleStrip({
                           border border-border rounded px-1 leading-none py-px">/</kbd>
         </span>
       </button>
+      )}
       <div className="shrink-0 flex items-center gap-2">
         <button
           type="button"
