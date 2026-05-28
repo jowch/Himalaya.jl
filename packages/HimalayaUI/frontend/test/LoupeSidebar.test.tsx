@@ -52,8 +52,11 @@ beforeEach(() => {
 });
 
 describe("LoupeSidebar — meta-list", () => {
-  // R2-M13: the redundant Status row drops here; Kind stays.
-  it("shows filename, kind and frame position", () => {
+  // R3-S02 (#256): the meta-list is instrument-facing — frame / integration /
+  // collected / signal (lowercase), mirroring the mockup. "Filename" and the
+  // schema-noun "Kind" (averaged/background_subtracted) are gone; integration +
+  // collected are stubbed to "—" until the backend fields are plumbed.
+  it("shows frame position and lowercase instrument-facing meta rows", () => {
     const exposures = [
       exposure({ id: 1 }), exposure({ id: 2, kind: "averaged", filename: null }),
     ];
@@ -64,10 +67,19 @@ describe("LoupeSidebar — meta-list", () => {
         exposures={exposures}
       />,
     ));
-    expect(screen.getByTestId("loupe-meta-filename")).toHaveTextContent("—");
-    expect(screen.getByTestId("loupe-meta-kind")).toHaveTextContent("averaged");
     expect(screen.getByTestId("loupe-meta-frame")).toHaveTextContent("2 of 2");
-    // The Status row is gone — the verdict card carries the same fact.
+    // Integration + collected are present and stubbed to "—".
+    expect(screen.getByTestId("loupe-meta-integration")).toHaveTextContent("—");
+    expect(screen.getByTestId("loupe-meta-collected")).toHaveTextContent("—");
+    // Labels are lowercase, instrument-facing.
+    expect(screen.getByText("frame")).toBeInTheDocument();
+    expect(screen.getByText("integration")).toBeInTheDocument();
+    expect(screen.getByText("collected")).toBeInTheDocument();
+    expect(screen.getByText("signal")).toBeInTheDocument();
+    // The schema-leaking rows are gone.
+    expect(screen.queryByTestId("loupe-meta-filename")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("loupe-meta-kind")).not.toBeInTheDocument();
+    // The Status row stayed gone (R2-M13).
     expect(screen.queryByTestId("loupe-meta-status")).not.toBeInTheDocument();
   });
 });
@@ -107,16 +119,25 @@ describe("LoupeSidebar — verdict", () => {
     render(wrap(<LoupeSidebar {...props} />));
     const toggle = screen.getByTestId("loupe-drop-toggle");
     expect(toggle).toHaveTextContent("Drop");
+    // R3-S03 (#256): the mono X keycap makes the keyboard shortcut discoverable
+    // from the right rail (matching CullBar's "Drop X" + the footer legend).
+    expect(toggle).toHaveTextContent("X");
+    const keycap = toggle.querySelector(".font-mono");
+    expect(keycap).not.toBeNull();
+    expect(keycap).toHaveTextContent("X");
     fireEvent.click(toggle);
     expect(props.onDropToggle).toHaveBeenCalledTimes(1);
   });
 
-  it("offers Restore for a dropped exposure", () => {
+  it("offers Restore for a dropped exposure with the mono X keycap", () => {
     const props = defaultProps();
     render(wrap(
       <LoupeSidebar {...props} exposure={exposure({ status: "rejected" })} />,
     ));
-    expect(screen.getByTestId("loupe-drop-toggle")).toHaveTextContent("Restore");
+    const toggle = screen.getByTestId("loupe-drop-toggle");
+    expect(toggle).toHaveTextContent("Restore");
+    expect(toggle).toHaveTextContent("X");
+    expect(toggle.querySelector(".font-mono")).toHaveTextContent("X");
   });
 
   // T-4: the kept verdict dot is SAGE (the success status token), not the
