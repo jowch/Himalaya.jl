@@ -39,6 +39,33 @@ describe("FocusNotesMargin", () => {
     expect(ta.value).toBe("my in-progress edit"); // focus-gate held
   });
 
+  it("R3-F04: shows a count badge when notes are present", () => {
+    render(<FocusNotesMargin sample={SAMPLE} onSaveNotes={() => {}} />);
+    expect(screen.getByTestId("focus-notes-count")).toHaveTextContent("1");
+  });
+
+  it("R3-F04: hides the count badge when notes are empty", () => {
+    render(<FocusNotesMargin sample={{ ...SAMPLE, notes: "" }} onSaveNotes={() => {}} />);
+    expect(screen.queryByTestId("focus-notes-count")).toBeNull();
+  });
+
+  it("R3-F04: mono-formats q ≈ N.NNN references in the note body", () => {
+    render(
+      <FocusNotesMargin
+        sample={{ ...SAMPLE, notes: "weak shoulder at q ≈ 0.064 here" }}
+        onSaveNotes={() => {}}
+      />,
+    );
+    const refs = screen.getAllByTestId("focus-notes-qref");
+    expect(refs.length).toBeGreaterThanOrEqual(1);
+    expect(refs[0]).toHaveTextContent("q ≈ 0.064");
+  });
+
+  it("R3-F04: renders the dashed add-a-note affordance", () => {
+    render(<FocusNotesMargin sample={{ ...SAMPLE, notes: "" }} onSaveNotes={() => {}} />);
+    expect(screen.getByTestId("focus-notes-add")).toBeInTheDocument();
+  });
+
   it("calls onSaveNotes with the edited value on blur", async () => {
     const user = userEvent.setup();
     const onSaveNotes = vi.fn();

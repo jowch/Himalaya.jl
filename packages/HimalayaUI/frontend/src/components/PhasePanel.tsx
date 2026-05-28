@@ -349,11 +349,23 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
             </p>
           </div>
 
-          {/* Speculative — user-built sub-minpeaks indices */}
-          <div className="flex flex-col gap-2.5">
-            <RailHead>Speculative</RailHead>
+          {/* Speculative — user-built sub-minpeaks indices. R3-F02: tucked
+              below-the-fold behind a native <details> disclosure so the rail
+              reads as the calm two-section output (Phase call + Candidates).
+              Auto-open when speculatives exist so the user's own builds stay
+              visible; collapsed by default otherwise. The "+ Add speculative"
+              CTA lives inside the disclosure body, so it only surfaces when the
+              section is open (the browser hides closed-<details> content). */}
+          <details
+            data-testid="speculative-disclosure"
+            open={speculatives.length > 0}
+            className="flex flex-col gap-2.5"
+          >
+            <summary className="cursor-pointer list-none">
+              <RailHead>Speculative</RailHead>
+            </summary>
             {speculatives.length > 0 && (
-              <div className="flex flex-col gap-[7px]">
+              <div className="mt-2.5 flex flex-col gap-[7px]">
                 {speculatives.map((ix) => (
                   <CandidateRow
                     key={ix.id}
@@ -370,12 +382,12 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
             <button
               type="button"
               data-testid="add-speculative-button"
-              className="w-full text-xs text-ink-faint border border-dashed border-hair rounded-md py-1.5 hover:text-ink hover:bg-paper-sunk transition-colors"
+              className="mt-2.5 w-full text-xs text-ink-faint border border-dashed border-hair rounded-md py-1.5 hover:text-ink hover:bg-paper-sunk transition-colors"
               onClick={() => openBuilder(exposureId)}
             >
               + Add speculative
             </button>
-          </div>
+          </details>
 
         </div>
       </Skeleton>

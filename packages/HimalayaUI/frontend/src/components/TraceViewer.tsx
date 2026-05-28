@@ -36,6 +36,13 @@ export interface TraceViewerProps {
 	xType?: "log" | "linear";
 	/** Called on plot dblclick. Defaults to `() => onXDomain(null)`. */
 	onReset?: () => void;
+	/** R3-F03: when true the trace plate is in "place a peak" mode — the tools
+	 *  cluster's `+ Peak` ghost is armed. Click-to-add empty-area placement works
+	 *  regardless; armed only carries the visible state (`data-add-armed`). */
+	addArmed?: boolean;
+	/** R3-F03: toggle the armed state. The toggle owner is PlotCard; accepted
+	 *  here for symmetry with the prop pair (TraceViewer only renders the flag). */
+	onToggleAddArmed?: () => void;
 	/** Q-axis units label. Defaults to "Å⁻¹" if omitted. */
 	qUnits?: string;
 }
@@ -171,6 +178,7 @@ export function TraceViewer({
 	yDomain = null,
 	xType = "log",
 	onReset,
+	addArmed = false,
 	qUnits,
 }: TraceViewerProps): JSX.Element {
 	const hostRef = useRef<HTMLDivElement>(null);
@@ -752,6 +760,7 @@ export function TraceViewer({
 			ref={hostRef}
 			className="w-full h-full relative anim-overlay"
 			data-testid="trace-viewer"
+			data-add-armed={addArmed ? "true" : "false"}
 		>
 			<div ref={plotContainer} className="w-full h-full" />
 			<svg

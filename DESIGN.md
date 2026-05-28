@@ -226,6 +226,7 @@ Mostly flat: paper and its chrome are flat; tonal steps (`paper` → `paper-sunk
 - **Phase chip:** a monospace data badge naming a phase, the instrument voice for a categorical result; on the contact sheet it replaces the static "Not indexed" string (M-6).
 - **Mini-waterfall:** a read-only per-series SVG figure on folio cards (F-A), the folio is a wall of distinct figures, not a card grid.
 - **Phase strip:** one cell per sample, coloured by its phase call (coexistence = two-phase gradient), with a transition caption.
+- **Reflections card:** the lower-row table beside the detector window on the focus workspace. Column headers are `phase · order · q · d`. The mockup (`docs/redesign-mockups/focus-workspace.html`) labels the second column `hkl`; the shipped header is **`order`** by deliberate rename — SAXS peaks in our data model carry a 1-based ratio-series position, not an (h,k,l) Miller triple (`lib/seriesRatio.ts`, `src/phase.jl` `phaseratios`). "order" reads as "1st reflection, 2nd reflection…", which is what the value is. Treat the live `order` header as correct; the mockup `hkl` is the intentional divergence, not a regression.
 
 ### Motion
 - Fast and nearly invisible: 120ms ease-out on colour/background/border/opacity. No bounce, no elastic, no scroll choreography. (The fractal-noise grain of the dark era is removed.)

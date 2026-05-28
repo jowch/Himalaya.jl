@@ -132,6 +132,23 @@ describe("<TraceViewer>", () => {
 		).not.toBeNull();
 	});
 
+	it("R3-F03: armed mode is reflected on the viewer root via data-add-armed", () => {
+		const trace = { q: [0.1, 0.2, 0.3], I: [10, 20, 30], sigma: [1, 1, 1] };
+		const { container } = render(
+			<TraceViewer
+				trace={trace}
+				peaks={[]}
+				activeGroupIndices={[]}
+				hoveredIndex={undefined}
+				addArmed={true}
+				{...defaultProps}
+			/>,
+		);
+		expect(
+			container.querySelector('[data-testid="trace-viewer"]'),
+		).toHaveAttribute("data-add-armed", "true");
+	});
+
 	it("renders a cursor-label text element in the overlay", () => {
 		const trace = { q: [0.1, 0.2, 0.3], I: [10, 20, 30], sigma: [1, 1, 1] };
 		const { container } = render(

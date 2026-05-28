@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "./test-utils";
-import { PlotCard } from "../src/components/PlotCard";
+import { PlotCard, ZoomIndicator } from "../src/components/PlotCard";
 import { useAppState } from "../src/state";
 
 // PlotCard mounts queries (experiment/samples/trace/...) and reads app state;
@@ -79,5 +80,36 @@ describe("PlotCard headerSlot (focus variant)", () => {
     // The x-scale toggle lives in the right-side cluster, outside the
     // header branch — it must remain regardless of the variant.
     expect(screen.getByTestId("x-scale-log")).toBeInTheDocument();
+  });
+
+  it("R3-F03: tools cluster shows Auto-fit + Add Peak ghost buttons, no numeric q-range inputs", () => {
+    renderWithProviders(
+      <PlotCard headerSlot={<div data-testid="custom-header">Custom</div>} />,
+    );
+    expect(screen.getByTestId("tool-autofit")).toBeInTheDocument();
+    expect(screen.getByTestId("tool-add-peak")).toBeInTheDocument();
+    // The numeric q-range editing pair is retired from the visible toolbar.
+    expect(screen.queryByTestId("q-range-controls")).toBeNull();
+    expect(screen.queryByTestId("q-range-min")).toBeNull();
+  });
+
+  it("U-4: no zoom indicator when the trace is at full range (default)", () => {
+    renderWithProviders(
+      <PlotCard headerSlot={<div data-testid="custom-header">Custom</div>} />,
+    );
+    expect(screen.queryByTestId("zoom-indicator")).toBeNull();
+  });
+});
+
+describe("ZoomIndicator (U-4)", () => {
+  it("renders a reset ghost button only when zoomed; click fires onReset", async () => {
+    const onReset = vi.fn();
+    const { rerender } = render(<ZoomIndicator zoomed={false} onReset={onReset} />);
+    expect(screen.queryByTestId("zoom-indicator")).toBeNull();
+    rerender(<ZoomIndicator zoomed={true} onReset={onReset} />);
+    const btn = screen.getByTestId("zoom-indicator");
+    expect(btn).toHaveTextContent(/zoomed/i);
+    await userEvent.setup().click(btn);
+    expect(onReset).toHaveBeenCalled();
   });
 });

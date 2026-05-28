@@ -232,4 +232,44 @@ describe("<PhasePanel> — speculative", () => {
     expect(screen.getByTestId("spec-delete-20")).toBeInTheDocument();
     expect(screen.getByTestId("add-speculative-button")).toBeInTheDocument();
   });
+
+  it("R3-F02: Speculative lives behind a collapsed disclosure when none exist", async () => {
+    // No speculative index — only an auto candidate. The rail should read as
+    // the calm two-section output (Phase call + Candidates), with Speculative
+    // tucked below the fold behind a collapsed <details>.
+    mockAll(
+      [
+        { id: 10, exposure_id: 42, phase: "Pn3m", basis: 0.5, score: 0.89,
+          r_squared: 0.99, lattice_d: 197, ngc: -1.5, status: "candidate", kind: "auto",
+          predicted_q: [0.045], peaks: [{ peak_id: 1, ratio_position: 1, residual: 0, q_observed: 0.045 }] },
+      ],
+      [{ id: 1, exposure_id: 42, kind: "auto", active: true, members: [] }],
+    );
+    renderWithProviders(<PhasePanel exposureId={42} />);
+    const disclosure = await screen.findByTestId("speculative-disclosure");
+    // Contract: a NATIVE <details> collapsed by default (the browser hides the
+    // body, incl. the CTA, until opened).
+    expect(disclosure.tagName.toLowerCase()).toBe("details");
+    expect(disclosure).not.toHaveAttribute("open");
+    // The CTA is a DESCENDANT of the (closed) disclosure — behind-the-fold,
+    // not an unconditional sibling. NOTE: JSDOM does not honor the native
+    // display:none of closed <details>, so queryByTestId would still FIND the
+    // CTA — assert containment, not absence.
+    const cta = screen.getByTestId("add-speculative-button");
+    expect(disclosure).toContainElement(cta);
+  });
+
+  it("R3-F02: disclosure is open when speculatives exist (user builds stay visible)", async () => {
+    mockAll(
+      [
+        { id: 20, exposure_id: 42, phase: "Lamellar", basis: 0.3, score: 0.55, r_squared: 1.0,
+          lattice_d: 52, ngc: null, status: "candidate", kind: "speculative", predicted_q: [0.21],
+          peaks: [{ peak_id: 5, ratio_position: 1, residual: 0, q_observed: 0.21 }] },
+      ],
+      [{ id: 1, exposure_id: 42, kind: "auto", active: true, members: [] }],
+    );
+    renderWithProviders(<PhasePanel exposureId={42} />);
+    const disclosure = await screen.findByTestId("speculative-disclosure");
+    expect(disclosure).toHaveAttribute("open");
+  });
 });
