@@ -6,10 +6,6 @@ interface Props {
   onBuild: () => void;
 }
 
-// Sage ready dot — matches the Im3m hue (paper-tuned palette). Inline because
-// it is a one-off status dot, not a phase swatch.
-const READY_DOT = "oklch(0.520 0.120 162)";
-
 /**
  * The narrative gate footer (series-scoping.html `.scope-foot`): a confirmation
  * state line (amber "N to check" / sage "ready"), the metadata-as-byproduct
@@ -30,7 +26,7 @@ export function ScopingFoot({ flagCount, memberCount, keyLabel, canBuild, onBuil
         >
           <span
             className="h-2 w-2 shrink-0 rounded-full"
-            style={{ background: ready ? READY_DOT : "var(--color-print-accent)" }}
+            style={{ background: ready ? "var(--color-success)" : "var(--color-print-accent)" }}
           />
           {stateText}
         </div>
