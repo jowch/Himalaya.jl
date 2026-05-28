@@ -32,6 +32,7 @@ import type { Trace, SeriesMember } from "../api";
 import { buildMemberMarks, buildMemberPeakRows } from "./MemberTraceLayer";
 import type { PeakRow } from "./MemberTraceLayer";
 import { buildMemberHeatmapMarks } from "./MemberHeatmapLayer";
+import { buildCrossTraceTrackingMarks } from "./CrossTraceTrackingLayer";
 import { invertQ, applyQ } from "../lib/plot/invertQ";
 import { formatAxis } from "../lib/plot/formatAxis";
 import { prettifyUnits } from "../lib/units";
@@ -213,6 +214,16 @@ export interface MultiTracePlotProps {
    * intensity field in the heatmap and have no per-peak target.
    */
   representation?: Representation;
+  /**
+   * Cross-trace peak-tracking layer (#208). When `true`, draw a thin
+   * coloured polyline per (phase, Miller-order) connecting the same
+   * reflection across every member whose confirmed_index carries that
+   * phase. The connector reads as a migration line as q drifts with
+   * the ordering variable. Default `false`. Renders in both waterfall
+   * and heatmap; peaks come from the member snapshot, the indexer
+   * supplies the Miller-order ordering via `confirmed_index.peak_ids`.
+   */
+  showCrossTraceTracking?: boolean;
 }
 
 export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
@@ -225,6 +236,7 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
     groupingMode, sampleIdFor,
     workingBandFraction,
     representation = "waterfall",
+    showCrossTraceTracking = false,
   } = props;
 
   const hostRef       = useRef<HTMLDivElement>(null);
@@ -362,6 +374,18 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
       const { peaks } = buildMemberPeakRows(layerProps);
       hoverPeakIndex.push({ memberId: m.id, yBand: yBand as [number, number], peaks });
     }
+    // Cross-trace peak-tracking layer (#208). One Plot.line mark grouped by
+    // (phase, Miller-order); empty array when nothing connects. Pushed AFTER
+    // per-member marks so the connector renders on top of the waterfall
+    // lines / heatmap cells.
+    if (showCrossTraceTracking) {
+      const trackingMarks = buildCrossTraceTrackingMarks({
+        members,
+        yBands: yBands as Array<[number, number]>,
+      });
+      for (const mk of trackingMarks) allMarks.push(mk);
+    }
+
     // Click-hit-test reuses the same index when `onPeakClick` is wired.
     const peakIndex = onPeakClick ? hoverPeakIndex : [];
 
@@ -571,7 +595,7 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
     showPeakTicks, showPeakLabels,
     groupingMode, sampleIdFor,
     workingBandFraction,
-    representation,
+    representation, showCrossTraceTracking,
   ]);
 
   useEffect(() => {
