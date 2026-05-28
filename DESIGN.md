@@ -12,6 +12,7 @@ colors:
   hair-strong: "oklch(0.806 0.010 78)"
   accent: "oklch(0.555 0.150 38)"
   frame-edge: "oklch(0.150 0.010 55)"
+  frame-tag: "oklch(0.82 0.01 80)"
   success: "oklch(0.520 0.120 162)"
   warning: "oklch(0.620 0.130 70)"
   error: "oklch(0.520 0.170 28)"
@@ -109,7 +110,7 @@ components:
 
 # Design System: HimalayaUI — "The Print"
 
-> **Status:** authored 2026-05-27 as the canonical reference for the redesign's fidelity pass (milestone "HimalayaUI — The Print finish"). This describes the **target** Print system the remediation builds to; the code migration to it is tracked by R0a (#221) onward. Until R0a lands, the shipped tokens still default to the retired dark "Darkroom" values, this doc is the spec, not yet the shipped state. R9 (#232) verifies shipped == this doc.
+> **Status:** authored 2026-05-27 as the canonical reference for the redesign's fidelity pass (milestone "HimalayaUI — The Print finish"). This describes the Print system the remediation built to; the token migration landed in R0a (#221) + R0b (#222) + R0c (#223). As of R9 (#232) the shipped tokens (`styles.css` `@theme`, `phases.ts`) have been verified to match this doc; the retired dark "Darkroom" defaults are gone. This doc is now both the spec **and** the shipped state.
 
 ## 1. Overview
 
@@ -141,6 +142,7 @@ A warm paper-and-ink system (every neutral tinted to hue ~70–85) carrying one 
 - **Ink** (`ink`, 0.265 0.013 68): primary text and solid-button fills. **Ink-soft** (`ink-soft`, 0.467): secondary text, ghost buttons. **Ink-faint** (`ink-faint`, 0.640): captions, placeholders, disabled.
 - **Hair** (`hair`, 0.882) / **Hair-strong** (`hair-strong`, 0.806): hairline separators and card edges; the line does the separating, paired with a soft shadow only on the plate.
 - **Frame-edge** (`frame-edge`, 0.150 0.010 55): the warm near-black backing for detector images, the dark window set into the paper.
+- **Frame-tag** (`frame-tag`, 0.82 0.01 80): the light caption tint for the mono labels set *over* the dark `frame-edge` (the loupe frame-tag, R0c #223 / T-8); a dark-on-dark caption would vanish on the detector frame.
 
 > **CSS-variable mapping (post-R0a).** The semantic utility tokens are remapped to these values: `--color-bg`→`paper`, `--color-bg-subtle`/`-hover`→`paper-sunk`, `--color-bg-elevated`→`plate`, `--color-fg`→`ink`, `--color-fg-muted`→`ink-soft`, `--color-fg-dim`→`ink-faint`, `--color-border`→`hair-strong`, `--color-border-soft`→`hair`, `--color-accent`→`accent` (terracotta). The dark `@theme` defaults, the `:root.theme-light` override, `color-scheme:dark`, the grain overlay, and the `theme` toggle are removed.
 

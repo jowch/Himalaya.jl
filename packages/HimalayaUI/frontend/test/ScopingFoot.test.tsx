@@ -19,6 +19,12 @@ describe("ScopingFoot", () => {
     fireEvent.click(screen.getByTestId("scoping-open-confirm"));
     expect(onBuild).toHaveBeenCalledTimes(1);
   });
+  it("the ready dot reads through the success (sage) token, not an inline oklch literal", () => {
+    render(<ScopingFoot flagCount={0} memberCount={1} keyLabel="ratio" canBuild onBuild={() => {}} />);
+    const dot = screen.getByTestId("scoping-foot-state").querySelector("span");
+    expect(dot).not.toBeNull();
+    expect(dot!.getAttribute("style")).toContain("var(--color-success)");
+  });
   it("the build button carries Print ink tokens, not ice-blue accent (S-B/S-C)", () => {
     render(<ScopingFoot flagCount={0} memberCount={1} keyLabel="ratio" canBuild onBuild={() => {}} />);
     const btn = screen.getByTestId("scoping-open-confirm");
