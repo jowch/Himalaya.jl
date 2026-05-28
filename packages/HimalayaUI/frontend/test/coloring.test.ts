@@ -19,6 +19,7 @@ import {
   type GroupingMode,
 } from "../src/lib/comparison/coloring";
 import { phaseColor, PHASE_PALETTE } from "../src/phases";
+import { angularHueDistance } from "../src/lib/color-distance";
 
 function makeMember(over: Partial<SeriesMember> = {}): SeriesMember {
   return {
@@ -112,12 +113,6 @@ function parseOklch(s: string): { L: number; C: number; h: number } {
   const m = /oklch\(\s*([\d.]+)\s+([\d.]+)\s+([\d.-]+)\s*\)/i.exec(s);
   if (!m) throw new Error(`not an oklch() string: ${s}`);
   return { L: parseFloat(m[1]!), C: parseFloat(m[2]!), h: parseFloat(m[3]!) };
-}
-
-/** Shortest angular distance between two hues in degrees, mod 360. */
-function angularHueDistance(a: number, b: number): number {
-  const d = Math.abs(((a - b) % 360) + 540) % 360 - 180;
-  return Math.abs(d);
 }
 
 function oklchToLinearSrgb({ L, C, h }: { L: number; C: number; h: number }): [number, number, number] {

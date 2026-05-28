@@ -49,11 +49,14 @@ export const LIGHT_PALETTE = {
  * step 3 wiring, adjust THIS constant — keep on-screen → export hue mapping
  * stable.
  *
- * **Phase-offset parity (PR #251 r1).** Entry [8] was relocated from hue 315
- * to 285 to keep parity with `COMPARE_PALETTE`'s same-index fix (3° collision
- * with Fd3m 318). Several other entries in this light variant — 175, 263,
- * 295, 3 — sit closer to phase hues than the on-screen ≥13° floor; tracked
- * but out of scope for #208 (issue covers the on-screen render-core).
+ * **Phase-offset invariant (#252).** Every entry sits >=13deg from every
+ * `PHASE_PALETTE` hue, matching the on-screen `COMPARE_PALETTE` floor — since
+ * PR #208 this palette also drives heatmap fill colors, so a member trace/fill
+ * must never read as perceptually identical to a phase color. Entry [8] was
+ * relocated 315->285 (3deg from Fd3m 318) in PR #251 r1; entries [6] 263->249
+ * (1deg from Lamellar 264) and [7] 295->279 (5deg from Ia3d 300) were re-tuned
+ * in #252 to mirror the on-screen palette's hue layout. `test/presets.test.ts`
+ * pins the floor — keep it green if you re-tune hues here.
  */
 export const COMPARE_PALETTE_LIGHT: readonly string[] = [
   "oklch(0.55 0.16  33)", // warm coral
@@ -62,8 +65,8 @@ export const COMPARE_PALETTE_LIGHT: readonly string[] = [
   "oklch(0.54 0.13 175)", // teal
   "oklch(0.55 0.13 200)", // cyan
   "oklch(0.54 0.13 220)", // azure
-  "oklch(0.55 0.12 263)", // lavender
-  "oklch(0.50 0.14 295)", // purple
+  "oklch(0.55 0.12 249)", // lavender (was 263 = 1deg from Lamellar 264; #252)
+  "oklch(0.50 0.14 279)", // purple (was 295 = 5deg from Ia3d 300; #252)
   "oklch(0.50 0.14 285)", // violet-purple (was 315 = 3° from Fd3m 318; #251 r1)
   "oklch(0.50 0.14 333)", // raspberry
   "oklch(0.55 0.14   3)", // pink-red
