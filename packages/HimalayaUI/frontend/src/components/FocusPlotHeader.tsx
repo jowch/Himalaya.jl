@@ -51,9 +51,16 @@ export function FocusPlotHeader({
       >
         {sampleName}
       </h1>
+      {/* R3-N2 (#209): subline previously capped at `max-w-[60ch]` + `.truncate`,
+          which cut the most diagnostic suffix ("representative exposure …")
+          off mid-token on real samples. Raise to 80ch — the suffix carries the
+          actual filename stem (the load-bearing provenance bit), so a truncate
+          at 60ch hides the highest-signal segment. 80ch comfortably fits
+          smp_NN + beamtime + "representative exposure smp_NN_eNN" without
+          wrapping below `xl`. */}
       <div
         data-testid="focus-plot-sub"
-        className="mt-1 font-mono text-xs text-ink-faint truncate max-w-[60ch]"
+        className="mt-1 font-mono text-xs text-ink-faint truncate max-w-[80ch]"
       >
         {segments.join(" · ")}
       </div>

@@ -39,6 +39,23 @@ describe("FocusPlotHeader", () => {
     expect(screen.queryByText(/click to change/i)).toBeNull();
   });
 
+  it("R3-N2 (#209): subline max-width is 80ch, not the legacy 60ch", () => {
+    // Round-2 finding R3-N2: 60ch truncated the most diagnostic suffix
+    // ("representative exposure smp_NN_eNN") mid-token. The fix raises the
+    // truncate cap to 80ch so the load-bearing exposure filename survives.
+    render(
+      <FocusPlotHeader
+        sampleName="Lipid 1-2 + LL37 1:0.5"
+        sampleCode="smp_09"
+        beamtime="SSRL Apr 2026"
+        exposureLabel="smp_09_e03"
+      />,
+    );
+    const sub = screen.getByTestId("focus-plot-sub");
+    expect(sub.className).toContain("max-w-[80ch]");
+    expect(sub.className).not.toContain("max-w-[60ch]");
+  });
+
   it("degrades to just the title when provenance fields are absent", () => {
     render(
       <FocusPlotHeader
