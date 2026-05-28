@@ -4,7 +4,7 @@ import { Skeleton } from "boneyard-js/react";
 import {
   useCorpusSamples,
   useExposures,
-  useExperiment,
+  usePeaks,
   useSetExposureStatus,
   useSelectExposure,
 } from "../queries";
@@ -50,6 +50,7 @@ const LOUPE_FIXTURE = (
         id: 0, experiment_id: 0, name: "JC000", display_name: "Sample",
         notes: null, tags: [], q_units: "A-1",
       }}
+      signalLevel={0}
       onDropToggle={() => {}}
       onSetRepresentative={() => {}}
     />
@@ -74,9 +75,6 @@ export function LoupePage(): JSX.Element {
   const exposuresQ = useExposures(hasValidId ? sampleId : undefined);
 
   const sample = corpusQ.data?.find((s) => s.id === sampleId);
-  const experimentQ = useExperiment(sample?.experiment_id ?? 0);
-  const experimentName =
-    experimentQ.data?.name ?? experimentQ.data?.path ?? undefined;
 
   const exposures = useMemo(() => exposuresQ.data ?? [], [exposuresQ.data]);
 
@@ -95,6 +93,18 @@ export function LoupePage(): JSX.Element {
     }
   }, [activeId, computedDefault]);
   const activeExposure = exposures.find((e) => e.id === activeId);
+
+  // M-8: signal-strength meter level — an honest proxy from the active
+  // exposure's detected-peak count (more resolvable Bragg reflections ⇒
+  // stronger ordering signal). The meter clamps to 0..5.
+  const peaksQ = usePeaks(activeExposure?.id);
+  const signalLevel = peaksQ.data?.length ?? 0;
+
+  // L-9: subtitle reads `<sample-id> · exposure N of M`. Position is the
+  // active exposure's 1-based index in the per-sample exposure list.
+  const frameIndex = exposures.findIndex((e) => e.id === activeId);
+  const exposurePosition =
+    frameIndex >= 0 ? `exposure ${frameIndex + 1} of ${exposures.length}` : "—";
 
   const setStatus = useSetExposureStatus(hasValidId ? sampleId : 0);
   const setRepresentative = useSelectExposure(hasValidId ? sampleId : 0);
@@ -175,9 +185,11 @@ export function LoupePage(): JSX.Element {
         <h2 className="text-2xl text-ink">
           {sample?.display_name ?? sample?.name ?? "—"}
         </h2>
-        <p className="mt-1 font-mono text-xs text-ink-faint">
-          {experimentName ?? "—"}
-          {sample?.name ? ` · ${sample.name}` : ""}
+        <p
+          data-testid="loupe-subtitle"
+          className="mt-1 font-mono text-xs text-ink-faint"
+        >
+          {sample?.name ?? "—"} · {exposurePosition}
         </p>
       </header>
 
@@ -209,6 +221,7 @@ export function LoupePage(): JSX.Element {
                 exposure={activeExposure}
                 exposures={exposures}
                 sample={sample}
+                signalLevel={signalLevel}
                 onDropToggle={handleDropToggle}
                 onSetRepresentative={handleSetRepresentative}
               />

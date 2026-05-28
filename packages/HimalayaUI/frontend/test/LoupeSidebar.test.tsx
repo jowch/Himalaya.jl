@@ -25,6 +25,7 @@ function defaultProps() {
     exposure: e,
     exposures: [e],
     sample: sample(),
+    signalLevel: 0,
     onDropToggle: vi.fn(),
     onSetRepresentative: vi.fn(),
   };
@@ -46,6 +47,35 @@ describe("LoupeSidebar — meta-list", () => {
     expect(screen.getByTestId("loupe-meta-kind")).toHaveTextContent("averaged");
     expect(screen.getByTestId("loupe-meta-frame")).toHaveTextContent("2 of 2");
     expect(screen.getByTestId("loupe-meta-status")).toHaveTextContent("pending");
+  });
+});
+
+describe("LoupeSidebar — signal meter (M-8)", () => {
+  it("renders a 5-bar signal meter in the meta list", () => {
+    render(<LoupeSidebar {...defaultProps()} signalLevel={3} />);
+    const meter = screen.getByTestId("loupe-meta-signal");
+    expect(meter).toBeInTheDocument();
+    expect(meter.querySelectorAll("[data-bar]")).toHaveLength(5);
+  });
+
+  it("fills exactly signalLevel bars", () => {
+    render(<LoupeSidebar {...defaultProps()} signalLevel={3} />);
+    const meter = screen.getByTestId("loupe-meta-signal");
+    expect(meter.querySelectorAll('[data-bar="on"]')).toHaveLength(3);
+    expect(meter.querySelectorAll('[data-bar="off"]')).toHaveLength(2);
+  });
+
+  it("clamps signalLevel into the 0..5 range", () => {
+    const { rerender } = render(
+      <LoupeSidebar {...defaultProps()} signalLevel={9} />,
+    );
+    expect(
+      screen.getByTestId("loupe-meta-signal").querySelectorAll('[data-bar="on"]'),
+    ).toHaveLength(5);
+    rerender(<LoupeSidebar {...defaultProps()} signalLevel={-2} />);
+    expect(
+      screen.getByTestId("loupe-meta-signal").querySelectorAll('[data-bar="on"]'),
+    ).toHaveLength(0);
   });
 });
 
@@ -120,7 +150,9 @@ describe("LoupeSidebar — representative", () => {
 });
 
 describe("LoupeSidebar — sample tags", () => {
-  it("renders tags as read-only chips with no remove control", () => {
+  // L-10: tags render as free-form single tokens (bare value), not
+  // `key: value`. Tag editing/on-ramp remains out of scope (#207 / #159).
+  it("renders tags as bare value tokens with no remove control", () => {
     const props = defaultProps();
     render(
       <LoupeSidebar
@@ -131,7 +163,8 @@ describe("LoupeSidebar — sample tags", () => {
       />,
     );
     const tags = screen.getByTestId("loupe-tags");
-    expect(tags).toHaveTextContent("lipid: DOPE");
+    expect(tags).toHaveTextContent("DOPE");
+    expect(tags).not.toHaveTextContent("lipid: DOPE");
     // Read-only: SampleMetadataCard's remove button is aria-labelled
     // "Remove <key> tag" — the loupe must not render it (editing is #159).
     expect(screen.queryByLabelText("Remove lipid tag")).not.toBeInTheDocument();

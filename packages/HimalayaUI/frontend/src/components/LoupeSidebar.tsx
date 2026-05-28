@@ -7,6 +7,13 @@ interface Props {
   exposures: Exposure[];
   /** The sample, for the read-only tags section. */
   sample: CorpusSample;
+  /**
+   * Signal-strength level, 0–5, for the meta-list meter (M-8). Derived by the
+   * parent from the active exposure's detected-peak count — an honest proxy for
+   * ordering-signal strength (a strongly-ordered phase resolves more Bragg
+   * reflections). Clamped to 0..5 here.
+   */
+  signalLevel: number;
   /** Drop the exposure if kept, restore it if dropped. */
   onDropToggle: () => void;
   /** Mark the active exposure as the indexing representative. */
@@ -21,6 +28,28 @@ function MetaRow(
       <span className="text-ink-faint">{label}</span>
       <span data-testid={testid} className="text-ink">{value}</span>
     </div>
+  );
+}
+
+/**
+ * SignalMeter — five fixed bars, the leftmost `level` filled (mockup
+ * `.signal-bars`). `level` is clamped to 0..5. Used as a meta-row value.
+ */
+function SignalMeter({ level }: { level: number }): JSX.Element {
+  const on = Math.max(0, Math.min(5, Math.round(level)));
+  return (
+    <span data-testid="loupe-meta-signal" className="inline-flex gap-0.5">
+      {[0, 1, 2, 3, 4].map((i) => (
+        <i
+          key={i}
+          data-bar={i < on ? "on" : "off"}
+          className={[
+            "h-[11px] w-[5px] rounded-[1px]",
+            i < on ? "bg-ink-soft" : "bg-hair-strong",
+          ].join(" ")}
+        />
+      ))}
+    </span>
   );
 }
 
@@ -44,6 +73,7 @@ export function LoupeSidebar({
   exposure,
   exposures,
   sample,
+  signalLevel,
   onDropToggle,
   onSetRepresentative,
 }: Props): JSX.Element {
@@ -77,6 +107,11 @@ export function LoupeSidebar({
             value={exposure.status ?? "pending"}
             testid="loupe-meta-status"
           />
+          {/* M-8: signal-strength meter — peak-count proxy (see Props). */}
+          <div className="flex items-center justify-between font-mono text-[11.5px]">
+            <span className="text-ink-faint">Signal</span>
+            <SignalMeter level={signalLevel} />
+          </div>
         </div>
       </section>
 
@@ -154,7 +189,7 @@ export function LoupeSidebar({
                 className="inline-flex items-center rounded-full border border-border
                            bg-bg-subtle px-2 py-0.5 text-xs text-ink-soft"
               >
-                {tag.key}: {tag.value}
+                {tag.value}
               </span>
             ))
           )}
