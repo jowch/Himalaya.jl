@@ -62,4 +62,18 @@ describe("LoupeFrame", () => {
     );
     expect(screen.queryByTestId("loupe-dropped-badge")).not.toBeInTheDocument();
   });
+
+  it("draws the grease-pencil reject ✕ on the big frame when rejected (M-10)", () => {
+    const e = exposure({ id: 1, status: "rejected" });
+    const { rerender } = render(
+      <LoupeFrame exposure={e} exposures={[e]} onSelectExposure={() => {}} />,
+    );
+    expect(screen.getByTestId("loupe-reject-xmark")).toBeInTheDocument();
+
+    const kept = exposure({ id: 1, status: "accepted" });
+    rerender(
+      <LoupeFrame exposure={kept} exposures={[kept]} onSelectExposure={() => {}} />,
+    );
+    expect(screen.queryByTestId("loupe-reject-xmark")).not.toBeInTheDocument();
+  });
 });

@@ -1,5 +1,6 @@
 import type { Exposure } from "../api";
 import { DetectorImage } from "./DetectorImage";
+import { RejectXMark } from "./RejectXMark";
 import { ThumbnailGallery } from "./ThumbnailGallery";
 
 interface Props {
@@ -44,6 +45,10 @@ export function LoupeFrame({
           size="full"
           className={isRejected ? "h-full w-full opacity-40" : "h-full w-full"}
         />
+        {/* M-10: the hand-skewed grease-pencil ✕ over a dropped big frame —
+            the same mark as the contact sheet (mockup `.big-x`), scaled up by
+            the SVG's full-bleed viewBox. */}
+        {isRejected && <RejectXMark testId="loupe-reject-xmark" />}
         {isRejected && (
           <span
             data-testid="loupe-dropped-badge"
