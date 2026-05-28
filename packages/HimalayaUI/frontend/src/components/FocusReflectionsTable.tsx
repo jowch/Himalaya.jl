@@ -57,12 +57,19 @@ export function FocusReflectionsTable(): JSX.Element {
     return null;
   };
 
-  // Tolerance for matching hoveredQ to a peak's q (mirrors the
-  // DetectorRingOverlay rule + lib/qRing nearestRingQ): 2% of the peak span,
-  // clamped at a small floor so a single-peak trace still has a finite
-  // hover-radius. Both the rings and the trace peaks use this width via the
-  // shared `Q_LINK_REL_TOL`/`matchTol` constants; the table reuses the same
-  // span-relative rule for symmetry.
+  // Tolerance for matching hoveredQ to a peak's q. The q-link channel has two
+  // tolerance formulas in flight today, not one shared constant:
+  //   - the ring overlay uses span-relative — 2% of (qHi - qLo), clamped at a
+  //     small floor (DetectorRingOverlay.tsx:73-74 + lib/qRing nearestRingQ);
+  //   - the trace peaks use per-peak relative — peak.q * Q_LINK_REL_TOL where
+  //     Q_LINK_REL_TOL = 0.01 (TraceViewer.tsx:51, 450-451).
+  // The table mirrors the ring formula on purpose: this matches the table's
+  // reading order (low-q first, like the rings ordered by radius) and gives a
+  // uniform hover band across the row list, where the trace's per-peak rule
+  // would shrink the hit-region near q ≈ 0. Both formulas absorb float noise
+  // on a hoveredQ that arrives carrying an exact peak.q from a sibling
+  // surface; the two are not unified, and the call site that lands on which
+  // formula is a current quirk of the codebase, not a stated invariant.
   const peakQs = peaks.map((p) => p.q);
   const qLo = peakQs.length ? Math.min(...peakQs) : 0;
   const qHi = peakQs.length ? Math.max(...peakQs) : 1;
