@@ -267,12 +267,15 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
     <div className="flex flex-col h-full min-h-0">
 
       {/* ── Sticky header ── */}
+      {/* R4-N1 (#209): the explanatory sentence "Check every phase that is
+          present…" appeared here AND in the rail-note paragraph below the
+          candidates ~3 lines apart. Mockup `focus-workspace.html` has only the
+          label "Index choices" in the rail head, with the explanatory note
+          below the candidates — so we keep the rail-note (which has more
+          context) and drop the subtitle here. */}
       <div className="card-header">
         <div className="flex flex-col justify-center min-w-0">
           <div className="text-title tracking-tight">Index choices</div>
-          <div className="text-xs text-fg-dim leading-tight">
-            Check every phase that is present — a sample can hold more than one
-          </div>
         </div>
       </div>
 
