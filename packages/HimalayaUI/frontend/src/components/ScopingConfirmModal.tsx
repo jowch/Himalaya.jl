@@ -50,7 +50,7 @@ export function ScopingConfirmModal({
           </button>
           <button type="button" data-testid="scoping-confirm-build"
             onClick={onConfirm}
-            className="rounded bg-accent px-3 py-1.5 text-sm font-semibold text-paper">
+            className="rounded border border-ink bg-ink px-3 py-1.5 text-sm font-semibold text-paper hover:bg-ink/85">
             Confirm &amp; build →
           </button>
         </div>

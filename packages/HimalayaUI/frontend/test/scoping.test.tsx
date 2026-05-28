@@ -109,6 +109,15 @@ describe("ScopingConfirmModal", () => {
     fireEvent.keyDown(screen.getByTestId("scoping-confirm-modal"), { key: "Escape" });
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  it("the confirm-build button uses Print ink tokens, not the accent (S-B)", () => {
+    render(<ScopingConfirmModal open orderingKey="ratio" count={2}
+      onConfirm={() => {}} onClose={() => {}} />);
+    const btn = screen.getByTestId("scoping-confirm-build");
+    expect(btn.className).toContain("bg-ink");
+    expect(btn.className).toContain("text-paper");
+    expect(btn.className).not.toContain("bg-accent");
+  });
 });
 
 describe("SeriesScopingPage", () => {
@@ -125,14 +134,14 @@ describe("SeriesScopingPage", () => {
     });
     renderScoping();
     await waitFor(() => expect(screen.getByTestId("scoping-page")).toBeInTheDocument());
-    // Wait for the queries to resolve (ordering-key flips from "—" to "ratio").
+    // Once the queries resolve the proposal surfaces the ordering key in the
+    // "Ordered by" field (the bare "Ordering variable: —" header is retired).
     await waitFor(() =>
-      expect(screen.getByTestId("ordering-key")).toHaveTextContent("ratio"));
-    // The row renders the sample name as text; the parsed value lives in the
-    // row's value <input> (input value is a property, not text content).
+      expect(screen.getByTestId("scoping-order-field")).toHaveTextContent("ratio"));
     await waitFor(() =>
       expect(screen.getByTestId("scoping-row-10")).toHaveTextContent("A"));
-    expect(screen.getByTestId("scoping-value-10")).toHaveValue("1:1");
+    // Confirm-not-fill-out (S-E): the value renders as ink text, not an input.
+    expect(screen.getByTestId("scoping-value-10")).toHaveTextContent("1:1");
   });
 
   it("confirm-and-build is gated until no rows are flagged, then writes + navigates", async () => {
@@ -182,13 +191,14 @@ describe("SeriesScopingPage", () => {
     expect(screen.queryByTestId("folio-stub")).toBeNull();
   });
 
-  it("D5: an excluded (unchecked) member is omitted from the batch", async () => {
+  it("D5: a sample without the ordering value is a loose match, omitted from the batch", async () => {
     const posted: any[] = [];
     vi.spyOn(global, "fetch").mockImplementation((input, init) => {
       const url = typeof input === "string" ? input : (input as Request).url;
       if (url.endsWith("/api/sample-tags")) return Promise.resolve(jsonRes([{ key: "ratio", value: "1:1" }]));
       if (url.endsWith("/api/picker-samples"))
-        return Promise.resolve(jsonRes([pickerRow(10, "A", "1:1"), pickerRow(11, "B", "2:1")]));
+        // sample 11 has no ratio → loose match (excluded by default).
+        return Promise.resolve(jsonRes([pickerRow(10, "A", "1:1"), pickerRow(11, "B")]));
       if (url.endsWith("/api/samples/tags/batch")) {
         posted.push(init?.body ? JSON.parse(String(init.body)) : null);
         return Promise.resolve(jsonRes([], 201));
@@ -196,14 +206,74 @@ describe("SeriesScopingPage", () => {
       return Promise.resolve(jsonRes([]));
     });
     renderScoping();
-    // Wait for rows to seed, then uncheck sample 11's include toggle.
-    fireEvent.click(await screen.findByTestId("scoping-include-11"));
     await waitFor(() =>
       expect(screen.getByTestId("scoping-open-confirm")).not.toBeDisabled());
+    // sample 11 is in Himalaya-also-found, not a member row.
+    expect(screen.queryByTestId("scoping-row-11")).toBeNull();
+    expect(screen.getByTestId("scoping-loose-11")).toBeInTheDocument();
     fireEvent.click(screen.getByTestId("scoping-open-confirm"));
     fireEvent.click(await screen.findByTestId("scoping-confirm-build"));
     await waitFor(() => expect(posted[0]).toMatchObject({
       key: "ratio", source: "scoping", tags: [{ sample_id: 10, value: "1:1" }] }));
     expect((posted[0].tags as { sample_id: number }[]).some((t) => t.sample_id === 11)).toBe(false);
+  });
+
+  it("renders the worksheet plate with autogroup summary + serif title + member row", async () => {
+    vi.spyOn(global, "fetch").mockImplementation((input) => {
+      const url = typeof input === "string" ? input : (input as Request).url;
+      if (url.endsWith("/api/sample-tags")) return Promise.resolve(jsonRes([{ key: "ratio", value: "1:1" }]));
+      if (url.endsWith("/api/picker-samples"))
+        return Promise.resolve(jsonRes([pickerRow(10, "A", "1:1"), pickerRow(11, "B", "2:1")]));
+      return Promise.resolve(jsonRes([]));
+    });
+    renderScoping();
+    await waitFor(() => expect(screen.getByTestId("scoping-autogroup")).toBeInTheDocument());
+    expect(screen.getByTestId("scoping-plate")).toBeInTheDocument();
+    expect(screen.getByTestId("scoping-title")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId("scoping-row-10")).toBeInTheDocument());
+  });
+
+  it("adding a loose match folds it into the member list", async () => {
+    vi.spyOn(global, "fetch").mockImplementation((input) => {
+      const url = typeof input === "string" ? input : (input as Request).url;
+      if (url.endsWith("/api/sample-tags")) return Promise.resolve(jsonRes([{ key: "ratio", value: "1:1" }]));
+      if (url.endsWith("/api/picker-samples"))
+        return Promise.resolve(jsonRes([pickerRow(10, "A", "1:1"), pickerRow(11, "B")]));
+      return Promise.resolve(jsonRes([]));
+    });
+    renderScoping();
+    fireEvent.click(await screen.findByTestId("scoping-loose-add-11"));
+    // 11 becomes a member row (still flagged — it has no value yet).
+    await waitFor(() => expect(screen.getByTestId("scoping-row-11")).toBeInTheDocument());
+    expect(screen.queryByTestId("scoping-loose-11")).toBeNull();
+  });
+
+  it("editing a value to empty flags the row; Undo restores it (in-session ⌘Z)", async () => {
+    vi.spyOn(global, "fetch").mockImplementation((input) => {
+      const url = typeof input === "string" ? input : (input as Request).url;
+      if (url.endsWith("/api/sample-tags")) return Promise.resolve(jsonRes([{ key: "ratio", value: "1:1" }]));
+      if (url.endsWith("/api/picker-samples")) return Promise.resolve(jsonRes([pickerRow(10, "A", "1:1")]));
+      return Promise.resolve(jsonRes([]));
+    });
+    renderScoping();
+    // Re-open the confident value (confirm-not-fill-out) and clear it → flagged.
+    fireEvent.click(await screen.findByTestId("scoping-value-10"));
+    const input = screen.getByTestId("scoping-value-input-10");
+    fireEvent.change(input, { target: { value: "" } });
+    fireEvent.blur(input);
+    await waitFor(() =>
+      expect(screen.getByTestId("scoping-row-10")).toHaveAttribute("data-flagged", "true"));
+    // Undo restores the confirmed value.
+    fireEvent.click(screen.getByTestId("scoping-undo"));
+    await waitFor(() =>
+      expect(screen.getByTestId("scoping-row-10")).not.toHaveAttribute("data-flagged"));
+    expect(screen.getByTestId("scoping-value-10")).toHaveTextContent("1:1");
+  });
+
+  it("discard navigates back to the folio", async () => {
+    vi.spyOn(global, "fetch").mockImplementation(() => Promise.resolve(jsonRes([])));
+    renderScoping();
+    fireEvent.click(await screen.findByTestId("scoping-discard"));
+    await waitFor(() => expect(screen.getByTestId("folio-stub")).toBeInTheDocument());
   });
 });
