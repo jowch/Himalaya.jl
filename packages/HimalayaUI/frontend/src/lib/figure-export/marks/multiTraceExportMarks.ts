@@ -1,6 +1,8 @@
 // multiTraceExportMarks.ts — Plot marks for the MultiTracePlot export.
 // Stacked traces in display_order, per-member labels at each band's
 // y-position, peak ticks/labels gated on showPeakTicks / showPeakLabels.
+// Heatmap representation + cross-trace tracking layer mirror the on-screen
+// MultiTracePlot (#251 r1 / B1).
 import * as Plot from "@observablehq/plot";
 import type { SeriesMember } from "../../../api";
 import type { Trace } from "../../../api";
@@ -10,6 +12,9 @@ import {
   TRACE_STROKE_PX,
   PEAK_TICK_STROKE_PX,
 } from "../presets";
+import { buildMemberHeatmapMarks } from "../../../components/MemberHeatmapLayer";
+import { buildCrossTraceTrackingMarks } from "../../../components/CrossTraceTrackingLayer";
+import type { Representation } from "../../../components/RepresentationToggle";
 
 export interface MultiTraceMarksArgs {
   /** Already filtered (null-exposure_id removed) and sorted by display_order. */
@@ -24,18 +29,60 @@ export interface MultiTraceMarksArgs {
   showPeakTicks: boolean;
   showPeakLabels: boolean;
   panelHeight: number;
+  /** Render mode (#251 r1 / B1). Defaults to `"waterfall"` — the legacy
+   *  export shape. `"heatmap"` swaps the per-row mark vocabulary to binned
+   *  intensity cells while keeping the same y-band envelope. */
+  representation?: Representation;
+  /** Emit the cross-trace tracking polylines (#251 r1 / B1). */
+  showCrossTraceTracking?: boolean;
+  /** Visible q-domain, threaded to the heatmap binner. `null` → derive from
+   *  the underlying traces (rare; the adapter normally supplies xDomain). */
+  xDomain?: [number, number] | null;
 }
+
+/**
+ * Pure white plate override for heatmap cells in the export. The on-screen
+ * heatmap mixes intensity into the warm `--plate` paper hue; on a white-bg
+ * export the cells should mix into pure white so the un-tinted background
+ * actually reads as background, not as a faint warm cast.
+ */
+const EXPORT_PLATE_WHITE = "oklch(1 0 0)";
 
 export function buildMultiTraceExportMarks(args: MultiTraceMarksArgs): Plot.Markish[] {
   const {
     members, traces, displayLabelByMemberId, colorByMember,
     showPeakTicks, showPeakLabels, panelHeight,
+    representation = "waterfall",
+    showCrossTraceTracking = false,
+    xDomain,
   } = args;
 
   const ratios = members.map((m) => m.band_height || 1);
   const yBands = computeYBands(ratios, panelHeight);
 
   const marks: Plot.Markish[] = [];
+
+  // Derive the heatmap q-domain once. Prefer the caller-supplied xDomain
+  // (matches the on-screen brush). Fall back to the min/max across all
+  // traces — only used when the adapter is called without a domain.
+  const heatmapDomain = ((): [number, number] => {
+    if (xDomain) return xDomain;
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const m of members) {
+      if (m.exposure_id === null) continue;
+      const t = traces.get(m.exposure_id);
+      if (!t || t.q.length === 0) continue;
+      const q0 = t.q[0]!;
+      const qN = t.q[t.q.length - 1]!;
+      if (q0 < lo) lo = q0;
+      if (qN > hi) hi = qN;
+    }
+    if (!Number.isFinite(lo) || !Number.isFinite(hi) || lo >= hi) {
+      return [0.01, 1] as [number, number];
+    }
+    return [lo, hi];
+  })();
 
   for (let i = 0; i < members.length; i++) {
     const member = members[i]!;
@@ -46,6 +93,46 @@ export function buildMultiTraceExportMarks(args: MultiTraceMarksArgs): Plot.Mark
     const [bandTop, bandBottom] = band;
     const bandH = Math.max(1, bandBottom - bandTop);
     const color = colorByMember.get(member.id) ?? LIGHT_PALETTE.trace;
+
+    if (representation === "heatmap") {
+      // Reuse the on-screen heatmap factory so binning + contrast curve stay
+      // in lockstep. Pre-resolved fill bypasses the layer's COMPARE_PALETTE
+      // lookup (the export adapter has already walked COMPARE_PALETTE_LIGHT
+      // into colorByMember). Pure-white plate for the export's white bg.
+      const heatmapMarks = buildMemberHeatmapMarks({
+        member,
+        trace,
+        yBand: [bandTop, bandBottom],
+        qDomain: heatmapDomain,
+        fillBaseOverride: color,
+        plateOverride: EXPORT_PLATE_WHITE,
+      });
+      for (const mk of heatmapMarks) marks.push(mk as Plot.Markish);
+
+      // Heatmap rows still get the per-member label at the band midpoint —
+      // matches the on-screen left-margin label (the in-band placement is
+      // the only equivalent without an axis margin).
+      const label = displayLabelByMemberId.get(member.id) ?? "";
+      if (label) {
+        marks.push(
+          Plot.text(
+            [{ q: trace.q[0] ?? 0, y: bandTop + bandH * 0.15, label }],
+            {
+              x: "q",
+              y: "y",
+              text: "label",
+              textAnchor: "start",
+              fill: LIGHT_PALETTE.text,
+              fontSize: 11,
+              dx: 4,
+            },
+          ),
+        );
+      }
+      // Heatmap representation folds peaks into the intensity field; skip
+      // the peak ticks / labels block.
+      continue;
+    }
 
     // Trace line — y-mapped into this band. We compute log(I) ourselves to
     // place the line within the band (Plot's y-domain is per-figure, not
@@ -132,6 +219,17 @@ export function buildMultiTraceExportMarks(args: MultiTraceMarksArgs): Plot.Mark
         );
       }
     }
+  }
+
+  // Cross-trace peak-tracking polylines (#251 r1 / B1). Pushed AFTER the
+  // per-member marks so the connectors render on top of the waterfall lines
+  // / heatmap cells — same z-order as the on-screen MultiTracePlot.
+  if (showCrossTraceTracking) {
+    const trackingMarks = buildCrossTraceTrackingMarks({
+      members,
+      yBands: yBands as Array<[number, number]>,
+    });
+    for (const mk of trackingMarks) marks.push(mk as Plot.Markish);
   }
 
   return marks;

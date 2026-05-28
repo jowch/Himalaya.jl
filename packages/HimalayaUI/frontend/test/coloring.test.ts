@@ -65,15 +65,34 @@ describe("colorFor — palette + fallback", () => {
     expect(ORPHAN_FALLBACK.length).toBeGreaterThan(0);
   });
 
-  it("COMPARE_PALETTE does not collide with the phase palette", () => {
-    // The grouping mode `byPhase` resolves through `phaseColor()` (i.e.
-    // `PHASE_PALETTE`), while `bySample` and `distinct` walk `COMPARE_PALETTE`.
-    // If any entry overlaps, two members chosen under different rules would
-    // render identically — visually conflating sample- and phase-colorings.
-    // See coloring.ts doc-comment.
+  it("COMPARE_PALETTE does not collide with the phase palette (string-equality)", () => {
+    // First-line defence: no exact OKLCH string match. The hue-offset floor
+    // below is the load-bearing perceptual check.
     const phaseColors = new Set(Object.values(PHASE_PALETTE));
     for (const c of COMPARE_PALETTE) {
       expect(phaseColors.has(c)).toBe(false);
+    }
+  });
+
+  it("every COMPARE_PALETTE hue sits ≥13° from every PHASE_PALETTE hue", () => {
+    // Perceptual floor — string-equality alone is the wrong check (round-1
+    // review of #208/#251 caught a 3° hue collision that string-equality
+    // missed). At L≈0.55 C≈0.13, 13° hue shift is ΔE2000 ≈ 2.5, the smallest
+    // gap that keeps the byPhase/bySample modes from visually conflating.
+    //
+    // 13° (not 15°) is the floor because the eight phase hues pack the warm
+    // and purple sectors tightly enough that ≥15° everywhere AND twelve
+    // mutually-distinct entries is infeasible. Nine of the twelve sit at
+    // exactly 15°; the 13° outlier is entry hue 5 vs Fm3m 18 (squeezed
+    // between Fm3m and Hex). If the palette is re-laid, keep this floor
+    // numeric, and update both the floor and the docstring in lockstep.
+    const phaseHues = Object.values(PHASE_PALETTE).map(s => parseOklch(s).h);
+    for (const c of COMPARE_PALETTE) {
+      const ch = parseOklch(c).h;
+      for (const ph of phaseHues) {
+        const dist = angularHueDistance(ch, ph);
+        expect(dist, `COMPARE ${c} (hue ${ch}) vs PHASE hue ${ph}`).toBeGreaterThanOrEqual(13);
+      }
     }
   });
 });
@@ -93,6 +112,12 @@ function parseOklch(s: string): { L: number; C: number; h: number } {
   const m = /oklch\(\s*([\d.]+)\s+([\d.]+)\s+([\d.-]+)\s*\)/i.exec(s);
   if (!m) throw new Error(`not an oklch() string: ${s}`);
   return { L: parseFloat(m[1]!), C: parseFloat(m[2]!), h: parseFloat(m[3]!) };
+}
+
+/** Shortest angular distance between two hues in degrees, mod 360. */
+function angularHueDistance(a: number, b: number): number {
+  const d = Math.abs(((a - b) % 360) + 540) % 360 - 180;
+  return Math.abs(d);
 }
 
 function oklchToLinearSrgb({ L, C, h }: { L: number; C: number; h: number }): [number, number, number] {

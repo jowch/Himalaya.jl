@@ -213,6 +213,8 @@ function SeriesBuilderBody(
   // Figure export — mirror Compare's spec thunk (evaluated at click time so
   // it captures fresh xDomain / toggles). No experiment scope on this surface,
   // so experimentName is omitted and the filename stem uses the series title.
+  // representation + showCrossTraceTracking propagate so the exported PNG/SVG
+  // matches the on-screen plot when heatmap or tracking is active (#251 r1).
   const exportFilenameStem = `himalaya-series-${slugifyForFilename(s.title || String(s.id))}`;
   const exportSpec = useCallback(() => buildMultiTraceExportSpec({
     members,
@@ -224,9 +226,12 @@ function SeriesBuilderBody(
     groupingMode,
     sampleIdFor,
     displayLabelByMemberId,
+    representation,
+    showCrossTraceTracking: trackOn,
   }), [
     members, traces, s.title, xDomain, showPeakTicks, showPeakLabels,
     groupingMode, sampleIdFor, displayLabelByMemberId,
+    representation, trackOn,
   ]);
   const exportDisabled =
     tracesLoading
@@ -298,6 +303,15 @@ function SeriesBuilderBody(
                     <span className="rounded-full border border-hair px-2 py-px text-[10.5px] text-ink-faint">
                       {representation === "heatmap" ? "intensity map" : "offset waterfall"}
                     </span>
+                    {/* tracked tag — mockup `series-builder.html:393` (#251 r1 / N3) */}
+                    {trackOn && (
+                      <span
+                        data-testid="fig-tag-track"
+                        className="rounded-full border border-hair px-2 py-px text-[10.5px] text-ink-faint"
+                      >
+                        tracked
+                      </span>
+                    )}
                   </div>
                 </div>
                 {editing ? (
@@ -336,7 +350,7 @@ function SeriesBuilderBody(
               ) : (
                 <>
                   <div className="mt-4 flex items-center gap-3" data-testid="series-builder-controls">
-                    <GroupingModeToggle mode={groupingMode} onChange={setGroupingMode} />
+                    <GroupingModeToggle value={groupingMode} onChange={setGroupingMode} />
                     <AnnotationToggles />
                   </div>
                   <div className="mt-3 flex min-h-0 flex-row gap-2" style={{ height: "60vh" }}>
@@ -377,6 +391,10 @@ function SeriesBuilderBody(
                       offset by {offset.toFixed(2)}× the band height
                       {s.ordering_variable ? <>, ordered by {s.ordering_variable}</> : null}. Peak ticks
                       coloured by indexed phase.
+                      {/* trackOn caption appendage — mockup `series-builder.html:845` (#251 r1 / N4) */}
+                      {trackOn && (
+                        <> Tracking lines follow each reflection as it migrates with dose.</>
+                      )}
                     </span>
                   </div>
                 </>

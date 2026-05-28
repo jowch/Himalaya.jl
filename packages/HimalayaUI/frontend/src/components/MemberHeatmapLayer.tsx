@@ -86,6 +86,15 @@ export interface MemberHeatmapMarksProps {
   groupingMode?: GroupingMode;
   allMembers?: ReadonlyArray<SeriesMember>;
   sampleIdFor?: (m: SeriesMember) => number | null;
+  /**
+   * Pre-resolved fill color; bypasses the grouping-context lookup. Used by
+   * the figure-export adapter (#251 r1 / B1) so the export's `LIGHT` palette
+   * is honoured without re-running `colorFor`. When set, also accepts an
+   * override of the plate color so the export's white background mixes in
+   * pure white rather than the on-screen warm paper.
+   */
+  fillBaseOverride?: string;
+  plateOverride?: string;
 }
 
 /**
@@ -96,7 +105,7 @@ export interface MemberHeatmapMarksProps {
  */
 export function buildMemberHeatmapMarks(props: MemberHeatmapMarksProps): unknown[] {
   const marks: unknown[] = [];
-  const { member, trace, yBand, qDomain } = props;
+  const { member, trace, yBand, qDomain, fillBaseOverride, plateOverride } = props;
   if (!trace || trace.q.length === 0) return marks;
 
   const [yTop, yBot] = yBand;
@@ -105,16 +114,23 @@ export function buildMemberHeatmapMarks(props: MemberHeatmapMarksProps): unknown
   const y1 = yTop + rowInset;
   const y2 = Math.max(y1 + 1, yBot - rowInset);
 
-  // Per-member fill colour — same lookup the waterfall uses.
-  const fillBase = resolveHeatmapFill(props);
+  // Per-member fill colour — same lookup the waterfall uses, unless the
+  // caller supplied a pre-resolved fill (export adapter walks the LIGHT
+  // palette upstream).
+  const fillBase = fillBaseOverride ?? resolveHeatmapFill(props);
+  const plate = plateOverride ?? PLATE_OKLCH;
 
   // Bin the trace's peak signal across the visible q-domain.
   const bins = binPeaksOnly(trace.q, trace.I, qDomain[0], qDomain[1], HEATMAP_BIN_COUNT);
 
   // Single-row max for the per-row normaliser (so a quiet sample's strongest
-  // peak still reaches MAX_PCT). A cross-row normaliser is plausible but
-  // makes faint samples disappear; per-row matches the mockup's `gmax` per
-  // sample → per-row band ratio behaviour at the visual level.
+  // peak still reaches MAX_PCT). Deliberate departure from the mockup
+  // (`series-builder.html:763-774` accumulates `gmax` GLOBALLY across all
+  // rows); a global max crushes the dimmer samples in a heterogeneous series
+  // to barely-tinted strips, which is the opposite of what the heatmap is
+  // for. Per-row keeps every sample's peak structure legible at the cost of
+  // not encoding absolute intensity differences between rows — the right
+  // tradeoff when "peak migration" is the signal users are looking for.
   let rowMax = 0;
   for (const v of bins) if (v > rowMax) rowMax = v;
   const norm = rowMax > 0 ? rowMax : 1;
@@ -131,7 +147,7 @@ export function buildMemberHeatmapMarks(props: MemberHeatmapMarksProps): unknown
       x2: q1,
       // The mockup mixes in OKLab; we use OKLCH-compatible mix which renders
       // in the same colour space for `oklch(...)` inputs.
-      fill: `color-mix(in oklab, ${fillBase} ${pct.toFixed(0)}%, ${PLATE_OKLCH})`,
+      fill: `color-mix(in oklab, ${fillBase} ${pct.toFixed(0)}%, ${plate})`,
       memberId: member.id,
     };
   });
@@ -212,7 +228,13 @@ export function binPeaksOnly(
     const hi = Math.min(n - 1, i + W);
     for (let j = lo; j <= hi; j++) {
       const v = out[j]!;
-      if (v > 0 && v < m) m = v;
+      // Unconditional `v < m` — including zero-floored bins. Skipping zeros
+      // (`v > 0 && v < m`) would chew an isolated peak in a sparse trace: a
+      // window full of zeros except the peak bin reduces to baseline = peak
+      // value, subtracting the peak away. Typical dense SAXS traces are
+      // unaffected (neighbours are nonzero, so the min lands well below the
+      // peak), so this is strict-improvement under all conditions.
+      if (v < m) m = v;
     }
     baseline[i] = Number.isFinite(m) ? m : 0;
   }

@@ -189,6 +189,84 @@ describe("buildMultiTraceExportSpec", () => {
     })).toThrow(/exposure_id === null/);
   });
 
+  it("heatmap representation emits different marks than waterfall (#251 r1 / B1)", () => {
+    // Heatmap swaps the per-row vocabulary from Plot.line traces to
+    // Plot.rect cells. Mark counts diverge: waterfall = 1 line + 1 label =
+    // 2 marks per member (no peaks here); heatmap = 1 rect (containing all
+    // cells in `data`) + 1 label per member. Same total count for the
+    // single-member fixture, so check the mark types instead.
+    const waterfall = buildMultiTraceExportSpec({
+      members: [makeMember()],
+      traces,
+      comparisonTitle: "T",
+      xDomain: [0.1, 0.3],
+      showPeakTicks: false, showPeakLabels: false,
+      groupingMode: "distinct", sampleIdFor,
+      representation: "waterfall",
+    });
+    const heatmap = buildMultiTraceExportSpec({
+      members: [makeMember()],
+      traces,
+      comparisonTitle: "T",
+      xDomain: [0.1, 0.3],
+      showPeakTicks: false, showPeakLabels: false,
+      groupingMode: "distinct", sampleIdFor,
+      representation: "heatmap",
+    });
+    // Both produce non-empty mark arrays.
+    expect((waterfall.plot.marks ?? []).length).toBeGreaterThan(0);
+    expect((heatmap.plot.marks ?? []).length).toBeGreaterThan(0);
+    // Plot.line vs Plot.rect — observable difference via the mark constructor
+    // name. Plot marks expose `ariaLabel` or undocumented `_mark`-ish hooks,
+    // but the safest cross-version check is `constructor.name`.
+    const wfNames = (waterfall.plot.marks ?? []).map((m) => (m as { constructor: { name: string } }).constructor.name);
+    const hmNames = (heatmap.plot.marks ?? []).map((m) => (m as { constructor: { name: string } }).constructor.name);
+    expect(wfNames.some((n) => /line/i.test(n))).toBe(true);
+    expect(hmNames.some((n) => /rect/i.test(n))).toBe(true);
+  });
+
+  it("showCrossTraceTracking adds tracking marks when ≥2 members share a phase (#251 r1 / B1)", () => {
+    const indexedSnapshot = (phase: string, peaks: Array<{ id: number; q: number }>) => ({
+      effective_peaks: peaks,
+      confirmed_index: {
+        id: 1, phase, lattice_d: 100, r_squared: 0.99, ngc: 1.5,
+        peak_ids: peaks.map((p) => p.id),
+      },
+      analysis_inputs_hash: "h",
+    });
+    const a = makeMember({
+      id: 1, exposure_id: 100, display_order: 0,
+      snapshot: indexedSnapshot("Pn3m", [{ id: 1, q: 0.10 }, { id: 2, q: 0.12 }]) as unknown as SeriesMember["snapshot"],
+    });
+    const b = makeMember({
+      id: 2, exposure_id: 101, display_order: 1,
+      snapshot: indexedSnapshot("Pn3m", [{ id: 3, q: 0.11 }, { id: 4, q: 0.13 }]) as unknown as SeriesMember["snapshot"],
+    });
+
+    const withTracking = buildMultiTraceExportSpec({
+      members: [a, b],
+      traces,
+      comparisonTitle: "T",
+      xDomain: [0.1, 0.3],
+      showPeakTicks: false, showPeakLabels: false,
+      groupingMode: "distinct", sampleIdFor,
+      showCrossTraceTracking: true,
+    });
+    const withoutTracking = buildMultiTraceExportSpec({
+      members: [a, b],
+      traces,
+      comparisonTitle: "T",
+      xDomain: [0.1, 0.3],
+      showPeakTicks: false, showPeakLabels: false,
+      groupingMode: "distinct", sampleIdFor,
+      showCrossTraceTracking: false,
+    });
+    // Tracking adds at least one additional Plot.line per (phase, order).
+    expect((withTracking.plot.marks ?? []).length).toBeGreaterThan(
+      (withoutTracking.plot.marks ?? []).length,
+    );
+  });
+
   it("does NOT set title/caption/figure on plot", () => {
     const spec = buildMultiTraceExportSpec({
       members: [makeMember()],
