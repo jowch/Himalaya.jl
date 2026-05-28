@@ -2,7 +2,7 @@
 
 **Date:** 2026-05-28
 **Milestone:** [#4 — HimalayaUI — The Print finish, round 3](https://github.com/jowch/Himalaya.jl/milestone/4) (8 issues) **+ folded-in** [#252](https://github.com/jowch/Himalaya.jl/issues/252) (figure-export palette invariant; no milestone)
-**Status:** approved-for-wave-1 (waves 2–4 provisional, pending wave-1 observation)
+**Status:** wave 1 COMPLETE + merged (2026-05-28, PRs #262/#263/#264); the wave-1 Monitor experiment is **resolved (REFUTED)** and waves 2–4 are confirmed on the orchestrator-nudge model — see [Wave-1 results & confirmed decisions](#wave-1-results--confirmed-decisions-2026-05-28) at the end of this doc.
 **Base:** `main` = `origin/main` @ `ef6071f` (incl. #253 round-3 findings doc). Reconciled before wave 1; all implementer worktrees branch off this.
 
 ## Purpose
@@ -114,3 +114,28 @@ Open question (`team-monitor-experiment` memory): *do persistent team members se
 - Team: `print-r3`. Implementers: `impl-<issue#>` (or `impl-bgh`). Reviewers: `rev-<PR#>`.
 - One worktree + one branch + one PR per member (except B+G+H = one of each).
 - Branch names: `r3-<letter>-<slug>` (e.g. `r3-a-accent-rationing`).
+
+
+## Wave-1 results & confirmed decisions (2026-05-28)
+
+Wave 1 (#252 palette · #254 accent · #258 series) shipped end-to-end: 3 issues → 3 PRs (#262/#263/#264), all **round-1 approved**, merged to `main` @ `6d73d64`, build-green. The full pipeline ran: spawn → plan → dual gate → TDD → PR → review loop → visual acceptance → merge.
+
+### The Monitor experiment — REFUTED
+
+**Persistent team members do NOT self-resume on their own armed Monitors across idle.** `impl-252` armed a Monitor on PR #262 and went idle; `rev-262` posted its review; impl-252 stayed silent ~9.5 min. Confirmed: idle teammates wake on `SendMessage` / task-claims, not on their own Monitor stdout. (See the `team-monitor-experiment` memory.)
+
+Sharper finding: **the nudge bridge is needed on BOTH sides** — the orchestrator had to nudge `rev-262` for round 2 as well as the author. So `request-pr-review` / `review-pr` is effectively **root-session-only inside a team**; the orchestrator drives every round transition and **cannot collapse to "spawn + collect."** Waves 2–4 run the orchestrator-watch + nudge model from the start (no per-wave probe).
+
+### Confirmed decisions
+
+- **Keep the full `request-pr-review` / `review-pr` loop on every PR, even when the review is trivial.** Rationale (operator): the loop's GitHub review thread is a first-class **audit-trail deliverable**, not just a quality gate. Do not downgrade low-risk PRs to gate-only.
+- **Wave width stays 2 (no aggressive fan-out).** The 2-wide cadence keeps the orchestrator's per-round nudge load manageable; since the orchestrator is the serialization point for review rounds, width is bounded by bridge bandwidth, not by file-disjointness alone.
+- **Seed the visual harness with one indexed series.** The dev DB has no indexed/ordered *series*, so series-heatmap Done-whens (e.g. #258's keyline/axis) fell back to `data-*` unit tests. Seeding one indexed series makes those pixel-verifiable for the remaining waves.
+
+### Operational note — team-member worktree pinning
+
+Spawned team members' `Write`/`Edit` tools (and the orchestrator's, once its session isolates) **pin to a single worktree** (`r3-e-series-finish` this run), not each member's own. Workaround (in use): author all edits via **Bash heredoc with absolute paths** in the correct worktree (`Bash` is not pinned). Consequences: (1) do **not** garbage-collect the pinned worktree mid-milestone — live members depend on it; (2) TDD edits are more fragile (no surgical `Edit`), so members must be careful. Not fixed this run (operator: stay with the workaround).
+
+### What the gate caught (value evidence)
+
+The plan gate (orchestrator verify-before-review grep + project reviewer + human) caught, **before any code**: #252's `[7]→285` swatch-collision (a bug in the *issue text itself*), #258's heatmap-keyline test-coupling (green unreachable as written) plus two non-existent test-helper names, and #256's "zero inline `text-[Npx]`" Done-when overshooting the issue's actual scope. Grepping cited values/paths against live source (not skimming) is what surfaced these.
