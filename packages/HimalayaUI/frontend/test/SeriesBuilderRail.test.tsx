@@ -9,6 +9,13 @@ function setup(over: Partial<React.ComponentProps<typeof SeriesBuilderRail>> = {
     representation: "waterfall" as const,
     onRepresentationChange: vi.fn(),
     orderingVariable: "LL37 : lipid ratio",
+    offset: 1.2,
+    onOffsetChange: vi.fn(),
+    scaleMode: "log" as const,
+    onScaleModeChange: vi.fn(),
+    sampleCount: 6,
+    onConfirmSeries: vi.fn(),
+    onAdjustSeries: vi.fn(),
     exportControls: <div data-testid="mock-export" />,
     ...over,
   };
@@ -19,7 +26,9 @@ function setup(over: Partial<React.ComponentProps<typeof SeriesBuilderRail>> = {
 describe("SeriesBuilderRail", () => {
   it("renders the ordering variable and the representation toggle", () => {
     setup();
-    expect(screen.getByText("LL37 : lipid ratio")).toBeInTheDocument();
+    // The ordering variable appears in both the autogroup card body and the
+    // dedicated ordering-variable line — assert on the dedicated line.
+    expect(screen.getAllByText("LL37 : lipid ratio").length).toBeGreaterThan(0);
     expect(screen.getByTestId("representation-toggle")).toBeInTheDocument();
   });
 
@@ -38,5 +47,32 @@ describe("SeriesBuilderRail", () => {
     setup({ collapsed: true });
     expect(screen.queryByText("LL37 : lipid ratio")).not.toBeInTheDocument();
     expect(screen.getByTestId("rail-restore")).toBeInTheDocument();
+  });
+
+  it("renders the offset slider, scale toggle, and autogroup card", () => {
+    setup();
+    expect(screen.getByTestId("offset-slider")).toBeInTheDocument();
+    expect(screen.getByTestId("scale-toggle")).toBeInTheDocument();
+    expect(screen.getByTestId("autogroup-card")).toBeInTheDocument();
+  });
+
+  it("forwards offset slider input to onOffsetChange", () => {
+    const props = setup();
+    fireEvent.change(screen.getByTestId("offset-slider"), { target: { value: "0.8" } });
+    expect(props.onOffsetChange).toHaveBeenCalledWith(0.8);
+  });
+
+  it("forwards scale toggle to onScaleModeChange", () => {
+    const props = setup();
+    fireEvent.click(screen.getByTestId("scale-linear"));
+    expect(props.onScaleModeChange).toHaveBeenCalledWith("linear");
+  });
+
+  it("hides the autogroup card and shows the recipe editor in edit mode", () => {
+    setup({ editControls: <div data-testid="mock-edit" /> });
+    expect(screen.queryByTestId("autogroup-card")).not.toBeInTheDocument();
+    expect(screen.getByTestId("mock-edit")).toBeInTheDocument();
+    // compose controls stay available in edit mode (they shape the figure too)
+    expect(screen.getByTestId("offset-slider")).toBeInTheDocument();
   });
 });

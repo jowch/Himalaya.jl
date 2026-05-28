@@ -28,6 +28,8 @@ vi.mock("../src/queries", () => ({
 vi.mock("../src/components/MultiTracePlot", () => ({
   MultiTracePlot: () => <div data-testid="mock-multi-trace-plot" />,
   COMPARE_PLOT_ASPECT: 0.3,
+  offsetToBandFraction: (offset: number) =>
+    0.45 + Math.min(1, Math.max(0, (offset - 0.4) / 1)) * 0.5,
 }));
 
 function member(over: Partial<SeriesMember> = {}): SeriesMember {

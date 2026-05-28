@@ -5,7 +5,7 @@ import {
   useSeries, useMemberTraces, useMemberTracesLoading,
   useMemberExposures, useMemberSamples,
 } from "../queries";
-import { MultiTracePlot } from "../components/MultiTracePlot";
+import { MultiTracePlot, offsetToBandFraction } from "../components/MultiTracePlot";
 import { MemberMetaGutter } from "../components/MemberMetaGutter";
 import { GroupingModeToggle } from "../components/GroupingModeToggle";
 import { AnnotationToggles } from "../components/AnnotationToggles";
@@ -13,8 +13,10 @@ import { ActiveBandProvider } from "../components/ActiveBandContext";
 import { FigureExportControls } from "../components/FigureExportControls";
 import { SeriesBuilderRail } from "../components/SeriesBuilderRail";
 import { SeriesRecipeEditor } from "../components/SeriesRecipeEditor";
+import { OffsetDock } from "../components/OffsetDock";
 import { HintText } from "../components/ui";
 import type { Representation } from "../components/RepresentationToggle";
+import type { ScaleMode } from "../components/ScaleToggle";
 import { resolveDisplayLabels } from "../lib/comparison/labels";
 import { buildMultiTraceExportSpec } from "../lib/figure-export/adapters/multiTraceAdapter";
 import { slugifyForFilename } from "../lib/figure-export/filename";
@@ -195,6 +197,18 @@ function SeriesBuilderBody(
   const [collapsed, setCollapsed] = useState(false);
   const [representation, setRepresentation] = useState<Representation>("waterfall");
 
+  // Compose controls (R8 / B-F): the trace-offset slider and the log/linear
+  // q-axis scale. Local UI state — a read surface's composition is a local
+  // concern (persisting it is a recipe edit, deferred). Offset maps to the
+  // plot's working-band fraction; scaleMode maps to xType.
+  const [offset, setOffset] = useState(1.2);
+  const [scaleMode, setScaleMode] = useState<ScaleMode>("log");
+  const workingBandFraction = offsetToBandFraction(offset);
+
+  // "Adjust" on the autogroup card enters edit mode (seeds a draft for this
+  // series) — same affordance as the header Edit button.
+  const startDraft = useAppState((st) => st.startSeriesDraftFromSeries);
+
   // Annotation toggles live in Zustand (shared with AnnotationToggles); the
   // export spec must reflect their current value so the figure matches the
   // on-screen plot.
@@ -243,7 +257,10 @@ function SeriesBuilderBody(
   return (
     <ActiveBandProvider>
       <div className="flex-1 min-h-0 flex flex-row" data-testid="series-builder-body">
-        <div className="flex-1 min-h-0 flex flex-col p-4 gap-3" data-testid="series-builder-plot">
+        <div
+          className="flex-1 min-h-0 overflow-auto flex flex-col items-center px-8 py-6"
+          data-testid="series-builder-plot"
+        >
           {members.length === 0 ? (
             // Empty plate — the placeholder lives in the PLOT area so the rail
             // (and, in edit mode, the recipe editor) still mounts. A
@@ -257,13 +274,43 @@ function SeriesBuilderBody(
               This series has no members yet.
             </div>
           ) : (
-            <>
-              <div className="flex items-center gap-3" data-testid="series-builder-controls">
+            // Figure-as-plate (R8 / B-J): the figure is the printed plate —
+            // white plate, hair border, soft shadow, centered, widening to
+            // 1336px when the rail collapses to full-bleed.
+            <div
+              data-testid="series-builder-plate"
+              className={`w-full ${collapsed ? "max-w-[1336px]" : "max-w-[1180px]"} rounded border border-hair bg-plate p-8 shadow-[0_1px_1px_rgba(60,52,40,.04),0_18px_40px_-20px_rgba(60,52,40,.22)] transition-[max-width] duration-200`}
+            >
+              {/* Kicker tag-row (R8 / B-H): terracotta "Series" + facet tags. */}
+              <div className="mb-2 flex items-baseline gap-3" data-testid="fig-tags">
+                <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-print-accent">
+                  Series
+                </span>
+                <div className="flex gap-1.5">
+                  <span className="rounded-full border border-hair px-2 py-px text-[10.5px] text-ink-faint">
+                    {members.length} {members.length === 1 ? "sample" : "samples"}
+                  </span>
+                  <span className="rounded-full border border-hair px-2 py-px text-[10.5px] text-ink-faint">
+                    {scaleMode === "log" ? "log q" : "linear q"}
+                  </span>
+                  <span className="rounded-full border border-hair px-2 py-px text-[10.5px] text-ink-faint">
+                    offset waterfall
+                  </span>
+                </div>
+              </div>
+              <h1 className="text-display font-medium text-ink">{s.title || "Untitled series"}</h1>
+              {s.description && (
+                <p className="mt-2 max-w-[64ch] text-sm text-ink-soft" data-testid="fig-sub">
+                  {s.description}
+                </p>
+              )}
+
+              <div className="mt-4 flex items-center gap-3" data-testid="series-builder-controls">
                 <GroupingModeToggle mode={groupingMode} onChange={setGroupingMode} />
                 <AnnotationToggles />
               </div>
-              <div className="flex-1 min-h-0 flex flex-row gap-2">
-                <div ref={plotColRef} className="flex-1 min-w-0">
+              <div className="mt-3 flex min-h-0 flex-row gap-2" style={{ height: "60vh" }}>
+                <div ref={plotColRef} className="min-w-0 flex-1">
                   <MultiTracePlot
                     members={members}
                     traces={traces}
@@ -273,6 +320,8 @@ function SeriesBuilderBody(
                     sampleIdFor={sampleIdFor}
                     showPeakTicks={showPeakTicks}
                     showPeakLabels={showPeakLabels}
+                    xType={scaleMode}
+                    workingBandFraction={workingBandFraction}
                   />
                 </div>
                 <div className="w-[280px] shrink-0" data-testid="series-builder-gutter">
@@ -284,7 +333,21 @@ function SeriesBuilderBody(
                   />
                 </div>
               </div>
-            </>
+
+              {/* Auto figure caption (R8 / B-H). */}
+              <div
+                data-testid="fig-caption"
+                className="mt-3 flex gap-2 border-t border-hair pt-3 text-xs leading-relaxed text-ink-soft"
+              >
+                <span className="font-bold text-ink">Fig.</span>
+                <span>
+                  {members.length} 1D integration{members.length === 1 ? "" : "s"}, vertically
+                  offset by {offset.toFixed(2)}× the band height
+                  {s.ordering_variable ? <>, ordered by {s.ordering_variable}</> : null}. Peak ticks
+                  coloured by indexed phase.
+                </span>
+              </div>
+            </div>
           )}
         </div>
         <SeriesBuilderRail
@@ -293,6 +356,13 @@ function SeriesBuilderBody(
           representation={representation}
           onRepresentationChange={setRepresentation}
           orderingVariable={s.ordering_variable}
+          offset={offset}
+          onOffsetChange={setOffset}
+          scaleMode={scaleMode}
+          onScaleModeChange={setScaleMode}
+          sampleCount={s.samples.length || members.length}
+          onConfirmSeries={() => { /* read surface: Confirm is a visual affordance; recipe edit deferred */ }}
+          onAdjustSeries={() => startDraft(s)}
           exportControls={
             <FigureExportControls
               spec={exportSpec}
@@ -304,6 +374,11 @@ function SeriesBuilderBody(
           {...(editing
             ? { editControls: <SeriesRecipeEditor seriesId={s.id} members={members} /> }
             : {})}
+        />
+        <OffsetDock
+          show={collapsed && representation === "waterfall"}
+          value={offset}
+          onChange={setOffset}
         />
       </div>
     </ActiveBandProvider>
