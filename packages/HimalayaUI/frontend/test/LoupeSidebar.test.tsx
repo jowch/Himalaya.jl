@@ -122,9 +122,9 @@ describe("LoupeSidebar — verdict", () => {
     // R3-S03 (#256): the mono X keycap makes the keyboard shortcut discoverable
     // from the right rail (matching CullBar's "Drop X" + the footer legend).
     expect(toggle).toHaveTextContent("X");
-    const keycap = toggle.querySelector(".font-mono");
-    expect(keycap).not.toBeNull();
-    expect(keycap).toHaveTextContent("X");
+    // The keycap is a distinct mono span (located by its data-testid, matching
+    // this file's structural data-* idiom rather than a brittle class selector).
+    expect(screen.getByTestId("loupe-drop-keycap")).toHaveTextContent("X");
     fireEvent.click(toggle);
     expect(props.onDropToggle).toHaveBeenCalledTimes(1);
   });
@@ -137,7 +137,7 @@ describe("LoupeSidebar — verdict", () => {
     const toggle = screen.getByTestId("loupe-drop-toggle");
     expect(toggle).toHaveTextContent("Restore");
     expect(toggle).toHaveTextContent("X");
-    expect(toggle.querySelector(".font-mono")).toHaveTextContent("X");
+    expect(screen.getByTestId("loupe-drop-keycap")).toHaveTextContent("X");
   });
 
   // T-4: the kept verdict dot is SAGE (the success status token), not the

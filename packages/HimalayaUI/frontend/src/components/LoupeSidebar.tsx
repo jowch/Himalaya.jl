@@ -281,7 +281,12 @@ export function LoupeSidebar({
           {/* R3-S03 (#256): the mono X keycap surfaces the drop/restore
               keyboard shortcut from the right rail, matching CullBar's
               "Drop X" and the footer-legend keycap idiom. */}
-          <span className="ml-1 font-mono text-[10px] opacity-60">X</span>
+          <span
+            data-testid="loupe-drop-keycap"
+            className="ml-1 font-mono text-[10px] opacity-60"
+          >
+            X
+          </span>
         </button>
       </section>
 

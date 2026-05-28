@@ -760,23 +760,37 @@ describe("ContactSheetRow — advertised affordances", () => {
     expect(thumb.tagName).toBe("BUTTON");
   });
 
-  it("opens the loupe on Enter without leaving the thumb selected", async () => {
+  // The "no double-action" guarantee is the handler calling e.preventDefault()
+  // to suppress the <button>'s synthesized activation click (which would also
+  // fire onSelect). JSDOM does NOT synthesize that follow-on click from a
+  // keydown, so asserting "not selected" alone would pass even without the
+  // suppression. Instead assert the actual mechanism: fireEvent.keyDown returns
+  // dispatchEvent's result, which is `false` exactly when preventDefault ran.
+  // Delete the e.preventDefault() in ContactSheetRow and these go red.
+  it("opens the loupe on Enter and prevents the default activation (no double-fire)", async () => {
     mockFetch({
       "/api/samples/7/exposures": [makeExposure({ id: 1, sample_id: 7 })],
     });
     renderRowRouted(makeSample({ id: 7 }));
     const thumb = await screen.findByTestId("exposure-thumb-1");
-    fireEvent.keyDown(thumb, { key: "Enter" });
+    const notPrevented = fireEvent.keyDown(thumb, { key: "Enter" });
+    // dispatchEvent → false means the event was default-prevented.
+    expect(notPrevented).toBe(false);
     expect(await screen.findByTestId("loupe-stub")).toBeInTheDocument();
+    // And the thumb was never left batch-selected (belt-and-suspenders: the
+    // CullBar only mounts when a selection exists).
+    expect(screen.queryByTestId("cull-bar")).toBeNull();
   });
 
-  it("opens the loupe on Space without leaving the thumb selected", async () => {
+  it("opens the loupe on Space and prevents the default activation (no double-fire)", async () => {
     mockFetch({
       "/api/samples/7/exposures": [makeExposure({ id: 1, sample_id: 7 })],
     });
     renderRowRouted(makeSample({ id: 7 }));
     const thumb = await screen.findByTestId("exposure-thumb-1");
-    fireEvent.keyDown(thumb, { key: " " });
+    const notPrevented = fireEvent.keyDown(thumb, { key: " " });
+    expect(notPrevented).toBe(false);
     expect(await screen.findByTestId("loupe-stub")).toBeInTheDocument();
+    expect(screen.queryByTestId("cull-bar")).toBeNull();
   });
 });
