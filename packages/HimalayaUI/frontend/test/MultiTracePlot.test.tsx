@@ -18,8 +18,23 @@ import {
   computeMaxPlotWidth,
   MIN_PLOT_WIDTH,
   COMPARE_PLOT_ASPECT,
+  offsetToBandFraction,
 } from "../src/components/MultiTracePlot";
 import type { SeriesMember } from "../src/api";
+
+describe("offsetToBandFraction", () => {
+  it("maps the slider range 0.4..1.4 into a band fraction 0.45..0.95", () => {
+    expect(offsetToBandFraction(0.4)).toBeCloseTo(0.45, 5);
+    expect(offsetToBandFraction(1.4)).toBeCloseTo(0.95, 5);
+  });
+  it("maps the mockup default 1.2 to ~0.85", () => {
+    expect(offsetToBandFraction(1.2)).toBeCloseTo(0.85, 2);
+  });
+  it("clamps out-of-range offsets to the fraction bounds", () => {
+    expect(offsetToBandFraction(0)).toBeCloseTo(0.45, 5);
+    expect(offsetToBandFraction(99)).toBeCloseTo(0.95, 5);
+  });
+});
 
 let lastPlotElement: HTMLElement | null = null;
 
