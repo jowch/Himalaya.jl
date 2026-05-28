@@ -93,10 +93,10 @@ test.describe("issue #35 sample-tag add-then-delete reconciliation (Bug 4)", () 
 
     // The contact-sheet `+ tag` button lives inside this row's tags cell.
     // (Empty-state rows show the full "+ tag" copy; rows with chips show "+".
-    // Either way the testid is "tag-add".) Hover to reveal the hover-only "+"
-    // variant before clicking.
+    // Either way the testid is "tag-add".) The hover-only `opacity-0` variant
+    // is still in the DOM + clickable; Playwright's click flow moves the
+    // cursor into the row before dispatching, so no explicit hover is needed.
     const row = page.getByTestId(`sample-row-${fx.sampleId}`);
-    await row.hover();
     await row.getByTestId("tag-add").click();
     const keyInput = row.getByPlaceholder("key");
     const valInput = row.getByPlaceholder("value");

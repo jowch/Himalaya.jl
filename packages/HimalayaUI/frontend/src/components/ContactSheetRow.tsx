@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import {
   useExposures,
   useSetExposureStatus,
-  useSelectExposure,
   useAddCorpusSampleTag,
   useRemoveCorpusSampleTag,
 } from "../queries";
@@ -172,15 +171,8 @@ export function ContactSheetRow({
     : exposuresQuery.isLoading;
 
   const setStatus = useSetExposureStatus(sample.id);
-  const setRepresentative = useSelectExposure(sample.id);
   const addTag = useAddCorpusSampleTag(sample.id);
   const removeTag = useRemoveCorpusSampleTag(sample.id);
-
-  // (R2-M11) representative pick / single-thumb reject toggle moved to the
-  // loupe. The `setRepresentative` mutator is retained because the per-row
-  // useExposures fan-out's optimistic mutual exclusion still flows through
-  // this hook when the loupe writes — keeping the wiring local + symmetric.
-  void setRepresentative;
 
   // Multi-select state — local to this row (selection never crosses samples,
   // matching the per-sample query fan-out). Stale ids are harmless: the batch

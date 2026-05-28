@@ -179,10 +179,13 @@ export function useExposures(sampleId: number | undefined) {
  * with no double-fetch.
  *
  * Why not one bulk HTTP route: a backend extension is out of scope for #207.
- * The 139× observer overhead (a major contributor to the live `ERR_INSUFFICIENT_
- * RESOURCES`) is what this hook removes — the request count stays N but the
- * subscription count drops to 1, and the *image* fan-out (the other major
- * contributor) is bounded by `DetectorImage`'s `IntersectionObserver` gate.
+ * The hook consolidates N per-row observer trees into a single `useQueries`
+ * call in `SamplesPage`; per-row `useExposures(undefined)` calls in the bulk
+ * path stay disabled and don't add a fetch. The HTTP request count stays N,
+ * but the *concurrent* fetch fan-out — the major contributor to the live
+ * `ERR_INSUFFICIENT_RESOURCES` — is now bounded by `useQueries`' shared
+ * scheduling, and the *image* fan-out (the other major contributor) is
+ * bounded by `DetectorImage`'s `IntersectionObserver` gate.
  *
  * Returns `{ byId, isLoading }`:
  *   - `byId.get(sampleId)` is `Exposure[] | undefined`. `undefined` reads as
