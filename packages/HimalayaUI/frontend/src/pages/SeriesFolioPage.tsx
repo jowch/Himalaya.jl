@@ -92,7 +92,7 @@ export function SeriesFolioPage(): JSX.Element {
             type="button"
             data-testid="series-folio-new"
             onClick={() => navigate("/series/new")}
-            className="rounded-md border border-ink bg-ink px-3 py-1.5 text-xs font-semibold text-paper hover:opacity-90"
+            className="rounded-md border border-print-accent bg-print-accent px-3 py-1.5 text-xs font-semibold text-paper hover:opacity-90"
           >
             + New series
           </button>

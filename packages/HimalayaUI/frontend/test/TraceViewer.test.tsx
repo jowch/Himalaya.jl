@@ -6,6 +6,7 @@ import {
 	nearestClickablePeak,
 } from "../src/components/TraceViewer";
 import type { IndexEntry, Peak } from "../src/api";
+import { phaseColor } from "../src/phases";
 
 vi.mock("@observablehq/plot", () => ({
 	plot: vi.fn(() => {
@@ -331,6 +332,93 @@ describe("<TraceViewer>", () => {
 		expect(kept!.hasAttribute("data-losing")).toBe(false);
 		expect(parseFloat(kept!.getAttribute("fill-opacity") ?? "1"))
 			.toBeGreaterThanOrEqual(0.9);
+	});
+
+	// R3-A (#254): accent rationing. Auto-peak triangles take the phase color of
+	// the index that claims them; terracotta (`--color-accent`) is reserved for
+	// the transient q-link hot state. Assertions read the SVG `fill` attribute
+	// (data/SVG-attribute, never a Tailwind class string — see test/AGENTS.md).
+	const claimingIndex: IndexEntry = {
+		id: 10,
+		exposure_id: 1,
+		phase: "Pn3m",
+		basis: 0.1,
+		score: null,
+		r_squared: null,
+		lattice_d: null,
+		ngc: null,
+		status: "candidate",
+		kind: "auto",
+		inputs_hash: null,
+		peaks: [{ peak_id: 1, ratio_position: 0, residual: 0, q_observed: 0.1 }],
+		predicted_q: [0.1],
+	};
+
+	it("paints an auto peak in the phase color of the index that claims it", () => {
+		const trace = { q: [0.1, 0.2, 0.3], I: [10, 20, 30], sigma: [1, 1, 1] };
+		const peaks: Peak[] = [
+			{ id: 1, exposure_id: 1, q: 0.1, intensity: null, prominence: null,
+			  sharpness: null, source: "auto", excluded: false },
+		];
+		const { container } = render(
+			<TraceViewer
+				trace={trace}
+				peaks={peaks}
+				activeGroupIndices={[claimingIndex]}
+				hoveredIndex={undefined}
+				{...defaultProps}
+			/>,
+		);
+		const tri = container.querySelector(
+			'[data-role="peak-root"] polygon[data-peak-id="1"]',
+		);
+		expect(tri).not.toBeNull();
+		expect(tri!.getAttribute("fill")).toBe(phaseColor("Pn3m"));
+	});
+
+	it("paints a claimed peak in terracotta only when hoveredQ matches its q", () => {
+		const trace = { q: [0.1, 0.2, 0.3], I: [10, 20, 30], sigma: [1, 1, 1] };
+		const peaks: Peak[] = [
+			{ id: 1, exposure_id: 1, q: 0.1, intensity: null, prominence: null,
+			  sharpness: null, source: "auto", excluded: false },
+		];
+		const { container } = render(
+			<TraceViewer
+				trace={trace}
+				peaks={peaks}
+				activeGroupIndices={[claimingIndex]}
+				hoveredIndex={undefined}
+				hoveredQ={0.1}
+				{...defaultProps}
+			/>,
+		);
+		const tri = container.querySelector(
+			'[data-role="peak-root"] polygon[data-peak-id="1"]',
+		);
+		expect(tri).not.toBeNull();
+		expect(tri!.getAttribute("fill")).toBe("var(--color-accent)");
+	});
+
+	it("paints an unclaimed auto peak in ink-faint, not terracotta", () => {
+		const trace = { q: [0.1, 0.2, 0.3], I: [10, 20, 30], sigma: [1, 1, 1] };
+		const peaks: Peak[] = [
+			{ id: 2, exposure_id: 1, q: 0.1, intensity: null, prominence: null,
+			  sharpness: null, source: "auto", excluded: false },
+		];
+		const { container } = render(
+			<TraceViewer
+				trace={trace}
+				peaks={peaks}
+				activeGroupIndices={[claimingIndex]}
+				hoveredIndex={undefined}
+				{...defaultProps}
+			/>,
+		);
+		const tri = container.querySelector(
+			'[data-role="peak-root"] polygon[data-peak-id="2"]',
+		);
+		expect(tri).not.toBeNull();
+		expect(tri!.getAttribute("fill")).toBe("var(--color-ink-faint)");
 	});
 });
 

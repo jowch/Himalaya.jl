@@ -396,6 +396,20 @@ export function TraceViewer({
 			px: number;
 			py: number;
 		}
+		// R3-A (#254): peaks are painted in the phase color of the index that
+		// claims them (accent rationing — DESIGN.md §2). Terracotta is rationed to
+		// the transient q-link hot state below; it is no longer a peak's resting
+		// color. Map a peak id → the phase color of the first active index that
+		// claims it.
+		const claimColorByPeakId = new Map<number, string>();
+		for (const ix of activeGroupIndices) {
+			for (const ref of ix.peaks) {
+				if (!claimColorByPeakId.has(ref.peak_id)) {
+					claimColorByPeakId.set(ref.peak_id, phaseColor(ix.phase));
+				}
+			}
+		}
+
 		const peakDraws: PeakDraw[] = [];
 		for (const p of peaks) {
 			const px = xScale.apply!(p.q);
@@ -408,10 +422,21 @@ export function TraceViewer({
 
 		for (const { peak, px, py } of peakDraws) {
 			const isAuto = peak.source === "auto";
-			// Bright/neon for "active workflow": auto = ice blue, manual = magenta.
-			const baseColor = isAuto
+			// R3-A (#254): resting peak color follows the claiming index's phase
+			// (DESIGN.md §2 accent rationing). Terracotta (`--color-accent`) is
+			// rationed to the q-link hot state (`litByQ`) only. Unclaimed auto peaks
+			// fall back to `--color-ink-faint` (the mockup's `--unindexed`); manual
+			// peaks keep their own identity color.
+			const litByQ = hoveredQ !== undefined
+				&& Math.abs(peak.q - hoveredQ) <= peak.q * Q_LINK_REL_TOL;
+			const claimColor = claimColorByPeakId.get(peak.id);
+			const baseColor = litByQ
 				? "var(--color-accent)"
-				: "var(--color-peak-manual)";
+				: claimColor
+					? claimColor
+					: isAuto
+						? "var(--color-ink-faint)"
+						: "var(--color-peak-manual)";
 			// Auto peaks: filled triangle. Excluded auto peaks: same color but ~30% opacity.
 			// Manual peaks: filled magenta triangle (always full opacity when not faded).
 			let fill: string;
@@ -447,8 +472,6 @@ export function TraceViewer({
 			// by the q-link (#180) when `hoveredQ` lands on this peak's q. Both
 			// channels share the same visual.
 			const litByPeakId = hoveredPeakId === peak.id;
-			const litByQ = hoveredQ !== undefined
-				&& Math.abs(peak.q - hoveredQ) <= peak.q * Q_LINK_REL_TOL;
 			if (litByPeakId || litByQ) {
 				const halo = document.createElementNS(
 					"http://www.w3.org/2000/svg",
