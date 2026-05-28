@@ -97,3 +97,56 @@ test("hovering a detector ring lights it (q-link source + sink)", async ({ page 
   await hit.dispatchEvent("mouseout");
   await expect(ring).toHaveAttribute("data-hot", "false");
 });
+
+// q-link triple (#209): completes the third surface. Hovering a reflection
+// row sets hoveredQ; the detector ring whose q matches lights. The mirror
+// direction (ring → row) is also covered: hovering the ring lights the row.
+// The Vitest unit tests cover the row's own hot/source/sink behaviour with
+// fine-grained state assertions; this Playwright pass validates the
+// row↔ring cross-surface contract through the real layout + the shipped
+// `hoveredQ` channel.
+test("row → ring: reflection-row hover lights the matching detector ring", async ({ page }) => {
+  await page.goto("/sample/10");
+  await expect(page.getByTestId("focus-workspace-page")).toBeVisible();
+  // Wait for both surfaces to render — the reflections panel sits in the lg+
+  // lower-row grid alongside the detector.
+  await expect(page.getByTestId("focus-reflections-panel")).toBeVisible();
+  await expect(page.getByTestId("detector-ring-overlay")).toBeVisible();
+
+  // Pick row for peak id 1 (q=0.045 — the first PEAKS fixture entry).
+  const row = page.getByTestId("reflection-row-1");
+  const ring = page.locator('[data-testid="detector-ring-q-0.045"]');
+
+  await expect(row).toHaveAttribute("data-hot", "false");
+  await expect(ring).toHaveAttribute("data-hot", "false");
+
+  // Row hover → hoveredQ → ring sink lights.
+  await row.dispatchEvent("mouseover");
+  await expect(row).toHaveAttribute("data-hot", "true");
+  await expect(ring).toHaveAttribute("data-hot", "true");
+
+  // Row leave clears (no other source active) — both surfaces go dark.
+  await row.dispatchEvent("mouseout");
+  await expect(row).toHaveAttribute("data-hot", "false");
+  await expect(ring).toHaveAttribute("data-hot", "false");
+});
+
+test("ring → row: detector-ring hover lights the matching reflection row", async ({ page }) => {
+  await page.goto("/sample/10");
+  await expect(page.getByTestId("focus-workspace-page")).toBeVisible();
+  await expect(page.getByTestId("focus-reflections-panel")).toBeVisible();
+
+  const hit = page.locator('[data-testid="detector-ring-hit-0.045"]');
+  const row = page.getByTestId("reflection-row-1");
+  const ring = page.locator('[data-testid="detector-ring-q-0.045"]');
+
+  await expect(row).toHaveAttribute("data-hot", "false");
+
+  // Ring hover → hoveredQ → row sink lights.
+  await hit.dispatchEvent("mouseover");
+  await expect(ring).toHaveAttribute("data-hot", "true");
+  await expect(row).toHaveAttribute("data-hot", "true");
+
+  await hit.dispatchEvent("mouseout");
+  await expect(row).toHaveAttribute("data-hot", "false");
+});

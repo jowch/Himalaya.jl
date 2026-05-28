@@ -65,6 +65,16 @@ describe("FocusDetectorPanel", () => {
     expect(await screen.findByTestId("focus-detector-panel")).toBeInTheDocument();
   });
 
+  it("R3-N3 (#209): the panel <section> wears the Plate Lift `.card` class", async () => {
+    // Round-2 finding R3-N3: the detector panel shipped with the bare
+    // `rounded border bg-plate` triple — no Plate Lift, so it read as
+    // flat against the warm paper. DESIGN.md §Elevation: plate-like
+    // cards belong to the lifted family.
+    renderPanel();
+    const panel = await screen.findByTestId("focus-detector-panel");
+    expect(panel.className).toContain("card");
+  });
+
   it("shows a pick-a-sample hint when no sample is active", async () => {
     useAppState.setState({ activeSampleId: undefined, activeExposureId: undefined });
     renderPanel();

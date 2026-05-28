@@ -192,6 +192,28 @@ describe("<PhasePanel> — candidate multi-select (R4 L-10)", () => {
   });
 });
 
+describe("<PhasePanel> — R4-N1 copy dedup (#209)", () => {
+  it("renders the explanatory sentence in exactly one rail slot, not both", async () => {
+    mockAll(
+      [
+        { id: 10, exposure_id: 42, phase: "Pn3m", basis: 0.5, score: 0.89,
+          r_squared: 0.99, lattice_d: 197, ngc: -1.5, status: "candidate", kind: "auto",
+          predicted_q: [0.045],
+          peaks: [{ peak_id: 1, ratio_position: 1, residual: 0, q_observed: 0.045 }] },
+      ],
+      [{ id: 1, exposure_id: 42, kind: "auto", active: true, members: [10] }],
+    );
+    renderWithProviders(<PhasePanel exposureId={42} />);
+    await screen.findByTestId("phase-call-block-10");
+    // The "Check every phase…" framing sentence appeared verbatim in BOTH
+    // the card-header subtitle AND the rail-note paragraph (PhasePanel.tsx
+    // :273-275 and :343-346, round-2 finding R4-N1). It must appear exactly
+    // once now — the rail-note copy, which the mockup has below candidates.
+    const occurrences = screen.queryAllByText(/check every phase that is present/i);
+    expect(occurrences).toHaveLength(1);
+  });
+});
+
 describe("<PhasePanel> — speculative", () => {
   it("renders speculative indices as candidate rows with a delete affordance + add button", async () => {
     mockAll(

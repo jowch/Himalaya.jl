@@ -139,6 +139,30 @@
     display: flex;
     align-items: center;
   }
+  /*
+   * R3-N1 (#209): the slotted variant for the focus-workspace plate header.
+   *
+   * The base 56px clamp + bottom hairline crushed the focus header's
+   * 3-row stack (11px kicker + 27px Newsreader display title + 12px mono
+   * subline ≈ 53px of content), pinning the subline flush against the
+   * bottom edge and adding a bottom hairline the mockup .plate-head does
+   * NOT have (the trace plate's head breathes into the figure below).
+   *
+   * Used by PlotCard's TitleStrip when `headerSlot` is supplied — i.e. the
+   * focus variant. Drops the height clamp + bottom border in favor of
+   * mockup-parity breathing-room padding (22px top, 18px bottom; px-6 keeps
+   * horizontal padding consistent with the body). Other consumers of
+   * `card-header` (which apply the base class only) are unaffected.
+   */
+  .card-header--slotted {
+    height: auto;
+    border-bottom: none;
+    padding-top: 1.375rem;
+    padding-bottom: 0.75rem;
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
+    align-items: flex-start;
+  }
   /* Card surface — shared across all three floating cards. The "Plate Lift":
      on warm paper, a card is the one elevated object, so a soft shadow lifts it
      off the page (DESIGN.md §Elevation). The dark-era shadow + the

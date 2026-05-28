@@ -334,8 +334,16 @@ export function PlotCard({ headerSlot }: PlotCardProps = {}): JSX.Element {
   const titleStep: "experiment" | "sample" =
     activeExperimentId === undefined ? "experiment" : "sample";
 
+  // R3-N3 (#209): the trace plate is the hero — the one elevated object in
+  // The Print's "flat-except-the-plate" rule (DESIGN.md §Elevation). Apply
+  // `.card` (Plate Lift shadow + bg-plate + hairline + radius) to the outer
+  // in the focus variant so the figure floats above the warm paper. Gated on
+  // `headerSlot` so prop-less PlotCard (any non-focus consumer) is unaffected.
+  const outerClass = headerSlot
+    ? "card flex flex-col h-full min-h-0 overflow-hidden"
+    : "flex flex-col h-full min-h-0 overflow-hidden";
   return (
-    <div data-testid="plot-card" className="flex flex-col h-full min-h-0 overflow-hidden">
+    <div data-testid="plot-card" className={outerClass}>
       <TitleStrip
         {...(headerSlot ? { headerSlot } : {})}
         experimentName={experimentName}
@@ -411,10 +419,19 @@ function TitleStrip({
 }: TitleStripProps): JSX.Element {
   const hasExp    = experimentName !== undefined;
   const hasSample = sampleName     !== undefined;
+  // R3-N1 (#209): when `headerSlot` is supplied (the focus variant), use the
+  // slotted card-header — drops the 56px clamp + bottom hairline that crushed
+  // the focus header's 3-row stack flush against the edge. The legacy Index
+  // path keeps the base `card-header` so other cards (PhasePanel, IndicesCard)
+  // stay aligned with it.
+  const headerClass = headerSlot
+    ? "card-header card-header--slotted justify-between gap-3"
+    : "card-header justify-between gap-3";
   return (
     <div
       data-testid="plot-stat-strip"
-      className="card-header justify-between gap-3"
+      data-variant={headerSlot ? "slotted" : "default"}
+      className={headerClass}
     >
       {/* Focus variant (R3 / #226): render the supplied header and drop the
           experiment-picker button entirely. The picker only makes sense on the
