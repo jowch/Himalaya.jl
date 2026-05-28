@@ -116,7 +116,12 @@ export function SamplesPage(): JSX.Element {
           data-testid="screened-progress"
           className="flex shrink-0 flex-col items-end text-right"
         >
-          <div className="text-display !text-[25px] text-ink">
+          {/* R3-S04 (#256, Fixed-Scale Rule): the progress numeral uses the
+              text-headline-lg scale role (Newsreader serif, 26px) instead of an
+              inline text-[25px] one-off. DESIGN.md S3 names "the progress
+              numeral" as a serif/title use, so the serif role is the right fit
+              (the 1px delta is invisible at this size). */}
+          <div className="text-headline-lg text-ink">
             {screened}
             <b className="font-medium text-ink-faint"> / {total}</b>
           </div>
