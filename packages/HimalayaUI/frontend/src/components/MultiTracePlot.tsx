@@ -31,12 +31,22 @@ import * as Plot from "@observablehq/plot";
 import type { Trace, SeriesMember } from "../api";
 import { buildMemberMarks, buildMemberPeakRows } from "./MemberTraceLayer";
 import type { PeakRow } from "./MemberTraceLayer";
+import { buildMemberHeatmapMarks } from "./MemberHeatmapLayer";
 import { invertQ, applyQ } from "../lib/plot/invertQ";
 import { formatAxis } from "../lib/plot/formatAxis";
 import { prettifyUnits } from "../lib/units";
 import type { GroupingMode } from "../lib/comparison/coloring";
 import { computeYBands } from "../lib/comparison/yBands";
 import { useActiveBand } from "./ActiveBandContext";
+
+/**
+ * Plot layout vocabulary (#208 — render-core finish). Today the render core
+ * has only the waterfall layout; the heatmap is a parallel representation
+ * built from `MemberHeatmapLayer`. Unlike `GroupingMode` (a coloring axis),
+ * `Representation` is a layout mode — picking one swaps the per-member mark
+ * vocabulary (line+peaks vs binned rects).
+ */
+export type Representation = "waterfall" | "heatmap";
 
 /**
  * Pixel hit radius for peak click hit-testing in edit mode (Phase 8.1).
@@ -193,6 +203,16 @@ export interface MultiTracePlotProps {
    * derives this from its offset slider via `offsetToBandFraction`.
    */
   workingBandFraction?: number;
+  /**
+   * Plot layout vocabulary (#208 — render-core finish). Default
+   * `"waterfall"` preserves the legacy line+peaks behaviour. `"heatmap"`
+   * swaps the per-member mark factory to `MemberHeatmapLayer`, rendering each
+   * member as a horizontal row of intensity-binned rectangles instead of a
+   * stacked trace. Peak ticks, peak labels, click hit-testing, and the
+   * hover tooltip are all waterfall-only: peaks are folded into the
+   * intensity field in the heatmap and have no per-peak target.
+   */
+  representation?: Representation;
 }
 
 export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
@@ -204,6 +224,7 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
     showPeakTicks = true, showPeakLabels = true,
     groupingMode, sampleIdFor,
     workingBandFraction,
+    representation = "waterfall",
   } = props;
 
   const hostRef       = useRef<HTMLDivElement>(null);
@@ -319,6 +340,23 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
           : {}),
         ...(workingBandFraction !== undefined ? { workingBandFraction } : {}),
       };
+      if (representation === "heatmap") {
+        // Heatmap row: same y-band envelope, mark vocabulary swaps to
+        // intensity-binned rects. The peak hit-test / hover machinery below
+        // is waterfall-only; peaks fold into the intensity field here, so we
+        // skip pushing rows into `hoverPeakIndex` for heatmap members.
+        const heatmapMarks = buildMemberHeatmapMarks({
+          member: m,
+          trace,
+          yBand: yBand as [number, number],
+          qDomain: [xMin, xMax],
+          ...(groupingMode !== undefined && sampleIdFor !== undefined
+            ? { groupingMode, allMembers: members, sampleIdFor }
+            : {}),
+        });
+        for (const mk of heatmapMarks) allMarks.push(mk);
+        continue;
+      }
       const memberMarks = buildMemberMarks(layerProps);
       for (const mk of memberMarks) allMarks.push(mk);
       const { peaks } = buildMemberPeakRows(layerProps);
@@ -533,6 +571,7 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
     showPeakTicks, showPeakLabels,
     groupingMode, sampleIdFor,
     workingBandFraction,
+    representation,
   ]);
 
   useEffect(() => {
@@ -574,6 +613,7 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
       ref={hostRef}
       className="w-full h-full relative"
       data-testid="multi-trace-plot"
+      data-representation={representation}
     >
       {/*
         Inner wrapper carries the width cap + horizontal centering. Both the
