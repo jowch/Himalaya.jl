@@ -4,7 +4,7 @@ using FileIO, TiffImages, ImageIO, ImageTransformations, ImageCore, ColorTypes
 Bump this string whenever `load_and_lognormalize` semantics change. It feeds
 into the per-image cache-busting token; bumping forces all browsers to re-fetch.
 """
-const IMAGE_PROCESSING_VERSION = "v2"
+const IMAGE_PROCESSING_VERSION = "v3"
 
 """
 Percentile clips applied to the log-counts of *positive* pixels in
