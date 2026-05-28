@@ -28,6 +28,9 @@ import { FocusNotesMargin } from "./FocusNotesMargin";
 export function FocusWorkspaceLayout(): JSX.Element {
   const activeSampleId   = useAppState((s) => s.activeSampleId);
   const activeExposureId = useAppState((s) => s.activeExposureId);
+  // F-12: below xl the Notes margin column yields to a topbar-toggled drawer.
+  const notesDrawerOpen  = useAppState((s) => s.notesDrawerOpen);
+  const closeNotesDrawer = useAppState((s) => s.closeNotesDrawer);
 
   // The corpus query gives us the sample's authoritative `experiment_id`
   // (the I4.1 route shim seeds only `activeSampleId`, NOT activeExperimentId).
@@ -99,14 +102,53 @@ export function FocusWorkspaceLayout(): JSX.Element {
         <IndicesCard />
       </aside>
 
-      {/* notes margin: collapses below xl. Gated on the experiment-scoped
-          sample being loaded so the textarea never reads a stale source. */}
+      {/* notes margin: the persistent xl+ column. Below xl it is hidden and the
+          topbar Notes toggle opens the drawer below instead (F-12). Gated on
+          the experiment-scoped sample so the textarea never reads a stale
+          source. */}
       {notesSample !== undefined && (
         <div className="hidden xl:block">
           <FocusNotesMargin
             sample={notesSample}
             onSaveNotes={(notes) => updateSample.mutate({ notes })}
           />
+        </div>
+      )}
+
+      {/* F-12: the < xl Notes drawer. Hidden at xl+ (where the margin column is
+          shown). A scrim dismisses it; the body is the SAME FocusNotesMargin
+          wired to the SAME save path, so edits round-trip identically whether
+          made in the margin or the drawer. */}
+      {notesSample !== undefined && notesDrawerOpen && (
+        <div data-testid="focus-notes-drawer" className="xl:hidden">
+          <div
+            data-testid="focus-notes-drawer-scrim"
+            onClick={closeNotesDrawer}
+            className="fixed inset-0 z-40 bg-ink/20"
+          />
+          <div
+            role="dialog"
+            aria-label="Notes"
+            className="fixed right-0 top-14 bottom-0 z-50 w-[300px] max-w-[85vw]
+                       overflow-y-auto bg-paper shadow-xl"
+          >
+            <div className="flex items-center justify-between border-b border-hair px-4 py-2">
+              <span className="text-meta uppercase tracking-wider text-ink-faint">Notes</span>
+              <button
+                type="button"
+                data-testid="focus-notes-drawer-close"
+                onClick={closeNotesDrawer}
+                aria-label="Close notes"
+                className="rounded px-1.5 text-base leading-none text-ink-faint hover:text-ink"
+              >
+                &#215;
+              </button>
+            </div>
+            <FocusNotesMargin
+              sample={notesSample}
+              onSaveNotes={(notes) => updateSample.mutate({ notes })}
+            />
+          </div>
         </div>
       )}
     </div>

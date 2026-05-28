@@ -278,15 +278,16 @@ export function CorpusTopbar(): JSX.Element {
       )}
 
       {/* F-12: Notes toggle — the < xl fallback for the focus Notes margin.
-          Always present on a sample route so Notes is reachable at every width
-          (the drawer body itself is xl:hidden — see FocusWorkspaceLayout). */}
+          Hidden at xl+ (mockup `#notes-btn{display:none}` above 1320px) where
+          the persistent Notes margin column is shown instead; below xl the
+          margin yields to this button + the drawer it toggles. */}
       {onSampleRoute && (
         <button
           type="button"
           data-testid="notes-toggle"
           data-has-notes={hasNotes ? "true" : undefined}
           onClick={toggleNotesDrawer}
-          className="flex items-center gap-1.5 rounded border border-hair-strong
+          className="xl:hidden flex items-center gap-1.5 rounded border border-hair-strong
                      bg-plate px-2.5 py-1 text-xs font-semibold text-ink
                      hover:border-ink-faint"
         >
