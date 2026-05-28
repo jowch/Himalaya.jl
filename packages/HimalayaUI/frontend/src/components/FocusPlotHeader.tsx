@@ -41,7 +41,7 @@ export function FocusPlotHeader({
     <div data-testid="focus-plot-header" className="min-w-0 flex flex-col items-start">
       <div
         data-testid="focus-plot-kicker"
-        className="text-xs font-semibold uppercase tracking-wide text-print-accent"
+        className="text-xs font-bold uppercase tracking-[0.13em] text-print-accent"
       >
         Integration
       </div>

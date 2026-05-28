@@ -232,6 +232,25 @@ export function PlotCard({ headerSlot }: PlotCardProps = {}): JSX.Element {
     ? indices.find((i) => i.id === hoveredIndexId)
     : undefined;
 
+  // R4 (L-11): when hovering a candidate that is NOT yet in the active set and
+  // competes with an active phase (claims an overlapping peak), the peaks that
+  // active phase would lose on the swap are dimmed in the trace so the cost is
+  // visible before the click. Mirrors the mockup `setPreview` "losing" set.
+  const losingPeakIds = useMemo(() => {
+    if (!hoveredIndex) return undefined;
+    const alreadyActive = activeGroupIndices.some((ix) => ix.id === hoveredIndex.id);
+    if (alreadyActive) return undefined;
+    const claim = new Set(hoveredIndex.peaks.map((p) => p.peak_id));
+    const losing = new Set<number>();
+    for (const active of activeGroupIndices) {
+      const activePeakIds = active.peaks.map((p) => p.peak_id);
+      const overlaps = activePeakIds.some((id) => claim.has(id));
+      if (!overlaps) continue; // independent phase → coexists, nothing lost
+      for (const id of activePeakIds) if (!claim.has(id)) losing.add(id);
+    }
+    return losing.size > 0 ? losing : undefined;
+  }, [hoveredIndex, activeGroupIndices]);
+
   // Figure export (spec: 2026-05-08-figure-export-design.md).
   const exposureLabel = activeExposureId !== undefined
     ? `Exposure ${activeExposureId}`
@@ -296,6 +315,7 @@ export function PlotCard({ headerSlot }: PlotCardProps = {}): JSX.Element {
         hoveredIndex={hoveredIndex}
         hoveredPeakId={hoveredPeakId}
         hoveredQ={hoveredQ}
+        losingPeakIds={losingPeakIds}
         onHoverQ={handleHoverQ}
         onAddPeak={(q) => addPeak.mutate(q)}
         onRemovePeak={(peakId) => removePeak.mutate(peakId)}
