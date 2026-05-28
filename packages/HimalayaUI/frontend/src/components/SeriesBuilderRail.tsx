@@ -76,7 +76,17 @@ export function SeriesBuilderRail({
       className="flex w-[336px] shrink-0 flex-col gap-5 overflow-y-auto border-l border-hair bg-paper-sunk p-4"
     >
       <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold uppercase tracking-wide text-ink">Compose</span>
+        {/*
+          R3-Y03: the rail recedes behind the figure plate (DESIGN.md §4
+          Flat-Except-the-Plate Rule). Ink-faint + the kicker letter-spacing,
+          no semibold — a quiet section label, not a title competing with the
+          plate's terracotta kicker.
+        */}
+        <span
+          data-testid="rail-compose-header"
+          data-recede="true"
+          className="text-xs uppercase tracking-[0.14em] text-ink-faint"
+        >Compose</span>
         <button
           type="button"
           data-testid="rail-collapse-toggle"
@@ -89,7 +99,16 @@ export function SeriesBuilderRail({
       </div>
 
       {editControls !== undefined ? (
-        <section className="flex flex-col gap-1.5 [&_input]:bg-plate" data-testid="rail-edit">
+        <section
+          className="flex flex-col gap-1.5 rail-edit-inputs"
+          data-testid="rail-edit"
+          data-rail-edit-inputs=""
+        >
+          {/*
+            R3-Y09: the plate-fill applies to text inputs only via the scoped
+            `.rail-edit-inputs` rule in styles.css — the old `[&_input]`
+            wildcard also caught injected `<input type="range">` slider thumbs.
+          */}
           {editControls}
         </section>
       ) : (
@@ -131,9 +150,10 @@ export function SeriesBuilderRail({
           <input
             type="checkbox"
             data-testid="track-toggle-input"
+            data-accent="print"
             checked={trackOn}
             onChange={(e) => onTrackOnChange(e.target.checked)}
-            className="rounded border-hair"
+            className="rounded border-hair accent-print-accent"
           />
           Track reflections
         </label>
