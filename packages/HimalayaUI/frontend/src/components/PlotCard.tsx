@@ -317,7 +317,7 @@ export function PlotCard({ headerSlot }: PlotCardProps = {}): JSX.Element {
   return (
     <div data-testid="plot-card" className="flex flex-col h-full min-h-0 overflow-hidden">
       <TitleStrip
-        headerSlot={headerSlot}
+        {...(headerSlot ? { headerSlot } : {})}
         experimentName={experimentName}
         sampleName={sampleName}
         onTitleClick={() => openNavModal(titleStep)}
