@@ -490,9 +490,10 @@ describe("<MultiTracePlot>", () => {
       />,
     );
 
-    // One Plot.rect call per member; no waterfall line/dot marks for the
-    // heatmap representation.
-    expect(Plot.rect).toHaveBeenCalledTimes(2);
+    // Two Plot.rect calls per member — the binned cells + the outer hair
+    // keyline that frames each row (R3-Y06, #258) — so 2 members → 4 rects.
+    // No waterfall line/dot marks for the heatmap representation.
+    expect(Plot.rect).toHaveBeenCalledTimes(4);
     expect(Plot.line).not.toHaveBeenCalled();
     expect(Plot.dot).not.toHaveBeenCalled();
   });

@@ -274,7 +274,7 @@ function SeriesBuilderBody(
           */}
           <div
             data-testid="series-builder-plate"
-            className={`w-full ${collapsed ? "max-w-[1336px]" : "max-w-[1180px]"} rounded border border-hair bg-plate p-8 shadow-[0_1px_1px_rgba(60,52,40,.04),0_18px_40px_-20px_rgba(60,52,40,.22)] transition-[max-width] duration-200`}
+            className={`w-full ${collapsed ? "max-w-[1336px]" : "max-w-[1180px]"} rounded border border-hair bg-plate p-8 shadow-[0_1px_0_rgba(255,255,255,.6)_inset,0_1px_1px_rgba(60,52,40,.04),0_18px_40px_-20px_rgba(60,52,40,.22)] transition-[max-width] duration-200`}
           >
               {/*
                 Kicker tag-row (R8 / B-H): terracotta "Series" + facet tags.
@@ -354,7 +354,20 @@ function SeriesBuilderBody(
                     <AnnotationToggles />
                   </div>
                   <div className="mt-3 flex min-h-0 flex-row gap-2" style={{ height: "60vh" }}>
-                    <div ref={plotColRef} className="min-w-0 flex-1">
+                    <div ref={plotColRef} className="relative min-w-0 flex-1">
+                      {representation === "heatmap" && s.ordering_variable && (
+                        // Rotated ordering-variable axis title in the left
+                        // margin (R3-Y07, #258). Mockup series-builder.html
+                        // :817-822 `.axis-title` — what makes the heatmap read
+                        // as a migration map "ordered by X", not stacked rows.
+                        <div
+                          data-testid="heatmap-axis-title"
+                          aria-hidden="true"
+                          className="pointer-events-none absolute left-0 top-1/2 z-10 origin-left -translate-y-1/2 -rotate-90 whitespace-nowrap text-[10.5px] uppercase tracking-[0.14em] text-ink-faint"
+                        >
+                          {s.ordering_variable} &rarr;
+                        </div>
+                      )}
                       <MultiTracePlot
                         members={members}
                         traces={traces}

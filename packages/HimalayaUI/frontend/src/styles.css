@@ -183,6 +183,13 @@
     position: relative;
   }
 
+  /* Series-builder rail recipe-editor: plate-fill text inputs only — never
+     the range-slider thumbs (or checkboxes) that injected editControls may
+     also nest. Replaces the old `[&_input]:bg-plate` wildcard (R3-Y09, #258). */
+  .rail-edit-inputs input:not([type="range"]):not([type="checkbox"]) {
+    background: var(--color-plate);
+  }
+
   /*
    * Animation primitives ported from the v3 design mockup.
    *

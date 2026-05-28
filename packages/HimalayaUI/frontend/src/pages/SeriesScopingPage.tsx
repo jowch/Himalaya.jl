@@ -225,7 +225,7 @@ export function SeriesScopingPage(): JSX.Element {
           type="button"
           data-testid="scoping-discard"
           onClick={() => navigate("/series")}
-          className="text-xs font-semibold text-ink-faint hover:text-ink"
+          className="px-[4px] py-[7px] text-xs font-semibold text-ink-faint hover:text-ink"
         >
           Discard
         </button>
@@ -233,7 +233,7 @@ export function SeriesScopingPage(): JSX.Element {
 
       <div
         data-testid="scoping-plate"
-        className="w-full max-w-[760px] rounded-md border border-hair bg-plate px-8 py-7 shadow-[0_1px_1px_rgba(60,52,40,.04),0_18px_40px_-22px_rgba(60,52,40,.22)]"
+        className="w-full max-w-[760px] rounded-md border border-hair bg-plate px-8 py-7 shadow-[0_1px_0_rgba(255,255,255,.6)_inset,0_1px_1px_rgba(60,52,40,.04),0_18px_40px_-22px_rgba(60,52,40,.22)]"
       >
         <div className="mb-1.5 text-[11px] font-bold uppercase tracking-[0.14em] text-print-accent">
           New series

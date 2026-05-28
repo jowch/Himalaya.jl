@@ -91,4 +91,27 @@ describe("SeriesBuilderRail", () => {
     setup({ trackOn: true });
     expect((screen.getByTestId("track-toggle-input") as HTMLInputElement).checked).toBe(true);
   });
+
+  it("recedes the COMPOSE header behind the plate (R3-Y03)", () => {
+    setup();
+    // The header is a recessed label, not a competing title: it carries the
+    // receded data marker the component sets when it drops to ink-faint.
+    expect(screen.getByTestId("rail-compose-header")).toHaveAttribute(
+      "data-recede",
+      "true",
+    );
+  });
+
+  it("renders the Track-reflections checkbox in the terracotta accent (R3-Y04)", () => {
+    setup();
+    expect(screen.getByTestId("track-toggle-input")).toHaveAttribute(
+      "data-accent",
+      "print",
+    );
+  });
+
+  it("scopes edit-input styling so it does not target slider thumbs (R3-Y09)", () => {
+    setup({ editControls: <input data-testid="ec" /> });
+    expect(screen.getByTestId("rail-edit")).toHaveAttribute("data-rail-edit-inputs", "");
+  });
 });
