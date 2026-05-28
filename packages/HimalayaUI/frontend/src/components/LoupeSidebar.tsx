@@ -138,8 +138,9 @@ function LoupeTagsEditor({ sample }: { sample: CorpusSample }): JSX.Element {
                 placeholder="key"
                 value={keyDraft}
                 onChange={(e) => setKeyDraft(e.target.value)}
-                className="w-12 bg-transparent text-[10.5px] text-ink outline-none
-                           placeholder:text-ink-faint"
+                className="w-12 rounded-sm bg-transparent text-[10.5px] text-ink outline-none
+                           placeholder:text-ink-faint
+                           focus:ring-1 focus:ring-print-accent/40"
               />
               <span className="text-ink-faint">:</span>
               <input
@@ -152,8 +153,9 @@ function LoupeTagsEditor({ sample }: { sample: CorpusSample }): JSX.Element {
                   else if (e.key === "Escape") reset();
                 }}
                 autoFocus
-                className="w-16 bg-transparent text-[10.5px] text-ink outline-none
-                           placeholder:text-ink-faint"
+                className="w-16 rounded-sm bg-transparent text-[10.5px] text-ink outline-none
+                           placeholder:text-ink-faint
+                           focus:ring-1 focus:ring-print-accent/40"
               />
               <button
                 type="button"

@@ -395,8 +395,10 @@ export function ContactSheetRow({
               <span className="text-ink-faint"> / {total}</span>
             </span>
             {dropped > 0 && (
-              <span className="font-sans text-[10px] font-semibold text-print-accent">
-                {dropped} dropped
+              // R3-S05 (#256): a passive count — off the grease-pencil accent
+              // (text-ink-soft) and parenthesised so it reads as a quiet fact.
+              <span className="font-sans text-[10px] font-semibold text-ink-soft">
+                ({dropped} dropped)
               </span>
             )}
           </>
@@ -441,8 +443,9 @@ export function ContactSheetRow({
               placeholder="key"
               value={tagKeyDraft}
               onChange={(e) => setTagKeyDraft(e.target.value)}
-              className="w-12 bg-transparent text-[10.5px] text-ink outline-none
-                         placeholder:text-ink-faint"
+              className="w-12 rounded-sm bg-transparent text-[10.5px] text-ink outline-none
+                         placeholder:text-ink-faint
+                         focus:ring-1 focus:ring-print-accent/40"
             />
             <span className="text-ink-faint">:</span>
             <input
@@ -455,8 +458,9 @@ export function ContactSheetRow({
                 else if (e.key === "Escape") resetTagForm();
               }}
               autoFocus
-              className="w-16 bg-transparent text-[10.5px] text-ink outline-none
-                         placeholder:text-ink-faint"
+              className="w-16 rounded-sm bg-transparent text-[10.5px] text-ink outline-none
+                         placeholder:text-ink-faint
+                         focus:ring-1 focus:ring-print-accent/40"
             />
             <button
               type="button"
@@ -486,9 +490,12 @@ export function ContactSheetRow({
               "text-[10.5px] font-semibold text-ink-faint",
               "hover:border-print-accent hover:text-print-accent",
               // Hover-revealed when chips exist; always-visible invite when empty.
+              // R3-S08 (#256): reveal on row hover OR when any descendant takes
+              // focus, so keyboard users can tab to the `+` (the old `focus:`
+              // could never fire on an opacity-0 button).
               sample.tags.length === 0
                 ? ""
-                : "opacity-0 group-hover:opacity-100 focus:opacity-100",
+                : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
             ].join(" ")}
           >
             {sample.tags.length === 0 ? "+ tag" : "+"}

@@ -153,7 +153,9 @@ describe("ContactSheetRow", () => {
     await waitFor(() => {
       expect(kept).toHaveTextContent("2");
       expect(kept).toHaveTextContent("3");
-      expect(kept).toHaveTextContent("1 dropped");
+      // R3-S05 (#256): the dropped sub-label is a passive fact — demoted off
+      // the grease-pencil accent and parenthesised.
+      expect(kept).toHaveTextContent("(1 dropped)");
     });
   });
 
@@ -191,6 +193,23 @@ describe("ContactSheetRow", () => {
     expect(btn).toBeEnabled();
     fireEvent.click(btn);
     expect(await screen.findByTestId("tag-form")).toBeInTheDocument();
+  });
+
+  // R3-S08 (#256): when chips already exist the `+` is a hover/focus-revealed
+  // affordance. It must still be a real, reachable <button> so keyboard users
+  // land on it in tab order (the reveal is CSS group-focus-within, not a mount
+  // gate). Asserts the element type, not the CSS opacity (JSDOM can't compute).
+  it("keeps the `+` tag affordance a reachable <button> when chips exist", async () => {
+    mockFetch({ "/api/samples/7/exposures": [] });
+    renderRow(
+      makeSample({
+        id: 7,
+        tags: [{ id: 1, key: "lipid", value: "DOPC", source: "manual" }],
+      }),
+    );
+    const btn = await screen.findByTestId("tag-add");
+    expect(btn.tagName).toBe("BUTTON");
+    expect(btn).toBeEnabled();
   });
 
   // R2-M11: the three permanent thumb-overlay buttons are stripped — the
