@@ -58,9 +58,11 @@ export function ThumbnailGallery({
                 "flex-1 min-h-0",
                 // Unified ring widths (always ring-2) prevent layout shift on hover.
                 // No ring-offset → ring sits flush against the rounded corner.
+                // T-7: Print selection chrome — terracotta selected ring,
+                // hair hover ring (was shared dark/ice-blue Inspect chrome).
                 isViewing
-                  ? "ring-2 ring-accent shadow-sm shadow-accent/30"
-                  : "ring-1 ring-border/50 group-hover:ring-2 group-hover:ring-fg-muted/40",
+                  ? "ring-2 ring-print-accent shadow-sm shadow-print-accent/30"
+                  : "ring-1 ring-hair/60 group-hover:ring-2 group-hover:ring-hair-strong",
               ].join(" ")}
             >
               <DetectorImage
@@ -73,7 +75,7 @@ export function ThumbnailGallery({
               {isIndexing && (
                 <span
                   className="absolute top-[5px] left-[5px] rounded-[3px]
-                             bg-accent/85 text-bg text-xs font-semibold
+                             bg-print-accent/90 text-paper text-xs font-semibold
                              px-1.5 py-0.5 leading-snug backdrop-blur-sm"
                 >
                   ⊙ Indexing
