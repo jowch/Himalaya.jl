@@ -158,12 +158,12 @@ export function LoupePage(): JSX.Element {
       <div data-testid="loupe-page" className="mx-auto max-w-[1100px] px-8 py-7">
         <div
           data-testid="loupe-not-found"
-          className="rounded border border-border p-8 text-sm text-ink-faint"
+          className="rounded border border-hair-strong p-8 text-sm text-ink-faint"
         >
           Sample not found.{" "}
           <button
             onClick={goBack}
-            className="font-semibold text-accent hover:underline"
+            className="font-semibold text-print-accent hover:underline"
           >
             Back to the sheet
           </button>
@@ -177,12 +177,12 @@ export function LoupePage(): JSX.Element {
       <button
         data-testid="loupe-back"
         onClick={goBack}
-        className="mb-3.5 text-[11.5px] font-semibold text-accent hover:underline"
+        className="mb-3.5 text-[11.5px] font-semibold text-print-accent hover:underline"
       >
         ← Back to the sheet
       </button>
       <header className="mb-5">
-        <h2 className="text-2xl text-ink">
+        <h2 data-testid="loupe-headline" className="text-headline-lg">
           {sample?.display_name ?? sample?.name ?? "—"}
         </h2>
         <p
