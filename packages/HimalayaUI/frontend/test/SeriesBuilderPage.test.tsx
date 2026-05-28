@@ -166,6 +166,24 @@ describe("SeriesBuilderPage — read + states", () => {
     expect(screen.getByTestId("fig-caption")).toBeInTheDocument();
   });
 
+  it("renders only the plate header — the outer page header is retired (R8-N1)", () => {
+    // Round-2 finding R8-N1: the outer `<header>` at `SeriesBuilderPage.tsx:99-124`
+    // duplicated the figure-plate kicker+title at `:284-301`, diluting the
+    // figure-as-plate metaphor (~80px of redundant stack). Mockup
+    // `series-builder.html:386-396` has only the plate header.
+    h.seriesQ = { data: series({ members: [member()] }), isLoading: false, isError: false };
+    renderAt();
+    expect(screen.queryByTestId("series-builder-header")).not.toBeInTheDocument();
+    // Title still renders, but on the plate (not in a separate outer header).
+    const title = screen.getByText("LL37 titration");
+    expect(title.closest('[data-testid="series-builder-plate"]')).not.toBeNull();
+    // Edit button still discoverable in read mode (re-homed into the kicker row).
+    expect(screen.getByTestId("series-builder-edit")).toBeInTheDocument();
+    // And it lives inside the plate kicker row, not in a separate header strip.
+    expect(screen.getByTestId("series-builder-edit").closest('[data-testid="series-builder-plate"]'))
+      .not.toBeNull();
+  });
+
   it("forwards the default scale (log) and offset to the plot", () => {
     h.seriesQ = { data: series({ members: [member()] }), isLoading: false, isError: false };
     renderAt();
