@@ -171,9 +171,11 @@ export function SamplesPage(): JSX.Element {
         </Skeleton>
       )}
 
-      {/* L-5/L-8/L-11: footer keycap-chip legend. The X / double-click / Esc
-          hints are wired by culling (#162) and the loupe; the shift-click
-          range hint is the M-3 multi-select affordance. */}
+      {/* L-5/L-8/L-11: footer keycap-chip legend. Every hint is a live
+          control on each ContactSheetRow: click / shift-click select &
+          extend a contiguous range over a sample's frames, double-click
+          opens that sample's loupe, and while a selection exists X
+          batch-rejects it and Esc clears it. */}
       <div
         data-testid="kb-legend"
         className="flex flex-wrap gap-5 px-4 text-[11.5px] text-ink-faint"

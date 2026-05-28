@@ -1,4 +1,5 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   useExposures,
   useSetExposureStatus,
@@ -45,14 +46,17 @@ function ExposureThumb({
   frameNo,
   selectedForBatch,
   onToggleReject,
-  onToggleSelected,
+  onSelect,
+  onOpenLoupe,
   onPickRepresentative,
 }: {
   exposure: Exposure;
   frameNo: number;
   selectedForBatch: boolean;
   onToggleReject: (exp: Exposure) => void;
-  onToggleSelected: (id: number) => void;
+  /** Body / checkbox click. `extend` is the shift-click range modifier. */
+  onSelect: (id: number, extend: boolean) => void;
+  onOpenLoupe: () => void;
   onPickRepresentative: (exp: Exposure) => void;
 }): JSX.Element {
   const isRejected = exposure.status === "rejected";
@@ -63,9 +67,15 @@ function ExposureThumb({
       data-rejected={isRejected ? "true" : undefined}
       data-representative={isRepresentative ? "true" : undefined}
       data-batch-selected={selectedForBatch ? "true" : undefined}
+      // L-5 legend "click — select a frame" / "⇧ click — extend the range":
+      // the whole thumb body is the click target (shiftKey extends the range).
+      // double-click opens the loupe (L-8). The inner action buttons stop
+      // propagation so they don't also toggle selection.
+      onClick={(e) => onSelect(exposure.id, e.shiftKey)}
+      onDoubleClick={onOpenLoupe}
       className={[
         // square dark window (62px) — L-4
-        "relative h-[62px] w-[62px] shrink-0 overflow-hidden rounded-[3px]",
+        "relative h-[62px] w-[62px] shrink-0 cursor-pointer overflow-hidden rounded-[3px]",
         "border border-frame-edge bg-frame-edge",
         selectedForBatch ? "ring-2 ring-print-accent" : "ring-0",
       ].join(" ")}
@@ -92,7 +102,10 @@ function ExposureThumb({
         data-testid={`exposure-select-${exposure.id}`}
         aria-pressed={selectedForBatch}
         title="Select for batch action"
-        onClick={() => onToggleSelected(exposure.id)}
+        onClick={(e) => {
+          e.stopPropagation();
+          onSelect(exposure.id, e.shiftKey);
+        }}
         className={[
           "absolute left-0 top-0 m-0.5 h-3 w-3 rounded-sm border",
           selectedForBatch
@@ -116,7 +129,10 @@ function ExposureThumb({
           type="button"
           data-testid={`exposure-represent-${exposure.id}`}
           title="Make representative"
-          onClick={() => onPickRepresentative(exposure)}
+          onClick={(e) => {
+            e.stopPropagation();
+            onPickRepresentative(exposure);
+          }}
           className="absolute bottom-0 left-0 m-0.5 rounded bg-paper/80 px-1
                      text-[10px] leading-none text-ink-faint"
         >
@@ -127,7 +143,10 @@ function ExposureThumb({
         type="button"
         data-testid={`exposure-reject-${exposure.id}`}
         title={isRejected ? "Un-reject exposure" : "Reject exposure"}
-        onClick={() => onToggleReject(exposure)}
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggleReject(exposure);
+        }}
         className="absolute bottom-0 right-0 m-0.5 rounded bg-paper/80 px-1
                    text-[10px] leading-none text-print-accent"
       >
@@ -147,8 +166,16 @@ function ExposureThumb({
  * Culling is wired here (#162): per-thumb reject toggle, multi-select batch
  * reject, and representative pick, all through the existing exposure queue
  * hooks. The tag-add button remains inert — sample-tag mutation is #159.
+ *
+ * The footer-legend affordances are all live here (R1 round 2): click /
+ * shift-click select & extend a contiguous range over this sample's frames,
+ * double-click opens the loupe, and while a selection exists `X` batch-rejects
+ * it and `Esc` clears it. The keydown listener is row-scoped and only mounts
+ * when this row owns the live selection, so the per-sample model holds (a
+ * keyboard action never touches another row's frames).
  */
 export function ContactSheetRow({ sample }: Props): JSX.Element {
+  const navigate = useNavigate();
   const exposuresQuery = useExposures(sample.id);
   const exposures = exposuresQuery.data ?? [];
 
@@ -183,15 +210,43 @@ export function ContactSheetRow({ sample }: Props): JSX.Element {
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<number>>(
     () => new Set(),
   );
-  const toggleSelected = useCallback((id: number) => {
+  // Range-select anchor: the last single-clicked frame id. A shift-click
+  // selects the contiguous span between the anchor and the clicked frame.
+  const anchorIdRef = useRef<number | null>(null);
+  // Always-current frame order for range math (avoids stale closures when the
+  // exposures query refetches). Frame order == the rendered exposures array.
+  const orderRef = useRef<number[]>([]);
+  orderRef.current = exposures.map((e) => e.id);
+
+  const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
+
+  // Select a frame. `extend` (shift-click) selects the contiguous range from
+  // the anchor to this frame; a plain click toggles the single frame and
+  // re-anchors. Range/anchor stay within this row's frames by construction.
+  const handleSelect = useCallback((id: number, extend: boolean) => {
     setSelectedIds((prev) => {
+      const order = orderRef.current;
+      if (extend && anchorIdRef.current !== null) {
+        const a = order.indexOf(anchorIdRef.current);
+        const b = order.indexOf(id);
+        if (a !== -1 && b !== -1) {
+          const [lo, hi] = a <= b ? [a, b] : [b, a];
+          const next = new Set(prev);
+          for (let i = lo; i <= hi; i++) next.add(order[i]);
+          return next;
+        }
+      }
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
+      anchorIdRef.current = id;
       return next;
     });
   }, []);
-  const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
+
+  const openLoupe = useCallback(() => {
+    navigate(`/samples/loupe/${sample.id}`);
+  }, [navigate, sample.id]);
 
   // Batch reject — N independent ops, one per currently-kept selected
   // exposure. Each setStatus.mutate() mints its own client_op_id and applies
@@ -205,6 +260,33 @@ export function ContactSheetRow({ sample }: Props): JSX.Element {
     }
     clearSelection();
   }, [exposures, selectedIds, setStatus, clearSelection]);
+
+  // Keyboard affordances (the CullBar / footer-legend `X` and `Esc` keycaps).
+  // Only mounted while this row owns a live selection, so it never competes
+  // with another row and never fires when nothing is selected. Suppressed
+  // while typing in a field, mirroring useGlobalShortcuts.
+  const hasSelection = selectedIds.size > 0;
+  useEffect(() => {
+    if (!hasSelection) return;
+    const onKeyDown = (e: KeyboardEvent): void => {
+      const t = e.target as HTMLElement | null;
+      const editing =
+        t &&
+        (t.tagName === "INPUT" ||
+          t.tagName === "TEXTAREA" ||
+          t.isContentEditable);
+      if (editing || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === "Escape") {
+        e.preventDefault();
+        clearSelection();
+      } else if (e.key === "x" || e.key === "X") {
+        e.preventDefault();
+        handleBatchReject();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [hasSelection, clearSelection, handleBatchReject]);
 
   const total = exposures.length;
   const kept = exposures.filter((e) => e.status !== "rejected").length;
@@ -285,7 +367,8 @@ export function ContactSheetRow({ sample }: Props): JSX.Element {
                 frameNo={i + 1}
                 selectedForBatch={selectedIds.has(e.id)}
                 onToggleReject={handleToggleReject}
-                onToggleSelected={toggleSelected}
+                onSelect={handleSelect}
+                onOpenLoupe={openLoupe}
                 onPickRepresentative={handlePickRepresentative}
               />
             ))
