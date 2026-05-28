@@ -141,13 +141,13 @@ The "Compose" header and the section/checkbox have no stable test hook today. Th
 
 - [ ] **Step 1: Write the failing tests**
 
+The file's helper is `setup(over)` at `test/SeriesBuilderRail.test.tsx:5` — it renders the rail and returns nothing; query via `screen`. Use it (do NOT invent `makeProps`).
+
 ```tsx
-// test/SeriesBuilderRail.test.tsx — append to the existing describe block
-import { render, screen } from "@testing-library/react";
-// (existing imports / makeProps helper already in the file)
+// test/SeriesBuilderRail.test.tsx — append inside the existing describe block
 
 it("recedes the COMPOSE header behind the plate (R3-Y03)", () => {
-  render(<SeriesBuilderRail {...makeProps()} />);
+  setup();
   // The header is a recessed label, not a competing title: it carries the
   // receded data marker the component sets when it drops to ink-faint.
   expect(screen.getByTestId("rail-compose-header")).toHaveAttribute(
@@ -157,7 +157,7 @@ it("recedes the COMPOSE header behind the plate (R3-Y03)", () => {
 });
 
 it("renders the Track-reflections checkbox in the terracotta accent (R3-Y04)", () => {
-  render(<SeriesBuilderRail {...makeProps()} />);
+  setup();
   expect(screen.getByTestId("track-toggle-input")).toHaveAttribute(
     "data-accent",
     "print",
@@ -165,12 +165,10 @@ it("renders the Track-reflections checkbox in the terracotta accent (R3-Y04)", (
 });
 
 it("scopes edit-input styling so it does not target slider thumbs (R3-Y09)", () => {
-  render(<SeriesBuilderRail {...makeProps({ editControls: <input data-testid="ec" /> })} />);
+  setup({ editControls: <input data-testid="ec" /> });
   expect(screen.getByTestId("rail-edit")).toHaveAttribute("data-rail-edit-inputs", "");
 });
 ```
-
-> If the file's existing `makeProps` helper has a different name/signature, adapt these three tests to it (it is the helper that builds the `SeriesBuilderRailProps`; the file already constructs full props for the 10 passing tests). Do NOT invent a new helper.
 
 - [ ] **Step 2: Run to verify they fail**
 
@@ -252,6 +250,8 @@ git commit -m "fix(series): recede rail header, terracotta track-checkbox, scope
 
 Heatmap rows currently push one `Plot.rect` (the cells) with `stroke: null`. Add a second `Plot.rect` per row: a single-cell outer frame at the row's inset bounds, `fill: none`, `stroke: var(--color-hair)`, `strokeWidth: 1` — mirroring the mockup's row keyline (`series-builder.html:791-792`). This makes the row read as "intensity inside a frame" instead of "two coloured boxes". The test asserts on the captured `Plot.rect` args (the established pattern — `Plot.rect` is mocked to echo its args).
 
+**AMENDMENT (orchestrator, MUST-FIX):** the second `Plot.rect` call breaks the existing test "emits a single rect mark with HEATMAP_BIN_COUNT cells across the q-domain" at `test/MemberHeatmapLayer.test.tsx:85-105` — its `expect(Plot.rect).toHaveBeenCalledTimes(1)` (line 92) and `mock.calls[0]` cells lookup. Task 3 MUST update that test in the same commit: retitle to "emits cells + an outer keyline rect", change `toHaveBeenCalledTimes(1)`→`(2)`, and select the **cells** call as the one WITHOUT `fill:"none"` (don't assume index 0). Green is unreachable otherwise.
+
 - [ ] **Step 1: Write the failing test**
 
 ```tsx
@@ -312,7 +312,7 @@ Expected: FAIL — only one rect today (`marks.length` is 1), no `fill:"none"` c
 - [ ] **Step 4: Run the test**
 
 Run: `node_modules/.bin/vitest run test/MemberHeatmapLayer.test.tsx`
-Expected: PASS (existing tests + the new keyline test). Confirm the existing "emits no marks when trace missing/empty" test still returns `marks.length === 0` (the early-return at line 109 is before the keyline push — verify the keyline lives AFTER the cells, inside the populated path).
+Expected: PASS (the amended cells+keyline test + the new keyline test + the rest). Confirm the existing "emits no marks when trace missing/empty" test still returns `marks.length === 0` (the early-return at line 109 is before the keyline push — verify the keyline lives AFTER the cells, inside the populated path).
 
 - [ ] **Step 5: Commit**
 
@@ -336,27 +336,25 @@ The plot column is `<div ref={plotColRef} className="min-w-0 flex-1">` at lines 
 
 - [ ] **Step 1: Write the failing test**
 
-```tsx
-// test/SeriesBuilderPage.test.tsx — add to the read+states describe
-// (reuse the file's existing render helper that mounts SeriesBuilderPage with
-//  a populated series; switch representation to heatmap via the rail's
-//  RepresentationToggle, or seed representation if the helper supports it.)
+The file's helper is `renderAt(id = "5")` at `test/SeriesBuilderPage.test.tsx:78`; it reads `h.seriesQ` (set first). The heatmap toggle is `data-testid="repr-heatmap"` (the existing test at `:230` flips it). The default `series()` fixture (`:73`) already sets `ordering_variable: "LL37 : lipid ratio"` — assert against that directly (AMENDMENT 3: no `"dose"` override).
 
-it("shows a rotated ordering-variable axis label in heatmap mode (R3-Y07)", async () => {
-  renderBuilder(/* populated series whose ordering_variable === "dose" */);
-  // switch to heatmap (RepresentationToggle exposes data-value="heatmap")
-  fireEvent.click(screen.getByRole("button", { name: /heatmap/i }));
-  const axis = await screen.findByTestId("heatmap-axis-title");
-  expect(axis).toHaveTextContent("dose");
+```tsx
+// test/SeriesBuilderPage.test.tsx — add inside the "read + states" describe
+
+it("shows a rotated ordering-variable axis label in heatmap mode (R3-Y07)", () => {
+  h.seriesQ = { data: series({ members: [member()] }), isLoading: false, isError: false };
+  renderAt();
+  fireEvent.click(screen.getByTestId("repr-heatmap"));
+  const axis = screen.getByTestId("heatmap-axis-title");
+  expect(axis).toHaveTextContent("LL37 : lipid ratio");
 });
 
 it("omits the heatmap axis label in waterfall mode (R3-Y07)", () => {
-  renderBuilder(/* same populated series, default waterfall */);
+  h.seriesQ = { data: series({ members: [member()] }), isLoading: false, isError: false };
+  renderAt();
   expect(screen.queryByTestId("heatmap-axis-title")).toBeNull();
 });
 ```
-
-> Use the file's existing render helper + fixture (the 18 passing tests already mount a populated series and toggle representation). If `ordering_variable` is null in the default fixture, set it to `"dose"` in the test's series override. Match the existing helper's name/signature — do not invent `renderBuilder` if the file uses a different one.
 
 - [ ] **Step 2: Run to verify it fails**
 
