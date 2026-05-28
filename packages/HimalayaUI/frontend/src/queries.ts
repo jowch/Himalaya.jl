@@ -171,6 +171,46 @@ export function useExposures(sampleId: number | undefined) {
 }
 
 /**
+ * Bulk contact-sheet hook (#207, R2-M14). Replaces the per-row
+ * `useExposures(sample.id)` fan-out from `ContactSheetRow` — a single
+ * observer in `SamplesPage` runs all N queries through `useQueries`, sharing
+ * the same `queryKeys.exposures(id)` cache rows. The cache key matches
+ * `useExposures(id)`, so any later loupe / mutator read picks up these rows
+ * with no double-fetch.
+ *
+ * Why not one bulk HTTP route: a backend extension is out of scope for #207.
+ * The 139× observer overhead (a major contributor to the live `ERR_INSUFFICIENT_
+ * RESOURCES`) is what this hook removes — the request count stays N but the
+ * subscription count drops to 1, and the *image* fan-out (the other major
+ * contributor) is bounded by `DetectorImage`'s `IntersectionObserver` gate.
+ *
+ * Returns `{ byId, isLoading }`:
+ *   - `byId.get(sampleId)` is `Exposure[] | undefined`. `undefined` reads as
+ *     "not yet fetched" (the row shows its skeleton); an empty array reads
+ *     as "fetched, no exposures" (the row paints with the empty-strip state).
+ *   - `isLoading` is true while ANY underlying query is in its cold-loading
+ *     state (boneyard `isLoading`, not `isPending` — disabled queries / bg
+ *     refetches stay quiet).
+ */
+export function useCorpusExposures(
+  samples: readonly api.CorpusSample[],
+): { byId: Map<number, api.Exposure[]>; isLoading: boolean } {
+  const queries = useQueries({
+    queries: samples.map((s) => ({
+      queryKey: queryKeys.exposures(s.id),
+      queryFn: () => api.listExposures(s.id),
+    })),
+  });
+  const byId = new Map<number, api.Exposure[]>();
+  for (let i = 0; i < samples.length; i++) {
+    const d = queries[i]?.data;
+    if (d !== undefined) byId.set(samples[i]!.id, d);
+  }
+  const isLoading = queries.some((q) => q.isLoading);
+  return { byId, isLoading };
+}
+
+/**
  * Page-level screened-progress aggregate for the contact-sheet header (M-1):
  * "N / M samples screened". Runs `useQueries` over the visible samples,
  * sharing the exact `queryKeys.exposures(id)` cache rows each ContactSheetRow
