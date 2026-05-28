@@ -19,7 +19,7 @@ export function SampleStatusChip({
     return (
       <span
         data-testid="phase-chip"
-        className="text-data-strong rounded px-2 py-0.5 text-[11px] font-bold"
+        className="rounded px-2 py-0.5 font-mono text-[11px] font-bold"
         style={{
           color,
           background: `color-mix(in oklab, ${color} 13%, transparent)`,
