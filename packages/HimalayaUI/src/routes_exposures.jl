@@ -48,11 +48,25 @@ function register_exposures_routes!()
         params   = HTTP.queryparams(req)
         is_thumb = get(params, "thumb", "0") == "1"
 
-        img = load_and_lognormalize(path)
-        if is_thumb
-            img = resize_to_fit(img, 128)
+        bytes = if is_thumb
+            # Thumb path: downscale-before-lognormalize (issue #261, H.1) behind a
+            # disk cache keyed on `image_version_token`. `ensure_thumb_cached`
+            # reads the cached PNG when present, else renders + persists it; on a
+            # `:memory:` DB (no on-disk dir) it renders fresh every call. NOTE: the
+            # full-resolution `load_and_lognormalize` is deliberately NOT called on
+            # this branch — the thumb variant runs the percentile math on the
+            # already-downscaled raster (~250x fewer pixels).
+            ensure_thumb_cached(db, id, path)
+        else
+            # Full path: run the percentile-clip math at full resolution (the
+            # science-quality view), THEN cap the rendered raster at 1536px
+            # max-side (issue #260, G) so the loupe/focus big frame ships a
+            # sub-MB PNG instead of a multi-MB native-resolution one. `resize_to_fit`
+            # no-ops when the detector is already <= 1536px.
+            img = load_and_lognormalize(path)
+            img = resize_to_fit(img, 1536)
+            encode_png(img)
         end
-        bytes = encode_png(img)
 
         # The frontend appends `?v=<image_version_token>` to the URL, so the
         # URL itself is the cache key. We can mark responses immutable and

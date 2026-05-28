@@ -30,6 +30,11 @@ function cli_init_with_db!(db::SQLite.DB, exp_dir::String; analyze::Bool = true)
         println("Running analysis (peak-finding + indexing)...")
         _analyze_experiment!(db, exp_id)
     end
+    # Pre-warm the thumbnail disk cache (issue #261) so the first contact-sheet
+    # visit on this freshly-ingested corpus is fast. OUTSIDE the tx for the same
+    # reason auto-analyze is: a TIFF-render failure must not roll back a good
+    # ingest. Skips missing TIFFs with a log; thread-parallel, FS-only workers.
+    prewarm_thumbnails!(db)
     exp_id
 end
 
@@ -131,11 +136,19 @@ function reingest!(db::SQLite.DB, experiment_id::Int, exp_dir::String)
     # so it races with concurrent route writers on the singleton. Reentrant —
     # the CLI caller doesn't hold the lock; HTTP callers don't either at this
     # point (route body runs outside `with_idempotency`).
-    lock(_DB_WRITE_LOCK) do
+    res = lock(_DB_WRITE_LOCK) do
         SQLite.transaction(db) do
             _reingest_inner!(db, experiment_id, exp_dir, toml_path)
         end
     end
+    # Re-warm the thumbnail disk cache AFTER the ingest tx commits (issue #261).
+    # `overwrite = true`: the `image_version_token` mtime granularity is whole
+    # seconds, so a same-second re-ingest of a rewritten TIFF would otherwise
+    # reuse the now-stale cached PNG. Re-rendering is free here (prewarm renders
+    # regardless), so unconditional replace closes that hole. FS-only + outside
+    # the write lock — no DB contention. Skips missing TIFFs with a log.
+    prewarm_thumbnails!(db; overwrite = true)
+    res
 end
 
 function _reingest_inner!(db::SQLite.DB, experiment_id::Int, exp_dir::String, toml_path::String)
