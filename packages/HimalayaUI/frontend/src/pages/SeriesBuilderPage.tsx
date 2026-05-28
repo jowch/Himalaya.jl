@@ -354,7 +354,20 @@ function SeriesBuilderBody(
                     <AnnotationToggles />
                   </div>
                   <div className="mt-3 flex min-h-0 flex-row gap-2" style={{ height: "60vh" }}>
-                    <div ref={plotColRef} className="min-w-0 flex-1">
+                    <div ref={plotColRef} className="relative min-w-0 flex-1">
+                      {representation === "heatmap" && s.ordering_variable && (
+                        // Rotated ordering-variable axis title in the left
+                        // margin (R3-Y07, #258). Mockup series-builder.html
+                        // :817-822 `.axis-title` — what makes the heatmap read
+                        // as a migration map "ordered by X", not stacked rows.
+                        <div
+                          data-testid="heatmap-axis-title"
+                          aria-hidden="true"
+                          className="pointer-events-none absolute left-0 top-1/2 z-10 origin-left -translate-y-1/2 -rotate-90 whitespace-nowrap text-[10.5px] uppercase tracking-[0.14em] text-ink-faint"
+                        >
+                          {s.ordering_variable} &rarr;
+                        </div>
+                      )}
                       <MultiTracePlot
                         members={members}
                         traces={traces}

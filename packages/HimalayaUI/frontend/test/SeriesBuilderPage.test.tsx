@@ -239,6 +239,20 @@ describe("SeriesBuilderPage — read + states", () => {
     expect(screen.getByTestId("fig-tags")).toHaveTextContent("intensity map");
   });
 
+  it("shows a rotated ordering-variable axis label in heatmap mode (R3-Y07)", () => {
+    h.seriesQ = { data: series({ members: [member()] }), isLoading: false, isError: false };
+    renderAt();
+    fireEvent.click(screen.getByTestId("repr-heatmap"));
+    const axis = screen.getByTestId("heatmap-axis-title");
+    expect(axis).toHaveTextContent("LL37 : lipid ratio");
+  });
+
+  it("omits the heatmap axis label in waterfall mode (R3-Y07)", () => {
+    h.seriesQ = { data: series({ members: [member()] }), isLoading: false, isError: false };
+    renderAt();
+    expect(screen.queryByTestId("heatmap-axis-title")).toBeNull();
+  });
+
   it("toggles cross-trace tracking when the Track-reflections checkbox is clicked (#208 wiring)", () => {
     h.seriesQ = { data: series({ members: [member()] }), isLoading: false, isError: false };
     renderAt();
