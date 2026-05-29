@@ -10,25 +10,13 @@
   /*
    * "The Print" is the single identity (R0a, #221). The dark "Darkroom"
    * `@theme` defaults, the `:root.theme-light` override, `color-scheme:dark`,
-   * and the fractal-grain overlay are retired. The neutral-ramp utility NAMES
-   * (`bg-bg*`, `text-fg*`, `border-border*`, `accent`) are kept — only their
-   * VALUES are remapped to Print, so every legacy component that consumes them
-   * inherits the paper/ink/hairline/terracotta look with no per-component edit.
-   *
-   * Mapping (DESIGN.md §3.1): bg→paper, bg-subtle/hover→paper-sunk,
-   * bg-elevated→plate, fg→ink, fg-muted→ink-soft, fg-dim→ink-faint,
-   * border→hair-strong, border-soft→hair, accent→terracotta (hue 38).
-   * Values are the canonical Print tokens (DESIGN.md `colors:` block).
+   * and the fractal-grain overlay are retired. The legacy neutral-ramp shim
+   * (`--color-bg*`/`--color-fg*`/`--color-border*`) is gone too (R3-F, #259):
+   * every consumer was swept onto the canonical Print tokens defined below
+   * (`--color-paper`/`--color-ink`/`--color-hair`/…), so re-introducing an old
+   * name is now self-revealing — Tailwind won't generate the utility and
+   * `var(--color-fg)` won't resolve.
    */
-  --color-bg: oklch(0.978 0.006 85);          /* paper */
-  --color-bg-elevated: oklch(0.992 0.004 90); /* plate */
-  --color-bg-hover: oklch(0.951 0.008 84);    /* paper-sunk */
-  --color-bg-subtle: oklch(0.951 0.008 84);   /* paper-sunk */
-  --color-fg: oklch(0.265 0.013 68);          /* ink */
-  --color-fg-muted: oklch(0.467 0.012 70);    /* ink-soft */
-  --color-fg-dim: oklch(0.640 0.010 74);      /* ink-faint */
-  --color-border: oklch(0.806 0.010 78);      /* hair-strong */
-  --color-border-soft: oklch(0.882 0.008 80); /* hair */
   --color-accent: oklch(0.555 0.150 38);      /* terracotta */
   /* Status tokens, paper-tuned for AA on plate (DESIGN.md `colors:` /
      §Status). R0c (#223) corrected `success` from the drifted mint
