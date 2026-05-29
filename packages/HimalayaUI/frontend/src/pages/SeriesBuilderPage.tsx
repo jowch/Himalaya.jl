@@ -366,13 +366,14 @@ function SeriesBuilderBody(
                         // margin (R3-Y07, #258). Mockup series-builder.html
                         // :817-822 `.axis-title` — what makes the heatmap read
                         // as a migration map "ordered by X", not stacked rows.
-                        <div
-                          data-testid="heatmap-axis-title"
+                        <Kicker
+                          tone="faint"
                           aria-hidden="true"
-                          className="pointer-events-none absolute left-0 top-1/2 z-10 origin-left -translate-y-1/2 -rotate-90 whitespace-nowrap text-[10.5px] uppercase tracking-[0.14em] text-ink-faint"
+                          data-testid="heatmap-axis-title"
+                          className="pointer-events-none absolute left-0 top-1/2 z-10 origin-left -translate-y-1/2 -rotate-90 whitespace-nowrap"
                         >
                           {s.ordering_variable} &rarr;
-                        </div>
+                        </Kicker>
                       )}
                       <MultiTracePlot
                         members={members}
