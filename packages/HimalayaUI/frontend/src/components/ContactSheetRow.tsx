@@ -443,6 +443,10 @@ export function ContactSheetRow({
               placeholder="key"
               value={tagKeyDraft}
               onChange={(e) => setTagKeyDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") submitTag();
+                else if (e.key === "Escape") resetTagForm();
+              }}
               className="w-12 rounded-sm bg-transparent text-[10.5px] text-ink outline-none
                          placeholder:text-ink-faint
                          focus:ring-1 focus:ring-print-accent/40"
