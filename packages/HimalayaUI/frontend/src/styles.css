@@ -292,3 +292,14 @@
    children of <Skeleton> behave as if they were direct children of its outer
    wrapper. The outer wrapper still positions the bones overlay via position:relative. */
 [data-boneyard-content] { display: contents; }
+
+/* SegmentedControl — fold in the 44px touch target only on coarse pointers
+   (DESIGN.md sign-off §8) so dense desktop toolbars keep compact density. */
+@media (pointer: coarse) {
+  .seg-segment {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
