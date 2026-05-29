@@ -229,7 +229,12 @@ describe("<PhasePanel> — speculative", () => {
     );
     renderWithProviders(<PhasePanel exposureId={42} />);
     expect(await screen.findByTestId("candidate-row-20")).toBeInTheDocument();
-    expect(screen.getByTestId("spec-delete-20")).toBeInTheDocument();
+    const del = screen.getByTestId("spec-delete-20");
+    expect(del).toBeInTheDocument();
+    // The delete control is an ink-stroke SVG, not the off-brand 🗑 emoji
+    // (the only emoji that used to live in the rail).
+    expect(del.querySelector("svg")).not.toBeNull();
+    expect(del.textContent).not.toContain("🗑");
     expect(screen.getByTestId("add-speculative-button")).toBeInTheDocument();
   });
 

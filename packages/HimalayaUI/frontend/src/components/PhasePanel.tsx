@@ -160,12 +160,18 @@ function CandidateRow({ index, inCall, onToggle, onHover, onLeave, onDelete }: C
         <button
           type="button"
           data-testid={`spec-delete-${index.id}`}
-          className="shrink-0 rounded p-1 text-ink-faint transition-colors hover:text-error"
+          className="shrink-0 rounded p-1 text-ink-faint transition-colors hover:text-error focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
           title="Delete this speculative index"
           aria-label={`Delete speculative index ${index.id}`}
           onClick={(e) => { e.stopPropagation(); onDelete(); }}
         >
-          🗑
+          <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" aria-hidden="true">
+            <path
+              d="M3.5 4.5h9M6 4.5V3.2a1 1 0 011-1h2a1 1 0 011 1v1.3M5 4.5l.55 8a1 1 0 001 .93h2.9a1 1 0 001-.93l.55-8"
+              fill="none" stroke="currentColor" strokeWidth="1.3"
+              strokeLinecap="round" strokeLinejoin="round"
+            />
+          </svg>
         </button>
       )}
     </div>
