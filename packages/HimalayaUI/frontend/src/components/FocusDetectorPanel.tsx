@@ -112,7 +112,7 @@ export function FocusDetectorPanel(): JSX.Element {
                   data-viewed={isViewed ? "true" : undefined}
                   title={
                     (e.filename ?? `exposure ${e.id}`) +
-                    (e.selected ? " — representative" : "")
+                    (e.selected ? " (representative)" : "")
                   }
                   onClick={() => setActiveExposure(e.id)}
                   className={

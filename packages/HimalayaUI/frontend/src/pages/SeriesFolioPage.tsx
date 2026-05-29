@@ -76,7 +76,7 @@ export function SeriesFolioPage(): JSX.Element {
           </h1>
           <p className="mt-1 max-w-[60ch] text-sm text-ink-soft">
             Every comparison you've built, across all beamtimes. Pick one up where you
-            left off — or start a new one from the contact sheet.
+            left off, or start a new one from the contact sheet.
           </p>
         </div>
         <div className="flex shrink-0 items-end gap-5">

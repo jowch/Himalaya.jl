@@ -368,7 +368,7 @@ export function MemberMetaRow(props: MemberMetaRowProps): JSX.Element {
         {member.is_stale && (
           <span
             data-testid="member-meta-stale-icon"
-            title="Stale snapshot — re-submit to refresh"
+            title="Stale snapshot: re-submit to refresh"
             className="text-warning shrink-0"
             aria-label="stale"
           >

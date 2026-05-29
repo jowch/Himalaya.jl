@@ -102,7 +102,7 @@ export function SamplesPage(): JSX.Element {
             className="mt-1 max-w-[62ch] text-sm text-ink-soft"
           >
             Flip the frames and drop the ones with flares or artifacts. Tags
-            are a light, optional note on what each sample is — the ordering
+            are a light, optional note on what each sample is; the ordering
             variable is named later, when you scope a series.
           </p>
           {/* Kept for back-compat with the scope assertion; doubles as a

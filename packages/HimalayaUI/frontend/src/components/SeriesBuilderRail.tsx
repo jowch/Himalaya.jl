@@ -90,7 +90,7 @@ export function SeriesBuilderRail({
           type="button"
           data-testid="rail-collapse-toggle"
           onClick={onToggleCollapsed}
-          title="Collapse the rail — full-bleed"
+          title="Collapse the rail (full-bleed)"
           className="rounded px-1.5 text-ink-faint hover:text-ink"
         >
           ›

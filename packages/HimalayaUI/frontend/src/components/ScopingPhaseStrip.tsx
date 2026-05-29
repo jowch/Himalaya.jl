@@ -24,7 +24,7 @@ export function ScopingPhaseStrip({ reads }: Props): JSX.Element {
   return (
     <div className="mt-5">
       <div className="mb-1.5 text-[10.5px] font-bold uppercase tracking-wider text-ink-faint">
-        Preview — phase across the series
+        Preview: phase across the series
       </div>
       <div className="flex h-2 gap-0.5">
         {reads.map((r, i) => (
@@ -38,7 +38,7 @@ export function ScopingPhaseStrip({ reads }: Props): JSX.Element {
       </div>
       <div data-testid="scoping-ps-cap" className="mt-2 flex items-center gap-1.5 text-[11.5px] text-ink-soft">
         {first === null ? (
-          <span className="text-ink-faint">Members not yet indexed — phase preview unavailable.</span>
+          <span className="text-ink-faint">Members not yet indexed; phase preview unavailable.</span>
         ) : first === last ? (
           <>
             <span className="font-semibold" style={{ color: phaseColor(first) }}>{first}</span>

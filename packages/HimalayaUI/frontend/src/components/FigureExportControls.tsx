@@ -62,7 +62,7 @@ export function FigureExportControls({
       await copyPngToClipboard(blob);
       showToast("Copied figure to clipboard", "success");
     } catch (err) {
-      showToast("Couldn't copy figure — try Download instead.", "error");
+      showToast("Couldn't copy figure. Try Download instead.", "error");
       // eslint-disable-next-line no-console
       console.warn(err);
     } finally {

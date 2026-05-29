@@ -50,7 +50,7 @@ export function ScopingLooseMatches({ rows, traces, phases, onAdd }: Props): JSX
                 <div className="truncate text-[12.5px] font-semibold text-ink-soft">{r.sampleName}</div>
                 <div className="text-[11px] text-ink-faint">
                   No <span className="font-semibold text-print-accent">value</span> for the ordering
-                  variable — add it to include.
+                  variable. Add it to include.
                 </div>
               </div>
               <button

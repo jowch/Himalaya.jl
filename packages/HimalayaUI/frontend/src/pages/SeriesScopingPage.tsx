@@ -248,7 +248,7 @@ export function SeriesScopingPage(): JSX.Element {
             role="alert"
             className="mt-4 rounded border border-print-accent bg-paper-sunk px-4 py-2 text-sm text-print-accent"
           >
-            Could not write the scoping tags. Nothing was saved — adjust and try Confirm &amp; build
+            Could not write the scoping tags. Nothing was saved. Adjust and try Confirm &amp; build
             again.
           </div>
         ) : null}

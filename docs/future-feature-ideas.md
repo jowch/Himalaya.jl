@@ -267,6 +267,26 @@ that reanalysis honors. That backend design is the real prerequisite, and is
 why this is one redesign (plot card + curation model), not a `PATCH /peaks/:id
 {q}` bolt-on. Pick it up when the curation/reanalysis model is on the table.
 
+**Folded into this redesign (deferred here 2026-05-29).** Two smaller items
+were intentionally deferred to this redesign rather than done piecemeal, because
+both sit in its blast radius and a pre-redesign change would just be redone:
+
+- **Rename `MultiTracePlot` off its Compare-era identity** (backlog #23). The
+  multi-trace Series render core (`MultiTracePlot.tsx`, ex-Compare-page plot;
+  exports `MultiTracePlot`, `MultiTracePlotProps`, `COMPARE_PLOT_ASPECT`) is
+  referenced across ~26 files incl. 2 `vi.mock` string-paths
+  (`test/SeriesBuilderPage.test.tsx`, `test/SeriesBuilderPage.edit.test.tsx`).
+  Settle the name
+  *during* the redesign, when the component boundaries are redrawn anyway — and
+  it **must stay unambiguous vs the single-trace `TraceViewer`** (the
+  redesign's own `TraceViewer`-vs-multi-trace decision should pick the name).
+- **Gate the "Track reflections" cross-trace toggle.** The checkbox
+  (`SeriesBuilderRail.tsx`) is a no-op when no member has a confirmed phase (the
+  `CrossTraceTrackingLayer` self-empties). The clean predicate is now available
+  on the builder — `members.some(m => m.snapshot?.confirmed_index != null)` —
+  so disable/hint the control when there's nothing to connect. It lives on the
+  multi-trace plot's rail, so it rides with the redesign of that surface.
+
 ---
 
 ## Index page — data triage
