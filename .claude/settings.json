@@ -20,6 +20,16 @@
             "command": "f=$(jq -r '.tool_input.file_path // empty'); case \"$f\" in *packages/HimalayaUI/frontend/test/*.test.tsx|*packages/HimalayaUI/frontend/test/*.test.ts) testfile=\"$f\";; *packages/HimalayaUI/frontend/src/*.ts|*packages/HimalayaUI/frontend/src/*.tsx) base=$(basename \"${f%.*}\"); testfile=\"$CLAUDE_PROJECT_DIR/packages/HimalayaUI/frontend/test/${base}.test.tsx\"; [ -f \"$testfile\" ] || testfile=\"$CLAUDE_PROJECT_DIR/packages/HimalayaUI/frontend/test/${base}.test.ts\"; [ -f \"$testfile\" ] || testfile=\"\";; *) testfile=\"\";; esac; if [ -n \"$testfile\" ] && [ -f \"$testfile\" ]; then cd \"$CLAUDE_PROJECT_DIR/packages/HimalayaUI/frontend\" && out=$(node_modules/.bin/vitest run \"$testfile\" 2>&1 | tail -30); if echo \"$out\" | grep -q ' failed'; then printf '\\nVitest failures:\\n%s\\n' \"$out\" >&2; exit 2; fi; fi"
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "description": "WARN-ONLY: print new design-token guard violations on frontend src TS/TSX edit",
+            "command": "f=$(jq -r '.tool_input.file_path // empty'); case \"$f\" in *packages/HimalayaUI/frontend/src/*.ts|*packages/HimalayaUI/frontend/src/*.tsx) cd \"$CLAUDE_PROJECT_DIR/packages/HimalayaUI/frontend\" && out=$(node scripts/check-design.mjs 2>&1); code=$?; if [ \"$code\" -ne 0 ]; then printf '\\n[design-guard WARN] new appearance utility in a consumer (CI build will block; move it into src/components/ui/** or fix):\\n%s\\n' \"$out\" >&2; fi ;; esac; exit 0"
+          }
+        ]
       }
     ],
     "PreToolUse": [
