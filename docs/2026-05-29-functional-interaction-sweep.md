@@ -30,8 +30,6 @@ Everything below is the cross-surface synthesis from the code inventory (9 agent
 
 ---
 
-This is an analysis-and-synthesis task. The deliverable is a markdown report returned as my text response. I have all 9 inventories inline — no code reading needed. Let me synthesize.
-
 # HimalayaUI — Cross-Surface UX Synthesis ("The Print")
 
 ## 1. Reachability map
