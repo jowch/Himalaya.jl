@@ -121,7 +121,7 @@ export function SeriesFolioCard({
                 style={{ background: phaseColor(phase) }}
               />
             ))}
-            {overflow > 0 && <span className="text-[10px] text-ink-faint">+{overflow} more</span>}
+            {overflow > 0 && <span className="text-xs text-ink-faint">+{overflow} more</span>}
           </div>
         )}
       </div>
@@ -136,7 +136,7 @@ export function SeriesFolioCard({
             <span
               data-testid={`series-card-${series.id}-pill`}
               className={[
-                "rounded-full px-2 py-0.5 text-[10px] font-bold tracking-[0.03em]",
+                "rounded-full px-2 py-0.5 text-xs font-bold tracking-[0.03em]",
                 pill.kind === "draft"
                   ? "border border-dashed border-hair-strong bg-paper-sunk text-ink-faint"
                   : "text-print-accent",
@@ -169,7 +169,7 @@ export function SeriesFolioCard({
         {/* meta line */}
         <div
           data-testid={`series-card-${series.id}-meta`}
-          className="flex items-center gap-1.5 text-[11.5px] text-ink-faint"
+          className="flex items-center gap-1.5 text-sm text-ink-faint"
         >
           <b className="font-semibold text-ink-soft">
             {series.member_count} {series.member_count === 1 ? "sample" : "samples"}
@@ -188,7 +188,7 @@ export function SeriesFolioCard({
         {/* footer rule + provenance + edited timestamp (F-H) */}
         <div
           data-testid={`series-card-${series.id}-foot`}
-          className="mt-3 flex items-center justify-between border-t border-hair pt-2.5 text-[10.5px] text-ink-faint"
+          className="mt-3 flex items-center justify-between border-t border-hair pt-2.5 text-xs text-ink-faint"
         >
           <span>
             {series.member_count} {series.member_count === 1 ? "member" : "members"}

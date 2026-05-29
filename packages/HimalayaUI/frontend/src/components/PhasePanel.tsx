@@ -40,7 +40,7 @@ function PhaseCallBlock({ index, latticeUnit }: PhaseCallBlockProps): JSX.Elemen
     <div data-testid={`phase-call-block-${index.id}`} className="px-4 py-3">
       <div className="flex items-baseline justify-between gap-2">
         <span
-          className="font-serif font-medium leading-none tracking-tight text-[23px]"
+          className="font-serif font-medium leading-none tracking-tight text-xl"
           style={{ color }}
         >
           {index.phase}
@@ -49,7 +49,7 @@ function PhaseCallBlock({ index, latticeUnit }: PhaseCallBlockProps): JSX.Elemen
           {formatScore(index.score)}
         </span>
       </div>
-      <div className="mt-1.5 font-mono text-[11px] text-ink-soft">
+      <div className="mt-1.5 font-mono text-sm text-ink-soft">
         {index.lattice_d != null && (
           <>{`a = ${index.lattice_d.toFixed(0)} ${latticeUnit}`}&nbsp; ·&nbsp; </>
         )}
@@ -57,7 +57,7 @@ function PhaseCallBlock({ index, latticeUnit }: PhaseCallBlockProps): JSX.Elemen
       </div>
       <ScoreBar value={score} phase={index.phase} size="bar" className="mt-2" />
       {ratio && (
-        <div className="mt-1.5 text-[10.5px] text-ink-faint">
+        <div className="mt-1.5 text-xs text-ink-faint">
           series&nbsp;&nbsp;
           <span className="font-mono font-semibold text-ink-soft">{ratio}</span>
         </div>
@@ -133,10 +133,10 @@ function CandidateRow({ index, inCall, onToggle, onHover, onLeave, onDelete }: C
 
       {/* body */}
       <div className="min-w-0 flex-1">
-        <div className="font-mono text-[13px] font-bold" style={{ color }}>
+        <div className="font-mono text-base font-bold" style={{ color }}>
           {index.phase}
         </div>
-        <div className="mt-0.5 text-[10.5px] text-ink-faint">
+        <div className="mt-0.5 text-xs text-ink-faint">
           explains {index.peaks.length} peaks{inCall ? " · in the call" : ""}
           {ratio && <span className="font-mono"> · {ratio}</span>}
         </div>
@@ -144,7 +144,7 @@ function CandidateRow({ index, inCall, onToggle, onHover, onLeave, onDelete }: C
 
       {/* score */}
       <div className="text-right font-mono">
-        <div className="text-[13px] font-bold text-ink tabular-nums">{formatScore(index.score)}</div>
+        <div className="text-base font-bold text-ink tabular-nums">{formatScore(index.score)}</div>
         <ScoreBar value={score} phase={index.phase} size="compact" className="mt-1" />
       </div>
 
@@ -339,7 +339,7 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
                 ))}
               </div>
             )}
-            <p className="text-[11px] leading-[1.55] text-ink-faint">
+            <p className="text-sm leading-[1.55] text-ink-faint">
               Check every phase that is present; a sample can hold more than one.
               Candidates that explain the same peaks swap; independent phases coexist.
             </p>

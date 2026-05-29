@@ -117,7 +117,7 @@ export function SamplesPage(): JSX.Element {
         >
           {/* R3-S04 (#256, Fixed-Scale Rule): the progress numeral uses the
               text-headline-lg scale role (Newsreader serif, 26px) instead of an
-              inline text-[25px] one-off. DESIGN.md S3 names "the progress
+              inline 25px size one-off. DESIGN.md S3 names "the progress
               numeral" as a serif/title use, so the serif role is the right fit
               (the 1px delta is invisible at this size). */}
           <div className="text-headline-lg text-ink">
@@ -201,7 +201,7 @@ export function SamplesPage(): JSX.Element {
       <div
         data-testid="kb-legend"
         className="sticky bottom-0 z-10 -mx-6 -mb-6 mt-2 flex flex-wrap gap-5
-                   border-t border-hair bg-paper/90 px-10 py-2 text-[11.5px]
+                   border-t border-hair bg-paper/90 px-10 py-2 text-sm
                    text-ink-faint backdrop-blur-sm"
       >
         {KB_HINTS.map((h) => (
@@ -209,7 +209,7 @@ export function SamplesPage(): JSX.Element {
             <span
               data-kb-key
               className="mr-1.5 rounded border border-hair-strong border-b-2
-                         bg-plate px-1.5 py-px font-mono text-[10.5px] text-ink-soft"
+                         bg-plate px-1.5 py-px font-mono text-xs text-ink-soft"
             >
               {h.key}
             </span>

@@ -214,7 +214,7 @@ export function DetectorImage({
       <div
         data-testid="detector-image-placeholder"
         data-variant="frame-window"
-        className={`flex items-center justify-center bg-frame-edge text-frame-tag font-mono text-[11px] tracking-wide ${className ?? ""}`}
+        className={`flex items-center justify-center bg-frame-edge text-frame-tag font-mono text-sm tracking-wide ${className ?? ""}`}
       >
         No image
       </div>

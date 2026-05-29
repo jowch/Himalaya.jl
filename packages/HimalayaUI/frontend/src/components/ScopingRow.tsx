@@ -29,8 +29,8 @@ export function ScopingRow({ row, trace, phase, onChangeValue, onToggleFlag }: P
     >
       <ScopingSparkline trace={trace} phase={phase} />
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[13px] font-semibold text-ink">{row.sampleName}</span>
-        <span className="block font-mono text-[10.5px] text-ink-faint">smp_{row.sampleId}</span>
+        <span className="block truncate text-base font-semibold text-ink">{row.sampleName}</span>
+        <span className="block font-mono text-xs text-ink-faint">smp_{row.sampleId}</span>
       </span>
       <ScopingValueCell
         sampleId={row.sampleId}

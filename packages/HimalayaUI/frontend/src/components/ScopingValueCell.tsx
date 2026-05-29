@@ -47,7 +47,7 @@ export function ScopingValueCell({
           if (e.key === "Enter") commit();
           if (e.key === "Escape") { setDraft(value); setEditing(false); }
         }}
-        className="w-24 shrink-0 rounded border border-hair-strong bg-plate px-2 py-1 text-right font-mono text-[13px] text-ink"
+        className="w-24 shrink-0 rounded border border-hair-strong bg-plate px-2 py-1 text-right font-mono text-base text-ink"
       />
     );
   }
@@ -62,7 +62,7 @@ export function ScopingValueCell({
       className={`group shrink-0 text-right ${flagged ? "text-print-accent" : "text-ink"}`}
     >
       <span
-        className={`font-mono text-[13px] font-bold ${
+        className={`font-mono text-base font-bold ${
           flagged
             ? "border-b-[1.5px] border-dashed border-print-accent/60 pb-px"
             : "border-b-[1.5px] border-dotted border-transparent pb-px group-hover:border-hair-strong"
@@ -71,7 +71,7 @@ export function ScopingValueCell({
         {value || "—"}
       </span>
       {flagged ? (
-        <span className="mt-0.5 block text-[9px] font-bold uppercase tracking-wide text-print-accent">
+        <span className="mt-0.5 block text-xs font-bold uppercase tracking-wide text-print-accent">
           ▸ check the read
         </span>
       ) : null}

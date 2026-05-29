@@ -20,9 +20,9 @@ export function ScopingOrderField({ keyLabel }: Props): JSX.Element {
         data-testid="scoping-order-field"
         className="flex items-center rounded-md border border-hair-strong bg-plate px-3.5 py-3"
       >
-        <span className="text-[15px] font-semibold text-ink">{keyLabel}</span>
+        <span className="text-lg font-semibold text-ink">{keyLabel}</span>
       </div>
-      <p className="mt-1.5 text-[11px] text-ink-faint">Read from the sample names.</p>
+      <p className="mt-1.5 text-sm text-ink-faint">Read from the sample names.</p>
     </>
   );
 }

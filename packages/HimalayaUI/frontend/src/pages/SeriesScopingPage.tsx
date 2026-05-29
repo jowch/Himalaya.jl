@@ -299,12 +299,12 @@ export function SeriesScopingPage(): JSX.Element {
                         data-testid="scoping-undo"
                         onClick={undo}
                         title={`Step back: ${history[history.length - 1]!.label}`}
-                        className="text-[11px] font-semibold text-print-accent hover:underline"
+                        className="text-sm font-semibold text-print-accent hover:underline"
                       >
                         ↺ Undo last change
                       </button>
                     ) : null}
-                    <span className="font-mono text-[10.5px] text-ink-faint">
+                    <span className="font-mono text-xs text-ink-faint">
                       {rows.length} samples · low to high
                     </span>
                   </span>
@@ -331,7 +331,7 @@ export function SeriesScopingPage(): JSX.Element {
                 />
                 <div className="mt-5">
                   {/* interim inline kicker — replace with <Kicker> when it lands */}
-                  <div className="mb-1.5 text-[10.5px] font-bold uppercase tracking-wider text-ink-faint">
+                  <div className="mb-1.5 text-xs font-bold uppercase tracking-wider text-ink-faint">
                     Preview: phase across the series
                   </div>
                   <PhaseStrip

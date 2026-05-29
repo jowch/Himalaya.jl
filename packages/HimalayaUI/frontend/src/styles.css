@@ -100,7 +100,7 @@
   --text-display: 27px;
   /* Loupe-plate headline step (R2-T9). Newsreader serif at the sample-table
      mockup's `.loupe-head h2` size (26px). Set via the `.text-headline-lg`
-     role below — DESIGN.md §3 Fixed-Scale Rule forbids inline `text-[26px]`. */
+     role below — DESIGN.md §3 Fixed-Scale Rule forbids inline 26px size literals. */
   --text-headline-lg: 26px;
 
   --text-xs--line-height:   1.4;

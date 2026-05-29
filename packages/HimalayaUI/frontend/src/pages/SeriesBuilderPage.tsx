@@ -293,20 +293,20 @@ function SeriesBuilderBody(
                 <div className="flex items-baseline gap-3">
                   <Kicker as="span" tone="accent">Series</Kicker>
                   <div className="flex gap-1.5">
-                    <span className="rounded-full border border-hair px-2 py-px text-[10.5px] text-ink-faint">
+                    <span className="rounded-full border border-hair px-2 py-px text-xs text-ink-faint">
                       {members.length} {members.length === 1 ? "sample" : "samples"}
                     </span>
-                    <span className="rounded-full border border-hair px-2 py-px text-[10.5px] text-ink-faint">
+                    <span className="rounded-full border border-hair px-2 py-px text-xs text-ink-faint">
                       {scaleMode === "log" ? "log q" : "linear q"}
                     </span>
-                    <span className="rounded-full border border-hair px-2 py-px text-[10.5px] text-ink-faint">
+                    <span className="rounded-full border border-hair px-2 py-px text-xs text-ink-faint">
                       {representation === "heatmap" ? "intensity map" : "offset waterfall"}
                     </span>
                     {/* tracked tag — mockup `series-builder.html:393` (#251 r1 / N3) */}
                     {trackOn && (
                       <span
                         data-testid="fig-tag-track"
-                        className="rounded-full border border-hair px-2 py-px text-[10.5px] text-ink-faint"
+                        className="rounded-full border border-hair px-2 py-px text-xs text-ink-faint"
                       >
                         tracked
                       </span>
@@ -320,7 +320,7 @@ function SeriesBuilderBody(
                     type="button"
                     data-testid="series-builder-edit"
                     onClick={onStartEdit}
-                    className="rounded border border-hair px-2 py-0.5 text-[11px] text-ink hover:bg-paper-sunk"
+                    className="rounded border border-hair px-2 py-0.5 text-sm text-ink hover:bg-paper-sunk"
                   >
                     Edit
                   </button>

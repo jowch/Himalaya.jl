@@ -31,7 +31,7 @@ export function ScopingLooseMatches({ rows, traces, phases, onAdd }: Props): JSX
     <div className="mt-5 border-t border-hair pt-4">
       <Kicker tone="faint" className="mb-2">Himalaya also found</Kicker>
       {rows.length === 0 ? (
-        <div data-testid="scoping-loose-empty" className="text-[11.5px] italic text-ink-faint">
+        <div data-testid="scoping-loose-empty" className="text-sm italic text-ink-faint">
           Nothing else in the corpus matches this grouping.
         </div>
       ) : (
@@ -46,8 +46,8 @@ export function ScopingLooseMatches({ rows, traces, phases, onAdd }: Props): JSX
                 <ScopingSparkline trace={traces.get(r.sampleId)} phase={phases.get(r.sampleId) ?? null} />
               </span>
               <div className="min-w-0 flex-1">
-                <div className="truncate text-[12.5px] font-semibold text-ink-soft">{r.sampleName}</div>
-                <div className="text-[11px] text-ink-faint">
+                <div className="truncate text-base font-semibold text-ink-soft">{r.sampleName}</div>
+                <div className="text-sm text-ink-faint">
                   No <span className="font-semibold text-print-accent">value</span> for the ordering
                   variable. Add it to include.
                 </div>
@@ -56,7 +56,7 @@ export function ScopingLooseMatches({ rows, traces, phases, onAdd }: Props): JSX
                 type="button"
                 data-testid={`scoping-loose-add-${r.sampleId}`}
                 onClick={() => onAdd(r.sampleId)}
-                className="shrink-0 rounded-md border border-hair-strong bg-plate px-2.5 py-1.5 text-[11.5px] font-semibold text-ink hover:bg-paper-sunk"
+                className="shrink-0 rounded-md border border-hair-strong bg-plate px-2.5 py-1.5 text-sm font-semibold text-ink hover:bg-paper-sunk"
               >
                 + Add to series
               </button>
@@ -67,7 +67,7 @@ export function ScopingLooseMatches({ rows, traces, phases, onAdd }: Props): JSX
               type="button"
               data-testid="scoping-loose-more"
               onClick={() => setExpanded(true)}
-              className="self-start text-[11.5px] font-semibold text-print-accent hover:underline"
+              className="self-start text-sm font-semibold text-print-accent hover:underline"
             >
               Show {hiddenCount} more
             </button>

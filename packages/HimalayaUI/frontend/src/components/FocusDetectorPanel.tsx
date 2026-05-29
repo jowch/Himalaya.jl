@@ -147,7 +147,7 @@ export function FocusDetectorPanel(): JSX.Element {
               data-testid="exposure-set-rep"
               disabled={viewedIsRep || exposure === undefined}
               onClick={() => exposure && setRepresentative.mutate(exposure.id)}
-              className="rounded border border-hair-strong px-1.5 py-0.5 text-[10px]
+              className="rounded border border-hair-strong px-1.5 py-0.5 text-xs
                          font-semibold uppercase tracking-wide text-ink
                          disabled:cursor-not-allowed disabled:opacity-40"
             >

@@ -206,7 +206,7 @@ export function CorpusTopbar(): JSX.Element {
         const beamtimeQuery = beamtime === "" ? "" : `?beamtime=${beamtime}`;
         const sheetHref = `/samples${beamtimeQuery}`;
         const segBase =
-          "px-3 py-1.5 text-[11.5px] font-semibold no-underline";
+          "px-3 py-1.5 text-sm font-semibold no-underline";
         const active = "bg-ink text-paper";
         const inactive = "text-ink-faint";
         return (

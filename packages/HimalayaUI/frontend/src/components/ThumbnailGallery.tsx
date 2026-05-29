@@ -36,7 +36,7 @@ export function ThumbnailGallery({
         const isIndexing = e.selected;
 
         /* border-radius: thumb is rounded-md (8px). chip offset is 5px.
-           chip border-radius = 8 - 5 = 3px → rounded-[3px].
+           chip border-radius = 8 - 5 = 3px → rounded-sm (decorative chip ≤5px).
            Keep in sync if rounded-md or offset changes. */
         return (
           <div
@@ -85,7 +85,7 @@ export function ThumbnailGallery({
               />
               {isIndexing && (
                 <span
-                  className="absolute top-[5px] left-[5px] rounded-[3px]
+                  className="absolute top-[5px] left-[5px] rounded-sm
                              bg-print-accent/90 text-paper text-xs font-semibold
                              px-1.5 py-0.5 leading-snug backdrop-blur-sm"
                 >

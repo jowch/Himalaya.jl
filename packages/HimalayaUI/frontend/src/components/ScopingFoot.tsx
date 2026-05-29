@@ -24,7 +24,7 @@ export function ScopingFoot({ flagCount, memberCount, keyLabel, canBuild, onBuil
       <div className="flex flex-col gap-1">
         <div
           data-testid="scoping-foot-state"
-          className={`flex items-center gap-2 text-[12.5px] font-semibold ${ready ? "text-ink" : "text-print-accent"}`}
+          className={`flex items-center gap-2 text-base font-semibold ${ready ? "text-ink" : "text-print-accent"}`}
         >
           <span
             className="h-2 w-2 shrink-0 rounded-full"
@@ -32,7 +32,7 @@ export function ScopingFoot({ flagCount, memberCount, keyLabel, canBuild, onBuil
           />
           {stateText}
         </div>
-        <div className="max-w-[42ch] text-[10.5px] text-ink-faint">
+        <div className="max-w-[42ch] text-xs text-ink-faint">
           Confirming records the {keyLabel} on every sample; the next series that needs it already knows.
         </div>
       </div>
@@ -43,7 +43,7 @@ export function ScopingFoot({ flagCount, memberCount, keyLabel, canBuild, onBuil
         disabled={!canBuild}
         onClick={onBuild}
         title={canBuild ? undefined : "Check the flagged values above before building"}
-        className="shrink-0 px-[18px] py-[11px] text-[13px] font-semibold disabled:cursor-not-allowed disabled:border-hair-strong disabled:bg-paper-sunk disabled:text-ink-faint"
+        className="shrink-0 px-[18px] py-[11px] text-base font-semibold disabled:cursor-not-allowed disabled:border-hair-strong disabled:bg-paper-sunk disabled:text-ink-faint"
       >
         Confirm &amp; build →
       </Button>

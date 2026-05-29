@@ -116,7 +116,7 @@ export function SeriesFolioPage(): JSX.Element {
               aria-pressed={filter === c.value}
               onClick={() => setFilter(c.value)}
               className={[
-                "rounded-full border px-3 py-1 text-[11.5px] font-semibold",
+                "rounded-full border px-3 py-1 text-sm font-semibold",
                 filter === c.value
                   ? "border-ink bg-ink text-paper"
                   : "border-hair-strong bg-plate text-ink-soft hover:border-ink-faint",

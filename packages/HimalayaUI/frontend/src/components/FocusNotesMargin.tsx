@@ -104,7 +104,7 @@ export function FocusNotesMargin({ sample, onSaveNotes }: Props): JSX.Element {
       <div
         data-testid="focus-notes-add"
         className="mt-auto border-b border-dashed border-hair-strong pb-[7px] pt-[6px]
-                   text-xs text-ink-faint before:text-[var(--color-accent)] before:content-['✎_']"
+                   text-xs text-ink-faint before:text-accent before:content-['✎_']"
       >
         <textarea
           data-testid="focus-notes-input"

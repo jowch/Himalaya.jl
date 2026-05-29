@@ -29,7 +29,7 @@ function MetaRow(
   { label, value, testid }: { label: string; value: string; testid: string },
 ): JSX.Element {
   return (
-    <div className="flex justify-between font-mono text-[11.5px]">
+    <div className="flex justify-between font-mono text-sm">
       <span className="text-ink-faint">{label}</span>
       <span data-testid={testid} className="text-ink">{value}</span>
     </div>
@@ -49,7 +49,7 @@ function SignalMeter({ level }: { level: number }): JSX.Element {
           key={i}
           data-bar={i < on ? "on" : "off"}
           className={[
-            "h-[11px] w-[5px] rounded-[1px]",
+            "h-[11px] w-[5px] rounded-sm",
             i < on ? "bg-ink-soft" : "bg-hair-strong",
           ].join(" ")}
         />
@@ -102,7 +102,7 @@ function LoupeTagsEditor({ sample }: { sample: CorpusSample }): JSX.Element {
           data-testid="loupe-tag-add"
           onClick={() => setEditing(true)}
           className="rounded-full border border-dashed border-hair-strong px-2 py-0.5
-                     text-[10.5px] font-semibold text-ink-faint
+                     text-xs font-semibold text-ink-faint
                      hover:border-print-accent hover:text-print-accent"
         >
           + tag
@@ -113,7 +113,7 @@ function LoupeTagsEditor({ sample }: { sample: CorpusSample }): JSX.Element {
             <span
               key={tag.id}
               className="inline-flex items-center gap-1 rounded-full border border-hair
-                         bg-plate px-2 py-0.5 text-[10.5px] font-semibold text-ink-soft"
+                         bg-plate px-2 py-0.5 text-xs font-semibold text-ink-soft"
             >
               {tag.value}
               <IconButton
@@ -139,7 +139,7 @@ function LoupeTagsEditor({ sample }: { sample: CorpusSample }): JSX.Element {
                   if (e.key === "Enter") submit();
                   else if (e.key === "Escape") reset();
                 }}
-                className="w-12 rounded-sm bg-transparent text-[10.5px] text-ink outline-none
+                className="w-12 rounded-sm bg-transparent text-xs text-ink outline-none
                            placeholder:text-ink-faint
                            focus:ring-1 focus:ring-print-accent/40"
               />
@@ -154,14 +154,14 @@ function LoupeTagsEditor({ sample }: { sample: CorpusSample }): JSX.Element {
                   else if (e.key === "Escape") reset();
                 }}
                 autoFocus
-                className="w-16 rounded-sm bg-transparent text-[10.5px] text-ink outline-none
+                className="w-16 rounded-sm bg-transparent text-xs text-ink outline-none
                            placeholder:text-ink-faint
                            focus:ring-1 focus:ring-print-accent/40"
               />
               <button
                 type="button"
                 onClick={submit}
-                className="text-[10.5px] font-semibold text-print-accent
+                className="text-xs font-semibold text-print-accent
                            hover:underline"
               >
                 Add
@@ -180,7 +180,7 @@ function LoupeTagsEditor({ sample }: { sample: CorpusSample }): JSX.Element {
               onClick={() => setEditing(true)}
               title="add a tag"
               className="rounded-full border border-dashed border-hair-strong px-2 py-0.5
-                         text-[10.5px] font-semibold text-ink-faint
+                         text-xs font-semibold text-ink-faint
                          hover:border-print-accent hover:text-print-accent"
             >
               +
@@ -240,7 +240,7 @@ export function LoupeSidebar({
           <MetaRow label="integration" value="—" testid="loupe-meta-integration" />
           <MetaRow label="collected" value="—" testid="loupe-meta-collected" />
           {/* M-8: signal-strength meter — peak-count proxy (see Props). */}
-          <div className="flex items-center justify-between font-mono text-[11.5px]">
+          <div className="flex items-center justify-between font-mono text-sm">
             <span className="text-ink-faint">signal</span>
             <SignalMeter level={signalLevel} />
           </div>
@@ -261,10 +261,10 @@ export function LoupeSidebar({
           ].join(" ")}
         />
         <div className="flex-1">
-          <div data-testid="loupe-verdict-state" className="text-[13px] font-bold text-ink">
+          <div data-testid="loupe-verdict-state" className="text-base font-bold text-ink">
             {isRejected ? "Dropped" : "Kept"}
           </div>
-          <div className="text-[10.5px] text-ink-faint">
+          <div className="text-xs text-ink-faint">
             {isRejected
               ? (rejectionReason ?? "Dropped from this sample.")
               : "Everything is kept until you drop it."}
@@ -274,7 +274,7 @@ export function LoupeSidebar({
           data-testid="loupe-drop-toggle"
           onClick={onDropToggle}
           className="rounded border border-hair-strong bg-paper px-2.5 py-1.5
-                     text-[11.5px] font-semibold text-ink hover:bg-paper-sunk"
+                     text-sm font-semibold text-ink hover:bg-paper-sunk"
         >
           {isRejected ? "Restore" : "Drop"}
           {/* R3-S03 (#256): the mono X keycap surfaces the drop/restore
@@ -282,7 +282,7 @@ export function LoupeSidebar({
               "Drop X" and the footer-legend keycap idiom. */}
           <span
             data-testid="loupe-drop-keycap"
-            className="ml-1 font-mono text-[10px] opacity-60"
+            className="ml-1 font-mono text-xs opacity-60"
           >
             X
           </span>
@@ -306,7 +306,7 @@ export function LoupeSidebar({
           </div>
         ) : (
           <>
-            <div className="text-[11.5px] text-ink-soft">
+            <div className="text-sm text-ink-soft">
               One exposure per sample carries forward to the Index stage.
               Pick the cleanest, strongest frame.
             </div>
@@ -314,7 +314,7 @@ export function LoupeSidebar({
               data-testid="loupe-set-representative"
               onClick={onSetRepresentative}
               className="mt-2 rounded border border-hair-strong bg-paper px-2.5 py-1.5
-                         text-[11.5px] font-semibold text-ink hover:bg-paper-sunk"
+                         text-sm font-semibold text-ink hover:bg-paper-sunk"
             >
               Set as representative
             </button>
@@ -328,7 +328,7 @@ export function LoupeSidebar({
         <Link
           to={`/sample/${sample.id}`}
           data-testid="loupe-open-index"
-          className="mt-3 flex w-fit items-center gap-1 rounded-sm text-[11.5px]
+          className="mt-3 flex w-fit items-center gap-1 rounded-sm text-sm
                      font-semibold text-print-accent hover:underline
                      focus-visible:outline focus-visible:outline-2
                      focus-visible:outline-accent focus-visible:outline-offset-2"
@@ -347,7 +347,7 @@ export function LoupeSidebar({
       {/* Keyboard legend */}
       <section>
         <SectionHeading>Keys</SectionHeading>
-        <div className="flex flex-col gap-1 text-[11px] text-ink-faint">
+        <div className="flex flex-col gap-1 text-sm text-ink-faint">
           <div>
             <kbd className="font-mono">←</kbd> <kbd className="font-mono">→</kbd> flip frames
           </div>
