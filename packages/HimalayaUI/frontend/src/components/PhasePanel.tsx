@@ -3,7 +3,7 @@ import { Skeleton } from "boneyard-js/react";
 import { useIndices, useGroups, useAddIndexToGroup, useRemoveIndexFromGroup, useDeleteIndex, useExperiment } from "../queries";
 import { useAppState } from "../state";
 import { phaseColor } from "../phases";
-import { HintText } from "./ui";
+import { HintText, ScoreBar } from "./ui";
 import { StaleIndicesBanner } from "./StaleIndicesBanner";
 import { SpeculativeBuilder } from "./SpeculativeBuilder";
 import { latticeUnitFromQUnits } from "../lib/units";
@@ -55,12 +55,7 @@ function PhaseCallBlock({ index, latticeUnit }: PhaseCallBlockProps): JSX.Elemen
         )}
         {index.peaks.length} peaks
       </div>
-      <div className="mt-2 h-1 overflow-hidden rounded-full bg-hair">
-        <i
-          className="block h-full"
-          style={{ width: `${Math.round(score * 100)}%`, background: color }}
-        />
-      </div>
+      <ScoreBar value={score} phase={index.phase} size="bar" className="mt-2" />
       {ratio && (
         <div className="mt-1.5 text-[10.5px] text-ink-faint">
           series&nbsp;&nbsp;
@@ -150,9 +145,7 @@ function CandidateRow({ index, inCall, onToggle, onHover, onLeave, onDelete }: C
       {/* score */}
       <div className="text-right font-mono">
         <div className="text-[13px] font-bold text-ink tabular-nums">{formatScore(index.score)}</div>
-        <div className="mt-1 h-[3.5px] w-[46px] overflow-hidden rounded-full bg-hair">
-          <i className="block h-full" style={{ width: `${Math.round(score * 100)}%`, background: color }} />
-        </div>
+        <ScoreBar value={score} phase={index.phase} size="compact" className="mt-1" />
       </div>
 
       {/* speculative delete */}
