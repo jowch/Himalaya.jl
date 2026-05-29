@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Skeleton } from "boneyard-js/react";
 import type { Trace } from "../api";
 import {
@@ -269,11 +269,20 @@ export function SeriesScopingPage(): JSX.Element {
             {proposal.orderingKey === undefined ? (
               <div
                 data-testid="scoping-empty"
-                className="px-4 py-12 text-center text-sm text-ink-faint"
+                className="flex flex-col items-center gap-3 px-4 py-12 text-center text-sm text-ink-faint"
               >
-                {rows.length === 0 && loose.length === 0
-                  ? "No samples in the corpus to scope."
-                  : "No shared ordering variable yet — tag these samples to propose a series."}
+                <p>
+                  {rows.length === 0 && loose.length === 0
+                    ? "No samples in the corpus to scope."
+                    : "No shared ordering variable yet. Tag these samples to propose a series."}
+                </p>
+                <Link
+                  to="/samples"
+                  data-testid="scoping-empty-cta"
+                  className="font-medium text-print-accent hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
+                >
+                  Open the contact sheet
+                </Link>
               </div>
             ) : (
               <>

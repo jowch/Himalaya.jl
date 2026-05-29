@@ -343,9 +343,19 @@ function SeriesBuilderBody(
                 // editor out of the empty case would lock that flow out.
                 <div
                   data-testid="series-builder-empty"
-                  className="mt-6 grid place-items-center rounded border border-dashed border-hair px-6 py-16 text-sm text-ink-faint"
+                  className="mt-6 grid place-items-center gap-3 rounded border border-dashed border-hair px-6 py-16 text-sm text-ink-faint"
                 >
-                  This series has no members yet.
+                  <p>This series has no members yet.</p>
+                  {!editing && (
+                    <button
+                      type="button"
+                      data-testid="series-builder-empty-cta"
+                      onClick={onStartEdit}
+                      className="font-medium text-print-accent hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
+                    >
+                      Add the first sample
+                    </button>
+                  )}
                 </div>
               ) : (
                 <>

@@ -167,6 +167,17 @@ describe("SeriesBuilderPage — edit mode (I3.5b)", () => {
     expect(screen.getAllByTestId("recipe-row")).toHaveLength(1);
   });
 
+  it("the empty-plate CTA is a second door into the recipe editor", () => {
+    // Besides the header Edit button, the empty plate offers an in-context
+    // 'Add the first sample' CTA — it must open the same recipe-edit flow.
+    h.seriesQ = { data: series({ members: [], samples: [] }), isLoading: false, isError: false };
+    renderPage();
+    fireEvent.click(screen.getByTestId("series-builder-empty-cta"));
+    expect(useAppState.getState().seriesDraft?.id).toBe(5);
+    expect(screen.getByTestId("series-recipe-editor")).toBeInTheDocument();
+    expect(screen.getByTestId("series-builder-editing-badge")).toBeInTheDocument();
+  });
+
   it("Commit is disabled while a recipe save is in flight (stale-plate guard)", () => {
     h.save = { mutate: vi.fn(), isPending: true, isSuccess: false, error: null };
     renderPage();

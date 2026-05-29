@@ -80,6 +80,29 @@ describe("SeriesFolioPage", () => {
     expect(screen.getByTestId("series-folio-empty")).toBeInTheDocument();
   });
 
+  it("offers a contact-sheet door from the zero-series empty state", () => {
+    // The copy already names the contact sheet as where a series starts; give
+    // it the matching link so the empty state is a door, not a dead message.
+    h.listQ = { data: [], isLoading: false, isError: false };
+    renderAt();
+    expect(screen.getByTestId("series-folio-empty-cta")).toHaveAttribute("href", "/samples");
+  });
+
+  it("clears search + filter from the no-match empty state", () => {
+    h.listQ = {
+      data: [summary({ id: 1, title: "Alpha series" })],
+      isLoading: false, isError: false,
+    };
+    renderAt();
+    // A search with no hits → no-match (distinct from zero-series empty).
+    fireEvent.change(screen.getByTestId("series-folio-search"), { target: { value: "zzz" } });
+    expect(screen.getByTestId("series-folio-no-match")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("series-folio-clear-filters"));
+    // The card returns and the no-match state is gone.
+    expect(screen.getByTestId("series-card-1")).toBeInTheDocument();
+    expect(screen.queryByTestId("series-folio-no-match")).not.toBeInTheDocument();
+  });
+
   it("shows an error state when the query errors", () => {
     h.listQ = { data: undefined, isLoading: false, isError: true };
     renderAt();
