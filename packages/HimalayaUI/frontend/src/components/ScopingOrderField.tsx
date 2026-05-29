@@ -3,9 +3,12 @@ interface Props {
 }
 
 /**
- * The "Ordered by" field (series-scoping.html `.order-field`): the one real
- * decision on this surface. Read-only in this milestone — re-selecting the
- * ordering variable is a follow-up; the field still presents as a decision.
+ * The "Ordered by" field (series-scoping.html `.order-field`): a read-out of
+ * the ordering variable Himalaya inferred from the sample names. M2 dropped the
+ * decorative `▾` chevron that made it present as an openable dropdown — there
+ * is no picker behind it. Re-selecting the ordering variable is a real future
+ * feature (it ripples through the proposal pipeline); until then this is an
+ * honest static read-out, not a control.
  */
 export function ScopingOrderField({ keyLabel }: Props): JSX.Element {
   return (
@@ -15,10 +18,9 @@ export function ScopingOrderField({ keyLabel }: Props): JSX.Element {
       </div>
       <div
         data-testid="scoping-order-field"
-        className="flex items-center justify-between rounded-md border border-hair-strong bg-plate px-3.5 py-3"
+        className="flex items-center rounded-md border border-hair-strong bg-plate px-3.5 py-3"
       >
         <span className="text-[15px] font-semibold text-ink">{keyLabel}</span>
-        <span className="text-xs text-ink-faint" aria-hidden>▾</span>
       </div>
       <p className="mt-1.5 text-[11px] text-ink-faint">Read from the sample names.</p>
     </>

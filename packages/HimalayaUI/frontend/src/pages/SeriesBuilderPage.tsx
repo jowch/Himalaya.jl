@@ -427,7 +427,6 @@ function SeriesBuilderBody(
           trackOn={trackOn}
           onTrackOnChange={setTrackOn}
           sampleCount={s.samples.length || members.length}
-          onConfirmSeries={() => { /* read surface: Confirm is a visual affordance; recipe edit deferred */ }}
           onAdjustSeries={onStartEdit}
           exportControls={
             <FigureExportControls

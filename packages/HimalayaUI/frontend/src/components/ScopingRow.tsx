@@ -13,8 +13,10 @@ interface Props {
 
 /**
  * One member row of the scoping worksheet (series-scoping.html `.srow`):
- * a drag grip, the trace sparkline, the sample name + id, and the
- * confirm-not-fill-out value cell. Flagged rows get an amber row tint.
+ * the trace sparkline, the sample name + id, and the confirm-not-fill-out
+ * value cell. Flagged rows get an amber row tint. (M2 removed a decorative
+ * drag grip: scoping rows are ordered by parsed tag value, not by hand, so a
+ * grip reordered nothing and contradicted the value-sort model.)
  */
 export function ScopingRow({ row, trace, phase, onChangeValue, onToggleFlag }: Props): JSX.Element {
   return (
@@ -25,13 +27,6 @@ export function ScopingRow({ row, trace, phase, onChangeValue, onToggleFlag }: P
         row.flagged ? "bg-print-accent/5" : ""
       }`}
     >
-      <span
-        data-testid={`scoping-grip-${row.sampleId}`}
-        aria-hidden
-        className="shrink-0 cursor-grab select-none leading-none tracking-tighter text-hair-strong"
-      >
-        ⠿
-      </span>
       <ScopingSparkline trace={trace} phase={phase} />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[13px] font-semibold text-ink">{row.sampleName}</span>

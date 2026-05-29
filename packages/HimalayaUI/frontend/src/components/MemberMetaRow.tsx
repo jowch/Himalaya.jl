@@ -87,9 +87,7 @@ export function MemberMetaRow(props: MemberMetaRowProps): JSX.Element {
     expanded, onToggleExpand, onDragStart,
   } = props;
   // Compare UX E-2 — `expanded` is a controlled prop; the row owns no
-  // expansion state. The overflow menu's open/close stays local.
-  const [overflowOpen, setOverflowOpen] = useState(false);
-
+  // expansion state.
   const updateMember = useAppState((s) => s.updateMember);
   const setHighlight = useAppState((s) => s.setHighlightedCompareMemberId);
   const idx = memberIndex ?? -1;
@@ -265,7 +263,6 @@ export function MemberMetaRow(props: MemberMetaRowProps): JSX.Element {
       data-member-id={String(member.id)}
       data-expanded={expanded ? "true" : "false"}
       data-interactable="expand"
-      {...(overflowOpen ? { "data-overflow-open": "" } : {})}
       {...(member.is_stale ? { "data-stale": "" } : {})}
       {...(isPinned ? { "data-highlighted": "" } : {})}
       // Tab into the row only when there's a confirmed index to highlight —
@@ -380,9 +377,11 @@ export function MemberMetaRow(props: MemberMetaRowProps): JSX.Element {
         )}
       </div>
 
-      {/* Compare UX E-1/E-2 — overflow + drag-cue affordances. Always
-          visible (collapsed or expanded); stops propagation internally. */}
-      <RowActionZone onOverflow={() => setOverflowOpen((v) => !v)} />
+      {/* M2: the drag cue renders only in edit mode, where the real reorder
+          grip (member-reorder-grip, above) actually exists — in review mode it
+          was a cue for a drag that could not happen. The no-op `⋯` overflow
+          button it used to sit beside was removed. */}
+      {mode === "edit" && <RowActionZone />}
 
       {/* Compare UX E-2 — per-member control widgets render only when the
           row is expanded. Collapsed rows show just label + meta + caret. */}

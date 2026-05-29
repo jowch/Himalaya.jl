@@ -16,7 +16,6 @@ function setup(over: Partial<React.ComponentProps<typeof SeriesBuilderRail>> = {
     trackOn: false,
     onTrackOnChange: vi.fn(),
     sampleCount: 6,
-    onConfirmSeries: vi.fn(),
     onAdjustSeries: vi.fn(),
     exportControls: <div data-testid="mock-export" />,
     ...over,

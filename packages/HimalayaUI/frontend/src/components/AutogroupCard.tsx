@@ -1,7 +1,6 @@
 interface AutogroupCardProps {
   sampleCount: number;
   orderingVariable: string | null;
-  onConfirm: () => void;
   onAdjust: () => void;
 }
 
@@ -13,7 +12,7 @@ interface AutogroupCardProps {
  * link buttons. Plate surface, hair border.
  */
 export function AutogroupCard({
-  sampleCount, orderingVariable, onConfirm, onAdjust,
+  sampleCount, orderingVariable, onAdjust,
 }: AutogroupCardProps): JSX.Element {
   return (
     <div
@@ -44,19 +43,11 @@ export function AutogroupCard({
       <div className="mt-2 flex gap-3">
         <button
           type="button"
-          data-testid="autogroup-confirm"
-          onClick={onConfirm}
-          className="text-xs font-semibold text-print-accent hover:underline"
-        >
-          Confirm series
-        </button>
-        <button
-          type="button"
           data-testid="autogroup-adjust"
           onClick={onAdjust}
-          className="text-xs font-semibold text-ink-faint hover:underline"
+          className="text-xs font-semibold text-print-accent hover:underline"
         >
-          Adjust
+          Adjust grouping
         </button>
       </div>
     </div>
