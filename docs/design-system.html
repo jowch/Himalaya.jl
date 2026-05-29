@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Himalaya — Print Component Library</title>
+<!--
+  Hand-authored visual catalog of the Print primitives. Sibling to
+  docs/redesign-mockups/*.html. NOT load-bearing: scripts/check-design.mjs + DESIGN.md
+  are the enforced source of truth. This page may drift; that drift is knowingly accepted
+  (spec §5). The inline <style> below MIRRORS the @theme tokens in
+  packages/HimalayaUI/frontend/src/styles.css — when a token changes there, update here.
+  Sections are static markup hand-mirroring each primitive's rendered look (no React import),
+  so this file cannot break the build.
+
+  Phase 0 sections present: Button, ScoreBar, Dot, Toast.
+  Later primitives are appended in their own migration waves (see the placeholder at the foot).
+-->
+<style>
+  /* ── Print tokens (mirror of src/styles.css @theme) ─────────────────── */
+  :root {
+    --color-paper:        oklch(0.978 0.006 85);
+    --color-paper-sunk:   oklch(0.951 0.008 84);
+    --color-plate:        oklch(0.992 0.004 90);
+    --color-ink:          oklch(0.265 0.013 68);
+    --color-ink-soft:     oklch(0.467 0.012 70);
+    --color-ink-faint:    oklch(0.640 0.010 74);
+    --color-hair:         oklch(0.882 0.008 80);
+    --color-hair-strong:  oklch(0.806 0.010 78);
+    --color-accent:       oklch(0.555 0.150 38);   /* terracotta */
+    --color-print-accent: oklch(0.555 0.150 38);
+    --color-success:      oklch(0.520 0.120 162);  /* sage */
+    --color-warning:      oklch(0.620 0.130 70);   /* amber */
+    --color-error:        oklch(0.520 0.170 28);   /* red */
+
+    /* Phase tints (mirror of src/phases.ts phaseColor) */
+    --phase-Pn3m:     oklch(0.570 0.150 58);
+    --phase-Im3m:     oklch(0.520 0.120 162);
+    --phase-Ia3d:     oklch(0.520 0.130 300);
+    --phase-Square:   oklch(0.550 0.130 132);
+    --phase-Lamellar: oklch(0.505 0.150 264);
+
+    /* Radius (locked: sm == md == 5px; full 9999px; singular --radius deleted) */
+    --radius-sm: 5px;
+    --radius-md: 5px;
+    --radius-full: 9999px;
+
+    --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+    --font-serif: "Newsreader", Georgia, ui-serif, serif;
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .page { max-width: 920px; margin: 0 auto; padding: 48px 32px 96px; }
+
+  /* Page header */
+  header.masthead { border-bottom: 1px solid var(--color-hair-strong); padding-bottom: 20px; margin-bottom: 8px; }
+  header.masthead .kicker {
+    font-weight: 700; letter-spacing: 0.13em; text-transform: uppercase;
+    font-size: 11px; color: var(--color-accent); margin: 0 0 8px;
+  }
+  header.masthead h1 { font-family: var(--font-serif); font-size: 27px; font-weight: 500; margin: 0; }
+  header.masthead p { color: var(--color-ink-soft); max-width: 60ch; margin: 10px 0 0; }
+  header.masthead .note { color: var(--color-ink-faint); font-size: 11.5px; font-style: italic; margin-top: 6px; }
+
+  /* Section frame */
+  section.primitive { margin-top: 48px; }
+  section.primitive > .sec-kicker {
+    font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase;
+    font-size: 11px; color: var(--color-ink-faint); margin: 0 0 4px;
+  }
+  section.primitive > h2 { font-family: var(--font-serif); font-size: 19px; font-weight: 500; margin: 0 0 6px; }
+  section.primitive > .blurb { color: var(--color-ink-soft); max-width: 64ch; margin: 0 0 4px; }
+  section.primitive > .shows { color: var(--color-ink-faint); font-size: 11.5px; margin: 0 0 18px; }
+  section.primitive > .shows b { color: var(--color-ink-soft); font-weight: 600; }
+
+  .specimen {
+    background: var(--color-plate);
+    border: 0.5px solid var(--color-hair);
+    border-radius: var(--radius-md);
+    padding: 20px;
+  }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
+  .row + .row { margin-top: 18px; }
+  .cell { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+  .cell .cap { font-size: 10.5px; color: var(--color-ink-faint); letter-spacing: 0.02em; }
+
+  /* ── Button mirror ──────────────────────────────────────────────────── */
+  .btn {
+    font-family: var(--font-sans); font-size: 11.5px; line-height: 1.4;
+    padding: 4px 10px; border-radius: var(--radius-md); cursor: pointer;
+    transition: filter 120ms, color 120ms, background 120ms;
+    border: 1px solid transparent;
+  }
+  .btn-solid  { background: var(--color-ink);    border-color: var(--color-ink);    color: var(--color-paper); }
+  .btn-accent { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-paper); }
+  .btn-ghost  { background: transparent; color: var(--color-ink-soft); }
+  .btn-danger { background: transparent; color: var(--color-ink-soft); }
+  .btn-solid:hover, .btn-accent:hover { filter: brightness(1.1); }
+  .btn-ghost:hover  { color: var(--color-ink); background: var(--color-paper-sunk); }
+  .btn-danger:hover { color: var(--color-error); }
+  /* simulated states (static mirror — no real interaction) */
+  .is-hover.btn-solid, .is-hover.btn-accent { filter: brightness(1.1); }
+  .is-hover.btn-ghost  { color: var(--color-ink); background: var(--color-paper-sunk); }
+  .is-hover.btn-danger { color: var(--color-error); }
+  .is-focus { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+  .btn:disabled, .is-disabled { opacity: 0.45; cursor: not-allowed; filter: none; }
+
+  /* ── ScoreBar mirror ────────────────────────────────────────────────── */
+  .scorebar { overflow: hidden; border-radius: var(--radius-full); background: var(--color-hair); }
+  .scorebar.size-bar     { height: 4px;  width: 200px; }
+  .scorebar.size-compact { height: 3.5px; width: 46px; }
+  .scorebar > i { display: block; height: 100%; border-radius: var(--radius-full); }
+
+  /* ── Dot mirror ─────────────────────────────────────────────────────── */
+  .dot { display: inline-block; border-radius: var(--radius-full); flex-shrink: 0; }
+  .dot.size-xs { width: 6px; height: 6px; }
+  .dot.size-sm { width: 8px; height: 8px; }
+  .dot.tone-accent  { background: var(--color-print-accent); }
+  .dot.tone-success { background: var(--color-success); }
+  .dot.tone-muted   { background: transparent; box-shadow: inset 0 0 0 1px var(--color-hair-strong); }
+  .dot.tone-neutral { background: var(--color-hair-strong); }
+
+  /* ── Toast mirror (side-stripe fix: leading status icon + word + full hairline) ─ */
+  .toast {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--color-plate);
+    border: 0.5px solid var(--color-hair-strong);
+    border-radius: var(--radius-md);
+    padding: 8px 12px; color: var(--color-ink);
+    box-shadow: 0 8px 24px oklch(0.05 0 0 / 0.12);
+    min-width: 280px;
+  }
+  .toast .status-icon {
+    font-family: var(--font-mono); font-weight: 700; font-size: 12px;
+    width: 18px; text-align: center; flex-shrink: 0;
+  }
+  .toast .status-word { font-weight: 700; letter-spacing: 0.04em; font-size: 11.5px; text-transform: uppercase; }
+  .toast .msg { flex: 1; color: var(--color-ink-soft); }
+  .toast .dismiss {
+    border: none; background: transparent; cursor: pointer; color: var(--color-ink-faint);
+    font-size: 14px; line-height: 1; padding: 2px 4px; border-radius: var(--radius-sm);
+  }
+  .toast .dismiss:hover { color: var(--color-ink); background: var(--color-paper-sunk); }
+  .toast.kind-info    .status-icon { color: var(--color-ink-soft); }
+  .toast.kind-success .status-icon { color: var(--color-success); }
+  .toast.kind-warning .status-icon { color: var(--color-warning); }
+  .toast.kind-error   .status-icon { color: var(--color-error); }
+
+  /* Foot / deferred list */
+  .foot { margin-top: 64px; border-top: 1px solid var(--color-hair-strong); padding-top: 24px; }
+  .foot .sec-kicker { font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; font-size: 11px; color: var(--color-ink-faint); margin: 0 0 10px; }
+  .foot ul { color: var(--color-ink-soft); margin: 0; padding-left: 18px; }
+  .foot li { margin: 4px 0; }
+  .foot li code { font-family: var(--font-mono); font-size: 11.5px; color: var(--color-ink); }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="masthead">
+    <p class="kicker">Himalaya Print System</p>
+    <h1>Component Library</h1>
+    <p>Hand-authored visual reference for the Print primitives, built on the Print design tokens.
+       Each primitive renders its variants, sizes, and states on warm paper.</p>
+    <p class="note">Not load-bearing — the enforcement guard (scripts/check-design.mjs) and DESIGN.md
+       are the enforced source of truth. This catalog may drift; that is accepted.</p>
+  </header>
+
+  <!-- ════════════════ Phase 0 — Button ════════════════ -->
+  <section class="primitive" id="button">
+    <p class="sec-kicker">Phase 0 · Action</p>
+    <h2>Button</h2>
+    <p class="blurb">Variant axis <code>solid | accent | ghost | danger</code>. <b>solid</b> is the
+       ink-filled confirm action with paper text (not terracotta); <b>accent</b> is the reserved
+       terracotta grease-pencil action; <b>ghost</b> is default chrome.</p>
+    <p class="shows">Catalog must show: <b>all 4 variants × {rest, hover, focus-visible ring, disabled}</b>;
+       solid reads as ink (not terracotta), accent reads as terracotta, button text reads as paper.</p>
+    <div class="specimen">
+      <div class="row">
+        <div class="cell"><button class="btn btn-solid">Save</button><span class="cap">solid · rest</span></div>
+        <div class="cell"><button class="btn btn-solid is-hover">Save</button><span class="cap">solid · hover</span></div>
+        <div class="cell"><button class="btn btn-solid is-focus">Save</button><span class="cap">solid · focus-visible</span></div>
+        <div class="cell"><button class="btn btn-solid" disabled>Save</button><span class="cap">solid · disabled</span></div>
+      </div>
+      <div class="row">
+        <div class="cell"><button class="btn btn-accent">+ New series</button><span class="cap">accent · rest</span></div>
+        <div class="cell"><button class="btn btn-accent is-hover">+ New series</button><span class="cap">accent · hover</span></div>
+        <div class="cell"><button class="btn btn-accent is-focus">+ New series</button><span class="cap">accent · focus-visible</span></div>
+        <div class="cell"><button class="btn btn-accent" disabled>+ New series</button><span class="cap">accent · disabled</span></div>
+      </div>
+      <div class="row">
+        <div class="cell"><button class="btn btn-ghost">Cancel</button><span class="cap">ghost · rest</span></div>
+        <div class="cell"><button class="btn btn-ghost is-hover">Cancel</button><span class="cap">ghost · hover</span></div>
+        <div class="cell"><button class="btn btn-ghost is-focus">Cancel</button><span class="cap">ghost · focus-visible</span></div>
+        <div class="cell"><button class="btn btn-ghost" disabled>Cancel</button><span class="cap">ghost · disabled</span></div>
+      </div>
+      <div class="row">
+        <div class="cell"><button class="btn btn-danger">Remove</button><span class="cap">danger · rest</span></div>
+        <div class="cell"><button class="btn btn-danger is-hover">Remove</button><span class="cap">danger · hover</span></div>
+        <div class="cell"><button class="btn btn-danger is-focus">Remove</button><span class="cap">danger · focus-visible</span></div>
+        <div class="cell"><button class="btn btn-danger" disabled>Remove</button><span class="cap">danger · disabled</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════ Phase 0 — ScoreBar ════════════════ -->
+  <section class="primitive" id="scorebar">
+    <p class="sec-kicker">Phase 0 · Data</p>
+    <h2>ScoreBar</h2>
+    <p class="blurb">Props <code>{ value, phase, size }</code>. Color derives from
+       <code>phaseColor(phase)</code> internally; track is always <code>bg-hair</code>;
+       <code>value</code> is clamped 0..1 and rendered as the fill width.</p>
+    <p class="shows">Catalog must show: <b>bar and compact sizes</b>, <b>several phase values</b>
+       (proving color derives from phase), and <b>clamping at value 0 / 0.5 / 1 / out-of-range</b>.</p>
+    <div class="specimen">
+      <div class="row">
+        <div class="cell"><div class="scorebar size-bar"><i style="width:0%;  background:var(--phase-Pn3m)"></i></div><span class="cap">bar · Pn3m · value 0 → 0%</span></div>
+        <div class="cell"><div class="scorebar size-bar"><i style="width:50%; background:var(--phase-Im3m)"></i></div><span class="cap">bar · Im3m · value 0.5 → 50%</span></div>
+        <div class="cell"><div class="scorebar size-bar"><i style="width:100%;background:var(--phase-Square)"></i></div><span class="cap">bar · Square · value 1 → 100%</span></div>
+      </div>
+      <div class="row">
+        <div class="cell"><div class="scorebar size-bar"><i style="width:100%;background:var(--phase-Lamellar)"></i></div><span class="cap">bar · Lamellar · value 1.4 → clamped 100%</span></div>
+        <div class="cell"><div class="scorebar size-bar"><i style="width:0%;  background:var(--phase-Ia3d)"></i></div><span class="cap">bar · Ia3d · value -0.2 → clamped 0%</span></div>
+      </div>
+      <div class="row">
+        <div class="cell"><div class="scorebar size-compact"><i style="width:80%; background:var(--phase-Pn3m)"></i></div><span class="cap">compact · Pn3m · value 0.8</span></div>
+        <div class="cell"><div class="scorebar size-compact"><i style="width:35%; background:var(--phase-Im3m)"></i></div><span class="cap">compact · Im3m · value 0.35</span></div>
+        <div class="cell"><div class="scorebar size-compact"><i style="width:100%;background:var(--phase-Square)"></i></div><span class="cap">compact · Square · value 1</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════ Phase 0 — Dot ════════════════ -->
+  <section class="primitive" id="dot">
+    <p class="sec-kicker">Phase 0 · Status</p>
+    <h2>Dot</h2>
+    <p class="blurb">Props <code>{ label, tone, size }</code>. Tone supplies a semantic color
+       (<code>accent · success · muted · neutral</code>); keeps <code>role="img"</code> + <code>aria-label</code>,
+       and a decorative dot may be <code>aria-hidden</code> to skip the label.</p>
+    <p class="shows">Catalog must show: <b>every tone × size</b>, plus the <b>hollow/neutral ring</b>
+       and an <b>aria-hidden decorative example</b>.</p>
+    <div class="specimen">
+      <div class="row">
+        <div class="cell"><span class="dot size-sm tone-accent" role="img" aria-label="accent"></span><span class="cap">accent · sm</span></div>
+        <div class="cell"><span class="dot size-sm tone-success" role="img" aria-label="success"></span><span class="cap">success · sm</span></div>
+        <div class="cell"><span class="dot size-sm tone-muted" role="img" aria-label="muted"></span><span class="cap">muted ring · sm</span></div>
+        <div class="cell"><span class="dot size-sm tone-neutral" role="img" aria-label="neutral"></span><span class="cap">neutral · sm</span></div>
+      </div>
+      <div class="row">
+        <div class="cell"><span class="dot size-xs tone-accent" role="img" aria-label="accent"></span><span class="cap">accent · xs</span></div>
+        <div class="cell"><span class="dot size-xs tone-success" role="img" aria-label="success"></span><span class="cap">success · xs</span></div>
+        <div class="cell"><span class="dot size-xs tone-muted" role="img" aria-label="muted"></span><span class="cap">muted ring · xs</span></div>
+        <div class="cell"><span class="dot size-xs tone-neutral" role="img" aria-label="neutral"></span><span class="cap">neutral · xs</span></div>
+      </div>
+      <div class="row">
+        <div class="cell"><span class="dot size-sm tone-neutral" aria-hidden="true"></span><span class="cap">decorative · aria-hidden (no label)</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════ Phase 0 — Toast ════════════════ -->
+  <section class="primitive" id="toast">
+    <p class="sec-kicker">Phase 0 · Feedback</p>
+    <h2>Toast</h2>
+    <p class="blurb">Four kinds (<code>info · success · warning · error</code>) with a dismiss button.
+       Kind is conveyed by a <b>leading status icon + word + full hairline border</b> — the
+       side-stripe fix (no edge-hue-only severity).</p>
+    <p class="shows">Catalog must show: <b>all four kinds with the leading status icon + word and the dismiss button</b>.
+       (Convention note: the prior <code>border-l-4</code> hue-only stripe is replaced by the
+       icon+word+hairline treatment, shipped in Phase 0 per the locked side-stripe decision.)</p>
+    <div class="specimen">
+      <div class="row" style="flex-direction:column; align-items:stretch; gap:12px;">
+        <div class="toast kind-info" role="status">
+          <span class="status-icon" aria-hidden="true">i</span><span class="status-word">Info</span>
+          <span class="msg">Re-analysis queued.</span>
+          <button class="dismiss" aria-label="Dismiss">×</button>
+        </div>
+        <div class="toast kind-success" role="status">
+          <span class="status-icon" aria-hidden="true">✓</span><span class="status-word">Success</span>
+          <span class="msg">Phase call saved.</span>
+          <button class="dismiss" aria-label="Dismiss">×</button>
+        </div>
+        <div class="toast kind-warning" role="status">
+          <span class="status-icon" aria-hidden="true">!</span><span class="status-word">Warning</span>
+          <span class="msg">Some indices are stale.</span>
+          <button class="dismiss" aria-label="Dismiss">×</button>
+        </div>
+        <div class="toast kind-error" role="status">
+          <span class="status-icon" aria-hidden="true">×</span><span class="status-word">Error</span>
+          <span class="msg">Couldn't save. Try refreshing.</span>
+          <button class="dismiss" aria-label="Dismiss">×</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════ Appended in later waves ════════════════ -->
+  <div class="foot">
+    <p class="sec-kicker">Appended in later migration waves</p>
+    <ul>
+      <li>Phase 1 — <code>SegmentedControl&lt;T&gt;</code>, <code>PhaseChip</code>, <code>PhaseStrip</code></li>
+      <li>Phase 2 — <code>Kicker</code>, <code>ModalShell</code>, <code>IconButton</code>, <code>Card</code>/<code>Plate</code></li>
+    </ul>
+    <p style="color:var(--color-ink-faint); font-size:11.5px; font-style:italic; margin-top:10px;">
+      Each primitive's section is added in the same wave that extracts it; this list is the running
+      backlog of sections not yet authored.</p>
+  </div>
+
+</div>
+</body>
+</html>
