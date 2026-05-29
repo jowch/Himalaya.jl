@@ -2,6 +2,8 @@ export { Button } from "./Button";
 export type { ButtonVariant } from "./Button";
 export { Dot } from "./Dot";
 export { HintText } from "./HintText";
+export { Kicker } from "./Kicker";
+export type { KickerTone } from "./Kicker";
 export { ScoreBar } from "./ScoreBar";
 export { PhaseChip } from "./PhaseChip";
 export type { PhaseChipVariant, PhaseChipSize } from "./PhaseChip";
