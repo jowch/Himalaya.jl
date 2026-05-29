@@ -2,7 +2,8 @@ import type { SeriesSummary } from "../api";
 import { phaseColor } from "../phases";
 import { useSeries } from "../queries";
 import { SeriesMiniWaterfall } from "./SeriesMiniWaterfall";
-import { SeriesPhaseStrip } from "./SeriesPhaseStrip";
+import { PhaseStrip } from "./ui/PhaseStrip";
+import { buildPhaseStrip } from "../lib/series/folioFigure";
 
 interface SeriesFolioCardProps {
   series: SeriesSummary;
@@ -181,7 +182,7 @@ export function SeriesFolioCard({
         </div>
 
         {/* live per-sample phase strip + caption (F-B); only with detail */}
-        {hasMiniature && <SeriesPhaseStrip members={members} />}
+        {hasMiniature && <PhaseStrip segments={buildPhaseStrip(members).segments} className="mt-3" />}
 
         {/* footer rule + provenance + edited timestamp (F-H) */}
         <div
