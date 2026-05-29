@@ -197,8 +197,16 @@ end
         # Add an exclude curation directly (event-driven path would emit
         # peak_excluded; we go straight to peak_curations to keep the test
         # focused on the analyze fast-skip predicate).
+        # Exclude the highest-q peak, NOT the basis (lowest-q) peak. Dropping the
+        # basis collapses indexpeaks to zero indices, which the fast-skip guard
+        # (`indices_count > 0`, pipeline.jl:846) legitimately refuses to skip — so
+        # excluding the basis tests the wrong thing. Mirroring the "hash mismatch"
+        # sibling test keeps the effective set indexable, so this testset actually
+        # exercises the exclude-only fast-skip path. (This testset went red when
+        # #200 lowered example_tot.dat recall 7->6; the guard-semantics question
+        # is tracked in #268.)
         auto_q = Tables.rowtable(DBInterface.execute(ctx.db,
-            "SELECT q FROM auto_peaks WHERE exposure_id = ? LIMIT 1",
+            "SELECT q FROM auto_peaks WHERE exposure_id = ? ORDER BY q DESC LIMIT 1",
             [ctx.exposure_id]))[1].q
         DBInterface.execute(ctx.db,
             "INSERT INTO peak_curations (exposure_id, kind, q) VALUES (?, 'exclude', ?)",
