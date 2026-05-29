@@ -13,30 +13,32 @@ import { useFocusTrap } from "../hooks/useFocusTrap";
  *   - Picking an existing user short-circuits the tutorial.
  *
  * Step 2 (tutorial):
- *   - Four slides introducing title-button, three cards, keyboard shortcuts,
- *     and active-set interaction. Shown only to brand-new users whose
- *     `tutorialSeen` flag is still false.
+ *   - Four slides introducing the three workflow stages (triage, index,
+ *     series) and the active-set interaction. Shown only to brand-new users
+ *     whose `tutorialSeen` flag is still false.
  */
 const TUTORIAL_SLIDES: readonly { title: string; body: string }[] = [
   {
-    title: "Scope lives up top",
+    title: "Three stages, one corpus",
     body:
-      "The title-button above the plot shows which experiment and sample you're looking at. " +
-      "Click it — or press / — to change either.",
+      "The stage tabs run across the top: Triage, Index, Series. You screen new " +
+      "exposures, index one representative per sample, then build the cross-sample " +
+      "series. The series is the point; the first two stages prepare it.",
   },
   {
-    title: "Three panels, one screen",
+    title: "Triage: screen and choose",
     body:
-      "Chat is on the left — jot observations as you go, and type @ to mention a peak, " +
-      "index, exposure, or sample inline. The plot is in the middle. " +
-      "Index choices are on the right: hover a candidate to preview its peaks.",
+      "Review each sample's detector images and reject the ones with flares or " +
+      "artifacts. Nothing is flagged for you, and keeping is the default. Pick one " +
+      "representative exposure per sample to carry into indexing.",
   },
   {
-    title: "Move quickly between samples",
+    title: "Index: read the trace",
     body:
-      "Press , and . to jump to the previous or next sample. " +
-      "Use ← → to switch between the Inspect, Index, and Compare tabs. " +
-      "Press / any time to open the picker.",
+      "Curate the Bragg peaks on the 1D integration. The detector image sits " +
+      "alongside, linked by q, so a trace peak and its ring light up together: a " +
+      "crisp ring is real signal, a blob or streak is an artifact. The phase call " +
+      "is the output.",
   },
   {
     title: "Curate the active set",
