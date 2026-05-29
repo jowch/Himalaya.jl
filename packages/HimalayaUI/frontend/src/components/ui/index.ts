@@ -16,3 +16,5 @@ export { ModalShell } from "./ModalShell";
 export type { ModalSize, ModalAlign, ModalVariant, ModalShellProps } from "./ModalShell";
 export { IconButton } from "./IconButton";
 export type { IconButtonTone } from "./IconButton";
+export { Card } from "./Card";
+export type { CardProps } from "./Card";
