@@ -21,7 +21,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SeriesMember } from "../api";
 import { useAppState } from "../state";
-import { phaseColor, CUBIC_PHASES } from "../phases";
+import { CUBIC_PHASES } from "../phases";
+import { PhaseChip } from "./ui/PhaseChip";
 import { COMPARE_PALETTE } from "../lib/comparison/coloring";
 import type { DraftMemberNormalization } from "../lib/comparison/draft";
 import { makeDragThresholdState } from "../lib/comparison/dragThreshold";
@@ -333,17 +334,13 @@ export function MemberMetaRow(props: MemberMetaRowProps): JSX.Element {
         </span>
         {ci !== null ? (
           <>
-            <span
+            <PhaseChip
+              phase={ci.phase}
+              variant="tint"
+              size="md"
               data-testid="member-meta-phase-chip"
-              className="text-data-strong px-1.5 py-0.5 rounded-sm border shrink-0"
-              style={{
-                color: phaseColor(ci.phase),
-                background: `color-mix(in oklab, ${phaseColor(ci.phase)} 10%, transparent)`,
-                borderColor: `color-mix(in oklab, ${phaseColor(ci.phase)} 35%, transparent)`,
-              }}
-            >
-              {ci.phase}
-            </span>
+              className="shrink-0"
+            />
             <span className="text-ink-soft tabular-nums shrink-0">
               <span className="text-ink-faint">d=</span>
               {formatLattice(ci.lattice_d)}
