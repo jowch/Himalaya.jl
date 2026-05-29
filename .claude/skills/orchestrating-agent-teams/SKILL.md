@@ -38,6 +38,7 @@ The hard constraint: **two members editing the same file in parallel collide** �
 3. **Within a wave:** a maximally file-disjoint set. **Across waves:** dependency order — a wave whose surface builds on an earlier change comes later and **branches off `main` AFTER the earlier wave merges** (rebase onto the new `main`; never hand-merge between feature branches).
 4. **Collapse hard-shared issues, don't split them.** If two issues *must* edit the same file (a shared component, one version bump), separate waves only defer the collision — put them in **one member / one PR**. (E.g. three issues all bumping a shared processing version ship as a single PR.)
 5. **Cap width at ~2 regardless of disjointness.** Even five file-disjoint issues shouldn't run five-wide — you are the serialization point for review rounds, so width is bounded by your nudge bandwidth, not the DAG.
+6. **Watch soft collisions on shared globals.** A wave can be file-disjoint yet still collide on a shared *global* file (`styles.css`, a design-token file, a shared config) that two members each *optionally* touch. This isn't structural — mitigate by having members take a reuse-an-existing path, and **confirm at the plan gate that they did** (caught there, not at merge).
 
 ```
 Wave 1:  #A (files x,y)   #B (file z)            disjoint → parallel
@@ -53,7 +54,7 @@ Create a TodoWrite item per step; work in order.
 
 1. **Reconcile `main` with `origin`** and land any orchestration doc first, so every member inherits it.
 2. **Build the wave DAG** (see *Sequencing* above) and confirm each wave is file-disjoint and width ~2 before spawning.
-3. **One role-tagged team:** `impl-<issue#>`, `rev-<PR#>`. **Names never reused** (a bare-name `SendMessage` can hit a dead agentId).
+3. **One role-tagged team:** `impl-<issue#>`, `rev-<PR#>`. **Names never reused** (a bare-name `SendMessage` can hit a dead agentId). **Brief each member fully in its spawn prompt** — issue + worktree path + the edit/verify constraints (Bash-heredoc rule, "don't run the visual harness," "run git from the worktree"). A fresh teammate starts cold and inherits none of your context.
 4. **Dual plan gate before ANY code** (members idle here until you relay approval): (a) you GREP every cited file:line/symbol/value against live source; (b) a project reviewer on the plan; (c) explicit human "approved".
 5. **TDD implement.** Assert on `data-*` attributes, not class strings; regression floors, not exact counts; include the **prod build** in the verify gate.
 6. **Full review loop on EVERY PR**, even trivial — the GitHub thread is the audit-trail deliverable. (Self-authored PRs can't be `--approve`d; reviewers `--comment` a verdict.)
@@ -61,6 +62,14 @@ Create a TodoWrite item per step; work in order.
 8. **Between waves:** re-run `npm install` + build on the **`main` checkout** (worktree installs leave it stale).
 9. **Merge on human go-ahead**, then **sweep the milestone for unclosed issues** — squash-merge does not auto-close issues lacking a per-issue `Closes #N`.
 10. **Teardown:** `shutdown_request` members; GC a worktree only after confirming clean + merged + unlocked + not your cwd.
+
+## More pitfalls (field-learned)
+
+- **Fast-forward local `main` after every merge, before you build or validate on it.** `gh pr merge` updates `origin/main`, not your local checkout — validate the stale tree and you've proven nothing. (Bit twice: a build on pre-merge code; a teammate committing onto an un-synced local `main`.)
+- **No CI? Run the full downstream suite at least once per milestone before declaring done.** Per-PR verification only covers touched files; a cross-package change (a core edit breaking a downstream test) slips straight through and surfaces waves later.
+- **Mid-milestone discoveries → file a follow-up issue, don't scope-creep the in-flight PR.** Capture the new problem as its own issue and keep the wave scoped; folding unbounded work into a live PR breaks the file-disjoint plan (and the value-identity of a mechanical change).
+- **Teardown: inspect before you GC.** A "dirty" worktree may be a regenerated artifact (a committed skeleton/boneyard capture), not real work — look before `--force`. Locks go stale after a milestone. In a shared repo with parallel jobs, a clean worktree may be another live session's — confirm it's yours/stale, and never remove your own cwd. (Squash-merge makes branch commits non-ancestors of `main`, so an `is-ancestor` test reads "unmerged" even when the work shipped — check PR state, not ancestry.)
+- **The independent guards are part of the safety net — don't route around them.** The push-to-`main` guard and the permission classifier each caught orchestrator scope-creep this run (a direct-main push; an over-scoped delete). Route doc/skill commits through PRs, scope destructive ops to explicitly-named targets, and treat a denial as a signal to narrow — not to work around.
 
 ## Prefer self-revealing over guarded
 
