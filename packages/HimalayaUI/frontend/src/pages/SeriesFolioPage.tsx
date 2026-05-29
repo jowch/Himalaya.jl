@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { Card } from "../components/ui";
 import { SegmentedControl } from "../components/ui/SegmentedControl";
 import { Kicker } from "../components/ui/Kicker";
 import { Skeleton } from "boneyard-js/react";
@@ -17,13 +18,13 @@ import {
 const FOLIO_FIXTURE = (
   <div className="[column-count:3] [column-gap:1.25rem]">
     {[0, 1, 2, 3, 4].map((i) => (
-      <div key={i} className="mb-5 break-inside-avoid rounded border border-hair bg-plate">
+      <Card key={i} className="mb-5 break-inside-avoid">
         <div className="h-24 bg-paper-sunk" />
         <div className="space-y-2 p-3">
           <div className="h-4 w-2/3 rounded bg-paper-sunk" />
           <div className="h-3 w-1/2 rounded bg-paper-sunk" />
         </div>
-      </div>
+      </Card>
     ))}
   </div>
 );

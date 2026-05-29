@@ -27,7 +27,7 @@ import type { Series, SeriesMember } from "../api";
 /** Static skeleton for boneyard's headless capture: the plate area + a rail. */
 const BUILDER_FIXTURE = (
   <div className="grid grid-cols-[1fr_336px] gap-0">
-    <div className="m-4 rounded border border-hair bg-plate" style={{ aspectRatio: "10 / 3" }} />
+    <Card className="m-4" style={{ aspectRatio: "10 / 3" }} />
     <div className="border-l border-hair p-4">
       <div className="h-4 w-1/2 rounded bg-paper-sunk" />
     </div>

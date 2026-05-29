@@ -3,7 +3,7 @@ import { Skeleton } from "boneyard-js/react";
 import { useIndices, useGroups, useAddIndexToGroup, useRemoveIndexFromGroup, useDeleteIndex, useExperiment } from "../queries";
 import { useAppState } from "../state";
 import { phaseColor } from "../phases";
-import { HintText, IconButton, ScoreBar, Kicker } from "./ui";
+import { Card, HintText, IconButton, ScoreBar, Kicker } from "./ui";
 import { StaleIndicesBanner } from "./StaleIndicesBanner";
 import { SpeculativeBuilder } from "./SpeculativeBuilder";
 import { latticeUnitFromQUnits } from "../lib/units";
@@ -196,9 +196,9 @@ const PHASE_PANEL_FIXTURE = (
   <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-5">
     <div className="flex flex-col gap-2.5">
       <RailHead>Phase call</RailHead>
-      <div className="overflow-hidden rounded-lg border border-hair bg-plate">
+      <Card className="overflow-hidden">
         <PhaseCallBlock index={FIXTURE_INDICES[0]!} latticeUnit="Å" />
-      </div>
+      </Card>
     </div>
     <div className="flex flex-col gap-2.5">
       <RailHead>Candidate indexings</RailHead>
@@ -294,7 +294,7 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
           {/* Phase call — the output */}
           <div className="flex flex-col gap-2.5">
             <RailHead>Phase call</RailHead>
-            <div className="overflow-hidden rounded-lg border border-hair bg-plate">
+            <Card className="overflow-hidden">
               {inCall.length === 0 ? (
                 <div data-testid="phase-call-empty" className="px-4 py-4 text-xs text-ink-faint">
                   No phase assigned; every peak is unindexed. Check a candidate below.
@@ -317,7 +317,7 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
                   </div>
                 </>
               )}
-            </div>
+            </Card>
           </div>
 
           {/* Candidate indexings — the multi-select active set */}
