@@ -274,7 +274,9 @@ both sit in its blast radius and a pre-redesign change would just be redone:
 - **Rename `MultiTracePlot` off its Compare-era identity** (backlog #23). The
   multi-trace Series render core (`MultiTracePlot.tsx`, ex-Compare-page plot;
   exports `MultiTracePlot`, `MultiTracePlotProps`, `COMPARE_PLOT_ASPECT`) is
-  referenced across ~26 files incl. 4 `vi.mock` string-paths. Settle the name
+  referenced across ~26 files incl. 2 `vi.mock` string-paths
+  (`test/SeriesBuilderPage.test.tsx`, `test/SeriesBuilderPage.edit.test.tsx`).
+  Settle the name
   *during* the redesign, when the component boundaries are redrawn anyway — and
   it **must stay unambiguous vs the single-trace `TraceViewer`** (the
   redesign's own `TraceViewer`-vs-multi-trace decision should pick the name).
