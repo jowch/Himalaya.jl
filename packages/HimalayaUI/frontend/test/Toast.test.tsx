@@ -108,3 +108,10 @@ describe("Toast", () => {
     spy.mockRestore();
   });
 });
+
+describe("Toast barrel export", () => {
+  it("ToastContainer is exported from the ui barrel", async () => {
+    const mod = await import("../src/components/ui");
+    expect(typeof mod.ToastContainer).toBe("function");
+  });
+});

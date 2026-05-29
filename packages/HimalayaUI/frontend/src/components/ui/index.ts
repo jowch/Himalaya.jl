@@ -5,3 +5,4 @@ export { HintText } from "./HintText";
 export { Input } from "./Input";
 export { ScoreBar } from "./ScoreBar";
 export { SectionLabel } from "./SectionLabel";
+export { ToastContainer } from "./Toast";
