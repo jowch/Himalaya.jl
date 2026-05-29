@@ -44,7 +44,7 @@ Wrap any function that is both defined inside a component AND used as a `useEffe
 
 ## Tailwind v4 theming
 
-"The Print" palette (light warm paper, terracotta accent hue 38, Newsreader serif) is defined once in `styles.css` via `@theme { --color-* ... }` — a single identity, no theme toggle (R0a, #221). The neutral-ramp utility names are kept (`bg-bg`, `text-fg-muted`, `border-border`) but their VALUES resolve to Print paper/ink/hairline; `accent` is terracotta. Component files use utility classes (`bg-bg`, `text-fg-muted`, `border-accent`, or the explicit Print utilities `bg-paper`/`text-ink`/`border-hair`/`text-print-accent`). Serif titles use the `text-display`/`text-headline` roles. To add a new color, add it to `@theme` first.
+"The Print" palette (light warm paper, terracotta accent hue 38, Newsreader serif) is defined once in `styles.css` via `@theme { --color-* ... }` — a single identity, no theme toggle (R0a, #221). The legacy dark-era neutral-ramp shim (the duplicated `bg-`/`text-`/`border-` neutral utilities that mirrored the canonical Print names) was excised in R3-F (#259): use the canonical Print utilities directly — `bg-paper`/`bg-paper-sunk`/`bg-plate`, `text-ink`/`text-ink-soft`/`text-ink-faint`, `border-hair`/`border-hair-strong`, `text-print-accent` (or `accent` for terracotta). Reintroducing an old name is self-revealing: Tailwind won't generate the utility and its `--color-*` custom property no longer resolves. Serif titles use the `text-display`/`text-headline` roles. To add a new color, add it to `@theme` first.
 
 ## Skeleton loading via boneyard-js
 

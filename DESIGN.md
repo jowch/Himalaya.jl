@@ -144,7 +144,7 @@ A warm paper-and-ink system (every neutral tinted to hue ~70–85) carrying one 
 - **Frame-edge** (`frame-edge`, 0.150 0.010 55): the warm near-black backing for detector images, the dark window set into the paper.
 - **Frame-tag** (`frame-tag`, 0.82 0.01 80): the light caption tint for the mono labels set *over* the dark `frame-edge` (the loupe frame-tag, R0c #223 / T-8); a dark-on-dark caption would vanish on the detector frame.
 
-> **CSS-variable mapping (post-R0a).** The semantic utility tokens are remapped to these values: `--color-bg`→`paper`, `--color-bg-subtle`/`-hover`→`paper-sunk`, `--color-bg-elevated`→`plate`, `--color-fg`→`ink`, `--color-fg-muted`→`ink-soft`, `--color-fg-dim`→`ink-faint`, `--color-border`→`hair-strong`, `--color-border-soft`→`hair`, `--color-accent`→`accent` (terracotta). The dark `@theme` defaults, the `:root.theme-light` override, `color-scheme:dark`, the grain overlay, and the `theme` toggle are removed.
+> **No legacy shim (post-R3-F, #259).** Earlier the dark-era neutral-ramp names (`--color-bg*`/`--color-fg*`/`--color-border*`) survived as a value-remapped shim; that shim is now excised. Use the canonical Print tokens directly — `paper`/`paper-sunk`/`plate`, `ink`/`ink-soft`/`ink-faint`, `hair`/`hair-strong`, `accent` (terracotta). Reintroducing an old name is self-revealing: Tailwind won't generate the utility and `var(--color-fg)` won't resolve. The dark `@theme` defaults, the `:root.theme-light` override, `color-scheme:dark`, the grain overlay, and the `theme` toggle were removed at R0a.
 
 ### Accent (the grease pencil)
 - **Terracotta** (`accent`, oklch 0.555 0.150 38): the single interaction accent, kept warm so it belongs to the paper. The reject ✕, the primary `button-accent` and ink-solid actions, focus rings, links, the q-link cross-highlight, the live-edit mark. It is the only chrome hue, and it earns that by appearing on a small fraction of any screen.
@@ -209,7 +209,7 @@ Mostly flat: paper and its chrome are flat; tonal steps (`paper` → `paper-sunk
 - **Focus:** `focus-visible` outline in `accent`, offset.
 
 ### Segmented controls / toggles
-- Rest: ink-soft text on transparent. **Active segment: ink fill, paper text** (`.btn.on`/`.seg button.on`). Do **not** use the neutral `bg-bg-subtle` (a dark-era token) for the active state, that was the L-5/B-A defect.
+- Rest: ink-soft text on transparent. **Active segment: ink fill, paper text** (`.btn.on`/`.seg button.on`). Use `bg-paper-sunk` for any sunk surface, never a dark-era neutral, the active state must not read as a recessed fill (the L-5/B-A defect).
 
 ### Cards / plate
 - 7px radius (`rounded.md`), `plate` background, a `hair-strong` hairline, and the Plate Lift shadow. The figure plate widens to a max-width and centres; the rail recesses into `paper-sunk`.
@@ -241,7 +241,7 @@ Mostly flat: paper and its chrome are flat; tonal steps (`paper` → `paper-sunk
 - Pair every colour encoding with a second channel; verify phase colours at AA on `plate`.
 
 ### Don't
-- Don't use the dark-era neutral tokens (`bg-bg`, `bg-bg-elevated`, `text-fg`, `border-border`) or the ice-blue accent (hue 220) on a Print surface, they are retired (the whole dark↔Print seam, §0).
+- Don't reach for the dark-era neutral names (`bg-bg`, `bg-bg-elevated`, `text-fg`, `border-border`) or the ice-blue accent (hue 220), the neutral shim was excised (R3-F, #259) so those utilities no longer exist; use `bg-paper`/`bg-plate`/`text-ink`/`border-hair-strong` (the whole dark↔Print seam, §0).
 - Don't look like legacy scientific software, a SaaS dashboard, a consumer app, or a bare notebook.
 - Don't carry meaning by hue alone.
 - Don't give a drop shadow to anything but the plate (and plate-like cards).

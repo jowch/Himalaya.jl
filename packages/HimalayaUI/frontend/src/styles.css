@@ -15,7 +15,7 @@
    * every consumer was swept onto the canonical Print tokens defined below
    * (`--color-paper`/`--color-ink`/`--color-hair`/…), so re-introducing an old
    * name is now self-revealing — Tailwind won't generate the utility and
-   * `var(--color-fg)` won't resolve.
+   * its old `--color-*` custom property no longer resolves.
    */
   --color-accent: oklch(0.555 0.150 38);      /* terracotta */
   /* Status tokens, paper-tuned for AA on plate (DESIGN.md `colors:` /

@@ -19,9 +19,9 @@ import { ErrorBoundary } from "./ErrorBoundary";
 // boneyard's `color` is a plain CSS string applied before any element exists,
 // so a `var(--…)` may not resolve here — use the oklch literal matching
 // `--color-paper-sunk`. Detector-window skeletons override this per-component
-// with a `frame-edge` fill (the window is dark even while loading). With the
-// theme toggle retired (R0a) there is no dark mode, so `darkColor` never applies;
-// it mirrors `color` to avoid a stray dark fallback if a `.dark` ancestor leaks in.
+// with a `frame-edge` fill (the window is dark even while loading). `darkColor`
+// mirrors `color` — there is no dark mode, so it only guards against a stray
+// dark fallback.
 configureBoneyard({
   color: "oklch(0.951 0.008 84)",
   darkColor: "oklch(0.951 0.008 84)",

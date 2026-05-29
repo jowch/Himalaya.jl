@@ -16,8 +16,8 @@
  * ComparePageEdit) decides whether to mount this component.
  *
  * **Styling — text-link parity with PlotCard.** Mirrors the q-range-reset /
- * XScaleToggle vocabulary used by the Index page: `text-fg-dim` at rest,
- * `text-fg + bg-bg-hover + border-border` on hover, `bg-bg-subtle text-fg`
+ * XScaleToggle vocabulary used by the Index page: `text-ink-faint` at rest,
+ * `text-ink + bg-paper-sunk + border-hair-strong` on hover, `bg-paper-sunk text-ink`
  * when active. No native checkbox — `aria-pressed` carries the toggle
  * semantics and `data-active` lets E2E selectors assert state.
  *
