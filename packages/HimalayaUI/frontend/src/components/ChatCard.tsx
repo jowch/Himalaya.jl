@@ -17,18 +17,18 @@ const CHAT_CARD_FIXTURE = (
     <div className="flex flex-col gap-0.5 min-w-0">
       <div className="flex items-baseline gap-2">
         <span className="text-meta">jchen</span>
-        <span className="text-fg-dim text-xs">10:15</span>
+        <span className="text-ink-faint text-xs">10:15</span>
       </div>
-      <p className="text-base font-sans text-fg-muted leading-snug">
+      <p className="text-base font-sans text-ink-soft leading-snug">
         Looks like a clean Pn3m. d-spacing consistent with 70% DOPE.
       </p>
     </div>
     <div className="flex flex-col gap-0.5 min-w-0">
       <div className="flex items-baseline gap-2">
         <span className="text-meta">jchen</span>
-        <span className="text-fg-dim text-xs">11:02</span>
+        <span className="text-ink-faint text-xs">11:02</span>
       </div>
-      <p className="text-base font-sans text-fg-muted leading-snug">
+      <p className="text-base font-sans text-ink-soft leading-snug">
         Re-ran with tighter q-range — score improved to 0.94.
       </p>
     </div>
@@ -196,12 +196,12 @@ function MessageRow({ msg }: { msg: AnyMessage }): JSX.Element {
   return (
     <div className="flex flex-col gap-0.5 min-w-0" data-testid={`chat-message-${msg.id}`}>
       <div className="flex items-baseline gap-2">
-        <span className={authorDeleted ? "text-meta text-fg-dim italic" : "text-meta"}>
+        <span className={authorDeleted ? "text-meta text-ink-faint italic" : "text-meta"}>
           {authorLabel}
         </span>
-        <span className="text-fg-dim text-xs">{formatTime(msg.created_at)}</span>
+        <span className="text-ink-faint text-xs">{formatTime(msg.created_at)}</span>
       </div>
-      <p className="text-base font-sans text-fg-muted leading-snug break-words whitespace-pre-wrap">
+      <p className="text-base font-sans text-ink-soft leading-snug break-words whitespace-pre-wrap">
         {segments.map((seg, i) => {
           if (seg.kind === "text") return <span key={i}>{seg.text}</span>;
           const key   = `${seg.type}:${seg.id}`;

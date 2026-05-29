@@ -198,7 +198,7 @@ function NameStep({
   const dialogRef = useRef<HTMLDivElement>(null);
   useFocusTrap(dialogRef, true);
   const inputClass =
-    "w-full bg-bg border border-border rounded-md px-2 py-1 " +
+    "w-full bg-paper border border-hair-strong rounded-md px-2 py-1 " +
     "focus:outline focus:outline-1 focus:outline-accent focus:border-accent";
 
   const displayName = (u: User): string => {
@@ -221,12 +221,12 @@ function NameStep({
       data-testid="onboarding-name"
       role="dialog"
       aria-modal="true"
-      className="bg-bg-elevated border border-border rounded-lg p-6
+      className="bg-plate border border-hair-strong rounded-lg p-6
                  min-w-[360px] max-w-[480px] flex flex-col gap-4"
       onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); onSubmit(); } }}
     >
-      <h2 className="text-base font-semibold text-fg">Who are you?</h2>
-      <p className="text-fg-muted text-base">
+      <h2 className="text-base font-semibold text-ink">Who are you?</h2>
+      <p className="text-ink-soft text-base">
         Your name is stored with every change so others can see what you've done.
       </p>
       <select
@@ -259,13 +259,13 @@ function NameStep({
             onChange={(e) => onNewLast(e.target.value)}
             data-testid="onboarding-new-last"
           />
-          <div className="flex items-stretch border border-border rounded-md
-                          bg-bg overflow-hidden
+          <div className="flex items-stretch border border-hair-strong rounded-md
+                          bg-paper overflow-hidden
                           focus-within:outline focus-within:outline-1
                           focus-within:outline-accent focus-within:border-accent">
             <span
               aria-hidden="true"
-              className="px-2 py-1 text-fg-muted bg-bg-elevated border-r border-border
+              className="px-2 py-1 text-ink-soft bg-plate border-r border-hair-strong
                          select-none"
             >@</span>
             <input
@@ -279,7 +279,7 @@ function NameStep({
           </div>
           <p
             data-testid="onboarding-preview"
-            className="text-fg-muted text-sm pl-1 min-h-[1.25rem]"
+            className="text-ink-soft text-sm pl-1 min-h-[1.25rem]"
           >
             {previewLabel(newFirst, newLast, newHandle)}
           </p>
@@ -320,14 +320,14 @@ function TutorialStep({
       aria-modal="true"
       tabIndex={-1}
       onKeyDown={onKeyDown}
-      className="bg-bg-elevated border border-border rounded-lg p-7
+      className="bg-plate border border-hair-strong rounded-lg p-7
                  min-w-[420px] max-w-[520px] flex flex-col gap-4 outline-0"
     >
-      <div className="text-xs uppercase tracking-widest text-fg-dim">
+      <div className="text-xs uppercase tracking-widest text-ink-faint">
         Welcome · {slideIdx + 1} of {TUTORIAL_SLIDES.length}
       </div>
-      <h2 className="text-lg font-semibold text-fg">{slide.title}</h2>
-      <p className="text-fg-muted text-base leading-relaxed">{slide.body}</p>
+      <h2 className="text-lg font-semibold text-ink">{slide.title}</h2>
+      <p className="text-ink-soft text-base leading-relaxed">{slide.body}</p>
       <div className="flex items-center justify-between pt-2">
         <div className="flex gap-1">
           {TUTORIAL_SLIDES.map((_, i) => (
@@ -335,7 +335,7 @@ function TutorialStep({
               key={i}
               className={
                 "w-1.5 h-1.5 rounded-full " +
-                (i === slideIdx ? "bg-accent" : "bg-border")
+                (i === slideIdx ? "bg-accent" : "bg-hair-strong")
               }
             />
           ))}

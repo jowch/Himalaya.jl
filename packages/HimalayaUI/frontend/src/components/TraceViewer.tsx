@@ -219,7 +219,7 @@ export function TraceViewer({
 			marginBottom: MARGIN_BOTTOM,
 			style: {
 				fontFamily: "var(--font-sans)",
-				color: "var(--color-fg-muted)",
+				color: "var(--color-ink-soft)",
 				background: "transparent",
 				overflow: "visible",
 			},
@@ -251,7 +251,7 @@ export function TraceViewer({
 				Plot.line(bandData, {
 					x: "q",
 					y: "I",
-					stroke: "var(--color-fg)",
+					stroke: "var(--color-ink)",
 					strokeWidth: 1,
 				}),
 			],
@@ -455,7 +455,7 @@ export function TraceViewer({
 			// visible before the click. Takes precedence over the dimOthers fade.
 			const losing = losingPeakIds?.has(peak.id) ?? false;
 			if (losing) {
-				fill = "var(--color-fg-dim)";
+				fill = "var(--color-ink-faint)";
 				opacity = 0.3;
 			} else if (excludedAuto) {
 				// Excluded auto peaks keep their identity (ice blue, ghosted) — they
@@ -466,7 +466,7 @@ export function TraceViewer({
 				// Hovering an index: peaks are not the focus → desaturate to gray
 				// rather than just thin the alpha. Removing the color signal entirely
 				// is what makes the hovered phase pop.
-				fill = "var(--color-fg-dim)";
+				fill = "var(--color-ink-faint)";
 				opacity = 0.5;
 			} else {
 				fill = baseColor;
@@ -518,7 +518,7 @@ export function TraceViewer({
 			} else {
 				tri.setAttribute("fill", fill);
 				tri.setAttribute("fill-opacity", String(opacity));
-				tri.setAttribute("stroke", "var(--color-bg)");
+				tri.setAttribute("stroke", "var(--color-paper)");
 				tri.setAttribute("stroke-width", "0.75");
 			}
 			tri.setAttribute("data-peak-id", String(peak.id));
@@ -557,7 +557,7 @@ export function TraceViewer({
 
 			// Plot vlines stay neutral (gray) until a specific index is hovered —
 			// colour now lives in the track row above the plot.
-			const stroke = opts.strong ? t.color : "var(--color-fg-dim)";
+			const stroke = opts.strong ? t.color : "var(--color-ink-faint)";
 			const strokeWidth = opts.strong ? "1.5" : "1";
 			const strokeOpacity = opts.faded
 				? opts.matched
@@ -600,7 +600,7 @@ export function TraceViewer({
 			const px = xScale!.apply!(t.q);
 			if (!Number.isFinite(px) || !insideX(px)) return;
 
-			const stroke = opts.faded ? "var(--color-fg-dim)" : t.color;
+			const stroke = opts.faded ? "var(--color-ink-faint)" : t.color;
 			const strokeWidth = opts.strong ? "1.75" : "1.25";
 			const strokeOpacity = opts.faded
 				? opts.matched
@@ -773,7 +773,7 @@ export function TraceViewer({
 				<g data-role="peak-root" />
 				<line
 					data-role="cursor-line"
-					stroke="var(--color-fg-dim)"
+					stroke="var(--color-ink-faint)"
 					strokeWidth={1}
 					strokeOpacity={0.7}
 					opacity={0}
@@ -790,7 +790,7 @@ export function TraceViewer({
 					data-role="cursor-label"
 					textAnchor="middle"
 					dominantBaseline="hanging"
-					fill="var(--color-fg-muted)"
+					fill="var(--color-ink-soft)"
 					fontSize="10"
 					fontFamily="var(--font-mono)"
 					opacity={0}

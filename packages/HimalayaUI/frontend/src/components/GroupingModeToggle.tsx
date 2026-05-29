@@ -16,8 +16,7 @@
  *
  * Styling mirrors the canonical sibling toggles (`ScaleToggle`,
  * `RepresentationToggle`): `bg-ink text-paper` active, `text-ink-faint` at
- * rest, ghost hover (`hover:text-ink hover:bg-paper-sunk`). Print vocabulary
- * only — no dark-era `bg-bg-*`/`text-fg-*`/`border-border` tokens (DESIGN.md §6).
+ * rest, ghost hover (`hover:text-ink hover:bg-paper-sunk`).
  * No outer bordered wrapper, no leading "Color" cell — the
  * `aria-label="Trace grouping mode"` carries that semantic.
  */

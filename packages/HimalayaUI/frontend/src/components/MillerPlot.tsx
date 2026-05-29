@@ -119,7 +119,7 @@ export function MillerPlot({ indices, hoveredIndex }: MillerPlotProps): JSX.Elem
       marginLeft: 32, marginBottom: 22, marginTop: 6, marginRight: 8,
       style: {
         fontFamily: "var(--font-sans)",
-        color: "var(--color-fg-muted)",
+        color: "var(--color-ink-soft)",
         background: "transparent",
         overflow: "visible",
         fontSize: "9px",
@@ -134,7 +134,7 @@ export function MillerPlot({ indices, hoveredIndex }: MillerPlotProps): JSX.Elem
           fillOpacity: dimming
             ? (d: ScatterRow) => (d.indexId === hoveredId ? 1 : 0.15)
             : 1,
-          stroke: "var(--color-bg)",
+          stroke: "var(--color-paper)",
           strokeWidth: 1,
           r: dimming
             ? (d: ScatterRow) => (d.indexId === hoveredId ? 4 : 2.5)

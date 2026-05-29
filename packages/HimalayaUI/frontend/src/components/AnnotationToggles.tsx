@@ -16,8 +16,8 @@
  * ComparePageEdit) decides whether to mount this component.
  *
  * **Styling — text-link parity with PlotCard.** Mirrors the q-range-reset /
- * XScaleToggle vocabulary used by the Index page: `text-fg-dim` at rest,
- * `text-fg + bg-bg-hover + border-border` on hover, `bg-bg-subtle text-fg`
+ * XScaleToggle vocabulary used by the Index page: `text-ink-faint` at rest,
+ * `text-ink + bg-paper-sunk + border-hair-strong` on hover, `bg-paper-sunk text-ink`
  * when active. No native checkbox — `aria-pressed` carries the toggle
  * semantics and `data-active` lets E2E selectors assert state.
  *
@@ -47,10 +47,10 @@ function ToggleButton({
       onClick={onToggle}
       className={[
         "px-1.5 py-0.5 rounded text-xs transition-colors",
-        "border border-transparent hover:border-border",
+        "border border-transparent hover:border-hair-strong",
         active
-          ? "bg-bg-subtle text-fg"
-          : "text-fg-dim hover:text-fg hover:bg-bg-hover",
+          ? "bg-paper-sunk text-ink"
+          : "text-ink-faint hover:text-ink hover:bg-paper-sunk",
       ].join(" ")}
     >
       {label}

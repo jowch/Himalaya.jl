@@ -60,14 +60,14 @@ export function TitleButton(): JSX.Element {
         "transition-colors " +
         "focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent " +
         (hovered
-          ? "bg-bg-elevated/70 border border-border"
+          ? "bg-plate/70 border border-hair-strong"
           : "border border-transparent")
       }
     >
       <span
         className={
           "font-sans font-semibold text-xl leading-tight " +
-          (isEmpty ? "text-fg-muted italic" : "text-fg")
+          (isEmpty ? "text-ink-soft italic" : "text-ink")
         }
       >
         {titleText}
@@ -75,18 +75,18 @@ export function TitleButton(): JSX.Element {
       {/* Detail row: experiment + shortcut hint, only while hovered or empty */}
       <span
         className={
-          "flex items-center gap-2 text-xs text-fg-dim " +
+          "flex items-center gap-2 text-xs text-ink-faint " +
           "transition-opacity " +
           (hovered || isEmpty ? "opacity-100" : "opacity-0")
         }
         aria-hidden={!(hovered || isEmpty)}
       >
         {subtitle && <span>{subtitle}</span>}
-        {subtitle && <span className="text-fg-dim/50">·</span>}
+        {subtitle && <span className="text-ink-faint/50">·</span>}
         <kbd
           data-testid="title-button-kbd"
-          className="text-xs text-fg-dim
-                     border border-border rounded px-1 py-px"
+          className="text-xs text-ink-faint
+                     border border-hair-strong rounded px-1 py-px"
         >/</kbd>
       </span>
     </button>

@@ -238,7 +238,7 @@ export function BandResizeGap(props: BandResizeGapProps): JSX.Element {
       }}
       className={[
         "z-10 rounded-full transition-[height,background-color]",
-        active ? "bg-accent/40" : "bg-border/60",
+        active ? "bg-accent/40" : "bg-hair-strong/60",
       ].join(" ")}
       aria-label="Resize band"
       role="separator"

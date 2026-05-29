@@ -573,7 +573,7 @@ describe("<TraceViewer> — overlay ticks", () => {
 		const dimmedOpacities = dimmed.map((n) => n.getAttribute("stroke-opacity"));
 		const dimmedStrokes = dimmed.map((n) => n.getAttribute("stroke"));
 		expect(dimmedOpacities.every((o) => o === "0.12")).toBe(true);
-		expect(dimmedStrokes.every((s) => s === "var(--color-fg-dim)")).toBe(true);
+		expect(dimmedStrokes.every((s) => s === "var(--color-ink-faint)")).toBe(true);
 		// Hovered (strong, unmatched): phase color at 0.45.
 		const hov = Array.from(ticks).slice(2) as SVGLineElement[];
 		expect(hov.every((n) => n.getAttribute("stroke-opacity") === "0.45")).toBe(

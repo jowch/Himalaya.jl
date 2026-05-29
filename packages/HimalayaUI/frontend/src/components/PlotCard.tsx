@@ -447,30 +447,30 @@ function TitleStrip({
         title="Change experiment / sample"
         className="min-w-0 flex flex-col items-start text-left
                    -mx-1 px-1 py-0.5 rounded
-                   hover:bg-bg-hover transition-colors
+                   hover:bg-paper-sunk transition-colors
                    focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
       >
         <span className="text-title tracking-tight truncate
                          max-w-[44ch]">
           {hasExp || hasSample ? (
             <>
-              <span className={hasExp ? "text-fg-muted" : "text-fg-muted italic"}>
+              <span className={hasExp ? "text-ink-soft" : "text-ink-soft italic"}>
                 {experimentName ?? "pick an experiment"}
               </span>
-              <span className="text-fg-dim mx-1.5">·</span>
-              <span className={hasSample ? "text-fg" : "text-fg-muted italic"}>
+              <span className="text-ink-faint mx-1.5">·</span>
+              <span className={hasSample ? "text-ink" : "text-ink-soft italic"}>
                 {sampleName ?? "pick a sample"}
               </span>
             </>
           ) : (
-            <span className="text-fg-muted italic">pick an experiment</span>
+            <span className="text-ink-soft italic">pick an experiment</span>
           )}
         </span>
-        <span className="flex items-center gap-1.5 text-xs text-fg-dim leading-tight">
+        <span className="flex items-center gap-1.5 text-xs text-ink-faint leading-tight">
           <span>click to change</span>
-          <span className="text-fg-dim/60">·</span>
-          <kbd className="text-xs text-fg-dim
-                          border border-border rounded px-1 leading-none py-px">/</kbd>
+          <span className="text-ink-faint/60">·</span>
+          <kbd className="text-xs text-ink-faint
+                          border border-hair-strong rounded px-1 leading-none py-px">/</kbd>
         </span>
       </button>
       )}
@@ -539,8 +539,8 @@ function XScaleToggle({ xType, onSetXType }: XScaleToggleProps): JSX.Element {
       className={[
         "text-xs px-1.5 py-0.5 transition-colors",
         xType === val
-          ? "bg-bg-subtle text-fg"
-          : "text-fg-dim hover:text-fg hover:bg-bg-hover",
+          ? "bg-paper-sunk text-ink"
+          : "text-ink-faint hover:text-ink hover:bg-paper-sunk",
       ].join(" ")}
     >
       {label}
@@ -548,11 +548,11 @@ function XScaleToggle({ xType, onSetXType }: XScaleToggleProps): JSX.Element {
   );
   return (
     <span
-      className="flex items-stretch border border-border rounded overflow-hidden"
+      className="flex items-stretch border border-hair-strong rounded overflow-hidden"
       title="x-axis scale"
     >
       {btn("log", "log")}
-      <span className="w-px bg-border" />
+      <span className="w-px bg-hair-strong" />
       {btn("linear", "lin")}
     </span>
   );
@@ -623,8 +623,8 @@ export function QNumInput({ value, onCommit, testId }: QNumInputProps): JSX.Elem
           (e.currentTarget as HTMLInputElement).blur();
         }
       }}
-      className="w-[70px] bg-bg border border-border rounded px-1 py-0.5
-                 text-fg text-xs tabular-nums text-right
+      className="w-[70px] bg-paper border border-hair-strong rounded px-1 py-0.5
+                 text-ink text-xs tabular-nums text-right
                  outline-0 focus:border-accent"
     />
   );
@@ -683,8 +683,8 @@ function PlotLegend({ peaks, hoveredIndex }: PlotLegendProps): JSX.Element {
   const hasManualPeaks   = peaks.some((p) => p.source === "manual");
   const hasExcludedPeaks = peaks.some((p) => p.excluded);
   return (
-    <div className="flex items-center gap-4 px-4 py-1.5 border-t border-border-soft
-                    font-mono text-xs text-fg-dim flex-wrap">
+    <div className="flex items-center gap-4 px-4 py-1.5 border-t border-hair
+                    font-mono text-xs text-ink-faint flex-wrap">
       {hasManualPeaks && (
         <LegendItem symbol={<TriangleSvg color="var(--color-peak-manual)" />} label="manual peak" />
       )}

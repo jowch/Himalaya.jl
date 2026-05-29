@@ -105,7 +105,7 @@ export interface MemberMarksProps {
    * is enforced inside `colorFor`).
    *
    * When `groupingMode` is omitted, the layer falls back to the legacy
-   * "color_override → var(--color-fg)" behaviour. This keeps the few
+   * "color_override → var(--color-ink)" behaviour. This keeps the few
    * non-Compare callers (and minimal test fixtures) working without
    * forcing them to wire the full `allMembers` + `sampleIdFor` context.
    */
@@ -245,7 +245,7 @@ export function buildMemberMarks(props: MemberMarksProps): unknown[] {
         allMembers: props.allMembers,
         sampleIdFor: props.sampleIdFor,
       })
-    : (member.color_override ?? "var(--color-fg)");
+    : (member.color_override ?? "var(--color-ink)");
 
   marks.push(
     Plot.line(linePoints, {
@@ -269,7 +269,7 @@ export function buildMemberMarks(props: MemberMarksProps): unknown[] {
         // Per-row color via channel — Observable Plot reads the `color`
         // field as the fill via the `fill` accessor below.
         fill: (d: unknown) => (d as PeakRow).color,
-        stroke: "var(--color-bg)",
+        stroke: "var(--color-paper)",
         strokeWidth: 0.75,
         r: 4,
       }),
@@ -310,7 +310,7 @@ export function buildMemberMarks(props: MemberMarksProps): unknown[] {
               x: "q",
               y: "y",
               text: "label",
-              fill: "var(--color-fg)",
+              fill: "var(--color-ink)",
               fontSize: 10,
               textAnchor: "middle",
             },
@@ -332,7 +332,7 @@ export function buildMemberMarks(props: MemberMarksProps): unknown[] {
               {
                 x1: "qPeak", y1: "yPeak",
                 x2: "qLabel", y2: "yLabel",
-                stroke: "var(--color-fg-muted)",
+                stroke: "var(--color-ink-soft)",
                 strokeWidth: 0.5,
                 strokeOpacity: 0.7,
               },
@@ -351,7 +351,7 @@ export function buildMemberMarks(props: MemberMarksProps): unknown[] {
               x: "q",
               y: "y",
               text: "label",
-              fill: "var(--color-fg)",
+              fill: "var(--color-ink)",
               fontSize: 10,
               textAnchor: "middle",
             },

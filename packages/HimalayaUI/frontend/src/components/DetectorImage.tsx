@@ -196,10 +196,6 @@ export function DetectorImage({
     return () => io.disconnect();
   }, [hasIntersected]);
 
-  // (R0c #223) The `<html>` theme-class MutationObserver was removed: R0a
-  // retired the dark↔light theme toggle, so nothing ever mutates the class
-  // and the observer never fired — dead scaffolding.
-
   // Watch wrapper size — rotate when container becomes much wider than image.
   useEffect(() => {
     const wrapper = wrapperRef.current;
@@ -212,7 +208,7 @@ export function DetectorImage({
   if (!imagePath) {
     // U-2 / R3-S06 (#255): the missing-image placeholder is a `frame-edge`
     // window (matching the live detector treatment) with a `frame-tag` mono
-    // caption — not light `text-fg-muted` text on paper. Empty states are where
+    // caption — not light `text-ink-soft` text on paper. Empty states are where
     // The Print is most exposed, so the dark window persists when data is absent.
     return (
       <div

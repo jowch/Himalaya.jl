@@ -107,7 +107,7 @@ export function DetectorRingOverlay({
                 cy={CENTER}
                 r={r}
                 fill="none"
-                stroke={hot ? "var(--color-accent)" : "var(--color-fg-dim)"}
+                stroke={hot ? "var(--color-accent)" : "var(--color-ink-faint)"}
                 strokeWidth={hot ? 1.6 : 0.8}
                 opacity={hot ? 0.95 : 0.5}
                 style={{ pointerEvents: "none" }}

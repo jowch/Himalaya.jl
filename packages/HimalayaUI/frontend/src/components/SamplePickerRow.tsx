@@ -56,7 +56,7 @@ export function SamplePickerRow({
         "flex items-start gap-3 px-3 py-2 rounded " +
         (disabled || alreadyAdded
           ? "opacity-60 cursor-not-allowed"
-          : "cursor-pointer hover:bg-bg-elevated") +
+          : "cursor-pointer hover:bg-plate") +
         (checked && !disabled && !alreadyAdded ? " ring-1 ring-accent/30" : "")
       }
     >
@@ -72,13 +72,13 @@ export function SamplePickerRow({
       )}
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline gap-2">
-          <span className="font-medium text-fg truncate">
+          <span className="font-medium text-ink truncate">
             {sampleLabel(row.sample)}
           </span>
           {alreadyAdded && (
-            <span className="text-xs text-fg-dim italic shrink-0">already added</span>
+            <span className="text-xs text-ink-faint italic shrink-0">already added</span>
           )}
-          <span className="text-xs text-fg-dim shrink-0">
+          <span className="text-xs text-ink-faint shrink-0">
             {row.all_exposures.length} {row.all_exposures.length === 1 ? "exposure" : "exposures"}
           </span>
           {!disabled && (
@@ -88,27 +88,27 @@ export function SamplePickerRow({
               aria-expanded={expanded}
               aria-label="Show exposures"
               onClick={(e) => { e.stopPropagation(); setExpanded((v) => !v); }}
-              className="ml-auto text-fg-muted hover:text-fg text-xs px-1"
+              className="ml-auto text-ink-soft hover:text-ink text-xs px-1"
             >
               {expanded ? "▾" : "▸"}
             </button>
           )}
         </div>
         {row.sample.notes && (
-          <div className="text-xs text-fg-muted line-clamp-2" title={row.sample.notes}>
+          <div className="text-xs text-ink-soft line-clamp-2" title={row.sample.notes}>
             {row.sample.notes}
           </div>
         )}
         {expanded && (
           <ul role="radiogroup" aria-label="Override exposure"
-              className="mt-2 ml-4 border-l border-border pl-2 flex flex-col">
+              className="mt-2 ml-4 border-l border-hair-strong pl-2 flex flex-col">
             {row.all_exposures.map((e) => {
               const radioId = `sprow-radio-${e.id}`;
               return (
                 <li key={e.id}>
                   <label
                     htmlFor={radioId}
-                    className="flex items-center gap-2 px-2 py-1 rounded cursor-pointer hover:bg-bg-elevated"
+                    className="flex items-center gap-2 px-2 py-1 rounded cursor-pointer hover:bg-plate"
                   >
                     <input
                       id={radioId}
@@ -118,7 +118,7 @@ export function SamplePickerRow({
                       className="shrink-0"
                     />
                     <span
-                      className="text-sm text-fg truncate flex-1 min-w-0"
+                      className="text-sm text-ink truncate flex-1 min-w-0"
                       title={e.filename ?? undefined}
                     >
                       {e.filename ?? `#${e.id}`}

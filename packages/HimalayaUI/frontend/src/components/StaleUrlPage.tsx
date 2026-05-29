@@ -105,8 +105,8 @@ export function StaleUrlPage({ staleUrlContext }: Props): JSX.Element {
       data-missing={ui.dataMissing}
       className="flex-1 min-h-0 flex flex-col items-center justify-center p-8 text-center"
     >
-      <h2 className="text-xl mb-2 text-fg">{ui.header}</h2>
-      <p className="text-fg-muted mb-6">It may have been renamed or removed.</p>
+      <h2 className="text-xl mb-2 text-ink">{ui.header}</h2>
+      <p className="text-ink-soft mb-6">It may have been renamed or removed.</p>
       <button
         onClick={ui.onPick}
         data-testid="stale-url-cta"
