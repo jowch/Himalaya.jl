@@ -1,0 +1,5 @@
+{
+  "files": ["packages/HimalayaUI/frontend/index.html"],
+  "insertBefore": "</body>",
+  "commentSyntax": "html"
+}

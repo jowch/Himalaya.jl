@@ -3,6 +3,7 @@ import { phaseColor } from "../phases";
 import { useSeries } from "../queries";
 import { SeriesMiniWaterfall } from "./SeriesMiniWaterfall";
 import { PhaseStrip } from "./ui/PhaseStrip";
+import { Kicker } from "./ui/Kicker";
 import { buildPhaseStrip } from "../lib/series/folioFigure";
 
 interface SeriesFolioCardProps {
@@ -125,12 +126,9 @@ export function SeriesFolioCard({
       <div className="flex flex-col gap-1 p-3">
         {/* kicker + pill row */}
         <div className="flex items-center justify-between gap-2">
-          <span
-            data-testid={`series-card-${series.id}-kicker`}
-            className="text-[10.5px] font-bold uppercase tracking-[0.11em] text-print-accent"
-          >
+          <Kicker as="span" tone="accent" data-testid={`series-card-${series.id}-kicker`}>
             {isDraft ? "Recipe" : `Fig. ${figNumber ?? series.id}`}
-          </span>
+          </Kicker>
           {pill && (
             <span
               data-testid={`series-card-${series.id}-pill`}

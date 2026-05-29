@@ -7,6 +7,7 @@ import {
   useScreenedProgress,
 } from "../queries";
 import { HintText } from "../components/ui/HintText";
+import { Kicker } from "../components/ui/Kicker";
 import {
   ContactSheetRow,
   CONTACT_SHEET_COLS,
@@ -91,9 +92,7 @@ export function SamplesPage(): JSX.Element {
           progress block on the right. */}
       <header className="flex items-end justify-between gap-8">
         <div className="flex flex-col gap-1">
-          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-print-accent">
-            Contact sheet
-          </div>
+          <Kicker tone="accent">Contact sheet</Kicker>
           <h1 data-testid="samples-title" className="text-display text-ink">
             {title}
           </h1>

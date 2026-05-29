@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { SegmentedControl } from "../components/ui/SegmentedControl";
+import { Kicker } from "../components/ui/Kicker";
 import { Skeleton } from "boneyard-js/react";
 import { useSeriesList } from "../queries";
 import { SeriesFolioCard } from "../components/SeriesFolioCard";
@@ -69,9 +70,7 @@ export function SeriesFolioPage(): JSX.Element {
     <div data-testid="series-folio-page" className="mx-auto flex max-w-[1380px] flex-col gap-4 p-6">
       <header className="flex items-end justify-between gap-8">
         <div className="flex flex-col gap-1">
-          <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-print-accent">
-            Folio
-          </div>
+          <Kicker tone="accent">Folio</Kicker>
           <h1 data-testid="series-folio-heading" className="text-headline text-ink">
             Saved series
           </h1>

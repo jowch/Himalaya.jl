@@ -18,6 +18,7 @@ import { ScopingOrderField } from "../components/ScopingOrderField";
 import { ScopingRow } from "../components/ScopingRow";
 import { ScopingLooseMatches } from "../components/ScopingLooseMatches";
 import { PhaseStrip } from "../components/ui/PhaseStrip";
+import { Kicker } from "../components/ui/Kicker";
 import { ScopingFoot } from "../components/ScopingFoot";
 import { ScopingConfirmModal } from "../components/ScopingConfirmModal";
 
@@ -235,9 +236,7 @@ export function SeriesScopingPage(): JSX.Element {
         data-testid="scoping-plate"
         className="w-full max-w-[760px] rounded-md border border-hair bg-plate px-8 py-7 shadow-[0_1px_0_rgba(255,255,255,.6)_inset,0_1px_1px_rgba(60,52,40,.04),0_18px_40px_-22px_rgba(60,52,40,.22)]"
       >
-        <div className="mb-1.5 text-[11px] font-bold uppercase tracking-[0.14em] text-print-accent">
-          New series
-        </div>
+        <Kicker tone="accent" className="mb-1.5">New series</Kicker>
         <h1 data-testid="scoping-title" className="text-display text-ink">
           {proposal.orderingKey ? `Series by ${keyLabel}` : "New series"}
         </h1>

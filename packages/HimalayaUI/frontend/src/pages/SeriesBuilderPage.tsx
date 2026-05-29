@@ -14,7 +14,7 @@ import { FigureExportControls } from "../components/FigureExportControls";
 import { SeriesBuilderRail } from "../components/SeriesBuilderRail";
 import { SeriesRecipeEditor } from "../components/SeriesRecipeEditor";
 import { OffsetDock } from "../components/OffsetDock";
-import { HintText } from "../components/ui";
+import { HintText, Kicker } from "../components/ui";
 import type { Representation } from "../components/RepresentationToggle";
 import type { ScaleMode } from "../components/ScaleToggle";
 import { resolveDisplayLabels } from "../lib/comparison/labels";
@@ -290,9 +290,7 @@ function SeriesBuilderBody(
                 data-testid="fig-tags"
               >
                 <div className="flex items-baseline gap-3">
-                  <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-print-accent">
-                    Series
-                  </span>
+                  <Kicker as="span" tone="accent">Series</Kicker>
                   <div className="flex gap-1.5">
                     <span className="rounded-full border border-hair px-2 py-px text-[10.5px] text-ink-faint">
                       {members.length} {members.length === 1 ? "sample" : "samples"}

@@ -1,3 +1,5 @@
+import { Kicker } from "./ui/Kicker";
+
 /**
  * FocusPlotHeader — the focus-workspace trace-plate header (mockup
  * focus-workspace.html `.plate-head`, DESIGN.md "The Print" R3 / #226).
@@ -39,12 +41,7 @@ export function FocusPlotHeader({
 
   return (
     <div data-testid="focus-plot-header" className="min-w-0 flex flex-col items-start">
-      <div
-        data-testid="focus-plot-kicker"
-        className="text-xs font-bold uppercase tracking-[0.13em] text-print-accent"
-      >
-        Integration
-      </div>
+      <Kicker tone="accent" data-testid="focus-plot-kicker">Integration</Kicker>
       <h1
         data-testid="focus-plot-title"
         className="text-display leading-tight text-ink truncate max-w-[44ch]"
