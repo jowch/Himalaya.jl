@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 // Zero-dependency design-token guard. Globs src/**/*.{ts,tsx}, excludes src/components/ui/**,
-// flags banned appearance utilities / raw color literals against a content-hash baseline.
+// flags banned appearance utilities / raw color literals. PURE-ABSOLUTE: every matched
+// violation (after the ui/ exclusion + per-rule allowlist) is a hard error (exit 2). There is
+// no baseline — the named scale + component library are now the only sanctioned source of
+// appearance, so any new bracket/raw-color escape is a regression, full stop.
 // Pure functions are exported for unit testing; the CLI runs only when invoked directly.
-import { readdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createHash } from "node:crypto";
 
 // import.meta.url is a file: URL when run by node directly, but some loaders
 // (e.g. Vitest's transform) hand back a non-file scheme that fileURLToPath rejects.
@@ -21,15 +23,18 @@ function scriptsDir() {
 }
 const HERE = scriptsDir();
 const SRC_DIR = join(HERE, "..", "src");
-const BASELINE_PATH = join(HERE, "design-baseline.json");
 
 // --- Ban rules ---------------------------------------------------------------
-// Each rule: { id, test(line) -> matched-substring|null }. Rule #3 also consults `relPath`
-// (POSIX-normalized, relative to src/) against its allowlist.
+// Each rule: { id, test(line) -> matched-substring|null }. Rules #3 and #5 also consult
+// `relPath` (POSIX-normalized, relative to src/) against the shared color-authoring allowlist.
 //
-// Rule #3 allowlist: arbitrary-value color UTILITIES that legitimately need a runtime color.
-// (spec §4: rules #1/#2/#4/#5 take NO allowlist.)
-const RULE3_ALLOWLIST = new Set([
+// Color-authoring allowlist: the files where color is legitimately authored (palette tables,
+// computed coloring, figure-export presets, the canvas/detector layers that paint pixels, the
+// app entry that seeds CSS vars). Rule #3 (arbitrary-value color UTILITIES that need a runtime
+// color) already exempts them; rule #5 (raw color literals anywhere) MUST exempt the same set —
+// otherwise the palette layer can never be clean, since authoring a palette necessarily writes
+// oklch()/rgba() literals. (Rules #1/#2/#4 take NO allowlist.)
+const COLOR_AUTHORING_ALLOWLIST = new Set([
   "phases.ts",
   "lib/comparison/coloring.ts",
   "components/MemberHeatmapLayer.tsx",
@@ -38,11 +43,11 @@ const RULE3_ALLOWLIST = new Set([
   "main.tsx",
 ]);
 // figure-export/** is allowlisted by prefix (the whole export palette dir).
-const RULE3_ALLOW_PREFIXES = ["lib/figure-export/"];
+const COLOR_AUTHORING_ALLOW_PREFIXES = ["lib/figure-export/"];
 
-function rule3Allowed(relPath) {
-  if (RULE3_ALLOWLIST.has(relPath)) return true;
-  return RULE3_ALLOW_PREFIXES.some((p) => relPath.startsWith(p));
+function colorAuthoringAllowed(relPath) {
+  if (COLOR_AUTHORING_ALLOWLIST.has(relPath)) return true;
+  return COLOR_AUTHORING_ALLOW_PREFIXES.some((p) => relPath.startsWith(p));
 }
 
 const COLOR_LITERAL = "(?:oklch|oklab|hsla?|rgba?)\\(|#[0-9a-fA-F]{3,8}\\b";
@@ -66,9 +71,9 @@ const RULES = [
   },
   {
     // #3 raw appearance color inside a color UTILITY (not shadow-[…]).
-    // shadow-[…] is excluded — 4 legit Plate-Lift rgba shadows live in tsx.
+    // shadow-[…] is excluded — legit Plate-Lift rgba shadows live in tsx.
     id: "no-raw-color-utility",
-    allowlisted: rule3Allowed,
+    allowlisted: colorAuthoringAllowed,
     test: (line) => {
       const re = new RegExp(
         "\\b(?:bg|text|border|fill|stroke|ring|outline|from|via|to|decoration)-\\[(?:[^\\]]*?)(?:" +
@@ -89,12 +94,17 @@ const RULES = [
   },
   {
     // #5 raw color literal ANYWHERE on the line (covers multi-line style={{…}}).
-    // Strip every var(--color-*) token FIRST, then flag a remaining raw literal.
-    // This passes legit computed-color sites (their non-var color is a ${…} expression
-    // with no raw literal) and flags the raw oklch(0.05…) scrim hand-inlines.
+    // Strip every var(--color-*) token AND every shadow-[…] value FIRST, then flag a
+    // remaining raw literal. Stripping var() passes legit computed-color sites; stripping
+    // shadow-[…] keeps rule #5 consistent with rule #3, which deliberately exempts the
+    // Plate-Lift rgba shadows (the rgba lives inside an elevation token, not a color role).
+    // What remains and trips: the raw oklch(0.05…) scrim hand-inlines and quoted hex colors.
     id: "no-raw-color-literal",
+    allowlisted: colorAuthoringAllowed,
     test: (line) => {
-      const stripped = line.replace(/var\(--color-[^)]*\)/g, "");
+      const stripped = line
+        .replace(/var\(--color-[^)]*\)/g, "")
+        .replace(/shadow-\[[^\]]*\]/g, "");
       const re = /(?:oklch|oklab|hsla?|rgba?)\(|["'`]#[0-9a-fA-F]{3,8}\b/;
       const m = re.exec(stripped);
       return m ? stripped.slice(m.index, m.index + 32).trim() : null;
@@ -145,36 +155,9 @@ export function scanContent(relPath, content) {
   return violations;
 }
 
-// Content-hash key: (rule, normalized-violation-text) — NOT (file,line), NOT (file,rule)-count.
-// Normalize: collapse all whitespace runs to one space + trim, so reflow/indent moves are no-ops.
-export function hashViolation(rule, text) {
-  const norm = text.replace(/\s+/g, " ").trim();
-  return createHash("sha1").update(rule + " " + norm).digest("hex").slice(0, 16);
-}
-
-export function loadBaseline(path = BASELINE_PATH) {
-  if (!existsSync(path)) return { hashes: [] };
-  return JSON.parse(readFileSync(path, "utf8"));
-}
-
-// baseline_new ⊆ baseline_old check + not-in-baseline detection.
-// Returns { notInBaseline: [...violations], grew: bool }.
-export function diffBaseline(violations, baseline) {
-  const baseSet = new Set(baseline.hashes ?? []);
-  const seen = new Set();
-  const notInBaseline = [];
-  for (const v of violations) {
-    const h = hashViolation(v.rule, v.text);
-    seen.add(h);
-    if (!baseSet.has(h)) notInBaseline.push({ ...v, hash: h });
-  }
-  // grew = the current set introduced a hash the baseline does not contain.
-  return { notInBaseline, grew: notInBaseline.length > 0, seenHashes: seen };
-}
-
 // --- CLI ---------------------------------------------------------------------
-function runCli(argv) {
-  const initMode = argv.includes("--init");
+// Pure-absolute: scan every source file, error on ANY violation (no baseline).
+function runCli() {
   const files = listSourceFiles(SRC_DIR);
   const all = [];
   for (const abs of files) {
@@ -182,31 +165,20 @@ function runCli(argv) {
     all.push(...scanContent(rel, readFileSync(abs, "utf8")));
   }
 
-  if (initMode) {
-    const hashes = [...new Set(all.map((v) => hashViolation(v.rule, v.text)))].sort();
-    const baseline = {
-      note: "Content-hash baseline for scripts/check-design.mjs. Keyed on (rule, normalized text). Ratchet: only ever shrinks. Regenerate seed with `node scripts/check-design.mjs --init`.",
-      generated: new Date().toISOString().slice(0, 10),
-      hashes,
-    };
-    writeFileSync(BASELINE_PATH, JSON.stringify(baseline, null, 2) + "\n");
-    process.stderr.write(`[check-design] wrote ${hashes.length} baseline hashes to ${BASELINE_PATH}\n`);
-    return 0;
-  }
-
-  const baseline = loadBaseline();
-  const { notInBaseline } = diffBaseline(all, baseline);
-  if (notInBaseline.length > 0) {
-    process.stderr.write(`[check-design] ${notInBaseline.length} NEW design violation(s) not in baseline:\n`);
-    for (const v of notInBaseline) {
-      process.stderr.write(`  ${v.rule}  src/${v.file}:${v.line}  ${JSON.stringify(v.text)}  [${v.hash}]\n`);
+  if (all.length > 0) {
+    process.stderr.write(`[check-design] ${all.length} design violation(s):\n`);
+    for (const v of all) {
+      process.stderr.write(`  ${v.rule}  src/${v.file}:${v.line}  ${JSON.stringify(v.text)}\n`);
     }
-    process.stderr.write("Fix the appearance utility (move it into src/components/ui/**) or, if intentional and pre-existing, the baseline is wrong.\n");
+    process.stderr.write(
+      "Move the appearance utility into src/components/ui/**, or use a named scale/role token. " +
+        "Raw color literals belong only in the color-authoring files.\n",
+    );
     return 2;
   }
   return 0;
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  process.exit(runCli(process.argv.slice(2)));
+  process.exit(runCli());
 }

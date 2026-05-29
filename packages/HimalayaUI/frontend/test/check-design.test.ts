@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { scanContent, hashViolation, diffBaseline } from "../scripts/check-design.mjs";
+import { scanContent } from "../scripts/check-design.mjs";
 
 // Helper: collect the set of rule ids a single line trips (outside ui/).
 function rulesFor(line: string): string[] {
@@ -64,31 +64,25 @@ describe("check-design guard — ban rules (spec §4)", () => {
     expect(rulesFor('        style={{ color: "#3c3428" }}')).toContain("no-raw-color-literal");
   });
 
+  // Rule #5 — shares rule #3's color-authoring allowlist
+  it("does NOT flag a raw oklch literal in an allowlisted color-authoring file (rule #5)", () => {
+    const line = '  Pn3m: { hue: "oklch(0.62 0.18 28)" },';
+    expect(scanContent("phases.ts", line).map((v) => v.rule)).not.toContain("no-raw-color-literal");
+  });
+  it("DOES flag the same raw oklch literal in a normal consumer (rule #5)", () => {
+    const line = '  Pn3m: { hue: "oklch(0.62 0.18 28)" },';
+    expect(scanContent("components/Probe.tsx", line).map((v) => v.rule)).toContain("no-raw-color-literal");
+  });
+
+  // Rule #5 — shadow-[…rgba…] elevation tokens are stripped first (consistent with rule #3,
+  // which excludes shadow-): the rgba lives inside an elevation token, not a color role.
+  it("passes a shadow-[…rgba…] Plate-Lift literal under rule #5 too", () => {
+    const line = '      className="rounded-md shadow-[0_8px_26px_-10px_rgba(60,52,40,.34)]"';
+    expect(rulesFor(line)).not.toContain("no-raw-color-literal");
+  });
+
   // Scope exclusion — src/components/ui/** is never scanned
   it("excludes src/components/ui/** entirely", () => {
     expect(scanContent("components/ui/Toast.tsx", '<div className="border-l-4 text-[10px]" />')).toHaveLength(0);
-  });
-});
-
-describe("check-design guard — baseline diff", () => {
-  it("returns clean (no new) when every violation hash is in the baseline", () => {
-    const violations = scanContent("components/Probe.tsx", '<div className="text-[10px]" />');
-    const baseline = { hashes: violations.map((v) => hashViolation(v.rule, v.text)) };
-    const { notInBaseline, grew } = diffBaseline(violations, baseline);
-    expect(notInBaseline).toHaveLength(0);
-    expect(grew).toBe(false);
-  });
-
-  it("flags a not-in-baseline violation (CI would exit 2)", () => {
-    const violations = scanContent("components/Probe.tsx", '<div className="text-[10px]" />');
-    const { notInBaseline, grew } = diffBaseline(violations, { hashes: [] });
-    expect(notInBaseline).toHaveLength(1);
-    expect(grew).toBe(true);
-  });
-
-  it("hash is stable across whitespace/indent reflow (move-between-files is a no-op)", () => {
-    expect(hashViolation("no-arbitrary-text", "text-[10px]")).toBe(
-      hashViolation("no-arbitrary-text", "   text-[10px]   "),
-    );
   });
 });
