@@ -3,7 +3,7 @@ import { useAppState } from "../state";
 import { useExposures, usePeaks, useSelectExposure } from "../queries";
 import { DetectorImage } from "./DetectorImage";
 import { DetectorRingOverlay } from "./DetectorRingOverlay";
-import { HintText } from "./ui";
+import { Card, HintText } from "./ui";
 
 /**
  * FocusDetectorPanel — the co-resident detector image on the focus workspace.
@@ -92,8 +92,8 @@ export function FocusDetectorPanel(): JSX.Element {
     // `rounded border bg-plate` triple to the canonical `.card` rule so the
     // panel floats above the paper with the same warm shadow as the trace
     // plate. Keep `p-4` for body padding.
-    <section data-testid="focus-detector-panel"
-             className="card flex min-h-0 flex-col p-4">
+    <Card as="section" elevated data-testid="focus-detector-panel"
+             className="flex min-h-0 flex-col p-4">
       <div className="card-header flex items-center justify-between gap-3">
         <span className="text-meta uppercase tracking-wider">Detector image</span>
         {showSwitcher && (
@@ -175,6 +175,6 @@ export function FocusDetectorPanel(): JSX.Element {
       >
         {body}
       </Skeleton>
-    </section>
+    </Card>
   );
 }

@@ -9,7 +9,7 @@ import {
 import { useAutoPickExposure, noUsableExposureState } from "../hooks/useAutoPickExposure";
 import { TraceViewer } from "./TraceViewer";
 import { NoUsableExposureNotice } from "./NoUsableExposureNotice";
-import { HintText } from "./ui";
+import { Card, HintText } from "./ui";
 import { SegmentedControl } from "./ui/SegmentedControl";
 import { FigureExportControls } from "./FigureExportControls";
 import { buildTraceExportSpec } from "../lib/figure-export/adapters/traceAdapter";
@@ -356,15 +356,13 @@ export function PlotCard({ headerSlot }: PlotCardProps = {}): JSX.Element {
     activeExperimentId === undefined ? "experiment" : "sample";
 
   // R3-N3 (#209): the trace plate is the hero — the one elevated object in
-  // The Print's "flat-except-the-plate" rule (DESIGN.md §Elevation). Apply
-  // `.card` (Plate Lift shadow + bg-plate + hairline + radius) to the outer
-  // in the focus variant so the figure floats above the warm paper. Gated on
-  // `headerSlot` so prop-less PlotCard (any non-focus consumer) is unaffected.
-  const outerClass = headerSlot
-    ? "card flex flex-col h-full min-h-0 overflow-hidden"
-    : "flex flex-col h-full min-h-0 overflow-hidden";
-  return (
-    <div data-testid="plot-card" className={outerClass}>
+  // The Print's "flat-except-the-plate" rule (DESIGN.md §Elevation). In the
+  // focus variant it is the single elevated object (Card elevated). Non-focus
+  // consumers stay an unstyled flow container (no plate, no bg) — gated on
+  // headerSlot exactly as before.
+  const layout = "flex flex-col h-full min-h-0 overflow-hidden";
+  const inner = (
+    <>
       <TitleStrip
         {...(headerSlot ? { headerSlot } : {})}
         experimentName={experimentName}
@@ -400,6 +398,15 @@ export function PlotCard({ headerSlot }: PlotCardProps = {}): JSX.Element {
           hoveredIndex={hoveredIndex}
         />
       )}
+    </>
+  );
+  return headerSlot ? (
+    <Card elevated data-testid="plot-card" className={layout}>
+      {inner}
+    </Card>
+  ) : (
+    <div data-testid="plot-card" className={layout}>
+      {inner}
     </div>
   );
 }

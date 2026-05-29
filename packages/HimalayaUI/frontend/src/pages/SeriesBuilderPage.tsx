@@ -14,7 +14,7 @@ import { FigureExportControls } from "../components/FigureExportControls";
 import { SeriesBuilderRail } from "../components/SeriesBuilderRail";
 import { SeriesRecipeEditor } from "../components/SeriesRecipeEditor";
 import { OffsetDock } from "../components/OffsetDock";
-import { HintText, Kicker } from "../components/ui";
+import { Card, HintText, Kicker } from "../components/ui";
 import type { Representation } from "../components/RepresentationToggle";
 import type { ScaleMode } from "../components/ScaleToggle";
 import { resolveDisplayLabels } from "../lib/comparison/labels";
@@ -272,9 +272,10 @@ function SeriesBuilderBody(
             affordance stay reachable — adding the first sample is the
             recipe-edit flow that populates the plot.
           */}
-          <div
+          <Card
+            elevated
             data-testid="series-builder-plate"
-            className={`w-full ${collapsed ? "max-w-[1336px]" : "max-w-[1180px]"} rounded border border-hair bg-plate p-8 shadow-[0_1px_0_rgba(255,255,255,.6)_inset,0_1px_1px_rgba(60,52,40,.04),0_18px_40px_-20px_rgba(60,52,40,.22)] transition-[max-width] duration-200`}
+            className={`w-full ${collapsed ? "max-w-[1336px]" : "max-w-[1180px]"} p-8 transition-[max-width] duration-200`}
           >
               {/*
                 Kicker tag-row (R8 / B-H): terracotta "Series" + facet tags.
@@ -419,7 +420,7 @@ function SeriesBuilderBody(
                   </div>
                 </>
               )}
-            </div>
+            </Card>
         </div>
         <SeriesBuilderRail
           collapsed={collapsed}

@@ -2,6 +2,7 @@ import type { SeriesSummary } from "../api";
 import { phaseColor } from "../phases";
 import { useSeries } from "../queries";
 import { SeriesMiniWaterfall } from "./SeriesMiniWaterfall";
+import { Card } from "./ui";
 import { PhaseStrip } from "./ui/PhaseStrip";
 import { Kicker } from "./ui/Kicker";
 import { buildPhaseStrip } from "../lib/series/folioFigure";
@@ -79,7 +80,9 @@ export function SeriesFolioCard({
       : null;
 
   return (
-    <button
+    <Card
+      as="button"
+      elevated
       type="button"
       data-testid={`series-card-${series.id}`}
       data-member-count={series.member_count}
@@ -87,9 +90,9 @@ export function SeriesFolioCard({
       data-stale={series.has_stale_members ? "true" : "false"}
       onClick={() => onOpen(series.id)}
       className={[
-        "mb-5 block w-full break-inside-avoid overflow-hidden rounded border text-left",
-        "bg-plate transition-transform hover:-translate-y-0.5",
-        isDraft ? "border-dashed border-hair-strong" : "border-hair",
+        "mb-5 block w-full break-inside-avoid overflow-hidden text-left",
+        "transition-transform hover:-translate-y-0.5",
+        isDraft ? "border-dashed" : "",
       ].join(" ")}
     >
       {/* The frozen plate — a live miniature once detail loads, else a swatch
@@ -197,6 +200,6 @@ export function SeriesFolioCard({
           </span>
         </div>
       </div>
-    </button>
+    </Card>
   );
 }

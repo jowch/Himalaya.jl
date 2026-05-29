@@ -17,6 +17,7 @@ import { ScopingAutogroupCard } from "../components/ScopingAutogroupCard";
 import { ScopingOrderField } from "../components/ScopingOrderField";
 import { ScopingRow } from "../components/ScopingRow";
 import { ScopingLooseMatches } from "../components/ScopingLooseMatches";
+import { Card } from "../components/ui";
 import { PhaseStrip } from "../components/ui/PhaseStrip";
 import { Kicker } from "../components/ui/Kicker";
 import { ScopingFoot } from "../components/ScopingFoot";
@@ -232,9 +233,10 @@ export function SeriesScopingPage(): JSX.Element {
         </button>
       </div>
 
-      <div
+      <Card
+        elevated
         data-testid="scoping-plate"
-        className="w-full max-w-[760px] rounded-md border border-hair bg-plate px-8 py-7 shadow-[0_1px_0_rgba(255,255,255,.6)_inset,0_1px_1px_rgba(60,52,40,.04),0_18px_40px_-22px_rgba(60,52,40,.22)]"
+        className="w-full max-w-[760px] px-8 py-7"
       >
         <Kicker tone="accent" className="mb-1.5">New series</Kicker>
         <h1 data-testid="scoping-title" className="text-display text-ink">
@@ -349,7 +351,7 @@ export function SeriesScopingPage(): JSX.Element {
             )}
           </Skeleton>
         )}
-      </div>
+      </Card>
 
       <ScopingConfirmModal
         open={confirmOpen}
