@@ -42,3 +42,24 @@ describe("Card", () => {
     expect(screen.getByTestId("sec").tagName).toBe("SECTION");
   });
 });
+
+describe("Card closed-look contract", () => {
+  it("never emits its own appearance via consumer className — flat carries no shadow utility", () => {
+    render(<Card data-testid="flat">x</Card>);
+    const cls = screen.getByTestId("flat").className;
+    expect(cls).toContain("bg-plate");
+    expect(cls).toContain("rounded-md");
+    expect(cls).not.toMatch(/shadow/);
+    expect(screen.getByTestId("flat")).not.toHaveAttribute("data-elevated");
+  });
+
+  it("elevated delegates appearance to the `.card` recipe (no inline shadow, no bg-plate util, no rounded util)", () => {
+    render(<Card data-testid="lift" elevated>x</Card>);
+    const cls = screen.getByTestId("lift").className;
+    expect(cls).toContain("card");
+    expect(cls).not.toMatch(/shadow-\[/);
+    expect(cls).not.toContain("bg-plate");
+    expect(cls).not.toContain("rounded-md");
+    expect(screen.getByTestId("lift")).toHaveAttribute("data-elevated", "true");
+  });
+});
