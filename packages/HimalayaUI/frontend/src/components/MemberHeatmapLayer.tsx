@@ -201,7 +201,7 @@ function resolveHeatmapFill(props: MemberHeatmapMarksProps): string {
   // Legacy fallback — phase hue if indexed, neutral ink otherwise.
   const phase = member.snapshot?.confirmed_index?.phase;
   if (phase) return phaseColor(phase);
-  return "var(--color-fg)";
+  return "var(--color-ink)";
 }
 
 /**

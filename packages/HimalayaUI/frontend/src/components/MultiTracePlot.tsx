@@ -188,7 +188,7 @@ export interface MultiTracePlotProps {
    * Trace coloring grouping mode (Phase 9 gap-fix; spec §Trace coloring).
    * Forwarded to `MemberTraceLayer.buildMemberMarks` so the per-member line
    * stroke routes through `colorFor`. Omit to fall back to the legacy
-   * "color_override → var(--color-fg)" behaviour (e.g. tests that don't
+   * "color_override → var(--color-ink)" behaviour (e.g. tests that don't
    * exercise grouping).
    */
   groupingMode?: GroupingMode;
@@ -396,7 +396,7 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
       marginTop: MARGIN_TOP,  marginBottom: MARGIN_BOTTOM,
       style: {
         fontFamily: "var(--font-sans)",
-        color: "var(--color-fg-muted)",
+        color: "var(--color-ink-soft)",
         background: "transparent",
         overflow: "visible",
       },
