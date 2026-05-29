@@ -29,12 +29,30 @@ These silently stall or corrupt — they are the whole reason naive "spawn + col
 4. **Verify by invariant, not enumeration** — an acceptance grep keyed off a hand-listed set is blind to the leak it guards. Match the structural pattern across all forms.
 5. **Discovery ≠ verification** — fan-out workflow to *scope* the unknown; deterministic grep+build+diff to *verify* the known. Don't re-run discovery to recount the known.
 
+## Sequencing: the wave DAG and file collisions
+
+The hard constraint: **two members editing the same file in parallel collide** — at merge the second PR conflicts, or (worse, with Bash-heredoc edits that can't surgically 3-way-merge) silently clobbers the first. So sequencing is about **file-disjointness**, not priority. Build the DAG before spawning anyone:
+
+1. **Map issue → files.** For each issue, list the files its scope touches (grep the cited paths). Include the collision hotspots: shared primitives (`ui/` components), shared CSS/design tokens, and any file that gets a version bump — these are touched by many issues.
+2. **Cluster by overlap.** Any two issues sharing a file **cannot be in the same wave.**
+3. **Within a wave:** a maximally file-disjoint set. **Across waves:** dependency order — a wave whose surface builds on an earlier change comes later and **branches off `main` AFTER the earlier wave merges** (rebase onto the new `main`; never hand-merge between feature branches).
+4. **Collapse hard-shared issues, don't split them.** If two issues *must* edit the same file (a shared component, one version bump), separate waves only defer the collision — put them in **one member / one PR**. (E.g. three issues all bumping a shared processing version ship as a single PR.)
+5. **Cap width at ~2 regardless of disjointness.** Even five file-disjoint issues shouldn't run five-wide — you are the serialization point for review rounds, so width is bounded by your nudge bandwidth, not the DAG.
+
+```
+Wave 1:  #A (files x,y)   #B (file z)            disjoint → parallel
+         └─────── both merge to main ───────┘
+Wave 2:  #C (files y,w)                          shares y with #A → must follow wave 1,
+         rebased onto post-wave-1 main           branched after wave 1 merges
+Wave 3:  #D+#E+#F  (all touch the same file)     hard-shared → ONE PR, not three
+```
+
 ## Procedure
 
 Create a TodoWrite item per step; work in order.
 
 1. **Reconcile `main` with `origin`** and land any orchestration doc first, so every member inherits it.
-2. **Build a cluster-aware, file-disjoint wave DAG.** Group by shared file; each wave is internally file-disjoint; later waves branch off `main` after earlier waves merge. **Keep wave width ~2** — you are the review-round serialization point; bound width by nudge bandwidth.
+2. **Build the wave DAG** (see *Sequencing* above) and confirm each wave is file-disjoint and width ~2 before spawning.
 3. **One role-tagged team:** `impl-<issue#>`, `rev-<PR#>`. **Names never reused** (a bare-name `SendMessage` can hit a dead agentId).
 4. **Dual plan gate before ANY code** (members idle here until you relay approval): (a) you GREP every cited file:line/symbol/value against live source; (b) a project reviewer on the plan; (c) explicit human "approved".
 5. **TDD implement.** Assert on `data-*` attributes, not class strings; regression floors, not exact counts; include the **prod build** in the verify gate.
