@@ -15,11 +15,15 @@
  * per-peak state the user is trying to manipulate. Caller (ComparePage vs.
  * ComparePageEdit) decides whether to mount this component.
  *
- * **Styling — text-link parity with PlotCard.** Mirrors the q-range-reset /
- * XScaleToggle vocabulary used by the Index page: `text-ink-faint` at rest,
- * `text-ink + bg-paper-sunk + border-hair-strong` on hover, `bg-paper-sunk text-ink`
- * when active. No native checkbox — `aria-pressed` carries the toggle
- * semantics and `data-active` lets E2E selectors assert state.
+ * **Styling — interim canonical multi-select toggle.** Two independent
+ * on/off toggles (not a single-select SegmentedControl). Active uses the
+ * canonical ink-on-paper fill (`bg-ink text-paper`, DESIGN.md §211/§240),
+ * `text-ink-faint` at rest, ghost hover (`hover:text-ink hover:bg-paper-sunk`).
+ * This is the interim canonical multi-select treatment until a dedicated
+ * `ToggleButton` primitive lands (Phase 2); the design-guard baseline carries
+ * a note so this corrected fill is not read as un-migrated drift. No native
+ * checkbox — `aria-pressed` carries the toggle semantics, `data-active` backs
+ * E2E selectors.
  *
  * No predicted-phase-ratio toggle. Per spec §Annotation toggles, v1
  * doesn't render predicted-q ticks at all — the figure is the result of
@@ -49,7 +53,7 @@ function ToggleButton({
         "px-1.5 py-0.5 rounded text-xs transition-colors",
         "border border-transparent hover:border-hair-strong",
         active
-          ? "bg-paper-sunk text-ink"
+          ? "bg-ink text-paper"
           : "text-ink-faint hover:text-ink hover:bg-paper-sunk",
       ].join(" ")}
     >

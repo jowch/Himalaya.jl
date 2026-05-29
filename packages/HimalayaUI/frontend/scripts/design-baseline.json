@@ -1,6 +1,12 @@
 {
   "note": "Content-hash baseline for scripts/check-design.mjs. Keyed on (rule, normalized text). Ratchet: only ever shrinks. Regenerate seed with `node scripts/check-design.mjs --init`.",
   "generated": "2026-05-29",
+  "interim_canonical_notes": [
+    {
+      "file": "components/AnnotationToggles.tsx",
+      "note": "Intentional interim multi-select toggle (NOT a SegmentedControl migration target). Two independent boolean toggles; active fill is canonical ink-on-paper (bg-ink text-paper, DESIGN.md §211/§240). Phase-2 will introduce a dedicated ToggleButton primitive. The hover state (hover:bg-paper-sunk) on the inactive branch is a ghost hover — not an L-5/B-A defect and not baselined. Do not read this file's remaining bg-paper-sunk (hover-only, inactive branch) as un-migrated drift."
+    }
+  ],
   "hashes": [
     "06804499267d5d1c",
     "0f40e52df2efcf6f",
@@ -50,7 +56,6 @@
     "73d2631549fb6847",
     "75a342034cb47272",
     "76eafda7bcdd76c5",
-    "7bcb01e6049a34ec",
     "7f60fb39487f46a9",
     "8263f4a9b06c831f",
     "834f721aa30636f1",
