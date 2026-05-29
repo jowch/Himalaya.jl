@@ -92,12 +92,14 @@ export function CorpusTopbar(): JSX.Element {
       data-testid="corpus-topbar"
       className="h-14 shrink-0 flex items-center gap-4 px-6 border-b border-hair bg-paper"
     >
-      <span
+      <Link
+        to="/samples"
         data-testid="corpus-wordmark"
-        className="text-sm font-bold uppercase tracking-[0.16em] text-ink"
+        aria-label="Himalaya SAXS, go to the corpus"
+        className="text-sm font-bold uppercase tracking-[0.16em] text-ink rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
       >
         Himalaya <span className="font-semibold text-ink-faint">· SAXS</span>
-      </span>
+      </Link>
 
       <nav data-testid="stage-tabs" aria-label="Workflow stages" className="flex gap-0.5">
         {STAGES.map((s) => {

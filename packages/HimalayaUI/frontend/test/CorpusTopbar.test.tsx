@@ -53,6 +53,14 @@ describe("CorpusTopbar", () => {
     expect(wordmark).toHaveTextContent("SAXS");
   });
 
+  it("links the wordmark home to the corpus from any route", () => {
+    mockExperiments();
+    renderTopbar("/series");
+    const wordmark = screen.getByTestId("corpus-wordmark");
+    expect(wordmark.tagName).toBe("A");
+    expect(wordmark).toHaveAttribute("href", "/samples");
+  });
+
   it("renders three stage-tabs; Samples is active and links to /samples", () => {
     mockExperiments();
     renderTopbar();
