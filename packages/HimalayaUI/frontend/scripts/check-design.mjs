@@ -7,7 +7,19 @@ import { join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 
-const HERE = fileURLToPath(new URL(".", import.meta.url));
+// import.meta.url is a file: URL when run by node directly, but some loaders
+// (e.g. Vitest's transform) hand back a non-file scheme that fileURLToPath rejects.
+// Fall back to a cwd-relative scripts dir so module load never throws; the CLI
+// (which actually walks the tree) is only ever invoked via `node`, where the
+// file: URL path holds.
+function scriptsDir() {
+  try {
+    return fileURLToPath(new URL(".", import.meta.url));
+  } catch {
+    return join(process.cwd(), "scripts");
+  }
+}
+const HERE = scriptsDir();
 const SRC_DIR = join(HERE, "..", "src");
 const BASELINE_PATH = join(HERE, "design-baseline.json");
 
