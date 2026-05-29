@@ -1,8 +1,10 @@
+import { useEffect, useRef } from "react";
 import { useAppState } from "../state";
 import {
   useCorpusSamples, useSamples, useUpdateSample,
   useExperiment, useExposures,
 } from "../queries";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 import { sampleDisplayName } from "../lib/sample/displayName";
 import { PlotCard } from "./PlotCard";
 import { FocusPlotHeader } from "./FocusPlotHeader";
@@ -34,6 +36,18 @@ export function FocusWorkspaceLayout(): JSX.Element {
   // F-12: below xl the Notes margin column yields to a topbar-toggled drawer.
   const notesDrawerOpen  = useAppState((s) => s.notesDrawerOpen);
   const closeNotesDrawer = useAppState((s) => s.closeNotesDrawer);
+
+  // F-12 harden: the < xl notes drawer is role=dialog, so it must behave like
+  // the app's other modals (SpeculativeBuilder/NavModal) — trap Tab while open
+  // and close on Esc. The trap is inert when the drawer is unmounted.
+  const notesDrawerRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(notesDrawerRef, notesDrawerOpen);
+  useEffect(() => {
+    if (!notesDrawerOpen) return;
+    const onKey = (e: KeyboardEvent): void => { if (e.key === "Escape") closeNotesDrawer(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [notesDrawerOpen, closeNotesDrawer]);
 
   // The corpus query gives us the sample's authoritative `experiment_id`
   // (the I4.1 route shim seeds only `activeSampleId`, NOT activeExperimentId).
@@ -140,7 +154,9 @@ export function FocusWorkspaceLayout(): JSX.Element {
             className="fixed inset-0 z-40 bg-ink/20"
           />
           <div
+            ref={notesDrawerRef}
             role="dialog"
+            aria-modal="true"
             aria-label="Notes"
             className="fixed right-0 top-14 bottom-0 z-50 w-[300px] max-w-[85vw]
                        overflow-y-auto bg-paper shadow-xl"
