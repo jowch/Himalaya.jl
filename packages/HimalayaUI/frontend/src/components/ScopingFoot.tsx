@@ -15,7 +15,7 @@ interface Props {
 export function ScopingFoot({ flagCount, memberCount, keyLabel, canBuild, onBuild }: Props): JSX.Element {
   const ready = flagCount === 0;
   const stateText = ready
-    ? `All ${memberCount} values confirmed — ready to build`
+    ? `All ${memberCount} values confirmed, ready to build`
     : `${flagCount} value${flagCount === 1 ? "" : "s"} to check before you can build`;
   return (
     <div className="mt-6 flex items-center justify-between gap-5 border-t border-hair pt-4">
@@ -31,7 +31,7 @@ export function ScopingFoot({ flagCount, memberCount, keyLabel, canBuild, onBuil
           {stateText}
         </div>
         <div className="max-w-[42ch] text-[10.5px] text-ink-faint">
-          Confirming records the {keyLabel} on every sample — the next series that needs it already knows.
+          Confirming records the {keyLabel} on every sample; the next series that needs it already knows.
         </div>
       </div>
       <button

@@ -31,7 +31,7 @@ export function ScopingAutogroupCard({ memberCount, keyLabel, flagCount }: Props
       <p className="text-xs leading-relaxed text-ink-soft">
         You selected <b className="font-semibold text-ink">{memberCount} samples</b>. Himalaya
         grouped them from their names and read the order from{" "}
-        <b className="font-semibold text-ink">{keyLabel}</b> — {flagPhrase}.
+        <b className="font-semibold text-ink">{keyLabel}</b>: {flagPhrase}.
       </p>
     </div>
   );

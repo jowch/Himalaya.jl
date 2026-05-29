@@ -308,7 +308,7 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
             <div className="overflow-hidden rounded-lg border border-hair bg-plate">
               {inCall.length === 0 ? (
                 <div data-testid="phase-call-empty" className="px-4 py-4 text-xs text-ink-faint">
-                  No phase assigned — every peak is unindexed. Check a candidate below.
+                  No phase assigned; every peak is unindexed. Check a candidate below.
                 </div>
               ) : (
                 <>
@@ -350,7 +350,7 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
               </div>
             )}
             <p className="text-[11px] leading-[1.55] text-ink-faint">
-              Check every phase that is present — a sample can hold more than one.
+              Check every phase that is present; a sample can hold more than one.
               Candidates that explain the same peaks swap; independent phases coexist.
             </p>
           </div>
