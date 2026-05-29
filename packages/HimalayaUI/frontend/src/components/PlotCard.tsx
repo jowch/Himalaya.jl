@@ -9,7 +9,7 @@ import {
 import { useAutoPickExposure, noUsableExposureState } from "../hooks/useAutoPickExposure";
 import { TraceViewer } from "./TraceViewer";
 import { NoUsableExposureNotice } from "./NoUsableExposureNotice";
-import { Card, HintText } from "./ui";
+import { HintText } from "./ui";
 import { SegmentedControl } from "./ui/SegmentedControl";
 import { FigureExportControls } from "./FigureExportControls";
 import { buildTraceExportSpec } from "../lib/figure-export/adapters/traceAdapter";
@@ -360,9 +360,22 @@ export function PlotCard({ headerSlot }: PlotCardProps = {}): JSX.Element {
   // focus variant it is the single elevated object (Card elevated). Non-focus
   // consumers stay an unstyled flow container (no plate, no bg) — gated on
   // headerSlot exactly as before.
+  //
+  // Implementation note: we keep the outer element a stable <div> across both
+  // branches so React's reconciler never unmounts the element when focusHeader
+  // loads (a function-component ↔ intrinsic-element swap would briefly remove
+  // data-testid="plot-card" from the DOM, breaking the layout integration test).
+  // The `card` class is applied directly to the div; Card is not used here.
   const layout = "flex flex-col h-full min-h-0 overflow-hidden";
-  const inner = (
-    <>
+  const outerClass = headerSlot
+    ? `card ${layout}`
+    : layout;
+  return (
+    <div
+      data-testid="plot-card"
+      className={outerClass}
+      {...(headerSlot ? { "data-elevated": "true" } : {})}
+    >
       <TitleStrip
         {...(headerSlot ? { headerSlot } : {})}
         experimentName={experimentName}
@@ -398,15 +411,6 @@ export function PlotCard({ headerSlot }: PlotCardProps = {}): JSX.Element {
           hoveredIndex={hoveredIndex}
         />
       )}
-    </>
-  );
-  return headerSlot ? (
-    <Card elevated data-testid="plot-card" className={layout}>
-      {inner}
-    </Card>
-  ) : (
-    <div data-testid="plot-card" className={layout}>
-      {inner}
     </div>
   );
 }
