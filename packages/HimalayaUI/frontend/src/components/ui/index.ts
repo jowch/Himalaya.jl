@@ -14,3 +14,5 @@ export { PhaseStrip } from "./PhaseStrip";
 export type { PhaseSegment, PhaseStripSize, PhaseStripProps } from "./PhaseStrip";
 export { ModalShell } from "./ModalShell";
 export type { ModalSize, ModalAlign, ModalVariant, ModalShellProps } from "./ModalShell";
+export { IconButton } from "./IconButton";
+export type { IconButtonTone } from "./IconButton";

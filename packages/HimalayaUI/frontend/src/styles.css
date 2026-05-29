@@ -286,6 +286,20 @@
                       line-height: 1.4; color: var(--color-ink); }
   .text-data-strong { font-family: var(--font-mono); font-size: var(--text-sm);
                       line-height: 1.4; font-weight: 600; }
+
+  /* Icon-only buttons keep a compact visible box but expand the pointer/touch
+     target to >=44px (WCAG 2.5.5) via a centered overlay, so dense chip rows
+     do not balloon. The overlay is transparent and pointer-events:auto so it
+     forwards clicks to the button. */
+  .icon-button::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 44px;
+    height: 44px;
+    transform: translate(-50%, -50%);
+  }
 }
 
 /* Boneyard skeleton: slow pulse keeps the loading state subtle */
