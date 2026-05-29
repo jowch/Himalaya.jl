@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { SegmentedControl } from "../components/ui/SegmentedControl";
 import { Skeleton } from "boneyard-js/react";
 import { useSeriesList } from "../queries";
 import { SeriesFolioCard } from "../components/SeriesFolioCard";
@@ -130,22 +131,14 @@ export function SeriesFolioPage(): JSX.Element {
         <span className="ml-auto text-[10.5px] font-bold uppercase tracking-[0.07em] text-ink-faint">
           Sort
         </span>
-        <div className="flex overflow-hidden rounded-md border border-hair-strong">
-          {SORT_OPTIONS.map((s) => (
-            <button
-              key={s.value}
-              type="button"
-              data-testid={`series-folio-sort-${s.value}`}
-              aria-pressed={sort === s.value}
-              onClick={() => setSort(s.value)}
-              className={`px-3 py-1.5 text-[11.5px] font-semibold ${
-                sort === s.value ? "bg-ink text-paper" : "text-ink-faint"
-              }`}
-            >
-              {s.label}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl<FolioSort>
+          aria-label="Sort series"
+          role="group"
+          variant="bordered"
+          options={SORT_OPTIONS.map((s) => ({ value: s.value, label: s.label, testId: `series-folio-sort-${s.value}` }))}
+          value={sort}
+          onChange={setSort}
+        />
       </div>
 
       {query.isError ? (
