@@ -142,12 +142,14 @@ function reingest!(db::SQLite.DB, experiment_id::Int, exp_dir::String)
         end
     end
     # Re-warm the thumbnail disk cache AFTER the ingest tx commits (issue #261).
+    # Only on a real ingest (`:ok`): the `:no_manifest` early-return leaves the
+    # exposure set untouched, so re-warming there is wasted work on a non-update.
     # `overwrite = true`: the `image_version_token` mtime granularity is whole
     # seconds, so a same-second re-ingest of a rewritten TIFF would otherwise
     # reuse the now-stale cached PNG. Re-rendering is free here (prewarm renders
     # regardless), so unconditional replace closes that hole. FS-only + outside
     # the write lock — no DB contention. Skips missing TIFFs with a log.
-    prewarm_thumbnails!(db; overwrite = true)
+    res.status === :ok && prewarm_thumbnails!(db; overwrite = true)
     res
 end
 
