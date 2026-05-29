@@ -48,6 +48,13 @@ function register_exposures_routes!()
         params   = HTTP.queryparams(req)
         is_thumb = get(params, "thumb", "0") == "1"
 
+        # Compute the cache/version token ONCE here, while the source is
+        # guaranteed present (the isfile guard above), and thread it into both
+        # the thumb cache key and the X-Image-Version response header. Computing
+        # it once avoids a second mtime syscall and keeps the disk-cache key
+        # identical to the header the client already cached against.
+        vtoken = image_version_token(ip)
+
         bytes = if is_thumb
             # Thumb path: downscale-before-lognormalize (issue #261, H.1) behind a
             # disk cache keyed on `image_version_token`. `ensure_thumb_cached`
@@ -56,7 +63,7 @@ function register_exposures_routes!()
             # full-resolution `load_and_lognormalize` is deliberately NOT called on
             # this branch — the thumb variant runs the percentile math on the
             # already-downscaled raster (~250x fewer pixels).
-            ensure_thumb_cached(db, id, path)
+            ensure_thumb_cached(db, id, path; token = vtoken)
         else
             # Full path: run the percentile-clip math at full resolution (the
             # science-quality view), THEN cap the rendered raster at 1536px
@@ -72,7 +79,6 @@ function register_exposures_routes!()
         # URL itself is the cache key. We can mark responses immutable and
         # cache them aggressively — when the underlying TIFF or our
         # processing code changes, the token (and therefore the URL) changes.
-        vtoken = image_version_token(ip)
         HTTP.Response(200,
             ["Content-Type"    => "image/png",
              "Cache-Control"   => "private, max-age=31536000, immutable",

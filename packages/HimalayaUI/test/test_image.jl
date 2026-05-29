@@ -96,14 +96,17 @@ end
             @test !isfile(cpath)
 
             # Miss: renders + writes the cache file.
-            b1 = HimalayaUI.ensure_thumb_cached(disk, 42, path)
+            b1 = HimalayaUI.ensure_thumb_cached(disk, 42, path; token=token)
             @test isfile(cpath)
             @test length(b1) > 100
 
             # Hit: serve from disk even after the SOURCE TIFF is gone — proves the
-            # second call read the cached file rather than re-rendering.
+            # second call read the cached file rather than re-rendering. The route
+            # computes the token while the source is present, so we pass the same
+            # `token` here (image_version_token() of a deleted file is "", which
+            # would compute the wrong key — exactly the resilience contract).
             rm(path; force=true)
-            b2 = HimalayaUI.ensure_thumb_cached(disk, 42, path)
+            b2 = HimalayaUI.ensure_thumb_cached(disk, 42, path; token=token)
             @test b2 == b1
         finally
             rm(path; force=true)
@@ -116,16 +119,19 @@ end
         disk = SQLite.DB(joinpath(tmp, "himalaya.db"))
         path = _make_detector_tiff(256)
         try
-            HimalayaUI.ensure_thumb_cached(disk, 9, path)
             token1 = HimalayaUI.image_version_token(path)
+            HimalayaUI.ensure_thumb_cached(disk, 9, path; token=token1)
             stale  = HimalayaUI.thumb_cache_path(disk, 9, token1)
             @test isfile(stale)
 
-            # Bump the source mtime into the future → a new token → a new key.
-            touch(path; mtime = time() + 5)
+            # Age the source mtime into the future so image_version_token yields a
+            # different token (the route's natural invalidator on a TIFF rewrite).
+            # Julia's `touch` has no mtime kwarg; shell out to `touch -t`.
+            future = Libc.strftime("%Y%m%d%H%M", time() + 120)
+            run(`touch -t $future $path`)
             token2 = HimalayaUI.image_version_token(path)
             @test token2 != token1
-            HimalayaUI.ensure_thumb_cached(disk, 9, path)
+            HimalayaUI.ensure_thumb_cached(disk, 9, path; token=token2)
             fresh = HimalayaUI.thumb_cache_path(disk, 9, token2)
             @test isfile(fresh)
             @test isfile(stale)            # stale entry left in place (bounded)

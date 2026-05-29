@@ -170,19 +170,28 @@ function _write_thumb_atomic(cache_path::String, bytes::Vector{UInt8})
 end
 
 """
-    ensure_thumb_cached(db, exposure_id, path; overwrite = false) -> Vector{UInt8}
+    ensure_thumb_cached(db, exposure_id, path; token = image_version_token(path), overwrite = false) -> Vector{UInt8}
 
 Return the thumbnail PNG bytes for `exposure_id`, reading the on-disk cache when
 present and rendering + persisting on a miss. On a `:memory:` DB (no cache dir)
 the thumbnail is rendered fresh and returned without a write.
+
+The cache key is `token` — by default `image_version_token(path)` (folds in
+`IMAGE_PROCESSING_VERSION` + the source TIFF's mtime). A cache HIT returns the
+stored bytes via a single `read`, NEVER re-touching the source TIFF — so the
+thumbnail still serves after the source is moved/deleted. Note callers MUST pass
+the token (or call while the source exists), because `image_version_token`
+returns `""` for a missing file: recomputing it lazily on a hit-after-delete
+would compute the WRONG key and miss the cached entry. The route and prewarm
+both compute the token while the guaranteed-present source is still on disk.
 
 `overwrite = true` forces a re-render + atomic replace even on a cache hit; the
 reingest prewarm uses it to close the same-second-mtime stale hole (the new
 bytes are produced regardless, so the rewrite is free).
 """
 function ensure_thumb_cached(db::SQLite.DB, exposure_id::Integer, path::String;
+                             token::AbstractString = image_version_token(path),
                              overwrite::Bool = false)
-    token = image_version_token(path)
     cache_path = thumb_cache_path(db, exposure_id, token)
 
     if cache_path !== nothing && !overwrite && isfile(cache_path)
