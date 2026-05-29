@@ -25,6 +25,10 @@ function renderRowRouted(sample: CorpusSample, initialPath = "/samples") {
             path="/samples/loupe/:sampleId"
             element={<div data-testid="loupe-stub" />}
           />
+          <Route
+            path="/sample/:sampleId"
+            element={<div data-testid="focus-stub" />}
+          />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -743,6 +747,30 @@ describe("ContactSheetRow — advertised affordances", () => {
     const thumb = await screen.findByTestId("exposure-thumb-1");
     fireEvent.doubleClick(thumb);
     expect(await screen.findByTestId("loupe-stub")).toBeInTheDocument();
+  });
+
+  // M1 on-ramp: the status cell is the corpus→focus door. The sample NAME
+  // stays identity (inert); the status cell ("Not indexed", or a phase chip
+  // once a call exists) is the click target that opens the indexing workspace
+  // at /sample/:id. This is the new representative-bridge door, not the
+  // resurrected dual-nav Index link, so it lives on the status, not the name.
+  it("navigates to the focus workspace when the status cell is clicked", async () => {
+    mockFetch({ "/api/samples/7/exposures": [] });
+    renderRowRouted(makeSample({ id: 7 }));
+    const cell = await screen.findByTestId("status-cell");
+    fireEvent.click(cell);
+    expect(await screen.findByTestId("focus-stub")).toBeInTheDocument();
+  });
+
+  // It must be a real <a href> (not a click-only div), so keyboard users get
+  // native focus + Enter activation and the row supports open-in-new-tab — the
+  // round-4 audit flagged inert click targets as the systemic a11y failure.
+  it("renders the status-cell door as a real link to /sample/:id", async () => {
+    mockFetch({ "/api/samples/7/exposures": [] });
+    renderRowRouted(makeSample({ id: 7 }));
+    const cell = await screen.findByTestId("status-cell");
+    expect(cell.tagName).toBe("A");
+    expect(cell).toHaveAttribute("href", "/sample/7");
   });
 
   // R3-S01 (#256, P1 a11y): the thumb root is a real <button>, so the contact
