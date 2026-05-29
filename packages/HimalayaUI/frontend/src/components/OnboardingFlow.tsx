@@ -1,9 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import * as api from "../api";
 import type { User } from "../api";
 import { useAppState } from "../state";
-import { Button } from "./ui";
-import { useFocusTrap } from "../hooks/useFocusTrap";
+import { Button, ModalShell } from "./ui";
 
 /**
  * OnboardingFlow — shown when no username is in persisted state.
@@ -142,11 +141,14 @@ export function OnboardingFlow(): JSX.Element | null {
   };
 
   return (
-    <div
-      data-testid="onboarding-overlay"
-      className="fixed inset-0 z-50 bg-[oklch(0.05_0_0/0.65)] backdrop-blur-sm
-                 flex items-center justify-center"
-      role="presentation"
+    <ModalShell
+      open
+      onClose={closeTutorial}
+      size="sm"
+      closeOnEsc={false}
+      closeOnOutsideClick={false}
+      testId="onboarding-overlay"
+      aria-label="Onboarding"
     >
       {phase === "name" && (
         <NameStep
@@ -172,7 +174,7 @@ export function OnboardingFlow(): JSX.Element | null {
           onKeyDown={onTutorialKey}
         />
       )}
-    </div>
+    </ModalShell>
   );
 }
 
@@ -197,8 +199,6 @@ function NameStep({
   newHandle, onNewHandle, newFirst, onNewFirst, newLast, onNewLast,
   error, onSubmit,
 }: NameStepProps): JSX.Element {
-  const dialogRef = useRef<HTMLDivElement>(null);
-  useFocusTrap(dialogRef, true);
   const inputClass =
     "w-full bg-paper border border-hair-strong rounded-md px-2 py-1 " +
     "focus:outline focus:outline-1 focus:outline-accent focus:border-accent";
@@ -219,12 +219,8 @@ function NameStep({
 
   return (
     <div
-      ref={dialogRef}
       data-testid="onboarding-name"
-      role="dialog"
-      aria-modal="true"
-      className="bg-plate border border-hair-strong rounded-lg p-6
-                 min-w-[360px] max-w-[480px] flex flex-col gap-4"
+      className="p-6 flex flex-col gap-4"
       onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); onSubmit(); } }}
     >
       <h2 className="text-base font-semibold text-ink">Who are you?</h2>
@@ -310,20 +306,14 @@ interface TutorialStepProps {
 function TutorialStep({
   slideIdx, onPrev, onNext, onDone, onKeyDown,
 }: TutorialStepProps): JSX.Element {
-  const dialogRef = useRef<HTMLDivElement>(null);
-  useFocusTrap(dialogRef, true);
   const slide = TUTORIAL_SLIDES[slideIdx]!;
   const isLast = slideIdx === TUTORIAL_SLIDES.length - 1;
   return (
     <div
-      ref={dialogRef}
       data-testid="onboarding-tutorial"
-      role="dialog"
-      aria-modal="true"
       tabIndex={-1}
       onKeyDown={onKeyDown}
-      className="bg-plate border border-hair-strong rounded-lg p-7
-                 min-w-[420px] max-w-[520px] flex flex-col gap-4 outline-0"
+      className="p-7 flex flex-col gap-4 outline-0"
     >
       <div className="text-xs uppercase tracking-widest text-ink-faint">
         Welcome · {slideIdx + 1} of {TUTORIAL_SLIDES.length}
