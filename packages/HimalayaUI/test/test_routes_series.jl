@@ -132,6 +132,49 @@ end
         end
     end
 
+    @testset "series_listing — spans_experiments + ordering_variable (M2)" begin
+        mktempdir() do tmp
+            db = _series_test_db(tmp)
+            # A second experiment + sample + exposure so a series can span
+            # beamtimes (valid because q is absolute — redesign architecture #1).
+            DBInterface.execute(db, """INSERT INTO experiments
+                (id, name, path, data_dir, analysis_dir)
+                VALUES (20, 'exp2', '/y', '/y/d', '/y/a')""")
+            DBInterface.execute(db,
+                "INSERT INTO samples (id, experiment_id, name) VALUES (200, 20, 'sB')")
+            DBInterface.execute(db,
+                "INSERT INTO exposures (id, sample_id, filename, selected) VALUES (2000, 200, 'JC900', 1)")
+
+            snap = "{\"effective_peaks\":[],\"confirmed_index\":null,\"analysis_inputs_hash\":null}"
+
+            # Series 1: single experiment (member in exp 10 only) + ordering var.
+            DBInterface.execute(db, """INSERT INTO series (id, title, state, ordering_variable)
+                VALUES (1, 'single', 'committed', 'temperature')""")
+            DBInterface.execute(db, """INSERT INTO series_members
+                (series_id, exposure_id, display_order, snapshot, created_at)
+                VALUES (1, 1000, 0, '$snap', '2026-05-01T00:00:00.000Z')""")
+
+            # Series 2: spans exp 10 + exp 20 (a member in each), no ordering var.
+            DBInterface.execute(db, """INSERT INTO series (id, title, state)
+                VALUES (2, 'cross', 'committed')""")
+            DBInterface.execute(db, """INSERT INTO series_members
+                (series_id, exposure_id, display_order, snapshot, created_at)
+                VALUES (2, 1000, 0, '$snap', '2026-05-01T00:00:00.000Z')""")
+            DBInterface.execute(db, """INSERT INTO series_members
+                (series_id, exposure_id, display_order, snapshot, created_at)
+                VALUES (2, 2000, 1, '$snap', '2026-05-01T00:00:00.000Z')""")
+
+            by_id = Dict(r[:id] => r for r in HimalayaUI.series_listing(db))
+            # Single-experiment series: spans_experiments false; var round-trips.
+            @test by_id[1][:spans_experiments] == false
+            @test by_id[1][:ordering_variable] == "temperature"
+            # Cross-experiment series: members resolve to 2 distinct experiments.
+            @test by_id[2][:spans_experiments] == true
+            @test by_id[2][:ordering_variable] === nothing
+            close(db)
+        end
+    end
+
     @testset "GET /api/series/{id}/forks" begin
         mktempdir() do tmp
             db = _series_test_db(tmp)

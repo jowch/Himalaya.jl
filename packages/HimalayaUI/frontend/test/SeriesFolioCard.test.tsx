@@ -22,7 +22,8 @@ function summary(over: Partial<SeriesSummary> = {}): SeriesSummary {
     view_show_peak_labels: null, last_event_at: "2026-05-25 10:00:00",
     author_username: "jc", member_count: 3,
     member_phases: ["Pn3m", "Lamellar"], member_phase_count: 2,
-    has_stale_members: false, ...over,
+    has_stale_members: false, ordering_variable: null, spans_experiments: false,
+    ...over,
   };
 }
 

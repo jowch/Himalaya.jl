@@ -9,7 +9,8 @@ function summary(over: Partial<SeriesSummary> = {}): SeriesSummary {
     forked_at_hash: null, view_grouping_mode: null, view_show_peak_ticks: null,
     view_show_peak_labels: null, last_event_at: "2026-05-02 10:00:00",
     author_username: "jc", member_count: 3, member_phases: ["Pn3m"],
-    member_phase_count: 1, has_stale_members: false, ...over,
+    member_phase_count: 1, has_stale_members: false,
+    ordering_variable: null, spans_experiments: false, ...over,
   };
 }
 
@@ -34,9 +35,14 @@ describe("filterSort", () => {
     expect(out.map((r) => r.id)).toEqual([2]);
   });
 
-  it("'cross' filter yields nothing (no cross-experiment data on the listing)", () => {
-    const rows = [summary({ id: 1 }), summary({ id: 2 })];
-    expect(filterSort(rows, { search: "", filter: "cross", sort: "recent" })).toHaveLength(0);
+  it("'cross' filter keeps only series that span more than one experiment", () => {
+    const rows = [
+      summary({ id: 1, spans_experiments: false }),
+      summary({ id: 2, spans_experiments: true }),
+      summary({ id: 3, spans_experiments: true }),
+    ];
+    const out = filterSort(rows, { search: "", filter: "cross", sort: "recent" });
+    expect(out.map((r) => r.id)).toEqual([2, 3]);
   });
 
   it("'size' sort orders by member_count descending", () => {
@@ -55,11 +61,22 @@ describe("filterSort", () => {
     expect(out.map((r) => r.id)).toEqual([3, 1, 2]);
   });
 
-  it("'variable' sort orders by title (the only stable listing text key)", () => {
+  it("'variable' sort orders by the recipe ordering variable, nulls last", () => {
     const rows = [
-      summary({ id: 1, title: "Charlie" }),
-      summary({ id: 2, title: "Alpha" }),
-      summary({ id: 3, title: "Bravo" }),
+      summary({ id: 1, ordering_variable: "temperature", title: "Z" }),
+      summary({ id: 2, ordering_variable: null, title: "A" }),
+      summary({ id: 3, ordering_variable: "dose", title: "M" }),
+    ];
+    const out = filterSort(rows, { search: "", filter: "all", sort: "variable" });
+    // dose < temperature (by variable); the null-variable series sorts last.
+    expect(out.map((r) => r.id)).toEqual([3, 1, 2]);
+  });
+
+  it("'variable' sort tiebreaks by title when the variable matches", () => {
+    const rows = [
+      summary({ id: 1, ordering_variable: "dose", title: "Charlie" }),
+      summary({ id: 2, ordering_variable: "dose", title: "Alpha" }),
+      summary({ id: 3, ordering_variable: "dose", title: "Bravo" }),
     ];
     const out = filterSort(rows, { search: "", filter: "all", sort: "variable" });
     expect(out.map((r) => r.id)).toEqual([2, 3, 1]);

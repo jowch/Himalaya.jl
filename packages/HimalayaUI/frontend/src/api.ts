@@ -776,6 +776,11 @@ export interface SeriesSummary {
   /** True distinct-phase total — for a `+N more` overflow if shown. */
   member_phase_count: number;
   has_stale_members: boolean;
+  /** Recipe ordering variable (e.g. "LL37 : lipid ratio"); null until scoped. */
+  ordering_variable: string | null;
+  /** True when the members resolve to >1 distinct `samples.experiment_id`.
+   *  Valid because q is absolute (Å⁻¹) — series may legitimately span beamtimes. */
+  spans_experiments: boolean;
 }
 
 /** The recipe membership — one `series_samples` row. */
