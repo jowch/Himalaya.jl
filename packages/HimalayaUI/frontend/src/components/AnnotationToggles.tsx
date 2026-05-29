@@ -47,10 +47,10 @@ function ToggleButton({
       onClick={onToggle}
       className={[
         "px-1.5 py-0.5 rounded text-xs transition-colors",
-        "border border-transparent hover:border-border",
+        "border border-transparent hover:border-hair-strong",
         active
-          ? "bg-bg-subtle text-fg"
-          : "text-fg-dim hover:text-fg hover:bg-bg-hover",
+          ? "bg-paper-sunk text-ink"
+          : "text-ink-faint hover:text-ink hover:bg-paper-sunk",
       ].join(" ")}
     >
       {label}

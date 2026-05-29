@@ -82,14 +82,14 @@ export function ConflictModalShell({
         aria-labelledby="conflict-title"
         aria-describedby="conflict-subtitle"
         className="w-[min(820px,calc(100vw-48px))] max-h-[80vh]
-                   bg-bg-elevated border border-border rounded-xl shadow-2xl
+                   bg-plate border border-hair-strong rounded-xl shadow-2xl
                    flex flex-col overflow-hidden anim-pal-scale"
       >
-        <header className="px-5 py-4 border-b border-border">
-          <h2 id="conflict-title" className="text-fg text-lg font-medium">
+        <header className="px-5 py-4 border-b border-hair-strong">
+          <h2 id="conflict-title" className="text-ink text-lg font-medium">
             {heading}
           </h2>
-          <p id="conflict-subtitle" className="text-fg-muted text-sm mt-1">
+          <p id="conflict-subtitle" className="text-ink-soft text-sm mt-1">
             {subtitle}
           </p>
         </header>
@@ -99,13 +99,13 @@ export function ConflictModalShell({
           <Panel {...localPanel} />
         </div>
 
-        <footer className="flex items-center gap-2 px-5 py-3 border-t border-border">
+        <footer className="flex items-center gap-2 px-5 py-3 border-t border-hair-strong">
           <button
             type="button"
             data-testid="conflict-discard"
             onClick={onDiscard}
-            className="px-3 py-1.5 rounded border border-border text-fg text-sm
-                       hover:bg-bg-hover"
+            className="px-3 py-1.5 rounded border border-hair-strong text-ink text-sm
+                       hover:bg-paper-sunk"
           >
             {discardLabel}
           </button>
@@ -117,7 +117,7 @@ export function ConflictModalShell({
             onClick={onOverwrite}
             disabled={overwriteBusy}
             className="px-3 py-1.5 rounded border border-accent bg-accent
-                       text-bg text-sm disabled:opacity-60"
+                       text-paper text-sm disabled:opacity-60"
           >
             {overwriteBusy ? "Saving…" : "Overwrite with mine"}
           </button>
@@ -133,27 +133,27 @@ function Panel({
   return (
     <section
       data-testid={testId}
-      className="border border-border rounded-md p-3 flex flex-col gap-2 min-w-0"
+      className="border border-hair-strong rounded-md p-3 flex flex-col gap-2 min-w-0"
     >
-      <header className="text-xs uppercase tracking-wide text-fg-dim">
+      <header className="text-xs uppercase tracking-wide text-ink-faint">
         {label}
       </header>
-      <div className="text-fg font-medium truncate" data-testid={`${testId}-title`}>
+      <div className="text-ink font-medium truncate" data-testid={`${testId}-title`}>
         {title || "(no title)"}
       </div>
-      <div className="text-fg-muted text-sm" data-testid={`${testId}-members`}>
+      <div className="text-ink-soft text-sm" data-testid={`${testId}-members`}>
         {memberCount} {memberCount === 1 ? "member" : "members"}
       </div>
       {description && (
         <div
-          className="text-fg-muted text-sm whitespace-pre-wrap"
+          className="text-ink-soft text-sm whitespace-pre-wrap"
           data-testid={`${testId}-description`}
         >
           {description}
         </div>
       )}
       {updatedAt && (
-        <div className="text-fg-dim text-xs mt-auto" data-testid={`${testId}-updated`}>
+        <div className="text-ink-faint text-xs mt-auto" data-testid={`${testId}-updated`}>
           Updated {updatedAt}
         </div>
       )}

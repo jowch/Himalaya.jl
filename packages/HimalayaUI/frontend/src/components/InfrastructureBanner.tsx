@@ -42,8 +42,8 @@ export function InfrastructureBanner(): JSX.Element | null {
 
   const stateAttr = stuck ? "stuck" : "showing";
   const tintClass = stuck
-    ? "bg-bg-elevated border-error text-fg"
-    : "bg-bg-elevated border-warning text-fg";
+    ? "bg-plate border-error text-ink"
+    : "bg-plate border-warning text-ink";
 
   return (
     <div
@@ -62,7 +62,7 @@ export function InfrastructureBanner(): JSX.Element | null {
           <button
             type="button"
             onClick={() => window.location.reload()}
-            className="rounded-md border border-error px-2 py-0.5 text-fg hover:bg-bg-hover"
+            className="rounded-md border border-error px-2 py-0.5 text-ink hover:bg-paper-sunk"
           >
             Refresh
           </button>

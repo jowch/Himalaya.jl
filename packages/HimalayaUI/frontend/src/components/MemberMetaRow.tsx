@@ -284,7 +284,7 @@ export function MemberMetaRow(props: MemberMetaRowProps): JSX.Element {
         top: `${top}px`,
         height: `${height}px`,
       }}
-      className="flex flex-col gap-0.5 px-2 py-1 text-xs hover:bg-bg-elevated/40 cursor-pointer
+      className="flex flex-col gap-0.5 px-2 py-1 text-xs hover:bg-plate/40 cursor-pointer
                  outline-0 focus-visible:ring-1 focus-visible:ring-accent"
     >
       {/* Primary single line — the grab-anywhere collapse/expand +
@@ -309,7 +309,7 @@ export function MemberMetaRow(props: MemberMetaRowProps): JSX.Element {
           ? { onDragStart: onGripDragStart }
           : {})}
       >
-        <span aria-hidden="true" className="text-fg-dim shrink-0 select-none">
+        <span aria-hidden="true" className="text-ink-faint shrink-0 select-none">
           {expanded ? "▾" : "▸"}
         </span>
         {mode === "edit" && (
@@ -319,7 +319,7 @@ export function MemberMetaRow(props: MemberMetaRowProps): JSX.Element {
             draggable
             // The actual drag-orchestration lives in the parent gutter
             // (Task 7.3) — this is the visible affordance.
-            className="cursor-grab select-none px-1 text-fg-dim hover:text-fg"
+            className="cursor-grab select-none px-1 text-ink-faint hover:text-ink"
             title="Drag to reorder"
             onClick={(e) => e.stopPropagation()}
             {...(onGripDragStart ? { onDragStart: onGripDragStart } : {})}
@@ -329,7 +329,7 @@ export function MemberMetaRow(props: MemberMetaRowProps): JSX.Element {
         )}
         <span
           data-testid="member-meta-label"
-          className="truncate min-w-0 max-w-[16ch] text-fg"
+          className="truncate min-w-0 max-w-[16ch] text-ink"
           title={displayLabel}
         >
           {displayLabel}
@@ -347,26 +347,26 @@ export function MemberMetaRow(props: MemberMetaRowProps): JSX.Element {
             >
               {ci.phase}
             </span>
-            <span className="text-fg-muted tabular-nums shrink-0">
-              <span className="text-fg-dim">d=</span>
+            <span className="text-ink-soft tabular-nums shrink-0">
+              <span className="text-ink-faint">d=</span>
               {formatLattice(ci.lattice_d)}
             </span>
-            <span className="text-fg-muted tabular-nums shrink-0">
-              <span className="text-fg-dim">R²=</span>
+            <span className="text-ink-soft tabular-nums shrink-0">
+              <span className="text-ink-faint">R²=</span>
               {formatR2(ci.r_squared)}
             </span>
             {isCubic && (
               <span
                 data-testid="member-meta-ngc"
-                className="text-fg-muted tabular-nums shrink-0"
+                className="text-ink-soft tabular-nums shrink-0"
               >
-                <span className="text-fg-dim">κ=</span>
+                <span className="text-ink-faint">κ=</span>
                 {formatKappa(ci.ngc)}
               </span>
             )}
           </>
         ) : (
-          <span className="text-fg-dim italic">no index</span>
+          <span className="text-ink-faint italic">no index</span>
         )}
         {member.is_stale && (
           <span
@@ -400,7 +400,7 @@ export function MemberMetaRow(props: MemberMetaRowProps): JSX.Element {
                 placeholder="Label override"
                 defaultValue={member.label_override ?? ""}
                 onBlur={(e) => onLabelCommit(e.currentTarget.value)}
-                className="bg-bg border border-border rounded px-1 py-0.5 text-fg text-xs
+                className="bg-paper border border-hair-strong rounded px-1 py-0.5 text-ink text-xs
                            outline-0 focus:border-accent w-[12ch]"
               />
               <select
@@ -409,7 +409,7 @@ export function MemberMetaRow(props: MemberMetaRowProps): JSX.Element {
                 onChange={(e) =>
                   onNormChange(e.currentTarget.value as DraftMemberNormalization)
                 }
-                className="bg-bg border border-border rounded px-1 py-0.5 text-fg text-xs"
+                className="bg-paper border border-hair-strong rounded px-1 py-0.5 text-ink text-xs"
               >
                 {NORMALIZATION_OPTIONS.map((n) => (
                   <option key={n} value={n}>
@@ -417,25 +417,25 @@ export function MemberMetaRow(props: MemberMetaRowProps): JSX.Element {
                   </option>
                 ))}
               </select>
-              <span className="text-fg-dim">q∈[</span>
+              <span className="text-ink-faint">q∈[</span>
               <QWindowInput
                 value={member.q_window_min ?? null}
                 testId="member-meta-qwindow-min"
                 onCommit={onQWindowMin}
               />
-              <span className="text-fg-dim">,</span>
+              <span className="text-ink-faint">,</span>
               <QWindowInput
                 value={member.q_window_max ?? null}
                 testId="member-meta-qwindow-max"
                 onCommit={onQWindowMax}
               />
-              <span className="text-fg-dim">]</span>
+              <span className="text-ink-faint">]</span>
               {member.color_override != null && (
                 <button
                   type="button"
                   data-testid="member-meta-reset-color"
                   onClick={onResetColor}
-                  className="text-fg-dim hover:text-fg text-xs underline"
+                  className="text-ink-faint hover:text-ink text-xs underline"
                 >
                   Reset color
                 </button>
@@ -447,25 +447,25 @@ export function MemberMetaRow(props: MemberMetaRowProps): JSX.Element {
               metadata, plus the color-picker swatch grid in edit mode. */}
           <div
             data-testid="member-meta-detail"
-            className="absolute z-10 left-2 top-full mt-1 bg-bg-elevated border border-border
+            className="absolute z-10 left-2 top-full mt-1 bg-plate border border-hair-strong
                        rounded shadow-md p-2 text-xs flex flex-col gap-2 min-w-[180px]"
             onClick={(e) => e.stopPropagation()}
           >
             <div>
-              <span className="text-fg-dim">Peaks: </span>
+              <span className="text-ink-faint">Peaks: </span>
               <span className="tabular-nums">
                 {member.snapshot?.effective_peaks?.length ?? 0}
               </span>
             </div>
             {ci !== null && (
               <div>
-                <span className="text-fg-dim">Index id: </span>
+                <span className="text-ink-faint">Index id: </span>
                 <span className="tabular-nums">{ci.id}</span>
               </div>
             )}
             {member.exposure_id !== null && (
               <div>
-                <span className="text-fg-dim">Exposure: </span>
+                <span className="text-ink-faint">Exposure: </span>
                 <span className="tabular-nums">#{member.exposure_id}</span>
               </div>
             )}
@@ -522,7 +522,7 @@ function ColorPickerSwatchGrid(
             style={{ background: c }}
             className={
               "h-5 w-5 rounded-sm border " +
-              (active ? "border-fg ring-1 ring-fg" : "border-border hover:border-fg-muted")
+              (active ? "border-ink ring-1 ring-ink" : "border-hair-strong hover:border-ink-soft")
             }
           />
         );
@@ -577,8 +577,8 @@ function QWindowInput({ value, testId, onCommit }: QWindowInputProps): JSX.Eleme
           (e.currentTarget as HTMLInputElement).blur();
         }
       }}
-      className="w-[60px] bg-bg border border-border rounded px-1 py-0.5
-                 text-fg text-xs tabular-nums text-right
+      className="w-[60px] bg-paper border border-hair-strong rounded px-1 py-0.5
+                 text-ink text-xs tabular-nums text-right
                  outline-0 focus:border-accent"
     />
   );

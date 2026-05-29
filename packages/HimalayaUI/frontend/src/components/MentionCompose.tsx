@@ -85,7 +85,7 @@ export function MentionCompose({ disabled, onSubmit }: MentionComposeProps): JSX
   };
 
   return (
-    <div ref={wrapRef} className="flex-shrink-0 border-t border-border bg-bg px-2.5 py-2 relative">
+    <div ref={wrapRef} className="flex-shrink-0 border-t border-hair-strong bg-paper px-2.5 py-2 relative">
       {pickerQuery !== null && (
         <MentionPicker
           query={pickerQuery}
@@ -100,17 +100,17 @@ export function MentionCompose({ disabled, onSubmit }: MentionComposeProps): JSX
         onKeyDown={onKeyDown}
         placeholder={disabled ? "Sign in to post…" : "Write a note… (@ to mention)"}
         data-testid="chat-compose"
-        className="w-full resize-none bg-transparent text-fg text-base font-sans
-                   placeholder:text-fg-dim outline-0 border-0"
+        className="w-full resize-none bg-transparent text-ink text-base font-sans
+                   placeholder:text-ink-faint outline-0 border-0"
         style={{ height: "40px" }}
       />
-      <div className="flex items-center justify-between text-xs text-fg-dim">
+      <div className="flex items-center justify-between text-xs text-ink-faint">
         <span>
-          <kbd className="border border-border rounded px-1">⏎</kbd> send
+          <kbd className="border border-hair-strong rounded px-1">⏎</kbd> send
           {" · "}
-          <kbd className="border border-border rounded px-1">⇧⏎</kbd> newline
+          <kbd className="border border-hair-strong rounded px-1">⇧⏎</kbd> newline
           {" · "}
-          <kbd className="border border-border rounded px-1">@</kbd> mention
+          <kbd className="border border-hair-strong rounded px-1">@</kbd> mention
         </span>
       </div>
     </div>

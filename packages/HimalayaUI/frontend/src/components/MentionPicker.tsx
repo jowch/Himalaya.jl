@@ -158,15 +158,15 @@ export function MentionPicker({ query, onSelect, onDismiss }: MentionPickerProps
       ref={listRef}
       role="listbox"
       className="absolute bottom-full left-0 right-0 mb-1 z-20
-                 bg-bg-elevated border border-border rounded-lg overflow-hidden shadow-xl"
+                 bg-plate border border-hair-strong rounded-lg overflow-hidden shadow-xl"
     >
-      <div className="px-3 py-1.5 border-b border-border bg-bg
-                      text-xs text-fg-dim flex justify-between">
+      <div className="px-3 py-1.5 border-b border-hair-strong bg-paper
+                      text-xs text-ink-faint flex justify-between">
         <span>@{query || "…"}</span>
-        <span className="text-fg-dim opacity-50">↑↓ navigate · Enter select · Esc dismiss</span>
+        <span className="text-ink-faint opacity-50">↑↓ navigate · Enter select · Esc dismiss</span>
       </div>
       {rows.length === 0 ? (
-        <div className="px-3 py-2 text-xs text-fg-dim">No results</div>
+        <div className="px-3 py-2 text-xs text-ink-faint">No results</div>
       ) : (
         <>
           <div
@@ -184,21 +184,21 @@ export function MentionPicker({ query, onSelect, onDismiss }: MentionPickerProps
                   aria-selected={i === activeIdx}
                   onClick={() => onSelect(rowToken(row))}
                   className={`px-3 py-1.5 cursor-pointer flex justify-between items-center text-sm
-                              ${i === activeIdx ? "bg-bg-hover" : "hover:bg-bg-hover"}`}
+                              ${i === activeIdx ? "bg-paper-sunk" : "hover:bg-paper-sunk"}`}
                 >
                   <span style={color ? { color } : undefined}>
                     {rowLabel(row)}
                   </span>
                   {meta && (
-                    <span className="text-xs text-fg-dim ml-2">{meta}</span>
+                    <span className="text-xs text-ink-faint ml-2">{meta}</span>
                   )}
                 </div>
               );
             })}
           </div>
           {rows.length > 5 && (
-            <div className="px-3 py-1 border-t border-border bg-bg
-                            text-[10px] text-fg-dim opacity-70 text-right">
+            <div className="px-3 py-1 border-t border-hair-strong bg-paper
+                            text-[10px] text-ink-faint opacity-70 text-right">
               {rows.length} matches · scroll or refine query
             </div>
           )}

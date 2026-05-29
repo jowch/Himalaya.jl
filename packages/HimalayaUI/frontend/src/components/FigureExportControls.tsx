@@ -133,13 +133,13 @@ export function FigureExportControls({
         title={copyTitle}
         disabled={copyDisabled}
         onClick={() => { void onCopy(); }}
-        className="px-1.5 py-0.5 rounded text-xs text-fg-dim hover:text-fg
-                   hover:bg-bg-hover border border-transparent hover:border-border
+        className="px-1.5 py-0.5 rounded text-xs text-ink-faint hover:text-ink
+                   hover:bg-paper-sunk border border-transparent hover:border-hair-strong
                    disabled:opacity-40 disabled:cursor-default"
       >
         Copy
       </button>
-      <span className="inline-flex items-stretch border border-border rounded overflow-hidden">
+      <span className="inline-flex items-stretch border border-hair-strong rounded overflow-hidden">
         <button
           type="button"
           data-testid="figure-export-download-png"
@@ -147,12 +147,12 @@ export function FigureExportControls({
           title={pngTitle}
           disabled={pngDisabled}
           onClick={() => { void onDownloadPng(); }}
-          className="px-1.5 py-0.5 text-xs text-fg-dim hover:text-fg hover:bg-bg-hover
+          className="px-1.5 py-0.5 text-xs text-ink-faint hover:text-ink hover:bg-paper-sunk
                      disabled:opacity-40 disabled:cursor-default"
         >
           Save
         </button>
-        <span className="w-px bg-border" />
+        <span className="w-px bg-hair-strong" />
         <button
           ref={triggerRef}
           type="button"
@@ -162,7 +162,7 @@ export function FigureExportControls({
           aria-expanded={menuOpen}
           disabled={downloadAnyDisabled}
           onClick={() => setMenuOpen((v) => !v)}
-          className="px-1 text-xs text-fg-dim hover:text-fg hover:bg-bg-hover
+          className="px-1 text-xs text-ink-faint hover:text-ink hover:bg-paper-sunk
                      disabled:opacity-40 disabled:cursor-default"
         >
           ▾
@@ -172,8 +172,8 @@ export function FigureExportControls({
         <div
           ref={panelRef}
           data-testid="figure-export-download-menu"
-          className="absolute z-50 top-full mt-1 right-0 min-w-[140px] card border border-border
-                     bg-bg-elevated shadow-lg p-1"
+          className="absolute z-50 top-full mt-1 right-0 min-w-[140px] card border border-hair-strong
+                     bg-plate shadow-lg p-1"
         >
           <button
             type="button"
@@ -181,7 +181,7 @@ export function FigureExportControls({
             disabled={!canPng}
             title={pngTitle}
             onClick={() => { void onDownloadPng(); }}
-            className="block w-full text-left px-2 py-1 text-xs text-fg hover:bg-bg-hover rounded
+            className="block w-full text-left px-2 py-1 text-xs text-ink hover:bg-paper-sunk rounded
                        disabled:opacity-40 disabled:cursor-default"
           >
             Download as PNG
@@ -190,7 +190,7 @@ export function FigureExportControls({
             type="button"
             data-testid="figure-export-download-menu-svg"
             onClick={onDownloadSvg}
-            className="block w-full text-left px-2 py-1 text-xs text-fg hover:bg-bg-hover rounded"
+            className="block w-full text-left px-2 py-1 text-xs text-ink hover:bg-paper-sunk rounded"
           >
             Download as SVG
           </button>

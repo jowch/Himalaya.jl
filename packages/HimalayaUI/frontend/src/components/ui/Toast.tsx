@@ -16,10 +16,10 @@ const DURATIONS: Record<ToastKind, number> = {
 
 const KIND_CLASS: Record<ToastKind, string> = {
   // Subtle elevated surface with a left-edge accent stripe matching the kind.
-  info:    "bg-bg-elevated border-accent text-fg",
-  success: "bg-bg-elevated border-success text-fg",
-  warning: "bg-bg-elevated border-warning text-fg",
-  error:   "bg-bg-elevated border-error text-fg",
+  info:    "bg-plate border-accent text-ink",
+  success: "bg-plate border-success text-ink",
+  warning: "bg-plate border-warning text-ink",
+  error:   "bg-plate border-error text-ink",
 };
 
 /**
@@ -92,7 +92,7 @@ export function ToastContainer(): JSX.Element {
             type="button"
             aria-label="Dismiss"
             onClick={() => dismiss(t.id)}
-            className="text-fg-muted hover:text-fg leading-none px-1"
+            className="text-ink-soft hover:text-ink leading-none px-1"
           >
             ×
           </button>

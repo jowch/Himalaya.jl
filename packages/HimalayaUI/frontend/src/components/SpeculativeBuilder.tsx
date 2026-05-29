@@ -121,19 +121,19 @@ export function SpeculativeBuilder({ exposureId, onClose }: SpeculativeBuilderPr
       <div
         ref={dialogRef}
         data-testid="speculative-builder"
-        className="bg-bg border border-border-soft rounded-xl shadow-xl w-full max-w-md flex flex-col gap-4 p-5 max-h-[90vh] overflow-y-auto"
+        className="bg-paper border border-hair rounded-xl shadow-xl w-full max-w-md flex flex-col gap-4 p-5 max-h-[90vh] overflow-y-auto"
         onClick={(e) => { e.stopPropagation(); }}
       >
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-fg">Speculative index</h2>
+          <h2 className="text-lg font-semibold text-ink">Speculative index</h2>
           <button
             onClick={onClose}
             aria-label="Close"
-            className="text-fg-dim hover:text-fg text-xl px-2 leading-none"
+            className="text-ink-faint hover:text-ink text-xl px-2 leading-none"
           >×</button>
         </div>
 
-        <p className="text-xs text-fg-dim">
+        <p className="text-xs text-ink-faint">
           Hand-build an index from a phase guess and an anchor peak. Best for sparse
           patterns where auto-analysis falls below the {""}
           <span className="font-mono">minpeaks</span> bar.
@@ -141,11 +141,11 @@ export function SpeculativeBuilder({ exposureId, onClose }: SpeculativeBuilderPr
 
         {/* Phase picker */}
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="spec-phase" className="text-xs text-fg-dim font-semibold">Phase</label>
+          <label htmlFor="spec-phase" className="text-xs text-ink-faint font-semibold">Phase</label>
           <select
             id="spec-phase"
             data-testid="spec-phase-select"
-            className="bg-bg-hover border border-border-soft rounded-md p-1.5 text-fg"
+            className="bg-paper-sunk border border-hair rounded-md p-1.5 text-ink"
             value={phase}
             onChange={(e) => { setPhase(e.target.value); }}
           >
@@ -157,13 +157,13 @@ export function SpeculativeBuilder({ exposureId, onClose }: SpeculativeBuilderPr
 
         {/* Anchor peak picker */}
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="spec-anchor" className="text-xs text-fg-dim font-semibold">
+          <label htmlFor="spec-anchor" className="text-xs text-ink-faint font-semibold">
             Anchor peak (q-value)
           </label>
           <select
             id="spec-anchor"
             data-testid="spec-anchor-select"
-            className="bg-bg-hover border border-border-soft rounded-md p-1.5 text-fg font-mono"
+            className="bg-paper-sunk border border-hair rounded-md p-1.5 text-ink font-mono"
             value={anchorPeakId ?? ""}
             onChange={(e) => { setAnchorPeakId(Number(e.target.value)); }}
           >
@@ -178,7 +178,7 @@ export function SpeculativeBuilder({ exposureId, onClose }: SpeculativeBuilderPr
 
         {/* Anchor ratio position */}
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="spec-ratio" className="text-xs text-fg-dim font-semibold">
+          <label htmlFor="spec-ratio" className="text-xs text-ink-faint font-semibold">
             Anchor ratio position (1 = first peak of the series)
           </label>
           <input
@@ -189,17 +189,17 @@ export function SpeculativeBuilder({ exposureId, onClose }: SpeculativeBuilderPr
             step={1}
             value={anchorRatio}
             onChange={(e) => { setAnchorRatio(Math.max(1, Number(e.target.value) || 1)); }}
-            className="bg-bg-hover border border-border-soft rounded-md p-1.5 text-fg font-mono w-24"
+            className="bg-paper-sunk border border-hair rounded-md p-1.5 text-ink font-mono w-24"
           />
         </div>
 
         {/* Snap preview */}
         <div className="flex flex-col gap-1.5">
-          <span className="text-xs text-fg-dim font-semibold">Predicted ratio positions</span>
+          <span className="text-xs text-ink-faint font-semibold">Predicted ratio positions</span>
           {anchorPeakId === null ? (
-            <p className="text-xs text-fg-dim italic">Pick an anchor peak to see predictions.</p>
+            <p className="text-xs text-ink-faint italic">Pick an anchor peak to see predictions.</p>
           ) : displaySnap === null && snapQ.isLoading ? (
-            <p className="text-xs text-fg-dim italic">Computing…</p>
+            <p className="text-xs text-ink-faint italic">Computing…</p>
           ) : snapQ.error ? (
             <p className="text-xs text-error">
               Snap failed: {snapQ.error instanceof Error ? snapQ.error.message : String(snapQ.error)}
@@ -209,12 +209,12 @@ export function SpeculativeBuilder({ exposureId, onClose }: SpeculativeBuilderPr
               {blocked && (
                 <p
                   data-testid="spec-snap-updating"
-                  className="text-xs text-fg-dim italic"
+                  className="text-xs text-ink-faint italic"
                 >
                   Updating to latest…
                 </p>
               )}
-              <ul className="flex flex-col gap-1 max-h-56 overflow-y-auto rounded-md border border-border-soft p-2">
+              <ul className="flex flex-col gap-1 max-h-56 overflow-y-auto rounded-md border border-hair p-2">
                 {(displaySnap ?? []).map((s) => {
                   const checked = s.is_anchor || (s.suggested_peak_id !== null && !!included[s.ratio_position]);
                   const disabled = s.is_anchor || s.suggested_peak_id === null;
@@ -234,8 +234,8 @@ export function SpeculativeBuilder({ exposureId, onClose }: SpeculativeBuilderPr
                         onChange={() => { toggleIncluded(s.ratio_position); }}
                         aria-label={`ratio position ${s.ratio_position}`}
                       />
-                      <span className="font-mono text-fg-muted w-10">r{s.ratio_position}</span>
-                      <span className="font-mono text-fg-dim w-24">
+                      <span className="font-mono text-ink-soft w-10">r{s.ratio_position}</span>
+                      <span className="font-mono text-ink-faint w-24">
                         ≈ q {s.predicted_q.toFixed(4)}
                       </span>
                       {s.is_anchor ? (
@@ -244,11 +244,11 @@ export function SpeculativeBuilder({ exposureId, onClose }: SpeculativeBuilderPr
                           anchor
                         </span>
                       ) : s.suggested_peak_id !== null ? (
-                        <span className="font-mono text-fg-muted truncate">
+                        <span className="font-mono text-ink-soft truncate">
                           snap q {s.suggested_q?.toFixed(4)} (Δ {dq}%)
                         </span>
                       ) : (
-                        <span className="text-fg-dim italic">no peak</span>
+                        <span className="text-ink-faint italic">no peak</span>
                       )}
                     </li>
                   );

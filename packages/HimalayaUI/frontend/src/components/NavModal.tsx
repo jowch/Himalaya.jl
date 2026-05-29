@@ -27,11 +27,11 @@ function navFixtureItems(items: { id: number; primary: string; secondary: string
           key={item.id}
           className={
             "w-full text-left px-3 py-2 flex flex-col gap-0.5 text-base " +
-            (idx === 0 ? "bg-bg-hover text-fg" : "text-fg")
+            (idx === 0 ? "bg-paper-sunk text-ink" : "text-ink")
           }
         >
           <span className="font-medium">{item.primary}</span>
-          <span className="text-fg-muted text-sm font-sans">{item.secondary}</span>
+          <span className="text-ink-soft text-sm font-sans">{item.secondary}</span>
         </div>
       ))}
     </>
@@ -217,11 +217,11 @@ export function NavModal(): JSX.Element | null {
         role="dialog"
         aria-modal="true"
         className="w-[min(640px,calc(100vw-48px))] max-h-[72vh]
-                   bg-bg-elevated border border-border rounded-xl shadow-2xl
+                   bg-plate border border-hair-strong rounded-xl shadow-2xl
                    flex flex-col overflow-hidden
                    anim-pal-scale"
       >
-        <div className="flex items-center gap-2 flex-wrap px-3 py-2.5 border-b border-border">
+        <div className="flex items-center gap-2 flex-wrap px-3 py-2.5 border-b border-hair-strong">
           {expChipLabel && (
             <Chip
               label={expChipLabel}
@@ -242,13 +242,13 @@ export function NavModal(): JSX.Element | null {
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={onInputKeyDown}
             placeholder={step === "experiment" ? "find experiment…" : "find sample…"}
-            className="flex-1 min-w-[120px] bg-transparent border-0 outline-0 text-fg
-                       placeholder:text-fg-dim font-sans text-base py-1"
+            className="flex-1 min-w-[120px] bg-transparent border-0 outline-0 text-ink
+                       placeholder:text-ink-faint font-sans text-base py-1"
             data-testid="nav-modal-input"
             spellCheck={false}
           />
-          <span className="text-xs text-fg-dim px-1.5 py-0.5
-                           border border-border rounded">esc</span>
+          <span className="text-xs text-ink-faint px-1.5 py-0.5
+                           border border-hair-strong rounded">esc</span>
         </div>
 
         <Skeleton
@@ -258,11 +258,11 @@ export function NavModal(): JSX.Element | null {
           stagger={50}
           transition={200}
           fixture={step === "experiment" ? NAV_EXPERIMENTS_FIXTURE : NAV_SAMPLES_FIXTURE}
-          fallback={<div className="px-4 py-6 text-center text-fg-muted italic text-base">{step === "experiment" ? "loading experiments…" : "loading samples…"}</div>}
+          fallback={<div className="px-4 py-6 text-center text-ink-soft italic text-base">{step === "experiment" ? "loading experiments…" : "loading samples…"}</div>}
         >
           <div className="flex-1 overflow-y-auto py-1" data-testid="nav-modal-results">
             {activeList.length === 0 ? (
-              <div className="px-4 py-6 text-center text-fg-muted italic text-base">
+              <div className="px-4 py-6 text-center text-ink-soft italic text-base">
                 {step === "experiment"
                   ? "no experiments"
                   : pendingExp === undefined
@@ -283,12 +283,12 @@ export function NavModal(): JSX.Element | null {
                   }}
                   className={
                     "w-full text-left px-3 py-2 flex flex-col gap-0.5 text-base " +
-                    (idx === selIdx ? "bg-bg-hover text-fg" : "text-fg hover:bg-bg-hover")
+                    (idx === selIdx ? "bg-paper-sunk text-ink" : "text-ink hover:bg-paper-sunk")
                   }
                 >
                   <span className="font-medium">{item.primary}</span>
                   {item.secondary && (
-                    <span className="text-fg-muted text-sm font-sans">{item.secondary}</span>
+                    <span className="text-ink-soft text-sm font-sans">{item.secondary}</span>
                   )}
                 </button>
               ))
@@ -296,11 +296,11 @@ export function NavModal(): JSX.Element | null {
           </div>
         </Skeleton>
 
-        <div className="flex items-center gap-3 px-3 py-2 border-t border-border
-                        text-xs text-fg-dim">
-          <span><kbd className="border border-border rounded px-1">↑↓</kbd> navigate</span>
-          <span><kbd className="border border-border rounded px-1">⏎</kbd> select</span>
-          <span><kbd className="border border-border rounded px-1">⌫</kbd> back</span>
+        <div className="flex items-center gap-3 px-3 py-2 border-t border-hair-strong
+                        text-xs text-ink-faint">
+          <span><kbd className="border border-hair-strong rounded px-1">↑↓</kbd> navigate</span>
+          <span><kbd className="border border-hair-strong rounded px-1">⏎</kbd> select</span>
+          <span><kbd className="border border-hair-strong rounded px-1">⌫</kbd> back</span>
           <span className="flex-1" />
           <span>{step === "experiment" ? "experiment" : "sample"}</span>
         </div>
@@ -320,14 +320,14 @@ function Chip({ label, onRemove, testId }: ChipProps): JSX.Element {
     <span
       data-testid={testId}
       className="inline-flex items-center gap-1 px-2 py-1 rounded-md
-                 bg-bg-hover border border-border text-sm text-fg"
+                 bg-paper-sunk border border-hair-strong text-sm text-ink"
     >
       {label}
       <button
         type="button"
         aria-label={`Remove ${label}`}
         onClick={onRemove}
-        className="text-fg-muted hover:text-error px-0.5 leading-none"
+        className="text-ink-soft hover:text-error px-0.5 leading-none"
         data-testid={testId ? `${testId}-remove` : undefined}
       >
         ×

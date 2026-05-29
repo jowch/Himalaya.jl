@@ -63,7 +63,7 @@ export function StaleIndicesBanner(
   return (
     <div
       role="alert"
-      className="flex items-center justify-between gap-4 px-3 py-2 mb-2 border border-warning text-fg bg-bg-elevated rounded-md"
+      className="flex items-center justify-between gap-4 px-3 py-2 mb-2 border border-warning text-ink bg-plate rounded-md"
     >
       <span>
         {stale.length} {stale.length === 1 ? "index is" : "indices are"} stale.
