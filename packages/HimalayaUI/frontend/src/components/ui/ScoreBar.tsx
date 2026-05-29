@@ -1,16 +1,33 @@
+import { phaseColor } from "../../phases";
+
+export type ScoreBarSize = "bar" | "compact";
+
 interface ScoreBarProps {
-  score: number;
-  color: string;
+  value: number;
+  phase: string;
+  size?: ScoreBarSize;
+  className?: string;
 }
 
-export function ScoreBar({ score, color }: ScoreBarProps): JSX.Element {
-  const pct = `${Math.round(Math.min(1, Math.max(0, score)) * 100)}%`;
+const sizeClass: Record<ScoreBarSize, string> = {
+  bar: "h-1 w-full",
+  compact: "h-[3.5px] w-[46px]",
+};
+
+export function ScoreBar({
+  value,
+  phase,
+  size = "bar",
+  className = "",
+}: ScoreBarProps): JSX.Element {
+  const pct = `${Math.round(Math.min(1, Math.max(0, value)) * 100)}%`;
   return (
-    <div className="h-0.5 w-full bg-paper-sunk rounded-full overflow-hidden mt-1">
-      <div
+    <div className={`overflow-hidden rounded-full bg-hair ${sizeClass[size]} ${className}`}>
+      <i
         data-score-bar
-        className="h-full rounded-full"
-        style={{ width: pct, background: color }}
+        data-phase={phase}
+        className="block h-full"
+        style={{ width: pct, background: phaseColor(phase) }}
       />
     </div>
   );
