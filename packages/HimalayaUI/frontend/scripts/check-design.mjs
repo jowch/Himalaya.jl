@@ -95,7 +95,7 @@ const RULES = [
     id: "no-raw-color-literal",
     test: (line) => {
       const stripped = line.replace(/var\(--color-[^)]*\)/g, "");
-      const re = new RegExp("(?:" + COLOR_LITERAL + ")");
+      const re = /(?:oklch|oklab|hsla?|rgba?)\(|["'`]#[0-9a-fA-F]{3,8}\b/;
       const m = re.exec(stripped);
       return m ? stripped.slice(m.index, m.index + 32).trim() : null;
     },

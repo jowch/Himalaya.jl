@@ -57,6 +57,12 @@ describe("check-design guard — ban rules (spec §4)", () => {
   it("flags a bare var() with NO raw literal as clean (FocusReflectionsTable/SeriesFolioCard cases)", () => {
     expect(rulesFor('        style={{ background: "var(--color-success)" }}')).not.toContain("no-raw-color-literal");
   });
+  it("passes a PR-number cross-reference in a comment (not a color)", () => {
+    expect(rulesFor("  // see #183 and #221 for the rationale")).not.toContain("no-raw-color-literal");
+  });
+  it("flags a quoted raw hex color literal", () => {
+    expect(rulesFor('        style={{ color: "#3c3428" }}')).toContain("no-raw-color-literal");
+  });
 
   // Scope exclusion — src/components/ui/** is never scanned
   it("excludes src/components/ui/** entirely", () => {
