@@ -104,11 +104,15 @@ describe("FocusReflectionsTable (#209)", () => {
   });
 
   // The row's only behavior is the mouse-hover q-link (no click action), so it
-  // must not wear a lying cursor-pointer that promises a click.
-  it("does not carry a lying cursor-pointer (no click action)", async () => {
+  // must make no false click promise: it is not a button and is not
+  // keyboard-focusable as a control. (Asserting the absence of a cursor-pointer
+  // Tailwind class would violate test/AGENTS.md; this is the stable behavioral
+  // equivalent.)
+  it("makes no false click promise (no button role, not focusable)", async () => {
     renderTable();
     const row = await screen.findByTestId("reflection-row-1");
-    expect(row.className).not.toContain("cursor-pointer");
+    expect(row).not.toHaveAttribute("role", "button");
+    expect(row).not.toHaveAttribute("tabindex");
   });
 
   it("labels claimed peaks with the active-set phase + ratio position", async () => {
