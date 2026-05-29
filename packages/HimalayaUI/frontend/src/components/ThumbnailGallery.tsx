@@ -43,9 +43,20 @@ export function ThumbnailGallery({
             key={e.id}
             data-testid={`thumb-cell-${e.id}`}
             data-rejected={isRejected ? "true" : undefined}
+            role="button"
+            tabIndex={0}
+            aria-pressed={isViewing}
+            aria-label={`View ${e.filename?.replace(/\.dat$/i, "") ?? `exposure ${e.id}`}`}
             onClick={() => onSelect(e.id)}
+            onKeyDown={(ev) => {
+              if (ev.key === "Enter" || ev.key === " ") {
+                ev.preventDefault();
+                onSelect(e.id);
+              }
+            }}
             className={[
               "relative flex flex-col items-center gap-1 cursor-pointer group",
+              "rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2",
               // h-full fills strip; aspect-[3/4] derives width from height
               "aspect-[3/4] h-full",
               isRejected ? "opacity-40 grayscale" : "",

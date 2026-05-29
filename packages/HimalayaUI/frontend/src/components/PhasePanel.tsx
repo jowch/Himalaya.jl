@@ -94,7 +94,7 @@ function CandidateRow({ index, inCall, onToggle, onHover, onLeave, onDelete }: C
       data-testid={`candidate-row-${index.id}`}
       data-alternative-id={index.id}
       data-active={inCall || undefined}
-      className="group flex items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors cursor-pointer"
+      className="group flex items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
       style={{
         // Hover-preview is phase-coloured (L-11): tint the border in the
         // phase's own hue on hover; membership uses the terracotta accent.

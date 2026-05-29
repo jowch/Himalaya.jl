@@ -123,6 +123,9 @@ describe("<PhasePanel> — candidate multi-select (R4 L-10)", () => {
     renderWithProviders(<PhasePanel exposureId={42} />);
     const row = await screen.findByTestId("candidate-row-11");
     expect(row).toHaveTextContent("1 : 2");
+    // The row is keyboard-operable (role=checkbox, tabIndex); it must show a
+    // focus-visible ring so keyboard users can see where they are.
+    expect(row.className).toContain("focus-visible:outline");
   });
 
   it("toggling an unchecked candidate posts add-to-group", async () => {

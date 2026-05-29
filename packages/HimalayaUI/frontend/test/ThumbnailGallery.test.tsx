@@ -80,3 +80,29 @@ test("calls onSelect when thumbnail clicked", async () => {
   await userEvent.click(screen.getByTestId("thumb-cell-5"));
   expect(onSelect).toHaveBeenCalledWith(5);
 });
+
+test("the thumb cell is a keyboard-operable button (role, tabIndex, aria-pressed)", () => {
+  const exposures = [makeExposure({ id: 5 })];
+  render(
+    <ThumbnailGallery exposures={exposures} selectedId={5} onSelect={vi.fn()} />,
+  );
+  const cell = screen.getByTestId("thumb-cell-5");
+  expect(cell).toHaveAttribute("role", "button");
+  expect(cell).toHaveAttribute("tabindex", "0");
+  // The viewed cell announces its selected state to assistive tech.
+  expect(cell).toHaveAttribute("aria-pressed", "true");
+});
+
+test("Enter and Space select the focused thumbnail", async () => {
+  const onSelect = vi.fn();
+  const exposures = [makeExposure({ id: 5 })];
+  render(
+    <ThumbnailGallery exposures={exposures} selectedId={undefined} onSelect={onSelect} />,
+  );
+  const cell = screen.getByTestId("thumb-cell-5");
+  cell.focus();
+  await userEvent.keyboard("{Enter}");
+  await userEvent.keyboard(" ");
+  expect(onSelect).toHaveBeenCalledTimes(2);
+  expect(onSelect).toHaveBeenCalledWith(5);
+});

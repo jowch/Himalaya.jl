@@ -103,6 +103,14 @@ describe("FocusReflectionsTable (#209)", () => {
     expect(screen.getByTestId("reflection-row-3")).toBeInTheDocument();
   });
 
+  // The row's only behavior is the mouse-hover q-link (no click action), so it
+  // must not wear a lying cursor-pointer that promises a click.
+  it("does not carry a lying cursor-pointer (no click action)", async () => {
+    renderTable();
+    const row = await screen.findByTestId("reflection-row-1");
+    expect(row.className).not.toContain("cursor-pointer");
+  });
+
   it("labels claimed peaks with the active-set phase + ratio position", async () => {
     renderTable();
     const row1 = await screen.findByTestId("reflection-row-1");

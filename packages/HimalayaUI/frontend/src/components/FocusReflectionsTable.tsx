@@ -148,7 +148,7 @@ export function FocusReflectionsTable(): JSX.Element {
                     // R3-F10: an unindexed row dims as a WHOLE (mockup
                     // `.refl tr.unindexed`), not just its phase + dash cells.
                     className={[
-                      "cursor-pointer border-b border-hair last:border-b-0 transition-colors",
+                      "border-b border-hair last:border-b-0 transition-colors",
                       indexed ? "" : "opacity-55",
                     ].join(" ")}
                     style={{
