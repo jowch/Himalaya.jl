@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Skeleton } from "boneyard-js/react";
 import {
   useCorpusSamples,
@@ -68,6 +68,7 @@ const LOUPE_FIXTURE = (
 export function LoupePage(): JSX.Element {
   const { sampleId: sampleIdParam } = useParams<{ sampleId: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const sampleId = Number(sampleIdParam);
   const hasValidId = Number.isFinite(sampleId);
 
@@ -134,8 +135,11 @@ export function LoupePage(): JSX.Element {
   );
 
   const goBack = useCallback(() => {
-    navigate("/samples");
-  }, [navigate]);
+    // Preserve the corpus filter so Back returns to the same filtered sheet the
+    // user came from, mirroring the topbar Contact-sheet link.
+    const beamtime = searchParams.get("beamtime");
+    navigate(beamtime ? `/samples?beamtime=${beamtime}` : "/samples");
+  }, [navigate, searchParams]);
 
   // Loupe keyboard shortcuts. The input/textarea guard is in from the start
   // so it survives #159 adding tag-edit inputs to the sidebar.

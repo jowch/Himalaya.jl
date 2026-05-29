@@ -113,6 +113,27 @@ describe("CorpusTopbar", () => {
     expect(seg).toHaveTextContent("Loupe");
   });
 
+  // The beamtime filter is honored only on the samples surface. It used to
+  // render on every route — changeable but inert on /series and /sample/:id.
+  // Hide it where it does nothing rather than lie.
+  it("shows the beamtime chip on the samples surface", () => {
+    mockExperiments();
+    renderTopbar("/samples");
+    expect(screen.getByTestId("beamtime-chip")).toBeInTheDocument();
+  });
+
+  it("hides the beamtime chip on /series (where it is inert)", () => {
+    mockExperiments();
+    renderTopbar("/series");
+    expect(screen.queryByTestId("beamtime-chip")).toBeNull();
+  });
+
+  it("hides the beamtime chip on the focus route (where it is inert)", () => {
+    mockExperiments();
+    renderTopbar("/sample/7");
+    expect(screen.queryByTestId("beamtime-chip")).toBeNull();
+  });
+
   it("marks Contact sheet active on /samples and disables Loupe", () => {
     mockExperiments();
     renderTopbar("/samples");

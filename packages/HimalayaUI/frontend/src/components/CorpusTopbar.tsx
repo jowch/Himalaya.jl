@@ -164,21 +164,27 @@ export function CorpusTopbar(): JSX.Element {
         })}
       </nav>
 
-      <select
-        data-testid="beamtime-chip"
-        aria-label="Filter to a beamtime"
-        value={beamtime}
-        onChange={handlePick}
-        className="rounded-full border border-hair-strong bg-plate px-2.5 py-1
-                   text-xs font-semibold text-ink"
-      >
-        <option value="">Beamtime — all experiments</option>
-        {(experimentsQuery.data ?? []).map((exp) => (
-          <option key={exp.id} value={exp.id}>
-            {exp.name ?? `Experiment ${exp.id}`}
-          </option>
-        ))}
-      </select>
+      {/* The beamtime filter is honored only on the samples surface (it filters
+          the contact sheet, and the loupe back-link preserves it). On /series
+          and /sample/:id it was changeable but inert — hide it there rather
+          than present a control that does nothing. */}
+      {pathname.startsWith("/samples") && (
+        <select
+          data-testid="beamtime-chip"
+          aria-label="Filter to a beamtime"
+          value={beamtime}
+          onChange={handlePick}
+          className="rounded-full border border-hair-strong bg-plate px-2.5 py-1
+                     text-xs font-semibold text-ink"
+        >
+          <option value="">Beamtime, all experiments</option>
+          {(experimentsQuery.data ?? []).map((exp) => (
+            <option key={exp.id} value={exp.id}>
+              {exp.name ?? `Experiment ${exp.id}`}
+            </option>
+          ))}
+        </select>
+      )}
 
       <span className="flex-1" />
 
