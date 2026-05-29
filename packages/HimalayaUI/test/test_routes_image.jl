@@ -50,3 +50,34 @@ using Test, HTTP, JSON3, SQLite, DBInterface, FileIO, ImageCore, TiffImages
 
     rm(tiff_path; force=true)
 end
+
+@testset "GET /api/exposures/:id/image — full path capped at 1536px (issue #260, G)" begin
+    # A >1536px detector: the full path must cap the RENDERED raster at 1536
+    # max-side (G) while the percentile-clip math still runs at full resolution.
+    big_path = tempname() * ".tiff"
+    save(big_path, Gray.(rand(Float32, 2048, 2048)))
+    # A small detector: resize_to_fit no-ops, dimensions preserved.
+    small_path = tempname() * ".tiff"
+    save(small_path, Gray.(rand(Float32, 600, 400)))
+
+    db = SQLite.DB()
+    HimalayaUI.create_schema!(db); HimalayaUI.migrate_schema!(db)
+    exp  = HimalayaUI.create_experiment!(db; path="/tmp", data_dir="/tmp", analysis_dir="/tmp")
+    samp = HimalayaUI.create_sample!(db; experiment_id=exp)
+    big  = HimalayaUI.create_exposure!(db; sample_id=samp, image_path=big_path)
+    small = HimalayaUI.create_exposure!(db; sample_id=samp, image_path=small_path)
+
+    decode_dims(body) = size(FileIO.load(FileIO.Stream{FileIO.format"PNG"}(IOBuffer(body))))
+
+    with_test_server(db) do port, base
+        rb = HTTP.get("$base/api/exposures/$big/image")
+        @test rb.status == 200
+        @test maximum(decode_dims(rb.body)) <= 1536      # capped
+
+        rs = HTTP.get("$base/api/exposures/$small/image")
+        @test rs.status == 200
+        @test maximum(decode_dims(rs.body)) == 600       # untouched (<=1536)
+    end
+
+    rm(big_path; force=true); rm(small_path; force=true)
+end

@@ -160,6 +160,11 @@ export function FocusDetectorPanel(): JSX.Element {
         name="focus-detector"
         className="flex-1 min-h-0 flex flex-col"
         loading={activeExposureId !== undefined && exposuresQ.isLoading}
+        // U-2 (#255): a detector window is dark even while loading, so its
+        // skeleton shimmers `frame-edge` (the dark window backing), overriding
+        // the global `paper-sunk` bone fill used on light surfaces. oklch literal
+        // matching `--color-frame-edge` (boneyard takes a plain CSS color string).
+        color="oklch(0.150 0.010 55)"
         stagger={50}
         transition={200}
         fallback={
