@@ -45,7 +45,8 @@
   --color-ink-faint:    oklch(0.640 0.010 74);
   --color-hair:         oklch(0.882 0.008 80);
   --color-hair-strong:  oklch(0.806 0.010 78);
-  --color-print-accent: oklch(0.555 0.150 38);
+  --color-print-accent: var(--color-accent); /* single source — was a duplicated terracotta literal */
+  --color-scrim: oklch(0.05 0 0 / 0.65); /* modal backdrops → bg-scrim (was hand-inlined literals) */
   /* Warm near-black backing for detector images — the dark window set into
      the paper (DESIGN.md §3.1 frame-edge). */
   --color-frame-edge:   oklch(0.150 0.010 55);
@@ -62,7 +63,16 @@
      paper->ink ramp did. NON-inverting: max intensity -> this lighter endpoint. */
   --color-frame-signal: oklch(0.92 0.02 80);
 
-  --radius: 6px;
+  /* Radius scale — make the radius tokens REAL. Tailwind v4 generates
+     rounded-* from the --radius-* NAMESPACE, not singular --radius (which was
+     dead: no var(--radius) consumer, and rounded-sm/md resolved to Tailwind
+     STOCK 4px/6px). Normalize the primary surfaces to the mockups' 5px corner
+     (see spec §3/§8). sm and md deliberately both = 5px so the utility-name
+     semantics (controls rounded-sm, cards rounded-md) survive for a future
+     re-differentiation by editing one token. */
+  --radius-sm:   5px;     /* buttons, inputs, chips, segmented controls */
+  --radius-md:   5px;     /* cards, plates, sheets, modals */
+  --radius-full: 9999px;  /* pills, dots */
   --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
   --font-serif: "Newsreader", Georgia, ui-serif, serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -172,7 +182,7 @@
   .card {
     background: var(--color-plate);
     border: 0.5px solid var(--color-hair);
-    border-radius: 12px;
+    border-radius: var(--radius-md); /* 5px — folds onto the radius scale (spec §3/§8 sign-off) */
     box-shadow:
       0 1px 0 rgba(255, 255, 255, .6) inset,
       0 6px 24px -8px rgba(20, 24, 40, .15);
