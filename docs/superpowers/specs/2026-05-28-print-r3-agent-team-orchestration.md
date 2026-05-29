@@ -139,3 +139,28 @@ Spawned team members' `Write`/`Edit` tools (and the orchestrator's, once its ses
 ### What the gate caught (value evidence)
 
 The plan gate (orchestrator verify-before-review grep + project reviewer + human) caught, **before any code**: #252's `[7]→285` swatch-collision (a bug in the *issue text itself*), #258's heatmap-keyline test-coupling (green unreachable as written) plus two non-existent test-helper names, and #256's "zero inline `text-[Npx]`" Done-when overshooting the issue's actual scope. Grepping cited values/paths against live source (not skimming) is what surfaced these.
+
+## Milestone close — waves 3–4 additions
+
+Recorded after milestone #4 fully closed (8 issues, PRs #262–#267 + #272; bonus #270). New, generalizable lessons beyond the wave-1 findings above.
+
+### Discovery ≠ verification — match the tool to the job
+
+A multi-lens explorer **workflow** (6 lenses + completeness critic + synthesizer, read-only) is the right instrument for OPEN-ENDED discovery — "what leaks exist, including categories I can't pre-name?" It found leak classes a fixed regex never would (hardcoded-hex bypass, dark-era naming leftovers) and a *critic* pass caught a derived-prefix trap all 6 lenses missed. But for CLOSED verification — "did these *known* things get removed?" — a deterministic grep+build+diff dominates; re-running discovery to recount the known is the **recount-the-known anti-pattern** (pure waste). Encode the split: **workflow to scope, grep/build/visual-diff to verify.** Cost signal this run: the discovery workflow was ~574k subagent tokens / 8 agents — justified once, wasteful repeated.
+
+### Self-revealing beats guarded
+
+The wave-4 issue asked for a CI grep guard against re-introduced legacy names. Better structural move: **delete the duplicate-token shim entirely** so a re-introduced name renders *broken/visible* instead of *identical/invisible*. The guard polices bad input; deletion makes the system reject it. This dropped the issue's CI-guard requirement and the perceptual-masking problem in one move. General principle: prefer changes that make regressions self-revealing over changes that add a detector on top of a system that still accepts the bad input.
+
+### The plan gate earns its cost on "purely mechanical" work too
+
+A value-identical 259-site token rename felt safe enough to skip scrutiny — but the frontend-reviewer plan-gate (BEFORE code) caught two **derived-prefix leaks**: a legacy token (`--color-border`) riding a non-natural utility prefix (`bg-border`, `text-bg`) that both the discovery catalog and the orchestrator's own grep missed, and that would have orphaned 5 consumers when the shim was deleted. **A list-keyed acceptance check is blind to the very leak it guards** — so the final grep must be token-suffix-anchored across ALL prefixes, never keyed off the enumerated mapping list.
+
+### Orchestrator-owned visual sign-off: probe hygiene
+
+For a value-identical change, the pixel-diff harness must hold the **host background identical across branches** — rendering a standalone component on `var(--color-plate)` vs `var(--color-paper)` produced a uniform signed color offset that *looked* like a real diff but was a probe artifact. Diagnostic: a **uniform, edge-independent, signed** offset ⇒ suspect the harness (background/token mismatch), not the component; AA noise is small and edge-localized. Result when fixed: 0/1.29M px differ, matching MD5s on all 4 surfaces — value-identity proven concretely, not just argued.
+
+### Two merge/teardown gotchas
+
+- **Teammate git-ops cwd discipline.** A teammate working in a worktree ran its `git commit`s from the MAIN repo root (its npm/test `cd` pointed there), landing commits on LOCAL main before moving them to the branch. The PR was sound (origin/main untouched, branch correct) but local main diverged. Fix forward: instruct teammates to run git ops from the worktree path explicitly; orchestrator verifies ref state (`merge-base` + "commits-not-reachable-elsewhere = empty") before any authorized `reset --hard`. The default-branch reset guard correctly blocked the teammate.
+- **Squash-merge does not auto-close multi-issue PRs.** A PR titled "B+G+H (#255+#260+#261)" closed only the Closes-keyworded issue; the other two stayed open until swept manually. When one PR delivers several milestone issues, put one `Closes #N` per issue in the body — or sweep the milestone for stragglers before declaring it closed.
