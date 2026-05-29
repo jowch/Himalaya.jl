@@ -246,6 +246,7 @@
  *   text-headline     Newsreader serif section title — folio/scoping (R0a)
  *   text-headline-lg  Newsreader serif plate headline — loupe sample title (R2-T9, 26px)
  *   text-caption      microcopy: timestamps, hints, "no items" placeholders
+ *   text-kicker       eyebrow / section label — uppercase, 700, tracked, tone-colored (accent|faint)
  *   text-label        form / section labels — uppercase, tracked, dim
  *   text-meta         inline labels (non-uppercase): author names, tag keys
  *   text-body         default readable text — chat body, paragraph
@@ -268,6 +269,10 @@
                       line-height: 1.15; font-weight: 500; color: var(--color-ink); }
   .text-caption     { font-size: var(--text-xs);  line-height: 1.4;
                       color: var(--color-ink-soft); }
+  .text-kicker        { font-size: var(--text-sm);  line-height: 1.4;
+                        font-weight: 700; text-transform: uppercase; }
+  .text-kicker-accent { color: var(--color-print-accent); letter-spacing: 0.13em; }
+  .text-kicker-faint  { color: var(--color-ink-faint);    letter-spacing: 0.09em; }
   .text-label       { font-size: var(--text-sm);  line-height: 1.4;
                       font-weight: 500; text-transform: uppercase;
                       letter-spacing: 0.06em; color: var(--color-ink-soft); }
