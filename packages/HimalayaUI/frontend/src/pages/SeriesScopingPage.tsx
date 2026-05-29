@@ -17,7 +17,7 @@ import { ScopingAutogroupCard } from "../components/ScopingAutogroupCard";
 import { ScopingOrderField } from "../components/ScopingOrderField";
 import { ScopingRow } from "../components/ScopingRow";
 import { ScopingLooseMatches } from "../components/ScopingLooseMatches";
-import { ScopingPhaseStrip } from "../components/ScopingPhaseStrip";
+import { PhaseStrip } from "../components/ui/PhaseStrip";
 import { ScopingFoot } from "../components/ScopingFoot";
 import { ScopingConfirmModal } from "../components/ScopingConfirmModal";
 
@@ -330,7 +330,17 @@ export function SeriesScopingPage(): JSX.Element {
                   phases={phaseBySample}
                   onAdd={addLoose}
                 />
-                <ScopingPhaseStrip reads={phaseReads} />
+                <div className="mt-5">
+                  {/* interim inline kicker — replace with <Kicker> when it lands */}
+                  <div className="mb-1.5 text-[10.5px] font-bold uppercase tracking-wider text-ink-faint">
+                    Preview: phase across the series
+                  </div>
+                  <PhaseStrip
+                    size="sm"
+                    emptyLabel="Members not yet indexed; phase preview unavailable."
+                    segments={phaseReads.map((r) => ({ phase: r.dominant, coexistWith: r.coexist }))}
+                  />
+                </div>
                 <ScopingFoot
                   flagCount={flagCount}
                   memberCount={rows.length}

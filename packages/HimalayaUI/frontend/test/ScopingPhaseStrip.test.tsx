@@ -1,33 +1,48 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { ScopingPhaseStrip } from "../src/components/ScopingPhaseStrip";
+import { PhaseStrip } from "../src/components/ui/PhaseStrip";
+import type { PhaseRead } from "../src/lib/scoping/dominantPhase";
 
-describe("ScopingPhaseStrip", () => {
+// Mirrors the SeriesScopingPage call site: PhaseRead[] → PhaseSegment[].
+function strip(reads: PhaseRead[]) {
+  return render(
+    <PhaseStrip
+      size="sm"
+      emptyLabel="Members not yet indexed; phase preview unavailable."
+      segments={reads.map((r) => ({ phase: r.dominant, coexistWith: r.coexist }))}
+    />,
+  );
+}
+
+describe("Scoping preview strip (PhaseStrip, size=sm)", () => {
   it("renders one segment per member", () => {
-    render(<ScopingPhaseStrip reads={[
+    strip([
       { dominant: "Pn3m", coexist: null },
       { dominant: "Lamellar", coexist: null },
-    ]} />);
-    expect(screen.getAllByTestId("scoping-ps-seg")).toHaveLength(2);
+    ]);
+    expect(screen.getAllByTestId("ps-seg")).toHaveLength(2);
   });
+
   it("captions a transition first → last", () => {
-    render(<ScopingPhaseStrip reads={[
+    strip([
       { dominant: "Pn3m", coexist: null },
       { dominant: "Lamellar", coexist: null },
-    ]} />);
-    const cap = screen.getByTestId("scoping-ps-cap");
+    ]);
+    const cap = screen.getByTestId("ps-cap");
     expect(cap).toHaveTextContent("Pn3m");
     expect(cap).toHaveTextContent("Lamellar");
   });
-  it("captions 'throughout' when first and last agree", () => {
-    render(<ScopingPhaseStrip reads={[
+
+  it("captions 'throughout' when every indexed segment is one phase", () => {
+    strip([
       { dominant: "Pn3m", coexist: null },
       { dominant: "Pn3m", coexist: null },
-    ]} />);
-    expect(screen.getByTestId("scoping-ps-cap")).toHaveTextContent(/throughout/i);
+    ]);
+    expect(screen.getByTestId("ps-cap")).toHaveTextContent(/throughout/i);
   });
-  it("renders a not-yet-indexed caption when no members are indexed", () => {
-    render(<ScopingPhaseStrip reads={[{ dominant: null, coexist: null }]} />);
-    expect(screen.getByTestId("scoping-ps-cap")).toHaveTextContent(/not yet indexed/i);
+
+  it("renders the not-yet-indexed empty label when no members are indexed", () => {
+    strip([{ dominant: null, coexist: null }]);
+    expect(screen.getByTestId("ps-cap")).toHaveTextContent(/not yet indexed/i);
   });
 });
