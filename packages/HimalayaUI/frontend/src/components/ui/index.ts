@@ -10,3 +10,5 @@ export type { SegmentOption, SegmentedVariant, SegmentedSize, SegmentedControlPr
 export { ToastContainer } from "./Toast";
 export { PhaseStrip } from "./PhaseStrip";
 export type { PhaseSegment, PhaseStripSize, PhaseStripProps } from "./PhaseStrip";
+export { ModalShell } from "./ModalShell";
+export type { ModalSize, ModalAlign, ModalVariant, ModalShellProps } from "./ModalShell";
