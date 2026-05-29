@@ -21,6 +21,41 @@ describe("Toast", () => {
     expect(screen.getByTestId("toast")).toHaveAttribute("data-toast-kind", "error");
   });
 
+  it("shows a severity word label per kind", () => {
+    render(<ToastContainer />);
+    const cases: Array<[import("../src/lib/toast").ToastKind, string]> = [
+      ["error", "Error"],
+      ["warning", "Warning"],
+      ["success", "Success"],
+      ["info", "Info"],
+    ];
+    for (const [kind, word] of cases) {
+      act(() => {
+        showToast(`msg-${kind}`, kind);
+      });
+      const toast = screen.getByTestId("toast");
+      expect(toast).toHaveAttribute("data-toast-kind", kind);
+      // visible severity word
+      expect(toast).toHaveTextContent(word);
+      // accessible status icon naming the severity (second channel, not hue)
+      expect(toast.querySelector(`[aria-label="${word}"]`)).not.toBeNull();
+      act(() => {
+        fireEvent.click(screen.getByLabelText("Dismiss"));
+      });
+    }
+  });
+
+  it("uses a full hairline border, not a left-edge severity stripe", () => {
+    render(<ToastContainer />);
+    act(() => {
+      showToast("hello", "error");
+    });
+    const toast = screen.getByTestId("toast");
+    expect(toast.className).toContain("border-hair");
+    expect(toast.className).not.toContain("border-l-4");
+    expect(toast.className).not.toContain("border-error");
+  });
+
   it("auto-dismisses error toast after 5000ms", () => {
     render(<ToastContainer />);
     act(() => {
