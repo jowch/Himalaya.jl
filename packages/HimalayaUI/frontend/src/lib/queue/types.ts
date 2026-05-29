@@ -9,7 +9,7 @@ import type { Comparison, Series } from "../../api";
 // inserting an indices row) use NEGATIVE placeholder ids in optimistic cache
 // writes. Real DB ids are always positive (INTEGER PRIMARY KEY AUTOINCREMENT
 // in SQLite never returns ≤ 0 for fresh inserts). Consumers that read these
-// caches (PeakRow, MentionChip, etc.) must tolerate negative ids: do not
+// caches (PeakRow, etc.) must tolerate negative ids: do not
 // `id > 0` filter, do not strict-parse, do not dereference into URLs without
 // a sign check. The placeholder is replaced with the real id when the
 // mutator's onSuccess runs against the server response.

@@ -46,7 +46,7 @@ describe("queries", () => {
 
   // Regression for #116. The hook used to take an `excludeRejected` option
   // that landed in the cache key, splitting the same sample's exposures
-  // across two cache rows (Index page filtered, Inspect/MentionPicker not).
+  // across two cache rows (Index page filtered, Inspect not).
   // Result: cold re-fetch on every Index↔Inspect crossing. Pinning the key
   // shape keeps a future regressor from quietly reintroducing the suffix.
   it("useExposures keys on the bare exposures prefix (no opts in cache key)", async () => {
