@@ -1,10 +1,32 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { renderWithProviders } from "./test-utils";
 import { NavModal } from "../src/components/NavModal";
 import { useAppState } from "../src/state";
 import * as api from "../src/api";
+
+/**
+ * NavModal calls useNavigate (M1: commitSample is a door into /sample/:id), so
+ * it needs Router context. In production it is a global overlay in CorpusShell,
+ * a sibling of the routed content — mirror that here: NavModal beside a tiny
+ * Routes whose /sample/:id stub lets a navigation be observed.
+ */
+function renderModal() {
+  return renderWithProviders(
+    <MemoryRouter initialEntries={["/samples"]}>
+      <NavModal />
+      <Routes>
+        <Route path="/samples" element={<div data-testid="route-samples" />} />
+        <Route
+          path="/sample/:sampleId"
+          element={<div data-testid="focus-stub" />}
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
 
 const EXPERIMENTS: api.Experiment[] = [
   { id: 1, name: "SSRL May 2026", path: "/data/ssrl_2026_05", data_dir: "/data/ssrl_2026_05/data", analysis_dir: "/data/ssrl_2026_05/analysis", manifest_path: null, created_at: "2026-05-01" },
@@ -42,13 +64,13 @@ beforeEach(() => {
 describe("<NavModal>", () => {
   it("returns null when navModalOpen is false", () => {
     useAppState.setState({ navModalOpen: false });
-    const { container } = renderWithProviders(<NavModal />);
+    const { container } = renderModal();
     expect(container.querySelector('[data-testid="nav-modal"]')).toBeNull();
   });
 
   it("renders experiment list when opened at experiment step", async () => {
     useAppState.setState({ navModalOpen: true, navModalStep: "experiment" });
-    renderWithProviders(<NavModal />);
+    renderModal();
     expect(await screen.findByText("SSRL May 2026")).toBeInTheDocument();
     expect(screen.getByText("APS Apr 2026")).toBeInTheDocument();
   });
@@ -56,7 +78,7 @@ describe("<NavModal>", () => {
   it("filters experiments by query", async () => {
     const user = userEvent.setup();
     useAppState.setState({ navModalOpen: true, navModalStep: "experiment" });
-    renderWithProviders(<NavModal />);
+    renderModal();
     await screen.findByText("SSRL May 2026");
 
     await user.type(screen.getByTestId("nav-modal-input"), "APS");
@@ -67,7 +89,7 @@ describe("<NavModal>", () => {
   it("Enter commits the selected experiment and advances to sample step with chip", async () => {
     const user = userEvent.setup();
     useAppState.setState({ navModalOpen: true, navModalStep: "experiment" });
-    renderWithProviders(<NavModal />);
+    renderModal();
     await screen.findByText("SSRL May 2026");
 
     await user.keyboard("{Enter}"); // commits first item
@@ -85,7 +107,7 @@ describe("<NavModal>", () => {
       navModalStep: "sample",
       activeExperimentId: 1,
     });
-    renderWithProviders(<NavModal />);
+    renderModal();
     await screen.findByText("cubic_run03");
 
     await user.keyboard("{Enter}");
@@ -96,6 +118,23 @@ describe("<NavModal>", () => {
     });
   });
 
+  // M1 on-ramp: committing a sample is the third door into the indexing
+  // workspace (beside the contact-sheet status cell and the loupe link). Before
+  // this NavModal only wrote the store and left the URL put. cubic_run03 = id 10.
+  it("navigates to the focus workspace when a sample is committed", async () => {
+    const user = userEvent.setup();
+    useAppState.setState({
+      navModalOpen: true,
+      navModalStep: "sample",
+      activeExperimentId: 1,
+    });
+    renderModal();
+    await screen.findByText("cubic_run03");
+
+    await user.keyboard("{Enter}");
+    expect(await screen.findByTestId("focus-stub")).toBeInTheDocument();
+  });
+
   it("Backspace on empty input at sample step pops the experiment chip", async () => {
     const user = userEvent.setup();
     useAppState.setState({
@@ -103,7 +142,7 @@ describe("<NavModal>", () => {
       navModalStep: "sample",
       activeExperimentId: 1,
     });
-    renderWithProviders(<NavModal />);
+    renderModal();
     await screen.findByText("cubic_run03");
     expect(screen.getByTestId("nav-chip-experiment")).toBeInTheDocument();
 
@@ -124,7 +163,7 @@ describe("<NavModal>", () => {
       activeExperimentId: 1,
       activeSampleId: 10,
     });
-    renderWithProviders(<NavModal />);
+    renderModal();
     await screen.findByTestId("nav-chip-sample");
     expect(screen.getByTestId("nav-chip-experiment")).toBeInTheDocument();
 
@@ -151,7 +190,7 @@ describe("<NavModal>", () => {
       navModalStep: "sample",
       activeExperimentId: 1,
     });
-    renderWithProviders(<NavModal />);
+    renderModal();
     await screen.findByText("cubic_run03");
 
     await user.click(screen.getByTestId("nav-chip-experiment-remove"));
@@ -168,7 +207,7 @@ describe("<NavModal>", () => {
       activeExperimentId: 99,
       activeSampleId: 42,
     });
-    renderWithProviders(<NavModal />);
+    renderModal();
     await screen.findByText("SSRL May 2026");
 
     await user.click(screen.getByTestId("nav-modal-input"));
@@ -185,7 +224,7 @@ describe("<NavModal>", () => {
       navModalStep: "sample",
       activeExperimentId: 1,
     });
-    renderWithProviders(<NavModal />);
+    renderModal();
     const row = await screen.findByText("hex_run01");
 
     await user.click(row);

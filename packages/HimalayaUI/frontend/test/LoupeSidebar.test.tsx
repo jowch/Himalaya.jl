@@ -1,6 +1,7 @@
 import { beforeEach, describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter } from "react-router-dom";
 import { makeClient } from "./test-utils";
 import type { ReactNode } from "react";
 import type { CorpusSample, Exposure } from "../src/api";
@@ -40,7 +41,9 @@ function defaultProps() {
 function wrap(node: ReactNode) {
   const client = makeClient();
   return (
-    <QueryClientProvider client={client}>{node}</QueryClientProvider>
+    <QueryClientProvider client={client}>
+      <MemoryRouter>{node}</MemoryRouter>
+    </QueryClientProvider>
   );
 }
 
@@ -208,6 +211,26 @@ describe("LoupeSidebar — representative", () => {
   it("omits the data-is-rep attribute when not representative", () => {
     render(wrap(<LoupeSidebar {...defaultProps()} />));
     expect(screen.getByTestId("loupe-rep")).not.toHaveAttribute("data-is-rep");
+  });
+
+  // M1 on-ramp: the loupe carries forward to indexing via a real link (the
+  // triage→index bridge). Present in both rep states — you index the sample
+  // either way. Was inert prose before; this is the loupe's onward door.
+  it("links onward to the focus workspace at /sample/:id (non-representative)", () => {
+    render(wrap(<LoupeSidebar {...defaultProps()} />));
+    const link = screen.getByTestId("loupe-open-index");
+    expect(link.tagName).toBe("A");
+    expect(link).toHaveAttribute("href", "/sample/7");
+  });
+
+  it("still offers the Index link when the frame is already the representative", () => {
+    render(wrap(
+      <LoupeSidebar {...defaultProps()} exposure={exposure({ selected: true })} />,
+    ));
+    expect(screen.getByTestId("loupe-open-index")).toHaveAttribute(
+      "href",
+      "/sample/7",
+    );
   });
 });
 

@@ -21,7 +21,7 @@ export const CUBIC_PHASES: ReadonlySet<string> = new Set([
 //
 // Colour-blind second channel: every phase hue is *always* paired with the
 // phase name/label (and shape, e.g. the Miller-plot symbols) in the consuming
-// components (PhasePanel chip, MentionChip, MemberTraceLayer) — colour is never
+// components (PhasePanel chip, MemberTraceLayer) — colour is never
 // the sole signal. This palette only supplies the hue; do not make any consumer
 // colour-only.
 //

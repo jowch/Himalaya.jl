@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import { Link } from "react-router-dom";
 import type { CorpusSample, Exposure } from "../api";
 import { useAddCorpusSampleTag, useRemoveCorpusSampleTag } from "../queries";
 
@@ -321,6 +322,22 @@ export function LoupeSidebar({
             </button>
           </>
         )}
+        {/* M1 on-ramp: the loupe's onward door to the indexing workspace. The
+            triage→index bridge the redesign called for — present whether or not
+            this frame is the representative, since you index the sample either
+            way. Pairs with the contact-sheet status-cell door (two doors, one
+            room). */}
+        <Link
+          to={`/sample/${sample.id}`}
+          data-testid="loupe-open-index"
+          className="mt-3 flex w-fit items-center gap-1 rounded-sm text-[11.5px]
+                     font-semibold text-print-accent hover:underline
+                     focus-visible:outline focus-visible:outline-2
+                     focus-visible:outline-accent focus-visible:outline-offset-2"
+        >
+          Open in the Index stage
+          <span aria-hidden="true">→</span>
+        </Link>
       </section>
 
       {/* Sample tags — read+write, routes through the corpus tag mutators. */}

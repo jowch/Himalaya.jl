@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   useExposures,
   useSetExposureStatus,
@@ -503,16 +503,25 @@ export function ContactSheetRow({
         )}
       </div>
 
-      {/* Status — phase chip when a phase is present (M-6), else the hollow-dot
-          "Not indexed" affordance. `sample.phase` is a forward-looking seam:
-          no corpus-level indexing rollup is wired yet, so it is absent today
-          and the cell reads "Not indexed". */}
-      <div
+      {/* Status — the corpus→focus DOOR (M1 on-ramp). The cell is a real link
+          to the indexing workspace: "Not indexed" → go index it; a phase chip
+          (once a call exists) → open and adjust it. The sample NAME stays
+          identity by design — the door lives on the status, the new
+          representative-bridge mechanic, not a resurrected dual-nav link.
+          `sample.phase` is a forward-looking seam (no corpus indexing rollup
+          is wired yet) so the chip reads "Not indexed" today. */}
+      <Link
+        to={`/sample/${sample.id}`}
         data-testid="status-cell"
-        className="flex min-h-[92px] items-center"
+        aria-label={
+          sample.phase
+            ? `Open indexing for ${name} (${sample.phase})`
+            : `Index ${name}`
+        }
+        className="flex min-h-[92px] items-center rounded-md px-2 transition-colors hover:bg-plate/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
       >
         <SampleStatusChip phase={sample.phase} />
-      </div>
+      </Link>
 
       {/* M-3: floating cull bar — rendered from the row root (outside the
           grid cell + overflow strip) so it floats at the bottom centre of the

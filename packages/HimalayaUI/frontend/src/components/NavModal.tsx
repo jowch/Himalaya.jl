@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Skeleton } from "boneyard-js/react";
 import { useAppState } from "../state";
 import { useExperiments, useSamples } from "../queries";
@@ -63,6 +64,7 @@ export function NavModal(): JSX.Element | null {
   const setStep       = useAppState((s) => s.setNavModalStep);
   const setExperiment = useAppState((s) => s.setActiveExperiment);
   const setSample     = useAppState((s) => s.setActiveSample);
+  const navigate      = useNavigate();
 
   // Local "pending" selection inside the modal — lets us rewind without nuking committed state
   // until the user explicitly commits.
@@ -141,6 +143,11 @@ export function NavModal(): JSX.Element | null {
     }
     setSample(id);
     closeModal();
+    // M1 on-ramp: committing a sample is a door into the indexing workspace.
+    // Before this the picker only mutated the store and left the URL where it
+    // was; now it actually lands you on /sample/:id (the third door, beside the
+    // contact-sheet status cell and the loupe "Open in the Index stage" link).
+    navigate(`/sample/${id}`);
   };
 
   const popSampleChip = (): void => {

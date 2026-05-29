@@ -199,6 +199,76 @@ consistency at a glance.
 
 ---
 
+## Trace plot card — interaction grammar redesign (incl. peak-move)
+
+The single-sample focus trace editor (`TraceViewer.tsx` / `PlotCard.tsx`)
+needs a holistic redesign, not a patch. This was Movement 4 ("redesign the
+trace grammar") of the 2026-05-29 functional-traversal remediation; M1–M3
+shipped, M4 was **deferred here** by owner decision because the headline
+verb (peak-move) is a backend data-model problem, not a plot interaction.
+See the round-4 audit synthesis and the program entry in
+[`redesign-notes.md`](redesign-notes.md).
+
+**What's wrong with the current grammar (verified against live source).**
+- **One click verb, three blind outcomes** decided only by what's under the
+  cursor (`TraceViewer.tsx:264-291`): empty area → add manual peak; on a
+  manual peak → delete; on an auto peak → toggle exclusion. No mode, no
+  modifier, no cursor change to say which.
+- **The `+ Peak` toggle is a false mode** — `addArmed` has no behavioral
+  effect; empty-click always adds regardless (`PlotCard.tsx:498-513`).
+- **Two conflicting "reset" verbs** — dblclick does a true full reset
+  (x+y → null); the ZoomIndicator labeled "reset" actually calls
+  `onFitFeatures` (auto-fit to features), not a reset (`PlotCard.tsx:480`).
+- **No peak-move at all** — q is immutable; only add / remove(manual) /
+  exclude(auto) exist.
+
+**Design direction (canon-derived, ready to build from).** Grounded in
+PRODUCT.md principle 4 ("recede so the data leads") + the "confident expert
+who is quiet" voice + the legacy-scientific-software anti-reference, and
+DESIGN.md's "The Print":
+- **Hover-reveals-the-action direct manipulation**, not a Select/Add mode
+  toolbar (the toolbar-soup reflex). Affordances appear *at the mark* on
+  approach (exclude/restore on an auto peak, delete on a manual peak, a
+  drag handle for move) and vanish otherwise. The verb is never blind.
+- **Terracotta stays rationed** — the grease-pencil mark is reserved for the
+  genuine edit acts (delete ✕, the live-move mark); hover controls are
+  otherwise ghost/ink, inline and hairline (flat-except-the-plate), never
+  floating cards.
+- **Provenance via color, per the Semantic Colour Rule** — a *moved* auto
+  peak is a hand-edit, so it reads as manual (peak-manual magenta). The color
+  is the audit trail of "you touched this."
+- **Reconcile the resets** — relabel the fit verb "fit"; reserve "reset" for
+  true full-range. **Kill the false `+ Peak` mode.**
+- **Focus editor first**, then propagate the proven grammar to the
+  series-builder (`MultiTracePlot`'s shipped-but-inert `onPeakClick`); the
+  Focus trace is *the plate*, the builder is a read-leaning secondary surface
+  with its own view-state-persistence gap.
+- Motion per canon: 120ms ease-out, no bounce; the drag is a quiet snap, with
+  an optional subtle snap-to-local-max assist.
+
+**Why later — the hard backend blocker.** Peaks are stored as two tables
+([db.jl:97-130](packages/HimalayaUI/src/db.jl:97)): `auto_peaks` (analysis
+output, **regenerated on every reanalysis**) and `peak_curations` (the manual
+delta layer, `kind IN ('add','exclude',…)`). Critically, **curations are
+keyed by q, not by a stable peak identity**: an exclude curation suppresses
+"whatever auto peak sits at q=X" (`events.jl:328`, `comparisons.jl:230`); the
+effective list is `auto_peaks LEFT JOIN peak_curations` with adds unioned in.
+So:
+- There is **no representation for "a moved auto peak"** — an auto peak's q is
+  owned by analysis. Move collapses to exclude-at-old-q + add-at-new-q: lossy
+  (provenance flips to a manual `add` with `intensity = nothing`, identity and
+  history lost), and manual-only (can't truly move an auto peak).
+- Because exclusion is **q-matched**, a reanalysis that nudges an auto peak's
+  q by epsilon can orphan its curation.
+
+Move-done-right requires the curation model rethought first: a stable
+per-peak identity that survives reanalysis, or a `shift`/`move` curation kind
+that reanalysis honors. That backend design is the real prerequisite, and is
+why this is one redesign (plot card + curation model), not a `PATCH /peaks/:id
+{q}` bolt-on. Pick it up when the curation/reanalysis model is on the table.
+
+---
+
 ## Index page — data triage
 
 ### Exposure-triage page

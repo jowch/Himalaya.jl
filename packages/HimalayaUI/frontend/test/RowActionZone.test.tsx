@@ -1,23 +1,18 @@
-import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { describe, it, expect } from "vitest";
+import { render, screen } from "@testing-library/react";
 import { RowActionZone } from "../src/components/RowActionZone";
 
-describe("RowActionZone — Compare UX E-1", () => {
-  it("renders ⋯ overflow and ⋮⋮ drag cue", () => {
-    render(<RowActionZone onOverflow={() => {}}/>);
-    expect(screen.getByTestId("row-action-overflow")).toBeInTheDocument();
-    expect(screen.getByTestId("row-action-drag-cue")).toBeInTheDocument();
+describe("RowActionZone", () => {
+  it("renders the ⋮⋮ drag cue as inert signage", () => {
+    render(<RowActionZone />);
+    const cue = screen.getByTestId("row-action-drag-cue");
+    expect(cue).toBeInTheDocument();
+    expect(cue).toHaveAttribute("aria-hidden", "true");
   });
-  it("dispatches overflow click", () => {
-    const onOverflow = vi.fn();
-    render(<RowActionZone onOverflow={onOverflow}/>);
-    fireEvent.click(screen.getByTestId("row-action-overflow"));
-    expect(onOverflow).toHaveBeenCalled();
-  });
-  it("⋮⋮ is signage (no click handler runs)", () => {
-    const onOverflow = vi.fn();
-    render(<RowActionZone onOverflow={onOverflow}/>);
-    fireEvent.click(screen.getByTestId("row-action-drag-cue"));
-    expect(onOverflow).not.toHaveBeenCalled();
+  // M2: the ⋯ overflow button toggled a `data-overflow-open` attribute that
+  // nothing consumed (opened no menu) — a no-op affordance. Removed.
+  it("no longer renders the no-op ⋯ overflow button", () => {
+    render(<RowActionZone />);
+    expect(screen.queryByTestId("row-action-overflow")).toBeNull();
   });
 });

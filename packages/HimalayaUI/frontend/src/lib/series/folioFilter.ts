@@ -3,15 +3,16 @@
  * (R6, finding F-D; mockup `series-folio.html` controls row).
  *
  * Kept out of the page component so the (data-shaped) decisions are unit-
- * tested without rendering. Two facets are present-but-data-starved on the
- * current corpus and documented as such:
+ * tested without rendering. Both the cross-experiment filter and the variable
+ * sort are now backed by real listing fields (M2 — `series_listing` projects
+ * `spans_experiments` via a member→exposure→sample experiment-id join, and
+ * `ordering_variable` straight off the series row):
  *
- *  - "cross" (cross-experiment) is not derivable from the `SeriesSummary`
- *    listing (no sample→experiment join on this path), so it yields nothing.
- *    The chip is wired per F-D and will light up once that join exists.
- *  - "variable" sort would key on the ordering variable, which the listing
- *    does not carry — so it sorts by title (the only stable text key on the
- *    summary). Labelled "Variable" per the mockup.
+ *  - "cross" (cross-experiment) keeps only series whose members span more than
+ *    one distinct experiment (valid because q is absolute — see redesign-notes
+ *    architecture decision 1).
+ *  - "variable" sort orders by the recipe ordering variable, tiebroken by title
+ *    so series with no variable yet (null) stay in a stable order.
  */
 import type { SeriesSummary } from "../../api";
 
@@ -39,14 +40,26 @@ export function filterSort(
     // "Has transition" ≈ spans more than one distinct phase.
     rows = rows.filter((s) => s.member_phase_count > 1);
   } else if (c.filter === "cross") {
-    // No cross-experiment signal on the listing (see module note).
-    rows = [];
+    // Members resolve to more than one distinct experiment.
+    rows = rows.filter((s) => s.spans_experiments);
   }
 
   if (c.sort === "size") {
     rows.sort((a, b) => b.member_count - a.member_count);
   } else if (c.sort === "variable") {
-    rows.sort((a, b) => a.title.localeCompare(b.title));
+    // Order by the recipe ordering variable; series with no variable yet (null)
+    // sort last, and ties break by title so the order is stable.
+    rows.sort((a, b) => {
+      const av = a.ordering_variable;
+      const bv = b.ordering_variable;
+      if (av !== bv) {
+        if (av === null) return 1;
+        if (bv === null) return -1;
+        const byVar = av.localeCompare(bv);
+        if (byVar !== 0) return byVar;
+      }
+      return a.title.localeCompare(b.title);
+    });
   }
   // "recent": backend already returns last_event_at DESC; preserve order.
 

@@ -24,6 +24,8 @@ const LISTING_ROW: SeriesSummary = {
   member_phases: ["Pn3m", "Lamellar"],
   member_phase_count: 2,
   has_stale_members: false,
+  ordering_variable: "LL37 : lipid ratio",
+  spans_experiments: false,
 };
 
 describe("series read fetchers", () => {

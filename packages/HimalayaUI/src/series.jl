@@ -31,6 +31,7 @@ function series_listing(db::SQLite.DB)::Vector{Dict{Symbol, Any}}
                   s.created_by, s.created_at, s.updated_at,
                   s.forked_from_id, s.forked_at_hash,
                   s.view_grouping_mode, s.view_show_peak_ticks, s.view_show_peak_labels,
+                  s.ordering_variable,
                   datetime(COALESCE((SELECT MAX(ua.timestamp) FROM user_actions ua
                                      WHERE ua.entity_type = 'series'
                                        AND ua.entity_id = s.id), s.updated_at))
@@ -51,7 +52,12 @@ function series_listing(db::SQLite.DB)::Vector{Dict{Symbol, Any}}
                       AND sm.exposure_id IS NOT NULL
                       AND json_extract(sm.snapshot, '\$.analysis_inputs_hash')
                           IS NOT e.analysis_inputs_hash
-                  ) AS has_stale_members
+                  ) AS has_stale_members,
+                  (SELECT COUNT(DISTINCT sa.experiment_id) > 1
+                   FROM series_members sm
+                   JOIN exposures ex ON ex.id = sm.exposure_id
+                   JOIN samples sa   ON sa.id = ex.sample_id
+                   WHERE sm.series_id = s.id) AS spans_experiments
            FROM series s
            LEFT JOIN users u ON u.id = s.created_by
            ORDER BY last_event_at DESC, s.id DESC"""))
@@ -85,6 +91,10 @@ function _series_listing_rows(rows)::Vector{Dict{Symbol, Any}}
             :member_phases         => member_phases,
             :member_phase_count    => _count_distinct_phases(phases_str),
             :has_stale_members     => Bool(r.has_stale_members),
+            :ordering_variable     => ismissing(r.ordering_variable) ? nothing : String(r.ordering_variable),
+            # Cross-experiment = members resolve to >1 distinct samples.experiment_id.
+            # Valid because q is absolute (Å⁻¹); see redesign-notes architecture decision 1.
+            :spans_experiments     => !ismissing(r.spans_experiments) && Bool(r.spans_experiments),
         )
     end
     out
@@ -102,6 +112,7 @@ function forks_of_series(db::SQLite.DB, series_id::Integer)::Vector{Dict{Symbol,
                   s.created_by, s.created_at, s.updated_at,
                   s.forked_from_id, s.forked_at_hash,
                   s.view_grouping_mode, s.view_show_peak_ticks, s.view_show_peak_labels,
+                  s.ordering_variable,
                   datetime(COALESCE((SELECT MAX(ua.timestamp) FROM user_actions ua
                                      WHERE ua.entity_type = 'series'
                                        AND ua.entity_id = s.id), s.updated_at))
@@ -122,7 +133,12 @@ function forks_of_series(db::SQLite.DB, series_id::Integer)::Vector{Dict{Symbol,
                       AND sm.exposure_id IS NOT NULL
                       AND json_extract(sm.snapshot, '\$.analysis_inputs_hash')
                           IS NOT e.analysis_inputs_hash
-                  ) AS has_stale_members
+                  ) AS has_stale_members,
+                  (SELECT COUNT(DISTINCT sa.experiment_id) > 1
+                   FROM series_members sm
+                   JOIN exposures ex ON ex.id = sm.exposure_id
+                   JOIN samples sa   ON sa.id = ex.sample_id
+                   WHERE sm.series_id = s.id) AS spans_experiments
            FROM series s
            LEFT JOIN users u ON u.id = s.created_by
            WHERE s.forked_from_id = ?

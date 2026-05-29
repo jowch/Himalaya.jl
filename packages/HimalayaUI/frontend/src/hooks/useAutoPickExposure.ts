@@ -1,6 +1,37 @@
 import { useEffect } from "react";
 import { useAppState } from "../state";
 import { useExposures } from "../queries";
+import type { Exposure } from "../api";
+
+/**
+ * Exposures that can be indexed — anything not explicitly rejected. The query
+ * returns the unfiltered list (one cache row shared with Inspect); the focus
+ * page is the only consumer that wants acceptable-only. Single source of truth
+ * for "which exposures count", reused by the auto-pick effect below and by
+ * PlotCard's zero-exposure empty state.
+ */
+export function acceptableExposures(
+  exposures: readonly Exposure[] | undefined,
+): Exposure[] {
+  return (exposures ?? []).filter((e) => e.status !== "rejected");
+}
+
+/**
+ * Whether the active sample has no usable exposure to index, and if so why.
+ *
+ * `noUsable` stays false until the exposures have actually loaded (undefined
+ * data) so a caller doesn't flash an empty state during the fetch. When there
+ * are zero acceptable exposures, `allRejected` distinguishes "the sample has
+ * exposures but all are rejected" (true → offer to restore in the loupe) from
+ * "the sample has no exposures at all" (false).
+ */
+export function noUsableExposureState(
+  exposures: readonly Exposure[] | undefined,
+): { noUsable: boolean; allRejected: boolean } {
+  if (exposures === undefined) return { noUsable: false, allRejected: false };
+  const noUsable = acceptableExposures(exposures).length === 0;
+  return { noUsable, allRejected: noUsable && exposures.length > 0 };
+}
 
 /**
  * Auto-select the right exposure for the active sample (focus workspace):
@@ -27,10 +58,9 @@ export function useAutoPickExposure(activeSampleId: number | undefined): void {
   const setActiveExposure = useAppState((s) => s.setActiveExposure);
   const exposuresQ = useExposures(activeSampleId);
   useEffect(() => {
-    // Skip rejected exposures. Hook returns the unfiltered list (one cache
-    // row shared with Inspect); the focus page is the only consumer that
-    // wants acceptable-only.
-    const exposures = (exposuresQ.data ?? []).filter((e) => e.status !== "rejected");
+    // Acceptable-only (see acceptableExposures): the shared cache row is the
+    // unfiltered Inspect list, but the focus auto-pick wants indexable ones.
+    const exposures = acceptableExposures(exposuresQ.data);
     if (exposures.length === 0) return;
     // 1. A valid current pick wins — never clobber a deliberate switch (F-11).
     if (exposures.some((e) => e.id === activeExposureId)) return;

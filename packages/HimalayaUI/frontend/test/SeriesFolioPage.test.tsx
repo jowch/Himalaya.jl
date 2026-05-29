@@ -24,7 +24,8 @@ function summary(over: Partial<SeriesSummary> = {}): SeriesSummary {
     forked_at_hash: null, view_grouping_mode: null, view_show_peak_ticks: null,
     view_show_peak_labels: null, last_event_at: "2026-05-02 10:00:00",
     author_username: "jc", member_count: 3, member_phases: ["Pn3m"],
-    member_phase_count: 1, has_stale_members: false, ...over,
+    member_phase_count: 1, has_stale_members: false,
+    ordering_variable: null, spans_experiments: false, ...over,
   };
 }
 

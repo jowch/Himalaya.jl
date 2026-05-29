@@ -21,7 +21,6 @@ interface SeriesBuilderRailProps {
   onTrackOnChange: (next: boolean) => void;
   /** Autogroup card (B-I): how many samples Himalaya read as this series. */
   sampleCount: number;
-  onConfirmSeries: () => void;
   onAdjustSeries: () => void;
   /** Parent injects <FigureExportControls/> (it owns the export spec thunk). */
   exportControls: ReactNode;
@@ -55,7 +54,7 @@ export function SeriesBuilderRail({
   collapsed, onToggleCollapsed, representation, onRepresentationChange,
   orderingVariable, offset, onOffsetChange, scaleMode, onScaleModeChange,
   trackOn, onTrackOnChange,
-  sampleCount, onConfirmSeries, onAdjustSeries, exportControls, editControls,
+  sampleCount, onAdjustSeries, exportControls, editControls,
 }: SeriesBuilderRailProps): JSX.Element {
   if (collapsed) {
     return (
@@ -116,7 +115,6 @@ export function SeriesBuilderRail({
           <AutogroupCard
             sampleCount={sampleCount}
             orderingVariable={orderingVariable}
-            onConfirm={onConfirmSeries}
             onAdjust={onAdjustSeries}
           />
           <section className="flex flex-col gap-1">

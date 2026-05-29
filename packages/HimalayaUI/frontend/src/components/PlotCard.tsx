@@ -4,10 +4,11 @@ import { useAppState } from "../state";
 import {
   useTrace, usePeaks, useIndices, useGroups,
   useAddPeak, useRemovePeak, useSetPeakExcluded,
-  useExperiment, useSamples,
+  useExperiment, useSamples, useExposures,
 } from "../queries";
-import { useAutoPickExposure } from "../hooks/useAutoPickExposure";
+import { useAutoPickExposure, noUsableExposureState } from "../hooks/useAutoPickExposure";
 import { TraceViewer } from "./TraceViewer";
+import { NoUsableExposureNotice } from "./NoUsableExposureNotice";
 import { HintText } from "./ui";
 import { FigureExportControls } from "./FigureExportControls";
 import { buildTraceExportSpec } from "../lib/figure-export/adapters/traceAdapter";
@@ -85,6 +86,7 @@ export function PlotCard({ headerSlot }: PlotCardProps = {}): JSX.Element {
   const peaksQ      = usePeaks(activeExposureId);
   const indicesQ    = useIndices(activeExposureId);
   const groupsQ     = useGroups(activeExposureId);
+  const exposuresQ  = useExposures(activeSampleId);
 
   const experimentName = activeExperimentId !== undefined
     ? (experimentQ.data?.name ?? `Experiment ${activeExperimentId}`)
@@ -291,12 +293,29 @@ export function PlotCard({ headerSlot }: PlotCardProps = {}): JSX.Element {
 
   const exportDisabled = !traceQ.data || !peaksQ.data;
 
+  // Distinguish "no usable exposure" from a transient trace miss. When the
+  // sample's exposures have loaded and none are acceptable (all rejected, or
+  // none exist), activeExposureId stays undefined (useAutoPickExposure bails),
+  // so the trace query never resolves. The M1 corpus→focus doors can land here
+  // — surface a real empty state with a path back to the loupe rather than the
+  // generic "No trace data available" copy, which reads as a load failure.
+  const { noUsable: noUsableExposure, allRejected: allExposuresRejected } =
+    noUsableExposureState(exposuresQ.data);
+
   const body = (() => {
     if (activeSampleId === undefined) {
       return (
         <div className="flex-1 flex items-center justify-center">
           <HintText>Pick a sample to see its trace.</HintText>
         </div>
+      );
+    }
+    if (noUsableExposure) {
+      return (
+        <NoUsableExposureNotice
+          sampleId={activeSampleId}
+          allRejected={allExposuresRejected}
+        />
       );
     }
     if (!traceQ.data || !peaksQ.data) {
