@@ -126,7 +126,7 @@ describe("focus workspace layout", () => {
     await screen.findByTestId("focus-notes-margin");
     await act(async () => { useAppState.getState().openNotesDrawer(); });
     await screen.findByTestId("focus-notes-drawer");
-    await act(async () => { fireEvent.keyDown(window, { key: "Escape" }); });
+    await act(async () => { fireEvent.keyDown(document, { key: "Escape" }); });
     await waitFor(() =>
       expect(useAppState.getState().notesDrawerOpen).toBe(false),
     );

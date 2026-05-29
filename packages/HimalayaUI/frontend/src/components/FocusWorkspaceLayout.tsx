@@ -1,11 +1,10 @@
-import { useEffect, useRef } from "react";
 import { useAppState } from "../state";
 import {
   useCorpusSamples, useSamples, useUpdateSample,
   useExperiment, useExposures,
 } from "../queries";
-import { useFocusTrap } from "../hooks/useFocusTrap";
 import { sampleDisplayName } from "../lib/sample/displayName";
+import { ModalShell } from "./ui";
 import { PlotCard } from "./PlotCard";
 import { FocusPlotHeader } from "./FocusPlotHeader";
 import { IndicesCard } from "./IndicesCard";
@@ -36,18 +35,6 @@ export function FocusWorkspaceLayout(): JSX.Element {
   // F-12: below xl the Notes margin column yields to a topbar-toggled drawer.
   const notesDrawerOpen  = useAppState((s) => s.notesDrawerOpen);
   const closeNotesDrawer = useAppState((s) => s.closeNotesDrawer);
-
-  // F-12 harden: the < xl notes drawer is role=dialog, so it must behave like
-  // the app's other modals (SpeculativeBuilder/NavModal) — trap Tab while open
-  // and close on Esc. The trap is inert when the drawer is unmounted.
-  const notesDrawerRef = useRef<HTMLDivElement>(null);
-  useFocusTrap(notesDrawerRef, notesDrawerOpen);
-  useEffect(() => {
-    if (!notesDrawerOpen) return;
-    const onKey = (e: KeyboardEvent): void => { if (e.key === "Escape") closeNotesDrawer(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [notesDrawerOpen, closeNotesDrawer]);
 
   // The corpus query gives us the sample's authoritative `experiment_id`
   // (the I4.1 route shim seeds only `activeSampleId`, NOT activeExperimentId).
@@ -146,20 +133,14 @@ export function FocusWorkspaceLayout(): JSX.Element {
           shown). A scrim dismisses it; the body is the SAME FocusNotesMargin
           wired to the SAME save path, so edits round-trip identically whether
           made in the margin or the drawer. */}
-      {notesSample !== undefined && notesDrawerOpen && (
-        <div data-testid="focus-notes-drawer" className="xl:hidden">
-          <div
-            data-testid="focus-notes-drawer-scrim"
-            onClick={closeNotesDrawer}
-            className="fixed inset-0 z-40 bg-ink/20"
-          />
-          <div
-            ref={notesDrawerRef}
-            role="dialog"
-            aria-modal="true"
+      {notesSample !== undefined && (
+        <div className="xl:hidden">
+          <ModalShell
+            open={notesDrawerOpen}
+            onClose={closeNotesDrawer}
+            variant="drawer"
+            testId="focus-notes-drawer"
             aria-label="Notes"
-            className="fixed right-0 top-14 bottom-0 z-50 w-[300px] max-w-[85vw]
-                       overflow-y-auto bg-paper shadow-xl"
           >
             <div className="flex items-center justify-between border-b border-hair px-4 py-2">
               <span className="text-meta uppercase tracking-wider text-ink-faint">Notes</span>
@@ -177,7 +158,7 @@ export function FocusWorkspaceLayout(): JSX.Element {
               sample={notesSample}
               onSaveNotes={(notes) => updateSample.mutate({ notes })}
             />
-          </div>
+          </ModalShell>
         </div>
       )}
     </div>
