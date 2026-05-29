@@ -3,6 +3,7 @@ import { useAppState } from "../state";
 import { useCorpusSamples, useExperiments } from "../queries";
 import { sampleDisplayName } from "../lib/sample/displayName";
 import { Kicker } from "./ui/Kicker";
+import { IconButton } from "./ui/IconButton";
 
 interface Stage {
   id: "samples" | "index" | "series";
@@ -253,34 +254,26 @@ export function CorpusTopbar(): JSX.Element {
           data-testid="sample-stepper"
           className="flex items-center gap-2 text-ink"
         >
-          <button
-            type="button"
-            data-testid="sample-stepper-prev"
+          <IconButton
+            label="Previous sample"
+            tone="ghost"
             disabled={prevSample === undefined}
             onClick={() => prevSample && navigate(`/sample/${prevSample.id}`)}
-            aria-label="Previous sample"
-            className="rounded px-1.5 py-0.5 text-base leading-none text-ink-faint
-                       hover:text-ink disabled:cursor-not-allowed disabled:opacity-30"
-          >
-            &#8249;
-          </button>
+            data-testid="sample-stepper-prev"
+          >{"‹"}</IconButton>
           <span className="flex flex-col items-end leading-tight">
             <span className="text-xs font-semibold text-ink">
               {sampleDisplayName(activeSample!)}
             </span>
             <Kicker as="span" tone="faint">sample {stepIdx + 1} of {siblings.length}</Kicker>
           </span>
-          <button
-            type="button"
-            data-testid="sample-stepper-next"
+          <IconButton
+            label="Next sample"
+            tone="ghost"
             disabled={nextSample === undefined}
             onClick={() => nextSample && navigate(`/sample/${nextSample.id}`)}
-            aria-label="Next sample"
-            className="rounded px-1.5 py-0.5 text-base leading-none text-ink-faint
-                       hover:text-ink disabled:cursor-not-allowed disabled:opacity-30"
-          >
-            &#8250;
-          </button>
+            data-testid="sample-stepper-next"
+          >{"›"}</IconButton>
         </div>
       )}
 

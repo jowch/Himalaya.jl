@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { setToastImpl, type ToastKind } from "../../lib/toast";
+import { IconButton } from "./IconButton";
 
 interface ToastItem {
   id: number;
@@ -112,14 +113,7 @@ export function ToastContainer(): JSX.Element {
             <span className="font-semibold">{KIND_WORD[t.kind]}</span>{" "}
             {t.msg}
           </span>
-          <button
-            type="button"
-            aria-label="Dismiss"
-            onClick={() => dismiss(t.id)}
-            className="text-ink-soft hover:text-ink leading-none px-1"
-          >
-            ×
-          </button>
+          <IconButton label="Dismiss" dismiss tone="ghost" onClick={() => dismiss(t.id)} />
         </div>
       ))}
     </div>

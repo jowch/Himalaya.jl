@@ -4,7 +4,7 @@ import {
   useExperiment, useExposures,
 } from "../queries";
 import { sampleDisplayName } from "../lib/sample/displayName";
-import { ModalShell, Kicker } from "./ui";
+import { IconButton, ModalShell, Kicker } from "./ui";
 import { PlotCard } from "./PlotCard";
 import { FocusPlotHeader } from "./FocusPlotHeader";
 import { IndicesCard } from "./IndicesCard";
@@ -144,15 +144,13 @@ export function FocusWorkspaceLayout(): JSX.Element {
           >
             <div className="flex items-center justify-between border-b border-hair px-4 py-2">
               <Kicker as="span" tone="faint">Notes</Kicker>
-              <button
-                type="button"
-                data-testid="focus-notes-drawer-close"
+              <IconButton
+                label="Close notes"
+                dismiss
+                tone="ghost"
                 onClick={closeNotesDrawer}
-                aria-label="Close notes"
-                className="rounded px-1.5 text-base leading-none text-ink-faint hover:text-ink"
-              >
-                &#215;
-              </button>
+                data-testid="focus-notes-drawer-close"
+              />
             </div>
             <FocusNotesMargin
               sample={notesSample}

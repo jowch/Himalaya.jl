@@ -3,7 +3,7 @@ import type { SpeculativeSnap } from "../api";
 import { usePeaks, useSpeculativeSnap, useCreateSpeculative } from "../queries";
 import { useExposureHasPendingPeakOps } from "../lib/queue/hooks";
 import { KNOWN_PHASES, phaseColor } from "../phases";
-import { Button, ModalShell } from "./ui";
+import { Button, IconButton, ModalShell } from "./ui";
 
 export interface SpeculativeBuilderProps {
   exposureId: number;
@@ -110,11 +110,7 @@ export function SpeculativeBuilder({ exposureId, onClose }: SpeculativeBuilderPr
     >
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold text-ink">Speculative index</h2>
-        <button
-          onClick={onClose}
-          aria-label="Close"
-          className="text-ink-faint hover:text-ink text-xl px-2 leading-none"
-        >×</button>
+        <IconButton label="Close" dismiss tone="ghost" onClick={onClose} />
       </div>
 
         <p className="text-xs text-ink-faint">

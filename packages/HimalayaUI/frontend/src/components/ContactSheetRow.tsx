@@ -13,6 +13,7 @@ import { DetectorImage } from "./DetectorImage";
 import { RejectXMark } from "./RejectXMark";
 import { SampleStatusChip } from "./SampleStatusChip";
 import { CullBar } from "./CullBar";
+import { IconButton } from "./ui/IconButton";
 
 /**
  * A sample's index/phase status column. #160 ships only "not-indexed";
@@ -422,14 +423,12 @@ export function ContactSheetRow({
                        bg-plate px-2 py-0.5 text-[10.5px] font-semibold text-ink-soft"
           >
             {t.value}
-            <button
-              type="button"
-              aria-label={`Remove ${t.key || t.value} tag`}
+            <IconButton
+              label={`Remove ${t.key || t.value} tag`}
+              dismiss
+              tone="accent"
               onClick={() => removeTag.mutate(t.id)}
-              className="text-ink-faint hover:text-print-accent"
-            >
-              ×
-            </button>
+            />
           </span>
         ))}
         {tagFormOpen ? (
@@ -474,14 +473,12 @@ export function ContactSheetRow({
             >
               Add
             </button>
-            <button
-              type="button"
-              aria-label="cancel adding tag"
+            <IconButton
+              label="cancel adding tag"
+              dismiss
+              tone="accent"
               onClick={resetTagForm}
-              className="text-ink-faint hover:text-print-accent"
-            >
-              ×
-            </button>
+            />
           </span>
         ) : (
           <button

@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import type { CorpusSample, Exposure } from "../api";
 import { useAddCorpusSampleTag, useRemoveCorpusSampleTag } from "../queries";
 import { Kicker } from "./ui/Kicker";
+import { IconButton } from "./ui/IconButton";
 
 interface Props {
   /** The active exposure. */
@@ -115,14 +116,12 @@ function LoupeTagsEditor({ sample }: { sample: CorpusSample }): JSX.Element {
                          bg-plate px-2 py-0.5 text-[10.5px] font-semibold text-ink-soft"
             >
               {tag.value}
-              <button
-                type="button"
-                aria-label={`Remove ${tag.key || tag.value} tag`}
+              <IconButton
+                label={`Remove ${tag.key || tag.value} tag`}
+                dismiss
+                tone="accent"
                 onClick={() => remove.mutate(tag.id)}
-                className="text-ink-faint hover:text-print-accent"
-              >
-                ×
-              </button>
+              />
             </span>
           ))}
           {editing ? (
@@ -167,14 +166,12 @@ function LoupeTagsEditor({ sample }: { sample: CorpusSample }): JSX.Element {
               >
                 Add
               </button>
-              <button
-                type="button"
-                aria-label="cancel adding tag"
+              <IconButton
+                label="cancel adding tag"
+                dismiss
+                tone="accent"
                 onClick={reset}
-                className="text-ink-faint hover:text-print-accent"
-              >
-                ×
-              </button>
+              />
             </span>
           ) : (
             <button

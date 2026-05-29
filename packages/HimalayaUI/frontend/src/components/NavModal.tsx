@@ -4,7 +4,7 @@ import { Skeleton } from "boneyard-js/react";
 import { useAppState } from "../state";
 import { useExperiments, useSamples } from "../queries";
 import type { Experiment, Sample } from "../api";
-import { ModalShell } from "./ui";
+import { IconButton, ModalShell } from "./ui";
 
 const NAV_FIXTURE_EXPERIMENTS: { id: number; primary: string; secondary: string }[] = [
   { id: 1, primary: "Experiment A", secondary: "/data/lipids/expA" },
@@ -318,15 +318,13 @@ function Chip({ label, onRemove, testId }: ChipProps): JSX.Element {
                  bg-paper-sunk border border-hair-strong text-sm text-ink"
     >
       {label}
-      <button
-        type="button"
-        aria-label={`Remove ${label}`}
+      <IconButton
+        label={`Remove ${label}`}
+        dismiss
+        tone="accent"
         onClick={onRemove}
-        className="text-ink-soft hover:text-error px-0.5 leading-none"
         data-testid={testId ? `${testId}-remove` : undefined}
-      >
-        ×
-      </button>
+      />
     </span>
   );
 }

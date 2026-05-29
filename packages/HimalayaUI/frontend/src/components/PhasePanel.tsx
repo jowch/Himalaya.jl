@@ -3,7 +3,7 @@ import { Skeleton } from "boneyard-js/react";
 import { useIndices, useGroups, useAddIndexToGroup, useRemoveIndexFromGroup, useDeleteIndex, useExperiment } from "../queries";
 import { useAppState } from "../state";
 import { phaseColor } from "../phases";
-import { HintText, ScoreBar, Kicker } from "./ui";
+import { HintText, IconButton, ScoreBar, Kicker } from "./ui";
 import { StaleIndicesBanner } from "./StaleIndicesBanner";
 import { SpeculativeBuilder } from "./SpeculativeBuilder";
 import { latticeUnitFromQUnits } from "../lib/units";
@@ -150,13 +150,13 @@ function CandidateRow({ index, inCall, onToggle, onHover, onLeave, onDelete }: C
 
       {/* speculative delete */}
       {onDelete && (
-        <button
-          type="button"
-          data-testid={`spec-delete-${index.id}`}
-          className="shrink-0 rounded p-1 text-ink-faint transition-colors hover:text-error focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
+        <IconButton
+          label={`Delete speculative index ${index.id}`}
+          tone="danger"
           title="Delete this speculative index"
-          aria-label={`Delete speculative index ${index.id}`}
+          data-testid={`spec-delete-${index.id}`}
           onClick={(e) => { e.stopPropagation(); onDelete(); }}
+          className="shrink-0"
         >
           <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" aria-hidden="true">
             <path
@@ -165,7 +165,7 @@ function CandidateRow({ index, inCall, onToggle, onHover, onLeave, onDelete }: C
               strokeLinecap="round" strokeLinejoin="round"
             />
           </svg>
-        </button>
+        </IconButton>
       )}
     </div>
   );
