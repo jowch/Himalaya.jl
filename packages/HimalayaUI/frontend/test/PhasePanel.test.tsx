@@ -123,6 +123,11 @@ describe("<PhasePanel> — candidate multi-select (R4 L-10)", () => {
     renderWithProviders(<PhasePanel exposureId={42} />);
     const row = await screen.findByTestId("candidate-row-11");
     expect(row).toHaveTextContent("1 : 2");
+    // The row must be keyboard-reachable (role=checkbox + tabIndex) so a
+    // keyboard user can land on it. The focus-visible ring layered on top is
+    // visual-only (no JSDOM proxy) and is verified in the live visual audit.
+    expect(row).toHaveAttribute("role", "checkbox");
+    expect(row).toHaveAttribute("tabindex", "0");
   });
 
   it("toggling an unchecked candidate posts add-to-group", async () => {
@@ -229,7 +234,12 @@ describe("<PhasePanel> — speculative", () => {
     );
     renderWithProviders(<PhasePanel exposureId={42} />);
     expect(await screen.findByTestId("candidate-row-20")).toBeInTheDocument();
-    expect(screen.getByTestId("spec-delete-20")).toBeInTheDocument();
+    const del = screen.getByTestId("spec-delete-20");
+    expect(del).toBeInTheDocument();
+    // The delete control is an ink-stroke SVG, not the off-brand 🗑 emoji
+    // (the only emoji that used to live in the rail).
+    expect(del.querySelector("svg")).not.toBeNull();
+    expect(del.textContent).not.toContain("🗑");
     expect(screen.getByTestId("add-speculative-button")).toBeInTheDocument();
   });
 

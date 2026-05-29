@@ -199,6 +199,37 @@ describe("ContactSheetRow", () => {
     expect(await screen.findByTestId("tag-form")).toBeInTheDocument();
   });
 
+  // Form-parity: the value input handled Enter/Esc but the key input did not,
+  // so submitting from the key field silently failed. Both inputs must submit
+  // on Enter and cancel on Esc.
+  it("submits the tag on Enter from the key input", async () => {
+    mockFetch({ "/api/samples/7/exposures": [], "/api/samples/7/tags":
+      { id: 1, key: "lipid", value: "DOPC", source: "manual" } });
+    renderRow(makeSample({ id: 7 }));
+    fireEvent.click(await screen.findByTestId("tag-add"));
+    await screen.findByTestId("tag-form");
+    fireEvent.change(screen.getByLabelText("tag key"), { target: { value: "lipid" } });
+    fireEvent.change(screen.getByLabelText("tag value"), { target: { value: "DOPC" } });
+    fireEvent.keyDown(screen.getByLabelText("tag key"), { key: "Enter" });
+    // submitTag ran: the POST fired and the form closed.
+    await waitFor(() => {
+      const calls = (global.fetch as ReturnType<typeof vi.fn>).mock.calls;
+      expect(calls.some((c) => String(c[0]).includes("/api/samples/7/tags")
+        && (c[1] as RequestInit | undefined)?.method === "POST")).toBe(true);
+    });
+    expect(screen.queryByTestId("tag-form")).toBeNull();
+  });
+
+  it("cancels the tag form on Escape from the key input", async () => {
+    mockFetch({ "/api/samples/7/exposures": [] });
+    renderRow(makeSample({ id: 7 }));
+    fireEvent.click(await screen.findByTestId("tag-add"));
+    await screen.findByTestId("tag-form");
+    fireEvent.change(screen.getByLabelText("tag key"), { target: { value: "lipid" } });
+    fireEvent.keyDown(screen.getByLabelText("tag key"), { key: "Escape" });
+    expect(screen.queryByTestId("tag-form")).toBeNull();
+  });
+
   // R3-S08 (#256): when chips already exist the `+` is a hover/focus-revealed
   // affordance. It must still be a real, reachable <button> so keyboard users
   // land on it in tab order (the reveal is CSS group-focus-within, not a mount

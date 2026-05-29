@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { render, screen, waitFor, act } from "@testing-library/react";
+import { render, screen, waitFor, act, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -117,6 +117,27 @@ describe("focus workspace layout", () => {
     await waitFor(() =>
       expect(useAppState.getState().notesDrawerOpen).toBe(false),
     );
+  });
+
+  // The drawer is role=dialog; it must behave like the app's other modals
+  // (SpeculativeBuilder/NavModal): Esc closes it and it declares aria-modal.
+  it("Escape closes the notes drawer", async () => {
+    renderAt("/sample/1");
+    await screen.findByTestId("focus-notes-margin");
+    await act(async () => { useAppState.getState().openNotesDrawer(); });
+    await screen.findByTestId("focus-notes-drawer");
+    await act(async () => { fireEvent.keyDown(window, { key: "Escape" }); });
+    await waitFor(() =>
+      expect(useAppState.getState().notesDrawerOpen).toBe(false),
+    );
+  });
+
+  it("the open notes drawer is a modal dialog (aria-modal)", async () => {
+    renderAt("/sample/1");
+    await screen.findByTestId("focus-notes-margin");
+    await act(async () => { useAppState.getState().openNotesDrawer(); });
+    const drawer = await screen.findByTestId("focus-notes-drawer");
+    expect(drawer.querySelector('[role="dialog"]')).toHaveAttribute("aria-modal", "true");
   });
 
   // BLOCKING-review regression: the notes textarea must read from the SAME

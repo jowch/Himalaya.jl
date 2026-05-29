@@ -63,6 +63,18 @@ describe("SeriesBuilderRail", () => {
     expect(props.onOffsetChange).toHaveBeenCalledWith(0.8);
   });
 
+  // Offset spaces a waterfall stack; in heatmap mode it does nothing, so it
+  // must be disabled there rather than stay live-but-inert.
+  it("disables the offset slider in heatmap mode", () => {
+    setup({ representation: "heatmap" });
+    expect(screen.getByTestId("offset-slider")).toBeDisabled();
+  });
+
+  it("keeps the offset slider enabled in waterfall mode", () => {
+    setup({ representation: "waterfall" });
+    expect(screen.getByTestId("offset-slider")).not.toBeDisabled();
+  });
+
   it("forwards scale toggle to onScaleModeChange", () => {
     const props = setup();
     fireEvent.click(screen.getByTestId("scale-linear"));

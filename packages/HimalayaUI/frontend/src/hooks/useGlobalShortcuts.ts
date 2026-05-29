@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useAppState } from "../state";
 import type { Sample } from "../api";
 
@@ -17,9 +18,15 @@ import type { Sample } from "../api";
  * I5.1 (#182): the ArrowLeft/Right "page-tab step" is gone with the dual-nav
  * `activePage` model — there are no legacy page tabs left to step between, so
  * the arrow keys are no longer bound here (corpus surfaces like the loupe own
- * them outright). `useLocation` is no longer needed.
+ * them outright).
+ *
+ * The `,`/`.` step is route-aware: on the focus route (`/sample/:id`) it
+ * navigates the URL (the source of truth there), elsewhere it sets the store.
+ * Hence `useLocation`/`useNavigate` are read here again.
  */
 export function useGlobalShortcuts(samplesInExperiment: Sample[] | undefined): void {
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
       const t = e.target as HTMLElement | null;
@@ -56,11 +63,20 @@ export function useGlobalShortcuts(samplesInExperiment: Sample[] | undefined): v
         const next = samples[nextIdx];
         if (next && next.id !== cur) {
           e.preventDefault();
-          useAppState.getState().setActiveSample(next.id);
+          // On the focus route the URL is the source of truth (one-way
+          // URL->store sync, useSyncActiveSampleFromRoute) — a store-only write
+          // is reverted on the next render, which is why this shortcut read as
+          // dead there. Navigate the URL instead, matching the topbar stepper.
+          // Corpus surfaces stay store-driven.
+          if (pathname.startsWith("/sample/")) {
+            navigate(`/sample/${next.id}`);
+          } else {
+            useAppState.getState().setActiveSample(next.id);
+          }
         }
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [samplesInExperiment]);
+  }, [samplesInExperiment, navigate, pathname]);
 }

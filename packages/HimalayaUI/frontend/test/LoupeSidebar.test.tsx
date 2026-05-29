@@ -1,5 +1,5 @@
 import { beforeEach, describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { makeClient } from "./test-utils";
@@ -278,5 +278,30 @@ describe("LoupeSidebar — sample tags", () => {
     fireEvent.click(screen.getByTestId("loupe-tag-add"));
     expect(screen.getByTestId("loupe-tag-form")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("value")).toBeInTheDocument();
+  });
+
+  // Form-parity (same defect as the contact-sheet form): the key input had no
+  // Enter/Esc handler, so submitting from it silently failed.
+  it("submits the tag on Enter from the key input", async () => {
+    render(wrap(<LoupeSidebar {...defaultProps()} />));
+    fireEvent.click(screen.getByTestId("loupe-tag-add"));
+    fireEvent.change(screen.getByLabelText("tag key"), { target: { value: "lipid" } });
+    fireEvent.change(screen.getByLabelText("tag value"), { target: { value: "DOPC" } });
+    fireEvent.keyDown(screen.getByLabelText("tag key"), { key: "Enter" });
+    // The form closes synchronously (reset); the queued POST flushes async.
+    expect(screen.queryByTestId("loupe-tag-form")).toBeNull();
+    await waitFor(() => {
+      const calls = (global.fetch as ReturnType<typeof vi.fn>).mock.calls;
+      expect(calls.some((c) => String(c[0]).includes("/api/samples/7/tags")
+        && (c[1] as RequestInit | undefined)?.method === "POST")).toBe(true);
+    });
+  });
+
+  it("cancels the tag form on Escape from the key input", () => {
+    render(wrap(<LoupeSidebar {...defaultProps()} />));
+    fireEvent.click(screen.getByTestId("loupe-tag-add"));
+    fireEvent.change(screen.getByLabelText("tag key"), { target: { value: "lipid" } });
+    fireEvent.keyDown(screen.getByLabelText("tag key"), { key: "Escape" });
+    expect(screen.queryByTestId("loupe-tag-form")).toBeNull();
   });
 });

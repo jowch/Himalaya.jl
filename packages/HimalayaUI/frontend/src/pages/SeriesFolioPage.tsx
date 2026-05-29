@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Skeleton } from "boneyard-js/react";
 import { useSeriesList } from "../queries";
 import { SeriesFolioCard } from "../components/SeriesFolioCard";
@@ -162,12 +162,27 @@ export function SeriesFolioPage(): JSX.Element {
           fixture={FOLIO_FIXTURE}
         >
           {series.length === 0 ? (
-            <div data-testid="series-folio-empty" className="px-4 py-12 text-center text-sm text-ink-faint">
-              No series yet. Select samples on the contact sheet to start one.
+            <div data-testid="series-folio-empty" className="flex flex-col items-center gap-3 px-4 py-12 text-center text-sm text-ink-faint">
+              <p>No series yet. Group samples on the contact sheet to start one.</p>
+              <Link
+                to="/samples"
+                data-testid="series-folio-empty-cta"
+                className="font-medium text-print-accent hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
+              >
+                Open the contact sheet
+              </Link>
             </div>
           ) : visible.length === 0 ? (
-            <div data-testid="series-folio-no-match" className="px-4 py-12 text-center text-sm text-ink-faint">
-              No series match. Clear the search or filter to see the whole folio.
+            <div data-testid="series-folio-no-match" className="flex flex-col items-center gap-3 px-4 py-12 text-center text-sm text-ink-faint">
+              <p>No series match the current search or filter.</p>
+              <button
+                type="button"
+                data-testid="series-folio-clear-filters"
+                onClick={() => { setSearch(""); setFilter("all"); }}
+                className="font-medium text-print-accent hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
+              >
+                Clear filters
+              </button>
             </div>
           ) : (
             <div className="[column-count:1] sm:[column-count:2] lg:[column-count:3] [column-gap:1.25rem]">

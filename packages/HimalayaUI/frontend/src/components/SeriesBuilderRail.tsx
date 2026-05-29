@@ -131,7 +131,7 @@ export function SeriesBuilderRail({
 
       <section className="flex flex-col gap-2.5" data-testid="rail-display">
         <div className="text-xs font-semibold text-ink-faint">Display</div>
-        <OffsetSlider value={offset} onChange={onOffsetChange} />
+        <OffsetSlider value={offset} onChange={onOffsetChange} disabled={representation === "heatmap"} />
         <ScaleToggle value={scaleMode} onChange={onScaleModeChange} />
         {/*
           Cross-trace peak-tracking (#208). The mockup gates this behind a

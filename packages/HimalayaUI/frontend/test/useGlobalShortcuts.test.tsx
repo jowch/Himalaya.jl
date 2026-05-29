@@ -1,14 +1,28 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { renderHook, fireEvent } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { renderHook, render, screen, fireEvent } from "@testing-library/react";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import type { ReactNode } from "react";
 import { useGlobalShortcuts } from "../src/hooks/useGlobalShortcuts";
 import { useAppState } from "../src/state";
+import type { Sample } from "../src/api";
 
 function wrapperAt(path: string) {
   return function Wrapper({ children }: { children: ReactNode }): JSX.Element {
     return <MemoryRouter initialEntries={[path]}>{children}</MemoryRouter>;
   };
+}
+
+function sample(id: number): Sample {
+  return { id, experiment_id: 1, name: `S${id}`, display_name: null,
+    notes: null, tags: [], q_units: "A-1" } as Sample;
+}
+
+// Renders the hook alongside a pathname probe so a test can observe whether the
+// ,/. shortcut navigated the URL (focus route) vs. only set store state.
+function Harness({ samples }: { samples: Sample[] }): JSX.Element {
+  useGlobalShortcuts(samples);
+  const loc = useLocation();
+  return <div data-testid="pathname">{loc.pathname}</div>;
 }
 
 // I5.1 (#182): the dual-nav `activePage` model + its ArrowLeft/Right page-tab
@@ -58,5 +72,43 @@ describe("useGlobalShortcuts — arrow keys are unbound (no page-tab step)", () 
     }).not.toThrow();
     // No store mutation from T.
     expect(useAppState.getState().activeSampleId).toBe(before.activeSampleId);
+  });
+});
+
+// The ,/. sample step was dead on the focus route: setActiveSample alone is
+// reverted by the one-way URL->store sync, so the step must navigate the URL
+// there (mirroring the topbar stepper + NavModal's M1 fix).
+describe("useGlobalShortcuts — ,/. sample step", () => {
+  const SAMPLES = [sample(10), sample(11), sample(12)];
+
+  beforeEach(() => {
+    useAppState.setState({ activeSampleId: 11 });
+  });
+
+  it("navigates to the next sibling URL on '.' from /sample/:id", () => {
+    render(<Harness samples={SAMPLES} />, { wrapper: wrapperAt("/sample/11") });
+    fireEvent.keyDown(document.body, { key: "." });
+    expect(screen.getByTestId("pathname")).toHaveTextContent("/sample/12");
+  });
+
+  it("navigates to the previous sibling URL on ',' from /sample/:id", () => {
+    render(<Harness samples={SAMPLES} />, { wrapper: wrapperAt("/sample/11") });
+    fireEvent.keyDown(document.body, { key: "," });
+    expect(screen.getByTestId("pathname")).toHaveTextContent("/sample/10");
+  });
+
+  it("does not wrap past the last sample on the focus route", () => {
+    useAppState.setState({ activeSampleId: 12 });
+    render(<Harness samples={SAMPLES} />, { wrapper: wrapperAt("/sample/12") });
+    fireEvent.keyDown(document.body, { key: "." });
+    expect(screen.getByTestId("pathname")).toHaveTextContent("/sample/12");
+  });
+
+  it("on a corpus route, '.' sets store state without navigating", () => {
+    render(<Harness samples={SAMPLES} />, { wrapper: wrapperAt("/samples") });
+    fireEvent.keyDown(document.body, { key: "." });
+    // Store advanced, URL unchanged (corpus surfaces are store-driven).
+    expect(useAppState.getState().activeSampleId).toBe(12);
+    expect(screen.getByTestId("pathname")).toHaveTextContent("/samples");
   });
 });

@@ -144,6 +144,31 @@ describe("SeriesScopingPage", () => {
     expect(screen.getByTestId("scoping-value-10")).toHaveTextContent("1:1");
   });
 
+  it("offers a contact-sheet door from the cold-corpus empty state", async () => {
+    // No tags and no picker samples → the corpus is cold; the empty state
+    // should send the scientist to the contact sheet rather than dead-end.
+    vi.spyOn(global, "fetch").mockImplementation(() =>
+      Promise.resolve(jsonRes([])),
+    );
+    renderScoping();
+    await waitFor(() => expect(screen.getByTestId("scoping-empty")).toBeInTheDocument());
+    expect(screen.getByTestId("scoping-empty-cta")).toHaveAttribute("href", "/samples");
+  });
+
+  it("offers a contact-sheet door from the no-shared-ordering empty state", async () => {
+    // Samples exist but share no ordering tag → still no proposal; the door is
+    // to the contact sheet to go tag them.
+    vi.spyOn(global, "fetch").mockImplementation((input) => {
+      const url = typeof input === "string" ? input : String(input);
+      if (url.endsWith("/api/picker-samples"))
+        return Promise.resolve(jsonRes([pickerRow(10, "A"), pickerRow(11, "B")]));
+      return Promise.resolve(jsonRes([]));
+    });
+    renderScoping();
+    await waitFor(() => expect(screen.getByTestId("scoping-empty")).toBeInTheDocument());
+    expect(screen.getByTestId("scoping-empty-cta")).toHaveAttribute("href", "/samples");
+  });
+
   it("confirm-and-build is gated until no rows are flagged, then writes + navigates", async () => {
     const posted: any[] = [];
     vi.spyOn(global, "fetch").mockImplementation((input, init) => {

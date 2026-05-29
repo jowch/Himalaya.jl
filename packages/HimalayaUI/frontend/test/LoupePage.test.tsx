@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { MemoryRouter, Routes, Route } from "react-router-dom";
+import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { makeClient } from "./test-utils";
 import type { CorpusSample, Exposure } from "../src/api";
@@ -62,13 +62,20 @@ function exposure(over: Partial<Exposure> = {}): Exposure {
   };
 }
 
+// The /samples marker surfaces its query string so a test can assert the
+// loupe back-navigation preserves ?beamtime=.
+function SamplesMarker(): JSX.Element {
+  const loc = useLocation();
+  return <div data-testid="samples-marker" data-search={loc.search} />;
+}
+
 function renderAt(path: string) {
   const client = makeClient();
   return render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[path]}>
         <Routes>
-          <Route path="/samples" element={<div data-testid="samples-marker" />} />
+          <Route path="/samples" element={<SamplesMarker />} />
           <Route path="/samples/loupe/:sampleId" element={<LoupePage />} />
         </Routes>
       </MemoryRouter>
@@ -193,6 +200,20 @@ describe("LoupePage — composition", () => {
     renderAt("/samples/loupe/7");
     fireEvent.click(screen.getByTestId("loupe-back"));
     expect(screen.getByTestId("samples-marker")).toBeInTheDocument();
+  });
+
+  it("preserves the ?beamtime filter when navigating back", () => {
+    // Back used to drop the corpus filter, dumping the user on the unfiltered
+    // sheet. The query must round-trip (mirrors the topbar Contact-sheet link).
+    renderAt("/samples/loupe/7?beamtime=3");
+    fireEvent.click(screen.getByTestId("loupe-back"));
+    expect(screen.getByTestId("samples-marker")).toHaveAttribute("data-search", "?beamtime=3");
+  });
+
+  it("navigates back with no query when no beamtime filter is set", () => {
+    renderAt("/samples/loupe/7");
+    fireEvent.click(screen.getByTestId("loupe-back"));
+    expect(screen.getByTestId("samples-marker")).toHaveAttribute("data-search", "");
   });
 });
 

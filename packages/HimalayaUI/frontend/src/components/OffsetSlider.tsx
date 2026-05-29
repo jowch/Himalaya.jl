@@ -2,6 +2,8 @@ interface OffsetSliderProps {
   /** Current offset multiplier (0.4..1.4). */
   value: number;
   onChange: (next: number) => void;
+  /** Greyed + inert when the offset has no effect (e.g. heatmap mode). */
+  disabled?: boolean;
 }
 
 /**
@@ -10,9 +12,12 @@ interface OffsetSliderProps {
  * range to a working-band fraction via `offsetToBandFraction`. Mockup:
  * `series-builder.html` `.slider-row` / `#offset`.
  */
-export function OffsetSlider({ value, onChange }: OffsetSliderProps): JSX.Element {
+export function OffsetSlider({ value, onChange, disabled = false }: OffsetSliderProps): JSX.Element {
   return (
-    <div className="flex flex-col gap-1.5" data-testid="offset-slider-row">
+    <div
+      className={`flex flex-col gap-1.5 ${disabled ? "opacity-40" : ""}`}
+      data-testid="offset-slider-row"
+    >
       <div className="flex items-baseline justify-between">
         <span className="text-xs font-semibold text-ink">Trace offset</span>
         <span className="text-xs font-semibold text-ink" data-testid="offset-slider-value">
@@ -27,8 +32,9 @@ export function OffsetSlider({ value, onChange }: OffsetSliderProps): JSX.Elemen
         max="1.4"
         step="0.05"
         value={value}
+        disabled={disabled}
         onChange={(e) => onChange(parseFloat(e.target.value))}
-        className="h-[3px] w-full cursor-pointer appearance-none rounded-full bg-hair-strong accent-print-accent"
+        className="h-[3px] w-full appearance-none rounded-full bg-hair-strong accent-print-accent disabled:cursor-not-allowed cursor-pointer"
       />
     </div>
   );
