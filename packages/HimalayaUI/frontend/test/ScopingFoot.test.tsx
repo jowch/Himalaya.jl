@@ -25,11 +25,9 @@ describe("ScopingFoot", () => {
     expect(dot).not.toBeNull();
     expect(dot!.getAttribute("style")).toContain("var(--color-success)");
   });
-  it("the build button carries Print ink tokens, not ice-blue accent (S-B/S-C)", () => {
+  it("the build button is the solid (ink) Button variant, not the ice-blue accent (S-B/S-C)", () => {
     render(<ScopingFoot flagCount={0} memberCount={1} keyLabel="ratio" canBuild onBuild={() => {}} />);
     const btn = screen.getByTestId("scoping-open-confirm");
-    expect(btn.className).toContain("bg-ink");
-    expect(btn.className).toContain("text-paper");
-    expect(btn.className).not.toContain("bg-accent");
+    expect(btn.getAttribute("data-variant")).toBe("solid");
   });
 });

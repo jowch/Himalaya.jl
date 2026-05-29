@@ -1,5 +1,6 @@
 import { useRef } from "react";
 import { useFocusTrap } from "../hooks/useFocusTrap";
+import { Button } from "./ui";
 
 interface Props {
   open: boolean;
@@ -48,11 +49,10 @@ export function ScopingConfirmModal({
             className="rounded px-3 py-1.5 text-sm text-ink-soft hover:underline">
             Cancel
           </button>
-          <button type="button" data-testid="scoping-confirm-build"
-            onClick={onConfirm}
-            className="rounded border border-ink bg-ink px-3 py-1.5 text-sm font-semibold text-paper hover:bg-ink/85">
+          <Button type="button" data-testid="scoping-confirm-build" variant="solid"
+            onClick={onConfirm} className="px-3 py-1.5 text-sm font-semibold">
             Confirm &amp; build →
-          </button>
+          </Button>
         </div>
       </div>
     </div>

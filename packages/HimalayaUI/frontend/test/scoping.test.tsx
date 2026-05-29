@@ -110,13 +110,11 @@ describe("ScopingConfirmModal", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it("the confirm-build button uses Print ink tokens, not the accent (S-B)", () => {
+  it("the confirm-build button is the solid (ink) Button variant, not the accent (S-B)", () => {
     render(<ScopingConfirmModal open orderingKey="ratio" count={2}
       onConfirm={() => {}} onClose={() => {}} />);
     const btn = screen.getByTestId("scoping-confirm-build");
-    expect(btn.className).toContain("bg-ink");
-    expect(btn.className).toContain("text-paper");
-    expect(btn.className).not.toContain("bg-accent");
+    expect(btn.getAttribute("data-variant")).toBe("solid");
   });
 });
 

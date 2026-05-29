@@ -1,3 +1,5 @@
+import { Button } from "./ui";
+
 interface Props {
   flagCount: number;
   memberCount: number;
@@ -34,16 +36,17 @@ export function ScopingFoot({ flagCount, memberCount, keyLabel, canBuild, onBuil
           Confirming records the {keyLabel} on every sample; the next series that needs it already knows.
         </div>
       </div>
-      <button
+      <Button
         type="button"
         data-testid="scoping-open-confirm"
+        variant="solid"
         disabled={!canBuild}
         onClick={onBuild}
         title={canBuild ? undefined : "Check the flagged values above before building"}
-        className="shrink-0 rounded-md border border-ink bg-ink px-[18px] py-[11px] text-[13px] font-semibold text-paper transition-colors hover:bg-ink/85 disabled:cursor-not-allowed disabled:border-hair-strong disabled:bg-paper-sunk disabled:text-ink-faint"
+        className="shrink-0 px-[18px] py-[11px] text-[13px] font-semibold disabled:cursor-not-allowed disabled:border-hair-strong disabled:bg-paper-sunk disabled:text-ink-faint"
       >
         Confirm &amp; build →
-      </button>
+      </Button>
     </div>
   );
 }
