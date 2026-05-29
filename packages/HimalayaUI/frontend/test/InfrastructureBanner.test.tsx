@@ -79,6 +79,36 @@ describe("InfrastructureBanner", () => {
     expect(screen.getByRole("button", { name: /refresh/i })).toBeInTheDocument();
   });
 
+  it("uses a full hairline border, not a left-edge severity stripe (showing)", () => {
+    addMutation(qc, { status: "pending", submittedAt: Date.now() - 1000 });
+    render(<InfrastructureBanner />, { wrapper: withQC(qc) });
+    const banner = screen.getByTestId("infrastructure-banner");
+    expect(banner.className).toContain("border-hair");
+    expect(banner.className).not.toContain("border-l-4");
+    expect(banner.className).not.toContain("border-warning");
+  });
+
+  it("labels the showing state with a Saving severity word + icon", () => {
+    addMutation(qc, { status: "pending", submittedAt: Date.now() - 1000 });
+    render(<InfrastructureBanner />, { wrapper: withQC(qc) });
+    const banner = screen.getByTestId("infrastructure-banner");
+    expect(banner).toHaveAttribute("data-state", "showing");
+    expect(banner).toHaveTextContent("Saving");
+    expect(banner.querySelector('[aria-label="Saving"]')).not.toBeNull();
+  });
+
+  it("labels the stuck state with an Error severity word + icon and corrected prose", () => {
+    addMutation(qc, { status: "pending", submittedAt: Date.now() - 31000 });
+    render(<InfrastructureBanner />, { wrapper: withQC(qc) });
+    const banner = screen.getByTestId("infrastructure-banner");
+    expect(banner).toHaveAttribute("data-state", "stuck");
+    expect(banner.querySelector('[aria-label="Error"]')).not.toBeNull();
+    // Em-dash retired: two sentences, no " — ".
+    expect(banner).toHaveTextContent("Couldn’t save. Try refreshing.");
+    expect(banner.textContent ?? "").not.toContain("—");
+    expect(screen.getByRole("button", { name: /refresh/i })).toBeInTheDocument();
+  });
+
   it("disappears when the mutation settles", () => {
     const m = addMutation(qc, { status: "pending", submittedAt: Date.now() - 1000 });
     render(<InfrastructureBanner />, { wrapper: withQC(qc) });

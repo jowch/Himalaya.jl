@@ -41,9 +41,7 @@ export function InfrastructureBanner(): JSX.Element | null {
   const stuck = visible.some((t) => now - t > STUCK_THRESHOLD_MS);
 
   const stateAttr = stuck ? "stuck" : "showing";
-  const tintClass = stuck
-    ? "bg-plate border-error text-ink"
-    : "bg-plate border-warning text-ink";
+  // Severity is conveyed by the leading icon + word below, not an edge hue.
 
   return (
     <div
@@ -52,13 +50,18 @@ export function InfrastructureBanner(): JSX.Element | null {
       role="status"
       className={
         "fixed left-1/2 -translate-x-1/2 bottom-4 z-40 flex items-center gap-3 " +
-        "rounded-md border-l-4 px-4 py-2 shadow-lg text-body " +
-        tintClass
+        "rounded-md border border-hair bg-plate text-ink px-4 py-2 shadow-lg text-body"
       }
     >
       {stuck ? (
         <>
-          <span>Couldn&rsquo;t save &mdash; try refreshing</span>
+          <span aria-label="Error" className="flex-shrink-0 font-bold text-error">
+            {"✕"}
+          </span>
+          <span>
+            <span className="font-semibold">Error.</span> Couldn&rsquo;t save. Try
+            refreshing.
+          </span>
           <button
             type="button"
             onClick={() => window.location.reload()}
@@ -70,10 +73,12 @@ export function InfrastructureBanner(): JSX.Element | null {
       ) : (
         <>
           <span
-            aria-hidden="true"
-            className="inline-block h-3 w-3 rounded-full border-2 border-warning border-t-transparent animate-spin"
+            aria-label="Saving"
+            className="inline-block h-3 w-3 flex-shrink-0 rounded-full border-2 border-accent border-t-transparent animate-spin"
           />
-          <span>Saving your changes&hellip;</span>
+          <span>
+            <span className="font-semibold">Saving</span> your changes&hellip;
+          </span>
         </>
       )}
     </div>
