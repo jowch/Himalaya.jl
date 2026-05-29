@@ -289,7 +289,7 @@ function NameStep({
       )}
       {error && <p className="text-error text-base">{error}</p>}
       <div className="flex justify-end">
-        <Button variant="primary" onClick={onSubmit} data-testid="onboarding-continue">
+        <Button variant="solid" onClick={onSubmit} data-testid="onboarding-continue">
           Continue
         </Button>
       </div>
@@ -349,11 +349,11 @@ function TutorialStep({
             </Button>
           )}
           {!isLast ? (
-            <Button variant="primary" onClick={onNext} data-testid="tutorial-next">
+            <Button variant="solid" onClick={onNext} data-testid="tutorial-next">
               Next
             </Button>
           ) : (
-            <Button variant="primary" onClick={onDone} data-testid="tutorial-done">
+            <Button variant="solid" onClick={onDone} data-testid="tutorial-done">
               Got it
             </Button>
           )}

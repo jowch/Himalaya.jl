@@ -267,7 +267,7 @@ export function SpeculativeBuilder({ exposureId, onClose }: SpeculativeBuilderPr
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="ghost" onClick={onClose} type="button">Cancel</Button>
           <Button
-            variant="primary"
+            variant="solid"
             onClick={handleSave}
             type="button"
             disabled={anchorPeakId === null || createMut.isPending}
