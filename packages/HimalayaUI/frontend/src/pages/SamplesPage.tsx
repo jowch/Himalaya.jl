@@ -124,9 +124,7 @@ export function SamplesPage(): JSX.Element {
             {screened}
             <b className="font-medium text-ink-faint"> / {total}</b>
           </div>
-          <div className="mt-0.5 text-[10.5px] font-bold uppercase tracking-[0.08em] text-ink-faint">
-            samples screened
-          </div>
+          <Kicker tone="faint" className="mt-0.5">samples screened</Kicker>
           <div
             data-testid="screened-progress-bar"
             className="mt-2 h-1 w-[152px] overflow-hidden rounded-full bg-hair"

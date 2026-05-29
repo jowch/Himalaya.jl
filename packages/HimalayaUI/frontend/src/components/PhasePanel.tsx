@@ -3,7 +3,7 @@ import { Skeleton } from "boneyard-js/react";
 import { useIndices, useGroups, useAddIndexToGroup, useRemoveIndexFromGroup, useDeleteIndex, useExperiment } from "../queries";
 import { useAppState } from "../state";
 import { phaseColor } from "../phases";
-import { HintText, ScoreBar } from "./ui";
+import { HintText, ScoreBar, Kicker } from "./ui";
 import { StaleIndicesBanner } from "./StaleIndicesBanner";
 import { SpeculativeBuilder } from "./SpeculativeBuilder";
 import { latticeUnitFromQUnits } from "../lib/units";
@@ -174,11 +174,7 @@ function CandidateRow({ index, inCall, onToggle, onHover, onLeave, onDelete }: C
 // ── Rail section heading ─────────────────────────────────────────────────────
 
 function RailHead({ children }: { children: ReactNode }): JSX.Element {
-  return (
-    <div className="text-[10.5px] font-bold uppercase tracking-[0.09em] text-ink-faint">
-      {children}
-    </div>
-  );
+  return <Kicker tone="faint">{children}</Kicker>;
 }
 
 // ── Panel ────────────────────────────────────────────────────────────────────
@@ -306,12 +302,13 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
               ) : (
                 <>
                   {inCall.length > 1 && (
-                    <div
+                    <Kicker
+                      tone="faint"
                       data-testid="coexistence-tag"
-                      className="px-4 pt-2.5 text-[10px] font-bold uppercase tracking-[0.08em] text-ink-faint"
+                      className="px-4 pt-2.5"
                     >
                       Coexistence · {inCall.length} phases
-                    </div>
+                    </Kicker>
                   )}
                   <div className="divide-y divide-hair">
                     {inCall.map((ix) => (

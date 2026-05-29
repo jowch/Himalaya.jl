@@ -3,6 +3,7 @@ import { RepresentationToggle, type Representation } from "./RepresentationToggl
 import { OffsetSlider } from "./OffsetSlider";
 import { ScaleToggle, type ScaleMode } from "./ScaleToggle";
 import { AutogroupCard } from "./AutogroupCard";
+import { Kicker } from "./ui/Kicker";
 
 interface SeriesBuilderRailProps {
   collapsed: boolean;
@@ -81,11 +82,12 @@ export function SeriesBuilderRail({
           no semibold — a quiet section label, not a title competing with the
           plate's terracotta kicker.
         */}
-        <span
+        <Kicker
+          as="span"
+          tone="faint"
           data-testid="rail-compose-header"
           data-recede="true"
-          className="text-xs uppercase tracking-[0.14em] text-ink-faint"
-        >Compose</span>
+        >Compose</Kicker>
         <button
           type="button"
           data-testid="rail-collapse-toggle"

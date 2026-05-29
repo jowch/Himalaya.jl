@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { Trace } from "../api";
 import type { OrderingRow } from "../lib/scoping/proposeOrdering";
 import { ScopingSparkline } from "./ScopingSparkline";
+import { Kicker } from "./ui/Kicker";
 
 interface Props {
   rows: OrderingRow[];
@@ -28,9 +29,7 @@ export function ScopingLooseMatches({ rows, traces, phases, onAdd }: Props): JSX
   const hiddenCount = rows.length - visible.length;
   return (
     <div className="mt-5 border-t border-hair pt-4">
-      <div className="mb-2 text-[10.5px] font-bold uppercase tracking-wider text-ink-faint">
-        Himalaya also found
-      </div>
+      <Kicker tone="faint" className="mb-2">Himalaya also found</Kicker>
       {rows.length === 0 ? (
         <div data-testid="scoping-loose-empty" className="text-[11.5px] italic text-ink-faint">
           Nothing else in the corpus matches this grouping.

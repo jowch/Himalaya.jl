@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 import { Link } from "react-router-dom";
 import type { CorpusSample, Exposure } from "../api";
 import { useAddCorpusSampleTag, useRemoveCorpusSampleTag } from "../queries";
+import { Kicker } from "./ui/Kicker";
 
 interface Props {
   /** The active exposure. */
@@ -57,11 +58,7 @@ function SignalMeter({ level }: { level: number }): JSX.Element {
 }
 
 function SectionHeading({ children }: { children: string }): JSX.Element {
-  return (
-    <div className="mb-2 text-[10px] font-bold uppercase tracking-wide text-ink-faint">
-      {children}
-    </div>
-  );
+  return <Kicker tone="faint" className="mb-2">{children}</Kicker>;
 }
 
 /**

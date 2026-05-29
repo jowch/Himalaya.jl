@@ -289,9 +289,7 @@ export function SeriesScopingPage(): JSX.Element {
                 <ScopingOrderField keyLabel={keyLabel} />
 
                 <div className="mb-1 mt-6 flex items-baseline justify-between">
-                  <span className="text-[10.5px] font-bold uppercase tracking-wider text-ink-faint">
-                    The series
-                  </span>
+                  <Kicker as="span" tone="faint">The series</Kicker>
                   <span className="flex items-baseline gap-3.5">
                     {history.length > 0 ? (
                       <button

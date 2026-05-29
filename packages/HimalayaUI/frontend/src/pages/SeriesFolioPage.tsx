@@ -84,9 +84,7 @@ export function SeriesFolioPage(): JSX.Element {
             <div data-testid="series-folio-count" className="text-display leading-none text-ink">
               {visible.length}
             </div>
-            <div className="mt-1 text-[10.5px] font-bold uppercase tracking-[0.08em] text-ink-faint">
-              {isFiltered ? `of ${series.length} shown` : "series in the folio"}
-            </div>
+            <Kicker tone="faint" className="mt-1">{isFiltered ? `of ${series.length} shown` : "series in the folio"}</Kicker>
           </div>
           <button
             type="button"
@@ -127,9 +125,7 @@ export function SeriesFolioPage(): JSX.Element {
             </button>
           ))}
         </div>
-        <span className="ml-auto text-[10.5px] font-bold uppercase tracking-[0.07em] text-ink-faint">
-          Sort
-        </span>
+        <Kicker as="span" tone="faint" className="ml-auto">Sort</Kicker>
         <SegmentedControl<FolioSort>
           aria-label="Sort series"
           role="group"

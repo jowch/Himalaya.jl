@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import * as api from "../api";
 import type { User } from "../api";
 import { useAppState } from "../state";
-import { Button, ModalShell } from "./ui";
+import { Button, ModalShell, Kicker } from "./ui";
 
 /**
  * OnboardingFlow — shown when no username is in persisted state.
@@ -315,9 +315,7 @@ function TutorialStep({
       onKeyDown={onKeyDown}
       className="p-7 flex flex-col gap-4 outline-0"
     >
-      <div className="text-xs uppercase tracking-widest text-ink-faint">
-        Welcome · {slideIdx + 1} of {TUTORIAL_SLIDES.length}
-      </div>
+      <Kicker tone="faint">Welcome · {slideIdx + 1} of {TUTORIAL_SLIDES.length}</Kicker>
       <h2 className="text-lg font-semibold text-ink">{slide.title}</h2>
       <p className="text-ink-soft text-base leading-relaxed">{slide.body}</p>
       <div className="flex items-center justify-between pt-2">

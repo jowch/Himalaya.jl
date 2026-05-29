@@ -313,9 +313,7 @@ function SeriesBuilderBody(
                   </div>
                 </div>
                 {editing ? (
-                  <span data-testid="series-builder-editing-badge" className="text-[10.5px] uppercase tracking-wide text-ink-faint">
-                    Editing
-                  </span>
+                  <Kicker as="span" tone="faint" data-testid="series-builder-editing-badge">Editing</Kicker>
                 ) : (
                   <button
                     type="button"

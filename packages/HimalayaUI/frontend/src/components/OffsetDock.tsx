@@ -1,3 +1,5 @@
+import { Kicker } from "./ui/Kicker";
+
 interface OffsetDockProps {
   /** Only renders when true — shown only in full-bleed (rail collapsed). */
   show: boolean;
@@ -19,7 +21,7 @@ export function OffsetDock({ show, value, onChange }: OffsetDockProps): JSX.Elem
       data-testid="offset-dock"
       className="fixed bottom-6 right-6 z-10 flex items-center gap-3.5 rounded-xl border border-hair-strong bg-plate px-4 py-3 shadow-[0_8px_26px_-10px_rgba(60,52,40,.34)]"
     >
-      <span className="text-[10px] font-bold uppercase tracking-wide text-ink-faint">Offset</span>
+      <Kicker as="span" tone="faint">Offset</Kicker>
       <input
         type="range"
         data-testid="offset-dock-slider"

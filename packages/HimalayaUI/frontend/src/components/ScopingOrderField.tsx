@@ -1,3 +1,5 @@
+import { Kicker } from "./ui/Kicker";
+
 interface Props {
   keyLabel: string;
 }
@@ -13,9 +15,7 @@ interface Props {
 export function ScopingOrderField({ keyLabel }: Props): JSX.Element {
   return (
     <>
-      <div className="mb-1.5 mt-5 text-[10.5px] font-bold uppercase tracking-wider text-ink-faint">
-        Ordered by
-      </div>
+      <Kicker tone="faint" className="mb-1.5 mt-5">Ordered by</Kicker>
       <div
         data-testid="scoping-order-field"
         className="flex items-center rounded-md border border-hair-strong bg-plate px-3.5 py-3"

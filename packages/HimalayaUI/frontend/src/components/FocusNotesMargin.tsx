@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Sample } from "../api";
+import { Kicker } from "./ui/Kicker";
 
 interface Props {
   sample: Sample;
@@ -77,7 +78,7 @@ export function FocusNotesMargin({ sample, onSaveNotes }: Props): JSX.Element {
       className="flex flex-col gap-[15px] overflow-y-auto border-l border-hair bg-paper px-[19px] py-[22px]"
     >
       <div className="flex items-baseline gap-[7px]">
-        <span className="text-meta uppercase tracking-wider text-ink-faint">Notes</span>
+        <Kicker as="span" tone="faint">Notes</Kicker>
         {hasNote && (
           <span
             data-testid="focus-notes-count"

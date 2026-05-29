@@ -2,6 +2,7 @@ import { Link, useLocation, useNavigate, useSearchParams } from "react-router-do
 import { useAppState } from "../state";
 import { useCorpusSamples, useExperiments } from "../queries";
 import { sampleDisplayName } from "../lib/sample/displayName";
+import { Kicker } from "./ui/Kicker";
 
 interface Stage {
   id: "samples" | "index" | "series";
@@ -267,9 +268,7 @@ export function CorpusTopbar(): JSX.Element {
             <span className="text-xs font-semibold text-ink">
               {sampleDisplayName(activeSample!)}
             </span>
-            <span className="text-[10px] uppercase tracking-wide text-ink-faint">
-              sample {stepIdx + 1} of {siblings.length}
-            </span>
+            <Kicker as="span" tone="faint">sample {stepIdx + 1} of {siblings.length}</Kicker>
           </span>
           <button
             type="button"
