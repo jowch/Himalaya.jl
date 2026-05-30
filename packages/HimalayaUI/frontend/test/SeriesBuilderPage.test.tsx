@@ -138,6 +138,26 @@ describe("SeriesBuilderPage — read + states", () => {
     expect(screen.queryByTestId("mock-multi-trace-plot")).not.toBeInTheDocument();
   });
 
+  it("mounts the phases-present reading + member rows in the rail (E-9)", () => {
+    const indexed = member({
+      id: 7, exposure_id: 101, display_order: 0,
+      snapshot: {
+        effective_peaks: [{ id: 1, q: 0.043, intensity: 1, sharpness: 1, source: "auto" }],
+        confirmed_index: { id: 70, phase: "Pn3m", lattice_d: 205, r_squared: 0.99, ngc: -1.5, peak_ids: [1] },
+        confirmed_phases: [{ phase: "Pn3m", lattice_d: 205 }],
+        assignment_state: "indexed",
+        analysis_inputs_hash: "h",
+      },
+    });
+    h.seriesQ = { data: series({ members: [indexed] }), isLoading: false, isError: false };
+    renderAt();
+    // The derived phases-present reading mounts…
+    expect(screen.getByTestId("series-reading")).toBeInTheDocument();
+    expect(screen.getByTestId("reading-phase-row")).toBeInTheDocument();
+    // …and a member row.
+    expect(screen.getByTestId("series-member-row")).toBeInTheDocument();
+  });
+
   it("mounts the rail and toggles full-bleed collapse", () => {
     h.seriesQ = { data: series({ members: [member()] }), isLoading: false, isError: false };
     renderAt();

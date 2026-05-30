@@ -244,6 +244,52 @@ end
         end
     end
 
+    # Plan E (E-4/E-7): the snapshot carries the durable assignment STATE
+    # (indexed | form_factor | null) so the Series surface can distinguish a
+    # form-factor member from a null member (confirmed_index is null for BOTH),
+    # plus `confirmed_phases` — the distinct phases assigned to the member —
+    # so coexistence reads/rows/strip cells can self-decode.
+    @testset "compute_member_snapshot: assignment_state + confirmed_phases" begin
+        mktempdir() do tmp
+            ctx = _setup_analyzed_exposure(tmp; datfile="cubic_tot.dat",
+                                            filename="cubic_tot")
+            # Default (no assignments row) → state "indexed".
+            snap0 = HimalayaUI.compute_member_snapshot(ctx.db, ctx.exposure_id)
+            @test snap0[:assignment_state] == "indexed"
+            @test snap0[:confirmed_phases] isa AbstractVector
+
+            # Drive the member to form_factor via the durable assignment table.
+            DBInterface.execute(ctx.db,
+                """INSERT INTO assignments (exposure_id, state) VALUES (?, 'form_factor')
+                   ON CONFLICT(exposure_id) DO UPDATE SET state = 'form_factor'""",
+                [ctx.exposure_id])
+            snap_ff = HimalayaUI.compute_member_snapshot(ctx.db, ctx.exposure_id)
+            @test snap_ff[:assignment_state] == "form_factor"
+
+            # And to null — distinct from form_factor though both have a null
+            # confirmed_index.
+            DBInterface.execute(ctx.db,
+                "UPDATE assignments SET state = 'null' WHERE exposure_id = ?",
+                [ctx.exposure_id])
+            snap_null = HimalayaUI.compute_member_snapshot(ctx.db, ctx.exposure_id)
+            @test snap_null[:assignment_state] == "null"
+
+            # confirmed_phases reflects the assignment members' index phases.
+            DBInterface.execute(ctx.db,
+                "UPDATE assignments SET state = 'indexed' WHERE exposure_id = ?",
+                [ctx.exposure_id])
+            ix = first(Tables.rowtable(DBInterface.execute(ctx.db,
+                """SELECT id, phase FROM indices WHERE exposure_id = ?
+                   AND phase IS NOT NULL ORDER BY score DESC LIMIT 1""",
+                [ctx.exposure_id])))
+            DBInterface.execute(ctx.db,
+                """INSERT OR IGNORE INTO assignment_members (exposure_id, index_id)
+                   VALUES (?, ?)""", [ctx.exposure_id, Int(ix.id)])
+            snap_ix = HimalayaUI.compute_member_snapshot(ctx.db, ctx.exposure_id)
+            @test String(ix.phase) in [cp[:phase] for cp in snap_ix[:confirmed_phases]]
+        end
+    end
+
     @testset "is_member_stale" begin
         mktempdir() do tmp
             ctx = _setup_analyzed_exposure(tmp)

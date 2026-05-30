@@ -41,6 +41,7 @@ export function buildExportSvg(spec: ExportSpec): SVGSVGElement {
   primary.setAttribute("x", String(EXPORT_MARGIN.left));
   primary.setAttribute("y", String(titleY));
   primary.setAttribute("font", TITLE_FONT_PRIMARY);
+  if (spec.fontFamily) primary.setAttribute("font-family", spec.fontFamily);
   primary.setAttribute("fill", LIGHT_PALETTE.text);
   primary.textContent = spec.title.primary;
   svg.appendChild(primary);
@@ -58,7 +59,11 @@ export function buildExportSvg(spec: ExportSpec): SVGSVGElement {
   // Plot body — Plot.plot() returns SVGSVGElement when title/caption/figure
   // are NOT set (adapters must NOT set them).
   const plotEl = Plot.plot({
-    style: { background: "transparent", color: LIGHT_PALETTE.text, fontFamily: BODY_FONT },
+    style: {
+      background: "transparent",
+      color: LIGHT_PALETTE.text,
+      fontFamily: spec.fontFamily ?? BODY_FONT,
+    },
     ...spec.plot,
   });
   const plotG = document.createElementNS(SVG_NS, "g");
@@ -85,6 +90,19 @@ export function buildExportSvg(spec: ExportSpec): SVGSVGElement {
       cursorX += item.width + 16;
     }
     svg.appendChild(legendG);
+  }
+
+  // Centered footnote line under the plot (clean preset, E-8).
+  if (spec.footnote) {
+    const foot = document.createElementNS(SVG_NS, "text");
+    foot.setAttribute("x", String(spec.width / 2));
+    foot.setAttribute("y", String(spec.height - 10));
+    foot.setAttribute("text-anchor", "middle");
+    foot.setAttribute("font", TITLE_FONT_SECONDARY);
+    if (spec.fontFamily) foot.setAttribute("font-family", spec.fontFamily);
+    foot.setAttribute("fill", LIGHT_PALETTE.textMuted);
+    foot.textContent = spec.footnote;
+    svg.appendChild(foot);
   }
 
   return svg;

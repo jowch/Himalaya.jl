@@ -366,6 +366,42 @@ describe("buildMemberMarks line stroke (Phase 9 grouping-mode wiring)", () => {
     }
   });
 
+  it("suppresses peak anchors for a form-factor member (real trace, no Bragg marks) — E-7", () => {
+    const m = makeMember({
+      snapshot: {
+        effective_peaks: [
+          { id: 11, q: 0.30, intensity: 50, sharpness: 1, source: "auto" },
+        ],
+        confirmed_index: null,
+        confirmed_phases: [],
+        assignment_state: "form_factor",
+        analysis_inputs_hash: "abc",
+      },
+    });
+    buildMemberMarks({ member: m, trace, yBand: [0, 100] });
+    // The trace line still renders…
+    expect(Plot.line).toHaveBeenCalled();
+    // …but NO peak dot/glyph marks (no anchors on a form-factor trace).
+    expect(Plot.dot).not.toHaveBeenCalled();
+  });
+
+  it("suppresses peak anchors for a null member (featureless) — E-7", () => {
+    const m = makeMember({
+      snapshot: {
+        effective_peaks: [
+          { id: 11, q: 0.30, intensity: 50, sharpness: 1, source: "auto" },
+        ],
+        confirmed_index: null,
+        confirmed_phases: [],
+        assignment_state: "null",
+        analysis_inputs_hash: "abc",
+      },
+    });
+    buildMemberMarks({ member: m, trace, yBand: [0, 100] });
+    expect(Plot.line).toHaveBeenCalled();
+    expect(Plot.dot).not.toHaveBeenCalled();
+  });
+
   it("orphan member (no confirmed_index) under byPhase falls back to the orphan gray", () => {
     const m = makeMember({ snapshot: null });
     buildMemberMarks({

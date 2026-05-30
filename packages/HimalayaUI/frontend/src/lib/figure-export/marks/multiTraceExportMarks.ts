@@ -38,6 +38,9 @@ export interface MultiTraceMarksArgs {
   /** Visible q-domain, threaded to the heatmap binner. `null` → derive from
    *  the underlying traces (rare; the adapter normally supplies xDomain). */
   xDomain?: [number, number] | null;
+  /** Override the trace stroke width (Plan E E-8 clean preset → 2px). When
+   *  omitted, the default TRACE_STROKE_PX (1.75) applies. */
+  traceStrokeOverride?: number;
 }
 
 /**
@@ -55,7 +58,9 @@ export function buildMultiTraceExportMarks(args: MultiTraceMarksArgs): Plot.Mark
     representation = "waterfall",
     showCrossTraceTracking = false,
     xDomain,
+    traceStrokeOverride,
   } = args;
+  const traceStroke = traceStrokeOverride ?? TRACE_STROKE_PX;
 
   const ratios = members.map((m) => m.band_height || 1);
   const yBands = computeYBands(ratios, panelHeight);
@@ -163,7 +168,7 @@ export function buildMultiTraceExportMarks(args: MultiTraceMarksArgs): Plot.Mark
         x: "q",
         y: "y",
         stroke: color,
-        strokeWidth: TRACE_STROKE_PX,
+        strokeWidth: traceStroke,
       }),
     );
 
@@ -186,8 +191,12 @@ export function buildMultiTraceExportMarks(args: MultiTraceMarksArgs): Plot.Mark
       );
     }
 
-    // Peaks — honour show toggles.
-    const peaks = member.snapshot?.effective_peaks ?? [];
+    // Peaks — honour show toggles AND the 3-state: a form-factor / null member
+    // shows its trace but no peak anchors (E-7).
+    const suppressPeaks =
+      member.snapshot?.assignment_state === "form_factor"
+      || member.snapshot?.assignment_state === "null";
+    const peaks = suppressPeaks ? [] : (member.snapshot?.effective_peaks ?? []);
     if (showPeakTicks && peaks.length > 0) {
       // Converged onto the shared peakMark builder (Plan C plot spine): the
       // legacy ruleX ticks become peak glyphs (manual → diamond, auto →

@@ -10,8 +10,10 @@
  */
 
 // Radicands (values under √) per phase, 1-based by `ratio_position`.
-// Source of truth: src/phase.jl `phaseratios`.
-const RADICANDS: Record<string, number[]> = {
+// Source of truth: src/phase.jl `phaseratios`. Exported so the series anchor
+// map (lib/series/anchors.ts) can derive predicted-q combs from the same table
+// instead of re-transcribing the physics.
+export const RADICANDS: Record<string, number[]> = {
   Lamellar:  [1, 4, 9, 16, 25, 36, 49, 64, 81, 100, 121],
   Hexagonal: [1, 3, 4, 7, 9, 11, 12, 13, 16, 19],
   Square:    [1, 2, 4, 5, 8, 9, 10, 13, 16, 17, 18, 20],

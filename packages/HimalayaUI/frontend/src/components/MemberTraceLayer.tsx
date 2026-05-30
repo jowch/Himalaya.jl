@@ -167,7 +167,14 @@ export function buildMemberPeakRows(props: MemberMarksProps): {
   if (!trace || trace.q.length === 0) return { peaks: [], linePoints: [] };
 
   const snapshot = member.snapshot;
-  const peaks: MemberSnapshotPeak[] = snapshot ? snapshot.effective_peaks : [];
+  // E-7: a form-factor / null member shows its REAL trace but NO peak anchors —
+  // a form-factor trace has a broad shoulder, not Bragg peaks, and a null member
+  // is featureless. Suppress the peak set so neither the ticks nor the
+  // hit-test index carry anchors (the line trace below still renders).
+  const suppressPeaks =
+    snapshot?.assignment_state === "form_factor"
+    || snapshot?.assignment_state === "null";
+  const peaks: MemberSnapshotPeak[] = snapshot && !suppressPeaks ? snapshot.effective_peaks : [];
   const qWindow: QWindow =
     member.q_window_min !== null && member.q_window_max !== null
       ? [member.q_window_min, member.q_window_max]

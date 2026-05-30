@@ -35,6 +35,8 @@ import { buildMemberHeatmapMarks } from "./MemberHeatmapLayer";
 import { buildCrossTraceTrackingMarks } from "./CrossTraceTrackingLayer";
 import { PlotSurface } from "./PlotSurface";
 import type { PlotOverlayContext } from "./PlotSurface";
+import { SeriesTrackingOverlay } from "./SeriesTrackingOverlay";
+import { buildAnchorMap } from "../lib/series/anchors";
 import type { GroupingMode } from "../lib/comparison/coloring";
 import { computeYBands } from "../lib/comparison/yBands";
 import { useActiveBand } from "./ActiveBandContext";
@@ -253,6 +255,11 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
   const showPeakIds = typeof window !== "undefined"
     && new URLSearchParams(window.location.search).has("showPeakIds");
 
+  // E-3: the ephemeral hover/focus-tracked (phase,order) anchor key. Hovering
+  // an anchor bead threads the terracotta migration connector + ghost rings
+  // across the stack; leaving clears it. Local UI state (per the plan).
+  const [trackedKey, setTrackedKey] = useState<string | null>(null);
+
   useEffect(() => {
     const el = plotContainer.current;
     if (!el) return;
@@ -454,6 +461,12 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
   // the correct y-band envelope.
   const overlayBands = computeYBands(members.map((m) => m.band_height || 1), panelHeight);
 
+  // E-2/E-3: the (phase,order) anchor map for the migration-tracking overlay.
+  // Derived from member snapshots only — bounded by member count, recomputed
+  // when the snapshot set changes. Gated on `showCrossTraceTracking` so the
+  // overlay (and its hover handles) mount only when tracking is enabled.
+  const anchorMap = useMemo(() => buildAnchorMap(members), [members]);
+
   // Issue #81 — self-constrain the plot width so each member's band lands at
   // a square aspect ratio (default 1.0). Without this, 4 members in an
   // ~810 px-wide column produces ~5.4:1 W:H bands which visually crushes peak
@@ -501,6 +514,20 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
             onPointerMove={handlePointerMove}
             onPointerLeave={handlePointerLeave}
             data-testid="multi-trace-plot-surface"
+            {...(showCrossTraceTracking
+              ? {
+                  overlay: (ctx: PlotOverlayContext) => (
+                    <SeriesTrackingOverlay
+                      ctx={ctx}
+                      members={members}
+                      anchorMap={anchorMap}
+                      yBands={overlayBands as Array<[number, number]>}
+                      trackedKey={trackedKey}
+                      onTrack={setTrackedKey}
+                    />
+                  ),
+                }
+              : {})}
           />
         </div>
         <div

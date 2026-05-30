@@ -295,9 +295,43 @@ function compute_member_snapshot(db::SQLite.DB, exposure_id::Integer)::Dict{Symb
         )
     end
 
+    # Plan E (E-4/E-7): durable 3-state assignment + the distinct phases the
+    # member's assignment carries. `confirmed_index` is null for BOTH a
+    # form_factor and a null member, so the Series surface needs the explicit
+    # STATE to tell them apart; `confirmed_phases` lets coexistence reads/rows/
+    # strip cells self-decode without a second round-trip to /assignment.
+    state_rows = Tables.rowtable(DBInterface.execute(db,
+        "SELECT state FROM assignments WHERE exposure_id = ?", [eid]))
+    assignment_state = isempty(state_rows) ? "indexed" : String(state_rows[1].state)
+
+    # Per-phase {phase, lattice_d} so a coexistence member can show BOTH
+    # lattices (e.g. `a 205 · d 60 Å`). One row per distinct phase the
+    # assignment carries; lattice_d is the index's fitted lattice parameter.
+    phase_rows = Tables.rowtable(DBInterface.execute(db,
+        """SELECT i.phase, i.lattice_d, MAX(i.score) AS s
+           FROM assignment_members m JOIN indices i ON i.id = m.index_id
+           WHERE m.exposure_id = ? AND i.phase IS NOT NULL
+           GROUP BY i.phase
+           ORDER BY s DESC NULLS LAST, i.phase""", [eid]))
+    confirmed_phases = [Dict{Symbol, Any}(
+        :phase     => String(r.phase),
+        :lattice_d => ismissing(r.lattice_d) ? nothing : Float64(r.lattice_d),
+    ) for r in phase_rows]
+    # Fall back to the confirmed_index phase when the durable assignment has no
+    # members yet (legacy exposures pre-Plan-A migration on this exposure).
+    if isempty(confirmed_phases) && confirmed_index !== nothing
+        cp = confirmed_index[:phase]
+        if cp isa AbstractString && !isempty(cp)
+            confirmed_phases = [Dict{Symbol, Any}(
+                :phase => cp, :lattice_d => confirmed_index[:lattice_d])]
+        end
+    end
+
     Dict{Symbol, Any}(
         :effective_peaks      => effective_peaks,
         :confirmed_index      => confirmed_index,
+        :assignment_state     => assignment_state,
+        :confirmed_phases     => confirmed_phases,
         :analysis_inputs_hash => read_inputs_hash(db, eid),
     )
 end
