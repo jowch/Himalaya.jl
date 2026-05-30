@@ -112,7 +112,7 @@ The product's hard colour-blind rule, applied where colour is densest. **The vis
 What the high-fidelity pass built and settled. The two mockup files are the visual contract; this section is the prose index to them. Items marked **(new)** were not in the §1–§6 concept and emerged during the pass.
 
 ### 8.1 Focus — as built
-- **Trace hero** with the §5.1 atoms live: down-triangle auto peaks, magenta diamond manual, ghosted (hollow/faint) excluded peak, `?`-labelled unindexed leftovers. q-line drops from the hovered mark; q-link "hot" grows the mark + adds a terracotta ring (not a recolour).
+- **Trace hero** with the §5.1 atoms live: down-triangle auto peaks, neutral-gray diamond manual (magenta retired, §5.1), ghosted (hollow/faint) excluded peak, `?`-labelled unindexed leftovers. q-line drops from the hovered mark; q-link "hot" grows the mark + adds a terracotta ring (not a recolour).
 - **Assignment cart** (right rail): 0..N phase blocks, each with phase name (serif, phase-coloured), score, lattice meta, score bar, and a clean **× remove** in the block header. `+ custom index…` footer reads as a button (hover fill). Contextual note below the cart — appears **only when substantive** (the Bonnet suggestion when Pn3m is in and peaks are unexplained; the Bonnet consistency check `ratio ≈ 1.279` when Pn3m+Im3m coexist); no filler line otherwise.
 - **Ranked candidates** with the `⭙ Bonnet` flag + score bump on the coexisting cubic whose lattice matches the Gauss–Bonnet ratio.
 - **Combs panel** replacing the table: per-phase teeth on a shared log-q ruler, full-height gridlines tying teeth to observed peaks, hollow-caret for predicted-but-absent, a **leftover row** of unexplained observed peaks. Toggles to the **indexing-space residual** (lollipop) view where deviating peaks bend off the Δq/q = 0 line.
@@ -136,4 +136,4 @@ What the high-fidelity pass built and settled. The two mockup files are the visu
 2. Auto peak silhouette: **downward** triangle (§5.1).
 3. q-link hot: **grow + ring**, not terracotta recolour (§5.1) — hue-proximity to Pn3m amber.
 4. Hypothetical preview: **plot-only**, never the cart (§8.2) — anti-reflow.
-5. `peak-manual` magenta **retained** for unindexed-manual peaks (the concept retired it) — open nuance in §5.1, recommend keep.
+5. `peak-manual` magenta **retired** (settled 2026-05-30, §5.1) — unindexed-manual peak is a neutral-gray diamond; silhouette carries provenance, colour stays = phase. `peakMark()` must pin this so consumers don't fork.
