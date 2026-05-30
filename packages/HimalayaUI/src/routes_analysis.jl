@@ -162,6 +162,12 @@ function register_analysis_routes!()
             JSON3.write([_group_with_members(db, Int(g.id)) for g in groups]))
     end
 
+    @get "/api/exposures/{id}/assignment" function(req::HTTP.Request, id::Int)
+        db = current_db()
+        HTTP.Response(200, ["Content-Type" => "application/json"],
+            JSON3.write(_assignment_body(db, id)))
+    end
+
     @post "/api/groups/{id}/members" function(req::HTTP.Request, id::Int)
         db = current_db()
         body = json(req)

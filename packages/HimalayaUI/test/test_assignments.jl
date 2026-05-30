@@ -82,3 +82,47 @@ end
         @test b1[:members] == [10, 11]   # ORDER BY index_id
     end
 end
+
+@testset "GET /assignment serves the assignment body" begin
+    mktempdir() do dir
+        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
+        e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (10, ?, 'Pn3m', 0.1)", [e_id])
+        DBInterface.execute(db, "INSERT INTO assignments (exposure_id, state) VALUES (?, 'form_factor')", [e_id])
+
+        # The route's body is _assignment_body; assert its JSON-serialized shape.
+        body = HimalayaUI._assignment_body(db, e_id)
+        round = JSON3.read(JSON3.write(body))
+        @test round.exposure_id == e_id
+        @test round.state == "form_factor"
+        @test collect(round.members) == Int[]
+    end
+end
+
+# Full in-process HTTP coverage — only when the shared test server harness
+# (test_http.jl::with_test_server) is loaded, i.e. under the full runtests.jl
+# suite. Skipped on a standalone `julia test_assignments.jl` run.
+if isdefined(@__MODULE__, :with_test_server)
+    @testset "GET /assignment in-process HTTP" begin
+        mktempdir() do dir
+            db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+            exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+            s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
+            e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
+            DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (10, ?, 'Pn3m', 0.1)", [e_id])
+            DBInterface.execute(db, "INSERT INTO assignments (exposure_id, state) VALUES (?, 'indexed')", [e_id])
+            DBInterface.execute(db, "INSERT INTO assignment_members (exposure_id, index_id) VALUES (?, 10)", [e_id])
+
+            with_test_server(db) do port, base
+                r = HTTP.get("$base/api/exposures/$e_id/assignment")
+                @test r.status == 200
+                got = JSON3.read(String(r.body))
+                @test got.exposure_id == e_id
+                @test got.state == "indexed"
+                @test collect(got.members) == [10]
+            end
+        end
+    end
+end
