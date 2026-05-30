@@ -23,4 +23,9 @@ export interface ExportSpec {
    *  SVGSVGElement (breaks the rest of the pipeline). */
   plot: Plot.PlotOptions;
   legend?: LegendSpec;
+  /** Override the figure font family (Plan E E-8 clean preset → Arial). When
+   *  omitted the renderer uses its default Print sans-serif. */
+  fontFamily?: string;
+  /** A centered footnote line under the plot (Plan E E-8 clean preset). */
+  footnote?: string;
 }
