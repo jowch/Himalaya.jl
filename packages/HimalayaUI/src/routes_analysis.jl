@@ -242,6 +242,12 @@ function register_analysis_routes!()
             # frontend goes assignment-native. Carries post_state (the current
             # assignment) so Plan D's applyRemoteToCache can patch directly; the
             # post_state has no top-level `indices` key by design.
+            # ORDERING IS LOAD-BEARING: index_confirmed MUST be enqueued before
+            # assignment_add. Both frames share this request's client_op_id; the
+            # own-tab deferred resolves off the FIRST frame (index_confirmed) via
+            # synthesizeResponseFromSse, and the second (assignment_add) then
+            # hits the self-echo guard → applyPostStateOnly → bails (no indices).
+            # Reordering these would resolve the deferred off the wrong frame.
             a_result = apply_event!(InTransaction(), db, req;
                 kind        = "assignment_add",
                 entity_type = "exposure",
@@ -297,7 +303,9 @@ function register_analysis_routes!()
 
             # Plan A dual-write (mirror of the add route, removed in Plan D).
             # Carries the current assignment as post_state; no top-level
-            # `indices` key.
+            # `indices` key. ORDERING IS LOAD-BEARING (same as the add route):
+            # index_unconfirmed MUST be enqueued before assignment_remove so the
+            # own-tab deferred resolves off the first frame.
             a_result = apply_event!(InTransaction(), db, req;
                 kind        = "assignment_remove",
                 entity_type = "exposure",
