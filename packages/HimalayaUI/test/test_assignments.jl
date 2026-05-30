@@ -126,3 +126,55 @@ if isdefined(@__MODULE__, :with_test_server)
         end
     end
 end
+
+@testset "assignment/state validation + effect" begin
+    mktempdir() do dir
+        db  = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
+        exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
+        e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
+
+        # Valid set → 'null' state recorded.
+        HimalayaUI.apply_event!(db, req; kind="assignment_set_state",
+            entity_type="exposure", entity_id=e_id, payload=Dict(:state => "null"))
+        @test HimalayaUI._assignment_body(db, e_id)[:state] == "null"
+
+        # The route's allow-list predicate (mirror of the handler guard).
+        valid = s -> s in ("indexed", "form_factor", "null")
+        @test valid("form_factor")
+        @test !valid("bogus")
+    end
+end
+
+if isdefined(@__MODULE__, :with_test_server)
+    @testset "POST /assignment/state in-process HTTP" begin
+        mktempdir() do dir
+            db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+            exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+            s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
+            e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
+            DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (10, ?, 'Pn3m', 0.1)", [e_id])
+            DBInterface.execute(db, "INSERT INTO assignments (exposure_id, state) VALUES (?, 'indexed')", [e_id])
+            DBInterface.execute(db, "INSERT INTO assignment_members (exposure_id, index_id) VALUES (?, 10)", [e_id])
+
+            with_test_server(db) do port, base
+                # Invalid state → 400.
+                r = HTTP.post("$base/api/exposures/$e_id/assignment/state",
+                    ["Content-Type" => "application/json"],
+                    JSON3.write(Dict(:state => "bogus")); status_exception=false)
+                @test r.status == 400
+
+                # Valid: form_factor clears members.
+                r = HTTP.post("$base/api/exposures/$e_id/assignment/state",
+                    ["Content-Type" => "application/json", "X-Username" => "alice"],
+                    JSON3.write(Dict(:state => "form_factor")))
+                @test r.status == 200
+                got = JSON3.read(String(r.body))
+                @test got.state == "form_factor"
+                @test collect(got.members) == Int[]
+                @test HimalayaUI._assignment_body(db, e_id)[:state] == "form_factor"
+            end
+        end
+    end
+end

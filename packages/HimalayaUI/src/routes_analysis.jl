@@ -168,6 +168,40 @@ function register_analysis_routes!()
             JSON3.write(_assignment_body(db, id)))
     end
 
+    @post "/api/exposures/{id}/assignment/state" function(req::HTTP.Request, id::Int)
+        db   = current_db()
+        body = json(req)
+        if !haskey(body, :state)
+            return HTTP.Response(400, ["Content-Type" => "application/json"],
+                JSON3.write(Dict(:error => "missing field: state")))
+        end
+        state = String(body.state)
+        if !(state in ("indexed", "form_factor", "null"))
+            return HTTP.Response(400, ["Content-Type" => "application/json"],
+                JSON3.write(Dict(:error => "invalid state: $state")))
+        end
+        return with_idempotency(db, req) do
+            result = apply_event!(InTransaction(), db, req;
+                kind        = "assignment_set_state",
+                entity_type = "exposure",
+                entity_id   = id,
+                payload     = Dict(:state => state))
+            # Build the response from the now-current assignment, and carry it as
+            # the SSE post_state so Plan D's applyRemoteToCache can patch the
+            # assignment cache directly (no extra refetch). NOTE: the post_state
+            # has NO top-level `indices` key — that is what lets the frontend's
+            # CurationPostState cast bail harmlessly for assignment frames.
+            b = _assignment_body(db, id)
+            post_state = Dict(:assignment =>
+                Dict(:state => b[:state], :members => b[:members]))
+            _enqueue_broadcast_from_result!(result, "assignment_set_state", "exposure", id;
+                post_state = post_state)
+            b[:event_id]    = result.event_id
+            b[:view_row_id] = result.view_row_id
+            HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(b))
+        end
+    end
+
     @post "/api/groups/{id}/members" function(req::HTTP.Request, id::Int)
         db = current_db()
         body = json(req)
