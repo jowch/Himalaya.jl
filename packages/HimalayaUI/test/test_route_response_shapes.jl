@@ -238,6 +238,11 @@ end
                     :id, :exposure_id, :phase, :basis, :score, :r_squared,
                     :lattice_d, :ngc, :status, :kind, :inputs_hash,
                     :peaks, :predicted_q,
+                    # Plan B: the candidate-list route carries the Gauss–Bonnet
+                    # coexistence flag (null when N/A). The single-index and
+                    # speculative routes do NOT yet — `bonnet?` is optional in
+                    # api.ts; Plan D extends them when it wires the ⭙ badge.
+                    :bonnet,
                 ]
                 # Every entry must have exactly these top-level keys —
                 # IndexEntry is closed.
