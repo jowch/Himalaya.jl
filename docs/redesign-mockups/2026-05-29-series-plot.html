@@ -1,0 +1,657 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Series — plotting redesign (first-principles pass)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet" />
+<style>
+  /*
+   * Series surface — first-principles redesign (spec §4).
+   *
+   * The job is "what changes across the variable?", not "curate peaks".
+   *   • WATERFALL is the hero; heatmap demotes to a toggle.
+   *   • TRACES are the subject; peaks render lightly, as interaction anchors
+   *     and interpretive accent — not dense curation marks.
+   *   • Phase is interpretive detail: trace colour + a slim PHASE-STRIP.
+   *   • The on-screen view is a THINKING INSTRUMENT, not a figure builder.
+   *   • EXPORT is decoupled: one-click, zero-config, a clean scientific render
+   *     (GraphPad/Origin), deliberately NOT the Print brand and NOT a
+   *     screen-grab — same plot elements, a different intended look.
+   */
+  :root {
+    --paper:        oklch(0.978 0.006 85);
+    --paper-sunk:   oklch(0.951 0.008 84);
+    --plate:        oklch(0.992 0.004 90);
+    --ink:          oklch(0.265 0.013 68);
+    --ink-soft:     oklch(0.467 0.012 70);
+    --ink-faint:    oklch(0.640 0.010 74);
+    --hair:         oklch(0.882 0.008 80);
+    --hair-strong:  oklch(0.806 0.010 78);
+
+    --pn3m:  oklch(0.570 0.150 58);    /* amber  */
+    --im3m:  oklch(0.520 0.120 162);   /* sage   */
+    --lam:   oklch(0.505 0.150 264);   /* indigo */
+    --hex:   oklch(0.540 0.130 350);   /* rose   */
+
+    --accent: oklch(0.555 0.150 38);
+    --scrim:  oklch(0.05 0 0 / 0.55);
+    --radius: 5px;
+    --rail-w: 320px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--paper); color: var(--ink);
+    font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+    font-size: 13px; line-height: 1.5;
+    -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+  }
+  .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+  .app { height: 100%; display: flex; flex-direction: column; }
+
+  /* ── Top bar ───────────────────────────────────────────────────────── */
+  .topbar {
+    height: 56px; flex-shrink: 0;
+    display: flex; align-items: center; gap: 16px;
+    padding: 0 24px; border-bottom: 1px solid var(--hair);
+  }
+  .wordmark { font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase;
+    font-weight: 700; color: var(--ink); }
+  .wordmark .tail { color: var(--ink-faint); font-weight: 600; }
+  .topbar .spacer { flex: 1; }
+  .stage-tabs { display: flex; gap: 2px; }
+  .stage-tab {
+    font-size: 11px; letter-spacing: 0.04em; font-weight: 600;
+    text-transform: uppercase; color: var(--ink-faint);
+    padding: 6px 11px; border-radius: 5px; cursor: pointer; border: none; background: none;
+  }
+  .stage-tab.is-active { color: var(--ink); background: var(--paper-sunk); }
+  .stage-tab .dot { display: inline-block; width: 5px; height: 5px; border-radius: 50%;
+    background: var(--hair-strong); margin-right: 6px; vertical-align: 1px; }
+  .stage-tab.is-active .dot { background: var(--accent); }
+
+  .btn {
+    font-family: inherit; font-size: 12px; font-weight: 600;
+    border-radius: 5px; cursor: pointer; padding: 7px 13px;
+    border: 1px solid var(--hair-strong); background: var(--plate); color: var(--ink);
+  }
+  .btn:hover { background: var(--paper-sunk); }
+  .btn-solid { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+  .btn-solid:hover { background: oklch(0.36 0.013 68); }
+
+  /* ── Main split ────────────────────────────────────────────────────── */
+  .main { flex: 1; display: grid; grid-template-columns: 1fr var(--rail-w); min-height: 0; }
+  .stage { overflow: auto; padding: 34px 40px 52px;
+    display: flex; flex-direction: column; align-items: center; }
+
+  /* ── The figure plate (the hero) ───────────────────────────────────── */
+  .plate {
+    width: 100%; max-width: 1080px;
+    background: var(--plate); border: 1px solid var(--hair); border-radius: var(--radius);
+    box-shadow: 0 1px 1px rgba(60,52,40,.04), 0 18px 40px -26px rgba(60,52,40,.22);
+    padding: 22px 26px 18px;
+  }
+  .plate-head {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 20px; margin-bottom: 8px;
+  }
+  .kicker { font-size: 11px; letter-spacing: 0.13em; text-transform: uppercase;
+    font-weight: 700; color: var(--accent); margin-bottom: 6px; }
+  .plate-head h1 {
+    font-family: "Newsreader", Georgia, serif; font-size: 27px; line-height: 1.1;
+    font-weight: 500; letter-spacing: -0.005em; color: var(--ink);
+  }
+  .plate-head .h-sub { margin-top: 5px; font-size: 12px; color: var(--ink-faint);
+    font-family: ui-monospace, Menlo, monospace; }
+  .tools { display: flex; gap: 7px; align-items: center; flex-shrink: 0; }
+  .seg { display: flex; background: var(--plate);
+    border: 1px solid var(--hair-strong); border-radius: 5px; overflow: hidden; }
+  .seg button { font-family: inherit; font-size: 11px; font-weight: 600;
+    padding: 5px 10px; border: none; background: none; cursor: pointer; color: var(--ink-faint); }
+  .seg button.on { background: var(--ink); color: var(--paper); }
+
+  .figure-wrap { display: grid; grid-template-columns: 1fr 30px; gap: 8px; }
+  #waterfall { display: block; width: 100%; }
+  /* phase-strip companion */
+  #phasestrip { display: block; width: 100%; }
+
+  svg .axis-line { stroke: var(--hair-strong); stroke-width: 1; }
+  svg .tick { stroke: var(--hair); stroke-width: 1; }
+  svg .tick-txt { fill: var(--ink-faint); font-size: 10.5px; font-family: ui-monospace, Menlo, monospace; }
+  svg .axis-title { fill: var(--ink-soft); font-size: 11.5px; font-weight: 600; }
+  svg .wf-trace { fill: none; stroke-width: 1.7; stroke-linejoin: round;
+    transition: stroke-width 100ms ease-out, opacity 100ms ease-out; }
+  svg .wf-anchor { transition: r 100ms ease-out; }
+  svg .wf-label { font-size: 10.5px; font-weight: 600;
+    font-family: ui-monospace, Menlo, monospace; fill: var(--ink-soft); }
+  svg .wf-row.dim .wf-trace { opacity: 0.28; }
+  svg .wf-row.dim .wf-anchor { opacity: 0.2; }
+  svg .wf-row.dim .wf-label { opacity: 0.3; }
+  svg .wf-row.hot .wf-trace { stroke-width: 2.4; }
+  svg .wf-row.hot .wf-anchor { r: 3.4; }
+  svg .ps-cell { cursor: pointer; }
+  svg .ps-cap { font-size: 10px; fill: var(--ink-faint); }
+
+  .plate-foot {
+    margin-top: 12px; padding-top: 11px; border-top: 1px solid var(--hair);
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 11px; color: var(--ink-faint);
+  }
+  .plate-foot .legend { display: flex; gap: 14px; align-items: center; }
+  .plate-foot .legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .lg-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+
+  /* ── Rail ──────────────────────────────────────────────────────────── */
+  .rail {
+    background: var(--paper-sunk); border-left: 1px solid var(--hair);
+    overflow-y: auto; padding: 24px 20px 28px;
+    display: flex; flex-direction: column; gap: 22px;
+  }
+  .rail-sec { display: flex; flex-direction: column; gap: 11px; }
+  .rail-h { font-size: 10.5px; letter-spacing: 0.09em; text-transform: uppercase;
+    font-weight: 700; color: var(--ink-faint); }
+  .var-line { font-size: 12px; color: var(--ink-soft); }
+  .var-line b { color: var(--ink); font-weight: 600; }
+
+  .member { display: flex; align-items: center; gap: 9px; padding: 7px 9px;
+    border-radius: var(--radius); cursor: pointer; }
+  .member:hover { background: var(--plate); }
+  .member.hot { background: var(--plate); box-shadow: inset 0 0 0 1px var(--hair); }
+  .m-swatch { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .m-name { flex: 1; font-size: 12px; font-weight: 600; color: var(--ink); }
+  .m-var { font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: var(--ink-faint); }
+
+  .transition {
+    background: var(--plate); border: 1px solid var(--hair); border-radius: var(--radius);
+    padding: 13px 15px;
+  }
+  .transition .t-line { font-family: "Newsreader", Georgia, serif; font-size: 16px;
+    font-weight: 500; color: var(--ink); }
+  .transition .t-line .ph1 { color: var(--pn3m); } .transition .t-line .ph2 { color: var(--lam); }
+  .transition .t-sub { margin-top: 4px; font-size: 11px; color: var(--ink-soft);
+    font-family: ui-monospace, Menlo, monospace; }
+
+  .export-btn {
+    display: flex; align-items: center; gap: 9px; width: 100%;
+    border: 1px solid var(--hair-strong); background: var(--plate);
+    border-radius: var(--radius); padding: 12px 14px; cursor: pointer;
+    text-align: left; font-family: inherit;
+  }
+  .export-btn:hover { background: var(--plate); border-color: var(--accent); }
+  .export-btn .eb-ico {
+    width: 30px; height: 30px; border-radius: 4px; flex-shrink: 0;
+    background: oklch(0.992 0.004 90); border: 1px solid var(--hair-strong);
+    display: grid; place-items: center;
+  }
+  .export-btn .eb-body { flex: 1; }
+  .export-btn .eb-t { font-size: 13px; font-weight: 600; color: var(--ink); }
+  .export-btn .eb-s { font-size: 10.5px; color: var(--ink-faint); margin-top: 1px; }
+  .rail-note { font-size: 10.5px; color: var(--ink-faint); line-height: 1.55; }
+
+  /* ── Export modal: the decoupled clean render ──────────────────────── */
+  .scrim {
+    position: fixed; inset: 0; background: var(--scrim); display: none;
+    align-items: center; justify-content: center; z-index: 30; padding: 40px;
+  }
+  .scrim.open { display: flex; }
+  .export-sheet {
+    background: var(--plate); border-radius: 7px; max-width: 720px; width: 100%;
+    box-shadow: 0 24px 60px -20px rgba(20,24,40,.4); overflow: hidden;
+  }
+  .es-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 20px; border-bottom: 1px solid var(--hair);
+  }
+  .es-head .es-t { font-family: "Newsreader", Georgia, serif; font-size: 18px;
+    font-weight: 500; color: var(--ink); }
+  .es-head .es-x { border: none; background: none; cursor: pointer; font-size: 18px;
+    color: var(--ink-faint); padding: 4px 8px; border-radius: 4px; }
+  .es-head .es-x:hover { background: var(--paper-sunk); color: var(--ink); }
+  .es-body { padding: 22px 22px 16px; background: var(--paper-sunk); }
+  /* the clean scientific render — deliberately NOT the Print brand */
+  .clean-card { background: #ffffff; border: 1px solid #e3e3e3; border-radius: 3px;
+    padding: 16px 14px 10px; }
+  .clean-card .cc-title { text-align: center; font: 700 14px Arial, Helvetica, sans-serif;
+    color: #111; margin-bottom: 4px; }
+  #clean-fig { display: block; width: 100%; }
+  .clean-card .cc-foot { text-align: center; font: 9px Arial, Helvetica, sans-serif;
+    color: #666; margin-top: 2px; }
+  .es-foot {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 22px 18px; background: var(--paper-sunk);
+  }
+  .es-foot .actions { display: flex; gap: 8px; }
+  .es-foot .es-note { font-size: 10.5px; color: var(--ink-faint); max-width: 320px; line-height: 1.5; }
+  .btn-accent { background: var(--accent); color: oklch(0.99 0.005 85); border-color: var(--accent); }
+  .btn-accent:hover { background: oklch(0.5 0.15 38); }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="topbar">
+    <span class="wordmark">Himalaya <span class="tail">· SAXS</span></span>
+    <div class="stage-tabs">
+      <button class="stage-tab"><span class="dot"></span>Samples</button>
+      <button class="stage-tab"><span class="dot"></span>Focus</button>
+      <button class="stage-tab is-active"><span class="dot"></span>Series</button>
+    </div>
+    <span class="spacer"></span>
+  </div>
+
+  <div class="main">
+    <div class="stage">
+      <div class="plate">
+        <div class="plate-head">
+          <div>
+            <div class="kicker">Series</div>
+            <h1>LL37 titration into Lipid 1&#8209;2</h1>
+            <div class="h-sub">6 exposures &nbsp;·&nbsp; variable: LL37 : lipid &nbsp;·&nbsp; SSRL Apr 2026</div>
+          </div>
+          <div class="tools">
+            <div class="seg" id="rep-seg">
+              <button data-rep="waterfall" class="on">waterfall</button>
+              <button data-rep="heatmap">heatmap</button>
+            </div>
+            <div class="seg" id="scale-seg">
+              <button data-scale="log" class="on">log q</button>
+              <button data-scale="lin">linear q</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="figure-wrap">
+          <svg id="waterfall" viewBox="0 0 940 460" role="img"
+            aria-label="Stacked-offset waterfall of six titration exposures"></svg>
+          <svg id="phasestrip" viewBox="0 0 30 460" aria-label="Phase call per sample"></svg>
+        </div>
+
+        <div class="plate-foot">
+          <div class="legend">
+            <span><i class="lg-dot" style="background:var(--pn3m)"></i>Pn3m</span>
+            <span><i class="lg-dot" style="background:var(--lam)"></i>Lamellar</span>
+            <span style="color:var(--ink-faint)">peaks are light anchors — hover a trace to read its indexing</span>
+          </div>
+          <span class="mono">offset ×1.0 · log I</span>
+        </div>
+      </div>
+    </div>
+
+    <aside class="rail">
+      <div class="rail-sec">
+        <div class="rail-h">Series</div>
+        <div class="var-line">Ordered by <b>LL37 : lipid</b>, low to high. Six exposures
+          from one titration.</div>
+      </div>
+
+      <div class="rail-sec">
+        <div class="rail-h">Reading</div>
+        <div class="transition">
+          <div class="t-line"><span class="ph1">Pn3m</span> &rarr; <span class="ph2">Lamellar</span></div>
+          <div class="t-sub">coexisting at 1:0.5 &middot; a 205&rarr;195 Å, then d 60&rarr;55 Å</div>
+        </div>
+      </div>
+
+      <div class="rail-sec">
+        <div class="rail-h">Members</div>
+        <div id="member-list" style="display:flex;flex-direction:column;gap:2px"></div>
+      </div>
+
+      <div class="rail-sec">
+        <div class="rail-h">Share</div>
+        <button class="export-btn" id="export-open">
+          <span class="eb-ico" aria-hidden="true">
+            <svg width="16" height="16" viewBox="0 0 16 16"><path d="M8 2v8M5 7l3 3 3-3M3 13h10"
+              fill="none" stroke="oklch(0.555 0.150 38)" stroke-width="1.5"
+              stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </span>
+          <span class="eb-body">
+            <span class="eb-t">Export figure</span>
+            <span class="eb-s">clean render — one click, no setup</span>
+          </span>
+        </button>
+        <div class="rail-note">
+          The view is for thinking. Export renders the same samples, order and
+          offset as a clean scientific figure for a slide or a colleague — not a
+          screen-grab of the Print styling.
+        </div>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<!-- ── Export modal ───────────────────────────────────────────────────── -->
+<div class="scrim" id="export-scrim">
+  <div class="export-sheet">
+    <div class="es-head">
+      <span class="es-t">Export figure</span>
+      <button class="es-x" id="export-close" aria-label="Close">&times;</button>
+    </div>
+    <div class="es-body">
+      <div class="clean-card">
+        <div class="cc-title">LL37 Titration: Pn3m &rarr; Lamellar</div>
+        <svg id="clean-fig" viewBox="0 0 600 340" aria-label="Clean exported figure"></svg>
+        <div class="cc-foot">Lipid 1-2 · SSRL Apr 2026 · q normalized · intensity offset for clarity</div>
+      </div>
+    </div>
+    <div class="es-foot">
+      <span class="es-note">A fixed sensible default. Same data as the view; nothing to tune.</span>
+      <div class="actions">
+        <button class="btn">Save SVG</button>
+        <button class="btn btn-accent" id="copy-png">Copy PNG</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ════════════════════════════════════════════════════════════════════
+ * LL37 titration into Lipid 1-2. As LL37 is added, a Pn3m cubic (lattice
+ * swelling, a 205→195 Å) gives way through a coexistence window to a
+ * lamellar phase (d 60→55 Å). Six exposures, ordered by the variable.
+ *
+ * q(cubic,N)  = 2π√N / a       q(lamellar,n) = 2π·n / d
+ * ════════════════════════════════════════════════════════════════════ */
+const TWO_PI = 2 * Math.PI;
+const COL = { Pn3m: 'oklch(0.570 0.150 58)', Lamellar: 'oklch(0.505 0.150 264)' };
+
+function cubic(a, Ns)  { return Ns.map(N => TWO_PI * Math.sqrt(N) / a); }
+function lamel(d, ns)  { return ns.map(n => TWO_PI * n / d); }
+
+/* each sample: variable label + the phases present, with peak q's + amps */
+const SAMPLES = [
+  { v: '1:0',    phases: [ { p:'Pn3m', q: cubic(205,[2,3,4]), amp:[1.0,0.55,0.32] } ] },
+  { v: '1:0.1',  phases: [ { p:'Pn3m', q: cubic(202,[2,3,4]), amp:[0.95,0.5,0.28] } ] },
+  { v: '1:0.25', phases: [ { p:'Pn3m', q: cubic(198,[2,3,4]), amp:[0.82,0.42,0.22] } ] },
+  { v: '1:0.5',  phases: [ { p:'Pn3m', q: cubic(195,[2,3,4]), amp:[0.5,0.26,0.14] },
+                           { p:'Lamellar', q: lamel(60,[1,2,3]), amp:[0.6,0.3,0.16] } ] },
+  { v: '1:0.75', phases: [ { p:'Lamellar', q: lamel(57,[1,2,3]), amp:[0.92,0.5,0.28] } ] },
+  { v: '1:1',    phases: [ { p:'Lamellar', q: lamel(55,[1,2,3]), amp:[1.0,0.56,0.32] } ] },
+];
+SAMPLES.forEach((s, i) => {
+  s.i = i;
+  s.dominant = s.phases.reduce((a, b) => (Math.max(...b.amp) > Math.max(...a.amp) ? b : a)).p;
+  s.coexist = s.phases.length > 1;
+});
+
+const NS = 'http://www.w3.org/2000/svg';
+const el = (n, a) => { const e = document.createElementNS(NS, n);
+  for (const k in a) e.setAttribute(k, a[k]); return e; };
+
+const Q = { min: 0.020, max: 0.360 };
+let scaleMode = 'log', repMode = 'waterfall';
+
+/* intensity model for one sample at q */
+function sampleIntensity(s, q) {
+  let v = 0.16 * Math.pow(Q.min / q, 0.9);
+  s.phases.forEach(ph => ph.q.forEach((pq, k) => {
+    const sg = 0.012 * pq + 0.0011;
+    v += ph.amp[k] * Math.exp(-0.5 * Math.pow((q - pq) / sg, 2));
+  }));
+  return v;
+}
+
+/* ════════════ waterfall (the hero) ════════════ */
+const WF = { l: 64, r: 96, t: 22, b: 50, w: 940, h: 460 };
+function wxOf(q, pw, l) {
+  return l + (scaleMode === 'log'
+    ? (Math.log(q) - Math.log(Q.min)) / (Math.log(Q.max) - Math.log(Q.min))
+    : (q - Q.min) / (Q.max - Q.min)) * pw;
+}
+
+function setHot(idx) {
+  document.querySelectorAll('[data-samp]').forEach(n =>
+    n.classList.toggle('hot', idx != null && +n.dataset.samp === idx));
+  document.querySelectorAll('.wf-row').forEach(n =>
+    n.classList.toggle('dim', idx != null && +n.dataset.samp !== idx));
+  document.querySelectorAll('.member').forEach(n =>
+    n.classList.toggle('hot', idx != null && +n.dataset.samp === idx));
+}
+
+function renderWaterfall() {
+  const svg = document.getElementById('waterfall');
+  svg.innerHTML = '';
+  const pw = WF.w - WF.l - WF.r, ph = WF.h - WF.t - WF.b;
+  const baseY = WF.t + ph;
+
+  /* x axis */
+  svg.appendChild(el('line', { class: 'axis-line', x1: WF.l, y1: baseY, x2: WF.l + pw, y2: baseY }));
+  const ticks = scaleMode === 'log' ? [0.02,0.03,0.05,0.08,0.12,0.2,0.3] : [0.05,0.1,0.15,0.2,0.25,0.3,0.35];
+  ticks.forEach(q => {
+    if (q < Q.min || q > Q.max) return;
+    const x = wxOf(q, pw, WF.l);
+    svg.appendChild(el('line', { class: 'tick', x1: x, y1: WF.t, x2: x, y2: baseY }));
+    const t = el('text', { class: 'tick-txt', x, y: baseY + 16, 'text-anchor': 'middle' });
+    t.textContent = q; svg.appendChild(t);
+  });
+  const at = el('text', { class: 'axis-title', x: WF.l + pw, y: baseY + 38, 'text-anchor': 'end' });
+  at.textContent = 'scattering vector  q  (Å⁻¹)'; svg.appendChild(at);
+  const yt = el('text', { class: 'axis-title', x: WF.l - 48, y: WF.t + ph / 2,
+    'text-anchor': 'middle', transform: `rotate(-90 ${WF.l - 48} ${WF.t + ph / 2})` });
+  yt.textContent = 'intensity  (a.u.)  +  offset'; svg.appendChild(yt);
+
+  const n = SAMPLES.length;
+  const slot = (ph - 18) / n;           // vertical room per trace
+  const traceH = slot * 1.55;           // overlap a little, like a real waterfall
+  const N = 460;
+
+  // bottom (s0) to top (s_last)
+  SAMPLES.forEach((s, ri) => {
+    const rowBase = baseY - ri * slot;
+    const ys = [], xs = [];
+    let gmax = 0;
+    for (let k = 0; k <= N; k++) {
+      const f = k / N;
+      const q = scaleMode === 'log'
+        ? Math.exp(Math.log(Q.min) + f * (Math.log(Q.max) - Math.log(Q.min)))
+        : Q.min + f * (Q.max - Q.min);
+      const v = sampleIntensity(s, q);
+      xs.push(q); ys.push(v); if (v > gmax) gmax = v;
+    }
+    const hScale = traceH / gmax;
+    const yOf = v => rowBase - v * hScale;
+    const color = COL[s.dominant];
+
+    const g = el('g', { class: 'wf-row', 'data-samp': s.i });
+    let d = '';
+    xs.forEach((q, k) => { d += (k === 0 ? 'M' : 'L') + wxOf(q, pw, WF.l).toFixed(1) + ' ' + yOf(ys[k]).toFixed(1) + ' '; });
+    g.appendChild(el('path', { class: 'wf-trace', d, stroke: color }));
+
+    /* light peak anchors — small dots at each peak apex, phase coloured */
+    s.phases.forEach(phh => phh.q.forEach((pq, k) => {
+      if (pq < Q.min || pq > Q.max) return;
+      const x = wxOf(pq, pw, WF.l), y = yOf(sampleIntensity(s, pq));
+      g.appendChild(el('circle', { class: 'wf-anchor', cx: x, cy: y, r: 2.1,
+        fill: COL[phh.p] }));
+    }));
+
+    /* sample label at right */
+    const lab = el('text', { class: 'wf-label', x: WF.l + pw + 8, y: rowBase - 2 });
+    lab.textContent = s.v; g.appendChild(lab);
+
+    g.addEventListener('mouseenter', () => setHot(s.i));
+    g.addEventListener('mouseleave', () => setHot(null));
+    svg.appendChild(g);
+  });
+}
+
+/* ════════════ heatmap (secondary toggle) ════════════ */
+function renderHeatmap() {
+  const svg = document.getElementById('waterfall');
+  svg.innerHTML = '';
+  const pw = WF.w - WF.l - WF.r, ph = WF.h - WF.t - WF.b;
+  const baseY = WF.t + ph;
+  const n = SAMPLES.length;
+  const rowH = (ph) / n;
+
+  // axis
+  svg.appendChild(el('line', { class: 'axis-line', x1: WF.l, y1: baseY, x2: WF.l + pw, y2: baseY }));
+  const ticks = scaleMode === 'log' ? [0.02,0.03,0.05,0.08,0.12,0.2,0.3] : [0.05,0.1,0.15,0.2,0.25,0.3,0.35];
+  ticks.forEach(q => {
+    if (q < Q.min || q > Q.max) return;
+    const x = wxOf(q, pw, WF.l);
+    const t = el('text', { class: 'tick-txt', x, y: baseY + 16, 'text-anchor': 'middle' });
+    t.textContent = q; svg.appendChild(t);
+  });
+  const at = el('text', { class: 'axis-title', x: WF.l + pw, y: baseY + 38, 'text-anchor': 'end' });
+  at.textContent = 'scattering vector  q  (Å⁻¹)'; svg.appendChild(at);
+
+  const ST = 150;
+  SAMPLES.forEach((s, ri) => {
+    const yTop = WF.t + (n - 1 - ri) * rowH;
+    const g = el('g', { class: 'wf-row', 'data-samp': s.i });
+    let gmax = 0; const cells = [];
+    for (let k = 0; k < ST; k++) {
+      const f = (k + 0.5) / ST;
+      const q = scaleMode === 'log'
+        ? Math.exp(Math.log(Q.min) + f * (Math.log(Q.max) - Math.log(Q.min)))
+        : Q.min + f * (Q.max - Q.min);
+      const v = sampleIntensity(s, q); if (v > gmax) gmax = v; cells.push([q, v]);
+    }
+    const x0 = wxOf(Q.min, pw, WF.l);
+    cells.forEach(([q, v], k) => {
+      const f0 = k / ST, f1 = (k + 1) / ST;
+      const qa = scaleMode === 'log' ? Math.exp(Math.log(Q.min)+f0*(Math.log(Q.max)-Math.log(Q.min))) : Q.min+f0*(Q.max-Q.min);
+      const qb = scaleMode === 'log' ? Math.exp(Math.log(Q.min)+f1*(Math.log(Q.max)-Math.log(Q.min))) : Q.min+f1*(Q.max-Q.min);
+      const xa = wxOf(qa, pw, WF.l), xb = wxOf(qb, pw, WF.l);
+      const t = Math.min(1, v / gmax);
+      // warm-dark window LUT: low intensity = frame-edge, high = phase colour
+      const L = (0.16 + 0.62 * t).toFixed(3), C = (0.02 + 0.13 * t).toFixed(3);
+      const hue = s.dominant === 'Pn3m' ? 58 : 264;
+      g.appendChild(el('rect', { x: xa, y: yTop, width: Math.max(0.6, xb - xa), height: rowH - 2,
+        fill: `oklch(${L} ${C} ${hue})` }));
+    });
+    const lab = el('text', { class: 'wf-label', x: WF.l + pw + 8, y: yTop + rowH / 2 + 3 });
+    lab.textContent = s.v; g.appendChild(lab);
+    g.addEventListener('mouseenter', () => setHot(s.i));
+    g.addEventListener('mouseleave', () => setHot(null));
+    svg.appendChild(g);
+  });
+}
+
+/* ════════════ phase-strip companion ════════════ */
+function renderPhaseStrip() {
+  const svg = document.getElementById('phasestrip');
+  svg.innerHTML = '';
+  const ph = WF.h - WF.t - WF.b;
+  const n = SAMPLES.length;
+  const slot = (ph - 18) / n;
+  const cellH = slot * 0.84, w = 24;
+
+  SAMPLES.forEach(s => {
+    const baseY = (WF.t + ph) - s.i * slot;
+    const y = baseY - cellH;
+    let fill;
+    if (s.coexist) {
+      const id = 'cg' + s.i;
+      const defs = el('defs', {});
+      const lg = el('linearGradient', { id, x1: 0, x2: 0, y1: 0, y2: 1 });
+      lg.appendChild(el('stop', { offset: '42%', 'stop-color': COL['Pn3m'] }));
+      lg.appendChild(el('stop', { offset: '58%', 'stop-color': COL['Lamellar'] }));
+      defs.appendChild(lg); svg.appendChild(defs);
+      fill = `url(#${id})`;
+    } else fill = COL[s.dominant];
+    const g = el('g', { class: 'ps-cell', 'data-samp': s.i });
+    g.appendChild(el('rect', { x: 3, y, width: w, height: cellH, rx: 3, fill }));
+    g.addEventListener('mouseenter', () => setHot(s.i));
+    g.addEventListener('mouseleave', () => setHot(null));
+    svg.appendChild(g);
+  });
+}
+
+/* ════════════ rail members ════════════ */
+function renderMembers() {
+  const box = document.getElementById('member-list');
+  box.innerHTML = '';
+  // top of list = high variable (matches waterfall top)
+  [...SAMPLES].reverse().forEach(s => {
+    const row = document.createElement('div');
+    row.className = 'member'; row.dataset.samp = s.i;
+    const sw = s.coexist
+      ? `background:linear-gradient(135deg, ${COL['Pn3m']} 48%, ${COL['Lamellar']} 52%)`
+      : `background:${COL[s.dominant]}`;
+    row.innerHTML = `<span class="m-swatch" style="${sw}"></span>
+      <span class="m-name">${s.coexist ? 'Pn3m + Lam' : s.dominant}</span>
+      <span class="m-var">${s.v}</span>`;
+    row.addEventListener('mouseenter', () => setHot(s.i));
+    row.addEventListener('mouseleave', () => setHot(null));
+    box.appendChild(row);
+  });
+}
+
+/* ════════════ the clean exported figure (decoupled renderer) ════════════ */
+function renderCleanFigure() {
+  const svg = document.getElementById('clean-fig');
+  svg.innerHTML = '';
+  const m = { l: 52, r: 64, t: 12, b: 40 }, W = 600, H = 340;
+  const pw = W - m.l - m.r, ph = H - m.t - m.b, baseY = m.t + ph;
+  const lx = q => m.l + (Math.log(q) - Math.log(Q.min)) / (Math.log(Q.max) - Math.log(Q.min)) * pw;
+
+  // axes — black, bold, GraphPad idiom
+  svg.appendChild(el('line', { x1: m.l, y1: baseY, x2: m.l + pw, y2: baseY, stroke: '#111', 'stroke-width': 1.6 }));
+  svg.appendChild(el('line', { x1: m.l, y1: m.t, x2: m.l, y2: baseY, stroke: '#111', 'stroke-width': 1.6 }));
+  [0.02,0.03,0.05,0.08,0.12,0.2,0.3].forEach(q => {
+    if (q < Q.min || q > Q.max) return;
+    const x = lx(q);
+    svg.appendChild(el('line', { x1: x, y1: baseY, x2: x, y2: baseY + 5, stroke: '#111', 'stroke-width': 1 }));
+    const t = el('text', { x, y: baseY + 16, 'text-anchor': 'middle',
+      'font-family': 'Arial, Helvetica, sans-serif', 'font-size': 9, fill: '#111' });
+    t.textContent = q; svg.appendChild(t);
+  });
+  const xt = el('text', { x: m.l + pw / 2, y: H - 4, 'text-anchor': 'middle',
+    'font-family': 'Arial, Helvetica, sans-serif', 'font-size': 11, 'font-weight': 700, fill: '#111' });
+  xt.textContent = 'q (Å⁻¹)'; svg.appendChild(xt);
+  const ytt = el('text', { x: 13, y: m.t + ph / 2, 'text-anchor': 'middle',
+    transform: `rotate(-90 13 ${m.t + ph / 2})`, 'font-family': 'Arial, Helvetica, sans-serif',
+    'font-size': 11, 'font-weight': 700, fill: '#111' });
+  ytt.textContent = 'Intensity (a.u.) + offset'; svg.appendChild(ytt);
+
+  const n = SAMPLES.length;
+  const slot = (ph - 14) / n, traceH = slot * 1.5, N = 360;
+  // pure phase colours in plain hex for the clean idiom
+  const HEX = { Pn3m: '#c8841f', Lamellar: '#4a4ba8' };
+  SAMPLES.forEach((s, ri) => {
+    const rowBase = baseY - ri * slot;
+    const xs = [], ys = []; let gmax = 0;
+    for (let k = 0; k <= N; k++) {
+      const f = k / N;
+      const q = Math.exp(Math.log(Q.min) + f * (Math.log(Q.max) - Math.log(Q.min)));
+      const v = sampleIntensity(s, q); xs.push(q); ys.push(v); if (v > gmax) gmax = v;
+    }
+    const yOf = v => rowBase - v * (traceH / gmax);
+    let d = '';
+    xs.forEach((q, k) => { d += (k === 0 ? 'M' : 'L') + lx(q).toFixed(1) + ' ' + yOf(ys[k]).toFixed(1) + ' '; });
+    svg.appendChild(el('path', { d, fill: 'none', stroke: HEX[s.dominant], 'stroke-width': 2 }));
+    const lab = el('text', { x: m.l + pw + 6, y: rowBase - 1,
+      'font-family': 'Arial, Helvetica, sans-serif', 'font-size': 9, fill: '#111' });
+    lab.textContent = s.v; svg.appendChild(lab);
+  });
+}
+
+/* ── controls ─────────────────────────────────────────────────────────── */
+function renderFigure() { repMode === 'waterfall' ? renderWaterfall() : renderHeatmap(); renderPhaseStrip(); }
+document.querySelectorAll('#rep-seg button').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('#rep-seg button').forEach(x => x.classList.remove('on'));
+  b.classList.add('on'); repMode = b.dataset.rep; renderFigure();
+}));
+document.querySelectorAll('#scale-seg button').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('#scale-seg button').forEach(x => x.classList.remove('on'));
+  b.classList.add('on'); scaleMode = b.dataset.scale; renderFigure();
+}));
+document.getElementById('export-open').addEventListener('click', () => {
+  renderCleanFigure(); document.getElementById('export-scrim').classList.add('open');
+});
+document.getElementById('export-close').addEventListener('click', () =>
+  document.getElementById('export-scrim').classList.remove('open'));
+document.getElementById('export-scrim').addEventListener('click', e => {
+  if (e.target.id === 'export-scrim') e.currentTarget.classList.remove('open');
+});
+
+renderFigure();
+renderMembers();
+</script>
+</body>
+</html>
