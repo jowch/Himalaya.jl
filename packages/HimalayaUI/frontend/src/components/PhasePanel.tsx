@@ -222,6 +222,7 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
   const assignmentQ = useAssignment(exposureId);
   const experimentQ = useExperiment(activeExperimentId ?? 0);
   const setHoveredIndex = useAppState((s) => s.setHoveredIndex);
+  const setPreviewIndex = useAppState((s) => s.setPreviewIndex);
   const active = (groupsQ.data && activeGroup(groupsQ.data)) ?? undefined;
   const addMember    = useAddIndexToGroup(exposureId ?? 0, active?.id ?? 0);
   const removeMember = useRemoveIndexFromGroup(exposureId ?? 0, active?.id ?? 0);
@@ -263,6 +264,12 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
     if (memberIds.has(ix.id)) removeMember.mutate(ix.id);
     else addMember.mutate(ix.id);
   };
+
+  // Plan D-7: hover a candidate → preview on the PLOT only (ghost combs + trace
+  // highlight); the cart is left untouched. NEVER a mutator/SSE event. Clear on
+  // leave/blur so a stale ghost never masks the real cart.
+  const previewOn  = (ix: IndexEntry): void => { setHoveredIndex(ix.id); setPreviewIndex(ix.id); };
+  const previewOff = (): void => { setHoveredIndex(undefined); setPreviewIndex(undefined); };
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -339,8 +346,8 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
                     index={ix}
                     inCall={memberIds.has(ix.id)}
                     onToggle={() => toggle(ix)}
-                    onHover={() => setHoveredIndex(ix.id)}
-                    onLeave={() => setHoveredIndex(undefined)}
+                    onHover={() => previewOn(ix)}
+                    onLeave={previewOff}
                   />
                 ))}
               </div>
@@ -374,8 +381,8 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
                     index={ix}
                     inCall={memberIds.has(ix.id)}
                     onToggle={() => toggle(ix)}
-                    onHover={() => setHoveredIndex(ix.id)}
-                    onLeave={() => setHoveredIndex(undefined)}
+                    onHover={() => previewOn(ix)}
+                    onLeave={previewOff}
                     onDelete={() => deleteIndex.mutate(ix.id)}
                   />
                 ))}
