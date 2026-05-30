@@ -243,15 +243,18 @@ function insert_custom_index!(db::SQLite.DB, exposure_id::Int,
     basis > 0 || error("basis must be positive")
 
     # Derive lattice_d the same way Himalaya does: build a 1-peak Index at the
-    # first predicted q (= basis, since normalized first ratio is 1.0) using the
-    # un-normalized slope, and read fit().d. Phase-correct for cubic/lamellar/hex.
+    # first predicted reflection (q1 = basis, since the normalized first ratio is
+    # 1.0) and read fit().d. Phase-correct for cubic/lamellar/hex.
+    # NOTE: Himalaya.fit recomputes d from the peak value and the un-normalized
+    # ratios — it does NOT read Index.basis — so the basis arg below is the
+    # canonical normalized q₁ slope (= basis) for documentation only; it does not
+    # affect lattice_d.
     ratios_unnorm = Himalaya.phaseratios(P)
-    slope = basis / first(ratios_unnorm)          # un-normalized slope (1/d terms)
     n = length(ratios_unnorm)
     q1 = basis                                    # predicted first reflection
     peaks_sv     = SparseVector{Float64, Int}(n, [1], [q1])
     sharpness_sv = SparseVector{Float64, Int}(n, [1], [1.0])
-    fit_result = Himalaya.fit(Himalaya.Index{P}(slope, peaks_sv, sharpness_sv))
+    fit_result = Himalaya.fit(Himalaya.Index{P}(basis, peaks_sv, sharpness_sv))
     lattice_d = fit_result.d
 
     current_hash = read_inputs_hash(db, exposure_id)
