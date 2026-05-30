@@ -373,6 +373,13 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
         return nothing
     end
 
+    if kind == "assignment_remove"
+        DBInterface.execute(db,
+            "DELETE FROM assignment_members WHERE exposure_id = ? AND index_id = ?",
+            [Int(entity_id), Int(payload.index_id)])
+        return nothing
+    end
+
     # M2.1 trivial-route migrations: routes write to view tables directly,
     # so the dispatcher is a no-op for these kinds. Branches exist for
     # exhaustiveness so the rebuild_views_from_log! property test treats
