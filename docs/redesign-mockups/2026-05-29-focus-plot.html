@@ -241,13 +241,16 @@
   svg .comb-row-sub { fill: var(--ink-faint); font-size: 9.5px;
     font-family: ui-monospace, Menlo, monospace; }
   svg .obs-mark { fill: var(--ink-soft); }
-  /* peak ↔ ring ↔ comb-tooth: hovering any node lights the tooth here */
+  /* peak ↔ ring ↔ comb-tooth: hovering any node lights the tooth here.
+     The cap keeps its PHASE colour and grows + gains a terracotta ring, rather
+     than recolouring to terracotta (which read poorly on the sage dots and was
+     too subtle to notice). Size + ring is the q-link signal; hue stays phase. */
   svg .tooth .tooth-stem, svg .tooth .tooth-cap,
-  svg .tooth .leftover-ring { transition: stroke 90ms ease-out, fill 90ms ease-out; }
+  svg .tooth .leftover-ring { transition: stroke 90ms ease-out, stroke-width 90ms ease-out, r 90ms ease-out; }
   svg .tooth.hot .tooth-stem { stroke: var(--accent); stroke-width: 2.8; }
-  svg .tooth.hot .tooth-cap { fill: var(--accent); }
+  svg .tooth.hot .tooth-cap { r: 5; stroke: var(--accent); stroke-width: 2; }
   svg .tooth.hot .tooth-mlabel { fill: var(--accent); }
-  svg .tooth.hot .leftover-ring { stroke: var(--accent); stroke-width: 2.2; }
+  svg .tooth.hot .leftover-ring { stroke: var(--accent); stroke-width: 2.4; r: 5; }
   .combs-legend {
     display: flex; flex-wrap: wrap; gap: 12px; margin-top: 10px;
     padding-top: 9px; border-top: 1px solid var(--hair);
