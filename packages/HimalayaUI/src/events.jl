@@ -357,6 +357,22 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
         return nothing
     end
 
+    # Plotting redesign Plan A: durable per-exposure assignment kinds. Sole
+    # writer to assignments/assignment_members. entity_id is the exposure id.
+    # Replay-idempotent (UPSERT / INSERT OR IGNORE / DELETE) so the fold from
+    # an empty view reproduces live state.
+    if kind == "assignment_add"
+        DBInterface.execute(db,
+            """INSERT INTO assignments (exposure_id, state) VALUES (?, 'indexed')
+               ON CONFLICT(exposure_id) DO UPDATE SET state = 'indexed'""",
+            [Int(entity_id)])
+        DBInterface.execute(db,
+            """INSERT OR IGNORE INTO assignment_members (exposure_id, index_id)
+               VALUES (?, ?)""",
+            [Int(entity_id), Int(payload.index_id)])
+        return nothing
+    end
+
     # M2.1 trivial-route migrations: routes write to view tables directly,
     # so the dispatcher is a no-op for these kinds. Branches exist for
     # exhaustiveness so the rebuild_views_from_log! property test treats
