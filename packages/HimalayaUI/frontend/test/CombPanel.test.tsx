@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { screen, fireEvent, within } from "@testing-library/react";
+import { screen, fireEvent } from "@testing-library/react";
 import { renderWithProviders } from "./test-utils";
 import { CombPanel } from "../src/components/CombPanel";
 import { useAppState } from "../src/state";

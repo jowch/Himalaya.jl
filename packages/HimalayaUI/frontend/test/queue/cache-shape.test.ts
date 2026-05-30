@@ -408,6 +408,32 @@ describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", ()
     expect(inval).toHaveBeenCalledWith({ queryKey: queryKeys.assignment(5) });
   });
 
+  it("customIndex does NOT splice a phantom row on the SSE-wins synth (issue-#37)", () => {
+    // On the SSE-wins own-tab race the deferred resolves off the FIRST frame
+    // (speculative_created), whose mutator has no synthesizeFromSse — so the
+    // response handed to customIndexMutator.onSuccess is the generic synth
+    // {event_id, client_op_id, analysis_inputs_hash, index_id}, NOT a full
+    // IndexEntry. The guard must invalidate instead of splicing a phantom
+    // {id:undefined, phase:undefined} row.
+    qc.setQueryData(queryKeys.indices(5), []);
+    qc.setQueryData(queryKeys.assignment(5), { exposure_id: 5, state: "indexed", members: [] });
+    const inval = vi.spyOn(qc, "invalidateQueries");
+    const synth = {
+      event_id: 30, client_op_id: "op-ci-1", analysis_inputs_hash: "h", index_id: 77,
+    } as unknown as Parameters<typeof customIndexMutator.onSuccess>[1];
+    const flat = {
+      exposureId: 5, username: "alice", clientId: "tab-1",
+      phase: "Pn3m", basis: 0.15,
+    } as unknown as Parameters<typeof customIndexMutator.onSuccess>[0];
+    customIndexMutator.onSuccess(flat, synth, qc);
+    const indices = qc.getQueryData<{ id: number | undefined }[]>(queryKeys.indices(5));
+    // No phantom row landed (cache stays empty; converges via the invalidate).
+    expect(indices).toEqual([]);
+    expect(indices!.some((i) => i.id === undefined)).toBe(false);
+    expect(inval).toHaveBeenCalledWith({ queryKey: queryKeys.indices(5) });
+    expect(inval).toHaveBeenCalledWith({ queryKey: queryKeys.assignment(5) });
+  });
+
   it("createSpeculative writes an IndexEntry with exactly 13 keys", async () => {
     qc.setQueryData(queryKeys.indices(5), []);
     qc.setQueryData(queryKeys.groups(5), []);
