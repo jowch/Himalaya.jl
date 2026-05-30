@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Skeleton } from "boneyard-js/react";
-import { useIndices, useGroups, useAssignment, useAddIndexToGroup, useRemoveIndexFromGroup, useDeleteIndex, useExperiment } from "../queries";
+import { useIndices, useAssignment, useAddAssignmentPhase, useRemoveAssignmentPhase, useDeleteIndex, useExperiment } from "../queries";
 import { useAppState } from "../state";
 import { phaseColor } from "../phases";
 import { Card, HintText, IconButton, ScoreBar, Kicker } from "./ui";
@@ -8,12 +8,8 @@ import { StaleIndicesBanner } from "./StaleIndicesBanner";
 import { SpeculativeBuilder } from "./SpeculativeBuilder";
 import { latticeUnitFromQUnits } from "../lib/units";
 import { seriesRatio } from "../lib/seriesRatio";
-import type { GroupEntry, IndexEntry } from "../api";
+import type { IndexEntry } from "../api";
 import { deriveActiveIndices } from "../lib/assignment";
-
-function activeGroup(groups: GroupEntry[]): GroupEntry | undefined {
-  return groups.find((g) => g.active);
-}
 
 function formatScore(s: number | null | undefined): string {
   return s != null ? s.toFixed(2) : "—";
@@ -134,8 +130,22 @@ function CandidateRow({ index, inCall, onToggle, onHover, onLeave, onDelete }: C
 
       {/* body */}
       <div className="min-w-0 flex-1">
-        <div className="font-mono text-base font-bold" style={{ color }}>
-          {index.phase}
+        <div className="flex items-center gap-1.5">
+          <span className="font-mono text-base font-bold" style={{ color }}>
+            {index.phase}
+          </span>
+          {/* Plan D F3: Bonnet badge — a coexisting cubic whose lattice matches
+              the Gauss–Bonnet ratio (IndexEntry.bonnet.consistent). The single
+              automation surfaced in the candidate list. */}
+          {index.bonnet?.consistent && (
+            <span
+              data-testid={`bonnet-badge-${index.id}`}
+              className="inline-flex items-center gap-0.5 rounded-full border border-accent/40 bg-accent/10 px-1.5 text-xs font-bold uppercase tracking-wide text-accent"
+              title={`Coexisting cubic at the Gauss–Bonnet lattice (predicted a ≈ ${index.bonnet.predicted_a.toFixed(0)})`}
+            >
+              <span aria-hidden>⭙</span> Bonnet
+            </span>
+          )}
         </div>
         <div className="mt-0.5 text-xs text-ink-faint">
           explains {index.peaks.length} peaks{inCall ? " · in the call" : ""}
@@ -218,14 +228,15 @@ export interface PhasePanelProps {
 export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
   const activeExperimentId = useAppState((s) => s.activeExperimentId);
   const indicesQ = useIndices(exposureId);
-  const groupsQ  = useGroups(exposureId);
   const assignmentQ = useAssignment(exposureId);
   const experimentQ = useExperiment(activeExperimentId ?? 0);
   const setHoveredIndex = useAppState((s) => s.setHoveredIndex);
   const setPreviewIndex = useAppState((s) => s.setPreviewIndex);
-  const active = (groupsQ.data && activeGroup(groupsQ.data)) ?? undefined;
-  const addMember    = useAddIndexToGroup(exposureId ?? 0, active?.id ?? 0);
-  const removeMember = useRemoveIndexFromGroup(exposureId ?? 0, active?.id ?? 0);
+  // Plan D-8: candidate toggles drive the assignment cart natively (the legacy
+  // group dual-write remains live on the backend until D-10, but the frontend
+  // no longer touches /groups).
+  const addMember    = useAddAssignmentPhase(exposureId ?? 0);
+  const removeMember = useRemoveAssignmentPhase(exposureId ?? 0);
   const deleteIndex  = useDeleteIndex(exposureId ?? 0);
   const builder      = useAppState((s) => s.speculativeBuilder);
   const openBuilder  = useAppState((s) => s.openSpeculativeBuilder);
@@ -245,9 +256,7 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
   const indices = (indicesQ.data ?? []).slice().sort(
     (a, b) => (b.score ?? 0) - (a.score ?? 0),
   );
-  // Plan D-2: the active member set is now sourced from the durable
-  // assignment cart; the legacy `active` group is retained only to drive
-  // the group mutators (swapped for assignment mutators in D-8).
+  // Active member set sourced from the durable assignment cart.
   const activeIndices   = deriveActiveIndices(assignmentQ.data, indices);
   const memberIds       = new Set(activeIndices.map((ix) => ix.id));
   const speculatives    = indices.filter((ix) => ix.kind === "speculative");
@@ -260,7 +269,6 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
   });
 
   const toggle = (ix: IndexEntry): void => {
-    if (!active) return;
     if (memberIds.has(ix.id)) removeMember.mutate(ix.id);
     else addMember.mutate(ix.id);
   };
@@ -296,7 +304,7 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
       <Skeleton
         name="phase-panel"
         className="flex-1 min-h-0 flex flex-col"
-        loading={indicesQ.isLoading || groupsQ.isLoading || assignmentQ.isLoading}
+        loading={indicesQ.isLoading || assignmentQ.isLoading}
         stagger={50}
         transition={200}
         fixture={PHASE_PANEL_FIXTURE}
