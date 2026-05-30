@@ -12,7 +12,7 @@
  * plot element (the same pattern Observable Plot uses internally).
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render } from "@testing-library/react";
+import { render, fireEvent } from "@testing-library/react";
 import {
   MultiTracePlot,
   computeMaxPlotWidth,
@@ -46,7 +46,9 @@ vi.mock("@observablehq/plot", () => ({
     (el as unknown as { scale: (n: string) => { invert?: (px: number) => number; apply?: (q: number) => number } | undefined }).scale = (n) =>
       n === "x"
         ? { invert: (px: number) => px / 100, apply: (q: number) => q * 100 }
-        : undefined;
+        : n === "y"
+          ? { apply: (v: number) => v }
+          : undefined;
     lastPlotElement = el;
     return el;
   }),
@@ -607,5 +609,79 @@ describe("<MultiTracePlot>", () => {
     );
     expect(container.querySelector('[data-testid="multi-trace-plot"]'))
       .toHaveAttribute("data-representation", "heatmap");
+  });
+});
+
+describe("<MultiTracePlot> migration-tracking overlay (E-3)", () => {
+  function trackingMember(id: number, lattice_d: number, qs: number[]): SeriesMember {
+    const peakIds = qs.map((_, i) => id * 100 + i);
+    return makeMember({
+      id, exposure_id: id * 10, display_order: id - 1,
+      snapshot: {
+        effective_peaks: qs.map((q, i) => ({
+          id: peakIds[i]!, q, intensity: 50, sharpness: 1, source: "auto" as const,
+        })),
+        confirmed_index: {
+          id: id * 1000, phase: "Pn3m", lattice_d, r_squared: 0.99, ngc: -1.5,
+          peak_ids: peakIds,
+        },
+        analysis_inputs_hash: "h",
+      },
+    });
+  }
+  const a = 200;
+  const qOf = (rad: number) => (2 * Math.PI * Math.sqrt(rad)) / a;
+  const members = [
+    trackingMember(1, a, [qOf(2), qOf(3)]),
+    trackingMember(2, a, [qOf(2), qOf(3)]),
+  ];
+  const traces = new Map([
+    [10, { q: [qOf(2), qOf(3)], I: [10, 5] }],
+    [20, { q: [qOf(2), qOf(3)], I: [10, 5] }],
+  ]) as unknown as Map<number, import("../src/api").Trace>;
+
+  it("mounts the tracking overlay with anchor handles when showCrossTraceTracking is on", () => {
+    const { container } = render(
+      <MultiTracePlot
+        members={members}
+        traces={traces}
+        xDomain={null}
+        onXDomain={() => {}}
+        showCrossTraceTracking
+      />,
+    );
+    expect(container.querySelector('[data-role="series-tracking-overlay"]')).not.toBeNull();
+    // Observed anchor hit targets exist (the hover/focus handles).
+    expect(container.querySelectorAll('[data-role="series-anchor-hit"]').length).toBeGreaterThan(0);
+  });
+
+  it("does NOT mount the overlay when tracking is off", () => {
+    const { container } = render(
+      <MultiTracePlot
+        members={members}
+        traces={traces}
+        xDomain={null}
+        onXDomain={() => {}}
+      />,
+    );
+    expect(container.querySelector('[data-role="series-tracking-overlay"]')).toBeNull();
+  });
+
+  it("threads the terracotta connector when an anchor is hovered/focused", () => {
+    const { container } = render(
+      <MultiTracePlot
+        members={members}
+        traces={traces}
+        xDomain={null}
+        onXDomain={() => {}}
+        showCrossTraceTracking
+      />,
+    );
+    const hit = container.querySelector('[data-role="series-anchor-hit"]')!;
+    fireEvent.mouseEnter(hit);
+    // The hovered track's connector turns on (data-tracked="true").
+    expect(container.querySelector('[data-role="series-track-line"][data-tracked="true"]')).not.toBeNull();
+    fireEvent.mouseLeave(hit);
+    expect(container.querySelector('[data-role="series-track-line"][data-tracked="true"]')).toBeNull();
   });
 });
