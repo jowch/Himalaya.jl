@@ -55,6 +55,25 @@ function _group_with_members(db::SQLite.DB, group_id::Int)
 end
 
 """
+    _assignment_body(db, exposure_id) -> Dict
+
+Build the canonical assignment response: the durable 3-state assignment for an
+exposure plus its 0..N member index ids (ascending). Returns the neutral
+default (state 'indexed', no members) when no assignment row exists yet.
+"""
+function _assignment_body(db::SQLite.DB, exposure_id::Int)
+    rows = Tables.rowtable(DBInterface.execute(db,
+        "SELECT state FROM assignments WHERE exposure_id = ?", [exposure_id]))
+    state = isempty(rows) ? "indexed" : String(rows[1].state)
+    members = Tables.rowtable(DBInterface.execute(db,
+        "SELECT index_id FROM assignment_members WHERE exposure_id = ? ORDER BY index_id",
+        [exposure_id]))
+    Dict(:exposure_id => exposure_id,
+         :state       => state,
+         :members     => [Int(m.index_id) for m in members])
+end
+
+"""
     predicted_q_for_phase(phase_name, basis) -> Vector{Float64}
 
 Return predicted q positions (basis × normalized phase ratios) for a phase
@@ -143,6 +162,46 @@ function register_analysis_routes!()
             JSON3.write([_group_with_members(db, Int(g.id)) for g in groups]))
     end
 
+    @get "/api/exposures/{id}/assignment" function(req::HTTP.Request, id::Int)
+        db = current_db()
+        HTTP.Response(200, ["Content-Type" => "application/json"],
+            JSON3.write(_assignment_body(db, id)))
+    end
+
+    @post "/api/exposures/{id}/assignment/state" function(req::HTTP.Request, id::Int)
+        db   = current_db()
+        body = json(req)
+        if !haskey(body, :state)
+            return HTTP.Response(400, ["Content-Type" => "application/json"],
+                JSON3.write(Dict(:error => "missing field: state")))
+        end
+        state = String(body.state)
+        if !(state in ("indexed", "form_factor", "null"))
+            return HTTP.Response(400, ["Content-Type" => "application/json"],
+                JSON3.write(Dict(:error => "invalid state: $state")))
+        end
+        return with_idempotency(db, req) do
+            result = apply_event!(InTransaction(), db, req;
+                kind        = "assignment_set_state",
+                entity_type = "exposure",
+                entity_id   = id,
+                payload     = Dict(:state => state))
+            # Build the response from the now-current assignment, and carry it as
+            # the SSE post_state so Plan D's applyRemoteToCache can patch the
+            # assignment cache directly (no extra refetch). NOTE: the post_state
+            # has NO top-level `indices` key — that is what lets the frontend's
+            # CurationPostState cast bail harmlessly for assignment frames.
+            b = _assignment_body(db, id)
+            post_state = Dict(:assignment =>
+                Dict(:state => b[:state], :members => b[:members]))
+            _enqueue_broadcast_from_result!(result, "assignment_set_state", "exposure", id;
+                post_state = post_state)
+            b[:event_id]    = result.event_id
+            b[:view_row_id] = result.view_row_id
+            HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(b))
+        end
+    end
+
     @post "/api/groups/{id}/members" function(req::HTTP.Request, id::Int)
         db = current_db()
         body = json(req)
@@ -176,6 +235,22 @@ function register_analysis_routes!()
                 entity_id   = exposure_id,
                 payload     = Dict(:group_id => custom_id, :index_id => index_id))
             _enqueue_broadcast_from_result!(result, "index_confirmed", "exposure", exposure_id)
+
+            # Plan A dual-write: keep the durable assignment in sync with the
+            # legacy group membership so the assignment tables stay live while
+            # the frontend still reads /groups. Removed in Plan D when the
+            # frontend goes assignment-native. Carries post_state (the current
+            # assignment) so Plan D's applyRemoteToCache can patch directly; the
+            # post_state has no top-level `indices` key by design.
+            a_result = apply_event!(InTransaction(), db, req;
+                kind        = "assignment_add",
+                entity_type = "exposure",
+                entity_id   = exposure_id,
+                payload     = Dict(:index_id => index_id))
+            a_body = _assignment_body(db, exposure_id)
+            _enqueue_broadcast_from_result!(a_result, "assignment_add", "exposure", exposure_id;
+                post_state = Dict(:assignment =>
+                    Dict(:state => a_body[:state], :members => a_body[:members])))
 
             # Issue #13: include event_id/view_row_id alongside the group
             # body so the response shape matches the spec's queue-migrated
@@ -219,6 +294,19 @@ function register_analysis_routes!()
                 payload         = Dict(:group_id => custom_id, :index_id => index_id),
                 undoes_event_id = undoes)
             _enqueue_broadcast_from_result!(result, "index_unconfirmed", "exposure", exposure_id)
+
+            # Plan A dual-write (mirror of the add route, removed in Plan D).
+            # Carries the current assignment as post_state; no top-level
+            # `indices` key.
+            a_result = apply_event!(InTransaction(), db, req;
+                kind        = "assignment_remove",
+                entity_type = "exposure",
+                entity_id   = exposure_id,
+                payload     = Dict(:index_id => index_id))
+            a_body = _assignment_body(db, exposure_id)
+            _enqueue_broadcast_from_result!(a_result, "assignment_remove", "exposure", exposure_id;
+                post_state = Dict(:assignment =>
+                    Dict(:state => a_body[:state], :members => a_body[:members])))
 
             body = _group_with_members(db, custom_id)
             body[:event_id]    = result.event_id
