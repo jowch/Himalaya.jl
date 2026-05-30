@@ -158,6 +158,43 @@ end
         end
     end
 
+    @testset "POST /api/exposures/:id/assignment/members (assignment_add)" begin
+        # Plan D Task D-3 layer-1/2: the native assignment member route must be
+        # idempotent under retry — one durable row, one SSE frame, identical body.
+        mktempdir() do tmp
+            db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+            exp_id = HimalayaUI.create_experiment!(db; path=tmp,
+                data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
+            s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
+            e_id = HimalayaUI.create_exposure!(db; sample_id=s_id)
+            DBInterface.execute(db,
+                "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (77, ?, 'Pn3m', 0.1)", [e_id])
+
+            with_test_server(db) do port, base
+                op_id = "replay-test-asg-$(rand(UInt32))"
+                headers = ["Content-Type" => "application/json",
+                           "X-Username"   => "alice",
+                           "X-Client-Id"  => "tab-1",
+                           "X-Client-Op-Id" => op_id]
+                body_json = JSON3.write(Dict(:index_id => 77))
+
+                pre_count = _count_actions(db, "assignment_add")
+                r1 = nothing; r2 = nothing
+                frames = _capture_sse_during("assignment_add") do
+                    r1 = HTTP.post("$base/api/exposures/$e_id/assignment/members";
+                        body = body_json, headers = headers)
+                    r2 = HTTP.post("$base/api/exposures/$e_id/assignment/members";
+                        body = body_json, headers = headers)
+                end
+                @test r1.status == 200
+                @test r2.status == 200
+                @test String(r2.body) == String(r1.body)
+                @test _count_actions(db, "assignment_add") - pre_count == 1
+                @test length(frames) == 1
+            end
+        end
+    end
+
     @testset "POST /api/samples/:id/messages (post_message)" begin
         mktempdir() do tmp
             db = HimalayaUI.open_db(joinpath(tmp, "h.db"))

@@ -31,6 +31,11 @@ import { saveSeriesMutator } from "./mutators/saveSeries";
 import { deleteSeriesMutator } from "./mutators/deleteSeries";
 import { commitSeriesPlateMutator } from "./mutators/commitSeriesPlate";
 import { scopeSeriesMutator } from "./mutators/scopeSeries";
+import {
+  addAssignmentPhaseMutator,
+  removeAssignmentPhaseMutator,
+  setAssignmentStateMutator,
+} from "./mutators/assignment";
 
 /**
  * Minimal shape required by the resolver: just enough of a persisted op to
@@ -126,6 +131,12 @@ export function resolveMutator(
       return deleteSeriesMutator;
     case "series_commit":
       return commitSeriesPlateMutator;
+    case "assignment_add":
+      return addAssignmentPhaseMutator;
+    case "assignment_remove":
+      return removeAssignmentPhaseMutator;
+    case "assignment_set_state":
+      return setAssignmentStateMutator;
     default:
       return undefined;
   }
@@ -168,6 +179,9 @@ export function resolveMutatorForEvent(
       return deleteSeriesMutator;
     case "series_plate_committed":
       return commitSeriesPlateMutator;
+    case "assignment_add":         return addAssignmentPhaseMutator;
+    case "assignment_remove":      return removeAssignmentPhaseMutator;
+    case "assignment_set_state":   return setAssignmentStateMutator;
     case "update_sample":       return updateSampleMutator;
     case "set_exposure_status": return setExposureStatusMutator;
     case "select_exposure":     return selectExposureMutator;

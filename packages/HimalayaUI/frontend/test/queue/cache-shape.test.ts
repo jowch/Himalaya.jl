@@ -30,6 +30,11 @@ import {
   addIndexToGroupMutator, removeIndexFromGroupMutator,
 } from "../../src/lib/queue/mutators/indexGroup";
 import { createSpeculativeMutator } from "../../src/lib/queue/mutators/createSpeculative";
+import {
+  addAssignmentPhaseMutator,
+  removeAssignmentPhaseMutator,
+  setAssignmentStateMutator,
+} from "../../src/lib/queue/mutators/assignment";
 import { reanalyzeExposureMutator } from "../../src/lib/queue/mutators/reanalyzeExposure";
 import {
   updateSampleMutator,
@@ -50,6 +55,9 @@ const PEAK_KEYS = new Set([
 ]);
 const GROUP_KEYS = new Set([
   "id", "exposure_id", "kind", "active", "members",
+]);
+const ASSIGNMENT_KEYS = new Set([
+  "exposure_id", "state", "members",
 ]);
 const SAMPLE_KEYS = new Set([
   "id", "experiment_id", "name", "display_name", "notes", "tags",
@@ -295,6 +303,87 @@ describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", ()
     });
     const groups = qc.getQueryData<unknown[]>(queryKeys.groups(5));
     assertKeys(groups![0], GROUP_KEYS, "removeIndexFromGroup cache row");
+  });
+
+  // -------------------------------------------------------------------------
+  // Assignment mutators (Plan D-3) — onSuccess writes ONLY the assignment
+  // cache (the 3-key Assignment shape); NEVER the exposure cache.
+  // -------------------------------------------------------------------------
+
+  it("addAssignmentPhase writes an Assignment with exactly 3 keys (no exposure write)", async () => {
+    qc.setQueryData(queryKeys.assignment(5), { exposure_id: 5, state: "indexed", members: [] });
+    qc.setQueryData(queryKeys.exposure(5), FULL_EXPOSURE);
+    // Mock derived from routes_analysis.jl POST /assignment/members response.
+    mockFetchOnce({
+      exposure_id: 5, state: "indexed", members: [42],
+      event_id: 21, view_row_id: 7,
+    }, 200);
+    await runMutator(qc, addAssignmentPhaseMutator, {
+      kind: "assignment_add",
+      clientOpId: "op-asg-1",
+      exposureId: 5, username: "alice", clientId: "tab-1",
+      indexId: 42, payload: { indexId: 42 },
+    });
+    const a = qc.getQueryData<unknown>(queryKeys.assignment(5));
+    assertKeys(a, ASSIGNMENT_KEYS, "addAssignmentPhase cache row");
+    // HIGH finding #2: the exposure hash must be untouched (never written with
+    // undefined from an assignment frame).
+    const exp = qc.getQueryData<{ analysis_inputs_hash: string }>(queryKeys.exposure(5));
+    expect(exp!.analysis_inputs_hash).toBe("h0");
+  });
+
+  it("removeAssignmentPhase writes an Assignment with exactly 3 keys", async () => {
+    qc.setQueryData(queryKeys.assignment(5), { exposure_id: 5, state: "indexed", members: [42] });
+    mockFetchOnce({
+      exposure_id: 5, state: "indexed", members: [],
+      event_id: 22, view_row_id: 8,
+    }, 200);
+    await runMutator(qc, removeAssignmentPhaseMutator, {
+      kind: "assignment_remove",
+      clientOpId: "op-asg-2",
+      exposureId: 5, username: "alice", clientId: "tab-1",
+      indexId: 42, payload: { indexId: 42 },
+    });
+    assertKeys(qc.getQueryData(queryKeys.assignment(5)), ASSIGNMENT_KEYS, "removeAssignmentPhase cache row");
+  });
+
+  it("setAssignmentState writes an Assignment with exactly 3 keys (members cleared)", async () => {
+    qc.setQueryData(queryKeys.assignment(5), { exposure_id: 5, state: "indexed", members: [42] });
+    mockFetchOnce({
+      exposure_id: 5, state: "form_factor", members: [],
+      event_id: 23, view_row_id: 9,
+    }, 200);
+    await runMutator(qc, setAssignmentStateMutator, {
+      kind: "assignment_set_state",
+      clientOpId: "op-asg-3",
+      exposureId: 5, username: "alice", clientId: "tab-1",
+      state: "form_factor", payload: { state: "form_factor" },
+    });
+    const a = qc.getQueryData<{ state: string; members: number[] }>(queryKeys.assignment(5));
+    assertKeys(a, ASSIGNMENT_KEYS, "setAssignmentState cache row");
+    expect(a!.state).toBe("form_factor");
+    expect(a!.members).toEqual([]);
+  });
+
+  it("two pending assignment_add ops converge (reverse-rollback + insertion-replay)", () => {
+    // Finding #5b: simulate two queued optimistic adds, then roll BOTH back in
+    // reverse order and replay in insertion order — both members must end up
+    // present (the rollback snapshots the whole Assignment, so it is symmetric).
+    qc.setQueryData(queryKeys.assignment(5), { exposure_id: 5, state: "indexed", members: [] });
+    const op1 = { kind: "assignment_add" as const, clientOpId: "c1", exposureId: 5,
+      username: "a", clientId: "t", indexId: 10, payload: { indexId: 10 } };
+    const op2 = { kind: "assignment_add" as const, clientOpId: "c2", exposureId: 5,
+      username: "a", clientId: "t", indexId: 11, payload: { indexId: 11 } };
+    const ctx1 = addAssignmentPhaseMutator.onMutate(op1, qc);
+    const ctx2 = addAssignmentPhaseMutator.onMutate(op2, qc);
+    // reverse-rollback
+    ctx2.restore();
+    ctx1.restore();
+    expect(qc.getQueryData<{ members: number[] }>(queryKeys.assignment(5))!.members).toEqual([]);
+    // insertion-replay
+    addAssignmentPhaseMutator.onMutate(op1, qc);
+    addAssignmentPhaseMutator.onMutate(op2, qc);
+    expect(qc.getQueryData<{ members: number[] }>(queryKeys.assignment(5))!.members).toEqual([10, 11]);
   });
 
   it("createSpeculative writes an IndexEntry with exactly 13 keys", async () => {

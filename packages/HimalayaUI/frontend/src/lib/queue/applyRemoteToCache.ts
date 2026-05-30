@@ -1,8 +1,8 @@
 import type { QueryClient } from "@tanstack/react-query";
-import type { SseEvent, CurationPostState } from "./types";
+import type { SseEvent, CurationPostState, AssignmentPostState } from "./types";
 import type {
   Peak, GroupEntry, Exposure, Sample, SampleMessage,
-  ComparisonMessage, ComparisonSummary, Comparison, Series,
+  ComparisonMessage, ComparisonSummary, Comparison, Series, Assignment,
 } from "../../api";
 import { queryKeys } from "../../queries";
 import { peakQTol } from "./peakQTol";
@@ -177,6 +177,26 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
         g.id === groupId
           ? { ...g, members: g.members.filter((m) => m !== indexId) }
           : g));
+      break;
+    }
+    case "assignment_add":
+    case "assignment_remove":
+    case "assignment_set_state": {
+      // Assignment frames carry a DISTINCT post_state — {assignment:{state,
+      // members}} with no top-level `indices` key (so applyPostStateOnly bails
+      // for these kinds, never touching the curation caches). Patch the
+      // assignment cache directly from post_state; invalidate as the fallback
+      // for a (pre-Plan-D) frame that lacks the envelope.
+      const ps = remote.post_state as AssignmentPostState | undefined;
+      if (ps?.assignment) {
+        qc.setQueryData<Assignment>(queryKeys.assignment(id), {
+          exposure_id: id,
+          state: ps.assignment.state,
+          members: ps.assignment.members,
+        });
+      } else {
+        qc.invalidateQueries({ queryKey: queryKeys.assignment(id) });
+      }
       break;
     }
     case "speculative_created":

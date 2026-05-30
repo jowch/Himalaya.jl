@@ -31,6 +31,11 @@ import {
   deleteIndexMutator,
 } from "./lib/queue/mutators/indexGroup";
 import { createSpeculativeMutator } from "./lib/queue/mutators/createSpeculative";
+import {
+  addAssignmentPhaseMutator,
+  removeAssignmentPhaseMutator,
+  setAssignmentStateMutator,
+} from "./lib/queue/mutators/assignment";
 import { reanalyzeExposureMutator } from "./lib/queue/mutators/reanalyzeExposure";
 import { saveComparisonMutator } from "./lib/queue/mutators/saveComparison";
 import { deleteComparisonMutator } from "./lib/queue/mutators/deleteComparison";
@@ -466,6 +471,33 @@ export function useAssignment(exposureId: number | undefined) {
     queryFn: () => api.getAssignment(exposureId as number),
     enabled: exposureId !== undefined,
   });
+}
+
+export function useAddAssignmentPhase(exposureId: number) {
+  const username = useAppState((s) => s.username);
+  const inner = useQueueMutation(
+    addAssignmentPhaseMutator,
+    { exposureId, username, clientId: CLIENT_ID },
+  );
+  return { ...inner, mutate: (indexId: number) => inner.mutate({ indexId }) };
+}
+
+export function useRemoveAssignmentPhase(exposureId: number) {
+  const username = useAppState((s) => s.username);
+  const inner = useQueueMutation(
+    removeAssignmentPhaseMutator,
+    { exposureId, username, clientId: CLIENT_ID },
+  );
+  return { ...inner, mutate: (indexId: number) => inner.mutate({ indexId }) };
+}
+
+export function useSetAssignmentState(exposureId: number) {
+  const username = useAppState((s) => s.username);
+  const inner = useQueueMutation(
+    setAssignmentStateMutator,
+    { exposureId, username, clientId: CLIENT_ID },
+  );
+  return { ...inner, mutate: (state: api.AssignmentState) => inner.mutate({ state }) };
 }
 
 export function useAddIndexToGroup(exposureId: number, groupId: number) {

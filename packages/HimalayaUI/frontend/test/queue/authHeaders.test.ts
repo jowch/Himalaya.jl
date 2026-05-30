@@ -28,6 +28,9 @@ import {
   addIndexToGroupMutator, removeIndexFromGroupMutator, deleteIndexMutator,
 } from "../../src/lib/queue/mutators/indexGroup";
 import { createSpeculativeMutator } from "../../src/lib/queue/mutators/createSpeculative";
+import {
+  addAssignmentPhaseMutator, removeAssignmentPhaseMutator, setAssignmentStateMutator,
+} from "../../src/lib/queue/mutators/assignment";
 import { reanalyzeExposureMutator } from "../../src/lib/queue/mutators/reanalyzeExposure";
 import { saveComparisonMutator } from "../../src/lib/queue/mutators/saveComparison";
 import { deleteComparisonMutator } from "../../src/lib/queue/mutators/deleteComparison";
@@ -136,6 +139,27 @@ const SPECS: Spec[] = [
     run: (qc) => deleteIndexMutator.request(
       { ...FLAT_BASE, kind: "delete_index",
         payload: { indexId: 10 }, exposureId: 5, indexId: 10 } as any,
+      new AbortController().signal),
+  },
+  {
+    name: "addAssignmentPhase",
+    run: (qc) => addAssignmentPhaseMutator.request(
+      { ...FLAT_BASE, kind: "assignment_add", payload: { indexId: 10 },
+        exposureId: 5, indexId: 10 } as any,
+      new AbortController().signal),
+  },
+  {
+    name: "removeAssignmentPhase",
+    run: (qc) => removeAssignmentPhaseMutator.request(
+      { ...FLAT_BASE, kind: "assignment_remove", payload: { indexId: 10 },
+        exposureId: 5, indexId: 10 } as any,
+      new AbortController().signal),
+  },
+  {
+    name: "setAssignmentState",
+    run: (qc) => setAssignmentStateMutator.request(
+      { ...FLAT_BASE, kind: "assignment_set_state", payload: { state: "form_factor" },
+        exposureId: 5, state: "form_factor" } as any,
       new AbortController().signal),
   },
   {

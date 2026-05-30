@@ -19,15 +19,15 @@
  * If you change a route's apply_event! payload, update the corresponding
  * test here — and double-check applyRemoteToCache.ts reads the same fields.
  */
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
-import { applyRemoteToCache } from "../../src/lib/queue/applyRemoteToCache";
+import { applyRemoteToCache, applyPostStateOnly } from "../../src/lib/queue/applyRemoteToCache";
 import { resolveMutatorForEvent } from "../../src/lib/queue/mutatorRegistry";
 import type { SseEvent } from "../../src/lib/queue/types";
 import { remoteForeignEvent } from "./helpers";
 import type {
   Peak, Exposure, Sample, GroupEntry, SampleMessage,
-  ComparisonMessage, ComparisonSummary,
+  ComparisonMessage, ComparisonSummary, Assignment,
 } from "../../src/api";
 import { queryKeys } from "../../src/queries";
 
@@ -196,6 +196,88 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
       .toBe("h-new");
     const indices = qc.getQueryData<unknown[]>(queryKeys.indices(5))!;
     expect(indices).toHaveLength(1);
+  });
+
+  // -------------------------------------------------------------------------
+  // Assignment events (Plan D-3) — DISTINCT {assignment:{state,members}}
+  // post_state (NO top-level `indices` key).
+  // -------------------------------------------------------------------------
+
+  it("assignment_add patches the assignment cache from the distinct post_state", () => {
+    qc.setQueryData<Assignment>(queryKeys.assignment(5),
+      { exposure_id: 5, state: "indexed", members: [10] });
+    const evt: SseEvent = {
+      id: 99, kind: "assignment_add", entity_type: "exposure", entity_id: 5,
+      payload: { index_id: 42 },
+      post_state: { assignment: { state: "indexed", members: [10, 42] } },
+    };
+    applyRemoteToCache(evt, qc);
+    expect(qc.getQueryData<Assignment>(queryKeys.assignment(5))).toEqual(
+      { exposure_id: 5, state: "indexed", members: [10, 42] });
+  });
+
+  it("assignment_remove patches the assignment cache from post_state", () => {
+    qc.setQueryData<Assignment>(queryKeys.assignment(5),
+      { exposure_id: 5, state: "indexed", members: [10, 42] });
+    const evt: SseEvent = {
+      id: 99, kind: "assignment_remove", entity_type: "exposure", entity_id: 5,
+      payload: { index_id: 42 },
+      post_state: { assignment: { state: "indexed", members: [10] } },
+    };
+    applyRemoteToCache(evt, qc);
+    expect(qc.getQueryData<Assignment>(queryKeys.assignment(5))!.members).toEqual([10]);
+  });
+
+  it("assignment_set_state patches state + clears members from post_state", () => {
+    qc.setQueryData<Assignment>(queryKeys.assignment(5),
+      { exposure_id: 5, state: "indexed", members: [10] });
+    const evt: SseEvent = {
+      id: 99, kind: "assignment_set_state", entity_type: "exposure", entity_id: 5,
+      payload: { state: "form_factor" },
+      post_state: { assignment: { state: "form_factor", members: [] } },
+    };
+    applyRemoteToCache(evt, qc);
+    const a = qc.getQueryData<Assignment>(queryKeys.assignment(5))!;
+    expect(a.state).toBe("form_factor");
+    expect(a.members).toEqual([]);
+  });
+
+  it("assignment frame carries NO top-level `indices` key (distinct post_state)", () => {
+    // Finding #5: the wire contract is {assignment:{state,members}} — assert the
+    // absence of `indices` so a future shape drift toward CurationPostState is
+    // caught. Mirrors the Julia route-emit test in test_assignments.jl.
+    const post_state = { assignment: { state: "indexed" as const, members: [10] } };
+    expect("indices" in post_state).toBe(false);
+    expect("assignment" in post_state).toBe(true);
+  });
+
+  it("applyPostStateOnly is a NO-OP on an assignment frame (finding #5a)", () => {
+    // The single highest-value test: an assignment frame reaching the own-tab
+    // applyPostStateOnly path must NOT clobber the exposure hash (the {assignment}
+    // post_state has no `indices` array, so the guard bails).
+    qc.setQueryData<Exposure>(queryKeys.exposure(5), FULL_EXPOSURE);
+    qc.setQueryData(queryKeys.indices(5), [{ id: 1 }]);
+    const evt: SseEvent = {
+      id: 99, kind: "assignment_add", entity_type: "exposure", entity_id: 5,
+      payload: { index_id: 42 },
+      post_state: { assignment: { state: "indexed", members: [42] } },
+    };
+    applyPostStateOnly(evt, qc);
+    // Exposure hash untouched; indices cache untouched.
+    expect(qc.getQueryData<Exposure>(queryKeys.exposure(5))!.analysis_inputs_hash).toBe("h0");
+    expect(qc.getQueryData<unknown[]>(queryKeys.indices(5))).toEqual([{ id: 1 }]);
+  });
+
+  it("assignment_add with no post_state invalidates the assignment cache (fallback)", () => {
+    qc.setQueryData<Assignment>(queryKeys.assignment(5),
+      { exposure_id: 5, state: "indexed", members: [10] });
+    const spy = vi.spyOn(qc, "invalidateQueries");
+    const evt: SseEvent = {
+      id: 99, kind: "assignment_add", entity_type: "exposure", entity_id: 5,
+      payload: { index_id: 42 },
+    };
+    applyRemoteToCache(evt, qc);
+    expect(spy).toHaveBeenCalledWith({ queryKey: queryKeys.assignment(5) });
   });
 
   // -------------------------------------------------------------------------
@@ -613,6 +695,27 @@ describe("synthesizeFromSse coverage (resolveMutatorForEvent contract)", () => {
       { event_id: 1, client_op_id: "x", analysis_inputs_hash: undefined },
     );
     expect(synth).toBeDefined();
+  });
+
+  // Assignment mutators synthesize from the DISTINCT {assignment} post_state,
+  // not from payload — so they need a post_state-bearing frame (the generic
+  // `cases` factory above only carries payload). All three share synthAssignment.
+  it.each([
+    "assignment_add", "assignment_remove", "assignment_set_state",
+  ])("%s synthesizes an Assignment from {assignment} post_state", (kind) => {
+    const mutator = resolveMutatorForEvent(kind, "exposure");
+    expect(mutator).toBeDefined();
+    const synth = mutator!.synthesizeFromSse?.(
+      remoteForeignEvent({
+        id: 7, kind, entity_type: "exposure", entity_id: 5, payload: {},
+        post_state: { assignment: { state: "indexed", members: [10, 11] } },
+      }),
+      { event_id: 7, client_op_id: "x", analysis_inputs_hash: undefined },
+    ) as { exposure_id: number; state: string; members: number[] } | undefined;
+    expect(synth).toBeDefined();
+    expect(synth!.exposure_id).toBe(5);
+    expect(synth!.state).toBe("indexed");
+    expect(synth!.members).toEqual([10, 11]);
   });
 
   // Every event kind in resolveMutatorForEvent's switch falls into one of
