@@ -35,6 +35,7 @@
 import * as Plot from "@observablehq/plot";
 import type { Trace, SeriesMember, MemberSnapshotPeak } from "../api";
 import { phaseColor } from "../phases";
+import { peakMark } from "./ui/peakMark";
 import {
   applyNormalization,
   computeReference,
@@ -144,6 +145,8 @@ export interface PeakRow {
   y: number;
   peakId: number;
   color: string;
+  /** Provenance silhouette: manual → diamond, auto → triangle (peakMark). */
+  source: "auto" | "manual";
 }
 
 /**
@@ -208,7 +211,7 @@ export function buildMemberPeakRows(props: MemberMarksProps): {
     const color = highlightedPeakIds.has(p.id)
       ? highlightColor
       : PEAK_COLOR_DEFAULT;
-    visiblePeaks.push({ q: p.q, y, peakId: p.id, color });
+    visiblePeaks.push({ q: p.q, y, peakId: p.id, color, source: p.source });
   }
 
   return { peaks: visiblePeaks, linePoints };
@@ -261,19 +264,10 @@ export function buildMemberMarks(props: MemberMarksProps): unknown[] {
     // data-* attributes through to the rendered SVG. Per-peak interaction is
     // unit-tested via peakCycle.test.ts + this file's mark-arg capture tests;
     // the band-level `member-trace` overlay in MultiTracePlot covers E2E.
-    marks.push(
-      Plot.dot(visiblePeaks, {
-        x: "q",
-        y: "y",
-        symbol: "triangle",
-        // Per-row color via channel — Observable Plot reads the `color`
-        // field as the fill via the `fill` accessor below.
-        fill: (d: unknown) => (d as PeakRow).color,
-        stroke: "var(--color-paper)",
-        strokeWidth: 0.75,
-        r: 4,
-      }),
-    );
+    // Converged onto the shared peakMark builder (Plan C plot spine): manual
+    // peaks read as diamonds, auto as triangles, all in the per-row resolved
+    // colour. `peakMark` reads `q`/`y`/`color`/`source` off each row.
+    marks.push(peakMark(visiblePeaks));
 
     // Labels: when `xScale` is provided, run `layoutPeakLabels` to spread
     // crowded labels horizontally + emit leader lines from the dodged

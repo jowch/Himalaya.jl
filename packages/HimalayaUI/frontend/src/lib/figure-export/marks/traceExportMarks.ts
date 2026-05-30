@@ -5,10 +5,10 @@
 import * as Plot from "@observablehq/plot";
 import type { Trace, Peak, IndexEntry } from "../../../api";
 import { phaseColor } from "../../../phases";
+import { peakMark } from "../../../components/ui/peakMark";
 import {
   LIGHT_PALETTE,
   TRACE_STROKE_PX,
-  PEAK_TICK_STROKE_PX,
   PREDICTED_Q_STROKE_PX,
 } from "../presets";
 
@@ -38,28 +38,21 @@ export function buildTraceExportMarks(args: {
     }),
   );
 
-  // Peak triangles. Color by source/excluded.
+  // Peak glyphs via the shared peakMark builder (Plan C plot spine). Manual
+  // peaks now read as DIAMONDS, auto as triangles. Export colour stays
+  // BY-SOURCE (LIGHT_PALETTE), NOT by-phase — the printable palette is
+  // deliberately source-coded, so we thread the LIGHT_PALETTE literal into
+  // peakMark's resolved `color` param (it carries literals fine). Excluded
+  // peaks ghost via the builder's `excluded` flag.
   const peakRows = peaks.map((p) => ({
     q: p.q,
-    I: p.intensity ?? 0,
-    fill: p.excluded
-      ? LIGHT_PALETTE.peakExcluded
-      : p.source === "manual"
-        ? LIGHT_PALETTE.peakManual
-        : LIGHT_PALETTE.peakAuto,
+    y: p.intensity ?? 0,
+    color: p.source === "manual" ? LIGHT_PALETTE.peakManual : LIGHT_PALETTE.peakAuto,
+    source: p.source,
+    ...(p.excluded ? { excluded: true } : {}),
   }));
   if (peakRows.length > 0) {
-    marks.push(
-      Plot.dot(peakRows, {
-        x: "q",
-        y: "I",
-        fill: "fill",
-        symbol: "triangle2",
-        r: 4,
-        stroke: "fill",
-        strokeWidth: PEAK_TICK_STROKE_PX,
-      }),
-    );
+    marks.push(peakMark(peakRows, { y: "y" }));
   }
 
   // Predicted-q ticks per active-group index, phase-coloured.

@@ -10,6 +10,8 @@ import { useAutoPickExposure, noUsableExposureState } from "../hooks/useAutoPick
 import { TraceViewer } from "./TraceViewer";
 import { NoUsableExposureNotice } from "./NoUsableExposureNotice";
 import { HintText } from "./ui";
+import { PeakGlyph } from "./ui/PeakGlyph";
+import { peakGlyph } from "./ui/peakMark";
 import { SegmentedControl } from "./ui/SegmentedControl";
 import { FigureExportControls } from "./FigureExportControls";
 import { buildTraceExportSpec } from "../lib/figure-export/adapters/traceAdapter";
@@ -645,19 +647,23 @@ interface PlotLegendProps {
   hoveredIndex: IndexEntry | undefined;
 }
 
-function TriangleSvg({ color, opacity = 1 }: { color: string; opacity?: number }): JSX.Element {
-  // Downward-pointing triangle matching TraceViewer geometry (hw=4, h=7)
+function PeakGlyphSwatch({
+  source,
+  excluded,
+  color,
+  opacity = 1,
+}: {
+  source: "auto" | "manual";
+  excluded?: boolean;
+  color: string;
+  opacity?: number;
+}): JSX.Element {
+  // Legend swatch sharing the canonical peak geometry: manual → diamond,
+  // auto → downward triangle, excluded → ghosted (hollow). Magenta retired.
+  const descriptor = peakGlyph({ source, color, ...(excluded ? { excluded: true } : {}) });
   return (
-    <svg width="10" height="8" viewBox="0 0 8 7" style={{ display: "block" }}>
-      <polygon
-        points="-4,0 4,0 0,7"
-        transform="translate(4,0)"
-        fill={color}
-        fillOpacity={opacity}
-        stroke={color}
-        strokeOpacity={opacity}
-        strokeWidth="0.5"
-      />
+    <svg width="12" height="12" viewBox="0 0 12 12" style={{ display: "block" }}>
+      <PeakGlyph descriptor={descriptor} x={6} y={11} opacity={opacity} haloStroke={color} />
     </svg>
   );
 }
@@ -694,10 +700,10 @@ function PlotLegend({ peaks, hoveredIndex }: PlotLegendProps): JSX.Element {
     <div className="flex items-center gap-4 px-4 py-1.5 border-t border-hair
                     font-mono text-xs text-ink-faint flex-wrap">
       {hasManualPeaks && (
-        <LegendItem symbol={<TriangleSvg color="var(--color-peak-manual)" />} label="manual peak" />
+        <LegendItem symbol={<PeakGlyphSwatch source="manual" color="var(--color-ink-faint)" />} label="manual peak" />
       )}
       {hasExcludedPeaks && (
-        <LegendItem symbol={<TriangleSvg color="var(--color-accent)" opacity={0.3} />} label="excluded" />
+        <LegendItem symbol={<PeakGlyphSwatch source="auto" excluded color="var(--color-ink-faint)" opacity={0.5} />} label="excluded" />
       )}
       {hoveredIndex && (
         <LegendItem
