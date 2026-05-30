@@ -136,6 +136,18 @@ CREATE TABLE IF NOT EXISTS index_group_members (
     PRIMARY KEY (group_id, index_id)
 );
 
+CREATE TABLE IF NOT EXISTS assignments (
+    exposure_id INTEGER PRIMARY KEY REFERENCES exposures(id),
+    state       TEXT NOT NULL DEFAULT 'indexed'
+                CHECK (state IN ('indexed', 'form_factor', 'null'))
+);
+
+CREATE TABLE IF NOT EXISTS assignment_members (
+    exposure_id INTEGER NOT NULL REFERENCES exposures(id),
+    index_id    INTEGER NOT NULL REFERENCES indices(id) ON DELETE CASCADE,
+    PRIMARY KEY (exposure_id, index_id)
+);
+
 CREATE TABLE IF NOT EXISTS sample_messages (
     id         INTEGER PRIMARY KEY,
     sample_id  INTEGER REFERENCES samples(id),
