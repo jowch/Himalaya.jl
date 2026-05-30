@@ -923,8 +923,9 @@ function renderRail() {
       <span class="mono" style="color:var(--ink-soft)">${(A_IM3M/A_PN3M).toFixed(3)}</span>
       &asymp; Bonnet <span class="mono" style="color:var(--ink-soft)">${BONNET}</span>. Consistent.`;
   } else {
-    note.innerHTML = `The assignment is the phase call for this exposure.`;
+    note.innerHTML = '';   // no filler — notes appear only when they say something
   }
+  note.style.display = note.innerHTML ? '' : 'none';
 
   const list = document.getElementById('cand-list');
   list.innerHTML = '';

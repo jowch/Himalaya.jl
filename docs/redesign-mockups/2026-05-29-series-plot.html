@@ -132,6 +132,10 @@
   svg .wf-row.dim .wf-label { opacity: 0.3; }
   svg .wf-row.hot .wf-trace { stroke-width: 2.4; }
   svg .wf-row.hot .wf-anchor { r: 4; }
+  svg .wf-anchor-hit { cursor: pointer; }
+  svg .wf-anchor.track-on { stroke: var(--accent); stroke-width: 1.8; r: 4.2; }
+  svg .wf-track-line { fill: none; stroke: var(--accent); stroke-width: 1.5;
+    stroke-dasharray: 4 3; opacity: 0.9; }
   svg .ps-cell { cursor: pointer; }
   svg .ps-cap { font-size: 10px; fill: var(--ink-faint); }
 
@@ -163,7 +167,9 @@
   .m-swatch { width: 11px; height: 11px; border-radius: 50%; flex-shrink: 0; }
   .m-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
   .m-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .m-names { display: inline-flex; align-items: baseline; }
   .m-name { font-size: 12px; font-weight: 600; color: var(--ink); }
+  .m-plus { font-size: 11px; color: var(--ink-faint); margin: 0 2px; }
   .m-var { font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: var(--ink-soft); }
   .m-data { font-family: ui-monospace, Menlo, monospace; font-size: 10px; color: var(--ink-faint); }
 
@@ -259,7 +265,7 @@
           <div>
             <div class="kicker">Series</div>
             <h1>LL37 titration into Lipid 1&#8209;2</h1>
-            <div class="h-sub">6 exposures &nbsp;·&nbsp; variable: LL37 : lipid &nbsp;·&nbsp; SSRL Apr 2026</div>
+            <div class="h-sub">7 exposures &nbsp;·&nbsp; variable: LL37 : lipid &nbsp;·&nbsp; SSRL Apr 2026</div>
           </div>
           <div class="tools">
             <div class="seg" id="rep-seg">
@@ -293,7 +299,7 @@
     <aside class="rail">
       <div class="rail-sec">
         <div class="rail-h">Series</div>
-        <div class="var-line">Ordered by <b>LL37 : lipid</b>, low to high. Six exposures
+        <div class="var-line">Ordered by <b>LL37 : lipid</b>, low to high. Seven exposures
           from one titration.</div>
       </div>
 
@@ -366,6 +372,8 @@
  * ════════════════════════════════════════════════════════════════════ */
 const TWO_PI = 2 * Math.PI;
 const COL = { Pn3m: 'oklch(0.570 0.150 58)', Lamellar: 'oklch(0.505 0.150 264)' };
+const NEUTRAL = 'oklch(0.560 0.010 70)';                 // form-factor trace — no phase
+const traceColor = s => s.formFactor ? NEUTRAL : COL[s.dominant];
 
 /* each phase carries its lattice constant explicitly so the reading panel and
    member rows are DERIVED from the data, not narrated by hand */
@@ -380,12 +388,15 @@ const SAMPLES = [
                            lamel('Lamellar', 60, [1,2,3], [0.6,0.3,0.16]) ] },
   { v: '1:0.75', phases: [ lamel('Lamellar', 57, [1,2,3], [0.92,0.5,0.28]) ] },
   { v: '1:1',    phases: [ lamel('Lamellar', 55, [1,2,3], [1.0,0.56,0.32]) ] },
+  { v: '1:1.5',  phases: [] },   // form factor only — excess peptide disrupts all long-range order
 ];
 SAMPLES.forEach((s, i) => {
   s.i = i;
-  s.dominant = s.phases.reduce((a, b) => (Math.max(...b.amp) > Math.max(...a.amp) ? b : a)).p;
+  s.formFactor = s.phases.length === 0;
+  s.dominant = s.formFactor ? null
+    : s.phases.reduce((a, b) => (Math.max(...b.amp) > Math.max(...a.amp) ? b : a)).p;
   s.coexist = s.phases.length > 1;
-  s.q1 = Math.min(...s.phases.flatMap(ph => ph.q));   // first (lowest-q) peak
+  s.q1 = s.formFactor ? null : Math.min(...s.phases.flatMap(ph => ph.q));  // first (lowest-q) peak
 });
 
 const NS = 'http://www.w3.org/2000/svg';
@@ -394,10 +405,16 @@ const el = (n, a) => { const e = document.createElementNS(NS, n);
 
 const Q = { min: 0.020, max: 0.360 };
 let scaleMode = 'log', repMode = 'waterfall';
+let anchorMap = {};   // reflId ("phase:order") → [{x,y,samp}] for migration tracking
 
 /* intensity model for one sample at q */
 function sampleIntensity(s, q) {
   let v = 0.16 * Math.pow(Q.min / q, 0.9);
+  if (s.formFactor) {
+    // broad lipid form-factor shoulder — structured, but no sharp Bragg peaks
+    v += 0.32 * Math.exp(-0.5 * Math.pow((q - 0.11) / 0.05, 2));
+    return v;
+  }
   s.phases.forEach(ph => ph.q.forEach((pq, k) => {
     const sg = 0.012 * pq + 0.0011;
     v += ph.amp[k] * Math.exp(-0.5 * Math.pow((q - pq) / sg, 2));
@@ -425,6 +442,7 @@ function setHot(idx) {
 function renderWaterfall() {
   const svg = document.getElementById('waterfall');
   svg.innerHTML = '';
+  anchorMap = {};
   const pw = WF.w - WF.l - WF.r, ph = WF.h - WF.t - WF.b;
   const baseY = WF.t + ph;
 
@@ -464,20 +482,27 @@ function renderWaterfall() {
     }
     const hScale = traceH / gmax;
     const yOf = v => rowBase - v * hScale;
-    const color = COL[s.dominant];
+    const color = traceColor(s);
 
     const g = el('g', { class: 'wf-row', 'data-samp': s.i });
     let d = '';
     xs.forEach((q, k) => { d += (k === 0 ? 'M' : 'L') + wxOf(q, pw, WF.l).toFixed(1) + ' ' + yOf(ys[k]).toFixed(1) + ' '; });
     g.appendChild(el('path', { class: 'wf-trace', d, stroke: color }));
 
-    /* peak anchors — beads on the string: a phase-coloured dot ringed in the
-       plate colour so it reads on the trace even when fill == trace colour */
+    /* peak anchors — interaction handles. A phase-coloured bead ringed in the
+       plate colour; hovering one TRACKS that reflection across the stack. A
+       form-factor trace has none. */
     s.phases.forEach(phh => phh.q.forEach((pq, k) => {
       if (pq < Q.min || pq > Q.max) return;
       const x = wxOf(pq, pw, WF.l), y = yOf(sampleIntensity(s, pq));
+      const reflId = phh.p + ':' + k;
       g.appendChild(el('circle', { class: 'wf-anchor', cx: x, cy: y, r: 2.9,
-        fill: COL[phh.p], stroke: 'var(--plate)', 'stroke-width': 1.4 }));
+        fill: COL[phh.p], stroke: 'var(--plate)', 'stroke-width': 1.4, 'data-refl': reflId }));
+      const hit = el('circle', { class: 'wf-anchor-hit', cx: x, cy: y, r: 9, fill: 'transparent' });
+      hit.addEventListener('mouseenter', e => { e.stopPropagation(); trackRefl(reflId); });
+      hit.addEventListener('mouseleave', () => trackRefl(null));
+      g.appendChild(hit);
+      (anchorMap[reflId] = anchorMap[reflId] || []).push({ x, y, samp: s.i });
     }));
 
     /* sample label at right */
@@ -488,6 +513,24 @@ function renderWaterfall() {
     g.addEventListener('mouseleave', () => setHot(null));
     svg.appendChild(g);
   });
+
+  svg.appendChild(el('g', { id: 'wf-track' }));   // migration-track overlay (on top)
+}
+
+/* hovering a peak anchor tracks that reflection (same phase + order) across
+   every trace it appears in — the migration the waterfall exists to show */
+function trackRefl(reflId) {
+  const overlay = document.getElementById('wf-track');
+  if (overlay) overlay.innerHTML = '';
+  document.querySelectorAll('.wf-anchor.track-on').forEach(n => n.classList.remove('track-on'));
+  if (!reflId) return;
+  document.querySelectorAll('.wf-row').forEach(n => n.classList.remove('dim', 'hot'));
+  document.querySelectorAll(`.wf-anchor[data-refl="${reflId}"]`).forEach(n => n.classList.add('track-on'));
+  const recs = (anchorMap[reflId] || []).slice().sort((a, b) => a.samp - b.samp);
+  if (recs.length > 1 && overlay) {
+    overlay.appendChild(el('polyline', { class: 'wf-track-line',
+      points: recs.map(r => `${r.x.toFixed(1)},${r.y.toFixed(1)}`).join(' ') }));
+  }
 }
 
 /* ════════════ heatmap (secondary toggle) ════════════ */
@@ -532,7 +575,7 @@ function renderHeatmap() {
       const t = Math.min(1, v / gmax);
       // warm-dark window LUT: low intensity = frame-edge, high = phase colour
       const L = (0.16 + 0.62 * t).toFixed(3), C = (0.02 + 0.13 * t).toFixed(3);
-      const hue = s.dominant === 'Pn3m' ? 58 : 264;
+      const hue = s.formFactor ? 80 : (s.dominant === 'Pn3m' ? 58 : 264);
       g.appendChild(el('rect', { x: xa, y: yTop, width: Math.max(0.6, xb - xa), height: rowH - 2,
         fill: `oklch(${L} ${C} ${hue})` }));
     });
@@ -556,18 +599,24 @@ function renderPhaseStrip() {
   SAMPLES.forEach(s => {
     const baseY = (WF.t + ph) - s.i * slot;
     const y = baseY - cellH;
-    let fill;
-    if (s.coexist) {
-      const id = 'cg' + s.i;
-      const defs = el('defs', {});
-      const lg = el('linearGradient', { id, x1: 0, x2: 0, y1: 0, y2: 1 });
-      lg.appendChild(el('stop', { offset: '42%', 'stop-color': COL['Pn3m'] }));
-      lg.appendChild(el('stop', { offset: '58%', 'stop-color': COL['Lamellar'] }));
-      defs.appendChild(lg); svg.appendChild(defs);
-      fill = `url(#${id})`;
-    } else fill = COL[s.dominant];
     const g = el('g', { class: 'ps-cell', 'data-samp': s.i });
-    g.appendChild(el('rect', { x: 3, y, width: w, height: cellH, rx: 3, fill }));
+    if (s.formFactor) {
+      // no phase — a hollow dashed cell, not a coloured one
+      g.appendChild(el('rect', { x: 3, y, width: w, height: cellH, rx: 3, fill: 'none',
+        stroke: 'var(--hair-strong)', 'stroke-width': 1.2, 'stroke-dasharray': '2.5 2.5' }));
+    } else {
+      let fill;
+      if (s.coexist) {
+        const id = 'cg' + s.i;
+        const defs = el('defs', {});
+        const lg = el('linearGradient', { id, x1: 0, x2: 0, y1: 0, y2: 1 });
+        lg.appendChild(el('stop', { offset: '42%', 'stop-color': COL['Pn3m'] }));
+        lg.appendChild(el('stop', { offset: '58%', 'stop-color': COL['Lamellar'] }));
+        defs.appendChild(lg); svg.appendChild(defs);
+        fill = `url(#${id})`;
+      } else fill = COL[s.dominant];
+      g.appendChild(el('rect', { x: 3, y, width: w, height: cellH, rx: 3, fill }));
+    }
     g.addEventListener('mouseenter', () => setHot(s.i));
     g.addEventListener('mouseleave', () => setHot(null));
     svg.appendChild(g);
@@ -600,6 +649,8 @@ function renderReading() {
   }
   const coex = SAMPLES.filter(s => s.coexist).map(s => s.v);
   if (coex.length) html += `<div class="rd-coex">coexistence at ${coex.join(', ')}</div>`;
+  const ff = SAMPLES.filter(s => s.formFactor).map(s => s.v);
+  if (ff.length) html += `<div class="rd-coex">form factor only at ${ff.join(', ')}</div>`;
   document.getElementById('reading').innerHTML = html;
 }
 
@@ -611,20 +662,31 @@ function renderMembers() {
   [...SAMPLES].reverse().forEach(s => {
     const row = document.createElement('div');
     row.className = 'member'; row.dataset.samp = s.i;
-    const sw = s.coexist
-      ? `background:linear-gradient(135deg, ${COL['Pn3m']} 48%, ${COL['Lamellar']} 52%)`
-      : `background:${COL[s.dominant]}`;
-    const cub = s.phases.find(p => p.kind === 'cubic');
-    const lam = s.phases.find(p => p.kind === 'lamellar');
-    const lat = (cub && lam) ? `a ${cub.a} · d ${lam.d} Å`
-              : cub ? `a = ${cub.a} Å` : `d = ${lam.d} Å`;
+    let sw, nameHtml, dataLine;
+    if (s.formFactor) {
+      sw = `background:transparent;border:1.4px dashed var(--hair-strong)`;
+      nameHtml = `<span class="m-name" style="color:var(--ink-faint)">Form factor</span>`;
+      dataLine = `no Bragg peaks · q₁ —`;
+    } else {
+      const cub = s.phases.find(p => p.kind === 'cubic');
+      const lam = s.phases.find(p => p.kind === 'lamellar');
+      const lat = (cub && lam) ? `a ${cub.a} · d ${lam.d} Å`
+                : cub ? `a = ${cub.a} Å` : `d = ${lam.d} Å`;
+      dataLine = `${lat} · q₁ ${s.q1.toFixed(3)} Å⁻¹`;
+      if (s.coexist) {
+        sw = `background:linear-gradient(135deg, ${COL['Pn3m']} 48%, ${COL['Lamellar']} 52%)`;
+        // colour each phase name by its phase so the swatch is self-decoding
+        nameHtml = s.phases.map(p => `<span class="m-name" style="color:${COL[p.p]}">${p.p}</span>`)
+          .join(`<span class="m-plus"> + </span>`);
+      } else {
+        sw = `background:${COL[s.dominant]}`;
+        nameHtml = `<span class="m-name" style="color:${COL[s.dominant]}">${s.dominant}</span>`;
+      }
+    }
     row.innerHTML = `<span class="m-swatch" style="${sw}"></span>
       <div class="m-body">
-        <div class="m-top">
-          <span class="m-name">${s.coexist ? 'Pn3m + Lamellar' : s.dominant}</span>
-          <span class="m-var">${s.v}</span>
-        </div>
-        <div class="m-data">${lat} · q₁ ${s.q1.toFixed(3)} Å⁻¹</div>
+        <div class="m-top"><span class="m-names">${nameHtml}</span><span class="m-var">${s.v}</span></div>
+        <div class="m-data">${dataLine}</div>
       </div>`;
     row.addEventListener('mouseenter', () => setHot(s.i));
     row.addEventListener('mouseleave', () => setHot(null));
@@ -674,7 +736,7 @@ function renderCleanFigure() {
     const yOf = v => rowBase - v * (traceH / gmax);
     let d = '';
     xs.forEach((q, k) => { d += (k === 0 ? 'M' : 'L') + lx(q).toFixed(1) + ' ' + yOf(ys[k]).toFixed(1) + ' '; });
-    svg.appendChild(el('path', { d, fill: 'none', stroke: HEX[s.dominant], 'stroke-width': 2 }));
+    svg.appendChild(el('path', { d, fill: 'none', stroke: HEX[s.dominant] || '#777', 'stroke-width': 2 }));
     const lab = el('text', { x: m.l + pw + 6, y: rowBase - 1,
       'font-family': 'Arial, Helvetica, sans-serif', 'font-size': 9, fill: '#111' });
     lab.textContent = s.v; svg.appendChild(lab);
