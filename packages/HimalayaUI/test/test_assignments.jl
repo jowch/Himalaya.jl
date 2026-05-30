@@ -224,3 +224,23 @@ end
         @test isempty(HimalayaUI._assignment_body(db, e_id)[:members])
     end
 end
+
+@testset "assignment seed-if-absent contract" begin
+    mktempdir() do dir
+        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
+        e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (10, ?, 'Pn3m', 0.1)", [e_id])
+
+        # Call the extracted seed helper directly.
+        HimalayaUI.seed_assignment_if_absent!(db, e_id, [10])
+        @test HimalayaUI._assignment_body(db, e_id)[:members] == [10]
+        @test HimalayaUI._assignment_body(db, e_id)[:state] == "indexed"
+
+        # Second call with a different selection must NOT clobber existing membership.
+        DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (11, ?, 'Im3m', 0.1)", [e_id])
+        HimalayaUI.seed_assignment_if_absent!(db, e_id, [11])
+        @test HimalayaUI._assignment_body(db, e_id)[:members] == [10]   # preserved
+    end
+end
