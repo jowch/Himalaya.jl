@@ -123,3 +123,10 @@ export function peakMark(
     fillOpacity: (d: unknown) => ((d as PeakMarkState).excluded ? 0.35 : 1),
   });
 }
+
+// Re-export the SVG renderer so consumers can import the whole peak-glyph
+// surface (builder + descriptor + component) from one module specifier. The
+// component lives in peakMark.tsx (JSX); this binding keeps `./peakMark` the
+// single import path. (ESM tolerates the .ts↔.tsx cycle — .tsx only consumes
+// the type + peakGlyph above, both fully initialized before the component runs.)
+export { PeakGlyph, PeakGlyphFromOpts } from "./PeakGlyph";

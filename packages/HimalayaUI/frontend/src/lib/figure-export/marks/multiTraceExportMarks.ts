@@ -10,9 +10,9 @@ import { computeYBands } from "../../comparison/yBands";
 import {
   LIGHT_PALETTE,
   TRACE_STROKE_PX,
-  PEAK_TICK_STROKE_PX,
 } from "../presets";
 import { buildMemberHeatmapMarks } from "../../../components/MemberHeatmapLayer";
+import { peakMark } from "../../../components/ui/peakMark";
 import { buildCrossTraceTrackingMarks } from "../../../components/CrossTraceTrackingLayer";
 import type { Representation } from "../../../components/RepresentationToggle";
 
@@ -189,18 +189,18 @@ export function buildMultiTraceExportMarks(args: MultiTraceMarksArgs): Plot.Mark
     // Peaks — honour show toggles.
     const peaks = member.snapshot?.effective_peaks ?? [];
     if (showPeakTicks && peaks.length > 0) {
+      // Converged onto the shared peakMark builder (Plan C plot spine): the
+      // legacy ruleX ticks become peak glyphs (manual → diamond, auto →
+      // triangle) seated just above each band top. Export colour stays the
+      // per-member trace colour (NOT by-phase) — threaded as the resolved
+      // `color` on every row.
       const tickPoints = peaks.map((p) => ({
         q: p.q,
         y: bandTop + bandH * 0.05,
+        color,
+        source: p.source,
       }));
-      marks.push(
-        Plot.ruleX(tickPoints, {
-          x: "q",
-          stroke: color,
-          strokeWidth: PEAK_TICK_STROKE_PX,
-          // Restrict the tick height by mapping y to a small range above the band top.
-        }),
-      );
+      marks.push(peakMark(tickPoints, { y: "y" }));
       if (showPeakLabels) {
         const labelRows = peaks.map((p, idx) => ({
           q: p.q,

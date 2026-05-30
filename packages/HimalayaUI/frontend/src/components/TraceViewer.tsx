@@ -5,6 +5,7 @@ import { phaseColor } from "../phases";
 import { prettifyUnits } from "../lib/units";
 import { invertQ } from "../lib/plot/invertQ";
 import { formatAxis } from "../lib/plot/formatAxis";
+import { peakGlyph } from "./ui/peakMark";
 
 export interface TraceViewerProps {
 	trace: Trace;
@@ -442,11 +443,10 @@ export function TraceViewer({
 				? "var(--color-accent)"
 				: claimColor
 					? claimColor
-					: isAuto
-						? "var(--color-ink-faint)"
-						: "var(--color-peak-manual)";
-			// Auto peaks: filled triangle. Excluded auto peaks: same color but ~30% opacity.
-			// Manual peaks: filled magenta triangle (always full opacity when not faded).
+					: "var(--color-ink-faint)";
+			// Auto → filled downward triangle; manual → filled diamond (§5.1, Plan C).
+			// Excluded auto peaks: same color, ~30% opacity. Magenta retired — the
+			// silhouette (triangle vs diamond) carries provenance, not the hue.
 			let fill: string;
 			let opacity: number;
 			const excludedAuto = isAuto && peak.excluded;
@@ -499,12 +499,27 @@ export function TraceViewer({
 				"http://www.w3.org/2000/svg",
 				"polygon",
 			);
-			tri.setAttribute(
-				"points",
-				`${px - TRIANGLE_HALF_W},${py - TRIANGLE_H} ` +
-					`${px + TRIANGLE_HALF_W},${py - TRIANGLE_H} ` +
-					`${px},${py}`,
-			);
+			// §5.1 silhouette (Plan C): auto → downward triangle (apex at the
+			// peak), manual → diamond. peakGlyph is the single source of truth
+			// for the shape; geometry is laid out here against the live scale.
+			const glyphShape = peakGlyph({ source: peak.source, color: baseColor }).shape;
+			if (glyphShape === "diamond") {
+				const cy = py - TRIANGLE_H / 2;
+				tri.setAttribute(
+					"points",
+					`${px},${cy - TRIANGLE_HALF_W} ` +
+						`${px + TRIANGLE_HALF_W},${cy} ` +
+						`${px},${cy + TRIANGLE_HALF_W} ` +
+						`${px - TRIANGLE_HALF_W},${cy}`,
+				);
+			} else {
+				tri.setAttribute(
+					"points",
+					`${px - TRIANGLE_HALF_W},${py - TRIANGLE_H} ` +
+						`${px + TRIANGLE_HALF_W},${py - TRIANGLE_H} ` +
+						`${px},${py}`,
+				);
+			}
 			// Optimistic placeholders (negative id) render outlined to signal
 			// "in flight, not yet interactable". The empty triangle fills in once
 			// the server confirms and the row swaps to a positive id.
@@ -522,6 +537,7 @@ export function TraceViewer({
 				tri.setAttribute("stroke-width", "0.75");
 			}
 			tri.setAttribute("data-peak-id", String(peak.id));
+			tri.setAttribute("data-shape", glyphShape);
 			if (losing) tri.setAttribute("data-losing", "true");
 			peakRoot.appendChild(tri);
 		}
