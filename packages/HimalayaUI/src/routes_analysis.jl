@@ -295,6 +295,19 @@ function register_analysis_routes!()
                 undoes_event_id = undoes)
             _enqueue_broadcast_from_result!(result, "index_unconfirmed", "exposure", exposure_id)
 
+            # Plan A dual-write (mirror of the add route, removed in Plan D).
+            # Carries the current assignment as post_state; no top-level
+            # `indices` key.
+            a_result = apply_event!(InTransaction(), db, req;
+                kind        = "assignment_remove",
+                entity_type = "exposure",
+                entity_id   = exposure_id,
+                payload     = Dict(:index_id => index_id))
+            a_body = _assignment_body(db, exposure_id)
+            _enqueue_broadcast_from_result!(a_result, "assignment_remove", "exposure", exposure_id;
+                post_state = Dict(:assignment =>
+                    Dict(:state => a_body[:state], :members => a_body[:members])))
+
             body = _group_with_members(db, custom_id)
             body[:event_id]    = result.event_id
             body[:view_row_id] = result.view_row_id
