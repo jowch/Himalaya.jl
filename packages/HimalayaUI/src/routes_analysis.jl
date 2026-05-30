@@ -55,6 +55,25 @@ function _group_with_members(db::SQLite.DB, group_id::Int)
 end
 
 """
+    _assignment_body(db, exposure_id) -> Dict
+
+Build the canonical assignment response: the durable 3-state assignment for an
+exposure plus its 0..N member index ids (ascending). Returns the neutral
+default (state 'indexed', no members) when no assignment row exists yet.
+"""
+function _assignment_body(db::SQLite.DB, exposure_id::Int)
+    rows = Tables.rowtable(DBInterface.execute(db,
+        "SELECT state FROM assignments WHERE exposure_id = ?", [exposure_id]))
+    state = isempty(rows) ? "indexed" : String(rows[1].state)
+    members = Tables.rowtable(DBInterface.execute(db,
+        "SELECT index_id FROM assignment_members WHERE exposure_id = ? ORDER BY index_id",
+        [exposure_id]))
+    Dict(:exposure_id => exposure_id,
+         :state       => state,
+         :members     => [Int(m.index_id) for m in members])
+end
+
+"""
     predicted_q_for_phase(phase_name, basis) -> Vector{Float64}
 
 Return predicted q positions (basis × normalized phase ratios) for a phase

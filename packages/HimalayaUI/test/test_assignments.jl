@@ -1,6 +1,7 @@
 using Test
 using HimalayaUI
 using SQLite, DBInterface, Tables
+using JSON3, HTTP
 
 @testset "assignments schema" begin
     mktempdir() do dir
@@ -55,5 +56,29 @@ end
         members = Set(Int(m.index_id) for m in Tables.rowtable(DBInterface.execute(db,
             "SELECT index_id FROM assignment_members WHERE exposure_id = ?", [e_id])))
         @test members == Set([10, 11])
+    end
+end
+
+@testset "_assignment_body shape" begin
+    mktempdir() do dir
+        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
+        e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
+
+        # No assignment yet → defaults: state 'indexed', empty members.
+        b0 = HimalayaUI._assignment_body(db, e_id)
+        @test b0[:exposure_id] == e_id
+        @test b0[:state] == "indexed"
+        @test b0[:members] == Int[]
+
+        # With members + a non-default state.
+        DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (10, ?, 'Pn3m', 0.1)", [e_id])
+        DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (11, ?, 'Im3m', 0.1)", [e_id])
+        DBInterface.execute(db, "INSERT INTO assignments (exposure_id, state) VALUES (?, 'indexed')", [e_id])
+        DBInterface.execute(db, "INSERT INTO assignment_members (exposure_id, index_id) VALUES (?, 11)", [e_id])
+        DBInterface.execute(db, "INSERT INTO assignment_members (exposure_id, index_id) VALUES (?, 10)", [e_id])
+        b1 = HimalayaUI._assignment_body(db, e_id)
+        @test b1[:members] == [10, 11]   # ORDER BY index_id
     end
 end
