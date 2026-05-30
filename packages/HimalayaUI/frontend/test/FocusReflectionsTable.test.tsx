@@ -31,6 +31,9 @@ const GROUPS = [
   { id: 1, exposure_id: 50, kind: "auto", active: true, members: [10] },
 ];
 
+// Plan D-2: active set now sourced from /assignment.
+const ASSIGNMENT = { exposure_id: 50, state: "indexed", members: [10] };
+
 beforeEach(() => {
   localStorage.clear();
   useAppState.setState({
@@ -42,6 +45,7 @@ beforeEach(() => {
       status: 200, headers: { "content-type": "application/json" } });
     if (u.endsWith("/peaks")) return json(PEAKS);
     if (u.endsWith("/indices")) return json(INDICES);
+    if (u.endsWith("/assignment")) return json(ASSIGNMENT);
     if (u.endsWith("/groups")) return json(GROUPS);
     return json([]);
   }));

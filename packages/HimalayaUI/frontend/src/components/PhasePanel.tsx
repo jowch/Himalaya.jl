@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Skeleton } from "boneyard-js/react";
-import { useIndices, useGroups, useAddIndexToGroup, useRemoveIndexFromGroup, useDeleteIndex, useExperiment } from "../queries";
+import { useIndices, useGroups, useAssignment, useAddIndexToGroup, useRemoveIndexFromGroup, useDeleteIndex, useExperiment } from "../queries";
 import { useAppState } from "../state";
 import { phaseColor } from "../phases";
 import { Card, HintText, IconButton, ScoreBar, Kicker } from "./ui";
@@ -9,6 +9,7 @@ import { SpeculativeBuilder } from "./SpeculativeBuilder";
 import { latticeUnitFromQUnits } from "../lib/units";
 import { seriesRatio } from "../lib/seriesRatio";
 import type { GroupEntry, IndexEntry } from "../api";
+import { deriveActiveIndices } from "../lib/assignment";
 
 function activeGroup(groups: GroupEntry[]): GroupEntry | undefined {
   return groups.find((g) => g.active);
@@ -218,6 +219,7 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
   const activeExperimentId = useAppState((s) => s.activeExperimentId);
   const indicesQ = useIndices(exposureId);
   const groupsQ  = useGroups(exposureId);
+  const assignmentQ = useAssignment(exposureId);
   const experimentQ = useExperiment(activeExperimentId ?? 0);
   const setHoveredIndex = useAppState((s) => s.setHoveredIndex);
   const active = (groupsQ.data && activeGroup(groupsQ.data)) ?? undefined;
@@ -242,7 +244,11 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
   const indices = (indicesQ.data ?? []).slice().sort(
     (a, b) => (b.score ?? 0) - (a.score ?? 0),
   );
-  const memberIds       = new Set(active?.members ?? []);
+  // Plan D-2: the active member set is now sourced from the durable
+  // assignment cart; the legacy `active` group is retained only to drive
+  // the group mutators (swapped for assignment mutators in D-8).
+  const activeIndices   = deriveActiveIndices(assignmentQ.data, indices);
+  const memberIds       = new Set(activeIndices.map((ix) => ix.id));
   const speculatives    = indices.filter((ix) => ix.kind === "speculative");
   const auto            = indices.filter((ix) => ix.kind !== "speculative");
   // Phase call = the active set, ordered by lowest claimed q (mockup ordering).
@@ -283,7 +289,7 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
       <Skeleton
         name="phase-panel"
         className="flex-1 min-h-0 flex flex-col"
-        loading={indicesQ.isLoading || groupsQ.isLoading}
+        loading={indicesQ.isLoading || groupsQ.isLoading || assignmentQ.isLoading}
         stagger={50}
         transition={200}
         fixture={PHASE_PANEL_FIXTURE}

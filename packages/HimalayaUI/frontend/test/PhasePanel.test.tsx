@@ -7,8 +7,21 @@ import { useAppState } from "../src/state";
 beforeEach(() => { vi.restoreAllMocks(); });
 
 function mockAll(indices: unknown[], groups: unknown[]): void {
+  // Plan D-2: the active member set is now read from /assignment, not the
+  // active group. Derive the assignment body from the active group's members
+  // so existing fixtures keep exercising the same active set.
+  const activeGroup = (groups as { active: boolean; members: number[] }[])
+    .find((g) => g.active);
+  const assignment = {
+    exposure_id: 42, state: "indexed",
+    members: activeGroup?.members ?? [],
+  };
   vi.spyOn(global, "fetch").mockImplementation(async (input) => {
     const u = typeof input === "string" ? input : (input as Request).url;
+    if (u.endsWith("/assignment")) {
+      return new Response(JSON.stringify(assignment),
+        { status: 200, headers: { "Content-Type": "application/json" } });
+    }
     if (u.endsWith("/indices")) {
       return new Response(JSON.stringify(indices),
         { status: 200, headers: { "Content-Type": "application/json" } });
@@ -133,6 +146,9 @@ describe("<PhasePanel> — candidate multi-select (R4 L-10)", () => {
   it("toggling an unchecked candidate posts add-to-group", async () => {
     vi.spyOn(global, "fetch").mockImplementation(async (input) => {
       const u = typeof input === "string" ? input : (input as Request).url;
+      if (u.endsWith("/assignment")) return new Response(JSON.stringify(
+        { exposure_id: 42, state: "indexed", members: [10] }),
+        { status: 200, headers: { "Content-Type": "application/json" } });
       if (u.endsWith("/indices")) return new Response(JSON.stringify([
         { id: 10, exposure_id: 42, phase: "Pn3m", basis: 0.5, score: 0.89, r_squared: 0.99,
           lattice_d: 197, ngc: -1.5, status: "candidate", kind: "auto", predicted_q: [0.045],
