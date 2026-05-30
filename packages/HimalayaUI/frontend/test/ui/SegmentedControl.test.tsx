@@ -200,6 +200,21 @@ describe("SegmentedControl — radiogroup semantics", () => {
     expect(onChange).toHaveBeenCalledWith("distinct");
   });
 
+  it("ArrowRight moves DOM focus to the newly-selected radio (focus follows selection)", () => {
+    render(
+      <SegmentedControl<GMode>
+        aria-label="Trace grouping mode"
+        role="radiogroup"
+        variant="plain"
+        options={THREE}
+        value="byPhase"
+        onChange={() => {}}
+      />,
+    );
+    fireEvent.keyDown(screen.getByRole("radio", { name: "By phase" }), { key: "ArrowRight" });
+    expect(document.activeElement).toBe(screen.getByRole("radio", { name: "Distinct" }));
+  });
+
   it("ArrowLeft wraps from the first option to the last", () => {
     const onChange = vi.fn();
     render(

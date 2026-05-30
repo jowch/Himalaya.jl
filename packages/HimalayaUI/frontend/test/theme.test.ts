@@ -75,9 +75,11 @@ describe("styles.css @theme tokens (Phase 0 token foundation)", () => {
     expect(declValue(theme, "--color-print-accent")).toBe("var(--color-accent)");
   });
 
-  it("drops the dead singular --radius token", () => {
-    // No `--radius:` declaration that is not part of `--radius-sm/md/full`.
-    expect(/--radius\s*:/.test(theme)).toBe(false);
+  it("keeps the singular --radius (= 5px) so bare `rounded` snaps to 5px, not stock 4px", () => {
+    // Tailwind v4's bare `.rounded` utility emits `border-radius: var(--radius)`.
+    // Deleting --radius silently regresses every bare `rounded` to the stock
+    // 0.25rem fallback — so it must stay defined and on the 5px control scale.
+    expect(declValue(theme, "--radius")).toBe("5px");
   });
 
   it("defines the namespaced radius scale", () => {
@@ -92,6 +94,10 @@ describe("styles.css @theme tokens (Phase 0 token foundation)", () => {
 
   it("resolves rounded-sm utility to 5px (not stock Tailwind 4px)", async () => {
     expect(await resolvedUtilityValue("rounded-sm", "border-radius")).toBe("5px");
+  });
+
+  it("resolves bare `rounded` utility to 5px (regression guard: not stock Tailwind 4px)", async () => {
+    expect(await resolvedUtilityValue("rounded", "border-radius")).toBe("5px");
   });
 
   it("no longer hardcodes a 12px corner on .card", () => {

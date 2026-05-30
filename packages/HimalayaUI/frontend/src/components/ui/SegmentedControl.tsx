@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import type { ReactNode, KeyboardEvent } from "react";
 
 /**
@@ -89,6 +90,10 @@ export function SegmentedControl<T extends string>({
   className = "",
 }: SegmentedControlProps<T>): JSX.Element {
   const isRadio = role === "radiogroup";
+  // Refs to the segment buttons so radiogroup arrow-nav can move DOM focus to
+  // the newly-selected radio (WAI-ARIA: focus follows selection). Without this,
+  // activeElement is left on a now-tabindex=-1 segment after an arrow key.
+  const segRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   const move = (delta: number, from: number): void => {
     const n = options.length;
@@ -98,6 +103,7 @@ export function SegmentedControl<T extends string>({
       i = (i + delta + n) % n;
       if (!options[i].disabled) {
         onChange(options[i].value);
+        segRefs.current[i]?.focus();
         return;
       }
     }
@@ -137,6 +143,9 @@ export function SegmentedControl<T extends string>({
         return (
           <button
             key={opt.value}
+            ref={(el) => {
+              segRefs.current[idx] = el;
+            }}
             type="button"
             disabled={opt.disabled}
             title={opt.title}

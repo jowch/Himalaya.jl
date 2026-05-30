@@ -4,7 +4,7 @@ import type {
   LiHTMLAttributes,
 } from "react";
 
-type CardElement = "div" | "button" | "section" | "li";
+export type CardElement = "div" | "button" | "section" | "li";
 
 type ElementProps = {
   div: HTMLAttributes<HTMLDivElement>;
@@ -53,6 +53,9 @@ export function Card<T extends CardElement = "div">({
   const props = {
     className: `${appearance} ${className}`.trim(),
     ...(elevated ? { "data-elevated": "true" } : {}),
+    // Default an explicit button type so a Card-as-button inside a <form> never
+    // silently acts as a submit; a consumer-passed `type` (via ...rest) still wins.
+    ...(Tag === "button" ? { type: "button" } : {}),
     ...rest,
   } as Record<string, unknown>;
   return <Tag {...(props as HTMLAttributes<HTMLElement>)}>{children}</Tag>;

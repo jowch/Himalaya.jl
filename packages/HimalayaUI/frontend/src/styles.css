@@ -63,13 +63,16 @@
      paper->ink ramp did. NON-inverting: max intensity -> this lighter endpoint. */
   --color-frame-signal: oklch(0.92 0.02 80);
 
-  /* Radius scale — make the radius tokens REAL. Tailwind v4 generates
-     rounded-* from the --radius-* NAMESPACE, not singular --radius (which was
-     dead: no var(--radius) consumer, and rounded-sm/md resolved to Tailwind
-     STOCK 4px/6px). Normalize the primary surfaces to the mockups' 5px corner
-     (see spec §3/§8). sm and md deliberately both = 5px so the utility-name
-     semantics (controls rounded-sm, cards rounded-md) survive for a future
-     re-differentiation by editing one token. */
+  /* Radius scale — make the radius tokens REAL. Tailwind v4 generates the
+     namespaced rounded-sm/md/lg from the --radius-* NAMESPACE, AND the bare
+     `rounded` utility from the singular --radius. Keep --radius defined (= 5px)
+     so bare `rounded` lands on the same 5px control corner as rounded-sm —
+     without it Tailwind falls back to its STOCK 0.25rem (4px) and every bare
+     `rounded` across the consumer surface silently regresses. Normalize the
+     primary surfaces to the mockups' 5px corner (spec §3/§8). sm and md
+     deliberately both = 5px so the utility-name semantics (controls rounded-sm,
+     cards rounded-md) survive a future re-differentiation by editing one token. */
+  --radius:      5px;     /* bare `rounded` — Tailwind keys it off singular --radius */
   --radius-sm:   5px;     /* buttons, inputs, chips, segmented controls */
   --radius-md:   5px;     /* cards, plates, sheets, modals */
   --radius-full: 9999px;  /* pills, dots */

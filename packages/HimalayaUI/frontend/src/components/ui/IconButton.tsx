@@ -2,7 +2,7 @@ import type { ButtonHTMLAttributes, ReactNode } from "react";
 
 export type IconButtonTone = "ghost" | "accent" | "danger";
 
-interface IconButtonProps
+export interface IconButtonProps
   extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "aria-label"> {
   /** REQUIRED — icon-only buttons have no text; this is the accessible name. */
   label: string;

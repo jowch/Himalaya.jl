@@ -1,10 +1,12 @@
 export { Button } from "./Button";
 export type { ButtonVariant } from "./Button";
 export { Dot } from "./Dot";
+export type { DotTone, DotSize } from "./Dot";
 export { HintText } from "./HintText";
 export { Kicker } from "./Kicker";
 export type { KickerTone } from "./Kicker";
 export { ScoreBar } from "./ScoreBar";
+export type { ScoreBarSize } from "./ScoreBar";
 export { PhaseChip } from "./PhaseChip";
 export type { PhaseChipVariant, PhaseChipSize } from "./PhaseChip";
 export { SegmentedControl } from "./SegmentedControl";
@@ -15,6 +17,6 @@ export type { PhaseSegment, PhaseStripSize, PhaseStripProps } from "./PhaseStrip
 export { ModalShell } from "./ModalShell";
 export type { ModalSize, ModalAlign, ModalVariant, ModalShellProps } from "./ModalShell";
 export { IconButton } from "./IconButton";
-export type { IconButtonTone } from "./IconButton";
+export type { IconButtonTone, IconButtonProps } from "./IconButton";
 export { Card } from "./Card";
-export type { CardProps } from "./Card";
+export type { CardProps, CardElement } from "./Card";
