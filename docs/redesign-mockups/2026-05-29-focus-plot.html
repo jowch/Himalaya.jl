@@ -790,7 +790,7 @@ function renderTrace() {
     const cand = claimOf(p.i);
     const color = p.state === 'excluded' ? 'var(--ink-faint)'
                 : cand ? cand.color
-                : (p.prov === 'manual' ? 'var(--manual)' : 'var(--unindexed)');
+                : 'var(--unindexed)';   // unindexed = gray; diamond silhouette carries "manual"
     const x = xOf(p.q), apexY = yOf(intensity(p.q));
     const gy = apexY - 14;
 
@@ -827,7 +827,7 @@ function renderDetector() {
     if (p.state === 'excluded') return;
     const cand = claimOf(p.i);
     const indexed = !!cand;
-    const color = indexed ? cand.color : (p.prov === 'manual' ? 'var(--manual)' : 'var(--unindexed)');
+    const color = indexed ? cand.color : 'var(--unindexed)';   // gray; silhouette carries provenance
     const op = (indexed ? 0.80 : 0.40) * (0.5 + 0.5 * b) * (0.46 + 0.54 * p.amp);
     const g = el('g', { class: 'ring', 'data-peak': p.i });
     g.appendChild(el('circle', { class: 'ring-glow', cx: 50, cy: 50, r: p.rr,
