@@ -32,6 +32,7 @@ import { createSpeculativeMutator } from "../../src/lib/queue/mutators/createSpe
 import {
   addAssignmentPhaseMutator, removeAssignmentPhaseMutator, setAssignmentStateMutator,
 } from "../../src/lib/queue/mutators/assignment";
+import { customIndexMutator } from "../../src/lib/queue/mutators/customIndex";
 import { reanalyzeExposureMutator } from "../../src/lib/queue/mutators/reanalyzeExposure";
 import { saveComparisonMutator } from "../../src/lib/queue/mutators/saveComparison";
 import { deleteComparisonMutator } from "../../src/lib/queue/mutators/deleteComparison";
@@ -172,6 +173,23 @@ const SPECS: Spec[] = [
       const ctx = removeAssignmentPhaseMutator.onMutate({
         kind: "assignment_remove", clientOpId: "op", payload: { indexId: 10 },
         exposureId: 5, username: "alice", clientId: "tab", indexId: 10,
+      } as any, qc);
+      ctx.restore();
+    },
+  },
+  {
+    name: "customIndex",
+    keys: [queryKeys.indices(5), queryKeys.assignment(5)],
+    seed: (qc) => {
+      qc.setQueryData(queryKeys.indices(5), [INDEX]);
+      qc.setQueryData(queryKeys.assignment(5), ASSIGNMENT);
+    },
+    run: (qc) => {
+      // onMutate is a no-op (server-assigned id; never splice a placeholder),
+      // so restore() must leave both caches bit-exact.
+      const ctx = customIndexMutator.onMutate({
+        kind: "custom_index_commit", clientOpId: "op", payload: { phase: "Pn3m", basis: 0.15 },
+        exposureId: 5, username: "alice", clientId: "tab", phase: "Pn3m", basis: 0.15,
       } as any, qc);
       ctx.restore();
     },

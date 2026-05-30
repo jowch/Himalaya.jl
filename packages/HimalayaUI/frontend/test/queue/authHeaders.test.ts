@@ -31,6 +31,7 @@ import { createSpeculativeMutator } from "../../src/lib/queue/mutators/createSpe
 import {
   addAssignmentPhaseMutator, removeAssignmentPhaseMutator, setAssignmentStateMutator,
 } from "../../src/lib/queue/mutators/assignment";
+import { customIndexMutator } from "../../src/lib/queue/mutators/customIndex";
 import { reanalyzeExposureMutator } from "../../src/lib/queue/mutators/reanalyzeExposure";
 import { saveComparisonMutator } from "../../src/lib/queue/mutators/saveComparison";
 import { deleteComparisonMutator } from "../../src/lib/queue/mutators/deleteComparison";
@@ -160,6 +161,13 @@ const SPECS: Spec[] = [
     run: (qc) => setAssignmentStateMutator.request(
       { ...FLAT_BASE, kind: "assignment_set_state", payload: { state: "form_factor" },
         exposureId: 5, state: "form_factor" } as any,
+      new AbortController().signal),
+  },
+  {
+    name: "customIndex",
+    run: (qc) => customIndexMutator.request(
+      { ...FLAT_BASE, kind: "custom_index_commit", payload: { phase: "Pn3m", basis: 0.15 },
+        exposureId: 5, phase: "Pn3m", basis: 0.15 } as any,
       new AbortController().signal),
   },
   {

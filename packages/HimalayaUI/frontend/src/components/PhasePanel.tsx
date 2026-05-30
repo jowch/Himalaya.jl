@@ -1,11 +1,13 @@
 import type { ReactNode } from "react";
 import { Skeleton } from "boneyard-js/react";
-import { useIndices, useAssignment, useAddAssignmentPhase, useRemoveAssignmentPhase, useDeleteIndex, useExperiment } from "../queries";
+import { useState } from "react";
+import { useIndices, useAssignment, useAddAssignmentPhase, useRemoveAssignmentPhase, useDeleteIndex, useExperiment, usePeaks, useCommitCustomIndex } from "../queries";
 import { useAppState } from "../state";
 import { phaseColor } from "../phases";
 import { Card, HintText, IconButton, ScoreBar, Kicker } from "./ui";
 import { StaleIndicesBanner } from "./StaleIndicesBanner";
 import { SpeculativeBuilder } from "./SpeculativeBuilder";
+import { CustomIndexModal } from "./CustomIndexModal";
 import { latticeUnitFromQUnits } from "../lib/units";
 import { seriesRatio } from "../lib/seriesRatio";
 import type { IndexEntry } from "../api";
@@ -238,6 +240,10 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
   const addMember    = useAddAssignmentPhase(exposureId ?? 0);
   const removeMember = useRemoveAssignmentPhase(exposureId ?? 0);
   const deleteIndex  = useDeleteIndex(exposureId ?? 0);
+  // Plan D-9: custom-index modal gate + commit.
+  const peaksQ        = usePeaks(exposureId);
+  const commitCustom  = useCommitCustomIndex(exposureId ?? 0);
+  const [customOpen, setCustomOpen] = useState(false);
   const builder      = useAppState((s) => s.speculativeBuilder);
   const openBuilder  = useAppState((s) => s.openSpeculativeBuilder);
   const closeBuilder = useAppState((s) => s.closeSpeculativeBuilder);
@@ -404,6 +410,14 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
             >
               + Add speculative
             </button>
+            <button
+              type="button"
+              data-testid="open-custom-index"
+              className="mt-2 w-full text-xs text-ink-faint border border-dashed border-hair rounded-md py-1.5 hover:text-ink hover:bg-paper-sunk transition-colors"
+              onClick={() => setCustomOpen(true)}
+            >
+              + Custom index…
+            </button>
           </details>
 
         </div>
@@ -412,6 +426,13 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
       {builder && builder.exposureId === exposureId && (
         <SpeculativeBuilder exposureId={exposureId} onClose={closeBuilder} />
       )}
+
+      <CustomIndexModal
+        open={customOpen}
+        peakQs={(peaksQ.data ?? []).filter((p) => !p.excluded).map((p) => p.q)}
+        onCommit={(phase, basis) => commitCustom.mutate(phase, basis)}
+        onClose={() => setCustomOpen(false)}
+      />
     </div>
   );
 }

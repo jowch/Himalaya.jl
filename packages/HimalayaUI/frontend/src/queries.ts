@@ -36,6 +36,7 @@ import {
   removeAssignmentPhaseMutator,
   setAssignmentStateMutator,
 } from "./lib/queue/mutators/assignment";
+import { customIndexMutator } from "./lib/queue/mutators/customIndex";
 import { reanalyzeExposureMutator } from "./lib/queue/mutators/reanalyzeExposure";
 import { saveComparisonMutator } from "./lib/queue/mutators/saveComparison";
 import { deleteComparisonMutator } from "./lib/queue/mutators/deleteComparison";
@@ -498,6 +499,18 @@ export function useSetAssignmentState(exposureId: number) {
     { exposureId, username, clientId: CLIENT_ID },
   );
   return { ...inner, mutate: (state: api.AssignmentState) => inner.mutate({ state }) };
+}
+
+export function useCommitCustomIndex(exposureId: number) {
+  const username = useAppState((s) => s.username);
+  const inner = useQueueMutation(
+    customIndexMutator,
+    { exposureId, username, clientId: CLIENT_ID },
+  );
+  return {
+    ...inner,
+    mutate: (phase: string, basis: number) => inner.mutate({ phase, basis }),
+  };
 }
 
 export function useAddIndexToGroup(exposureId: number, groupId: number) {

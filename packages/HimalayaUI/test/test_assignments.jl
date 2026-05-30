@@ -367,3 +367,75 @@ if isdefined(@__MODULE__, :with_test_server)
         end
     end
 end
+
+# ── Plan D Task D-9 (B4): client-fitted custom-index commit ──────────────────
+@testset "insert_custom_index! round-trips the modal comb (Ia3d, √6)" begin
+    # Finding #4: basis = q₁ slope = 2π/a × first(phaseratios(P)). Ia3d's √6
+    # first reflection maximizes the convention-mismatch signal — assert that
+    # predicted_q_for_phase(phase, basis) reproduces the physical comb for a=100.
+    mktempdir() do dir
+        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
+        e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
+
+        a = 100.0
+        P = Himalaya.Ia3d
+        ru = Himalaya.phaseratios(P)                 # un-normalized = √N
+        basis = 2π / a * first(ru)                   # the modal convention
+
+        nid = HimalayaUI.insert_custom_index!(db, e_id, P, basis)
+        row = Tables.rowtable(DBInterface.execute(db,
+            "SELECT phase, basis, lattice_d, kind FROM indices WHERE id = ?", [nid]))[1]
+        @test String(row.phase) == "Ia3d"
+        @test String(row.kind) == "speculative"
+        @test Float64(row.basis) ≈ basis
+        # lattice_d recovered via Himalaya.fit ≈ a.
+        @test Float64(row.lattice_d) ≈ a atol = 1e-6
+
+        # predicted_q_for_phase reproduces the physics comb q_N = 2π√N/a.
+        pred = HimalayaUI.predicted_q_for_phase("Ia3d", basis)
+        phys = [2π * r / a for r in ru]              # 2π√N/a
+        @test length(pred) == length(phys)
+        @test all(abs.(pred .- phys) .< 1e-9)
+        # The FIRST predicted q equals basis (normalized first ratio is 1.0) —
+        # this is the convention check that fails if basis were `a` or `2π/a`.
+        @test pred[1] ≈ basis
+    end
+end
+
+if isdefined(@__MODULE__, :with_test_server)
+    @testset "POST /custom-index persists + adds to the assignment" begin
+        mktempdir() do dir
+            db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+            exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+            s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
+            e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
+
+            a = 150.0
+            P = Himalaya.Pn3m
+            basis = 2π / a * first(Himalaya.phaseratios(P))
+
+            with_test_server(db) do port, base
+                # missing basis → 400
+                r = HTTP.post("$base/api/exposures/$e_id/custom-index",
+                    ["Content-Type" => "application/json"],
+                    JSON3.write(Dict(:phase => "Pn3m")); status_exception=false)
+                @test r.status == 400
+
+                r = HTTP.post("$base/api/exposures/$e_id/custom-index",
+                    ["Content-Type" => "application/json", "X-Username" => "alice"],
+                    JSON3.write(Dict(:phase => "Pn3m", :basis => basis)))
+                @test r.status == 200
+                got = JSON3.read(String(r.body))
+                @test got.phase == "Pn3m"
+                @test got.kind == "speculative"
+                @test got.basis ≈ basis
+                nid = got.id
+
+                # the new custom index is now an assignment member.
+                @test nid in HimalayaUI._assignment_body(db, e_id)[:members]
+            end
+        end
+    end
+end

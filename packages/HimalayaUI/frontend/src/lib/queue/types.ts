@@ -58,7 +58,12 @@ export type OpKind =
   // Focus surface (Plan D). The assignment cart's 3 mutators map 1:1 to the
   // native assignment event kinds. `affectsExposurePeaks: () => false` for all
   // three — they touch only the assignment cache, never the peak set.
-  | "assignment_add" | "assignment_remove" | "assignment_set_state";
+  | "assignment_add" | "assignment_remove" | "assignment_set_state"
+  // Custom-index commit (Plan D-9). The OpKind names the user gesture; the
+  // backend route emits two events (speculative_created + assignment_add), so
+  // there is no `custom_index_commit` event kind on the wire — it lives only in
+  // resolveMutator (outbound).
+  | "custom_index_commit";
 
 /**
  * A queued operation: its kind, its per-call client_op_id (Stripe-style

@@ -592,6 +592,87 @@ function register_analysis_routes!()
         end
     end
 
+    # ── Plan D Task D-9 (B4): client-fitted custom-index commit ─────────────
+    # Accepts {phase, basis} where `basis` is the q₁ slope the modal computed
+    # from a symmetry + lattice via real physics. Persists a speculative index
+    # (no peak assignment — a pure lattice hypothesis) and adds it to the
+    # assignment in one transaction. Two SSE frames: speculative_created (indices
+    # cache) THEN assignment_add (assignment cache). ORDERING IS LOAD-BEARING —
+    # the own-tab deferred resolves off the FIRST frame (speculative_created)
+    # which carries the new IndexEntry, then assignment_add patches the cart.
+    @post "/api/exposures/{id}/custom-index" function(req::HTTP.Request, id::Int)
+        db   = current_db()
+        body = json(req)
+        for field in (:phase, :basis)
+            if !haskey(body, field)
+                return HTTP.Response(400, ["Content-Type" => "application/json"],
+                    JSON3.write(Dict(:error => "missing field: $(field)")))
+            end
+        end
+        local phase_name::String
+        local basis::Float64
+        try
+            phase_name = String(body.phase)
+            basis      = Float64(body.basis)
+        catch
+            return HTTP.Response(400, ["Content-Type" => "application/json"],
+                JSON3.write(Dict(:error => "phase must be string; basis must be a number")))
+        end
+        P = resolve_phase(phase_name)
+        P === nothing && return HTTP.Response(400, ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:error => "unknown phase: $phase_name")))
+        basis > 0 || return HTTP.Response(400, ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:error => "basis must be positive")))
+
+        return with_idempotency(db, req) do
+            local nid::Int
+            try
+                nid = insert_custom_index!(db, id, P, basis)
+            catch e
+                return HTTP.Response(400, ["Content-Type" => "application/json"],
+                    JSON3.write(Dict(:error => sprint(showerror, e))))
+            end
+
+            # Frame 1: speculative_created — carries the new index to the indices
+            # cache (post-commit broadcast; subscribers converge via invalidate).
+            sc = apply_event!(InTransaction(), db, req;
+                kind        = "speculative_created",
+                entity_type = "exposure",
+                entity_id   = id,
+                payload     = Dict(:index_id => nid))
+            _enqueue_post_commit_broadcast!(
+                Int(sc.event_id), "speculative_created", "exposure", Int(id),
+                sc.user_id, sc.client_id, sc.client_op_id, sc.payload_json)
+
+            # Frame 2: assignment_add — adds the new custom index to the cart,
+            # carrying the distinct {assignment} post_state.
+            aa = apply_event!(InTransaction(), db, req;
+                kind        = "assignment_add",
+                entity_type = "exposure",
+                entity_id   = id,
+                payload     = Dict(:index_id => nid))
+            ab = _assignment_body(db, id)
+            _enqueue_broadcast_from_result!(aa, "assignment_add", "exposure", id;
+                post_state = Dict(:assignment =>
+                    Dict(:state => ab[:state], :members => ab[:members])))
+
+            # Return the freshly-built index (GET /api/indices/:id shape).
+            rows = Tables.rowtable(DBInterface.execute(db,
+                """SELECT id, exposure_id, phase, basis, score, r_squared, lattice_d,
+                      status, kind, inputs_hash
+               FROM indices WHERE id = ?""", [nid]))
+            ix = rows[1]
+            predicted = predicted_q_for_phase(String(ix.phase), Float64(ix.basis))
+            d = row_to_json(ix)
+            d[:peaks]       = Dict[]
+            d[:predicted_q] = predicted
+            d[:ngc]         = _ngc_for_phase(String(ix.phase), ix.lattice_d)
+            d[:event_id]    = sc.event_id
+            d[:view_row_id] = sc.view_row_id
+            HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(d))
+        end
+    end
+
     @delete "/api/indices/{id}" function(req::HTTP.Request, id::Int)
         db = current_db()
         return with_idempotency(db, req) do

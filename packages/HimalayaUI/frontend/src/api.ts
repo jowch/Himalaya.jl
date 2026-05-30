@@ -332,6 +332,19 @@ export const createSpeculative = (
   opts?: AuthOpts,
 ) => request<IndexEntry>("POST", `/api/exposures/${exposure_id}/speculative`, body, opts);
 
+// Custom index (Plan D-9): a client-fitted lattice hypothesis. `basis` is the
+// q₁ slope the modal computes via physics (2π/a × first(phaseratios(P))). The
+// route persists a speculative index and adds it to the assignment. Response is
+// the new IndexEntry (+ queue metadata).
+export type CustomIndexResponse = IndexEntry & {
+  event_id: number;
+  view_row_id: number | null;
+};
+export const createCustomIndex = (
+  exposure_id: number, phase: string, basis: number, opts?: AuthOpts,
+) => request<CustomIndexResponse>(
+  "POST", `/api/exposures/${exposure_id}/custom-index`, { phase, basis }, opts);
+
 // Groups
 export interface GroupEntry {
   id: number;

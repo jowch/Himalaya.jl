@@ -19,7 +19,7 @@
  * be wrong). Each mock fixture below is annotated with the file:line of
  * the route handler it mirrors.
  */
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import { peakAddMutator } from "../../src/lib/queue/mutators/peakAdd";
 import { peakRemoveMutator } from "../../src/lib/queue/mutators/peakRemove";
@@ -35,6 +35,7 @@ import {
   removeAssignmentPhaseMutator,
   setAssignmentStateMutator,
 } from "../../src/lib/queue/mutators/assignment";
+import { customIndexMutator } from "../../src/lib/queue/mutators/customIndex";
 import { reanalyzeExposureMutator } from "../../src/lib/queue/mutators/reanalyzeExposure";
 import {
   updateSampleMutator,
@@ -384,6 +385,27 @@ describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", ()
     addAssignmentPhaseMutator.onMutate(op1, qc);
     addAssignmentPhaseMutator.onMutate(op2, qc);
     expect(qc.getQueryData<{ members: number[] }>(queryKeys.assignment(5))!.members).toEqual([10, 11]);
+  });
+
+  it("customIndex appends the new IndexEntry and invalidates the assignment", async () => {
+    qc.setQueryData(queryKeys.indices(5), []);
+    qc.setQueryData(queryKeys.assignment(5), { exposure_id: 5, state: "indexed", members: [] });
+    const inval = vi.spyOn(qc, "invalidateQueries");
+    // Mock derived from routes_analysis.jl POST /custom-index response.
+    mockFetchOnce({
+      id: 77, exposure_id: 5, phase: "Pn3m", basis: 0.15, score: null, r_squared: null,
+      lattice_d: 197, ngc: -1.5, status: "candidate", kind: "speculative", inputs_hash: "h",
+      peaks: [], predicted_q: [0.15],
+      event_id: 30, view_row_id: 12,
+    }, 200);
+    await runMutator(qc, customIndexMutator, {
+      kind: "custom_index_commit", clientOpId: "op-ci-1",
+      exposureId: 5, username: "alice", clientId: "tab-1",
+      phase: "Pn3m", basis: 0.15, payload: { phase: "Pn3m", basis: 0.15 },
+    });
+    const indices = qc.getQueryData<{ id: number }[]>(queryKeys.indices(5));
+    expect(indices!.some((i) => i.id === 77)).toBe(true);
+    expect(inval).toHaveBeenCalledWith({ queryKey: queryKeys.assignment(5) });
   });
 
   it("createSpeculative writes an IndexEntry with exactly 13 keys", async () => {
