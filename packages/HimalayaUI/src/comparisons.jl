@@ -307,23 +307,34 @@ function compute_member_snapshot(db::SQLite.DB, exposure_id::Integer)::Dict{Symb
     # Per-phase {phase, lattice_d} so a coexistence member can show BOTH
     # lattices (e.g. `a 205 · d 60 Å`). One row per distinct phase the
     # assignment carries; lattice_d is the index's fitted lattice parameter.
-    phase_rows = Tables.rowtable(DBInterface.execute(db,
-        """SELECT i.phase, i.lattice_d, MAX(i.score) AS s
-           FROM assignment_members m JOIN indices i ON i.id = m.index_id
-           WHERE m.exposure_id = ? AND i.phase IS NOT NULL
-           GROUP BY i.phase
-           ORDER BY s DESC NULLS LAST, i.phase""", [eid]))
-    confirmed_phases = [Dict{Symbol, Any}(
-        :phase     => String(r.phase),
-        :lattice_d => ismissing(r.lattice_d) ? nothing : Float64(r.lattice_d),
-    ) for r in phase_rows]
-    # Fall back to the confirmed_index phase when the durable assignment has no
-    # members yet (legacy exposures pre-Plan-A migration on this exposure).
-    if isempty(confirmed_phases) && confirmed_index !== nothing
-        cp = confirmed_index[:phase]
-        if cp isa AbstractString && !isempty(cp)
-            confirmed_phases = [Dict{Symbol, Any}(
-                :phase => cp, :lattice_d => confirmed_index[:lattice_d])]
+    #
+    # STATE IS AUTHORITATIVE: confirmed_phases is meaningful ONLY for an
+    # `indexed` member. A form_factor / null member carries NO lattice phases by
+    # definition — so we report empty for those states even if stale member rows
+    # linger (e.g. a migration backfill from the active auto-group followed by a
+    # state change, where the durable members were not also cleared). This keeps
+    # the Series surface's state-first read self-consistent: a form_factor member
+    # never decodes as if it had a lattice.
+    confirmed_phases = Dict{Symbol, Any}[]
+    if assignment_state == "indexed"
+        phase_rows = Tables.rowtable(DBInterface.execute(db,
+            """SELECT i.phase, i.lattice_d, MAX(i.score) AS s
+               FROM assignment_members m JOIN indices i ON i.id = m.index_id
+               WHERE m.exposure_id = ? AND i.phase IS NOT NULL
+               GROUP BY i.phase
+               ORDER BY s DESC NULLS LAST, i.phase""", [eid]))
+        confirmed_phases = [Dict{Symbol, Any}(
+            :phase     => String(r.phase),
+            :lattice_d => ismissing(r.lattice_d) ? nothing : Float64(r.lattice_d),
+        ) for r in phase_rows]
+        # Fall back to the confirmed_index phase when the durable assignment has
+        # no members yet (legacy exposures pre-Plan-A migration on this exposure).
+        if isempty(confirmed_phases) && confirmed_index !== nothing
+            cp = confirmed_index[:phase]
+            if cp isa AbstractString && !isempty(cp)
+                confirmed_phases = [Dict{Symbol, Any}(
+                    :phase => cp, :lattice_d => confirmed_index[:lattice_d])]
+            end
         end
     end
 

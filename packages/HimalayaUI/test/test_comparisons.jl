@@ -265,28 +265,90 @@ end
                 [ctx.exposure_id])
             snap_ff = HimalayaUI.compute_member_snapshot(ctx.db, ctx.exposure_id)
             @test snap_ff[:assignment_state] == "form_factor"
+            # A form_factor member carries NO lattice phases — even with a
+            # lingering legacy confirmed_index (auto group active under the dual-
+            # write), confirmed_phases must be empty (state-gated fallback).
+            @test isempty(snap_ff[:confirmed_phases])
 
             # And to null — distinct from form_factor though both have a null
-            # confirmed_index.
+            # confirmed_index; also carries no lattice phases.
             DBInterface.execute(ctx.db,
                 "UPDATE assignments SET state = 'null' WHERE exposure_id = ?",
                 [ctx.exposure_id])
             snap_null = HimalayaUI.compute_member_snapshot(ctx.db, ctx.exposure_id)
             @test snap_null[:assignment_state] == "null"
+            @test isempty(snap_null[:confirmed_phases])
 
-            # confirmed_phases reflects the assignment members' index phases.
+            # ── Coexistence: two distinct-phase assigned indices → two
+            #    confirmed_phases, EACH with its own lattice_d, ordered score-desc.
             DBInterface.execute(ctx.db,
                 "UPDATE assignments SET state = 'indexed' WHERE exposure_id = ?",
                 [ctx.exposure_id])
+            # Clear any migration-backfilled members (from the active auto-group)
+            # so this asserts an UNAMBIGUOUS two-phase coexistence, not whatever
+            # the fixture's auto group happened to contain.
+            DBInterface.execute(ctx.db,
+                "DELETE FROM assignment_members WHERE exposure_id = ?", [ctx.exposure_id])
+            # Insert two explicit distinct-phase indices with known lattice + score.
+            DBInterface.execute(ctx.db,
+                """INSERT INTO indices (exposure_id, phase, basis, score, r_squared, lattice_d, status, kind)
+                   VALUES (?, 'Pn3m', 0.10, 0.90, 0.99, 100.0, 'candidate', 'auto')""",
+                [ctx.exposure_id])
+            id_pn = first(Tables.rowtable(DBInterface.execute(ctx.db,
+                "SELECT id FROM indices WHERE exposure_id=? AND phase='Pn3m' ORDER BY id DESC LIMIT 1", [ctx.exposure_id]))).id
+            DBInterface.execute(ctx.db,
+                """INSERT INTO indices (exposure_id, phase, basis, score, r_squared, lattice_d, status, kind)
+                   VALUES (?, 'Im3m', 0.10, 0.50, 0.99, 128.0, 'candidate', 'auto')""",
+                [ctx.exposure_id])
+            id_im = first(Tables.rowtable(DBInterface.execute(ctx.db,
+                "SELECT id FROM indices WHERE exposure_id=? AND phase='Im3m' ORDER BY id DESC LIMIT 1", [ctx.exposure_id]))).id
+            DBInterface.execute(ctx.db,
+                """INSERT OR IGNORE INTO assignment_members (exposure_id, index_id) VALUES (?, ?)""",
+                [ctx.exposure_id, Int(id_pn)])
+            DBInterface.execute(ctx.db,
+                """INSERT OR IGNORE INTO assignment_members (exposure_id, index_id) VALUES (?, ?)""",
+                [ctx.exposure_id, Int(id_im)])
+            snap_cx = HimalayaUI.compute_member_snapshot(ctx.db, ctx.exposure_id)
+            cps = snap_cx[:confirmed_phases]
+            @test length(cps) == 2
+            # Both phases present, each with its OWN lattice_d (the point of the
+            # per-phase shape for coexistence reads/rows).
+            by_phase = Dict(cp[:phase] => cp[:lattice_d] for cp in cps)
+            @test by_phase["Pn3m"] == 100.0
+            @test by_phase["Im3m"] == 128.0
+            # Ordered score-desc (Pn3m score 0.90 > Im3m 0.50) so the dominant
+            # phase reads first.
+            @test cps[1][:phase] == "Pn3m"
+        end
+    end
+
+    # Legacy fallback: an `indexed` member with a confirmed_index but ZERO
+    # durable assignment_members (e.g. a pre-Plan-A exposure not yet acted on)
+    # falls back to the confirmed_index phase so the Series surface still reads.
+    @testset "compute_member_snapshot: confirmed_phases legacy fallback" begin
+        mktempdir() do tmp
+            ctx = _setup_analyzed_exposure(tmp; datfile="cubic_tot.dat",
+                                            filename="cubic_tot")
+            # Establish a confirmed_index via the active custom group + R² gate,
+            # exactly like the R²-gated testset — but add NO assignment_members.
             ix = first(Tables.rowtable(DBInterface.execute(ctx.db,
                 """SELECT id, phase FROM indices WHERE exposure_id = ?
                    AND phase IS NOT NULL ORDER BY score DESC LIMIT 1""",
                 [ctx.exposure_id])))
+            (custom_id, _) = HimalayaUI.ensure_custom_group!(ctx.db, ctx.exposure_id)
             DBInterface.execute(ctx.db,
-                """INSERT OR IGNORE INTO assignment_members (exposure_id, index_id)
-                   VALUES (?, ?)""", [ctx.exposure_id, Int(ix.id)])
-            snap_ix = HimalayaUI.compute_member_snapshot(ctx.db, ctx.exposure_id)
-            @test String(ix.phase) in [cp[:phase] for cp in snap_ix[:confirmed_phases]]
+                "UPDATE index_groups SET active = 1 WHERE id = ?", [custom_id])
+            DBInterface.execute(ctx.db,
+                "INSERT OR IGNORE INTO index_group_members (group_id, index_id) VALUES (?, ?)",
+                [custom_id, Int(ix.id)])
+            DBInterface.execute(ctx.db,
+                "UPDATE indices SET r_squared = 0.99 WHERE id = ?", [Int(ix.id)])
+            # No assignments row at all → state defaults "indexed"; no members.
+            snap = HimalayaUI.compute_member_snapshot(ctx.db, ctx.exposure_id)
+            @test snap[:assignment_state] == "indexed"
+            @test snap[:confirmed_index] !== nothing
+            @test length(snap[:confirmed_phases]) == 1
+            @test snap[:confirmed_phases][1][:phase] == String(ix.phase)
         end
     end
 
