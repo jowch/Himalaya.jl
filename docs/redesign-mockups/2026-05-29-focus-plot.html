@@ -1145,6 +1145,7 @@ document.getElementById('addpeak').addEventListener('click', e => e.currentTarge
 /* ════════════ custom-index builder ════════════ */
 let customSym = 'Im3m', customVal = SYMS.Im3m.def;
 function openCustom() {
+  if (previewName) { previewName = null; setPreview(null); renderAssignment(); renderCombs(); }
   customSym = 'Im3m'; customVal = SYMS.Im3m.def;
   buildSymButtons(); syncParamInputs(); renderCustomPreview();
   document.getElementById('custom-scrim').classList.add('open');
