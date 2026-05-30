@@ -20,7 +20,7 @@ Index, phase, basis, peaks, numpeaks, predictpeaks, missingpeaks,
 findpeaks, persistence, knee,
 
 # bonnet
-bonnet_lattice
+bonnet_lattice, bonnet_consistent
 
 include("util.jl")
 include("phase.jl")

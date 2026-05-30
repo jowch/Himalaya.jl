@@ -24,3 +24,17 @@ function bonnet_lattice(from::Type{<:Phase}, a_from::Real, to::Type{<:Phase})
     (haskey(BONNET_SCALE, from) && haskey(BONNET_SCALE, to)) || return nothing
     Float64(a_from) * (BONNET_SCALE[to] / BONNET_SCALE[from])
 end
+
+"""
+    bonnet_consistent(from, a_from, to, a_to_observed; reltol=0.02) -> Bool
+
+True when an observed coexisting-cubic lattice `a_to_observed` matches the
+Bonnet-predicted lattice within relative tolerance `reltol`. False for phase
+pairs with no Bonnet relation.
+"""
+function bonnet_consistent(from::Type{<:Phase}, a_from::Real,
+                           to::Type{<:Phase}, a_to_observed::Real; reltol::Real=0.02)
+    pred = bonnet_lattice(from, a_from, to)
+    pred === nothing && return false
+    abs(a_to_observed - pred) <= reltol * pred
+end
