@@ -311,6 +311,15 @@
   }
   .as-foot::before { content: "+ "; color: var(--accent); font-weight: 700; }
 
+  /* hypothetical preview blocks */
+  .as-block.as-removing { opacity: 0.5; }
+  .as-block.as-removing .asb-name { text-decoration: line-through; }
+  .as-block.as-adding { background: color-mix(in oklab, var(--accent) 5%, transparent); }
+  .asb-ghosttag {
+    display: block; font-size: 9px; font-weight: 700; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--ink-faint); margin-bottom: 5px;
+  }
+
   /* candidate rows */
   .cand {
     display: flex; align-items: center; gap: 11px;
@@ -356,6 +365,48 @@
   .cand .c-score .cs-bar i { display: block; height: 100%; }
   .rail-note { font-size: 10.5px; color: var(--ink-faint); line-height: 1.55; }
   .rail-note b { color: var(--ink-soft); font-weight: 600; }
+
+  /* ── Custom-index modal ────────────────────────────────────────────── */
+  .scrim {
+    position: fixed; inset: 0; background: oklch(0.05 0 0 / 0.5); display: none;
+    align-items: center; justify-content: center; z-index: 30; padding: 40px;
+  }
+  .scrim.open { display: flex; }
+  .custom-sheet {
+    background: var(--plate); border-radius: 7px; width: 100%; max-width: 600px;
+    box-shadow: 0 24px 60px -20px rgba(20, 24, 40, .4); overflow: hidden;
+  }
+  .cs-head { display: flex; align-items: flex-start; justify-content: space-between;
+    padding: 15px 20px; border-bottom: 1px solid var(--hair); }
+  .cs-kicker { font-size: 10px; letter-spacing: 0.13em; text-transform: uppercase;
+    font-weight: 700; color: var(--accent); margin-bottom: 2px; }
+  .cs-t { font-family: "Newsreader", Georgia, serif; font-size: 20px; font-weight: 500; color: var(--ink); }
+  .cs-x { border: none; background: none; cursor: pointer; font-size: 20px; color: var(--ink-faint);
+    padding: 2px 8px; border-radius: 4px; line-height: 1; }
+  .cs-x:hover { background: var(--paper-sunk); color: var(--ink); }
+  .cs-body { padding: 18px 20px 8px; display: flex; flex-direction: column; gap: 15px; }
+  .cs-row { display: flex; align-items: center; gap: 14px; }
+  .cs-flabel { font-size: 11.5px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--ink-soft); width: 100px; flex-shrink: 0; }
+  .cs-flabel .mono { text-transform: none; color: var(--ink-faint); }
+  .cs-syms { flex: 1; }
+  .cs-syms button { flex: 1; }
+  .cs-param { flex: 1; display: flex; align-items: center; gap: 10px; }
+  .cs-param input[type=range] { flex: 1; accent-color: var(--accent); }
+  .cs-num { width: 64px; background: var(--plate); border: 1px solid var(--hair-strong);
+    border-radius: 5px; padding: 5px 8px; font-family: ui-monospace, Menlo, monospace;
+    font-size: 12px; color: var(--ink); }
+  .cs-unit { font-size: 11px; color: var(--ink-faint); font-family: ui-monospace, Menlo, monospace; }
+  .cs-previewwrap { background: var(--paper-sunk); border: 1px solid var(--hair);
+    border-radius: 5px; padding: 6px 8px; }
+  #cs-preview { display: block; width: 100%; }
+  .cs-fit { font-size: 12px; color: var(--ink-soft); }
+  .cs-fit b { color: var(--ink); font-weight: 700; }
+  .cs-foot { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px 18px; }
+  .cs-note { font-size: 10.5px; color: var(--ink-faint); }
+  .cs-actions { display: flex; gap: 8px; }
+  .cs-add { background: var(--accent); color: oklch(0.99 0.005 85); border-color: var(--accent); }
+  .cs-add:hover { background: oklch(0.5 0.15 38); }
 </style>
 </head>
 <body>
@@ -460,6 +511,45 @@
         </div>
       </div>
     </aside>
+  </div>
+</div>
+
+<!-- ── Custom-index builder ─────────────────────────────────────────────── -->
+<div class="scrim" id="custom-scrim">
+  <div class="custom-sheet">
+    <div class="cs-head">
+      <div>
+        <div class="cs-kicker">Speculative</div>
+        <span class="cs-t">Custom index</span>
+      </div>
+      <button class="cs-x" id="custom-close" aria-label="Close">&times;</button>
+    </div>
+    <div class="cs-body">
+      <div class="cs-row">
+        <span class="cs-flabel">Symmetry</span>
+        <div class="seg cs-syms" id="cs-syms"></div>
+      </div>
+      <div class="cs-row">
+        <span class="cs-flabel">Lattice <span id="cs-paramname" class="mono">a</span></span>
+        <div class="cs-param">
+          <input type="range" id="cs-slider" aria-label="lattice parameter" />
+          <input type="number" id="cs-num" class="cs-num" aria-label="lattice value" />
+          <span class="cs-unit">Å</span>
+        </div>
+      </div>
+      <div class="cs-previewwrap">
+        <svg id="cs-preview" viewBox="0 0 520 150"
+          aria-label="Custom index reflections against observed peaks"></svg>
+      </div>
+      <div class="cs-fit" id="cs-fit"></div>
+    </div>
+    <div class="cs-foot">
+      <span class="cs-note">Drag the lattice until the teeth land on your peaks.</span>
+      <div class="cs-actions">
+        <button class="tool-btn" id="custom-cancel">Cancel</button>
+        <button class="tool-btn cs-add" id="custom-add">Add to assignment</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -591,7 +681,7 @@ function setHot(i) {
     node.classList.toggle('hot', i != null && +node.dataset.peak === i);
   });
 }
-/* candidate hover-preview: dim the peaks a swap would orphan */
+/* candidate hover-preview: highlight the peaks it would claim */
 function setPreview(name) {
   document.querySelectorAll('.preview, .dim').forEach(n => n.classList.remove('preview', 'dim'));
   if (!name) return;
@@ -600,6 +690,48 @@ function setPreview(name) {
   document.querySelectorAll('[data-peak]').forEach(node => {
     if (claim.has(+node.dataset.peak)) node.classList.add('preview');
   });
+}
+
+/* ── hypothetical-assignment preview ─ what the cart would become on add ── */
+let previewName = null;
+function hypothetical(name) {
+  if (assignment.has(name)) return null;            // already in — nothing hypothetical
+  const cand = byName(name);
+  const removes = [...assignment].filter(o => byName(o).claimed.some(p => cand.claimed.includes(p)));
+  return { cand, removes };
+}
+const leftoverCount = () => PEAKS.filter(p => p.state === 'real' && !claimOf(p.i)).length;
+const fmtScore = c => c.score != null ? c.score.toFixed(2) : 'custom';
+const pctScore = c => (c.score != null ? (c.score * 100).toFixed(0) : 0) + '%';
+const latStr   = c => `${c.paramKind || 'a'} = ${c.a} Å`;
+
+/* ── custom-index builder data ─ symmetry → predicted reflections ──────── */
+const PHASE_COLORS = { Pn3m: 'var(--pn3m)', Im3m: 'var(--im3m)', Ia3d: 'var(--ia3d)',
+  Lamellar: 'var(--lam)', Hexagonal: 'var(--hex)' };
+const SYMS = {
+  Pn3m:      { kind: 'cubic',    Ms: [2,3,4,6,8,9],     param: 'a', def: 197, min: 120, max: 320 },
+  Im3m:      { kind: 'cubic',    Ms: [2,4,6,8,10,12],   param: 'a', def: 252, min: 120, max: 360 },
+  Ia3d:      { kind: 'cubic',    Ms: [6,8,14,16,20,22], param: 'a', def: 218, min: 120, max: 360 },
+  Lamellar:  { kind: 'lamellar', Ms: [1,2,3,4,5],       param: 'd', def: 60,  min: 30,  max: 130 },
+  Hexagonal: { kind: 'hex',      Ms: [1,3,4,7,9,12],    param: 'a', def: 70,  min: 40,  max: 160 },
+};
+function customRefls(sym, val) {
+  const s = SYMS[sym];
+  if (s.kind === 'lamellar') return s.Ms.map(n => ({ N: n, q: TWO_PI * n / val }));
+  if (s.kind === 'hex') { const q1 = 4 * Math.PI / (Math.sqrt(3) * val);
+    return s.Ms.map(M => ({ N: M, q: q1 * Math.sqrt(M) })); }
+  return s.Ms.map(N => ({ N, q: TWO_PI * Math.sqrt(N) / val }));        // cubic
+}
+function buildCustomCandidate(sym, val) {
+  const refl = customRefls(sym, val).map(rf => {
+    let best = null, bd = 1e9;
+    PEAKS.forEach(p => { if (p.state === 'excluded') return;
+      const dd = Math.abs(p.q - rf.q) / rf.q; if (dd < bd) { bd = dd; best = p; } });
+    return { N: rf.N, q: rf.q, claim: bd < 0.022 ? best.i : null };
+  });
+  return { name: sym + ' (custom)', color: PHASE_COLORS[sym], a: val, paramKind: SYMS[sym].param,
+    score: null, custom: true, bonnet: false, note: 'custom index', refl,
+    claimed: refl.filter(r => r.claim != null).map(r => r.claim) };
 }
 
 /* ════════════ the trace ════════════ */
@@ -787,34 +919,41 @@ function renderCombs() {
       stroke: 'var(--hair)', 'stroke-width': 1, 'stroke-dasharray': '1 3', opacity: 0.8 }));
   });
 
-  // distribute rows (assigned phases + a leftover row) across the band so the
-  // panel fills whether there are 1 or 3 phases
-  const nRows = phases.length + 1;
+  // rows: assigned phases + a ghost preview row when hovering a candidate
+  const combRows = phases.map(c => ({ c, ghost: false }));
+  const hyp = previewName ? hypothetical(previewName) : null;
+  if (hyp) combRows.push({ c: hyp.cand, ghost: true });
+
+  const nRows = combRows.length + 1;
   const band = railY - top;
   const rowGap = band / nRows;
-  const toothH = Math.min(rowGap * 0.58, 44);
+  const toothH = Math.min(rowGap * 0.58, 42);
 
-  phases.forEach((c, ri) => {
-    const yBase = top + (ri + 0.74) * rowGap;
-    const lab = el('text', { class: 'comb-row-label', x: 8, y: yBase - 8, fill: c.color });
-    lab.textContent = c.name; svg.appendChild(lab);
+  combRows.forEach(({ c, ghost }, ri) => {
+    const yBase = top + (ri + 0.72) * rowGap;
+    const lab = el('text', { class: 'comb-row-label', x: 8, y: yBase - 8, fill: c.color,
+      ...(ghost ? { opacity: 0.8 } : {}) });
+    lab.textContent = ghost ? '+ ' + c.name : c.name; svg.appendChild(lab);
     const sub = el('text', { class: 'comb-row-sub', x: 8, y: yBase + 6 });
-    sub.textContent = 'a = ' + c.a + ' Å'; svg.appendChild(sub);
+    sub.textContent = ghost ? 'hypothetical' : latStr(c); svg.appendChild(sub);
 
-    // baseline for this comb
+    // baseline (dashed for the ghost row)
     svg.appendChild(el('line', { x1: CB.l, y1: yBase, x2: CB.w - CB.r, y2: yBase,
-      stroke: 'var(--hair-strong)', 'stroke-width': 1 }));
+      stroke: ghost ? 'var(--hair)' : 'var(--hair-strong)', 'stroke-width': 1,
+      ...(ghost ? { 'stroke-dasharray': '3 3' } : {}) }));
 
     c.refl.forEach(r => {
       if (r.q < Q.min || r.q > Q.max) return;
       const x = cxOf(r.q);
-      const g = el('g', { class: 'tooth' + (r.claim != null ? '' : ' absent') });
-      if (r.claim != null) g.setAttribute('data-peak', r.claim);
+      const g = el('g', { class: 'tooth' + (r.claim != null ? '' : ' absent'),
+        ...(ghost ? { opacity: 0.78 } : {}) });
+      if (r.claim != null && !ghost) g.setAttribute('data-peak', r.claim);
       if (r.claim != null) {
-        // predicted & observed — solid tooth + cap
+        // predicted & observed — solid tooth (ghost: dashed + hollow cap)
         g.appendChild(el('line', { class: 'tooth-stem', x1: x, y1: yBase, x2: x, y2: yBase - toothH,
-          stroke: c.color, 'stroke-width': 2 }));
-        g.appendChild(el('circle', { class: 'tooth-cap', cx: x, cy: yBase - toothH, r: 2.4, fill: c.color }));
+          stroke: c.color, 'stroke-width': ghost ? 1.6 : 2, ...(ghost ? { 'stroke-dasharray': '2.5 2' } : {}) }));
+        g.appendChild(el('circle', { class: 'tooth-cap', cx: x, cy: yBase - toothH, r: 2.4,
+          fill: ghost ? 'var(--plate)' : c.color, stroke: ghost ? c.color : 'none', 'stroke-width': ghost ? 1.4 : 0 }));
         const ml = el('text', { class: 'tooth-mlabel', x: x, y: yBase - toothH - 6, 'text-anchor': 'middle',
           'font-size': 9.5, 'font-weight': 700, fill: c.color, 'font-family': 'ui-monospace, Menlo, monospace' });
         ml.textContent = MILLER[r.N] || ('√' + r.N); g.appendChild(ml);
@@ -832,7 +971,7 @@ function renderCombs() {
 
   // leftover row — observed peaks no assigned phase claims
   const leftover = PEAKS.filter(p => p.state === 'real' && !claimOf(p.i));
-  const yL = top + (phases.length + 0.6) * rowGap;
+  const yL = top + (combRows.length + 0.55) * rowGap;
   const llab = el('text', { class: 'comb-row-sub', x: 8, y: yL + 3 });
   llab.textContent = leftover.length ? 'leftover' : 'leftover — none'; svg.appendChild(llab);
   leftover.forEach(p => {
@@ -887,38 +1026,59 @@ function renderResidual(svg, phases, top, railY) {
 }
 
 /* ════════════ rail: assignment + candidates ════════════ */
-function renderRail() {
-  const phases = CANDIDATES.filter(c => assignment.has(c.name))
-    .sort((a, b) => b.score - a.score);
+function renderRail() { renderAssignment(); renderCandidates(); }
 
+/* the assignment cart — preview-aware: hovering a candidate shows a ghost
+   "would add" block and marks any block the add would swap out */
+function renderAssignment() {
+  const phases = CANDIDATES.filter(c => assignment.has(c.name))
+    .sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+  const hyp = previewName ? hypothetical(previewName) : null;
   const as = document.getElementById('assign');
   document.getElementById('as-count').textContent =
     phases.length ? `· ${phases.length} phase${phases.length > 1 ? 's' : ''}` : '· empty';
 
-  if (phases.length === 0) {
-    as.innerHTML = `<div class="as-empty">No phase yet &mdash; this is form factor / unindexed.
-      Evaluate the candidates and add the ones that make sense.</div>
-      <div class="as-foot">custom index…</div>`;
+  let blocks = '';
+  if (phases.length === 0 && !hyp) {
+    blocks = `<div class="as-empty">No phase yet — this is form factor / unindexed.
+      Evaluate the candidates and add the ones that make sense.</div>`;
   } else {
-    as.innerHTML = phases.map(c => `
-      <div class="as-block">
+    blocks = phases.map(c => {
+      const rm = hyp && hyp.removes.includes(c.name);
+      return `<div class="as-block${rm ? ' as-removing' : ''}">
         <button class="asb-remove" data-remove="${c.name}">remove</button>
         <div class="asb-top">
           <span class="asb-name" style="color:${c.color}">${c.name}</span>
-          <span class="asb-val" style="color:${c.color}">${c.score.toFixed(2)}</span>
+          <span class="asb-val" style="color:${c.color}">${fmtScore(c)}</span>
         </div>
-        <div class="asb-meta">a = ${c.a} Å &nbsp;·&nbsp; ${c.claimed.length} reflections</div>
-        <div class="asb-bar"><i style="width:${(c.score*100).toFixed(0)}%;background:${c.color}"></i></div>
-      </div>`).join('') + `<div class="as-foot">custom index…</div>`;
-    as.querySelectorAll('[data-remove]').forEach(b =>
-      b.addEventListener('click', () => { assignment.delete(b.dataset.remove); renderAll(); }));
+        <div class="asb-meta">${latStr(c)} · ${c.claimed.length} reflections${rm ? ' · would be replaced' : ''}</div>
+        ${c.score != null ? `<div class="asb-bar"><i style="width:${pctScore(c)};background:${c.color}"></i></div>` : ''}
+      </div>`;
+    }).join('');
+    if (hyp) {
+      const c = hyp.cand;
+      blocks += `<div class="as-block as-adding">
+        <span class="asb-ghosttag">hypothetical · would add</span>
+        <div class="asb-top">
+          <span class="asb-name" style="color:${c.color}">${c.name}</span>
+          <span class="asb-val" style="color:${c.color}">${fmtScore(c)}</span>
+        </div>
+        <div class="asb-meta">${latStr(c)} · explains ${c.claimed.length} peak${c.claimed.length !== 1 ? 's' : ''}${
+          hyp.removes.length ? ` · replaces ${hyp.removes.join(', ')}` : ' · coexists'}</div>
+      </div>`;
+    }
   }
+  as.innerHTML = blocks + `<div class="as-foot" id="custom-open">custom index…</div>`;
+  as.querySelectorAll('[data-remove]').forEach(b =>
+    b.addEventListener('click', () => { assignment.delete(b.dataset.remove); renderAll(); }));
+  document.getElementById('custom-open').addEventListener('click', openCustom);
 
-  // assignment note — Bonnet coexistence prompt
   const note = document.getElementById('assign-note');
-  const leftover = PEAKS.filter(p => p.state === 'real' && !claimOf(p.i)).length;
-  if (assignment.has('Pn3m') && !assignment.has('Im3m') && leftover > 0) {
-    note.innerHTML = `<b>${leftover} peaks</b> are unexplained. A coexisting
+  if (hyp) {
+    note.innerHTML = `Previewing <b style="color:${hyp.cand.color}">${hyp.cand.name}</b>
+      — click to add, move away to keep the current assignment.`;
+  } else if (assignment.has('Pn3m') && !assignment.has('Im3m') && leftoverCount() > 0) {
+    note.innerHTML = `<b>${leftoverCount()} peaks</b> are unexplained. A coexisting
       <span style="color:var(--im3m);font-weight:600">Im3m</span> at the Bonnet
       lattice would account for them.`;
   } else if (assignment.has('Pn3m') && assignment.has('Im3m')) {
@@ -926,10 +1086,12 @@ function renderRail() {
       <span class="mono" style="color:var(--ink-soft)">${(A_IM3M/A_PN3M).toFixed(3)}</span>
       &asymp; Bonnet <span class="mono" style="color:var(--ink-soft)">${BONNET}</span>. Consistent.`;
   } else {
-    note.innerHTML = '';   // no filler — notes appear only when they say something
+    note.innerHTML = '';
   }
   note.style.display = note.innerHTML ? '' : 'none';
+}
 
+function renderCandidates() {
   const list = document.getElementById('cand-list');
   list.innerHTML = '';
   CANDIDATES.forEach(c => {
@@ -947,12 +1109,13 @@ function renderRail() {
         <div class="c-cover">${c.note}</div>
       </div>
       <div class="c-score">
-        <div class="cs-v">${c.score.toFixed(2)}</div>
-        <div class="cs-bar"><i style="width:${(c.score*100).toFixed(0)}%;background:${c.color}"></i></div>
+        <div class="cs-v">${fmtScore(c)}</div>
+        ${c.score != null ? `<div class="cs-bar"><i style="width:${pctScore(c)};background:${c.color}"></i></div>` : ''}
       </div>`;
-    row.addEventListener('mouseenter', () => setPreview(c.name));
-    row.addEventListener('mouseleave', () => setPreview(null));
-    row.addEventListener('click', () => { toggleCandidate(c.name); renderAll(); });
+    // hover updates the cart + combs (NOT the candidate list — avoids re-render under cursor)
+    row.addEventListener('mouseenter', () => { previewName = c.name; setPreview(c.name); renderAssignment(); renderCombs(); });
+    row.addEventListener('mouseleave', () => { previewName = null; setPreview(null); renderAssignment(); renderCombs(); });
+    row.addEventListener('click', () => { previewName = null; toggleCandidate(c.name); renderAll(); });
     list.appendChild(row);
   });
 }
@@ -978,6 +1141,79 @@ document.querySelectorAll('#comb-seg button').forEach(b => {
   });
 });
 document.getElementById('addpeak').addEventListener('click', e => e.currentTarget.classList.toggle('armed'));
+
+/* ════════════ custom-index builder ════════════ */
+let customSym = 'Im3m', customVal = SYMS.Im3m.def;
+function openCustom() {
+  customSym = 'Im3m'; customVal = SYMS.Im3m.def;
+  buildSymButtons(); syncParamInputs(); renderCustomPreview();
+  document.getElementById('custom-scrim').classList.add('open');
+}
+function closeCustom() { document.getElementById('custom-scrim').classList.remove('open'); }
+function buildSymButtons() {
+  const box = document.getElementById('cs-syms'); box.innerHTML = '';
+  Object.keys(SYMS).forEach(name => {
+    const b = document.createElement('button');
+    b.textContent = name; if (name === customSym) b.classList.add('on');
+    b.addEventListener('click', () => { customSym = name; customVal = SYMS[name].def;
+      buildSymButtons(); syncParamInputs(); renderCustomPreview(); });
+    box.appendChild(b);
+  });
+}
+function syncParamInputs() {
+  const s = SYMS[customSym];
+  document.getElementById('cs-paramname').textContent = s.param;
+  const sl = document.getElementById('cs-slider'), nu = document.getElementById('cs-num');
+  sl.min = s.min; sl.max = s.max; sl.value = customVal;
+  nu.min = s.min; nu.max = s.max; nu.value = customVal;
+}
+function renderCustomPreview() {
+  const svg = document.getElementById('cs-preview'); svg.innerHTML = '';
+  const W = 520, H = 150, m = { l: 14, r: 14, t: 16, b: 26 };
+  const pw = W - m.l - m.r, baseY = H - m.b, top = m.t;
+  const lx = q => m.l + (Math.log(q) - Math.log(Q.min)) / (Math.log(Q.max) - Math.log(Q.min)) * pw;
+  svg.appendChild(el('line', { x1: m.l, y1: baseY, x2: m.l + pw, y2: baseY,
+    stroke: 'var(--hair-strong)', 'stroke-width': 1 }));
+  [0.02, 0.03, 0.05, 0.07, 0.1, 0.15, 0.2].forEach(q => { if (q < Q.min || q > Q.max) return;
+    const x = lx(q); const t = el('text', { x, y: baseY + 13, 'text-anchor': 'middle',
+      'font-size': 9, fill: 'var(--ink-faint)', 'font-family': 'ui-monospace, Menlo, monospace' });
+    t.textContent = q; svg.appendChild(t); });
+  const obs = PEAKS.filter(p => p.state === 'real');
+  obs.forEach(p => { const x = lx(p.q);
+    svg.appendChild(el('line', { x1: x, y1: top, x2: x, y2: baseY,
+      stroke: 'var(--hair)', 'stroke-width': 1, 'stroke-dasharray': '1 3' }));
+    svg.appendChild(el('circle', { cx: x, cy: baseY, r: 2.4, fill: 'var(--ink-soft)' })); });
+  const color = PHASE_COLORS[customSym];
+  let lands = 0;
+  customRefls(customSym, customVal).forEach(rf => {
+    if (rf.q < Q.min || rf.q > Q.max) return;
+    const x = lx(rf.q);
+    const near = obs.some(p => Math.abs(p.q - rf.q) / rf.q < 0.022);
+    if (near) lands++;
+    const h = near ? 56 : 40;
+    svg.appendChild(el('line', { x1: x, y1: baseY, x2: x, y2: baseY - h, stroke: color,
+      'stroke-width': near ? 2.2 : 1.3, opacity: near ? 1 : 0.55,
+      ...(near ? {} : { 'stroke-dasharray': '2 2' }) }));
+    svg.appendChild(el('circle', { cx: x, cy: baseY - h, r: near ? 2.8 : 2,
+      fill: near ? color : 'var(--plate)', stroke: color, 'stroke-width': near ? 0 : 1.3 }));
+  });
+  document.getElementById('cs-fit').innerHTML =
+    `Lands on <b>${lands}</b> of ${obs.length} observed peaks · ${SYMS[customSym].param} = <b>${customVal} Å</b>`;
+}
+document.getElementById('cs-slider').addEventListener('input', e => {
+  customVal = +e.target.value; document.getElementById('cs-num').value = customVal; renderCustomPreview(); });
+document.getElementById('cs-num').addEventListener('input', e => {
+  customVal = +e.target.value; document.getElementById('cs-slider').value = customVal; renderCustomPreview(); });
+document.getElementById('custom-close').addEventListener('click', closeCustom);
+document.getElementById('custom-cancel').addEventListener('click', closeCustom);
+document.getElementById('custom-scrim').addEventListener('click', e => {
+  if (e.target.id === 'custom-scrim') closeCustom(); });
+document.getElementById('custom-add').addEventListener('click', () => {
+  const cand = buildCustomCandidate(customSym, customVal);
+  const ex = CANDIDATES.findIndex(c => c.name === cand.name);
+  if (ex >= 0) CANDIDATES.splice(ex, 1, cand); else CANDIDATES.push(cand);
+  previewName = null; toggleCandidate(cand.name); closeCustom(); renderAll();
+});
 
 renderExposures();
 renderAll();
