@@ -135,6 +135,12 @@ export function seriesReading(members: SeriesMember[], variableOf: (m: SeriesMem
 
 ---
 
+## Review findings (frontend-reviewer, 2026-05-30)
+
+Plan E passed review. Two shared findings (documented in Plan C's review section) apply to E's tasks:
+- **E-2 absent-order ghost rings** use the SVG `peakGlyph`/`<PeakGlyph>` caret path, **never** the `peakMark()` Plot.dot markish (which can't render the caret atom and would draw an up-triangle).
+- **E-8 clean export** colours peaks via the export palette literals (`LIGHT_PALETTE`/clean-preset hex passed into `peakMark`'s `color` param), **not** `phaseColor()` — the export is by-source/by-preset by design (the "colour = phase" rule is for on-screen surfaces). Confirmed sound: the bounded `useStableQueryMap`/`useQueries` fan-out with signature-hash identity, no snapshot-embedding, the snapshot shape supporting all client-side derivations, `(phase, order)` keying matching the existing `CrossTraceTrackingLayer`.
+
 ## Execution Handoff
 1. **Subagent-Driven (recommended)** — fresh subagent per task; E-2 (tracking) and E-8 (export) get careful review.
 2. **Inline Execution** — batch with checkpoints after E-4 and E-8.

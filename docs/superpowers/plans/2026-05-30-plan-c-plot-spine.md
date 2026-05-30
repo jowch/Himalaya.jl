@@ -274,6 +274,13 @@ export interface PlotOverlayContext {
 
 ---
 
+## Review findings — required fixes (frontend-reviewer, 2026-05-30)
+
+1. **[HIGH] Scope MillerPlot OUT of the PlotSurface refactor.** `MillerPlot.tsx:116-145` is a **q-vs-Miller-ratio scatter with `linearRegressionY` overlays** — x=`ratio` (linear, `ticks:4`), y=`q`, no log/linear q-axis, no `invertQ`/`applyQ`, no wheel/zoom, no peak `hitTest`. The `PlotSurfaceProps` contract here is q/peak-typed and exposes none of MillerPlot's ratio-axis/regression/tick needs. The self-review's "MillerPlot zoom is honored" justification is about the wrong plot (MillerPlot has no zoom). **Fix Task 5:** refactor only TraceViewer + MultiTracePlot onto PlotSurface; leave MillerPlot standalone (or, only if a future need arises, widen PlotSurface to first-class non-q x-channels + axis config — out of scope now).
+2. **[MED] `peakMark()` Plot.Markish does not render the caret atom** — it only branches `manual→diamond : triangle`. The `predictedAbsent→caret` glyph (combs D-5, absent-order ghost rings E-2) MUST go through the SVG `peakGlyph`/`<PeakGlyph>` path, **never** the `Plot.dot` markish (which would draw an up-triangle). Make this explicit so a worker wiring ghost rings via `peakMark()` doesn't get the wrong glyph.
+3. **[MED] Export peak colour is by-source, not by-phase.** `traceExportMarks.ts:42-50` colours export peaks from `LIGHT_PALETTE` by `source`/`excluded` (`peakAuto:#1f5fb0`, `peakManual:#a0421f`), deliberately not `phaseColor()`. The §5.1 "colour = phase, always" framing is for the *on-screen* surfaces — at the export sites, pass the `LIGHT_PALETTE.*` / clean-preset hex into `peakMark`'s `color` param (it carries literals fine). Don't "fix" the export to phase-colour or it regresses the printable palette. The manual→diamond geometry change does correctly alter the export legend (`traceAdapter.test.ts:59` update already noted).
+4. **Confirmed sound:** design-guard (phaseColor through JS mark options / `ui/**` is clean — `check-design` is purely textual on literal `oklch(`/`#hex`), the Observable-Plot-in-React seam (scale cast, read-clientWidth-in-render, re-bind on resize, wheel preventDefault), per-consumer margins/xType (for the two q-plots), `offsetPx` 7/5 preservation, the no-downward-triangle caveat (the mockup itself hand-builds the path — `focus-plot.html:742`), `nearestClickablePeak` `id<0` skip, magenta retirement.
+
 ## Execution Handoff
 1. **Subagent-Driven (recommended)** — fresh subagent per task; review the peakMark sweep (Task 2) and PlotSurface (Task 3) carefully (highest blast radius).
 2. **Inline Execution** — batch with checkpoints after Tasks 2 and 3.

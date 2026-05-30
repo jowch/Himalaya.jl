@@ -989,6 +989,16 @@ git commit -m "docs(event-log): register assignment_add/remove/set_state kinds"
 
 ---
 
+## Review findings — required fixes (himalaya-reviewer, queue-reviewer, 2026-05-30)
+
+Apply these during implementation; the architecture passed review, these are precision fixes:
+
+1. **[HIGH] Emit `post_state` on the assignment routes.** Task 8 (`/assignment/state`) and the dual-write events (Tasks 9–10) currently broadcast with **no `post_state`**, so Plan D's `applyRemoteToCache` arm always falls to invalidate (extra refetch) and the documented `{assignment:{state,members}}` shape never arrives. Pass `post_state = Dict(:assignment => Dict(:state => …, :members => […]))` into `apply_event!`/`_enqueue_broadcast_from_result!`. **The post_state must have NO top-level `indices` key** — that's what lets the frontend's `applyPostStateOnly` `CurationPostState` cast bail harmlessly (`applyRemoteToCache.ts:18-41`).
+2. **[MED] Task 11 seed:** reuse the auto-group loop's own collected `db_id`s rather than recomputing `seeded_ids` via a parallel `group_set` comprehension (avoids silent drift), and ensure the seed runs **before** the custom re-attach block (pipeline.jl:539+) so it seeds from the auto group only.
+3. **[MED] Migration ordering:** `migrate_assignments!` must register **after `migrate_pk_to_autoincrement!`** (db.jl:316, which rebuilds `exposures`/`indices`), not merely after `migrate_comparisons_to_series!`. It already lands there; make the dependency explicit in the comment so a future reorder can't break it. Confirmed: `open_db` runs `create_schema!` → `migrate_schema!` → `PRAGMA foreign_keys=ON`, so the new tables exist and FK is OFF during backfill (correct).
+4. **[LOW] Native DELETE member route (D-1):** return 200 with the current `_assignment_body` when the member is absent (idempotent delete), matching the frontend mutator's `treats404AsSuccess`.
+5. **Confirmed sound:** sentinel idiom, 3 dispatcher branches (replay-idempotent, sole-writer, `entity_type="exposure"`), CHECK enum + `ON CONFLICT(exposure_id)` UPSERT, dual-write idempotency (distinct `action` values share one `client_op_id` without colliding on the `(client_op_id, action, entity_id)` partial unique index), `persist_analysis!` seed inside the transaction, `string(nameof(P))` phase strings.
+
 ## Execution Handoff
 
 Two execution options:

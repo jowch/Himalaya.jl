@@ -16,9 +16,9 @@
 - **Tasks 4–6 (backend wiring + frontend type)** depend on **Plan A** (they read the assignment's member indices). Sequence after A.
 - **Out of scope:** the `⭙ Bonnet` badge, the contextual note, and any candidate reordering live in **Plan D** (Focus). Plan B stops at the `bonnet` field on the wire.
 
-## ⚠️ Physics constant to confirm
+## Physics constants — confirmed
 
-The Bonnet lattice-parameter ratios among the three bicontinuous cubics are standard in the lipid-mesophase literature; the survey/spec commit only `a_Im3m ≈ 1.279·a_Pn3m`. This plan encodes the canonical triple `a_Pn3m : a_Im3m : a_Ia3d = 1.000 : 1.279 : 1.576`. **The `Ia3d = 1.576` value must be confirmed by the domain expert / `saxs-physics-reviewer` before Task 3 lands.** If only the Pn3m↔Im3m pair is trusted, populate just those two in `BONNET_SCALE` and have the kernel return `nothing` for any pair involving Ia3d (the code below already degrades that way for unknown phases).
+The Bonnet lattice-parameter ratios among the three bicontinuous cubics are the canonical lipid-mesophase triple `a_D(Pn3m) : a_P(Im3m) : a_G(Ia3d) = 1.000 : 1.279 : 1.576` (Diamond/Primitive/Gyroid; Hyde; Squires/Templer/Seddon). **Both `1.279` and `1.576` are confirmed by `saxs-physics-reviewer` (2026-05-30) and can ship** — they track the NGC constants already hard-coded in `index.jl:311-313` (A₀ = 1.919/2.345/3.091), which derive from the same IPMS geometry. The kernel still returns `nothing` for any non-bicontinuous-cubic pairing (correct by construction — the Bonnet relation is cubic↔cubic only).
 
 ## File structure
 

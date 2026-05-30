@@ -46,8 +46,12 @@ C (plot spine) ─────────────────────�
 - **Physics integrity:** `score()` stays coverage×consistency; Bonnet is a display flag, never scored or persisted.
 - **Colour-parameterized marks:** `peakMark()` takes resolved colour (no CSS-var reads) so the canvas export renderer works.
 
+## Review status (2026-05-30)
+
+All five plans + spec reviewed by the four project reviewer agents (himalaya, queue, frontend, saxs-physics). **Verdict: architecturally sound; ~12 precision fixes folded into per-plan "Review findings" sections.** Highlights: the spec's "score bump" contradiction was reconciled to Plan B's display-only stance (a bump would corrupt `auto_group`/`remove_subsets`); both Bonnet ratios (1.279 + 1.576) confirmed; the `post_state` envelope + type-union extension, the D-10 dispatcher-branch no-op-guards, and the MillerPlot-doesn't-fit-PlotSurface scoping are the load-bearing fixes.
+
 ## Open questions for the user / domain expert
 
-- **Gauss–Bonnet `Ia3d = 1.576`** (Plan B) — confirm with `saxs-physics-reviewer` before B-flag ships; restrict to Pn3m↔Im3m (1.279) if unsure.
 - **Dual-write vs hard-cutover** (Plan A) — defaulted to dual-write (keeps `main` green); hard-cutover lands A+D together and deletes `index_groups` outright.
 - **S5 q₁ source** (Plan E) — client-derive `min(effective_peaks.q)` (default) vs add `q1` to the snapshot if too costly.
+- ~~Gauss–Bonnet `Ia3d = 1.576`~~ — **resolved**: confirmed canonical (saxs-physics-reviewer).
