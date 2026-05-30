@@ -14,7 +14,10 @@
   so this file cannot break the build.
 
   Phase 0 sections present: Button, ScoreBar, Dot, Toast.
-  Later primitives are appended in their own migration waves (see the placeholder at the foot).
+  Phase 1 sections present: SegmentedControl, PhaseChip, PhaseStrip.
+  Phase 2 sections present: Kicker, ModalShell, IconButton, Card.
+  HintText is a trivial single-class text helper (text-ink-faint italic paragraph); no specimen section added.
+  All current primitives are catalogued. Later primitives are appended in their own migration waves.
 -->
 <style>
   /* ── Print tokens (mirror of src/styles.css @theme) ─────────────────── */
@@ -154,6 +157,153 @@
   .toast.kind-success .status-icon { color: var(--color-success); }
   .toast.kind-warning .status-icon { color: var(--color-warning); }
   .toast.kind-error   .status-icon { color: var(--color-error); }
+
+  /* ── SegmentedControl mirror ────────────────────────────────────────── */
+  /* bordered variant: pill-clipped row with dividers */
+  .seg-bordered {
+    display: inline-flex; overflow: hidden; border-radius: var(--radius-md);
+    border: 1px solid var(--color-hair-strong);
+  }
+  .seg-bordered .seg-btn + .seg-btn { border-left: 1px solid var(--color-hair-strong); }
+  /* plain variant: spaced buttons with transparent borders */
+  .seg-plain { display: inline-flex; align-items: center; gap: 4px; }
+  .seg-plain .seg-btn { border-radius: var(--radius-md); border: 1px solid transparent; }
+  /* shared segment button */
+  .seg-btn {
+    font-family: var(--font-sans); cursor: pointer; background: transparent;
+    transition: color 120ms, background 120ms;
+  }
+  .seg-btn.size-sm { font-size: 11.5px; padding: 4px 12px; }
+  .seg-btn.size-md { font-size: 13px; padding: 6px 14px; }
+  /* active: ink fill + paper text (the canonical "L-5/B-A"-free look) */
+  .seg-btn.is-active { background: var(--color-ink); color: var(--color-paper); }
+  /* rest: faint ink */
+  .seg-btn.is-rest   { color: var(--color-ink-faint); }
+  /* simulated hover/focus/disabled */
+  .seg-btn.is-hover  { color: var(--color-ink); background: var(--color-paper-sunk); }
+  .seg-btn.is-focus  { color: var(--color-ink); background: var(--color-paper-sunk);
+                        outline: 2px solid var(--color-accent); outline-offset: 2px; }
+  .seg-btn.is-disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* ── PhaseChip mirror ───────────────────────────────────────────────── */
+  .pchip {
+    display: inline-flex; align-items: center; border-radius: 2px; border: 1px solid;
+    font-family: var(--font-mono); font-weight: 700;
+  }
+  .pchip.size-sm { font-size: 11px; padding: 1px 8px; }
+  .pchip.size-md { font-size: 13px; padding: 2px 6px; }
+  /* tint: phase-tinted bg + phase-colored text + translucent border */
+  .pchip-tint-pn3m    { color: var(--phase-Pn3m);    background: color-mix(in oklab, var(--phase-Pn3m)    13%, transparent); border-color: color-mix(in oklab, var(--phase-Pn3m)    35%, transparent); }
+  .pchip-tint-im3m    { color: var(--phase-Im3m);    background: color-mix(in oklab, var(--phase-Im3m)    13%, transparent); border-color: color-mix(in oklab, var(--phase-Im3m)    35%, transparent); }
+  .pchip-tint-lamellar{ color: var(--phase-Lamellar); background: color-mix(in oklab, var(--phase-Lamellar)13%, transparent); border-color: color-mix(in oklab, var(--phase-Lamellar)35%, transparent); }
+  /* solid: phase-colored bg + paper text + transparent border */
+  .pchip-solid-pn3m    { color: var(--color-paper); background: var(--phase-Pn3m);    border-color: transparent; }
+  .pchip-solid-im3m    { color: var(--color-paper); background: var(--phase-Im3m);    border-color: transparent; }
+  .pchip-solid-lamellar{ color: var(--color-paper); background: var(--phase-Lamellar); border-color: transparent; }
+
+  /* ── PhaseStrip mirror ──────────────────────────────────────────────── */
+  .pstrip-wrap { display: flex; flex-direction: column; }
+  .pstrip { display: flex; border-radius: 2px; overflow: hidden; }
+  .pstrip.size-sm { height: 8px; gap: 2px; }
+  .pstrip.size-md { height: 7px; gap: 2px; }
+  .pstrip .ps-seg { flex: 1; border-radius: 1.5px; }
+  .pstrip-cap {
+    margin-top: 6px; display: flex; align-items: center; gap: 6px;
+    font-size: 11.5px; color: var(--color-ink-soft);
+  }
+  .pstrip-cap .ps-phase { font-weight: 600; }
+  .pstrip-cap .ps-arrow { color: var(--color-ink-faint); }
+  .pstrip-cap .ps-throughout { color: var(--color-ink-faint); }
+  .pstrip-cap .ps-unindexed { font-weight: 600; color: var(--color-ink-faint); }
+
+  /* ── Kicker mirror ──────────────────────────────────────────────────── */
+  .kck {
+    font-family: var(--font-sans); font-weight: 700; text-transform: uppercase;
+    font-size: 11px;
+  }
+  .kck-accent { color: var(--color-print-accent); letter-spacing: 0.13em; }
+  .kck-faint  { color: var(--color-ink-faint);   letter-spacing: 0.09em; }
+
+  /* ── ModalShell mirror ──────────────────────────────────────────────── */
+  /* Static non-interactive frame mock — behavioural layer (Esc/focus-trap/outside-click) is React-only */
+  .modal-scrim {
+    position: relative; border-radius: var(--radius-md);
+    background: oklch(0.265 0.013 68 / 0.45); /* bg-scrim approximation */
+    padding: 32px; display: flex; align-items: center; justify-content: center;
+  }
+  .modal-scrim.align-top { align-items: flex-start; padding-top: 48px; }
+  .modal-frame {
+    background: var(--color-plate); border: 1px solid var(--color-hair-strong);
+    border-radius: var(--radius-md); box-shadow: 0 24px 48px oklch(0.05 0 0 / 0.24);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .modal-frame.size-sm { width: min(320px, 100%); }
+  .modal-frame.size-md { width: min(480px, 100%); }
+  .modal-frame.size-lg { width: min(580px, 100%); }
+  .modal-frame-body { padding: 20px; color: var(--color-ink-soft); font-size: 12px; }
+  .modal-frame-header {
+    padding: 14px 20px 12px; border-bottom: 1px solid var(--color-hair);
+    font-family: var(--font-serif); font-size: 16px; color: var(--color-ink);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  /* drawer variant */
+  .drawer-scrim {
+    position: relative; background: oklch(0.265 0.013 68 / 0.25);
+    border-radius: var(--radius-md); height: 220px; display: flex;
+    align-items: stretch; justify-content: flex-end; overflow: hidden;
+  }
+  .drawer-frame {
+    width: 200px; background: var(--color-plate);
+    border-left: 1px solid var(--color-hair-strong);
+    box-shadow: -8px 0 24px oklch(0.05 0 0 / 0.12);
+    padding: 16px; font-size: 12px; color: var(--color-ink-soft);
+  }
+
+  /* ── IconButton mirror ──────────────────────────────────────────────── */
+  .ibtn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 28px; height: 28px;          /* compact visible box */
+    border-radius: var(--radius-md); border: none; background: transparent;
+    font-family: var(--font-sans); font-size: 16px; line-height: 1;
+    cursor: pointer; transition: color 120ms, background 120ms;
+    color: var(--color-ink-faint);
+  }
+  /* rest tone → inherits .ibtn ink-faint */
+  .ibtn.tone-ghost.is-hover  { color: var(--color-ink); }
+  .ibtn.tone-accent.is-hover { color: var(--color-print-accent); }
+  .ibtn.tone-danger.is-hover { color: var(--color-error); }
+  .ibtn.is-focus {
+    outline: 2px solid var(--color-accent); outline-offset: 2px;
+  }
+  .ibtn.is-disabled { opacity: 0.30; cursor: not-allowed; }
+  /* 44px hit area note: the real component uses a ::before pseudo-element via .icon-button
+     in styles.css; the static mirror uses a visible 44×44 wrapper for illustration */
+  .ibtn-hit-wrapper {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 44px; height: 44px; border: 1px dashed var(--color-hair-strong);
+    border-radius: var(--radius-md);
+  }
+
+  /* ── Card mirror ────────────────────────────────────────────────────── */
+  /* .card-flat: bg-plate + hairline, no shadow (Flat-Except-the-Plate) */
+  .card-flat {
+    background: var(--color-plate); border-radius: var(--radius-md);
+    border: 1px solid var(--color-hair);
+  }
+  .card-flat-strong {
+    background: var(--color-plate); border-radius: var(--radius-md);
+    border: 1px solid var(--color-hair-strong);
+  }
+  /* .card-elevated: the single "Plate Lift" object with warm drop shadow */
+  .card-elevated {
+    background: var(--color-plate); border-radius: var(--radius-md);
+    border: 0.5px solid var(--color-hair);
+    box-shadow:
+      0 1px 2px oklch(0.265 0.013 68 / 0.06),
+      0 4px 12px oklch(0.265 0.013 68 / 0.10),
+      inset 0 0.5px 0 oklch(1 0 0 / 0.60); /* inset highlight */
+  }
+  .card-body { padding: 16px; font-size: 12px; color: var(--color-ink-soft); }
 
   /* Foot / deferred list */
   .foot { margin-top: 64px; border-top: 1px solid var(--color-hair-strong); padding-top: 24px; }
@@ -303,16 +453,522 @@
     </div>
   </section>
 
-  <!-- ════════════════ Appended in later waves ════════════════ -->
+  <!-- ════════════════ Phase 1 — SegmentedControl ════════════════ -->
+  <section class="primitive" id="segmented-control">
+    <p class="sec-kicker">Phase 1 · Selection</p>
+    <h2>SegmentedControl</h2>
+    <p class="blurb">Variant axis <code>bordered | plain</code>; sizes <code>sm | md</code>; role
+       axis <code>group</code> (toggle, <code>aria-pressed</code>) vs <code>radiogroup</code>
+       (radio, <code>aria-checked</code> + arrow-key roving tabindex). Active segment is always
+       <b>bg-ink text-paper</b> — never the recessed <code>bg-paper-sunk</code> tint.</p>
+    <p class="shows">Catalog must show: <b>bordered + plain × sm + md; active / rest / hover / focus-visible / disabled segments</b>;
+       group role vs radiogroup role labelled in the caption.</p>
+    <div class="specimen">
+      <!-- bordered / sm / group -->
+      <div class="row">
+        <div class="cell">
+          <div class="seg-bordered" role="group" aria-label="View mode">
+            <button class="seg-btn size-sm is-active" aria-pressed="true">Trace</button>
+            <button class="seg-btn size-sm is-rest"   aria-pressed="false">Loupe</button>
+            <button class="seg-btn size-sm is-rest"   aria-pressed="false">Compare</button>
+          </div>
+          <span class="cap">bordered · sm · group · active/rest</span>
+        </div>
+        <div class="cell">
+          <div class="seg-bordered" role="group" aria-label="View mode">
+            <button class="seg-btn size-sm is-rest"  aria-pressed="false">Trace</button>
+            <button class="seg-btn size-sm is-hover" aria-pressed="false">Loupe</button>
+            <button class="seg-btn size-sm is-rest"  aria-pressed="false">Compare</button>
+          </div>
+          <span class="cap">bordered · sm · hover</span>
+        </div>
+        <div class="cell">
+          <div class="seg-bordered" role="group" aria-label="View mode">
+            <button class="seg-btn size-sm is-active" aria-pressed="true">Trace</button>
+            <button class="seg-btn size-sm is-focus"  aria-pressed="false">Loupe</button>
+            <button class="seg-btn size-sm is-rest"   aria-pressed="false">Compare</button>
+          </div>
+          <span class="cap">bordered · sm · focus-visible</span>
+        </div>
+        <div class="cell">
+          <div class="seg-bordered" role="group" aria-label="View mode">
+            <button class="seg-btn size-sm is-active"   aria-pressed="true">Trace</button>
+            <button class="seg-btn size-sm is-disabled" aria-pressed="false" disabled>Loupe</button>
+            <button class="seg-btn size-sm is-rest"     aria-pressed="false">Compare</button>
+          </div>
+          <span class="cap">bordered · sm · disabled segment</span>
+        </div>
+      </div>
+      <!-- bordered / md -->
+      <div class="row">
+        <div class="cell">
+          <div class="seg-bordered" role="group" aria-label="Scale">
+            <button class="seg-btn size-md is-rest"   aria-pressed="false">Linear</button>
+            <button class="seg-btn size-md is-active" aria-pressed="true">Log</button>
+          </div>
+          <span class="cap">bordered · md · group</span>
+        </div>
+        <!-- plain / sm / radiogroup -->
+        <div class="cell">
+          <div class="seg-plain" role="radiogroup" aria-label="Grouping">
+            <button class="seg-btn size-sm is-active" role="radio" aria-checked="true"  tabindex="0">Phase</button>
+            <button class="seg-btn size-sm is-rest"   role="radio" aria-checked="false" tabindex="-1">Sample</button>
+            <button class="seg-btn size-sm is-rest"   role="radio" aria-checked="false" tabindex="-1">Series</button>
+          </div>
+          <span class="cap">plain · sm · radiogroup · arrow-key roving</span>
+        </div>
+        <!-- plain / md / radiogroup -->
+        <div class="cell">
+          <div class="seg-plain" role="radiogroup" aria-label="Sort">
+            <button class="seg-btn size-md is-rest"   role="radio" aria-checked="false" tabindex="-1">A → Z</button>
+            <button class="seg-btn size-md is-active" role="radio" aria-checked="true"  tabindex="0">Score</button>
+          </div>
+          <span class="cap">plain · md · radiogroup</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════ Phase 1 — PhaseChip ════════════════ -->
+  <section class="primitive" id="phase-chip">
+    <p class="sec-kicker">Phase 1 · Data</p>
+    <h2>PhaseChip</h2>
+    <p class="blurb">Variant axis <code>tint | solid</code>; sizes <code>sm | md</code>.
+       Hue derives entirely from <code>phaseColor(phase)</code> — the <code>phase</code> prop
+       is both the rendered text (the always-on second channel) and the colour source.
+       <b>tint</b> = 13% phase fill + 35% phase border + phase-coloured text; <b>solid</b> = full
+       phase fill + paper text + transparent border.</p>
+    <p class="shows">Catalog must show: <b>tint + solid × sm + md across ≥3 phases</b>
+       (Pn3m / Im3m / Lamellar) proving colour derives from phase, not a fixed palette.</p>
+    <div class="specimen">
+      <!-- tint / sm -->
+      <div class="row">
+        <div class="cell"><span class="pchip size-sm pchip-tint-pn3m">Pn3m</span><span class="cap">tint · sm · Pn3m</span></div>
+        <div class="cell"><span class="pchip size-sm pchip-tint-im3m">Im3m</span><span class="cap">tint · sm · Im3m</span></div>
+        <div class="cell"><span class="pchip size-sm pchip-tint-lamellar">Lamellar</span><span class="cap">tint · sm · Lamellar</span></div>
+      </div>
+      <!-- tint / md -->
+      <div class="row">
+        <div class="cell"><span class="pchip size-md pchip-tint-pn3m">Pn3m</span><span class="cap">tint · md · Pn3m</span></div>
+        <div class="cell"><span class="pchip size-md pchip-tint-im3m">Im3m</span><span class="cap">tint · md · Im3m</span></div>
+        <div class="cell"><span class="pchip size-md pchip-tint-lamellar">Lamellar</span><span class="cap">tint · md · Lamellar</span></div>
+      </div>
+      <!-- solid / sm -->
+      <div class="row">
+        <div class="cell"><span class="pchip size-sm pchip-solid-pn3m">Pn3m</span><span class="cap">solid · sm · Pn3m</span></div>
+        <div class="cell"><span class="pchip size-sm pchip-solid-im3m">Im3m</span><span class="cap">solid · sm · Im3m</span></div>
+        <div class="cell"><span class="pchip size-sm pchip-solid-lamellar">Lamellar</span><span class="cap">solid · sm · Lamellar</span></div>
+      </div>
+      <!-- solid / md -->
+      <div class="row">
+        <div class="cell"><span class="pchip size-md pchip-solid-pn3m">Pn3m</span><span class="cap">solid · md · Pn3m</span></div>
+        <div class="cell"><span class="pchip size-md pchip-solid-im3m">Im3m</span><span class="cap">solid · md · Im3m</span></div>
+        <div class="cell"><span class="pchip size-md pchip-solid-lamellar">Lamellar</span><span class="cap">solid · md · Lamellar</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════ Phase 1 — PhaseStrip ════════════════ -->
+  <section class="primitive" id="phase-strip">
+    <p class="sec-kicker">Phase 1 · Data</p>
+    <h2>PhaseStrip</h2>
+    <p class="blurb">One cell per series member coloured by its confirmed phase. Coexistence cells use
+       a 2-stop <code>linear-gradient(100deg, A 42%, B 58%)</code>; a <code>null</code> phase renders
+       <code>var(--color-ink-faint)</code> (unindexed). The distinct-count caption reads
+       "X throughout", "X → Y" (transition), or the <code>emptyLabel</code> when nothing is indexed.
+       Sizes <code>sm</code> (8 px) and <code>md</code> (7 px, default). Each segment carries an
+       <code>aria-label</code>/<code>title</code> as the accessible second channel.</p>
+    <p class="shows">Catalog must show: <b>solid-phase, coexistence (gradient), and unindexed segments;
+       sm and md sizes; "throughout", transition, and empty captions.</b></p>
+    <div class="specimen">
+      <!-- md: single phase throughout -->
+      <div class="row">
+        <div class="cell" style="min-width:200px;">
+          <div class="pstrip-wrap">
+            <div class="pstrip size-md">
+              <div class="ps-seg" style="background:var(--phase-Pn3m);"    aria-label="Pn3m"    title="Pn3m"></div>
+              <div class="ps-seg" style="background:var(--phase-Pn3m);"    aria-label="Pn3m"    title="Pn3m"></div>
+              <div class="ps-seg" style="background:var(--phase-Pn3m);"    aria-label="Pn3m"    title="Pn3m"></div>
+              <div class="ps-seg" style="background:var(--phase-Pn3m);"    aria-label="Pn3m"    title="Pn3m"></div>
+              <div class="ps-seg" style="background:var(--phase-Pn3m);"    aria-label="Pn3m"    title="Pn3m"></div>
+            </div>
+            <div class="pstrip-cap">
+              <span class="ps-phase" style="color:var(--phase-Pn3m);">Pn3m</span>
+              <span class="ps-throughout">throughout</span>
+            </div>
+          </div>
+          <span class="cap">md · single phase · "throughout" caption</span>
+        </div>
+
+        <!-- md: transition Pn3m → Lamellar with coexistence middle cell -->
+        <div class="cell" style="min-width:240px;">
+          <div class="pstrip-wrap">
+            <div class="pstrip size-md">
+              <div class="ps-seg" style="background:var(--phase-Pn3m);" aria-label="Pn3m" title="Pn3m"></div>
+              <div class="ps-seg" style="background:var(--phase-Pn3m);" aria-label="Pn3m" title="Pn3m"></div>
+              <div class="ps-seg"
+                   style="background:linear-gradient(100deg, var(--phase-Pn3m) 42%, var(--phase-Lamellar) 58%);"
+                   aria-label="Pn3m + Lamellar (coexistence)"
+                   title="Pn3m + Lamellar (coexistence)"></div>
+              <div class="ps-seg" style="background:var(--phase-Lamellar);" aria-label="Lamellar" title="Lamellar"></div>
+              <div class="ps-seg" style="background:var(--phase-Lamellar);" aria-label="Lamellar" title="Lamellar"></div>
+            </div>
+            <div class="pstrip-cap">
+              <span class="ps-phase" style="color:var(--phase-Pn3m);">Pn3m</span>
+              <span class="ps-arrow" aria-hidden="true">→</span>
+              <span class="ps-phase" style="color:var(--phase-Lamellar);">Lamellar</span>
+            </div>
+          </div>
+          <span class="cap">md · transition + coexistence gradient · "X → Y" caption</span>
+        </div>
+
+        <!-- md: all unindexed -->
+        <div class="cell" style="min-width:160px;">
+          <div class="pstrip-wrap">
+            <div class="pstrip size-md">
+              <div class="ps-seg" style="background:var(--color-ink-faint);" aria-label="Unindexed" title="Unindexed"></div>
+              <div class="ps-seg" style="background:var(--color-ink-faint);" aria-label="Unindexed" title="Unindexed"></div>
+              <div class="ps-seg" style="background:var(--color-ink-faint);" aria-label="Unindexed" title="Unindexed"></div>
+            </div>
+            <div class="pstrip-cap">
+              <span class="ps-unindexed">No clear phase</span>
+            </div>
+          </div>
+          <span class="cap">md · all null · emptyLabel caption</span>
+        </div>
+      </div>
+
+      <!-- sm sizes -->
+      <div class="row">
+        <div class="cell" style="min-width:200px;">
+          <div class="pstrip-wrap">
+            <div class="pstrip size-sm">
+              <div class="ps-seg" style="background:var(--phase-Im3m);" aria-label="Im3m" title="Im3m"></div>
+              <div class="ps-seg" style="background:var(--phase-Im3m);" aria-label="Im3m" title="Im3m"></div>
+              <div class="ps-seg" style="background:var(--phase-Im3m);" aria-label="Im3m" title="Im3m"></div>
+              <div class="ps-seg" style="background:var(--phase-Im3m);" aria-label="Im3m" title="Im3m"></div>
+            </div>
+            <div class="pstrip-cap">
+              <span class="ps-phase" style="color:var(--phase-Im3m);">Im3m</span>
+              <span class="ps-throughout">throughout</span>
+            </div>
+          </div>
+          <span class="cap">sm (8 px) · single phase</span>
+        </div>
+        <div class="cell" style="min-width:220px;">
+          <div class="pstrip-wrap">
+            <div class="pstrip size-sm">
+              <div class="ps-seg" style="background:var(--phase-Im3m);" aria-label="Im3m" title="Im3m"></div>
+              <div class="ps-seg"
+                   style="background:linear-gradient(100deg, var(--phase-Im3m) 42%, var(--phase-Ia3d) 58%);"
+                   aria-label="Im3m + Ia3d (coexistence)"
+                   title="Im3m + Ia3d (coexistence)"></div>
+              <div class="ps-seg" style="background:var(--phase-Ia3d);" aria-label="Ia3d" title="Ia3d"></div>
+            </div>
+            <div class="pstrip-cap">
+              <span class="ps-phase" style="color:var(--phase-Im3m);">Im3m</span>
+              <span class="ps-arrow" aria-hidden="true">→</span>
+              <span class="ps-phase" style="color:var(--phase-Ia3d);">Ia3d</span>
+            </div>
+          </div>
+          <span class="cap">sm (8 px) · transition + coexistence</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════ Phase 2 — Kicker ════════════════ -->
+  <section class="primitive" id="kicker">
+    <p class="sec-kicker">Phase 2 · Typography</p>
+    <h2>Kicker</h2>
+    <p class="blurb">Tone axis <code>accent | faint</code> (default <code>faint</code>); polymorphic
+       <code>as</code> prop accepts <code>div | span | h2 | h3</code> (default <code>div</code>).
+       Base geometry — 700 weight, uppercase, ~11 px — is applied via the <code>.text-kicker</code>
+       class in styles.css; tone selects colour and per-tone tracking: accent = terracotta +
+       0.13 em; faint = ink-faint + 0.09 em. Section-heading usages should be <code>h2</code>/<code>h3</code>
+       for the a11y tree; inline/metric labels stay <code>div</code>/<code>span</code>.</p>
+    <p class="shows">Catalog must show: <b>both tones; as div, span, h2, h3</b> so the polymorphic
+       rendering is clear.</p>
+    <div class="specimen">
+      <div class="row">
+        <div class="cell">
+          <div class="kck kck-accent">Phase 1 · Data</div>
+          <span class="cap">accent · as div (default)</span>
+        </div>
+        <div class="cell">
+          <div class="kck kck-faint">Confirmed Phase</div>
+          <span class="cap">faint · as div</span>
+        </div>
+      </div>
+      <div class="row">
+        <div class="cell">
+          <span class="kck kck-accent">Himalaya Print System</span>
+          <span class="cap">accent · as span</span>
+        </div>
+        <div class="cell">
+          <span class="kck kck-faint">Score</span>
+          <span class="cap">faint · as span</span>
+        </div>
+      </div>
+      <div class="row">
+        <div class="cell">
+          <h2 class="kck kck-accent" style="margin:0;">Series Overview</h2>
+          <span class="cap">accent · as h2 (section eyebrow)</span>
+        </div>
+        <div class="cell">
+          <h3 class="kck kck-faint" style="margin:0;">Notes</h3>
+          <span class="cap">faint · as h3 (sub-section label)</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════ Phase 2 — ModalShell ════════════════ -->
+  <section class="primitive" id="modal-shell">
+    <p class="sec-kicker">Phase 2 · Overlay</p>
+    <h2>ModalShell</h2>
+    <p class="blurb">A behavioural overlay shell — <b>Esc dismiss, focus-trap, and outside-click are
+       React-only behaviours and are not shown here</b>; this section shows the static frame look.
+       Variant axis <code>dialog | drawer</code>; dialog sizes <code>sm | md | lg</code>; dialog
+       align <code>center | top</code>. Frame is <code>bg-plate + border-hair-strong + rounded-md +
+       shadow-2xl</code> on a semi-transparent <code>bg-scrim</code> backdrop. The drawer variant
+       appears as a right-edge sheet with a lighter scrim and a left hairline border.</p>
+    <p class="shows">Catalog must show: <b>dialog sm / md / lg at center; top-align variant; drawer variant</b>.
+       Note behavioural layer is React-only.</p>
+    <div class="specimen">
+      <!-- dialog / center / sm md lg -->
+      <div class="row" style="align-items:flex-start; flex-wrap:wrap; gap:20px;">
+        <div class="cell">
+          <div class="modal-scrim" style="width:260px; height:160px;">
+            <div class="modal-frame size-sm">
+              <div class="modal-frame-header">Confirm delete<span style="font-family:var(--font-sans);font-size:16px;color:var(--color-ink-faint);">×</span></div>
+              <div class="modal-frame-body">This cannot be undone.</div>
+            </div>
+          </div>
+          <span class="cap">dialog · sm · center</span>
+        </div>
+        <div class="cell">
+          <div class="modal-scrim" style="width:360px; height:200px;">
+            <div class="modal-frame size-md">
+              <div class="modal-frame-header">Edit series<span style="font-family:var(--font-sans);font-size:16px;color:var(--color-ink-faint);">×</span></div>
+              <div class="modal-frame-body">Sample picker and conflict resolution go here.</div>
+            </div>
+          </div>
+          <span class="cap">dialog · md · center</span>
+        </div>
+        <div class="cell">
+          <div class="modal-scrim" style="width:440px; height:220px;">
+            <div class="modal-frame size-lg">
+              <div class="modal-frame-header">Phase explorer<span style="font-family:var(--font-sans);font-size:16px;color:var(--color-ink-faint);">×</span></div>
+              <div class="modal-frame-body">Full-width layout for a data-dense dialog.</div>
+            </div>
+          </div>
+          <span class="cap">dialog · lg · center</span>
+        </div>
+      </div>
+      <!-- dialog / top-align -->
+      <div class="row">
+        <div class="cell">
+          <div class="modal-scrim align-top" style="width:360px; height:200px;">
+            <div class="modal-frame size-md">
+              <div class="modal-frame-header">Navigate<span style="font-family:var(--font-sans);font-size:16px;color:var(--color-ink-faint);">×</span></div>
+              <div class="modal-frame-body">Command palette / nav modal lives at the top of the viewport.</div>
+            </div>
+          </div>
+          <span class="cap">dialog · md · top align (NavModal)</span>
+        </div>
+      </div>
+      <!-- drawer -->
+      <div class="row">
+        <div class="cell">
+          <div class="drawer-scrim" style="width:340px;">
+            <div class="drawer-frame">
+              <div style="font-family:var(--font-serif);font-size:14px;color:var(--color-ink);margin-bottom:8px;">Notes</div>
+              <div>Right-edge sheet — bg-plate + border-l hair-strong + shadow-2xl on a lighter scrim. Width 300 px (max 85 vw).</div>
+            </div>
+          </div>
+          <span class="cap">drawer · right-edge sheet (size prop ignored)</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════ Phase 2 — IconButton ════════════════ -->
+  <section class="primitive" id="icon-button">
+    <p class="sec-kicker">Phase 2 · Action</p>
+    <h2>IconButton</h2>
+    <p class="blurb">Tone axis <code>ghost | accent | danger</code> (default <code>ghost</code>).
+       All tones rest at <code>text-ink-faint</code>; hover reveals the tone colour: ghost → ink,
+       accent → terracotta, danger → error-red. The canonical dismiss glyph (× U+00D7) is rendered
+       via <code>dismiss</code> prop. The visible box stays compact (~28 px); the real component
+       grows its touch target to 44 px via a <code>::before</code> pseudo-element
+       (<code>.icon-button</code> in styles.css) — illustrated here with a dashed 44 px wrapper.</p>
+    <p class="shows">Catalog must show: <b>all 3 tones × {rest, hover, focus-visible, disabled};
+       a dismiss-glyph example; the 44 px hit-area illustration.</b></p>
+    <div class="specimen">
+      <!-- ghost tone -->
+      <div class="row">
+        <div class="cell">
+          <button class="ibtn tone-ghost" aria-label="Close" title="Close">&#x00D7;</button>
+          <span class="cap">ghost · rest</span>
+        </div>
+        <div class="cell">
+          <button class="ibtn tone-ghost is-hover" aria-label="Close" title="Close">&#x00D7;</button>
+          <span class="cap">ghost · hover</span>
+        </div>
+        <div class="cell">
+          <button class="ibtn tone-ghost is-focus" aria-label="Close" title="Close">&#x00D7;</button>
+          <span class="cap">ghost · focus-visible</span>
+        </div>
+        <div class="cell">
+          <button class="ibtn tone-ghost is-disabled" aria-label="Close" title="Close" disabled>&#x00D7;</button>
+          <span class="cap">ghost · disabled</span>
+        </div>
+      </div>
+      <!-- accent tone -->
+      <div class="row">
+        <div class="cell">
+          <button class="ibtn tone-accent" aria-label="Remove tag" title="Remove tag">&#x00D7;</button>
+          <span class="cap">accent · rest</span>
+        </div>
+        <div class="cell">
+          <button class="ibtn tone-accent is-hover" aria-label="Remove tag" title="Remove tag">&#x00D7;</button>
+          <span class="cap">accent · hover</span>
+        </div>
+        <div class="cell">
+          <button class="ibtn tone-accent is-focus" aria-label="Remove tag" title="Remove tag">&#x00D7;</button>
+          <span class="cap">accent · focus-visible</span>
+        </div>
+        <div class="cell">
+          <button class="ibtn tone-accent is-disabled" aria-label="Remove tag" title="Remove tag" disabled>&#x00D7;</button>
+          <span class="cap">accent · disabled</span>
+        </div>
+      </div>
+      <!-- danger tone -->
+      <div class="row">
+        <div class="cell">
+          <button class="ibtn tone-danger" aria-label="Delete" title="Delete">&#x00D7;</button>
+          <span class="cap">danger · rest</span>
+        </div>
+        <div class="cell">
+          <button class="ibtn tone-danger is-hover" aria-label="Delete" title="Delete">&#x00D7;</button>
+          <span class="cap">danger · hover</span>
+        </div>
+        <div class="cell">
+          <button class="ibtn tone-danger is-focus" aria-label="Delete" title="Delete">&#x00D7;</button>
+          <span class="cap">danger · focus-visible</span>
+        </div>
+        <div class="cell">
+          <button class="ibtn tone-danger is-disabled" aria-label="Delete" title="Delete" disabled>&#x00D7;</button>
+          <span class="cap">danger · disabled</span>
+        </div>
+      </div>
+      <!-- dismiss prop + 44px hit area illustration -->
+      <div class="row">
+        <div class="cell">
+          <div class="ibtn-hit-wrapper" title="44px hit area (::before pseudo-element in real component)">
+            <button class="ibtn tone-ghost" aria-label="Dismiss toast" title="Dismiss toast">&#x00D7;</button>
+          </div>
+          <span class="cap">dismiss glyph · 44 px hit-area (dashed = pseudo-element extent)</span>
+        </div>
+        <div class="cell">
+          <div class="ibtn-hit-wrapper" title="44px hit area">
+            <button class="ibtn tone-accent" aria-label="Remove chip" title="Remove chip">&#x00D7;</button>
+          </div>
+          <span class="cap">dismiss · accent · chip-remove</span>
+        </div>
+        <div class="cell">
+          <div class="ibtn-hit-wrapper" title="44px hit area">
+            <button class="ibtn tone-danger is-hover" aria-label="Delete item" title="Delete item">&#x00D7;</button>
+          </div>
+          <span class="cap">dismiss · danger · hover state</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════ Phase 2 — Card ════════════════ -->
+  <section class="primitive" id="card">
+    <p class="sec-kicker">Phase 2 · Surface</p>
+    <h2>Card</h2>
+    <p class="blurb">Two appearance modes: <b>elevated</b> (<code>elevated=true</code>) renders the
+       single "Plate Lift" object — <code>bg-plate + hairline + rounded-md</code> plus the
+       distinctive warm inset highlight and soft drop shadow (the <code>.card</code> CSS class);
+       the default <b>flat</b> mode (<code>elevated=false</code>) renders <code>bg-plate +
+       hairline + rounded-md</code> with no shadow (Flat-Except-the-Plate). The flat variant
+       accepts a <code>border</code> prop (<code>"hair" | "strong"</code>, default <code>"hair"</code>)
+       to distinguish inner vs standalone surfaces. Polymorphic via <code>as</code>
+       (<code>div | button | section | li</code>). <b>Nested cards are never allowed.</b></p>
+    <p class="shows">Catalog must show: <b>elevated vs flat; flat with hair vs strong border;
+       the no-shadow constraint on flat; the nested-card prohibition note.</b></p>
+    <div class="specimen">
+      <div class="row" style="align-items:flex-start; flex-wrap:wrap; gap:20px;">
+        <!-- elevated -->
+        <div class="cell">
+          <div class="card-elevated" style="width:220px;">
+            <div class="card-body">
+              <strong style="color:var(--color-ink);font-size:12px;">Elevated card</strong>
+              <p style="margin:6px 0 0;font-size:11.5px;">Plate Lift shadow — the single lifted object on the surface hierarchy. Used for folio cards and primary panels.</p>
+            </div>
+          </div>
+          <span class="cap">elevated=true · .card (shadow + inset highlight)</span>
+        </div>
+        <!-- flat / hair -->
+        <div class="cell">
+          <div class="card-flat" style="width:220px;">
+            <div class="card-body">
+              <strong style="color:var(--color-ink);font-size:12px;">Flat card (hair border)</strong>
+              <p style="margin:6px 0 0;font-size:11.5px;">No shadow. Hair-weight hairline. Default for inner containers and list tiles.</p>
+            </div>
+          </div>
+          <span class="cap">elevated=false · border="hair" · no shadow</span>
+        </div>
+        <!-- flat / strong -->
+        <div class="cell">
+          <div class="card-flat-strong" style="width:220px;">
+            <div class="card-body">
+              <strong style="color:var(--color-ink);font-size:12px;">Flat card (strong border)</strong>
+              <p style="margin:6px 0 0;font-size:11.5px;">No shadow. Strong hairline for outer/standalone surfaces. Same bg-plate, heavier border.</p>
+            </div>
+          </div>
+          <span class="cap">elevated=false · border="strong" · no shadow</span>
+        </div>
+      </div>
+      <!-- nested prohibition note -->
+      <div class="row" style="margin-top:18px;">
+        <div class="cell" style="max-width:500px;">
+          <div class="card-flat" style="width:100%;padding:1px;">
+            <div class="card-body" style="display:flex;align-items:center;gap:8px;">
+              <span style="color:var(--color-error);font-weight:700;">✕</span>
+              <span style="color:var(--color-ink-soft);font-size:11.5px;">
+                <strong style="color:var(--color-ink);">Nested cards are never allowed.</strong>
+                Place a flat card inside a <code style="font-family:var(--font-mono);">bg-paper-sunk</code>
+                container or use a plain <code style="font-family:var(--font-mono);">bg-plate</code> surface.
+                The shadow on an elevated card inside another card creates a layering contradiction.
+              </span>
+            </div>
+          </div>
+          <span class="cap">prohibition note</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════ Coverage note (all current primitives catalogued) ════════════════ -->
   <div class="foot">
-    <p class="sec-kicker">Appended in later migration waves</p>
-    <ul>
-      <li>Phase 1 — <code>SegmentedControl&lt;T&gt;</code>, <code>PhaseChip</code>, <code>PhaseStrip</code></li>
-      <li>Phase 2 — <code>Kicker</code>, <code>ModalShell</code>, <code>IconButton</code>, <code>Card</code>/<code>Plate</code></li>
-    </ul>
-    <p style="color:var(--color-ink-faint); font-size:11.5px; font-style:italic; margin-top:10px;">
-      Each primitive's section is added in the same wave that extracts it; this list is the running
-      backlog of sections not yet authored.</p>
+    <p class="sec-kicker">All current primitives catalogued</p>
+    <p style="color:var(--color-ink-soft); margin: 0 0 6px;">
+      This catalog now covers all extracted Print primitives:
+      Button, ScoreBar, Dot, Toast (Phase 0);
+      SegmentedControl, PhaseChip, PhaseStrip (Phase 1);
+      Kicker, ModalShell, IconButton, Card (Phase 2).
+    </p>
+    <p style="color:var(--color-ink-faint); font-size:11.5px; font-style:italic; margin: 0;">
+      <code>HintText</code> is a trivial single-class text helper
+      (<code>text-ink-faint italic p</code> — no variant axis, no visual spec). No specimen section
+      was added for it; a note in the head comment records this decision.
+      New primitives should be added here in the migration wave that extracts them.
+    </p>
   </div>
 
 </div>
