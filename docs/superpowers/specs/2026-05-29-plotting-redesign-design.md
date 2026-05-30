@@ -1,8 +1,10 @@
 # Plotting redesign — design spec
 
-> **Status:** brainstormed 2026-05-29, first-principles pass. Captures the converged *concept* for HimalayaUI's plotting surfaces (Focus single-pattern + Series cross-sample). Visual craft (high-fidelity rendering) and the implementation plan are downstream of this doc, not in it.
+> **Status:** brainstormed 2026-05-29 (first-principles concept); **high-fidelity visual pass complete + user-approved 2026-05-30**. The concept below is now realised as two interactive high-fidelity mockups; §8 records what the visual pass built, the decisions it settled, and the handful of points where the *built* design deviates from the original concept (encoding atoms especially — read §8 before §5.1). The implementation plan is the next step, downstream of this doc.
 >
-> **Companions:** `PRODUCT.md` (strategic), `DESIGN.md` ("The Print" visual system), `docs/2026-05-29-frontend-audit-impeccable.md` (the audit that scoped this as program item #2), `docs/redesign-notes.md` (the redesign history this extends).
+> **Mockups (the visual contract for implementation):** `docs/redesign-mockups/2026-05-29-focus-plot.html`, `docs/redesign-mockups/2026-05-29-series-plot.html` — real Print tokens/fonts, analytic SAXS traces, real lattice math; every interaction in §8 is live in them.
+>
+> **Companions:** `PRODUCT.md` (strategic), `DESIGN.md` ("The Print" visual system), `docs/2026-05-29-frontend-audit-impeccable.md` (the audit that scoped this as program item #2), `docs/redesign-mockups/2026-05-30-plotting-mockup-audit.md` (the impeccable audit of the mockups → the implementation a11y/responsive checklist), `docs/redesign-notes.md` (the redesign history this extends).
 
 ## 1. Why this pass
 
@@ -71,21 +73,22 @@ This turns the audit's "two source-of-truth for a mark" liability into a **featu
 These underlie both surfaces and resolve the audit's Themes B (encoding) and C (grammar) + the architecture finding.
 
 ### 5.1 Encoding: colour = phase, everything else gets a non-colour channel
-The product's hard colour-blind rule, applied where colour is densest:
+The product's hard colour-blind rule, applied where colour is densest. **The visual pass refined three of these atoms — the list below is the settled, as-built form; see §8.1 for the rationale on each change:**
 - **Colour = phase identity, only.** Never provenance, never state.
-- **Silhouette = provenance:** auto peak = filled triangle; manual peak = a distinct glyph (e.g. diamond). Retires magenta-for-manual (frees colour for phase).
+- **Silhouette = provenance:** auto peak = filled **downward** triangle (a marker pointing *at* the peak, not a "mountain" sitting on it — settled in the visual pass); manual peak = a diamond.
 - **Fill vs outline = real vs in-flight** (optimistic peak = outline-only; already the precedent).
-- **Struck glyph = excluded** (hollow + terracotta strike — the grease-pencil negation), replacing today's invisible "faint gray".
-- **Separate mark = predicted-but-unobserved** reflection (a caret/tick, never a triangle).
-- Transient interaction state (q-link hot, candidate preview, dim) rides **halo + opacity**, never silhouette.
+- **Excluded = ghosted** (hollow outline + reduced opacity, no label). **The "terracotta strike" from the original concept was cut** — it read as redundant and was hard to see; a hollow faint glyph distinguishes excluded from unindexed-but-real (filled gray) without the strike.
+- **Separate mark = predicted-but-unobserved** reflection: a **hollow caret** in the Focus combs, a **hollow ghost ring at the predicted q** in the Series migration track (§4 / §8.2). Same atom, both surfaces; never a triangle.
+- Transient interaction state (q-link hot, candidate preview, dim) rides **halo / size-grow + opacity**, never silhouette. *Note:* the q-link "hot" state **grows the mark and adds a terracotta ring rather than recolouring it terracotta** — terracotta (hue 38) sits too close to Pn3m amber (58) for a hue-only highlight to read; size + ring is hue-independent.
+- **Open nuance — magenta for unindexed manual peaks.** The original concept retired `peak-manual` magenta entirely (silhouette carries provenance). The built mockup keeps magenta for an *unindexed manual* peak only (a hand-added peak with no phase yet); once indexed it takes the phase colour. Decide during implementation: keep magenta as the "added, not yet indexed" tint, or use a neutral diamond and let silhouette alone carry it. Recommend: keep it — it's a useful "you added this, it's not explained yet" signal and never competes with a phase colour (only appears when there is no phase).
 - Series peaks use the same atoms but **lightly** (anchors), per §4.
 
 ### 5.2 One mark-builder, one plot core
 - **`peakMark()`** — a single builder consumed by Focus on-screen, Series on-screen, **and both export paths**. Collapses today's five drifted definitions (triangle direction, offset px) into one. The *only* allowed divergence is the deliberate Print-vs-scientific style split at the export boundary (§4.2).
 - **`<PlotSurface>` primitive** — owns the Observable Plot instance, shared log/linear x-scale, gestures (wheel-zoom / brush / dblclick), invert/apply, and a **rAF-batched resize** (kills the per-frame setState replot in TraceViewer / MillerPlot / MultiTracePlot). Exposes `marks` / `overlay(scales)` / `hitTest()`. Both plot cores consume it — retires ~400 duplicated LOC.
 
-### 5.3 Interaction grammar (still open — defer to the visual/build pass)
-The audit's grammar problems (overloaded single-click, theatre "+ Peak", two conflicting resets) remain to resolve. The earlier brief offered "select-then-act" vs "fix-the-lies"; this was **not** settled in the first-principles pass and should be decided during the high-fidelity build, where the real cursors/affordances can be felt. Recorded as an open decision, not a closed one.
+### 5.3 Interaction grammar — settled: select-then-act
+**Settled in the visual pass (2026-05-30).** The mockups use **select-then-act** throughout and it was approved: clicking a candidate adds it to the assignment; clicking a peak/ring/comb-tooth selects that reflection (q-link); hovering previews without committing (candidate → plot preview; anchor → migration track); the explicit `remove` ×, `+ Peak` arm-toggle, and `+ custom index` are distinct, labelled affordances rather than overloaded clicks. "fix-the-lies" is not pursued. The audit's specific grammar defects (overloaded single-click, theatre "+ Peak", two conflicting resets) are resolved by giving each action its own affordance; the implementation must preserve that one-action-one-affordance discipline rather than re-collapsing them.
 
 ### 5.4 Preserve (audit's preserve-list)
 `phases.ts` / `coloring.ts` palette engineering (AA-pinned, single source), the serif/sans/mono voice discipline, `formatAxis`, the PlotCard auto-fit heuristic, the **q-link triple** (the best-composed thing in the app — *enrich* it with phase-colour rings, don't regress it), and the modal focus-trap.
@@ -99,7 +102,38 @@ The audit's grammar problems (overloaded single-click, theatre "+ Peak", two con
 
 ## 7. Open items / next
 
-1. **High-fidelity visual pass** — the immediate next step. Render both surfaces in real Print tokens/fonts/trace quality (impeccable's high-fidelity presenter), judge and tune *craft* (the schematic brainstorm medium can't). This spec is the brief for it.
-2. **Interaction grammar** (§5.3) — decide select-then-act vs fix-the-lies during that pass.
-3. **Export default** — pin the one sensible default (line weight, colour mode, label density) during the visual pass; ship Copy/Save only.
-4. **Implementation plan** — after visuals settle, via the writing-plans flow: `PlotSurface` + `peakMark()` first (the spine), then Focus (assignment/cart, combs, Bonnet, phase-colour rings), then Series (waterfall thinking-view + decoupled export), with the live functional traversal as the acceptance gate.
+1. ~~**High-fidelity visual pass**~~ — **done + approved 2026-05-30.** Both surfaces rendered in real Print tokens/fonts/trace quality; craft judged and tuned over several review rounds. Outcomes in §8.
+2. ~~**Interaction grammar**~~ — **settled: select-then-act** (§5.3).
+3. ~~**Export default**~~ — **pinned** (§8.2): clean scientific idiom (white ground, 2px bold traces, Arial axis labels `q (Å⁻¹)` / `Intensity (a.u.) + offset`, title, provenance footnote), same samples/order/offset as the view; Copy PNG / Save SVG, no tuning UI.
+4. **Implementation plan** — **the immediate next step**, via the writing-plans flow. Build order: `PlotSurface` + `peakMark()` first (the spine), then Focus (assignment cart, ranked candidates + Bonnet, combs + indexing-space residual, hypothetical preview, custom-index builder, phase-colour detector rings), then Series (waterfall thinking-view + phase-strip + migration tracking + decoupled export). The live functional traversal is the acceptance gate. Fold in the mockup audit (`docs/redesign-mockups/2026-05-30-plotting-mockup-audit.md`) as the a11y/responsive checklist: button semantics for the clickable rows, keyboard paths for the q-link / migration track, responsive breakpoints + 44px touch targets, landmark structure, `text-ink-faint` contrast check, em-dash copy sweep.
+
+## 8. Visual-pass outcomes (2026-05-30)
+
+What the high-fidelity pass built and settled. The two mockup files are the visual contract; this section is the prose index to them. Items marked **(new)** were not in the §1–§6 concept and emerged during the pass.
+
+### 8.1 Focus — as built
+- **Trace hero** with the §5.1 atoms live: down-triangle auto peaks, magenta diamond manual, ghosted (hollow/faint) excluded peak, `?`-labelled unindexed leftovers. q-line drops from the hovered mark; q-link "hot" grows the mark + adds a terracotta ring (not a recolour).
+- **Assignment cart** (right rail): 0..N phase blocks, each with phase name (serif, phase-coloured), score, lattice meta, score bar, and a clean **× remove** in the block header. `+ custom index…` footer reads as a button (hover fill). Contextual note below the cart — appears **only when substantive** (the Bonnet suggestion when Pn3m is in and peaks are unexplained; the Bonnet consistency check `ratio ≈ 1.279` when Pn3m+Im3m coexist); no filler line otherwise.
+- **Ranked candidates** with the `⭙ Bonnet` flag + score bump on the coexisting cubic whose lattice matches the Gauss–Bonnet ratio.
+- **Combs panel** replacing the table: per-phase teeth on a shared log-q ruler, full-height gridlines tying teeth to observed peaks, hollow-caret for predicted-but-absent, a **leftover row** of unexplained observed peaks. Toggles to the **indexing-space residual** (lollipop) view where deviating peaks bend off the Δq/q = 0 line.
+- **Detector** first-class, rings in phase colour (two concentric ring sets under coexistence), q-linked.
+
+### 8.2 Focus — new interactions (new)
+- **Hypothetical-assignment preview.** Hovering a candidate previews what adding it would do — rendered **on the plot only** (a dashed ghost comb row + trace highlight), deliberately **not** in the cart (cart mutation on hover caused reflow/jank). The ghost row honestly shows a weak candidate explaining few/zero peaks (all-caret row), which is the disambiguation value.
+- **Custom-index builder.** `+ custom index…` opens a modal: symmetry segmented control (Pn3m/Im3m/Ia3d/Lamellar/Hexagonal), a lattice slider + numeric input, and a **live preview comb** with a running **"lands on N of M observed peaks"** fit. Reflections from real physics (`2π√N/a` cubic, `2πn/d` lamellar, `4π√M/(√3·a)` hex). **Snap-to-peaks:** dragging magnetically pulls the lattice to values where a predicted order lands exactly on an observed peak (≈2.6 Å zone, "snapped" indicator), and clicking an observed peak snaps the first reflection onto it; free positioning between snaps. **Add** commits it as a first-class candidate (with swap). *Implementation note:* the snap threshold and density are a one-line tune; revisit if it feels too aggressive on real data.
+
+### 8.3 Series — as built
+- **Waterfall hero** ordered by the variable; **heatmap** as a secondary toggle. Per-sample traces from real phase models with drifting lattices, so peaks genuinely migrate.
+- **Light anchors as interaction handles (new behaviour).** Anchors are plate-ringed beads (detectable but light). Hovering one **tracks that reflection (phase + order index) across the whole stack**, threading a terracotta connector through every trace it appears in — the migration the waterfall exists to show. A **missing peak** (phase present, that order not observed) renders a **hollow ghost ring at the predicted q** on the baseline and the connector routes through it (same predicted-but-absent atom as the combs); where the phase is *absent entirely*, the track simply ends. Keying on phase+order (not nearest-q) is what makes "absent" drawable.
+- **Phase-strip companion** (one cell per sample, coexistence = two-phase gradient, form-factor = hollow dashed cell).
+- **"Phases present" reading — derived, not narrated.** Computed from per-sample phase calls: each phase's variable span + lattice trend (`a 205 → 195 Å`), plus `coexistence at …` / `form factor only at …` lines. Generalises to any series; no hand-written "X → Y" story.
+- **Member rows** enriched with lattice (`a`/`d`, both under coexistence) + first-peak `q₁`; phase names coloured by phase so coexistence rows self-decode.
+- **Form-factor-only members** handled end-to-end: neutral broad-shouldered trace, no anchors, hollow strip cell, "no Bragg peaks · q₁ —" row.
+- **Decoupled export** (§4.2): one-click modal rendering the same samples/order/offset in the clean scientific idiom (white, 2px traces, Arial axes/title/footnote); Copy PNG / Save SVG; no tuning.
+
+### 8.4 Deviations from the §1–§6 concept (reconciled)
+1. Excluded peak: **ghosted, not struck** (§5.1).
+2. Auto peak silhouette: **downward** triangle (§5.1).
+3. q-link hot: **grow + ring**, not terracotta recolour (§5.1) — hue-proximity to Pn3m amber.
+4. Hypothetical preview: **plot-only**, never the cart (§8.2) — anti-reflow.
+5. `peak-manual` magenta **retained** for unindexed-manual peaks (the concept retired it) — open nuance in §5.1, recommend keep.
