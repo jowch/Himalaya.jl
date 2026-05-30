@@ -480,12 +480,6 @@ export interface MemberSnapshotPhase {
   lattice_d: number | null;
 }
 
-/** Durable 3-state assignment (Plan A B2). `confirmed_index` is null for BOTH
- *  `form_factor` and `null`, so the Series surface needs this explicit STATE to
- *  tell the two apart (form factor → a real broad-shouldered trace, no anchors;
- *  null → featureless). */
-export type AssignmentState = "indexed" | "form_factor" | "null";
-
 export interface MemberSnapshot {
   effective_peaks: MemberSnapshotPeak[];
   confirmed_index: MemberSnapshotConfirmedIndex | null;

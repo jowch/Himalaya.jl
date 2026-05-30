@@ -43,15 +43,21 @@ export function segmentsFromMembers(members: SeriesMember[]): PhaseSegment[] {
 
 export interface SeriesPhaseStripProps {
   members: SeriesMember[];
+  /** Strip orientation (E-5). The waterfall companion is "vertical" (one cell
+   *  per stacked trace); the default "horizontal" suits an inline bar. */
+  orientation?: "horizontal" | "vertical";
   /** PLACEMENT ONLY. */
   className?: string;
 }
 
-export function SeriesPhaseStrip({ members, className }: SeriesPhaseStripProps): JSX.Element {
+export function SeriesPhaseStrip(
+  { members, orientation = "horizontal", className }: SeriesPhaseStripProps,
+): JSX.Element {
   const segments = segmentsFromMembers(members);
   return (
     <PhaseStrip
       segments={segments}
+      orientation={orientation}
       emptyLabel="No phase calls yet"
       {...(className !== undefined ? { className } : {})}
     />

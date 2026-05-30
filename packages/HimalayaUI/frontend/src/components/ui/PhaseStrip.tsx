@@ -37,6 +37,10 @@ export interface PhaseStripProps {
   size?: PhaseStripSize;
   /** Caption when no segment is indexed. Default "No clear phase". */
   emptyLabel?: string;
+  /** Orientation (Plan E E-5). `"horizontal"` (default) lays cells left→right
+   *  with the caption beneath (folio bar); `"vertical"` stacks cells top→bottom
+   *  (the Series waterfall companion) and drops the caption. */
+  orientation?: "horizontal" | "vertical";
   /** PLACEMENT ONLY: margin / width / grid position. No appearance utilities. */
   className?: string;
 }
@@ -72,8 +76,10 @@ export function PhaseStrip({
   segments,
   size = "md",
   emptyLabel = "No clear phase",
+  orientation = "horizontal",
   className = "",
 }: PhaseStripProps): JSX.Element {
+  const vertical = orientation === "vertical";
   const indexed = segments
     .map((s) => s.phase)
     .filter((p): p is string => p !== null);
@@ -82,8 +88,8 @@ export function PhaseStrip({
   const distinct = new Set(indexed);
 
   return (
-    <div className={className} data-size={size}>
-      <div className={cx("flex", sizeClass[size])}>
+    <div className={cx(vertical && "h-full", className)} data-size={size} data-orientation={orientation}>
+      <div className={cx("flex", vertical ? "h-full w-2 flex-col gap-[2px]" : sizeClass[size])}>
         {segments.map((seg, i) => {
           // Form-factor → hollow dashed cell; null → a faint distinct cell.
           if (seg.state === "form_factor") {
@@ -122,6 +128,7 @@ export function PhaseStrip({
           );
         })}
       </div>
+      {!vertical && (
       <div
         data-testid="ps-cap"
         className="mt-1.5 flex items-center gap-1.5 text-base text-ink-soft"
@@ -149,6 +156,7 @@ export function PhaseStrip({
           </>
         )}
       </div>
+      )}
     </div>
   );
 }

@@ -12,6 +12,10 @@ import { AnnotationToggles } from "../components/AnnotationToggles";
 import { ActiveBandProvider } from "../components/ActiveBandContext";
 import { FigureExportControls } from "../components/FigureExportControls";
 import { SeriesBuilderRail } from "../components/SeriesBuilderRail";
+import { SeriesReadingPanel } from "../components/SeriesReadingPanel";
+import { SeriesMemberRow } from "../components/SeriesMemberRow";
+import { SeriesPhaseStrip } from "../components/SeriesPhaseStrip";
+import { seriesReading } from "../lib/series/seriesReading";
 import { SeriesRecipeEditor } from "../components/SeriesRecipeEditor";
 import { OffsetDock } from "../components/OffsetDock";
 import { Card, HintText, Kicker } from "../components/ui";
@@ -181,6 +185,25 @@ function SeriesBuilderBody(
     [members, exposures, samples],
   );
 
+  // E-9: the per-member ordering-variable label. The series stores only the
+  // variable NAME (`ordering_variable`); the per-member VALUE isn't carried in
+  // the snapshot, so we use the resolved display label (sample name) as the
+  // member's position label — the same handle the member rows + reading show.
+  const variableLabelOf = useCallback(
+    (m: SeriesMember): string =>
+      displayLabelByMemberId.get(m.id)
+      ?? m.label_override
+      ?? (m.exposure_id !== null ? `Exposure #${m.exposure_id}` : `Member ${m.id}`),
+    [displayLabelByMemberId],
+  );
+
+  // E-4/E-9: the derived "phases present" reading + per-member rows, computed
+  // from the member snapshots (no extra fetch — bounded by member count).
+  const reading = useMemo(
+    () => seriesReading(members, variableLabelOf),
+    [members, variableLabelOf],
+  );
+
   // Local UI state for the rail: collapse (full-bleed) + representation
   // (waterfall + heatmap, both live in the shared render core, #208).
   const [collapsed, setCollapsed] = useState(false);
@@ -228,6 +251,7 @@ function SeriesBuilderBody(
     displayLabelByMemberId,
     representation,
     showCrossTraceTracking: trackOn,
+    preset: "clean",
   }), [
     members, traces, s.title, xDomain, showPeakTicks, showPeakLabels,
     groupingMode, sampleIdFor, displayLabelByMemberId,
@@ -391,6 +415,11 @@ function SeriesBuilderBody(
                         showCrossTraceTracking={trackOn}
                       />
                     </div>
+                    <div className="flex w-3 shrink-0 flex-col justify-stretch" data-testid="series-phase-strip-col">
+                      {/* Phase-strip companion (E-5) — one cell per sample in
+                          variable order, alongside the waterfall. */}
+                      <SeriesPhaseStrip members={members} orientation="vertical" className="h-full" />
+                    </div>
                     <div className="w-[280px] shrink-0" data-testid="series-builder-gutter">
                       <MemberMetaGutter
                         members={members}
@@ -446,7 +475,22 @@ function SeriesBuilderBody(
           }
           {...(editing
             ? { editControls: <SeriesRecipeEditor seriesId={s.id} members={members} /> }
-            : {})}
+            : members.length > 0
+              ? {
+                  readingPanel: <SeriesReadingPanel reading={reading} />,
+                  memberRows: (
+                    <>
+                      {members.map((m) => (
+                        <SeriesMemberRow
+                          key={m.id}
+                          member={m}
+                          variableLabel={variableLabelOf(m)}
+                        />
+                      ))}
+                    </>
+                  ),
+                }
+              : {})}
         />
         <OffsetDock
           show={collapsed && representation === "waterfall"}
