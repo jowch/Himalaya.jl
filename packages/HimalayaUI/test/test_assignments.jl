@@ -270,3 +270,100 @@ end
         @test b2 !== nothing && b2[:consistent] == false
     end
 end
+
+# ── Plan D Task D-1: native assignment member routes ─────────────────────────
+# POST/DELETE /api/exposures/{id}/assignment/members emit assignment_add /
+# assignment_remove with a DISTINCT post_state ({assignment:{state,members}},
+# no top-level `indices` key). These are the assignment-native targets that
+# replace the legacy /groups dual-write. The legacy /groups routes remain live
+# (retired separately in D-10).
+if isdefined(@__MODULE__, :with_test_server)
+    @testset "POST /assignment/members adds a member (native route)" begin
+        mktempdir() do dir
+            db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+            exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+            s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
+            e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
+            DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (10, ?, 'Pn3m', 0.1)", [e_id])
+            DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (11, ?, 'Im3m', 0.1)", [e_id])
+
+            with_test_server(db) do port, base
+                # Missing field -> 400.
+                r = HTTP.post("$base/api/exposures/$e_id/assignment/members",
+                    ["Content-Type" => "application/json"],
+                    JSON3.write(Dict(:nope => 1)); status_exception=false)
+                @test r.status == 400
+
+                # Valid add -> 200, body is the canonical assignment shape.
+                r = HTTP.post("$base/api/exposures/$e_id/assignment/members",
+                    ["Content-Type" => "application/json", "X-Username" => "alice"],
+                    JSON3.write(Dict(:index_id => 10)))
+                @test r.status == 200
+                got = JSON3.read(String(r.body))
+                @test got.exposure_id == e_id
+                @test got.state == "indexed"
+                @test collect(got.members) == [10]
+                @test haskey(got, :event_id)
+                @test HimalayaUI._assignment_body(db, e_id)[:members] == [10]
+
+                # Idempotent re-add of the same member is a no-op on membership.
+                r = HTTP.post("$base/api/exposures/$e_id/assignment/members",
+                    ["Content-Type" => "application/json", "X-Username" => "alice"],
+                    JSON3.write(Dict(:index_id => 11)))
+                @test r.status == 200
+                @test HimalayaUI._assignment_body(db, e_id)[:members] == [10, 11]
+            end
+        end
+    end
+
+    @testset "DELETE /assignment/members/{index_id} removes a member (native route)" begin
+        mktempdir() do dir
+            db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+            exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+            s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
+            e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
+            DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (10, ?, 'Pn3m', 0.1)", [e_id])
+            DBInterface.execute(db, "INSERT INTO assignments (exposure_id, state) VALUES (?, 'indexed')", [e_id])
+            DBInterface.execute(db, "INSERT INTO assignment_members (exposure_id, index_id) VALUES (?, 10)", [e_id])
+
+            with_test_server(db) do port, base
+                r = HTTP.delete("$base/api/exposures/$e_id/assignment/members/10",
+                    ["X-Username" => "alice"])
+                @test r.status == 200
+                got = JSON3.read(String(r.body))
+                @test collect(got.members) == Int[]
+                @test isempty(HimalayaUI._assignment_body(db, e_id)[:members])
+
+                # Removing an absent member is a benign no-op (200, empty).
+                r = HTTP.delete("$base/api/exposures/$e_id/assignment/members/10",
+                    ["X-Username" => "alice"])
+                @test r.status == 200
+            end
+        end
+    end
+
+    @testset "native member routes carry distinct {assignment} post_state" begin
+        # Layer-1/2 contract: the SSE frame these routes enqueue carries
+        # post_state = {assignment:{state,members}} with NO top-level `indices`
+        # key, so the frontend's CurationPostState/applyPostStateOnly guard bails.
+        mktempdir() do dir
+            db  = HimalayaUI.open_db(joinpath(dir, "h.db"))
+            req = HTTP.Request("POST", "/x",
+                ["X-Username" => "alice", "X-Client-Op-Id" => "op-d1-1"], UInt8[])
+            exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+            s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
+            e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
+            DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (10, ?, 'Pn3m', 0.1)", [e_id])
+
+            HimalayaUI.apply_event!(db, req; kind="assignment_add",
+                entity_type="exposure", entity_id=e_id, payload=Dict(:index_id => 10))
+            b = HimalayaUI._assignment_body(db, e_id)
+            post_state = Dict(:assignment => Dict(:state => b[:state], :members => b[:members]))
+            round = JSON3.read(JSON3.write(post_state))
+            @test haskey(round, :assignment)
+            @test !haskey(round, :indices)
+            @test round.assignment.state == "indexed"
+            @test collect(round.assignment.members) == [10]
+        end
+    end
+end

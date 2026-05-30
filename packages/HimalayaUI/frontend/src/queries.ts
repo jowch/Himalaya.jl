@@ -61,6 +61,8 @@ export const queryKeys = {
     ["exposure", exposureId ?? "none", "indices"] as const,
   groups:     (exposureId: number | undefined) =>
     ["exposure", exposureId ?? "none", "groups"] as const,
+  assignment: (exposureId: number | undefined) =>
+    ["exposure", exposureId ?? "none", "assignment"] as const,
   messages:   (sampleId: number | undefined) =>
     ["sample", sampleId ?? "none", "messages"] as const,
   speculativeSnap: (
@@ -451,6 +453,17 @@ export function useGroups(exposureId: number | undefined) {
   return useQuery({
     queryKey: queryKeys.groups(exposureId),
     queryFn: () => api.listGroups(exposureId as number),
+    enabled: exposureId !== undefined,
+  });
+}
+
+// Plan D: the assignment cart data layer. Replaces useGroups as the source of
+// the active phase set; deriveActiveIndices(assignment, indices) supersedes the
+// legacy groups.find(g => g.active) read.
+export function useAssignment(exposureId: number | undefined) {
+  return useQuery({
+    queryKey: queryKeys.assignment(exposureId),
+    queryFn: () => api.getAssignment(exposureId as number),
     enabled: exposureId !== undefined,
   });
 }

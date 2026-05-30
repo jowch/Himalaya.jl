@@ -359,6 +359,47 @@ export const addIndexToGroup = (group_id: number, index_id: number, opts?: AuthO
 export const removeIndexFromGroup = (group_id: number, index_id: number, opts?: AuthOpts) =>
   request<GroupMutationResponse>("DELETE", `/api/groups/${group_id}/members/${index_id}`, undefined, opts);
 
+// Assignment (Plan D) — the durable per-exposure 3-state phase assignment cart.
+// `state` is explicit, never inferred from members.length: an `indexed`
+// assignment with 0 members is a "call in progress"; `form_factor`/`null`
+// always carry 0 members. Replaces the legacy single-active GroupEntry model.
+export type AssignmentState = "indexed" | "form_factor" | "null";
+
+export interface Assignment {
+  exposure_id: number;
+  state: AssignmentState;
+  members: number[]; // index ids, ascending
+}
+
+/**
+ * Assignment mutation responses carry queue-framework metadata (event_id,
+ * view_row_id) alongside the canonical Assignment body — the mutator's
+ * onSuccess strips these before writing the row into the cache (mirrors
+ * GroupMutationResponse).
+ */
+export type AssignmentMutationResponse = Assignment & {
+  event_id: number;
+  view_row_id: number | null;
+};
+
+export const getAssignment = (exposure_id: number) =>
+  request<Assignment>("GET", `/api/exposures/${exposure_id}/assignment`);
+
+export const setAssignmentState = (
+  exposure_id: number, state: AssignmentState, opts?: AuthOpts,
+) => request<AssignmentMutationResponse>(
+  "POST", `/api/exposures/${exposure_id}/assignment/state`, { state }, opts);
+
+export const addAssignmentPhase = (
+  exposure_id: number, index_id: number, opts?: AuthOpts,
+) => request<AssignmentMutationResponse>(
+  "POST", `/api/exposures/${exposure_id}/assignment/members`, { index_id }, opts);
+
+export const removeAssignmentPhase = (
+  exposure_id: number, index_id: number, opts?: AuthOpts,
+) => request<AssignmentMutationResponse>(
+  "DELETE", `/api/exposures/${exposure_id}/assignment/members/${index_id}`, undefined, opts);
+
 // Sample messages (chat log)
 export interface SampleMessage {
   id: number;

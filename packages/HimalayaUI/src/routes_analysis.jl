@@ -244,6 +244,62 @@ function register_analysis_routes!()
         end
     end
 
+    # ── Plan D Task D-1: assignment-native member routes ────────────────────
+    # POST/DELETE /api/exposures/{id}/assignment/members are the assignment-
+    # native targets that the Plan D frontend calls directly (the legacy
+    # /groups/{id}/members dual-write stays live until D-10). They mirror the
+    # /assignment/state route shape: with_idempotency + apply_event!(InTransaction())
+    # + _assignment_body response, and carry the DISTINCT post_state
+    # {assignment:{state,members}} (NO top-level `indices` key) so the
+    # frontend's applyPostStateOnly/CurationPostState guard bails harmlessly.
+    @post "/api/exposures/{id}/assignment/members" function(req::HTTP.Request, id::Int)
+        db   = current_db()
+        body = json(req)
+        if !haskey(body, :index_id)
+            return HTTP.Response(400, ["Content-Type" => "application/json"],
+                JSON3.write(Dict(:error => "missing field: index_id")))
+        end
+        local index_id::Int
+        try
+            index_id = Int(body.index_id)
+        catch
+            return HTTP.Response(400, ["Content-Type" => "application/json"],
+                JSON3.write(Dict(:error => "index_id must be an integer")))
+        end
+        return with_idempotency(db, req) do
+            result = apply_event!(InTransaction(), db, req;
+                kind        = "assignment_add",
+                entity_type = "exposure",
+                entity_id   = id,
+                payload     = Dict(:index_id => index_id))
+            b = _assignment_body(db, id)
+            _enqueue_broadcast_from_result!(result, "assignment_add", "exposure", id;
+                post_state = Dict(:assignment =>
+                    Dict(:state => b[:state], :members => b[:members])))
+            b[:event_id]    = result.event_id
+            b[:view_row_id] = result.view_row_id
+            HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(b))
+        end
+    end
+
+    @delete "/api/exposures/{id}/assignment/members/{index_id}" function(req::HTTP.Request, id::Int, index_id::Int)
+        db = current_db()
+        return with_idempotency(db, req) do
+            result = apply_event!(InTransaction(), db, req;
+                kind        = "assignment_remove",
+                entity_type = "exposure",
+                entity_id   = id,
+                payload     = Dict(:index_id => index_id))
+            b = _assignment_body(db, id)
+            _enqueue_broadcast_from_result!(result, "assignment_remove", "exposure", id;
+                post_state = Dict(:assignment =>
+                    Dict(:state => b[:state], :members => b[:members])))
+            b[:event_id]    = result.event_id
+            b[:view_row_id] = result.view_row_id
+            HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(b))
+        end
+    end
+
     @post "/api/groups/{id}/members" function(req::HTTP.Request, id::Int)
         db = current_db()
         body = json(req)
