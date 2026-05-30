@@ -265,6 +265,14 @@ export interface IndexPeakRef {
   q_observed: number;
 }
 
+/** Gauss–Bonnet coexistence flag for an index candidate vs the current
+ *  assignment. Display-and-ranking only — never folded into `score` (which
+ *  stays coverage×consistency). Recomputed per request, never persisted. */
+export interface BonnetFlag {
+  predicted_a: number;
+  consistent: boolean;
+}
+
 export interface IndexEntry {
   id: number;
   exposure_id: number;
@@ -279,6 +287,9 @@ export interface IndexEntry {
   inputs_hash: string | null;
   peaks: IndexPeakRef[];
   predicted_q: number[];
+  /** Bonnet coexistence flag vs the assignment (null when N/A). Rendered as
+   *  the ⭙ Bonnet badge in Plan D. */
+  bonnet?: BonnetFlag | null;
 }
 
 export const listIndices = (exposure_id: number) =>
