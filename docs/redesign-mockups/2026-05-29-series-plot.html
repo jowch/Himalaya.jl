@@ -131,7 +131,7 @@
   svg .wf-row.dim .wf-anchor { opacity: 0.2; }
   svg .wf-row.dim .wf-label { opacity: 0.3; }
   svg .wf-row.hot .wf-trace { stroke-width: 2.4; }
-  svg .wf-row.hot .wf-anchor { r: 3.4; }
+  svg .wf-row.hot .wf-anchor { r: 4; }
   svg .ps-cell { cursor: pointer; }
   svg .ps-cap { font-size: 10px; fill: var(--ink-faint); }
 
@@ -160,18 +160,28 @@
     border-radius: var(--radius); cursor: pointer; }
   .member:hover { background: var(--plate); }
   .member.hot { background: var(--plate); box-shadow: inset 0 0 0 1px var(--hair); }
-  .m-swatch { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
-  .m-name { flex: 1; font-size: 12px; font-weight: 600; color: var(--ink); }
-  .m-var { font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: var(--ink-faint); }
+  .m-swatch { width: 11px; height: 11px; border-radius: 50%; flex-shrink: 0; }
+  .m-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .m-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .m-name { font-size: 12px; font-weight: 600; color: var(--ink); }
+  .m-var { font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: var(--ink-soft); }
+  .m-data { font-family: ui-monospace, Menlo, monospace; font-size: 10px; color: var(--ink-faint); }
 
-  .transition {
+  /* phases-present reading — programmatically derived */
+  .reading {
     background: var(--plate); border: 1px solid var(--hair); border-radius: var(--radius);
-    padding: 13px 15px;
+    padding: 11px 13px; display: flex; flex-direction: column; gap: 9px;
   }
-  .transition .t-line { font-family: "Newsreader", Georgia, serif; font-size: 16px;
-    font-weight: 500; color: var(--ink); }
-  .transition .t-line .ph1 { color: var(--pn3m); } .transition .t-line .ph2 { color: var(--lam); }
-  .transition .t-sub { margin-top: 4px; font-size: 11px; color: var(--ink-soft);
+  .rd-row { display: flex; flex-direction: column; gap: 2px; }
+  .rd-top { display: flex; align-items: center; gap: 7px; }
+  .rd-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+  .rd-name { font-size: 12px; font-weight: 700; }
+  .rd-span { margin-left: auto; font-family: ui-monospace, Menlo, monospace;
+    font-size: 10.5px; color: var(--ink-soft); }
+  .rd-lat { margin-left: 16px; font-family: ui-monospace, Menlo, monospace;
+    font-size: 10.5px; color: var(--ink-faint); }
+  .rd-coex { font-size: 10.5px; color: var(--ink-soft); margin-top: 2px;
+    padding-top: 8px; border-top: 1px solid var(--hair);
     font-family: ui-monospace, Menlo, monospace; }
 
   .export-btn {
@@ -288,11 +298,10 @@
       </div>
 
       <div class="rail-sec">
-        <div class="rail-h">Reading</div>
-        <div class="transition">
-          <div class="t-line"><span class="ph1">Pn3m</span> &rarr; <span class="ph2">Lamellar</span></div>
-          <div class="t-sub">coexisting at 1:0.5 &middot; a 205&rarr;195 Å, then d 60&rarr;55 Å</div>
-        </div>
+        <div class="rail-h">Phases present</div>
+        <div class="reading" id="reading"></div>
+        <div class="rail-note">Derived from the per-sample phase calls — the span
+          each phase occupies on the variable and its lattice trend.</div>
       </div>
 
       <div class="rail-sec">
@@ -358,23 +367,25 @@
 const TWO_PI = 2 * Math.PI;
 const COL = { Pn3m: 'oklch(0.570 0.150 58)', Lamellar: 'oklch(0.505 0.150 264)' };
 
-function cubic(a, Ns)  { return Ns.map(N => TWO_PI * Math.sqrt(N) / a); }
-function lamel(d, ns)  { return ns.map(n => TWO_PI * n / d); }
+/* each phase carries its lattice constant explicitly so the reading panel and
+   member rows are DERIVED from the data, not narrated by hand */
+function cubic(p, a, Ns, amp)  { return { p, kind:'cubic', a, q: Ns.map(N => TWO_PI*Math.sqrt(N)/a), amp }; }
+function lamel(p, d, ns, amp)  { return { p, kind:'lamellar', d, q: ns.map(n => TWO_PI*n/d), amp }; }
 
-/* each sample: variable label + the phases present, with peak q's + amps */
 const SAMPLES = [
-  { v: '1:0',    phases: [ { p:'Pn3m', q: cubic(205,[2,3,4]), amp:[1.0,0.55,0.32] } ] },
-  { v: '1:0.1',  phases: [ { p:'Pn3m', q: cubic(202,[2,3,4]), amp:[0.95,0.5,0.28] } ] },
-  { v: '1:0.25', phases: [ { p:'Pn3m', q: cubic(198,[2,3,4]), amp:[0.82,0.42,0.22] } ] },
-  { v: '1:0.5',  phases: [ { p:'Pn3m', q: cubic(195,[2,3,4]), amp:[0.5,0.26,0.14] },
-                           { p:'Lamellar', q: lamel(60,[1,2,3]), amp:[0.6,0.3,0.16] } ] },
-  { v: '1:0.75', phases: [ { p:'Lamellar', q: lamel(57,[1,2,3]), amp:[0.92,0.5,0.28] } ] },
-  { v: '1:1',    phases: [ { p:'Lamellar', q: lamel(55,[1,2,3]), amp:[1.0,0.56,0.32] } ] },
+  { v: '1:0',    phases: [ cubic('Pn3m', 205, [2,3,4], [1.0,0.55,0.32]) ] },
+  { v: '1:0.1',  phases: [ cubic('Pn3m', 202, [2,3,4], [0.95,0.5,0.28]) ] },
+  { v: '1:0.25', phases: [ cubic('Pn3m', 198, [2,3,4], [0.82,0.42,0.22]) ] },
+  { v: '1:0.5',  phases: [ cubic('Pn3m', 195, [2,3,4], [0.5,0.26,0.14]),
+                           lamel('Lamellar', 60, [1,2,3], [0.6,0.3,0.16]) ] },
+  { v: '1:0.75', phases: [ lamel('Lamellar', 57, [1,2,3], [0.92,0.5,0.28]) ] },
+  { v: '1:1',    phases: [ lamel('Lamellar', 55, [1,2,3], [1.0,0.56,0.32]) ] },
 ];
 SAMPLES.forEach((s, i) => {
   s.i = i;
   s.dominant = s.phases.reduce((a, b) => (Math.max(...b.amp) > Math.max(...a.amp) ? b : a)).p;
   s.coexist = s.phases.length > 1;
+  s.q1 = Math.min(...s.phases.flatMap(ph => ph.q));   // first (lowest-q) peak
 });
 
 const NS = 'http://www.w3.org/2000/svg';
@@ -460,12 +471,13 @@ function renderWaterfall() {
     xs.forEach((q, k) => { d += (k === 0 ? 'M' : 'L') + wxOf(q, pw, WF.l).toFixed(1) + ' ' + yOf(ys[k]).toFixed(1) + ' '; });
     g.appendChild(el('path', { class: 'wf-trace', d, stroke: color }));
 
-    /* light peak anchors — small dots at each peak apex, phase coloured */
+    /* peak anchors — beads on the string: a phase-coloured dot ringed in the
+       plate colour so it reads on the trace even when fill == trace colour */
     s.phases.forEach(phh => phh.q.forEach((pq, k) => {
       if (pq < Q.min || pq > Q.max) return;
       const x = wxOf(pq, pw, WF.l), y = yOf(sampleIntensity(s, pq));
-      g.appendChild(el('circle', { class: 'wf-anchor', cx: x, cy: y, r: 2.1,
-        fill: COL[phh.p] }));
+      g.appendChild(el('circle', { class: 'wf-anchor', cx: x, cy: y, r: 2.9,
+        fill: COL[phh.p], stroke: 'var(--plate)', 'stroke-width': 1.4 }));
     }));
 
     /* sample label at right */
@@ -562,7 +574,36 @@ function renderPhaseStrip() {
   });
 }
 
-/* ════════════ rail members ════════════ */
+/* ════════════ rail: phases-present reading (derived) ════════════ */
+function renderReading() {
+  // group samples by phase → variable span + lattice endpoints
+  const map = new Map();
+  SAMPLES.forEach(s => s.phases.forEach(ph => {
+    if (!map.has(ph.p)) map.set(ph.p, { kind: ph.kind, items: [] });
+    map.get(ph.p).items.push({ v: s.v, lat: ph.kind === 'cubic' ? ph.a : ph.d });
+  }));
+  let html = '';
+  for (const [name, info] of map) {
+    const it = info.items, v0 = it[0].v, v1 = it[it.length - 1].v;
+    const l0 = it[0].lat, l1 = it[it.length - 1].lat;
+    const sym = info.kind === 'cubic' ? 'a' : 'd';
+    const span = v0 === v1 ? v0 : `${v0} → ${v1}`;
+    const lat = l0 === l1 ? `${sym} = ${l0} Å` : `${sym} ${l0} → ${l1} Å`;
+    html += `<div class="rd-row">
+      <div class="rd-top">
+        <span class="rd-dot" style="background:${COL[name]}"></span>
+        <span class="rd-name" style="color:${COL[name]}">${name}</span>
+        <span class="rd-span">${span}</span>
+      </div>
+      <div class="rd-lat">${lat}</div>
+    </div>`;
+  }
+  const coex = SAMPLES.filter(s => s.coexist).map(s => s.v);
+  if (coex.length) html += `<div class="rd-coex">coexistence at ${coex.join(', ')}</div>`;
+  document.getElementById('reading').innerHTML = html;
+}
+
+/* ════════════ rail members — lattice + first-peak q, derived ════════════ */
 function renderMembers() {
   const box = document.getElementById('member-list');
   box.innerHTML = '';
@@ -573,9 +614,18 @@ function renderMembers() {
     const sw = s.coexist
       ? `background:linear-gradient(135deg, ${COL['Pn3m']} 48%, ${COL['Lamellar']} 52%)`
       : `background:${COL[s.dominant]}`;
+    const cub = s.phases.find(p => p.kind === 'cubic');
+    const lam = s.phases.find(p => p.kind === 'lamellar');
+    const lat = (cub && lam) ? `a ${cub.a} · d ${lam.d} Å`
+              : cub ? `a = ${cub.a} Å` : `d = ${lam.d} Å`;
     row.innerHTML = `<span class="m-swatch" style="${sw}"></span>
-      <span class="m-name">${s.coexist ? 'Pn3m + Lam' : s.dominant}</span>
-      <span class="m-var">${s.v}</span>`;
+      <div class="m-body">
+        <div class="m-top">
+          <span class="m-name">${s.coexist ? 'Pn3m + Lamellar' : s.dominant}</span>
+          <span class="m-var">${s.v}</span>
+        </div>
+        <div class="m-data">${lat} · q₁ ${s.q1.toFixed(3)} Å⁻¹</div>
+      </div>`;
     row.addEventListener('mouseenter', () => setHot(s.i));
     row.addEventListener('mouseleave', () => setHot(null));
     box.appendChild(row);
@@ -651,6 +701,7 @@ document.getElementById('export-scrim').addEventListener('click', e => {
 });
 
 renderFigure();
+renderReading();
 renderMembers();
 </script>
 </body>

@@ -170,9 +170,7 @@
   svg .pk-label { font-size: 11px; font-weight: 700;
     font-family: ui-monospace, Menlo, monospace; }
   svg .pk-hit { fill: transparent; cursor: pointer; }
-  svg .pk.hot .pk-qline { opacity: 0.7; }
-  svg .pk.hot .pk-halo  { opacity: 1; }
-  svg .pk-halo { opacity: 0; transition: opacity 90ms ease-out; }
+  svg .pk.hot .pk-qline { opacity: 0.75; }
   svg .pk.preview .pk-qline { opacity: 0.85; }
   svg .pk.dim .pk-glyph { opacity: 0.32; }
   svg .pk.dim .pk-label { opacity: 0.32; }
@@ -243,7 +241,13 @@
   svg .comb-row-sub { fill: var(--ink-faint); font-size: 9.5px;
     font-family: ui-monospace, Menlo, monospace; }
   svg .obs-mark { fill: var(--ink-soft); }
-  svg .tooth.hot .tooth-stem { stroke: var(--accent); stroke-width: 2.2; }
+  /* peak ↔ ring ↔ comb-tooth: hovering any node lights the tooth here */
+  svg .tooth .tooth-stem, svg .tooth .tooth-cap,
+  svg .tooth .leftover-ring { transition: stroke 90ms ease-out, fill 90ms ease-out; }
+  svg .tooth.hot .tooth-stem { stroke: var(--accent); stroke-width: 2.8; }
+  svg .tooth.hot .tooth-cap { fill: var(--accent); }
+  svg .tooth.hot .tooth-mlabel { fill: var(--accent); }
+  svg .tooth.hot .leftover-ring { stroke: var(--accent); stroke-width: 2.2; }
   .combs-legend {
     display: flex; flex-wrap: wrap; gap: 12px; margin-top: 10px;
     padding-top: 9px; border-top: 1px solid var(--hair);
@@ -596,25 +600,22 @@ function setPreview(name) {
 }
 
 /* ════════════ the trace ════════════ */
-function provGlyph(p, x, y, color, cls) {
-  // silhouette = provenance; fill vs outline = real vs in-flight; struck = excluded
+function provGlyph(p, x, y, color) {
+  // silhouette = provenance (auto ▽ / manual ◆); excluded = ghosted (hollow,
+  // faint) rather than struck — the X read as redundant and was hard to see.
   const g = el('g', { class: 'pk-glyph' });
-  const filled = p.state !== 'excluded';
-  const stroke = color, fill = filled ? color : 'none';
+  const excluded = p.state === 'excluded';
+  const fill = excluded ? 'none' : color, stroke = color, sw = excluded ? 1.4 : 1.6;
   if (p.prov === 'manual') {
     // diamond
     g.appendChild(el('path', { d: `M${x} ${y-6} L${x+6} ${y} L${x} ${y+6} L${x-6} ${y} Z`,
-      fill, stroke, 'stroke-width': 1.6 }));
+      fill, stroke, 'stroke-width': sw }));
   } else {
-    // upward triangle
-    g.appendChild(el('path', { d: `M${x} ${y-6.4} L${x+5.8} ${y+4.6} L${x-5.8} ${y+4.6} Z`,
-      fill, stroke, 'stroke-width': 1.6, 'stroke-linejoin': 'round' }));
+    // downward triangle — a marker pointing AT the peak, not a mountain on it
+    g.appendChild(el('path', { d: `M${x-5.8} ${y-4.6} L${x+5.8} ${y-4.6} L${x} ${y+6.2} Z`,
+      fill, stroke, 'stroke-width': sw, 'stroke-linejoin': 'round' }));
   }
-  if (p.state === 'excluded') {
-    // terracotta grease-pencil strike
-    g.appendChild(el('line', { x1: x-7.5, y1: y+7, x2: x+7.5, y2: y-7,
-      stroke: 'var(--accent)', 'stroke-width': 2, 'stroke-linecap': 'round' }));
-  }
+  if (excluded) g.setAttribute('opacity', '0.45');
   return g;
 }
 
@@ -667,11 +668,9 @@ function renderTrace() {
 
     const g = el('g', { class: 'pk', 'data-peak': p.i });
     g.appendChild(el('line', { class: 'pk-qline', x1: x, y1: gy + 6, x2: x, y2: baseY, stroke: color }));
-    g.appendChild(el('circle', { class: 'pk-halo', cx: x, cy: gy, r: 11,
-      fill: 'none', stroke: 'var(--accent)', 'stroke-width': 1.4 }));
-    g.appendChild(provGlyph(p, x, gy, color, ''));
+    g.appendChild(provGlyph(p, x, gy, color));
     const lab = el('text', { class: 'pk-label', x: x, y: gy - 11, 'text-anchor': 'middle', fill: color });
-    lab.textContent = p.state === 'excluded' ? '✕' : (cand ? millerOf(cand, p.i) : '?');
+    lab.textContent = p.state === 'excluded' ? '' : (cand ? millerOf(cand, p.i) : '?');
     g.appendChild(lab);
     g.appendChild(el('rect', { class: 'pk-hit', x: x - 13, y: M.t, width: 26, height: PH }));
     g.addEventListener('mouseenter', () => setHot(p.i));
@@ -812,8 +811,8 @@ function renderCombs() {
         // predicted & observed — solid tooth + cap
         g.appendChild(el('line', { class: 'tooth-stem', x1: x, y1: yBase, x2: x, y2: yBase - toothH,
           stroke: c.color, 'stroke-width': 2 }));
-        g.appendChild(el('circle', { cx: x, cy: yBase - toothH, r: 2.4, fill: c.color }));
-        const ml = el('text', { x: x, y: yBase - toothH - 6, 'text-anchor': 'middle',
+        g.appendChild(el('circle', { class: 'tooth-cap', cx: x, cy: yBase - toothH, r: 2.4, fill: c.color }));
+        const ml = el('text', { class: 'tooth-mlabel', x: x, y: yBase - toothH - 6, 'text-anchor': 'middle',
           'font-size': 9.5, 'font-weight': 700, fill: c.color, 'font-family': 'ui-monospace, Menlo, monospace' });
         ml.textContent = MILLER[r.N] || ('√' + r.N); g.appendChild(ml);
       } else {
@@ -836,7 +835,7 @@ function renderCombs() {
   leftover.forEach(p => {
     const x = cxOf(p.q);
     const g = el('g', { class: 'tooth', 'data-peak': p.i });
-    g.appendChild(el('circle', { cx: x, cy: yL, r: 3.6, fill: 'none',
+    g.appendChild(el('circle', { class: 'leftover-ring', cx: x, cy: yL, r: 3.6, fill: 'none',
       stroke: 'var(--unindexed)', 'stroke-width': 1.6 }));
     g.appendChild(el('circle', { cx: x, cy: yL, r: 9, fill: 'transparent' }));
     g.addEventListener('mouseenter', () => setHot(p.i));
@@ -875,7 +874,7 @@ function renderResidual(svg, phases, top, railY) {
       svg.appendChild(el('line', { x1: x, y1: midY, x2: x, y2: y,
         stroke: c.color, 'stroke-width': 1, opacity: 0.5 }));
       const g = el('g', { class: 'tooth', 'data-peak': r.claim });
-      g.appendChild(el('circle', { cx: x, cy: y, r: 3.2, fill: c.color }));
+      g.appendChild(el('circle', { class: 'tooth-cap', cx: x, cy: y, r: 3.2, fill: c.color }));
       g.appendChild(el('circle', { cx: x, cy: y, r: 9, fill: 'transparent' }));
       g.addEventListener('mouseenter', () => setHot(r.claim));
       g.addEventListener('mouseleave', () => setHot(null));
