@@ -94,6 +94,11 @@ export const CLEAN_SCIENTIFIC = {
   fontFamily: "Arial, Helvetica, sans-serif",
   axisLabel: {
     x: "q (Å⁻¹)",
+    // NOTE: the waterfall has no labelable y-axis — the adapter sets
+    // label:null / axis:null because intensity lives in synthetic offset-band
+    // pixel space (a real intensity axis would mislead). This string is kept
+    // for the non-waterfall (single-trace) export path and the footnote idiom;
+    // it is intentionally NOT wired onto the waterfall y-axis.
     y: "Intensity (a.u.) + offset",
   },
 } as const;

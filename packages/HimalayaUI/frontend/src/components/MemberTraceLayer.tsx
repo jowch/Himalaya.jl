@@ -257,12 +257,22 @@ export function buildMemberMarks(props: MemberMarksProps): unknown[] {
       })
     : (member.color_override ?? "var(--color-ink)");
 
+  // E-7 / three-state model: distinguish the two no-lattice states ON THE
+  // WATERFALL, not just in the strip/rows. Both render their REAL trace (no
+  // fabricated-flat data), but a `null` member ("no interesting scattering")
+  // reads de-emphasized, while a `form_factor` member (structured broad-shoulder
+  // scattering) keeps a full-opacity trace — so indexed / form_factor / null are
+  // three visually distinct readings, matching the distinction the assignment
+  // model carries.
+  const traceOpacity = member.snapshot?.assignment_state === "null" ? 0.4 : 1;
+
   marks.push(
     Plot.line(linePoints, {
       x: "q",
       y: "y",
       stroke,
       strokeWidth: 1,
+      strokeOpacity: traceOpacity,
     }),
   );
 
