@@ -31,6 +31,12 @@ import {
   deleteIndexMutator,
 } from "./lib/queue/mutators/indexGroup";
 import { createSpeculativeMutator } from "./lib/queue/mutators/createSpeculative";
+import {
+  addAssignmentPhaseMutator,
+  removeAssignmentPhaseMutator,
+  setAssignmentStateMutator,
+} from "./lib/queue/mutators/assignment";
+import { customIndexMutator } from "./lib/queue/mutators/customIndex";
 import { reanalyzeExposureMutator } from "./lib/queue/mutators/reanalyzeExposure";
 import { saveComparisonMutator } from "./lib/queue/mutators/saveComparison";
 import { deleteComparisonMutator } from "./lib/queue/mutators/deleteComparison";
@@ -61,6 +67,8 @@ export const queryKeys = {
     ["exposure", exposureId ?? "none", "indices"] as const,
   groups:     (exposureId: number | undefined) =>
     ["exposure", exposureId ?? "none", "groups"] as const,
+  assignment: (exposureId: number | undefined) =>
+    ["exposure", exposureId ?? "none", "assignment"] as const,
   messages:   (sampleId: number | undefined) =>
     ["sample", sampleId ?? "none", "messages"] as const,
   speculativeSnap: (
@@ -453,6 +461,56 @@ export function useGroups(exposureId: number | undefined) {
     queryFn: () => api.listGroups(exposureId as number),
     enabled: exposureId !== undefined,
   });
+}
+
+// Plan D: the assignment cart data layer. Replaces useGroups as the source of
+// the active phase set; deriveActiveIndices(assignment, indices) supersedes the
+// legacy groups.find(g => g.active) read.
+export function useAssignment(exposureId: number | undefined) {
+  return useQuery({
+    queryKey: queryKeys.assignment(exposureId),
+    queryFn: () => api.getAssignment(exposureId as number),
+    enabled: exposureId !== undefined,
+  });
+}
+
+export function useAddAssignmentPhase(exposureId: number) {
+  const username = useAppState((s) => s.username);
+  const inner = useQueueMutation(
+    addAssignmentPhaseMutator,
+    { exposureId, username, clientId: CLIENT_ID },
+  );
+  return { ...inner, mutate: (indexId: number) => inner.mutate({ indexId }) };
+}
+
+export function useRemoveAssignmentPhase(exposureId: number) {
+  const username = useAppState((s) => s.username);
+  const inner = useQueueMutation(
+    removeAssignmentPhaseMutator,
+    { exposureId, username, clientId: CLIENT_ID },
+  );
+  return { ...inner, mutate: (indexId: number) => inner.mutate({ indexId }) };
+}
+
+export function useSetAssignmentState(exposureId: number) {
+  const username = useAppState((s) => s.username);
+  const inner = useQueueMutation(
+    setAssignmentStateMutator,
+    { exposureId, username, clientId: CLIENT_ID },
+  );
+  return { ...inner, mutate: (state: api.AssignmentState) => inner.mutate({ state }) };
+}
+
+export function useCommitCustomIndex(exposureId: number) {
+  const username = useAppState((s) => s.username);
+  const inner = useQueueMutation(
+    customIndexMutator,
+    { exposureId, username, clientId: CLIENT_ID },
+  );
+  return {
+    ...inner,
+    mutate: (phase: string, basis: number) => inner.mutate({ phase, basis }),
+  };
 }
 
 export function useAddIndexToGroup(exposureId: number, groupId: number) {

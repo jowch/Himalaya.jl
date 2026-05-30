@@ -1,6 +1,7 @@
 import { Skeleton } from "boneyard-js/react";
 import { useAppState } from "../state";
-import { usePeaks, useIndices, useGroups } from "../queries";
+import { usePeaks, useIndices, useAssignment } from "../queries";
+import { deriveActiveIndices } from "../lib/assignment";
 import { phaseColor } from "../phases";
 import { Card, HintText } from "./ui";
 import type { IndexEntry, Peak } from "../api";
@@ -36,15 +37,13 @@ export function FocusReflectionsTable(): JSX.Element {
 
   const peaksQ   = usePeaks(activeExposureId);
   const indicesQ = useIndices(activeExposureId);
-  const groupsQ  = useGroups(activeExposureId);
+  const assignmentQ = useAssignment(activeExposureId);
 
   const peaks   = peaksQ.data ?? [];
   const indices = indicesQ.data ?? [];
-  const groups  = groupsQ.data ?? [];
 
-  const activeGroup = groups.find((g) => g.active);
-  const memberIds = new Set(activeGroup?.members ?? []);
-  const activeIndices = indices.filter((ix) => memberIds.has(ix.id));
+  // Plan D: active set sourced from the durable assignment cart.
+  const activeIndices = deriveActiveIndices(assignmentQ.data, indices);
 
   // For each peak, the active index that CLAIMS it (independent phases
   // coexist; same-peak claims are mutually exclusive per `auto_group` /
@@ -245,7 +244,7 @@ export function FocusReflectionsTable(): JSX.Element {
         className="flex-1 min-h-0 flex flex-col"
         loading={
           activeExposureId !== undefined
-          && (peaksQ.isLoading || indicesQ.isLoading || groupsQ.isLoading)
+          && (peaksQ.isLoading || indicesQ.isLoading || assignmentQ.isLoading)
         }
         stagger={50}
         transition={200}

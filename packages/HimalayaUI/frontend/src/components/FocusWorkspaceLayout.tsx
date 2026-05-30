@@ -9,7 +9,9 @@ import { PlotCard } from "./PlotCard";
 import { FocusPlotHeader } from "./FocusPlotHeader";
 import { IndicesCard } from "./IndicesCard";
 import { FocusDetectorPanel } from "./FocusDetectorPanel";
-import { FocusReflectionsTable } from "./FocusReflectionsTable";
+// Plan D-5: CombPanel replaces FocusReflectionsTable as the q-link triple's
+// third surface (the legacy table file is retired in D-10).
+import { CombPanel } from "./CombPanel";
 import { FocusNotesMargin } from "./FocusNotesMargin";
 
 /**
@@ -106,7 +108,7 @@ export function FocusWorkspaceLayout(): JSX.Element {
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
           <FocusDetectorPanel />
           <div className="hidden lg:flex min-h-0 flex-col">
-            <FocusReflectionsTable />
+            <CombPanel />
           </div>
         </div>
       </div>

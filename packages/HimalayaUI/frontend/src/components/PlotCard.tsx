@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Skeleton } from "boneyard-js/react";
 import { useAppState } from "../state";
 import {
-  useTrace, usePeaks, useIndices, useGroups,
+  useTrace, usePeaks, useIndices, useAssignment,
   useAddPeak, useRemovePeak, useSetPeakExcluded,
   useExperiment, useSamples, useExposures,
 } from "../queries";
@@ -18,6 +18,7 @@ import { buildTraceExportSpec } from "../lib/figure-export/adapters/traceAdapter
 import { slugifyForFilename } from "../lib/figure-export/filename";
 import { phaseColor } from "../phases";
 import type { IndexEntry, Peak, Trace } from "../api";
+import { deriveActiveIndices } from "../lib/assignment";
 
 const PLOT_CARD_FIXTURE_DATA = {
   trace: {
@@ -88,7 +89,7 @@ export function PlotCard({ headerSlot }: PlotCardProps = {}): JSX.Element {
   const traceQ      = useTrace(activeExposureId);
   const peaksQ      = usePeaks(activeExposureId);
   const indicesQ    = useIndices(activeExposureId);
-  const groupsQ     = useGroups(activeExposureId);
+  const assignmentQ = useAssignment(activeExposureId);
   const exposuresQ  = useExposures(activeSampleId);
 
   const experimentName = activeExperimentId !== undefined
@@ -230,12 +231,13 @@ export function PlotCard({ headerSlot }: PlotCardProps = {}): JSX.Element {
   }, []);
 
   const indices = indicesQ.data ?? [];
-  const activeGroup = (groupsQ.data ?? []).find((g) => g.active);
+  // Plan D: the active phase set now comes from the durable assignment cart
+  // (deriveActiveIndices) instead of the legacy single-active group. The name
+  // `activeGroupIndices` is kept so downstream consumers (TraceViewer overlay,
+  // figure export) read unchanged; it is now assignment-sourced.
   const activeGroupIndices = useMemo(
-    () => (activeGroup?.members ?? [])
-      .map((id) => indices.find((i) => i.id === id))
-      .filter((i): i is NonNullable<typeof i> => i != null),
-    [activeGroup, indices],
+    () => deriveActiveIndices(assignmentQ.data, indices),
+    [assignmentQ.data, indices],
   );
   const hoveredIndex = hoveredIndexId != null
     ? indices.find((i) => i.id === hoveredIndexId)

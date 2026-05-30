@@ -48,3 +48,51 @@ describe("DetectorRingOverlay", () => {
     expect(svgL.getAttribute("style") ?? "").toContain("rotate(90deg)");
   });
 });
+
+describe("DetectorRingOverlay — phase-colour rings (Plan D-6)", () => {
+  beforeEach(() => { useAppState.setState({ hoveredQ: undefined }); });
+
+  it("colours rings by their assigned phase", () => {
+    render(<DetectorRingOverlay rings={[
+      { q: 0.045, color: "rgb(10, 20, 30)" },
+      { q: 0.055, color: "rgb(40, 50, 60)" },
+    ]} />);
+    const r1 = screen.getByTestId("detector-ring-q-0.045");
+    expect(r1.getAttribute("stroke")).toBe("rgb(10, 20, 30)");
+    const r2 = screen.getByTestId("detector-ring-q-0.055");
+    expect(r2.getAttribute("stroke")).toBe("rgb(40, 50, 60)");
+  });
+
+  it("renders concentric sets under coexistence (two phases, distinct colours)", () => {
+    render(<DetectorRingOverlay rings={[
+      { q: 0.045, color: "rgb(10, 20, 30)" },  // phase A
+      { q: 0.064, color: "rgb(40, 50, 60)" },  // phase B
+    ]} />);
+    expect(screen.getAllByTestId(/^detector-ring-q-/)).toHaveLength(2);
+    expect(screen.getByTestId("detector-ring-q-0.045").getAttribute("stroke"))
+      .toBe("rgb(10, 20, 30)");
+    expect(screen.getByTestId("detector-ring-q-0.064").getAttribute("stroke"))
+      .toBe("rgb(40, 50, 60)");
+  });
+
+  it("renders a hollow ghost ring for a predicted-but-absent order", () => {
+    render(<DetectorRingOverlay rings={[
+      { q: 0.045, color: "rgb(10, 20, 30)" },
+      { q: 0.0636, color: "rgb(10, 20, 30)", ghost: true },
+    ]} />);
+    const ghost = screen.getByTestId("detector-ring-q-0.0636");
+    expect(ghost).toHaveAttribute("data-ghost", "true");
+    // ghost is dashed (hollow) — distinguishes it from a solid observed ring.
+    expect(ghost.getAttribute("stroke-dasharray")).toBeTruthy();
+  });
+
+  it("q-link lights the phase-coloured ring matching hoveredQ", () => {
+    render(<DetectorRingOverlay rings={[
+      { q: 0.045, color: "rgb(10, 20, 30)" },
+      { q: 0.055, color: "rgb(40, 50, 60)" },
+    ]} />);
+    act(() => useAppState.getState().setHoveredQ(0.055));
+    expect(screen.getByTestId("detector-ring-q-0.055")).toHaveAttribute("data-hot", "true");
+    expect(screen.getByTestId("detector-ring-q-0.045")).toHaveAttribute("data-hot", "false");
+  });
+});

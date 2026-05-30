@@ -3,9 +3,26 @@ import { useAppState } from "../state";
 import { decideOrient } from "../lib/detectorOrient";
 import { qToRadius, nearestRingQ, RING_VIEWBOX } from "../lib/qRing";
 
+/**
+ * A phase-coloured ring spec (Plan D-6). `color` is a RESOLVED colour string
+ * (phaseColor(), or a token CSS var) threaded through the SVG stroke attribute
+ * — the design-guard-safe path. `ghost` marks a predicted-but-absent order:
+ * rendered hollow + dashed. Omitting `color` falls back to the neutral
+ * ink-faint ring (a leftover/unclaimed peak).
+ */
+export interface RingSpec {
+  q: number;
+  color?: string;
+  ghost?: boolean;
+}
+
 interface Props {
-  /** The peak q-values to draw as rings. */
-  peakQs: number[];
+  /** The peak q-values to draw as neutral rings (legacy / fallback). */
+  peakQs?: number[];
+  /** Plan D-6: phase-coloured ring specs. When provided, takes precedence
+   *  over `peakQs` — rings colour by assigned phase, concentric under
+   *  coexistence, hollow ghost ring for predicted-but-absent orders. */
+  rings?: RingSpec[];
   /** Orientation, when the parent drives it (mirrors DetectorImage). When
    *  omitted the overlay self-observes its wrapper. */
   orient?: "portrait" | "landscape";
@@ -28,8 +45,10 @@ const CENTER = RING_VIEWBOX / 2;
  * Hovering a ring sets `hoveredQ`; a ring whose q matches `hoveredQ` lights.
  */
 export function DetectorRingOverlay({
-  peakQs, orient: orientProp, matchTol,
+  peakQs, rings, orient: orientProp, matchTol,
 }: Props): JSX.Element {
+  // Normalize to a single RingSpec[] — `rings` wins; else map legacy peakQs.
+  const ringSpecs: RingSpec[] = rings ?? (peakQs ?? []).map((q) => ({ q }));
   const wrapperRef = useRef<HTMLDivElement>(null);
   const [selfOrient, setSelfOrient] =
     useState<"portrait" | "landscape">("portrait");
@@ -69,10 +88,11 @@ export function DetectorRingOverlay({
     return () => ro.disconnect();
   }, [orientProp]);
 
-  const qLo = peakQs.length ? Math.min(...peakQs) : 0;
-  const qHi = peakQs.length ? Math.max(...peakQs) : 1;
+  const allQs = ringSpecs.map((r) => r.q);
+  const qLo = allQs.length ? Math.min(...allQs) : 0;
+  const qHi = allQs.length ? Math.max(...allQs) : 1;
   const tol = matchTol ?? Math.max((qHi - qLo) * 0.02, 1e-6);
-  const matched = nearestRingQ(hoveredQ, peakQs, tol);
+  const matched = nearestRingQ(hoveredQ, allQs, tol);
 
   const svgStyle: CSSProperties = {
     position: "absolute",
@@ -94,22 +114,28 @@ export function DetectorRingOverlay({
         style={svgStyle}
         aria-hidden="true"
       >
-        {peakQs.map((q) => {
+        {ringSpecs.map(({ q, color, ghost }) => {
           const r = qToRadius(q, qLo, qHi);
           const hot = matched !== undefined && q === matched;
+          // Hot wins (terracotta q-link); else the phase colour; else neutral.
+          const stroke = hot
+            ? "var(--color-accent)"
+            : (color ?? "var(--color-ink-faint)");
           return (
             <g key={q}>
-              {/* Visible ring. */}
+              {/* Visible ring. Ghost (predicted-but-absent) rings are dashed. */}
               <circle
                 data-testid={`detector-ring-q-${q}`}
                 data-hot={hot ? "true" : "false"}
+                data-ghost={ghost ? "true" : undefined}
                 cx={CENTER}
                 cy={CENTER}
                 r={r}
                 fill="none"
-                stroke={hot ? "var(--color-accent)" : "var(--color-ink-faint)"}
-                strokeWidth={hot ? 1.6 : 0.8}
-                opacity={hot ? 0.95 : 0.5}
+                stroke={stroke}
+                strokeWidth={hot ? 1.6 : ghost ? 0.8 : 0.9}
+                strokeDasharray={ghost ? "2 2.5" : undefined}
+                opacity={hot ? 0.95 : ghost ? 0.45 : 0.6}
                 style={{ pointerEvents: "none" }}
               />
               {/* Wide transparent hit-ring (mockup parity) so the thin visible

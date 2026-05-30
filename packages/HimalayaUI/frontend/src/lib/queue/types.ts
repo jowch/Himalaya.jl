@@ -1,5 +1,5 @@
 import type { QueryClient } from "@tanstack/react-query";
-import type { Comparison, Series } from "../../api";
+import type { Assignment, Comparison, Series } from "../../api";
 
 // ---------------------------------------------------------------------------
 // Optimistic-id invariant
@@ -54,7 +54,16 @@ export type OpKind =
   // AND recipe edit (PATCH /api/series/:id) — `payload.id` discriminates,
   // mirroring `comparison_save`. `series_commit` → `series_plate_committed`.
   // `series_delete` → `series_deleted`.
-  | "series_save" | "series_commit" | "series_delete";
+  | "series_save" | "series_commit" | "series_delete"
+  // Focus surface (Plan D). The assignment cart's 3 mutators map 1:1 to the
+  // native assignment event kinds. `affectsExposurePeaks: () => false` for all
+  // three — they touch only the assignment cache, never the peak set.
+  | "assignment_add" | "assignment_remove" | "assignment_set_state"
+  // Custom-index commit (Plan D-9). The OpKind names the user gesture; the
+  // backend route emits two events (speculative_created + assignment_add), so
+  // there is no `custom_index_commit` event kind on the wire — it lives only in
+  // resolveMutator (outbound).
+  | "custom_index_commit";
 
 /**
  * A queued operation: its kind, its per-call client_op_id (Stripe-style
@@ -101,6 +110,19 @@ export interface CurationPostState {
 }
 
 /**
+ * Assignment-frame `post_state`: the {state, members} snapshot threaded onto
+ * `assignment_*` SSE frames so `applyRemoteToCache` can patch the assignment
+ * cache directly without a refetch. CRUCIALLY this has NO top-level `indices`
+ * key — that absence is what lets `applyPostStateOnly`'s
+ * `Array.isArray(ps.indices)` guard skip an assignment frame (so it never
+ * clobbers the exposure's analysis_inputs_hash with undefined). Mirrors the
+ * Julia route's `post_state = Dict(:assignment => Dict(:state, :members))`.
+ */
+export interface AssignmentPostState {
+  assignment: Pick<Assignment, "state" | "members">;
+}
+
+/**
  * The shape of an SSE frame as parsed from the JSON `data:` line. Mirrors
  * the Julia-side `broadcast_event!` JSON shape (events.jl).
  *
@@ -121,7 +143,7 @@ export interface SseEvent {
   client_op_id?: string | null;
   ts?: string;
   payload?: unknown;
-  post_state?: CurationPostState | Comparison | Series;
+  post_state?: CurationPostState | AssignmentPostState | Comparison | Series;
 }
 
 /**

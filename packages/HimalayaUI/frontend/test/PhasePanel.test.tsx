@@ -7,8 +7,21 @@ import { useAppState } from "../src/state";
 beforeEach(() => { vi.restoreAllMocks(); });
 
 function mockAll(indices: unknown[], groups: unknown[]): void {
+  // Plan D-2: the active member set is now read from /assignment, not the
+  // active group. Derive the assignment body from the active group's members
+  // so existing fixtures keep exercising the same active set.
+  const activeGroup = (groups as { active: boolean; members: number[] }[])
+    .find((g) => g.active);
+  const assignment = {
+    exposure_id: 42, state: "indexed",
+    members: activeGroup?.members ?? [],
+  };
   vi.spyOn(global, "fetch").mockImplementation(async (input) => {
     const u = typeof input === "string" ? input : (input as Request).url;
+    if (u.endsWith("/assignment")) {
+      return new Response(JSON.stringify(assignment),
+        { status: 200, headers: { "Content-Type": "application/json" } });
+    }
     if (u.endsWith("/indices")) {
       return new Response(JSON.stringify(indices),
         { status: 200, headers: { "Content-Type": "application/json" } });
@@ -130,9 +143,12 @@ describe("<PhasePanel> — candidate multi-select (R4 L-10)", () => {
     expect(row).toHaveAttribute("tabindex", "0");
   });
 
-  it("toggling an unchecked candidate posts add-to-group", async () => {
+  it("toggling an unchecked candidate posts to the native assignment members route (D-8)", async () => {
     vi.spyOn(global, "fetch").mockImplementation(async (input) => {
       const u = typeof input === "string" ? input : (input as Request).url;
+      if (u.endsWith("/assignment")) return new Response(JSON.stringify(
+        { exposure_id: 42, state: "indexed", members: [10] }),
+        { status: 200, headers: { "Content-Type": "application/json" } });
       if (u.endsWith("/indices")) return new Response(JSON.stringify([
         { id: 10, exposure_id: 42, phase: "Pn3m", basis: 0.5, score: 0.89, r_squared: 0.99,
           lattice_d: 197, ngc: -1.5, status: "candidate", kind: "auto", predicted_q: [0.045],
@@ -144,8 +160,8 @@ describe("<PhasePanel> — candidate multi-select (R4 L-10)", () => {
       if (u.endsWith("/groups")) return new Response(JSON.stringify([
         { id: 2, exposure_id: 42, kind: "custom", active: true, members: [10] },
       ]), { status: 200, headers: { "Content-Type": "application/json" } });
-      if (u.endsWith("/api/groups/2/members")) return new Response(JSON.stringify({
-        id: 2, exposure_id: 42, kind: "custom", active: true, members: [10, 11],
+      if (u.endsWith("/api/exposures/42/assignment/members")) return new Response(JSON.stringify({
+        exposure_id: 42, state: "indexed", members: [10, 11], event_id: 1, view_row_id: 1,
       }), { status: 200, headers: { "Content-Type": "application/json" } });
       return new Response("not found", { status: 404 });
     });
@@ -154,12 +170,15 @@ describe("<PhasePanel> — candidate multi-select (R4 L-10)", () => {
     fireEvent.click(candidate);
     await waitFor(() => {
       const spy = global.fetch as unknown as { mock: { calls: unknown[][] } };
-      const urls = spy.mock.calls.map((c) => typeof c[0] === "string" ? c[0] : (c[0] as Request).url);
-      expect(urls).toContain("/api/groups/2/members");
+      const calls = spy.mock.calls.map((c) => ({
+        url: typeof c[0] === "string" ? c[0] : (c[0] as Request).url,
+        method: (c[1] as RequestInit | undefined)?.method,
+      }));
+      expect(calls.some((c) => c.url === "/api/exposures/42/assignment/members" && c.method === "POST")).toBe(true);
     });
   });
 
-  it("toggling a checked candidate posts remove-from-group", async () => {
+  it("toggling a checked candidate DELETEs from the native assignment members route (D-8)", async () => {
     mockAll(
       [
         { id: 10, exposure_id: 42, phase: "Pn3m", basis: 0.5, score: 0.89, r_squared: 0.99,
@@ -174,7 +193,7 @@ describe("<PhasePanel> — candidate multi-select (R4 L-10)", () => {
     await waitFor(() => {
       const spy = global.fetch as unknown as { mock: { calls: unknown[][] } };
       const urls = spy.mock.calls.map((c) => typeof c[0] === "string" ? c[0] : (c[0] as Request).url);
-      expect(urls.some((u) => u === "/api/groups/2/members/10")).toBe(true);
+      expect(urls.some((u) => u === "/api/exposures/42/assignment/members/10")).toBe(true);
     });
   });
 
@@ -281,5 +300,55 @@ describe("<PhasePanel> — speculative", () => {
     renderWithProviders(<PhasePanel exposureId={42} />);
     const disclosure = await screen.findByTestId("speculative-disclosure");
     expect(disclosure).toHaveAttribute("open");
+  });
+});
+
+describe("<PhasePanel> — D-8 assignment cart + Bonnet badge", () => {
+  it("candidate inCall reflects assignment membership", async () => {
+    mockAll(
+      [
+        { id: 10, exposure_id: 42, phase: "Pn3m", basis: 0.5, score: 0.9, r_squared: 0.99,
+          lattice_d: 197, ngc: -1.5, status: "candidate", kind: "auto", predicted_q: [0.045],
+          peaks: [{ peak_id: 1, ratio_position: 1, residual: 0, q_observed: 0.045 }] },
+        { id: 11, exposure_id: 42, phase: "Im3m", basis: 0.3, score: 0.5, r_squared: 0.7,
+          lattice_d: 252, ngc: null, status: "candidate", kind: "auto", predicted_q: [0.103],
+          peaks: [{ peak_id: 2, ratio_position: 1, residual: 0, q_observed: 0.103 }] },
+      ],
+      [{ id: 1, exposure_id: 42, kind: "auto", active: true, members: [10] }],
+    );
+    renderWithProviders(<PhasePanel exposureId={42} />);
+    const pn3m = await screen.findByRole("checkbox", { name: /Pn3m/i });
+    const im3m = await screen.findByRole("checkbox", { name: /Im3m/i });
+    expect(pn3m).toHaveAttribute("aria-checked", "true");
+    expect(im3m).toHaveAttribute("aria-checked", "false");
+  });
+
+  it("shows the Bonnet badge on a consistent candidate", async () => {
+    mockAll(
+      [
+        { id: 11, exposure_id: 42, phase: "Im3m", basis: 0.3, score: 0.5, r_squared: 0.7,
+          lattice_d: 252, ngc: null, status: "candidate", kind: "auto", predicted_q: [0.103],
+          peaks: [{ peak_id: 2, ratio_position: 1, residual: 0, q_observed: 0.103 }],
+          bonnet: { predicted_a: 252, consistent: true } },
+      ],
+      [{ id: 1, exposure_id: 42, kind: "auto", active: true, members: [] }],
+    );
+    renderWithProviders(<PhasePanel exposureId={42} />);
+    expect(await screen.findByTestId("bonnet-badge-11")).toBeInTheDocument();
+  });
+
+  it("hides the Bonnet badge on a non-consistent candidate", async () => {
+    mockAll(
+      [
+        { id: 11, exposure_id: 42, phase: "Im3m", basis: 0.3, score: 0.5, r_squared: 0.7,
+          lattice_d: 252, ngc: null, status: "candidate", kind: "auto", predicted_q: [0.103],
+          peaks: [{ peak_id: 2, ratio_position: 1, residual: 0, q_observed: 0.103 }],
+          bonnet: { predicted_a: 300, consistent: false } },
+      ],
+      [{ id: 1, exposure_id: 42, kind: "auto", active: true, members: [] }],
+    );
+    renderWithProviders(<PhasePanel exposureId={42} />);
+    await screen.findByRole("checkbox", { name: /Im3m/i });
+    expect(screen.queryByTestId("bonnet-badge-11")).not.toBeInTheDocument();
   });
 });

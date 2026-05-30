@@ -1,18 +1,17 @@
 import type { ReactNode } from "react";
 import { Skeleton } from "boneyard-js/react";
-import { useIndices, useGroups, useAddIndexToGroup, useRemoveIndexFromGroup, useDeleteIndex, useExperiment } from "../queries";
+import { useState } from "react";
+import { useIndices, useAssignment, useAddAssignmentPhase, useRemoveAssignmentPhase, useDeleteIndex, useExperiment, usePeaks, useCommitCustomIndex } from "../queries";
 import { useAppState } from "../state";
 import { phaseColor } from "../phases";
 import { Card, HintText, IconButton, ScoreBar, Kicker } from "./ui";
 import { StaleIndicesBanner } from "./StaleIndicesBanner";
 import { SpeculativeBuilder } from "./SpeculativeBuilder";
+import { CustomIndexModal } from "./CustomIndexModal";
 import { latticeUnitFromQUnits } from "../lib/units";
 import { seriesRatio } from "../lib/seriesRatio";
-import type { GroupEntry, IndexEntry } from "../api";
-
-function activeGroup(groups: GroupEntry[]): GroupEntry | undefined {
-  return groups.find((g) => g.active);
-}
+import type { IndexEntry } from "../api";
+import { deriveActiveIndices } from "../lib/assignment";
 
 function formatScore(s: number | null | undefined): string {
   return s != null ? s.toFixed(2) : "—";
@@ -133,8 +132,22 @@ function CandidateRow({ index, inCall, onToggle, onHover, onLeave, onDelete }: C
 
       {/* body */}
       <div className="min-w-0 flex-1">
-        <div className="font-mono text-base font-bold" style={{ color }}>
-          {index.phase}
+        <div className="flex items-center gap-1.5">
+          <span className="font-mono text-base font-bold" style={{ color }}>
+            {index.phase}
+          </span>
+          {/* Plan D F3: Bonnet badge — a coexisting cubic whose lattice matches
+              the Gauss–Bonnet ratio (IndexEntry.bonnet.consistent). The single
+              automation surfaced in the candidate list. */}
+          {index.bonnet?.consistent && (
+            <span
+              data-testid={`bonnet-badge-${index.id}`}
+              className="inline-flex items-center gap-0.5 rounded-full border border-accent/40 bg-accent/10 px-1.5 text-xs font-bold uppercase tracking-wide text-accent"
+              title={`Coexisting cubic at the Gauss–Bonnet lattice (predicted a ≈ ${index.bonnet.predicted_a.toFixed(0)})`}
+            >
+              <span aria-hidden>⭙</span> Bonnet
+            </span>
+          )}
         </div>
         <div className="mt-0.5 text-xs text-ink-faint">
           explains {index.peaks.length} peaks{inCall ? " · in the call" : ""}
@@ -217,13 +230,20 @@ export interface PhasePanelProps {
 export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
   const activeExperimentId = useAppState((s) => s.activeExperimentId);
   const indicesQ = useIndices(exposureId);
-  const groupsQ  = useGroups(exposureId);
+  const assignmentQ = useAssignment(exposureId);
   const experimentQ = useExperiment(activeExperimentId ?? 0);
   const setHoveredIndex = useAppState((s) => s.setHoveredIndex);
-  const active = (groupsQ.data && activeGroup(groupsQ.data)) ?? undefined;
-  const addMember    = useAddIndexToGroup(exposureId ?? 0, active?.id ?? 0);
-  const removeMember = useRemoveIndexFromGroup(exposureId ?? 0, active?.id ?? 0);
+  const setPreviewIndex = useAppState((s) => s.setPreviewIndex);
+  // Plan D-8: candidate toggles drive the assignment cart natively (the legacy
+  // group dual-write remains live on the backend until D-10, but the frontend
+  // no longer touches /groups).
+  const addMember    = useAddAssignmentPhase(exposureId ?? 0);
+  const removeMember = useRemoveAssignmentPhase(exposureId ?? 0);
   const deleteIndex  = useDeleteIndex(exposureId ?? 0);
+  // Plan D-9: custom-index modal gate + commit.
+  const peaksQ        = usePeaks(exposureId);
+  const commitCustom  = useCommitCustomIndex(exposureId ?? 0);
+  const [customOpen, setCustomOpen] = useState(false);
   const builder      = useAppState((s) => s.speculativeBuilder);
   const openBuilder  = useAppState((s) => s.openSpeculativeBuilder);
   const closeBuilder = useAppState((s) => s.closeSpeculativeBuilder);
@@ -242,7 +262,9 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
   const indices = (indicesQ.data ?? []).slice().sort(
     (a, b) => (b.score ?? 0) - (a.score ?? 0),
   );
-  const memberIds       = new Set(active?.members ?? []);
+  // Active member set sourced from the durable assignment cart.
+  const activeIndices   = deriveActiveIndices(assignmentQ.data, indices);
+  const memberIds       = new Set(activeIndices.map((ix) => ix.id));
   const speculatives    = indices.filter((ix) => ix.kind === "speculative");
   const auto            = indices.filter((ix) => ix.kind !== "speculative");
   // Phase call = the active set, ordered by lowest claimed q (mockup ordering).
@@ -253,10 +275,15 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
   });
 
   const toggle = (ix: IndexEntry): void => {
-    if (!active) return;
     if (memberIds.has(ix.id)) removeMember.mutate(ix.id);
     else addMember.mutate(ix.id);
   };
+
+  // Plan D-7: hover a candidate → preview on the PLOT only (ghost combs + trace
+  // highlight); the cart is left untouched. NEVER a mutator/SSE event. Clear on
+  // leave/blur so a stale ghost never masks the real cart.
+  const previewOn  = (ix: IndexEntry): void => { setHoveredIndex(ix.id); setPreviewIndex(ix.id); };
+  const previewOff = (): void => { setHoveredIndex(undefined); setPreviewIndex(undefined); };
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -283,7 +310,7 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
       <Skeleton
         name="phase-panel"
         className="flex-1 min-h-0 flex flex-col"
-        loading={indicesQ.isLoading || groupsQ.isLoading}
+        loading={indicesQ.isLoading || assignmentQ.isLoading}
         stagger={50}
         transition={200}
         fixture={PHASE_PANEL_FIXTURE}
@@ -333,8 +360,8 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
                     index={ix}
                     inCall={memberIds.has(ix.id)}
                     onToggle={() => toggle(ix)}
-                    onHover={() => setHoveredIndex(ix.id)}
-                    onLeave={() => setHoveredIndex(undefined)}
+                    onHover={() => previewOn(ix)}
+                    onLeave={previewOff}
                   />
                 ))}
               </div>
@@ -368,8 +395,8 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
                     index={ix}
                     inCall={memberIds.has(ix.id)}
                     onToggle={() => toggle(ix)}
-                    onHover={() => setHoveredIndex(ix.id)}
-                    onLeave={() => setHoveredIndex(undefined)}
+                    onHover={() => previewOn(ix)}
+                    onLeave={previewOff}
                     onDelete={() => deleteIndex.mutate(ix.id)}
                   />
                 ))}
@@ -383,6 +410,14 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
             >
               + Add speculative
             </button>
+            <button
+              type="button"
+              data-testid="open-custom-index"
+              className="mt-2 w-full text-xs text-ink-faint border border-dashed border-hair rounded-md py-1.5 hover:text-ink hover:bg-paper-sunk transition-colors"
+              onClick={() => setCustomOpen(true)}
+            >
+              + Custom index…
+            </button>
           </details>
 
         </div>
@@ -391,6 +426,13 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
       {builder && builder.exposureId === exposureId && (
         <SpeculativeBuilder exposureId={exposureId} onClose={closeBuilder} />
       )}
+
+      <CustomIndexModal
+        open={customOpen}
+        peakQs={(peaksQ.data ?? []).filter((p) => !p.excluded).map((p) => p.q)}
+        onCommit={(phase, basis) => commitCustom.mutate(phase, basis)}
+        onClose={() => setCustomOpen(false)}
+      />
     </div>
   );
 }

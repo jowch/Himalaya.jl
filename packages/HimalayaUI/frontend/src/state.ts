@@ -76,6 +76,12 @@ export interface AppState {
    *  mutation queue and never reaches a server payload — pure client hover
    *  state (mirrors the `pendingConflict` non-persist rationale below). */
   hoveredQ: number | undefined;
+  /** Plan D-7: ephemeral hypothetical-candidate preview. When set, the plot
+   *  (combs ghost row + trace highlight) previews what the cart WOULD become
+   *  if this candidate index were added — pure plot-only, NEVER a mutator,
+   *  never an SSE event. Omitted from partialize (a momentary tab-local cue);
+   *  cleared on hover-leave/blur so a stale ghost never masks the real cart. */
+  previewIndexId: number | undefined;
   navModalOpen: boolean;
   navModalStep: NavModalStep;
   /**
@@ -182,6 +188,7 @@ export interface AppState {
   setHoveredIndex: (id: number | undefined) => void;
   setHoveredPeak: (id: number | undefined) => void;
   setHoveredQ: (q: number | undefined) => void;
+  setPreviewIndex: (id: number | undefined) => void;
   setTutorialSeen: (seen: boolean) => void;
   openNavModal: (step?: NavModalStep) => void;
   closeNavModal: () => void;
@@ -293,6 +300,7 @@ export const useAppState = create<AppState>()(
         hoveredIndexId: undefined,
         hoveredPeakId: undefined,
         hoveredQ: undefined,
+        previewIndexId: undefined,
         navModalOpen: false,
         navModalStep: "experiment",
         notesDrawerOpen: false,
@@ -343,6 +351,7 @@ export const useAppState = create<AppState>()(
         setHoveredIndex: (hoveredIndexId) => set({ hoveredIndexId }),
         setHoveredPeak: (hoveredPeakId) => set({ hoveredPeakId }),
         setHoveredQ: (hoveredQ) => set({ hoveredQ }),
+        setPreviewIndex: (previewIndexId) => set({ previewIndexId }),
         setTutorialSeen: (tutorialSeen) => set({ tutorialSeen }),
         openNavModal: (step) =>
           set(step ? { navModalOpen: true, navModalStep: step } : { navModalOpen: true }),

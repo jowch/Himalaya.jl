@@ -1,6 +1,9 @@
 import { Skeleton } from "boneyard-js/react";
 import { useAppState } from "../state";
-import { useExposures, usePeaks, useSelectExposure } from "../queries";
+import { useExposures, usePeaks, useSelectExposure, useIndices, useAssignment } from "../queries";
+import { deriveActiveIndices } from "../lib/assignment";
+import { phaseColor } from "../phases";
+import type { RingSpec } from "./DetectorRingOverlay";
 import { DetectorImage } from "./DetectorImage";
 import { DetectorRingOverlay } from "./DetectorRingOverlay";
 import { Card, HintText } from "./ui";
@@ -38,6 +41,40 @@ export function FocusDetectorPanel(): JSX.Element {
   // q-link rings during every peak edit. Left ungated on purpose.
   const peaksQ = usePeaks(activeExposureId);
   const peakQs = (peaksQ.data ?? []).map((p) => p.q);
+
+  // Plan D-6: phase-coloured detector rings, derived from the assignment cart.
+  // Each assigned phase contributes a coloured ring per claimed peak q +
+  // (concentric, distinct colour under coexistence) a hollow ghost ring for a
+  // predicted-but-absent order. Unclaimed observed peaks stay neutral.
+  const indicesQ = useIndices(activeExposureId);
+  const assignmentQ = useAssignment(activeExposureId);
+  const activeIndices = deriveActiveIndices(assignmentQ.data, indicesQ.data ?? []);
+  const rings: RingSpec[] = (() => {
+    if (activeIndices.length === 0) return [];
+    const specs: RingSpec[] = [];
+    const claimed = new Set<number>();
+    const TOL = (qs: number[]) => {
+      const lo = qs.length ? Math.min(...qs) : 0;
+      const hi = qs.length ? Math.max(...qs) : 1;
+      return Math.max((hi - lo) * 0.02, 1e-6);
+    };
+    const tol = TOL(peakQs);
+    for (const ix of activeIndices) {
+      const color = phaseColor(ix.phase);
+      const claimedQs = ix.peaks.map((p) => p.q_observed);
+      for (const cq of claimedQs) { specs.push({ q: cq, color }); claimed.add(cq); }
+      // predicted-but-absent → ghost ring (no observed peak within tolerance)
+      for (const pq of ix.predicted_q) {
+        const matched = peakQs.some((q) => Math.abs(q - pq) <= tol);
+        if (!matched) specs.push({ q: pq, color, ghost: true });
+      }
+    }
+    // leftover observed peaks → neutral rings
+    for (const q of peakQs) {
+      if (![...claimed].some((cq) => Math.abs(cq - q) <= tol)) specs.push({ q });
+    }
+    return specs;
+  })();
 
   const exposures = exposuresQ.data ?? [];
   const exposure = activeExposureId !== undefined
@@ -80,7 +117,11 @@ export function FocusDetectorPanel(): JSX.Element {
           size="full"
           className="h-full w-full"
         />
-        {peakQs.length > 0 && <DetectorRingOverlay peakQs={peakQs} />}
+        {(rings.length > 0 || peakQs.length > 0) && (
+          rings.length > 0
+            ? <DetectorRingOverlay rings={rings} />
+            : <DetectorRingOverlay peakQs={peakQs} />
+        )}
       </div>
     );
   })();
