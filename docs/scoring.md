@@ -64,6 +64,10 @@ R² from the least-squares lattice fit is stored per index in the database but i
 
 Instead, R² acts as a **hard gate in the UI**: alternatives with `r_squared < 0.98` are visually dimmed in PhasePanel with a "low R²" label. Users can still manually promote them. This keeps the score formula clean and ensures R² doesn't dominate over the physically-motivated coverage and consistency signals.
 
+## Gauss–Bonnet coexistence flag — not in the score
+
+When a bicontinuous cubic (Pn3m / Im3m / Ia3d) is in an exposure's assignment, the `bonnet` field on the indices response (`GET /api/exposures/{id}/indices`) flags candidates whose measured lattice matches what the Gauss–Bonnet ratio predicts for a *coexisting* cubic of a different phase (`a_Pn3m : a_Im3m : a_Ia3d = 1.000 : 1.279 : 1.576`; kernel in `src/bonnet.jl`). It is a **display-and-ranking affordance computed from the live assignment**, recomputed per request and **never persisted, never folded into `score`**. Folding it in would corrupt the `auto_group` / `remove_subsets` ordering, which relies on `score` being coverage×consistency alone — so the Bonnet match surfaces only as the ⭙ badge (and may sort up within the candidate-list view), never as a score change.
+
 ## Design constraints
 
 Several design choices are non-obvious enough to be worth stating explicitly:
