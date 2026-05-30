@@ -45,7 +45,8 @@
   --color-ink-faint:    oklch(0.640 0.010 74);
   --color-hair:         oklch(0.882 0.008 80);
   --color-hair-strong:  oklch(0.806 0.010 78);
-  --color-print-accent: oklch(0.555 0.150 38);
+  --color-print-accent: var(--color-accent); /* single source — was a duplicated terracotta literal */
+  --color-scrim: oklch(0.05 0 0 / 0.65); /* modal backdrops → bg-scrim (was hand-inlined literals) */
   /* Warm near-black backing for detector images — the dark window set into
      the paper (DESIGN.md §3.1 frame-edge). */
   --color-frame-edge:   oklch(0.150 0.010 55);
@@ -62,7 +63,19 @@
      paper->ink ramp did. NON-inverting: max intensity -> this lighter endpoint. */
   --color-frame-signal: oklch(0.92 0.02 80);
 
-  --radius: 6px;
+  /* Radius scale — make the radius tokens REAL. Tailwind v4 generates the
+     namespaced rounded-sm/md/lg from the --radius-* NAMESPACE, AND the bare
+     `rounded` utility from the singular --radius. Keep --radius defined (= 5px)
+     so bare `rounded` lands on the same 5px control corner as rounded-sm —
+     without it Tailwind falls back to its STOCK 0.25rem (4px) and every bare
+     `rounded` across the consumer surface silently regresses. Normalize the
+     primary surfaces to the mockups' 5px corner (spec §3/§8). sm and md
+     deliberately both = 5px so the utility-name semantics (controls rounded-sm,
+     cards rounded-md) survive a future re-differentiation by editing one token. */
+  --radius:      5px;     /* bare `rounded` — Tailwind keys it off singular --radius */
+  --radius-sm:   5px;     /* buttons, inputs, chips, segmented controls */
+  --radius-md:   5px;     /* cards, plates, sheets, modals */
+  --radius-full: 9999px;  /* pills, dots */
   --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
   --font-serif: "Newsreader", Georgia, ui-serif, serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -90,7 +103,7 @@
   --text-display: 27px;
   /* Loupe-plate headline step (R2-T9). Newsreader serif at the sample-table
      mockup's `.loupe-head h2` size (26px). Set via the `.text-headline-lg`
-     role below — DESIGN.md §3 Fixed-Scale Rule forbids inline `text-[26px]`. */
+     role below — DESIGN.md §3 Fixed-Scale Rule forbids inline 26px size literals. */
   --text-headline-lg: 26px;
 
   --text-xs--line-height:   1.4;
@@ -172,7 +185,7 @@
   .card {
     background: var(--color-plate);
     border: 0.5px solid var(--color-hair);
-    border-radius: 12px;
+    border-radius: var(--radius-md); /* 5px — folds onto the radius scale (spec §3/§8 sign-off) */
     box-shadow:
       0 1px 0 rgba(255, 255, 255, .6) inset,
       0 6px 24px -8px rgba(20, 24, 40, .15);
@@ -236,6 +249,7 @@
  *   text-headline     Newsreader serif section title — folio/scoping (R0a)
  *   text-headline-lg  Newsreader serif plate headline — loupe sample title (R2-T9, 26px)
  *   text-caption      microcopy: timestamps, hints, "no items" placeholders
+ *   text-kicker       eyebrow / section label — uppercase, 700, tracked, tone-colored (accent|faint)
  *   text-label        form / section labels — uppercase, tracked, dim
  *   text-meta         inline labels (non-uppercase): author names, tag keys
  *   text-body         default readable text — chat body, paragraph
@@ -258,6 +272,10 @@
                       line-height: 1.15; font-weight: 500; color: var(--color-ink); }
   .text-caption     { font-size: var(--text-xs);  line-height: 1.4;
                       color: var(--color-ink-soft); }
+  .text-kicker        { font-size: var(--text-sm);  line-height: 1.4;
+                        font-weight: 700; text-transform: uppercase; }
+  .text-kicker-accent { color: var(--color-print-accent); letter-spacing: 0.13em; }
+  .text-kicker-faint  { color: var(--color-ink-faint);    letter-spacing: 0.09em; }
   .text-label       { font-size: var(--text-sm);  line-height: 1.4;
                       font-weight: 500; text-transform: uppercase;
                       letter-spacing: 0.06em; color: var(--color-ink-soft); }
@@ -271,6 +289,20 @@
                       line-height: 1.4; color: var(--color-ink); }
   .text-data-strong { font-family: var(--font-mono); font-size: var(--text-sm);
                       line-height: 1.4; font-weight: 600; }
+
+  /* Icon-only buttons keep a compact visible box but expand the pointer/touch
+     target to >=44px (WCAG 2.5.5) via a centered overlay, so dense chip rows
+     do not balloon. The overlay is transparent and pointer-events:auto so it
+     forwards clicks to the button. */
+  .icon-button::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 44px;
+    height: 44px;
+    transform: translate(-50%, -50%);
+  }
 }
 
 /* Boneyard skeleton: slow pulse keeps the loading state subtle */
@@ -282,3 +314,14 @@
    children of <Skeleton> behave as if they were direct children of its outer
    wrapper. The outer wrapper still positions the bones overlay via position:relative. */
 [data-boneyard-content] { display: contents; }
+
+/* SegmentedControl — fold in the 44px touch target only on coarse pointers
+   (DESIGN.md sign-off §8) so dense desktop toolbars keep compact density. */
+@media (pointer: coarse) {
+  .seg-segment {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+}

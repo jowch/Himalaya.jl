@@ -53,13 +53,13 @@ export function LoupeFrame({
           <span
             data-testid="loupe-dropped-badge"
             className="absolute left-3 top-3 rounded bg-print-accent px-2 py-0.5
-                       text-[10px] font-bold uppercase tracking-wide text-paper"
+                       text-xs font-bold uppercase tracking-wide text-paper"
           >
             Dropped
           </span>
         )}
         {/* T-8: light caption over the dark frame (was dark `text-ink-faint`). */}
-        <span className="absolute bottom-2 left-3 font-mono text-[11px] text-frame-tag">
+        <span className="absolute bottom-2 left-3 font-mono text-sm text-frame-tag">
           {caption}
         </span>
       </div>

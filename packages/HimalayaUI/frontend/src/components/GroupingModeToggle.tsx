@@ -14,15 +14,15 @@
  * active option (used by E2E tests). Each option carries `data-value` and
  * `data-active` for assertions.
  *
- * Styling mirrors the canonical sibling toggles (`ScaleToggle`,
- * `RepresentationToggle`): `bg-ink text-paper` active, `text-ink-faint` at
- * rest, ghost hover (`hover:text-ink hover:bg-paper-sunk`).
- * No outer bordered wrapper, no leading "Color" cell — the
- * `aria-label="Trace grouping mode"` carries that semantic.
+ * Thin wrapper over SegmentedControl<GroupingMode> with `role="radiogroup"` +
+ * `variant="plain"` + `stateAttr="data-mode"` (aliases `data-state` →
+ * `data-mode` on the container). Gains roving arrow-key nav (WAI-ARIA
+ * radiogroup pattern). Active fill is canonical ink-on-paper (`bg-ink text-paper`).
  */
+import { SegmentedControl, type SegmentOption } from "./ui/SegmentedControl";
 import type { GroupingMode } from "../lib/comparison/coloring";
 
-const OPTIONS: Array<{ value: GroupingMode; label: string }> = [
+const OPTIONS: ReadonlyArray<SegmentOption<GroupingMode>> = [
   { value: "bySample", label: "By sample" },
   { value: "byPhase",  label: "By phase"  },
   { value: "distinct", label: "Distinct"  },
@@ -38,36 +38,15 @@ export function GroupingModeToggle({
   onChange,
 }: GroupingModeToggleProps): JSX.Element {
   return (
-    <div
-      data-testid="grouping-mode"
-      data-mode={value}
-      role="radiogroup"
+    <SegmentedControl<GroupingMode>
       aria-label="Trace grouping mode"
-      className="inline-flex items-center gap-1"
-    >
-      {OPTIONS.map((opt) => {
-        const active = opt.value === value;
-        return (
-          <button
-            key={opt.value}
-            type="button"
-            role="radio"
-            aria-checked={active}
-            data-active={active ? "true" : "false"}
-            data-value={opt.value}
-            onClick={() => onChange(opt.value)}
-            className={[
-              "px-1.5 py-0.5 rounded text-xs transition-colors",
-              "border border-transparent",
-              active
-                ? "bg-ink text-paper"
-                : "text-ink-faint hover:text-ink hover:bg-paper-sunk",
-            ].join(" ")}
-          >
-            {opt.label}
-          </button>
-        );
-      })}
-    </div>
+      role="radiogroup"
+      variant="plain"
+      testId="grouping-mode"
+      stateAttr="data-mode"
+      options={OPTIONS}
+      value={value}
+      onChange={onChange}
+    />
   );
 }

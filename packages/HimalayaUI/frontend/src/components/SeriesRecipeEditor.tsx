@@ -21,6 +21,7 @@ import { useCorpusSamples, useSaveSeries, useCommitSeriesPlate } from "../querie
 import { buildSeriesSaveBody } from "../lib/series/buildSeriesSaveBody";
 import { buildSeriesCommitBody } from "../lib/series/buildSeriesCommitBody";
 import type { SeriesMember, OrderRule } from "../api";
+import { IconButton } from "./ui/IconButton";
 
 const ORDER_RULES: readonly OrderRule[] = ["ascending", "descending", "manual"];
 
@@ -141,35 +142,30 @@ export function SeriesRecipeEditor({
             <span className="flex-1 truncate">
               {sampleNameById.get(row.sample_id) ?? `Sample #${row.sample_id}`}
             </span>
-            <button
-              type="button"
-              data-testid="recipe-row-up"
+            <IconButton
+              label="Move up"
+              tone="ghost"
               disabled={i === 0}
               onClick={() => reorderSample(i, i - 1)}
               title="Move up"
-              className="rounded px-1 text-ink-faint hover:text-ink disabled:opacity-30"
-            >
-              ▲
-            </button>
-            <button
-              type="button"
-              data-testid="recipe-row-down"
+              data-testid="recipe-row-up"
+            >{"▲"}</IconButton>
+            <IconButton
+              label="Move down"
+              tone="ghost"
               disabled={i === draft.recipe.length - 1}
               onClick={() => reorderSample(i, i + 1)}
               title="Move down"
-              className="rounded px-1 text-ink-faint hover:text-ink disabled:opacity-30"
-            >
-              ▼
-            </button>
-            <button
-              type="button"
-              data-testid="recipe-row-remove"
+              data-testid="recipe-row-down"
+            >{"▼"}</IconButton>
+            <IconButton
+              label="Remove from recipe"
+              dismiss
+              tone="ghost"
               onClick={() => removeSample(row.id)}
               title="Remove from recipe"
-              className="rounded px-1 text-ink-faint hover:text-ink"
-            >
-              ✕
-            </button>
+              data-testid="recipe-row-remove"
+            />
           </li>
         ))}
         {draft.recipe.length === 0 && (

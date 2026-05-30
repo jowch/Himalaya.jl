@@ -15,9 +15,8 @@
  * client_op_id, so the idempotency layer can't dedupe a racing pair); the
  * shell just renders `overwriteBusy` and forwards the click.
  */
-import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
-import { useFocusTrap } from "../hooks/useFocusTrap";
+import { Kicker, ModalShell } from "./ui";
 
 export interface ConflictPanelData {
   label: string;
@@ -49,81 +48,54 @@ export function ConflictModalShell({
   open, heading, subtitle, serverPanel, localPanel,
   onClose, onDiscard, discardLabel, onOverwrite, overwriteBusy, extraAction,
 }: ConflictModalShellProps): JSX.Element | null {
-  const dialogRef = useRef<HTMLDivElement>(null);
-  useFocusTrap(dialogRef, open);
-
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
-
-  if (!open) return null;
-
   return (
-    <div
-      data-testid="conflict-modal"
-      className="fixed inset-0 z-50 flex items-center justify-center
-                 bg-[oklch(0.05_0_0/0.65)] backdrop-blur-sm
-                 anim-pal-in"
-      role="presentation"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    <ModalShell
+      open={open}
+      onClose={onClose}
+      size="lg"
+      testId="conflict-modal"
+      aria-labelledby="conflict-title"
+      aria-describedby="conflict-subtitle"
+      className="max-h-[80vh]"
     >
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="conflict-title"
-        aria-describedby="conflict-subtitle"
-        className="w-[min(820px,calc(100vw-48px))] max-h-[80vh]
-                   bg-plate border border-hair-strong rounded-xl shadow-2xl
-                   flex flex-col overflow-hidden anim-pal-scale"
-      >
-        <header className="px-5 py-4 border-b border-hair-strong">
-          <h2 id="conflict-title" className="text-ink text-lg font-medium">
-            {heading}
-          </h2>
-          <p id="conflict-subtitle" className="text-ink-soft text-sm mt-1">
-            {subtitle}
-          </p>
-        </header>
+      <header className="px-5 py-4 border-b border-hair-strong">
+        <h2 id="conflict-title" className="text-ink text-lg font-medium">
+          {heading}
+        </h2>
+        <p id="conflict-subtitle" className="text-ink-soft text-sm mt-1">
+          {subtitle}
+        </p>
+      </header>
 
-        <div className="flex-1 min-h-0 overflow-y-auto grid grid-cols-2 gap-3 p-5">
-          <Panel {...serverPanel} />
-          <Panel {...localPanel} />
-        </div>
-
-        <footer className="flex items-center gap-2 px-5 py-3 border-t border-hair-strong">
-          <button
-            type="button"
-            data-testid="conflict-discard"
-            onClick={onDiscard}
-            className="px-3 py-1.5 rounded border border-hair-strong text-ink text-sm
-                       hover:bg-paper-sunk"
-          >
-            {discardLabel}
-          </button>
-          {extraAction}
-          <span className="flex-1" />
-          <button
-            type="button"
-            data-testid="conflict-overwrite"
-            onClick={onOverwrite}
-            disabled={overwriteBusy}
-            className="px-3 py-1.5 rounded border border-accent bg-accent
-                       text-paper text-sm disabled:opacity-60"
-          >
-            {overwriteBusy ? "Saving…" : "Overwrite with mine"}
-          </button>
-        </footer>
+      <div className="flex-1 min-h-0 overflow-y-auto grid grid-cols-2 gap-3 p-5">
+        <Panel {...serverPanel} />
+        <Panel {...localPanel} />
       </div>
-    </div>
+
+      <footer className="flex items-center gap-2 px-5 py-3 border-t border-hair-strong">
+        <button
+          type="button"
+          data-testid="conflict-discard"
+          onClick={onDiscard}
+          className="px-3 py-1.5 rounded border border-hair-strong text-ink text-sm
+                     hover:bg-paper-sunk"
+        >
+          {discardLabel}
+        </button>
+        {extraAction}
+        <span className="flex-1" />
+        <button
+          type="button"
+          data-testid="conflict-overwrite"
+          onClick={onOverwrite}
+          disabled={overwriteBusy}
+          className="px-3 py-1.5 rounded border border-accent bg-accent
+                     text-paper text-sm disabled:opacity-60"
+        >
+          {overwriteBusy ? "Saving…" : "Overwrite with mine"}
+        </button>
+      </footer>
+    </ModalShell>
   );
 }
 
@@ -135,9 +107,9 @@ function Panel({
       data-testid={testId}
       className="border border-hair-strong rounded-md p-3 flex flex-col gap-2 min-w-0"
     >
-      <header className="text-xs uppercase tracking-wide text-ink-faint">
+      <Kicker tone="faint" as="div">
         {label}
-      </header>
+      </Kicker>
       <div className="text-ink font-medium truncate" data-testid={`${testId}-title`}>
         {title || "(no title)"}
       </div>

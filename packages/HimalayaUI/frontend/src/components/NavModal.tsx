@@ -4,7 +4,7 @@ import { Skeleton } from "boneyard-js/react";
 import { useAppState } from "../state";
 import { useExperiments, useSamples } from "../queries";
 import type { Experiment, Sample } from "../api";
-import { useFocusTrap } from "../hooks/useFocusTrap";
+import { IconButton, ModalShell } from "./ui";
 
 const NAV_FIXTURE_EXPERIMENTS: { id: number; primary: string; secondary: string }[] = [
   { id: 1, primary: "Experiment A", secondary: "/data/lipids/expA" },
@@ -74,8 +74,6 @@ export function NavModal(): JSX.Element | null {
   const [selIdx, setSelIdx] = useState(0);
 
   const inputRef  = useRef<HTMLInputElement>(null);
-  const dialogRef = useRef<HTMLDivElement>(null);
-  useFocusTrap(dialogRef, open);
 
   // When the modal opens, sync pending values with committed, reset query.
   useEffect(() => {
@@ -113,8 +111,6 @@ export function NavModal(): JSX.Element | null {
 
   // Reset selection cursor on query/step change
   useEffect(() => { setSelIdx(0); }, [query, step]);
-
-  if (!open) return null;
 
   const activeList: readonly { id: number; primary: string; secondary: string }[] =
     step === "experiment"
@@ -211,23 +207,16 @@ export function NavModal(): JSX.Element | null {
   })();
 
   return (
-    <div
-      data-testid="nav-modal"
-      className="fixed inset-0 z-50 flex items-start justify-center pt-[12vh]
-                 bg-[oklch(0.05_0_0/0.65)] backdrop-blur-sm
-                 anim-pal-in"
-      role="presentation"
-      onClick={(e) => { if (e.target === e.currentTarget) closeModal(); }}
+    <ModalShell
+      open={open}
+      onClose={closeModal}
+      size="md"
+      align="top"
+      closeOnEsc={false}
+      testId="nav-modal"
+      aria-label="Navigate to experiment or sample"
+      className="max-h-[72vh]"
     >
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        className="w-[min(640px,calc(100vw-48px))] max-h-[72vh]
-                   bg-plate border border-hair-strong rounded-xl shadow-2xl
-                   flex flex-col overflow-hidden
-                   anim-pal-scale"
-      >
         <div className="flex items-center gap-2 flex-wrap px-3 py-2.5 border-b border-hair-strong">
           {expChipLabel && (
             <Chip
@@ -311,8 +300,7 @@ export function NavModal(): JSX.Element | null {
           <span className="flex-1" />
           <span>{step === "experiment" ? "experiment" : "sample"}</span>
         </div>
-      </div>
-    </div>
+    </ModalShell>
   );
 }
 
@@ -330,15 +318,13 @@ function Chip({ label, onRemove, testId }: ChipProps): JSX.Element {
                  bg-paper-sunk border border-hair-strong text-sm text-ink"
     >
       {label}
-      <button
-        type="button"
-        aria-label={`Remove ${label}`}
+      <IconButton
+        label={`Remove ${label}`}
+        dismiss
+        tone="accent"
         onClick={onRemove}
-        className="text-ink-soft hover:text-error px-0.5 leading-none"
         data-testid={testId ? `${testId}-remove` : undefined}
-      >
-        ×
-      </button>
+      />
     </span>
   );
 }

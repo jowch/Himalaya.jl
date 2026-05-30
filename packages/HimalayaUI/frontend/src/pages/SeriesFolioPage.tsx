@@ -1,5 +1,8 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { Card } from "../components/ui";
+import { SegmentedControl } from "../components/ui/SegmentedControl";
+import { Kicker } from "../components/ui/Kicker";
 import { Skeleton } from "boneyard-js/react";
 import { useSeriesList } from "../queries";
 import { SeriesFolioCard } from "../components/SeriesFolioCard";
@@ -15,13 +18,13 @@ import {
 const FOLIO_FIXTURE = (
   <div className="[column-count:3] [column-gap:1.25rem]">
     {[0, 1, 2, 3, 4].map((i) => (
-      <div key={i} className="mb-5 break-inside-avoid rounded border border-hair bg-plate">
+      <Card key={i} className="mb-5 break-inside-avoid">
         <div className="h-24 bg-paper-sunk" />
         <div className="space-y-2 p-3">
           <div className="h-4 w-2/3 rounded bg-paper-sunk" />
           <div className="h-3 w-1/2 rounded bg-paper-sunk" />
         </div>
-      </div>
+      </Card>
     ))}
   </div>
 );
@@ -68,9 +71,7 @@ export function SeriesFolioPage(): JSX.Element {
     <div data-testid="series-folio-page" className="mx-auto flex max-w-[1380px] flex-col gap-4 p-6">
       <header className="flex items-end justify-between gap-8">
         <div className="flex flex-col gap-1">
-          <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-print-accent">
-            Folio
-          </div>
+          <Kicker tone="accent">Folio</Kicker>
           <h1 data-testid="series-folio-heading" className="text-headline text-ink">
             Saved series
           </h1>
@@ -84,9 +85,7 @@ export function SeriesFolioPage(): JSX.Element {
             <div data-testid="series-folio-count" className="text-display leading-none text-ink">
               {visible.length}
             </div>
-            <div className="mt-1 text-[10.5px] font-bold uppercase tracking-[0.08em] text-ink-faint">
-              {isFiltered ? `of ${series.length} shown` : "series in the folio"}
-            </div>
+            <Kicker tone="faint" className="mt-1">{isFiltered ? `of ${series.length} shown` : "series in the folio"}</Kicker>
           </div>
           <button
             type="button"
@@ -117,7 +116,7 @@ export function SeriesFolioPage(): JSX.Element {
               aria-pressed={filter === c.value}
               onClick={() => setFilter(c.value)}
               className={[
-                "rounded-full border px-3 py-1 text-[11.5px] font-semibold",
+                "rounded-full border px-3 py-1 text-sm font-semibold",
                 filter === c.value
                   ? "border-ink bg-ink text-paper"
                   : "border-hair-strong bg-plate text-ink-soft hover:border-ink-faint",
@@ -127,25 +126,15 @@ export function SeriesFolioPage(): JSX.Element {
             </button>
           ))}
         </div>
-        <span className="ml-auto text-[10.5px] font-bold uppercase tracking-[0.07em] text-ink-faint">
-          Sort
-        </span>
-        <div className="flex overflow-hidden rounded-md border border-hair-strong">
-          {SORT_OPTIONS.map((s) => (
-            <button
-              key={s.value}
-              type="button"
-              data-testid={`series-folio-sort-${s.value}`}
-              aria-pressed={sort === s.value}
-              onClick={() => setSort(s.value)}
-              className={`px-3 py-1.5 text-[11.5px] font-semibold ${
-                sort === s.value ? "bg-ink text-paper" : "text-ink-faint"
-              }`}
-            >
-              {s.label}
-            </button>
-          ))}
-        </div>
+        <Kicker as="span" tone="faint" className="ml-auto">Sort</Kicker>
+        <SegmentedControl<FolioSort>
+          aria-label="Sort series"
+          role="group"
+          variant="bordered"
+          options={SORT_OPTIONS.map((s) => ({ value: s.value, label: s.label, testId: `series-folio-sort-${s.value}` }))}
+          value={sort}
+          onChange={setSort}
+        />
       </div>
 
       {query.isError ? (

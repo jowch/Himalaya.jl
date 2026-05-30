@@ -13,6 +13,7 @@ import { DetectorImage } from "./DetectorImage";
 import { RejectXMark } from "./RejectXMark";
 import { SampleStatusChip } from "./SampleStatusChip";
 import { CullBar } from "./CullBar";
+import { IconButton } from "./ui/IconButton";
 
 /**
  * A sample's index/phase status column. #160 ships only "not-indexed";
@@ -105,7 +106,7 @@ function ExposureThumb({
         // square dark window (62px) — L-4. appearance-none + p-0 neutralise UA
         // button chrome; the box is fully specified by the size/border classes.
         "relative h-[62px] w-[62px] shrink-0 cursor-pointer appearance-none p-0",
-        "overflow-hidden rounded-[3px] border border-frame-edge bg-frame-edge",
+        "overflow-hidden rounded-sm border border-frame-edge bg-frame-edge",
         "focus-visible:ring-2 focus-visible:ring-print-accent focus-visible:ring-offset-1",
         selectedForBatch ? "ring-2 ring-print-accent" : "ring-0",
       ].join(" ")}
@@ -123,7 +124,7 @@ function ExposureThumb({
       <span
         data-testid={`frame-no-${exposure.id}`}
         className={`pointer-events-none absolute bottom-px left-[3px] font-mono
-                    text-[8.5px] text-paper/80 ${isRejected ? "opacity-45" : ""}`}
+                    text-xs text-paper/80 ${isRejected ? "opacity-45" : ""}`}
       >
         {String(frameNo).padStart(2, "0")}
       </span>
@@ -345,10 +346,10 @@ export function ContactSheetRow({
           )}
         </span>
         <span className="min-w-0">
-          <span className="block truncate text-[13.5px] font-semibold text-ink">
+          <span className="block truncate text-base font-semibold text-ink">
             {name}
           </span>
-          <span className="mt-0.5 block font-mono text-[10.5px] text-ink-faint">
+          <span className="mt-0.5 block font-mono text-xs text-ink-faint">
             #{sample.id}
           </span>
         </span>
@@ -397,7 +398,7 @@ export function ContactSheetRow({
             {dropped > 0 && (
               // R3-S05 (#256): a passive count — off the grease-pencil accent
               // (text-ink-soft) and parenthesised so it reads as a quiet fact.
-              <span className="font-sans text-[10px] font-semibold text-ink-soft">
+              <span className="font-sans text-xs font-semibold text-ink-soft">
                 ({dropped} dropped)
               </span>
             )}
@@ -419,17 +420,15 @@ export function ContactSheetRow({
             title={t.key || undefined}
             data-testid={`sample-tag-${t.id}`}
             className="inline-flex items-center gap-1 rounded-full border border-hair
-                       bg-plate px-2 py-0.5 text-[10.5px] font-semibold text-ink-soft"
+                       bg-plate px-2 py-0.5 text-xs font-semibold text-ink-soft"
           >
             {t.value}
-            <button
-              type="button"
-              aria-label={`Remove ${t.key || t.value} tag`}
+            <IconButton
+              label={`Remove ${t.key || t.value} tag`}
+              dismiss
+              tone="accent"
               onClick={() => removeTag.mutate(t.id)}
-              className="text-ink-faint hover:text-print-accent"
-            >
-              ×
-            </button>
+            />
           </span>
         ))}
         {tagFormOpen ? (
@@ -447,7 +446,7 @@ export function ContactSheetRow({
                 if (e.key === "Enter") submitTag();
                 else if (e.key === "Escape") resetTagForm();
               }}
-              className="w-12 rounded-sm bg-transparent text-[10.5px] text-ink outline-none
+              className="w-12 rounded-sm bg-transparent text-xs text-ink outline-none
                          placeholder:text-ink-faint
                          focus:ring-1 focus:ring-print-accent/40"
             />
@@ -462,26 +461,24 @@ export function ContactSheetRow({
                 else if (e.key === "Escape") resetTagForm();
               }}
               autoFocus
-              className="w-16 rounded-sm bg-transparent text-[10.5px] text-ink outline-none
+              className="w-16 rounded-sm bg-transparent text-xs text-ink outline-none
                          placeholder:text-ink-faint
                          focus:ring-1 focus:ring-print-accent/40"
             />
             <button
               type="button"
               onClick={submitTag}
-              className="text-[10.5px] font-semibold text-print-accent
+              className="text-xs font-semibold text-print-accent
                          hover:underline"
             >
               Add
             </button>
-            <button
-              type="button"
-              aria-label="cancel adding tag"
+            <IconButton
+              label="cancel adding tag"
+              dismiss
+              tone="accent"
               onClick={resetTagForm}
-              className="text-ink-faint hover:text-print-accent"
-            >
-              ×
-            </button>
+            />
           </span>
         ) : (
           <button
@@ -491,7 +488,7 @@ export function ContactSheetRow({
             title="Add a tag"
             className={[
               "rounded-full border border-dashed border-hair-strong px-2 py-0.5",
-              "text-[10.5px] font-semibold text-ink-faint",
+              "text-xs font-semibold text-ink-faint",
               "hover:border-print-accent hover:text-print-accent",
               // Hover-revealed when chips exist; always-visible invite when empty.
               // R3-S08 (#256): reveal on row hover OR when any descendant takes

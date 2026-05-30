@@ -1,3 +1,5 @@
+import { Card } from "./ui";
+
 interface AutogroupCardProps {
   sampleCount: number;
   orderingVariable: string | null;
@@ -15,9 +17,9 @@ export function AutogroupCard({
   sampleCount, orderingVariable, onAdjust,
 }: AutogroupCardProps): JSX.Element {
   return (
-    <div
+    <Card
       data-testid="autogroup-card"
-      className="rounded-md border border-hair bg-plate p-3.5"
+      className="p-3.5"
     >
       <div className="mb-1.5 flex items-center gap-1.5">
         <svg className="h-[15px] w-[15px] shrink-0" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -50,6 +52,6 @@ export function AutogroupCard({
           Adjust grouping
         </button>
       </div>
-    </div>
+    </Card>
   );
 }

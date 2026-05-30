@@ -94,7 +94,7 @@ describe("SeriesFolioCard", () => {
     h.detailQ = { data: detail(), isLoading: false };
     renderCard(summary());
     expect(screen.getByTestId("series-mini-waterfall")).toBeInTheDocument();
-    expect(screen.getByTestId("series-phase-strip")).toBeInTheDocument();
+    expect(screen.getAllByTestId("ps-seg").length).toBeGreaterThan(0);
     expect(screen.queryByTestId("series-card-4-swatches")).not.toBeInTheDocument();
   });
 

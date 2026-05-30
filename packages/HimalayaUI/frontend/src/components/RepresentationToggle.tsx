@@ -1,9 +1,16 @@
+import { SegmentedControl, type SegmentOption } from "./ui/SegmentedControl";
+
 export type Representation = "waterfall" | "heatmap";
 
 interface RepresentationToggleProps {
   value: Representation;
   onChange: (next: Representation) => void;
 }
+
+const OPTIONS: ReadonlyArray<SegmentOption<Representation>> = [
+  { value: "waterfall", label: "Waterfall", testId: "repr-waterfall" },
+  { value: "heatmap", label: "Heatmap", testId: "repr-heatmap" },
+];
 
 /**
  * Representation segment for the series builder. Picks the plot's layout
@@ -18,33 +25,21 @@ interface RepresentationToggleProps {
  *
  * Originally shipped with the heatmap button disabled (#175 carved out the
  * render-core work to #208); both modes are now live.
+ *
+ * Thin wrapper over the shared SegmentedControl primitive; keeps its
+ * `Representation` export + `value`/`onChange` contract so importers are
+ * untouched. Active segment is the canonical ink-on-paper fill.
  */
 export function RepresentationToggle({ value, onChange }: RepresentationToggleProps): JSX.Element {
   return (
-    <div
-      data-testid="representation-toggle"
-      role="group"
+    <SegmentedControl<Representation>
       aria-label="Plot representation"
-      className="inline-flex overflow-hidden rounded border border-hair-strong"
-    >
-      <button
-        type="button"
-        data-testid="repr-waterfall"
-        aria-pressed={value === "waterfall"}
-        onClick={() => onChange("waterfall")}
-        className={`px-3 py-1.5 text-xs ${value === "waterfall" ? "bg-ink text-paper" : "text-ink-faint"}`}
-      >
-        Waterfall
-      </button>
-      <button
-        type="button"
-        data-testid="repr-heatmap"
-        aria-pressed={value === "heatmap"}
-        onClick={() => onChange("heatmap")}
-        className={`px-3 py-1.5 text-xs ${value === "heatmap" ? "bg-ink text-paper" : "text-ink-faint"}`}
-      >
-        Heatmap
-      </button>
-    </div>
+      role="group"
+      variant="bordered"
+      testId="representation-toggle"
+      options={OPTIONS}
+      value={value}
+      onChange={onChange}
+    />
   );
 }

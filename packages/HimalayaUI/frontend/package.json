@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit -p tsconfig.build.json && vite build",
+    "build": "npm run lint:design && tsc --noEmit -p tsconfig.build.json && vite build",
+    "lint:design": "node scripts/check-design.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",

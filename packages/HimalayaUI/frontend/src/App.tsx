@@ -4,7 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { AppRoutes } from "./components/AppRoutes";
 import { OnboardingFlow } from "./components/OnboardingFlow";
 import { NavModal } from "./components/NavModal";
-import { ToastContainer } from "./components/ui/Toast";
+import { ToastContainer } from "./components/ui";
 import { InfrastructureBanner } from "./components/InfrastructureBanner";
 import { SeriesCommitConflictModal } from "./components/SeriesCommitConflictModal";
 import { handleRemoteEvent } from "./lib/queue/replayCoordinator";

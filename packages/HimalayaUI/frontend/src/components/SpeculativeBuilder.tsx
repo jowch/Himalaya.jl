@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { SpeculativeSnap } from "../api";
 import { usePeaks, useSpeculativeSnap, useCreateSpeculative } from "../queries";
-import { useFocusTrap } from "../hooks/useFocusTrap";
 import { useExposureHasPendingPeakOps } from "../lib/queue/hooks";
 import { KNOWN_PHASES, phaseColor } from "../phases";
-import { Button } from "./ui";
+import { Button, IconButton, ModalShell } from "./ui";
 
 export interface SpeculativeBuilderProps {
   exposureId: number;
@@ -34,9 +33,6 @@ export function SpeculativeBuilder({ exposureId, onClose }: SpeculativeBuilderPr
   const [anchorRatio, setAnchorRatio]     = useState<number>(1);
   // ratio_position → checked (anchor's ratio is always implicitly true)
   const [included, setIncluded]           = useState<Record<number, boolean>>({});
-
-  const dialogRef = useRef<HTMLDivElement>(null);
-  useFocusTrap(dialogRef, true);
 
   // Reset selection when phase or anchor changes
   useEffect(() => { setIncluded({}); }, [phase, anchorPeakId, anchorRatio]);
@@ -96,13 +92,6 @@ export function SpeculativeBuilder({ exposureId, onClose }: SpeculativeBuilderPr
     });
   }
 
-  // Esc to close
-  useEffect(() => {
-    function onKey(e: KeyboardEvent): void { if (e.key === "Escape") onClose(); }
-    window.addEventListener("keydown", onKey);
-    return () => { window.removeEventListener("keydown", onKey); };
-  }, [onClose]);
-
   const color = phaseColor(phase);
   const errorMessage: string | null = createMut.error
     ? (createMut.error instanceof Error
@@ -111,27 +100,18 @@ export function SpeculativeBuilder({ exposureId, onClose }: SpeculativeBuilderPr
     : null;
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
+    <ModalShell
+      open
+      onClose={onClose}
+      size="sm"
       aria-label="Build speculative index"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={onClose}
+      testId="speculative-builder"
+      className="max-h-[90vh] overflow-y-auto gap-4 p-5"
     >
-      <div
-        ref={dialogRef}
-        data-testid="speculative-builder"
-        className="bg-paper border border-hair rounded-xl shadow-xl w-full max-w-md flex flex-col gap-4 p-5 max-h-[90vh] overflow-y-auto"
-        onClick={(e) => { e.stopPropagation(); }}
-      >
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-ink">Speculative index</h2>
-          <button
-            onClick={onClose}
-            aria-label="Close"
-            className="text-ink-faint hover:text-ink text-xl px-2 leading-none"
-          >×</button>
-        </div>
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold text-ink">Speculative index</h2>
+        <IconButton label="Close" dismiss tone="ghost" onClick={onClose} />
+      </div>
 
         <p className="text-xs text-ink-faint">
           Hand-build an index from a phase guess and an anchor peak. Best for sparse
@@ -267,7 +247,7 @@ export function SpeculativeBuilder({ exposureId, onClose }: SpeculativeBuilderPr
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="ghost" onClick={onClose} type="button">Cancel</Button>
           <Button
-            variant="primary"
+            variant="solid"
             onClick={handleSave}
             type="button"
             disabled={anchorPeakId === null || createMut.isPending}
@@ -276,7 +256,6 @@ export function SpeculativeBuilder({ exposureId, onClose }: SpeculativeBuilderPr
             {createMut.isPending ? "Saving…" : "Save"}
           </Button>
         </div>
-      </div>
-    </div>
+    </ModalShell>
   );
 }

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { setToastImpl, type ToastKind } from "../../lib/toast";
+import { IconButton } from "./IconButton";
 
 interface ToastItem {
   id: number;
@@ -14,12 +15,28 @@ const DURATIONS: Record<ToastKind, number> = {
   warning: 3000,
 };
 
-const KIND_CLASS: Record<ToastKind, string> = {
-  // Subtle elevated surface with a left-edge accent stripe matching the kind.
-  info:    "bg-plate border-accent text-ink",
-  success: "bg-plate border-success text-ink",
-  warning: "bg-plate border-warning text-ink",
-  error:   "bg-plate border-error text-ink",
+// Severity is conveyed by a leading status icon + word, NOT an edge hue.
+// The icon's color is decorative; the accessible severity is the aria-label
+// (on the icon) plus the visible word.
+const KIND_WORD: Record<ToastKind, string> = {
+  info: "Info",
+  success: "Success",
+  warning: "Warning",
+  error: "Error",
+};
+
+const KIND_GLYPH: Record<ToastKind, string> = {
+  info: "i",
+  success: "✓", // ✓
+  warning: "!",
+  error: "✕", // ✕
+};
+
+const KIND_ICON_COLOR: Record<ToastKind, string> = {
+  info: "text-accent",
+  success: "text-success",
+  warning: "text-warning",
+  error: "text-error",
 };
 
 /**
@@ -82,20 +99,21 @@ export function ToastContainer(): JSX.Element {
           data-toast-kind={t.kind}
           role="status"
           className={
-            "pointer-events-auto flex items-start gap-2 rounded-md border-l-4 " +
-            "px-3 py-2 shadow-lg text-body min-w-[220px] max-w-[360px] " +
-            KIND_CLASS[t.kind]
+            "pointer-events-auto flex items-start gap-2 rounded-md border border-hair " +
+            "bg-plate text-ink px-3 py-2 shadow-lg text-body min-w-[220px] max-w-[360px]"
           }
         >
-          <span className="flex-1 break-words">{t.msg}</span>
-          <button
-            type="button"
-            aria-label="Dismiss"
-            onClick={() => dismiss(t.id)}
-            className="text-ink-soft hover:text-ink leading-none px-1"
+          <span
+            aria-label={KIND_WORD[t.kind]}
+            className={`flex-shrink-0 font-bold leading-tight ${KIND_ICON_COLOR[t.kind]}`}
           >
-            ×
-          </button>
+            {KIND_GLYPH[t.kind]}
+          </span>
+          <span className="flex-1 break-words">
+            <span className="font-semibold">{KIND_WORD[t.kind]}</span>{" "}
+            {t.msg}
+          </span>
+          <IconButton label="Dismiss" dismiss tone="ghost" onClick={() => dismiss(t.id)} />
         </div>
       ))}
     </div>

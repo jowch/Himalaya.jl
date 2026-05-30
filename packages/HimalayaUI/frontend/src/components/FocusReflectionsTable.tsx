@@ -2,7 +2,7 @@ import { Skeleton } from "boneyard-js/react";
 import { useAppState } from "../state";
 import { usePeaks, useIndices, useGroups } from "../queries";
 import { phaseColor } from "../phases";
-import { HintText } from "./ui";
+import { Card, HintText } from "./ui";
 import type { IndexEntry, Peak } from "../api";
 
 /**
@@ -172,7 +172,7 @@ export function FocusReflectionsTable(): JSX.Element {
                         style={{ background: color }}
                       />
                       <span
-                        className="text-[9.5px] font-bold tracking-[0.03em]"
+                        className="text-xs font-bold tracking-[0.03em]"
                         style={{ color }}
                       >
                         {indexed ? claim.index.phase : "unindexed"}
@@ -205,7 +205,7 @@ export function FocusReflectionsTable(): JSX.Element {
         </div>
         <div
           data-testid="focus-reflections-foot"
-          className="mt-[11px] pt-[10px] border-t border-hair text-[11px] text-ink-faint
+          className="mt-[11px] pt-[10px] border-t border-hair text-sm text-ink-faint
                      shrink-0"
         >
           <span className="font-semibold text-ink-soft">{covered} of {peaks.length}</span>
@@ -222,9 +222,11 @@ export function FocusReflectionsTable(): JSX.Element {
   return (
     // R3-N3 sibling: the reflections panel is plate-like and lifts with the
     // detector panel on its left. Same `.card` Plate Lift treatment.
-    <section
+    <Card
+      as="section"
+      elevated
       data-testid="focus-reflections-panel"
-      className="card flex min-h-0 flex-col p-4"
+      className="flex min-h-0 flex-col p-4"
     >
       <div className="card-header flex items-center justify-between gap-3">
         <span className="text-meta uppercase tracking-wider">Reflections</span>
@@ -255,6 +257,6 @@ export function FocusReflectionsTable(): JSX.Element {
       >
         {body}
       </Skeleton>
-    </section>
+    </Card>
   );
 }

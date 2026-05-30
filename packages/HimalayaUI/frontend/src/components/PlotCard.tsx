@@ -10,6 +10,7 @@ import { useAutoPickExposure, noUsableExposureState } from "../hooks/useAutoPick
 import { TraceViewer } from "./TraceViewer";
 import { NoUsableExposureNotice } from "./NoUsableExposureNotice";
 import { HintText } from "./ui";
+import { SegmentedControl } from "./ui/SegmentedControl";
 import { FigureExportControls } from "./FigureExportControls";
 import { buildTraceExportSpec } from "../lib/figure-export/adapters/traceAdapter";
 import { slugifyForFilename } from "../lib/figure-export/filename";
@@ -355,15 +356,26 @@ export function PlotCard({ headerSlot }: PlotCardProps = {}): JSX.Element {
     activeExperimentId === undefined ? "experiment" : "sample";
 
   // R3-N3 (#209): the trace plate is the hero — the one elevated object in
-  // The Print's "flat-except-the-plate" rule (DESIGN.md §Elevation). Apply
-  // `.card` (Plate Lift shadow + bg-plate + hairline + radius) to the outer
-  // in the focus variant so the figure floats above the warm paper. Gated on
-  // `headerSlot` so prop-less PlotCard (any non-focus consumer) is unaffected.
+  // The Print's "flat-except-the-plate" rule (DESIGN.md §Elevation). In the
+  // focus variant it is the single elevated object (Card elevated). Non-focus
+  // consumers stay an unstyled flow container (no plate, no bg) — gated on
+  // headerSlot exactly as before.
+  //
+  // Implementation note: we keep the outer element a stable <div> across both
+  // branches so React's reconciler never unmounts the element when focusHeader
+  // loads (a function-component ↔ intrinsic-element swap would briefly remove
+  // data-testid="plot-card" from the DOM, breaking the layout integration test).
+  // The `card` class is applied directly to the div; Card is not used here.
+  const layout = "flex flex-col h-full min-h-0 overflow-hidden";
   const outerClass = headerSlot
-    ? "card flex flex-col h-full min-h-0 overflow-hidden"
-    : "flex flex-col h-full min-h-0 overflow-hidden";
+    ? `card ${layout}`
+    : layout;
   return (
-    <div data-testid="plot-card" className={outerClass}>
+    <div
+      data-testid="plot-card"
+      className={outerClass}
+      {...(headerSlot ? { "data-elevated": "true" } : {})}
+    >
       <TitleStrip
         {...(headerSlot ? { headerSlot } : {})}
         experimentName={experimentName}
@@ -497,7 +509,17 @@ function TitleStrip({
         {/* U-4: zoom-state indicator — only shows when the trace is off its
             full q-range; clicking it auto-fits (pairs with Auto-fit below). */}
         <ZoomIndicator zoomed={isZoomed} onReset={onFitFeatures} />
-        <XScaleToggle xType={xType} onSetXType={onSetXType} />
+        <SegmentedControl<"log" | "linear">
+          aria-label="x-axis scale"
+          role="group"
+          variant="bordered"
+          options={[
+            { value: "log", label: "log", testId: "x-scale-log" },
+            { value: "linear", label: "lin", testId: "x-scale-linear" },
+          ]}
+          value={xType}
+          onChange={onSetXType}
+        />
         {/* R3-F03: the mockup's `.tools` cluster — Auto-fit + `+ Peak` ghost
             buttons replacing the numeric q-range input pair (anti-reference:
             "legacy scientific software" toolbar). Both are ghost `tool-btn`s
@@ -543,39 +565,6 @@ function TitleStrip({
   );
 }
 
-interface XScaleToggleProps {
-  xType: "log" | "linear";
-  onSetXType: (t: "log" | "linear") => void;
-}
-
-function XScaleToggle({ xType, onSetXType }: XScaleToggleProps): JSX.Element {
-  const btn = (val: "log" | "linear", label: string): JSX.Element => (
-    <button
-      type="button"
-      onClick={() => onSetXType(val)}
-      data-testid={`x-scale-${val}`}
-      data-active={xType === val}
-      className={[
-        "text-xs px-1.5 py-0.5 transition-colors",
-        xType === val
-          ? "bg-paper-sunk text-ink"
-          : "text-ink-faint hover:text-ink hover:bg-paper-sunk",
-      ].join(" ")}
-    >
-      {label}
-    </button>
-  );
-  return (
-    <span
-      className="flex items-stretch border border-hair-strong rounded overflow-hidden"
-      title="x-axis scale"
-    >
-      {btn("log", "log")}
-      <span className="w-px bg-hair-strong" />
-      {btn("linear", "lin")}
-    </span>
-  );
-}
 
 /**
  * ZoomIndicator (U-4) — a quiet terracotta ghost button shown in the TitleStrip

@@ -181,7 +181,7 @@ export function LoupePage(): JSX.Element {
       <button
         data-testid="loupe-back"
         onClick={goBack}
-        className="mb-3.5 text-[11.5px] font-semibold text-print-accent hover:underline"
+        className="mb-3.5 text-sm font-semibold text-print-accent hover:underline"
       >
         ← Back to the sheet
       </button>

@@ -1,5 +1,5 @@
-import { useRef } from "react";
-import { useFocusTrap } from "../hooks/useFocusTrap";
+import { ModalShell } from "./ui";
+import { Button } from "./ui";
 
 interface Props {
   open: boolean;
@@ -17,44 +17,33 @@ interface Props {
 export function ScopingConfirmModal({
   open, orderingKey, count, onConfirm, onClose,
 }: Props): JSX.Element | null {
-  const dialogRef = useRef<HTMLDivElement>(null);
-  useFocusTrap(dialogRef, open);
-  if (!open) return null;
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
-      onClick={onClose}
+    <ModalShell
+      open={open}
+      onClose={onClose}
+      size="sm"
+      testId="scoping-confirm-modal"
+      aria-label="Confirm series scoping"
+      className="p-6"
     >
-      <div
-        ref={dialogRef}
-        data-testid="scoping-confirm-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Confirm series scoping"
-        className="rounded-lg bg-paper p-6 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-        onKeyDown={(e) => { if (e.key === "Escape") onClose(); }}
-      >
-        <h2 className="text-lg font-semibold text-ink">Confirm &amp; build</h2>
-        <p className="mt-2 text-sm text-ink-soft">
-          Records the ordering variable{" "}
-          <span className="font-mono text-ink">{orderingKey ?? "—"}</span> on{" "}
-          <span className="font-semibold text-ink">{count}</span>{" "}
-          sample{count === 1 ? "" : "s"} as scoping tags.
-        </p>
-        <div className="mt-5 flex justify-end gap-2">
-          <button type="button" data-testid="scoping-confirm-cancel"
-            onClick={onClose}
-            className="rounded px-3 py-1.5 text-sm text-ink-soft hover:underline">
-            Cancel
-          </button>
-          <button type="button" data-testid="scoping-confirm-build"
-            onClick={onConfirm}
-            className="rounded border border-ink bg-ink px-3 py-1.5 text-sm font-semibold text-paper hover:bg-ink/85">
-            Confirm &amp; build →
-          </button>
-        </div>
+      <h2 className="text-lg font-semibold text-ink">Confirm &amp; build</h2>
+      <p className="mt-2 text-sm text-ink-soft">
+        Records the ordering variable{" "}
+        <span className="font-mono text-ink">{orderingKey ?? "—"}</span> on{" "}
+        <span className="font-semibold text-ink">{count}</span>{" "}
+        sample{count === 1 ? "" : "s"} as scoping tags.
+      </p>
+      <div className="mt-5 flex justify-end gap-2">
+        <button type="button" data-testid="scoping-confirm-cancel"
+          onClick={onClose}
+          className="rounded px-3 py-1.5 text-sm text-ink-soft hover:underline">
+          Cancel
+        </button>
+        <Button type="button" data-testid="scoping-confirm-build" variant="solid"
+          onClick={onConfirm} className="px-3 py-1.5 text-sm font-semibold">
+          Confirm &amp; build →
+        </Button>
       </div>
-    </div>
+    </ModalShell>
   );
 }

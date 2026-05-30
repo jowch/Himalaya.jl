@@ -76,3 +76,6 @@ cache/thumb-*/
 
 # Git worktree directories — session-local checkouts
 .worktrees/
+
+# impeccable design-skill scratch (screenshots, live config) — local only, never versioned
+.impeccable/

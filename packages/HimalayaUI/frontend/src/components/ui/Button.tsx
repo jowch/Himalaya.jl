@@ -1,14 +1,17 @@
 import type { ButtonHTMLAttributes } from "react";
 
-export type ButtonVariant = "primary" | "ghost" | "danger";
+export type ButtonVariant = "solid" | "accent" | "ghost" | "danger";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
 }
 
 const variantClass: Record<ButtonVariant, string> = {
-  primary:
-    "bg-accent border border-accent text-white hover:brightness-110 " +
+  solid:
+    "bg-ink border border-ink text-paper hover:brightness-110 " +
+    "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
+  accent:
+    "bg-accent border border-accent text-paper hover:brightness-110 " +
     "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
   ghost:
     "text-ink-soft hover:text-ink hover:bg-paper-sunk border border-transparent " +
@@ -26,6 +29,7 @@ export function Button({
 }: ButtonProps): JSX.Element {
   return (
     <button
+      data-variant={variant}
       className={`rounded-md px-2.5 py-1 transition-colors ${variantClass[variant]} ${className}`}
       {...props}
     >

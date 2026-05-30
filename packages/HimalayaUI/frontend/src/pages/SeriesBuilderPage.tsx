@@ -14,7 +14,7 @@ import { FigureExportControls } from "../components/FigureExportControls";
 import { SeriesBuilderRail } from "../components/SeriesBuilderRail";
 import { SeriesRecipeEditor } from "../components/SeriesRecipeEditor";
 import { OffsetDock } from "../components/OffsetDock";
-import { HintText } from "../components/ui";
+import { Card, HintText, Kicker } from "../components/ui";
 import type { Representation } from "../components/RepresentationToggle";
 import type { ScaleMode } from "../components/ScaleToggle";
 import { resolveDisplayLabels } from "../lib/comparison/labels";
@@ -27,7 +27,7 @@ import type { Series, SeriesMember } from "../api";
 /** Static skeleton for boneyard's headless capture: the plate area + a rail. */
 const BUILDER_FIXTURE = (
   <div className="grid grid-cols-[1fr_336px] gap-0">
-    <div className="m-4 rounded border border-hair bg-plate" style={{ aspectRatio: "10 / 3" }} />
+    <Card className="m-4" style={{ aspectRatio: "10 / 3" }} />
     <div className="border-l border-hair p-4">
       <div className="h-4 w-1/2 rounded bg-paper-sunk" />
     </div>
@@ -272,9 +272,10 @@ function SeriesBuilderBody(
             affordance stay reachable — adding the first sample is the
             recipe-edit flow that populates the plot.
           */}
-          <div
+          <Card
+            elevated
             data-testid="series-builder-plate"
-            className={`w-full ${collapsed ? "max-w-[1336px]" : "max-w-[1180px]"} rounded border border-hair bg-plate p-8 shadow-[0_1px_0_rgba(255,255,255,.6)_inset,0_1px_1px_rgba(60,52,40,.04),0_18px_40px_-20px_rgba(60,52,40,.22)] transition-[max-width] duration-200`}
+            className={`w-full ${collapsed ? "max-w-[1336px]" : "max-w-[1180px]"} p-8 transition-[max-width] duration-200`}
           >
               {/*
                 Kicker tag-row (R8 / B-H): terracotta "Series" + facet tags.
@@ -290,24 +291,22 @@ function SeriesBuilderBody(
                 data-testid="fig-tags"
               >
                 <div className="flex items-baseline gap-3">
-                  <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-print-accent">
-                    Series
-                  </span>
+                  <Kicker as="span" tone="accent">Series</Kicker>
                   <div className="flex gap-1.5">
-                    <span className="rounded-full border border-hair px-2 py-px text-[10.5px] text-ink-faint">
+                    <span className="rounded-full border border-hair px-2 py-px text-xs text-ink-faint">
                       {members.length} {members.length === 1 ? "sample" : "samples"}
                     </span>
-                    <span className="rounded-full border border-hair px-2 py-px text-[10.5px] text-ink-faint">
+                    <span className="rounded-full border border-hair px-2 py-px text-xs text-ink-faint">
                       {scaleMode === "log" ? "log q" : "linear q"}
                     </span>
-                    <span className="rounded-full border border-hair px-2 py-px text-[10.5px] text-ink-faint">
+                    <span className="rounded-full border border-hair px-2 py-px text-xs text-ink-faint">
                       {representation === "heatmap" ? "intensity map" : "offset waterfall"}
                     </span>
                     {/* tracked tag — mockup `series-builder.html:393` (#251 r1 / N3) */}
                     {trackOn && (
                       <span
                         data-testid="fig-tag-track"
-                        className="rounded-full border border-hair px-2 py-px text-[10.5px] text-ink-faint"
+                        className="rounded-full border border-hair px-2 py-px text-xs text-ink-faint"
                       >
                         tracked
                       </span>
@@ -315,15 +314,13 @@ function SeriesBuilderBody(
                   </div>
                 </div>
                 {editing ? (
-                  <span data-testid="series-builder-editing-badge" className="text-[10.5px] uppercase tracking-wide text-ink-faint">
-                    Editing
-                  </span>
+                  <Kicker as="span" tone="faint" data-testid="series-builder-editing-badge">Editing</Kicker>
                 ) : (
                   <button
                     type="button"
                     data-testid="series-builder-edit"
                     onClick={onStartEdit}
-                    className="rounded border border-hair px-2 py-0.5 text-[11px] text-ink hover:bg-paper-sunk"
+                    className="rounded border border-hair px-2 py-0.5 text-sm text-ink hover:bg-paper-sunk"
                   >
                     Edit
                   </button>
@@ -370,13 +367,14 @@ function SeriesBuilderBody(
                         // margin (R3-Y07, #258). Mockup series-builder.html
                         // :817-822 `.axis-title` — what makes the heatmap read
                         // as a migration map "ordered by X", not stacked rows.
-                        <div
-                          data-testid="heatmap-axis-title"
+                        <Kicker
+                          tone="faint"
                           aria-hidden="true"
-                          className="pointer-events-none absolute left-0 top-1/2 z-10 origin-left -translate-y-1/2 -rotate-90 whitespace-nowrap text-[10.5px] uppercase tracking-[0.14em] text-ink-faint"
+                          data-testid="heatmap-axis-title"
+                          className="pointer-events-none absolute left-0 top-1/2 z-10 origin-left -translate-y-1/2 -rotate-90 whitespace-nowrap"
                         >
                           {s.ordering_variable} &rarr;
-                        </div>
+                        </Kicker>
                       )}
                       <MultiTracePlot
                         members={members}
@@ -422,7 +420,7 @@ function SeriesBuilderBody(
                   </div>
                 </>
               )}
-            </div>
+            </Card>
         </div>
         <SeriesBuilderRail
           collapsed={collapsed}

@@ -3,7 +3,7 @@ import { Skeleton } from "boneyard-js/react";
 import { useIndices, useGroups, useAddIndexToGroup, useRemoveIndexFromGroup, useDeleteIndex, useExperiment } from "../queries";
 import { useAppState } from "../state";
 import { phaseColor } from "../phases";
-import { HintText } from "./ui";
+import { Card, HintText, IconButton, ScoreBar, Kicker } from "./ui";
 import { StaleIndicesBanner } from "./StaleIndicesBanner";
 import { SpeculativeBuilder } from "./SpeculativeBuilder";
 import { latticeUnitFromQUnits } from "../lib/units";
@@ -40,7 +40,7 @@ function PhaseCallBlock({ index, latticeUnit }: PhaseCallBlockProps): JSX.Elemen
     <div data-testid={`phase-call-block-${index.id}`} className="px-4 py-3">
       <div className="flex items-baseline justify-between gap-2">
         <span
-          className="font-serif font-medium leading-none tracking-tight text-[23px]"
+          className="font-serif font-medium leading-none tracking-tight text-xl"
           style={{ color }}
         >
           {index.phase}
@@ -49,20 +49,15 @@ function PhaseCallBlock({ index, latticeUnit }: PhaseCallBlockProps): JSX.Elemen
           {formatScore(index.score)}
         </span>
       </div>
-      <div className="mt-1.5 font-mono text-[11px] text-ink-soft">
+      <div className="mt-1.5 font-mono text-sm text-ink-soft">
         {index.lattice_d != null && (
           <>{`a = ${index.lattice_d.toFixed(0)} ${latticeUnit}`}&nbsp; ·&nbsp; </>
         )}
         {index.peaks.length} peaks
       </div>
-      <div className="mt-2 h-1 overflow-hidden rounded-full bg-hair">
-        <i
-          className="block h-full"
-          style={{ width: `${Math.round(score * 100)}%`, background: color }}
-        />
-      </div>
+      <ScoreBar value={score} phase={index.phase} size="bar" className="mt-2" />
       {ratio && (
-        <div className="mt-1.5 text-[10.5px] text-ink-faint">
+        <div className="mt-1.5 text-xs text-ink-faint">
           series&nbsp;&nbsp;
           <span className="font-mono font-semibold text-ink-soft">{ratio}</span>
         </div>
@@ -138,10 +133,10 @@ function CandidateRow({ index, inCall, onToggle, onHover, onLeave, onDelete }: C
 
       {/* body */}
       <div className="min-w-0 flex-1">
-        <div className="font-mono text-[13px] font-bold" style={{ color }}>
+        <div className="font-mono text-base font-bold" style={{ color }}>
           {index.phase}
         </div>
-        <div className="mt-0.5 text-[10.5px] text-ink-faint">
+        <div className="mt-0.5 text-xs text-ink-faint">
           explains {index.peaks.length} peaks{inCall ? " · in the call" : ""}
           {ratio && <span className="font-mono"> · {ratio}</span>}
         </div>
@@ -149,21 +144,19 @@ function CandidateRow({ index, inCall, onToggle, onHover, onLeave, onDelete }: C
 
       {/* score */}
       <div className="text-right font-mono">
-        <div className="text-[13px] font-bold text-ink tabular-nums">{formatScore(index.score)}</div>
-        <div className="mt-1 h-[3.5px] w-[46px] overflow-hidden rounded-full bg-hair">
-          <i className="block h-full" style={{ width: `${Math.round(score * 100)}%`, background: color }} />
-        </div>
+        <div className="text-base font-bold text-ink tabular-nums">{formatScore(index.score)}</div>
+        <ScoreBar value={score} phase={index.phase} size="compact" className="mt-1" />
       </div>
 
       {/* speculative delete */}
       {onDelete && (
-        <button
-          type="button"
-          data-testid={`spec-delete-${index.id}`}
-          className="shrink-0 rounded p-1 text-ink-faint transition-colors hover:text-error focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
+        <IconButton
+          label={`Delete speculative index ${index.id}`}
+          tone="danger"
           title="Delete this speculative index"
-          aria-label={`Delete speculative index ${index.id}`}
+          data-testid={`spec-delete-${index.id}`}
           onClick={(e) => { e.stopPropagation(); onDelete(); }}
+          className="shrink-0"
         >
           <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" aria-hidden="true">
             <path
@@ -172,7 +165,7 @@ function CandidateRow({ index, inCall, onToggle, onHover, onLeave, onDelete }: C
               strokeLinecap="round" strokeLinejoin="round"
             />
           </svg>
-        </button>
+        </IconButton>
       )}
     </div>
   );
@@ -181,11 +174,7 @@ function CandidateRow({ index, inCall, onToggle, onHover, onLeave, onDelete }: C
 // ── Rail section heading ─────────────────────────────────────────────────────
 
 function RailHead({ children }: { children: ReactNode }): JSX.Element {
-  return (
-    <div className="text-[10.5px] font-bold uppercase tracking-[0.09em] text-ink-faint">
-      {children}
-    </div>
-  );
+  return <Kicker tone="faint">{children}</Kicker>;
 }
 
 // ── Panel ────────────────────────────────────────────────────────────────────
@@ -207,9 +196,9 @@ const PHASE_PANEL_FIXTURE = (
   <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-5">
     <div className="flex flex-col gap-2.5">
       <RailHead>Phase call</RailHead>
-      <div className="overflow-hidden rounded-lg border border-hair bg-plate">
+      <Card className="overflow-hidden">
         <PhaseCallBlock index={FIXTURE_INDICES[0]!} latticeUnit="Å" />
-      </div>
+      </Card>
     </div>
     <div className="flex flex-col gap-2.5">
       <RailHead>Candidate indexings</RailHead>
@@ -305,7 +294,7 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
           {/* Phase call — the output */}
           <div className="flex flex-col gap-2.5">
             <RailHead>Phase call</RailHead>
-            <div className="overflow-hidden rounded-lg border border-hair bg-plate">
+            <Card className="overflow-hidden">
               {inCall.length === 0 ? (
                 <div data-testid="phase-call-empty" className="px-4 py-4 text-xs text-ink-faint">
                   No phase assigned; every peak is unindexed. Check a candidate below.
@@ -313,12 +302,13 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
               ) : (
                 <>
                   {inCall.length > 1 && (
-                    <div
+                    <Kicker
+                      tone="faint"
                       data-testid="coexistence-tag"
-                      className="px-4 pt-2.5 text-[10px] font-bold uppercase tracking-[0.08em] text-ink-faint"
+                      className="px-4 pt-2.5"
                     >
                       Coexistence · {inCall.length} phases
-                    </div>
+                    </Kicker>
                   )}
                   <div className="divide-y divide-hair">
                     {inCall.map((ix) => (
@@ -327,7 +317,7 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
                   </div>
                 </>
               )}
-            </div>
+            </Card>
           </div>
 
           {/* Candidate indexings — the multi-select active set */}
@@ -349,7 +339,7 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
                 ))}
               </div>
             )}
-            <p className="text-[11px] leading-[1.55] text-ink-faint">
+            <p className="text-sm leading-[1.55] text-ink-faint">
               Check every phase that is present; a sample can hold more than one.
               Candidates that explain the same peaks swap; independent phases coexist.
             </p>

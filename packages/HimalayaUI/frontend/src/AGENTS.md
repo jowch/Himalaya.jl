@@ -14,6 +14,7 @@ React 18 + Vite + TypeScript strict + TailwindCSS 4. TanStack Query for server s
 | Phase palette | `phases.ts` | phase → color mapping |
 | Tailwind theme | `styles.css` | `@theme { --color-* … }` |
 | Components | `components/` | See [components/AGENTS.md](components/AGENTS.md) |
+| UI primitives | `components/ui/` | Closed-look design-system primitives (Button, Card, SegmentedControl, PhaseChip, PhaseStrip, ModalShell, Kicker, IconButton, ScoreBar, Dot, ToastContainer, HintText). Appearance lives here; consumer `className` is placement-only. See "Design system" below. |
 | Pages | `pages/` | `SamplesPage`, `LoupePage`, `FocusWorkspacePage`, `SeriesFolioPage`, `SeriesScopingPage`, `SeriesBuilderPage` (all under the single `CorpusShell`; legacy Index/Inspect/Compare pages + `AppShell` retired in Phases 3–5) |
 | Hooks | `hooks/` | `useFocusTrap`, `useGlobalShortcuts`, `useStateFromUrl`, … |
 | Library | `lib/` | URL helpers, plot helpers, comparison helpers, figure export |
@@ -46,6 +47,19 @@ Wrap any function that is both defined inside a component AND used as a `useEffe
 
 "The Print" palette (light warm paper, terracotta accent hue 38, Newsreader serif) is defined once in `styles.css` via `@theme { --color-* ... }` — a single identity, no theme toggle (R0a, #221). The legacy dark-era neutral-ramp shim (the duplicated `bg-`/`text-`/`border-` neutral utilities that mirrored the canonical Print names) was excised in R3-F (#259): use the canonical Print utilities directly — `bg-paper`/`bg-paper-sunk`/`bg-plate`, `text-ink`/`text-ink-soft`/`text-ink-faint`, `border-hair`/`border-hair-strong`, `text-print-accent` (or `accent` for terracotta). Reintroducing an old name is self-revealing: Tailwind won't generate the utility and its `--color-*` custom property no longer resolves. Serif titles use the `text-display`/`text-headline` roles. To add a new color, add it to `@theme` first.
 
+## Design system — closed-look primitives + the design guard (ENFORCED)
+
+The Print's recurring patterns live as **closed-look** primitives in `components/ui/` (Button, Card, SegmentedControl, PhaseChip, PhaseStrip, ModalShell, Kicker, IconButton, ScoreBar, Dot, ToastContainer, HintText). They own their appearance via semantic props (`variant` / `size` / `tone` / domain props); a consumer's `className` is **placement-only** (margins, position, grid). To change how a primitive looks, build a variant *into the primitive* — the idiom is a `Record<Variant,string>` map + a tiny local `cx()` join helper (no cva/clsx/tailwind-merge). Don't restyle from the outside.
+
+This is **mechanically enforced** (2026-05-29 extraction). `scripts/check-design.mjs` runs as a pure-absolute `lint:design` step prepended to `npm run build` (plus a warn-only PostToolUse hook), and **fails the build** on any inline appearance utility *outside* `components/ui/**`:
+
+- arbitrary type size `text-[…]` → use a named scale role (`text-xs/sm/base/lg/xl/headline-lg/display`)
+- arbitrary radius `rounded-[…]` → `rounded-sm` / `rounded-md` (both 5px) / `rounded-full`
+- raw colour literal (`oklch(` / `rgba(` / quoted `#hex`) → a `--color-*` token utility
+- side-stripe `border-l/r` > 1px → a full border + a leading icon/word instead
+
+Only the colour-AUTHORING files are exempt (rules #3/#5 share an allowlist: `phases.ts`, `lib/comparison/coloring.ts`, `lib/figure-export/**`, `MemberHeatmapLayer.tsx`, `DetectorImage.tsx`, `FocusDetectorPanel.tsx`, `main.tsx`). Need a colour anywhere else → add a `--color-*` token to `@theme`, then use the utility. Visual reference: `docs/design-system.html`; full system: root `DESIGN.md`.
+
 ## Skeleton loading via boneyard-js
 
 Each load-gated card wraps content in `<Skeleton>` from `boneyard-js/react`. Full reference: `packages/HimalayaUI/docs/boneyard.md`. Two rules that bite hardest:
@@ -69,3 +83,4 @@ Every reconciliation contract has six layers (route emit → SSE payload → `ap
 - Mint `client_op_id` inside `mutationFn`, not at hook creation time.
 - Don't read `peaks(id)` derivatively during in-flight ops without `useExposureHasPendingPeakOps` gating.
 - Don't assert on Tailwind class strings in tests — use `data-testid` / `data-*` attributes.
+- Don't inline appearance utilities (`text-[…]`, `rounded-[…]`, raw colours, side-stripes) in a consumer — `lint:design` fails the build. Put appearance in a `components/ui/` primitive; `className` is placement-only (see "Design system").

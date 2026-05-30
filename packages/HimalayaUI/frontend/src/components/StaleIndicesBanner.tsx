@@ -69,7 +69,7 @@ export function StaleIndicesBanner(
         {stale.length} {stale.length === 1 ? "index is" : "indices are"} stale.
       </span>
       <Button
-        variant="primary"
+        variant="solid"
         disabled={reanalyzePending}
         onClick={() => reanalyze.mutate({})}
       >

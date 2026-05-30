@@ -1,4 +1,4 @@
-import { phaseColor } from "../phases";
+import { PhaseChip } from "./ui/PhaseChip";
 
 /**
  * The contact-sheet status cell (M-6). A sample with a resolved phase shows a
@@ -15,19 +15,7 @@ export function SampleStatusChip({
   phase: string | null | undefined;
 }): JSX.Element {
   if (phase) {
-    const color = phaseColor(phase);
-    return (
-      <span
-        data-testid="phase-chip"
-        className="rounded px-2 py-0.5 font-mono text-[11px] font-bold"
-        style={{
-          color,
-          background: `color-mix(in oklab, ${color} 13%, transparent)`,
-        }}
-      >
-        {phase}
-      </span>
-    );
+    return <PhaseChip phase={phase} variant="tint" size="sm" />;
   }
   return (
     <span className="flex items-center text-xs text-ink-faint">

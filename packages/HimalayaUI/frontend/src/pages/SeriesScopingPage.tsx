@@ -17,7 +17,9 @@ import { ScopingAutogroupCard } from "../components/ScopingAutogroupCard";
 import { ScopingOrderField } from "../components/ScopingOrderField";
 import { ScopingRow } from "../components/ScopingRow";
 import { ScopingLooseMatches } from "../components/ScopingLooseMatches";
-import { ScopingPhaseStrip } from "../components/ScopingPhaseStrip";
+import { Card } from "../components/ui";
+import { PhaseStrip } from "../components/ui/PhaseStrip";
+import { Kicker } from "../components/ui/Kicker";
 import { ScopingFoot } from "../components/ScopingFoot";
 import { ScopingConfirmModal } from "../components/ScopingConfirmModal";
 
@@ -231,13 +233,12 @@ export function SeriesScopingPage(): JSX.Element {
         </button>
       </div>
 
-      <div
+      <Card
+        elevated
         data-testid="scoping-plate"
-        className="w-full max-w-[760px] rounded-md border border-hair bg-plate px-8 py-7 shadow-[0_1px_0_rgba(255,255,255,.6)_inset,0_1px_1px_rgba(60,52,40,.04),0_18px_40px_-22px_rgba(60,52,40,.22)]"
+        className="w-full max-w-[760px] px-8 py-7"
       >
-        <div className="mb-1.5 text-[11px] font-bold uppercase tracking-[0.14em] text-print-accent">
-          New series
-        </div>
+        <Kicker tone="accent" className="mb-1.5">New series</Kicker>
         <h1 data-testid="scoping-title" className="text-display text-ink">
           {proposal.orderingKey ? `Series by ${keyLabel}` : "New series"}
         </h1>
@@ -290,9 +291,7 @@ export function SeriesScopingPage(): JSX.Element {
                 <ScopingOrderField keyLabel={keyLabel} />
 
                 <div className="mb-1 mt-6 flex items-baseline justify-between">
-                  <span className="text-[10.5px] font-bold uppercase tracking-wider text-ink-faint">
-                    The series
-                  </span>
+                  <Kicker as="span" tone="faint">The series</Kicker>
                   <span className="flex items-baseline gap-3.5">
                     {history.length > 0 ? (
                       <button
@@ -300,12 +299,12 @@ export function SeriesScopingPage(): JSX.Element {
                         data-testid="scoping-undo"
                         onClick={undo}
                         title={`Step back: ${history[history.length - 1]!.label}`}
-                        className="text-[11px] font-semibold text-print-accent hover:underline"
+                        className="text-sm font-semibold text-print-accent hover:underline"
                       >
                         ↺ Undo last change
                       </button>
                     ) : null}
-                    <span className="font-mono text-[10.5px] text-ink-faint">
+                    <span className="font-mono text-xs text-ink-faint">
                       {rows.length} samples · low to high
                     </span>
                   </span>
@@ -330,7 +329,16 @@ export function SeriesScopingPage(): JSX.Element {
                   phases={phaseBySample}
                   onAdd={addLoose}
                 />
-                <ScopingPhaseStrip reads={phaseReads} />
+                <div className="mt-5">
+                  <Kicker tone="faint" as="div" className="mb-1.5">
+                    Preview: phase across the series
+                  </Kicker>
+                  <PhaseStrip
+                    size="sm"
+                    emptyLabel="Members not yet indexed; phase preview unavailable."
+                    segments={phaseReads.map((r) => ({ phase: r.dominant, coexistWith: r.coexist }))}
+                  />
+                </div>
                 <ScopingFoot
                   flagCount={flagCount}
                   memberCount={rows.length}
@@ -342,7 +350,7 @@ export function SeriesScopingPage(): JSX.Element {
             )}
           </Skeleton>
         )}
-      </div>
+      </Card>
 
       <ScopingConfirmModal
         open={confirmOpen}

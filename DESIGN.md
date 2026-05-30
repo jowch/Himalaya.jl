@@ -70,7 +70,7 @@ typography:
     letterSpacing: "normal"
 rounded:
   sm: "5px"
-  md: "7px"
+  md: "5px"
   full: "9999px"
 spacing:
   sm: "8px"
@@ -111,6 +111,8 @@ components:
 # Design System: HimalayaUI — "The Print"
 
 > **Status:** authored 2026-05-27 as the canonical reference for the redesign's fidelity pass (milestone "HimalayaUI — The Print finish"). This describes the Print system the remediation built to; the token migration landed in R0a (#221) + R0b (#222) + R0c (#223). As of R9 (#232) the shipped tokens (`styles.css` `@theme`, `phases.ts`) have been verified to match this doc; the retired dark "Darkroom" defaults are gone. This doc is now both the spec **and** the shipped state.
+>
+> **Update (2026-05-29 component-library extraction).** The Print's recurring patterns were extracted into closed-look primitives under `src/components/ui/` (Button, Card, SegmentedControl, PhaseChip, PhaseStrip, ModalShell, Kicker, IconButton, ScoreBar, Dot, Toast, HintText) and the system is now **mechanically enforced**: `scripts/check-design.mjs` runs as a pure-absolute `lint:design` build step that fails the build on any inline appearance utility (`text-[…]`, `rounded-[…]`, raw colour literals, side-stripes) outside `src/components/ui/**`. Consumers pass placement-only `className`; appearance lives in the primitives. Two token truths changed: `rounded.md` 7px → 5px (radius collapsed to one 5px step), and `--color-print-accent` now sources from `--color-accent`. See `docs/superpowers/plans/2026-05-29-component-library-extraction.md`.
 
 ## 1. Overview
 
@@ -186,7 +188,7 @@ Eight semantic data colours, one per liquid-crystalline phase, used for index/pe
 ### Named rules
 **The Serif-Means-Title Rule.** Newsreader is for titles on a plate (sample name, figure title, card title, the progress numeral). Never set prose or chrome in serif.
 **The Monospace-Means-Measurement Rule.** Mono is for values produced by the instrument. Never for prose.
-**The Fixed-Scale Rule.** Extend the scale in `styles.css` as a reviewed change; never inline a one-off `text-[Npx]` (e.g. the off-scale `text-2xl` at `LoupePage.tsx:175`, L-2).
+**The Fixed-Scale Rule.** Extend the scale in `styles.css` as a reviewed change; never inline a one-off `text-[Npx]`. (Enforced: `scripts/check-design.mjs` fails the build on any inline `text-[…]` outside `components/ui/**`.)
 
 ## 4. Elevation
 
@@ -212,7 +214,7 @@ Mostly flat: paper and its chrome are flat; tonal steps (`paper` → `paper-sunk
 - Rest: ink-soft text on transparent. **Active segment: ink fill, paper text** (`.btn.on`/`.seg button.on`). Use `bg-paper-sunk` for any sunk surface, never a dark-era neutral, the active state must not read as a recessed fill (the L-5/B-A defect).
 
 ### Cards / plate
-- 7px radius (`rounded.md`), `plate` background, a `hair-strong` hairline, and the Plate Lift shadow. The figure plate widens to a max-width and centres; the rail recesses into `paper-sunk`.
+- 5px radius (`rounded.md`), `plate` background, a `hair-strong` hairline, and the Plate Lift shadow. The figure plate widens to a max-width and centres; the rail recesses into `paper-sunk`. (Radius collapsed to a single 5px step in the 2026-05-29 component-library extraction: `rounded.sm` and `rounded.md` are both 5px, so cards and controls share one corner; the two names survive only to allow a future re-differentiation by editing one token. The `Card` primitive is the single source of the plate look.)
 
 ### Inputs
 - Recessed: `plate`/`paper-sunk` well, `hair` border, 5px radius. Focus shifts the border to `accent` with a 1px accent ring. Scoping values are "confident ink, re-openable" rather than a permanent open field (S-E).

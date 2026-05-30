@@ -2,7 +2,10 @@ import type { SeriesSummary } from "../api";
 import { phaseColor } from "../phases";
 import { useSeries } from "../queries";
 import { SeriesMiniWaterfall } from "./SeriesMiniWaterfall";
-import { SeriesPhaseStrip } from "./SeriesPhaseStrip";
+import { Card } from "./ui";
+import { PhaseStrip } from "./ui/PhaseStrip";
+import { Kicker } from "./ui/Kicker";
+import { buildPhaseStrip } from "../lib/series/folioFigure";
 
 interface SeriesFolioCardProps {
   series: SeriesSummary;
@@ -77,7 +80,9 @@ export function SeriesFolioCard({
       : null;
 
   return (
-    <button
+    <Card
+      as="button"
+      elevated
       type="button"
       data-testid={`series-card-${series.id}`}
       data-member-count={series.member_count}
@@ -85,9 +90,9 @@ export function SeriesFolioCard({
       data-stale={series.has_stale_members ? "true" : "false"}
       onClick={() => onOpen(series.id)}
       className={[
-        "mb-5 block w-full break-inside-avoid overflow-hidden rounded border text-left",
-        "bg-plate transition-transform hover:-translate-y-0.5",
-        isDraft ? "border-dashed border-hair-strong" : "border-hair",
+        "mb-5 block w-full break-inside-avoid overflow-hidden text-left",
+        "transition-transform hover:-translate-y-0.5",
+        isDraft ? "border-dashed" : "",
       ].join(" ")}
     >
       {/* The frozen plate — a live miniature once detail loads, else a swatch
@@ -116,7 +121,7 @@ export function SeriesFolioCard({
                 style={{ background: phaseColor(phase) }}
               />
             ))}
-            {overflow > 0 && <span className="text-[10px] text-ink-faint">+{overflow} more</span>}
+            {overflow > 0 && <span className="text-xs text-ink-faint">+{overflow} more</span>}
           </div>
         )}
       </div>
@@ -124,17 +129,14 @@ export function SeriesFolioCard({
       <div className="flex flex-col gap-1 p-3">
         {/* kicker + pill row */}
         <div className="flex items-center justify-between gap-2">
-          <span
-            data-testid={`series-card-${series.id}-kicker`}
-            className="text-[10.5px] font-bold uppercase tracking-[0.11em] text-print-accent"
-          >
+          <Kicker as="span" tone="accent" data-testid={`series-card-${series.id}-kicker`}>
             {isDraft ? "Recipe" : `Fig. ${figNumber ?? series.id}`}
-          </span>
+          </Kicker>
           {pill && (
             <span
               data-testid={`series-card-${series.id}-pill`}
               className={[
-                "rounded-full px-2 py-0.5 text-[10px] font-bold tracking-[0.03em]",
+                "rounded-full px-2 py-0.5 text-xs font-bold tracking-[0.03em]",
                 pill.kind === "draft"
                   ? "border border-dashed border-hair-strong bg-paper-sunk text-ink-faint"
                   : "text-print-accent",
@@ -167,7 +169,7 @@ export function SeriesFolioCard({
         {/* meta line */}
         <div
           data-testid={`series-card-${series.id}-meta`}
-          className="flex items-center gap-1.5 text-[11.5px] text-ink-faint"
+          className="flex items-center gap-1.5 text-sm text-ink-faint"
         >
           <b className="font-semibold text-ink-soft">
             {series.member_count} {series.member_count === 1 ? "sample" : "samples"}
@@ -181,12 +183,12 @@ export function SeriesFolioCard({
         </div>
 
         {/* live per-sample phase strip + caption (F-B); only with detail */}
-        {hasMiniature && <SeriesPhaseStrip members={members} />}
+        {hasMiniature && <PhaseStrip segments={buildPhaseStrip(members).segments} className="mt-3" />}
 
         {/* footer rule + provenance + edited timestamp (F-H) */}
         <div
           data-testid={`series-card-${series.id}-foot`}
-          className="mt-3 flex items-center justify-between border-t border-hair pt-2.5 text-[10.5px] text-ink-faint"
+          className="mt-3 flex items-center justify-between border-t border-hair pt-2.5 text-xs text-ink-faint"
         >
           <span>
             {series.member_count} {series.member_count === 1 ? "member" : "members"}
@@ -198,6 +200,6 @@ export function SeriesFolioCard({
           </span>
         </div>
       </div>
-    </button>
+    </Card>
   );
 }

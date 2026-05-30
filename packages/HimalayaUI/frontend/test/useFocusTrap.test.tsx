@@ -15,6 +15,16 @@ function TrapContainer({ active = true }: { active?: boolean }): JSX.Element {
   );
 }
 
+function TextareaTrap({ active = true }: { active?: boolean }): JSX.Element {
+  const ref = useRef<HTMLDivElement>(null);
+  useFocusTrap(ref, active);
+  return (
+    <div ref={ref}>
+      <textarea data-testid="ta-only" defaultValue="" />
+    </div>
+  );
+}
+
 describe("useFocusTrap", () => {
   it("Tab on the last element wraps focus to the first", () => {
     const { getByTestId } = render(<TrapContainer />);
@@ -76,5 +86,35 @@ describe("useFocusTrap", () => {
     expect(document.activeElement).toBe(trigger);
 
     document.body.removeChild(trigger);
+  });
+
+  it("traps a textarea-only container (Tab on the sole textarea stays put)", () => {
+    const { getByTestId } = render(<TextareaTrap />);
+    const ta = getByTestId("ta-only");
+    ta.focus();
+    expect(document.activeElement).toBe(ta);
+    // Sole focusable is both first and last → Tab wraps to itself, focus held.
+    const evt = fireEvent.keyDown(ta, { key: "Tab", bubbles: true });
+    expect(evt).toBe(false); // defaultPrevented: trap acted (textarea is now in FOCUSABLE)
+    expect(document.activeElement).toBe(ta);
+  });
+
+  it("includes anchors with href in the focusable set", () => {
+    function AnchorTrap(): JSX.Element {
+      const ref = useRef<HTMLDivElement>(null);
+      useFocusTrap(ref, true);
+      return (
+        <div ref={ref}>
+          <a href="#x" data-testid="lnk">link</a>
+          <button data-testid="btn-z">Z</button>
+        </div>
+      );
+    }
+    const { getByTestId } = render(<AnchorTrap />);
+    const lnk = getByTestId("lnk");
+    const z = getByTestId("btn-z");
+    z.focus();
+    fireEvent.keyDown(z, { key: "Tab", bubbles: true }); // last → wraps to first (anchor)
+    expect(document.activeElement).toBe(lnk);
   });
 });
