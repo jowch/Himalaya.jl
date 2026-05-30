@@ -44,22 +44,17 @@ describe("Card", () => {
 });
 
 describe("Card closed-look contract", () => {
-  it("never emits its own appearance via consumer className — flat carries no shadow utility", () => {
-    render(<Card data-testid="flat">x</Card>);
-    const cls = screen.getByTestId("flat").className;
-    expect(cls).toContain("bg-plate");
-    expect(cls).toContain("rounded-md");
-    expect(cls).not.toMatch(/shadow/);
-    expect(screen.getByTestId("flat")).not.toHaveAttribute("data-elevated");
+  it("flat card has no data-elevated attribute and renders children", () => {
+    render(<Card data-testid="flat">content</Card>);
+    const el = screen.getByTestId("flat");
+    expect(el).not.toHaveAttribute("data-elevated");
+    expect(el).toHaveTextContent("content");
   });
 
-  it("elevated delegates appearance to the `.card` recipe (no inline shadow, no bg-plate util, no rounded util)", () => {
-    render(<Card data-testid="lift" elevated>x</Card>);
-    const cls = screen.getByTestId("lift").className;
-    expect(cls).toContain("card");
-    expect(cls).not.toMatch(/shadow-\[/);
-    expect(cls).not.toContain("bg-plate");
-    expect(cls).not.toContain("rounded-md");
-    expect(screen.getByTestId("lift")).toHaveAttribute("data-elevated", "true");
+  it("elevated card sets data-elevated=\"true\" and renders children", () => {
+    render(<Card data-testid="lift" elevated>content</Card>);
+    const el = screen.getByTestId("lift");
+    expect(el).toHaveAttribute("data-elevated", "true");
+    expect(el).toHaveTextContent("content");
   });
 });

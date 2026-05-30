@@ -1,9 +1,11 @@
 interface HintTextProps {
   children: React.ReactNode;
+  /** Placement-only className (spacing, max-width, etc). Appearance is fixed. */
+  className?: string;
 }
 
-export function HintText({ children }: HintTextProps): JSX.Element {
+export function HintText({ children, className = "" }: HintTextProps): JSX.Element {
   return (
-    <p className="text-ink-faint text-base italic">{children}</p>
+    <p className={`text-ink-faint text-base italic ${className}`.trim()}>{children}</p>
   );
 }

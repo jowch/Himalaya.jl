@@ -188,7 +188,7 @@ Eight semantic data colours, one per liquid-crystalline phase, used for index/pe
 ### Named rules
 **The Serif-Means-Title Rule.** Newsreader is for titles on a plate (sample name, figure title, card title, the progress numeral). Never set prose or chrome in serif.
 **The Monospace-Means-Measurement Rule.** Mono is for values produced by the instrument. Never for prose.
-**The Fixed-Scale Rule.** Extend the scale in `styles.css` as a reviewed change; never inline a one-off `text-[Npx]` (e.g. the off-scale `text-2xl` at `LoupePage.tsx:175`, L-2).
+**The Fixed-Scale Rule.** Extend the scale in `styles.css` as a reviewed change; never inline a one-off `text-[Npx]`. (Enforced: `scripts/check-design.mjs` fails the build on any inline `text-[…]` outside `components/ui/**`.)
 
 ## 4. Elevation
 

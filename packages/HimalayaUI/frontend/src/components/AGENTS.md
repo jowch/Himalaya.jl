@@ -1,6 +1,6 @@
 # frontend/src/components — UI components
 
-React components for the three-card Index workspace, Inspect page, Compare page, modals, and shared primitives.
+React components for the corpus contact sheet, loupe, focus workspace, series views (folio/scoping/builder), modals, and the shared `ui/` primitives.
 
 ## Where things live
 

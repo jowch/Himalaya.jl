@@ -330,10 +330,9 @@ export function SeriesScopingPage(): JSX.Element {
                   onAdd={addLoose}
                 />
                 <div className="mt-5">
-                  {/* interim inline kicker — replace with <Kicker> when it lands */}
-                  <div className="mb-1.5 text-xs font-bold uppercase tracking-wider text-ink-faint">
+                  <Kicker tone="faint" as="div" className="mb-1.5">
                     Preview: phase across the series
-                  </div>
+                  </Kicker>
                   <PhaseStrip
                     size="sm"
                     emptyLabel="Members not yet indexed; phase preview unavailable."

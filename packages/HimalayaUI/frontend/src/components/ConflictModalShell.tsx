@@ -16,7 +16,7 @@
  * shell just renders `overwriteBusy` and forwards the click.
  */
 import type { ReactNode } from "react";
-import { ModalShell } from "./ui";
+import { Kicker, ModalShell } from "./ui";
 
 export interface ConflictPanelData {
   label: string;
@@ -107,9 +107,9 @@ function Panel({
       data-testid={testId}
       className="border border-hair-strong rounded-md p-3 flex flex-col gap-2 min-w-0"
     >
-      <header className="text-xs uppercase tracking-wide text-ink-faint">
+      <Kicker tone="faint" as="div">
         {label}
-      </header>
+      </Kicker>
       <div className="text-ink font-medium truncate" data-testid={`${testId}-title`}>
         {title || "(no title)"}
       </div>
