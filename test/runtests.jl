@@ -11,4 +11,5 @@ using Test
     include("peakfinding_gating.jl")
     include("peakfinding_real.jl")
     include("test_remove_subsets_score_once.jl")
+    include("bonnet.jl")
 end
