@@ -25,6 +25,10 @@ import type { Peak } from "../api";
  *  TraceViewer/MultiTracePlot (#180 q-link feel). */
 export const PEAK_HIT_PX = 10;
 
+/** Stable empty default for `peaks` so the renderPlot callback identity is
+ *  stable when a read-only consumer omits peaks (no spurious second build). */
+const NO_PEAKS: readonly Peak[] = Object.freeze([]);
+
 type Scale =
   | { invert?: (v: number) => number; apply?: (v: number) => number }
   | undefined;
@@ -76,6 +80,19 @@ export interface PlotSurfaceProps {
   /** Render the interactive SVG overlay given live scales. */
   overlay?: (ctx: PlotOverlayContext) => React.ReactNode | void;
   hitTolerancePx?: number;
+  /** Escape hatch for consumers whose hit-testing isn't single-peak-by-id
+   *  (MultiTracePlot: per-member-band peak click). Fires for ANY interior
+   *  click with the container-relative pixel + the overlay ctx, BEFORE the
+   *  built-in peak hit-test. Return `true` to mark the click handled (skips
+   *  onClickPeak / onAddPeak). q/peak-plots leave it unset. */
+  onPointerClick?: (ctx: PlotOverlayContext, px: number, py: number, altKey: boolean) => boolean | void;
+  /** Mousemove escape hatch (MultiTracePlot peak tooltip). Container-relative. */
+  onPointerMove?: (ctx: PlotOverlayContext, px: number, py: number) => void;
+  /** Mouseleave escape hatch (clear tooltip). */
+  onPointerLeave?: () => void;
+  /** Horizontal brush-to-zoom (MultiTracePlot). When set, a drag emits the
+   *  [qA, qB] sub-range; tiny drags (<4px) are treated as clicks (ignored). */
+  onBrush?: (domain: [number, number]) => void;
   /** Forwarded to the root for E2E / placement. */
   className?: string;
   "data-testid"?: string;
@@ -110,8 +127,9 @@ export function PlotSurface(props: PlotSurfaceProps): JSX.Element {
     marks, xType, xDomain, yDomain = null,
     yType = "log", yReversed = false, hideYAxis = false, yLabel = "I (a.u.)",
     margins, qUnits, onXDomain, xExtent = null,
-    peaks = [], onAddPeak, onClickPeak, onReset, overlay,
+    peaks = NO_PEAKS as Peak[], onAddPeak, onClickPeak, onReset, overlay,
     hitTolerancePx = PEAK_HIT_PX,
+    onPointerClick, onPointerMove, onPointerLeave, onBrush,
     className, "data-testid": dataTestId = "plot-surface",
   } = props;
 
@@ -180,7 +198,26 @@ export function PlotSurface(props: PlotSurfaceProps): JSX.Element {
     container.replaceChildren(el);
     plotElRef.current = el as unknown as HTMLElement;
 
-    // ── click: hit-test → onClickPeak, else onAddPeak(invertQ) ─────────────
+    // Build an overlay context for the escape-hatch handlers (same shape the
+    // `overlay` slot receives). Closes over the freshly-built element.
+    const makeCtx = (): PlotOverlayContext => {
+      const plotEl = plotElRef.current;
+      const yScale: Scale = (
+        plotEl as unknown as { scale: (n: string) => Scale }
+      )?.scale("y");
+      return {
+        applyQ: (q) => applyQHelper(plotEl, q),
+        invertQ: (px) => invertQHelper(plotEl, px),
+        applyY: (v) => (yScale?.apply ? yScale.apply(v) : null),
+        width: container!.clientWidth,
+        height: container!.clientHeight,
+        margins,
+        hitTest: (ps, px, tol) =>
+          hitTestPeaks(ps, px, (q) => applyQHelper(plotEl, q) ?? NaN, tol ?? hitTolerancePx),
+      };
+    };
+
+    // ── click: pointer escape hatch → peak hit-test → onClickPeak, else add ─
     function handleClick(ev: Event): void {
       const me = ev as MouseEvent;
       const xScale: Scale = (
@@ -190,6 +227,17 @@ export function PlotSurface(props: PlotSurfaceProps): JSX.Element {
       const rect = container!.getBoundingClientRect();
       const clickX = me.clientX - rect.left;
       const clickY = me.clientY - rect.top;
+
+      // The escape hatch (MultiTracePlot per-band hit-test) runs FIRST and is
+      // NOT gated on the interior box — it does its own y-band bounds check and
+      // must fire even when the container rect is degenerate (JSDOM / 0-size).
+      if (onPointerClick) {
+        const handled = onPointerClick(makeCtx(), clickX, clickY, me.altKey);
+        if (handled) return;
+      }
+
+      // The built-in peak/add path keeps the interior guard (TraceViewer feel):
+      // clicks in the axis margins shouldn't add a peak.
       if (!insideInterior(clickX, clickY, rect.width, rect.height, margins)) return;
 
       if (onClickPeak) {
@@ -245,6 +293,49 @@ export function PlotSurface(props: PlotSurfaceProps): JSX.Element {
     }
     (el as unknown as EventTarget).addEventListener("dblclick", handleDblClick);
 
+    // ── pointer move / leave escape hatch (MultiTracePlot peak tooltip) ────
+    function handlePointerMove(evRaw: Event): void {
+      if (!onPointerMove) return;
+      const ev = evRaw as MouseEvent;
+      const rect = container!.getBoundingClientRect();
+      onPointerMove(makeCtx(), ev.clientX - rect.left, ev.clientY - rect.top);
+    }
+    function handlePointerLeave(): void {
+      onPointerLeave?.();
+    }
+    if (onPointerMove) {
+      (el as unknown as EventTarget).addEventListener("mousemove", handlePointerMove);
+    }
+    if (onPointerLeave) {
+      (el as unknown as EventTarget).addEventListener("mouseleave", handlePointerLeave);
+    }
+
+    // ── horizontal brush-to-zoom (MultiTracePlot) ─────────────────────────
+    let brushStartPx: number | null = null;
+    function handleMouseDown(evRaw: Event): void {
+      if (!onBrush) return;
+      const ev = evRaw as MouseEvent;
+      const rect = container!.getBoundingClientRect();
+      brushStartPx = ev.clientX - rect.left;
+    }
+    function handleMouseUp(evRaw: Event): void {
+      if (!onBrush || brushStartPx === null) return;
+      const ev = evRaw as MouseEvent;
+      const rect = container!.getBoundingClientRect();
+      const endPx = ev.clientX - rect.left;
+      const start = brushStartPx;
+      brushStartPx = null;
+      if (Math.abs(endPx - start) < 4) return; // tiny drag = click
+      const a = invertQHelper(plotElRef.current, Math.min(start, endPx));
+      const b = invertQHelper(plotElRef.current, Math.max(start, endPx));
+      if (a === null || b === null || b <= a) return;
+      onBrush([a, b]);
+    }
+    if (onBrush) {
+      (el as unknown as EventTarget).addEventListener("mousedown", handleMouseDown);
+      (el as unknown as EventTarget).addEventListener("mouseup", handleMouseUp);
+    }
+
     // Paint the overlay once the scales exist (one-shot; subsequent rebuilds
     // are picked up via the `_resizeKey` re-render below).
     setReady(true);
@@ -253,6 +344,10 @@ export function PlotSurface(props: PlotSurfaceProps): JSX.Element {
       (el as unknown as EventTarget).removeEventListener("click", handleClick);
       (el as unknown as EventTarget).removeEventListener("wheel", handleWheel);
       (el as unknown as EventTarget).removeEventListener("dblclick", handleDblClick);
+      (el as unknown as EventTarget).removeEventListener("mousemove", handlePointerMove);
+      (el as unknown as EventTarget).removeEventListener("mouseleave", handlePointerLeave);
+      (el as unknown as EventTarget).removeEventListener("mousedown", handleMouseDown);
+      (el as unknown as EventTarget).removeEventListener("mouseup", handleMouseUp);
       container.replaceChildren();
       plotElRef.current = null;
     };
@@ -260,6 +355,7 @@ export function PlotSurface(props: PlotSurfaceProps): JSX.Element {
     marks, xType, xDomain, yDomain, yType, yReversed, hideYAxis, yLabel,
     margins, qUnits, onXDomain, xExtent, peaks, onAddPeak, onClickPeak,
     onReset, hitTolerancePx,
+    onPointerClick, onPointerMove, onPointerLeave, onBrush,
   ]);
 
   useEffect(() => {

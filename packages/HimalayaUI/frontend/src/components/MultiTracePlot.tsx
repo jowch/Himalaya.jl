@@ -33,9 +33,8 @@ import { buildMemberMarks, buildMemberPeakRows } from "./MemberTraceLayer";
 import type { PeakRow } from "./MemberTraceLayer";
 import { buildMemberHeatmapMarks } from "./MemberHeatmapLayer";
 import { buildCrossTraceTrackingMarks } from "./CrossTraceTrackingLayer";
-import { invertQ, applyQ } from "../lib/plot/invertQ";
-import { formatAxis } from "../lib/plot/formatAxis";
-import { prettifyUnits } from "../lib/units";
+import { PlotSurface } from "./PlotSurface";
+import type { PlotOverlayContext } from "./PlotSurface";
 import type { GroupingMode } from "../lib/comparison/coloring";
 import { computeYBands } from "../lib/comparison/yBands";
 import { useActiveBand } from "./ActiveBandContext";
@@ -241,19 +240,13 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
 
   const hostRef       = useRef<HTMLDivElement>(null);
   const plotContainer = useRef<HTMLDivElement>(null);
-  const plotElRef     = useRef<HTMLElement | SVGElement | null>(null);
 
   const [_resizeKey, setResizeKey] = useState(0);
-  // Tracked panel height drives the per-band overlay positions in the JSX
-  // below. Read from the same `clientHeight` source the plot uses, so the
-  // overlay y-bands stay in sync with the rendered plot.
+  // Tracked panel height drives the per-band overlay positions + the band math.
   const [panelHeight, setPanelHeight] = useState(0);
+  const [panelWidth, setPanelWidth] = useState(0);
 
-  // Phase 8.3 — peak hover tooltip state. `null` = nothing hovered. The
-  // `xPx` / `yPx` values are container-local pixel coordinates used to
-  // position the tooltip overlay; `q` and `peakId` are the rendered fields.
-  // Peak id is only displayed when the developer-only `?showPeakIds` URL
-  // flag is set (read once on mount; doesn't react to history changes).
+  // Phase 8.3 — peak hover tooltip state (unchanged contract).
   const [tooltip, setTooltip] = useState<{
     q: number; peakId: number; xPx: number; yPx: number;
   } | null>(null);
@@ -264,15 +257,19 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
     const el = plotContainer.current;
     if (!el) return;
     setPanelHeight(el.clientHeight);
+    setPanelWidth(el.clientWidth);
     const obs = new ResizeObserver(() => {
       setResizeKey((k) => k + 1);
-      if (plotContainer.current) setPanelHeight(plotContainer.current.clientHeight);
+      if (plotContainer.current) {
+        setPanelHeight(plotContainer.current.clientHeight);
+        setPanelWidth(plotContainer.current.clientWidth);
+      }
     });
     obs.observe(el);
     return () => obs.disconnect();
   }, []);
 
-  // Derive q-domain from union of all member traces (for full-range default).
+  // Derive q-domain from union of all member traces (full-range default).
   const qExtent = useCallback((): [number, number] | null => {
     let lo = Infinity;
     let hi = -Infinity;
@@ -289,44 +286,24 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
     return [lo, hi];
   }, [members, traces]);
 
-  // Imperative render-and-bind: builds the Plot element from current props,
-  // installs the wheel/dblclick/brush listeners, and returns a cleanup that
-  // detaches them. Wrapped in `useCallback` with its true deps so the effect
-  // below depends on `[renderPlot, _resizeKey]` alone — no eslint-disable,
-  // no hand-curated dep list (per CLAUDE.md "Imperative render functions
-  // in effects: use `useCallback`").
-  const renderPlot = useCallback((): (() => void) | undefined => {
-    const container = plotContainer.current;
-    if (!container) return;
-
-    const panelW = container.clientWidth  || 400;
-    const panelH = container.clientHeight || 300;
-
+  // Build the marks + per-member hit-test index in one memoized pass so they
+  // never drift from each other (same `buildMemberPeakRows` source). `_resizeKey`
+  // is a dep so the synthesized x-scale (used for label dodge) tracks resize.
+  const { allMarks, hoverPeakIndex } = useMemo(() => {
+    void _resizeKey;
+    const panelW = panelWidth || 400;
+    const panelH = panelHeight || 300;
     const ratios = members.map((m) => m.band_height || 1);
     const yBands = computeYBands(ratios, panelH);
 
-    // Synthesize an x-scale directly from the domain + plot width so the
-    // label-dodge layout (Phase 8.2) can run in the SAME pass as mark
-    // building — no two-pass `Plot.plot()` call needed. The plot interior
-    // is `[MARGIN_LEFT, panelW - MARGIN_RIGHT]`; pixels outside that range
-    // map to the corresponding domain edges (matches Plot's clamping).
     const ext = qExtent();
     const xMin = xDomain ? xDomain[0] : ext?.[0] ?? 1;
     const xMax = xDomain ? xDomain[1] : ext?.[1] ?? 10;
     const innerW = Math.max(1, panelW - MARGIN_LEFT - MARGIN_RIGHT);
     const xScale = makeXScale(xType, xMin, xMax, MARGIN_LEFT, innerW);
 
-    const allMarks: unknown[] = [];
-    // Per-member visible peak rows + y-band, captured for click + hover
-    // hit-testing. Built in the same loop as the marks so we never drift
-    // from what was rendered (the same `buildMemberPeakRows` call sources
-    // both). The HOVER index is unconditional (tooltip works in review
-    // mode too); the CLICK index is the same data, gated by `onPeakClick`.
-    const hoverPeakIndex: Array<{
-      memberId: number;
-      yBand: [number, number];
-      peaks: PeakRow[];
-    }> = [];
+    const marks: unknown[] = [];
+    const index: Array<{ memberId: number; yBand: [number, number]; peaks: PeakRow[] }> = [];
     for (let i = 0; i < members.length; i++) {
       const m = members[i]!;
       const yBand = yBands[i] ?? [0, panelH];
@@ -344,19 +321,12 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
         xScale,
         showPeakTicks,
         showPeakLabels,
-        // Phase 9 gap-fix: forward grouping context so the per-member line
-        // stroke recolors with the toggle. `MemberTraceLayer` falls back
-        // to legacy single-color rendering when these are undefined.
         ...(groupingMode !== undefined && sampleIdFor !== undefined
           ? { groupingMode, allMembers: members, sampleIdFor }
           : {}),
         ...(workingBandFraction !== undefined ? { workingBandFraction } : {}),
       };
       if (representation === "heatmap") {
-        // Heatmap row: same y-band envelope, mark vocabulary swaps to
-        // intensity-binned rects. The peak hit-test / hover machinery below
-        // is waterfall-only; peaks fold into the intensity field here, so we
-        // skip pushing rows into `hoverPeakIndex` for heatmap members.
         const heatmapMarks = buildMemberHeatmapMarks({
           member: m,
           trace,
@@ -366,130 +336,43 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
             ? { groupingMode, allMembers: members, sampleIdFor }
             : {}),
         });
-        for (const mk of heatmapMarks) allMarks.push(mk);
+        for (const mk of heatmapMarks) marks.push(mk);
         continue;
       }
       const memberMarks = buildMemberMarks(layerProps);
-      for (const mk of memberMarks) allMarks.push(mk);
+      for (const mk of memberMarks) marks.push(mk);
       const { peaks } = buildMemberPeakRows(layerProps);
-      hoverPeakIndex.push({ memberId: m.id, yBand: yBand as [number, number], peaks });
+      index.push({ memberId: m.id, yBand: yBand as [number, number], peaks });
     }
-    // Cross-trace peak-tracking layer (#208). One Plot.line mark grouped by
-    // (phase, Miller-order); empty array when nothing connects. Pushed AFTER
-    // per-member marks so the connector renders on top of the waterfall
-    // lines / heatmap cells.
     if (showCrossTraceTracking) {
       const trackingMarks = buildCrossTraceTrackingMarks({
         members,
         yBands: yBands as Array<[number, number]>,
       });
-      for (const mk of trackingMarks) allMarks.push(mk);
+      for (const mk of trackingMarks) marks.push(mk);
     }
+    return { allMarks: marks as Plot.Markish[], hoverPeakIndex: index };
+  }, [
+    members, traces, xDomain, xType,
+    peakDisplayByMemberId, highlightedMemberId,
+    showPeakTicks, showPeakLabels, groupingMode, sampleIdFor,
+    workingBandFraction, representation, showCrossTraceTracking,
+    qExtent, panelWidth, panelHeight, _resizeKey,
+  ]);
 
-    // Click-hit-test reuses the same index when `onPeakClick` is wired.
-    const peakIndex = onPeakClick ? hoverPeakIndex : [];
-
-    const el = Plot.plot({
-      width:  panelW,
-      height: panelH,
-      marginLeft: MARGIN_LEFT, marginRight: MARGIN_RIGHT,
-      marginTop: MARGIN_TOP,  marginBottom: MARGIN_BOTTOM,
-      style: {
-        fontFamily: "var(--font-sans)",
-        color: "var(--color-ink-soft)",
-        background: "transparent",
-        overflow: "visible",
-      },
-      x: {
-        type: xType,
-        label: `q (${prettifyUnits(qUnits ?? "A-1")})`,
-        // Plain decimal tick labels — Plot's default SI-suffix formatter
-        // renders 0.040 as "40m" which is unhelpful for SAXS q values.
-        // Shared with `TraceViewer` for cross-page parity (issue #80).
-        tickFormat: (d: number) => formatAxis(d),
-        ...(xDomain ? { domain: xDomain } : {}),
-      },
-      // Y-axis is in pixel-space envelope coordinates produced by
-      // `applyNormalization` (small y = top of band, large y = bottom).
-      // Plot's default orientation maps domain[0] → bottom, domain[1] →
-      // top, so we reverse the domain to keep small-y at top — otherwise
-      // every trace renders upside-down (issue #63).
-      y: {
-        type: "linear",
-        domain: [panelH, 0],
-        // Hide y axis — the y-band layout is the visualization, not the
-        // numbers themselves.
-        axis: null,
-      },
-      // Observable Plot's `Markish` type is closed over the public mark
-      // factories; `buildMemberMarks` returns `unknown[]` because callers
-      // shouldn't depend on the internal mark constructor shapes. Cast at
-      // the boundary; the runtime contract holds (these were produced by
-      // `Plot.line / Plot.dot / Plot.text`).
-      marks: allMarks as Plot.Markish[],
-    });
-
-    container.replaceChildren(el);
-    plotElRef.current = el as unknown as HTMLElement;
-
-    function handleWheel(evRaw: Event): void {
-      const ev = evRaw as WheelEvent;
-      ev.preventDefault();
-      const rect = container!.getBoundingClientRect();
-      const cursorQ = invertQ(plotElRef.current, ev.clientX - rect.left);
-      if (cursorQ === null) return;
-      const ext = qExtent();
-      const curMin = xDomain ? xDomain[0] : ext?.[0] ?? cursorQ * 0.5;
-      const curMax = xDomain ? xDomain[1] : ext?.[1] ?? cursorQ * 2;
-      const factor = Math.exp(ev.deltaY * 0.001);
-      const q0 = ext?.[0] ?? curMin;
-      const qN = ext?.[1] ?? curMax;
-      let newMin: number;
-      let newMax: number;
-      if (xType === "log") {
-        const logMin = Math.log(curMin);
-        const logMax = Math.log(curMax);
-        const logCur = Math.log(Math.max(cursorQ, 1e-6));
-        newMin = Math.max(q0, Math.exp(logCur - (logCur - logMin) * factor));
-        newMax = Math.min(qN, Math.exp(logCur + (logMax - logCur) * factor));
-      } else {
-        newMin = Math.max(q0, cursorQ - (cursorQ - curMin) * factor);
-        newMax = Math.min(qN, cursorQ + (curMax - cursorQ) * factor);
-      }
-      if (newMax - newMin < (qN - q0) * 1e-4) return;
-      onXDomain([newMin, newMax]);
-    }
-    (el as unknown as EventTarget).addEventListener("wheel", handleWheel, { passive: false } as AddEventListenerOptions);
-
-    function handleDblClick(): void {
-      onXDomain(null);
-    }
-    (el as unknown as EventTarget).addEventListener("dblclick", handleDblClick);
-
-    // ── peak click hit-testing (Phase 8.1, edit mode only) ─────────────
-    // Only installs when `onPeakClick` is provided. Hit-test logic:
-    //   1. Convert click pixel → q via the x-scale.
-    //   2. Identify the member whose y-band contains the click Y.
-    //   3. Find the closest peak in that member's `peaks` within
-    //      `PEAK_HIT_PX` pixels (using `applyQ` to convert peak q → px).
-    //   4. Dispatch `onPeakClick(memberId, peakId, altKey)`.
-    // Bails silently when nothing matches — leaves brush/zoom untouched.
-    function handlePeakClick(evRaw: Event): void {
-      if (!onPeakClick) return;
-      const ev = evRaw as MouseEvent;
-      const rect = container!.getBoundingClientRect();
-      const clickX = ev.clientX - rect.left;
-      const clickY = ev.clientY - rect.top;
+  // Per-band peak click hit-test (edit mode). Routes through PlotSurface's
+  // onPointerClick escape hatch: picks the member whose y-band contains the
+  // click, then the closest peak within PEAK_HIT_PX. Returns `true` when a
+  // peak is hit so PlotSurface skips its own (single-id) peak/add handlers.
+  const handlePointerClick = useCallback(
+    (ctx: PlotOverlayContext, clickX: number, clickY: number, altKey: boolean): boolean => {
+      if (!onPeakClick) return false;
       let best: { memberId: number; peakId: number; dist: number } | null = null;
-      for (const band of peakIndex) {
-        // Y-band selection — pick the member whose band contains the click Y.
-        // We still allow a small tolerance so clicks on the very edge of the
-        // band (e.g. on a triangle that pokes above the line) hit the right
-        // member.
+      for (const band of hoverPeakIndex) {
         const [top, bottom] = band.yBand;
         if (clickY < top - PEAK_HIT_PX || clickY > bottom + PEAK_HIT_PX) continue;
         for (const p of band.peaks) {
-          const px = applyQ(plotElRef.current, p.q);
+          const px = ctx.applyQ(p.q);
           if (px === null) continue;
           const d = Math.abs(px - clickX);
           if (d <= PEAK_HIT_PX && (best === null || d < best.dist)) {
@@ -497,25 +380,26 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
           }
         }
       }
-      if (best !== null) onPeakClick(best.memberId, best.peakId, ev.altKey);
-    }
-    (el as unknown as EventTarget).addEventListener("click", handlePeakClick);
+      if (best !== null) {
+        onPeakClick(best.memberId, best.peakId, altKey);
+        return true;
+      }
+      return false;
+    },
+    [onPeakClick, hoverPeakIndex],
+  );
 
-    // ── peak hover tooltip (Phase 8.3) ─────────────────────────────────
-    // Mousemove hit-tests against ALL members' visible peaks (regardless
-    // of edit mode — tooltip is informational and unconditional). Same
-    // hit radius as click. Mouseleave hides the tooltip.
-    function handleHoverMove(evRaw: Event): void {
-      const ev = evRaw as MouseEvent;
-      const rect = container!.getBoundingClientRect();
-      const cursorX = ev.clientX - rect.left;
-      const cursorY = ev.clientY - rect.top;
+  // Peak hover tooltip (unconditional — informational). Mirrors the legacy
+  // handleHoverMove: hit-test against ALL members, translate to host-relative
+  // coords for the absolutely-positioned tooltip.
+  const handlePointerMove = useCallback(
+    (ctx: PlotOverlayContext, cursorX: number, cursorY: number): void => {
       let best: { memberId: number; peakId: number; q: number; dist: number } | null = null;
       for (const band of hoverPeakIndex) {
         const [top, bottom] = band.yBand;
         if (cursorY < top - PEAK_HIT_PX || cursorY > bottom + PEAK_HIT_PX) continue;
         for (const p of band.peaks) {
-          const px = applyQ(plotElRef.current, p.q);
+          const px = ctx.applyQ(p.q);
           if (px === null) continue;
           const d = Math.abs(px - cursorX);
           if (d <= PEAK_HIT_PX && (best === null || d < best.dist)) {
@@ -527,84 +411,32 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
         setTooltip(null);
         return;
       }
-      // Tooltip is positioned absolutely against `hostRef`, but `cursorX/Y`
-      // above are `plotContainer`-relative (used for plot-pixel hit-testing
-      // via `applyQ`). After issue #81's width cap, `plotContainer` is
-      // `mx-auto`-centered inside `hostRef`, so the two origins differ by
-      // `(hostWidth - maxPlotWidth) / 2`. Translate to host-relative before
-      // storing — otherwise the tooltip lands offset to the left of the
-      // hovered peak. `hostRef.current` is non-null whenever `plotContainer`
-      // is (plotContainer is a descendant of hostRef in the JSX), so the
-      // bang matches the `container!` usage above.
-      const hostRect = hostRef.current!.getBoundingClientRect();
+      // cursorX/Y are plotContainer-relative; the tooltip is positioned against
+      // hostRef. After the #81 width cap the two origins differ, so translate.
+      const host = hostRef.current;
+      const cont = plotContainer.current;
+      const hostRect = host?.getBoundingClientRect();
+      const contRect = cont?.getBoundingClientRect();
+      const dx = (contRect?.left ?? 0) - (hostRect?.left ?? 0);
+      const dy = (contRect?.top ?? 0) - (hostRect?.top ?? 0);
       setTooltip({
         q: best.q,
         peakId: best.peakId,
-        xPx: ev.clientX - hostRect.left,
-        yPx: ev.clientY - hostRect.top,
+        xPx: cursorX + dx,
+        yPx: cursorY + dy,
       });
-    }
-    function handleHoverLeave(): void {
-      setTooltip(null);
-    }
-    (el as unknown as EventTarget).addEventListener("mousemove", handleHoverMove);
-    (el as unknown as EventTarget).addEventListener("mouseleave", handleHoverLeave);
+    },
+    [hoverPeakIndex],
+  );
 
-    // Brush-to-zoom: drag horizontally to set a q sub-range. Implemented as
-    // mousedown→mousemove→mouseup; we track pixel coords and invert at end.
-    let brushStartPx: number | null = null;
-    function handleMouseDown(evRaw: Event): void {
-      const ev = evRaw as MouseEvent;
-      const rect = container!.getBoundingClientRect();
-      brushStartPx = ev.clientX - rect.left;
-    }
-    function handleMouseUp(evRaw: Event): void {
-      if (brushStartPx === null) return;
-      const ev = evRaw as MouseEvent;
-      const rect = container!.getBoundingClientRect();
-      const endPx = ev.clientX - rect.left;
-      const start = brushStartPx;
-      brushStartPx = null;
-      // Ignore tiny drags (single-click).
-      if (Math.abs(endPx - start) < 4) return;
-      const a = invertQ(plotElRef.current, Math.min(start, endPx));
-      const b = invertQ(plotElRef.current, Math.max(start, endPx));
-      if (a === null || b === null) return;
-      if (b <= a) return;
-      onXDomain([a, b]);
-    }
-    (el as unknown as EventTarget).addEventListener("mousedown", handleMouseDown);
-    (el as unknown as EventTarget).addEventListener("mouseup", handleMouseUp);
+  const handlePointerLeave = useCallback(() => setTooltip(null), []);
 
-    return () => {
-      (el as unknown as EventTarget).removeEventListener("wheel", handleWheel);
-      (el as unknown as EventTarget).removeEventListener("dblclick", handleDblClick);
-      (el as unknown as EventTarget).removeEventListener("mousedown", handleMouseDown);
-      (el as unknown as EventTarget).removeEventListener("mouseup", handleMouseUp);
-      (el as unknown as EventTarget).removeEventListener("click", handlePeakClick);
-      (el as unknown as EventTarget).removeEventListener("mousemove", handleHoverMove);
-      (el as unknown as EventTarget).removeEventListener("mouseleave", handleHoverLeave);
-      container.replaceChildren();
-      plotElRef.current = null;
-      setTooltip(null);
-    };
-  }, [
-    members, traces, xDomain, xType, qUnits,
-    peakDisplayByMemberId, highlightedMemberId,
-    onXDomain, qExtent, onPeakClick,
-    showPeakTicks, showPeakLabels,
-    groupingMode, sampleIdFor,
-    workingBandFraction,
-    representation, showCrossTraceTracking,
-  ]);
+  const margins = useMemo(
+    () => ({ left: MARGIN_LEFT, right: MARGIN_RIGHT, top: MARGIN_TOP, bottom: MARGIN_BOTTOM }),
+    [],
+  );
+  const ext = qExtent();
 
-  useEffect(() => {
-    return renderPlot();
-    // `_resizeKey` rerenders the plot when the container resizes — the
-    // ResizeObserver bumps the key so we recompute panelW/panelH. It's not
-    // captured by `renderPlot` (we read `container.clientWidth` directly),
-    // so include it as a primitive dep.
-  }, [renderPlot, _resizeKey]);
 
   // Per-member invisible overlays carrying `data-testid="member-trace"` and
   // `data-member-id={id}` for E2E selectors (Plan §"E2E selector and
@@ -650,7 +482,27 @@ export function MultiTracePlot(props: MultiTracePlotProps): JSX.Element {
         className="h-full mx-auto relative"
         style={{ maxWidth: `${maxPlotWidth}px`, width: "100%" }}
       >
-        <div ref={plotContainer} className="w-full h-full" />
+        <div ref={plotContainer} className="w-full h-full absolute inset-0">
+          <PlotSurface
+            marks={allMarks}
+            xType={xType}
+            xDomain={xDomain}
+            yType="linear"
+            yDomain={[0, panelHeight || 300]}
+            yReversed
+            hideYAxis
+            margins={margins}
+            {...(qUnits !== undefined ? { qUnits } : {})}
+            {...(ext !== null ? { xExtent: ext } : {})}
+            onXDomain={onXDomain}
+            onReset={() => onXDomain(null)}
+            onBrush={(d) => onXDomain(d)}
+            {...(onPeakClick ? { onPointerClick: handlePointerClick } : {})}
+            onPointerMove={handlePointerMove}
+            onPointerLeave={handlePointerLeave}
+            data-testid="multi-trace-plot-surface"
+          />
+        </div>
         <div
           aria-hidden="true"
           className="absolute inset-0 pointer-events-none"
