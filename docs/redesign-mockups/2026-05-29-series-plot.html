@@ -136,6 +136,7 @@
   svg .wf-anchor.track-on { stroke: var(--accent); stroke-width: 1.8; r: 4.2; }
   svg .wf-track-line { fill: none; stroke: var(--accent); stroke-width: 1.5;
     stroke-dasharray: 4 3; opacity: 0.9; }
+  svg .wf-track-ghost { stroke-dasharray: 2.5 2; }   /* predicted-but-absent */
   svg .ps-cell { cursor: pointer; }
   svg .ps-cap { font-size: 10px; fill: var(--ink-faint); }
 
@@ -375,15 +376,23 @@ const COL = { Pn3m: 'oklch(0.570 0.150 58)', Lamellar: 'oklch(0.505 0.150 264)' 
 const NEUTRAL = 'oklch(0.560 0.010 70)';                 // form-factor trace — no phase
 const traceColor = s => s.formFactor ? NEUTRAL : COL[s.dominant];
 
-/* each phase carries its lattice constant explicitly so the reading panel and
-   member rows are DERIVED from the data, not narrated by hand */
-function cubic(p, a, Ns, amp)  { return { p, kind:'cubic', a, q: Ns.map(N => TWO_PI*Math.sqrt(N)/a), amp }; }
-function lamel(p, d, ns, amp)  { return { p, kind:'lamellar', d, q: ns.map(n => TWO_PI*n/d), amp }; }
+/* each phase carries its lattice + the PREDICTED reflections (one per order);
+   amp == null means that order is predicted but not observed in this exposure.
+   The reading/member panels and the migration track are all DERIVED from this. */
+function cubic(p, a, Ns, amps) {
+  return { p, kind: 'cubic', a, refls: Ns.map((N, k) => ({
+    order: k, label: N, q: TWO_PI * Math.sqrt(N) / a, amp: amps[k], observed: amps[k] != null })) };
+}
+function lamel(p, d, ns, amps) {
+  return { p, kind: 'lamellar', d, refls: ns.map((n, k) => ({
+    order: k, label: n, q: TWO_PI * n / d, amp: amps[k], observed: amps[k] != null })) };
+}
 
 const SAMPLES = [
   { v: '1:0',    phases: [ cubic('Pn3m', 205, [2,3,4], [1.0,0.55,0.32]) ] },
   { v: '1:0.1',  phases: [ cubic('Pn3m', 202, [2,3,4], [0.95,0.5,0.28]) ] },
-  { v: '1:0.25', phases: [ cubic('Pn3m', 198, [2,3,4], [0.82,0.42,0.22]) ] },
+  // 1:0.25 — the 2nd-order (√3) Pn3m reflection is predicted but not observed here
+  { v: '1:0.25', phases: [ cubic('Pn3m', 198, [2,3,4], [0.82,null,0.22]) ] },
   { v: '1:0.5',  phases: [ cubic('Pn3m', 195, [2,3,4], [0.5,0.26,0.14]),
                            lamel('Lamellar', 60, [1,2,3], [0.6,0.3,0.16]) ] },
   { v: '1:0.75', phases: [ lamel('Lamellar', 57, [1,2,3], [0.92,0.5,0.28]) ] },
@@ -393,10 +402,12 @@ const SAMPLES = [
 SAMPLES.forEach((s, i) => {
   s.i = i;
   s.formFactor = s.phases.length === 0;
+  const maxAmp = ph => Math.max(...ph.refls.filter(r => r.observed).map(r => r.amp));
   s.dominant = s.formFactor ? null
-    : s.phases.reduce((a, b) => (Math.max(...b.amp) > Math.max(...a.amp) ? b : a)).p;
+    : s.phases.reduce((a, b) => (maxAmp(b) > maxAmp(a) ? b : a)).p;
   s.coexist = s.phases.length > 1;
-  s.q1 = s.formFactor ? null : Math.min(...s.phases.flatMap(ph => ph.q));  // first (lowest-q) peak
+  s.q1 = s.formFactor ? null
+    : Math.min(...s.phases.flatMap(ph => ph.refls.filter(r => r.observed).map(r => r.q)));
 });
 
 const NS = 'http://www.w3.org/2000/svg';
@@ -415,9 +426,10 @@ function sampleIntensity(s, q) {
     v += 0.32 * Math.exp(-0.5 * Math.pow((q - 0.11) / 0.05, 2));
     return v;
   }
-  s.phases.forEach(ph => ph.q.forEach((pq, k) => {
-    const sg = 0.012 * pq + 0.0011;
-    v += ph.amp[k] * Math.exp(-0.5 * Math.pow((q - pq) / sg, 2));
+  s.phases.forEach(ph => ph.refls.forEach(r => {
+    if (!r.observed) return;
+    const sg = 0.012 * r.q + 0.0011;
+    v += r.amp * Math.exp(-0.5 * Math.pow((q - r.q) / sg, 2));
   }));
   return v;
 }
@@ -492,17 +504,20 @@ function renderWaterfall() {
     /* peak anchors — interaction handles. A phase-coloured bead ringed in the
        plate colour; hovering one TRACKS that reflection across the stack. A
        form-factor trace has none. */
-    s.phases.forEach(phh => phh.q.forEach((pq, k) => {
-      if (pq < Q.min || pq > Q.max) return;
-      const x = wxOf(pq, pw, WF.l), y = yOf(sampleIntensity(s, pq));
-      const reflId = phh.p + ':' + k;
+    s.phases.forEach(phh => phh.refls.forEach(r => {
+      if (r.q < Q.min || r.q > Q.max) return;
+      const x = wxOf(r.q, pw, WF.l), y = yOf(sampleIntensity(s, r.q));
+      const reflId = phh.p + ':' + r.order;
+      // record EVERY predicted reflection (observed or not) so the track can
+      // mark a missing peak rather than skipping the sample
+      (anchorMap[reflId] = anchorMap[reflId] || []).push({ x, y, samp: s.i, observed: r.observed });
+      if (!r.observed) return;        // a bead is drawn only where the peak is real
       g.appendChild(el('circle', { class: 'wf-anchor', cx: x, cy: y, r: 2.9,
         fill: COL[phh.p], stroke: 'var(--plate)', 'stroke-width': 1.4, 'data-refl': reflId }));
       const hit = el('circle', { class: 'wf-anchor-hit', cx: x, cy: y, r: 9, fill: 'transparent' });
       hit.addEventListener('mouseenter', e => { e.stopPropagation(); trackRefl(reflId); });
       hit.addEventListener('mouseleave', () => trackRefl(null));
       g.appendChild(hit);
-      (anchorMap[reflId] = anchorMap[reflId] || []).push({ x, y, samp: s.i });
     }));
 
     /* sample label at right */
@@ -527,10 +542,15 @@ function trackRefl(reflId) {
   document.querySelectorAll('.wf-row').forEach(n => n.classList.remove('dim', 'hot'));
   document.querySelectorAll(`.wf-anchor[data-refl="${reflId}"]`).forEach(n => n.classList.add('track-on'));
   const recs = (anchorMap[reflId] || []).slice().sort((a, b) => a.samp - b.samp);
-  if (recs.length > 1 && overlay) {
-    overlay.appendChild(el('polyline', { class: 'wf-track-line',
-      points: recs.map(r => `${r.x.toFixed(1)},${r.y.toFixed(1)}`).join(' ') }));
-  }
+  if (!overlay || !recs.length) return;
+  if (recs.length > 1) overlay.appendChild(el('polyline', { class: 'wf-track-line',
+    points: recs.map(r => `${r.x.toFixed(1)},${r.y.toFixed(1)}`).join(' ') }));
+  // a predicted-but-absent reflection gets a hollow ghost ring at its predicted
+  // q (same encoding as Focus's combs) — the missing peak reads as missing
+  recs.filter(r => !r.observed).forEach(r => {
+    overlay.appendChild(el('circle', { class: 'wf-track-ghost', cx: r.x, cy: r.y, r: 4.2,
+      fill: 'var(--plate)', stroke: 'var(--accent)', 'stroke-width': 1.4 }));
+  });
 }
 
 /* ════════════ heatmap (secondary toggle) ════════════ */
