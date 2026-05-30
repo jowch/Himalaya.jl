@@ -178,3 +178,27 @@ if isdefined(@__MODULE__, :with_test_server)
         end
     end
 end
+
+@testset "member-add dual-writes the assignment" begin
+    mktempdir() do dir
+        db  = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
+        exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
+        e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (10, ?, 'Pn3m', 0.1)", [e_id])
+        DBInterface.execute(db, "INSERT INTO index_groups (id, exposure_id, kind, active) VALUES (200, ?, 'custom', 1)", [e_id])
+
+        # Simulate exactly what the route body now does: legacy event + dual-write.
+        HimalayaUI.apply_event!(db, req; kind="index_confirmed",
+            entity_type="exposure", entity_id=e_id, payload=Dict(:group_id => 200, :index_id => 10))
+        HimalayaUI.apply_event!(db, req; kind="assignment_add",
+            entity_type="exposure", entity_id=e_id, payload=Dict(:index_id => 10))
+
+        # Both sources of truth agree.
+        legacy = Set(Int(m.index_id) for m in Tables.rowtable(DBInterface.execute(db,
+            "SELECT index_id FROM index_group_members WHERE group_id = 200")))
+        @test legacy == Set([10])
+        @test HimalayaUI._assignment_body(db, e_id)[:members] == [10]
+    end
+end

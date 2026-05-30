@@ -236,6 +236,22 @@ function register_analysis_routes!()
                 payload     = Dict(:group_id => custom_id, :index_id => index_id))
             _enqueue_broadcast_from_result!(result, "index_confirmed", "exposure", exposure_id)
 
+            # Plan A dual-write: keep the durable assignment in sync with the
+            # legacy group membership so the assignment tables stay live while
+            # the frontend still reads /groups. Removed in Plan D when the
+            # frontend goes assignment-native. Carries post_state (the current
+            # assignment) so Plan D's applyRemoteToCache can patch directly; the
+            # post_state has no top-level `indices` key by design.
+            a_result = apply_event!(InTransaction(), db, req;
+                kind        = "assignment_add",
+                entity_type = "exposure",
+                entity_id   = exposure_id,
+                payload     = Dict(:index_id => index_id))
+            a_body = _assignment_body(db, exposure_id)
+            _enqueue_broadcast_from_result!(a_result, "assignment_add", "exposure", exposure_id;
+                post_state = Dict(:assignment =>
+                    Dict(:state => a_body[:state], :members => a_body[:members])))
+
             # Issue #13: include event_id/view_row_id alongside the group
             # body so the response shape matches the spec's queue-migrated
             # contract (event_id, view_row_id, ...).
