@@ -22,7 +22,6 @@ export const BODY_FONT = "400 12px ui-sans-serif, system-ui, sans-serif";
 
 /** Trace + peak stroke widths — wider than on-screen for printability. */
 export const TRACE_STROKE_PX = 1.75;
-export const PEAK_TICK_STROKE_PX = 1.5;
 export const PREDICTED_Q_STROKE_PX = 1.5;
 
 /** Light palette for export (overrides dark-theme CSS vars). Values are
