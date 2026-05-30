@@ -281,11 +281,12 @@
   .as-block { padding: 12px 15px 13px; }
   .as-block + .as-block { border-top: 1px solid var(--hair); }
   .asb-top {
-    display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+    display: flex; align-items: baseline; gap: 8px;
   }
   .asb-name {
     font-family: "Newsreader", Georgia, serif; font-weight: 500;
     font-size: 22px; line-height: 1; letter-spacing: -0.01em;
+    flex: 1; min-width: 0;
   }
   .asb-val { font-size: 12px; font-weight: 700; font-family: ui-monospace, Menlo, monospace; }
   .asb-meta { margin-top: 5px; font-size: 11px; color: var(--ink-soft);
@@ -297,9 +298,9 @@
   .asb-series .sr { font-family: ui-monospace, Menlo, monospace;
     color: var(--ink-soft); font-weight: 600; }
   .asb-remove {
-    float: right; font-size: 10px; color: var(--ink-faint); cursor: pointer;
-    border: none; background: none; font-family: inherit; font-weight: 600;
-    text-transform: uppercase; letter-spacing: 0.05em; padding: 0;
+    border: none; background: none; cursor: pointer; color: var(--ink-faint);
+    font-size: 17px; line-height: 1; padding: 0 0 0 2px; align-self: center;
+    flex-shrink: 0;
   }
   .asb-remove:hover { color: var(--accent); }
   .as-empty { padding: 16px 15px; font-size: 12px; color: var(--ink-faint);
@@ -307,18 +308,10 @@
   .as-foot {
     border-top: 1px dashed var(--hair-strong);
     padding: 9px 15px; font-size: 11.5px; color: var(--ink-soft);
-    cursor: text; font-weight: 600;
+    cursor: pointer; font-weight: 600;
   }
+  .as-foot:hover { background: var(--paper-sunk); color: var(--ink); }
   .as-foot::before { content: "+ "; color: var(--accent); font-weight: 700; }
-
-  /* hypothetical preview blocks */
-  .as-block.as-removing { opacity: 0.5; }
-  .as-block.as-removing .asb-name { text-decoration: line-through; }
-  .as-block.as-adding { background: color-mix(in oklab, var(--accent) 5%, transparent); }
-  .asb-ghosttag {
-    display: block; font-size: 9px; font-weight: 700; letter-spacing: 0.06em;
-    text-transform: uppercase; color: var(--ink-faint); margin-bottom: 5px;
-  }
 
   /* candidate rows */
   .cand {
@@ -1028,45 +1021,30 @@ function renderResidual(svg, phases, top, railY) {
 /* ════════════ rail: assignment + candidates ════════════ */
 function renderRail() { renderAssignment(); renderCandidates(); }
 
-/* the assignment cart — preview-aware: hovering a candidate shows a ghost
-   "would add" block and marks any block the add would swap out */
+/* the assignment cart. Hovering a candidate previews on the PLOT only (combs +
+   trace); the cart is left untouched to avoid reflow/jank. */
 function renderAssignment() {
   const phases = CANDIDATES.filter(c => assignment.has(c.name))
     .sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
-  const hyp = previewName ? hypothetical(previewName) : null;
   const as = document.getElementById('assign');
   document.getElementById('as-count').textContent =
     phases.length ? `· ${phases.length} phase${phases.length > 1 ? 's' : ''}` : '· empty';
 
-  let blocks = '';
-  if (phases.length === 0 && !hyp) {
+  let blocks;
+  if (phases.length === 0) {
     blocks = `<div class="as-empty">No phase yet — this is form factor / unindexed.
       Evaluate the candidates and add the ones that make sense.</div>`;
   } else {
-    blocks = phases.map(c => {
-      const rm = hyp && hyp.removes.includes(c.name);
-      return `<div class="as-block${rm ? ' as-removing' : ''}">
-        <button class="asb-remove" data-remove="${c.name}">remove</button>
+    blocks = phases.map(c => `
+      <div class="as-block">
         <div class="asb-top">
           <span class="asb-name" style="color:${c.color}">${c.name}</span>
           <span class="asb-val" style="color:${c.color}">${fmtScore(c)}</span>
+          <button class="asb-remove" data-remove="${c.name}" aria-label="remove ${c.name}">&times;</button>
         </div>
-        <div class="asb-meta">${latStr(c)} · ${c.claimed.length} reflections${rm ? ' · would be replaced' : ''}</div>
+        <div class="asb-meta">${latStr(c)} · ${c.claimed.length} reflections</div>
         ${c.score != null ? `<div class="asb-bar"><i style="width:${pctScore(c)};background:${c.color}"></i></div>` : ''}
-      </div>`;
-    }).join('');
-    if (hyp) {
-      const c = hyp.cand;
-      blocks += `<div class="as-block as-adding">
-        <span class="asb-ghosttag">hypothetical · would add</span>
-        <div class="asb-top">
-          <span class="asb-name" style="color:${c.color}">${c.name}</span>
-          <span class="asb-val" style="color:${c.color}">${fmtScore(c)}</span>
-        </div>
-        <div class="asb-meta">${latStr(c)} · explains ${c.claimed.length} peak${c.claimed.length !== 1 ? 's' : ''}${
-          hyp.removes.length ? ` · replaces ${hyp.removes.join(', ')}` : ' · coexists'}</div>
-      </div>`;
-    }
+      </div>`).join('');
   }
   as.innerHTML = blocks + `<div class="as-foot" id="custom-open">custom index…</div>`;
   as.querySelectorAll('[data-remove]').forEach(b =>
@@ -1074,10 +1052,7 @@ function renderAssignment() {
   document.getElementById('custom-open').addEventListener('click', openCustom);
 
   const note = document.getElementById('assign-note');
-  if (hyp) {
-    note.innerHTML = `Previewing <b style="color:${hyp.cand.color}">${hyp.cand.name}</b>
-      — click to add, move away to keep the current assignment.`;
-  } else if (assignment.has('Pn3m') && !assignment.has('Im3m') && leftoverCount() > 0) {
+  if (assignment.has('Pn3m') && !assignment.has('Im3m') && leftoverCount() > 0) {
     note.innerHTML = `<b>${leftoverCount()} peaks</b> are unexplained. A coexisting
       <span style="color:var(--im3m);font-weight:600">Im3m</span> at the Bonnet
       lattice would account for them.`;
@@ -1112,9 +1087,10 @@ function renderCandidates() {
         <div class="cs-v">${fmtScore(c)}</div>
         ${c.score != null ? `<div class="cs-bar"><i style="width:${pctScore(c)};background:${c.color}"></i></div>` : ''}
       </div>`;
-    // hover updates the cart + combs (NOT the candidate list — avoids re-render under cursor)
-    row.addEventListener('mouseenter', () => { previewName = c.name; setPreview(c.name); renderAssignment(); renderCombs(); });
-    row.addEventListener('mouseleave', () => { previewName = null; setPreview(null); renderAssignment(); renderCombs(); });
+    // hover previews on the PLOT only (combs ghost row + trace) — the cart is
+    // left alone so there's no reflow/jank
+    row.addEventListener('mouseenter', () => { previewName = c.name; setPreview(c.name); renderCombs(); });
+    row.addEventListener('mouseleave', () => { previewName = null; setPreview(null); renderCombs(); });
     row.addEventListener('click', () => { previewName = null; toggleCandidate(c.name); renderAll(); });
     list.appendChild(row);
   });
@@ -1144,8 +1120,35 @@ document.getElementById('addpeak').addEventListener('click', e => e.currentTarge
 
 /* ════════════ custom-index builder ════════════ */
 let customSym = 'Im3m', customVal = SYMS.Im3m.def;
+const SNAP_THRESH = 2.6;   // Å magnetic zone around a peak-aligned lattice
+
+/* lattice values at which any predicted order lands exactly on an observed peak */
+function snapValues(sym) {
+  const s = SYMS[sym], vals = [];
+  PEAKS.filter(p => p.state === 'real').forEach(p => s.Ms.forEach(M => {
+    const v = s.kind === 'lamellar' ? TWO_PI * M / p.q
+            : s.kind === 'hex'      ? 4 * Math.PI * Math.sqrt(M) / (Math.sqrt(3) * p.q)
+            :                          TWO_PI * Math.sqrt(M) / p.q;
+    if (v >= s.min && v <= s.max) vals.push(v);
+  }));
+  return vals;
+}
+function applySnap(raw) {
+  let best = null, bd = SNAP_THRESH;
+  snapValues(customSym).forEach(v => { const dd = Math.abs(v - raw); if (dd < bd) { bd = dd; best = v; } });
+  return Math.round(best != null ? best : raw);
+}
+const isSnapped = v => snapValues(customSym).some(s => Math.abs(s - v) < 0.75);
+/* lattice that puts the first allowed order on a given peak q (click-to-snap) */
+function latticeForFirstOrder(sym, pq) {
+  const s = SYMS[sym], M0 = s.Ms[0];
+  const v = s.kind === 'lamellar' ? TWO_PI * M0 / pq
+          : s.kind === 'hex'      ? 4 * Math.PI * Math.sqrt(M0) / (Math.sqrt(3) * pq)
+          :                          TWO_PI * Math.sqrt(M0) / pq;
+  return Math.round(Math.max(s.min, Math.min(s.max, v)));
+}
 function openCustom() {
-  if (previewName) { previewName = null; setPreview(null); renderAssignment(); renderCombs(); }
+  if (previewName) { previewName = null; setPreview(null); renderCombs(); }
   customSym = 'Im3m'; customVal = SYMS.Im3m.def;
   buildSymButtons(); syncParamInputs(); renderCustomPreview();
   document.getElementById('custom-scrim').classList.add('open');
@@ -1183,7 +1186,12 @@ function renderCustomPreview() {
   obs.forEach(p => { const x = lx(p.q);
     svg.appendChild(el('line', { x1: x, y1: top, x2: x, y2: baseY,
       stroke: 'var(--hair)', 'stroke-width': 1, 'stroke-dasharray': '1 3' }));
-    svg.appendChild(el('circle', { cx: x, cy: baseY, r: 2.4, fill: 'var(--ink-soft)' })); });
+    svg.appendChild(el('circle', { cx: x, cy: baseY, r: 2.4, fill: 'var(--ink-soft)' }));
+    // click a peak → snap the first reflection onto it
+    const hit = el('circle', { cx: x, cy: baseY, r: 9, fill: 'transparent', style: 'cursor:pointer' });
+    hit.addEventListener('click', () => { customVal = latticeForFirstOrder(customSym, p.q);
+      syncParamInputs(); renderCustomPreview(); });
+    svg.appendChild(hit); });
   const color = PHASE_COLORS[customSym];
   let lands = 0;
   customRefls(customSym, customVal).forEach(rf => {
@@ -1199,12 +1207,21 @@ function renderCustomPreview() {
       fill: near ? color : 'var(--plate)', stroke: color, 'stroke-width': near ? 0 : 1.3 }));
   });
   document.getElementById('cs-fit').innerHTML =
-    `Lands on <b>${lands}</b> of ${obs.length} observed peaks · ${SYMS[customSym].param} = <b>${customVal} Å</b>`;
+    `Lands on <b>${lands}</b> of ${obs.length} observed peaks · ${SYMS[customSym].param} = <b>${customVal} Å</b>`
+    + (isSnapped(customVal) ? ` · <span style="color:var(--accent);font-weight:600">snapped</span>` : '');
 }
+/* slider drag snaps magnetically to peak-aligned lattices */
 document.getElementById('cs-slider').addEventListener('input', e => {
-  customVal = +e.target.value; document.getElementById('cs-num').value = customVal; renderCustomPreview(); });
+  customVal = applySnap(+e.target.value);
+  document.getElementById('cs-slider').value = customVal;
+  document.getElementById('cs-num').value = customVal; renderCustomPreview(); });
+/* typing is free; commit (blur/enter) snaps */
 document.getElementById('cs-num').addEventListener('input', e => {
   customVal = +e.target.value; document.getElementById('cs-slider').value = customVal; renderCustomPreview(); });
+document.getElementById('cs-num').addEventListener('change', e => {
+  customVal = applySnap(+e.target.value);
+  document.getElementById('cs-num').value = customVal;
+  document.getElementById('cs-slider').value = customVal; renderCustomPreview(); });
 document.getElementById('custom-close').addEventListener('click', closeCustom);
 document.getElementById('custom-cancel').addEventListener('click', closeCustom);
 document.getElementById('custom-scrim').addEventListener('click', e => {
