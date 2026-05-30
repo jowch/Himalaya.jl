@@ -244,3 +244,29 @@ end
         @test HimalayaUI._assignment_body(db, e_id)[:members] == [10]   # preserved
     end
 end
+
+@testset "_bonnet_for_index flags a coexisting cubic" begin
+    mktempdir() do dir
+        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
+        e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
+
+        # Assigned Pn3m at a=100; a candidate Im3m at a=128 (Bonnet-consistent).
+        DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis, lattice_d) VALUES (10, ?, 'Pn3m', 0.1, 100.0)", [e_id])
+        DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis, lattice_d) VALUES (11, ?, 'Im3m', 0.1, 128.0)", [e_id])
+        DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis, lattice_d) VALUES (12, ?, 'Im3m', 0.1, 200.0)", [e_id])
+        DBInterface.execute(db, "INSERT INTO assignments (exposure_id, state) VALUES (?, 'indexed')", [e_id])
+        DBInterface.execute(db, "INSERT INTO assignment_members (exposure_id, index_id) VALUES (?, 10)", [e_id])
+
+        # The assigned Pn3m (10) itself: no flag (it's the anchor, same phase).
+        @test HimalayaUI._bonnet_for_index(db, e_id, "Pn3m", 100.0, 10) === nothing
+        # Candidate Im3m at 128 → consistent, predicted ≈ 127.9.
+        b = HimalayaUI._bonnet_for_index(db, e_id, "Im3m", 128.0, 11)
+        @test b !== nothing && b[:consistent] == true
+        @test b[:predicted_a] ≈ 127.9 atol=1.0
+        # Candidate Im3m at 200 → predicted still 127.9, not consistent.
+        b2 = HimalayaUI._bonnet_for_index(db, e_id, "Im3m", 200.0, 12)
+        @test b2 !== nothing && b2[:consistent] == false
+    end
+end

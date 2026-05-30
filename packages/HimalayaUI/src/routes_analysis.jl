@@ -127,6 +127,47 @@ function _ngc_for_phase(phase_name::AbstractString, lattice_d)::Union{Float64, N
     -2π * (χ / A₀) / a^2
 end
 
+"""
+    _bonnet_for_index(db, exposure_id, phase_name, lattice_d, index_id) -> Union{Dict,Nothing}
+
+For a candidate index, return `{predicted_a, consistent}` when the exposure's
+assignment contains a bicontinuous cubic of a DIFFERENT phase that predicts this
+candidate's lattice via the Gauss–Bonnet ratio (`Himalaya.bonnet_lattice`).
+Returns `nothing` when there is no applicable anchor (no assigned cubic, same
+phase, or non-bicontinuous phase). The anchor index itself is never flagged.
+
+Display-and-ranking affordance only — recomputed per request from the live
+assignment, never persisted, never folded into `score()` (see docs/scoring.md).
+"""
+function _bonnet_for_index(db::SQLite.DB, exposure_id::Integer,
+                           phase_name::AbstractString, lattice_d, index_id::Integer)
+    (lattice_d === nothing || ismissing(lattice_d)) && return nothing
+    P = resolve_phase(phase_name)
+    P === nothing && return nothing
+    a = Float64(lattice_d)
+    a > 0 || return nothing
+
+    # Assigned bicontinuous-cubic anchors (phase + lattice), excluding this index.
+    anchors = Tables.rowtable(DBInterface.execute(db,
+        """SELECT i.phase, i.lattice_d
+           FROM assignment_members m JOIN indices i ON i.id = m.index_id
+           WHERE m.exposure_id = ? AND i.id != ?
+             AND i.lattice_d IS NOT NULL
+             AND i.phase IN ('Pn3m', 'Im3m', 'Ia3d')""",
+        [Int(exposure_id), Int(index_id)]))
+
+    for anc in anchors
+        Pa = resolve_phase(String(anc.phase))
+        Pa === nothing && continue
+        Pa === P && continue   # same phase: not a coexisting pair
+        pred = Himalaya.bonnet_lattice(Pa, Float64(anc.lattice_d), P)
+        pred === nothing && continue
+        return Dict(:predicted_a => pred,
+                    :consistent  => abs(a - pred) <= 0.02 * pred)
+    end
+    nothing
+end
+
 function register_analysis_routes!()
     @get "/api/exposures/{id}/indices" function(req::HTTP.Request, id::Int)
         db = current_db()
@@ -148,6 +189,7 @@ function register_analysis_routes!()
             d[:peaks]        = rows_to_json(peak_rows)
             d[:predicted_q]  = predicted
             d[:ngc]          = _ngc_for_phase(String(ix.phase), ix.lattice_d)
+            d[:bonnet]       = _bonnet_for_index(db, id, String(ix.phase), ix.lattice_d, Int(ix.id))
             d
         end
         HTTP.Response(200, ["Content-Type" => "application/json"],
