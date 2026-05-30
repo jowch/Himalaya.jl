@@ -26,3 +26,34 @@ using SQLite, DBInterface, Tables
         @test String(st) == "indexed"
     end
 end
+
+@testset "migrate_assignments! backfills from active group" begin
+    mktempdir() do dir
+        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
+        e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
+
+        # Two indices, an active custom group owning both, an inactive auto group.
+        DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (10, ?, 'Pn3m', 0.1)", [e_id])
+        DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (11, ?, 'Im3m', 0.1)", [e_id])
+        DBInterface.execute(db, "INSERT INTO index_groups (id, exposure_id, kind, active) VALUES (100, ?, 'auto', 0)", [e_id])
+        DBInterface.execute(db, "INSERT INTO index_groups (id, exposure_id, kind, active) VALUES (101, ?, 'custom', 1)", [e_id])
+        DBInterface.execute(db, "INSERT INTO index_group_members (group_id, index_id) VALUES (101, 10)")
+        DBInterface.execute(db, "INSERT INTO index_group_members (group_id, index_id) VALUES (101, 11)")
+
+        # Wipe the migration sentinel + new tables so we can re-run the migration deterministically.
+        DBInterface.execute(db, "DELETE FROM schema_migrations WHERE name = 'assignments_v1'")
+        DBInterface.execute(db, "DELETE FROM assignment_members WHERE exposure_id = ?", [e_id])
+        DBInterface.execute(db, "DELETE FROM assignments WHERE exposure_id = ?", [e_id])
+
+        HimalayaUI.migrate_assignments!(db)
+
+        state = Tables.rowtable(DBInterface.execute(db,
+            "SELECT state FROM assignments WHERE exposure_id = ?", [e_id]))
+        @test !isempty(state) && String(state[1].state) == "indexed"
+        members = Set(Int(m.index_id) for m in Tables.rowtable(DBInterface.execute(db,
+            "SELECT index_id FROM assignment_members WHERE exposure_id = ?", [e_id])))
+        @test members == Set([10, 11])
+    end
+end

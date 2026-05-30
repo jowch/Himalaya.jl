@@ -4,6 +4,9 @@ using Dates: now, UTC, format, @dateformat_str
 # Sentinel marker name for the I3.1 comparison→series data migration (#171).
 const MIGRATION_COMPARISONS_TO_SERIES = "comparisons_to_series"
 
+# Sentinel marker name for the Plotting redesign Plan A durable-assignment backfill.
+const MIGRATION_ASSIGNMENTS = "assignments_v1"
+
 const SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
     id         INTEGER PRIMARY KEY,
@@ -394,6 +397,14 @@ function migrate_schema!(db::SQLite.DB)
     # the two compare migrations above (reads their columns). Own transaction;
     # sentinel-gated; raw-INSERT user_actions, never apply_event! (no broadcast).
     migrate_comparisons_to_series!(db)
+
+    # Plotting redesign Plan A: durable per-exposure assignment. MUST run AFTER
+    # migrate_pk_to_autoincrement! (db.jl, which rebuilds exposures/indices — the
+    # assignments/assignment_members FKs must point at the rebuilt tables) and
+    # after create_schema!/migrate_series! (the assignment tables + the
+    # schema_migrations sentinel exist). Backfills from the legacy active group;
+    # sentinel-gated; own transaction.
+    migrate_assignments!(db)
 
     # PR #107 left the on-disk experiment.toml AND the in-DB experiments.config
     # blob using the legacy `[manifest].label/name` shape. The deprecation
@@ -1023,6 +1034,38 @@ function migrate_comparisons_to_series!(db::SQLite.DB)
         DBInterface.execute(db,
             "INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)",
             [MIGRATION_COMPARISONS_TO_SERIES, comparison_now_iso()])
+    end
+    nothing
+end
+
+"""
+    migrate_assignments!(db)
+
+Backfill the durable per-exposure assignment from the legacy active group:
+create an `assignments` row (state='indexed') and copy the active group's
+members into `assignment_members`, for every exposure that has an active group.
+Sentinel-gated, idempotent, own transaction. Raw INSERTs (never apply_event!) —
+this is a data backfill, not a user action.
+"""
+function migrate_assignments!(db::SQLite.DB)
+    already = Tables.rowtable(DBInterface.execute(db,
+        "SELECT 1 FROM schema_migrations WHERE name = ?", [MIGRATION_ASSIGNMENTS]))
+    isempty(already) || return nothing
+
+    SQLite.transaction(db) do
+        DBInterface.execute(db,
+            """INSERT OR IGNORE INTO assignments (exposure_id, state)
+               SELECT DISTINCT exposure_id, 'indexed'
+               FROM index_groups WHERE active = 1""")
+        DBInterface.execute(db,
+            """INSERT OR IGNORE INTO assignment_members (exposure_id, index_id)
+               SELECT g.exposure_id, m.index_id
+               FROM index_groups g
+               JOIN index_group_members m ON m.group_id = g.id
+               WHERE g.active = 1""")
+        DBInterface.execute(db,
+            "INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)",
+            [MIGRATION_ASSIGNMENTS, comparison_now_iso()])
     end
     nothing
 end
