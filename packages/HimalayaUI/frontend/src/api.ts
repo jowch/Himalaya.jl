@@ -473,9 +473,30 @@ export interface MemberSnapshotConfirmedIndex {
   peak_ids: number[];
 }
 
+/** One assigned phase + its fitted lattice (Plan E E-4). `lattice_d` is the
+ *  index lattice parameter (`a` for cubics, `d` for lamellar/hexagonal). */
+export interface MemberSnapshotPhase {
+  phase: string;
+  lattice_d: number | null;
+}
+
+/** Durable 3-state assignment (Plan A B2). `confirmed_index` is null for BOTH
+ *  `form_factor` and `null`, so the Series surface needs this explicit STATE to
+ *  tell the two apart (form factor → a real broad-shouldered trace, no anchors;
+ *  null → featureless). */
+export type AssignmentState = "indexed" | "form_factor" | "null";
+
 export interface MemberSnapshot {
   effective_peaks: MemberSnapshotPeak[];
   confirmed_index: MemberSnapshotConfirmedIndex | null;
+  /** Durable 3-state assignment (Plan E E-7). Older snapshots predate this
+   *  field; treat a missing value as "indexed". */
+  assignment_state?: AssignmentState;
+  /** Distinct phases the member's assignment carries (Plan E E-4), each with
+   *  its fitted lattice. Drives the coexistence reading / member rows / strip
+   *  cells (both lattices under coexistence). Empty for form-factor / null
+   *  members. Missing on older snapshots → derive from confirmed_index. */
+  confirmed_phases?: MemberSnapshotPhase[];
   analysis_inputs_hash: string;
 }
 
