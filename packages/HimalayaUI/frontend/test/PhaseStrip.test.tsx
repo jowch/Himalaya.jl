@@ -80,6 +80,21 @@ describe("PhaseStrip", () => {
     expect(container.firstChild).toHaveAttribute("data-size", "sm");
   });
 
+  it("renders a hollow dashed cell for a form_factor segment", () => {
+    render(<PhaseStrip segments={[{ phase: null, state: "form_factor" }]} />);
+    const segment = screen.getAllByTestId("ps-seg")[0]!;
+    expect(segment).toHaveAttribute("data-state", "form_factor");
+    expect(segment).toHaveAttribute("aria-label", expect.stringMatching(/form factor/i));
+  });
+
+  it("renders a null-state cell distinct from a form-factor cell", () => {
+    render(<PhaseStrip segments={[{ phase: null, state: "null" }]} />);
+    const segment = screen.getAllByTestId("ps-seg")[0]!;
+    expect(segment).toHaveAttribute("data-state", "null");
+    // distinct data-state from form_factor
+    expect(segment.getAttribute("data-state")).not.toBe("form_factor");
+  });
+
   it("applies the placement className to the root", () => {
     const { container } = render(<PhaseStrip segments={[seg("Pn3m")]} className="mt-5" />);
     expect(container.firstChild).toHaveClass("mt-5");
