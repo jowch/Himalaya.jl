@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as Plot from "@observablehq/plot";
 import type { Trace, Peak, IndexEntry } from "../api";
 import { phaseColor } from "../phases";
-import { prettifyUnits } from "../lib/units";
 import { invertQ } from "../lib/plot/invertQ";
 import { formatAxis } from "../lib/plot/formatAxis";
 import { peakGlyph } from "./ui/peakMark";
+import { PlotSurface } from "./PlotSurface";
+import type { PlotOverlayContext } from "./PlotSurface";
 
 export interface TraceViewerProps {
 	trace: Trace;
@@ -185,10 +186,16 @@ export function TraceViewer({
 	const hostRef = useRef<HTMLDivElement>(null);
 	const plotContainer = useRef<HTMLDivElement>(null);
 	const overlayRef = useRef<SVGSVGElement>(null);
+	// `plotElRef` holds a thin SCALE SHIM derived from PlotSurface's overlay
+	// context (apply/invert + bounding box). The imperative overlay + cursor code
+	// below reads `plotEl.scale("x").apply` / `.getBoundingClientRect()` exactly
+	// as it did against a raw Plot element — so PlotSurface now owns the plot
+	// instance + gestures while the proven overlay geometry stays verbatim.
 	const plotElRef = useRef<HTMLElement | SVGElement | null>(null);
 
+	// Resize re-render trigger for the overlay subtree (PlotSurface owns the
+	// plot's own ResizeObserver; this one re-runs the imperative overlay).
 	const [_resizeKey, setResizeKey] = useState(0);
-
 	useEffect(() => {
 		const el = plotContainer.current;
 		if (!el) return;
@@ -197,169 +204,50 @@ export function TraceViewer({
 		return () => obs.disconnect();
 	}, []);
 
-	// Re-render trigger for the overlay (needed because our deps include peaks
-	// and indices; effects close over those values).
-	useEffect(() => {
-		const host = hostRef.current;
-		const container = plotContainer.current;
-		if (!host || !container) return;
-
+	// The data layer: sigma band + trace line. Memoized so PlotSurface's render
+	// effect doesn't re-run on unrelated state churn.
+	const marks = useMemo<Plot.Markish[]>(() => {
 		const bandData = trace.q.map((q, i) => ({
 			q,
 			I: trace.I[i]!,
 			lo: Math.max(1e-12, trace.I[i]! - trace.sigma[i]!),
 			hi: trace.I[i]! + trace.sigma[i]!,
 		}));
+		return [
+			Plot.areaY(bandData, {
+				x: "q",
+				y1: "lo",
+				y2: "hi",
+				fill: "var(--color-accent)",
+				fillOpacity: 0.12,
+			}),
+			Plot.line(bandData, {
+				x: "q",
+				y: "I",
+				stroke: "var(--color-ink)",
+				strokeWidth: 1,
+			}),
+		];
+	}, [trace]);
 
-		const el = Plot.plot({
-			width: container.clientWidth || 400,
-			height: container.clientHeight || 300,
-			marginLeft: MARGIN_LEFT,
-			marginRight: MARGIN_RIGHT,
-			marginTop: MARGIN_TOP,
-			marginBottom: MARGIN_BOTTOM,
-			style: {
-				fontFamily: "var(--font-sans)",
-				color: "var(--color-ink-soft)",
-				background: "transparent",
-				overflow: "visible",
-			},
-			x: {
-				type: xType,
-				label: `q (${prettifyUnits(qUnits ?? "A-1")})`,
-				// Plain decimal tick labels — Plot's default SI-suffix formatter
-				// renders 0.040 as "40m" which is unhelpful for SAXS q values.
-				tickFormat: (d: number) => formatAxis(d),
-				...(xDomain ? { domain: xDomain } : {}),
-			},
-			y: {
-				type: "log",
-				label: "I (a.u.)",
-				tickFormat: (d: number) => formatAxis(d),
-				...(yDomain ? { domain: yDomain } : {}),
-			},
-			// The Plot only renders the data trace + sigma band. Everything else
-			// (peak triangles, predicted-q lines, cursor) lives in the overlay so
-			// we have full control over geometry, fade-on-hover, and cursor follow.
-			marks: [
-				Plot.areaY(bandData, {
-					x: "q",
-					y1: "lo",
-					y2: "hi",
-					fill: "var(--color-accent)",
-					fillOpacity: 0.12,
-				}),
-				Plot.line(bandData, {
-					x: "q",
-					y: "I",
-					stroke: "var(--color-ink)",
-					strokeWidth: 1,
-				}),
-			],
-		});
+	const margins = useMemo(
+		() => ({ left: MARGIN_LEFT, right: MARGIN_RIGHT, top: MARGIN_TOP, bottom: MARGIN_BOTTOM }),
+		[],
+	);
 
-		container.replaceChildren(el);
-		plotElRef.current = el as unknown as HTMLElement;
+	// Click → remove (manual) / toggle-exclude (auto). PlotSurface hit-tests and
+	// hands us the peak id (id<0 already skipped); we look up the source. Empty
+	// clicks route to `onAddPeak` inside PlotSurface.
+	const handleClickPeak = useCallback(
+		(peakId: number): void => {
+			const peak = peaks.find((p) => p.id === peakId);
+			if (!peak) return;
+			if (peak.source === "manual") onRemovePeak(peak.id);
+			else onTogglePeakExclusion(peak.id, !peak.excluded);
+		},
+		[peaks, onRemovePeak, onTogglePeakExclusion],
+	);
 
-		// ── click: add / remove / toggle-exclude based on what's near the cursor ─
-		function handleClick(ev: Event): void {
-			const me = ev as MouseEvent;
-			const xScale: Scale = (
-				plotElRef.current as unknown as { scale: (n: string) => Scale }
-			)?.scale("x");
-			if (!xScale?.invert || !xScale.apply) return;
-			const rect = container!.getBoundingClientRect();
-			const clickX = me.clientX - rect.left;
-			const clickY = me.clientY - rect.top;
-			if (!insideInterior(clickX, clickY, rect.width, rect.height)) return;
-
-			const bestPeak = nearestClickablePeak(
-				peaks,
-				clickX,
-				xScale.apply!,
-				PEAK_HIT_PX,
-			);
-
-			if (bestPeak) {
-				if (bestPeak.source === "manual") onRemovePeak(bestPeak.id);
-				else onTogglePeakExclusion(bestPeak.id, !bestPeak.excluded);
-				return;
-			}
-
-			// Empty area → add a manual peak at the exact clicked q (no snap).
-			const q = xScale.invert(clickX);
-			if (Number.isFinite(q) && q > 0) onAddPeak(q);
-		}
-		(el as unknown as EventTarget).addEventListener("click", handleClick);
-
-		// ── wheel: zoom x-domain around cursor ───────────────────────────────
-		function handleWheel(evRaw: Event): void {
-			const ev = evRaw as WheelEvent;
-			ev.preventDefault();
-			const rect = container!.getBoundingClientRect();
-			const cursorQ = invertQ(plotElRef.current, ev.clientX - rect.left);
-			if (cursorQ === null) return;
-			const curMin = xDomain ? xDomain[0] : trace.q[0]!;
-			const curMax = xDomain ? xDomain[1] : trace.q[trace.q.length - 1]!;
-			const factor = Math.exp(ev.deltaY * 0.001);
-			const q0 = trace.q[0]!;
-			const qN = trace.q[trace.q.length - 1]!;
-			let newMin: number;
-			let newMax: number;
-			if (xType === "log") {
-				const logMin = Math.log(curMin);
-				const logMax = Math.log(curMax);
-				const logCur = Math.log(Math.max(cursorQ, 1e-6));
-				newMin = Math.max(q0, Math.exp(logCur - (logCur - logMin) * factor));
-				newMax = Math.min(qN, Math.exp(logCur + (logMax - logCur) * factor));
-			} else {
-				// Linear x: zoom symmetrically in linear space around the cursor.
-				newMin = Math.max(q0, cursorQ - (cursorQ - curMin) * factor);
-				newMax = Math.min(qN, cursorQ + (curMax - cursorQ) * factor);
-			}
-			if (newMax - newMin < (qN - q0) * 1e-4) return;
-			onXDomain([newMin, newMax]);
-		}
-		(el as unknown as EventTarget).addEventListener("wheel", handleWheel, {
-			passive: false,
-		} as AddEventListenerOptions);
-
-		// ── dblclick: reset domain (delegates to onReset if provided) ───────
-		function handleDblClick(): void {
-			if (onReset) onReset();
-			else onXDomain(null);
-		}
-		(el as unknown as EventTarget).addEventListener("dblclick", handleDblClick);
-
-		renderOverlay();
-
-		return () => {
-			(el as unknown as EventTarget).removeEventListener("click", handleClick);
-			(el as unknown as EventTarget).removeEventListener("wheel", handleWheel);
-			(el as unknown as EventTarget).removeEventListener(
-				"dblclick",
-				handleDblClick,
-			);
-			container.replaceChildren();
-			plotElRef.current = null;
-		};
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [
-		trace,
-		peaks,
-		activeGroupIndices,
-		hoveredIndex,
-		xDomain,
-		yDomain,
-		xType,
-		qUnits,
-		onAddPeak,
-		onRemovePeak,
-		onTogglePeakExclusion,
-		onXDomain,
-		onReset,
-		_resizeKey,
-	]);
 
 	// ── overlay renderer (peaks + predicted-q lines + cursor) ───────────────
 	const renderOverlay = useCallback((): void => {
@@ -668,6 +556,42 @@ export function TraceViewer({
 		renderOverlay();
 	}, [renderOverlay]);
 
+	// Capture PlotSurface's live scales into the shim `plotElRef`. Called every
+	// frame PlotSurface (re)builds its plot, so the overlay always reads fresh
+	// scales. The shim exposes the same `.scale(name).apply/invert` +
+	// `.getBoundingClientRect()` surface the overlay/cursor expect.
+	const captureCtx = useCallback((ctx: PlotOverlayContext): null => {
+		const rectSource = plotContainer.current;
+		const shim = {
+			scale: (name: string) =>
+				name === "x"
+					? {
+							apply: (q: number) => ctx.applyQ(q) ?? NaN,
+							invert: (px: number) => ctx.invertQ(px) ?? NaN,
+						}
+					: { apply: (v: number) => ctx.applyY(v) ?? NaN },
+			getBoundingClientRect: (): DOMRect => {
+				const base = rectSource?.getBoundingClientRect();
+				return {
+					left: base?.left ?? 0,
+					top: base?.top ?? 0,
+					width: ctx.width,
+					height: ctx.height,
+					right: (base?.left ?? 0) + ctx.width,
+					bottom: (base?.top ?? 0) + ctx.height,
+					x: base?.left ?? 0,
+					y: base?.top ?? 0,
+					toJSON() {},
+				} as DOMRect;
+			},
+		};
+		plotElRef.current = shim as unknown as HTMLElement;
+		// Redraw the imperative overlay against the fresh scales.
+		renderOverlay();
+		return null;
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [renderOverlay]);
+
 	// ── cursor crosshair (separate, doesn't rebuild the plot) ──────────────
 	useEffect(() => {
 		const host = hostRef.current;
@@ -778,7 +702,27 @@ export function TraceViewer({
 			data-testid="trace-viewer"
 			data-add-armed={addArmed ? "true" : "false"}
 		>
-			<div ref={plotContainer} className="w-full h-full" />
+			{/* PlotSurface owns the Plot instance + wheel/click/dblclick gestures.
+			    The container div fills the host so plotContainer.getBoundingClientRect()
+			    matches the plot area for the imperative overlay/cursor coordinate math. */}
+			<div ref={plotContainer} className="w-full h-full absolute inset-0">
+				<PlotSurface
+					marks={marks}
+					xType={xType}
+					xDomain={xDomain}
+					yDomain={yDomain}
+					yType="log"
+					margins={margins}
+					{...(qUnits !== undefined ? { qUnits } : {})}
+					peaks={peaks}
+					onXDomain={onXDomain}
+					onAddPeak={onAddPeak}
+					onClickPeak={handleClickPeak}
+					{...(onReset !== undefined ? { onReset } : {})}
+					overlay={captureCtx}
+					data-testid="trace-plot-surface"
+				/>
+			</div>
 			<svg
 				ref={overlayRef}
 				className="absolute inset-0 pointer-events-none"
