@@ -1,49 +1,76 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import { TagList } from "../../src/print/ui/TagList";
+import type { Tag } from "../../src/print/ui/tag";
 
 describe("TagList", () => {
-  it("renders all tags as pills", () => {
-    render(<TagList tags={["lipid-A", "37C", "run-3"]} />);
+  it("renders one TagPill per tag, including key+value tags", () => {
+    const tags: Tag[] = [
+      { key: "LL37" },
+      { key: "temperature", value: "37C" },
+      { key: "buffer", value: "PBS" },
+    ];
+    render(<TagList tags={tags} />);
     expect(screen.getAllByTestId("tag-pill")).toHaveLength(3);
-  });
-
-  it("renders NO add button when onAdd is omitted", () => {
-    render(<TagList tags={["lipid-A"]} />);
-    expect(screen.queryByTestId("tag-add")).toBeNull();
-  });
-
-  it("renders an add button with aria-label when onAdd is provided and fires it on click", () => {
-    const onAdd = vi.fn();
-    render(<TagList tags={["lipid-A"]} onAdd={onAdd} />);
-    const add = screen.getByTestId("tag-add");
-    expect(add).toBeTruthy();
-    expect(add.getAttribute("aria-label")).toBe("Add tag");
-    fireEvent.click(add);
-    expect(onAdd).toHaveBeenCalledTimes(1);
-  });
-
-  it("renders a remove button per pill when editable and onRemove are provided", () => {
-    const onRemove = vi.fn();
-    render(
-      <TagList tags={["lipid-A", "37C"]} editable onRemove={onRemove} />,
-    );
     expect(
-      screen.getAllByRole("button", { name: "Remove tag" }),
-    ).toHaveLength(2);
+      screen
+        .getAllByTestId("tag-pill")
+        .some(
+          (p) =>
+            p.querySelector('[data-role="tag-value"]')?.textContent === "37C",
+        ),
+    ).toBe(true);
+  });
+
+  it("renders NO add chip when onAdd is omitted", () => {
+    render(<TagList tags={[{ key: "LL37" }]} />);
+    expect(screen.queryByRole("button", { name: "Add" })).toBeNull();
+  });
+
+  it("shows the add chip when onAdd is provided; clicking it reveals the editor, and committing a key fires onAdd and hides the editor", () => {
+    const onAdd = vi.fn();
+    render(<TagList tags={[{ key: "LL37" }]} onAdd={onAdd} />);
+
+    const add = screen.getByRole("button", { name: "Add" });
+    expect(add.getAttribute("data-variant")).toBe("add");
+    expect(screen.queryByTestId("tag-editor")).toBeNull();
+
+    fireEvent.click(add);
+    const editor = screen.getByTestId("tag-editor");
+    expect(editor).toBeTruthy();
+
+    const keyInput = editor.querySelector(
+      'input[placeholder="key"]',
+    ) as HTMLInputElement;
+    fireEvent.change(keyInput, { target: { value: "pH" } });
+    fireEvent.keyDown(keyInput, { key: "Enter" });
+
+    expect(onAdd).toHaveBeenCalledTimes(1);
+    expect(onAdd).toHaveBeenCalledWith({ key: "pH" });
+    expect(screen.queryByTestId("tag-editor")).toBeNull();
+  });
+
+  it("renders a remove button per pill when editable and onRemove are provided, firing onRemove with the tag", () => {
+    const onRemove = vi.fn();
+    const tags: Tag[] = [{ key: "LL37" }, { key: "temperature", value: "37C" }];
+    render(<TagList tags={tags} editable onRemove={onRemove} />);
+    const buttons = screen.getAllByRole("button", { name: "Remove" });
+    expect(buttons).toHaveLength(2);
+    fireEvent.click(buttons[1]!);
+    expect(onRemove).toHaveBeenCalledWith({ key: "temperature", value: "37C" });
   });
 
   it("renders NO remove buttons when not editable", () => {
     const onRemove = vi.fn();
-    render(<TagList tags={["lipid-A", "37C"]} onRemove={onRemove} />);
-    expect(screen.queryAllByRole("button", { name: "Remove tag" })).toHaveLength(
-      0,
+    render(
+      <TagList tags={[{ key: "LL37" }, { key: "x", value: "y" }]} onRemove={onRemove} />,
     );
+    expect(screen.queryAllByRole("button", { name: "Remove" })).toHaveLength(0);
   });
 
-  it("shows the add invite even when the tag list is empty", () => {
+  it("shows the add chip even when the tag list is empty (the invite)", () => {
     const onAdd = vi.fn();
     render(<TagList tags={[]} onAdd={onAdd} />);
-    expect(screen.getByTestId("tag-add")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Add" })).toBeTruthy();
   });
 });

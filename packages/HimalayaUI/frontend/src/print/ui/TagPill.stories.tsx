@@ -4,13 +4,16 @@ import { TagPill } from "./TagPill";
 const meta = {
   title: "ui/TagPill",
   component: TagPill,
-  args: { children: "lipid-A" },
+  args: { tag: { key: "LL37" } },
 } satisfies Meta<typeof TagPill>;
 
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const Default: Story = { args: { children: "lipid-A" } };
+export const KeyOnly: Story = { args: { tag: { key: "LL37" } } };
+export const KeyValue: Story = {
+  args: { tag: { key: "temperature", value: "37C" } },
+};
 export const Removable: Story = {
-  args: { children: "lipid-A", onRemove: () => {} },
+  args: { tag: { key: "buffer", value: "PBS" }, onRemove: () => {} },
 };

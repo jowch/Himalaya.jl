@@ -1,9 +1,13 @@
+import { useState } from "react";
 import { TagPill } from "./TagPill";
+import { Chip } from "./Chip";
+import { TagEditor } from "./TagEditor";
+import type { Tag } from "./tag";
 
 interface TagListProps {
-  tags: string[];
-  onAdd?: () => void;
-  onRemove?: (tag: string) => void;
+  tags: Tag[];
+  onAdd?: (tag: Tag) => void;
+  onRemove?: (tag: Tag) => void;
   editable?: boolean;
   className?: string;
 }
@@ -12,16 +16,14 @@ function cx(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(" ");
 }
 
-/** A wrapping list of {@link TagPill}s plus an optional dashed "+ tag" add invite
- *  (mockup `.tags` + `.tag-add`). Composes TagPill (DRY).
+/** A wrapping list of key-value {@link TagPill}s plus an optional add affordance.
+ *  Composes TagPill, the base {@link Chip} `add` variant, and {@link TagEditor}.
  *
- *  B — the rationed accent appears ONLY on the add invite's hover/focus
- *  (→accent), never on the resting list or pills. C — the add button ships
- *  default / hover / focus-visible; the named-group reveal is keyboard-reachable
- *  because `focus-visible:opacity-100` un-hides it on focus even before row hover.
- *  When tags exist the invite is hidden until row hover (`group-hover/tags`); when
- *  the list is EMPTY it is always visible (the empty-state invite). G — only a
- *  tokenized OPACITY/color transition, never a layout/size animation. */
+ *  B — the rationed accent appears ONLY on the add invite's hover/focus (Chip's
+ *  `add` variant), never on the resting list or pills. G — when tags exist the
+ *  invite is hidden until row hover via a tokenized OPACITY transition
+ *  (`group-hover/tags` + `focus-within`), never a layout/size animation; when the
+ *  list is EMPTY it is always visible (the empty-state invite). */
 export function TagList({
   tags,
   onAdd,
@@ -29,35 +31,41 @@ export function TagList({
   editable = false,
   className = "",
 }: TagListProps): JSX.Element {
+  const [adding, setAdding] = useState(false);
+
   return (
     <div
       data-testid="tag-list"
       className={cx("flex items-center flex-wrap gap-1.5 group/tags", className)}
     >
-      {tags.map((t) => (
+      {tags.map((t, i) => (
         <TagPill
-          key={t}
+          key={i}
+          tag={t}
           {...(editable && onRemove ? { onRemove: () => onRemove(t) } : {})}
-        >
-          {t}
-        </TagPill>
+        />
       ))}
-      {onAdd && (
-        <button
-          type="button"
-          data-testid="tag-add"
-          aria-label="Add tag"
-          onClick={onAdd}
-          className={cx(
-            "text-xs font-semibold rounded-full border border-dashed border-hair-strong px-2 py-px text-ink-faint transition-colors",
-            "hover:text-accent hover:border-accent focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent",
-            tags.length > 0 &&
-              "opacity-0 group-hover/tags:opacity-100 focus-visible:opacity-100",
-          )}
-        >
-          + tag
-        </button>
-      )}
+      {onAdd &&
+        (adding ? (
+          <TagEditor
+            onCommit={(tag) => {
+              onAdd(tag);
+              setAdding(false);
+            }}
+            onCancel={() => setAdding(false)}
+          />
+        ) : (
+          <Chip
+            variant="add"
+            onClick={() => setAdding(true)}
+            className={cx(
+              tags.length > 0 &&
+                "opacity-0 group-hover/tags:opacity-100 focus-within:opacity-100",
+            )}
+          >
+            + tag
+          </Chip>
+        ))}
     </div>
   );
 }
