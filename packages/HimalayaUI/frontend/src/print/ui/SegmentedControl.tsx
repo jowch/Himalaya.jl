@@ -35,7 +35,7 @@ export interface SegmentOption<T extends string> {
 }
 
 export type SegmentedVariant = "bordered" | "plain";
-export type SegmentedSize = "sm" | "md";
+export type SegmentedSize = "xs" | "sm" | "md";
 
 export interface SegmentedControlProps<T extends string> {
   options: ReadonlyArray<SegmentOption<T>>;
@@ -67,7 +67,12 @@ const containerClass: Record<SegmentedVariant, string> = {
   plain: "inline-flex items-center gap-1",
 };
 
+// `xs` is a known-dense in-panel toggle (focus-plot mini comb switch). Its
+// effective hit area is enlarged by the toolbar row it sits in; the segment
+// itself is intentionally below the 44px standalone touch target. `sm`/`md`
+// remain the default comfortable sizes.
 const sizeClass: Record<SegmentedSize, string> = {
+  xs: "text-xs px-2 py-1",
   sm: "text-xs px-3 py-1.5",
   md: "text-sm px-3.5 py-2",
 };
