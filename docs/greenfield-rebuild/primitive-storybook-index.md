@@ -58,9 +58,29 @@ spec (98 tests); the 9 seeded primitives carry their pre-existing `test/ui/` spe
 | `ui/ScoreBar` | High · Mid · Low + Compact |
 | `ui/Toast` | Info · Success · Warning · Error (seeded via `showToast`) |
 
+## Phase-1.5 — base layer, refactors, and review fixes (after the first Storybook review)
+
+New **base primitives** the specialized ones now compose from:
+
+| Storybook title | Story states | Role |
+|---|---|---|
+| `ui/Input` | Default · WithLeadingIcon · Invalid · Small | recessed field base (DESIGN.md §5); `leading`/`trailing` slots, focus-within accent ring, `invalid`→error border + `aria-invalid`. Backs SearchInput + TagEditor. |
+| `ui/Chip` | Static · Removable · Add · ToggleOff · ToggleOn · Trigger | base pill; `testId` override. Backs FilterChip (toggle), FacetChip (trigger), TagPill (static/removable). Remove × is **neutral**; `add` is the dashed accent-on-hover invite. |
+| `ui/Menu` | Open · WithDisabled | plate dropdown popover (net-new); keyboard nav (Esc + arrows), `role=menu`/`menuitem`. |
+| `ui/Tooltip` | OnButton · Bottom | `frame-edge` dark caption (net-new); hover+focus, `role=tooltip` + `aria-describedby`. |
+| `ui/Wordmark` | Default · WithTail | sans/uppercase/700 brand mark ("HIMALAYA · SAXS") — fixes the TopBar serif bug. |
+| `ui/TagEditor` | Default · WithKnownKeys | key + optional-value entry (composes Input); commits a `Tag`, omits empty value. |
+| `ui/CheckCircle` | Selected · Unselected · ScreenedStatus | 13px disc+check for multi-select AND screened status (was `ScreenedMark`). |
+
+**Changed in this pass (from your review notes):**
+- `ui/Button` gained `danger` — error-red at rest → red fill on hover (DESIGN.md §2 Status; destructive reads destructive). `ui/IconButton` `danger` likewise reads error-red at baseline.
+- `ui/TagPill` / `ui/TagList` now model **key-value tags** (`{key, value?}`): key = faint sans label, value = mono ink; key-only = bare token. TagList's add invite opens an inline TagEditor.
+- `ui/SearchInput`, `ui/FilterChip`, `ui/FacetChip` are now thin wrappers composing `Input`/`Chip` (same contracts).
+- Fixes: TopBar wordmark (sans/700), Kicker accent/faint parity, Dot label-as-aria caption, Card optional `padding`, hot peak glyph heavier outline (no ring), ToggleSwitch `hideLabel`.
+
 ## Notes for the reviewer
 
-- **Second-Channel (color-blind) primitives to spot-check in grayscale:** `ScreenedMark`
+- **Second-Channel (color-blind) primitives to spot-check in grayscale:** `CheckCircle`
   (fill + checkmark), `SignalBars` (bar count), `ProgressBar` (fill width), `PhaseChip`
   (phase name text), `RejectOverlay` (✕ shape + consumer frame dimming), `FilterChip`
   (ink/paper inversion). None rest meaning on hue alone.
