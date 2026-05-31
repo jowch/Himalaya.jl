@@ -16,3 +16,14 @@ describe("<Card> draft variant", () => {
     expect(screen.getByTestId("c").getAttribute("data-elevated")).toBe("true");
   });
 });
+
+describe("<Card> padding", () => {
+  it("has no data-padding by default", () => {
+    render(<Card data-testid="c">x</Card>);
+    expect(screen.getByTestId("c").getAttribute("data-padding")).toBe(null);
+  });
+  it("sets data-padding when padding given", () => {
+    render(<Card padding="md" data-testid="c">x</Card>);
+    expect(screen.getByTestId("c").getAttribute("data-padding")).toBe("md");
+  });
+});

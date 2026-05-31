@@ -13,3 +13,4 @@ type Story = StoryObj<typeof meta>;
 export const Default: Story = {};
 export const Elevated: Story = { args: { elevated: true } };
 export const Draft: Story = { args: { draft: true, children: "New recipe" } };
+export const Padded: Story = { args: { elevated: true, padding: "md", children: "Padded plate body" } };

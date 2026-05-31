@@ -29,6 +29,8 @@ type CardOwnProps<T extends CardElement> = {
   /** Folio draft/recipe card: dashed hair-strong border, no Plate-Lift shadow,
    *  figure dimmed by the consumer. (mockup .card.is-draft) */
   draft?: boolean;
+  /** Optional internal padding. Default none (consumers often pad the body themselves; mockup padding varies 13–30px). sm≈13px md≈16px lg≈28px. */
+  padding?: "sm" | "md" | "lg";
 };
 
 export type CardProps<T extends CardElement = "div"> = CardOwnProps<T> &
@@ -39,11 +41,18 @@ const borderClass: Record<NonNullable<CardOwnProps<CardElement>["border"]>, stri
   strong: "border border-hair-strong",
 };
 
+const paddingClass: Record<NonNullable<CardOwnProps<CardElement>["padding"]>, string> = {
+  sm: "p-3",
+  md: "p-4",
+  lg: "p-7",
+};
+
 export function Card<T extends CardElement = "div">({
   as,
   elevated = false,
   border = "hair",
   draft = false,
+  padding,
   className = "",
   children,
   ...rest
@@ -51,15 +60,18 @@ export function Card<T extends CardElement = "div">({
   const Tag = (as ?? "div") as CardElement;
   // elevated → `.card` (single source of the shadow). flat → tonal hairline,
   // never a shadow. Radius token (rounded-md = 5px) comes from Phase 0.
-  const appearance = draft
-    ? "rounded-md bg-plate border border-dashed border-hair-strong"
-    : elevated
-      ? "card"
-      : `rounded-md bg-plate ${borderClass[border]}`;
+  const appearance =
+    (draft
+      ? "rounded-md bg-plate border border-dashed border-hair-strong"
+      : elevated
+        ? "card"
+        : `rounded-md bg-plate ${borderClass[border]}`) +
+    (padding ? ` ${paddingClass[padding]}` : "");
   const props = {
     className: `${appearance} ${className}`.trim(),
     ...(draft ? { "data-draft": "true" } : {}),
     ...(elevated && !draft ? { "data-elevated": "true" } : {}),
+    ...(padding ? { "data-padding": padding } : {}),
     // Default an explicit button type so a Card-as-button inside a <form> never
     // silently acts as a submit; a consumer-passed `type` (via ...rest) still wins.
     ...(Tag === "button" ? { type: "button" } : {}),
