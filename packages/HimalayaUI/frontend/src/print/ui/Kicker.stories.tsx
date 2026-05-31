@@ -4,13 +4,11 @@ import { Kicker } from "./Kicker";
 const meta = {
   title: "ui/Kicker",
   component: Kicker,
-  args: { children: "Phase call" },
+  args: { children: "BEAMTIME 2024-03" },
 } satisfies Meta<typeof Kicker>;
 
 export default meta;
 type Story = StoryObj<typeof meta>;
-
-export const Default: Story = {};
 
 export const Faint: Story = { args: { tone: "faint" } };
 export const Accent: Story = { args: { tone: "accent" } };

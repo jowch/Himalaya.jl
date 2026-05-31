@@ -269,8 +269,8 @@
                       color: var(--color-ink-soft); }
   .text-kicker        { font-size: var(--text-sm);  line-height: 1.4;
                         font-weight: 700; text-transform: uppercase; }
-  .text-kicker-accent { color: var(--color-print-accent); letter-spacing: 0.13em; }
-  .text-kicker-faint  { color: var(--color-ink-faint);    letter-spacing: 0.09em; }
+  .text-kicker-accent { color: var(--color-print-accent); letter-spacing: 0.10em; }
+  .text-kicker-faint  { color: var(--color-ink-faint);    letter-spacing: 0.10em; }
   .text-label       { font-size: var(--text-sm);  line-height: 1.4;
                       font-weight: 500; text-transform: uppercase;
                       letter-spacing: 0.06em; color: var(--color-ink-soft); }
