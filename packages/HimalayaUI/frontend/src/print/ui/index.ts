@@ -38,3 +38,4 @@ export type { StageKey } from "./StageTabs";
 export { TagPill } from "./TagPill";
 export { TagList } from "./TagList";
 export { SearchInput } from "./SearchInput";
+export { Slider } from "./Slider";

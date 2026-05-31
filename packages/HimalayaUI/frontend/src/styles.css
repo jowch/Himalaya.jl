@@ -297,6 +297,19 @@
     height: 44px;
     transform: translate(-50%, -50%);
   }
+
+  /* Slider — custom range track + thumb. WebKit/Moz pseudo-elements cannot be
+     expressed as Tailwind utilities, so the appearance is authored here (the
+     legitimate styles.css home for pseudo-element styling). Colors via tokens. */
+  .print-range { -webkit-appearance: none; appearance: none; width: 100%; height: 3px;
+    background: var(--color-hair-strong); border-radius: 9999px; outline: none; }
+  .print-range::-webkit-slider-thumb { -webkit-appearance: none; appearance: none;
+    width: 16px; height: 16px; border-radius: 50%; background: var(--color-accent);
+    cursor: pointer; border: 2.5px solid var(--color-plate);
+    box-shadow: 0 0 0 1px var(--color-hair-strong); }
+  .print-range::-moz-range-thumb { width: 16px; height: 16px; border: 2.5px solid var(--color-plate);
+    border-radius: 50%; background: var(--color-accent); box-shadow: 0 0 0 1px var(--color-hair-strong); }
+  .print-range:focus-visible::-webkit-slider-thumb { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 }
 
 /* Boneyard skeleton: slow pulse keeps the loading state subtle */
