@@ -5,6 +5,8 @@ export { Dot } from "./Dot";
 export type { DotTone, DotSize } from "./Dot";
 export { HintText } from "./HintText";
 export { KbKey } from "./KbKey";
+export { KbLegend } from "./KbLegend";
+export type { Shortcut } from "./KbLegend";
 export { Kicker } from "./Kicker";
 export type { KickerTone } from "./Kicker";
 export { ScoreBar } from "./ScoreBar";
