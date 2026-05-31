@@ -13,7 +13,7 @@ export { Kicker } from "./Kicker";
 export type { KickerTone } from "./Kicker";
 export { ScoreBar } from "./ScoreBar";
 export { SignalBars } from "./SignalBars";
-export { ScreenedMark } from "./ScreenedMark";
+export { CheckCircle } from "./CheckCircle";
 export { RejectOverlay } from "./RejectOverlay";
 export type { ScoreBarSize } from "./ScoreBar";
 export { ProgressBar } from "./ProgressBar";

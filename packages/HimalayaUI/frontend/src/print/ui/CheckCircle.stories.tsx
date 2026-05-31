@@ -1,9 +1,9 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { ScreenedMark } from "./ScreenedMark";
+import { CheckCircle } from "./CheckCircle";
 
 const meta = {
-  title: "ui/ScreenedMark",
-  component: ScreenedMark,
+  title: "ui/CheckCircle",
+  component: CheckCircle,
   // Render on a small light surface so the empty (transparent) disc and its
   // hairline ring are visible against the page.
   decorators: [
@@ -13,10 +13,11 @@ const meta = {
       </div>
     ),
   ],
-} satisfies Meta<typeof ScreenedMark>;
+} satisfies Meta<typeof CheckCircle>;
 
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const Screened: Story = { args: { done: true } };
-export const Unscreened: Story = { args: { done: false } };
+export const Selected: Story = { args: { checked: true } };
+export const Unselected: Story = { args: { checked: false } };
+export const ScreenedStatus: Story = { args: { checked: true, label: "Screened" } };
