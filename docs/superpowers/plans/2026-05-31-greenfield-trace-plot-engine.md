@@ -1174,8 +1174,31 @@ describe("TracePlot", () => {
     });
     expect(onAddPeak).toHaveBeenCalledTimes(1);
   });
+
+  it("does not add a peak when clicking the axis margins (interior guard)", () => {
+    const onAddPeak = vi.fn();
+    const { container } = render(
+      <TracePlot
+        traces={[model]}
+        width={500}
+        height={300}
+        interaction={{ onXDomain: () => {}, onAddPeak }}
+      />,
+    );
+    const svg = container.querySelector("svg")!;
+    // Left axis gutter (clientX < margins.left = 52): plotPx negative.
+    fireEvent.click(svg, { clientX: 10, clientY: 100 });
+    // Bottom label strip (clientY beyond plotHeight = 300-12-40 = 248).
+    fireEvent.click(svg, { clientX: 200, clientY: 285 });
+    expect(onAddPeak).not.toHaveBeenCalled();
+  });
 });
 ```
+
+> **Post-review amendment (parity fix):** `handleClickPx` gates on the plot-body
+> interior and `q > 0` (Step 3 below), matching PlotSurface's `insideInterior` +
+> `q > 0` guards. The Step-4 expected count is now **4 tests** (the interior-guard
+> case above is the fourth).
 
 - [ ] **Step 2: Run the test to verify it fails**
 
@@ -1297,12 +1320,24 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
   }, []);
 
   const handleClickPx = useCallback(
-    (px: number, _py: number, altKey: boolean) => {
+    (px: number, py: number, altKey: boolean) => {
       const s = stateRef.current;
       if (!s || !s.interaction) return;
       const plotPx = px - s.dims.margins.left;
+      const plotPy = py - s.dims.margins.top;
+      // Ignore clicks in the axis margins (parity with PlotSurface's interior
+      // guard — no spurious peak from the gutters).
+      if (
+        plotPx < 0 ||
+        plotPx > s.dims.plotWidth ||
+        plotPy < 0 ||
+        plotPy > s.dims.plotHeight
+      ) {
+        return;
+      }
       const q = s.projection.x.invert(plotPx);
-      if (!Number.isFinite(q)) return;
+      // Positive, finite q only (linear invert can go negative in the gutters).
+      if (!Number.isFinite(q) || q <= 0) return;
       const tol = s.interaction.hitTolerancePx ?? PEAK_HIT_PX;
       const hit = hitTestPeaks(
         s.peaks,
