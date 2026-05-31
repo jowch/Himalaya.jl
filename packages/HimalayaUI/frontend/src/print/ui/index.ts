@@ -39,6 +39,8 @@ export type { StageKey } from "./StageTabs";
 export { TagPill } from "./TagPill";
 export { TagList } from "./TagList";
 export { SearchInput } from "./SearchInput";
+export { Input } from "./Input";
+export type { InputProps } from "./Input";
 export { Slider } from "./Slider";
 export { ToggleSwitch } from "./ToggleSwitch";
 export { MetaList } from "./MetaList";
