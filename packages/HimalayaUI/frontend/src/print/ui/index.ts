@@ -1,4 +1,5 @@
 export { Badge } from "./Badge";
+export { BonnetBadge } from "./BonnetBadge";
 export { Button } from "./Button";
 export { EmptyState } from "./EmptyState";
 export type { ButtonVariant } from "./Button";
