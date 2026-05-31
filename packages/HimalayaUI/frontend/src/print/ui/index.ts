@@ -28,3 +28,4 @@ export type { CardProps, CardElement } from "./Card";
 export { TopBar } from "./TopBar";
 export { StageTabs } from "./StageTabs";
 export type { StageKey } from "./StageTabs";
+export { TagPill } from "./TagPill";
