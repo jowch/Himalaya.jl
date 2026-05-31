@@ -21,3 +21,4 @@ export { IconButton } from "./IconButton";
 export type { IconButtonTone, IconButtonProps } from "./IconButton";
 export { Card } from "./Card";
 export type { CardProps, CardElement } from "./Card";
+export { TopBar } from "./TopBar";
