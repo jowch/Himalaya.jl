@@ -19,6 +19,7 @@ export { ModalShell } from "./ModalShell";
 export type { ModalSize, ModalAlign, ModalVariant, ModalShellProps } from "./ModalShell";
 export { IconButton } from "./IconButton";
 export type { IconButtonTone, IconButtonProps } from "./IconButton";
+export { FacetChip } from "./FacetChip";
 export { Card } from "./Card";
 export type { CardProps, CardElement } from "./Card";
 export { TopBar } from "./TopBar";
