@@ -133,8 +133,6 @@ const MARGIN_RIGHT  = 14;
 const MARGIN_TOP    = 8;
 const MARGIN_BOTTOM = 32;
 
-type Scale = { invert?: (v: number) => number; apply?: (v: number) => number } | undefined;
-
 /**
  * Map the builder's trace-offset slider (0.4..1.4, mockup default 1.2) to the
  * working-band fraction consumed by `applyNormalization` (R8, #231). A larger
@@ -619,7 +617,3 @@ function MemberBandOverlay(props: {
     />
   );
 }
-
-// Silence unused-Scale warning while keeping the type next to the helpers
-// for future overlay work (cursor crosshair, peak hover effects).
-export type { Scale };

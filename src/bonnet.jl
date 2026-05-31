@@ -1,11 +1,15 @@
 # Gauss–Bonnet lattice-parameter ratios among the three bicontinuous cubic
 # phases. Reference scale (Pn3m = 1.0): a_Pn3m : a_Im3m : a_Ia3d.
 #
-# These track the NGC constants already hard-coded in index.jl (A₀ =
-# 1.919/2.345/3.091), which derive from the same IPMS geometry. The
-# Pn3m:Im3m:Ia3d = 1.000:1.279:1.576 triple is confirmed canonical
-# (saxs-physics-reviewer, 2026-05-30). `bonnet_lattice` returns `nothing` for
-# any non-bicontinuous-cubic pairing — the Bonnet relation is cubic↔cubic only.
+# The 1.000:1.279:1.576 triple is the canonical lattice ratio for the
+# D (Pn3m) / P (Im3m) / G (Ia3d) infinite periodic minimal surfaces related by
+# the Bonnet (isometric) transformation — standard in the bicontinuous-cubic-
+# phase literature (e.g. Hyde et al., "The Language of Shape", 1997). It follows
+# from the Gauss–Bonnet relation between each surface's area and Euler
+# characteristic. NOTE: this is NOT the ratio of the NGC A₀ surface-area
+# constants in index.jl (1.919/2.345/3.091) — those differ (2.345/1.919 = 1.222,
+# not 1.279). `bonnet_lattice` returns `nothing` for any non-bicontinuous-cubic
+# pairing — the Bonnet relation is cubic↔cubic only.
 const BONNET_SCALE = Dict{DataType,Float64}(
     Pn3m => 1.000,
     Im3m => 1.279,

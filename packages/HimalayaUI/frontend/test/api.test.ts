@@ -77,13 +77,14 @@ describe("api", () => {
   it("addPeak posts {q} with X-Username and returns parsed peak", async () => {
     const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue(
       new Response(JSON.stringify({
-        id: 7, exposure_id: 42, q: 0.15, source: "manual", stale_indices: 3,
+        id: 7, exposure_id: 42, q: 0.15, source: "manual",
+        event_id: 100, view_row_id: 7, analysis_inputs_hash: "sha256:abc",
       }), { status: 201 }),
     );
     const p = await api.addPeak(42, 0.15, { username: "alice", clientId: "tab-xyz" });
     expect(p.id).toBe(7);
     expect(p.source).toBe("manual");
-    expect(p.stale_indices).toBe(3);
+    expect(p.analysis_inputs_hash).toBe("sha256:abc");
     const init = fetchSpy.mock.calls[0]![1] as RequestInit;
     expect((init.headers as Record<string, string>)["X-Username"]).toBe("alice");
     expect((init.headers as Record<string, string>)["X-Client-Id"]).toBe("tab-xyz");

@@ -137,7 +137,11 @@ export function CombPanel(): JSX.Element {
             {active.flatMap((ix) =>
               ix.peaks.map((p) => {
                 if (p.q_observed <= 0) return null;
-                const dd = p.residual / (p.q_observed - p.residual || p.q_observed);
+                // Δq/q against predicted-q (= observed − residual). Guard a
+                // near-zero predicted-q (a degenerate index) explicitly so dd
+                // stays bounded rather than relying solely on yResid's clamp.
+                const predictedQ = p.q_observed - p.residual;
+                const dd = p.residual / (Math.abs(predictedQ) > 1e-9 ? predictedQ : p.q_observed);
                 const x = logX(p.q_observed, qMin, qMax);
                 const y = yResid(dd);
                 const color = phaseColor(ix.phase);

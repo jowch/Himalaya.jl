@@ -53,8 +53,7 @@ function makeSnap(): SpeculativeSnap[] {
   return [
     {
       ratio_position: 0,
-      ratio_value: 1.0,
-      target_q: 0.1,
+      predicted_q: 0.1,
       suggested_peak_id: 5,
       suggested_q: 0.1,
       suggested_residual: 0.0,
