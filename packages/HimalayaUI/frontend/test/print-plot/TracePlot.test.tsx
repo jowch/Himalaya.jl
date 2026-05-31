@@ -51,4 +51,22 @@ describe("TracePlot", () => {
     });
     expect(onAddPeak).toHaveBeenCalledTimes(1);
   });
+
+  it("does not add a peak when clicking the axis margins (interior guard)", () => {
+    const onAddPeak = vi.fn();
+    const { container } = render(
+      <TracePlot
+        traces={[model]}
+        width={500}
+        height={300}
+        interaction={{ onXDomain: () => {}, onAddPeak }}
+      />,
+    );
+    const svg = container.querySelector("svg")!;
+    // Left axis gutter (clientX < margins.left = 52): plotPx negative.
+    fireEvent.click(svg, { clientX: 10, clientY: 100 });
+    // Bottom label strip (clientY beyond plotHeight = 300-12-40 = 248).
+    fireEvent.click(svg, { clientX: 200, clientY: 285 });
+    expect(onAddPeak).not.toHaveBeenCalled();
+  });
 });

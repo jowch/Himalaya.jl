@@ -109,12 +109,25 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
   }, []);
 
   const handleClickPx = useCallback(
-    (px: number, _py: number, altKey: boolean) => {
+    (px: number, py: number, altKey: boolean) => {
       const s = stateRef.current;
       if (!s || !s.interaction) return;
       const plotPx = px - s.dims.margins.left;
+      const plotPy = py - s.dims.margins.top;
+      // Ignore clicks landing in the axis margins, not the plot body — parity
+      // with PlotSurface's interior guard (no spurious peak from the gutters).
+      if (
+        plotPx < 0 ||
+        plotPx > s.dims.plotWidth ||
+        plotPy < 0 ||
+        plotPy > s.dims.plotHeight
+      ) {
+        return;
+      }
       const q = s.projection.x.invert(plotPx);
-      if (!Number.isFinite(q)) return;
+      // q must be a positive, finite value (linear invert can go negative in
+      // the gutters; log invert stays positive). Matches PlotSurface:252.
+      if (!Number.isFinite(q) || q <= 0) return;
       const tol = s.interaction.hitTolerancePx ?? PEAK_HIT_PX;
       const hit = hitTestPeaks(
         s.peaks,

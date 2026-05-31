@@ -79,8 +79,9 @@ export function PlotFrame({
   const dims: PlotDims = { width: w, height, plotWidth, plotHeight, margins };
 
   function handleClick(ev: React.MouseEvent): void {
-    if (!onClickPx) return;
-    const rect = containerRef.current!.getBoundingClientRect();
+    const el = containerRef.current;
+    if (!onClickPx || !el) return;
+    const rect = el.getBoundingClientRect();
     onClickPx(ev.clientX - rect.left, ev.clientY - rect.top, ev.altKey);
   }
 
