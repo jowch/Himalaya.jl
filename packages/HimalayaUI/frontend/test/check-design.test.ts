@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { scanContent } from "../scripts/check-design.mjs";
+import { scanContent, scanLegacyImports } from "../scripts/check-design.mjs";
 
 // Helper: collect the set of rule ids a single line trips (outside ui/).
 function rulesFor(line: string): string[] {
@@ -84,5 +84,58 @@ describe("check-design guard — ban rules (spec §4)", () => {
   // Scope exclusion — src/components/ui/** is never scanned
   it("excludes src/components/ui/** entirely", () => {
     expect(scanContent("components/ui/Toast.tsx", '<div className="border-l-4 text-[10px]" />')).toHaveLength(0);
+  });
+});
+
+describe("scanLegacyImports", () => {
+  it("flags a print/ file importing old components (one level up to src)", () => {
+    const v = scanLegacyImports("print/App.tsx", `import { X } from "../components/X";`);
+    expect(v).toEqual([
+      { rule: "no-legacy-import", file: "print/App.tsx", line: 1, text: "../components/X" },
+    ]);
+  });
+
+  it("flags a print/ui file importing old components (two levels up to src)", () => {
+    const v = scanLegacyImports("print/ui/Button.tsx", `import { X } from "../../components/X";`);
+    expect(v.map((h) => h.text)).toEqual(["../../components/X"]);
+  });
+
+  it("flags importing old pages", () => {
+    const v = scanLegacyImports("print/pages/P.tsx", `import P from "../../pages/Old";`);
+    expect(v.map((h) => h.rule)).toEqual(["no-legacy-import"]);
+  });
+
+  it("flags importing the OLD ui primitives (under components/)", () => {
+    const v = scanLegacyImports("print/ui/Card.tsx", `import { Dot } from "../../components/ui/Dot";`);
+    expect(v).toHaveLength(1);
+  });
+
+  it("allows importing the shared core", () => {
+    const src = [
+      `import { api } from "../api";`,
+      `import { phaseColor } from "../phases";`,
+      `import { foo } from "../lib/queue/types";`,
+      `import { useFocusTrap } from "../hooks/useFocusTrap";`,
+    ].join("\n");
+    expect(scanLegacyImports("print/App.tsx", src)).toEqual([]);
+  });
+
+  it("allows print-internal imports (its own components/pages)", () => {
+    const v = scanLegacyImports("print/App.tsx", `import { Page } from "./pages/ContactSheet";\nimport { C } from "./components/C";`);
+    expect(v).toEqual([]);
+  });
+
+  it("ignores non-print files entirely", () => {
+    expect(scanLegacyImports("components/Foo.tsx", `import x from "../pages/Bar";`)).toEqual([]);
+  });
+});
+
+describe("isExcluded via scanContent — print/ui authoring", () => {
+  it("excludes src/print/ui from appearance rules", () => {
+    expect(scanContent("print/ui/PhaseChip.tsx", `<span className="text-[11px]" />`)).toEqual([]);
+  });
+  it("still enforces appearance rules on print/ consumers", () => {
+    const v = scanContent("print/components/Foo.tsx", `<span className="text-[11px]" />`);
+    expect(v.map((h) => h.rule)).toContain("no-arbitrary-text");
   });
 });

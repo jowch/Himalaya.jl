@@ -6,7 +6,7 @@
 // appearance, so any new bracket/raw-color escape is a regression, full stop.
 // Pure functions are exported for unit testing; the CLI runs only when invoked directly.
 import { readdirSync, readFileSync } from "node:fs";
-import { join, relative, sep } from "node:path";
+import { join, relative, sep, posix } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // import.meta.url is a file: URL when run by node directly, but some loaders
@@ -131,9 +131,9 @@ function relToSrc(absPath) {
   return relative(SRC_DIR, absPath).split(sep).join("/");
 }
 
-// src/components/ui/** is excluded entirely (it is where appearance is authored).
+// src/components/ui/** and src/print/ui/** are excluded entirely (where appearance is authored).
 function isExcluded(relPath) {
-  return relPath.startsWith("components/ui/");
+  return relPath.startsWith("components/ui/") || relPath.startsWith("print/ui/");
 }
 
 // Scan one file's text. Returns [{ rule, file, line, text }].
@@ -155,6 +155,35 @@ export function scanContent(relPath, content) {
   return violations;
 }
 
+// Relative import/export specifiers on one line. Group 1 = `... from "X"`, group 2 = dynamic import("X").
+const IMPORT_SPEC_RE =
+  /(?:import|export)\b[^'"]*?\bfrom\s*["']([^"']+)["']|import\s*\(\s*["']([^"']+)["']\s*\)/g;
+
+// Import-boundary guard: a file under src/print/** may not import (relatively) from the OLD
+// src/components/** or src/pages/**. We resolve each relative specifier against the importer's
+// dir (POSIX) and flag it if it lands under components/ or pages/. Print-internal imports
+// (./components, ./pages — i.e. src/print/components, src/print/pages) resolve under print/ and pass.
+// Exported pure for unit testing.
+export function scanLegacyImports(relPath, content) {
+  if (!relPath.startsWith("print/")) return [];
+  const dir = posix.dirname(relPath);
+  const out = [];
+  const lines = content.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    IMPORT_SPEC_RE.lastIndex = 0;
+    let m;
+    while ((m = IMPORT_SPEC_RE.exec(lines[i])) != null) {
+      const spec = m[1] ?? m[2];
+      if (!spec || !spec.startsWith(".")) continue; // bare/external specifiers are fine
+      const resolved = posix.normalize(posix.join(dir, spec));
+      if (resolved.startsWith("components/") || resolved.startsWith("pages/")) {
+        out.push({ rule: "no-legacy-import", file: relPath, line: i + 1, text: spec });
+      }
+    }
+  }
+  return out;
+}
+
 // --- CLI ---------------------------------------------------------------------
 // Pure-absolute: scan every source file, error on ANY violation (no baseline).
 function runCli() {
@@ -162,7 +191,9 @@ function runCli() {
   const all = [];
   for (const abs of files) {
     const rel = relToSrc(abs);
-    all.push(...scanContent(rel, readFileSync(abs, "utf8")));
+    const content = readFileSync(abs, "utf8");
+    all.push(...scanContent(rel, content));
+    all.push(...scanLegacyImports(rel, content));
   }
 
   if (all.length > 0) {
@@ -171,8 +202,9 @@ function runCli() {
       process.stderr.write(`  ${v.rule}  src/${v.file}:${v.line}  ${JSON.stringify(v.text)}\n`);
     }
     process.stderr.write(
-      "Move the appearance utility into src/components/ui/**, or use a named scale/role token. " +
-        "Raw color literals belong only in the color-authoring files.\n",
+      "Move the appearance utility into src/components/ui/** (or src/print/ui/**), or use a named " +
+        "scale/role token. Raw color literals belong only in the color-authoring files. " +
+        "src/print/** may not import from src/components/** or src/pages/** (no-legacy-import).\n",
     );
     return 2;
   }
