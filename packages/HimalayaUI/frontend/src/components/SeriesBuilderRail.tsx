@@ -25,6 +25,12 @@ interface SeriesBuilderRailProps {
   onAdjustSeries: () => void;
   /** Parent injects <FigureExportControls/> (it owns the export spec thunk). */
   exportControls: ReactNode;
+  /** E-9: the derived "phases present" reading panel (injected by the page,
+   *  which owns the member-snapshot derivation). Omitted in edit mode / when
+   *  there's nothing to read. */
+  readingPanel?: ReactNode;
+  /** E-9: the per-member rail rows (lattice + q₁), injected by the page. */
+  memberRows?: ReactNode;
   /**
    * I3.5b — recipe-edit controls (add/remove/reorder sample, ordering-var,
    * order-rule, Save/Commit/Cancel). Injected only in edit mode; when present
@@ -56,6 +62,7 @@ export function SeriesBuilderRail({
   orderingVariable, offset, onOffsetChange, scaleMode, onScaleModeChange,
   trackOn, onTrackOnChange,
   sampleCount, onAdjustSeries, exportControls, editControls,
+  readingPanel, memberRows,
 }: SeriesBuilderRailProps): JSX.Element {
   if (collapsed) {
     return (
@@ -158,6 +165,24 @@ export function SeriesBuilderRail({
           Track reflections
         </label>
       </section>
+
+      {readingPanel !== undefined && (
+        <section className="flex flex-col gap-2" data-testid="rail-reading">
+          <div className="text-xs font-semibold text-ink-faint">Phases present</div>
+          {readingPanel}
+          <p className="text-xs leading-relaxed text-ink-faint">
+            Derived from the per-sample phase calls — the span each phase
+            occupies on the variable and its lattice trend.
+          </p>
+        </section>
+      )}
+
+      {memberRows !== undefined && (
+        <section className="flex flex-col gap-1" data-testid="rail-members">
+          <div className="text-xs font-semibold text-ink-faint">Members</div>
+          <div className="flex flex-col gap-0.5">{memberRows}</div>
+        </section>
+      )}
 
       <section className="flex flex-col gap-1.5" data-testid="rail-export">
         {exportControls}

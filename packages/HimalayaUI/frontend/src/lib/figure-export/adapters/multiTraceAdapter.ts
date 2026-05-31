@@ -3,7 +3,7 @@ import type { SeriesMember, Trace } from "../../../api";
 import type { ExportSpec, LegendRow } from "../types";
 import {
   COMPARE_DIMS, COMPARE_PALETTE_LIGHT, ORPHAN_FALLBACK_LIGHT,
-  EXPORT_MARGIN,
+  EXPORT_MARGIN, CLEAN_SCIENTIFIC,
 } from "../presets";
 import { buildMultiTraceExportMarks } from "../marks/multiTraceExportMarks";
 import { colorFor, ORPHAN_FALLBACK, type GroupingMode } from "../../comparison/coloring";
@@ -31,6 +31,10 @@ export interface MultiTraceAdapterArgs {
    *  the export emits the same per-(phase, Miller-order) polylines on top of
    *  the trace/heatmap marks (#251 r1 / B1). */
   showCrossTraceTracking?: boolean;
+  /** Export preset (Plan E E-8). `"default"` (the Print export) or `"clean"`
+   *  (the decoupled CLEAN_SCIENTIFIC render — white, 2px Arial, q (Å⁻¹) /
+   *  Intensity axes, footnote). */
+  preset?: "default" | "clean";
 }
 
 export function buildMultiTraceExportSpec(args: MultiTraceAdapterArgs): ExportSpec {
@@ -40,7 +44,9 @@ export function buildMultiTraceExportSpec(args: MultiTraceAdapterArgs): ExportSp
     groupingMode, sampleIdFor, displayLabelByMemberId,
     representation = "waterfall",
     showCrossTraceTracking = false,
+    preset = "default",
   } = args;
+  const clean = preset === "clean";
 
   // Critical ordering (spec §MultiTracePlot export "Critical"): compute
   // colors on the UNFILTERED members so defaultDistinct findIndex is stable,
@@ -90,6 +96,7 @@ export function buildMultiTraceExportSpec(args: MultiTraceAdapterArgs): ExportSp
     representation,
     showCrossTraceTracking,
     xDomain,
+    ...(clean ? { traceStrokeOverride: CLEAN_SCIENTIFIC.traceStroke } : {}),
   });
 
   // Legend per grouping mode.
@@ -97,7 +104,7 @@ export function buildMultiTraceExportSpec(args: MultiTraceAdapterArgs): ExportSp
 
   const xConfig: Record<string, unknown> = {
     type: "log",
-    label: "q",
+    label: clean ? CLEAN_SCIENTIFIC.axisLabel.x : "q",
   };
   if (xDomain) xConfig.domain = xDomain;
 
@@ -112,7 +119,15 @@ export function buildMultiTraceExportSpec(args: MultiTraceAdapterArgs): ExportSp
     ? { primary: comparisonTitle, secondary: experimentName }
     : { primary: comparisonTitle };
 
+  const footnote = clean
+    ? [experimentName, "q normalized", "intensity offset for clarity"]
+        .filter(Boolean)
+        .join(" · ")
+    : undefined;
+
   return {
+    ...(clean ? { fontFamily: CLEAN_SCIENTIFIC.fontFamily } : {}),
+    ...(footnote ? { footnote } : {}),
     title,
     width: COMPARE_DIMS.width,
     height: COMPARE_DIMS.height,

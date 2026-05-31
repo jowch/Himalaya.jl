@@ -5,6 +5,30 @@ using JSON3
 using HTTP: HTTP, Request
 
 """
+    seed_assignment_if_absent!(db, exposure_id, index_db_ids)
+
+Seed the durable assignment from the auto-indexing selection, but only when the
+exposure has no assignment members yet — so reanalysis never clobbers a user's
+curated assignment. Creates the `assignments` row (state='indexed') and inserts
+`index_db_ids` as members. FK `ON DELETE CASCADE` cleans up members whose
+indices are later replaced.
+"""
+function seed_assignment_if_absent!(db::SQLite.DB, exposure_id::Integer, index_db_ids)
+    DBInterface.execute(db,
+        "INSERT OR IGNORE INTO assignments (exposure_id, state) VALUES (?, 'indexed')",
+        [Int(exposure_id)])
+    has_members = !isempty(Tables.rowtable(DBInterface.execute(db,
+        "SELECT 1 FROM assignment_members WHERE exposure_id = ? LIMIT 1", [Int(exposure_id)])))
+    has_members && return nothing
+    for db_id in index_db_ids
+        DBInterface.execute(db,
+            "INSERT OR IGNORE INTO assignment_members (exposure_id, index_id) VALUES (?, ?)",
+            [Int(exposure_id), Int(db_id)])
+    end
+    nothing
+end
+
+"""
     auto_group(indices, eff) -> Vector{<:Index}
     auto_group(indices)       -> Vector{<:Index}
 
@@ -528,13 +552,22 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
     group_db_id = Int(DBInterface.lastrowid(res))
 
     group_set = Set(group_indices)
+    auto_member_db_ids = Int[]
     for (ci, idx) in enumerate(candidates)
         idx in group_set || continue
         db_id = candidate_to_db_id[ci]
+        push!(auto_member_db_ids, db_id)
         DBInterface.execute(db,
             "INSERT INTO index_group_members (group_id, index_id) VALUES (?, ?)",
             [group_db_id, db_id])
     end
+
+    # Plan A: seed the durable assignment from the same auto selection
+    # (reuse the db_ids the auto-group loop just collected — no parallel
+    # recompute). seed-if-absent, so reanalysis preserves user curation; must
+    # run BEFORE the custom re-attach block so it seeds from the auto group
+    # only.
+    seed_assignment_if_absent!(db, exposure_id, auto_member_db_ids)
 
     # ── Re-attach custom-group members by semantic identity ────────────────
     if !isempty(custom_member_identities)

@@ -216,3 +216,52 @@ function insert_speculative_index!(db::SQLite.DB, exposure_id::Int,
     end
     new_id
 end
+
+"""
+    insert_custom_index!(db, exposure_id, phase, basis) -> Int (new index id)
+
+Plan D Task D-9 (B4): persist a CLIENT-FITTED custom index. The frontend's
+custom-index modal computes `basis` directly from a symmetry + a user-chosen
+lattice via real physics (`2π√N/a` cubic, `2πn/d` lamellar, `4π√M/(√3·a)` hex),
+so the backend does NOT re-fit against observed peaks — it stores the supplied
+basis verbatim and derives `lattice_d` via `Himalaya.fit` on a synthetic first
+reflection, so `predicted_q_for_phase(phase, basis)` reproduces the modal's
+client-side comb exactly.
+
+CONVENTION (review finding #4): the supplied `basis` is the q₁ slope —
+`2π/a × first(phaseratios(P))` — i.e. the value such that
+`predicted_q_for_phase` (which multiplies by the NORMALIZED ratios, whose first
+entry is 1.0) reproduces the physical first reflection. It is NOT `a` and NOT
+`2π/a`. The √6 first reflection of Ia3d maximizes the convention-mismatch
+signal, so the round-trip contract test pins it specifically.
+
+No `index_peaks` rows are written: a custom index is a pure lattice hypothesis,
+not a peak assignment. Returns the new index id.
+"""
+function insert_custom_index!(db::SQLite.DB, exposure_id::Int,
+                              phase::Type{P}, basis::Float64) where {P<:Himalaya.Phase}
+    basis > 0 || error("basis must be positive")
+
+    # Derive lattice_d the same way Himalaya does: build a 1-peak Index at the
+    # first predicted reflection (q1 = basis, since the normalized first ratio is
+    # 1.0) and read fit().d. Phase-correct for cubic/lamellar/hex.
+    # NOTE: Himalaya.fit recomputes d from the peak value and the un-normalized
+    # ratios — it does NOT read Index.basis — so the basis arg below is the
+    # canonical normalized q₁ slope (= basis) for documentation only; it does not
+    # affect lattice_d.
+    ratios_unnorm = Himalaya.phaseratios(P)
+    n = length(ratios_unnorm)
+    q1 = basis                                    # predicted first reflection
+    peaks_sv     = SparseVector{Float64, Int}(n, [1], [q1])
+    sharpness_sv = SparseVector{Float64, Int}(n, [1], [1.0])
+    fit_result = Himalaya.fit(Himalaya.Index{P}(basis, peaks_sv, sharpness_sv))
+    lattice_d = fit_result.d
+
+    current_hash = read_inputs_hash(db, exposure_id)
+    res = DBInterface.execute(db,
+        """INSERT INTO indices
+             (exposure_id, phase, basis, score, r_squared, lattice_d, status, kind, inputs_hash)
+           VALUES (?, ?, ?, NULL, NULL, ?, 'candidate', 'speculative', ?)""",
+        [exposure_id, string(nameof(P)), basis, lattice_d, current_hash])
+    Int(DBInterface.lastrowid(res))
+end

@@ -366,6 +366,54 @@ describe("buildMemberMarks line stroke (Phase 9 grouping-mode wiring)", () => {
     }
   });
 
+  it("suppresses peak anchors for a form-factor member (real trace, no Bragg marks) — E-7", () => {
+    const m = makeMember({
+      snapshot: {
+        effective_peaks: [
+          { id: 11, q: 0.30, intensity: 50, sharpness: 1, source: "auto" },
+        ],
+        confirmed_index: null,
+        confirmed_phases: [],
+        assignment_state: "form_factor",
+        analysis_inputs_hash: "abc",
+      },
+    });
+    buildMemberMarks({ member: m, trace, yBand: [0, 100] });
+    // The trace line still renders…
+    expect(Plot.line).toHaveBeenCalled();
+    // …but NO peak dot/glyph marks (no anchors on a form-factor trace).
+    expect(Plot.dot).not.toHaveBeenCalled();
+    // …and a form-factor member keeps a FULL-opacity trace (structured
+    // broad-shoulder scattering is real signal worth reading at full strength).
+    const ffOpts = (Plot.line as unknown as { mock: { calls: unknown[][] } })
+      .mock.calls[0]![1] as { strokeOpacity?: number };
+    expect(ffOpts.strokeOpacity).toBe(1);
+  });
+
+  it("suppresses peak anchors for a null member (featureless) — E-7", () => {
+    const m = makeMember({
+      snapshot: {
+        effective_peaks: [
+          { id: 11, q: 0.30, intensity: 50, sharpness: 1, source: "auto" },
+        ],
+        confirmed_index: null,
+        confirmed_phases: [],
+        assignment_state: "null",
+        analysis_inputs_hash: "abc",
+      },
+    });
+    buildMemberMarks({ member: m, trace, yBand: [0, 100] });
+    expect(Plot.line).toHaveBeenCalled();
+    expect(Plot.dot).not.toHaveBeenCalled();
+    // A null member ("nothing interesting") reads DE-EMPHASIZED — a dimmed real
+    // trace, visually distinct from a full-opacity form_factor member and from
+    // an indexed member. This is the three-state distinction ON the waterfall,
+    // not just in the phase-strip / member rows.
+    const nullOpts = (Plot.line as unknown as { mock: { calls: unknown[][] } })
+      .mock.calls[0]![1] as { strokeOpacity?: number };
+    expect(nullOpts.strokeOpacity).toBe(0.4);
+  });
+
   it("orphan member (no confirmed_index) under byPhase falls back to the orphan gray", () => {
     const m = makeMember({ snapshot: null });
     buildMemberMarks({

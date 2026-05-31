@@ -2,19 +2,16 @@
  * speculative_created mutator (M2.4).
  *
  * Speculative-create can affect the indices ordering globally (the new index
- * lands in `indices`, possibly altering score-sort positions, and may opt into
- * the active group). Reconstructing the exact post-create cache shape
- * optimistically would duplicate backend score logic, so we snapshot the prior
- * cache for rollback and let SSE invalidation (in `applyRemoteToCache`) +
- * `onSuccess` produce the final state.
+ * lands in `indices`, possibly altering score-sort positions). Reconstructing
+ * the exact post-create cache shape optimistically would duplicate backend
+ * score logic, so we snapshot the prior cache for rollback and let SSE
+ * invalidation (in `applyRemoteToCache`) + `onSuccess` produce the final state.
  *
  * The backend POST returns the freshly-built index (same shape as
- * GET /api/indices/:id). On success we splice it into the indices cache and
- * leave groups invalidation to the SSE post-commit broadcast — the response
- * doesn't carry the canonical groups payload.
+ * GET /api/indices/:id). On success we splice it into the indices cache.
  */
 import * as api from "../../../api";
-import type { IndexEntry, GroupEntry, AuthOpts } from "../../../api";
+import type { IndexEntry, AuthOpts } from "../../../api";
 import { queryKeys } from "../../../queries";
 import { authOpts } from "../../authOpts";
 import type { Mutator, RollbackContext } from "../types";
@@ -45,13 +42,10 @@ export const createSpeculativeMutator: Mutator<
   kind: "speculative_created",
   onMutate: (p, qc): RollbackContext => {
     const indicesKey = queryKeys.indices(p.exposureId);
-    const groupsKey  = queryKeys.groups(p.exposureId);
     const prevIndices = qc.getQueryData<IndexEntry[]>(indicesKey);
-    const prevGroups  = qc.getQueryData<GroupEntry[]>(groupsKey);
     return {
       restore: () => {
         if (prevIndices !== undefined) qc.setQueryData(indicesKey, prevIndices);
-        if (prevGroups  !== undefined) qc.setQueryData(groupsKey,  prevGroups);
       },
     };
   },
@@ -79,9 +73,6 @@ export const createSpeculativeMutator: Mutator<
     } else {
       qc.invalidateQueries({ queryKey: indicesKey });
     }
-    // Groups membership lives on the backend; invalidate so the active set
-    // reflects any auto-add when `active: true`.
-    qc.invalidateQueries({ queryKey: queryKeys.groups(p.exposureId) });
   },
   affectsExposurePeaks: () => false,
 };

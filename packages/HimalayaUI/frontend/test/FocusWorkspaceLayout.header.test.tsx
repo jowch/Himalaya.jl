@@ -50,7 +50,6 @@ beforeEach(() => {
     if (u.includes("/trace")) return json(TRACE);
     if (u.includes("/peaks")) return json([]);
     if (u.includes("/indices")) return json([]);
-    if (u.includes("/groups")) return json([]);
     // The exposures sub-resource (/api/samples/:id/exposures) must be matched
     // BEFORE the bare /api/samples corpus route, which would otherwise swallow
     // it and hand back the corpus list.

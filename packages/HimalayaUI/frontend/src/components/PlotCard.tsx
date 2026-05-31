@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Skeleton } from "boneyard-js/react";
 import { useAppState } from "../state";
 import {
-  useTrace, usePeaks, useIndices, useGroups,
+  useTrace, usePeaks, useIndices, useAssignment,
   useAddPeak, useRemovePeak, useSetPeakExcluded,
   useExperiment, useSamples, useExposures,
 } from "../queries";
@@ -10,12 +10,15 @@ import { useAutoPickExposure, noUsableExposureState } from "../hooks/useAutoPick
 import { TraceViewer } from "./TraceViewer";
 import { NoUsableExposureNotice } from "./NoUsableExposureNotice";
 import { HintText } from "./ui";
+import { PeakGlyph } from "./ui/PeakGlyph";
+import { peakGlyph } from "./ui/peakMark";
 import { SegmentedControl } from "./ui/SegmentedControl";
 import { FigureExportControls } from "./FigureExportControls";
 import { buildTraceExportSpec } from "../lib/figure-export/adapters/traceAdapter";
 import { slugifyForFilename } from "../lib/figure-export/filename";
 import { phaseColor } from "../phases";
 import type { IndexEntry, Peak, Trace } from "../api";
+import { deriveActiveIndices } from "../lib/assignment";
 
 const PLOT_CARD_FIXTURE_DATA = {
   trace: {
@@ -86,7 +89,7 @@ export function PlotCard({ headerSlot }: PlotCardProps = {}): JSX.Element {
   const traceQ      = useTrace(activeExposureId);
   const peaksQ      = usePeaks(activeExposureId);
   const indicesQ    = useIndices(activeExposureId);
-  const groupsQ     = useGroups(activeExposureId);
+  const assignmentQ = useAssignment(activeExposureId);
   const exposuresQ  = useExposures(activeSampleId);
 
   const experimentName = activeExperimentId !== undefined
@@ -228,12 +231,13 @@ export function PlotCard({ headerSlot }: PlotCardProps = {}): JSX.Element {
   }, []);
 
   const indices = indicesQ.data ?? [];
-  const activeGroup = (groupsQ.data ?? []).find((g) => g.active);
+  // Plan D: the active phase set now comes from the durable assignment cart
+  // (deriveActiveIndices) instead of the legacy single-active group. The name
+  // `activeGroupIndices` is kept so downstream consumers (TraceViewer overlay,
+  // figure export) read unchanged; it is now assignment-sourced.
   const activeGroupIndices = useMemo(
-    () => (activeGroup?.members ?? [])
-      .map((id) => indices.find((i) => i.id === id))
-      .filter((i): i is NonNullable<typeof i> => i != null),
-    [activeGroup, indices],
+    () => deriveActiveIndices(assignmentQ.data, indices),
+    [assignmentQ.data, indices],
   );
   const hoveredIndex = hoveredIndexId != null
     ? indices.find((i) => i.id === hoveredIndexId)
@@ -645,19 +649,23 @@ interface PlotLegendProps {
   hoveredIndex: IndexEntry | undefined;
 }
 
-function TriangleSvg({ color, opacity = 1 }: { color: string; opacity?: number }): JSX.Element {
-  // Downward-pointing triangle matching TraceViewer geometry (hw=4, h=7)
+function PeakGlyphSwatch({
+  source,
+  excluded,
+  color,
+  opacity = 1,
+}: {
+  source: "auto" | "manual";
+  excluded?: boolean;
+  color: string;
+  opacity?: number;
+}): JSX.Element {
+  // Legend swatch sharing the canonical peak geometry: manual → diamond,
+  // auto → downward triangle, excluded → ghosted (hollow). Magenta retired.
+  const descriptor = peakGlyph({ source, color, ...(excluded ? { excluded: true } : {}) });
   return (
-    <svg width="10" height="8" viewBox="0 0 8 7" style={{ display: "block" }}>
-      <polygon
-        points="-4,0 4,0 0,7"
-        transform="translate(4,0)"
-        fill={color}
-        fillOpacity={opacity}
-        stroke={color}
-        strokeOpacity={opacity}
-        strokeWidth="0.5"
-      />
+    <svg width="12" height="12" viewBox="0 0 12 12" style={{ display: "block" }}>
+      <PeakGlyph descriptor={descriptor} x={6} y={11} opacity={opacity} haloStroke={color} />
     </svg>
   );
 }
@@ -694,10 +702,10 @@ function PlotLegend({ peaks, hoveredIndex }: PlotLegendProps): JSX.Element {
     <div className="flex items-center gap-4 px-4 py-1.5 border-t border-hair
                     font-mono text-xs text-ink-faint flex-wrap">
       {hasManualPeaks && (
-        <LegendItem symbol={<TriangleSvg color="var(--color-peak-manual)" />} label="manual peak" />
+        <LegendItem symbol={<PeakGlyphSwatch source="manual" color="var(--color-ink-faint)" />} label="manual peak" />
       )}
       {hasExcludedPeaks && (
-        <LegendItem symbol={<TriangleSvg color="var(--color-accent)" opacity={0.3} />} label="excluded" />
+        <LegendItem symbol={<PeakGlyphSwatch source="auto" excluded color="var(--color-ink-faint)" opacity={0.5} />} label="excluded" />
       )}
       {hoveredIndex && (
         <LegendItem

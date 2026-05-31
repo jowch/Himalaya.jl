@@ -18,7 +18,7 @@ describe("toScatterData", () => {
   it("maps each peak to (ratio, q_observed, phase)", () => {
     const ix: IndexEntry = {
       id: 1, exposure_id: 1, phase: "Pn3m", basis: 0.5, score: 1,
-      r_squared: 0.99, lattice_d: 12, ngc: -1.51, status: "candidate",
+      r_squared: 0.99, lattice_d: 12, ngc: -1.51, status: "candidate", kind: "auto", inputs_hash: null,
       predicted_q: [0.7071, 0.866, 1.0],
       peaks: [
         { peak_id: 10, ratio_position: 1, residual: 0.001, q_observed: 0.71 },
@@ -34,7 +34,7 @@ describe("toScatterData", () => {
   it("skips peaks whose ratio_position is out of bounds", () => {
     const ix: IndexEntry = {
       id: 1, exposure_id: 1, phase: "Pn3m", basis: 0.5, score: 1,
-      r_squared: 0.99, lattice_d: 12, ngc: -1.51, status: "candidate",
+      r_squared: 0.99, lattice_d: 12, ngc: -1.51, status: "candidate", kind: "auto", inputs_hash: null,
       predicted_q: [0.7],
       peaks: [{ peak_id: 10, ratio_position: 99, residual: 0, q_observed: 1.0 }],
     };
@@ -54,7 +54,7 @@ describe("<MillerPlot>", () => {
     (Plot.linearRegressionY as unknown as { mockClear: () => void }).mockClear();
     const ix: IndexEntry = {
       id: 1, exposure_id: 1, phase: "Pn3m", basis: 0.5, score: 1,
-      r_squared: 0.99, lattice_d: 12, ngc: -1.51, status: "candidate",
+      r_squared: 0.99, lattice_d: 12, ngc: -1.51, status: "candidate", kind: "auto", inputs_hash: null,
       predicted_q: [0.7, 1.0],
       peaks: [
         { peak_id: 10, ratio_position: 1, residual: 0, q_observed: 0.71 },

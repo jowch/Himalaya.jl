@@ -100,21 +100,9 @@ end
                 end
             end
 
-            # Group POST: needs a real group_id to target. The auto group
-            # should exist after the analyze.
-            gid_rows = Tables.rowtable(DBInterface.execute(ctx.db,
-                "SELECT id FROM index_groups WHERE exposure_id = ? LIMIT 1",
-                [ctx.exposure_id]))
-            if !isempty(gid_rows)
-                gid = gid_rows[1].id
-                @testset "POST /groups/:id/members — missing index_id" begin
-                    r = HTTP.post("$base/api/groups/$gid/members";
-                        body = JSON3.write(Dict(:NOT_index_id => 1)),
-                        headers = base_headers,
-                        status_exception = false)
-                    @test 400 <= r.status < 500
-                end
-            end
+            # D-10: POST /groups/:id/members (and its missing-index_id validation)
+            # was retired. The assignment-native POST /assignment/members carries
+            # the equivalent validation, exercised in test_assignments.jl.
         end
     end
 end

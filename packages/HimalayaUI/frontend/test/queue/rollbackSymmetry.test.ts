@@ -25,10 +25,12 @@ import { peakRemoveMutator } from "../../src/lib/queue/mutators/peakRemove";
 import {
   peakExcludeMutator, peakUnexcludeMutator,
 } from "../../src/lib/queue/mutators/peakSetExcluded";
-import {
-  addIndexToGroupMutator, removeIndexFromGroupMutator, deleteIndexMutator,
-} from "../../src/lib/queue/mutators/indexGroup";
+import { deleteIndexMutator } from "../../src/lib/queue/mutators/indexGroup";
 import { createSpeculativeMutator } from "../../src/lib/queue/mutators/createSpeculative";
+import {
+  addAssignmentPhaseMutator, removeAssignmentPhaseMutator, setAssignmentStateMutator,
+} from "../../src/lib/queue/mutators/assignment";
+import { customIndexMutator } from "../../src/lib/queue/mutators/customIndex";
 import { reanalyzeExposureMutator } from "../../src/lib/queue/mutators/reanalyzeExposure";
 import { saveComparisonMutator } from "../../src/lib/queue/mutators/saveComparison";
 import { deleteComparisonMutator } from "../../src/lib/queue/mutators/deleteComparison";
@@ -57,8 +59,8 @@ const SAMPLE = {
   id: 10, experiment_id: 1, display_name: "D1", name: "n", notes: null,
   tags: [{ id: 1, key: "k", value: "v", source: "manual" }],
 };
-const GROUP = {
-  id: 1, exposure_id: 5, kind: "custom" as const, active: true, members: [10] as number[],
+const ASSIGNMENT = {
+  exposure_id: 5, state: "indexed" as const, members: [10] as number[],
 };
 const INDEX = {
   id: 10, exposure_id: 5, phase: "Pn3m", basis: 0.1, score: 0.9,
@@ -133,39 +135,63 @@ const SPECS: Spec[] = [
     },
   },
   {
-    name: "addIndexToGroup",
-    keys: [queryKeys.groups(5)],
-    seed: (qc) => qc.setQueryData(queryKeys.groups(5), [GROUP]),
+    name: "addAssignmentPhase",
+    keys: [queryKeys.assignment(5)],
+    seed: (qc) => qc.setQueryData(queryKeys.assignment(5), ASSIGNMENT),
     run: (qc) => {
-      const ctx = addIndexToGroupMutator.onMutate({
-        kind: "index_confirmed", clientOpId: "op",
-        payload: { groupId: 1, indexId: 99 },
-        exposureId: 5, groupId: 1, username: "alice", clientId: "tab",
-        indexId: 99,
+      const ctx = addAssignmentPhaseMutator.onMutate({
+        kind: "assignment_add", clientOpId: "op", payload: { indexId: 99 },
+        exposureId: 5, username: "alice", clientId: "tab", indexId: 99,
       } as any, qc);
       ctx.restore();
     },
   },
   {
-    name: "removeIndexFromGroup",
-    keys: [queryKeys.groups(5)],
-    seed: (qc) => qc.setQueryData(queryKeys.groups(5), [GROUP]),
+    name: "removeAssignmentPhase",
+    keys: [queryKeys.assignment(5)],
+    seed: (qc) => qc.setQueryData(queryKeys.assignment(5), ASSIGNMENT),
     run: (qc) => {
-      const ctx = removeIndexFromGroupMutator.onMutate({
-        kind: "index_unconfirmed", clientOpId: "op",
-        payload: { groupId: 1, indexId: 10 },
-        exposureId: 5, groupId: 1, username: "alice", clientId: "tab",
-        indexId: 10,
+      const ctx = removeAssignmentPhaseMutator.onMutate({
+        kind: "assignment_remove", clientOpId: "op", payload: { indexId: 10 },
+        exposureId: 5, username: "alice", clientId: "tab", indexId: 10,
+      } as any, qc);
+      ctx.restore();
+    },
+  },
+  {
+    name: "customIndex",
+    keys: [queryKeys.indices(5), queryKeys.assignment(5)],
+    seed: (qc) => {
+      qc.setQueryData(queryKeys.indices(5), [INDEX]);
+      qc.setQueryData(queryKeys.assignment(5), ASSIGNMENT);
+    },
+    run: (qc) => {
+      // onMutate is a no-op (server-assigned id; never splice a placeholder),
+      // so restore() must leave both caches bit-exact.
+      const ctx = customIndexMutator.onMutate({
+        kind: "custom_index_commit", clientOpId: "op", payload: { phase: "Pn3m", basis: 0.15 },
+        exposureId: 5, username: "alice", clientId: "tab", phase: "Pn3m", basis: 0.15,
+      } as any, qc);
+      ctx.restore();
+    },
+  },
+  {
+    name: "setAssignmentState",
+    keys: [queryKeys.assignment(5)],
+    seed: (qc) => qc.setQueryData(queryKeys.assignment(5), ASSIGNMENT),
+    run: (qc) => {
+      const ctx = setAssignmentStateMutator.onMutate({
+        kind: "assignment_set_state", clientOpId: "op", payload: { state: "form_factor" },
+        exposureId: 5, username: "alice", clientId: "tab", state: "form_factor",
       } as any, qc);
       ctx.restore();
     },
   },
   {
     name: "deleteIndex",
-    keys: [queryKeys.indices(5), queryKeys.groups(5)],
+    keys: [queryKeys.indices(5)],
     seed: (qc) => {
       qc.setQueryData(queryKeys.indices(5), [INDEX]);
-      qc.setQueryData(queryKeys.groups(5), [GROUP]);
     },
     run: (qc) => {
       const ctx = deleteIndexMutator.onMutate({
@@ -179,10 +205,9 @@ const SPECS: Spec[] = [
   },
   {
     name: "createSpeculative",
-    keys: [queryKeys.indices(5), queryKeys.groups(5)],
+    keys: [queryKeys.indices(5)],
     seed: (qc) => {
       qc.setQueryData(queryKeys.indices(5), [INDEX]);
-      qc.setQueryData(queryKeys.groups(5), [GROUP]);
     },
     run: (qc) => {
       const ctx = createSpeculativeMutator.onMutate({

@@ -47,6 +47,9 @@ round-trip test in `test_events.jl`.
 | `peak_unexcluded` | `DELETE FROM peak_curations WHERE kind='exclude' AND q≈payload.q` (with `undoes_event_id` set when resolvable) |
 | `index_confirmed` | `INSERT OR IGNORE INTO index_group_members(group_id, index_id)` |
 | `index_unconfirmed` | `DELETE FROM index_group_members WHERE group_id=… AND index_id=…` |
+| `assignment_add` | UPSERT `assignments` → `indexed`; `INSERT OR IGNORE INTO assignment_members(exposure_id, index_id)` (entity_type=`exposure`, payload `{index_id}`) |
+| `assignment_remove` | `DELETE FROM assignment_members WHERE exposure_id=… AND index_id=…` (entity_type=`exposure`, payload `{index_id}`) |
+| `assignment_set_state` | UPSERT `assignments.state`; clears `assignment_members` when state ≠ `indexed` (entity_type=`exposure`, payload `{state}`) |
 
 **Route through `apply_event!` for entity-type discipline, but no view write:**
 `peak_removed`, `speculative_created`, `speculative_deleted`. Using

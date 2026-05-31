@@ -18,11 +18,7 @@ import {
   peakExcludeMutator,
   peakUnexcludeMutator,
 } from "./mutators/peakSetExcluded";
-import {
-  addIndexToGroupMutator,
-  removeIndexFromGroupMutator,
-  deleteIndexMutator,
-} from "./mutators/indexGroup";
+import { deleteIndexMutator } from "./mutators/indexGroup";
 import { createSpeculativeMutator } from "./mutators/createSpeculative";
 import { reanalyzeExposureMutator } from "./mutators/reanalyzeExposure";
 import { saveComparisonMutator } from "./mutators/saveComparison";
@@ -31,6 +27,12 @@ import { saveSeriesMutator } from "./mutators/saveSeries";
 import { deleteSeriesMutator } from "./mutators/deleteSeries";
 import { commitSeriesPlateMutator } from "./mutators/commitSeriesPlate";
 import { scopeSeriesMutator } from "./mutators/scopeSeries";
+import {
+  addAssignmentPhaseMutator,
+  removeAssignmentPhaseMutator,
+  setAssignmentStateMutator,
+} from "./mutators/assignment";
+import { customIndexMutator } from "./mutators/customIndex";
 
 /**
  * Minimal shape required by the resolver: just enough of a persisted op to
@@ -104,10 +106,6 @@ export function resolveMutator(
       return peakExcludeMutator;
     case "peak_unexcluded":
       return peakUnexcludeMutator;
-    case "index_confirmed":
-      return addIndexToGroupMutator;
-    case "index_unconfirmed":
-      return removeIndexFromGroupMutator;
     case "delete_index":
       return deleteIndexMutator;
     case "speculative_created":
@@ -126,6 +124,14 @@ export function resolveMutator(
       return deleteSeriesMutator;
     case "series_commit":
       return commitSeriesPlateMutator;
+    case "assignment_add":
+      return addAssignmentPhaseMutator;
+    case "assignment_remove":
+      return removeAssignmentPhaseMutator;
+    case "assignment_set_state":
+      return setAssignmentStateMutator;
+    case "custom_index_commit":
+      return customIndexMutator;
     default:
       return undefined;
   }
@@ -151,8 +157,6 @@ export function resolveMutatorForEvent(
     case "peak_removed":        return peakRemoveMutator;
     case "peak_excluded":       return peakExcludeMutator;
     case "peak_unexcluded":     return peakUnexcludeMutator;
-    case "index_confirmed":     return addIndexToGroupMutator;
-    case "index_unconfirmed":   return removeIndexFromGroupMutator;
     case "speculative_created": return createSpeculativeMutator;
     // event-kind speculative_deleted is the SSE counterpart of op-kind delete_index
     case "speculative_deleted": return deleteIndexMutator;
@@ -168,6 +172,11 @@ export function resolveMutatorForEvent(
       return deleteSeriesMutator;
     case "series_plate_committed":
       return commitSeriesPlateMutator;
+    case "assignment_add":         return addAssignmentPhaseMutator;
+    case "assignment_remove":      return removeAssignmentPhaseMutator;
+    case "assignment_set_state":   return setAssignmentStateMutator;
+    // custom_index_commit has no own event kind — its route emits
+    // speculative_created + assignment_add, both resolved above. Nothing to add.
     case "update_sample":       return updateSampleMutator;
     case "set_exposure_status": return setExposureStatusMutator;
     case "select_exposure":     return selectExposureMutator;

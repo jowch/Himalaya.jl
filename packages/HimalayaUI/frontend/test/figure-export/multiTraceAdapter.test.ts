@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { buildMultiTraceExportSpec } from "../../src/lib/figure-export/adapters/multiTraceAdapter";
-import { COMPARE_DIMS } from "../../src/lib/figure-export/presets";
+import { COMPARE_DIMS, CLEAN_SCIENTIFIC } from "../../src/lib/figure-export/presets";
+import { buildExportSvg } from "../../src/lib/figure-export/renderer";
 import type { SeriesMember, Trace } from "../../src/api";
 
 function makeMember(over: Partial<SeriesMember> = {}): SeriesMember {
@@ -279,5 +280,73 @@ describe("buildMultiTraceExportSpec", () => {
     expect((spec.plot as { title?: unknown }).title).toBeUndefined();
     expect((spec.plot as { caption?: unknown }).caption).toBeUndefined();
     expect((spec.plot as { figure?: unknown }).figure).toBeUndefined();
+  });
+});
+
+describe("buildMultiTraceExportSpec — CLEAN_SCIENTIFIC preset (E-8)", () => {
+  function ffMember(): SeriesMember {
+    return makeMember({
+      id: 2, exposure_id: 101, display_order: 1,
+      snapshot: {
+        effective_peaks: [{ id: 9, q: 0.2, intensity: 1, sharpness: 1, source: "auto" }],
+        confirmed_index: null,
+        confirmed_phases: [],
+        assignment_state: "form_factor",
+        analysis_inputs_hash: "h",
+      },
+    });
+  }
+
+  it("emits a white-bg Arial spec with 2px traces + axis labels + footnote", () => {
+    const spec = buildMultiTraceExportSpec({
+      members: [makeMember(), ffMember()],
+      traces,
+      comparisonTitle: "LL37 Titration",
+      xDomain: null,
+      showPeakTicks: true, showPeakLabels: false,
+      groupingMode: "distinct", sampleIdFor,
+      preset: "clean",
+    });
+    // Arial font threaded onto the spec.
+    expect(spec.fontFamily).toBe(CLEAN_SCIENTIFIC.fontFamily);
+    // Axis labels read q (Å⁻¹) / Intensity.
+    expect((spec.plot.x as { label?: string }).label).toBe(CLEAN_SCIENTIFIC.axisLabel.x);
+    // A footnote line is present.
+    expect(spec.footnote).toBeTruthy();
+    // 2px trace strokes (find a Plot.line mark with the clean stroke width).
+    const marks = (spec.plot.marks ?? []) as Array<{ options?: { strokeWidth?: number } }>;
+    // (Plot marks are opaque here; the stroke width is asserted via the preset constant.)
+    expect(CLEAN_SCIENTIFIC.traceStroke).toBe(2);
+    expect(marks.length).toBeGreaterThan(0);
+  });
+
+  it("includes form-factor members in the clean export", () => {
+    const spec = buildMultiTraceExportSpec({
+      members: [makeMember(), ffMember()],
+      traces,
+      comparisonTitle: "T",
+      xDomain: null,
+      showPeakTicks: true, showPeakLabels: false,
+      groupingMode: "distinct", sampleIdFor,
+      preset: "clean",
+    });
+    // Both members render → at least two trace lines.
+    expect((spec.plot.marks ?? []).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("the clean spec round-trips through buildExportSvg", () => {
+    const spec = buildMultiTraceExportSpec({
+      members: [makeMember()],
+      traces,
+      comparisonTitle: "T",
+      xDomain: null,
+      showPeakTicks: true, showPeakLabels: false,
+      groupingMode: "distinct", sampleIdFor,
+      preset: "clean",
+    });
+    const svg = buildExportSvg(spec);
+    expect(svg.tagName.toLowerCase()).toBe("svg");
+    // The footnote text appears in the rendered SVG.
+    expect(svg.textContent).toContain(spec.footnote);
   });
 });

@@ -32,8 +32,8 @@ Use the store's named actions (`clearUsername`, `setTutorialSeen`, `openNavModal
 ## State split (load-bearing)
 
 - **Zustand owns *client* state**: active sample/exposure, hoveredIndexId, username.
-- **TanStack Query owns *server* state**: experiments, samples, exposures, peaks, indices, groups.
-- Mutations invalidate scoped query keys (`queryKeys.peaks(id)`, `queryKeys.groups(id)`). Don't mix the two concerns in the same hook.
+- **TanStack Query owns *server* state**: experiments, samples, exposures, peaks, indices, assignment.
+- Mutations invalidate scoped query keys (`queryKeys.peaks(id)`, `queryKeys.indices(id)`). Don't mix the two concerns in the same hook.
 
 ## Per-tab SSE identity
 

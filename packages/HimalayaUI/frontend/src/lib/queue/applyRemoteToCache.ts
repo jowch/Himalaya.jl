@@ -1,8 +1,8 @@
 import type { QueryClient } from "@tanstack/react-query";
-import type { SseEvent, CurationPostState } from "./types";
+import type { SseEvent, CurationPostState, AssignmentPostState } from "./types";
 import type {
-  Peak, GroupEntry, Exposure, Sample, SampleMessage,
-  ComparisonMessage, ComparisonSummary, Comparison, Series,
+  Peak, Exposure, Sample, SampleMessage,
+  ComparisonMessage, ComparisonSummary, Comparison, Series, Assignment,
 } from "../../api";
 import { queryKeys } from "../../queries";
 import { peakQTol } from "./peakQTol";
@@ -148,41 +148,29 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
       applyPostState();
       break;
     }
-    case "index_confirmed": {
-      const groupId = payload?.group_id as number;
-      const indexId = payload?.index_id as number;
-      const cached = qc.getQueryData<GroupEntry[]>(queryKeys.groups(id));
-      // Issue #37 Bug 1c: the foreign tab may have just triggered
-      // `ensure_custom_group!`, which mints a new custom group id and
-      // demotes the auto group. Local tabs won't have that group cached;
-      // the surgical splice would silently miss the foreign confirmation.
-      // Invalidate to refetch the canonical group structure.
-      if (!cached || !cached.some((g) => g.id === groupId)) {
-        qc.invalidateQueries({ queryKey: queryKeys.groups(id) });
-        break;
+    case "assignment_add":
+    case "assignment_remove":
+    case "assignment_set_state": {
+      // Assignment frames carry a DISTINCT post_state — {assignment:{state,
+      // members}} with no top-level `indices` key (so applyPostStateOnly bails
+      // for these kinds, never touching the curation caches). Patch the
+      // assignment cache directly from post_state; invalidate as the fallback
+      // for a (pre-Plan-D) frame that lacks the envelope.
+      const ps = remote.post_state as AssignmentPostState | undefined;
+      if (ps?.assignment) {
+        qc.setQueryData<Assignment>(queryKeys.assignment(id), {
+          exposure_id: id,
+          state: ps.assignment.state,
+          members: ps.assignment.members,
+        });
+      } else {
+        qc.invalidateQueries({ queryKey: queryKeys.assignment(id) });
       }
-      qc.setQueryData<GroupEntry[]>(queryKeys.groups(id), cached.map((g) =>
-        g.id === groupId ? { ...g, members: [...g.members, indexId] } : g));
-      break;
-    }
-    case "index_unconfirmed": {
-      const groupId = payload?.group_id as number;
-      const indexId = payload?.index_id as number;
-      const cached = qc.getQueryData<GroupEntry[]>(queryKeys.groups(id));
-      if (!cached || !cached.some((g) => g.id === groupId)) {
-        qc.invalidateQueries({ queryKey: queryKeys.groups(id) });
-        break;
-      }
-      qc.setQueryData<GroupEntry[]>(queryKeys.groups(id), cached.map((g) =>
-        g.id === groupId
-          ? { ...g, members: g.members.filter((m) => m !== indexId) }
-          : g));
       break;
     }
     case "speculative_created":
     case "speculative_deleted": {
       qc.invalidateQueries({ queryKey: queryKeys.indices(id) });
-      qc.invalidateQueries({ queryKey: queryKeys.groups(id) });
       break;
     }
     case "set_exposure_status": {
@@ -363,7 +351,6 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
     default: {
       qc.invalidateQueries({ queryKey: queryKeys.peaks(id) });
       qc.invalidateQueries({ queryKey: queryKeys.indices(id) });
-      qc.invalidateQueries({ queryKey: queryKeys.groups(id) });
     }
   }
 }

@@ -22,7 +22,6 @@ export const BODY_FONT = "400 12px ui-sans-serif, system-ui, sans-serif";
 
 /** Trace + peak stroke widths — wider than on-screen for printability. */
 export const TRACE_STROKE_PX = 1.75;
-export const PEAK_TICK_STROKE_PX = 1.5;
 export const PREDICTED_Q_STROKE_PX = 1.5;
 
 /** Light palette for export (overrides dark-theme CSS vars). Values are
@@ -75,3 +74,31 @@ export const COMPARE_PALETTE_LIGHT: readonly string[] = [
 
 /** Neutral cool-gray for orphans on light bg. */
 export const ORPHAN_FALLBACK_LIGHT = "oklch(0.50 0.02 270)";
+
+/**
+ * CLEAN_SCIENTIFIC — the decoupled clean export preset (Plan E, Task E-8).
+ *
+ * The on-screen Series view is a thinking instrument in the Print brand; the
+ * exported figure is deliberately NOT that — a clean GraphPad/Origin-idiom
+ * render for a slide or a colleague: white ground, 2px traces, Arial axes /
+ * title / footnote, plain `q (Å⁻¹)` / `Intensity` labels. By-source / by-preset
+ * colour (literal hex, no CSS vars) — the export renderer cannot resolve vars.
+ */
+export const CLEAN_SCIENTIFIC = {
+  background: "#ffffff",
+  ink: "#111111",
+  inkMuted: "#666666",
+  /** GraphPad-idiom trace stroke — 2px, heavier than the on-screen 1.7px. */
+  traceStroke: 2,
+  /** Plain Arial for the whole figure (axes, title, footnote). */
+  fontFamily: "Arial, Helvetica, sans-serif",
+  axisLabel: {
+    x: "q (Å⁻¹)",
+    // NOTE: the waterfall has no labelable y-axis — the adapter sets
+    // label:null / axis:null because intensity lives in synthetic offset-band
+    // pixel space (a real intensity axis would mislead). This string is kept
+    // for the non-waterfall (single-trace) export path and the footnote idiom;
+    // it is intentionally NOT wired onto the waterfall y-axis.
+    y: "Intensity (a.u.) + offset",
+  },
+} as const;

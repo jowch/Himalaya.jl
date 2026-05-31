@@ -35,6 +35,7 @@
 import * as Plot from "@observablehq/plot";
 import type { Trace, SeriesMember, MemberSnapshotPeak } from "../api";
 import { phaseColor } from "../phases";
+import { peakMark } from "./ui/peakMark";
 import {
   applyNormalization,
   computeReference,
@@ -144,6 +145,8 @@ export interface PeakRow {
   y: number;
   peakId: number;
   color: string;
+  /** Provenance silhouette: manual → diamond, auto → triangle (peakMark). */
+  source: "auto" | "manual";
 }
 
 /**
@@ -164,7 +167,14 @@ export function buildMemberPeakRows(props: MemberMarksProps): {
   if (!trace || trace.q.length === 0) return { peaks: [], linePoints: [] };
 
   const snapshot = member.snapshot;
-  const peaks: MemberSnapshotPeak[] = snapshot ? snapshot.effective_peaks : [];
+  // E-7: a form-factor / null member shows its REAL trace but NO peak anchors —
+  // a form-factor trace has a broad shoulder, not Bragg peaks, and a null member
+  // is featureless. Suppress the peak set so neither the ticks nor the
+  // hit-test index carry anchors (the line trace below still renders).
+  const suppressPeaks =
+    snapshot?.assignment_state === "form_factor"
+    || snapshot?.assignment_state === "null";
+  const peaks: MemberSnapshotPeak[] = snapshot && !suppressPeaks ? snapshot.effective_peaks : [];
   const qWindow: QWindow =
     member.q_window_min !== null && member.q_window_max !== null
       ? [member.q_window_min, member.q_window_max]
@@ -208,7 +218,7 @@ export function buildMemberPeakRows(props: MemberMarksProps): {
     const color = highlightedPeakIds.has(p.id)
       ? highlightColor
       : PEAK_COLOR_DEFAULT;
-    visiblePeaks.push({ q: p.q, y, peakId: p.id, color });
+    visiblePeaks.push({ q: p.q, y, peakId: p.id, color, source: p.source });
   }
 
   return { peaks: visiblePeaks, linePoints };
@@ -247,12 +257,22 @@ export function buildMemberMarks(props: MemberMarksProps): unknown[] {
       })
     : (member.color_override ?? "var(--color-ink)");
 
+  // E-7 / three-state model: distinguish the two no-lattice states ON THE
+  // WATERFALL, not just in the strip/rows. Both render their REAL trace (no
+  // fabricated-flat data), but a `null` member ("no interesting scattering")
+  // reads de-emphasized, while a `form_factor` member (structured broad-shoulder
+  // scattering) keeps a full-opacity trace — so indexed / form_factor / null are
+  // three visually distinct readings, matching the distinction the assignment
+  // model carries.
+  const traceOpacity = member.snapshot?.assignment_state === "null" ? 0.4 : 1;
+
   marks.push(
     Plot.line(linePoints, {
       x: "q",
       y: "y",
       stroke,
       strokeWidth: 1,
+      strokeOpacity: traceOpacity,
     }),
   );
 
@@ -261,19 +281,10 @@ export function buildMemberMarks(props: MemberMarksProps): unknown[] {
     // data-* attributes through to the rendered SVG. Per-peak interaction is
     // unit-tested via peakCycle.test.ts + this file's mark-arg capture tests;
     // the band-level `member-trace` overlay in MultiTracePlot covers E2E.
-    marks.push(
-      Plot.dot(visiblePeaks, {
-        x: "q",
-        y: "y",
-        symbol: "triangle",
-        // Per-row color via channel — Observable Plot reads the `color`
-        // field as the fill via the `fill` accessor below.
-        fill: (d: unknown) => (d as PeakRow).color,
-        stroke: "var(--color-paper)",
-        strokeWidth: 0.75,
-        r: 4,
-      }),
-    );
+    // Converged onto the shared peakMark builder (Plan C plot spine): manual
+    // peaks read as diamonds, auto as triangles, all in the per-row resolved
+    // colour. `peakMark` reads `q`/`y`/`color`/`source` off each row.
+    marks.push(peakMark(visiblePeaks));
 
     // Labels: when `xScale` is provided, run `layoutPeakLabels` to spread
     // crowded labels horizontally + emit leader lines from the dodged

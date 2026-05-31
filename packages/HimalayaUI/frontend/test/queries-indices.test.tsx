@@ -4,26 +4,13 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { makeClient } from "./test-utils";
 import {
-  useAddIndexToGroup,
-  useRemoveIndexFromGroup,
   useDeleteIndex,
   queryKeys,
 } from "../src/queries";
 import { pendingDeferreds } from "../src/lib/queue/deferred";
-import type { GroupEntry, IndexEntry } from "../src/api";
+import type { IndexEntry } from "../src/api";
 
 const EXPOSURE_ID = 42;
-const GROUP_ID = 7;
-
-function makeGroup(members: number[] = []): GroupEntry {
-  return {
-    id: GROUP_ID,
-    exposure_id: EXPOSURE_ID,
-    kind: "custom",
-    active: true,
-    members,
-  };
-}
 
 function makeIndex(id: number): IndexEntry {
   return {
@@ -63,104 +50,24 @@ function mockNever(): void {
   vi.spyOn(global, "fetch").mockImplementation(() => new Promise(() => {}));
 }
 
-describe("queries — index/group mutations (queue-driven, M2.3)", () => {
+describe("queries — index deletion (queue-driven, M2.3)", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     pendingDeferreds.clear();
   });
 
-  // ---------------------- useAddIndexToGroup ----------------------
-
-  it("useAddIndexToGroup appends indexId to the group's members optimistically", async () => {
-    const { client, wrapper } = withClient();
-    client.setQueryData<GroupEntry[]>(queryKeys.groups(EXPOSURE_ID), [makeGroup([])]);
-    mockNever();
-    const { result } = renderHook(() => useAddIndexToGroup(EXPOSURE_ID, GROUP_ID), { wrapper });
-    act(() => { result.current.mutate(101); });
-    await waitFor(() => {
-      const groups = client.getQueryData<GroupEntry[]>(queryKeys.groups(EXPOSURE_ID)) ?? [];
-      expect(groups[0].members).toEqual([101]);
-    });
-  });
-
-  it("useAddIndexToGroup replaces the optimistic group with the server-returned GroupEntry", async () => {
-    const { client, wrapper } = withClient();
-    client.setQueryData<GroupEntry[]>(queryKeys.groups(EXPOSURE_ID), [makeGroup([])]);
-    mockOnce(200, { ...makeGroup([101, 102]) });
-    const { result } = renderHook(() => useAddIndexToGroup(EXPOSURE_ID, GROUP_ID), { wrapper });
-    act(() => { result.current.mutate(101); });
-    await waitFor(() => {
-      const groups = client.getQueryData<GroupEntry[]>(queryKeys.groups(EXPOSURE_ID)) ?? [];
-      expect(groups[0].members).toEqual([101, 102]);
-    });
-  });
-
-  it("useAddIndexToGroup rolls back the optimistic membership on error", async () => {
-    const { client, wrapper } = withClient();
-    client.setQueryData<GroupEntry[]>(queryKeys.groups(EXPOSURE_ID), [makeGroup([])]);
-    mockOnce(400, { error: "bad" });
-    const { result } = renderHook(() => useAddIndexToGroup(EXPOSURE_ID, GROUP_ID), { wrapper });
-    act(() => { result.current.mutate(101); });
-    await waitFor(() => {
-      const groups = client.getQueryData<GroupEntry[]>(queryKeys.groups(EXPOSURE_ID)) ?? [];
-      expect(groups[0].members).toEqual([]);
-    });
-  });
-
-  // ---------------------- useRemoveIndexFromGroup ----------------------
-
-  it("useRemoveIndexFromGroup filters indexId out of the group's members optimistically", async () => {
-    const { client, wrapper } = withClient();
-    client.setQueryData<GroupEntry[]>(queryKeys.groups(EXPOSURE_ID), [makeGroup([101, 102])]);
-    mockNever();
-    const { result } = renderHook(() => useRemoveIndexFromGroup(EXPOSURE_ID, GROUP_ID), { wrapper });
-    act(() => { result.current.mutate(101); });
-    await waitFor(() => {
-      const groups = client.getQueryData<GroupEntry[]>(queryKeys.groups(EXPOSURE_ID)) ?? [];
-      expect(groups[0].members).toEqual([102]);
-    });
-  });
-
-  it("useRemoveIndexFromGroup replaces the group with the server-returned GroupEntry", async () => {
-    const { client, wrapper } = withClient();
-    client.setQueryData<GroupEntry[]>(queryKeys.groups(EXPOSURE_ID), [makeGroup([101, 102])]);
-    mockOnce(200, { ...makeGroup([102]) });
-    const { result } = renderHook(() => useRemoveIndexFromGroup(EXPOSURE_ID, GROUP_ID), { wrapper });
-    act(() => { result.current.mutate(101); });
-    await waitFor(() => {
-      const groups = client.getQueryData<GroupEntry[]>(queryKeys.groups(EXPOSURE_ID)) ?? [];
-      expect(groups[0].members).toEqual([102]);
-    });
-  });
-
-  it("useRemoveIndexFromGroup rolls back the optimistic removal on error", async () => {
-    const { client, wrapper } = withClient();
-    client.setQueryData<GroupEntry[]>(queryKeys.groups(EXPOSURE_ID), [makeGroup([101, 102])]);
-    mockOnce(400, { error: "bad" });
-    const { result } = renderHook(() => useRemoveIndexFromGroup(EXPOSURE_ID, GROUP_ID), { wrapper });
-    act(() => { result.current.mutate(101); });
-    await waitFor(() => {
-      const groups = client.getQueryData<GroupEntry[]>(queryKeys.groups(EXPOSURE_ID)) ?? [];
-      expect(groups[0].members).toEqual([101, 102]);
-    });
-  });
-
   // ---------------------- useDeleteIndex ----------------------
 
-  it("useDeleteIndex filters the index from BOTH indices and group members optimistically", async () => {
+  it("useDeleteIndex filters the index from the indices cache optimistically", async () => {
     const { client, wrapper } = withClient();
     client.setQueryData<IndexEntry[]>(queryKeys.indices(EXPOSURE_ID),
       [makeIndex(101), makeIndex(102)]);
-    client.setQueryData<GroupEntry[]>(queryKeys.groups(EXPOSURE_ID),
-      [makeGroup([101, 102])]);
     mockNever();
     const { result } = renderHook(() => useDeleteIndex(EXPOSURE_ID), { wrapper });
     act(() => { result.current.mutate(101); });
     await waitFor(() => {
       const indices = client.getQueryData<IndexEntry[]>(queryKeys.indices(EXPOSURE_ID)) ?? [];
-      const groups = client.getQueryData<GroupEntry[]>(queryKeys.groups(EXPOSURE_ID)) ?? [];
       expect(indices.map((i) => i.id)).toEqual([102]);
-      expect(groups[0].members).toEqual([102]);
     });
   });
 
@@ -168,32 +75,24 @@ describe("queries — index/group mutations (queue-driven, M2.3)", () => {
     const { client, wrapper } = withClient();
     client.setQueryData<IndexEntry[]>(queryKeys.indices(EXPOSURE_ID),
       [makeIndex(101), makeIndex(102)]);
-    client.setQueryData<GroupEntry[]>(queryKeys.groups(EXPOSURE_ID),
-      [makeGroup([101, 102])]);
     mockOnce(200, { deleted: 101 });
     const { result } = renderHook(() => useDeleteIndex(EXPOSURE_ID), { wrapper });
     act(() => { result.current.mutate(101); });
     await waitFor(() => expect(result.current.isPending).toBe(false));
     const indices = client.getQueryData<IndexEntry[]>(queryKeys.indices(EXPOSURE_ID)) ?? [];
-    const groups = client.getQueryData<GroupEntry[]>(queryKeys.groups(EXPOSURE_ID)) ?? [];
     expect(indices.map((i) => i.id)).toEqual([102]);
-    expect(groups[0].members).toEqual([102]);
   });
 
-  it("useDeleteIndex rolls back BOTH indices and group caches on error", async () => {
+  it("useDeleteIndex rolls back the indices cache on error", async () => {
     const { client, wrapper } = withClient();
     client.setQueryData<IndexEntry[]>(queryKeys.indices(EXPOSURE_ID),
       [makeIndex(101), makeIndex(102)]);
-    client.setQueryData<GroupEntry[]>(queryKeys.groups(EXPOSURE_ID),
-      [makeGroup([101, 102])]);
     mockOnce(403, { error: "only speculative indices can be deleted" });
     const { result } = renderHook(() => useDeleteIndex(EXPOSURE_ID), { wrapper });
     act(() => { result.current.mutate(101); });
     await waitFor(() => {
       const indices = client.getQueryData<IndexEntry[]>(queryKeys.indices(EXPOSURE_ID)) ?? [];
-      const groups = client.getQueryData<GroupEntry[]>(queryKeys.groups(EXPOSURE_ID)) ?? [];
       expect(indices.map((i) => i.id)).toEqual([101, 102]);
-      expect(groups[0].members).toEqual([101, 102]);
     });
   });
 });

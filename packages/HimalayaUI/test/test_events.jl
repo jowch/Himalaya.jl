@@ -845,3 +845,86 @@ end
         SQLite.close(db)
     end
 end
+
+@testset "assignment_add round-trips through the log" begin
+    mktempdir() do dir
+        db  = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
+        exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
+        e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (10, ?, 'Pn3m', 0.1)", [e_id])
+
+        HimalayaUI.apply_event!(db, req; kind="assignment_add",
+            entity_type="exposure", entity_id=e_id, payload=Dict(:index_id => 10))
+
+        # Live state: member present, state forced to 'indexed'.
+        @test Set(Int(m.index_id) for m in Tables.rowtable(DBInterface.execute(db,
+            "SELECT index_id FROM assignment_members WHERE exposure_id = ?", [e_id]))) == Set([10])
+        @test String(Tables.rowtable(DBInterface.execute(db,
+            "SELECT state FROM assignments WHERE exposure_id = ?", [e_id]))[1].state) == "indexed"
+
+        # Wipe + rebuild from the log reproduces the member.
+        DBInterface.execute(db, "DELETE FROM assignment_members WHERE exposure_id = ?", [e_id])
+        HimalayaUI.rebuild_views_from_log!(db, e_id)
+        @test Set(Int(m.index_id) for m in Tables.rowtable(DBInterface.execute(db,
+            "SELECT index_id FROM assignment_members WHERE exposure_id = ?", [e_id]))) == Set([10])
+    end
+end
+
+@testset "assignment_remove round-trips through the log" begin
+    mktempdir() do dir
+        db  = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
+        exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
+        e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (10, ?, 'Pn3m', 0.1)", [e_id])
+        DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (11, ?, 'Im3m', 0.1)", [e_id])
+
+        HimalayaUI.apply_event!(db, req; kind="assignment_add",
+            entity_type="exposure", entity_id=e_id, payload=Dict(:index_id => 10))
+        HimalayaUI.apply_event!(db, req; kind="assignment_add",
+            entity_type="exposure", entity_id=e_id, payload=Dict(:index_id => 11))
+        HimalayaUI.apply_event!(db, req; kind="assignment_remove",
+            entity_type="exposure", entity_id=e_id, payload=Dict(:index_id => 10))
+
+        live() = Set(Int(m.index_id) for m in Tables.rowtable(DBInterface.execute(db,
+            "SELECT index_id FROM assignment_members WHERE exposure_id = ?", [e_id])))
+        @test live() == Set([11])
+
+        DBInterface.execute(db, "DELETE FROM assignment_members WHERE exposure_id = ?", [e_id])
+        HimalayaUI.rebuild_views_from_log!(db, e_id)
+        @test live() == Set([11])
+    end
+end
+
+@testset "assignment_set_state round-trips and clears members on form_factor" begin
+    mktempdir() do dir
+        db  = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
+        exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
+        e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (10, ?, 'Pn3m', 0.1)", [e_id])
+
+        HimalayaUI.apply_event!(db, req; kind="assignment_add",
+            entity_type="exposure", entity_id=e_id, payload=Dict(:index_id => 10))
+        HimalayaUI.apply_event!(db, req; kind="assignment_set_state",
+            entity_type="exposure", entity_id=e_id, payload=Dict(:state => "form_factor"))
+
+        state() = String(Tables.rowtable(DBInterface.execute(db,
+            "SELECT state FROM assignments WHERE exposure_id = ?", [e_id]))[1].state)
+        members() = Set(Int(m.index_id) for m in Tables.rowtable(DBInterface.execute(db,
+            "SELECT index_id FROM assignment_members WHERE exposure_id = ?", [e_id])))
+        @test state() == "form_factor"
+        @test isempty(members())   # form_factor cleared the lattice members
+
+        # Wipe + rebuild reproduces both the state and the empty member set.
+        DBInterface.execute(db, "DELETE FROM assignment_members WHERE exposure_id = ?", [e_id])
+        DBInterface.execute(db, "UPDATE assignments SET state = 'indexed' WHERE exposure_id = ?", [e_id])
+        HimalayaUI.rebuild_views_from_log!(db, e_id)
+        @test state() == "form_factor"
+        @test isempty(members())
+    end
+end

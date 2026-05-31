@@ -25,12 +25,14 @@ import { peakRemoveMutator } from "./lib/queue/mutators/peakRemove";
 import {
   peakExcludeMutator, peakUnexcludeMutator,
 } from "./lib/queue/mutators/peakSetExcluded";
-import {
-  addIndexToGroupMutator,
-  removeIndexFromGroupMutator,
-  deleteIndexMutator,
-} from "./lib/queue/mutators/indexGroup";
+import { deleteIndexMutator } from "./lib/queue/mutators/indexGroup";
 import { createSpeculativeMutator } from "./lib/queue/mutators/createSpeculative";
+import {
+  addAssignmentPhaseMutator,
+  removeAssignmentPhaseMutator,
+  setAssignmentStateMutator,
+} from "./lib/queue/mutators/assignment";
+import { customIndexMutator } from "./lib/queue/mutators/customIndex";
 import { reanalyzeExposureMutator } from "./lib/queue/mutators/reanalyzeExposure";
 import { saveComparisonMutator } from "./lib/queue/mutators/saveComparison";
 import { deleteComparisonMutator } from "./lib/queue/mutators/deleteComparison";
@@ -59,8 +61,8 @@ export const queryKeys = {
     ["exposure", exposureId ?? "none", "peaks"] as const,
   indices:    (exposureId: number | undefined) =>
     ["exposure", exposureId ?? "none", "indices"] as const,
-  groups:     (exposureId: number | undefined) =>
-    ["exposure", exposureId ?? "none", "groups"] as const,
+  assignment: (exposureId: number | undefined) =>
+    ["exposure", exposureId ?? "none", "assignment"] as const,
   messages:   (sampleId: number | undefined) =>
     ["sample", sampleId ?? "none", "messages"] as const,
   speculativeSnap: (
@@ -72,7 +74,7 @@ export const queryKeys = {
         phase ?? "", anchorPeakId ?? -1, anchorRatio] as const,
   // Single-entity keys are namespaced with `-entity` to avoid prefix-matching
   // collisions with the existing collection keys (e.g., a future
-  // invalidate(["exposure", id]) would otherwise also blast peaks/indices/groups).
+  // invalidate(["exposure", id]) would otherwise also blast peaks/indices).
   peak:     (id: number | undefined) => ["peak-entity", id ?? "none"] as const,
   index:    (id: number | undefined) => ["index-entity", id ?? "none"] as const,
   exposure: (id: number | undefined) => ["exposure-entity", id ?? "none"] as const,
@@ -447,37 +449,55 @@ export function useReanalyzeExposure(exposureId: number) {
   );
 }
 
-export function useGroups(exposureId: number | undefined) {
+// Plan D: the assignment cart data layer. The source of the active phase set;
+// deriveActiveIndices(assignment, indices) yields the active indices.
+export function useAssignment(exposureId: number | undefined) {
   return useQuery({
-    queryKey: queryKeys.groups(exposureId),
-    queryFn: () => api.listGroups(exposureId as number),
+    queryKey: queryKeys.assignment(exposureId),
+    queryFn: () => api.getAssignment(exposureId as number),
     enabled: exposureId !== undefined,
   });
 }
 
-export function useAddIndexToGroup(exposureId: number, groupId: number) {
+export function useAddAssignmentPhase(exposureId: number) {
   const username = useAppState((s) => s.username);
   const inner = useQueueMutation(
-    addIndexToGroupMutator,
-    { exposureId, groupId, username, clientId: CLIENT_ID },
+    addAssignmentPhaseMutator,
+    { exposureId, username, clientId: CLIENT_ID },
+  );
+  return { ...inner, mutate: (indexId: number) => inner.mutate({ indexId }) };
+}
+
+export function useRemoveAssignmentPhase(exposureId: number) {
+  const username = useAppState((s) => s.username);
+  const inner = useQueueMutation(
+    removeAssignmentPhaseMutator,
+    { exposureId, username, clientId: CLIENT_ID },
+  );
+  return { ...inner, mutate: (indexId: number) => inner.mutate({ indexId }) };
+}
+
+export function useSetAssignmentState(exposureId: number) {
+  const username = useAppState((s) => s.username);
+  const inner = useQueueMutation(
+    setAssignmentStateMutator,
+    { exposureId, username, clientId: CLIENT_ID },
+  );
+  return { ...inner, mutate: (state: api.AssignmentState) => inner.mutate({ state }) };
+}
+
+export function useCommitCustomIndex(exposureId: number) {
+  const username = useAppState((s) => s.username);
+  const inner = useQueueMutation(
+    customIndexMutator,
+    { exposureId, username, clientId: CLIENT_ID },
   );
   return {
     ...inner,
-    mutate: (indexId: number) => inner.mutate({ indexId }),
+    mutate: (phase: string, basis: number) => inner.mutate({ phase, basis }),
   };
 }
 
-export function useRemoveIndexFromGroup(exposureId: number, groupId: number) {
-  const username = useAppState((s) => s.username);
-  const inner = useQueueMutation(
-    removeIndexFromGroupMutator,
-    { exposureId, groupId, username, clientId: CLIENT_ID },
-  );
-  return {
-    ...inner,
-    mutate: (indexId: number) => inner.mutate({ indexId }),
-  };
-}
 
 // Speculative-snap is a query keyed on (exposureId, phase, anchorPeakId, anchorRatio).
 // The hook is enabled-gated because the builder calls it after a phase + anchor

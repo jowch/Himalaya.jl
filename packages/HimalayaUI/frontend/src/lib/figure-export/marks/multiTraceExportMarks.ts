@@ -10,9 +10,9 @@ import { computeYBands } from "../../comparison/yBands";
 import {
   LIGHT_PALETTE,
   TRACE_STROKE_PX,
-  PEAK_TICK_STROKE_PX,
 } from "../presets";
 import { buildMemberHeatmapMarks } from "../../../components/MemberHeatmapLayer";
+import { peakMark } from "../../../components/ui/peakMark";
 import { buildCrossTraceTrackingMarks } from "../../../components/CrossTraceTrackingLayer";
 import type { Representation } from "../../../components/RepresentationToggle";
 
@@ -38,6 +38,9 @@ export interface MultiTraceMarksArgs {
   /** Visible q-domain, threaded to the heatmap binner. `null` → derive from
    *  the underlying traces (rare; the adapter normally supplies xDomain). */
   xDomain?: [number, number] | null;
+  /** Override the trace stroke width (Plan E E-8 clean preset → 2px). When
+   *  omitted, the default TRACE_STROKE_PX (1.75) applies. */
+  traceStrokeOverride?: number;
 }
 
 /**
@@ -55,7 +58,9 @@ export function buildMultiTraceExportMarks(args: MultiTraceMarksArgs): Plot.Mark
     representation = "waterfall",
     showCrossTraceTracking = false,
     xDomain,
+    traceStrokeOverride,
   } = args;
+  const traceStroke = traceStrokeOverride ?? TRACE_STROKE_PX;
 
   const ratios = members.map((m) => m.band_height || 1);
   const yBands = computeYBands(ratios, panelHeight);
@@ -163,7 +168,7 @@ export function buildMultiTraceExportMarks(args: MultiTraceMarksArgs): Plot.Mark
         x: "q",
         y: "y",
         stroke: color,
-        strokeWidth: TRACE_STROKE_PX,
+        strokeWidth: traceStroke,
       }),
     );
 
@@ -186,21 +191,25 @@ export function buildMultiTraceExportMarks(args: MultiTraceMarksArgs): Plot.Mark
       );
     }
 
-    // Peaks — honour show toggles.
-    const peaks = member.snapshot?.effective_peaks ?? [];
+    // Peaks — honour show toggles AND the 3-state: a form-factor / null member
+    // shows its trace but no peak anchors (E-7).
+    const suppressPeaks =
+      member.snapshot?.assignment_state === "form_factor"
+      || member.snapshot?.assignment_state === "null";
+    const peaks = suppressPeaks ? [] : (member.snapshot?.effective_peaks ?? []);
     if (showPeakTicks && peaks.length > 0) {
+      // Converged onto the shared peakMark builder (Plan C plot spine): the
+      // legacy ruleX ticks become peak glyphs (manual → diamond, auto →
+      // triangle) seated just above each band top. Export colour stays the
+      // per-member trace colour (NOT by-phase) — threaded as the resolved
+      // `color` on every row.
       const tickPoints = peaks.map((p) => ({
         q: p.q,
         y: bandTop + bandH * 0.05,
+        color,
+        source: p.source,
       }));
-      marks.push(
-        Plot.ruleX(tickPoints, {
-          x: "q",
-          stroke: color,
-          strokeWidth: PEAK_TICK_STROKE_PX,
-          // Restrict the tick height by mapping y to a small range above the band top.
-        }),
-      );
+      marks.push(peakMark(tickPoints, { y: "y" }));
       if (showPeakLabels) {
         const labelRows = peaks.map((p, idx) => ({
           q: p.q,

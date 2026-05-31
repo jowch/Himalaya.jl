@@ -19,15 +19,15 @@
  * If you change a route's apply_event! payload, update the corresponding
  * test here — and double-check applyRemoteToCache.ts reads the same fields.
  */
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
-import { applyRemoteToCache } from "../../src/lib/queue/applyRemoteToCache";
+import { applyRemoteToCache, applyPostStateOnly } from "../../src/lib/queue/applyRemoteToCache";
 import { resolveMutatorForEvent } from "../../src/lib/queue/mutatorRegistry";
 import type { SseEvent } from "../../src/lib/queue/types";
 import { remoteForeignEvent } from "./helpers";
 import type {
-  Peak, Exposure, Sample, GroupEntry, SampleMessage,
-  ComparisonMessage, ComparisonSummary,
+  Peak, Exposure, Sample, SampleMessage,
+  ComparisonMessage, ComparisonSummary, Assignment,
 } from "../../src/api";
 import { queryKeys } from "../../src/queries";
 
@@ -199,84 +199,89 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
   });
 
   // -------------------------------------------------------------------------
-  // Group/index events
+  // Assignment events (Plan D-3) — DISTINCT {assignment:{state,members}}
+  // post_state (NO top-level `indices` key).
   // -------------------------------------------------------------------------
 
-  it("index_confirmed appends index_id to the matching group's members", () => {
-    qc.setQueryData<GroupEntry[]>(queryKeys.groups(5), [
-      { id: 1, exposure_id: 5, kind: "custom", active: true, members: [10] },
-    ]);
-    // Mirrors routes_analysis.jl POST /groups/:id/members: payload is
-    // {group_id, index_id}.
+  it("assignment_add patches the assignment cache from the distinct post_state", () => {
+    qc.setQueryData<Assignment>(queryKeys.assignment(5),
+      { exposure_id: 5, state: "indexed", members: [10] });
     const evt: SseEvent = {
-      id: 99, kind: "index_confirmed", entity_type: "exposure", entity_id: 5,
-      payload: { group_id: 1, index_id: 42 },
+      id: 99, kind: "assignment_add", entity_type: "exposure", entity_id: 5,
+      payload: { index_id: 42 },
+      post_state: { assignment: { state: "indexed", members: [10, 42] } },
     };
     applyRemoteToCache(evt, qc);
-    expect(qc.getQueryData<GroupEntry[]>(queryKeys.groups(5))![0]!.members)
-      .toEqual([10, 42]);
+    expect(qc.getQueryData<Assignment>(queryKeys.assignment(5))).toEqual(
+      { exposure_id: 5, state: "indexed", members: [10, 42] });
   });
 
-  it("index_unconfirmed removes index_id from the matching group's members", () => {
-    qc.setQueryData<GroupEntry[]>(queryKeys.groups(5), [
-      { id: 1, exposure_id: 5, kind: "custom", active: true, members: [10, 42] },
-    ]);
+  it("assignment_remove patches the assignment cache from post_state", () => {
+    qc.setQueryData<Assignment>(queryKeys.assignment(5),
+      { exposure_id: 5, state: "indexed", members: [10, 42] });
     const evt: SseEvent = {
-      id: 99, kind: "index_unconfirmed", entity_type: "exposure", entity_id: 5,
-      payload: { group_id: 1, index_id: 42 },
+      id: 99, kind: "assignment_remove", entity_type: "exposure", entity_id: 5,
+      payload: { index_id: 42 },
+      post_state: { assignment: { state: "indexed", members: [10] } },
     };
     applyRemoteToCache(evt, qc);
-    expect(qc.getQueryData<GroupEntry[]>(queryKeys.groups(5))![0]!.members)
-      .toEqual([10]);
+    expect(qc.getQueryData<Assignment>(queryKeys.assignment(5))!.members).toEqual([10]);
   });
 
-  it("index_confirmed for an unknown group_id invalidates the groups list (issue #37 Bug 1c)", () => {
-    // Foreign tab confirmed an index for the FIRST time on this exposure,
-    // creating a fresh custom group on the backend. Other tabs only have the
-    // auto group cached; the surgical update would silently miss the new
-    // custom group, leaving the foreign confirmation invisible until refetch.
-    qc.setQueryData<GroupEntry[]>(queryKeys.groups(5), [
-      { id: 1, exposure_id: 5, kind: "auto", active: true, members: [] },
-    ]);
-    let invalidated = false;
-    const orig = qc.invalidateQueries.bind(qc);
-    qc.invalidateQueries = (filters: any) => {
-      const k = filters?.queryKey ?? [];
-      if (Array.isArray(k) && k[0] === "exposure" && k[1] === 5 && k[2] === "groups") {
-        invalidated = true;
-      }
-      return orig(filters);
-    };
+  it("assignment_set_state patches state + clears members from post_state", () => {
+    qc.setQueryData<Assignment>(queryKeys.assignment(5),
+      { exposure_id: 5, state: "indexed", members: [10] });
     const evt: SseEvent = {
-      id: 99, kind: "index_confirmed", entity_type: "exposure", entity_id: 5,
-      payload: { group_id: 5, index_id: 42 },  // group_id=5 NOT in cache
+      id: 99, kind: "assignment_set_state", entity_type: "exposure", entity_id: 5,
+      payload: { state: "form_factor" },
+      post_state: { assignment: { state: "form_factor", members: [] } },
     };
     applyRemoteToCache(evt, qc);
-    expect(invalidated).toBe(true);
+    const a = qc.getQueryData<Assignment>(queryKeys.assignment(5))!;
+    expect(a.state).toBe("form_factor");
+    expect(a.members).toEqual([]);
   });
 
-  it("index_unconfirmed for an unknown group_id invalidates the groups list", () => {
-    qc.setQueryData<GroupEntry[]>(queryKeys.groups(5), [
-      { id: 1, exposure_id: 5, kind: "auto", active: true, members: [] },
-    ]);
-    let invalidated = false;
-    const orig = qc.invalidateQueries.bind(qc);
-    qc.invalidateQueries = (filters: any) => {
-      const k = filters?.queryKey ?? [];
-      if (Array.isArray(k) && k[0] === "exposure" && k[1] === 5 && k[2] === "groups") {
-        invalidated = true;
-      }
-      return orig(filters);
-    };
+  it("assignment frame carries NO top-level `indices` key (distinct post_state)", () => {
+    // Finding #5: the wire contract is {assignment:{state,members}} — assert the
+    // absence of `indices` so a future shape drift toward CurationPostState is
+    // caught. Mirrors the Julia route-emit test in test_assignments.jl.
+    const post_state = { assignment: { state: "indexed" as const, members: [10] } };
+    expect("indices" in post_state).toBe(false);
+    expect("assignment" in post_state).toBe(true);
+  });
+
+  it("applyPostStateOnly is a NO-OP on an assignment frame (finding #5a)", () => {
+    // The single highest-value test: an assignment frame reaching the own-tab
+    // applyPostStateOnly path must NOT clobber the exposure hash (the {assignment}
+    // post_state has no `indices` array, so the guard bails).
+    qc.setQueryData<Exposure>(queryKeys.exposure(5), FULL_EXPOSURE);
+    qc.setQueryData(queryKeys.indices(5), [{ id: 1 }]);
     const evt: SseEvent = {
-      id: 99, kind: "index_unconfirmed", entity_type: "exposure", entity_id: 5,
-      payload: { group_id: 5, index_id: 42 },
+      id: 99, kind: "assignment_add", entity_type: "exposure", entity_id: 5,
+      payload: { index_id: 42 },
+      post_state: { assignment: { state: "indexed", members: [42] } },
+    };
+    applyPostStateOnly(evt, qc);
+    // Exposure hash untouched; indices cache untouched.
+    expect(qc.getQueryData<Exposure>(queryKeys.exposure(5))!.analysis_inputs_hash).toBe("h0");
+    expect(qc.getQueryData<unknown[]>(queryKeys.indices(5))).toEqual([{ id: 1 }]);
+  });
+
+  it("assignment_add with no post_state invalidates the assignment cache (fallback)", () => {
+    qc.setQueryData<Assignment>(queryKeys.assignment(5),
+      { exposure_id: 5, state: "indexed", members: [10] });
+    const spy = vi.spyOn(qc, "invalidateQueries");
+    const evt: SseEvent = {
+      id: 99, kind: "assignment_add", entity_type: "exposure", entity_id: 5,
+      payload: { index_id: 42 },
     };
     applyRemoteToCache(evt, qc);
-    expect(invalidated).toBe(true);
+    expect(spy).toHaveBeenCalledWith({ queryKey: queryKeys.assignment(5) });
   });
 
-  it("speculative_created invalidates indices+groups (no inline cache write)", () => {
+
+  it("speculative_created invalidates indices (no inline cache write)", () => {
     let called = 0;
     const orig = qc.invalidateQueries.bind(qc);
     qc.invalidateQueries = ((arg: any) => { called++; return orig(arg); }) as typeof qc.invalidateQueries;
@@ -285,10 +290,10 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
       payload: { index_id: 7 },
     };
     applyRemoteToCache(evt, qc);
-    expect(called).toBe(2);  // indices + groups
+    expect(called).toBe(1);  // indices
   });
 
-  it("speculative_deleted invalidates indices+groups", () => {
+  it("speculative_deleted invalidates indices", () => {
     let called = 0;
     const orig = qc.invalidateQueries.bind(qc);
     qc.invalidateQueries = ((arg: any) => { called++; return orig(arg); }) as typeof qc.invalidateQueries;
@@ -297,7 +302,7 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
       payload: { index_id: 7 },
     };
     applyRemoteToCache(evt, qc);
-    expect(called).toBe(2);
+    expect(called).toBe(1);
   });
 
   // -------------------------------------------------------------------------
@@ -422,7 +427,7 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
     ]);
   });
 
-  it("delete_index falls through to default (invalidates peaks+indices+groups)", () => {
+  it("delete_index falls through to default (invalidates peaks+indices)", () => {
     // `delete_index` is the OpKind for the user gesture that hits the
     // DELETE /api/indices/:id route — the backend emits `speculative_deleted`
     // on the wire, which has its own dedicated case. But if a future
@@ -439,11 +444,10 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
       payload: { index_id: 7 },
     };
     applyRemoteToCache(evt, qc);
-    // Default branch invalidates peaks, indices, groups for the entity.
+    // Default branch invalidates peaks, indices for the entity.
     expect(invalidatedKeys).toEqual([
       queryKeys.peaks(5),
       queryKeys.indices(5),
-      queryKeys.groups(5),
     ]);
   });
 
@@ -615,6 +619,27 @@ describe("synthesizeFromSse coverage (resolveMutatorForEvent contract)", () => {
     expect(synth).toBeDefined();
   });
 
+  // Assignment mutators synthesize from the DISTINCT {assignment} post_state,
+  // not from payload — so they need a post_state-bearing frame (the generic
+  // `cases` factory above only carries payload). All three share synthAssignment.
+  it.each([
+    "assignment_add", "assignment_remove", "assignment_set_state",
+  ])("%s synthesizes an Assignment from {assignment} post_state", (kind) => {
+    const mutator = resolveMutatorForEvent(kind, "exposure");
+    expect(mutator).toBeDefined();
+    const synth = mutator!.synthesizeFromSse?.(
+      remoteForeignEvent({
+        id: 7, kind, entity_type: "exposure", entity_id: 5, payload: {},
+        post_state: { assignment: { state: "indexed", members: [10, 11] } },
+      }),
+      { event_id: 7, client_op_id: "x", analysis_inputs_hash: undefined },
+    ) as { exposure_id: number; state: string; members: number[] } | undefined;
+    expect(synth).toBeDefined();
+    expect(synth!.exposure_id).toBe(5);
+    expect(synth!.state).toBe("indexed");
+    expect(synth!.members).toEqual([10, 11]);
+  });
+
   // Every event kind in resolveMutatorForEvent's switch falls into one of
   // two camps: (a) bespoke synth via the owning mutator's synthesizeFromSse
   // (the `cases` array above), or (b) generic `{...base, ...payload}`
@@ -650,8 +675,6 @@ describe("synthesizeFromSse coverage (resolveMutatorForEvent contract)", () => {
     // (b.iii) looksFull-handled or hash-only effects
     { kind: "analyze_run",         entity_type: "exposure"           },
     { kind: "peak_removed",        entity_type: "exposure"           },
-    { kind: "index_confirmed",     entity_type: "exposure"           },
-    { kind: "index_unconfirmed",   entity_type: "exposure"           },
     { kind: "speculative_created", entity_type: "exposure"           },
     { kind: "speculative_deleted", entity_type: "exposure"           },
   ];

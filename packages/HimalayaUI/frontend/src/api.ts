@@ -265,6 +265,14 @@ export interface IndexPeakRef {
   q_observed: number;
 }
 
+/** Gauss–Bonnet coexistence flag for an index candidate vs the current
+ *  assignment. Display-and-ranking only — never folded into `score` (which
+ *  stays coverage×consistency). Recomputed per request, never persisted. */
+export interface BonnetFlag {
+  predicted_a: number;
+  consistent: boolean;
+}
+
 export interface IndexEntry {
   id: number;
   exposure_id: number;
@@ -279,6 +287,9 @@ export interface IndexEntry {
   inputs_hash: string | null;
   peaks: IndexPeakRef[];
   predicted_q: number[];
+  /** Bonnet coexistence flag vs the assignment (null when N/A). Rendered as
+   *  the ⭙ Bonnet badge in Plan D. */
+  bonnet?: BonnetFlag | null;
 }
 
 export const listIndices = (exposure_id: number) =>
@@ -321,32 +332,58 @@ export const createSpeculative = (
   opts?: AuthOpts,
 ) => request<IndexEntry>("POST", `/api/exposures/${exposure_id}/speculative`, body, opts);
 
-// Groups
-export interface GroupEntry {
-  id: number;
+// Custom index (Plan D-9): a client-fitted lattice hypothesis. `basis` is the
+// q₁ slope the modal computes via physics (2π/a × first(phaseratios(P))). The
+// route persists a speculative index and adds it to the assignment. Response is
+// the new IndexEntry (+ queue metadata).
+export type CustomIndexResponse = IndexEntry & {
+  event_id: number;
+  view_row_id: number | null;
+};
+export const createCustomIndex = (
+  exposure_id: number, phase: string, basis: number, opts?: AuthOpts,
+) => request<CustomIndexResponse>(
+  "POST", `/api/exposures/${exposure_id}/custom-index`, { phase, basis }, opts);
+
+// Assignment (Plan D) — the durable per-exposure 3-state phase assignment cart.
+// `state` is explicit, never inferred from members.length: an `indexed`
+// assignment with 0 members is a "call in progress"; `form_factor`/`null`
+// always carry 0 members. Replaces the retired single-active group model.
+export type AssignmentState = "indexed" | "form_factor" | "null";
+
+export interface Assignment {
   exposure_id: number;
-  kind: "auto" | "custom";
-  active: boolean;
-  members: number[];
+  state: AssignmentState;
+  members: number[]; // index ids, ascending
 }
 
 /**
- * Mutation responses on group routes carry queue-framework metadata
- * (event_id, view_row_id) alongside the row. The mutator's onSuccess MUST
- * destructure these out before writing the row into the cache — otherwise
- * `GroupEntry` rows get polluted with queue plumbing fields.
+ * Assignment mutation responses carry queue-framework metadata (event_id,
+ * view_row_id) alongside the canonical Assignment body — the mutator's
+ * onSuccess strips these before writing the row into the cache.
  */
-export type GroupMutationResponse = GroupEntry & {
+export type AssignmentMutationResponse = Assignment & {
   event_id: number;
   view_row_id: number | null;
 };
 
-export const listGroups = (exposure_id: number) =>
-  request<GroupEntry[]>("GET", `/api/exposures/${exposure_id}/groups`);
-export const addIndexToGroup = (group_id: number, index_id: number, opts?: AuthOpts) =>
-  request<GroupMutationResponse>("POST", `/api/groups/${group_id}/members`, { index_id }, opts);
-export const removeIndexFromGroup = (group_id: number, index_id: number, opts?: AuthOpts) =>
-  request<GroupMutationResponse>("DELETE", `/api/groups/${group_id}/members/${index_id}`, undefined, opts);
+export const getAssignment = (exposure_id: number) =>
+  request<Assignment>("GET", `/api/exposures/${exposure_id}/assignment`);
+
+export const setAssignmentState = (
+  exposure_id: number, state: AssignmentState, opts?: AuthOpts,
+) => request<AssignmentMutationResponse>(
+  "POST", `/api/exposures/${exposure_id}/assignment/state`, { state }, opts);
+
+export const addAssignmentPhase = (
+  exposure_id: number, index_id: number, opts?: AuthOpts,
+) => request<AssignmentMutationResponse>(
+  "POST", `/api/exposures/${exposure_id}/assignment/members`, { index_id }, opts);
+
+export const removeAssignmentPhase = (
+  exposure_id: number, index_id: number, opts?: AuthOpts,
+) => request<AssignmentMutationResponse>(
+  "DELETE", `/api/exposures/${exposure_id}/assignment/members/${index_id}`, undefined, opts);
 
 // Sample messages (chat log)
 export interface SampleMessage {
@@ -408,9 +445,24 @@ export interface MemberSnapshotConfirmedIndex {
   peak_ids: number[];
 }
 
+/** One assigned phase + its fitted lattice (Plan E E-4). `lattice_d` is the
+ *  index lattice parameter (`a` for cubics, `d` for lamellar/hexagonal). */
+export interface MemberSnapshotPhase {
+  phase: string;
+  lattice_d: number | null;
+}
+
 export interface MemberSnapshot {
   effective_peaks: MemberSnapshotPeak[];
   confirmed_index: MemberSnapshotConfirmedIndex | null;
+  /** Durable 3-state assignment (Plan E E-7). Older snapshots predate this
+   *  field; treat a missing value as "indexed". */
+  assignment_state?: AssignmentState;
+  /** Distinct phases the member's assignment carries (Plan E E-4), each with
+   *  its fitted lattice. Drives the coexistence reading / member rows / strip
+   *  cells (both lattices under coexistence). Empty for form-factor / null
+   *  members. Missing on older snapshots → derive from confirmed_index. */
+  confirmed_phases?: MemberSnapshotPhase[];
   analysis_inputs_hash: string;
 }
 

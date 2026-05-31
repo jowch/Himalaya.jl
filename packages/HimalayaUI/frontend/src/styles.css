@@ -25,12 +25,6 @@
   --color-success: oklch(0.520 0.120 162);    /* sage */
   --color-warning: oklch(0.620 0.130 70);     /* amber */
   --color-error:   oklch(0.520 0.170 28);     /* red */
-  /* Manual (user-added) peak marker. Hue 340 (magenta) keeps it well clear of
-     the terracotta accent (hue 38) and every index hue in phases.ts. R0c
-     (#223) paper-re-tuned it from the dark-era L 0.78 to the DESIGN.md value
-     for AA on plate. */
-  --color-peak-manual: oklch(0.550 0.200 340);
-
   /* "The Print" palette — the canonical light aesthetic (DESIGN.md `colors:`).
      Consumed directly by the new corpus surfaces via the `bg-paper`/`text-ink`/
      `border-hair`/`text-print-accent` utilities. `--color-accent` above is now

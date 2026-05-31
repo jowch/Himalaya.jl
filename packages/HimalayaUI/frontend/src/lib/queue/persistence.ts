@@ -8,7 +8,10 @@ export const STORAGE_KEY = "himalaya-ui:queue";
 // pre-cutover queued comparison_* op in sessionStorage must DROP on rehydrate
 // (warning toast) instead of replaying into a 404 against the dead route. This
 // counter is independent of the Zustand `persist` `version` in state.ts.
-export const SCHEMA_VERSION = 3;
+// Bumped 3 → 4 in the plotting redesign (D-10): the /groups routes + the
+// index_confirmed / index_unconfirmed op kinds were retired. Any pre-cutover
+// queued group op must DROP on rehydrate rather than replay into a dead route.
+export const SCHEMA_VERSION = 4;
 
 interface PersistedOp {
   schemaVersion: number;
