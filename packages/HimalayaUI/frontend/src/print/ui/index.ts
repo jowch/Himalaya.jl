@@ -43,6 +43,8 @@ export { TagList } from "./TagList";
 export { SearchInput } from "./SearchInput";
 export { Input } from "./Input";
 export type { InputProps } from "./Input";
+export { Menu } from "./Menu";
+export type { MenuOption } from "./Menu";
 export { Slider } from "./Slider";
 export { ToggleSwitch } from "./ToggleSwitch";
 export { MetaList } from "./MetaList";
