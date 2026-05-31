@@ -13,6 +13,9 @@ export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 
   /** Adornment slot, e.g. a clear button or unit suffix. */
   trailing?: ReactNode;
   invalid?: boolean;
+  /** Overrides the wrapper's `data-testid`, default `"input"`; lets SearchInput
+   *  etc. keep their contract. */
+  testId?: string;
 }
 
 const sizeClass: Record<"sm" | "md", string> = {
@@ -38,12 +41,13 @@ export function Input({
   leading,
   trailing,
   invalid = false,
+  testId,
   className = "",
   ...rest
 }: InputProps): JSX.Element {
   return (
     <div
-      data-testid="input"
+      data-testid={testId ?? "input"}
       data-invalid={invalid ? "true" : undefined}
       className={cx(
         "inline-flex items-center gap-2 bg-plate border rounded-sm transition-colors focus-within:border-accent",

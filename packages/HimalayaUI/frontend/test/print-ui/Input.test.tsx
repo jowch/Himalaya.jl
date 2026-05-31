@@ -49,4 +49,20 @@ describe("<Input>", () => {
     );
     expect(screen.getByPlaceholderText("Search series")).toBeInTheDocument();
   });
+
+  it("overrides the wrapper data-testid via testId, default 'input'", () => {
+    const { rerender } = render(
+      <Input value="" onValueChange={() => {}} aria-label="name" />,
+    );
+    expect(screen.getByTestId("input")).toBeInTheDocument();
+
+    rerender(
+      <Input value="" onValueChange={() => {}} aria-label="name" testId="x" />,
+    );
+    const wrapper = screen.getByTestId("x");
+    expect(wrapper).toBeInTheDocument();
+    // testId must not leak onto the inner input
+    expect(wrapper).toContainElement(screen.getByLabelText("name"));
+    expect(screen.queryByTestId("input")).toBeNull();
+  });
 });
