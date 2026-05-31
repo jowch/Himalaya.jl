@@ -1,12 +1,13 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { TopBar } from "./TopBar";
 import { Button } from "./Button";
+import { Wordmark } from "./Wordmark";
 
 const meta = {
   title: "ui/TopBar",
   component: TopBar,
   args: {
-    wordmark: <span className="font-serif">Himalaya</span>,
+    wordmark: <Wordmark tail="SAXS">Himalaya</Wordmark>,
     children: <span>tabs</span>,
     rightSlot: <Button>Account</Button>,
   },
