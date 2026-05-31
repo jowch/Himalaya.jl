@@ -19,10 +19,15 @@ import { phaseColor } from "../../phases";
  */
 
 /** One per series member, in display (low→high) order. `coexistWith` drives the
- *  2-stop gradient; a null phase = unindexed (the neutral ink-faint cell). */
+ *  N-band coexistence gradient; a null phase = unindexed (the neutral
+ *  ink-faint cell). */
 export interface PhaseSegment {
   phase: string | null;
-  coexistWith?: string | null;
+  /** Additional coexisting phases beyond the dominant `phase` (in addition
+   *  order). Drives an N-stop equal-band gradient; the dominant `phase` is the
+   *  first band. Empty/omitted/null = single-phase cell. Supports 2-, 3-,
+   *  N-phase coexistence. */
+  coexistWith?: string[] | null;
   /** Durable 3-state assignment (Plan E E-5/E-7). `form_factor` renders a hollow
    *  dashed cell (a real trace but no Bragg peaks); `null` renders a faint,
    *  distinct cell. Omitted → a plain indexed / unindexed cell. */
@@ -58,8 +63,18 @@ const sizeClass: Record<PhaseStripSize, string> = {
 
 function segBackground(seg: PhaseSegment): string {
   if (seg.phase === null) return UNINDEXED;
-  if (seg.coexistWith) {
-    return `linear-gradient(100deg, ${phaseColor(seg.phase)} 42%, ${phaseColor(seg.coexistWith)} 58%)`;
+  const coexist = seg.coexistWith ?? [];
+  if (coexist.length > 0) {
+    const all = [seg.phase, ...coexist];
+    const n = all.length;
+    const stops = all
+      .map((p, i) => {
+        const start = ((i / n) * 100).toFixed(2);
+        const end = (((i + 1) / n) * 100).toFixed(2);
+        return `${phaseColor(p)} ${start}%, ${phaseColor(p)} ${end}%`;
+      })
+      .join(", ");
+    return `linear-gradient(100deg, ${stops})`;
   }
   return phaseColor(seg.phase);
 }
@@ -68,7 +83,9 @@ function segLabel(seg: PhaseSegment): string {
   if (seg.state === "form_factor") return "Form factor (no Bragg peaks)";
   if (seg.state === "null") return "No phase";
   if (seg.phase === null) return "Unindexed";
-  if (seg.coexistWith) return `${seg.phase} + ${seg.coexistWith} (coexistence)`;
+  const coexist = seg.coexistWith ?? [];
+  if (coexist.length > 0)
+    return `${seg.phase} + ${coexist.join(" + ")} (coexistence)`;
   return seg.phase;
 }
 
@@ -116,10 +133,14 @@ export function PhaseStrip({
               />
             );
           }
+          const coexist = seg.coexistWith ?? [];
           return (
             <div
               key={i}
               data-testid="ps-seg"
+              data-coexist-count={
+                coexist.length > 0 ? String(coexist.length + 1) : undefined
+              }
               aria-label={segLabel(seg)}
               title={segLabel(seg)}
               className="flex-1 rounded-[1.5px]"

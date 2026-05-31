@@ -27,13 +27,24 @@ export const Throughout: Story = {
   },
 };
 
-// Coexistence gradient in one cell.
+// Two-phase coexistence gradient in one cell.
 export const Coexistence: Story = {
   args: {
     segments: [
       { phase: "Pn3m" },
-      { phase: "Pn3m", coexistWith: "Im3m" },
+      { phase: "Pn3m", coexistWith: ["Im3m"] },
       { phase: "Im3m" },
+    ],
+  },
+};
+
+// Three coexisting phases in one cell (N-band gradient).
+export const ThreePhase: Story = {
+  args: {
+    segments: [
+      { phase: "Pn3m" },
+      { phase: "Pn3m", coexistWith: ["Lamellar", "Hexagonal"] },
+      { phase: "Lamellar" },
     ],
   },
 };
