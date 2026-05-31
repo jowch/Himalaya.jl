@@ -81,7 +81,6 @@ using JSON3
     @test exp.name == "TestExp"
 end
 
-using HimalayaUI: ensure_custom_group!
 using DBInterface
 using Tables
 
@@ -149,9 +148,19 @@ end
 
     analyze_exposure!(db, e_id, analysis_dir)
 
-    # Promote the auto group to a custom group (mirrors the UI flow when a
-    # user clicks an Active-set member).
-    custom_id, _ = ensure_custom_group!(db, e_id)
+    # Promote the auto group to a custom group, inline. (D-10 retired the
+    # ensure_custom_group! helper + the /groups routes, but persist_analysis!'s
+    # custom-group re-attach machinery — exercised below — is still live and
+    # writes to the kept index_groups tables.)
+    auto_gid = Int(first(Tables.rowtable(DBInterface.execute(db,
+        "SELECT id FROM index_groups WHERE exposure_id = ? AND kind = 'auto'", [e_id]))).id)
+    custom_id = Int(DBInterface.lastrowid(DBInterface.execute(db,
+        "INSERT INTO index_groups (exposure_id, kind, active) VALUES (?, 'custom', 1)", [e_id])))
+    DBInterface.execute(db,
+        "INSERT INTO index_group_members (group_id, index_id)
+         SELECT ?, index_id FROM index_group_members WHERE group_id = ?", [custom_id, auto_gid])
+    DBInterface.execute(db,
+        "UPDATE index_groups SET active = 0 WHERE id = ?", [auto_gid])
 
     # Snapshot the custom group's members by semantic identity before reanalysis.
     snap_before = Tables.rowtable(DBInterface.execute(db, """

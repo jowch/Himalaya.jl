@@ -1,58 +1,12 @@
 using HTTP, JSON3, DBInterface, Tables, Oxygen, SQLite
 using Himalaya
 
-"""
-    ensure_custom_group!(db, exposure_id) -> (group_id, created)
-
-Returns the id of the custom group for this exposure and whether it was just
-created. If a custom group already exists, returns (existing_id, false).
-Otherwise clones the auto group's members into a new custom group (active),
-demotes the auto group to inactive, returns (new_id, true).
-
-Errors if no auto group exists for the exposure.
-"""
-function ensure_custom_group!(db::SQLite.DB, exposure_id::Int)
-    existing = Tables.rowtable(DBInterface.execute(db,
-        "SELECT id FROM index_groups
-         WHERE exposure_id = ? AND kind = 'custom'", [exposure_id]))
-    isempty(existing) || return (Int(existing[1].id), false)
-
-    auto_rows = Tables.rowtable(DBInterface.execute(db,
-        "SELECT id FROM index_groups
-         WHERE exposure_id = ? AND kind = 'auto'", [exposure_id]))
-    isempty(auto_rows) && error("no auto group for exposure $exposure_id")
-    auto_id = Int(auto_rows[1].id)
-
-    res = DBInterface.execute(db,
-        "INSERT INTO index_groups (exposure_id, kind, active)
-         VALUES (?, 'custom', 1)", [exposure_id])
-    custom_id = Int(DBInterface.lastrowid(res))
-
-    DBInterface.execute(db,
-        "INSERT INTO index_group_members (group_id, index_id)
-         SELECT ?, index_id FROM index_group_members WHERE group_id = ?",
-        [custom_id, auto_id])
-
-    DBInterface.execute(db,
-        "UPDATE index_groups SET active = 0 WHERE id = ?", [auto_id])
-
-    (custom_id, true)
-end
-
-function _group_with_members(db::SQLite.DB, group_id::Int)
-    g = Tables.rowtable(DBInterface.execute(db,
-        # SELECT only the fields the frontend GroupEntry type declares —
-        # `created_at` and `created_by` are server-internal and not consumed
-        # by any UI. Including them would silently pollute the cache (no
-        # type error, just bloat). Pinned by test_route_response_shapes.jl.
-        "SELECT id, exposure_id, kind, active FROM index_groups WHERE id = ?", [group_id]))[1]
-    members = Tables.rowtable(DBInterface.execute(db,
-        "SELECT index_id FROM index_group_members
-         WHERE group_id = ? ORDER BY index_id", [group_id]))
-    d = row_to_json(g; bool_keys = (:active,))
-    d[:members] = [Int(m.index_id) for m in members]
-    d
-end
+# D-10 (plotting redesign): the legacy index-group machinery — ensure_custom_group!,
+# _group_with_members, and the /groups routes — was retired. confirmed_index now
+# sources from the durable per-exposure assignment (assignments / assignment_members),
+# and the cart uses the assignment-native routes below. The index_groups /
+# index_group_members tables are kept (still written by persist_analysis!'s auto
+# group, read by migrate_assignments!) but are no longer served or curated.
 
 """
     _assignment_body(db, exposure_id) -> Dict
@@ -196,14 +150,6 @@ function register_analysis_routes!()
             JSON3.write(out))
     end
 
-    @get "/api/exposures/{id}/groups" function(req::HTTP.Request, id::Int)
-        db     = current_db()
-        groups = Tables.rowtable(DBInterface.execute(db,
-            "SELECT id FROM index_groups WHERE exposure_id = ? ORDER BY id", [id]))
-        HTTP.Response(200, ["Content-Type" => "application/json"],
-            JSON3.write([_group_with_members(db, Int(g.id)) for g in groups]))
-    end
-
     @get "/api/exposures/{id}/assignment" function(req::HTTP.Request, id::Int)
         db = current_db()
         HTTP.Response(200, ["Content-Type" => "application/json"],
@@ -300,128 +246,6 @@ function register_analysis_routes!()
         end
     end
 
-    @post "/api/groups/{id}/members" function(req::HTTP.Request, id::Int)
-        db = current_db()
-        body = json(req)
-        if !haskey(body, :index_id)
-            return HTTP.Response(400,
-                ["Content-Type" => "application/json"],
-                JSON3.write(Dict(:error => "missing field: index_id")))
-        end
-        local index_id::Int
-        try
-            index_id = Int(body.index_id)
-        catch
-            return HTTP.Response(400,
-                ["Content-Type" => "application/json"],
-                JSON3.write(Dict(:error => "index_id must be an integer")))
-        end
-        return with_idempotency(db, req) do
-
-            rows = Tables.rowtable(DBInterface.execute(db,
-                "SELECT exposure_id, kind FROM index_groups WHERE id = ?", [id]))
-            isempty(rows) && return HTTP.Response(404,
-                ["Content-Type" => "application/json"],
-                JSON3.write(Dict(:error => "group not found")))
-            exposure_id = Int(rows[1].exposure_id)
-
-            custom_id, _ = ensure_custom_group!(db, exposure_id)
-
-            result = apply_event!(InTransaction(), db, req;
-                kind        = "index_confirmed",
-                entity_type = "exposure",
-                entity_id   = exposure_id,
-                payload     = Dict(:group_id => custom_id, :index_id => index_id))
-            _enqueue_broadcast_from_result!(result, "index_confirmed", "exposure", exposure_id)
-
-            # Plan A dual-write: keep the durable assignment in sync with the
-            # legacy group membership so the assignment tables stay live while
-            # the frontend still reads /groups. Removed in Plan D when the
-            # frontend goes assignment-native. Carries post_state (the current
-            # assignment) so Plan D's applyRemoteToCache can patch directly; the
-            # post_state has no top-level `indices` key by design.
-            # ORDERING IS LOAD-BEARING: index_confirmed MUST be enqueued before
-            # assignment_add. Both frames share this request's client_op_id; the
-            # own-tab deferred resolves off the FIRST frame (index_confirmed) via
-            # synthesizeResponseFromSse, and the second (assignment_add) then
-            # hits the self-echo guard → applyPostStateOnly → bails (no indices).
-            # Reordering these would resolve the deferred off the wrong frame.
-            a_result = apply_event!(InTransaction(), db, req;
-                kind        = "assignment_add",
-                entity_type = "exposure",
-                entity_id   = exposure_id,
-                payload     = Dict(:index_id => index_id))
-            a_body = _assignment_body(db, exposure_id)
-            _enqueue_broadcast_from_result!(a_result, "assignment_add", "exposure", exposure_id;
-                post_state = Dict(:assignment =>
-                    Dict(:state => a_body[:state], :members => a_body[:members])))
-
-            # Issue #13: include event_id/view_row_id alongside the group
-            # body so the response shape matches the spec's queue-migrated
-            # contract (event_id, view_row_id, ...).
-            body = _group_with_members(db, custom_id)
-            body[:event_id]    = result.event_id
-            body[:view_row_id] = result.view_row_id
-            HTTP.Response(200, ["Content-Type" => "application/json"],
-                JSON3.write(body))
-        end
-    end
-
-    @delete "/api/groups/{id}/members/{index_id}" function(req::HTTP.Request, id::Int, index_id::Int)
-        db = current_db()
-        return with_idempotency(db, req) do
-            rows = Tables.rowtable(DBInterface.execute(db,
-                "SELECT exposure_id FROM index_groups WHERE id = ?", [id]))
-            isempty(rows) && return HTTP.Response(404,
-                ["Content-Type" => "application/json"],
-                JSON3.write(Dict(:error => "group not found")))
-            exposure_id = Int(rows[1].exposure_id)
-
-            custom_id, _ = ensure_custom_group!(db, exposure_id)
-
-            # undoes_event_id: find the most recent index_confirmed for this (group_id, index_id).
-            prior = Tables.rowtable(DBInterface.execute(db, """
-                SELECT id FROM user_actions
-                WHERE action = 'index_confirmed'
-                  AND entity_type = 'exposure' AND entity_id = ?
-                  AND payload IS NOT NULL
-                  AND json_extract(payload, '\$.group_id') = ?
-                  AND json_extract(payload, '\$.index_id') = ?
-                ORDER BY id DESC LIMIT 1
-            """, [exposure_id, custom_id, index_id]))
-            undoes = isempty(prior) ? nothing : Int(prior[1].id)
-
-            result = apply_event!(InTransaction(), db, req;
-                kind            = "index_unconfirmed",
-                entity_type     = "exposure",
-                entity_id       = exposure_id,
-                payload         = Dict(:group_id => custom_id, :index_id => index_id),
-                undoes_event_id = undoes)
-            _enqueue_broadcast_from_result!(result, "index_unconfirmed", "exposure", exposure_id)
-
-            # Plan A dual-write (mirror of the add route, removed in Plan D).
-            # Carries the current assignment as post_state; no top-level
-            # `indices` key. ORDERING IS LOAD-BEARING (same as the add route):
-            # index_unconfirmed MUST be enqueued before assignment_remove so the
-            # own-tab deferred resolves off the first frame.
-            a_result = apply_event!(InTransaction(), db, req;
-                kind        = "assignment_remove",
-                entity_type = "exposure",
-                entity_id   = exposure_id,
-                payload     = Dict(:index_id => index_id))
-            a_body = _assignment_body(db, exposure_id)
-            _enqueue_broadcast_from_result!(a_result, "assignment_remove", "exposure", exposure_id;
-                post_state = Dict(:assignment =>
-                    Dict(:state => a_body[:state], :members => a_body[:members])))
-
-            body = _group_with_members(db, custom_id)
-            body[:event_id]    = result.event_id
-            body[:view_row_id] = result.view_row_id
-            HTTP.Response(200, ["Content-Type" => "application/json"],
-                JSON3.write(body))
-        end
-    end
-
     @get "/api/exposures/{id}/speculative-snap" function(req::HTTP.Request, id::Int)
         db = current_db()
         params = HTTP.queryparams(HTTP.URI(req.target))
@@ -513,9 +337,11 @@ function register_analysis_routes!()
         return with_idempotency(db, req) do
             # additional_peak_ids: parallel arrays {ratio_position, peak_id}
             additional      = haskey(body, :additional) ? body.additional : []
-            # Default to *not* in the active set — speculative indices are
-            # hypotheses, and active membership is an explicit user gesture.
-            active_default  = haskey(body, :active) ? Bool(body.active) : false
+            # NOTE: the `active` body field is accepted for back-compat but no
+            # longer auto-adds to any set — D-10 retired the legacy active custom
+            # group, and "make this index active" is now an explicit assignment
+            # gesture (POST /assignment/members). The only caller already passes
+            # active:false, so this is a no-op contract change.
 
             P = resolve_phase(phase_name)
             P === nothing && return HTTP.Response(400,
@@ -543,12 +369,6 @@ function register_analysis_routes!()
                 return HTTP.Response(400,
                     ["Content-Type" => "application/json"],
                     JSON3.write(Dict(:error => sprint(showerror, e))))
-            end
-            if active_default
-                cid, _ = ensure_custom_group!(db, id)
-                DBInterface.execute(db,
-                    "INSERT OR IGNORE INTO index_group_members (group_id, index_id) VALUES (?, ?)",
-                    [cid, nid])
             end
             payload = Dict(:index_id => nid)
             result = apply_event!(InTransaction(), db, req;

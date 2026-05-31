@@ -2,16 +2,6 @@ using SHA, JSON3, SQLite, DBInterface, Tables
 using Dates
 
 """
-    CONFIRMED_INDEX_R2_GATE
-
-Shared R² hard-gate for `confirmed_index` snapshots. Mirrors the threshold
-used by the frontend `PhasePanel` so an index that clears the UI hide-low-R²
-filter is the same one that lands in the comparison snapshot. Bumping this
-should be a deliberate edit in lockstep with `frontend/.../PhasePanel.tsx`.
-"""
-const CONFIRMED_INDEX_R2_GATE = 0.98
-
-"""
     canonical_json(x) -> String
 
 Deterministic JSON serialization for content-hash inputs. **Object keys
@@ -199,10 +189,11 @@ Dict(
 `source` is `"auto"` or `"manual"` (matches `GET /api/exposures/:id/peaks`);
 manual peaks carry `intensity = nothing`.
 
-`confirmed_index` is the highest-scored member of the active custom
-`index_groups` row whose `r_squared >= CONFIRMED_INDEX_R2_GATE`. Returns
-`nothing` if there's no custom group for the exposure, no member meets the
-gate, or no exposure exists.
+`confirmed_index` is the highest-scored member of the durable per-exposure
+assignment (`assignment_members`), reported only when `assignment_state` is
+`indexed`. Returns `nothing` for a form_factor / null member, an indexed
+member with no assignment members, or a missing exposure. (D-10 re-sourced this
+from the legacy active custom group; there is no longer an R² gate.)
 
 This helper is the source of truth for the dispatcher's
 `comparison_created` fallback (when the client omits a snapshot for a new
@@ -260,61 +251,59 @@ function compute_member_snapshot(db::SQLite.DB, exposure_id::Integer)::Dict{Symb
         )
     end
 
-    # confirmed_index: highest-scored member of the active custom group
-    # that clears the R² gate. Reads from index_groups + index_group_members
-    # joined against indices. `inputs_hash` tracking belongs to the staleness
-    # signal, not this snapshot — we just record what was confirmed.
-    confirmed_index = nothing
-    confirmed_rows = Tables.rowtable(DBInterface.execute(db,
-        """SELECT i.id, i.phase, i.basis, i.lattice_d, i.r_squared, i.score
-           FROM index_groups g
-           JOIN index_group_members m ON m.group_id = g.id
-           JOIN indices i ON i.id = m.index_id
-           WHERE g.exposure_id = ? AND g.kind = 'custom' AND g.active = 1
-             AND i.r_squared IS NOT NULL AND i.r_squared >= ?
-           ORDER BY i.score DESC NULLS LAST, i.id ASC
-           LIMIT 1""", [eid, CONFIRMED_INDEX_R2_GATE]))
-    if !isempty(confirmed_rows)
-        ix = confirmed_rows[1]
-        ix_id = Int(ix.id)
-        peak_id_rows = Tables.rowtable(DBInterface.execute(db,
-            """SELECT peak_id FROM index_peaks
-               WHERE index_id = ? ORDER BY ratio_position""", [ix_id]))
-        peak_ids = [Int(r.peak_id) for r in peak_id_rows]
-        phase_str = ismissing(ix.phase) ? "" : String(ix.phase)
-        lattice_d = ismissing(ix.lattice_d) ? nothing : Float64(ix.lattice_d)
-        r_squared = ismissing(ix.r_squared) ? nothing : Float64(ix.r_squared)
-        ngc = _ngc_for_phase(phase_str, lattice_d)
-        confirmed_index = Dict{Symbol, Any}(
-            :id        => ix_id,
-            :phase     => phase_str,
-            :lattice_d => lattice_d,
-            :r_squared => r_squared,
-            :ngc       => ngc,
-            :peak_ids  => peak_ids,
-        )
-    end
-
-    # Plan E (E-4/E-7): durable 3-state assignment + the distinct phases the
-    # member's assignment carries. `confirmed_index` is null for BOTH a
-    # form_factor and a null member, so the Series surface needs the explicit
-    # STATE to tell them apart; `confirmed_phases` lets coexistence reads/rows/
-    # strip cells self-decode without a second round-trip to /assignment.
+    # Durable 3-state assignment (indexed | form_factor | null). STATE IS
+    # AUTHORITATIVE for everything the Series surface decodes downstream:
+    # `confirmed_index` is null for BOTH a form_factor and a null member, so the
+    # explicit state is what tells them apart, and `confirmed_phases` lets
+    # coexistence reads/rows/strip cells self-decode without a second round-trip
+    # to /assignment. Default to "indexed" when no assignments row exists.
     state_rows = Tables.rowtable(DBInterface.execute(db,
         "SELECT state FROM assignments WHERE exposure_id = ?", [eid]))
     assignment_state = isempty(state_rows) ? "indexed" : String(state_rows[1].state)
 
+    # confirmed_index: the representative index for peak highlighting + Series
+    # anchors — the highest-scored member of the durable assignment. Sourced
+    # from assignment_members; the single durable assignment replaced the legacy
+    # active custom group in the plotting redesign (D-10). No R² gate: an
+    # explicit user assignment supersedes the old auto-confirm heuristic. Null
+    # for a form_factor / null member (state-gated — no index represents those).
+    confirmed_index = nothing
+    if assignment_state == "indexed"
+        confirmed_rows = Tables.rowtable(DBInterface.execute(db,
+            """SELECT i.id, i.phase, i.basis, i.lattice_d, i.r_squared, i.score
+               FROM assignment_members m
+               JOIN indices i ON i.id = m.index_id
+               WHERE m.exposure_id = ?
+               ORDER BY i.score DESC NULLS LAST, i.id ASC
+               LIMIT 1""", [eid]))
+        if !isempty(confirmed_rows)
+            ix = confirmed_rows[1]
+            ix_id = Int(ix.id)
+            peak_id_rows = Tables.rowtable(DBInterface.execute(db,
+                """SELECT peak_id FROM index_peaks
+                   WHERE index_id = ? ORDER BY ratio_position""", [ix_id]))
+            peak_ids = [Int(r.peak_id) for r in peak_id_rows]
+            phase_str = ismissing(ix.phase) ? "" : String(ix.phase)
+            lattice_d = ismissing(ix.lattice_d) ? nothing : Float64(ix.lattice_d)
+            r_squared = ismissing(ix.r_squared) ? nothing : Float64(ix.r_squared)
+            ngc = _ngc_for_phase(phase_str, lattice_d)
+            confirmed_index = Dict{Symbol, Any}(
+                :id        => ix_id,
+                :phase     => phase_str,
+                :lattice_d => lattice_d,
+                :r_squared => r_squared,
+                :ngc       => ngc,
+                :peak_ids  => peak_ids,
+            )
+        end
+    end
+
     # Per-phase {phase, lattice_d} so a coexistence member can show BOTH
     # lattices (e.g. `a 205 · d 60 Å`). One row per distinct phase the
     # assignment carries; lattice_d is the index's fitted lattice parameter.
-    #
-    # STATE IS AUTHORITATIVE: confirmed_phases is meaningful ONLY for an
-    # `indexed` member. A form_factor / null member carries NO lattice phases by
-    # definition — so we report empty for those states even if stale member rows
-    # linger (e.g. a migration backfill from the active auto-group followed by a
-    # state change, where the durable members were not also cleared). This keeps
-    # the Series surface's state-first read self-consistent: a form_factor member
-    # never decodes as if it had a lattice.
+    # Same source as confirmed_index (assignment_members) so the two are
+    # inherently consistent — meaningful ONLY for an `indexed` member; a
+    # form_factor / null member carries NO lattice phases by definition.
     confirmed_phases = Dict{Symbol, Any}[]
     if assignment_state == "indexed"
         phase_rows = Tables.rowtable(DBInterface.execute(db,
@@ -327,15 +316,6 @@ function compute_member_snapshot(db::SQLite.DB, exposure_id::Integer)::Dict{Symb
             :phase     => String(r.phase),
             :lattice_d => ismissing(r.lattice_d) ? nothing : Float64(r.lattice_d),
         ) for r in phase_rows]
-        # Fall back to the confirmed_index phase when the durable assignment has
-        # no members yet (legacy exposures pre-Plan-A migration on this exposure).
-        if isempty(confirmed_phases) && confirmed_index !== nothing
-            cp = confirmed_index[:phase]
-            if cp isa AbstractString && !isempty(cp)
-                confirmed_phases = [Dict{Symbol, Any}(
-                    :phase => cp, :lattice_d => confirmed_index[:lattice_d])]
-            end
-        end
     end
 
     Dict{Symbol, Any}(

@@ -203,44 +203,67 @@ end
         end
     end
 
-    @testset "compute_member_snapshot: confirmed_index R²-gated" begin
+    @testset "compute_member_snapshot: confirmed_index sources from the assignment" begin
         mktempdir() do tmp
             ctx = _setup_analyzed_exposure(tmp; datfile="cubic_tot.dat",
                                             filename="cubic_tot")
-            # Force every index below the gate first → confirmed_index = nothing.
-            DBInterface.execute(ctx.db,
-                "UPDATE indices SET r_squared = 0.5 WHERE exposure_id = ?",
-                [ctx.exposure_id])
-            # Pick the highest-scored index, confirm it via the standard route
-            # path (ensure_custom_group + insert member).
-            ix = first(Tables.rowtable(DBInterface.execute(ctx.db,
-                """SELECT id FROM indices WHERE exposure_id = ?
-                   ORDER BY score DESC LIMIT 1""", [ctx.exposure_id])))
-            ix_id = Int(ix.id)
-            (custom_id, _) = HimalayaUI.ensure_custom_group!(ctx.db, ctx.exposure_id)
-            # Ensure the custom group is the active one for this test (the
-            # helper requires g.active = 1). `ensure_custom_group!` clones
-            # the auto group's members into the custom group, so the index
-            # may already be present — use OR IGNORE.
-            DBInterface.execute(ctx.db,
-                "UPDATE index_groups SET active = 1 WHERE id = ?", [custom_id])
-            DBInterface.execute(ctx.db,
-                "INSERT OR IGNORE INTO index_group_members (group_id, index_id) VALUES (?, ?)",
-                [custom_id, ix_id])
-
-            snap_below = HimalayaUI.compute_member_snapshot(ctx.db, ctx.exposure_id)
-            @test snap_below[:confirmed_index] === nothing  # R²=0.5 below gate
-
-            # Bump that single index above the gate.
-            DBInterface.execute(ctx.db,
-                "UPDATE indices SET r_squared = 0.99 WHERE id = ?", [ix_id])
+            # D-10: confirmed_index is the highest-scored member of the durable
+            # assignment, NOT the legacy active custom group, and there is NO R²
+            # gate. seed_assignment_if_absent! seeds the assignment (state
+            # indexed) from the auto group during analyze, so an analyzed
+            # exposure has a confirmed_index by default — the top-scored member.
+            top = first(Tables.rowtable(DBInterface.execute(ctx.db,
+                """SELECT i.id FROM assignment_members m
+                   JOIN indices i ON i.id = m.index_id
+                   WHERE m.exposure_id = ?
+                   ORDER BY i.score DESC NULLS LAST, i.id ASC LIMIT 1""",
+                [ctx.exposure_id])))
             snap = HimalayaUI.compute_member_snapshot(ctx.db, ctx.exposure_id)
             @test snap[:confirmed_index] !== nothing
             ci = snap[:confirmed_index]
-            @test ci[:id] == ix_id
+            @test ci[:id] == Int(top.id)
             @test ci[:phase] isa AbstractString
-            @test ci[:r_squared] >= HimalayaUI.CONFIRMED_INDEX_R2_GATE
             @test ci[:peak_ids] isa AbstractVector
+
+            # A low-R² member stays confirmed — an explicit assignment supersedes
+            # the old auto-confirm R² heuristic (no gate post-D-10).
+            DBInterface.execute(ctx.db,
+                "UPDATE indices SET r_squared = 0.10 WHERE exposure_id = ?",
+                [ctx.exposure_id])
+            @test HimalayaUI.compute_member_snapshot(
+                ctx.db, ctx.exposure_id)[:confirmed_index] !== nothing
+
+            # form_factor / null state → no representative index (state-gated).
+            DBInterface.execute(ctx.db,
+                """INSERT INTO assignments (exposure_id, state) VALUES (?, 'form_factor')
+                   ON CONFLICT(exposure_id) DO UPDATE SET state = 'form_factor'""",
+                [ctx.exposure_id])
+            @test HimalayaUI.compute_member_snapshot(
+                ctx.db, ctx.exposure_id)[:confirmed_index] === nothing
+
+            # An assignment narrowed to one explicit member → that member is the
+            # confirmed_index, and confirmed_index tracks assignment_members (not
+            # any legacy group).
+            DBInterface.execute(ctx.db,
+                "UPDATE assignments SET state = 'indexed' WHERE exposure_id = ?",
+                [ctx.exposure_id])
+            DBInterface.execute(ctx.db,
+                "DELETE FROM assignment_members WHERE exposure_id = ?", [ctx.exposure_id])
+            DBInterface.execute(ctx.db,
+                """INSERT INTO indices (exposure_id, phase, basis, score, r_squared, lattice_d, status, kind)
+                   VALUES (?, 'Pn3m', 0.10, 0.42, 0.20, 100.0, 'candidate', 'auto')""",
+                [ctx.exposure_id])
+            only_id = first(Tables.rowtable(DBInterface.execute(ctx.db,
+                "SELECT id FROM indices WHERE exposure_id=? AND phase='Pn3m' ORDER BY id DESC LIMIT 1",
+                [ctx.exposure_id]))).id
+            DBInterface.execute(ctx.db,
+                "INSERT INTO assignment_members (exposure_id, index_id) VALUES (?, ?)",
+                [ctx.exposure_id, Int(only_id)])
+            ci2 = HimalayaUI.compute_member_snapshot(ctx.db, ctx.exposure_id)[:confirmed_index]
+            @test ci2 !== nothing
+            @test ci2[:id] == Int(only_id)
+            @test ci2[:phase] == "Pn3m"
+            @test ci2[:lattice_d] == 100.0
         end
     end
 
@@ -265,10 +288,12 @@ end
                 [ctx.exposure_id])
             snap_ff = HimalayaUI.compute_member_snapshot(ctx.db, ctx.exposure_id)
             @test snap_ff[:assignment_state] == "form_factor"
-            # A form_factor member carries NO lattice phases — even with a
-            # lingering legacy confirmed_index (auto group active under the dual-
-            # write), confirmed_phases must be empty (state-gated fallback).
+            # A form_factor member carries NO lattice phases and NO representative
+            # index — both confirmed_phases and confirmed_index are state-gated to
+            # empty/null even if durable member rows linger (the auto-seeded
+            # assignment members are not cleared on a state flip).
             @test isempty(snap_ff[:confirmed_phases])
+            @test snap_ff[:confirmed_index] === nothing
 
             # And to null — distinct from form_factor though both have a null
             # confirmed_index; also carries no lattice phases.
@@ -278,6 +303,7 @@ end
             snap_null = HimalayaUI.compute_member_snapshot(ctx.db, ctx.exposure_id)
             @test snap_null[:assignment_state] == "null"
             @test isempty(snap_null[:confirmed_phases])
+            @test snap_null[:confirmed_index] === nothing
 
             # ── Coexistence: two distinct-phase assigned indices → two
             #    confirmed_phases, EACH with its own lattice_d, ordered score-desc.
@@ -322,33 +348,21 @@ end
         end
     end
 
-    # Legacy fallback: an `indexed` member with a confirmed_index but ZERO
-    # durable assignment_members (e.g. a pre-Plan-A exposure not yet acted on)
-    # falls back to the confirmed_index phase so the Series surface still reads.
-    @testset "compute_member_snapshot: confirmed_phases legacy fallback" begin
+    # D-10 retired the confirmed_phases "legacy fallback" (an indexed member with
+    # a confirmed_index but no durable assignment_members): confirmed_index now
+    # ALSO sources from assignment_members, so with zero members both are empty —
+    # there is nothing to fall back FROM. A never-migrated, never-seeded exposure
+    # simply reads as indexed/empty until its assignment is seeded.
+    @testset "compute_member_snapshot: indexed but no assignment members → empty" begin
         mktempdir() do tmp
             ctx = _setup_analyzed_exposure(tmp; datfile="cubic_tot.dat",
                                             filename="cubic_tot")
-            # Establish a confirmed_index via the active custom group + R² gate,
-            # exactly like the R²-gated testset — but add NO assignment_members.
-            ix = first(Tables.rowtable(DBInterface.execute(ctx.db,
-                """SELECT id, phase FROM indices WHERE exposure_id = ?
-                   AND phase IS NOT NULL ORDER BY score DESC LIMIT 1""",
-                [ctx.exposure_id])))
-            (custom_id, _) = HimalayaUI.ensure_custom_group!(ctx.db, ctx.exposure_id)
             DBInterface.execute(ctx.db,
-                "UPDATE index_groups SET active = 1 WHERE id = ?", [custom_id])
-            DBInterface.execute(ctx.db,
-                "INSERT OR IGNORE INTO index_group_members (group_id, index_id) VALUES (?, ?)",
-                [custom_id, Int(ix.id)])
-            DBInterface.execute(ctx.db,
-                "UPDATE indices SET r_squared = 0.99 WHERE id = ?", [Int(ix.id)])
-            # No assignments row at all → state defaults "indexed"; no members.
+                "DELETE FROM assignment_members WHERE exposure_id = ?", [ctx.exposure_id])
             snap = HimalayaUI.compute_member_snapshot(ctx.db, ctx.exposure_id)
             @test snap[:assignment_state] == "indexed"
-            @test snap[:confirmed_index] !== nothing
-            @test length(snap[:confirmed_phases]) == 1
-            @test snap[:confirmed_phases][1][:phase] == String(ix.phase)
+            @test snap[:confirmed_index] === nothing
+            @test isempty(snap[:confirmed_phases])
         end
     end
 
@@ -505,8 +519,8 @@ end
     # I3.6 (#177): the Phase 9.6 stale-flip + low-R² snapshot regression
     # testsets observed staleness through `fetch_comparison_with_members`
     # (now deleted). The `is_member_stale` helper keeps its own direct test
-    # (above), and the R²-gate is covered by "compute_member_snapshot:
-    # confirmed_index R²-gated".
+    # (above), and confirmed_index sourcing is covered by "compute_member_snapshot:
+    # confirmed_index sources from the assignment".
 end
 
 # I3.6 (#177): the "Comparisons REST routes" testset block exercised the routes

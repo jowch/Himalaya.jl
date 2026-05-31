@@ -281,7 +281,12 @@ if isdefined(@__MODULE__, :with_test_server)
     end
 end
 
-@testset "member-add dual-writes the assignment" begin
+@testset "retired index_confirmed/index_unconfirmed events fold to no-ops (D-10)" begin
+    # The Plan-A dual-write was retired with the /groups routes. The legacy
+    # event kinds remain as no-op GUARDS so rebuild_views_from_log! still treats
+    # them as KNOWN kinds (never throws on historical events), but they write
+    # NOTHING — the durable assignment is now the sole source of truth, written
+    # exclusively by the assignment_* kinds.
     mktempdir() do dir
         db  = HimalayaUI.open_db(joinpath(dir, "h.db"))
         req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
@@ -291,38 +296,23 @@ end
         DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (10, ?, 'Pn3m', 0.1)", [e_id])
         DBInterface.execute(db, "INSERT INTO index_groups (id, exposure_id, kind, active) VALUES (200, ?, 'custom', 1)", [e_id])
 
-        # Simulate exactly what the route body now does: legacy event + dual-write.
+        # Folding a historical index_confirmed / index_unconfirmed must not throw
+        # and must leave the legacy membership table untouched.
         HimalayaUI.apply_event!(db, req; kind="index_confirmed",
             entity_type="exposure", entity_id=e_id, payload=Dict(:group_id => 200, :index_id => 10))
-        HimalayaUI.apply_event!(db, req; kind="assignment_add",
-            entity_type="exposure", entity_id=e_id, payload=Dict(:index_id => 10))
-
-        # Both sources of truth agree.
-        legacy = Set(Int(m.index_id) for m in Tables.rowtable(DBInterface.execute(db,
-            "SELECT index_id FROM index_group_members WHERE group_id = 200")))
-        @test legacy == Set([10])
-        @test HimalayaUI._assignment_body(db, e_id)[:members] == [10]
-    end
-end
-
-@testset "member-remove dual-writes the assignment" begin
-    mktempdir() do dir
-        db  = HimalayaUI.open_db(joinpath(dir, "h.db"))
-        req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
-        exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-        e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
-        DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (10, ?, 'Pn3m', 0.1)", [e_id])
-        DBInterface.execute(db, "INSERT INTO index_groups (id, exposure_id, kind, active) VALUES (200, ?, 'custom', 1)", [e_id])
-
-        HimalayaUI.apply_event!(db, req; kind="assignment_add",
-            entity_type="exposure", entity_id=e_id, payload=Dict(:index_id => 10))
-        # Simulate the DELETE route body: legacy unconfirm + dual-write remove.
+        @test isempty(Tables.rowtable(DBInterface.execute(db,
+            "SELECT 1 FROM index_group_members WHERE group_id = 200")))
         HimalayaUI.apply_event!(db, req; kind="index_unconfirmed",
             entity_type="exposure", entity_id=e_id, payload=Dict(:group_id => 200, :index_id => 10))
+        @test isempty(Tables.rowtable(DBInterface.execute(db,
+            "SELECT 1 FROM index_group_members WHERE group_id = 200")))
+
+        # assignment_* remains the sole writer to the durable assignment.
+        HimalayaUI.apply_event!(db, req; kind="assignment_add",
+            entity_type="exposure", entity_id=e_id, payload=Dict(:index_id => 10))
+        @test HimalayaUI._assignment_body(db, e_id)[:members] == [10]
         HimalayaUI.apply_event!(db, req; kind="assignment_remove",
             entity_type="exposure", entity_id=e_id, payload=Dict(:index_id => 10))
-
         @test isempty(HimalayaUI._assignment_body(db, e_id)[:members])
     end
 end

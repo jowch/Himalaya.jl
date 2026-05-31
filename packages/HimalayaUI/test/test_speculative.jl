@@ -82,11 +82,9 @@ end
     new_id = HimalayaUI.insert_speculative_index!(db, e_id, Himalaya.Lamellar,
         Dict{Int,Int}(1 => p1, 2 => p2))
 
-    # Add to custom (active) group
-    custom_id, _ = HimalayaUI.ensure_custom_group!(db, e_id)
-    DBInterface.execute(db,
-        "INSERT OR IGNORE INTO index_group_members (group_id, index_id) VALUES (?, ?)",
-        [custom_id, new_id])
+    # D-10: speculative indices survive re-analyze by virtue of kind='speculative'
+    # (only kind='auto' indices are wiped/rebuilt), independent of any active-set
+    # membership — so no group/assignment setup is needed to exercise this.
 
     pre_rows = Tables.rowtable(DBInterface.execute(db,
         "SELECT * FROM indices WHERE id = ?", [new_id]))
@@ -111,11 +109,9 @@ end
            LEFT JOIN peak_curations pc ON pc.id = ip.peak_id AND ip.peak_kind = 'curation'
            WHERE ip.index_id = ? ORDER BY ip.ratio_position""", [new_id]))
     @test length(ip_rows) == 2
-
-    # Custom group membership preserved
-    g_rows = Tables.rowtable(DBInterface.execute(db,
-        "SELECT * FROM index_group_members WHERE index_id = ?", [new_id]))
-    @test length(g_rows) == 1
+    # (D-10: the speculative index is no longer auto-added to a custom group, so
+    # there's no membership to assert here. The pipeline's custom-group re-attach
+    # machinery itself is covered in test_pipeline.jl.)
 end
 
 # ── Helpers for the next two testsets ───────────────────────────────────────
@@ -362,11 +358,9 @@ end
         @test length(new_ix.peaks) == 2
         new_id = Int(new_ix.id)
 
-        # Group membership reflects active=true
-        r = HTTP.get("$base/api/exposures/$e_id/groups")
-        groups = JSON3.read(String(r.body))
-        cust_g = first(filter(g -> g.kind == "custom", groups))
-        @test new_id in cust_g.members
+        # D-10: `active:true` is accepted but no longer auto-adds to any set (the
+        # legacy custom group + GET /groups are retired); "make active" is now an
+        # explicit POST /assignment/members, covered in test_assignments.jl.
 
         # DELETE rejects auto indices
         auto_ix_id = Int(first(filter(ix -> ix.kind != "speculative",

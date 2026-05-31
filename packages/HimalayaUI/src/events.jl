@@ -341,21 +341,15 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
     # it as a known kind rather than silently falling through.
     kind == "peak_removed" && return nothing
 
-    if kind == "index_confirmed"
-        DBInterface.execute(db,
-            """INSERT OR IGNORE INTO index_group_members (group_id, index_id)
-               VALUES (?, ?)""",
-            [Int(payload.group_id), Int(payload.index_id)])
-        return nothing
-    end
-
-    if kind == "index_unconfirmed"
-        DBInterface.execute(db,
-            """DELETE FROM index_group_members
-               WHERE group_id = ? AND index_id = ?""",
-            [Int(payload.group_id), Int(payload.index_id)])
-        return nothing
-    end
+    # index_confirmed / index_unconfirmed: RETIRED legacy group-membership kinds
+    # (plotting redesign D-10). The /groups routes that emitted them are gone and
+    # confirmed_index now sources from the durable assignment, not index_groups.
+    # These remain as no-op GUARDS — never delete them: historical events still
+    # live in user_actions, and rebuild_views_from_log! must treat them as KNOWN
+    # kinds rather than fall through and throw. No-op is replay-consistent (live
+    # apply and replay both write nothing, so the round-trip property holds); the
+    # legacy index_group_members table is kept but no longer log-derived or read.
+    (kind == "index_confirmed" || kind == "index_unconfirmed") && return nothing
 
     # Plotting redesign Plan A: durable per-exposure assignment kinds. Sole
     # writer to assignments/assignment_members. entity_id is the exposure id.

@@ -170,58 +170,10 @@ end
         end
     end
 
-    @testset "POST /api/groups/:id/members → GroupMutationResponse" begin
-        mktempdir() do tmp
-            ctx = _setup_analyzed_exposure(tmp)
-            with_test_server(ctx.db) do port, base
-                r1 = HTTP.get("$base/api/exposures/$(ctx.exposure_id)/groups")
-                groups = JSON3.read(String(r1.body))
-                gid = groups[1].id
-
-                r2 = HTTP.get("$base/api/exposures/$(ctx.exposure_id)/indices")
-                indices = JSON3.read(String(r2.body))
-                # The route adds to the custom group, independent of auto-group
-                # membership, so any candidate index exercises the mutation.
-                idx = first(indices)
-
-                r3 = HTTP.post("$base/api/groups/$gid/members";
-                    body = JSON3.write(Dict(:index_id => idx.id)),
-                    headers = ["Content-Type" => "application/json",
-                               "X-Username"   => "alice"])
-                @test r3.status == 200
-                body = JSON3.read(String(r3.body))
-                # GroupMutationResponse = GroupEntry & {event_id, view_row_id}
-                # GroupEntry: {id, exposure_id, kind, active, members}
-                assert_keys(body, [
-                    :id, :exposure_id, :kind, :active, :members,
-                    :event_id, :view_row_id,
-                ])
-                @test body.event_id isa Integer
-            end
-        end
-    end
-
-    @testset "DELETE /api/groups/:id/members/:idx → GroupMutationResponse" begin
-        mktempdir() do tmp
-            ctx = _setup_analyzed_exposure(tmp)
-            with_test_server(ctx.db) do port, base
-                r1 = HTTP.get("$base/api/exposures/$(ctx.exposure_id)/groups")
-                groups = JSON3.read(String(r1.body))
-                gid = groups[1].id
-                isempty(groups[1].members) && return
-                idx_id = first(groups[1].members)
-
-                r2 = HTTP.delete("$base/api/groups/$gid/members/$idx_id";
-                    headers = ["X-Username" => "alice"])
-                @test r2.status == 200
-                body = JSON3.read(String(r2.body))
-                assert_keys(body, [
-                    :id, :exposure_id, :kind, :active, :members,
-                    :event_id, :view_row_id,
-                ])
-            end
-        end
-    end
+    # D-10: the POST/DELETE /api/groups/:id/members routes (GroupMutationResponse)
+    # were retired. The assignment-native POST/DELETE /assignment/members routes
+    # and their {assignment:{state,members}} response shape are pinned in
+    # test_assignments.jl.
 
     @testset "GET /api/exposures/:id/indices → IndexEntry[] full shape" begin
         # Suggestion #11: pin the GET /indices shape so a future SELECT
@@ -331,9 +283,9 @@ end
 
     # ── Entity GET routes ──────────────────────────────────────────────────
     # Pin the read-side shapes too. Cache pollution happens here just as easily
-    # as on mutation routes — `_group_with_members` was the canonical example
-    # before we tightened it. Any future SELECT * regression on an entity
-    # table will fail one of these assertions.
+    # as on mutation routes — the now-retired `_group_with_members` was the
+    # canonical example before we tightened it. Any future SELECT * regression
+    # on an entity table will fail one of these assertions.
 
     @testset "GET /api/exposures/:id → full Exposure shape" begin
         mktempdir() do tmp
@@ -412,21 +364,9 @@ end
         end
     end
 
-    @testset "GET /api/exposures/:id/groups → GroupEntry[] (must NOT leak created_at/created_by)" begin
-        mktempdir() do tmp
-            ctx = _setup_analyzed_exposure(tmp)
-            with_test_server(ctx.db) do port, base
-                r = HTTP.get("$base/api/exposures/$(ctx.exposure_id)/groups")
-                @test r.status == 200
-                groups = JSON3.read(String(r.body))
-                @test !isempty(groups)
-                expected = [:id, :exposure_id, :kind, :active, :members]
-                for g in groups
-                    assert_keys(g, expected)
-                end
-            end
-        end
-    end
+    # D-10: GET /api/exposures/:id/groups (GroupEntry[]) was retired. The read-side
+    # shape pinned here now lives on GET /assignment ({state, members}) in
+    # test_assignments.jl.
 
     @testset "GET /api/samples/:id/messages → SampleMessage[]" begin
         mktempdir() do tmp
