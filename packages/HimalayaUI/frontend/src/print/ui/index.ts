@@ -40,3 +40,5 @@ export { TagList } from "./TagList";
 export { SearchInput } from "./SearchInput";
 export { Slider } from "./Slider";
 export { ToggleSwitch } from "./ToggleSwitch";
+export { MetaList } from "./MetaList";
+export type { MetaEntry } from "./MetaList";
