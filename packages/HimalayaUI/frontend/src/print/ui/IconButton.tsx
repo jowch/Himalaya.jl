@@ -7,7 +7,8 @@ export interface IconButtonProps
   /** REQUIRED — icon-only buttons have no text; this is the accessible name. */
   label: string;
   /** hover intent. ghost → hover:text-ink (default); accent → hover:text-print-accent
-   *  (chip-remove, the terracotta reject mark); danger → hover:text-error (destructive). */
+   *  (a rationed terracotta inline action where the brand mark is the point —
+   *  NOT close/remove, which is `ghost`/neutral); danger → hover:text-error (destructive). */
   tone?: IconButtonTone;
   /** render the canonical dismiss glyph (×, U+00D7) as the content. */
   dismiss?: boolean;

@@ -21,3 +21,18 @@ export const WithGlyph: Story = {
 };
 
 export const Disabled: Story = { args: { disabled: true } };
+
+export const HoverIntent: Story = {
+  render: () => (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-3">
+        <IconButton label="Dismiss" dismiss tone="ghost" />
+        <IconButton label="Action" tone="accent">›</IconButton>
+        <IconButton label="Delete" tone="danger" dismiss />
+      </div>
+      <p className="text-xs text-ink-faint">
+        All three are neutral (ink-faint) at rest by design; on hover ghost→ink, accent→terracotta, danger→red.
+      </p>
+    </div>
+  ),
+};
