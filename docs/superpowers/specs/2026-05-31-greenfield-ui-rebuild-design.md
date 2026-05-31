@@ -46,15 +46,26 @@ effort.
 - SSE wiring (currently inline in `App.tsx`; the new `App` re-establishes the same
   `EventSource('/api/events')` → `handleRemoteEvent` plumbing)
 - `src/lib/**` geometry & logic: `plot/`, `qRing`, `detectorOrient`,
-  `assignment`, `scoping/`, `series/`, `comparison/`, `figure-export/`, `units`,
+  `assignment`, `scoping/`, `series/`, `comparison/`, `units`,
   `seriesRatio`, `customIndex`, `color-distance`, `clientId`, `clientOpId`,
   `authOpts`, `toast`
 - Logic hooks: `useStateFromUrl`, `useGlobalShortcuts`, `useFocusTrap`,
   `useSyncActiveSampleFromRoute`, `useAutoPickExposure`, `useCurrentUserId`
 
-Phase 0 verifies each shared-core file is pure logic (no import of
-`src/components/**` or `src/pages/**`). Any accidental entanglement is extracted
-into the core during Phase 0, not carried forward.
+**Known impurity — `src/lib/figure-export/**` (verified 2026-05-31):** unlike the
+rest of `lib/**`, `figure-export` is **coupled to the renderer layer** — it
+imports old renderer components (`components/ui/peakMark`,
+`components/MemberHeatmapLayer`, `components/CrossTraceTrackingLayer`,
+`components/RepresentationToggle`) to reuse their Observable-Plot *mark* logic. It
+is therefore not pure shared core. It is **not imported by the foundation
+`src/print/` tree**, so the clean room holds initially; it is repointed at the
+`print/` renderer components when those are rebuilt (`peakMark` is seeded into
+`src/print/ui/`, so a target already exists for it).
+
+Phase 0 verifies the rest of the shared core is pure logic (no import of
+`src/components/**` or `src/pages/**`); the `figure-export` coupling is the one
+known, documented exception. Any *other* accidental entanglement is extracted into
+the core during Phase 0, not carried forward.
 
 ### Greenfield — REBUILT clean from the mockups
 
@@ -107,10 +118,17 @@ The structural guarantee that fixes the root cause. Extend the existing
 `scripts/check-design.mjs` (already run as the `lint:design` build step) with a
 new rule:
 
-- **Rule: no-legacy-import.** Any file under `src/print/**` that imports from
-  `src/components/**` or `src/pages/**` (relative or aliased) is a hard error
-  (exit 2). Old UI is mechanically unreachable from new UI; the build fails if
-  anyone reaches back.
+- **Rule: no-legacy-import.** Any file under `src/print/**` that imports
+  (relatively) from `src/components/**` or `src/pages/**` is a hard error
+  (exit 2). Old UI is mechanically unreachable from new UI by **direct** import;
+  the build fails if anyone reaches back.
+- **Known limitation — transitive reach.** The guard checks direct imports only.
+  A `print/` file importing a shared-core module that *itself* imports old UI
+  (today: `lib/figure-export` → `components/**`) would reach old code
+  transitively without tripping the guard. Mitigation: `print/` does not import
+  `figure-export` until the renderers are rebuilt, at which point `figure-export`
+  is repointed at the `print/` renderer components — closing the leak. Tracked in
+  the Phase 0 core-purity ledger.
 
 Additionally:
 
@@ -122,12 +140,21 @@ Additionally:
   `components/MemberHeatmapLayer.tsx`) gains `src/print/` equivalents as those
   renderers are rebuilt.
 
-### Excluding old code from the new build
+### Old code and the build
 
-`tsconfig.build.json` (used by the build's `tsc --noEmit`) is narrowed to
-**exclude `src/components/**` and `src/pages/**`** so old, unmaintained,
-bit-rotting UI does not block the new build's typecheck. Old code remains
-git-tracked as reference until cutover deletes it.
+The production build emits **only** the new app (`vite.config.ts`
+`rollupOptions.input` → `print.html`); the old `index.html` entry is not built.
+
+Old code is **not** excluded from the `tsc --noEmit` typecheck in early phases,
+for two reasons (verified 2026-05-31): (a) it is unnecessary while old still
+typechecks green and we are only *adding* `src/print/`; (b) a `tsconfig`
+`exclude` is *ineffective* here anyway — TS still typechecks an excluded file if
+an *included* file imports it, and `lib/figure-export` (included shared core)
+imports old `components/**`, dragging them back in. A real typecheck-time
+exclusion of old becomes relevant only once old rots, and must be paired with
+severing/repointing `figure-export`'s component imports — a later-phase task, not
+foundation work. Old code remains git-tracked as reference until cutover deletes
+it.
 
 ### Visual verification: Storybook + Playwright
 
@@ -182,10 +209,11 @@ implementation plan; Phase 0's output feeds all later phases.
     extract **every** reusable primitive/pattern into a complete catalog (the
     `src/print/ui/` target set, seeded from today's primitives and expanded); map
     each mockup to its new page + the components it needs.
-- **Phase 1 — Foundation.** Stand up: separate Vite entry (`print.html`), the
-  import-boundary guard, the `tsconfig.build.json` exclusion, and Storybook. Seed
-  `src/print/ui/` from today's primitives, then hone + expand to the full catalog,
-  each primitive verified in Storybook against its mockup specimen.
+- **Phase 1 — Foundation.** Stand up: separate Vite entry (`print.html`, build
+  output only), the import-boundary guard, and Storybook. Seed `src/print/ui/`
+  from today's primitives, then hone + expand to the full catalog, each primitive
+  verified in Storybook against its mockup specimen. (No `tsconfig` exclusion of
+  old — see "Old code and the build".)
 - **Phase 2 — Components.** Rebuild consumer components surface by surface from
   the primitives, each verified in Storybook. Renderers rebuilt here, importing
   the trusted geometry math.
@@ -194,10 +222,11 @@ implementation plan; Phase 0's output feeds all later phases.
   data via `print.html`. Playwright page-fidelity checks against mockups.
 - **Phase 4 — Cutover.** Repoint `index.html`/entry to the new app; delete old
   `src/components/**` (consumer), `src/pages/**`, old `src/components/ui/**`, old
-  `App.tsx`/`AppRoutes`, old bones; remove the obsolete `print.html`/`index.html`
-  split; flatten `src/print/**` → `src/**`; remove the now-unnecessary
-  `tsconfig.build.json` exclusion and the no-legacy-import rule (or repoint it);
-  delete dead old UI tests; full suite green.
+  `App.tsx`/`AppRoutes`, old bones; ensure `lib/figure-export` now imports only
+  `print/` renderer components (the last component coupling); remove the obsolete
+  `print.html`/`index.html` split; flatten `src/print/**` → `src/**`; remove the
+  no-legacy-import rule (or repoint it); delete dead old UI tests; full suite
+  green.
 
 ## Verification spine
 
