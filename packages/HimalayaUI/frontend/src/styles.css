@@ -335,3 +335,16 @@
     justify-content: center;
   }
 }
+
+/* Respect prefers-reduced-motion (impeccable checklist G). Unlayered + !important
+   so it overrides the layered global transition rule AND the keyframe animations
+   (.anim-*, .bone skeleton pulse, overlay-fade-in). We near-zero rather than fully
+   remove durations so any transitionend/animationend listeners still fire. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+}
