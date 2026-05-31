@@ -34,4 +34,20 @@ describe("<ToggleSwitch>", () => {
     expect(screen.getByRole("switch", { name: "Heatmap" })).toBeInTheDocument();
     expect(screen.getByText("Heatmap")).toBeInTheDocument();
   });
+
+  it("keeps the accessible name but visually hides the label text when hideLabel", () => {
+    render(<ToggleSwitch checked={false} onChange={() => {}} label="Heatmap" hideLabel />);
+    // accessible name preserved (aria-label on the switch)
+    expect(screen.getByRole("switch", { name: "Heatmap" })).toBeInTheDocument();
+    // the visible label span carries a data-role we can find, and is marked hidden
+    const labelSpan = screen.getByTestId("toggle-switch").querySelector('[data-role="switch-label"]');
+    expect(labelSpan).not.toBeNull();
+    expect(labelSpan?.getAttribute("data-hidden")).toBe("true");
+  });
+
+  it("shows the label text by default", () => {
+    render(<ToggleSwitch checked={false} onChange={() => {}} label="Heatmap" />);
+    const labelSpan = screen.getByTestId("toggle-switch").querySelector('[data-role="switch-label"]');
+    expect(labelSpan?.getAttribute("data-hidden")).toBe(null);
+  });
 });

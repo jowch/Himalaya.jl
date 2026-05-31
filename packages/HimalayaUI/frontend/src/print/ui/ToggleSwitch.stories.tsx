@@ -12,3 +12,6 @@ type Story = StoryObj<typeof meta>;
 
 export const Off: Story = { args: { checked: false, label: "Heatmap", onChange: () => {} } };
 export const On: Story = { args: { checked: true, label: "Heatmap", onChange: () => {} } };
+export const NoVisibleLabel: Story = {
+  args: { checked: true, label: "Heatmap", hideLabel: true, onChange: () => {} },
+};

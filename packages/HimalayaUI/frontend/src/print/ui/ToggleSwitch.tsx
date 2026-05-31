@@ -2,6 +2,9 @@ interface ToggleSwitchProps {
   checked: boolean;
   onChange: (v: boolean) => void;
   label: string;
+  /** Visually hide the label text while keeping it as the accessible name +
+   *  screen-reader text, for dense standalone use (e.g. a toolbar). */
+  hideLabel?: boolean;
   className?: string;
 }
 
@@ -28,6 +31,7 @@ export function ToggleSwitch({
   checked,
   onChange,
   label,
+  hideLabel = false,
   className,
 }: ToggleSwitchProps): JSX.Element {
   return (
@@ -54,7 +58,13 @@ export function ToggleSwitch({
           )}
         />
       </button>
-      <span className="text-base font-semibold text-ink">{label}</span>
+      <span
+        data-role="switch-label"
+        data-hidden={hideLabel ? "true" : undefined}
+        className={cx("text-base font-semibold text-ink", hideLabel && "sr-only")}
+      >
+        {label}
+      </span>
     </label>
   );
 }
