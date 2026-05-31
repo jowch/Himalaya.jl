@@ -39,3 +39,4 @@ export { TagPill } from "./TagPill";
 export { TagList } from "./TagList";
 export { SearchInput } from "./SearchInput";
 export { Slider } from "./Slider";
+export { ToggleSwitch } from "./ToggleSwitch";
