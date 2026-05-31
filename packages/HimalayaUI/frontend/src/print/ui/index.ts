@@ -50,3 +50,4 @@ export { ToggleSwitch } from "./ToggleSwitch";
 export { MetaList } from "./MetaList";
 export type { MetaEntry } from "./MetaList";
 export { Wordmark } from "./Wordmark";
+export { Tooltip } from "./Tooltip";
