@@ -131,9 +131,14 @@ function relToSrc(absPath) {
   return relative(SRC_DIR, absPath).split(sep).join("/");
 }
 
-// src/components/ui/** and src/print/ui/** are excluded entirely (where appearance is authored).
+// src/components/ui/**, src/print/ui/**, and src/print/plot/** are excluded
+// entirely (where appearance is authored — primitives and the plot engine).
 function isExcluded(relPath) {
-  return relPath.startsWith("components/ui/") || relPath.startsWith("print/ui/");
+  return (
+    relPath.startsWith("components/ui/") ||
+    relPath.startsWith("print/ui/") ||
+    relPath.startsWith("print/plot/")
+  );
 }
 
 // Scan one file's text. Returns [{ rule, file, line, text }].
