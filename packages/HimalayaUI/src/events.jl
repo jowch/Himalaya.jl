@@ -344,11 +344,22 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
     # index_confirmed / index_unconfirmed: RETIRED legacy group-membership kinds
     # (plotting redesign D-10). The /groups routes that emitted them are gone and
     # confirmed_index now sources from the durable assignment, not index_groups.
-    # These remain as no-op GUARDS — never delete them: historical events still
-    # live in user_actions, and rebuild_views_from_log! must treat them as KNOWN
-    # kinds rather than fall through and throw. No-op is replay-consistent (live
-    # apply and replay both write nothing, so the round-trip property holds); the
-    # legacy index_group_members table is kept but no longer log-derived or read.
+    # These remain as explicit no-op GUARDS — never delete them: historical events
+    # still live in user_actions, and this keeps them recognized KNOWN kinds (the
+    # branch is for exhaustiveness/intent, matching the other retired-kind guards;
+    # the dispatcher's default is itself a silent no-op, so this isn't strictly
+    # throw-prevention). No-op is replay-consistent: live apply and replay both
+    # write nothing, so the per-event round-trip property holds.
+    #
+    # RECOVERY CAVEAT (see migrate_assignments!): the *state* a pre-Plan-A
+    # confirmation produced is NOT reproducible from the log alone — those
+    # exposures have only index_confirmed events (now no-ops) and no paired
+    # assignment_add, so their durable assignment exists solely because the
+    # sentinel-gated migrate_assignments! backfilled it from index_groups. A
+    # from-empty rebuild_views_from_log! (drop assignment tables + re-fold) will
+    # NOT reconstruct them; it must be preceded by clearing the assignments_v1
+    # sentinel and re-running migrate_assignments!. Post-Plan-A confirmations
+    # ride assignment_add and DO round-trip through the log.
     (kind == "index_confirmed" || kind == "index_unconfirmed") && return nothing
 
     # Plotting redesign Plan A: durable per-exposure assignment kinds. Sole

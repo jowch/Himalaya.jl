@@ -193,7 +193,16 @@ manual peaks carry `intensity = nothing`.
 assignment (`assignment_members`), reported only when `assignment_state` is
 `indexed`. Returns `nothing` for a form_factor / null member, an indexed
 member with no assignment members, or a missing exposure. (D-10 re-sourced this
-from the legacy active custom group; there is no longer an R² gate.)
+from the legacy active custom group.)
+
+SEMANTIC SHIFT (D-10): this is the assigned index, NOT "a human confirmed it".
+The legacy field meant "user-confirmed via the active custom group, R²≥0.98".
+The new field means "top member of the current assignment, ungated" — and since
+the assignment defaults to the auto seed (state 'indexed' for every analyzed
+exposure), an analyzed-but-never-touched exposure now reports a non-null
+`confirmed_index` (even a low-R² auto guess). Consumers must NOT read
+`confirmed_index !== nothing` as evidence of a human decision; the durable
+`assignment_state` is the source of truth for what the user did.
 
 This helper is the source of truth for the dispatcher's
 `comparison_created` fallback (when the client omits a snapshot for a new

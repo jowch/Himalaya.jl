@@ -1046,6 +1046,25 @@ create an `assignments` row (state='indexed') and copy the active group's
 members into `assignment_members`, for every exposure that has an active group.
 Sentinel-gated, idempotent, own transaction. Raw INSERTs (never apply_event!) —
 this is a data backfill, not a user action.
+
+`active=1` matches WITHOUT a kind filter, by design: this captures both
+user-confirmed (active custom) groups AND the auto group of a never-confirmed
+exposure — converging migrated DBs with `seed_assignment_if_absent!`'s
+new-model default (every analyzed exposure defaults to state='indexed' + auto
+members). Consequence to be aware of: after upgrade, an analyzed-but-never-
+confirmed exposure reports a non-null `confirmed_index` (the auto guess) where
+the legacy `kind='custom'` snapshot reported `nothing`.
+
+LOG-DERIVABILITY CAVEAT (load-bearing for disaster recovery): this backfill is
+the ONLY record of a pre-Plan-A confirmation's membership — those exposures have
+`index_confirmed` events (now no-op guards in `update_view_for_event!`) but no
+`assignment_add` event, so their assignment is NOT reproducible from the event
+log. In normal operation nothing is lost (`rebuild_views_from_log!` does not
+truncate, and this migration's sentinel persists). But a true from-empty rebuild
+(drop `assignments`/`assignment_members`, re-fold the log) MUST first clear the
+`assignments_v1` sentinel and re-run this migration, or every pre-Plan-A
+confirmation is silently lost. Post-Plan-A confirmations ride `assignment_add`
+and round-trip through the log normally.
 """
 function migrate_assignments!(db::SQLite.DB)
     already = Tables.rowtable(DBInterface.execute(db,
