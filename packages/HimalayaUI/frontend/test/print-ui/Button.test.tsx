@@ -26,3 +26,17 @@ describe("<Button> armed state", () => {
     expect(onClick).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("<Button> danger variant", () => {
+  it("carries data-variant=danger and renders its label", () => {
+    render(<Button variant="danger">Delete sample</Button>);
+    const b = screen.getByRole("button", { name: "Delete sample" });
+    expect(b.getAttribute("data-variant")).toBe("danger");
+  });
+  it("fires onClick", () => {
+    const onClick = vi.fn();
+    render(<Button variant="danger" onClick={onClick}>Delete sample</Button>);
+    fireEvent.click(screen.getByRole("button", { name: "Delete sample" }));
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+});

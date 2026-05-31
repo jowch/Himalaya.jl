@@ -21,8 +21,8 @@ const variantClass: Record<ButtonVariant, string> = {
     "text-ink-soft hover:text-ink hover:bg-paper-sunk border border-transparent " +
     "focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent",
   danger:
-    "text-ink-soft hover:text-error border border-transparent " +
-    "focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent",
+    "text-error border border-transparent hover:bg-error hover:text-paper hover:border-error " +
+    "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
 };
 
 // Armed overrides the resting look with the terracotta active fill (mockup
