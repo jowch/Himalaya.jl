@@ -4,6 +4,10 @@ export type ButtonVariant = "solid" | "accent" | "ghost" | "danger";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
+  /** Toggled/active tool-button state (focus-plot "+ Peak" armed): terracotta
+   *  fill, paper text, `aria-pressed`. Distinct from `variant="accent"` (a
+   *  primary action, not a toggle). */
+  armed?: boolean;
 }
 
 const variantClass: Record<ButtonVariant, string> = {
@@ -21,8 +25,14 @@ const variantClass: Record<ButtonVariant, string> = {
     "focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent",
 };
 
+// Armed overrides the resting look with the terracotta active fill (mockup
+// .tool-btn.armed). Kept as an override layer so any variant can be armed.
+const armedClass =
+  "bg-accent border border-accent text-paper hover:brightness-110";
+
 export function Button({
   variant = "ghost",
+  armed = false,
   className = "",
   children,
   ...props
@@ -30,7 +40,9 @@ export function Button({
   return (
     <button
       data-variant={variant}
-      className={`rounded-md px-2.5 py-1 transition-colors ${variantClass[variant]} ${className}`}
+      data-armed={armed ? "true" : undefined}
+      aria-pressed={armed ? true : undefined}
+      className={`rounded-md px-2.5 py-1 transition-colors ${armed ? armedClass : variantClass[variant]} ${className}`}
       {...props}
     >
       {children}

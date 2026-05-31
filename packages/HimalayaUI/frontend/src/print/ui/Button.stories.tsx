@@ -14,3 +14,4 @@ export const Ghost: Story = { args: { variant: "ghost" } };
 export const Solid: Story = { args: { variant: "solid" } };
 export const Accent: Story = { args: { variant: "accent" } };
 export const Danger: Story = { args: { variant: "danger", children: "Reject" } };
+export const Armed: Story = { args: { variant: "ghost", armed: true, children: "+ Peak" } };
