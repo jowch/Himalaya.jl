@@ -8,7 +8,9 @@ export interface IconButtonProps
   label: string;
   /** hover intent. ghost → hover:text-ink (default); accent → hover:text-print-accent
    *  (a rationed terracotta inline action where the brand mark is the point —
-   *  NOT close/remove, which is `ghost`/neutral); danger → hover:text-error (destructive). */
+   *  NOT close/remove, which is `ghost`/neutral); danger → error-red at rest
+   *  (the destructive baseline signal — DESIGN.md §2), strengthening to a subtle
+   *  red wash on hover. */
   tone?: IconButtonTone;
   /** render the canonical dismiss glyph (×, U+00D7) as the content. */
   dismiss?: boolean;
@@ -19,7 +21,7 @@ export interface IconButtonProps
 const toneClass: Record<IconButtonTone, string> = {
   ghost: "text-ink-faint hover:text-ink",
   accent: "text-ink-faint hover:text-print-accent",
-  danger: "text-ink-faint hover:text-error",
+  danger: "text-error hover:bg-error/10",
 };
 
 function cx(...parts: Array<string | false | undefined>): string {

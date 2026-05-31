@@ -31,7 +31,7 @@ export const HoverIntent: Story = {
         <IconButton label="Delete" tone="danger" dismiss />
       </div>
       <p className="text-xs text-ink-faint">
-        All three are neutral (ink-faint) at rest by design; on hover ghost→ink, accent→terracotta, danger→red.
+        danger is error-red at rest (the destructive baseline); ghost→ink and accent→terracotta appear on hover.
       </p>
     </div>
   ),
