@@ -24,3 +24,23 @@ export const ToggleOn: Story = {
 export const Trigger: Story = {
   args: { variant: "trigger", children: "Beamtime" },
 };
+
+/** Size is orthogonal to variant: the SAME variant rendered at `sm` and `md`. */
+export const Sizes: Story = {
+  render: () => (
+    <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+      <Chip variant="static" size="sm">
+        static sm
+      </Chip>
+      <Chip variant="static" size="md">
+        static md
+      </Chip>
+      <Chip variant="toggle" size="sm" active>
+        toggle sm
+      </Chip>
+      <Chip variant="toggle" size="md" active>
+        toggle md
+      </Chip>
+    </div>
+  ),
+};

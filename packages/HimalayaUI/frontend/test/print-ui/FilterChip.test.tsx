@@ -10,6 +10,13 @@ describe("FilterChip", () => {
     );
   });
 
+  it('defaults to data-size="md"', () => {
+    render(<FilterChip label="Coexistence" active={false} onClick={() => {}} />);
+    expect(screen.getByTestId("filter-chip").getAttribute("data-size")).toBe(
+      "md",
+    );
+  });
+
   it("reflects active=true via aria-pressed and data-active", () => {
     render(<FilterChip label="Coexistence" active={true} onClick={() => {}} />);
     const chip = screen.getByTestId("filter-chip");

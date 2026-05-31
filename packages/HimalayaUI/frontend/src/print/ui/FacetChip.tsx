@@ -1,8 +1,11 @@
 import { Chip } from "./Chip";
+import type { ChipSize } from "./Chip";
 
 interface FacetChipProps {
   label: string;
   onClick?: () => void;
+  /** Size axis, forwarded to the base Chip. Defaults to `"md"` (text-sm). */
+  size?: ChipSize;
   className?: string;
 }
 
@@ -14,11 +17,13 @@ interface FacetChipProps {
 export function FacetChip({
   label,
   onClick,
+  size = "md",
   className = "",
 }: FacetChipProps): JSX.Element {
   return (
     <Chip
       variant="trigger"
+      size={size}
       testId="facet-chip"
       {...(onClick ? { onClick } : {})}
       className={className}

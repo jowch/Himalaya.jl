@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { TagPill } from "./TagPill";
 import { Chip } from "./Chip";
+import type { ChipSize } from "./Chip";
 import { TagEditor } from "./TagEditor";
 import type { Tag } from "./tag";
 
@@ -9,6 +10,8 @@ interface TagListProps {
   onAdd?: (tag: Tag) => void;
   onRemove?: (tag: Tag) => void;
   editable?: boolean;
+  /** Size axis, forwarded to every pill AND the add invite. Defaults to `"sm"`. */
+  size?: ChipSize;
   className?: string;
 }
 
@@ -29,6 +32,7 @@ export function TagList({
   onAdd,
   onRemove,
   editable = false,
+  size = "sm",
   className = "",
 }: TagListProps): JSX.Element {
   const [adding, setAdding] = useState(false);
@@ -42,6 +46,7 @@ export function TagList({
         <TagPill
           key={i}
           tag={t}
+          size={size}
           {...(editable && onRemove ? { onRemove: () => onRemove(t) } : {})}
         />
       ))}
@@ -57,6 +62,7 @@ export function TagList({
         ) : (
           <Chip
             variant="add"
+            size={size}
             onClick={() => setAdding(true)}
             className={cx(
               tags.length > 0 &&

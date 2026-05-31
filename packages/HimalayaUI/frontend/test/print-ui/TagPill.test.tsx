@@ -8,6 +8,16 @@ describe("TagPill", () => {
     expect(screen.getByTestId("tag-pill")).toBeTruthy();
   });
 
+  it('defaults to dense size: data-size="sm"', () => {
+    render(<TagPill tag={{ key: "LL37" }} />);
+    expect(screen.getByTestId("tag-pill").getAttribute("data-size")).toBe("sm");
+  });
+
+  it('size="md" overrides to data-size="md"', () => {
+    render(<TagPill tag={{ key: "LL37" }} size="md" />);
+    expect(screen.getByTestId("tag-pill").getAttribute("data-size")).toBe("md");
+  });
+
   it("renders a key-only tag as the bare key, with no value span", () => {
     render(<TagPill tag={{ key: "LL37" }} />);
     const keyEl = screen.getByTestId("tag-pill").querySelector(

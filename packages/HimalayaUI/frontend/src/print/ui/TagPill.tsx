@@ -1,9 +1,12 @@
 import { Chip } from "./Chip";
+import type { ChipSize } from "./Chip";
 import type { Tag } from "./tag";
 
 interface TagPillProps {
   tag: Tag;
   onRemove?: () => void;
+  /** Size axis, forwarded to the base Chip. Defaults to `"sm"` — tags are dense. */
+  size?: ChipSize;
   className?: string;
 }
 
@@ -18,6 +21,7 @@ interface TagPillProps {
 export function TagPill({
   tag,
   onRemove,
+  size = "sm",
   className = "",
 }: TagPillProps): JSX.Element {
   const content =
@@ -37,6 +41,7 @@ export function TagPill({
   return (
     <Chip
       variant={onRemove ? "removable" : "static"}
+      size={size}
       testId="tag-pill"
       {...(onRemove ? { onRemove } : {})}
       className={className}

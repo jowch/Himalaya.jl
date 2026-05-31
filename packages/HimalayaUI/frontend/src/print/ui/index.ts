@@ -29,7 +29,7 @@ export type { ModalSize, ModalAlign, ModalVariant, ModalShellProps } from "./Mod
 export { IconButton } from "./IconButton";
 export type { IconButtonTone, IconButtonProps } from "./IconButton";
 export { Chip } from "./Chip";
-export type { ChipVariant } from "./Chip";
+export type { ChipVariant, ChipSize } from "./Chip";
 export { FacetChip } from "./FacetChip";
 export { FilterChip } from "./FilterChip";
 export { GripHandle } from "./GripHandle";

@@ -37,6 +37,40 @@ describe("<Chip> variants", () => {
   });
 });
 
+describe("<Chip> size axis (orthogonal to variant)", () => {
+  it('data-size defaults to "md"', () => {
+    render(<Chip>Pn3m</Chip>);
+    expect(screen.getByTestId("chip").getAttribute("data-size")).toBe("md");
+  });
+
+  it('size="sm" sets data-size="sm"', () => {
+    render(<Chip size="sm">Pn3m</Chip>);
+    expect(screen.getByTestId("chip").getAttribute("data-size")).toBe("sm");
+  });
+
+  it('a toggle can be sm: both data-variant="toggle" AND data-size="sm"', () => {
+    render(
+      <Chip variant="toggle" size="sm">
+        Kept
+      </Chip>,
+    );
+    const el = screen.getByTestId("chip");
+    expect(el.getAttribute("data-variant")).toBe("toggle");
+    expect(el.getAttribute("data-size")).toBe("sm");
+  });
+
+  it('a static can be md: both data-variant="static" AND data-size="md"', () => {
+    render(
+      <Chip variant="static" size="md">
+        Pn3m
+      </Chip>,
+    );
+    const el = screen.getByTestId("chip");
+    expect(el.getAttribute("data-variant")).toBe("static");
+    expect(el.getAttribute("data-size")).toBe("md");
+  });
+});
+
 describe("<Chip> testId override", () => {
   it('defaults data-testid to "chip"', () => {
     render(<Chip>x</Chip>);

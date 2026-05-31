@@ -1,9 +1,12 @@
 import { Chip } from "./Chip";
+import type { ChipSize } from "./Chip";
 
 interface FilterChipProps {
   label: string;
   active: boolean;
   onClick: () => void;
+  /** Size axis, forwarded to the base Chip. Defaults to `"md"` (text-sm). */
+  size?: ChipSize;
   className?: string;
 }
 
@@ -16,11 +19,13 @@ export function FilterChip({
   label,
   active,
   onClick,
+  size = "md",
   className = "",
 }: FilterChipProps): JSX.Element {
   return (
     <Chip
       variant="toggle"
+      size={size}
       testId="filter-chip"
       active={active}
       onClick={onClick}

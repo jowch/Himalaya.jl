@@ -13,6 +13,13 @@ describe("FacetChip", () => {
     expect(screen.getByTestId("facet-chip")).toBeTruthy();
   });
 
+  it('defaults to data-size="md"', () => {
+    render(<FacetChip label="Beamtime" />);
+    expect(screen.getByTestId("facet-chip").getAttribute("data-size")).toBe(
+      "md",
+    );
+  });
+
   it("calls onClick when clicked", () => {
     const onClick = vi.fn();
     render(<FacetChip label="Beamtime" onClick={onClick} />);

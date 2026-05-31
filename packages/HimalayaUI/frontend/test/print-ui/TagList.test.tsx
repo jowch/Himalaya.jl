@@ -13,6 +13,9 @@ describe("TagList", () => {
     render(<TagList tags={tags} />);
     expect(screen.getAllByTestId("tag-pill")).toHaveLength(3);
     expect(
+      screen.getAllByTestId("tag-pill")[0]!.getAttribute("data-size"),
+    ).toBe("sm");
+    expect(
       screen
         .getAllByTestId("tag-pill")
         .some(
