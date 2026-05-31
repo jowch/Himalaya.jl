@@ -1,5 +1,6 @@
 export { Badge } from "./Badge";
 export { Button } from "./Button";
+export { EmptyState } from "./EmptyState";
 export type { ButtonVariant } from "./Button";
 export { Dot } from "./Dot";
 export type { DotTone, DotSize } from "./Dot";
