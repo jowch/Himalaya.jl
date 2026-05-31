@@ -466,7 +466,7 @@ describe("handleRemoteEvent", () => {
     expect(pinInvalidations).toHaveLength(1);
   });
 
-  it("applyRemoteToCache default branch invalidates peaks/indices/groups for unknown kinds", () => {
+  it("applyRemoteToCache default branch invalidates peaks/indices for unknown kinds", () => {
     const spy = vi.spyOn(qc, "invalidateQueries");
     handleRemoteEvent({
       id: 300,
@@ -475,6 +475,6 @@ describe("handleRemoteEvent", () => {
       entity_id: 42,
       client_op_id: null,
     }, qc, qc.getMutationCache());
-    expect(spy).toHaveBeenCalledTimes(3);
+    expect(spy).toHaveBeenCalledTimes(2);
   });
 });

@@ -57,7 +57,6 @@ beforeEach(() => {
     if (u.includes("/trace")) return json(TRACE);
     if (u.includes("/peaks")) return json([]);   // no peaks: TraceViewer renders empty
     if (u.includes("/indices")) return json([]); // no indices: PhasePanel empty state
-    if (u.includes("/groups")) return json([]);  // no active group
     if (/\/exposures(\?|$)/.test(u)) return json(EXPOSURES); // GET /api/samples/:id/exposures
     return json([]);
   }));

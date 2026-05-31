@@ -10,7 +10,7 @@ import {
 } from "../src/queries";
 import { pendingDeferreds } from "../src/lib/queue/deferred";
 import { makeFakeMutation } from "./queue/helpers";
-import type { GroupEntry, IndexEntry, SpeculativeSnap } from "../src/api";
+import type { IndexEntry, SpeculativeSnap } from "../src/api";
 
 const EXPOSURE_ID = 42;
 
@@ -48,15 +48,6 @@ function makeIndex(id: number): IndexEntry {
   };
 }
 
-function makeGroup(members: number[] = []): GroupEntry {
-  return {
-    id: 7,
-    exposure_id: EXPOSURE_ID,
-    kind: "custom",
-    active: true,
-    members,
-  };
-}
 
 function makeSnap(): SpeculativeSnap[] {
   return [
@@ -306,39 +297,10 @@ describe("useCreateSpeculative — createSpeculativeMutator (M2.4)", () => {
     expect(list[0]?.id).toBe(101);
   });
 
-  it("HTTP success invalidates the groups query for the exposure", async () => {
-    const { client, wrapper } = withClient();
-    client.setQueryData<IndexEntry[]>(queryKeys.indices(EXPOSURE_ID), []);
-    client.setQueryData<GroupEntry[]>(queryKeys.groups(EXPOSURE_ID), [makeGroup([])]);
-    const invalidate = vi.spyOn(client, "invalidateQueries");
-    mockOnce(200, makeIndex(101));
-    const { result } = renderHook(() => useCreateSpeculative(EXPOSURE_ID), { wrapper });
-    act(() => {
-      result.current.mutate({
-        phase: "Pn3m",
-        anchor_peak_id: 5,
-        anchor_ratio: 1.0,
-        additional: [],
-        active: true,
-      });
-    });
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    const calls = invalidate.mock.calls.map((c) => c[0]);
-    expect(calls.some((arg) => {
-      const key = (arg as { queryKey?: readonly unknown[] } | undefined)?.queryKey;
-      return Array.isArray(key)
-        && key[0] === "exposure"
-        && key[1] === EXPOSURE_ID
-        && key[2] === "groups";
-    })).toBe(true);
-  });
-
-  it("HTTP error rolls back: indices/groups caches restored to pre-mutate snapshot", async () => {
+  it("HTTP error rolls back: indices cache restored to pre-mutate snapshot", async () => {
     const { client, wrapper } = withClient();
     const seedIndices = [makeIndex(50)];
-    const seedGroups = [makeGroup([50])];
     client.setQueryData<IndexEntry[]>(queryKeys.indices(EXPOSURE_ID), seedIndices);
-    client.setQueryData<GroupEntry[]>(queryKeys.groups(EXPOSURE_ID), seedGroups);
     mockOnce(400, { error: "bad anchor" });
     const { result } = renderHook(() => useCreateSpeculative(EXPOSURE_ID), { wrapper });
     act(() => {
@@ -351,9 +313,7 @@ describe("useCreateSpeculative — createSpeculativeMutator (M2.4)", () => {
     });
     await waitFor(() => expect(result.current.error).toBeTruthy());
     const indices = client.getQueryData<IndexEntry[]>(queryKeys.indices(EXPOSURE_ID));
-    const groups = client.getQueryData<GroupEntry[]>(queryKeys.groups(EXPOSURE_ID));
     expect(indices).toEqual(seedIndices);
-    expect(groups).toEqual(seedGroups);
   });
 
   it("optimistic phase leaves caches unchanged (mutator is null-optimistic)", async () => {

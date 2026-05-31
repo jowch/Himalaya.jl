@@ -234,9 +234,7 @@ export function PhasePanel({ exposureId }: PhasePanelProps): JSX.Element {
   const experimentQ = useExperiment(activeExperimentId ?? 0);
   const setHoveredIndex = useAppState((s) => s.setHoveredIndex);
   const setPreviewIndex = useAppState((s) => s.setPreviewIndex);
-  // Plan D-8: candidate toggles drive the assignment cart natively (the legacy
-  // group dual-write remains live on the backend until D-10, but the frontend
-  // no longer touches /groups).
+  // Plan D-8: candidate toggles drive the assignment cart natively.
   const addMember    = useAddAssignmentPhase(exposureId ?? 0);
   const removeMember = useRemoveAssignmentPhase(exposureId ?? 0);
   const deleteIndex  = useDeleteIndex(exposureId ?? 0);

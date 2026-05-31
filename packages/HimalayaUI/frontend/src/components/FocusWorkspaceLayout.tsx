@@ -9,8 +9,7 @@ import { PlotCard } from "./PlotCard";
 import { FocusPlotHeader } from "./FocusPlotHeader";
 import { IndicesCard } from "./IndicesCard";
 import { FocusDetectorPanel } from "./FocusDetectorPanel";
-// Plan D-5: CombPanel replaces FocusReflectionsTable as the q-link triple's
-// third surface (the legacy table file is retired in D-10).
+// Plan D-5: CombPanel is the q-link triple's third surface.
 import { CombPanel } from "./CombPanel";
 import { FocusNotesMargin } from "./FocusNotesMargin";
 
@@ -23,7 +22,7 @@ import { FocusNotesMargin } from "./FocusNotesMargin";
  *   - trace hero  = <PlotCard/>      (also drives useAutoPickExposure)
  *   - rail        = <IndicesCard/>   (PhasePanel phase call + candidates + Miller)
  *   - detector    = <FocusDetectorPanel/> (read-only DetectorImage; q-link is I4.3)
- *   - reflections = <FocusReflectionsTable/> (the q-link triple's third surface;
+ *   - reflections = <CombPanel/> (the q-link triple's third surface;
  *                   row hover ↔ peak ↔ ring via the shipped `hoveredQ` channel)
  *   - notes       = <FocusNotesMargin/>
  *

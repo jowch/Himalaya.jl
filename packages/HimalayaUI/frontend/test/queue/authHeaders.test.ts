@@ -24,9 +24,7 @@ import { peakRemoveMutator } from "../../src/lib/queue/mutators/peakRemove";
 import {
   peakExcludeMutator, peakUnexcludeMutator,
 } from "../../src/lib/queue/mutators/peakSetExcluded";
-import {
-  addIndexToGroupMutator, removeIndexFromGroupMutator, deleteIndexMutator,
-} from "../../src/lib/queue/mutators/indexGroup";
+import { deleteIndexMutator } from "../../src/lib/queue/mutators/indexGroup";
 import { createSpeculativeMutator } from "../../src/lib/queue/mutators/createSpeculative";
 import {
   addAssignmentPhaseMutator, removeAssignmentPhaseMutator, setAssignmentStateMutator,
@@ -117,22 +115,6 @@ const SPECS: Spec[] = [
       { ...FLAT_BASE, kind: "peak_unexcluded",
         payload: { peakId: 7, q: 0.5 },
         exposureId: 5, peakId: 7, q: 0.5 } as any,
-      new AbortController().signal),
-  },
-  {
-    name: "addIndexToGroup",
-    run: (qc) => addIndexToGroupMutator.request(
-      { ...FLAT_BASE, kind: "index_confirmed",
-        payload: { groupId: 1, indexId: 10 },
-        exposureId: 5, groupId: 1, indexId: 10 } as any,
-      new AbortController().signal),
-  },
-  {
-    name: "removeIndexFromGroup",
-    run: (qc) => removeIndexFromGroupMutator.request(
-      { ...FLAT_BASE, kind: "index_unconfirmed",
-        payload: { groupId: 1, indexId: 10 },
-        exposureId: 5, groupId: 1, indexId: 10 } as any,
       new AbortController().signal),
   },
   {

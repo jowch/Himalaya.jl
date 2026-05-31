@@ -26,15 +26,6 @@ function mockAll(indices: unknown[], groups: unknown[]): void {
       return new Response(JSON.stringify(indices),
         { status: 200, headers: { "Content-Type": "application/json" } });
     }
-    if (u.endsWith("/groups")) {
-      return new Response(JSON.stringify(groups),
-        { status: 200, headers: { "Content-Type": "application/json" } });
-    }
-    if (u.match(/\/api\/groups\/\d+\/members\/\d+$/)) {
-      return new Response(JSON.stringify({
-        id: 2, exposure_id: 42, kind: "custom", active: true, members: [],
-      }), { status: 200, headers: { "Content-Type": "application/json" } });
-    }
     return new Response("not found", { status: 404 });
   });
 }
@@ -156,9 +147,6 @@ describe("<PhasePanel> — candidate multi-select (R4 L-10)", () => {
         { id: 11, exposure_id: 42, phase: "Im3m", basis: 0.3, score: 0.6, r_squared: 0.71,
           lattice_d: 9.1, ngc: null, status: "candidate", kind: "auto", predicted_q: [0.4],
           peaks: [{ peak_id: 2, ratio_position: 1, residual: 0, q_observed: 0.4 }] },
-      ]), { status: 200, headers: { "Content-Type": "application/json" } });
-      if (u.endsWith("/groups")) return new Response(JSON.stringify([
-        { id: 2, exposure_id: 42, kind: "custom", active: true, members: [10] },
       ]), { status: 200, headers: { "Content-Type": "application/json" } });
       if (u.endsWith("/api/exposures/42/assignment/members")) return new Response(JSON.stringify({
         exposure_id: 42, state: "indexed", members: [10, 11], event_id: 1, view_row_id: 1,

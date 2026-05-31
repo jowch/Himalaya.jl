@@ -132,33 +132,6 @@ describe("api", () => {
     expect(indices[0]!.peaks[0]!.q_observed).toBeCloseTo(0.71);
   });
 
-  it("listGroups fetches groups for exposure", async () => {
-    vi.spyOn(global, "fetch").mockResolvedValue(
-      new Response(JSON.stringify([
-        { id: 1, exposure_id: 42, kind: "auto",   active: false, members: [10] },
-        { id: 2, exposure_id: 42, kind: "custom", active: true,  members: [10, 11] },
-      ]), { status: 200 }),
-    );
-    const groups = await api.listGroups(42);
-    expect(groups).toHaveLength(2);
-    expect(groups[1]!.kind).toBe("custom");
-    expect(groups[1]!.active).toBe(true);
-  });
-
-  it("addIndexToGroup posts {index_id} with X-Username", async () => {
-    const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({
-        id: 2, exposure_id: 42, kind: "custom", active: true, members: [10, 11],
-      }), { status: 200 }),
-    );
-    const g = await api.addIndexToGroup(2, 11, { username: "alice", clientId: "tab-xyz" });
-    expect(g.members).toEqual([10, 11]);
-    const [, init] = fetchSpy.mock.calls[0]! as [string, RequestInit];
-    expect((init.headers as Record<string, string>)["X-Username"]).toBe("alice");
-    expect((init.headers as Record<string, string>)["X-Client-Id"]).toBe("tab-xyz");
-    expect(init.body).toBe(JSON.stringify({ index_id: 11 }));
-  });
-
   it("listSampleMessages fetches messages for a sample", async () => {
     vi.spyOn(global, "fetch").mockResolvedValue(
       new Response(JSON.stringify([
@@ -230,17 +203,4 @@ describe("api", () => {
     expect(headers["X-Username"]).toBeUndefined();
   });
 
-  it("removeIndexFromGroup sends DELETE with X-Username", async () => {
-    const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({
-        id: 2, exposure_id: 42, kind: "custom", active: true, members: [10],
-      }), { status: 200 }),
-    );
-    await api.removeIndexFromGroup(2, 11, { username: "alice", clientId: "tab-xyz" });
-    const [url, init] = fetchSpy.mock.calls[0]! as [string, RequestInit];
-    expect(url).toBe("/api/groups/2/members/11");
-    expect(init.method).toBe("DELETE");
-    expect((init.headers as Record<string, string>)["X-Username"]).toBe("alice");
-    expect((init.headers as Record<string, string>)["X-Client-Id"]).toBe("tab-xyz");
-  });
 });

@@ -345,37 +345,10 @@ export const createCustomIndex = (
 ) => request<CustomIndexResponse>(
   "POST", `/api/exposures/${exposure_id}/custom-index`, { phase, basis }, opts);
 
-// Groups
-export interface GroupEntry {
-  id: number;
-  exposure_id: number;
-  kind: "auto" | "custom";
-  active: boolean;
-  members: number[];
-}
-
-/**
- * Mutation responses on group routes carry queue-framework metadata
- * (event_id, view_row_id) alongside the row. The mutator's onSuccess MUST
- * destructure these out before writing the row into the cache — otherwise
- * `GroupEntry` rows get polluted with queue plumbing fields.
- */
-export type GroupMutationResponse = GroupEntry & {
-  event_id: number;
-  view_row_id: number | null;
-};
-
-export const listGroups = (exposure_id: number) =>
-  request<GroupEntry[]>("GET", `/api/exposures/${exposure_id}/groups`);
-export const addIndexToGroup = (group_id: number, index_id: number, opts?: AuthOpts) =>
-  request<GroupMutationResponse>("POST", `/api/groups/${group_id}/members`, { index_id }, opts);
-export const removeIndexFromGroup = (group_id: number, index_id: number, opts?: AuthOpts) =>
-  request<GroupMutationResponse>("DELETE", `/api/groups/${group_id}/members/${index_id}`, undefined, opts);
-
 // Assignment (Plan D) — the durable per-exposure 3-state phase assignment cart.
 // `state` is explicit, never inferred from members.length: an `indexed`
 // assignment with 0 members is a "call in progress"; `form_factor`/`null`
-// always carry 0 members. Replaces the legacy single-active GroupEntry model.
+// always carry 0 members. Replaces the retired single-active group model.
 export type AssignmentState = "indexed" | "form_factor" | "null";
 
 export interface Assignment {
@@ -387,8 +360,7 @@ export interface Assignment {
 /**
  * Assignment mutation responses carry queue-framework metadata (event_id,
  * view_row_id) alongside the canonical Assignment body — the mutator's
- * onSuccess strips these before writing the row into the cache (mirrors
- * GroupMutationResponse).
+ * onSuccess strips these before writing the row into the cache.
  */
 export type AssignmentMutationResponse = Assignment & {
   event_id: number;

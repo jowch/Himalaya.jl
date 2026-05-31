@@ -26,9 +26,6 @@ import { peakRemoveMutator } from "../../src/lib/queue/mutators/peakRemove";
 import {
   peakExcludeMutator, peakUnexcludeMutator,
 } from "../../src/lib/queue/mutators/peakSetExcluded";
-import {
-  addIndexToGroupMutator, removeIndexFromGroupMutator,
-} from "../../src/lib/queue/mutators/indexGroup";
 import { createSpeculativeMutator } from "../../src/lib/queue/mutators/createSpeculative";
 import {
   addAssignmentPhaseMutator,
@@ -53,9 +50,6 @@ import { pendingDeferreds } from "../../src/lib/queue/deferred";
 const PEAK_KEYS = new Set([
   "id", "exposure_id", "q", "intensity", "prominence", "sharpness",
   "source", "excluded",
-]);
-const GROUP_KEYS = new Set([
-  "id", "exposure_id", "kind", "active", "members",
 ]);
 const ASSIGNMENT_KEYS = new Set([
   "exposure_id", "state", "members",
@@ -267,46 +261,6 @@ describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", ()
   });
 
   // -------------------------------------------------------------------------
-  // Group / index mutators
-  // -------------------------------------------------------------------------
-
-  it("addIndexToGroup writes a GroupEntry with exactly 5 keys (issue #16)", async () => {
-    qc.setQueryData(queryKeys.groups(5), [
-      { id: 1, exposure_id: 5, kind: "auto", active: true, members: [] },
-    ]);
-    mockFetchOnce({
-      id: 1, exposure_id: 5, kind: "custom", active: true, members: [42],
-      event_id: 11, view_row_id: 1,
-    }, 200);
-    await runMutator(qc, addIndexToGroupMutator, {
-      kind: "index_confirmed",
-      clientOpId: "op-shape-6",
-      exposureId: 5, groupId: 1, username: "alice", clientId: "tab-1",
-      indexId: 42, payload: { groupId: 1, indexId: 42 },
-    });
-    const groups = qc.getQueryData<unknown[]>(queryKeys.groups(5));
-    assertKeys(groups![0], GROUP_KEYS, "addIndexToGroup cache row");
-  });
-
-  it("removeIndexFromGroup writes a GroupEntry with exactly 5 keys", async () => {
-    qc.setQueryData(queryKeys.groups(5), [
-      { id: 1, exposure_id: 5, kind: "custom", active: true, members: [42] },
-    ]);
-    mockFetchOnce({
-      id: 1, exposure_id: 5, kind: "custom", active: true, members: [],
-      event_id: 12, view_row_id: 1,
-    }, 200);
-    await runMutator(qc, removeIndexFromGroupMutator, {
-      kind: "index_unconfirmed",
-      clientOpId: "op-shape-7",
-      exposureId: 5, groupId: 1, username: "alice", clientId: "tab-1",
-      indexId: 42, payload: { groupId: 1, indexId: 42 },
-    });
-    const groups = qc.getQueryData<unknown[]>(queryKeys.groups(5));
-    assertKeys(groups![0], GROUP_KEYS, "removeIndexFromGroup cache row");
-  });
-
-  // -------------------------------------------------------------------------
   // Assignment mutators (Plan D-3) — onSuccess writes ONLY the assignment
   // cache (the 3-key Assignment shape); NEVER the exposure cache.
   // -------------------------------------------------------------------------
@@ -436,7 +390,6 @@ describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", ()
 
   it("createSpeculative writes an IndexEntry with exactly 13 keys", async () => {
     qc.setQueryData(queryKeys.indices(5), []);
-    qc.setQueryData(queryKeys.groups(5), []);
     // Mock derived from routes_analysis.jl POST /speculative response (~line 374-397).
     mockFetchOnce({
       id: 99, exposure_id: 5, phase: "Pn3m", basis: 0.123,

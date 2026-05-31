@@ -26,7 +26,7 @@ import { resolveMutatorForEvent } from "../../src/lib/queue/mutatorRegistry";
 import type { SseEvent } from "../../src/lib/queue/types";
 import { remoteForeignEvent } from "./helpers";
 import type {
-  Peak, Exposure, Sample, GroupEntry, SampleMessage,
+  Peak, Exposure, Sample, SampleMessage,
   ComparisonMessage, ComparisonSummary, Assignment,
 } from "../../src/api";
 import { queryKeys } from "../../src/queries";
@@ -280,85 +280,8 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
     expect(spy).toHaveBeenCalledWith({ queryKey: queryKeys.assignment(5) });
   });
 
-  // -------------------------------------------------------------------------
-  // Group/index events
-  // -------------------------------------------------------------------------
 
-  it("index_confirmed appends index_id to the matching group's members", () => {
-    qc.setQueryData<GroupEntry[]>(queryKeys.groups(5), [
-      { id: 1, exposure_id: 5, kind: "custom", active: true, members: [10] },
-    ]);
-    // Mirrors routes_analysis.jl POST /groups/:id/members: payload is
-    // {group_id, index_id}.
-    const evt: SseEvent = {
-      id: 99, kind: "index_confirmed", entity_type: "exposure", entity_id: 5,
-      payload: { group_id: 1, index_id: 42 },
-    };
-    applyRemoteToCache(evt, qc);
-    expect(qc.getQueryData<GroupEntry[]>(queryKeys.groups(5))![0]!.members)
-      .toEqual([10, 42]);
-  });
-
-  it("index_unconfirmed removes index_id from the matching group's members", () => {
-    qc.setQueryData<GroupEntry[]>(queryKeys.groups(5), [
-      { id: 1, exposure_id: 5, kind: "custom", active: true, members: [10, 42] },
-    ]);
-    const evt: SseEvent = {
-      id: 99, kind: "index_unconfirmed", entity_type: "exposure", entity_id: 5,
-      payload: { group_id: 1, index_id: 42 },
-    };
-    applyRemoteToCache(evt, qc);
-    expect(qc.getQueryData<GroupEntry[]>(queryKeys.groups(5))![0]!.members)
-      .toEqual([10]);
-  });
-
-  it("index_confirmed for an unknown group_id invalidates the groups list (issue #37 Bug 1c)", () => {
-    // Foreign tab confirmed an index for the FIRST time on this exposure,
-    // creating a fresh custom group on the backend. Other tabs only have the
-    // auto group cached; the surgical update would silently miss the new
-    // custom group, leaving the foreign confirmation invisible until refetch.
-    qc.setQueryData<GroupEntry[]>(queryKeys.groups(5), [
-      { id: 1, exposure_id: 5, kind: "auto", active: true, members: [] },
-    ]);
-    let invalidated = false;
-    const orig = qc.invalidateQueries.bind(qc);
-    qc.invalidateQueries = (filters: any) => {
-      const k = filters?.queryKey ?? [];
-      if (Array.isArray(k) && k[0] === "exposure" && k[1] === 5 && k[2] === "groups") {
-        invalidated = true;
-      }
-      return orig(filters);
-    };
-    const evt: SseEvent = {
-      id: 99, kind: "index_confirmed", entity_type: "exposure", entity_id: 5,
-      payload: { group_id: 5, index_id: 42 },  // group_id=5 NOT in cache
-    };
-    applyRemoteToCache(evt, qc);
-    expect(invalidated).toBe(true);
-  });
-
-  it("index_unconfirmed for an unknown group_id invalidates the groups list", () => {
-    qc.setQueryData<GroupEntry[]>(queryKeys.groups(5), [
-      { id: 1, exposure_id: 5, kind: "auto", active: true, members: [] },
-    ]);
-    let invalidated = false;
-    const orig = qc.invalidateQueries.bind(qc);
-    qc.invalidateQueries = (filters: any) => {
-      const k = filters?.queryKey ?? [];
-      if (Array.isArray(k) && k[0] === "exposure" && k[1] === 5 && k[2] === "groups") {
-        invalidated = true;
-      }
-      return orig(filters);
-    };
-    const evt: SseEvent = {
-      id: 99, kind: "index_unconfirmed", entity_type: "exposure", entity_id: 5,
-      payload: { group_id: 5, index_id: 42 },
-    };
-    applyRemoteToCache(evt, qc);
-    expect(invalidated).toBe(true);
-  });
-
-  it("speculative_created invalidates indices+groups (no inline cache write)", () => {
+  it("speculative_created invalidates indices (no inline cache write)", () => {
     let called = 0;
     const orig = qc.invalidateQueries.bind(qc);
     qc.invalidateQueries = ((arg: any) => { called++; return orig(arg); }) as typeof qc.invalidateQueries;
@@ -367,10 +290,10 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
       payload: { index_id: 7 },
     };
     applyRemoteToCache(evt, qc);
-    expect(called).toBe(2);  // indices + groups
+    expect(called).toBe(1);  // indices
   });
 
-  it("speculative_deleted invalidates indices+groups", () => {
+  it("speculative_deleted invalidates indices", () => {
     let called = 0;
     const orig = qc.invalidateQueries.bind(qc);
     qc.invalidateQueries = ((arg: any) => { called++; return orig(arg); }) as typeof qc.invalidateQueries;
@@ -379,7 +302,7 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
       payload: { index_id: 7 },
     };
     applyRemoteToCache(evt, qc);
-    expect(called).toBe(2);
+    expect(called).toBe(1);
   });
 
   // -------------------------------------------------------------------------
@@ -504,7 +427,7 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
     ]);
   });
 
-  it("delete_index falls through to default (invalidates peaks+indices+groups)", () => {
+  it("delete_index falls through to default (invalidates peaks+indices)", () => {
     // `delete_index` is the OpKind for the user gesture that hits the
     // DELETE /api/indices/:id route — the backend emits `speculative_deleted`
     // on the wire, which has its own dedicated case. But if a future
@@ -521,11 +444,10 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
       payload: { index_id: 7 },
     };
     applyRemoteToCache(evt, qc);
-    // Default branch invalidates peaks, indices, groups for the entity.
+    // Default branch invalidates peaks, indices for the entity.
     expect(invalidatedKeys).toEqual([
       queryKeys.peaks(5),
       queryKeys.indices(5),
-      queryKeys.groups(5),
     ]);
   });
 
@@ -753,8 +675,6 @@ describe("synthesizeFromSse coverage (resolveMutatorForEvent contract)", () => {
     // (b.iii) looksFull-handled or hash-only effects
     { kind: "analyze_run",         entity_type: "exposure"           },
     { kind: "peak_removed",        entity_type: "exposure"           },
-    { kind: "index_confirmed",     entity_type: "exposure"           },
-    { kind: "index_unconfirmed",   entity_type: "exposure"           },
     { kind: "speculative_created", entity_type: "exposure"           },
     { kind: "speculative_deleted", entity_type: "exposure"           },
   ];

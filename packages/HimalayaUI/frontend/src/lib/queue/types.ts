@@ -36,7 +36,6 @@ import type { Assignment, Comparison, Series } from "../../api";
  */
 export type OpKind =
   | "peak_added" | "peak_excluded" | "peak_unexcluded" | "peak_removed"
-  | "index_confirmed" | "index_unconfirmed"
   | "speculative_created" | "speculative_deleted"
   | "set_exposure_status" | "select_exposure"
   | "add_tag" | "remove_tag"

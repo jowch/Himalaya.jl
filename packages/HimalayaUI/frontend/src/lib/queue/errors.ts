@@ -53,8 +53,6 @@ const VALIDATION_COPY: Partial<Record<OpKind, string>> = {
   peak_excluded: "Couldn't exclude peak",
   peak_unexcluded: "Couldn't restore peak",
   peak_removed: "Couldn't remove peak",
-  index_confirmed: "Couldn't confirm index",
-  index_unconfirmed: "Couldn't undo confirmation",
   speculative_created: "Couldn't create speculative index",
   speculative_deleted: "Couldn't delete speculative index",
   set_exposure_status: "Couldn't update exposure status",

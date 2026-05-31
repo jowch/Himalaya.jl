@@ -25,9 +25,7 @@ import { peakRemoveMutator } from "../../src/lib/queue/mutators/peakRemove";
 import {
   peakExcludeMutator, peakUnexcludeMutator,
 } from "../../src/lib/queue/mutators/peakSetExcluded";
-import {
-  addIndexToGroupMutator, removeIndexFromGroupMutator, deleteIndexMutator,
-} from "../../src/lib/queue/mutators/indexGroup";
+import { deleteIndexMutator } from "../../src/lib/queue/mutators/indexGroup";
 import { createSpeculativeMutator } from "../../src/lib/queue/mutators/createSpeculative";
 import {
   addAssignmentPhaseMutator, removeAssignmentPhaseMutator, setAssignmentStateMutator,
@@ -60,9 +58,6 @@ const EXPOSURE = {
 const SAMPLE = {
   id: 10, experiment_id: 1, display_name: "D1", name: "n", notes: null,
   tags: [{ id: 1, key: "k", value: "v", source: "manual" }],
-};
-const GROUP = {
-  id: 1, exposure_id: 5, kind: "custom" as const, active: true, members: [10] as number[],
 };
 const ASSIGNMENT = {
   exposure_id: 5, state: "indexed" as const, members: [10] as number[],
@@ -140,20 +135,6 @@ const SPECS: Spec[] = [
     },
   },
   {
-    name: "addIndexToGroup",
-    keys: [queryKeys.groups(5)],
-    seed: (qc) => qc.setQueryData(queryKeys.groups(5), [GROUP]),
-    run: (qc) => {
-      const ctx = addIndexToGroupMutator.onMutate({
-        kind: "index_confirmed", clientOpId: "op",
-        payload: { groupId: 1, indexId: 99 },
-        exposureId: 5, groupId: 1, username: "alice", clientId: "tab",
-        indexId: 99,
-      } as any, qc);
-      ctx.restore();
-    },
-  },
-  {
     name: "addAssignmentPhase",
     keys: [queryKeys.assignment(5)],
     seed: (qc) => qc.setQueryData(queryKeys.assignment(5), ASSIGNMENT),
@@ -207,25 +188,10 @@ const SPECS: Spec[] = [
     },
   },
   {
-    name: "removeIndexFromGroup",
-    keys: [queryKeys.groups(5)],
-    seed: (qc) => qc.setQueryData(queryKeys.groups(5), [GROUP]),
-    run: (qc) => {
-      const ctx = removeIndexFromGroupMutator.onMutate({
-        kind: "index_unconfirmed", clientOpId: "op",
-        payload: { groupId: 1, indexId: 10 },
-        exposureId: 5, groupId: 1, username: "alice", clientId: "tab",
-        indexId: 10,
-      } as any, qc);
-      ctx.restore();
-    },
-  },
-  {
     name: "deleteIndex",
-    keys: [queryKeys.indices(5), queryKeys.groups(5)],
+    keys: [queryKeys.indices(5)],
     seed: (qc) => {
       qc.setQueryData(queryKeys.indices(5), [INDEX]);
-      qc.setQueryData(queryKeys.groups(5), [GROUP]);
     },
     run: (qc) => {
       const ctx = deleteIndexMutator.onMutate({
@@ -239,10 +205,9 @@ const SPECS: Spec[] = [
   },
   {
     name: "createSpeculative",
-    keys: [queryKeys.indices(5), queryKeys.groups(5)],
+    keys: [queryKeys.indices(5)],
     seed: (qc) => {
       qc.setQueryData(queryKeys.indices(5), [INDEX]);
-      qc.setQueryData(queryKeys.groups(5), [GROUP]);
     },
     run: (qc) => {
       const ctx = createSpeculativeMutator.onMutate({

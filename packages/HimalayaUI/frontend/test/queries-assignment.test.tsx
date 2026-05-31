@@ -25,9 +25,9 @@ function mockOnce(status: number, body: unknown): void {
 describe("queries — assignment (Plan D-1)", () => {
   beforeEach(() => { vi.restoreAllMocks(); });
 
-  it("queryKeys.assignment is exposure-scoped and distinct from groups", () => {
+  it("queryKeys.assignment is exposure-scoped and distinct from indices", () => {
     expect(queryKeys.assignment(42)).toEqual(["exposure", 42, "assignment"]);
-    expect(queryKeys.assignment(42)).not.toEqual(queryKeys.groups(42));
+    expect(queryKeys.assignment(42)).not.toEqual(queryKeys.indices(42));
   });
 
   it("useAssignment fetches when exposureId is provided", async () => {

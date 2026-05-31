@@ -54,7 +54,7 @@ describe("check-design guard — ban rules (spec §4)", () => {
   it("flags a raw oklch scrim string literal", () => {
     expect(rulesFor('        background: "oklch(0.05 0 0 / 0.65)",')).toContain("no-raw-color-literal");
   });
-  it("flags a bare var() with NO raw literal as clean (FocusReflectionsTable/SeriesFolioCard cases)", () => {
+  it("flags a bare var() with NO raw literal as clean (SeriesFolioCard case)", () => {
     expect(rulesFor('        style={{ background: "var(--color-success)" }}')).not.toContain("no-raw-color-literal");
   });
   it("passes a PR-number cross-reference in a comment (not a color)", () => {

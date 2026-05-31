@@ -1,7 +1,7 @@
 /**
  * reanalyze_exposure mutator (M2.5). Manual "Re-analyze" button on
  * StaleIndicesBanner. There is no real optimistic effect — the server runs
- * analysis and the resulting indices/groups arrive via SSE post_state on the
+ * analysis and the resulting indices arrive via SSE post_state on the
  * analyze_run frame (handled by applyRemoteToCache.ts). The onMutate returns
  * a no-op restore.
  *
@@ -39,7 +39,7 @@ export const reanalyzeExposureMutator: Mutator<
   // Write the new hash onto the exposure cache so StaleIndicesBanner clears
   // immediately on HTTP success — without this, there's a flicker window
   // between the HTTP response and the SSE post_state arrival where the
-  // banner still shows "stale" against the old hash. Indices/groups still
+  // banner still shows "stale" against the old hash. Indices still
   // arrive via SSE post_state on the analyze_run frame (see
   // applyRemoteToCache.ts).
   onSuccess: (p, response, qc) => {

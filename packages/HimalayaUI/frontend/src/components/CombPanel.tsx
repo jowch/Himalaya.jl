@@ -9,8 +9,7 @@ import type { IndexEntry, Peak } from "../api";
 
 /**
  * CombPanel (Plan D Task D-5) — predicted reflections as comb teeth on a shared
- * log-q ruler, replacing FocusReflectionsTable as the q-link triple's third
- * surface.
+ * log-q ruler; the q-link triple's third surface.
  *
  *  - One row of teeth per assigned phase, drawn from `IndexEntry.predicted_q`
  *    (all orders). A predicted order that matches an observed peak is a solid
@@ -78,7 +77,7 @@ export function CombPanel(): JSX.Element {
   const qMin = qs.length ? Math.min(...qs) * 0.9 : 0.01;
   const qMax = qs.length ? Math.max(...qs) * 1.1 : 0.2;
 
-  // q-link tolerance — span-relative (mirror the ring/FocusReflectionsTable rule).
+  // q-link tolerance — span-relative (mirror the ring rule).
   const peakQs = peaks.map((p) => p.q);
   const qLo = peakQs.length ? Math.min(...peakQs) : 0;
   const qHi = peakQs.length ? Math.max(...peakQs) : 1;

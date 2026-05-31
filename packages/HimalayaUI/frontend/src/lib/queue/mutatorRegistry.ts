@@ -18,11 +18,7 @@ import {
   peakExcludeMutator,
   peakUnexcludeMutator,
 } from "./mutators/peakSetExcluded";
-import {
-  addIndexToGroupMutator,
-  removeIndexFromGroupMutator,
-  deleteIndexMutator,
-} from "./mutators/indexGroup";
+import { deleteIndexMutator } from "./mutators/indexGroup";
 import { createSpeculativeMutator } from "./mutators/createSpeculative";
 import { reanalyzeExposureMutator } from "./mutators/reanalyzeExposure";
 import { saveComparisonMutator } from "./mutators/saveComparison";
@@ -110,10 +106,6 @@ export function resolveMutator(
       return peakExcludeMutator;
     case "peak_unexcluded":
       return peakUnexcludeMutator;
-    case "index_confirmed":
-      return addIndexToGroupMutator;
-    case "index_unconfirmed":
-      return removeIndexFromGroupMutator;
     case "delete_index":
       return deleteIndexMutator;
     case "speculative_created":
@@ -165,8 +157,6 @@ export function resolveMutatorForEvent(
     case "peak_removed":        return peakRemoveMutator;
     case "peak_excluded":       return peakExcludeMutator;
     case "peak_unexcluded":     return peakUnexcludeMutator;
-    case "index_confirmed":     return addIndexToGroupMutator;
-    case "index_unconfirmed":   return removeIndexFromGroupMutator;
     case "speculative_created": return createSpeculativeMutator;
     // event-kind speculative_deleted is the SSE counterpart of op-kind delete_index
     case "speculative_deleted": return deleteIndexMutator;

@@ -20,11 +20,7 @@ import {
   peakExcludeMutator,
   peakUnexcludeMutator,
 } from "../../src/lib/queue/mutators/peakSetExcluded";
-import {
-  addIndexToGroupMutator,
-  removeIndexFromGroupMutator,
-  deleteIndexMutator,
-} from "../../src/lib/queue/mutators/indexGroup";
+import { deleteIndexMutator } from "../../src/lib/queue/mutators/indexGroup";
 import { createSpeculativeMutator } from "../../src/lib/queue/mutators/createSpeculative";
 import { reanalyzeExposureMutator } from "../../src/lib/queue/mutators/reanalyzeExposure";
 import { saveComparisonMutator } from "../../src/lib/queue/mutators/saveComparison";
@@ -102,12 +98,6 @@ describe("resolveMutator", () => {
     );
     expect(resolveMutator({ kind: "peak_unexcluded", payload: {} })).toBe(
       peakUnexcludeMutator,
-    );
-    expect(resolveMutator({ kind: "index_confirmed", payload: {} })).toBe(
-      addIndexToGroupMutator,
-    );
-    expect(resolveMutator({ kind: "index_unconfirmed", payload: {} })).toBe(
-      removeIndexFromGroupMutator,
     );
     expect(resolveMutator({ kind: "delete_index", payload: {} })).toBe(
       deleteIndexMutator,
@@ -202,8 +192,6 @@ describe("resolveMutator ↔ resolveMutatorForEvent consistency", () => {
     { mutator: peakRemoveMutator,       eventKind: "peak_removed",        entityType: "exposure"   },
     { mutator: peakExcludeMutator,      eventKind: "peak_excluded",       entityType: "exposure"   },
     { mutator: peakUnexcludeMutator,    eventKind: "peak_unexcluded",     entityType: "exposure"   },
-    { mutator: addIndexToGroupMutator,  eventKind: "index_confirmed",     entityType: "exposure"   },
-    { mutator: removeIndexFromGroupMutator, eventKind: "index_unconfirmed", entityType: "exposure" },
     { mutator: deleteIndexMutator,      eventKind: "speculative_deleted", entityType: "exposure"   },
     { mutator: createSpeculativeMutator, eventKind: "speculative_created", entityType: "exposure"  },
     { mutator: reanalyzeExposureMutator, eventKind: "analyze_run",        entityType: "exposure"   },
