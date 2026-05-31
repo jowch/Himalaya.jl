@@ -11,6 +11,7 @@ export type { Shortcut } from "./KbLegend";
 export { Kicker } from "./Kicker";
 export type { KickerTone } from "./Kicker";
 export { ScoreBar } from "./ScoreBar";
+export { ScreenedMark } from "./ScreenedMark";
 export type { ScoreBarSize } from "./ScoreBar";
 export { PhaseChip } from "./PhaseChip";
 export type { PhaseChipVariant, PhaseChipSize } from "./PhaseChip";
