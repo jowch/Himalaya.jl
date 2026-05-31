@@ -4,11 +4,21 @@ import { phaseColor } from "../../phases";
 export type PhaseChipVariant = "tint" | "solid";
 export type PhaseChipSize = "sm" | "md";
 
+const PHASE_SHORT: Record<string, string> = {
+  Pn3m: "Pn3m", Im3m: "Im3m", Ia3d: "Ia3d", Fm3m: "Fm3m",
+  Fd3m: "Fd3m", Hexagonal: "Hex", Lamellar: "Lam", Square: "Sq",
+};
+function short(p: string): string { return PHASE_SHORT[p] ?? p; }
+
 interface PhaseChipProps
   extends Omit<HTMLAttributes<HTMLSpanElement>, "color" | "children"> {
   /** Phase name, e.g. "Pn3m". Rendered as the chip's text (the always-on
    *  second channel) AND drives the hue via phaseColor() internally. */
   phase: string;
+  /** Optional second phase for a coexistence chip. When set, the chip reads
+   *  "<short(phase)> + <short(coexistWith)>" using the DOMINANT (`phase`) color
+   *  — a single tinted chip, never a split. (mockup builder coexistence chip) */
+  coexistWith?: string;
   /** "tint": phase-tinted fill + phase-colored text (default, the M-6 look).
    *  "solid": phase-colored fill + paper text (emphasis / dense rows). */
   variant?: PhaseChipVariant;
@@ -44,22 +54,25 @@ function variantStyle(variant: PhaseChipVariant, color: string): CSSProperties {
 
 export function PhaseChip({
   phase,
+  coexistWith,
   variant = "tint",
   size = "sm",
   className = "",
   ...props
 }: PhaseChipProps): JSX.Element {
   const color = phaseColor(phase);
+  const text = coexistWith ? `${short(phase)} + ${short(coexistWith)}` : phase;
   return (
     <span
       data-testid="phase-chip"
       data-variant={variant}
       data-size={size}
+      data-coexist={coexistWith ? "true" : undefined}
       className={`${base} ${sizeClass[size]} ${className}`}
       style={variantStyle(variant, color)}
       {...props}
     >
-      {phase}
+      {text}
     </span>
   );
 }
