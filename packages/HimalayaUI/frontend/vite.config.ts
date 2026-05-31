@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
@@ -38,5 +39,12 @@ export default defineConfig({
     outDir: "dist",
     emptyOutDir: true,
     sourcemap: true,
+    // The production build emits ONLY the new greenfield app. The old
+    // index.html → src/main.tsx is left for dev reference until cutover; it is
+    // not built (the rebuild does not preserve old-app usability). In dev,
+    // `vite` still serves index.html by path regardless of this input.
+    rollupOptions: {
+      input: { print: fileURLToPath(new URL("./print.html", import.meta.url)) },
+    },
   },
 });
