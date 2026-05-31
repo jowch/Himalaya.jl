@@ -58,7 +58,8 @@ export const Caret: Story = {
   },
 };
 
-// hot (q-link) → grown glyph + terracotta ring.
+// hot (q-link) → grown glyph emphasized with a darker, heavier accent OUTLINE
+// stroke on the glyph itself (no surrounding ring).
 export const Hot: Story = {
   args: {
     descriptor: peakGlyph({ source: "auto", hot: true, color: PHASE_COLOR }),

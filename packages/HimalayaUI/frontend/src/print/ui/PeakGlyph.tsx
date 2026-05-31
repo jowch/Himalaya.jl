@@ -58,28 +58,19 @@ export function PeakGlyph({
   const { shape, fill, stroke, strokeWidth, ring, r } = descriptor;
   const idAttr = dataPeakId !== undefined ? { "data-peak-id": String(dataPeakId) } : {};
 
+  // Hot (q-link) emphasis is carried by the glyph's OWN outline: a darker,
+  // heavier accent stroke — NOT a surrounding ring (review note 14).
   return (
     <g data-role="peak-glyph">
-      {ring && (
-        <circle
-          data-role="hot-ring"
-          cx={x}
-          cy={y - r}
-          r={r + 4}
-          fill="none"
-          stroke="var(--color-accent)"
-          strokeWidth={1.5}
-          strokeOpacity={0.7}
-        />
-      )}
       {shape === "caret" ? (
         // Hollow caret: an open chevron pointing down at the predicted q.
         <polyline
           data-shape="caret"
+          data-hot={ring ? "true" : undefined}
           points={`${x - r},${y - r * 1.4} ${x},${y} ${x + r},${y - r * 1.4}`}
           fill="none"
-          stroke={stroke}
-          strokeWidth={strokeWidth + 0.5}
+          stroke={ring ? "var(--color-accent)" : stroke}
+          strokeWidth={ring ? strokeWidth + 1.5 : strokeWidth + 0.5}
           strokeOpacity={opacity}
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -88,11 +79,12 @@ export function PeakGlyph({
       ) : (
         <polygon
           data-shape={shape}
+          data-hot={ring ? "true" : undefined}
           points={glyphPoints(shape, x, y, r)}
           fill={fill}
           fillOpacity={fill === "none" ? undefined : opacity}
-          stroke={fill === "none" ? stroke : haloStroke}
-          strokeWidth={strokeWidth}
+          stroke={ring ? "var(--color-accent)" : fill === "none" ? stroke : haloStroke}
+          strokeWidth={ring ? strokeWidth + 1.5 : strokeWidth}
           strokeOpacity={opacity}
           {...idAttr}
         />
