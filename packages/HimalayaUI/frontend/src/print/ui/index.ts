@@ -28,6 +28,7 @@ export type { ModalSize, ModalAlign, ModalVariant, ModalShellProps } from "./Mod
 export { IconButton } from "./IconButton";
 export type { IconButtonTone, IconButtonProps } from "./IconButton";
 export { FacetChip } from "./FacetChip";
+export { FilterChip } from "./FilterChip";
 export { GripHandle } from "./GripHandle";
 export { Card } from "./Card";
 export type { CardProps, CardElement } from "./Card";
