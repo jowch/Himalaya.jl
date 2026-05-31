@@ -59,6 +59,108 @@ end
     end
 end
 
+@testset "migrate_assignments! seeds auto-only (never-confirmed) exposures as indexed" begin
+    # The dominant production case: an analyzed exposure the user never
+    # confirmed has only an ACTIVE auto group (no custom group). Legacy
+    # confirmed_index ignored it (kind='custom' filter), so it read as null.
+    # The new model treats the auto selection as the default assignment, so the
+    # migration must seed state='indexed' + the auto members — converging with
+    # seed_assignment_if_absent! for a fresh analyze. This pins the single
+    # biggest behavior shift at the D-10 cutover.
+    mktempdir() do dir
+        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
+        e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
+
+        DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (20, ?, 'Pn3m', 0.1)", [e_id])
+        DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (21, ?, 'Im3m', 0.1)", [e_id])
+        DBInterface.execute(db, "INSERT INTO index_groups (id, exposure_id, kind, active) VALUES (200, ?, 'auto', 1)", [e_id])
+        DBInterface.execute(db, "INSERT INTO index_group_members (group_id, index_id) VALUES (200, 20)")
+        DBInterface.execute(db, "INSERT INTO index_group_members (group_id, index_id) VALUES (200, 21)")
+
+        DBInterface.execute(db, "DELETE FROM schema_migrations WHERE name = 'assignments_v1'")
+        DBInterface.execute(db, "DELETE FROM assignment_members WHERE exposure_id = ?", [e_id])
+        DBInterface.execute(db, "DELETE FROM assignments WHERE exposure_id = ?", [e_id])
+
+        HimalayaUI.migrate_assignments!(db)
+
+        state = Tables.rowtable(DBInterface.execute(db,
+            "SELECT state FROM assignments WHERE exposure_id = ?", [e_id]))
+        @test !isempty(state) && String(state[1].state) == "indexed"
+        members = Set(Int(m.index_id) for m in Tables.rowtable(DBInterface.execute(db,
+            "SELECT index_id FROM assignment_members WHERE exposure_id = ?", [e_id])))
+        @test members == Set([20, 21])
+    end
+end
+
+@testset "migrate_assignments! sentinel protects post-migration user edits" begin
+    # The load-bearing safety contract: migrate_schema! runs on EVERY server
+    # boot. Once the sentinel is set, a re-run must short-circuit and never
+    # clobber edits the user made after the first migration — otherwise an
+    # INSERT OR IGNORE would re-add deleted members on the next restart. The
+    # happy-path test deletes the sentinel to force a re-run, so this guard is
+    # otherwise entirely uncovered.
+    mktempdir() do dir
+        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
+        e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
+
+        DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (30, ?, 'Pn3m', 0.1)", [e_id])
+        DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (31, ?, 'Im3m', 0.1)", [e_id])
+        DBInterface.execute(db, "INSERT INTO index_groups (id, exposure_id, kind, active) VALUES (300, ?, 'custom', 1)", [e_id])
+        DBInterface.execute(db, "INSERT INTO index_group_members (group_id, index_id) VALUES (300, 30)")
+        DBInterface.execute(db, "INSERT INTO index_group_members (group_id, index_id) VALUES (300, 31)")
+
+        # First migration (force fresh).
+        DBInterface.execute(db, "DELETE FROM schema_migrations WHERE name = 'assignments_v1'")
+        DBInterface.execute(db, "DELETE FROM assignment_members WHERE exposure_id = ?", [e_id])
+        DBInterface.execute(db, "DELETE FROM assignments WHERE exposure_id = ?", [e_id])
+        HimalayaUI.migrate_assignments!(db)
+
+        # User edits the assignment AFTER migration: drops a member, sets null.
+        DBInterface.execute(db, "DELETE FROM assignment_members WHERE exposure_id = ? AND index_id = 31", [e_id])
+        DBInterface.execute(db, "UPDATE assignments SET state = 'null' WHERE exposure_id = ?", [e_id])
+
+        # Second boot: sentinel is present, so this must be a no-op.
+        HimalayaUI.migrate_assignments!(db)
+
+        state = Tables.rowtable(DBInterface.execute(db,
+            "SELECT state FROM assignments WHERE exposure_id = ?", [e_id]))[1].state
+        @test String(state) == "null"            # state edit preserved
+        members = Set(Int(m.index_id) for m in Tables.rowtable(DBInterface.execute(db,
+            "SELECT index_id FROM assignment_members WHERE exposure_id = ?", [e_id])))
+        @test members == Set([30])               # dropped member stays dropped
+    end
+end
+
+@testset "migrate_assignments! skips exposures with no active group" begin
+    # An exposure whose only group is inactive (active=0) must NOT get an
+    # assignment row — the migration keys strictly off active=1, mirroring the
+    # legacy active-group semantics.
+    mktempdir() do dir
+        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
+        e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
+
+        DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (40, ?, 'Pn3m', 0.1)", [e_id])
+        DBInterface.execute(db, "INSERT INTO index_groups (id, exposure_id, kind, active) VALUES (400, ?, 'auto', 0)", [e_id])
+        DBInterface.execute(db, "INSERT INTO index_group_members (group_id, index_id) VALUES (400, 40)")
+
+        DBInterface.execute(db, "DELETE FROM schema_migrations WHERE name = 'assignments_v1'")
+        DBInterface.execute(db, "DELETE FROM assignment_members WHERE exposure_id = ?", [e_id])
+        DBInterface.execute(db, "DELETE FROM assignments WHERE exposure_id = ?", [e_id])
+        HimalayaUI.migrate_assignments!(db)
+
+        @test isempty(Tables.rowtable(DBInterface.execute(db,
+            "SELECT 1 FROM assignments WHERE exposure_id = ?", [e_id])))
+        @test isempty(Tables.rowtable(DBInterface.execute(db,
+            "SELECT 1 FROM assignment_members WHERE exposure_id = ?", [e_id])))
+    end
+end
+
 @testset "_assignment_body shape" begin
     mktempdir() do dir
         db = HimalayaUI.open_db(joinpath(dir, "h.db"))
