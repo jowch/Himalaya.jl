@@ -15,10 +15,12 @@ interface PhaseChipProps
   /** Phase name, e.g. "Pn3m". Rendered as the chip's text (the always-on
    *  second channel) AND drives the hue via phaseColor() internally. */
   phase: string;
-  /** Optional second phase for a coexistence chip. When set, the chip reads
-   *  "<short(phase)> + <short(coexistWith)>" using the DOMINANT (`phase`) color
-   *  — a single tinted chip, never a split. (mockup builder coexistence chip) */
-  coexistWith?: string;
+  /** Optional coexisting phases beyond the dominant `phase`. When non-empty the
+   *  chip reads `<short(phase)> + <short(a)> + <short(b)>…` in the DOMINANT
+   *  (`phase`) color — a single tinted chip listing all phases, never a split.
+   *  The full phase-name text is the always-on second channel (survives
+   *  grayscale). Supports 2-, 3-, and N-phase coexistence. */
+  coexistWith?: string[];
   /** "tint": phase-tinted fill + phase-colored text (default, the M-6 look).
    *  "solid": phase-colored fill + paper text (emphasis / dense rows). */
   variant?: PhaseChipVariant;
@@ -61,13 +63,18 @@ export function PhaseChip({
   ...props
 }: PhaseChipProps): JSX.Element {
   const color = phaseColor(phase);
-  const text = coexistWith ? `${short(phase)} + ${short(coexistWith)}` : phase;
+  const coexist = coexistWith ?? [];
+  const text =
+    coexist.length > 0
+      ? [phase, ...coexist].map(short).join(" + ")
+      : phase;
   return (
     <span
       data-testid="phase-chip"
       data-variant={variant}
       data-size={size}
-      data-coexist={coexistWith ? "true" : undefined}
+      data-coexist={coexist.length > 0 ? "true" : undefined}
+      data-coexist-count={coexist.length > 0 ? String(coexist.length + 1) : undefined}
       className={`${base} ${sizeClass[size]} ${className}`}
       style={variantStyle(variant, color)}
       {...props}
