@@ -77,4 +77,21 @@ describe("axisTicks", () => {
     expect(ts.length).toBeGreaterThan(0);
     expect(ts.every((t) => t.kind === "major")).toBe(true);
   });
+  it("never leaves a sub-decade window unlabelled (zoom regression)", () => {
+    // Domain entirely between two decade multiples: no m·10ⁿ lands inside, so
+    // the naive decade loop returned [] → a bare axis. Must still produce ticks.
+    const ax = makeAxis([0.013, 0.017], [0, 400], "log");
+    const ts = axisTicks(ax);
+    expect(ts.length).toBeGreaterThan(0);
+    expect(ts.some((t) => t.kind !== "minor")).toBe(true); // at least one label
+  });
+  it("caps tick density on wide log ranges (overplot regression)", () => {
+    // Intensity over 7 decades: the naive loop emitted ~64 ticks / ~22 labels.
+    const ax = makeAxis([1e-2, 1e5], [0, 400], "log");
+    const ts = axisTicks(ax, 6);
+    const labelled = ts.filter((t) => t.kind !== "minor").length;
+    expect(labelled).toBeGreaterThan(0);
+    expect(labelled).toBeLessThanOrEqual(8); // count + 2
+    expect(ts.every((t) => t.value >= 1e-2 - 1e-9 && t.value <= 1e5 + 1e-9)).toBe(true);
+  });
 });

@@ -38,7 +38,15 @@ export type TickKind = "major" | "mid" | "minor";
 export interface Tick { value: number; kind: TickKind; }
 
 /** Decade-anchored ticks for log axes (major = 10ⁿ, mid = ×2/×5, minor = rest);
- *  linear axes pass d3's nice ticks through as majors. */
+ *  linear axes pass d3's nice ticks through as majors.
+ *
+ *  Density is adaptive so the axis is always legible AND always labelled:
+ *   - a moderate range keeps the full detailed set (decades + ×2/×5 + minors);
+ *   - a wide range (intensity over many decades) thins to majors, then strides
+ *     the decades, so the label count stays near `count`;
+ *   - a degenerate sub-decade window (e.g. after a tight wheel-zoom) where no
+ *     decade multiple lands in range falls back to d3's nice ticks, and finally
+ *     to the geometric endpoints — never an empty, unlabelled axis. */
 export function axisTicks(axis: Axis1D, count = 6): Tick[] {
   if (axis.type === "linear") {
     return axis.ticks(count).map((value) => ({ value, kind: "major" as const }));
@@ -46,17 +54,48 @@ export function axisTicks(axis: Axis1D, count = 6): Tick[] {
   const lo = Math.min(axis.domain[0], axis.domain[1]);
   const hi = Math.max(axis.domain[0], axis.domain[1]);
   if (!(lo > 0) || !(hi > 0)) return [];
-  const out: Tick[] = [];
-  for (let e = Math.floor(Math.log10(lo)); e <= Math.floor(Math.log10(hi)); e++) {
+
+  const inRange = (v: number): boolean =>
+    v >= lo * (1 - 1e-9) && v <= hi * (1 + 1e-9);
+  const eLo = Math.floor(Math.log10(lo));
+  const eHi = Math.floor(Math.log10(hi));
+
+  const detailed: Tick[] = [];
+  for (let e = eLo; e <= eHi; e++) {
     const decade = Math.pow(10, e);
     for (const m of [1, 2, 3, 4, 5, 6, 7, 8, 9]) {
       const value = m * decade;
-      if (value < lo * (1 - 1e-9) || value > hi * (1 + 1e-9)) continue;
+      if (!inRange(value)) continue;
       const kind: TickKind = m === 1 ? "major" : m === 2 || m === 5 ? "mid" : "minor";
-      out.push({ value, kind });
+      detailed.push({ value, kind });
     }
   }
-  return out;
+
+  // Sub-decade window with no decade multiple in range → never leave the axis
+  // bare: use d3's nice log ticks, and the geometric endpoints as a last resort.
+  if (detailed.length === 0) {
+    const nice = axis.ticks(count);
+    if (nice.length > 0) {
+      return nice.map((value) => ({ value, kind: "major" as const }));
+    }
+    return [lo, Math.sqrt(lo * hi), hi].map((value) => ({
+      value,
+      kind: "major" as const,
+    }));
+  }
+
+  const cap = count + 2;
+  const labelled = detailed.filter((t) => t.kind !== "minor").length;
+  if (labelled <= cap) return detailed;
+
+  // Too dense → decades only, strided to keep ~`count` labels.
+  const majors = detailed.filter((t) => t.kind === "major");
+  if (majors.length === 0) {
+    return detailed.filter((t) => t.kind === "mid"); // sub-decade-ish: keep ×2/×5
+  }
+  if (majors.length <= cap) return majors;
+  const stride = Math.ceil(majors.length / count);
+  return majors.filter((_, i) => i % stride === 0);
 }
 
 export interface Projection {
