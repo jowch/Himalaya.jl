@@ -3,6 +3,7 @@ import {
   makeAxis,
   makeProjection,
   positiveExtent,
+  axisTicks,
 } from "../../src/print/plot/projection";
 
 describe("makeAxis", () => {
@@ -55,5 +56,25 @@ describe("positiveExtent", () => {
 
   it("falls back when there is no positive data", () => {
     expect(positiveExtent([0, -5, NaN])).toEqual([1, 10]);
+  });
+});
+
+describe("axisTicks", () => {
+  it("classifies log decades / mid / minor across a narrow range", () => {
+    const ax = makeAxis([0.02, 0.23], [0, 400], "log");
+    const ts = axisTicks(ax);
+    const major = ts.filter((t) => t.kind === "major").map((t) => t.value);
+    const mid = ts.filter((t) => t.kind === "mid").map((t) => t.value);
+    expect(major).toContainEqual(0.1);
+    expect(mid.some((v) => Math.abs(v - 0.05) < 1e-9)).toBe(true);
+    expect(mid.some((v) => Math.abs(v - 0.2) < 1e-9)).toBe(true);
+    expect(ts.every((t) => t.value >= 0.02 - 1e-9 && t.value <= 0.23 + 1e-9)).toBe(true);
+    expect(ts.find((t) => Math.abs(t.value - 0.03) < 1e-9)?.kind).toBe("minor");
+  });
+  it("passes linear scales straight through as majors", () => {
+    const ax = makeAxis([0, 10], [0, 400], "linear");
+    const ts = axisTicks(ax, 5);
+    expect(ts.length).toBeGreaterThan(0);
+    expect(ts.every((t) => t.kind === "major")).toBe(true);
   });
 });

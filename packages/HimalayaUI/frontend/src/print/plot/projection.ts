@@ -34,6 +34,31 @@ export function makeAxis(
   };
 }
 
+export type TickKind = "major" | "mid" | "minor";
+export interface Tick { value: number; kind: TickKind; }
+
+/** Decade-anchored ticks for log axes (major = 10ⁿ, mid = ×2/×5, minor = rest);
+ *  linear axes pass d3's nice ticks through as majors. */
+export function axisTicks(axis: Axis1D, count = 6): Tick[] {
+  if (axis.type === "linear") {
+    return axis.ticks(count).map((value) => ({ value, kind: "major" as const }));
+  }
+  const lo = Math.min(axis.domain[0], axis.domain[1]);
+  const hi = Math.max(axis.domain[0], axis.domain[1]);
+  if (!(lo > 0) || !(hi > 0)) return [];
+  const out: Tick[] = [];
+  for (let e = Math.floor(Math.log10(lo)); e <= Math.floor(Math.log10(hi)); e++) {
+    const decade = Math.pow(10, e);
+    for (const m of [1, 2, 3, 4, 5, 6, 7, 8, 9]) {
+      const value = m * decade;
+      if (value < lo * (1 - 1e-9) || value > hi * (1 + 1e-9)) continue;
+      const kind: TickKind = m === 1 ? "major" : m === 2 || m === 5 ? "mid" : "minor";
+      out.push({ value, kind });
+    }
+  }
+  return out;
+}
+
 export interface Projection {
   x: Axis1D;
   y: Axis1D;
