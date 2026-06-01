@@ -1,9 +1,11 @@
+import { useState } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { TracePlot, type TraceModel } from "./TracePlot";
 import type { PlotPeak } from "./marks/PlotPeaks";
 import { realTraces } from "../fixtures/realTraces";
 import { realMembers, transitionSeries } from "../fixtures/realSeriesMembers";
 import type { SeriesMember } from "../../api";
+import { Card, Kicker, SegmentedControl, Button } from "../ui";
 
 function modelFor(member: SeriesMember): TraceModel {
   const trace = realTraces[member.exposure_id as number]!;
@@ -64,5 +66,72 @@ export const TransitionOverlay: Story = {
   args: {
     traces: transitionSeries.map(modelFor),
     height: 360,
+  },
+};
+
+// HeroPlate: the full Print figure plate — closed-look primitives composing the
+// publication framing around the redesigned TracePlot, matching the mockup at
+// docs/redesign-mockups/2026-05-29-focus-plot.html.
+export const HeroPlate: Story = {
+  // args satisfies the Story constraint; render overrides the entire output.
+  args: { traces: [heroModel], height: 360 },
+  render: () => {
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    const [scale, setScale] = useState<"log" | "linear">("log");
+    return (
+      <div style={{ maxWidth: 640, margin: "0 auto" }}>
+        <Card elevated padding="md">
+          {/* Header rail */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "flex-start",
+              justifyContent: "space-between",
+              marginBottom: 12,
+              gap: 12,
+            }}
+          >
+            {/* Left: kicker + title + subtitle stack */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              <Kicker tone="accent" as="div">Integration</Kicker>
+              <div className="text-display" style={{ lineHeight: 1.15 }}>
+                exp 65 · Ia3d
+              </div>
+              <div className="text-data" style={{ opacity: 0.7 }}>
+                smp_65 · SSRL Apr 2026
+              </div>
+            </div>
+            {/* Right: scale toggle + add-peak button */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+              <SegmentedControl
+                aria-label="Scale"
+                options={[
+                  { value: "log", label: "Log" },
+                  { value: "linear", label: "Linear" },
+                ]}
+                value={scale}
+                onChange={(v) => setScale(v)}
+                size="xs"
+              />
+              <Button variant="ghost" onClick={() => console.log("addPeak")}>
+                + Peak
+              </Button>
+            </div>
+          </div>
+          {/* Plot body */}
+          <TracePlot
+            traces={[heroModel]}
+            height={360}
+            paperColor="var(--color-paper)"
+            yType={scale}
+            interaction={{
+              onXDomain: () => {},
+              onAddPeak: () => {},
+              onClickPeak: () => {},
+            }}
+          />
+        </Card>
+      </div>
+    );
   },
 };
