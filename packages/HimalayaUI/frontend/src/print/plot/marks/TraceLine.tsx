@@ -5,8 +5,6 @@ import { type Trace } from "../../../api";
 export interface TraceLineProps {
   trace: Trace;
   projection: Projection;
-  /** Resolved stroke/fill colour (e.g. phaseColor output). */
-  color: string;
   /** Draw the ±σ band behind the line (default true; needs trace.sigma). */
   band?: boolean;
 }
@@ -14,7 +12,6 @@ export interface TraceLineProps {
 export function TraceLine({
   trace,
   projection,
-  color,
   band = true,
 }: TraceLineProps): JSX.Element {
   const { x, y } = projection;
@@ -45,13 +42,13 @@ export function TraceLine({
   return (
     <g data-role="trace-line">
       {bandPath ? (
-        <path d={bandPath} fill={color} opacity={0.15} stroke="none" />
+        <path d={bandPath} fill="var(--color-ink-soft)" opacity={0.12} stroke="none" />
       ) : null}
       <path
         d={linePath}
         fill="none"
-        stroke={color}
-        strokeWidth={1.25}
+        stroke="var(--color-ink-soft)"
+        strokeWidth={1.8}
         strokeLinejoin="round"
       />
     </g>

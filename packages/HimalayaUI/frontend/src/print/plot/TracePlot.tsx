@@ -211,12 +211,7 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
               </>
             ) : null}
             {traces.map((t, i) => (
-              <TraceLine
-                key={`line-${i}`}
-                trace={t.trace}
-                projection={projection}
-                color={t.phase ? phaseColor(t.phase) : UNINDEXED_COLOR}
-              />
+              <TraceLine key={`line-${i}`} trace={t.trace} projection={projection} />
             ))}
             {traces.map((t, i) => (
               <PlotPeaks
