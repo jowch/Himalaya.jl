@@ -44,7 +44,7 @@ describe("TracePlot", () => {
         interaction={{ onXDomain: () => {}, onAddPeak }}
       />,
     );
-    // Click far from the single peak (q=0.2 ≈ px 274 in plot space). px=148.
+    // Click in plot body: plotPx = 200-60 = 140 ∈ [0,416], plotPy = 100-20 = 80 ∈ [0,232].
     fireEvent.click(container.querySelector("svg")!, {
       clientX: 200,
       clientY: 100,
@@ -63,9 +63,9 @@ describe("TracePlot", () => {
       />,
     );
     const svg = container.querySelector("svg")!;
-    // Left axis gutter (clientX < margins.left = 52): plotPx negative.
+    // Left axis gutter (clientX=10 < margins.left=60): plotPx = 10-60 = -50 < 0.
     fireEvent.click(svg, { clientX: 10, clientY: 100 });
-    // Bottom label strip (clientY beyond plotHeight = 300-12-40 = 248).
+    // Bottom label strip (clientY=285 > top+plotHeight = 20+232 = 252): plotPy = 285-20 = 265 > 232.
     fireEvent.click(svg, { clientX: 200, clientY: 285 });
     expect(onAddPeak).not.toHaveBeenCalled();
   });

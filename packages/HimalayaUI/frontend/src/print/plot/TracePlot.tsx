@@ -73,7 +73,7 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
     yType = "log",
     axes = true,
     xLabel = "q (Å⁻¹)",
-    yLabel = "I",
+    yLabel = "intensity (a.u.)",
     interaction = false,
     overlay,
     height = 320,
@@ -88,7 +88,7 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
   const curXDomain = xDomain ?? xExtent;
 
   const margins: Margins = axes
-    ? { top: 12, right: 14, bottom: 40, left: 52 }
+    ? { top: 20, right: 24, bottom: 48, left: 60 }
     : { top: 4, right: 4, bottom: 4, left: 4 };
 
   const stateRef = useRef<PlotState | null>(null);
