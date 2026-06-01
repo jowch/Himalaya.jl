@@ -48,14 +48,27 @@ export function PlotPeaks({
           ...(p.hot ? { hot: true } : {}),
         });
         return (
-          <PeakGlyph
-            key={p.id}
-            descriptor={descriptor}
-            x={px}
-            y={py}
-            dataPeakId={p.id}
-            {...(paperColor ? { haloStroke: paperColor } : {})}
-          />
+          <g key={p.id}>
+            {p.hot ? (
+              <line
+                data-role="peak-qline"
+                x1={px}
+                y1={y.range[0]}
+                x2={px}
+                y2={y.range[1]}
+                stroke={color}
+                strokeWidth={1}
+                opacity={0.6}
+              />
+            ) : null}
+            <PeakGlyph
+              descriptor={descriptor}
+              x={px}
+              y={py}
+              dataPeakId={p.id}
+              {...(paperColor ? { haloStroke: paperColor } : {})}
+            />
+          </g>
         );
       })}
     </g>

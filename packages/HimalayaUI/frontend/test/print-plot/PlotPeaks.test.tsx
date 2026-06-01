@@ -27,4 +27,27 @@ describe("PlotPeaks", () => {
       container.querySelectorAll('[data-role="peak-glyph"]').length,
     ).toBe(1);
   });
+
+  it("draws a q-link line only for hot peaks", () => {
+    const { container, rerender } = render(
+      <svg>
+        <PlotPeaks
+          peaks={[{ id: 1, q: 0.2, intensity: 20, source: "auto" }]}
+          projection={proj}
+          color="var(--color-accent)"
+        />
+      </svg>,
+    );
+    expect(container.querySelector('[data-role="peak-qline"]')).toBeNull();
+    rerender(
+      <svg>
+        <PlotPeaks
+          peaks={[{ id: 1, q: 0.2, intensity: 20, source: "auto", hot: true }]}
+          projection={proj}
+          color="var(--color-accent)"
+        />
+      </svg>,
+    );
+    expect(container.querySelector('[data-role="peak-qline"]')).toBeTruthy();
+  });
 });
