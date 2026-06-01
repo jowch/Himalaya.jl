@@ -1,12 +1,12 @@
 import { render } from "@testing-library/react";
 import { describe, it, expect } from "vitest";
-import { makeAxis } from "../../src/print/plot/projection";
+import { makeAxis, axisTicks } from "../../src/print/plot/projection";
 import { Axis } from "../../src/print/plot/Axis";
 
 describe("Axis", () => {
-  it("renders one tick label per tick value (bottom)", () => {
+  it("renders one tick label per labelled tick value (bottom)", () => {
     const a = makeAxis([0.01, 1], [0, 300], "log");
-    const ticks = a.ticks(6);
+    const labelled = axisTicks(a).filter((t) => t.kind !== "minor");
     const { container } = render(
       <svg>
         <Axis
@@ -18,7 +18,7 @@ describe("Axis", () => {
       </svg>,
     );
     const texts = container.querySelectorAll('[data-role="axis-bottom"] text');
-    expect(texts.length).toBe(ticks.length);
+    expect(texts.length).toBe(labelled.length);
   });
 
   it("renders a label when provided (left)", () => {
@@ -38,5 +38,16 @@ describe("Axis", () => {
       (t) => t.textContent === "I",
     );
     expect(labels.length).toBe(1);
+  });
+
+  it("renders a spine and decade gridlines on the bottom axis", () => {
+    const ax = makeAxis([0.02, 0.23], [0, 400], "log");
+    const { container } = render(
+      <svg><Axis axis={ax} orientation="bottom" plotWidth={400} plotHeight={200} label="q (Å⁻¹)" /></svg>,
+    );
+    expect(container.querySelector('[data-role="axis-spine"]')).toBeTruthy();
+    expect(container.querySelectorAll('[data-role="gridline"]').length).toBeGreaterThan(0);
+    const texts = container.querySelectorAll('[data-role="axis-bottom"] text');
+    expect(texts.length).toBeGreaterThan(0);
   });
 });
