@@ -66,15 +66,19 @@ export function CombScaffold({ rows, xDomain, maxWidth, ariaLabel, children }: P
 
   return (
     <div className="flex items-stretch" style={{ maxWidth: maxW }} data-testid="comb-scaffold">
-      {/* Pinned gutter (HTML, never scrolled) — vertically aligned to the SVG rows. */}
-      <div className="shrink-0 select-none" style={{ width: GUTTER_W }}>
+      {/* Pinned gutter (HTML, never scrolled) — vertically aligned to the SVG rows.
+          The top pad is the container's own padding (NOT a margin on row 0): a child
+          margin-top would collapse through this block — which has no BFC — and shove
+          the whole gutter down relative to the SVG pane (an overflow BFC) whose row
+          math already bakes in TOP_PAD. Padding the container keeps the two aligned. */}
+      <div className="shrink-0 select-none" style={{ width: GUTTER_W, paddingTop: TOP_PAD }}>
         {rows.map((r, i) => (
           <div
             key={i}
             data-role="gutter-row"
             {...(r.preview ? { "data-preview": "true" } : {})}
             className="flex flex-col justify-end pr-2"
-            style={{ height: ROW_H, marginTop: i === 0 ? TOP_PAD : 0, paddingBottom: 8 }}
+            style={{ height: ROW_H, paddingBottom: 8 }}
           >
             <div className={`font-mono text-data leading-none ${r.preview ? "text-ink-faint" : "text-ink"}`}>
               {r.gutterTitle}

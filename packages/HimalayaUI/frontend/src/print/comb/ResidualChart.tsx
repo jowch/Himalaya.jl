@@ -4,7 +4,10 @@ import { assembleRows, combQDomain, type CombSeries, type CombRow } from "./comb
 const TOL = 1e-6;
 const RESID_DOMAIN = 0.03; // fixed symmetric y-domain (±3%)
 const BAND = 0.022;        // tolerance band drawn at ±2.2%
-const HALF_SPAN = ROW_H / 2 - 9; // px from baseline to the row's ±RESID_DOMAIN edge
+// px from baseline to the row's ±RESID_DOMAIN edge. Capped at the room BELOW the
+// baseline (baselineY sits ROW_H-14 from the row top → 14px to the bottom edge), so a
+// clamped negative residual stays inside the row rather than bleeding into the gap.
+const HALF_SPAN = ROW_H / 2 - 10;
 
 interface Props {
   assigned: CombSeries[];
