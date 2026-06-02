@@ -149,3 +149,13 @@ describe("isExcluded via scanContent — print/detector authoring", () => {
     expect(scanContent("print/components/Foo.tsx", `<span className="text-[11px]" />`).length).toBeGreaterThan(0);
   });
 });
+
+describe("isExcluded via scanContent — print/comb authoring", () => {
+  it("excludes src/print/comb from appearance rules", () => {
+    expect(scanContent("print/comb/CombChart.tsx", `<circle stroke="oklch(0.57 0.15 58)" />`)).toEqual([]);
+    expect(scanContent("print/comb/CombScaffold.tsx", `<text fontSize={9.5} fill="var(--color-ink-faint)" />`)).toEqual([]);
+  });
+  it("still ENFORCES print/components (placement-only composites)", () => {
+    expect(scanContent("print/components/Foo.tsx", `<span className="text-[11px]" />`).length).toBeGreaterThan(0);
+  });
+});
