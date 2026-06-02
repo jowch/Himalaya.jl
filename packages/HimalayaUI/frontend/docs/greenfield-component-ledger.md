@@ -37,14 +37,20 @@ flagged ⚠️ below.
 
 ## Layer 0 — Primitives (`src/print/ui/`, design-guard-exempt)
 
-**39 built — the foundation is complete.** Appearance lives here; consumers pass placement only.
+**41 built — the foundation is complete.** Appearance lives here; consumers pass placement only.
 
 `Badge` · `BonnetBadge` · `Button` · `Card` · `CheckCircle` · `Chip` · `Dot` · `EmptyState` ·
 `FacetChip` · `FilterChip` · `GripHandle` · `HintText` · `IconButton` · `Input` · `KbKey` ·
 `KbLegend` · `Kicker` · `Menu` · `MetaList` · `ModalShell` · `PeakGlyph` · `PhaseChip` ·
-`PhaseStrip` · `ProgressBar` · `RejectOverlay` · `ScoreBar` · `SearchInput` ·
-`SegmentedControl` · `SignalBars` · `Slider` · `StageTabs` · `TagEditor` · `TagList` ·
+`PhaseLabel` · `PhaseStrip` · `ProgressBar` · `RejectOverlay` · `ScoreBar` · `SearchInput` ·
+`SegmentedControl` · `SignalBars` · `Slider` · `StageTabs` · `Swatch` · `TagEditor` · `TagList` ·
 `TagPill` · `Toast` · `ToggleSwitch` · `Tooltip` · `TopBar` · `Wordmark` — all ✅
+
+> Batch 3 (2026-06-02) added two refactor-on-contact primitives so phase color stays out of the
+> placement-only composite layer (mirrors `ScoreBar`/`PhaseChip`): **`Swatch`** (phase-colored 9px
+> color sample, `shape: "square"|"circle"`, `data-swatch`/`data-phase`/`data-shape`) and
+> **`PhaseLabel`** (phase-colored text wrapper, placement `className` sizes it). `Dot` was left
+> untouched (its `tone` enum stays status-pure; a circular color sample is a `Swatch`).
 
 **Primitive-level watch list** (decide at refactor-on-contact, may need a new primitive or a variant):
 
@@ -87,11 +93,11 @@ flagged ⚠️ below.
 | `Verdict` | kept/dropped state row | `Dot` + `Button` | loupe | ✅ | `Verdict.tsx` |
 | ★ **`Thumbnail`** | mini `DetectorImage` + frame-no + rep-dot + reject-X | `DetectorImage`+`Dot`+`RejectOverlay`+text | focus, sample-table, loupe (**3 sites**) | ✅ | `components/Thumbnail.tsx` |
 | ★ **`ThumbnailGallery`** | filmstrip wrapper (exposure switcher / loupe strip) | `Thumbnail`×N | focus DetectorPanel, sample-table row, loupe | ✅ | `components/ThumbnailGallery.tsx` |
-| `PhaseBlock` | assigned-phase line (name+score+remove) | text+`ScoreBar`+`IconButton` | focus assignment cart | ⬜ | — |
-| `FolioHeader` | folio page header (kicker+title+sub+count) | `Kicker`+text | series-folio | ⬜ | — |
-| `AutoGroup` | confident-expert summary box (★ + text + actions) | icon+text+`Button` | scoping, builder | ⬜ | — |
-| `MemberRow` / `TRow` | trace-list row (grip+swatch+name+phase) | `GripHandle`+`Dot`+`PhaseChip` | series-builder | ⬜ | — |
-| `ReadingRow` | phases-present line (dot+name+lattice span) | `Dot`+text | series-plot (reading panel) | ⬜ | — |
+| `PhaseBlock` | assigned-phase line (name+score+bar+remove) | `PhaseLabel`+`ScoreBar`+`IconButton` | focus assignment cart | ✅ | `PhaseBlock.tsx` |
+| `FolioHeader` | folio page header (kicker+title+sub+count) | `Kicker`+text | series-folio | ✅ | `FolioHeader.tsx` |
+| `AutoGroup` | confident-expert summary box (★ + text + actions) | star svg+text+link-buttons | scoping, builder | ✅ | `AutoGroup.tsx` |
+| `MemberRow` | trace-list row (grip+swatch+name+phase) — **builder `.trow` only** | `GripHandle`+`Swatch`+`PhaseChip` | series-builder | ✅ | `MemberRow.tsx` |
+| `ReadingRow` | phases-present line (dot+name+span+lattice) | `Swatch`+`PhaseLabel`+text | series-plot (reading panel) | ✅ | `ReadingRow.tsx` |
 | `KeptCell` / `TagsCell` / `StatusCell` / `SpecCell` | sample-table cell composites | `TagList`/`PhaseChip`/`CheckCircle`/`Dot`/text | sample-table | ✅ | `components/{SpecCell,KeptCell,StatusCell}.tsx` (TagsCell = TagList primitive, no new file) |
 
 ---
@@ -170,16 +176,18 @@ All ⬜ — deferred until composite + renderer layers are proven in Storybook (
 |---|---|---|---|
 | `HeatmapChart` (Waterfall⇄Heatmap toggle) | ⛔ **out of scope** | 2026-06-02 | Not needed for the rebuild; waterfall is the canonical Series representation. |
 | `TrackingLine` / cross-trace migration track + ghost rings | ⏸ **deferred** | 2026-06-02 | Buildable client-side from `confirmed_index.phase + lattice_d` (legacy `buildAnchorMap` proves it), but q-proximity matching is fragile and the connector is hard to read. The peak-q cursor delivers ~90% of the reading value. Revisit only if users ask. |
+| `MemberRow` series-plot `.member` variant (gradient coexistence swatch + inline colored phase names + lattice data) | ⏸ **split out** | 2026-06-02 | `MemberRow` (Batch 3) is the series-**builder** `.trow` only. The series-plot `.member` is a different row (gradient swatch for coexistence, per-phase inline names) — belongs with the later MemberList/SeriesPlate work. `Swatch` will gain a gradient/coexistence mode then (stub comment already in `Swatch.tsx`). |
+| Type-scale snaps: `FolioHeader` title 31px→`text-display` (27); `PhaseBlock` name 22px→`text-headline` (19) | ✅ **snap to named role** | 2026-06-02 | The mockups use off-scale serif sizes (31/22px) with no named role; `text-[31px]` is guard-banned. Composites snap to the **nearest named role** rather than add a one-off scale step. If fidelity review objects, the fix is a new `--text-*` step in `styles.css` (the authoring layer), never an arbitrary in a composite. Folio count 26px = `text-headline-lg` is exact. |
 
 ---
 
 ## Coverage summary
 
-- **Layer 0 primitives:** 39/39 ✅ (foundation complete)
+- **Layer 0 primitives:** 41/41 ✅ (foundation complete; +`Swatch` +`PhaseLabel`, Batch 3)
 - **Layer 1 renderers:** 6 ✅ · 3 ⬜ (`CardFigure`, `CustomPreview`, `CleanFigure`) · 1 ⛔ · 1 ⏸
-- **Layer 2 tier-1 composites:** 12 ✅ · ~4 ⬜
+- **Layer 2 tier-1 composites:** 17 ✅ — **layer COMPLETE** (Batch 3 closed `PhaseBlock`/`FolioHeader`/`AutoGroup`/`MemberRow`/`ReadingRow`)
 - **Layer 3 tier-2 panels:** 1 ✅ · ~16 ⬜
 - **Modals/overlays:** 0 ✅ (`ModalShell` chrome ✅) · ~6 gap clusters ⬜
 - **Layer 4 pages:** 0/5 ⬜
 
-The build frontier is **Layer 2 completion + remaining Layer 1 renderers (`CardFigure`, `CustomPreview`, `CleanFigure`)**, which between them unlock every Layer 3 panel.
+The tier-1 composite layer is now complete. The build frontier is **the 3 remaining Layer 1 renderers (`CardFigure`, `CustomPreview`, `CleanFigure`)** — which unlock `SeriesCard`/`CustomIndexModal`/`ExportSheet` — plus the now-unblocked **Layer 3 tier-2 panels** (`AssignmentCart`←`PhaseBlock`, `CandidateList`←`CandidateRow`, `ReadingPanel`←`ReadingRow`, `MemberList`←`MemberRow`, `Gallery`/`SeriesCard`←`FolioHeader`, `SheetTable`←`SampleTableRow`, the loupe panels).
