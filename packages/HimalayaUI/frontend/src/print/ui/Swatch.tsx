@@ -21,6 +21,7 @@ export function Swatch({ phase, shape = "square", className = "" }: SwatchProps)
     <span
       data-swatch
       data-phase={phase}
+      data-shape={shape}
       aria-hidden="true"
       className={`inline-block shrink-0 h-[9px] w-[9px] ${shapeClass[shape]} ${className}`}
       style={{ background: phaseColor(phase) }}

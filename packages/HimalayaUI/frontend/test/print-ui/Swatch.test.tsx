@@ -31,13 +31,13 @@ describe("<Swatch> (print)", () => {
     expect(container.querySelector("[data-swatch]")!).toHaveAttribute("aria-hidden", "true");
   });
 
-  it("carries rounded-sm geometry by default (square)", () => {
+  it("exposes square shape by default on data-shape", () => {
     const { container } = render(<Swatch phase="Lamellar" />);
-    expect((container.querySelector("[data-swatch]") as HTMLElement).className).toContain("rounded-sm");
+    expect(container.querySelector("[data-swatch]")!).toHaveAttribute("data-shape", "square");
   });
 
-  it("carries rounded-full geometry when shape='circle'", () => {
+  it("exposes circle shape on data-shape when shape='circle'", () => {
     const { container } = render(<Swatch phase="Lamellar" shape="circle" />);
-    expect((container.querySelector("[data-swatch]") as HTMLElement).className).toContain("rounded-full");
+    expect(container.querySelector("[data-swatch]")!).toHaveAttribute("data-shape", "circle");
   });
 });
