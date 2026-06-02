@@ -131,13 +131,15 @@ function relToSrc(absPath) {
   return relative(SRC_DIR, absPath).split(sep).join("/");
 }
 
-// src/components/ui/**, src/print/ui/**, and src/print/plot/** are excluded
-// entirely (where appearance is authored — primitives and the plot engine).
+// src/components/ui/**, src/print/ui/**, src/print/plot/**, and src/print/detector/**
+// are excluded (appearance authored — primitives, the trace-plot engine, and the
+// detector rendering layer that paints real pixels).
 function isExcluded(relPath) {
   return (
     relPath.startsWith("components/ui/") ||
     relPath.startsWith("print/ui/") ||
-    relPath.startsWith("print/plot/")
+    relPath.startsWith("print/plot/") ||
+    relPath.startsWith("print/detector/")
   );
 }
 

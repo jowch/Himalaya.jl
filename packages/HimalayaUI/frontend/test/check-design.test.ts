@@ -139,3 +139,13 @@ describe("isExcluded via scanContent — print/ui authoring", () => {
     expect(v.map((h) => h.rule)).toContain("no-arbitrary-text");
   });
 });
+
+describe("isExcluded via scanContent — print/detector authoring", () => {
+  it("excludes src/print/detector from appearance rules", () => {
+    expect(scanContent("print/detector/DetectorRings.tsx", `<circle stroke="oklch(0.9 0.045 80)" />`)).toEqual([]);
+    expect(scanContent("print/detector/detectorLut.ts", `const stop = "oklch(0.55 0.12 45)";`)).toEqual([]);
+  });
+  it("still ENFORCES print/components (placement-only composites)", () => {
+    expect(scanContent("print/components/Foo.tsx", `<span className="text-[11px]" />`).length).toBeGreaterThan(0);
+  });
+});
