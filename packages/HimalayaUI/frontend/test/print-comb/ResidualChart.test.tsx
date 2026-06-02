@@ -46,11 +46,24 @@ describe("ResidualChart", () => {
     expect(Number(neg.getAttribute("cy"))).toBeGreaterThan(baseY); // below = larger y
   });
 
-  it("marks an out-of-domain residual as overflow (open dot)", () => {
+  it("marks an out-of-domain residual with a sign-flipped off-scale chevron + value label (no dot)", () => {
     const { container } = render(<ResidualChart assigned={[PN3M]} />);
-    const overflow = container.querySelector('[data-role="resid-point"][data-overflow="true"] circle')!;
-    expect(overflow.getAttribute("data-q") ?? overflow.parentElement!.getAttribute("data-q")).toBe("0.1234");
-    expect(overflow.getAttribute("fill")).toBe("none");
+    const overflow = container.querySelector('[data-role="resid-point"][data-overflow="true"]')!;
+    expect(overflow.getAttribute("data-q")).toBe("0.1234"); // PN3M √6 residual +0.041
+    const arrow = overflow.querySelector('[data-role="resid-overflow"]')!;
+    expect(arrow.getAttribute("data-dir")).toBe("up");      // positive → off the TOP
+    expect(overflow.querySelector("circle")).toBeNull();    // chevron replaces the dot
+    expect(overflow.textContent).toContain("%");            // value label present
+  });
+
+  it("points the off-scale chevron DOWN for a large negative residual", () => {
+    const neg: CombSeries = {
+      phase: "Pn3m", color: "oklch(0.570 0.150 58)",
+      teeth: [{ q: 0.09, label: "√3", observed: true, residual: -0.05 }],
+    };
+    const { container } = render(<ResidualChart assigned={[neg]} />);
+    const arrow = container.querySelector('[data-role="resid-overflow"]')!;
+    expect(arrow.getAttribute("data-dir")).toBe("down");    // negative → off the BOTTOM
   });
 
   it("a hovered point goes hot keeping its own colour (no accent)", () => {

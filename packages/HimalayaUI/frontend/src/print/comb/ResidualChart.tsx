@@ -74,6 +74,38 @@ function renderResidRow(
           const overflow = Math.abs(res) > RESID_DOMAIN;
           const hot = hoveredQ !== undefined && Math.abs(t.q - hoveredQ) <= TOL;
           const cx = ctx.x.to(t.q);
+          if (overflow) {
+            const up = res > 0;
+            const edgeY = y0 + (up ? -HALF_SPAN : HALF_SPAN);
+            const apexY = up ? edgeY - 3 : edgeY + 3;   // chevron apex pokes outward
+            const baseY = up ? edgeY + 2 : edgeY - 2;
+            const labelY = up ? edgeY + 9 : edgeY - 6;  // label sits inward, inside the row
+            const label = (up ? "+" : "−") + Math.round(Math.abs(res) * 100) + "%";
+            return (
+              <g
+                key={j}
+                data-role="resid-point"
+                data-q={t.q}
+                data-overflow="true"
+                {...(hot ? { "data-hot": "true" } : {})}
+                style={{ cursor: onHoverQ ? "pointer" : "default" }}
+                {...(onHoverQ ? { onMouseEnter: () => onHoverQ(t.q), onMouseLeave: () => onHoverQ(undefined) } : {})}
+              >
+                <path
+                  data-role="resid-overflow" data-dir={up ? "up" : "down"}
+                  d={`M${cx - 4} ${baseY} L${cx} ${apexY} L${cx + 4} ${baseY}`}
+                  fill="none" stroke={color} strokeWidth={hot ? 2 : 1.6}
+                  strokeLinejoin="round" strokeLinecap="round"
+                />
+                <text
+                  data-role="resid-overflow-label" x={cx} y={labelY} textAnchor="middle"
+                  className="font-mono" fontSize={8.5} fontWeight={700} fill={color}
+                >
+                  {label}
+                </text>
+              </g>
+            );
+          }
           const cy = yFor(res);
           const r = hot ? 4 : 2.6;
           return (
@@ -81,17 +113,11 @@ function renderResidRow(
               key={j}
               data-role="resid-point"
               data-q={t.q}
-              {...(overflow ? { "data-overflow": "true" } : {})}
               {...(hot ? { "data-hot": "true" } : {})}
               style={{ cursor: onHoverQ ? "pointer" : "default" }}
               {...(onHoverQ ? { onMouseEnter: () => onHoverQ(t.q), onMouseLeave: () => onHoverQ(undefined) } : {})}
             >
-              <circle
-                cx={cx} cy={cy} r={r}
-                fill={overflow ? "none" : color}
-                stroke={color}
-                strokeWidth={overflow ? 1.6 : hot ? 1.4 : 0}
-              />
+              <circle cx={cx} cy={cy} r={r} fill={color} stroke={color} strokeWidth={hot ? 1.4 : 0} />
               {hot ? <circle cx={cx} cy={cy} r={r + 3} fill="none" stroke={color} strokeWidth={1.4} opacity={0.6} /> : null}
             </g>
           );
