@@ -58,11 +58,19 @@ describe("DetectorRings", () => {
     expect(Number(sharp.getAttribute("ry"))).toBeLessThan(Number(sharp.getAttribute("rx")));
   });
 
-  it("draws a ghost ring dashed + hollow", () => {
+  it("draws a ghost ring dotted + hollow (zero-dash + round cap = dots, not dashes)", () => {
     const { container } = render(<DetectorRings beamCenter={beamCenter} rings={rings} />);
     const ghost = container.querySelector('[data-ghost="true"] [data-role="ring-sharp"]')!;
-    expect(ghost.getAttribute("stroke-dasharray")).toBeTruthy();
+    expect(ghost.getAttribute("stroke-dasharray")).toBe("0 5");
+    expect(ghost.getAttribute("stroke-linecap")).toBe("round");
     expect(ghost.getAttribute("fill")).toBe("none");
+  });
+
+  it("a solid (non-ghost) ring has no dash and no round cap", () => {
+    const { container } = render(<DetectorRings beamCenter={beamCenter} rings={[{ q: 0.1, r: 0.2 }]} />);
+    const sharp = container.querySelector('[data-role="ring-sharp"]')!;
+    expect(sharp.getAttribute("stroke-dasharray")).toBeNull();
+    expect(sharp.getAttribute("stroke-linecap")).toBeNull();
   });
 
   it("a leftover ring (no color) strokes neutral ink-faint", () => {

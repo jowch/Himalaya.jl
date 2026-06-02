@@ -57,16 +57,19 @@ export function DetectorRings({ beamCenter, rings, hoveredQ, onHoverQ, imageAspe
           // washing out where they cross the bright beam region.
           const casingW = sharpW + 2;
           const casingOp = hot ? 0.7 : ghost ? 0.35 : 0.55;
-          const dash = ghost ? "2 2.5" : undefined;
+          // Ghost (predicted-absent) rings are DOTTED: a zero-length dash + round
+          // linecap renders a dot (diameter = stroke width) every 5px along the ring.
+          const dash = ghost ? "0 5" : undefined;
+          const cap = ghost ? "round" : undefined;
           return (
             <g key={i} data-role="det-ring" data-ring-q={q}
                data-hot={hot ? "true" : undefined} data-ghost={ghost ? "true" : undefined}>
               <ellipse data-role="ring-casing" cx={beamCenter.x} cy={beamCenter.y} rx={r} ry={r * aspect}
                 fill="none" stroke="oklch(0.12 0.01 60)" strokeWidth={casingW} vectorEffect="non-scaling-stroke"
-                strokeDasharray={dash} opacity={casingOp} style={{ pointerEvents: "none" }} />
+                strokeDasharray={dash} strokeLinecap={cap} opacity={casingOp} style={{ pointerEvents: "none" }} />
               <ellipse data-role="ring-sharp" cx={beamCenter.x} cy={beamCenter.y} rx={r} ry={r * aspect}
                 fill="none" stroke={stroke} strokeWidth={sharpW} vectorEffect="non-scaling-stroke"
-                strokeDasharray={dash} opacity={sharpOp}
+                strokeDasharray={dash} strokeLinecap={cap} opacity={sharpOp}
                 style={{ pointerEvents: "none" }} />
               <ellipse data-role="ring-hit" cx={beamCenter.x} cy={beamCenter.y} rx={r} ry={r * aspect}
                 fill="none" stroke="transparent" strokeWidth={5} vectorEffect="non-scaling-stroke"
