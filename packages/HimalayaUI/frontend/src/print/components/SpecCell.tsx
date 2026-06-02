@@ -30,7 +30,7 @@ export function SpecCell({
         </span>
         <span
           data-role="spec-id"
-          className="text-data text-ink-faint block mt-0.5"
+          className="text-data text-ink-faint block truncate mt-0.5"
         >
           {sampleId}
         </span>

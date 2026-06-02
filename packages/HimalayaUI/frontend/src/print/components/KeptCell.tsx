@@ -17,7 +17,7 @@ export function KeptCell({
   return (
     <div
       data-testid="kept-cell"
-      className={`font-mono${className ? ` ${className}` : ""}`}
+      className={`font-mono overflow-hidden${className ? ` ${className}` : ""}`}
     >
       <div className="whitespace-nowrap">
         <span data-role="kept-count" className="text-data text-ink font-semibold">

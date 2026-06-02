@@ -32,10 +32,14 @@ export interface SampleTableRowProps {
 export const SAMPLE_TABLE_COLS = "244px minmax(360px,1fr) 78px 168px 150px";
 
 /** Per-cell grid-child wrapper: vertical centering + the cell gutter + a DEFINED
- *  row height (not a min — keeps every row uniform). `overflow-hidden` contains a
- *  cell's content to that height; `min-w-0` lets the exposures gallery scroll
- *  instead of widening the track. All placement/layout (allowed by the design guard). */
-const CELL = "flex items-center px-3 h-[92px] min-w-0 overflow-hidden";
+ *  row height (not a min — keeps every row uniform). `min-w-0` lets the exposures
+ *  gallery scroll instead of widening the track. NO `overflow-hidden` here on
+ *  purpose: a cell-level clip silently truncates data AND clips escaping UI like
+ *  the tags "+N" tooltip. Instead EACH cell owns its overflow — the name clamps
+ *  (line-clamp-2), the id truncates, KeptCell self-clips its short data, the
+ *  gallery scrolls (overflow-x-auto), and TagList caps with "+N". All cells thus
+ *  self-bound to the row height. Placement/layout only (design-guard clean). */
+const CELL = "flex items-center px-3 h-[92px] min-w-0";
 
 /** One full row of the contact-sheet samples table. Composes the cell composites
  *  (SpecCell / KeptCell / StatusCell), the ThumbnailGallery, and TagList across a
