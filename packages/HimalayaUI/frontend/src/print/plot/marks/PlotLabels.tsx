@@ -12,6 +12,8 @@ export interface PlotLabelsProps {
   labelWidthPx?: number;
   /** y data-value for peaks lacking an intensity (anchors them to baseline). */
   baselineI?: number;
+  /** When non-empty, labels for peaks NOT in this set fade to neutral gray. */
+  highlightPeakIds?: ReadonlySet<number>;
 }
 
 /**
@@ -61,6 +63,7 @@ interface LabelEntry {
   py: number;
   label: string;
   color: string;
+  dimmed: boolean;
 }
 
 export function PlotLabels({
@@ -70,6 +73,7 @@ export function PlotLabels({
   offsetPx = 12,
   labelWidthPx = 30,
   baselineI,
+  highlightPeakIds,
 }: PlotLabelsProps): JSX.Element {
   const { x, y } = projection;
 
@@ -87,12 +91,17 @@ export function PlotLabels({
     const py =
       iVal != null && Number.isFinite(iVal) ? y.to(iVal) : y.range[0];
 
+    const dimmed =
+      !!highlightPeakIds &&
+      highlightPeakIds.size > 0 &&
+      !highlightPeakIds.has(p.id);
     entries.push({
       id: p.id,
       naturalPx: px,
       py,
       label: p.label,
-      color: p.color ?? color,
+      color: dimmed ? "var(--color-ink-faint)" : (p.color ?? color),
+      dimmed,
     });
   }
 
@@ -131,6 +140,7 @@ export function PlotLabels({
               x={dodgedX}
               y={labelY}
               textAnchor="middle"
+              {...(e.dimmed ? { "data-dimmed": "true" } : {})}
               style={{
                 fontFamily: "var(--font-mono)",
                 fontSize: 11,

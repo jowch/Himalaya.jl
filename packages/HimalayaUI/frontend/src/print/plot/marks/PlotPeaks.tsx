@@ -28,6 +28,8 @@ export interface PlotPeaksProps {
   paperColor?: string;
   /** Keyboard focus/blur handler for accessibility. Called with peak id on focus, null on blur. */
   onPeakFocus?: (id: number | null) => void;
+  /** When non-empty, peaks NOT in this set (and not hot) fade to neutral gray. */
+  highlightPeakIds?: ReadonlySet<number>;
 }
 
 export function PlotPeaks({
@@ -37,6 +39,7 @@ export function PlotPeaks({
   baselineI,
   paperColor,
   onPeakFocus,
+  highlightPeakIds,
 }: PlotPeaksProps): JSX.Element {
   const { x, y } = projection;
   return (
@@ -48,7 +51,9 @@ export function PlotPeaks({
         const iVal = p.intensity ?? baselineI;
         const py =
           iVal != null && Number.isFinite(iVal) ? y.to(iVal) : y.range[0];
-        const c = p.color ?? color;
+        const hl = highlightPeakIds;
+        const dimmed = !!hl && hl.size > 0 && !hl.has(p.id) && !p.hot; // hot wins over dim
+        const c = dimmed ? "var(--color-ink-faint)" : (p.color ?? color);
         const descriptor = peakGlyph({
           source: p.source,
           color: c,
@@ -66,7 +71,7 @@ export function PlotPeaks({
             }
           : {};
         return (
-          <g key={p.id} {...focusAttrs}>
+          <g key={p.id} {...focusAttrs} {...(dimmed ? { "data-dimmed": "true" } : {})}>
             {p.hot ? (
               <line
                 data-role="peak-qline"

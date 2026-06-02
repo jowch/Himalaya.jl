@@ -134,4 +134,106 @@ describe("PlotPeaks", () => {
     expect(peakG?.getAttribute("tabindex")).toBeNull();
     expect(peakG?.getAttribute("role")).toBeNull();
   });
+
+  describe("highlightPeakIds — index/phase highlight", () => {
+    const peaks3: PlotPeak[] = [
+      { id: 1, q: 0.13, source: "auto", intensity: 10 },
+      { id: 2, q: 0.18, source: "auto", intensity: 15 },
+      { id: 3, q: 0.25, source: "auto", intensity: 20 },
+    ];
+
+    it("non-highlighted peaks have data-dimmed='true' and glyph fill=ink-faint", () => {
+      const { container } = render(
+        <svg>
+          <PlotPeaks
+            peaks={peaks3}
+            projection={proj}
+            color="oklch(0.5 0.1 30)"
+            highlightPeakIds={new Set([1])}
+          />
+        </svg>,
+      );
+      const allPeakGs = container.querySelectorAll('[data-role="plot-peaks"] > g');
+      // Find the <g> for peak id=1 (highlighted) — must NOT be dimmed
+      const g1 = Array.from(allPeakGs).find(
+        (g) => g.querySelector('[data-peak-id="1"]'),
+      );
+      expect(g1).toBeTruthy();
+      expect(g1!.getAttribute("data-dimmed")).toBeNull();
+
+      // Peaks 2 and 3 must be dimmed
+      const g2 = Array.from(allPeakGs).find(
+        (g) => g.querySelector('[data-peak-id="2"]'),
+      );
+      const g3 = Array.from(allPeakGs).find(
+        (g) => g.querySelector('[data-peak-id="3"]'),
+      );
+      expect(g2).toBeTruthy();
+      expect(g3).toBeTruthy();
+      expect(g2!.getAttribute("data-dimmed")).toBe("true");
+      expect(g3!.getAttribute("data-dimmed")).toBe("true");
+
+      // Dimmed glyph fill must be ink-faint
+      expect(
+        g2!.querySelector('[data-role="peak-glyph"] polygon')?.getAttribute("fill"),
+      ).toBe("var(--color-ink-faint)");
+      expect(
+        g3!.querySelector('[data-role="peak-glyph"] polygon')?.getAttribute("fill"),
+      ).toBe("var(--color-ink-faint)");
+    });
+
+    it("no <g> has data-dimmed when highlightPeakIds is not provided", () => {
+      const { container } = render(
+        <svg>
+          <PlotPeaks peaks={peaks3} projection={proj} color="oklch(0.5 0.1 30)" />
+        </svg>,
+      );
+      const dimmed = container.querySelectorAll(
+        '[data-role="plot-peaks"] > g[data-dimmed]',
+      );
+      expect(dimmed.length).toBe(0);
+    });
+
+    it("no <g> has data-dimmed when highlightPeakIds is an empty set", () => {
+      const { container } = render(
+        <svg>
+          <PlotPeaks
+            peaks={peaks3}
+            projection={proj}
+            color="oklch(0.5 0.1 30)"
+            highlightPeakIds={new Set()}
+          />
+        </svg>,
+      );
+      const dimmed = container.querySelectorAll(
+        '[data-role="plot-peaks"] > g[data-dimmed]',
+      );
+      expect(dimmed.length).toBe(0);
+    });
+
+    it("hot peak is exempt from dimming even if not in highlightPeakIds", () => {
+      const peaksWithHot: PlotPeak[] = [
+        { id: 1, q: 0.13, source: "auto", intensity: 10 },
+        { id: 2, q: 0.18, source: "auto", intensity: 15, hot: true },
+        { id: 3, q: 0.25, source: "auto", intensity: 20 },
+      ];
+      const { container } = render(
+        <svg>
+          <PlotPeaks
+            peaks={peaksWithHot}
+            projection={proj}
+            color="oklch(0.5 0.1 30)"
+            highlightPeakIds={new Set([1])}
+          />
+        </svg>,
+      );
+      const allPeakGs = container.querySelectorAll('[data-role="plot-peaks"] > g');
+      // Peak 2 is hot and NOT in highlightPeakIds → must NOT be dimmed
+      const g2 = Array.from(allPeakGs).find(
+        (g) => g.querySelector('[data-peak-id="2"]'),
+      );
+      expect(g2).toBeTruthy();
+      expect(g2!.getAttribute("data-dimmed")).toBeNull();
+    });
+  });
 });

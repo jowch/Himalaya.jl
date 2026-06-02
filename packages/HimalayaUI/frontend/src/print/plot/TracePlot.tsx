@@ -55,6 +55,8 @@ export interface TracePlotProps {
   "data-testid"?: string;
   /** Gate which annotation layers render. Axes/grid stay governed by `axes`. */
   show?: { peaks?: boolean; labels?: boolean; band?: boolean };
+  /** When non-empty, peaks/labels NOT in this set fade to neutral gray. Hot peaks are exempt. */
+  highlightPeakIds?: ReadonlySet<number>;
 }
 
 const UNINDEXED_COLOR = "var(--color-ink-faint)";
@@ -86,6 +88,7 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
     className,
     "data-testid": testid,
     show,
+    highlightPeakIds,
   } = props;
 
   const layers = { peaks: true, labels: false, band: true, ...(show ?? {}) };
@@ -254,6 +257,7 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
                   baselineI={yExtent[0]}
                   {...(paperColor ? { paperColor } : {})}
                   {...(interaction ? { onPeakFocus: setHoverId } : {})}
+                  {...(highlightPeakIds ? { highlightPeakIds } : {})}
                 />
               );
             }) : null}
@@ -264,6 +268,7 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
                 projection={projection}
                 color={t.phase ? phaseColor(t.phase) : UNINDEXED_COLOR}
                 baselineI={yExtent[0]}
+                {...(highlightPeakIds ? { highlightPeakIds } : {})}
               />
             )) : null}
             {overlay ? overlay(ctx) : null}

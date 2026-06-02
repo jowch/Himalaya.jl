@@ -111,6 +111,66 @@ describe("PlotLabels", () => {
     expect(Math.abs(xs[1]! - xs[0]!)).toBeGreaterThanOrEqual(29.9);
   });
 
+  // ── highlightPeakIds — label dimming ---------------------------------------
+  describe("highlightPeakIds — label dimming", () => {
+    const peaks3: PlotPeak[] = [
+      { id: 1, q: 50, source: "auto", intensity: 10, label: "α" },
+      { id: 2, q: 150, source: "auto", intensity: 15, label: "β" },
+      { id: 3, q: 250, source: "auto", intensity: 20, label: "γ" },
+    ];
+
+    it("non-highlighted labels have data-dimmed='true' and fill=ink-faint", () => {
+      const { container } = wrap({
+        peaks: peaks3,
+        projection: proj,
+        color,
+        highlightPeakIds: new Set([1]),
+      });
+      const allTexts = container.querySelectorAll('[data-role="peak-label"]');
+      expect(allTexts.length).toBe(3);
+
+      // Find text elements by content
+      const t1 = Array.from(allTexts).find((t) => t.textContent === "α");
+      const t2 = Array.from(allTexts).find((t) => t.textContent === "β");
+      const t3 = Array.from(allTexts).find((t) => t.textContent === "γ");
+      expect(t1).toBeTruthy();
+      expect(t2).toBeTruthy();
+      expect(t3).toBeTruthy();
+
+      // Highlighted: NOT dimmed
+      expect(t1!.getAttribute("data-dimmed")).toBeNull();
+
+      // Non-highlighted: dimmed
+      expect(t2!.getAttribute("data-dimmed")).toBe("true");
+      expect(t3!.getAttribute("data-dimmed")).toBe("true");
+
+      // Dimmed fill must be ink-faint
+      expect((t2 as HTMLElement).style.fill).toBe("var(--color-ink-faint)");
+      expect((t3 as HTMLElement).style.fill).toBe("var(--color-ink-faint)");
+    });
+
+    it("no label has data-dimmed when highlightPeakIds is not provided", () => {
+      const { container } = wrap({ peaks: peaks3, projection: proj, color });
+      const dimmed = container.querySelectorAll(
+        '[data-role="peak-label"][data-dimmed]',
+      );
+      expect(dimmed.length).toBe(0);
+    });
+
+    it("no label has data-dimmed when highlightPeakIds is an empty set", () => {
+      const { container } = wrap({
+        peaks: peaks3,
+        projection: proj,
+        color,
+        highlightPeakIds: new Set(),
+      });
+      const dimmed = container.querySelectorAll(
+        '[data-role="peak-label"][data-dimmed]',
+      );
+      expect(dimmed.length).toBe(0);
+    });
+  });
+
   // ── dodgeX unit tests -------------------------------------------------------
   describe("dodgeX (pure helper)", () => {
     it("returns identity when positions are far apart", () => {

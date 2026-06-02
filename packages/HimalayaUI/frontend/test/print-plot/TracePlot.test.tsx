@@ -108,6 +108,44 @@ describe("TracePlot", () => {
     expect(container.querySelector('[data-role="plot-peaks"]')).toBeNull();
   });
 
+  describe("highlightPeakIds threading", () => {
+    const modelWith2Peaks: TraceModel = {
+      trace: { q: [0.1, 0.2, 0.3], I: [10, 20, 15], sigma: [1, 1, 1] },
+      peaks: [
+        { id: 1, q: 0.15, source: "auto", intensity: 10 },
+        { id: 2, q: 0.25, source: "auto", intensity: 15 },
+      ],
+      phase: "Ia3d",
+    };
+
+    it("non-highlighted peaks get data-dimmed when highlightPeakIds is set", () => {
+      const { container } = render(
+        <TracePlot
+          traces={[modelWith2Peaks]}
+          width={500}
+          height={300}
+          highlightPeakIds={new Set([1])}
+        />,
+      );
+      const allGs = container.querySelectorAll('[data-role="plot-peaks"] > g');
+      const g2 = Array.from(allGs).find(
+        (g) => g.querySelector('[data-peak-id="2"]'),
+      );
+      expect(g2).toBeTruthy();
+      expect(g2!.getAttribute("data-dimmed")).toBe("true");
+    });
+
+    it("no peaks dimmed when highlightPeakIds is not provided", () => {
+      const { container } = render(
+        <TracePlot traces={[modelWith2Peaks]} width={500} height={300} />,
+      );
+      const dimmed = container.querySelectorAll(
+        '[data-role="plot-peaks"] > g[data-dimmed]',
+      );
+      expect(dimmed.length).toBe(0);
+    });
+  });
+
   describe("hover / focus (engine-owned)", () => {
     it("D1: focusing the peak <g> shows the q-readout chip and blur hides it", () => {
       const { container } = render(
