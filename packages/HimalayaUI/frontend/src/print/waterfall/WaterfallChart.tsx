@@ -27,7 +27,7 @@ export interface WaterfallChartProps {
 }
 
 function anchorsToPeaks(row: WaterfallRow): PlotPeak[] {
-  return row.anchors.map((a) => ({ id: a.id, q: a.q, source: "auto" as const }));
+  return row.anchors.map((a) => ({ id: a.id, q: a.q, intensity: a.intensity, source: "auto" as const }));
 }
 
 export function WaterfallChart({

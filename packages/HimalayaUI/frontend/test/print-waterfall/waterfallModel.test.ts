@@ -21,6 +21,8 @@ describe("toWaterfallRows", () => {
     expect(rows[0]!.anchors.map((a) => a.id).sort()).toEqual([...ci.peak_ids].sort());
     const byId = new Map(realMembers[0]!.snapshot!.effective_peaks.map((p) => [p.id, p.q]));
     for (const a of rows[0]!.anchors) expect(a.q).toBe(byId.get(a.id));
+    const iById = new Map(realMembers[0]!.snapshot!.effective_peaks.map((p) => [p.id, p.intensity]));
+    for (const a of rows[0]!.anchors) expect(a.intensity).toBe(iById.get(a.id));
   });
 
   it("yields zero anchors and a null phase for a form-factor member", () => {

@@ -14,7 +14,13 @@ export const FULL: WaterfallRow[] = toWaterfallRows(realMembers, realTraces);
 export const TRANSITION: WaterfallRow[] = toWaterfallRows(transitionSeries, realTraces);
 
 /** Mixed states: an indexed member, a form-factor member, an unindexed member. */
-export const MIXED_STATES: WaterfallRow[] = toWaterfallRows(
-  [realMembers[0]!, formFactorMember, unindexedMember],
-  realTraces,
-);
+// The synthetic form-factor / no-index members predate real trace capture
+// (exposure_id null). Borrow a real measured trace so the story shows the
+// realistic look — a curve with NO anchor beads — instead of a blank band.
+const ff = toWaterfallRows([formFactorMember], realTraces)[0]!;
+const ni = toWaterfallRows([unindexedMember], realTraces)[0]!;
+export const MIXED_STATES: WaterfallRow[] = [
+  toWaterfallRows([realMembers[0]!], realTraces)[0]!,
+  { ...ff, trace: realTraces[66]! },
+  { ...ni, trace: realTraces[67]! },
+];

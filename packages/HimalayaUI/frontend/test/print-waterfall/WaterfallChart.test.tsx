@@ -7,13 +7,13 @@ const ROWS: WaterfallRow[] = [
   {
     key: "a", label: "1:0", phase: "Ia3d", state: "indexed",
     trace: { q: [0.02, 0.05, 0.1], I: [100, 60, 12], sigma: [1, 1, 1] },
-    anchors: [{ id: 1, q: 0.05, phase: "Ia3d" }],
+    anchors: [{ id: 1, q: 0.05, intensity: 60, phase: "Ia3d" }],
     bandHeight: 1, yOffset: 0,
   },
   {
     key: "b", label: "1:1", phase: "Im3m", state: "indexed",
     trace: { q: [0.02, 0.06, 0.12], I: [90, 55, 10], sigma: [1, 1, 1] },
-    anchors: [{ id: 2, q: 0.06, phase: "Im3m" }],
+    anchors: [{ id: 2, q: 0.06, intensity: 55, phase: "Im3m" }],
     bandHeight: 1, yOffset: 0,
   },
 ];

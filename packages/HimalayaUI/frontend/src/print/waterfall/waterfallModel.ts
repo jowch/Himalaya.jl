@@ -7,6 +7,8 @@ export interface WaterfallAnchor {
   /** Effective-peak id (from peak_ids) — maps 1:1 to PlotPeak.id. */
   id: number;
   q: number;
+  /** Measured peak intensity (from effective_peaks) — places the bead on the curve. */
+  intensity: number | null;
   /** Member dominant phase (drives bead colour); null = unindexed. */
   phase: string | null;
 }
@@ -54,12 +56,15 @@ export function toWaterfallRows(
     const effectivePeaks = snap?.effective_peaks ?? [];
     const confirmedIndex = snap?.confirmed_index ?? null;
 
-    const qById = new Map(effectivePeaks.map((p) => [p.id, p.q]));
+    const peakById = new Map(effectivePeaks.map((p) => [p.id, p]));
     const anchors: WaterfallAnchor[] =
       state === "indexed" && confirmedIndex !== null
         ? confirmedIndex.peak_ids
-            .filter((id) => qById.has(id))
-            .map((id) => ({ id, q: qById.get(id)!, phase }))
+            .filter((id) => peakById.has(id))
+            .map((id) => {
+              const p = peakById.get(id)!;
+              return { id, q: p.q, intensity: p.intensity, phase };
+            })
         : [];
 
     return {
