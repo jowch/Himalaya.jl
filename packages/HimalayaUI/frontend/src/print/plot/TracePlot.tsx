@@ -13,7 +13,6 @@ import { PlotLabels } from "./marks/PlotLabels";
 import { hitTestPeaks, zoomXDomain, PEAK_HIT_PX } from "./interaction";
 import { phaseColor } from "../../phases";
 import { type Trace } from "../../api";
-import { formatAxis } from "../../lib/plot/formatAxis";
 
 export interface TraceModel {
   trace: Trace;
@@ -291,7 +290,7 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
                     fill="var(--color-plate)" stroke="var(--color-hair-strong)" strokeWidth={1} />
                   <text x={0} y={6 + h / 2} dy="0.32em" textAnchor="middle"
                     style={{ fontFamily: "var(--font-mono)", fontSize: 10.5, fill: "var(--color-ink)" }}>
-                    {formatAxis(hovered.q)}
+                    {hovered.q.toFixed(3)}
                   </text>
                 </g>
               );

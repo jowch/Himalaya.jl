@@ -48,7 +48,31 @@ describe("PlotPeaks", () => {
         />
       </svg>,
     );
-    expect(container.querySelector('[data-role="peak-qline"]')).toBeTruthy();
+    const qline = container.querySelector('[data-role="peak-qline"]')!;
+    expect(qline).toBeTruthy();
+    // Extends DOWN from the marker to the baseline (y1 = marker < y2 = baseline),
+    // and is slightly thicker than the resting hairline.
+    expect(Number(qline.getAttribute("y1"))).toBeLessThan(
+      Number(qline.getAttribute("y2")),
+    );
+    expect(qline.getAttribute("stroke-width")).toBe("1.5");
+  });
+
+  it("a hot peak draws a concentric same-shape halo, not a terracotta recolour", () => {
+    const { container } = render(
+      <svg>
+        <PlotPeaks
+          peaks={[{ id: 1, q: 0.2, intensity: 20, source: "auto", hot: true }]}
+          projection={proj}
+          color="var(--color-success)"
+        />
+      </svg>,
+    );
+    // A separate, larger, same-shape outline element is drawn.
+    expect(container.querySelector('[data-role="peak-halo"]')).toBeTruthy();
+    // The mark itself keeps its phase colour — it is NOT recoloured terracotta.
+    const mark = container.querySelector('[data-role="peak-glyph"] [data-shape]')!;
+    expect(mark.getAttribute("stroke")).not.toBe("var(--color-accent)");
   });
 
   it("uses per-peak color when present, ignoring the layer color", () => {

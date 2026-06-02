@@ -47,6 +47,23 @@ function glyphPoints(
   return `${x},${cy - hw} ${x + hw},${cy} ${x},${cy + hw} ${x - hw},${cy}`;
 }
 
+/** Scale a points string about its own centroid — yields a larger, concentric
+ *  copy of the same shape (used for the q-link halo). */
+function expandPoints(pointsStr: string, scale: number): string {
+  const pts = pointsStr
+    .trim()
+    .split(/\s+/)
+    .map((p) => p.split(",").map(Number) as [number, number]);
+  const cx = pts.reduce((s, p) => s + p[0], 0) / pts.length;
+  const cy = pts.reduce((s, p) => s + p[1], 0) / pts.length;
+  return pts
+    .map(([px, py]) => `${cx + (px - cx) * scale},${cy + (py - cy) * scale}`)
+    .join(" ");
+}
+
+/** Halo size relative to the mark — large enough to leave a visible gap. */
+const HALO_SCALE = 1.7;
+
 export function PeakGlyph({
   descriptor,
   x,
@@ -57,38 +74,71 @@ export function PeakGlyph({
 }: PeakGlyphProps): JSX.Element {
   const { shape, fill, stroke, strokeWidth, ring, r } = descriptor;
   const idAttr = dataPeakId !== undefined ? { "data-peak-id": String(dataPeakId) } : {};
+  const isCaret = shape === "caret";
+  const pts = isCaret
+    ? `${x - r},${y - r * 1.4} ${x},${y} ${x + r},${y - r * 1.4}`
+    : glyphPoints(shape, x, y, r);
 
-  // Hot (q-link) emphasis is carried by the glyph's OWN outline: a darker,
-  // heavier accent stroke — NOT a surrounding ring (review note 14).
+  // The resting mark — identical whether or not it is hot. Hot emphasis is the
+  // separate concentric halo below, NOT a recolour/grow of the mark itself.
+  const mark = isCaret ? (
+    // Hollow caret: an open chevron pointing down at the predicted q.
+    <polyline
+      data-shape="caret"
+      data-hot={ring ? "true" : undefined}
+      points={pts}
+      fill="none"
+      stroke={stroke}
+      strokeWidth={strokeWidth + 0.5}
+      strokeOpacity={opacity}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...idAttr}
+    />
+  ) : (
+    <polygon
+      data-shape={shape}
+      data-hot={ring ? "true" : undefined}
+      points={pts}
+      fill={fill}
+      fillOpacity={fill === "none" ? undefined : opacity}
+      stroke={fill === "none" ? stroke : haloStroke}
+      strokeWidth={strokeWidth}
+      strokeOpacity={opacity}
+      {...idAttr}
+    />
+  );
+
+  // q-link emphasis: a larger, concentric outline of the SAME shape with a gap,
+  // a thin line, in the peak's own colour — not a surrounding terracotta ring.
+  const halo = ring ? (
+    isCaret ? (
+      <polyline
+        data-role="peak-halo"
+        points={expandPoints(pts, HALO_SCALE)}
+        fill="none"
+        stroke={stroke}
+        strokeWidth={1}
+        strokeOpacity={opacity}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    ) : (
+      <polygon
+        data-role="peak-halo"
+        points={expandPoints(pts, HALO_SCALE)}
+        fill="none"
+        stroke={stroke}
+        strokeWidth={1}
+        strokeOpacity={opacity}
+      />
+    )
+  ) : null;
+
   return (
     <g data-role="peak-glyph">
-      {shape === "caret" ? (
-        // Hollow caret: an open chevron pointing down at the predicted q.
-        <polyline
-          data-shape="caret"
-          data-hot={ring ? "true" : undefined}
-          points={`${x - r},${y - r * 1.4} ${x},${y} ${x + r},${y - r * 1.4}`}
-          fill="none"
-          stroke={ring ? "var(--color-accent)" : stroke}
-          strokeWidth={ring ? strokeWidth + 1.5 : strokeWidth + 0.5}
-          strokeOpacity={opacity}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          {...idAttr}
-        />
-      ) : (
-        <polygon
-          data-shape={shape}
-          data-hot={ring ? "true" : undefined}
-          points={glyphPoints(shape, x, y, r)}
-          fill={fill}
-          fillOpacity={fill === "none" ? undefined : opacity}
-          stroke={ring ? "var(--color-accent)" : fill === "none" ? stroke : haloStroke}
-          strokeWidth={ring ? strokeWidth + 1.5 : strokeWidth}
-          strokeOpacity={opacity}
-          {...idAttr}
-        />
-      )}
+      {mark}
+      {halo}
     </g>
   );
 }

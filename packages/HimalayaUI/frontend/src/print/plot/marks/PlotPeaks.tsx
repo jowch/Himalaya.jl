@@ -73,14 +73,16 @@ export function PlotPeaks({
         return (
           <g key={p.id} {...focusAttrs} {...(dimmed ? { "data-dimmed": "true" } : {})}>
             {p.hot ? (
+              // Drop a guide DOWN from the marker to the axis baseline (where
+              // the q-readout chip sits) — it no longer runs through the mark.
               <line
                 data-role="peak-qline"
                 x1={px}
-                y1={y.range[0]}
+                y1={py}
                 x2={px}
-                y2={y.range[1]}
+                y2={y.range[0]}
                 stroke={c}
-                strokeWidth={1}
+                strokeWidth={1.5}
                 opacity={0.6}
               />
             ) : null}

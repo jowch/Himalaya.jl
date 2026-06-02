@@ -160,9 +160,11 @@ describe("TracePlot", () => {
       expect(peakG).toBeTruthy();
       // Before focus: no readout
       expect(container.querySelector('[data-role="q-readout"]')).toBeNull();
-      // Focus → readout appears
+      // Focus → readout appears, showing the q-value at 3 decimals (q=0.2).
       fireEvent.focus(peakG!);
-      expect(container.querySelector('[data-role="q-readout"]')).toBeTruthy();
+      const readout = container.querySelector('[data-role="q-readout"]');
+      expect(readout).toBeTruthy();
+      expect(readout!.querySelector("text")!.textContent).toBe("0.200");
       // Blur → readout disappears
       fireEvent.blur(peakG!);
       expect(container.querySelector('[data-role="q-readout"]')).toBeNull();

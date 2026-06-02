@@ -55,7 +55,7 @@ export interface PeakGlyphDescriptor {
   fill: string | "none";
   stroke: string;
   strokeWidth: number;
-  /** terracotta hot ring (q-link). */
+  /** q-link emphasis: draw a concentric same-shape halo around the mark. */
   ring: boolean;
   r: number;
   offsetPx: number;
@@ -63,7 +63,6 @@ export interface PeakGlyphDescriptor {
   interactive: boolean;
 }
 
-const HOT_GROWTH = 1.5;
 const DEFAULT_R = 4;
 const DEFAULT_OFFSET_PX = 7;
 
@@ -75,8 +74,9 @@ export function peakGlyph(opts: PeakMarkOpts): PeakGlyphDescriptor {
     : opts.source === "manual"
       ? "diamond"
       : "triangle-down";
-  const baseR = opts.r ?? DEFAULT_R;
-  const r = opts.hot ? baseR * HOT_GROWTH : baseR;
+  // Hot does NOT grow the mark: the q-link emphasis is a separate concentric
+  // halo (drawn by <PeakGlyph>), so the resting glyph keeps its size + colour.
+  const r = opts.r ?? DEFAULT_R;
   // Filled only when it's a real, present, non-ghosted, non-optimistic peak.
   const filled = !opts.predictedAbsent && !opts.optimistic && !opts.excluded;
   return {
