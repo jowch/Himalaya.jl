@@ -6,6 +6,7 @@ import { realTraces } from "../fixtures/realTraces";
 import { realMembers, transitionSeries } from "../fixtures/realSeriesMembers";
 import type { SeriesMember } from "../../api";
 import { Card, Kicker, SegmentedControl, Button } from "../ui";
+import { phaseColor } from "../../phases";
 
 function modelFor(member: SeriesMember): TraceModel {
   const trace = realTraces[member.exposure_id as number]!;
@@ -67,6 +68,16 @@ export const TransitionOverlay: Story = {
     traces: transitionSeries.map(modelFor),
     height: 360,
   },
+};
+
+// annotatedModel: heroModel peaks annotated with Ia3d colour + Miller labels.
+const annotatedModel: TraceModel = {
+  ...heroModel,
+  peaks: heroModel.peaks.map((p, i) => ({
+    ...p,
+    color: phaseColor("Ia3d"),
+    label: (["110", "111", "200", "211", "220", "221", "?"] as const)[i] ?? "?",
+  })),
 };
 
 // HeroPlate: the full Print figure plate — closed-look primitives composing the
@@ -133,5 +144,59 @@ export const HeroPlate: Story = {
         </Card>
       </div>
     );
+  },
+};
+
+// Annotated: live layer toggles — peaks, labels, confidence band.
+// All three layers can be toggled independently via Storybook controls.
+export const Annotated: StoryObj<{ showPeaks: boolean; showLabels: boolean; showBand: boolean }> = {
+  args: { showPeaks: true, showLabels: true, showBand: true },
+  argTypes: {
+    showPeaks: { control: "boolean" },
+    showLabels: { control: "boolean" },
+    showBand: { control: "boolean" },
+  },
+  render: ({ showPeaks, showLabels, showBand }) => (
+    <TracePlot
+      traces={[annotatedModel]}
+      height={360}
+      show={{ peaks: showPeaks, labels: showLabels, band: showBand }}
+      interaction={{ onXDomain: () => {}, onAddPeak: () => {}, onClickPeak: () => {} }}
+      paperColor="var(--color-paper)"
+    />
+  ),
+};
+
+// Hover: manual-fidelity story — pointer or keyboard-focus a peak to see the
+// terracotta ring, q-line, and axis chip; other peaks do NOT dim.
+export const Hover: Story = {
+  args: {
+    traces: [annotatedModel],
+    height: 360,
+    show: { labels: true },
+    interaction: {
+      onXDomain: () => {},
+      onAddPeak: () => {},
+      onClickPeak: () => {},
+    },
+    paperColor: "var(--color-paper)",
+  },
+  parameters: {
+    docs: {
+      description: {
+        story:
+          "Pointer or keyboard-focus a peak: it grows + gains the terracotta ring, the q-line shows, and a q-value chip appears at the axis foot. Other peaks do NOT dim.",
+      },
+    },
+  },
+};
+
+// PhaseHighlight: a subset of peaks stays at full colour; the rest fade to neutral.
+export const PhaseHighlight: Story = {
+  args: {
+    traces: [annotatedModel],
+    height: 360,
+    show: { labels: true },
+    highlightPeakIds: new Set(annotatedModel.peaks.slice(0, 3).map((p) => p.id)),
   },
 };
