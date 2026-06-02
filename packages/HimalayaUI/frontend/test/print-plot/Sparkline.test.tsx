@@ -1,6 +1,7 @@
 import { render } from "@testing-library/react";
 import { describe, it, expect } from "vitest";
 import { Sparkline } from "../../src/print/plot/Sparkline";
+import { phaseColor } from "../../src/phases";
 
 const sampleTrace = {
   q: [0.05, 0.10, 0.15, 0.20, 0.25, 0.30],
@@ -27,7 +28,7 @@ describe("Sparkline", () => {
     expect(container.querySelector('[data-role="spark-baseline"]')).not.toBeNull();
   });
 
-  it("(d) phase drives hue: Lamellar uses oklch, null uses ink-faint token, and they differ", () => {
+  it("(d) phase drives hue via the phaseColor contract; differs from the unindexed token", () => {
     const { container: lamellarContainer } = render(
       <Sparkline trace={sampleTrace} phase="Lamellar" />,
     );
@@ -42,19 +43,22 @@ describe("Sparkline", () => {
       .querySelector('[data-role="spark-line"]')!
       .getAttribute("stroke");
 
-    expect(lamellarStroke).toBeTruthy();
-    expect(nullStroke).toBeTruthy();
+    expect(lamellarStroke).toBe(phaseColor("Lamellar"));
+    expect(nullStroke).toBe("var(--color-ink-faint)");
     expect(lamellarStroke).not.toBe(nullStroke);
-    expect(lamellarStroke!).toContain("oklch");
   });
 
-  it("(e) degenerate trace (single point) renders baseline and no spark-line, no throw", () => {
-    expect(() => {
-      const { container } = render(
-        <Sparkline trace={{ q: [0.1], I: [5] }} />,
-      );
-      expect(container.querySelector('[data-role="spark-baseline"]')).not.toBeNull();
-      expect(container.querySelector('[data-role="spark-line"]')).toBeNull();
-    }).not.toThrow();
+  it("(f) renders [data-role='spark-area'] for a valid multi-point trace", () => {
+    const { container } = render(<Sparkline trace={sampleTrace} />);
+    expect(container.querySelector('[data-role="spark-area"]')).not.toBeNull();
+  });
+
+  it("(e) degenerate trace (single point) renders the baseline, no spark-line or spark-area", () => {
+    // Render outside any wrapper: a throw surfaces naturally as an uncaught
+    // test error rather than being swallowed by toThrow().
+    const { container } = render(<Sparkline trace={{ q: [0.1], I: [5] }} />);
+    expect(container.querySelector('[data-role="spark-baseline"]')).not.toBeNull();
+    expect(container.querySelector('[data-role="spark-line"]')).toBeNull();
+    expect(container.querySelector('[data-role="spark-area"]')).toBeNull();
   });
 });

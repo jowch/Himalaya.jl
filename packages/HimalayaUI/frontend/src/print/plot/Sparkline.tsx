@@ -14,10 +14,15 @@ export interface SparklineProps {
  *  or a degenerate q range to render lines. */
 function isDegenerate(trace: { q: number[]; I: number[] }): boolean {
   if (trace.q.length <= 1) return true;
-  const maxI = Math.max(...trace.I);
-  if (maxI <= 0) return true;
   const positiveQ = trace.q.filter((v) => v > 0);
   if (positiveQ.length < 2) return true;
+  // maxI must be taken over the positive-q positions only — a beamstop/detector
+  // artefact at near-zero or negative q (filtered out of the x-mapping) would
+  // otherwise squash the visible curve.
+  const positiveQI = trace.I.filter((_, idx) => trace.q[idx]! > 0);
+  if (positiveQI.length === 0) return true;
+  const maxI = Math.max(...positiveQI);
+  if (maxI <= 0) return true;
   const qMin = Math.min(...positiveQ);
   const qMax = Math.max(...positiveQ);
   if (qMin === qMax) return true;
@@ -43,7 +48,7 @@ export function Sparkline({ trace, phase, className }: SparklineProps): JSX.Elem
     const positiveQ = trace.q.filter((v) => v > 0);
     const qMin = Math.min(...positiveQ);
     const qMax = Math.max(...positiveQ);
-    const maxI = Math.max(...trace.I);
+    const maxI = Math.max(...trace.I.filter((_, idx) => trace.q[idx]! > 0));
 
     // x: log-q mapping over [4, 72]
     const x = makeAxis([qMin, qMax], [4, 72], "log");
