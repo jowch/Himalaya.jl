@@ -27,3 +27,28 @@ describe("<Card> padding", () => {
     expect(screen.getByTestId("c").getAttribute("data-padding")).toBe("md");
   });
 });
+
+describe("<Card> selected", () => {
+  it("has no data-selected by default", () => {
+    render(<Card data-testid="c">x</Card>);
+    expect(screen.getByTestId("c").getAttribute("data-selected")).toBe(null);
+  });
+  it("sets data-selected='true' when selected=true", () => {
+    render(<Card selected data-testid="c">x</Card>);
+    expect(screen.getByTestId("c").getAttribute("data-selected")).toBe("true");
+  });
+  it("does not set data-selected when selected=false", () => {
+    render(<Card selected={false} data-testid="c">x</Card>);
+    expect(screen.getByTestId("c").getAttribute("data-selected")).toBe(null);
+  });
+  it("composes with as='button'", () => {
+    render(<Card as="button" selected data-testid="c">x</Card>);
+    const el = screen.getByTestId("c");
+    expect(el.tagName.toLowerCase()).toBe("button");
+    expect(el.getAttribute("data-selected")).toBe("true");
+  });
+  it("does not set data-selected when selected is absent (existing flat card)", () => {
+    render(<Card elevated data-testid="c">x</Card>);
+    expect(screen.getByTestId("c").getAttribute("data-selected")).toBe(null);
+  });
+});
