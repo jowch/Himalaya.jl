@@ -74,7 +74,11 @@ export function TagList({
             </button>
           }
         >
-          <div className="flex flex-wrap gap-1.5">
+          {/* Vertical chip list — one tag per row. A wrapping row would get
+              crammed/clipped because the popover panel's shrink-to-fit width is
+              clamped by the narrow trigger wrapper, not its content; stacking
+              guarantees each chip fits the panel and never clips. */}
+          <div className="flex flex-col items-start gap-1.5">
             {hidden.map((t, i) => (
               <TagPill
                 key={i}
