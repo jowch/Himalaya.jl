@@ -92,7 +92,7 @@ flagged ⚠️ below.
 | `AutoGroup` | confident-expert summary box (★ + text + actions) | icon+text+`Button` | scoping, builder | ⬜ | — |
 | `MemberRow` / `TRow` | trace-list row (grip+swatch+name+phase) | `GripHandle`+`Dot`+`PhaseChip` | series-builder | ⬜ | — |
 | `ReadingRow` | phases-present line (dot+name+lattice span) | `Dot`+text | series-plot (reading panel) | ⬜ | — |
-| `KeptCell` / `TagsCell` / `StatusCell` / `SpecCell` | sample-table cell composites | `TagList`/`PhaseChip`/text | sample-table | ⬜ | — |
+| `KeptCell` / `TagsCell` / `StatusCell` / `SpecCell` | sample-table cell composites | `TagList`/`PhaseChip`/`CheckCircle`/`Dot`/text | sample-table | ✅ | `components/{SpecCell,KeptCell,StatusCell}.tsx` (TagsCell = TagList primitive, no new file) |
 
 ---
 
@@ -177,7 +177,7 @@ All ⬜ — deferred until composite + renderer layers are proven in Storybook (
 
 - **Layer 0 primitives:** 39/39 ✅ (foundation complete)
 - **Layer 1 renderers:** 6 ✅ · 3 ⬜ (`CardFigure`, `CustomPreview`, `CleanFigure`) · 1 ⛔ · 1 ⏸
-- **Layer 2 tier-1 composites:** 9 ✅ · ~7 ⬜
+- **Layer 2 tier-1 composites:** 12 ✅ · ~4 ⬜
 - **Layer 3 tier-2 panels:** 0 ✅ · ~17 ⬜
 - **Modals/overlays:** 0 ✅ (`ModalShell` chrome ✅) · ~6 gap clusters ⬜
 - **Layer 4 pages:** 0/5 ⬜
