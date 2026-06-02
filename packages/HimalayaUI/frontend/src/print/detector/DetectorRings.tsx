@@ -31,7 +31,7 @@ export function DetectorRings({ beamCenter, rings, hoveredQ, onHoverQ, orient }:
           overflow:hidden clips the arcs of an off-center beam. */}
       <svg data-testid="detector-rings" data-orient={orient ?? "portrait"}
            viewBox="0 0 1 1" preserveAspectRatio="none" style={svgStyle} aria-hidden="true">
-        {rings.map(({ q, r, color, ghost }) => {
+        {rings.map(({ q, r, color, ghost }, i) => {
           const hot = hoveredQ !== undefined && Math.abs(q - hoveredQ) <= TOL;
           const stroke = hot ? "var(--color-accent)" : (color ?? "var(--color-ink-faint)");
           // Radii/strokes are in the normalized (0..1) space; vector-effect keeps
@@ -39,7 +39,7 @@ export function DetectorRings({ beamCenter, rings, hoveredQ, onHoverQ, orient }:
           const sharpW = hot ? 1.8 : ghost ? 0.8 : 1.0;
           const sharpOp = hot ? 0.95 : ghost ? 0.45 : 0.7;
           return (
-            <g key={q} data-role="det-ring" data-ring-q={q}
+            <g key={i} data-role="det-ring" data-ring-q={q}
                data-hot={hot ? "true" : undefined} data-ghost={ghost ? "true" : undefined}>
               <circle data-role="ring-glow" cx={beamCenter.x} cy={beamCenter.y} r={r}
                 fill="none" stroke={stroke} strokeWidth={2.4} vectorEffect="non-scaling-stroke"
