@@ -46,14 +46,15 @@ describe("ResidualChart", () => {
     expect(Number(neg.getAttribute("cy"))).toBeGreaterThan(baseY); // below = larger y
   });
 
-  it("marks an out-of-domain residual with a sign-flipped off-scale chevron + value label (no dot)", () => {
+  it("marks an out-of-domain residual with a clamped open circle + a small sign chevron, no magnitude label", () => {
     const { container } = render(<ResidualChart assigned={[PN3M]} />);
     const overflow = container.querySelector('[data-role="resid-point"][data-overflow="true"]')!;
     expect(overflow.getAttribute("data-q")).toBe("0.1234"); // PN3M √6 residual +0.041
+    const circle = overflow.querySelector("circle")!;
+    expect(circle.getAttribute("fill")).toBe("none");       // hollow dot = off-scale
     const arrow = overflow.querySelector('[data-role="resid-overflow"]')!;
     expect(arrow.getAttribute("data-dir")).toBe("up");      // positive → off the TOP
-    expect(overflow.querySelector("circle")).toBeNull();    // chevron replaces the dot
-    expect(overflow.textContent).toContain("%");            // value label present
+    expect(overflow.querySelector('[data-role="resid-overflow-label"]')).toBeNull(); // no magnitude label
   });
 
   it("points the off-scale chevron DOWN for a large negative residual", () => {

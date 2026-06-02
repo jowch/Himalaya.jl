@@ -75,12 +75,15 @@ function renderResidRow(
           const hot = hoveredQ !== undefined && Math.abs(t.q - hoveredQ) <= TOL;
           const cx = ctx.x.to(t.q);
           if (overflow) {
+            // Off-scale: a HOLLOW dot clamped to the track edge (hollow distinguishes
+            // it from the filled in-range dots; which edge it lands on encodes the
+            // sign). No magnitude — on a quality check you only need "this is off",
+            // not how far. A small outward chevron cap reinforces "continues beyond".
             const up = res > 0;
             const edgeY = y0 + (up ? -HALF_SPAN : HALF_SPAN);
-            const apexY = up ? edgeY - 3 : edgeY + 3;   // chevron apex pokes outward
-            const baseY = up ? edgeY + 2 : edgeY - 2;
-            const labelY = up ? edgeY + 9 : edgeY - 6;  // label sits inward, inside the row
-            const label = (up ? "+" : "−") + Math.round(Math.abs(res) * 100) + "%";
+            const r = hot ? 4 : 2.6;
+            const capBase = up ? edgeY - r - 1.5 : edgeY + r + 1.5;
+            const capApex = up ? capBase - 2.5 : capBase + 2.5;
             return (
               <g
                 key={j}
@@ -91,18 +94,13 @@ function renderResidRow(
                 style={{ cursor: onHoverQ ? "pointer" : "default" }}
                 {...(onHoverQ ? { onMouseEnter: () => onHoverQ(t.q), onMouseLeave: () => onHoverQ(undefined) } : {})}
               >
+                <circle cx={cx} cy={edgeY} r={r} fill="none" stroke={color} strokeWidth={1.6} />
                 <path
                   data-role="resid-overflow" data-dir={up ? "up" : "down"}
-                  d={`M${cx - 4} ${baseY} L${cx} ${apexY} L${cx + 4} ${baseY}`}
-                  fill="none" stroke={color} strokeWidth={hot ? 2 : 1.6}
+                  d={`M${cx - 2.5} ${capBase} L${cx} ${capApex} L${cx + 2.5} ${capBase}`}
+                  fill="none" stroke={color} strokeWidth={1.4}
                   strokeLinejoin="round" strokeLinecap="round"
                 />
-                <text
-                  data-role="resid-overflow-label" x={cx} y={labelY} textAnchor="middle"
-                  className="font-mono" fontSize={8.5} fontWeight={700} fill={color}
-                >
-                  {label}
-                </text>
               </g>
             );
           }
