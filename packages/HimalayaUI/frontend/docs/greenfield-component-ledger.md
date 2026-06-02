@@ -65,7 +65,7 @@ flagged ⚠️ below.
 | `DetectorImage` | 2D Debye–Scherrer rings | SVG + LUT | focus-workspace, sample-table | ✅ | `detector/DetectorImage.tsx` |
 | `CombChart` / `ResidualChart` | reflection comb + indexing-space residual | SVG | focus-plot (combs panel) | ✅ | `comb/` |
 | `WaterfallChart` | stacked-offset multi-trace hero (+ peak-q cursor) | composes N `TracePlot` | series-plot, series-builder | ✅ | `waterfall/WaterfallChart.tsx` |
-| ⚠️ **`Sparkline`** | tiny 76×28 trace thumbnail | small `TracePlot` config or micro-renderer | series-scoping (`SampleRow`), series-builder (`TraceList`) | ⬜ | — |
+| ⚠️ **`Sparkline`** | tiny 76×28 trace thumbnail | small `TracePlot` config or micro-renderer | series-scoping (`SampleRow`), series-builder (`TraceList`) | ✅ | `plot/Sparkline.tsx` |
 | `CardFigure` (mini-waterfall) | frozen mini-waterfall inside a series card | small `WaterfallChart` config | series-folio (`SeriesCard`) | ⬜ | — |
 | `CustomPreview` viz | live predicted-vs-observed render in custom-index modal | likely `CombChart` reuse | focus-plot (custom-index modal) | ⬜ | — |
 | `CleanFigure` | export idiom (plain GraphPad render, no Print branding) | standalone SVG (Arial, plain hex) | series-plot (export sheet) | ⬜ | — |
@@ -176,10 +176,10 @@ All ⬜ — deferred until composite + renderer layers are proven in Storybook (
 ## Coverage summary
 
 - **Layer 0 primitives:** 39/39 ✅ (foundation complete)
-- **Layer 1 renderers:** 5 ✅ · 4 ⬜ (`Sparkline`, `CardFigure`, `CustomPreview`, `CleanFigure`) · 1 ⛔ · 1 ⏸
+- **Layer 1 renderers:** 6 ✅ · 3 ⬜ (`CardFigure`, `CustomPreview`, `CleanFigure`) · 1 ⛔ · 1 ⏸
 - **Layer 2 tier-1 composites:** 7 ✅ · ~9 ⬜
 - **Layer 3 tier-2 panels:** 0 ✅ · ~17 ⬜
 - **Modals/overlays:** 0 ✅ (`ModalShell` chrome ✅) · ~6 gap clusters ⬜
 - **Layer 4 pages:** 0/5 ⬜
 
-The build frontier is **Layer 2 completion + Layer 1 small renderers (`Sparkline`)**, which between them unlock every Layer 3 panel.
+The build frontier is **Layer 2 completion + remaining Layer 1 renderers (`CardFigure`, `CustomPreview`, `CleanFigure`)**, which between them unlock every Layer 3 panel.
