@@ -203,5 +203,10 @@ describe("TracePlot", () => {
       fireEvent.pointerLeave(div);
       expect(container.querySelector('[data-role="q-readout"]')).toBeNull();
     });
+    // Note: the pointer-hover path and the "q-readout gated when peaks hidden"
+    // edge are not unit-tested — jsdom does not carry clientX on synthetic
+    // PointerEvents (arrives as 0, never hits), and with peaks hidden there is
+    // no focusable peak <g> to drive the focus path. The readout is gated on
+    // `layers.peaks` in TracePlot; the positive path is covered by D1.
   });
 });

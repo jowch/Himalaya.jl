@@ -276,7 +276,9 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
                 Motion is instant (no CSS transition), which is inherently reduced-motion-safe.
                 A 90ms opacity fade on enter/leave is intentionally deferred. */}
             {(() => {
-              const hovered = hoverId == null
+              // Gate the readout on the peaks layer: with peaks hidden there is
+              // no glyph to anchor it to, so a floating chip would be dishonest.
+              const hovered = hoverId == null || !layers.peaks
                 ? null
                 : traces.flatMap((t) => t.peaks).find((p) => p.id === hoverId) ?? null;
               if (!hovered) return null;
