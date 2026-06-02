@@ -53,3 +53,5 @@ export { MetaList } from "./MetaList";
 export type { MetaEntry } from "./MetaList";
 export { Wordmark } from "./Wordmark";
 export { Tooltip } from "./Tooltip";
+export { Popover } from "./Popover";
+export type { PopoverProps } from "./Popover";

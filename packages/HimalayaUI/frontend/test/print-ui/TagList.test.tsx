@@ -86,20 +86,42 @@ describe("TagList", () => {
       { key: "pH", value: "7.4" },
     ];
 
-    it("caps at maxVisible pills plus one '+N' overflow chip", () => {
+    it("caps at maxVisible pills plus one muted '+N' overflow trigger (NOT a tag-pill)", () => {
       render(<TagList tags={FIVE} maxVisible={2} />);
       expect(screen.getAllByTestId("tag-pill")).toHaveLength(2);
       const overflow = screen.getByTestId("tag-overflow");
-      expect(overflow.textContent).toBe("+3");
+      expect(overflow.textContent).toBe("+3 more");
+      // The trigger is a real <button>, and it is NOT styled as a tag pill.
+      expect(overflow.tagName).toBe("BUTTON");
+      expect(overflow.getAttribute("data-testid")).not.toBe("tag-pill");
     });
 
-    it("lists the hidden tags in the overflow tooltip label", () => {
+    it("clicking the overflow trigger opens a popover with the hidden tags as real pills", () => {
       render(<TagList tags={FIVE} maxVisible={2} />);
-      const overflow = screen.getByTestId("tag-overflow");
-      // Hover reveals the Tooltip; its label lists the three hidden tags.
-      fireEvent.mouseEnter(overflow.parentElement!);
-      const tip = screen.getByRole("tooltip");
-      expect(tip.textContent).toBe("buffer PBS, lipid DOPC, pH 7.4");
+      // Closed: only the 2 visible pills, no popover.
+      expect(screen.getAllByTestId("tag-pill")).toHaveLength(2);
+      expect(screen.queryByTestId("popover")).toBeNull();
+
+      fireEvent.click(screen.getByTestId("tag-overflow"));
+      const panel = screen.getByTestId("popover");
+      expect(panel).toBeTruthy();
+      // The 3 hidden tags now render as real TagPills inside the popover.
+      const pillsInPanel = panel.querySelectorAll('[data-testid="tag-pill"]');
+      expect(pillsInPanel).toHaveLength(3);
+      expect(panel.textContent).toContain("buffer");
+      expect(panel.textContent).toContain("PBS");
+      expect(panel.textContent).toContain("7.4");
+    });
+
+    it("wires onRemove on the hidden popover pills when editable", () => {
+      const onRemove = vi.fn();
+      render(<TagList tags={FIVE} maxVisible={2} editable onRemove={onRemove} />);
+      fireEvent.click(screen.getByTestId("tag-overflow"));
+      const panel = screen.getByTestId("popover");
+      const removes = panel.querySelectorAll('button[aria-label="Remove"]');
+      expect(removes).toHaveLength(3);
+      fireEvent.click(removes[0]!);
+      expect(onRemove).toHaveBeenCalledWith({ key: "buffer", value: "PBS" });
     });
 
     it("renders all pills and no overflow chip when maxVisible is unset", () => {

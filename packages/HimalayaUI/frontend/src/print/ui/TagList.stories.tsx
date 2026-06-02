@@ -38,8 +38,9 @@ export const Editable: Story = {
   },
 };
 
-/** maxVisible caps the list: first 2 pills + a "+N" overflow chip whose tooltip
- *  lists the hidden tags. */
+/** maxVisible caps the list: the first 2 pills render, then a muted "+N more"
+ *  trigger (quiet secondary text — NOT a pill). Click it to open a popover that
+ *  reveals the hidden tags as real, removable TagPill chips. */
 export const Capped: Story = {
   args: {
     tags: [

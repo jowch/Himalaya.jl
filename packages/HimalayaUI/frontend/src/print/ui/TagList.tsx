@@ -3,7 +3,7 @@ import { TagPill } from "./TagPill";
 import { Chip } from "./Chip";
 import type { ChipSize } from "./Chip";
 import { TagEditor } from "./TagEditor";
-import { Tooltip } from "./Tooltip";
+import { Popover } from "./Popover";
 import type { Tag } from "./tag";
 
 interface TagListProps {
@@ -14,16 +14,11 @@ interface TagListProps {
   /** Size axis, forwarded to every pill AND the add invite. Defaults to `"sm"`. */
   size?: ChipSize;
   /** When set and `tags.length > maxVisible`, only the first `maxVisible` pills
-   *  render, followed by a single `+N` overflow chip whose tooltip lists the
-   *  hidden tags. Unset → all tags render (the unbounded, wrapping case). */
+   *  render, followed by a single muted "+N more" trigger that opens a popover
+   *  revealing the hidden tags as real {@link TagPill}s. Unset → all tags render
+   *  (the unbounded, wrapping case). */
   maxVisible?: number;
   className?: string;
-}
-
-/** Render a tag as plain text for the overflow tooltip: `key value` when the
- *  tag has a value, otherwise the bare key. */
-function tagLabel(t: Tag): string {
-  return t.value !== undefined ? `${t.key} ${t.value}` : t.key;
 }
 
 function cx(...parts: Array<string | false | null | undefined>): string {
@@ -67,11 +62,29 @@ export function TagList({
         />
       ))}
       {capped && (
-        <Tooltip label={hidden.map(tagLabel).join(", ")}>
-          <Chip variant="static" size={size} testId="tag-overflow">
-            +{hidden.length}
-          </Chip>
-        </Tooltip>
+        <Popover
+          label="More tags"
+          trigger={
+            <button
+              type="button"
+              data-testid="tag-overflow"
+              className="text-ink-faint text-xs hover:text-ink cursor-pointer focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent rounded-sm"
+            >
+              +{hidden.length} more
+            </button>
+          }
+        >
+          <div className="flex flex-wrap gap-1.5">
+            {hidden.map((t, i) => (
+              <TagPill
+                key={i}
+                tag={t}
+                size={size}
+                {...(editable && onRemove ? { onRemove: () => onRemove(t) } : {})}
+              />
+            ))}
+          </div>
+        </Popover>
       )}
       {onAdd &&
         (adding ? (
