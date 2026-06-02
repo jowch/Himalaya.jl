@@ -1,4 +1,4 @@
-import { CheckCircle } from "../ui/CheckCircle";
+import { Chip } from "../ui/Chip";
 
 export interface SpecCellProps {
   name: string;
@@ -8,6 +8,12 @@ export interface SpecCellProps {
   className?: string;
 }
 
+/** The samples-table identity cell: sample name + id, plus a quiet "Needs
+ *  review" chip on UN-screened rows. We flag the EXCEPTION (the actionable,
+ *  not-yet-screened state) rather than marking every screened row — a leading
+ *  checkbox-in-a-circle reads as row SELECTION, and a mark floated right of the
+ *  subtitle breaks vertical scannability (Carbon/Polaris). The chip sits in a
+ *  fixed slot under the id, left-aligned, so the column still scans. */
 export function SpecCell({
   name,
   sampleId,
@@ -17,24 +23,22 @@ export function SpecCell({
   return (
     <div
       data-testid="spec-cell"
-      className={`flex items-start gap-2.5${className ? ` ${className}` : ""}`}
+      className={`min-w-0${className ? ` ${className}` : ""}`}
     >
-      <CheckCircle
-        checked={!!screened}
-        label={screened ? "Screened" : "Not screened"}
-        className="mt-0.5"
-      />
-      <div className="min-w-0">
-        <span data-role="spec-name" className="text-body font-semibold block leading-tight line-clamp-2">
-          {name}
-        </span>
-        <span
-          data-role="spec-id"
-          className="text-data text-ink-faint block truncate mt-0.5"
-        >
-          {sampleId}
-        </span>
-      </div>
+      <span data-role="spec-name" className="text-body font-semibold block leading-tight line-clamp-2">
+        {name}
+      </span>
+      <span
+        data-role="spec-id"
+        className="text-data text-ink-faint block truncate mt-0.5"
+      >
+        {sampleId}
+      </span>
+      {!screened && (
+        <Chip variant="static" size="sm" testId="needs-review" className="mt-1.5">
+          Needs review
+        </Chip>
+      )}
     </div>
   );
 }

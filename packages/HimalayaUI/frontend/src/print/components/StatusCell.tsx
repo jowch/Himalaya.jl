@@ -18,7 +18,7 @@ export function StatusCell({ phase, className }: StatusCellProps): JSX.Element {
       {hasPhase ? (
         <PhaseChip phase={phase as string} />
       ) : (
-        <span data-role="status-unset" className="text-ink-faint text-xs">
+        <span data-role="status-unset" className="text-ink-faint text-xs whitespace-nowrap">
           <Dot tone="muted" size="xs" className="mr-1.5 align-middle" />
           Not indexed
         </span>

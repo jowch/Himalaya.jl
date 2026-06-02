@@ -30,27 +30,27 @@ describe("<SpecCell> name and id", () => {
   });
 });
 
-describe("<SpecCell> screened prop", () => {
-  it("check-circle has data-checked=true when screened=true", () => {
-    const { container } = render(<SpecCell name="Sample A" sampleId="s-001" screened />);
-    expect(container.querySelector("[data-testid='check-circle']")).toHaveAttribute(
-      "data-checked",
-      "true"
-    );
-  });
-
-  it("check-circle does NOT have data-checked when screened=false", () => {
-    const { container } = render(<SpecCell name="Sample A" sampleId="s-001" screened={false} />);
-    expect(container.querySelector("[data-testid='check-circle']")).not.toHaveAttribute(
-      "data-checked"
-    );
-  });
-
-  it("check-circle does NOT have data-checked when screened is omitted", () => {
+describe("<SpecCell> screened prop (flag-the-exception)", () => {
+  it("does NOT render a leading checkbox/check-circle (it reads as selection)", () => {
     const { container } = render(<SpecCell name="Sample A" sampleId="s-001" />);
-    expect(container.querySelector("[data-testid='check-circle']")).not.toHaveAttribute(
-      "data-checked"
-    );
+    expect(container.querySelector("[data-testid='check-circle']")).not.toBeInTheDocument();
+  });
+
+  it("shows the 'Needs review' chip when screened=false", () => {
+    render(<SpecCell name="Sample A" sampleId="s-001" screened={false} />);
+    const chip = screen.getByTestId("needs-review");
+    expect(chip).toBeInTheDocument();
+    expect(chip).toHaveTextContent("Needs review");
+  });
+
+  it("shows the 'Needs review' chip when screened is omitted", () => {
+    render(<SpecCell name="Sample A" sampleId="s-001" />);
+    expect(screen.getByTestId("needs-review")).toBeInTheDocument();
+  });
+
+  it("does NOT show the 'Needs review' chip when screened=true", () => {
+    render(<SpecCell name="Sample A" sampleId="s-001" screened />);
+    expect(screen.queryByTestId("needs-review")).not.toBeInTheDocument();
   });
 
   it("renders the root data-testid=spec-cell", () => {

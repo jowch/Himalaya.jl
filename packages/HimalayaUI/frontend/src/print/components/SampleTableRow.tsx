@@ -28,8 +28,17 @@ export interface SampleTableRowProps {
  *  them identical is what proves column alignment. Sample / Exposures / Kept /
  *  Tags / Status. Applied via inline `style={{ gridTemplateColumns }}` rather
  *  than a `grid-cols-[…]` arbitrary so it is immune to Tailwind dev-JIT misses
- *  on a brand-new arbitrary class mid-session. */
-export const SAMPLE_TABLE_COLS = "244px minmax(360px,1fr) 78px 168px 150px";
+ *  on a brand-new arbitrary class mid-session.
+ *
+ *  Per-column MIN-WIDTHS (not fixed px that clip): atomic columns are sized to
+ *  fit their longest realistic value so they NEVER truncate — Kept holds
+ *  "10 / 12" + "2 dropped" (96px), Status holds "Not indexed" (150px). The
+ *  identity / exposures / tags columns carry a min + grow (fr). The row's
+ *  intrinsic min-width is the sum of mins (~1018px); a future SheetTable wraps
+ *  the rows in a horizontal-scroll container with a sticky Sample column, so a
+ *  narrow viewport SCROLLS rather than clipping (Carbon/Polaris). */
+export const SAMPLE_TABLE_COLS =
+  "minmax(244px,1.4fr) minmax(360px,2fr) 96px minmax(168px,1fr) 150px";
 
 /** Per-cell grid-child wrapper: vertical centering + the cell gutter + a DEFINED
  *  row height (not a min — keeps every row uniform). `min-w-0` lets the exposures
