@@ -12,6 +12,8 @@ export type { Shortcut } from "./KbLegend";
 export { Kicker } from "./Kicker";
 export type { KickerTone } from "./Kicker";
 export { ScoreBar } from "./ScoreBar";
+export { Swatch } from "./Swatch";
+export type { SwatchShape } from "./Swatch";
 export { SignalBars } from "./SignalBars";
 export { CheckCircle } from "./CheckCircle";
 export { RejectOverlay } from "./RejectOverlay";
