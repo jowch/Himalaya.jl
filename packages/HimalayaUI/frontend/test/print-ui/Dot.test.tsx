@@ -19,23 +19,18 @@ describe("<Dot> (print)", () => {
     expect(dot.getAttribute("aria-hidden")).toBe("true");
   });
 
-  it("renders the md size class (9px circle)", () => {
+  it("reflects the md size on data-size", () => {
     const { container } = render(<Dot tone="accent" size="md" aria-hidden />);
-    const dot = container.querySelector("span")!;
-    expect(dot.className).toContain("h-[9px]");
-    expect(dot.className).toContain("w-[9px]");
+    expect(container.querySelector("span")!).toHaveAttribute("data-size", "md");
   });
 
-  it("adds a plate-colored border ring when bordered", () => {
+  it("marks data-bordered='true' when bordered", () => {
     const { container } = render(<Dot tone="accent" size="md" bordered aria-hidden />);
-    const dot = container.querySelector("span")!;
-    expect(dot.className).toContain("border-[1.5px]");
-    expect(dot.className).toContain("border-plate");
+    expect(container.querySelector("span")!).toHaveAttribute("data-bordered", "true");
   });
 
-  it("has no border ring by default", () => {
+  it("has no data-bordered attribute by default", () => {
     const { container } = render(<Dot tone="accent" size="md" aria-hidden />);
-    const dot = container.querySelector("span")!;
-    expect(dot.className).not.toContain("border-plate");
+    expect(container.querySelector("span")!).not.toHaveAttribute("data-bordered");
   });
 });

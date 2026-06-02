@@ -39,6 +39,8 @@ export function Dot({
     <span
       className={`inline-block shrink-0 rounded-full ${sizeClass[size]} ${toneClass[tone]}${borderClass} ${className}`}
       data-tone={tone}
+      data-size={size}
+      {...(bordered ? { "data-bordered": "true" } : {})}
       {...(decorative ? {} : { role: "img", "aria-label": label })}
       {...props}
     />

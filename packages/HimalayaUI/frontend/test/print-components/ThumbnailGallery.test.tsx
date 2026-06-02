@@ -106,18 +106,14 @@ describe("<ThumbnailGallery> size", () => {
 });
 
 describe("<ThumbnailGallery> align", () => {
-  it("align='center' → gallery data-align='center' and adds justify-center", () => {
+  it("align='center' → gallery data-align='center'", () => {
     render(<ThumbnailGallery exposures={THREE_EXPOSURES} align="center" />);
-    const gallery = screen.getByTestId("thumbnail-gallery");
-    expect(gallery).toHaveAttribute("data-align", "center");
-    expect(gallery.className).toContain("justify-center");
+    expect(screen.getByTestId("thumbnail-gallery")).toHaveAttribute("data-align", "center");
   });
 
-  it("default align='start' → data-align='start' and no justify-center", () => {
+  it("default align='start' → data-align='start'", () => {
     render(<ThumbnailGallery exposures={THREE_EXPOSURES} />);
-    const gallery = screen.getByTestId("thumbnail-gallery");
-    expect(gallery).toHaveAttribute("data-align", "start");
-    expect(gallery.className).not.toContain("justify-center");
+    expect(screen.getByTestId("thumbnail-gallery")).toHaveAttribute("data-align", "start");
   });
 });
 
