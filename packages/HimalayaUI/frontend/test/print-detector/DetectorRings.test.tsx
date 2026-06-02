@@ -61,7 +61,7 @@ describe("DetectorRings", () => {
   it("draws a ghost ring dotted + hollow (zero-dash + round cap = dots, not dashes)", () => {
     const { container } = render(<DetectorRings beamCenter={beamCenter} rings={rings} />);
     const ghost = container.querySelector('[data-ghost="true"] [data-role="ring-sharp"]')!;
-    expect(ghost.getAttribute("stroke-dasharray")).toBe("0 5");
+    expect(ghost.getAttribute("stroke-dasharray")).toBe("0 7");
     expect(ghost.getAttribute("stroke-linecap")).toBe("round");
     expect(ghost.getAttribute("fill")).toBe("none");
   });

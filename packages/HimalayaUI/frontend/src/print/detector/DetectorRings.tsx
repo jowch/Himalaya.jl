@@ -48,8 +48,10 @@ export function DetectorRings({ beamCenter, rings, hoveredQ, onHoverQ, imageAspe
           const stroke = color ?? "var(--color-ink-faint)";
           // Stroke widths are in screen px (vector-effect="non-scaling-stroke" keeps
           // them crisp despite the preserveAspectRatio="none" stretch).
-          const sharpW = hot ? 2.4 : ghost ? 1.2 : 1.5;
-          const sharpOp = hot ? 0.95 : ghost ? 0.5 : 0.85;
+          // Ghost dots take the diameter from this width, so they run a touch
+          // wider than the solid stroke to read clearly as dots.
+          const sharpW = hot ? 2.6 : ghost ? 2.2 : 1.5;
+          const sharpOp = hot ? 0.95 : ghost ? 0.7 : 0.85;
           // Dark casing drawn UNDER the stroke, ~1px wider each side. Invisible on
           // the dark window backing, but on bright Bragg arcs / mid-gray data it
           // outlines the stroke so every ring reads as a drawn annotation — never
@@ -58,8 +60,8 @@ export function DetectorRings({ beamCenter, rings, hoveredQ, onHoverQ, imageAspe
           const casingW = sharpW + 2;
           const casingOp = hot ? 0.7 : ghost ? 0.35 : 0.55;
           // Ghost (predicted-absent) rings are DOTTED: a zero-length dash + round
-          // linecap renders a dot (diameter = stroke width) every 5px along the ring.
-          const dash = ghost ? "0 5" : undefined;
+          // linecap renders a dot (diameter = stroke width) every 7px along the ring.
+          const dash = ghost ? "0 7" : undefined;
           const cap = ghost ? "round" : undefined;
           return (
             <g key={i} data-role="det-ring" data-ring-q={q}
