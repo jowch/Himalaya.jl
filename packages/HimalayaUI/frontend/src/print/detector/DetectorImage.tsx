@@ -102,7 +102,11 @@ export function DetectorImage({ src, size, className }: Props): JSX.Element {
     ...(layout.orient === "landscape" && layout.caps
       ? { maxWidth: `${layout.caps.maxW}px`, maxHeight: `${layout.caps.maxH}px`,
           transform: "rotate(90deg)", transformOrigin: "center" }
-      : { maxWidth: "100%", maxHeight: "100%" }),
+      // Fill the frame (scale up AND down), aspect-preserved. maxWidth:100% alone
+      // only ever scaled DOWN, so a sub-frame image (e.g. a low-res capture) drew
+      // at its native pixel size and floated tiny in the box. The frame is the
+      // canonical display size; the image fits it.
+      : { width: "100%", height: "100%", objectFit: "contain" }),
   };
 
   return (

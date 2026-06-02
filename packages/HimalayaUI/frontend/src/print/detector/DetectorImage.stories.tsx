@@ -7,7 +7,9 @@ const meta: Meta<typeof DetectorImage> = { title: "detector/DetectorImage", comp
 export default meta;
 type Story = StoryObj<typeof DetectorImage>;
 
-const frame = "aspect-square w-[420px] overflow-hidden rounded border border-frame-edge bg-frame-edge";
+// Real detector geometry for fixture 37: 981×1043 (portrait). The frame matches
+// that aspect so object-fit:contain fills it edge-to-edge (no letterbox).
+const frame = "aspect-[981/1043] w-[420px] overflow-hidden rounded border border-frame-edge bg-frame-edge";
 
 export const Full: Story = {
   render: () => <div className={frame}><DetectorImage src={thumb37} size="full" className="h-full w-full" /></div>,

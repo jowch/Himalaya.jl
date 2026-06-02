@@ -40,6 +40,17 @@ test("fetches exactly the src it was given (no URL building inside)", async () =
   expect(spy.mock.calls[0][1]).toBeUndefined();
 });
 
+test("portrait canvas fills the frame (object-fit contain, scales up AND down)", async () => {
+  render(<DetectorImage src="/x.png" size="full" />);
+  const canvas = await waitFor(() => screen.getByRole("img", { hidden: true }) as HTMLCanvasElement);
+  // Fill the frame, aspect-preserved — NOT maxWidth:100% which only scaled down
+  // and left a sub-frame image at native pixel size.
+  expect(canvas.style.objectFit).toBe("contain");
+  expect(canvas.style.width).toBe("100%");
+  expect(canvas.style.height).toBe("100%");
+  expect(canvas.style.transform).toBe(""); // portrait: no rotate
+});
+
 test("LUT is non-inverting — brighter source pixel -> lighter output", async () => {
   // Two source pixels: intensity 0 and intensity 255 (R channel is read as t).
   const srcData = new Uint8ClampedArray([0,0,0,255, 255,255,255,255]);
