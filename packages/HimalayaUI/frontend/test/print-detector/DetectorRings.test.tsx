@@ -12,13 +12,25 @@ const rings: RingPlacement[] = [
 const beamCenter = { x: 0.5, y: 0.5 };
 
 describe("DetectorRings", () => {
-  it("renders one ring group per placement, each with glow + sharp + hit", () => {
+  it("renders one ring group per placement, each with casing + sharp + hit", () => {
     const { container } = render(<DetectorRings beamCenter={beamCenter} rings={rings} />);
     expect(container.querySelectorAll('[data-role="det-ring"]').length).toBe(4);
     const g = container.querySelector('[data-role="det-ring"]')!;
-    expect(g.querySelector('[data-role="ring-glow"]')).toBeTruthy();
+    // Dark casing under the coloured stroke so rings read against any background.
+    expect(g.querySelector('[data-role="ring-casing"]')).toBeTruthy();
     expect(g.querySelector('[data-role="ring-sharp"]')).toBeTruthy();
     expect(g.querySelector('[data-role="ring-hit"]')).toBeTruthy();
+  });
+
+  it("the casing sits under (before) the coloured stroke in paint order", () => {
+    const { container } = render(<DetectorRings beamCenter={beamCenter} rings={[{ q: 0.1, r: 0.3, color: "var(--color-success)" }]} />);
+    const g = container.querySelector('[data-role="det-ring"]')!;
+    const roles = Array.from(g.querySelectorAll("ellipse")).map((e) => e.getAttribute("data-role"));
+    expect(roles.indexOf("ring-casing")).toBeLessThan(roles.indexOf("ring-sharp"));
+    // The casing is wider than the stroke (it outlines it).
+    const casing = g.querySelector('[data-role="ring-casing"]')!;
+    const sharp = g.querySelector('[data-role="ring-sharp"]')!;
+    expect(Number(casing.getAttribute("stroke-width"))).toBeGreaterThan(Number(sharp.getAttribute("stroke-width")));
   });
 
   it("centers every ring at the beam center (not the viewBox middle)", () => {

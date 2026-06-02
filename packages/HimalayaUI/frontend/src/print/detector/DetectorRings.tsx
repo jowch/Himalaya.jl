@@ -46,19 +46,27 @@ export function DetectorRings({ beamCenter, rings, hoveredQ, onHoverQ, imageAspe
           // stroke, never a terracotta-accent recolour (matches the trace-plot
           // hover rule: the accent is not a hover highlight).
           const stroke = color ?? "var(--color-ink-faint)";
-          // Radii/strokes are in the normalized (0..1) space; vector-effect keeps
-          // stroke widths crisp despite preserveAspectRatio="none" scaling.
-          const sharpW = hot ? 1.8 : ghost ? 0.8 : 1.0;
-          const sharpOp = hot ? 0.95 : ghost ? 0.45 : 0.7;
+          // Stroke widths are in screen px (vector-effect="non-scaling-stroke" keeps
+          // them crisp despite the preserveAspectRatio="none" stretch).
+          const sharpW = hot ? 2.4 : ghost ? 1.2 : 1.5;
+          const sharpOp = hot ? 0.95 : ghost ? 0.5 : 0.85;
+          // Dark casing drawn UNDER the stroke, ~1px wider each side. Invisible on
+          // the dark window backing, but on bright Bragg arcs / mid-gray data it
+          // outlines the stroke so every ring reads as a drawn annotation — never
+          // mistaken for the (now grayscale) image, and the warm phase strokes stop
+          // washing out where they cross the bright beam region.
+          const casingW = sharpW + 2;
+          const casingOp = hot ? 0.7 : ghost ? 0.35 : 0.55;
+          const dash = ghost ? "2 2.5" : undefined;
           return (
             <g key={i} data-role="det-ring" data-ring-q={q}
                data-hot={hot ? "true" : undefined} data-ghost={ghost ? "true" : undefined}>
-              <ellipse data-role="ring-glow" cx={beamCenter.x} cy={beamCenter.y} rx={r} ry={r * aspect}
-                fill="none" stroke={stroke} strokeWidth={2.4} vectorEffect="non-scaling-stroke"
-                opacity={hot ? 0.4 : ghost ? 0.06 : 0.18} style={{ pointerEvents: "none" }} />
+              <ellipse data-role="ring-casing" cx={beamCenter.x} cy={beamCenter.y} rx={r} ry={r * aspect}
+                fill="none" stroke="oklch(0.12 0.01 60)" strokeWidth={casingW} vectorEffect="non-scaling-stroke"
+                strokeDasharray={dash} opacity={casingOp} style={{ pointerEvents: "none" }} />
               <ellipse data-role="ring-sharp" cx={beamCenter.x} cy={beamCenter.y} rx={r} ry={r * aspect}
                 fill="none" stroke={stroke} strokeWidth={sharpW} vectorEffect="non-scaling-stroke"
-                strokeDasharray={ghost ? "2 2.5" : undefined} opacity={sharpOp}
+                strokeDasharray={dash} opacity={sharpOp}
                 style={{ pointerEvents: "none" }} />
               <ellipse data-role="ring-hit" cx={beamCenter.x} cy={beamCenter.y} rx={r} ry={r * aspect}
                 fill="none" stroke="transparent" strokeWidth={5} vectorEffect="non-scaling-stroke"
