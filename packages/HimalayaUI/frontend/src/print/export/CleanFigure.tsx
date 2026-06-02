@@ -16,9 +16,12 @@ export interface CleanFigureProps {
 
 const ARIAL = "Arial, Helvetica, sans-serif";
 
-// Constant vertical space per trace; with the 52px vertical margins below this
-// makes the default height grow with the series (3 rows → 12+40+3*96 = 340).
+// Constant vertical space per trace; with the vertical margins + bottom gap
+// below, the default height grows with the series.
 const PER_ROW_H = 96;
+// Breathing room between the lowest trace's baseline and the x-axis line, so
+// the bottom trace doesn't hug the axis.
+const BOTTOM_GAP = 14;
 
 // Pure phase colours in plain hex — the un-branded export idiom (NOT Print OKLCH).
 const HEX: Record<string, string> = {
@@ -41,7 +44,8 @@ export function CleanFigure({
   className,
 }: CleanFigureProps) {
   const m = { l: 52, r: 64, t: 12, b: 40 };
-  const h = height ?? m.t + m.b + Math.max(1, rows.length) * PER_ROW_H;
+  const h =
+    height ?? m.t + m.b + BOTTOM_GAP + Math.max(1, rows.length) * PER_ROW_H;
   const pw = width - m.l - m.r;
   const ph = h - m.t - m.b;
   const baseY = m.t + ph;
@@ -61,7 +65,10 @@ export function CleanFigure({
     }
   }
   const safeMaxI = globalMaxI > 0 ? globalMaxI : 1;
-  const slot = rows.length > 0 ? ph / rows.length : ph;
+  // Baselines stack within the region above the bottom gap, so row 0 floats
+  // BOTTOM_GAP above the x-axis.
+  const stackH = ph - BOTTOM_GAP;
+  const slot = rows.length > 0 ? stackH / rows.length : stackH;
   const amp = slot * 0.9;
 
   const pathFor = (row: WaterfallRow, rowBase: number): string => {
@@ -163,7 +170,7 @@ export function CleanFigure({
 
         {/* Traces, stacked bottom→top. */}
         {rows.map((row, i) => {
-          const rowBase = baseY - i * slot;
+          const rowBase = baseY - BOTTOM_GAP - i * slot;
           const d = pathFor(row, rowBase);
           return (
             <g key={row.key}>
