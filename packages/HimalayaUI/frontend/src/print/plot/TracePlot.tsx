@@ -9,6 +9,7 @@ import {
 import { Axis } from "./Axis";
 import { TraceLine } from "./marks/TraceLine";
 import { PlotPeaks, type PlotPeak } from "./marks/PlotPeaks";
+import { PlotLabels } from "./marks/PlotLabels";
 import { hitTestPeaks, zoomXDomain, PEAK_HIT_PX } from "./interaction";
 import { phaseColor } from "../../phases";
 import { type Trace } from "../../api";
@@ -226,6 +227,15 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
                 color={t.phase ? phaseColor(t.phase) : UNINDEXED_COLOR}
                 baselineI={yExtent[0]}
                 {...(paperColor ? { paperColor } : {})}
+              />
+            )) : null}
+            {layers.labels ? traces.map((t, i) => (
+              <PlotLabels
+                key={`labels-${i}`}
+                peaks={t.peaks}
+                projection={projection}
+                color={t.phase ? phaseColor(t.phase) : UNINDEXED_COLOR}
+                baselineI={yExtent[0]}
               />
             )) : null}
             {overlay ? overlay(ctx) : null}
