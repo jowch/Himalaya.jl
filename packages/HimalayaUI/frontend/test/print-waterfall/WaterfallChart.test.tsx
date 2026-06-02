@@ -100,4 +100,25 @@ describe("WaterfallChart", () => {
     rerender(<WaterfallChart rows={ROWS} xType="linear" onXTypeChange={onXTypeChange} />);
     expect(getByTestId("waterfall").getAttribute("data-xtype")).toBe("linear");
   });
+
+  it("renders no q-guide when hoveredQ is unset", () => {
+    const { queryByTestId } = render(<WaterfallChart rows={ROWS} />);
+    expect(queryByTestId("wf-qguide")).toBeNull();
+    expect(queryByTestId("wf-qreadout")).toBeNull();
+  });
+
+  it("renders the q-guide + readout at a controlled hoveredQ", () => {
+    const q = ROWS[0]!.anchors[0]!.q;
+    const { getByTestId } = render(<WaterfallChart rows={ROWS} hoveredQ={q} />);
+    expect(getByTestId("wf-qguide").getAttribute("data-q")).toBe(String(q));
+    expect(getByTestId("wf-qreadout").textContent).toBe(q.toFixed(3));
+  });
+
+  it("clears the cursor (fires onHoverQ undefined) on pointer leave", () => {
+    const onHoverQ = vi.fn();
+    const { getByTestId } = render(<WaterfallChart rows={ROWS} onHoverQ={onHoverQ} />);
+    const stack = getByTestId("wf-stack");
+    fireEvent.pointerLeave(stack);
+    expect(onHoverQ).toHaveBeenLastCalledWith(undefined);
+  });
 });

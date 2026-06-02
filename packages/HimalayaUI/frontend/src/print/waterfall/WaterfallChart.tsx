@@ -5,6 +5,8 @@ import { makeAxis } from "../plot/projection";
 import type { PlotPeak } from "../plot/marks/PlotPeaks";
 import { waterfallQDomain, type WaterfallRow } from "./waterfallModel";
 import { SegmentedControl } from "../ui";
+import { snapToPeakQ } from "./cursor";
+import { PEAK_HIT_PX } from "../plot/interaction";
 
 const AXIS_H = 44;          // height of the shared bottom axis strip
 const LABEL_W = 56;         // right-margin label gutter
@@ -20,6 +22,8 @@ export interface WaterfallChartProps {
   hoveredKey?: string;
   onHoverRow?: (key?: string) => void;
   onHoverQ?: (q?: number) => void;
+  /** Controlled cursor q; falls back to internal hover when omitted. */
+  hoveredQ?: number;
   /** Fit-to-width ceiling (px). Default 1080 (mockup plate). */
   maxWidth?: number;
   /** CSS min-width floor on the figure; it won't shrink below this. Default 560. */
@@ -38,6 +42,8 @@ export function WaterfallChart({
   onXTypeChange,
   hoveredKey,
   onHoverRow,
+  onHoverQ,
+  hoveredQ,
   maxWidth = 1080,
   minWidth = 560,
   className = "",
@@ -46,6 +52,8 @@ export function WaterfallChart({
   const hot = hoveredKey ?? internalHot;
   const [internalXType, setInternalXType] = useState<"log" | "linear">("log");
   const scale = xType ?? internalXType;
+  const [internalHoveredQ, setInternalHoveredQ] = useState<number | undefined>(undefined);
+  const cursorQ = hoveredQ ?? internalHoveredQ;
 
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [measuredW, setMeasuredW] = useState<number | null>(null);
@@ -67,6 +75,8 @@ export function WaterfallChart({
   // falling back to maxWidth before first measure / in non-DOM tests.
   const effectiveW = Math.min(measuredW ?? maxWidth, maxWidth);
   const plotW = Math.max(0, effectiveW - LABEL_W);
+
+  const sharedX = makeAxis(qDomain, [4, plotW - 4], scale);
 
   const totalWeight = rows.reduce((s, r) => s + Math.max(0, r.bandHeight), 0) || rows.length;
 
@@ -91,6 +101,11 @@ export function WaterfallChart({
     onXTypeChange?.(next);
   };
 
+  const setCursorQ = (q: number | undefined): void => {
+    if (hoveredQ === undefined) setInternalHoveredQ(q);
+    onHoverQ?.(q);
+  };
+
   return (
     <div ref={rootRef} className={`relative w-full ${className}`} style={{ maxWidth, minWidth }} data-testid="waterfall" data-xtype={scale}>
       <div className="flex justify-end mb-1">
@@ -103,7 +118,17 @@ export function WaterfallChart({
           testId="wf-scale"
         />
       </div>
-      <div className="relative" style={{ height: TOTAL_H }}>
+      <div
+        className="relative"
+        style={{ height: TOTAL_H }}
+        data-testid="wf-stack"
+        onPointerMove={(e) => {
+          const rect = e.currentTarget.getBoundingClientRect();
+          const snapped = snapToPeakQ(e.clientX - rect.left, rows, (q) => sharedX.to(q), PEAK_HIT_PX);
+          setCursorQ(snapped ?? undefined);
+        }}
+        onPointerLeave={() => setCursorQ(undefined)}
+      >
         {placed.map(({ row, top, h }) => {
           const model: TraceModel = { trace: row.trace, peaks: anchorsToPeaks(row), phase: row.phase };
           const isHot = hot === row.key;
@@ -141,12 +166,31 @@ export function WaterfallChart({
             </div>
           );
         })}
+        {cursorQ != null ? (
+          <>
+            <div
+              data-role="wf-qguide"
+              data-testid="wf-qguide"
+              data-q={cursorQ}
+              className="absolute top-0 w-px bg-accent pointer-events-none"
+              style={{ left: sharedX.to(cursorQ), height: TOTAL_H }}
+            />
+            <div
+              data-role="wf-qreadout"
+              data-testid="wf-qreadout"
+              className="absolute top-0 -translate-x-1/2 bg-plate border border-hair rounded-sm px-1 text-meta font-mono text-ink pointer-events-none"
+              style={{ left: sharedX.to(cursorQ) }}
+            >
+              {cursorQ.toFixed(3)}
+            </div>
+          </>
+        ) : null}
       </div>
 
       <svg width={plotW} height={AXIS_H} role="img" aria-label="scattering vector q" data-testid="wf-axis">
         {/* Axis baseline sits at the strip top (plotHeight=0); ticks + label descend into the 44px strip. */}
         {/* range [4, plotW-4] matches a row TracePlot's axes=false 4px inset, so ticks sit under the traces. */}
-        <Axis axis={makeAxis(qDomain, [4, plotW - 4], scale)} orientation="bottom" plotWidth={plotW} plotHeight={0} label="q (Å⁻¹)" />
+        <Axis axis={sharedX} orientation="bottom" plotWidth={plotW} plotHeight={0} label="q (Å⁻¹)" />
       </svg>
     </div>
   );
