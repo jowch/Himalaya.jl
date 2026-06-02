@@ -55,7 +55,8 @@ export interface PeakGlyphDescriptor {
   fill: string | "none";
   stroke: string;
   strokeWidth: number;
-  /** q-link emphasis: draw a concentric same-shape halo around the mark. */
+  /** q-link emphasis flag — the q-line/readout carry it; the mark is unchanged
+   *  (kept as a `data-hot` DOM hook). */
   ring: boolean;
   r: number;
   offsetPx: number;
@@ -74,8 +75,8 @@ export function peakGlyph(opts: PeakMarkOpts): PeakGlyphDescriptor {
     : opts.source === "manual"
       ? "diamond"
       : "triangle-down";
-  // Hot does NOT grow the mark: the q-link emphasis is a separate concentric
-  // halo (drawn by <PeakGlyph>), so the resting glyph keeps its size + colour.
+  // Hot does NOT change the mark at all: the q-link emphasis is the q-line +
+  // q-readout (PlotPeaks/TracePlot), so the glyph keeps its resting size+colour.
   const r = opts.r ?? DEFAULT_R;
   // Filled only when it's a real, present, non-ghosted, non-optimistic peak.
   const filled = !opts.predictedAbsent && !opts.optimistic && !opts.excluded;

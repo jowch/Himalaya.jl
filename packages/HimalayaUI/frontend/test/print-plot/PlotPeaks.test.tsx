@@ -58,21 +58,36 @@ describe("PlotPeaks", () => {
     expect(qline.getAttribute("stroke-width")).toBe("1.5");
   });
 
-  it("a hot peak draws a concentric same-shape halo, not a terracotta recolour", () => {
-    const { container } = render(
+  it("a hot peak does not change the mark — no halo/ring, emphasis is the q-line", () => {
+    const restColor = "var(--color-success)";
+    const { container, rerender } = render(
+      <svg>
+        <PlotPeaks
+          peaks={[{ id: 1, q: 0.2, intensity: 20, source: "auto" }]}
+          projection={proj}
+          color={restColor}
+        />
+      </svg>,
+    );
+    const restingStroke = container
+      .querySelector('[data-role="peak-glyph"] [data-shape]')!
+      .getAttribute("stroke");
+    rerender(
       <svg>
         <PlotPeaks
           peaks={[{ id: 1, q: 0.2, intensity: 20, source: "auto", hot: true }]}
           projection={proj}
-          color="var(--color-success)"
+          color={restColor}
         />
       </svg>,
     );
-    // A separate, larger, same-shape outline element is drawn.
-    expect(container.querySelector('[data-role="peak-halo"]')).toBeTruthy();
-    // The mark itself keeps its phase colour — it is NOT recoloured terracotta.
-    const mark = container.querySelector('[data-role="peak-glyph"] [data-shape]')!;
-    expect(mark.getAttribute("stroke")).not.toBe("var(--color-accent)");
+    // No separate halo/ring element, and the mark's stroke is unchanged by hot.
+    expect(container.querySelector('[data-role="peak-halo"]')).toBeNull();
+    const hotStroke = container
+      .querySelector('[data-role="peak-glyph"] [data-shape]')!
+      .getAttribute("stroke");
+    expect(hotStroke).toBe(restingStroke);
+    expect(hotStroke).not.toBe("var(--color-accent)");
   });
 
   it("uses per-peak color when present, ignoring the layer color", () => {

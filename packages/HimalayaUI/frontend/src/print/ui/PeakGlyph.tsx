@@ -47,23 +47,6 @@ function glyphPoints(
   return `${x},${cy - hw} ${x + hw},${cy} ${x},${cy + hw} ${x - hw},${cy}`;
 }
 
-/** Scale a points string about its own centroid — yields a larger, concentric
- *  copy of the same shape (used for the q-link halo). */
-function expandPoints(pointsStr: string, scale: number): string {
-  const pts = pointsStr
-    .trim()
-    .split(/\s+/)
-    .map((p) => p.split(",").map(Number) as [number, number]);
-  const cx = pts.reduce((s, p) => s + p[0], 0) / pts.length;
-  const cy = pts.reduce((s, p) => s + p[1], 0) / pts.length;
-  return pts
-    .map(([px, py]) => `${cx + (px - cx) * scale},${cy + (py - cy) * scale}`)
-    .join(" ");
-}
-
-/** Halo size relative to the mark — large enough to leave a visible gap. */
-const HALO_SCALE = 1.7;
-
 export function PeakGlyph({
   descriptor,
   x,
@@ -109,38 +92,11 @@ export function PeakGlyph({
     />
   );
 
-  // q-link emphasis: a larger, concentric outline of the SAME shape with a gap,
-  // a thin line, in the peak's own colour — not a surrounding terracotta ring.
-  const halo = ring ? (
-    isCaret ? (
-      <polyline
-        data-role="peak-halo"
-        points={expandPoints(pts, HALO_SCALE)}
-        fill="none"
-        stroke={stroke}
-        strokeWidth={1}
-        strokeOpacity={opacity}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    ) : (
-      <polygon
-        data-role="peak-halo"
-        points={expandPoints(pts, HALO_SCALE)}
-        fill="none"
-        stroke={stroke}
-        strokeWidth={1}
-        strokeOpacity={opacity}
-      />
-    )
-  ) : null;
-
-  return (
-    <g data-role="peak-glyph">
-      {mark}
-      {halo}
-    </g>
-  );
+  // q-link emphasis is carried entirely by the q-line + q-readout (see
+  // PlotPeaks / TracePlot); the mark itself is UNCHANGED when hot, per the
+  // "scientific instrument — everything else recedes" restraint (DESIGN §1.1).
+  // `data-hot` stays as a DOM hook for tests/debug only.
+  return <g data-role="peak-glyph">{mark}</g>;
 }
 
 /** Convenience: render a glyph straight from atom options (legend call sites). */
