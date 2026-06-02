@@ -7,12 +7,15 @@ export interface TraceLineProps {
   projection: Projection;
   /** Draw the ±σ band behind the line (default true; needs trace.sigma). */
   band?: boolean;
+  /** Line stroke colour (default the neutral ink-soft). */
+  color?: string;
 }
 
 export function TraceLine({
   trace,
   projection,
   band = true,
+  color = "var(--color-ink-soft)",
 }: TraceLineProps): JSX.Element {
   const { x, y } = projection;
   const n = Math.min(trace.q.length, trace.I.length);
@@ -47,7 +50,7 @@ export function TraceLine({
       <path
         d={linePath}
         fill="none"
-        stroke="var(--color-ink-soft)"
+        stroke={color}
         strokeWidth={1.8}
         strokeLinejoin="round"
       />
