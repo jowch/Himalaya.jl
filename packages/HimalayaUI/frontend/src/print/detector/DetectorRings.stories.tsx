@@ -3,6 +3,7 @@ import { useState } from "react";
 import { DetectorRings } from "./DetectorRings";
 import { DetectorImage } from "./DetectorImage";
 import { buildRingPlacements } from "./detectorGeometry";
+import { phaseColor } from "../../phases";
 import thumb37 from "../fixtures/thumbs/37.png?url";
 
 const meta: Meta<typeof DetectorRings> = { title: "detector/DetectorRings", component: DetectorRings };
@@ -19,9 +20,13 @@ const frame = "relative aspect-[981/1043] w-[420px] overflow-hidden rounded bord
 // BOTTOM (detector origin), so flip it to the top-left screen origin the overlay
 // uses — same convention as buildRingPlacements. Off-center: high and left.
 const BEAM37 = { x: 421.409 / IMG37.w, y: 1 - 836.946 / IMG37.h }; // ≈ { 0.430, 0.198 }
+// Ring colour comes from phaseColor(assignedPhase) — what the DetectorPanel
+// composite will pass per ring. Here: a Pn3m series (amber) with one predicted-
+// absent ghost, plus an unassigned leftover (no colour → neutral ink-faint).
+const PN3M = phaseColor("Pn3m");
 const QS = [
-  { q: 0.082, color: "var(--color-success)" }, { q: 0.116, color: "var(--color-success)" },
-  { q: 0.142, color: "var(--color-success)" }, { q: 0.171, color: "var(--color-success)", ghost: true },
+  { q: 0.082, color: PN3M }, { q: 0.116, color: PN3M },
+  { q: 0.142, color: PN3M }, { q: 0.171, color: PN3M, ghost: true },
   { q: 0.205 },
 ];
 // NOTE: ring RADII here are presentational (the null-calibration fallback). The

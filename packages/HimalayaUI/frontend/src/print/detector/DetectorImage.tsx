@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { decideOrient } from "../../lib/detectorOrient";
-import { buildPrintDetectorLut } from "./detectorLut";
+import { buildPrintDetectorLut, type DetectorLutVariant } from "./detectorLut";
 
 interface Props {
   /** Image URL to fetch + paint; null -> frame-window placeholder. Caller builds
@@ -8,12 +8,15 @@ interface Props {
   src: string | null;
   /** `thumb` locks portrait + scroll-gates the fetch; `full` rotates + eager. */
   size: "thumb" | "full";
+  /** Colormap: "neutral" (default) keeps the image a warm-gray so the phase-ring
+   *  overlay owns all the colour; "warm" is the saturated beauty ramp. */
+  lutVariant?: DetectorLutVariant;
   className?: string;
 }
 
 interface Layout { orient: "portrait" | "landscape"; caps: { maxW: number; maxH: number } | null }
 
-export function DetectorImage({ src, size, className }: Props): JSX.Element {
+export function DetectorImage({ src, size, lutVariant = "neutral", className }: Props): JSX.Element {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [layout, setLayout] = useState<Layout>({ orient: "portrait", caps: null });
@@ -47,9 +50,10 @@ export function DetectorImage({ src, size, className }: Props): JSX.Element {
     bitmap.close();
     const imageData = offCtx.getImageData(0, 0, width, height);
 
-    // Warm, NON-inverting Print LUT: index the 256-entry colormap by the
-    // grayscale intensity (R channel of the log-normalized PNG).
-    const lut = buildPrintDetectorLut();
+    // NON-inverting Print LUT: index the 256-entry colormap by the grayscale
+    // intensity (R channel of the log-normalized PNG). Neutral warm-gray by
+    // default so the phase-ring overlay carries the colour.
+    const lut = buildPrintDetectorLut(lutVariant);
     const data = imageData.data;
     for (let i = 0; i < data.length; i += 4) {
       const t = data[i];           // 0..255 intensity
@@ -62,7 +66,7 @@ export function DetectorImage({ src, size, className }: Props): JSX.Element {
     canvas.height = height;
     canvas.getContext("2d")?.putImageData(imageData, 0, 0);
     evaluateOrient();
-  }, [src, hasIntersected, evaluateOrient]);
+  }, [src, hasIntersected, lutVariant, evaluateOrient]);
 
   useEffect(() => { renderImage(); }, [renderImage]);
 
