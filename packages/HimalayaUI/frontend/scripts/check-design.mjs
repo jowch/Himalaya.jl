@@ -132,15 +132,17 @@ function relToSrc(absPath) {
 }
 
 // src/components/ui/**, src/print/ui/**, src/print/plot/**, src/print/detector/**,
-// and src/print/comb/** are excluded (appearance authored — primitives, the trace-plot
-// engine, the detector rendering layer, and the comb/residual rendering layer).
+// src/print/comb/**, and src/print/export/** are excluded (appearance authored —
+// primitives, the trace-plot engine, the detector rendering layer, the comb/residual
+// rendering layer, and the deliberately un-branded export renderer).
 function isExcluded(relPath) {
   return (
     relPath.startsWith("components/ui/") ||
     relPath.startsWith("print/ui/") ||
     relPath.startsWith("print/plot/") ||
     relPath.startsWith("print/detector/") ||
-    relPath.startsWith("print/comb/")
+    relPath.startsWith("print/comb/") ||
+    relPath.startsWith("print/export/")   // CleanFigure: deliberately un-branded export idiom (Arial + literal hex)
   );
 }
 
