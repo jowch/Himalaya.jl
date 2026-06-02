@@ -4,6 +4,7 @@ import { Axis } from "../plot/Axis";
 import { makeAxis } from "../plot/projection";
 import type { PlotPeak } from "../plot/marks/PlotPeaks";
 import { waterfallQDomain, type WaterfallRow } from "./waterfallModel";
+import { SegmentedControl } from "../ui";
 
 const AXIS_H = 44;          // height of the shared bottom axis strip
 const LABEL_W = 56;         // right-margin label gutter
@@ -14,6 +15,7 @@ export interface WaterfallChartProps {
   /** Rows low→high (display order); rendered bottom-up. */
   rows: WaterfallRow[];
   xType?: "log" | "linear";
+  onXTypeChange?: (next: "log" | "linear") => void;
   /** Controlled hot row; falls back to internal hover when omitted. */
   hoveredKey?: string;
   onHoverRow?: (key?: string) => void;
@@ -32,7 +34,8 @@ function anchorsToPeaks(row: WaterfallRow): PlotPeak[] {
 
 export function WaterfallChart({
   rows,
-  xType = "log",
+  xType,
+  onXTypeChange,
   hoveredKey,
   onHoverRow,
   maxWidth = 1080,
@@ -41,6 +44,8 @@ export function WaterfallChart({
 }: WaterfallChartProps): JSX.Element {
   const [internalHot, setInternalHot] = useState<string | undefined>(undefined);
   const hot = hoveredKey ?? internalHot;
+  const [internalXType, setInternalXType] = useState<"log" | "linear">("log");
+  const scale = xType ?? internalXType;
 
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [measuredW, setMeasuredW] = useState<number | null>(null);
@@ -81,8 +86,23 @@ export function WaterfallChart({
     onHoverRow?.(key);
   };
 
+  const setScale = (next: "log" | "linear"): void => {
+    if (xType === undefined) setInternalXType(next);
+    onXTypeChange?.(next);
+  };
+
   return (
-    <div ref={rootRef} className={`relative w-full ${className}`} style={{ maxWidth, minWidth }} data-testid="waterfall">
+    <div ref={rootRef} className={`relative w-full ${className}`} style={{ maxWidth, minWidth }} data-testid="waterfall" data-xtype={scale}>
+      <div className="flex justify-end mb-1">
+        <SegmentedControl<"log" | "linear">
+          options={[{ value: "log", label: "log" }, { value: "linear", label: "linear" }]}
+          value={scale}
+          onChange={setScale}
+          size="sm"
+          aria-label="q axis scale"
+          testId="wf-scale"
+        />
+      </div>
       <div className="relative" style={{ height: TOTAL_H }}>
         {placed.map(({ row, top, h }) => {
           const model: TraceModel = { trace: row.trace, peaks: anchorsToPeaks(row), phase: row.phase };
@@ -103,7 +123,7 @@ export function WaterfallChart({
               <TracePlot
                 trace={model}
                 axes={false}
-                xType={xType}
+                xType={scale}
                 xDomain={qDomain}
                 yHeadroom={Y_HEADROOM}
                 height={h}
@@ -126,7 +146,7 @@ export function WaterfallChart({
       <svg width={plotW} height={AXIS_H} role="img" aria-label="scattering vector q" data-testid="wf-axis">
         {/* Axis baseline sits at the strip top (plotHeight=0); ticks + label descend into the 44px strip. */}
         {/* range [4, plotW-4] matches a row TracePlot's axes=false 4px inset, so ticks sit under the traces. */}
-        <Axis axis={makeAxis(qDomain, [4, plotW - 4], xType)} orientation="bottom" plotWidth={plotW} plotHeight={0} label="q (Å⁻¹)" />
+        <Axis axis={makeAxis(qDomain, [4, plotW - 4], scale)} orientation="bottom" plotWidth={plotW} plotHeight={0} label="q (Å⁻¹)" />
       </svg>
     </div>
   );

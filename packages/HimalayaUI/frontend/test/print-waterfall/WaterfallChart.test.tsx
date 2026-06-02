@@ -74,4 +74,30 @@ describe("WaterfallChart", () => {
     expect(container.querySelector('[data-role="wf-row"][data-key="b"]')!.getAttribute("data-hot")).toBe("true");
     expect(container.querySelector('[data-role="wf-row"][data-key="a"]')!.getAttribute("data-dim")).toBe("true");
   });
+
+  it("defaults the q-axis to log and exposes it via data-xtype", () => {
+    const { getByTestId } = render(<WaterfallChart rows={ROWS} />);
+    expect(getByTestId("waterfall").getAttribute("data-xtype")).toBe("log");
+  });
+
+  it("renders a log/linear scale toggle and flips internal scale on click", () => {
+    const { getByTestId } = render(<WaterfallChart rows={ROWS} />);
+    expect(getByTestId("wf-scale")).toBeTruthy();
+    const linear = getByTestId("wf-scale").querySelector('[data-value="linear"]') as HTMLElement;
+    fireEvent.click(linear);
+    expect(getByTestId("waterfall").getAttribute("data-xtype")).toBe("linear");
+  });
+
+  it("fires onXTypeChange and respects a controlled xType", () => {
+    const onXTypeChange = vi.fn();
+    const { getByTestId, rerender } = render(
+      <WaterfallChart rows={ROWS} xType="log" onXTypeChange={onXTypeChange} />,
+    );
+    const linear = getByTestId("wf-scale").querySelector('[data-value="linear"]') as HTMLElement;
+    fireEvent.click(linear);
+    expect(onXTypeChange).toHaveBeenCalledWith("linear");
+    expect(getByTestId("waterfall").getAttribute("data-xtype")).toBe("log");
+    rerender(<WaterfallChart rows={ROWS} xType="linear" onXTypeChange={onXTypeChange} />);
+    expect(getByTestId("waterfall").getAttribute("data-xtype")).toBe("linear");
+  });
 });
