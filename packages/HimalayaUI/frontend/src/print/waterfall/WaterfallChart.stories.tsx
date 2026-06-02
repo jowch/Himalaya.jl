@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { WaterfallChart } from "./WaterfallChart";
+import { SegmentedControl } from "../ui";
 import { FULL, TRANSITION, MIXED_STATES } from "./waterfall.fixtures";
 
 const meta: Meta<typeof WaterfallChart> = {
@@ -58,6 +59,41 @@ export const ControlledHover: Story = {
     return (
       <div className={frame} style={{ width: 980 }}>
         <WaterfallChart rows={TRANSITION} maxWidth={920} {...hoverProps} />
+      </div>
+    );
+  },
+};
+
+// ScaleToggle: demonstrates the panel-owned toggle pattern — a parent useState drives
+// both the SegmentedControl and the chart's xType prop.
+export const ScaleToggle: Story = {
+  render: () => {
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    const [xType, setXType] = useState<"log" | "linear">("log");
+    return (
+      <div className={frame} style={{ width: 920 }}>
+        <div className="flex justify-end mb-2">
+          <SegmentedControl<"log" | "linear">
+            options={[{ value: "log", label: "log" }, { value: "linear", label: "linear" }]}
+            value={xType}
+            onChange={setXType}
+            size="sm"
+            aria-label="q axis scale"
+          />
+        </div>
+        <WaterfallChart rows={TRANSITION} maxWidth={920} xType={xType} />
+      </div>
+    );
+  },
+};
+
+// QCursor: shows the cursor guide statically via a controlled hoveredQ.
+export const QCursor: Story = {
+  render: () => {
+    const q = TRANSITION[0]?.anchors[0]?.q ?? 0.06;
+    return (
+      <div className={frame} style={{ width: 920 }}>
+        <WaterfallChart rows={TRANSITION} maxWidth={920} hoveredQ={q} />
       </div>
     );
   },

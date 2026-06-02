@@ -4,7 +4,6 @@ import { Axis } from "../plot/Axis";
 import { makeAxis } from "../plot/projection";
 import type { PlotPeak } from "../plot/marks/PlotPeaks";
 import { waterfallQDomain, type WaterfallRow } from "./waterfallModel";
-import { SegmentedControl } from "../ui";
 import { snapToPeakQ } from "./cursor";
 import { PEAK_HIT_PX } from "../plot/interaction";
 
@@ -17,7 +16,6 @@ export interface WaterfallChartProps {
   /** Rows low→high (display order); rendered bottom-up. */
   rows: WaterfallRow[];
   xType?: "log" | "linear";
-  onXTypeChange?: (next: "log" | "linear") => void;
   /** Controlled hot row; falls back to internal hover when omitted. */
   hoveredKey?: string;
   onHoverRow?: (key?: string) => void;
@@ -38,8 +36,7 @@ function anchorsToPeaks(row: WaterfallRow): PlotPeak[] {
 
 export function WaterfallChart({
   rows,
-  xType,
-  onXTypeChange,
+  xType = "log",
   hoveredKey,
   onHoverRow,
   onHoverQ,
@@ -50,8 +47,6 @@ export function WaterfallChart({
 }: WaterfallChartProps): JSX.Element {
   const [internalHot, setInternalHot] = useState<string | undefined>(undefined);
   const hot = hoveredKey ?? internalHot;
-  const [internalXType, setInternalXType] = useState<"log" | "linear">("log");
-  const scale = xType ?? internalXType;
   const [internalHoveredQ, setInternalHoveredQ] = useState<number | undefined>(undefined);
   const cursorQ = hoveredQ ?? internalHoveredQ;
 
@@ -76,7 +71,7 @@ export function WaterfallChart({
   const effectiveW = Math.min(measuredW ?? maxWidth, maxWidth);
   const plotW = Math.max(0, effectiveW - LABEL_W);
 
-  const sharedX = makeAxis(qDomain, [4, plotW - 4], scale);
+  const sharedX = makeAxis(qDomain, [4, plotW - 4], xType);
 
   const totalWeight = rows.reduce((s, r) => s + Math.max(0, r.bandHeight), 0) || rows.length;
 
@@ -96,28 +91,13 @@ export function WaterfallChart({
     onHoverRow?.(key);
   };
 
-  const setScale = (next: "log" | "linear"): void => {
-    if (xType === undefined) setInternalXType(next);
-    onXTypeChange?.(next);
-  };
-
   const setCursorQ = (q: number | undefined): void => {
     if (hoveredQ === undefined) setInternalHoveredQ(q);
     onHoverQ?.(q);
   };
 
   return (
-    <div ref={rootRef} className={`relative w-full ${className}`} style={{ maxWidth, minWidth }} data-testid="waterfall" data-xtype={scale}>
-      <div className="flex justify-end mb-1">
-        <SegmentedControl<"log" | "linear">
-          options={[{ value: "log", label: "log" }, { value: "linear", label: "linear" }]}
-          value={scale}
-          onChange={setScale}
-          size="sm"
-          aria-label="q axis scale"
-          testId="wf-scale"
-        />
-      </div>
+    <div ref={rootRef} className={`relative w-full ${className}`} style={{ maxWidth, minWidth }} data-testid="waterfall" data-xtype={xType}>
       <div
         className="relative"
         style={{ height: TOTAL_H }}
@@ -148,7 +128,7 @@ export function WaterfallChart({
               <TracePlot
                 trace={model}
                 axes={false}
-                xType={scale}
+                xType={xType}
                 xDomain={qDomain}
                 yHeadroom={Y_HEADROOM}
                 height={h}
