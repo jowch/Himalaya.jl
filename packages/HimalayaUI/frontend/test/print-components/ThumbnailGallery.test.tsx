@@ -14,9 +14,11 @@ describe("<ThumbnailGallery> root element", () => {
     expect(screen.getByTestId("thumbnail-gallery")).toBeInTheDocument();
   });
 
-  it("defaults data-variant to 'sheet'", () => {
+  it("defaults data-size to 'sm' and data-align to 'start'", () => {
     render(<ThumbnailGallery exposures={THREE_EXPOSURES} />);
-    expect(screen.getByTestId("thumbnail-gallery")).toHaveAttribute("data-variant", "sheet");
+    const gallery = screen.getByTestId("thumbnail-gallery");
+    expect(gallery).toHaveAttribute("data-size", "sm");
+    expect(gallery).toHaveAttribute("data-align", "start");
   });
 });
 
@@ -83,23 +85,39 @@ describe("<ThumbnailGallery> selectedId", () => {
   });
 });
 
-describe("<ThumbnailGallery> variant", () => {
-  it("variant='loupe' → gallery data-variant='loupe' AND children data-size='loupe'", () => {
-    render(<ThumbnailGallery exposures={THREE_EXPOSURES} variant="loupe" />);
-    expect(screen.getByTestId("thumbnail-gallery")).toHaveAttribute("data-variant", "loupe");
+describe("<ThumbnailGallery> size", () => {
+  it("size='lg' → gallery data-size='lg' AND every child data-size='lg'", () => {
+    render(<ThumbnailGallery exposures={THREE_EXPOSURES} size="lg" />);
+    expect(screen.getByTestId("thumbnail-gallery")).toHaveAttribute("data-size", "lg");
     const thumbs = screen.getAllByTestId("thumbnail");
     for (const thumb of thumbs) {
-      expect(thumb).toHaveAttribute("data-size", "loupe");
+      expect(thumb).toHaveAttribute("data-size", "lg");
     }
   });
 
-  it("default variant → gallery data-variant='sheet' AND children data-size='sheet'", () => {
+  it("default size → gallery data-size='sm' AND every child data-size='sm'", () => {
     render(<ThumbnailGallery exposures={THREE_EXPOSURES} />);
-    expect(screen.getByTestId("thumbnail-gallery")).toHaveAttribute("data-variant", "sheet");
+    expect(screen.getByTestId("thumbnail-gallery")).toHaveAttribute("data-size", "sm");
     const thumbs = screen.getAllByTestId("thumbnail");
     for (const thumb of thumbs) {
-      expect(thumb).toHaveAttribute("data-size", "sheet");
+      expect(thumb).toHaveAttribute("data-size", "sm");
     }
+  });
+});
+
+describe("<ThumbnailGallery> align", () => {
+  it("align='center' → gallery data-align='center' and adds justify-center", () => {
+    render(<ThumbnailGallery exposures={THREE_EXPOSURES} align="center" />);
+    const gallery = screen.getByTestId("thumbnail-gallery");
+    expect(gallery).toHaveAttribute("data-align", "center");
+    expect(gallery.className).toContain("justify-center");
+  });
+
+  it("default align='start' → data-align='start' and no justify-center", () => {
+    render(<ThumbnailGallery exposures={THREE_EXPOSURES} />);
+    const gallery = screen.getByTestId("thumbnail-gallery");
+    expect(gallery).toHaveAttribute("data-align", "start");
+    expect(gallery.className).not.toContain("justify-center");
   });
 });
 

@@ -107,9 +107,13 @@ const HEADER_LABELS = ["SAMPLE", "EXPOSURES", "KEPT", "TAGS", "STATUS"];
 /** Header row (story-local scaffolding) + 4 rows on the SAME grid track —
  *  proves column alignment. */
 export const Stack: Story = {
+  parameters: { layout: "fullscreen" },
   render: () => (
-    <div className="bg-plate">
-      <div className={`grid ${SAMPLE_TABLE_COLS} border-b border-hair-strong`}>
+    <div className="bg-plate min-w-[1000px]">
+      <div
+        className="grid border-b border-hair-strong"
+        style={{ gridTemplateColumns: SAMPLE_TABLE_COLS }}
+      >
         {HEADER_LABELS.map((label) => (
           <div key={label} className="px-4 py-2">
             <span className="text-kicker text-kicker-faint">{label}</span>

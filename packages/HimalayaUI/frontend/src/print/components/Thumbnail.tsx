@@ -10,17 +10,17 @@ export interface ThumbnailProps {
   representative?: boolean;
   rejected?: boolean;
   selected?: boolean;
-  /** Loupe variant → 70px instead of 62px. */
-  size?: "sheet" | "loupe";
+  /** `"sm"` → 62px (contact-sheet strip); `"lg"` → 70px (loupe strip). */
+  size?: "sm" | "lg";
   onClick?: () => void;
   title?: string;
   /** PLACEMENT ONLY. */
   className?: string;
 }
 
-const SIZE_PX: Record<"sheet" | "loupe", number> = {
-  sheet: 62,
-  loupe: 70,
+const SIZE_PX: Record<"sm" | "lg", number> = {
+  sm: 62,
+  lg: 70,
 };
 
 function buildDataState(props: {
@@ -42,7 +42,7 @@ export function Thumbnail({
   representative = false,
   rejected = false,
   selected = false,
-  size = "sheet",
+  size = "sm",
   onClick,
   title,
   className,
@@ -80,11 +80,8 @@ export function Thumbnail({
 
       {/* Representative marker */}
       {representative && (
-        <span
-          data-role="thumb-rep"
-          className="absolute top-1 right-1 ring-2 ring-plate rounded-full"
-        >
-          <Dot tone="accent" size="sm" aria-hidden="true" />
+        <span data-role="thumb-rep" className="absolute top-1 right-1">
+          <Dot tone="accent" size="md" bordered aria-hidden="true" />
         </span>
       )}
 

@@ -28,9 +28,9 @@ type Story = StoryObj<typeof meta>;
 /** Default sheet strip — horizontal scroll, one representative, one rejected. */
 export const Sheet: Story = {};
 
-/** Loupe strip — centered row. */
+/** Loupe strip — larger thumbnails, centered row. */
 export const Loupe: Story = {
-  args: { variant: "loupe" },
+  args: { size: "lg", align: "center" },
 };
 
 /** One exposure selected via selectedId. */

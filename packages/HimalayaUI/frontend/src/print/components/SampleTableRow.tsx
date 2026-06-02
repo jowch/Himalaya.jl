@@ -26,9 +26,10 @@ export interface SampleTableRowProps {
 
 /** The 5-column grid track shared by every row AND the table header — keeping
  *  them identical is what proves column alignment. Sample / Exposures / Kept /
- *  Tags / Status. */
-export const SAMPLE_TABLE_COLS =
-  "grid-cols-[244px_minmax(360px,1fr)_78px_168px_150px]";
+ *  Tags / Status. Applied via inline `style={{ gridTemplateColumns }}` rather
+ *  than a `grid-cols-[…]` arbitrary so it is immune to Tailwind dev-JIT misses
+ *  on a brand-new arbitrary class mid-session. */
+export const SAMPLE_TABLE_COLS = "244px minmax(360px,1fr) 78px 168px 150px";
 
 /** Per-cell grid-child wrapper: vertical centering + the cell gutter + the row's
  *  resting height floor. All placement/layout (allowed by the design guard). */
@@ -62,13 +63,13 @@ export function SampleTableRow({
       data-screened={screened ? "true" : "false"}
       className={`border-b border-hair hover:bg-paper-sunk${restTint}${className ? ` ${className}` : ""}`}
     >
-      <div className={`grid ${SAMPLE_TABLE_COLS}`}>
+      <div className="grid" style={{ gridTemplateColumns: SAMPLE_TABLE_COLS }}>
         <div className={CELL}>
           <SpecCell name={name} sampleId={sampleId} screened={screened} />
         </div>
         <div className={CELL}>
           <ThumbnailGallery
-            variant="sheet"
+            size="sm"
             exposures={exposures}
             {...(selectedExposureId != null ? { selectedId: selectedExposureId } : {})}
             {...(onSelectExposure ? { onSelect: onSelectExposure } : {})}

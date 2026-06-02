@@ -17,6 +17,17 @@ export const Success: Story = { args: { tone: "success" } };
 export const Muted: Story = { args: { tone: "muted" } };
 export const Neutral: Story = { args: { tone: "neutral" } };
 
+/** The representative-marker form: 9px accent circle with a 1.5px plate ring,
+ *  shown here on an accent backdrop so the separator ring reads. */
+export const BorderedMarker: Story = {
+  args: { tone: "accent", size: "md", bordered: true },
+  render: (args) => (
+    <span className="inline-flex bg-print-accent p-2 rounded-sm">
+      <Dot {...args} aria-hidden="true" />
+    </span>
+  ),
+};
+
 export const WithCaption: Story = {
   // `label` is the screen-reader name; the visible word is the sibling text.
   render: () => (

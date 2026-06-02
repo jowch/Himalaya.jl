@@ -13,7 +13,11 @@ export interface ThumbnailGalleryProps {
   /** Currently-selected exposure id (drives child Thumbnail `selected`). */
   selectedId?: number;
   onSelect?: (id: number) => void;
-  variant?: "sheet" | "loupe";
+  /** Child thumbnail size; forwarded to every Thumbnail. Default `"sm"`. */
+  size?: "sm" | "lg";
+  /** Horizontal alignment of the strip. `"center"` adds `justify-center`
+   *  (e.g. the loupe strip). Default `"start"`. */
+  align?: "start" | "center";
   /** PLACEMENT ONLY. */
   className?: string;
 }
@@ -22,18 +26,20 @@ export function ThumbnailGallery({
   exposures,
   selectedId,
   onSelect,
-  variant = "sheet",
+  size = "sm",
+  align = "start",
   className,
 }: ThumbnailGalleryProps): JSX.Element {
   const baseClass =
-    variant === "loupe"
-      ? "flex justify-center gap-2 mt-3"
+    align === "center"
+      ? "flex flex-nowrap overflow-x-auto gap-2 justify-center"
       : "flex flex-nowrap overflow-x-auto gap-2";
 
   return (
     <div
       data-testid="thumbnail-gallery"
-      data-variant={variant}
+      data-size={size}
+      data-align={align}
       className={`${baseClass}${className ? ` ${className}` : ""}`}
     >
       {exposures.map((exposure) => (
@@ -44,7 +50,7 @@ export function ThumbnailGallery({
           {...(exposure.representative != null ? { representative: exposure.representative } : {})}
           {...(exposure.rejected != null ? { rejected: exposure.rejected } : {})}
           selected={selectedId === exposure.id}
-          size={variant}
+          size={size}
           {...(onSelect ? { onClick: () => onSelect(exposure.id) } : {})}
         />
       ))}

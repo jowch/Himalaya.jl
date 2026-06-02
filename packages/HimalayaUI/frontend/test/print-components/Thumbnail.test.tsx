@@ -9,14 +9,14 @@ describe("<Thumbnail> root element", () => {
     expect(btn.tagName).toBe("BUTTON");
   });
 
-  it("defaults data-size to 'sheet'", () => {
+  it("defaults data-size to 'sm'", () => {
     render(<Thumbnail src={null} />);
-    expect(screen.getByTestId("thumbnail")).toHaveAttribute("data-size", "sheet");
+    expect(screen.getByTestId("thumbnail")).toHaveAttribute("data-size", "sm");
   });
 
-  it("sets data-size='loupe' when size='loupe'", () => {
-    render(<Thumbnail src={null} size="loupe" />);
-    expect(screen.getByTestId("thumbnail")).toHaveAttribute("data-size", "loupe");
+  it("sets data-size='lg' when size='lg'", () => {
+    render(<Thumbnail src={null} size="lg" />);
+    expect(screen.getByTestId("thumbnail")).toHaveAttribute("data-size", "lg");
   });
 });
 
