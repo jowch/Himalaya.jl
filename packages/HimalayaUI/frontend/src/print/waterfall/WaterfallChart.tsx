@@ -158,8 +158,11 @@ export function WaterfallChart({
             <div
               data-role="wf-qreadout"
               data-testid="wf-qreadout"
-              className="absolute top-0 -translate-x-1/2 bg-plate border border-hair rounded-sm px-1 text-meta font-mono text-ink pointer-events-none"
-              style={{ left: sharedX.to(cursorQ) }}
+              // Anchored at the FOOT of the guide (bottom edge at the stack base, just
+              // above the q-axis) — parallels TracePlot's q-readout sitting at the axis
+              // baseline, so the value reads where the eye reads q.
+              className="absolute -translate-x-1/2 -translate-y-full bg-plate border border-hair rounded-sm px-1 text-meta font-mono text-ink pointer-events-none"
+              style={{ left: sharedX.to(cursorQ), top: TOTAL_H }}
             >
               {cursorQ.toFixed(3)}
             </div>
