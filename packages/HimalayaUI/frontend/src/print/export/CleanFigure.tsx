@@ -7,13 +7,18 @@ export interface CleanFigureProps {
   footer: string;
   /** SVG viewBox width. */
   width?: number;
-  /** SVG viewBox height. */
+  /** SVG viewBox height. Defaults to a row-count-driven height so every trace
+   *  keeps a constant vertical slot (3 rows → 340, matching the mockup). */
   height?: number;
   /** Placement-only className on the outer card. */
   className?: string;
 }
 
 const ARIAL = "Arial, Helvetica, sans-serif";
+
+// Constant vertical space per trace; with the 52px vertical margins below this
+// makes the default height grow with the series (3 rows → 12+40+3*96 = 340).
+const PER_ROW_H = 96;
 
 // Pure phase colours in plain hex — the un-branded export idiom (NOT Print OKLCH).
 const HEX: Record<string, string> = {
@@ -32,12 +37,13 @@ export function CleanFigure({
   title,
   footer,
   width = 600,
-  height = 340,
+  height,
   className,
 }: CleanFigureProps) {
   const m = { l: 52, r: 64, t: 12, b: 40 };
+  const h = height ?? m.t + m.b + Math.max(1, rows.length) * PER_ROW_H;
   const pw = width - m.l - m.r;
-  const ph = height - m.t - m.b;
+  const ph = h - m.t - m.b;
   const baseY = m.t + ph;
 
   // Log-q x-axis over all rows' q, padded ~8% each side.
@@ -96,7 +102,7 @@ export function CleanFigure({
       </div>
 
       <svg
-        viewBox={`0 0 ${width} ${height}`}
+        viewBox={`0 0 ${width} ${h}`}
         role="img"
         aria-label={title}
         style={{ display: "block", width: "100%" }}
@@ -131,7 +137,7 @@ export function CleanFigure({
         {/* X axis title. */}
         <text
           x={m.l + pw / 2}
-          y={height - 4}
+          y={h - 4}
           textAnchor="middle"
           fontFamily={ARIAL}
           fontSize={11}
