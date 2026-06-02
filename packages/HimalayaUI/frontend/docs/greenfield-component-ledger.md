@@ -85,7 +85,7 @@ flagged ⚠️ below.
 | `CombLegend` | comb vocabulary key | `PeakGlyph` + text | focus | ✅ | `CombLegend.tsx` |
 | `RepresentativeBox` | set-representative box | `Button` + caption | loupe | ✅ | `RepresentativeBox.tsx` |
 | `Verdict` | kept/dropped state row | `Dot` + `Button` | loupe | ✅ | `Verdict.tsx` |
-| ★ **`Thumbnail`** | mini `DetectorImage` + frame-no + rep-dot + reject-X | `DetectorImage`+`Dot`+`RejectOverlay`+text | focus, sample-table, loupe (**3 sites**) | ⬜ | — |
+| ★ **`Thumbnail`** | mini `DetectorImage` + frame-no + rep-dot + reject-X | `DetectorImage`+`Dot`+`RejectOverlay`+text | focus, sample-table, loupe (**3 sites**) | ✅ | `components/Thumbnail.tsx` |
 | ★ **`ThumbnailGallery`** | filmstrip wrapper (exposure switcher / loupe strip) | `Thumbnail`×N | focus DetectorPanel, sample-table row, loupe | ⬜ | — |
 | `PhaseBlock` | assigned-phase line (name+score+remove) | text+`ScoreBar`+`IconButton` | focus assignment cart | ⬜ | — |
 | `FolioHeader` | folio page header (kicker+title+sub+count) | `Kicker`+text | series-folio | ⬜ | — |
@@ -177,7 +177,7 @@ All ⬜ — deferred until composite + renderer layers are proven in Storybook (
 
 - **Layer 0 primitives:** 39/39 ✅ (foundation complete)
 - **Layer 1 renderers:** 6 ✅ · 3 ⬜ (`CardFigure`, `CustomPreview`, `CleanFigure`) · 1 ⛔ · 1 ⏸
-- **Layer 2 tier-1 composites:** 7 ✅ · ~9 ⬜
+- **Layer 2 tier-1 composites:** 8 ✅ · ~8 ⬜
 - **Layer 3 tier-2 panels:** 0 ✅ · ~17 ⬜
 - **Modals/overlays:** 0 ✅ (`ModalShell` chrome ✅) · ~6 gap clusters ⬜
 - **Layer 4 pages:** 0/5 ⬜
