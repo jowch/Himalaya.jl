@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { TracePlot, type TraceModel } from "../plot/TracePlot";
 import { Axis } from "../plot/Axis";
 import { makeAxis } from "../plot/projection";
@@ -42,8 +42,26 @@ export function WaterfallChart({
   const [internalHot, setInternalHot] = useState<string | undefined>(undefined);
   const hot = hoveredKey ?? internalHot;
 
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const [measuredW, setMeasuredW] = useState<number | null>(null);
+
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width ?? 0;
+      if (w > 0) setMeasuredW(w);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   const qDomain = waterfallQDomain(rows);
-  const plotW = maxWidth - LABEL_W;
+
+  // Effective figure width: the measured container (CSS-clamped to [minWidth, maxWidth]),
+  // falling back to maxWidth before first measure / in non-DOM tests.
+  const effectiveW = Math.min(measuredW ?? maxWidth, maxWidth);
+  const plotW = Math.max(0, effectiveW - LABEL_W);
 
   const totalWeight = rows.reduce((s, r) => s + Math.max(0, r.bandHeight), 0) || rows.length;
 
@@ -64,7 +82,7 @@ export function WaterfallChart({
   };
 
   return (
-    <div className={`relative w-full ${className}`} style={{ maxWidth, minWidth }} data-testid="waterfall">
+    <div ref={rootRef} className={`relative w-full ${className}`} style={{ maxWidth, minWidth }} data-testid="waterfall">
       <div className="relative" style={{ height: TOTAL_H }}>
         {placed.map(({ row, top, h }) => {
           const model: TraceModel = { trace: row.trace, peaks: anchorsToPeaks(row), phase: row.phase };
@@ -107,7 +125,8 @@ export function WaterfallChart({
 
       <svg width={plotW} height={AXIS_H} role="img" aria-label="scattering vector q" data-testid="wf-axis">
         {/* Axis baseline sits at the strip top (plotHeight=0); ticks + label descend into the 44px strip. */}
-        <Axis axis={makeAxis(qDomain, [0, plotW], xType)} orientation="bottom" plotWidth={plotW} plotHeight={0} label="q (Å⁻¹)" />
+        {/* range [4, plotW-4] matches a row TracePlot's axes=false 4px inset, so ticks sit under the traces. */}
+        <Axis axis={makeAxis(qDomain, [4, plotW - 4], xType)} orientation="bottom" plotWidth={plotW} plotHeight={0} label="q (Å⁻¹)" />
       </svg>
     </div>
   );
