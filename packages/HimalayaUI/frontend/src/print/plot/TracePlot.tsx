@@ -51,6 +51,8 @@ export interface TracePlotProps {
   paperColor?: string;
   className?: string;
   "data-testid"?: string;
+  /** Gate which annotation layers render. Axes/grid stay governed by `axes`. */
+  show?: { peaks?: boolean; labels?: boolean; band?: boolean };
 }
 
 const UNINDEXED_COLOR = "var(--color-ink-faint)";
@@ -81,7 +83,10 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
     paperColor,
     className,
     "data-testid": testid,
+    show,
   } = props;
+
+  const layers = { peaks: true, labels: false, band: true, ...(show ?? {}) };
 
   const xExtent = positiveExtent(traces.flatMap((t) => t.trace.q));
   const yExtent = positiveExtent(traces.flatMap((t) => t.trace.I));
@@ -211,9 +216,9 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
               </>
             ) : null}
             {traces.map((t, i) => (
-              <TraceLine key={`line-${i}`} trace={t.trace} projection={projection} />
+              <TraceLine key={`line-${i}`} trace={t.trace} projection={projection} band={layers.band} />
             ))}
-            {traces.map((t, i) => (
+            {layers.peaks ? traces.map((t, i) => (
               <PlotPeaks
                 key={`peaks-${i}`}
                 peaks={t.peaks}
@@ -222,7 +227,7 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
                 baselineI={yExtent[0]}
                 {...(paperColor ? { paperColor } : {})}
               />
-            ))}
+            )) : null}
             {overlay ? overlay(ctx) : null}
           </>
         );

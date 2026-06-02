@@ -69,4 +69,37 @@ describe("TracePlot", () => {
     fireEvent.click(svg, { clientX: 200, clientY: 285 });
     expect(onAddPeak).not.toHaveBeenCalled();
   });
+
+  it("renders σ band and peaks by default (no show prop)", () => {
+    const { container } = render(
+      <TracePlot traces={[model]} width={500} height={300} />,
+    );
+    // σ band path: the opacity=0.12 path inside trace-line
+    expect(
+      container.querySelector('[data-role="trace-line"] path[opacity="0.12"]'),
+    ).toBeTruthy();
+    // peaks layer
+    expect(container.querySelector('[data-role="plot-peaks"]')).toBeTruthy();
+  });
+
+  it("hides the σ band when show={{ band: false }}", () => {
+    const { container } = render(
+      <TracePlot traces={[model]} width={500} height={300} show={{ band: false }} />,
+    );
+    // band path should be gone
+    expect(
+      container.querySelector('[data-role="trace-line"] path[opacity="0.12"]'),
+    ).toBeNull();
+    // but the line path (no opacity attr) should still be present
+    expect(
+      container.querySelector('[data-role="trace-line"] path:not([opacity])'),
+    ).toBeTruthy();
+  });
+
+  it("hides the peaks layer when show={{ peaks: false }}", () => {
+    const { container } = render(
+      <TracePlot traces={[model]} width={500} height={300} show={{ peaks: false }} />,
+    );
+    expect(container.querySelector('[data-role="plot-peaks"]')).toBeNull();
+  });
 });
