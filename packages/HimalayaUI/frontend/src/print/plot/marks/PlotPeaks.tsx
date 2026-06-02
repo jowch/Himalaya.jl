@@ -1,6 +1,7 @@
 import { type Projection } from "../projection";
 import { PeakGlyph } from "../../ui/PeakGlyph";
 import { peakGlyph } from "../../ui/peakMark";
+import { formatAxis } from "../../../lib/plot/formatAxis";
 
 export interface PlotPeak {
   id: number;
@@ -25,6 +26,8 @@ export interface PlotPeaksProps {
   baselineI?: number;
   /** Paper colour threaded to PeakGlyph's halo (export-parity). */
   paperColor?: string;
+  /** Keyboard focus/blur handler for accessibility. Called with peak id on focus, null on blur. */
+  onPeakFocus?: (id: number | null) => void;
 }
 
 export function PlotPeaks({
@@ -33,6 +36,7 @@ export function PlotPeaks({
   color,
   baselineI,
   paperColor,
+  onPeakFocus,
 }: PlotPeaksProps): JSX.Element {
   const { x, y } = projection;
   return (
@@ -52,8 +56,17 @@ export function PlotPeaks({
           ...(p.excluded ? { excluded: true } : {}),
           ...(p.hot ? { hot: true } : {}),
         });
+        const focusAttrs = onPeakFocus
+          ? {
+              tabIndex: 0,
+              role: "button" as const,
+              "aria-label": `peak at q ${formatAxis(p.q)}`,
+              onFocus: () => onPeakFocus(p.id),
+              onBlur: () => onPeakFocus(null),
+            }
+          : {};
         return (
-          <g key={p.id}>
+          <g key={p.id} {...focusAttrs}>
             {p.hot ? (
               <line
                 data-role="peak-qline"

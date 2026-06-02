@@ -1,5 +1,5 @@
-import { render } from "@testing-library/react";
-import { describe, it, expect } from "vitest";
+import { render, fireEvent } from "@testing-library/react";
+import { describe, it, expect, vi } from "vitest";
 import { makeProjection } from "../../src/print/plot/projection";
 import { PlotPeaks, type PlotPeak } from "../../src/print/plot/marks/PlotPeaks";
 
@@ -80,5 +80,58 @@ describe("PlotPeaks", () => {
     expect(
       container.querySelector('[data-role="peak-glyph"] polygon')?.getAttribute('fill'),
     ).toBe("var(--color-accent)");
+  });
+
+  it("peak <g> has tabIndex/role/aria-label when onPeakFocus is provided", () => {
+    const { container } = render(
+      <svg>
+        <PlotPeaks
+          peaks={[{ id: 1, q: 0.2, intensity: 20, source: "auto" }]}
+          projection={proj}
+          color="var(--color-accent)"
+          onPeakFocus={vi.fn()}
+        />
+      </svg>,
+    );
+    const peakG = container.querySelector('[data-role="plot-peaks"] > g');
+    expect(peakG).toBeTruthy();
+    expect(peakG!.getAttribute("tabindex")).toBe("0");
+    expect(peakG!.getAttribute("role")).toBe("button");
+    expect(peakG!.getAttribute("aria-label")).toMatch(/peak at q/);
+  });
+
+  it("calls onPeakFocus(id) on focus and onPeakFocus(null) on blur", () => {
+    const spy = vi.fn();
+    const { container } = render(
+      <svg>
+        <PlotPeaks
+          peaks={[{ id: 42, q: 0.2, intensity: 20, source: "auto" }]}
+          projection={proj}
+          color="var(--color-accent)"
+          onPeakFocus={spy}
+        />
+      </svg>,
+    );
+    const peakG = container.querySelector('[data-role="plot-peaks"] > g')!;
+    fireEvent.focus(peakG);
+    expect(spy).toHaveBeenCalledWith(42);
+    fireEvent.blur(peakG);
+    expect(spy).toHaveBeenCalledWith(null);
+  });
+
+  it("does NOT add tabIndex/role when onPeakFocus is not provided", () => {
+    const { container } = render(
+      <svg>
+        <PlotPeaks
+          peaks={[{ id: 1, q: 0.2, intensity: 20, source: "auto" }]}
+          projection={proj}
+          color="var(--color-accent)"
+        />
+      </svg>,
+    );
+    const peakG = container.querySelector('[data-role="plot-peaks"] > g');
+    // No interaction wired — tabindex should not be present
+    expect(peakG?.getAttribute("tabindex")).toBeNull();
+    expect(peakG?.getAttribute("role")).toBeNull();
   });
 });

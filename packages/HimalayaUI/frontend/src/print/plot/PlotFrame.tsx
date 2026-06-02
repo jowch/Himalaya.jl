@@ -28,6 +28,9 @@ export interface PlotFrameProps {
   onWheelPx?: (deltaY: number, px: number, py: number) => void;
   onClickPx?: (px: number, py: number, altKey: boolean) => void;
   onDoubleClickPx?: () => void;
+  /** Container-relative pointer position (same rect math as wheel/click). */
+  onPointerMovePx?: (px: number, py: number) => void;
+  onPointerLeave?: () => void;
   /** Render the plot body, given the resolved pixel dimensions. */
   render: (dims: PlotDims) => ReactNode;
 }
@@ -42,6 +45,8 @@ export function PlotFrame({
   onWheelPx,
   onClickPx,
   onDoubleClickPx,
+  onPointerMovePx,
+  onPointerLeave,
   render,
 }: PlotFrameProps): JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -85,11 +90,20 @@ export function PlotFrame({
     onClickPx(ev.clientX - rect.left, ev.clientY - rect.top, ev.altKey);
   }
 
+  function handlePointerMove(ev: React.PointerEvent): void {
+    const el = containerRef.current;
+    if (!onPointerMovePx || !el) return;
+    const rect = el.getBoundingClientRect();
+    onPointerMovePx(ev.clientX - rect.left, ev.clientY - rect.top);
+  }
+
   return (
     <div
       ref={containerRef}
       className={className}
       style={{ width: width !== undefined ? width : "100%" }}
+      onPointerMove={onPointerMovePx ? handlePointerMove : undefined}
+      onPointerLeave={onPointerLeave}
     >
       <svg
         width={w}

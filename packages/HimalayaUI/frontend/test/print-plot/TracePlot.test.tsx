@@ -8,6 +8,11 @@ const model: TraceModel = {
   phase: "Ia3d",
 };
 
+// Helper: the single peak <g> is the first child of [data-role="plot-peaks"]
+function getPeakG(container: HTMLElement): Element | null {
+  return container.querySelector('[data-role="plot-peaks"] > g');
+}
+
 describe("TracePlot", () => {
   it("renders axes, a trace line, and peak glyphs for a single trace", () => {
     const { container } = render(
@@ -101,5 +106,64 @@ describe("TracePlot", () => {
       <TracePlot traces={[model]} width={500} height={300} show={{ peaks: false }} />,
     );
     expect(container.querySelector('[data-role="plot-peaks"]')).toBeNull();
+  });
+
+  describe("hover / focus (engine-owned)", () => {
+    it("D1: focusing the peak <g> shows the q-readout chip and blur hides it", () => {
+      const { container } = render(
+        <TracePlot
+          traces={[model]}
+          width={500}
+          height={300}
+          interaction={{ onXDomain: () => {} }}
+        />,
+      );
+      const peakG = getPeakG(container);
+      expect(peakG).toBeTruthy();
+      // Before focus: no readout
+      expect(container.querySelector('[data-role="q-readout"]')).toBeNull();
+      // Focus → readout appears
+      fireEvent.focus(peakG!);
+      expect(container.querySelector('[data-role="q-readout"]')).toBeTruthy();
+      // Blur → readout disappears
+      fireEvent.blur(peakG!);
+      expect(container.querySelector('[data-role="q-readout"]')).toBeNull();
+    });
+
+    it("D2: with interaction=false, peaks are not focusable (no role=button) and no readout appears", () => {
+      const { container } = render(
+        <TracePlot
+          traces={[model]}
+          width={500}
+          height={300}
+          interaction={false}
+        />,
+      );
+      // No role=button on peak <g>
+      expect(container.querySelector('[role="button"]')).toBeNull();
+      // Attempt focus anyway — no readout
+      const peakG = getPeakG(container);
+      if (peakG) fireEvent.focus(peakG);
+      expect(container.querySelector('[data-role="q-readout"]')).toBeNull();
+    });
+
+    it("D3: pointerLeave on the container clears the readout", () => {
+      const { container } = render(
+        <TracePlot
+          traces={[model]}
+          width={500}
+          height={300}
+          interaction={{ onXDomain: () => {} }}
+        />,
+      );
+      const peakG = getPeakG(container)!;
+      // Show readout via focus (deterministic in jsdom)
+      fireEvent.focus(peakG);
+      expect(container.querySelector('[data-role="q-readout"]')).toBeTruthy();
+      // pointerLeave on the outer container div clears it
+      const div = container.querySelector("div")!;
+      fireEvent.pointerLeave(div);
+      expect(container.querySelector('[data-role="q-readout"]')).toBeNull();
+    });
   });
 });

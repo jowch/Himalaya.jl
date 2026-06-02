@@ -1,4 +1,4 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 import { PlotFrame, type Margins, type PlotDims } from "./PlotFrame";
 import {
   makeProjection,
@@ -13,6 +13,7 @@ import { PlotLabels } from "./marks/PlotLabels";
 import { hitTestPeaks, zoomXDomain, PEAK_HIT_PX } from "./interaction";
 import { phaseColor } from "../../phases";
 import { type Trace } from "../../api";
+import { formatAxis } from "../../lib/plot/formatAxis";
 
 export interface TraceModel {
   trace: Trace;
@@ -99,6 +100,24 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
 
   const stateRef = useRef<PlotState | null>(null);
 
+  const [hoverId, setHoverId] = useState<number | null>(null);
+
+  const handlePointerMovePx = useCallback((px: number, py: number) => {
+    const s = stateRef.current;
+    if (!s || !s.interaction) return;
+    const plotPx = px - s.dims.margins.left;
+    const plotPy = py - s.dims.margins.top;
+    if (plotPx < 0 || plotPx > s.dims.plotWidth || plotPy < 0 || plotPy > s.dims.plotHeight) {
+      setHoverId(null);
+      return;
+    }
+    const tol = s.interaction.hitTolerancePx ?? PEAK_HIT_PX;
+    const hit = hitTestPeaks(s.peaks, plotPx, (q) => s.projection.x.to(q), tol);
+    setHoverId(hit ? hit.id : null);
+  }, []);
+
+  const handlePointerLeave = useCallback(() => setHoverId(null), []);
+
   const handleWheelPx = useCallback((deltaY: number, px: number) => {
     const s = stateRef.current;
     if (!s || !s.interaction) return;
@@ -169,6 +188,8 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
             onWheelPx: handleWheelPx,
             onClickPx: handleClickPx,
             onDoubleClickPx: handleDblClick,
+            onPointerMovePx: handlePointerMovePx,
+            onPointerLeave: handlePointerLeave,
           }
         : {})}
       render={(dims) => {
@@ -219,16 +240,23 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
             {traces.map((t, i) => (
               <TraceLine key={`line-${i}`} trace={t.trace} projection={projection} band={layers.band} />
             ))}
-            {layers.peaks ? traces.map((t, i) => (
-              <PlotPeaks
-                key={`peaks-${i}`}
-                peaks={t.peaks}
-                projection={projection}
-                color={t.phase ? phaseColor(t.phase) : UNINDEXED_COLOR}
-                baselineI={yExtent[0]}
-                {...(paperColor ? { paperColor } : {})}
-              />
-            )) : null}
+            {layers.peaks ? traces.map((t, i) => {
+              // C4: inject hot flag for the hovered peak (hover does NOT dim others)
+              const peaksWithHover = hoverId == null
+                ? t.peaks
+                : t.peaks.map((p) => (p.id === hoverId ? { ...p, hot: true } : p));
+              return (
+                <PlotPeaks
+                  key={`peaks-${i}`}
+                  peaks={peaksWithHover}
+                  projection={projection}
+                  color={t.phase ? phaseColor(t.phase) : UNINDEXED_COLOR}
+                  baselineI={yExtent[0]}
+                  {...(paperColor ? { paperColor } : {})}
+                  {...(interaction ? { onPeakFocus: setHoverId } : {})}
+                />
+              );
+            }) : null}
             {layers.labels ? traces.map((t, i) => (
               <PlotLabels
                 key={`labels-${i}`}
@@ -239,6 +267,28 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
               />
             )) : null}
             {overlay ? overlay(ctx) : null}
+            {/* C5: q-readout chip — anchored to axis bottom, on top of all other layers.
+                Motion is instant (no CSS transition), which is inherently reduced-motion-safe.
+                A 90ms opacity fade on enter/leave is intentionally deferred. */}
+            {(() => {
+              const hovered = hoverId == null
+                ? null
+                : traces.flatMap((t) => t.peaks).find((p) => p.id === hoverId) ?? null;
+              if (!hovered) return null;
+              const qx = projection.x.to(hovered.q);
+              const baseY = dims.plotHeight;
+              const w = 46, h = 16;
+              return (
+                <g data-role="q-readout" transform={`translate(${qx},${baseY})`}>
+                  <rect x={-w / 2} y={6} width={w} height={h} rx={3}
+                    fill="var(--color-plate)" stroke="var(--color-hair-strong)" strokeWidth={1} />
+                  <text x={0} y={6 + h / 2} dy="0.32em" textAnchor="middle"
+                    style={{ fontFamily: "var(--font-mono)", fontSize: 10.5, fill: "var(--color-ink)" }}>
+                    {formatAxis(hovered.q)}
+                  </text>
+                </g>
+              );
+            })()}
           </>
         );
       }}

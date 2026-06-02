@@ -1,4 +1,4 @@
-import { render } from "@testing-library/react";
+import { render, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import { PlotFrame } from "../../src/print/plot/PlotFrame";
 
@@ -38,5 +38,39 @@ describe("PlotFrame", () => {
       />,
     );
     expect(container.querySelector('svg[data-testid="frame"]')).toBeTruthy();
+  });
+
+  it("calls onPointerMovePx when pointer moves over the container div", () => {
+    const spy = vi.fn();
+    const { container } = render(
+      <PlotFrame
+        height={200}
+        margins={margins}
+        width={400}
+        render={() => null}
+        onPointerMovePx={spy}
+      />,
+    );
+    const div = container.querySelector("div")!;
+    fireEvent.pointerMove(div, { clientX: 30, clientY: 20 });
+    // jsdom getBoundingClientRect returns 0,0; clientX/Y are passed through.
+    // We only assert the spy was called (coordinate math is the same as click/wheel).
+    expect(spy).toHaveBeenCalled();
+  });
+
+  it("calls onPointerLeave when pointer leaves the container div", () => {
+    const leaveSpy = vi.fn();
+    const { container } = render(
+      <PlotFrame
+        height={200}
+        margins={margins}
+        width={400}
+        render={() => null}
+        onPointerLeave={leaveSpy}
+      />,
+    );
+    const div = container.querySelector("div")!;
+    fireEvent.pointerLeave(div);
+    expect(leaveSpy).toHaveBeenCalledTimes(1);
   });
 });
