@@ -72,9 +72,9 @@ flagged ⚠️ below.
 | `CombChart` / `ResidualChart` | reflection comb + indexing-space residual | SVG | focus-plot (combs panel) | ✅ | `comb/` |
 | `WaterfallChart` | stacked-offset multi-trace hero (+ peak-q cursor) | composes N `TracePlot` | series-plot, series-builder | ✅ | `waterfall/WaterfallChart.tsx` |
 | ⚠️ **`Sparkline`** | tiny 76×28 trace thumbnail | small `TracePlot` config or micro-renderer | series-scoping (`SampleRow`), series-builder (`TraceList`) | ✅ | `plot/Sparkline.tsx` |
-| `CardFigure` (mini-waterfall) | frozen mini-waterfall inside a series card | small `WaterfallChart` config | series-folio (`SeriesCard`) | ⬜ | — |
-| `CustomPreview` viz | live predicted-vs-observed render in custom-index modal | likely `CombChart` reuse | focus-plot (custom-index modal) | ⬜ | — |
-| `CleanFigure` | export idiom (plain GraphPad render, no Print branding) | standalone SVG (Arial, plain hex) | series-plot (export sheet) | ⬜ | — |
+| `CardFigure` (mini-waterfall) | frozen mini-waterfall inside a series card | frozen per-row `TracePlot` stack (reuses the engine) | series-folio (`SeriesCard`) | ✅ | `waterfall/CardFigure.tsx` |
+| `CustomPreview` viz | static predicted-teeth-vs-observed-peaks render in custom-index modal | hand-rolled 1-row SVG + `makeAxis` (NOT `CombChart`) | focus-plot (custom-index modal) | ✅ | `comb/CustomPreview.tsx` |
+| `CleanFigure` | export idiom (plain GraphPad render, no Print branding) | standalone SVG (Arial, plain hex); reuses only `makeAxis`/`axisTicks` math | series-plot (export sheet) | ✅ | `export/CleanFigure.tsx` |
 | ⛔ `HeatmapChart` | row-per-sample binned heatmap (Waterfall⇄Heatmap toggle) | — | series-builder/plot | ⛔ **out of scope (2026-06-02)** | — |
 | ⏸ `TrackingLine` / cross-trace migration | polyline tracking one reflection across the stack + ghost rings | overlay on `WaterfallChart` | series-builder ("Track reflections") | ⏸ **deferred** (declined in waterfall honing — buildable client-side, but readability call) | — |
 
@@ -178,16 +178,25 @@ All ⬜ — deferred until composite + renderer layers are proven in Storybook (
 | `TrackingLine` / cross-trace migration track + ghost rings | ⏸ **deferred** | 2026-06-02 | Buildable client-side from `confirmed_index.phase + lattice_d` (legacy `buildAnchorMap` proves it), but q-proximity matching is fragile and the connector is hard to read. The peak-q cursor delivers ~90% of the reading value. Revisit only if users ask. |
 | `MemberRow` series-plot `.member` variant (gradient coexistence swatch + inline colored phase names + lattice data) | ⏸ **split out** | 2026-06-02 | `MemberRow` (Batch 3) is the series-**builder** `.trow` only. The series-plot `.member` is a different row (gradient swatch for coexistence, per-phase inline names) — belongs with the later MemberList/SeriesPlate work. `Swatch` will gain a gradient/coexistence mode then (stub comment already in `Swatch.tsx`). |
 | Type-scale snaps: `FolioHeader` title 31px→`text-display` (27); `PhaseBlock` name 22px→`text-headline` (19) | ✅ **snap to named role** | 2026-06-02 | The mockups use off-scale serif sizes (31/22px) with no named role; `text-[31px]` is guard-banned. Composites snap to the **nearest named role** rather than add a one-off scale step. If fidelity review objects, the fix is a new `--text-*` step in `styles.css` (the authoring layer), never an arbitrary in a composite. Folio count 26px = `text-headline-lg` is exact. |
+| `src/print/export/` added to the design-guard `isExcluded` allowlist (Batch 4) | ✅ **new exempt renderer dir** | 2026-06-02 | `CleanFigure` is the export idiom — it DELIBERATELY sheds the Print look (Arial + literal hex `#c8841f`/`#4a4ba8`/`#111`, no `var(--color-*)` tokens), so it must author literal appearance like the other renderer dirs (`plot`/`comb`/`detector`). Edit is a single trailing-slash-bounded prefix in `scripts/check-design.mjs:isExcluded` — proven to still flag `print/components/` and not over-match `print/exporters-*`. Mirrors the legacy `lib/figure-export/**` export-palette allowlist. `CardFigure`/`CustomPreview` did NOT need exemption (literal-free, `phaseColor()` + tokens only). |
 
 ---
 
 ## Coverage summary
 
 - **Layer 0 primitives:** 41/41 ✅ (foundation complete; +`Swatch` +`PhaseLabel`, Batch 3)
-- **Layer 1 renderers:** 6 ✅ · 3 ⬜ (`CardFigure`, `CustomPreview`, `CleanFigure`) · 1 ⛔ · 1 ⏸
+- **Layer 1 renderers:** 9 ✅ — **layer COMPLETE** (Batch 4 closed `CardFigure`/`CustomPreview`/`CleanFigure`) · 1 ⛔ · 1 ⏸
 - **Layer 2 tier-1 composites:** 17 ✅ — **layer COMPLETE** (Batch 3 closed `PhaseBlock`/`FolioHeader`/`AutoGroup`/`MemberRow`/`ReadingRow`)
 - **Layer 3 tier-2 panels:** 1 ✅ · ~16 ⬜
 - **Modals/overlays:** 0 ✅ (`ModalShell` chrome ✅) · ~6 gap clusters ⬜
 - **Layer 4 pages:** 0/5 ⬜
 
-The tier-1 composite layer is now complete. The build frontier is **the 3 remaining Layer 1 renderers (`CardFigure`, `CustomPreview`, `CleanFigure`)** — which unlock `SeriesCard`/`CustomIndexModal`/`ExportSheet` — plus the now-unblocked **Layer 3 tier-2 panels** (`AssignmentCart`←`PhaseBlock`, `CandidateList`←`CandidateRow`, `ReadingPanel`←`ReadingRow`, `MemberList`←`MemberRow`, `Gallery`/`SeriesCard`←`FolioHeader`, `SheetTable`←`SampleTableRow`, the loupe panels).
+Layers 0, 1, and 2 are now all complete. The build frontier is the **Layer 3 tier-2 panels**, which are now fully unblocked (every renderer + tier-1 composite they compose exists):
+
+- `AssignmentCart`←`PhaseBlock` · `CandidateList`←`CandidateRow` · `ReadingPanel`←`ReadingRow` · `MemberList`←`MemberRow`
+- `Gallery`←`SeriesCard`←(`CardFigure`+`PhaseStrip`) · `SheetTable`←`SampleTableRow`
+- `TracePlate`←(`PlateHeader`+`ToolBar`+`TracePlot`+`CombLegend`) · `DetectorPanel`←(`PlateHeader`+`DetectorImage`+`ThumbnailGallery`) · `CombsPanel`←(`CombChart`/`ResidualChart`+`CombLegend`) · `SeriesPlate`←(`PlateHeader`+`ToolBar`+`WaterfallChart`)
+- loupe panels (`BigFrame`, `LoupeSidePanel`), scoping (`ScopePlate`+`SampleRow`), `BuilderRail`
+- modals/overlays: `CustomIndexModal`←`CustomPreview` · `ExportSheet`←`CleanFigure` · plus `CullBar`/`RailBack`/`Dock`/`ConflictModal`
+
+Natural next vertical slice: the **Series folio** (`CardFigure`✅ → `SeriesCard` → `Gallery`), which yields a full demoable page in Storybook with `FolioHeader`✅ already in hand.
