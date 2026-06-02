@@ -49,6 +49,13 @@ describe("<SampleTableRow> structure", () => {
     expect(thumbs).toHaveLength(EXPOSURES.length);
   });
 
+  it("renders exactly 5 grid-child cell wrappers", () => {
+    renderRow();
+    const row = screen.getByTestId("sample-table-row");
+    const grid = row.firstElementChild!;
+    expect(grid.children).toHaveLength(5);
+  });
+
   it("(d) contains the KeptCell counts (kept and total)", () => {
     const { container } = renderRow();
     expect(container.querySelector("[data-role='kept-count']")).toHaveTextContent("2");
