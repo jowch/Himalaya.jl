@@ -10,15 +10,18 @@ type Story = StoryObj<typeof ResidualChart>;
 
 const frame = "rounded border border-hair bg-plate p-3";
 
-// One reflection in range, one just past the top of the track, one just past the
-// bottom — each off-scale point draws a clamped hollow circle (sign by which edge)
-// with a small directional chevron. No magnitude: off-scale is a binary "this is off".
-const OFF_SCALE: CombSeries = {
+// All three tiers in one row: in tolerance (filled dot), out of tolerance but on the
+// track (hollow dot at its real value), and off-scale beyond the track (a chevron
+// clamped at the edge, sign by direction). No magnitude on the chevron — off-scale is
+// a binary "ran off the track".
+const TIERS: CombSeries = {
   phase: "Fm3m", color: phaseColor("Fm3m"), rSquared: 0.71,
   teeth: [
-    { q: 0.071, label: "√3", observed: true, residual: 0.006 },   // in range (filled dot)
-    { q: 0.092, label: "√4", observed: true, residual: 0.038 },   // off the top → hollow + up chevron
-    { q: 0.118, label: "√8", observed: true, residual: -0.034 },  // off the bottom → hollow + down chevron
+    { q: 0.071, label: "√3", observed: true, residual: 0.006 },   // in tolerance → filled dot
+    { q: 0.083, label: "√4", observed: true, residual: 0.026 },   // out of tolerance, on-scale → hollow dot (high)
+    { q: 0.100, label: "√6", observed: true, residual: -0.028 },  // out of tolerance, on-scale → hollow dot (low)
+    { q: 0.118, label: "√8", observed: true, residual: 0.045 },   // off-scale → up chevron at top edge
+    { q: 0.140, label: "√10", observed: true, residual: -0.05 },  // off-scale → down chevron at bottom edge
   ],
 };
 
@@ -30,8 +33,8 @@ export const NarrowScrolling: Story = {
   render: () => <div className={frame} style={{ width: 360 }}><ResidualChart assigned={[PN3M, IM3M]} maxWidth={360} /></div>,
 };
 
-// Off-scale residuals (just past ±3%): a hollow clamped circle + small chevron at the
-// top edge (over-predicted) and the bottom edge (under-predicted).
-export const OffScale: Story = {
-  render: () => <div className={frame} style={{ width: 760 }}><ResidualChart assigned={[OFF_SCALE]} maxWidth={760} /></div>,
+// The three tiers: in-tolerance filled dot, out-of-tolerance hollow dot (at value),
+// and off-scale chevron clamped at the edge (both directions).
+export const ToleranceTiers: Story = {
+  render: () => <div className={frame} style={{ width: 760 }}><ResidualChart assigned={[TIERS]} maxWidth={760} /></div>,
 };

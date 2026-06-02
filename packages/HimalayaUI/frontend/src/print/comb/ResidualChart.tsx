@@ -71,19 +71,23 @@ function renderResidRow(
         .filter((t) => t.observed && t.residual !== undefined)
         .map((t, j) => {
           const res = t.residual as number;
-          const overflow = Math.abs(res) > RESID_DOMAIN;
+          const absRes = Math.abs(res);
+          // Three tiers:
+          //  • in tolerance (within the ±BAND band)            → filled dot at value
+          //  • out of tolerance, still on the track (BAND..DOMAIN) → HOLLOW dot at value
+          //  • off-scale (beyond ±RESID_DOMAIN)                 → chevron clamped at edge, no dot
+          // The hollow dot says "out of tolerance" while still reading its real value;
+          // the chevron says "ran off the track" (a binary signal — magnitude past the
+          // edge is noise on a quality check). Chevron geometry matches the CombChart
+          // predicted-absent caret (half-width 3.2, height 4).
+          const offScale = absRes > RESID_DOMAIN;
+          const outOfTol = !offScale && absRes > BAND;
           const hot = hoveredQ !== undefined && Math.abs(t.q - hoveredQ) <= TOL;
           const cx = ctx.x.to(t.q);
-          if (overflow) {
-            // Off-scale: a HOLLOW dot clamped to the track edge (hollow distinguishes
-            // it from the filled in-range dots; which edge it lands on encodes the
-            // sign). No magnitude — on a quality check you only need "this is off",
-            // not how far. A small outward chevron cap reinforces "continues beyond".
+          if (offScale) {
             const up = res > 0;
             const edgeY = y0 + (up ? -HALF_SPAN : HALF_SPAN);
-            const r = hot ? 4 : 2.6;
-            const capBase = up ? edgeY - r - 1.5 : edgeY + r + 1.5;
-            const capApex = up ? capBase - 2.5 : capBase + 2.5;
+            const apexY = up ? edgeY - 4 : edgeY + 4; // apex points outward (off the track)
             return (
               <g
                 key={j}
@@ -94,11 +98,10 @@ function renderResidRow(
                 style={{ cursor: onHoverQ ? "pointer" : "default" }}
                 {...(onHoverQ ? { onMouseEnter: () => onHoverQ(t.q), onMouseLeave: () => onHoverQ(undefined) } : {})}
               >
-                <circle cx={cx} cy={edgeY} r={r} fill="none" stroke={color} strokeWidth={1.6} />
                 <path
                   data-role="resid-overflow" data-dir={up ? "up" : "down"}
-                  d={`M${cx - 2.5} ${capBase} L${cx} ${capApex} L${cx + 2.5} ${capBase}`}
-                  fill="none" stroke={color} strokeWidth={1.4}
+                  d={`M${cx - 3.2} ${edgeY} L${cx} ${apexY} L${cx + 3.2} ${edgeY}`}
+                  fill="none" stroke={color} strokeWidth={hot ? 2 : 1.3}
                   strokeLinejoin="round" strokeLinecap="round"
                 />
               </g>
@@ -111,11 +114,17 @@ function renderResidRow(
               key={j}
               data-role="resid-point"
               data-q={t.q}
+              {...(outOfTol ? { "data-outoftol": "true" } : {})}
               {...(hot ? { "data-hot": "true" } : {})}
               style={{ cursor: onHoverQ ? "pointer" : "default" }}
               {...(onHoverQ ? { onMouseEnter: () => onHoverQ(t.q), onMouseLeave: () => onHoverQ(undefined) } : {})}
             >
-              <circle cx={cx} cy={cy} r={r} fill={color} stroke={color} strokeWidth={hot ? 1.4 : 0} />
+              {/* Hollow when out of tolerance (past the band, still on the track); filled in tolerance. */}
+              <circle
+                cx={cx} cy={cy} r={r}
+                fill={outOfTol ? "none" : color}
+                stroke={color} strokeWidth={outOfTol ? 1.6 : hot ? 1.4 : 0}
+              />
               {hot ? <circle cx={cx} cy={cy} r={r + 3} fill="none" stroke={color} strokeWidth={1.4} opacity={0.6} /> : null}
             </g>
           );

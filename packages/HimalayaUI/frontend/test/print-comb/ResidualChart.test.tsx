@@ -46,15 +46,37 @@ describe("ResidualChart", () => {
     expect(Number(neg.getAttribute("cy"))).toBeGreaterThan(baseY); // below = larger y
   });
 
-  it("marks an out-of-domain residual with a clamped open circle + a small sign chevron, no magnitude label", () => {
+  it("draws a HOLLOW circle at its actual value for an out-of-tolerance but on-scale residual (band < |res| ≤ domain)", () => {
+    const s: CombSeries = {
+      phase: "Pn3m", color: "oklch(0.570 0.150 58)",
+      teeth: [{ q: 0.09, label: "√3", observed: true, residual: 0.026 }], // 2.6%: past the 2.2% band, inside the 3% track
+    };
+    const { container } = render(<ResidualChart assigned={[s]} />);
+    const pt = container.querySelector('[data-role="resid-point"]')!;
+    expect(pt.getAttribute("data-outoftol")).toBe("true");
+    expect(pt.querySelector("circle")!.getAttribute("fill")).toBe("none");       // hollow = out of tolerance
+    expect(pt.querySelector('[data-role="resid-overflow"]')).toBeNull();          // still on-scale → not a chevron
+  });
+
+  it("positions the out-of-tolerance circle at its actual value, not clamped to the edge", () => {
+    const mk = (residual: number): CombSeries => ({
+      phase: "Pn3m", color: "oklch(0.570 0.150 58)",
+      teeth: [{ q: 0.09, label: "√3", observed: true, residual }],
+    });
+    const a = render(<ResidualChart assigned={[mk(0.024)]} />);
+    const b = render(<ResidualChart assigned={[mk(0.029)]} />);
+    const cyA = Number(a.container.querySelector('[data-role="resid-point"] circle')!.getAttribute("cy"));
+    const cyB = Number(b.container.querySelector('[data-role="resid-point"] circle')!.getAttribute("cy"));
+    expect(cyB).toBeLessThan(cyA); // larger positive residual sits higher → distinct positions, not clamped to a shared edge
+  });
+
+  it("draws a clamped sign-flipped chevron and NO dot for a residual beyond the track", () => {
     const { container } = render(<ResidualChart assigned={[PN3M]} />);
-    const overflow = container.querySelector('[data-role="resid-point"][data-overflow="true"]')!;
-    expect(overflow.getAttribute("data-q")).toBe("0.1234"); // PN3M √6 residual +0.041
-    const circle = overflow.querySelector("circle")!;
-    expect(circle.getAttribute("fill")).toBe("none");       // hollow dot = off-scale
-    const arrow = overflow.querySelector('[data-role="resid-overflow"]')!;
+    const offscale = container.querySelector('[data-role="resid-point"][data-overflow="true"]')!;
+    expect(offscale.getAttribute("data-q")).toBe("0.1234"); // PN3M √6 residual +0.041 (> 3%)
+    const arrow = offscale.querySelector('[data-role="resid-overflow"]')!;
     expect(arrow.getAttribute("data-dir")).toBe("up");      // positive → off the TOP
-    expect(overflow.querySelector('[data-role="resid-overflow-label"]')).toBeNull(); // no magnitude label
+    expect(offscale.querySelector("circle")).toBeNull();    // off-scale → chevron only, no dot
   });
 
   it("points the off-scale chevron DOWN for a large negative residual", () => {
