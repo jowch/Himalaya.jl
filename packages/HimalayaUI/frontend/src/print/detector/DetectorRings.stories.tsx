@@ -13,6 +13,7 @@ type Story = StoryObj<typeof DetectorRings>;
 // that aspect so the contained image fills it with no letterbox — which is what
 // lets the rings (a unit-square SVG stretched to the frame) register on the image.
 const IMG37 = { w: 981, h: 1043 };
+const ASPECT37 = IMG37.w / IMG37.h; // width/height → ry correction so rings stay round
 const frame = "relative aspect-[981/1043] w-[420px] overflow-hidden rounded border border-frame-edge bg-frame-edge";
 // Real beam center for sample 37 (px → normalized). y is measured from the
 // BOTTOM (detector origin), so flip it to the top-left screen origin the overlay
@@ -33,7 +34,7 @@ const presentationalRings = buildRingPlacements(QS, null).rings;
 // before any beam-center data exists.
 export const Vocabulary: Story = {
   render: () => (
-    <div className={frame}><DetectorRings beamCenter={{ x: 0.5, y: 0.5 }} rings={presentationalRings} /></div>
+    <div className={frame}><DetectorRings beamCenter={{ x: 0.5, y: 0.5 }} rings={presentationalRings} imageAspect={ASPECT37} /></div>
   ),
 };
 
@@ -41,7 +42,7 @@ export const Vocabulary: Story = {
 // past the frame as partial arcs, clipped by overflow:hidden.
 export const OffCenterBeam: Story = {
   render: () => (
-    <div className={frame}><DetectorRings beamCenter={BEAM37} rings={presentationalRings} /></div>
+    <div className={frame}><DetectorRings beamCenter={BEAM37} rings={presentationalRings} imageAspect={ASPECT37} /></div>
   ),
 };
 
@@ -53,7 +54,7 @@ export const OverImage: Story = {
     return (
       <div className={frame}>
         <DetectorImage src={thumb37} size="full" className="h-full w-full" />
-        <DetectorRings beamCenter={BEAM37} rings={presentationalRings}
+        <DetectorRings beamCenter={BEAM37} rings={presentationalRings} imageAspect={ASPECT37}
           {...(hovered !== undefined ? { hoveredQ: hovered } : {})}
           onHoverQ={setHovered} />
       </div>

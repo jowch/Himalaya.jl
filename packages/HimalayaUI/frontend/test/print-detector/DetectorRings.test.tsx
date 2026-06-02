@@ -28,7 +28,22 @@ describe("DetectorRings", () => {
     const sharp = container.querySelector('[data-role="ring-sharp"]')!;
     expect(Number(sharp.getAttribute("cx"))).toBeCloseTo(0.8, 5);
     expect(Number(sharp.getAttribute("cy"))).toBeCloseTo(0.1, 5);
-    expect(Number(sharp.getAttribute("r"))).toBeCloseTo(0.3, 5);
+    // Default aspect 1 → rx === ry === r (a true circle on a square frame).
+    expect(Number(sharp.getAttribute("rx"))).toBeCloseTo(0.3, 5);
+    expect(Number(sharp.getAttribute("ry"))).toBeCloseTo(0.3, 5);
+  });
+
+  it("aspect-corrects ry so a ring renders as a true circle on a non-square frame", () => {
+    // Portrait image (981×1043): preserveAspectRatio=none would squash a circle
+    // in x; we pre-scale ry by width/height so the rendered pixel radii match.
+    const aspect = 981 / 1043; // ≈ 0.9405
+    const { container } = render(
+      <DetectorRings beamCenter={{ x: 0.5, y: 0.5 }} rings={[{ q: 0.1, r: 0.3 }]} imageAspect={aspect} />,
+    );
+    const sharp = container.querySelector('[data-role="ring-sharp"]')!;
+    expect(Number(sharp.getAttribute("rx"))).toBeCloseTo(0.3, 5);
+    expect(Number(sharp.getAttribute("ry"))).toBeCloseTo(0.3 * aspect, 5);
+    expect(Number(sharp.getAttribute("ry"))).toBeLessThan(Number(sharp.getAttribute("rx")));
   });
 
   it("draws a ghost ring dashed + hollow", () => {

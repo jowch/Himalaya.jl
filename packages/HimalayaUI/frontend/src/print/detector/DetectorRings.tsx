@@ -12,17 +12,26 @@ interface Props {
   hoveredQ?: number;
   /** Fired on hit-ring enter (q) / leave (undefined). Omit -> inert rings. */
   onHoverQ?: (q?: number) => void;
+  /** Displayed image aspect ratio (width / height). The viewBox is stretched to
+   *  the (non-square) image rect by preserveAspectRatio="none", which would
+   *  squash a <circle> into an ellipse; we pre-correct the y-radius by this ratio
+   *  so rings render as TRUE circles. Defaults to 1 (square). */
+  imageAspect?: number;
   /** Orientation when the parent drives it (mirrors DetectorImage). */
   orient?: "portrait" | "landscape";
 }
 
-export function DetectorRings({ beamCenter, rings, hoveredQ, onHoverQ, orient }: Props): JSX.Element {
+export function DetectorRings({ beamCenter, rings, hoveredQ, onHoverQ, imageAspect, orient }: Props): JSX.Element {
   const svgStyle: CSSProperties = {
     position: "absolute", inset: 0, width: "100%", height: "100%",
     pointerEvents: "none", // hit rings re-enable individually
     ...(orient === "landscape" ? { transform: "rotate(90deg)", transformOrigin: "center" } : {}),
   };
   const TOL = 1e-6;
+  // r is a fraction of image WIDTH. After preserveAspectRatio="none" stretches the
+  // 0..1 viewBox to a Wp×Hp rect, an x-radius rx renders rx·Wp px and a y-radius ry
+  // renders ry·Hp px. To get equal pixel radii (a circle), ry = rx·(Wp/Hp) = r·aspect.
+  const aspect = imageAspect ?? 1;
 
   return (
     <div className="pointer-events-none absolute inset-0 z-10">
@@ -44,14 +53,14 @@ export function DetectorRings({ beamCenter, rings, hoveredQ, onHoverQ, orient }:
           return (
             <g key={i} data-role="det-ring" data-ring-q={q}
                data-hot={hot ? "true" : undefined} data-ghost={ghost ? "true" : undefined}>
-              <circle data-role="ring-glow" cx={beamCenter.x} cy={beamCenter.y} r={r}
+              <ellipse data-role="ring-glow" cx={beamCenter.x} cy={beamCenter.y} rx={r} ry={r * aspect}
                 fill="none" stroke={stroke} strokeWidth={2.4} vectorEffect="non-scaling-stroke"
                 opacity={hot ? 0.4 : ghost ? 0.06 : 0.18} style={{ pointerEvents: "none" }} />
-              <circle data-role="ring-sharp" cx={beamCenter.x} cy={beamCenter.y} r={r}
+              <ellipse data-role="ring-sharp" cx={beamCenter.x} cy={beamCenter.y} rx={r} ry={r * aspect}
                 fill="none" stroke={stroke} strokeWidth={sharpW} vectorEffect="non-scaling-stroke"
                 strokeDasharray={ghost ? "2 2.5" : undefined} opacity={sharpOp}
                 style={{ pointerEvents: "none" }} />
-              <circle data-role="ring-hit" cx={beamCenter.x} cy={beamCenter.y} r={r}
+              <ellipse data-role="ring-hit" cx={beamCenter.x} cy={beamCenter.y} rx={r} ry={r * aspect}
                 fill="none" stroke="transparent" strokeWidth={5} vectorEffect="non-scaling-stroke"
                 style={{ pointerEvents: onHoverQ ? "stroke" : "none", cursor: onHoverQ ? "pointer" : "default" }}
                 {...(onHoverQ ? { onMouseEnter: () => onHoverQ(q), onMouseLeave: () => onHoverQ(undefined) } : {})} />
