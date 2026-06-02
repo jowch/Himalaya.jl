@@ -1,6 +1,7 @@
 import { render, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import { TracePlot, type TraceModel } from "../../src/print/plot/TracePlot";
+import { phaseColor } from "../../src/phases";
 
 const model: TraceModel = {
   trace: { q: [0.1, 0.2, 0.3], I: [10, 20, 15], sigma: [1, 1, 1] },
@@ -16,7 +17,7 @@ function getPeakG(container: HTMLElement): Element | null {
 describe("TracePlot", () => {
   it("renders axes, a trace line, and peak glyphs for a single trace", () => {
     const { container } = render(
-      <TracePlot traces={[model]} width={500} height={300} data-testid="tp" />,
+      <TracePlot trace={model} width={500} height={300} data-testid="tp" />,
     );
     expect(container.querySelector('svg[data-testid="tp"]')).toBeTruthy();
     expect(
@@ -31,7 +32,7 @@ describe("TracePlot", () => {
 
   it("renders no axes when axes={false} (mini level)", () => {
     const { container } = render(
-      <TracePlot traces={[model]} width={120} height={48} axes={false} />,
+      <TracePlot trace={model} width={120} height={48} axes={false} />,
     );
     expect(container.querySelector('[data-role="axis-bottom"]')).toBeNull();
     expect(
@@ -43,7 +44,7 @@ describe("TracePlot", () => {
     const onAddPeak = vi.fn();
     const { container } = render(
       <TracePlot
-        traces={[model]}
+        trace={model}
         width={500}
         height={300}
         interaction={{ onXDomain: () => {}, onAddPeak }}
@@ -61,7 +62,7 @@ describe("TracePlot", () => {
     const onAddPeak = vi.fn();
     const { container } = render(
       <TracePlot
-        traces={[model]}
+        trace={model}
         width={500}
         height={300}
         interaction={{ onXDomain: () => {}, onAddPeak }}
@@ -77,7 +78,7 @@ describe("TracePlot", () => {
 
   it("renders σ band and peaks by default (no show prop)", () => {
     const { container } = render(
-      <TracePlot traces={[model]} width={500} height={300} />,
+      <TracePlot trace={model} width={500} height={300} />,
     );
     // σ band path: the opacity=0.12 path inside trace-line
     expect(
@@ -89,7 +90,7 @@ describe("TracePlot", () => {
 
   it("hides the σ band when show={{ band: false }}", () => {
     const { container } = render(
-      <TracePlot traces={[model]} width={500} height={300} show={{ band: false }} />,
+      <TracePlot trace={model} width={500} height={300} show={{ band: false }} />,
     );
     // band path should be gone
     expect(
@@ -103,7 +104,7 @@ describe("TracePlot", () => {
 
   it("hides the peaks layer when show={{ peaks: false }}", () => {
     const { container } = render(
-      <TracePlot traces={[model]} width={500} height={300} show={{ peaks: false }} />,
+      <TracePlot trace={model} width={500} height={300} show={{ peaks: false }} />,
     );
     expect(container.querySelector('[data-role="plot-peaks"]')).toBeNull();
   });
@@ -121,7 +122,7 @@ describe("TracePlot", () => {
     it("non-highlighted peaks get data-dimmed when highlightPeakIds is set", () => {
       const { container } = render(
         <TracePlot
-          traces={[modelWith2Peaks]}
+          trace={modelWith2Peaks}
           width={500}
           height={300}
           highlightPeakIds={new Set([1])}
@@ -137,7 +138,7 @@ describe("TracePlot", () => {
 
     it("no peaks dimmed when highlightPeakIds is not provided", () => {
       const { container } = render(
-        <TracePlot traces={[modelWith2Peaks]} width={500} height={300} />,
+        <TracePlot trace={modelWith2Peaks} width={500} height={300} />,
       );
       const dimmed = container.querySelectorAll(
         '[data-role="plot-peaks"] > g[data-dimmed]',
@@ -146,11 +147,35 @@ describe("TracePlot", () => {
     });
   });
 
+  describe("TracePlot single-trace API", () => {
+    const singleModel: TraceModel = {
+      trace: { q: [0.02, 0.05, 0.1], I: [100, 50, 10], sigma: [1, 1, 1] },
+      peaks: [{ id: 1, q: 0.05, intensity: 50, source: "auto" }],
+      phase: "Ia3d",
+    };
+
+    it("colours the trace line by phase (not ink-soft)", () => {
+      const { container } = render(<TracePlot trace={singleModel} height={200} />);
+      const paths = container.querySelectorAll('[data-role="trace-line"] path');
+      const line = paths[paths.length - 1] as SVGPathElement;
+      expect(line.getAttribute("stroke")).toBe(phaseColor("Ia3d"));
+    });
+
+    it("falls back to ink-faint for a null-phase trace", () => {
+      const { container } = render(
+        <TracePlot trace={{ ...singleModel, phase: null }} height={200} />,
+      );
+      const paths = container.querySelectorAll('[data-role="trace-line"] path');
+      const line = paths[paths.length - 1] as SVGPathElement;
+      expect(line.getAttribute("stroke")).toBe("var(--color-ink-faint)");
+    });
+  });
+
   describe("hover / focus (engine-owned)", () => {
     it("D1: focusing the peak <g> shows the q-readout chip and blur hides it", () => {
       const { container } = render(
         <TracePlot
-          traces={[model]}
+          trace={model}
           width={500}
           height={300}
           interaction={{ onXDomain: () => {} }}
@@ -173,7 +198,7 @@ describe("TracePlot", () => {
     it("D2: with interaction=false, peaks are not focusable (no role=button) and no readout appears", () => {
       const { container } = render(
         <TracePlot
-          traces={[model]}
+          trace={model}
           width={500}
           height={300}
           interaction={false}
@@ -190,7 +215,7 @@ describe("TracePlot", () => {
     it("D3: pointerLeave on the container clears the readout", () => {
       const { container } = render(
         <TracePlot
-          traces={[model]}
+          trace={model}
           width={500}
           height={300}
           interaction={{ onXDomain: () => {} }}

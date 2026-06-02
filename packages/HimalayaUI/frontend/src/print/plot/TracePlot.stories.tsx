@@ -3,7 +3,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { TracePlot, type TraceModel } from "./TracePlot";
 import type { PlotPeak } from "./marks/PlotPeaks";
 import { realTraces } from "../fixtures/realTraces";
-import { realMembers, transitionSeries } from "../fixtures/realSeriesMembers";
+import { realMembers } from "../fixtures/realSeriesMembers";
 import type { SeriesMember } from "../../api";
 import { Card, Kicker, SegmentedControl, Button } from "../ui";
 import { phaseColor } from "../../phases";
@@ -39,7 +39,7 @@ type Story = StoryObj<typeof meta>;
 // Focus hero: axes on, full interaction (zoom + click-to-add/select peaks).
 export const Hero: Story = {
   args: {
-    traces: [heroModel],
+    trace: heroModel,
     height: 360,
     interaction: {
       onXDomain: (d) => console.log("xDomain", d),
@@ -53,20 +53,11 @@ export const Hero: Story = {
 // Mini: axes + interaction off, small — cheap enough for a masonry of cards.
 export const Mini: Story = {
   args: {
-    traces: [heroModel],
+    trace: heroModel,
     height: 64,
     width: 200,
     axes: false,
     interaction: false,
-  },
-};
-
-// Overlay: the three-member Sample-9 transition in shared scales (a preview of
-// the Plan #2 band layout — here simply overlaid).
-export const TransitionOverlay: Story = {
-  args: {
-    traces: transitionSeries.map(modelFor),
-    height: 360,
   },
 };
 
@@ -85,7 +76,7 @@ const annotatedModel: TraceModel = {
 // docs/redesign-mockups/2026-05-29-focus-plot.html.
 export const HeroPlate: Story = {
   // args satisfies the Story constraint; render overrides the entire output.
-  args: { traces: [heroModel], height: 360 },
+  args: { trace: heroModel, height: 360 },
   render: () => {
     // eslint-disable-next-line react-hooks/rules-of-hooks
     const [scale, setScale] = useState<"log" | "linear">("log");
@@ -131,7 +122,7 @@ export const HeroPlate: Story = {
           </div>
           {/* Plot body */}
           <TracePlot
-            traces={[heroModel]}
+            trace={heroModel}
             height={360}
             paperColor="var(--color-paper)"
             yType={scale}
@@ -158,7 +149,7 @@ export const Annotated: StoryObj<{ showPeaks: boolean; showLabels: boolean; show
   },
   render: ({ showPeaks, showLabels, showBand }) => (
     <TracePlot
-      traces={[annotatedModel]}
+      trace={annotatedModel}
       height={360}
       show={{ peaks: showPeaks, labels: showLabels, band: showBand }}
       interaction={{ onXDomain: () => {}, onAddPeak: () => {}, onClickPeak: () => {} }}
@@ -171,7 +162,7 @@ export const Annotated: StoryObj<{ showPeaks: boolean; showLabels: boolean; show
 // terracotta ring, q-line, and axis chip; other peaks do NOT dim.
 export const Hover: Story = {
   args: {
-    traces: [annotatedModel],
+    trace: annotatedModel,
     height: 360,
     show: { labels: true },
     interaction: {
@@ -194,7 +185,7 @@ export const Hover: Story = {
 // PhaseHighlight: a subset of peaks stays at full colour; the rest fade to neutral.
 export const PhaseHighlight: Story = {
   args: {
-    traces: [annotatedModel],
+    trace: annotatedModel,
     height: 360,
     show: { labels: true },
     highlightPeakIds: new Set(annotatedModel.peaks.slice(0, 3).map((p) => p.id)),

@@ -35,8 +35,8 @@ export interface TracePlotInteraction {
 }
 
 export interface TracePlotProps {
-  /** 1 = hero/mini; >1 overlays in shared scales. */
-  traces: TraceModel[];
+  /** The single trace to render (hero / mini / one waterfall row). */
+  trace: TraceModel;
   /** Visible x window; null = full data extent. */
   xDomain?: [number, number] | null;
   xType?: ScaleType;
@@ -56,6 +56,9 @@ export interface TracePlotProps {
   show?: { peaks?: boolean; labels?: boolean; band?: boolean };
   /** When non-empty, peaks/labels NOT in this set fade to neutral gray. Hot peaks are exempt. */
   highlightPeakIds?: ReadonlySet<number>;
+  /** Multiply the y-domain top by (1 + yHeadroom) so peaks keep headroom below
+   *  the ceiling — used by the stacked waterfall. Default 0 (no change). */
+  yHeadroom?: number;
 }
 
 const UNINDEXED_COLOR = "var(--color-ink-faint)";
@@ -72,7 +75,7 @@ interface PlotState {
 
 export function TracePlot(props: TracePlotProps): JSX.Element {
   const {
-    traces,
+    trace,
     xDomain = null,
     xType = "log",
     yType = "log",
@@ -88,12 +91,14 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
     "data-testid": testid,
     show,
     highlightPeakIds,
+    yHeadroom = 0,
   } = props;
 
   const layers = { peaks: true, labels: false, band: true, ...(show ?? {}) };
 
-  const xExtent = positiveExtent(traces.flatMap((t) => t.trace.q));
-  const yExtent = positiveExtent(traces.flatMap((t) => t.trace.I));
+  const xExtent = positiveExtent(trace.trace.q);
+  const rawYExtent = positiveExtent(trace.trace.I);
+  const yExtent: [number, number] = [rawYExtent[0], rawYExtent[1] * (1 + yHeadroom)];
   const curXDomain = xDomain ?? xExtent;
 
   const margins: Margins = axes
@@ -203,7 +208,6 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
           xType,
           yType,
         });
-        const allPeaks = traces.flatMap((t) => t.peaks);
         stateRef.current = {
           projection,
           dims,
@@ -211,7 +215,7 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
           xExtent,
           xType,
           interaction: interaction || null,
-          peaks: allPeaks,
+          peaks: trace.peaks,
         };
         const ctx: PlotContext = {
           projection,
@@ -239,37 +243,37 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
                 />
               </>
             ) : null}
-            {traces.map((t, i) => (
-              <TraceLine key={`line-${i}`} trace={t.trace} projection={projection} band={layers.band} />
-            ))}
-            {layers.peaks ? traces.map((t, i) => {
-              // C4: inject hot flag for the hovered peak (hover does NOT dim others)
+            <TraceLine
+              trace={trace.trace}
+              projection={projection}
+              band={layers.band}
+              color={trace.phase ? phaseColor(trace.phase) : UNINDEXED_COLOR}
+            />
+            {layers.peaks ? (() => {
               const peaksWithHover = hoverId == null
-                ? t.peaks
-                : t.peaks.map((p) => (p.id === hoverId ? { ...p, hot: true } : p));
+                ? trace.peaks
+                : trace.peaks.map((p) => (p.id === hoverId ? { ...p, hot: true } : p));
               return (
                 <PlotPeaks
-                  key={`peaks-${i}`}
                   peaks={peaksWithHover}
                   projection={projection}
-                  color={t.phase ? phaseColor(t.phase) : UNINDEXED_COLOR}
+                  color={trace.phase ? phaseColor(trace.phase) : UNINDEXED_COLOR}
                   baselineI={yExtent[0]}
                   {...(paperColor ? { paperColor } : {})}
                   {...(interaction ? { onPeakFocus: setHoverId } : {})}
                   {...(highlightPeakIds ? { highlightPeakIds } : {})}
                 />
               );
-            }) : null}
-            {layers.labels ? traces.map((t, i) => (
+            })() : null}
+            {layers.labels ? (
               <PlotLabels
-                key={`labels-${i}`}
-                peaks={t.peaks}
+                peaks={trace.peaks}
                 projection={projection}
-                color={t.phase ? phaseColor(t.phase) : UNINDEXED_COLOR}
+                color={trace.phase ? phaseColor(trace.phase) : UNINDEXED_COLOR}
                 baselineI={yExtent[0]}
                 {...(highlightPeakIds ? { highlightPeakIds } : {})}
               />
-            )) : null}
+            ) : null}
             {overlay ? overlay(ctx) : null}
             {/* C5: q-readout chip — anchored to axis bottom, on top of all other layers.
                 Motion is instant (no CSS transition), which is inherently reduced-motion-safe.
@@ -279,7 +283,7 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
               // no glyph to anchor it to, so a floating chip would be dishonest.
               const hovered = hoverId == null || !layers.peaks
                 ? null
-                : traces.flatMap((t) => t.peaks).find((p) => p.id === hoverId) ?? null;
+                : trace.peaks.find((p) => p.id === hoverId) ?? null;
               if (!hovered) return null;
               const qx = projection.x.to(hovered.q);
               const baseY = dims.plotHeight;
