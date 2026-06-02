@@ -14,6 +14,7 @@ export type { KickerTone } from "./Kicker";
 export { ScoreBar } from "./ScoreBar";
 export { Swatch } from "./Swatch";
 export type { SwatchShape } from "./Swatch";
+export { PhaseLabel } from "./PhaseLabel";
 export { SignalBars } from "./SignalBars";
 export { CheckCircle } from "./CheckCircle";
 export { RejectOverlay } from "./RejectOverlay";
