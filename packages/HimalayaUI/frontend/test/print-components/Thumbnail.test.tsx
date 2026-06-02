@@ -37,6 +37,24 @@ describe("<Thumbnail> frameNo", () => {
     const { container } = render(<Thumbnail src={null} />);
     expect(container.querySelector("[data-role='thumb-fno']")).not.toBeInTheDocument();
   });
+
+  it("renders [data-role='thumb-fno'] with text '0' when frameNo={0} (valid first frame)", () => {
+    render(<Thumbnail src={null} frameNo={0} />);
+    const fno = screen.getByText("0");
+    expect(fno).toHaveAttribute("data-role", "thumb-fno");
+  });
+});
+
+describe("<Thumbnail> rejected dimming", () => {
+  it("marks the image wrapper [data-dimmed='true'] when rejected=true", () => {
+    const { container } = render(<Thumbnail src={null} rejected />);
+    expect(container.querySelector("[data-dimmed='true']")).toBeInTheDocument();
+  });
+
+  it("marks the image wrapper [data-dimmed='false'] when not rejected", () => {
+    const { container } = render(<Thumbnail src={null} />);
+    expect(container.querySelector("[data-dimmed='false']")).toBeInTheDocument();
+  });
 });
 
 describe("<Thumbnail> representative marker", () => {

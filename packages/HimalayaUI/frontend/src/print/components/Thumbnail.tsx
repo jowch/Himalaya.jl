@@ -61,7 +61,10 @@ export function Thumbnail({
       className={`relative inline-block flex-shrink-0 overflow-hidden rounded-sm bg-frame-edge border border-frame-edge p-0 cursor-pointer${selected ? " ring-2 ring-accent" : " hover:ring-2 hover:ring-hair-strong"}${className ? ` ${className}` : ""}`}
     >
       {/* Detector image — dimmed when rejected */}
-      <div className={rejected ? "w-full h-full opacity-40" : "w-full h-full"}>
+      <div
+        data-dimmed={rejected ? "true" : "false"}
+        className={rejected ? "w-full h-full opacity-40" : "w-full h-full"}
+      >
         <DetectorImage src={src} size="thumb" className="w-full h-full" />
       </div>
 
