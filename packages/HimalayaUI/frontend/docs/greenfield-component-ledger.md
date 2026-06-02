@@ -106,7 +106,7 @@ flagged ⚠️ below.
 | `AssignmentCart` | working-assignment editor (phase blocks + custom-index footer) | `PhaseBlock`×N + custom-index trigger | focus | ⬜ |
 | `CandidateList` | ranked candidate list | `CandidateRow`×N | focus | ⬜ |
 | `SheetTable` | contact-sheet grid (header + rows) | `TableHeader`+`SampleTableRow`×N | sample-table | ⬜ |
-| ★ **`SampleTableRow`** | one sample row (screened+spec+exposures+kept+tags+status) | `CheckCircle`+`ThumbnailGallery`+cell composites | sample-table | ⬜ |
+| ★ **`SampleTableRow`** | one sample row (screened+spec+exposures+kept+tags+status) — `components/SampleTableRow.tsx` | `CheckCircle`+`ThumbnailGallery`+cell composites | sample-table | ✅ |
 | `BigFrame` | loupe large detector frame (+ dropped tag, big reject-X) | `DetectorImage`+text+`RejectOverlay` | loupe | ⬜ |
 | `LoupeSidePanel` | loupe aside (metadata + verdict + rep box + tags + keys) | `MetaList`+`Verdict`+`RepresentativeBox`+`TagList`+`KbLegend` | loupe | ⬜ |
 | `SeriesCard` | folio card (mini-waterfall + meta + phase strip + pill) | `CardFigure`+`PhaseStrip`+`Chip`+text | series-folio | ⬜ |
@@ -178,7 +178,7 @@ All ⬜ — deferred until composite + renderer layers are proven in Storybook (
 - **Layer 0 primitives:** 39/39 ✅ (foundation complete)
 - **Layer 1 renderers:** 6 ✅ · 3 ⬜ (`CardFigure`, `CustomPreview`, `CleanFigure`) · 1 ⛔ · 1 ⏸
 - **Layer 2 tier-1 composites:** 12 ✅ · ~4 ⬜
-- **Layer 3 tier-2 panels:** 0 ✅ · ~17 ⬜
+- **Layer 3 tier-2 panels:** 1 ✅ · ~16 ⬜
 - **Modals/overlays:** 0 ✅ (`ModalShell` chrome ✅) · ~6 gap clusters ⬜
 - **Layer 4 pages:** 0/5 ⬜
 
