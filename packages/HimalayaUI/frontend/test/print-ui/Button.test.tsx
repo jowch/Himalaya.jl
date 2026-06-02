@@ -27,6 +27,30 @@ describe("<Button> armed state", () => {
   });
 });
 
+describe("<Button> outline variant", () => {
+  it("carries data-variant=outline and renders its label", () => {
+    render(<Button variant="outline">Drop</Button>);
+    const b = screen.getByRole("button", { name: "Drop" });
+    expect(b.getAttribute("data-variant")).toBe("outline");
+  });
+  it("renders the button", () => {
+    render(<Button variant="outline">Set as representative</Button>);
+    expect(screen.getByRole("button", { name: "Set as representative" })).toBeInTheDocument();
+  });
+  it("still fires onClick", () => {
+    const onClick = vi.fn();
+    render(<Button variant="outline" onClick={onClick}>Drop</Button>);
+    fireEvent.click(screen.getByRole("button", { name: "Drop" }));
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+  it("armed overrides outline resting look (data-armed=true)", () => {
+    render(<Button variant="outline" armed>Drop</Button>);
+    const b = screen.getByRole("button", { name: "Drop" });
+    expect(b.getAttribute("data-variant")).toBe("outline");
+    expect(b.getAttribute("data-armed")).toBe("true");
+  });
+});
+
 describe("<Button> danger variant", () => {
   it("carries data-variant=danger and renders its label", () => {
     render(<Button variant="danger">Delete sample</Button>);

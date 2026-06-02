@@ -1,6 +1,6 @@
 import type { ButtonHTMLAttributes } from "react";
 
-export type ButtonVariant = "solid" | "accent" | "ghost" | "danger";
+export type ButtonVariant = "solid" | "accent" | "ghost" | "danger" | "outline";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
@@ -22,6 +22,9 @@ const variantClass: Record<ButtonVariant, string> = {
     "focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent",
   danger:
     "text-error border border-transparent hover:bg-error hover:text-paper hover:border-error " +
+    "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
+  outline:
+    "border border-hair-strong bg-plate text-ink hover:bg-paper-sunk " +
     "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
 };
 
