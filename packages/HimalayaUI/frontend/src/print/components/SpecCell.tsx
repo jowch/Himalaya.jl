@@ -24,8 +24,8 @@ export function SpecCell({
         label={screened ? "Screened" : "Not screened"}
         className="mt-0.5"
       />
-      <div>
-        <span data-role="spec-name" className="text-body font-semibold">
+      <div className="min-w-0">
+        <span data-role="spec-name" className="text-body font-semibold block leading-tight">
           {name}
         </span>
         <span

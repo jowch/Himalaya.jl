@@ -20,10 +20,10 @@ export function KeptCell({
       className={`font-mono${className ? ` ${className}` : ""}`}
     >
       <div>
-        <span data-role="kept-count" className="text-data font-medium">
+        <span data-role="kept-count" className="text-data text-ink font-semibold">
           {kept}
         </span>
-        <span data-role="kept-total" className="text-ink-faint">
+        <span data-role="kept-total" className="text-data text-ink-faint">
           {" / "}{total}
         </span>
       </div>
