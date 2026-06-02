@@ -33,7 +33,7 @@ export const SAMPLE_TABLE_COLS = "244px minmax(360px,1fr) 78px 168px 150px";
 
 /** Per-cell grid-child wrapper: vertical centering + the cell gutter + the row's
  *  resting height floor. All placement/layout (allowed by the design guard). */
-const CELL = "flex items-center px-4 py-[13px] min-h-[92px]";
+const CELL = "flex items-center px-4 py-[13px] min-h-[92px] min-w-0";
 
 /** One full row of the contact-sheet samples table. Composes the cell composites
  *  (SpecCell / KeptCell / StatusCell), the ThumbnailGallery, and TagList across a
@@ -70,6 +70,7 @@ export function SampleTableRow({
         <div className={CELL}>
           <ThumbnailGallery
             size="sm"
+            className="w-full"
             exposures={exposures}
             {...(selectedExposureId != null ? { selectedId: selectedExposureId } : {})}
             {...(onSelectExposure ? { onSelect: onSelectExposure } : {})}
@@ -85,6 +86,7 @@ export function SampleTableRow({
         <div className={CELL}>
           <TagList
             tags={tags}
+            maxVisible={2}
             editable
             {...(onAddTag ? { onAdd: onAddTag } : {})}
             {...(onRemoveTag ? { onRemove: onRemoveTag } : {})}

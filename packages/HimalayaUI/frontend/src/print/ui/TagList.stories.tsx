@@ -37,3 +37,19 @@ export const Editable: Story = {
     onRemove: () => {},
   },
 };
+
+/** maxVisible caps the list: first 2 pills + a "+N" overflow chip whose tooltip
+ *  lists the hidden tags. */
+export const Capped: Story = {
+  args: {
+    tags: [
+      { key: "LL37" },
+      { key: "temperature", value: "37C" },
+      { key: "buffer", value: "PBS" },
+      { key: "lipid", value: "DOPC" },
+      { key: "pH", value: "7.4" },
+      { key: "chol", value: "20%" },
+    ],
+    maxVisible: 2,
+  },
+};

@@ -76,4 +76,42 @@ describe("TagList", () => {
     render(<TagList tags={[]} onAdd={onAdd} />);
     expect(screen.getByRole("button", { name: "Add" })).toBeTruthy();
   });
+
+  describe("maxVisible overflow cap", () => {
+    const FIVE: Tag[] = [
+      { key: "LL37" },
+      { key: "temperature", value: "37C" },
+      { key: "buffer", value: "PBS" },
+      { key: "lipid", value: "DOPC" },
+      { key: "pH", value: "7.4" },
+    ];
+
+    it("caps at maxVisible pills plus one '+N' overflow chip", () => {
+      render(<TagList tags={FIVE} maxVisible={2} />);
+      expect(screen.getAllByTestId("tag-pill")).toHaveLength(2);
+      const overflow = screen.getByTestId("tag-overflow");
+      expect(overflow.textContent).toBe("+3");
+    });
+
+    it("lists the hidden tags in the overflow tooltip label", () => {
+      render(<TagList tags={FIVE} maxVisible={2} />);
+      const overflow = screen.getByTestId("tag-overflow");
+      // Hover reveals the Tooltip; its label lists the three hidden tags.
+      fireEvent.mouseEnter(overflow.parentElement!);
+      const tip = screen.getByRole("tooltip");
+      expect(tip.textContent).toBe("buffer PBS, lipid DOPC, pH 7.4");
+    });
+
+    it("renders all pills and no overflow chip when maxVisible is unset", () => {
+      render(<TagList tags={FIVE} />);
+      expect(screen.getAllByTestId("tag-pill")).toHaveLength(5);
+      expect(screen.queryByTestId("tag-overflow")).toBeNull();
+    });
+
+    it("renders no overflow chip when tags.length <= maxVisible", () => {
+      render(<TagList tags={FIVE.slice(0, 2)} maxVisible={2} />);
+      expect(screen.getAllByTestId("tag-pill")).toHaveLength(2);
+      expect(screen.queryByTestId("tag-overflow")).toBeNull();
+    });
+  });
 });

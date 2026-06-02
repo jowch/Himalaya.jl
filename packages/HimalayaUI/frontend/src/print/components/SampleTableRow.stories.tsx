@@ -102,6 +102,48 @@ const STACK_ROWS = [
   },
 ];
 
+const SRC_CYCLE = [thumb37, thumb65, thumb66, thumb67, thumb93];
+const MANY_EXPOSURES: GalleryExposure[] = Array.from(
+  { length: 12 },
+  (_, i): GalleryExposure => ({
+    id: 200 + i,
+    src: SRC_CYCLE[i % SRC_CYCLE.length]!,
+    frameNo: String(200 + i),
+    ...(i === 0 ? { representative: true } : {}),
+    ...(i === 4 ? { rejected: true } : {}),
+  }),
+);
+
+const MANY_TAGS: Tag[] = [
+  { key: "LL37" },
+  { key: "temperature", value: "37C" },
+  { key: "buffer", value: "PBS" },
+  { key: "lipid", value: "DOPC" },
+  { key: "pH", value: "7.4" },
+  { key: "chol", value: "20%" },
+];
+
+/** Real row context with ~12 exposures and ~6 tags — the exposures cell scrolls
+ *  horizontally within its column and the tags cell shows the "+N" overflow. */
+export const Overflowing: Story = {
+  parameters: { layout: "fullscreen" },
+  render: () => (
+    <div className="bg-plate min-w-[1000px]">
+      <SampleTableRow
+        name="POPC + 20% chol (long batch)"
+        sampleId="s-999"
+        screened
+        phase="Pn3m"
+        exposures={MANY_EXPOSURES}
+        kept={10}
+        total={12}
+        dropped={2}
+        tags={MANY_TAGS}
+      />
+    </div>
+  ),
+};
+
 const HEADER_LABELS = ["SAMPLE", "EXPOSURES", "KEPT", "TAGS", "STATUS"];
 
 /** Header row (story-local scaffolding) + 4 rows on the SAME grid track —

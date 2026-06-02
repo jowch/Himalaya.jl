@@ -80,7 +80,7 @@ export function Thumbnail({
 
       {/* Representative marker */}
       {representative && (
-        <span data-role="thumb-rep" className="absolute top-1 right-1">
+        <span data-role="thumb-rep" className="absolute top-0.5 right-0.5 flex">
           <Dot tone="accent" size="md" bordered aria-hidden="true" />
         </span>
       )}

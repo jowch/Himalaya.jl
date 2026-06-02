@@ -37,3 +37,26 @@ export const Loupe: Story = {
 export const Selected: Story = {
   args: { selectedId: 65 },
 };
+
+const SRC_CYCLE = [thumb37, thumb65, thumb66, thumb67, thumb93];
+const MANY_EXPOSURES: GalleryExposure[] = Array.from(
+  { length: 12 },
+  (_, i): GalleryExposure => ({
+    id: 100 + i,
+    src: SRC_CYCLE[i % SRC_CYCLE.length]!,
+    frameNo: String(100 + i),
+    ...(i === 0 ? { representative: true } : {}),
+    ...(i === 3 ? { rejected: true } : {}),
+  }),
+);
+
+/** Many exposures inside a fixed-width wrapper — the strip stays one row and
+ *  scrolls horizontally instead of widening its container. */
+export const Overflowing: Story = {
+  args: { exposures: MANY_EXPOSURES },
+  render: (args) => (
+    <div style={{ width: 360 }} className="border border-hair">
+      <ThumbnailGallery {...args} className="w-full" />
+    </div>
+  ),
+};

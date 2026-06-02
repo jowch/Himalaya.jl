@@ -32,8 +32,8 @@ export function ThumbnailGallery({
 }: ThumbnailGalleryProps): JSX.Element {
   const baseClass =
     align === "center"
-      ? "flex flex-nowrap overflow-x-auto gap-2 justify-center"
-      : "flex flex-nowrap overflow-x-auto gap-2";
+      ? "flex flex-nowrap overflow-x-auto gap-2 justify-center min-w-0"
+      : "flex flex-nowrap overflow-x-auto gap-2 min-w-0";
 
   return (
     <div
