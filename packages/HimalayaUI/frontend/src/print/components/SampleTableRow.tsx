@@ -31,9 +31,11 @@ export interface SampleTableRowProps {
  *  on a brand-new arbitrary class mid-session. */
 export const SAMPLE_TABLE_COLS = "244px minmax(360px,1fr) 78px 168px 150px";
 
-/** Per-cell grid-child wrapper: vertical centering + the cell gutter + the row's
- *  resting height floor. All placement/layout (allowed by the design guard). */
-const CELL = "flex items-center px-4 py-[13px] min-h-[92px] min-w-0";
+/** Per-cell grid-child wrapper: vertical centering + the cell gutter + a DEFINED
+ *  row height (not a min — keeps every row uniform). `overflow-hidden` contains a
+ *  cell's content to that height; `min-w-0` lets the exposures gallery scroll
+ *  instead of widening the track. All placement/layout (allowed by the design guard). */
+const CELL = "flex items-center px-3 h-[92px] min-w-0 overflow-hidden";
 
 /** One full row of the contact-sheet samples table. Composes the cell composites
  *  (SpecCell / KeptCell / StatusCell), the ThumbnailGallery, and TagList across a

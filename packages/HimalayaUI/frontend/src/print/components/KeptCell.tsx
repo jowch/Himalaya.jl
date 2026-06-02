@@ -19,7 +19,7 @@ export function KeptCell({
       data-testid="kept-cell"
       className={`font-mono${className ? ` ${className}` : ""}`}
     >
-      <div>
+      <div className="whitespace-nowrap">
         <span data-role="kept-count" className="text-data text-ink font-semibold">
           {kept}
         </span>
@@ -30,7 +30,7 @@ export function KeptCell({
       {showDropped && (
         <span
           data-role="kept-dropped"
-          className="block text-accent text-xs font-semibold mt-0.5"
+          className="block whitespace-nowrap text-accent text-xs font-semibold mt-0.5"
         >
           {dropped} dropped
         </span>

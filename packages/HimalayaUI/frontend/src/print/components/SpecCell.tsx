@@ -25,7 +25,7 @@ export function SpecCell({
         className="mt-0.5"
       />
       <div className="min-w-0">
-        <span data-role="spec-name" className="text-body font-semibold block leading-tight">
+        <span data-role="spec-name" className="text-body font-semibold block leading-tight line-clamp-2">
           {name}
         </span>
         <span
