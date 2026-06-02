@@ -50,4 +50,35 @@ describe("PlotPeaks", () => {
     );
     expect(container.querySelector('[data-role="peak-qline"]')).toBeTruthy();
   });
+
+  it("uses per-peak color when present, ignoring the layer color", () => {
+    const { container } = render(
+      <svg>
+        <PlotPeaks
+          peaks={[{ id: 1, q: 0.2, intensity: 20, source: "auto", color: "var(--color-success)" }]}
+          projection={proj}
+          color="var(--color-accent)"
+        />
+      </svg>,
+    );
+    // The auto peak is filled → polygon fill should be the per-peak color, not the layer color.
+    expect(
+      container.querySelector('[data-role="peak-glyph"] polygon')?.getAttribute('fill'),
+    ).toBe("var(--color-success)");
+  });
+
+  it("falls back to layer color when peak has no per-peak color", () => {
+    const { container } = render(
+      <svg>
+        <PlotPeaks
+          peaks={[{ id: 1, q: 0.2, intensity: 20, source: "auto" }]}
+          projection={proj}
+          color="var(--color-accent)"
+        />
+      </svg>,
+    );
+    expect(
+      container.querySelector('[data-role="peak-glyph"] polygon')?.getAttribute('fill'),
+    ).toBe("var(--color-accent)");
+  });
 });

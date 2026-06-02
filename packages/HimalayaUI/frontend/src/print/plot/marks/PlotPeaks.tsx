@@ -10,6 +10,10 @@ export interface PlotPeak {
   excluded?: boolean;
   predictedAbsent?: boolean;
   hot?: boolean;
+  /** Per-peak resolved colour (e.g. assigned-index colour). Falls back to the layer `color` prop. */
+  color?: string;
+  /** Pre-resolved label string (consumed by label layers; unused in this mark). */
+  label?: string;
 }
 
 export interface PlotPeaksProps {
@@ -40,9 +44,10 @@ export function PlotPeaks({
         const iVal = p.intensity ?? baselineI;
         const py =
           iVal != null && Number.isFinite(iVal) ? y.to(iVal) : y.range[0];
+        const c = p.color ?? color;
         const descriptor = peakGlyph({
           source: p.source,
-          color,
+          color: c,
           ...(p.predictedAbsent ? { predictedAbsent: true } : {}),
           ...(p.excluded ? { excluded: true } : {}),
           ...(p.hot ? { hot: true } : {}),
@@ -56,7 +61,7 @@ export function PlotPeaks({
                 y1={y.range[0]}
                 x2={px}
                 y2={y.range[1]}
-                stroke={color}
+                stroke={c}
                 strokeWidth={1}
                 opacity={0.6}
               />
