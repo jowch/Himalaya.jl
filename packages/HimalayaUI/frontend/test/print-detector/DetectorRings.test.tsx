@@ -43,11 +43,17 @@ describe("DetectorRings", () => {
     expect(container.querySelector('[data-role="ring-sharp"]')!.getAttribute("stroke")).toBe("var(--color-ink-faint)");
   });
 
-  it("the ring matching hoveredQ goes hot (accent stroke)", () => {
+  it("the ring matching hoveredQ goes hot via width/opacity, keeping its own color (no terracotta recolor)", () => {
     const { container } = render(<DetectorRings beamCenter={beamCenter} rings={rings} hoveredQ={0.20} />);
     const hot = container.querySelector('[data-hot="true"]')!;
     expect(hot.getAttribute("data-ring-q")).toBe("0.2");
-    expect(hot.querySelector('[data-role="ring-sharp"]')!.getAttribute("stroke")).toBe("var(--color-accent)");
+    const sharp = hot.querySelector('[data-role="ring-sharp"]')!;
+    // Keeps the ring's own colour — NOT recoloured to the terracotta accent.
+    expect(sharp.getAttribute("stroke")).toBe("var(--color-success)");
+    expect(sharp.getAttribute("stroke")).not.toBe("var(--color-accent)");
+    // Emphasis is a wider, more opaque stroke than a resting ring.
+    expect(Number(sharp.getAttribute("stroke-width"))).toBeGreaterThan(1.0);
+    expect(Number(sharp.getAttribute("opacity"))).toBeGreaterThan(0.7);
   });
 
   it("no ring is hot when hoveredQ is undefined", () => {

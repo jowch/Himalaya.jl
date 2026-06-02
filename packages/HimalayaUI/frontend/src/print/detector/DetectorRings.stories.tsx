@@ -14,8 +14,10 @@ type Story = StoryObj<typeof DetectorRings>;
 // lets the rings (a unit-square SVG stretched to the frame) register on the image.
 const IMG37 = { w: 981, h: 1043 };
 const frame = "relative aspect-[981/1043] w-[420px] overflow-hidden rounded border border-frame-edge bg-frame-edge";
-// Real beam center for sample 37 (px → normalized). Off-center: low and left.
-const BEAM37 = { x: 421.409 / IMG37.w, y: 836.946 / IMG37.h }; // ≈ { 0.430, 0.802 }
+// Real beam center for sample 37 (px → normalized). y is measured from the
+// BOTTOM (detector origin), so flip it to the top-left screen origin the overlay
+// uses — same convention as buildRingPlacements. Off-center: high and left.
+const BEAM37 = { x: 421.409 / IMG37.w, y: 1 - 836.946 / IMG37.h }; // ≈ { 0.430, 0.198 }
 const QS = [
   { q: 0.082, color: "var(--color-success)" }, { q: 0.116, color: "var(--color-success)" },
   { q: 0.142, color: "var(--color-success)" }, { q: 0.171, color: "var(--color-success)", ghost: true },

@@ -30,10 +30,11 @@ describe("buildRingPlacements", () => {
     expect(rings.map((r) => r.q)).toEqual([0.1, 0.2]);
     expect(rings[0].r).toBeCloseTo(0.1592, 3);
   });
-  it("off-center beam normalizes correctly", () => {
+  it("off-center beam normalizes x directly and FLIPS y (bottom-left cal → top-left screen)", () => {
     const { beamCenter } = buildRingPlacements([0.1], { ...CAL, beamCenterPx: { x: 950, y: 60 } });
     expect(beamCenter.x).toBeCloseTo(0.95, 3);
-    expect(beamCenter.y).toBeCloseTo(0.06, 3);
+    // y=60 from the bottom of a 1000px image → 0.94 from the top.
+    expect(beamCenter.y).toBeCloseTo(0.94, 3);
   });
   it("null calibration -> presentational fallback: centered, radius prop to q-range", () => {
     const { beamCenter, rings } = buildRingPlacements([0.1, 0.2, 0.3], null);

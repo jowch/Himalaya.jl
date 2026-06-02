@@ -33,7 +33,10 @@ export function DetectorRings({ beamCenter, rings, hoveredQ, onHoverQ, orient }:
            viewBox="0 0 1 1" preserveAspectRatio="none" style={svgStyle} aria-hidden="true">
         {rings.map(({ q, r, color, ghost }, i) => {
           const hot = hoveredQ !== undefined && Math.abs(q - hoveredQ) <= TOL;
-          const stroke = hot ? "var(--color-accent)" : (color ?? "var(--color-ink-faint)");
+          // Hover keeps the ring's OWN colour — emphasis is a wider, more opaque
+          // stroke, never a terracotta-accent recolour (matches the trace-plot
+          // hover rule: the accent is not a hover highlight).
+          const stroke = color ?? "var(--color-ink-faint)";
           // Radii/strokes are in the normalized (0..1) space; vector-effect keeps
           // stroke widths crisp despite preserveAspectRatio="none" scaling.
           const sharpW = hot ? 1.8 : ghost ? 0.8 : 1.0;

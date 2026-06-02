@@ -50,7 +50,10 @@ export function buildRingPlacements(
     return {
       beamCenter: {
         x: cal.beamCenterPx.x / cal.imageSizePx.w,
-        y: cal.beamCenterPx.y / cal.imageSizePx.h,
+        // Calibration measures the beam center from the BOTTOM-left (detector /
+        // physics origin, y-up); the overlay renders top-left (SVG/DOM, y-down).
+        // Flip y so the ring origin lands on the displayed image.
+        y: 1 - cal.beamCenterPx.y / cal.imageSizePx.h,
       },
       rings: items.map((it) => ({
         q: it.q,
