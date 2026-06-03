@@ -24,3 +24,13 @@ describe("<SegmentedControl> xs size", () => {
     expect(onChange).toHaveBeenCalledWith("resid");
   });
 });
+
+it("stretch makes the container full-width and segments flex-1", () => {
+  const { getByTestId, getAllByRole } = render(
+    <SegmentedControl stretch testId="syms" aria-label="sym"
+      options={[{ value: "a", label: "A" }, { value: "b", label: "B" }]}
+      value="a" onChange={() => {}} />,
+  );
+  expect(getByTestId("syms").className).toContain("w-full");
+  expect(getAllByRole("button")[0]!.className).toContain("flex-1");
+});

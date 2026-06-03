@@ -54,6 +54,8 @@ export interface SegmentedControlProps<T extends string> {
    * the always-present `data-state` (e.g. "data-mode" for GroupingModeToggle).
    */
   stateAttr?: string;
+  /** Makes the container full-width and each segment flex-1 (equal-width fill). */
+  stretch?: boolean;
   /** PLACEMENT-ONLY: margin / width / flex-grid position. No appearance utils. */
   className?: string;
 }
@@ -92,6 +94,7 @@ export function SegmentedControl<T extends string>({
   "aria-label": ariaLabel,
   testId,
   stateAttr,
+  stretch = false,
   className = "",
 }: SegmentedControlProps<T>): JSX.Element {
   const isRadio = role === "radiogroup";
@@ -137,7 +140,7 @@ export function SegmentedControl<T extends string>({
     <div
       role={role}
       aria-label={ariaLabel}
-      className={cx(containerClass[variant], className)}
+      className={cx(containerClass[variant], stretch && "flex w-full", className)}
       {...containerProps}
     >
       {options.map((opt, idx) => {
@@ -167,6 +170,7 @@ export function SegmentedControl<T extends string>({
                 ? "bg-ink text-paper"
                 : "text-ink-faint hover:text-ink hover:bg-paper-sunk",
               opt.disabled && "opacity-50 cursor-not-allowed",
+              stretch && "flex-1",
             )}
             {...selectedProps}
           >
