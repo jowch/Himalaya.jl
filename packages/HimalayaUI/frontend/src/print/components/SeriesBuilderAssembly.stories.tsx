@@ -61,14 +61,21 @@ function SeriesBuilderView(): JSX.Element {
 
   // The rail's "Traces — drag to reorder" label is honest: dragging a row
   // rewrites the page-owned `traceOrder`.
-  const { dragItemProps } = useDragReorder((from, to) =>
+  const { dragItemProps, dropEdge } = useDragReorder((from, to) =>
     setTraceOrder((o) => reorder(o, from, to)),
   );
 
   const traces = traceOrder.map((t, i) => {
     const props = dragItemProps(i);
+    const edge = dropEdge(i);
     return (
-      <div key={t.id} {...props} className={`cursor-grab${props["data-dragging"] ? " opacity-50" : ""}`}>
+      <div key={t.id} {...props} className={`relative cursor-grab${props["data-dragging"] ? " opacity-50" : ""}`}>
+        {edge && (
+          <span
+            aria-hidden="true"
+            className={`pointer-events-none absolute left-0 right-0 z-10 h-0.5 rounded-full bg-accent ${edge === "top" ? "-top-px" : "-bottom-px"}`}
+          />
+        )}
         <MemberRow
           name={t.name}
           sub={`${t.id} · ${t.dose}`}

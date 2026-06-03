@@ -73,7 +73,7 @@ function ScopingView(): JSX.Element {
     [...INITIAL_SERIES].sort((a, b) => a.key - b.key).map((s) => s.id),
   );
 
-  const { dragItemProps } = useDragReorder((from, to) =>
+  const { dragItemProps, dropEdge } = useDragReorder((from, to) =>
     setOrder((o) => reorder(o, from, to)),
   );
 
@@ -165,12 +165,19 @@ function ScopingView(): JSX.Element {
         {...(history.length ? { onUndo: undo, ...(lastLabel ? { undoLabel: `Step back: ${lastLabel}` } : {}) } : {})}
         rows={sorted.map((s, i) => {
           const dprops = dragItemProps(i);
+          const edge = dropEdge(i);
           return (
             <div
               key={s.id}
               {...dprops}
-              className={`cursor-grab${dprops["data-dragging"] ? " opacity-50" : ""}`}
+              className={`relative cursor-grab${dprops["data-dragging"] ? " opacity-50" : ""}`}
             >
+              {edge && (
+                <span
+                  aria-hidden="true"
+                  className={`pointer-events-none absolute left-0 right-0 z-10 h-0.5 rounded-full bg-accent ${edge === "top" ? "-top-px" : "-bottom-px"}`}
+                />
+              )}
               <ScopeSampleRow
                 name={s.name}
                 sampleId={s.id}

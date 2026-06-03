@@ -13,6 +13,20 @@ export function reorder<T>(list: readonly T[], from: number, to: number): T[] {
   return next;
 }
 
+/** Which edge of row `index` should show the drop indicator while dragging,
+ *  or null. Matches reorder() placement: dragging from BELOW the target (a
+ *  smaller drop index) inserts ABOVE it ("top"); from ABOVE inserts BELOW
+ *  ("bottom"). No indicator on the dragged row itself or when not over it. */
+export function dropEdgeFor(
+  draggingIndex: number | null,
+  overIndex: number | null,
+  index: number,
+): "top" | "bottom" | null {
+  if (draggingIndex === null || overIndex === null) return null;
+  if (overIndex !== index || draggingIndex === index) return null;
+  return draggingIndex > index ? "top" : "bottom";
+}
+
 export interface DragItemProps {
   draggable: true;
   onDragStart: (e: DragEvent) => void;
@@ -24,8 +38,11 @@ export interface DragItemProps {
 
 export interface UseDragReorder {
   draggingIndex: number | null;
+  overIndex: number | null;
   /** Spread onto each row wrapper: `<div {...dragItemProps(i)}>`. */
   dragItemProps: (index: number) => DragItemProps;
+  /** Edge of row `index` to draw the insertion line on, or null. */
+  dropEdge: (index: number) => "top" | "bottom" | null;
 }
 
 /** Native HTML5 drag-reorder wiring for a list whose order the caller owns.
@@ -34,6 +51,7 @@ export interface UseDragReorder {
  *  documented follow-up (the row grips are aria-hidden visual handles). */
 export function useDragReorder(onReorder: (from: number, to: number) => void): UseDragReorder {
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
+  const [overIndex, setOverIndex] = useState<number | null>(null);
   const dragItemProps = (index: number): DragItemProps => ({
     draggable: true,
     onDragStart: (e) => {
@@ -49,14 +67,24 @@ export function useDragReorder(onReorder: (from: number, to: number) => void): U
     onDragOver: (e) => {
       e.preventDefault();
       e.dataTransfer.dropEffect = "move";
+      setOverIndex(index);
     },
     onDrop: (e) => {
       e.preventDefault();
       if (draggingIndex !== null && draggingIndex !== index) onReorder(draggingIndex, index);
       setDraggingIndex(null);
+      setOverIndex(null);
     },
-    onDragEnd: () => setDraggingIndex(null),
+    onDragEnd: () => {
+      setDraggingIndex(null);
+      setOverIndex(null);
+    },
     "data-dragging": draggingIndex === index,
   });
-  return { draggingIndex, dragItemProps };
+  return {
+    draggingIndex,
+    overIndex,
+    dragItemProps,
+    dropEdge: (index: number) => dropEdgeFor(draggingIndex, overIndex, index),
+  };
 }
