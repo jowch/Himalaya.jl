@@ -65,4 +65,16 @@ describe("<Input>", () => {
     expect(wrapper).toContainElement(screen.getByLabelText("name"));
     expect(screen.queryByTestId("input")).toBeNull();
   });
+
+  it("renders the value in mono when mono is set", () => {
+    const { getByTestId } = render(
+      <Input value="252" onValueChange={() => {}} mono testId="latt" />,
+    );
+    const inner = getByTestId("latt").querySelector("input")!;
+    expect(inner.className).toContain("font-mono");
+  });
+  it("is sans by default (no mono)", () => {
+    const { getByTestId } = render(<Input value="x" onValueChange={() => {}} testId="d" />);
+    expect(getByTestId("d").querySelector("input")!.className).not.toContain("font-mono");
+  });
 });

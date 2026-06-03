@@ -13,6 +13,8 @@ export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 
   /** Adornment slot, e.g. a clear button or unit suffix. */
   trailing?: ReactNode;
   invalid?: boolean;
+  /** Renders the inner input in monospace — for lattice/numeric fields. */
+  mono?: boolean;
   /** Overrides the wrapper's `data-testid`, default `"input"`; lets SearchInput
    *  etc. keep their contract. */
   testId?: string;
@@ -41,6 +43,7 @@ export function Input({
   leading,
   trailing,
   invalid = false,
+  mono = false,
   testId,
   className = "",
   ...rest
@@ -61,7 +64,7 @@ export function Input({
         value={value}
         onChange={(e) => onValueChange(e.target.value)}
         aria-invalid={invalid || undefined}
-        className="flex-1 bg-transparent border-none outline-none text-base text-ink placeholder:text-ink-faint min-w-0"
+        className={cx("flex-1 bg-transparent border-none outline-none text-base text-ink placeholder:text-ink-faint min-w-0", mono && "font-mono")}
         {...rest}
       />
       {trailing}
