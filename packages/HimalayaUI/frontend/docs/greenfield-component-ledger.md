@@ -171,11 +171,11 @@ Speculative-phase entry sheet. Triggered from the assignment cart's "custom inde
 
 | Component | What | Composes | Mockup | Status |
 |---|---|---|---|---|
-| ⚠️ **`ExportSheet`** | full-screen export dialog wrapping the clean render | `ModalShell`+`ModalHead`+`CleanFigure`+`ModalFooter` | series-plot | ⬜ |
+| **`ExportButton`** (+ `useFigureExport` hook) | figure export **split button** — primary **Copy** (→ clipboard), chevron menu **Download PNG / SVG**. NOT a modal/sheet: content-WYSIWYG, style-transformed (clean render is the engine adapter's job). Design: [specs/2026-06-03-figure-export-design.md](../../../../docs/superpowers/specs/2026-06-03-figure-export-design.md). | `Button`+`Menu` (hook wraps `lib/figure-export/*`) | series-plot | ⬜ (design approved 2026-06-03) |
 | **`CullBar`** | floating batch-reject action bar (bottom-center; visible on multi-select) — `components/CullBar.tsx` (Batch 11). Presentational (`count`/`show`/handlers); dark `bg-ink` pill, `accent` Drop + `ghostInverse` Restore/Clear; `aria-hidden`+`tabIndex=-1` when hidden. | count + `Button`×3 (`accent`/`ghostInverse`) | sample-table | ✅ | `CullBar.tsx` |
 | ⚠️ **`RailBack`** | floating tab to restore collapsed rail (full-bleed mode) | `IconButton`+label | series-builder | ⬜ |
 | ⚠️ **`Dock`** | floating offset-slider pod (full-bleed mode) | `Slider`+label | series-builder | ⬜ |
-| `ConflictModal` | member-conflict resolution (exists in legacy Series) | `ModalShell`+content | series-builder | ⬜ verify vs mockups |
+| ~~`ConflictModal`~~ | member-conflict resolution (legacy) | — | — | ⛔ **out of scope (2026-06-03)** — no conflict UI; see registry below |
 
 ---
 
@@ -189,7 +189,7 @@ All ⬜ — deferred until composite + renderer layers are proven in Storybook (
 | Samples / corpus | `sample-table.html` | `SheetTable` · `CullBar` · (loupe: `BigFrame` · `LoupeSidePanel` · `ThumbnailGallery`) |
 | Series folio | `series-folio.html` | `FolioHeader` · `Gallery`(`SeriesCard`) · `SearchInput` · `FilterChip`s · `SegmentedControl` |
 | Series scoping | `series-scoping.html` | `ScopePlate` · scoping `SampleRow`s · `AutoGroup` · `CandidateRow`s |
-| Series builder | `series-builder.html`, `2026-05-29-series-plot.html` | `SeriesPlate`(`WaterfallChart`) · `BuilderRail` · `MemberList` · `ReadingPanel` · `ExportSheet` · `RailBack`/`Dock` |
+| Series builder | `series-builder.html`, `2026-05-29-series-plot.html` | `SeriesPlate`(`WaterfallChart`) · `BuilderRail` · `MemberList` · `ReadingPanel` · `ExportButton` · `RailBack`/`Dock` |
 
 ---
 
@@ -198,6 +198,8 @@ All ⬜ — deferred until composite + renderer layers are proven in Storybook (
 | Item | Decision | Date | Rationale |
 |---|---|---|---|
 | `HeatmapChart` (Waterfall⇄Heatmap toggle) | ⛔ **out of scope** | 2026-06-02 | Not needed for the rebuild; waterfall is the canonical Series representation. |
+| `ExportSheet` (full-screen export dialog) → **`ExportButton` + `useFigureExport`** | 🔁 **redesigned** | 2026-06-03 | Brainstorm collapsed the "sheet": export is content-WYSIWYG / style-transformed with **no preview, no options, no modal**. It's a split button — Copy (→ clipboard) + a PNG/SVG download menu — on the Print presentational contract (hook owns `lib/figure-export/*`, button is presentational). Clean scientific styling stays the engine adapter's job (`CLEAN_SCIENTIFIC`), wired at Layer 4. Design: `docs/superpowers/specs/2026-06-03-figure-export-design.md`. |
+| `ConflictModal` (member/commit conflict resolution) | ⛔ **out of scope — cancelled** | 2026-06-03 | No conflict UI. The git-style server-vs-draft / Discard-Overwrite model (Plan 7 R5b, `If-Match` + `409`) is abandoned, not deferred — multiplayer stays last-write-wins, replaced by **edit-tracking → undo/redo → versioning** designed in Layer 4 (its own sub-project; touches the commit contract). See `docs/redesign-notes.md` (2026-06-03), `docs/event-log.md` §"Conflict resolution", `docs/future-feature-ideas.md` §"Multi-user / review". |
 | `TrackingLine` / cross-trace migration track + ghost rings | ⏸ **deferred** | 2026-06-02 | Buildable client-side from `confirmed_index.phase + lattice_d` (legacy `buildAnchorMap` proves it), but q-proximity matching is fragile and the connector is hard to read. The peak-q cursor delivers ~90% of the reading value. Revisit only if users ask. |
 | `MemberRow` series-plot `.member` variant (gradient coexistence swatch + inline colored phase names + lattice data) | ✅ **split done (Batch 9)** | 2026-06-02 | RESOLVED: built as the new `SeriesMemberRow` leaf (not a `MemberRow` variant — structurally distinct: no grip/chip; gradient/dashed/solid swatch + per-phase colored names + var + lattice·q₁ data line). `Swatch` gained the promised `coexistWith` gradient + `empty` (form-factor dashed) + `size` modes (the `Swatch.tsx` stub). Builder `MemberRow` (Batch 3) stays the `.trow`. |
 | Batch 10 — Loupe slice (`BigFrame` + `LoupeSidePanel`) | ✅ **loupe surface built** | 2026-06-02 | The loupe view's two composites, derived from `sample-table.html` `.loupe-shell`. **Pure composition — ZERO new primitives / no `ui/` refactor-on-contact:** every appearance detail traced to an existing token or primitive (the `.frame-tag` caption uses the `--color-frame-tag` token added back in R0c specifically for this; the solid "Dropped" pill uses `bg-accent`+`text-plate` token classes, NOT `NoticePill` which is accent-*tinted*; the big ✕ reuses `RejectOverlay`). `BigFrame` = square `bg-frame-edge` frame, `DetectorImage size="full"` dimmed `opacity-40` when rejected, `data-rejected` flag. `LoupeSidePanel` is **presentational** (Batch 7 contract): no `useState`, all state lifted; `shortcuts` defaults to exported `LOUPE_KEYS`; the page-sim assembly (`LoupeAssembly.stories.tsx`) owns selected-frame/dropped-set/rep state. **Layer-4 deferral (consistent w/ Batch 7/9):** the `.loupe-plate` shell (bordered plate + `loupe-back` + serif `loupe-head` + 2-col body) + `loupe-strip` are page assembly — a combined `LoupeAssembly` story simulates the page (2-col grid + `ThumbnailGallery` filmstrip) for fidelity without building the page component. frontend-reviewer clean on both (no issues). Gate green (lint:design + tsc + build-storybook); BigFrame (kept+dropped), LoupeSidePanel, and the assembly all visually verified vs the mockup. |
@@ -224,7 +226,7 @@ All ⬜ — deferred until composite + renderer layers are proven in Storybook (
 - **Layer 1 renderers:** 9 ✅ — **layer COMPLETE** (Batch 4 closed `CardFigure`/`CustomPreview`/`CleanFigure`) · 1 ⛔ · 1 ⏸
 - **Layer 2 tier-1 composites:** 18 ✅ — layer complete + 1 (Batch 3 closed `PhaseBlock`/`FolioHeader`/`AutoGroup`/`MemberRow`/`ReadingRow`; **Batch 9 added `SeriesMemberRow`** — the split-out series-plot member leaf)
 - **Layer 3 tier-2 panels:** ~28 ✅ — **layer COMPLETE** (Batch 5: `SeriesCard`/`Gallery`; Batch 6: `AssignmentCart` + `CandidateList`; Batch 7: `TracePlate`/`DetectorPanel`/`CombsPanel` + `PanelHeader`; Batch 8: `AssignmentRail` + `RailSection` + the 6 modal leaves; Batch 9: `MemberList` + `ReadingPanel` + `SeriesPlate`; Batch 10: `BigFrame` + `LoupeSidePanel`; Batch 11: `SheetTable`; Batch 12: `ScopePlate` + `ScopeSampleRow` + `ScopeCandidateRow`; **Batch 13: `BuilderRail`**)
-- **Modals/overlays:** 1 cluster ✅ (`CustomIndexModal` + 6 leaves, Batch 8; `ModalShell` chrome ✅) · `CullBar` ✅ (Batch 11) · **`RailBack` + `Dock` ✅ (Batch 13)** · 2 gap clusters ⬜ **with NO mockup** (`ExportSheet`, `ConflictModal`) — not buildable until a mockup exists (derive-from-mockup rule)
+- **Modals/overlays:** 1 cluster ✅ (`CustomIndexModal` + 6 leaves, Batch 8; `ModalShell` chrome ✅) · `CullBar` ✅ (Batch 11) · **`RailBack` + `Dock` ✅ (Batch 13)** · `ExportButton` (+`useFigureExport`) ⬜ **design approved 2026-06-03** (split button, not a sheet — see registry) · ~~`ConflictModal`~~ ⛔ **cancelled 2026-06-03** (no conflict UI — see registry)
 - **Layer 4 pages:** 0/5 ⬜ — now the build frontier (all six pages — Focus/Series/Contact/Loupe/Scoping/Builder — are assemblable; the panel + renderer + primitive layers beneath them are complete)
 
 Layers 0, 1, and 2 are now all complete. The build frontier is the **Layer 3 tier-2 panels**, which are now fully unblocked (every renderer + tier-1 composite they compose exists):
@@ -233,7 +235,7 @@ Layers 0, 1, and 2 are now all complete. The build frontier is the **Layer 3 tie
 - ~~`Gallery`←`SeriesCard`←(`CardFigure`+`PhaseStrip`)~~ ✅ **DONE (Batch 5)** · ~~`SheetTable`←`SampleTableRow`~~ ✅ **DONE (Batch 11)**
 - ~~`TracePlate` · `DetectorPanel` · `CombsPanel` (+ shared `PanelHeader`)~~ ✅ **DONE (Batch 7)** · ~~`SeriesPlate`←(`PlateHeader`+`ToolBar`+`WaterfallChart`)~~ ✅ **DONE (Batch 9)**
 - ~~loupe panels (`BigFrame`, `LoupeSidePanel`)~~ ✅ **DONE (Batch 10)** · ~~scoping (`ScopePlate`+`ScopeSampleRow`+`ScopeCandidateRow`)~~ ✅ **DONE (Batch 12)** · ~~`BuilderRail` (+`Field`/`RailBack`/`Dock`)~~ ✅ **DONE (Batch 13)** — **Layer 3 is now COMPLETE.**
-- modals/overlays: `CustomIndexModal`←`CustomPreview` · `ExportSheet`←`CleanFigure` · ~~`CullBar`~~ ✅ **DONE (Batch 11)** · plus `RailBack`/`Dock`/`ConflictModal`
+- modals/overlays: `CustomIndexModal`←`CustomPreview` · `ExportButton`+`useFigureExport` (⬜ designed 2026-06-03; split button, not `ExportSheet`) · ~~`CullBar`~~ ✅ **DONE (Batch 11)** · ~~`RailBack`/`Dock`~~ ✅ **DONE (Batch 13)** · ~~`ConflictModal`~~ ⛔ **cancelled 2026-06-03**
 
 **Batch 7 (2026-06-02) closed the Focus-plates slice** — the Focus hero trio (`TracePlate`/`DetectorPanel`/`CombsPanel`) + the shared `PanelHeader`, plus a `Thumbnail` `xs` size (refactor-on-contact). All three panels are presentational (scale/exposure/view/hovered-q lifted to the consumer). With Batch 6's assignment rail, **the entire Focus workspace's panel layer is now built — the Focus *page* (Layer 4) is assemblable.** Remaining next vertical slices, each fully unblocked:
 

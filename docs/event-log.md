@@ -205,16 +205,28 @@ The EventSource connection is bound to `App.tsx`'s mount/unmount only;
 `clientId` is stable for the lifetime of the tab, so no listener
 recycling is needed.
 
-### Conflict resolution (deferred)
+### Conflict resolution
+
+> **⚠ Superseded — decided 2026-06-03 (greenfield "The Print" rebuild).** The
+> optimistic-concurrency model described below (`If-Match` + 409-retry, Plan 7
+> R5b) is **cancelled, not deferred.** The product decision is that commit
+> conflicts should not surface as friction: multiplayer stays last-write-wins
+> permanently, and the positive replacement is **edit-tracking → undo/redo →
+> versioning**, designed during Layer 4. Do **not** build the `409`/`If-Match`
+> conflict UI from this section. See `docs/redesign-notes.md` (2026-06-03
+> entry), `docs/future-feature-ideas.md` §"Multi-user / review", and
+> `docs/superpowers/specs/2026-06-03-figure-export-design.md` §"Non-goal:
+> conflict resolution". The original deferral note is retained below for
+> historical context only.
 
 Optimistic concurrency via `If-Match` headers + 409-retry on the
-frontend (R5b in Plan 7) is **deferred**. The gate is R4 instrumentation
-showing real contention: ≥2% delta-event collision rate over ≥4 weeks /
-≥500 events. Until then, multiplayer is last-write-wins, which the
+frontend (R5b in Plan 7) was originally **deferred**. The gate was R4
+instrumentation showing real contention: ≥2% delta-event collision rate over
+≥4 weeks / ≥500 events. Until then, multiplayer is last-write-wins, which the
 event log makes auditable after the fact.
 
-`exposures.selected` is intentionally LWW even after R5b ships — see the
-note in `CLAUDE.md`.
+`exposures.selected` is intentionally LWW — see the note in `CLAUDE.md`. (Under
+the 2026-06-03 decision above, *all* entities follow this LWW grain.)
 
 ---
 

@@ -339,6 +339,24 @@ JOIN across them via SQLite's `ATTACH` mechanism.
 
 ## Multi-user / review
 
+### Edit-tracking → undo/redo → versioning (the conflict-model replacement)
+
+**Decided 2026-06-03 (greenfield rebuild):** there is **no conflict modal** and
+no optimistic-concurrency conflict UI — the `If-Match` + `409`-retry model
+(Plan 7 R5b) is **cancelled**, not deferred (see `docs/event-log.md`
+§"Conflict resolution", `docs/redesign-notes.md` 2026-06-03 entry). Commit
+conflicts should never surface as friction. Multiplayer stays last-write-wins.
+
+The positive replacement, to design during **Layer 4** (where the real commit
+path / mutation queue / SSE wiring lives): track multiplayer edits as a durable
+sequence and expose **undo/redo + versioning** instead of asking a user to
+reconcile a divergent draft. Open questions for that spec — scope of undo
+(per-entity vs per-session), whether versioning is automatic snapshots vs named
+saves, how the existing `user_actions` event log seeds the history, and what
+this means for the backend commit contract (the `expected_content_hash` gate
+likely relaxes). This is its own sub-project: spec → plan → implementation, not
+part of the figure-export build.
+
 ### Cross-tab SSE URL invalidation — live integration coverage
 
 The slug-disappearance branch in `useUrlFromState.ts` (a previously-resolved
