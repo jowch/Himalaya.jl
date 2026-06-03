@@ -48,8 +48,8 @@ export function LatticeParamControl({
         inputSize="sm"
         value={value}
         onValueChange={onValueChange}
-        {...(min !== undefined ? { min } : {})}
-        {...(max !== undefined ? { max } : {})}
+        min={min}
+        max={max}
         {...(step !== undefined ? { step } : {})}
         aria-label={`${label} value`}
         className="w-16 shrink-0"
