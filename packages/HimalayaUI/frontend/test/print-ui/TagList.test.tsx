@@ -77,6 +77,25 @@ describe("TagList", () => {
     expect(screen.getByRole("button", { name: "Add" })).toBeTruthy();
   });
 
+  it("does NOT flag persistent-add by default (hover-gated when tags present)", () => {
+    render(<TagList tags={[{ key: "LL37" }]} onAdd={vi.fn()} />);
+    expect(screen.getByTestId("tag-list")).not.toHaveAttribute(
+      "data-persistent-add",
+    );
+  });
+
+  it("persistentAdd keeps the add invite always shown alongside existing tags (the loupe rule)", () => {
+    render(<TagList tags={[{ key: "LL37" }]} onAdd={vi.fn()} persistentAdd />);
+    expect(screen.getByTestId("tag-list")).toHaveAttribute(
+      "data-persistent-add",
+      "true",
+    );
+    // The add affordance is still the functional dashed add chip.
+    expect(screen.getByRole("button", { name: "Add" }).getAttribute("data-variant")).toBe(
+      "add",
+    );
+  });
+
   describe("maxVisible overflow cap", () => {
     const FIVE: Tag[] = [
       { key: "LL37" },

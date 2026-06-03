@@ -46,4 +46,22 @@ describe("LoupeSidePanel", () => {
     expect(screen.getByText("flip frames")).toBeInTheDocument();
     expect(screen.getByText("set representative")).toBeInTheDocument();
   });
+
+  it("shows the add-tag affordance persistently (the loupe rule) and commits a new tag", async () => {
+    const onAddTag = vi.fn();
+    setup({ onAddTag });
+    // Loupe tags keep the dashed add chip always visible, even with tags present.
+    expect(screen.getByTestId("tag-list")).toHaveAttribute(
+      "data-persistent-add",
+      "true",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Add" }));
+    const editor = screen.getByTestId("tag-editor");
+    const keyInput = editor.querySelector(
+      'input[placeholder="key"]',
+    ) as HTMLInputElement;
+    await userEvent.type(keyInput, "pH");
+    await userEvent.keyboard("{Enter}");
+    expect(onAddTag).toHaveBeenCalledWith({ key: "pH" });
+  });
 });

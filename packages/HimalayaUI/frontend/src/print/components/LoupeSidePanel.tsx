@@ -78,6 +78,7 @@ export function LoupeSidePanel({
         <TagList
           tags={tags}
           editable
+          persistentAdd
           {...(onAddTag ? { onAdd: onAddTag } : {})}
           {...(onRemoveTag ? { onRemove: onRemoveTag } : {})}
         />

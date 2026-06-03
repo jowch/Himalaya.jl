@@ -65,17 +65,22 @@ export const DroppedRepresentative: Story = {
 function InteractivePanel(): JSX.Element {
   const [dropped, setDropped] = useState(false);
   const [isRep, setIsRep] = useState(false);
+  const [tags, setTags] = useState<Tag[]>(mockTags);
   return (
     <div className="bg-paper p-5 w-[300px]">
       <LoupeSidePanel
         meta={mockMeta}
         dropped={dropped}
         isRepresentative={isRep}
-        tags={mockTags}
+        tags={tags}
         onToggleDrop={() => setDropped((d) => !d)}
         onSetRepresentative={() => setIsRep(true)}
-        onAddTag={() => {}}
-        onRemoveTag={() => {}}
+        onAddTag={(t) => setTags((prev) => [...prev, t])}
+        onRemoveTag={(t) =>
+          setTags((prev) =>
+            prev.filter((x) => !(x.key === t.key && x.value === t.value)),
+          )
+        }
       />
     </div>
   );

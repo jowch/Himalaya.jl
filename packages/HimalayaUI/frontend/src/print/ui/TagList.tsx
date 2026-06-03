@@ -18,6 +18,11 @@ interface TagListProps {
    *  revealing the hidden tags as real {@link TagPill}s. Unset → all tags render
    *  (the unbounded, wrapping case). */
   maxVisible?: number;
+  /** Keep the add invite ALWAYS visible, even when tags exist (the loupe
+   *  `.loupe-tags` rule) — instead of the default quiet appendix revealed only on
+   *  row hover/focus (the contact-sheet `.srow:hover` rule). No effect on the
+   *  empty-state invite, which is always visible regardless. */
+  persistentAdd?: boolean;
   className?: string;
 }
 
@@ -32,7 +37,8 @@ function cx(...parts: Array<string | false | null | undefined>): string {
  *  `add` variant), never on the resting list or pills. G — when tags exist the
  *  invite is hidden until row hover via a tokenized OPACITY transition
  *  (`group-hover/tags` + `focus-within`), never a layout/size animation; when the
- *  list is EMPTY it is always visible (the empty-state invite). */
+ *  list is EMPTY it is always visible (the empty-state invite). `persistentAdd`
+ *  overrides the hover-gating so the invite is always shown (the loupe). */
 export function TagList({
   tags,
   onAdd,
@@ -40,6 +46,7 @@ export function TagList({
   editable = false,
   size = "sm",
   maxVisible,
+  persistentAdd = false,
   className = "",
 }: TagListProps): JSX.Element {
   const [adding, setAdding] = useState(false);
@@ -51,6 +58,7 @@ export function TagList({
   return (
     <div
       data-testid="tag-list"
+      {...(persistentAdd ? { "data-persistent-add": "true" } : {})}
       className={cx("flex items-center flex-wrap gap-1.5 group/tags", className)}
     >
       {visible.map((t, i) => (
@@ -105,7 +113,8 @@ export function TagList({
             size={size}
             onClick={() => setAdding(true)}
             className={cx(
-              tags.length > 0 &&
+              !persistentAdd &&
+                tags.length > 0 &&
                 "opacity-0 group-hover/tags:opacity-100 focus-within:opacity-100",
             )}
           >

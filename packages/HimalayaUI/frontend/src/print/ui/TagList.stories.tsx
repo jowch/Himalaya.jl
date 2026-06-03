@@ -38,6 +38,19 @@ export const Editable: Story = {
   },
 };
 
+/** persistentAdd keeps the dashed "+ tag" invite always visible alongside
+ *  existing tags (the loupe `.loupe-tags` rule) — versus the default, where the
+ *  invite is a quiet appendix revealed only on hover/focus when tags are present. */
+export const PersistentAdd: Story = {
+  args: {
+    tags: [{ key: "LL37" }, { key: "temperature", value: "37C" }],
+    editable: true,
+    persistentAdd: true,
+    onAdd: () => {},
+    onRemove: () => {},
+  },
+};
+
 /** maxVisible caps the list: the first 2 pills render, then a muted "+N more"
  *  trigger (quiet secondary text — NOT a pill). Click it to open a popover that
  *  reveals the hidden tags as real, removable TagPill chips. */
