@@ -10,15 +10,16 @@ export interface ThumbnailProps {
   representative?: boolean;
   rejected?: boolean;
   selected?: boolean;
-  /** `"sm"` → 62px (contact-sheet strip); `"lg"` → 70px (loupe strip). */
-  size?: "sm" | "lg";
+  /** `"xs"` → 30px (dense Focus exposure strip); `"sm"` → 62px (contact-sheet strip); `"lg"` → 70px (loupe strip). */
+  size?: "xs" | "sm" | "lg";
   onClick?: () => void;
   title?: string;
   /** PLACEMENT ONLY. */
   className?: string;
 }
 
-const SIZE_PX: Record<"sm" | "lg", number> = {
+const SIZE_PX: Record<"xs" | "sm" | "lg", number> = {
+  xs: 30,
   sm: 62,
   lg: 70,
 };

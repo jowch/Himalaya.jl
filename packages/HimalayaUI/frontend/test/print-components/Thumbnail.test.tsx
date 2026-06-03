@@ -151,3 +151,15 @@ describe("<Thumbnail> DetectorImage integration", () => {
     expect(screen.getByTestId("detector-image-placeholder")).toBeInTheDocument();
   });
 });
+
+describe("<Thumbnail> xs size (dense exposure strip)", () => {
+  it("renders the xs (dense exposure-strip) size", () => {
+    render(<Thumbnail src={null} size="xs" />);
+    expect(screen.getByTestId("thumbnail").dataset.size).toBe("xs");
+  });
+
+  it("sets data-size='xs' when size='xs'", () => {
+    render(<Thumbnail src={null} size="xs" />);
+    expect(screen.getByTestId("thumbnail")).toHaveAttribute("data-size", "xs");
+  });
+});

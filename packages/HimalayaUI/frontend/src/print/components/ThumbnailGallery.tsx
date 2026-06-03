@@ -14,7 +14,7 @@ export interface ThumbnailGalleryProps {
   selectedId?: number;
   onSelect?: (id: number) => void;
   /** Child thumbnail size; forwarded to every Thumbnail. Default `"sm"`. */
-  size?: "sm" | "lg";
+  size?: "xs" | "sm" | "lg";
   /** Horizontal alignment of the strip. `"center"` adds `justify-center`
    *  (e.g. the loupe strip). Default `"start"`. */
   align?: "start" | "center";
