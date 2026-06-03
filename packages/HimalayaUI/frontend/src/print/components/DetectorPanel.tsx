@@ -1,8 +1,9 @@
 // src/print/components/DetectorPanel.tsx
 import type { ReactNode } from "react";
 import { Card } from "../ui";
-import { DetectorImage } from "../detector";
+import { DetectorImage, DetectorRings, buildRingPlacements } from "../detector";
 import type { DetectorLutVariant } from "../detector/detectorLut";
+import type { DetectorCalibration, RingInput } from "../detector/detectorGeometry";
 import { PanelHeader } from "./PanelHeader";
 
 function cx(...parts: Array<string | false | null | undefined>): string {
@@ -16,8 +17,19 @@ export interface DetectorPanelProps {
   label?: ReactNode;
   /** Header right slot — the exposure switcher (ThumbnailGallery). */
   tools?: ReactNode;
-  /** Detector colormap; "neutral" lets the ring overlay own colour. */
+  /** Detector colormap; "neutral" (default) lets the ring overlay own colour. */
   lutVariant?: DetectorLutVariant;
+  /** Phase-coloured Debye–Scherrer rings to overlay — the assigned reflections,
+   *  each `{ q, color, ghost? }` (or a bare q). Empty/omitted → image only. */
+  rings?: RingInput[];
+  /** Beam-center + q→radius calibration. `null`/omitted → presentational
+   *  centered fallback (radii spread by q-range) until the backend supplies it. */
+  calibration?: DetectorCalibration | null;
+  /** q hovered elsewhere (trace peak / comb tooth) → the matching ring lights —
+   *  the cross-panel "triple lights up" link. */
+  hoveredQ?: number;
+  /** Fired on ring enter (q) / leave (undefined) → drives the same link outward. */
+  onHoverQ?: (q?: number) => void;
   /** Caption under the frame. */
   hint?: ReactNode;
   /** PLACEMENT-ONLY. */
@@ -29,9 +41,19 @@ export function DetectorPanel({
   label = "Detector image",
   tools,
   lutVariant,
+  rings,
+  calibration,
+  hoveredQ,
+  onHoverQ,
   hint,
   className,
 }: DetectorPanelProps): JSX.Element {
+  // Rings are geometrically real (beam-centered); the frame is aspect-square so
+  // imageAspect stays 1. null calibration → centered presentational fallback.
+  const placed =
+    rings && rings.length > 0
+      ? buildRingPlacements(rings, calibration ?? null)
+      : null;
   return (
     <Card
       as="section"
@@ -41,13 +63,21 @@ export function DetectorPanel({
       <PanelHeader label={label}>{tools}</PanelHeader>
       <div
         data-testid="detector-frame"
-        className="bg-frame-edge border border-frame-edge rounded overflow-hidden aspect-square mx-auto w-full"
+        className="relative bg-frame-edge border border-frame-edge rounded overflow-hidden aspect-square mx-auto w-full"
       >
         <DetectorImage
           src={src}
           size="full"
           {...(lutVariant !== undefined ? { lutVariant } : {})}
         />
+        {placed && (
+          <DetectorRings
+            beamCenter={placed.beamCenter}
+            rings={placed.rings}
+            {...(hoveredQ !== undefined ? { hoveredQ } : {})}
+            {...(onHoverQ !== undefined ? { onHoverQ } : {})}
+          />
+        )}
       </div>
       {hint != null && (
         <div className="text-caption text-ink-faint mt-2.5">{hint}</div>
