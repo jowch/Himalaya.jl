@@ -73,3 +73,15 @@ describe("<PhaseBlock> placement className", () => {
     expect(within(root).getByText("Lamellar")).toBeInTheDocument();
   });
 });
+
+describe("<PhaseBlock> optional series line", () => {
+  it("renders an optional series line when `series` is provided", () => {
+    render(<PhaseBlock phase="Im3m" score={0.8} meta="a = 14.2 nm · 5 reflections" series="QII alkane" />);
+    expect(screen.getByText(/QII alkane/)).toBeInTheDocument();
+    expect(screen.getByText(/series/i)).toBeInTheDocument();
+  });
+  it("omits the series line when `series` is absent", () => {
+    render(<PhaseBlock phase="Im3m" score={0.8} meta="a = 14.2 nm" />);
+    expect(screen.queryByText(/^series/i)).not.toBeInTheDocument();
+  });
+});

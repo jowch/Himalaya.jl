@@ -6,6 +6,8 @@ export interface PhaseBlockProps {
   score: number;        // 0..1
   meta: ReactNode;      // e.g. "a = 14.2 nm · 5 reflections"
   onRemove?: () => void;
+  /** Optional series name shown below the score bar. */
+  series?: ReactNode;
   /** PLACEMENT-ONLY. Appended last. */
   className?: string;
 }
@@ -15,6 +17,7 @@ export function PhaseBlock({
   score,
   meta,
   onRemove,
+  series,
   className,
 }: PhaseBlockProps): JSX.Element {
   return (
@@ -41,6 +44,11 @@ export function PhaseBlock({
       </div>
       <div className="text-data text-ink-soft mt-1">{meta}</div>
       <ScoreBar value={score} phase={phase} size="bar" className="mt-2" />
+      {series != null && (
+        <div className="text-caption text-ink-faint mt-1.5">
+          series <b className="text-ink-soft font-semibold font-mono">{series}</b>
+        </div>
+      )}
     </div>
   );
 }
