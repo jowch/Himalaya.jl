@@ -16,6 +16,15 @@ export const Accent: Story = { args: { variant: "accent" } };
 export const Danger: Story = { args: { variant: "danger", children: "Delete sample" } };
 export const Outline: Story = { args: { variant: "outline", children: "Drop" } };
 export const Armed: Story = { args: { variant: "ghost", armed: true, children: "+ Peak" } };
+export const Disabled: Story = {
+  args: { variant: "solid", children: "Confirm & build →" },
+  render: (args) => (
+    <div className="inline-flex gap-3">
+      <Button {...args} disabled />
+      <Button {...args} />
+    </div>
+  ),
+};
 export const GhostInverse: Story = {
   args: { variant: "ghostInverse", children: "Restore" },
   render: (args) => (

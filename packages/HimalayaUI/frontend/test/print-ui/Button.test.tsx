@@ -59,6 +59,13 @@ describe("<Button> ghostInverse variant", () => {
   });
 });
 
+describe("<Button> disabled state", () => {
+  it("forwards the disabled attribute (gated actions)", () => {
+    render(<Button variant="solid" disabled>Confirm & build</Button>);
+    expect(screen.getByRole("button", { name: /confirm & build/i })).toBeDisabled();
+  });
+});
+
 describe("<Button> danger variant", () => {
   it("carries data-variant=danger and renders its label", () => {
     render(<Button variant="danger">Delete sample</Button>);

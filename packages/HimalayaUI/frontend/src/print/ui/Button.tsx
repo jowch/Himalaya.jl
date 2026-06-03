@@ -48,7 +48,7 @@ export function Button({
       data-variant={variant}
       data-armed={armed ? "true" : undefined}
       aria-pressed={armed ? true : undefined}
-      className={`rounded-md px-2.5 py-1 transition-colors ${armed ? armedClass : variantClass[variant]} ${className}`}
+      className={`rounded-md px-2.5 py-1 transition-colors disabled:opacity-45 disabled:cursor-not-allowed ${armed ? armedClass : variantClass[variant]} ${className}`}
       {...props}
     >
       {children}
