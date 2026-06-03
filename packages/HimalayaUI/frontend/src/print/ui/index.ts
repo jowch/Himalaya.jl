@@ -60,3 +60,5 @@ export { Popover } from "./Popover";
 export type { PopoverProps } from "./Popover";
 export { NoticePill } from "./NoticePill";
 export type { NoticePillTone } from "./NoticePill";
+export { FlagButton } from "./FlagButton";
+export type { FlagButtonProps } from "./FlagButton";
