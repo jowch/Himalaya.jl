@@ -11,6 +11,11 @@ export interface CustomPreviewProps {
   width?: number;
   /** SVG height (px). */
   height?: number;
+  /** When set, each observed peak gets a click/Enter hit target that emits its
+   *  q — the consumer snaps the lattice so the first reflection lands on it
+   *  (click-to-snap). Omit for a static preview. The renderer owns the pointer +
+   *  q-geometry; the snap math (lattice-for-first-order) lives in the consumer. */
+  onSelectObserved?: (q: number) => void;
   /** Placement only. */
   className?: string;
 }
@@ -32,6 +37,7 @@ export function CustomPreview({
   observed,
   width = 520,
   height = 150,
+  onSelectObserved,
   className,
 }: CustomPreviewProps): JSX.Element {
   const pw = width - mL - mR;
@@ -64,16 +70,39 @@ export function CustomPreview({
         strokeWidth={1}
       />
 
-      {/* observed peak markers */}
+      {/* observed peak markers (+ optional click-to-snap hit target). The
+          visible dot stays 2.5px; the hit circle is a larger transparent
+          target so clicking near the dot snaps the first reflection to it. */}
       {observed.map((q, i) => (
-        <circle
-          key={`obs-${i}`}
-          data-observed-q={q}
-          cx={x.to(q)}
-          cy={baseY}
-          r={2.5}
-          fill="var(--color-ink-soft)"
-        />
+        <g key={`obs-${i}`}>
+          <circle
+            data-observed-q={q}
+            cx={x.to(q)}
+            cy={baseY}
+            r={2.5}
+            fill="var(--color-ink-soft)"
+          />
+          {onSelectObserved && (
+            <circle
+              data-observed-hit={q}
+              cx={x.to(q)}
+              cy={baseY}
+              r={9}
+              fill="transparent"
+              role="button"
+              tabIndex={0}
+              aria-label={`Snap lattice so the first reflection lands on the observed peak at q ${q.toFixed(3)}`}
+              style={{ cursor: "pointer" }}
+              onClick={() => onSelectObserved(q)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onSelectObserved(q);
+                }
+              }}
+            />
+          )}
+        </g>
       ))}
 
       {/* predicted teeth */}

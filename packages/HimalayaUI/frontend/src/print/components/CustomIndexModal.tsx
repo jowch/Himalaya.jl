@@ -30,6 +30,9 @@ export interface CustomIndexModalProps {
   unit?: string;
   previewSeries: CombSeries;
   observed: number[];
+  /** Click-to-snap: clicking an observed peak in the preview emits its q so the
+   *  consumer can set the lattice for the first reflection to land on it. */
+  onSelectObserved?: (q: number) => void;
   fit: CustomIndexFit;
   className?: string;
 }
@@ -39,7 +42,7 @@ export function CustomIndexModal(props: CustomIndexModalProps): JSX.Element | nu
     open, onClose, onCancel, onAdd,
     symmetries, symmetry, onSymmetryChange,
     paramName, paramValue, paramMin, paramMax, paramStep, onParamChange, unit = "Å",
-    previewSeries, observed, fit, className,
+    previewSeries, observed, onSelectObserved, fit, className,
   } = props;
 
   return (
@@ -76,7 +79,12 @@ export function CustomIndexModal(props: CustomIndexModalProps): JSX.Element | nu
         </ModalFieldRow>
 
         <div className="bg-paper-sunk border border-hair rounded-sm px-2 py-1.5">
-          <CustomPreview series={previewSeries} observed={observed} className="block w-full" />
+          <CustomPreview
+            series={previewSeries}
+            observed={observed}
+            {...(onSelectObserved ? { onSelectObserved } : {})}
+            className="block w-full"
+          />
         </div>
 
         <FitMetadata

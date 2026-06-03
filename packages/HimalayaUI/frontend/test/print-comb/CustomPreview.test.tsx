@@ -1,5 +1,5 @@
-import { render } from "@testing-library/react";
-import { describe, it, expect } from "vitest";
+import { render, fireEvent } from "@testing-library/react";
+import { describe, it, expect, vi } from "vitest";
 import { CustomPreview } from "../../src/print/comb/CustomPreview";
 import { PN3M } from "../../src/print/comb/comb.fixtures";
 import type { CombSeries } from "../../src/print/comb/combModel";
@@ -51,6 +51,24 @@ describe("CustomPreview", () => {
     const absent = container.querySelector('[data-tooth-observed="false"]');
     expect(absent).toBeTruthy();
     expect(absent!.getAttribute("stroke-dasharray")).toBeTruthy();
+  });
+
+  it("with onSelectObserved, clicking a peak's hit target emits that peak's q (click-to-snap)", () => {
+    const onSelectObserved = vi.fn();
+    const { container } = render(
+      <CustomPreview series={PN3M} observed={[0.0712, 0.0872, 0.156]} onSelectObserved={onSelectObserved} />,
+    );
+    const hits = container.querySelectorAll("[data-observed-hit]");
+    expect(hits.length).toBe(3);
+    fireEvent.click(hits[1]!);
+    expect(onSelectObserved).toHaveBeenCalledWith(0.0872);
+  });
+
+  it("renders NO hit targets when onSelectObserved is absent (static preview)", () => {
+    const { container } = render(
+      <CustomPreview series={PN3M} observed={[0.0712, 0.0872]} />,
+    );
+    expect(container.querySelectorAll("[data-observed-hit]").length).toBe(0);
   });
 
   it("colors observed teeth with the phase color (read-back round-trip)", () => {

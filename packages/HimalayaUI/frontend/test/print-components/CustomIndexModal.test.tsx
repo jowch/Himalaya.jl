@@ -30,6 +30,18 @@ describe("CustomIndexModal", () => {
     expect(getByText("Add to assignment")).toBeTruthy();
     expect(getByText("Cancel")).toBeTruthy();
   });
+  it("forwards onSelectObserved to the preview (click-to-snap on a baseline peak)", () => {
+    const onSelectObserved = vi.fn();
+    const { container } = render(
+      <CustomIndexModal {...base} onClose={() => {}} onCancel={() => {}} onAdd={() => {}}
+        onSymmetryChange={() => {}} onParamChange={() => {}} onSelectObserved={onSelectObserved} />,
+    );
+    const hits = container.querySelectorAll("[data-observed-hit]");
+    expect(hits.length).toBe(base.observed.length);
+    fireEvent.click(hits[0]!);
+    expect(onSelectObserved).toHaveBeenCalledWith(base.observed[0]);
+  });
+
   it("renders nothing when open=false", () => {
     const { queryByText } = render(
       <CustomIndexModal {...base} open={false} onClose={() => {}} onCancel={() => {}} onAdd={() => {}}

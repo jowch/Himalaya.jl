@@ -74,6 +74,20 @@ function snapValues(sym: string): number[] {
 const isSnapped = (sym: string, v: number): boolean =>
   snapValues(sym).some((s) => Math.abs(s - v) < 0.75);
 
+/** Lattice that puts the FIRST allowed order on a clicked observed peak q
+ *  (click-to-snap). Clamped to the symmetry's range. */
+function latticeForFirstOrder(sym: string, pq: number): number {
+  const s = SYMS[sym]!;
+  const M0 = s.Ms[0]!;
+  const v =
+    s.kind === "lamellar"
+      ? (TWO_PI * M0) / pq
+      : s.kind === "hex"
+        ? (4 * Math.PI * Math.sqrt(M0)) / (Math.sqrt(3) * pq)
+        : (TWO_PI * Math.sqrt(M0)) / pq;
+  return Math.round(Math.max(s.min, Math.min(s.max, v)));
+}
+
 /** Build the live preview series + fit from a symmetry + lattice value — the
  *  computation the Focus page will own. A tooth is "observed" when a real peak
  *  sits within 2.2% of its predicted q. */
@@ -161,6 +175,7 @@ function OpenDemo(): JSX.Element {
         unit="Å"
         previewSeries={preview.series}
         observed={OBSERVED}
+        onSelectObserved={(q) => setParamValue(String(latticeForFirstOrder(symmetry, q)))}
         fit={preview.fit}
       />
     </div>
