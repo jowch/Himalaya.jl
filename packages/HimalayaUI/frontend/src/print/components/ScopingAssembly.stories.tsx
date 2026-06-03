@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { ScopePlate } from "./ScopePlate";
 import { ScopeSampleRow } from "./ScopeSampleRow";
 import { ScopeCandidateRow } from "./ScopeCandidateRow";
+import { useDragReorder, reorder } from "./useDragReorder";
 import type { PhaseSegment } from "../ui";
 import { realTraces } from "../fixtures/realTraces";
 
@@ -65,9 +66,20 @@ function ScopingView(): JSX.Element {
   const [candidates, setCandidates] = useState<Member[]>(INITIAL_CANDIDATES);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [orderedBy, setOrderedBy] = useState("LL37 : lipid ratio");
+  // The displayed order is seeded value-sorted (low → high), but the grip is a
+  // real MANUAL OVERRIDE: dragging a row rewrites this id list, and manual order
+  // then wins (candidates append; we never re-sort).
+  const [order, setOrder] = useState<string[]>(() =>
+    [...INITIAL_SERIES].sort((a, b) => a.key - b.key).map((s) => s.id),
+  );
 
-  // Series is always shown low → high by its numeric key.
-  const sorted = [...series].sort((a, b) => a.key - b.key);
+  const { dragItemProps } = useDragReorder((from, to) =>
+    setOrder((o) => reorder(o, from, to)),
+  );
+
+  // The shown members follow the page-owned manual `order` against the lookup.
+  const byId = new Map(series.map((s) => [s.id, s]));
+  const sorted = order.map((id) => byId.get(id)).filter((s): s is Member => s != null);
 
   // Clicking a value toggles whether the parse still needs a look. Recorded so
   // it steps back with Undo / ⌘Z.
@@ -81,12 +93,14 @@ function ScopingView(): JSX.Element {
     setSeries((cur) => cur.map((s) => (s.id === id ? { ...s, flagged: !s.flagged } : s)));
   };
 
-  // Adding a candidate folds it into the series (re-sorted on render by key).
+  // Adding a candidate folds it into the series. Manual order wins, so it is
+  // APPENDED to the displayed order rather than re-sorted in by key.
   const addCandidate = (id: string): void => {
     const c = candidates.find((x) => x.id === id);
     if (!c) return;
     setCandidates((cur) => cur.filter((x) => x.id !== id));
     setSeries((cur) => [...cur, c]);
+    setOrder((o) => [...o, id]);
     setHistory((h) => [...h, { type: "add", id, label: "added " + id }]);
   };
 
@@ -102,6 +116,7 @@ function ScopingView(): JSX.Element {
           if (m) setCandidates((cs) => [...cs, m]);
           return cur.filter((s) => s.id !== e.id);
         });
+        setOrder((o) => o.filter((id) => id !== e.id));
       }
       return h.slice(0, -1);
     });
@@ -148,18 +163,26 @@ function ScopingView(): JSX.Element {
         orderNote="Read from the sample names. Change it to time, dose, temperature, or define your own."
         count={`${n} samples · low to high`}
         {...(history.length ? { onUndo: undo, ...(lastLabel ? { undoLabel: `Step back: ${lastLabel}` } : {}) } : {})}
-        rows={sorted.map((s, i) => (
-          <ScopeSampleRow
-            key={s.id}
-            name={s.name}
-            sampleId={s.id}
-            trace={traceFor(i)}
-            phase={s.phase}
-            value={s.value}
-            {...(s.flagged ? { flagged: true } : {})}
-            onToggleFlag={() => toggleFlag(s.id)}
-          />
-        ))}
+        rows={sorted.map((s, i) => {
+          const dprops = dragItemProps(i);
+          return (
+            <div
+              key={s.id}
+              {...dprops}
+              className={`cursor-grab${dprops["data-dragging"] ? " opacity-50" : ""}`}
+            >
+              <ScopeSampleRow
+                name={s.name}
+                sampleId={s.id}
+                trace={traceFor(i)}
+                phase={s.phase}
+                value={s.value}
+                {...(s.flagged ? { flagged: true } : {})}
+                onToggleFlag={() => toggleFlag(s.id)}
+              />
+            </div>
+          );
+        })}
         candidates={
           candidates.length ? (
             candidates.map((c, i) => (

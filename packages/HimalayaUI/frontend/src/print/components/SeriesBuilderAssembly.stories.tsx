@@ -5,6 +5,7 @@ import { SeriesPlate, type SeriesScale } from "./SeriesPlate";
 import { MemberRow } from "./MemberRow";
 import { RailBack } from "./RailBack";
 import { Dock } from "./Dock";
+import { useDragReorder, reorder } from "./useDragReorder";
 import { TRANSITION } from "../waterfall/waterfall.fixtures";
 
 /**
@@ -56,16 +57,27 @@ function SeriesBuilderView(): JSX.Element {
   const [scale, setScale] = useState<SeriesScale>("log");
   const [collapsed, setCollapsed] = useState(false);
   const [orderedBy, setOrderedBy] = useState("LL37 : lipid ratio");
+  const [traceOrder, setTraceOrder] = useState<TraceDatum[]>(TRACES);
 
-  const traces = TRACES.map((t) => (
-    <MemberRow
-      key={t.id}
-      name={t.name}
-      sub={`${t.id} · ${t.dose}`}
-      phase={t.phase}
-      {...(t.coexistWith ? { coexistWith: t.coexistWith } : {})}
-    />
-  ));
+  // The rail's "Traces — drag to reorder" label is honest: dragging a row
+  // rewrites the page-owned `traceOrder`.
+  const { dragItemProps } = useDragReorder((from, to) =>
+    setTraceOrder((o) => reorder(o, from, to)),
+  );
+
+  const traces = traceOrder.map((t, i) => {
+    const props = dragItemProps(i);
+    return (
+      <div key={t.id} {...props} className={`cursor-grab${props["data-dragging"] ? " opacity-50" : ""}`}>
+        <MemberRow
+          name={t.name}
+          sub={`${t.id} · ${t.dose}`}
+          phase={t.phase}
+          {...(t.coexistWith ? { coexistWith: t.coexistWith } : {})}
+        />
+      </div>
+    );
+  });
 
   return (
     <div className="bg-paper min-h-screen">
