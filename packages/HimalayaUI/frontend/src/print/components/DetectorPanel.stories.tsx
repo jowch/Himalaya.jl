@@ -103,5 +103,9 @@ function OverflowDemo() {
 export const ManyExposures: Story = { render: () => <OverflowDemo /> };
 
 export const Empty: Story = {
-  args: { src: null, hint: "No exposure selected." },
+  render: () => (
+    <div style={{ width: 372 }}>
+      <DetectorPanel src={null} hint="No exposure selected." />
+    </div>
+  ),
 };

@@ -79,8 +79,11 @@ export function DetectorPanel({
         data-testid="detector-frame"
         // aspectRatio is geometry (not appearance) → inline style is guard-clean
         // and lets the frame match the real (often portrait) detector image so
-        // the contained image fills edge-to-edge and the rings register.
-        style={{ aspectRatio: aspect }}
+        // the contained image fills edge-to-edge and the rings register. Bounded
+        // to the mockup's det-size (320px) so the frame — esp. the empty
+        // placeholder — never blows up to fill an unbounded container; floored so
+        // it stays legible in a narrow column.
+        style={{ aspectRatio: aspect, maxWidth: 320, minWidth: 160 }}
         className="relative bg-frame-edge border border-frame-edge rounded overflow-hidden mx-auto w-full"
       >
         <DetectorImage
