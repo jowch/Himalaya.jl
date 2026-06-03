@@ -172,8 +172,9 @@ function ContactSheetView(): JSX.Element {
           }
         >
           {SAMPLES.map((s) => {
-            // Find the selected exposure id that belongs to THIS row, if any.
-            const rowSel = s.exposures.find((e) => selected.has(e.id))?.id ?? null;
+            // Cull model is MULTI-select: hand the whole selection set down. The
+            // gallery only renders THIS row's exposures, so only its own members
+            // light up — every selected frame, not just the first.
             return (
               <SampleTableRow
                 key={s.sampleId}
@@ -181,7 +182,7 @@ function ContactSheetView(): JSX.Element {
                 sampleId={s.sampleId}
                 {...(s.screened !== undefined ? { screened: s.screened } : {})}
                 exposures={s.exposures}
-                {...(rowSel != null ? { selectedExposureId: rowSel } : {})}
+                selectedExposureIds={selected}
                 onSelectExposure={(id) => toggle(s, id)}
                 kept={s.kept}
                 total={s.total}

@@ -10,8 +10,13 @@ export interface GalleryExposure {
 
 export interface ThumbnailGalleryProps {
   exposures: GalleryExposure[];
-  /** Currently-selected exposure id (drives child Thumbnail `selected`). */
+  /** Single currently-selected exposure id (the loupe "current frame" model). */
   selectedId?: number;
+  /** Multi-select highlight set (the contact-sheet *cull* model, where several
+   *  frames in one row can be flagged for dropping at once). A thumb renders
+   *  `selected` if its id is in this set OR equals `selectedId` — so a gallery
+   *  can use either model, or both. */
+  selectedIds?: ReadonlySet<number>;
   onSelect?: (id: number) => void;
   /** Child thumbnail size; forwarded to every Thumbnail. Default `"sm"`. */
   size?: "xs" | "sm" | "lg";
@@ -25,6 +30,7 @@ export interface ThumbnailGalleryProps {
 export function ThumbnailGallery({
   exposures,
   selectedId,
+  selectedIds,
   onSelect,
   size = "sm",
   align = "start",
@@ -49,7 +55,7 @@ export function ThumbnailGallery({
           {...(exposure.frameNo != null ? { frameNo: exposure.frameNo } : {})}
           {...(exposure.representative != null ? { representative: exposure.representative } : {})}
           {...(exposure.rejected != null ? { rejected: exposure.rejected } : {})}
-          selected={selectedId === exposure.id}
+          selected={selectedId === exposure.id || (selectedIds?.has(exposure.id) ?? false)}
           size={size}
           {...(onSelect ? { onClick: () => onSelect(exposure.id) } : {})}
         />

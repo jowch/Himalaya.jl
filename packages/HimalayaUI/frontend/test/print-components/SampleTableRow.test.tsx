@@ -109,4 +109,13 @@ describe("<SampleTableRow> exposure selection", () => {
     expect(onSelectExposure).toHaveBeenCalledTimes(1);
     expect(onSelectExposure).toHaveBeenCalledWith(65);
   });
+
+  it("selectedExposureIds highlights EVERY matching thumb (multi-select cull model)", () => {
+    // EXPOSURES order: [37, 65, 66] — select the first and last.
+    renderRow({ selectedExposureIds: new Set([37, 66]) });
+    const thumbs = screen.getAllByTestId("thumbnail");
+    expect((thumbs[0].getAttribute("data-state") ?? "").split(" ")).toContain("selected");
+    expect((thumbs[1].getAttribute("data-state") ?? "").split(" ")).not.toContain("selected");
+    expect((thumbs[2].getAttribute("data-state") ?? "").split(" ")).toContain("selected");
+  });
 });

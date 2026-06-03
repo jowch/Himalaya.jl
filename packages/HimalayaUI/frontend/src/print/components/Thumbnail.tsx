@@ -59,7 +59,12 @@ export function Thumbnail({
       onClick={onClick}
       title={title}
       style={{ width: px, height: px }}
-      className={`relative inline-block flex-shrink-0 overflow-hidden rounded-sm bg-frame-edge border border-frame-edge p-0 cursor-pointer${selected ? " ring-2 ring-accent" : " hover:ring-2 hover:ring-hair-strong"}${className ? ` ${className}` : ""}`}
+      // Selection/hover use an INSET ring, not an outset one: the gallery wraps
+      // thumbnails in `overflow-x-auto`, which clips an outset box-shadow ring to
+      // the scroll content box (it showed on only one or two sides, and not at
+      // all on edge thumbnails). An inset ring is painted inside the element's
+      // own box, so it always renders the full perimeter on every thumbnail.
+      className={`relative inline-block flex-shrink-0 overflow-hidden rounded-sm bg-frame-edge border border-frame-edge p-0 cursor-pointer${selected ? " inset-ring-[3px] inset-ring-accent" : " hover:inset-ring-2 hover:inset-ring-hair-strong"}${className ? ` ${className}` : ""}`}
     >
       {/* Detector image — dimmed when rejected */}
       <div

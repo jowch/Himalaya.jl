@@ -146,3 +146,30 @@ describe("<ThumbnailGallery> per-exposure flag passthrough", () => {
     expect(screen.queryByTestId("reject-overlay")).not.toBeInTheDocument();
   });
 });
+
+describe("<ThumbnailGallery> selectedIds (multi-select cull model)", () => {
+  it("marks every thumb whose id is in selectedIds as selected", () => {
+    render(
+      <ThumbnailGallery exposures={THREE_EXPOSURES} selectedIds={new Set([37, 66])} />
+    );
+    const thumbs = screen.getAllByTestId("thumbnail");
+    // thumb[0]=37 (in set), thumb[1]=65 (out), thumb[2]=66 (in set)
+    expect((thumbs[0].getAttribute("data-state") ?? "").split(" ")).toContain("selected");
+    expect((thumbs[1].getAttribute("data-state") ?? "").split(" ")).not.toContain("selected");
+    expect((thumbs[2].getAttribute("data-state") ?? "").split(" ")).toContain("selected");
+  });
+
+  it("ORs with selectedId — a thumb selected by either source is marked", () => {
+    render(
+      <ThumbnailGallery
+        exposures={THREE_EXPOSURES}
+        selectedId={65}
+        selectedIds={new Set([37])}
+      />
+    );
+    const thumbs = screen.getAllByTestId("thumbnail");
+    expect((thumbs[0].getAttribute("data-state") ?? "").split(" ")).toContain("selected"); // via set
+    expect((thumbs[1].getAttribute("data-state") ?? "").split(" ")).toContain("selected"); // via selectedId
+    expect((thumbs[2].getAttribute("data-state") ?? "").split(" ")).not.toContain("selected");
+  });
+});

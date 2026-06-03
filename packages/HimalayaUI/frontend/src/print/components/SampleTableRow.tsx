@@ -11,7 +11,12 @@ export interface SampleTableRowProps {
   sampleId: string;
   screened?: boolean;
   exposures: GalleryExposure[];
+  /** Single highlighted exposure (loupe "current frame" model). */
   selectedExposureId?: number;
+  /** Multi-select highlight set (contact-sheet *cull* model — several frames in
+   *  this row flagged for dropping at once). Forwarded to the gallery's
+   *  `selectedIds`; OR'd with `selectedExposureId`. */
+  selectedExposureIds?: ReadonlySet<number>;
   onSelectExposure?: (id: number) => void;
   kept: number;
   total: number;
@@ -60,6 +65,7 @@ export function SampleTableRow({
   screened = false,
   exposures,
   selectedExposureId,
+  selectedExposureIds,
   onSelectExposure,
   kept,
   total,
@@ -88,6 +94,7 @@ export function SampleTableRow({
             className="w-full"
             exposures={exposures}
             {...(selectedExposureId != null ? { selectedId: selectedExposureId } : {})}
+            {...(selectedExposureIds != null ? { selectedIds: selectedExposureIds } : {})}
             {...(onSelectExposure ? { onSelect: onSelectExposure } : {})}
           />
         </div>
