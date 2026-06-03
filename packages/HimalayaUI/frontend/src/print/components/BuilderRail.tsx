@@ -16,6 +16,9 @@ export interface BuilderRailProps {
   orderedBy: string;
   orderNote?: ReactNode;
   onChangeOrder?: () => void;
+  /** Ordering-variable options → makes the field a real dropdown. */
+  orderOptions?: ReadonlyArray<{ value: string; label: ReactNode }>;
+  onOrderSelect?: (value: string) => void;
   offset: number;
   onOffsetChange: (v: number) => void;
   scale: Scale;
@@ -48,6 +51,8 @@ export function BuilderRail({
   orderedBy,
   orderNote,
   onChangeOrder,
+  orderOptions,
+  onOrderSelect,
   offset,
   onOffsetChange,
   scale,
@@ -85,7 +90,14 @@ export function BuilderRail({
       </AutoGroup>
 
       <RailSection label="Ordering variable" {...(orderNote != null ? { note: orderNote } : {})}>
-        <Field value={orderedBy} {...(onChangeOrder ? { onClick: onChangeOrder } : {})} />
+        <Field
+          value={orderedBy}
+          {...(orderOptions
+            ? { options: orderOptions, ...(onOrderSelect ? { onSelect: onOrderSelect } : {}) }
+            : onChangeOrder
+              ? { onClick: onChangeOrder }
+              : {})}
+        />
       </RailSection>
 
       <RailSection label="Display">

@@ -48,6 +48,14 @@ const INITIAL_CANDIDATES: Member[] = [
   { id: "smp_21", name: "Lipid 1-1 + LL37 1:1", value: "1 : 1", key: 1, phase: "Pn3m", flagged: false },
 ];
 
+const ORDER_OPTIONS = [
+  { value: "LL37 : lipid ratio", label: "LL37 : lipid ratio" },
+  { value: "Time", label: "Time" },
+  { value: "Dose", label: "Dose" },
+  { value: "Temperature", label: "Temperature" },
+  { value: "Define your own…", label: "Define your own…" },
+];
+
 type HistoryEntry =
   | { type: "flag"; id: string; prev: boolean; label: string }
   | { type: "add"; id: string; label: string };
@@ -56,6 +64,7 @@ function ScopingView(): JSX.Element {
   const [series, setSeries] = useState<Member[]>(INITIAL_SERIES);
   const [candidates, setCandidates] = useState<Member[]>(INITIAL_CANDIDATES);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [orderedBy, setOrderedBy] = useState("LL37 : lipid ratio");
 
   // Series is always shown low → high by its numeric key.
   const sorted = [...series].sort((a, b) => a.key - b.key);
@@ -133,7 +142,9 @@ function ScopingView(): JSX.Element {
             parsed cleanly, one needs a look.
           </>
         }
-        orderedBy="LL37 : lipid ratio"
+        orderedBy={orderedBy}
+        orderOptions={ORDER_OPTIONS}
+        onOrderSelect={setOrderedBy}
         orderNote="Read from the sample names. Change it to time, dose, temperature, or define your own."
         count={`${n} samples · low to high`}
         {...(history.length ? { onUndo: undo, ...(lastLabel ? { undoLabel: `Step back: ${lastLabel}` } : {}) } : {})}

@@ -43,10 +43,19 @@ const TRACES: TraceDatum[] = [
   { id: "smp_18", name: "Lamellar", dose: "1 : 4", phase: "Lamellar" },
 ];
 
+const ORDER_OPTIONS = [
+  { value: "LL37 : lipid ratio", label: "LL37 : lipid ratio" },
+  { value: "Time", label: "Time" },
+  { value: "Dose", label: "Dose" },
+  { value: "Temperature", label: "Temperature" },
+  { value: "Define your own…", label: "Define your own…" },
+];
+
 function SeriesBuilderView(): JSX.Element {
   const [offset, setOffset] = useState(1.2);
   const [scale, setScale] = useState<SeriesScale>("log");
   const [collapsed, setCollapsed] = useState(false);
+  const [orderedBy, setOrderedBy] = useState("LL37 : lipid ratio");
 
   const traces = TRACES.map((t) => (
     <MemberRow
@@ -84,7 +93,9 @@ function SeriesBuilderView(): JSX.Element {
                   names, ordered by <strong>LL37 : lipid ratio</strong>.
                 </>
               }
-              orderedBy="LL37 : lipid ratio"
+              orderedBy={orderedBy}
+              orderOptions={ORDER_OPTIONS}
+              onOrderSelect={setOrderedBy}
               orderNote="Confirmed once, then reused by every series that needs it."
               offset={offset}
               onOffsetChange={setOffset}

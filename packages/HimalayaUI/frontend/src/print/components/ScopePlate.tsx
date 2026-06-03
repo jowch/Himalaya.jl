@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Card, Kicker, PhaseStrip, Dot, Button } from "../ui";
+import { Card, Kicker, PhaseStrip, Dot, Button, Field } from "../ui";
 import type { PhaseSegment } from "../ui";
 import { AutoGroup } from "./AutoGroup";
 
@@ -16,6 +16,9 @@ export interface ScopePlateProps {
   orderedBy: string;
   orderNote: ReactNode;
   onChangeOrder?: () => void;
+  /** Ordering-variable options → makes the order-field a real dropdown. */
+  orderOptions?: ReadonlyArray<{ value: string; label: ReactNode }>;
+  onOrderSelect?: (value: string) => void;
   /** e.g. "6 samples · low to high". */
   count: string;
   onUndo?: () => void;
@@ -52,6 +55,8 @@ export function ScopePlate({
   orderedBy,
   orderNote,
   onChangeOrder,
+  orderOptions,
+  onOrderSelect,
   count,
   onUndo,
   undoLabel,
@@ -84,17 +89,15 @@ export function ScopePlate({
       <Kicker tone="faint" className="mt-5 mb-2">
         Ordered by
       </Kicker>
-      <button
-        type="button"
-        data-testid="order-field"
-        {...(onChangeOrder ? { onClick: onChangeOrder } : {})}
-        className="w-full flex items-center justify-between border border-hair-strong rounded bg-plate px-3.5 py-2.5 hover:border-ink-faint"
-      >
-        <span className="text-title font-semibold text-ink">{orderedBy}</span>
-        <span className="text-ink-faint" aria-hidden>
-          ▾
-        </span>
-      </button>
+      <Field
+        testId="order-field"
+        value={orderedBy}
+        {...(orderOptions
+          ? { options: orderOptions, ...(onOrderSelect ? { onSelect: onOrderSelect } : {}) }
+          : onChangeOrder
+            ? { onClick: onChangeOrder }
+            : {})}
+      />
       <div className="text-caption text-ink-faint mt-1.5">{orderNote}</div>
 
       <div className="flex items-baseline justify-between mt-6 mb-1">
