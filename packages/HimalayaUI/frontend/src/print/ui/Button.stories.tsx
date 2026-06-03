@@ -16,3 +16,11 @@ export const Accent: Story = { args: { variant: "accent" } };
 export const Danger: Story = { args: { variant: "danger", children: "Delete sample" } };
 export const Outline: Story = { args: { variant: "outline", children: "Drop" } };
 export const Armed: Story = { args: { variant: "ghost", armed: true, children: "+ Peak" } };
+export const GhostInverse: Story = {
+  args: { variant: "ghostInverse", children: "Restore" },
+  render: (args) => (
+    <div className="bg-ink p-4 rounded-md inline-flex">
+      <Button {...args} />
+    </div>
+  ),
+};

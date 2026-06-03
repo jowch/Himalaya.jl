@@ -51,6 +51,14 @@ describe("<Button> outline variant", () => {
   });
 });
 
+describe("<Button> ghostInverse variant", () => {
+  it("renders the ghostInverse variant for dark surfaces", () => {
+    render(<Button variant="ghostInverse">Restore</Button>);
+    const btn = screen.getByRole("button", { name: "Restore" });
+    expect(btn.getAttribute("data-variant")).toBe("ghostInverse");
+  });
+});
+
 describe("<Button> danger variant", () => {
   it("carries data-variant=danger and renders its label", () => {
     render(<Button variant="danger">Delete sample</Button>);
