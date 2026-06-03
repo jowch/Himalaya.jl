@@ -3,7 +3,7 @@ import { useState } from "react";
 import { LatticeParamControl } from "./LatticeParamControl";
 
 const meta: Meta<typeof LatticeParamControl> = {
-  title: "Print/Components/LatticeParamControl",
+  title: "components/LatticeParamControl",
   component: LatticeParamControl,
   parameters: { layout: "padded" },
 };
