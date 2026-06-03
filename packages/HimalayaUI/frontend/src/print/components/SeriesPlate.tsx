@@ -17,6 +17,8 @@ export interface SeriesPlateProps {
   subtitle?: ReactNode;
   /** Member rows low→high (rendered bottom-up by WaterfallChart). */
   rows: WaterfallRow[];
+  /** Global waterfall trace-offset; scales inter-trace separation (1 = unchanged). */
+  offsetScale?: number;
   scale: SeriesScale;
   onScaleChange: (next: SeriesScale) => void;
   /** Controlled hot row + cursor q, lifted to the page (synced with MemberList). */
@@ -35,7 +37,7 @@ export interface SeriesPlateProps {
 }
 
 export function SeriesPlate({
-  kicker, title, subtitle, rows, scale, onScaleChange,
+  kicker, title, subtitle, rows, offsetScale, scale, onScaleChange,
   hoveredKey, onHoverRow, hoveredQ, onHoverQ,
   legendPhases, footHint, footNote, className,
 }: SeriesPlateProps): JSX.Element {
@@ -56,6 +58,7 @@ export function SeriesPlate({
         rows={rows}
         xType={scale === "log" ? "log" : "linear"}
         className="mt-2"
+        {...(offsetScale !== undefined ? { offsetScale } : {})}
         {...(hoveredKey !== undefined ? { hoveredKey } : {})}
         {...(onHoverRow ? { onHoverRow } : {})}
         {...(hoveredQ !== undefined ? { hoveredQ } : {})}

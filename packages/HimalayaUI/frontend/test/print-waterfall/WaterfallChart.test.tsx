@@ -110,4 +110,62 @@ describe("WaterfallChart", () => {
     fireEvent.pointerLeave(stack);
     expect(onHoverQ).toHaveBeenLastCalledWith(undefined);
   });
+
+  it("defaults offsetScale to 1 and reflects it on the root", () => {
+    const { getByTestId } = render(<WaterfallChart rows={ROWS} />);
+    expect(getByTestId("waterfall").getAttribute("data-offset-scale")).toBe("1");
+  });
+
+  it("reflects a custom offsetScale", () => {
+    const { getByTestId } = render(<WaterfallChart rows={ROWS} offsetScale={1.4} />);
+    expect(getByTestId("waterfall").getAttribute("data-offset-scale")).toBe("1.4");
+  });
+
+  it("at offsetScale=1 the stack height is unchanged (TOTAL_H = 420)", () => {
+    const { getByTestId } = render(<WaterfallChart rows={ROWS} />);
+    expect(getByTestId("wf-stack").style.height).toBe("420px");
+  });
+
+  it("a larger offsetScale grows the stack height and the inter-row separation", () => {
+    const at1 = render(<WaterfallChart rows={ROWS} offsetScale={1} maxWidth={800} />).container;
+    const at14 = render(<WaterfallChart rows={ROWS} offsetScale={1.4} maxWidth={800} />).container;
+
+    const stack1 = stackHeight(at1);
+    const stack14 = stackHeight(at14);
+    expect(stack14).toBeGreaterThan(stack1);
+
+    const topA1 = topOf(at1, "a");
+    const topA14 = topOf(at14, "a");
+    // display-order-0 ("a") sits at the bottom; a larger offsetScale pushes it lower.
+    expect(topA14).toBeGreaterThan(topA1);
+  });
+
+  it("keeps per-row render band-height (h) constant across offsetScale", () => {
+    const at1 = render(<WaterfallChart rows={ROWS} offsetScale={1} maxWidth={800} />).container;
+    const at14 = render(<WaterfallChart rows={ROWS} offsetScale={1.4} maxWidth={800} />).container;
+    const hA1 = heightOf(at1, "a");
+    const hA14 = heightOf(at14, "a");
+    expect(hA14).toBe(hA1);
+  });
+
+  it("clamps offsetScale to a floor so 0 can't collapse the stack", () => {
+    const { getByTestId } = render(<WaterfallChart rows={ROWS} offsetScale={0} maxWidth={800} />);
+    const stack = Number(getByTestId("wf-stack").style.height.replace("px", ""));
+    expect(stack).toBeGreaterThan(0);
+  });
 });
+
+function topOf(container: HTMLElement, key: string): number {
+  const el = container.querySelector(`[data-role="wf-row"][data-key="${key}"]`) as HTMLElement;
+  return Number(el.style.top.replace("px", ""));
+}
+
+function heightOf(container: HTMLElement, key: string): number {
+  const el = container.querySelector(`[data-role="wf-row"][data-key="${key}"]`) as HTMLElement;
+  return Number(el.style.height.replace("px", ""));
+}
+
+function stackHeight(container: HTMLElement): number {
+  const el = container.querySelector('[data-testid="wf-stack"]') as HTMLElement;
+  return Number(el.style.height.replace("px", ""));
+}

@@ -26,6 +26,14 @@ export interface WaterfallChartProps {
   maxWidth?: number;
   /** CSS min-width floor on the figure; it won't shrink below this. Default 560. */
   minWidth?: number;
+  /**
+   * Global waterfall trace-offset: scales the inter-row vertical SEPARATION
+   * (the gap between stacked traces) while keeping each row's render band-height
+   * constant, so trace amplitudes stay fixed and only the separation changes.
+   * 1 (default) is byte-identical to no scaling; the stack grows/shrinks with it.
+   * Clamped to a 0.1 floor so it can't collapse the stack.
+   */
+  offsetScale?: number;
   /** PLACEMENT ONLY. */
   className?: string;
 }
@@ -43,8 +51,10 @@ export function WaterfallChart({
   hoveredQ,
   maxWidth = 1080,
   minWidth = 560,
+  offsetScale = 1,
   className = "",
 }: WaterfallChartProps): JSX.Element {
+  const scale = Math.max(0.1, offsetScale);
   const [internalHot, setInternalHot] = useState<string | undefined>(undefined);
   const hot = hoveredKey ?? internalHot;
   const [internalHoveredQ, setInternalHoveredQ] = useState<number | undefined>(undefined);
@@ -76,13 +86,17 @@ export function WaterfallChart({
   const totalWeight = rows.reduce((s, r) => s + Math.max(0, r.bandHeight), 0) || rows.length;
 
   // Bottom-up: display-order-0 (rows[0]) sits at the bottom. Walk rows in
-  // reverse for top→bottom pixel placement.
+  // reverse for top→bottom pixel placement. The inter-row STEP is scaled by
+  // `scale` (the global trace-offset); each row's render band-height `h` stays
+  // constant so only the separation changes — a true waterfall offset.
   let cumulative = 0;
+  let stackHeight = 0; // natural total = max row bottom (top + h)
   const placed = [...rows].reverse().map((row) => {
     const h = (Math.max(0, row.bandHeight) / totalWeight) * TOTAL_H;
     // TODO: clamp/scale yOffset into TOTAL_H so a large durable offset can't push a row off-canvas.
     const top = cumulative + row.yOffset;
-    cumulative += h;
+    cumulative += h * scale;
+    stackHeight = Math.max(stackHeight, top + h);
     return { row, top, h };
   });
 
@@ -97,10 +111,10 @@ export function WaterfallChart({
   };
 
   return (
-    <div ref={rootRef} className={`relative w-full ${className}`} style={{ maxWidth, minWidth }} data-testid="waterfall" data-xtype={xType}>
+    <div ref={rootRef} className={`relative w-full ${className}`} style={{ maxWidth, minWidth }} data-testid="waterfall" data-xtype={xType} data-offset-scale={offsetScale}>
       <div
         className="relative"
-        style={{ height: TOTAL_H }}
+        style={{ height: stackHeight }}
         data-testid="wf-stack"
         onPointerMove={(e) => {
           const rect = e.currentTarget.getBoundingClientRect();
@@ -153,7 +167,7 @@ export function WaterfallChart({
               data-testid="wf-qguide"
               data-q={cursorQ}
               className="absolute top-0 w-px bg-accent pointer-events-none"
-              style={{ left: sharedX.to(cursorQ), height: TOTAL_H }}
+              style={{ left: sharedX.to(cursorQ), height: stackHeight }}
             />
             <div
               data-role="wf-qreadout"
@@ -162,7 +176,7 @@ export function WaterfallChart({
               // above the q-axis) — parallels TracePlot's q-readout sitting at the axis
               // baseline, so the value reads where the eye reads q.
               className="absolute -translate-x-1/2 -translate-y-full bg-plate border border-hair rounded-sm px-1 text-meta font-mono text-ink pointer-events-none"
-              style={{ left: sharedX.to(cursorQ), top: TOTAL_H }}
+              style={{ left: sharedX.to(cursorQ), top: stackHeight }}
             >
               {cursorQ.toFixed(3)}
             </div>

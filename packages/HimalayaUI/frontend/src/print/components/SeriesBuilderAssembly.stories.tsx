@@ -76,6 +76,7 @@ function SeriesBuilderView(): JSX.Element {
             title="LL37 titration of lipid 1-2"
             subtitle="6 exposures · variable: LL37 : lipid · SSRL Apr 2026"
             rows={TRANSITION}
+            offsetScale={offset}
             scale={scale}
             onScaleChange={setScale}
             legendPhases={["Pn3m", "Im3m", "Lamellar"]}
