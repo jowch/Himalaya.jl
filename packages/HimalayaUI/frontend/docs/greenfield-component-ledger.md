@@ -37,14 +37,20 @@ flagged ⚠️ below.
 
 ## Layer 0 — Primitives (`src/print/ui/`, design-guard-exempt)
 
-**41 built — the foundation is complete.** Appearance lives here; consumers pass placement only.
+**42 built — the foundation is complete.** Appearance lives here; consumers pass placement only.
 
 `Badge` · `BonnetBadge` · `Button` · `Card` · `CheckCircle` · `Chip` · `Dot` · `EmptyState` ·
 `FacetChip` · `FilterChip` · `GripHandle` · `HintText` · `IconButton` · `Input` · `KbKey` ·
-`KbLegend` · `Kicker` · `Menu` · `MetaList` · `ModalShell` · `PeakGlyph` · `PhaseChip` ·
+`KbLegend` · `Kicker` · `Menu` · `MetaList` · `ModalShell` · `NoticePill` · `PeakGlyph` · `PhaseChip` ·
 `PhaseLabel` · `PhaseStrip` · `ProgressBar` · `RejectOverlay` · `ScoreBar` · `SearchInput` ·
 `SegmentedControl` · `SignalBars` · `Slider` · `StageTabs` · `Swatch` · `TagEditor` · `TagList` ·
 `TagPill` · `Toast` · `ToggleSwitch` · `Tooltip` · `TopBar` · `Wordmark` — all ✅
+
+> Batch 5 (2026-06-02) added **`NoticePill`** as a refactor-on-contact primitive (folio
+> `SeriesCard` kick-row pill): `tone: "new" | "draft"` — `new` is the accent-tinted "+N new
+> match" recipe signal (`color-mix(in oklab, var(--color-accent) 14%, transparent)`), `draft`
+> is the dashed-faint marker. It authors the tint/dashed appearance the placement-only card
+> can't, so it lives in `ui/`. `data-testid="notice-pill"`, `data-tone`.
 
 > Batch 3 (2026-06-02) added two refactor-on-contact primitives so phase color stays out of the
 > placement-only composite layer (mirrors `ScoreBar`/`PhaseChip`): **`Swatch`** (phase-colored 9px
@@ -115,8 +121,8 @@ flagged ⚠️ below.
 | ★ **`SampleTableRow`** | one sample row (screened+spec+exposures+kept+tags+status) — `components/SampleTableRow.tsx` | `CheckCircle`+`ThumbnailGallery`+cell composites | sample-table | ✅ |
 | `BigFrame` | loupe large detector frame (+ dropped tag, big reject-X) | `DetectorImage`+text+`RejectOverlay` | loupe | ⬜ |
 | `LoupeSidePanel` | loupe aside (metadata + verdict + rep box + tags + keys) | `MetaList`+`Verdict`+`RepresentativeBox`+`TagList`+`KbLegend` | loupe | ⬜ |
-| `SeriesCard` | folio card (mini-waterfall + meta + phase strip + pill) | `CardFigure`+`PhaseStrip`+`Chip`+text | series-folio | ⬜ |
-| `Gallery` | masonry wall of series cards | `SeriesCard`×N | series-folio | ⬜ |
+| `SeriesCard` | folio card (mini-waterfall + meta + phase strip + pill) | `CardFigure`+`PhaseStrip`+`NoticePill`+text | series-folio | ✅ `components/SeriesCard.tsx` |
+| `Gallery` | masonry wall of series cards | `SeriesCard`×N (CSS multi-column) | series-folio | ✅ `components/Gallery.tsx` |
 | `ScopePlate` | scoping worksheet (editable title + order field + sample rows + preview) | `PlateHeader`+scoping-`SampleRow`×N+`PhaseStrip` | series-scoping | ⬜ |
 | scoping `SampleRow` | ordered member row (grip+sparkline+name+parsed value+flag) | `GripHandle`+`Sparkline`+`FlagButton`+text | series-scoping | ⬜ |
 | `MemberList` | builder/plot member list (swatch+value+phase, reorderable) | `MemberRow`/`TRow`×N | series-builder, series-plot | ⬜ |
@@ -178,25 +184,31 @@ All ⬜ — deferred until composite + renderer layers are proven in Storybook (
 | `TrackingLine` / cross-trace migration track + ghost rings | ⏸ **deferred** | 2026-06-02 | Buildable client-side from `confirmed_index.phase + lattice_d` (legacy `buildAnchorMap` proves it), but q-proximity matching is fragile and the connector is hard to read. The peak-q cursor delivers ~90% of the reading value. Revisit only if users ask. |
 | `MemberRow` series-plot `.member` variant (gradient coexistence swatch + inline colored phase names + lattice data) | ⏸ **split out** | 2026-06-02 | `MemberRow` (Batch 3) is the series-**builder** `.trow` only. The series-plot `.member` is a different row (gradient swatch for coexistence, per-phase inline names) — belongs with the later MemberList/SeriesPlate work. `Swatch` will gain a gradient/coexistence mode then (stub comment already in `Swatch.tsx`). |
 | Type-scale snaps: `FolioHeader` title 31px→`text-display` (27); `PhaseBlock` name 22px→`text-headline` (19) | ✅ **snap to named role** | 2026-06-02 | The mockups use off-scale serif sizes (31/22px) with no named role; `text-[31px]` is guard-banned. Composites snap to the **nearest named role** rather than add a one-off scale step. If fidelity review objects, the fix is a new `--text-*` step in `styles.css` (the authoring layer), never an arbitrary in a composite. Folio count 26px = `text-headline-lg` is exact. |
+| `NoticePill` is a NEW primitive, not a `Chip`/`Badge` variant (Batch 5) | ✅ **new ui/ primitive** | 2026-06-02 | The folio card-kick pill (`+N new match` accent-tint / dashed `Draft`) is a distinct 10px tinted/dashed look — `Chip` is a full-border pill, `Badge` a flat mono count, neither fits. The accent tint (`color-mix(…var(--color-accent) 14%…)`) + dashed border are appearance the placement-only `SeriesCard` cannot author, so they live in `ui/` (guard-exempt). No guard-allowlist edit needed — `ui/` was already exempt. `SeriesCard` stays placement-only by composing it. |
+| `SeriesCard` figure region sits on PLATE, not paper-sunk (Batch 5 review fix) | ✅ **plate surface + paper-sunk hairline** | 2026-06-02 | First pass painted `bg-paper-sunk` across the whole figure pad; the mockup `.card-fig` keeps the pad on the card's plate surface with only a 1px paper-sunk bottom line — and `CardFigure`'s inner plots use `paperColor="var(--color-plate)"`, so a sunk pad created a plate-on-sunk seam. Fixed to `border-b border-paper-sunk` (the `--color-paper-sunk` Tailwind v4 `@theme` token generates `border-paper-sunk`, guard-clean). `cursor-pointer` also made conditional on `onClick`. |
 | `src/print/export/` added to the design-guard `isExcluded` allowlist (Batch 4) | ✅ **new exempt renderer dir** | 2026-06-02 | `CleanFigure` is the export idiom — it DELIBERATELY sheds the Print look (Arial + literal hex `#c8841f`/`#4a4ba8`/`#111`, no `var(--color-*)` tokens), so it must author literal appearance like the other renderer dirs (`plot`/`comb`/`detector`). Edit is a single trailing-slash-bounded prefix in `scripts/check-design.mjs:isExcluded` — proven to still flag `print/components/` and not over-match `print/exporters-*`. Mirrors the legacy `lib/figure-export/**` export-palette allowlist. `CardFigure`/`CustomPreview` did NOT need exemption (literal-free, `phaseColor()` + tokens only). |
 
 ---
 
 ## Coverage summary
 
-- **Layer 0 primitives:** 41/41 ✅ (foundation complete; +`Swatch` +`PhaseLabel`, Batch 3)
+- **Layer 0 primitives:** 42/42 ✅ (foundation complete; +`Swatch` +`PhaseLabel`, Batch 3; +`NoticePill`, Batch 5)
 - **Layer 1 renderers:** 9 ✅ — **layer COMPLETE** (Batch 4 closed `CardFigure`/`CustomPreview`/`CleanFigure`) · 1 ⛔ · 1 ⏸
 - **Layer 2 tier-1 composites:** 17 ✅ — **layer COMPLETE** (Batch 3 closed `PhaseBlock`/`FolioHeader`/`AutoGroup`/`MemberRow`/`ReadingRow`)
-- **Layer 3 tier-2 panels:** 1 ✅ · ~16 ⬜
+- **Layer 3 tier-2 panels:** 3 ✅ (Batch 5 closed `SeriesCard`/`Gallery`) · ~14 ⬜
 - **Modals/overlays:** 0 ✅ (`ModalShell` chrome ✅) · ~6 gap clusters ⬜
 - **Layer 4 pages:** 0/5 ⬜
 
 Layers 0, 1, and 2 are now all complete. The build frontier is the **Layer 3 tier-2 panels**, which are now fully unblocked (every renderer + tier-1 composite they compose exists):
 
 - `AssignmentCart`←`PhaseBlock` · `CandidateList`←`CandidateRow` · `ReadingPanel`←`ReadingRow` · `MemberList`←`MemberRow`
-- `Gallery`←`SeriesCard`←(`CardFigure`+`PhaseStrip`) · `SheetTable`←`SampleTableRow`
+- ~~`Gallery`←`SeriesCard`←(`CardFigure`+`PhaseStrip`)~~ ✅ **DONE (Batch 5)** · `SheetTable`←`SampleTableRow`
 - `TracePlate`←(`PlateHeader`+`ToolBar`+`TracePlot`+`CombLegend`) · `DetectorPanel`←(`PlateHeader`+`DetectorImage`+`ThumbnailGallery`) · `CombsPanel`←(`CombChart`/`ResidualChart`+`CombLegend`) · `SeriesPlate`←(`PlateHeader`+`ToolBar`+`WaterfallChart`)
 - loupe panels (`BigFrame`, `LoupeSidePanel`), scoping (`ScopePlate`+`SampleRow`), `BuilderRail`
 - modals/overlays: `CustomIndexModal`←`CustomPreview` · `ExportSheet`←`CleanFigure` · plus `CullBar`/`RailBack`/`Dock`/`ConflictModal`
 
-Natural next vertical slice: the **Series folio** (`CardFigure`✅ → `SeriesCard` → `Gallery`), which yields a full demoable page in Storybook with `FolioHeader`✅ already in hand.
+**Batch 5 (2026-06-02) closed the Series-folio card slice** (`NoticePill` + `SeriesCard` + `Gallery`); with `FolioHeader`✅ the folio is a near-complete demoable page (only the page-level search/sort/filter chrome + the `/series` route shell remain, both Layer 4). Natural next vertical slices, each fully unblocked:
+
+1. **Focus assignment** — `AssignmentCart`←`PhaseBlock` + `CandidateList`←`CandidateRow` (the interactive heart of the Focus workspace).
+2. **Series reading** — `MemberList`←`MemberRow` + `ReadingPanel`←`ReadingRow` + `SeriesPlate`←`WaterfallChart`.
+3. **Focus plates** — `TracePlate` + `DetectorPanel` + `CombsPanel` (the Focus hero trio).
