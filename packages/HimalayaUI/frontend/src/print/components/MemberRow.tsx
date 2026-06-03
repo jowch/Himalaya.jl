@@ -13,7 +13,9 @@ export interface MemberRowProps {
 // ONE reorderable trace-list row in the series-builder sidebar (mockup `.trow`):
 // grip + square color swatch + name/dose + phase chip. The root carries `group`
 // so the grip's color reveal fires on row hover. Resting→hover cue is
-// `hover:bg-plate` + a hairline border, matching the mockup.
+// `hover:bg-plate` + a hairline border, matching the mockup. The border is
+// reserved at rest as `border-transparent` so hover only changes its COLOR —
+// adding a 1px border on hover would grow the box by 2px and shift the row.
 export function MemberRow({
   name,
   sub,
@@ -24,7 +26,7 @@ export function MemberRow({
   return (
     <div
       data-testid="member-row"
-      className={`group flex items-center gap-2 px-2 py-1.5 rounded hover:bg-plate hover:border hover:border-hair${className ? ` ${className}` : ""}`}
+      className={`group flex items-center gap-2 px-2 py-1.5 rounded border border-transparent hover:bg-plate hover:border-hair${className ? ` ${className}` : ""}`}
     >
       <GripHandle />
       <Swatch phase={phase} shape="square" />
