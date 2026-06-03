@@ -43,4 +43,13 @@ describe("<Slider>", () => {
     );
     expect(screen.getByText("0.40")).toBeInTheDocument();
   });
+
+  it("sets aria-label from ariaLabel without rendering a visible label row", () => {
+    const { getByTestId, queryByText } = render(
+      <Slider value={5} min={0} max={10} ariaLabel="lattice a" onChange={() => {}} />,
+    );
+    const input = getByTestId("slider");
+    expect(input.getAttribute("aria-label")).toBe("lattice a");
+    expect(queryByText("lattice a")).toBeNull(); // no visible row
+  });
 });

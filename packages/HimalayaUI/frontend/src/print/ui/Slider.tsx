@@ -8,6 +8,11 @@ interface SliderProps {
   onChange: (v: number) => void;
   label?: string;
   valueDisplay?: ReactNode;
+  /** Sets `aria-label` on the `<input>` without rendering a visible label row.
+   *  Useful for bare sliders embedded in a composite that provides its own
+   *  visible label. Precedence: `ariaLabel` wins over `label` for the input's
+   *  `aria-label`; the visible row is still gated on `label || valueDisplay`. */
+  ariaLabel?: string;
   className?: string;
 }
 
@@ -35,8 +40,10 @@ export function Slider({
   onChange,
   label,
   valueDisplay,
+  ariaLabel,
   className,
 }: SliderProps): JSX.Element {
+  const a11yName = ariaLabel ?? label;
   return (
     <div className={cx("flex flex-col gap-1", className)}>
       {(label || valueDisplay) && (
@@ -54,7 +61,7 @@ export function Slider({
         max={max}
         {...(step !== undefined ? { step } : {})}
         onChange={(e) => onChange(Number(e.target.value))}
-        {...(label ? { "aria-label": label } : {})}
+        {...(a11yName ? { "aria-label": a11yName } : {})}
       />
     </div>
   );
