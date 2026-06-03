@@ -59,12 +59,7 @@ export function Thumbnail({
       onClick={onClick}
       title={title}
       style={{ width: px, height: px }}
-      // Selection/hover use an INSET ring, not an outset one: the gallery wraps
-      // thumbnails in `overflow-x-auto`, which clips an outset box-shadow ring to
-      // the scroll content box (it showed on only one or two sides, and not at
-      // all on edge thumbnails). An inset ring is painted inside the element's
-      // own box, so it always renders the full perimeter on every thumbnail.
-      className={`relative inline-block flex-shrink-0 overflow-hidden rounded-sm bg-frame-edge border border-frame-edge p-0 cursor-pointer${selected ? " inset-ring-[3px] inset-ring-accent" : " hover:inset-ring-2 hover:inset-ring-hair-strong"}${className ? ` ${className}` : ""}`}
+      className={`group relative inline-block flex-shrink-0 overflow-hidden rounded-sm bg-frame-edge border border-frame-edge p-0 cursor-pointer${className ? ` ${className}` : ""}`}
     >
       {/* Detector image — dimmed when rejected */}
       <div
@@ -93,6 +88,22 @@ export function Thumbnail({
 
       {/* Reject overlay */}
       {rejected && <RejectOverlay />}
+
+      {/* Selection / hover frame — an overlay painted ON TOP of the detector
+          image. An inset ring (or any box-shadow) sits BEHIND child content, so
+          the `object-fit: contain` canvas covered it wherever the image bled to
+          the frame edge (top/bottom on a square frame holding a portrait image).
+          An `inset-0` bordered span paints the full perimeter above the canvas,
+          inside `overflow-hidden` — so it is neither occluded by the image nor
+          clipped by the gallery's `overflow-x-auto`. */}
+      <span
+        aria-hidden="true"
+        className={`pointer-events-none absolute inset-0 rounded-sm${
+          selected
+            ? " border-[3px] border-accent"
+            : " border-2 border-transparent group-hover:border-hair-strong"
+        }`}
+      />
     </button>
   );
 }
