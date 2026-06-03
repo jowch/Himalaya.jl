@@ -314,6 +314,14 @@
     border-radius: 50%; background: var(--color-accent); box-shadow: 0 0 0 1px var(--color-hair-strong); }
   .print-range:focus-visible::-webkit-slider-thumb { outline: 2px solid var(--color-accent); outline-offset: 2px; }
   .print-range:focus-visible::-moz-range-thumb { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+
+  /* Custom-index preview click-to-snap targets: kill the UA focus box (it
+     rendered as a stray blue square over the peak) and show an on-brand accent
+     ring ONLY on keyboard focus — mouse clicks never show a ring. Mirrors the
+     .print-range focus treatment; SVG :focus-visible stroke can't be expressed
+     in Tailwind, so it lives here. */
+  [data-observed-hit] { outline: none; cursor: pointer; }
+  [data-observed-hit]:focus-visible { stroke: var(--color-accent); stroke-width: 2; }
 }
 
 /* Boneyard skeleton: slow pulse keeps the loading state subtle */

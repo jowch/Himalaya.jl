@@ -92,7 +92,6 @@ export function CustomPreview({
               role="button"
               tabIndex={0}
               aria-label={`Snap lattice so the first reflection lands on the observed peak at q ${q.toFixed(3)}`}
-              style={{ cursor: "pointer" }}
               onClick={() => onSelectObserved(q)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
