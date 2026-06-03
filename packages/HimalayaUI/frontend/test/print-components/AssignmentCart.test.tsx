@@ -1,4 +1,5 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
+import { describe, it, expect, vi } from "vitest";
 import { AssignmentCart } from "../../src/print/components/AssignmentCart";
 import { PhaseBlock } from "../../src/print/components/PhaseBlock";
 
@@ -40,5 +41,26 @@ describe("AssignmentCart", () => {
   it("forwards a placement-only className", () => {
     render(<AssignmentCart className="mt-4">{block("Im3m")}</AssignmentCart>);
     expect(screen.getByTestId("assignment-cart").className).toContain("mt-4");
+  });
+  it("renders the custom-index footer when onCustomIndex is given, and fires it", () => {
+    const onCustomIndex = vi.fn();
+    const { getByTestId } = render(
+      <AssignmentCart onCustomIndex={onCustomIndex}>
+        <div>blockA</div>
+      </AssignmentCart>,
+    );
+    const foot = getByTestId("custom-index-trigger");
+    expect(foot.textContent).toContain("custom index");
+    fireEvent.click(foot);
+    expect(onCustomIndex).toHaveBeenCalledTimes(1);
+  });
+  it("shows the footer in the empty state too", () => {
+    const { getByTestId } = render(<AssignmentCart onCustomIndex={() => {}} />);
+    expect(getByTestId("assignment-empty")).toBeTruthy();
+    expect(getByTestId("custom-index-trigger")).toBeTruthy();
+  });
+  it("omits the footer when onCustomIndex is absent", () => {
+    const { queryByTestId } = render(<AssignmentCart><div>x</div></AssignmentCart>);
+    expect(queryByTestId("custom-index-trigger")).toBeNull();
   });
 });

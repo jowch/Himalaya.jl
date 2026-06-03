@@ -9,6 +9,8 @@ export interface AssignmentCartProps {
   children?: ReactNode;
   /** Override the empty-state copy. */
   empty?: ReactNode;
+  /** When provided, shows the "custom index…" footer. */
+  onCustomIndex?: () => void;
   /** PLACEMENT-ONLY. Appended last. */
   className?: string;
 }
@@ -19,6 +21,7 @@ const DEFAULT_EMPTY =
 export function AssignmentCart({
   children,
   empty,
+  onCustomIndex,
   className,
 }: AssignmentCartProps): JSX.Element {
   const count = Children.count(children);
@@ -58,6 +61,16 @@ export function AssignmentCart({
             </div>
           ))}
         </>
+      )}
+      {onCustomIndex && (
+        <button
+          type="button"
+          data-testid="custom-index-trigger"
+          onClick={onCustomIndex}
+          className="w-full text-left border-t border-dashed border-hair-strong px-4 py-2.5 text-caption font-semibold text-ink-soft transition-colors hover:bg-paper-sunk hover:text-ink"
+        >
+          <span className="text-print-accent font-bold">+</span> custom index…
+        </button>
       )}
     </div>
   );
