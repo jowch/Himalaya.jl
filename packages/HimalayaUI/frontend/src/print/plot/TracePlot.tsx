@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useId, useRef, useState } from "react";
 import { PlotFrame, type Margins, type PlotDims } from "./PlotFrame";
 import {
   makeProjection,
@@ -108,6 +108,9 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
   const stateRef = useRef<PlotState | null>(null);
 
   const [hoverId, setHoverId] = useState<number | null>(null);
+  // Unique clip-path id (multiple TracePlots coexist — e.g. the waterfall stack).
+  // useId() returns colon-wrapped ids; strip them so url(#…) resolves.
+  const clipId = `trace-clip-${useId().replace(/:/g, "")}`;
 
   const handlePointerMovePx = useCallback((px: number, py: number) => {
     const s = stateRef.current;
@@ -225,6 +228,22 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
         };
         return (
           <>
+            {/* Clip the trace + peaks + labels to the plot rect so a curve / glyphs
+                whose q falls outside the visible window — common after a zoom — stop
+                at the axes instead of drawing over the spines and tick labels. The
+                top is left open to the SVG edge (y = -margins.top) so peak labels
+                keep their designed headroom above the curve; only left / right /
+                bottom (the three axis edges) bound the annotations. */}
+            <defs>
+              <clipPath id={clipId}>
+                <rect
+                  x={0}
+                  y={-dims.margins.top}
+                  width={dims.plotWidth}
+                  height={dims.plotHeight + dims.margins.top}
+                />
+              </clipPath>
+            </defs>
             {axes ? (
               <>
                 <Axis
@@ -243,13 +262,14 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
                 />
               </>
             ) : null}
-            <TraceLine
-              trace={trace.trace}
-              projection={projection}
-              band={layers.band}
-              color={trace.phase ? phaseColor(trace.phase) : UNINDEXED_COLOR}
-            />
-            {layers.peaks ? (() => {
+            <g clipPath={`url(#${clipId})`}>
+              <TraceLine
+                trace={trace.trace}
+                projection={projection}
+                band={layers.band}
+                color={trace.phase ? phaseColor(trace.phase) : UNINDEXED_COLOR}
+              />
+              {layers.peaks ? (() => {
               const peaksWithHover = hoverId == null
                 ? trace.peaks
                 : trace.peaks.map((p) => (p.id === hoverId ? { ...p, hot: true } : p));
@@ -265,15 +285,16 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
                 />
               );
             })() : null}
-            {layers.labels ? (
-              <PlotLabels
-                peaks={trace.peaks}
-                projection={projection}
-                color={trace.phase ? phaseColor(trace.phase) : UNINDEXED_COLOR}
-                baselineI={yExtent[0]}
-                {...(highlightPeakIds ? { highlightPeakIds } : {})}
-              />
-            ) : null}
+              {layers.labels ? (
+                <PlotLabels
+                  peaks={trace.peaks}
+                  projection={projection}
+                  color={trace.phase ? phaseColor(trace.phase) : UNINDEXED_COLOR}
+                  baselineI={yExtent[0]}
+                  {...(highlightPeakIds ? { highlightPeakIds } : {})}
+                />
+              ) : null}
+            </g>
             {overlay ? overlay(ctx) : null}
             {/* C5: q-readout chip — anchored to axis bottom, on top of all other layers.
                 Motion is instant (no CSS transition), which is inherently reduced-motion-safe.

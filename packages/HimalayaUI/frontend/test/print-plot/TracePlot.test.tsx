@@ -30,6 +30,25 @@ describe("TracePlot", () => {
     expect(container.querySelector('[data-role="axis-left"]')).toBeTruthy();
   });
 
+  it("clips the trace to the plot rect so it never overdraws the axes", () => {
+    const { container } = render(
+      <TracePlot trace={model} width={500} height={300} />,
+    );
+    // The trace-line group is wrapped in a clip-path'd <g>…
+    const wrapped = container
+      .querySelector('[data-role="trace-line"]')!
+      .closest("g[clip-path]");
+    expect(wrapped).toBeTruthy();
+    // …referencing a <clipPath> whose rect spans the plot area.
+    const ref = wrapped!.getAttribute("clip-path")!; // "url(#trace-clip-…)"
+    const id = ref.slice(5, -1);
+    const clip = container.querySelector(`clipPath#${id}`);
+    expect(clip).toBeTruthy();
+    const rect = clip!.querySelector("rect")!;
+    expect(Number(rect.getAttribute("width"))).toBeGreaterThan(0);
+    expect(Number(rect.getAttribute("height"))).toBeGreaterThan(0);
+  });
+
   it("renders no axes when axes={false} (mini level)", () => {
     const { container } = render(
       <TracePlot trace={model} width={120} height={48} axes={false} />,

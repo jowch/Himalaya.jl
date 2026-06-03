@@ -56,3 +56,23 @@ function HeroDemo() {
 }
 
 export const Hero: Story = { render: () => <HeroDemo /> };
+
+/** A pre-zoomed window. The trace + any peaks/labels whose q falls outside
+ *  [0.04, 0.08] clip cleanly at the axes instead of overdrawing the spines and
+ *  tick labels (peak labels keep their headroom above the curve). */
+export const Zoomed: Story = {
+  render: () => (
+    <div style={{ maxWidth: 1180 }}>
+      <TracePlate
+        kicker="Integration"
+        title="Lipid 1-2 + LL37 1:0.5"
+        subtitle="zoomed to q ∈ [0.04, 0.08] — annotations clip at the axes"
+        trace={heroModel}
+        scale="log"
+        onScaleChange={() => {}}
+        xDomain={[0.04, 0.08]}
+        interaction={{ onXDomain: () => {} }}
+      />
+    </div>
+  ),
+};
