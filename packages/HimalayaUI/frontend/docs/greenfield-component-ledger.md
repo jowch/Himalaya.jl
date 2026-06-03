@@ -115,8 +115,8 @@ flagged ⚠️ below.
 | `TracePlate` | Focus hero panel (header + toolbar + trace + legend) — **home of the panel-owned scale toggle** | `PlateHeader`+`ToolBar`+`TracePlot`+`CombLegend` | focus-plot | ⬜ |
 | `DetectorPanel` | detector image + exposure filmstrip | `PlateHeader`+`DetectorImage`+`ThumbnailGallery` | focus-workspace | ⬜ |
 | `CombsPanel` | comb/residual view + legend + view toggle | `CombChart`/`ResidualChart`+`CombLegend`+`SegmentedControl` | focus-plot | ⬜ |
-| `AssignmentCart` | working-assignment editor (phase blocks + custom-index footer) | `PhaseBlock`×N + custom-index trigger | focus | ⬜ |
-| `CandidateList` | ranked candidate list | `CandidateRow`×N | focus | ⬜ |
+| `AssignmentCart` | phase-call plate (coexistence tag when >1 · full-bleed dividers · empty state) — `components/AssignmentCart.tsx` (Batch 6). Custom-index footer deferred to the `CustomIndexModal` slice. | `PhaseBlock`×N | focus-workspace | ✅ |
+| `CandidateList` | ranked candidate list (thin `flex-col gap-2` wrapper) — `components/CandidateRow.tsx` (co-built with `CandidateRow`, Batch 1) | `CandidateRow`×N | focus | ✅ |
 | `SheetTable` | contact-sheet grid (header + rows) | `TableHeader`+`SampleTableRow`×N | sample-table | ⬜ |
 | ★ **`SampleTableRow`** | one sample row (screened+spec+exposures+kept+tags+status) — `components/SampleTableRow.tsx` | `CheckCircle`+`ThumbnailGallery`+cell composites | sample-table | ✅ |
 | `BigFrame` | loupe large detector frame (+ dropped tag, big reject-X) | `DetectorImage`+text+`RejectOverlay` | loupe | ⬜ |
@@ -187,6 +187,7 @@ All ⬜ — deferred until composite + renderer layers are proven in Storybook (
 | `NoticePill` is a NEW primitive, not a `Chip`/`Badge` variant (Batch 5) | ✅ **new ui/ primitive** | 2026-06-02 | The folio card-kick pill (`+N new match` accent-tint / dashed `Draft`) is a distinct 10px tinted/dashed look — `Chip` is a full-border pill, `Badge` a flat mono count, neither fits. The accent tint (`color-mix(…var(--color-accent) 14%…)`) + dashed border are appearance the placement-only `SeriesCard` cannot author, so they live in `ui/` (guard-exempt). No guard-allowlist edit needed — `ui/` was already exempt. `SeriesCard` stays placement-only by composing it. |
 | `SeriesCard` figure region sits on PLATE, not paper-sunk (Batch 5 review fix) | ✅ **plate surface + paper-sunk hairline** | 2026-06-02 | First pass painted `bg-paper-sunk` across the whole figure pad; the mockup `.card-fig` keeps the pad on the card's plate surface with only a 1px paper-sunk bottom line — and `CardFigure`'s inner plots use `paperColor="var(--color-plate)"`, so a sunk pad created a plate-on-sunk seam. Fixed to `border-b border-paper-sunk` (the `--color-paper-sunk` Tailwind v4 `@theme` token generates `border-paper-sunk`, guard-clean). `cursor-pointer` also made conditional on `onClick`. |
 | `src/print/export/` added to the design-guard `isExcluded` allowlist (Batch 4) | ✅ **new exempt renderer dir** | 2026-06-02 | `CleanFigure` is the export idiom — it DELIBERATELY sheds the Print look (Arial + literal hex `#c8841f`/`#4a4ba8`/`#111`, no `var(--color-*)` tokens), so it must author literal appearance like the other renderer dirs (`plot`/`comb`/`detector`). Edit is a single trailing-slash-bounded prefix in `scripts/check-design.mjs:isExcluded` — proven to still flag `print/components/` and not over-match `print/exporters-*`. Mirrors the legacy `lib/figure-export/**` export-palette allowlist. `CardFigure`/`CustomPreview` did NOT need exemption (literal-free, `phaseColor()` + tokens only). |
+| `AssignmentCart` owns count→tag + positional-divider + empty (Batch 6) | ✅ **container owns cross-child state** | 2026-06-02 | The mockup `.phasecall` conditional `.pc-tag` ("Coexistence · N phases", only when >1 phase) and the `.pc-block + .pc-block` divider are state a lone `PhaseBlock` can't know — they belong to the container. `AssignmentCart` derives count from `Children.count`, renders the tag at count>1, and uses the Gallery-proven `Children.map` + positional `border-t border-hair` on a full-width `px-4` wrapper for **full-bleed** dividers (NOT `divide-y` on a padded wrapper — that insets the hairline). Wrappers carry `data-testid="cart-block" data-divider` so the load-bearing divider is asserted without class-string tests. `CandidateList` was already built (Batch 1, in `CandidateRow.tsx`) so this slice was just `AssignmentCart` + an optional content-only `series` prop on `PhaseBlock` (`.pcb-series`, guard-clean: `font-mono`/`text-caption`/`text-ink-*` only). |
 
 ---
 
@@ -195,20 +196,20 @@ All ⬜ — deferred until composite + renderer layers are proven in Storybook (
 - **Layer 0 primitives:** 42/42 ✅ (foundation complete; +`Swatch` +`PhaseLabel`, Batch 3; +`NoticePill`, Batch 5)
 - **Layer 1 renderers:** 9 ✅ — **layer COMPLETE** (Batch 4 closed `CardFigure`/`CustomPreview`/`CleanFigure`) · 1 ⛔ · 1 ⏸
 - **Layer 2 tier-1 composites:** 17 ✅ — **layer COMPLETE** (Batch 3 closed `PhaseBlock`/`FolioHeader`/`AutoGroup`/`MemberRow`/`ReadingRow`)
-- **Layer 3 tier-2 panels:** 3 ✅ (Batch 5 closed `SeriesCard`/`Gallery`) · ~14 ⬜
+- **Layer 3 tier-2 panels:** 5 ✅ (Batch 5: `SeriesCard`/`Gallery`; Batch 6: `AssignmentCart` + `CandidateList` confirmed-already-built) · ~12 ⬜
 - **Modals/overlays:** 0 ✅ (`ModalShell` chrome ✅) · ~6 gap clusters ⬜
 - **Layer 4 pages:** 0/5 ⬜
 
 Layers 0, 1, and 2 are now all complete. The build frontier is the **Layer 3 tier-2 panels**, which are now fully unblocked (every renderer + tier-1 composite they compose exists):
 
-- `AssignmentCart`←`PhaseBlock` · `CandidateList`←`CandidateRow` · `ReadingPanel`←`ReadingRow` · `MemberList`←`MemberRow`
+- ~~`AssignmentCart`←`PhaseBlock` · `CandidateList`←`CandidateRow`~~ ✅ **DONE (Batch 6)** · `ReadingPanel`←`ReadingRow` · `MemberList`←`MemberRow`
 - ~~`Gallery`←`SeriesCard`←(`CardFigure`+`PhaseStrip`)~~ ✅ **DONE (Batch 5)** · `SheetTable`←`SampleTableRow`
 - `TracePlate`←(`PlateHeader`+`ToolBar`+`TracePlot`+`CombLegend`) · `DetectorPanel`←(`PlateHeader`+`DetectorImage`+`ThumbnailGallery`) · `CombsPanel`←(`CombChart`/`ResidualChart`+`CombLegend`) · `SeriesPlate`←(`PlateHeader`+`ToolBar`+`WaterfallChart`)
 - loupe panels (`BigFrame`, `LoupeSidePanel`), scoping (`ScopePlate`+`SampleRow`), `BuilderRail`
 - modals/overlays: `CustomIndexModal`←`CustomPreview` · `ExportSheet`←`CleanFigure` · plus `CullBar`/`RailBack`/`Dock`/`ConflictModal`
 
-**Batch 5 (2026-06-02) closed the Series-folio card slice** (`NoticePill` + `SeriesCard` + `Gallery`); with `FolioHeader`✅ the folio is a near-complete demoable page (only the page-level search/sort/filter chrome + the `/series` route shell remain, both Layer 4). Natural next vertical slices, each fully unblocked:
+**Batch 6 (2026-06-02) closed the Focus-assignment slice** (`AssignmentCart` + an optional `series` line on `PhaseBlock`; `CandidateList` was discovered already-built in Batch 1's `CandidateRow.tsx`). The Focus rail's "Phase call" output is now demoable. Remaining next vertical slices, each fully unblocked:
 
-1. **Focus assignment** — `AssignmentCart`←`PhaseBlock` + `CandidateList`←`CandidateRow` (the interactive heart of the Focus workspace).
-2. **Series reading** — `MemberList`←`MemberRow` + `ReadingPanel`←`ReadingRow` + `SeriesPlate`←`WaterfallChart`.
-3. **Focus plates** — `TracePlate` + `DetectorPanel` + `CombsPanel` (the Focus hero trio).
+1. **Series reading** — `MemberList`←`MemberRow` + `ReadingPanel`←`ReadingRow` + `SeriesPlate`←`WaterfallChart` (the series-builder reading surface).
+2. **Focus plates** — `TracePlate` + `DetectorPanel` + `CombsPanel` (the Focus hero trio; most renderer-heavy).
+3. **Contact sheet** — `SheetTable`←`SampleTableRow` + `CullBar` (the corpus grid).
