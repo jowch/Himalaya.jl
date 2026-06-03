@@ -13,7 +13,7 @@ export { Kicker } from "./Kicker";
 export type { KickerTone } from "./Kicker";
 export { ScoreBar } from "./ScoreBar";
 export { Swatch } from "./Swatch";
-export type { SwatchShape } from "./Swatch";
+export type { SwatchShape, SwatchSize } from "./Swatch";
 export { PhaseLabel } from "./PhaseLabel";
 export { SignalBars } from "./SignalBars";
 export { CheckCircle } from "./CheckCircle";

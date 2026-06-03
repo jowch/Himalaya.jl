@@ -40,4 +40,28 @@ describe("<Swatch> (print)", () => {
     const { container } = render(<Swatch phase="Lamellar" shape="circle" />);
     expect(container.querySelector("[data-swatch]")!).toHaveAttribute("data-shape", "circle");
   });
+
+  it("renders a coexistence gradient blending both phases", () => {
+    const { getByTestId } = render(<div data-testid="w"><Swatch phase="Pn3m" coexistWith="Lamellar" shape="circle" /></div>);
+    const sw = getByTestId("w").firstChild as HTMLElement;
+    expect(sw.getAttribute("data-coexist")).toBe("Lamellar");
+    // The DOM canonicalizes the OKLCH substrings on write, so compare against an
+    // identically-built reference (round-trip), as the solid-color test does.
+    const ref = document.createElement("span");
+    ref.style.background = `linear-gradient(135deg, ${phaseColor("Pn3m")} 48%, ${phaseColor("Lamellar")} 52%)`;
+    expect(sw.style.background).toBe(ref.style.background);
+  });
+
+  it("renders an empty (form-factor) swatch with no phase fill", () => {
+    const { getByTestId } = render(<div data-testid="w"><Swatch phase="Pn3m" empty /></div>);
+    const sw = getByTestId("w").firstChild as HTMLElement;
+    expect(sw.getAttribute("data-empty")).toBe("true");
+    expect(sw.style.background).not.toContain(phaseColor("Pn3m"));
+  });
+
+  it("size md is 11px", () => {
+    const { getByTestId } = render(<div data-testid="w"><Swatch phase="Pn3m" size="md" /></div>);
+    const sw = getByTestId("w").firstChild as HTMLElement;
+    expect(sw.className).toContain("w-[11px]");
+  });
 });
