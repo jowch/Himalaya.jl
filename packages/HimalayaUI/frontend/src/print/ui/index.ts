@@ -58,3 +58,5 @@ export { Wordmark } from "./Wordmark";
 export { Tooltip } from "./Tooltip";
 export { Popover } from "./Popover";
 export type { PopoverProps } from "./Popover";
+export { NoticePill } from "./NoticePill";
+export type { NoticePillTone } from "./NoticePill";
