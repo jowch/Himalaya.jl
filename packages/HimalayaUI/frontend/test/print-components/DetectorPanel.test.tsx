@@ -46,6 +46,14 @@ describe("DetectorPanel", () => {
     expect(hot).not.toBeNull();
     expect(hot?.getAttribute("data-ring-q")).toBe("0.045");
   });
+  it("places rings on a measured off-center beamCenter override", () => {
+    const { container } = render(
+      <DetectorPanel src={null} rings={RINGS} beamCenter={{ x: 0.43, y: 0.2 }} />,
+    );
+    const ring = container.querySelector('[data-role="ring-sharp"]');
+    expect(ring?.getAttribute("cx")).toBe("0.43");
+    expect(ring?.getAttribute("cy")).toBe("0.2");
+  });
   it("fires onHoverQ with the ring's q when a ring is hovered", () => {
     const onHoverQ = vi.fn();
     const { container } = render(
