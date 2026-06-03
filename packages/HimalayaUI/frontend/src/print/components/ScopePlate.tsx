@@ -1,0 +1,156 @@
+import type { ReactNode } from "react";
+import { Card, Kicker, PhaseStrip, Dot, Button } from "../ui";
+import type { PhaseSegment } from "../ui";
+import { AutoGroup } from "./AutoGroup";
+
+function cx(...parts: Array<string | false | null | undefined>): string {
+  return parts.filter(Boolean).join(" ");
+}
+
+export interface ScopePlateProps {
+  seriesName: string;
+  /** Title is editable in-place; page-deferred (no input is built here). */
+  onEditTitle?: () => void;
+  /** AutoGroup body (with <strong> emphasis). */
+  grouping: ReactNode;
+  orderedBy: string;
+  orderNote: ReactNode;
+  onChangeOrder?: () => void;
+  /** e.g. "6 samples · low to high". */
+  count: string;
+  onUndo?: () => void;
+  undoLabel?: string;
+  /** ScopeSampleRow×N (children-slotting). */
+  rows: ReactNode;
+  /** ScopeCandidateRow×N OR the empty node. */
+  candidates: ReactNode;
+  preview: PhaseSegment[];
+  footState: { kind: "warn" | "ready"; text: string };
+  footNote: ReactNode;
+  buildDisabled?: boolean;
+  onBuild?: () => void;
+  /** PLACEMENT-ONLY. */
+  className?: string;
+}
+
+/**
+ * ScopePlate — the whole series-scoping worksheet (mockup `.scope-plate`): a
+ * centred, elevated review surface where the human confirms the machine's
+ * grouping and ordering before building the series.
+ *
+ * Presentational: ScopePlate holds NO state. Every derivation — the preview
+ * segments, the foot state line, the build gate, the count string, the undo
+ * affordance — arrives as a prop computed by the consumer (the future Layer-4
+ * page; simulated by ScopingAssembly). The row/candidate regions are ReactNode
+ * slots so the page maps data → leaf rows. The rows wrapper strips the last
+ * row's bottom hairline.
+ */
+export function ScopePlate({
+  seriesName,
+  onEditTitle,
+  grouping,
+  orderedBy,
+  orderNote,
+  onChangeOrder,
+  count,
+  onUndo,
+  undoLabel,
+  rows,
+  candidates,
+  preview,
+  footState,
+  footNote,
+  buildDisabled,
+  onBuild,
+  className,
+}: ScopePlateProps): JSX.Element {
+  return (
+    <Card elevated className={cx("w-full max-w-[760px] px-8 pt-7 pb-6", className)}>
+      <Kicker tone="accent">New series</Kicker>
+
+      <h1 className="text-display text-ink mt-1.5">
+        <span
+          className="border-b border-dotted border-hair-strong pb-px"
+          {...(onEditTitle ? { onClick: onEditTitle } : {})}
+        >
+          {seriesName}
+        </span>
+      </h1>
+
+      <AutoGroup variant="summary" className="mt-4">
+        {grouping}
+      </AutoGroup>
+
+      <Kicker tone="faint" className="mt-5 mb-2">
+        Ordered by
+      </Kicker>
+      <button
+        type="button"
+        data-testid="order-field"
+        {...(onChangeOrder ? { onClick: onChangeOrder } : {})}
+        className="w-full flex items-center justify-between border border-hair-strong rounded bg-plate px-3.5 py-2.5 hover:border-ink-faint"
+      >
+        <span className="text-title font-semibold text-ink">{orderedBy}</span>
+        <span className="text-ink-faint" aria-hidden>
+          ▾
+        </span>
+      </button>
+      <div className="text-caption text-ink-faint mt-1.5">{orderNote}</div>
+
+      <div className="flex items-baseline justify-between mt-6 mb-1">
+        <Kicker tone="faint">The series</Kicker>
+        <div className="flex items-baseline gap-3.5">
+          {onUndo ? (
+            <button
+              type="button"
+              onClick={onUndo}
+              className="text-caption font-semibold text-accent hover:underline"
+              {...(undoLabel ? { title: undoLabel } : {})}
+            >
+              ↺ Undo last change
+            </button>
+          ) : null}
+          <span className="text-caption font-mono text-ink-faint">{count}</span>
+        </div>
+      </div>
+
+      <div className="[&>*:last-child]:border-b-0">{rows}</div>
+
+      <div className="mt-5 pt-4 border-t border-hair">
+        <Kicker tone="faint" className="mb-2.5">
+          Himalaya also found
+        </Kicker>
+        {candidates}
+      </div>
+
+      <div className="mt-5">
+        <Kicker tone="faint" className="mb-2">
+          Preview — phase across the series
+        </Kicker>
+        <PhaseStrip segments={preview} size="sm" />
+      </div>
+
+      <div className="mt-6 pt-4 border-t border-hair flex items-center justify-between gap-5">
+        <div className="flex flex-col gap-1">
+          <div
+            className={cx(
+              "flex items-center gap-2 text-meta font-semibold",
+              footState.kind === "warn" ? "text-accent" : "text-ink",
+            )}
+          >
+            <Dot tone={footState.kind === "warn" ? "accent" : "success"} aria-hidden />
+            {footState.text}
+          </div>
+          <div className="text-caption text-ink-faint max-w-[42ch]">{footNote}</div>
+        </div>
+        <Button
+          variant="solid"
+          {...(buildDisabled ? { disabled: true } : {})}
+          {...(onBuild ? { onClick: onBuild } : {})}
+        >
+          Confirm & build →
+        </Button>
+      </div>
+    </Card>
+  );
+}
