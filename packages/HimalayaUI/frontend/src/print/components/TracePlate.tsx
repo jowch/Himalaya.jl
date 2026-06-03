@@ -27,8 +27,16 @@ export interface TracePlateProps {
   /** Add-peak armed (terracotta) toggle state + handler. */
   addPeakArmed?: boolean;
   onToggleAddPeak?: () => void;
-  /** Forwarded TracePlot interaction (zoom / add / select). */
+  /** Forwarded TracePlot interaction (scroll-zoom / add / select / reset).
+   *  Scroll-to-zoom EMITS through `interaction.onXDomain`; for the zoom to
+   *  RENDER, the consumer must round-trip the emitted window back via `xDomain`
+   *  (TracePlot is fully controlled on the domain — it holds no internal zoom
+   *  state). So a zoomable plate is the controlled pair `xDomain` + the
+   *  `interaction.onXDomain` handler, both owned by the page. */
   interaction?: TracePlotInteraction | false;
+  /** Controlled visible q-window; `null`/omitted = full data extent. Feed the
+   *  domain emitted by `interaction.onXDomain` back here to render scroll-zoom. */
+  xDomain?: [number, number] | null;
   /** Plot height in px. Default 360. */
   plotHeight?: number;
   /** PLACEMENT-ONLY. */
@@ -46,6 +54,7 @@ export function TracePlate({
   addPeakArmed = false,
   onToggleAddPeak,
   interaction,
+  xDomain,
   plotHeight = 360,
   className,
 }: TracePlateProps): JSX.Element {
@@ -84,6 +93,7 @@ export function TracePlate({
         height={plotHeight}
         xType={scale === "log" ? "log" : "linear"}
         axes
+        {...(xDomain !== undefined ? { xDomain } : {})}
         {...(interaction !== undefined ? { interaction } : {})}
         paperColor="var(--color-plate)"
         data-testid="trace-plate-plot"

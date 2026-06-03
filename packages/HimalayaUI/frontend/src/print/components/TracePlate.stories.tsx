@@ -31,6 +31,11 @@ type Story = StoryObj<typeof meta>;
 function HeroDemo() {
   const [scale, setScale] = useState<TraceScale>("log");
   const [armed, setArmed] = useState(false);
+  // Scroll-to-zoom round-trip: the wheel emits a window via onXDomain; we store
+  // it and feed it straight back as the controlled `xDomain` so the zoom renders.
+  // Double-click (TracePlot reset) emits null → back to full extent. Auto-fit
+  // here clears the zoom too.
+  const [zoom, setZoom] = useState<[number, number] | null>(null);
   return (
     <div style={{ maxWidth: 1180 }}>
       <TracePlate
@@ -40,10 +45,11 @@ function HeroDemo() {
         trace={heroModel}
         scale={scale}
         onScaleChange={setScale}
-        onAutoFit={() => {}}
+        onAutoFit={() => setZoom(null)}
         addPeakArmed={armed}
         onToggleAddPeak={() => setArmed((p) => !p)}
-        interaction={{ onXDomain: () => {} }}
+        xDomain={zoom}
+        interaction={{ onXDomain: setZoom }}
       />
     </div>
   );

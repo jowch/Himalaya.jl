@@ -47,4 +47,13 @@ describe("TracePlate", () => {
     render(<TracePlate {...base} className="mt-6" />);
     expect(screen.getByTestId("trace-plate").className).toContain("mt-6");
   });
+  it("accepts a controlled xDomain (scroll-zoom window) and renders the plot", () => {
+    // The zoom round-trip lives in the consumer: wheel → interaction.onXDomain →
+    // store → xDomain. TracePlate's job is to plumb xDomain through to TracePlot;
+    // the window itself is honoured by TracePlot (covered in its own suite).
+    render(
+      <TracePlate {...base} xDomain={[0.04, 0.06]} interaction={{ onXDomain: () => {} }} />,
+    );
+    expect(screen.getByTestId("trace-plate-plot")).toBeInTheDocument();
+  });
 });
