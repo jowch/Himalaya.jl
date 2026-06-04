@@ -147,6 +147,27 @@ describe("<ThumbnailGallery> per-exposure flag passthrough", () => {
   });
 });
 
+describe("<ThumbnailGallery> onActivate (double-click → loupe)", () => {
+  it("fires onActivate(id) on double-click of a thumb", () => {
+    const onActivate = vi.fn();
+    render(
+      <ThumbnailGallery
+        exposures={[{ id: 7, src: null, frameNo: 1 }]}
+        onActivate={onActivate}
+      />,
+    );
+    fireEvent.doubleClick(screen.getAllByTestId("thumbnail")[0]);
+    expect(onActivate).toHaveBeenCalledWith(7);
+  });
+
+  it("does not throw when double-clicked without an onActivate handler", () => {
+    render(<ThumbnailGallery exposures={[{ id: 7, src: null, frameNo: 1 }]} />);
+    expect(() =>
+      fireEvent.doubleClick(screen.getAllByTestId("thumbnail")[0]),
+    ).not.toThrow();
+  });
+});
+
 describe("<ThumbnailGallery> selectedIds (multi-select cull model)", () => {
   it("marks every thumb whose id is in selectedIds as selected", () => {
     render(

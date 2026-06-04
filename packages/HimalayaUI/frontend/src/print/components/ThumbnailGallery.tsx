@@ -18,6 +18,8 @@ export interface ThumbnailGalleryProps {
    *  can use either model, or both. */
   selectedIds?: ReadonlySet<number>;
   onSelect?: (id: number) => void;
+  /** Double-click handler — opens the loupe for the clicked exposure. */
+  onActivate?: (id: number) => void;
   /** Child thumbnail size; forwarded to every Thumbnail. Default `"sm"`. */
   size?: "xs" | "sm" | "lg";
   /** Horizontal alignment of the strip. `"center"` adds `justify-center`
@@ -32,6 +34,7 @@ export function ThumbnailGallery({
   selectedId,
   selectedIds,
   onSelect,
+  onActivate,
   size = "sm",
   align = "start",
   className,
@@ -58,6 +61,7 @@ export function ThumbnailGallery({
           selected={selectedId === exposure.id || (selectedIds?.has(exposure.id) ?? false)}
           size={size}
           {...(onSelect ? { onClick: () => onSelect(exposure.id) } : {})}
+          {...(onActivate ? { onDoubleClick: () => onActivate(exposure.id) } : {})}
         />
       ))}
     </div>

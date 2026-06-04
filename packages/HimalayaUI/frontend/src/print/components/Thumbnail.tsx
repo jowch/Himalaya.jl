@@ -13,6 +13,7 @@ export interface ThumbnailProps {
   /** `"xs"` → 30px (dense Focus exposure strip); `"sm"` → 62px (contact-sheet strip); `"lg"` → 70px (loupe strip). */
   size?: "xs" | "sm" | "lg";
   onClick?: () => void;
+  onDoubleClick?: () => void;
   title?: string;
   /** PLACEMENT ONLY. */
   className?: string;
@@ -45,6 +46,7 @@ export function Thumbnail({
   selected = false,
   size = "sm",
   onClick,
+  onDoubleClick,
   title,
   className,
 }: ThumbnailProps): JSX.Element {
@@ -57,6 +59,7 @@ export function Thumbnail({
       data-state={dataState}
       data-size={size}
       onClick={onClick}
+      {...(onDoubleClick ? { onDoubleClick } : {})}
       title={title}
       style={{ width: px, height: px }}
       className={`group relative inline-block flex-shrink-0 overflow-hidden rounded-sm bg-frame-edge border border-frame-edge p-0 cursor-pointer${className ? ` ${className}` : ""}`}
