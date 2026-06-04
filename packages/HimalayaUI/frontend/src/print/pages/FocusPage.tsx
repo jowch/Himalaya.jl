@@ -10,7 +10,7 @@ import { AssignmentCart } from "../components/AssignmentCart";
 import { PhaseBlock } from "../components/PhaseBlock";
 import { CandidateRow, CandidateList } from "../components/CandidateRow";
 import { CustomIndexModal } from "../components/CustomIndexModal";
-import { IconButton, HintText } from "../ui";
+import { HintText } from "../ui";
 import { ExportButton } from "../components/ExportButton";
 import { useFigureExport } from "../components/useFigureExport";
 import { buildTraceExportSpec } from "../../lib/figure-export/adapters/traceAdapter";
@@ -39,7 +39,6 @@ import {
   useAddAssignmentPhase,
   useRemoveAssignmentPhase,
   useCommitCustomIndex,
-  useDeleteIndex,
 } from "../../queries";
 import { useAppState } from "../../state";
 import { useSyncActiveSampleFromRoute } from "../../hooks/useSyncActiveSampleFromRoute";
@@ -146,7 +145,6 @@ export function FocusPage(): JSX.Element {
   const addAssignmentPhase = useAddAssignmentPhase(activeExposureId ?? 0);
   const removeAssignmentPhase = useRemoveAssignmentPhase(activeExposureId ?? 0);
   const commitCustomIndex = useCommitCustomIndex(activeExposureId ?? 0);
-  const deleteIndex = useDeleteIndex(activeExposureId ?? 0);
 
   // ── page-owned state ─────────────────────────────────────────────────────────
   const [scale, setScale] = useState<"log" | "lin">("log");
@@ -289,8 +287,10 @@ export function FocusPage(): JSX.Element {
   // ── rail building ────────────────────────────────────────────────────────────
   // Speculative-kind indices are the output of the custom-index builder (it
   // persists a speculative index + adds it to the assignment); they render as
-  // deletable candidate rows. The legacy anchor/ratio "+ Add speculative"
-  // creation dialog was retired — the custom-index modal is the hypothesis tool.
+  // ordinary toggle candidate rows alongside the auto candidates — the mockup's
+  // candidate list is uniform/toggle-only (no per-row delete). The custom-index
+  // modal is the hypothesis tool; the cart's remove (PhaseBlock onRemove) takes
+  // a phase back out of the call.
   const speculatives = indices.filter((i) => i.kind === "speculative");
   const candidatePool = indices.filter((i) => i.kind !== "speculative");
 
@@ -315,7 +315,7 @@ export function FocusPage(): JSX.Element {
     </AssignmentCart>
   );
 
-  function candidateRow(ix: IndexEntry, deletable = false): JSX.Element {
+  function candidateRow(ix: IndexEntry): JSX.Element {
     const selected = memberIds.has(ix.id);
     return (
       // Placement-only wrapper so the candidate-hover preview (losing-peak dim)
@@ -323,12 +323,10 @@ export function FocusPage(): JSX.Element {
       // primitive with no hover hook.
       <div
         key={ix.id}
-        className="flex items-center gap-1.5"
         onMouseEnter={() => setPreviewIndexId(ix.id)}
         onMouseLeave={() => setPreviewIndexId(undefined)}
       >
         <CandidateRow
-          className="flex-1 min-w-0"
           phase={ix.phase}
           score={ix.score}
           why={`explains ${ix.peaks.length} peaks${selected ? " · in the call" : ""}`}
@@ -340,26 +338,6 @@ export function FocusPage(): JSX.Element {
               : addAssignmentPhase.mutate(ix.id)
           }
         />
-        {deletable && (
-          <IconButton
-            label={`Delete speculative index ${ix.id}`}
-            tone="danger"
-            data-testid={`spec-delete-${ix.id}`}
-            onClick={() => deleteIndex.mutate(ix.id)}
-            className="shrink-0"
-          >
-            <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" aria-hidden="true">
-              <path
-                d="M3.5 4.5h9M6 4.5V3.2a1 1 0 011-1h2a1 1 0 011 1v1.3M5 4.5l.55 8a1 1 0 001 .93h2.9a1 1 0 001-.93l.55-8"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.3"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </IconButton>
-        )}
       </div>
     );
   }
@@ -371,7 +349,7 @@ export function FocusPage(): JSX.Element {
       ) : (
         candidatePool.map((ix) => candidateRow(ix))
       )}
-      {speculatives.map((ix) => candidateRow(ix, true))}
+      {speculatives.map((ix) => candidateRow(ix))}
     </CandidateList>
   );
 

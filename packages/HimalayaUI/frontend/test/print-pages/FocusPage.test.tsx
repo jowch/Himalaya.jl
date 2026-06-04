@@ -13,7 +13,6 @@ const addAssignMutate = vi.fn();
 const removeAssignMutate = vi.fn();
 const setAssignStateMutate = vi.fn();
 const commitCustomMutate = vi.fn();
-const deleteIndexMutate = vi.fn();
 
 // ── mock data plane (mutated per test) ────────────────────────────────────────
 const state = {
@@ -50,7 +49,6 @@ vi.mock("../../src/queries", () => ({
   useRemoveAssignmentPhase: () => ({ mutate: removeAssignMutate }),
   useSetAssignmentState: () => ({ mutate: setAssignStateMutate }),
   useCommitCustomIndex: () => ({ mutate: commitCustomMutate }),
-  useDeleteIndex: () => ({ mutate: deleteIndexMutate }),
 }));
 
 // Route shim: seed the Zustand active sample / exposure from the mock state.
