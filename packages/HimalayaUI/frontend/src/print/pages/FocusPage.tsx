@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useCallback } from "react";
 import { Skeleton } from "boneyard-js/react";
 import { PageFrame } from "../components/PageFrame";
 import { TracePlate } from "../components/TracePlate";
@@ -13,6 +13,10 @@ import { NotesMargin } from "../components/NotesMargin";
 import { CustomIndexModal } from "../components/CustomIndexModal";
 import { SpeculativeDialog } from "../components/SpeculativeDialog";
 import { ModalShell, Kicker, IconButton, HintText } from "../ui";
+import { ExportButton } from "../components/ExportButton";
+import { useFigureExport } from "../components/useFigureExport";
+import { buildTraceExportSpec } from "../../lib/figure-export/adapters/traceAdapter";
+import type { ExportSpec } from "../../lib/figure-export/types";
 import {
   toTraceModel,
   losingPeakIds,
@@ -232,6 +236,23 @@ export function FocusPage(): JSX.Element {
   const isLoading =
     corpusQ.isLoading ||
     (activeExposureId !== undefined && (traceQ.isLoading || peaksQ.isLoading));
+
+  // ── figure export ─────────────────────────────────────────────────────────────
+  const exportSpec = useCallback((): ExportSpec => buildTraceExportSpec({
+    trace: traceQ.data ?? EMPTY_TRACE,
+    peaks,
+    activeGroupIndices: activeIndices,
+    experimentName: experimentQ.data?.name ?? "",
+    sampleName,
+    exposureLabel: exposureLabel ?? "",
+    xDomain,
+    yDomain: null,
+    xType: scale === "log" ? "log" : "linear",
+    ...(experimentQ.data?.q_units ? { qUnits: experimentQ.data.q_units } : {}),
+  }), [traceQ.data, peaks, activeIndices, experimentQ.data, sampleName, exposureLabel, xDomain, scale]);
+
+  const filenameStem = `${sampleName} ${exposureLabel ?? ""}`.trim();
+  const fx = useFigureExport(exportSpec, filenameStem, "trace plot");
 
   // ── early states ─────────────────────────────────────────────────────────────
   if (!corpusQ.isLoading && !corpusSample) {
@@ -475,6 +496,13 @@ export function FocusPage(): JSX.Element {
                     : removePeak.mutate(id),
                 onReset: () => setXDomain(null),
               }}
+              actions={
+                <ExportButton
+                  {...fx}
+                  ariaContext="trace plot"
+                  disabled={!traceQ.data || peaks.length === 0}
+                />
+              }
             />
             <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
               <DetectorPanel

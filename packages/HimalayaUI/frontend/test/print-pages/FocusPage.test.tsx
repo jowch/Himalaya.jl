@@ -252,4 +252,24 @@ describe("FocusPage", () => {
     fireEvent.click(within(banner).getByText("Re-analyze"));
     expect(reanalyzeMutate).toHaveBeenCalled();
   });
+
+  it("renders the export-button in the trace plate when the sample has trace data", () => {
+    renderAt(42);
+    const plate = screen.getByTestId("trace-plate");
+    expect(within(plate).getByTestId("export-button")).toBeInTheDocument();
+    // ariaContext is wired — the Copy button carries the aria-label
+    expect(
+      within(plate).getByRole("button", { name: /copy trace plot to clipboard/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("export-button is disabled (data gate) when there are no peaks", () => {
+    state.peaks = [];
+    renderAt(42);
+    const plate = screen.getByTestId("trace-plate");
+    const exportBtn = within(plate).getByTestId("export-button");
+    // Every button inside the export widget should be disabled when the data gate is off.
+    const copyBtn = within(exportBtn).getByTestId("export-copy");
+    expect(copyBtn).toBeDisabled();
+  });
 });
