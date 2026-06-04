@@ -255,4 +255,68 @@ describe("TracePlot", () => {
     // no focusable peak <g> to drive the focus path. The readout is gated on
     // `layers.peaks` in TracePlot; the positive path is covered by D1.
   });
+
+  describe("q-link (cross-panel hover wires)", () => {
+    // Outward: hovering a peak (here driven through the focus path, which is the
+    // deterministic jsdom mechanism — see D1; the effect keys on internal hoverId
+    // so both the frame hit-test and the glyph focus share this site) emits onHoverQ.
+    it("Q1: emits onHoverQ(peak.q) on internal hover and onHoverQ(undefined) on leave", () => {
+      const onHoverQ = vi.fn();
+      const { container } = render(
+        <TracePlot
+          trace={model}
+          width={500}
+          height={300}
+          interaction={{ onXDomain: () => {} }}
+          onHoverQ={onHoverQ}
+        />,
+      );
+      const peakG = getPeakG(container)!;
+      // Mount may emit onHoverQ(undefined) once; clear it so we assert the hover delta.
+      onHoverQ.mockClear();
+      fireEvent.focus(peakG);
+      expect(onHoverQ).toHaveBeenCalledWith(0.2);
+      onHoverQ.mockClear();
+      fireEvent.blur(peakG);
+      expect(onHoverQ).toHaveBeenCalledWith(undefined);
+    });
+
+    // Incoming: an external hoveredQ at (or very near) a peak's q lights it —
+    // full parity with internal hover: the q-readout chip appears showing that q.
+    it("Q2: an incoming hoveredQ lights the matching peak (q-readout chip appears)", () => {
+      const { container } = render(
+        <TracePlot
+          trace={model}
+          width={500}
+          height={300}
+          interaction={{ onXDomain: () => {} }}
+          hoveredQ={0.2}
+        />,
+      );
+      const readout = container.querySelector('[data-role="q-readout"]');
+      expect(readout).toBeTruthy();
+      expect(readout!.querySelector("text")!.textContent).toBe("0.200");
+    });
+
+    // No feedback loop: an external hoveredQ with no real pointer/focus hover must
+    // NOT cause onHoverQ to fire with a defined number (page→hoveredQ→onHoverQ→…).
+    it("Q3: incoming hoveredQ does not emit onHoverQ (no feedback loop)", () => {
+      const onHoverQ = vi.fn();
+      render(
+        <TracePlot
+          trace={model}
+          width={500}
+          height={300}
+          interaction={{ onXDomain: () => {} }}
+          hoveredQ={0.2}
+          onHoverQ={onHoverQ}
+        />,
+      );
+      // A mount-time onHoverQ(undefined) is acceptable; a defined-number call is not.
+      const definedCalls = onHoverQ.mock.calls.filter(
+        ([q]) => typeof q === "number",
+      );
+      expect(definedCalls).toEqual([]);
+    });
+  });
 });

@@ -1,4 +1,4 @@
-import { useCallback, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { PlotFrame, type Margins, type PlotDims } from "./PlotFrame";
 import {
   makeProjection,
@@ -59,6 +59,12 @@ export interface TracePlotProps {
   /** Multiply the y-domain top by (1 + yHeadroom) so peaks keep headroom below
    *  the ceiling — used by the stacked waterfall. Default 0 (no change). */
   yHeadroom?: number;
+  /** Emitted when the USER hovers a peak (internal hover only — frame hit-test
+   *  or glyph focus). The cross-panel q-link source. */
+  onHoverQ?: (q: number | undefined) => void;
+  /** Incoming hot q from another panel: light the peak matching this q (within
+   *  the hit tolerance). The cross-panel q-link sink. */
+  hoveredQ?: number;
 }
 
 const UNINDEXED_COLOR = "var(--color-ink-faint)";
@@ -92,6 +98,8 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
     show,
     highlightPeakIds,
     yHeadroom = 0,
+    onHoverQ,
+    hoveredQ,
   } = props;
 
   const layers = { peaks: true, labels: false, band: true, ...(show ?? {}) };
@@ -111,6 +119,17 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
   // Unique clip-path id (multiple TracePlots coexist — e.g. the waterfall stack).
   // useId() returns colon-wrapped ids; strip them so url(#…) resolves.
   const clipId = `trace-clip-${useId().replace(/:/g, "")}`;
+
+  // Outward q-link: emit the hovered peak's q whenever the INTERNAL hover changes
+  // (covers both the frame hit-test and the per-glyph focus, which both write
+  // hoverId). Keyed on hoverId — NOT hoveredQ — so an incoming external hover can
+  // never round-trip back out and form a feedback loop.
+  useEffect(() => {
+    if (!onHoverQ) return;
+    const p =
+      hoverId == null ? undefined : trace.peaks.find((pk) => pk.id === hoverId);
+    onHoverQ(p?.q);
+  }, [hoverId, onHoverQ, trace.peaks]);
 
   const handlePointerMovePx = useCallback((px: number, py: number) => {
     const s = stateRef.current;
@@ -226,6 +245,27 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
           hitTest: (ps, px, tol) =>
             hitTestPeaks(ps, px, (q) => projection.x.to(q), tol ?? PEAK_HIT_PX),
         };
+        // Incoming q-link: resolve hoveredQ to the nearest peak within the same
+        // pixel tolerance the hit-test uses. Internal hover stays authoritative.
+        const externalHotId =
+          hoveredQ == null
+            ? null
+            : (() => {
+                let best: number | null = null;
+                let bestPx = Infinity;
+                const tol =
+                  (interaction && interaction.hitTolerancePx) || PEAK_HIT_PX;
+                const targetPx = projection.x.to(hoveredQ);
+                for (const p of trace.peaks) {
+                  const d = Math.abs(projection.x.to(p.q) - targetPx);
+                  if (d <= tol && d < bestPx) {
+                    bestPx = d;
+                    best = p.id;
+                  }
+                }
+                return best;
+              })();
+        const effectiveHoverId = hoverId ?? externalHotId;
         return (
           <>
             {/* Clip the trace + peaks + labels to the plot rect so a curve / glyphs
@@ -270,9 +310,9 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
                 color={trace.phase ? phaseColor(trace.phase) : UNINDEXED_COLOR}
               />
               {layers.peaks ? (() => {
-              const peaksWithHover = hoverId == null
+              const peaksWithHover = effectiveHoverId == null
                 ? trace.peaks
-                : trace.peaks.map((p) => (p.id === hoverId ? { ...p, hot: true } : p));
+                : trace.peaks.map((p) => (p.id === effectiveHoverId ? { ...p, hot: true } : p));
               return (
                 <PlotPeaks
                   peaks={peaksWithHover}
@@ -302,9 +342,9 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
             {(() => {
               // Gate the readout on the peaks layer: with peaks hidden there is
               // no glyph to anchor it to, so a floating chip would be dishonest.
-              const hovered = hoverId == null || !layers.peaks
+              const hovered = effectiveHoverId == null || !layers.peaks
                 ? null
-                : trace.peaks.find((p) => p.id === hoverId) ?? null;
+                : trace.peaks.find((p) => p.id === effectiveHoverId) ?? null;
               if (!hovered) return null;
               const qx = projection.x.to(hovered.q);
               const baseY = dims.plotHeight;
