@@ -64,6 +64,22 @@ describe("TracePlate", () => {
     expect(onAddPeak).toHaveBeenCalledTimes(1);
     expect(typeof onAddPeak.mock.calls[0]![0]).toBe("number");
   });
+  it("does NOT remove/exclude a peak on click when '+ Peak' is not armed", () => {
+    // The arm governs all peak editing: while disarmed, clicking a peak must
+    // not fire onClickPeak (remove / alt-exclude). Clicking the peak glyph at
+    // q=0.05 (model fixture) would otherwise hit the remove path.
+    const onClickPeak = vi.fn();
+    const { container } = render(
+      <TracePlate {...base} interaction={{ onXDomain: () => {}, onClickPeak }} />,
+    );
+    const glyph = container.querySelector('[data-role="plot-peaks"] [role="button"]');
+    if (glyph) fireEvent.click(glyph);
+    // Also drive a raw plot click in case the glyph isn't focusable in JSDOM —
+    // either way no removal should fire while disarmed.
+    const svg = container.querySelector('svg[data-testid="trace-plate-plot"]')!;
+    fireEvent.click(svg, { clientX: 0, clientY: 0 });
+    expect(onClickPeak).not.toHaveBeenCalled();
+  });
   it("forwards a placement-only className", () => {
     render(<TracePlate {...base} className="mt-6" />);
     expect(screen.getByTestId("trace-plate").className).toContain("mt-6");

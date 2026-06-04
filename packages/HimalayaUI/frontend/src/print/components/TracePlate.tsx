@@ -70,10 +70,12 @@ export function TracePlate({
   actions,
   className,
 }: TracePlateProps): JSX.Element {
-  // "+ Peak" arm gate: TracePlot creates a peak on any plot click where
-  // `interaction.onAddPeak` is present. Withhold it until armed so a stray
-  // click never adds a peak. Rebuilt explicitly (not `{...interaction,
-  // onAddPeak: undefined}`) to satisfy exactOptionalPropertyTypes.
+  // "+ Peak" arm gate: TracePlot edits peaks on a plot click — empty space
+  // adds (onAddPeak), a peak removes / alt-excludes (onClickPeak). BOTH are
+  // destructive-ish, so the arm governs all peak editing: while disarmed the
+  // plot is read-only (hover/q-link still work) and a stray click neither adds
+  // NOR removes a peak. Rebuilt explicitly (not `{...interaction, onAddPeak:
+  // undefined}`) to satisfy exactOptionalPropertyTypes.
   const gatedInteraction: TracePlotInteraction | false | undefined = !interaction
     ? interaction
     : {
@@ -81,7 +83,9 @@ export function TracePlate({
         ...(addPeakArmed && interaction.onAddPeak
           ? { onAddPeak: interaction.onAddPeak }
           : {}),
-        ...(interaction.onClickPeak ? { onClickPeak: interaction.onClickPeak } : {}),
+        ...(addPeakArmed && interaction.onClickPeak
+          ? { onClickPeak: interaction.onClickPeak }
+          : {}),
         ...(interaction.onReset ? { onReset: interaction.onReset } : {}),
         ...(interaction.hitTolerancePx !== undefined
           ? { hitTolerancePx: interaction.hitTolerancePx }
