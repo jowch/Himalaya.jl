@@ -5,7 +5,7 @@ import { queryKeys } from "../queries";
 import * as api from "../api";
 import { useGlobalShortcuts } from "../hooks/useGlobalShortcuts";
 import { CorpusShell } from "./CorpusShell";
-import { SamplesPage } from "../pages/SamplesPage";
+import { SamplesPage } from "../print/pages/SamplesPage";
 import { LoupePage } from "../print/pages/LoupePage";
 import { FocusPage } from "../print/pages/FocusPage";
 import { SeriesFolioPage } from "../pages/SeriesFolioPage";
