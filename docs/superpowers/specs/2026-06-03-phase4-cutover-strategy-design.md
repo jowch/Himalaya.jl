@@ -34,9 +34,10 @@ The central discipline. At every commit, every file is unambiguously in one of *
 
 **The repurpose test:** a mechanism may be CARRIED only if the answer to *"would we write it this way in the new surface?"* is **yes**. The data plane, mutation queue, SSE wiring, and hooks pass — they are plumbing, identical either way. Anything that fails the test is OLD and gets rebuilt in `print/`, not imported across the line.
 
-**Two hard boundary rules** (keep the line from blurring during the mixed-state window):
+**Three hard boundary rules** (keep the line from blurring during the mixed-state window):
 1. **`src/print/pages/**` imports NEW + CARRIED only — never OLD.** If a swapped page reaches for a legacy presentational component, that is a *gap to build in `print/`*, not a cross-boundary import. This is mechanically checkable: a grep for legacy-component imports inside `src/print/pages/` must return nothing.
 2. **No partial-greenfielding of a legacy page.** We never edit a legacy `src/pages/*.tsx` to "start using print bits." Each swap is atomic: the new body lands in `src/print/pages/`, the route repoints, the old body is deleted.
+3. **Greenfield content, not just greenfield components — reuse logic, never presentation.** A page is assembled from **only** the `src/print` composites + the affordances/content the **mockup** (`docs/redesign-mockups/*.html`) specifies. Do **not** reproduce a legacy affordance just because the legacy page had it — even when freshly hand-written (the import rule alone does not catch this). Rule 1 stops *importing* OLD; this stops *re-creating* OLD. A print primitive's own API is the contract (e.g. `CandidateRow` is toggle-only → candidate rows have no per-row delete). A removed affordance usually described a legacy *workflow* the greenfield backend changed; keep the carried hook/route that backed it (dormant library surface) but drop the UI. **Greenfield-first: assemble from the mockup, do not port-then-prune.** (`FocusPage` was ported from the legacy workspace and dragged in the notes margin/drawer, the add-speculative dialog, the stale-index banner, and a per-candidate trash button — none in the mockup, each removed reactively over several rounds. This rule exists so that does not recur.)
 
 The result is a genuinely new rebuilt surface that *repurposes* existing mechanisms — not a hybrid of both systems.
 
