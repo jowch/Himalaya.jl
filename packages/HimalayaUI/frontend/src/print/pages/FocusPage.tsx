@@ -12,7 +12,6 @@ import { CandidateRow, CandidateList } from "../components/CandidateRow";
 import { StaleBanner } from "../components/StaleBanner";
 import { NotesMargin } from "../components/NotesMargin";
 import { CustomIndexModal } from "../components/CustomIndexModal";
-import { SpeculativeDialog } from "../components/SpeculativeDialog";
 import { ModalShell, Kicker, IconButton, HintText } from "../ui";
 import { ExportButton } from "../components/ExportButton";
 import { useFigureExport } from "../components/useFigureExport";
@@ -45,9 +44,7 @@ import {
   useRemoveAssignmentPhase,
   useCommitCustomIndex,
   useReanalyzeExposure,
-  useCreateSpeculative,
   useDeleteIndex,
-  useSpeculativeSnap,
 } from "../../queries";
 import { useAppState } from "../../state";
 import { useSyncActiveSampleFromRoute } from "../../hooks/useSyncActiveSampleFromRoute";
@@ -56,7 +53,6 @@ import { useExposureHasPendingPeakOps } from "../../lib/queue/hooks";
 import { deriveActiveIndices } from "../../lib/assignment";
 import { basisFor } from "../../lib/customIndex";
 import { seriesRatio } from "../../lib/seriesRatio";
-import { KNOWN_PHASES } from "../../phases";
 import type { Trace, IndexEntry } from "../../api";
 
 const EMPTY_TRACE: Trace = { q: [], I: [], sigma: [] };
@@ -173,7 +169,6 @@ export function FocusPage(): JSX.Element {
   const removeAssignmentPhase = useRemoveAssignmentPhase(activeExposureId ?? 0);
   const commitCustomIndex = useCommitCustomIndex(activeExposureId ?? 0);
   const reanalyze = useReanalyzeExposure(activeExposureId ?? 0);
-  const createSpeculative = useCreateSpeculative(activeExposureId ?? 0);
   const deleteIndex = useDeleteIndex(activeExposureId ?? 0);
   const updateSample = useUpdateSample(experimentId ?? 0, activeSampleId ?? 0);
   const pendingPeakOps = useExposureHasPendingPeakOps(activeExposureId);
@@ -192,13 +187,6 @@ export function FocusPage(): JSX.Element {
   const [customParam, setCustomParam] = useState<string>(
     String(CUSTOM_SYMS[0]!.min),
   );
-
-  // speculative dialog
-  const [specOpen, setSpecOpen] = useState(false);
-  const [specPhase, setSpecPhase] = useState<string>("Lamellar");
-  const [anchorPeakId, setAnchorPeakId] = useState<number | undefined>(undefined);
-  const [anchorRatio, setAnchorRatio] = useState<number>(1);
-  const [included, setIncluded] = useState<Record<number, boolean>>({});
 
   // ── derived ──────────────────────────────────────────────────────────────────
   const peaks = peaksQ.data ?? [];
@@ -286,15 +274,6 @@ export function FocusPage(): JSX.Element {
     observedQs,
   );
 
-  // speculative snap (gated by the carried hook)
-  const snapQ = useSpeculativeSnap(
-    activeExposureId,
-    specPhase,
-    anchorPeakId,
-    anchorRatio,
-  );
-  const snap = snapQ.data ?? [];
-
   const isLoading =
     corpusQ.isLoading ||
     (activeExposureId !== undefined && (traceQ.isLoading || peaksQ.isLoading));
@@ -333,36 +312,17 @@ export function FocusPage(): JSX.Element {
   const noExposure =
     !exposuresQ.isLoading && activeExposureId === undefined;
 
-  // ── speculative helpers ──────────────────────────────────────────────────────
+  // ── custom-index helper ──────────────────────────────────────────────────────
   function commitCustom(): void {
     commitCustomIndex.mutate(customSym, basisFor(customSym, Number(customParam)));
     setCustomOpen(false);
   }
 
-  function createSpec(): void {
-    if (anchorPeakId === undefined) return;
-    const additional = snap
-      .filter(
-        (s) =>
-          !s.is_anchor &&
-          s.suggested_peak_id !== null &&
-          included[s.ratio_position],
-      )
-      .map((s) => ({
-        ratio_position: s.ratio_position,
-        peak_id: s.suggested_peak_id!,
-      }));
-    createSpeculative.mutate({
-      phase: specPhase,
-      anchor_peak_id: anchorPeakId,
-      anchor_ratio: anchorRatio,
-      additional,
-      active: false,
-    });
-    setSpecOpen(false);
-  }
-
   // ── rail building ────────────────────────────────────────────────────────────
+  // Speculative-kind indices are the output of the custom-index builder (it
+  // persists a speculative index + adds it to the assignment); they render as
+  // deletable candidate rows. The legacy anchor/ratio "+ Add speculative"
+  // creation dialog was retired — the custom-index modal is the hypothesis tool.
   const speculatives = indices.filter((i) => i.kind === "speculative");
   const candidatePool = indices.filter((i) => i.kind !== "speculative");
 
@@ -444,14 +404,6 @@ export function FocusPage(): JSX.Element {
         candidatePool.map((ix) => candidateRow(ix))
       )}
       {speculatives.map((ix) => candidateRow(ix, true))}
-      <button
-        type="button"
-        data-testid="add-speculative-button"
-        onClick={() => setSpecOpen(true)}
-        className="mt-1 w-full rounded-md border border-dashed border-hair py-1.5 text-caption text-ink-faint transition-colors hover:bg-paper-sunk hover:text-ink"
-      >
-        + Add speculative
-      </button>
     </CandidateList>
   );
 
@@ -486,27 +438,6 @@ export function FocusPage(): JSX.Element {
         onAdd={commitCustom}
         onCancel={() => setCustomOpen(false)}
         onClose={() => setCustomOpen(false)}
-      />
-      <SpeculativeDialog
-        open={specOpen}
-        onClose={() => setSpecOpen(false)}
-        phases={KNOWN_PHASES as readonly string[]}
-        phase={specPhase}
-        onPhaseChange={setSpecPhase}
-        peaks={peaks.map((p) => ({ id: p.id, q: p.q, source: p.source }))}
-        anchorPeakId={anchorPeakId}
-        onAnchorChange={setAnchorPeakId}
-        anchorRatio={anchorRatio}
-        onAnchorRatioChange={setAnchorRatio}
-        snap={snap}
-        included={included}
-        onToggleIncluded={(rp) =>
-          setIncluded((prev) => ({ ...prev, [rp]: !prev[rp] }))
-        }
-        snapLoading={snapQ.isLoading}
-        blocked={pendingPeakOps}
-        saving={createSpeculative.isPending}
-        onCreate={createSpec}
       />
     </>
   );

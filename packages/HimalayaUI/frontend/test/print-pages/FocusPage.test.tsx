@@ -14,7 +14,6 @@ const removeAssignMutate = vi.fn();
 const setAssignStateMutate = vi.fn();
 const commitCustomMutate = vi.fn();
 const reanalyzeMutate = vi.fn();
-const createSpecMutate = vi.fn();
 const deleteIndexMutate = vi.fn();
 const updateSampleMutate = vi.fn();
 
@@ -54,10 +53,8 @@ vi.mock("../../src/queries", () => ({
   useSetAssignmentState: () => ({ mutate: setAssignStateMutate }),
   useCommitCustomIndex: () => ({ mutate: commitCustomMutate }),
   useReanalyzeExposure: () => ({ mutate: reanalyzeMutate }),
-  useCreateSpeculative: () => ({ mutate: createSpecMutate, isSuccess: false, isPending: false, error: null }),
   useDeleteIndex: () => ({ mutate: deleteIndexMutate }),
   useUpdateSample: () => ({ mutate: updateSampleMutate }),
-  useSpeculativeSnap: () => ({ data: [], isLoading: false, error: null }),
 }));
 
 // Route shim: seed the Zustand active sample / exposure from the mock state.
@@ -193,6 +190,12 @@ describe("FocusPage", () => {
     const pn3m = screen.getByRole("button", { name: /Pn3m, in assignment/ });
     fireEvent.click(pn3m);
     expect(removeAssignMutate).toHaveBeenCalledWith(1);
+  });
+
+  it("does not render the legacy '+ Add speculative' affordance (custom-index is the hypothesis tool)", () => {
+    renderAt(42);
+    expect(screen.queryByTestId("add-speculative-button")).toBeNull();
+    expect(screen.queryByText("+ Add speculative")).toBeNull();
   });
 
   it("arming '+ Peak' then clicking the trace fires useAddPeak().mutate(q)", () => {
