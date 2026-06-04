@@ -60,8 +60,17 @@ describe("toTraceModel", () => {
     expect(toTraceModel(trace, [], null).phase).toBeNull();
   });
 
-  it("omits intensity (does not set it to undefined) when the peak intensity is null", () => {
-    const tm = toTraceModel(trace, [peak({ id: 1, intensity: null })], null);
+  it("anchors a null-intensity (curation) peak to the trace curve at its q (nearest sample)", () => {
+    // trace = q:[0.1,0.2] I:[1,2]; a manually-added peak at q=0.1 has no backend
+    // intensity → nearest sample is q=0.1 → I=1. Without this it would drop to
+    // baselineI in PlotPeaks and render flat on the axis.
+    const tm = toTraceModel(trace, [peak({ id: 1, q: 0.1, intensity: null })], null);
+    expect(tm.peaks[0]).toMatchObject({ intensity: 1 });
+  });
+
+  it("omits intensity (does not set it to undefined) when there is no curve to anchor to", () => {
+    const empty: Trace = { q: [], I: [], sigma: [] };
+    const tm = toTraceModel(empty, [peak({ id: 1, intensity: null })], null);
     expect("intensity" in tm.peaks[0]!).toBe(false);
   });
 });

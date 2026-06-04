@@ -31,6 +31,25 @@ function spanTol(qs: number[]): number {
 // ── trace peaks ───────────────────────────────────────────────────────────────
 
 /**
+ * Trace intensity at `q` via nearest-sample lookup — restores the legacy
+ * TraceViewer `interpolateI`. Manually-added ("curation") peaks come back from
+ * the backend with `intensity: null` (routes_peaks.jl stores them with no
+ * metrics computed yet). Without anchoring, `PlotPeaks` drops an
+ * intensity-less glyph to `baselineI` and it renders flat on the axis. We pin
+ * it to the curve instead. Returns `null` for an empty trace (no curve to read).
+ */
+function traceIntensityAt(q: number, trace: Trace): number | null {
+  const qs = trace.q;
+  if (qs.length === 0) return null;
+  let nearest = 0;
+  for (let i = 1; i < qs.length; i++) {
+    if (Math.abs(qs[i]! - q) < Math.abs(qs[nearest]! - q)) nearest = i;
+  }
+  const iv = trace.I[nearest];
+  return iv != null && Number.isFinite(iv) ? iv : null;
+}
+
+/**
  * Observed `Peak[]` → trace `PlotPeak[]`; `phase` drives the trace colour
  * downstream (TracePlot resolves it via phaseColor).
  *
@@ -38,8 +57,13 @@ function spanTol(qs: number[]): number {
  * PlotCard → TraceViewer mapping does NOT decorate trace peaks with
  * `predictedAbsent`/`color` — those are index-overlay concerns (the comb /
  * detector rings carry the assignment colouring), so this adapter takes no
- * `activeIndices` param. `intensity` is conditionally spread (never set to
- * `undefined`) to satisfy `exactOptionalPropertyTypes`.
+ * `activeIndices` param.
+ *
+ * A peak with no backend `intensity` (a manually-added curation peak) is
+ * anchored to the trace curve at its q via {@link traceIntensityAt} so its
+ * glyph sits on the data, not on the baseline. `intensity` is conditionally
+ * spread (never set to `undefined`) to satisfy `exactOptionalPropertyTypes`;
+ * it is omitted only when there is no curve to read (empty trace).
  */
 export function toTraceModel(
   trace: Trace,
@@ -49,13 +73,17 @@ export function toTraceModel(
   return {
     trace,
     phase,
-    peaks: peaks.map((p): PlotPeak => ({
-      id: p.id,
-      q: p.q,
-      source: p.source,
-      excluded: p.excluded,
-      ...(p.intensity != null ? { intensity: p.intensity } : {}),
-    })),
+    peaks: peaks.map((p): PlotPeak => {
+      const intensity =
+        p.intensity != null ? p.intensity : traceIntensityAt(p.q, trace);
+      return {
+        id: p.id,
+        q: p.q,
+        source: p.source,
+        excluded: p.excluded,
+        ...(intensity != null ? { intensity } : {}),
+      };
+    }),
   };
 }
 
