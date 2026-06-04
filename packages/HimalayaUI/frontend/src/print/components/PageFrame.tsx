@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 export const PAGE_WIDTHS = {
   loupe: "max-w-[1100px]",
   sheet: "max-w-[1240px]",
-  focus: "max-w-[1160px]",
+  focus: "max-w-[1240px]",
   folio: "max-w-[1380px]",
   scoping: "max-w-[760px]",
   builder: "max-w-[1180px]",

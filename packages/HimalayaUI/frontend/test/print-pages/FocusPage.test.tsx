@@ -13,7 +13,6 @@ const addAssignMutate = vi.fn();
 const removeAssignMutate = vi.fn();
 const setAssignStateMutate = vi.fn();
 const commitCustomMutate = vi.fn();
-const reanalyzeMutate = vi.fn();
 const deleteIndexMutate = vi.fn();
 
 // ── mock data plane (mutated per test) ────────────────────────────────────────
@@ -51,7 +50,6 @@ vi.mock("../../src/queries", () => ({
   useRemoveAssignmentPhase: () => ({ mutate: removeAssignMutate }),
   useSetAssignmentState: () => ({ mutate: setAssignStateMutate }),
   useCommitCustomIndex: () => ({ mutate: commitCustomMutate }),
-  useReanalyzeExposure: () => ({ mutate: reanalyzeMutate }),
   useDeleteIndex: () => ({ mutate: deleteIndexMutate }),
 }));
 
@@ -70,11 +68,6 @@ vi.mock("../../src/state", () => ({
       activeSampleId: state.activeSampleId,
       activeExposureId: state.activeExposureId,
     }),
-}));
-
-// Pending-peak-ops gate (lives under lib/queue/hooks): no pending ops in tests.
-vi.mock("../../src/lib/queue/hooks", () => ({
-  useExposureHasPendingPeakOps: () => false,
 }));
 
 // boneyard Skeleton: render children when not loading.
@@ -242,14 +235,15 @@ describe("FocusPage", () => {
     expect(screen.getByText(/no exposures/i)).toBeInTheDocument();
   });
 
-  it("shows the stale-index banner + reanalyzes when an index hash is stale", () => {
+  it("does not render a stale-index banner (peak edits auto-reanalyze server-side)", () => {
+    // A speculative index keeps its inputs_hash across reanalysis, so the old
+    // hash-mismatch banner was a permanent false alarm; it was removed. Even
+    // with a mismatched hash, no alert renders.
     state.indices = [ix({ id: 1, inputs_hash: "OLD" })];
     state.assignment = { exposure_id: 7, state: "indexed", members: [1] };
     renderAt(42);
-    const banner = screen.getByRole("alert");
-    expect(within(banner).getByText(/stale/)).toBeInTheDocument();
-    fireEvent.click(within(banner).getByText("Re-analyze"));
-    expect(reanalyzeMutate).toHaveBeenCalled();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByText(/stale/i)).toBeNull();
   });
 
   it("renders the export-button in the trace plate when the sample has trace data", () => {

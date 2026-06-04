@@ -9,7 +9,6 @@ import { AssignmentRail } from "../components/AssignmentRail";
 import { AssignmentCart } from "../components/AssignmentCart";
 import { PhaseBlock } from "../components/PhaseBlock";
 import { CandidateRow, CandidateList } from "../components/CandidateRow";
-import { StaleBanner } from "../components/StaleBanner";
 import { CustomIndexModal } from "../components/CustomIndexModal";
 import { IconButton, HintText } from "../ui";
 import { ExportButton } from "../components/ExportButton";
@@ -40,13 +39,11 @@ import {
   useAddAssignmentPhase,
   useRemoveAssignmentPhase,
   useCommitCustomIndex,
-  useReanalyzeExposure,
   useDeleteIndex,
 } from "../../queries";
 import { useAppState } from "../../state";
 import { useSyncActiveSampleFromRoute } from "../../hooks/useSyncActiveSampleFromRoute";
 import { useAutoPickExposure } from "../../hooks/useAutoPickExposure";
-import { useExposureHasPendingPeakOps } from "../../lib/queue/hooks";
 import { deriveActiveIndices } from "../../lib/assignment";
 import { basisFor } from "../../lib/customIndex";
 import { seriesRatio } from "../../lib/seriesRatio";
@@ -149,9 +146,7 @@ export function FocusPage(): JSX.Element {
   const addAssignmentPhase = useAddAssignmentPhase(activeExposureId ?? 0);
   const removeAssignmentPhase = useRemoveAssignmentPhase(activeExposureId ?? 0);
   const commitCustomIndex = useCommitCustomIndex(activeExposureId ?? 0);
-  const reanalyze = useReanalyzeExposure(activeExposureId ?? 0);
   const deleteIndex = useDeleteIndex(activeExposureId ?? 0);
-  const pendingPeakOps = useExposureHasPendingPeakOps(activeExposureId);
 
   // ── page-owned state ─────────────────────────────────────────────────────────
   const [scale, setScale] = useState<"log" | "lin">("log");
@@ -220,13 +215,6 @@ export function FocusPage(): JSX.Element {
     [activeIndices, peaks],
   );
 
-  // Stale-index count: indices whose snapshot input-hash differs from the
-  // active exposure's analysis hash (the StaleIndicesBanner contract).
-  const expectedHash = activeExposure?.analysis_inputs_hash ?? null;
-  const staleCount = expectedHash
-    ? indices.filter((i) => i.inputs_hash !== expectedHash).length
-    : 0;
-
   // Detector image url for the active exposure (loupe's builder → cache-coherent).
   const detectorSrc = activeExposure
     ? buildExposureImageUrl(activeExposure)
@@ -278,7 +266,7 @@ export function FocusPage(): JSX.Element {
   // ── early states ─────────────────────────────────────────────────────────────
   if (!corpusQ.isLoading && !corpusSample) {
     return (
-      <PageFrame width="focus" className="px-8 py-7">
+      <PageFrame width="focus" className="px-6 py-7">
         <div
           data-testid="focus-not-found"
           className="rounded border border-hair-strong p-8 text-sm text-ink-faint"
@@ -414,7 +402,7 @@ export function FocusPage(): JSX.Element {
 
   // ── layout ───────────────────────────────────────────────────────────────────
   return (
-    <PageFrame width="focus" className="px-8 py-7">
+    <PageFrame width="focus" className="px-6 py-7">
       <Skeleton
         name="focus"
         className="block"
@@ -490,13 +478,6 @@ export function FocusPage(): JSX.Element {
 
           {/* rail */}
           <div className="flex min-h-0 flex-col gap-4">
-            {staleCount > 0 && (
-              <StaleBanner
-                staleCount={staleCount}
-                pending={pendingPeakOps}
-                onReanalyze={() => reanalyze.mutate({})}
-              />
-            )}
             {noExposure ? (
               <div className="p-8 text-sm text-ink-faint">
                 This sample has no exposures.
