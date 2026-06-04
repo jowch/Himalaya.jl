@@ -197,63 +197,6 @@ export function CorpusTopbar(): JSX.Element {
 
       <span className="flex-1" />
 
-      {/* M-9: Contact sheet | Loupe segmented view switch. The loupe is a
-          sample-scoped route (/samples/loupe/:id); the topbar has no sample id
-          on /samples, so the switch is route-based — on a loupe route both
-          segments reflect state and "Loupe" is active; on the sheet, "Contact
-          sheet" is active and "Loupe" is disabled (no sample is selected to
-          open). The Contact-sheet link preserves the ?beamtime= filter.
-
-          R5 (#228) coordination: scoped to the samples surface. The focus
-          surface (/sample/:id) shows its own per-sample stepper + Notes toggle
-          below, not the contact-sheet/loupe switch (which is meaningless
-          there). */}
-      {pathname.startsWith("/samples") && (() => {
-        const onLoupe = pathname.startsWith("/samples/loupe");
-        const beamtimeQuery = beamtime === "" ? "" : `?beamtime=${beamtime}`;
-        const sheetHref = `/samples${beamtimeQuery}`;
-        const segBase =
-          "px-3 py-1.5 text-sm font-semibold no-underline";
-        const active = "bg-ink text-paper";
-        const inactive = "text-ink-faint";
-        return (
-          <div
-            data-testid="view-seg"
-            className="flex overflow-hidden rounded-md border border-hair-strong bg-plate"
-          >
-            <Link
-              to={sheetHref}
-              data-testid="view-seg-sheet"
-              data-active={onLoupe ? undefined : "true"}
-              aria-current={onLoupe ? undefined : "page"}
-              className={`${segBase} ${onLoupe ? inactive : active}`}
-            >
-              Contact sheet
-            </Link>
-            {onLoupe ? (
-              <span
-                data-testid="view-seg-loupe"
-                data-active="true"
-                aria-current="page"
-                className={`${segBase} ${active}`}
-              >
-                Loupe
-              </span>
-            ) : (
-              <button
-                type="button"
-                disabled
-                data-testid="view-seg-loupe"
-                title="Open a sample to use the loupe"
-                className={`${segBase} ${inactive} cursor-not-allowed bg-transparent`}
-              >
-                Loupe
-              </button>
-            )}
-          </div>
-        );
-      })()}
-
       {/* F-13: per-sample stepper — the focus surface's primary inter-sample
           nav. URL-routed so the one-way route→store sync stays intact. */}
       {showStepper && (

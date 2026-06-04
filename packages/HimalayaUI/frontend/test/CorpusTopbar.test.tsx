@@ -105,14 +105,6 @@ describe("CorpusTopbar", () => {
     expect(screen.getByTestId("beamtime-probe")).toHaveTextContent("");
   });
 
-  it("shows a Contact sheet | Loupe segmented switch", () => {
-    mockExperiments();
-    renderTopbar("/samples");
-    const seg = screen.getByTestId("view-seg");
-    expect(seg).toHaveTextContent("Contact sheet");
-    expect(seg).toHaveTextContent("Loupe");
-  });
-
   // The beamtime filter is honored only on the samples surface. It used to
   // render on every route — changeable but inert on /series and /sample/:id.
   // Hide it where it does nothing rather than lie.
@@ -132,38 +124,6 @@ describe("CorpusTopbar", () => {
     mockExperiments();
     renderTopbar("/sample/7");
     expect(screen.queryByTestId("beamtime-chip")).toBeNull();
-  });
-
-  it("marks Contact sheet active on /samples and disables Loupe", () => {
-    mockExperiments();
-    renderTopbar("/samples");
-    expect(screen.getByTestId("view-seg-sheet")).toHaveAttribute(
-      "data-active",
-      "true",
-    );
-    expect(screen.getByTestId("view-seg-loupe")).toBeDisabled();
-  });
-
-  it("marks Loupe active on a loupe route and links sheet back to /samples", () => {
-    mockExperiments();
-    renderTopbar("/samples/loupe/2");
-    expect(screen.getByTestId("view-seg-loupe")).toHaveAttribute(
-      "data-active",
-      "true",
-    );
-    expect(screen.getByTestId("view-seg-sheet")).toHaveAttribute(
-      "href",
-      "/samples",
-    );
-  });
-
-  it("preserves ?beamtime= on the Contact sheet link", () => {
-    mockExperiments();
-    renderTopbar("/samples/loupe/2?beamtime=1");
-    expect(screen.getByTestId("view-seg-sheet")).toHaveAttribute(
-      "href",
-      "/samples?beamtime=1",
-    );
   });
 
   it("reflects the current ?beamtime= as the selected option", async () => {
