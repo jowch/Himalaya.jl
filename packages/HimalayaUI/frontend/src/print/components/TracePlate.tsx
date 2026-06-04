@@ -70,6 +70,23 @@ export function TracePlate({
   actions,
   className,
 }: TracePlateProps): JSX.Element {
+  // "+ Peak" arm gate: TracePlot creates a peak on any plot click where
+  // `interaction.onAddPeak` is present. Withhold it until armed so a stray
+  // click never adds a peak. Rebuilt explicitly (not `{...interaction,
+  // onAddPeak: undefined}`) to satisfy exactOptionalPropertyTypes.
+  const gatedInteraction: TracePlotInteraction | false | undefined = !interaction
+    ? interaction
+    : {
+        onXDomain: interaction.onXDomain,
+        ...(addPeakArmed && interaction.onAddPeak
+          ? { onAddPeak: interaction.onAddPeak }
+          : {}),
+        ...(interaction.onClickPeak ? { onClickPeak: interaction.onClickPeak } : {}),
+        ...(interaction.onReset ? { onReset: interaction.onReset } : {}),
+        ...(interaction.hitTolerancePx !== undefined
+          ? { hitTolerancePx: interaction.hitTolerancePx }
+          : {}),
+      };
   return (
     <Card
       as="section"
@@ -107,7 +124,7 @@ export function TracePlate({
         xType={scale === "log" ? "log" : "linear"}
         axes
         {...(xDomain !== undefined ? { xDomain } : {})}
-        {...(interaction !== undefined ? { interaction } : {})}
+        {...(gatedInteraction !== undefined ? { interaction: gatedInteraction } : {})}
         {...(hoveredQ !== undefined ? { hoveredQ } : {})}
         {...(onHoverQ !== undefined ? { onHoverQ } : {})}
         {...(highlightPeakIds !== undefined ? { highlightPeakIds } : {})}

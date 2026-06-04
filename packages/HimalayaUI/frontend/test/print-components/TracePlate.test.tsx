@@ -43,6 +43,27 @@ describe("TracePlate", () => {
     fireEvent.click(peak);
     expect(onToggleAddPeak).toHaveBeenCalled();
   });
+  it("does NOT add a peak on a plot click when '+ Peak' is not armed", () => {
+    // The arm gate: TracePlot would otherwise add a peak on any empty-space
+    // click. With addPeakArmed=false the onAddPeak handler is withheld.
+    const onAddPeak = vi.fn();
+    const { container } = render(
+      <TracePlate {...base} interaction={{ onXDomain: () => {}, onAddPeak }} />,
+    );
+    const svg = container.querySelector('svg[data-testid="trace-plate-plot"]')!;
+    fireEvent.click(svg, { clientX: 300, clientY: 150 });
+    expect(onAddPeak).not.toHaveBeenCalled();
+  });
+  it("adds a peak on a plot click only once armed", () => {
+    const onAddPeak = vi.fn();
+    const { container } = render(
+      <TracePlate {...base} addPeakArmed interaction={{ onXDomain: () => {}, onAddPeak }} />,
+    );
+    const svg = container.querySelector('svg[data-testid="trace-plate-plot"]')!;
+    fireEvent.click(svg, { clientX: 300, clientY: 150 });
+    expect(onAddPeak).toHaveBeenCalledTimes(1);
+    expect(typeof onAddPeak.mock.calls[0]![0]).toBe("number");
+  });
   it("forwards a placement-only className", () => {
     render(<TracePlate {...base} className="mt-6" />);
     expect(screen.getByTestId("trace-plate").className).toContain("mt-6");
