@@ -15,7 +15,6 @@ const setAssignStateMutate = vi.fn();
 const commitCustomMutate = vi.fn();
 const reanalyzeMutate = vi.fn();
 const deleteIndexMutate = vi.fn();
-const updateSampleMutate = vi.fn();
 
 // ── mock data plane (mutated per test) ────────────────────────────────────────
 const state = {
@@ -54,7 +53,6 @@ vi.mock("../../src/queries", () => ({
   useCommitCustomIndex: () => ({ mutate: commitCustomMutate }),
   useReanalyzeExposure: () => ({ mutate: reanalyzeMutate }),
   useDeleteIndex: () => ({ mutate: deleteIndexMutate }),
-  useUpdateSample: () => ({ mutate: updateSampleMutate }),
 }));
 
 // Route shim: seed the Zustand active sample / exposure from the mock state.
@@ -65,14 +63,12 @@ vi.mock("../../src/hooks/useAutoPickExposure", () => ({
   useAutoPickExposure: () => {},
 }));
 
-// Zustand store: return the mock active ids + the notes-drawer slice.
+// Zustand store: return the mock active ids.
 vi.mock("../../src/state", () => ({
   useAppState: (sel: (s: Record<string, unknown>) => unknown) =>
     sel({
       activeSampleId: state.activeSampleId,
       activeExposureId: state.activeExposureId,
-      notesDrawerOpen: false,
-      closeNotesDrawer: () => {},
     }),
 }));
 

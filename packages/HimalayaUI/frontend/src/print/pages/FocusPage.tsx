@@ -10,9 +10,8 @@ import { AssignmentCart } from "../components/AssignmentCart";
 import { PhaseBlock } from "../components/PhaseBlock";
 import { CandidateRow, CandidateList } from "../components/CandidateRow";
 import { StaleBanner } from "../components/StaleBanner";
-import { NotesMargin } from "../components/NotesMargin";
 import { CustomIndexModal } from "../components/CustomIndexModal";
-import { ModalShell, Kicker, IconButton, HintText } from "../ui";
+import { IconButton, HintText } from "../ui";
 import { ExportButton } from "../components/ExportButton";
 import { useFigureExport } from "../components/useFigureExport";
 import { buildTraceExportSpec } from "../../lib/figure-export/adapters/traceAdapter";
@@ -29,14 +28,12 @@ import {
 import { buildExposureImageUrl } from "./loupeAdapters";
 import {
   useCorpusSamples,
-  useSamples,
   useExperiment,
   useExposures,
   useTrace,
   usePeaks,
   useIndices,
   useAssignment,
-  useUpdateSample,
   useAddPeak,
   useRemovePeak,
   useSetPeakExcluded,
@@ -70,9 +67,9 @@ const FIXTURE_TRACE = {
   phase: null,
 };
 const FOCUS_FIXTURE = (
-  <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1fr_348px_250px]">
+  <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_348px]">
     {/* work area */}
-    <div className="flex min-h-0 flex-col gap-5">
+    <div className="flex min-h-0 min-w-0 flex-col gap-5">
       <TracePlate
         kicker="Integration"
         title="Sample"
@@ -110,18 +107,13 @@ const FOCUS_FIXTURE = (
       }
       candidatesNote="Check every phase that is present; a sample can hold more than one."
     />
-
-    {/* notes margin (xl+) */}
-    <div className="hidden xl:block">
-      <NotesMargin notes={null} onSaveNotes={() => {}} />
-    </div>
   </div>
 );
 
 /**
  * FocusPage (greenfield) — the Focus workspace at /sample/:sampleId.
  *
- * Mirrors the legacy FocusWorkspaceLayout's 3-column grid (work · rail · notes)
+ * Mirrors the 2-column workspace grid (work · rail)
  * but assembled entirely from src/print composites + the carried data layer.
  * The route param seeds Zustand `activeSampleId` (useSyncActiveSampleFromRoute);
  * useAutoPickExposure seeds `activeExposureId`. All hooks are called
@@ -132,8 +124,6 @@ export function FocusPage(): JSX.Element {
   useSyncActiveSampleFromRoute();
   const activeSampleId = useAppState((s) => s.activeSampleId);
   const activeExposureId = useAppState((s) => s.activeExposureId);
-  const notesDrawerOpen = useAppState((s) => s.notesDrawerOpen);
-  const closeNotesDrawer = useAppState((s) => s.closeNotesDrawer);
   useAutoPickExposure(activeSampleId);
 
   // ── data ────────────────────────────────────────────────────────────────────
@@ -145,7 +135,6 @@ export function FocusPage(): JSX.Element {
   const experimentId = corpusSample?.experiment_id;
 
   const experimentQ = useExperiment(experimentId ?? 0);
-  const samplesQ = useSamples(experimentId ?? 0);
   const exposuresQ = useExposures(activeSampleId);
 
   const traceQ = useTrace(activeExposureId);
@@ -153,15 +142,7 @@ export function FocusPage(): JSX.Element {
   const indicesQ = useIndices(activeExposureId);
   const assignmentQ = useAssignment(activeExposureId);
 
-  // CACHE-COHERENCE: the notes textarea must read from the SAME cache the
-  // update mutator patches — the experiment-scoped samples list, NOT the corpus
-  // list (mirrors the legacy FocusWorkspaceLayout note).
-  const notesSample =
-    activeSampleId !== undefined && experimentId !== undefined
-      ? samplesQ.data?.find((s) => s.id === activeSampleId)
-      : undefined;
-
-  // ── mutators (all exposure-scoped, except the sample-scoped notes save) ──────
+  // ── mutators (all exposure-scoped) ───────────────────────────────────────────
   const addPeak = useAddPeak(activeExposureId ?? 0);
   const removePeak = useRemovePeak(activeExposureId ?? 0);
   const setPeakExcluded = useSetPeakExcluded(activeExposureId ?? 0);
@@ -170,7 +151,6 @@ export function FocusPage(): JSX.Element {
   const commitCustomIndex = useCommitCustomIndex(activeExposureId ?? 0);
   const reanalyze = useReanalyzeExposure(activeExposureId ?? 0);
   const deleteIndex = useDeleteIndex(activeExposureId ?? 0);
-  const updateSample = useUpdateSample(experimentId ?? 0, activeSampleId ?? 0);
   const pendingPeakOps = useExposureHasPendingPeakOps(activeExposureId);
 
   // ── page-owned state ─────────────────────────────────────────────────────────
@@ -407,16 +387,6 @@ export function FocusPage(): JSX.Element {
     </CandidateList>
   );
 
-  // ── notes (shared by the xl margin + the < xl drawer) ────────────────────────
-  const notesBody =
-    notesSample !== undefined ? (
-      <NotesMargin
-        notes={notesSample.notes ?? null}
-        onSaveNotes={(notes) => updateSample.mutate({ notes })}
-        onHoverQ={setHoveredQ}
-      />
-    ) : null;
-
   // ── modals (mounted regardless of layout branch) ─────────────────────────────
   const modals = (
     <>
@@ -463,10 +433,10 @@ export function FocusPage(): JSX.Element {
       >
         <div
           data-testid="focus-workspace"
-          className="grid grid-cols-1 gap-5 xl:grid-cols-[1fr_348px_250px]"
+          className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_348px]"
         >
           {/* work area */}
-          <div className="flex min-h-0 flex-col gap-5">
+          <div className="flex min-h-0 min-w-0 flex-col gap-5">
             <TracePlate
               kicker="Integration"
               title={sampleName}
@@ -540,37 +510,8 @@ export function FocusPage(): JSX.Element {
               />
             )}
           </div>
-
-          {/* notes margin (xl+) */}
-          {notesBody && <div className="hidden xl:block">{notesBody}</div>}
         </div>
       </Skeleton>
-
-      {/* notes drawer (< xl) */}
-      {notesBody && (
-        <div className="xl:hidden">
-          <ModalShell
-            open={notesDrawerOpen}
-            onClose={closeNotesDrawer}
-            variant="drawer"
-            testId="focus-notes-drawer"
-            aria-label="Notes"
-          >
-            <div className="flex items-center justify-between border-b border-hair px-4 py-2">
-              <Kicker as="span" tone="faint">
-                Notes
-              </Kicker>
-              <IconButton
-                label="Close notes"
-                dismiss
-                tone="ghost"
-                onClick={closeNotesDrawer}
-              />
-            </div>
-            {notesBody}
-          </ModalShell>
-        </div>
-      )}
 
       {modals}
     </PageFrame>
