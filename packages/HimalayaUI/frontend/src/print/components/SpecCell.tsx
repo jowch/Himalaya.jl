@@ -4,6 +4,10 @@ export interface SpecCellProps {
   name: string;
   sampleId: string;
   screened?: boolean;
+  /** When provided, promotes the name to a keyboard-accessible button that
+   *  opens the loupe view for this sample. When absent, the name renders as
+   *  a static span (other consumers unaffected). */
+  onOpenLoupe?: () => void;
   /** PLACEMENT-ONLY. */
   className?: string;
 }
@@ -18,6 +22,7 @@ export function SpecCell({
   name,
   sampleId,
   screened,
+  onOpenLoupe,
   className,
 }: SpecCellProps): JSX.Element {
   return (
@@ -25,9 +30,20 @@ export function SpecCell({
       data-testid="spec-cell"
       className={`min-w-0${className ? ` ${className}` : ""}`}
     >
-      <span data-role="spec-name" className="text-body font-semibold block leading-tight line-clamp-2">
-        {name}
-      </span>
+      {onOpenLoupe ? (
+        <button
+          type="button"
+          data-role="spec-name"
+          onClick={onOpenLoupe}
+          className="text-body font-semibold block leading-tight line-clamp-2 text-left hover:text-print-accent"
+        >
+          {name}
+        </button>
+      ) : (
+        <span data-role="spec-name" className="text-body font-semibold block leading-tight line-clamp-2">
+          {name}
+        </span>
+      )}
       <div className="flex items-center gap-2 mt-0.5 min-w-0">
         <span
           data-role="spec-id"
