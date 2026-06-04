@@ -4,6 +4,7 @@ import { PageFrame } from "../components/PageFrame";
 import { TracePlate } from "../components/TracePlate";
 import { DetectorPanel } from "../components/DetectorPanel";
 import { CombsPanel, type CombView } from "../components/CombsPanel";
+import type { PlotPeak } from "../plot/marks/PlotPeaks";
 import { AssignmentRail } from "../components/AssignmentRail";
 import { AssignmentCart } from "../components/AssignmentCart";
 import { PhaseBlock } from "../components/PhaseBlock";
@@ -59,6 +60,67 @@ import { KNOWN_PHASES } from "../../phases";
 import type { Trace, IndexEntry } from "../../api";
 
 const EMPTY_TRACE: Trace = { q: [], I: [], sigma: [] };
+
+// Boneyard fixture — a real render with mock props so the headless capture CLI
+// measures the greenfield Focus body. Uses static composites with no-op handlers
+// and a small synthetic trace so the plot draws real geometry.
+const FIXTURE_TRACE = {
+  trace: {
+    q: [0.02, 0.04, 0.06, 0.1, 0.15, 0.2],
+    I: [12000, 8000, 4800, 2400, 1200, 600],
+    sigma: [80, 55, 35, 20, 12, 7],
+  },
+  peaks: [] as PlotPeak[],
+  phase: null,
+};
+const FOCUS_FIXTURE = (
+  <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1fr_348px_250px]">
+    {/* work area */}
+    <div className="flex min-h-0 flex-col gap-5">
+      <TracePlate
+        kicker="Integration"
+        title="Sample"
+        subtitle="JC000 · Experiment · frame-001"
+        trace={FIXTURE_TRACE}
+        scale="log"
+        onScaleChange={() => {}}
+        onAutoFit={() => {}}
+        onToggleAddPeak={() => {}}
+      />
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <DetectorPanel src={null} />
+        <div className="hidden lg:flex min-h-0 flex-col">
+          <CombsPanel
+            assigned={[]}
+            view="comb"
+            onViewChange={() => {}}
+          />
+        </div>
+      </div>
+    </div>
+
+    {/* rail */}
+    <AssignmentRail
+      assignment={
+        <AssignmentCart>
+          <PhaseBlock phase="Pn3m" score={0.87} meta="a = 142 Å · 5 reflections" />
+        </AssignmentCart>
+      }
+      candidates={
+        <CandidateList>
+          <CandidateRow phase="Pn3m" score={0.87} why="explains 5 peaks · in the call" selected />
+          <CandidateRow phase="Im3m" score={0.61} why="explains 3 peaks" />
+        </CandidateList>
+      }
+      candidatesNote="Check every phase that is present; a sample can hold more than one."
+    />
+
+    {/* notes margin (xl+) */}
+    <div className="hidden xl:block">
+      <NotesMargin notes={null} onSaveNotes={() => {}} />
+    </div>
+  </div>
+);
 
 /**
  * FocusPage (greenfield) — the Focus workspace at /sample/:sampleId.
@@ -458,6 +520,7 @@ export function FocusPage(): JSX.Element {
         loading={isLoading}
         stagger={50}
         transition={200}
+        fixture={FOCUS_FIXTURE}
         fallback={
           <div
             data-testid="focus-skeleton"
