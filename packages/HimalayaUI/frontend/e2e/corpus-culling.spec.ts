@@ -61,9 +61,11 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("cull: rejecting a selected exposure via X dims its thumbnail and PATCHes status", async ({ page }) => {
-  // R2-M11 (#207): the per-thumb reject ✕ button is gone — single-thumb
-  // reject is now "click-to-select, then X" (the same path the cull-bar's
-  // Drop button exercises, but driven from the keyboard).
+  // Greenfield contact sheet: single-thumb reject is "click-to-select, then X".
+  // The thumb gains data-state="selected"; the page-global CullBar appears; the
+  // X key drops the selection (the same path the CullBar "Drop" button drives).
+  // After the PATCH resolves + the exposures query updates, the optimistic
+  // status flips to "rejected" so the thumb re-renders dimmed.
   let patchedBody: unknown = null;
   await mockCorpus(page);
   await page.route("**/api/exposures/1/status", async (route) => {
@@ -75,16 +77,28 @@ test("cull: rejecting a selected exposure via X dims its thumbnail and PATCHes s
   });
 
   await page.goto("/samples");
-  await expect(page.getByTestId("sample-row-10")).toBeVisible();
-  await page.getByTestId("exposure-thumb-1").click();
+  const row = page.getByTestId("sample-table-row").first();
+  await expect(row).toBeVisible();
+
+  // Mock EXPOSURES order is ids 1,2,3 → nth(0) is exposure 1.
+  const thumb1 = row.getByTestId("thumbnail").nth(0);
+  await thumb1.click();
+  await expect(thumb1).toHaveAttribute("data-state", /selected/);
+  await expect(page.getByTestId("cull-bar")).toHaveAttribute("data-show", "true");
+
   await page.keyboard.press("x");
 
-  await expect(page.getByTestId("exposure-thumb-1")).toHaveAttribute("data-rejected", "true");
+  // The dropped thumb re-renders rejected (state token + dimmed image).
+  await expect(thumb1).toHaveAttribute("data-state", /rejected/);
+  await expect(thumb1.locator('[data-dimmed="true"]')).toBeVisible();
   await expect.poll(() => patchedBody).toMatchObject({ status: "rejected" });
+  // Drop clears the selection → the cull bar hides.
+  await expect(page.getByTestId("cull-bar")).toHaveAttribute("data-show", "false");
 });
 
 test("batch-reject: multi-select then reject PATCHes each selected exposure", async ({ page }) => {
-  // R2-M11: no per-thumb checkbox; click the thumb body to select.
+  // Click two thumb bodies to add them to the page-global selection, then hit
+  // the CullBar "Drop" button. Each selected exposure fires a status PATCH.
   const patched: string[] = [];
   await mockCorpus(page);
   await page.route(/\/api\/exposures\/\d+\/status$/, async (route) => {
@@ -96,10 +110,16 @@ test("batch-reject: multi-select then reject PATCHes each selected exposure", as
   });
 
   await page.goto("/samples");
-  await expect(page.getByTestId("sample-row-10")).toBeVisible();
-  await page.getByTestId("exposure-thumb-1").click();
-  await page.getByTestId("exposure-thumb-3").click();
-  await page.getByTestId("batch-reject").click();
+  const row = page.getByTestId("sample-table-row").first();
+  await expect(row).toBeVisible();
+
+  // EXPOSURES order ids 1,2,3 → nth 0,2 are exposures 1 and 3.
+  await row.getByTestId("thumbnail").nth(0).click();
+  await row.getByTestId("thumbnail").nth(2).click();
+
+  const cullBar = page.getByTestId("cull-bar");
+  await expect(cullBar).toHaveAttribute("data-show", "true");
+  await cullBar.getByRole("button", { name: /Drop/ }).click();
 
   await expect.poll(() => patched.length).toBe(2);
   expect(patched.some((p) => p.endsWith("/exposures/1/status"))).toBe(true);
