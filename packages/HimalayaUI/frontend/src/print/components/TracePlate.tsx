@@ -45,6 +45,8 @@ export interface TracePlateProps {
   highlightPeakIds?: ReadonlySet<number>;
   /** Plot height in px. Default 360. */
   plotHeight?: number;
+  /** Extra toolbar actions rendered after the built-in controls (e.g. figure export). */
+  actions?: ReactNode;
   /** PLACEMENT-ONLY. */
   className?: string;
 }
@@ -65,6 +67,7 @@ export function TracePlate({
   onHoverQ,
   highlightPeakIds,
   plotHeight = 360,
+  actions,
   className,
 }: TracePlateProps): JSX.Element {
   return (
@@ -95,6 +98,7 @@ export function TracePlate({
               + Peak
             </Button>
           )}
+          {actions}
         </ToolBar>
       </PlateHeader>
       <TracePlot

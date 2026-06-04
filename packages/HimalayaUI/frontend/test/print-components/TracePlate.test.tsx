@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import { TracePlate } from "../../src/print/components/TracePlate";
 import type { TraceModel } from "../../src/print/plot/TracePlot";
 
@@ -79,6 +79,17 @@ describe("TracePlate", () => {
     onHoverQ.mockClear();
     fireEvent.focus(peakG);
     expect(onHoverQ).toHaveBeenCalledWith(0.05);
+  });
+
+  it("renders a node passed as actions inside the plate", () => {
+    render(
+      <TracePlate
+        {...base}
+        actions={<button data-testid="x" type="button">Export</button>}
+      />,
+    );
+    const plate = screen.getByTestId("trace-plate");
+    expect(within(plate).getByTestId("x")).toBeInTheDocument();
   });
 
   // highlightPeakIds forwarding: a peak NOT in the set dims (data-dimmed=true).
