@@ -621,6 +621,28 @@ export function useSetExposureStatus(sampleId: number) {
   return useQueueMutation(setExposureStatusMutator, { sampleId, username, clientId: CLIENT_ID });
 }
 
+/** Batch/cross-sample exposure-status setter for the contact-sheet cull.
+ *  Unlike useSetExposureStatus (one bound sample), the sampleId rides in the
+ *  per-call input and overrides the placeholder scope (useQueueMutation spreads
+ *  input over scope: payload = {kind, clientOpId, ...scope, ...input}), so one
+ *  hook dispatches reject/restore to ANY sample. Each mutate() mints its own
+ *  client_op_id and patches queryKeys.exposures(sampleId). */
+export function useSetExposureStatusBatch() {
+  const username = useAppState((s) => s.username);
+  const inner = useQueueMutation(setExposureStatusMutator, {
+    sampleId: 0, username, clientId: CLIENT_ID,
+  });
+  return {
+    ...inner,
+    mutate: (v: { sampleId: number; exposureId: number; status: "accepted" | "rejected" | null }) =>
+      // sampleId rides in the input position → payload.sampleId === v.sampleId,
+      // overriding the placeholder scope.sampleId (0). The cast is required
+      // because SetExposureStatusInput doesn't declare sampleId; the runtime
+      // payload merge is what carries it.
+      inner.mutate(v as unknown as { exposureId: number; status: "accepted" | "rejected" | null }),
+  };
+}
+
 export function useSelectExposure(sampleId: number) {
   const username = useAppState((s) => s.username);
   const inner = useQueueMutation(selectExposureMutator, { sampleId, username, clientId: CLIENT_ID });
