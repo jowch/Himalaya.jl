@@ -1,0 +1,208 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Skeleton } from "boneyard-js/react";
+import {
+  useCorpusSamples,
+  useExposures,
+  useSetExposureStatus,
+  useSelectExposure,
+  useAddCorpusSampleTag,
+  useRemoveCorpusSampleTag,
+} from "../../queries";
+import type { Tag } from "../ui";
+import { BigFrame } from "../components/BigFrame";
+import { ThumbnailGallery } from "../components/ThumbnailGallery";
+import { LoupeSidePanel } from "../components/LoupeSidePanel";
+import { PlateHeader } from "../components/PlateHeader";
+import {
+  defaultExposureId,
+  buildExposureImageUrl,
+  toGalleryExposures,
+  toMetaEntries,
+  toLoupeTags,
+  findSampleTagId,
+} from "./loupeAdapters";
+
+// Boneyard fixture — a real render with mock props so the headless capture CLI
+// measures the greenfield loupe body. image_path:null → DetectorImage takes its
+// placeholder branch (a plain rectangle at the frame's fixed aspect).
+const FIXTURE_EXPOSURE = {
+  id: 0, sample_id: 0, filename: "JC000-001.dat", kind: "file" as const,
+  selected: false, status: "accepted" as const, image_path: null,
+  image_version: "", tags: [], sources: [],
+  trace_hash: null, analysis_inputs_hash: null,
+};
+const LOUPE_FIXTURE = (
+  <div className="grid grid-cols-[1fr_286px] gap-7">
+    <div>
+      <BigFrame src={null} caption="frame 1 of 1 · kept" />
+      <ThumbnailGallery
+        exposures={[{ id: 0, src: null, frameNo: 1 }]}
+        selectedId={0}
+        size="lg"
+        align="center"
+        className="mt-3"
+      />
+    </div>
+    <LoupeSidePanel
+      meta={toMetaEntries(FIXTURE_EXPOSURE, [FIXTURE_EXPOSURE])}
+      dropped={false}
+      isRepresentative={false}
+      tags={[]}
+    />
+  </div>
+);
+
+/**
+ * LoupePage (greenfield) — the sample loupe at /samples/loupe/:sampleId.
+ * URL-owned: the sample id is the route param, never Zustand `activeSampleId`.
+ * Mounts body-only inside the carried CorpusShell <Outlet>.
+ */
+export function LoupePage(): JSX.Element {
+  const { sampleId: sampleIdParam } = useParams<{ sampleId: string }>();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const sampleId = Number(sampleIdParam);
+  const hasValidId = Number.isFinite(sampleId);
+
+  const corpusQ = useCorpusSamples();
+  const exposuresQ = useExposures(hasValidId ? sampleId : undefined);
+
+  const sample = corpusQ.data?.find((s) => s.id === sampleId);
+  const exposures = useMemo(() => exposuresQ.data ?? [], [exposuresQ.data]);
+  const isLoading = corpusQ.isLoading || exposuresQ.isLoading;
+
+  // Active exposure — local state, defaulted by defaultExposureId, reset on
+  // sample change so the next sample picks its own default.
+  const [activeId, setActiveId] = useState<number | undefined>(undefined);
+  useEffect(() => { setActiveId(undefined); }, [sampleId]);
+  const computedDefault = defaultExposureId(exposures);
+  useEffect(() => {
+    if (activeId === undefined && computedDefault !== undefined) setActiveId(computedDefault);
+  }, [activeId, computedDefault]);
+  const activeExposure = exposures.find((e) => e.id === activeId);
+
+  const frameIndex = exposures.findIndex((e) => e.id === activeId);
+  const exposurePosition =
+    frameIndex >= 0 ? `exposure ${frameIndex + 1} of ${exposures.length}` : "—";
+
+  const setStatus = useSetExposureStatus(hasValidId ? sampleId : 0);
+  const setRepresentative = useSelectExposure(hasValidId ? sampleId : 0);
+  const addTag = useAddCorpusSampleTag(hasValidId ? sampleId : 0);
+  const removeTag = useRemoveCorpusSampleTag(hasValidId ? sampleId : 0);
+
+  const handleDropToggle = useCallback(() => {
+    if (!activeExposure) return;
+    setStatus.mutate({
+      exposureId: activeExposure.id,
+      status: activeExposure.status === "rejected" ? null : "rejected",
+    });
+  }, [activeExposure, setStatus]);
+
+  const handleSetRepresentative = useCallback(() => {
+    if (!activeExposure) return;
+    setRepresentative.mutate(activeExposure.id);
+  }, [activeExposure, setRepresentative]);
+
+  const handleAddTag = useCallback((t: Tag) => {
+    addTag.mutate({ key: t.key, value: t.value ?? "" });
+  }, [addTag]);
+
+  const handleRemoveTag = useCallback((t: Tag) => {
+    if (!sample) return;
+    const id = findSampleTagId(sample.tags, t);
+    if (id !== undefined) removeTag.mutate(id); // optimistic-add w/o id → no-op (ledger risk)
+  }, [removeTag, sample]);
+
+  const flip = useCallback((delta: number) => {
+    if (activeId === undefined || exposures.length === 0) return;
+    const idx = exposures.findIndex((e) => e.id === activeId);
+    if (idx < 0) return;
+    const next = Math.min(Math.max(idx + delta, 0), exposures.length - 1);
+    setActiveId(exposures[next]!.id);
+  }, [activeId, exposures]);
+
+  const goBack = useCallback(() => {
+    const beamtime = searchParams.get("beamtime");
+    navigate(beamtime ? `/samples?beamtime=${beamtime}` : "/samples");
+  }, [navigate, searchParams]);
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent): void {
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      if (e.key === "ArrowLeft") flip(-1);
+      else if (e.key === "ArrowRight") flip(1);
+      else if (e.key === "x" || e.key === "X") handleDropToggle();
+      else if (e.key === "r" || e.key === "R") handleSetRepresentative();
+      else if (e.key === "Escape") goBack();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [flip, handleDropToggle, handleSetRepresentative, goBack]);
+
+  if (!corpusQ.isLoading && !sample) {
+    return (
+      <div data-testid="loupe-page" className="mx-auto max-w-[1100px] px-8 py-7">
+        <div data-testid="loupe-not-found" className="rounded border border-hair-strong p-8 text-sm text-ink-faint">
+          Sample not found.{" "}
+          <button onClick={goBack} className="font-semibold text-print-accent hover:underline">
+            Back to the sheet
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const isDropped = activeExposure?.status === "rejected";
+
+  return (
+    <div data-testid="loupe-page" className="mx-auto max-w-[1100px] px-8 py-7">
+      <button data-testid="loupe-back" onClick={goBack} className="mb-3.5 text-sm font-semibold text-print-accent hover:underline">
+        ← Back to the sheet
+      </button>
+      <PlateHeader
+        title={sample?.display_name ?? sample?.name ?? "—"}
+        subtitle={`${sample?.name ?? "—"} · ${exposurePosition}`}
+        className="mb-5"
+      />
+      <Skeleton name="loupe" className="block" loading={isLoading} stagger={50} transition={200}
+        fixture={LOUPE_FIXTURE}
+        fallback={<div data-testid="loupe-skeleton" className="p-8 text-sm italic text-ink-faint">Loading sample…</div>}>
+        <div className="grid grid-cols-[1fr_286px] gap-7">
+          {sample && activeExposure ? (
+            <>
+              <div>
+                <BigFrame
+                  src={buildExposureImageUrl(activeExposure)}
+                  caption={`frame ${frameIndex + 1} of ${exposures.length} · ${isDropped ? "dropped" : "kept"}`}
+                  rejected={isDropped}
+                />
+                <ThumbnailGallery
+                  exposures={toGalleryExposures(exposures)}
+                  {...(activeId !== undefined ? { selectedId: activeId } : {})}
+                  onSelect={setActiveId}
+                  size="lg"
+                  align="center"
+                  className="mt-3"
+                />
+              </div>
+              <LoupeSidePanel
+                meta={toMetaEntries(activeExposure, exposures)}
+                dropped={!!isDropped}
+                isRepresentative={activeExposure.selected}
+                tags={toLoupeTags(sample.tags)}
+                onToggleDrop={handleDropToggle}
+                onSetRepresentative={handleSetRepresentative}
+                onAddTag={handleAddTag}
+                onRemoveTag={handleRemoveTag}
+              />
+            </>
+          ) : (
+            <div className="col-span-2 p-8 text-sm text-ink-faint">This sample has no exposures.</div>
+          )}
+        </div>
+      </Skeleton>
+    </div>
+  );
+}
