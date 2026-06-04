@@ -143,35 +143,37 @@ export function toDetectorRings(
 // PHYSICS-REVIEWED √N labelling.
 // The legacy CombPanel draws teeth from `ix.predicted_q` but labels them by
 // ORDER INDEX (1,2,3…), not √N. The greenfield comb wants √N labels consistent
-// with the custom-index physics, so we recover them: from the index's own
-// lattice we regenerate the reflection list and label each predicted_q tooth by
-// the √N of the NEAREST reflection (nearest by |q|).
+// with the custom-index physics, so we recover N from the DIFFRACTION Q-LAW —
+// NOT by matching against customRefls' truncated `SYMS.Ms` list. That list stops
+// at a handful of orders, so nearest-matching clamps/mislabels every higher
+// order (Pn3m √10..√16 → "√9", Im3m √14..√20 → "√12", Lamellar 6..11 → "√5"),
+// and position-aligning fails too where SYMS skips an order the backend keeps
+// (Hexagonal SYMS.Ms omits √11).
 //
-// We reconstruct the lattice via `latticeForFirstOrderOnPeak(phase, basis)`:
-// `basis` IS the first-order q the backend stored (the q₁ slope; see
-// customIndex.basisFor), and customRefls' first reflection sits at that q, so
-// passing `basis` as the "first-order peak q" reproduces exactly the index's
-// own comb. For an unknown symmetry (phase ∉ SYMS) there is no reflection list,
-// so we fall back to an order-index label ("√?·i") and never throw.
+// q ∝ √N for cubic AND hexagonal (both q ∝ √(quadratic form)); q ∝ N for
+// lamellar. We anchor on `predicted_q[0]` (== basis, the q₁ slope; see
+// customIndex.basisFor) and the first allowed reflection's N (n1), then solve
+// the q-law per order:
+//   lamellar:  N = round(n1 · q/q0)         (q ∝ N)
+//   cubic/hex: N = round(n1 · (q/q0)²)      (q ∝ √N ⇒ N = N1·(q/q0)²)
+// For a genuinely-unknown symmetry (Square/Fm3m/Fd3m ∉ SYMS) we fall back to an
+// honest order-index label ("√?·i") and never throw.
 function labelTeeth(phase: string, predictedQ: number[]): string[] {
-  const known = SYMS[phase] !== undefined;
-  if (!known || predictedQ.length === 0) {
-    // Fallback: no √N basis for an unknown symmetry — label by order, no crash.
+  const spec = SYMS[phase];
+  if (!spec || predictedQ.length === 0) {
+    // Fallback: no q-law basis for an unknown symmetry — label by order, no crash.
     return predictedQ.map((_, i) => `√?·${i + 1}`);
   }
-  const firstQ = predictedQ.find((q) => q > 0);
-  if (firstQ === undefined) return predictedQ.map((_, i) => `√?·${i + 1}`);
-  const val = latticeForFirstOrderOnPeak(phase, firstQ);
-  const refls = customRefls(phase, val);
+  const q0 = predictedQ[0]!;
+  if (q0 <= 0) return predictedQ.map((_, i) => `√?·${i + 1}`);
+  const val = latticeForFirstOrderOnPeak(phase, q0);
+  const n1 = customRefls(phase, val)[0]?.N ?? 1; // first allowed N (e.g. Pn3m → 2)
   return predictedQ.map((q) => {
-    if (refls.length === 0) return "√?";
-    let best = refls[0]!;
-    let bestD = Math.abs(refls[0]!.q - q);
-    for (const r of refls) {
-      const d = Math.abs(r.q - q);
-      if (d < bestD) { bestD = d; best = r; }
-    }
-    return `√${best.N}`;
+    const ratio = q / q0;
+    const n = spec.kind === "lamellar"
+      ? Math.round(n1 * ratio)          // q ∝ N
+      : Math.round(n1 * ratio * ratio); // cubic + hex: q ∝ √N ⇒ N = N1·(q/q0)²
+    return `√${n}`;
   });
 }
 

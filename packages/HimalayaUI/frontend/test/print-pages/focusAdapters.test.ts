@@ -233,6 +233,52 @@ describe("toCombSeries", () => {
     // fallback labels are non-empty strings, no throw
     expect(s.teeth.every((t) => typeof t.label === "string" && t.label.length > 0)).toBe(true);
   });
+
+  it("labels a full Pn3m index BEYOND SYMS.Ms by the q-law (no √9 clamp on √10..√16)", () => {
+    // q ∝ √N for cubic, anchored on √2 (basis = q0). Build predicted_q from a
+    // single basis so q/q0 ratios are exact: q_N = q0·√(N/2).
+    const q0 = 0.10; // √2 order
+    const Ns = [2, 3, 4, 6, 8, 9, 10, 11, 12, 14, 16];
+    const predicted_q = Ns.map((N) => q0 * Math.sqrt(N / 2));
+    const active = [
+      ix({ id: 1, phase: "Pn3m", basis: q0, lattice_d: null, r_squared: null,
+           predicted_q, peaks: [] }),
+    ];
+    const { assigned } = toCombSeries(active, []);
+    const labels = assigned[0]!.teeth.map((t) => t.label);
+    expect(labels).toEqual(Ns.map((N) => `√${N}`));
+    // the tail orders that USED to clamp to √9 are now correct:
+    expect(labels.slice(-3)).toEqual(["√12", "√14", "√16"]);
+  });
+
+  it("labels the Hexagonal √11 order correctly (SYMS.Ms omits 11; no √12 mislabel)", () => {
+    // hex: q ∝ √M, anchored on M=1 (n1=1). q_M = q0·√M.
+    const q0 = 0.05; // M=1
+    const Ms = [1, 3, 4, 7, 9, 11, 12];
+    const predicted_q = Ms.map((M) => q0 * Math.sqrt(M));
+    const active = [
+      ix({ id: 1, phase: "Hexagonal", basis: q0, lattice_d: null, r_squared: null,
+           predicted_q, peaks: [] }),
+    ];
+    const { assigned } = toCombSeries(active, []);
+    const labels = assigned[0]!.teeth.map((t) => t.label);
+    expect(labels).toEqual(["√1", "√3", "√4", "√7", "√9", "√11", "√12"]);
+    // √11 is NOT in SYMS.Hexagonal.Ms — nearest/position matching would mislabel it.
+    expect(labels[5]).toBe("√11");
+  });
+
+  it("labels a Lamellar index by the linear q-law (q ∝ N) beyond SYMS.Ms", () => {
+    // lamellar: q ∝ N, n1=1. orders 1..8 (SYMS.Ms stops at 5).
+    const q0 = 0.04;
+    const Ns = [1, 2, 3, 4, 5, 6, 7, 8];
+    const predicted_q = Ns.map((N) => q0 * N);
+    const active = [
+      ix({ id: 1, phase: "Lamellar", basis: q0, lattice_d: null, r_squared: null,
+           predicted_q, peaks: [] }),
+    ];
+    const { assigned } = toCombSeries(active, []);
+    expect(assigned[0]!.teeth.map((t) => t.label)).toEqual(Ns.map((N) => `√${N}`));
+  });
 });
 
 // ── CUSTOM_SYMS ───────────────────────────────────────────────────────────────
