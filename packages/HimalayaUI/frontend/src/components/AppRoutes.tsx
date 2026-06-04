@@ -6,7 +6,7 @@ import * as api from "../api";
 import { useGlobalShortcuts } from "../hooks/useGlobalShortcuts";
 import { CorpusShell } from "./CorpusShell";
 import { SamplesPage } from "../pages/SamplesPage";
-import { LoupePage } from "../pages/LoupePage";
+import { LoupePage } from "../print/pages/LoupePage";
 import { FocusWorkspacePage } from "../pages/FocusWorkspacePage";
 import { SeriesFolioPage } from "../pages/SeriesFolioPage";
 import { SeriesBuilderPage } from "../pages/SeriesBuilderPage";

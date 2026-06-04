@@ -125,9 +125,10 @@ test("representative: picking a representative in the loupe PATCHes select", asy
 
   await page.goto("/samples/loupe/10");
   await expect(page.getByTestId("loupe-page")).toBeVisible();
-  // Open the loupe on exposure 2 by clicking its strip thumbnail.
-  await page.getByTestId("thumb-cell-2").click();
-  await page.getByTestId("loupe-set-representative").click();
+  // Open the loupe on exposure 2 by clicking its strip thumbnail (frameNo 2 →
+  // nth(1)). Every greenfield strip thumb shares data-testid="thumbnail".
+  await page.getByTestId("thumbnail").nth(1).click();
+  await page.getByRole("button", { name: "Set as representative" }).click();
 
   await expect.poll(() => selected).toBe(true);
 });
@@ -136,9 +137,9 @@ test("loupe-flip: arrow keys move between exposures in the loupe", async ({ page
   await mockCorpus(page);
   await page.goto("/samples/loupe/10");
   await expect(page.getByTestId("loupe-page")).toBeVisible();
-  // Loupe opens on the representative (exposure 1 → pos1.dat). Assert via the
-  // sidebar's filename meta-row (data-testid, per e2e/AGENTS.md), not text.
-  await expect(page.getByTestId("loupe-meta-filename")).toHaveText("pos1.dat");
+  // Loupe opens on the representative (exposure 1, frame 1). The greenfield
+  // page has no filename row; assert the active frame via the BigFrame caption.
+  await expect(page.locator('[data-role="frame-caption"]')).toContainText("frame 1 of");
   await page.keyboard.press("ArrowRight");
-  await expect(page.getByTestId("loupe-meta-filename")).toHaveText("pos2.dat");
+  await expect(page.locator('[data-role="frame-caption"]')).toContainText("frame 2 of");
 });
