@@ -25,6 +25,16 @@ export interface SampleTableRowProps {
   onAddTag?: (t: Tag) => void;
   onRemoveTag?: (t: Tag) => void;
   phase?: string | null;
+  /** When set, the sample name in the SpecCell becomes a button that opens the
+   *  loupe view for this sample. */
+  onOpenLoupe?: () => void;
+  /** When set, the status cell becomes a keyboard-accessible Focus door — a
+   *  button that opens the indexing workspace for this sample. Absent → the
+   *  status cell is a plain div (other consumers unaffected). */
+  onOpenFocus?: () => void;
+  /** When set, double-clicking a thumbnail fires this with the exposure id,
+   *  opening the loupe at that frame. Forwarded to ThumbnailGallery.onActivate. */
+  onActivateExposure?: (id: number) => void;
   /** PLACEMENT-ONLY. Appended last to the root. */
   className?: string;
 }
@@ -74,6 +84,9 @@ export function SampleTableRow({
   onAddTag,
   onRemoveTag,
   phase,
+  onOpenLoupe,
+  onOpenFocus,
+  onActivateExposure,
   className,
 }: SampleTableRowProps): JSX.Element {
   const restTint = screened ? "" : " bg-paper-sunk";
@@ -86,7 +99,12 @@ export function SampleTableRow({
     >
       <div className="grid" style={{ gridTemplateColumns: SAMPLE_TABLE_COLS }}>
         <div className={CELL}>
-          <SpecCell name={name} sampleId={sampleId} screened={screened} />
+          <SpecCell
+            name={name}
+            sampleId={sampleId}
+            screened={screened}
+            {...(onOpenLoupe ? { onOpenLoupe } : {})}
+          />
         </div>
         <div className={CELL}>
           <ThumbnailGallery
@@ -96,6 +114,7 @@ export function SampleTableRow({
             {...(selectedExposureId != null ? { selectedId: selectedExposureId } : {})}
             {...(selectedExposureIds != null ? { selectedIds: selectedExposureIds } : {})}
             {...(onSelectExposure ? { onSelect: onSelectExposure } : {})}
+            {...(onActivateExposure ? { onActivate: onActivateExposure } : {})}
           />
         </div>
         <div className={CELL}>
@@ -115,7 +134,18 @@ export function SampleTableRow({
           />
         </div>
         <div className={CELL}>
-          <StatusCell {...(phase !== undefined ? { phase } : {})} />
+          {onOpenFocus ? (
+            <button
+              type="button"
+              onClick={onOpenFocus}
+              aria-label={phase ? `Open indexing for ${name} (${phase})` : `Index ${name}`}
+              className="flex items-center rounded-md px-2 -mx-2 transition-colors hover:bg-plate/60"
+            >
+              <StatusCell {...(phase !== undefined ? { phase } : {})} />
+            </button>
+          ) : (
+            <StatusCell {...(phase !== undefined ? { phase } : {})} />
+          )}
         </div>
       </div>
     </div>

@@ -119,3 +119,44 @@ describe("<SampleTableRow> exposure selection", () => {
     expect((thumbs[2].getAttribute("data-state") ?? "").split(" ")).toContain("selected");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Nav seams (Task 3)
+// ---------------------------------------------------------------------------
+
+const baseProps = {
+  name: "POPC",
+  sampleId: "#42",
+  exposures: [{ id: 1, src: null, frameNo: 1 }],
+  kept: 1,
+  total: 1,
+  tags: [] as import("../../src/print/ui/tag").Tag[],
+};
+
+describe("<SampleTableRow> nav seams", () => {
+  it("forwards onOpenLoupe to the SpecCell name button", () => {
+    const onOpenLoupe = vi.fn();
+    render(<SampleTableRow {...baseProps} onOpenLoupe={onOpenLoupe} />);
+    fireEvent.click(screen.getByRole("button", { name: /POPC/ }));
+    expect(onOpenLoupe).toHaveBeenCalled();
+  });
+
+  it("forwards onActivateExposure to the gallery on thumb double-click", () => {
+    const onActivateExposure = vi.fn();
+    render(<SampleTableRow {...baseProps} onActivateExposure={onActivateExposure} />);
+    fireEvent.doubleClick(screen.getAllByTestId("thumbnail")[0]);
+    expect(onActivateExposure).toHaveBeenCalledWith(1);
+  });
+
+  it("makes the status cell a Focus door (button) when onOpenFocus is set", () => {
+    const onOpenFocus = vi.fn();
+    render(<SampleTableRow {...baseProps} phase={null} onOpenFocus={onOpenFocus} />);
+    fireEvent.click(screen.getByRole("button", { name: /index/i }));
+    expect(onOpenFocus).toHaveBeenCalled();
+  });
+
+  it("status cell is NOT a button when onOpenFocus is absent", () => {
+    render(<SampleTableRow {...baseProps} phase={null} />);
+    expect(screen.queryByRole("button", { name: /index/i })).toBeNull();
+  });
+});
