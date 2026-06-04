@@ -56,4 +56,46 @@ describe("TracePlate", () => {
     );
     expect(screen.getByTestId("trace-plate-plot")).toBeInTheDocument();
   });
+
+  // q-link forwarding: an incoming hoveredQ near a peak (q=0.05) reaches the
+  // inner TracePlot, which lights the matching peak → the q-readout chip appears.
+  it("forwards hoveredQ to the inner TracePlot (q-readout chip lights up)", () => {
+    const { container } = render(
+      <TracePlate {...base} hoveredQ={0.05} interaction={{ onXDomain: () => {} }} />,
+    );
+    const readout = container.querySelector('[data-role="q-readout"]');
+    expect(readout).toBeTruthy();
+    expect(readout!.querySelector("text")!.textContent).toBe("0.050");
+  });
+
+  // onHoverQ forwarding: hovering (via the deterministic focus path) a peak glyph
+  // bubbles the peak's q out through TracePlate's onHoverQ.
+  it("forwards onHoverQ from the inner TracePlot", () => {
+    const onHoverQ = vi.fn();
+    const { container } = render(
+      <TracePlate {...base} onHoverQ={onHoverQ} interaction={{ onXDomain: () => {} }} />,
+    );
+    const peakG = container.querySelector('[data-role="plot-peaks"] > g')!;
+    onHoverQ.mockClear();
+    fireEvent.focus(peakG);
+    expect(onHoverQ).toHaveBeenCalledWith(0.05);
+  });
+
+  // highlightPeakIds forwarding: a peak NOT in the set dims (data-dimmed=true).
+  it("forwards highlightPeakIds (a non-member peak dims)", () => {
+    const twoPeaks: TraceModel = {
+      ...model,
+      peaks: [
+        { id: 0, q: 0.05, intensity: 40, source: "auto" },
+        { id: 1, q: 0.1, intensity: 20, source: "auto" },
+      ],
+    };
+    const { container } = render(
+      <TracePlate {...base} trace={twoPeaks} highlightPeakIds={new Set([0])} />,
+    );
+    const allGs = container.querySelectorAll('[data-role="plot-peaks"] > g');
+    const g1 = Array.from(allGs).find((g) => g.querySelector('[data-peak-id="1"]'));
+    expect(g1).toBeTruthy();
+    expect(g1!.getAttribute("data-dimmed")).toBe("true");
+  });
 });

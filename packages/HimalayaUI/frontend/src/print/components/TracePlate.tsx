@@ -37,6 +37,12 @@ export interface TracePlateProps {
   /** Controlled visible q-window; `null`/omitted = full data extent. Feed the
    *  domain emitted by `interaction.onXDomain` back here to render scroll-zoom. */
   xDomain?: [number, number] | null;
+  /** Incoming hot q from another panel (q-link sink) → forwarded to TracePlot. */
+  hoveredQ?: number;
+  /** Emitted when the user hovers a peak (q-link source) → forwarded to TracePlot. */
+  onHoverQ?: (q: number | undefined) => void;
+  /** When non-empty, peaks NOT in this set dim to neutral → forwarded to TracePlot. */
+  highlightPeakIds?: ReadonlySet<number>;
   /** Plot height in px. Default 360. */
   plotHeight?: number;
   /** PLACEMENT-ONLY. */
@@ -55,6 +61,9 @@ export function TracePlate({
   onToggleAddPeak,
   interaction,
   xDomain,
+  hoveredQ,
+  onHoverQ,
+  highlightPeakIds,
   plotHeight = 360,
   className,
 }: TracePlateProps): JSX.Element {
@@ -95,6 +104,9 @@ export function TracePlate({
         axes
         {...(xDomain !== undefined ? { xDomain } : {})}
         {...(interaction !== undefined ? { interaction } : {})}
+        {...(hoveredQ !== undefined ? { hoveredQ } : {})}
+        {...(onHoverQ !== undefined ? { onHoverQ } : {})}
+        {...(highlightPeakIds !== undefined ? { highlightPeakIds } : {})}
         paperColor="var(--color-plate)"
         data-testid="trace-plate-plot"
         className="mt-2"
