@@ -1,4 +1,5 @@
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { PAGE_WIDTHS } from "../print/components/PageFrame";
 import { useAppState } from "../state";
 import { useCorpusSamples, useExperiments } from "../queries";
 import { sampleDisplayName } from "../lib/sample/displayName";
@@ -99,7 +100,7 @@ export function CorpusTopbar(): JSX.Element {
           monitor — the "app max-width" the per-surface page shells also use. */}
       <div
         data-testid="corpus-topbar-inner"
-        className="mx-auto flex h-full w-full max-w-[1240px] items-center gap-4 px-6"
+        className={`mx-auto flex h-full w-full ${PAGE_WIDTHS.sheet} items-center gap-4 px-6`}
       >
       <Link
         to="/samples"

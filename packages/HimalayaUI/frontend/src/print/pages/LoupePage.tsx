@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { PageFrame } from "../components/PageFrame";
 import { Skeleton } from "boneyard-js/react";
 import {
   useCorpusSamples,
@@ -143,66 +144,70 @@ export function LoupePage(): JSX.Element {
 
   if (!corpusQ.isLoading && !sample) {
     return (
-      <div data-testid="loupe-page" className="mx-auto max-w-[1100px] px-8 py-7">
-        <div data-testid="loupe-not-found" className="rounded border border-hair-strong p-8 text-sm text-ink-faint">
-          Sample not found.{" "}
-          <button onClick={goBack} className="font-semibold text-print-accent hover:underline">
-            Back to the sheet
-          </button>
+      <PageFrame width="loupe" className="px-8 py-7">
+        <div data-testid="loupe-page">
+          <div data-testid="loupe-not-found" className="rounded border border-hair-strong p-8 text-sm text-ink-faint">
+            Sample not found.{" "}
+            <button onClick={goBack} className="font-semibold text-print-accent hover:underline">
+              Back to the sheet
+            </button>
+          </div>
         </div>
-      </div>
+      </PageFrame>
     );
   }
 
   const isDropped = activeExposure?.status === "rejected";
 
   return (
-    <div data-testid="loupe-page" className="mx-auto max-w-[1100px] px-8 py-7">
-      <button data-testid="loupe-back" onClick={goBack} className="mb-3.5 text-sm font-semibold text-print-accent hover:underline">
-        ← Back to the sheet
-      </button>
-      <PlateHeader
-        title={sample?.display_name ?? sample?.name ?? "—"}
-        subtitle={`${sample?.name ?? "—"} · ${exposurePosition}`}
-        className="mb-5"
-      />
-      <Skeleton name="loupe" className="block" loading={isLoading} stagger={50} transition={200}
-        fixture={LOUPE_FIXTURE}
-        fallback={<div data-testid="loupe-skeleton" className="p-8 text-sm italic text-ink-faint">Loading sample…</div>}>
-        <div className="grid grid-cols-[minmax(0,1fr)_286px] gap-7">
-          {sample && activeExposure ? (
-            <>
-              <div className="min-w-0">
-                <BigFrame
-                  src={buildExposureImageUrl(activeExposure)}
-                  caption={`frame ${frameIndex + 1} of ${exposures.length} · ${isDropped ? "dropped" : "kept"}`}
-                  rejected={isDropped}
+    <PageFrame width="loupe" className="px-8 py-7">
+      <div data-testid="loupe-page">
+        <button data-testid="loupe-back" onClick={goBack} className="mb-3.5 text-sm font-semibold text-print-accent hover:underline">
+          ← Back to the sheet
+        </button>
+        <PlateHeader
+          title={sample?.display_name ?? sample?.name ?? "—"}
+          subtitle={`${sample?.name ?? "—"} · ${exposurePosition}`}
+          className="mb-5"
+        />
+        <Skeleton name="loupe" className="block" loading={isLoading} stagger={50} transition={200}
+          fixture={LOUPE_FIXTURE}
+          fallback={<div data-testid="loupe-skeleton" className="p-8 text-sm italic text-ink-faint">Loading sample…</div>}>
+          <div className="grid grid-cols-[minmax(0,1fr)_286px] gap-7">
+            {sample && activeExposure ? (
+              <>
+                <div className="min-w-0">
+                  <BigFrame
+                    src={buildExposureImageUrl(activeExposure)}
+                    caption={`frame ${frameIndex + 1} of ${exposures.length} · ${isDropped ? "dropped" : "kept"}`}
+                    rejected={isDropped}
+                  />
+                  <ThumbnailGallery
+                    exposures={toGalleryExposures(exposures)}
+                    {...(activeId !== undefined ? { selectedId: activeId } : {})}
+                    onSelect={setActiveId}
+                    size="lg"
+                    align="center"
+                    className="mt-3"
+                  />
+                </div>
+                <LoupeSidePanel
+                  meta={toMetaEntries(activeExposure, exposures)}
+                  dropped={!!isDropped}
+                  isRepresentative={activeExposure.selected}
+                  tags={toLoupeTags(sample.tags)}
+                  onToggleDrop={handleDropToggle}
+                  onSetRepresentative={handleSetRepresentative}
+                  onAddTag={handleAddTag}
+                  onRemoveTag={handleRemoveTag}
                 />
-                <ThumbnailGallery
-                  exposures={toGalleryExposures(exposures)}
-                  {...(activeId !== undefined ? { selectedId: activeId } : {})}
-                  onSelect={setActiveId}
-                  size="lg"
-                  align="center"
-                  className="mt-3"
-                />
-              </div>
-              <LoupeSidePanel
-                meta={toMetaEntries(activeExposure, exposures)}
-                dropped={!!isDropped}
-                isRepresentative={activeExposure.selected}
-                tags={toLoupeTags(sample.tags)}
-                onToggleDrop={handleDropToggle}
-                onSetRepresentative={handleSetRepresentative}
-                onAddTag={handleAddTag}
-                onRemoveTag={handleRemoveTag}
-              />
-            </>
-          ) : (
-            <div className="col-span-2 p-8 text-sm text-ink-faint">This sample has no exposures.</div>
-          )}
-        </div>
-      </Skeleton>
-    </div>
+              </>
+            ) : (
+              <div className="col-span-2 p-8 text-sm text-ink-faint">This sample has no exposures.</div>
+            )}
+          </div>
+        </Skeleton>
+      </div>
+    </PageFrame>
   );
 }
