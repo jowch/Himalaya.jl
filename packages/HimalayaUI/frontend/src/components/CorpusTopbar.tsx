@@ -92,8 +92,15 @@ export function CorpusTopbar(): JSX.Element {
   return (
     <header
       data-testid="corpus-topbar"
-      className="h-14 shrink-0 flex items-center gap-4 px-6 border-b border-hair bg-paper"
+      className="h-14 shrink-0 border-b border-hair bg-paper"
     >
+      {/* Full-bleed bar (border + background span the window); the controls live
+          in a centered frame so they don't sprawl to the screen edges on a wide
+          monitor — the "app max-width" the per-surface page shells also use. */}
+      <div
+        data-testid="corpus-topbar-inner"
+        className="mx-auto flex h-full w-full max-w-[1240px] items-center gap-4 px-6"
+      >
       <Link
         to="/samples"
         data-testid="corpus-wordmark"
@@ -300,6 +307,7 @@ export function CorpusTopbar(): JSX.Element {
           )}
         </button>
       )}
+      </div>
     </header>
   );
 }
