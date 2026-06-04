@@ -143,3 +143,43 @@ test("loupe-flip: arrow keys move between exposures in the loupe", async ({ page
   await page.keyboard.press("ArrowRight");
   await expect(page.locator('[data-role="frame-caption"]')).toContainText("frame 2 of");
 });
+
+// Regression: a many-exposure loupe must NOT let the filmstrip balloon the grid's
+// `1fr` column and shove the side panel off-screen. (Found in the Phase-4 loupe
+// walkthrough: a CSS `1fr` track has an implicit `min-width:auto`, so the 20-thumb
+// strip forced the column to ~1552px and pushed the side panel past the viewport.
+// Fixed via `minmax(0,1fr)` + `min-w-0` on the column + `justify-center-safe` on
+// the strip.) The mockup only ever drew a handful of thumbs, so it never exposed this.
+test("loupe layout: a many-exposure filmstrip keeps the side panel on-screen", async ({ page }) => {
+  await page.setViewportSize({ width: 1200, height: 800 });
+  const MANY = Array.from({ length: 16 }, (_, i) => ({
+    id: 500 + i, sample_id: 11, filename: `f${i + 1}.dat`, kind: "file",
+    selected: i === 0, status: i === 0 ? "accepted" : null,
+    image_path: null, image_version: "", tags: [],
+    sources: [], trace_hash: null, analysis_inputs_hash: null,
+  }));
+  await page.route("**/api/users", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
+  await page.route("**/api/experiments", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([EXPERIMENT]) }));
+  await page.route("**/api/samples", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([
+      { id: 11, experiment_id: 1, display_name: "D-many", name: "run11", notes: null, tags: [], q_units: "A-1" },
+    ]) }));
+  await page.route("**/api/samples/11/exposures*", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(MANY) }));
+  await page.route("**/api/samples/11/messages", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
+
+  await page.goto("/samples/loupe/11");
+  await expect(page.getByTestId("loupe-page")).toBeVisible();
+
+  // The filmstrip genuinely overflows its column (so the guard is meaningful)…
+  const strip = page.getByTestId("thumbnail-gallery");
+  expect(await strip.evaluate((g) => g.scrollWidth > g.clientWidth + 1)).toBe(true);
+
+  // …yet the side panel's right edge stays within the viewport.
+  const box = await page.getByTestId("loupe-side-panel").boundingBox();
+  expect(box).not.toBeNull();
+  expect(box!.x + box!.width).toBeLessThanOrEqual(1200 + 1);
+});

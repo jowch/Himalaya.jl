@@ -33,8 +33,8 @@ const FIXTURE_EXPOSURE = {
   trace_hash: null, analysis_inputs_hash: null,
 };
 const LOUPE_FIXTURE = (
-  <div className="grid grid-cols-[1fr_286px] gap-7">
-    <div>
+  <div className="grid grid-cols-[minmax(0,1fr)_286px] gap-7">
+    <div className="min-w-0">
       <BigFrame src={null} caption="frame 1 of 1 · kept" />
       <ThumbnailGallery
         exposures={[{ id: 0, src: null, frameNo: 1 }]}
@@ -169,10 +169,10 @@ export function LoupePage(): JSX.Element {
       <Skeleton name="loupe" className="block" loading={isLoading} stagger={50} transition={200}
         fixture={LOUPE_FIXTURE}
         fallback={<div data-testid="loupe-skeleton" className="p-8 text-sm italic text-ink-faint">Loading sample…</div>}>
-        <div className="grid grid-cols-[1fr_286px] gap-7">
+        <div className="grid grid-cols-[minmax(0,1fr)_286px] gap-7">
           {sample && activeExposure ? (
             <>
-              <div>
+              <div className="min-w-0">
                 <BigFrame
                   src={buildExposureImageUrl(activeExposure)}
                   caption={`frame ${frameIndex + 1} of ${exposures.length} · ${isDropped ? "dropped" : "kept"}`}
