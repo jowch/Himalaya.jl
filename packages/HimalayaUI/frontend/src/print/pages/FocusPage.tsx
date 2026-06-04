@@ -1,8 +1,8 @@
 import { useMemo, useState, useCallback } from "react";
 import { Skeleton } from "boneyard-js/react";
-import { PageFrame } from "../components/PageFrame";
 import { TracePlate } from "../components/TracePlate";
 import { DetectorPanel } from "../components/DetectorPanel";
+import { ThumbnailGallery } from "../components/ThumbnailGallery";
 import { CombsPanel, type CombView } from "../components/CombsPanel";
 import type { PlotPeak } from "../plot/marks/PlotPeaks";
 import { AssignmentRail } from "../components/AssignmentRail";
@@ -24,7 +24,7 @@ import {
   CUSTOM_SYMS,
   customIndexPreview,
 } from "./focusAdapters";
-import { buildExposureImageUrl } from "./loupeAdapters";
+import { buildExposureImageUrl, toGalleryExposures } from "./loupeAdapters";
 import {
   useCorpusSamples,
   useExperiment,
@@ -63,46 +63,50 @@ const FIXTURE_TRACE = {
   phase: null,
 };
 const FOCUS_FIXTURE = (
-  <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_348px]">
-    {/* work area */}
-    <div className="flex min-h-0 min-w-0 flex-col gap-5">
-      <TracePlate
-        kicker="Integration"
-        title="Sample"
-        subtitle="JC000 · Experiment · frame-001"
-        trace={FIXTURE_TRACE}
-        scale="log"
-        onScaleChange={() => {}}
-        onAutoFit={() => {}}
-        onToggleAddPeak={() => {}}
-      />
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-        <DetectorPanel src={null} />
-        <div className="hidden lg:flex min-h-0 flex-col">
-          <CombsPanel
-            assigned={[]}
-            view="comb"
-            onViewChange={() => {}}
-          />
+  <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_350px]">
+    {/* work column */}
+    <div className="min-w-0 px-8 pt-7 pb-13">
+      <div className="mx-auto flex min-w-0 max-w-[1180px] flex-col gap-[18px]">
+        <TracePlate
+          kicker="Integration"
+          title="Sample"
+          subtitle="JC000 · Experiment · frame-001"
+          trace={FIXTURE_TRACE}
+          scale="log"
+          onScaleChange={() => {}}
+          onAutoFit={() => {}}
+          onToggleAddPeak={() => {}}
+        />
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+          <DetectorPanel src={null} />
+          <div className="hidden lg:flex min-h-0 flex-col">
+            <CombsPanel
+              assigned={[]}
+              view="comb"
+              onViewChange={() => {}}
+            />
+          </div>
         </div>
       </div>
     </div>
 
-    {/* rail */}
-    <AssignmentRail
-      assignment={
-        <AssignmentCart>
-          <PhaseBlock phase="Pn3m" score={0.87} meta="a = 142 Å · 5 reflections" />
-        </AssignmentCart>
-      }
-      candidates={
-        <CandidateList>
-          <CandidateRow phase="Pn3m" score={0.87} why="explains 5 peaks · in the call" selected />
-          <CandidateRow phase="Im3m" score={0.61} why="explains 3 peaks" />
-        </CandidateList>
-      }
-      candidatesNote="Check every phase that is present; a sample can hold more than one."
-    />
+    {/* rail column */}
+    <div className="border-l border-hair bg-paper-sunk px-5 pt-[22px] pb-7">
+      <AssignmentRail
+        assignment={
+          <AssignmentCart>
+            <PhaseBlock phase="Pn3m" score={0.87} meta="a = 142 Å · 5 reflections" />
+          </AssignmentCart>
+        }
+        candidates={
+          <CandidateList>
+            <CandidateRow phase="Pn3m" score={0.87} why="explains 5 peaks · in the call" selected />
+            <CandidateRow phase="Im3m" score={0.61} why="explains 3 peaks" />
+          </CandidateList>
+        }
+        candidatesNote="Check every phase that is present; a sample can hold more than one."
+      />
+    </div>
   </div>
 );
 
@@ -120,6 +124,7 @@ export function FocusPage(): JSX.Element {
   useSyncActiveSampleFromRoute();
   const activeSampleId = useAppState((s) => s.activeSampleId);
   const activeExposureId = useAppState((s) => s.activeExposureId);
+  const setActiveExposure = useAppState((s) => s.setActiveExposure);
   useAutoPickExposure(activeSampleId);
 
   // ── data ────────────────────────────────────────────────────────────────────
@@ -264,14 +269,14 @@ export function FocusPage(): JSX.Element {
   // ── early states ─────────────────────────────────────────────────────────────
   if (!corpusQ.isLoading && !corpusSample) {
     return (
-      <PageFrame width="focus" className="px-6 py-7">
+      <div className="px-8 py-7">
         <div
           data-testid="focus-not-found"
           className="rounded border border-hair-strong p-8 text-sm text-ink-faint"
         >
           Sample not found.
         </div>
-      </PageFrame>
+      </div>
     );
   }
 
@@ -379,8 +384,11 @@ export function FocusPage(): JSX.Element {
   );
 
   // ── layout ───────────────────────────────────────────────────────────────────
+  // Full-bleed per the focus-plot mockup: a [work 1fr · rail 350px] grid with
+  // NO outer max-width — the work column centres its own content at 1180px and
+  // the rail (bg-paper-sunk + left hairline) pins to the right edge.
   return (
-    <PageFrame width="focus" className="px-6 py-7">
+    <>
       <Skeleton
         name="focus"
         className="block"
@@ -399,10 +407,11 @@ export function FocusPage(): JSX.Element {
       >
         <div
           data-testid="focus-workspace"
-          className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_348px]"
+          className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_350px]"
         >
-          {/* work area */}
-          <div className="flex min-h-0 min-w-0 flex-col gap-5">
+          {/* work column — full-bleed; inner content capped at 1180px (mockup .work / .work-inner) */}
+          <div className="min-w-0 px-8 pt-7 pb-13">
+           <div className="mx-auto flex min-w-0 max-w-[1180px] flex-col gap-[18px]">
             <TracePlate
               kicker="Integration"
               title={sampleName}
@@ -440,6 +449,16 @@ export function FocusPage(): JSX.Element {
                 rings={rings}
                 {...(hoveredQ !== undefined ? { hoveredQ } : {})}
                 onHoverQ={setHoveredQ}
+                tools={
+                  exposures.length > 0 ? (
+                    <ThumbnailGallery
+                      exposures={toGalleryExposures(exposures)}
+                      {...(activeExposureId !== undefined ? { selectedId: activeExposureId } : {})}
+                      onSelect={setActiveExposure}
+                      size="xs"
+                    />
+                  ) : undefined
+                }
               />
               <div className="hidden lg:flex min-h-0 flex-col">
                 <CombsPanel
@@ -452,10 +471,11 @@ export function FocusPage(): JSX.Element {
                 />
               </div>
             </div>
+           </div>
           </div>
 
-          {/* rail */}
-          <div className="flex min-h-0 flex-col gap-4">
+          {/* rail column — bg-paper-sunk + left hairline, pinned right (mockup .rail) */}
+          <div className="flex min-h-0 flex-col gap-[22px] border-l border-hair bg-paper-sunk px-5 pt-[22px] pb-7">
             {noExposure ? (
               <div className="p-8 text-sm text-ink-faint">
                 This sample has no exposures.
@@ -473,6 +493,6 @@ export function FocusPage(): JSX.Element {
       </Skeleton>
 
       {modals}
-    </PageFrame>
+    </>
   );
 }

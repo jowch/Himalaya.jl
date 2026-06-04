@@ -1,12 +1,12 @@
 import type { ReactNode } from "react";
 
 /** Single source of truth for per-surface content widths (mockup values).
- *  Changing a surface's width is a one-line edit here. The topbar app-frame
- *  reads `PAGE_WIDTHS.sheet` so the chrome stays coherent. */
+ *  Changing a surface's width is a one-line edit here. Centred surfaces only —
+ *  the focus workspace is full-bleed (work 1fr · rail 350px) and does NOT use a
+ *  PageFrame, so it has no entry here. The app bar is full-bleed too. */
 export const PAGE_WIDTHS = {
   loupe: "max-w-[1100px]",
   sheet: "max-w-[1240px]",
-  focus: "max-w-[1240px]",
   folio: "max-w-[1380px]",
   scoping: "max-w-[760px]",
   builder: "max-w-[1180px]",
