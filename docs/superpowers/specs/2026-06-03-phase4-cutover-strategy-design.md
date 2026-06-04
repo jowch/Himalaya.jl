@@ -48,7 +48,7 @@ So:
 1. Keep the existing `App.tsx` + `AppRoutes` + SSE mount + queue + `CorpusShell` as-is.
 2. Swap one route's page body legacy → greenfield at a time. `AppRoutes` routes by path, so a greenfield page slots in wherever the legacy one was; navigation between mixed pages just works (it is route-based).
 3. Greenfield bodies mount **body-only** inside the existing `CorpusShell` `<Outlet>` (no chrome of their own during migration).
-4. After each swap the whole app still runs — fidelity-gate that one page, recapture its skeleton, commit. A clean checkpoint.
+4. After each swap the whole app still runs — visually check that one page against its mockup, recapture its skeleton, commit. A clean checkpoint.
 5. **Reskin the shell last** — `CorpusShell` / `CorpusTopbar` / `NavModal` / etc. are presentational; swap them in one deliberate step once all six bodies are greenfield.
 
 This satisfies the ledger's hard constraint (atomic per route) while keeping a runnable, demoable app at every step and never producing a giant final-merge diff. The only cost is a transient mixed-look app mid-migration — seen only by the developer, on an unmerged branch.
@@ -69,7 +69,7 @@ Each route is one self-contained, just-in-time unit. Build its gaps *with* the p
 4. **Repoint the route** — swap the route's element legacy → greenfield in `AppRoutes`. App still runs (mixed state).
 5. **Delete the OLD** — remove the legacy page body + its now-orphaned legacy-only components (grep confirms no remaining importers), respecting the ledger's *extract-first* traps. CARRIED is untouched.
 6. **Recapture boneyard** — capture the new page's `bones.json` so the loading skeleton matches the new layout.
-7. **Gate & commit** — fidelity spec vs mockup (fidelity-reviewer), unit tests, e2e (mocked), `npm run lint:design`, `npx tsc --noEmit -p tsconfig.build.json`, `npm run build`. Commit the swap.
+7. **Gate & commit** — **visual check vs mockup** (developer eyeball of the rendered page against the relevant `docs/redesign-mockups/*.html`; there is no automated fidelity harness in this branch — an automated screenshot gate is a possible later sub-project, not a cutover prerequisite), unit tests, e2e (mocked), `npm run lint:design`, `npx tsc --noEmit -p tsconfig.build.json`, `npm run build`. Commit the swap.
 
 ## Build sequence
 
@@ -110,7 +110,7 @@ Backend changes attach to their gating route (traces → folio; 409 relax → bu
 - All six routes render greenfield bodies.
 - `src/pages/**` and the legacy presentational components are deleted; the shell is reskinned.
 - **Zero** legacy imports inside `src/print/**` (grep-clean).
-- Full suite green: Julia (HimalayaUI), Vitest, Playwright (mocked) E2E, and the fidelity gate for all six surfaces.
+- Full suite green: Julia (HimalayaUI), Vitest, Playwright (mocked) E2E; each surface visually checked against its mockup at swap time.
 - Dead message/comparison **routes** removed; comparison **tables + dispatcher branches** retained for replay.
 - The app runs on last-write-wins with **no** conflict UI.
 
