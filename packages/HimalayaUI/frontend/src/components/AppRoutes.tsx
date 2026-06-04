@@ -7,7 +7,7 @@ import { useGlobalShortcuts } from "../hooks/useGlobalShortcuts";
 import { CorpusShell } from "./CorpusShell";
 import { SamplesPage } from "../pages/SamplesPage";
 import { LoupePage } from "../print/pages/LoupePage";
-import { FocusWorkspacePage } from "../pages/FocusWorkspacePage";
+import { FocusPage } from "../print/pages/FocusPage";
 import { SeriesFolioPage } from "../pages/SeriesFolioPage";
 import { SeriesBuilderPage } from "../pages/SeriesBuilderPage";
 import { SeriesScopingPage } from "../pages/SeriesScopingPage";
@@ -88,7 +88,7 @@ export function AppRoutes(): JSX.Element {
         <Route path="/samples" element={<SamplesPage />} />
         <Route path="/samples/loupe/:sampleId" element={<LoupePage />} />
         {/* I4.1 (#178): focus workspace. I4.4 (#181) redirects /index* here. */}
-        <Route path="/sample/:sampleId" element={<FocusWorkspacePage />} />
+        <Route path="/sample/:sampleId" element={<FocusPage />} />
         {/* I3.3 (#173): series folio — corpus-wide masonry of saved series. */}
         <Route path="/series" element={<SeriesFolioPage />} />
         {/* I3.4 (#174): series scoping — the confirm-and-build gate that writes

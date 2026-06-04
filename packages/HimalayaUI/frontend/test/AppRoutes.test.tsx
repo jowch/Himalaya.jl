@@ -171,7 +171,12 @@ describe("AppRoutes — I4.4 index cutover redirects", () => {
       } as Response),
     );
     renderRoutes("/index/lipid/JC001");
-    expect(await screen.findByTestId("focus-workspace-page")).toBeInTheDocument();
+    // Phase-4 cutover: /sample/:id now serves the greenfield FocusPage. The
+    // single ResolveSuccess fetch mock doesn't satisfy the page's corpus-sample
+    // query, so it renders its `focus-not-found` body — which only mounts on
+    // the Focus route. That the Focus route (not /samples) was reached is the
+    // assertion this slug-redirect test makes.
+    expect(await screen.findByTestId("focus-not-found")).toBeInTheDocument();
   });
 
   it("/index/:experiment/:sample falls back to /samples when resolve 404s", async () => {
