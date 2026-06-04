@@ -90,23 +90,21 @@ const FOCUS_FIXTURE = (
       </div>
     </div>
 
-    {/* rail column */}
-    <div className="border-l border-hair bg-paper-sunk px-5 pt-[22px] pb-7">
-      <AssignmentRail
-        assignment={
-          <AssignmentCart>
-            <PhaseBlock phase="Pn3m" score={0.87} meta="a = 142 Å · 5 reflections" />
-          </AssignmentCart>
-        }
-        candidates={
-          <CandidateList>
-            <CandidateRow phase="Pn3m" score={0.87} why="explains 5 peaks · in the call" selected />
-            <CandidateRow phase="Im3m" score={0.61} why="explains 3 peaks" />
-          </CandidateList>
-        }
-        candidatesNote="Check every phase that is present; a sample can hold more than one."
-      />
-    </div>
+    {/* rail column = AssignmentRail (owns the rail shell) */}
+    <AssignmentRail
+      assignment={
+        <AssignmentCart>
+          <PhaseBlock phase="Pn3m" score={0.87} meta="a = 142 Å · 5 reflections" />
+        </AssignmentCart>
+      }
+      candidates={
+        <CandidateList>
+          <CandidateRow phase="Pn3m" score={0.87} why="explains 5 peaks · in the call" selected />
+          <CandidateRow phase="Im3m" score={0.61} why="explains 3 peaks" />
+        </CandidateList>
+      }
+      candidatesNote="Check every phase that is present; a sample can hold more than one."
+    />
   </div>
 );
 
@@ -474,21 +472,21 @@ export function FocusPage(): JSX.Element {
            </div>
           </div>
 
-          {/* rail column — bg-paper-sunk + left hairline, pinned right (mockup .rail) */}
-          <div className="flex min-h-0 flex-col gap-[22px] border-l border-hair bg-paper-sunk px-5 pt-[22px] pb-7">
-            {noExposure ? (
-              <div className="p-8 text-sm text-ink-faint">
-                This sample has no exposures.
-              </div>
-            ) : (
-              <AssignmentRail
-                assignmentCount={activeIndices.length || undefined}
-                assignment={cart}
-                candidates={candidates}
-                candidatesNote="Check every phase that is present; a sample can hold more than one. Candidates that explain the same peaks swap; independent phases coexist."
-              />
-            )}
-          </div>
+          {/* rail column = AssignmentRail itself (it owns the rail shell:
+              bg-paper-sunk + left hairline + padding + scroll). The empty state
+              mirrors that shell so the column looks identical with no exposures. */}
+          {noExposure ? (
+            <div className="flex min-h-0 flex-col border-l border-hair bg-paper-sunk p-5 text-sm text-ink-faint">
+              This sample has no exposures.
+            </div>
+          ) : (
+            <AssignmentRail
+              assignmentCount={activeIndices.length || undefined}
+              assignment={cart}
+              candidates={candidates}
+              candidatesNote="Check every phase that is present; a sample can hold more than one. Candidates that explain the same peaks swap; independent phases coexist."
+            />
+          )}
         </div>
       </Skeleton>
 
