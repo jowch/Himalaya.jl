@@ -103,49 +103,24 @@ describe("CorpusTopbar — focus affordances (F-13/F-14/F-12)", () => {
     expect(screen.getByTestId("sample-stepper-next")).not.toBeDisabled();
   });
 
-  // ── F-14: active Index stage tab on /sample/:id ──────────────────────────
-  it("marks the Index stage tab active on a /sample/:id route", async () => {
+  // ── the focus workspace is not a top-level stage tab ─────────────────────
+  // There is no "Index"/"Focus" stage tab — the focus workspace is reached by
+  // opening a sample, and the on-focus context is carried by the sample stepper.
+  it("renders no Index/Focus stage tab on a /sample/:id route", async () => {
     mockFetch();
     useAppState.setState({ activeSampleId: 2 });
     renderAt("/sample/2");
-    const tab = screen.getByTestId("stage-tab-index");
-    expect(tab).toHaveAttribute("aria-current", "page");
+    // The stepper still mounts (focus context), but no stage tab for focus.
+    expect(await screen.findByTestId("sample-stepper")).toBeInTheDocument();
+    expect(screen.queryByTestId("stage-tab-index")).toBeNull();
   });
 
-  it("leaves the Index stage tab inactive off a sample route", () => {
-    mockFetch();
-    renderAt("/samples");
-    expect(screen.getByTestId("stage-tab-index")).not.toHaveAttribute("aria-current");
-  });
-
-  // ── F-12: Notes toggle button ────────────────────────────────────────────
-  it("shows a Notes toggle only on a sample route", async () => {
+  // ── notes were removed from the focus surface ────────────────────────────
+  it("renders no Notes toggle on a sample route (notes feature removed)", async () => {
     mockFetch();
     useAppState.setState({ activeSampleId: 2 });
     renderAt("/sample/2");
-    expect(await screen.findByTestId("notes-toggle")).toBeInTheDocument();
-  });
-
-  it("does not show the Notes toggle off a sample route", () => {
-    mockFetch();
-    renderAt("/samples");
-    expect(screen.queryByTestId("notes-toggle")).not.toBeInTheDocument();
-  });
-
-  it("clicking the Notes toggle flips notesDrawerOpen", async () => {
-    mockFetch();
-    useAppState.setState({ activeSampleId: 2, notesDrawerOpen: false });
-    renderAt("/sample/2");
-    fireEvent.click(await screen.findByTestId("notes-toggle"));
-    expect(useAppState.getState().notesDrawerOpen).toBe(true);
-  });
-
-  it("badges the Notes toggle when the active sample has notes", async () => {
-    mockFetch();
-    useAppState.setState({ activeSampleId: 9 });
-    renderAt("/sample/9");
-    await waitFor(() =>
-      expect(screen.getByTestId("notes-toggle")).toHaveAttribute("data-has-notes", "true"),
-    );
+    await screen.findByTestId("sample-stepper");
+    expect(screen.queryByTestId("notes-toggle")).toBeNull();
   });
 });

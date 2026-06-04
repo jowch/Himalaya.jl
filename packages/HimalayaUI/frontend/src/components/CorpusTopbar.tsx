@@ -1,5 +1,4 @@
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { PAGE_WIDTHS } from "../print/components/PageFrame";
 import { useAppState } from "../state";
 import { useCorpusSamples, useExperiments } from "../queries";
 import { sampleDisplayName } from "../lib/sample/displayName";
@@ -7,21 +6,18 @@ import { Kicker } from "./ui/Kicker";
 import { IconButton } from "./ui/IconButton";
 
 interface Stage {
-  id: "samples" | "index" | "series";
+  id: "samples" | "series";
   label: string;
-  /** Absolute path the tab links to. Omitted = inert (disabled) tab. */
-  to?: string;
+  /** Absolute path the tab links to. */
+  to: string;
 }
 
-// Samples (#160) and Series (#173) are live surfaces. The Index stage is the
-// focus workspace at `/sample/:id` (Phase 4 cutover, #181) — but there is no
-// canonical `/index` landing route (those URLs redirect), so the tab is not a
-// Link. It renders as a button that is INERT off a sample route and ACTIVE
-// (not navigable) on `/sample/:id` (R5 / #228, F-14). A tab with a `to`
-// renders as a Link and derives its active state from the current route.
+// Samples (#160) and Series (#173) are the two navigable workflow surfaces. The
+// focus workspace at `/sample/:id` is NOT a top-level stage — it is reached only
+// by opening a sample from the contact sheet, so it has no tab (the right-side
+// sample stepper carries the on-focus context instead).
 const STAGES: readonly Stage[] = [
   { id: "samples", label: "Samples", to: "/samples" },
-  { id: "index", label: "Index" },
   { id: "series", label: "Series", to: "/series" },
 ];
 
@@ -51,10 +47,9 @@ export function CorpusTopbar(): JSX.Element {
 
   // ── Focus-surface affordances (R5 / #228) ─────────────────────────────────
   // The focus workspace lives at `/sample/:id`. The topbar is global, so the
-  // stepper, the active Index tab, and the Notes toggle only appear there.
+  // per-sample stepper only appears there.
   const onSampleRoute = pathname.startsWith("/sample/");
   const activeSampleId = useAppState((s) => s.activeSampleId);
-  const toggleNotesDrawer = useAppState((s) => s.toggleNotesDrawer);
   const corpusQ = useCorpusSamples();
 
   // F-13 stepper: order the active sample's experiment-siblings by their corpus
@@ -75,11 +70,6 @@ export function CorpusTopbar(): JSX.Element {
     ? siblings[stepIdx + 1] : undefined;
   const showStepper = onSampleRoute && activeSample !== undefined && stepIdx >= 0;
 
-  // F-12: the Notes toggle is the < xl fallback for the focus Notes margin. The
-  // badge reflects whether the active sample carries notes (so the user knows
-  // there's something behind the drawer without opening it).
-  const hasNotes = (activeSample?.notes ?? "").trim().length > 0;
-
   function handlePick(event: React.ChangeEvent<HTMLSelectElement>): void {
     const value = event.target.value;
     setSearchParams((prev) => {
@@ -95,12 +85,13 @@ export function CorpusTopbar(): JSX.Element {
       data-testid="corpus-topbar"
       className="h-14 shrink-0 border-b border-hair bg-paper"
     >
-      {/* Full-bleed bar (border + background span the window); the controls live
-          in a centered frame so they don't sprawl to the screen edges on a wide
-          monitor — the "app max-width" the per-surface page shells also use. */}
+      {/* Full-bleed bar matching the mockups' app bar: the controls span the
+          window with 24px gutters (no centred max-width cap). Each page body
+          owns its own content width (the contact sheet / folio centre; the
+          focus workspace is full-bleed). */}
       <div
         data-testid="corpus-topbar-inner"
-        className={`mx-auto flex h-full w-full ${PAGE_WIDTHS.sheet} items-center gap-4 px-6`}
+        className="flex h-full w-full items-center gap-4 px-6"
       >
       <Link
         to="/samples"
@@ -113,26 +104,9 @@ export function CorpusTopbar(): JSX.Element {
 
       <nav data-testid="stage-tabs" aria-label="Workflow stages" className="flex gap-0.5">
         {STAGES.map((s) => {
-          // The Index tab has no `to` but is live on a sample route (F-14), so
-          // its dot lights when active too — not just for `to`-bearing tabs.
-          const live = s.to !== undefined || (s.id === "index" && onSampleRoute);
-          const dot = (
-            <span
-              aria-hidden="true"
-              className={
-                "inline-block w-1 h-1 rounded-full mr-1.5 align-middle " +
-                (live ? "bg-print-accent" : "bg-hair-strong")
-              }
-            />
-          );
-          // Active = this tab's path is the current route's prefix. Derived
-          // from the router (not hardcoded) now that multiple stages are live.
-          // F-14: the linkless Index tab is active on `/sample/:id` (the focus
-          // workspace), reflecting the focus surface as the Index stage.
-          const isActive = s.to !== undefined
-            ? pathname.startsWith(s.to)
-            : s.id === "index" && onSampleRoute;
-          return s.to !== undefined ? (
+          // Active = this tab's path is the current route's prefix (router-derived).
+          const isActive = pathname.startsWith(s.to);
+          return (
             <Link
               key={s.id}
               to={s.to}
@@ -145,31 +119,12 @@ export function CorpusTopbar(): JSX.Element {
                 (isActive ? "text-ink bg-paper-sunk" : "text-ink-faint")
               }
             >
-              {dot}
+              <span
+                aria-hidden="true"
+                className="inline-block w-1 h-1 rounded-full mr-1.5 align-middle bg-print-accent"
+              />
               {s.label}
             </Link>
-          ) : (
-            <button
-              key={s.id}
-              type="button"
-              // Active (on /sample/:id) the Index tab is a non-navigable
-              // current-stage marker, not a disabled control. Off a sample
-              // route it stays inert.
-              disabled={!isActive}
-              data-testid={`stage-tab-${s.id}`}
-              data-active={isActive ? "true" : undefined}
-              aria-current={isActive ? "page" : undefined}
-              className={
-                "px-2.5 py-1.5 rounded text-xs font-semibold uppercase " +
-                "tracking-wide " +
-                (isActive
-                  ? "text-ink bg-paper-sunk cursor-default"
-                  : "text-ink-faint cursor-not-allowed")
-              }
-            >
-              {dot}
-              {s.label}
-            </button>
           );
         })}
       </nav>
@@ -226,30 +181,6 @@ export function CorpusTopbar(): JSX.Element {
             data-testid="sample-stepper-next"
           >{"›"}</IconButton>
         </div>
-      )}
-
-      {/* F-12: Notes toggle — the < xl fallback for the focus Notes margin.
-          Hidden at xl+ (mockup `#notes-btn{display:none}` above 1320px) where
-          the persistent Notes margin column is shown instead; below xl the
-          margin yields to this button + the drawer it toggles. */}
-      {onSampleRoute && (
-        <button
-          type="button"
-          data-testid="notes-toggle"
-          data-has-notes={hasNotes ? "true" : undefined}
-          onClick={toggleNotesDrawer}
-          className="xl:hidden flex items-center gap-1.5 rounded border border-hair-strong
-                     bg-plate px-2.5 py-1 text-xs font-semibold text-ink
-                     hover:border-ink-faint"
-        >
-          Notes
-          {hasNotes && (
-            <span
-              aria-hidden="true"
-              className="inline-block h-1.5 w-1.5 rounded-full bg-print-accent"
-            />
-          )}
-        </button>
       )}
       </div>
     </header>

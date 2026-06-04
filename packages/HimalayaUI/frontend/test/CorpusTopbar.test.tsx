@@ -61,15 +61,15 @@ describe("CorpusTopbar", () => {
     expect(wordmark).toHaveAttribute("href", "/samples");
   });
 
-  it("renders three stage-tabs; Samples is active and links to /samples", () => {
+  it("renders two stage-tabs (Samples, Series); Samples is active and links to /samples", () => {
     mockExperiments();
     renderTopbar();
     const samples = screen.getByTestId("stage-tab-samples");
     expect(samples).toHaveAttribute("href", "/samples");
     expect(samples).toHaveAttribute("data-active", "true");
-    // Index remains inert until Phase 4; Series is now a live link (#173 / I3.3)
-    // but inactive on /samples.
-    expect(screen.getByTestId("stage-tab-index")).toBeDisabled();
+    // The focus workspace is no longer a top-level stage tab — it is reached by
+    // opening a sample. Only Samples + Series remain.
+    expect(screen.queryByTestId("stage-tab-index")).toBeNull();
     const series = screen.getByTestId("stage-tab-series");
     expect(series).toHaveAttribute("href", "/series");
     expect(series).not.toHaveAttribute("data-active");
