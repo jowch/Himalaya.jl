@@ -102,6 +102,28 @@ export function SeriesFolioPage(): JSX.Element {
     setControls((c) => ({ ...c, filter }));
   }
 
+  // Honest error surface: a failed list fetch settles with data=undefined, which
+  // would otherwise read as "No series match" (telling the user to clear a filter
+  // when the request actually failed). Handle it before the normal body so a
+  // failure never masquerades as a zero-results state.
+  if (listQ.isError) {
+    return (
+      <PageFrame width="folio" className="px-10 py-8">
+        <FolioHeader
+          kicker="Folio"
+          title="Saved series"
+          count={0}
+          countLabel="series in the folio"
+          className="mb-5"
+        />
+        <EmptyState
+          title="Couldn't load the folio"
+          body="The series list failed to load. Try reloading the page."
+        />
+      </PageFrame>
+    );
+  }
+
   return (
     <PageFrame width="folio" className="px-10 py-8">
       {/* ── Header ────────────────────────────────────────────────────── */}

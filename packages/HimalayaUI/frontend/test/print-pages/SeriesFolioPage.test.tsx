@@ -18,12 +18,14 @@ const state = {
   summaries: [] as SeriesSummary[],
   seriesById: new Map<number, Series>(),
   loading: false,
+  error: false,
 };
 
 vi.mock("../../src/queries", () => ({
   useSeriesList: () => ({
-    data: state.summaries,
+    data: state.error ? undefined : state.summaries,
     isLoading: state.loading,
+    isError: state.error,
   }),
   useSeries: (id: number | undefined) => ({
     data: id !== undefined ? state.seriesById.get(id) : undefined,
@@ -130,6 +132,7 @@ function seed(): void {
     [3, seriesDetail(3, [member({ id: 30, series_id: 3, exposure_id: 3 })])],
   ]);
   state.loading = false;
+  state.error = false;
 }
 
 function renderPage() {
@@ -196,5 +199,15 @@ describe("SeriesFolioPage", () => {
     fireEvent.change(input, { target: { value: "xxxxxxxxxnotaseriesname" } });
     expect(screen.getByTestId("gallery-empty")).toBeInTheDocument();
     expect(screen.getByTestId("empty-state")).toBeInTheDocument();
+  });
+
+  it("shows an honest error surface when the list fetch fails, not 'No series match'", () => {
+    state.error = true;
+    renderPage();
+    // Distinct error copy — not the zero-results "No series match" line.
+    expect(screen.getByText("Couldn't load the folio")).toBeInTheDocument();
+    expect(screen.queryByText("No series match")).toBeNull();
+    // No cards / no controls Gallery in the error branch.
+    expect(screen.queryAllByTestId("series-card")).toHaveLength(0);
   });
 });
