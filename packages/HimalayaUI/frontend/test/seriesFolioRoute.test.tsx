@@ -39,7 +39,7 @@ function renderAt(path: string) {
 describe("/series routing", () => {
   it("mounts SeriesFolioPage under the corpus shell", async () => {
     renderAt("/series");
-    expect(await screen.findByTestId("series-folio-page")).toBeInTheDocument();
+    expect(await screen.findByTestId("folio-header")).toBeInTheDocument();
     // proves it is under CorpusShell (the corpus topbar), not the legacy AppShell
     expect(screen.getByTestId("corpus-topbar")).toBeInTheDocument();
   });

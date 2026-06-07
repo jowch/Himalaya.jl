@@ -8,7 +8,7 @@ import { CorpusShell } from "./CorpusShell";
 import { SamplesPage } from "../print/pages/SamplesPage";
 import { LoupePage } from "../print/pages/LoupePage";
 import { FocusPage } from "../print/pages/FocusPage";
-import { SeriesFolioPage } from "../pages/SeriesFolioPage";
+import { SeriesFolioPage } from "../print/pages/SeriesFolioPage";
 import { SeriesBuilderPage } from "../pages/SeriesBuilderPage";
 import { SeriesScopingPage } from "../pages/SeriesScopingPage";
 import { IndexSlugRedirect } from "./IndexSlugRedirect";
