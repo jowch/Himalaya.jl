@@ -62,6 +62,9 @@ describe("formatEdited", () => {
     expect(formatEdited("2026-06-10T00:00:00Z", now)).toBe("just now");
     expect(formatEdited("2026-06-09T00:00:00Z", now)).toBe("yesterday");
     expect(formatEdited("2026-06-06T00:00:00Z", now)).toBe("4 days ago");
+    expect(formatEdited("2026-06-06 00:00:00", now)).toBe("4 days ago"); // SQLite space form, no Z
+    expect(formatEdited("2026-06-01T00:00:00Z", now)).toBe("1 week ago"); // 9 days
     expect(formatEdited("2026-05-27T00:00:00Z", now)).toBe("2 weeks ago");
+    expect(formatEdited("2026-05-10T00:00:00Z", now)).toBe("4 weeks ago"); // 31 days
   });
 });

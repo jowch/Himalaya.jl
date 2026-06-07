@@ -10,10 +10,13 @@ export function membersToSegments(members: SeriesMember[]): PhaseSegment[] {
   return members.map((m) => {
     const phase = dominantPhase(m);
     const state = resolveState(m);
-    const cp = m.snapshot?.confirmed_phases ?? [];
-    const coexistWith = cp.length > 1 ? cp.slice(1).map((p) => p.phase) : null;
     const seg: PhaseSegment = { phase };
-    if (coexistWith) seg.coexistWith = coexistWith;
+    // Coexistence only applies to an indexed (non-null) dominant phase — a
+    // form_factor/null member must never carry a stray coexistence array.
+    if (phase !== null) {
+      const cp = m.snapshot?.confirmed_phases ?? [];
+      if (cp.length > 1) seg.coexistWith = cp.slice(1).map((p) => p.phase);
+    }
     if (state === "form_factor" || state === "null") seg.state = state;
     return seg;
   });
