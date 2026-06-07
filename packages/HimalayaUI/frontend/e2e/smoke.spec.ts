@@ -311,6 +311,7 @@ test("a /compare* URL redirects to the series folio (Compare retired, #177)", as
   await page.goto("/experiments/1/compare");
 
   await expect(page).toHaveURL(/\/series$/);
-  await expect(page.getByTestId("series-folio-page")).toBeVisible();
+  // Greenfield folio: folio-header replaces the retired series-folio-page testid.
+  await expect(page.getByTestId("folio-header")).toBeVisible();
   await expect(page.getByTestId("compare-page")).toHaveCount(0);
 });
