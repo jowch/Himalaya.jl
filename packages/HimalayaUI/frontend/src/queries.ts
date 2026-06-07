@@ -98,6 +98,10 @@ export const queryKeys = {
   // clobbers a detail entry (mirrors the comparison/comparisons split). Read
   // hooks (useSeriesList / useSeries) — see below (I3.3).
   series:     (id: number | undefined) => ["series", id ?? "none"] as const,
+  // Nested under the series-detail prefix on purpose — `queryKeys.series(id)`
+  // invalidations (rename / member reorder / commit / SSE replay) prefix-match
+  // and re-pull the trace batch, which is the desired refresh-on-member-change
+  // behavior.
   seriesTraces: (id: number | undefined) =>
     ["series", id ?? "none", "traces"] as const,
   seriesList: ["series-list"] as const,
@@ -834,8 +838,8 @@ export function useSeries(id: number | undefined) {
 }
 
 /** Batch member traces for a series (one request, `exposure_id → Trace`). Feeds
- *  the greenfield folio's `SeriesCard`→`CardFigure` via `toWaterfallRows`; avoids
- *  the O(N×M) per-exposure fan-out the legacy folio would incur on greenfield curves. */
+ *  the greenfield folio via `toWaterfallRows(members, tracesById)` (Plan 4b wires
+ *  `SeriesCard`→`CardFigure`); avoids the O(N×M) per-exposure fan-out. */
 export function useSeriesTraces(seriesId: number | undefined) {
   return useQuery({
     queryKey: queryKeys.seriesTraces(seriesId),
