@@ -98,6 +98,8 @@ export const queryKeys = {
   // clobbers a detail entry (mirrors the comparison/comparisons split). Read
   // hooks (useSeriesList / useSeries) — see below (I3.3).
   series:     (id: number | undefined) => ["series", id ?? "none"] as const,
+  seriesTraces: (id: number | undefined) =>
+    ["series", id ?? "none", "traces"] as const,
   seriesList: ["series-list"] as const,
   seriesPins: ["series-pins"] as const,
   // Corpus scoping reads (I3.4 #174): the ordering-variable proposal source
@@ -828,6 +830,17 @@ export function useSeries(id: number | undefined) {
     // Parity with useComparison (above): a missing/draft series should error
     // fast rather than retry 3× — the I3.5a builder reuses this.
     retry: false,
+  });
+}
+
+/** Batch member traces for a series (one request, `exposure_id → Trace`). Feeds
+ *  the greenfield folio's `SeriesCard`→`CardFigure` via `toWaterfallRows`; avoids
+ *  the O(N×M) per-exposure fan-out the legacy folio would incur on greenfield curves. */
+export function useSeriesTraces(seriesId: number | undefined) {
+  return useQuery({
+    queryKey: queryKeys.seriesTraces(seriesId),
+    queryFn: () => api.getSeriesTraces(seriesId as number),
+    enabled: seriesId !== undefined,
   });
 }
 
