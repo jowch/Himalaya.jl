@@ -755,3 +755,53 @@ end
     end
 
 end
+
+@testset "GET /api/series/{id}/traces" begin
+    mktempdir() do tmp
+        # Proven .dat fixture (mirrors test_routes_trace.jl): one resolvable exposure.
+        analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
+        mkpath(analysis_dir)
+        cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
+           joinpath(analysis_dir, "example_tot.dat"))
+        db     = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+        exp_id = HimalayaUI.init_experiment!(db; path=tmp,
+            data_dir=joinpath(tmp, "data"), analysis_dir=analysis_dir)
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
+        good   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
+        # A second exposure whose .dat does NOT exist on disk → must be SKIPPED, not 500.
+        missing_dat = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="nope")
+
+        snap = "{\"effective_peaks\":[],\"confirmed_index\":null,\"analysis_inputs_hash\":null}"
+        DBInterface.execute(db, "INSERT INTO series (id, title, state) VALUES (7, 'S7', 'draft')")
+        # display_order 0 = good, 1 = missing-dat, 2 = NULL exposure (orphan) → both skipped.
+        DBInterface.execute(db, """INSERT INTO series_members (series_id, exposure_id, display_order, snapshot, created_at)
+            VALUES (7, $good, 0, '$snap', '2026-06-06T00:00:00.000Z')""")
+        DBInterface.execute(db, """INSERT INTO series_members (series_id, exposure_id, display_order, snapshot, created_at)
+            VALUES (7, $missing_dat, 1, '$snap', '2026-06-06T00:00:00.000Z')""")
+        DBInterface.execute(db, """INSERT INTO series_members (series_id, exposure_id, display_order, snapshot, created_at)
+            VALUES (7, NULL, 2, '$snap', '2026-06-06T00:00:00.000Z')""")
+
+        with_test_server(db) do port, base
+            # 404 for an unknown series.
+            r404 = HTTP.get("$base/api/series/999/traces", ["X-Username" => "alice"];
+                            status_exception = false)
+            @test r404.status == 404
+
+            r = HTTP.get("$base/api/series/7/traces", ["X-Username" => "alice"])
+            @test r.status == 200
+            body = JSON3.read(String(r.body), Dict{String, Any})
+            # Only the resolvable exposure is present; the missing-dat + NULL members are skipped.
+            @test collect(keys(body)) == [string(good)]
+            tr = body[string(good)]
+            @test haskey(tr, "q") && haskey(tr, "I") && haskey(tr, "sigma")
+            @test length(tr["q"]) == length(tr["I"]) == length(tr["sigma"]) > 0
+
+            # An existing series with zero resolvable members → 200 + empty object (not 404).
+            DBInterface.execute(db, "INSERT INTO series (id, title, state) VALUES (8, 'S8', 'draft')")
+            rEmpty = HTTP.get("$base/api/series/8/traces", ["X-Username" => "alice"])
+            @test rEmpty.status == 200
+            @test JSON3.read(String(rEmpty.body), Dict{String, Any}) == Dict{String, Any}()
+        end
+        close(db)
+    end
+end

@@ -358,6 +358,49 @@ function _series_sample_payload(m_in, default_position::Integer)
     )
 end
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Batch trace loader (Phase-4, 4a) — unblocks the Series-folio CardFigure.
+# ─────────────────────────────────────────────────────────────────────────────
+
+"""
+    series_member_traces(db, series_id) -> Dict{Int,Any}
+
+Resolve and load every member trace of `series_id`, keyed by exposure_id, in
+display order. Members with no exposure, a derived (non-"file") exposure, no
+filename, or a missing `.dat` on disk are SKIPPED (omitted from the map) — the
+batch route degrades gracefully; the folio's `toWaterfallRows` renders an empty
+row for any absent exposure. `config_from_db` is memoized per experiment.
+"""
+function series_member_traces(db::SQLite.DB, series_id::Integer)
+    rows = Tables.rowtable(DBInterface.execute(db,
+        """SELECT e.id AS exposure_id, e.filename, e.kind,
+                  x.id AS experiment_id, x.analysis_dir
+           FROM series_members sm
+           JOIN exposures e   ON e.id = sm.exposure_id
+           JOIN samples s     ON s.id = e.sample_id
+           JOIN experiments x ON x.id = s.experiment_id
+           WHERE sm.series_id = ? AND sm.exposure_id IS NOT NULL
+           ORDER BY sm.display_order ASC, sm.id ASC""", [series_id]))
+
+    out = Dict{Int,Any}()
+    cfg_cache = Dict{Int,Any}()
+    for row in rows
+        row.kind === missing && continue
+        String(row.kind) == "file" || continue
+        row.filename === missing && continue
+        eid = Int(row.experiment_id)
+        cfg = get!(cfg_cache, eid) do
+            config_from_db(db, eid)
+        end
+        pattern = replace(cfg.integration_pattern, "{name}" => String(row.filename))
+        path    = joinpath(String(row.analysis_dir), pattern)
+        isfile(path) || continue
+        q, I, σ = load_dat(path)
+        out[Int(row.exposure_id)] = Dict(:q => q, :I => I, :sigma => σ)
+    end
+    return out
+end
+
 """
     _series_member_payload(db, m_in) -> Dict{Symbol, Any}
 

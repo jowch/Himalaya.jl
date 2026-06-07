@@ -90,6 +90,15 @@ function register_series_routes!()
         HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(rows))
     end
 
+    @get "/api/series/{id}/traces" function(req::HTTP.Request, id::Int)
+        db = current_db()
+        exists = !isempty(Tables.rowtable(DBInterface.execute(db,
+            "SELECT 1 FROM series WHERE id = ?", [id])))
+        exists || return _json_error(404, "series not found")
+        out = series_member_traces(db, id)
+        HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(out))
+    end
+
     # ── Create (draft) ──────────────────────────────────────────────────────
 
     @post "/api/series" function(req::HTTP.Request)
