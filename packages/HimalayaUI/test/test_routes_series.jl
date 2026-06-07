@@ -770,16 +770,26 @@ end
         good   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
         # A second exposure whose .dat does NOT exist on disk → must be SKIPPED, not 500.
         missing_dat = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="nope")
+        # A derived (non-"file") exposure whose .dat IS on disk → must be SKIPPED on
+        # the kind branch (not on the missing-file branch). Exercises the
+        # `String(row.kind) == "file" || continue` guard directly.
+        cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
+           joinpath(analysis_dir, "derived_tot.dat"))
+        derived = HimalayaUI.create_exposure!(db; sample_id=s_id,
+            filename="derived", kind="derived")
 
         snap = "{\"effective_peaks\":[],\"confirmed_index\":null,\"analysis_inputs_hash\":null}"
         DBInterface.execute(db, "INSERT INTO series (id, title, state) VALUES (7, 'S7', 'draft')")
-        # display_order 0 = good, 1 = missing-dat, 2 = NULL exposure (orphan) → both skipped.
+        # display_order 0 = good, 1 = missing-dat, 2 = NULL exposure (orphan),
+        # 3 = derived-kind (file present) → all but `good` skipped.
         DBInterface.execute(db, """INSERT INTO series_members (series_id, exposure_id, display_order, snapshot, created_at)
             VALUES (7, $good, 0, '$snap', '2026-06-06T00:00:00.000Z')""")
         DBInterface.execute(db, """INSERT INTO series_members (series_id, exposure_id, display_order, snapshot, created_at)
             VALUES (7, $missing_dat, 1, '$snap', '2026-06-06T00:00:00.000Z')""")
         DBInterface.execute(db, """INSERT INTO series_members (series_id, exposure_id, display_order, snapshot, created_at)
             VALUES (7, NULL, 2, '$snap', '2026-06-06T00:00:00.000Z')""")
+        DBInterface.execute(db, """INSERT INTO series_members (series_id, exposure_id, display_order, snapshot, created_at)
+            VALUES (7, $derived, 3, '$snap', '2026-06-06T00:00:00.000Z')""")
 
         with_test_server(db) do port, base
             # 404 for an unknown series.
@@ -790,8 +800,10 @@ end
             r = HTTP.get("$base/api/series/7/traces", ["X-Username" => "alice"])
             @test r.status == 200
             body = JSON3.read(String(r.body), Dict{String, Any})
-            # Only the resolvable exposure is present; the missing-dat + NULL members are skipped.
+            # Only the resolvable exposure is present; the missing-dat + NULL +
+            # derived-kind members are skipped (the singleton key asserts all three).
             @test collect(keys(body)) == [string(good)]
+            @test !haskey(body, string(derived))
             tr = body[string(good)]
             @test haskey(tr, "q") && haskey(tr, "I") && haskey(tr, "sigma")
             @test length(tr["q"]) == length(tr["I"]) == length(tr["sigma"]) > 0

@@ -370,6 +370,11 @@ display order. Members with no exposure, a derived (non-"file") exposure, no
 filename, or a missing `.dat` on disk are SKIPPED (omitted from the map) — the
 batch route degrades gracefully; the folio's `toWaterfallRows` renders an empty
 row for any absent exposure. `config_from_db` is memoized per experiment.
+
+Note the deliberate skip-vs-throw asymmetry: a member whose `.dat` is *absent*
+is skipped, but a member whose `.dat` is *present-but-corrupt* (unparseable /
+<3 columns) intentionally surfaces as a 500 via `load_dat` — corruption is NOT
+swallowed (it should fail loudly, not silently vanish from the map).
 """
 function series_member_traces(db::SQLite.DB, series_id::Integer)
     rows = Tables.rowtable(DBInterface.execute(db,
