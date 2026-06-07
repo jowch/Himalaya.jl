@@ -192,6 +192,12 @@ export interface Trace {
 export const getTrace = (exposure_id: number) =>
   request<Trace>("GET", `/api/exposures/${exposure_id}/trace`);
 
+/** Batch member traces for a series, keyed by exposure_id. Matches the
+ *  `toWaterfallRows(members, tracesById)` contract (a plain Record, number index).
+ *  Unresolvable members (no exposure / derived / missing .dat) are absent from the map. */
+export const getSeriesTraces = (series_id: number) =>
+  request<Record<number, Trace>>("GET", `/api/series/${series_id}/traces`);
+
 // Peaks
 export interface Peak {
   id: number;
