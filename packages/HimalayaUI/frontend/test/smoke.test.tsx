@@ -100,7 +100,7 @@ describe("App smoke", () => {
 
   it("a /compare* URL redirects to the series folio (Compare retired, #177)", async () => {
     renderAppAt("/experiments/1/compare");
-    await waitFor(() => expect(screen.getByTestId("series-folio-page")).toBeInTheDocument(),
+    await waitFor(() => expect(screen.getByTestId("folio-header")).toBeInTheDocument(),
       { timeout: 3000 });
     expect(screen.queryByTestId("compare-page")).toBeNull();
   });

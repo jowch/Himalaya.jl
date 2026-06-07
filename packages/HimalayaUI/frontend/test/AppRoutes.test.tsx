@@ -64,14 +64,14 @@ describe("AppRoutes — single-shell route table", () => {
 
   it("redirects a /compare* URL to the series folio (Compare retired, #177)", async () => {
     renderRoutes("/compare/all");
-    expect(await screen.findByTestId("series-folio-page")).toBeInTheDocument();
+    expect(await screen.findByTestId("folio-header")).toBeInTheDocument();
     expect(screen.queryByTestId("app-shell")).toBeNull();
     expect(screen.queryByTestId("compare-page")).toBeNull();
   });
 
   it("redirects an experiment-scoped /compare URL to the series folio (#177)", async () => {
     renderRoutes("/experiments/7/compare/123");
-    expect(await screen.findByTestId("series-folio-page")).toBeInTheDocument();
+    expect(await screen.findByTestId("folio-header")).toBeInTheDocument();
     expect(screen.queryByTestId("compare-page")).toBeNull();
   });
 
@@ -234,7 +234,7 @@ describe("AppRoutes — bare / always lands on the corpus (#77 / I4.4)", () => {
     useAppState.setState({ activeExperimentId: 7 });
     renderRoutes("/experiments/7/compare/123");
     await waitFor(() => {
-      expect(screen.getByTestId("series-folio-page")).toBeInTheDocument();
+      expect(screen.getByTestId("folio-header")).toBeInTheDocument();
     });
     expect(screen.queryByTestId("compare-page")).toBeNull();
   });
