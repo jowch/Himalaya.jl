@@ -26,7 +26,7 @@ export interface WaterfallRow {
 }
 
 /** Dominant phase: first confirmed_phases entry, else confirmed_index.phase, else null. */
-function dominantPhase(member: SeriesMember): string | null {
+export function dominantPhase(member: SeriesMember): string | null {
   const snap = member.snapshot;
   if (snap === null) return null;
   if (snap.assignment_state === "form_factor" || snap.assignment_state === "null") return null;
@@ -36,7 +36,7 @@ function dominantPhase(member: SeriesMember): string | null {
 }
 
 /** Resolve the assignment state, treating missing snapshot or undefined state as "indexed". */
-function resolveState(member: SeriesMember): AssignmentState {
+export function resolveState(member: SeriesMember): AssignmentState {
   const snap = member.snapshot;
   if (snap === null) return "indexed";
   return snap.assignment_state ?? "indexed";
