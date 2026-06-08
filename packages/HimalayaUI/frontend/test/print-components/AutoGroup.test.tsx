@@ -85,4 +85,30 @@ describe("<AutoGroup> actions", () => {
     fireEvent.click(screen.getByRole("button", { name: "Confirm series" }));
     expect(onConfirm).toHaveBeenCalledTimes(1);
   });
+
+  it("renders an action with no onClick as DISABLED (controls-don't-lie)", () => {
+    render(<AutoGroup actions={[{ label: "Confirm series" }]}>body</AutoGroup>);
+    const btn = screen.getByRole("button", { name: "Confirm series" });
+    expect(btn).toBeDisabled();
+    expect(btn).toHaveAttribute("aria-disabled", "true");
+  });
+
+  it("an action WITH onClick stays enabled even alongside an inert sibling", () => {
+    const onAdjust = vi.fn();
+    render(
+      <AutoGroup
+        actions={[
+          { label: "Confirm series" },
+          { label: "Adjust", muted: true, onClick: onAdjust },
+        ]}
+      >
+        body
+      </AutoGroup>,
+    );
+    expect(screen.getByRole("button", { name: "Confirm series" })).toBeDisabled();
+    const adjust = screen.getByRole("button", { name: "Adjust" });
+    expect(adjust).not.toBeDisabled();
+    fireEvent.click(adjust);
+    expect(onAdjust).toHaveBeenCalledTimes(1);
+  });
 });

@@ -155,10 +155,23 @@ describe("SeriesBuilderPage", () => {
     expect(screen.getByRole("button", { name: /adjust/i })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^cancel$/i })).toBeNull();
     expect(useAppState.getState().seriesDraft).toBeNull();
-    // The rail's baked "Confirm series" is present but INERT in read state —
-    // clicking it does not fire the save chain.
-    fireEvent.click(screen.getByRole("button", { name: /confirm series/i }));
+    // controls-don't-lie: the rail's baked "Confirm series" is visibly DISABLED
+    // in read state (no live draft → no onConfirm), not a live accent button.
+    const confirm = screen.getByRole("button", { name: /confirm series/i });
+    expect(confirm).toBeDisabled();
+    // And clicking it does not fire the save chain.
+    fireEvent.click(confirm);
     expect(state.save.mutate).not.toHaveBeenCalled();
+  });
+
+  it("read-state ordering-variable Field is static read-only (no interactive trigger)", () => {
+    renderPage();
+    const field = screen.getByTestId("field");
+    // controls-don't-lie: nothing wires an order-variable list, so the Field is
+    // a plain read-only value — not a clickable dropdown trigger.
+    expect(field.tagName).not.toBe("BUTTON");
+    expect(field).not.toHaveTextContent("▾");
+    expect(field).toHaveTextContent("ratio");
   });
 
   it("surfaces a load error distinctly (no plate)", () => {
@@ -217,8 +230,11 @@ describe("SeriesBuilderPage", () => {
     // Start a draft.
     fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "Edited" } });
     const draft = useAppState.getState().seriesDraft!;
+    // With a live draft the rail's "Confirm series" is now ENABLED.
+    const confirm = screen.getByRole("button", { name: /confirm series/i });
+    expect(confirm).not.toBeDisabled();
     // Click Confirm series.
-    fireEvent.click(screen.getByRole("button", { name: /confirm series/i }));
+    fireEvent.click(confirm);
     // save.mutate called with buildSeriesSaveBody(draft) + id.
     expect(state.save.mutate).toHaveBeenCalledTimes(1);
     const saveArg = state.save.mutate.mock.calls[0]![0] as { id: number; title: string };

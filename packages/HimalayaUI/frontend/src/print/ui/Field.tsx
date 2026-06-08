@@ -62,6 +62,28 @@ export function Field({
     return () => document.removeEventListener("pointerdown", onPointerDown);
   }, [open]);
 
+  // controls-don't-lie: a Field with neither `options` (dropdown) nor `onClick`
+  // (trigger) is INERT — it must read as a static read-only value, not as a
+  // clickable dropdown. Render a plain non-interactive row: no `▾` chevron, no
+  // pointer cursor, not a `<button>`. The chevron + pointer are reserved for the
+  // genuinely-actionable dropdown / trigger forms below.
+  const isStatic = !isDropdown && onClick === undefined;
+  if (isStatic) {
+    return (
+      <div
+        data-testid={testId ?? "field"}
+        className={cx(
+          "w-full flex items-center justify-between border border-hair-strong bg-plate rounded px-3 py-2 text-meta font-semibold",
+          className,
+        )}
+      >
+        <span className={showPlaceholder ? "text-ink-faint" : "text-ink"}>
+          {showPlaceholder ? placeholder : value}
+        </span>
+      </div>
+    );
+  }
+
   const trigger = (
     <button
       type="button"

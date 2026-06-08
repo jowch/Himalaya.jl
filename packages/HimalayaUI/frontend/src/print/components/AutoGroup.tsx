@@ -64,20 +64,31 @@ export function AutoGroup({
 
       {actions?.length ? (
         <div className="flex gap-3 mt-2">
-          {actions.map((action) => (
-            <button
-              key={action.label}
-              type="button"
-              onClick={action.onClick}
-              className={
-                action.muted
-                  ? "text-sm font-semibold text-ink-faint hover:underline"
-                  : "text-sm font-semibold text-print-accent hover:underline"
-              }
-            >
-              {action.label}
-            </button>
-          ))}
+          {actions.map((action) => {
+            // controls-don't-lie: an action with no `onClick` is inert, so it
+            // renders visibly + behaviourally disabled (faint, no underline-on-
+            // hover, `disabled` + `aria-disabled`) rather than as a live accent
+            // link that does nothing.
+            const inert = action.onClick === undefined;
+            return (
+              <button
+                key={action.label}
+                type="button"
+                {...(action.onClick ? { onClick: action.onClick } : {})}
+                disabled={inert}
+                aria-disabled={inert || undefined}
+                className={
+                  inert
+                    ? "text-sm font-semibold text-ink-faint cursor-not-allowed"
+                    : action.muted
+                      ? "text-sm font-semibold text-ink-faint hover:underline"
+                      : "text-sm font-semibold text-print-accent hover:underline"
+                }
+              >
+                {action.label}
+              </button>
+            );
+          })}
         </div>
       ) : null}
     </div>

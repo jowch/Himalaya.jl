@@ -3,16 +3,21 @@ import { describe, it, expect, vi } from "vitest";
 import { Field } from "../../src/print/ui/Field";
 
 describe("<Field>", () => {
-  it("renders the value and is a button", () => {
+  it("with neither options nor onClick renders a STATIC read-only value (not a button, no chevron)", () => {
     render(<Field value="LL37 : lipid ratio" />);
     const f = screen.getByTestId("field");
-    expect(f.tagName).toBe("BUTTON");
+    // controls-don't-lie: inert Field is not interactive.
+    expect(f.tagName).not.toBe("BUTTON");
     expect(f).toHaveTextContent("LL37 : lipid ratio");
+    // No clickable-looking chevron.
+    expect(f).not.toHaveTextContent("▾");
   });
-  it("fires onClick", () => {
+  it("renders a clickable trigger button when given onClick", () => {
     const onClick = vi.fn();
     render(<Field value="x" onClick={onClick} />);
-    fireEvent.click(screen.getByTestId("field"));
+    const f = screen.getByTestId("field");
+    expect(f.tagName).toBe("BUTTON");
+    fireEvent.click(f);
     expect(onClick).toHaveBeenCalledOnce();
   });
   it("shows the placeholder when value is empty", () => {

@@ -141,6 +141,17 @@ export function SeriesBuilderPage(): JSX.Element {
     ensureDraft();
     addSample(sampleId);
   };
+  // Guard-enforce the draft invariant rather than relying on the recipe editor
+  // only rendering under a live draft (layout-enforced). `ensureDraft()` is a
+  // no-op when a draft already exists.
+  const onRemoveSample = (rowId: number): void => {
+    ensureDraft();
+    removeSample(rowId);
+  };
+  const onReorderSample = (from: number, to: number): void => {
+    ensureDraft();
+    reorderSample(from, to);
+  };
 
   const onConfirm = (): void => {
     if (!liveDraft || stage.current !== "idle") return;
@@ -181,8 +192,8 @@ export function SeriesBuilderPage(): JSX.Element {
           onToggleLabels={() => setShowPeakLabels(!showPeakLabels)}
           onEditTitle={onEditTitle}
           onAddSample={onAddSample}
-          onRemoveSample={removeSample}
-          onReorderSample={reorderSample}
+          onRemoveSample={onRemoveSample}
+          onReorderSample={onReorderSample}
           ensureDraft={ensureDraft}
           onConfirm={onConfirm}
           onCancel={onCancel}
