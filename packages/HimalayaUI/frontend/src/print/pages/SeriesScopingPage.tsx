@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Skeleton } from "boneyard-js/react";
 import { PageFrame } from "../components/PageFrame";
@@ -123,14 +123,14 @@ export function SeriesScopingPage(): JSX.Element {
     setRows((cur) => cur.map((r) => (r.sampleId === id ? { ...r, flagged: !r.flagged } : r)));
   };
 
-  const undo = (): void => {
+  const undo = useCallback((): void => {
     setHistory((h) => {
       const e = h[h.length - 1];
       if (!e) return h;
       setRows((cur) => cur.map((r) => (r.sampleId === e.id ? { ...r, flagged: e.prev } : r)));
       return h.slice(0, -1);
     });
-  };
+  }, []);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent): void {
@@ -141,7 +141,7 @@ export function SeriesScopingPage(): JSX.Element {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  });
+  }, [undo]);
 
   // Trace + dominant-phase maps, keyed exposure → sample (carried wiring).
   const pickerById = useMemo(() => {
