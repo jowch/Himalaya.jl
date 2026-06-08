@@ -89,6 +89,15 @@ export function SeriesBuilderPage(): JSX.Element {
   // The active draft only counts when it targets THIS series.
   const liveDraft = draft !== null && series !== undefined && draft.id === series.id ? draft : null;
 
+  // LOAD-BEARING: the page never calls save.reset()/commit.reset(). A lingering
+  // save.isSuccess/commit.isSuccess === true between Confirm runs is INERT
+  // because every chain effect below is `stage`-ref gated — they fire only while
+  // stage.current is the matching phase ("saving"/"committing"), and onConfirm
+  // re-arms the chain by flipping stage to "saving" itself. Do NOT add a reset()
+  // or remove the stage gating: a reset would race the SSE-vs-HTTP deferred
+  // resolution, and dropping the gate would let a stale isSuccess re-fire the
+  // commit on the next unrelated re-render.
+  //
   // Save landed → commit the FRESH plate from the save response, never the
   // stale draft. `save.data` is the updated full Series on the HTTP-wins path
   // (useSaveSeries surfaces mutation.data); guard with isFullSeries so the
@@ -300,7 +309,6 @@ function BuilderBody({
   const tracesSlot = liveDraft ? (
     <RecipeEditor
       recipe={liveDraft.recipe}
-      corpus={corpus}
       sampleNameById={sampleNameMap(corpus)}
       onRemove={onRemoveSample}
       onReorder={onReorderSample}
@@ -433,18 +441,15 @@ function PlateTitle({ value, onChange }: { value: string; onChange: (v: string) 
 // ── Editable recipe rows (grip + name + reorder + remove) ──────────────────
 function RecipeEditor({
   recipe,
-  corpus,
   sampleNameById,
   onRemove,
   onReorder,
 }: {
   recipe: import("../../lib/series/seriesDraft").SeriesRecipeRow[];
-  corpus: api.CorpusSample[];
   sampleNameById: Record<number, string>;
   onRemove: (rowId: number) => void;
   onReorder: (from: number, to: number) => void;
 }): JSX.Element {
-  void corpus;
   return (
     <div className="flex flex-col gap-0.5" data-testid="builder-recipe">
       {recipe.map((row, i) => {
