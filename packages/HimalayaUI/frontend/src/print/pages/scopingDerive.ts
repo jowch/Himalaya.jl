@@ -7,32 +7,33 @@ export interface FootState {
   text: string;
 }
 
-/** The confirm-gate state line. Warn while any value still needs a look; ready
- *  once all are confirmed. `memberCount` is the member total (the denominator
- *  in the "All N values confirmed" copy). */
-export function buildFootState(flagCount: number, memberCount: number): FootState {
-  if (flagCount > 0) {
-    return {
-      kind: "warn",
-      text: `${flagCount} value${flagCount === 1 ? "" : "s"} to check before you can build`,
-    };
+/** The confirm-gate state line. `flagged` is reframed as "skip this read from
+ *  the write" (the honest Option-A model: every member's parsed read is
+ *  committed unless the user skips it). `keptCount` = members whose read will be
+ *  committed; `skippedCount` = members the user excluded. Warn only when nothing
+ *  is kept (nothing to build); otherwise ready, annotating any skips. */
+export function buildFootState(keptCount: number, skippedCount: number): FootState {
+  if (keptCount === 0) {
+    return { kind: "warn", text: "Keep at least one value to build" };
   }
-  return { kind: "ready", text: `All ${memberCount} values confirmed — ready to build` };
+  const base = `${keptCount} value${keptCount === 1 ? "" : "s"} ready to commit`;
+  return { kind: "ready", text: skippedCount > 0 ? `${base} · ${skippedCount} skipped` : base };
 }
 
-/** Build gate (carried contract from the legacy page): an ordering key must
- *  exist, at least one member must be included, and no included member may be
- *  flagged. The batch route 400s on an empty array. */
+/** Build gate: an ordering key must exist and at least one KEPT member must
+ *  remain (included, not skipped, has a value). A skipped (flagged) member is
+ *  excluded from the write, never blocks. */
 export function canScopeBuild(rows: OrderingRow[], orderingKey: string | undefined): boolean {
   if (orderingKey === undefined) return false;
-  const included = rows.filter((r) => r.include && !r.flagged);
-  return included.length > 0 && rows.every((r) => !r.include || !r.flagged);
+  return rows.some((r) => r.include && !r.flagged && r.value !== "");
 }
 
-/** The batch payload: only included, non-flagged members are written. */
+/** The batch payload: only included, non-skipped members WITH a value are
+ *  written. The empty-value guard prevents corrupting a sample with `value:""`
+ *  (loose matches carry no value and must never reach the write). */
 export function buildScopePayload(rows: OrderingRow[]): { sampleId: number; value: string }[] {
   return rows
-    .filter((r) => r.include && !r.flagged)
+    .filter((r) => r.include && !r.flagged && r.value !== "")
     .map((r) => ({ sampleId: r.sampleId, value: r.value }));
 }
 

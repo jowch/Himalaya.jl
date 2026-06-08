@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, act } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type {
@@ -84,15 +84,20 @@ vi.mock("boneyard-js/react", () => ({
 
 import { SeriesScopingPage } from "../../src/print/pages/SeriesScopingPage";
 
-function renderPage(): void {
+function renderPage(): { rerender: () => void } {
   const qc = new QueryClient();
-  render(
+  const tree = (): JSX.Element => (
     <QueryClientProvider client={qc}>
       <MemoryRouter initialEntries={["/series/new"]}>
         <SeriesScopingPage />
       </MemoryRouter>
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
+  const result = render(tree());
+  // A FRESH element reference each rerender so React re-renders (and re-runs the
+  // success effect after `scopeState.isSuccess` is flipped) rather than bailing
+  // on an identical element reference.
+  return { rerender: () => result.rerender(tree()) };
 }
 
 function seed(): void {
@@ -105,6 +110,20 @@ function seed(): void {
     data: [
       pickerRow(sample(1, "A", [tag("ratio", "1 : 0")]), 37),
       pickerRow(sample(2, "B", [tag("ratio", "1 : 0.5")]), 65),
+    ],
+    isLoading: false,
+    isError: false,
+  };
+}
+
+/** A 3-member corpus (all with a value) for skip/payload-exclusion cases. */
+function seed3(): void {
+  tagsState = { data: [{ key: "ratio", value: "1 : 0.5" }], isLoading: false, isError: false };
+  pickerState = {
+    data: [
+      pickerRow(sample(1, "A", [tag("ratio", "1 : 0")]), 37),
+      pickerRow(sample(2, "B", [tag("ratio", "1 : 0.5")]), 65),
+      pickerRow(sample(3, "C", [tag("ratio", "1 : 1")]), 66),
     ],
     isLoading: false,
     isError: false,
@@ -130,23 +149,32 @@ describe("SeriesScopingPage", () => {
     expect(screen.queryByTestId("scope-sample-row")).not.toBeInTheDocument();
   });
 
-  it("writes only confirmed members and navigates on build success", () => {
-    renderPage();
+  it("writes every member's read and navigates to /series on build success", () => {
+    const { rerender } = renderPage();
     fireEvent.click(screen.getByRole("button", { name: /confirm & build/i }));
     expect(mutate).toHaveBeenCalledWith(
       expect.objectContaining({
         key: "ratio",
-        tags: expect.arrayContaining([{ sampleId: 2, value: "1 : 0.5" }]),
+        tags: expect.arrayContaining([
+          { sampleId: 1, value: "1 : 0" },
+          { sampleId: 2, value: "1 : 0.5" },
+        ]),
       }),
     );
+    // No navigation until the write actually settles.
+    expect(navigateSpy).not.toHaveBeenCalledWith("/series");
+    // The write succeeds → the success effect navigates to the folio.
+    scopeState = { mutate, isSuccess: true, error: null };
+    act(() => rerender());
+    expect(navigateSpy).toHaveBeenCalledWith("/series");
   });
 
-  it("shows the ready foot line when no member is flagged", () => {
+  it("shows the ready foot line with the kept count when nothing is skipped", () => {
     renderPage();
-    expect(screen.getByText(/All 2 values confirmed — ready to build/i)).toBeInTheDocument();
+    expect(screen.getByText(/2 values ready to commit/i)).toBeInTheDocument();
   });
 
-  it("treats a sample missing the ordering key as a loose candidate, not a member", () => {
+  it("treats a sample missing the ordering key as a candidate, not a member", () => {
     // Sample A has no "ratio" value → it splits out as a loose match (a
     // candidate), leaving one clean member B. Build stays enabled.
     pickerState = {
@@ -159,22 +187,65 @@ describe("SeriesScopingPage", () => {
     };
     renderPage();
     expect(screen.getAllByTestId("scope-sample-row")).toHaveLength(1);
-    expect(screen.getByTestId("scope-candidate-row")).toBeInTheDocument();
+    expect(screen.getByTestId("scope-candidate")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /confirm & build/i })).not.toBeDisabled();
   });
 
-  it("flagging a member's value warns, disables build; unflagging re-enables", () => {
+  it("skipping a member excludes it from the write but does not block the build", () => {
+    seed3();
     renderPage();
+    // Members sort low→high: A(1:0), B(1:0.5), C(1:1). Skip B (index 1).
+    const flagButtons = screen.getAllByTestId("flag-button");
+    fireEvent.click(flagButtons[1]!);
+    // Build stays enabled (A and C are still kept).
     const build = screen.getByRole("button", { name: /confirm & build/i });
     expect(build).not.toBeDisabled();
-    // Click the first member's value control → re-open (flag) it.
+    // Foot line annotates the skip.
+    expect(screen.getByText(/2 values ready to commit · 1 skipped/i)).toBeInTheDocument();
+    // The write excludes the skipped member B.
+    fireEvent.click(build);
+    expect(mutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        key: "ratio",
+        tags: [
+          { sampleId: 1, value: "1 : 0" },
+          { sampleId: 3, value: "1 : 1" },
+        ],
+      }),
+    );
+  });
+
+  it("disables build when every member is skipped, and re-enables on unskip", () => {
+    renderPage();
     const flagButtons = screen.getAllByTestId("flag-button");
     fireEvent.click(flagButtons[0]!);
-    expect(screen.getByText(/1 value to check before you can build/i)).toBeInTheDocument();
+    fireEvent.click(screen.getAllByTestId("flag-button")[1]!);
+    // Both members skipped → nothing to commit.
+    expect(screen.getByText(/keep at least one value to build/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /confirm & build/i })).toBeDisabled();
-    // Click it again → resolve; build re-enables.
+    // Unskip one → build re-enables.
     fireEvent.click(screen.getAllByTestId("flag-button")[0]!);
     expect(screen.getByRole("button", { name: /confirm & build/i })).not.toBeDisabled();
+  });
+
+  it("renders candidates as informational discovery with no add control", () => {
+    pickerState = {
+      data: [
+        pickerRow(sample(1, "A", [tag("ratio", "1 : 0")]), 37),
+        pickerRow(sample(2, "B", []), 65),
+      ],
+      isLoading: false,
+      isError: false,
+    };
+    renderPage();
+    // One member (A), one candidate (B).
+    expect(screen.getAllByTestId("scope-sample-row")).toHaveLength(1);
+    expect(screen.getByTestId("scope-candidate")).toBeInTheDocument();
+    // No "+ Add to series" control anywhere.
+    expect(screen.queryByRole("button", { name: /add to series/i })).toBeNull();
+    expect(screen.queryByText(/add to series/i)).toBeNull();
+    // The member count is unchanged (no way to fold a candidate in).
+    expect(screen.getAllByTestId("scope-sample-row")).toHaveLength(1);
   });
 
   it("shows the no-ordering-variable empty state with a contact-sheet CTA on a cold corpus", () => {

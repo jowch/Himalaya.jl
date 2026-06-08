@@ -18,18 +18,27 @@ const row = (over: Partial<OrderingRow>): OrderingRow => ({
 });
 
 describe("buildFootState", () => {
-  it("is ready when no flags, with the member count", () => {
-    expect(buildFootState(0, 6)).toEqual({
+  it("is ready with the kept count when nothing is skipped", () => {
+    expect(buildFootState(6, 0)).toEqual({
       kind: "ready",
-      text: "All 6 values confirmed — ready to build",
+      text: "6 values ready to commit",
     });
   });
-  it("warns with singular/plural flag wording", () => {
-    expect(buildFootState(1, 6)).toEqual({
-      kind: "warn",
-      text: "1 value to check before you can build",
+  it("annotates skipped members on the ready line", () => {
+    expect(buildFootState(5, 1)).toEqual({
+      kind: "ready",
+      text: "5 values ready to commit · 1 skipped",
     });
-    expect(buildFootState(2, 6).text).toBe("2 values to check before you can build");
+  });
+  it("uses singular wording for a single kept value", () => {
+    expect(buildFootState(1, 0).text).toBe("1 value ready to commit");
+    expect(buildFootState(1, 2).text).toBe("1 value ready to commit · 2 skipped");
+  });
+  it("warns when nothing is kept (every member skipped)", () => {
+    expect(buildFootState(0, 3)).toEqual({
+      kind: "warn",
+      text: "Keep at least one value to build",
+    });
   });
 });
 
@@ -40,24 +49,36 @@ describe("canScopeBuild", () => {
   it("is false with no included members", () => {
     expect(canScopeBuild([row({ include: false })], "ratio")).toBe(false);
   });
-  it("is false when an included member is flagged", () => {
-    expect(canScopeBuild([row({ flagged: true })], "ratio")).toBe(false);
+  it("is false when an empty-value row is the only included member", () => {
+    expect(canScopeBuild([row({ value: "" })], "ratio")).toBe(false);
   });
-  it("is true when all included members are unflagged (flagged loose ignored)", () => {
+  it("is true when another member is kept even though one is skipped", () => {
     expect(
-      canScopeBuild([row({ sampleId: 1 }), row({ sampleId: 2, include: false, flagged: true })], "ratio"),
+      canScopeBuild([row({ sampleId: 1 }), row({ sampleId: 2, flagged: true })], "ratio"),
     ).toBe(true);
+  });
+  it("is false when every member is skipped (flagged), never blocking elsewhere", () => {
+    expect(
+      canScopeBuild(
+        [row({ sampleId: 1, flagged: true }), row({ sampleId: 2, flagged: true })],
+        "ratio",
+      ),
+    ).toBe(false);
   });
 });
 
 describe("buildScopePayload", () => {
-  it("writes only included, unflagged members as {sampleId, value}", () => {
+  it("writes only included, non-skipped members WITH a value as {sampleId, value}", () => {
     const rows = [
       row({ sampleId: 1, value: "1 : 0" }),
       row({ sampleId: 2, flagged: true }),
       row({ sampleId: 3, include: false }),
+      row({ sampleId: 4, value: "" }),
     ];
     expect(buildScopePayload(rows)).toEqual([{ sampleId: 1, value: "1 : 0" }]);
+  });
+  it("never emits an empty-value entry even if flagged is false", () => {
+    expect(buildScopePayload([row({ sampleId: 9, value: "", flagged: false })])).toEqual([]);
   });
 });
 

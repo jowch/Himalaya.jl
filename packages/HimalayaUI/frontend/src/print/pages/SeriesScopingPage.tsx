@@ -4,8 +4,8 @@ import { Skeleton } from "boneyard-js/react";
 import { PageFrame } from "../components/PageFrame";
 import { ScopePlate } from "../components/ScopePlate";
 import { ScopeSampleRow } from "../components/ScopeSampleRow";
-import { ScopeCandidateRow } from "../components/ScopeCandidateRow";
 import { useDragReorder, reorder } from "../components/useDragReorder";
+import { Sparkline } from "../plot/Sparkline";
 import { EmptyState, Button } from "../ui";
 import type { Trace } from "../../api";
 import {
@@ -37,9 +37,7 @@ const SCOPING_FIXTURE = (
   </div>
 );
 
-type HistoryEntry =
-  | { type: "flag"; id: number; prev: boolean; label: string }
-  | { type: "add"; id: number; label: string };
+type HistoryEntry = { type: "flag"; id: number; prev: boolean; label: string };
 
 /**
  * SeriesScopingPage (greenfield) — the machine-proposes / human-confirms
@@ -47,9 +45,14 @@ type HistoryEntry =
  * the structured (key,value) sample_tags — NOT series creation (that is the
  * builder). Assembled from src/print composites + the series-scoping mockup;
  * carried logic only (proposeOrdering/splitProposal/dominantPhase + the
- * useScopeSeries batch write), no legacy presentation. See the plan's scope
- * table for the six honesty decisions (display-only order field, no confirm
- * modal, display-only drag-reorder, honest grouping copy, flag-not-edit).
+ * useScopeSeries batch write), no legacy presentation.
+ *
+ * Honest commit-gate model (Option A): in the carried data a member ALWAYS has a
+ * value (loose matches — value==="" — split out as informational candidates), so
+ * members are never machine-flagged. Scoping's only durable effect is writing
+ * Himalaya's parsed (key,value) read onto each member; every read is committed
+ * unless the user SKIPS it (the value control toggles skip). Candidates carry no
+ * value, so they cannot be committed — they're discovery only, with no add path.
  */
 export function SeriesScopingPage(): JSX.Element {
   const navigate = useNavigate();
@@ -83,7 +86,10 @@ export function SeriesScopingPage(): JSX.Element {
     [split.members],
   );
 
-  // Local, user-owned copies seeded once the proposal resolves.
+  // Local, user-owned copies seeded once the proposal resolves. The reseed on a
+  // `split` change is intentional: TanStack structural sharing keeps the query
+  // `data` referentially stable unless the corpus content actually changed, in
+  // which case reseeding the worksheet to the new proposal is correct.
   const [rows, setRows] = useState<OrderingRow[]>([]);
   const [loose, setLoose] = useState<OrderingRow[]>([]);
   const [order, setOrder] = useState<number[]>([]);
@@ -107,8 +113,9 @@ export function SeriesScopingPage(): JSX.Element {
     [order, byId],
   );
 
-  // Clicking a value confirms / re-opens the machine's read (flag-not-edit,
-  // scope decision #2). Recorded so Undo / ⌘Z steps it back.
+  // Clicking a member's value toggles "skip this sample from the write" — the
+  // honest commit-gate (Option A). A skipped read is excluded from the batch,
+  // never blocks the build. Recorded so Undo / ⌘Z steps it back.
   const toggleFlag = (id: number): void => {
     const m = rows.find((r) => r.sampleId === id);
     if (!m) return;
@@ -116,31 +123,11 @@ export function SeriesScopingPage(): JSX.Element {
     setRows((cur) => cur.map((r) => (r.sampleId === id ? { ...r, flagged: !r.flagged } : r)));
   };
 
-  // Folding a candidate in: include it and APPEND to the displayed order
-  // (manual order wins — never re-sort).
-  const addCandidate = (id: number): void => {
-    const c = loose.find((r) => r.sampleId === id);
-    if (!c) return;
-    setLoose((cur) => cur.filter((r) => r.sampleId !== id));
-    setRows((cur) => [...cur, { ...c, include: true }]);
-    setOrder((o) => [...o, id]);
-    setHistory((h) => [...h, { type: "add", id, label: `smp_${id}` }]);
-  };
-
   const undo = (): void => {
     setHistory((h) => {
       const e = h[h.length - 1];
       if (!e) return h;
-      if (e.type === "flag") {
-        setRows((cur) => cur.map((r) => (r.sampleId === e.id ? { ...r, flagged: e.prev } : r)));
-      } else {
-        setRows((cur) => {
-          const m = cur.find((r) => r.sampleId === e.id);
-          if (m) setLoose((ls) => [...ls, { ...m, include: false }]);
-          return cur.filter((r) => r.sampleId !== e.id);
-        });
-        setOrder((o) => o.filter((id) => id !== e.id));
-      }
+      setRows((cur) => cur.map((r) => (r.sampleId === e.id ? { ...r, flagged: e.prev } : r)));
       return h.slice(0, -1);
     });
   };
@@ -201,8 +188,9 @@ export function SeriesScopingPage(): JSX.Element {
     [sorted, pickerById, indicesByExposure],
   );
 
-  const flagCount = rows.filter((r) => r.flagged).length;
-  const footState = buildFootState(flagCount, rows.length);
+  const skippedCount = rows.filter((r) => r.flagged).length;
+  const keptCount = rows.filter((r) => r.include && !r.flagged && r.value !== "").length;
+  const footState = buildFootState(keptCount, skippedCount);
   const canBuild = canScopeBuild(rows, proposal.orderingKey);
   const lastLabel = history.length ? history[history.length - 1]!.label : undefined;
 
@@ -292,16 +280,8 @@ export function SeriesScopingPage(): JSX.Element {
               grouping={
                 <>
                   Himalaya grouped <strong>{rows.length} samples</strong> by their{" "}
-                  <strong>{keyLabel}</strong>, read from the sample names.
-                  {flagCount > 0 ? (
-                    <>
-                      {" "}
-                      {rows.length - flagCount} parsed cleanly, {flagCount}{" "}
-                      {flagCount === 1 ? "needs" : "need"} a look.
-                    </>
-                  ) : (
-                    <> All {rows.length} parsed cleanly.</>
-                  )}
+                  <strong>{keyLabel}</strong>, read from the sample names. Confirm the reads and build —
+                  skip any it misread.
                 </>
               }
               orderedBy={keyLabel}
@@ -339,21 +319,36 @@ export function SeriesScopingPage(): JSX.Element {
               })}
               candidates={
                 loose.length ? (
-                  loose.map((c) => (
-                    <ScopeCandidateRow
-                      key={c.sampleId}
-                      name={c.sampleName}
-                      why={
-                        <>
-                          lacks the <strong className="text-accent font-semibold">{keyLabel}</strong> — add
-                          it if it belongs.
-                        </>
-                      }
-                      trace={traceBySample.get(c.sampleId) ?? EMPTY_TRACE}
-                      phase={phaseBySample.get(c.sampleId) ?? null}
-                      onAdd={() => addCandidate(c.sampleId)}
-                    />
-                  ))
+                  /* Informational discovery only (Option A): loose matches carry
+                     no value for this key, so they CANNOT be committed — there is
+                     no add action. A plain sparkline + name + why list, not the
+                     ScopeCandidateRow composite (whose "+ Add to series" button
+                     always renders; a dead button would lie). */
+                  <div data-testid="scope-candidates" className="space-y-2">
+                    {loose.map((c) => (
+                      <div
+                        key={c.sampleId}
+                        data-testid="scope-candidate"
+                        className="flex items-center gap-3 px-2 py-2.5 border border-dashed border-hair-strong rounded"
+                      >
+                        <Sparkline
+                          trace={traceBySample.get(c.sampleId) ?? EMPTY_TRACE}
+                          {...(phaseBySample.get(c.sampleId) != null
+                            ? { phase: phaseBySample.get(c.sampleId)! }
+                            : {})}
+                          className="opacity-70"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-meta font-semibold text-ink-soft">{c.sampleName}</div>
+                          <div className="text-caption text-ink-faint">
+                            lacks the{" "}
+                            <strong className="text-accent font-semibold">{keyLabel}</strong> — tag it on
+                            the contact sheet if it belongs.
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 ) : (
                   <div className="text-meta text-ink-faint italic">
                     Nothing else in the corpus matches this grouping.
@@ -364,8 +359,8 @@ export function SeriesScopingPage(): JSX.Element {
               footState={footState}
               footNote={
                 <>
-                  Confirming records the {keyLabel} on every sample — the next series that needs it already
-                  knows.
+                  Confirming records the {keyLabel} on every kept sample — the next series that needs it
+                  already knows.
                 </>
               }
               {...(!canBuild ? { buildDisabled: true } : {})}
