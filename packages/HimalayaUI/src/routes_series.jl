@@ -231,27 +231,14 @@ function register_series_routes!()
         if !haskey(body, :members) || !(body.members isa AbstractVector)
             return _json_error(400, "members must be an array")
         end
-        expected_hash = haskey(body, :expected_content_hash) &&
-                        body.expected_content_hash !== nothing ?
-                        String(body.expected_content_hash) : nothing
-
         return with_idempotency(db, req) do
-            # Existence (404) before the conflict check (409) — HTTP semantics.
-            # No author gate (architecture decision 3).
+            # Existence (404) only — the optimistic-concurrency 409 gate was
+            # relaxed to last-write-wins (no conflict UI; docs/redesign-notes.md
+            # 2026-06-03). content_hash is still written by the committed event
+            # (post_state + future fork/stale checks), so compute_series_content_hash
+            # / current_series_content_hash stay defined and used in the event layer.
             if !series_exists(db, id)
                 return _json_error(404, "series not found")
-            end
-            # Optimistic-concurrency check (NOT the author gate): the stored
-            # hash must match the client's expected_content_hash, else 409.
-            current_hash = current_series_content_hash(db, id)
-            if expected_hash !== nothing && current_hash !== expected_hash
-                current_state = fetch_series_with_plate(db, id)
-                return HTTP.Response(409, ["Content-Type" => "application/json"],
-                    JSON3.write(Dict(
-                        :error         => "conflict",
-                        :current_hash  => current_hash,
-                        :current_state => current_state,
-                    )))
             end
 
             members_payload = [_series_member_payload(db, m) for m in body.members]

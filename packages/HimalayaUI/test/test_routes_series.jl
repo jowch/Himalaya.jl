@@ -346,7 +346,7 @@ end
         end
     end
 
-    @testset "POST /api/series/{id}/commit (smoke + no gate + 409)" begin
+    @testset "POST /api/series/{id}/commit (smoke + no gate + LWW)" begin
         mktempdir() do tmp
             db = _series_test_db(tmp)
             with_test_server(db) do port, base
@@ -363,7 +363,7 @@ end
                 @test resp404.status == 404
 
                 # Seed a committed series authored by alice (id 1), with a
-                # stored content_hash so the 409 path can be exercised.
+                # stored content_hash to confirm the gate was present in the DB.
                 DBInterface.execute(db, "INSERT INTO users (id, username) VALUES (1, 'alice')")
                 DBInterface.execute(db, """INSERT INTO series
                     (id, title, state, created_by, content_hash)
@@ -379,19 +379,17 @@ end
                 ev = Tables.rowtable(DBInterface.execute(db,
                     "SELECT action FROM user_actions WHERE entity_type='series' AND entity_id=20"))
                 @test any(r -> r.action == "series_plate_committed", ev)
-                # Capture the hash the dispatcher just wrote (plate-based, not the seed).
-                committed_hash = JSON3.read(resp.body, Dict{Symbol, Any})[:content_hash]
 
-                # Conflict: a wrong expected_content_hash → 409.
-                resp409 = HTTP.post("$base/api/series/20/commit",
+                # LWW: a stale/wrong expected_content_hash is IGNORED — the commit
+                # succeeds with 200 and the members are applied (no 409 gate).
+                resp_lww = HTTP.post("$base/api/series/20/commit",
                     ["X-Username" => "alice", "Content-Type" => "application/json"],
                     JSON3.write(Dict(:members => [_member],
                                      :expected_content_hash => "sha256:WRONG"));
                     status_exception = false)
-                @test resp409.status == 409
-                conflict = JSON3.read(resp409.body, Dict{Symbol, Any})
-                @test conflict[:error] == "conflict"
-                @test conflict[:current_hash] == committed_hash
+                @test resp_lww.status == 200
+                body_lww = JSON3.read(resp_lww.body, Dict{Symbol, Any})
+                @test !haskey(body_lww, :error)
             end
             close(db)
         end
