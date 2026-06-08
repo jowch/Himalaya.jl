@@ -6,14 +6,11 @@ import { OnboardingFlow } from "./components/OnboardingFlow";
 import { NavModal } from "./components/NavModal";
 import { ToastContainer } from "./components/ui";
 import { InfrastructureBanner } from "./components/InfrastructureBanner";
-import { SeriesCommitConflictModal } from "./components/SeriesCommitConflictModal";
 import { handleRemoteEvent } from "./lib/queue/replayCoordinator";
 import { attachPersistence, rehydrate } from "./lib/queue/persistence";
-import { attachConflictBridge } from "./lib/queue/conflictBridge";
 import { resolveMutator } from "./lib/queue/mutatorRegistry";
 import { exposeTestHelpers } from "./lib/queue/testHelpers";
 import { showToast } from "./lib/toast";
-import { useAppState } from "./state";
 import type { SseEvent } from "./lib/queue/types";
 
 /**
@@ -50,21 +47,6 @@ export function App(): JSX.Element {
     return attachPersistence(mc);
   }, [mc]);
 
-  // Single-source-of-truth bridge: a ConflictError on a `series_commit`
-  // mutation → Zustand `pendingConflict` (the slot the
-  // `SeriesCommitConflictModal` reads). Mounted once at App startup so the
-  // mount sites can't race on the slot. Module-scoped last-seen tracking keeps
-  // remount/HMR from re-popping the modal on a stale terminal-error mutation
-  // still in the cache. See `lib/queue/conflictBridge.ts`.
-  //
-  // I3.6 (#177): Compare is retired, so the `comparison_save` arm of the
-  // bridge is gone; only `series_commit` remains. The bridge + slot are KEPT
-  // (series uses them).
-  useEffect(() => {
-    const setPendingConflict = useAppState.getState().setPendingConflict;
-    return attachConflictBridge(mc, setPendingConflict);
-  }, [mc]);
-
   // On mount, replay any persisted ops left over from a previous tab
   // session through their matching mutators. Server-side request-level
   // idempotency (X-Client-Op-Id) makes this safe even if the original op
@@ -97,7 +79,6 @@ export function App(): JSX.Element {
           stay mounted app-wide so the `/` + ⌘K shortcuts and StaleUrlPage
           recovery can open it from any surface. */}
       <NavModal />
-      <SeriesCommitConflictModal />
       <ToastContainer />
       <InfrastructureBanner />
     </>

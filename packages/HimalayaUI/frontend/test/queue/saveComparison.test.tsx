@@ -22,11 +22,7 @@ import { setToastImpl } from "../../src/lib/toast";
 import { pendingDeferreds } from "../../src/lib/queue/deferred";
 import { ConflictError } from "../../src/api";
 import type { Comparison, ComparisonMemberInput } from "../../src/api";
-import { queryKeys, useSaveComparison } from "../../src/queries";
-import { useAppState } from "../../src/state";
-import {
-  attachConflictBridge, _resetConflictBridgeForTest,
-} from "../../src/lib/queue/conflictBridge";
+import { queryKeys } from "../../src/queries";
 import { makeClient } from "../test-utils";
 
 const SNAP = {
@@ -316,38 +312,6 @@ describe("saveComparisonMutator — useQueueMutation suppresses toast on 409 Con
     expect(toastCalls).toEqual([]);
     // Sanity: the typed throw still landed on `error` for the modal to read.
     expect(result.current.error).toBeInstanceOf(ConflictError);
-  });
-
-  it("on 409, the conflictBridge does NOT populate `pendingConflict` (Compare retired, #177)", async () => {
-    // I3.6: the Compare page is gone, so the bridge's `comparison_save` arm
-    // was removed. The mutator still THROWS a typed ConflictError on 409 (it
-    // remains registered for foreign-event replay), and the toast is still
-    // suppressed — but a comparison_save 409 no longer reaches `pendingConflict`
-    // (no Compare modal to open). Only `series_commit` bridges now.
-    const { client, wrapper } = withClient();
-    mockFetch409();
-    useAppState.setState({ pendingConflict: null });
-    _resetConflictBridgeForTest();
-    const detachBridge = attachConflictBridge(
-      client.getMutationCache(),
-      useAppState.getState().setPendingConflict,
-    );
-    const { result } = renderHook(() => useSaveComparison(), { wrapper });
-    act(() => {
-      result.current.mutate({
-        id: 42, title: "Edited", members: [MEMBER_INPUT],
-        expected_content_hash: "sha256:stale",
-      });
-    });
-    await waitFor(() => expect(result.current.isPending).toBe(false));
-    // The typed ConflictError still surfaces on the mutation result …
-    expect(result.current.error).toBeInstanceOf(ConflictError);
-    // … but the bridge does not route it to the slot (Compare arm removed).
-    expect(useAppState.getState().pendingConflict).toBeNull();
-    // Toast still suppressed (409 is not a validation-class error).
-    expect(toastCalls).toEqual([]);
-    detachBridge();
-    useAppState.setState({ pendingConflict: null });
   });
 
   it("still surfaces a validation toast on a non-Conflict 4xx (e.g. 403)", async () => {

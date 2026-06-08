@@ -625,20 +625,22 @@ export interface SaveComparisonBody {
 }
 
 /**
- * Thrown by `saveComparison` when the server returns 409 (content_hash drift).
- * Carries the server's `current_hash` and `current_state` so the conflict
- * modal can render the diff. `status` is set to 409 so the queue's failure-
- * class router treats it as a validation error (no retry, surfaces in
- * `onError`); the modal opens off the typed throw, not the toast.
+ * Thrown by a fetcher when the server returns 409 (content_hash drift).
+ * Carries the server's `current_hash` and `current_state`. `status` is 409 so
+ * the queue's failure-class router treats it as a validation error (no retry,
+ * surfaces in `onError`); `useQueueMutation` suppresses the toast on it.
+ *
+ * There is no longer a conflict surface that consumes it. Compare is retired
+ * (#177, replay-only) and the series-commit route is last-write-wins (Plan 6a,
+ * no longer 409s). The type is kept because `saveComparison` / `commitSeriesPlate`
+ * still defensively parse a 409 should one ever arrive.
  */
 export class ConflictError extends Error {
   status = 409 as const;
   constructor(
     public current_hash: string | null,
-    // I3.5b — widened from `Comparison | null`. A comparison-submit 409 carries
-    // a `Comparison`; a series-commit 409 (`commitSeriesPlate`) carries a
-    // `Series`. No discriminator: each conflict wrapper (ConflictModal /
-    // SeriesCommitConflictModal) knows its own kind by where it is mounted.
+    // A comparison-submit 409 carries a `Comparison`; a series-commit 409
+    // (`commitSeriesPlate`) carries a `Series`. No discriminator.
     public current_state: Comparison | Series | null,
     message?: string,
   ) {
@@ -955,7 +957,6 @@ export interface SaveSeriesBody {
 /** Body for `POST /api/series/:id/commit`. */
 export interface CommitSeriesPlateBody {
   members: SeriesMemberInput[];
-  expected_content_hash?: string;
 }
 
 /**

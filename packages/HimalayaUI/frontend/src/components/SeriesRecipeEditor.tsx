@@ -70,7 +70,7 @@ export function SeriesRecipeEditor({
     if (draft === null) return;
     if (commit.isPending || commitInFlight.current) return;
     commitInFlight.current = true;
-    commit.mutate({ id: seriesId, ...buildSeriesCommitBody(draft, members) });
+    commit.mutate({ id: seriesId, ...buildSeriesCommitBody(members) });
   }, [draft, commit, seriesId, members]);
 
   const handleCancel = useCallback(() => {
@@ -86,8 +86,8 @@ export function SeriesRecipeEditor({
   }, [save.isSuccess, save.error]);
 
   // Commit success → discard the draft + return to the read surface (the
-  // committed plate). A 409 surfaces via the conflict bridge →
-  // SeriesCommitConflictModal; release the guard so the modal can retry.
+  // committed plate). The commit route is last-write-wins (Plan 6a): no 409,
+  // no conflict UI. A commit error releases the guard so the user can retry.
   useEffect(() => {
     if (commit.isSuccess && commitInFlight.current) {
       commitInFlight.current = false;

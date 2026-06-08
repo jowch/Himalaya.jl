@@ -126,14 +126,14 @@ describe("SeriesBuilderPage — edit mode (I3.5b)", () => {
     expect("expected_content_hash" in arg).toBe(false);
   });
 
-  it("Commit plate flushes useCommitSeriesPlate with expected_content_hash from baseHash", () => {
+  it("Commit plate flushes useCommitSeriesPlate WITHOUT expected_content_hash (LWW relax, Plan 6a)", () => {
     renderPage();
     fireEvent.click(screen.getByTestId("series-builder-edit"));
     fireEvent.click(screen.getByTestId("recipe-commit"));
     expect(h.commit.mutate).toHaveBeenCalledTimes(1);
     const arg = h.commit.mutate.mock.calls[0][0];
     expect(arg.id).toBe(5);
-    expect(arg.expected_content_hash).toBe("sha256:base");
+    expect("expected_content_hash" in arg).toBe(false);
     expect(arg.members[0].exposure_id).toBe(101);
     expect("id" in arg.members[0]).toBe(false);
   });

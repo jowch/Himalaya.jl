@@ -5,8 +5,8 @@
  * `post_state` envelope (the full `fetch_series_with_plate` projection), so
  * `synthesizeFromSse` can return a complete Series on the SSE-wins path.
  *
- * A 409 (content_hash conflict) surfaces as a generic `ApiError`; the typed
- * conflict modal is I3.5b's concern.
+ * The commit route is last-write-wins (Plan 6a): the body carries no
+ * `expected_content_hash` and the backend no longer 409s on a stale hash.
  */
 import * as api from "../../../api";
 import type {
@@ -19,7 +19,6 @@ import type { Mutator, RollbackContext } from "../types";
 export interface CommitSeriesPlateInput {
   id: number;
   members: SeriesMemberInput[];
-  expected_content_hash?: string;
 }
 
 interface CommitSeriesPlateScope {
@@ -38,9 +37,6 @@ export const commitSeriesPlateMutator: Mutator<CommitSeriesPlateInput, CommitSer
     // Annotate with the shared CommitSeriesPlateBody type — do not re-declare
     // it inline (drift risk).
     const body: CommitSeriesPlateBody = { members: p.members };
-    if (p.expected_content_hash !== undefined) {
-      body.expected_content_hash = p.expected_content_hash;
-    }
     return api.commitSeriesPlate(p.id, body, buildAuthOpts(p));
   },
   onSuccess: (_p, response, qc) => {

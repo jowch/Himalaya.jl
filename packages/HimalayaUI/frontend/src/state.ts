@@ -1,6 +1,5 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { ConflictError } from "./api";
 import {
   emptyDraft,
   loadDraftFromSession,
@@ -74,7 +73,7 @@ export interface AppState {
    *  hovered* fields; a hovered q is a momentary, tab-local UI cue that would
    *  be meaningless to replay across reloads. It is also invisible to the
    *  mutation queue and never reaches a server payload — pure client hover
-   *  state (mirrors the `pendingConflict` non-persist rationale below). */
+   *  state (mirrors the `staleUrlContext` non-persist rationale below). */
   hoveredQ: number | undefined;
   /** Plan D-7: ephemeral hypothetical-candidate preview. When set, the plot
    *  (combs ghost row + trace highlight) previews what the cart WOULD become
@@ -152,24 +151,6 @@ export interface AppState {
   highlightedCompareMemberId: number | undefined;
 
   /**
-   * Compare-page conflict modal slot (Plan §Phase 12). When non-null, the
-   * `ConflictModal` mounted at `App.tsx` opens, rendering the server's
-   * `current_state` (frozen at conflict time) side-by-side with the local
-   * draft. Set by `useSaveComparison` whenever the typed `ConflictError`
-   * surfaces; cleared by Discard / Overwrite-success / Fork / Esc.
-   *
-   * NOT persisted — a 409 is a tab-local UX concern, and replaying it
-   * across reloads would resurrect a stale conflict whose underlying
-   * server state has likely moved on.
-   *
-   * Re-callability invariant: setting a fresh `ConflictError` while the
-   * modal is open replaces the slot rather than stacking. This is the
-   * second-409 race path — the modal stays mounted but its rendered
-   * server-state panel updates to the new `current_state`.
-   */
-  pendingConflict: ConflictError | null;
-
-  /**
    * Permalink URL handling slots (spec §4.4 + §6).
    * Both ephemeral — not persisted. `staleUrlContext` is non-null when the
    * current URL points to a slug that doesn't resolve (404 from
@@ -237,9 +218,6 @@ export interface AppState {
   setShowPeakTicks: (show: boolean) => void;
   setShowPeakLabels: (show: boolean) => void;
   setHighlightedCompareMemberId: (id: number | undefined) => void;
-
-  // Phase 12 — conflict modal slot
-  setPendingConflict: (conflict: ConflictError | null) => void;
 
   // Permalink URL handling actions (spec §4.4 + §6)
   setStaleUrlContext: (ctx: StaleUrlContext | null) => void;
@@ -315,9 +293,6 @@ export const useAppState = create<AppState>()(
         showPeakTicks: true,
         showPeakLabels: true,
         highlightedCompareMemberId: undefined,
-
-        // Phase 12 — conflict modal closed by default.
-        pendingConflict: null,
 
         // Permalink URL handling — both ephemeral, default empty.
         staleUrlContext: null,
@@ -474,10 +449,6 @@ export const useAppState = create<AppState>()(
         setShowPeakLabels: (showPeakLabels) => set({ showPeakLabels }),
         setHighlightedCompareMemberId: (highlightedCompareMemberId) =>
           set({ highlightedCompareMemberId }),
-
-        // Phase 12 — replace, never stack. A second 409 mid-modal updates
-        // `current_state` in-place; the modal stays open.
-        setPendingConflict: (pendingConflict) => set({ pendingConflict }),
 
         // Permalink URL handling actions (spec §4.4 + §6).
         // `recoverFromStaleUrl` is atomic: clears stale + sets active ids +

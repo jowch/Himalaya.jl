@@ -805,10 +805,9 @@ export function useSaveSeries() {
 
 /**
  * Series plate-commit (I3.5b). `series_commit` → POST /api/series/:id/commit.
- * Spinner (no optimistic write). On 409 the fetcher throws `ConflictError`,
- * which the App-level `attachConflictBridge` routes to `pendingConflict`
- * (kind `series_commit`) — bridge-free here, single writer, mirroring
- * `useSaveComparison`.
+ * Spinner (no optimistic write). The commit route is last-write-wins (Plan 6a):
+ * the backend no longer 409s on a stale hash and the body carries no
+ * `expected_content_hash`, so there is no conflict surface here.
  */
 export function useCommitSeriesPlate() {
   const username = useAppState((s) => s.username);
@@ -875,13 +874,10 @@ export function usePostComparisonMessage(comparisonId: number) {
 
 export function useSaveComparison() {
   const username = useAppState((s) => s.username);
-  // Phase 12 — bridging ConflictError to Zustand's `pendingConflict` slot
-  // happens via a single MutationCache subscriber mounted in App.tsx (see
-  // `lib/queue/conflictBridge.ts`). The hook is intentionally bridge-free
-  // so multiple mount sites (ComparePageEdit's Save, ConflictModal's
-  // Overwrite) cannot race on the slot — there is one subscriber, one
-  // writer. Toast suppression on 409 still lives in useQueueMutation's
-  // onError (the conflict modal owns that surface).
+  // Compare is retired (#177); this mutator stays registered only for
+  // foreign-event replay. A 409 still surfaces a typed `ConflictError` on
+  // `useMutation.error` (and toast suppression lives in useQueueMutation's
+  // onError), but there is no longer a conflict surface that reads it.
   return useQueueMutation(
     saveComparisonMutator,
     { username, clientId: CLIENT_ID },
