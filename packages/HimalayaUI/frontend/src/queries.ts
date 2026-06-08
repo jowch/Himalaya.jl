@@ -112,15 +112,6 @@ export const queryKeys = {
   // refreshes the /series/new proposal.
   corpusSampleTags:    ["corpus-sample-tags"] as const,
   corpusPickerSamples: ["corpus-picker-samples"] as const,
-  // Picker support routes (Plan §Phase 5, Task 5.2). Both are read-only —
-  // `recentlyPickedExposures` is per-user across all experiments; `sampleTags`
-  // is per-experiment (distinct (key, value) pairs).
-  recentlyPickedExposures: (userId: number | undefined, limit: number) =>
-    ["user", userId ?? "none", "recently-picked-exposures", limit] as const,
-  sampleTags: (experimentId: number | undefined) =>
-    ["experiment", experimentId ?? "none", "sample-tags"] as const,
-  pickerSamples: (experimentId: number | undefined) =>
-    ["experiment", experimentId ?? "none", "picker-samples"] as const,
   // Phase 13 — comparison pins, scoped per-user via the X-Username header
   // (no userId in the key — the cache row is implicitly per-tab/per-username).
   comparisonPins: ["comparison-pins"] as const,
@@ -890,52 +881,6 @@ export function useDeleteComparison() {
     deleteComparisonMutator,
     { username, clientId: CLIENT_ID },
   );
-}
-
-// ─── Picker support hooks (Plan §Phase 5, Task 5.2) ────────────────────────
-
-/**
- * Fetches the user's most-recently-picked exposures (across all comparisons
- * and experiments). Used by the comparison picker's "Recently used" section.
- * Disabled until `userId` is defined so an empty user state doesn't fire a
- * GET /api/users/undefined/recently-picked-exposures.
- */
-export function useRecentlyPickedExposures(
-  userId: number | undefined, limit = 20,
-) {
-  return useQuery({
-    queryKey: queryKeys.recentlyPickedExposures(userId, limit),
-    queryFn: () => api.getRecentlyPickedExposures(userId as number, limit),
-    enabled: userId !== undefined,
-  });
-}
-
-/**
- * Fetches distinct `(key, value)` sample-tag pairs for an experiment. Used
- * by the picker's tag-filter dropdown. Empty list when no tags exist.
- */
-export function useSampleTags(experimentId: number | undefined) {
-  return useQuery({
-    queryKey: queryKeys.sampleTags(experimentId),
-    queryFn: () => api.getSampleTags(experimentId as number),
-    enabled: experimentId !== undefined,
-  });
-}
-
-/**
- * Picker primary list. Returns one row per sample with the resolved
- * indexing-exposure id frozen at fetch time. Spec §PR1 backend.
- *
- * `enabled: experimentId !== undefined` matches `useSampleTags` — picker is
- * always opened from an experiment context, but the hook is shaped to
- * accept `undefined` so render isn't gated on experiment selection.
- */
-export function usePickerSamples(experimentId: number | undefined) {
-  return useQuery({
-    queryKey: queryKeys.pickerSamples(experimentId),
-    queryFn: () => api.getPickerSamples(experimentId as number),
-    enabled: experimentId !== undefined,
-  });
 }
 
 // ─── Comparison pins (Plan §Phase 13, Task 13.2) ───────────────────────────

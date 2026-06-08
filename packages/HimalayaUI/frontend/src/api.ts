@@ -708,29 +708,17 @@ export const postComparisonMessage = (
 ) => request<ComparisonMessage>(
   "POST", `/api/comparisons/${comparison_id}/messages`, { body }, opts);
 
-// ─── Picker support routes (Plan §Phase 5, Task 5.2) ───────────────────────
-//
-// Read-only GETs feeding the comparison picker. `recently-picked` returns
-// a flat exposure-id list in most-recent-first order; `sample-tags` returns
-// distinct (key, value) pairs scoped to one experiment.
+// ─── Picker / scoping shared types ──────────────────────────────────────────
 
-/** Per-pair shape returned by `GET /api/experiments/:eid/sample-tags`. */
+/** Per-pair shape returned by `GET /api/sample-tags` (corpus) and
+ *  the experiment-scoped `/api/experiments/:eid/sample-tags`. */
 export interface SampleTagPair {
   key: string;
   value: string;
 }
 
-export const getRecentlyPickedExposures = (
-  user_id: number, limit?: number,
-): Promise<number[]> => {
-  const qs = limit !== undefined ? `?limit=${limit}` : "";
-  return request<number[]>("GET", `/api/users/${user_id}/recently-picked-exposures${qs}`);
-};
-
-export const getSampleTags = (experiment_id: number): Promise<SampleTagPair[]> =>
-  request<SampleTagPair[]>("GET", `/api/experiments/${experiment_id}/sample-tags`);
-
-/** Per-row shape returned by `GET /api/experiments/:eid/picker-samples`. */
+/** Per-row shape returned by `GET /api/experiments/:eid/picker-samples`
+ *  and the corpus-wide `GET /api/picker-samples`. */
 export interface PickerSampleRow {
   sample: Sample;
   indexing_exposure_id: number | null;
@@ -743,12 +731,6 @@ export interface PickerSampleExposure {
   filename: string | null;
   selected: boolean;
 }
-
-export const getPickerSamples = (
-  experiment_id: number,
-): Promise<PickerSampleRow[]> =>
-  request<PickerSampleRow[]>(
-    "GET", `/api/experiments/${experiment_id}/picker-samples`);
 
 // ─── Corpus scoping reads (I0.2 / I0.3 corpus siblings; I3.4 consumer) ──────
 /** Corpus-wide distinct (key,value) tag pairs — GET /api/sample-tags. Reuses
