@@ -10,7 +10,7 @@ import { LoupePage } from "../print/pages/LoupePage";
 import { FocusPage } from "../print/pages/FocusPage";
 import { SeriesFolioPage } from "../print/pages/SeriesFolioPage";
 import { SeriesBuilderPage } from "../pages/SeriesBuilderPage";
-import { SeriesScopingPage } from "../pages/SeriesScopingPage";
+import { SeriesScopingPage } from "../print/pages/SeriesScopingPage";
 import { IndexSlugRedirect } from "./IndexSlugRedirect";
 import { ResolvingFallback } from "./ResolvingFallback";
 import { StaleUrlPage } from "./StaleUrlPage";
