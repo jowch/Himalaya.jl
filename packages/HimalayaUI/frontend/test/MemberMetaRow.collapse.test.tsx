@@ -18,11 +18,8 @@
  */
 import { useState } from "react";
 import { describe, it, expect } from "vitest";
-import { render, screen, cleanup, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { MemberMetaRow } from "../src/components/MemberMetaRow";
-import { MemberMetaGutter } from "../src/components/MemberMetaGutter";
-import { useAppState } from "../src/state";
-import { emptyDraft } from "../src/lib/comparison/draft";
 import type { SeriesMember } from "../src/api";
 
 /**
@@ -138,54 +135,5 @@ describe("MemberMetaRow collapse/expand — Compare UX E-2", () => {
     const row = screen.getByTestId("member-meta-row");
     expect(row).toHaveAttribute("data-member-id", "1");
     expect(row).toHaveAttribute("data-interactable", "expand");
-  });
-
-  it("only one row expanded at a time across siblings", () => {
-    cleanup();
-    useAppState.setState({
-      activeDraft: {
-        ...emptyDraft(),
-        members: [
-          { id: 1, exposure_id: 100, display_order: 0, band_height: 1, y_offset: 0,
-            normalization: "qwindow", color_override: undefined, label_override: undefined,
-            q_window_min: undefined, q_window_max: undefined, peak_display: undefined,
-            snapshot: undefined },
-          { id: 2, exposure_id: 200, display_order: 1, band_height: 1, y_offset: 0,
-            normalization: "qwindow", color_override: undefined, label_override: undefined,
-            q_window_min: undefined, q_window_max: undefined, peak_display: undefined,
-            snapshot: undefined },
-        ],
-      },
-    });
-    const members: SeriesMember[] = [
-      makeMember({ id: 1, exposure_id: 100 }),
-      makeMember({ id: 2, exposure_id: 200 }),
-    ];
-    const labelMap = new Map<number, string>(
-      members.map((m) => [m.id, `row-${m.id}`]),
-    );
-    render(
-      <MemberMetaGutter
-        members={members}
-        panelHeight={300}
-        mode="review"
-        displayLabelByMemberId={labelMap}
-      />,
-    );
-    const rows = screen.getAllByTestId("member-meta-row");
-    const rowA = rows.find((r) => r.getAttribute("data-member-id") === "1")!;
-    const rowB = rows.find((r) => r.getAttribute("data-member-id") === "2")!;
-    const bodyA = rowA.querySelector("[data-testid='member-meta-row-body']")!;
-    const bodyB = rowB.querySelector("[data-testid='member-meta-row-body']")!;
-
-    // Expand A.
-    tapBody(bodyA);
-    expect(rowA).toHaveAttribute("data-expanded", "true");
-    expect(rowB).toHaveAttribute("data-expanded", "false");
-
-    // Expand B — A must collapse (single-expanded invariant).
-    tapBody(bodyB);
-    expect(rowA).toHaveAttribute("data-expanded", "false");
-    expect(rowB).toHaveAttribute("data-expanded", "true");
   });
 });

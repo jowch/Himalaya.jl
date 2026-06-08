@@ -42,7 +42,10 @@ function renderAt(path: string) {
 describe("/series/:id routing", () => {
   it("mounts SeriesBuilderPage under the corpus shell", async () => {
     renderAt("/series/5");
-    expect(await screen.findByTestId("series-builder-page")).toBeInTheDocument();
+    // Greenfield SeriesBuilderPage (src/print/pages) renders the SeriesPlate
+    // once the series loads — its signature element (the legacy page's
+    // `series-builder-page` wrapper testid is gone post-cutover).
+    expect(await screen.findByTestId("series-plate")).toBeInTheDocument();
     expect(screen.getByTestId("corpus-topbar")).toBeInTheDocument();
   });
 });
