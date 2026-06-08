@@ -9,7 +9,8 @@ using HTTP, JSON3, DBInterface, Tables, Oxygen, SQLite
 # `with_idempotency` so a malformed payload returns an uncached 400.
 #
 # No route carries an `is_author` / 403 gate (architecture decision 3).
-# Existence (404) and optimistic-concurrency (409) checks remain.
+# Existence (404) checks remain; the `/commit` optimistic-concurrency (409) gate
+# was relaxed to last-write-wins (docs/redesign-notes.md 2026-06-03).
 #
 # `_json_error` and `_view_fields_error` are shared route helpers defined in
 # `json.jl` (same module). I3.6 (#177) relocated them there from the now-deleted

@@ -269,8 +269,9 @@ end
     current_series_content_hash(db, series_id) -> Union{String, Nothing}
 
 The stored `content_hash`. Returns `nothing` for a missing series AND for an
-uncommitted draft (drafts have NULL `content_hash`). Used only for the `commit`
-409 optimistic-concurrency check — never as the existence probe (that is
+uncommitted draft (drafts have NULL `content_hash`). Retained for future
+fork/stale checks (the `commit` 409 optimistic-concurrency gate it once served
+was relaxed to last-write-wins) — never the existence probe (that is
 `series_exists`).
 """
 function current_series_content_hash(db::SQLite.DB, series_id::Integer)::Union{String, Nothing}
