@@ -2,8 +2,10 @@ import { Link, useLocation, useNavigate, useSearchParams } from "react-router-do
 import { useAppState } from "../state";
 import { useCorpusSamples, useExperiments } from "../queries";
 import { sampleDisplayName } from "../lib/sample/displayName";
-import { Kicker } from "./ui/Kicker";
-import { IconButton } from "./ui/IconButton";
+import { TopBar } from "../print/ui/TopBar";
+import { Wordmark } from "../print/ui/Wordmark";
+import { Kicker } from "../print/ui/Kicker";
+import { IconButton } from "../print/ui/IconButton";
 
 interface Stage {
   id: "samples" | "series";
@@ -80,109 +82,120 @@ export function CorpusTopbar(): JSX.Element {
     });
   }
 
-  return (
-    <header
-      data-testid="corpus-topbar"
-      className="h-14 shrink-0 border-b border-hair bg-paper"
+  // ── Wordmark — a real router Link home to /samples that carries the contract
+  // testid; the `Wordmark` print primitive owns the brand appearance (SANS,
+  // 700, wide tracking) and renders the faint " · SAXS" tail. Placement +
+  // focus-ring are the only call-site classes.
+  const wordmark = (
+    <Link
+      to="/samples"
+      data-testid="corpus-wordmark"
+      aria-label="Himalaya SAXS, go to the corpus"
+      className="rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
     >
-      {/* Full-bleed bar matching the mockups' app bar: the controls span the
-          window with 24px gutters (no centred max-width cap). Each page body
-          owns its own content width (the contact sheet / folio centre; the
-          focus workspace is full-bleed). */}
-      <div
-        data-testid="corpus-topbar-inner"
-        className="flex h-full w-full items-center gap-4 px-6"
-      >
-      <Link
-        to="/samples"
-        data-testid="corpus-wordmark"
-        aria-label="Himalaya SAXS, go to the corpus"
-        className="text-sm font-bold uppercase tracking-[0.16em] text-ink rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
-      >
-        Himalaya <span className="font-semibold text-ink-faint">· SAXS</span>
-      </Link>
+      <Wordmark tail="SAXS">Himalaya</Wordmark>
+    </Link>
+  );
 
-      <nav data-testid="stage-tabs" aria-label="Workflow stages" className="flex gap-0.5">
-        {STAGES.map((s) => {
-          // Active = this tab's path is the current route's prefix (router-derived).
-          const isActive = pathname.startsWith(s.to);
-          return (
-            <Link
-              key={s.id}
-              to={s.to}
-              data-testid={`stage-tab-${s.id}`}
-              data-active={isActive ? "true" : undefined}
-              aria-current={isActive ? "page" : undefined}
-              className={
-                "px-2.5 py-1.5 rounded text-xs font-semibold uppercase " +
-                "tracking-wide no-underline " +
-                (isActive ? "text-ink bg-paper-sunk" : "text-ink-faint")
-              }
-            >
-              <span
-                aria-hidden="true"
-                className="inline-block w-1 h-1 rounded-full mr-1.5 align-middle bg-print-accent"
-              />
-              {s.label}
-            </Link>
-          );
-        })}
-      </nav>
+  // ── Stage tabs — router Links with router-derived active state + the accent
+  // leading dot. The print StageTabs primitive is a button tablist (state-driven,
+  // not route-driven), so it does not fit; these stay Links whose appearance is
+  // expressed with design-system TOKEN utilities (text-ink / text-ink-faint /
+  // bg-paper-sunk / bg-print-accent / rounded) — tokens, not appearance literals.
+  const stageTabs = (
+    <nav data-testid="stage-tabs" aria-label="Workflow stages" className="flex gap-0.5">
+      {STAGES.map((s) => {
+        // Active = this tab's path is the current route's prefix (router-derived).
+        const isActive = pathname.startsWith(s.to);
+        return (
+          <Link
+            key={s.id}
+            to={s.to}
+            data-testid={`stage-tab-${s.id}`}
+            data-active={isActive ? "true" : undefined}
+            aria-current={isActive ? "page" : undefined}
+            className={
+              "px-2.5 py-1.5 rounded text-xs font-semibold uppercase " +
+              "tracking-wide no-underline " +
+              (isActive ? "text-ink bg-paper-sunk" : "text-ink-faint")
+            }
+          >
+            <span
+              aria-hidden="true"
+              className="inline-block w-1 h-1 rounded-full mr-1.5 align-middle bg-print-accent"
+            />
+            {s.label}
+          </Link>
+        );
+      })}
+    </nav>
+  );
 
-      {/* The beamtime filter is honored only on the samples surface (it filters
-          the contact sheet, and the loupe back-link preserves it). On /series
-          and /sample/:id it was changeable but inert — hide it there rather
-          than present a control that does nothing. */}
-      {pathname.startsWith("/samples") && (
-        <select
-          data-testid="beamtime-chip"
-          aria-label="Filter to a beamtime"
-          value={beamtime}
-          onChange={handlePick}
-          className="rounded-full border border-hair-strong bg-plate px-2.5 py-1
-                     text-xs font-semibold text-ink"
-        >
-          <option value="">Beamtime, all experiments</option>
-          {(experimentsQuery.data ?? []).map((exp) => (
-            <option key={exp.id} value={exp.id}>
-              {exp.name ?? `Experiment ${exp.id}`}
-            </option>
-          ))}
-        </select>
-      )}
+  // ── Beamtime facet chip — honored only on the samples surface (it filters the
+  // contact sheet, and the loupe back-link preserves it). On /series and
+  // /sample/:id it was changeable but inert — hide it there rather than present
+  // a control that does nothing.
+  const beamtimeChip = pathname.startsWith("/samples") ? (
+    <select
+      data-testid="beamtime-chip"
+      aria-label="Filter to a beamtime"
+      value={beamtime}
+      onChange={handlePick}
+      className="rounded-full border border-hair-strong bg-plate px-2.5 py-1
+                 text-xs font-semibold text-ink"
+    >
+      <option value="">Beamtime, all experiments</option>
+      {(experimentsQuery.data ?? []).map((exp) => (
+        <option key={exp.id} value={exp.id}>
+          {exp.name ?? `Experiment ${exp.id}`}
+        </option>
+      ))}
+    </select>
+  ) : null;
 
-      <span className="flex-1" />
+  // ── F-13: per-sample stepper — the focus surface's primary inter-sample nav,
+  // shown in the TopBar rightSlot. URL-routed so the one-way route→store sync
+  // stays intact.
+  const stepper = showStepper ? (
+    <div
+      data-testid="sample-stepper"
+      className="flex items-center gap-2 text-ink"
+    >
+      <IconButton
+        label="Previous sample"
+        tone="ghost"
+        disabled={prevSample === undefined}
+        onClick={() => prevSample && navigate(`/sample/${prevSample.id}`)}
+        data-testid="sample-stepper-prev"
+      >{"‹"}</IconButton>
+      <span className="flex flex-col items-end leading-tight">
+        <span className="text-xs font-semibold text-ink">
+          {sampleDisplayName(activeSample!)}
+        </span>
+        <Kicker as="span" tone="faint">sample {stepIdx + 1} of {siblings.length}</Kicker>
+      </span>
+      <IconButton
+        label="Next sample"
+        tone="ghost"
+        disabled={nextSample === undefined}
+        onClick={() => nextSample && navigate(`/sample/${nextSample.id}`)}
+        data-testid="sample-stepper-next"
+      >{"›"}</IconButton>
+    </div>
+  ) : null;
 
-      {/* F-13: per-sample stepper — the focus surface's primary inter-sample
-          nav. URL-routed so the one-way route→store sync stays intact. */}
-      {showStepper && (
-        <div
-          data-testid="sample-stepper"
-          className="flex items-center gap-2 text-ink"
-        >
-          <IconButton
-            label="Previous sample"
-            tone="ghost"
-            disabled={prevSample === undefined}
-            onClick={() => prevSample && navigate(`/sample/${prevSample.id}`)}
-            data-testid="sample-stepper-prev"
-          >{"‹"}</IconButton>
-          <span className="flex flex-col items-end leading-tight">
-            <span className="text-xs font-semibold text-ink">
-              {sampleDisplayName(activeSample!)}
-            </span>
-            <Kicker as="span" tone="faint">sample {stepIdx + 1} of {siblings.length}</Kicker>
-          </span>
-          <IconButton
-            label="Next sample"
-            tone="ghost"
-            disabled={nextSample === undefined}
-            onClick={() => nextSample && navigate(`/sample/${nextSample.id}`)}
-            data-testid="sample-stepper-next"
-          >{"›"}</IconButton>
-        </div>
-      )}
-      </div>
-    </header>
+  // Compose from the print TopBar slot-shell (wordmark → children → spacer →
+  // rightSlot). The shell owns the bar appearance (h-14, hairline, paper, the
+  // 24px gutters, the flex-1 spacer); the corpus-topbar contract testid is
+  // carried via TopBar's data-testid passthrough.
+  return (
+    <TopBar
+      data-testid="corpus-topbar"
+      wordmark={wordmark}
+      rightSlot={stepper}
+    >
+      {stageTabs}
+      {beamtimeChip}
+    </TopBar>
   );
 }
