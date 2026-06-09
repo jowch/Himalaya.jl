@@ -38,8 +38,6 @@ const COLOR_AUTHORING_ALLOWLIST = new Set([
   "phases.ts",
   "lib/comparison/coloring.ts",
   "components/MemberHeatmapLayer.tsx",
-  "components/DetectorImage.tsx",
-  "components/FocusDetectorPanel.tsx",
   "main.tsx",
 ]);
 // figure-export/** is allowlisted by prefix (the whole export palette dir).

@@ -36,7 +36,7 @@ describe("check-design guard — ban rules (spec §4)", () => {
     expect(rulesFor('<div className="shadow-[0_8px_26px_-10px_rgba(60,52,40,.34)]" />')).not.toContain("no-raw-color-utility");
   });
   it("allowlists bg-[oklch] inside an allowlisted file (rule #3 only)", () => {
-    const v = scanContent("components/DetectorImage.tsx", '<div className="bg-[oklch(0.15_0.01_55)]" />');
+    const v = scanContent("components/MemberHeatmapLayer.tsx", '<div className="bg-[oklch(0.15_0.01_55)]" />');
     expect(v.map((x) => x.rule)).not.toContain("no-raw-color-utility");
   });
 
