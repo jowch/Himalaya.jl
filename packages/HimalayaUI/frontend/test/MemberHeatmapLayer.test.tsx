@@ -19,7 +19,7 @@ import {
   buildMemberHeatmapMarks,
   binPeaksOnly,
   HEATMAP_BIN_COUNT,
-} from "../src/components/MemberHeatmapLayer";
+} from "../src/print/export/MemberHeatmapLayer";
 import { phaseColor } from "../src/phases";
 import { COMPARE_PALETTE } from "../src/lib/comparison/coloring";
 

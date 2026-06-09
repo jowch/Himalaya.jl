@@ -1,20 +1,20 @@
 import { Routes, Route, Navigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { useAppState } from "../state";
-import { queryKeys } from "../queries";
-import * as api from "../api";
-import { useGlobalShortcuts } from "../hooks/useGlobalShortcuts";
+import { useAppState } from "../../state";
+import { queryKeys } from "../../queries";
+import * as api from "../../api";
+import { useGlobalShortcuts } from "../../hooks/useGlobalShortcuts";
 import { CorpusShell } from "./CorpusShell";
-import { SamplesPage } from "../print/pages/SamplesPage";
-import { LoupePage } from "../print/pages/LoupePage";
-import { FocusPage } from "../print/pages/FocusPage";
-import { SeriesFolioPage } from "../print/pages/SeriesFolioPage";
-import { SeriesBuilderPage } from "../print/pages/SeriesBuilderPage";
-import { SeriesScopingPage } from "../print/pages/SeriesScopingPage";
+import { SamplesPage } from "../pages/SamplesPage";
+import { LoupePage } from "../pages/LoupePage";
+import { FocusPage } from "../pages/FocusPage";
+import { SeriesFolioPage } from "../pages/SeriesFolioPage";
+import { SeriesBuilderPage } from "../pages/SeriesBuilderPage";
+import { SeriesScopingPage } from "../pages/SeriesScopingPage";
 import { IndexSlugRedirect } from "./IndexSlugRedirect";
 import { ResolvingFallback } from "./ResolvingFallback";
 import { StaleUrlPage } from "./StaleUrlPage";
-import { useStateFromUrl } from "../hooks/useStateFromUrl";
+import { useStateFromUrl } from "../../hooks/useStateFromUrl";
 
 /**
  * PageBody — the `*` catch-all body. After I5.1 (#182) it mounts under the

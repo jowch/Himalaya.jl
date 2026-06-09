@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useNavigate, type NavigateFunction } from "react-router-dom";
-import { useAppState } from "../state";
-import type { StaleUrlContext } from "../state";
+import { useAppState } from "../../state";
+import type { StaleUrlContext } from "../../state";
 
 interface Props {
   staleUrlContext: StaleUrlContext;

@@ -3,7 +3,7 @@ import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { renderWithProviders } from "./test-utils";
-import { NavModal } from "../src/components/NavModal";
+import { NavModal } from "../src/print/shell/NavModal";
 import { useAppState } from "../src/state";
 import * as api from "../src/api";
 

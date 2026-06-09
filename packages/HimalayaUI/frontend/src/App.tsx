@@ -1,11 +1,11 @@
 import "./styles.css";
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { AppRoutes } from "./components/AppRoutes";
-import { OnboardingFlow } from "./components/OnboardingFlow";
-import { NavModal } from "./components/NavModal";
+import { AppRoutes } from "./print/shell/AppRoutes";
+import { OnboardingFlow } from "./print/shell/OnboardingFlow";
+import { NavModal } from "./print/shell/NavModal";
 import { ToastContainer } from "./print/ui";
-import { InfrastructureBanner } from "./components/InfrastructureBanner";
+import { InfrastructureBanner } from "./print/shell/InfrastructureBanner";
 import { handleRemoteEvent } from "./lib/queue/replayCoordinator";
 import { attachPersistence, rehydrate } from "./lib/queue/persistence";
 import { resolveMutator } from "./lib/queue/mutatorRegistry";

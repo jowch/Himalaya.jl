@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Navigate, useParams } from "react-router-dom";
-import * as api from "../api";
+import * as api from "../../api";
 import { ResolvingFallback } from "./ResolvingFallback";
 
 /**

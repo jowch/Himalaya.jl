@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import * as api from "../api";
-import type { User } from "../api";
-import { useAppState } from "../state";
-import { Button, ModalShell, Kicker } from "../print/ui";
+import * as api from "../../api";
+import type { User } from "../../api";
+import { useAppState } from "../../state";
+import { Button, ModalShell, Kicker } from "../ui";
 
 /**
  * OnboardingFlow — shown when no username is in persisted state.

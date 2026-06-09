@@ -25,13 +25,13 @@
  * peak-on-decay shape without re-fitting peaks. See `binPeaksOnly` below.
  */
 import * as Plot from "@observablehq/plot";
-import type { Trace, SeriesMember } from "../api";
-import { phaseColor } from "../phases";
+import type { Trace, SeriesMember } from "../../api";
+import { phaseColor } from "../../phases";
 import {
   colorFor,
   COMPARE_PALETTE,
   type GroupingMode,
-} from "../lib/comparison/coloring";
+} from "../../lib/comparison/coloring";
 
 /**
  * Paper plate colour (`--plate`) — concrete value so OKLCH `color-mix` calls

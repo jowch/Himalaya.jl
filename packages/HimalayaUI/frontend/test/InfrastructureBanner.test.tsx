@@ -3,7 +3,7 @@ import { act, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { Mutation } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { InfrastructureBanner } from "../src/components/InfrastructureBanner";
+import { InfrastructureBanner } from "../src/print/shell/InfrastructureBanner";
 
 function withQC(qc: QueryClient) {
   return ({ children }: { children: ReactNode }) => (

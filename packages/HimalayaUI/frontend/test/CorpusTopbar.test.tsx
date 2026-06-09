@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { MemoryRouter, useSearchParams } from "react-router-dom";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { makeClient } from "./test-utils";
-import { CorpusTopbar } from "../src/components/CorpusTopbar";
+import { CorpusTopbar } from "../src/print/shell/CorpusTopbar";
 
 const EXPERIMENTS = [
   { id: 1, name: "SSRL Apr 2026", path: "/e1", data_dir: "/d1",

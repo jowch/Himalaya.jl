@@ -9,7 +9,7 @@ import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { MemoryRouter, useNavigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useAppState } from "../src/state";
-import { AppRoutes } from "../src/components/AppRoutes";
+import { AppRoutes } from "../src/print/shell/AppRoutes";
 import type { ResolveSuccess } from "../src/api";
 
 function makeQc() {

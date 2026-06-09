@@ -12,7 +12,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import * as Plot from "@observablehq/plot";
 import type { SeriesMember } from "../src/api";
-import { buildCrossTraceTrackingMarks } from "../src/components/CrossTraceTrackingLayer";
+import { buildCrossTraceTrackingMarks } from "../src/print/export/CrossTraceTrackingLayer";
 import { phaseColor } from "../src/phases";
 
 vi.mock("@observablehq/plot", () => ({

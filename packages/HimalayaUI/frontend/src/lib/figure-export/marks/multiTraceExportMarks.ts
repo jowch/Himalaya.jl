@@ -11,9 +11,9 @@ import {
   LIGHT_PALETTE,
   TRACE_STROKE_PX,
 } from "../presets";
-import { buildMemberHeatmapMarks } from "../../../components/MemberHeatmapLayer";
+import { buildMemberHeatmapMarks } from "../../../print/export/MemberHeatmapLayer";
 import { peakMark } from "../../../print/ui/peakMark";
-import { buildCrossTraceTrackingMarks } from "../../../components/CrossTraceTrackingLayer";
+import { buildCrossTraceTrackingMarks } from "../../../print/export/CrossTraceTrackingLayer";
 
 /** Plot layout vocabulary for the multi-trace figure: stacked 1-D traces
  *  (`waterfall`) vs. q-binned intensity rows (`heatmap`). Formerly defined on

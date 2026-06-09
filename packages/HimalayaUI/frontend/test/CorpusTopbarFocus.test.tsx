@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { MemoryRouter, useLocation, Routes, Route } from "react-router-dom";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { makeClient } from "./test-utils";
-import { CorpusTopbar } from "../src/components/CorpusTopbar";
+import { CorpusTopbar } from "../src/print/shell/CorpusTopbar";
 import { useAppState } from "../src/state";
 
 // Two experiments; samples 1-3 in experiment 1, sample 9 in experiment 2.

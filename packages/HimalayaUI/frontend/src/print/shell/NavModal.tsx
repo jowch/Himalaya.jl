@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Skeleton } from "boneyard-js/react";
-import { useAppState } from "../state";
-import { useExperiments, useSamples } from "../queries";
-import type { Experiment, Sample } from "../api";
-import { IconButton, ModalShell } from "../print/ui";
+import { useAppState } from "../../state";
+import { useExperiments, useSamples } from "../../queries";
+import type { Experiment, Sample } from "../../api";
+import { IconButton, ModalShell } from "../ui";
 
 const NAV_FIXTURE_EXPERIMENTS: { id: number; primary: string; secondary: string }[] = [
   { id: 1, primary: "Experiment A", secondary: "/data/lipids/expA" },

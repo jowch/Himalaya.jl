@@ -1,11 +1,11 @@
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { useAppState } from "../state";
-import { useCorpusSamples, useExperiments } from "../queries";
-import { sampleDisplayName } from "../lib/sample/displayName";
-import { TopBar } from "../print/ui/TopBar";
-import { Wordmark } from "../print/ui/Wordmark";
-import { Kicker } from "../print/ui/Kicker";
-import { IconButton } from "../print/ui/IconButton";
+import { useAppState } from "../../state";
+import { useCorpusSamples, useExperiments } from "../../queries";
+import { sampleDisplayName } from "../../lib/sample/displayName";
+import { TopBar } from "../ui/TopBar";
+import { Wordmark } from "../ui/Wordmark";
+import { Kicker } from "../ui/Kicker";
+import { IconButton } from "../ui/IconButton";
 
 interface Stage {
   id: "samples" | "series";

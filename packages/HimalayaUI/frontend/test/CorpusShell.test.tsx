@@ -3,7 +3,7 @@ import { render, screen } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { makeClient } from "./test-utils";
-import { CorpusShell } from "../src/components/CorpusShell";
+import { CorpusShell } from "../src/print/shell/CorpusShell";
 
 /** CorpusTopbar issues queries — answer them all 200/[]. */
 function mockEmptyApi(): void {

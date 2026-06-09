@@ -27,8 +27,8 @@
  * envelope, so the baseline-y here is the row's lower edge.
  */
 import * as Plot from "@observablehq/plot";
-import type { SeriesMember } from "../api";
-import { phaseColor } from "../phases";
+import type { SeriesMember } from "../../api";
+import { phaseColor } from "../../phases";
 
 /**
  * Number of Miller orders to render per phase. Cap at 4 to match the
