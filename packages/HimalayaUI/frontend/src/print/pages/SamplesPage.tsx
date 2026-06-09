@@ -5,7 +5,7 @@ import { PageFrame } from "../components/PageFrame";
 import { SheetTable } from "../components/SheetTable";
 import { SampleTableRow } from "../components/SampleTableRow";
 import { CullBar } from "../components/CullBar";
-import { Kicker, KbLegend, ProgressBar } from "../ui";
+import { Kicker, KbLegend, ProgressBar, ComposeBar } from "../ui";
 import {
   useCorpusSamples,
   useCorpusExposures,
@@ -13,6 +13,7 @@ import {
   useExperiments,
   useSetExposureStatusBatch,
 } from "../../queries";
+import { navigateToNewSeries } from "../../lib/series/newSeriesNav";
 import { toSampleRowModel } from "./samplesAdapters";
 
 // Boneyard fixture — a static skeleton shaped to the SheetTable rows region so
@@ -75,9 +76,23 @@ export function SamplesPage(): JSX.Element {
   const batch = useSetExposureStatusBatch();
 
   // ── selection state (page-owned) ────────────────────────────────────────────
+  // Exposure-grain cull selection (drives CullBar → Drop/Restore).
   const [selected, setSelected] = useState<Set<number>>(() => new Set());
   const anchorRef = useRef<{ sampleId: number; exposureId: number } | null>(null);
   const shiftRef = useRef(false);
+
+  // Sample-grain pick selection — DISTINCT from the exposure-grain cull above.
+  // Drives the ComposeBar → "+ New series" carry; never merged with `selected`.
+  const [checkedSamples, setCheckedSamples] = useState<Set<number>>(() => new Set());
+
+  function toggleSampleCheck(sampleId: number): void {
+    setCheckedSamples((prev) => {
+      const next = new Set(prev);
+      if (next.has(sampleId)) next.delete(sampleId);
+      else next.add(sampleId);
+      return next;
+    });
+  }
 
   useEffect(() => {
     function onShiftDown(e: KeyboardEvent): void {
@@ -207,6 +222,7 @@ export function SamplesPage(): JSX.Element {
             }
           >
             <SheetTable
+              checkboxColumn
               empty={
                 <div className="p-10 text-center text-ink-faint">
                   No samples{" "}
@@ -229,6 +245,8 @@ export function SamplesPage(): JSX.Element {
                     dropped={m.dropped}
                     tags={m.tags}
                     {...(m.phase !== undefined ? { phase: m.phase } : {})}
+                    checked={checkedSamples.has(s.id)}
+                    onCheck={() => toggleSampleCheck(s.id)}
                     selectedExposureIds={selected}
                     onSelectExposure={(id) => toggleSelect(s.id, id)}
                     onActivateExposure={() => navigate(loupeHref(s.id))}
@@ -264,6 +282,14 @@ export function SamplesPage(): JSX.Element {
           setSelected(new Set());
           anchorRef.current = null;
         }}
+      />
+
+      {/* ── Floating sample-grain compose bar (sits above CullBar) ─────────────── */}
+      <ComposeBar
+        count={checkedSamples.size}
+        show={checkedSamples.size > 0}
+        onNewSeries={() => navigateToNewSeries(checkedSamples, navigate)}
+        onClear={() => setCheckedSamples(new Set())}
       />
     </PageFrame>
   );
