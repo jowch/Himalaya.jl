@@ -65,7 +65,7 @@ const FIXTURE_TRACE = {
   phase: null,
 };
 const FOCUS_FIXTURE = (
-  <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_350px]">
+  <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_350px]">
     {/* work column */}
     <div className="min-w-0 px-8 pt-7 pb-13">
       <div className="mx-auto flex min-w-0 max-w-[1180px] flex-col gap-[18px]">
@@ -416,7 +416,7 @@ export function FocusPage(): JSX.Element {
       >
         <div
           data-testid="focus-workspace"
-          className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_350px]"
+          className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_350px]"
         >
           {/* work column — full-bleed; inner content capped at 1180px (mockup .work / .work-inner) */}
           <div className="min-w-0 px-8 pt-7 pb-13">

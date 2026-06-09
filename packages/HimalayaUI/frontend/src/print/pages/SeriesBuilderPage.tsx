@@ -364,7 +364,7 @@ function BuilderBody({
   return (
     <div
       data-testid="builder-workspace"
-      className="grid min-h-full grid-cols-1 xl:grid-cols-[minmax(0,1fr)_336px]"
+      className="grid min-h-full grid-cols-1 lg:grid-cols-[minmax(0,1fr)_336px]"
     >
       {/* work column — full-bleed; inner content capped at the builder width */}
       <div className="min-w-0 px-6 py-6">
