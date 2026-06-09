@@ -52,8 +52,12 @@
 - **Backend dead-code = OUT OF SCOPE (correctness, not avoidance):** the `comparison*` tables + `apply_event!` dispatcher branches are RETAINED BY DESIGN for historical event replay (per AppRoutes comment) — no safe backend deletion exists.
 - **PENDING:** orchestrator full `npm test` + `npm run build` + `lint:design` (running, bg `brwf2lj8h`) → flip to ✅ when green. tsc already 0; targeted suites (SegmentedControl/MemberHeatmapLayer/labelDodge 38/38) green.
 
-### M-E — Plan 8: shell reskin ⬜
-- The carried `CorpusShell` / app-shell reskin to the greenfield look (the last legacy presentation under the per-route bodies). Plan-first; mockup-driven.
+### M-E — shell reskin ✅ (2026-06-09) → plan `docs/superpowers/plans/2026-06-09-shell-reskin.md`
+**Full gate GREEN:** full `npm test` **2056/2056 passed (260 files)** · `npm run build` 0 · tsc 0 · lint:design 0.
+**Reskin DONE + live-verified.** Commits `5be15fc` (TopBar data-testid passthrough) · `3d7893b` (CorpusTopbar recomposed). `frontend-reviewer` clean — no issues. `CorpusTopbar` now composes the greenfield print `TopBar` slot-shell + `Wordmark` (+ print `IconButton`/`Kicker`), dropping all old `src/components/ui` imports and the hand-rolled wordmark appearance (`tracking-[0.16em]` now lives in the `Wordmark` primitive). PRESENTATION-ONLY — all routing/query/stepper logic reused verbatim; every contract testid preserved.
+- **Live-verified all 3 route shapes:** `/samples` (header 56px, wordmark "Himalaya · SAXS"→/samples, samples-active, beamtime chip) · `/series` (series-active, beamtime chip + stepper hidden) · `/sample/1` (stepper `‹ HEPES Only · sample 1 of 31 ›`, prev disabled@first, next enabled, no tab active). All testids present; behavior byte-equivalent.
+- **Decision:** stage tabs stay router `Link`s (print `StageTabs` is a state-driven button tablist, not route-driven) styled with design-system TOKEN utilities — lint:design-accepted, not appearance literals. The old `src/components/ui` barrel SURVIVES (NavModal/OnboardingFlow/AssignmentCart still use it) — global-chrome reskin is OUT OF SCOPE (separate post-merge unit if wanted).
+- **PENDING:** orchestrator full `npm test` + `npm run build` (running, bg `brz5ty2j8`) → flip ✅ when green. tsc 0 · lint:design 0 · targeted shell suites 22/22 already green.
 
 ### M-F — Deferred polish ⬜
 - Boneyard skeleton captures for the greenfield pages (sanctioned capture recipe; `registry.ts` IS committable for this) + a per-page live visual-fidelity pass vs the mockups.
