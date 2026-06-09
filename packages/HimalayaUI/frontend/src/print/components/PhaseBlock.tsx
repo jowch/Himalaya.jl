@@ -45,7 +45,7 @@ export function PhaseBlock({
       <div className="text-data text-ink-soft mt-1">{meta}</div>
       <ScoreBar value={score} phase={phase} size="bar" className="mt-2" />
       {series != null && (
-        <div className="text-caption text-ink-faint mt-1.5">
+        <div className="text-caption text-ink-soft mt-1.5">
           series <b className="text-ink-soft font-semibold font-mono">{series}</b>
         </div>
       )}

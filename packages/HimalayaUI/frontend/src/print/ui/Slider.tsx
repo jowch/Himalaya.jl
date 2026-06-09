@@ -47,7 +47,7 @@ export function Slider({
   return (
     <div className={cx("flex flex-col gap-1", className)}>
       {(label || valueDisplay) && (
-        <div className="flex justify-between items-baseline text-xs text-ink-faint">
+        <div className="flex justify-between items-baseline text-xs text-ink-soft">
           {label && <span>{label}</span>}
           {valueDisplay && <span className="font-mono text-ink-soft">{valueDisplay}</span>}
         </div>

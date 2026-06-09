@@ -37,7 +37,7 @@ export function AssignmentCart({
       {count === 0 ? (
         <div
           data-testid="assignment-empty"
-          className="text-caption text-ink-faint p-4"
+          className="text-caption text-ink-soft p-4"
         >
           {empty ?? DEFAULT_EMPTY}
         </div>

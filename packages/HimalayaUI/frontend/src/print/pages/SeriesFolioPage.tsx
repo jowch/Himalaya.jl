@@ -178,7 +178,7 @@ export function SeriesFolioPage(): JSX.Element {
         transition={200}
         fixture={FOLIO_FIXTURE}
         fallback={
-          <div className="p-8 text-sm text-ink-faint">Loading series…</div>
+          <div className="p-8 text-sm text-ink-soft">Loading series…</div>
         }
       >
         <Gallery

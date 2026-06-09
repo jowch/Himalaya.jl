@@ -24,7 +24,7 @@ export function Wordmark({ children, tail, className = "" }: WordmarkProps): JSX
     >
       {children}
       {tail && (
-        <span data-role="tail" className="text-ink-faint font-semibold"> · {tail}</span>
+        <span data-role="tail" className="text-ink-soft font-semibold"> · {tail}</span>
       )}
     </span>
   );

@@ -77,7 +77,7 @@ export function Field({
           className,
         )}
       >
-        <span className={showPlaceholder ? "text-ink-faint" : "text-ink"}>
+        <span className={showPlaceholder ? "text-ink-soft" : "text-ink"}>
           {showPlaceholder ? placeholder : value}
         </span>
       </div>
@@ -100,7 +100,7 @@ export function Field({
         isDropdown ? undefined : className,
       )}
     >
-      <span className={showPlaceholder ? "text-ink-faint" : "text-ink"}>
+      <span className={showPlaceholder ? "text-ink-soft" : "text-ink"}>
         {showPlaceholder ? placeholder : value}
       </span>
       <span className="text-ink-faint" aria-hidden="true">

@@ -100,7 +100,7 @@ export function CorpusTopbar(): JSX.Element {
   // ── Stage tabs — router Links with router-derived active state + the accent
   // leading dot. The print StageTabs primitive is a button tablist (state-driven,
   // not route-driven), so it does not fit; these stay Links whose appearance is
-  // expressed with design-system TOKEN utilities (text-ink / text-ink-faint /
+  // expressed with design-system TOKEN utilities (text-ink / text-ink-soft /
   // bg-paper-sunk / bg-print-accent / rounded) — tokens, not appearance literals.
   const stageTabs = (
     <nav data-testid="stage-tabs" aria-label="Workflow stages" className="flex gap-0.5">
@@ -117,7 +117,7 @@ export function CorpusTopbar(): JSX.Element {
             className={
               "px-2.5 py-1.5 rounded text-xs font-semibold uppercase " +
               "tracking-wide no-underline " +
-              (isActive ? "text-ink bg-paper-sunk" : "text-ink-faint")
+              (isActive ? "text-ink bg-paper-sunk" : "text-ink-soft")
             }
           >
             <span

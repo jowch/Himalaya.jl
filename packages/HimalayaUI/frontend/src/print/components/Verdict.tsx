@@ -32,7 +32,7 @@ export function Verdict({
         <div className="text-body font-bold text-ink">
           {dropped ? "Dropped" : "Kept"}
         </div>
-        <div className="text-caption text-ink-faint">
+        <div className="text-caption text-ink-soft">
           {hint ?? defaultHint}
         </div>
       </div>

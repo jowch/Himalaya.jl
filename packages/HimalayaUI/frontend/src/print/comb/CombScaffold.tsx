@@ -80,11 +80,11 @@ export function CombScaffold({ rows, xDomain, maxWidth, ariaLabel, children }: P
             className="flex flex-col justify-end pr-2"
             style={{ height: ROW_H, paddingBottom: 8 }}
           >
-            <div className={`font-mono text-data leading-none ${r.preview ? "text-ink-faint" : "text-ink"}`}>
+            <div className={`font-mono text-data leading-none ${r.preview ? "text-ink-soft" : "text-ink"}`}>
               {r.gutterTitle}
             </div>
             {r.gutterSub ? (
-              <div className="font-mono text-meta text-ink-faint leading-none mt-0.5">{r.gutterSub}</div>
+              <div className="font-mono text-meta text-ink-soft leading-none mt-0.5">{r.gutterSub}</div>
             ) : null}
           </div>
         ))}

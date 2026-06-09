@@ -272,7 +272,7 @@ export function FocusPage(): JSX.Element {
       <div className="px-8 py-7">
         <div
           data-testid="focus-not-found"
-          className="rounded border border-hair-strong p-8 text-sm text-ink-faint"
+          className="rounded border border-hair-strong p-8 text-sm text-ink-soft"
         >
           Sample not found.
         </div>
@@ -408,7 +408,7 @@ export function FocusPage(): JSX.Element {
         fallback={
           <div
             data-testid="focus-skeleton"
-            className="p-8 text-sm italic text-ink-faint"
+            className="p-8 text-sm italic text-ink-soft"
           >
             Loading workspace…
           </div>
@@ -495,7 +495,7 @@ export function FocusPage(): JSX.Element {
               bg-paper-sunk + left hairline + padding + scroll). The empty state
               mirrors that shell so the column looks identical with no exposures. */}
           {noExposure ? (
-            <div className="flex min-h-0 flex-col border-l border-hair bg-paper-sunk p-5 text-sm text-ink-faint">
+            <div className="flex min-h-0 flex-col border-l border-hair bg-paper-sunk p-5 text-sm text-ink-soft">
               This sample has no exposures.
             </div>
           ) : (

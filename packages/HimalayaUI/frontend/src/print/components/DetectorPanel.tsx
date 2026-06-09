@@ -103,7 +103,7 @@ export function DetectorPanel({
         )}
       </div>
       {hint != null && (
-        <div className="text-caption text-ink-faint mt-2.5">{hint}</div>
+        <div className="text-caption text-ink-soft mt-2.5">{hint}</div>
       )}
     </Card>
   );

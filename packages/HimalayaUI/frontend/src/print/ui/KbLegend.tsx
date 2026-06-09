@@ -27,7 +27,7 @@ export function KbLegend({ shortcuts, className = "" }: KbLegendProps): JSX.Elem
   return (
     <div
       data-testid="kb-legend"
-      className={cx("flex flex-wrap gap-5 text-sm text-ink-faint", className)}
+      className={cx("flex flex-wrap gap-5 text-sm text-ink-soft", className)}
     >
       {shortcuts.map((s) => (
         <span key={s.keyLabel} className="inline-flex items-center gap-1.5">

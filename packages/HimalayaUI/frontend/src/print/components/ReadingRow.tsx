@@ -22,7 +22,7 @@ export function ReadingRow({ phase, span, lattice, className }: ReadingRowProps)
         </PhaseLabel>
         <span className="ml-auto text-data text-ink-soft">{span}</span>
       </div>
-      <div className="text-data text-ink-faint ml-4">{lattice}</div>
+      <div className="text-data text-ink-soft ml-4">{lattice}</div>
     </div>
   );
 }

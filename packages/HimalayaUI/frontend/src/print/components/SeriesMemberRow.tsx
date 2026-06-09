@@ -49,11 +49,11 @@ export function SeriesMemberRow({
         <div className="flex items-baseline justify-between gap-2">
           <span className="inline-flex items-baseline min-w-0">
             {formFactor ? (
-              <span className="text-meta font-semibold text-ink-faint">Form factor</span>
+              <span className="text-meta font-semibold text-ink-soft">Form factor</span>
             ) : (
               phases.map((p, i) => (
                 <span key={p} className="inline-flex items-baseline">
-                  {i > 0 && <span className="text-meta text-ink-faint mx-0.5"> + </span>}
+                  {i > 0 && <span className="text-meta text-ink-soft mx-0.5"> + </span>}
                   <PhaseLabel phase={p} className="text-meta font-semibold">{p}</PhaseLabel>
                 </span>
               ))
@@ -61,7 +61,7 @@ export function SeriesMemberRow({
           </span>
           <span className="text-data text-ink-soft shrink-0">{variableValue}</span>
         </div>
-        <div className="text-data text-ink-faint truncate">{dataLine}</div>
+        <div className="text-data text-ink-soft truncate">{dataLine}</div>
       </div>
     </div>
   );

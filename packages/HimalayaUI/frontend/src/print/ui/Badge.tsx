@@ -20,7 +20,7 @@ export function Badge({
   return (
     <span
       data-testid="badge"
-      className={cx("font-mono text-xs text-ink-faint ml-1.5", className)}
+      className={cx("font-mono text-xs text-ink-soft ml-1.5", className)}
       {...rest}
     >
       {children}

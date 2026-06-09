@@ -47,7 +47,7 @@ export function SpecCell({
       <div className="flex items-center gap-2 mt-0.5 min-w-0">
         <span
           data-role="spec-id"
-          className="text-data text-ink-faint truncate min-w-0"
+          className="text-data text-ink-soft truncate min-w-0"
         >
           {sampleId}
         </span>

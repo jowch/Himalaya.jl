@@ -356,7 +356,7 @@ export function SeriesScopingPage(): JSX.Element {
             type="button"
             data-testid="scoping-discard"
             onClick={() => navigate("/series")}
-            className="px-1 py-1.5 text-caption font-semibold text-ink-faint hover:text-ink"
+            className="px-1 py-1.5 text-caption font-semibold text-ink-soft hover:text-ink"
           >
             Discard
           </button>
@@ -380,7 +380,7 @@ export function SeriesScopingPage(): JSX.Element {
           stagger={50}
           transition={200}
           fixture={SCOPING_FIXTURE}
-          fallback={<div className="p-8 text-meta text-ink-faint">Loading the worksheet…</div>}
+          fallback={<div className="p-8 text-meta text-ink-soft">Loading the worksheet…</div>}
         >
           {proposal.orderingKey === undefined ? (
             seed !== null ? (
@@ -412,7 +412,7 @@ export function SeriesScopingPage(): JSX.Element {
                         ? `${coldRows.length} value${coldRows.length === 1 ? "" : "s"} ready to commit`
                         : "Name the variable and assign every value to build"}
                     </div>
-                    <div className="text-caption text-ink-faint max-w-[42ch]">
+                    <div className="text-caption text-ink-soft max-w-[42ch]">
                       Confirming records the variable on every sample — the next series that needs it
                       already knows.
                     </div>
@@ -510,7 +510,7 @@ export function SeriesScopingPage(): JSX.Element {
                         />
                         <div className="flex-1 min-w-0">
                           <div className="text-meta font-semibold text-ink-soft">{c.sampleName}</div>
-                          <div className="text-caption text-ink-faint">
+                          <div className="text-caption text-ink-soft">
                             lacks the{" "}
                             <strong className="text-accent font-semibold">{keyLabel}</strong> — tag it on
                             the contact sheet if it belongs.
@@ -520,7 +520,7 @@ export function SeriesScopingPage(): JSX.Element {
                     ))}
                   </div>
                 ) : (
-                  <div className="text-meta text-ink-faint italic">
+                  <div className="text-meta text-ink-soft italic">
                     Nothing else in the corpus matches this grouping.
                   </div>
                 )

@@ -43,7 +43,7 @@ export function Dock({
         className,
       )}
     >
-      <span className="text-label text-ink-faint">Offset</span>
+      <span className="text-label text-ink-soft">Offset</span>
       <Slider
         value={offset}
         min={min}

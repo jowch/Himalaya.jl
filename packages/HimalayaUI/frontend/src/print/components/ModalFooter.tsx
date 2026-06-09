@@ -17,7 +17,7 @@ export function ModalFooter({ note, actions, className }: ModalFooterProps): JSX
       className={cx("flex items-center justify-between px-5 pt-3.5 pb-4", className)}
     >
       {note != null ? (
-        <span className="text-caption text-ink-faint">{note}</span>
+        <span className="text-caption text-ink-soft">{note}</span>
       ) : (
         <span />
       )}

@@ -23,7 +23,7 @@ export function KeptCell({
         <span data-role="kept-count" className="text-data text-ink font-semibold">
           {kept}
         </span>
-        <span data-role="kept-total" className="text-data text-ink-faint">
+        <span data-role="kept-total" className="text-data text-ink-soft">
           {" / "}{total}
         </span>
       </div>

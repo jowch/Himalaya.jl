@@ -54,7 +54,7 @@ export function LatticeParamControl({
         aria-label={`${label} value`}
         className="w-16 shrink-0"
       />
-      <span className="text-caption text-ink-faint font-mono shrink-0">{unit}</span>
+      <span className="text-caption text-ink-soft font-mono shrink-0">{unit}</span>
     </div>
   );
 }

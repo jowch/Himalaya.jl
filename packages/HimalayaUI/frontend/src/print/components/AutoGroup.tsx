@@ -79,9 +79,9 @@ export function AutoGroup({
                 aria-disabled={inert || undefined}
                 className={
                   inert
-                    ? "text-sm font-semibold text-ink-faint cursor-not-allowed"
+                    ? "text-sm font-semibold text-ink-soft cursor-not-allowed"
                     : action.muted
-                      ? "text-sm font-semibold text-ink-faint hover:underline"
+                      ? "text-sm font-semibold text-ink-soft hover:underline"
                       : "text-sm font-semibold text-print-accent hover:underline"
                 }
               >

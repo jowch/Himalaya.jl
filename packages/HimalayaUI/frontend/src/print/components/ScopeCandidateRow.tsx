@@ -44,7 +44,7 @@ export function ScopeCandidateRow({
       />
       <div className="flex-1 min-w-0">
         <div className="text-meta font-semibold text-ink-soft">{name}</div>
-        <div className="text-caption text-ink-faint">{why}</div>
+        <div className="text-caption text-ink-soft">{why}</div>
       </div>
       <Button variant="outline" {...(onAdd ? { onClick: onAdd } : {})}>
         + Add to series

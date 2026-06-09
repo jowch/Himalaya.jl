@@ -29,7 +29,7 @@ export function ModalFieldRow({
       >
         {label}
         {labelSuffix != null && (
-          <span className="font-mono normal-case text-ink-faint"> {labelSuffix}</span>
+          <span className="font-mono normal-case text-ink-soft"> {labelSuffix}</span>
         )}
       </span>
       <div className="flex-1 min-w-0 flex items-center">{children}</div>

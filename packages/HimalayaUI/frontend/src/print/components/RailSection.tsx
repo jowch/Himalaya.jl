@@ -24,7 +24,7 @@ export function RailSection({ label, count, note, children, className }: RailSec
       </div>
       {children}
       {note != null && (
-        <div data-testid="rail-section-note" className="text-caption text-ink-faint leading-relaxed">
+        <div data-testid="rail-section-note" className="text-caption text-ink-soft leading-relaxed">
           {note}
         </div>
       )}

@@ -162,7 +162,7 @@ export function LoupePage(): JSX.Element {
     return (
       <PageFrame width="loupe" className="px-8 py-7">
         <div data-testid="loupe-page">
-          <div data-testid="loupe-not-found" className="rounded border border-hair-strong p-8 text-sm text-ink-faint">
+          <div data-testid="loupe-not-found" className="rounded border border-hair-strong p-8 text-sm text-ink-soft">
             Sample not found.{" "}
             <button onClick={goBack} className="font-semibold text-print-accent hover:underline">
               Back to the sheet
@@ -188,7 +188,7 @@ export function LoupePage(): JSX.Element {
         />
         <Skeleton name="loupe" className="block" loading={isLoading} stagger={50} transition={200}
           fixture={LOUPE_FIXTURE}
-          fallback={<div data-testid="loupe-skeleton" className="p-8 text-sm italic text-ink-faint">Loading sample…</div>}>
+          fallback={<div data-testid="loupe-skeleton" className="p-8 text-sm italic text-ink-soft">Loading sample…</div>}>
           <div className="grid grid-cols-[minmax(0,1fr)_286px] gap-7">
             {sample && activeExposure ? (
               <>
@@ -219,7 +219,7 @@ export function LoupePage(): JSX.Element {
                 />
               </>
             ) : (
-              <div className="col-span-2 p-8 text-sm text-ink-faint">This sample has no exposures.</div>
+              <div className="col-span-2 p-8 text-sm text-ink-soft">This sample has no exposures.</div>
             )}
           </div>
         </Skeleton>

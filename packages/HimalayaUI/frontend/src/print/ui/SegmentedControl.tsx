@@ -168,7 +168,7 @@ export function SegmentedControl<T extends string>({
               segmentBaseClass[variant],
               active
                 ? "bg-ink text-paper"
-                : "text-ink-faint hover:text-ink hover:bg-paper-sunk",
+                : "text-ink-soft hover:text-ink hover:bg-paper-sunk",
               opt.disabled && "opacity-50 cursor-not-allowed",
               stretch && "flex-1",
             )}

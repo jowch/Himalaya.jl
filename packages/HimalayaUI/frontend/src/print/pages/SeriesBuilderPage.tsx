@@ -194,7 +194,7 @@ export function SeriesBuilderPage(): JSX.Element {
       className="block"
       loading={seriesQ.isLoading || series === undefined}
       fixture={BUILDER_FIXTURE}
-      fallback={<div className="p-8 text-sm text-ink-faint">Loading series…</div>}
+      fallback={<div className="p-8 text-sm text-ink-soft">Loading series…</div>}
     >
       {series && (
         <BuilderBody

@@ -98,7 +98,7 @@ export function ScopePlate({
             ? { onClick: onChangeOrder }
             : {})}
       />
-      <div className="text-caption text-ink-faint mt-1.5">{orderNote}</div>
+      <div className="text-caption text-ink-soft mt-1.5">{orderNote}</div>
 
       <div className="flex items-baseline justify-between mt-6 mb-1">
         <Kicker tone="faint">The series</Kicker>
@@ -113,7 +113,7 @@ export function ScopePlate({
               ↺ Undo last change
             </button>
           ) : null}
-          <span className="text-caption font-mono text-ink-faint">{count}</span>
+          <span className="text-caption font-mono text-ink-soft">{count}</span>
         </div>
       </div>
 
@@ -144,7 +144,7 @@ export function ScopePlate({
             <Dot tone={footState.kind === "warn" ? "accent" : "success"} aria-hidden />
             {footState.text}
           </div>
-          <div className="text-caption text-ink-faint max-w-[42ch]">{footNote}</div>
+          <div className="text-caption text-ink-soft max-w-[42ch]">{footNote}</div>
         </div>
         <Button
           variant="solid"

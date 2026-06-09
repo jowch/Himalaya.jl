@@ -34,7 +34,7 @@ export function FolioHeader({
       </div>
       <div className="shrink-0 text-right">
         <div data-testid="folio-count" className="text-headline-lg text-ink leading-none">{count}</div>
-        <div className="text-caption text-ink-faint uppercase mt-0.5">{countLabel}</div>
+        <div className="text-caption text-ink-soft uppercase mt-0.5">{countLabel}</div>
       </div>
     </div>
   );

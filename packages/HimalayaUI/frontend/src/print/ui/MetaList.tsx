@@ -34,7 +34,7 @@ export function MetaList({
     >
       {entries.map((e) => (
         <div key={e.key} className="flex justify-between gap-4">
-          <dt className="text-ink-faint">{e.key}</dt>
+          <dt className="text-ink-soft">{e.key}</dt>
           {/* m-0 neutralizes the UA default margin-inline-start on <dd> so
               justify-between aligns the value flush to the right edge. */}
           <dd className="text-ink m-0">{e.value}</dd>

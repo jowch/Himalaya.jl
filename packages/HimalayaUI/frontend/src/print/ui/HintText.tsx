@@ -6,6 +6,6 @@ interface HintTextProps {
 
 export function HintText({ children, className = "" }: HintTextProps): JSX.Element {
   return (
-    <p className={`text-ink-faint text-base italic ${className}`.trim()}>{children}</p>
+    <p className={`text-ink-soft text-base italic ${className}`.trim()}>{children}</p>
   );
 }

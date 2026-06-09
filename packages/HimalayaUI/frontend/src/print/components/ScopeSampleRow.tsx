@@ -56,7 +56,7 @@ export function ScopeSampleRow({
       <Sparkline trace={trace} {...(phase != null ? { phase } : {})} />
       <div className="flex-1 min-w-0">
         <div className="text-body font-semibold text-ink">{name}</div>
-        <div className="text-caption font-mono text-ink-faint">{sampleId}</div>
+        <div className="text-caption font-mono text-ink-soft">{sampleId}</div>
       </div>
       <FlagButton
         value={value}

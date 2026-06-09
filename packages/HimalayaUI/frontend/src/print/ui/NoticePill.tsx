@@ -57,7 +57,7 @@ export function NoticePill({
       data-tone="draft"
       className={cx(
         baseClasses,
-        "text-ink-faint bg-paper-sunk border border-dashed border-hair-strong",
+        "text-ink-soft bg-paper-sunk border border-dashed border-hair-strong",
         className,
       )}
       style={{

@@ -40,7 +40,7 @@ export function Stepper({
           {label}
         </span>
         {position && (
-          <span className="block text-caption uppercase tracking-wide text-ink-faint mt-0.5">
+          <span className="block text-caption uppercase tracking-wide text-ink-soft mt-0.5">
             {position}
           </span>
         )}

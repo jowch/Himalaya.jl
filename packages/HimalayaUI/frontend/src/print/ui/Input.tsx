@@ -64,7 +64,7 @@ export function Input({
         value={value}
         onChange={(e) => onValueChange(e.target.value)}
         aria-invalid={invalid || undefined}
-        className={cx("flex-1 bg-transparent border-none outline-none text-base text-ink placeholder:text-ink-faint min-w-0", mono && "font-mono")}
+        className={cx("flex-1 bg-transparent border-none outline-none text-base text-ink placeholder:text-ink-soft min-w-0", mono && "font-mono")}
         {...rest}
       />
       {trailing}

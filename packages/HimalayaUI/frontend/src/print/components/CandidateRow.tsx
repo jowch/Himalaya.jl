@@ -57,7 +57,7 @@ export function CandidateRow({
           <PhaseChip phase={phase} variant="tint" size="md" />
           {bonnet && <BonnetBadge />}
         </div>
-        <div className="text-caption text-ink-faint mt-0.5">{why}</div>
+        <div className="text-caption text-ink-soft mt-0.5">{why}</div>
       </div>
 
       {/* score block */}

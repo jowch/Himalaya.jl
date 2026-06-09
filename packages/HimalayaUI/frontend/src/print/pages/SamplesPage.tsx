@@ -197,7 +197,7 @@ export function SamplesPage(): JSX.Element {
           <div className="shrink-0 text-right">
             <div className="text-headline-lg text-ink leading-none">
               {screened}
-              <b className="font-medium text-ink-faint"> / {total}</b>
+              <b className="font-medium text-ink-soft"> / {total}</b>
             </div>
             <Kicker tone="faint" className="mt-0.5">samples screened</Kicker>
             <ProgressBar
@@ -213,7 +213,7 @@ export function SamplesPage(): JSX.Element {
         {corpusQuery.isError ? (
           <div
             data-testid="samples-error"
-            className="rounded-md border border-hair-strong p-8 text-center text-ink-faint"
+            className="rounded-md border border-hair-strong p-8 text-center text-ink-soft"
           >
             Could not load the corpus. Try reloading.
           </div>
@@ -226,13 +226,13 @@ export function SamplesPage(): JSX.Element {
             transition={200}
             fixture={CONTACT_SHEET_FIXTURE}
             fallback={
-              <div className="p-8 text-sm text-ink-faint">Loading samples…</div>
+              <div className="p-8 text-sm text-ink-soft">Loading samples…</div>
             }
           >
             <SheetTable
               checkboxColumn
               empty={
-                <div className="p-10 text-center text-ink-faint">
+                <div className="p-10 text-center text-ink-soft">
                   No samples{" "}
                   {beamtime === undefined ? "in the corpus" : "in this beamtime"}{" "}
                   yet.

@@ -131,7 +131,7 @@ export function BuilderRail({
         </Button>
       </div>
 
-      <div className="text-caption text-ink-faint leading-relaxed">
+      <div className="text-caption text-ink-soft leading-relaxed">
         The plate above is the figure as it will export. What you compose is what you publish.
       </div>
     </aside>

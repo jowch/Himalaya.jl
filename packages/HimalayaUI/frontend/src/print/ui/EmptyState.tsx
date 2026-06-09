@@ -17,7 +17,7 @@ export function EmptyState({ title, body, className }: EmptyStateProps): JSX.Ele
       {/* 21px serif in the mockup; reuse the .text-headline role (19px, -2px) rather
           than mint a one-off token (YAGNI; the audit warns against off-scale sizes). */}
       <h2 className="text-headline text-ink-soft mb-1.5">{title}</h2>
-      {body && <div className="text-base text-ink-faint">{body}</div>}
+      {body && <div className="text-base text-ink-soft">{body}</div>}
     </div>
   );
 }

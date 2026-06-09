@@ -33,7 +33,7 @@ export function MemberRow({
       <div className="flex-1 min-w-0">
         <div className="text-meta font-semibold text-ink truncate">{name}</div>
         {sub != null && (
-          <div className="text-data text-ink-faint truncate">{sub}</div>
+          <div className="text-data text-ink-soft truncate">{sub}</div>
         )}
       </div>
       <PhaseChip

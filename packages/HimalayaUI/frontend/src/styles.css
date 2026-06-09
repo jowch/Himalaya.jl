@@ -36,6 +36,14 @@
   --color-paper-sunk:   oklch(0.951 0.008 84);
   --color-plate:        oklch(0.992 0.004 90);
   --color-ink:          oklch(0.265 0.013 68);
+  /* De-emphasis tones — pick by WCAG context, NOT by "how faint do I want it".
+     `ink-soft` (6.50:1 on paper) is the tone for SMALL / NORMAL-weight
+     informational TEXT — legends, labels, captions, hints, placeholders, value
+     text, inactive tabs, helper/empty/loading copy (AA-normal needs 4.5:1).
+     `ink-faint` (3.16:1 on paper) is the tone for LARGE / DECORATIVE / non-text
+     contexts only — bold tracked uppercase kickers (AA-large 3.0:1), aria-hidden
+     glyphs/separators, icon-only controls and swatch/cell fills (non-text 3:1).
+     Do NOT borrow `ink-faint` for small body text — it fails AA-normal. */
   --color-ink-soft:     oklch(0.467 0.012 70);
   --color-ink-faint:    oklch(0.640 0.010 74);
   --color-hair:         oklch(0.882 0.008 80);
@@ -270,6 +278,9 @@
   .text-kicker        { font-size: var(--text-sm);  line-height: 1.4;
                         font-weight: 700; text-transform: uppercase; }
   .text-kicker-accent { color: var(--color-print-accent); letter-spacing: 0.10em; }
+  /* ink-faint is AA-large-only (3.16:1): correct here because .text-kicker is
+     700-weight uppercase = "large text". Small informational text must use
+     ink-soft instead — see the --color-ink-faint definition note above. */
   .text-kicker-faint  { color: var(--color-ink-faint);    letter-spacing: 0.10em; }
   .text-label       { font-size: var(--text-sm);  line-height: 1.4;
                       font-weight: 500; text-transform: uppercase;

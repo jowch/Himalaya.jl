@@ -155,7 +155,7 @@ export function PhaseStrip({
         className="mt-1.5 flex items-center gap-1.5 text-base text-ink-soft"
       >
         {first === null || last === null ? (
-          <span className="font-semibold text-ink-faint">{emptyLabel}</span>
+          <span className="font-semibold text-ink-soft">{emptyLabel}</span>
         ) : distinct.size > 1 ? (
           <>
             <span className="font-semibold" style={{ color: phaseColor(first) }}>
@@ -173,7 +173,7 @@ export function PhaseStrip({
             <span className="font-semibold" style={{ color: phaseColor(first) }}>
               {first}
             </span>
-            <span className="text-ink-faint">throughout</span>
+            <span className="text-ink-soft">throughout</span>
           </>
         )}
       </div>

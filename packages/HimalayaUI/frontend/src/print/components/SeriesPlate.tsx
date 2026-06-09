@@ -65,7 +65,7 @@ export function SeriesPlate({
         {...(onHoverQ ? { onHoverQ } : {})}
       />
       {hasFoot && (
-        <div data-testid="series-plate-foot" className="mt-3 pt-[11px] border-t border-hair flex items-center justify-between text-meta text-ink-faint">
+        <div data-testid="series-plate-foot" className="mt-3 pt-[11px] border-t border-hair flex items-center justify-between text-meta text-ink-soft">
           <div className="flex items-center gap-[14px]">
             {legendPhases?.map((p) => (
               <span key={p} className="inline-flex items-center gap-[5px]">

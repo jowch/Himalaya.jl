@@ -57,7 +57,7 @@ export function CombLegend({ items, className }: CombLegendProps): JSX.Element {
           >
             <PeakGlyphFromOpts opts={glyphOpts(item)} x={9} y={11} />
           </svg>
-          <span className="font-mono text-caption text-ink-faint">
+          <span className="font-mono text-caption text-ink-soft">
             {LABELS[item]}
           </span>
         </span>

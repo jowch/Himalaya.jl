@@ -104,7 +104,7 @@ export function SeriesCard({
           {variable.trim() !== "" && (
             <>
               <span className="text-ink-faint" aria-hidden="true">·</span>
-              <span className="text-ink-faint">by {variable}</span>
+              <span className="text-ink-soft">by {variable}</span>
             </>
           )}
         </div>
@@ -113,7 +113,7 @@ export function SeriesCard({
         <PhaseStrip segments={segments} className="mt-3" />
 
         {/* Footer */}
-        <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-hair text-caption text-ink-faint">
+        <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-hair text-caption text-ink-soft">
           <span>{provenance}</span>
           <span>
             edited <b className="text-ink-soft font-semibold">{editedLabel}</b>

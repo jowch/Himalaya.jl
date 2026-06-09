@@ -239,11 +239,11 @@ export function NavModal(): JSX.Element | null {
             onKeyDown={onInputKeyDown}
             placeholder={step === "experiment" ? "find experiment…" : "find sample…"}
             className="flex-1 min-w-[120px] bg-transparent border-0 outline-0 text-ink
-                       placeholder:text-ink-faint font-sans text-base py-1"
+                       placeholder:text-ink-soft font-sans text-base py-1"
             data-testid="nav-modal-input"
             spellCheck={false}
           />
-          <span className="text-xs text-ink-faint px-1.5 py-0.5
+          <span className="text-xs text-ink-soft px-1.5 py-0.5
                            border border-hair-strong rounded">esc</span>
         </div>
 
@@ -293,7 +293,7 @@ export function NavModal(): JSX.Element | null {
         </Skeleton>
 
         <div className="flex items-center gap-3 px-3 py-2 border-t border-hair-strong
-                        text-xs text-ink-faint">
+                        text-xs text-ink-soft">
           <span><kbd className="border border-hair-strong rounded px-1">↑↓</kbd> navigate</span>
           <span><kbd className="border border-hair-strong rounded px-1">⏎</kbd> select</span>
           <span><kbd className="border border-hair-strong rounded px-1">⌫</kbd> back</span>
