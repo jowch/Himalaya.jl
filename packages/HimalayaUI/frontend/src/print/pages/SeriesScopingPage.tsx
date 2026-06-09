@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { Skeleton } from "boneyard-js/react";
 import { PageFrame } from "../components/PageFrame";
 import { ScopePlate } from "../components/ScopePlate";
@@ -19,7 +19,14 @@ import { proposeOrdering, type OrderingRow } from "../../lib/scoping/proposeOrde
 import { splitProposal, humanizeKey } from "../../lib/scoping/splitProposal";
 import { parseSortKey } from "../../lib/scoping/parseSortKey";
 import { dominantPhase } from "../../lib/scoping/dominantPhase";
-import { buildFootState, canScopeBuild, buildScopePayload, toPreviewSegments } from "./scopingDerive";
+import {
+  buildFootState,
+  canScopeBuild,
+  buildScopePayload,
+  toPreviewSegments,
+  filterPickerBySeed,
+} from "./scopingDerive";
+import { readNewSeriesSeed } from "../../lib/series/newSeriesNav";
 
 const EMPTY_TRACE: Trace = { q: [], I: [], sigma: [] };
 
@@ -56,6 +63,7 @@ type HistoryEntry = { type: "flag"; id: number; prev: boolean; label: string };
  */
 export function SeriesScopingPage(): JSX.Element {
   const navigate = useNavigate();
+  const location = useLocation();
   const tagsQ = useCorpusSampleTags();
   const pickerQ = useCorpusPickerSamples();
   const scopeSeries = useScopeSeries();
@@ -63,9 +71,17 @@ export function SeriesScopingPage(): JSX.Element {
   const isLoading = tagsQ.isLoading || pickerQ.isLoading;
   const isError = tagsQ.isError || pickerQ.isError;
 
+  // Seeded selection (from the contact-sheet picker → /series/new): when present
+  // we scope the proposal to just those samples; when null (a direct visit) the
+  // full corpus is used — the existing whole-corpus behaviour.
+  const seed = useMemo(() => readNewSeriesSeed(location), [location]);
+  const seededPicker = useMemo(
+    () => filterPickerBySeed(pickerQ.data ?? [], seed),
+    [pickerQ.data, seed],
+  );
   const proposal = useMemo(
-    () => proposeOrdering(tagsQ.data ?? [], pickerQ.data ?? []),
-    [tagsQ.data, pickerQ.data],
+    () => proposeOrdering(tagsQ.data ?? [], seededPicker),
+    [tagsQ.data, seededPicker],
   );
   const split = useMemo(() => splitProposal(proposal), [proposal]);
   const keyLabel = humanizeKey(proposal.orderingKey);

@@ -84,11 +84,15 @@ vi.mock("boneyard-js/react", () => ({
 
 import { SeriesScopingPage } from "../../src/print/pages/SeriesScopingPage";
 
-function renderPage(): { rerender: () => void } {
+function renderPage(seedSampleIds?: number[]): { rerender: () => void } {
   const qc = new QueryClient();
+  const entry =
+    seedSampleIds === undefined
+      ? "/series/new"
+      : { pathname: "/series/new", state: { seedSampleIds } };
   const tree = (): JSX.Element => (
     <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={["/series/new"]}>
+      <MemoryRouter initialEntries={[entry]}>
         <SeriesScopingPage />
       </MemoryRouter>
     </QueryClientProvider>
@@ -261,6 +265,31 @@ describe("SeriesScopingPage", () => {
     const cta = screen.getByRole("button", { name: /contact sheet/i });
     fireEvent.click(cta);
     expect(navigateSpy).toHaveBeenCalledWith("/samples");
+  });
+
+  it("scopes the proposal to the seeded sample ids when arrived with a seed", () => {
+    // 3-member corpus (A,B,C); seed only A(1) and C(3). The proposal — and thus
+    // the rendered members + the write — must scope to just the seeded samples.
+    seed3();
+    renderPage([1, 3]);
+    expect(screen.getAllByTestId("scope-sample-row")).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", { name: /confirm & build/i }));
+    expect(mutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        key: "ratio",
+        tags: [
+          { sampleId: 1, value: "1 : 0" },
+          { sampleId: 3, value: "1 : 1" },
+        ],
+      }),
+    );
+  });
+
+  it("scopes to the whole corpus on a direct (unseeded) visit", () => {
+    // Same 3-member corpus, no seed → all three are members.
+    seed3();
+    renderPage();
+    expect(screen.getAllByTestId("scope-sample-row")).toHaveLength(3);
   });
 
   it("shows the write-error banner when the batch write fails", () => {

@@ -1,6 +1,19 @@
 import type { OrderingRow } from "../../lib/scoping/proposeOrdering";
 import type { PhaseRead } from "../../lib/scoping/dominantPhase";
 import type { PhaseSegment } from "../ui";
+import type { PickerSampleRow } from "../../api";
+
+/** Filter the corpus picker rows to only those whose sample.id is in `seed`.
+ *  When `seed` is null the full corpus is returned (no-filter path for a
+ *  direct /series/new visit). */
+export function filterPickerBySeed(
+  rows: PickerSampleRow[],
+  seed: number[] | null,
+): PickerSampleRow[] {
+  if (seed === null) return rows;
+  const ids = new Set(seed);
+  return rows.filter((r) => ids.has(r.sample.id));
+}
 
 export interface FootState {
   kind: "warn" | "ready";
