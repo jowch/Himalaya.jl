@@ -7,15 +7,21 @@ interface CheckCircleProps {
   /** Accessible name override. Defaults to "Selected"/"Not selected"; a
    *  screened-status use can pass label={done ? "Screened" : "Not screened"}. */
   label?: string;
+  /** When true, the badge is purely decorative: no `role`/`aria-label`, and
+   *  `aria-hidden`. Used when an interactive wrapper (e.g. the Checkbox
+   *  primitive) already provides the checkbox semantics — avoids doubling up
+   *  roles/labels on nested elements. */
+  decorative?: boolean;
   className?: string;
 }
 
-export function CheckCircle({ checked, label, className }: CheckCircleProps): JSX.Element {
+export function CheckCircle({ checked, label, decorative, className }: CheckCircleProps): JSX.Element {
   return (
     <span
       data-testid="check-circle"
-      role="img"
-      aria-label={label ?? (checked ? "Selected" : "Not selected")}
+      role={decorative ? undefined : "img"}
+      aria-label={decorative ? undefined : (label ?? (checked ? "Selected" : "Not selected"))}
+      aria-hidden={decorative ? "true" : undefined}
       data-checked={checked ? "true" : undefined}
       // 13px is a fixed semantic badge dimension (not body text), so the arbitrary
       // size is intentional and allowed in print/ui. The check stroke uses the paper

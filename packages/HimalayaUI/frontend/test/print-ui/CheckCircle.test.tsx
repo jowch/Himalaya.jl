@@ -48,4 +48,12 @@ describe("CheckCircle", () => {
     render(<CheckCircle checked className="ml-4" />);
     expect(screen.getByTestId("check-circle").className).toContain("ml-4");
   });
+
+  it("decorative drops role/aria-label and sets aria-hidden", () => {
+    render(<CheckCircle checked decorative />);
+    const el = screen.getByTestId("check-circle");
+    expect(el.getAttribute("role")).toBeNull();
+    expect(el.getAttribute("aria-label")).toBeNull();
+    expect(el.getAttribute("aria-hidden")).toBe("true");
+  });
 });

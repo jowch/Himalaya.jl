@@ -1,4 +1,5 @@
 import type { HTMLAttributes } from "react";
+import { CheckCircle } from "./CheckCircle";
 
 function cx(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(" ");
@@ -16,18 +17,23 @@ export interface CheckboxProps extends Omit<HTMLAttributes<HTMLSpanElement>, "on
 }
 
 /**
- * Checkbox — a closed-look tri-state checkbox primitive (src/print/ui/).
+ * Checkbox — interactive tri-state checkbox primitive (src/print/ui/).
  *
- * Implemented as a `<span role="checkbox">` rather than a native `<input
- * type="checkbox">` so the visual ring is fully token-driven (bg-ink,
- * border-hair-strong, accent) and no browser reset is needed. The span
- * receives `tabIndex={0}`, responds to Space/Enter, and announces via
- * `aria-checked` (false / true / mixed for indeterminate). `data-checked`
- * and `data-indeterminate` are stable E2E selectors.
+ * The VISUAL is the round `CheckCircle` badge (reused, rendered `decorative`),
+ * wrapped in an interactive `<span role="checkbox">` that owns all semantics:
+ * `aria-checked` (false / true / mixed for indeterminate), `data-checked` /
+ * `data-indeterminate` (stable E2E selectors), `tabIndex`, Space/Enter
+ * activation, a disabled guard, and the accent `focus-visible` ring. The inner
+ * CheckCircle is `aria-hidden` so the role/label live only on the wrapper.
  *
- * Appearance is intentionally minimal: a 16px box, border-hair-strong resting
- * ring, bg-ink fill + paper SVG check when checked, accent fill + dash when
- * indeterminate. No inline colour literals or arbitrary sizes — all from @theme.
+ * Indeterminate note: CheckCircle has no indeterminate visual, and no real
+ * consumer currently passes a truthy `indeterminate` (SampleTableRow only
+ * plumbs the prop through). The prop is retained for API/test compatibility —
+ * outer `aria-checked="mixed"` + `data-indeterminate` are honoured — but the
+ * rendered badge falls back to the unchecked CheckCircle look.
+ *
+ * Appearance lives entirely in CheckCircle (token-driven); the wrapper carries
+ * only placement + interaction classes — no inline colour literals here.
  */
 export function Checkbox({
   checked = false,
@@ -64,43 +70,14 @@ export function Checkbox({
         }
       }}
       className={cx(
-        "inline-flex items-center justify-center flex-shrink-0 w-4 h-4 rounded border cursor-pointer select-none transition-colors",
+        "inline-flex items-center justify-center flex-shrink-0 rounded-full cursor-pointer select-none",
         "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
         disabled && "opacity-40 cursor-not-allowed",
-        isChecked
-          ? "bg-ink border-ink"
-          : indeterminate
-            ? "bg-accent border-accent"
-            : "bg-plate border-hair-strong hover:border-ink",
         className,
       )}
       {...rest}
     >
-      {isChecked && (
-        <svg viewBox="0 0 16 16" className="w-full h-full" aria-hidden="true">
-          <path
-            d="M4 8.2l2.6 2.6 5.4-5.6"
-            fill="none"
-            stroke="var(--color-paper)"
-            strokeWidth={1.8}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      )}
-      {indeterminate && (
-        <svg viewBox="0 0 16 16" className="w-full h-full" aria-hidden="true">
-          <line
-            x1="4"
-            y1="8"
-            x2="12"
-            y2="8"
-            stroke="var(--color-paper)"
-            strokeWidth={2}
-            strokeLinecap="round"
-          />
-        </svg>
-      )}
+      <CheckCircle checked={isChecked} decorative />
     </span>
   );
 }

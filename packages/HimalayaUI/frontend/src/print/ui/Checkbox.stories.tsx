@@ -1,6 +1,12 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { Checkbox } from "./Checkbox";
 
+/**
+ * The Checkbox VISUAL is the round CheckCircle badge wrapped in an interactive
+ * role="checkbox" element. The `indeterminate` story keeps the mixed a11y
+ * semantics but falls back to the unchecked CheckCircle look (CheckCircle has
+ * no indeterminate visual; no real consumer sets it truthy).
+ */
 const meta = {
   title: "ui/Checkbox",
   component: Checkbox,
