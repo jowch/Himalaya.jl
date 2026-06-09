@@ -35,10 +35,22 @@ function buildAuthOpts(p: { username: string | undefined; clientId: string; clie
  *   2. saveSeries (no id → POST /api/series) — then creates the series.
  * Returns the created `Series`.
  *
- * Uses kind='series_save' so the SSE frame the backend emits for the create
- * routes through the existing `saveSeriesMutator.synthesizeFromSse` path for
- * foreign-tab replay (mutatorRegistry maps the `series_save` event kind →
- * saveSeriesMutator). The scoping batch tags emit `add_tag` frames; those
+ * IDEMPOTENCY — TWO DISTINCT client_op_ids. The backend `with_idempotency`
+ * (packages/HimalayaUI/src/idempotency.jl) keys its response cache on the
+ * `client_op_id` ALONE (not per-route). If BOTH writes shared this op's single
+ * clientOpId, the second call (saveSeries) would REPLAY the cached 201 from
+ * the first (batchSampleTags) WITHOUT ever creating the series. So saveSeries
+ * gets a derived, distinct op-id: `${clientOpId}:series`. Each route then
+ * caches under its own key; both stay idempotent + retry-safe.
+ *
+ * kind='series_save' is the frontend OpKind (the queue's outbound op type).
+ * The CREATE route emits a `series_created` SSE wire frame (NOT `series_save`,
+ * which is not a wire event). Because saveSeries carries the suffixed op-id,
+ * the own tab's `series_created` frame does NOT match the deferred registered
+ * under the bare clientOpId, so it replays as a "foreign" event through
+ * `applyRemoteToCache`'s `series_created` branch — which is INVALIDATE-ONLY on
+ * the seriesList (verified 2026-06-09), so the own-tab replay is an idempotent
+ * refetch, never a duplicate card. The batch tags emit `add_tag` frames that
  * replay via the existing `addSampleTagMutator.synthesizeFromSse` path. So
  * this mutator defines NO `synthesizeFromSse` of its own — it would be dead
  * code (the registry never resolves a foreign event to this mutator), exactly
@@ -60,13 +72,17 @@ export const scopeAndCreateSeriesMutator: Mutator<
   kind: "series_save",
   onMutate: (): RollbackContext => ({ restore: () => {} }),
   request: async (p, _signal) => {
-    const opts = buildAuthOpts(p);
+    // Tags write under the op's bare client_op_id; the series create gets a
+    // DISTINCT derived op-id so the backend's client_op_id-keyed idempotency
+    // cache does not replay the tags 201 in place of creating the series.
+    const tagsOpts = buildAuthOpts(p);
+    const seriesOpts = authOpts(p.username, p.clientId, `${p.clientOpId}:series`);
     // 1. Write the ordering tags FIRST.
     await api.batchSampleTags(
       p.key,
       p.tags.map((t) => ({ sample_id: t.sampleId, value: t.value })),
       "scoping",
-      opts,
+      tagsOpts,
     );
     // 2. Then create the series (no id → POST /api/series).
     return api.saveSeries(
@@ -77,7 +93,7 @@ export const scopeAndCreateSeriesMutator: Mutator<
         ...(p.orderingVariable !== undefined ? { ordering_variable: p.orderingVariable } : {}),
       },
       undefined,
-      opts,
+      seriesOpts,
     );
   },
   onSuccess: (_p, response, qc) => {

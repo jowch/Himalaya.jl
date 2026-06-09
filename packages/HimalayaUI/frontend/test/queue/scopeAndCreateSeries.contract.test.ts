@@ -82,7 +82,8 @@ describe("scopeAndCreateSeriesMutator", () => {
       "ratio",
       [{ sample_id: 10, value: "1:1" }],
       "scoping",
-      expect.anything(),
+      // Tags write under the op's BARE client_op_id.
+      expect.objectContaining({ clientOpId: "op1" }),
     );
     expect(saveSpy).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -91,10 +92,36 @@ describe("scopeAndCreateSeriesMutator", () => {
         samples: [{ sample_id: 10, position: 0 }],
       }),
       undefined, // no id → POST /api/series (create)
-      expect.anything(),
+      // Series create gets a DISTINCT, `:series`-suffixed op-id.
+      expect.objectContaining({ clientOpId: "op1:series" }),
     );
     // request returns the created Series.
     expect(result).toBe(FULL_SERIES);
+  });
+
+  it("request: the two writes use DISTINCT client_op_ids (regression: shared op-id ⇒ idempotency replays the tags 201 and the series is never created)", async () => {
+    const batchSpy = vi.spyOn(api, "batchSampleTags").mockResolvedValue([]);
+    const saveSpy = vi.spyOn(api, "saveSeries").mockResolvedValue(FULL_SERIES);
+    await scopeAndCreateSeriesMutator.request(
+      {
+        key: "ratio",
+        tags: [{ sampleId: 10, value: "1:1" }],
+        title: "Series by ratio",
+        samples: [{ sample_id: 10, position: 0 }],
+        orderingVariable: "ratio",
+        username: "a",
+        clientId: "c",
+        clientOpId: "op1",
+      } as never,
+      new AbortController().signal,
+    );
+    const batchOpId = (batchSpy.mock.calls[0]![3] as { clientOpId?: string })?.clientOpId;
+    const saveOpId = (saveSpy.mock.calls[0]![2] as { clientOpId?: string })?.clientOpId;
+    // The backend with_idempotency keys on client_op_id ALONE (not per-route),
+    // so the two writes MUST differ or saveSeries replays the tags 201.
+    expect(batchOpId).toBe("op1");
+    expect(saveOpId).toBe("op1:series");
+    expect(saveOpId).not.toBe(batchOpId);
   });
 
   it("onSuccess: splices the new series into the series-list cache and invalidates scoping caches", () => {

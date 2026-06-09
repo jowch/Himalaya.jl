@@ -55,10 +55,12 @@ type HistoryEntry = { type: "flag"; id: number; prev: boolean; label: string };
 /**
  * SeriesScopingPage (greenfield) — the machine-proposes / human-confirms
  * scoping worksheet at /series/new. The confirm-and-build GATE that *writes*
- * the structured (key,value) sample_tags — NOT series creation (that is the
- * builder). Assembled from src/print composites + the series-scoping mockup;
- * carried logic only (proposeOrdering/splitProposal/dominantPhase + the
- * useScopeSeries batch write), no legacy presentation.
+ * the structured (key,value) sample_tags AND creates the series (M-A Task 7):
+ * a single queued op writes the ordering tags then POSTs /api/series, and on
+ * success the page navigates to the new `/series/:id` builder. Assembled from
+ * src/print composites + the series-scoping mockup; carried logic only
+ * (proposeOrdering/splitProposal/dominantPhase + the useScopeAndCreateSeries
+ * scope-then-create write), no legacy presentation.
  *
  * Honest commit-gate model (Option A): in the carried data a member ALWAYS has a
  * value (loose matches — value==="" — split out as informational candidates), so
