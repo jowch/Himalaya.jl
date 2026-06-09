@@ -9,10 +9,11 @@ import { Sparkline } from "../plot/Sparkline";
 import { EmptyState, Button, Card, Dot } from "../ui";
 import { ColdAssignPanel } from "../components/ColdAssignPanel";
 import type { Trace } from "../../api";
+import { isFullSeries } from "../../api";
 import {
   useCorpusSampleTags,
   useCorpusPickerSamples,
-  useScopeSeries,
+  useScopeAndCreateSeries,
   useMemberTraces,
   useMemberIndices,
 } from "../../queries";
@@ -71,7 +72,7 @@ export function SeriesScopingPage(): JSX.Element {
   const location = useLocation();
   const tagsQ = useCorpusSampleTags();
   const pickerQ = useCorpusPickerSamples();
-  const scopeSeries = useScopeSeries();
+  const scopeAndCreate = useScopeAndCreateSeries();
 
   const isLoading = tagsQ.isLoading || pickerQ.isLoading;
   const isError = tagsQ.isError || pickerQ.isError;
@@ -238,27 +239,51 @@ export function SeriesScopingPage(): JSX.Element {
   const canColdBuildNow = canColdBuild(coldKey, coldRows);
   const isColdPath = proposal.orderingKey === undefined && seed !== null;
 
-  // Defer navigation until the batch write actually succeeds (pending ref).
+  // Defer navigation until the scope-then-create op actually succeeds (pending
+  // ref). On success the page lands on the NEW /series/:id builder (M-A Task 7);
+  // the same mutator writes the ordering tags AND creates the series.
   const pendingBuildRef = useRef(false);
   const handleBuild = (): void => {
     if (isColdPath) {
       if (!canColdBuildNow) return;
       pendingBuildRef.current = true;
-      scopeSeries.mutate({ key: coldKey.trim(), tags: buildColdScopePayload(coldRows) });
+      const key = coldKey.trim();
+      // Cold members: every assigned sample, in the worksheet order.
+      scopeAndCreate.mutate({
+        key,
+        tags: buildColdScopePayload(coldRows),
+        title: `Series by ${key}`,
+        samples: coldRows.map((r, i) => ({ sample_id: r.sampleId, position: i })),
+        orderingVariable: key,
+      });
     } else {
       if (proposal.orderingKey === undefined) return;
       pendingBuildRef.current = true;
-      scopeSeries.mutate({ key: proposal.orderingKey, tags: buildScopePayload(rows) });
+      // Warm members: the SCOPED, kept set (skips excluded — same predicate as
+      // buildScopePayload) in the displayed low→high order, so the series
+      // recipe matches the tags actually written.
+      const keptInOrder = sorted.filter((r) => r.include && !r.flagged && r.value !== "");
+      scopeAndCreate.mutate({
+        key: proposal.orderingKey,
+        tags: buildScopePayload(rows),
+        title: `Series by ${keyLabel}`,
+        samples: keptInOrder.map((r, i) => ({ sample_id: r.sampleId, position: i })),
+        orderingVariable: proposal.orderingKey,
+      });
     }
   };
   useEffect(() => {
-    if (!scopeSeries.isSuccess || !pendingBuildRef.current) return;
+    if (!scopeAndCreate.isSuccess || !pendingBuildRef.current) return;
     pendingBuildRef.current = false;
-    navigate("/series");
-  }, [scopeSeries.isSuccess, navigate]);
+    // Navigate to the new series builder. scopeAndCreate.data is the created
+    // Series; guard on a full-series response (mirrors the builder's guard).
+    const created = scopeAndCreate.data;
+    const newId = isFullSeries(created) ? created.id : undefined;
+    navigate(newId !== undefined ? `/series/${newId}` : "/series");
+  }, [scopeAndCreate.isSuccess, scopeAndCreate.data, navigate]);
   useEffect(() => {
-    if (scopeSeries.error) pendingBuildRef.current = false;
-  }, [scopeSeries.error]);
+    if (scopeAndCreate.error) pendingBuildRef.current = false;
+  }, [scopeAndCreate.error]);
 
   // ── State 1: corpus load failed (distinct from an empty result). ──────────
   if (isError) {
@@ -287,8 +312,8 @@ export function SeriesScopingPage(): JSX.Element {
           </button>
         </div>
 
-        {/* State 4: the batch write failed. */}
-        {scopeSeries.error ? (
+        {/* State 4: the scope-then-create op failed (tags + series create). */}
+        {scopeAndCreate.error ? (
           <div
             data-testid="scoping-error-banner"
             role="alert"
@@ -312,8 +337,8 @@ export function SeriesScopingPage(): JSX.Element {
               /* Cold path: the user arrived from the contact sheet with a
                  deliberate selection, but no tag key can be proposed. Rather
                  than dead-end, let them name the ordering variable and assign
-                 each sample's value — then commit through the SAME scopeSeries
-                 write path the warm path uses. */
+                 each sample's value — then commit through the SAME
+                 scopeAndCreate write path the warm path uses. */
               <Card border="strong" padding="lg" data-testid="cold-scope-plate" className="w-full">
                 <ColdAssignPanel
                   rows={coldRows}

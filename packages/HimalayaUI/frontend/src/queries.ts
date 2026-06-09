@@ -37,6 +37,7 @@ import { reanalyzeExposureMutator } from "./lib/queue/mutators/reanalyzeExposure
 import { saveComparisonMutator } from "./lib/queue/mutators/saveComparison";
 import { deleteComparisonMutator } from "./lib/queue/mutators/deleteComparison";
 import { scopeSeriesMutator } from "./lib/queue/mutators/scopeSeries";
+import { scopeAndCreateSeriesMutator } from "./lib/queue/mutators/scopeAndCreateSeries";
 import { saveSeriesMutator } from "./lib/queue/mutators/saveSeries";
 import { commitSeriesPlateMutator } from "./lib/queue/mutators/commitSeriesPlate";
 import { deleteSeriesMutator } from "./lib/queue/mutators/deleteSeries";
@@ -781,6 +782,19 @@ export function useScopeSeries() {
     mutate: (input: { key: string; tags: { sampleId: number; value: string }[] }) =>
       inner.mutate(input),
   };
+}
+
+/**
+ * Scoping confirm-and-build, atomic create (M-A Task 7). Writes the ordering
+ * (key,value) sample_tags (source='scoping') THEN creates the series
+ * (POST /api/series) in one queued op; on success the page navigates to the
+ * new `/series/:id` builder. `series_save` kind reuses the existing series SSE
+ * event kind (foreign-tab replay routes through saveSeriesMutator). No-op
+ * optimistic; the mutator splices the new Series into the listing cache.
+ */
+export function useScopeAndCreateSeries() {
+  const username = useAppState((s) => s.username);
+  return useQueueMutation(scopeAndCreateSeriesMutator, { username, clientId: CLIENT_ID });
 }
 
 /**
