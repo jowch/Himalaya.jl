@@ -5,7 +5,7 @@
 import * as Plot from "@observablehq/plot";
 import type { Trace, Peak, IndexEntry } from "../../../api";
 import { phaseColor } from "../../../phases";
-import { peakMark } from "../../../components/ui/peakMark";
+import { peakMark } from "../../../print/ui/peakMark";
 import {
   LIGHT_PALETTE,
   TRACE_STROKE_PX,

@@ -12,7 +12,7 @@ import {
   TRACE_STROKE_PX,
 } from "../presets";
 import { buildMemberHeatmapMarks } from "../../../components/MemberHeatmapLayer";
-import { peakMark } from "../../../components/ui/peakMark";
+import { peakMark } from "../../../print/ui/peakMark";
 import { buildCrossTraceTrackingMarks } from "../../../components/CrossTraceTrackingLayer";
 import type { Representation } from "../../../components/RepresentationToggle";
 
