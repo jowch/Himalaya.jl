@@ -1,6 +1,6 @@
 import { render } from "@testing-library/react";
 import { describe, it, expect } from "vitest";
-import { ScoreBar } from "../../src/components/ui/ScoreBar";
+import { ScoreBar } from "../../src/print/ui/ScoreBar";
 
 describe("<ScoreBar>", () => {
   const fill = () => document.querySelector("[data-score-bar]") as HTMLElement;

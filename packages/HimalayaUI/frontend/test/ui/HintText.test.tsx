@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { describe, it, expect } from "vitest";
-import { HintText } from "../../src/components/ui/HintText";
+import { HintText } from "../../src/print/ui/HintText";
 
 describe("HintText", () => {
   it("renders its children text", () => {

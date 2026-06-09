@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { SegmentedControl } from "../../src/components/ui/SegmentedControl";
+import { SegmentedControl } from "../../src/print/ui/SegmentedControl";
 
 type Mode = "log" | "linear";
 const TWO = [

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Zero-dependency design-token guard. Globs src/**/*.{ts,tsx}, excludes src/components/ui/**,
+// Zero-dependency design-token guard. Globs src/**/*.{ts,tsx}, excludes src/print/ui/**,
 // flags banned appearance utilities / raw color literals. PURE-ABSOLUTE: every matched
 // violation (after the ui/ exclusion + per-rule allowlist) is a hard error (exit 2). There is
 // no baseline — the named scale + component library are now the only sanctioned source of
@@ -129,13 +129,12 @@ function relToSrc(absPath) {
   return relative(SRC_DIR, absPath).split(sep).join("/");
 }
 
-// src/components/ui/**, src/print/ui/**, src/print/plot/**, src/print/detector/**,
-// src/print/comb/**, and src/print/export/** are excluded (appearance authored —
-// primitives, the trace-plot engine, the detector rendering layer, the comb/residual
-// rendering layer, and the deliberately un-branded export renderer).
+// src/print/ui/**, src/print/plot/**, src/print/detector/**, src/print/comb/**,
+// and src/print/export/** are excluded (appearance authored — primitives, the
+// trace-plot engine, the detector rendering layer, the comb/residual rendering
+// layer, and the deliberately un-branded export renderer).
 function isExcluded(relPath) {
   return (
-    relPath.startsWith("components/ui/") ||
     relPath.startsWith("print/ui/") ||
     relPath.startsWith("print/plot/") ||
     relPath.startsWith("print/detector/") ||

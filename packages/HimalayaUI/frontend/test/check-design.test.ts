@@ -81,9 +81,9 @@ describe("check-design guard — ban rules (spec §4)", () => {
     expect(rulesFor(line)).not.toContain("no-raw-color-literal");
   });
 
-  // Scope exclusion — src/components/ui/** is never scanned
-  it("excludes src/components/ui/** entirely", () => {
-    expect(scanContent("components/ui/Toast.tsx", '<div className="border-l-4 text-[10px]" />')).toHaveLength(0);
+  // Scope exclusion — src/print/ui/** is never scanned
+  it("excludes src/print/ui/** entirely", () => {
+    expect(scanContent("print/ui/Toast.tsx", '<div className="border-l-4 text-[10px]" />')).toHaveLength(0);
   });
 });
 
@@ -105,8 +105,8 @@ describe("scanLegacyImports", () => {
     expect(v.map((h) => h.rule)).toEqual(["no-legacy-import"]);
   });
 
-  it("flags importing the OLD ui primitives (under components/)", () => {
-    const v = scanLegacyImports("print/ui/Card.tsx", `import { Dot } from "../../components/ui/Dot";`);
+  it("flags any import from the old components/ tree (the import boundary)", () => {
+    const v = scanLegacyImports("print/ui/Card.tsx", `import { Dot } from "../../components/Foo";`);
     expect(v).toHaveLength(1);
   });
 

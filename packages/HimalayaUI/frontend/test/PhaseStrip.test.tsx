@@ -1,9 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { PhaseStrip } from "../src/components/ui/PhaseStrip";
-import type { PhaseSegment } from "../src/components/ui/PhaseStrip";
+import { PhaseStrip } from "../src/print/ui/PhaseStrip";
+import type { PhaseSegment } from "../src/print/ui/PhaseStrip";
 
-const seg = (phase: string | null, coexistWith: string | null = null): PhaseSegment => ({
+// Greenfield PhaseStrip's coexistWith is an array (N-band coexistence gradient);
+// the old single-string param is adapted here so the behavioral coverage is kept.
+const seg = (phase: string | null, coexistWith: string[] | null = null): PhaseSegment => ({
   phase,
   coexistWith,
 });
@@ -67,7 +69,7 @@ describe("PhaseStrip", () => {
   });
 
   it("labels a coexistence segment as 'A + B (coexistence)'", () => {
-    render(<PhaseStrip segments={[seg("Pn3m", "Lamellar")]} />);
+    render(<PhaseStrip segments={[seg("Pn3m", ["Lamellar"])]} />);
     const segment = screen.getAllByTestId("ps-seg")[0];
     expect(segment).toHaveAttribute("aria-label", "Pn3m + Lamellar (coexistence)");
     expect(segment).toHaveAttribute("title", "Pn3m + Lamellar (coexistence)");

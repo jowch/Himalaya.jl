@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { peakGlyph, peakMark } from "../src/components/ui/peakMark";
+import { peakGlyph, peakMark } from "../src/print/ui/peakMark";
 
 // Plot is mocked so peakMark's Plot.dot call returns an inspectable stub. The
 // builder only needs Plot.dot here; the marks themselves are opaque to these
@@ -56,10 +56,13 @@ describe("peakGlyph — §5.1 encoding atoms", () => {
     expect(g.fill).toBe("none");
   });
 
-  it("hot (q-link) → grows + gains a ring (no recolour)", () => {
+  it("hot (q-link) → sets the ring flag but does NOT grow or recolour the mark", () => {
     const base = peakGlyph({ source: "auto", color: PHASE, r: 4 });
     const hot = peakGlyph({ source: "auto", color: PHASE, r: 4, hot: true });
-    expect(hot.r).toBeGreaterThan(base.r);
+    // Greenfield q-link redesign: the mark is UNCHANGED when hot — emphasis is
+    // carried by the q-line + q-readout, not by growing the glyph. `ring` is now
+    // a pure flag (surfaced as data-hot on the SVG), no geometry change.
+    expect(hot.r).toBe(base.r);
     expect(hot.ring).toBe(true);
     // hue is unchanged — provenance/state never rides on colour.
     expect(hot.fill).toBe(base.fill);

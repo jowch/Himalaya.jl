@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { act, render, screen, fireEvent } from "@testing-library/react";
-import { ToastContainer } from "../src/components/ui/Toast";
+import { ToastContainer } from "../src/print/ui/Toast";
 import { showToast, setToastImpl } from "../src/lib/toast";
 
 describe("Toast", () => {
@@ -146,7 +146,7 @@ describe("Toast", () => {
 
 describe("Toast barrel export", () => {
   it("ToastContainer is exported from the ui barrel", async () => {
-    const mod = await import("../src/components/ui");
+    const mod = await import("../src/print/ui");
     expect(typeof mod.ToastContainer).toBe("function");
   });
 });
