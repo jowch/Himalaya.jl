@@ -8,7 +8,7 @@ import {
 import { buildMultiTraceExportMarks } from "../marks/multiTraceExportMarks";
 import { colorFor, ORPHAN_FALLBACK, type GroupingMode } from "../../comparison/coloring";
 import { phaseColor } from "../../../phases";
-import type { Representation } from "../../../components/RepresentationToggle";
+import type { Representation } from "../marks/multiTraceExportMarks";
 
 export interface MultiTraceAdapterArgs {
   members: SeriesMember[];          // sorted by display_order

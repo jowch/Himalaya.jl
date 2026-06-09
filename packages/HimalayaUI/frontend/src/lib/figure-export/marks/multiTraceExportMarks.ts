@@ -14,7 +14,12 @@ import {
 import { buildMemberHeatmapMarks } from "../../../components/MemberHeatmapLayer";
 import { peakMark } from "../../../print/ui/peakMark";
 import { buildCrossTraceTrackingMarks } from "../../../components/CrossTraceTrackingLayer";
-import type { Representation } from "../../../components/RepresentationToggle";
+
+/** Plot layout vocabulary for the multi-trace figure: stacked 1-D traces
+ *  (`waterfall`) vs. q-binned intensity rows (`heatmap`). Formerly defined on
+ *  the now-removed RepresentationToggle component; the export pipeline is its
+ *  only remaining consumer. */
+export type Representation = "waterfall" | "heatmap";
 
 export interface MultiTraceMarksArgs {
   /** Already filtered (null-exposure_id removed) and sorted by display_order. */
