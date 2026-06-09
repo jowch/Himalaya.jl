@@ -14,6 +14,7 @@ import {
   useSetExposureStatusBatch,
 } from "../../queries";
 import { navigateToNewSeries } from "../../lib/series/newSeriesNav";
+import { showToast } from "../../lib/toast";
 import { toSampleRowModel } from "./samplesAdapters";
 
 // Boneyard fixture — a static skeleton shaped to the SheetTable rows region so
@@ -142,9 +143,16 @@ export function SamplesPage(): JSX.Element {
   }
 
   function batchSet(status: "rejected" | null): void {
+    const n = selected.size;
     for (const id of selected) {
       const sampleId = ownerOf.get(id);
       if (sampleId !== undefined) batch.mutate({ sampleId, exposureId: id, status });
+    }
+    // Consequential, batch-scale change → visible toast. Drop and its symmetric
+    // restore both announce so the action and its undo are equally legible.
+    if (n > 0) {
+      const verb = status === "rejected" ? "dropped" : "restored";
+      showToast(`${n} frame${n === 1 ? "" : "s"} ${verb}`, "success");
     }
     setSelected(new Set());
     anchorRef.current = null;

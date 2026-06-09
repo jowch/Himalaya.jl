@@ -4,7 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { AppRoutes } from "./print/shell/AppRoutes";
 import { OnboardingFlow } from "./print/shell/OnboardingFlow";
 import { NavModal } from "./print/shell/NavModal";
-import { ToastContainer } from "./print/ui";
+import { ToastContainer, LiveRegion } from "./print/ui";
 import { InfrastructureBanner } from "./print/shell/InfrastructureBanner";
 import { handleRemoteEvent } from "./lib/queue/replayCoordinator";
 import { attachPersistence, rehydrate } from "./lib/queue/persistence";
@@ -80,6 +80,7 @@ export function App(): JSX.Element {
           recovery can open it from any surface. */}
       <NavModal />
       <ToastContainer />
+      <LiveRegion />
       <InfrastructureBanner />
     </>
   );

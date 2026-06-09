@@ -120,11 +120,23 @@ export function SeriesBuilderPage(): JSX.Element {
     if (stage.current !== "committing" || !commit.isSuccess) return;
     stage.current = "idle";
     discardDraft();
+    // Consequential terminal success of the Save→Commit chain → visible toast.
+    showToast("Series confirmed", "success");
   }, [commit.isSuccess, discardDraft]);
 
-  // Either error → reset so the user can retry.
+  // Either error → reset so the user can retry. Stage-ref guarded like its
+  // success sibling: the toast fires once per in-flight attempt (stage !=
+  // "idle") and can't double-fire if both save.error and commit.error resolve
+  // in the same cycle — the first run flips stage to "idle", so the re-run
+  // early-returns.
   useEffect(() => {
-    if (save.error || commit.error) stage.current = "idle";
+    if (stage.current === "idle") return;
+    if (save.error || commit.error) {
+      stage.current = "idle";
+      // The rail already shows a role=alert div; also surface it assertively as
+      // a toast so the failure reaches a user whose focus is elsewhere.
+      showToast("Couldn't confirm the series. Try again.", "error");
+    }
   }, [save.error, commit.error]);
 
   // ── Honest states ───────────────────────────────────────────────────────

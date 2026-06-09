@@ -11,6 +11,8 @@ import {
   useRemoveCorpusSampleTag,
 } from "../../queries";
 import type { Tag } from "../ui";
+import { announce } from "../../lib/announce";
+import { showToast } from "../../lib/toast";
 import { BigFrame } from "../components/BigFrame";
 import { ThumbnailGallery } from "../components/ThumbnailGallery";
 import { LoupeSidePanel } from "../components/LoupeSidePanel";
@@ -94,15 +96,19 @@ export function LoupePage(): JSX.Element {
 
   const handleDropToggle = useCallback(() => {
     if (!activeExposure) return;
+    const dropping = activeExposure.status !== "rejected";
     setStatus.mutate({
       exposureId: activeExposure.id,
-      status: activeExposure.status === "rejected" ? null : "rejected",
+      status: dropping ? "rejected" : null,
     });
+    // Consequential single-frame status change → visible toast.
+    showToast(dropping ? "Frame dropped" : "Frame restored", "success");
   }, [activeExposure, setStatus]);
 
   const handleSetRepresentative = useCallback(() => {
     if (!activeExposure) return;
     setRepresentative.mutate(activeExposure.id);
+    showToast("Set as the representative frame", "success");
   }, [activeExposure, setRepresentative]);
 
   const handleAddTag = useCallback((t: Tag) => {
@@ -121,7 +127,17 @@ export function LoupePage(): JSX.Element {
     if (idx < 0) return;
     const next = Math.min(Math.max(idx + delta, 0), exposures.length - 1);
     setActiveId(exposures[next]!.id);
+    // High-frequency, immediately-visible navigation → SR-only (not a toast).
+    announce(`Frame ${next + 1} of ${exposures.length}`);
   }, [activeId, exposures]);
+
+  // Thumbnail-click selection routes through the SAME announcement as the
+  // keyboard flip so mouse and keyboard navigation are consistent for SR users.
+  const selectFrame = useCallback((id: number) => {
+    setActiveId(id);
+    const idx = exposures.findIndex((e) => e.id === id);
+    if (idx >= 0) announce(`Frame ${idx + 1} of ${exposures.length}`);
+  }, [exposures]);
 
   const goBack = useCallback(() => {
     const beamtime = searchParams.get("beamtime");
@@ -185,7 +201,7 @@ export function LoupePage(): JSX.Element {
                   <ThumbnailGallery
                     exposures={toGalleryExposures(exposures)}
                     {...(activeId !== undefined ? { selectedId: activeId } : {})}
-                    onSelect={setActiveId}
+                    onSelect={selectFrame}
                     size="lg"
                     align="center"
                     className="mt-3"

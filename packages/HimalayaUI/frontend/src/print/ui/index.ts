@@ -25,6 +25,7 @@ export type { PhaseChipVariant, PhaseChipSize } from "./PhaseChip";
 export { SegmentedControl } from "./SegmentedControl";
 export type { SegmentOption, SegmentedVariant, SegmentedSize, SegmentedControlProps } from "./SegmentedControl";
 export { ToastContainer } from "./Toast";
+export { LiveRegion } from "./LiveRegion";
 export { PhaseStrip } from "./PhaseStrip";
 export type { PhaseSegment, PhaseStripSize, PhaseStripProps } from "./PhaseStrip";
 export { ModalShell } from "./ModalShell";

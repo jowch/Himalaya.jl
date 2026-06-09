@@ -46,6 +46,8 @@ import { useAutoPickExposure } from "../../hooks/useAutoPickExposure";
 import { deriveActiveIndices } from "../../lib/assignment";
 import { basisFor } from "../../lib/customIndex";
 import { seriesRatio } from "../../lib/seriesRatio";
+import { announce } from "../../lib/announce";
+import { showToast } from "../../lib/toast";
 import type { Trace, IndexEntry } from "../../api";
 
 const EMPTY_TRACE: Trace = { q: [], I: [], sigma: [] };
@@ -285,6 +287,8 @@ export function FocusPage(): JSX.Element {
   function commitCustom(): void {
     commitCustomIndex.mutate(customSym, basisFor(customSym, Number(customParam)));
     setCustomOpen(false);
+    // Consequential: a custom hypothesis was added to the call → visible toast.
+    showToast(`${customSym} index added`, "success");
   }
 
   // ── rail building ────────────────────────────────────────────────────────────
@@ -312,7 +316,10 @@ export function FocusPage(): JSX.Element {
           score={ix.score ?? 0}
           meta={phaseMeta(ix)}
           series={seriesRatio(ix.phase, ix.peaks.map((p) => p.ratio_position)) || undefined}
-          onRemove={() => removeAssignmentPhase.mutate(ix.id)}
+          onRemove={() => {
+            removeAssignmentPhase.mutate(ix.id);
+            announce(`${ix.phase} removed from the call`);
+          }}
         />
       ))}
     </AssignmentCart>
@@ -335,11 +342,15 @@ export function FocusPage(): JSX.Element {
           why={`explains ${ix.peaks.length} peaks${selected ? " · in the call" : ""}`}
           selected={selected}
           {...(ix.bonnet?.consistent ? { bonnet: true } : {})}
-          onToggle={() =>
-            selected
-              ? removeAssignmentPhase.mutate(ix.id)
-              : addAssignmentPhase.mutate(ix.id)
-          }
+          onToggle={() => {
+            if (selected) {
+              removeAssignmentPhase.mutate(ix.id);
+              announce(`${ix.phase} removed from the call`);
+            } else {
+              addAssignmentPhase.mutate(ix.id);
+              announce(`${ix.phase} added to the call`);
+            }
+          }}
         />
       </div>
     );
@@ -426,11 +437,19 @@ export function FocusPage(): JSX.Element {
               {...(highlight !== undefined ? { highlightPeakIds: highlight } : {})}
               interaction={{
                 onXDomain: setXDomain,
-                onAddPeak: (q) => addPeak.mutate(q),
-                onClickPeak: (id, alt) =>
-                  alt
-                    ? setPeakExcluded.mutate({ peakId: id, excluded: true })
-                    : removePeak.mutate(id),
+                onAddPeak: (q) => {
+                  addPeak.mutate(q);
+                  announce("Peak added");
+                },
+                onClickPeak: (id, alt) => {
+                  if (alt) {
+                    setPeakExcluded.mutate({ peakId: id, excluded: true });
+                    announce("Peak excluded");
+                  } else {
+                    removePeak.mutate(id);
+                    announce("Peak removed");
+                  }
+                },
                 onReset: () => setXDomain(null),
               }}
               actions={

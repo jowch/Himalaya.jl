@@ -39,6 +39,8 @@ vi.mock("../../src/print/detector/DetectorImage", () => ({
 }));
 
 import { LoupePage } from "../../src/print/pages/LoupePage";
+import { setToastImpl } from "../../src/lib/toast";
+import { setAnnounceImpl } from "../../src/lib/announce";
 
 function exp(over: Partial<Exposure>): Exposure {
   return {
@@ -103,6 +105,65 @@ describe("LoupePage", () => {
     renderAt(42);
     fireEvent.keyDown(window, { key: "ArrowRight" });
     expect(screen.getByTestId("big-frame")).toHaveAttribute("data-rejected", "true");
+  });
+
+  it("X drop announces a status toast (consequential → visible)", () => {
+    const toast = vi.fn();
+    setToastImpl(toast);
+    try {
+      renderAt(42);
+      fireEvent.keyDown(window, { key: "x" });
+      expect(toast).toHaveBeenCalledWith("Frame dropped", "success");
+    } finally {
+      setToastImpl(null);
+    }
+  });
+
+  it("R set-representative announces a toast", () => {
+    const toast = vi.fn();
+    setToastImpl(toast);
+    try {
+      renderAt(42);
+      fireEvent.keyDown(window, { key: "r" });
+      expect(toast).toHaveBeenCalledWith("Set as the representative frame", "success");
+    } finally {
+      setToastImpl(null);
+    }
+  });
+
+  it("ArrowRight flip announces SR-only (frame position), not a toast", () => {
+    const announce = vi.fn();
+    const toast = vi.fn();
+    setAnnounceImpl(announce);
+    setToastImpl(toast);
+    try {
+      renderAt(42);
+      fireEvent.keyDown(window, { key: "ArrowRight" });
+      expect(announce.mock.calls[0]?.[0]).toBe("Frame 2 of 2");
+      expect(toast).not.toHaveBeenCalled();
+    } finally {
+      setAnnounceImpl(null);
+      setToastImpl(null);
+    }
+  });
+
+  it("thumbnail-click navigation announces SR-only too (consistent with keyboard flip)", () => {
+    const announce = vi.fn();
+    const toast = vi.fn();
+    setAnnounceImpl(announce);
+    setToastImpl(toast);
+    try {
+      renderAt(42);
+      // The filmstrip thumbnails; clicking the 2nd selects exposure 2.
+      const thumbs = screen.getAllByTestId("thumbnail");
+      fireEvent.click(thumbs[1]!);
+      expect(announce.mock.calls[0]?.[0]).toBe("Frame 2 of 2");
+      // Navigation is quiet (SR-only), never a toast.
+      expect(toast).not.toHaveBeenCalled();
+    } finally {
+      setAnnounceImpl(null);
+      setToastImpl(null);
+    }
   });
 
   it("Escape navigates back to the sheet", () => {

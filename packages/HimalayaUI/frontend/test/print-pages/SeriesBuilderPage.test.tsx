@@ -49,6 +49,7 @@ vi.mock("boneyard-js/react", () => ({
 }));
 
 import { SeriesBuilderPage } from "../../src/print/pages/SeriesBuilderPage";
+import { setToastImpl } from "../../src/lib/toast";
 
 // ── fixtures ─────────────────────────────────────────────────────────────────
 function member(id: number, over: Partial<SeriesMember> = {}): SeriesMember {
@@ -294,6 +295,58 @@ describe("SeriesBuilderPage", () => {
     state.commit = { ...state.commit, isSuccess: true };
     act(() => rerender());
     expect(useAppState.getState().seriesDraft).toBeNull();
+  });
+
+  it("confirm success announces a 'Series confirmed' toast", () => {
+    const toast = vi.fn();
+    setToastImpl(toast);
+    try {
+      const { rerender } = renderPage();
+      fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "Edited" } });
+      fireEvent.click(screen.getByRole("button", { name: /confirm series/i }));
+      state.save = { ...state.save, isSuccess: true, data: baseSeries({ title: "Edited" }) };
+      act(() => rerender());
+      state.commit = { ...state.commit, isSuccess: true };
+      act(() => rerender());
+      expect(toast).toHaveBeenCalledWith("Series confirmed", "success");
+    } finally {
+      setToastImpl(null);
+    }
+  });
+
+  it("confirm failure announces an error toast (in addition to the role=alert notice)", () => {
+    const toast = vi.fn();
+    setToastImpl(toast);
+    try {
+      const { rerender } = renderPage();
+      fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "x" } });
+      // Click Confirm so the chain is in-flight (stage != "idle"); only then is
+      // the stage-guarded error effect armed.
+      fireEvent.click(screen.getByRole("button", { name: /confirm series/i }));
+      state.commit = { ...state.commit, error: new Error("boom") };
+      act(() => rerender());
+      expect(toast).toHaveBeenCalledWith(expect.stringMatching(/confirm/i), "error");
+    } finally {
+      setToastImpl(null);
+    }
+  });
+
+  it("error toast fires once even if BOTH save and commit error resolve together", () => {
+    const toast = vi.fn();
+    setToastImpl(toast);
+    try {
+      const { rerender } = renderPage();
+      fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "x" } });
+      fireEvent.click(screen.getByRole("button", { name: /confirm series/i }));
+      // Both errors land in the same render cycle.
+      state.save = { ...state.save, error: new Error("s") };
+      state.commit = { ...state.commit, error: new Error("c") };
+      act(() => rerender());
+      const errorCalls = toast.mock.calls.filter((c) => c[1] === "error");
+      expect(errorCalls).toHaveLength(1);
+    } finally {
+      setToastImpl(null);
+    }
   });
 
   it("removing a recipe row mutates the draft", () => {

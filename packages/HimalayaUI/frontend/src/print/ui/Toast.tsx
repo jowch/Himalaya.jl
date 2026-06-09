@@ -97,7 +97,11 @@ export function ToastContainer(): JSX.Element {
           key={t.id}
           data-testid="toast"
           data-toast-kind={t.kind}
-          role="status"
+          // WCAG 4.1.3: error/warning are interruptive (assertive); info/success
+          // are advisory (polite, the default). The severity word stays the
+          // human-readable channel; the role/aria-live carry it to assistive tech.
+          role={t.kind === "error" || t.kind === "warning" ? "alert" : "status"}
+          aria-live={t.kind === "error" || t.kind === "warning" ? "assertive" : "polite"}
           className={
             "pointer-events-auto flex items-start gap-2 rounded-md border border-hair " +
             "bg-plate text-ink px-3 py-2 shadow-lg text-body min-w-[220px] max-w-[360px]"

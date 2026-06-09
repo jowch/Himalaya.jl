@@ -92,6 +92,8 @@ vi.mock("../../src/print/components/CombsPanel", () => ({
 }));
 
 import { FocusPage } from "../../src/print/pages/FocusPage";
+import { setAnnounceImpl } from "../../src/lib/announce";
+import { setToastImpl } from "../../src/lib/toast";
 
 // ── fixtures ──────────────────────────────────────────────────────────────────
 function corpus(over: Partial<CorpusSample> = {}): CorpusSample {
@@ -216,6 +218,53 @@ describe("FocusPage", () => {
     renderAt(42);
     fireEvent.click(screen.getByTestId("custom-index-trigger"));
     expect(screen.getByTestId("custom-index-modal")).toBeInTheDocument();
+  });
+
+  it("toggling a candidate phase announces SR-only (frequent → quiet channel)", () => {
+    const announce = vi.fn();
+    const toast = vi.fn();
+    setAnnounceImpl(announce);
+    setToastImpl(toast);
+    try {
+      renderAt(42);
+      fireEvent.click(screen.getByRole("button", { name: /Lamellar/ }));
+      expect(announce.mock.calls[0]?.[0]).toBe("Lamellar added to the call");
+      // a candidate toggle is NOT a visible toast (would be spam)
+      expect(toast).not.toHaveBeenCalled();
+    } finally {
+      setAnnounceImpl(null);
+      setToastImpl(null);
+    }
+  });
+
+  it("adding a peak announces 'Peak added' SR-only", () => {
+    const announce = vi.fn();
+    setAnnounceImpl(announce);
+    try {
+      const { container } = renderAt(42);
+      fireEvent.click(screen.getByText("+ Peak"));
+      const svg = container.querySelector('svg[data-testid="trace-plate-plot"]')!;
+      fireEvent.click(svg, { clientX: 300, clientY: 150 });
+      expect(announce.mock.calls[0]?.[0]).toBe("Peak added");
+    } finally {
+      setAnnounceImpl(null);
+    }
+  });
+
+  it("committing a custom index announces a visible toast (consequential)", () => {
+    const toast = vi.fn();
+    setToastImpl(toast);
+    try {
+      renderAt(42);
+      fireEvent.click(screen.getByTestId("custom-index-trigger"));
+      // The modal's Add commits the custom index.
+      const modal = screen.getByTestId("custom-index-modal");
+      fireEvent.click(within(modal).getByRole("button", { name: /^Add/ }));
+      expect(commitCustomMutate).toHaveBeenCalled();
+      expect(toast).toHaveBeenCalledWith(expect.stringContaining("index added"), "success");
+    } finally {
+      setToastImpl(null);
+    }
   });
 
   it("not-found: no corpus sample for the id", () => {

@@ -55,6 +55,7 @@ vi.mock("../../src/print/detector/DetectorImage", () => ({
 }));
 
 import { SamplesPage } from "../../src/print/pages/SamplesPage";
+import { setToastImpl } from "../../src/lib/toast";
 
 // ── fixtures ──────────────────────────────────────────────────────────────────
 function corpus(over: Partial<CorpusSample> = {}): CorpusSample {
@@ -172,6 +173,35 @@ describe("SamplesPage", () => {
     fireEvent.keyDown(window, { key: "Escape" });
     expect(screen.getByTestId("cull-bar")).toHaveAttribute("data-show", "false");
     expect(batchMutate).not.toHaveBeenCalled();
+  });
+
+  it("dropping frames announces a count toast (consequential → visible)", () => {
+    const toast = vi.fn();
+    setToastImpl(toast);
+    try {
+      renderAt("/samples?beamtime=1");
+      const thumbs = screen.getAllByTestId("thumbnail");
+      fireEvent.click(thumbs[0]!);
+      fireEvent.keyDown(window, { key: "X" });
+      expect(toast).toHaveBeenCalledWith("1 frame dropped", "success");
+    } finally {
+      setToastImpl(null);
+    }
+  });
+
+  it("restoring frames announces a symmetric count toast", () => {
+    const toast = vi.fn();
+    setToastImpl(toast);
+    try {
+      renderAt("/samples?beamtime=1");
+      const thumbs = screen.getAllByTestId("thumbnail");
+      fireEvent.click(thumbs[0]!);
+      // The CullBar Restore button routes through batchSet(null).
+      fireEvent.click(screen.getByRole("button", { name: /Restore/ }));
+      expect(toast).toHaveBeenCalledWith("1 frame restored", "success");
+    } finally {
+      setToastImpl(null);
+    }
   });
 
   it("shift-click extends the contiguous range within one sample only", () => {

@@ -45,6 +45,38 @@ describe("Toast", () => {
     }
   });
 
+  it("announces error and warning toasts assertively (role=alert, aria-live=assertive)", () => {
+    render(<ToastContainer />);
+    for (const kind of ["error", "warning"] as const) {
+      act(() => {
+        showToast(`msg-${kind}`, kind);
+      });
+      const toast = screen.getByTestId("toast");
+      expect(toast).toHaveAttribute("role", "alert");
+      expect(toast).toHaveAttribute("aria-live", "assertive");
+      act(() => {
+        fireEvent.click(screen.getByLabelText("Dismiss"));
+      });
+    }
+  });
+
+  it("announces info and success toasts politely (role=status)", () => {
+    render(<ToastContainer />);
+    for (const kind of ["info", "success"] as const) {
+      act(() => {
+        showToast(`msg-${kind}`, kind);
+      });
+      const toast = screen.getByTestId("toast");
+      expect(toast).toHaveAttribute("role", "status");
+      // Positively lock the polite contract — an absent aria-live would also
+      // satisfy `not assertive`, so assert the attribute is present + "polite".
+      expect(toast).toHaveAttribute("aria-live", "polite");
+      act(() => {
+        fireEvent.click(screen.getByLabelText("Dismiss"));
+      });
+    }
+  });
+
   it("uses a full hairline border, not a left-edge severity stripe", () => {
     render(<ToastContainer />);
     act(() => {
