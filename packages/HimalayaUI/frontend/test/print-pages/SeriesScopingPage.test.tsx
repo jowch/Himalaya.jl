@@ -227,6 +227,32 @@ describe("SeriesScopingPage", () => {
     expect(navigateSpy).toHaveBeenCalledWith("/series/7");
   });
 
+  it("navigates to /series/:id even when Op B resolves with the SSE-win PARTIAL shape (id only, no members/state)", () => {
+    // Under the live SSE-wins race, the queue resolves the create's deferred
+    // with saveSeriesMutator.synthesizeFromSse → a PARTIAL series ({...base,
+    // ...payload, id: entity_id}) — NO members/state, so isFullSeries is false,
+    // but the new id IS present. The success effect must read the id directly,
+    // not gate on isFullSeries (which would yield "/series", the folio). Mocked
+    // tests normally drain SSE so HTTP wins and data is full — this asserts the
+    // shape the full-series mock structurally hides.
+    const { rerender } = renderPage();
+    fireEvent.click(screen.getByRole("button", { name: /confirm & build/i }));
+    // Op A lands → Op B fires.
+    scopeState = { mutate: scopeMutate, isSuccess: true, error: null, data: undefined };
+    act(() => rerender());
+    expect(createMutate).toHaveBeenCalled();
+    // Op B resolves with the PARTIAL SSE-synthesized shape: id only.
+    createState = {
+      mutate: createMutate,
+      isSuccess: true,
+      error: null,
+      data: { id: 9 } as unknown as Series,
+    };
+    act(() => rerender());
+    expect(navigateSpy).toHaveBeenCalledWith("/series/9");
+    expect(navigateSpy).not.toHaveBeenCalledWith("/series");
+  });
+
   it("shows the ready foot line with the kept count when nothing is skipped", () => {
     renderPage();
     expect(screen.getByText(/2 values ready to commit/i)).toBeInTheDocument();

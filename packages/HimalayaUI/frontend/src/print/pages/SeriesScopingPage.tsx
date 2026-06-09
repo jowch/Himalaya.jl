@@ -9,7 +9,6 @@ import { Sparkline } from "../plot/Sparkline";
 import { EmptyState, Button, Card, Dot } from "../ui";
 import { ColdAssignPanel } from "../components/ColdAssignPanel";
 import type { Trace } from "../../api";
-import { isFullSeries } from "../../api";
 import {
   useCorpusSampleTags,
   useCorpusPickerSamples,
@@ -314,13 +313,20 @@ export function SeriesScopingPage(): JSX.Element {
     createSeries.mutate(body);
   }, [scopeSeries.isSuccess, createSeries]);
 
-  // Op B landed (series created) → navigate to the new builder. `createSeries.data`
-  // is reliably the full Series (single-write op); guard with isFullSeries.
+  // Op B landed (series created) → navigate to the new builder. Read the new
+  // series `id` DIRECTLY, never gated on isFullSeries: under the SSE-wins race
+  // `createSeries.data` is the PARTIAL shape from saveSeriesMutator's
+  // synthesizeFromSse (`{...base, ...payload, id: entity_id}` — no
+  // members/state, so isFullSeries is false) — but it DOES carry the new
+  // series id. On the HTTP-wins path it's the full Series; the id is present in
+  // BOTH shapes. (Live, Op A's tag write warms the /api/events stream so the
+  // `series_created` frame usually wins the race; mocked tests drain SSE so
+  // HTTP wins — only the id-direct read works for both.)
   useEffect(() => {
     if (stage.current !== "creating" || !createSeries.isSuccess) return;
     stage.current = "idle";
-    const created = createSeries.data;
-    const newId = isFullSeries(created) ? created.id : undefined;
+    const created = createSeries.data as { id?: unknown } | undefined;
+    const newId = typeof created?.id === "number" ? created.id : undefined;
     navigate(newId !== undefined ? `/series/${newId}` : "/series");
   }, [createSeries.isSuccess, createSeries.data, navigate]);
 
