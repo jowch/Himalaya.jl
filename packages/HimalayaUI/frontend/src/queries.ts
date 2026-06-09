@@ -37,7 +37,7 @@ import { reanalyzeExposureMutator } from "./lib/queue/mutators/reanalyzeExposure
 import { saveComparisonMutator } from "./lib/queue/mutators/saveComparison";
 import { deleteComparisonMutator } from "./lib/queue/mutators/deleteComparison";
 import { scopeSeriesMutator } from "./lib/queue/mutators/scopeSeries";
-import { scopeAndCreateSeriesMutator } from "./lib/queue/mutators/scopeAndCreateSeries";
+import { createSeriesMutator } from "./lib/queue/mutators/createSeries";
 import { saveSeriesMutator } from "./lib/queue/mutators/saveSeries";
 import { commitSeriesPlateMutator } from "./lib/queue/mutators/commitSeriesPlate";
 import { deleteSeriesMutator } from "./lib/queue/mutators/deleteSeries";
@@ -785,16 +785,20 @@ export function useScopeSeries() {
 }
 
 /**
- * Scoping confirm-and-build, atomic create (M-A Task 7). Writes the ordering
- * (key,value) sample_tags (source='scoping') THEN creates the series
- * (POST /api/series) in one queued op; on success the page navigates to the
- * new `/series/:id` builder. `series_save` kind reuses the existing series SSE
- * event kind (foreign-tab replay routes through saveSeriesMutator). No-op
- * optimistic; the mutator splices the new Series into the listing cache.
+ * Series CREATE (M-A: Op B of the scoping scope→create chain). A SINGLE-write
+ * queue op — `series_save` → POST /api/series (no id ⇒ create). Split out from
+ * the tag write (useScopeSeries, Op A) because the queue resolves an op's
+ * deferred with whichever lands first (HTTP return OR own-op SSE frame); a
+ * compound two-write op had its `add_tag` frame resolve the deferred before the
+ * create returned, so `mutation.data` was the tag confirmation, not the Series.
+ * As a single write, this op's only own-op frame is `series_created`, so
+ * `data` is reliably the created Series (like useSaveSeries, which the builder
+ * reads `.data.members` from). The page chains scopeSeries.mutate →
+ * createSeries.mutate via a ref state machine, then navigates to /series/:id.
  */
-export function useScopeAndCreateSeries() {
+export function useCreateSeries() {
   const username = useAppState((s) => s.username);
-  return useQueueMutation(scopeAndCreateSeriesMutator, { username, clientId: CLIENT_ID });
+  return useQueueMutation(createSeriesMutator, { username, clientId: CLIENT_ID });
 }
 
 /**

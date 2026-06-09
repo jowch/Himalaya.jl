@@ -2,20 +2,25 @@ import { test, expect, type Page } from "@playwright/test";
 
 // M-A Task 8 (new-series creation flow): the full mocked B-path. Drives the
 // contact-sheet sample-grain checkbox column → ComposeBar → "+ New series" →
-// the pre-seeded SeriesScopingPage → "Confirm & build" → the two sequential
-// writes (POST /api/samples/tags/batch then POST /api/series) → navigation to
-// /series/:id.
+// the pre-seeded SeriesScopingPage → "Confirm & build" → the TWO-OP chain
+// (Op A: POST /api/samples/tags/batch, then Op B: POST /api/series) →
+// navigation to /series/:id.
 //
 // Greenfield DOM only (src/print/**): SamplesPage + SheetTable + SampleTableRow
 // + Checkbox + ComposeBar on the picker side; SeriesScopingPage + ScopePlate +
 // ScopeSampleRow on the scoping side. All assertions are on stable data-* /
 // role selectors per e2e/AGENTS.md.
 //
-// Critical pin (commit 0ded204): the two POSTs carry DISTINCT X-Client-Op-Id
-// headers — the tags batch under the op's bare client_op_id, the series create
-// under a `${op}:series`-suffixed id. Without that, the backend's
-// client_op_id-keyed idempotency cache would replay the tags 201 in place of
-// creating the series. This spec captures both headers and asserts they differ.
+// Why TWO ops (not one compound op): the queue resolves an op's deferred with
+// whichever lands first — the HTTP return OR an own-op SSE frame on that op-id.
+// A single op that wrote the tags then created the series had its tag-write
+// `add_tag` frame resolve the deferred BEFORE the create returned, so the
+// page's `mutation.data` was the tag confirmation, not the Series — it
+// navigated to the folio, not the builder. The fix splits the chain into two
+// separate single-write queue ops; each mints its own fresh client_op_id, so
+// the two POSTs carry DISTINCT X-Client-Op-Id headers. This spec captures both
+// headers and asserts they differ. The `POST /api/series` mock returns a fresh
+// draft with `members: []` — exactly the shape that exposed the original bug.
 
 const EXPERIMENT = {
   id: 1, name: "SSRL Test", path: "/p", data_dir: "/p/data",
@@ -210,15 +215,17 @@ test.describe("new-series creation flow (M-A)", () => {
     // …then the series create with a title mentioning the ordering variable.
     await expect.poll(() => captured.seriesCreate?.["title"], { timeout: 4000 }).toMatch(/ratio/i);
 
-    // CRITICAL PIN: the two POSTs carry DISTINCT X-Client-Op-Id headers — the
-    // series create is the tags op-id suffixed with ":series". This is the
-    // idempotency fix (without it, the create would replay the tags 201).
+    // CRITICAL PIN: the two POSTs carry DISTINCT X-Client-Op-Id headers. Each
+    // write is its own single-write queue op, so each mints its own fresh
+    // client_op_id. Distinct op-ids are what keep the backend's
+    // client_op_id-keyed idempotency cache from replaying the tags 201 in place
+    // of creating the series.
     await expect.poll(() => captured.seriesOpId).not.toBeNull();
     expect(captured.tagsOpId).not.toBeNull();
     expect(captured.seriesOpId).not.toBe(captured.tagsOpId);
-    expect(captured.seriesOpId).toBe(`${captured.tagsOpId}:series`);
 
-    // Navigated to the new series builder at /series/42.
+    // Navigated to the new series builder at /series/42 — proving the page read
+    // the created Series (members: []) off createSeries.data, not a tag frame.
     await expect(page).toHaveURL(/\/series\/42/);
   });
 

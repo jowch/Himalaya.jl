@@ -41,7 +41,6 @@
 ### M-D — Plan 7: dead-code sweep ⬜
 - **Frontend tail** (left by the Series-builder cutover): legacy plot helper-layers (`MemberTraceLayer`/`MemberHeatmapLayer`/`PlotSurface`/`CrossTraceTrackingLayer`/`SeriesTrackingOverlay`/`BandResizeDivider`/etc.) + now-orphaned carried controls (`GroupingModeToggle`/`AnnotationToggles`/`FigureExportControls`/`SeriesPhaseStrip`) — grep each for ANY surviving consumer (incl. tests/stories) before `git rm`.
 - **Backend dead-code** track per the original Phase-4 cutover strategy.
-- **Orphaned by M-A:** `useScopeSeries` (queries.ts) lost its last caller when M-A Task 7 swapped scoping's build to `useScopeAndCreateSeries` — delete it, and check whether `scopeSeriesMutator` is now dead too (it may still be referenced by `mutatorRegistry` for foreign `add_tag` replay — grep before removing).
 - Acceptance: full `npm test` + `tsc` green after each deletion (the suite is the proof a deletion was safe).
 
 ### M-E — Plan 8: shell reskin ⬜

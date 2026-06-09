@@ -13,7 +13,8 @@ import { isFullSeries } from "../../api";
 import {
   useCorpusSampleTags,
   useCorpusPickerSamples,
-  useScopeAndCreateSeries,
+  useScopeSeries,
+  useCreateSeries,
   useMemberTraces,
   useMemberIndices,
 } from "../../queries";
@@ -55,12 +56,14 @@ type HistoryEntry = { type: "flag"; id: number; prev: boolean; label: string };
 /**
  * SeriesScopingPage (greenfield) — the machine-proposes / human-confirms
  * scoping worksheet at /series/new. The confirm-and-build GATE that *writes*
- * the structured (key,value) sample_tags AND creates the series (M-A Task 7):
- * a single queued op writes the ordering tags then POSTs /api/series, and on
- * success the page navigates to the new `/series/:id` builder. Assembled from
- * src/print composites + the series-scoping mockup; carried logic only
- * (proposeOrdering/splitProposal/dominantPhase + the useScopeAndCreateSeries
- * scope-then-create write), no legacy presentation.
+ * the structured (key,value) sample_tags AND creates the series (M-A): a
+ * TWO-OP queue chain (mirrors the builder's save→commit) — Op A writes the
+ * ordering tags (useScopeSeries), Op B creates the series (useCreateSeries,
+ * POST /api/series) — sequenced by a ref state machine; on success the page
+ * navigates to the new `/series/:id` builder. Assembled from src/print
+ * composites + the series-scoping mockup; carried logic only
+ * (proposeOrdering/splitProposal/dominantPhase + the scope→create chain), no
+ * legacy presentation.
  *
  * Honest commit-gate model (Option A): in the carried data a member ALWAYS has a
  * value (loose matches — value==="" — split out as informational candidates), so
@@ -74,7 +77,8 @@ export function SeriesScopingPage(): JSX.Element {
   const location = useLocation();
   const tagsQ = useCorpusSampleTags();
   const pickerQ = useCorpusPickerSamples();
-  const scopeAndCreate = useScopeAndCreateSeries();
+  const scopeSeries = useScopeSeries();
+  const createSeries = useCreateSeries();
 
   const isLoading = tagsQ.isLoading || pickerQ.isLoading;
   const isError = tagsQ.isError || pickerQ.isError;
@@ -241,51 +245,89 @@ export function SeriesScopingPage(): JSX.Element {
   const canColdBuildNow = canColdBuild(coldKey, coldRows);
   const isColdPath = proposal.orderingKey === undefined && seed !== null;
 
-  // Defer navigation until the scope-then-create op actually succeeds (pending
-  // ref). On success the page lands on the NEW /series/:id builder (M-A Task 7);
-  // the same mutator writes the ordering tags AND creates the series.
-  const pendingBuildRef = useRef(false);
+  // ── Confirm & build: a TWO-OP chain (mirrors the builder's save→commit). ──
+  // Confirm & build can't be ONE queue op: a compound op that writes the tags
+  // then creates the series would have its tag-write `add_tag` SSE frame
+  // resolve the op's deferred BEFORE the in-flight create returned, so
+  // `mutation.data` would be the tag confirmation, not the Series (the queue
+  // resolves the deferred with whichever lands first — see useQueueMutation).
+  // So it's two SEPARATE single-write ops sequenced by a ref state machine:
+  //   Op A  scopeSeries.mutate({key, tags})   — the batch sample_tags write
+  //   Op B  createSeries.mutate({title, …})   — POST /api/series
+  // Only the single-write create reliably surfaces the full Series in
+  // `createSeries.data` (its only own-op frame is `series_created`).
+  //
+  // LOAD-BEARING (mirrors SeriesBuilderPage): the page never calls
+  // scopeSeries.reset()/createSeries.reset(). A lingering isSuccess===true
+  // between Confirm runs is INERT because every chain effect is `stage`-ref
+  // gated — they fire only while stage.current is the matching phase, and
+  // handleBuild re-arms by flipping stage to "tagging" itself. Do NOT add a
+  // reset() (it would race the SSE-vs-HTTP deferred resolution) or drop the
+  // gate (a stale isSuccess would re-fire the next op on an unrelated render).
+  const stage = useRef<"idle" | "tagging" | "creating">("idle");
+  // The create body, stashed when Op A fires so Op B can read it on success.
+  const createBodyRef = useRef<{
+    title: string;
+    samples: { sample_id: number; position: number }[];
+    ordering_variable: string;
+  } | null>(null);
+
   const handleBuild = (): void => {
+    if (stage.current !== "idle") return;
     if (isColdPath) {
       if (!canColdBuildNow) return;
-      pendingBuildRef.current = true;
       const key = coldKey.trim();
       // Cold members: every assigned sample, in the worksheet order.
-      scopeAndCreate.mutate({
-        key,
-        tags: buildColdScopePayload(coldRows),
+      createBodyRef.current = {
         title: `Series by ${key}`,
         samples: coldRows.map((r, i) => ({ sample_id: r.sampleId, position: i })),
-        orderingVariable: key,
-      });
+        ordering_variable: key,
+      };
+      stage.current = "tagging";
+      scopeSeries.mutate({ key, tags: buildColdScopePayload(coldRows) });
     } else {
       if (proposal.orderingKey === undefined) return;
-      pendingBuildRef.current = true;
       // Warm members: the SCOPED, kept set (skips excluded — same predicate as
       // buildScopePayload) in the displayed low→high order, so the series
       // recipe matches the tags actually written.
       const keptInOrder = sorted.filter((r) => r.include && !r.flagged && r.value !== "");
-      scopeAndCreate.mutate({
-        key: proposal.orderingKey,
-        tags: buildScopePayload(rows),
+      createBodyRef.current = {
         title: `Series by ${keyLabel}`,
         samples: keptInOrder.map((r, i) => ({ sample_id: r.sampleId, position: i })),
-        orderingVariable: proposal.orderingKey,
-      });
+        ordering_variable: proposal.orderingKey,
+      };
+      stage.current = "tagging";
+      scopeSeries.mutate({ key: proposal.orderingKey, tags: buildScopePayload(rows) });
     }
   };
+
+  // Op A landed (tags written) → fire Op B (create the series) from the
+  // stashed body.
   useEffect(() => {
-    if (!scopeAndCreate.isSuccess || !pendingBuildRef.current) return;
-    pendingBuildRef.current = false;
-    // Navigate to the new series builder. scopeAndCreate.data is the created
-    // Series; guard on a full-series response (mirrors the builder's guard).
-    const created = scopeAndCreate.data;
+    if (stage.current !== "tagging" || !scopeSeries.isSuccess) return;
+    const body = createBodyRef.current;
+    if (!body) {
+      stage.current = "idle";
+      return;
+    }
+    stage.current = "creating";
+    createSeries.mutate(body);
+  }, [scopeSeries.isSuccess, createSeries]);
+
+  // Op B landed (series created) → navigate to the new builder. `createSeries.data`
+  // is reliably the full Series (single-write op); guard with isFullSeries.
+  useEffect(() => {
+    if (stage.current !== "creating" || !createSeries.isSuccess) return;
+    stage.current = "idle";
+    const created = createSeries.data;
     const newId = isFullSeries(created) ? created.id : undefined;
     navigate(newId !== undefined ? `/series/${newId}` : "/series");
-  }, [scopeAndCreate.isSuccess, scopeAndCreate.data, navigate]);
+  }, [createSeries.isSuccess, createSeries.data, navigate]);
+
+  // Either op errored → reset so the user can retry.
   useEffect(() => {
-    if (scopeAndCreate.error) pendingBuildRef.current = false;
-  }, [scopeAndCreate.error]);
+    if (scopeSeries.error || createSeries.error) stage.current = "idle";
+  }, [scopeSeries.error, createSeries.error]);
 
   // ── State 1: corpus load failed (distinct from an empty result). ──────────
   if (isError) {
@@ -314,14 +356,14 @@ export function SeriesScopingPage(): JSX.Element {
           </button>
         </div>
 
-        {/* State 4: the scope-then-create op failed (tags + series create). */}
-        {scopeAndCreate.error ? (
+        {/* State 4: either chain op failed (the tag write or the series create). */}
+        {scopeSeries.error || createSeries.error ? (
           <div
             data-testid="scoping-error-banner"
             role="alert"
             className="mb-4 rounded border border-print-accent bg-paper-sunk px-4 py-2 text-meta text-print-accent"
           >
-            Could not write the scoping tags. Nothing was saved. Adjust and try Confirm &amp; build again.
+            Could not build the series. Nothing was saved. Adjust and try Confirm &amp; build again.
           </div>
         ) : null}
 
@@ -340,7 +382,7 @@ export function SeriesScopingPage(): JSX.Element {
                  deliberate selection, but no tag key can be proposed. Rather
                  than dead-end, let them name the ordering variable and assign
                  each sample's value — then commit through the SAME
-                 scopeAndCreate write path the warm path uses. */
+                 scope→create chain the warm path uses. */
               <Card border="strong" padding="lg" data-testid="cold-scope-plate" className="w-full">
                 <ColdAssignPanel
                   rows={coldRows}

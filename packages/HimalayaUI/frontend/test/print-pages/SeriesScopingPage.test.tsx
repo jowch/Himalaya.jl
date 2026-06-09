@@ -50,8 +50,8 @@ function indexEntry(exposureId: number, phase: string, score: number): IndexEntr
   };
 }
 
-// A minimal full `Series` (api.isFullSeries true) — the created series the
-// scope-then-create op resolves with; the page reads its id for navigation.
+// A minimal full `Series` (api.isFullSeries true) — the created series Op B
+// (createSeries) resolves with; the page reads its id for navigation.
 function fullSeries(id: number): Series {
   return {
     id,
@@ -76,25 +76,27 @@ function fullSeries(id: number): Series {
 }
 
 // ── mock data plane (mutated per test in beforeEach / inline) ─────────────────
-const mutate = vi.fn();
-let scopeState: {
-  mutate: typeof mutate;
+// Two separate single-write queue ops (the M-A scope→create chain):
+//   Op A  scopeSeries.mutate({key, tags})    — the tag batch write
+//   Op B  createSeries.mutate({title, …})    — POST /api/series
+type OpState = {
+  mutate: ReturnType<typeof vi.fn>;
   isSuccess: boolean;
   error: Error | null;
   data: Series | undefined;
-} = {
-  mutate,
-  isSuccess: false,
-  error: null,
-  data: undefined,
 };
+const scopeMutate = vi.fn();
+const createMutate = vi.fn();
+let scopeState: OpState = { mutate: scopeMutate, isSuccess: false, error: null, data: undefined };
+let createState: OpState = { mutate: createMutate, isSuccess: false, error: null, data: undefined };
 let tagsState: { data: SampleTagPair[]; isLoading: boolean; isError: boolean };
 let pickerState: { data: PickerSampleRow[]; isLoading: boolean; isError: boolean };
 
 vi.mock("../../src/queries", () => ({
   useCorpusSampleTags: () => tagsState,
   useCorpusPickerSamples: () => pickerState,
-  useScopeAndCreateSeries: () => scopeState,
+  useScopeSeries: () => scopeState,
+  useCreateSeries: () => createState,
   useMemberTraces: (ids: number[]) =>
     new Map<number, Trace>(ids.map((id) => [id, trace()])),
   useMemberIndices: (ids: number[]) =>
@@ -168,7 +170,8 @@ function seed3(): void {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  scopeState = { mutate, isSuccess: false, error: null, data: undefined };
+  scopeState = { mutate: scopeMutate, isSuccess: false, error: null, data: undefined };
+  createState = { mutate: createMutate, isSuccess: false, error: null, data: undefined };
   seed();
 });
 
@@ -185,30 +188,41 @@ describe("SeriesScopingPage", () => {
     expect(screen.queryByTestId("scope-sample-row")).not.toBeInTheDocument();
   });
 
-  it("writes every read, creates the series, and navigates to /series/:id on success", () => {
+  it("warm: writes the tags (Op A), then creates the series (Op B), then navigates to /series/:id", () => {
     const { rerender } = renderPage();
     fireEvent.click(screen.getByRole("button", { name: /confirm & build/i }));
-    // The scope-then-create op carries BOTH the tags AND the create body
-    // (title + scoped members + ordering variable, no id → create).
-    expect(mutate).toHaveBeenCalledWith(
+    // Op A fires FIRST — the tag batch write (no create body on this op).
+    expect(scopeMutate).toHaveBeenCalledWith(
       expect.objectContaining({
         key: "ratio",
         tags: expect.arrayContaining([
           { sampleId: 1, value: "1 : 0" },
           { sampleId: 2, value: "1 : 0.5" },
         ]),
+      }),
+    );
+    // Op B has NOT fired yet (gated on Op A's success).
+    expect(createMutate).not.toHaveBeenCalled();
+    expect(navigateSpy).not.toHaveBeenCalled();
+
+    // Op A lands → the chain fires Op B (the create) with the scoped body.
+    scopeState = { mutate: scopeMutate, isSuccess: true, error: null, data: undefined };
+    act(() => rerender());
+    expect(createMutate).toHaveBeenCalledWith(
+      expect.objectContaining({
         title: "Series by ratio",
-        orderingVariable: "ratio",
+        ordering_variable: "ratio",
         samples: expect.arrayContaining([
           { sample_id: 1, position: 0 },
           { sample_id: 2, position: 1 },
         ]),
       }),
     );
-    // No navigation until the op actually settles.
+    // Still no navigation until the create itself settles.
     expect(navigateSpy).not.toHaveBeenCalled();
-    // The op succeeds with the created Series → navigate to the new builder.
-    scopeState = { mutate, isSuccess: true, error: null, data: fullSeries(7) };
+
+    // Op B lands with the created Series → navigate to the new builder.
+    createState = { mutate: createMutate, isSuccess: true, error: null, data: fullSeries(7) };
     act(() => rerender());
     expect(navigateSpy).toHaveBeenCalledWith("/series/7");
   });
@@ -246,9 +260,9 @@ describe("SeriesScopingPage", () => {
     expect(build).not.toBeDisabled();
     // Foot line annotates the skip.
     expect(screen.getByText(/2 values ready to commit · 1 skipped/i)).toBeInTheDocument();
-    // The write excludes the skipped member B.
+    // The tag write (Op A) excludes the skipped member B.
     fireEvent.click(build);
-    expect(mutate).toHaveBeenCalledWith(
+    expect(scopeMutate).toHaveBeenCalledWith(
       expect.objectContaining({
         key: "ratio",
         tags: [
@@ -307,10 +321,10 @@ describe("SeriesScopingPage", () => {
     expect(navigateSpy).toHaveBeenCalledWith("/samples");
   });
 
-  it("cold path: names the variable, creates the series, navigates to /series/:id", () => {
+  it("cold path: names the variable, writes the tags (Op A), creates the series (Op B), navigates to /series/:id", () => {
     // No proposable key (empty tags) + a deliberate seed → the cold-assign
     // path. Naming the variable and assigning every value opens the build,
-    // which writes the tags AND creates the series in one op.
+    // which runs the same two-op scope→create chain as the warm path.
     tagsState = { data: [], isLoading: false, isError: false };
     pickerState = {
       data: [
@@ -332,24 +346,34 @@ describe("SeriesScopingPage", () => {
     const build = screen.getByRole("button", { name: /confirm & build/i });
     expect(build).not.toBeDisabled();
     fireEvent.click(build);
-    // The op carries the named key + a create body built from the cold rows.
-    expect(mutate).toHaveBeenCalledWith(
+    // Op A — the tag batch write under the named key.
+    expect(scopeMutate).toHaveBeenCalledWith(
       expect.objectContaining({
         key: "lipid ratio",
-        title: "Series by lipid ratio",
-        orderingVariable: "lipid ratio",
         tags: [
           { sampleId: 1, value: "1:0" },
           { sampleId: 2, value: "1:1" },
         ],
+      }),
+    );
+    expect(createMutate).not.toHaveBeenCalled();
+
+    // Op A lands → Op B fires with the create body built from the cold rows.
+    scopeState = { mutate: scopeMutate, isSuccess: true, error: null, data: undefined };
+    act(() => rerender());
+    expect(createMutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Series by lipid ratio",
+        ordering_variable: "lipid ratio",
         samples: [
           { sample_id: 1, position: 0 },
           { sample_id: 2, position: 1 },
         ],
       }),
     );
-    // On success → navigate to the new builder.
-    scopeState = { mutate, isSuccess: true, error: null, data: fullSeries(9) };
+
+    // Op B lands with the created Series → navigate to the new builder.
+    createState = { mutate: createMutate, isSuccess: true, error: null, data: fullSeries(9) };
     act(() => rerender());
     expect(navigateSpy).toHaveBeenCalledWith("/series/9");
   });
@@ -361,7 +385,7 @@ describe("SeriesScopingPage", () => {
     renderPage([1, 3]);
     expect(screen.getAllByTestId("scope-sample-row")).toHaveLength(2);
     fireEvent.click(screen.getByRole("button", { name: /confirm & build/i }));
-    expect(mutate).toHaveBeenCalledWith(
+    expect(scopeMutate).toHaveBeenCalledWith(
       expect.objectContaining({
         key: "ratio",
         tags: [
@@ -379,11 +403,19 @@ describe("SeriesScopingPage", () => {
     expect(screen.getAllByTestId("scope-sample-row")).toHaveLength(3);
   });
 
-  it("shows the write-error banner when the scope-then-create op fails", () => {
-    scopeState = { mutate, isSuccess: false, error: new Error("boom"), data: undefined };
+  it("shows the error banner when the tag write (Op A) fails", () => {
+    scopeState = { mutate: scopeMutate, isSuccess: false, error: new Error("boom"), data: undefined };
     renderPage();
     const banner = screen.getByRole("alert");
     expect(banner).toBeInTheDocument();
-    expect(banner.textContent).toMatch(/could not write the scoping tags/i);
+    expect(banner.textContent).toMatch(/could not build the series/i);
+  });
+
+  it("shows the error banner when the series create (Op B) fails", () => {
+    createState = { mutate: createMutate, isSuccess: false, error: new Error("boom"), data: undefined };
+    renderPage();
+    const banner = screen.getByRole("alert");
+    expect(banner).toBeInTheDocument();
+    expect(banner.textContent).toMatch(/could not build the series/i);
   });
 });
