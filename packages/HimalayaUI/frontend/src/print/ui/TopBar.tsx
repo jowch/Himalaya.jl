@@ -9,6 +9,9 @@ interface TopBarProps {
   children?: ReactNode;
   rightSlot?: ReactNode;
   className?: string;
+  /** Test handle on the outer `<header>`. Defaults to `"topbar"`; the carried
+   *  corpus shell passes `"corpus-topbar"` to keep its contract testid. */
+  "data-testid"?: string;
 }
 
 /**
@@ -22,10 +25,11 @@ export function TopBar({
   children,
   rightSlot,
   className,
+  "data-testid": dataTestid = "topbar",
 }: TopBarProps): JSX.Element {
   return (
     <header
-      data-testid="topbar"
+      data-testid={dataTestid}
       className={cx(
         "h-14 flex-shrink-0 flex items-center gap-4 px-6 border-b border-hair bg-paper",
         className,

@@ -22,6 +22,12 @@ describe("<TopBar>", () => {
     expect(screen.getByTestId("topbar")).toBeInTheDocument();
   });
 
+  it("renders a caller-supplied data-testid on the outer header", () => {
+    render(<TopBar data-testid="corpus-topbar" />);
+    expect(screen.getByTestId("corpus-topbar")).toBeInTheDocument();
+    expect(screen.queryByTestId("topbar")).toBeNull();
+  });
+
   it("exposes the banner landmark role", () => {
     render(<TopBar />);
     expect(screen.getByRole("banner")).toBeInTheDocument();
