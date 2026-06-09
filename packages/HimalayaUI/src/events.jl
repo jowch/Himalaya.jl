@@ -793,7 +793,10 @@ AUTOINCREMENT id; a plain INSERT would collide on the live path — so this
 SELECTs and UPDATEs an existing row, else INSERTs with an explicit id for the
 replay-from-empty path). Sets `state='draft'`; `content_hash` stays NULL (a
 draft has no committed plate — master plan §5.1). Then pure-replaces
-`series_samples` from the full payload snapshot. Touches no `series_members`.
+`series_samples` from the full payload snapshot and resolves the plate
+(`series_members`) from that recipe via `_resolve_series_plate!` (decision
+2026-06: a created draft lands renderable — `content_hash` stays NULL since the
+plate is not yet committed).
 """
 function _update_view_for_series_created!(db, entity_id, payload, event_id)
     sid     = Int(entity_id)
@@ -859,6 +862,12 @@ function _update_view_for_series_created!(db, entity_id, payload, event_id)
     for s in samples
         _insert_series_sample!(db, sid, s)
     end
+
+    # Resolve the plate (series_members) from the just-written recipe so the
+    # created draft renders its waterfall immediately (decision 2026-06: a
+    # created series lands in the builder already showing its traces). The plate
+    # is a draft convenience here — content_hash stays NULL until commit.
+    _resolve_series_plate!(db, sid, user_id, now_str)
     return sid
 end
 
@@ -931,6 +940,69 @@ function _insert_series_member!(db, series_id, m, user_id, now_str)
          snap,
          user_id, now_str])
     nothing
+end
+
+"""
+    _resolve_series_plate!(db, series_id, user_id, now_str) -> Int
+
+Resolve the **plate** (`series_members`) from the **recipe** (`series_samples`)
+for a draft series. Pure-replace: `DELETE`s every existing `series_members` row,
+then for each non-excluded recipe sample (in `position` order) resolves its
+representative exposure and `INSERT`s one plate member with a freshly-computed
+snapshot. Returns the number of members written.
+
+Representative-exposure rule (the `_corpus_with_exposures` precedent,
+`comparisons.jl`): highest-id `selected=1` exposure wins; else highest-id
+exposure overall; else the sample resolves to NO exposure and is SKIPPED (a
+recipe sample with no exposure has nothing renderable to plate). `display_order`
+is sequential over the resolved members, so skipped rows leave no gap.
+
+Used by the `series_created` dispatcher so a just-created draft lands with its
+plate already resolved (the builder renders the waterfall immediately). Does
+NOT touch `content_hash` or `state` — resolution is a draft convenience; the
+plate is only frozen + hashed by `series_plate_committed` (the commit path).
+"""
+function _resolve_series_plate!(db, series_id, user_id, now_str)
+    sid = Int(series_id)
+    DBInterface.execute(db, "DELETE FROM series_members WHERE series_id = ?", [sid])
+
+    recipe = Tables.rowtable(DBInterface.execute(db,
+        """SELECT sample_id FROM series_samples
+           WHERE series_id = ? AND excluded = 0
+           ORDER BY position ASC, id ASC""", [sid]))
+
+    display_order = 0
+    for r in recipe
+        sample_id = Int(r.sample_id)
+        # Representative exposure: highest-id selected wins; else highest-id
+        # overall; else nothing (skip — no renderable trace for this sample).
+        exps = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id, selected FROM exposures WHERE sample_id = ? ORDER BY id ASC",
+            [sample_id]))
+        eid = nothing
+        for e in Iterators.reverse(exps)
+            if e.selected != 0
+                eid = Int(e.id); break
+            end
+        end
+        if eid === nothing && !isempty(exps)
+            eid = Int(last(exps).id)
+        end
+        eid === nothing && continue
+
+        # `_insert_series_member!` reads members via `getproperty` (the commit
+        # path feeds it JSON3.Objects); round-trip the constructed dict through
+        # JSON3 so property access resolves. Defaults (band_height, y_offset,
+        # normalization, …) are supplied by `_member_field`'s `default=`.
+        member = JSON3.read(JSON3.write(Dict{Symbol, Any}(
+            :exposure_id   => eid,
+            :display_order => display_order,
+            :snapshot      => compute_member_snapshot(db, eid),
+        )))
+        _insert_series_member!(db, sid, member, user_id, now_str)
+        display_order += 1
+    end
+    return display_order
 end
 
 """

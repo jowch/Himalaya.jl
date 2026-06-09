@@ -263,8 +263,14 @@ end
                 @test new_id isa Integer
                 # #166: dispatcher now writes state='draft' + recipe rows.
                 @test created[:state] == "draft"
-                @test created[:members] == []
                 @test length(created[:samples]) == 1
+                # Plate is RESOLVED on create (not committed): each non-excluded
+                # recipe sample resolves to its representative exposure
+                # (selected=1 → exposure 1000) and lands as a plate member, so a
+                # just-created series renders its waterfall immediately.
+                @test length(created[:members]) == 1
+                @test created[:members][1]["exposure_id"] == 1000
+                @test created[:members][1]["display_order"] == 0
                 # The durable event row IS written.
                 ev = Tables.rowtable(DBInterface.execute(db,
                     "SELECT action FROM user_actions WHERE entity_type='series' AND entity_id=?",
@@ -297,6 +303,65 @@ end
                     JSON3.write(Dict(:title => "t", :samples => [Dict(:position => 0)]));
                     status_exception = false)
                 @test resp400c.status == 400
+            end
+            close(db)
+        end
+    end
+
+    @testset "POST /api/series — plate is resolved from the recipe on create" begin
+        mktempdir() do tmp
+            db = _series_test_db(tmp)
+            # A second sample (200) with two exposures — selected=1 on the
+            # higher id (3000) so the representative-exposure rule (highest-id
+            # selected wins) is exercised. A third sample (300) with NO exposure
+            # — it cannot resolve to a renderable member, so it is omitted.
+            DBInterface.execute(db,
+                "INSERT INTO samples (id, experiment_id, name) VALUES (200, 10, 'sB')")
+            DBInterface.execute(db,
+                "INSERT INTO exposures (id, sample_id, filename, selected) VALUES (2000, 200, 'JC200a', 0)")
+            DBInterface.execute(db,
+                "INSERT INTO exposures (id, sample_id, filename, selected) VALUES (3000, 200, 'JC200b', 1)")
+            DBInterface.execute(db,
+                "INSERT INTO samples (id, experiment_id, name) VALUES (300, 10, 'sC')")
+            with_test_server(db) do port, base
+                # Recipe of three samples: 200 at position 0, 100 at position 1,
+                # 300 at position 2 — plus one EXCLUDED sample that must NOT
+                # produce a member. The resolved plate must follow recipe
+                # position order, skipping the excluded and exposureless rows.
+                resp = HTTP.post("$base/api/series",
+                    ["X-Username" => "alice", "Content-Type" => "application/json"],
+                    JSON3.write(Dict(
+                        :title => "resolved",
+                        :samples => [
+                            Dict(:sample_id => 200, :position => 0),
+                            Dict(:sample_id => 100, :position => 1),
+                            Dict(:sample_id => 300, :position => 2),
+                            Dict(:sample_id => 100, :position => 3, :excluded => true),
+                        ])))
+                @test resp.status == 201
+                created = JSON3.read(resp.body, Dict{Symbol, Any})
+                @test created[:state] == "draft"
+                # 4 recipe rows persisted; 2 resolved plate members (200→3000,
+                # 100→1000). 300 has no exposure → skipped; the excluded 100 row
+                # → skipped.
+                @test length(created[:samples]) == 4
+                @test length(created[:members]) == 2
+                # Order follows recipe position (200 before 100).
+                @test created[:members][1]["exposure_id"] == 3000
+                @test created[:members][1]["display_order"] == 0
+                @test created[:members][2]["exposure_id"] == 1000
+                @test created[:members][2]["display_order"] == 1
+                # The created series is NOT committed by resolution (resolution
+                # is a draft convenience; content_hash stays NULL until commit).
+                @test created[:content_hash] == ""
+
+                # And GET round-trips the same resolved plate.
+                got = JSON3.read(
+                    HTTP.get("$base/api/series/$(created[:id])",
+                             ["X-Username" => "alice"]).body, Dict{Symbol, Any})
+                @test length(got[:members]) == 2
+                @test got[:members][1]["exposure_id"] == 3000
+                @test got[:members][2]["exposure_id"] == 1000
             end
             close(db)
         end
@@ -535,9 +600,14 @@ end
                 @test length(got[:samples]) == 1
                 @test got[:samples][1]["sample_id"] == 100
                 @test got[:samples][1]["pinned"] == true
-                @test isempty(got[:members])             # series_created carries zero members
+                # series_created now RESOLVES the plate from the recipe: sample
+                # 100 → its representative exposure 1000 lands as a plate member.
+                @test length(got[:members]) == 1
+                @test got[:members][1]["exposure_id"] == 1000
 
                 # rebuild_views_from_log! round-trip: empty the view rows, re-fold.
+                # Resolution is replay-stable — the re-folded plate matches.
+                DBInterface.execute(db, "DELETE FROM series_members WHERE series_id = ?", [sid])
                 DBInterface.execute(db, "DELETE FROM series_samples WHERE series_id = ?", [sid])
                 DBInterface.execute(db, "DELETE FROM series WHERE id = ?", [sid])
                 HimalayaUI.rebuild_views_from_log!(db, sid; entity_type = "series")
@@ -546,6 +616,8 @@ end
                 @test refold[:state] == "draft"
                 @test length(refold[:samples]) == 1
                 @test refold[:samples][1][:sample_id] == 100
+                @test length(refold[:members]) == 1
+                @test refold[:members][1][:exposure_id] == 1000
 
                 # SSE layer: a second create, observed through the in-process
                 # subscriber, must broadcast exactly one series_created frame
