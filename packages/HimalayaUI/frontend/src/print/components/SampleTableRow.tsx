@@ -5,6 +5,7 @@ import { KeptCell } from "./KeptCell";
 import { StatusCell } from "./StatusCell";
 import { TagList } from "../ui/TagList";
 import type { Tag } from "../ui/tag";
+import { Checkbox } from "../ui";
 
 export interface SampleTableRowProps {
   name: string;
@@ -35,6 +36,10 @@ export interface SampleTableRowProps {
   /** When set, double-clicking a thumbnail fires this with the exposure id,
    *  opening the loupe at that frame. Forwarded to ThumbnailGallery.onActivate. */
   onActivateExposure?: (id: number) => void;
+  /** When provided, a checkbox column is rendered as the left-most cell. */
+  checked?: boolean;
+  indeterminate?: boolean;
+  onCheck?: () => void;
   /** PLACEMENT-ONLY. Appended last to the root. */
   className?: string;
 }
@@ -52,8 +57,17 @@ export interface SampleTableRowProps {
  *  intrinsic min-width is the sum of mins (~1018px); a future SheetTable wraps
  *  the rows in a horizontal-scroll container with a sticky Sample column, so a
  *  narrow viewport SCROLLS rather than clipping (Carbon/Polaris). */
-export const SAMPLE_TABLE_COLS =
+export const SAMPLE_TABLE_COLS_BASE =
   "minmax(244px,1.4fr) minmax(360px,2fr) 96px minmax(168px,1fr) 150px";
+/** Returns the grid-template-columns string for a row/header.
+ *  `withCheckbox=true` prepends a 36px checkbox track as the left-most column.
+ *  BOTH the SheetTable header AND every SampleTableRow body call this with the
+ *  same boolean — the shared computed template is the alignment invariant. */
+export function sampleTableCols(withCheckbox: boolean): string {
+  return withCheckbox ? `36px ${SAMPLE_TABLE_COLS_BASE}` : SAMPLE_TABLE_COLS_BASE;
+}
+// Backward-compat alias — existing callers (stories) import this as a string.
+export const SAMPLE_TABLE_COLS = SAMPLE_TABLE_COLS_BASE;
 
 /** Per-cell grid-child wrapper: vertical centering + the cell gutter + a DEFINED
  *  row height (not a min — keeps every row uniform). `min-w-0` lets the exposures
@@ -87,6 +101,9 @@ export function SampleTableRow({
   onOpenLoupe,
   onOpenFocus,
   onActivateExposure,
+  checked,
+  indeterminate,
+  onCheck,
   className,
 }: SampleTableRowProps): JSX.Element {
   const restTint = screened ? "" : " bg-paper-sunk";
@@ -97,7 +114,20 @@ export function SampleTableRow({
       data-screened={screened ? "true" : "false"}
       className={`border-b border-hair hover:bg-paper-sunk${restTint}${className ? ` ${className}` : ""}`}
     >
-      <div className="grid" style={{ gridTemplateColumns: SAMPLE_TABLE_COLS }}>
+      <div
+        className="grid"
+        style={{ gridTemplateColumns: sampleTableCols(onCheck !== undefined) }}
+      >
+        {onCheck !== undefined && (
+          <div className="flex items-center justify-center px-1 h-[92px]">
+            <Checkbox
+              checked={checked ?? false}
+              {...(indeterminate ? { indeterminate: true } : {})}
+              onChange={onCheck}
+              aria-label="Select sample"
+            />
+          </div>
+        )}
         <div className={CELL}>
           <SpecCell
             name={name}

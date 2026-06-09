@@ -1,7 +1,7 @@
 import React from "react";
 import type { ReactNode } from "react";
 import { Card, Kicker } from "../ui";
-import { SAMPLE_TABLE_COLS } from "./SampleTableRow";
+import { sampleTableCols } from "./SampleTableRow";
 
 function cx(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(" ");
@@ -12,6 +12,9 @@ export interface SheetTableProps {
   children?: ReactNode;
   /** Rendered (instead of the rows region) when there are zero children. */
   empty?: ReactNode;
+  /** When true, prepends a blank checkbox header cell + 36px grid track so the
+   *  header stays aligned with rows that render their own checkbox column. */
+  checkboxColumn?: boolean;
   /** PLACEMENT-ONLY, appended last. */
   className?: string;
 }
@@ -35,6 +38,7 @@ export interface SheetTableProps {
 export function SheetTable({
   children,
   empty,
+  checkboxColumn,
   className,
 }: SheetTableProps): JSX.Element {
   const isEmpty = React.Children.count(children) === 0;
@@ -43,7 +47,16 @@ export function SheetTable({
     <Card elevated data-testid="sheet-table" className={cx("overflow-hidden", className)}>
       {/* Header: paper-sunk tint + hairline-strong bottom border */}
       <div data-testid="sheet-head" className="bg-paper-sunk border-b border-hair-strong">
-        <div className="grid" style={{ gridTemplateColumns: SAMPLE_TABLE_COLS }}>
+        <div
+          className="grid"
+          style={{ gridTemplateColumns: sampleTableCols(checkboxColumn ?? false) }}
+        >
+          {checkboxColumn && (
+            <div
+              className="px-1 py-2.5 flex items-center justify-center"
+              aria-hidden="true"
+            />
+          )}
           <Kicker tone="faint" className="px-4 py-2.5">Sample</Kicker>
           <Kicker tone="faint" className="px-4 py-2.5">Exposures</Kicker>
           <Kicker tone="faint" className="px-4 py-2.5">Kept</Kicker>
