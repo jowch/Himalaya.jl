@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, act } from "@testing-library/react";
+import { render, screen, fireEvent, act, within } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { Series, SeriesMember, SeriesSample, CorpusSample, Trace } from "../../src/api";
@@ -164,6 +164,19 @@ describe("SeriesBuilderPage", () => {
     expect(state.save.mutate).not.toHaveBeenCalled();
   });
 
+  it("lays out as a full-height work·rail grid (rail is a direct grid child, mirrors Focus)", () => {
+    renderPage();
+    // Item 1: the success body is the full-bleed [work 1fr · rail] grid (no
+    // capped PageFrame wrapper), so the rail — a direct grid child — stretches
+    // to the row height flush under the header, matching FocusPage.
+    const workspace = screen.getByTestId("builder-workspace");
+    expect(workspace).toBeInTheDocument();
+    // The plate and the rail are both DIRECT children of the grid container so
+    // the default align-items:stretch lets the rail fill the grid-row height.
+    const rail = screen.getByTestId("builder-rail");
+    expect(rail.parentElement).toBe(workspace);
+  });
+
   it("read-state ordering-variable Field is static read-only (no interactive trigger)", () => {
     renderPage();
     const field = screen.getByTestId("field");
@@ -204,14 +217,33 @@ describe("SeriesBuilderPage", () => {
 
   it("view controls (offset / scale) change local state and do NOT start a draft", () => {
     renderPage();
-    // q-scale toggle on the rail (two segmented controls exist — plate + rail;
-    // either is a local-only view control). Use the offset slider, which is
-    // unique to the rail.
+    // The offset slider is unique to the rail's Display section.
     const slider = screen.getByLabelText(/trace offset/i);
     fireEvent.change(slider, { target: { value: "0.8" } });
-    // A plate scale toggle is also local-only.
-    fireEvent.click(screen.getAllByRole("button", { name: /linear q/i })[0]!);
+    // The single q-scale toggle lives on the plate (the rail's redundant copy
+    // was removed) — it's local-only too.
+    fireEvent.click(screen.getByRole("button", { name: /linear q/i }));
     expect(useAppState.getState().seriesDraft).toBeNull();
+  });
+
+  it("renders exactly ONE q-scale toggle (on the plate, not duplicated on the rail)", () => {
+    renderPage();
+    // Item 3: the redundant rail Display scale toggle was removed; only the
+    // plate's contextual toggle remains.
+    expect(screen.getAllByRole("button", { name: /log q/i })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: /linear q/i })).toHaveLength(1);
+  });
+
+  it("with a draft live, 'Adjust' is hidden (redundant no-op), Confirm+Cancel remain", () => {
+    renderPage();
+    // Read state: Adjust present.
+    expect(screen.getByRole("button", { name: /adjust/i })).toBeInTheDocument();
+    // Start a draft.
+    fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "x" } });
+    // Item 2: Adjust withheld; Confirm enabled + Cancel present.
+    expect(screen.queryByRole("button", { name: /adjust/i })).toBeNull();
+    expect(screen.getByRole("button", { name: /confirm series/i })).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: /^cancel$/i })).toBeInTheDocument();
   });
 
   it("Cancel discards the draft with NO request", () => {
@@ -281,6 +313,39 @@ describe("SeriesBuilderPage", () => {
     // Move first row down.
     fireEvent.click(screen.getAllByTestId("builder-recipe-down")[0]!);
     expect(useAppState.getState().seriesDraft!.recipe[1]!.sample_id).toBe(firstSampleId);
+  });
+
+  it("annotation toggles are ARMED when the series has indexed peaks", () => {
+    renderPage();
+    const group = screen.getByTestId("annotation-toggles");
+    const ticks = within(group).getByRole("button", { name: /peak ticks/i });
+    const labels = within(group).getByRole("button", { name: /peak labels/i });
+    // baseSeries members are indexed with peak anchors → armed + enabled.
+    expect(ticks).toHaveAttribute("aria-pressed", "true");
+    expect(labels).toHaveAttribute("aria-pressed", "true");
+    expect(ticks).not.toBeDisabled();
+    expect(labels).not.toBeDisabled();
+  });
+
+  it("annotation toggles are INERT (disabled, not armed) on a peakless series", () => {
+    // Item 4: a form-factor series has no indexed-peak anchors → nothing to
+    // annotate, so the toggles default OFF and disabled regardless of the
+    // global showPeakTicks/showPeakLabels defaults (which are true).
+    const peakless = baseSeries({
+      members: [
+        member(1, { snapshot: { effective_peaks: [], confirmed_index: null, confirmed_phases: [], assignment_state: "form_factor", analysis_inputs_hash: "h" } }),
+        member(2, { snapshot: { effective_peaks: [], confirmed_index: null, confirmed_phases: [], assignment_state: "form_factor", analysis_inputs_hash: "h" } }),
+      ],
+    });
+    state.seriesById = new Map([[10, peakless]]);
+    renderPage();
+    const group = screen.getByTestId("annotation-toggles");
+    const ticks = within(group).getByRole("button", { name: /peak ticks/i });
+    const labels = within(group).getByRole("button", { name: /peak labels/i });
+    expect(ticks).toBeDisabled();
+    expect(labels).toBeDisabled();
+    expect(ticks).not.toHaveAttribute("aria-pressed", "true");
+    expect(labels).not.toHaveAttribute("aria-pressed", "true");
   });
 
   it("shows a commit-error notice (role=alert) on commit failure", () => {

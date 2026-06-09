@@ -119,8 +119,6 @@ function SeriesBuilderView(): JSX.Element {
               orderNote="Confirmed once, then reused by every series that needs it."
               offset={offset}
               onOffsetChange={setOffset}
-              scale={scale}
-              onScaleChange={setScale}
               traces={traces}
               onCollapse={() => setCollapsed(true)}
             />

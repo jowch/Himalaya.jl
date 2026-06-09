@@ -274,6 +274,12 @@ function BuilderBody({
   const memberData = membersToMemberData(members);
   const legendPhases = legendPhasesOf(members);
 
+  // Peak-annotation gating: ticks/labels annotate indexed-peak anchors. A
+  // form-factor / unindexed series has no anchors on any row → nothing to
+  // annotate, so the annotation toggles are inert (not armed, disabled).
+  // controls-don't-lie: don't arm a toggle that has nothing to show.
+  const seriesHasPeaks = rows.some((r) => r.anchors.length > 0);
+
   const effectiveTitle = liveDraft ? liveDraft.title : series.title;
 
   // ── Figure export (Copy as PNG) ─────────────────────────────────────────
@@ -336,42 +342,53 @@ function BuilderBody({
   );
   const addable = addableSamples(corpus, recipeAsSamples);
 
+  // Full-bleed layout MIRRORING FocusPage: a [work 1fr · rail 336px] grid with
+  // NO outer max-width and NO `items-start`. The grid fills the scroll
+  // container's height (min-h-full) so the rail — a direct grid child — stretches
+  // flush from under the header to the bottom edge (default align-items:stretch),
+  // matching the Focus AssignmentRail. The work column centres its plate at the
+  // builder width (1180px); the rail (bg-paper-sunk + left hairline) pins right.
   return (
-    <PageFrame width="builder" className="px-6 py-6">
-      <div className="grid grid-cols-[1fr_336px] gap-0 items-start">
-        <SeriesPlate
-          kicker="Series"
-          title={
-            <PlateTitle value={effectiveTitle} onChange={onEditTitle} />
-          }
-          rows={rows}
-          offsetScale={offset}
-          scale={scale}
-          onScaleChange={onScaleChange}
-          {...(hoveredKey !== undefined ? { hoveredKey } : {})}
-          onHoverRow={onHoverRow}
-          legendPhases={legendPhases}
-          footHint={
-            <AnnotationToggleRow
-              showPeakTicks={showPeakTicks}
-              showPeakLabels={showPeakLabels}
-              onToggleTicks={onToggleTicks}
-              onToggleLabels={onToggleLabels}
-            />
-          }
-          footNote={`offset ×${offset.toFixed(2)} · ${scale === "log" ? "log" : "linear"} q`}
-          className="m-4"
-        />
-        <BuilderRail
-          grouping={groupingSummary(series)}
-          {...(liveDraft && !confirmBusy ? { onConfirm } : {})}
-          onAdjust={ensureDraft}
-          orderedBy={series.ordering_variable ?? "—"}
-          offset={offset}
-          onOffsetChange={onOffsetChange}
-          scale={scale}
-          onScaleChange={onScaleChange}
-          traces={
+    <div
+      data-testid="builder-workspace"
+      className="grid min-h-full grid-cols-1 xl:grid-cols-[minmax(0,1fr)_336px]"
+    >
+      {/* work column — full-bleed; inner content capped at the builder width */}
+      <div className="min-w-0 px-6 py-6">
+        <div className="mx-auto w-full max-w-[1180px]">
+          <SeriesPlate
+            kicker="Series"
+            title={
+              <PlateTitle value={effectiveTitle} onChange={onEditTitle} />
+            }
+            rows={rows}
+            offsetScale={offset}
+            scale={scale}
+            onScaleChange={onScaleChange}
+            {...(hoveredKey !== undefined ? { hoveredKey } : {})}
+            onHoverRow={onHoverRow}
+            legendPhases={legendPhases}
+            footHint={
+              <AnnotationToggleRow
+                enabled={seriesHasPeaks}
+                showPeakTicks={showPeakTicks}
+                showPeakLabels={showPeakLabels}
+                onToggleTicks={onToggleTicks}
+                onToggleLabels={onToggleLabels}
+              />
+            }
+            footNote={`offset ×${offset.toFixed(2)} · ${scale === "log" ? "log" : "linear"} q`}
+          />
+        </div>
+      </div>
+      <BuilderRail
+        grouping={groupingSummary(series)}
+        {...(liveDraft && !confirmBusy ? { onConfirm } : {})}
+        {...(liveDraft ? {} : { onAdjust: ensureDraft })}
+        orderedBy={series.ordering_variable ?? "—"}
+        offset={offset}
+        onOffsetChange={onOffsetChange}
+        traces={
             <div className="flex flex-col gap-2">
               {chainError != null && (
                 <div role="alert" className="text-caption text-error">
@@ -391,10 +408,9 @@ function BuilderBody({
               )}
             </div>
           }
-          onCopyPng={onCopyPng}
-        />
-      </div>
-    </PageFrame>
+        onCopyPng={onCopyPng}
+      />
+    </div>
   );
 }
 
@@ -403,11 +419,15 @@ function BuilderBody({
 // forbids src/print/** importing src/components/**); the Zustand flags + the
 // export-spec read are identical.
 function AnnotationToggleRow({
+  enabled,
   showPeakTicks,
   showPeakLabels,
   onToggleTicks,
   onToggleLabels,
 }: {
+  /** Whether the series has indexed peaks to annotate. When false the toggles
+   *  are disabled and never read as armed (nothing to show). */
+  enabled: boolean;
   showPeakTicks: boolean;
   showPeakLabels: boolean;
   onToggleTicks: () => void;
@@ -415,10 +435,10 @@ function AnnotationToggleRow({
 }): JSX.Element {
   return (
     <span data-testid="annotation-toggles" role="group" aria-label="Annotation toggles" className="inline-flex items-center gap-1">
-      <Button variant="ghost" armed={showPeakTicks} onClick={onToggleTicks}>
+      <Button variant="ghost" armed={enabled && showPeakTicks} disabled={!enabled} onClick={onToggleTicks}>
         Peak ticks
       </Button>
-      <Button variant="ghost" armed={showPeakLabels} onClick={onToggleLabels}>
+      <Button variant="ghost" armed={enabled && showPeakLabels} disabled={!enabled} onClick={onToggleLabels}>
         Peak labels
       </Button>
     </span>

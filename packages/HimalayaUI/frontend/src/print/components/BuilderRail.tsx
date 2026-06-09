@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Button, IconButton, Kicker, SegmentedControl, Slider, Field } from "../ui";
+import { Button, IconButton, Kicker, Slider, Field } from "../ui";
 import { AutoGroup } from "./AutoGroup";
 import { RailSection } from "./RailSection";
 
@@ -7,11 +7,14 @@ function cx(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(" ");
 }
 
-type Scale = "log" | "lin";
-
 export interface BuilderRailProps {
   grouping: ReactNode;
   onConfirm?: () => void;
+  /**
+   * The "Adjust" entry into draft state. Omit it (e.g. while a draft is already
+   * live) and the affordance is NOT rendered — re-running the idempotent
+   * ensureDraft is a no-op, and controls-don't-lie says we don't show it.
+   */
   onAdjust?: () => void;
   orderedBy: string;
   orderNote?: ReactNode;
@@ -21,8 +24,6 @@ export interface BuilderRailProps {
   onOrderSelect?: (value: string) => void;
   offset: number;
   onOffsetChange: (v: number) => void;
-  scale: Scale;
-  onScaleChange: (s: Scale) => void;
   traces: ReactNode;
   onAddSample?: () => void;
   onCopyPng?: () => void;
@@ -42,7 +43,8 @@ export interface BuilderRailProps {
  * section (Waterfall/Heatmap) and the "Track reflections" toggle drive renderers
  * that are out-of-scope / deferred (HeatmapChart out-of-scope; TrackingLine
  * deferred — same call as Batch 9 SeriesPlate). Both are OMITTED; the Display
- * section keeps only the offset slider + the log/linear scale toggle.
+ * section keeps only the offset slider — the log/linear q-scale toggle lives on
+ * the plate (a single contextual control, not a redundant rail+plate pair).
  */
 export function BuilderRail({
   grouping,
@@ -55,8 +57,6 @@ export function BuilderRail({
   onOrderSelect,
   offset,
   onOffsetChange,
-  scale,
-  onScaleChange,
   traces,
   onAddSample,
   onCopyPng,
@@ -83,7 +83,10 @@ export function BuilderRail({
         title="Auto-grouped"
         actions={[
           { label: "Confirm series", ...(onConfirm ? { onClick: onConfirm } : {}) },
-          { label: "Adjust", muted: true, ...(onAdjust ? { onClick: onAdjust } : {}) },
+          // "Adjust" is the entry into draft state; once a draft is live the page
+          // withholds onAdjust and the affordance is dropped (not rendered inert),
+          // since re-running ensureDraft would be a redundant no-op.
+          ...(onAdjust ? [{ label: "Adjust", muted: true, onClick: onAdjust }] : []),
         ]}
       >
         {grouping}
@@ -100,6 +103,9 @@ export function BuilderRail({
         />
       </RailSection>
 
+      {/* DISPLAY holds the Trace-offset slider only. The log/linear-q scale
+          toggle lives on the PLATE (contextual to the figure that exports) —
+          a single q-scale control, not a redundant pair. */}
       <RailSection label="Display">
         <Slider
           label="Trace offset"
@@ -109,16 +115,6 @@ export function BuilderRail({
           max={1.4}
           step={0.05}
           onChange={onOffsetChange}
-        />
-        <SegmentedControl
-          aria-label="q scale"
-          stretch
-          options={[
-            { value: "log", label: "log q" },
-            { value: "lin", label: "linear q" },
-          ]}
-          value={scale}
-          onChange={onScaleChange}
         />
       </RailSection>
 
