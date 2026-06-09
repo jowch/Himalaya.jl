@@ -15,24 +15,8 @@
  * the data coordinate system. Tests use the identity scale (px = q*100)
  * and the inverse (q = px/100) so the assertions are easy to read.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import * as Plot from "@observablehq/plot";
+import { describe, it, expect } from "vitest";
 import { layoutPeakLabels } from "../src/lib/plot/labelDodge";
-import { buildMemberMarks } from "../src/components/MemberTraceLayer";
-
-vi.mock("@observablehq/plot", () => ({
-  line: vi.fn((data: unknown, opts: unknown) => ({ _kind: "line", data, opts })),
-  dot:  vi.fn((data: unknown, opts: unknown) => ({ _kind: "dot",  data, opts })),
-  text: vi.fn((data: unknown, opts: unknown) => ({ _kind: "text", data, opts })),
-  link: vi.fn((data: unknown, opts: unknown) => ({ _kind: "link", data, opts })),
-}));
-
-beforeEach(() => {
-  (Plot.line as unknown as { mockClear: () => void }).mockClear();
-  (Plot.dot  as unknown as { mockClear: () => void }).mockClear();
-  (Plot.text as unknown as { mockClear: () => void }).mockClear();
-  (Plot.link as unknown as { mockClear: () => void }).mockClear();
-});
 
 const toPx = (q: number) => q * 100;
 const fromPx = (px: number) => px / 100;
@@ -120,74 +104,6 @@ describe("layoutPeakLabels (Phase 8.2)", () => {
     expect(out).toHaveLength(1);
     expect(out[0]!.qLabel).toBe(0.42);
     expect(out[0]!.qPeak).toBe(0.42);
-  });
-
-  it("integration: buildMemberMarks emits Plot.link marks for crowded labels with xScale", () => {
-    const member = {
-      id: 1, series_id: 1, exposure_id: 42, display_order: 0,
-      band_height: 1, y_offset: 0, normalization: "qwindow" as const,
-      color_override: null, label_override: null,
-      q_window_min: null, q_window_max: null, peak_display: null,
-      snapshot: {
-        effective_peaks: [
-          { id: 11, q: 0.30, intensity: 50, sharpness: 1, source: "auto" as const },
-          { id: 12, q: 0.31, intensity: 50, sharpness: 1, source: "auto" as const },
-          { id: 13, q: 0.32, intensity: 50, sharpness: 1, source: "auto" as const },
-        ],
-        confirmed_index: null,
-        analysis_inputs_hash: "h",
-      },
-      is_stale: false, created_by: null, created_at: null,
-    };
-    const trace = {
-      q: [0.10, 0.20, 0.30, 0.31, 0.32, 0.40],
-      I: [1, 2, 3, 4, 5, 6],
-      sigma: [0, 0, 0, 0, 0, 0],
-    };
-
-    buildMemberMarks({
-      member,
-      trace,
-      yBand: [0, 100],
-      peakDisplay: { hidden: [], labeled: [11, 12, 13] },
-      xScale: { toPx, fromPx },
-    });
-
-    // Crowded labels at q=0.30,0.31,0.32 (px=30,31,32) all want a 32-px-wide
-    // slot, so the dodge MUST push them apart and emit at least one link.
-    expect((Plot.text as unknown as { mock: { calls: unknown[] } }).mock.calls.length).toBeGreaterThan(0);
-    expect((Plot.link as unknown as { mock: { calls: unknown[] } }).mock.calls.length).toBeGreaterThan(0);
-  });
-
-  it("integration: buildMemberMarks does NOT emit a link mark for sparse labels", () => {
-    const member = {
-      id: 1, series_id: 1, exposure_id: 42, display_order: 0,
-      band_height: 1, y_offset: 0, normalization: "qwindow" as const,
-      color_override: null, label_override: null,
-      q_window_min: null, q_window_max: null, peak_display: null,
-      snapshot: {
-        effective_peaks: [
-          { id: 11, q: 0.10, intensity: 50, sharpness: 1, source: "auto" as const },
-          { id: 12, q: 0.50, intensity: 50, sharpness: 1, source: "auto" as const },
-          { id: 13, q: 0.90, intensity: 50, sharpness: 1, source: "auto" as const },
-        ],
-        confirmed_index: null,
-        analysis_inputs_hash: "h",
-      },
-      is_stale: false, created_by: null, created_at: null,
-    };
-    const trace = { q: [0.10, 0.50, 0.90], I: [1, 2, 3], sigma: [0, 0, 0] };
-
-    buildMemberMarks({
-      member,
-      trace,
-      yBand: [0, 100],
-      peakDisplay: { hidden: [], labeled: [11, 12, 13] },
-      xScale: { toPx, fromPx },
-    });
-
-    expect((Plot.text as unknown as { mock: { calls: unknown[] } }).mock.calls.length).toBeGreaterThan(0);
-    expect((Plot.link as unknown as { mock: { calls: unknown[] } }).mock.calls.length).toBe(0);
   });
 
   it("dodge spreads labels symmetrically around the cluster center", () => {

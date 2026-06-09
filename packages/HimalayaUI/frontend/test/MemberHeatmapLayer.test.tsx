@@ -1,8 +1,8 @@
 /**
  * MemberHeatmapLayer tests (#208 — render-core heatmap representation).
  *
- * Same pattern as `MemberTraceLayer.test.tsx`: mark factories invoke mocked
- * `Plot.rect` and we inspect the captured args. Two layers of contract:
+ * Mark factories invoke mocked `Plot.rect` and we inspect the captured
+ * args. Two layers of contract:
  *
  *   - `buildMemberHeatmapMarks` shape: one `Plot.rect` mark per member, with
  *     `HEATMAP_BIN_COUNT` cells, each carrying a `color-mix` fill that lerps
