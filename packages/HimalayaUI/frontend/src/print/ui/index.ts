@@ -64,3 +64,5 @@ export { FlagButton } from "./FlagButton";
 export type { FlagButtonProps } from "./FlagButton";
 export { Field } from "./Field";
 export type { FieldProps } from "./Field";
+export { Checkbox } from "./Checkbox";
+export type { CheckboxProps } from "./Checkbox";
