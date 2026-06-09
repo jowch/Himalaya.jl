@@ -315,6 +315,36 @@ describe("SeriesBuilderPage", () => {
     expect(useAppState.getState().seriesDraft!.recipe[1]!.sample_id).toBe(firstSampleId);
   });
 
+  it("each recipe row is draggable and carries a grip handle (label tells the truth)", () => {
+    renderPage();
+    fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "x" } });
+    const rows = screen.getAllByTestId("builder-recipe-row");
+    expect(rows.length).toBeGreaterThan(1);
+    for (const row of rows) {
+      expect(row).toHaveAttribute("draggable", "true");
+      expect(within(row).getByTestId("grip-handle")).toBeInTheDocument();
+    }
+  });
+
+  it("dragging row 1 onto row 0 reorders the draft recipe (additive to the ▲▼ buttons)", () => {
+    renderPage();
+    fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "x" } });
+    const secondSampleId = useAppState.getState().seriesDraft!.recipe[1]!.sample_id;
+    const rows = screen.getAllByTestId("builder-recipe-row");
+    // Native HTML5 drag: grab row index 1, drop it on row index 0.
+    const dataTransfer = {
+      effectAllowed: "",
+      dropEffect: "",
+      setData: vi.fn(),
+      getData: vi.fn(),
+    };
+    fireEvent.dragStart(rows[1]!, { dataTransfer });
+    fireEvent.dragOver(rows[0]!, { dataTransfer });
+    fireEvent.drop(rows[0]!, { dataTransfer });
+    // Row that was at index 1 is now at index 0.
+    expect(useAppState.getState().seriesDraft!.recipe[0]!.sample_id).toBe(secondSampleId);
+  });
+
   it("annotation toggles are ARMED when the series has indexed peaks", () => {
     renderPage();
     const group = screen.getByTestId("annotation-toggles");

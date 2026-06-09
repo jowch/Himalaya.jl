@@ -5,7 +5,8 @@ import { PageFrame } from "../components/PageFrame";
 import { SeriesPlate } from "../components/SeriesPlate";
 import { BuilderRail } from "../components/BuilderRail";
 import { MemberList } from "../components/MemberList";
-import { IconButton, Button, EmptyState, Input } from "../ui";
+import { IconButton, Button, EmptyState, Input, GripHandle } from "../ui";
+import { useDragReorder } from "../components/useDragReorder";
 import {
   useSeries,
   useSeriesTraces,
@@ -470,6 +471,7 @@ function RecipeEditor({
   onRemove: (rowId: number) => void;
   onReorder: (from: number, to: number) => void;
 }): JSX.Element {
+  const { dragItemProps, dropEdge } = useDragReorder(onReorder);
   return (
     <div className="flex flex-col gap-0.5" data-testid="builder-recipe">
       {recipe.map((row, i) => {
@@ -477,12 +479,22 @@ function RecipeEditor({
           { id: row.id, series_id: 0, sample_id: row.sample_id, position: row.position, pinned: row.pinned, excluded: row.excluded },
           sampleNameById,
         );
+        const dprops = dragItemProps(i);
+        const edge = dropEdge(i);
         return (
           <div
             key={row.id}
             data-testid="builder-recipe-row"
-            className="flex items-center gap-2 px-2 py-1.5 rounded border border-transparent hover:bg-plate"
+            {...dprops}
+            className={`group relative cursor-grab flex items-center gap-2 px-2 py-1.5 rounded border border-transparent hover:bg-plate${dprops["data-dragging"] ? " opacity-50" : ""}`}
           >
+            {edge && (
+              <span
+                aria-hidden="true"
+                className={`pointer-events-none absolute left-0 right-0 z-10 h-0.5 rounded-full bg-accent ${edge === "top" ? "-top-px" : "-bottom-px"}`}
+              />
+            )}
+            <GripHandle />
             <span className="flex-1 min-w-0 truncate text-meta text-ink">{view.name}</span>
             <IconButton
               label="Move up"
