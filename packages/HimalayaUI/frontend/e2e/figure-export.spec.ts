@@ -95,34 +95,43 @@ test.describe("Figure export — focus workspace TraceViewer (#181)", () => {
     expect(types).toContain("image/png");
   });
 
-  test("Download → PNG file lands with himalaya-trace-… filename", async ({ page }) => {
+  // Greenfield ExportButton (src/print/components/ExportButton.tsx) is a split
+  // button: a primary "Copy" + a "▾" chevron (IconButton label "Download
+  // formats") that opens a Menu with "Download as PNG" / "Download as SVG"
+  // menuitems. The download filename stem is the sample/exposure label (FocusPage
+  // `filenameStem`), suffixed with `-YYYY-MM-DD.{ext}` by buildFilename — there is
+  // no "himalaya-trace-" prefix on the greenfield surface, so we assert the
+  // date-stamped extension contract rather than the retired hard-coded prefix.
+  test("Download → PNG via chevron menu lands a date-stamped .png", async ({ page }) => {
     await mockApi(page);
     await seedState(page);
     await page.goto("/sample/10");
 
-    const dlBtn = page.getByRole("button", { name: /download trace plot as png/i });
-    await expect(dlBtn).toBeEnabled();
+    const chevron = page.getByRole("button", { name: /download formats/i });
+    await expect(chevron).toBeEnabled();
+    await chevron.click();
+    const pngRow = page.getByRole("menuitem", { name: /download as png/i });
 
     const downloadPromise = page.waitForEvent("download");
-    await dlBtn.click();
+    await pngRow.click();
     const download = await downloadPromise;
 
-    expect(download.suggestedFilename()).toMatch(/^himalaya-trace-.*\d{4}-\d{2}-\d{2}\.png$/);
+    expect(download.suggestedFilename()).toMatch(/-\d{4}-\d{2}-\d{2}\.png$/);
   });
 
-  test("Download → SVG via chevron menu", async ({ page }) => {
+  test("Download → SVG via chevron menu lands a date-stamped .svg", async ({ page }) => {
     await mockApi(page);
     await seedState(page);
     await page.goto("/sample/10");
 
-    const chevron = page.getByRole("button", { name: /other download formats/i });
+    const chevron = page.getByRole("button", { name: /download formats/i });
     await chevron.click();
-    const svgRow = page.getByText(/download as svg/i);
+    const svgRow = page.getByRole("menuitem", { name: /download as svg/i });
 
     const downloadPromise = page.waitForEvent("download");
     await svgRow.click();
     const download = await downloadPromise;
 
-    expect(download.suggestedFilename()).toMatch(/^himalaya-trace-.*\d{4}-\d{2}-\d{2}\.svg$/);
+    expect(download.suggestedFilename()).toMatch(/-\d{4}-\d{2}-\d{2}\.svg$/);
   });
 });
