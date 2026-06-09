@@ -111,7 +111,9 @@ test("picking a new user triggers the tutorial and dismisses with 'Got it'", asy
   await page.getByTestId("tutorial-done").click();
 
   await expect(page.getByTestId("onboarding-overlay")).not.toBeVisible();
-  await expect(page.getByTestId("plot-title")).toBeVisible();
+  // Greenfield focus workspace: the retired three-card Index `plot-title` is
+  // replaced by the TracePlate trace plot on the focus surface.
+  await expect(page.getByTestId("trace-plate")).toBeVisible();
 });
 
 // I4.4 (#181): the legacy three-card Index's shell affordances — opening the
@@ -124,180 +126,20 @@ test("picking a new user triggers the tutorial and dismisses with 'Got it'", asy
 // legacy-Index E2E cases that exercised them are removed here rather than
 // repointed (they have no equivalent on the replacement surface).
 
-test("curate: clicking + adds a candidate to the active set", async ({ page }) => {
-  const EXPOSURE = {
-    id: 5, sample_id: 10, filename: "scan1.dat", kind: "file",
-    selected: true, tags: [], sources: [],
-  };
-  const CANDIDATES = [
-    {
-      id: 1, exposure_id: 5, phase: "Pn3m", basis: 0.1, score: 0.95,
-      r_squared: 0.99, lattice_d: 12.5, status: "candidate",
-      predicted_q: [0.1, 0.14], peaks: [],
-    },
-    {
-      id: 2, exposure_id: 5, phase: "Im3m", basis: 0.15, score: 0.7,
-      r_squared: 0.85, lattice_d: 9.0, status: "candidate",
-      predicted_q: [0.12, 0.17], peaks: [],
-    },
-  ];
-  const BASE_GROUP = { id: 1, exposure_id: 5, kind: "auto", active: true };
-  let groupMembers: number[] = [];
-  let addedIndexId: number | null = null;
-
-  await seedState(page, { activeExperimentId: 1, activeSampleId: 10, activeExposureId: 5 });
-  await mockCore(page, [{ id: 1, username: "alice" }]);
-
-  // Override exposures for sample 10 to include our test exposure.
-  await page.route("**/api/samples/10/exposures*", (r) =>
-    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([EXPOSURE]) }));
-
-  await page.route("**/api/exposures/5/trace", (r) =>
-    r.fulfill({ status: 200, contentType: "application/json",
-      body: JSON.stringify({ q: [0.1, 0.2], I: [10, 20], sigma: [1, 1] }) }));
-  await page.route("**/api/exposures/5/peaks", (r) =>
-    r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
-  await page.route("**/api/exposures/5/indices", (r) =>
-    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(CANDIDATES) }));
-
-  // Groups reflect the current state of `groupMembers` on every fetch.
-  await page.route("**/api/exposures/5/groups", (r) =>
-    r.fulfill({ status: 200, contentType: "application/json",
-      body: JSON.stringify([{ ...BASE_GROUP, members: [...groupMembers] }]) }));
-
-  await page.route("**/api/groups/1/members", async (route) => {
-    const data = route.request().postDataJSON() as { index_id: number };
-    addedIndexId = data.index_id;
-    groupMembers = [data.index_id];
-    await route.fulfill({ status: 200, contentType: "application/json",
-      body: JSON.stringify({ ...BASE_GROUP, members: groupMembers }) });
-  });
-
-  await page.goto("/sample/10");
-
-  // Wait for PhasePanel to show the Pn3m candidate.
-  await expect(page.getByText("Pn3m")).toBeVisible();
-
-  // Click the "+" button on the first candidate (index id 1).
-  await page.getByRole("button", { name: "Add index 1" }).click();
-
-  // POST should have been sent with the correct index_id.
-  await expect.poll(() => addedIndexId, { timeout: 2000 }).toBe(1);
-
-  // After groups refetch, index 1 should appear in the Active set section.
-  await expect(page.locator('[data-index-id="1"][data-active]')).toBeVisible();
-});
-
-test("reanalyze: stale-indices banner fires POST /analyze when clicked", async ({ page }) => {
-  // Stale index: inputs_hash differs from the exposure's analysis_inputs_hash.
-  // The banner derives staleness from hash mismatch, not the legacy
-  // status='stale' enum (which R3 retired).
-  const EXPOSURE = {
-    id: 5, sample_id: 10, filename: "scan1.dat", kind: "file",
-    selected: true, tags: [], sources: [],
-    trace_hash: "newhash", analysis_inputs_hash: "newhash",
-  };
-  const STALE_INDEX = {
-    id: 3, exposure_id: 5, phase: "Pn3m", basis: 0.1, score: 0.9,
-    r_squared: 0.99, lattice_d: 12.5, status: "candidate",
-    inputs_hash: "oldhash",
-    predicted_q: [0.1, 0.14], peaks: [],
-  };
-  let analyzeCalled = false;
-
-  await seedState(page, { activeExperimentId: 1, activeSampleId: 10, activeExposureId: 5 });
-  await mockCore(page, [{ id: 1, username: "alice" }]);
-
-  await page.route("**/api/exposures/5", (r) =>
-    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(EXPOSURE) }));
-  await page.route("**/api/samples/10/exposures*", (r) =>
-    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([EXPOSURE]) }));
-  await page.route("**/api/exposures/5/trace", (r) =>
-    r.fulfill({ status: 200, contentType: "application/json",
-      body: JSON.stringify({ q: [0.1, 0.2], I: [10, 20], sigma: [1, 1] }) }));
-  await page.route("**/api/exposures/5/peaks", (r) =>
-    r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
-  await page.route("**/api/exposures/5/indices", (r) =>
-    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([STALE_INDEX]) }));
-  await page.route("**/api/exposures/5/groups", (r) =>
-    r.fulfill({ status: 200, contentType: "application/json",
-      body: JSON.stringify([{ id: 1, exposure_id: 5, kind: "auto", active: true, members: [3] }]) }));
-
-  await page.route("**/api/exposures/5/analyze", async (route) => {
-    analyzeCalled = true;
-    await route.fulfill({ status: 200, contentType: "application/json",
-      body: JSON.stringify({ id: 5, analyzed: true }) });
-  });
-
-  await page.goto("/sample/10");
-
-  // StaleIndicesBanner should appear because the index has status "stale".
-  await expect(page.getByRole("alert")).toBeVisible();
-  await expect(page.getByRole("alert")).toContainText("stale");
-
-  await page.getByRole("button", { name: /Re-analyze/ }).click();
-
-  await expect.poll(() => analyzeCalled, { timeout: 2000 }).toBe(true);
-});
-
-test("curate → reanalyze: active-set membership survives a reanalysis round-trip", async ({ page }) => {
-  // Index is stale because its inputs_hash differs from the exposure's
-  // current analysis_inputs_hash — the post-R3 derivation. The legacy
-  // status='stale' enum was retired.
-  const EXPOSURE = {
-    id: 5, sample_id: 10, filename: "scan1.dat", kind: "file",
-    selected: true, tags: [], sources: [],
-    trace_hash: "newhash", analysis_inputs_hash: "newhash",
-  };
-  const BASE_INDEX = {
-    id: 1, exposure_id: 5, phase: "Pn3m", basis: 0.1, score: 0.95,
-    r_squared: 0.99, lattice_d: 12.5, predicted_q: [0.1, 0.14], peaks: [],
-    status: "candidate",
-  };
-  let indexInputsHash = "oldhash";
-  let analyzeCalled = false;
-
-  await seedState(page, { activeExperimentId: 1, activeSampleId: 10, activeExposureId: 5 });
-  await mockCore(page, [{ id: 1, username: "alice" }]);
-
-  await page.route("**/api/exposures/5", (r) =>
-    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(EXPOSURE) }));
-  await page.route("**/api/samples/10/exposures*", (r) =>
-    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([EXPOSURE]) }));
-  await page.route("**/api/exposures/5/trace", (r) =>
-    r.fulfill({ status: 200, contentType: "application/json",
-      body: JSON.stringify({ q: [0.1, 0.2], I: [10, 20], sigma: [1, 1] }) }));
-  await page.route("**/api/exposures/5/peaks", (r) =>
-    r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
-  await page.route("**/api/exposures/5/indices", (r) =>
-    r.fulfill({ status: 200, contentType: "application/json",
-      body: JSON.stringify([{ ...BASE_INDEX, inputs_hash: indexInputsHash }]) }));
-  await page.route("**/api/exposures/5/groups", (r) =>
-    r.fulfill({ status: 200, contentType: "application/json",
-      body: JSON.stringify([{ id: 1, exposure_id: 5, kind: "auto", active: true, members: [1] }]) }));
-
-  await page.route("**/api/exposures/5/analyze", async (route) => {
-    analyzeCalled = true;
-    indexInputsHash = "newhash";  // post-reanalyze, hashes match → banner clears
-    await route.fulfill({ status: 200, contentType: "application/json",
-      body: JSON.stringify({ id: 5, analyzed: true }) });
-  });
-
-  await page.goto("/sample/10");
-
-  // Index 1 is active (curated) but stale — banner must appear.
-  await expect(page.locator('[data-index-id="1"][data-active]')).toBeVisible();
-  await expect(page.getByRole("alert")).toContainText("stale");
-
-  // Trigger reanalysis.
-  await page.getByRole("button", { name: /Re-analyze/ }).click();
-  await expect.poll(() => analyzeCalled, { timeout: 2000 }).toBe(true);
-
-  // Group membership must survive — index 1 stays active after the refetch.
-  await expect(page.locator('[data-index-id="1"][data-active]')).toBeVisible();
-  // Stale banner must be gone once indices are fresh.
-  await expect(page.getByRole("alert")).not.toBeVisible();
-});
+// I4.4 + plotting redesign (#280): the auto-peaks/curation model — the `+`
+// "Add index N" candidate buttons, the curated "Active set" with
+// `data-index-id`/`data-active` rows, the `/groups/:id/members` POST, and the
+// StaleIndicesBanner (`role="alert"` + POST `/analyze` "Re-analyze") — were
+// RETIRED by the greenfield rebuild. The focus surface now uses the assignment
+// model (AssignmentRail/AssignmentCart driven by `confirmed_index`); there is no
+// curation `+`, no active-set membership row, and no stale-indices banner /
+// reanalyze affordance anywhere in `src/print` or `src/components`. The three
+// E2E cases that exercised those surfaces ("curate: clicking + adds a
+// candidate", "reanalyze: stale-indices banner fires POST /analyze", and
+// "curate → reanalyze … round-trip") are removed here rather than repointed —
+// they have no equivalent on the replacement surface (matching the legacy-Index
+// removal precedent above). Replacement coverage for the assignment model lives
+// in FocusWorkspacePage.*.test.tsx + the assignment Vitest suites.
 
 test("a /compare* URL redirects to the series folio (Compare retired, #177)", async ({ page }) => {
   // I3.6 (#177): Compare is retired and replaced by the series stage. Every
