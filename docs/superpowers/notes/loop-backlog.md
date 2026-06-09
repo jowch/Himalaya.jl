@@ -31,7 +31,7 @@ All six below GOLD on both axes. No P0s anywhere. Baseline reads: theming + anti
 
 - [x] **Wave 0 — Foundation refresh** — DONE (`c525c93`). DESIGN.md re-rooted to `src/print/ui`, stale two-theme/grain promises killed, four new sections (State taxonomy / Spacing & density / Motion / Copy & UX writing); PRODUCT.md a11y de-dark-themed + named persona seeded.
 - [x] **Wave 1 — Scored baseline** — DONE (2026-06-09). SAXS `ignore.md` seeded; 6 surfaces rendered + scored (critique /40 + audit /20); snapshots persisted; new P1s merged below. No P0s.
-- [ ] **Wave 2 — P1 fixes top-down** ← IN PROGRESS. ✅ F-LIVE (`c07cdce`). ✅ F-ERRSILENT (closed-by-architecture). ✅ F-CONTRAST (`275c421`). Next cross-cutting P1s: the **rail adapt** (BU-RAIL+FO-RAIL+FO-COMB — layout, render-verify at 1120/1440), **SC-HEAD** (region headings), **F-A11Y** (operationalize contrast pairs as tests — now that ink-soft/ink-faint roles are settled). Then surface-specific P1s.
+- [ ] **Wave 2 — P1 fixes top-down** ← IN PROGRESS. ✅ F-LIVE (`c07cdce`). ✅ F-ERRSILENT (closed-by-architecture). ✅ F-CONTRAST (`275c421`). ✅ rail-adapt (FO-RAIL+BU-RAIL `6cee2a6`; FO-COMB closed-already-honest). **All Wave-2 cross-cutting P1s now closed.** Next: **SC-HEAD** (non-heading region labels), **F-A11Y** (operationalize ink/accent/status contrast pairs as tests — roles now settled), then surface-specific P1s (SA-SEM, FOL-KBD, SC-ORDER, BU-DEAD, BU-EXPORT, LO-KEYD).
 
 > **✅ HARNESS STATUS (rebuilt 2026-06-09):** the dev backend died mid-session and its `/tmp/himalaya-uat/` DB copy was reclaimed; **now restored** — sourced a surviving persistent DB at `/Users/me/projects/himalaya-devdata/himalaya.db` (139 samples / 1 series / 3 experiments), `sqlite3 .backup`'d it to a disposable `/tmp/himalaya-uat/himalaya.db`, and restarted `env HIMALAYA_DB_PATH=/tmp/himalaya-uat/himalaya.db julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- serve --port 8091` (from-source). `/api/samples` → HTTP 200. vite :5182 (VITE_API_PORT=8091) proxies to it; prod :8080 untouched. Render-verify is available. The canonical devdata DB stays pristine (we serve the copy). See [[feedback_live_audit_harness]].
 - [ ] **Wave 3 — P2/P3 enhancement**
@@ -95,7 +95,7 @@ Severity: P0 blocking · P1 major/any-WCAG-AA · P2 minor · P3 polish. Status: 
 | id | opportunity | command | sev | status | notes |
 |---|---|---|---|---|---|
 | BU-DEAD | **Two inert controls in COMPOSE rail** — outline "+ Add sample" Button + collapse "›" chevron render live but get no handler; controls-don't-lie violation; duplicates working native select | harden | P1 | todo | ✓W1 |
-| BU-RAIL | **Work·rail split gated at `xl:` (1280px)** drops rail below plate across 1024–1279 laptop band (Confirm/ordering/offset/export off-screen) | adapt | P1 | todo | ✓W1 · fix WITH FO-RAIL |
+| BU-RAIL | **Work·rail split gated at `xl:` (1280px)** drops rail below plate across 1024–1279 laptop band (Confirm/ordering/offset/export off-screen) | adapt | P1 | **done** | SeriesBuilderPage:367 `xl:`→`lg:`. Render-verified at 1120: COMPOSE rail sits beside the plate. frontend-reviewer APPROVE. Commit `6cee2a6` |
 | BU-EXPORT | surface Export-figure to topbar (mockup series-builder.html:378) — builder exposes only rail "Copy as PNG" | clarify+layout | P1 | todo | loop-config "Export now"; Duplicate DEFERRED |
 | BU-PROGRESS | confirm chain no visible progress + generic causeless error copy | clarify | P2 | todo | → F-LIVE/F-ERRSILENT |
 
@@ -103,8 +103,8 @@ Severity: P0 blocking · P1 major/any-WCAG-AA · P2 minor · P3 polish. Status: 
 
 | id | opportunity | command | sev | status | notes |
 |---|---|---|---|---|---|
-| FO-COMB | **Comb/reflections panel `hidden lg:flex` drops at <1024px laptop band** (stack under detector, don't hide a primary analysis tool) | adapt | P1 | todo | ✓W1 · distinct from FO-RAIL |
-| FO-RAIL | work·rail split gated at `xl:` — confirm whether the assignment rail (not just comb) also drops; fix WITH BU-RAIL | adapt | P1 | todo | verify vs FO-COMB |
+| FO-COMB | **Comb/reflections panel `hidden lg:flex` drops at <1024px laptop band** (stack under detector, don't hide a primary analysis tool) | adapt | P1 | **closed (already honest)** | Verify-before-review: the comb wrapper is `hidden lg:flex` = visible at **≥1024**, so it's present across the whole in-scope band; the "<1024" drop is BELOW the ~1024 floor (out of scope, decision #1). Render-verified at 1024: Detector\|Comb side-by-side, compact but functional — no change needed. |
+| FO-RAIL | work·rail split gated at `xl:` — confirm whether the assignment rail (not just comb) also drops; fix WITH BU-RAIL | adapt | P1 | **done** | Confirmed: FocusPage:419 (live) + :68 (fixture) work·rail grid was `xl:grid-cols-[1fr_350px]` → `lg:`. Render-verified at 1120 + 1024: ASSIGNMENT/CANDIDATES rail sits beside work; inner Detector\|Comb split left at `lg:` (honest at floor). Commit `6cee2a6` |
 | FO-EDIT | trace-edit model undiscoverable (arm "+Peak"/click=add/click-peak=remove/alt-click=exclude) + no keyboard accelerators / plot not keyboard-operable + generic detector canvas label | onboard+harden | P2 | todo | ✓W1 · WCAG 2.1.1/1.1.1 |
 | FO-ERR | bespoke "Sample not found" instead of EmptyState | clarify+extract | P2 | todo | → EX-EMPTY |
 | FO-DIM | candidate-hover losing-peak dim instant; drag drop-edge hard hairline | animate | P2 | todo | |
