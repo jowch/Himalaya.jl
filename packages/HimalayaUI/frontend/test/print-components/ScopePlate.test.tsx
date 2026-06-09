@@ -28,6 +28,22 @@ describe("<ScopePlate>", () => {
     expect(screen.getByTestId("cands-slot")).toBeInTheDocument();
     expect(screen.getAllByTestId("ps-seg").length).toBe(2);
   });
+  it("exposes a sound heading tree: one h1 (series name) + four h2 section labels", () => {
+    render(<ScopePlate {...base} footState={{ kind: "ready", text: "ready" }} />);
+    // The series name is the single level-1 heading.
+    const h1s = screen.getAllByRole("heading", { level: 1 });
+    expect(h1s).toHaveLength(1);
+    expect(h1s[0]).toHaveAccessibleName("LL37 titration of lipid 1-2");
+    // The four section labels are level-2 headings nested under it.
+    expect(screen.getByRole("heading", { level: 2, name: "Ordered by" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: "The series" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Himalaya also found" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Preview — phase across the series" }),
+    ).toBeInTheDocument();
+  });
   it("gates the build button when buildDisabled", () => {
     render(<ScopePlate {...base} buildDisabled footState={{ kind: "warn", text: "1 value to check before you can build" }} />);
     expect(screen.getByText(/1 value to check/)).toBeInTheDocument();

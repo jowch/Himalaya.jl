@@ -36,6 +36,13 @@ describe("<SeriesCard> renders text content", () => {
     expect(screen.getByText("LL37 titration of lipid 1-2")).toBeInTheDocument();
   });
 
+  it("renders the title as a level-2 heading (folio h1 → card h2, no skip)", () => {
+    render(<SeriesCard {...BASE_PROPS} />);
+    expect(
+      screen.getByRole("heading", { level: 2, name: "LL37 titration of lipid 1-2" }),
+    ).toBeInTheDocument();
+  });
+
   it("renders the figLabel", () => {
     render(<SeriesCard {...BASE_PROPS} />);
     expect(screen.getByText("Fig. 1")).toBeInTheDocument();

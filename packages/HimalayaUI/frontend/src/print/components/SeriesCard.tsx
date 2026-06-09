@@ -94,7 +94,7 @@ export function SeriesCard({
         </div>
 
         {/* Title — Newsreader serif, 19px via text-headline */}
-        <h3 className="text-headline">{title}</h3>
+        <h2 className="text-headline">{title}</h2>
 
         {/* Meta line — the "· by {variable}" ordering clause is dropped when the
             series has no ordering variable (e.g. a form-factor series), so the
