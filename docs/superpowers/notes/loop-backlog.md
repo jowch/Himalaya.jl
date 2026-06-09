@@ -12,60 +12,114 @@ Durable state for the impeccable production-polish loop. Companion to [2026-06-0
 | **ordering_vars** | Scoping "Ordered by" dropdown is **data-driven** from the real manifest/adapter variable set + a "define your own" affordance. Verify against backend before wiring; do not hardcode the mockup's time/dose/temperature set. |
 | **branch** | `worktree-greenfield-ui-rebuild` — STAYS UNMERGED. Never merge, never `finishing-a-development-branch`, never `git add -A`, every commit ends with the mandated co-author line. |
 
-## Score trend (per surface — filled by Wave 1 + re-scores)
+## Score trend (per surface — Wave 1 baseline 2026-06-09)
 
-| Surface | critique /40 | audit /20 | trend | target |
-|---|---|---|---|---|
-| SamplesPage (contact sheet) | — | — | | ≥36 / ≥18 |
-| SeriesFolioPage | — | — | | ≥36 / ≥18 |
-| SeriesScopingPage | — | — | | ≥36 / ≥18 |
-| SeriesBuilderPage | — | — | | ≥36 / ≥18 |
-| FocusPage | — | — | | ≥36 / ≥18 |
-| LoupePage | — | — | | ≥36 / ≥18 |
+| Surface | critique /40 | audit /20 | trend | target | gap |
+|---|---|---|---|---|---|
+| SamplesPage (contact sheet) | 31 | 15 | 31 | ≥36 / ≥18 | +5 / +3 |
+| SeriesFolioPage | 30 | 17 | 30 | ≥36 / ≥18 | +6 / +1 |
+| SeriesScopingPage | 28 | 16 | 28 | ≥36 / ≥18 | +8 / +2 |
+| SeriesBuilderPage | 27 | 16 | 27 | ≥36 / ≥18 | +9 / +2 |
+| FocusPage | 24 | 16 | 24 | ≥36 / ≥18 | +12 / +2 |
+| LoupePage | 30 | 15 | 30 | ≥36 / ≥18 | +6 / +3 |
+
+All six below GOLD on both axes. No P0s anywhere. Baseline reads: theming + anti-patterns are 4/4 almost everywhere (design-guard working); **a11y is the universal drag** (a11y dim 2–3 on every surface). Snapshots persisted under `.impeccable/critique/` (impeccable-native trend; re-score in Wave 4 to show the rise). Slugs: SamplesPage=`imalayaui-…-samplespage-tsx`, Folio=`ayaui-…-seriesfoliopage-tsx`, Scoping=`aui-…-seriesscopingpage-tsx`, Builder=`aui-…-seriesbuilderpage-tsx`, Focus=`himalayaui-…-focuspage-tsx`, Loupe=`himalayaui-…-loupepage-tsx`.
+
+**Note on faithfulness:** Wave-1 critiques ran a single capable evaluation agent per surface applying the real `critique.md`+`audit.md` rubrics over source + rendered screenshots (desktop 1440 + laptop 1120 for the rail/grid surfaces) + the SAXS `ignore.md`, rather than the two-fully-isolated-subagent design/detect split. The deterministic detector (`impeccable detect --json`) was run centrally on every page source and returned `[]` (zero anti-pattern tells) — that is the Assessment-B half, and it corroborates the 4/4 anti-patterns scores. Re-scores in Wave 4 use the same method for trend comparability.
 
 ## Wave status
 
-- [x] **Wave 0 — Foundation refresh** — DONE (`c525c93`). DESIGN.md re-rooted to `src/print/ui`, stale two-theme/grain promises killed, status note reframed as living spec, four new sections added (State taxonomy / Spacing & density / Motion / Copy & UX writing) grounded in scanned source; PRODUCT.md a11y de-dark-themed + reduced-motion reframed + named persona seeded. Display token left at 27px (31px = later render-verified task). Doc-only; gate unaffected.
-- [ ] **Wave 1 — Scored baseline** (read-only; seeds rows). Per surface: `audit` + `critique`, with `ignore.md` seeded for SAXS vocabulary + a SAXS persona. Record /40, /20, slug; merge P0/P1 findings below.
-- [ ] **Wave 2 — P1 fixes top-down**
+- [x] **Wave 0 — Foundation refresh** — DONE (`c525c93`). DESIGN.md re-rooted to `src/print/ui`, stale two-theme/grain promises killed, four new sections (State taxonomy / Spacing & density / Motion / Copy & UX writing); PRODUCT.md a11y de-dark-themed + named persona seeded.
+- [x] **Wave 1 — Scored baseline** — DONE (2026-06-09). SAXS `ignore.md` seeded; 6 surfaces rendered + scored (critique /40 + audit /20); snapshots persisted; new P1s merged below. No P0s.
+- [ ] **Wave 2 — P1 fixes top-down** ← NEXT. Open with the cross-cutting P1s (each moves multiple surfaces): **F-LIVE** (aria-live status), **F-ERRSILENT** (surface mutation errors), **F-CONTRAST** (app-wide token), the **rail adapt** (BU-RAIL+FO-RAIL+FO-COMB), **SC-HEAD** (region headings). Then surface-specific P1s.
 - [ ] **Wave 3 — P2/P3 enhancement**
 - [ ] **Wave 4 — Converge (`polish`) + re-score to GOLD**
 
-## Backlog (seeded from synthesis §4 + decisions; Wave 1 will append audit/critique findings)
+## Backlog
 
 Severity: P0 blocking · P1 major/any-WCAG-AA · P2 minor · P3 polish. Status: todo / in-progress / done / blocked.
+`✓W1` = confirmed by the Wave-1 baseline. Prefer items that fix multiple surfaces at once.
 
-| id | surface | opportunity | command | sev | status | notes |
-|---|---|---|---|---|---|---|
-| F-DOC | cross-cut | DESIGN.md/PRODUCT.md doc-debt: re-root to `src/print/`, kill stale two-theme/grain promises, add state-taxonomy/spacing/motion/copy | document+teach | P1 | **done** | `c525c93` Wave 0 |
-| F-STATE | cross-cut | No documented state taxonomy (rest/hover/active/focus-visible/disabled/busy/selected/error/read-only; skeleton-vs-spinner-vs-empty-vs-inline-error) | document+harden | P1 | todo | doc-half DONE (`c525c93` State-taxonomy section); harden ENFORCEMENT half remains for Wave 2 |
-| F-A11Y | cross-cut | a11y not operationalized: only phase-on-plate contrast pinned; pin ink/accent/status pairs; per-widget keyboard maps/aria | harden | P1 | todo | |
-| SC-ORDER | scoping | "Ordered by" is immutable static text; wire data-driven dropdown + custom + restore of-note copy | clarify | P1 | todo | ordering_vars=data-driven+custom; verify manifest/adapter |
-| SC-KBD | scoping | drag-reorder has no keyboard alternative (builder has ▲/▼; scoping doesn't) | harden | P1 | todo | |
-| BU-EXPORT | builder | surface Export-figure to topbar (mockup series-builder.html:378) | clarify+layout | P1 | todo | Duplicate-series DEFERRED per decision |
-| BU-RAIL | builder | work·rail split gated at `xl:` drops rail below work col on 1024–1279px | adapt | P1 | todo | fix WITH FO-RAIL (same change) |
-| FO-RAIL | focus | work·rail split gated at `xl:` — same defect | adapt | P1 | todo | fix WITH BU-RAIL |
-| LO-GRID | loupe | grid `[minmax(0,1fr)_286px]` has no responsive prefix; crushes detector at narrow widths | adapt | P1 | todo | stack below documented min-width |
-| SA-KEYD | contact sheet | window keydown ("X" drops frames) guards only INPUT/TEXTAREA; no isContentEditable/open-modal check, no aria-live, no keyboard cull path | harden | P1 | todo | |
-| LO-KEYD | loupe | window keydown (X/R/arrows/Esc) — same guard hole, no aria-live | harden | P1 | todo | shared pattern with SA-KEYD |
-| EX-EMPTY | cross-cut | unify bespoke bordered error/not-found divs (Samples, Focus, Loupe) onto EmptyState + first-class action/retry slot | extract | P2 | todo | |
-| FOL-ERR | folio | EmptyState used but no action passed on error | extract | P2 | todo | depends EX-EMPTY |
-| TY-DISPLAY | cross-cut | restore display-xl step (titles app-wide quieter than designed) | typeset | P3 | todo | reconcile w/ DESIGN.md display token in Wave 0 |
-| FOL-SORT | folio | visible "SORT" label missing left of segmented control (mockup series-folio.html:326) | typeset | P2 | todo | |
-| LA-COLLIDE | contact sheet | CullBar/ComposeBar can collide with bottom InfrastructureBanner | layout+animate | P2 | todo | |
-| EX-SPACING | cross-cut | spacing/density scale underspecified (sm/md/stage only); promote shared-grid/alignment constants to tokens | extract | P2 | todo | |
-| AN-MOTION | cross-cut | app essentially static: selection bars snap, drag drop-edge hard hairline, candidate-dim instant, no toast/modal motion | animate | P2 | todo | reduced-motion preserved |
-| SA-RETRY | contact sheet | error div has no retry CTA | clarify | P2 | todo | depends EX-EMPTY |
-| FO-ERR | focus | bespoke "Sample not found" instead of EmptyState | clarify+extract | P2 | todo | depends EX-EMPTY |
-| FO-DIM | focus | candidate-hover losing-peak dim instant; drag drop-edge hard hairline | animate | P2 | todo | |
-| LO-FOCUS | loupe | "Back to the sheet"/"Sample not found" rely on UA-default focus, not a spelled-out focus-visible ring | harden | P2 | todo | |
-| DI-FOCUSNOTE | focus | candidate rail hint is a dense 2-sentence indexing-theory run-on | distill | P3 | todo | domain-guard: don't dumb down |
-| DI-SCOPECOLD | scoping | cold-panel stacked explanatory prose competes for one eye position | distill | P3 | todo | |
-| DI-SAHEAD | contact sheet | head body is a long single tagging-philosophy paragraph | distill | P3 | todo | |
-| ON-EMPTY | contact sheet | empty corpus dead-ends ("No samples yet") with no add-data/learn path | onboard | P3 | todo | |
-| MO-DOC | cross-cut | motion vocabulary undocumented as a system | document+animate | P3 | **done** | `c525c93` Wave 0 Motion section |
+### Cross-cutting (the system / multiple surfaces)
+
+| id | opportunity | command | sev | status | notes |
+|---|---|---|---|---|---|
+| F-DOC | DESIGN.md/PRODUCT.md doc-debt | document+teach | P1 | **done** | `c525c93` Wave 0 |
+| MO-DOC | motion vocabulary undocumented as a system | document+animate | P3 | **done** | `c525c93` Wave 0 Motion section |
+| F-LIVE | **No `aria-live`/status-message on mutations & destructive keys** — Samples X-drop, Focus peak/phase/custom-index, Loupe X/R/flip, Builder confirm-progress. One polite+assertive live-region pattern fixes status feedback across 4 surfaces. | harden | P1 | todo | ✓W1 · WCAG 4.1.3 · highest cross-surface leverage |
+| F-ERRSILENT | **Failed mutations fail silently** — Focus (`queries.ts:888` error read by nobody), Loupe, Builder; legacy of the cancelled conflict-UI decision. Surface plain-language error + retry. | harden | P1 | todo | ✓W1 · pairs with F-LIVE |
+| F-CONTRAST | **`ink-faint` muted text fails AA (~3.16:1 on paper / 2.92 on paper-sunk)** — used for column headers, sample IDs, "Not indexed", kb legends across surfaces. Darken token to ≥L0.58 or restrict to large/decorative. | colorize | P1 | todo | ✓W1 (Samples) · **VERIFY measurement first** · app-wide one-token fix |
+| F-A11Y | a11y not operationalized: pin ink/accent/status contrast pairs as tests (like phase-on-plate); per-widget keyboard maps/aria | harden | P1 | todo | corroborated W1; see F-CONTRAST |
+| F-STATE | state taxonomy: doc-half done (`c525c93`); enforcement half (rest/hover/active/focus-visible/disabled/busy/selected/error/read-only consistently applied) | harden | P1 | todo | |
+| SC-HEAD | **Region labels are non-heading `div`s** (Kicker default) on Scoping (and Folio) — only h1 in the heading tree; pass `as="h2"/"h3"`. | harden | P1 | todo | ✓W1 · WCAG 1.3.1 · spans scoping+folio |
+| EX-EMPTY | unify bespoke error/not-found divs (Samples, Focus, Loupe) onto EmptyState + action/retry slot | extract | P2 | todo | |
+| EX-SPACING | spacing/density scale underspecified; promote shared-grid/alignment constants to tokens | extract | P2 | todo | |
+| AN-MOTION | app essentially static: selection bars snap, drag drop-edge hard hairline, candidate-dim instant, no toast/modal motion | animate | P2 | todo | reduced-motion preserved |
+| TY-DISPLAY | restore display-xl (31px) step (titles app-wide quieter than designed) | typeset | P3 | todo | reconcile w/ DESIGN.md display token |
+
+### SamplesPage (contact sheet)
+
+| id | opportunity | command | sev | status | notes |
+|---|---|---|---|---|---|
+| SA-SEM | **Non-semantic data table** — grid divs, no `role=table/row/columnheader/cell`, span headers, unlabeled thumbnail `<button>`s | harden | P1 | todo | ✓W1 · WCAG 1.3.1/4.1.2 |
+| SA-RESP | **Unbuilt responsive scroll** — row min-width ~1018–1054px overflows near 1024px; sticky-Sample `overflow-x` container the comments describe doesn't exist | adapt | P1 | todo | ✓W1 · WCAG 1.4.10 |
+| SA-KEYD | window keydown ("X" drops frames) guards only INPUT/TEXTAREA; no isContentEditable/open-modal check; no keyboard loupe-open (Enter) | harden | P1 | todo | ✓W1 · announce half → F-LIVE |
+| SA-RETRY | error div has no retry CTA | clarify | P2 | todo | → EX-EMPTY/F-ERRSILENT |
+| DI-SAHEAD | head body is a long single tagging-philosophy paragraph | distill | P3 | todo | |
+| ON-EMPTY | empty corpus dead-ends ("No samples yet") with no add-data/learn path | onboard | P3 | todo | |
+| LA-COLLIDE | CullBar/ComposeBar can collide with bottom InfrastructureBanner | layout+animate | P2 | todo | |
+
+### SeriesFolioPage
+
+| id | opportunity | command | sev | status | notes |
+|---|---|---|---|---|---|
+| FOL-KBD | **Series cards not keyboard-operable** — `onClick` on `<article>`, no role/tabIndex/onKeyDown; primary navigation mouse-only | harden | P1 | todo | ✓W1 · WCAG 2.1.1 |
+| FOL-SORT | visible "SORT" label missing left of segmented control (mockup series-folio.html:326) | typeset | P2 | todo | |
+| FOL-ERR | EmptyState used but no action passed on error | extract | P2 | todo | → EX-EMPTY |
+| FOL-MISC | search input unlabeled (P2, WCAG 3.3.2) + no on-page new-series CTA + indistinguishable empty drafts | harden+craft+clarify | P2 | todo | ✓W1 |
+
+### SeriesScopingPage
+
+| id | opportunity | command | sev | status | notes |
+|---|---|---|---|---|---|
+| SC-ORDER | **"Ordered by" renders as an editable input but is inert** (static Field, no options/onClick) — wire data-driven dropdown + custom + restore of-note copy | clarify | P1 | todo | ✓W1 · ordering_vars=data-driven+custom; verify manifest/adapter |
+| SC-KBD | **Drag-reorder has no keyboard alternative** (GripHandle aria-hidden; page never adds the path its primitive documents) | harden | P1 | todo | ✓W1 · WCAG 2.1.1 |
+| SC-FOLD | **Candidate "also found" list inverts the fold** over the 2-member series + build action | layout | P1 | todo | ✓W1 |
+| SC-MISC | candidate rows dead-end (no inline tag-add) + Discard no focus-visible ring + candidate sparkline aria-hidden phase | craft+harden | P2 | todo | ✓W1 |
+| DI-SCOPECOLD | cold-panel stacked explanatory prose competes for one eye position | distill | P3 | todo | |
+
+### SeriesBuilderPage
+
+| id | opportunity | command | sev | status | notes |
+|---|---|---|---|---|---|
+| BU-DEAD | **Two inert controls in COMPOSE rail** — outline "+ Add sample" Button + collapse "›" chevron render live but get no handler; controls-don't-lie violation; duplicates working native select | harden | P1 | todo | ✓W1 |
+| BU-RAIL | **Work·rail split gated at `xl:` (1280px)** drops rail below plate across 1024–1279 laptop band (Confirm/ordering/offset/export off-screen) | adapt | P1 | todo | ✓W1 · fix WITH FO-RAIL |
+| BU-EXPORT | surface Export-figure to topbar (mockup series-builder.html:378) — builder exposes only rail "Copy as PNG" | clarify+layout | P1 | todo | loop-config "Export now"; Duplicate DEFERRED |
+| BU-PROGRESS | confirm chain no visible progress + generic causeless error copy | clarify | P2 | todo | → F-LIVE/F-ERRSILENT |
+
+### FocusPage
+
+| id | opportunity | command | sev | status | notes |
+|---|---|---|---|---|---|
+| FO-COMB | **Comb/reflections panel `hidden lg:flex` drops at <1024px laptop band** (stack under detector, don't hide a primary analysis tool) | adapt | P1 | todo | ✓W1 · distinct from FO-RAIL |
+| FO-RAIL | work·rail split gated at `xl:` — confirm whether the assignment rail (not just comb) also drops; fix WITH BU-RAIL | adapt | P1 | todo | verify vs FO-COMB |
+| FO-EDIT | trace-edit model undiscoverable (arm "+Peak"/click=add/click-peak=remove/alt-click=exclude) + no keyboard accelerators / plot not keyboard-operable + generic detector canvas label | onboard+harden | P2 | todo | ✓W1 · WCAG 2.1.1/1.1.1 |
+| FO-ERR | bespoke "Sample not found" instead of EmptyState | clarify+extract | P2 | todo | → EX-EMPTY |
+| FO-DIM | candidate-hover losing-peak dim instant; drag drop-edge hard hairline | animate | P2 | todo | |
+| DI-FOCUSNOTE | candidate rail hint is a dense 2-sentence indexing-theory run-on | distill | P3 | todo | domain-guard: don't dumb down |
+
+### LoupePage
+
+| id | opportunity | command | sev | status | notes |
+|---|---|---|---|---|---|
+| LO-KEYD | **Window keydown (X/R/arrows/Esc) guard incomplete** (no isContentEditable/open-popover) + no aria-live announcement | harden | P1 | todo | ✓W1 · WCAG 2.1.1/4.1.3; announce → F-LIVE |
+| LO-FOCUS | "Back to the sheet" bare buttons rely on UA-default focus, not a focus-visible ring | harden | P2 | todo | ✓W1 · WCAG 2.4.7 (was P1; localized) |
+| LO-THUMB | filmstrip thumbnails have no accessible frame identity (every one reads "Detector image, button"); add aria-label + aria-current/pressed | harden | P2 | todo | ✓W1 · WCAG 4.1.2 |
+| LO-ERR | no failure feedback on drop/representative/tag mutations | harden | P2 | todo | ✓W1 · → F-ERRSILENT |
+| LO-GRID | grid `[minmax(0,1fr)_286px]` never stacks — **honest at 1024px+ (in scope), rigid below** | adapt | P2 | todo | ✓W1 DOWNGRADED from P1 (in-scope OK) |
 
 ## Iteration log
 
 - _2026-06-09 — loop designed, configured (4 decisions), tracker seeded (`docs` commit)._
-- _2026-06-09 — **Wave 0 done** (`c525c93`): foundation doc refresh (PRODUCT.md/DESIGN.md). Closed F-DOC, MO-DOC; F-STATE doc-half done. Fresh-implementer cadence + verify-by-diff. Next: Wave 1 scored baseline (6× audit + critique, seed SAXS ignore.md)._
+- _2026-06-09 — **Wave 0 done** (`c525c93`): foundation doc refresh (PRODUCT.md/DESIGN.md). Closed F-DOC, MO-DOC; F-STATE doc-half done._
+- _2026-06-09 — **Wave 1 done** (scored baseline): seeded SAXS `.impeccable/critique/ignore.md`; rendered all 6 surfaces (1440 + 1120 for rail/grid surfaces) via Playwright MCP against the dev-DB server (:5182, prod :8080 untouched); ran `impeccable detect` (all `[]`) + a per-surface critique/audit. Scores: Samples 31/15 · Folio 30/17 · Scoping 28/16 · Builder 27/16 · Focus 24/16 · Loupe 30/15. No P0s. Persisted 6 snapshots. Merged ~10 new P1s (F-LIVE, F-ERRSILENT, F-CONTRAST, SC-HEAD, SA-SEM, SA-RESP, FOL-KBD, SC-FOLD, BU-DEAD, FO-COMB) + confirmed SC-ORDER/SC-KBD/BU-RAIL/LO-KEYD/LO-FOCUS; downgraded LO-GRID→P2. **Next: Wave 2** — open with cross-cutting P1s (F-LIVE → F-ERRSILENT → rail adapt → F-CONTRAST → SC-HEAD)._
