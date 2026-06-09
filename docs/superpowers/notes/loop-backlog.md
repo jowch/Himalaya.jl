@@ -25,7 +25,7 @@ Durable state for the impeccable production-polish loop. Companion to [2026-06-0
 
 ## Wave status
 
-- [ ] **Wave 0 — Foundation refresh** (docs unblock everything). `document` (scan) re-roots DESIGN.md to `src/print/`, reconciles the stale two-theme AA promise + grain refs + Plate-Lift drift, adds State-Taxonomy / Spacing-Density / Motion / Copy sections; light `teach` refresh of PRODUCT.md (single light identity; SAXS-scientist persona). Re-run `load-context.mjs`.
+- [x] **Wave 0 — Foundation refresh** — DONE (`c525c93`). DESIGN.md re-rooted to `src/print/ui`, stale two-theme/grain promises killed, status note reframed as living spec, four new sections added (State taxonomy / Spacing & density / Motion / Copy & UX writing) grounded in scanned source; PRODUCT.md a11y de-dark-themed + reduced-motion reframed + named persona seeded. Display token left at 27px (31px = later render-verified task). Doc-only; gate unaffected.
 - [ ] **Wave 1 — Scored baseline** (read-only; seeds rows). Per surface: `audit` + `critique`, with `ignore.md` seeded for SAXS vocabulary + a SAXS persona. Record /40, /20, slug; merge P0/P1 findings below.
 - [ ] **Wave 2 — P1 fixes top-down**
 - [ ] **Wave 3 — P2/P3 enhancement**
@@ -37,8 +37,8 @@ Severity: P0 blocking · P1 major/any-WCAG-AA · P2 minor · P3 polish. Status: 
 
 | id | surface | opportunity | command | sev | status | notes |
 |---|---|---|---|---|---|---|
-| F-DOC | cross-cut | DESIGN.md/PRODUCT.md doc-debt: re-root to `src/print/`, kill stale two-theme/grain promises, add state-taxonomy/spacing/motion/copy | document+teach | P1 | todo | Wave 0 |
-| F-STATE | cross-cut | No documented state taxonomy (rest/hover/active/focus-visible/disabled/busy/selected/error/read-only; skeleton-vs-spinner-vs-empty-vs-inline-error) | document+harden | P1 | todo | Wave 0 doc + Wave 2 enforce |
+| F-DOC | cross-cut | DESIGN.md/PRODUCT.md doc-debt: re-root to `src/print/`, kill stale two-theme/grain promises, add state-taxonomy/spacing/motion/copy | document+teach | P1 | **done** | `c525c93` Wave 0 |
+| F-STATE | cross-cut | No documented state taxonomy (rest/hover/active/focus-visible/disabled/busy/selected/error/read-only; skeleton-vs-spinner-vs-empty-vs-inline-error) | document+harden | P1 | todo | doc-half DONE (`c525c93` State-taxonomy section); harden ENFORCEMENT half remains for Wave 2 |
 | F-A11Y | cross-cut | a11y not operationalized: only phase-on-plate contrast pinned; pin ink/accent/status pairs; per-widget keyboard maps/aria | harden | P1 | todo | |
 | SC-ORDER | scoping | "Ordered by" is immutable static text; wire data-driven dropdown + custom + restore of-note copy | clarify | P1 | todo | ordering_vars=data-driven+custom; verify manifest/adapter |
 | SC-KBD | scoping | drag-reorder has no keyboard alternative (builder has ▲/▼; scoping doesn't) | harden | P1 | todo | |
@@ -63,8 +63,9 @@ Severity: P0 blocking · P1 major/any-WCAG-AA · P2 minor · P3 polish. Status: 
 | DI-SCOPECOLD | scoping | cold-panel stacked explanatory prose competes for one eye position | distill | P3 | todo | |
 | DI-SAHEAD | contact sheet | head body is a long single tagging-philosophy paragraph | distill | P3 | todo | |
 | ON-EMPTY | contact sheet | empty corpus dead-ends ("No samples yet") with no add-data/learn path | onboard | P3 | todo | |
-| MO-DOC | cross-cut | motion vocabulary undocumented as a system | document+animate | P3 | todo | Wave 0 doc |
+| MO-DOC | cross-cut | motion vocabulary undocumented as a system | document+animate | P3 | **done** | `c525c93` Wave 0 Motion section |
 
 ## Iteration log
 
-- _2026-06-09 — loop designed, configured (4 decisions), tracker seeded. Wave 0 next._
+- _2026-06-09 — loop designed, configured (4 decisions), tracker seeded (`docs` commit)._
+- _2026-06-09 — **Wave 0 done** (`c525c93`): foundation doc refresh (PRODUCT.md/DESIGN.md). Closed F-DOC, MO-DOC; F-STATE doc-half done. Fresh-implementer cadence + verify-by-diff. Next: Wave 1 scored baseline (6× audit + critique, seed SAXS ignore.md)._
