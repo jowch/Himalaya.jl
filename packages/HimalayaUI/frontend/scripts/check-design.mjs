@@ -37,7 +37,8 @@ const SRC_DIR = join(HERE, "..", "src");
 const COLOR_AUTHORING_ALLOWLIST = new Set([
   "phases.ts",
   "lib/comparison/coloring.ts",
-  "components/MemberHeatmapLayer.tsx",
+  // MemberHeatmapLayer/CrossTraceTrackingLayer author phase color; they now live under
+  // src/print/export/ and are covered by that prefix's isExcluded() exemption — no entry needed.
   "main.tsx",
 ]);
 // figure-export/** is allowlisted by prefix (the whole export palette dir).
@@ -167,10 +168,12 @@ const IMPORT_SPEC_RE =
   /(?:import|export)\b[^'"]*?\bfrom\s*["']([^"']+)["']|import\s*\(\s*["']([^"']+)["']\s*\)/g;
 
 // Import-boundary guard: a file under src/print/** may not import (relatively) from the OLD
-// src/components/** or src/pages/**. We resolve each relative specifier against the importer's
-// dir (POSIX) and flag it if it lands under components/ or pages/. Print-internal imports
-// (./components, ./pages — i.e. src/print/components, src/print/pages) resolve under print/ and pass.
-// Exported pure for unit testing.
+// src/components/** or src/pages/**. As of the full migration both legacy dirs are GONE (the
+// whole frontend now lives under src/print/), so this is a REINTRODUCTION guardrail — it keeps
+// anyone from re-creating a top-level src/components/ or src/pages/ and importing across it. We
+// resolve each relative specifier against the importer's dir (POSIX) and flag it if it lands
+// under components/ or pages/. Print-internal imports (./components, ./pages — i.e.
+// src/print/components, src/print/pages) resolve under print/ and pass. Exported pure for unit testing.
 export function scanLegacyImports(relPath, content) {
   if (!relPath.startsWith("print/")) return [];
   const dir = posix.dirname(relPath);
@@ -209,7 +212,7 @@ function runCli() {
       process.stderr.write(`  ${v.rule}  src/${v.file}:${v.line}  ${JSON.stringify(v.text)}\n`);
     }
     process.stderr.write(
-      "Move the appearance utility into src/components/ui/** (or src/print/ui/**), or use a named " +
+      "Move the appearance utility into src/print/ui/**, or use a named " +
         "scale/role token. Raw color literals belong only in the color-authoring files. " +
         "src/print/** may not import from src/components/** or src/pages/** (no-legacy-import).\n",
     );

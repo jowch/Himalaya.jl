@@ -15,7 +15,7 @@ src/AGENTS.md                                        # core peak-finding/indexin
 packages/HimalayaUI/src/AGENTS.md                    # backend (SQLite, Oxygen, pipeline)
 packages/HimalayaUI/test/AGENTS.md                   # Julia test patterns
 packages/HimalayaUI/frontend/src/AGENTS.md           # frontend conventions
-packages/HimalayaUI/frontend/src/components/AGENTS.md  # UI component gotchas
+packages/HimalayaUI/frontend/src/print/shell/AGENTS.md  # app shell / routing / modal gotchas
 packages/HimalayaUI/frontend/src/lib/queue/AGENTS.md  # mutation queue internals
 packages/HimalayaUI/frontend/test/AGENTS.md          # Vitest/JSDOM patterns
 packages/HimalayaUI/frontend/e2e/AGENTS.md           # Playwright patterns
@@ -43,11 +43,11 @@ packages/HimalayaUI/
   configs/                          # built-in experiment.toml templates (simple.toml)
   frontend/
     src/                            # frontend — see frontend/src/AGENTS.md
-      components/                   # see components/AGENTS.md
+      print/                        # all presentation: shell/, ui/, components/, pages/, render layers
+        shell/                      # app shell, routing, modals — see print/shell/AGENTS.md
       hooks/                        # custom React hooks
       lib/                          # url, plot, comparison, figure-export helpers
         queue/                      # mutation queue — see lib/queue/AGENTS.md
-      pages/                        # ComparePage, ComparePageEdit
       bones/                        # committed *.bones.json skeleton captures
     test/                           # Vitest unit tests — see frontend/test/AGENTS.md
     e2e/                            # Playwright mocked — see e2e/AGENTS.md
@@ -130,7 +130,7 @@ Module-specific conventions and anti-patterns live in the AGENTS.md file nearest
 | Routes, SQLite, pipeline, events, image, idempotency | [packages/HimalayaUI/src/AGENTS.md](packages/HimalayaUI/src/AGENTS.md) |
 | Backend tests, in-process SSE, FK-heal fixtures | [packages/HimalayaUI/test/AGENTS.md](packages/HimalayaUI/test/AGENTS.md) |
 | Zustand, TanStack Query, SSE wiring, Tailwind, boneyard | [packages/HimalayaUI/frontend/src/AGENTS.md](packages/HimalayaUI/frontend/src/AGENTS.md) |
-| Component-specific quirks (Plot, DetectorImage, TraceViewer, StaleIndicesBanner) | [packages/HimalayaUI/frontend/src/components/AGENTS.md](packages/HimalayaUI/frontend/src/components/AGENTS.md) |
+| App shell / routing / modal gotchas (CorpusShell, CorpusTopbar, AppRoutes, NavModal, OnboardingFlow) | [packages/HimalayaUI/frontend/src/print/shell/AGENTS.md](packages/HimalayaUI/frontend/src/print/shell/AGENTS.md) |
 | Mutation queue internals | [packages/HimalayaUI/frontend/src/lib/queue/AGENTS.md](packages/HimalayaUI/frontend/src/lib/queue/AGENTS.md) |
 | Vitest / JSDOM / RTL patterns | [packages/HimalayaUI/frontend/test/AGENTS.md](packages/HimalayaUI/frontend/test/AGENTS.md) |
 | Playwright selectors, port binding, live-mode timing | [packages/HimalayaUI/frontend/e2e/AGENTS.md](packages/HimalayaUI/frontend/e2e/AGENTS.md) |

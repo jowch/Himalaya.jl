@@ -35,9 +35,9 @@ describe("check-design guard — ban rules (spec §4)", () => {
   it("passes a shadow-[…rgba…] Plate-Lift literal (rule #3 excludes shadow-)", () => {
     expect(rulesFor('<div className="shadow-[0_8px_26px_-10px_rgba(60,52,40,.34)]" />')).not.toContain("no-raw-color-utility");
   });
-  it("allowlists bg-[oklch] inside an allowlisted file (rule #3 only)", () => {
-    const v = scanContent("components/MemberHeatmapLayer.tsx", '<div className="bg-[oklch(0.15_0.01_55)]" />');
-    expect(v.map((x) => x.rule)).not.toContain("no-raw-color-utility");
+  it("excludes MemberHeatmapLayer (now under print/export/) entirely — color authored by prefix", () => {
+    const v = scanContent("print/export/MemberHeatmapLayer.tsx", '<div className="bg-[oklch(0.15_0.01_55)]" />');
+    expect(v).toHaveLength(0);
   });
 
   // Rule #5 — raw color literal anywhere; var(--color-*) stripped first
