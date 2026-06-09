@@ -65,6 +65,7 @@ export function Checkbox({
       }}
       className={cx(
         "inline-flex items-center justify-center flex-shrink-0 w-4 h-4 rounded border cursor-pointer select-none transition-colors",
+        "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
         disabled && "opacity-40 cursor-not-allowed",
         isChecked
           ? "bg-ink border-ink"
