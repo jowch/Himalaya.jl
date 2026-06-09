@@ -49,7 +49,8 @@
 
 ### M-F — Deferred polish ⬜
 - Boneyard skeleton captures for the greenfield pages (sanctioned capture recipe; `registry.ts` IS committable for this) + a per-page live visual-fidelity pass vs the mockups.
-- Decide with the user: enforce the e2e suite (the 4 pre-existing red smoke specs — assignment-model rot from #280) — fix-or-quarantine + CI-gate, or leave for post-merge.
+- Decide with the user: enforce the e2e suite. **Actual pre-existing red count (measured 2026-06-09 M-A run): 10 failing tests across 4 specs** — `permalinks` (1: legacy /index deep-link), `figure-export` (2: PNG/SVG download), `qlink` (3: ring↔row hover), `smoke` (4: new-user tutorial, curate, reanalyze ×2). Assignment-model + slug rot from #280; NOT M-A regressions (new-series-creation 4/4 green). Fix-or-quarantine + CI-gate, or leave for post-merge.
+- NOTE (2026-06-09): the 2 long-"known" `bonnet_lattice` Julia dev-link errors are GONE in this worktree once core is `Pkg.develop`-linked (done this session); the full HimalayaUI suite is fully green.
 
 ### FINAL — whole-branch review, then STOP ⬜
 - Run the full gate one last time (tsc · lint:design · full `npm test` · `npm run e2e` · `npm run build`) + a final `frontend-reviewer` over the whole branch + a live click-through of every page.
