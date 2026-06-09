@@ -66,3 +66,5 @@ export { Field } from "./Field";
 export type { FieldProps } from "./Field";
 export { Checkbox } from "./Checkbox";
 export type { CheckboxProps } from "./Checkbox";
+export { ComposeBar } from "./ComposeBar";
+export type { ComposeBarProps } from "./ComposeBar";
