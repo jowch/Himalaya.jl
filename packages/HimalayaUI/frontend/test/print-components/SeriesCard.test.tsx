@@ -50,6 +50,23 @@ describe("<SeriesCard> renders text content", () => {
     render(<SeriesCard {...BASE_PROPS} />);
     expect(screen.getByText(/LL37 : lipid ratio/)).toBeInTheDocument();
   });
+
+  it("renders '· by {variable}' when a variable is present", () => {
+    render(<SeriesCard {...BASE_PROPS} />);
+    expect(screen.getByText(/by LL37 : lipid ratio/)).toBeInTheDocument();
+  });
+
+  it("DROPS the dangling '· by' clause when variable is empty (item 5)", () => {
+    render(<SeriesCard {...BASE_PROPS} variable="" />);
+    // No dangling preposition: the meta line is just "{n} samples".
+    expect(screen.queryByText(/\bby\b/)).toBeNull();
+    expect(screen.getByText("3 samples")).toBeInTheDocument();
+  });
+
+  it("DROPS the clause for a whitespace-only variable", () => {
+    render(<SeriesCard {...BASE_PROPS} variable="   " />);
+    expect(screen.queryByText(/\bby\b/)).toBeNull();
+  });
 });
 
 describe("<SeriesCard> card-figure", () => {

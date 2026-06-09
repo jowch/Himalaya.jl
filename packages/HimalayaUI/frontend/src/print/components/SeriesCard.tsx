@@ -96,11 +96,17 @@ export function SeriesCard({
         {/* Title — Newsreader serif, 19px via text-headline */}
         <h3 className="text-headline">{title}</h3>
 
-        {/* Meta line */}
+        {/* Meta line — the "· by {variable}" ordering clause is dropped when the
+            series has no ordering variable (e.g. a form-factor series), so the
+            line never reads "… · by" with a dangling preposition. */}
         <div className="flex items-center gap-1.5 mt-1 text-caption">
           <b className="text-ink-soft font-semibold">{sampleCount} samples</b>
-          <span className="text-ink-faint" aria-hidden="true">·</span>
-          <span className="text-ink-faint">by {variable}</span>
+          {variable.trim() !== "" && (
+            <>
+              <span className="text-ink-faint" aria-hidden="true">·</span>
+              <span className="text-ink-faint">by {variable}</span>
+            </>
+          )}
         </div>
 
         {/* Phase strip */}
