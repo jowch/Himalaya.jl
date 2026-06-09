@@ -33,4 +33,12 @@ describe("<Dot> (print)", () => {
     const { container } = render(<Dot tone="accent" size="md" aria-hidden />);
     expect(container.querySelector("span")!).not.toHaveAttribute("data-bordered");
   });
+  it("passes through arbitrary props (data-testid, title)", () => {
+    const { container } = render(
+      <Dot tone="accent" size="md" aria-hidden data-testid="d" title="hover me" />,
+    );
+    const dot = container.querySelector("span")!;
+    expect(dot.getAttribute("data-testid")).toBe("d");
+    expect(dot.getAttribute("title")).toBe("hover me");
+  });
 });

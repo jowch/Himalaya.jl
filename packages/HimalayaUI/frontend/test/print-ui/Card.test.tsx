@@ -52,3 +52,18 @@ describe("<Card> selected", () => {
     expect(screen.getByTestId("c").getAttribute("data-selected")).toBe(null);
   });
 });
+
+describe("<Card> polymorphic `as`", () => {
+  it("renders a <div> by default", () => {
+    render(<Card data-testid="c">x</Card>);
+    expect(screen.getByTestId("c").tagName.toLowerCase()).toBe("div");
+  });
+  it("renders the given tag for as='li'", () => {
+    render(<Card as="li" data-testid="c">x</Card>);
+    expect(screen.getByTestId("c").tagName.toLowerCase()).toBe("li");
+  });
+  it("renders the given tag for as='section'", () => {
+    render(<Card as="section" data-testid="c">x</Card>);
+    expect(screen.getByTestId("c").tagName.toLowerCase()).toBe("section");
+  });
+});
