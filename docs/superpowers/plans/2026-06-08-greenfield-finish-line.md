@@ -74,6 +74,17 @@
 
 ---
 
+## POST-FINAL (user-requested 2026-06-09, after FINISH LINE)
+
+### Fidelity pass — screenshot vs mockup ✅
+Rendered each live page beside `docs/redesign-mockups/*.html`. **All 5 surfaces high-fidelity.** Differences sort into: data-state (dev DB largely unindexed → sparse gray previews vs mockups' indexed color), intentional redesign the mockups predate (assignment model, notes removed, Index retired, new-series-from-contact-sheet, controls-don't-lie omissions like scoping "+ Add to series" / focus notes), tracked-deferred features (detector q-rings, heatmap REPRESENTATION toggle, "Track reflections"), and minor cosmetics (folio "SORT" label, builder topbar Duplicate/Export actions, scoping variable-dropdown-vs-text). **No fidelity defects.**
+
+### Full frontend migration — `src/components/` eliminated ✅ → plan `docs/superpowers/plans/2026-06-09-frontend-full-migration.md`
+User chose full relocation: the ENTIRE frontend now lives under `src/print/`; `src/components/` is GONE. Stages A `6c8fc86` (ToastContainer/peakMark→print/ui) · B `9924d88` (NavModal/OnboardingFlow off old barrel) · C `e499719`+`b37c4e2` (delete old duplicate AssignmentCart/ThumbnailGallery/DetectorImage + vestigial RepresentationToggle) · D `ffb007f` (delete old 15-file `src/components/ui/` barrel; repoint+rewrite its tests — peakMark/peakGlyph `hot` assertions rewritten to the greenfield no-grow/`data-hot` contract; SegmentedControl/PhaseStrip/PhaseChip repointed to preserve comprehensive coverage) · E `46c85ce`+`ac76437` (`git mv` 9 shell files → `src/print/shell/` + 2 export utils → `src/print/export/`; new `src/print/shell/AGENTS.md`; CLAUDE.md + frontend AGENTS.md index pointers updated; `check-design.mjs` path-coupling fixed; import-boundary guard kept as a reintroduction guardrail).
+**Full gate GREEN post-migration:** tsc 0 · lint:design 0 · vitest **252 files / 2010 tests** · e2e **35/3/0** · build 0. **Live smoke:** /samples + /sample/1 render clean (0 console errors). Branch still **ready to merge, UNMERGED.**
+
+---
+
 ## Open decision — RESOLVED 2026-06-08
 **How is a new series born?** LOCKED: B-shaped with a corpus-page sample picker (a new left-most checkbox column at the sample grain) → "+ New series" carries the selection → scoping proposes-or-assigns the ordering variable → "Confirm & build" creates the series (`POST /api/series`) → builder. See M-A above. (Rationale: pure machine-proposal dead-ends on unstructured corpora; the sample-grain picker is the necessary feeder. Frame-level cull stays unchanged on the thumbnails.)
 
