@@ -50,6 +50,32 @@ export function buildScopePayload(rows: OrderingRow[]): { sampleId: number; valu
     .map((r) => ({ sampleId: r.sampleId, value: r.value }));
 }
 
+export interface ColdAssignRow {
+  sampleId: number;
+  sampleName: string;
+  value: string;
+}
+
+/** Seed the cold-assign worksheet from a list of (id, name) pairs.
+ *  All values start empty — the user fills them in. */
+export function buildColdAssignRows(
+  seed: ReadonlyArray<{ sampleId: number; sampleName: string }>,
+): ColdAssignRow[] {
+  return seed.map((s) => ({ sampleId: s.sampleId, sampleName: s.sampleName, value: "" }));
+}
+
+/** Cold-assign build gate: key must be non-empty and every sample must have a
+ *  non-empty value. Never blocks on a partial fill — controls-don't-lie. */
+export function canColdBuild(key: string, rows: ColdAssignRow[]): boolean {
+  if (key.trim() === "") return false;
+  return rows.every((r) => r.value.trim() !== "");
+}
+
+/** Cold-assign scope payload: all rows unconditionally (gate is upstream). */
+export function buildColdScopePayload(rows: ColdAssignRow[]): { sampleId: number; value: string }[] {
+  return rows.map((r) => ({ sampleId: r.sampleId, value: r.value }));
+}
+
 /** Map per-member phase reads (dominant + optional coexist partner) onto the
  *  PhaseStrip preview segments. A null dominant stays a null (unindexed) cell;
  *  a coexist partner becomes the single-element `coexistWith` array (the

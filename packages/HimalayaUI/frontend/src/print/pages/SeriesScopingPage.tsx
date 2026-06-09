@@ -6,7 +6,8 @@ import { ScopePlate } from "../components/ScopePlate";
 import { ScopeSampleRow } from "../components/ScopeSampleRow";
 import { useDragReorder, reorder } from "../components/useDragReorder";
 import { Sparkline } from "../plot/Sparkline";
-import { EmptyState, Button } from "../ui";
+import { EmptyState, Button, Card, Dot } from "../ui";
+import { ColdAssignPanel } from "../components/ColdAssignPanel";
 import type { Trace } from "../../api";
 import {
   useCorpusSampleTags,
@@ -25,6 +26,10 @@ import {
   buildScopePayload,
   toPreviewSegments,
   filterPickerBySeed,
+  buildColdAssignRows,
+  canColdBuild,
+  buildColdScopePayload,
+  type ColdAssignRow,
 } from "./scopingDerive";
 import { readNewSeriesSeed } from "../../lib/series/newSeriesNav";
 
@@ -116,6 +121,24 @@ export function SeriesScopingPage(): JSX.Element {
     setOrder(seededOrder);
     setHistory([]);
   }, [split.members, split.looseMatches, seededOrder]);
+
+  // ── Cold-corpus path (no proposable variable, user arrived with a seed) ──
+  const [coldKey, setColdKey] = useState("");
+  const [coldRows, setColdRows] = useState<ColdAssignRow[]>([]);
+  // Seed cold rows once when the page loads into the cold path.
+  useEffect(() => {
+    if (!isLoading && proposal.orderingKey === undefined && seed !== null && rows.length === 0) {
+      const names = new Map<number, string>();
+      for (const s of pickerQ.data ?? [])
+        names.set(s.sample.id, s.sample.display_name ?? s.sample.name ?? "");
+      setColdRows(
+        buildColdAssignRows(
+          (seed ?? []).map((id) => ({ sampleId: id, sampleName: names.get(id) ?? `smp_${id}` })),
+        ),
+      );
+      setColdKey("");
+    }
+  }, [isLoading, proposal.orderingKey, seed, rows.length, pickerQ.data]);
 
   // Display-only manual reorder (scope decision #5): rewrites `order` + the
   // preview; never touches the written (key,value) payload.
@@ -210,12 +233,23 @@ export function SeriesScopingPage(): JSX.Element {
   const canBuild = canScopeBuild(rows, proposal.orderingKey);
   const lastLabel = history.length ? history[history.length - 1]!.label : undefined;
 
+  // Cold-corpus build gate (controls-don't-lie: enabled only once the user has
+  // named the variable AND filled in every sample's value).
+  const canColdBuildNow = canColdBuild(coldKey, coldRows);
+  const isColdPath = proposal.orderingKey === undefined && seed !== null;
+
   // Defer navigation until the batch write actually succeeds (pending ref).
   const pendingBuildRef = useRef(false);
   const handleBuild = (): void => {
-    if (proposal.orderingKey === undefined) return;
-    pendingBuildRef.current = true;
-    scopeSeries.mutate({ key: proposal.orderingKey, tags: buildScopePayload(rows) });
+    if (isColdPath) {
+      if (!canColdBuildNow) return;
+      pendingBuildRef.current = true;
+      scopeSeries.mutate({ key: coldKey.trim(), tags: buildColdScopePayload(coldRows) });
+    } else {
+      if (proposal.orderingKey === undefined) return;
+      pendingBuildRef.current = true;
+      scopeSeries.mutate({ key: proposal.orderingKey, tags: buildScopePayload(rows) });
+    }
   };
   useEffect(() => {
     if (!scopeSeries.isSuccess || !pendingBuildRef.current) return;
@@ -274,22 +308,67 @@ export function SeriesScopingPage(): JSX.Element {
           fallback={<div className="p-8 text-meta text-ink-faint">Loading the worksheet…</div>}
         >
           {proposal.orderingKey === undefined ? (
-            /* State 3: nothing shares an ordering variable yet. */
-            <EmptyState
-              title={rows.length === 0 && loose.length === 0 ? "Nothing to scope yet" : "No shared ordering variable"}
-              body={
-                <div className="flex flex-col items-center gap-4">
-                  <span>
-                    {rows.length === 0 && loose.length === 0
-                      ? "No samples in the corpus to scope."
-                      : "These samples share no ordering variable yet. Tag them on the contact sheet to propose a series."}
-                  </span>
-                  <Button variant="outline" onClick={() => navigate("/samples")}>
-                    Open the contact sheet
+            seed !== null ? (
+              /* Cold path: the user arrived from the contact sheet with a
+                 deliberate selection, but no tag key can be proposed. Rather
+                 than dead-end, let them name the ordering variable and assign
+                 each sample's value — then commit through the SAME scopeSeries
+                 write path the warm path uses. */
+              <Card border="strong" padding="lg" data-testid="cold-scope-plate" className="w-full">
+                <ColdAssignPanel
+                  rows={coldRows}
+                  variableKey={coldKey}
+                  onKeyChange={setColdKey}
+                  onValueChange={(id, v) =>
+                    setColdRows((cur) =>
+                      cur.map((r) => (r.sampleId === id ? { ...r, value: v } : r)),
+                    )
+                  }
+                />
+                <div className="mt-6 pt-4 border-t border-hair flex items-center justify-between gap-5">
+                  <div className="flex flex-col gap-1">
+                    <div
+                      className={`flex items-center gap-2 text-meta font-semibold ${
+                        canColdBuildNow ? "text-ink" : "text-accent"
+                      }`}
+                    >
+                      <Dot tone={canColdBuildNow ? "success" : "accent"} aria-hidden />
+                      {canColdBuildNow
+                        ? `${coldRows.length} value${coldRows.length === 1 ? "" : "s"} ready to commit`
+                        : "Name the variable and assign every value to build"}
+                    </div>
+                    <div className="text-caption text-ink-faint max-w-[42ch]">
+                      Confirming records the variable on every sample — the next series that needs it
+                      already knows.
+                    </div>
+                  </div>
+                  <Button
+                    variant="solid"
+                    {...(!canColdBuildNow ? { disabled: true } : {})}
+                    onClick={handleBuild}
+                  >
+                    Confirm &amp; build →
                   </Button>
                 </div>
-              }
-            />
+              </Card>
+            ) : (
+              /* State 3: nothing shares an ordering variable yet (no seed). */
+              <EmptyState
+                title={rows.length === 0 && loose.length === 0 ? "Nothing to scope yet" : "No shared ordering variable"}
+                body={
+                  <div className="flex flex-col items-center gap-4">
+                    <span>
+                      {rows.length === 0 && loose.length === 0
+                        ? "No samples in the corpus to scope."
+                        : "These samples share no ordering variable yet. Tag them on the contact sheet to propose a series."}
+                    </span>
+                    <Button variant="outline" onClick={() => navigate("/samples")}>
+                      Open the contact sheet
+                    </Button>
+                  </div>
+                }
+              />
+            )
           ) : (
             <ScopePlate
               seriesName={`Series by ${keyLabel}`}
