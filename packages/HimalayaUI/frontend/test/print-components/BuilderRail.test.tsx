@@ -19,8 +19,23 @@ describe("<BuilderRail>", () => {
     expect(screen.getByTestId("field")).toHaveTextContent("LL37 : lipid ratio");
     expect(screen.getByTestId("slider")).toBeInTheDocument();
     expect(screen.getByTestId("traces-slot")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /add sample/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /copy as png/i })).toBeInTheDocument();
+  });
+  it("OMITS the collapse and add-sample controls when their handlers are withheld", () => {
+    // controls-don't-lie: the live page passes neither onCollapse (no collapse
+    // behavior exists) nor onAddSample (its add path is the traces-slot select),
+    // so neither control may render inert.
+    render(<BuilderRail {...base} />);
+    expect(screen.queryByRole("button", { name: /collapse rail/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /add sample/i })).toBeNull();
+  });
+  it("renders and fires the collapse and add-sample controls when wired", () => {
+    const onAddSample = vi.fn(), onCollapse = vi.fn();
+    render(<BuilderRail {...base} onAddSample={onAddSample} onCollapse={onCollapse} />);
+    fireEvent.click(screen.getByRole("button", { name: /add sample/i }));
+    expect(onAddSample).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name: /collapse rail/i }));
+    expect(onCollapse).toHaveBeenCalledOnce();
   });
   it("OMITS the heatmap representation toggle and the track-reflections switch", () => {
     render(<BuilderRail {...base} />);
@@ -70,15 +85,10 @@ describe("<BuilderRail>", () => {
     expect(screen.queryByRole("button", { name: /adjust/i })).toBeNull();
     expect(screen.getByRole("button", { name: /confirm series/i })).toBeInTheDocument();
   });
-  it("fires the display + foot + collapse handlers", () => {
-    const onOffsetChange = vi.fn(), onAddSample = vi.fn(), onCollapse = vi.fn();
-    render(<BuilderRail {...base} onOffsetChange={onOffsetChange}
-      onAddSample={onAddSample} onCollapse={onCollapse} />);
+  it("fires the offset-slider handler", () => {
+    const onOffsetChange = vi.fn();
+    render(<BuilderRail {...base} onOffsetChange={onOffsetChange} />);
     fireEvent.change(screen.getByTestId("slider"), { target: { value: "0.8" } });
     expect(onOffsetChange).toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: /add sample/i }));
-    expect(onAddSample).toHaveBeenCalledOnce();
-    fireEvent.click(screen.getByRole("button", { name: /collapse rail/i }));
-    expect(onCollapse).toHaveBeenCalledOnce();
   });
 });

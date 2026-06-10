@@ -45,6 +45,12 @@ export interface BuilderRailProps {
  * deferred — same call as Batch 9 SeriesPlate). Both are OMITTED; the Display
  * section keeps only the offset slider — the log/linear q-scale toggle lives on
  * the plate (a single contextual control, not a redundant rail+plate pair).
+ *
+ * CONDITIONAL AFFORDANCES (same pattern as onAdjust): the "Collapse rail"
+ * IconButton renders only when onCollapse is passed (the live builder page has
+ * no collapse behavior yet), and the "+ Add sample" Button renders only when
+ * onAddSample is passed (the page's real add path is the native select in the
+ * traces slot); when it is absent, "Copy as PNG" takes the full foot row.
  */
 export function BuilderRail({
   grouping,
@@ -73,9 +79,13 @@ export function BuilderRail({
     >
       <div className="flex items-center justify-between">
         <Kicker tone="faint">Compose</Kicker>
-        <IconButton label="Collapse rail" tone="ghost" onClick={onCollapse}>
-          &#8250;
-        </IconButton>
+        {/* controls-don't-lie: no onCollapse means no collapse behavior exists,
+            so the affordance is dropped; the Kicker sits flush-left on its own. */}
+        {onCollapse && (
+          <IconButton label="Collapse rail" tone="ghost" onClick={onCollapse}>
+            &#8250;
+          </IconButton>
+        )}
       </div>
 
       <AutoGroup
@@ -124,9 +134,14 @@ export function BuilderRail({
       </RailSection>
 
       <div className="flex gap-2">
-        <Button variant="outline" className="flex-1" {...(onAddSample ? { onClick: onAddSample } : {})}>
-          + Add sample
-        </Button>
+        {/* controls-don't-lie: the live page adds samples through the native
+            select in the traces slot, so this button only renders when a rail
+            add path (onAddSample) actually exists. */}
+        {onAddSample && (
+          <Button variant="outline" className="flex-1" onClick={onAddSample}>
+            + Add sample
+          </Button>
+        )}
         <Button variant="outline" className="flex-1" {...(onCopyPng ? { onClick: onCopyPng } : {})}>
           Copy as PNG
         </Button>
