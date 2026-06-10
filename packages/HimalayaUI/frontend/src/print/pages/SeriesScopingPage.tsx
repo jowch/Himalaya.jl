@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Skeleton } from "boneyard-js/react";
 import { PageFrame } from "../components/PageFrame";
@@ -6,7 +7,7 @@ import { ScopePlate } from "../components/ScopePlate";
 import { ScopeSampleRow } from "../components/ScopeSampleRow";
 import { useDragReorder, reorder } from "../components/useDragReorder";
 import { Sparkline } from "../plot/Sparkline";
-import { EmptyState, Button, Card, Dot } from "../ui";
+import { EmptyState, Button, Card, Dot, Field, Kicker } from "../ui";
 import { ColdAssignPanel } from "../components/ColdAssignPanel";
 import type { Trace } from "../../api";
 import {
@@ -36,6 +37,13 @@ import { readNewSeriesSeed } from "../../lib/series/newSeriesNav";
 
 const EMPTY_TRACE: Trace = { q: [], I: [], sigma: [] };
 
+// The sentinel "Define your own..." dropdown entry (locked decision A):
+// selecting it inline-converts the warm worksheet to the ColdAssignPanel flow,
+// seeded with the current members, committing through the SAME two-op
+// scope->create chain. value === label so Menu's strict activeValue equality
+// highlights it while custom mode is active.
+const DEFINE_YOUR_OWN = "Define your own…";
+
 // Token-only skeleton fixture (no inline appearance literals — design-guard clean).
 // No scoping.bones.json capture exists yet (deferred, needs the data volume).
 const SCOPING_FIXTURE = (
@@ -51,6 +59,71 @@ const SCOPING_FIXTURE = (
 );
 
 type HistoryEntry = { type: "flag"; id: number; prev: boolean; label: string };
+
+/**
+ * ColdAssignSection: the shared assign body (ColdAssignPanel + the gated
+ * confirm foot) used by BOTH the cold path (no proposable key + a seed) and
+ * the warm worksheet's "Define your own..." custom mode. Presentational; the
+ * page owns the state and the build chain (`onBuild` is handleBuild in both
+ * uses, so each commits through the same two-op scope->create chain).
+ */
+function ColdAssignSection({
+  rows,
+  variableKey,
+  onKeyChange,
+  onValueChange,
+  canBuildNow,
+  onBuild,
+  intro,
+}: {
+  rows: ColdAssignRow[];
+  variableKey: string;
+  onKeyChange: (key: string) => void;
+  onValueChange: (sampleId: number, value: string) => void;
+  canBuildNow: boolean;
+  onBuild: () => void;
+  /** Pass-through to ColdAssignPanel: undefined keeps the default cold-corpus
+   *  intro; an explicit null suppresses it (custom mode, where that copy
+   *  would be false). */
+  intro?: ReactNode;
+}): JSX.Element {
+  return (
+    <>
+      <ColdAssignPanel
+        rows={rows}
+        variableKey={variableKey}
+        onKeyChange={onKeyChange}
+        onValueChange={onValueChange}
+        {...(intro !== undefined ? { intro } : {})}
+      />
+      <div className="mt-6 pt-4 border-t border-hair flex items-center justify-between gap-5">
+        <div className="flex flex-col gap-1">
+          <div
+            className={`flex items-center gap-2 text-meta font-semibold ${
+              canBuildNow ? "text-ink" : "text-accent"
+            }`}
+          >
+            <Dot tone={canBuildNow ? "success" : "accent"} aria-hidden />
+            {canBuildNow
+              ? `${rows.length} value${rows.length === 1 ? "" : "s"} ready to commit`
+              : "Name the variable and assign every value to build"}
+          </div>
+          <div className="text-caption text-ink-soft max-w-[42ch]">
+            Confirming records the variable on every sample — the next series that needs it
+            already knows.
+          </div>
+        </div>
+        <Button
+          variant="solid"
+          {...(!canBuildNow ? { disabled: true } : {})}
+          onClick={onBuild}
+        >
+          Confirm &amp; build →
+        </Button>
+      </div>
+    </>
+  );
+}
 
 /**
  * SeriesScopingPage (greenfield) — the machine-proposes / human-confirms
@@ -121,19 +194,31 @@ export function SeriesScopingPage(): JSX.Element {
   // strict value-equality with the displayed value (`orderedBy` === keyLabel),
   // so each option's `value` IS its humanized label; map the selected label back
   // to the raw key for the override. Deduped by humanized label so two raw keys
-  // can't collide on one option (last raw key wins the label).
+  // can't collide on one option (last raw key wins the label). A real key whose
+  // humanized label collides with the sentinel is filtered out so it can never
+  // shadow the "Define your own..." routing.
   const labelToKey = useMemo(
-    () => new Map(orderKeys.map((k) => [humanizeKey(k), k])),
+    () =>
+      new Map(
+        orderKeys
+          .map((k) => [humanizeKey(k), k] as const)
+          .filter(([label]) => label !== DEFINE_YOUR_OWN),
+      ),
     [orderKeys],
   );
+  // The dropdown always renders (even with a single key): "Define your own..."
+  // is a real alternative on every corpus, listed last.
   const orderOptions = useMemo(
-    () => [...labelToKey.keys()].map((label) => ({ value: label, label })),
+    () => [
+      ...[...labelToKey.keys()].map((label) => ({ value: label, label })),
+      { value: DEFINE_YOUR_OWN, label: DEFINE_YOUR_OWN },
+    ],
     [labelToKey],
   );
-  const onOrderSelect = useCallback(
-    (label: string): void => setOverrideKey(labelToKey.get(label) ?? null),
-    [labelToKey],
-  );
+
+  // Custom ("define your own") mode is page state, not URL state. Only
+  // reachable from the warm worksheet; the cold path renders independently.
+  const [customMode, setCustomMode] = useState(false);
 
   // Default value-sorted member order (low → high; unparseable last, stable by id).
   const seededOrder = useMemo(
@@ -194,6 +279,34 @@ export function SeriesScopingPage(): JSX.Element {
   const sorted = useMemo(
     () => order.map((id) => byId.get(id)).filter((r): r is OrderingRow => r != null),
     [order, byId],
+  );
+
+  // Routing for the ordering dropdown. The sentinel enters custom mode, seeding
+  // the assign rows from the current members in their displayed order (re-entry
+  // deliberately re-seeds: previous custom edits are discarded). Any existing
+  // label exits custom mode and applies the override (existing behaviour).
+  const onOrderSelect = useCallback(
+    (label: string): void => {
+      if (label === DEFINE_YOUR_OWN) {
+        setColdRows(
+          buildColdAssignRows(
+            sorted.map((r) => ({ sampleId: r.sampleId, sampleName: r.sampleName })),
+          ),
+        );
+        setColdKey("");
+        setCustomMode(true);
+        return;
+      }
+      setCustomMode(false);
+      setOverrideKey(labelToKey.get(label) ?? null);
+    },
+    [labelToKey, sorted],
+  );
+
+  const onColdValueChange = useCallback(
+    (id: number, v: string): void =>
+      setColdRows((cur) => cur.map((r) => (r.sampleId === id ? { ...r, value: v } : r))),
+    [],
   );
 
   // Clicking a member's value toggles "skip this sample from the write" — the
@@ -311,10 +424,10 @@ export function SeriesScopingPage(): JSX.Element {
 
   const handleBuild = (): void => {
     if (stage.current !== "idle") return;
-    if (isColdPath) {
+    if (isColdPath || customMode) {
       if (!canColdBuildNow) return;
       const key = coldKey.trim();
-      // Cold members: every assigned sample, in the worksheet order.
+      // Cold/custom members: every assigned sample, in the worksheet order.
       createBodyRef.current = {
         title: `Series by ${key}`,
         samples: coldRows.map((r, i) => ({ sample_id: r.sampleId, position: i })),
@@ -428,41 +541,14 @@ export function SeriesScopingPage(): JSX.Element {
                  each sample's value — then commit through the SAME
                  scope→create chain the warm path uses. */
               <Card border="strong" padding="lg" data-testid="cold-scope-plate" className="w-full">
-                <ColdAssignPanel
+                <ColdAssignSection
                   rows={coldRows}
                   variableKey={coldKey}
                   onKeyChange={setColdKey}
-                  onValueChange={(id, v) =>
-                    setColdRows((cur) =>
-                      cur.map((r) => (r.sampleId === id ? { ...r, value: v } : r)),
-                    )
-                  }
+                  onValueChange={onColdValueChange}
+                  canBuildNow={canColdBuildNow}
+                  onBuild={handleBuild}
                 />
-                <div className="mt-6 pt-4 border-t border-hair flex items-center justify-between gap-5">
-                  <div className="flex flex-col gap-1">
-                    <div
-                      className={`flex items-center gap-2 text-meta font-semibold ${
-                        canColdBuildNow ? "text-ink" : "text-accent"
-                      }`}
-                    >
-                      <Dot tone={canColdBuildNow ? "success" : "accent"} aria-hidden />
-                      {canColdBuildNow
-                        ? `${coldRows.length} value${coldRows.length === 1 ? "" : "s"} ready to commit`
-                        : "Name the variable and assign every value to build"}
-                    </div>
-                    <div className="text-caption text-ink-soft max-w-[42ch]">
-                      Confirming records the variable on every sample — the next series that needs it
-                      already knows.
-                    </div>
-                  </div>
-                  <Button
-                    variant="solid"
-                    {...(!canColdBuildNow ? { disabled: true } : {})}
-                    onClick={handleBuild}
-                  >
-                    Confirm &amp; build →
-                  </Button>
-                </div>
               </Card>
             ) : (
               /* State 3: nothing shares an ordering variable yet (no seed). */
@@ -482,6 +568,48 @@ export function SeriesScopingPage(): JSX.Element {
                 }
               />
             )
+          ) : customMode ? (
+            /* Custom ("Define your own...") mode: the warm worksheet swaps for
+               the cold-assign flow, seeded with the current members; the same
+               order Field is the escape hatch back to a proposed key. Commits
+               run the SAME two-op scope->create chain via handleBuild. */
+            <Card
+              elevated
+              data-testid="custom-scope-plate"
+              className="w-full max-w-[760px] px-8 pt-7 pb-6"
+            >
+              <Kicker tone="accent">New series</Kicker>
+              <h1 className="text-display text-ink mt-1.5">
+                Series by {coldKey.trim() || "…"}
+              </h1>
+              <Kicker as="h2" tone="faint" className="mt-5 mb-2">
+                Ordered by
+              </Kicker>
+              <Field
+                testId="order-field"
+                srLabel="Ordered by"
+                value={DEFINE_YOUR_OWN}
+                options={orderOptions}
+                onSelect={onOrderSelect}
+              />
+              <div className="text-caption text-ink-soft mt-1.5">
+                Name the variable below and assign each sample's value.
+              </div>
+              <div className="mt-6">
+                {/* intro={null}: the default cold-corpus paragraph ("These
+                    samples share no tag key yet...") would be false here, and
+                    the caption above already instructs. */}
+                <ColdAssignSection
+                  rows={coldRows}
+                  variableKey={coldKey}
+                  onKeyChange={setColdKey}
+                  onValueChange={onColdValueChange}
+                  canBuildNow={canColdBuildNow}
+                  onBuild={handleBuild}
+                  intro={null}
+                />
+              </div>
+            </Card>
           ) : (
             <ScopePlate
               seriesName={`Series by ${keyLabel}`}
@@ -493,12 +621,9 @@ export function SeriesScopingPage(): JSX.Element {
                 </>
               }
               orderedBy={keyLabel}
-              {...(orderKeys.length > 1 ? { orderOptions, onOrderSelect } : {})}
-              orderNote={
-                orderKeys.length > 1
-                  ? "Read from the sample names. Switch the ordering variable above."
-                  : "Read from the sample names."
-              }
+              orderOptions={orderOptions}
+              onOrderSelect={onOrderSelect}
+              orderNote="Read from the sample names. Switch the ordering variable above, or define your own."
               count={`${rows.length} samples · low to high`}
               {...(history.length
                 ? { onUndo: undo, ...(lastLabel ? { undoLabel: `Step back: ${lastLabel}` } : {}) }

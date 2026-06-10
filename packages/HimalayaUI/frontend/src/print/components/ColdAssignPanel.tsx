@@ -1,4 +1,5 @@
 // src/print/components/ColdAssignPanel.tsx
+import type { ReactNode } from "react";
 import { Input, Kicker, HintText } from "../ui";
 import type { ColdAssignRow } from "../pages/scopingDerive";
 
@@ -12,6 +13,11 @@ export interface ColdAssignPanelProps {
   variableKey: string;
   onKeyChange: (key: string) => void;
   onValueChange: (sampleId: number, value: string) => void;
+  /** The intro paragraph under the kicker. Undefined renders the default
+   *  cold-corpus copy ("These samples share no tag key yet..."); an explicit
+   *  `null` suppresses the paragraph entirely (custom mode, where that copy
+   *  would be false); any other node renders in the same slot and typography. */
+  intro?: ReactNode;
   /** PLACEMENT-ONLY. */
   className?: string;
 }
@@ -33,18 +39,27 @@ export function ColdAssignPanel({
   variableKey,
   onKeyChange,
   onValueChange,
+  intro,
   className,
 }: ColdAssignPanelProps): JSX.Element {
+  // Undefined keeps the default cold-corpus paragraph (call sites unchanged);
+  // null is a deliberate suppression; any other node fills the same slot.
+  const introNode =
+    intro === undefined ? (
+      <>
+        These samples share no tag key yet. Name the variable (e.g. "lipid ratio") and assign each
+        sample's value — then Confirm &amp; build.
+      </>
+    ) : (
+      intro
+    );
   return (
     <div data-testid="cold-assign-panel" className={cx("space-y-4", className)}>
       <div>
         <Kicker tone="accent" className="mb-1">
           Name the ordering variable
         </Kicker>
-        <p className="text-body text-ink-soft mb-2">
-          These samples share no tag key yet. Name the variable (e.g. "lipid ratio") and assign each
-          sample's value — then Confirm &amp; build.
-        </p>
+        {introNode !== null ? <p className="text-body text-ink-soft mb-2">{introNode}</p> : null}
         <Input
           value={variableKey}
           onValueChange={onKeyChange}

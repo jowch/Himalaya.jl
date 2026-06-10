@@ -64,9 +64,12 @@ export function buildColdAssignRows(
   return seed.map((s) => ({ sampleId: s.sampleId, sampleName: s.sampleName, value: "" }));
 }
 
-/** Cold-assign build gate: key must be non-empty and every sample must have a
- *  non-empty value. Never blocks on a partial fill — controls-don't-lie. */
+/** Cold-assign build gate: at least one sample, key non-empty, every value
+ *  filled — an empty worksheet never builds (a vacuous `every` on zero rows
+ *  would otherwise let a key alone commit an empty series). Never blocks on a
+ *  partial fill beyond that — controls-don't-lie. */
 export function canColdBuild(key: string, rows: ColdAssignRow[]): boolean {
+  if (rows.length === 0) return false;
   if (key.trim() === "") return false;
   return rows.every((r) => r.value.trim() !== "");
 }

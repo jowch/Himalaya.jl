@@ -186,6 +186,45 @@ test.describe("series scoping — greenfield DOM", () => {
     await expect(page.getByRole("button", { name: /confirm & build/i })).toBeDisabled();
   });
 
+  test("Define your own… converts the worksheet to the custom assign flow and commits under the typed key", async ({ page }) => {
+    const captured = { body: null as unknown };
+    await mockScoping(page, captured);
+    await page.goto("/series/new");
+
+    await expect(page.getByTestId("scoping-page")).toBeVisible();
+
+    // Open the ordering dropdown and pick the sentinel last entry.
+    await page.getByTestId("order-field").click();
+    await page.getByRole("menuitem", { name: "Define your own…" }).click();
+
+    // The warm worksheet is replaced by the custom assign card, seeded with
+    // the two current members (values empty).
+    await expect(page.getByTestId("custom-scope-plate")).toBeVisible();
+    await expect(page.getByTestId("scope-sample-row")).toHaveCount(0);
+    await expect(page.getByTestId("cold-assign-row")).toHaveCount(2);
+
+    // Gate closed until the key and every value are filled.
+    const buildBtn = page.getByRole("button", { name: /confirm & build/i });
+    await expect(buildBtn).toBeDisabled();
+    await page.getByTestId("cold-key-input").fill("dose");
+    const rows = page.getByTestId("cold-assign-row");
+    await rows.nth(0).getByRole("textbox").fill("10");
+    await rows.nth(1).getByRole("textbox").fill("20");
+    await expect(buildBtn).toBeEnabled();
+
+    // Confirm — the SAME two-op chain: the batch write goes out under the
+    // typed key with both assigned values...
+    await buildBtn.click();
+    await expect.poll(() => (captured.body as Record<string, unknown> | null)?.["key"], { timeout: 3000 }).toBe("dose");
+    const tags = (captured.body as Record<string, unknown>)["tags"];
+    expect(Array.isArray(tags) ? (tags as unknown[]).length : null).toBe(2);
+
+    // ...then the create lands and the page navigates on to the folio (the
+    // mocked /api/series create returns no id, so the fallback is /series).
+    await expect(page).toHaveURL(/\/series$/);
+    await expect(page.getByTestId("folio-header")).toBeVisible();
+  });
+
   test("scoping-discard navigates to /series without writing", async ({ page }) => {
     const captured = { body: null as unknown };
     await mockScoping(page, captured);

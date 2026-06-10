@@ -23,6 +23,10 @@ describe("canColdBuild", () => {
     expect(canColdBuild("", [{ sampleId: 10, sampleName: "A", value: "1.0" }])).toBe(false);
   });
 
+  it("returns false on zero rows even with a key (an empty worksheet never builds)", () => {
+    expect(canColdBuild("dose", [])).toBe(false);
+  });
+
   it("returns false when any sample has an empty value", () => {
     const rows = [
       { sampleId: 10, sampleName: "A", value: "1.0" },

@@ -485,7 +485,16 @@ describe("SeriesScopingPage", () => {
     fireEvent.click(screen.getByTestId("order-field"));
     expect(screen.getByRole("menuitem", { name: "ratio" })).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: "temp" })).toBeInTheDocument();
-    expect(screen.getAllByRole("menuitem")).toHaveLength(2);
+    // Both corpus keys plus the always-present "Define your own…" sentinel.
+    expect(screen.getAllByRole("menuitem")).toHaveLength(3);
+  });
+
+  it("lists Define your own… as the last dropdown option", () => {
+    seedTwoKeys();
+    renderPage();
+    fireEvent.click(screen.getByTestId("order-field"));
+    const items = screen.getAllByRole("menuitem").map((m) => m.textContent);
+    expect(items[items.length - 1]).toBe("Define your own…");
   });
 
   it("selecting a non-active ordering variable re-groups the worksheet by its values", () => {
@@ -506,11 +515,152 @@ describe("SeriesScopingPage", () => {
     expect(values).not.toContain("1 : 0");
   });
 
-  it("keeps the ordered-by control static when only one ordering variable exists", () => {
-    // The default single-key `seed()` corpus → no real alternative to offer.
+  it("renders the dropdown even when only one ordering variable exists (Define your own… is always an alternative)", () => {
+    // Deliberately flipped from the commit-1 static-control behaviour: with the
+    // "Define your own…" sentinel there is ALWAYS a real alternative, so the
+    // single-key `seed()` corpus now gets the dropdown too.
     renderPage();
     const field = screen.getByTestId("order-field");
-    expect(field).not.toHaveAttribute("aria-haspopup");
-    expect(screen.queryByRole("menuitem")).toBeNull();
+    expect(field).toHaveAttribute("aria-haspopup", "menu");
+    fireEvent.click(field);
+    const items = screen.getAllByRole("menuitem").map((m) => m.textContent);
+    expect(items).toEqual(["ratio", "Define your own…"]);
+  });
+
+  it("selecting Define your own… swaps the worksheet for the custom assign card seeded with the members", () => {
+    seedTwoKeys();
+    renderPage();
+    fireEvent.click(screen.getByTestId("order-field"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Define your own…" }));
+
+    // The warm worksheet is replaced by the custom card in the same slot.
+    expect(screen.getByTestId("custom-scope-plate")).toBeInTheDocument();
+    expect(screen.queryByTestId("scope-sample-row")).toBeNull();
+    expect(screen.getByTestId("cold-assign-panel")).toBeInTheDocument();
+
+    // Headed, not headless: the h1 reads a placeholder until the key is named.
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Series by …");
+
+    // One assign row per current member, names carried over, values empty.
+    const rows = screen.getAllByTestId("cold-assign-row");
+    expect(rows).toHaveLength(2);
+    expect(rows[0]!.textContent).toContain("A");
+    expect(rows[1]!.textContent).toContain("B");
+    for (const row of rows) {
+      expect((row.querySelector("input") as HTMLInputElement).value).toBe("");
+    }
+  });
+
+  it("custom mode suppresses the cold-corpus intro copy (these samples DO share keys)", () => {
+    seedTwoKeys();
+    renderPage();
+    fireEvent.click(screen.getByTestId("order-field"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Define your own…" }));
+    expect(screen.getByTestId("custom-scope-plate")).toBeInTheDocument();
+    // The default cold-corpus paragraph would be false here and is redundant
+    // with the card's own caption, so it must not render.
+    expect(screen.queryByText(/these samples share no tag key yet/i)).toBeNull();
+    // The card's own instruction stands in for it.
+    expect(screen.getByText(/name the variable below and assign each sample's value/i)).toBeInTheDocument();
+  });
+
+  it("the cold path keeps the cold-corpus intro copy (it is true there)", () => {
+    // No proposable key + a deliberate seed → the cold path, where the samples
+    // genuinely share no tag key, so the default intro must still render.
+    tagsState = { data: [], isLoading: false, isError: false };
+    pickerState = {
+      data: [pickerRow(sample(1, "A", []), 37), pickerRow(sample(2, "B", []), 65)],
+      isLoading: false,
+      isError: false,
+    };
+    renderPage([1, 2]);
+    expect(screen.getByTestId("cold-scope-plate")).toBeInTheDocument();
+    expect(screen.getByText(/these samples share no tag key yet/i)).toBeInTheDocument();
+  });
+
+  it("custom mode with zero members keeps Confirm & build disabled even after typing a key", () => {
+    // A key IS proposed from the corpus-wide tag pairs, but no picker sample
+    // carries it → a warm worksheet with zero members (all loose candidates).
+    // Entering custom mode then seeds ZERO assign rows; a key alone must not
+    // open the gate (an empty worksheet never builds an empty series).
+    pickerState = {
+      data: [pickerRow(sample(1, "A", []), 37), pickerRow(sample(2, "B", []), 65)],
+      isLoading: false,
+      isError: false,
+    };
+    renderPage();
+    fireEvent.click(screen.getByTestId("order-field"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Define your own…" }));
+    expect(screen.getByTestId("custom-scope-plate")).toBeInTheDocument();
+    expect(screen.queryAllByTestId("cold-assign-row")).toHaveLength(0);
+    fireEvent.change(screen.getByTestId("cold-key-input"), { target: { value: "dose" } });
+    expect(screen.getByRole("button", { name: /confirm & build/i })).toBeDisabled();
+  });
+
+  it("custom mode: types a key, assigns values, runs the same scope-then-create chain, navigates to /series/:id", () => {
+    seedTwoKeys();
+    const { rerender } = renderPage();
+    fireEvent.click(screen.getByTestId("order-field"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Define your own…" }));
+
+    // Gate closed until the key and every value are filled.
+    expect(screen.getByRole("button", { name: /confirm & build/i })).toBeDisabled();
+    fireEvent.change(screen.getByTestId("cold-key-input"), { target: { value: "dose" } });
+    const rows = screen.getAllByTestId("cold-assign-row");
+    fireEvent.change(rows[0]!.querySelector("input")!, { target: { value: "10" } });
+    fireEvent.change(rows[1]!.querySelector("input")!, { target: { value: "20" } });
+    // The heading follows the typed key.
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Series by dose");
+    const build = screen.getByRole("button", { name: /confirm & build/i });
+    expect(build).not.toBeDisabled();
+    fireEvent.click(build);
+
+    // Op A — the tag batch write under the typed key, values in worksheet order.
+    expect(scopeMutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        key: "dose",
+        tags: [
+          { sampleId: 1, value: "10" },
+          { sampleId: 2, value: "20" },
+        ],
+      }),
+    );
+    expect(createMutate).not.toHaveBeenCalled();
+
+    // Op A lands → Op B fires with the create body built from the custom rows.
+    scopeState = { mutate: scopeMutate, isSuccess: true, error: null, data: undefined };
+    act(() => rerender());
+    expect(createMutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Series by dose",
+        ordering_variable: "dose",
+        samples: [
+          { sample_id: 1, position: 0 },
+          { sample_id: 2, position: 1 },
+        ],
+      }),
+    );
+
+    // Op B lands with the created Series → navigate to the new builder.
+    createState = { mutate: createMutate, isSuccess: true, error: null, data: fullSeries(11) };
+    act(() => rerender());
+    expect(navigateSpy).toHaveBeenCalledWith("/series/11");
+  });
+
+  it("selecting an existing key from custom mode returns to the warm worksheet re-grouped by it", () => {
+    seedTwoKeys();
+    renderPage();
+    fireEvent.click(screen.getByTestId("order-field"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Define your own…" }));
+    expect(screen.getByTestId("custom-scope-plate")).toBeInTheDocument();
+
+    // The custom card's order field is the escape hatch back to a proposed key.
+    fireEvent.click(screen.getByTestId("order-field"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "temp" }));
+
+    expect(screen.queryByTestId("custom-scope-plate")).toBeNull();
+    const values = screen.getAllByTestId("flag-button").map((b) => b.textContent);
+    expect(values).toEqual(expect.arrayContaining(["20C", "40C"]));
+    expect(values).not.toContain("1 : 0");
   });
 });
