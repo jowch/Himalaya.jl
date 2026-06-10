@@ -78,6 +78,12 @@ function ScopingView(): JSX.Element {
     setOrder((o) => reorder(o, from, to)),
   );
 
+  // Keyboard reorder (SC-KBD) converges on the same setOrder(reorder) path as
+  // drag; `reorder` no-ops on out-of-range boundaries. The real page also
+  // announces moves to an SR live region — invisible in Storybook, so the
+  // story wires the move only.
+  const moveRow = (i: number, delta: -1 | 1): void => setOrder((o) => reorder(o, i, i + delta));
+
   // The shown members follow the page-owned manual `order` against the lookup.
   const byId = new Map(series.map((s) => [s.id, s]));
   const sorted = order.map((id) => byId.get(id)).filter((s): s is Member => s != null);
@@ -187,6 +193,7 @@ function ScopingView(): JSX.Element {
                 value={s.value}
                 {...(s.flagged ? { flagged: true } : {})}
                 onToggleFlag={() => toggleFlag(s.id)}
+                onMoveBy={(delta) => moveRow(i, delta)}
               />
             </div>
           );

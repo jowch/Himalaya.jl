@@ -121,6 +121,28 @@ test.describe("series scoping — greenfield DOM", () => {
     ).toBeVisible();
   });
 
+  test("arrow keys on a grip button reorder the worksheet (SC-KBD)", async ({ page }) => {
+    const captured = { body: null as unknown };
+    await mockScoping(page, captured);
+    await page.goto("/series/new");
+
+    const rows = page.getByTestId("scope-sample-row");
+    await expect(rows.first()).toContainText("A_1to1");
+    await expect(rows.last()).toContainText("B_2to1");
+
+    const grip = page.getByRole("button", { name: /^reorder B_2to1$/i });
+    await grip.focus();
+    await page.keyboard.press("ArrowUp");
+
+    await expect(rows.first()).toContainText("B_2to1");
+    await expect(rows.last()).toContainText("A_1to1");
+    await expect(page.getByTestId("reorder-announcement")).toHaveText(
+      /Moved B_2to1 to position 1 of 2\./,
+    );
+    // Focus stays on the moved row's grip.
+    await expect(grip).toBeFocused();
+  });
+
   test("Confirm & build is enabled when members exist and navigates to /series on success", async ({ page }) => {
     const captured = { body: null as unknown };
     await mockScoping(page, captured);

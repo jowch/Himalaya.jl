@@ -47,8 +47,11 @@ export interface UseDragReorder {
 
 /** Native HTML5 drag-reorder wiring for a list whose order the caller owns.
  *  `onReorder(from, to)` is called on drop; the caller updates its order state
- *  (use the exported `reorder` helper). Pointer-only; keyboard reorder is a
- *  documented follow-up (the row grips are aria-hidden visual handles). */
+ *  (use the exported `reorder` helper). This hook is the POINTER path only:
+ *  the keyboard path is the row's `onMoveBy` contract (see ScopeSampleRow),
+ *  which the page must route into the SAME `onReorder` handler so both
+ *  converge on one order mutation (done on SeriesScopingPage; the builder's
+ *  adoption is tracked as BU-ORDERINERT). */
 export function useDragReorder(onReorder: (from: number, to: number) => void): UseDragReorder {
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
   const [overIndex, setOverIndex] = useState<number | null>(null);

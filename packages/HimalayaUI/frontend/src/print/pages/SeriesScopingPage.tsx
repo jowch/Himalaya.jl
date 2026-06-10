@@ -278,16 +278,50 @@ export function SeriesScopingPage(): JSX.Element {
   }, [isLoading, proposal.orderingKey, seed, rows.length, pickerQ.data]);
 
   // Display-only manual reorder (scope decision #5): rewrites `order` + the
-  // preview; never touches the written (key,value) payload.
-  const { dragItemProps, dropEdge } = useDragReorder((from, to) =>
-    setOrder((o) => reorder(o, from, to)),
+  // preview; never touches the written (key,value) payload. `applyReorder` is
+  // the SINGLE order mutation — the pointer (drag) and keyboard (grip-button
+  // arrows) paths both converge on it.
+  const applyReorder = useCallback(
+    (from: number, to: number): void => setOrder((o) => reorder(o, from, to)),
+    [],
   );
+  const { dragItemProps, dropEdge } = useDragReorder(applyReorder);
 
   const byId = useMemo(() => new Map(rows.map((r) => [r.sampleId, r])), [rows]);
   const sorted = useMemo(
     () => order.map((id) => byId.get(id)).filter((r): r is OrderingRow => r != null),
     [order, byId],
   );
+
+  // ── Keyboard reorder (SC-KBD, WCAG 2.1.1) ─────────────────────────────────
+  // Announcements land in a persistent polite live region (rendered
+  // unconditionally below, never mounted-on-demand, so SRs reliably pick up
+  // text changes). The toggled trailing space mirrors LiveRegion.tsx: two
+  // identical consecutive announcements (e.g. ArrowUp on the first row twice)
+  // must still mutate textContent or the SR silently skips the repeat.
+  const [reorderMsg, setReorderMsg] = useState("");
+  const reorderFlip = useRef(false);
+  const announceReorder = useCallback((msg: string): void => {
+    reorderFlip.current = !reorderFlip.current;
+    setReorderMsg(reorderFlip.current ? msg : `${msg} `);
+  }, []);
+
+  // Arrow-key move from row i's grip button. A boundary press is an order
+  // no-op but still announces — a silent keypress is dead air for an SR user.
+  const moveRow = (i: number, delta: -1 | 1): void => {
+    const r = sorted[i];
+    if (!r) return;
+    if (i === 0 && delta === -1) {
+      announceReorder(`${r.sampleName} is already first.`);
+      return;
+    }
+    if (i === sorted.length - 1 && delta === 1) {
+      announceReorder(`${r.sampleName} is already last.`);
+      return;
+    }
+    applyReorder(i, i + delta);
+    announceReorder(`Moved ${r.sampleName} to position ${i + delta + 1} of ${sorted.length}.`);
+  };
 
   // Routing for the ordering dropdown. The sentinel enters custom mode, seeding
   // the assign rows from the current members in their displayed order (re-entry
@@ -546,6 +580,19 @@ export function SeriesScopingPage(): JSX.Element {
           </button>
         </div>
 
+        {/* SC-KBD: keyboard-reorder live region. Persistent (never conditional)
+            so screen readers track its text mutations; sr-only is the project's
+            visually-hidden mechanism (see ui/LiveRegion.tsx). */}
+        <div
+          data-testid="reorder-announcement"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+          className="sr-only"
+        >
+          {reorderMsg}
+        </div>
+
         {/* State 4: a chain op failed. Two modes (see chainErrorCopy): an Op-A
             (tag write) failure means no series and no tags from this attempt; an
             Op-B (create) failure means the tags ARE committed — the copy admits
@@ -687,6 +734,7 @@ export function SeriesScopingPage(): JSX.Element {
                       value={r.value}
                       {...(r.flagged ? { flagged: true } : {})}
                       onToggleFlag={() => toggleFlag(r.sampleId)}
+                      onMoveBy={(delta) => moveRow(i, delta)}
                     />
                   </div>
                 );

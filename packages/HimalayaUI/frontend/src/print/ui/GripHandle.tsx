@@ -19,9 +19,12 @@ interface GripHandleProps {
 // hair-strong→ink-faint, not chromatic, so no second-channel concern; C/D — the
 // interactive drag/reorder lives in the consumer, N/A at the primitive level.)
 //
-// PHASE-2 CONSUMER RESPONSIBILITY: because this grip is aria-hidden, the consumer
-// row MUST provide a keyboard reorder path (e.g. move-up/down buttons or
-// aria-grabbed semantics) so reordering is not pointer-only.
+// CONSUMER RESPONSIBILITY: because this grip is aria-hidden, the consumer row
+// MUST provide a keyboard reorder path so reordering is not pointer-only.
+// ScopeSampleRow's `onMoveBy` contract is the canonical discharge: when given,
+// the row wraps this glyph in a real "Reorder {name}" button handling
+// ArrowUp/ArrowDown (SC-KBD). Other reorderable consumers (e.g. the builder's
+// MemberRow, tracked as BU-ORDERINERT) should adopt the same contract.
 export function GripHandle({ className }: GripHandleProps): JSX.Element {
   return (
     <span

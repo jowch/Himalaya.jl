@@ -808,4 +808,88 @@ describe("SeriesScopingPage", () => {
     );
     expect(values.some((v) => v.includes("1 : 0"))).toBe(false);
   });
+
+  describe("keyboard reorder (SC-KBD)", () => {
+    /** Member names (A/B/C) in rendered worksheet order. */
+    function renderedNames(): string[] {
+      return screen
+        .getAllByTestId("scope-sample-row")
+        .map((r) => within(r).getByText(/^(A|B|C)$/).textContent ?? "");
+    }
+
+    it("ArrowUp on a middle row's grip button moves it up in the rendered order", () => {
+      seed3();
+      renderPage();
+      expect(renderedNames()).toEqual(["A", "B", "C"]);
+      fireEvent.keyDown(screen.getByRole("button", { name: /^reorder B$/i }), { key: "ArrowUp" });
+      expect(renderedNames()).toEqual(["B", "A", "C"]);
+    });
+
+    it("announces a successful move with the computed position and count", () => {
+      seed3();
+      renderPage();
+      fireEvent.keyDown(screen.getByRole("button", { name: /^reorder B$/i }), { key: "ArrowUp" });
+      expect(screen.getByTestId("reorder-announcement")).toHaveTextContent(
+        "Moved B to position 1 of 3.",
+      );
+    });
+
+    it("ArrowUp on the first row is an order no-op but still announces 'already first'", () => {
+      seed3();
+      renderPage();
+      fireEvent.keyDown(screen.getByRole("button", { name: /^reorder A$/i }), { key: "ArrowUp" });
+      expect(renderedNames()).toEqual(["A", "B", "C"]);
+      expect(screen.getByTestId("reorder-announcement")).toHaveTextContent("A is already first.");
+    });
+
+    it("ArrowDown on the last row is an order no-op but still announces 'already last'", () => {
+      seed3();
+      renderPage();
+      fireEvent.keyDown(screen.getByRole("button", { name: /^reorder C$/i }), { key: "ArrowDown" });
+      expect(renderedNames()).toEqual(["A", "B", "C"]);
+      expect(screen.getByTestId("reorder-announcement")).toHaveTextContent("C is already last.");
+    });
+
+    it("keeps focus on the moved row's grip button after the move", () => {
+      seed3();
+      renderPage();
+      const grip = screen.getByRole("button", { name: /^reorder B$/i });
+      grip.focus();
+      fireEvent.keyDown(grip, { key: "ArrowDown" });
+      expect(renderedNames()).toEqual(["A", "C", "B"]);
+      expect(document.activeElement).toBe(grip);
+      // The focused node must still BE row B's grip (catches index-keyed rows,
+      // where focus would silently land on a different sample's button).
+      expect(screen.getByRole("button", { name: /^reorder B$/i })).toBe(document.activeElement);
+      // A second computed announcement (resists a hardcoded string).
+      expect(screen.getByTestId("reorder-announcement")).toHaveTextContent(
+        "Moved B to position 3 of 3.",
+      );
+    });
+
+    it("renders the polite live region persistently, before any move", () => {
+      seed3();
+      renderPage();
+      const region = screen.getByTestId("reorder-announcement");
+      expect(region).toHaveAttribute("aria-live", "polite");
+      expect(region).toHaveTextContent("");
+    });
+
+    it("two identical consecutive announcements still mutate textContent (flip)", () => {
+      // SRs skip a live-region update whose text is byte-identical to the last;
+      // the toggled trailing space (LiveRegion.tsx pattern) must survive. Raw
+      // textContent comparison on purpose: toHaveTextContent normalizes
+      // whitespace and cannot see the flip.
+      seed3();
+      renderPage();
+      const grip = screen.getByRole("button", { name: /^reorder A$/i });
+      fireEvent.keyDown(grip, { key: "ArrowUp" });
+      const first = screen.getByTestId("reorder-announcement").textContent;
+      fireEvent.keyDown(grip, { key: "ArrowUp" });
+      const second = screen.getByTestId("reorder-announcement").textContent;
+      expect(first).toMatch(/A is already first\./);
+      expect(second).toMatch(/A is already first\./);
+      expect(second).not.toBe(first);
+    });
+  });
 });

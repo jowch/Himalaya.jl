@@ -18,6 +18,15 @@ export interface ScopeSampleRowProps {
   flagged?: boolean;
   /** Forwarded to FlagButton onClick. */
   onToggleFlag?: () => void;
+  /**
+   * Keyboard-reorder contract (SC-KBD, WCAG 2.1.1). When provided, the grip
+   * renders as a real button named "Reorder {name}" that handles ArrowUp
+   * (`onMoveBy(-1)`) and ArrowDown (`onMoveBy(1)`), preventing default so the
+   * page does not scroll. When absent, the grip stays the aria-hidden visual
+   * affordance — no dead control. The page owns boundary handling and
+   * announcements (it sees the row's position; this row does not).
+   */
+  onMoveBy?: (delta: -1 | 1) => void;
   /** PLACEMENT-ONLY. */
   className?: string;
 }
@@ -29,8 +38,10 @@ export interface ScopeSampleRowProps {
  * When `flagged` (the user skipped this read from the batch write), the whole
  * row takes a faint accent wash and the value control marks the exclusion. The row
  * carries `group` so the grip brightens on row hover; it also draws its own
- * bottom hairline (the parent strips the last). Drag-reorder is page-deferred —
- * the grip here is the visual affordance only.
+ * bottom hairline (the parent strips the last). Pointer drag-reorder is
+ * page-deferred (the page wraps rows in `useDragReorder` props); the keyboard
+ * reorder path lives HERE via `onMoveBy` — provide it wherever rows are
+ * reorderable so the grip is not pointer-only.
  */
 export function ScopeSampleRow({
   name,
@@ -40,6 +51,7 @@ export function ScopeSampleRow({
   value,
   flagged,
   onToggleFlag,
+  onMoveBy,
   className,
 }: ScopeSampleRowProps): JSX.Element {
   return (
@@ -52,7 +64,34 @@ export function ScopeSampleRow({
         className,
       )}
     >
-      <GripHandle />
+      {onMoveBy ? (
+        /* Real, focusable grip: the keyboard path the aria-hidden glyph cannot
+           be (FOL-KBD precedent: native button, focus-visible token outline,
+           never a dead control). The glyph look is unchanged — the button is a
+           transparent wrapper. */
+        <button
+          type="button"
+          aria-keyshortcuts="ArrowUp ArrowDown"
+          onKeyDown={(e) => {
+            // Modified arrows stay native (Cmd+ArrowDown = macOS scroll-to-end,
+            // Alt+Arrow = word-nav): hijacking those would be its own trap.
+            if (e.metaKey || e.ctrlKey || e.altKey) return;
+            if (e.key === "ArrowUp") {
+              e.preventDefault();
+              onMoveBy(-1);
+            } else if (e.key === "ArrowDown") {
+              e.preventDefault();
+              onMoveBy(1);
+            }
+          }}
+          className="flex-shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+        >
+          <span className="sr-only">Reorder {name}</span>
+          <GripHandle />
+        </button>
+      ) : (
+        <GripHandle />
+      )}
       <Sparkline trace={trace} {...(phase != null ? { phase } : {})} />
       <div className="flex-1 min-w-0">
         <div className="text-body font-semibold text-ink">{name}</div>

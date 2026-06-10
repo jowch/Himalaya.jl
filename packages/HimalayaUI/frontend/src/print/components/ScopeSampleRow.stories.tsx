@@ -46,6 +46,10 @@ export const Coexistence: Story = {
   },
 };
 
+/** A reorderable list context: each row carries the keyboard-reorder contract
+ *  (SC-KBD), so the grip is a real "Reorder {name}" button — Tab to it, then
+ *  ArrowUp/ArrowDown. The page (see ScopingAssembly) routes onMoveBy into the
+ *  same order state the pointer drag mutates. */
 export const List: Story = {
   render: () => (
     <div className="max-w-[420px]">
@@ -56,6 +60,7 @@ export const List: Story = {
         phase="Pn3m"
         value="1 : 0"
         onToggleFlag={noop}
+        onMoveBy={noop}
       />
       <ScopeSampleRow
         name="Lipid 1-2 + LL37 1:0.25"
@@ -65,6 +70,7 @@ export const List: Story = {
         value="1 : 0.25"
         flagged
         onToggleFlag={noop}
+        onMoveBy={noop}
       />
       <ScopeSampleRow
         name="Lipid 1-2 + LL37 1:0.5"
@@ -73,6 +79,7 @@ export const List: Story = {
         phase="Im3m"
         value="1 : 0.5"
         onToggleFlag={noop}
+        onMoveBy={noop}
       />
       <ScopeSampleRow
         name="Lipid 1-2 + LL37 1:1"
@@ -81,6 +88,7 @@ export const List: Story = {
         phase={null}
         value="1 : 1"
         onToggleFlag={noop}
+        onMoveBy={noop}
       />
     </div>
   ),

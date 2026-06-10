@@ -25,4 +25,73 @@ describe("<ScopeSampleRow>", () => {
     fireEvent.click(screen.getByTestId("flag-button"));
     expect(onToggleFlag).toHaveBeenCalledOnce();
   });
+
+  describe("keyboard reorder contract (SC-KBD)", () => {
+    it("with onMoveBy: the grip is a real button named 'Reorder {name}' (anchored)", () => {
+      render(
+        <ScopeSampleRow name="Lipid A" sampleId="smp_01" trace={TRACE} value="1 : 0" onMoveBy={() => {}} />,
+      );
+      expect(screen.getByRole("button", { name: /^reorder Lipid A$/i })).toBeInTheDocument();
+      // The glyph itself is unchanged (still the aria-hidden visual handle).
+      expect(screen.getByTestId("grip-handle")).toBeInTheDocument();
+    });
+
+    it("ArrowUp calls onMoveBy(-1) and prevents default", () => {
+      const onMoveBy = vi.fn();
+      render(
+        <ScopeSampleRow name="Lipid A" sampleId="smp_01" trace={TRACE} value="1 : 0" onMoveBy={onMoveBy} />,
+      );
+      const btn = screen.getByRole("button", { name: /^reorder Lipid A$/i });
+      // fireEvent returns false when a handler called preventDefault on a
+      // cancelable event — the page must not scroll on a handled arrow key.
+      const notPrevented = fireEvent.keyDown(btn, { key: "ArrowUp" });
+      expect(onMoveBy).toHaveBeenCalledTimes(1);
+      expect(onMoveBy).toHaveBeenCalledWith(-1);
+      expect(notPrevented).toBe(false);
+    });
+
+    it("ArrowDown calls onMoveBy(1) and prevents default", () => {
+      const onMoveBy = vi.fn();
+      render(
+        <ScopeSampleRow name="Lipid A" sampleId="smp_01" trace={TRACE} value="1 : 0" onMoveBy={onMoveBy} />,
+      );
+      const btn = screen.getByRole("button", { name: /^reorder Lipid A$/i });
+      const notPrevented = fireEvent.keyDown(btn, { key: "ArrowDown" });
+      expect(onMoveBy).toHaveBeenCalledTimes(1);
+      expect(onMoveBy).toHaveBeenCalledWith(1);
+      expect(notPrevented).toBe(false);
+    });
+
+    it("modified arrows stay native (no move, no preventDefault)", () => {
+      // Cmd+ArrowDown is macOS scroll-to-end; Alt/Ctrl arrows are nav chords.
+      // Hijacking them from a focused control would be its own keyboard trap.
+      const onMoveBy = vi.fn();
+      render(
+        <ScopeSampleRow name="Lipid A" sampleId="smp_01" trace={TRACE} value="1 : 0" onMoveBy={onMoveBy} />,
+      );
+      const btn = screen.getByRole("button", { name: /^reorder Lipid A$/i });
+      for (const mod of [{ metaKey: true }, { ctrlKey: true }, { altKey: true }]) {
+        const notPrevented = fireEvent.keyDown(btn, { key: "ArrowDown", ...mod });
+        expect(notPrevented).toBe(true);
+      }
+      expect(onMoveBy).not.toHaveBeenCalled();
+    });
+
+    it("other keys neither call onMoveBy nor prevent default", () => {
+      const onMoveBy = vi.fn();
+      render(
+        <ScopeSampleRow name="Lipid A" sampleId="smp_01" trace={TRACE} value="1 : 0" onMoveBy={onMoveBy} />,
+      );
+      const btn = screen.getByRole("button", { name: /^reorder Lipid A$/i });
+      const notPrevented = fireEvent.keyDown(btn, { key: "ArrowLeft" });
+      expect(onMoveBy).not.toHaveBeenCalled();
+      expect(notPrevented).toBe(true);
+    });
+
+    it("without onMoveBy: no reorder button renders, the visual grip remains", () => {
+      render(<ScopeSampleRow name="Lipid A" sampleId="smp_01" trace={TRACE} value="1 : 0" />);
+      expect(screen.queryByRole("button", { name: /reorder/i })).toBeNull();
+      expect(screen.getByTestId("grip-handle")).toBeInTheDocument();
+    });
+  });
 });
