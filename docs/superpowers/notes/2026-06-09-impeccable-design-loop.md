@@ -2,7 +2,7 @@
 
 _Written 2026-06-09. Branch: `worktree-greenfield-ui-rebuild` (STAYS UNMERGED). Scope: drive a multi-iteration production-polish pass over the six greenfield "Print" surfaces (and backend where it affects UX) using the impeccable skillset, held to a tracked, scored bar._
 
-This is a planning/orientation doc. **Harness note (2026-06-10):** the pass now runs as a native `/goal` (continuous evaluator-checked turns, one iteration per turn, no ScheduleWakeup self-pacing) — §7 records the original `/loop` prompt verbatim as the substance contract; only its self-pacing/wake mechanics are superseded. The filename keeps `-loop` for stable references.
+This is a planning/orientation doc. **Harness note (2026-06-10, pacing debugged with Jonathan later the same day):** the pass now runs as a native `/goal`. Iterations chain **back-to-back within a single turn** — never stop after an item completes; commit it, mark the tracker, and immediately start the next highest-severity item. The turn ends only on a genuine AskUserQuestion product decision, a hard blocker, or the GOLD finish table being surfaced. The original `/loop`'s pacing mechanics ("one iteration per wake", ScheduleWakeup, "End the turn" — §7 algorithm step 9, and any "one iteration per turn" restatement) are **fully superseded**; §7 records the original prompt verbatim as the substance contract only. The filename keeps `-loop` for stable references.
 
 ---
 
@@ -242,7 +242,7 @@ Net: keep Playwright MCP as the goal's primary verification; treat `live` as an 
 
 ## 7. The harness prompt (historical `/loop` version — substance still binding)
 
-Seeded from this doc's §4 backlog + the Wave-1 scored baseline, it drives one opportunity per iteration through the subagent cadence, verifies by rendering, keeps the gate green, commits per the hard constraints — stopping for genuine product decisions and at the §3 finish line. **Since 2026-06-10 the harness is a native `/goal`:** the wake/ScheduleWakeup mechanics below are superseded (the goal's evaluator auto-continues turns; one iteration per turn), the finish line additionally requires surfacing the per-surface re-score table in-conversation, and `loop-backlog.md` is the same tracker. Everything else (constraints, setup, algorithm steps 2–8, re-score cadence, guarded verbs) is the binding substance. Kept verbatim as the record:
+Seeded from this doc's §4 backlog + the Wave-1 scored baseline, it drives one opportunity per iteration through the subagent cadence, verifies by rendering, keeps the gate green, commits per the hard constraints — stopping for genuine product decisions and at the §3 finish line. **Since 2026-06-10 the harness is a native `/goal`:** the wake/ScheduleWakeup mechanics below are superseded — iterations chain continuously within the turn; step 9 (SELF-PACE / "End the turn") is a no-op and must NOT be obeyed — never end the turn just because an item finished. The finish line additionally requires surfacing the per-surface re-score table in-conversation, and `loop-backlog.md` is the same tracker. Everything else (constraints, setup, algorithm steps 2–8, re-score cadence, guarded verbs) is the binding substance. Kept verbatim as the record:
 
 ```
 PRODUCTION-POLISH LOOP — "The Print" greenfield UI (branch worktree-greenfield-ui-rebuild). Run one iteration per wake. Read docs/superpowers/notes/2026-06-09-impeccable-design-loop.md (the synthesis doc) before acting — it is your command catalog, law checklist, severity machinery, and per-surface backlog.

@@ -1,6 +1,6 @@
 # Production-polish goal — backlog & tracker
 
-Durable state for the impeccable production-polish **goal** (native `/goal` harness since 2026-06-10; originally a `/loop` — filename kept for stable references). Companion to [2026-06-09-impeccable-design-loop.md](2026-06-09-impeccable-design-loop.md) (the command catalog, law checklist, severity machinery, per-surface map). Each turn re-reads both. One iteration per turn; the goal's evaluator auto-continues turns until the GOLD finish condition is met and surfaced in-conversation.
+Durable state for the impeccable production-polish **goal** (native `/goal` harness since 2026-06-10; originally a `/loop` — filename kept for stable references). Companion to [2026-06-09-impeccable-design-loop.md](2026-06-09-impeccable-design-loop.md) (the command catalog, law checklist, severity machinery, per-surface map). Re-read both at the start of a session, then run iterations **BACK-TO-BACK within the turn**: after an item is committed and tracker-marked, immediately pick the next highest-severity open item and continue — do **NOT** end the turn between iterations. End the turn only to AskUserQuestion on a genuine product/scope decision, when hard-blocked, or when the GOLD finish table has been surfaced. _(Debugged with Jonathan 2026-06-10: the earlier "one iteration per turn" phrasing — a holdover from the /loop wake model — made the agent stop after every single item; that pacing rule is dead.)_
 
 ## goal-config (resolved with Jonathan 2026-06-09 — binding)
 
