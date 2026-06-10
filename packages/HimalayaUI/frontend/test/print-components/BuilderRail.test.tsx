@@ -11,7 +11,7 @@ const base = {
 };
 
 describe("<BuilderRail>", () => {
-  it("renders the compose head, autogroup, field, display controls, traces slot, and foot", () => {
+  it("renders the compose head, autogroup, field, display controls, and traces slot", () => {
     render(<BuilderRail {...base} />);
     expect(screen.getByTestId("builder-rail")).toBeInTheDocument();
     expect(screen.getByText("Compose")).toBeInTheDocument();
@@ -19,7 +19,16 @@ describe("<BuilderRail>", () => {
     expect(screen.getByTestId("field")).toHaveTextContent("LL37 : lipid ratio");
     expect(screen.getByTestId("slider")).toBeInTheDocument();
     expect(screen.getByTestId("traces-slot")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /copy as png/i })).toBeInTheDocument();
+  });
+  it("does NOT render 'Copy as PNG' (figure export lives on the plate head)", () => {
+    // Same single-contextual-control reasoning as the q-scale toggle: the
+    // export affordance is the ExportButton in SeriesPlate's actions slot.
+    render(<BuilderRail {...base} />);
+    expect(screen.queryByText(/copy as png/i)).toBeNull();
+  });
+  it("does NOT render 'Copy as PNG' even when the foot row renders (onAddSample passed)", () => {
+    render(<BuilderRail {...base} onAddSample={() => {}} />);
+    expect(screen.queryByText(/copy as png/i)).toBeNull();
   });
   it("OMITS the collapse and add-sample controls when their handlers are withheld", () => {
     // controls-don't-lie: the live page passes neither onCollapse (no collapse

@@ -26,7 +26,6 @@ export interface BuilderRailProps {
   onOffsetChange: (v: number) => void;
   traces: ReactNode;
   onAddSample?: () => void;
-  onCopyPng?: () => void;
   onCollapse?: () => void;
   /** PLACEMENT-ONLY. Width is page-owned (the assembly sets it). */
   className?: string;
@@ -45,12 +44,16 @@ export interface BuilderRailProps {
  * deferred — same call as Batch 9 SeriesPlate). Both are OMITTED; the Display
  * section keeps only the offset slider — the log/linear q-scale toggle lives on
  * the plate (a single contextual control, not a redundant rail+plate pair).
+ * Figure export likewise lives on the PLATE head (`SeriesPlate`'s `actions`
+ * slot, the ExportButton split button) — the rail-foot "Copy as PNG" was
+ * removed for the same single-contextual-control reason.
  *
  * CONDITIONAL AFFORDANCES (same pattern as onAdjust): the "Collapse rail"
  * IconButton renders only when onCollapse is passed (the live builder page has
  * no collapse behavior yet), and the "+ Add sample" Button renders only when
  * onAddSample is passed (the page's real add path is the native select in the
- * traces slot); when it is absent, "Copy as PNG" takes the full foot row.
+ * traces slot); the foot row itself is conditional on onAddSample — when it is
+ * absent, no foot row renders at all.
  */
 export function BuilderRail({
   grouping,
@@ -65,7 +68,6 @@ export function BuilderRail({
   onOffsetChange,
   traces,
   onAddSample,
-  onCopyPng,
   onCollapse,
   className,
 }: BuilderRailProps): JSX.Element {
@@ -133,19 +135,16 @@ export function BuilderRail({
         <div className="flex flex-col gap-0.5">{traces}</div>
       </RailSection>
 
-      <div className="flex gap-2">
-        {/* controls-don't-lie: the live page adds samples through the native
-            select in the traces slot, so this button only renders when a rail
-            add path (onAddSample) actually exists. */}
-        {onAddSample && (
+      {/* controls-don't-lie: the live page adds samples through the native
+          select in the traces slot, so the foot row only renders when a rail
+          add path (onAddSample) actually exists. */}
+      {onAddSample && (
+        <div className="flex gap-2">
           <Button variant="outline" className="flex-1" onClick={onAddSample}>
             + Add sample
           </Button>
-        )}
-        <Button variant="outline" className="flex-1" {...(onCopyPng ? { onClick: onCopyPng } : {})}>
-          Copy as PNG
-        </Button>
-      </div>
+        </div>
+      )}
 
       <div className="text-caption text-ink-soft leading-relaxed">
         The plate above is the figure as it will export. What you compose is what you publish.

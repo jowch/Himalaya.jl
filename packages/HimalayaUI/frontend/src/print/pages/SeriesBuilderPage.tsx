@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { Skeleton } from "boneyard-js/react";
 import { PageFrame } from "../components/PageFrame";
@@ -28,8 +28,8 @@ import {
 import { buildSeriesSaveBody } from "../../lib/series/buildSeriesSaveBody";
 import { buildSeriesCommitBody } from "../../lib/series/buildSeriesCommitBody";
 import { buildMultiTraceExportSpec } from "../../lib/figure-export/adapters/multiTraceAdapter";
-import { buildExportPng, canExportPng } from "../../lib/figure-export/renderer";
-import { canCopyPngToClipboard, copyPngToClipboard } from "../../lib/figure-export/clipboard";
+import { ExportButton } from "../components/ExportButton";
+import { useFigureExport } from "../components/useFigureExport";
 import { showToast } from "../../lib/toast";
 
 type Scale = "log" | "lin";
@@ -295,34 +295,23 @@ function BuilderBody({
 
   const effectiveTitle = liveDraft ? liveDraft.title : series.title;
 
-  // ── Figure export (Copy as PNG) ─────────────────────────────────────────
-  const exportSpec = (): import("../../lib/figure-export/types").ExportSpec =>
-    buildMultiTraceExportSpec({
-      members,
-      traces: new Map(Object.entries(tracesById).map(([k, v]) => [Number(k), v])),
-      comparisonTitle: effectiveTitle,
-      xDomain: null,
-      showPeakTicks,
-      showPeakLabels,
-      groupingMode: "bySample",
-      sampleIdFor: () => null,
-      preset: "clean",
-    });
-  const onCopyPng = (): void => {
-    if (!canCopyPngToClipboard() || !canExportPng()) {
-      showToast("This browser can't copy figures. Try Save instead.", "error");
-      return;
-    }
-    void (async (): Promise<void> => {
-      try {
-        const blob = await buildExportPng(exportSpec());
-        await copyPngToClipboard(blob);
-        showToast("Copied figure to clipboard", "success");
-      } catch {
-        showToast("Couldn't copy figure.", "error");
-      }
-    })();
-  };
+  // ── Figure export (plate-head ExportButton, wired via useFigureExport) ───
+  const exportSpec = useCallback(
+    (): import("../../lib/figure-export/types").ExportSpec =>
+      buildMultiTraceExportSpec({
+        members,
+        traces: new Map(Object.entries(tracesById).map(([k, v]) => [Number(k), v])),
+        comparisonTitle: effectiveTitle,
+        xDomain: null,
+        showPeakTicks,
+        showPeakLabels,
+        groupingMode: "bySample",
+        sampleIdFor: () => null,
+        preset: "clean",
+      }),
+    [members, tracesById, effectiveTitle, showPeakTicks, showPeakLabels],
+  );
+  const fx = useFigureExport(exportSpec, effectiveTitle, "series figure");
 
   // ── Traces slot — read MemberList, or the editable recipe in draft ──────
   const tracesSlot = liveDraft ? (
@@ -391,6 +380,19 @@ function BuilderBody({
               />
             }
             footNote={`offset ×${offset.toFixed(2)} · ${scale === "log" ? "log" : "linear"} q`}
+            // WYSIWYG-honest gate: disabled when the exported figure would
+            // contain no data. toWaterfallRows pads missing traces with
+            // EMPTY_TRACE (rows.length === members.length always), so the
+            // predicate must look INSIDE the rows — every-trace-empty covers
+            // no members, traces still loading, a failed trace fetch, and a
+            // legitimately all-empty series alike.
+            actions={
+              <ExportButton
+                {...fx}
+                ariaContext="series figure"
+                disabled={!rows.some((r) => r.trace.q.length > 0)}
+              />
+            }
           />
         </div>
       </div>
@@ -421,7 +423,6 @@ function BuilderBody({
               )}
             </div>
           }
-        onCopyPng={onCopyPng}
       />
     </div>
   );

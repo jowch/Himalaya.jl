@@ -32,6 +32,8 @@ export interface SeriesPlateProps {
   footHint?: ReactNode;
   /** Mono right-aligned foot note (e.g. "offset ×1.0 · log I"). */
   footNote?: ReactNode;
+  /** Extra toolbar actions rendered after the built-in controls (e.g. figure export). */
+  actions?: ReactNode;
   /** PLACEMENT-ONLY. */
   className?: string;
 }
@@ -39,7 +41,7 @@ export interface SeriesPlateProps {
 export function SeriesPlate({
   kicker, title, subtitle, rows, offsetScale, scale, onScaleChange,
   hoveredKey, onHoverRow, hoveredQ, onHoverQ,
-  legendPhases, footHint, footNote, className,
+  legendPhases, footHint, footNote, actions, className,
 }: SeriesPlateProps): JSX.Element {
   const hasFoot = (legendPhases && legendPhases.length > 0) || footHint != null || footNote != null;
   return (
@@ -52,6 +54,7 @@ export function SeriesPlate({
             onChange={onScaleChange}
             aria-label="q scale"
           />
+          {actions}
         </ToolBar>
       </PlateHeader>
       <WaterfallChart

@@ -1,4 +1,4 @@
-import { render, fireEvent } from "@testing-library/react";
+import { render, fireEvent, within } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import { SeriesPlate } from "../../src/print/components/SeriesPlate";
 import { TRANSITION } from "../../src/print/waterfall/waterfall.fixtures";
@@ -21,6 +21,13 @@ describe("SeriesPlate", () => {
       <SeriesPlate title="x" rows={TRANSITION} scale="log" onScaleChange={() => {}} />,
     );
     expect(queryByText(/heatmap/i)).toBeNull();
+  });
+  it("renders the actions slot inside the plate (e.g. the figure-export button)", () => {
+    const { getByTestId } = render(
+      <SeriesPlate title="x" rows={TRANSITION} scale="log" onScaleChange={() => {}}
+        actions={<button data-testid="x-action">A</button>} />,
+    );
+    expect(within(getByTestId("series-plate")).getByTestId("x-action")).toBeInTheDocument();
   });
   it("wires the scale toggle", () => {
     const onScaleChange = vi.fn();

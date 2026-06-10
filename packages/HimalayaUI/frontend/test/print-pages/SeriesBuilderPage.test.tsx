@@ -431,6 +431,45 @@ describe("SeriesBuilderPage", () => {
     expect(labels).not.toHaveAttribute("aria-pressed", "true");
   });
 
+  it("the plate head exposes the figure-export split button (Copy + download menu)", () => {
+    // Loaded traces for both members → the figure has data → the gate is open.
+    state.traces = {
+      1: { q: [0.05, 0.06], I: [10, 9], sigma: [1, 1] },
+      2: { q: [0.05, 0.06], I: [8, 7], sigma: [1, 1] },
+    };
+    renderPage();
+    const plate = screen.getByTestId("series-plate");
+    expect(within(plate).getByTestId("export-button")).toBeInTheDocument();
+    expect(within(plate).getByTestId("export-copy")).toBeInTheDocument();
+    // With member traces loaded there's a figure to export → the page gate is
+    // open. (export-copy itself stays disabled in JSDOM — no clipboard /
+    // OffscreenCanvas capability — so assert the gate on the menu trigger.)
+    expect(within(plate).getByTestId("export-menu-trigger")).not.toBeDisabled();
+  });
+
+  it("'Copy as PNG' no longer renders anywhere (single contextual export on the plate)", () => {
+    renderPage();
+    expect(screen.queryByText(/copy as png/i)).toBeNull();
+  });
+
+  it("the export control is disabled when the series has no members (nothing to export)", () => {
+    state.seriesById = new Map([[10, baseSeries({ members: [], samples: [] })]]);
+    renderPage();
+    // export-copy would be vacuous here: it's ALWAYS disabled in JSDOM via the
+    // capability probes — the menu trigger is the assertion that carries the
+    // page gate.
+    expect(screen.getByTestId("export-menu-trigger")).toBeDisabled();
+  });
+
+  it("the export control is disabled while members have NO trace data (loading / failed fetch)", () => {
+    // The beforeEach trace mock is empty: members exist but every waterfall row
+    // is padded with EMPTY_TRACE — the exported figure would contain no data,
+    // so the WYSIWYG-honest gate stays closed (rows.length alone would lie).
+    renderPage();
+    expect(screen.getAllByTestId("series-member-row")).toHaveLength(2);
+    expect(screen.getByTestId("export-menu-trigger")).toBeDisabled();
+  });
+
   it("shows a commit-error notice (role=alert) on commit failure", () => {
     const { rerender } = renderPage();
     fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "x" } });
