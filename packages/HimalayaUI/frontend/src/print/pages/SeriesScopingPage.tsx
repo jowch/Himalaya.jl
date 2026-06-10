@@ -9,7 +9,7 @@ import { useDragReorder, reorder } from "../components/useDragReorder";
 import { Sparkline } from "../plot/Sparkline";
 import { EmptyState, Button, Card, Dot, Field, Kicker } from "../ui";
 import { ColdAssignPanel } from "../components/ColdAssignPanel";
-import type { Trace } from "../../api";
+import type { SampleTagPair, Trace } from "../../api";
 import {
   useCorpusSampleTags,
   useCorpusPickerSamples,
@@ -38,8 +38,9 @@ import { readNewSeriesSeed } from "../../lib/series/newSeriesNav";
 const EMPTY_TRACE: Trace = { q: [], I: [], sigma: [] };
 
 // The sentinel "Define your own..." dropdown entry (locked decision A):
-// selecting it inline-converts the warm worksheet to the ColdAssignPanel flow,
-// seeded with the current members, committing through the SAME two-op
+// selecting it inline-converts the warm worksheet to the ColdAssignPanel flow
+// (seeded visits carry the WHOLE selection, members first then loose; direct
+// visits carry the current members only), committing through the SAME two-op
 // scope->create chain. value === label so Menu's strict activeValue equality
 // highlights it while custom mode is active.
 const DEFINE_YOUR_OWN = "Define your own…";
@@ -164,36 +165,64 @@ export function SeriesScopingPage(): JSX.Element {
   const isError = tagsQ.isError || pickerQ.isError;
 
   // Seeded selection (from the contact-sheet picker → /series/new): when present
-  // we scope the proposal to just those samples; when null (a direct visit) the
-  // full corpus is used — the existing whole-corpus behaviour.
+  // we scope BOTH the proposal rows AND the ordering-variable vocabulary to just
+  // those samples; when null (a direct visit) the full corpus is used — the
+  // existing whole-corpus behaviour.
   const seed = useMemo(() => readNewSeriesSeed(location), [location]);
   const seededPicker = useMemo(
     () => filterPickerBySeed(pickerQ.data ?? [], seed),
     [pickerQ.data, seed],
   );
 
-  // The corpus's real ordering-variable vocabulary: the distinct tag keys, in
+  // SC-SEEDDEAD: the ordering-variable vocabulary scopes to the seed. A seeded
+  // visit derives it from the seeded samples' OWN tags, deduped to first match
+  // per (sample, key) — retries can duplicate sample_tags rows and readers take
+  // the first match — so frequency = how many seeded samples carry the key; a
+  // direct visit keeps the corpus-wide distinct pair list. Without this, a seed
+  // of samples lacking the corpus's dominant key dead-ends in a 0-member
+  // worksheet whose foot gate can never be satisfied.
+  const scopedTags = useMemo<SampleTagPair[]>(
+    () =>
+      seed === null
+        ? tagsQ.data ?? []
+        : seededPicker.flatMap((s) => {
+            const seen = new Set<string>();
+            return s.sample.tags
+              .filter((t) => {
+                if (seen.has(t.key)) return false;
+                seen.add(t.key);
+                return true;
+              })
+              .map((t) => ({ key: t.key, value: t.value }));
+          }),
+    [seed, tagsQ.data, seededPicker],
+  );
+
+  // The real ordering-variable vocabulary: the distinct tag keys of the scoped
+  // universe (the seed's own tags, or the whole corpus on a direct visit), in
   // proposeOrdering's deterministic order (frequency desc, lexicographic tie),
-  // so the dropdown lists exactly what the corpus exposes — no declared schema.
+  // so the dropdown lists exactly what the scoped samples expose — no declared
+  // schema, and no corpus key the seed can't satisfy.
   const orderKeys = useMemo(() => {
     const freq = new Map<string, number>();
-    for (const t of tagsQ.data ?? []) freq.set(t.key, (freq.get(t.key) ?? 0) + 1);
+    for (const t of scopedTags) freq.set(t.key, (freq.get(t.key) ?? 0) + 1);
     return [...freq.entries()]
       .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))
       .map(([k]) => k);
-  }, [tagsQ.data]);
+  }, [scopedTags]);
 
   // Human override of the machine's frequency winner. Null → the machine picks.
   const [overrideKey, setOverrideKey] = useState<string | null>(null);
-  // A corpus change can't strand a stale override: drop it once it names a key
-  // the corpus no longer exposes.
+  // A vocabulary change can't strand a stale override: drop it once it names a
+  // key the scoped universe (seed's tags, or the corpus on a direct visit) no
+  // longer exposes.
   useEffect(() => {
     if (overrideKey !== null && !orderKeys.includes(overrideKey)) setOverrideKey(null);
   }, [overrideKey, orderKeys]);
 
   const proposal = useMemo(
-    () => proposeOrdering(tagsQ.data ?? [], seededPicker, overrideKey ?? undefined),
-    [tagsQ.data, seededPicker, overrideKey],
+    () => proposeOrdering(scopedTags, seededPicker, overrideKey ?? undefined),
+    [scopedTags, seededPicker, overrideKey],
   );
   const split = useMemo(() => splitProposal(proposal), [proposal]);
   const keyLabel = humanizeKey(proposal.orderingKey);
@@ -259,7 +288,7 @@ export function SeriesScopingPage(): JSX.Element {
     setHistory([]);
   }, [split.members, split.looseMatches, seededOrder]);
 
-  // ── Cold-corpus path (no proposable variable, user arrived with a seed) ──
+  // ── Cold path (no variable proposable FROM THE SEED, user arrived with one) ──
   const [coldKey, setColdKey] = useState("");
   const [coldRows, setColdRows] = useState<ColdAssignRow[]>([]);
   // Seed cold rows once when the page loads into the cold path.
@@ -324,15 +353,20 @@ export function SeriesScopingPage(): JSX.Element {
   };
 
   // Routing for the ordering dropdown. The sentinel enters custom mode, seeding
-  // the assign rows from the current members in their displayed order (re-entry
-  // deliberately re-seeds: previous custom edits are discarded). Any existing
-  // label exits custom mode and applies the override (existing behaviour).
+  // the assign rows conditionally on the seed (re-entry deliberately re-seeds:
+  // previous custom edits are discarded). A SEEDED visit carries the WHOLE
+  // selection — members in displayed order first, then the loose ones (the user
+  // deliberately picked them all; custom mode must not silently drop any). A
+  // direct visit stays members-only: a whole-corpus DYO must not fan in 100+
+  // loose candidates. Any existing label exits custom mode and applies the
+  // override (existing behaviour).
   const onOrderSelect = useCallback(
     (label: string): void => {
       if (label === DEFINE_YOUR_OWN) {
+        const source = seed !== null ? [...sorted, ...loose] : sorted;
         setColdRows(
           buildColdAssignRows(
-            sorted.map((r) => ({ sampleId: r.sampleId, sampleName: r.sampleName })),
+            source.map((r) => ({ sampleId: r.sampleId, sampleName: r.sampleName })),
           ),
         );
         setColdKey("");
@@ -342,7 +376,7 @@ export function SeriesScopingPage(): JSX.Element {
       setCustomMode(false);
       setOverrideKey(labelToKey.get(label) ?? null);
     },
-    [labelToKey, sorted],
+    [labelToKey, sorted, loose, seed],
   );
 
   const onColdValueChange = useCallback(
@@ -619,10 +653,12 @@ export function SeriesScopingPage(): JSX.Element {
           {proposal.orderingKey === undefined ? (
             seed !== null ? (
               /* Cold path: the user arrived from the contact sheet with a
-                 deliberate selection, but no tag key can be proposed. Rather
-                 than dead-end, let them name the ordering variable and assign
-                 each sample's value — then commit through the SAME
-                 scope→create chain the warm path uses. */
+                 deliberate selection, but no tag key can be proposed from the
+                 seeded samples' own tags (SC-SEEDDEAD: the corpus may still
+                 carry keys — they don't bind here). Rather than dead-end, let
+                 them name the ordering variable and assign each sample's
+                 value — then commit through the SAME scope→create chain the
+                 warm path uses. */
               <Card border="strong" padding="lg" data-testid="cold-scope-plate" className="w-full">
                 <ColdAssignSection
                   rows={coldRows}
@@ -653,9 +689,11 @@ export function SeriesScopingPage(): JSX.Element {
             )
           ) : customMode ? (
             /* Custom ("Define your own...") mode: the warm worksheet swaps for
-               the cold-assign flow, seeded with the current members; the same
-               order Field is the escape hatch back to a proposed key. Commits
-               run the SAME two-op scope->create chain via handleBuild. */
+               the cold-assign flow, seeded with the whole selection on a seeded
+               visit (members first, then loose) or the current members on a
+               direct visit; the same order Field is the escape hatch back to a
+               proposed key. Commits run the SAME two-op scope->create chain via
+               handleBuild. */
             <Card
               elevated
               data-testid="custom-scope-plate"

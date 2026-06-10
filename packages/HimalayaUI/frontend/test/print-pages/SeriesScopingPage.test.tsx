@@ -809,6 +809,125 @@ describe("SeriesScopingPage", () => {
     expect(values.some((v) => v.includes("1 : 0"))).toBe(false);
   });
 
+  // ── SC-SEEDDEAD: the proposal vocabulary scopes to the seed ────────────────
+  // A contact-sheet seed of samples lacking the corpus's dominant tag key must
+  // never dead-end: the ordering-variable universe is the SEEDED samples' own
+  // tags, not the corpus-wide pair list (which applies only to direct visits).
+  describe("seed-scoped vocabulary (SC-SEEDDEAD)", () => {
+    /** Corpus where "ratio" is the frequency winner; samples 11-13 untagged. */
+    function seedUntaggedCorpus(): void {
+      tagsState = {
+        data: [
+          { key: "ratio", value: "1 : 0" },
+          { key: "ratio", value: "1 : 0.5" },
+        ],
+        isLoading: false,
+        isError: false,
+      };
+      pickerState = {
+        data: [
+          pickerRow(sample(1, "A", [tag("ratio", "1 : 0")]), 37),
+          pickerRow(sample(2, "B", [tag("ratio", "1 : 0.5")]), 65),
+          pickerRow(sample(11, "U1", []), 100),
+          pickerRow(sample(12, "U2", []), 101),
+          pickerRow(sample(13, "U3", []), 102),
+        ],
+        isLoading: false,
+        isError: false,
+      };
+    }
+
+    /** Corpus winner is "ratio" (3 pairs vs 2); samples 4-5 carry ONLY "temp". */
+    function seedDisjointKeyCorpus(): void {
+      tagsState = {
+        data: [
+          { key: "ratio", value: "1 : 0" },
+          { key: "ratio", value: "1 : 0.5" },
+          { key: "ratio", value: "1 : 1" },
+          { key: "temp", value: "20C" },
+          { key: "temp", value: "40C" },
+        ],
+        isLoading: false,
+        isError: false,
+      };
+      pickerState = {
+        data: [
+          pickerRow(sample(1, "A", [tag("ratio", "1 : 0")]), 37),
+          pickerRow(sample(2, "B", [tag("ratio", "1 : 0.5")]), 65),
+          pickerRow(sample(3, "C", [tag("ratio", "1 : 1")]), 66),
+          pickerRow(sample(4, "T1", [tag("temp", "20C")]), 70),
+          pickerRow(sample(5, "T2", [tag("temp", "40C")]), 71),
+        ],
+        isLoading: false,
+        isError: false,
+      };
+    }
+
+    it("seeding only untagged samples on a tagged corpus renders the cold-assign card, not a 0-member worksheet", () => {
+      // The corpus proposes "ratio", but no seeded sample carries ANY tag —
+      // there is no variable proposable FROM THE SEED, so the cold-assign
+      // escape must fire with every seeded sample as an assign row.
+      seedUntaggedCorpus();
+      renderPage([11, 12, 13]);
+      expect(screen.getByTestId("cold-scope-plate")).toBeInTheDocument();
+      const rows = screen.getAllByTestId("cold-assign-row");
+      expect(rows).toHaveLength(3);
+      expect(rows[0]!.textContent).toContain("U1");
+      expect(rows[1]!.textContent).toContain("U2");
+      expect(rows[2]!.textContent).toContain("U3");
+      // The dead-end 0-member warm worksheet must NOT render.
+      expect(screen.queryByTestId("scope-sample-row")).toBeNull();
+      expect(screen.queryByText(/keep at least one value to build/i)).toBeNull();
+    });
+
+    it("proposes the seeded samples' own shared key, not the corpus-wide frequency winner", () => {
+      // Corpus-wide "ratio" outweighs "temp", but the seeded samples carry
+      // only "temp" → the worksheet must group by temp with both as members.
+      seedDisjointKeyCorpus();
+      renderPage([4, 5]);
+      expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Series by temp");
+      expect(screen.getAllByTestId("scope-sample-row")).toHaveLength(2);
+    });
+
+    it("offers only keys the seeded samples carry in the order dropdown (plus Define your own…)", () => {
+      // A corpus key absent from the seed ("ratio") would re-create the
+      // 0-member state straight from the dropdown — it must not be offered.
+      seedDisjointKeyCorpus();
+      renderPage([4, 5]);
+      fireEvent.click(screen.getByTestId("order-field"));
+      const items = screen.getAllByRole("menuitem").map((m) => m.textContent);
+      expect(items).toEqual(["temp", "Define your own…"]);
+    });
+
+    it("Define your own… on a seeded visit carries the WHOLE selection (members first, then loose)", () => {
+      // Mixed seed: 2 with "ratio" + 2 without. The warm worksheet shows
+      // 2 members + 2 candidates; custom mode must seed all 4 (the user
+      // deliberately selected them), members in displayed order first.
+      seedUntaggedCorpus();
+      renderPage([1, 2, 11, 12]);
+      expect(screen.getAllByTestId("scope-sample-row")).toHaveLength(2);
+      expect(screen.getAllByTestId("scope-candidate")).toHaveLength(2);
+      fireEvent.click(screen.getByTestId("order-field"));
+      fireEvent.click(screen.getByRole("menuitem", { name: "Define your own…" }));
+      const rows = screen.getAllByTestId("cold-assign-row");
+      expect(rows).toHaveLength(4);
+      expect(rows[0]!.textContent).toContain("A");
+      expect(rows[1]!.textContent).toContain("B");
+      expect(rows[2]!.textContent).toContain("U1");
+      expect(rows[3]!.textContent).toContain("U2");
+    });
+
+    it("Define your own… on a direct visit stays members-only (loose candidates do not fan in)", () => {
+      // Whole-corpus DYO must NOT suck in the 7 loose candidates — only the
+      // 2 members seed the custom worksheet.
+      seedManyLoose();
+      renderPage();
+      fireEvent.click(screen.getByTestId("order-field"));
+      fireEvent.click(screen.getByRole("menuitem", { name: "Define your own…" }));
+      expect(screen.getAllByTestId("cold-assign-row")).toHaveLength(2);
+    });
+  });
+
   describe("keyboard reorder (SC-KBD)", () => {
     /** Member names (A/B/C) in rendered worksheet order. */
     function renderedNames(): string[] {

@@ -14,17 +14,18 @@ export interface OrderingProposal {
 
 /**
  * Machine proposal for the series ordering variable. Picks the most frequent
- * tag `key` across the corpus tag pairs as the ordering variable, then reads
- * each member sample's value for that key. A sample missing the key is
- * `flagged` (the human must resolve it before the confirm-and-build gate
- * opens). Cold corpus (no tags) → no key, every row flagged (#174 accepts
- * this — scoping starts cold).
+ * tag `key` across the GIVEN tag pairs (callers pass the corpus pair list, or
+ * a seed-scoped one — the function is pure over its argument) as the ordering
+ * variable, then reads each member sample's value for that key. A sample
+ * missing the key is `flagged` (the human must resolve it before the
+ * confirm-and-build gate opens). No tags → no key, every row flagged (#174
+ * accepts this — scoping starts cold).
  *
  * `preferredKey` lets the human override the machine's frequency winner: when
- * it names a key that actually exists in the corpus (present in the frequency
- * map) it becomes the `orderingKey`; otherwise (undefined / empty / not a real
- * corpus key) the function falls back to the frequency winner — byte-identical
- * to the two-argument call. Pure.
+ * it names a key that actually exists in the given pairs (present in the
+ * frequency map) it becomes the `orderingKey`; otherwise (undefined / empty /
+ * not a real key) the function falls back to the frequency winner —
+ * byte-identical to the two-argument call. Pure.
  */
 export function proposeOrdering(
   corpusTags: SampleTagPair[],
