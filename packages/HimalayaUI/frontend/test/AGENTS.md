@@ -38,6 +38,10 @@ Don't construct a `Request` to introspect the call. See `test/queue/authHeaders.
 
 JSDOM doesn't ship `ResizeObserver`. `test/setup.ts` provides a no-op stub so components like `DetectorImage` (whose auto-rotate logic depends on it) can render. Don't strip the stub even if a passing test seems not to need it — the production component code path still references the global.
 
+## JSDOM ignores `inert`
+
+The hidden floating bars (CullBar, ComposeBar) hide via the `inert` attribute. JSDOM applies the attribute but implements none of its semantics: RTL role queries still match inert content, and `fireEvent` happily clicks inert buttons. Scope queries with `within(...)` when both bars are mounted, assert the attribute (`toHaveAttribute("inert")`) for the hide contract, and leave focus/AT semantics to the e2e real-browser pin (`e2e/corpus-culling.spec.ts`).
+
 ## `ImageBitmap.close()` regression
 
 A getter-based mock in `test/DetectorImage.test.tsx` simulates the spec-mandated width/height-zeroing on `close()`. Keep it green — production code captures `{ width, height }` before closing.

@@ -18,6 +18,12 @@ describe("Kicker", () => {
     expect(screen.getByText("Notes")).toHaveAttribute("data-tone", "faint");
   });
 
+  it("exposes the soft tone (informational labels / sunk surfaces, WCAG 1.4.3)", () => {
+    render(<Kicker tone="soft">Sample</Kicker>);
+    const el = screen.getByText("Sample");
+    expect(el).toHaveAttribute("data-tone", "soft");
+  });
+
   it("renders a heading when as='h3'", () => {
     render(<Kicker as="h3" tone="accent">Folio</Kicker>);
     expect(screen.getByRole("heading", { name: "Folio" })).toBeInTheDocument();

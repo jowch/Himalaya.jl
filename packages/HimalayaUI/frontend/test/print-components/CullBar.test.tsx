@@ -12,6 +12,13 @@ describe("CullBar", () => {
     expect(bar.textContent).toContain("frames selected");
   });
 
+  it("uses the singular grain for a single frame", () => {
+    render(<CullBar count={1} show />);
+    const bar = screen.getByTestId("cull-bar");
+    expect(bar.textContent).toContain("frame selected");
+    expect(bar.textContent).not.toContain("frames selected");
+  });
+
   it("is hidden (data-show=false) when show is omitted", () => {
     render(<CullBar count={0} />);
     expect(screen.getByTestId("cull-bar")).toHaveAttribute("data-show", "false");
@@ -35,12 +42,27 @@ describe("CullBar", () => {
     expect(screen.getByRole("button", { name: /clear/i }).getAttribute("data-variant")).toBe("ghostInverse");
   });
 
-  it("removes the bar from the a11y tree and tab order when hidden", () => {
+  it("is inert when hidden (removes the subtree from the a11y tree and tab order)", () => {
+    // JSDOM note: assert the inert ATTRIBUTE only — JSDOM does not implement
+    // inert focus/AT semantics. Real-browser behavior is pinned by the
+    // corpus-culling e2e (focus leaves the bar, no aria-hidden warning).
     render(<CullBar count={0} />);
     const bar = screen.getByTestId("cull-bar");
-    expect(bar).toHaveAttribute("aria-hidden", "true");
-    screen.getAllByRole("button", { hidden: true }).forEach((b) =>
-      expect(b).toHaveAttribute("tabindex", "-1"),
+    expect(bar).toHaveAttribute("inert");
+    expect(bar).not.toHaveAttribute("aria-hidden");
+    screen.getAllByRole("button").forEach((b) =>
+      expect(b).not.toHaveAttribute("tabindex"),
     );
+  });
+
+  it("is not inert when shown", () => {
+    render(<CullBar count={2} show />);
+    expect(screen.getByTestId("cull-bar")).not.toHaveAttribute("inert");
+  });
+
+  it("becomes inert when show flips false after a click empties the selection", () => {
+    const { rerender } = render(<CullBar count={2} show />);
+    rerender(<CullBar count={0} show={false} />);
+    expect(screen.getByTestId("cull-bar")).toHaveAttribute("inert");
   });
 });

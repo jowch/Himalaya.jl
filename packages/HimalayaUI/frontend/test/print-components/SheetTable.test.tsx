@@ -53,6 +53,16 @@ describe("SheetTable a11y semantics (WCAG 1.3.1 / 4.1.2)", () => {
     expect(headers).toEqual(["Sample", "Exposures", "Kept", "Tags", "Status"]);
   });
 
+  it("column-header kickers use the soft tone (WCAG 1.4.3 on the sunk header band)", () => {
+    // ink-faint is 2.92:1 on paper-sunk — fails AA even for large text. The
+    // header band is paper-sunk, so its informational labels must be ink-soft.
+    render(<SheetTable checkboxColumn>{[checkRow("a")]}</SheetTable>);
+    const head = screen.getByTestId("sheet-head");
+    const kickers = head.querySelectorAll("[data-tone]");
+    expect(kickers).toHaveLength(5);
+    kickers.forEach((k) => expect(k).toHaveAttribute("data-tone", "soft"));
+  });
+
   it("adds a 'Select' columnheader as column 0 when checkboxColumn is set", () => {
     render(<SheetTable checkboxColumn>{[checkRow("a")]}</SheetTable>);
     const headers = screen.getAllByRole("columnheader");

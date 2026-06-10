@@ -1,6 +1,6 @@
 // test/SamplesPage.samplePicker.test.tsx
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
@@ -60,7 +60,12 @@ describe("SamplesPage — sample-grain picker", () => {
     const user = userEvent.setup();
     setup();
     await user.click(screen.getAllByRole("checkbox")[0]!);
-    await user.click(screen.getByRole("button", { name: /clear/i, hidden: false }));
+    // Scope to the compose bar: the hidden CullBar also has a Clear button,
+    // and JSDOM does not implement inert a11y-tree exclusion (real browsers
+    // do — pinned by the corpus-culling e2e).
+    await user.click(
+      within(screen.getByTestId("compose-bar")).getByRole("button", { name: /clear/i }),
+    );
     expect(screen.getByTestId("compose-bar")).toHaveAttribute("data-show", "false");
   });
 

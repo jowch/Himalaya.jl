@@ -128,6 +128,52 @@ test("batch-reject: multi-select then reject PATCHes each selected exposure", as
   expect(patched.some((p) => p.endsWith("/exposures/2/status"))).toBe(false);
 });
 
+// SA-CULLFOCUS (WCAG 4.1.2): the cull bar hides via the native `inert`
+// attribute, not aria-hidden + tabIndex=-1. The failing ordering was a mouse
+// CLICK on Drop: the button holds focus, the handler empties the selection,
+// the bar hides — aria-hidden would then land on an ancestor of the focused
+// button and Chrome blocks it with a console warning. inert blurs the focused
+// descendant itself, so this pins (a) focus leaves the bar and (b) no
+// aria-hidden warning is emitted. Real-browser only — JSDOM has no inert
+// semantics (the unit tests assert just the attribute).
+test("cull bar: clicking Drop moves focus out of the hidden bar with no aria-hidden warning", async ({ page }) => {
+  const consoleMessages: string[] = [];
+  page.on("console", (msg) => consoleMessages.push(msg.text()));
+
+  await mockCorpus(page);
+  await page.route("**/api/exposures/1/status", (route) =>
+    route.fulfill({
+      status: 200, contentType: "application/json",
+      body: JSON.stringify({ id: 1, status: "rejected" }),
+    }));
+
+  await page.goto("/samples");
+  const row = page.getByTestId("sample-table-row").first();
+  await expect(row).toBeVisible();
+  await row.getByTestId("thumbnail").nth(0).click();
+
+  const cullBar = page.getByTestId("cull-bar");
+  await expect(cullBar).toHaveAttribute("data-show", "true");
+
+  // Mouse click (not keyboard) so the Drop button holds focus as the bar hides.
+  await cullBar.getByRole("button", { name: /Drop/ }).click();
+  await expect(cullBar).toHaveAttribute("data-show", "false");
+
+  // inert blurred the focused descendant: focus is no longer inside the bar.
+  const focusInBar = await page.evaluate(() =>
+    document.activeElement
+      ? document.activeElement.closest('[data-testid="cull-bar"]') !== null
+      : false,
+  );
+  expect(focusInBar).toBe(false);
+
+  // Belt-and-braces only: headless Chromium was NOT observed emitting the
+  // blocked-aria-hidden warning through page.on("console"), so this line
+  // alone would not fail under the old code — the focus assertion above is
+  // the load-bearing regression pin.
+  expect(consoleMessages.filter((m) => m.includes("aria-hidden"))).toEqual([]);
+});
+
 test("representative: picking a representative in the loupe PATCHes select", async ({ page }) => {
   // R2-M11 (#207): the per-thumb rep ⊙ button is gone — representative pick
   // lives in the loupe sidebar's "Set as representative" affordance (and the

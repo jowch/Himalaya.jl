@@ -84,7 +84,10 @@ export function SheetTable({
       {/* ONE shared horizontal scroller for header + rows (alignment invariant). */}
       <div data-testid="sheet-scroll" className="overflow-x-auto">
         <div role="table" aria-label="Samples" className="min-w-min">
-          {/* Header: paper-sunk tint + hairline-strong bottom border */}
+          {/* Header: paper-sunk tint + hairline-strong bottom border.
+              Header kickers are tone="soft" (NOT faint): ink-faint is 2.92:1
+              on the sunk band — a WCAG 1.4.3 failure for these informational
+              column labels. */}
           <div data-testid="sheet-head" role="rowgroup" className="bg-paper-sunk border-b border-hair-strong">
             <div
               role="row"
@@ -105,12 +108,12 @@ export function SheetTable({
                 className="sticky z-10 bg-paper-sunk border-r border-hair-strong"
                 style={{ left: sampleLeft }}
               >
-                <Kicker tone="faint" className="px-4 py-2.5">Sample</Kicker>
+                <Kicker tone="soft" className="px-4 py-2.5">Sample</Kicker>
               </div>
-              <Kicker tone="faint" role="columnheader" className="px-4 py-2.5">Exposures</Kicker>
-              <Kicker tone="faint" role="columnheader" className="px-4 py-2.5">Kept</Kicker>
-              <Kicker tone="faint" role="columnheader" className="px-4 py-2.5">Tags</Kicker>
-              <Kicker tone="faint" role="columnheader" className="px-4 py-2.5">Status</Kicker>
+              <Kicker tone="soft" role="columnheader" className="px-4 py-2.5">Exposures</Kicker>
+              <Kicker tone="soft" role="columnheader" className="px-4 py-2.5">Kept</Kicker>
+              <Kicker tone="soft" role="columnheader" className="px-4 py-2.5">Tags</Kicker>
+              <Kicker tone="soft" role="columnheader" className="px-4 py-2.5">Status</Kicker>
             </div>
           </div>
 

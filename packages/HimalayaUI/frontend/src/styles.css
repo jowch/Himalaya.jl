@@ -252,7 +252,7 @@
  *   text-headline     Newsreader serif section title — folio/scoping (R0a)
  *   text-headline-lg  Newsreader serif plate headline — loupe sample title (R2-T9, 26px)
  *   text-caption      microcopy: timestamps, hints, "no items" placeholders
- *   text-kicker       eyebrow / section label — uppercase, 700, tracked, tone-colored (accent|faint)
+ *   text-kicker       eyebrow / section label — uppercase, 700, tracked, tone-colored (accent|faint|soft)
  *   text-label        form / section labels — uppercase, tracked, dim
  *   text-meta         inline labels (non-uppercase): author names, tag keys
  *   text-body         default readable text — chat body, paragraph
@@ -278,10 +278,17 @@
   .text-kicker        { font-size: var(--text-sm);  line-height: 1.4;
                         font-weight: 700; text-transform: uppercase; }
   .text-kicker-accent { color: var(--color-print-accent); letter-spacing: 0.10em; }
-  /* ink-faint is AA-large-only (3.16:1): correct here because .text-kicker is
-     700-weight uppercase = "large text". Small informational text must use
-     ink-soft instead — see the --color-ink-faint definition note above. */
+  /* Kicker tone contrast (WCAG 1.4.3): ink-faint measures 3.16:1 on paper —
+     clearing only the 3:1 non-text/large-text line — and 2.92:1 on paper-sunk,
+     which fails every line. (Note 700-weight uppercase at this size is NOT
+     WCAG "large text": large-bold starts at 18.66px, so the 3:1 line never
+     actually applies to kickers; faint survives on plain paper only as a
+     decorative tone.) So `tone="faint"` is reserved for decorative/redundant
+     labels resting on plain paper; informational labels and ANY kicker on a
+     sunk surface use `tone="soft"` (ink-soft, 6.50:1 on paper — AA at all
+     sizes). See the --color-ink-faint definition note above. */
   .text-kicker-faint  { color: var(--color-ink-faint);    letter-spacing: 0.10em; }
+  .text-kicker-soft   { color: var(--color-ink-soft);     letter-spacing: 0.10em; }
   .text-label       { font-size: var(--text-sm);  line-height: 1.4;
                       font-weight: 500; text-transform: uppercase;
                       letter-spacing: 0.06em; color: var(--color-ink-soft); }

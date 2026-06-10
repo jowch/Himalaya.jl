@@ -5,16 +5,20 @@ import userEvent from "@testing-library/user-event";
 import { ComposeBar } from "../src/print/ui/ComposeBar";
 
 describe("ComposeBar", () => {
-  it("is hidden (aria-hidden) when show=false", () => {
+  it("is hidden (inert) when show=false", () => {
+    // JSDOM note: assert the inert ATTRIBUTE only — JSDOM does not implement
+    // inert focus/AT semantics.
     render(<ComposeBar count={0} show={false} />);
-    expect(screen.getByTestId("compose-bar")).toHaveAttribute("data-show", "false");
-    expect(screen.getByTestId("compose-bar")).toHaveAttribute("aria-hidden", "true");
+    const bar = screen.getByTestId("compose-bar");
+    expect(bar).toHaveAttribute("data-show", "false");
+    expect(bar).toHaveAttribute("inert");
+    expect(bar).not.toHaveAttribute("aria-hidden");
   });
 
-  it("is visible when show=true", () => {
+  it("is visible (not inert) when show=true", () => {
     render(<ComposeBar count={2} show />);
     expect(screen.getByTestId("compose-bar")).toHaveAttribute("data-show", "true");
-    expect(screen.getByTestId("compose-bar")).not.toHaveAttribute("aria-hidden", "true");
+    expect(screen.getByTestId("compose-bar")).not.toHaveAttribute("inert");
   });
 
   it("displays the sample count", () => {
@@ -38,9 +42,10 @@ describe("ComposeBar", () => {
     expect(onClear).toHaveBeenCalledTimes(1);
   });
 
-  it("+ New series button has tabIndex=-1 when hidden", () => {
+  it("buttons carry no per-button tabindex (inert owns the tab order)", () => {
     render(<ComposeBar count={0} show={false} />);
-    expect(screen.getByRole("button", { name: /new series/i, hidden: true }))
-      .toHaveAttribute("tabindex", "-1");
+    screen.getAllByRole("button").forEach((b) =>
+      expect(b).not.toHaveAttribute("tabindex"),
+    );
   });
 });
