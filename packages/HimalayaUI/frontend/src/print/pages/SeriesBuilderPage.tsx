@@ -363,6 +363,15 @@ function BuilderBody({
             title={
               <PlateTitle value={effectiveTitle} onChange={onEditTitle} />
             }
+            // Honest state: the plate keeps rendering the COMMITTED members
+            // mid-draft (lazy-draft render model) while the title above it
+            // updates live — say so, precisely: only membership/order lag.
+            {...(liveDraft
+              ? {
+                  subtitle:
+                    "Editing the recipe. Membership and order changes appear here after you confirm.",
+                }
+              : {})}
             rows={rows}
             offsetScale={offset}
             scale={scale}
@@ -400,6 +409,16 @@ function BuilderBody({
         grouping={groupingSummary(series)}
         {...(liveDraft && !confirmBusy ? { onConfirm } : {})}
         {...(liveDraft ? {} : { onAdjust: ensureDraft })}
+        // copy-doesn't-lie: the rail's default WYSIWYG caption is false
+        // mid-draft, so a live draft swaps in the honest variant. Precision:
+        // only membership/order on the plate are stale — the draft title and
+        // the offset slider still render live.
+        {...(liveDraft
+          ? {
+              caption:
+                "Membership and order on the plate are from the last confirmed figure. Confirm the series to publish your edits.",
+            }
+          : {})}
         orderedBy={series.ordering_variable ?? "—"}
         offset={offset}
         onOffsetChange={onOffsetChange}

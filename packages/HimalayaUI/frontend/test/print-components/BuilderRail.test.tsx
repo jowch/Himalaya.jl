@@ -94,6 +94,23 @@ describe("<BuilderRail>", () => {
     expect(screen.queryByRole("button", { name: /adjust/i })).toBeNull();
     expect(screen.getByRole("button", { name: /confirm series/i })).toBeInTheDocument();
   });
+  it("renders the default WYSIWYG foot caption when the caption prop is omitted", () => {
+    render(<BuilderRail {...base} />);
+    expect(
+      screen.getByText(
+        "The plate above is the figure as it will export. What you compose is what you publish.",
+      ),
+    ).toBeInTheDocument();
+  });
+  it("a provided caption REPLACES the default WYSIWYG sentence (copy-doesn't-lie override)", () => {
+    render(<BuilderRail {...base} caption="The plate still shows the last confirmed figure." />);
+    expect(
+      screen.getByText("The plate still shows the last confirmed figure."),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/what you compose is what you publish/i),
+    ).toBeNull();
+  });
   it("fires the offset-slider handler", () => {
     const onOffsetChange = vi.fn();
     render(<BuilderRail {...base} onOffsetChange={onOffsetChange} />);

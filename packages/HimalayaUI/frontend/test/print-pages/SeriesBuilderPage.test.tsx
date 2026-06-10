@@ -247,6 +247,38 @@ describe("SeriesBuilderPage", () => {
     expect(screen.getByRole("button", { name: /^cancel$/i })).toBeInTheDocument();
   });
 
+  it("read state: no draft plate notice; the rail asserts the WYSIWYG default", () => {
+    renderPage();
+    // No draft → the plate IS the committed figure; no honest-state notice.
+    expect(screen.queryByText(/editing the recipe/i)).toBeNull();
+    // The rail's default caption may assert WYSIWYG because it's true here.
+    expect(
+      screen.getByText(
+        "The plate above is the figure as it will export. What you compose is what you publish.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/last confirmed figure/i)).toBeNull();
+  });
+
+  it("draft state: the plate carries the lazy-draft notice and the rail caption stops claiming WYSIWYG", () => {
+    renderPage();
+    // Start a draft (title edit is the lazy-draft entry).
+    fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "x" } });
+    // Honest state: the plate says membership/order edits are not on it yet.
+    expect(
+      screen.getByText(
+        "Editing the recipe. Membership and order changes appear here after you confirm.",
+      ),
+    ).toBeInTheDocument();
+    // The rail caption is the honest draft variant; the WYSIWYG default is gone.
+    expect(
+      screen.getByText(
+        "Membership and order on the plate are from the last confirmed figure. Confirm the series to publish your edits.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/what you compose is what you publish/i)).toBeNull();
+  });
+
   it("Cancel discards the draft with NO request", () => {
     renderPage();
     // Start a draft via the title edit.

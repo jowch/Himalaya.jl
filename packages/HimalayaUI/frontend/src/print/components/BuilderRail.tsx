@@ -27,6 +27,13 @@ export interface BuilderRailProps {
   traces: ReactNode;
   onAddSample?: () => void;
   onCollapse?: () => void;
+  /**
+   * Foot caption. The default asserts WYSIWYG ("The plate above is the figure
+   * as it will export…") — a read-state truth. A page in a state where that is
+   * NOT true (e.g. mid-draft, when recipe edits haven't re-resolved the plate
+   * yet) MUST override it with an honest variant (copy-doesn't-lie).
+   */
+  caption?: ReactNode;
   /** PLACEMENT-ONLY. Width is page-owned (the assembly sets it). */
   className?: string;
 }
@@ -69,6 +76,7 @@ export function BuilderRail({
   traces,
   onAddSample,
   onCollapse,
+  caption,
   className,
 }: BuilderRailProps): JSX.Element {
   return (
@@ -147,7 +155,8 @@ export function BuilderRail({
       )}
 
       <div className="text-caption text-ink-soft leading-relaxed">
-        The plate above is the figure as it will export. What you compose is what you publish.
+        {caption ??
+          "The plate above is the figure as it will export. What you compose is what you publish."}
       </div>
     </aside>
   );
