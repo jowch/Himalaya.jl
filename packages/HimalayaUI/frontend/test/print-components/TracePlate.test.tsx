@@ -129,6 +129,171 @@ describe("TracePlate", () => {
     expect(within(plate).getByTestId("x")).toBeInTheDocument();
   });
 
+  // ── FO-EDIT: discoverability hint + minimal keyboard path ────────────────────
+
+  const HINT_RX = /Click the trace to add a peak/;
+
+  it("hides the edit hint (and the add-at-q field) when '+ Peak' is not armed", () => {
+    render(
+      <TracePlate
+        {...base}
+        interaction={{ onXDomain: () => {}, onAddPeak: () => {}, onClickPeak: () => {} }}
+      />,
+    );
+    expect(screen.queryByText(HINT_RX)).toBeNull();
+    expect(screen.queryByTestId("add-peak-at-q")).toBeNull();
+  });
+
+  it("shows the three-verb edit hint while armed", () => {
+    render(
+      <TracePlate
+        {...base}
+        addPeakArmed
+        interaction={{ onXDomain: () => {}, onAddPeak: () => {}, onClickPeak: () => {} }}
+      />,
+    );
+    expect(
+      screen.getByText(
+        "Click the trace to add a peak. Click a peak to remove it. Alt-click excludes it from indexing.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("unarmed peak marks are read-only: no role, no tabindex", () => {
+    const { container } = render(
+      <TracePlate
+        {...base}
+        interaction={{ onXDomain: () => {}, onAddPeak: () => {}, onClickPeak: () => {} }}
+      />,
+    );
+    expect(
+      container.querySelector('[data-role="plot-peaks"] [role="button"]'),
+    ).toBeNull();
+    expect(
+      container.querySelector('[data-role="plot-peaks"] [tabindex]'),
+    ).toBeNull();
+  });
+
+  it("armed peak marks are focusable buttons named by their q", () => {
+    const { container } = render(
+      <TracePlate
+        {...base}
+        addPeakArmed
+        interaction={{ onXDomain: () => {}, onAddPeak: () => {}, onClickPeak: () => {} }}
+      />,
+    );
+    const mark = container.querySelector('[data-role="plot-peaks"] [role="button"]');
+    expect(mark).toBeTruthy();
+    expect(mark!.getAttribute("tabindex")).toBe("0");
+    expect(mark!.getAttribute("aria-label")).toBe("Peak at q = 0.0500");
+  });
+
+  it("armed: Enter on a peak mark removes it; Alt+Enter excludes it", () => {
+    const onClickPeak = vi.fn();
+    const { container } = render(
+      <TracePlate
+        {...base}
+        addPeakArmed
+        interaction={{ onXDomain: () => {}, onClickPeak }}
+      />,
+    );
+    const mark = container.querySelector('[data-role="plot-peaks"] [role="button"]')!;
+    fireEvent.keyDown(mark, { key: "Enter" });
+    expect(onClickPeak).toHaveBeenLastCalledWith(0, false);
+    fireEvent.keyDown(mark, { key: "Enter", altKey: true });
+    expect(onClickPeak).toHaveBeenLastCalledWith(0, true);
+  });
+
+  it("armed add-at-q: typing a q inside the trace domain and submitting fires onAddPeak(q)", () => {
+    const onAddPeak = vi.fn();
+    render(
+      <TracePlate
+        {...base}
+        addPeakArmed
+        interaction={{ onXDomain: () => {}, onAddPeak }}
+      />,
+    );
+    const input = screen.getByLabelText("q value for new peak");
+    fireEvent.change(input, { target: { value: "0.07" } });
+    const add = screen.getByRole("button", { name: "Add peak at q" });
+    expect(add).toBeEnabled();
+    fireEvent.click(add);
+    expect(onAddPeak).toHaveBeenCalledTimes(1);
+    expect(onAddPeak).toHaveBeenCalledWith(0.07);
+  });
+
+  it("armed add-at-q: a q outside the trace domain disables Add and never fires", () => {
+    // model trace q spans [0.02, 0.2]
+    const onAddPeak = vi.fn();
+    render(
+      <TracePlate
+        {...base}
+        addPeakArmed
+        interaction={{ onXDomain: () => {}, onAddPeak }}
+      />,
+    );
+    const input = screen.getByLabelText("q value for new peak");
+    const add = screen.getByRole("button", { name: "Add peak at q" });
+    // Empty → disabled.
+    expect(add).toBeDisabled();
+    fireEvent.change(input, { target: { value: "0.5" } });
+    expect(add).toBeDisabled();
+    fireEvent.click(add);
+    expect(onAddPeak).not.toHaveBeenCalled();
+    fireEvent.change(input, { target: { value: "0.001" } });
+    expect(add).toBeDisabled();
+  });
+
+  it("onClickPeak only: hint drops the add sentence and the add-at-q field", () => {
+    // The hint promises only the wired verbs: with no onAddPeak, "Click the
+    // trace to add a peak" would be false, and no field may promise an add
+    // path the plate cannot deliver.
+    render(
+      <TracePlate
+        {...base}
+        addPeakArmed
+        interaction={{ onXDomain: () => {}, onClickPeak: () => {} }}
+      />,
+    );
+    const hint = screen.getByTestId("peak-edit-hint");
+    expect(hint.textContent).toBe(
+      "Click a peak to remove it. Alt-click excludes it from indexing.",
+    );
+    expect(screen.queryByText(HINT_RX)).toBeNull();
+    expect(screen.queryByTestId("add-peak-at-q")).toBeNull();
+  });
+
+  it("onAddPeak only: hint drops the remove/exclude sentences", () => {
+    // Worse than false: without onClickPeak wired, TracePlot's click handler
+    // falls through to onAddPeak on a peak hit, so "Click a peak to remove it"
+    // would actually duplicate-add. The hint must not promise it.
+    render(
+      <TracePlate
+        {...base}
+        addPeakArmed
+        interaction={{ onXDomain: () => {}, onAddPeak: () => {} }}
+      />,
+    );
+    const hint = screen.getByTestId("peak-edit-hint");
+    expect(within(hint).getByText(HINT_RX)).toBeInTheDocument();
+    expect(hint.textContent).not.toMatch(/remove|excludes/);
+    expect(screen.getByTestId("add-peak-at-q")).toBeInTheDocument();
+  });
+
+  it("clears a typed-but-unsubmitted q when the plate disarms", () => {
+    const interaction = { onXDomain: () => {}, onAddPeak: () => {} };
+    const { rerender } = render(
+      <TracePlate {...base} addPeakArmed interaction={interaction} />,
+    );
+    const input = screen.getByLabelText("q value for new peak");
+    fireEvent.change(input, { target: { value: "0.07" } });
+    expect(input).toHaveValue(0.07);
+    // Disarm, then re-arm: the stale draft must not reappear.
+    rerender(<TracePlate {...base} interaction={interaction} />);
+    rerender(<TracePlate {...base} addPeakArmed interaction={interaction} />);
+    expect(screen.getByLabelText("q value for new peak")).toHaveValue(null);
+  });
+
   // highlightPeakIds forwarding: a peak NOT in the set dims (data-dimmed=true).
   it("forwards highlightPeakIds (a non-member peak dims)", () => {
     const twoPeaks: TraceModel = {

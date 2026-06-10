@@ -1,5 +1,5 @@
-import type { ReactNode } from "react";
-import { Card, Button, SegmentedControl } from "../ui";
+import { useEffect, useState, type ReactNode } from "react";
+import { Card, Button, HintText, Input, SegmentedControl } from "../ui";
 import { PlateHeader } from "./PlateHeader";
 import { ToolBar } from "./ToolBar";
 import { TracePlot, type TraceModel, type TracePlotInteraction } from "../plot/TracePlot";
@@ -91,6 +91,46 @@ export function TracePlate({
           ? { hitTolerancePx: interaction.hitTolerancePx }
           : {}),
       };
+
+  // ── armed add-at-q (keyboard parity for click-empty-space-adds) ────────────
+  // Validate against the trace's q extent: a peak outside the measured window
+  // would be unanchorable, so Add stays disabled there.
+  const [qText, setQText] = useState("");
+  let qMin = Infinity;
+  let qMax = -Infinity;
+  for (const q of trace.trace.q) {
+    if (!Number.isFinite(q)) continue;
+    if (q < qMin) qMin = q;
+    if (q > qMax) qMax = q;
+  }
+  const qParsed = Number(qText);
+  const qValid =
+    qText.trim() !== "" &&
+    Number.isFinite(qParsed) &&
+    qParsed >= qMin &&
+    qParsed <= qMax;
+  const onAddPeakAtQ =
+    addPeakArmed && interaction ? interaction.onAddPeak : undefined;
+
+  // A typed-but-unsubmitted q must not survive a disarm/re-arm round trip —
+  // it would reappear as stale state. Clear it whenever the plate disarms.
+  useEffect(() => {
+    if (!addPeakArmed) setQText("");
+  }, [addPeakArmed]);
+
+  // The hint promises only the verbs that are actually wired: with no
+  // onAddPeak the add sentence would be false, and with no onClickPeak the
+  // remove sentence would be worse than false (TracePlot's click handler
+  // falls through to onAddPeak on a peak hit, so "remove" would duplicate-add).
+  const hintSentences = interaction
+    ? [
+        ...(interaction.onAddPeak ? ["Click the trace to add a peak."] : []),
+        ...(interaction.onClickPeak
+          ? ["Click a peak to remove it.", "Alt-click excludes it from indexing."]
+          : []),
+      ]
+    : [];
+
   return (
     <Card
       as="section"
@@ -122,6 +162,54 @@ export function TracePlate({
           {actions}
         </ToolBar>
       </PlateHeader>
+      {/* Armed-only edit legend: only the WIRED pointer verbs, plus the
+          keyboard add path. Hidden while disarmed — the plot is read-only
+          then and a standing instruction would lie. */}
+      {addPeakArmed && hintSentences.length > 0 && (
+        <div
+          data-testid="peak-edit-hint"
+          className="mt-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5"
+        >
+          <HintText className="min-w-0">{hintSentences.join(" ")}</HintText>
+          {onAddPeakAtQ && (
+            <form
+              data-testid="add-peak-at-q"
+              className="flex shrink-0 items-center gap-1.5"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!qValid) return;
+                onAddPeakAtQ(qParsed);
+                setQText("");
+              }}
+            >
+              <Input
+                value={qText}
+                onValueChange={setQText}
+                type="number"
+                inputMode="decimal"
+                step="any"
+                min={qMin}
+                max={qMax}
+                mono
+                inputSize="sm"
+                invalid={qText.trim() !== "" && !qValid}
+                aria-label="q value for new peak"
+                placeholder="q"
+                testId="add-peak-q-input"
+                className="w-24"
+              />
+              <Button
+                type="submit"
+                variant="outline"
+                disabled={!qValid}
+                aria-label="Add peak at q"
+              >
+                Add
+              </Button>
+            </form>
+          )}
+        </div>
+      )}
       <TracePlot
         trace={trace}
         height={plotHeight}

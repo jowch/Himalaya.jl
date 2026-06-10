@@ -133,7 +133,10 @@ describe("PlotPeaks", () => {
     ).toBe("currentColor");
   });
 
-  it("peak <g> has tabIndex/role/aria-label when onPeakFocus is provided", () => {
+  it("onPeakFocus alone (read-only marks) does NOT make the <g> focusable or a button", () => {
+    // The hover q-link (onPeakFocus) is independent of editability. A mark that
+    // exposes role=button while the plate is disarmed would lie: activating it
+    // would do nothing. Focusability is gated on onPeakActivate alone.
     const { container } = render(
       <svg>
         <PlotPeaks
@@ -146,9 +149,63 @@ describe("PlotPeaks", () => {
     );
     const peakG = container.querySelector('[data-role="plot-peaks"] > g');
     expect(peakG).toBeTruthy();
+    expect(peakG!.getAttribute("tabindex")).toBeNull();
+    expect(peakG!.getAttribute("role")).toBeNull();
+    expect(peakG!.getAttribute("aria-label")).toBeNull();
+  });
+
+  it("peak <g> has tabIndex/role/aria-label/aria-keyshortcuts when onPeakActivate is provided", () => {
+    const { container } = render(
+      <svg>
+        <PlotPeaks
+          peaks={[{ id: 1, q: 0.2, intensity: 20, source: "auto" }]}
+          projection={proj}
+          color="var(--color-accent)"
+          onPeakActivate={vi.fn()}
+        />
+      </svg>,
+    );
+    const peakG = container.querySelector('[data-role="plot-peaks"] > g');
+    expect(peakG).toBeTruthy();
     expect(peakG!.getAttribute("tabindex")).toBe("0");
     expect(peakG!.getAttribute("role")).toBe("button");
-    expect(peakG!.getAttribute("aria-label")).toMatch(/peak at q/);
+    expect(peakG!.getAttribute("aria-label")).toBe("Peak at q = 0.2000");
+    expect(peakG!.getAttribute("aria-keyshortcuts")).toBe("Enter Space Alt+Enter");
+  });
+
+  it("Enter / Space fire onPeakActivate(id, false); Alt+Enter fires (id, true)", () => {
+    const spy = vi.fn();
+    const { container } = render(
+      <svg>
+        <PlotPeaks
+          peaks={[{ id: 7, q: 0.2, intensity: 20, source: "auto" }]}
+          projection={proj}
+          color="var(--color-accent)"
+          onPeakActivate={spy}
+        />
+      </svg>,
+    );
+    const peakG = container.querySelector('[data-role="plot-peaks"] > g')!;
+    // Enter = remove. fireEvent returns false when default was prevented.
+    expect(fireEvent.keyDown(peakG, { key: "Enter" })).toBe(false);
+    expect(spy).toHaveBeenLastCalledWith(7, false);
+    // Space = remove (and must preventDefault so the page does not scroll).
+    expect(fireEvent.keyDown(peakG, { key: " " })).toBe(false);
+    expect(spy).toHaveBeenLastCalledWith(7, false);
+    // Alt+Enter = exclude.
+    fireEvent.keyDown(peakG, { key: "Enter", altKey: true });
+    expect(spy).toHaveBeenLastCalledWith(7, true);
+    expect(spy).toHaveBeenCalledTimes(3);
+    // Unrelated keys are ignored.
+    fireEvent.keyDown(peakG, { key: "a" });
+    expect(spy).toHaveBeenCalledTimes(3);
+    // Key-repeat must not machine-gun mutations.
+    fireEvent.keyDown(peakG, { key: "Enter", repeat: true });
+    expect(spy).toHaveBeenCalledTimes(3);
+    // Alt modifies Enter only — Alt+Space stays a plain remove (the
+    // advertised shortcuts are "Enter Space Alt+Enter").
+    fireEvent.keyDown(peakG, { key: " ", altKey: true });
+    expect(spy).toHaveBeenLastCalledWith(7, false);
   });
 
   it("calls onPeakFocus(id) on focus and onPeakFocus(null) on blur", () => {

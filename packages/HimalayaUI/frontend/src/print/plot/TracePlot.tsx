@@ -321,6 +321,15 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
                   baselineI={yExtent[0]}
                   {...(paperColor ? { paperColor } : {})}
                   {...(interaction ? { onPeakFocus: setHoverId } : {})}
+                  {
+                    // Keyboard peak editing rides the same gate as pointer
+                    // editing: onClickPeak is only threaded while the consumer
+                    // is armed (TracePlate strips it otherwise), so disarmed
+                    // marks stay roleless and unfocusable.
+                    ...(interaction && interaction.onClickPeak
+                      ? { onPeakActivate: interaction.onClickPeak }
+                      : {})
+                  }
                   {...(highlightPeakIds ? { highlightPeakIds } : {})}
                 />
               );

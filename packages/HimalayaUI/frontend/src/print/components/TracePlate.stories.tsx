@@ -36,20 +36,38 @@ function HeroDemo() {
   // Double-click (TracePlot reset) emits null → back to full extent. Auto-fit
   // here clears the zoom too.
   const [zoom, setZoom] = useState<[number, number] | null>(null);
+  // Working peak edits (FocusPage simulation): arming "+ Peak" reveals the
+  // edit hint + the add-at-q field, and the peak marks become keyboard
+  // buttons (Enter removes, Alt+Enter excludes). Edits land in local state.
+  const [peaks, setPeaks] = useState(heroModel.peaks);
+  const model: TraceModel = { ...heroModel, peaks };
   return (
     <div style={{ maxWidth: 1180 }}>
       <TracePlate
         kicker="Integration"
         title="Lipid 1-2 + LL37 1:0.5"
         subtitle="smp_09 · SSRL Apr 2026 · representative exposure smp_09_e03"
-        trace={heroModel}
+        trace={model}
         scale={scale}
         onScaleChange={setScale}
         onAutoFit={() => setZoom(null)}
         addPeakArmed={armed}
         onToggleAddPeak={() => setArmed((p) => !p)}
         xDomain={zoom}
-        interaction={{ onXDomain: setZoom }}
+        interaction={{
+          onXDomain: setZoom,
+          onAddPeak: (q) =>
+            setPeaks((ps) => [
+              ...ps,
+              { id: Math.max(0, ...ps.map((p) => p.id)) + 1, q, source: "manual" },
+            ]),
+          onClickPeak: (id, alt) =>
+            setPeaks((ps) =>
+              alt
+                ? ps.map((p) => (p.id === id ? { ...p, excluded: !p.excluded } : p))
+                : ps.filter((p) => p.id !== id),
+            ),
+        }}
       />
     </div>
   );

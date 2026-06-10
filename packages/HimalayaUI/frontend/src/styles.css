@@ -354,6 +354,18 @@
      in Tailwind, so it lives here. */
   [data-observed-hit] { outline: none; cursor: pointer; }
   [data-observed-hit]:focus-visible { stroke: var(--color-accent); stroke-width: 2; }
+
+  /* Armed peak marks in the trace plot: while editing is armed each per-peak
+     SVG <g> becomes a role=button tab stop (PlotPeaks), but the base keyboard
+     ring above targets button:/a: only — an SVG g is neither. Mirror the 2px
+     accent ring on the g's bounding box (outline works on SVG elements in the
+     supported engines); a stroke override would be swallowed here because the
+     glyph shapes set their own stroke. Keyboard-only, like every other ring. */
+  [data-role="plot-peaks"] g[role="button"] { outline: none; cursor: pointer; }
+  [data-role="plot-peaks"] g[role="button"]:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
 }
 
 /* Boneyard skeleton: slow pulse keeps the loading state subtle */

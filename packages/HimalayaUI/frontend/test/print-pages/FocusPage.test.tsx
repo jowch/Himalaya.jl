@@ -251,6 +251,42 @@ describe("FocusPage", () => {
     }
   });
 
+  it("arming '+ Peak' then adding via the q field fires useAddPeak().mutate(q) and announces", () => {
+    const announce = vi.fn();
+    setAnnounceImpl(announce);
+    try {
+      renderAt(42);
+      fireEvent.click(screen.getByText("+ Peak"));
+      // The keyboard parity for click-empty-space-adds: type a q, press Add.
+      const input = screen.getByLabelText("q value for new peak");
+      fireEvent.change(input, { target: { value: "0.15" } });
+      fireEvent.click(screen.getByRole("button", { name: "Add peak at q" }));
+      expect(addPeakMutate).toHaveBeenCalledTimes(1);
+      expect(addPeakMutate).toHaveBeenCalledWith(0.15);
+      expect(announce.mock.calls[0]?.[0]).toBe("Peak added");
+    } finally {
+      setAnnounceImpl(null);
+    }
+  });
+
+  it("arming '+ Peak' then pressing Enter on a focused peak mark removes it and announces", () => {
+    const announce = vi.fn();
+    setAnnounceImpl(announce);
+    try {
+      const { container } = renderAt(42);
+      fireEvent.click(screen.getByText("+ Peak"));
+      const mark = container.querySelector('[data-role="plot-peaks"] [role="button"]')!;
+      expect(mark).toBeTruthy();
+      fireEvent.keyDown(mark, { key: "Enter" });
+      expect(removePeakMutate).toHaveBeenCalledWith(1);
+      expect(announce.mock.calls[0]?.[0]).toBe("Peak removed");
+      fireEvent.keyDown(mark, { key: "Enter", altKey: true });
+      expect(setPeakExclMutate).toHaveBeenCalledWith({ peakId: 1, excluded: true });
+    } finally {
+      setAnnounceImpl(null);
+    }
+  });
+
   it("committing a custom index announces a visible toast (consequential)", () => {
     const toast = vi.fn();
     setToastImpl(toast);

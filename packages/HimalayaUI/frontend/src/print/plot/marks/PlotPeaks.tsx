@@ -1,7 +1,6 @@
 import { type Projection } from "../projection";
 import { PeakGlyph } from "../../ui/PeakGlyph";
 import { peakGlyph } from "../../ui/peakMark";
-import { formatAxis } from "../../../lib/plot/formatAxis";
 
 export interface PlotPeak {
   id: number;
@@ -28,6 +27,12 @@ export interface PlotPeaksProps {
   paperColor?: string;
   /** Keyboard focus/blur handler for accessibility. Called with peak id on focus, null on blur. */
   onPeakFocus?: (id: number | null) => void;
+  /** Armed keyboard editing. Its PRESENCE gates focusability: each mark becomes
+   *  a tabbable role=button named by its q. Enter/Space activate with
+   *  altKey=false (remove); Alt+Enter activates with altKey=true (exclude).
+   *  Omit it while editing is disarmed so read-only marks stay roleless — an
+   *  inert focusable control would lie. */
+  onPeakActivate?: (id: number, altKey: boolean) => void;
   /** When non-empty, peaks NOT in this set (and not hot) fade to neutral gray. */
   highlightPeakIds?: ReadonlySet<number>;
 }
@@ -39,6 +44,7 @@ export function PlotPeaks({
   baselineI,
   paperColor,
   onPeakFocus,
+  onPeakActivate,
   highlightPeakIds,
 }: PlotPeaksProps): JSX.Element {
   const { x, y } = projection;
@@ -68,19 +74,38 @@ export function PlotPeaks({
           ...(p.excluded ? { excluded: true } : {}),
           ...(p.hot ? { hot: true } : {}),
         });
+        // Hover q-link (onPeakFocus) and keyboard editing (onPeakActivate) are
+        // independent gates. Only the latter makes the mark a real control —
+        // tabIndex/role/name appear with it and vanish when editing disarms.
         const focusAttrs = onPeakFocus
+          ? {
+              onFocus: () => onPeakFocus(p.id),
+              onBlur: () => onPeakFocus(null),
+            }
+          : {};
+        const activateAttrs = onPeakActivate
           ? {
               tabIndex: 0,
               role: "button" as const,
-              "aria-label": `peak at q ${formatAxis(p.q)}`,
-              onFocus: () => onPeakFocus(p.id),
-              onBlur: () => onPeakFocus(null),
+              "aria-label": `Peak at q = ${p.q.toFixed(4)}`,
+              "aria-keyshortcuts": "Enter Space Alt+Enter",
+              onKeyDown: (e: React.KeyboardEvent<SVGGElement>) => {
+                if (e.key !== "Enter" && e.key !== " ") return;
+                // Holding the key must not machine-gun mutations.
+                if (e.repeat) return;
+                // preventDefault so Space doesn't scroll the page.
+                e.preventDefault();
+                // Alt modifies Enter only — the advertised shortcuts are
+                // "Enter Space Alt+Enter"; Alt+Space stays a plain remove.
+                onPeakActivate(p.id, e.altKey && e.key === "Enter");
+              },
             }
           : {};
         return (
           <g
             key={p.id}
             {...focusAttrs}
+            {...activateAttrs}
             {...(dimmed ? { "data-dimmed": "true" } : {})}
             style={{ color: c }}
           >
