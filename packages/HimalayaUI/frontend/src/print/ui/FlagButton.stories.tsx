@@ -11,13 +11,13 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** Resolved, re-openable value: hover reveals the dotted editable affordance. */
+/** Kept read (will be committed): hover reveals the dotted affordance; clicking skips it. */
 export const Default: Story = {};
 
-/** Uncertain parse: accent value, dashed underline, "check the read" caption. */
+/** Skipped read: accent value, dashed underline, "skipped" caption; clicking restores it. */
 export const Flagged: Story = { args: { flagged: true } };
 
-/** Click the value to flip between the flagged and resolved looks. */
+/** Click the value to flip between the skipped and kept looks. */
 export const Toggling: Story = {
   render: () => {
     const [flagged, setFlagged] = useState(true);

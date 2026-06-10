@@ -6,6 +6,7 @@ import { ScopeCandidateRow } from "./ScopeCandidateRow";
 import { useDragReorder, reorder } from "./useDragReorder";
 import type { PhaseSegment } from "../ui";
 import { realTraces } from "../fixtures/realTraces";
+import { buildFootState } from "../pages/scopingDerive";
 
 /**
  * Page simulation (NOT a component): assembles `ScopePlate` with mapped
@@ -81,14 +82,14 @@ function ScopingView(): JSX.Element {
   const byId = new Map(series.map((s) => [s.id, s]));
   const sorted = order.map((id) => byId.get(id)).filter((s): s is Member => s != null);
 
-  // Clicking a value toggles whether the parse still needs a look. Recorded so
-  // it steps back with Undo / ⌘Z.
+  // Clicking a value toggles whether this read is skipped from the batch
+  // write. Recorded so it steps back with Undo / ⌘Z.
   const toggleFlag = (id: string): void => {
     const m = series.find((s) => s.id === id);
     if (!m) return;
     setHistory((h) => [
       ...h,
-      { type: "flag", id, prev: m.flagged, label: (m.flagged ? "resolved " : "re-opened ") + id },
+      { type: "flag", id, prev: m.flagged, label: (m.flagged ? "restored " : "skipped ") + id },
     ]);
     setSeries((cur) => cur.map((s) => (s.id === id ? { ...s, flagged: !s.flagged } : s)));
   };
@@ -134,16 +135,16 @@ function ScopingView(): JSX.Element {
     return () => window.removeEventListener("keydown", onKey);
   });
 
-  // Derivations the page owns — ScopePlate just renders them.
+  // Derivations the page owns — ScopePlate just renders them. The foot + gate
+  // mirror the REAL page contract (scopingDerive.ts): a skipped (flagged) read
+  // is excluded from the write, never blocks; warn only when nothing is kept.
   const n = sorted.length;
-  const flags = sorted.filter((s) => s.flagged).length;
+  const skipped = sorted.filter((s) => s.flagged).length;
+  const kept = n - skipped;
   const preview: PhaseSegment[] = sorted.map((s) =>
     s.coexistWith ? { phase: s.phase, coexistWith: s.coexistWith } : { phase: s.phase },
   );
-  const footState: { kind: "warn" | "ready"; text: string } =
-    flags > 0
-      ? { kind: "warn", text: `${flags} value${flags === 1 ? "" : "s"} to check before you can build` }
-      : { kind: "ready", text: `All ${n} values confirmed — ready to build` };
+  const footState = buildFootState(kept, skipped);
   const lastLabel = history.length ? history[history.length - 1]!.label : undefined;
 
   return (
@@ -153,8 +154,8 @@ function ScopingView(): JSX.Element {
         grouping={
           <>
             You selected <strong>{n} samples</strong> on the contact sheet. Himalaya grouped them from
-            their names and read the order from the <strong>LL37 : lipid ratio</strong> — five ratios
-            parsed cleanly, one needs a look.
+            their names and read the order from the <strong>LL37 : lipid ratio</strong>. Click a value
+            to skip that read from the write — one starts skipped here to show the exclusion look.
           </>
         }
         orderedBy={orderedBy}
@@ -217,11 +218,11 @@ function ScopingView(): JSX.Element {
         footState={footState}
         footNote={
           <>
-            Confirming records the LL37 : lipid ratio on every sample — the next series that needs it
-            already knows.
+            Confirming records the LL37 : lipid ratio on every kept sample — the next series that
+            needs it already knows.
           </>
         }
-        {...(flags > 0 ? { buildDisabled: true } : {})}
+        {...(kept === 0 ? { buildDisabled: true } : {})}
         onBuild={() => undefined}
       />
     </div>

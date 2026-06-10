@@ -14,7 +14,7 @@ export interface ScopeSampleRowProps {
   phase?: string | null;
   /** The parsed ordering value, e.g. "1 : 0.25". */
   value: string;
-  /** Uncertain parse → FlagButton flagged + faint accent row wash. */
+  /** Skipped read → FlagButton flagged look + faint accent row wash. */
   flagged?: boolean;
   /** Forwarded to FlagButton onClick. */
   onToggleFlag?: () => void;
@@ -26,8 +26,8 @@ export interface ScopeSampleRowProps {
  * One row of the series-scoping worksheet (mockup `.srow`): a drag grip, a small
  * trace sparkline, the sample's name + id, and a trailing parsed-value control.
  *
- * When `flagged` (an uncertain parse), the whole row takes a faint accent wash
- * and the value control surfaces as the one thing asking for attention. The row
+ * When `flagged` (the user skipped this read from the batch write), the whole
+ * row takes a faint accent wash and the value control marks the exclusion. The row
  * carries `group` so the grip brightens on row hover; it also draws its own
  * bottom hairline (the parent strips the last). Drag-reorder is page-deferred —
  * the grip here is the visual affordance only.

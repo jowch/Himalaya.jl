@@ -5,21 +5,29 @@ function cx(...parts: Array<string | false | null | undefined>): string {
 export interface FlagButtonProps {
   /** Parsed value, e.g. "1 : 0.25", rendered mono. */
   value: string;
-  /** true → uncertain-parse look; false/omitted → resolved re-openable look. */
+  /** true → the user skipped this read from the batch write; false/omitted → the read will be committed. */
   flagged?: boolean;
-  /** Toggles the read. */
+  /** Toggles whether the read is skipped. */
   onClick?: () => void;
   /** PLACEMENT ONLY. */
   className?: string;
 }
 
 /**
- * The clickable parsed-value control on the series-scoping worksheet.
+ * The clickable parsed-value control on the series-scoping worksheet. It is a
+ * skip toggle: clicking excludes (or restores) this read from the batch write.
  *
- * - **flagged** — accent value with a dashed accent underline + a
- *   "▸ check the read" caption; clicking accepts the read.
- * - **ok** (default) — ink value with a dotted re-openable affordance that
- *   firms up on hover; clicking re-opens the value.
+ * - **flagged** — the user skipped this read from the batch write; the accent
+ *   look (accent value, dashed underline, "▸ skipped" caption) marks the
+ *   exclusion. Clicking restores the read.
+ * - **ok** (default) — the read will be committed; ink value with a dotted
+ *   affordance that firms up on hover. Clicking skips the read.
+ *
+ * The `flagged` prop name and the `data-state="ok"/"flagged"` values are KEPT
+ * as stable API/e2e keys (ScopeSampleRow's row-wash keys off the same name) —
+ * only the user-facing vocabulary is skip/skipped. State is exposed via
+ * `aria-pressed`; the accessible name ("Skip this read: {value}") stays
+ * constant across states.
  */
 export function FlagButton({ value, flagged, onClick, className }: FlagButtonProps): JSX.Element {
   return (
@@ -27,14 +35,16 @@ export function FlagButton({ value, flagged, onClick, className }: FlagButtonPro
       type="button"
       data-testid="flag-button"
       data-state={flagged ? "flagged" : "ok"}
+      aria-pressed={flagged === true}
       onClick={onClick}
-      {...(flagged ? {} : { title: "Click to re-open this value" })}
+      title={flagged ? "Restore this read" : "Skip this read"}
       className={cx(
         "group/fb block text-right font-mono cursor-pointer min-w-[92px] flex-shrink-0",
         flagged ? "text-accent" : "text-ink",
         className,
       )}
     >
+      <span className="sr-only">Skip this read: </span>
       <span
         className={cx(
           "text-data font-bold border-b pb-px",
@@ -46,8 +56,11 @@ export function FlagButton({ value, flagged, onClick, className }: FlagButtonPro
         {value}
       </span>
       {flagged && (
-        <span className="block text-[9px] font-bold uppercase tracking-wide text-accent mt-0.5">
-          ▸ check the read
+        <span
+          aria-hidden="true"
+          className="block text-[9px] font-bold uppercase tracking-wide text-accent mt-0.5"
+        >
+          ▸ skipped
         </span>
       )}
     </button>

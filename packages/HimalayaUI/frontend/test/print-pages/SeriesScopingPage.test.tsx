@@ -517,18 +517,23 @@ describe("SeriesScopingPage", () => {
     seedTwoKeys();
     renderPage();
     // Default: grouped by the frequency winner "ratio" → ratio values render.
-    let values = screen.getAllByTestId("flag-button").map((b) => b.textContent);
-    expect(values).toEqual(expect.arrayContaining(["1 : 0", "1 : 0.5"]));
-    expect(values).not.toContain("20C");
+    // (FlagButton textContent carries an sr-only "Skip this read: " purpose prefix.)
+    let values = screen.getAllByTestId("flag-button").map((b) => b.textContent ?? "");
+    expect(values).toEqual(
+      expect.arrayContaining(["Skip this read: 1 : 0", "Skip this read: 1 : 0.5"]),
+    );
+    expect(values.some((v) => v.includes("20C"))).toBe(false);
 
     // Switch the ordering variable to "temp".
     fireEvent.click(screen.getByTestId("order-field"));
     fireEvent.click(screen.getByRole("menuitem", { name: "temp" }));
 
     // The members now read their "temp" values.
-    values = screen.getAllByTestId("flag-button").map((b) => b.textContent);
-    expect(values).toEqual(expect.arrayContaining(["20C", "40C"]));
-    expect(values).not.toContain("1 : 0");
+    values = screen.getAllByTestId("flag-button").map((b) => b.textContent ?? "");
+    expect(values).toEqual(
+      expect.arrayContaining(["Skip this read: 20C", "Skip this read: 40C"]),
+    );
+    expect(values.some((v) => v.includes("1 : 0"))).toBe(false);
   });
 
   it("renders the dropdown even when only one ordering variable exists (Define your own… is always an alternative)", () => {
@@ -675,8 +680,10 @@ describe("SeriesScopingPage", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: "temp" }));
 
     expect(screen.queryByTestId("custom-scope-plate")).toBeNull();
-    const values = screen.getAllByTestId("flag-button").map((b) => b.textContent);
-    expect(values).toEqual(expect.arrayContaining(["20C", "40C"]));
-    expect(values).not.toContain("1 : 0");
+    const values = screen.getAllByTestId("flag-button").map((b) => b.textContent ?? "");
+    expect(values).toEqual(
+      expect.arrayContaining(["Skip this read: 20C", "Skip this read: 40C"]),
+    );
+    expect(values.some((v) => v.includes("1 : 0"))).toBe(false);
   });
 });

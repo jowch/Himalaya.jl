@@ -16,8 +16,8 @@ export const Summary: Story = {
       <>
         You selected <strong className="text-ink font-semibold">6 samples</strong> on the
         contact sheet. Himalaya grouped them from their names and read the order from the{" "}
-        <strong className="text-ink font-semibold">LL37 : lipid ratio</strong> — five ratios
-        parsed cleanly, one needs a look.
+        <strong className="text-ink font-semibold">LL37 : lipid ratio</strong> — six ratios
+        parsed; click any value to skip that read from the write.
       </>
     ),
   },
