@@ -94,6 +94,7 @@ export function BuilderRail({
 
       <RailSection label="Ordering variable" {...(orderNote != null ? { note: orderNote } : {})}>
         <Field
+          srLabel="Ordering variable"
           value={orderedBy}
           {...(orderOptions
             ? { options: orderOptions, ...(onOrderSelect ? { onSelect: onOrderSelect } : {}) }

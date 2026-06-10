@@ -34,6 +34,32 @@ describe("<BuilderRail>", () => {
     expect(screen.queryByRole("button", { name: /log q/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /linear q/i })).toBeNull();
   });
+  it("names the static ordering field with its label so it is not a bare value (WCAG 4.1.2)", () => {
+    // The builder page passes neither orderOptions nor onChangeOrder, so the
+    // Field renders in static mode; its readable text must still compose
+    // "Ordering variable {value}" and never drop the value.
+    render(<BuilderRail {...base} />);
+    expect(screen.getByTestId("field")).toHaveTextContent(
+      /Ordering variable\s+LL37 : lipid ratio/,
+    );
+  });
+  it("names the dropdown ordering field with label + value (WCAG 4.1.2)", () => {
+    render(
+      <BuilderRail
+        {...base}
+        orderOptions={[
+          { value: "LL37 : lipid ratio", label: "LL37 : lipid ratio" },
+          { value: "Time", label: "Time" },
+        ]}
+        onOrderSelect={() => {}}
+      />,
+    );
+    // With options the field is a real dropdown trigger button; its accessible
+    // name must read label + value, not just the value.
+    expect(
+      screen.getByRole("button", { name: /ordering variable\s+LL37 : lipid ratio/i }),
+    ).toBeInTheDocument();
+  });
   it("renders the Adjust action when onAdjust is provided (read state)", () => {
     render(<BuilderRail {...base} onAdjust={() => {}} />);
     expect(screen.getByRole("button", { name: /adjust/i })).toBeInTheDocument();
