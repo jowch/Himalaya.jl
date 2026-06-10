@@ -116,7 +116,7 @@ export function Menu<T extends string>({
               active
                 ? "text-ink bg-paper-sunk"
                 : "text-ink-soft hover:text-ink hover:bg-paper-sunk",
-              "disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent",
+              "disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-0 focus-visible:outline-accent",
             )}
           >
             {o.label}

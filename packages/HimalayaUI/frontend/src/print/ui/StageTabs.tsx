@@ -41,7 +41,7 @@ export function StageTabs({ active, onChange, className }: StageTabsProps): JSX.
           // stays "Samples").
           className={cx(
             "inline-flex items-center text-sm font-semibold uppercase tracking-wide px-3 py-1.5 rounded-sm transition-colors",
-            "focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent",
+            "focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-0 focus-visible:outline-accent",
             active === s.key ? "text-ink bg-paper-sunk" : "text-ink-soft hover:text-ink",
           )}
         >

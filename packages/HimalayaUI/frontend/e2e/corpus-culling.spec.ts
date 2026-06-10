@@ -314,6 +314,55 @@ test("narrow viewport: Status column is reachable by scrolling; Sample column st
   expect(Math.abs(sampleAfter!.x - sampleBefore!.x)).toBeLessThanOrEqual(1);
 });
 
+// F-STATE (DESIGN.md State taxonomy → Focus-visible): bespoke <button>/<a>
+// elements inherit the keyboard-only 2px accent ring from ONE @layer base rule
+// in styles.css (the loupe back button is the tracked LO-FOCUS case). Real
+// browser only: :focus-visible heuristics (keyboard vs mouse) don't exist in
+// JSDOM, and programmatic .focus() does not reliably trigger :focus-visible —
+// so this Tab-walks to the button for the keyboard half and mouse-clicks a
+// non-navigating bespoke button (a strip thumbnail) for the no-ring half.
+test("focus-visible: keyboard focus draws the 2px accent ring on a bespoke button; mouse click draws none", async ({ page }) => {
+  await mockCorpus(page);
+  await page.goto("/samples/loupe/10");
+  await expect(page.getByTestId("loupe-page")).toBeVisible();
+
+  // Tab-walk (bounded) until the bespoke loupe-back button holds focus.
+  let reached = false;
+  for (let i = 0; i < 30; i++) {
+    await page.keyboard.press("Tab");
+    reached = await page.evaluate(
+      () => document.activeElement?.getAttribute("data-testid") === "loupe-back",
+    );
+    if (reached) break;
+  }
+  expect(reached, "Tab order reaches the loupe back button").toBe(true);
+
+  // The keyboard ring is the accent token, not the UA default. Resolve
+  // var(--color-accent) through a probe element so both sides go through the
+  // same computed-value serialization.
+  const accent = await page.evaluate(() => {
+    const probe = document.createElement("div");
+    probe.style.color = "var(--color-accent)";
+    document.body.appendChild(probe);
+    const c = getComputedStyle(probe).color;
+    probe.remove();
+    return c;
+  });
+  const focused = await page.getByTestId("loupe-back").evaluate((el) => {
+    const s = getComputedStyle(el);
+    return { style: s.outlineStyle, width: s.outlineWidth, color: s.outlineColor };
+  });
+  expect(focused.style).toBe("solid");
+  expect(focused.width).toBe("2px");
+  expect(focused.color).toBe(accent);
+
+  // Mouse clicks never show a ring. loupe-back navigates away, so use another
+  // bespoke button that stays put: a filmstrip thumbnail (frame select only).
+  const thumb = page.getByTestId("thumbnail").nth(1);
+  await thumb.click();
+  expect(await thumb.evaluate((el) => getComputedStyle(el).outlineStyle)).toBe("none");
+});
+
 test("wide viewport: the sheet does not scroll horizontally (unchanged layout)", async ({ page }) => {
   // Playwright's default 1280×720 viewport is the wide case.
   await mockCorpus(page);

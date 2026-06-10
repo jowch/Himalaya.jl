@@ -78,7 +78,7 @@ export function Chip({
           type="button"
           aria-label="Remove"
           onClick={onRemove}
-          className="text-ink-faint hover:text-ink focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent rounded-sm"
+          className="text-ink-faint hover:text-ink focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-0 focus-visible:outline-accent rounded-sm"
         >
           ×
         </button>
@@ -98,7 +98,7 @@ export function Chip({
         className={cx(
           pillBase,
           sizeClass[size],
-          "text-ink-faint border border-dashed border-hair-strong hover:text-accent hover:border-accent focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent",
+          "text-ink-faint border border-dashed border-hair-strong hover:text-accent hover:border-accent focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-0 focus-visible:outline-accent",
           className,
         )}
       >

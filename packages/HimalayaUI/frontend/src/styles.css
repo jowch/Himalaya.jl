@@ -234,6 +234,20 @@
   .anim-overlay svg [data-role="tick-root"] line {
     animation: overlay-fade-in 140ms ease both;
   }
+
+  /* State taxonomy — focus-visible (DESIGN.md): every bespoke button/link gets
+     the keyboard-only accent ring by default. Primitives that refine it (ghost
+     1px, etc.) win via the utilities layer — but layer override is PER-PROPERTY:
+     `outline-1` alone would still inherit this rule's 2px offset, so the 1px
+     refiners redeclare `focus-visible:outline-offset-0` explicitly (the shipped
+     ghost look is 1px at offset 0). Deliberate suppressions win via
+     @layer components ([data-observed-hit], .print-range) or focus:outline-none
+     utilities (Popover container, Input inner). Mouse clicks never show a ring. */
+  button:focus-visible,
+  a:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
 }
 
 /*

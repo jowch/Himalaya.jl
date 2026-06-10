@@ -19,7 +19,7 @@ const variantClass: Record<ButtonVariant, string> = {
     "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
   ghost:
     "text-ink-soft hover:text-ink hover:bg-paper-sunk border border-transparent " +
-    "focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent",
+    "focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-0 focus-visible:outline-accent",
   danger:
     "text-error border border-transparent hover:bg-error hover:text-paper hover:border-error " +
     "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
@@ -28,7 +28,7 @@ const variantClass: Record<ButtonVariant, string> = {
     "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
   ghostInverse:
     "bg-transparent text-paper/70 hover:text-paper border border-transparent " +
-    "focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent",
+    "focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-0 focus-visible:outline-accent",
 };
 
 // Armed overrides the resting look with the terracotta active fill (mockup

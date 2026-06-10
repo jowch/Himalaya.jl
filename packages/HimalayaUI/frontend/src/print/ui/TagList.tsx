@@ -76,7 +76,7 @@ export function TagList({
             <button
               type="button"
               data-testid="tag-overflow"
-              className="text-ink-faint text-xs hover:text-ink cursor-pointer focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent rounded-sm"
+              className="text-ink-faint text-xs hover:text-ink cursor-pointer focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-0 focus-visible:outline-accent rounded-sm"
             >
               +{hidden.length} more
             </button>
