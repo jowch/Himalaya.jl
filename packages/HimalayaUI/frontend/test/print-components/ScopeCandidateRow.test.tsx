@@ -14,6 +14,15 @@ describe("<ScopeCandidateRow>", () => {
     expect(row).toHaveTextContent("1-1 lipid line");
     expect(screen.getByTestId("sparkline")).toBeInTheDocument();
   });
+  it("renders the optional smp_ sample identity next to the name", () => {
+    render(<ScopeCandidateRow name="Lipid 1-1 + LL37 1:1" sampleId="smp_42"
+      why="has LL37" trace={TRACE} />);
+    expect(screen.getByText("smp_42")).toBeInTheDocument();
+  });
+  it("omits the identity line when sampleId is not given", () => {
+    render(<ScopeCandidateRow name="x" why="y" trace={TRACE} />);
+    expect(screen.queryByText(/^smp_/)).toBeNull();
+  });
   it("fires onAdd from the Add-to-series button", () => {
     const onAdd = vi.fn();
     render(<ScopeCandidateRow name="x" why="y" trace={TRACE} onAdd={onAdd} />);

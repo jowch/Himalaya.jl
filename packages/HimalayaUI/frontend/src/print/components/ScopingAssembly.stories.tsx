@@ -214,6 +214,7 @@ function ScopingView(): JSX.Element {
               <ScopeCandidateRow
                 key={c.id}
                 name={c.name}
+                sampleId={c.id}
                 why={
                   <>
                     has LL37, but the{" "}

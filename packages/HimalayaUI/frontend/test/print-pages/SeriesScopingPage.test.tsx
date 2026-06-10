@@ -336,6 +336,41 @@ describe("SeriesScopingPage", () => {
     expect(screen.getByRole("button", { name: /confirm & build/i })).not.toBeDisabled();
   });
 
+  // ── SC-CANDID: candidate rows carry the member-row sample identity ──────────
+  // Display names duplicate in the real corpus; without the mono smp_{id} the
+  // page reads as a contradiction (the same name both in and out of the series).
+
+  it("gives every visible candidate row its smp_{id} identity as rendered text", () => {
+    seedManyLoose();
+    renderPage();
+    const candidates = screen.getAllByTestId("scope-candidate");
+    expect(candidates).toHaveLength(3);
+    const ids = candidates.map(
+      (row) => within(row).getByText(/^smp_\d+$/).textContent,
+    );
+    expect(ids).toEqual(["smp_11", "smp_12", "smp_13"]);
+  });
+
+  it("distinguishes a member and a candidate sharing a display name by their smp ids", () => {
+    // Member "1-2 Only" = smp_5; a DIFFERENT sample with the same display name
+    // lacks the ratio key and splits out as a loose candidate (smp_42).
+    pickerState = {
+      data: [
+        pickerRow(sample(5, "1-2 Only", [tag("ratio", "1 : 0")]), 37),
+        pickerRow(sample(42, "1-2 Only", []), 100),
+      ],
+      isLoading: false,
+      isError: false,
+    };
+    renderPage();
+    const member = screen.getByTestId("scope-sample-row");
+    expect(within(member).getByText("1-2 Only")).toBeInTheDocument();
+    expect(within(member).getByText("smp_5")).toBeInTheDocument();
+    const candidate = screen.getByTestId("scope-candidate");
+    expect(within(candidate).getByText("1-2 Only")).toBeInTheDocument();
+    expect(within(candidate).getByText("smp_42")).toBeInTheDocument();
+  });
+
   it("skipping a member excludes it from the write but does not block the build", () => {
     seed3();
     renderPage();

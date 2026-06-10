@@ -8,6 +8,9 @@ function cx(...parts: Array<string | false | null | undefined>): string {
 
 export interface ScopeCandidateRowProps {
   name: string;
+  /** Mono `smp_{id}` identity, mirroring the member-row (ScopeSampleRow)
+   *  idiom — display names duplicate in real corpora. */
+  sampleId?: string;
   /** One-line rationale; ReactNode so the caller can embed an accent
    *  `<strong>` for the `.warn` emphasis. */
   why: ReactNode;
@@ -23,6 +26,7 @@ export interface ScopeCandidateRowProps {
  *  name + a one-line "why", and a trailing "+ Add to series" button. */
 export function ScopeCandidateRow({
   name,
+  sampleId,
   why,
   trace,
   phase,
@@ -43,7 +47,12 @@ export function ScopeCandidateRow({
         className="opacity-70"
       />
       <div className="flex-1 min-w-0">
-        <div className="text-meta font-semibold text-ink-soft">{name}</div>
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-meta font-semibold text-ink-soft">{name}</span>
+          {sampleId != null && (
+            <span className="text-caption font-mono text-ink-soft">{sampleId}</span>
+          )}
+        </div>
         <div className="text-caption text-ink-soft">{why}</div>
       </div>
       <Button variant="outline" {...(onAdd ? { onClick: onAdd } : {})}>

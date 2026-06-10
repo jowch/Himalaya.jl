@@ -7,6 +7,7 @@ const meta = {
   component: ScopeCandidateRow,
   args: {
     name: "Lipid 1-1 + LL37 1:1",
+    sampleId: "smp_37",
     phase: "Pn3m",
     trace: realTraces[37]!,
     why: (

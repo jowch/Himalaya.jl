@@ -810,7 +810,20 @@ export function SeriesScopingPage(): JSX.Element {
                           className="opacity-70"
                         />
                         <div className="flex-1 min-w-0">
-                          <div className="text-meta font-semibold text-ink-soft">{c.sampleName}</div>
+                          {/* Same identity vocabulary as the member rows
+                              (ScopeSampleRow's mono smp_ caption) — display
+                              names duplicate in the corpus, and without the id
+                              a candidate can read as a member that is somehow
+                              also out of the series. Inline (not stacked) so
+                              the dimmed row stays two lines tall. */}
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="text-meta font-semibold text-ink-soft">
+                              {c.sampleName}
+                            </span>
+                            <span className="text-caption font-mono text-ink-soft">
+                              smp_{c.sampleId}
+                            </span>
+                          </div>
                           <div className="text-caption text-ink-soft">
                             lacks the{" "}
                             <strong className="text-accent font-semibold">{keyLabel}</strong>
