@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { KeyboardEvent } from "react";
 import { Button, IconButton, Menu } from "../ui";
 
 function cx(...parts: Array<string | false | null | undefined>): string {
@@ -7,6 +8,11 @@ function cx(...parts: Array<string | false | null | undefined>): string {
 
 export interface ExportButtonProps {
   onCopy: () => void;
+  /** Download handlers. Wiring contract: each MUST flip `pending` true
+   *  synchronously (useFigureExport does) — the parked-focus repair consumes
+   *  its own-activation flag at the next pending true→false edge, so a
+   *  handler that never starts a pending cycle would leave the flag armed
+   *  for a later (possibly foreign) cycle to consume. */
   onDownloadPng: () => void;
   onDownloadSvg: () => void;
   /** Copy unavailable (no clipboard / no PNG renderer / a render in flight). */
@@ -27,9 +33,16 @@ export interface ExportButtonProps {
  * The figure-export split button (mockup: series-builder rail-foot "Copy as
  * PNG"): a bordered group with a primary **Copy** action and a `▾` chevron that
  * opens a two-item download menu (PNG / SVG). Presentational — every side
- * effect is a prop (wire it with `useFigureExport`). Owns ONLY its menu-open
- * state + outside-pointerdown dismissal (the `Field` precedent; `Menu` owns
- * Escape + arrow-nav).
+ * effect is a prop (wire it with `useFigureExport`). Owns its menu-open state,
+ * outside-pointerdown dismissal, and the APG menu-button trigger half (the
+ * `Field` precedent; `Menu` owns in-menu Escape + arrow-nav and moves focus
+ * into the menu on open):
+ * - ArrowDown on the closed trigger opens + focuses the first enabled item;
+ *   ArrowUp opens + focuses the LAST (both preventDefault — no page scroll).
+ * - Escape on the trigger while open closes (focus already on the trigger).
+ * - Keyboard-reachable closes (Escape in the menu, item select) RETURN focus
+ *   to the trigger; outside-pointerdown close does NOT — the pointer user
+ *   clicked elsewhere on purpose, so we never yank focus back.
  */
 export function ExportButton({
   onCopy,
@@ -43,7 +56,11 @@ export function ExportButton({
   className,
 }: ExportButtonProps): JSX.Element {
   const [open, setOpen] = useState(false);
+  // Where Menu's mount effect puts focus on open: "first" (click/ArrowDown)
+  // or "last" (ArrowUp). APG menu-button.
+  const [menuFocus, setMenuFocus] = useState<"first" | "last">("first");
   const wrapRef = useRef<HTMLSpanElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
 
   // Outside-pointerdown closes the menu (mirrors Field/Popover). Bound only
   // while open.
@@ -61,6 +78,48 @@ export function ExportButton({
   const copyOff = disabled || copyDisabled;
   const pngOff = disabled || pngDisabled;
   const svgOff = disabled || pending;
+
+  // Close + return focus to the trigger (keyboard close paths only —
+  // outside-pointerdown deliberately bypasses this; see the doc comment).
+  const closeAndRefocus = (): void => {
+    setOpen(false);
+    triggerRef.current?.focus();
+  };
+
+  // Parked focus across the pending window (RepresentativeBox precedent):
+  // selecting a download flips `pending` synchronously, which disables the
+  // trigger (`disabled || pending`) — and real browsers BLUR a focused element
+  // the moment it disables, so closeAndRefocus()'s focus is transient and the
+  // keyboard user is dumped on <body> for the render window. Park the intent
+  // in a ref set ONLY by our own menu select; a layout effect restores focus
+  // to the trigger when pending transitions back to false (before paint).
+  // Foreign pending flips (an export initiated elsewhere) never set the flag,
+  // so they never yank focus. The flag is consumed at every pending end.
+  const refocusAfterPending = useRef(false);
+  const prevPending = useRef(pending);
+  useLayoutEffect(() => {
+    const was = prevPending.current;
+    prevPending.current = pending;
+    if (was && !pending) {
+      if (refocusAfterPending.current) triggerRef.current?.focus();
+      refocusAfterPending.current = false; // consume — lives one cycle
+    }
+  }, [pending]);
+
+  // APG menu-button trigger keys: arrows open with a focus target; Escape
+  // closes an open menu whose focus is still on the trigger (Menu only hears
+  // Escape once focus is inside it). Enter/Space open via the native click.
+  const onTriggerKeyDown = (e: KeyboardEvent<HTMLButtonElement>): void => {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault(); // arrows must not scroll the page
+      setMenuFocus(e.key === "ArrowDown" ? "first" : "last");
+      setOpen(true);
+    } else if (e.key === "Escape" && open) {
+      e.preventDefault();
+      e.stopPropagation(); // innermost popup only — don't double-close a host modal
+      setOpen(false); // focus is already on the trigger
+    }
+  };
 
   return (
     <span
@@ -80,12 +139,17 @@ export function ExportButton({
         </Button>
         <span className="w-px bg-hair-strong" aria-hidden="true" />
         <IconButton
+          ref={triggerRef}
           label="Download formats"
           data-testid="export-menu-trigger"
           aria-haspopup="menu"
           aria-expanded={open}
           disabled={disabled || pending}
-          onClick={() => setOpen((o) => !o)}
+          onClick={() => {
+            setMenuFocus("first"); // click-open focuses the first enabled item
+            setOpen((o) => !o);
+          }}
+          onKeyDown={onTriggerKeyDown}
         >
           ▾
         </IconButton>
@@ -97,11 +161,13 @@ export function ExportButton({
           { value: "svg", label: "Download as SVG", disabled: svgOff },
         ]}
         onSelect={(v) => {
+          refocusAfterPending.current = true; // our activation — park focus intent
           if (v === "png") onDownloadPng();
           else onDownloadSvg();
         }}
-        onClose={() => setOpen(false)}
+        onClose={closeAndRefocus}
         aria-label="Download formats"
+        initialFocus={menuFocus}
         className="right-0 top-full"
       />
     </span>

@@ -77,6 +77,77 @@ describe("ExportButton", () => {
     expect(screen.queryByRole("menu", { name: /download formats/i })).toBeNull();
   });
 
+  // APG menu-button keyboard pattern.
+  it("ArrowDown on the closed trigger opens and focuses the first enabled item", () => {
+    setup();
+    const trigger = screen.getByTestId("export-menu-trigger");
+    trigger.focus();
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(
+      screen.getByRole("menuitem", { name: /download as png/i }),
+    );
+  });
+
+  it("ArrowUp on the closed trigger opens and focuses the LAST enabled item", () => {
+    setup();
+    const trigger = screen.getByTestId("export-menu-trigger");
+    trigger.focus();
+    fireEvent.keyDown(trigger, { key: "ArrowUp" });
+    expect(document.activeElement).toBe(
+      screen.getByRole("menuitem", { name: /download as svg/i }),
+    );
+  });
+
+  it("Escape inside the menu closes and RETURNS focus to the trigger", () => {
+    setup();
+    const trigger = screen.getByTestId("export-menu-trigger");
+    fireEvent.click(trigger);
+    fireEvent.keyDown(screen.getByRole("menu", { name: /download formats/i }), {
+      key: "Escape",
+    });
+    expect(screen.queryByRole("menu", { name: /download formats/i })).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it("select-refocus survives the pending window (parked focus across the disabled trigger)", () => {
+    // Real sequence: selecting a download flips `pending` synchronously, which
+    // disables the trigger (`disabled || pending`). Real browsers blur a
+    // focused element the moment it disables — JSDOM doesn't, so model the
+    // blur — and the parked-focus effect must restore the trigger when
+    // pending transitions back to false (RepresentativeBox precedent).
+    const props = {
+      onCopy: vi.fn(),
+      onDownloadPng: vi.fn(),
+      onDownloadSvg: vi.fn(),
+      ariaContext: "the trace",
+    };
+    const { rerender } = render(<ExportButton {...props} />);
+    const trigger = screen.getByTestId("export-menu-trigger");
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole("menuitem", { name: /download as png/i }));
+    rerender(<ExportButton {...props} pending />);
+    expect(trigger).toBeDisabled();
+    // Model the blur-on-disable JSDOM omits (its blur() doesn't even unfocus —
+    // move focus off the trigger explicitly).
+    screen.getByTestId("export-copy").focus();
+    expect(document.activeElement).not.toBe(trigger);
+    rerender(<ExportButton {...props} />); // render lands → pending ends
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it("a pending cycle WITHOUT a local menu activation never yanks focus (foreign flip)", () => {
+    const props = {
+      onCopy: vi.fn(),
+      onDownloadPng: vi.fn(),
+      onDownloadSvg: vi.fn(),
+      ariaContext: "the trace",
+    };
+    const { rerender } = render(<ExportButton {...props} />);
+    rerender(<ExportButton {...props} pending />);
+    rerender(<ExportButton {...props} />);
+    expect(document.activeElement).not.toBe(screen.getByTestId("export-menu-trigger"));
+  });
+
   it("an outside pointerdown closes the open menu", () => {
     setup();
     fireEvent.click(screen.getByRole("button", { name: /download formats/i }));

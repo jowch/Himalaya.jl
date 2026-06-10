@@ -1,3 +1,4 @@
+import { forwardRef } from "react";
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 
 export type IconButtonTone = "ghost" | "accent" | "danger";
@@ -28,18 +29,24 @@ function cx(...parts: Array<string | false | undefined>): string {
   return parts.filter(Boolean).join(" ");
 }
 
-export function IconButton({
-  label,
-  tone = "ghost",
-  dismiss = false,
-  className = "",
-  children,
-  type = "button",
-  title,
-  ...props
-}: IconButtonProps): JSX.Element {
+// forwardRef so owners can hold the DOM button — e.g. ExportButton returns
+// focus to its menu trigger on keyboard close (APG menu-button).
+export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconButton(
+  {
+    label,
+    tone = "ghost",
+    dismiss = false,
+    className = "",
+    children,
+    type = "button",
+    title,
+    ...props
+  },
+  ref,
+): JSX.Element {
   return (
     <button
+      ref={ref}
       type={type}
       aria-label={label}
       title={title ?? label}
@@ -60,4 +67,4 @@ export function IconButton({
       {dismiss ? "×" : children}
     </button>
   );
-}
+});

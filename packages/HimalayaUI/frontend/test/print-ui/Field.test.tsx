@@ -47,4 +47,95 @@ describe("<Field>", () => {
     expect(onSelect).toHaveBeenCalledWith("Dose");
     expect(screen.queryByTestId("menu")).toBeNull();          // closes on select
   });
+
+  // APG menu-button keyboard pattern (dropdown mode).
+  describe("dropdown keyboard pattern", () => {
+    const opts = [
+      { value: "Time", label: "Time" },
+      { value: "Dose", label: "Dose" },
+      { value: "Mass", label: "Mass" },
+    ];
+    function setup() {
+      render(<Field value="Dose" options={opts} onSelect={() => {}} />);
+      return screen.getByTestId("field");
+    }
+
+    it("ArrowDown on the closed trigger opens and focuses the active item", () => {
+      const trigger = setup();
+      trigger.focus();
+      fireEvent.keyDown(trigger, { key: "ArrowDown" });
+      expect(screen.getByTestId("menu")).toBeInTheDocument();
+      expect(document.activeElement).toBe(screen.getByRole("menuitem", { name: "Dose" }));
+    });
+
+    it("ArrowUp on the closed trigger opens and focuses the LAST item", () => {
+      const trigger = setup();
+      trigger.focus();
+      fireEvent.keyDown(trigger, { key: "ArrowUp" });
+      expect(screen.getByTestId("menu")).toBeInTheDocument();
+      expect(document.activeElement).toBe(screen.getByRole("menuitem", { name: "Mass" }));
+    });
+
+    it("opening by click also moves focus into the menu (APG)", () => {
+      const trigger = setup();
+      fireEvent.click(trigger);
+      expect(document.activeElement).toBe(screen.getByRole("menuitem", { name: "Dose" }));
+    });
+
+    it("Escape on the trigger while open closes; focus stays on the trigger", () => {
+      const trigger = setup();
+      trigger.focus();
+      fireEvent.click(trigger);
+      trigger.focus(); // user shift-tabbed back / focus never left in this path
+      fireEvent.keyDown(trigger, { key: "Escape" });
+      expect(screen.queryByTestId("menu")).toBeNull();
+      expect(document.activeElement).toBe(trigger);
+    });
+
+    it("Escape inside the menu closes and RETURNS focus to the trigger", () => {
+      const trigger = setup();
+      fireEvent.click(trigger);
+      fireEvent.keyDown(screen.getByTestId("menu"), { key: "Escape" });
+      expect(screen.queryByTestId("menu")).toBeNull();
+      expect(document.activeElement).toBe(trigger);
+    });
+
+    it("selecting an item closes and returns focus to the trigger", () => {
+      const trigger = setup();
+      fireEvent.click(trigger);
+      fireEvent.click(screen.getByRole("menuitem", { name: "Mass" }));
+      expect(screen.queryByTestId("menu")).toBeNull();
+      expect(document.activeElement).toBe(trigger);
+    });
+
+    it("Escape that closes the menu does NOT reach document listeners (innermost popup only)", () => {
+      // ModalShell dismisses on a document-level Escape listener; a menu
+      // inside a future modal must not double-close it (APG: Escape closes
+      // only the innermost popup).
+      const trigger = setup();
+      const docSpy = vi.fn();
+      document.addEventListener("keydown", docSpy);
+      try {
+        fireEvent.click(trigger);
+        fireEvent.keyDown(screen.getByTestId("menu"), { key: "Escape" });
+        expect(screen.queryByTestId("menu")).toBeNull();
+        expect(docSpy).not.toHaveBeenCalled();
+        // Escape on the trigger while open is equally contained.
+        fireEvent.click(trigger);
+        fireEvent.keyDown(trigger, { key: "Escape" });
+        expect(screen.queryByTestId("menu")).toBeNull();
+        expect(docSpy).not.toHaveBeenCalled();
+      } finally {
+        document.removeEventListener("keydown", docSpy);
+      }
+    });
+
+    it("an outside pointerdown closes WITHOUT stealing focus back to the trigger", () => {
+      const trigger = setup();
+      fireEvent.click(trigger);
+      fireEvent.pointerDown(document.body);
+      expect(screen.queryByTestId("menu")).toBeNull();
+      expect(document.activeElement).not.toBe(trigger);
+    });
+  });
 });

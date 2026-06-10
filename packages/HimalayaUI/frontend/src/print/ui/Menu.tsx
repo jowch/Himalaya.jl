@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import type { ReactNode, KeyboardEvent } from "react";
 
 /**
@@ -14,6 +14,15 @@ import type { ReactNode, KeyboardEvent } from "react";
  * mirrors SegmentedControl's radiogroup roving focus — refs array + `.focus()`
  * on ArrowUp/Down — plus Escape -> onClose. A click selects then closes.
  * Renders nothing when `!open`.
+ *
+ * APG menu-button: opening the menu moves DOM focus INTO it — to the active
+ * item when `activeValue` names an enabled option, else the first enabled
+ * item; `initialFocus="last"` targets the last enabled item instead, so owners
+ * can implement ArrowUp-on-trigger-opens-focusing-last. Mouse clicks on the
+ * trigger land focus in the menu too (the APG makes no pointer/keyboard
+ * distinction on open); `focus-visible` keeps the focus ring keyboard-only, so
+ * mouse users see no ring flash. Returning focus to the TRIGGER on close is
+ * the owner's job (Menu has no trigger ref) — see Field / ExportButton.
  */
 
 export interface MenuOption<T extends string> {
@@ -30,8 +39,12 @@ export interface MenuProps<T extends string> {
   onClose: () => void;
   /** Required: names the menu for assistive tech. */
   "aria-label": string;
-  /** The currently-active option's value (gets `data-active`). */
+  /** The currently-active option's value (gets `data-active` + initial focus). */
   activeValue?: T;
+  /** Where focus lands on open (APG menu-button). Default/"first": the active
+   *  item if enabled, else the first enabled item. "last": the last enabled
+   *  item — owners pass this when ArrowUp opened the menu. */
+  initialFocus?: "first" | "last";
   /** PLACEMENT-ONLY: margin / width / position. No appearance utils. */
   className?: string;
 }
@@ -47,11 +60,37 @@ export function Menu<T extends string>({
   onClose,
   "aria-label": ariaLabel,
   activeValue,
+  initialFocus,
   className = "",
 }: MenuProps<T>): JSX.Element | null {
   // Refs to the menuitem buttons so arrow-nav can move DOM focus among them,
   // mirroring SegmentedControl's radiogroup roving-focus idiom.
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
+
+  // APG menu-button: when the menu opens, move DOM focus to a menuitem. The
+  // menu mounts on open (we render null when closed), so an effect keyed on
+  // `open` fires exactly on the open transition, after the item refs exist.
+  // Deliberately NOT keyed on options/activeValue/initialFocus — focus moves
+  // once per open, never on later re-renders of an already-open menu.
+  useEffect(() => {
+    if (!open) return;
+    let target = -1;
+    if (initialFocus === "last") {
+      for (let i = options.length - 1; i >= 0; i--) {
+        if (!options[i].disabled) {
+          target = i;
+          break;
+        }
+      }
+    } else {
+      // Active item wins (so the menu opens "on" the current value); a
+      // disabled active option falls through to first-enabled.
+      target = options.findIndex((o) => o.value === activeValue && !o.disabled);
+      if (target < 0) target = options.findIndex((o) => !o.disabled);
+    }
+    if (target >= 0) itemRefs.current[target]?.focus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   if (!open) return null;
 
@@ -81,6 +120,10 @@ export function Menu<T extends string>({
   const onMenuKeyDown = (e: KeyboardEvent<HTMLDivElement>): void => {
     if (e.key === "Escape") {
       e.preventDefault();
+      // APG: Escape dismisses only the innermost popup. Stop the event here
+      // so a host modal's document-level Escape listener (ModalShell) does
+      // not double-close.
+      e.stopPropagation();
       onClose();
     }
   };

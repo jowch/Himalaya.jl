@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import type { KeyboardEvent } from "react";
 import { Menu } from "./Menu";
 import type { MenuOption } from "./Menu";
 
@@ -31,7 +32,18 @@ function cx(...parts: Array<string | false | null | undefined>): string {
  *
  *  In DROPDOWN mode (`options` given) the field is self-contained: it owns its
  *  open state, renders the `Menu` primitive anchored to a `relative` wrapper,
- *  and closes on select / outside-click / Escape (Menu owns Escape + arrow nav).
+ *  and closes on select / outside-click / Escape (Menu owns in-menu Escape +
+ *  arrow nav; Menu's mount effect moves focus into the menu on open).
+ *
+ *  APG menu-button keyboard pattern (the owner half):
+ *  - ArrowDown on the closed trigger opens + focuses the active/first item;
+ *    ArrowUp opens + focuses the LAST item (both preventDefault — no scroll).
+ *  - Escape on the trigger while the menu is open closes it (focus is already
+ *    on the trigger, so nothing moves).
+ *  - Any keyboard-reachable close (Escape inside the menu, selecting an item)
+ *    RETURNS focus to the trigger. Outside-pointerdown close deliberately does
+ *    NOT — the pointer user clicked elsewhere on purpose; yanking focus back
+ *    to the trigger would fight their intent.
  *
  *  In TRIGGER mode (no `options`) it is the bare button whose click fires the
  *  passed `onClick` — the menu is owned elsewhere (today's behaviour).
@@ -52,7 +64,11 @@ export function Field({
   const showPlaceholder = value === "" && placeholder != null;
   const isDropdown = options != null;
   const [open, setOpen] = useState(false);
+  // Where Menu's mount effect puts focus: "first" = active-else-first (click,
+  // ArrowDown); "last" = last enabled item (ArrowUp). APG menu-button.
+  const [menuFocus, setMenuFocus] = useState<"first" | "last">("first");
   const wrapRef = useRef<HTMLSpanElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
 
   // Outside-click closes the menu (mirrors Popover's outside-pointerdown
   // pattern); bound only while open.
@@ -90,15 +106,48 @@ export function Field({
     );
   }
 
+  // Close + return focus to the trigger — every keyboard-reachable close path
+  // (Escape inside the menu, item select) routes through here so the user is
+  // never dropped at <body>. Outside-pointerdown bypasses it on purpose.
+  const closeAndRefocus = (): void => {
+    setOpen(false);
+    triggerRef.current?.focus();
+  };
+
+  // APG menu-button trigger keys (dropdown mode only):
+  // ArrowDown opens focusing active/first; ArrowUp opens focusing last;
+  // Escape closes an open menu whose focus is still on the trigger (without
+  // this, Escape here was inert — Menu only hears keys once focus is inside).
+  // Enter/Space already open via the native button click.
+  const onTriggerKeyDown = (e: KeyboardEvent<HTMLButtonElement>): void => {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault(); // arrows must not scroll the page
+      setMenuFocus(e.key === "ArrowDown" ? "first" : "last");
+      setOpen(true);
+    } else if (e.key === "Escape" && open) {
+      e.preventDefault();
+      e.stopPropagation(); // innermost popup only — don't double-close a host modal
+      setOpen(false); // focus is already on the trigger — nothing to restore
+    }
+  };
+
   const trigger = (
     <button
+      ref={triggerRef}
       type="button"
       data-testid={testId ?? "field"}
       {...(isDropdown
-        ? { "aria-haspopup": "menu" as const, "aria-expanded": open }
+        ? {
+            "aria-haspopup": "menu" as const,
+            "aria-expanded": open,
+            onKeyDown: onTriggerKeyDown,
+          }
         : {})}
       onClick={() => {
-        if (isDropdown) setOpen((o) => !o);
+        if (isDropdown) {
+          setMenuFocus("first"); // click-open focuses active-else-first
+          setOpen((o) => !o);
+        }
         onClick?.();
       }}
       className={cx(
@@ -124,13 +173,11 @@ export function Field({
       <Menu<string>
         open={open}
         options={options}
-        onSelect={(v) => {
-          onSelect?.(v);
-          setOpen(false);
-        }}
-        onClose={() => setOpen(false)}
+        onSelect={(v) => onSelect?.(v)}
+        onClose={closeAndRefocus}
         aria-label={menuLabel ?? "Choose an option"}
         activeValue={value}
+        initialFocus={menuFocus}
         className="w-full"
       />
     </span>

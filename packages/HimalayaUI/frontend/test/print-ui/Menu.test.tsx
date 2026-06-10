@@ -74,6 +74,95 @@ describe("<Menu>", () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
+  // APG menu-button: opening the menu moves DOM focus into it.
+  describe("focus on open", () => {
+    it("focuses the active item when activeValue matches an enabled option", () => {
+      render(
+        <Menu
+          aria-label="fruit"
+          open
+          options={opts}
+          activeValue="b"
+          onSelect={() => {}}
+          onClose={() => {}}
+        />,
+      );
+      expect(document.activeElement).toBe(screen.getByRole("menuitem", { name: "Banana" }));
+    });
+
+    it("focuses the first enabled item when there is no activeValue", () => {
+      render(
+        <Menu aria-label="fruit" open options={opts} onSelect={() => {}} onClose={() => {}} />,
+      );
+      expect(document.activeElement).toBe(screen.getByRole("menuitem", { name: "Apple" }));
+    });
+
+    it("skips a disabled first option", () => {
+      render(
+        <Menu
+          aria-label="fruit"
+          open
+          options={[
+            { value: "a", label: "Apple", disabled: true },
+            { value: "b", label: "Banana" },
+          ]}
+          onSelect={() => {}}
+          onClose={() => {}}
+        />,
+      );
+      expect(document.activeElement).toBe(screen.getByRole("menuitem", { name: "Banana" }));
+    });
+
+    it('initialFocus="last" focuses the last enabled item (ArrowUp-opens)', () => {
+      render(
+        <Menu
+          aria-label="fruit"
+          open
+          options={opts}
+          initialFocus="last"
+          onSelect={() => {}}
+          onClose={() => {}}
+        />,
+      );
+      expect(document.activeElement).toBe(screen.getByRole("menuitem", { name: "Cherry" }));
+    });
+
+    it('initialFocus="last" skips a disabled last option', () => {
+      render(
+        <Menu
+          aria-label="fruit"
+          open
+          options={[
+            { value: "a", label: "Apple" },
+            { value: "b", label: "Banana" },
+            { value: "c", label: "Cherry", disabled: true },
+          ]}
+          initialFocus="last"
+          onSelect={() => {}}
+          onClose={() => {}}
+        />,
+      );
+      expect(document.activeElement).toBe(screen.getByRole("menuitem", { name: "Banana" }));
+    });
+
+    it("does not match a disabled option as the active item", () => {
+      render(
+        <Menu
+          aria-label="fruit"
+          open
+          options={[
+            { value: "a", label: "Apple" },
+            { value: "b", label: "Banana", disabled: true },
+          ]}
+          activeValue="b"
+          onSelect={() => {}}
+          onClose={() => {}}
+        />,
+      );
+      expect(document.activeElement).toBe(screen.getByRole("menuitem", { name: "Apple" }));
+    });
+  });
+
   it("the active option has data-active=true", () => {
     render(
       <Menu
