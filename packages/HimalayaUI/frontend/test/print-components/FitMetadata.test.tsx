@@ -10,11 +10,31 @@ describe("<FitMetadata>", () => {
     expect(screen.getByTestId("fit-metadata")).toBeInTheDocument();
   });
 
-  it("contains 'Lands on' text", () => {
+  it("names reflections as the subject with a plural verb when landed=0", () => {
     render(
-      <FitMetadata landed={7} total={9} paramName="d" paramValue="81.2" unit="Å" />
+      <FitMetadata landed={0} total={6} paramName="d" paramValue="81.2" unit="Å" />
     );
-    expect(screen.getByTestId("fit-metadata")).toHaveTextContent("Lands on");
+    expect(screen.getByTestId("fit-metadata")).toHaveTextContent(
+      "0 of 6 reflections land on observed peaks"
+    );
+  });
+
+  it("uses the singular verb 'lands' when landed=1", () => {
+    render(
+      <FitMetadata landed={1} total={6} paramName="d" paramValue="81.2" unit="Å" />
+    );
+    expect(screen.getByTestId("fit-metadata")).toHaveTextContent(
+      "1 of 6 reflections lands on observed peaks"
+    );
+  });
+
+  it("uses the plural verb 'land' when landed=4", () => {
+    render(
+      <FitMetadata landed={4} total={6} paramName="d" paramValue="81.2" unit="Å" />
+    );
+    expect(screen.getByTestId("fit-metadata")).toHaveTextContent(
+      "4 of 6 reflections land on observed peaks"
+    );
   });
 
   it("contains the landed count", () => {

@@ -309,7 +309,7 @@ describe("CUSTOM_SYMS", () => {
 // ── customIndexPreview ────────────────────────────────────────────────────────
 
 describe("customIndexPreview", () => {
-  it("builds a preview series + a 'lands on K of M' fit", () => {
+  it("builds a preview series + a 'K of M reflections land' fit", () => {
     const sym = "Pn3m";
     const val = latticeForFirstOrderOnPeak(sym, 0.10); // first order on 0.10
     const refls = customRefls(sym, val); // N = [2,3,4,6,8,9]

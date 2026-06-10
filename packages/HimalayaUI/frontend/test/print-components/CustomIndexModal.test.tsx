@@ -26,7 +26,9 @@ describe("CustomIndexModal", () => {
     expect(getAllByRole("button").some((b) => b.textContent === "Im3m")).toBe(true);
     expect(getByTestId("lattice-param")).toBeTruthy();
     expect(getByTestId("custom-preview")).toBeTruthy();
-    expect(getByTestId("fit-metadata").textContent).toContain("Lands on");
+    expect(getByTestId("fit-metadata").textContent).toContain(
+      "3 of 5 reflections land on observed peaks",
+    );
     expect(getByText("Add to assignment")).toBeTruthy();
     expect(getByText("Cancel")).toBeTruthy();
   });

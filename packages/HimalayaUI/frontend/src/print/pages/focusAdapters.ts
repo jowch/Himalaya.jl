@@ -286,7 +286,7 @@ export const CUSTOM_SYMS: ReadonlyArray<{
 });
 
 /**
- * Live preview comb + "lands on N of M" fit for the custom-index modal, at
+ * Live preview comb + "N of M reflections land" fit for the custom-index modal, at
  * lattice `paramValue` against `observed` peak q-values. Reuses customRefls /
  * landsOn from customIndex.ts; the per-tooth `observed`/`residual` use the SAME
  * relTol (0.022) `landsOn` does, so the displayed fit count and the lit teeth

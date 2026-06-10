@@ -23,7 +23,8 @@ export function FitMetadata({
 }: FitMetadataProps): JSX.Element {
   return (
     <div data-testid="fit-metadata" className={cx("text-meta text-ink-soft", className)}>
-      Lands on <b className="text-ink font-bold">{landed}</b> of {total} observed peaks
+      <b className="text-ink font-bold">{landed}</b> of {total} reflections{" "}
+      {landed === 1 ? "lands" : "land"} on observed peaks
       {" · "}
       <b className="text-ink font-bold">{paramName}</b> ={" "}
       <b className="text-ink font-bold">

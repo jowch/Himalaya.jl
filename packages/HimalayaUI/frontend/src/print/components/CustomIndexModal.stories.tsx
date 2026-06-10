@@ -102,7 +102,7 @@ function buildPreview(sym: string, val: number): { series: CombSeries; fit: Cust
   const landed = teeth.filter((t) => t.observed).length;
   return {
     series: { phase: sym, color: phaseColor(sym), teeth },
-    fit: { landed, total: OBSERVED.length, snapped: isSnapped(sym, val) },
+    fit: { landed, total: teeth.length, snapped: isSnapped(sym, val) },
   };
 }
 
@@ -145,7 +145,7 @@ function OpenDemo(): JSX.Element {
 
   // The page-owned computation: predicted teeth + fit recompute on every
   // symmetry / lattice change, so dragging the slider moves the teeth and the
-  // "Lands on N of M" line is real, not hard-coded.
+  // "N of M reflections land on observed peaks" line is real, not hard-coded.
   const preview = useMemo(() => buildPreview(symmetry, Number(paramValue)), [symmetry, paramValue]);
 
   const handleSymmetryChange = (s: string): void => {
