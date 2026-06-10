@@ -1,13 +1,13 @@
-# Production-polish loop — backlog & tracker
+# Production-polish goal — backlog & tracker
 
-Durable state for the impeccable production-polish loop. Companion to [2026-06-09-impeccable-design-loop.md](2026-06-09-impeccable-design-loop.md) (the command catalog, law checklist, severity machinery, per-surface map). Each wake re-reads both. One iteration per wake.
+Durable state for the impeccable production-polish **goal** (native `/goal` harness since 2026-06-10; originally a `/loop` — filename kept for stable references). Companion to [2026-06-09-impeccable-design-loop.md](2026-06-09-impeccable-design-loop.md) (the command catalog, law checklist, severity machinery, per-surface map). Each turn re-reads both. One iteration per turn; the goal's evaluator auto-continues turns until the GOLD finish condition is met and surfaced in-conversation.
 
-## loop-config (resolved with Jonathan 2026-06-09 — binding)
+## goal-config (resolved with Jonathan 2026-06-09 — binding)
 
 | Key | Value |
 |---|---|
 | **responsive_scope** | Desktop-first, **honest to ~1024px**. Fix `xl:`→`lg:` rail (Focus+Builder) + stack Loupe grid below a documented min-width. Sub-tablet (<~768px) out of scope; `<600px` scoping foot-row wrap item **dropped**. |
-| **duplicate_export** | **Export-figure surfaced now** (P1, presentation/placement). **Duplicate-series deferred** out of this loop (separate `shape`-gated feature; no backend duplicate path today). |
+| **duplicate_export** | **Export-figure surfaced now** (P1, presentation/placement). **Duplicate-series deferred** out of this goal (separate `shape`-gated feature; no backend duplicate path today). |
 | **finish_bar** | **GOLD / flagship.** Every surface **critique ≥ 36/40 AND audit ≥ 18/20** AND all P0/P1 closed. Genuinely-infeasible flagship items → mark `blocked`, surface, do not force. |
 | **ordering_vars** | Scoping "Ordered by" dropdown is **data-driven** from the real manifest/adapter variable set + a "define your own" affordance. Verify against backend before wiring; do not hardcode the mockup's time/dose/temperature set. |
 | **branch** | `worktree-greenfield-ui-rebuild` — STAYS UNMERGED. Never merge, never `finishing-a-development-branch`, never `git add -A`, every commit ends with the mandated co-author line. |
@@ -100,7 +100,7 @@ Severity: P0 blocking · P1 major/any-WCAG-AA · P2 minor · P3 polish. Status: 
 | BU-DEAD | **Two inert controls in COMPOSE rail** — outline "+ Add sample" Button + collapse "›" chevron render live but get no handler; controls-don't-lie violation; duplicates working native select | harden | P1 | todo | ✓W1 |
 | BU-FIELD | **Ordering-variable `Field` trigger has no descriptive accessible name** — same gap as SC-FIELD: BuilderRail's `<Field>` sits under a visible "Ordering variable" `RailSection` label that isn't programmatically tied; trigger a11y name is just the value. Pass `srLabel="Ordering variable"` (the `Field` `srLabel` prop already exists from SC-FIELD). | harden | P1 | todo | surfaced by SC-FIELD impl · WCAG 4.1.2 · trivial (prop already built) |
 | BU-RAIL | **Work·rail split gated at `xl:` (1280px)** drops rail below plate across 1024–1279 laptop band (Confirm/ordering/offset/export off-screen) | adapt | P1 | **done** | SeriesBuilderPage:367 `xl:`→`lg:`. Render-verified at 1120: COMPOSE rail sits beside the plate. frontend-reviewer APPROVE. Commit `6cee2a6` |
-| BU-EXPORT | surface Export-figure to topbar (mockup series-builder.html:378) — builder exposes only rail "Copy as PNG" | clarify+layout | P1 | todo | loop-config "Export now"; Duplicate DEFERRED |
+| BU-EXPORT | surface Export-figure to topbar (mockup series-builder.html:378) — builder exposes only rail "Copy as PNG" | clarify+layout | P1 | todo | goal-config "Export now"; Duplicate DEFERRED |
 | BU-PROGRESS | confirm chain no visible progress + generic causeless error copy | clarify | P2 | todo | → F-LIVE/F-ERRSILENT |
 
 ### FocusPage

@@ -1,8 +1,8 @@
-# Impeccable design loop — synthesis for "The Print" production-polish pass
+# Impeccable design goal — synthesis for "The Print" production-polish pass
 
 _Written 2026-06-09. Branch: `worktree-greenfield-ui-rebuild` (STAYS UNMERGED). Scope: drive a multi-iteration production-polish pass over the six greenfield "Print" surfaces (and backend where it affects UX) using the impeccable skillset, held to a tracked, scored bar._
 
-This is a planning/orientation doc. The paste-ready loop prompt lives in §7 and is also returned as `loopPromptDraft`.
+This is a planning/orientation doc. **Harness note (2026-06-10):** the pass now runs as a native `/goal` (continuous evaluator-checked turns, one iteration per turn, no ScheduleWakeup self-pacing) — §7 records the original `/loop` prompt verbatim as the substance contract; only its self-pacing/wake mechanics are superseded. The filename keeps `-loop` for stable references.
 
 ---
 
@@ -24,7 +24,7 @@ These shape every decision below.
 
 ## 1. Command catalog (organized by category, with relevance to The Print)
 
-Relevance key: **★★★** drives the loop · **★★** situational · **★** low/guarded.
+Relevance key: **★★★** drives the goal · **★★** situational · **★** low/guarded.
 
 ### Setup & Register
 
@@ -46,7 +46,7 @@ Relevance key: **★★★** drives the loop · **★★** situational · **★*
 
 | Command | What it does | When WE'd use it | Flow / gates / output | Relevance to The Print |
 |---|---|---|---|---|
-| `critique` | Dual-track (LLM design review + 27-pattern detector), synthesized to Nielsen /40 + AI-slop verdict + cognitive-load + persona red-flags + P0–P3, **persisted for trend**. | **Per-surface baseline** at loop start, and re-run after fixes to watch the /40 trend rise. | Two **isolated** sub-agents, each own browser tab → synthesize → persist via `critique-storage.mjs` → trend line. Gate: isolation non-negotiable; `ignore.md` drops domain-jargon false-positives silently. | **★★★** the loop's scored memory. **Caveat:** seed `ignore.md` + a SAXS persona so heuristic-2 (jargon) doesn't penalize Pn3m/Miller/q-value vocabulary. |
+| `critique` | Dual-track (LLM design review + 27-pattern detector), synthesized to Nielsen /40 + AI-slop verdict + cognitive-load + persona red-flags + P0–P3, **persisted for trend**. | **Per-surface baseline** at goal start, and re-run after fixes to watch the /40 trend rise. | Two **isolated** sub-agents, each own browser tab → synthesize → persist via `critique-storage.mjs` → trend line. Gate: isolation non-negotiable; `ignore.md` drops domain-jargon false-positives silently. | **★★★** the goal's scored memory. **Caveat:** seed `ignore.md` + a SAXS persona so heuristic-2 (jargon) doesn't penalize Pn3m/Miller/q-value vocabulary. |
 | `audit` | Code-level 5-dim scan (a11y/perf/responsive/theming/anti-patterns) → /20 + P0–P3. Documents, doesn't fix. | **Per-surface baseline** alongside critique — maps cleanly onto our hard invariants (theming→check-design, a11y→focus-trap/keyboard, responsive→the `xl:` rail + Loupe grid). | Per-dim 0–4 anchors → report by severity (location + WCAG + fix + suggested command). | **★★★** the technical half of the baseline; its findings seed the backlog directly. |
 
 ### Refine
@@ -83,7 +83,7 @@ Relevance key: **★★★** drives the loop · **★★** situational · **★*
 
 | Command | What it does | When WE'd use it | Flow / gates / output | Relevance to The Print |
 |---|---|---|---|---|
-| `live` | HMR select-element → 3 variants → dial param knobs → accept/carbonize into source. | **Optional accelerator** for fine-tuning dense visual surfaces (spacing/density/type-scale knobs on plates/rails) once a DESIGN.md + `.impeccable/live/config.json` exist. **Default mode** (vary within identity) fits a shipped DS. | Identity-lock → default/departure mode gate → squint test → param budget. Caveat: React-rendered elements often hit wrap's `agent-driven` fallback. | **★★** powerful but setup-heavy; not required for the core loop (Playwright MCP already gives verify-by-rendering). |
+| `live` | HMR select-element → 3 variants → dial param knobs → accept/carbonize into source. | **Optional accelerator** for fine-tuning dense visual surfaces (spacing/density/type-scale knobs on plates/rails) once a DESIGN.md + `.impeccable/live/config.json` exist. **Default mode** (vary within identity) fits a shipped DS. | Identity-lock → default/departure mode gate → squint test → param budget. Caveat: React-rendered elements often hit wrap's `agent-driven` fallback. | **★★** powerful but setup-heavy; not required for the core goal (Playwright MCP already gives verify-by-rendering). |
 
 ---
 
@@ -130,7 +130,7 @@ Relevance key: **★★★** drives the loop · **★★** situational · **★*
 
 ---
 
-## 3. Scoring & severity machinery (how we track the loop)
+## 3. Scoring & severity machinery (how we track the goal)
 
 **Per-surface scored baseline (run once at start, re-run after fixes):**
 - `critique` → Nielsen **/40** + rating band (36–40 ship · 28–35 good · 20–27 acceptable · 12–19 poor · 0–11 critical), AI-slop verdict, cognitive-load failure count (0–1 low / 2–3 moderate / 4+ critical), persona red-flags.
@@ -146,13 +146,13 @@ Relevance key: **★★★** drives the loop · **★★** situational · **★*
 
 **Cognitive-load caps (LLM review applies):** ≤4 working-memory items, ≤4 visible options per decision point, ≤5 top-level nav, 1 primary + 1–2 secondary actions. Named violations to watch on dense surfaces: Wall-of-Options, Memory-Bridge, Visual-Noise-Floor, Jargon-Barrier (**domain-calibrated** — Pn3m/Miller/q are correct, not slop).
 
-**Loop target (proposed, confirm with user):** every surface reaches **critique ≥ 32/40 AND audit ≥ 16/20**, and **all P0/P1 resolved**. (See §8 open decisions.)
+**Goal target (resolved with Jonathan — GOLD, decision #3 in §8):** every surface reaches **critique ≥ 36/40 AND audit ≥ 18/20**, and **all P0/P1 resolved**.
 
 ---
 
 ## 4. Surface-by-surface improvement map
 
-Each item: opportunity → impeccable command → severity. (P1s are the loop's first wave.)
+Each item: opportunity → impeccable command → severity. (P1s are the goal's first wave.)
 
 ### Contact sheet — `SamplesPage.tsx`
 - Global `window` keydown ("X" drops selected frames) guards only INPUT/TEXTAREA — no `isContentEditable`, no open-modal/menu check, no aria-live on the bulk-reject result, no keyboard selection path for the cull → **`harden` · P1**.
@@ -202,12 +202,12 @@ Each item: opportunity → impeccable command → severity. (P1s are the loop's 
 This is an existing, disciplined system. **Do not rebuild.** Establish a scored baseline, fix top-down by severity, converge on `polish`, re-score.
 
 **Wave 0 — Foundation refresh (unblocks everything; do FIRST).**
-1. `document` (scan mode) — re-root DESIGN.md to `src/print/`, reconcile dark-theme/shadow drift, **add the state-taxonomy / spacing-density / motion / copy sections**, frame as extendable. Then a light `teach` refresh to fix PRODUCT.md's stale two-theme promise + seed the SAXS persona. Mandatory `load-context.mjs` re-run so the rest of the loop reads the fixed docs. _Rationale: every later command (and `live`) reads these; fixing them first makes all downstream evaluation/refinement correct-by-context._
+1. `document` (scan mode) — re-root DESIGN.md to `src/print/`, reconcile dark-theme/shadow drift, **add the state-taxonomy / spacing-density / motion / copy sections**, frame as extendable. Then a light `teach` refresh to fix PRODUCT.md's stale two-theme promise + seed the SAXS persona. Mandatory `load-context.mjs` re-run so the rest of the goal reads the fixed docs. _Rationale: every later command (and `live`) reads these; fixing them first makes all downstream evaluation/refinement correct-by-context._
 
 **Wave 1 — Scored baseline (read-only; seeds the backlog).**
 2. `audit` + `critique` per surface (6× each), with `IMPECCABLE_CONTEXT_DIR` set, an `ignore.md` seeded for SAXS domain vocabulary, and a SAXS persona. Persist all twelve snapshots → record the /40 and /20 baseline + trend slugs in the tracker. _Rationale: turns "is it better?" into tracked numbers; the audit/critique P0–P1 findings become the backlog, merged with the verified recon items in §4._
 
-**Wave 2 — P1 fixes, top-down (the bulk of the loop).** For each P1, run the mapped command → `polish` handoff → verify-by-rendering → gate green → commit:
+**Wave 2 — P1 fixes, top-down (the bulk of the work).** For each P1, run the mapped command → `polish` handoff → verify-by-rendering → gate green → commit:
 3. `clarify` — scoping "Ordered by" dropdown + copy; builder Duplicate/Export surfacing.
 4. `adapt` — `xl:`→`lg:` rail (Focus + Builder together); responsive Loupe grid.
 5. `harden` — window-keydown guards + aria-live (Samples, Loupe); scoping keyboard-reorder; a11y operationalization (pin contrast pairs, keyboard maps).
@@ -230,20 +230,19 @@ This is an existing, disciplined system. **Do not rebuild.** Establish a scored 
 
 ## 6. How `live` fits our verify-by-rendering discipline
 
-We already have a strong verify-by-rendering path (Playwright MCP against a writable DB copy), which the loop uses by default. `live` is an **optional accelerator**, not a requirement:
+We already have a strong verify-by-rendering path (Playwright MCP against a writable DB copy), which the goal harness uses by default. `live` is an **optional accelerator**, not a requirement:
 
 - **Where it helps:** dialing dense visual params without regeneration — density/spacing/type-scale **param knobs** on plates and rails (`layout`/`typeset`/`colorize` actions in default mode, which is "vary within the existing identity" — exactly right for a shipped DS). The identity-lock latches onto the existing `src/print/ui` tokens even with a thin DESIGN.md (and Wave 0 makes the lock sharper).
-- **Setup gates before it works:** (a) the context-doc location must be resolvable (`IMPECCABLE_CONTEXT_DIR` or run from worktree root); (b) author `.impeccable/live/config.json` pointing at the Vite entry, with `commentSyntax: jsx`; (c) variant-writing uses TSX rules (template-literal `<style>`, className/style props).
-- **The friction for THIS app:** the six surfaces render elements at runtime from React components/data (trace plot, detector image, gallery rows). `live-wrap.mjs` will frequently return the `agent-driven` fallback (`element_not_found` / `element_not_in_source`) rather than the deterministic path — expect to drive the fallback (find the real component source, scaffold a temporary served-file wrapper, persist on accept). This means `live` is best reserved for **leaf primitives in Storybook** (where wrap is deterministic) rather than live data pages.
+- **Setup gates before it works:** (a) the context-doc location must be resolvable (`IMPECCABLE_CONTEXT_DIR` or run from worktree root); (b) author `.impeccable/live/config.json` pointing at the Vite entry, with `commentSyntax: jsx`; (c) variant-writing uses TSX rules (template-literal `<style>`, className/style props).- **The friction for THIS app:** the six surfaces render elements at runtime from React components/data (trace plot, detector image, gallery rows). `live-wrap.mjs` will frequently return the `agent-driven` fallback (`element_not_found` / `element_not_in_source`) rather than the deterministic path — expect to drive the fallback (find the real component source, scaffold a temporary served-file wrapper, persist on accept). This means `live` is best reserved for **leaf primitives in Storybook** (where wrap is deterministic) rather than live data pages.
 - **Carbonize lands in true source** through the real edit path — compatible with the gate, but the accepted CSS must move into a `src/print/ui` primitive (not inline) to satisfy the design guard, and the resulting change still goes through the normal subagent review + gate + commit cadence. **`live` never bypasses the gate or the commit constraints.**
 
-Net: keep Playwright MCP as the loop's primary verification; treat `live` as an opt-in tool for primitive-level tuning runs, gated on the setup above.
+Net: keep Playwright MCP as the goal's primary verification; treat `live` as an opt-in tool for primitive-level tuning runs, gated on the setup above.
 
 ---
 
-## 7. The loop prompt
+## 7. The harness prompt (historical `/loop` version — substance still binding)
 
-Seeded from this doc's §4 backlog + the Wave-1 scored baseline, it drives one opportunity per iteration through the subagent cadence, verifies by rendering, keeps the gate green, commits per the hard constraints, and self-paces via ScheduleWakeup — stopping for genuine product decisions and at the §3 finish line. Paste-ready:
+Seeded from this doc's §4 backlog + the Wave-1 scored baseline, it drives one opportunity per iteration through the subagent cadence, verifies by rendering, keeps the gate green, commits per the hard constraints — stopping for genuine product decisions and at the §3 finish line. **Since 2026-06-10 the harness is a native `/goal`:** the wake/ScheduleWakeup mechanics below are superseded (the goal's evaluator auto-continues turns; one iteration per turn), the finish line additionally requires surfacing the per-surface re-score table in-conversation, and `loop-backlog.md` is the same tracker. Everything else (constraints, setup, algorithm steps 2–8, re-score cadence, guarded verbs) is the binding substance. Kept verbatim as the record:
 
 ```
 PRODUCTION-POLISH LOOP — "The Print" greenfield UI (branch worktree-greenfield-ui-rebuild). Run one iteration per wake. Read docs/superpowers/notes/2026-06-09-impeccable-design-loop.md (the synthesis doc) before acting — it is your command catalog, law checklist, severity machinery, and per-surface backlog.
@@ -285,17 +284,17 @@ FINISH LINE (stop the loop and report, do NOT merge): the agreed target is met (
 GUARDED VERBS: do NOT run impeccable optimize unless a measured render bottleneck exists (measure first). Do NOT run impeccable overdrive unless the user explicitly asks for one extraordinary functional moment (then use its propose-2-3-then-ask gate). impeccable live is optional and only for Storybook leaf primitives — never bypasses the gate or commit rules.
 ```
 
-The four scope inputs the loop hardcodes (responsive target, Duplicate-series feature, finish-line bar, scoping ordering variables) are settled in the §8 decision record below; the loop-backlog.md header records the resolved answers as a `loop-config` block.
+The four scope inputs the goal hardcodes (responsive target, Duplicate-series feature, finish-line bar, scoping ordering variables) are settled in the §8 decision record below; the loop-backlog.md header records the resolved answers as a `goal-config` block.
 
 ---
 
 ## 8. Decision record (resolved with Jonathan, 2026-06-09)
 
-These four were surfaced as genuine product/scope decisions before launch and answered. They are binding loop config.
+These four were surfaced as genuine product/scope decisions before launch and answered. They are binding goal config.
 
 1. **Responsive scope → desktop-first, honest down to ~1024px.** Fix the work·rail split breakpoint (`xl:`→`lg:`) on Focus + Builder and stack the Loupe grid below a documented min-width. Sub-tablet (<~768px) is explicitly out of scope — the `<600px` scoping foot-row wrap item is dropped, not fixed. Rationale: the verified defects bite in the 1024–1279px laptop-not-maximized range real scientists hit; true mobile is out of character for a dense instrument.
 
-2. **Duplicate / Export → surface Export-figure now; defer Duplicate-series.** Export-figure is a pure presentation/placement P1 (`clarify` label + `layout` placement). Duplicate-series is potentially net-new product behavior (no duplicate path exists; may need backend/state) and leaves this loop as a separate `shape`-gated feature decision — not smuggled in through a fidelity fix.
+2. **Duplicate / Export → surface Export-figure now; defer Duplicate-series.** Export-figure is a pure presentation/placement P1 (`clarify` label + `layout` placement). Duplicate-series is potentially net-new product behavior (no duplicate path exists; may need backend/state) and leaves this goal as a separate `shape`-gated feature decision — not smuggled in through a fidelity fix.
 
 3. **Finish bar → GOLD / flagship.** Every surface reaches **critique ≥ 36/40 AND audit ≥ 18/20** (the "excellent" bands) AND all P0/P1 backlog rows closed. Where a flagship item is genuinely infeasible without backend/feature work, mark the row `blocked` and surface it rather than forcing it — note blockers as discovered. Surfaces below target re-enter the P1/P2 waves.
 
