@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { describe, it, expect } from "vitest";
 import { PhaseStrip } from "../../src/print/ui/PhaseStrip";
 import type { PhaseSegment } from "../../src/print/ui/PhaseStrip";
@@ -63,6 +63,47 @@ describe("<PhaseStrip> 3-phase coexistence", () => {
     expect(cell.style.background.startsWith("linear-gradient(100deg")).toBe(
       true,
     );
+  });
+});
+
+describe("<PhaseStrip> assistive-tech exposure", () => {
+  it("exposes every segment as role=img with the right accessible names", () => {
+    render(
+      <PhaseStrip
+        segments={segs(
+          { phase: "Pn3m" },
+          { phase: null },
+          { phase: null, state: "form_factor" },
+          { phase: null, state: "null" },
+          { phase: "Pn3m", coexistWith: ["Lamellar"] },
+        )}
+      />,
+    );
+    const cells = screen.getAllByRole("img");
+    expect(cells).toHaveLength(5);
+    expect(screen.getByRole("img", { name: "Pn3m" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Unindexed" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("img", { name: "Form factor (no Bragg peaks)" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "No phase" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("img", { name: "Pn3m + Lamellar (coexistence)" }),
+    ).toBeInTheDocument();
+  });
+
+  it("speaks the transition relation: arrow stays decorative, 'to' is accessible", () => {
+    render(
+      <PhaseStrip segments={segs({ phase: "Pn3m" }, { phase: "Lamellar" })} />,
+    );
+    const cap = screen.getByTestId("ps-cap");
+    // The visual arrow is hidden from AT...
+    const arrow = cap.querySelector('[aria-hidden="true"]');
+    expect(arrow).not.toBeNull();
+    expect(arrow).toHaveTextContent("→");
+    // ...and the relation word "to" is exposed between the phase names.
+    const to = within(cap).getByText("to");
+    expect(to).not.toHaveAttribute("aria-hidden");
   });
 });
 

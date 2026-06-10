@@ -13,8 +13,11 @@ import { phaseColor } from "../../phases";
  * derived from the COUNT OF DISTINCT indexed phases (the truthful rule): a
  * non-monotone strip like [Pn3m, Lamellar, Pn3m] reads as a transition.
  *
- * Per-segment `aria-label`/`title` carry the phase name as the accessible
- * second channel (colour is never the sole signal — see phases.ts). The visual
+ * Per-segment `role="img"` + `aria-label`/`title` carry the phase name as the
+ * accessible second channel (colour is never the sole signal — see phases.ts);
+ * the role follows the house Semantic-Dot pattern (Dot.tsx) so the label is
+ * reliably exposed. The caption's visual transition arrow is decorative
+ * (aria-hidden) with an sr-only "to" carrying the relation for AT. The visual
  * glyph/pattern second channel is deferred to the plotting redesign.
  */
 
@@ -113,6 +116,7 @@ export function PhaseStrip({
             return (
               <div
                 key={i}
+                role="img"
                 data-testid="ps-seg"
                 data-state="form_factor"
                 aria-label={segLabel(seg)}
@@ -125,6 +129,7 @@ export function PhaseStrip({
             return (
               <div
                 key={i}
+                role="img"
                 data-testid="ps-seg"
                 data-state="null"
                 aria-label={segLabel(seg)}
@@ -137,6 +142,7 @@ export function PhaseStrip({
           return (
             <div
               key={i}
+              role="img"
               data-testid="ps-seg"
               data-coexist-count={
                 coexist.length > 0 ? String(coexist.length + 1) : undefined
@@ -164,6 +170,7 @@ export function PhaseStrip({
             <span className="text-ink-faint" aria-hidden="true">
               →
             </span>
+            <span className="sr-only">to</span>
             <span className="font-semibold" style={{ color: phaseColor(last) }}>
               {last}
             </span>
