@@ -12,6 +12,7 @@ import {
 } from "../../queries";
 import type { Tag } from "../ui";
 import { announce } from "../../lib/announce";
+import { suppressGlobalKeys } from "../../lib/keys";
 import { showToast } from "../../lib/toast";
 import { BigFrame } from "../components/BigFrame";
 import { ThumbnailGallery } from "../components/ThumbnailGallery";
@@ -146,8 +147,10 @@ export function LoupePage(): JSX.Element {
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent): void {
-      const tag = (e.target as HTMLElement | null)?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      // Modifier chords belong to the browser (⌘R reload, ⌘X cut) — never to
+      // the page. The typing/modal suppression is the shared helper.
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (suppressGlobalKeys(e)) return;
       if (e.key === "ArrowLeft") flip(-1);
       else if (e.key === "ArrowRight") flip(1);
       else if (e.key === "x" || e.key === "X") handleDropToggle();

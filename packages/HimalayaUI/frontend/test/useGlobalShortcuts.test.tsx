@@ -112,3 +112,19 @@ describe("useGlobalShortcuts — ,/. sample step", () => {
     expect(screen.getByTestId("pathname")).toHaveTextContent("/samples");
   });
 });
+
+// LO-KEYD: the shared suppressGlobalKeys guard must NOT swallow modifier
+// chords — ⌘K is the one binding here that REQUIRES metaKey to pass through.
+describe("useGlobalShortcuts — ⌘K passes the suppression guard", () => {
+  beforeEach(() => {
+    useAppState.setState({ navModalOpen: false, activeExperimentId: undefined });
+  });
+
+  it("opens the nav modal on ⌘K from a non-editing target", () => {
+    renderHook(() => useGlobalShortcuts(undefined), {
+      wrapper: wrapperAt("/samples"),
+    });
+    fireEvent.keyDown(document.body, { key: "k", metaKey: true });
+    expect(useAppState.getState().navModalOpen).toBe(true);
+  });
+});

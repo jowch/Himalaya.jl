@@ -261,4 +261,39 @@ describe("SamplesPage", () => {
     renderAt("/samples");
     expect(screen.getByTestId("samples-error")).toBeInTheDocument();
   });
+
+  it("X from a contenteditable target does not batch-drop", () => {
+    renderAt("/samples?beamtime=1");
+    fireEvent.click(screen.getAllByTestId("thumbnail")[0]!);
+    const editor = document.createElement("div");
+    editor.setAttribute("contenteditable", "true");
+    document.body.appendChild(editor);
+    try {
+      fireEvent.keyDown(editor, { key: "X" });
+      expect(batchMutate).not.toHaveBeenCalled();
+      // Selection survives — the cull bar is still up.
+      expect(screen.getByTestId("cull-bar")).toHaveAttribute("data-show", "true");
+    } finally {
+      editor.remove();
+    }
+  });
+
+  it("an open modal dialog suppresses X (selection survives, no batch mutate)", () => {
+    renderAt("/samples?beamtime=1");
+    fireEvent.click(screen.getAllByTestId("thumbnail")[0]!);
+    const dialog = document.createElement("div");
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
+    document.body.appendChild(dialog);
+    try {
+      fireEvent.keyDown(window, { key: "X" });
+      expect(batchMutate).not.toHaveBeenCalled();
+      expect(screen.getByTestId("cull-bar")).toHaveAttribute("data-show", "true");
+      // Escape behind the modal must not clear the selection either.
+      fireEvent.keyDown(window, { key: "Escape" });
+      expect(screen.getByTestId("cull-bar")).toHaveAttribute("data-show", "true");
+    } finally {
+      dialog.remove();
+    }
+  });
 });

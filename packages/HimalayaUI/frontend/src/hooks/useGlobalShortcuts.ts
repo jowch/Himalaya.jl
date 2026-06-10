@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAppState } from "../state";
+import { suppressGlobalKeys } from "../lib/keys";
 import type { Sample } from "../api";
 
 /**
@@ -29,12 +30,9 @@ export function useGlobalShortcuts(samplesInExperiment: Sample[] | undefined): v
   const { pathname } = useLocation();
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
-      const t = e.target as HTMLElement | null;
-      const editing = t && (
-        t.tagName === "INPUT" || t.tagName === "TEXTAREA" ||
-        (t as HTMLElement).isContentEditable
-      );
-      if (editing) return;
+      // Typing contexts + open modals suppress. NOTE: the helper deliberately
+      // does not swallow modifier chords — ⌘K below must still pass.
+      if (suppressGlobalKeys(e)) return;
 
       // `/` or `⌘K` → nav modal
       if ((e.key === "k" || e.key === "K") && (e.metaKey || e.ctrlKey)) {

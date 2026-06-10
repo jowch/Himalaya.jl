@@ -7,6 +7,7 @@ import { useDragReorder, reorder } from "./useDragReorder";
 import type { PhaseSegment } from "../ui";
 import { realTraces } from "../fixtures/realTraces";
 import { buildFootState } from "../pages/scopingDerive";
+import { suppressGlobalKeys } from "../../lib/keys";
 
 /**
  * Page simulation (NOT a component): assembles `ScopePlate` with mapped
@@ -129,10 +130,14 @@ function ScopingView(): JSX.Element {
     });
   };
 
-  // ⌘Z / Ctrl-Z steps back, mirroring the mockup.
+  // ⌘Z / Ctrl-Z steps back, mirroring the mockup — and the REAL page handler
+  // (SeriesScopingPage): the suppression guard runs BEFORE preventDefault so
+  // ⌘Z inside an input stays the browser's native text undo
+  // (story-simulates-page-computation).
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
+        if (suppressGlobalKeys(e)) return;
         e.preventDefault();
         undo();
       }

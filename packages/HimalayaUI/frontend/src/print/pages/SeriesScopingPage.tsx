@@ -34,6 +34,7 @@ import {
   type ColdAssignRow,
 } from "./scopingDerive";
 import { readNewSeriesSeed } from "../../lib/series/newSeriesNav";
+import { suppressGlobalKeys } from "../../lib/keys";
 
 const EMPTY_TRACE: Trace = { q: [], I: [], sigma: [] };
 
@@ -407,6 +408,9 @@ export function SeriesScopingPage(): JSX.Element {
   useEffect(() => {
     function onKey(e: KeyboardEvent): void {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
+        // Guard BEFORE preventDefault — ⌘Z inside an input must stay the
+        // browser's native text undo, not the page's skip-undo.
+        if (suppressGlobalKeys(e)) return;
         e.preventDefault();
         undo();
       }

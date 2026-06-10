@@ -197,4 +197,53 @@ describe("LoupePage", () => {
     renderAt(42);
     expect(screen.getByText(/no exposures/i)).toBeInTheDocument();
   });
+
+  it("modifier chords pass through: ⌘R does not set representative, ⌘X does not drop", () => {
+    renderAt(42);
+    fireEvent.keyDown(window, { key: "r", metaKey: true });
+    expect(selectMutate).not.toHaveBeenCalled();
+    fireEvent.keyDown(window, { key: "x", metaKey: true });
+    expect(setStatusMutate).not.toHaveBeenCalled();
+    fireEvent.keyDown(window, { key: "x", ctrlKey: true });
+    fireEvent.keyDown(window, { key: "r", altKey: true });
+    expect(setStatusMutate).not.toHaveBeenCalled();
+    expect(selectMutate).not.toHaveBeenCalled();
+  });
+
+  it("keys from a contenteditable target do not mutate", () => {
+    renderAt(42);
+    const editor = document.createElement("div");
+    editor.setAttribute("contenteditable", "true");
+    const inner = document.createElement("span");
+    editor.appendChild(inner);
+    document.body.appendChild(editor);
+    try {
+      fireEvent.keyDown(inner, { key: "x" });
+      fireEvent.keyDown(inner, { key: "r" });
+      expect(setStatusMutate).not.toHaveBeenCalled();
+      expect(selectMutate).not.toHaveBeenCalled();
+    } finally {
+      editor.remove();
+    }
+  });
+
+  it("an open modal dialog suppresses X/R and Escape (no double action behind the modal)", () => {
+    renderAt(42);
+    const dialog = document.createElement("div");
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
+    document.body.appendChild(dialog);
+    try {
+      fireEvent.keyDown(window, { key: "x" });
+      fireEvent.keyDown(window, { key: "r" });
+      expect(setStatusMutate).not.toHaveBeenCalled();
+      expect(selectMutate).not.toHaveBeenCalled();
+      // Escape must not ALSO navigate back while the modal owns it.
+      fireEvent.keyDown(window, { key: "Escape" });
+      expect(screen.queryByTestId("sheet")).toBeNull();
+      expect(screen.getByTestId("loupe-page")).toBeInTheDocument();
+    } finally {
+      dialog.remove();
+    }
+  });
 });

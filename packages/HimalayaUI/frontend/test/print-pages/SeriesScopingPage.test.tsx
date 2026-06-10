@@ -367,6 +367,35 @@ describe("SeriesScopingPage", () => {
     expect(screen.getByRole("button", { name: /confirm & build/i })).not.toBeDisabled();
   });
 
+  it("⌘Z from the page body steps the last skip back (regression pin)", () => {
+    seed3();
+    renderPage();
+    fireEvent.click(screen.getAllByTestId("flag-button")[1]!);
+    expect(screen.getByText(/2 values ready to commit · 1 skipped/i)).toBeInTheDocument();
+    const notPrevented = fireEvent.keyDown(window, { key: "z", metaKey: true });
+    // The page handled (and preventDefault'ed) the chord.
+    expect(notPrevented).toBe(false);
+    expect(screen.getByText(/3 values ready to commit/i)).toBeInTheDocument();
+  });
+
+  it("⌘Z from a text input does NOT fire skip-undo and leaves native text-undo intact", () => {
+    seed3();
+    renderPage();
+    fireEvent.click(screen.getAllByTestId("flag-button")[1]!);
+    expect(screen.getByText(/2 values ready to commit · 1 skipped/i)).toBeInTheDocument();
+    const input = document.createElement("input");
+    document.body.appendChild(input);
+    try {
+      const notPrevented = fireEvent.keyDown(input, { key: "z", metaKey: true });
+      // Not preventDefault'ed — the browser's native text undo survives.
+      expect(notPrevented).toBe(true);
+      // The skip state is untouched.
+      expect(screen.getByText(/2 values ready to commit · 1 skipped/i)).toBeInTheDocument();
+    } finally {
+      input.remove();
+    }
+  });
+
   it("renders candidates as informational discovery with no add control", () => {
     pickerState = {
       data: [

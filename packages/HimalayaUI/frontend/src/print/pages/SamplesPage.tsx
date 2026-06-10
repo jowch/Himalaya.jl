@@ -14,6 +14,7 @@ import {
   useSetExposureStatusBatch,
 } from "../../queries";
 import { navigateToNewSeries } from "../../lib/series/newSeriesNav";
+import { suppressGlobalKeys } from "../../lib/keys";
 import { showToast } from "../../lib/toast";
 import { toSampleRowModel } from "./samplesAdapters";
 
@@ -162,8 +163,7 @@ export function SamplesPage(): JSX.Element {
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent): void {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
-      const tag = (e.target as HTMLElement | null)?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      if (suppressGlobalKeys(e)) return;
       if (selected.size === 0) return;
       if (e.key === "x" || e.key === "X") batchSet("rejected");
       else if (e.key === "Escape") {
