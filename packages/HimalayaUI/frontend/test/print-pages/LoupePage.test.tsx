@@ -95,10 +95,30 @@ describe("LoupePage", () => {
     expect(setStatusMutate).toHaveBeenCalledWith({ exposureId: 1, status: "rejected" });
   });
 
-  it("R sets the representative", () => {
+  it("R sets the representative when the active frame is NOT it", () => {
     renderAt(42);
+    // Flip off the representative (frame 1) onto frame 2 first.
+    fireEvent.keyDown(window, { key: "ArrowRight" });
     fireEvent.keyDown(window, { key: "r" });
-    expect(selectMutate).toHaveBeenCalledWith(1);
+    expect(selectMutate).toHaveBeenCalledWith(2);
+  });
+
+  it("R on the current representative is a no-op: no mutation, SR announce, no success toast (LO-REPLIES)", () => {
+    const announce = vi.fn();
+    const toast = vi.fn();
+    setAnnounceImpl(announce);
+    setToastImpl(toast);
+    try {
+      renderAt(42);
+      // The loupe opens on the representative (exposure 1).
+      fireEvent.keyDown(window, { key: "r" });
+      expect(selectMutate).not.toHaveBeenCalled();
+      expect(announce.mock.calls[0]?.[0]).toBe("Already the representative frame");
+      expect(toast).not.toHaveBeenCalled();
+    } finally {
+      setAnnounceImpl(null);
+      setToastImpl(null);
+    }
   });
 
   it("ArrowRight flips to the next exposure", () => {
@@ -119,16 +139,38 @@ describe("LoupePage", () => {
     }
   });
 
-  it("R set-representative announces a toast", () => {
+  it("R set-representative announces a toast (when it actually sets)", () => {
     const toast = vi.fn();
     setToastImpl(toast);
     try {
       renderAt(42);
+      fireEvent.keyDown(window, { key: "ArrowRight" });
       fireEvent.keyDown(window, { key: "r" });
       expect(toast).toHaveBeenCalledWith("Set as the representative frame", "success");
     } finally {
       setToastImpl(null);
     }
+  });
+
+  it("rep-dropped sample shows the warning regardless of the active frame (LO-REPDROP)", () => {
+    state.exposures = [
+      exp({ id: 1, selected: true, status: "rejected" }),
+      exp({ id: 2 }),
+    ];
+    renderAt(42);
+    // Opens on the (dropped) representative.
+    expect(screen.getByTestId("rep-dropped-warning")).toBeInTheDocument();
+    // Still warned after flipping to a different, kept frame.
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    expect(screen.getByTestId("rep-dropped-warning")).toBeInTheDocument();
+  });
+
+  it("no rep-dropped warning when the representative is kept", () => {
+    renderAt(42);
+    expect(screen.queryByTestId("rep-dropped-warning")).not.toBeInTheDocument();
+    // A dropped NON-representative frame does not trigger it either.
+    fireEvent.keyDown(window, { key: "ArrowRight" }); // frame 2 is rejected in the fixture
+    expect(screen.queryByTestId("rep-dropped-warning")).not.toBeInTheDocument();
   });
 
   it("ArrowRight flip announces SR-only (frame position), not a toast", () => {
@@ -200,6 +242,9 @@ describe("LoupePage", () => {
 
   it("modifier chords pass through: ⌘R does not set representative, ⌘X does not drop", () => {
     renderAt(42);
+    // Flip OFF the representative first so a leaked plain-r WOULD mutate —
+    // keeps this chord test load-bearing under the R no-op guard.
+    fireEvent.keyDown(window, { key: "ArrowRight" });
     fireEvent.keyDown(window, { key: "r", metaKey: true });
     expect(selectMutate).not.toHaveBeenCalled();
     fireEvent.keyDown(window, { key: "x", metaKey: true });

@@ -199,6 +199,38 @@ test("representative: picking a representative in the loupe PATCHes select", asy
   await expect.poll(() => selected).toBe(true);
 });
 
+// LO-REPDROP: the backend's Index-stage resolution never consults exposure
+// status, so a DROPPED representative still carries forward. Dropping the
+// representative in the loupe must surface the honest warning in the
+// RepresentativeBox; restoring it clears the warning.
+test("loupe: dropping the representative shows the rep-dropped warning; restore clears it", async ({ page }) => {
+  await mockCorpus(page);
+  // The exposures cache is patched OPTIMISTICALLY by the queue mutator's
+  // onMutate (lib/queue/mutators/trivial.ts) — the fulfilled 200 here only
+  // prevents the rollback, for drop (rejected) and restore (null) alike.
+  await page.route("**/api/exposures/1/status", async (route) => {
+    const body = route.request().postDataJSON() as { status: string | null };
+    await route.fulfill({
+      status: 200, contentType: "application/json",
+      body: JSON.stringify({ id: 1, status: body.status }),
+    });
+  });
+
+  await page.goto("/samples/loupe/10");
+  await expect(page.getByTestId("loupe-page")).toBeVisible();
+  // The loupe opens on the representative (exposure 1) — kept, so no warning.
+  await expect(page.getByTestId("rep-dropped-warning")).toBeHidden();
+
+  await page.keyboard.press("x"); // drop the representative
+  await expect(page.getByTestId("rep-dropped-warning")).toBeVisible();
+  await expect(page.getByTestId("rep-dropped-warning")).toContainText(
+    "Warning. The representative frame is dropped.",
+  );
+
+  await page.keyboard.press("x"); // restore it
+  await expect(page.getByTestId("rep-dropped-warning")).toBeHidden();
+});
+
 test("loupe-flip: arrow keys move between exposures in the loupe", async ({ page }) => {
   await mockCorpus(page);
   await page.goto("/samples/loupe/10");

@@ -108,6 +108,12 @@ export function LoupePage(): JSX.Element {
 
   const handleSetRepresentative = useCallback(() => {
     if (!activeExposure) return;
+    if (activeExposure.selected) {
+      // Already the representative — no mutation, no false success toast.
+      // Quiet SR-only acknowledgement keeps the R key honest.
+      announce("Already the representative frame");
+      return;
+    }
     setRepresentative.mutate(activeExposure.id);
     showToast("Set as the representative frame", "success");
   }, [activeExposure, setRepresentative]);
@@ -177,6 +183,11 @@ export function LoupePage(): JSX.Element {
   }
 
   const isDropped = activeExposure?.status === "rejected";
+  // Sample-level truth, not frame-level: the backend's Index-stage resolution
+  // never consults status, so a dropped representative still carries forward.
+  const representativeDropped = exposures.some(
+    (e) => e.selected && e.status === "rejected",
+  );
 
   return (
     <PageFrame width="loupe" className="px-8 py-7">
@@ -214,6 +225,7 @@ export function LoupePage(): JSX.Element {
                   meta={toMetaEntries(activeExposure, exposures)}
                   dropped={!!isDropped}
                   isRepresentative={activeExposure.selected}
+                  representativeDropped={representativeDropped}
                   tags={toLoupeTags(sample.tags)}
                   onToggleDrop={handleDropToggle}
                   onSetRepresentative={handleSetRepresentative}

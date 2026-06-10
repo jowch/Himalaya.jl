@@ -41,6 +41,16 @@ describe("LoupeSidePanel", () => {
     expect(onSetRepresentative).toHaveBeenCalledOnce();
   });
 
+  it("threads representativeDropped through to the RepresentativeBox warning", () => {
+    setup({ representativeDropped: true });
+    expect(screen.getByTestId("rep-dropped-warning")).toBeInTheDocument();
+  });
+
+  it("no dropped-representative warning by default", () => {
+    setup();
+    expect(screen.queryByTestId("rep-dropped-warning")).not.toBeInTheDocument();
+  });
+
   it("shows the default loupe keys", () => {
     setup();
     expect(screen.getByText("flip frames")).toBeInTheDocument();

@@ -15,6 +15,8 @@ export interface LoupeSidePanelProps {
   onToggleDrop?: () => void;
   /** Representative state + setter. */
   isRepresentative: boolean;
+  /** The sample's representative exposure (any frame) is dropped. */
+  representativeDropped?: boolean;
   onSetRepresentative?: () => void;
   /** Sample tags + edit handlers. */
   tags: Tag[];
@@ -38,6 +40,7 @@ export function LoupeSidePanel({
   dropped,
   onToggleDrop,
   isRepresentative,
+  representativeDropped,
   onSetRepresentative,
   tags,
   onAddTag,
@@ -67,6 +70,7 @@ export function LoupeSidePanel({
       {/* Block 3: RepresentativeBox */}
       <RepresentativeBox
         isRepresentative={isRepresentative}
+        {...(representativeDropped !== undefined ? { representativeDropped } : {})}
         {...(onSetRepresentative ? { onSetRepresentative } : {})}
       />
 

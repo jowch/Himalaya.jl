@@ -97,7 +97,7 @@ flagged ⚠️ below.
 | `ToolBar` | plot controls (scale toggle + buttons) | `SegmentedControl` + `Button` | focus, series | ✅ | `ToolBar.tsx` |
 | `CandidateRow` | phase candidate (name+why+score+bonnet+add) | `ScoreBar`+`BonnetBadge`+`Button`+`PhaseChip` | focus, scoping | ✅ | `CandidateRow.tsx` |
 | `CombLegend` | comb vocabulary key | `PeakGlyph` + text | focus | ✅ | `CombLegend.tsx` |
-| `RepresentativeBox` | set-representative box | `Button` + caption | loupe | ✅ | `RepresentativeBox.tsx` |
+| `RepresentativeBox` | set-representative box; button OMITTED on the representative itself (controls-don't-lie); `representativeDropped` renders the bold-"Warning."-word dropped-rep line (LO-REPDROP) | `Button` + caption | loupe | ✅ | `RepresentativeBox.tsx` |
 | `Verdict` | kept/dropped state row | `Dot` + `Button` | loupe | ✅ | `Verdict.tsx` |
 | ★ **`Thumbnail`** | mini `DetectorImage` + frame-no + rep-dot + reject-X | `DetectorImage`+`Dot`+`RejectOverlay`+text | focus, sample-table, loupe (**3 sites**) | ✅ | `components/Thumbnail.tsx` |
 | ★ **`ThumbnailGallery`** | filmstrip wrapper (exposure switcher / loupe strip) | `Thumbnail`×N | focus DetectorPanel, sample-table row, loupe | ✅ | `components/ThumbnailGallery.tsx` |
