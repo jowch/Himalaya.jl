@@ -1,7 +1,7 @@
 import React from "react";
 import type { ReactNode } from "react";
 import { Card, Kicker } from "../ui";
-import { sampleTableCols } from "./SampleTableRow";
+import { sampleTableCols, CHECKBOX_TRACK_PX } from "./SampleTableRow";
 
 function cx(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(" ");
@@ -12,8 +12,9 @@ export interface SheetTableProps {
   children?: ReactNode;
   /** Rendered (instead of the rows region) when there are zero children. */
   empty?: ReactNode;
-  /** When true, prepends a blank checkbox header cell + 36px grid track so the
-   *  header stays aligned with rows that render their own checkbox column. */
+  /** When true, prepends a blank checkbox header cell + a grid track
+   *  CHECKBOX_TRACK_PX wide so the header stays aligned with rows that render
+   *  their own checkbox column. */
   checkboxColumn?: boolean;
   /** PLACEMENT-ONLY, appended last. */
   className?: string;
@@ -26,6 +27,33 @@ export interface SheetTableProps {
  * header and every SampleTableRow child use the SAME exported
  * `SAMPLE_TABLE_COLS` constant (not a re-derived arbitrary) — that shared
  * identity is what proves the header and rows are actually aligned.
+ *
+ * Narrow viewports (WCAG 1.4.10): the grid's intrinsic min-width (~1018px +
+ * the CHECKBOX_TRACK_PX checkbox track) exceeds a 1024px viewport, so the
+ * header rowgroup
+ * AND the rows live together in ONE shared `overflow-x-auto` scroller
+ * (`data-testid="sheet-scroll"`) — a narrow viewport SCROLLS rather than
+ * clipping columns (Carbon/Polaris). The alignment invariant therefore also
+ * depends on the shared scroller: header and rows must scroll as one. The
+ * identity columns (checkbox + Sample) are sticky — see SampleTableRow.
+ *
+ * The inner wrapper is `min-w-min` (min-width: min-content), NOT min-w-max:
+ * the grid's MIN-content width is exactly the sum of the fixed track minimums
+ * (~1054px with the checkbox track) because the gallery cell is
+ * overflow-x-auto/min-w-0 and the text cells clamp/truncate. max-content
+ * would instead let the fr tracks expand to fit a fully-unwrapped
+ * ThumbnailGallery (flex-nowrap) — a many-exposure corpus blew the scroller
+ * out to ~3400px. With min-w-min the gallery keeps scrolling INTERNALLY and
+ * the sheet scroller caps at the intrinsic track minimum. At wide viewports
+ * the block wrapper's auto width fills the Card (min-width only binds when
+ * the container is narrower) — zero wide-viewport change.
+ *
+ * ARIA tree: `role="table"` lives on the inner `min-w-min` wrapper (NOT the
+ * Card), so the scroll container sits BETWEEN the visual plate and the table
+ * role tree. That keeps the owned-element chain contiguous
+ * (table > rowgroup > row > columnheader/cell) with no role-bearing wrapper
+ * in between. The empty slot renders OUTSIDE the table role tree (a rowgroup
+ * may only own rows) and outside the scroller so it spans the Card width.
  *
  * Children-slotting keeps SheetTable presentational: the PAGE maps its sample
  * data → SampleTableRow children (owning per-row handlers + selection state);
@@ -42,45 +70,60 @@ export function SheetTable({
   className,
 }: SheetTableProps): JSX.Element {
   const isEmpty = React.Children.count(children) === 0;
+  const showEmpty = isEmpty && empty != null;
+  // The sticky offset for the Sample column derives from the SAME constant as
+  // the checkbox grid track, so track width and frozen offset cannot diverge.
+  const sampleLeft = checkboxColumn ? CHECKBOX_TRACK_PX : 0;
 
   return (
     <Card
       elevated
-      role="table"
-      aria-label="Samples"
       data-testid="sheet-table"
       className={cx("overflow-hidden", className)}
     >
-      {/* Header: paper-sunk tint + hairline-strong bottom border */}
-      <div data-testid="sheet-head" role="rowgroup" className="bg-paper-sunk border-b border-hair-strong">
-        <div
-          role="row"
-          className="grid"
-          style={{ gridTemplateColumns: sampleTableCols(checkboxColumn ?? false) }}
-        >
-          {checkboxColumn && (
+      {/* ONE shared horizontal scroller for header + rows (alignment invariant). */}
+      <div data-testid="sheet-scroll" className="overflow-x-auto">
+        <div role="table" aria-label="Samples" className="min-w-min">
+          {/* Header: paper-sunk tint + hairline-strong bottom border */}
+          <div data-testid="sheet-head" role="rowgroup" className="bg-paper-sunk border-b border-hair-strong">
             <div
-              className="px-1 py-2.5 flex items-center justify-center"
-              role="columnheader"
-              aria-label="Select"
-            />
+              role="row"
+              className="grid"
+              style={{ gridTemplateColumns: sampleTableCols(checkboxColumn ?? false) }}
+            >
+              {checkboxColumn && (
+                <div
+                  className="sticky left-0 z-10 bg-paper-sunk px-1 py-2.5 flex items-center justify-center"
+                  role="columnheader"
+                  aria-label="Select"
+                  data-sticky="true"
+                />
+              )}
+              <div
+                role="columnheader"
+                data-sticky="true"
+                className="sticky z-10 bg-paper-sunk border-r border-hair-strong"
+                style={{ left: sampleLeft }}
+              >
+                <Kicker tone="faint" className="px-4 py-2.5">Sample</Kicker>
+              </div>
+              <Kicker tone="faint" role="columnheader" className="px-4 py-2.5">Exposures</Kicker>
+              <Kicker tone="faint" role="columnheader" className="px-4 py-2.5">Kept</Kicker>
+              <Kicker tone="faint" role="columnheader" className="px-4 py-2.5">Tags</Kicker>
+              <Kicker tone="faint" role="columnheader" className="px-4 py-2.5">Status</Kicker>
+            </div>
+          </div>
+
+          {/* Rows region */}
+          {!showEmpty && (
+            <div data-testid="sheet-rows" role="rowgroup">
+              {children}
+            </div>
           )}
-          <Kicker tone="faint" role="columnheader" className="px-4 py-2.5">Sample</Kicker>
-          <Kicker tone="faint" role="columnheader" className="px-4 py-2.5">Exposures</Kicker>
-          <Kicker tone="faint" role="columnheader" className="px-4 py-2.5">Kept</Kicker>
-          <Kicker tone="faint" role="columnheader" className="px-4 py-2.5">Tags</Kicker>
-          <Kicker tone="faint" role="columnheader" className="px-4 py-2.5">Status</Kicker>
         </div>
       </div>
 
-      {/* Rows region */}
-      <div data-testid="sheet-rows">
-        {isEmpty && empty != null ? (
-          <div data-testid="sheet-empty">{empty}</div>
-        ) : (
-          children
-        )}
-      </div>
+      {showEmpty && <div data-testid="sheet-empty">{empty}</div>}
     </Card>
   );
 }

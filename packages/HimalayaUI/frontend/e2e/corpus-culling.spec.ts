@@ -203,3 +203,78 @@ test("loupe layout: a many-exposure filmstrip keeps the side panel on-screen", a
   expect(box).not.toBeNull();
   expect(box!.x + box!.width).toBeLessThanOrEqual(1200 + 1);
 });
+
+// SA-RESP (WCAG 1.4.10): the sheet grid's intrinsic min-width (~1054px with the
+// checkbox track) exceeds a 1024px viewport. SheetTable wraps header + rows in
+// ONE shared horizontal scroller with sticky identity columns, so a narrow
+// viewport SCROLLS to the Status column instead of silently clipping it.
+//
+// The mock sample carries MANY exposures on purpose: the table wrapper is
+// min-w-min, so the scroller's width must stay at the grid's track-min sum
+// (~1054px) while the ThumbnailGallery keeps scrolling INTERNALLY. (A
+// max-content wrapper regressed this live: a real 8-exposure corpus unwrapped
+// the flex-nowrap gallery and blew the scroller out to ~3400px — Status ended
+// up 2.3 viewports away. Few-exposure mocks could not see that.)
+test("narrow viewport: Status column is reachable by scrolling; Sample column sticks", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 800 });
+  await mockCorpus(page);
+  // Registered AFTER mockCorpus → takes precedence (Playwright matches the
+  // most recently registered route first): sample 10 gets 12 exposures.
+  const MANY = Array.from({ length: 12 }, (_, i) => ({
+    id: 700 + i, sample_id: 10, filename: `m${i + 1}.dat`, kind: "file",
+    selected: i === 0, status: "accepted",
+    image_path: null, image_version: "", tags: [],
+    sources: [], trace_hash: null, analysis_inputs_hash: null,
+  }));
+  await page.route("**/api/samples/10/exposures*", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(MANY) }));
+  await page.goto("/samples");
+  await expect(page.getByTestId("sample-table-row").first()).toBeVisible();
+  await expect(page.getByTestId("thumbnail")).toHaveCount(12);
+
+  // The grid overflows the card at 1024 → the shared container scrolls…
+  const scroll = page.getByTestId("sheet-scroll");
+  const widths = await scroll.evaluate((el) => ({
+    scrollWidth: el.scrollWidth, clientWidth: el.clientWidth,
+  }));
+  expect(widths.scrollWidth).toBeGreaterThan(widths.clientWidth);
+  // …but only to the grid's track-min sum, NOT the gallery's unwrapped
+  // max-content width (the min-w-min cap).
+  expect(widths.scrollWidth).toBeLessThan(1200);
+
+  // The many-exposure gallery still scrolls internally instead of widening
+  // its fr track.
+  const gallery = page.getByTestId("thumbnail-gallery");
+  expect(
+    await gallery.evaluate((g) => g.scrollWidth > g.clientWidth + 1),
+  ).toBe(true);
+
+  const status = page.getByRole("columnheader", { name: "Status" });
+  const sample = page.getByRole("columnheader", { name: "Sample" });
+  const sampleBefore = await sample.boundingBox();
+  expect(sampleBefore).not.toBeNull();
+
+  // Scroll the container to the far right: the Status column must be REACHABLE
+  // (fully inside the viewport) — the 1.4.10 substance.
+  await scroll.evaluate((el) => { el.scrollLeft = el.scrollWidth; });
+  const statusBox = await status.boundingBox();
+  expect(statusBox).not.toBeNull();
+  expect(statusBox!.x).toBeGreaterThanOrEqual(0);
+  expect(statusBox!.x + statusBox!.width).toBeLessThanOrEqual(1024 + 1);
+
+  // The sticky Sample header did not move with the scroll.
+  const sampleAfter = await sample.boundingBox();
+  expect(sampleAfter).not.toBeNull();
+  expect(Math.abs(sampleAfter!.x - sampleBefore!.x)).toBeLessThanOrEqual(1);
+});
+
+test("wide viewport: the sheet does not scroll horizontally (unchanged layout)", async ({ page }) => {
+  // Playwright's default 1280×720 viewport is the wide case.
+  await mockCorpus(page);
+  await page.goto("/samples");
+  await expect(page.getByTestId("sample-table-row").first()).toBeVisible();
+  const widths = await page.getByTestId("sheet-scroll").evaluate((el) => ({
+    scrollWidth: el.scrollWidth, clientWidth: el.clientWidth,
+  }));
+  expect(widths.scrollWidth).toBeLessThanOrEqual(widths.clientWidth + 1);
+});

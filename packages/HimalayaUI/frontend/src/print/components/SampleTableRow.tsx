@@ -54,17 +54,28 @@ export interface SampleTableRowProps {
  *  fit their longest realistic value so they NEVER truncate — Kept holds
  *  "10 / 12" + "2 dropped" (96px), Status holds "Not indexed" (150px). The
  *  identity / exposures / tags columns carry a min + grow (fr). The row's
- *  intrinsic min-width is the sum of mins (~1018px); a future SheetTable wraps
- *  the rows in a horizontal-scroll container with a sticky Sample column, so a
- *  narrow viewport SCROLLS rather than clipping (Carbon/Polaris). */
+ *  intrinsic min-width is the sum of mins (~1018px); SheetTable wraps the
+ *  header + rows in ONE shared horizontal-scroll container, so a narrow
+ *  viewport SCROLLS rather than clipping (Carbon/Polaris). The contract is
+ *  split: SheetTable provides the scroller (`data-testid="sheet-scroll"`) and
+ *  the sticky column HEADERS; every row provides its own sticky identity
+ *  cells — checkbox at left 0, Sample at left CHECKBOX_TRACK_PX (or 0 when no
+ *  checkbox column) — with an opaque background + z-10 so scrolled content
+ *  slides beneath, and a right hairline so the frozen edge reads. */
 export const SAMPLE_TABLE_COLS_BASE =
   "minmax(244px,1.4fr) minmax(360px,2fr) 96px minmax(168px,1fr) 150px";
+/** Width of the checkbox grid track, in px. SINGLE SOURCE for both the grid
+ *  template's leading track AND the sticky `left` offset of the Sample column
+ *  (here and in SheetTable's header) — they cannot diverge. */
+export const CHECKBOX_TRACK_PX = 36;
 /** Returns the grid-template-columns string for a row/header.
- *  `withCheckbox=true` prepends a 36px checkbox track as the left-most column.
+ *  `withCheckbox=true` prepends the checkbox track as the left-most column.
  *  BOTH the SheetTable header AND every SampleTableRow body call this with the
  *  same boolean — the shared computed template is the alignment invariant. */
 export function sampleTableCols(withCheckbox: boolean): string {
-  return withCheckbox ? `36px ${SAMPLE_TABLE_COLS_BASE}` : SAMPLE_TABLE_COLS_BASE;
+  return withCheckbox
+    ? `${CHECKBOX_TRACK_PX}px ${SAMPLE_TABLE_COLS_BASE}`
+    : SAMPLE_TABLE_COLS_BASE;
 }
 // Backward-compat alias — existing callers (stories) import this as a string.
 export const SAMPLE_TABLE_COLS = SAMPLE_TABLE_COLS_BASE;
@@ -107,21 +118,34 @@ export function SampleTableRow({
   className,
 }: SampleTableRowProps): JSX.Element {
   const restTint = screened ? "" : " bg-paper-sunk";
+  const hasCheckbox = onCheck !== undefined;
+  // Sticky identity cells (SheetTable owns the scroller; rows own the frozen
+  // cells). The opaque background must mirror the row's own surface — bg-plate
+  // for screened rows (transparent over the Card plate), bg-paper-sunk for the
+  // unscreened resting tint — and follow the row hover via group-hover, so the
+  // frozen column is indistinguishable from the row at wide viewports.
+  const stickyBg = screened ? "bg-plate" : "bg-paper-sunk";
+  const sticky = `sticky z-10 ${stickyBg} group-hover/row:bg-paper-sunk`;
+  const sampleLeft = hasCheckbox ? CHECKBOX_TRACK_PX : 0;
 
   return (
     <div
       data-testid="sample-table-row"
       role="row"
       data-screened={screened ? "true" : "false"}
-      className={`border-b border-hair hover:bg-paper-sunk${restTint}${className ? ` ${className}` : ""}`}
+      className={`group/row border-b border-hair hover:bg-paper-sunk${restTint}${className ? ` ${className}` : ""}`}
     >
       <div
         role="presentation"
         className="grid"
-        style={{ gridTemplateColumns: sampleTableCols(onCheck !== undefined) }}
+        style={{ gridTemplateColumns: sampleTableCols(hasCheckbox) }}
       >
-        {onCheck !== undefined && (
-          <div role="cell" className="flex items-center justify-center px-1 h-[92px]">
+        {hasCheckbox && (
+          <div
+            role="cell"
+            data-sticky="true"
+            className={`${sticky} left-0 flex items-center justify-center px-1 h-[92px]`}
+          >
             <Checkbox
               checked={checked ?? false}
               {...(indeterminate ? { indeterminate: true } : {})}
@@ -130,7 +154,12 @@ export function SampleTableRow({
             />
           </div>
         )}
-        <div role="cell" className={CELL}>
+        <div
+          role="cell"
+          data-sticky="true"
+          className={`${CELL} ${sticky} border-r border-hair-strong`}
+          style={{ left: sampleLeft }}
+        >
           <SpecCell
             name={name}
             sampleId={sampleId}

@@ -69,6 +69,23 @@ describe("<SampleTableRow> structure", () => {
     expect(within(row).getAllByRole("cell")).toHaveLength(6);
   });
 
+  it("sticky identity cells: Sample sticks at left 0 when there is no checkbox column", () => {
+    renderRow();
+    const cells = within(screen.getByRole("row")).getAllByRole("cell");
+    expect(cells[0]).toHaveAttribute("data-sticky", "true");
+    expect(cells[0]).toHaveStyle({ left: "0px" });
+    cells.slice(1).forEach((c) => expect(c).not.toHaveAttribute("data-sticky"));
+  });
+
+  it("sticky identity cells: checkbox at 0 + Sample offset by the checkbox track (shared const)", () => {
+    renderRow({ onCheck: () => {} });
+    const cells = within(screen.getByRole("row")).getAllByRole("cell");
+    expect(cells[0]).toHaveAttribute("data-sticky", "true"); // checkbox cell
+    expect(cells[1]).toHaveAttribute("data-sticky", "true"); // Sample cell
+    expect(cells[1]).toHaveStyle({ left: "36px" });
+    cells.slice(2).forEach((c) => expect(c).not.toHaveAttribute("data-sticky"));
+  });
+
   it("(d) contains the KeptCell counts (kept and total)", () => {
     const { container } = renderRow();
     expect(container.querySelector("[data-role='kept-count']")).toHaveTextContent("2");

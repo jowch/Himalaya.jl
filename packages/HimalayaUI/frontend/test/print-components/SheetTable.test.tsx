@@ -91,4 +91,74 @@ describe("SheetTable a11y semantics (WCAG 1.3.1 / 4.1.2)", () => {
       expect(within(r).getAllByRole("cell")).toHaveLength(6);
     });
   });
+
+  it("table role tree is contiguous: rowgroups are DIRECT children of the table, rows of a rowgroup", () => {
+    render(<SheetTable checkboxColumn>{[checkRow("a"), checkRow("b")]}</SheetTable>);
+    const table = screen.getByRole("table", { name: "Samples" });
+    const rowgroups = screen.getAllByRole("rowgroup");
+    expect(rowgroups).toHaveLength(2); // header + rows region
+    rowgroups.forEach((rg) => {
+      expect(rg.closest('[role="table"]')).toBe(table);
+      // No role-bearing element between table and rowgroup: direct DOM child.
+      expect(rg.parentElement).toBe(table);
+    });
+    screen.getAllByRole("row").forEach((r) => {
+      expect(r.parentElement?.getAttribute("role")).toBe("rowgroup");
+    });
+  });
+});
+
+describe("SheetTable horizontal scroll + sticky identity (WCAG 1.4.10)", () => {
+  it("header rowgroup and rows region share ONE sheet-scroll container", () => {
+    render(<SheetTable>{[row("a")]}</SheetTable>);
+    const scroll = screen.getByTestId("sheet-scroll");
+    expect(within(scroll).getByTestId("sheet-head")).toBeInTheDocument();
+    expect(within(scroll).getByTestId("sheet-rows")).toBeInTheDocument();
+  });
+
+  it("the scroller sits OUTSIDE the table role element (Card > scroller > table)", () => {
+    render(<SheetTable>{[row("a")]}</SheetTable>);
+    const table = screen.getByRole("table", { name: "Samples" });
+    const scroll = screen.getByTestId("sheet-scroll");
+    expect(scroll.contains(table)).toBe(true);
+    expect(table.contains(scroll)).toBe(false);
+    // The Card stays the visual plate around the scroller.
+    expect(screen.getByTestId("sheet-table").contains(scroll)).toBe(true);
+  });
+
+  it("sticky headers: checkbox + Sample carry data-sticky; the rest do not", () => {
+    render(<SheetTable checkboxColumn>{[checkRow("a")]}</SheetTable>);
+    const headers = screen.getAllByRole("columnheader");
+    expect(headers[0]).toHaveAccessibleName("Select");
+    expect(headers[0]).toHaveAttribute("data-sticky", "true");
+    expect(headers[1]).toHaveTextContent("Sample");
+    expect(headers[1]).toHaveAttribute("data-sticky", "true");
+    headers.slice(2).forEach((h) => expect(h).not.toHaveAttribute("data-sticky"));
+  });
+
+  it("sticky headers without checkbox column: only Sample carries data-sticky", () => {
+    render(<SheetTable>{[row("a")]}</SheetTable>);
+    const headers = screen.getAllByRole("columnheader");
+    expect(headers[0]).toHaveTextContent("Sample");
+    expect(headers[0]).toHaveAttribute("data-sticky", "true");
+    headers.slice(1).forEach((h) => expect(h).not.toHaveAttribute("data-sticky"));
+  });
+
+  it("sticky row cells: checkbox + Sample cells carry data-sticky; the rest do not", () => {
+    render(<SheetTable checkboxColumn>{[checkRow("a")]}</SheetTable>);
+    const bodyRow = screen
+      .getAllByRole("row")
+      .find((r) => within(r).queryAllByRole("columnheader").length === 0)!;
+    const cells = within(bodyRow).getAllByRole("cell");
+    expect(cells[0]).toHaveAttribute("data-sticky", "true"); // checkbox
+    expect(cells[1]).toHaveAttribute("data-sticky", "true"); // Sample
+    cells.slice(2).forEach((c) => expect(c).not.toHaveAttribute("data-sticky"));
+  });
+
+  it("still renders the empty slot (outside the table role tree) when no children", () => {
+    render(<SheetTable empty={<span>No samples</span>}>{[]}</SheetTable>);
+    const empty = screen.getByTestId("sheet-empty");
+    expect(empty).toBeInTheDocument();
+    expect(empty.closest('[role="table"]')).toBeNull();
+  });
 });
