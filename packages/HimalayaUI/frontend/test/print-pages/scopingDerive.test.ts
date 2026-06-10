@@ -4,6 +4,7 @@ import {
   canScopeBuild,
   buildScopePayload,
   toPreviewSegments,
+  isKept,
 } from "../../src/print/pages/scopingDerive";
 import type { OrderingRow } from "../../src/lib/scoping/proposeOrdering";
 import type { PhaseRead } from "../../src/lib/scoping/dominantPhase";
@@ -39,6 +40,32 @@ describe("buildFootState", () => {
       kind: "warn",
       text: "Keep at least one value to build",
     });
+  });
+});
+
+describe("isKept", () => {
+  it("keeps an included, non-skipped row with a value", () => {
+    expect(isKept(row({}))).toBe(true);
+  });
+  it("excludes a skipped (flagged) row", () => {
+    expect(isKept(row({ flagged: true }))).toBe(false);
+  });
+  it("excludes a non-included row", () => {
+    expect(isKept(row({ include: false }))).toBe(false);
+  });
+  it("excludes an empty-value row (loose matches never reach the write)", () => {
+    expect(isKept(row({ value: "" }))).toBe(false);
+  });
+  it("IS the membership predicate behind buildScopePayload (single definition)", () => {
+    const rows = [
+      row({ sampleId: 1 }),
+      row({ sampleId: 2, flagged: true }),
+      row({ sampleId: 3, include: false }),
+      row({ sampleId: 4, value: "" }),
+    ];
+    expect(buildScopePayload(rows).map((t) => t.sampleId)).toEqual(
+      rows.filter(isKept).map((r) => r.sampleId),
+    );
   });
 });
 

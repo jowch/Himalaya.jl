@@ -33,21 +33,29 @@ export function buildFootState(keptCount: number, skippedCount: number): FootSta
   return { kind: "ready", text: skippedCount > 0 ? `${base} · ${skippedCount} skipped` : base };
 }
 
-/** Build gate: an ordering key must exist and at least one KEPT member must
- *  remain (included, not skipped, has a value). A skipped (flagged) member is
- *  excluded from the write, never blocks. */
-export function canScopeBuild(rows: OrderingRow[], orderingKey: string | undefined): boolean {
-  if (orderingKey === undefined) return false;
-  return rows.some((r) => r.include && !r.flagged && r.value !== "");
+/** THE single definition of "this member's read will be committed": included,
+ *  not skipped (flagged), and carrying a value. Every consumer of the commit
+ *  membership — the batch payload, the build gate, the kept/skipped counts,
+ *  the create body, and the PhaseStrip preview — must derive through this
+ *  predicate so the worksheet can never disagree with the write. The
+ *  empty-value guard prevents corrupting a sample with `value:""` (loose
+ *  matches carry no value and must never reach the write). Structural Pick so
+ *  story/page simulations can satisfy it without a full OrderingRow. */
+export function isKept(r: Pick<OrderingRow, "include" | "flagged" | "value">): boolean {
+  return r.include && !r.flagged && r.value !== "";
 }
 
-/** The batch payload: only included, non-skipped members WITH a value are
- *  written. The empty-value guard prevents corrupting a sample with `value:""`
- *  (loose matches carry no value and must never reach the write). */
+/** Build gate: an ordering key must exist and at least one KEPT member must
+ *  remain (`isKept`). A skipped (flagged) member is excluded from the write,
+ *  never blocks. */
+export function canScopeBuild(rows: OrderingRow[], orderingKey: string | undefined): boolean {
+  if (orderingKey === undefined) return false;
+  return rows.some(isKept);
+}
+
+/** The batch payload: only kept members (`isKept`) are written. */
 export function buildScopePayload(rows: OrderingRow[]): { sampleId: number; value: string }[] {
-  return rows
-    .filter((r) => r.include && !r.flagged && r.value !== "")
-    .map((r) => ({ sampleId: r.sampleId, value: r.value }));
+  return rows.filter(isKept).map((r) => ({ sampleId: r.sampleId, value: r.value }));
 }
 
 export interface ColdAssignRow {

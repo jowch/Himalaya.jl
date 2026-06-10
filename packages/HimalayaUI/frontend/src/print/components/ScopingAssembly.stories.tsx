@@ -6,7 +6,7 @@ import { ScopeCandidateRow } from "./ScopeCandidateRow";
 import { useDragReorder, reorder } from "./useDragReorder";
 import type { PhaseSegment } from "../ui";
 import { realTraces } from "../fixtures/realTraces";
-import { buildFootState } from "../pages/scopingDerive";
+import { buildFootState, isKept } from "../pages/scopingDerive";
 import { suppressGlobalKeys } from "../../lib/keys";
 
 /**
@@ -146,13 +146,18 @@ function ScopingView(): JSX.Element {
     return () => window.removeEventListener("keydown", onKey);
   });
 
-  // Derivations the page owns — ScopePlate just renders them. The foot + gate
-  // mirror the REAL page contract (scopingDerive.ts): a skipped (flagged) read
-  // is excluded from the write, never blocks; warn only when nothing is kept.
+  // Derivations the page owns — ScopePlate just renders them. The foot, gate,
+  // AND the preview strip mirror the REAL page contract (scopingDerive.ts):
+  // the commit membership is the shared `isKept` predicate (story members are
+  // always included and carry a value, so only the skip matters here). A
+  // skipped read is excluded from the write — and from the preview, which
+  // shows exactly the series that will be built; warn only when nothing is
+  // kept (story-simulates-page-computation).
   const n = sorted.length;
-  const skipped = sorted.filter((s) => s.flagged).length;
-  const kept = n - skipped;
-  const preview: PhaseSegment[] = sorted.map((s) =>
+  const keptRows = sorted.filter((s) => isKept({ include: true, flagged: s.flagged, value: s.value }));
+  const kept = keptRows.length;
+  const skipped = n - kept;
+  const preview: PhaseSegment[] = keptRows.map((s) =>
     s.coexistWith ? { phase: s.phase, coexistWith: s.coexistWith } : { phase: s.phase },
   );
   const footState = buildFootState(kept, skipped);

@@ -27,6 +27,7 @@ import {
   canScopeBuild,
   buildScopePayload,
   toPreviewSegments,
+  isKept,
   filterPickerBySeed,
   buildColdAssignRows,
   canColdBuild,
@@ -459,11 +460,14 @@ export function SeriesScopingPage(): JSX.Element {
     return m;
   }, [allSampleIds, pickerById, indicesByExposure]);
 
-  // Preview strip follows the displayed order.
+  // Preview strip: the strip's job is to preview the series figure that will
+  // be BUILT, so it shows exactly the commit membership (isKept — the same
+  // predicate as the write payload), in displayed order. Skipped members must
+  // not paint a cell the foot says is excluded.
   const preview = useMemo(
     () =>
       toPreviewSegments(
-        sorted.map((r) => {
+        sorted.filter(isKept).map((r) => {
           const eid = pickerById.get(r.sampleId);
           const idx = eid != null ? indicesByExposure.get(eid) : undefined;
           return idx ? dominantPhase(idx) : { dominant: null, coexist: null };
@@ -473,7 +477,7 @@ export function SeriesScopingPage(): JSX.Element {
   );
 
   const skippedCount = rows.filter((r) => r.flagged).length;
-  const keptCount = rows.filter((r) => r.include && !r.flagged && r.value !== "").length;
+  const keptCount = rows.filter(isKept).length;
   const footState = buildFootState(keptCount, skippedCount);
   const canBuild = canScopeBuild(rows, proposal.orderingKey);
   const lastLabel = history.length ? history[history.length - 1]!.label : undefined;
@@ -525,10 +529,10 @@ export function SeriesScopingPage(): JSX.Element {
       scopeSeries.mutate({ key, tags: buildColdScopePayload(coldRows) });
     } else {
       if (proposal.orderingKey === undefined) return;
-      // Warm members: the SCOPED, kept set (skips excluded — same predicate as
-      // buildScopePayload) in the displayed low→high order, so the series
-      // recipe matches the tags actually written.
-      const keptInOrder = sorted.filter((r) => r.include && !r.flagged && r.value !== "");
+      // Warm members: the SCOPED, kept set (skips excluded — isKept, the same
+      // predicate as buildScopePayload) in the displayed low→high order, so
+      // the series recipe matches the tags actually written.
+      const keptInOrder = sorted.filter(isKept);
       createBodyRef.current = {
         title: `Series by ${keyLabel}`,
         samples: keptInOrder.map((r, i) => ({ sample_id: r.sampleId, position: i })),

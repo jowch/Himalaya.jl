@@ -127,12 +127,18 @@ export function ScopePlate({
         {candidates}
       </div>
 
-      <div className="mt-5">
-        <Kicker as="h2" tone="faint" className="mb-2">
-          Preview — phase across the series
-        </Kicker>
-        <PhaseStrip segments={preview} size="sm" />
-      </div>
+      {/* Omitted entirely when nothing will be committed: a zero-segment
+          PhaseStrip still paints an empty bar plus its "No clear phase"
+          caption — a visible artifact previewing nothing. The foot's warn
+          state already says "Keep at least one value to build". */}
+      {preview.length > 0 ? (
+        <div className="mt-5">
+          <Kicker as="h2" tone="faint" className="mb-2">
+            Preview — phase across the series
+          </Kicker>
+          <PhaseStrip segments={preview} size="sm" />
+        </div>
+      ) : null}
 
       <div className="mt-6 pt-4 border-t border-hair flex items-center justify-between gap-5">
         <div className="flex flex-col gap-1">

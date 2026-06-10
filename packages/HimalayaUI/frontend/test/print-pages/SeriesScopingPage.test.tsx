@@ -94,6 +94,9 @@ let pickerState: { data: PickerSampleRow[]; isLoading: boolean; isError: boolean
 // Records the exposure ids the page actually asks traces for (the fan-out) —
 // lets the candidate-preview cap pin that below-fold candidates are not fetched.
 let requestedTraceExposureIds: number[] = [];
+// Per-exposure phase override for useMemberIndices (default "Pn3m") — lets
+// preview-strip tests tell members apart by their accessible phase labels.
+let phaseByExposure: Record<number, string> = {};
 
 vi.mock("../../src/queries", () => ({
   useCorpusSampleTags: () => tagsState,
@@ -105,7 +108,9 @@ vi.mock("../../src/queries", () => ({
     return new Map<number, Trace>(ids.map((id) => [id, trace()]));
   },
   useMemberIndices: (ids: number[]) =>
-    new Map<number, IndexEntry[]>(ids.map((id) => [id, [indexEntry(id, "Pn3m", 0.9)]])),
+    new Map<number, IndexEntry[]>(
+      ids.map((id) => [id, [indexEntry(id, phaseByExposure[id] ?? "Pn3m", 0.9)]]),
+    ),
 }));
 
 // boneyard Skeleton: render children when not loading (mirror the folio harness).
@@ -227,6 +232,7 @@ beforeEach(() => {
   scopeState = { mutate: scopeMutate, isSuccess: false, error: null, data: undefined };
   createState = { mutate: createMutate, isSuccess: false, error: null, data: undefined };
   requestedTraceExposureIds = [];
+  phaseByExposure = {};
   seed();
 });
 
@@ -365,6 +371,60 @@ describe("SeriesScopingPage", () => {
     // Unskip one → build re-enables.
     fireEvent.click(screen.getAllByTestId("flag-button")[0]!);
     expect(screen.getByRole("button", { name: /confirm & build/i })).not.toBeDisabled();
+  });
+
+  // ── SC-PREVIEWSKIP: the strip previews exactly the commit membership ───────
+  // The PhaseStrip's job is to preview the series figure that will be built —
+  // it must show exactly the members the write will commit (isKept), in
+  // displayed order, never the skipped ones the foot says are excluded.
+
+  it("the preview strip omits a skipped member's cell and restores it on unskip", () => {
+    seed3();
+    // Make the middle member (B → exposure 65) distinguishable by label.
+    phaseByExposure = { 65: "Ia3d" };
+    renderPage();
+    const labels = (): (string | null)[] =>
+      screen.getAllByTestId("ps-seg").map((el) => el.getAttribute("aria-label"));
+    // All three members preview, in displayed (low→high) order.
+    expect(labels()).toEqual(["Pn3m", "Ia3d", "Pn3m"]);
+    // Skip B → its cell leaves the preview (2 cells, no Ia3d label).
+    fireEvent.click(screen.getAllByTestId("flag-button")[1]!);
+    expect(labels()).toEqual(["Pn3m", "Pn3m"]);
+    // Unskip → the cell returns in place.
+    fireEvent.click(screen.getAllByTestId("flag-button")[1]!);
+    expect(labels()).toEqual(["Pn3m", "Ia3d", "Pn3m"]);
+  });
+
+  it("the preview strip follows the DISPLAYED order after a keyboard reorder, filtered by isKept", () => {
+    // seed3's picker (rows) order and the value-sorted display order coincide,
+    // so the omit-on-skip pin alone cannot tell `sorted` from `rows` — diverge
+    // them with a real reorder (the SC-KBD grip path) before asserting.
+    seed3();
+    // Distinct label per member: A(37)=Pn3m (default), B(65)=Ia3d, C(66)=Im3m.
+    phaseByExposure = { 65: "Ia3d", 66: "Im3m" };
+    renderPage();
+    const labels = (): (string | null)[] =>
+      screen.getAllByTestId("ps-seg").map((el) => el.getAttribute("aria-label"));
+    expect(labels()).toEqual(["Pn3m", "Ia3d", "Im3m"]);
+    // ArrowUp on C's grip → displayed order A, C, B (rows order stays A, B, C).
+    fireEvent.keyDown(screen.getByRole("button", { name: /^reorder C$/i }), { key: "ArrowUp" });
+    expect(labels()).toEqual(["Pn3m", "Im3m", "Ia3d"]);
+    // Skip A (first DISPLAYED row) → the kept set IN the new order: C, B.
+    fireEvent.click(screen.getAllByTestId("flag-button")[0]!);
+    expect(labels()).toEqual(["Im3m", "Ia3d"]);
+  });
+
+  it("omits the preview strip region entirely when every member is skipped", () => {
+    renderPage();
+    fireEvent.click(screen.getAllByTestId("flag-button")[0]!);
+    fireEvent.click(screen.getAllByTestId("flag-button")[1]!);
+    // Nothing will be committed → nothing to preview: no cells, no section
+    // heading, no orphaned "No clear phase" caption. The foot already warns.
+    expect(screen.queryAllByTestId("ps-seg")).toHaveLength(0);
+    expect(
+      screen.queryByRole("heading", { level: 2, name: /preview — phase across the series/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/no clear phase/i)).not.toBeInTheDocument();
   });
 
   it("⌘Z from the page body steps the last skip back (regression pin)", () => {

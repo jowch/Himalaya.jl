@@ -28,7 +28,7 @@ describe("<ScopePlate>", () => {
     expect(screen.getByTestId("cands-slot")).toBeInTheDocument();
     expect(screen.getAllByTestId("ps-seg").length).toBe(2);
   });
-  it("exposes a sound heading tree: one h1 (series name) + four h2 section labels", () => {
+  it("exposes a sound heading tree with a populated preview: one h1 (series name) + four h2 section labels (the Preview h2 is conditional on segments)", () => {
     render(<ScopePlate {...base} footState={{ kind: "ready", text: "ready" }} />);
     // The series name is the single level-1 heading.
     const h1s = screen.getAllByRole("heading", { level: 1 });
@@ -60,6 +60,24 @@ describe("<ScopePlate>", () => {
     expect(
       screen.getByRole("button", { name: /ordered by\s+LL37 : lipid ratio/i }),
     ).toBeInTheDocument();
+  });
+  it("omits the preview section entirely when there are no segments (every member skipped)", () => {
+    // A zero-segment PhaseStrip would still paint an empty bar + the
+    // "No clear phase" caption — a visible artifact previewing nothing. The
+    // plate drops the whole section (heading included); the foot warns instead.
+    render(
+      <ScopePlate
+        {...base}
+        preview={[]}
+        buildDisabled
+        footState={{ kind: "warn", text: "Keep at least one value to build" }}
+      />,
+    );
+    expect(screen.queryAllByTestId("ps-seg")).toHaveLength(0);
+    expect(
+      screen.queryByRole("heading", { level: 2, name: /preview — phase across the series/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/no clear phase/i)).not.toBeInTheDocument();
   });
   it("gates the build button when buildDisabled", () => {
     render(<ScopePlate {...base} buildDisabled footState={{ kind: "warn", text: "1 value to check before you can build" }} />);
