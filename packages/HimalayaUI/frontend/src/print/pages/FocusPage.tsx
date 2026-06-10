@@ -1,4 +1,5 @@
 import { useMemo, useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { Skeleton } from "boneyard-js/react";
 import { TracePlate } from "../components/TracePlate";
 import { DetectorPanel } from "../components/DetectorPanel";
@@ -10,7 +11,7 @@ import { AssignmentCart } from "../components/AssignmentCart";
 import { PhaseBlock } from "../components/PhaseBlock";
 import { CandidateRow, CandidateList } from "../components/CandidateRow";
 import { CustomIndexModal } from "../components/CustomIndexModal";
-import { HintText } from "../ui";
+import { HintText, EmptyState, Button } from "../ui";
 import { ExportButton } from "../components/ExportButton";
 import { useFigureExport } from "../components/useFigureExport";
 import { buildTraceExportSpec } from "../../lib/figure-export/adapters/traceAdapter";
@@ -120,6 +121,8 @@ const FOCUS_FIXTURE = (
  * unconditionally (hooks rule) before any early return.
  */
 export function FocusPage(): JSX.Element {
+  const navigate = useNavigate();
+
   // ── route → store seeding ──────────────────────────────────────────────────
   useSyncActiveSampleFromRoute();
   const activeSampleId = useAppState((s) => s.activeSampleId);
@@ -270,11 +273,16 @@ export function FocusPage(): JSX.Element {
   if (!corpusQ.isLoading && !corpusSample) {
     return (
       <div className="px-8 py-7">
-        <div
-          data-testid="focus-not-found"
-          className="rounded border border-hair-strong p-8 text-sm text-ink-soft"
-        >
-          Sample not found.
+        <div data-testid="focus-not-found">
+          <EmptyState
+            title="Sample not found"
+            body="Nothing in the corpus matches this address."
+            action={
+              <Button variant="outline" onClick={() => navigate("/samples")}>
+                Back to the contact sheet
+              </Button>
+            }
+          />
         </div>
       </div>
     );

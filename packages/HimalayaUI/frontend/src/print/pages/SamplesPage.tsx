@@ -5,7 +5,7 @@ import { PageFrame } from "../components/PageFrame";
 import { SheetTable } from "../components/SheetTable";
 import { SampleTableRow } from "../components/SampleTableRow";
 import { CullBar } from "../components/CullBar";
-import { Kicker, KbLegend, ProgressBar, ComposeBar } from "../ui";
+import { Kicker, KbLegend, ProgressBar, ComposeBar, EmptyState, Button } from "../ui";
 import {
   useCorpusSamples,
   useCorpusExposures,
@@ -211,11 +211,20 @@ export function SamplesPage(): JSX.Element {
 
         {/* ── Table ─────────────────────────────────────────────────────────── */}
         {corpusQuery.isError ? (
-          <div
-            data-testid="samples-error"
-            className="rounded-md border border-hair-strong p-8 text-center text-ink-soft"
-          >
-            Could not load the corpus. Try reloading.
+          <div data-testid="samples-error">
+            <EmptyState
+              title="Could not load the corpus"
+              body="The sample list request failed."
+              action={
+                <Button
+                  variant="outline"
+                  disabled={corpusQuery.isFetching}
+                  onClick={() => void corpusQuery.refetch()}
+                >
+                  Reload the corpus
+                </Button>
+              }
+            />
           </div>
         ) : (
           <Skeleton

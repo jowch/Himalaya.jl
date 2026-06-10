@@ -274,6 +274,21 @@ describe("FocusPage", () => {
     expect(screen.getByTestId("focus-not-found")).toBeInTheDocument();
   });
 
+  it("not-found renders an EmptyState whose action leads back to the contact sheet (FO-ERR)", () => {
+    state.corpus = [];
+    state.activeSampleId = undefined;
+    renderAt(999);
+    const block = screen.getByTestId("focus-not-found");
+    expect(within(block).getByTestId("empty-state")).toBeInTheDocument();
+    expect(
+      within(block).getByRole("heading", { name: "Sample not found" }),
+    ).toBeInTheDocument();
+    fireEvent.click(
+      within(block).getByRole("button", { name: "Back to the contact sheet" }),
+    );
+    expect(screen.getByTestId("sheet")).toBeInTheDocument();
+  });
+
   it("no-exposure: the sample has no exposures", () => {
     state.exposures = [];
     state.activeExposureId = undefined;

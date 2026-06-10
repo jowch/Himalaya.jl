@@ -10,6 +10,7 @@ import {
   FilterChip,
   SegmentedControl,
   EmptyState,
+  Button,
 } from "../ui";
 import type { SegmentOption } from "../ui";
 import { useSeriesList, useSeries, useSeriesTraces } from "../../queries";
@@ -118,7 +119,16 @@ export function SeriesFolioPage(): JSX.Element {
         />
         <EmptyState
           title="Couldn't load the folio"
-          body="The series list failed to load. Try reloading the page."
+          body="The series list failed to load."
+          action={
+            <Button
+              variant="outline"
+              disabled={listQ.isFetching}
+              onClick={() => void listQ.refetch()}
+            >
+              Try again
+            </Button>
+          }
         />
       </PageFrame>
     );

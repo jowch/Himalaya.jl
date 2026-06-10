@@ -5,6 +5,7 @@ import type { CorpusSample, Exposure, Experiment } from "../../src/api";
 
 // ── mutator spy ───────────────────────────────────────────────────────────────
 const batchMutate = vi.fn();
+const corpusRefetch = vi.fn();
 
 // ── mock data plane (mutated per test) ────────────────────────────────────────
 const state = {
@@ -15,6 +16,7 @@ const state = {
   total: 0,
   loading: false,
   error: false,
+  fetching: false,
 };
 
 vi.mock("../../src/queries", () => ({
@@ -22,6 +24,8 @@ vi.mock("../../src/queries", () => ({
     data: state.samples,
     isLoading: state.loading,
     isError: state.error,
+    isFetching: state.fetching,
+    refetch: corpusRefetch,
   }),
   useCorpusExposures: (filtered: CorpusSample[]) => {
     // Only expose the rows for the filtered samples (mirrors the real hook).
@@ -95,6 +99,7 @@ function seed(): void {
   state.total = 3;
   state.loading = false;
   state.error = false;
+  state.fetching = false;
 }
 
 function renderAt(path = "/samples") {
@@ -256,10 +261,27 @@ describe("SamplesPage", () => {
     expect(screen.getByTestId("sheet-empty")).toBeInTheDocument();
   });
 
-  it("error state renders the error block", () => {
+  it("error state renders an EmptyState with a retry control wired to refetch (SA-RETRY)", () => {
     state.error = true;
     renderAt("/samples");
-    expect(screen.getByTestId("samples-error")).toBeInTheDocument();
+    const block = screen.getByTestId("samples-error");
+    expect(within(block).getByTestId("empty-state")).toBeInTheDocument();
+    expect(
+      within(block).getByRole("heading", { name: "Could not load the corpus" }),
+    ).toBeInTheDocument();
+    // The control embodies the way forward — no "try reloading" instruction.
+    fireEvent.click(within(block).getByRole("button", { name: "Reload the corpus" }));
+    expect(corpusRefetch).toHaveBeenCalled();
+  });
+
+  it("the retry control is disabled while the refetch is in flight", () => {
+    state.error = true;
+    state.fetching = true;
+    renderAt("/samples");
+    const block = screen.getByTestId("samples-error");
+    expect(
+      within(block).getByRole("button", { name: "Reload the corpus" }),
+    ).toBeDisabled();
   });
 
   it("X from a contenteditable target does not batch-drop", () => {

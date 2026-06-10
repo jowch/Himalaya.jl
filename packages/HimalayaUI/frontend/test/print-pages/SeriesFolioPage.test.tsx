@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import type { SeriesSummary, Series, SeriesMember } from "../../src/api";
 
 // ── navigate spy ─────────────────────────────────────────────────────────────
 const navigateSpy = vi.fn();
+const listRefetch = vi.fn();
 vi.mock("react-router-dom", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-router-dom")>();
   return {
@@ -19,6 +20,7 @@ const state = {
   seriesById: new Map<number, Series>(),
   loading: false,
   error: false,
+  fetching: false,
 };
 
 vi.mock("../../src/queries", () => ({
@@ -26,6 +28,8 @@ vi.mock("../../src/queries", () => ({
     data: state.error ? undefined : state.summaries,
     isLoading: state.loading,
     isError: state.error,
+    isFetching: state.fetching,
+    refetch: listRefetch,
   }),
   useSeries: (id: number | undefined) => ({
     data: id !== undefined ? state.seriesById.get(id) : undefined,
@@ -133,6 +137,7 @@ function seed(): void {
   ]);
   state.loading = false;
   state.error = false;
+  state.fetching = false;
 }
 
 function renderPage() {
@@ -209,5 +214,24 @@ describe("SeriesFolioPage", () => {
     expect(screen.queryByText("No series match")).toBeNull();
     // No cards / no controls Gallery in the error branch.
     expect(screen.queryAllByTestId("series-card")).toHaveLength(0);
+  });
+
+  it("the error surface offers a retry control wired to refetch (FOL-ERR)", () => {
+    state.error = true;
+    renderPage();
+    const block = screen.getByTestId("empty-state");
+    // The body states what happened; the control embodies the way forward.
+    expect(screen.getByText("The series list failed to load.")).toBeInTheDocument();
+    expect(screen.queryByText(/try reloading/i)).toBeNull();
+    fireEvent.click(within(block).getByRole("button", { name: "Try again" }));
+    expect(listRefetch).toHaveBeenCalled();
+  });
+
+  it("the retry control is disabled while the refetch is in flight", () => {
+    state.error = true;
+    state.fetching = true;
+    renderPage();
+    const block = screen.getByTestId("empty-state");
+    expect(within(block).getByRole("button", { name: "Try again" })).toBeDisabled();
   });
 });

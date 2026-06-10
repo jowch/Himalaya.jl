@@ -11,6 +11,7 @@ import {
   useRemoveCorpusSampleTag,
 } from "../../queries";
 import type { Tag } from "../ui";
+import { EmptyState, Button } from "../ui";
 import { announce } from "../../lib/announce";
 import { suppressGlobalKeys } from "../../lib/keys";
 import { showToast } from "../../lib/toast";
@@ -171,11 +172,16 @@ export function LoupePage(): JSX.Element {
     return (
       <PageFrame width="loupe" className="px-8 py-7">
         <div data-testid="loupe-page">
-          <div data-testid="loupe-not-found" className="rounded border border-hair-strong p-8 text-sm text-ink-soft">
-            Sample not found.{" "}
-            <button onClick={goBack} className="font-semibold text-print-accent hover:underline">
-              Back to the sheet
-            </button>
+          <div data-testid="loupe-not-found">
+            <EmptyState
+              title="Sample not found"
+              body="Nothing in the corpus matches this address."
+              action={
+                <Button variant="outline" onClick={goBack}>
+                  Back to the sheet
+                </Button>
+              }
+            />
           </div>
         </div>
       </PageFrame>

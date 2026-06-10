@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { EmptyState } from "./EmptyState";
+import { Button } from "./Button";
 
 const meta = {
   title: "ui/EmptyState",
@@ -18,3 +19,14 @@ export const FilterNoMatch: Story = {
 };
 
 export const TitleOnly: Story = { args: { title: "No samples yet" } };
+
+// Error states stop dead-ending: the body states what happened, the action
+// slot offers the way forward (the consumer composes a ui Button; the
+// primitive owns the gap below the body).
+export const WithAction: Story = {
+  args: {
+    title: "Could not load the corpus",
+    body: "The sample list request failed.",
+    action: <Button variant="outline">Reload the corpus</Button>,
+  },
+};

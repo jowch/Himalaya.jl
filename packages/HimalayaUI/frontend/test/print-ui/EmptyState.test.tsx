@@ -37,4 +37,29 @@ describe("EmptyState", () => {
     render(<EmptyState title="No samples yet" className="mt-8" />);
     expect(screen.getByTestId("empty-state").className).toContain("mt-8");
   });
+
+  it("renders the action slot below the body", () => {
+    render(
+      <EmptyState
+        title="Could not load the corpus"
+        body="The sample list request failed."
+        action={<button>Reload the corpus</button>}
+      />,
+    );
+    const root = screen.getByTestId("empty-state");
+    const button = screen.getByRole("button", { name: "Reload the corpus" });
+    expect(root.contains(button)).toBe(true);
+    // The action container is the last child (below the body).
+    expect(root.lastElementChild!.contains(button)).toBe(true);
+    expect(root.lastElementChild!.textContent).not.toContain(
+      "The sample list request failed.",
+    );
+  });
+
+  it("does not render an action container when action is omitted", () => {
+    render(<EmptyState title="No samples yet" body="Nothing here." />);
+    const root = screen.getByTestId("empty-state");
+    // heading + body only
+    expect(root.children.length).toBe(2);
+  });
 });

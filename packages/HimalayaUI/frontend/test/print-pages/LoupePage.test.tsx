@@ -234,6 +234,25 @@ describe("LoupePage", () => {
     expect(screen.getByTestId("loupe-not-found")).toBeInTheDocument();
   });
 
+  it("not-found renders an EmptyState whose action goes back to the sheet (LP shell unification)", () => {
+    state.samples = [];
+    renderAt(999);
+    const block = screen.getByTestId("loupe-not-found");
+    expect(within(block).getByTestId("empty-state")).toBeInTheDocument();
+    expect(
+      within(block).getByRole("heading", { name: "Sample not found" }),
+    ).toBeInTheDocument();
+    fireEvent.click(within(block).getByRole("button", { name: "Back to the sheet" }));
+    expect(screen.getByTestId("sheet")).toBeInTheDocument();
+  });
+
+  it("not-found keeps the Escape path back to the sheet", () => {
+    state.samples = [];
+    renderAt(999);
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.getByTestId("sheet")).toBeInTheDocument();
+  });
+
   it("shows the no-exposures state", () => {
     state.exposures = [];
     renderAt(42);
