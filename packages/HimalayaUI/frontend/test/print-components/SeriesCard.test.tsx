@@ -142,6 +142,45 @@ describe("<SeriesCard> onClick", () => {
     fireEvent.click(screen.getByTestId("series-card"));
     expect(onClick).toHaveBeenCalledOnce();
   });
+
+  it("exposes the title as a keyboard-focusable button when onClick is set (FOL-KBD)", () => {
+    const onClick = vi.fn();
+    render(<SeriesCard {...BASE_PROPS} onClick={onClick} />);
+    const button = screen.getByRole("button", {
+      name: "LL37 titration of lipid 1-2",
+    });
+    expect(button).toBeInTheDocument();
+  });
+
+  it("clicking the title button fires onClick exactly once (stopPropagation, no double-nav)", () => {
+    const onClick = vi.fn();
+    render(<SeriesCard {...BASE_PROPS} onClick={onClick} />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "LL37 titration of lipid 1-2" }),
+    );
+    expect(onClick).toHaveBeenCalledOnce();
+  });
+
+  it("the title button still presents as a level-2 heading (SC-HEAD survives)", () => {
+    render(<SeriesCard {...BASE_PROPS} onClick={vi.fn()} />);
+    expect(
+      screen.getByRole("heading", {
+        level: 2,
+        name: "LL37 titration of lipid 1-2",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("renders the title as plain text (no button) when onClick is absent", () => {
+    render(<SeriesCard {...BASE_PROPS} />);
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(
+      screen.getByRole("heading", {
+        level: 2,
+        name: "LL37 titration of lipid 1-2",
+      }),
+    ).toBeInTheDocument();
+  });
 });
 
 describe("<SeriesCard> footer", () => {

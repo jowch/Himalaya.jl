@@ -93,8 +93,29 @@ export function SeriesCard({
           )}
         </div>
 
-        {/* Title — Newsreader serif, 19px via text-headline */}
-        <h2 className="text-headline">{title}</h2>
+        {/* Title — Newsreader serif, 19px via text-headline.
+            When the card is interactive (onClick present), the title hosts a
+            real <button> so keyboard/SR users have a focusable primary action
+            (Tab → Enter/Space) — the whole-card <article onClick> stays a
+            mouse-only enhancement (FOL-KBD, WCAG 2.1.1 / 2.4.7). stopPropagation
+            prevents the title click also bubbling to the article (double-nav).
+            With no onClick, the title is plain text — no dead control. */}
+        <h2 className="text-headline">
+          {onClick ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onClick();
+              }}
+              className="text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            >
+              {title}
+            </button>
+          ) : (
+            title
+          )}
+        </h2>
 
         {/* Meta line — the "· by {variable}" ordering clause is dropped when the
             series has no ordering variable (e.g. a form-factor series), so the
