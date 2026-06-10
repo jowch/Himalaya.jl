@@ -486,6 +486,23 @@ export function SeriesScopingPage(): JSX.Element {
     if (scopeSeries.error || createSeries.error) stage.current = "idle";
   }, [scopeSeries.error, createSeries.error]);
 
+  // Chain-failure banner copy, differentiated by WHICH op failed — the two
+  // modes leave different data committed and the banner must not lie:
+  //   Op A failed → no tags from THIS attempt, no series. (Deliberately not
+  //   "Nothing was saved": a PRIOR attempt's tags may already persist.)
+  //   Op B failed → Op A already committed, so the ordering tags ARE durably
+  //   written; only the series create is missing. A retry re-inserts the same
+  //   (key, value) rows (sample_tags has no unique constraint); readers take
+  //   the first match, so identical values are a no-op in effect.
+  // scopeSeries.error is checked FIRST: handleBuild re-fires scopeSeries.mutate
+  // (clearing its error), so when both are set the scope error is the more
+  // recent attempt and a stale createSeries.error may linger from a prior one.
+  const chainErrorCopy = scopeSeries.error
+    ? "Could not save the ordering tags. The series was not created. Adjust and try Confirm & build again."
+    : createSeries.error
+      ? "The ordering tags were saved, but the series was not created. Try Confirm & build again."
+      : null;
+
   // ── State 1: corpus load failed (distinct from an empty result). ──────────
   if (isError) {
     return (
@@ -513,14 +530,17 @@ export function SeriesScopingPage(): JSX.Element {
           </button>
         </div>
 
-        {/* State 4: either chain op failed (the tag write or the series create). */}
-        {scopeSeries.error || createSeries.error ? (
+        {/* State 4: a chain op failed. Two modes (see chainErrorCopy): an Op-A
+            (tag write) failure means no series and no tags from this attempt; an
+            Op-B (create) failure means the tags ARE committed — the copy admits
+            it. Op A wins precedence because a stale create error can linger. */}
+        {chainErrorCopy !== null ? (
           <div
             data-testid="scoping-error-banner"
             role="alert"
             className="mb-4 rounded border border-print-accent bg-paper-sunk px-4 py-2 text-meta text-print-accent"
           >
-            Could not build the series. Nothing was saved. Adjust and try Confirm &amp; build again.
+            {chainErrorCopy}
           </div>
         ) : null}
 

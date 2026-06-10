@@ -455,20 +455,36 @@ describe("SeriesScopingPage", () => {
     expect(screen.getAllByTestId("scope-sample-row")).toHaveLength(3);
   });
 
-  it("shows the error banner when the tag write (Op A) fails", () => {
+  it("shows the tag-write failure copy when Op A fails (series was not created)", () => {
     scopeState = { mutate: scopeMutate, isSuccess: false, error: new Error("boom"), data: undefined };
     renderPage();
-    const banner = screen.getByRole("alert");
-    expect(banner).toBeInTheDocument();
-    expect(banner.textContent).toMatch(/could not build the series/i);
+    const banner = screen.getByTestId("scoping-error-banner");
+    expect(banner).toHaveAttribute("role", "alert");
+    expect(banner.textContent).toMatch(/could not save the ordering tags/i);
+    expect(banner.textContent).toMatch(/the series was not created/i);
+    // The Op-B copy must NOT bleed in.
+    expect(banner.textContent).not.toMatch(/were saved/i);
   });
 
-  it("shows the error banner when the series create (Op B) fails", () => {
+  it("shows the tags-committed copy when Op B fails (Op A already wrote the tags)", () => {
     createState = { mutate: createMutate, isSuccess: false, error: new Error("boom"), data: undefined };
     renderPage();
-    const banner = screen.getByRole("alert");
-    expect(banner).toBeInTheDocument();
-    expect(banner.textContent).toMatch(/could not build the series/i);
+    const banner = screen.getByTestId("scoping-error-banner");
+    expect(banner).toHaveAttribute("role", "alert");
+    expect(banner.textContent).toMatch(/the ordering tags were saved, but the series was not created/i);
+    // Op A committed — the page must never claim nothing was saved.
+    expect(screen.queryByText(/nothing was saved/i)).not.toBeInTheDocument();
+    // The Op-A copy must NOT bleed in.
+    expect(banner.textContent).not.toMatch(/could not save/i);
+  });
+
+  it("prefers the Op-A copy when both errors are set (a stale create error can linger from a prior attempt)", () => {
+    scopeState = { mutate: scopeMutate, isSuccess: false, error: new Error("fresh"), data: undefined };
+    createState = { mutate: createMutate, isSuccess: false, error: new Error("stale"), data: undefined };
+    renderPage();
+    const banner = screen.getByTestId("scoping-error-banner");
+    expect(banner.textContent).toMatch(/could not save the ordering tags/i);
+    expect(banner.textContent).not.toMatch(/were saved/i);
   });
 
   it("renders the ordered-by control as a dropdown when ≥2 ordering variables exist", () => {
