@@ -124,7 +124,10 @@ export function FocusPage(): JSX.Element {
   const navigate = useNavigate();
 
   // ── route → store seeding ──────────────────────────────────────────────────
-  useSyncActiveSampleFromRoute();
+  // The status guards against the mid-session lie: a bogus /sample/:id never
+  // seeds the store, so activeSampleId would keep pointing at the previous
+  // sample. routeStatus "unknown" forces the not-found branch instead.
+  const routeStatus = useSyncActiveSampleFromRoute();
   const activeSampleId = useAppState((s) => s.activeSampleId);
   const activeExposureId = useAppState((s) => s.activeExposureId);
   const setActiveExposure = useAppState((s) => s.setActiveExposure);
@@ -270,7 +273,7 @@ export function FocusPage(): JSX.Element {
   const fx = useFigureExport(exportSpec, filenameStem, "trace plot");
 
   // ── early states ─────────────────────────────────────────────────────────────
-  if (!corpusQ.isLoading && !corpusSample) {
+  if (routeStatus === "unknown" || (!corpusQ.isLoading && !corpusSample)) {
     return (
       <div className="px-8 py-7">
         <div data-testid="focus-not-found">

@@ -51,10 +51,9 @@ vi.mock("../../src/queries", () => ({
   useCommitCustomIndex: () => ({ mutate: commitCustomMutate }),
 }));
 
-// Route shim: seed the Zustand active sample / exposure from the mock state.
-vi.mock("../../src/hooks/useSyncActiveSampleFromRoute", () => ({
-  useSyncActiveSampleFromRoute: () => {},
-}));
+// useSyncActiveSampleFromRoute runs REAL here (against the mocked queries and
+// store): the page consumes its route-resolution status, so shimming it would
+// hide the mid-session bogus-URL behaviour (F-STALEURL).
 vi.mock("../../src/hooks/useAutoPickExposure", () => ({
   useAutoPickExposure: () => {},
 }));
@@ -65,6 +64,9 @@ vi.mock("../../src/state", () => ({
     sel({
       activeSampleId: state.activeSampleId,
       activeExposureId: state.activeExposureId,
+      setActiveSample: (id: number | undefined) => {
+        state.activeSampleId = id;
+      },
     }),
 }));
 
@@ -139,7 +141,7 @@ function seedFull(): void {
   state.loading = false;
 }
 
-function renderAt(sampleId: number) {
+function renderAt(sampleId: number | string) {
   return render(
     <MemoryRouter initialEntries={[`/sample/${sampleId}`]}>
       <Routes>
@@ -323,6 +325,21 @@ describe("FocusPage", () => {
       within(block).getByRole("button", { name: "Back to the contact sheet" }),
     );
     expect(screen.getByTestId("sheet")).toBeInTheDocument();
+  });
+
+  it("mid-session: a bogus numeric /sample/:id renders not-found, not the previous sample (F-STALEURL)", () => {
+    // seedFull leaves activeSampleId at 42 with a warm corpus cache; the URL
+    // names a sample that does not exist. Rendering sample 42 under
+    // /sample/99999 would be a lie: the page must show not-found instead.
+    renderAt(99999);
+    expect(screen.getByTestId("focus-not-found")).toBeInTheDocument();
+    expect(screen.queryByTestId("trace-plate")).toBeNull();
+  });
+
+  it("mid-session: a non-numeric /sample/:id renders not-found (F-STALEURL)", () => {
+    renderAt("not-a-number");
+    expect(screen.getByTestId("focus-not-found")).toBeInTheDocument();
+    expect(screen.queryByTestId("trace-plate")).toBeNull();
   });
 
   it("no-exposure: the sample has no exposures", () => {

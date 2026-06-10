@@ -1,6 +1,7 @@
-import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useMatch, useNavigate, useSearchParams } from "react-router-dom";
 import { useAppState } from "../../state";
 import { useCorpusSamples, useExperiments } from "../../queries";
+import { resolveRouteSampleStatus } from "../../hooks/useSyncActiveSampleFromRoute";
 import { sampleDisplayName } from "../../lib/sample/displayName";
 import { TopBar } from "../ui/TopBar";
 import { Wordmark } from "../ui/Wordmark";
@@ -54,6 +55,20 @@ export function CorpusTopbar(): JSX.Element {
   const activeSampleId = useAppState((s) => s.activeSampleId);
   const corpusQ = useCorpusSamples();
 
+  // F-STALEURL honesty gate: the topbar renders ABOVE the routed element, so
+  // useParams cannot see the child route's :sampleId; useMatch reads it off
+  // the location instead. A bogus param never seeds the store, so the stale
+  // activeSampleId would otherwise keep the previous sample's stepper alive
+  // over a "Sample not found" body. Hide on "unknown" only: "pending" cannot
+  // be judged yet, and gating on param equality with the store would flicker
+  // the stepper on every valid step (the store lags the URL by one effect
+  // tick, while a known param stays "found" throughout).
+  const sampleMatch = useMatch("/sample/:sampleId");
+  const routeStatus = resolveRouteSampleStatus(
+    sampleMatch?.params.sampleId,
+    corpusQ.data,
+  );
+
   // F-13 stepper: order the active sample's experiment-siblings by their corpus
   // order (matches the `,`/`.` shortcut's experiment-scoped semantics). The URL
   // is the focus surface's source of truth, so prev/next navigate the route
@@ -70,7 +85,11 @@ export function CorpusTopbar(): JSX.Element {
   const prevSample = stepIdx > 0 ? siblings[stepIdx - 1] : undefined;
   const nextSample = stepIdx >= 0 && stepIdx < siblings.length - 1
     ? siblings[stepIdx + 1] : undefined;
-  const showStepper = onSampleRoute && activeSample !== undefined && stepIdx >= 0;
+  const showStepper =
+    onSampleRoute &&
+    routeStatus !== "unknown" &&
+    activeSample !== undefined &&
+    stepIdx >= 0;
 
   function handlePick(event: React.ChangeEvent<HTMLSelectElement>): void {
     const value = event.target.value;

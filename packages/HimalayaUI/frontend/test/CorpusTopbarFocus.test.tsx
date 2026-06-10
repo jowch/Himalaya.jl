@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { MemoryRouter, useLocation, Routes, Route } from "react-router-dom";
+import { MemoryRouter, useLocation, useNavigate, Routes, Route } from "react-router-dom";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { makeClient } from "./test-utils";
 import { CorpusTopbar } from "../src/print/shell/CorpusTopbar";
@@ -35,6 +35,38 @@ function mockFetch(): void {
 function LocationProbe(): JSX.Element {
   const loc = useLocation();
   return <span data-testid="loc">{loc.pathname}</span>;
+}
+
+// Mid-session navigation probe: a button that navigates to the given path,
+// simulating the user editing the URL or following a stale link.
+function NavTo({ path }: { path: string }): JSX.Element {
+  const navigate = useNavigate();
+  return (
+    <button data-testid="nav-to" onClick={() => navigate(path)}>
+      go
+    </button>
+  );
+}
+
+function renderWithNav(initialPath: string, navPath: string) {
+  return render(
+    <QueryClientProvider client={makeClient()}>
+      <MemoryRouter initialEntries={[initialPath]}>
+        <Routes>
+          <Route
+            path="*"
+            element={
+              <>
+                <CorpusTopbar />
+                <LocationProbe />
+                <NavTo path={navPath} />
+              </>
+            }
+          />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
 }
 
 function renderAt(path: string) {
@@ -101,6 +133,48 @@ describe("CorpusTopbar — focus affordances (F-13/F-14/F-12)", () => {
     await screen.findByTestId("sample-stepper");
     expect(screen.getByTestId("sample-stepper-prev")).toBeDisabled();
     expect(screen.getByTestId("sample-stepper-next")).not.toBeDisabled();
+  });
+
+  // ── F-STALEURL: a bogus /sample/:id must not show the stale stepper ──────
+  // Mid-session the store keeps the previous activeSampleId (a bogus route
+  // never seeds it), so the stepper would otherwise keep showing the previous
+  // sample's name and live prev/next above a "Sample not found" body.
+  it("hides the stepper when navigating mid-session to a bogus numeric /sample/:id (F-STALEURL)", async () => {
+    mockFetch();
+    useAppState.setState({ activeSampleId: 2 });
+    renderWithNav("/sample/2", "/sample/99999");
+    // Warm start on a real sample: the stepper is up, the corpus cache is hot.
+    await screen.findByTestId("sample-stepper");
+    fireEvent.click(screen.getByTestId("nav-to"));
+    expect(screen.getByTestId("loc")).toHaveTextContent("/sample/99999");
+    await waitFor(() =>
+      expect(screen.queryByTestId("sample-stepper")).not.toBeInTheDocument(),
+    );
+  });
+
+  it("hides the stepper when navigating mid-session to a non-numeric /sample/:id (F-STALEURL)", async () => {
+    mockFetch();
+    useAppState.setState({ activeSampleId: 2 });
+    renderWithNav("/sample/2", "/sample/not-a-number");
+    await screen.findByTestId("sample-stepper");
+    fireEvent.click(screen.getByTestId("nav-to"));
+    await waitFor(() =>
+      expect(screen.queryByTestId("sample-stepper")).not.toBeInTheDocument(),
+    );
+  });
+
+  it("keeps the stepper across a valid-to-valid step (no flicker gate on store equality)", async () => {
+    mockFetch();
+    useAppState.setState({ activeSampleId: 2 });
+    renderWithNav("/sample/2", "/sample/3");
+    await screen.findByTestId("sample-stepper");
+    fireEvent.click(screen.getByTestId("nav-to"));
+    // The store still says 2 for an effect tick after the URL says 3; a known
+    // param stays "found" throughout, so the stepper must remain mounted.
+    expect(screen.getByTestId("sample-stepper")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByTestId("sample-stepper")).toBeInTheDocument(),
+    );
   });
 
   // ── the focus workspace is not a top-level stage tab ─────────────────────

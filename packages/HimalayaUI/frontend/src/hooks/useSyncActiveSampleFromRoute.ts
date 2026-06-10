@@ -2,6 +2,31 @@ import { useEffect } from "react";
 import { useParams } from "react-router-dom";
 import { useAppState } from "../state";
 import { useCorpusSamples } from "../queries";
+import type { CorpusSample } from "../api";
+
+/**
+ * Route-resolution status for the `/sample/:sampleId` param.
+ * "pending": the corpus cache has not resolved yet, so the param cannot be
+ * judged. "found": the param names a known sample. "unknown": the cache is
+ * ready and the param is non-numeric, or numeric but matching no sample.
+ */
+export type RouteSampleStatus = "pending" | "found" | "unknown";
+
+/**
+ * The single shared predicate behind RouteSampleStatus: the exact parse plus
+ * cache lookup the seeding hook uses. Pure, so honest surfaces rendered
+ * outside the routed element (the CorpusTopbar sample stepper) can judge the
+ * same param against the same cache without duplicating the logic.
+ */
+export function resolveRouteSampleStatus(
+  sampleIdParam: string | undefined,
+  samples: CorpusSample[] | undefined,
+): RouteSampleStatus {
+  if (samples === undefined) return "pending";
+  const parsed = Number(sampleIdParam);
+  if (!Number.isFinite(parsed)) return "unknown";
+  return samples.some((s) => s.id === parsed) ? "found" : "unknown";
+}
 
 /**
  * useSyncActiveSampleFromRoute — the I4.1 focus-workspace wiring shim.
@@ -21,20 +46,31 @@ import { useCorpusSamples } from "../queries";
  * called ONLY when the id actually changes, because that action cascades
  * `activeExposureId: undefined` — calling it every render would clobber the
  * exposure `useAutoPickExposure` just selected.
+ *
+ * Returns the RouteSampleStatus from `resolveRouteSampleStatus`, the same
+ * predicate the seeding effect mirrors. A bogus param never seeds the store,
+ * but mid-session the previous `activeSampleId` survives; the caller
+ * (FocusPage) uses the "unknown" status to render not-found instead of
+ * silently showing the previous sample under the wrong URL.
  */
-export function useSyncActiveSampleFromRoute(): void {
+export function useSyncActiveSampleFromRoute(): RouteSampleStatus {
   const { sampleId: sampleIdParam } = useParams<{ sampleId: string }>();
   const corpusQ = useCorpusSamples();
   const activeSampleId = useAppState((s) => s.activeSampleId);
   const setActiveSample = useAppState((s) => s.setActiveSample);
 
+  // Single parse + cache handle: the seeding effect and the returned status
+  // both derive from these, so the two can never diverge.
+  const parsed = Number(sampleIdParam);
+  const samples = corpusQ.data;
+
   useEffect(() => {
-    const parsed = Number(sampleIdParam);
-    if (!Number.isFinite(parsed)) return; // non-numeric param: ignore
-    const samples = corpusQ.data;
+    if (!Number.isFinite(parsed)) return; // non-numeric param: never seed
     if (samples === undefined) return; // cache not ready yet; re-runs on resolve
-    if (!samples.some((s) => s.id === parsed)) return; // unknown sample: ignore
+    if (!samples.some((s) => s.id === parsed)) return; // unknown sample: never seed
     if (parsed === activeSampleId) return; // no-op: avoid the exposure-clobber cascade
     setActiveSample(parsed);
-  }, [sampleIdParam, corpusQ.data, activeSampleId, setActiveSample]);
+  }, [parsed, samples, activeSampleId, setActiveSample]);
+
+  return resolveRouteSampleStatus(sampleIdParam, samples);
 }
