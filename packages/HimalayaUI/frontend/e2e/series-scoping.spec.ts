@@ -110,8 +110,15 @@ test.describe("series scoping — greenfield DOM", () => {
     await expect(page.getByTestId("scope-candidates")).toBeVisible();
     await expect(page.getByTestId("scope-candidate")).toHaveCount(1);
 
-    // Candidate list carries NO add button (Option A: candidates are discovery-only).
-    await expect(page.getByTestId("scope-candidates").getByRole("button")).toHaveCount(0);
+    // Candidate ROWS carry NO control at all (Option A: candidates are
+    // discovery-only; any button on a row would imply an add path). The only
+    // button in the section is the note's contact-sheet navigation control.
+    await expect(
+      page.getByTestId("scope-candidate").getByRole("button"),
+    ).toHaveCount(0);
+    await expect(
+      page.getByTestId("scope-candidates-note").getByRole("button", { name: /open the contact sheet/i }),
+    ).toBeVisible();
   });
 
   test("Confirm & build is enabled when members exist and navigates to /series on success", async ({ page }) => {

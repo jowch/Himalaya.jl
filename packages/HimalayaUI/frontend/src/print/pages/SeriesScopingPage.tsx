@@ -44,6 +44,14 @@ const EMPTY_TRACE: Trace = { q: [], I: [], sigma: [] };
 // highlights it while custom mode is active.
 const DEFINE_YOUR_OWN = "Define your own…";
 
+// How many loose-candidate exemplars the worksheet renders. The worksheet is a
+// review surface; the contact sheet is the corpus browser. On a whole-corpus
+// visit the loose list can run to 100+ samples — rendering them all buries the
+// members and pushes the build action far below the fold, and discovery beyond
+// a few exemplars belongs on the contact sheet. The section note below the
+// rows states the hidden remainder and links there.
+const SCOPE_CANDIDATE_PREVIEW_COUNT = 3;
+
 // Token-only skeleton fixture (no inline appearance literals — design-guard clean).
 // No scoping.bones.json capture exists yet (deferred, needs the data volume).
 const SCOPING_FIXTURE = (
@@ -345,7 +353,15 @@ export function SeriesScopingPage(): JSX.Element {
     for (const s of pickerQ.data ?? []) m.set(s.sample.id, s.indexing_exposure_id);
     return m;
   }, [pickerQ.data]);
-  const allSampleIds = useMemo(() => [...rows, ...loose].map((r) => r.sampleId), [rows, loose]);
+  // Only the candidate exemplars that actually RENDER (the preview cap) join
+  // the trace/index fan-out — the hidden remainder must not trigger fetches.
+  // EmptyState gating and the remainder count keep using the FULL loose list.
+  const visibleLoose = useMemo(() => loose.slice(0, SCOPE_CANDIDATE_PREVIEW_COUNT), [loose]);
+  const hiddenLooseCount = loose.length - visibleLoose.length;
+  const allSampleIds = useMemo(
+    () => [...rows, ...visibleLoose].map((r) => r.sampleId),
+    [rows, visibleLoose],
+  );
   const exposureIds = useMemo(
     () => allSampleIds.map((id) => pickerById.get(id)).filter((e): e is number => e != null),
     [allSampleIds, pickerById],
@@ -681,9 +697,12 @@ export function SeriesScopingPage(): JSX.Element {
                      no value for this key, so they CANNOT be committed — there is
                      no add action. A plain sparkline + name + why list, not the
                      ScopeCandidateRow composite (whose "+ Add to series" button
-                     always renders; a dead button would lie). */
+                     always renders; a dead button would lie). Capped to a few
+                     exemplars (SCOPE_CANDIDATE_PREVIEW_COUNT); the section note
+                     below owns the remainder count + the tag instruction once,
+                     instead of repeating it per row. */
                   <div data-testid="scope-candidates" className="space-y-2">
-                    {loose.map((c) => (
+                    {visibleLoose.map((c) => (
                       <div
                         key={c.sampleId}
                         data-testid="scope-candidate"
@@ -700,12 +719,29 @@ export function SeriesScopingPage(): JSX.Element {
                           <div className="text-meta font-semibold text-ink-soft">{c.sampleName}</div>
                           <div className="text-caption text-ink-soft">
                             lacks the{" "}
-                            <strong className="text-accent font-semibold">{keyLabel}</strong> — tag it on
-                            the contact sheet if it belongs.
+                            <strong className="text-accent font-semibold">{keyLabel}</strong>
                           </div>
                         </div>
                       </div>
                     ))}
+                    <div data-testid="scope-candidates-note" className="text-caption text-ink-soft pt-1">
+                      {hiddenLooseCount > 0 ? (
+                        <>
+                          …and {hiddenLooseCount} more lack{hiddenLooseCount === 1 ? "s" : ""} the{" "}
+                          <strong className="text-accent font-semibold">{keyLabel}</strong>.{" "}
+                        </>
+                      ) : null}
+                      Tag a sample with the{" "}
+                      <strong className="text-accent font-semibold">{keyLabel}</strong> on the
+                      contact sheet if it belongs here.{" "}
+                      <button
+                        type="button"
+                        onClick={() => navigate("/samples")}
+                        className="text-caption font-semibold text-accent hover:underline"
+                      >
+                        Open the contact sheet
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <div className="text-meta text-ink-soft italic">

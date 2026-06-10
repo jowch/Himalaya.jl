@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, act } from "@testing-library/react";
+import { render, screen, fireEvent, act, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type {
@@ -91,14 +91,19 @@ let scopeState: OpState = { mutate: scopeMutate, isSuccess: false, error: null, 
 let createState: OpState = { mutate: createMutate, isSuccess: false, error: null, data: undefined };
 let tagsState: { data: SampleTagPair[]; isLoading: boolean; isError: boolean };
 let pickerState: { data: PickerSampleRow[]; isLoading: boolean; isError: boolean };
+// Records the exposure ids the page actually asks traces for (the fan-out) —
+// lets the candidate-preview cap pin that below-fold candidates are not fetched.
+let requestedTraceExposureIds: number[] = [];
 
 vi.mock("../../src/queries", () => ({
   useCorpusSampleTags: () => tagsState,
   useCorpusPickerSamples: () => pickerState,
   useScopeSeries: () => scopeState,
   useCreateSeries: () => createState,
-  useMemberTraces: (ids: number[]) =>
-    new Map<number, Trace>(ids.map((id) => [id, trace()])),
+  useMemberTraces: (ids: number[]) => {
+    requestedTraceExposureIds = ids;
+    return new Map<number, Trace>(ids.map((id) => [id, trace()]));
+  },
   useMemberIndices: (ids: number[]) =>
     new Map<number, IndexEntry[]>(ids.map((id) => [id, [indexEntry(id, "Pn3m", 0.9)]])),
 }));
@@ -194,10 +199,34 @@ function seedTwoKeys(): void {
   };
 }
 
+/** 2 members + 7 loose candidates (no "ratio" tag) — loose exceeds the
+ * candidate preview cap, so the worksheet must truncate to exemplars. Seven
+ * (not six) so hidden (4) ≠ visible (3): a remainder computed from the SLICED
+ * list instead of the full one is detectably wrong. */
+function seedManyLoose(): void {
+  tagsState = { data: [{ key: "ratio", value: "1 : 0.5" }], isLoading: false, isError: false };
+  pickerState = {
+    data: [
+      pickerRow(sample(1, "A", [tag("ratio", "1 : 0")]), 37),
+      pickerRow(sample(2, "B", [tag("ratio", "1 : 0.5")]), 65),
+      pickerRow(sample(11, "L1", []), 100),
+      pickerRow(sample(12, "L2", []), 101),
+      pickerRow(sample(13, "L3", []), 102),
+      pickerRow(sample(14, "L4", []), 103),
+      pickerRow(sample(15, "L5", []), 104),
+      pickerRow(sample(16, "L6", []), 105),
+      pickerRow(sample(17, "L7", []), 106),
+    ],
+    isLoading: false,
+    isError: false,
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   scopeState = { mutate: scopeMutate, isSuccess: false, error: null, data: undefined };
   createState = { mutate: createMutate, isSuccess: false, error: null, data: undefined };
+  requestedTraceExposureIds = [];
   seed();
 });
 
@@ -666,6 +695,99 @@ describe("SeriesScopingPage", () => {
     createState = { mutate: createMutate, isSuccess: true, error: null, data: fullSeries(11) };
     act(() => rerender());
     expect(navigateSpy).toHaveBeenCalledWith("/series/11");
+  });
+
+  // ── SC-FOLD: loose-candidate preview cap ────────────────────────────────────
+  // The worksheet is a review surface; on a whole-corpus visit the loose list
+  // can run to 100+ rows, burying the members and the build action. The page
+  // renders only a few exemplar candidates plus one honest section note.
+
+  it("caps the rendered candidate rows at the preview count", () => {
+    seedManyLoose();
+    renderPage();
+    // 7 loose candidates, but only the preview cap (3) render as rows.
+    expect(screen.getAllByTestId("scope-candidate")).toHaveLength(3);
+    // Members are unaffected.
+    expect(screen.getAllByTestId("scope-sample-row")).toHaveLength(2);
+  });
+
+  it("the section note states the hidden remainder count", () => {
+    seedManyLoose();
+    renderPage();
+    const note = screen.getByTestId("scope-candidates-note");
+    // 7 loose − 3 shown = 4 more (computed from the FULL list; 4 ≠ the visible
+    // count, so a remainder derived from the sliced list fails here).
+    expect(note.textContent).toMatch(/4 more lack the ratio/i);
+  });
+
+  it("pluralizes a single hidden candidate as 'lacks'", () => {
+    // 1 member + 4 loose: exactly one is hidden behind the cap of 3.
+    pickerState = {
+      data: [
+        pickerRow(sample(1, "A", [tag("ratio", "1 : 0")]), 37),
+        pickerRow(sample(11, "L1", []), 100),
+        pickerRow(sample(12, "L2", []), 101),
+        pickerRow(sample(13, "L3", []), 102),
+        pickerRow(sample(14, "L4", []), 103),
+      ],
+      isLoading: false,
+      isError: false,
+    };
+    renderPage();
+    const note = screen.getByTestId("scope-candidates-note");
+    expect(note.textContent).toMatch(/1 more lacks the ratio/i);
+  });
+
+  it("the note's contact-sheet control navigates to /samples", () => {
+    seedManyLoose();
+    renderPage();
+    const note = screen.getByTestId("scope-candidates-note");
+    fireEvent.click(within(note).getByRole("button", { name: /open the contact sheet/i }));
+    expect(navigateSpy).toHaveBeenCalledWith("/samples");
+  });
+
+  it("renders every candidate and no remainder line when loose fits within the cap", () => {
+    // 1 member + 2 loose (under the cap of 3): nothing is hidden, so the note
+    // must not claim a remainder — but the instruction + control still render.
+    pickerState = {
+      data: [
+        pickerRow(sample(1, "A", [tag("ratio", "1 : 0")]), 37),
+        pickerRow(sample(11, "L1", []), 100),
+        pickerRow(sample(12, "L2", []), 101),
+      ],
+      isLoading: false,
+      isError: false,
+    };
+    renderPage();
+    expect(screen.getAllByTestId("scope-candidate")).toHaveLength(2);
+    const note = screen.getByTestId("scope-candidates-note");
+    expect(note.textContent).not.toMatch(/more lack/i);
+    expect(
+      within(note).getByRole("button", { name: /open the contact sheet/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps the nothing-else-matches line when there are no candidates", () => {
+    // seed(): both samples carry the key → loose is empty. The existing branch
+    // stands, and the candidates note must not render.
+    renderPage();
+    expect(
+      screen.getByText(/nothing else in the corpus matches this grouping/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("scope-candidates-note")).toBeNull();
+  });
+
+  it("fetches traces only for members plus the visible candidates", () => {
+    seedManyLoose();
+    renderPage();
+    // 2 member exposures (37, 65) + the 3 visible candidates' (100–102).
+    expect(requestedTraceExposureIds).toHaveLength(5);
+    expect(requestedTraceExposureIds).toEqual(expect.arrayContaining([37, 65]));
+    // The hidden candidates' exposures must NOT be fan-out fetched.
+    expect(requestedTraceExposureIds).not.toContain(103);
+    expect(requestedTraceExposureIds).not.toContain(104);
+    expect(requestedTraceExposureIds).not.toContain(105);
+    expect(requestedTraceExposureIds).not.toContain(106);
   });
 
   it("selecting an existing key from custom mode returns to the warm worksheet re-grouped by it", () => {
