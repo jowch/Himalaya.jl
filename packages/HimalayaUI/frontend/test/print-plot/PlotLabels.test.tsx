@@ -144,9 +144,13 @@ describe("PlotLabels", () => {
       expect(t2!.getAttribute("data-dimmed")).toBe("true");
       expect(t3!.getAttribute("data-dimmed")).toBe("true");
 
-      // Dimmed fill must be ink-faint
-      expect((t2 as HTMLElement).style.fill).toBe("var(--color-ink-faint)");
-      expect((t3 as HTMLElement).style.fill).toBe("var(--color-ink-faint)");
+      // Dim colour lands on CSS `color` (ink-faint) with fill=currentColor so
+      // the dim/release eases through the global 120ms ease-out `color`
+      // transition instead of snapping.
+      expect((t2 as HTMLElement).style.color).toBe("var(--color-ink-faint)");
+      expect((t3 as HTMLElement).style.color).toBe("var(--color-ink-faint)");
+      expect((t2 as HTMLElement).style.fill).toBe("currentColor");
+      expect((t3 as HTMLElement).style.fill).toBe("currentColor");
     });
 
     it("no label has data-dimmed when highlightPeakIds is not provided", () => {

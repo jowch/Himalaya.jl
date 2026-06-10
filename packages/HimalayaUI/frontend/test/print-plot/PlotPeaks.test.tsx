@@ -56,6 +56,8 @@ describe("PlotPeaks", () => {
       Number(qline.getAttribute("y2")),
     );
     expect(qline.getAttribute("stroke-width")).toBe("1.5");
+    // Paint flows through the animatable color channel (FO-DIM), not a literal.
+    expect(qline.getAttribute("stroke")).toBe("currentColor");
   });
 
   it("a hot peak does not change the mark — no halo/ring, emphasis is the q-line", () => {
@@ -100,10 +102,16 @@ describe("PlotPeaks", () => {
         />
       </svg>,
     );
-    // The auto peak is filled → polygon fill should be the per-peak color, not the layer color.
+    // The auto peak is filled → the per-peak color (not the layer color) lands
+    // on the wrapping <g>'s CSS `color`; the polygon paints via currentColor so
+    // the global 120ms ease-out `color` transition animates dim/release.
+    const peakG = container.querySelector(
+      '[data-role="plot-peaks"] > g',
+    ) as SVGGElement;
+    expect(peakG.style.color).toBe("var(--color-success)");
     expect(
       container.querySelector('[data-role="peak-glyph"] polygon')?.getAttribute('fill'),
-    ).toBe("var(--color-success)");
+    ).toBe("currentColor");
   });
 
   it("falls back to layer color when peak has no per-peak color", () => {
@@ -116,9 +124,13 @@ describe("PlotPeaks", () => {
         />
       </svg>,
     );
+    const peakG = container.querySelector(
+      '[data-role="plot-peaks"] > g',
+    ) as SVGGElement;
+    expect(peakG.style.color).toBe("var(--color-accent)");
     expect(
       container.querySelector('[data-role="peak-glyph"] polygon')?.getAttribute('fill'),
-    ).toBe("var(--color-accent)");
+    ).toBe("currentColor");
   });
 
   it("peak <g> has tabIndex/role/aria-label when onPeakFocus is provided", () => {
@@ -212,13 +224,17 @@ describe("PlotPeaks", () => {
       expect(g2!.getAttribute("data-dimmed")).toBe("true");
       expect(g3!.getAttribute("data-dimmed")).toBe("true");
 
-      // Dimmed glyph fill must be ink-faint
+      // Dim colour lands on the wrapping <g>'s CSS `color` (ink-faint); the
+      // glyph paints via currentColor so the dim/release eases through the
+      // global 120ms ease-out `color` transition instead of snapping.
+      expect((g2 as SVGGElement).style.color).toBe("var(--color-ink-faint)");
+      expect((g3 as SVGGElement).style.color).toBe("var(--color-ink-faint)");
       expect(
         g2!.querySelector('[data-role="peak-glyph"] polygon')?.getAttribute("fill"),
-      ).toBe("var(--color-ink-faint)");
+      ).toBe("currentColor");
       expect(
         g3!.querySelector('[data-role="peak-glyph"] polygon')?.getAttribute("fill"),
-      ).toBe("var(--color-ink-faint)");
+      ).toBe("currentColor");
     });
 
     it("no <g> has data-dimmed when highlightPeakIds is not provided", () => {

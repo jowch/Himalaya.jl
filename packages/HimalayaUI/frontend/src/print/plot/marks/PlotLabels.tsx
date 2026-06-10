@@ -141,11 +141,18 @@ export function PlotLabels({
               y={labelY}
               textAnchor="middle"
               {...(e.dimmed ? { "data-dimmed": "true" } : {})}
+              // The resolved colour lands on CSS `color`, painted via
+              // currentColor: `color` is in the global 120ms ease-out
+              // transition list (styles.css @layer base) while `fill` is not,
+              // so the dim (and its release) eases instead of snapping —
+              // matching the PlotPeaks glyph treatment. Reduced motion is
+              // handled by the global near-zero rule.
               style={{
                 fontFamily: "var(--font-mono)",
                 fontSize: 11,
                 fontWeight: 700,
-                fill: e.color,
+                color: e.color,
+                fill: "currentColor",
               }}
             >
               {e.label}

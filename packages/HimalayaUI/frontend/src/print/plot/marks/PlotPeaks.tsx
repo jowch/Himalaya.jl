@@ -54,9 +54,16 @@ export function PlotPeaks({
         const hl = highlightPeakIds;
         const dimmed = !!hl && hl.size > 0 && !hl.has(p.id) && !p.hot; // hot wins over dim
         const c = dimmed ? "var(--color-ink-faint)" : (p.color ?? color);
+        // The resolved colour lands on the wrapping <g>'s CSS `color`; the
+        // glyph + q-line paint via currentColor. SVG fill/stroke attributes
+        // are NOT in the global transition-property list, but `color` IS
+        // (styles.css @layer base: 120ms ease-out) — so routing the paint
+        // through `color` makes the losing-peak dim (and its release) ease
+        // instead of snapping. prefers-reduced-motion is handled by the
+        // global near-zero rule; the data-dimmed flip itself stays instant.
         const descriptor = peakGlyph({
           source: p.source,
-          color: c,
+          color: "currentColor",
           ...(p.predictedAbsent ? { predictedAbsent: true } : {}),
           ...(p.excluded ? { excluded: true } : {}),
           ...(p.hot ? { hot: true } : {}),
@@ -71,7 +78,12 @@ export function PlotPeaks({
             }
           : {};
         return (
-          <g key={p.id} {...focusAttrs} {...(dimmed ? { "data-dimmed": "true" } : {})}>
+          <g
+            key={p.id}
+            {...focusAttrs}
+            {...(dimmed ? { "data-dimmed": "true" } : {})}
+            style={{ color: c }}
+          >
             {p.hot ? (
               // Drop a guide DOWN from the marker to the axis baseline (where
               // the q-readout chip sits) — it no longer runs through the mark.
@@ -81,7 +93,7 @@ export function PlotPeaks({
                 y1={py}
                 x2={px}
                 y2={y.range[0]}
-                stroke={c}
+                stroke="currentColor"
                 strokeWidth={1.5}
                 opacity={0.6}
               />
