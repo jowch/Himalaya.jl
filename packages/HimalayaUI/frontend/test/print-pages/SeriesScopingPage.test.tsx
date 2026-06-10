@@ -168,6 +168,32 @@ function seed3(): void {
   };
 }
 
+/** A corpus exposing TWO distinct ordering variables on shared samples.
+ * "ratio" is the frequency winner (3 pairs vs 2); "temp" is the alternative.
+ * Each sample carries a distinct value under each key so a re-group is
+ * observable in the rendered member values. */
+function seedTwoKeys(): void {
+  tagsState = {
+    data: [
+      { key: "ratio", value: "1 : 0" },
+      { key: "ratio", value: "1 : 0.5" },
+      { key: "ratio", value: "1 : 1" },
+      { key: "temp", value: "20C" },
+      { key: "temp", value: "40C" },
+    ],
+    isLoading: false,
+    isError: false,
+  };
+  pickerState = {
+    data: [
+      pickerRow(sample(1, "A", [tag("ratio", "1 : 0"), tag("temp", "40C")]), 37),
+      pickerRow(sample(2, "B", [tag("ratio", "1 : 0.5"), tag("temp", "20C")]), 65),
+    ],
+    isLoading: false,
+    isError: false,
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   scopeState = { mutate: scopeMutate, isSuccess: false, error: null, data: undefined };
@@ -443,5 +469,48 @@ describe("SeriesScopingPage", () => {
     const banner = screen.getByRole("alert");
     expect(banner).toBeInTheDocument();
     expect(banner.textContent).toMatch(/could not build the series/i);
+  });
+
+  it("renders the ordered-by control as a dropdown when ≥2 ordering variables exist", () => {
+    seedTwoKeys();
+    renderPage();
+    const trigger = screen.getByTestId("order-field");
+    // Dropdown mode → the trigger advertises a menu popup (static mode has none).
+    expect(trigger).toHaveAttribute("aria-haspopup", "menu");
+  });
+
+  it("lists a menu option for each distinct ordering variable", () => {
+    seedTwoKeys();
+    renderPage();
+    fireEvent.click(screen.getByTestId("order-field"));
+    expect(screen.getByRole("menuitem", { name: "ratio" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "temp" })).toBeInTheDocument();
+    expect(screen.getAllByRole("menuitem")).toHaveLength(2);
+  });
+
+  it("selecting a non-active ordering variable re-groups the worksheet by its values", () => {
+    seedTwoKeys();
+    renderPage();
+    // Default: grouped by the frequency winner "ratio" → ratio values render.
+    let values = screen.getAllByTestId("flag-button").map((b) => b.textContent);
+    expect(values).toEqual(expect.arrayContaining(["1 : 0", "1 : 0.5"]));
+    expect(values).not.toContain("20C");
+
+    // Switch the ordering variable to "temp".
+    fireEvent.click(screen.getByTestId("order-field"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "temp" }));
+
+    // The members now read their "temp" values.
+    values = screen.getAllByTestId("flag-button").map((b) => b.textContent);
+    expect(values).toEqual(expect.arrayContaining(["20C", "40C"]));
+    expect(values).not.toContain("1 : 0");
+  });
+
+  it("keeps the ordered-by control static when only one ordering variable exists", () => {
+    // The default single-key `seed()` corpus → no real alternative to offer.
+    renderPage();
+    const field = screen.getByTestId("order-field");
+    expect(field).not.toHaveAttribute("aria-haspopup");
+    expect(screen.queryByRole("menuitem")).toBeNull();
   });
 });

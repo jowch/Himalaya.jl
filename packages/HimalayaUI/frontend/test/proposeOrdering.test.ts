@@ -58,4 +58,49 @@ describe("proposeOrdering", () => {
       { sampleId: 10, sampleName: "A", value: "", flagged: true, include: true },
     ]);
   });
+
+  it("honours a preferredKey that is a real corpus key, reading that key's values", () => {
+    // Frequency winner is "ratio" (2 vs 1); override to "lipid".
+    const corpusTags: SampleTagPair[] = [
+      { key: "ratio", value: "1:1" },
+      { key: "ratio", value: "2:1" },
+      { key: "lipid", value: "DOPC" },
+    ];
+    const samples = [
+      row(10, "A", [{ key: "ratio", value: "1:1" }, { key: "lipid", value: "DOPC" }]),
+      row(11, "B", [{ key: "ratio", value: "2:1" }, { key: "lipid", value: "POPC" }]),
+    ];
+    const result = proposeOrdering(corpusTags, samples, "lipid");
+    expect(result.orderingKey).toBe("lipid");
+    expect(result.rows).toEqual([
+      { sampleId: 10, sampleName: "A", value: "DOPC", flagged: false, include: true },
+      { sampleId: 11, sampleName: "B", value: "POPC", flagged: false, include: true },
+    ]);
+  });
+
+  it("falls back to the frequency winner when preferredKey is not a real corpus key", () => {
+    const corpusTags: SampleTagPair[] = [
+      { key: "ratio", value: "1:1" },
+      { key: "ratio", value: "2:1" },
+      { key: "lipid", value: "DOPC" },
+    ];
+    const samples = [row(10, "A", [{ key: "ratio", value: "1:1" }])];
+    const result = proposeOrdering(corpusTags, samples, "temperature");
+    expect(result.orderingKey).toBe("ratio");
+  });
+
+  it("is identical to the two-argument call when preferredKey is undefined", () => {
+    const corpusTags: SampleTagPair[] = [
+      { key: "ratio", value: "1:1" },
+      { key: "ratio", value: "2:1" },
+      { key: "lipid", value: "DOPC" },
+    ];
+    const samples = [
+      row(10, "A", [{ key: "ratio", value: "1:1" }]),
+      row(11, "B", [{ key: "ratio", value: "2:1" }]),
+    ];
+    expect(proposeOrdering(corpusTags, samples, undefined)).toEqual(
+      proposeOrdering(corpusTags, samples),
+    );
+  });
 });

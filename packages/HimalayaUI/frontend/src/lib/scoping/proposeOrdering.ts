@@ -19,20 +19,30 @@ export interface OrderingProposal {
  * `flagged` (the human must resolve it before the confirm-and-build gate
  * opens). Cold corpus (no tags) → no key, every row flagged (#174 accepts
  * this — scoping starts cold).
+ *
+ * `preferredKey` lets the human override the machine's frequency winner: when
+ * it names a key that actually exists in the corpus (present in the frequency
+ * map) it becomes the `orderingKey`; otherwise (undefined / empty / not a real
+ * corpus key) the function falls back to the frequency winner — byte-identical
+ * to the two-argument call. Pure.
  */
 export function proposeOrdering(
   corpusTags: SampleTagPair[],
   samples: PickerSampleRow[],
+  preferredKey?: string,
 ): OrderingProposal {
   const freq = new Map<string, number>();
   for (const t of corpusTags) freq.set(t.key, (freq.get(t.key) ?? 0) + 1);
   // Deterministic: highest count, ties broken by lexicographic key. Take the
   // first entry of the sorted array — no loop. `sorted[0]` is `undefined` on a
-  // cold corpus (no tags), so `orderingKey` is `undefined` there.
+  // cold corpus (no tags), so the frequency winner is `undefined` there.
   const sorted = [...freq.entries()].sort(
     (a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1),
   );
-  const [orderingKey] = sorted[0] ?? [];
+  const [freqWinner] = sorted[0] ?? [];
+  // Honour the override only when it is a real corpus key; else the freq winner.
+  const orderingKey =
+    preferredKey !== undefined && freq.has(preferredKey) ? preferredKey : freqWinner;
 
   const rows: OrderingRow[] = samples.map((s) => {
     const tag = orderingKey === undefined

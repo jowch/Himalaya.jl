@@ -90,12 +90,50 @@ export function SeriesScopingPage(): JSX.Element {
     () => filterPickerBySeed(pickerQ.data ?? [], seed),
     [pickerQ.data, seed],
   );
+
+  // The corpus's real ordering-variable vocabulary: the distinct tag keys, in
+  // proposeOrdering's deterministic order (frequency desc, lexicographic tie),
+  // so the dropdown lists exactly what the corpus exposes — no declared schema.
+  const orderKeys = useMemo(() => {
+    const freq = new Map<string, number>();
+    for (const t of tagsQ.data ?? []) freq.set(t.key, (freq.get(t.key) ?? 0) + 1);
+    return [...freq.entries()]
+      .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))
+      .map(([k]) => k);
+  }, [tagsQ.data]);
+
+  // Human override of the machine's frequency winner. Null → the machine picks.
+  const [overrideKey, setOverrideKey] = useState<string | null>(null);
+  // A corpus change can't strand a stale override: drop it once it names a key
+  // the corpus no longer exposes.
+  useEffect(() => {
+    if (overrideKey !== null && !orderKeys.includes(overrideKey)) setOverrideKey(null);
+  }, [overrideKey, orderKeys]);
+
   const proposal = useMemo(
-    () => proposeOrdering(tagsQ.data ?? [], seededPicker),
-    [tagsQ.data, seededPicker],
+    () => proposeOrdering(tagsQ.data ?? [], seededPicker, overrideKey ?? undefined),
+    [tagsQ.data, seededPicker, overrideKey],
   );
   const split = useMemo(() => splitProposal(proposal), [proposal]);
   const keyLabel = humanizeKey(proposal.orderingKey);
+
+  // Ordering-variable dropdown wiring. The Menu highlights its active option by
+  // strict value-equality with the displayed value (`orderedBy` === keyLabel),
+  // so each option's `value` IS its humanized label; map the selected label back
+  // to the raw key for the override. Deduped by humanized label so two raw keys
+  // can't collide on one option (last raw key wins the label).
+  const labelToKey = useMemo(
+    () => new Map(orderKeys.map((k) => [humanizeKey(k), k])),
+    [orderKeys],
+  );
+  const orderOptions = useMemo(
+    () => [...labelToKey.keys()].map((label) => ({ value: label, label })),
+    [labelToKey],
+  );
+  const onOrderSelect = useCallback(
+    (label: string): void => setOverrideKey(labelToKey.get(label) ?? null),
+    [labelToKey],
+  );
 
   // Default value-sorted member order (low → high; unparseable last, stable by id).
   const seededOrder = useMemo(
@@ -455,7 +493,12 @@ export function SeriesScopingPage(): JSX.Element {
                 </>
               }
               orderedBy={keyLabel}
-              orderNote="Read from the sample names."
+              {...(orderKeys.length > 1 ? { orderOptions, onOrderSelect } : {})}
+              orderNote={
+                orderKeys.length > 1
+                  ? "Read from the sample names. Switch the ordering variable above."
+                  : "Read from the sample names."
+              }
               count={`${rows.length} samples · low to high`}
               {...(history.length
                 ? { onUndo: undo, ...(lastLabel ? { undoLabel: `Step back: ${lastLabel}` } : {}) }
