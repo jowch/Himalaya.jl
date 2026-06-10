@@ -130,7 +130,7 @@ export function SeriesFolioPage(): JSX.Element {
       <FolioHeader
         kicker="Folio"
         title="Saved series"
-        subtitle="Every comparison you've built, across all beamtimes. Pick one up where you left off — or select samples on the contact sheet to start a new one."
+        subtitle="Every comparison you've built, across all beamtimes. Pick one up where you left off, or select samples on the contact sheet to start a new one."
         count={summaries.length}
         countLabel="series in the folio"
         className="mb-5"

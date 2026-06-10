@@ -21,7 +21,7 @@ export interface CombsPanelProps {
   /** Incoming q-link from the trace/detector. */
   hoveredQ?: number;
   onHoverQ?: (q?: number) => void;
-  /** Section label. Default "Reflections — comb". */
+  /** Section label. Default "Reflections · comb". */
   label?: ReactNode;
   /** PLACEMENT-ONLY. */
   className?: string;
@@ -34,7 +34,7 @@ export function CombsPanel({
   onViewChange,
   hoveredQ,
   onHoverQ,
-  label = "Reflections — comb",
+  label = "Reflections · comb",
   className,
 }: CombsPanelProps): JSX.Element {
   const hover = {

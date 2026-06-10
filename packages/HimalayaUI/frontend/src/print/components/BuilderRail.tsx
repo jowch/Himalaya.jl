@@ -139,7 +139,7 @@ export function BuilderRail({
         />
       </RailSection>
 
-      <RailSection label="Traces — drag to reorder">
+      <RailSection label="Traces · drag to reorder">
         <div className="flex flex-col gap-0.5">{traces}</div>
       </RailSection>
 

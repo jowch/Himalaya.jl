@@ -16,7 +16,7 @@ export const LabelOnly: Story = {
 
 export const WithTools: Story = {
   render: () => (
-    <PanelHeader label="Reflections — comb">
+    <PanelHeader label="Reflections · comb">
       <SegmentedControl
         size="xs"
         options={[

@@ -9,7 +9,7 @@ describe("PanelHeader", () => {
   });
   it("renders a right-side tools slot when children are given", () => {
     render(
-      <PanelHeader label="Reflections — comb">
+      <PanelHeader label="Reflections · comb">
         <button data-testid="tool">x</button>
       </PanelHeader>,
     );

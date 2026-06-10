@@ -236,7 +236,7 @@ function ScopingView(): JSX.Element {
         footState={footState}
         footNote={
           <>
-            Confirming records the LL37 : lipid ratio on every kept sample — the next series that
+            Confirming records the LL37 : lipid ratio on every kept sample. The next series that
             needs it already knows.
           </>
         }

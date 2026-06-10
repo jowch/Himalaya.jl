@@ -16,7 +16,7 @@ export interface AssignmentCartProps {
 }
 
 const DEFAULT_EMPTY =
-  "No phase assigned — every peak is unindexed. Check a candidate below.";
+  "No phase assigned. Every peak is unindexed. Check a candidate below.";
 
 export function AssignmentCart({
   children,

@@ -190,7 +190,7 @@ export function SamplesPage(): JSX.Element {
             <h1 className="text-display text-ink">{title}</h1>
             <p className="text-body text-ink-soft mt-2 max-w-[62ch]">
               Flip the frames and drop the ones with flares or artifacts. Tags
-              are a light, optional note on what each sample is — the ordering
+              are a light, optional note on what each sample is. The ordering
               variable is named later, when you scope a series.
             </p>
           </div>

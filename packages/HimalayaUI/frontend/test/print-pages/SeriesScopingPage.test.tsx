@@ -457,7 +457,7 @@ describe("SeriesScopingPage", () => {
     // heading, no orphaned "No clear phase" caption. The foot already warns.
     expect(screen.queryAllByTestId("ps-seg")).toHaveLength(0);
     expect(
-      screen.queryByRole("heading", { level: 2, name: /preview — phase across the series/i }),
+      screen.queryByRole("heading", { level: 2, name: /preview · phase across the series/i }),
     ).not.toBeInTheDocument();
     expect(screen.queryByText(/no clear phase/i)).not.toBeInTheDocument();
   });

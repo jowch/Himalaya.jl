@@ -59,7 +59,7 @@ function SeriesBuilderView(): JSX.Element {
   const [orderedBy, setOrderedBy] = useState("LL37 : lipid ratio");
   const [traceOrder, setTraceOrder] = useState<TraceDatum[]>(TRACES);
 
-  // The rail's "Traces — drag to reorder" label is honest: dragging a row
+  // The rail's "Traces · drag to reorder" label is honest: dragging a row
   // rewrites the page-owned `traceOrder`.
   const { dragItemProps, dropEdge } = useDragReorder((from, to) =>
     setTraceOrder((o) => reorder(o, from, to)),

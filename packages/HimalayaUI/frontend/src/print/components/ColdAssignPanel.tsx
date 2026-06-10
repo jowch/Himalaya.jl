@@ -48,7 +48,7 @@ export function ColdAssignPanel({
     intro === undefined ? (
       <>
         These samples share no tag key yet. Name the variable (e.g. "lipid ratio") and assign each
-        sample's value — then Confirm &amp; build.
+        sample's value, then Confirm &amp; build.
       </>
     ) : (
       intro

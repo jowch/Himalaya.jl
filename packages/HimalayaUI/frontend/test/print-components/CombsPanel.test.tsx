@@ -13,7 +13,7 @@ describe("CombsPanel", () => {
   it("renders the label and the comb-view toggle", () => {
     render(<CombsPanel {...base} />);
     expect(screen.getByTestId("combs-panel")).toBeInTheDocument();
-    expect(screen.getByText("Reflections — comb")).toBeInTheDocument();
+    expect(screen.getByText("Reflections · comb")).toBeInTheDocument();
     expect(screen.getByText("comb")).toBeInTheDocument();
     expect(screen.getByText("indexing space")).toBeInTheDocument();
   });

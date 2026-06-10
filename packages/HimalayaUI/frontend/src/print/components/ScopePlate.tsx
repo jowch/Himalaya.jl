@@ -134,7 +134,7 @@ export function ScopePlate({
       {preview.length > 0 ? (
         <div className="mt-5">
           <Kicker as="h2" tone="faint" className="mb-2">
-            Preview — phase across the series
+            Preview · phase across the series
           </Kicker>
           <PhaseStrip segments={preview} size="sm" />
         </div>

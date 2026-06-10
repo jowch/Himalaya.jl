@@ -9,7 +9,7 @@
 export function PrintApp(): JSX.Element {
   return (
     <main data-testid="print-shell" className="min-h-screen bg-paper text-ink">
-      <h1 className="text-display">The Print — greenfield shell</h1>
+      <h1 className="text-display">The Print · greenfield shell</h1>
     </main>
   );
 }

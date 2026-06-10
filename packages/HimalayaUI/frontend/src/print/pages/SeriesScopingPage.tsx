@@ -120,7 +120,7 @@ function ColdAssignSection({
               : "Name the variable and assign every value to build"}
           </div>
           <div className="text-caption text-ink-soft max-w-[42ch]">
-            Confirming records the variable on every sample — the next series that needs it
+            Confirming records the variable on every sample. The next series that needs it
             already knows.
           </div>
         </div>
@@ -745,8 +745,8 @@ export function SeriesScopingPage(): JSX.Element {
               grouping={
                 <>
                   Himalaya grouped <strong>{rows.length} samples</strong> by their{" "}
-                  <strong>{keyLabel}</strong>, read from the sample names. Confirm the reads and build —
-                  skip any it misread.
+                  <strong>{keyLabel}</strong>, read from the sample names. Confirm the reads and build.
+                  Skip any it misread.
                 </>
               }
               orderedBy={keyLabel}
@@ -860,7 +860,7 @@ export function SeriesScopingPage(): JSX.Element {
               footState={footState}
               footNote={
                 <>
-                  Confirming records the {keyLabel} on every kept sample — the next series that needs it
+                  Confirming records the {keyLabel} on every kept sample. The next series that needs it
                   already knows.
                 </>
               }

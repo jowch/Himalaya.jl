@@ -41,7 +41,7 @@ describe("<ScopePlate>", () => {
       screen.getByRole("heading", { level: 2, name: "Himalaya also found" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { level: 2, name: "Preview — phase across the series" }),
+      screen.getByRole("heading", { level: 2, name: "Preview · phase across the series" }),
     ).toBeInTheDocument();
   });
   it("names the order-field control with its label so it is not a bare value (WCAG 4.1.2)", () => {
@@ -75,7 +75,7 @@ describe("<ScopePlate>", () => {
     );
     expect(screen.queryAllByTestId("ps-seg")).toHaveLength(0);
     expect(
-      screen.queryByRole("heading", { level: 2, name: /preview — phase across the series/i }),
+      screen.queryByRole("heading", { level: 2, name: /preview · phase across the series/i }),
     ).not.toBeInTheDocument();
     expect(screen.queryByText(/no clear phase/i)).not.toBeInTheDocument();
   });
