@@ -24,6 +24,19 @@ describe("<Field>", () => {
     render(<Field value="" placeholder="Choose a variable" />);
     expect(screen.getByTestId("field")).toHaveTextContent("Choose a variable");
   });
+  it("composes the accessible name from srLabel + value (WCAG 4.1.2)", () => {
+    render(<Field value="lipid ratio" srLabel="Ordered by" onClick={() => {}} />);
+    // The visually-hidden label prefix joins the value in the computed name —
+    // it does NOT override it (which an aria-label attribute would).
+    expect(
+      screen.getByRole("button", { name: /ordered by lipid ratio/i }),
+    ).toBeInTheDocument();
+  });
+  it("without srLabel the accessible name is just the bare value (additive prop)", () => {
+    render(<Field value="lipid ratio" onClick={() => {}} />);
+    // No label prefix, the value is never dropped.
+    expect(screen.getByRole("button", { name: "lipid ratio" })).toBeInTheDocument();
+  });
   it("opens a menu and fires onSelect in dropdown mode", () => {
     const onSelect = vi.fn();
     render(<Field value="Time" options={[{value:"Time",label:"Time"},{value:"Dose",label:"Dose"}]} onSelect={onSelect} />);

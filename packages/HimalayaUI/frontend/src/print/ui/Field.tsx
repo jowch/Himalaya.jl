@@ -13,6 +13,10 @@ export interface FieldProps {
   placeholder?: string;
   /** a11y name for the menu (dropdown mode). Default "Choose an option". */
   menuLabel?: string;
+  /** Visually-hidden descriptive label rendered before the value, so the
+   *  control's accessible name reads "{srLabel} {value}" (WCAG 4.1.2).
+   *  Without it the name is just the bare value. */
+  srLabel?: string;
   /** data-testid override (default "field"). */
   testId?: string;
   className?: string; // PLACEMENT ONLY
@@ -41,6 +45,7 @@ export function Field({
   onClick,
   placeholder,
   menuLabel,
+  srLabel,
   testId,
   className,
 }: FieldProps): JSX.Element {
@@ -77,6 +82,7 @@ export function Field({
           className,
         )}
       >
+        {srLabel != null && <span className="sr-only">{srLabel} </span>}
         <span className={showPlaceholder ? "text-ink-soft" : "text-ink"}>
           {showPlaceholder ? placeholder : value}
         </span>
@@ -100,6 +106,7 @@ export function Field({
         isDropdown ? undefined : className,
       )}
     >
+      {srLabel != null && <span className="sr-only">{srLabel} </span>}
       <span className={showPlaceholder ? "text-ink-soft" : "text-ink"}>
         {showPlaceholder ? placeholder : value}
       </span>

@@ -91,6 +91,7 @@ export function ScopePlate({
       </Kicker>
       <Field
         testId="order-field"
+        srLabel="Ordered by"
         value={orderedBy}
         {...(orderOptions
           ? { options: orderOptions, ...(onOrderSelect ? { onSelect: onOrderSelect } : {}) }

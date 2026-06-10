@@ -44,6 +44,23 @@ describe("<ScopePlate>", () => {
       screen.getByRole("heading", { level: 2, name: "Preview — phase across the series" }),
     ).toBeInTheDocument();
   });
+  it("names the order-field control with its label so it is not a bare value (WCAG 4.1.2)", () => {
+    render(
+      <ScopePlate
+        {...base}
+        orderOptions={[
+          { value: "LL37 : lipid ratio", label: "LL37 : lipid ratio" },
+          { value: "Time", label: "Time" },
+        ]}
+        footState={{ kind: "ready", text: "ready" }}
+      />,
+    );
+    // With options the field is a real combobox-style trigger button; its
+    // accessible name must read label + value, not just the value.
+    expect(
+      screen.getByRole("button", { name: /ordered by\s+LL37 : lipid ratio/i }),
+    ).toBeInTheDocument();
+  });
   it("gates the build button when buildDisabled", () => {
     render(<ScopePlate {...base} buildDisabled footState={{ kind: "warn", text: "1 value to check before you can build" }} />);
     expect(screen.getByText(/1 value to check/)).toBeInTheDocument();
