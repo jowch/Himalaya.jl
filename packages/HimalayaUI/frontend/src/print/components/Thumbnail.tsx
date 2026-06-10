@@ -53,11 +53,21 @@ export function Thumbnail({
   const px = SIZE_PX[size];
   const dataState = buildDataState({ selected, rejected, representative });
 
+  // Accessible name: "Frame N" (or "Exposure" when unnumbered), with state
+  // suffixes for the visual markers (representative dot / reject overlay) so a
+  // screen-reader hears what a sighted user sees. Selection is conveyed via
+  // aria-pressed (a toggle role), not folded into the label.
+  let ariaLabel = frameNo != null ? `Frame ${frameNo}` : "Exposure";
+  if (representative) ariaLabel += ", representative";
+  if (rejected) ariaLabel += ", dropped";
+
   return (
     <button
       data-testid="thumbnail"
       data-state={dataState}
       data-size={size}
+      aria-label={ariaLabel}
+      {...(onClick ? { "aria-pressed": selected } : {})}
       onClick={onClick}
       {...(onDoubleClick ? { onDoubleClick } : {})}
       title={title}

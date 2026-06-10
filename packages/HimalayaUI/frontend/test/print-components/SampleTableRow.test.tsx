@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import { SampleTableRow } from "../../src/print/components/SampleTableRow";
 import type { GalleryExposure } from "../../src/print/components/ThumbnailGallery";
@@ -54,6 +54,19 @@ describe("<SampleTableRow> structure", () => {
     const row = screen.getByTestId("sample-table-row");
     const grid = row.firstElementChild!;
     expect(grid.children).toHaveLength(5);
+  });
+
+  it("exposes role=row with 5 cells (no checkbox)", () => {
+    renderRow();
+    const row = screen.getByRole("row");
+    expect(screen.getByTestId("sample-table-row")).toHaveAttribute("role", "row");
+    expect(within(row).getAllByRole("cell")).toHaveLength(5);
+  });
+
+  it("exposes 6 cells when a checkbox column is rendered (onCheck set)", () => {
+    renderRow({ onCheck: () => {} });
+    const row = screen.getByRole("row");
+    expect(within(row).getAllByRole("cell")).toHaveLength(6);
   });
 
   it("(d) contains the KeptCell counts (kept and total)", () => {

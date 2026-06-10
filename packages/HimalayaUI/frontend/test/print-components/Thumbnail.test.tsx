@@ -145,6 +145,64 @@ describe("<Thumbnail> combined states", () => {
   });
 });
 
+describe("<Thumbnail> accessible name (WCAG 4.1.2)", () => {
+  it("names the button 'Frame N' when frameNo is set", () => {
+    render(<Thumbnail src={null} frameNo={65} />);
+    expect(screen.getByRole("button", { name: "Frame 65" })).toBeInTheDocument();
+  });
+
+  it("names the button 'Exposure' when frameNo is omitted", () => {
+    render(<Thumbnail src={null} />);
+    expect(screen.getByRole("button", { name: "Exposure" })).toBeInTheDocument();
+  });
+
+  it("appends ', representative' to the name", () => {
+    render(<Thumbnail src={null} frameNo={65} representative />);
+    expect(
+      screen.getByRole("button", { name: "Frame 65, representative" }),
+    ).toBeInTheDocument();
+  });
+
+  it("appends ', dropped' to the name when rejected", () => {
+    render(<Thumbnail src={null} frameNo={65} rejected />);
+    expect(
+      screen.getByRole("button", { name: "Frame 65, dropped" }),
+    ).toBeInTheDocument();
+  });
+
+  it("appends both suffixes in order (representative then dropped)", () => {
+    render(<Thumbnail src={null} frameNo={65} representative rejected />);
+    expect(
+      screen.getByRole("button", { name: "Frame 65, representative, dropped" }),
+    ).toBeInTheDocument();
+  });
+});
+
+describe("<Thumbnail> aria-pressed (selection toggle)", () => {
+  it("reflects selected=true via aria-pressed when onClick is provided", () => {
+    render(<Thumbnail src={null} frameNo={65} selected onClick={() => {}} />);
+    expect(screen.getByRole("button", { name: /Frame 65/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
+  it("reflects selected=false via aria-pressed when onClick is provided", () => {
+    render(<Thumbnail src={null} frameNo={65} onClick={() => {}} />);
+    expect(screen.getByRole("button", { name: /Frame 65/ })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+  });
+
+  it("omits aria-pressed entirely when no onClick (not a toggle)", () => {
+    render(<Thumbnail src={null} frameNo={65} selected />);
+    expect(screen.getByRole("button", { name: /Frame 65/ })).not.toHaveAttribute(
+      "aria-pressed",
+    );
+  });
+});
+
 describe("<Thumbnail> DetectorImage integration", () => {
   it("renders the image placeholder when src is null", () => {
     render(<Thumbnail src={null} />);

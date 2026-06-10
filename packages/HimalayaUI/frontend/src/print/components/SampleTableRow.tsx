@@ -111,15 +111,17 @@ export function SampleTableRow({
   return (
     <div
       data-testid="sample-table-row"
+      role="row"
       data-screened={screened ? "true" : "false"}
       className={`border-b border-hair hover:bg-paper-sunk${restTint}${className ? ` ${className}` : ""}`}
     >
       <div
+        role="presentation"
         className="grid"
         style={{ gridTemplateColumns: sampleTableCols(onCheck !== undefined) }}
       >
         {onCheck !== undefined && (
-          <div className="flex items-center justify-center px-1 h-[92px]">
+          <div role="cell" className="flex items-center justify-center px-1 h-[92px]">
             <Checkbox
               checked={checked ?? false}
               {...(indeterminate ? { indeterminate: true } : {})}
@@ -128,7 +130,7 @@ export function SampleTableRow({
             />
           </div>
         )}
-        <div className={CELL}>
+        <div role="cell" className={CELL}>
           <SpecCell
             name={name}
             sampleId={sampleId}
@@ -136,7 +138,7 @@ export function SampleTableRow({
             {...(onOpenLoupe ? { onOpenLoupe } : {})}
           />
         </div>
-        <div className={CELL}>
+        <div role="cell" className={CELL}>
           <ThumbnailGallery
             size="sm"
             className="w-full"
@@ -147,14 +149,14 @@ export function SampleTableRow({
             {...(onActivateExposure ? { onActivate: onActivateExposure } : {})}
           />
         </div>
-        <div className={CELL}>
+        <div role="cell" className={CELL}>
           <KeptCell
             kept={kept}
             total={total}
             {...(dropped != null ? { dropped } : {})}
           />
         </div>
-        <div className={CELL}>
+        <div role="cell" className={CELL}>
           <TagList
             tags={tags}
             maxVisible={2}
@@ -163,7 +165,7 @@ export function SampleTableRow({
             {...(onRemoveTag ? { onRemove: onRemoveTag } : {})}
           />
         </div>
-        <div className={CELL}>
+        <div role="cell" className={CELL}>
           {onOpenFocus ? (
             <button
               type="button"

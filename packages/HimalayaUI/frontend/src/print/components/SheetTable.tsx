@@ -44,24 +44,32 @@ export function SheetTable({
   const isEmpty = React.Children.count(children) === 0;
 
   return (
-    <Card elevated data-testid="sheet-table" className={cx("overflow-hidden", className)}>
+    <Card
+      elevated
+      role="table"
+      aria-label="Samples"
+      data-testid="sheet-table"
+      className={cx("overflow-hidden", className)}
+    >
       {/* Header: paper-sunk tint + hairline-strong bottom border */}
-      <div data-testid="sheet-head" className="bg-paper-sunk border-b border-hair-strong">
+      <div data-testid="sheet-head" role="rowgroup" className="bg-paper-sunk border-b border-hair-strong">
         <div
+          role="row"
           className="grid"
           style={{ gridTemplateColumns: sampleTableCols(checkboxColumn ?? false) }}
         >
           {checkboxColumn && (
             <div
               className="px-1 py-2.5 flex items-center justify-center"
-              aria-hidden="true"
+              role="columnheader"
+              aria-label="Select"
             />
           )}
-          <Kicker tone="faint" className="px-4 py-2.5">Sample</Kicker>
-          <Kicker tone="faint" className="px-4 py-2.5">Exposures</Kicker>
-          <Kicker tone="faint" className="px-4 py-2.5">Kept</Kicker>
-          <Kicker tone="faint" className="px-4 py-2.5">Tags</Kicker>
-          <Kicker tone="faint" className="px-4 py-2.5">Status</Kicker>
+          <Kicker tone="faint" role="columnheader" className="px-4 py-2.5">Sample</Kicker>
+          <Kicker tone="faint" role="columnheader" className="px-4 py-2.5">Exposures</Kicker>
+          <Kicker tone="faint" role="columnheader" className="px-4 py-2.5">Kept</Kicker>
+          <Kicker tone="faint" role="columnheader" className="px-4 py-2.5">Tags</Kicker>
+          <Kicker tone="faint" role="columnheader" className="px-4 py-2.5">Status</Kicker>
         </div>
       </div>
 
