@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { Skeleton } from "boneyard-js/react";
 import { PageFrame } from "../components/PageFrame";
 import { SeriesPlate } from "../components/SeriesPlate";
@@ -60,6 +60,7 @@ const BUILDER_FIXTURE = (
  * AnnotationToggles / figure-export). No legacy presentation is imported.
  */
 export function SeriesBuilderPage(): JSX.Element {
+  const navigate = useNavigate();
   const id = Number(useParams<{ id: string }>().id);
   const seriesQ = useSeries(Number.isFinite(id) ? id : undefined);
   const tracesQ = useSeriesTraces(Number.isFinite(id) ? id : undefined);
@@ -229,13 +230,25 @@ export function SeriesBuilderPage(): JSX.Element {
   }, [save.error, commit.error]);
 
   // ── Honest states ───────────────────────────────────────────────────────
-  if (seriesQ.isError) {
+  // BU-BADID: a non-numeric :id (NaN) is knowable synchronously from the route
+  // param — the gated query never enables, so without this branch the page
+  // would sit on the loading skeleton forever. It exits through the SAME
+  // not-found surface as a missing numeric id (the FocusPage routeStatus
+  // "unknown" precedent), one shared branch for both.
+  if (!Number.isFinite(id) || seriesQ.isError) {
     return (
       <PageFrame width="builder" className="px-8 py-8">
-        <EmptyState
-          title="Couldn't load this series"
-          body="It may have been deleted, or the request failed. Try reloading the page."
-        />
+        <div data-testid="builder-not-found">
+          <EmptyState
+            title="Couldn't load this series"
+            body="It may have been deleted, the address may be wrong, or the request failed."
+            action={
+              <Button variant="outline" onClick={() => navigate("/series")}>
+                Back to the series folio
+              </Button>
+            }
+          />
+        </div>
       </PageFrame>
     );
   }

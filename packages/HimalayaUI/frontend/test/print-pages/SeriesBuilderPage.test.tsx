@@ -994,3 +994,50 @@ describe("SeriesBuilderPage", () => {
     expect(alert.textContent).toMatch(/could.?n.?t|failed|error/i);
   });
 });
+
+// ── BU-BADID: a non-numeric :id must exit honestly, not hang on the skeleton ──
+// A NaN id is knowable synchronously from the route param, so the page must
+// render the SAME not-found surface a missing numeric id gets (the FocusPage
+// routeStatus "unknown" precedent), never the perpetual loading skeleton.
+describe("SeriesBuilderPage with a non-numeric route id", () => {
+  function renderAt(path: string): void {
+    const qc = new QueryClient();
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={[path]}>
+          <Routes>
+            <Route path="/series" element={<div data-testid="folio-stub" />} />
+            <Route path="/series/:id" element={<SeriesBuilderPage />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+  }
+
+  it("/series/abc renders the not-found EmptyState, not the loading skeleton", () => {
+    renderAt("/series/abc");
+    // The honest exit: the shared not-found surface (same branch as a missing
+    // numeric id), with a way back to the folio.
+    expect(screen.getByTestId("builder-not-found")).toBeInTheDocument();
+    expect(screen.getByText(/couldn't load|could not load/i)).toBeInTheDocument();
+    // Red-check pins: the old code sat on the skeleton fallback forever
+    // (disabled query → isLoading/data never settle) and never showed a plate.
+    expect(screen.queryByText(/loading series/i)).toBeNull();
+    expect(screen.queryByTestId("series-plate")).toBeNull();
+  });
+
+  it("the not-found CTA navigates back to the series folio (/series)", () => {
+    renderAt("/series/abc");
+    fireEvent.click(screen.getByRole("button", { name: /back to the series folio/i }));
+    expect(screen.getByTestId("folio-stub")).toBeInTheDocument();
+  });
+
+  it("a numeric-missing id (query error) renders the same not-found surface", () => {
+    state.error = true;
+    state.seriesById = new Map();
+    renderAt("/series/999");
+    expect(screen.getByTestId("builder-not-found")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /back to the series folio/i })).toBeInTheDocument();
+    expect(screen.queryByTestId("series-plate")).toBeNull();
+  });
+});
