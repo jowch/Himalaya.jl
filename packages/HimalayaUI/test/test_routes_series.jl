@@ -164,13 +164,24 @@ end
                 (series_id, exposure_id, display_order, snapshot, created_at)
                 VALUES (2, 2000, 1, '$snap', '2026-05-01T00:00:00.000Z')""")
 
+            # Series 3: memberless — no provenance derivable.
+            DBInterface.execute(db, """INSERT INTO series (id, title, state)
+                VALUES (3, 'empty', 'draft')""")
+
             by_id = Dict(r[:id] => r for r in HimalayaUI.series_listing(db))
             # Single-experiment series: spans_experiments false; var round-trips.
             @test by_id[1][:spans_experiments] == false
             @test by_id[1][:ordering_variable] == "temperature"
+            # Beamtime provenance (FOL P2-2): the single experiment's name.
+            @test by_id[1][:experiment_name] == "exp"
             # Cross-experiment series: members resolve to 2 distinct experiments.
             @test by_id[2][:spans_experiments] == true
             @test by_id[2][:ordering_variable] === nothing
+            # Spanning ⇒ no single beamtime to name.
+            @test by_id[2][:experiment_name] === nothing
+            # Memberless ⇒ no provenance (and not spanning).
+            @test by_id[3][:spans_experiments] == false
+            @test by_id[3][:experiment_name] === nothing
             close(db)
         end
     end
@@ -196,6 +207,10 @@ end
                 @test length(forks) == 1
                 @test forks[1][:id] == 8
                 @test forks[1][:forked_from_id] == 7
+                # The forks projection carries the same provenance field as
+                # the listing; a memberless fork has none (JSON null).
+                @test haskey(forks[1], :experiment_name)
+                @test forks[1][:experiment_name] === nothing
             end
             close(db)
         end

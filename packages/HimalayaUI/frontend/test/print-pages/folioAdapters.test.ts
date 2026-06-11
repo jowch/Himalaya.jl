@@ -13,7 +13,7 @@ function summary(over: Partial<SeriesSummary>): SeriesSummary {
     view_grouping_mode: null, view_show_peak_ticks: null, view_show_peak_labels: null,
     last_event_at: "2026-06-04T00:00:00Z", author_username: "alice", member_count: 4,
     member_phases: ["Ia3d", "Im3m"], member_phase_count: 2, has_stale_members: false,
-    ordering_variable: "lipid ratio", spans_experiments: false, ...over } as SeriesSummary;
+    ordering_variable: "lipid ratio", spans_experiments: false, experiment_name: null, ...over } as SeriesSummary;
 }
 
 describe("membersToSegments", () => {
@@ -52,6 +52,14 @@ describe("toCardChrome", () => {
     expect(c.notice).toEqual({ tone: "draft" });
     expect(c.title).toBe("Untitled series");
     expect(c.provenance).not.toBeNull();
+  });
+  it("names the beamtime on a single-experiment card (FOL P2-2)", () => {
+    const c = toCardChrome(summary({ experiment_name: "April 2026 beamtime" }), 1, new Date("2026-06-06T00:00:00Z"));
+    expect(c.provenance).toBe("April 2026 beamtime");
+  });
+  it("keeps the cross-experiment note when spanning, ignoring any name", () => {
+    const c = toCardChrome(summary({ spans_experiments: true, experiment_name: null }), 1, new Date("2026-06-06T00:00:00Z"));
+    expect(c.provenance).toBe("↔ cross-experiment · q normalized");
   });
 });
 

@@ -75,6 +75,7 @@ function summary(over: Partial<SeriesSummary> = {}): SeriesSummary {
     has_stale_members: false,
     ordering_variable: "LL37 : lipid ratio",
     spans_experiments: false,
+    experiment_name: null,
     ...over,
   };
 }
@@ -126,7 +127,7 @@ function seriesDetail(id: number, members: SeriesMember[] = []): Series {
 
 function seed(): void {
   state.summaries = [
-    summary({ id: 1, title: "LL37 titration lipid 1-2", member_phase_count: 2, spans_experiments: false }),
+    summary({ id: 1, title: "LL37 titration lipid 1-2", member_phase_count: 2, spans_experiments: false, experiment_name: "April 2026 beamtime" }),
     summary({ id: 2, title: "Lipid baselines", member_phase_count: 1, spans_experiments: false }),
     summary({ id: 3, title: "April vs July cross-exp", member_phase_count: 1, spans_experiments: true, content_hash: "" }),
   ];
@@ -189,6 +190,19 @@ describe("SeriesFolioPage", () => {
     const cards = screen.getAllByTestId("series-card");
     fireEvent.click(cards[0]!);
     expect(navigateSpy).toHaveBeenCalledWith("/series/1");
+  });
+
+  it("a single-experiment card names its beamtime; a null-provenance card stays silent (FOL P2-2)", () => {
+    renderPage();
+    const cards = screen.getAllByTestId("series-card");
+    // Series 1 carries experiment_name — the footer names the beamtime.
+    expect(screen.getByText("April 2026 beamtime")).toBeInTheDocument();
+    // Series 2 has experiment_name: null and does not span — no provenance
+    // text appears on its card (the footer-left slot is empty).
+    const card2 = cards.find((c) => within(c).queryByText("Lipid baselines") !== null);
+    expect(card2).toBeDefined();
+    expect(within(card2!).queryByText("April 2026 beamtime")).toBeNull();
+    expect(within(card2!).queryByText(/cross-experiment/)).toBeNull();
   });
 
   it("a draft series (content_hash === '') shows the Draft pill", () => {

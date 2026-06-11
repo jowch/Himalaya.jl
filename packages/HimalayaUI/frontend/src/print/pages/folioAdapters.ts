@@ -38,7 +38,11 @@ export function toCardChrome(s: SeriesSummary, position: number, now: Date): Car
     title,
     sampleCount: s.member_count,
     variable: s.ordering_variable ?? "",
-    provenance: s.spans_experiments ? "↔ cross-experiment · q normalized" : null,
+    // Footer provenance: cross-experiment cards keep the explicit span note;
+    // single-beamtime cards quietly name the beamtime (null when memberless).
+    provenance: s.spans_experiments
+      ? "↔ cross-experiment · q normalized"
+      : s.experiment_name,
     editedLabel: formatEdited(s.updated_at ?? s.last_event_at, now),
     author: s.author_username ?? "",
     draft,

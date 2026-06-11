@@ -9,6 +9,7 @@ const SERIES_LISTING = [
     last_event_at: "2026-05-02 10:00:00", author_username: "jc",
     member_count: 3, member_phases: ["Pn3m", "Lamellar"], member_phase_count: 2,
     has_stale_members: false, ordering_variable: null, spans_experiments: false,
+    experiment_name: "exp-april",
   },
   {
     id: 2, title: "Cubic temperature sweep", description: null, content_hash: "",
@@ -18,6 +19,7 @@ const SERIES_LISTING = [
     last_event_at: "2026-05-03 09:00:00", author_username: "jc",
     member_count: 6, member_phases: ["Im3m"], member_phase_count: 1,
     has_stale_members: true, ordering_variable: null, spans_experiments: false,
+    experiment_name: null,
   },
 ];
 

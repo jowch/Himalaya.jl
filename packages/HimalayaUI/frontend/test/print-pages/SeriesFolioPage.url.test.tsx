@@ -55,6 +55,7 @@ function summary(over: Partial<SeriesSummary> = {}): SeriesSummary {
     has_stale_members: false,
     ordering_variable: "LL37 : lipid ratio",
     spans_experiments: false,
+    experiment_name: null,
     ...over,
   };
 }

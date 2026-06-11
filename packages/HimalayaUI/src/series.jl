@@ -57,7 +57,14 @@ function series_listing(db::SQLite.DB)::Vector{Dict{Symbol, Any}}
                    FROM series_members sm
                    JOIN exposures ex ON ex.id = sm.exposure_id
                    JOIN samples sa   ON sa.id = ex.sample_id
-                   WHERE sm.series_id = s.id) AS spans_experiments
+                   WHERE sm.series_id = s.id) AS spans_experiments,
+                  (SELECT CASE WHEN COUNT(DISTINCT sa.experiment_id) = 1
+                               THEN MIN(x.name) END
+                   FROM series_members sm
+                   JOIN exposures ex   ON ex.id = sm.exposure_id
+                   JOIN samples sa     ON sa.id = ex.sample_id
+                   JOIN experiments x  ON x.id = sa.experiment_id
+                   WHERE sm.series_id = s.id) AS experiment_name
            FROM series s
            LEFT JOIN users u ON u.id = s.created_by
            ORDER BY last_event_at DESC, s.id DESC"""))
@@ -95,6 +102,11 @@ function _series_listing_rows(rows)::Vector{Dict{Symbol, Any}}
             # Cross-experiment = members resolve to >1 distinct samples.experiment_id.
             # Valid because q is absolute (Å⁻¹); see redesign-notes architecture decision 1.
             :spans_experiments     => !ismissing(r.spans_experiments) && Bool(r.spans_experiments),
+            # Beamtime provenance: the members' single experiment's name when
+            # NOT spanning; NULL when spanning, memberless, or the single experiment itself has a NULL name (the CASE guard
+            # in the projection — MIN is well-defined because COUNT(DISTINCT)=1
+            # means every joined row carries the same name).
+            :experiment_name       => ismissing(r.experiment_name) ? nothing : String(r.experiment_name),
         )
     end
     out
@@ -138,7 +150,14 @@ function forks_of_series(db::SQLite.DB, series_id::Integer)::Vector{Dict{Symbol,
                    FROM series_members sm
                    JOIN exposures ex ON ex.id = sm.exposure_id
                    JOIN samples sa   ON sa.id = ex.sample_id
-                   WHERE sm.series_id = s.id) AS spans_experiments
+                   WHERE sm.series_id = s.id) AS spans_experiments,
+                  (SELECT CASE WHEN COUNT(DISTINCT sa.experiment_id) = 1
+                               THEN MIN(x.name) END
+                   FROM series_members sm
+                   JOIN exposures ex   ON ex.id = sm.exposure_id
+                   JOIN samples sa     ON sa.id = ex.sample_id
+                   JOIN experiments x  ON x.id = sa.experiment_id
+                   WHERE sm.series_id = s.id) AS experiment_name
            FROM series s
            LEFT JOIN users u ON u.id = s.created_by
            WHERE s.forked_from_id = ?

@@ -27,7 +27,7 @@ describe("series read hooks", () => {
         view_show_peak_labels: null, last_event_at: null,
         author_username: null, member_count: 0, member_phases: [],
         member_phase_count: 0, has_stale_members: false,
-        ordering_variable: null, spans_experiments: false,
+        ordering_variable: null, spans_experiments: false, experiment_name: null,
       },
     ]);
     const { result } = renderHook(() => useSeriesList(), { wrapper: wrapper() });

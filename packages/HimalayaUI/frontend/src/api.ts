@@ -823,6 +823,9 @@ export interface SeriesSummary {
   /** True when the members resolve to >1 distinct `samples.experiment_id`.
    *  Valid because q is absolute (Å⁻¹) — series may legitimately span beamtimes. */
   spans_experiments: boolean;
+  /** Beamtime provenance: the members' single experiment's `name` when the
+   *  series does NOT span experiments; null when spanning, memberless, or the single experiment has no name. */
+  experiment_name: string | null;
 }
 
 /** The recipe membership — one `series_samples` row. */
