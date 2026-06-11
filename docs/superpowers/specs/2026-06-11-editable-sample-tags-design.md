@@ -44,7 +44,7 @@ Three cohesive changes (all tag-vocabulary), each behind the existing `with_idem
 
 2. **New event kind `edit_tag`** (non-view-producing, like `add_tag`/`remove_tag` → `apply_event!` returns `nothing`; it logs to `user_actions` and broadcasts over SSE). Scaffold via the `new-event-kind` skill (`/new-event-kind edit_tag --no-view`). Payload carries `{tag_id, key, value, prev_key, prev_value}` for the audit trail. **Round-trip test** required (rebuild-from-log parity) per the event-log contract.
 
-3. **Scoping batch becomes an upsert.** `POST /api/samples/tags/batch` today inserts N rows. Change it to **upsert on `(sample_id, key)`**: if the sample already has a tag with that key, UPDATE its value (and stamp `source='scoping'`); else INSERT. This means re-scoping never duplicates, and scoping a sample that already has a manual `dose=10` updates that one tag instead of minting a twin. Emits `edit_tag` for updates, `add_tag` for inserts. **This adopts a "key is single-valued per sample" model** for the scoping path — see Open Decisions.
+3. **Scoping batch becomes an upsert.** `POST /api/samples/tags/batch` today inserts N rows **unconditionally** — which is the root of the duplicate: the warm-path worksheet already *reads* each sample's existing value for the ordering key (`proposeOrdering.ts:48-52` does `s.sample.tags.find(t => t.key === orderingKey)` and uses `tag?.value`), so it pre-fills `dose=10` from the existing tag, then on commit inserts a *second* `source='scoping'` row with that same `10`. Change the batch to **upsert on `(sample_id, key)`**: if the sample already has a tag with that key, leave it untouched when the value is unchanged (the common "just use it" case → no write, no `edit_tag` event), or UPDATE the existing row in place (keeping its `id`, leaving its `source`) when the worksheet value was deliberately edited; INSERT `source='scoping'` only for samples that lacked the key. Re-scoping is then idempotent and never mints a twin.
 
 4. **Extend `GET /api/sample-tags`** to return a per-`(key,value)` **sample count**: `{key, value, count}` instead of bare `{key, value}`. The frontend derives per-key counts by summing. This feeds the suggestion dropdowns' counts. (Additive field; existing consumers ignore it.)
 
@@ -76,8 +76,7 @@ Three cohesive changes (all tag-vocabulary), each behind the existing `with_idem
 ## Error handling
 
 - Writes go through `useQueueMutation`: 4xx → assertive validation toast (`buildValidationMessage`); 5xx/network → auto-retry + `InfrastructureBanner`; optimistic rollback on terminal failure (per the established Honest-Surface-State machinery).
-- Exact `(key,value)` duplicate add/edit → inline non-destructive rejection in the modal (don't mint a second identical row), with an `aria-invalid` + alert, cleared on edit (mirrors `TagEditor`'s empty-key rejection).
-- Edit that collides with another existing tag on the same sample (same resulting `key,value`) → inline "this sample already has dose=10" nudge; no silent merge in Layer 1.
+- **Duplicate-key rejection (single-valued-key rule).** Adding a key the sample already has, or editing a key so it collides with another row on the same sample → inline non-destructive rejection ("This sample already has a `dose` tag — edit that one instead"), `aria-invalid` + alert, cleared on edit (mirrors `TagEditor`'s empty-key rejection). No silent merge in Layer 1. The one pre-existing live duplicate (sample 3) is shown as two rows so the user can delete the redundant one — the rejection only prevents *new* collisions.
 
 ## Accessibility (the explicit bar)
 
@@ -94,10 +93,10 @@ Three cohesive changes (all tag-vocabulary), each behind the existing `with_idem
 - **E2E (Playwright, mocked):** open Manage from the loupe, edit a value, delete the redundant duplicate row; assert rendered semantics (data-*/text/aria), never class strings.
 - **Live render-verify** at :5182 against the real corpus (the duplicate `dose=10` sample) before the work is marked done.
 
-## Open decisions (ratify at spec review)
+## Resolved decisions (ratified with Jonathan 2026-06-11)
 
-1. **Single-valued-key model for scoping upsert.** The scoping upsert keys on `(sample_id, key)`, which treats a key as single-valued per sample (correct for ordering variables like `dose`/`temperature`). The **modal** itself does *not* enforce uniqueness — it allows repeated keys generally (multi-value), but rejects an exact `(key,value)` duplicate. Confirm this split is right, or decide keys must be globally unique per sample (which would make the modal enforce it too).
-2. **Does scoping overwrite a *manual* same-key tag?** The upsert as specified updates *any* same-key tag (manual or scoping) to the scoped value and stamps `source='scoping'`. Alternative: scoping only upserts within `source='scoping'` and leaves manual tags alone (so a first-time scope of a manually-tagged sample still creates one scoping twin, reconciled in the modal). The spec adopts the former (no twin ever); confirm.
+1. **A key is single-valued per sample — enforced, no multi-value.** A sample never has two tags with the same key. Enforcement lives in the write paths: the modal's add-row and the inline `+ tag` quick-add both **reject a key already present on the sample** (and offer to edit the existing one instead); a key-edit that would collide with another row on the same sample is rejected inline (no silent merge in Layer 1). The backend `POST .../tags` and `PATCH .../tags/:id` return a 409/400 as a backstop. No DB `UNIQUE(sample_id, key)` constraint is added (the one pre-existing duplicate in live data — sample 3 — would violate it; that row is reconciled by the user in the modal, not by a migration).
+2. **Scoping "just uses" the existing tag.** Resolved by the verification above: scoping already reads the existing value (`proposeOrdering.ts:51`); the bug is the unconditional insert on commit. The upsert (change #3) leaves an existing tag untouched when the value is unchanged and only updates it (in place, same `id`, same `source`) on a deliberate worksheet edit. There is no "overwrite a manual tag" surprise, because the worksheet is pre-filled from that very tag.
 
 ## Components & files (anticipated)
 
