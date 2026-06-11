@@ -209,11 +209,16 @@ function register_samples_routes!()
                  WHERE id = ? AND sample_id = ?", [tag_id, id]))
             isempty(cur) && return HTTP.Response(404, ["Content-Type" => "application/json"],
                 JSON3.write(Dict(:error => "tag not found")))
-            new_key = has_key ? String(body.key) : String(cur[1].key)
+            cur_key = String(cur[1].key)
+            new_key = has_key ? String(body.key) : cur_key
             new_val = has_val ? String(body.value) : String(cur[1].value)
-            # Single-valued-key rule: a key-edit must not collide with another
-            # tag on the same sample (id<>? excludes the row being edited).
-            if has_key
+            # Single-valued-key rule: only a key *change* can introduce a
+            # collision. A value-only edit (or a no-op key write — the client
+            # sends the unchanged key alongside a value edit) leaves the key
+            # set untouched, so it can't violate the invariant and must not be
+            # rejected — including on a sample that already carries a same-key
+            # duplicate, which is exactly the state this modal exists to fix.
+            if new_key != cur_key
                 coll = Tables.rowtable(DBInterface.execute(db,
                     "SELECT 1 FROM sample_tags
                      WHERE sample_id = ? AND key = ? AND id <> ?",

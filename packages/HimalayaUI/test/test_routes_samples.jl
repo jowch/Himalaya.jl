@@ -364,6 +364,43 @@ end
     end
 end
 
+@testset "PATCH value edit succeeds on a sample with a same-key duplicate" begin
+    # The single-valued-key collision check must guard only key *changes*. A
+    # value-only edit (or a no-op key write, which the client sends) on a sample
+    # that ALREADY carries two same-key tags — the duplicate this modal exists
+    # to resolve — must NOT 409: it doesn't change the key set.
+    db = SQLite.DB()
+    HimalayaUI.create_schema!(db)
+    exp_id = HimalayaUI.init_experiment!(db; path="/tpdup", data_dir="/tpdup/d",
+                                             analysis_dir="/tpdup/a")
+    sid = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S1")
+    # Two byte-identical-key tags: dose=10 (manual) and dose=10 (scoping).
+    DBInterface.execute(db,
+        "INSERT INTO sample_tags (sample_id, key, value, source) VALUES (?, ?, ?, ?)",
+        [sid, "dose", "10", "manual"])
+    A = Int(DBInterface.lastrowid(DBInterface.execute(db, "SELECT last_insert_rowid()")))
+    DBInterface.execute(db,
+        "INSERT INTO sample_tags (sample_id, key, value, source) VALUES (?, ?, ?, ?)",
+        [sid, "dose", "10", "scoping"])
+    B = Int(DBInterface.lastrowid(DBInterface.execute(db, "SELECT last_insert_rowid()")))
+
+    with_test_server(db) do port, base
+        # Value-only edit of A (key omitted): allowed despite B sharing the key.
+        r = HTTP.request("PATCH", "$base/api/samples/$sid/tags/$A",
+            ["Content-Type" => "application/json", "X-Username" => "alice"],
+            JSON3.write(Dict(:value => "5")); status_exception=false)
+        @test r.status == 200
+        # No-op key write alongside a value edit (what the modal actually sends).
+        r2 = HTTP.request("PATCH", "$base/api/samples/$sid/tags/$B",
+            ["Content-Type" => "application/json", "X-Username" => "alice"],
+            JSON3.write(Dict(:key => "dose", :value => "20")); status_exception=false)
+        @test r2.status == 200
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT value FROM sample_tags WHERE id = ? ", [A]))
+        @test String(rows[1].value) == "5"
+    end
+end
+
 @testset "PATCH /api/samples/:id/tags/:tag_id returns 404 for non-matching tag" begin
     db = SQLite.DB()
     HimalayaUI.create_schema!(db)
