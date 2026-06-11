@@ -185,6 +185,12 @@ export function TagSuggest({
         onBlur={handleBlur}
         invalid={invalid}
         inputSize="sm"
+        // Fill the TagSuggest root (which the consumer can stretch via
+        // className) so the field tracks its container width instead of sitting
+        // at content width. The default `inline-flex` root still collapses to
+        // content when the consumer passes no width, preserving every existing
+        // consumer's layout.
+        className="w-full"
         aria-label={label}
         // Combobox ARIA
         role="combobox"

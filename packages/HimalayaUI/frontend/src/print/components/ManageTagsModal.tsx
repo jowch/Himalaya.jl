@@ -177,101 +177,107 @@ export function ManageTagsModal({
         onClose={onClose}
       />
 
-      {/* Tag rows */}
-      <div className="px-5 pt-4 pb-2 flex flex-col gap-3">
-        {tags.map((tag) => {
-          const draft = drafts[tag.id] ?? { key: tag.key, value: tag.value ?? "" };
-          const keyDup = editKeyDupId === tag.id;
-          const rowErrorId = `${editErrorIdPrefix}-${tag.id}`;
-          return (
-            <div key={tag.id} className="flex flex-col gap-1">
-              <div
-                data-testid="manage-tag-row"
-                className="flex items-center gap-2"
-              >
-                <TagSuggest
-                  label={`Key for tag ${tag.id}`}
-                  mode="key"
-                  value={draft.key}
-                  options={keyOptions}
-                  onValueChange={(v) => setDraft(tag.id, "key", v)}
-                  onCommit={(v) => commitEdit(tag, "key", v)}
-                  invalid={keyDup}
-                  {...(keyDup ? { "aria-describedby": rowErrorId } : {})}
-                  className="flex-1 min-w-0"
-                />
-                <TagSuggest
-                  label={`Value for tag ${tag.id}`}
-                  mode="value"
-                  value={draft.value}
-                  options={valueOptionsFor(draft.key)}
-                  onValueChange={(v) => setDraft(tag.id, "value", v)}
-                  onCommit={(v) => commitEdit(tag, "value", v)}
-                  className="flex-1 min-w-0"
-                />
-                <IconButton
-                  dismiss
-                  label={`Remove ${tag.key}${tag.value ? ` ${tag.value}` : ""}`}
-                  tone="ghost"
-                  onClick={() => handleRemove(tag)}
-                  className="shrink-0"
-                />
-              </div>
-              {keyDup && (
-                <span
-                  id={rowErrorId}
-                  role="alert"
-                  data-testid="manage-tag-edit-dup-error"
-                  className="text-caption text-error"
+      {/* Tag rows — shared 3-column grid: [key][value][action].
+          All rows (edit + add) sit in the same grid so the action column
+          auto-sizes to the widest child (the "Add" button) and × aligns
+          with it above. `relative z-10` creates a stacking context above the
+          footer so TagSuggest dropdowns (z-30 within this context) render
+          on top of the footer copy. */}
+      <div className="px-5 pt-4 pb-2 relative z-10">
+        <div className="grid grid-cols-[1fr_1fr_auto] gap-x-2 gap-y-3">
+          {tags.map((tag) => {
+            const draft = drafts[tag.id] ?? { key: tag.key, value: tag.value ?? "" };
+            const keyDup = editKeyDupId === tag.id;
+            const rowErrorId = `${editErrorIdPrefix}-${tag.id}`;
+            return (
+              <div key={tag.id} className="contents">
+                <div
+                  data-testid="manage-tag-row"
+                  className="col-span-3 grid grid-cols-subgrid items-center"
                 >
-                  This sample already has a tag with that key.
-                </span>
-              )}
-            </div>
-          );
-        })}
+                  <TagSuggest
+                    label={`Key for tag ${tag.id}`}
+                    mode="key"
+                    value={draft.key}
+                    options={keyOptions}
+                    onValueChange={(v) => setDraft(tag.id, "key", v)}
+                    onCommit={(v) => commitEdit(tag, "key", v)}
+                    invalid={keyDup}
+                    {...(keyDup ? { "aria-describedby": rowErrorId } : {})}
+                    className="min-w-0 w-full"
+                  />
+                  <TagSuggest
+                    label={`Value for tag ${tag.id}`}
+                    mode="value"
+                    value={draft.value}
+                    options={valueOptionsFor(draft.key)}
+                    onValueChange={(v) => setDraft(tag.id, "value", v)}
+                    onCommit={(v) => commitEdit(tag, "value", v)}
+                    className="min-w-0 w-full"
+                  />
+                  <IconButton
+                    dismiss
+                    label={`Remove ${tag.key}${tag.value ? ` ${tag.value}` : ""}`}
+                    tone="ghost"
+                    onClick={() => handleRemove(tag)}
+                  />
+                </div>
+                {keyDup && (
+                  <span
+                    id={rowErrorId}
+                    role="alert"
+                    data-testid="manage-tag-edit-dup-error"
+                    className="col-span-3 text-caption text-error"
+                  >
+                    This sample already has a tag with that key.
+                  </span>
+                )}
+              </div>
+            );
+          })}
 
-        {/* Add-a-tag row */}
-        <div
-          data-testid="manage-tag-add-row"
-          className="flex items-center gap-2"
-        >
-          <TagSuggest
-            label="New tag key"
-            mode="key"
-            value={addKey}
-            options={keyOptions}
-            onValueChange={clearAddDupError}
-            onCommit={(v) => {
-              clearAddDupError(v);
-            }}
-            invalid={addKeyDup}
-            {...(addKeyDup ? { "aria-describedby": addErrorId } : {})}
-            className="flex-1 min-w-0"
-          />
-          <TagSuggest
-            label="New tag value"
-            mode="value"
-            value={addValue}
-            options={valueOptionsFor(addKey)}
-            onValueChange={setAddValue}
-            onCommit={(v) => setAddValue(v)}
-            className="flex-1 min-w-0"
-          />
-          <Button variant="solid" onClick={handleAdd} className="shrink-0">
-            Add
-          </Button>
-        </div>
-        {addKeyDup && (
-          <span
-            id={addErrorId}
-            role="alert"
-            data-testid="manage-tag-dup-error"
-            className={cx("text-caption text-error")}
+          {/* Add-a-tag row — aligns with the edit rows above */}
+          <div
+            data-testid="manage-tag-add-row"
+            className="col-span-3 grid grid-cols-subgrid items-center"
           >
-            This sample already has a tag with that key.
-          </span>
-        )}
+            <TagSuggest
+              label="New tag key"
+              mode="key"
+              value={addKey}
+              options={keyOptions}
+              onValueChange={clearAddDupError}
+              onCommit={(v) => {
+                clearAddDupError(v);
+              }}
+              invalid={addKeyDup}
+              {...(addKeyDup ? { "aria-describedby": addErrorId } : {})}
+              className="min-w-0 w-full"
+            />
+            <TagSuggest
+              label="New tag value"
+              mode="value"
+              value={addValue}
+              options={valueOptionsFor(addKey)}
+              onValueChange={setAddValue}
+              onCommit={(v) => setAddValue(v)}
+              className="min-w-0 w-full"
+            />
+            <Button variant="solid" onClick={handleAdd}>
+              Add
+            </Button>
+          </div>
+          {addKeyDup && (
+            <span
+              id={addErrorId}
+              role="alert"
+              data-testid="manage-tag-dup-error"
+              className={cx("col-span-3 text-caption text-error")}
+            >
+              This sample already has a tag with that key.
+            </span>
+          )}
+        </div>
       </div>
 
       <ModalFooter

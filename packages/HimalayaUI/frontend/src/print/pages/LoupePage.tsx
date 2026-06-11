@@ -296,6 +296,7 @@ export function LoupePage(): JSX.Element {
           ← Back to the sheet
         </button>
         <PlateHeader
+          as="h1"
           title={sample?.display_name ?? sample?.name ?? "—"}
           subtitle={`${sample?.name ?? "—"} · ${exposurePosition}`}
           className="mb-5"

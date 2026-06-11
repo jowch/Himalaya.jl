@@ -112,7 +112,7 @@ export function Chip({
         className={cx(
           pillBase,
           sizeClass[size],
-          "text-ink-faint border border-dashed border-hair-strong hover:text-accent hover:border-accent focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-0 focus-visible:outline-accent",
+          "text-ink-soft border border-dashed border-hair-strong hover:text-accent hover:border-accent focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-0 focus-visible:outline-accent",
           className,
         )}
       >

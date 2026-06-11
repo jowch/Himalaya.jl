@@ -208,4 +208,12 @@ describe("<Chip> add", () => {
     render(<Chip variant="add" />);
     expect(screen.getByTestId("chip").textContent).toContain("+ add");
   });
+
+  it("is a real interactive button (role=button) so it is keyboard-reachable", () => {
+    render(<Chip variant="add">+ tag</Chip>);
+    // The add invite must render as a <button> — required for keyboard operability
+    // (Tab + Enter/Space) and for the 4.5:1 resting contrast to be a WCAG 1.4.3
+    // requirement rather than the relaxed 3:1 non-text threshold.
+    expect(screen.getByRole("button", { name: "Add" })).toBeInTheDocument();
+  });
 });

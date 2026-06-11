@@ -110,6 +110,13 @@ describe("LoupePage", () => {
     expect(screen.getByTestId("loupe-side-panel")).toBeInTheDocument();
   });
 
+  it("sample title renders as h1 — the document outline has a top-level anchor (LO-NOH1)", () => {
+    renderAt(42);
+    // WCAG 1.3.1 / 2.4.6: the loupe has no outer h1 from a shell, so PlateHeader
+    // must be promoted to h1 so assistive technology can navigate to the page topic.
+    expect(screen.getByRole("heading", { level: 1, name: /JC042 — LL37/ })).toBeInTheDocument();
+  });
+
   it("opens on the representative exposure (id 1)", () => {
     renderAt(42);
     expect(screen.getByTestId("big-frame")).not.toHaveAttribute("data-rejected");
