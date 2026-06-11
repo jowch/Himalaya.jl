@@ -37,6 +37,26 @@ const CONTACT_SHEET_FIXTURE = (
 );
 
 /**
+ * Single shared predicate (SA-F3): how many distinct samples a selection
+ * spans, counted EXACTLY the way the Drop/Keep/Restore handler routes the
+ * batch — distinct owners among the ids `ownerOf` can map (unmappable ids
+ * are skipped by the handler, so they don't count here either). Both the
+ * CullBar disclosure and the toast receipt go through this one function so
+ * the promise and the action can never count differently.
+ */
+function selectionSpread(
+  selected: ReadonlySet<number>,
+  ownerOf: ReadonlyMap<number, number>,
+): number {
+  const owners = new Set<number>();
+  for (const id of selected) {
+    const sampleId = ownerOf.get(id);
+    if (sampleId !== undefined) owners.add(sampleId);
+  }
+  return owners.size;
+}
+
+/**
  * SamplesPage (greenfield) — the contact-sheet table at /samples.
  *
  * Reimplemented from src/print composites + the sample-table mockup: a
@@ -175,7 +195,11 @@ export function SamplesPage(): JSX.Element {
     if (n > 0) {
       const verb =
         status === "rejected" ? "dropped" : status === "accepted" ? "kept" : "restored";
-      showToast(`${n} frame${n === 1 ? "" : "s"} ${verb}`, "success");
+      // SA-F3: the receipt matches the bar's promise — a cross-sample batch
+      // discloses its spread with the same suffix, under the same predicate.
+      const spread = selectionSpread(selected, ownerOf);
+      const suffix = spread > 1 ? ` across ${spread} samples` : "";
+      showToast(`${n} frame${n === 1 ? "" : "s"} ${verb}${suffix}`, "success");
     }
     setSelected(new Set());
     anchorRef.current = null;
@@ -340,6 +364,7 @@ export function SamplesPage(): JSX.Element {
       {/* ── Floating cull bar (page root) ─────────────────────────────────────── */}
       <CullBar
         count={selected.size}
+        sampleCount={selectionSpread(selected, ownerOf)}
         show={selected.size > 0}
         onReject={() => batchSet("rejected")}
         onKeep={() => batchSet("accepted")}

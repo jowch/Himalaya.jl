@@ -19,6 +19,41 @@ describe("CullBar", () => {
     expect(bar.textContent).not.toContain("frames selected");
   });
 
+  it("stays count-only when sampleCount is omitted", () => {
+    render(<CullBar count={3} show />);
+    const bar = screen.getByTestId("cull-bar");
+    expect(bar.textContent).toContain("frames selected");
+    expect(bar.textContent).not.toContain("across");
+  });
+
+  it("stays count-only when the selection sits within one sample (sampleCount=1)", () => {
+    // No noise when nothing is hidden: a single-sample selection reads
+    // exactly "N frames selected" — and never "across 1 samples".
+    render(<CullBar count={3} sampleCount={1} show />);
+    const bar = screen.getByTestId("cull-bar");
+    expect(bar.textContent).toContain("frames selected");
+    expect(bar.textContent).not.toContain("across");
+  });
+
+  it("discloses the spread when the selection spans samples (SA-F3)", () => {
+    render(<CullBar count={5} sampleCount={2} show />);
+    const bar = screen.getByTestId("cull-bar");
+    expect(bar.textContent).toContain("5");
+    expect(bar.textContent).toContain("frames selected across");
+    expect(bar.textContent).toContain("2");
+    expect(bar.textContent).toContain("samples");
+  });
+
+  it("keeps both grains correct: singular frame, plural samples", () => {
+    render(<CullBar count={1} sampleCount={2} show />);
+    const bar = screen.getByTestId("cull-bar");
+    expect(bar.textContent).toContain("frame selected across");
+    expect(bar.textContent).not.toContain("frames selected");
+    // The suffix only ever appears for a spread (>1), so "samples" is plural.
+    expect(bar.textContent).toContain("samples");
+    expect(bar.textContent).not.toContain("1 samples");
+  });
+
   it("is hidden (data-show=false) when show is omitted", () => {
     render(<CullBar count={0} />);
     expect(screen.getByTestId("cull-bar")).toHaveAttribute("data-show", "false");

@@ -299,6 +299,69 @@ describe("SamplesPage", () => {
     }
   });
 
+  it("a cross-sample selection discloses its spread in the cull bar (SA-F3)", () => {
+    renderAt("/samples?beamtime=1");
+    // Sample 1 renders thumbs 0-2; sample 2 renders thumbs 3-4. Select one
+    // frame from EACH row — the bar must disclose that the selection spans
+    // two samples, not just report a flat count.
+    const thumbs = screen.getAllByTestId("thumbnail");
+    fireEvent.click(thumbs[0]!); // sample 1 → exposure 100
+    fireEvent.click(thumbs[3]!); // sample 2 → exposure 200
+    const bar = screen.getByTestId("cull-bar");
+    expect(bar.textContent).toContain("frames selected across");
+    expect(bar.textContent).toContain("2 samples");
+  });
+
+  it("a single-sample selection stays count-only — no 'across' noise", () => {
+    renderAt("/samples?beamtime=1");
+    const thumbs = screen.getAllByTestId("thumbnail");
+    fireEvent.click(thumbs[0]!); // sample 1
+    fireEvent.click(thumbs[1]!); // sample 1 again
+    const bar = screen.getByTestId("cull-bar");
+    expect(bar.textContent).toContain("frames selected");
+    expect(bar.textContent).not.toContain("across");
+  });
+
+  it("the Drop toast carries the same spread disclosure as the bar (SA-F3)", () => {
+    const toast = vi.fn();
+    setToastImpl(toast);
+    try {
+      renderAt("/samples?beamtime=1");
+      const thumbs = screen.getAllByTestId("thumbnail");
+      fireEvent.click(thumbs[0]!); // sample 1 → exposure 100
+      fireEvent.click(thumbs[3]!); // sample 2 → exposure 200
+      fireEvent.click(screen.getByRole("button", { name: /Drop/ }));
+      // The receipt matches the bar's promise: both frames, both samples.
+      expect(toast).toHaveBeenCalledWith(
+        "2 frames dropped across 2 samples",
+        "success",
+      );
+      expect(batchMutate).toHaveBeenCalledWith({
+        sampleId: 1, exposureId: 100, status: "rejected",
+      });
+      expect(batchMutate).toHaveBeenCalledWith({
+        sampleId: 2, exposureId: 200, status: "rejected",
+      });
+    } finally {
+      setToastImpl(null);
+    }
+  });
+
+  it("a single-sample Drop toast carries no spread suffix", () => {
+    const toast = vi.fn();
+    setToastImpl(toast);
+    try {
+      renderAt("/samples?beamtime=1");
+      const thumbs = screen.getAllByTestId("thumbnail");
+      fireEvent.click(thumbs[0]!);
+      fireEvent.click(thumbs[1]!);
+      fireEvent.click(screen.getByRole("button", { name: /Drop/ }));
+      expect(toast).toHaveBeenCalledWith("2 frames dropped", "success");
+    } finally {
+      setToastImpl(null);
+    }
+  });
+
   it("shift-click extends the contiguous range within one sample only", () => {
     renderAt("/samples?beamtime=1");
     // Sample 1 (3 thumbs) then sample 2 (2 thumbs).

@@ -30,6 +30,12 @@ function cx(...parts: Array<string | false | null | undefined>): string {
 export interface CullBarProps {
   /** Number of currently-selected frames. Shown as the mono count. */
   count: number;
+  /** Number of distinct samples the selection spans (SA-F3). When > 1 the
+   *  count line discloses the spread ("… across M samples") so a selection
+   *  accumulated across off-screen rows is never silently included in a
+   *  Drop. Omitted or 1 → no suffix: no noise when nothing is hidden. The
+   *  parent must derive this from the SAME mapping its Drop handler uses. */
+  sampleCount?: number;
   /** true → visible + interactive; false → hidden (faded, inert,
    *  pointer-events:none) while staying mounted so it can animate.
    *  Default false. */
@@ -44,6 +50,7 @@ export interface CullBarProps {
 
 export function CullBar({
   count,
+  sampleCount,
   show = false,
   onReject,
   onKeep,
@@ -70,6 +77,16 @@ export function CullBar({
     >
       <span className="text-sm font-semibold mr-2.5">
         <b className="font-mono">{count}</b> frame{count === 1 ? "" : "s"} selected
+        {sampleCount !== undefined && sampleCount > 1 && (
+          // Spread disclosure (SA-F3). Rendered only for a spread (> 1), so
+          // "samples" is always correctly plural here — "across 1 samples"
+          // can never appear.
+          <>
+            {" across "}
+            <b className="font-mono">{sampleCount}</b>
+            {" samples"}
+          </>
+        )}
       </span>
       <Button variant="accent" onClick={onReject}>
         Drop<span className="font-mono text-xs opacity-60 ml-1">X</span>
