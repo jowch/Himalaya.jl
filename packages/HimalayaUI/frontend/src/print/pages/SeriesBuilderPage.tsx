@@ -81,10 +81,17 @@ export function SeriesBuilderPage(): JSX.Element {
   const [scale, setScale] = useState<Scale>("log");
   const [hoveredKey, setHoveredKey] = useState<string | undefined>(undefined);
 
-  // ── Confirm chain (Save → Commit → discard) ─────────────────────────────
+  // ── Confirm chain (Save → await fresh cache → Commit → discard) ─────────
   const save = useSaveSeries();
   const commit = useCommitSeriesPlate();
-  const stage = useRef<"idle" | "saving" | "committing">("idle");
+  const stage = useRef<"idle" | "saving" | "awaiting-fresh" | "committing">("idle");
+  // Confirm-time snapshot of the series query's dataUpdatedAt. The commit only
+  // fires once the cache holds a series NEWER than this watermark. That is a
+  // recency gate, not a provenance gate: normally the newer data is our own
+  // save's reconciliation, but under concurrent writes it is whatever the
+  // server's latest projection holds (LWW — the commit route itself is
+  // last-write-wins; conflict UI cancelled by decision).
+  const watermark = useRef(0);
 
   const series = seriesQ.data;
   // The active draft only counts when it targets THIS series.
@@ -93,27 +100,54 @@ export function SeriesBuilderPage(): JSX.Element {
   // LOAD-BEARING: the page never calls save.reset()/commit.reset(). A lingering
   // save.isSuccess/commit.isSuccess === true between Confirm runs is INERT
   // because every chain effect below is `stage`-ref gated — they fire only while
-  // stage.current is the matching phase ("saving"/"committing"), and onConfirm
-  // re-arms the chain by flipping stage to "saving" itself. Do NOT add a reset()
-  // or remove the stage gating: a reset would race the SSE-vs-HTTP deferred
-  // resolution, and dropping the gate would let a stale isSuccess re-fire the
-  // commit on the next unrelated re-render.
+  // stage.current is the matching phase, and onConfirm re-arms the chain by
+  // flipping stage to "saving" itself. Do NOT add a reset() or remove the stage
+  // gating: a reset would race the SSE-vs-HTTP deferred resolution, and dropping
+  // the gate would let a stale isSuccess re-fire the commit on the next
+  // unrelated re-render.
   //
-  // Save landed → commit the FRESH plate from the save response, never the
-  // stale draft. `save.data` is the updated full Series on the HTTP-wins path
-  // (useSaveSeries surfaces mutation.data); guard with isFullSeries so the
-  // SSE-wins partial shape (no members) can't be committed.
+  // Save landed → commit the FRESH plate from the SERIES QUERY CACHE, never the
+  // stale draft and never `save.data`. Under the queue's SSE-wins race the
+  // own-op SSE confirmation resolves `save.data` as the synthesized PARTIAL
+  // ({id}, no members/state — saveSeriesMutator.synthesizeFromSse), so gating
+  // the commit on isFullSeries(save.data) stalls the chain on live backends
+  // (P0 BU-CONFIRMSTALL). The cache is the one source that is correct on BOTH
+  // race outcomes: the mutator's onSuccess either setQueryData's the full HTTP
+  // response or invalidates the key so TanStack refetches the canonical
+  // projection — either way the series key gets a full Series and its
+  // dataUpdatedAt advances past the Confirm-time watermark. The cache is also
+  // the only holder of server-resolved SeriesMember[] (exposure_ids included)
+  // that buildSeriesCommitBody builds from — the local draft is a sample-level
+  // recipe, not resolved members (the body itself is positional; member ids
+  // are stripped on the wire).
+  //
+  // Single transition effect: "saving" + save.isSuccess → "awaiting-fresh";
+  // "awaiting-fresh" + fresh full series in cache → "committing" + mutate.
+  // One effect (not two) so the same pass that observes save.isSuccess also
+  // re-checks the cache — on the HTTP-wins path setQueryData lands BEFORE the
+  // mutation flips to success, so a split second effect keyed only on
+  // dataUpdatedAt could miss its trigger and stall.
   useEffect(() => {
-    if (stage.current !== "saving" || !save.isSuccess || !save.data) return;
-    if (!api.isFullSeries(save.data)) {
-      // SSE-wins partial: cannot commit from a memberless shape. Reset so the
-      // user can retry; the save itself already landed.
-      stage.current = "idle";
-      return;
-    }
+    if (stage.current === "saving" && save.isSuccess) stage.current = "awaiting-fresh";
+    if (stage.current !== "awaiting-fresh") return;
+    const fresh = seriesQ.data;
+    if (fresh === undefined || !api.isFullSeries(fresh)) return;
+    if (seriesQ.dataUpdatedAt <= watermark.current) return;
     stage.current = "committing";
-    commit.mutate({ id, ...buildSeriesCommitBody(save.data.members) });
-  }, [save.isSuccess, save.data, id, commit]);
+    commit.mutate({ id, ...buildSeriesCommitBody(fresh.members) });
+  }, [save.isSuccess, seriesQ.data, seriesQ.dataUpdatedAt, id, commit]);
+
+  // Stall exit: the refetch we are awaiting ERRORED (useSeries has retry:
+  // false, so this surfaces fast). Reset so Confirm re-arms, and tell the
+  // truth: the PATCH landed server-side; only the confirm step is missing.
+  // Stage-ref guarded → single-fire (the first run flips stage to "idle").
+  // save.isSuccess is in the deps so an error that PRE-DATES the stage flip
+  // (isError already true when we enter awaiting-fresh) still gets a pass.
+  useEffect(() => {
+    if (stage.current !== "awaiting-fresh" || !seriesQ.isError) return;
+    stage.current = "idle";
+    showToast("Order saved, but confirming failed. Try Confirm again.", "error");
+  }, [seriesQ.isError, save.isSuccess]);
 
   // Commit landed → drop the draft; stay (now read state).
   useEffect(() => {
@@ -177,6 +211,9 @@ export function SeriesBuilderPage(): JSX.Element {
 
   const onConfirm = (): void => {
     if (!liveDraft || stage.current !== "idle") return;
+    // Watermark BEFORE the save fires: any cache update at or before this
+    // instant predates the save and must not be committed.
+    watermark.current = seriesQ.dataUpdatedAt;
     stage.current = "saving";
     save.mutate({ id, ...buildSeriesSaveBody(liveDraft) });
   };

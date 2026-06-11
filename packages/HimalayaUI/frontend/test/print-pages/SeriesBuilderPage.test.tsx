@@ -21,6 +21,11 @@ function emptyMut(): MutResult {
 
 const state = {
   seriesById: new Map<number, Series>(),
+  // Mirrors the TanStack query's dataUpdatedAt for the series key. The page's
+  // Save→Commit chain watermarks this at Confirm and only commits once the
+  // cache delivers a series NEWER than the watermark — so chain tests bump it
+  // when they simulate the queue's onSuccess (setQueryData / invalidate→refetch).
+  seriesUpdatedAt: 1000,
   traces: {} as Record<number, Trace>,
   corpus: [] as CorpusSample[],
   loading: false,
@@ -34,6 +39,7 @@ vi.mock("../../src/queries", () => ({
     data: id !== undefined ? state.seriesById.get(id) : undefined,
     isLoading: state.loading,
     isError: state.error,
+    dataUpdatedAt: state.seriesUpdatedAt,
   }),
   useSeriesTraces: (_id: number | undefined) => ({ data: state.traces, isLoading: false }),
   useCorpusSamples: () => ({ data: state.corpus, isLoading: false, isError: false }),
@@ -135,6 +141,7 @@ function resetDraft(): void {
 beforeEach(() => {
   vi.clearAllMocks();
   state.seriesById = new Map([[10, baseSeries()]]);
+  state.seriesUpdatedAt = 1000;
   state.traces = {};
   state.corpus = [corpusSample(1, "A"), corpusSample(2, "B"), corpusSample(3, "C")];
   state.loading = false;
@@ -310,11 +317,17 @@ describe("SeriesBuilderPage", () => {
 
     // Flip save to success with a FRESH server response whose members differ
     // from the stale draft plate (different exposure ids prove provenance).
+    // HTTP-wins path: saveSeriesMutator.onSuccess setQueryData's the full
+    // response into the series cache, bumping dataUpdatedAt — simulate that
+    // cache write alongside the mutation flip (the page commits from the
+    // CACHE, the only source that is correct on both race outcomes).
     const savedSeries = baseSeries({
       title: "Edited",
       members: [member(7), member(8)],
     });
     state.save = { ...state.save, isSuccess: true, data: savedSeries };
+    state.seriesById.set(10, savedSeries);
+    state.seriesUpdatedAt = 2000;
     act(() => rerender());
 
     // Commit fired with the SAVE RESPONSE members (display_order 7,8), not 1,2.
@@ -329,6 +342,129 @@ describe("SeriesBuilderPage", () => {
     expect(useAppState.getState().seriesDraft).toBeNull();
   });
 
+  it("HTTP-wins ordering: a fresh cache BEFORE save.isSuccess does not commit; the later isSuccess flip does", () => {
+    // Pins the merged-single-effect rationale: on HTTP-wins the mutator's
+    // setQueryData lands (cache fresh, dataUpdatedAt advanced) BEFORE the
+    // mutation flips to success. A premature commit here would publish before
+    // the save settled; a split effect keyed only on dataUpdatedAt would
+    // conversely stall. Two renders, one assertion each.
+    const { rerender } = renderPage();
+    fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "Edited" } });
+    fireEvent.click(screen.getByRole("button", { name: /confirm series/i }));
+
+    // Render N: cache already fresh, mutation still pending.
+    const savedSeries = baseSeries({ title: "Edited", members: [member(7), member(8)] });
+    state.seriesById.set(10, savedSeries);
+    state.seriesUpdatedAt = 2000;
+    act(() => rerender());
+    expect(state.commit.mutate).not.toHaveBeenCalled();
+
+    // Render N+1: the success flip arrives; the same effect re-checks the
+    // (already fresh) cache and commits.
+    state.save = { ...state.save, isSuccess: true, data: savedSeries };
+    act(() => rerender());
+    expect(state.commit.mutate).toHaveBeenCalledTimes(1);
+  });
+
+  it("P0 BU-CONFIRMSTALL: SSE-wins partial save response still commits once the cache refetch delivers the fresh series", () => {
+    // Live repro: the queue's own-op SSE confirmation resolves save.data as the
+    // SYNTHESIZED PARTIAL ({id}, no members/state). The old code gated commit
+    // on isFullSeries(save.data) and silently stalled. The fix commits from the
+    // SERIES QUERY CACHE: saveSeriesMutator.onSuccess invalidates the key, the
+    // refetch lands the canonical full series, and the page watches
+    // dataUpdatedAt past the Confirm-time watermark.
+    const toast = vi.fn();
+    setToastImpl(toast);
+    try {
+      const { rerender } = renderPage();
+      fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "Edited" } });
+      fireEvent.click(screen.getByRole("button", { name: /confirm series/i }));
+      expect(state.save.mutate).toHaveBeenCalledTimes(1);
+
+      // SSE wins the race: save.data is the memberless partial shape.
+      state.save = { ...state.save, isSuccess: true, data: { id: 10 } };
+      act(() => rerender());
+      // The partial alone must NOT be committed (no members to commit from).
+      expect(state.commit.mutate).not.toHaveBeenCalled();
+
+      // The mutator's invalidate → TanStack refetch → canonical full series
+      // lands in the cache with a newer dataUpdatedAt.
+      const fresh = baseSeries({ title: "Edited", members: [member(7), member(8)] });
+      state.seriesById.set(10, fresh);
+      state.seriesUpdatedAt = 2000;
+      act(() => rerender());
+
+      // Commit fired with the FRESH cache members (the cache is the only
+      // holder of server-resolved SeriesMember[] the commit body builds from).
+      expect(state.commit.mutate).toHaveBeenCalledTimes(1);
+      const commitArg = state.commit.mutate.mock.calls[0]![0] as { id: number; members: Array<{ exposure_id: number }> };
+      expect(commitArg.id).toBe(10);
+      expect(commitArg.members.map((m) => m.exposure_id).sort()).toEqual([7, 8]);
+
+      // Commit success → draft discarded + terminal toast (chain completes).
+      state.commit = { ...state.commit, isSuccess: true };
+      act(() => rerender());
+      expect(useAppState.getState().seriesDraft).toBeNull();
+      expect(toast).toHaveBeenCalledWith("Series confirmed", "success");
+    } finally {
+      setToastImpl(null);
+    }
+  });
+
+  it("awaiting-fresh + series query error: stage resets with a truthful toast, draft preserved, Confirm re-armed", () => {
+    const toast = vi.fn();
+    setToastImpl(toast);
+    try {
+      const { rerender } = renderPage();
+      fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "Edited" } });
+      fireEvent.click(screen.getByRole("button", { name: /confirm series/i }));
+
+      // SSE-wins partial → the chain is awaiting the cache refetch…
+      state.save = { ...state.save, isSuccess: true, data: { id: 10 } };
+      act(() => rerender());
+      expect(state.commit.mutate).not.toHaveBeenCalled();
+
+      // …but the refetch ERRORS. The chain must not stall silently: it resets
+      // and tells the truth (the PATCH landed; only the confirm step failed).
+      state.error = true;
+      act(() => rerender());
+      expect(toast).toHaveBeenCalledWith(
+        "Order saved, but confirming failed. Try Confirm again.",
+        "error",
+      );
+      expect(state.commit.mutate).not.toHaveBeenCalled();
+      // Draft preserved so the user keeps their edits.
+      expect(useAppState.getState().seriesDraft).not.toBeNull();
+
+      // Query recovers → Confirm is re-enabled and re-fires the save chain.
+      state.error = false;
+      act(() => rerender());
+      const confirm = screen.getByRole("button", { name: /confirm series/i });
+      expect(confirm).not.toBeDisabled();
+      fireEvent.click(confirm);
+      expect(state.save.mutate).toHaveBeenCalledTimes(2);
+    } finally {
+      setToastImpl(null);
+    }
+  });
+
+  it("stale-cache guard: a series query older than the Confirm watermark does NOT trigger the commit", () => {
+    const { rerender } = renderPage();
+    fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "Edited" } });
+    fireEvent.click(screen.getByRole("button", { name: /confirm series/i }));
+
+    // Save lands (SSE-wins partial), but the cache still holds the PRE-save
+    // series: dataUpdatedAt has not advanced past the Confirm-time watermark.
+    state.save = { ...state.save, isSuccess: true, data: { id: 10 } };
+    state.seriesById.set(10, baseSeries({ members: [member(7), member(8)] }));
+    // state.seriesUpdatedAt stays at its beforeEach value (== watermark).
+    act(() => rerender());
+    act(() => rerender());
+
+    // No premature commit from stale data.
+    expect(state.commit.mutate).not.toHaveBeenCalled();
+  });
+
   it("confirm success announces a 'Series confirmed' toast", () => {
     const toast = vi.fn();
     setToastImpl(toast);
@@ -336,7 +472,11 @@ describe("SeriesBuilderPage", () => {
       const { rerender } = renderPage();
       fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "Edited" } });
       fireEvent.click(screen.getByRole("button", { name: /confirm series/i }));
-      state.save = { ...state.save, isSuccess: true, data: baseSeries({ title: "Edited" }) };
+      const savedSeries = baseSeries({ title: "Edited" });
+      state.save = { ...state.save, isSuccess: true, data: savedSeries };
+      // Simulate the mutator's HTTP-wins setQueryData (cache delivers fresh).
+      state.seriesById.set(10, savedSeries);
+      state.seriesUpdatedAt = 2000;
       act(() => rerender());
       state.commit = { ...state.commit, isSuccess: true };
       act(() => rerender());
