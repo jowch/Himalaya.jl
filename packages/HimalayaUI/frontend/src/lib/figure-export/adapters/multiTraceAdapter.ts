@@ -129,7 +129,15 @@ export function buildMultiTraceExportSpec(args: MultiTraceAdapterArgs): ExportSp
   const yConfig: Record<string, unknown> = {
     type: "linear",
     label: null,
-    domain: [0, panelHeight], // synthetic — marks pre-place y in pixel space
+    // Synthetic pixel-space scale: every multi-trace mark pre-places y in
+    // SCREEN convention (y grows downward; band tops are small values, the
+    // in-band trace maps high intensity toward bandTop). Observable Plot's
+    // default linear y is a DATA scale (range inverted: larger values render
+    // higher), so the domain must run [panelHeight, 0] to restore screen
+    // semantics. With [0, panelHeight] the whole figure renders vertically
+    // mirrored vs the plate (Builder re-score #4 P1: display-order 0
+    // exported at the TOP while the plate paints it at the bottom).
+    domain: [panelHeight, 0],
     axis: null,
   };
 

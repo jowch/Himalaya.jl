@@ -539,3 +539,75 @@ describe("buildMultiTraceExportSpec — CLEAN_SCIENTIFIC preset (E-8)", () => {
     expect(svg.textContent).toContain(spec.footnote);
   });
 });
+
+describe("rendered-geometry pins (Builder re-score #4 P1: the export was vertically mirrored)", () => {
+  // These pin the FINAL SVG geometry, not the band arrays — the marks are
+  // authored in screen convention while Plot's y scale is a data scale, and
+  // only the rendered output can prove the two conventions compose upright.
+  function twoMemberSvg(): SVGSVGElement {
+    const peaky: Trace = {
+      // A single sharp peak at q=0.2 over a flat floor.
+      q: [0.1, 0.15, 0.2, 0.25, 0.3],
+      I: [10, 10, 1000, 10, 10],
+      sigma: [1, 1, 1, 1, 1],
+    };
+    const t = new Map<number, Trace>([[100, peaky], [101, peaky]]);
+    const members = [
+      makeMember({ id: 1, exposure_id: 100, display_order: 0, label_override: "exp 100" }),
+      makeMember({ id: 2, exposure_id: 101, display_order: 1, label_override: "exp 101" }),
+    ];
+    const spec = buildMultiTraceExportSpec({
+      members,
+      traces: t,
+      comparisonTitle: "geometry pin",
+      xDomain: null,
+      showPeakTicks: false,
+      showPeakLabels: false,
+      groupingMode: "bySample",
+      sampleIdFor: () => null,
+    });
+    return buildExportSvg(spec);
+  }
+
+  function labelY(svg: SVGSVGElement, label: string): number {
+    const el = [...svg.querySelectorAll("text")].find((t) => t.textContent === label);
+    if (!el) throw new Error(`label ${label} not found`);
+    // Plot positions text via transform translate; the y attribute is the
+    // em-unit baseline shift ("0.32em"), not a position.
+    const m = /translate\([\d.+-]+[, ]([\d.+-]+)\)/.exec(el.getAttribute("transform") ?? "");
+    if (m) return Number(m[1]);
+    const yAttr = el.getAttribute("y");
+    if (yAttr !== null && !yAttr.endsWith("em")) return Number(yAttr);
+    throw new Error(`label ${label} has no positional y`);
+  }
+
+  it("display-order 0 renders BELOW display-order 1 (the plate's bottom-up stack)", () => {
+    const svg = twoMemberSvg();
+    expect(labelY(svg, "exp 100")).toBeGreaterThan(labelY(svg, "exp 101"));
+  });
+
+  it("within a band, the intensity peak points UP (smaller rendered y at the peak q)", () => {
+    const svg = twoMemberSvg();
+    // The trace lines are path elements; collect every path's points and find
+    // one whose x-midpoint y dips: min y must be WELL above (smaller than)
+    // the path's edge y values for a peaked trace.
+    const paths = [...svg.querySelectorAll("path")]
+      .map((p) => p.getAttribute("d") ?? "")
+      .filter((d) => (d.match(/[\d.]+,[\d.]+/g) ?? []).length >= 5);
+    expect(paths.length).toBeGreaterThan(0);
+    const upright = paths.some((d) => {
+      const pts = (d.match(/(-?[\d.]+),(-?[\d.]+)/g) ?? []).map((s) => {
+        const [x, y] = s.split(",").map(Number);
+        return { x: x!, y: y! };
+      });
+      if (pts.length < 5) return false;
+      const ys = pts.map((p) => p.y);
+      const minY = Math.min(...ys);
+      const edgeY = (ys[0]! + ys[ys.length - 1]!) / 2;
+      // Peak = an interior point substantially HIGHER (smaller y) than edges.
+      const minIdx = ys.indexOf(minY);
+      return minIdx > 0 && minIdx < ys.length - 1 && edgeY - minY > 5;
+    });
+    expect(upright).toBe(true);
+  });
+});
