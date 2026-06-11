@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import { DetectorPanel } from "../../src/print/components/DetectorPanel";
 
 const RINGS = [
@@ -54,6 +54,43 @@ describe("DetectorPanel", () => {
     expect(ring?.getAttribute("cx")).toBe("0.43");
     expect(ring?.getAttribute("cy")).toBe("0.2");
   });
+  it("captions the rings with a phase chip + frame-scope copy when ringPhases is provided", () => {
+    render(
+      <DetectorPanel src={null} rings={RINGS} ringPhases={["Hexagonal"]} />,
+    );
+    const caption = screen.getByTestId("detector-ring-caption");
+    expect(within(caption).getByTestId("phase-chip")).toHaveTextContent(
+      "Hexagonal",
+    );
+    // Reading order: the label LEADS ("rings: Hexagonal this frame's
+    // indexing"), so the a11y string never opens with a bare phase name.
+    expect(caption.textContent).toMatch(/^rings:/);
+    expect(caption).toHaveTextContent("this frame's indexing");
+    // The caption is the WCAG 1.4.1 second channel — it must live in the a11y
+    // tree, never hidden.
+    expect(caption.closest('[aria-hidden="true"]')).toBeNull();
+  });
+
+  it("renders one chip per distinct phase, in the given (rail) order", () => {
+    render(
+      <DetectorPanel
+        src={null}
+        rings={RINGS}
+        ringPhases={["Pn3m", "Im3m"]}
+      />,
+    );
+    const caption = screen.getByTestId("detector-ring-caption");
+    const chips = within(caption).getAllByTestId("phase-chip");
+    expect(chips.map((c) => c.textContent)).toEqual(["Pn3m", "Im3m"]);
+  });
+
+  it("omits the caption entirely when ringPhases is empty or absent", () => {
+    const { rerender } = render(<DetectorPanel src={null} ringPhases={[]} />);
+    expect(screen.queryByTestId("detector-ring-caption")).toBeNull();
+    rerender(<DetectorPanel src={null} rings={RINGS} />);
+    expect(screen.queryByTestId("detector-ring-caption")).toBeNull();
+  });
+
   it("fires onHoverQ with the ring's q when a ring is hovered", () => {
     const onHoverQ = vi.fn();
     const { container } = render(

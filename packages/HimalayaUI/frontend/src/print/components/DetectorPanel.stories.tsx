@@ -3,8 +3,8 @@ import { useState } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { DetectorPanel } from "./DetectorPanel";
 import { ThumbnailGallery, type GalleryExposure } from "./ThumbnailGallery";
-import type { RingInput } from "../detector/detectorGeometry";
-import { phaseColor } from "../../phases";
+import { toDetectorRings } from "../pages/focusAdapters";
+import type { IndexEntry, Peak } from "../../api";
 import thumb37 from "../fixtures/thumbs/37.png?url";
 import thumb65 from "../fixtures/thumbs/65.png?url";
 import thumb66 from "../fixtures/thumbs/66.png?url";
@@ -28,13 +28,33 @@ const BEAM37 = { x: 421.409 / IMG37.w, y: 1 - 836.946 / IMG37.h }; // ≈ {0.430
 // Assigned reflections, phase-coloured: a dominant Pn3m + a subtle Im3m (one
 // predicted-absent ghost). q in Å⁻¹; radii are the presentational fallback
 // (real radii arrive with full optical calibration).
-const RINGS: RingInput[] = [
-  { q: 0.082, color: phaseColor("Pn3m") },
-  { q: 0.116, color: phaseColor("Pn3m") },
-  { q: 0.142, color: phaseColor("Pn3m") },
-  { q: 0.103, color: phaseColor("Im3m") },
-  { q: 0.171, color: phaseColor("Im3m"), ghost: true },
+//
+// FocusPage derives BOTH the rings and the caption's phases from ONE
+// toDetectorRings walk over the active-index set; the story simulates that
+// page computation with the SAME adapter (never hand-built), so the caption
+// can only name hues that are actually on the frame: one assigned structure
+// → minimal IndexEntry/Peak fixtures → { rings, phases }.
+const ASSIGNED: Array<{ phase: string; qs: number[]; ghosts?: number[] }> = [
+  { phase: "Pn3m", qs: [0.082, 0.116, 0.142] },
+  { phase: "Im3m", qs: [0.103], ghosts: [0.171] },
 ];
+const PEAKS: Peak[] = ASSIGNED.flatMap(({ qs }) => qs).map((q, i) => ({
+  id: i + 1, exposure_id: 0, q, intensity: null, prominence: null,
+  sharpness: null, source: "auto", excluded: false,
+}));
+const ACTIVE: IndexEntry[] = ASSIGNED.map(({ phase, qs, ghosts }, i) => ({
+  id: i + 1, exposure_id: 0, phase, basis: qs[0]!, score: 0.9,
+  r_squared: 0.99, lattice_d: 150, ngc: null, status: "candidate",
+  kind: "auto", inputs_hash: null,
+  peaks: qs.map((q, j) => ({
+    peak_id: PEAKS.find((p) => p.q === q)!.id,
+    ratio_position: j + 1,
+    residual: 0,
+    q_observed: q,
+  })),
+  predicted_q: [...qs, ...(ghosts ?? [])], // ghosts sit on no observed peak
+}));
+const { rings: RINGS, phases: RING_PHASES } = toDetectorRings(ACTIVE, PEAKS);
 
 const meta: Meta<typeof DetectorPanel> = {
   title: "components/DetectorPanel",
@@ -56,6 +76,7 @@ function DetectorDemo() {
       <DetectorPanel
         src={SRCS[cur]!}
         rings={RINGS}
+        ringPhases={RING_PHASES}
         beamCenter={BEAM37}
         imageAspect={ASPECT37}
         {...(hoveredQ !== undefined ? { hoveredQ } : {})}
@@ -90,6 +111,7 @@ function OverflowDemo() {
       <DetectorPanel
         src={SRCS[cur % SRCS.length]!}
         rings={RINGS}
+        ringPhases={RING_PHASES}
         beamCenter={BEAM37}
         imageAspect={ASPECT37}
         tools={

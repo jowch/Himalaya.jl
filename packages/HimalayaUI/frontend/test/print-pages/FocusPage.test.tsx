@@ -216,6 +216,47 @@ describe("FocusPage", () => {
     expect(combsProps.hoveredQ).toBe(0.2);
   });
 
+  it("captions the detector rings with the assignment's phase for the displayed frame (FO-RING)", () => {
+    // assignment members = [1] → Pn3m is the active index; the detector caption
+    // must name it in text (the second channel for the hue-only rings) and tie
+    // it to the displayed frame.
+    renderAt(42);
+    const panel = screen.getByTestId("detector-panel");
+    const caption = within(panel).getByTestId("detector-ring-caption");
+    expect(within(caption).getByTestId("phase-chip")).toHaveTextContent("Pn3m");
+    // label leads the reading order
+    expect(caption.textContent).toMatch(/^rings:/);
+    expect(caption).toHaveTextContent("this frame's indexing");
+  });
+
+  it("does not chip a fully-landed custom index that colours zero rings (FO-RING no-lie)", () => {
+    // A committed custom index arrives with peaks: [] (insert_custom_index!
+    // writes no index_peaks rows). With every predicted_q within tol of an
+    // observed peak it emits NO coloured or ghost ring, so the caption must
+    // not name it — only the ring-emitting sibling.
+    state.indices = [
+      ix({ id: 1, phase: "Pn3m" }),
+      ix({
+        id: 3, phase: "Hexagonal", kind: "speculative",
+        peaks: [],
+        predicted_q: [0.2, 0.3], // both sit on observed peaks -> zero rings
+      }),
+    ];
+    state.assignment = { exposure_id: 7, state: "indexed", members: [1, 3] };
+    renderAt(42);
+    const panel = screen.getByTestId("detector-panel");
+    const caption = within(panel).getByTestId("detector-ring-caption");
+    const chips = within(caption).getAllByTestId("phase-chip");
+    expect(chips.map((c) => c.textContent)).toEqual(["Pn3m"]);
+  });
+
+  it("omits the detector ring caption when the frame has no assigned phases (FO-RING honest empty)", () => {
+    state.assignment = { exposure_id: 7, state: "indexed", members: [] };
+    renderAt(42);
+    const panel = screen.getByTestId("detector-panel");
+    expect(within(panel).queryByTestId("detector-ring-caption")).toBeNull();
+  });
+
   it("'+ custom index…' opens the CustomIndexModal", () => {
     renderAt(42);
     fireEvent.click(screen.getByTestId("custom-index-trigger"));

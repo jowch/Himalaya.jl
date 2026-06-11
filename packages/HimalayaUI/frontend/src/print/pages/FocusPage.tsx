@@ -215,7 +215,11 @@ export function FocusPage(): JSX.Element {
     );
   }, [previewIx, activeIndices, peaks]);
 
-  const rings = useMemo(
+  // Rings + their caption phases come from ONE adapter walk: `phases` names
+  // only the phases that actually emitted a ring on this frame, so the caption
+  // can never chip a hue that is not there (FO-RING single source; the
+  // ring-less fully-landed custom index is the mainline case it guards).
+  const { rings, phases: ringPhases } = useMemo(
     () => toDetectorRings(activeIndices, peaks),
     [activeIndices, peaks],
   );
@@ -475,6 +479,7 @@ export function FocusPage(): JSX.Element {
               <DetectorPanel
                 src={detectorSrc}
                 rings={rings}
+                ringPhases={ringPhases}
                 {...(hoveredQ !== undefined ? { hoveredQ } : {})}
                 onHoverQ={setHoveredQ}
                 tools={

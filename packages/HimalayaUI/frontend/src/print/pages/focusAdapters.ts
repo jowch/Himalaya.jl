@@ -132,38 +132,54 @@ export function complementPeakIds(
 // ── detector rings (FocusDetectorPanel.tsx 52-77) ────────────────────────────
 
 /**
- * Active indices + observed peaks → greenfield `RingInput[]`:
+ * Active indices + observed peaks → greenfield rings + their caption phases:
  *  - each claimed peak q (ix.peaks[].q_observed) → a phase-coloured ring,
  *  - each predicted-but-absent order (predicted_q with no observed peak within
  *    tol) → a ghost ring,
  *  - each leftover observed peak (claimed by no active index) → a neutral ring
  *    (bare `{ q }`).
  * No active indices → no rings (the panel falls back to plain peak rings).
+ *
+ * `phases` is the ring-identity caption source (FO-RING): the distinct phases
+ * that actually put a ring on the frame, appended in walk (= rail) order the
+ * first time their index emits one. A ghost ring still carries the phase hue,
+ * so it counts; an index that emits NOTHING — the mainline case is a
+ * fully-landed custom index, which insert_custom_index! stores with no
+ * index_peaks rows (peaks: []) and whose every predicted_q sits on an observed
+ * peak — contributes no phase. Deriving both from the same walk keeps the
+ * caption honest by construction: it can only name hues that are on the frame.
  */
 export function toDetectorRings(
   activeIndices: IndexEntry[],
   peaks: Peak[],
-): RingInput[] {
-  if (activeIndices.length === 0) return [];
+): { rings: RingInput[]; phases: string[] } {
+  if (activeIndices.length === 0) return { rings: [], phases: [] };
   const peakQs = peaks.map((p) => p.q);
   const tol = spanTol(peakQs);
   const rings: RingInput[] = [];
+  const phases: string[] = [];
   const claimed: number[] = [];
   for (const ix of activeIndices) {
     const color = phaseColor(ix.phase);
+    let emitted = false;
     for (const p of ix.peaks) {
       rings.push({ q: p.q_observed, color });
       claimed.push(p.q_observed);
+      emitted = true;
     }
     for (const pq of ix.predicted_q) {
       const matched = peakQs.some((q) => Math.abs(q - pq) <= tol);
-      if (!matched) rings.push({ q: pq, color, ghost: true });
+      if (!matched) {
+        rings.push({ q: pq, color, ghost: true });
+        emitted = true;
+      }
     }
+    if (emitted && !phases.includes(ix.phase)) phases.push(ix.phase);
   }
   for (const q of peakQs) {
     if (!claimed.some((cq) => Math.abs(cq - q) <= tol)) rings.push({ q });
   }
-  return rings;
+  return { rings, phases };
 }
 
 // ── comb series (CombPanel.tsx) ──────────────────────────────────────────────

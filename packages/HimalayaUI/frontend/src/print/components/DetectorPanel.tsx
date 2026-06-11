@@ -1,6 +1,6 @@
 // src/print/components/DetectorPanel.tsx
 import type { ReactNode } from "react";
-import { Card } from "../ui";
+import { Card, PhaseChip } from "../ui";
 import { DetectorImage, DetectorRings, buildRingPlacements } from "../detector";
 import type { DetectorLutVariant } from "../detector/detectorLut";
 import type { DetectorCalibration, RingInput } from "../detector/detectorGeometry";
@@ -34,6 +34,12 @@ export interface DetectorPanelProps {
    *  the contained image fills it with no letterbox (rings register), and corrects
    *  the ring y-radius so they stay round. Default 1 (square). */
   imageAspect?: number;
+  /** Distinct phases of the displayed rings, in rail order. Non-empty →
+   *  a visible caption under the frame (PhaseChips + "rings: this frame's
+   *  indexing") naming the ring identity in text — the second channel for the
+   *  hue-only rings AND the tie to the displayed frame's own indexing.
+   *  Empty/omitted → no caption (honest empty for a ring-less frame). */
+  ringPhases?: string[];
   /** q hovered elsewhere (trace peak / comb tooth) → the matching ring lights —
    *  the cross-panel "triple lights up" link. */
   hoveredQ?: number;
@@ -51,6 +57,7 @@ export function DetectorPanel({
   tools,
   lutVariant,
   rings,
+  ringPhases,
   calibration,
   beamCenter,
   imageAspect,
@@ -102,6 +109,22 @@ export function DetectorPanel({
           />
         )}
       </div>
+      {ringPhases !== undefined && ringPhases.length > 0 && (
+        // Ring-identity caption: the text second channel for the hue-only
+        // rings, scoped to the displayed frame. In the a11y tree by design.
+        // Reading order: the label LEADS — "rings: <chips> this frame's
+        // indexing" — so the line never opens with a bare phase name.
+        <div
+          data-testid="detector-ring-caption"
+          className="text-caption text-ink-soft mt-2.5 flex flex-wrap items-center gap-1.5"
+        >
+          <span>rings:</span>
+          {ringPhases.map((phase) => (
+            <PhaseChip key={phase} phase={phase} />
+          ))}
+          <span>this frame's indexing</span>
+        </div>
+      )}
       {hint != null && (
         <div className="text-caption text-ink-soft mt-2.5">{hint}</div>
       )}

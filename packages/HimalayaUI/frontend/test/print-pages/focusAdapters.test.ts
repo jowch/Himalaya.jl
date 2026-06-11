@@ -137,8 +137,11 @@ describe("complementPeakIds", () => {
 // ── toDetectorRings (FocusDetectorPanel 52-77) ────────────────────────────────
 
 describe("toDetectorRings", () => {
-  it("returns no rings when there are no active indices", () => {
-    expect(toDetectorRings([], [peak({ id: 1, q: 0.1 })])).toEqual([]);
+  it("returns no rings and no phases when there are no active indices", () => {
+    expect(toDetectorRings([], [peak({ id: 1, q: 0.1 })])).toEqual({
+      rings: [],
+      phases: [],
+    });
   });
 
   it("claimed peaks -> coloured ring; predicted-absent -> ghost ring; leftover -> neutral", () => {
@@ -154,7 +157,7 @@ describe("toDetectorRings", () => {
         predicted_q: [0.10, 0.20, 0.35], // 0.35 has no observed peak -> ghost
       }),
     ];
-    const rings = toDetectorRings(active, peaks);
+    const { rings, phases } = toDetectorRings(active, peaks);
     const c = phaseColor("Pn3m");
     // two claimed coloured rings
     expect(rings).toContainEqual({ q: 0.10, color: c });
@@ -164,6 +167,67 @@ describe("toDetectorRings", () => {
     // leftover neutral ring is a bare q object (no color/ghost)
     expect(rings).toContainEqual({ q: 0.50 });
     expect(rings).toHaveLength(4);
+    // the index emitted rings -> its phase is the caption identity
+    expect(phases).toEqual(["Pn3m"]);
+  });
+
+  // FO-RING caption identity: `phases` names only the phases that actually put
+  // a ring (coloured or ghost) on the frame — derived from the SAME walk that
+  // emits the rings, never from bare ix.phase.
+  describe("phases (ring-identity caption source)", () => {
+    it("EXCLUDES a fully-landed custom index (peaks: [], every predicted_q matched -> zero rings)", () => {
+      // insert_custom_index! writes no index_peaks rows, so a committed custom
+      // index arrives with peaks: []. When its fit is perfect every predicted_q
+      // sits within tol of an observed peak, no ghost survives, and it colours
+      // ZERO rings (its peaks render as neutral leftovers). The caption must
+      // not chip it.
+      const peaks = [peak({ id: 1, q: 0.10 }), peak({ id: 2, q: 0.20 })];
+      const active = [
+        ix({
+          id: 1, phase: "Im3m",
+          peaks: [ref({ peak_id: 1, q_observed: 0.10 })],
+          predicted_q: [0.10],
+        }),
+        ix({
+          id: 2, phase: "Pn3m", kind: "speculative",
+          peaks: [], // landed custom: pure lattice hypothesis, no claimed peaks
+          predicted_q: [0.10, 0.20], // both within tol of observed -> no ghosts
+        }),
+      ];
+      const { rings, phases } = toDetectorRings(active, peaks);
+      // the sibling with claimed peaks IS the caption; the ring-less custom is not
+      expect(phases).toEqual(["Im3m"]);
+      // sanity: the custom emitted no Pn3m-coloured ring (solid or ghost)
+      expect(
+        rings.filter((r) => typeof r === "object" && r.color === phaseColor("Pn3m")),
+      ).toHaveLength(0);
+    });
+
+    it("INCLUDES a peaks-empty index that emits at least one ghost (unmatched predicted_q)", () => {
+      // A ghost ring still carries the phase hue, so it counts as identity on
+      // the frame.
+      const peaks = [peak({ id: 1, q: 0.10 }), peak({ id: 2, q: 0.20 })];
+      const active = [
+        ix({
+          id: 1, phase: "Pn3m", kind: "speculative",
+          peaks: [],
+          predicted_q: [0.10, 0.35], // 0.35 unmatched -> one ghost ring
+        }),
+      ];
+      const { rings, phases } = toDetectorRings(active, peaks);
+      expect(phases).toEqual(["Pn3m"]);
+      expect(rings).toContainEqual({ q: 0.35, color: phaseColor("Pn3m"), ghost: true });
+    });
+
+    it("dedupes a phase carried by two ring-emitting indices, keeping first position", () => {
+      const peaks = [peak({ id: 1, q: 0.10 }), peak({ id: 2, q: 0.20 }), peak({ id: 3, q: 0.30 })];
+      const active = [
+        ix({ id: 1, phase: "Pn3m", peaks: [ref({ peak_id: 1, q_observed: 0.10 })], predicted_q: [0.10] }),
+        ix({ id: 2, phase: "Im3m", peaks: [ref({ peak_id: 2, q_observed: 0.20 })], predicted_q: [0.20] }),
+        ix({ id: 3, phase: "Pn3m", peaks: [ref({ peak_id: 3, q_observed: 0.30 })], predicted_q: [0.30] }),
+      ];
+      expect(toDetectorRings(active, peaks).phases).toEqual(["Pn3m", "Im3m"]);
+    });
   });
 });
 
