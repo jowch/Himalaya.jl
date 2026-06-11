@@ -216,6 +216,13 @@ describe("SamplesPage", () => {
     expect(within(legend).getByText("drop the selected frames")).toBeInTheDocument();
   });
 
+  it("the keyboard legend advertises the ⌘K finder (SA-F4)", () => {
+    renderAt("/samples?beamtime=1");
+    const legend = screen.getByTestId("kb-legend");
+    expect(within(legend).getByText("⌘K")).toBeInTheDocument();
+    expect(within(legend).getByText("find a sample")).toBeInTheDocument();
+  });
+
   it("K from a contenteditable target does not batch-keep", () => {
     renderAt("/samples?beamtime=1");
     fireEvent.click(screen.getAllByTestId("thumbnail")[0]!);

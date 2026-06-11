@@ -357,6 +357,7 @@ export function SamplesPage(): JSX.Element {
             { keyLabel: "K", description: "keep the selected frames" },
             { keyLabel: "double-click", description: "open the loupe" },
             { keyLabel: "Esc", description: "clear" },
+            { keyLabel: "⌘K", description: "find a sample" },
           ]}
         />
       </div>

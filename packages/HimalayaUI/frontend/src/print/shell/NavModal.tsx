@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Skeleton } from "boneyard-js/react";
 import { useAppState } from "../../state";
-import { useExperiments, useSamples } from "../../queries";
-import type { Experiment, Sample } from "../../api";
+import { useCorpusSamples, useExperiments, useSamples } from "../../queries";
+import type { CorpusSample, Experiment, Sample } from "../../api";
 import { IconButton, ModalShell } from "../ui";
 
 const NAV_FIXTURE_EXPERIMENTS: { id: number; primary: string; secondary: string }[] = [
@@ -42,12 +42,20 @@ function navFixtureItems(items: { id: number; primary: string; secondary: string
 const NAV_EXPERIMENTS_FIXTURE = navFixtureItems(NAV_FIXTURE_EXPERIMENTS);
 const NAV_SAMPLES_FIXTURE     = navFixtureItems(NAV_FIXTURE_SAMPLES);
 
+// Cap for the direct-sample group at the experiment step (SA-F4). The corpus is
+// ~139 samples; anything past the cap is disclosed honestly as "+N more".
+const SAMPLE_HIT_CAP = 8;
+
 /**
  * NavModal — cascading experiment → sample picker.
  *
  * Behavior:
  * - Opens with chips for whatever is already committed in the store.
  * - Step "experiment": filters the experiment list; Enter/Tab commits + advances to "sample".
+ *   A query that also matches sample names across the whole corpus surfaces a
+ *   capped "Samples" group under the experiment matches (SA-F4) — selecting one
+ *   skips the cascade and lands straight on /sample/:id. One flat highlight
+ *   order spans both groups, experiments first.
  * - Step "sample": filters samples in the chosen experiment; Enter/Tab commits + closes modal.
  * - Backspace on empty input rewinds one step (removes sample chip, then experiment chip).
  * - Clicking a chip × is equivalent to Backspace at that chip's position.
@@ -89,6 +97,7 @@ export function NavModal(): JSX.Element | null {
 
   const experimentsQ = useExperiments();
   const samplesQ     = useSamples(pendingExp ?? 0);
+  const corpusQ      = useCorpusSamples();
 
   const filteredExperiments: Experiment[] = useMemo(() => {
     const list = experimentsQ.data ?? [];
@@ -109,6 +118,20 @@ export function NavModal(): JSX.Element | null {
     );
   }, [samplesQ.data, query]);
 
+  // SA-F4: while at the experiment step, a non-empty query also matches sample
+  // names across the WHOLE corpus (same matcher as the sample step), so a known
+  // sample name is one keystroke sequence away — no experiment commit needed.
+  const corpusSampleHits: CorpusSample[] = useMemo(() => {
+    if (step !== "experiment" || !query) return [];
+    const needle = query.toLowerCase();
+    return (corpusQ.data ?? []).filter((s) =>
+      [s.name ?? "", s.display_name ?? ""].some(h => h.toLowerCase().includes(needle)),
+    );
+  }, [step, query, corpusQ.data]);
+
+  const visibleSampleHits = corpusSampleHits.slice(0, SAMPLE_HIT_CAP);
+  const sampleHitOverflow = corpusSampleHits.length - visibleSampleHits.length;
+
   // Reset selection cursor on query/step change
   useEffect(() => { setSelIdx(0); }, [query, step]);
 
@@ -124,6 +147,14 @@ export function NavModal(): JSX.Element | null {
           primary: s.display_name || s.name || `Sample ${s.id}`,
           secondary: s.name && s.display_name && s.name !== s.display_name ? s.name : "",
         }));
+
+  // One flat highlight order across both groups, experiments first (SA-F4).
+  const totalRows = activeList.length + visibleSampleHits.length;
+
+  const experimentName = (id: number): string => {
+    const exp = experimentsQ.data?.find((e) => e.id === id);
+    return exp?.name ?? `Experiment ${id}`;
+  };
 
   const commitExperiment = (id: number): void => {
     setPendingExp(id);
@@ -144,6 +175,18 @@ export function NavModal(): JSX.Element | null {
     // was; now it actually lands you on /sample/:id (the third door, beside the
     // contact-sheet status cell and the loupe "Open in the Index stage" link).
     navigate(`/sample/${id}`);
+  };
+
+  // SA-F4: a direct sample hit from the experiment step skips the cascade and
+  // lands on exactly the destination the cascading flow ends at — /sample/:id —
+  // with the sample's own experiment committed to the store.
+  const commitDirectSample = (s: CorpusSample): void => {
+    if (s.experiment_id !== committedExp) {
+      setExperiment(s.experiment_id);
+    }
+    setSample(s.id);
+    closeModal();
+    navigate(`/sample/${s.id}`);
   };
 
   const popSampleChip = (): void => {
@@ -177,7 +220,7 @@ export function NavModal(): JSX.Element | null {
     }
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setSelIdx((i) => Math.min(activeList.length - 1, i + 1));
+      setSelIdx((i) => Math.min(totalRows - 1, i + 1));
       return;
     }
     if (e.key === "ArrowUp") {
@@ -186,6 +229,14 @@ export function NavModal(): JSX.Element | null {
       return;
     }
     if (e.key === "Enter" || e.key === "Tab") {
+      if (step === "experiment" && selIdx >= activeList.length) {
+        // Cursor sits in the Samples group (SA-F4) — direct sample commit.
+        const hit = visibleSampleHits[selIdx - activeList.length];
+        if (!hit) return;
+        e.preventDefault();
+        commitDirectSample(hit);
+        return;
+      }
       const picked = activeList[selIdx];
       if (!picked) return;
       e.preventDefault();
@@ -257,7 +308,7 @@ export function NavModal(): JSX.Element | null {
           fallback={<div className="px-4 py-6 text-center text-ink-soft italic text-base">{step === "experiment" ? "loading experiments…" : "loading samples…"}</div>}
         >
           <div className="flex-1 overflow-y-auto py-1" data-testid="nav-modal-results">
-            {activeList.length === 0 ? (
+            {activeList.length === 0 && visibleSampleHits.length === 0 ? (
               <div className="px-4 py-6 text-center text-ink-soft italic text-base">
                 {step === "experiment"
                   ? "no experiments"
@@ -266,28 +317,72 @@ export function NavModal(): JSX.Element | null {
                     : "no samples"}
               </div>
             ) : (
-              activeList.map((item, idx) => (
-                <button
-                  key={`${step}-${item.id}`}
-                  type="button"
-                  data-testid={`nav-item-${step}-${item.id}`}
-                  data-selected={idx === selIdx || undefined}
-                  onMouseEnter={() => setSelIdx(idx)}
-                  onClick={() => {
-                    if (step === "experiment") commitExperiment(item.id);
-                    else                        commitSample(item.id);
-                  }}
-                  className={
-                    "w-full text-left px-3 py-2 flex flex-col gap-0.5 text-base " +
-                    (idx === selIdx ? "bg-paper-sunk text-ink" : "text-ink hover:bg-paper-sunk")
-                  }
-                >
-                  <span className="font-medium">{item.primary}</span>
-                  {item.secondary && (
-                    <span className="text-ink-soft text-sm font-sans">{item.secondary}</span>
-                  )}
-                </button>
-              ))
+              <>
+                {activeList.map((item, idx) => (
+                  <button
+                    key={`${step}-${item.id}`}
+                    type="button"
+                    data-testid={`nav-item-${step}-${item.id}`}
+                    data-selected={idx === selIdx || undefined}
+                    onMouseEnter={() => setSelIdx(idx)}
+                    onClick={() => {
+                      if (step === "experiment") commitExperiment(item.id);
+                      else                        commitSample(item.id);
+                    }}
+                    className={
+                      "w-full text-left px-3 py-2 flex flex-col gap-0.5 text-base " +
+                      (idx === selIdx ? "bg-paper-sunk text-ink" : "text-ink hover:bg-paper-sunk")
+                    }
+                  >
+                    <span className="font-medium">{item.primary}</span>
+                    {item.secondary && (
+                      <span className="text-ink-soft text-sm font-sans">{item.secondary}</span>
+                    )}
+                  </button>
+                ))}
+                {visibleSampleHits.length > 0 && (
+                  <>
+                    <div
+                      data-testid="nav-samples-group-label"
+                      className="px-3 pt-2 pb-1 text-xs text-ink-soft"
+                    >
+                      Samples
+                    </div>
+                    {visibleSampleHits.map((s, i) => {
+                      const idx = activeList.length + i;
+                      return (
+                        <button
+                          key={`corpus-sample-${s.id}`}
+                          type="button"
+                          data-testid={`nav-item-corpus-sample-${s.id}`}
+                          data-selected={idx === selIdx || undefined}
+                          onMouseEnter={() => setSelIdx(idx)}
+                          onClick={() => commitDirectSample(s)}
+                          className={
+                            "w-full text-left px-3 py-2 flex flex-col gap-0.5 text-base " +
+                            (idx === selIdx ? "bg-paper-sunk text-ink" : "text-ink hover:bg-paper-sunk")
+                          }
+                        >
+                          <span className="font-medium">
+                            {s.display_name || s.name || `Sample ${s.id}`}
+                          </span>
+                          <span className="text-ink-soft text-sm font-sans">
+                            {experimentName(s.experiment_id)}
+                          </span>
+                        </button>
+                      );
+                    })}
+                    {sampleHitOverflow > 0 && (
+                      <div
+                        data-testid="nav-samples-overflow"
+                        className="px-3 py-2 text-ink-soft italic text-sm"
+                      >
+                        +{sampleHitOverflow} more {sampleHitOverflow === 1 ? "match" : "matches"}
+                      </div>
+                    )}
+                  </>
+                )}
+              </>
             )}
           </div>
         </Skeleton>

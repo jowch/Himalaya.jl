@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { renderWithProviders } from "./test-utils";
@@ -42,6 +42,15 @@ const SAMPLES_EXP2: api.Sample[] = [
   { id: 20, experiment_id: 2, display_name: "S1", name: "lamellar_A",  notes: null, tags: [] },
 ];
 
+// Corpus-wide sample list (SA-F4): the experiment step matches sample names
+// across ALL experiments through this, not just the committed one.
+const CORPUS: api.CorpusSample[] = [
+  { id: 10, experiment_id: 1, display_name: "D1",    name: "cubic_run03", notes: null, tags: [], q_units: "A-1" },
+  { id: 11, experiment_id: 1, display_name: "D2",    name: "hex_run01",   notes: null, tags: [], q_units: "A-1" },
+  { id: 20, experiment_id: 2, display_name: "S1",    name: "lamellar_A",  notes: null, tags: [], q_units: "A-1" },
+  { id: 30, experiment_id: 2, display_name: "Calib", name: "aps_calib",   notes: null, tags: [], q_units: "A-1" },
+];
+
 function resetStore(): void {
   localStorage.clear();
   useAppState.setState({
@@ -59,6 +68,7 @@ beforeEach(() => {
   vi.spyOn(api, "listExperiments").mockResolvedValue(EXPERIMENTS);
   vi.spyOn(api, "listSamples").mockImplementation((expId: number) =>
     Promise.resolve(expId === 1 ? SAMPLES_EXP1 : SAMPLES_EXP2));
+  vi.spyOn(api, "listCorpusSamples").mockResolvedValue(CORPUS);
 });
 
 describe("<NavModal>", () => {
@@ -83,7 +93,11 @@ describe("<NavModal>", () => {
 
     await user.type(screen.getByTestId("nav-modal-input"), "APS");
     expect(screen.queryByText("SSRL May 2026")).not.toBeInTheDocument();
-    expect(screen.getByText("APS Apr 2026")).toBeInTheDocument();
+    // Scoped to the experiment row: the same name can also appear as quiet
+    // context on a direct sample hit (SA-F4).
+    expect(
+      within(screen.getByTestId("nav-item-experiment-2")).getByText("APS Apr 2026"),
+    ).toBeInTheDocument();
   });
 
   it("Enter commits the selected experiment and advances to sample step with chip", async () => {
@@ -215,6 +229,150 @@ describe("<NavModal>", () => {
     expect(useAppState.getState().navModalOpen).toBe(false);
     expect(useAppState.getState().activeExperimentId).toBe(99);
     expect(useAppState.getState().activeSampleId).toBe(42);
+  });
+
+  // ── SA-F4: direct sample find from the experiment step ──────────────────────
+  describe("direct sample find (SA-F4)", () => {
+    it("a query matching a sample surfaces the Samples group with experiment context", async () => {
+      const user = userEvent.setup();
+      useAppState.setState({ navModalOpen: true, navModalStep: "experiment" });
+      renderModal();
+      await screen.findByText("SSRL May 2026");
+
+      await user.type(screen.getByTestId("nav-modal-input"), "cubic");
+      const row = await screen.findByTestId("nav-item-corpus-sample-10");
+      expect(screen.getByTestId("nav-samples-group-label")).toHaveTextContent("Samples");
+      // Row = sample display name + its experiment name as quiet context.
+      expect(within(row).getByText("D1")).toBeInTheDocument();
+      expect(within(row).getByText("SSRL May 2026")).toBeInTheDocument();
+    });
+
+    it("an empty query shows no Samples group", async () => {
+      useAppState.setState({ navModalOpen: true, navModalStep: "experiment" });
+      renderModal();
+      await screen.findByText("SSRL May 2026");
+      expect(screen.queryByTestId("nav-samples-group-label")).toBeNull();
+    });
+
+    it("an experiments-only query shows no Samples group (no noise)", async () => {
+      const user = userEvent.setup();
+      useAppState.setState({ navModalOpen: true, navModalStep: "experiment" });
+      renderModal();
+      await screen.findByText("SSRL May 2026");
+
+      await user.type(screen.getByTestId("nav-modal-input"), "SSRL");
+      expect(screen.getByText("SSRL May 2026")).toBeInTheDocument();
+      expect(screen.queryByTestId("nav-samples-group-label")).toBeNull();
+    });
+
+    it("Enter on a highlighted sample hit navigates to /sample/:id and closes", async () => {
+      const user = userEvent.setup();
+      useAppState.setState({ navModalOpen: true, navModalStep: "experiment" });
+      renderModal();
+      await screen.findByText("SSRL May 2026");
+
+      // "cubic" matches no experiment, so the sample hit is the first flat row.
+      await user.type(screen.getByTestId("nav-modal-input"), "cubic");
+      await screen.findByTestId("nav-item-corpus-sample-10");
+
+      await user.keyboard("{Enter}");
+      await waitFor(() => {
+        expect(useAppState.getState().navModalOpen).toBe(false);
+        expect(useAppState.getState().activeSampleId).toBe(10);
+        expect(useAppState.getState().activeExperimentId).toBe(1);
+      });
+      expect(await screen.findByTestId("focus-stub")).toBeInTheDocument();
+    });
+
+    it("clicking a sample hit commits like Enter would", async () => {
+      const user = userEvent.setup();
+      useAppState.setState({ navModalOpen: true, navModalStep: "experiment" });
+      renderModal();
+      await screen.findByText("SSRL May 2026");
+
+      await user.type(screen.getByTestId("nav-modal-input"), "hex_run");
+      await user.click(await screen.findByTestId("nav-item-corpus-sample-11"));
+      await waitFor(() => {
+        expect(useAppState.getState().navModalOpen).toBe(false);
+        expect(useAppState.getState().activeSampleId).toBe(11);
+        expect(useAppState.getState().activeExperimentId).toBe(1);
+      });
+      expect(await screen.findByTestId("focus-stub")).toBeInTheDocument();
+    });
+
+    it("one flat highlight order spans both groups, experiments first", async () => {
+      const user = userEvent.setup();
+      useAppState.setState({ navModalOpen: true, navModalStep: "experiment" });
+      renderModal();
+      await screen.findByText("SSRL May 2026");
+
+      // "aps" matches one experiment (APS Apr 2026) and one sample (aps_calib).
+      await user.type(screen.getByTestId("nav-modal-input"), "aps");
+      const sampleRow = await screen.findByTestId("nav-item-corpus-sample-30");
+      const expRow = screen.getByTestId("nav-item-experiment-2");
+
+      // Experiments lead the flat order.
+      expect(expRow).toHaveAttribute("data-selected");
+      expect(sampleRow).not.toHaveAttribute("data-selected");
+
+      // One ArrowDown crosses the group boundary seamlessly.
+      await user.keyboard("{ArrowDown}");
+      expect(sampleRow).toHaveAttribute("data-selected");
+      expect(expRow).not.toHaveAttribute("data-selected");
+
+      // Enter on the sample hit goes straight to the workspace (exp 2 carried).
+      await user.keyboard("{Enter}");
+      await waitFor(() => {
+        expect(useAppState.getState().navModalOpen).toBe(false);
+        expect(useAppState.getState().activeSampleId).toBe(30);
+        expect(useAppState.getState().activeExperimentId).toBe(2);
+      });
+      expect(await screen.findByTestId("focus-stub")).toBeInTheDocument();
+    });
+
+    it("caps the group at 8 and discloses the remainder honestly", async () => {
+      const many: api.CorpusSample[] = Array.from({ length: 11 }, (_, i) => ({
+        id: 100 + i,
+        experiment_id: 1,
+        display_name: `Bulk ${i + 1}`,
+        name: `bulk_${String(i + 1).padStart(2, "0")}`,
+        notes: null,
+        tags: [],
+        q_units: "A-1",
+      }));
+      vi.spyOn(api, "listCorpusSamples").mockResolvedValue(many);
+
+      const user = userEvent.setup();
+      useAppState.setState({ navModalOpen: true, navModalStep: "experiment" });
+      renderModal();
+      await screen.findByText("SSRL May 2026");
+
+      await user.type(screen.getByTestId("nav-modal-input"), "bulk");
+      await screen.findByTestId("nav-item-corpus-sample-100");
+      const results = screen.getByTestId("nav-modal-results");
+      expect(within(results).getAllByTestId(/nav-item-corpus-sample-/)).toHaveLength(8);
+      expect(screen.getByTestId("nav-samples-overflow")).toHaveTextContent("+3 more matches");
+    });
+
+    it("Backspace rewind semantics are untouched by the Samples group", async () => {
+      const user = userEvent.setup();
+      useAppState.setState({
+        navModalOpen: true,
+        navModalStep: "sample",
+        activeExperimentId: 1,
+      });
+      renderModal();
+      await screen.findByText("cubic_run03");
+
+      await user.click(screen.getByTestId("nav-modal-input"));
+      await user.keyboard("{Backspace}");
+      await waitFor(() => {
+        expect(screen.queryByTestId("nav-chip-experiment")).not.toBeInTheDocument();
+        expect(screen.getByText("SSRL May 2026")).toBeInTheDocument();
+      });
+      // Rewound to the experiment step with an empty query: no Samples group.
+      expect(screen.queryByTestId("nav-samples-group-label")).toBeNull();
+    });
   });
 
   it("clicking a result commits like Enter would", async () => {
