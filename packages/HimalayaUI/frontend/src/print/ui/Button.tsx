@@ -1,3 +1,4 @@
+import { forwardRef } from "react";
 import type { ButtonHTMLAttributes } from "react";
 
 export type ButtonVariant = "solid" | "accent" | "success" | "ghost" | "danger" | "outline" | "ghostInverse";
@@ -42,15 +43,22 @@ const variantClass: Record<ButtonVariant, string> = {
 const armedClass =
   "bg-accent border border-accent text-paper hover:brightness-110";
 
-export function Button({
-  variant = "ghost",
-  armed = false,
-  className = "",
-  children,
-  ...props
-}: ButtonProps): JSX.Element {
+// forwardRef so owners can hold the DOM button — e.g. LoupeSidePanel hands its
+// "Manage" trigger to ManageTagsModal for focus-restore-on-close (mirrors how
+// IconButton forwards its ref).
+export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
+  {
+    variant = "ghost",
+    armed = false,
+    className = "",
+    children,
+    ...props
+  },
+  ref,
+): JSX.Element {
   return (
     <button
+      ref={ref}
       data-variant={variant}
       data-armed={armed ? "true" : undefined}
       aria-pressed={armed ? true : undefined}
@@ -60,4 +68,4 @@ export function Button({
       {children}
     </button>
   );
-}
+});

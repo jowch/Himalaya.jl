@@ -15,6 +15,10 @@ export interface TagEditorProps {
   /** Optional assist: known tag keys offered as one-click suggestions to fill
    *  the key field. Free-text key entry is always available regardless. */
   knownKeys?: string[];
+  /** Keys already on this sample — adding one of these is rejected inline
+   *  (single-valued-key rule). When undefined the check is skipped (backward-
+   *  compatible: all existing consumers that don't pass this still work). */
+  existingKeys?: string[];
   /** PLACEMENT-ONLY: margin / alignment. No appearance utils. */
   className?: string;
 }
@@ -39,11 +43,13 @@ export function TagEditor({
   onCommit,
   onCancel,
   knownKeys,
+  existingKeys,
   className = "",
 }: TagEditorProps): JSX.Element {
   const [key, setKey] = useState("");
   const [value, setValue] = useState("");
   const [keyMissing, setKeyMissing] = useState(false);
+  const [keyDuplicate, setKeyDuplicate] = useState(false);
   const errorId = useId();
 
   const commit = (): void => {
@@ -51,6 +57,13 @@ export function TagEditor({
     if (!k) {
       // Honest rejection: an empty-key Add is invalid input, never a silent no-op.
       setKeyMissing(true);
+      setKeyDuplicate(false);
+      return;
+    }
+    if (existingKeys?.includes(k)) {
+      // Single-valued-key rule: reject adding a key the sample already has.
+      setKeyDuplicate(true);
+      setKeyMissing(false);
       return;
     }
     const v = value.trim();
@@ -58,11 +71,15 @@ export function TagEditor({
     setKey("");
     setValue("");
     setKeyMissing(false);
+    setKeyDuplicate(false);
   };
 
   const onKeyChange = (v: string): void => {
     setKey(v);
-    if (keyMissing && v.trim() !== "") setKeyMissing(false);
+    if ((keyMissing || keyDuplicate) && v.trim() !== "") {
+      setKeyMissing(false);
+      setKeyDuplicate(false);
+    }
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>): void => {
@@ -86,8 +103,8 @@ export function TagEditor({
         placeholder="key"
         inputSize="sm"
         onKeyDown={onKeyDown}
-        invalid={keyMissing}
-        {...(keyMissing ? { "aria-describedby": errorId } : {})}
+        invalid={keyMissing || keyDuplicate}
+        {...((keyMissing || keyDuplicate) ? { "aria-describedby": errorId } : {})}
       />
       <Input
         value={value}
@@ -107,6 +124,15 @@ export function TagEditor({
           className="text-caption text-error"
         >
           Enter a key first.
+        </span>
+      ) : keyDuplicate ? (
+        <span
+          id={errorId}
+          role="alert"
+          data-testid="tag-editor-error"
+          className="text-caption text-error"
+        >
+          This sample already has a tag with that key.
         </span>
       ) : null}
       {knownKeys && knownKeys.length > 0 ? (

@@ -7,6 +7,7 @@ const setStatusMutate = vi.fn();
 const selectMutate = vi.fn();
 const addTagMutate = vi.fn();
 const removeTagMutate = vi.fn();
+const editTagMutate = vi.fn();
 
 const state = {
   samples: [] as CorpusSample[],
@@ -21,6 +22,8 @@ vi.mock("../../src/queries", () => ({
   useSelectExposure: () => ({ mutate: selectMutate }),
   useAddCorpusSampleTag: () => ({ mutate: addTagMutate }),
   useRemoveCorpusSampleTag: () => ({ mutate: removeTagMutate }),
+  useEditCorpusSampleTag: () => ({ mutate: editTagMutate }),
+  useCorpusSampleTags: () => ({ data: [] }),
 }));
 
 // boneyard Skeleton: render children when not loading (avoid capture machinery in JSDOM).

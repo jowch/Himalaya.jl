@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { PageFrame } from "../components/PageFrame";
 import { Skeleton } from "boneyard-js/react";
@@ -9,6 +9,8 @@ import {
   useSelectExposure,
   useAddCorpusSampleTag,
   useRemoveCorpusSampleTag,
+  useEditCorpusSampleTag,
+  useCorpusSampleTags,
 } from "../../queries";
 import type { Tag } from "../ui";
 import { EmptyState, Button } from "../ui";
@@ -19,6 +21,7 @@ import { isValidationError } from "../../lib/queue/errors";
 import { BigFrame } from "../components/BigFrame";
 import { ThumbnailGallery } from "../components/ThumbnailGallery";
 import { LoupeSidePanel } from "../components/LoupeSidePanel";
+import { ManageTagsModal } from "../components/ManageTagsModal";
 import { PlateHeader } from "../components/PlateHeader";
 import {
   defaultExposureId,
@@ -27,6 +30,7 @@ import {
   toMetaEntries,
   toLoupeTags,
 } from "./loupeAdapters";
+import type { SampleTagPair } from "../../api";
 
 // Boneyard fixture — a real render with mock props so the headless capture CLI
 // measures the greenfield loupe body. image_path:null → DetectorImage takes its
@@ -127,6 +131,40 @@ export function LoupePage(): JSX.Element {
   const setRepresentative = useSelectExposure(hasValidId ? sampleId : 0);
   const addTag = useAddCorpusSampleTag(hasValidId ? sampleId : 0);
   const removeTag = useRemoveCorpusSampleTag(hasValidId ? sampleId : 0);
+  const editTag = useEditCorpusSampleTag(hasValidId ? sampleId : 0);
+
+  // ManageTagsModal state
+  const [manageOpen, setManageOpen] = useState(false);
+  const manageTagsTriggerRef = useRef<HTMLButtonElement>(null);
+
+  // Corpus-wide tag pairs for key/value suggestions
+  const corpusTagsQ = useCorpusSampleTags();
+  const corpusTags: SampleTagPair[] = corpusTagsQ.data ?? [];
+
+  // Derive keyOptions: distinct keys ranked by descending total count
+  const keyOptions = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const t of corpusTags) {
+      counts.set(t.key, (counts.get(t.key) ?? 0) + (t.count ?? 1));
+    }
+    return Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([label, count]) => ({ label, count }));
+  }, [corpusTags]);
+
+  // Derive valueOptionsFor: values for a given key, ranked by count
+  const valueOptionsFor = useCallback(
+    (key: string) => {
+      return corpusTags
+        .filter((t) => t.key === key)
+        .sort((a, b) => (b.count ?? 1) - (a.count ?? 1))
+        .map((t) => ({
+          label: t.value,
+          ...(t.count !== undefined ? { count: t.count } : {}),
+        }));
+    },
+    [corpusTags],
+  );
 
   const handleDropToggle = useCallback(() => {
     if (!activeExposure) return;
@@ -296,6 +334,20 @@ export function LoupePage(): JSX.Element {
                   onSetRepresentative={handleSetRepresentative}
                   onAddTag={handleAddTag}
                   onRemoveTag={handleRemoveTag}
+                  onManageTags={() => setManageOpen(true)}
+                  manageTagsTriggerRef={manageTagsTriggerRef}
+                />
+                <ManageTagsModal
+                  open={manageOpen}
+                  sampleName={sample.display_name ?? sample.name ?? ""}
+                  tags={toLoupeTags(sample.tags)}
+                  keyOptions={keyOptions}
+                  valueOptionsFor={valueOptionsFor}
+                  onEdit={(tagId, key, value) => editTag.mutate({ tagId, key, value })}
+                  onAdd={(key, value) => addTag.mutate({ key, value: value })}
+                  onRemove={(tagId) => removeTag.mutate(tagId)}
+                  onClose={() => setManageOpen(false)}
+                  triggerRef={manageTagsTriggerRef}
                 />
               </>
             ) : (

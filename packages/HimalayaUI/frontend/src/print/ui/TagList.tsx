@@ -30,6 +30,10 @@ interface TagListProps {
    *  row hover/focus (the contact-sheet `.srow:hover` rule). No effect on the
    *  empty-state invite, which is always visible regardless. */
   persistentAdd?: boolean;
+  /** Keys already on this sample — forwarded to the inline TagEditor so adding
+   *  a duplicate key is rejected (single-valued-key rule). Optional: when
+   *  absent the TagEditor check is skipped (backward-compatible). */
+  existingKeys?: string[];
   className?: string;
 }
 
@@ -82,6 +86,7 @@ export function TagList({
   size = "sm",
   maxVisible,
   persistentAdd = false,
+  existingKeys,
   className = "",
 }: TagListProps): JSX.Element {
   const [adding, setAdding] = useState(false);
@@ -151,6 +156,7 @@ export function TagList({
               setAdding(false);
             }}
             onCancel={() => setAdding(false)}
+            {...(existingKeys !== undefined ? { existingKeys } : {})}
           />
         ) : (
           <Chip

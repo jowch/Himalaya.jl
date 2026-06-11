@@ -1,4 +1,5 @@
-import { Kicker, MetaList, TagList, KbLegend } from "../ui";
+import type { RefObject } from "react";
+import { Kicker, MetaList, TagList, KbLegend, Button } from "../ui";
 import type { MetaEntry, Tag, Shortcut } from "../ui";
 import type { LoupeTag } from "../pages/loupeAdapters";
 import { Verdict } from "./Verdict";
@@ -27,6 +28,11 @@ export interface LoupeSidePanelProps {
   onAddTag?: (t: Tag) => void;
   /** Id-exact remove: called with the tag's `id` (LO-TAGDUP fix). */
   onRemoveTag?: (id: number) => void;
+  /** Called when the user clicks the "Manage" affordance next to "Sample tags".
+   *  When absent the button is not rendered. */
+  onManageTags?: () => void;
+  /** Ref for the "Manage" button — forwarded to ManageTagsModal for focus-restore. */
+  manageTagsTriggerRef?: RefObject<HTMLButtonElement>;
   /** Key legend — defaults to the canonical loupe keys. */
   shortcuts?: Shortcut[];
   /** PLACEMENT ONLY. */
@@ -53,6 +59,8 @@ export function LoupeSidePanel({
   tags,
   onAddTag,
   onRemoveTag,
+  onManageTags,
+  manageTagsTriggerRef,
   shortcuts = LOUPE_KEYS,
   className,
 }: LoupeSidePanelProps): JSX.Element {
@@ -86,13 +94,27 @@ export function LoupeSidePanel({
 
       {/* Block 4: Sample tags */}
       <div>
-        <Kicker tone="faint" as="h3" className="mb-2">
-          Sample tags
-        </Kicker>
+        <div className="flex items-center justify-between mb-2">
+          <Kicker tone="faint" as="h3">
+            Sample tags
+          </Kicker>
+          {onManageTags && (
+            <Button
+              ref={manageTagsTriggerRef}
+              variant="ghost"
+              onClick={onManageTags}
+              data-testid="manage-tags-trigger"
+              className="px-2 py-0.5"
+            >
+              Manage
+            </Button>
+          )}
+        </div>
         <TagList
           tags={tags}
           editable
           persistentAdd
+          existingKeys={tags.map((t) => t.key)}
           {...(onAddTag ? { onAdd: onAddTag } : {})}
           {...(onRemoveTag ? { onRemoveById: onRemoveTag } : {})}
         />
