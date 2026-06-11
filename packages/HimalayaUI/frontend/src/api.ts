@@ -128,6 +128,8 @@ export const addSampleTag   = (id: number, key: string, value: string, opts?: Au
   request<SampleTag>("POST", `/api/samples/${id}/tags`, { key, value }, opts);
 export const removeSampleTag = (id: number, tag_id: number, opts?: AuthOpts) =>
   request<void>("DELETE", `/api/samples/${id}/tags/${tag_id}`, undefined, opts);
+export const editSampleTag = (id: number, tag_id: number, patch: { key?: string; value?: string }, opts?: AuthOpts) =>
+  request<SampleTag>("PATCH", `/api/samples/${id}/tags/${tag_id}`, patch, opts);
 
 // Exposures
 export interface ExposureTag {

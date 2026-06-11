@@ -389,6 +389,53 @@ export const removeCorpusSampleTagMutator: Mutator<
 };
 
 // ---------------------------------------------------------------------------
+// edit_tag (corpus sample) — Slice 2 (editable tags)
+// ---------------------------------------------------------------------------
+
+export type EditCorpusSampleTagInput = { tagId: number; key: string; value: string };
+type EditCorpusSampleTagScope = BaseScope & { sampleId: number };
+
+export const editCorpusSampleTagMutator: Mutator<
+  EditCorpusSampleTagInput, EditCorpusSampleTagScope, SampleTag
+> = {
+  kind: "edit_tag",
+  onMutate: (p, qc): RollbackContext => {
+    const key = queryKeys.corpusSamples;
+    const prev = qc.getQueryData<CorpusSample[]>(key);
+    if (prev) {
+      qc.setQueryData<CorpusSample[]>(key, prev.map((s) =>
+        s.id === p.sampleId
+          ? { ...s, tags: s.tags.map((t) =>
+              t.id === p.tagId ? { ...t, key: p.key, value: p.value } : t) }
+          : s,
+      ));
+    }
+    return {
+      restore: () => {
+        if (prev !== undefined) qc.setQueryData(key, prev);
+      },
+    };
+  },
+  request: (p) => api.editSampleTag(p.sampleId, p.tagId, { key: p.key, value: p.value }, buildAuthOpts(p)),
+  // id is stable across the edit, so the optimistic row already matches the
+  // server row — no placeholder reconciliation needed (unlike add).
+  onSuccess: () => {},
+  // `source: "manual"` is a faint-marker-only inaccuracy for a scoping-edited tag —
+  // the SSE payload carries no source, and source is not surfaced in the pill UI.
+  synthesizeFromSse: (remote, base) => {
+    const p = (remote.payload as Record<string, unknown> | undefined) ?? {};
+    if (p.tag_id === undefined) return undefined;
+    return {
+      ...base,
+      id: p.tag_id as number,
+      key: p.key as string,
+      value: p.value as string,
+      source: "manual",
+    } as SampleTag;
+  },
+};
+
+// ---------------------------------------------------------------------------
 // post_message
 // ---------------------------------------------------------------------------
 

@@ -313,6 +313,114 @@ end
     end
 end
 
+@testset "PATCH /api/samples/:id/tags/:tag_id edits in place" begin
+    db = SQLite.DB()
+    HimalayaUI.create_schema!(db)
+    exp_id = HimalayaUI.init_experiment!(db; path="/tpe", data_dir="/tpe/d",
+                                             analysis_dir="/tpe/a")
+    sid = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S1")
+    # Seed a tag directly.
+    DBInterface.execute(db,
+        "INSERT INTO sample_tags (sample_id, key, value, source) VALUES (?, ?, ?, ?)",
+        [sid, "dose", "10", "manual"])
+    T = Int(DBInterface.lastrowid(DBInterface.execute(db, "SELECT last_insert_rowid()")))
+
+    with_test_server(db) do port, base
+        r = HTTP.request("PATCH", "$base/api/samples/$sid/tags/$T",
+            ["Content-Type" => "application/json", "X-Username" => "alice"],
+            JSON3.write(Dict(:value => "12")); status_exception=false)
+        @test r.status == 200
+        body = JSON3.read(String(r.body))
+        @test body.id == T && body.value == "12" && body.key == "dose"
+        # Row updated in place, id stable.
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id, value FROM sample_tags WHERE id = ?", [T]))
+        @test length(rows) == 1 && rows[1].value == "12"
+    end
+end
+
+@testset "PATCH /api/samples/:id/tags/:tag_id rejects key-collision with 409" begin
+    db = SQLite.DB()
+    HimalayaUI.create_schema!(db)
+    exp_id = HimalayaUI.init_experiment!(db; path="/tp409", data_dir="/tp409/d",
+                                             analysis_dir="/tp409/a")
+    sid = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S1")
+    # Seed two tags: dose=10 (A) and temp=25 (B).
+    DBInterface.execute(db,
+        "INSERT INTO sample_tags (sample_id, key, value, source) VALUES (?, ?, ?, ?)",
+        [sid, "dose", "10", "manual"])
+    A = Int(DBInterface.lastrowid(DBInterface.execute(db, "SELECT last_insert_rowid()")))
+    DBInterface.execute(db,
+        "INSERT INTO sample_tags (sample_id, key, value, source) VALUES (?, ?, ?, ?)",
+        [sid, "temp", "25", "manual"])
+    B = Int(DBInterface.lastrowid(DBInterface.execute(db, "SELECT last_insert_rowid()")))
+
+    with_test_server(db) do port, base
+        # Editing B's key to "dose" collides with A.
+        r = HTTP.request("PATCH", "$base/api/samples/$sid/tags/$B",
+            ["Content-Type" => "application/json", "X-Username" => "alice"],
+            JSON3.write(Dict(:key => "dose")); status_exception=false)
+        @test r.status == 409
+    end
+end
+
+@testset "PATCH /api/samples/:id/tags/:tag_id returns 404 for non-matching tag" begin
+    db = SQLite.DB()
+    HimalayaUI.create_schema!(db)
+    exp_id = HimalayaUI.init_experiment!(db; path="/tp404", data_dir="/tp404/d",
+                                             analysis_dir="/tp404/a")
+    sid = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S1")
+
+    with_test_server(db) do port, base
+        r = HTTP.request("PATCH", "$base/api/samples/$sid/tags/999999",
+            ["Content-Type" => "application/json", "X-Username" => "alice"],
+            JSON3.write(Dict(:value => "x")); status_exception=false)
+        @test r.status == 404
+    end
+end
+
+@testset "edit_tag is a non-view log event (user_actions row, no view write)" begin
+    db = SQLite.DB()
+    HimalayaUI.create_schema!(db)
+    exp_id = HimalayaUI.init_experiment!(db; path="/tplog", data_dir="/tplog/d",
+                                             analysis_dir="/tplog/a")
+    sid = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S1")
+    DBInterface.execute(db,
+        "INSERT INTO sample_tags (sample_id, key, value, source) VALUES (?, ?, ?, ?)",
+        [sid, "dose", "10", "manual"])
+    T = Int(DBInterface.lastrowid(DBInterface.execute(db, "SELECT last_insert_rowid()")))
+
+    with_test_server(db) do port, base
+        n0 = only(Tables.rowtable(DBInterface.execute(db,
+            "SELECT COUNT(*) AS c FROM user_actions"))).c
+        # Capture the list of view tables before the PATCH.
+        view_counts0 = map(["indices","auto_peaks","peak_curations","assignment_members"]) do tbl
+            only(Tables.rowtable(DBInterface.execute(db,
+                "SELECT COUNT(*) AS c FROM $tbl"))).c
+        end
+
+        HTTP.request("PATCH", "$base/api/samples/$sid/tags/$T",
+            ["Content-Type" => "application/json", "X-Username" => "alice"],
+            JSON3.write(Dict(:value => "13")))
+
+        n1 = only(Tables.rowtable(DBInterface.execute(db,
+            "SELECT COUNT(*) AS c FROM user_actions"))).c
+        @test n1 == n0 + 1
+
+        # Confirm the event kind is correct.
+        row = only(Tables.rowtable(DBInterface.execute(db,
+            "SELECT action FROM user_actions ORDER BY id DESC LIMIT 1")))
+        @test row.action == "edit_tag"
+
+        # No view tables were written.
+        view_counts1 = map(["indices","auto_peaks","peak_curations","assignment_members"]) do tbl
+            only(Tables.rowtable(DBInterface.execute(db,
+                "SELECT COUNT(*) AS c FROM $tbl"))).c
+        end
+        @test view_counts1 == view_counts0
+    end
+end
+
 @testset "corpus samples route" begin
     db = SQLite.DB()
     HimalayaUI.create_schema!(db)

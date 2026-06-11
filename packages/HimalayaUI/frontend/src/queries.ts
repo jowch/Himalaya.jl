@@ -13,6 +13,7 @@ import {
   removeSampleTagMutator,
   addCorpusSampleTagMutator,
   removeCorpusSampleTagMutator,
+  editCorpusSampleTagMutator,
   addExposureTagMutator,
   removeExposureTagMutator,
   postSampleMessageMutator,
@@ -611,6 +612,23 @@ export function useRemoveCorpusSampleTag(sampleId: number) {
   return {
     ...inner,
     mutate: (tagId: number) => inner.mutate({ tagId }),
+  };
+}
+
+/**
+ * Corpus contact-sheet tag editor (#LO-TAGDUP Slice 2). Scope carries `sampleId`
+ * only — same routing as useRemoveCorpusSampleTag — which routes the op to
+ * editCorpusSampleTagMutator via resolveMutator (edit_tag, sampleId-only).
+ */
+export function useEditCorpusSampleTag(sampleId: number) {
+  const username = useAppState((s) => s.username);
+  const inner = useQueueMutation(
+    editCorpusSampleTagMutator,
+    { sampleId, username, clientId: CLIENT_ID },
+  );
+  return {
+    ...inner,
+    mutate: (a: { tagId: number; key: string; value: string }) => inner.mutate(a),
   };
 }
 

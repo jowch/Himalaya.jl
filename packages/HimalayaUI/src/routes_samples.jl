@@ -190,6 +190,56 @@ function register_samples_routes!()
         end
     end
 
+    @patch "/api/samples/{id}/tags/{tag_id}" function(req::HTTP.Request, id::Int, tag_id::Int)
+        db   = current_db()
+        body = json(req)
+        # Partial update: key and/or value, each a string if present.
+        has_key = haskey(body, :key); has_val = haskey(body, :value)
+        (has_key || has_val) ||
+            return HTTP.Response(400, ["Content-Type" => "application/json"],
+                JSON3.write(Dict(:error => "provide at least one of: key, value")))
+        if (has_key && !(body.key isa AbstractString)) ||
+           (has_val && !(body.value isa AbstractString))
+            return HTTP.Response(400, ["Content-Type" => "application/json"],
+                JSON3.write(Dict(:error => "key and value must be strings")))
+        end
+        return with_idempotency(db, req) do
+            cur = Tables.rowtable(DBInterface.execute(db,
+                "SELECT id, key, value, source FROM sample_tags
+                 WHERE id = ? AND sample_id = ?", [tag_id, id]))
+            isempty(cur) && return HTTP.Response(404, ["Content-Type" => "application/json"],
+                JSON3.write(Dict(:error => "tag not found")))
+            new_key = has_key ? String(body.key) : String(cur[1].key)
+            new_val = has_val ? String(body.value) : String(cur[1].value)
+            # Single-valued-key rule: a key-edit must not collide with another
+            # tag on the same sample (id<>? excludes the row being edited).
+            if has_key
+                coll = Tables.rowtable(DBInterface.execute(db,
+                    "SELECT 1 FROM sample_tags
+                     WHERE sample_id = ? AND key = ? AND id <> ?",
+                    [id, new_key, tag_id]))
+                isempty(coll) || return HTTP.Response(409, ["Content-Type" => "application/json"],
+                    JSON3.write(Dict(:error => "sample already has a '$new_key' tag")))
+            end
+            srows = Tables.rowtable(DBInterface.execute(db,
+                "SELECT experiment_id FROM samples WHERE id = ?", [id]))
+            exp_id = (isempty(srows) || ismissing(srows[1].experiment_id)) ?
+                     nothing : Int(srows[1].experiment_id)
+            DBInterface.execute(db,
+                "UPDATE sample_tags SET key = ?, value = ? WHERE id = ? AND sample_id = ?",
+                [new_key, new_val, tag_id, id])
+            result = apply_event!(InTransaction(), db, req;
+                kind = "edit_tag",
+                entity_type = "sample", entity_id = id,
+                payload = Dict(:tag_id => tag_id, :key => new_key, :value => new_val,
+                               :experiment_id => exp_id))
+            _enqueue_broadcast_from_result!(result, "edit_tag", "sample", id)
+            HTTP.Response(200, ["Content-Type" => "application/json"],
+                JSON3.write(Dict(:id => tag_id, :key => new_key, :value => new_val,
+                                 :source => String(cur[1].source))))
+        end
+    end
+
     @get "/api/samples/{id}" function(req::HTTP.Request, id::Int)
         db   = current_db()
         rows = Tables.rowtable(DBInterface.execute(db,

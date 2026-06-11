@@ -355,7 +355,8 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
       break;
     }
     case "add_tag":
-    case "remove_tag": {
+    case "remove_tag":
+    case "edit_tag": {
       if (remote.entity_type === "sample") {
         // A sample tag appears in two cached projections: the per-experiment
         // samples list AND the corpus-wide contact-sheet list. The route

@@ -7,6 +7,7 @@ import {
   removeExposureTagMutator,
   addCorpusSampleTagMutator,
   removeCorpusSampleTagMutator,
+  editCorpusSampleTagMutator,
   postSampleMessageMutator,
   postComparisonMessageMutator,
   setExposureStatusMutator,
@@ -90,6 +91,10 @@ export function resolveMutator(
       return p?.experimentId !== undefined
         ? removeSampleTagMutator
         : removeCorpusSampleTagMutator;
+    case "edit_tag":
+      // edit_tag is corpus-only (no experiment-scoped or exposure-scoped path).
+      // sampleId-only scope routes here, mirroring the corpus add_tag/remove_tag fallthrough.
+      return editCorpusSampleTagMutator;
     case "post_message":
       return p?.comparisonId !== undefined
         ? postComparisonMessageMutator
@@ -198,6 +203,9 @@ export function resolveMutatorForEvent(
       return entityType === "sample" ? addSampleTagMutator : addExposureTagMutator;
     case "remove_tag":
       return entityType === "sample" ? removeSampleTagMutator : removeExposureTagMutator;
+    case "edit_tag":
+      // edit_tag is sample-scoped only. The corpus mutator owns synthesizeFromSse.
+      return editCorpusSampleTagMutator;
     case "post_message":
       // entity_type is the wire string ("sample_message" / "comparison_message"),
       // matching applyRemoteToCache.ts's discriminator. Default the
