@@ -321,7 +321,11 @@ function BuilderBody({
   // committed members; the draft drives only the title + the editable rail.
   const members: SeriesMember[] = series.members;
   const rows = toWaterfallRows(members, tracesById);
-  const memberData = membersToMemberData(members);
+  // MemberList contract: rows in DISPLAY order top-down, but the waterfall
+  // paints display order bottom-up — reverse so the rail's top row is the
+  // plate's top trace (membersToMemberData returns a fresh array; in-place
+  // reverse is safe). Keys are member ids, so hover-sync is order-agnostic.
+  const memberData = membersToMemberData(members).reverse();
   const legendPhases = legendPhasesOf(members);
 
   // Peak-annotation gating: ticks/labels annotate indexed-peak anchors. A
@@ -413,6 +417,11 @@ function BuilderBody({
             offsetScale={offset}
             scale={scale}
             onScaleChange={onScaleChange}
+            // The annotation toggles drive the PLATE through the same two
+            // Zustand flags that feed the export spec below — one source, so
+            // the on-screen figure and the export cannot diverge on these axes.
+            showPeakTicks={showPeakTicks}
+            showPeakLabels={showPeakLabels}
             {...(hoveredKey !== undefined ? { hoveredKey } : {})}
             onHoverRow={onHoverRow}
             legendPhases={legendPhases}
@@ -540,10 +549,21 @@ function RecipeEditor({
   onRemove: (rowId: number) => void;
   onReorder: (from: number, to: number) => void;
 }): JSX.Element {
-  const { dragItemProps, dropEdge } = useDragReorder(onReorder);
+  // Rail-mirrors-plate (BU-INVERT): the waterfall paints recipe position 0 at
+  // the BOTTOM of the stack, so the editor renders the recipe REVERSED (top
+  // row = plate top). ONE visual-to-recipe index mapping feeds every reorder
+  // path (drag drops AND the arrow buttons) so "Move down" always moves the
+  // trace down IN THE FIGURE. Mapping both endpoints is sufficient because a
+  // splice-move commutes with reversal (remove-at + insert-at land on the
+  // mirrored positions). Removal stays id-based and needs no mapping.
+  const visual = [...recipe].reverse();
+  const toRecipe = (v: number): number => recipe.length - 1 - v;
+  const reorderVisual = (fromV: number, toV: number): void =>
+    onReorder(toRecipe(fromV), toRecipe(toV));
+  const { dragItemProps, dropEdge } = useDragReorder(reorderVisual);
   return (
     <div className="flex flex-col gap-0.5" data-testid="builder-recipe">
-      {recipe.map((row, i) => {
+      {visual.map((row, i) => {
         const view = recipeRowView(
           { id: row.id, series_id: 0, sample_id: row.sample_id, position: row.position, pinned: row.pinned, excluded: row.excluded },
           sampleNameById,
@@ -570,7 +590,7 @@ function RecipeEditor({
               tone="ghost"
               data-testid="builder-recipe-up"
               disabled={i === 0}
-              onClick={() => onReorder(i, i - 1)}
+              onClick={() => reorderVisual(i, i - 1)}
             >
               &#9650;
             </IconButton>
@@ -578,8 +598,8 @@ function RecipeEditor({
               label="Move down"
               tone="ghost"
               data-testid="builder-recipe-down"
-              disabled={i === recipe.length - 1}
-              onClick={() => onReorder(i, i + 1)}
+              disabled={i === visual.length - 1}
+              onClick={() => reorderVisual(i, i + 1)}
             >
               &#9660;
             </IconButton>

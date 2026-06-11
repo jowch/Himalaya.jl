@@ -34,12 +34,32 @@ export interface WaterfallChartProps {
    * Clamped to a 0.1 floor so it can't collapse the stack.
    */
   offsetScale?: number;
+  /** Render the peak-anchor beads (the "Peak ticks" annotation layer).
+   *  Default true — consumers without annotation toggles keep today's look. */
+  showPeakTicks?: boolean;
+  /** Render ordinal peak labels above the anchors (the "Peak labels" layer).
+   *  Default false. Same NUMBERING register as the exported figure (1..n
+   *  ascending q per row); the export currently numbers ALL effective_peaks
+   *  while the plate labels indexed anchors only — a peak-set divergence
+   *  owned by BU-EXPORTDIVERGE, not by this layer. */
+  showPeakLabels?: boolean;
   /** PLACEMENT ONLY. */
   className?: string;
 }
 
 function anchorsToPeaks(row: WaterfallRow): PlotPeak[] {
-  return row.anchors.map((a) => ({ id: a.id, q: a.q, intensity: a.intensity, source: "auto" as const }));
+  // Pre-resolve ordinal labels (1..n ascending q) onto the PlotPeak shape;
+  // TracePlot's PlotLabels layer paints them only when the labels layer is on.
+  // Ascending-q numbering matches the export's per-row peak numbering.
+  const byAscendingQ = [...row.anchors].sort((a, b) => a.q - b.q);
+  const ordinalById = new Map(byAscendingQ.map((a, i) => [a.id, String(i + 1)]));
+  return row.anchors.map((a) => ({
+    id: a.id,
+    q: a.q,
+    intensity: a.intensity,
+    source: "auto" as const,
+    label: ordinalById.get(a.id)!,
+  }));
 }
 
 export function WaterfallChart({
@@ -52,6 +72,8 @@ export function WaterfallChart({
   maxWidth = 1080,
   minWidth = 560,
   offsetScale = 1,
+  showPeakTicks = true,
+  showPeakLabels = false,
   className = "",
 }: WaterfallChartProps): JSX.Element {
   const scale = Math.max(0.1, offsetScale);
@@ -148,7 +170,7 @@ export function WaterfallChart({
                 height={h}
                 width={plotW}
                 paperColor="var(--color-plate)"
-                show={{ peaks: true, labels: false, band: false }}
+                show={{ peaks: showPeakTicks, labels: showPeakLabels, band: false }}
               />
               <div
                 data-role="wf-label"

@@ -19,6 +19,11 @@ export interface SeriesPlateProps {
   rows: WaterfallRow[];
   /** Global waterfall trace-offset; scales inter-trace separation (1 = unchanged). */
   offsetScale?: number;
+  /** Annotation layers, threaded to WaterfallChart (defaults live there:
+   *  ticks on, labels off). Wire BOTH from the same state that feeds any
+   *  figure export so the plate and the exported figure cannot diverge. */
+  showPeakTicks?: boolean;
+  showPeakLabels?: boolean;
   scale: SeriesScale;
   onScaleChange: (next: SeriesScale) => void;
   /** Controlled hot row + cursor q, lifted to the page (synced with MemberList). */
@@ -40,6 +45,7 @@ export interface SeriesPlateProps {
 
 export function SeriesPlate({
   kicker, title, subtitle, rows, offsetScale, scale, onScaleChange,
+  showPeakTicks, showPeakLabels,
   hoveredKey, onHoverRow, hoveredQ, onHoverQ,
   legendPhases, footHint, footNote, actions, className,
 }: SeriesPlateProps): JSX.Element {
@@ -62,6 +68,8 @@ export function SeriesPlate({
         xType={scale === "log" ? "log" : "linear"}
         className="mt-2"
         {...(offsetScale !== undefined ? { offsetScale } : {})}
+        {...(showPeakTicks !== undefined ? { showPeakTicks } : {})}
+        {...(showPeakLabels !== undefined ? { showPeakLabels } : {})}
         {...(hoveredKey !== undefined ? { hoveredKey } : {})}
         {...(onHoverRow ? { onHoverRow } : {})}
         {...(hoveredQ !== undefined ? { hoveredQ } : {})}

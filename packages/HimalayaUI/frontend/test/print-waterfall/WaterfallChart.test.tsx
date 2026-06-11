@@ -148,6 +148,37 @@ describe("WaterfallChart", () => {
     expect(hA14).toBe(hA1);
   });
 
+  // ── BU-TOGGLELIE: annotation props gate the tick + label layers ───────────
+
+  it("hides the peak beads when showPeakTicks is false (default stays on)", () => {
+    const { container } = render(<WaterfallChart rows={ROWS} showPeakTicks={false} />);
+    expect(container.querySelectorAll('[data-role="peak-glyph"]')).toHaveLength(0);
+  });
+
+  it("renders no peak labels by default", () => {
+    const { container } = render(<WaterfallChart rows={ROWS} />);
+    expect(container.querySelectorAll('[data-role="peak-label"]')).toHaveLength(0);
+  });
+
+  it("renders ordinal peak labels (1..n ascending q, the export register) when showPeakLabels is true", () => {
+    // Two anchors on one row, DELIBERATELY out of q order in the array: the
+    // ordinal must follow ascending q (id 9 at q=0.03 reads "1"), matching the
+    // exported figure's numbering. PlotLabels renders left-to-right, so DOM
+    // order ["1","2"] pins the ascending-q assignment.
+    const rows: WaterfallRow[] = [
+      {
+        ...ROWS[0]!,
+        anchors: [
+          { id: 1, q: 0.05, intensity: 60, phase: "Ia3d" },
+          { id: 9, q: 0.03, intensity: 80, phase: "Ia3d" },
+        ],
+      },
+    ];
+    const { container } = render(<WaterfallChart rows={rows} showPeakLabels />);
+    const labels = Array.from(container.querySelectorAll('[data-role="peak-label"]'));
+    expect(labels.map((l) => l.textContent)).toEqual(["1", "2"]);
+  });
+
   it("clamps offsetScale to a floor so 0 can't collapse the stack", () => {
     const { getByTestId } = render(<WaterfallChart rows={ROWS} offsetScale={0} maxWidth={800} />);
     const stack = Number(getByTestId("wf-stack").style.height.replace("px", ""));

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, act, within } from "@testing-library/react";
+import { render, screen, fireEvent, act, within, waitFor } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { Series, SeriesMember, SeriesSample, CorpusSample, Trace } from "../../src/api";
@@ -45,6 +45,25 @@ vi.mock("../../src/queries", () => ({
   useCorpusSamples: () => ({ data: state.corpus, isLoading: false, isError: false }),
   useSaveSeries: () => state.save,
   useCommitSeriesPlate: () => state.commit,
+}));
+
+// Export-spec spy (BU-TOGGLELIE single-source pin): the page builds its
+// ExportSpec through this adapter; mocking it lets the test assert the SAME
+// Zustand flags that drive the plate annotations reach the export call.
+// Only evaluated at export-click time, so the mock is inert everywhere else.
+const { specSpy } = vi.hoisted(() => ({
+  // A minimally render-viable spec (title included — renderer reads
+  // spec.title.primary) so the export path under test completes on the
+  // success branch, not via the renderer's error toast.
+  specSpy: vi.fn((_args: Record<string, unknown>) => ({
+    width: 10,
+    height: 10,
+    marks: [],
+    title: { primary: "spec under test" },
+  })),
+}));
+vi.mock("../../src/lib/figure-export/adapters/multiTraceAdapter", () => ({
+  buildMultiTraceExportSpec: specSpy,
 }));
 
 // boneyard Skeleton: render children when not loading.
@@ -640,6 +659,144 @@ describe("SeriesBuilderPage", () => {
     renderPage();
     expect(screen.getAllByTestId("series-member-row")).toHaveLength(2);
     expect(screen.getByTestId("export-menu-trigger")).toBeDisabled();
+  });
+
+  // ── BU-INVERT: the rail mirrors the plate's vertical order ────────────────
+
+  it("BU-INVERT read mode: the rail lists members REVERSED so its top row is the plate's top trace", () => {
+    renderPage();
+    // Members display order is [ratio 1, ratio 2]; the waterfall paints display
+    // order bottom-up, so the plate TOP is "ratio 2". The MemberList contract
+    // ("page reverses so top = high variable") means the rail leads with it.
+    const rows = screen.getAllByTestId("series-member-row");
+    expect(rows[0]).toHaveTextContent("ratio 2");
+    expect(rows[1]).toHaveTextContent("ratio 1");
+    // The plate's geometry agrees: member 2's wf-row sits ABOVE member 1's.
+    const plate = screen.getByTestId("series-plate");
+    const topOf = (key: string): number =>
+      Number((plate.querySelector(`[data-role="wf-row"][data-key="${key}"]`) as HTMLElement)
+        .style.top.replace("px", ""));
+    expect(topOf("2")).toBeLessThan(topOf("1"));
+  });
+
+  it("BU-INVERT hover-sync: hovering the rail's TOP row lights the plate's TOP trace", () => {
+    renderPage();
+    const first = screen.getAllByTestId("series-member-row")[0]!;
+    fireEvent.mouseEnter(first);
+    const hot = document.querySelector('[data-role="wf-row"][data-hot="true"]');
+    // Member 2 is the plate top (largest display order, painted highest).
+    expect(hot?.getAttribute("data-key")).toBe("2");
+  });
+
+  it("BU-INVERT draft mode: recipe rows render plate-top-first; 'Move down' on the FIRST VISUAL row moves the trace toward the plate BOTTOM", () => {
+    // Three rows so the permutation discriminates: the pre-fix top-down editor
+    // moving its first row (A) down produced [B,A,C]; the plate-mirroring
+    // editor's first visual row is C (recipe last) and moving it down gives
+    // [A,C,B].
+    state.seriesById = new Map([[10, baseSeries({
+      samples: [seriesSample(101, 1, 0), seriesSample(102, 2, 1), seriesSample(103, 3, 2)],
+    })]]);
+    renderPage();
+    fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "x" } });
+    const rows = screen.getAllByTestId("builder-recipe-row");
+    // Visual order mirrors the plate: recipe position 2 (sample C) on top.
+    expect(rows[0]).toHaveTextContent("C");
+    expect(rows[1]).toHaveTextContent("B");
+    expect(rows[2]).toHaveTextContent("A");
+    // Endpoint guards in VISUAL terms: top row can't move up, bottom can't move down.
+    expect(within(rows[0]!).getByTestId("builder-recipe-up")).toBeDisabled();
+    expect(within(rows[2]!).getByTestId("builder-recipe-down")).toBeDisabled();
+    // Move down on the top visual row (C): recipe [A,B,C] → [A,C,B].
+    fireEvent.click(within(rows[0]!).getByTestId("builder-recipe-down"));
+    expect(useAppState.getState().seriesDraft!.recipe.map((r) => r.sample_id)).toEqual([1, 3, 2]);
+  });
+
+  it("BU-INVERT draft drag shares the same visual mapping (drop B onto C → B becomes the plate top)", () => {
+    state.seriesById = new Map([[10, baseSeries({
+      samples: [seriesSample(101, 1, 0), seriesSample(102, 2, 1), seriesSample(103, 3, 2)],
+    })]]);
+    renderPage();
+    fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "x" } });
+    const rows = screen.getAllByTestId("builder-recipe-row");
+    const dataTransfer = { effectAllowed: "", dropEffect: "", setData: vi.fn(), getData: vi.fn() };
+    // Visual rows are [C, B, A]; drag B (visual 1) onto C (visual 0) = move B
+    // to the visual top = recipe end: [A,B,C] → [A,C,B].
+    fireEvent.dragStart(rows[1]!, { dataTransfer });
+    fireEvent.dragOver(rows[0]!, { dataTransfer });
+    fireEvent.drop(rows[0]!, { dataTransfer });
+    expect(useAppState.getState().seriesDraft!.recipe.map((r) => r.sample_id)).toEqual([1, 3, 2]);
+  });
+
+  // ── BU-TOGGLELIE: the annotation toggles drive the PLATE ──────────────────
+
+  // Traces covering the member anchors (q = 0.051 / 0.052) so glyphs render.
+  function loadTraces(): void {
+    state.traces = {
+      1: { q: [0.04, 0.051, 0.07], I: [100, 60, 12], sigma: [1, 1, 1] },
+      2: { q: [0.04, 0.052, 0.07], I: [90, 55, 10], sigma: [1, 1, 1] },
+    };
+  }
+
+  it("BU-TOGGLELIE: switching 'Peak ticks' OFF removes the peak glyphs from the plate", () => {
+    loadTraces();
+    renderPage();
+    try {
+      const plate = screen.getByTestId("series-plate");
+      expect(plate.querySelectorAll('[data-role="peak-glyph"]').length).toBeGreaterThan(0);
+      fireEvent.click(
+        within(screen.getByTestId("annotation-toggles")).getByRole("button", { name: /peak ticks/i }),
+      );
+      expect(plate.querySelectorAll('[data-role="peak-glyph"]')).toHaveLength(0);
+    } finally {
+      // The flags live in the real (module-singleton) Zustand store; restore.
+      act(() => useAppState.setState({ showPeakTicks: true }));
+    }
+  });
+
+  it("BU-TOGGLELIE: 'Peak labels' ON renders labels at the anchors; OFF removes them", () => {
+    loadTraces();
+    renderPage();
+    try {
+      const plate = screen.getByTestId("series-plate");
+      // Zustand default is ON → labels render (one anchor per member → "1").
+      const labels = plate.querySelectorAll('[data-role="peak-label"]');
+      expect(labels.length).toBeGreaterThan(0);
+      expect(labels[0]!.textContent).toBe("1");
+      fireEvent.click(
+        within(screen.getByTestId("annotation-toggles")).getByRole("button", { name: /peak labels/i }),
+      );
+      expect(plate.querySelectorAll('[data-role="peak-label"]')).toHaveLength(0);
+    } finally {
+      act(() => useAppState.setState({ showPeakLabels: true }));
+    }
+  });
+
+  it("BU-TOGGLELIE single source: the export spec is built from the SAME flags that drive the plate", async () => {
+    loadTraces();
+    renderPage();
+    // JSDOM has no URL.createObjectURL; stub it so the download path completes
+    // on the success branch instead of logging the renderer's error toast.
+    const createObjectURL = vi.fn(() => "blob:test");
+    const revokeObjectURL = vi.fn();
+    Object.assign(URL, { createObjectURL, revokeObjectURL });
+    try {
+      // Toggle labels OFF on the plate, then export: the spec must carry the
+      // post-toggle flags (ticks true, labels false) — plate and export cannot
+      // diverge on these axes because both read one Zustand pair.
+      fireEvent.click(
+        within(screen.getByTestId("annotation-toggles")).getByRole("button", { name: /peak labels/i }),
+      );
+      expect(screen.getByTestId("series-plate").querySelectorAll('[data-role="peak-label"]')).toHaveLength(0);
+      fireEvent.click(screen.getByTestId("export-menu-trigger"));
+      fireEvent.click(screen.getByRole("menuitem", { name: /download as svg/i }));
+      await waitFor(() => expect(specSpy).toHaveBeenCalled());
+      expect(specSpy.mock.calls.at(-1)![0]).toMatchObject({
+        showPeakTicks: true,
+        showPeakLabels: false,
+      });
+    } finally {
+      act(() => useAppState.setState({ showPeakLabels: true }));
+    }
   });
 
   it("shows a commit-error notice (role=alert) on commit failure", () => {
