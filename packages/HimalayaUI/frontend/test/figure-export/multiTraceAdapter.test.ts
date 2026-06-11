@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import { buildMultiTraceExportSpec } from "../../src/lib/figure-export/adapters/multiTraceAdapter";
 import { COMPARE_DIMS, CLEAN_SCIENTIFIC } from "../../src/lib/figure-export/presets";
 import { buildExportSvg } from "../../src/lib/figure-export/renderer";
+import { computeWaterfallExportBands } from "../../src/lib/comparison/yBands";
+import { phaseColor } from "../../src/phases";
 import type { SeriesMember, Trace } from "../../src/api";
 
 function makeMember(over: Partial<SeriesMember> = {}): SeriesMember {
@@ -280,6 +282,193 @@ describe("buildMultiTraceExportSpec", () => {
     expect((spec.plot as { title?: unknown }).title).toBeUndefined();
     expect((spec.plot as { caption?: unknown }).caption).toBeUndefined();
     expect((spec.plot as { figure?: unknown }).figure).toBeUndefined();
+  });
+});
+
+// ── BU-EXPORTDIVERGE — the export must speak the plate's registers ──────────
+// The builder's plate footnote promises "what you compose is what you
+// publish"; these tests pin the five divergence axes the downloaded SVG
+// contradicted (phase color/identity, legend, label register, axis scale +
+// tick vocabulary, stack order/offset, peak set).
+describe("buildMultiTraceExportSpec — BU-EXPORTDIVERGE (export matches the plate)", () => {
+  /** Collect every <text> content from the rendered export SVG. */
+  function svgTexts(spec: ReturnType<typeof buildMultiTraceExportSpec>): string[] {
+    const svg = buildExportSvg(spec);
+    return Array.from(svg.querySelectorAll("text")).map((t) => t.textContent ?? "");
+  }
+
+  it("byPhase legend reads the DOMINANT phase (confirmed_phases[0]), not confirmed_index.phase", () => {
+    // Coexistence member whose confirmed_phases order disagrees with
+    // confirmed_index: the plate (waterfallModel.dominantPhase) calls this
+    // member Im3m; the export must agree.
+    const coexist = makeMember({
+      id: 1, exposure_id: 100,
+      snapshot: {
+        effective_peaks: [],
+        confirmed_index: { id: 1, phase: "Pn3m", lattice_d: 100, r_squared: 0.99, ngc: 1.5, peak_ids: [] },
+        confirmed_phases: [{ phase: "Im3m", lattice_d: 110 }, { phase: "Pn3m", lattice_d: 100 }],
+        analysis_inputs_hash: "h",
+      } as unknown as SeriesMember["snapshot"],
+    });
+    const spec = buildMultiTraceExportSpec({
+      members: [coexist],
+      traces,
+      comparisonTitle: "T",
+      xDomain: null,
+      showPeakTicks: false, showPeakLabels: false,
+      groupingMode: "byPhase", sampleIdFor,
+    });
+    const rows = spec.legend?.rows ?? [];
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.label).toBe("Im3m");
+    expect(rows[0]!.color).toBe(phaseColor("Im3m"));
+  });
+
+  it("a member confirmed via confirmed_phases ONLY legends under its phase, not 'unphased / unbound'", () => {
+    const phasesOnly = makeMember({
+      id: 1, exposure_id: 100,
+      snapshot: {
+        effective_peaks: [],
+        confirmed_index: null,
+        confirmed_phases: [{ phase: "Ia3d", lattice_d: 195 }],
+        analysis_inputs_hash: "h",
+      } as unknown as SeriesMember["snapshot"],
+    });
+    const spec = buildMultiTraceExportSpec({
+      members: [phasesOnly],
+      traces,
+      comparisonTitle: "T",
+      xDomain: null,
+      showPeakTicks: false, showPeakLabels: false,
+      groupingMode: "byPhase", sampleIdFor,
+    });
+    const labels = (spec.legend?.rows ?? []).map((r) => r.label);
+    expect(labels).toContain("Ia3d");
+    expect(labels.join(" ").toLowerCase()).not.toContain("unphased");
+  });
+
+  it("default member labels speak the plate's register ('exp N'), never 'Exposure #N'", () => {
+    const spec = buildMultiTraceExportSpec({
+      members: [makeMember({ id: 1, exposure_id: 100 })],
+      traces,
+      comparisonTitle: "T",
+      xDomain: null,
+      showPeakTicks: false, showPeakLabels: false,
+      groupingMode: "distinct", sampleIdFor,
+    });
+    const texts = svgTexts(spec);
+    expect(texts).toContain("exp 100");
+    expect(texts.some((t) => t.includes("Exposure #"))).toBe(false);
+  });
+
+  it("xType passes through to the x scale: default log, 'linear' when the plate is linear", () => {
+    const base = {
+      members: [makeMember()],
+      traces,
+      comparisonTitle: "T",
+      xDomain: null as [number, number] | null,
+      showPeakTicks: false, showPeakLabels: false,
+      groupingMode: "distinct" as const, sampleIdFor,
+    };
+    const logSpec = buildMultiTraceExportSpec(base);
+    expect((logSpec.plot.x as { type?: string }).type).toBe("log");
+    const linSpec = buildMultiTraceExportSpec({ ...base, xType: "linear" });
+    expect((linSpec.plot.x as { type?: string }).type).toBe("linear");
+  });
+
+  it("q ticks use the plate's decimal register, not d3's SI-milli ('100m') suffixes", () => {
+    // trace q spans 0.1–0.3: Plot's default log tickFormat renders "100m",
+    // "200m", "300m" — the divergence the downloaded SVG showed. The plate
+    // formats these as plain decimals (formatAxis).
+    const spec = buildMultiTraceExportSpec({
+      members: [makeMember()],
+      traces,
+      comparisonTitle: "T",
+      xDomain: [0.1, 0.3],
+      showPeakTicks: false, showPeakLabels: false,
+      groupingMode: "distinct", sampleIdFor,
+    });
+    const texts = svgTexts(spec);
+    expect(texts.some((t) => /^\d+m$/.test(t.trim()))).toBe(false);
+    // And at least one plain-decimal q tick is present.
+    expect(texts.some((t) => /^0\.\d+$/.test(t.trim()))).toBe(true);
+  });
+
+  it("peak labels number the PLATE's set (indexed anchors), not all effective_peaks", () => {
+    const threePeaks = [
+      { id: 11, q: 0.10, intensity: 100, sharpness: 1, source: "auto" },
+      { id: 12, q: 0.15, intensity: 80, sharpness: 1, source: "auto" },
+      { id: 13, q: 0.20, intensity: 60, sharpness: 1, source: "auto" },
+    ];
+    const member = makeMember({
+      id: 1, exposure_id: 100,
+      snapshot: {
+        effective_peaks: threePeaks,
+        // Only two of the three peaks are indexed anchors — the plate labels
+        // exactly those two (1, 2 ascending q) and never the third.
+        confirmed_index: { id: 1, phase: "Pn3m", lattice_d: 100, r_squared: 0.99, ngc: 1.5, peak_ids: [11, 12] },
+        analysis_inputs_hash: "h",
+      } as unknown as SeriesMember["snapshot"],
+    });
+    const spec = buildMultiTraceExportSpec({
+      members: [member],
+      traces,
+      comparisonTitle: "T",
+      xDomain: [0.05, 0.3],
+      showPeakTicks: true, showPeakLabels: true,
+      groupingMode: "byPhase", sampleIdFor,
+    });
+    const texts = svgTexts(spec).map((t) => t.trim());
+    expect(texts).toContain("1");
+    expect(texts).toContain("2");
+    expect(texts).not.toContain("3");
+  });
+});
+
+describe("computeWaterfallExportBands — plate-mirroring stack geometry", () => {
+  it("paints display-order row 0 at the BOTTOM (the plate's bottom-up stack)", () => {
+    const bands = computeWaterfallExportBands(
+      [{ band_height: 1, y_offset: 0 }, { band_height: 1, y_offset: 0 }],
+      100,
+      1,
+    );
+    // Row 0 occupies the lower half, row 1 the upper half — contiguous at ×1.
+    expect(bands[0]).toEqual([50, 100]);
+    expect(bands[1]).toEqual([0, 50]);
+  });
+
+  it("offsetScale > 1 opens separation between bands (plate's offset slider flows through)", () => {
+    const tight = computeWaterfallExportBands(
+      [{ band_height: 1, y_offset: 0 }, { band_height: 1, y_offset: 0 }],
+      100,
+      1,
+    );
+    const spread = computeWaterfallExportBands(
+      [{ band_height: 1, y_offset: 0 }, { band_height: 1, y_offset: 0 }],
+      100,
+      2,
+    );
+    const gapOf = (b: Array<[number, number]>): number => b[0]![0] - b[1]![1];
+    expect(gapOf(tight)).toBeCloseTo(0);
+    expect(gapOf(spread)).toBeGreaterThan(0);
+    // The stack always renormalizes to fill the fixed export panel.
+    expect(spread[0]![1]).toBeCloseTo(100);
+    expect(spread[1]![0]).toBeCloseTo(0);
+  });
+
+  it("y_offset nudges are converted from plate pixels (420 stack) into panel space", () => {
+    // A 42px plate nudge = 10% of the plate stack. In a 100px panel it must
+    // contribute 10px BEFORE renormalization, not its raw 42px (which would
+    // weigh the nudge ~4x heavier in the export than on the plate).
+    const nudged = computeWaterfallExportBands(
+      [{ band_height: 1, y_offset: 0 }, { band_height: 1, y_offset: 42 }],
+      100,
+      1,
+    );
+    // Row 1 (top) is pushed DOWN into the stack by the panel-scaled nudge
+    // (10px, not 42px); row 0 still bottoms the panel, so no renormalization.
+    expect(nudged[1]![0]).toBeCloseTo(10);
+    expect(nudged[0]![0]).toBeCloseTo(50);
   });
 });
 

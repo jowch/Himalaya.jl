@@ -1,12 +1,14 @@
 // multiTraceExportMarks.ts — Plot marks for the MultiTracePlot export.
-// Stacked traces in display_order, per-member labels at each band's
+// Stacked traces in display_order (display-order 0 at the BOTTOM, mirroring
+// the plate's bottom-up waterfall), per-member labels at each band's
 // y-position, peak ticks/labels gated on showPeakTicks / showPeakLabels.
 // Heatmap representation + cross-trace tracking layer mirror the on-screen
 // MultiTracePlot (#251 r1 / B1).
 import * as Plot from "@observablehq/plot";
 import type { SeriesMember } from "../../../api";
 import type { Trace } from "../../../api";
-import { computeYBands } from "../../comparison/yBands";
+import { computeWaterfallExportBands } from "../../comparison/yBands";
+import { indexedAnchorPeaks } from "../../series/memberRead";
 import {
   LIGHT_PALETTE,
   TRACE_STROKE_PX,
@@ -46,6 +48,10 @@ export interface MultiTraceMarksArgs {
   /** Override the trace stroke width (Plan E E-8 clean preset → 2px). When
    *  omitted, the default TRACE_STROKE_PX (1.75) applies. */
   traceStrokeOverride?: number;
+  /** The plate's global trace-offset (BU-EXPORTDIVERGE): scales the inter-row
+   *  separation exactly as WaterfallChart's offset slider does, normalized
+   *  into the fixed export panel. Default 1 (contiguous bands). */
+  offsetScale?: number;
 }
 
 /**
@@ -64,11 +70,15 @@ export function buildMultiTraceExportMarks(args: MultiTraceMarksArgs): Plot.Mark
     showCrossTraceTracking = false,
     xDomain,
     traceStrokeOverride,
+    offsetScale = 1,
   } = args;
   const traceStroke = traceStrokeOverride ?? TRACE_STROKE_PX;
 
-  const ratios = members.map((m) => m.band_height || 1);
-  const yBands = computeYBands(ratios, panelHeight);
+  // Plate-mirroring band geometry (BU-EXPORTDIVERGE): display-order 0 at the
+  // bottom, offset slider + per-member y_offset honored, normalized into the
+  // fixed panel. The old computeYBands stacking published the figure flipped
+  // and ignored the plate's offset.
+  const yBands = computeWaterfallExportBands(members, panelHeight, offsetScale);
 
   const marks: Plot.Markish[] = [];
 
@@ -196,12 +206,13 @@ export function buildMultiTraceExportMarks(args: MultiTraceMarksArgs): Plot.Mark
       );
     }
 
-    // Peaks — honour show toggles AND the 3-state: a form-factor / null member
-    // shows its trace but no peak anchors (E-7).
-    const suppressPeaks =
-      member.snapshot?.assignment_state === "form_factor"
-      || member.snapshot?.assignment_state === "null";
-    const peaks = suppressPeaks ? [] : (member.snapshot?.effective_peaks ?? []);
+    // Peaks — honour show toggles AND the PLATE's annotation set
+    // (BU-EXPORTDIVERGE): indexed anchors only, ascending q — the same 1..n
+    // numbering register WaterfallChart paints. Numbering ALL effective_peaks
+    // here published labels the composition surface never showed. The shared
+    // predicate already yields [] for form-factor / null members (E-7) and
+    // unindexed members, so no separate suppress branch.
+    const peaks = indexedAnchorPeaks(member);
     if (showPeakTicks && peaks.length > 0) {
       // Converged onto the shared peakMark builder (Plan C plot spine): the
       // legacy ruleX ticks become peak glyphs (manual → diamond, auto →

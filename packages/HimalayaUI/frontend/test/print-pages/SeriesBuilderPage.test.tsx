@@ -799,6 +799,41 @@ describe("SeriesBuilderPage", () => {
     }
   });
 
+  it("BU-EXPORTDIVERGE: the export spec carries the plate's grouping/scale/offset/domain/label register", async () => {
+    loadTraces();
+    renderPage();
+    const createObjectURL = vi.fn(() => "blob:test");
+    const revokeObjectURL = vi.fn();
+    Object.assign(URL, { createObjectURL, revokeObjectURL });
+    // Default plate state: phase-colored traces, log q, offset ×1.20.
+    fireEvent.click(screen.getByTestId("export-menu-trigger"));
+    fireEvent.click(screen.getByRole("menuitem", { name: /download as svg/i }));
+    await waitFor(() => expect(specSpy).toHaveBeenCalled());
+    const args = specSpy.mock.calls.at(-1)![0] as Record<string, unknown>;
+    // The plate footnote promises WYSIWYG — every axis the plate renders
+    // flows into the spec from the same sources the plate reads.
+    expect(args).toMatchObject({
+      groupingMode: "byPhase",
+      xType: "log",
+      offsetScale: 1.2,
+      preset: "clean",
+    });
+    // Label register: the plate's (label_override ?? "exp N"), per member.
+    const labels = args.displayLabelByMemberId as Map<number, string>;
+    expect(labels.get(1)).toBe("ratio 1");
+    expect(labels.get(2)).toBe("ratio 2");
+    // The plate's padded q-domain, not the old hardcoded null.
+    expect(Array.isArray(args.xDomain)).toBe(true);
+
+    // Flip the plate to linear q and export again — the spec follows.
+    fireEvent.click(screen.getByRole("button", { name: /linear q/i }));
+    fireEvent.click(screen.getByTestId("export-menu-trigger"));
+    fireEvent.click(screen.getByRole("menuitem", { name: /download as svg/i }));
+    await waitFor(() =>
+      expect((specSpy.mock.calls.at(-1)![0] as { xType?: string }).xType).toBe("linear"),
+    );
+  });
+
   it("shows a commit-error notice (role=alert) on commit failure", () => {
     const { rerender } = renderPage();
     fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "x" } });

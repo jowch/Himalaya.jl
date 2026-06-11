@@ -37,3 +37,55 @@ export function computeYBands(
   }
   return out;
 }
+
+/**
+ * Plate-mirroring band layout for the export waterfall (BU-EXPORTDIVERGE).
+ * Mirrors WaterfallChart's stacking model, then normalizes into the fixed
+ * export panel:
+ *
+ *   - display-order row 0 sits at the BOTTOM (the plate paints bottom-up;
+ *     `computeYBands` above paints top-down — using it published a vertically
+ *     flipped figure);
+ *   - the inter-row STEP scales with `offsetScale` (the builder's offset
+ *     slider, same 0.1 floor as the plate) while each row's band height stays
+ *     constant, so separation/overlap ratios match the on-screen figure;
+ *   - per-member durable `y_offset` nudges are honored, like the plate;
+ *   - the resulting stack is rescaled to exactly fill `panelHeight`, because
+ *     the export canvas is fixed while the on-screen stack grows with the
+ *     offset. Relative geometry — the WYSIWYG axis — is what's preserved.
+ *
+ * Returned bands are indexed by member position (same convention as
+ * `computeYBands`), each `[top, bottom]` in panel pixels.
+ */
+export function computeWaterfallExportBands(
+  rows: ReadonlyArray<{ band_height: number; y_offset: number }>,
+  panelHeight: number,
+  offsetScale: number,
+): Array<[number, number]> {
+  const n = rows.length;
+  if (n === 0) return [];
+  const scale = Math.max(0.1, offsetScale); // plate's collapse floor
+  const totalWeight = rows.reduce((s, r) => s + Math.max(0, r.band_height), 0) || n;
+  // y_offset is a durable nudge in PLATE pixels (WaterfallChart's 420px
+  // internal stack). Band heights are weight-normalized in each space, but a
+  // raw-pixel nudge would carry ~1.5x more relative weight in the smaller
+  // export panel - convert it to panel space so the nudge:band ratio matches
+  // the plate.
+  const PLATE_TOTAL_H = 420;
+  const nudgeScale = panelHeight / PLATE_TOTAL_H;
+  const bands: Array<[number, number]> = new Array<[number, number]>(n);
+  let cumulative = 0;
+  let stackHeight = 0;
+  // Reversed walk = top-down pixel placement of a bottom-up display order,
+  // exactly as WaterfallChart places its rows.
+  for (let i = n - 1; i >= 0; i--) {
+    const r = rows[i]!;
+    const h = (Math.max(0, r.band_height) / totalWeight) * panelHeight;
+    const top = cumulative + r.y_offset * nudgeScale;
+    cumulative += h * scale;
+    stackHeight = Math.max(stackHeight, top + h);
+    bands[i] = [top, top + h];
+  }
+  const k = panelHeight / Math.max(stackHeight, 1e-9);
+  return bands.map(([top, bottom]) => [top * k, bottom * k]);
+}

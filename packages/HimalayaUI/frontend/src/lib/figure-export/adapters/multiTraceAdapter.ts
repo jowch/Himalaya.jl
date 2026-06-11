@@ -8,6 +8,8 @@ import {
 import { buildMultiTraceExportMarks } from "../marks/multiTraceExportMarks";
 import { colorFor, ORPHAN_FALLBACK, type GroupingMode } from "../../comparison/coloring";
 import { phaseColor } from "../../../phases";
+import { formatAxis } from "../../plot/formatAxis";
+import { dominantPhase, memberRowLabel } from "../../series/memberRead";
 import type { Representation } from "../marks/multiTraceExportMarks";
 
 export interface MultiTraceAdapterArgs {
@@ -20,9 +22,17 @@ export interface MultiTraceAdapterArgs {
   showPeakLabels: boolean;
   groupingMode: GroupingMode;
   sampleIdFor: (m: SeriesMember) => number | null;
-  /** Pre-resolved labels via lib/comparison/labels.resolveDisplayLabels.
-   *  Falls back to "Exposure #${exposure_id}" when missing. */
+  /** Pre-resolved member labels. Falls back to the plate's register
+   *  (memberRead.memberRowLabel: label_override ?? "exp N") when missing —
+   *  the export must speak the same label vocabulary as the plate
+   *  (BU-EXPORTDIVERGE), never the retired "Exposure #N" long form. */
   displayLabelByMemberId?: Map<number, string>;
+  /** The plate's q-axis scale (BU-EXPORTDIVERGE). Default "log" — pass
+   *  "linear" when the on-screen linear-q toggle is active. */
+  xType?: "log" | "linear";
+  /** The plate's global trace-offset slider value (BU-EXPORTDIVERGE);
+   *  threaded to the marks builder's stack geometry. Default 1. */
+  offsetScale?: number;
   /** Render mode the on-screen plot is in — `"waterfall"` (default) or
    *  `"heatmap"`. Threaded through to the marks builder so the exported PNG/
    *  SVG matches the live figure (#251 r1 / B1). */
@@ -42,6 +52,8 @@ export function buildMultiTraceExportSpec(args: MultiTraceAdapterArgs): ExportSp
     members, traces, comparisonTitle, experimentName,
     xDomain, showPeakTicks, showPeakLabels,
     groupingMode, sampleIdFor, displayLabelByMemberId,
+    xType = "log",
+    offsetScale = 1,
     representation = "waterfall",
     showCrossTraceTracking = false,
     preset = "default",
@@ -75,13 +87,12 @@ export function buildMultiTraceExportSpec(args: MultiTraceAdapterArgs): ExportSp
     );
   }
 
-  // Build a default display-label map if the parent didn't provide one. The
-  // ComparePage call site DOES provide one; the adapter test calls without.
+  // Build a default display-label map if the parent didn't provide one —
+  // from the SAME register the plate paints (memberRead.memberRowLabel), so
+  // an adapter-default export still labels rows "exp N", never "Exposure #N"
+  // (BU-EXPORTDIVERGE).
   const labels = displayLabelByMemberId ?? new Map<number, string>(
-    filtered.map((m) => [
-      m.id,
-      m.label_override ?? `Exposure #${m.exposure_id}`,
-    ]),
+    filtered.map((m) => [m.id, memberRowLabel(m)]),
   );
 
   // panelHeight for the marks builder = export height minus chrome.
@@ -96,6 +107,7 @@ export function buildMultiTraceExportSpec(args: MultiTraceAdapterArgs): ExportSp
     representation,
     showCrossTraceTracking,
     xDomain,
+    offsetScale,
     ...(clean ? { traceStrokeOverride: CLEAN_SCIENTIFIC.traceStroke } : {}),
   });
 
@@ -103,8 +115,14 @@ export function buildMultiTraceExportSpec(args: MultiTraceAdapterArgs): ExportSp
   const legendRows = buildLegendRows(members, filtered, groupingMode, sampleIdFor, colorByMember);
 
   const xConfig: Record<string, unknown> = {
-    type: "log",
+    // The plate's axis scale flows through (BU-EXPORTDIVERGE) — the export
+    // previously hardcoded log and ignored the linear-q toggle.
+    type: xType,
     label: clean ? CLEAN_SCIENTIFIC.axisLabel.x : "q",
+    // The plate's tick vocabulary: plain decimals (0.01, 0.1, …) via the
+    // shared formatAxis, not d3's default SI-suffix format that renders
+    // q = 0.1 as "100m" (milli) — unidiomatic and confusing for SAXS q.
+    tickFormat: formatAxis,
   };
   if (xDomain) xConfig.domain = xDomain;
 
@@ -176,8 +194,12 @@ function buildLegendRows(
         label: sid !== null ? `Sample ${sid}` : "(unknown sample)",
       });
     } else if (mode === "byPhase") {
-      const phase = m.snapshot?.confirmed_index?.phase;
-      if (!phase) {
+      // Same shared predicate as the trace color (memberRead.dominantPhase):
+      // a coexistence member legends under its dominant phase, and a member
+      // confirmed via confirmed_phases can never read "unphased / unbound"
+      // while its trace renders in a phase color (BU-EXPORTDIVERGE).
+      const phase = dominantPhase(m);
+      if (phase === null) {
         orphanPresent = true;
         continue;
       }

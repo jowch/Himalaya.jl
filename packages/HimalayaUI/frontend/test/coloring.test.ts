@@ -291,6 +291,37 @@ describe("colorFor — byPhase", () => {
       .not.toBe(colorFor(b, "byPhase", COMPARE_PALETTE, ctx));
   });
 
+  it("coexistence member colors by the DOMINANT phase (confirmed_phases[0]), not confirmed_index.phase (BU-EXPORTDIVERGE)", () => {
+    // The plate's identity source is memberRead.dominantPhase
+    // (confirmed_phases[0] ?? confirmed_index.phase). When the two disagree
+    // (coexistence ordering), the exported trace color must follow the plate.
+    const m = makeMember({
+      snapshot: {
+        effective_peaks: [],
+        confirmed_index: { id: 1, phase: "Pn3m", lattice_d: 12, r_squared: 0.99, ngc: -1.5, peak_ids: [] },
+        confirmed_phases: [{ phase: "Im3m", lattice_d: 110 }, { phase: "Pn3m", lattice_d: 100 }],
+        analysis_inputs_hash: "abc",
+      },
+    });
+    const ctx = { allMembers: [m], sampleIdFor: sampleIdResolver({}) };
+    expect(colorFor(m, "byPhase", COMPARE_PALETTE, ctx)).toBe(phaseColor("Im3m"));
+  });
+
+  it("form_factor assignment state → ORPHAN_FALLBACK even with a lingering confirmed_index", () => {
+    // The plate renders form-factor members phaseless (dominantPhase gates on
+    // assignment_state); byPhase coloring must agree.
+    const m = makeMember({
+      snapshot: {
+        effective_peaks: [],
+        confirmed_index: { id: 1, phase: "Pn3m", lattice_d: 12, r_squared: 0.99, ngc: -1.5, peak_ids: [] },
+        assignment_state: "form_factor",
+        analysis_inputs_hash: "abc",
+      },
+    });
+    const ctx = { allMembers: [m], sampleIdFor: sampleIdResolver({}) };
+    expect(colorFor(m, "byPhase", COMPARE_PALETTE, ctx)).toBe(ORPHAN_FALLBACK);
+  });
+
   it("unindexed member (confirmed_index === null) → ORPHAN_FALLBACK", () => {
     const m = makeMember({
       snapshot: {

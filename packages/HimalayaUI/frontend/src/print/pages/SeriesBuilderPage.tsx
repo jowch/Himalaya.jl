@@ -17,7 +17,8 @@ import {
 import { useAppState } from "../../state";
 import * as api from "../../api";
 import type { Series, SeriesMember } from "../../api";
-import { toWaterfallRows } from "../waterfall/waterfallModel";
+import { toWaterfallRows, waterfallQDomain } from "../waterfall/waterfallModel";
+import { memberRowLabel } from "../../lib/series/memberRead";
 import {
   membersToMemberData,
   groupingSummary,
@@ -337,20 +338,30 @@ function BuilderBody({
   const effectiveTitle = liveDraft ? liveDraft.title : series.title;
 
   // ── Figure export (plate-head ExportButton, wired via useFigureExport) ───
+  // WYSIWYG contract (BU-EXPORTDIVERGE): the plate footnote promises "what
+  // you compose is what you publish", so every axis the plate renders flows
+  // into the spec from the SAME sources the plate reads — phase identity
+  // (byPhase via the shared memberRead.dominantPhase predicate), the plate's
+  // padded q-domain, the log/linear toggle, the offset slider, the annotation
+  // flags, and the plate's row-label register. Publication furniture (title
+  // block, white background, margins) is the only sanctioned delta.
   const exportSpec = useCallback(
     (): import("../../lib/figure-export/types").ExportSpec =>
       buildMultiTraceExportSpec({
         members,
         traces: new Map(Object.entries(tracesById).map(([k, v]) => [Number(k), v])),
         comparisonTitle: effectiveTitle,
-        xDomain: null,
+        xDomain: waterfallQDomain(rows),
         showPeakTicks,
         showPeakLabels,
-        groupingMode: "bySample",
+        groupingMode: "byPhase",
         sampleIdFor: () => null,
+        displayLabelByMemberId: new Map(members.map((m) => [m.id, memberRowLabel(m)])),
+        xType: scale === "log" ? "log" : "linear",
+        offsetScale: offset,
         preset: "clean",
       }),
-    [members, tracesById, effectiveTitle, showPeakTicks, showPeakLabels],
+    [members, rows, tracesById, effectiveTitle, showPeakTicks, showPeakLabels, scale, offset],
   );
   const fx = useFigureExport(exportSpec, effectiveTitle, "series figure");
 

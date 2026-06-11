@@ -1,4 +1,16 @@
 import type { SeriesMember, Trace, AssignmentState } from "../../api";
+import {
+  dominantPhase,
+  indexedAnchorPeaks,
+  memberRowLabel,
+  resolveState,
+} from "../../lib/series/memberRead";
+
+// Single-shared-predicate (BU-EXPORTDIVERGE): the plate's identity reads live
+// in lib/series/memberRead so the export pipeline resolves phase / label /
+// state / peak set through the exact same chains. Re-exported here for the
+// existing waterfallModel importers (builderAdapters, folioAdapters, …).
+export { dominantPhase, resolveState } from "../../lib/series/memberRead";
 
 const EMPTY_TRACE: Trace = { q: [], I: [], sigma: [] };
 
@@ -25,51 +37,28 @@ export interface WaterfallRow {
   yOffset: number;
 }
 
-/** Dominant phase: first confirmed_phases entry, else confirmed_index.phase, else null. */
-export function dominantPhase(member: SeriesMember): string | null {
-  const snap = member.snapshot;
-  if (snap === null) return null;
-  if (snap.assignment_state === "form_factor" || snap.assignment_state === "null") return null;
-  const cp = snap.confirmed_phases;
-  if (cp && cp.length > 0) return cp[0]!.phase;
-  return snap.confirmed_index?.phase ?? null;
-}
-
-/** Resolve the assignment state, treating missing snapshot or undefined state as "indexed". */
-export function resolveState(member: SeriesMember): AssignmentState {
-  const snap = member.snapshot;
-  if (snap === null) return "indexed";
-  return snap.assignment_state ?? "indexed";
-}
-
 /** Map API members + a trace lookup → rows in input (display) order. */
 export function toWaterfallRows(
   members: SeriesMember[],
   tracesById: Record<number, Trace>,
 ): WaterfallRow[] {
   return members.map((member) => {
-    const snap = member.snapshot;
     const state = resolveState(member);
     const phase = dominantPhase(member);
     const trace = (member.exposure_id != null && tracesById[member.exposure_id]) || EMPTY_TRACE;
 
-    const effectivePeaks = snap?.effective_peaks ?? [];
-    const confirmedIndex = snap?.confirmed_index ?? null;
-
-    const peakById = new Map(effectivePeaks.map((p) => [p.id, p]));
-    const anchors: WaterfallAnchor[] =
-      state === "indexed" && confirmedIndex !== null
-        ? confirmedIndex.peak_ids
-            .filter((id) => peakById.has(id))
-            .map((id) => {
-              const p = peakById.get(id)!;
-              return { id, q: p.q, intensity: p.intensity, phase };
-            })
-        : [];
+    // indexedAnchorPeaks is the shared annotated-peak predicate (also drives
+    // the export's peak marks) — indexed anchors only, ascending q.
+    const anchors: WaterfallAnchor[] = indexedAnchorPeaks(member).map((p) => ({
+      id: p.id,
+      q: p.q,
+      intensity: p.intensity,
+      phase,
+    }));
 
     return {
       key: String(member.id),
-      label: member.label_override ?? (member.exposure_id != null ? `exp ${member.exposure_id}` : ""),
+      label: memberRowLabel(member),
       trace,
       phase,
       state,

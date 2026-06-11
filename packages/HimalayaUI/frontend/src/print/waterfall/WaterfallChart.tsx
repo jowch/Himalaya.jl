@@ -38,10 +38,10 @@ export interface WaterfallChartProps {
    *  Default true — consumers without annotation toggles keep today's look. */
   showPeakTicks?: boolean;
   /** Render ordinal peak labels above the anchors (the "Peak labels" layer).
-   *  Default false. Same NUMBERING register as the exported figure (1..n
-   *  ascending q per row); the export currently numbers ALL effective_peaks
-   *  while the plate labels indexed anchors only — a peak-set divergence
-   *  owned by BU-EXPORTDIVERGE, not by this layer. */
+   *  Default false. Same numbering register AND peak set as the exported
+   *  figure (1..n ascending q per row, indexed anchors only) — both layers
+   *  read memberRead.indexedAnchorPeaks (BU-EXPORTDIVERGE aligned the export
+   *  to the plate's set). */
   showPeakLabels?: boolean;
   /** PLACEMENT ONLY. */
   className?: string;
