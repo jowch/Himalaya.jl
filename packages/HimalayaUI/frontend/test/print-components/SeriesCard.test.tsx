@@ -123,6 +123,31 @@ describe("<SeriesCard> notice pill", () => {
   });
 });
 
+describe("<SeriesCard> plate lift (FOL P2-1)", () => {
+  // DESIGN.md §4: folio cards are Plate Lift surfaces. The lift is the Card
+  // primitive's `elevated` variant (the single source of the plate look), so
+  // the pin is the variant attribute — semantics, not class strings.
+  it("a saved card carries the Card elevated variant (data-elevated='true')", () => {
+    render(<SeriesCard {...BASE_PROPS} />);
+    expect(screen.getByTestId("series-card")).toHaveAttribute("data-elevated", "true");
+  });
+
+  it("a draft card stays flat — dashed recipe, NO Plate Lift", () => {
+    render(<SeriesCard {...BASE_PROPS} draft />);
+    expect(screen.getByTestId("series-card")).not.toHaveAttribute("data-elevated");
+  });
+
+  it("a clickable card carries the quiet hover door affordance (data-interactive='true')", () => {
+    render(<SeriesCard {...BASE_PROPS} onClick={vi.fn()} />);
+    expect(screen.getByTestId("series-card")).toHaveAttribute("data-interactive", "true");
+  });
+
+  it("a non-clickable card has no door affordance", () => {
+    render(<SeriesCard {...BASE_PROPS} />);
+    expect(screen.getByTestId("series-card")).not.toHaveAttribute("data-interactive");
+  });
+});
+
 describe("<SeriesCard> draft variant", () => {
   it("draft=true → root data-draft='true'", () => {
     render(<SeriesCard {...BASE_PROPS} draft />);

@@ -66,4 +66,26 @@ describe("<Card> polymorphic `as`", () => {
     render(<Card as="section" data-testid="c">x</Card>);
     expect(screen.getByTestId("c").tagName.toLowerCase()).toBe("section");
   });
+  it("renders the given tag for as='article' (the folio card root)", () => {
+    render(<Card as="article" data-testid="c">x</Card>);
+    expect(screen.getByTestId("c").tagName.toLowerCase()).toBe("article");
+  });
+});
+
+describe("<Card> interactive (door affordance)", () => {
+  it("is not interactive by default", () => {
+    render(<Card data-testid="c">x</Card>);
+    expect(screen.getByTestId("c").getAttribute("data-interactive")).toBe(null);
+  });
+  it("sets data-interactive='true' when interactive", () => {
+    render(<Card interactive data-testid="c">x</Card>);
+    expect(screen.getByTestId("c").getAttribute("data-interactive")).toBe("true");
+  });
+  it("composes with elevated + as='article' (the lifted folio door)", () => {
+    render(<Card as="article" elevated interactive data-testid="c">x</Card>);
+    const el = screen.getByTestId("c");
+    expect(el.tagName.toLowerCase()).toBe("article");
+    expect(el.getAttribute("data-elevated")).toBe("true");
+    expect(el.getAttribute("data-interactive")).toBe("true");
+  });
 });

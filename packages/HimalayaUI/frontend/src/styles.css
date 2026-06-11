@@ -79,6 +79,15 @@
   --radius-sm:   5px;     /* buttons, inputs, chips, segmented controls */
   --radius-md:   5px;     /* cards, plates, sheets, modals */
   --radius-full: 9999px;  /* pills, dots */
+
+  /* Elevation — the single genuine shadow (DESIGN.md §4 "Plate Lift"): soft,
+     warm, shallow. The ONE token every lifted plate-like surface (figure
+     plate, folio cards, scoping worksheet, loupe frame surround) draws from,
+     via the `.card` rule / Card `elevated`. Warm rgba(40,30,20) per DESIGN.md —
+     the cool dark-era rgba(20,24,40) cast is retired (FOL P2-1). */
+  --shadow-plate-lift:
+    0 1px 0 rgba(255, 255, 255, .6) inset,
+    0 6px 24px -8px rgba(40, 30, 20, .14);
   --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
   --font-serif: "Newsreader", Georgia, ui-serif, serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -189,9 +198,7 @@
     background: var(--color-plate);
     border: 0.5px solid var(--color-hair);
     border-radius: var(--radius-md); /* 5px — folds onto the radius scale (spec §3/§8 sign-off) */
-    box-shadow:
-      0 1px 0 rgba(255, 255, 255, .6) inset,
-      0 6px 24px -8px rgba(20, 24, 40, .15);
+    box-shadow: var(--shadow-plate-lift);
     position: relative;
   }
 

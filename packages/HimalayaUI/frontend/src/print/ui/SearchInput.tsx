@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { Input } from "./Input";
 
 interface SearchInputProps {
@@ -35,10 +36,17 @@ function MagnifierSvg(): JSX.Element {
 }
 
 /** Standard product search field: composes the base {@link Input} with a leading
- *  magnifier glyph. Appearance (plate well, hairline, 5px radius, the rationed
+ *  magnifier glyph and, while non-empty, a trailing one-click clear (×).
+ *  Appearance (plate well, hairline, 5px radius, the rationed
  *  `focus-within:border-accent` ring) lives in `Input`; SearchInput contributes
- *  only the leading adornment and keeps its own `data-testid="search-input"`
- *  contract via Input's `testId` override.
+ *  only the adornments and keeps its own `data-testid="search-input"` contract
+ *  via Input's `testId` override.
+ *
+ *  The clear × is the house ghost-icon idiom (Chip's remove precedent): a real
+ *  in-flow `h-6 w-6` (24×24 CSS px, WCAG 2.5.8 / LO-TAGTARGET) border box whose
+ *  negative margins collapse the LAYOUT footprint so the field never inflates
+ *  when the button appears. Clearing keeps focus in the input (the user is
+ *  mid-search, not done searching).
  *
  *  C — focus is Input's `focus-within:border-accent` ring; hover N/A (a field,
  *  not a button). E — input text is sans/base (prose entry), correct. F —
@@ -50,6 +58,20 @@ export function SearchInput({
   placeholder,
   className,
 }: SearchInputProps): JSX.Element {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const clearButton = (
+    <button
+      type="button"
+      aria-label="Clear search"
+      onClick={() => {
+        onChange("");
+        inputRef.current?.focus();
+      }}
+      className="inline-flex h-6 w-6 shrink-0 items-center justify-center -my-1 -mr-1 rounded-sm text-ink-faint hover:text-ink focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-0 focus-visible:outline-accent"
+    >
+      ×
+    </button>
+  );
   return (
     <Input
       testId="search-input"
@@ -58,6 +80,8 @@ export function SearchInput({
       {...(placeholder !== undefined ? { placeholder } : {})}
       className={className ?? ""}
       leading={<MagnifierSvg />}
+      inputRef={inputRef}
+      {...(value !== "" ? { trailing: clearButton } : {})}
     />
   );
 }

@@ -25,6 +25,39 @@ export interface FolioControls {
   sort: FolioSort;
 }
 
+/**
+ * URL ⇄ controls codec (FOL P2-3 — the house permalink convention).
+ *
+ * Schema: `?q=<search>&filter=transition|cross&sort=variable|size`.
+ * Defaults are ABSENT from the URL: an empty search never leaves `?q=`,
+ * `filter=all` / `sort=recent` are the no-param state. Unknown values fall
+ * back to the defaults (a shared link with a stale token still renders).
+ */
+export function folioControlsFromParams(params: URLSearchParams): FolioControls {
+  const filter = params.get("filter");
+  const sort = params.get("sort");
+  return {
+    search: params.get("q") ?? "",
+    filter: filter === "transition" || filter === "cross" ? filter : "all",
+    sort: sort === "variable" || sort === "size" ? sort : "recent",
+  };
+}
+
+/** Writes `controls` onto `params` in place (set non-defaults, delete
+ *  defaults) and returns it. Non-folio params are left untouched. */
+export function writeFolioControlsToParams(
+  params: URLSearchParams,
+  c: FolioControls,
+): URLSearchParams {
+  if (c.search === "") params.delete("q");
+  else params.set("q", c.search);
+  if (c.filter === "all") params.delete("filter");
+  else params.set("filter", c.filter);
+  if (c.sort === "recent") params.delete("sort");
+  else params.set("sort", c.sort);
+  return params;
+}
+
 export function filterSort(
   series: SeriesSummary[],
   c: FolioControls,

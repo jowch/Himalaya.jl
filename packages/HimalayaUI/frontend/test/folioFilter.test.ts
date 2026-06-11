@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { filterSort } from "../src/lib/series/folioFilter";
+import {
+  filterSort,
+  folioControlsFromParams,
+  writeFolioControlsToParams,
+} from "../src/lib/series/folioFilter";
 import type { SeriesSummary } from "../src/api";
 
 function summary(over: Partial<SeriesSummary> = {}): SeriesSummary {
@@ -87,5 +91,59 @@ describe("filterSort", () => {
     const snapshot = rows.map((r) => r.id);
     filterSort(rows, { search: "", filter: "all", sort: "size" });
     expect(rows.map((r) => r.id)).toEqual(snapshot);
+  });
+});
+
+describe("folio URL codec (FOL P2-3)", () => {
+  it("no params parse to the defaults", () => {
+    expect(folioControlsFromParams(new URLSearchParams(""))).toEqual({
+      search: "", filter: "all", sort: "recent",
+    });
+  });
+
+  it("?q=&filter=&sort= round-trip into controls", () => {
+    expect(
+      folioControlsFromParams(new URLSearchParams("q=LL37&filter=transition&sort=size")),
+    ).toEqual({ search: "LL37", filter: "transition", sort: "size" });
+    expect(
+      folioControlsFromParams(new URLSearchParams("filter=cross&sort=variable")),
+    ).toEqual({ search: "", filter: "cross", sort: "variable" });
+  });
+
+  it("unknown filter/sort tokens fall back to the defaults (stale shared link still renders)", () => {
+    expect(
+      folioControlsFromParams(new URLSearchParams("filter=bogus&sort=nope")),
+    ).toEqual({ search: "", filter: "all", sort: "recent" });
+  });
+
+  it("default controls write NO params (an empty search never leaves ?q=)", () => {
+    const params = writeFolioControlsToParams(
+      new URLSearchParams("q=old&filter=transition&sort=size"),
+      { search: "", filter: "all", sort: "recent" },
+    );
+    expect(params.toString()).toBe("");
+  });
+
+  it("non-default controls write their params", () => {
+    const params = writeFolioControlsToParams(new URLSearchParams(""), {
+      search: "LL37", filter: "cross", sort: "variable",
+    });
+    expect(params.get("q")).toBe("LL37");
+    expect(params.get("filter")).toBe("cross");
+    expect(params.get("sort")).toBe("variable");
+  });
+
+  it("leaves foreign params untouched", () => {
+    const params = writeFolioControlsToParams(new URLSearchParams("other=1&q=x"), {
+      search: "", filter: "all", sort: "recent",
+    });
+    expect(params.get("other")).toBe("1");
+    expect(params.get("q")).toBe(null);
+  });
+
+  it("controls round-trip through the params unchanged", () => {
+    const controls = { search: "lipid 1-2", filter: "transition", sort: "size" } as const;
+    const params = writeFolioControlsToParams(new URLSearchParams(""), controls);
+    expect(folioControlsFromParams(params)).toEqual(controls);
   });
 });

@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useMemo } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Skeleton } from "boneyard-js/react";
 import { PageFrame } from "../components/PageFrame";
 import { FolioHeader } from "../components/FolioHeader";
@@ -15,7 +15,11 @@ import {
 import type { SegmentOption } from "../ui";
 import { useSeriesList, useSeries, useSeriesTraces } from "../../queries";
 import type { SeriesSummary } from "../../api";
-import { filterSort } from "../../lib/series/folioFilter";
+import {
+  filterSort,
+  folioControlsFromParams,
+  writeFolioControlsToParams,
+} from "../../lib/series/folioFilter";
 import type { FolioControls, FolioFilter, FolioSort } from "../../lib/series/folioFilter";
 import { membersToSegments, toCardChrome } from "./folioAdapters";
 import { toWaterfallRows } from "../waterfall/waterfallModel";
@@ -91,16 +95,31 @@ export function SeriesFolioPage(): JSX.Element {
   const summaries = listQ.data ?? [];
   const now = new Date();
 
-  const [controls, setControls] = useState<FolioControls>({
-    search: "",
-    filter: "all",
-    sort: "recent",
-  });
+  // FOL P2-3: the controls live in the URL (the house permalink convention —
+  // ?q=&filter=&sort=, defaults absent), so reload/share keeps the view.
+  // Writes use replace, not push: a keystroke must not become a history entry
+  // (same reason SamplesPage's beamtime select doesn't spam Back).
+  const [searchParams, setSearchParams] = useSearchParams();
+  const controls = useMemo(
+    () => folioControlsFromParams(searchParams),
+    [searchParams],
+  );
+
+  function updateControls(patch: Partial<FolioControls>): void {
+    setSearchParams(
+      (prev) =>
+        writeFolioControlsToParams(new URLSearchParams(prev), {
+          ...folioControlsFromParams(prev),
+          ...patch,
+        }),
+      { replace: true },
+    );
+  }
 
   const visible = filterSort(summaries, controls);
 
   function setFilter(filter: FolioFilter): void {
-    setControls((c) => ({ ...c, filter }));
+    updateControls({ filter });
   }
 
   // Honest error surface: a failed list fetch settles with data=undefined, which
@@ -150,7 +169,7 @@ export function SeriesFolioPage(): JSX.Element {
       <div className="flex items-center gap-3.5 flex-wrap pb-4 mb-5 border-b border-hair">
         <SearchInput
           value={controls.search}
-          onChange={(v) => setControls((c) => ({ ...c, search: v }))}
+          onChange={(v) => updateControls({ search: v })}
           placeholder="Search series…"
         />
         <div className="flex gap-1.5">
@@ -175,7 +194,7 @@ export function SeriesFolioPage(): JSX.Element {
           aria-label="Sort series"
           options={SORT_OPTIONS}
           value={controls.sort}
-          onChange={(v) => setControls((c) => ({ ...c, sort: v }))}
+          onChange={(v) => updateControls({ sort: v })}
         />
       </div>
 
@@ -213,9 +232,9 @@ export function SeriesFolioPage(): JSX.Element {
                 action={
                   <Button
                     variant="outline"
-                    onClick={() =>
-                      setControls((c) => ({ ...c, search: "", filter: "all" }))
-                    }
+                    // Resets search + filter (and drops their URL params);
+                    // the sort — and its param — survive. Pinned semantic.
+                    onClick={() => updateControls({ search: "", filter: "all" })}
                   >
                     Show the whole folio
                   </Button>

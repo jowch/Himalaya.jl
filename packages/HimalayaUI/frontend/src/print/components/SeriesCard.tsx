@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { CardFigure } from "../waterfall/CardFigure";
-import { PhaseStrip, NoticePill } from "../ui";
+import { Card, PhaseStrip, NoticePill } from "../ui";
 import type { PhaseSegment } from "../ui";
 import type { WaterfallRow } from "../waterfall/waterfallModel";
 
@@ -59,17 +59,21 @@ export function SeriesCard({
   onClick,
   className,
 }: SeriesCardProps): JSX.Element {
+  // The plate look comes from the Card primitive (the single source of the
+  // Plate Lift — DESIGN.md §4: folio cards ARE lifted plates). Saved cards are
+  // `elevated`; drafts take Card's dashed flat variant (no shadow — a recipe,
+  // not yet a print). `interactive` adds the quiet house hover affordance
+  // (hairline firming, no motion) when the card is a door.
   return (
-    <article
+    <Card
+      as="article"
+      elevated={!draft}
+      draft={draft}
+      interactive={onClick !== undefined}
       data-testid="series-card"
       data-draft={draft ? "true" : "false"}
-      onClick={onClick}
-      className={cx(
-        "bg-plate border border-hair rounded overflow-hidden",
-        onClick && "cursor-pointer",
-        draft && "border-dashed border-hair-strong",
-        className,
-      )}
+      {...(onClick ? { onClick } : {})}
+      className={cx("overflow-hidden", className)}
     >
       {/* Figure region — the frozen mini-waterfall plate */}
       <div
@@ -143,6 +147,6 @@ export function SeriesCard({
           </span>
         </div>
       </div>
-    </article>
+    </Card>
   );
 }

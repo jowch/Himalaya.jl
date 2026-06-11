@@ -4,13 +4,14 @@ import type {
   LiHTMLAttributes,
 } from "react";
 
-export type CardElement = "div" | "button" | "section" | "li";
+export type CardElement = "div" | "button" | "section" | "li" | "article";
 
 type ElementProps = {
   div: HTMLAttributes<HTMLDivElement>;
   section: HTMLAttributes<HTMLElement>;
   li: LiHTMLAttributes<HTMLLIElement>;
   button: ButtonHTMLAttributes<HTMLButtonElement>;
+  article: HTMLAttributes<HTMLElement>;
 };
 
 type CardOwnProps<T extends CardElement> = {
@@ -37,6 +38,11 @@ type CardOwnProps<T extends CardElement> = {
    *  (non-elevated) variant. Adds `data-selected="true"` for tests and
    *  targeted CSS. */
   selected?: boolean;
+  /** Clickable card / door. The quiet house hover affordance — hairline
+   *  firming (`hair` → `hair-strong`) + pointer cursor, riding the global
+   *  120ms colour transition. NO motion, NO shadow change. Adds
+   *  `data-interactive="true"` for tests. */
+  interactive?: boolean;
 };
 
 export type CardProps<T extends CardElement = "div"> = CardOwnProps<T> &
@@ -60,20 +66,25 @@ export function Card<T extends CardElement = "div">({
   draft = false,
   padding,
   selected = false,
+  interactive = false,
   className = "",
   children,
   ...rest
 }: CardProps<T>): JSX.Element {
   const Tag = (as ?? "div") as CardElement;
-  // elevated → `.card` (single source of the shadow). flat → tonal hairline,
-  // never a shadow. Radius token (rounded-md = 5px) comes from Phase 0.
+  // elevated → `.card` (single source of the Plate-Lift shadow, sourced from
+  // the `--shadow-plate-lift` token). flat → tonal hairline, never a shadow.
+  // Radius token (rounded-md = 5px) comes from Phase 0.
   // selected → accent border + inset accent ring (flat, no shadow).
+  // interactive → quiet hover hairline firming (utilities layer beats the
+  // `.card` base-layer border colour), pointer cursor. No motion.
   const appearance =
     (draft
       ? "rounded-md bg-plate border border-dashed border-hair-strong"
       : elevated
         ? "card"
         : `rounded-md bg-plate ${borderClass[border]}`) +
+    (interactive ? " cursor-pointer hover:border-hair-strong" : "") +
     (padding ? ` ${paddingClass[padding]}` : "");
   // The selected ring style is injected inline so it can use CSS custom
   // properties without minting a new Tailwind class outside print/ui.
@@ -91,6 +102,7 @@ export function Card<T extends CardElement = "div">({
     ...(elevated && !draft ? { "data-elevated": "true" } : {}),
     ...(padding ? { "data-padding": padding } : {}),
     ...(selected ? { "data-selected": "true" } : {}),
+    ...(interactive ? { "data-interactive": "true" } : {}),
     // Default an explicit button type so a Card-as-button inside a <form> never
     // silently acts as a submit; a consumer-passed `type` (via ...rest) still wins.
     ...(Tag === "button" ? { type: "button" } : {}),

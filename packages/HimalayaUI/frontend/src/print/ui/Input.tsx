@@ -1,4 +1,4 @@
-import type { InputHTMLAttributes, ReactNode } from "react";
+import type { InputHTMLAttributes, ReactNode, Ref } from "react";
 
 function cx(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(" ");
@@ -18,6 +18,9 @@ export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 
   /** Overrides the wrapper's `data-testid`, default `"input"`; lets SearchInput
    *  etc. keep their contract. */
   testId?: string;
+  /** Ref to the inner <input> — lets composers (e.g. SearchInput's clear
+   *  affordance) return focus to the field after acting on it. */
+  inputRef?: Ref<HTMLInputElement>;
 }
 
 const sizeClass: Record<"sm" | "md", string> = {
@@ -45,6 +48,7 @@ export function Input({
   invalid = false,
   mono = false,
   testId,
+  inputRef,
   className = "",
   ...rest
 }: InputProps): JSX.Element {
@@ -61,6 +65,7 @@ export function Input({
     >
       {leading}
       <input
+        ref={inputRef}
         value={value}
         onChange={(e) => onValueChange(e.target.value)}
         aria-invalid={invalid || undefined}

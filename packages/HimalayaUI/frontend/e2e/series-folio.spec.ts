@@ -47,6 +47,20 @@ async function mockCore(page: Page): Promise<void> {
 }
 
 test.describe("series folio", () => {
+  // The new tests CLICK (the clear ×, "Show the whole folio"); the onboarding
+  // overlay would intercept, so seed a username like corpus-culling.spec.ts.
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() =>
+      localStorage.setItem(
+        "himalaya-ui:state",
+        JSON.stringify({
+          state: { username: "alice", theme: "dark", tutorialSeen: true },
+          version: 3,
+        }),
+      ),
+    );
+  });
+
   // Greenfield folio testid mapping (replaces legacy series-folio-page DOM):
   //   series-folio-page  → folio-header     (FolioHeader root, data-testid="folio-header")
   //   series-card-N      → series-card      (all SeriesCards share one testid; use .nth())
@@ -87,5 +101,53 @@ test.describe("series folio", () => {
     await mockCore(page);
     await page.goto("/series");
     await expect(page.getByTestId("stage-tab-series")).toHaveAttribute("aria-current", "page");
+  });
+
+  // FOL P2-4 + LO-TAGTARGET (WCAG 2.2 §2.5.8): the search clear × is a bare
+  // glyph in a dense field, so the button itself must carry a ≥24×24 CSS-px
+  // border box (same in-flow h-6/w-6 idiom the tag-remove × pins in
+  // corpus-culling.spec.ts). jsdom has no layout, so geometry is pinned here.
+  test("folio search: the clear × has a ≥24×24 hit target and stays inside the field", async ({ page }) => {
+    await mockCore(page);
+    await page.goto("/series");
+    const field = page.getByTestId("search-input");
+    await field.getByRole("textbox").fill("cubic");
+    const clear = field.getByRole("button", { name: "Clear search" });
+    await expect(clear).toBeVisible();
+    const fieldBox = await field.boundingBox();
+    const clearBox = await clear.boundingBox();
+    expect(fieldBox).not.toBeNull();
+    expect(clearBox).not.toBeNull();
+    expect(clearBox!.width).toBeGreaterThanOrEqual(24);
+    expect(clearBox!.height).toBeGreaterThanOrEqual(24);
+    // The × must not spill past the field's right border box.
+    expect(clearBox!.x + clearBox!.width).toBeLessThanOrEqual(
+      fieldBox!.x + fieldBox!.width,
+    );
+    // One click clears the field AND the URL param; focus stays in the input.
+    await clear.click();
+    await expect(field.getByRole("textbox")).toHaveValue("");
+    await expect(page).toHaveURL(/\/series$/);
+    await expect(field.getByRole("textbox")).toBeFocused();
+    await expect(page.getByTestId("series-card")).toHaveCount(2);
+  });
+
+  test("folio controls round-trip through the URL (FOL P2-3)", async ({ page }) => {
+    await mockCore(page);
+    // Arrive with a shared link: search + filter + sort prefilled from params.
+    await page.goto("/series?q=cubic&filter=transition&sort=size");
+    await expect(page.getByTestId("search-input").getByRole("textbox")).toHaveValue("cubic");
+    // "cubic" matches series 2 but it is single-phase; the transition filter
+    // drops it → honest no-match state, proving BOTH params were applied.
+    await expect(page.getByTestId("series-card")).toHaveCount(0);
+    // "Show the whole folio" drops q + filter; the sort param SURVIVES.
+    await page.getByRole("button", { name: "Show the whole folio" }).click();
+    await expect(page).toHaveURL(/\/series\?sort=size$/);
+    await expect(page.getByTestId("series-card")).toHaveCount(2);
+    // Typing writes ?q= back (the address is shareable mid-search).
+    await page.getByTestId("search-input").getByRole("textbox").fill("lipid");
+    await expect(page).toHaveURL(/q=lipid/);
+    await expect(page).toHaveURL(/sort=size/);
+    await expect(page.getByTestId("series-card")).toHaveCount(1);
   });
 });
