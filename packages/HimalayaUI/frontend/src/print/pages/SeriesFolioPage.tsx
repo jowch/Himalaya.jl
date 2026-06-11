@@ -193,10 +193,35 @@ export function SeriesFolioPage(): JSX.Element {
       >
         <Gallery
           empty={
-            <EmptyState
-              title="No series match"
-              body="Clear the search or filter to see the whole folio."
-            />
+            summaries.length === 0 ? (
+              // Genuinely empty folio (nothing saved yet, regardless of what's
+              // typed in the controls): honest first-run state with a door to
+              // the creation path, never the filtered no-match masquerade.
+              <EmptyState
+                title="No series yet"
+                body="The folio holds every comparison you save. New series start from samples selected on the contact sheet."
+                action={
+                  <Button variant="outline" onClick={() => navigate("/samples")}>
+                    Open the contact sheet
+                  </Button>
+                }
+              />
+            ) : (
+              <EmptyState
+                title="No series match"
+                body="Clear the search or filter to see the whole folio."
+                action={
+                  <Button
+                    variant="outline"
+                    onClick={() =>
+                      setControls((c) => ({ ...c, search: "", filter: "all" }))
+                    }
+                  >
+                    Show the whole folio
+                  </Button>
+                }
+              />
+            )
           }
         >
           {visible.map((s, i) => (

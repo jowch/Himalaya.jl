@@ -206,6 +206,56 @@ describe("SeriesFolioPage", () => {
     expect(screen.getByTestId("empty-state")).toBeInTheDocument();
   });
 
+  it("a genuinely empty folio shows the first-run state with a door to the contact sheet (FOL-EMPTY-FIRSTRUN)", () => {
+    state.summaries = [];
+    state.seriesById = new Map();
+    renderPage();
+    // Honest first-run copy, not the filtered no-match masquerade.
+    expect(screen.getByText("No series yet")).toBeInTheDocument();
+    expect(screen.queryByText("No series match")).toBeNull();
+    expect(
+      screen.queryByText("Clear the search or filter to see the whole folio."),
+    ).toBeNull();
+    // The action is a door to the creation path.
+    const block = screen.getByTestId("empty-state");
+    fireEvent.click(
+      within(block).getByRole("button", { name: "Open the contact sheet" }),
+    );
+    expect(navigateSpy).toHaveBeenCalledWith("/samples");
+  });
+
+  it("zero summaries plus a typed search still shows the first-run state (a search over nothing is still nothing saved)", () => {
+    state.summaries = [];
+    state.seriesById = new Map();
+    renderPage();
+    const input = screen.getByRole("textbox");
+    fireEvent.change(input, { target: { value: "LL37" } });
+    expect(screen.getByText("No series yet")).toBeInTheDocument();
+    expect(screen.queryByText("No series match")).toBeNull();
+  });
+
+  it("the no-match state offers a one-click clear that shows the whole folio again", () => {
+    renderPage();
+    const input = screen.getByRole("textbox");
+    fireEvent.change(input, { target: { value: "xxxxxxxxxnotaseriesname" } });
+    const chips = screen.getAllByTestId("filter-chip");
+    const transitionChip = chips.find((c) => c.textContent === "Has transition");
+    fireEvent.click(transitionChip!);
+    // Dirty the sort too: clearing must NOT touch it.
+    fireEvent.click(screen.getByRole("button", { name: "Largest" }));
+    expect(screen.getByText("No series match")).toBeInTheDocument();
+    const block = screen.getByTestId("empty-state");
+    fireEvent.click(
+      within(block).getByRole("button", { name: "Show the whole folio" }),
+    );
+    // Search and filter both reset; all three cards return; sort survives.
+    expect(screen.getAllByTestId("series-card")).toHaveLength(3);
+    expect(screen.getByRole("textbox")).toHaveValue("");
+    expect(
+      screen.getByRole("button", { name: "Largest" }),
+    ).toHaveAttribute("aria-pressed", "true");
+  });
+
   it("shows an honest error surface when the list fetch fails, not 'No series match'", () => {
     state.error = true;
     renderPage();
