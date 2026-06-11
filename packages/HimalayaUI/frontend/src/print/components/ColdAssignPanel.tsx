@@ -56,7 +56,11 @@ export function ColdAssignPanel({
   return (
     <div data-testid="cold-assign-panel" className={cx("space-y-4", className)}>
       <div>
-        <Kicker tone="accent" className="mb-1">
+        {/* A real heading (SC-COLDHEAD, WCAG 1.3.1): both call sites, the cold
+            plate and the custom (DYO) card, render this directly under the
+            plate's h1, so the section label slots in at level 2, matching the
+            warm worksheet's h2 section labels (the SC-HEAD precedent). */}
+        <Kicker as="h2" tone="accent" className="mb-1">
           Name the ordering variable
         </Kicker>
         {introNode !== null ? <p className="text-body text-ink-soft mb-2">{introNode}</p> : null}

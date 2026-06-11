@@ -1061,6 +1061,84 @@ describe("SeriesScopingPage", () => {
     });
   });
 
+  // ── SC-COLD + SC-COLDHEAD: cold-path plate identity + heading structure ────
+  // The cold worksheet previously rendered a bare Card: no page h1 and its
+  // "Name the ordering variable" label was a div Kicker (WCAG 1.3.1). It must
+  // carry the SAME plate identity as the warm/custom plates ("New series"
+  // kicker + an h1 that follows the typed key) and expose its section label as
+  // a real h2 so the tree has no level skip.
+  describe("cold-path identity and heading tree (SC-COLD / SC-COLDHEAD)", () => {
+    /** No proposable key + a deliberate seed → the cold path. */
+    function seedColdPath(): void {
+      tagsState = { data: [], isLoading: false, isError: false };
+      pickerState = {
+        data: [pickerRow(sample(1, "A", []), 37), pickerRow(sample(2, "B", []), 65)],
+        isLoading: false,
+        isError: false,
+      };
+    }
+
+    /** Asserts the rendered heading tree starts at h1 and never skips a level. */
+    function expectNoHeadingLevelSkip(): void {
+      const levels = screen.getAllByRole("heading").map((h) => Number(h.tagName.slice(1)));
+      expect(Math.min(...levels)).toBe(1);
+      for (const level of levels) {
+        if (level > 1) expect(levels).toContain(level - 1);
+      }
+    }
+
+    it("cold path renders the plate identity: New series kicker + an h1 that follows the typed key", () => {
+      seedColdPath();
+      renderPage([1, 2]);
+      expect(screen.getByTestId("cold-scope-plate")).toBeInTheDocument();
+      expect(screen.getByText("New series")).toBeInTheDocument();
+      // Placeholder until the key is named (mirrors the custom card's h1).
+      expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Series by …");
+      fireEvent.change(screen.getByTestId("cold-key-input"), {
+        target: { value: "lipid ratio" },
+      });
+      expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
+        "Series by lipid ratio",
+      );
+    });
+
+    it("cold path exposes the section label as an h2 under a single h1, with no level skip", () => {
+      seedColdPath();
+      renderPage([1, 2]);
+      expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+      expect(
+        screen.getByRole("heading", { level: 2, name: "Name the ordering variable" }),
+      ).toBeInTheDocument();
+      expectNoHeadingLevelSkip();
+    });
+
+    it("custom (Define your own…) mode keeps its identity block and slots the same h2 section label in, no level skip", () => {
+      seedTwoKeys();
+      renderPage();
+      fireEvent.click(screen.getByTestId("order-field"));
+      fireEvent.click(screen.getByRole("menuitem", { name: "Define your own…" }));
+      // The identity block is unchanged (pinned elsewhere too: placeholder h1 +
+      // suppressed cold-corpus intro); here the level structure is the pin.
+      expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Series by …");
+      expect(screen.getByRole("heading", { level: 2, name: "Ordered by" })).toBeInTheDocument();
+      expect(
+        screen.getByRole("heading", { level: 2, name: "Name the ordering variable" }),
+      ).toBeInTheDocument();
+      expectNoHeadingLevelSkip();
+    });
+
+    it("the warm worksheet tree is unchanged: one h1, h2 section labels, no cold-assign heading", () => {
+      seed3();
+      renderPage();
+      expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+      expect(screen.getByRole("heading", { level: 2, name: "Ordered by" })).toBeInTheDocument();
+      expect(
+        screen.queryByRole("heading", { name: "Name the ordering variable" }),
+      ).not.toBeInTheDocument();
+      expectNoHeadingLevelSkip();
+    });
+  });
+
   describe("keyboard reorder (SC-KBD)", () => {
     /** Member names (A/B/C) in rendered worksheet order. */
     function renderedNames(): string[] {

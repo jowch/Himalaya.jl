@@ -666,16 +666,31 @@ export function SeriesScopingPage(): JSX.Element {
                  carry keys — they don't bind here). Rather than dead-end, let
                  them name the ordering variable and assign each sample's
                  value — then commit through the SAME scope→create chain the
-                 warm path uses. */
-              <Card border="strong" padding="lg" data-testid="cold-scope-plate" className="w-full">
-                <ColdAssignSection
-                  rows={coldRows}
-                  variableKey={coldKey}
-                  onKeyChange={setColdKey}
-                  onValueChange={onColdValueChange}
-                  canBuildNow={canColdBuildNow}
-                  onBuild={handleBuild}
-                />
+                 warm path uses. SC-COLD/SC-COLDHEAD: the worksheet carries the
+                 SAME plate identity as the warm/custom plates ("New series"
+                 kicker + serif h1 following the typed key), so ColdAssignPanel's
+                 h2 section label nests under a real h1 with no level skip.
+                 No order Field here: there is no proposable key to offer, and
+                 a dropdown with nothing to select would lie. */
+              <Card
+                elevated
+                data-testid="cold-scope-plate"
+                className="w-full max-w-[760px] px-8 pt-7 pb-6"
+              >
+                <Kicker tone="accent">New series</Kicker>
+                <h1 className="text-display text-ink mt-1.5">
+                  Series by {coldKey.trim() || "…"}
+                </h1>
+                <div className="mt-6">
+                  <ColdAssignSection
+                    rows={coldRows}
+                    variableKey={coldKey}
+                    onKeyChange={setColdKey}
+                    onValueChange={onColdValueChange}
+                    canBuildNow={canColdBuildNow}
+                    onBuild={handleBuild}
+                  />
+                </div>
               </Card>
             ) : (
               /* State 3: nothing shares an ordering variable yet (no seed). */
