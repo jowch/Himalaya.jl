@@ -74,11 +74,20 @@ export function Chip({
         )}
       >
         {children}
+        {/* WCAG 2.5.8: the × needs a real ≥24×24px hit box, but the pill is a
+            dense ~20px tag that must not inflate. h-6/w-6 gives the border box;
+            the negative margins collapse its LAYOUT footprint back to roughly
+            the bare glyph's (≈8×16px), so pill size is unchanged. -mx-2 is
+            tuned to the tightest case (sm, px-2): the button's right edge lands
+            exactly at the pill's inner border, never past it — the neighboring
+            pill's × and the "+ tag" invite sit only 6px away (gap-1.5), so
+            spilling right would overlap another target. Spilling LEFT over the
+            pill's own non-interactive text is allowed and intended. */}
         <button
           type="button"
           aria-label="Remove"
           onClick={onRemove}
-          className="text-ink-faint hover:text-ink focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-0 focus-visible:outline-accent rounded-sm"
+          className="inline-flex h-6 w-6 shrink-0 items-center justify-center -mx-2 -my-1 text-ink-faint hover:text-ink focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-0 focus-visible:outline-accent rounded-sm"
         >
           ×
         </button>

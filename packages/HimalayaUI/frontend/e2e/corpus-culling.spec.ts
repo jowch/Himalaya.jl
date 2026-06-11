@@ -435,3 +435,42 @@ test("wide viewport: the sheet does not scroll horizontally (unchanged layout)",
   }));
   expect(widths.scrollWidth).toBeLessThanOrEqual(widths.clientWidth + 1);
 });
+
+// LO-TAGTARGET (WCAG 2.2 §2.5.8 Target Size Minimum): the tag-remove × is a
+// bare glyph on a dense pill, and the "+ tag" invite sits only 6px to its
+// right (TagList gap-1.5) — too close for the spacing exemption, so the button
+// itself must carry a ≥24×24 CSS-px border box. It also must not spill past
+// the pill's right border, or it would overlap that neighboring target.
+// jsdom has no layout, so this is pinned here in a real browser.
+test("loupe tags: the tag-remove × has a ≥24×24 hit target inside the pill's right edge", async ({ page }) => {
+  await mockCorpus(page);
+  // Re-register /api/samples AFTER mockCorpus so this tagged payload wins
+  // (Playwright matches the most recently registered route first).
+  await page.route("**/api/samples", (r) =>
+    r.fulfill({
+      status: 200, contentType: "application/json",
+      body: JSON.stringify([{
+        ...SAMPLES[0],
+        tags: [{ id: 1, key: "temperature", value: "37C", source: "user" }],
+      }]),
+    }));
+
+  await page.goto("/samples/loupe/10");
+  await expect(page.getByTestId("loupe-page")).toBeVisible();
+
+  const pill = page.getByTestId("tag-pill").first();
+  const remove = pill.getByRole("button", { name: "Remove" });
+  await expect(remove).toBeVisible();
+
+  const pillBox = await pill.boundingBox();
+  const removeBox = await remove.boundingBox();
+  expect(pillBox).not.toBeNull();
+  expect(removeBox).not.toBeNull();
+  expect(removeBox!.width).toBeGreaterThanOrEqual(24);
+  expect(removeBox!.height).toBeGreaterThanOrEqual(24);
+  // Right edge stays inside the pill's border box — the next interactive
+  // target (the "+ tag" invite / the next pill's ×) is only 6px away.
+  expect(removeBox!.x + removeBox!.width).toBeLessThanOrEqual(
+    pillBox!.x + pillBox!.width,
+  );
+});
