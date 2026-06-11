@@ -24,6 +24,7 @@ This spec is **Layer 1**: per-sample tag management. A **Layer 2** corpus-wide v
 - **Exposure** tags (same insert/delete-only model, not the pain point; left untouched).
 - Re-homing scoping tags out of `sample_tags` into series-member attributes (a larger re-architecture; noted, not done).
 - Undo/redo and versioning of tag edits beyond the immediate optimistic-queue rollback (Layer-4 territory).
+- **A value-type concept** (typed/numeric/unit-aware value equality). In Layer 1 a tag value is an **opaque string**: `10.0` and `10` are two distinct values with two counts, and the system never asserts they are equal — it surfaces both with their sample counts and lets the human decide and reconcile. Knowing `10.0 == 10` (or `25C == 298K`) automatically requires a typed-value subsystem (numeric parsing, precision, unit normalization) — a real future layer, and the same machinery that would power the deferred did-you-mean near-match nudge. Explicitly out of scope; the counts + human-in-the-loop carry Layer 1.
 
 ## Research grounding (full briefs in session)
 
