@@ -346,6 +346,24 @@ describe("FocusPage", () => {
     }
   });
 
+  it("Escape sequence: an open custom-index modal closes first; only the NEXT Escape disarms '+ Peak' (F7)", () => {
+    renderAt(42);
+    const addPeakBtn = screen.getByText("+ Peak");
+    fireEvent.click(addPeakBtn);
+    expect(addPeakBtn).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(screen.getByTestId("custom-index-trigger"));
+    expect(screen.getByTestId("custom-index-modal")).toBeInTheDocument();
+    // Escape #1: the dialog owns Escape — the modal closes and the armed mode
+    // survives (the dialog is still in the DOM during that dispatch, so the
+    // TracePlate guard sees it).
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(screen.queryByTestId("custom-index-modal")).toBeNull();
+    expect(addPeakBtn).toHaveAttribute("aria-pressed", "true");
+    // Escape #2: no dialog left — this one disarms.
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(addPeakBtn).not.toHaveAttribute("aria-pressed");
+  });
+
   it("not-found: no corpus sample for the id", () => {
     state.corpus = [];
     state.activeSampleId = undefined;

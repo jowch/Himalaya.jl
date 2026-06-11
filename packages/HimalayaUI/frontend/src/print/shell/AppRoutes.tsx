@@ -65,8 +65,12 @@ export function AppRoutes(): JSX.Element {
   // identity defined statically in styles.css `@theme`; there is no
   // `theme-light` class to toggle on <html>.
 
-  // Global keyboard shortcuts — hoisted above the shell so they work app-wide;
-  // the `,`/`.` sample-step shortcut needs the active experiment's samples.
+  // Global keyboard shortcuts — hoisted above the shell so they work app-wide.
+  // The `,`/`.` sample step needs this per-experiment samples list only on the
+  // CORPUS surfaces (store-driven branch); on the focus route (/sample/:id) it
+  // derives the active sample's experiment-siblings from the corpus cache via
+  // useExperimentSiblings (F5 — the shared derivation behind the topbar
+  // stepper), so it works there even when activeExperimentId was never set.
   // They fire under the corpus shell (e.g. on /samples). #160 (contact sheet)
   // should be aware of this when landing — shortcuts may need guarding there.
   //

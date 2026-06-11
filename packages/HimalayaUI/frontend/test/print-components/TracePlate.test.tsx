@@ -294,6 +294,120 @@ describe("TracePlate", () => {
     expect(screen.getByLabelText("q value for new peak")).toHaveValue(null);
   });
 
+  // ── F7: Escape disarms the armed + Peak mode ─────────────────────────────────
+  // The armed mode had no keyboard exit. Escape disarms via onToggleAddPeak,
+  // with a modal dialog winning (ModalShell owns Escape-to-close and stamps
+  // preventDefault on the press it consumes), and the hint names the exit.
+
+  it("Escape disarms: fires onToggleAddPeak while armed", () => {
+    const onToggleAddPeak = vi.fn();
+    render(
+      <TracePlate
+        {...base}
+        addPeakArmed
+        onToggleAddPeak={onToggleAddPeak}
+        interaction={{ onXDomain: () => {}, onAddPeak: () => {} }}
+      />,
+    );
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(onToggleAddPeak).toHaveBeenCalledTimes(1);
+  });
+
+  it("Escape while disarmed does nothing (no spurious re-arm toggle)", () => {
+    const onToggleAddPeak = vi.fn();
+    render(
+      <TracePlate
+        {...base}
+        onToggleAddPeak={onToggleAddPeak}
+        interaction={{ onXDomain: () => {}, onAddPeak: () => {} }}
+      />,
+    );
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(onToggleAddPeak).not.toHaveBeenCalled();
+  });
+
+  it("Escape with an open modal dialog does NOT disarm (the dialog owns Escape)", () => {
+    const onToggleAddPeak = vi.fn();
+    render(
+      <>
+        <TracePlate
+          {...base}
+          addPeakArmed
+          onToggleAddPeak={onToggleAddPeak}
+          interaction={{ onXDomain: () => {}, onAddPeak: () => {} }}
+        />
+        {/* What ModalShell emits while open — e.g. the custom-index modal. */}
+        <div role="dialog" aria-modal="true" aria-label="stub dialog" />
+      </>,
+    );
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(onToggleAddPeak).not.toHaveBeenCalled();
+  });
+
+  it("an already-consumed Escape does NOT disarm even with the dialog gone (real-browser closing press)", () => {
+    const onToggleAddPeak = vi.fn();
+    render(
+      <TracePlate
+        {...base}
+        addPeakArmed
+        onToggleAddPeak={onToggleAddPeak}
+        interaction={{ onXDomain: () => {}, onAddPeak: () => {} }}
+      />,
+    );
+    // In a real browser a microtask checkpoint runs between ModalShell's
+    // document-level close listener and TracePlate's window-level one, so the
+    // dialog is already unmounted when the disarm guard fires — the only trace
+    // of the modal is the preventDefault stamp ModalShell left on the event.
+    const consume = (e: KeyboardEvent): void => e.preventDefault();
+    document.addEventListener("keydown", consume);
+    try {
+      fireEvent.keyDown(document.body, { key: "Escape" });
+    } finally {
+      document.removeEventListener("keydown", consume);
+    }
+    expect(onToggleAddPeak).not.toHaveBeenCalled();
+  });
+
+  it("Escape inside the add-at-q input disarms (the input has no local Escape behavior)", () => {
+    const onToggleAddPeak = vi.fn();
+    render(
+      <TracePlate
+        {...base}
+        addPeakArmed
+        onToggleAddPeak={onToggleAddPeak}
+        interaction={{ onXDomain: () => {}, onAddPeak: () => {} }}
+      />,
+    );
+    const input = screen.getByLabelText("q value for new peak");
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(onToggleAddPeak).toHaveBeenCalledTimes(1);
+  });
+
+  it("armed hint names the Esc exit when the toggle is wired", () => {
+    render(
+      <TracePlate
+        {...base}
+        addPeakArmed
+        onToggleAddPeak={() => {}}
+        interaction={{ onXDomain: () => {}, onAddPeak: () => {}, onClickPeak: () => {} }}
+      />,
+    );
+    const hint = screen.getByTestId("peak-edit-hint");
+    expect(hint.textContent).toContain("Esc exits.");
+  });
+
+  it("armed hint omits the Esc sentence when no onToggleAddPeak is wired (controls don't lie)", () => {
+    render(
+      <TracePlate
+        {...base}
+        addPeakArmed
+        interaction={{ onXDomain: () => {}, onAddPeak: () => {}, onClickPeak: () => {} }}
+      />,
+    );
+    const hint = screen.getByTestId("peak-edit-hint");
+    expect(hint.textContent).not.toContain("Esc exits.");
+  });
+
   // highlightPeakIds forwarding: a peak NOT in the set dims (data-dimmed=true).
   it("forwards highlightPeakIds (a non-member peak dims)", () => {
     const twoPeaks: TraceModel = {

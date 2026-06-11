@@ -1,7 +1,10 @@
 import { useEffect } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useMatch, useNavigate } from "react-router-dom";
 import { useAppState } from "../state";
 import { suppressGlobalKeys } from "../lib/keys";
+import { useCorpusSamples } from "../queries";
+import { resolveRouteSampleStatus } from "./useSyncActiveSampleFromRoute";
+import { useExperimentSiblings } from "./useExperimentSiblings";
 import type { Sample } from "../api";
 
 /**
@@ -24,10 +27,35 @@ import type { Sample } from "../api";
  * The `,`/`.` step is route-aware: on the focus route (`/sample/:id`) it
  * navigates the URL (the source of truth there), elsewhere it sets the store.
  * Hence `useLocation`/`useNavigate` are read here again.
+ *
+ * F5: on the focus route the step derives its sibling list from the CORPUS
+ * cache via the shared `useExperimentSiblings` derivation — the SAME list the
+ * topbar stepper renders, so the two can never disagree. The
+ * `samplesInExperiment` parameter is gated on `activeExperimentId`, which only
+ * the NavModal picker and recoverFromStaleUrl ever write; direct-visit and
+ * door-entry flows never set it, which is exactly why the shortcut used to be
+ * dead on /sample/:id. Cold corpus cache or an unknown active sample degrade
+ * to an empty derivation, so the shortcut no-ops gracefully there.
  */
 export function useGlobalShortcuts(samplesInExperiment: Sample[] | undefined): void {
   const navigate = useNavigate();
   const { pathname } = useLocation();
+  const { prev: prevSibling, next: nextSibling } = useExperimentSiblings();
+
+  // F-STALEURL honesty gate (M1): a bogus /sample/:id never seeds the store,
+  // so mid-session the previous VALID activeSampleId survives — the sibling
+  // derivation above would then step relative to a sample the URL does not
+  // show, out of a "Sample not found" page. Judge the route param against the
+  // corpus with the SAME predicate the topbar stepper uses to hide itself
+  // (resolveRouteSampleStatus); gate on "unknown" only — "pending" (cold
+  // cache) already no-ops via the empty derivation.
+  const sampleMatch = useMatch("/sample/:sampleId");
+  const corpusQ = useCorpusSamples();
+  const routeStatus = resolveRouteSampleStatus(
+    sampleMatch?.params.sampleId,
+    corpusQ.data,
+  );
+
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
       // Typing contexts + open modals suppress. NOTE: the helper deliberately
@@ -52,6 +80,24 @@ export function useGlobalShortcuts(samplesInExperiment: Sample[] | undefined): v
 
       // `,` / `.` → prev / next sample within experiment (no wrap)
       if ((e.key === "," || e.key === ".") && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        // Focus route: the URL is the source of truth (one-way URL->store sync,
+        // useSyncActiveSampleFromRoute) — a store-only write is reverted on the
+        // next render. Navigate the URL through the corpus-derived sibling list
+        // the topbar stepper uses (F5, shared derivation). prev/next are
+        // undefined at the ends AND when the derivation is unresolved (cold
+        // corpus cache, unknown STORE sample) — both no-op. The routeStatus
+        // gate covers the remaining case: a bogus URL over a stale-valid store
+        // sample (see the F-STALEURL note above).
+        if (pathname.startsWith("/sample/")) {
+          if (routeStatus === "unknown") return;
+          const target = e.key === "." ? nextSibling : prevSibling;
+          if (target) {
+            e.preventDefault();
+            navigate(`/sample/${target.id}`);
+          }
+          return;
+        }
+        // Corpus surfaces stay store-driven off the per-experiment list.
         const samples = samplesInExperiment ?? [];
         if (samples.length === 0) return;
         const cur = useAppState.getState().activeSampleId;
@@ -61,20 +107,11 @@ export function useGlobalShortcuts(samplesInExperiment: Sample[] | undefined): v
         const next = samples[nextIdx];
         if (next && next.id !== cur) {
           e.preventDefault();
-          // On the focus route the URL is the source of truth (one-way
-          // URL->store sync, useSyncActiveSampleFromRoute) — a store-only write
-          // is reverted on the next render, which is why this shortcut read as
-          // dead there. Navigate the URL instead, matching the topbar stepper.
-          // Corpus surfaces stay store-driven.
-          if (pathname.startsWith("/sample/")) {
-            navigate(`/sample/${next.id}`);
-          } else {
-            useAppState.getState().setActiveSample(next.id);
-          }
+          useAppState.getState().setActiveSample(next.id);
         }
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [samplesInExperiment, navigate, pathname]);
+  }, [samplesInExperiment, navigate, pathname, prevSibling, nextSibling, routeStatus]);
 }

@@ -1,7 +1,7 @@
 import { Link, useLocation, useMatch, useNavigate, useSearchParams } from "react-router-dom";
-import { useAppState } from "../../state";
 import { useCorpusSamples, useExperiments } from "../../queries";
 import { resolveRouteSampleStatus } from "../../hooks/useSyncActiveSampleFromRoute";
+import { useExperimentSiblings } from "../../hooks/useExperimentSiblings";
 import { sampleDisplayName } from "../../lib/sample/displayName";
 import { TopBar } from "../ui/TopBar";
 import { Wordmark } from "../ui/Wordmark";
@@ -52,7 +52,6 @@ export function CorpusTopbar(): JSX.Element {
   // The focus workspace lives at `/sample/:id`. The topbar is global, so the
   // per-sample stepper only appears there.
   const onSampleRoute = pathname.startsWith("/sample/");
-  const activeSampleId = useAppState((s) => s.activeSampleId);
   const corpusQ = useCorpusSamples();
 
   // F-STALEURL honesty gate: the topbar renders ABOVE the routed element, so
@@ -69,22 +68,18 @@ export function CorpusTopbar(): JSX.Element {
     corpusQ.data,
   );
 
-  // F-13 stepper: order the active sample's experiment-siblings by their corpus
-  // order (matches the `,`/`.` shortcut's experiment-scoped semantics). The URL
-  // is the focus surface's source of truth, so prev/next navigate the route
-  // (one-way URL→store sync stays intact — see useSyncActiveSampleFromRoute).
-  const activeSample = activeSampleId !== undefined
-    ? corpusQ.data?.find((s) => s.id === activeSampleId)
-    : undefined;
-  const siblings = activeSample !== undefined
-    ? (corpusQ.data ?? []).filter((s) => s.experiment_id === activeSample.experiment_id)
-    : [];
-  const stepIdx = activeSample !== undefined
-    ? siblings.findIndex((s) => s.id === activeSample.id)
-    : -1;
-  const prevSample = stepIdx > 0 ? siblings[stepIdx - 1] : undefined;
-  const nextSample = stepIdx >= 0 && stepIdx < siblings.length - 1
-    ? siblings[stepIdx + 1] : undefined;
+  // F-13 stepper: the active sample's experiment-siblings in corpus order,
+  // via the SHARED useExperimentSiblings derivation (F5) — the `,`/`.` global
+  // shortcut steps through the identical list, so the two can never disagree.
+  // The URL is the focus surface's source of truth, so prev/next navigate the
+  // route (one-way URL→store sync stays intact — see useSyncActiveSampleFromRoute).
+  const {
+    activeSample,
+    siblings,
+    index: stepIdx,
+    prev: prevSample,
+    next: nextSample,
+  } = useExperimentSiblings();
   const showStepper =
     onSampleRoute &&
     routeStatus !== "unknown" &&
@@ -191,7 +186,10 @@ export function CorpusTopbar(): JSX.Element {
         <span className="text-xs font-semibold text-ink">
           {sampleDisplayName(activeSample!)}
         </span>
-        <Kicker as="span" tone="faint">sample {stepIdx + 1} of {siblings.length}</Kicker>
+        {/* F6: "sample N of M" is small INFORMATIONAL text — under the
+            F-CONTRAST roles it rides ink-soft (AA-normal); faint is
+            decorative-only (3.16:1 on paper at 11.5px fails AA). */}
+        <Kicker as="span" tone="soft">sample {stepIdx + 1} of {siblings.length}</Kicker>
       </span>
       <IconButton
         label="Next sample"

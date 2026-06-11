@@ -108,6 +108,20 @@ describe("CorpusTopbar — focus affordances (F-13/F-14/F-12)", () => {
     expect(stepper).toHaveTextContent("Lipid B");
   });
 
+  // F6: the caption is small INFORMATIONAL text, so under the F-CONTRAST
+  // settled roles it must ride the ink-soft token (AA-normal >= 4.5:1) — faint
+  // is decorative-only (3.16:1 on paper, below AA for text). The Kicker
+  // primitive's data-tone attribute is its documented tone contract (the
+  // token-pair ratios themselves are pinned in contrast-tokens.test.ts).
+  it("renders the 'sample N of M' caption in the soft informational tone, not faint (F-CONTRAST)", async () => {
+    mockFetch();
+    useAppState.setState({ activeSampleId: 2 });
+    renderAt("/sample/2");
+    await screen.findByTestId("sample-stepper");
+    const caption = screen.getByText(/sample 2 of 3/);
+    expect(caption).toHaveAttribute("data-tone", "soft");
+  });
+
   it("next navigates to the next sample in the experiment", async () => {
     mockFetch();
     useAppState.setState({ activeSampleId: 2 });

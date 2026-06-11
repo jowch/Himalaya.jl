@@ -118,18 +118,47 @@ export function TracePlate({
     if (!addPeakArmed) setQText("");
   }, [addPeakArmed]);
 
+  // ── F7: Escape disarms the armed mode (the keyboard exit) ──────────────────
+  // Precedence: an OPEN MODAL DIALOG wins — ModalShell owns Escape-to-close
+  // and stamps preventDefault on the press it consumes, so the closing press
+  // arrives here already-defaultPrevented; only a later Escape disarms. The
+  // defaultPrevented check is the load-bearing one: in a real browser a
+  // microtask checkpoint runs between the document-level close listener and
+  // this window-level one, so React has already unmounted the dialog by the
+  // time this fires — DOM presence alone misses the closing press (jsdom's
+  // synchronous dispatch hides this). The DOM check stays for open dialogs
+  // that keep Escape inert (closeOnEsc=false, parent-owned Escape). The
+  // add-at-q Input has no local Escape behavior, so Escape there falls
+  // through to the disarm (whose effect above also clears the draft q).
+  // suppressGlobalKeys is deliberately NOT used here: it suppresses ALL
+  // typing contexts, which would make Escape inert exactly where the armed
+  // mode parks the focus.
+  useEffect(() => {
+    if (!addPeakArmed || !onToggleAddPeak) return;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== "Escape") return;
+      if (e.defaultPrevented) return;
+      if (document.querySelector('[role="dialog"][aria-modal="true"]') !== null) return;
+      onToggleAddPeak();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [addPeakArmed, onToggleAddPeak]);
+
   // The hint promises only the verbs that are actually wired: with no
   // onAddPeak the add sentence would be false, and with no onClickPeak the
   // remove sentence would be worse than false (TracePlot's click handler
   // falls through to onAddPeak on a peak hit, so "remove" would duplicate-add).
-  const hintSentences = interaction
-    ? [
-        ...(interaction.onAddPeak ? ["Click the trace to add a peak."] : []),
-        ...(interaction.onClickPeak
-          ? ["Click a peak to remove it.", "Alt-click excludes it from indexing."]
-          : []),
-      ]
-    : [];
+  // "Esc exits." needs the toggle handler — that is what Escape disarms through.
+  const hintSentences = [
+    ...(interaction && interaction.onAddPeak
+      ? ["Click the trace to add a peak."]
+      : []),
+    ...(interaction && interaction.onClickPeak
+      ? ["Click a peak to remove it.", "Alt-click excludes it from indexing."]
+      : []),
+    ...(onToggleAddPeak ? ["Esc exits."] : []),
+  ];
 
   return (
     <Card

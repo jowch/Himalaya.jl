@@ -1,25 +1,52 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { renderHook, render, screen, fireEvent } from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { useGlobalShortcuts } from "../src/hooks/useGlobalShortcuts";
 import { useAppState } from "../src/state";
-import type { Sample } from "../src/api";
+import { queryKeys } from "../src/queries";
+import type { CorpusSample, Sample } from "../src/api";
 
-function wrapperAt(path: string) {
+// staleTime: Infinity so a setQueryData-seeded corpus list is served without a
+// mount refetch (no fetch mock needed); retry: false keeps cold-cache tests
+// from spinning.
+function makeClient(): QueryClient {
+  return new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity, gcTime: Infinity } },
+  });
+}
+
+function wrapperAt(path: string, client: QueryClient = makeClient()) {
   return function Wrapper({ children }: { children: ReactNode }): JSX.Element {
-    return <MemoryRouter initialEntries={[path]}>{children}</MemoryRouter>;
+    return (
+      <QueryClientProvider client={client}>
+        <MemoryRouter initialEntries={[path]}>{children}</MemoryRouter>
+      </QueryClientProvider>
+    );
   };
 }
 
-function sample(id: number): Sample {
-  return { id, experiment_id: 1, name: `S${id}`, display_name: null,
+function sample(id: number, experiment_id = 1): Sample {
+  return { id, experiment_id, name: `S${id}`, display_name: null,
     notes: null, tags: [], q_units: "A-1" } as Sample;
+}
+
+// The corpus list the focus-route step derives its siblings from (F5): same
+// rows as the per-experiment list, in corpus order, as CorpusSample.
+function corpusOf(...samples: Sample[]): CorpusSample[] {
+  return samples as CorpusSample[];
+}
+
+function clientWithCorpus(corpus: CorpusSample[]): QueryClient {
+  const client = makeClient();
+  client.setQueryData(queryKeys.corpusSamples, corpus);
+  return client;
 }
 
 // Renders the hook alongside a pathname probe so a test can observe whether the
 // ,/. shortcut navigated the URL (focus route) vs. only set store state.
-function Harness({ samples }: { samples: Sample[] }): JSX.Element {
+function Harness({ samples }: { samples: Sample[] | undefined }): JSX.Element {
   useGlobalShortcuts(samples);
   const loc = useLocation();
   return <div data-testid="pathname">{loc.pathname}</div>;
@@ -75,33 +102,117 @@ describe("useGlobalShortcuts — arrow keys are unbound (no page-tab step)", () 
   });
 });
 
-// The ,/. sample step was dead on the focus route: setActiveSample alone is
-// reverted by the one-way URL->store sync, so the step must navigate the URL
-// there (mirroring the topbar stepper + NavModal's M1 fix).
-describe("useGlobalShortcuts — ,/. sample step", () => {
-  const SAMPLES = [sample(10), sample(11), sample(12)];
+// F5: on the focus route the step derives the active sample's
+// experiment-siblings from the CORPUS cache (the same shared derivation the
+// topbar stepper uses) — NOT from the `samplesInExperiment` parameter, which
+// is undefined whenever `activeExperimentId` was never set (direct visit /
+// door entry; only the NavModal picker and recoverFromStaleUrl write it).
+describe("useGlobalShortcuts — ,/. sample step (focus route, corpus-derived)", () => {
+  const CORPUS = corpusOf(sample(10), sample(11), sample(12), sample(90, 2));
 
   beforeEach(() => {
     useAppState.setState({ activeSampleId: 11 });
   });
 
-  it("navigates to the next sibling URL on '.' from /sample/:id", () => {
-    render(<Harness samples={SAMPLES} />, { wrapper: wrapperAt("/sample/11") });
+  it("navigates to the next sibling URL on '.' from /sample/:id with NO samplesInExperiment", () => {
+    render(<Harness samples={undefined} />, {
+      wrapper: wrapperAt("/sample/11", clientWithCorpus(CORPUS)),
+    });
     fireEvent.keyDown(document.body, { key: "." });
     expect(screen.getByTestId("pathname")).toHaveTextContent("/sample/12");
   });
 
-  it("navigates to the previous sibling URL on ',' from /sample/:id", () => {
-    render(<Harness samples={SAMPLES} />, { wrapper: wrapperAt("/sample/11") });
+  it("navigates to the previous sibling URL on ',' from /sample/:id with NO samplesInExperiment", () => {
+    render(<Harness samples={undefined} />, {
+      wrapper: wrapperAt("/sample/11", clientWithCorpus(CORPUS)),
+    });
     fireEvent.keyDown(document.body, { key: "," });
     expect(screen.getByTestId("pathname")).toHaveTextContent("/sample/10");
   });
 
-  it("does not wrap past the last sample on the focus route", () => {
+  it("steps only within the active sample's experiment (corpus order, no cross-experiment leak)", () => {
     useAppState.setState({ activeSampleId: 12 });
-    render(<Harness samples={SAMPLES} />, { wrapper: wrapperAt("/sample/12") });
+    render(<Harness samples={undefined} />, {
+      wrapper: wrapperAt("/sample/12", clientWithCorpus(CORPUS)),
+    });
+    // sample 12 is the last of experiment 1; sample 90 (experiment 2) follows
+    // it in corpus order but is NOT a sibling — the step must not wrap or leak.
     fireEvent.keyDown(document.body, { key: "." });
     expect(screen.getByTestId("pathname")).toHaveTextContent("/sample/12");
+  });
+
+  it("does not wrap past the first sample on the focus route", () => {
+    useAppState.setState({ activeSampleId: 10 });
+    render(<Harness samples={undefined} />, {
+      wrapper: wrapperAt("/sample/10", clientWithCorpus(CORPUS)),
+    });
+    fireEvent.keyDown(document.body, { key: "," });
+    expect(screen.getByTestId("pathname")).toHaveTextContent("/sample/10");
+  });
+
+  it("no-ops gracefully when the corpus cache is cold", () => {
+    render(<Harness samples={undefined} />, {
+      wrapper: wrapperAt("/sample/11", makeClient()),
+    });
+    expect(() => {
+      fireEvent.keyDown(document.body, { key: "." });
+      fireEvent.keyDown(document.body, { key: "," });
+    }).not.toThrow();
+    expect(screen.getByTestId("pathname")).toHaveTextContent("/sample/11");
+  });
+
+  it("no-ops gracefully when the active sample is unknown to the corpus", () => {
+    useAppState.setState({ activeSampleId: 99999 });
+    render(<Harness samples={undefined} />, {
+      wrapper: wrapperAt("/sample/99999", clientWithCorpus(CORPUS)),
+    });
+    fireEvent.keyDown(document.body, { key: "." });
+    expect(screen.getByTestId("pathname")).toHaveTextContent("/sample/99999");
+  });
+
+  it("F-STALEURL: bogus /sample/:id URL with a stale VALID store sample -> '.' no-ops", () => {
+    // Mid-session navigation to /sample/99999 never seeds the store, so the
+    // previous valid activeSampleId (11) survives. The topbar hides its
+    // stepper via resolveRouteSampleStatus; the shortcut must gate on the
+    // SAME predicate — otherwise it would invisibly step relative to a sample
+    // the URL does not show, out of a "Sample not found" page.
+    useAppState.setState({ activeSampleId: 11 });
+    render(<Harness samples={undefined} />, {
+      wrapper: wrapperAt("/sample/99999", clientWithCorpus(CORPUS)),
+    });
+    fireEvent.keyDown(document.body, { key: "." });
+    expect(screen.getByTestId("pathname")).toHaveTextContent("/sample/99999");
+    fireEvent.keyDown(document.body, { key: "," });
+    expect(screen.getByTestId("pathname")).toHaveTextContent("/sample/99999");
+  });
+
+  it("F-STALEURL: non-numeric /sample/:id with a stale valid store sample -> '.' no-ops", () => {
+    useAppState.setState({ activeSampleId: 11 });
+    render(<Harness samples={undefined} />, {
+      wrapper: wrapperAt("/sample/not-a-number", clientWithCorpus(CORPUS)),
+    });
+    fireEvent.keyDown(document.body, { key: "." });
+    expect(screen.getByTestId("pathname")).toHaveTextContent("/sample/not-a-number");
+  });
+
+  it("ignores the samplesInExperiment parameter on the focus route (corpus wins)", () => {
+    // A stale per-experiment list (e.g. from a previously-picked experiment)
+    // must not drive the focus-route step — the corpus-derived siblings do.
+    const staleOtherExperiment = [sample(90, 2), sample(91, 2)];
+    render(<Harness samples={staleOtherExperiment} />, {
+      wrapper: wrapperAt("/sample/11", clientWithCorpus(CORPUS)),
+    });
+    fireEvent.keyDown(document.body, { key: "." });
+    expect(screen.getByTestId("pathname")).toHaveTextContent("/sample/12");
+  });
+});
+
+// Corpus surfaces keep the store-driven, samplesInExperiment-parameterized step.
+describe("useGlobalShortcuts — ,/. sample step (corpus surfaces, store-driven)", () => {
+  const SAMPLES = [sample(10), sample(11), sample(12)];
+
+  beforeEach(() => {
+    useAppState.setState({ activeSampleId: 11 });
   });
 
   it("on a corpus route, '.' sets store state without navigating", () => {
@@ -109,6 +220,13 @@ describe("useGlobalShortcuts — ,/. sample step", () => {
     fireEvent.keyDown(document.body, { key: "." });
     // Store advanced, URL unchanged (corpus surfaces are store-driven).
     expect(useAppState.getState().activeSampleId).toBe(12);
+    expect(screen.getByTestId("pathname")).toHaveTextContent("/samples");
+  });
+
+  it("on a corpus route, ',' steps the store back without navigating", () => {
+    render(<Harness samples={SAMPLES} />, { wrapper: wrapperAt("/samples") });
+    fireEvent.keyDown(document.body, { key: "," });
+    expect(useAppState.getState().activeSampleId).toBe(10);
     expect(screen.getByTestId("pathname")).toHaveTextContent("/samples");
   });
 });
