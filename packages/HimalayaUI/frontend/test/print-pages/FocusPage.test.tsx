@@ -430,13 +430,67 @@ describe("FocusPage", () => {
     ).toBeInTheDocument();
   });
 
-  it("export-button is disabled (data gate) when there are no peaks", () => {
+  it("export stays enabled with a rendered trace and zero peaks (F4: WYSIWYG figure)", () => {
+    // A peakless trace still renders a full figure; gating export on peaks
+    // made the buttons lie. Only trace emptiness disables export. The menu
+    // trigger is the probe: its disabled is exactly the page gate (Copy is
+    // environment-disabled in JSDOM — no ClipboardItem — so it can't see it).
     state.peaks = [];
     renderAt(42);
     const plate = screen.getByTestId("trace-plate");
-    const exportBtn = within(plate).getByTestId("export-button");
-    // Every button inside the export widget should be disabled when the data gate is off.
-    const copyBtn = within(exportBtn).getByTestId("export-copy");
-    expect(copyBtn).toBeDisabled();
+    expect(within(plate).getByTestId("export-menu-trigger")).not.toBeDisabled();
+  });
+
+  it("export is disabled when the trace is empty or missing (F4 data gate)", () => {
+    state.trace = { q: [], I: [], sigma: [] };
+    const view = renderAt(42);
+    let plate = screen.getByTestId("trace-plate");
+    expect(within(plate).getByTestId("export-menu-trigger")).toBeDisabled();
+
+    view.unmount();
+    state.trace = undefined;
+    renderAt(42);
+    plate = screen.getByTestId("trace-plate");
+    expect(within(plate).getByTestId("export-menu-trigger")).toBeDisabled();
+  });
+
+  it("zero peaks: cart and candidate list agree that peaks come first (F3)", () => {
+    state.peaks = [];
+    state.indices = [];
+    state.assignment = { exposure_id: 7, state: "indexed", members: [] };
+    renderAt(42);
+    const cartEmpty = screen.getByTestId("assignment-empty");
+    expect(cartEmpty).toHaveTextContent(
+      "No peaks marked. Find peaks on the trace to start indexing.",
+    );
+    // The default copy's two lies must be gone with zero peaks.
+    expect(screen.queryByText(/Every peak is unindexed/)).toBeNull();
+    expect(screen.queryByText(/Check a candidate below/)).toBeNull();
+    // The candidate list derives from the SAME peaks-empty predicate.
+    expect(
+      screen.getByText("Candidates appear once peaks are marked."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("No candidate indexings.")).toBeNull();
+  });
+
+  it("peaks but zero candidates: cart points at the custom-index tool (F3)", () => {
+    state.indices = [];
+    state.assignment = { exposure_id: 7, state: "indexed", members: [] };
+    renderAt(42);
+    expect(screen.getByTestId("assignment-empty")).toHaveTextContent(
+      "No phase assigned. No candidate fits these peaks. Try a custom index.",
+    );
+    // The named next action renders directly below in the cart footer.
+    expect(screen.getByTestId("custom-index-trigger")).toBeInTheDocument();
+    // Candidate-list line for the peaks-exist branch is unchanged.
+    expect(screen.getByText("No candidate indexings.")).toBeInTheDocument();
+  });
+
+  it("candidates exist: the cart keeps its default empty copy (F3 unchanged branch)", () => {
+    state.assignment = { exposure_id: 7, state: "indexed", members: [] };
+    renderAt(42);
+    expect(screen.getByTestId("assignment-empty")).toHaveTextContent(
+      "No phase assigned. Every peak is unindexed. Check a candidate below.",
+    );
   });
 });

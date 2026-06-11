@@ -316,6 +316,17 @@ export function FocusPage(): JSX.Element {
   const speculatives = indices.filter((i) => i.kind === "speculative");
   const candidatePool = indices.filter((i) => i.kind !== "speculative");
 
+  // Single shared predicate: the cart's empty copy AND the candidate-list line
+  // both branch on peaksEmpty, so the two texts can never contradict each
+  // other (with zero peaks, "Every peak is unindexed" / "Check a candidate
+  // below" would both be lies — the real next action is marking peaks).
+  const peaksEmpty = peaks.length === 0;
+  const cartEmpty = peaksEmpty
+    ? "No peaks marked. Find peaks on the trace to start indexing."
+    : candidatePool.length === 0 && speculatives.length === 0
+      ? "No phase assigned. No candidate fits these peaks. Try a custom index."
+      : undefined; // candidates exist → AssignmentCart's default copy is correct
+
   function phaseMeta(ix: IndexEntry): string {
     const lattice =
       ix.lattice_d != null ? `a = ${ix.lattice_d.toFixed(0)} Å · ` : "";
@@ -323,7 +334,10 @@ export function FocusPage(): JSX.Element {
   }
 
   const cart = (
-    <AssignmentCart onCustomIndex={() => setCustomOpen(true)}>
+    <AssignmentCart
+      onCustomIndex={() => setCustomOpen(true)}
+      {...(cartEmpty !== undefined ? { empty: cartEmpty } : {})}
+    >
       {activeIndices.map((ix) => (
         <PhaseBlock
           key={ix.id}
@@ -374,7 +388,11 @@ export function FocusPage(): JSX.Element {
   const candidates = (
     <CandidateList>
       {candidatePool.length === 0 ? (
-        <HintText>No candidate indexings.</HintText>
+        <HintText>
+          {peaksEmpty
+            ? "Candidates appear once peaks are marked."
+            : "No candidate indexings."}
+        </HintText>
       ) : (
         candidatePool.map((ix) => candidateRow(ix))
       )}
@@ -471,7 +489,9 @@ export function FocusPage(): JSX.Element {
                 <ExportButton
                   {...fx}
                   ariaContext="trace plot"
-                  disabled={!traceQ.data || peaks.length === 0}
+                  // Export gates on trace emptiness only: a peakless trace is
+                  // still an exportable WYSIWYG figure (BU-EXPORT precedent).
+                  disabled={!traceQ.data || traceQ.data.q.length === 0}
                 />
               }
             />
