@@ -22,9 +22,9 @@ describe("ResidualChart", () => {
     expect(container.querySelector('[data-row-kind="leftover"]')).toBeNull();
   });
 
-  it("shows the R² in the gutter", () => {
+  it("shows the R² in the gutter, prefixed so it reads as fit quality", () => {
     const { getByText } = render(<ResidualChart assigned={[PN3M]} />);
-    expect(getByText(/R².*0\.998/)).toBeTruthy();
+    expect(getByText(/fit R² 0\.998/)).toBeTruthy();
   });
 
   it("draws a tolerance band per row", () => {

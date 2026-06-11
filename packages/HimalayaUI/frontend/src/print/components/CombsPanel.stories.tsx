@@ -11,8 +11,8 @@ const meta: Meta<typeof CombsPanel> = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-function CombsDemo() {
-  const [view, setView] = useState<CombView>("comb");
+function CombsDemo({ initialView = "comb" }: { initialView?: CombView }) {
+  const [view, setView] = useState<CombView>(initialView);
   const [hoveredQ, setHoveredQ] = useState<number | undefined>(undefined);
   const hover = hoveredQ !== undefined ? { hoveredQ } : {};
   return (
@@ -31,3 +31,7 @@ function CombsDemo() {
 }
 
 export const Default: Story = { render: () => <CombsDemo /> };
+
+// Starts in indexing space: view-derived header label + the ResidualLegend
+// (in/out-of-tolerance dots, off-scale chevron, band/track note).
+export const IndexingSpace: Story = { render: () => <CombsDemo initialView="resid" /> };

@@ -2,8 +2,10 @@ import { CombScaffold, ROW_H, type ScaffoldRow, type ScaffoldCtx } from "./CombS
 import { assembleRows, combQDomain, type CombSeries, type CombRow } from "./combModel";
 
 const TOL = 1e-6;
-const RESID_DOMAIN = 0.03; // fixed symmetric y-domain (±3%)
-const BAND = 0.022;        // tolerance band drawn at ±2.2%
+// Exported so ResidualLegend's band/track note is derived from the SAME constants the
+// chart draws — the annotation can't drift from the geometry.
+export const RESID_DOMAIN = 0.03; // fixed symmetric y-domain (the "track", ±3%)
+export const RESID_BAND = 0.022;  // tolerance band drawn at ±2.2%
 // px from baseline to the row's ±RESID_DOMAIN edge. Capped at the room BELOW the
 // baseline (baselineY sits ROW_H-14 from the row top → 14px to the bottom edge), so a
 // clamped negative residual stays inside the row rather than bleeding into the gap.
@@ -39,7 +41,9 @@ export function ResidualChart({ assigned, hovered, hoveredQ, onHoverQ, maxWidth,
 
 function rowToGutter(row: CombRow): ScaffoldRow {
   if (row.kind === "leftover") return { gutterTitle: "leftover" }; // unreachable (no leftover passed)
-  const sub = row.series.rSquared !== undefined ? `R² ${row.series.rSquared.toFixed(3)}` : undefined;
+  // "fit" prefix so the number reads as fit quality, not a bare statistic; the
+  // ResidualLegend's band/track note gives the surrounding context.
+  const sub = row.series.rSquared !== undefined ? `fit R² ${row.series.rSquared.toFixed(3)}` : undefined;
   const base: ScaffoldRow = { gutterTitle: row.series.phase, ...(sub ? { gutterSub: sub } : {}) };
   return row.kind === "preview" ? { ...base, preview: true } : base;
 }
@@ -54,7 +58,7 @@ function renderResidRow(
   if (row.kind === "leftover") return <g key={i} data-role="resid-row" data-row-kind="leftover" />; // unreachable
   const { color } = row.series;
   const y0 = ctx.baselineY(i);
-  const bandPx = (BAND / RESID_DOMAIN) * HALF_SPAN;
+  const bandPx = (RESID_BAND / RESID_DOMAIN) * HALF_SPAN;
   // Positive residual (over-predicted) sits ABOVE the baseline (smaller y).
   const yFor = (res: number): number => {
     const clamped = Math.max(-RESID_DOMAIN, Math.min(RESID_DOMAIN, res));
@@ -73,15 +77,15 @@ function renderResidRow(
           const res = t.residual as number;
           const absRes = Math.abs(res);
           // Three tiers:
-          //  • in tolerance (within the ±BAND band)            → filled dot at value
-          //  • out of tolerance, still on the track (BAND..DOMAIN) → HOLLOW dot at value
+          //  • in tolerance (within the ±RESID_BAND band)      → filled dot at value
+          //  • out of tolerance, still on the track (RESID_BAND..DOMAIN) → HOLLOW dot at value
           //  • off-scale (beyond ±RESID_DOMAIN)                 → chevron clamped at edge, no dot
           // The hollow dot says "out of tolerance" while still reading its real value;
           // the chevron says "ran off the track" (a binary signal — magnitude past the
           // edge is noise on a quality check). Chevron geometry matches the CombChart
           // predicted-absent caret (half-width 3.2, height 4).
           const offScale = absRes > RESID_DOMAIN;
-          const outOfTol = !offScale && absRes > BAND;
+          const outOfTol = !offScale && absRes > RESID_BAND;
           const hot = hoveredQ !== undefined && Math.abs(t.q - hoveredQ) <= TOL;
           const cx = ctx.x.to(t.q);
           if (offScale) {

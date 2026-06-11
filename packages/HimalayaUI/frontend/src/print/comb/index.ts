@@ -1,5 +1,5 @@
 export { CombChart } from "./CombChart";
-export { ResidualChart } from "./ResidualChart";
+export { ResidualChart, RESID_DOMAIN, RESID_BAND } from "./ResidualChart";
 export { CombScaffold } from "./CombScaffold";
 export { CustomPreview } from "./CustomPreview";
 export type { CustomPreviewProps } from "./CustomPreview";

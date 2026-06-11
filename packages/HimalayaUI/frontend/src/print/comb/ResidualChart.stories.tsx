@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { ResidualChart } from "./ResidualChart";
+import { ResidualLegend } from "../components/ResidualLegend";
 import { PN3M, IM3M } from "./comb.fixtures";
 import { phaseColor } from "../../phases";
 import type { CombSeries } from "./combModel";
@@ -36,5 +37,11 @@ export const NarrowScrolling: Story = {
 // The three tiers: in-tolerance filled dot, out-of-tolerance hollow dot (at value),
 // and off-scale chevron clamped at the edge (both directions).
 export const ToleranceTiers: Story = {
-  render: () => <div className={frame} style={{ width: 760 }}><ResidualChart assigned={[TIERS]} maxWidth={760} /></div>,
+  render: () => (
+    // Legend shown as in CombsPanel: the residual vocabulary + the band/track note.
+    <div className={frame} style={{ width: 760 }}>
+      <ResidualChart assigned={[TIERS]} maxWidth={760} />
+      <ResidualLegend className="mt-2.5" />
+    </div>
+  ),
 };

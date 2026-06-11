@@ -3,6 +3,7 @@ import { Card, SegmentedControl } from "../ui";
 import { CombChart, ResidualChart, type CombSeries } from "../comb";
 import { PanelHeader } from "./PanelHeader";
 import { CombLegend } from "./CombLegend";
+import { ResidualLegend } from "./ResidualLegend";
 
 function cx(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(" ");
@@ -21,7 +22,8 @@ export interface CombsPanelProps {
   /** Incoming q-link from the trace/detector. */
   hoveredQ?: number;
   onHoverQ?: (q?: number) => void;
-  /** Section label. Default "Reflections · comb". */
+  /** Section label override. By default the label derives from `view`:
+   *  "Reflections · comb" / "Reflections · indexing space". */
   label?: ReactNode;
   /** PLACEMENT-ONLY. */
   className?: string;
@@ -34,9 +36,13 @@ export function CombsPanel({
   onViewChange,
   hoveredQ,
   onHoverQ,
-  label = "Reflections · comb",
+  label,
   className,
 }: CombsPanelProps): JSX.Element {
+  // Single source: the same `view` that switches the chart also names the section,
+  // so flipping to indexing space never keeps the comb's identity in the header.
+  const heading =
+    label ?? (view === "comb" ? "Reflections · comb" : "Reflections · indexing space");
   const hover = {
     ...(hoveredQ !== undefined ? { hoveredQ } : {}),
     ...(onHoverQ !== undefined ? { onHoverQ } : {}),
@@ -48,7 +54,7 @@ export function CombsPanel({
       data-view={view}
       className={cx("flex flex-col p-4", className)}
     >
-      <PanelHeader label={label}>
+      <PanelHeader label={heading}>
         <SegmentedControl
           size="xs"
           options={[
@@ -67,7 +73,12 @@ export function CombsPanel({
           <ResidualChart assigned={assigned} {...hover} />
         )}
       </div>
-      <CombLegend className="mt-2.5" />
+      {/* Per-view legend: each view's glyph vocabulary, never the other's. */}
+      {view === "comb" ? (
+        <CombLegend className="mt-2.5" />
+      ) : (
+        <ResidualLegend className="mt-2.5" />
+      )}
     </Card>
   );
 }
