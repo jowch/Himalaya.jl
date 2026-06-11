@@ -458,6 +458,192 @@ end
     end
 end
 
+# ---------------------------------------------------------------------------
+# Batch upsert tests (Slice 5 / Task 10)
+# ---------------------------------------------------------------------------
+
+@testset "POST /api/samples/tags/batch upserts: existing key updates in place, provenance preserved" begin
+    # Sample S already has dose=10 (id X, source manual). A scoping batch
+    # with key=dose value="12" must update the row in place — no twin — and
+    # must NOT change the source (manual provenance preserved).
+    db = SQLite.DB()
+    HimalayaUI.create_schema!(db)
+    exp_id = HimalayaUI.init_experiment!(db; path="/tbu1", data_dir="/tbu1/d",
+                                             analysis_dir="/tbu1/a")
+    S = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="SU1")
+    DBInterface.execute(db,
+        "INSERT INTO sample_tags (sample_id, key, value, source) VALUES (?, ?, ?, ?)",
+        [S, "dose", "10", "manual"])
+    X = Int(DBInterface.lastrowid(DBInterface.execute(db, "SELECT last_insert_rowid()")))
+
+    with_test_server(db) do port, base
+        n0 = only(Tables.rowtable(DBInterface.execute(db,
+            "SELECT COUNT(*) AS c FROM user_actions"))).c
+
+        r = HTTP.post("$base/api/samples/tags/batch";
+            body    = JSON3.write(Dict(:key => "dose", :source => "scoping",
+                                       :tags => [Dict(:sample_id => S, :value => "12")])),
+            headers = ["Content-Type" => "application/json", "X-Username" => "alice"])
+        @test r.status == 201
+
+        # Exactly one dose row remains, same id, updated value.
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id, value, source FROM sample_tags
+             WHERE sample_id = ? AND key = 'dose'", [S]))
+        @test length(rows) == 1
+        @test rows[1].id    == X
+        @test String(rows[1].value) == "12"
+        # Provenance untouched — scoping must not overwrite manual.
+        @test String(rows[1].source) == "manual"
+
+        # An edit_tag event was written (not add_tag).
+        n1 = only(Tables.rowtable(DBInterface.execute(db,
+            "SELECT COUNT(*) AS c FROM user_actions"))).c
+        @test n1 == n0 + 1
+        last_action = only(Tables.rowtable(DBInterface.execute(db,
+            "SELECT action FROM user_actions ORDER BY id DESC LIMIT 1")))
+        @test last_action.action == "edit_tag"
+
+        # Response carries one entry with the resolved id, new value, actual source.
+        body = JSON3.read(String(r.body))
+        @test length(body) == 1
+        @test body[1].id     == X
+        @test body[1].value  == "12"
+        @test body[1].source == "manual"
+    end
+end
+
+@testset "POST /api/samples/tags/batch upserts: unchanged value is a no-op" begin
+    # Sample S has dose=12 (from a prior batch/insert). Re-scoping with the
+    # same value must write nothing and emit no event.
+    db = SQLite.DB()
+    HimalayaUI.create_schema!(db)
+    exp_id = HimalayaUI.init_experiment!(db; path="/tbu2", data_dir="/tbu2/d",
+                                             analysis_dir="/tbu2/a")
+    S = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="SU2")
+    DBInterface.execute(db,
+        "INSERT INTO sample_tags (sample_id, key, value, source) VALUES (?, ?, ?, ?)",
+        [S, "dose", "12", "scoping"])
+    X = Int(DBInterface.lastrowid(DBInterface.execute(db, "SELECT last_insert_rowid()")))
+
+    with_test_server(db) do port, base
+        n0 = only(Tables.rowtable(DBInterface.execute(db,
+            "SELECT COUNT(*) AS c FROM user_actions"))).c
+
+        r = HTTP.post("$base/api/samples/tags/batch";
+            body    = JSON3.write(Dict(:key => "dose", :source => "scoping",
+                                       :tags => [Dict(:sample_id => S, :value => "12")])),
+            headers = ["Content-Type" => "application/json", "X-Username" => "alice"])
+        @test r.status == 201
+
+        # No new event: value was unchanged.
+        n1 = only(Tables.rowtable(DBInterface.execute(db,
+            "SELECT COUNT(*) AS c FROM user_actions"))).c
+        @test n1 == n0
+
+        # Still exactly one row, same id, same value.
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id, value FROM sample_tags
+             WHERE sample_id = ? AND key = 'dose'", [S]))
+        @test length(rows) == 1
+        @test rows[1].id == X
+        @test String(rows[1].value) == "12"
+
+        # Response still carries one entry per input row.
+        body = JSON3.read(String(r.body))
+        @test length(body) == 1
+        @test body[1].id == X
+    end
+end
+
+@testset "POST /api/samples/tags/batch upserts: new key inserts" begin
+    # A key the sample does not yet have: should INSERT, emit add_tag.
+    db = SQLite.DB()
+    HimalayaUI.create_schema!(db)
+    exp_id = HimalayaUI.init_experiment!(db; path="/tbu3", data_dir="/tbu3/d",
+                                             analysis_dir="/tbu3/a")
+    S = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="SU3")
+
+    with_test_server(db) do port, base
+        n0 = only(Tables.rowtable(DBInterface.execute(db,
+            "SELECT COUNT(*) AS c FROM user_actions"))).c
+
+        r = HTTP.post("$base/api/samples/tags/batch";
+            body    = JSON3.write(Dict(:key => "lipid", :source => "scoping",
+                                       :tags => [Dict(:sample_id => S, :value => "DOPC")])),
+            headers = ["Content-Type" => "application/json", "X-Username" => "alice"])
+        @test r.status == 201
+
+        # New row inserted, source matches the batch.
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id, value, source FROM sample_tags
+             WHERE sample_id = ? AND key = 'lipid'", [S]))
+        @test length(rows) == 1
+        @test String(rows[1].value)  == "DOPC"
+        @test String(rows[1].source) == "scoping"
+
+        # add_tag event written.
+        n1 = only(Tables.rowtable(DBInterface.execute(db,
+            "SELECT COUNT(*) AS c FROM user_actions"))).c
+        @test n1 == n0 + 1
+        last_action = only(Tables.rowtable(DBInterface.execute(db,
+            "SELECT action FROM user_actions ORDER BY id DESC LIMIT 1")))
+        @test last_action.action == "add_tag"
+
+        body = JSON3.read(String(r.body))
+        @test length(body) == 1
+        @test body[1].id > 0
+        @test body[1].source == "scoping"
+    end
+end
+
+@testset "POST /api/samples/tags/batch upsert: idempotency replay writes nothing new" begin
+    # Same client_op_id twice: the second call returns the cached response and
+    # must produce no new rows or events beyond the first call.
+    db = SQLite.DB()
+    HimalayaUI.create_schema!(db)
+    exp_id = HimalayaUI.init_experiment!(db; path="/tbu4", data_dir="/tbu4/d",
+                                             analysis_dir="/tbu4/a")
+    S = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="SU4")
+    # Seed an existing tag to exercise the update-branch idempotency.
+    DBInterface.execute(db,
+        "INSERT INTO sample_tags (sample_id, key, value, source) VALUES (?, ?, ?, ?)",
+        [S, "dose", "5", "manual"])
+
+    with_test_server(db) do port, base
+        op_id = "uuid-batch-upsert-idem-1"
+        body_str = JSON3.write(Dict(:key => "dose", :source => "scoping",
+                                    :tags => [Dict(:sample_id => S, :value => "99")]))
+        hdrs = ["Content-Type"   => "application/json",
+                "X-Username"     => "alice",
+                "X-Client-Op-Id" => op_id]
+
+        r1 = HTTP.post("$base/api/samples/tags/batch"; body=body_str, headers=hdrs)
+        @test r1.status == 201
+        body1 = String(copy(r1.body))
+
+        n_tags0 = only(Tables.rowtable(DBInterface.execute(db,
+            "SELECT COUNT(*) AS c FROM sample_tags WHERE sample_id = ? AND key = 'dose'",
+            [S]))).c
+        n_events0 = only(Tables.rowtable(DBInterface.execute(db,
+            "SELECT COUNT(*) AS c FROM user_actions"))).c
+
+        r2 = HTTP.post("$base/api/samples/tags/batch"; body=body_str, headers=hdrs)
+        @test r2.status == 201
+        # Cached response replayed verbatim.
+        @test String(copy(r2.body)) == body1
+
+        # No new rows, no new events on the replay.
+        n_tags1 = only(Tables.rowtable(DBInterface.execute(db,
+            "SELECT COUNT(*) AS c FROM sample_tags WHERE sample_id = ? AND key = 'dose'",
+            [S]))).c
+        n_events1 = only(Tables.rowtable(DBInterface.execute(db,
+            "SELECT COUNT(*) AS c FROM user_actions"))).c
+        @test n_tags1   == n_tags0
+        @test n_events1 == n_events0
+    end
+end
+
 @testset "corpus samples route" begin
     db = SQLite.DB()
     HimalayaUI.create_schema!(db)

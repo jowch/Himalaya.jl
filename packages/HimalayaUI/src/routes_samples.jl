@@ -313,37 +313,79 @@ function register_samples_routes!()
 
         return with_idempotency(db, req) do
             # `with_idempotency` supplies the single enclosing transaction —
-            # every insert + event below commits or rolls back together.
+            # every insert/update + event below commits or rolls back together.
             created = Vector{Dict{Symbol, Any}}()
             for t in entries
                 sample_id = Int(t.sample_id)
                 value     = String(t.value)
-                res = DBInterface.execute(db,
-                    "INSERT INTO sample_tags (sample_id, key, value, source)
-                     VALUES (?, ?, ?, ?)",
-                    [sample_id, key, value, source])
-                tag_id = Int(DBInterface.lastrowid(res))
 
                 # Parent experiment_id lets the frontend invalidate the right
                 # samples cache key — matches the single-tag route's payload.
+                # Hoisted to the top: all three branches (insert/update/no-op)
+                # need it for the event payload.
                 srows = Tables.rowtable(DBInterface.execute(db,
                     "SELECT experiment_id FROM samples WHERE id = ?", [sample_id]))
                 exp_id = (isempty(srows) || ismissing(srows[1].experiment_id)) ?
                          nothing : Int(srows[1].experiment_id)
 
-                result = apply_event!(InTransaction(), db, req;
-                    kind = "add_tag",
-                    entity_type = "sample", entity_id = sample_id,
-                    payload = Dict(:key => key, :value => value,
-                                   :tag_id => tag_id, :experiment_id => exp_id))
-                _enqueue_broadcast_from_result!(result, "add_tag",
-                                                "sample", sample_id)
+                # Upsert on (sample_id, key): update the oldest matching row if
+                # the key already exists, insert only when absent. Ordering by id
+                # ensures a stable winner when duplicates are already present
+                # (LO-TAGDUP recovery path) and the SELECT covers source so we
+                # can preserve the existing tag's provenance on update.
+                existing = Tables.rowtable(DBInterface.execute(db,
+                    "SELECT id, value, source FROM sample_tags
+                     WHERE sample_id = ? AND key = ? ORDER BY id LIMIT 1",
+                    [sample_id, key]))
+
+                if isempty(existing)
+                    # --- INSERT branch: key absent → add new tag ---
+                    res = DBInterface.execute(db,
+                        "INSERT INTO sample_tags (sample_id, key, value, source)
+                         VALUES (?, ?, ?, ?)",
+                        [sample_id, key, value, source])
+                    tag_id       = Int(DBInterface.lastrowid(res))
+                    actual_source = source   # new row carries the batch source
+                    result = apply_event!(InTransaction(), db, req;
+                        kind = "add_tag",
+                        entity_type = "sample", entity_id = sample_id,
+                        payload = Dict(:key => key, :value => value,
+                                       :tag_id => tag_id, :experiment_id => exp_id))
+                    _enqueue_broadcast_from_result!(result, "add_tag",
+                                                    "sample", sample_id)
+                elseif String(existing[1].value) != value
+                    # --- UPDATE branch: key present but value changed ---
+                    # Do NOT touch `source`: scoping must not overwrite a manual
+                    # tag's provenance (the whole point of the upsert semantics).
+                    tag_id        = Int(existing[1].id)
+                    actual_source = String(existing[1].source)
+                    DBInterface.execute(db,
+                        "UPDATE sample_tags SET value = ? WHERE id = ?",
+                        [value, tag_id])
+                    result = apply_event!(InTransaction(), db, req;
+                        kind = "edit_tag",
+                        entity_type = "sample", entity_id = sample_id,
+                        payload = Dict(:tag_id => tag_id, :key => key,
+                                       :value => value, :experiment_id => exp_id))
+                    _enqueue_broadcast_from_result!(result, "edit_tag",
+                                                    "sample", sample_id)
+                else
+                    # --- NO-OP branch: key present, value unchanged ---
+                    # No write, no event — the batch response still carries one
+                    # entry per input row (contract preserved below).
+                    tag_id        = Int(existing[1].id)
+                    actual_source = String(existing[1].source)
+                end
 
                 # Each entry is a full SampleTag plus the explicit sample_id —
                 # there is no URL param to make the parent FK implicit here.
+                # One shared push for all three branches: uses the resolved
+                # tag_id, the new value (or unchanged value on no-op), and the
+                # ACTUAL stored source (batch source on insert, existing tag's
+                # source on update/no-op).
                 push!(created, Dict(:id => tag_id, :sample_id => sample_id,
                                     :key => key, :value => value,
-                                    :source => source))
+                                    :source => actual_source))
             end
             HTTP.Response(201, ["Content-Type" => "application/json"],
                 JSON3.write(created))
