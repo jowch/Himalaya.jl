@@ -1,4 +1,5 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { RefObject } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Skeleton } from "boneyard-js/react";
 import { PageFrame } from "../components/PageFrame";
@@ -21,14 +22,23 @@ import {
   writeFolioControlsToParams,
 } from "../../lib/series/folioFilter";
 import type { FolioControls, FolioFilter, FolioSort } from "../../lib/series/folioFilter";
-import { membersToSegments, toCardChrome } from "./folioAdapters";
+import { membersToSegments, stableFigNumbers, toCardChrome } from "./folioAdapters";
 import { toWaterfallRows } from "../waterfall/waterfallModel";
 
-// ── Boneyard fixture — inline placeholder so the Skeleton has a defined
-// fallback while no folio.bones.json capture has been made yet.
+// ── Folio loading skeleton (FOL-BONES) — a hand-rolled card-shaped placeholder
+// grid doing double duty: it is the Skeleton `fixture` (what the boneyard
+// capture CLI measures when a folio.bones.json capture is eventually made) AND
+// the runtime `fallback` (what renders today, since src/bones/registry.ts has
+// no "folio" entry yet — boneyard's documented no-bones path, Rule 3). Until a
+// real capture lands, loading shows these card bones instead of bare text.
 // Token-only classes; no inline appearance literals (design-guard clean). ────
-const FOLIO_FIXTURE = (
-  <div className="columns-1 sm:columns-2 lg:columns-3 gap-5">
+const FOLIO_SKELETON = (
+  <div
+    className="columns-1 sm:columns-2 lg:columns-3 gap-5"
+    data-testid="folio-bones-fallback"
+    role="status"
+    aria-label="Loading series"
+  >
     {[0, 1, 2].map((i) => (
       <div key={i} className="break-inside-avoid mb-5">
         <div className="bg-plate border border-hair rounded overflow-hidden">
@@ -51,31 +61,70 @@ const SORT_OPTIONS: ReadonlyArray<SegmentOption<FolioSort>> = [
   { value: "size", label: "Largest" },
 ];
 
+// ── Viewport-lazy gate (FOL-N+1, page-local by design) ───────────────────────
+// One-shot latch: `near` flips true the first time the element comes within
+// PREFETCH_MARGIN of the viewport, then stays true (queries stay mounted; no
+// refetch churn on scroll-away). Fails open — no IntersectionObserver (JSDOM,
+// very old browsers) means every card loads immediately, which is exactly the
+// pre-fix behaviour and keeps a tiny corpus rendering at once.
+const PREFETCH_MARGIN = "400px 0px";
+
+function useNearViewport(): [RefObject<HTMLDivElement>, boolean] {
+  const ref = useRef<HTMLDivElement>(null);
+  const [near, setNear] = useState(false);
+  useEffect(() => {
+    if (near) return;
+    const el = ref.current;
+    if (el === null || typeof IntersectionObserver === "undefined") {
+      setNear(true);
+      return;
+    }
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) setNear(true);
+      },
+      { rootMargin: PREFETCH_MARGIN },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [near]);
+  return [ref, near];
+}
+
 // ── Per-card data container (page glue; NOT a print/components composite) ─────
+// The card CHROME (fig label, title, counts, provenance) is fully derivable
+// from the LIST summary; only the figure rows + phase strip need the detail
+// and trace fetches. Those queries stay disabled (id=undefined → enabled:false)
+// until the card nears the viewport, so a corpus-scale folio fires 2×(visible)
+// requests, not 2N.
 function FolioCard({
   summary,
-  position,
+  figNumber,
   onOpen,
   now,
 }: {
   summary: SeriesSummary;
-  position: number;
+  /** Stable corpus number (stableFigNumbers); 0 for drafts (ignored). */
+  figNumber: number;
   onOpen: () => void;
   now: Date;
 }): JSX.Element {
-  const detail = useSeries(summary.id);
-  const tracesQ = useSeriesTraces(summary.id);
+  const [ref, near] = useNearViewport();
+  const detail = useSeries(near ? summary.id : undefined);
+  const tracesQ = useSeriesTraces(near ? summary.id : undefined);
   const members = detail.data?.members ?? [];
   const rows = toWaterfallRows(members, tracesQ.data ?? {});
   const segments = membersToSegments(members);
-  const chrome = toCardChrome(summary, position, now);
+  const chrome = toCardChrome(summary, figNumber, now);
   return (
-    <SeriesCard
-      rows={rows}
-      segments={segments}
-      {...chrome}
-      onClick={onOpen}
-    />
+    <div ref={ref}>
+      <SeriesCard
+        rows={rows}
+        segments={segments}
+        {...chrome}
+        onClick={onOpen}
+      />
+    </div>
   );
 }
 
@@ -117,6 +166,10 @@ export function SeriesFolioPage(): JSX.Element {
   }
 
   const visible = filterSort(summaries, controls);
+
+  // Stable fig numbers (FOL-FIGNUM): computed over the WHOLE committed corpus,
+  // not the filtered view — a card keeps its number under every sort/filter.
+  const figNumbers = useMemo(() => stableFigNumbers(summaries), [summaries]);
 
   function setFilter(filter: FolioFilter): void {
     updateControls({ filter });
@@ -205,10 +258,8 @@ export function SeriesFolioPage(): JSX.Element {
         loading={listQ.isLoading}
         stagger={50}
         transition={200}
-        fixture={FOLIO_FIXTURE}
-        fallback={
-          <div className="p-8 text-sm text-ink-soft">Loading series…</div>
-        }
+        fixture={FOLIO_SKELETON}
+        fallback={FOLIO_SKELETON}
       >
         <Gallery
           empty={
@@ -243,11 +294,11 @@ export function SeriesFolioPage(): JSX.Element {
             )
           }
         >
-          {visible.map((s, i) => (
+          {visible.map((s) => (
             <FolioCard
               key={s.id}
               summary={s}
-              position={i + 1}
+              figNumber={figNumbers.get(s.id) ?? 0}
               now={now}
               onOpen={() => navigate(`/series/${s.id}`)}
             />

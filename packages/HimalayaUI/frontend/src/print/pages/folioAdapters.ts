@@ -28,13 +28,28 @@ export interface CardChrome {
   notice?: { tone: "draft" }; draft: boolean;
 }
 
+/** Stable figure numbers over the COMMITTED corpus (FOL-FIGNUM): committed
+ *  series (non-draft, `content_hash !== ""`) ordered by id (creation order),
+ *  numbered 1..N — independent of the current filter/sort view, so a card
+ *  keeps its number under every view and a filtered wall can honestly open at
+ *  "Fig. 2". Drafts get no entry: they show the Draft pill, not a number, and
+ *  never consume one. */
+export function stableFigNumbers(summaries: SeriesSummary[]): Map<number, number> {
+  const ids = summaries
+    .filter((s) => s.content_hash !== "")
+    .map((s) => s.id)
+    .sort((a, b) => a - b);
+  return new Map(ids.map((id, i) => [id, i + 1]));
+}
+
 /** Everything a card shows that is derivable from the LIST summary (no detail fetch).
- *  `position` = 1-based index in the filtered/sorted list (the "Fig. N"). */
-export function toCardChrome(s: SeriesSummary, position: number, now: Date): CardChrome {
+ *  `figNumber` = the series' stable number from {@link stableFigNumbers}
+ *  (view-independent); ignored for drafts, which label as "Recipe". */
+export function toCardChrome(s: SeriesSummary, figNumber: number, now: Date): CardChrome {
   const draft = s.content_hash === "";
   const title = s.title.trim() === "" ? "Untitled series" : s.title;
   const chrome: CardChrome = {
-    figLabel: draft ? "Recipe" : `Fig. ${position}`,
+    figLabel: draft ? "Recipe" : `Fig. ${figNumber}`,
     title,
     sampleCount: s.member_count,
     variable: s.ordering_variable ?? "",

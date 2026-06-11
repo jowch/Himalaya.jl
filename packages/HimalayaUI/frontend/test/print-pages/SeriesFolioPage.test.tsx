@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, within } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, screen, fireEvent, within, act } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import type { SeriesSummary, Series, SeriesMember } from "../../src/api";
 
@@ -23,6 +23,14 @@ const state = {
   fetching: false,
 };
 
+// Per-card hook spies (FOL-N+1): record the id each mount passes so tests can
+// pin that off-viewport cards pass `undefined` (the enabled:false gate — no
+// detail/trace fetch) until they near the viewport.
+const { seriesSpy, tracesSpy } = vi.hoisted(() => ({
+  seriesSpy: vi.fn<(id: number | undefined) => void>(),
+  tracesSpy: vi.fn<(id: number | undefined) => void>(),
+}));
+
 vi.mock("../../src/queries", () => ({
   useSeriesList: () => ({
     data: state.error ? undefined : state.summaries,
@@ -31,14 +39,20 @@ vi.mock("../../src/queries", () => ({
     isFetching: state.fetching,
     refetch: listRefetch,
   }),
-  useSeries: (id: number | undefined) => ({
-    data: id !== undefined ? state.seriesById.get(id) : undefined,
-    isLoading: state.loading,
-  }),
-  useSeriesTraces: (_id: number | undefined) => ({
-    data: {},
-    isLoading: false,
-  }),
+  useSeries: (id: number | undefined) => {
+    seriesSpy(id);
+    return {
+      data: id !== undefined ? state.seriesById.get(id) : undefined,
+      isLoading: state.loading,
+    };
+  },
+  useSeriesTraces: (id: number | undefined) => {
+    tracesSpy(id);
+    return {
+      data: {},
+      isLoading: false,
+    };
+  },
 }));
 
 // boneyard Skeleton: render children when not loading.
@@ -153,6 +167,33 @@ beforeEach(() => {
   vi.clearAllMocks();
   seed();
 });
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+/** Find the rendered card containing `title`. */
+function cardWithTitle(title: string): HTMLElement {
+  const card = screen
+    .getAllByTestId("series-card")
+    .find((c) => within(c).queryByText(title) !== null);
+  expect(card).toBeDefined();
+  return card!;
+}
+
+/** Controllable IntersectionObserver stub: nothing intersects until a test
+ *  fires an instance's callback. Instance order == card render order. */
+class IOStub {
+  static instances: IOStub[] = [];
+  callback: (entries: Array<{ isIntersecting: boolean }>) => void;
+  constructor(cb: (entries: Array<{ isIntersecting: boolean }>) => void) {
+    this.callback = cb;
+    IOStub.instances.push(this);
+  }
+  observe(): void {}
+  unobserve(): void {}
+  disconnect(): void {}
+}
 
 describe("SeriesFolioPage", () => {
   it("renders the FolioHeader with total count and one card per listed series", () => {
@@ -297,5 +338,89 @@ describe("SeriesFolioPage", () => {
     renderPage();
     const block = screen.getByTestId("empty-state");
     expect(within(block).getByRole("button", { name: "Try again" })).toBeDisabled();
+  });
+});
+
+describe("SeriesFolioPage stable fig numbers (FOL-FIGNUM)", () => {
+  it("filtering to a single card keeps its corpus-stable number", () => {
+    renderPage();
+    const input = screen.getByRole("textbox");
+    fireEvent.change(input, { target: { value: "Lipid baselines" } });
+    const cards = screen.getAllByTestId("series-card");
+    expect(cards).toHaveLength(1);
+    // Series 2 is the second committed series by id — it stays "Fig. 2" even
+    // when it is the only card on screen (never renumbered to "Fig. 1").
+    expect(within(cards[0]!).getByText("Fig. 2")).toBeInTheDocument();
+    expect(screen.queryByText("Fig. 1")).toBeNull();
+  });
+
+  it("changing the sort does not renumber the cards", () => {
+    // Make series 2 the largest so "Largest" reorders it to the front.
+    state.summaries[1] = summary({ id: 2, title: "Lipid baselines", member_count: 9 });
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Largest" }));
+    const first = screen.getAllByTestId("series-card")[0]!;
+    expect(within(first).getByText("Lipid baselines")).toBeInTheDocument();
+    expect(within(first).getByText("Fig. 2")).toBeInTheDocument();
+    expect(within(cardWithTitle("LL37 titration lipid 1-2")).getByText("Fig. 1")).toBeInTheDocument();
+  });
+
+  it("a draft consumes no fig number — committed series after it stay densely numbered", () => {
+    // Seed: ids 1, 2 committed; 3 draft. Add committed id 4 — it must be
+    // "Fig. 3" (the draft never held a number), not "Fig. 4".
+    state.summaries.push(summary({ id: 4, title: "Fourth series" }));
+    state.seriesById.set(4, seriesDetail(4, [member({ id: 40, series_id: 4, exposure_id: 4 })]));
+    renderPage();
+    expect(within(cardWithTitle("Fourth series")).getByText("Fig. 3")).toBeInTheDocument();
+  });
+
+  it("the draft card itself shows no fig number", () => {
+    renderPage();
+    expect(within(cardWithTitle("April vs July cross-exp")).queryByText(/^Fig\./)).toBeNull();
+  });
+});
+
+describe("SeriesFolioPage viewport-lazy card data (FOL-N+1)", () => {
+  it("off-viewport cards do not fetch detail/traces; nearing the viewport starts the fetch", () => {
+    vi.stubGlobal("IntersectionObserver", IOStub);
+    IOStub.instances = [];
+    renderPage();
+    // All card chrome renders from the LIST summary alone…
+    expect(screen.getAllByTestId("series-card")).toHaveLength(3);
+    // …and no card has mounted an enabled detail/trace query yet.
+    expect(seriesSpy.mock.calls.every(([id]) => id === undefined)).toBe(true);
+    expect(tracesSpy.mock.calls.every(([id]) => id === undefined)).toBe(true);
+    expect(IOStub.instances.length).toBe(3);
+
+    // First card nears the viewport → its queries enable with its id.
+    act(() => {
+      IOStub.instances[0]!.callback([{ isIntersecting: true }]);
+    });
+    expect(seriesSpy.mock.calls.some(([id]) => id === 1)).toBe(true);
+    expect(tracesSpy.mock.calls.some(([id]) => id === 1)).toBe(true);
+    // The other two cards still have not fetched.
+    expect(seriesSpy.mock.calls.some(([id]) => id === 2 || id === 3)).toBe(false);
+    expect(tracesSpy.mock.calls.some(([id]) => id === 2 || id === 3)).toBe(false);
+  });
+
+  it("without IntersectionObserver support, every card fetches immediately (fail-open)", () => {
+    // JSDOM has no IntersectionObserver — this is the default environment.
+    renderPage();
+    for (const id of [1, 2, 3]) {
+      expect(tracesSpy.mock.calls.some(([got]) => got === id)).toBe(true);
+      expect(seriesSpy.mock.calls.some(([got]) => got === id)).toBe(true);
+    }
+  });
+});
+
+describe("SeriesFolioPage loading skeleton (FOL-BONES)", () => {
+  it("the loading state renders the skeleton card grid, not bare text", () => {
+    state.loading = true;
+    renderPage();
+    // The mocked Skeleton renders `fallback` while loading: the house standard
+    // is a card-shaped placeholder grid, never a bare "Loading series…" line.
+    expect(screen.getByTestId("folio-bones-fallback")).toBeInTheDocument();
+    expect(screen.queryByText("Loading series…")).toBeNull();
+    expect(screen.queryAllByTestId("series-card")).toHaveLength(0);
   });
 });

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { membersToSegments, toCardChrome, formatEdited } from "../../src/print/pages/folioAdapters";
+import { membersToSegments, toCardChrome, formatEdited, stableFigNumbers } from "../../src/print/pages/folioAdapters";
 import type { SeriesMember, SeriesSummary } from "../../src/api";
 
 function member(id: number, snap: SeriesMember["snapshot"]): SeriesMember {
@@ -60,6 +60,36 @@ describe("toCardChrome", () => {
   it("keeps the cross-experiment note when spanning, ignoring any name", () => {
     const c = toCardChrome(summary({ spans_experiments: true, experiment_name: null }), 1, new Date("2026-06-06T00:00:00Z"));
     expect(c.provenance).toBe("↔ cross-experiment · q normalized");
+  });
+});
+
+describe("stableFigNumbers (FOL-FIGNUM)", () => {
+  it("numbers committed series 1..N by id (creation order)", () => {
+    const map = stableFigNumbers([
+      summary({ id: 7 }),
+      summary({ id: 2 }),
+      summary({ id: 5 }),
+    ]);
+    expect(map.get(2)).toBe(1);
+    expect(map.get(5)).toBe(2);
+    expect(map.get(7)).toBe(3);
+  });
+
+  it("drafts get no number and do not consume one", () => {
+    const map = stableFigNumbers([
+      summary({ id: 1 }),
+      summary({ id: 2, content_hash: "" }), // draft between two committed
+      summary({ id: 3 }),
+    ]);
+    expect(map.get(1)).toBe(1);
+    expect(map.has(2)).toBe(false);
+    expect(map.get(3)).toBe(2); // dense: the draft did not consume "2"
+  });
+
+  it("is independent of input (view) order", () => {
+    const rows = [summary({ id: 3 }), summary({ id: 1 }), summary({ id: 9 })];
+    const shuffled = [rows[1]!, rows[2]!, rows[0]!];
+    expect(stableFigNumbers(rows)).toEqual(stableFigNumbers(shuffled));
   });
 });
 
