@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
-import { MemoryRouter, Routes, Route } from "react-router-dom";
+import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
 import type { Exposure, CorpusSample } from "../../src/api";
 
 const setStatusMutate = vi.fn();
@@ -50,11 +50,26 @@ function exp(over: Partial<Exposure>): Exposure {
   };
 }
 
-function renderAt(sampleId: number) {
+/** Surfaces the live location.search so tests can pin "the loupe never
+ *  rewrites the URL while flipping frames" (SA-F2 read-once contract). */
+function LocationProbe(): JSX.Element {
+  const loc = useLocation();
+  return <div data-testid="loc-probe" data-search={loc.search} />;
+}
+
+function renderAt(sampleId: number, search = "") {
   return render(
-    <MemoryRouter initialEntries={[`/samples/loupe/${sampleId}`]}>
+    <MemoryRouter initialEntries={[`/samples/loupe/${sampleId}${search}`]}>
       <Routes>
-        <Route path="/samples/loupe/:sampleId" element={<LoupePage />} />
+        <Route
+          path="/samples/loupe/:sampleId"
+          element={
+            <>
+              <LoupePage />
+              <LocationProbe />
+            </>
+          }
+        />
         <Route path="/samples" element={<div data-testid="sheet">sheet</div>} />
       </Routes>
     </MemoryRouter>,
@@ -87,6 +102,47 @@ describe("LoupePage", () => {
   it("opens on the representative exposure (id 1)", () => {
     renderAt(42);
     expect(screen.getByTestId("big-frame")).not.toHaveAttribute("data-rejected");
+  });
+
+  it("?exposure opens the loupe AT that frame (SA-F2)", () => {
+    // Exposure 2 is the rejected, NON-default frame — landing on it proves the
+    // param won over the representative default.
+    const { container } = renderAt(42, "?exposure=2");
+    expect(screen.getByTestId("big-frame")).toHaveAttribute("data-rejected", "true");
+    expect(container.querySelector('[data-role="frame-caption"]')).toHaveTextContent(
+      "frame 2 of 2",
+    );
+  });
+
+  it("an unknown ?exposure falls back to the default frame silently", () => {
+    // 999 is no frame of this sample. A FOREIGN sample's exposure id takes the
+    // identical path: validation is membership in THIS sample's exposure list,
+    // so foreign and unknown ids are indistinguishable here — both fall back.
+    const { container } = renderAt(42, "?exposure=999");
+    expect(screen.getByTestId("big-frame")).not.toHaveAttribute("data-rejected");
+    expect(container.querySelector('[data-role="frame-caption"]')).toHaveTextContent(
+      "frame 1 of 2",
+    );
+    // Silent fallback: no error surface of any kind.
+    expect(screen.queryByTestId("loupe-not-found")).toBeNull();
+  });
+
+  it("a malformed ?exposure is ignored (default frame, no error)", () => {
+    const { container } = renderAt(42, "?exposure=abc");
+    expect(container.querySelector('[data-role="frame-caption"]')).toHaveTextContent(
+      "frame 1 of 2",
+    );
+  });
+
+  it("frame flipping reads ?exposure once and never rewrites the URL", () => {
+    renderAt(42, "?exposure=2");
+    fireEvent.keyDown(window, { key: "ArrowLeft" }); // flip back to frame 1
+    expect(screen.getByTestId("big-frame")).not.toHaveAttribute("data-rejected");
+    // The param stays as the permalink wrote it — flipping is URL-silent.
+    expect(screen.getByTestId("loc-probe")).toHaveAttribute(
+      "data-search",
+      "?exposure=2",
+    );
   });
 
   it("drop toggle mutates status to rejected for the active exposure", () => {

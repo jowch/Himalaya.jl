@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
-import { MemoryRouter, Routes, Route } from "react-router-dom";
+import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
 import type { CorpusSample, Exposure, Experiment } from "../../src/api";
 
 // ── mutator spy ───────────────────────────────────────────────────────────────
@@ -102,12 +102,19 @@ function seed(): void {
   state.fetching = false;
 }
 
+/** Loupe-route stand-in that also surfaces the search string, so SA-F2 can
+ *  assert WHICH frame the navigation carried (not just that it navigated). */
+function LoupeRouteProbe(): JSX.Element {
+  const loc = useLocation();
+  return <div data-testid="loupe-route" data-search={loc.search} />;
+}
+
 function renderAt(path = "/samples") {
   return render(
     <MemoryRouter initialEntries={[path]}>
       <Routes>
         <Route path="/samples" element={<SamplesPage />} />
-        <Route path="/samples/loupe/:sampleId" element={<div data-testid="loupe-route" />} />
+        <Route path="/samples/loupe/:sampleId" element={<LoupeRouteProbe />} />
         <Route path="/sample/:sampleId" element={<div data-testid="focus-route" />} />
       </Routes>
     </MemoryRouter>,
@@ -322,6 +329,26 @@ describe("SamplesPage", () => {
     expect(screen.getByTestId("loupe-route")).toBeInTheDocument();
   });
 
+  it("double-clicking a frame opens the loupe AT that frame (SA-F2)", () => {
+    renderAt("/samples?beamtime=1");
+    // Sample 1's thumbs render first; thumbs[1] = exposure 101 (frame 2).
+    const thumbs = screen.getAllByTestId("thumbnail");
+    fireEvent.dblClick(thumbs[1]!);
+    expect(screen.getByTestId("loupe-route")).toHaveAttribute(
+      "data-search",
+      "?beamtime=1&exposure=101",
+    );
+  });
+
+  it("a name-click loupe opening carries no exposure param (default frame)", () => {
+    renderAt("/samples?beamtime=1");
+    fireEvent.click(screen.getByRole("button", { name: "Buffer" }));
+    expect(screen.getByTestId("loupe-route")).toHaveAttribute(
+      "data-search",
+      "?beamtime=1",
+    );
+  });
+
   it("?beamtime filters rows and titles by the experiment", () => {
     renderAt("/samples?beamtime=2");
     // beamtime 2 → only sample 3
@@ -335,6 +362,38 @@ describe("SamplesPage", () => {
     renderAt("/samples");
     expect(screen.getByRole("heading", { name: "The corpus" })).toBeInTheDocument();
     expect(screen.getAllByTestId("sample-table-row")).toHaveLength(3);
+  });
+
+  it("an unknown ?beamtime renders an honest EmptyState, not a bare div (SA-F5)", () => {
+    // 99 names no experiment record AND no sample carries it → unknown filter.
+    renderAt("/samples?beamtime=99");
+    const block = screen.getByTestId("samples-unknown-beamtime");
+    expect(within(block).getByTestId("empty-state")).toBeInTheDocument();
+    expect(
+      within(block).getByRole("heading", { name: "Unknown beamtime" }),
+    ).toBeInTheDocument();
+    // The raw id never leaks into the page title.
+    expect(screen.queryByRole("heading", { name: /experiment 99/i })).toBeNull();
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
+      "Unknown beamtime",
+    );
+  });
+
+  it("the unknown-beamtime CTA clears the filter and shows the whole corpus", () => {
+    renderAt("/samples?beamtime=99");
+    fireEvent.click(screen.getByRole("button", { name: "Show all experiments" }));
+    expect(screen.getByRole("heading", { name: "The corpus" })).toBeInTheDocument();
+    expect(screen.getAllByTestId("sample-table-row")).toHaveLength(3);
+    expect(screen.queryByTestId("samples-unknown-beamtime")).toBeNull();
+  });
+
+  it("a beamtime known only through its samples is NOT unknown (shared-predicate pin)", () => {
+    // Experiment 2 has no /experiments record but sample 3 carries it — the
+    // shared resolver treats it as real, so the page (and the topbar select,
+    // which uses the same resolver) never calls it unknown.
+    renderAt("/samples?beamtime=2");
+    expect(screen.queryByTestId("samples-unknown-beamtime")).toBeNull();
+    expect(screen.getAllByTestId("sample-table-row")).toHaveLength(1);
   });
 
   it("empty state when there are no samples", () => {

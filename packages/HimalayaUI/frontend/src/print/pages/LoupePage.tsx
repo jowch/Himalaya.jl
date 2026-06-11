@@ -83,9 +83,27 @@ export function LoupePage(): JSX.Element {
   const [activeId, setActiveId] = useState<number | undefined>(undefined);
   useEffect(() => { setActiveId(undefined); }, [sampleId]);
   const computedDefault = defaultExposureId(exposures);
+
+  // SA-F2: ?exposure=<id> preselects the frame the contact sheet was
+  // double-clicked on. Read once for the INITIAL selection only — flipping
+  // frames (arrows, thumb clicks) stays URL-silent; this page syncs no other
+  // state to the URL, so the param is a permalink seed, not live state. An id
+  // outside THIS sample's exposure list (unknown or foreign) is dropped
+  // silently and the default wins — no error surface.
+  const exposureParam = searchParams.get("exposure");
+  const requestedId =
+    exposureParam !== null && /^\d+$/.test(exposureParam)
+      ? Number(exposureParam)
+      : undefined;
   useEffect(() => {
-    if (activeId === undefined && computedDefault !== undefined) setActiveId(computedDefault);
-  }, [activeId, computedDefault]);
+    if (activeId !== undefined) return;
+    const requested =
+      requestedId !== undefined && exposures.some((e) => e.id === requestedId)
+        ? requestedId
+        : undefined;
+    const initial = requested ?? computedDefault;
+    if (initial !== undefined) setActiveId(initial);
+  }, [activeId, computedDefault, exposures, requestedId]);
   const activeExposure = exposures.find((e) => e.id === activeId);
 
   const frameIndex = exposures.findIndex((e) => e.id === activeId);

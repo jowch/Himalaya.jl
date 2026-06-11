@@ -14,6 +14,10 @@ import {
   useSetExposureStatusBatch,
 } from "../../queries";
 import { navigateToNewSeries } from "../../lib/series/newSeriesNav";
+import {
+  resolveExperimentFilter,
+  UNKNOWN_BEAMTIME_LABEL,
+} from "../../lib/experimentFilter";
 import { suppressGlobalKeys } from "../../lib/keys";
 import { showToast } from "../../lib/toast";
 import { toSampleRowModel } from "./samplesAdapters";
@@ -46,15 +50,20 @@ const CONTACT_SHEET_FIXTURE = (
  */
 export function SamplesPage(): JSX.Element {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   // ── filter + title (carried logic) ──────────────────────────────────────────
-  const raw = searchParams.get("beamtime");
-  const beamtime = raw !== null && /^\d+$/.test(raw) ? Number(raw) : undefined;
-  const beamtimeQuery = beamtime !== undefined ? `?beamtime=${beamtime}` : "";
-
   const corpusQuery = useCorpusSamples();
   const experimentsQuery = useExperiments();
+  // SA-F5: the SAME resolver the topbar select uses — the page body and the
+  // select must agree on whether the URL names a real beamtime.
+  const filter = resolveExperimentFilter(
+    searchParams.get("beamtime"),
+    experimentsQuery.data,
+    corpusQuery.data,
+  );
+  const beamtime = filter.id;
+
   const samples = useMemo(
     () => corpusQuery.data ?? [],
     [corpusQuery.data],
@@ -67,11 +76,22 @@ export function SamplesPage(): JSX.Element {
     [samples, beamtime],
   );
 
+  // The unknown title never repeats the raw id from the address; the loading
+  // fallback (`experiment N`) only shows before the lists settle the verdict.
   const title =
     beamtime === undefined
       ? "The corpus"
-      : (experimentsQuery.data?.find((e) => e.id === beamtime)?.name ??
-        `experiment ${beamtime}`);
+      : filter.unknown
+        ? UNKNOWN_BEAMTIME_LABEL
+        : (filter.name ?? `experiment ${beamtime}`);
+
+  function clearBeamtimeFilter(): void {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete("beamtime");
+      return next;
+    });
+  }
 
   const corpusExposures = useCorpusExposures(filtered);
   const { screened, total } = useScreenedProgress(filtered);
@@ -179,8 +199,16 @@ export function SamplesPage(): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected, ownerOf]);
 
-  function loupeHref(id: number): string {
-    return `/samples/loupe/${id}${beamtimeQuery}`;
+  // SA-F2: a double-clicked frame carries its exposure id into the loupe via
+  // ?exposure= so the loupe opens AT that frame. A search param (not router
+  // state) keeps the frame on refresh/permalink, the house slug-permalink
+  // direction. Frameless openings (name click) omit it → loupe default frame.
+  function loupeHref(id: number, exposureId?: number): string {
+    const params = new URLSearchParams();
+    if (beamtime !== undefined) params.set("beamtime", String(beamtime));
+    if (exposureId !== undefined) params.set("exposure", String(exposureId));
+    const qs = params.toString();
+    return `/samples/loupe/${id}${qs ? `?${qs}` : ""}`;
   }
 
   return (
@@ -229,6 +257,22 @@ export function SamplesPage(): JSX.Element {
               }
             />
           </div>
+        ) : filter.unknown ? (
+          // SA-F5: an address filtering by a beamtime that names nothing gets
+          // an honest empty state, never the bare "No samples in this beamtime"
+          // placeholder (which would imply the beamtime exists). The single
+          // action embodies the way forward: clear the filter.
+          <div data-testid="samples-unknown-beamtime">
+            <EmptyState
+              title={UNKNOWN_BEAMTIME_LABEL}
+              body="The address filters by a beamtime that is not in this corpus."
+              action={
+                <Button variant="outline" onClick={clearBeamtimeFilter}>
+                  Show all experiments
+                </Button>
+              }
+            />
+          </div>
         ) : (
           <Skeleton
             name="contact-sheet"
@@ -269,7 +313,7 @@ export function SamplesPage(): JSX.Element {
                     onCheck={() => toggleSampleCheck(s.id)}
                     selectedExposureIds={selected}
                     onSelectExposure={(id) => toggleSelect(s.id, id)}
-                    onActivateExposure={() => navigate(loupeHref(s.id))}
+                    onActivateExposure={(id) => navigate(loupeHref(s.id, id))}
                     onOpenLoupe={() => navigate(loupeHref(s.id))}
                     onOpenFocus={() => navigate(`/sample/${s.id}`)}
                   />

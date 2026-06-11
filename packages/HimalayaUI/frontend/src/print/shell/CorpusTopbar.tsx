@@ -3,6 +3,10 @@ import { useCorpusSamples, useExperiments } from "../../queries";
 import { resolveRouteSampleStatus } from "../../hooks/useSyncActiveSampleFromRoute";
 import { useExperimentSiblings } from "../../hooks/useExperimentSiblings";
 import { sampleDisplayName } from "../../lib/sample/displayName";
+import {
+  resolveExperimentFilter,
+  UNKNOWN_BEAMTIME_LABEL,
+} from "../../lib/experimentFilter";
 import { TopBar } from "../ui/TopBar";
 import { Wordmark } from "../ui/Wordmark";
 import { Kicker } from "../ui/Kicker";
@@ -46,7 +50,6 @@ export function CorpusTopbar(): JSX.Element {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const experimentsQuery = useExperiments();
-  const beamtime = searchParams.get("beamtime") ?? "";
 
   // ── Focus-surface affordances (R5 / #228) ─────────────────────────────────
   // The focus workspace lives at `/sample/:id`. The topbar is global, so the
@@ -149,16 +152,41 @@ export function CorpusTopbar(): JSX.Element {
   // contact sheet, and the loupe back-link preserves it). On /series and
   // /sample/:id it was changeable but inert — hide it there rather than present
   // a control that does nothing.
+  //
+  // SA-F5 honesty: the SAME resolver the contact sheet uses judges the URL's
+  // filter, so the select and the page body can never disagree. A ?beamtime
+  // that matches no <option> would otherwise make the controlled select
+  // display "all experiments" while the sheet is filtered — surface the actual
+  // state as a disabled option instead (the only way OUT of it is picking a
+  // real entry, mirroring the sheet's clear-filter CTA).
+  const filter = resolveExperimentFilter(
+    searchParams.get("beamtime"),
+    experimentsQuery.data,
+    corpusQ.data,
+  );
+  const beamtimeUnlisted =
+    filter.id !== undefined &&
+    !(experimentsQuery.data ?? []).some((e) => e.id === filter.id);
   const beamtimeChip = pathname.startsWith("/samples") ? (
     <select
       data-testid="beamtime-chip"
       aria-label="Filter to a beamtime"
-      value={beamtime}
+      // The resolver's normalized id, not the raw param: a non-canonical
+      // numeral ("007") filters the sheet but matches no option value, so the
+      // raw string would display "all experiments" over a filtered corpus.
+      value={filter.id !== undefined ? String(filter.id) : ""}
       onChange={handlePick}
       className="rounded-full border border-hair-strong bg-plate px-2.5 py-1
                  text-xs font-semibold text-ink"
     >
       <option value="">Beamtime, all experiments</option>
+      {beamtimeUnlisted && (
+        <option value={String(filter.id)} disabled>
+          {filter.unknown
+            ? UNKNOWN_BEAMTIME_LABEL
+            : (filter.name ?? `Experiment ${filter.id}`)}
+        </option>
+      )}
       {(experimentsQuery.data ?? []).map((exp) => (
         <option key={exp.id} value={exp.id}>
           {exp.name ?? `Experiment ${exp.id}`}

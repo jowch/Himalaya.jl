@@ -15,11 +15,17 @@ const EXPERIMENTS = [
 ];
 
 function mockExperiments(): void {
-  vi.spyOn(global, "fetch").mockResolvedValue(
-    new Response(JSON.stringify(EXPERIMENTS), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    }),
+  // A fresh Response per call: the topbar runs TWO queries (experiments +
+  // corpus samples, both needed by the SA-F5 unknown-filter verdict), and a
+  // Response body is single-use — a shared mockResolvedValue would leave the
+  // second query permanently unresolved ("body already used").
+  vi.spyOn(global, "fetch").mockImplementation(() =>
+    Promise.resolve(
+      new Response(JSON.stringify(EXPERIMENTS), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    ),
   );
 }
 
@@ -124,6 +130,30 @@ describe("CorpusTopbar", () => {
     mockExperiments();
     renderTopbar("/sample/7");
     expect(screen.queryByTestId("beamtime-chip")).toBeNull();
+  });
+
+  it("an unknown ?beamtime shows the honest disabled option, never 'all experiments' (SA-F5)", async () => {
+    mockExperiments();
+    renderTopbar("/samples?beamtime=99");
+    // Wait for BOTH lists (experiments + corpus) to settle the unknown verdict.
+    const unknown = await screen.findByRole("option", { name: "Unknown beamtime" });
+    expect(unknown).toBeDisabled();
+    const select = screen.getByTestId("beamtime-chip") as HTMLSelectElement;
+    expect(select.value).toBe("99");
+    // The displayed selection is the honest label — the same copy string the
+    // contact sheet's EmptyState shows (shared UNKNOWN_BEAMTIME_LABEL).
+    expect(select.selectedOptions[0]?.textContent).toBe("Unknown beamtime");
+  });
+
+  it("picking 'all experiments' is the way out of an unknown ?beamtime", async () => {
+    mockExperiments();
+    renderTopbar("/samples?beamtime=99");
+    await screen.findByRole("option", { name: "Unknown beamtime" });
+    fireEvent.change(screen.getByTestId("beamtime-chip"), { target: { value: "" } });
+    expect(screen.getByTestId("beamtime-probe")).toHaveTextContent("");
+    await waitFor(() =>
+      expect(screen.queryByRole("option", { name: "Unknown beamtime" })).toBeNull(),
+    );
   });
 
   it("reflects the current ?beamtime= as the selected option", async () => {
