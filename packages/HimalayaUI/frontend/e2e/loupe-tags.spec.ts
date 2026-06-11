@@ -140,11 +140,11 @@ test("delete the second duplicate row via its Remove button", async ({ page }) =
   // The second remove button targets tag id 2 (the scoping duplicate)
   await removeButtons.nth(1).click();
 
-  // After deletion the DELETE stub responds 204; optimistically the row count
-  // drops. Since the mock doesn't update the cache we just assert the click
-  // reached the remove button and it had the right accessible name.
-  // (Full cache-update round-trip is covered by the queue contract tests.)
-  await expect(removeButtons.nth(1)).toBeVisible(); // idempotent: still present until cache updates
+  // The queue's optimistic onMutate removes that one tag from the cache
+  // immediately (client-side, independent of the mock), so the modal re-renders
+  // with exactly one row left — proving the second duplicate is individually
+  // addressable (LO-TAGDUP). The full server round-trip is in the queue tests.
+  await expect(dialog.getByTestId("manage-tag-row")).toHaveCount(1);
 });
 
 test("edit a tag value via the value TagSuggest and press Enter", async ({ page }) => {

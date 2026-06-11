@@ -46,6 +46,11 @@ async function mockCorpus(page: Page): Promise<void> {
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(EXPOSURES) }));
   await page.route("**/api/samples/10/messages", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
+  // The loupe's Manage-tags modal reads the corpus tag vocabulary; an unstubbed
+  // request here would leave the query in-flight and swallow the page's keyboard
+  // shortcuts (x/k/arrows). Empty vocabulary is fine for these tests.
+  await page.route("**/api/sample-tags", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
 }
 
 test.beforeEach(async ({ page }) => {
