@@ -83,3 +83,27 @@ describe("suppressGlobalKeys — open modal dialog", () => {
     expect(probe(mount("button"))).toBe(false);
   });
 });
+
+describe("suppressGlobalKeys — already-consumed event (defaultPrevented)", () => {
+  // The real bug this guards: ModalShell's `document` Escape listener
+  // preventDefault()s and closes the modal; React can unmount it before the
+  // page's `window` listener runs, so the open-dialog check sees nothing.
+  // `defaultPrevented` survives that race. Here a closer listener consumes the
+  // key (no dialog present at all), and the window-level predicate must still
+  // suppress.
+  it("suppresses when an upstream listener has called preventDefault — even with no dialog", () => {
+    const target = mount("button");
+    let result: boolean | null = null;
+    const consumer = (e: Event): void => e.preventDefault();
+    const probeListener = (e: Event): void => {
+      result = suppressGlobalKeys(e as KeyboardEvent);
+    };
+    // document consumes first (bubble: document before window), window observes.
+    document.addEventListener("keydown", consumer);
+    window.addEventListener("keydown", probeListener);
+    fireEvent.keyDown(target, { key: "Escape" });
+    window.removeEventListener("keydown", probeListener);
+    document.removeEventListener("keydown", consumer);
+    expect(result).toBe(true);
+  });
+});

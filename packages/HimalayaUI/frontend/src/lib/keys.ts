@@ -28,6 +28,14 @@
  * while respecting the nearest explicit `contenteditable="false"` island.
  */
 export function suppressGlobalKeys(e: KeyboardEvent): boolean {
+  // A handler closer to the source already consumed this key (e.g. ModalShell's
+  // Escape preventDefault()s before closing). The open-dialog check below is NOT
+  // enough on its own: in a real browser a microtask checkpoint runs between the
+  // dialog's `document` listener and a page's `window` listener, so React can
+  // flush the close and UNMOUNT the dialog mid-dispatch — by the time we query
+  // for `[aria-modal]` it is already gone and the page shortcut (loupe Esc →
+  // back to the sheet) wrongly fires. `defaultPrevented` survives that race.
+  if (e.defaultPrevented) return true;
   const t = e.target;
   if (t instanceof HTMLElement) {
     const tag = t.tagName;
