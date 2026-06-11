@@ -20,8 +20,10 @@ import {
   latticeForFirstOrderOnPeak,
 } from "../../lib/customIndex";
 
-// The q-link / claim tolerance the legacy surfaces use (CombPanel,
-// FocusDetectorPanel): span-relative, floored at 1e-6.
+// The legacy span-relative q tolerance (floored at 1e-6). Only used where no
+// backend ratio_position join exists: a claimless index (peaks: [] — a
+// committed custom index) matching its predicted_q against observed peaks in
+// toDetectorRings. Claimed reflections join by ratio_position, never by tol.
 function spanTol(qs: number[]): number {
   const lo = qs.length ? Math.min(...qs) : 0;
   const hi = qs.length ? Math.max(...qs) : 1;
@@ -134,20 +136,30 @@ export function complementPeakIds(
 /**
  * Active indices + observed peaks → greenfield rings + their caption phases:
  *  - each claimed peak q (ix.peaks[].q_observed) → a phase-coloured ring,
- *  - each predicted-but-absent order (predicted_q with no observed peak within
- *    tol) → a ghost ring,
- *  - each leftover observed peak (claimed by no active index) → a neutral ring
- *    (bare `{ q }`).
+ *  - each predicted-but-absent order → a ghost ring,
+ *  - each leftover observed peak (claimed by no active index, by peak_id) → a
+ *    neutral ring (bare `{ q }`).
  * No active indices → no rings (the panel falls back to plain peak rings).
+ *
+ * "Absent" is the backend's own join, not a q-tolerance rescan:
+ * `IndexPeakRef.ratio_position` is the 1-based index into `predicted_q`
+ * (pipeline.jl builds both from the same normalized ratio series, at most one
+ * claimed peak per position), so a predicted order is absent iff its position
+ * is claimed by NO ref of this index. Re-matching by q within spanTol could
+ * disagree with the claim (a peak accepted at residual > tol would paint BOTH
+ * an observed ring at q_observed AND a ghost at its predicted q for the same
+ * reflection — the FO-RESCORE2-P2 F2 lie). The one place the q-tolerance scan
+ * survives is a claimless index (peaks: [] — a committed custom index, which
+ * insert_custom_index! stores with no index_peaks rows): there is no join to
+ * read, so its absent orders are the predicted_q with no observed peak within
+ * tol — a fully-landed custom index therefore still emits zero rings.
  *
  * `phases` is the ring-identity caption source (FO-RING): the distinct phases
  * that actually put a ring on the frame, appended in walk (= rail) order the
  * first time their index emits one. A ghost ring still carries the phase hue,
- * so it counts; an index that emits NOTHING — the mainline case is a
- * fully-landed custom index, which insert_custom_index! stores with no
- * index_peaks rows (peaks: []) and whose every predicted_q sits on an observed
- * peak — contributes no phase. Deriving both from the same walk keeps the
- * caption honest by construction: it can only name hues that are on the frame.
+ * so it counts; an index that emits NOTHING (the fully-landed custom above)
+ * contributes no phase. Deriving both from the same walk keeps the caption
+ * honest by construction: it can only name hues that are on the frame.
  */
 export function toDetectorRings(
   activeIndices: IndexEntry[],
@@ -155,29 +167,35 @@ export function toDetectorRings(
 ): { rings: RingInput[]; phases: string[] } {
   if (activeIndices.length === 0) return { rings: [], phases: [] };
   const peakQs = peaks.map((p) => p.q);
-  const tol = spanTol(peakQs);
+  const tol = spanTol(peakQs); // only for the claimless-index (no-join) fallback
   const rings: RingInput[] = [];
   const phases: string[] = [];
-  const claimed: number[] = [];
+  const claimedPeakIds = new Set<number>();
   for (const ix of activeIndices) {
     const color = phaseColor(ix.phase);
     let emitted = false;
+    const claimedPositions = new Set<number>(); // 0-based predicted_q indices
     for (const p of ix.peaks) {
       rings.push({ q: p.q_observed, color });
-      claimed.push(p.q_observed);
+      claimedPeakIds.add(p.peak_id);
+      claimedPositions.add(p.ratio_position - 1);
       emitted = true;
     }
-    for (const pq of ix.predicted_q) {
-      const matched = peakQs.some((q) => Math.abs(q - pq) <= tol);
-      if (!matched) {
+    const hasJoin = ix.peaks.length > 0;
+    for (let i = 0; i < ix.predicted_q.length; i++) {
+      const pq = ix.predicted_q[i]!;
+      const absent = hasJoin
+        ? !claimedPositions.has(i)
+        : !peakQs.some((q) => Math.abs(q - pq) <= tol);
+      if (absent) {
         rings.push({ q: pq, color, ghost: true });
         emitted = true;
       }
     }
     if (emitted && !phases.includes(ix.phase)) phases.push(ix.phase);
   }
-  for (const q of peakQs) {
-    if (!claimed.some((cq) => Math.abs(cq - q) <= tol)) rings.push({ q });
+  for (const p of peaks) {
+    if (!claimedPeakIds.has(p.id)) rings.push({ q: p.q });
   }
   return { rings, phases };
 }
@@ -224,21 +242,30 @@ function labelTeeth(phase: string, predictedQ: number[]): string[] {
 /**
  * Active indices + observed peaks → assigned comb rows + the leftover q set.
  *
- * Mirrors CombPanel: a predicted order is `observed` when a claimed peak
- * (ix.peaks[].q_observed) sits within tol of it; `leftover` is the observed
- * peaks no active index claims (by peak_id). Per claimed tooth the residual is
- * the index's fractional residual (q_obs − q_pred)/q_pred, derived from the
- * matched IndexPeakRef (`residual` is the absolute Δq; q_pred = q_obs −
- * residual). √N labels per `labelTeeth` above. `latticeLabel` mirrors the
- * legacy "a = … Å" (rounded) from `lattice_d`; `rSquared` from `r_squared`.
+ * A predicted order `i` (0-based) is `observed` iff a claimed IndexPeakRef has
+ * `ratio_position - 1 === i` — the backend's own join. `ratio_position` is the
+ * 1-based index into the phase's normalized ratio series, and `predicted_q` is
+ * basis × that same series in the SAME order (pipeline.jl), with at most one
+ * claimed peak per position. Re-deriving the match by nearest-q within spanTol
+ * was a SECOND tolerance regime that could reject claims the backend accepted
+ * (a peak claimed at residual > tol rendered absent while the assignment cart
+ * counted it — the FO-RESCORE2-P2 F2 lie). Refs whose position falls outside
+ * `predicted_q` are ignored (defensive; should not happen).
+ *
+ * Per claimed tooth the residual is the SIGNED fraction
+ * (q_obs − q_pred)/q_pred with q_pred = predicted_q[ratio_position − 1] — the
+ * true ideal. (The backend `residual` field is abs(q_obs − ideal), so
+ * reconstructing the ideal as q_obs − residual is wrong below the prediction;
+ * ResidualChart plots signed fractions above/below its baseline.)
+ *
+ * `leftover` is the observed peaks no active index claims (by peak_id).
+ * √N labels per `labelTeeth` above. `latticeLabel` mirrors the legacy
+ * "a = … Å" (rounded) from `lattice_d`; `rSquared` from `r_squared`.
  */
 export function toCombSeries(
   activeIndices: IndexEntry[],
   peaks: Peak[],
 ): { assigned: CombSeries[]; leftover: number[] } {
-  const peakQs = peaks.map((p) => p.q);
-  const tol = spanTol(peakQs);
-
   // Leftover: observed peaks claimed (by peak_id) by no active index.
   const claimedPeakIds = new Set<number>();
   for (const ix of activeIndices) for (const p of ix.peaks) claimedPeakIds.add(p.peak_id);
@@ -246,27 +273,16 @@ export function toCombSeries(
 
   const assigned: CombSeries[] = activeIndices.map((ix) => {
     const labels = labelTeeth(ix.phase, ix.predicted_q);
-    // claimed observed q-values + their fractional residual, keyed for lookup.
-    const claimedQs = ix.peaks.map((p) => p.q_observed);
+    // Join claimed refs to teeth by ratio_position (1-based into predicted_q).
+    const claimedByTooth = new Map<number, IndexEntry["peaks"][number]>();
+    for (const p of ix.peaks) {
+      const i = p.ratio_position - 1;
+      if (i >= 0 && i < ix.predicted_q.length) claimedByTooth.set(i, p);
+    }
     const teeth: CombTooth[] = ix.predicted_q.map((q, i): CombTooth => {
-      // Nearest claimed observed peak within tol → this predicted order is
-      // "observed". The residual comes from the matched IndexPeakRef.
-      let matched: IndexEntry["peaks"][number] | undefined;
-      let bestD = tol;
-      for (const p of ix.peaks) {
-        const d = Math.abs(p.q_observed - q);
-        if (d <= bestD) { bestD = d; matched = p; }
-      }
-      // Also require an actual observed peak near this q (mirror CombPanel,
-      // which only marks a tooth observed when a member q_observed lands near a
-      // detected peak). claimedQs already are member q_observed values.
-      const observed = matched !== undefined
-        && claimedQs.some((cq) => Math.abs(cq - q) <= tol);
-      if (observed && matched !== undefined) {
-        const predicted = matched.q_observed - matched.residual;
-        const frac = Math.abs(predicted) > 1e-9
-          ? matched.residual / predicted
-          : 0;
+      const claimed = claimedByTooth.get(i);
+      if (claimed !== undefined) {
+        const frac = Math.abs(q) > 1e-9 ? (claimed.q_observed - q) / q : 0;
         return { q, label: labels[i]!, observed: true, residual: frac };
       }
       return { q, label: labels[i]!, observed: false };

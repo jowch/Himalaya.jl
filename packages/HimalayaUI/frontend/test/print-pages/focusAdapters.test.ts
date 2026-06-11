@@ -153,8 +153,13 @@ describe("toDetectorRings", () => {
     const active = [
       ix({
         id: 1, phase: "Pn3m",
-        peaks: [ref({ peak_id: 1, q_observed: 0.10 }), ref({ peak_id: 2, q_observed: 0.20 })],
-        predicted_q: [0.10, 0.20, 0.35], // 0.35 has no observed peak -> ghost
+        // ratio_position joins each claim to its predicted_q slot (1-based);
+        // position 3 (0.35) is unclaimed -> ghost.
+        peaks: [
+          ref({ peak_id: 1, ratio_position: 1, q_observed: 0.10 }),
+          ref({ peak_id: 2, ratio_position: 2, q_observed: 0.20 }),
+        ],
+        predicted_q: [0.10, 0.20, 0.35],
       }),
     ];
     const { rings, phases } = toDetectorRings(active, peaks);
@@ -169,6 +174,55 @@ describe("toDetectorRings", () => {
     expect(rings).toHaveLength(4);
     // the index emitted rings -> its phase is the caption identity
     expect(phases).toEqual(["Pn3m"]);
+  });
+
+  // FO-RESCORE2-P2 F2: "absent" means "predicted order whose ratio_position is
+  // NOT claimed by this index" — the backend join — never a q-tolerance rescan
+  // that can disagree with what the backend actually claimed.
+  it("does NOT paint a ghost ring over a claimed order, even when its residual exceeds spanTol (both-rings repro)", () => {
+    // peaks span [0.10, 0.30] → spanTol = 0.004. The index CLAIMS peak 2
+    // (ratio_position 2, ideal 0.20) at q_observed 0.21 — 0.01 off, beyond tol.
+    // The old tolerance scan saw no observed peak near 0.20 and painted BOTH an
+    // observed ring at 0.21 AND a ghost at 0.20 for the same reflection.
+    const peaks = [
+      peak({ id: 1, q: 0.10 }),
+      peak({ id: 2, q: 0.21 }),
+      peak({ id: 3, q: 0.30 }), // leftover, widens the span
+    ];
+    const active = [
+      ix({
+        id: 1, phase: "Pn3m",
+        peaks: [
+          ref({ peak_id: 1, ratio_position: 1, q_observed: 0.10, residual: 0 }),
+          ref({ peak_id: 2, ratio_position: 2, q_observed: 0.21, residual: 0.01 }),
+        ],
+        predicted_q: [0.10, 0.20],
+      }),
+    ];
+    const { rings } = toDetectorRings(active, peaks);
+    const c = phaseColor("Pn3m");
+    // the claimed reflection renders ONCE, at its observed q
+    expect(rings).toContainEqual({ q: 0.21, color: c });
+    // …and never also as a ghost at its predicted q
+    expect(rings).not.toContainEqual({ q: 0.20, color: c, ghost: true });
+    // no ghost at all: both predicted orders are claimed
+    expect(rings.filter((r) => typeof r === "object" && r.ghost)).toHaveLength(0);
+  });
+
+  it("ghosts exactly the UNCLAIMED predicted orders of a claiming index", () => {
+    const peaks = [peak({ id: 1, q: 0.10 }), peak({ id: 2, q: 0.30 })];
+    const active = [
+      ix({
+        id: 1, phase: "Im3m",
+        peaks: [ref({ peak_id: 1, ratio_position: 1, q_observed: 0.10, residual: 0 })],
+        predicted_q: [0.10, 0.14, 0.17], // positions 2 and 3 unclaimed
+      }),
+    ];
+    const { rings } = toDetectorRings(active, peaks);
+    const c = phaseColor("Im3m");
+    expect(rings).toContainEqual({ q: 0.14, color: c, ghost: true });
+    expect(rings).toContainEqual({ q: 0.17, color: c, ghost: true });
+    expect(rings).not.toContainEqual({ q: 0.10, color: c, ghost: true });
   });
 
   // FO-RING caption identity: `phases` names only the phases that actually put
@@ -293,6 +347,100 @@ describe("toCombSeries", () => {
     expect(s.latticeLabel).toBeUndefined();
     expect(s.rSquared).toBeUndefined();
     expect(leftover).toEqual([]);
+  });
+
+  // FO-RESCORE2-P2 F2: the cart counts ix.peaks.length "reflections"; the comb
+  // must light the SAME reflections. A tooth is observed iff a claimed
+  // IndexPeakRef joins to it by ratio_position (1-based index into
+  // predicted_q) — never by re-matching q within a second tolerance regime.
+  it("renders a claimed peak observed even when its q_observed is farther from the tooth than spanTol (F2 repro)", () => {
+    // peaks span [0.10, 0.30] → spanTol = 0.004. The backend claimed peak 2
+    // for ratio_position 2 (ideal 0.20) at q_observed 0.21 — 0.01 off, well
+    // beyond tol. The old tolerance rescan rejected the match: the cart said
+    // "2 reflections" while the comb showed 1 observed tooth.
+    const peaks = [
+      peak({ id: 1, q: 0.10 }),
+      peak({ id: 2, q: 0.21 }),
+      peak({ id: 3, q: 0.30 }), // leftover, widens the span
+    ];
+    const active = [
+      ix({
+        id: 1, phase: "Pn3m",
+        peaks: [
+          ref({ peak_id: 1, ratio_position: 1, q_observed: 0.10, residual: 0 }),
+          ref({ peak_id: 2, ratio_position: 2, q_observed: 0.21, residual: 0.01 }),
+        ],
+        predicted_q: [0.10, 0.20],
+      }),
+    ];
+    const { assigned } = toCombSeries(active, peaks);
+    const s = assigned[0]!;
+    expect(s.teeth[1]!.observed).toBe(true);
+    expect(s.teeth[1]!.residual).toBeCloseTo((0.21 - 0.20) / 0.20, 6); // 0.05
+  });
+
+  it("observed-teeth count equals ix.peaks.length (cart–comb consistency invariant)", () => {
+    const peaks = [
+      peak({ id: 1, q: 0.10 }),
+      peak({ id: 2, q: 0.145 }),
+      peak({ id: 3, q: 0.21 }),
+      peak({ id: 4, q: 0.40 }), // unclaimed → leftover
+    ];
+    const active = [
+      ix({
+        id: 1, phase: "Pn3m",
+        peaks: [
+          ref({ peak_id: 1, ratio_position: 1, q_observed: 0.10, residual: 0 }),
+          ref({ peak_id: 2, ratio_position: 2, q_observed: 0.145, residual: 0.005 }),
+          ref({ peak_id: 3, ratio_position: 4, q_observed: 0.21, residual: 0.01 }),
+        ],
+        predicted_q: [0.10, 0.14, 0.17, 0.20], // position 3 unclaimed
+      }),
+    ];
+    const { assigned } = toCombSeries(active, peaks);
+    const s = assigned[0]!;
+    expect(s.teeth.filter((t) => t.observed)).toHaveLength(active[0]!.peaks.length);
+    expect(s.teeth.map((t) => t.observed)).toEqual([true, true, false, true]);
+  });
+
+  it("derives the residual from the TRUE ideal (predicted_q[rpos-1]); a peak below prediction gets a negative fraction", () => {
+    // Backend residual is abs(q_obs − ideal) (pipeline.jl), so reconstructing
+    // the ideal as q_obs − residual is wrong whenever the peak sits BELOW the
+    // prediction. q_observed = 0.198 vs ideal 0.20 → fraction −0.01.
+    const peaks = [
+      peak({ id: 1, q: 0.10 }),
+      peak({ id: 2, q: 0.198 }),
+      peak({ id: 3, q: 0.50 }), // widens span so old tol would have matched too
+    ];
+    const active = [
+      ix({
+        id: 1, phase: "Pn3m",
+        peaks: [
+          ref({ peak_id: 1, ratio_position: 1, q_observed: 0.10, residual: 0 }),
+          ref({ peak_id: 2, ratio_position: 2, q_observed: 0.198, residual: 0.002 }),
+        ],
+        predicted_q: [0.10, 0.20],
+      }),
+    ];
+    const { assigned } = toCombSeries(active, peaks);
+    expect(assigned[0]!.teeth[1]!.observed).toBe(true);
+    expect(assigned[0]!.teeth[1]!.residual).toBeCloseTo(-0.01, 6);
+  });
+
+  it("ignores a claimed ref whose ratio_position is out of bounds of predicted_q (defensive, no crash)", () => {
+    const peaks = [peak({ id: 1, q: 0.10 })];
+    const active = [
+      ix({
+        id: 1, phase: "Pn3m",
+        peaks: [
+          ref({ peak_id: 1, ratio_position: 1, q_observed: 0.10, residual: 0 }),
+          ref({ peak_id: 99, ratio_position: 7, q_observed: 0.26, residual: 0 }), // out of range
+        ],
+        predicted_q: [0.10, 0.20],
+      }),
+    ];
+    const { assigned } = toCombSeries(active, peaks);
+    expect(assigned[0]!.teeth.map((t) => t.observed)).toEqual([true, false]);
   });
 
   it("does not crash on an unknown symmetry; labels fall back gracefully", () => {
