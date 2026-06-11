@@ -6,6 +6,26 @@ import type {
 } from "../../api";
 import { queryKeys } from "../../queries";
 import { peakQTol } from "./peakQTol";
+import { announceAssignmentDropped } from "./assignmentDropped";
+
+/**
+ * Write the `{state, members}` assignment envelope into the assignment cache.
+ * Single writer shared by the assignment_* branch in `applyRemoteToCache`
+ * and the curation-frame path in `applyPostStateOnly` (F-WIPE W2: peak_*
+ * frames now carry the same envelope, serialized by the same backend
+ * helper) — one place to keep the cache row shape honest.
+ */
+function writeAssignmentFromPostState(
+  exposureId: number,
+  assignment: Pick<Assignment, "state" | "members">,
+  qc: QueryClient,
+): void {
+  qc.setQueryData<Assignment>(queryKeys.assignment(exposureId), {
+    exposure_id: exposureId,
+    state: assignment.state,
+    members: assignment.members,
+  });
+}
 
 /**
  * Write `post_state.indices` and `post_state.analysis_inputs_hash` into the
@@ -14,6 +34,24 @@ import { peakQTol } from "./peakQTol";
  * `replayCoordinator` — own ops need post_state propagation too, otherwise
  * the indices cache stays frozen at the pre-mutation `inputs_hash` and the
  * StaleIndicesBanner sticks until a hard refetch.
+ *
+ * F-WIPE W2: this is ALSO where the W1 assignment envelope on peak_* frames
+ * is consumed, deliberately. Every curation frame is processed by exactly
+ * one of three mutually-exclusive paths per tab, and ALL of them funnel
+ * through this function:
+ *
+ *   1. Own-op SSE-wins (replayCoordinator Case 1, deferred match) — calls
+ *      applyPostStateOnly directly, then resolves the deferred (the HTTP
+ *      request is aborted; its response is never processed).
+ *   2. Own-op HTTP-wins (self-echo guard: client_id matches, deferred
+ *      already cleared) — calls applyPostStateOnly directly. The mutator's
+ *      onSuccess (HTTP path) never reads post_state, so nothing double-fires.
+ *   3. Foreign frame — applyRemoteToCache's peak_* and analyze_run branches
+ *      call applyPostState() → here.
+ *
+ * Placing the assignment write AND the assignment_dropped announcement here
+ * therefore guarantees exactly-once semantics for both the editing tab and
+ * foreign tabs, with no per-branch duplication.
  */
 export function applyPostStateOnly(remote: SseEvent, qc: QueryClient): void {
   if (!remote.post_state) return;
@@ -38,6 +76,20 @@ export function applyPostStateOnly(remote: SseEvent, qc: QueryClient): void {
     old
       ? { ...old, analysis_inputs_hash: ps.analysis_inputs_hash }
       : old);
+  // F-WIPE W2: every reanalyzing frame (peak_* AND analyze_run) carries the
+  // re-attached assignment inside the curation post_state (same {state,
+  // members} envelope as the assignment_* frames), plus assignment_dropped
+  // when non-empty. Splice it; when ABSENT (pre-W1 backend) do NOT
+  // invalidate or touch the assignment cache, preserving the previous
+  // behavior.
+  if (ps.assignment) {
+    writeAssignmentFromPostState(id, ps.assignment, qc);
+  }
+  // Announce dropped call members. Consequential state change → visible
+  // toast; the Toast surface is itself the aria-live region (role="alert"
+  // for warnings), so no separate announce() — see assignmentDropped.ts.
+  // Exactly-once: see the path enumeration in this function's docstring.
+  announceAssignmentDropped(ps.assignment_dropped);
 }
 
 /**
@@ -158,11 +210,7 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
       // for a (pre-Plan-D) frame that lacks the envelope.
       const ps = remote.post_state as AssignmentPostState | undefined;
       if (ps?.assignment) {
-        qc.setQueryData<Assignment>(queryKeys.assignment(id), {
-          exposure_id: id,
-          state: ps.assignment.state,
-          members: ps.assignment.members,
-        });
+        writeAssignmentFromPostState(id, ps.assignment, qc);
       } else {
         qc.invalidateQueries({ queryKey: queryKeys.assignment(id) });
       }

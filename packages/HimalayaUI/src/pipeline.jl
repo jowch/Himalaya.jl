@@ -8,10 +8,16 @@ using HTTP: HTTP, Request
     seed_assignment_if_absent!(db, exposure_id, index_db_ids)
 
 Seed the durable assignment from the auto-indexing selection, but only when the
-exposure has no assignment members yet — so reanalysis never clobbers a user's
-curated assignment. Creates the `assignments` row (state='indexed') and inserts
-`index_db_ids` as members. FK `ON DELETE CASCADE` cleans up members whose
-indices are later replaced.
+exposure has no assignment members yet. Creates the `assignments` row
+(state='indexed') and inserts `index_db_ids` as members.
+
+The members-empty check here is NOT sufficient on its own during reanalysis:
+`assignment_members.index_id` carries FK `ON DELETE CASCADE`, so by the time
+`_persist_analysis_inner!` reaches this call the auto-index wipe has already
+emptied a previously-curated assignment (F-WIPE W1). The caller therefore
+gates this on its pre-wipe `had_assignment_members` snapshot — seed only an
+exposure that genuinely had no members; a curated assignment gets a semantic
+re-attach instead, and stays empty (announced) if nothing re-attaches.
 """
 function seed_assignment_if_absent!(db::SQLite.DB, exposure_id::Integer, index_db_ids)
     DBInterface.execute(db,
@@ -257,6 +263,11 @@ function persist_analysis!(db::SQLite.DB, exposure_id::Int,
                             candidates::Vector{<:Himalaya.Index},
                             group_indices::Vector{<:Himalaya.Index},
                             eff::NamedTuple)
+    # Returns `dropped_assignment_phases::Vector{String}` — assignment members
+    # whose semantic identity (phase + basis) failed to re-attach after the
+    # rebuild (F-WIPE W1). Both `lock` and `SQLite.transaction` propagate the
+    # closure's return value.
+    #
     # _DB_WRITE_LOCK (#122) serializes the tx against any other singleton
     # writer. Reentrant — `analyze_exposure!` already holds it when calling
     # through here.
@@ -290,6 +301,30 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
         JOIN indices i ON i.id = m.index_id
         WHERE g.exposure_id = ? AND g.kind = 'custom' AND i.kind = 'auto'
         """, [exposure_id]))
+
+    # Snapshot the durable assignment's members by the same semantic identity
+    # (F-WIPE W1). `assignment_members.index_id` carries ON DELETE CASCADE, so
+    # the auto-index delete below silently empties the assignment too. Only
+    # kind='auto' members are vulnerable — speculative members (incl.
+    # custom-committed indices) keep stable ids across the wipe.
+    # ORDER BY makes both the re-attach CLAIMING order and the drop-report
+    # order deterministic: when two identities merge onto one new candidate
+    # (see the claim set in the re-attach loop), the member earlier in
+    # (phase, basis) order is the one that survives.
+    assignment_member_identities = Tables.rowtable(DBInterface.execute(db, """
+        SELECT i.phase, i.basis
+        FROM assignment_members m
+        JOIN indices i ON i.id = m.index_id
+        WHERE m.exposure_id = ? AND i.kind = 'auto'
+        ORDER BY i.phase, i.basis
+        """, [exposure_id]))
+    # Whether the exposure had ANY members (of any kind) before the wipe —
+    # gates the seeding below: a curated assignment that loses all its members
+    # stays EMPTY (announced via the returned dropped phases), never silently
+    # replaced by the fresh machine picks.
+    had_assignment_members = !isempty(Tables.rowtable(DBInterface.execute(db,
+        "SELECT 1 FROM assignment_members WHERE exposure_id = ? LIMIT 1",
+        [exposure_id])))
 
     # Snapshot speculative indices' index_peaks rows by q-value. Auto peaks are
     # about to be re-detected with new ids, so the FK in index_peaks would
@@ -562,12 +597,63 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
             [group_db_id, db_id])
     end
 
-    # Plan A: seed the durable assignment from the same auto selection
+    # Plan A + F-WIPE W1: seed the durable assignment from the auto selection
     # (reuse the db_ids the auto-group loop just collected — no parallel
-    # recompute). seed-if-absent, so reanalysis preserves user curation; must
-    # run BEFORE the custom re-attach block so it seeds from the auto group
-    # only.
-    seed_assignment_if_absent!(db, exposure_id, auto_member_db_ids)
+    # recompute) ONLY when the exposure had no assignment members before the
+    # wipe above. seed_assignment_if_absent! alone is not enough — by the time
+    # it runs, the ON DELETE CASCADE has already emptied a previously-curated
+    # assignment, so seeding here would silently replace user curation with
+    # machine picks. A curated assignment instead gets its auto members
+    # re-attached by semantic identity; identities that fail to re-attach are
+    # returned as `dropped_assignment_phases` (announced, not papered over).
+    # Must run BEFORE the custom re-attach block so a seed comes from the auto
+    # group only.
+    dropped_assignment_phases = String[]
+    if had_assignment_members
+        # Re-attach assignment members by phase + nearest basis within
+        # MEMBER_REATTACH_RELTOL, mirroring the custom-group block below.
+        asg_new_by_phase = Dict{String, Vector{Tuple{Float64, Int}}}()
+        for (ci, idx) in enumerate(candidates)
+            phase_name = string(nameof(Himalaya.phase(idx)))
+            push!(get!(asg_new_by_phase, phase_name, Tuple{Float64, Int}[]),
+                  (Himalaya.basis(idx), candidate_to_db_id[ci]))
+        end
+
+        # Each new candidate may be claimed by at most ONE snapshot identity.
+        # Two same-phase members whose bases both fall within tolerance of a
+        # single new candidate would otherwise merge via a silent INSERT OR
+        # IGNORE PK no-op — a membership shrink (2 → 1) with an empty drop
+        # report, the same species of silent loss W1 exists to kill. The
+        # later claimant (snapshot order is phase, basis — see the snapshot
+        # query) is reported as dropped instead; there is deliberately NO
+        # fallback to the next-nearest candidate, because re-attach is an
+        # identity match, not an assignment problem.
+        claimed_new_ids = Set{Int}()
+        for r in assignment_member_identities
+            phase = String(r.phase)
+            prev_basis = Float64(r.basis)
+            best_id, best_delta = 0, Inf
+            for (b, id) in get(asg_new_by_phase, phase, Tuple{Float64, Int}[])
+                d = abs(b - prev_basis)
+                if d < best_delta
+                    best_delta, best_id = d, id
+                end
+            end
+            tol = max(MEMBER_REATTACH_RELTOL * prev_basis, 1e-9)
+            if best_id != 0 && best_delta <= tol && !(best_id in claimed_new_ids)
+                DBInterface.execute(db,
+                    "INSERT OR IGNORE INTO assignment_members (exposure_id, index_id)
+                     VALUES (?, ?)", [exposure_id, best_id])
+                push!(claimed_new_ids, best_id)
+            else
+                # PER-MEMBER report: one entry per lost member, so phases may
+                # repeat when several members of the same phase drop.
+                push!(dropped_assignment_phases, phase)
+            end
+        end
+    else
+        seed_assignment_if_absent!(db, exposure_id, auto_member_db_ids)
+    end
 
     # ── Re-attach custom-group members by semantic identity ────────────────
     if !isempty(custom_member_identities)
@@ -628,6 +714,11 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
     DBInterface.execute(db,
         "UPDATE indices SET inputs_hash = ? WHERE exposure_id = ?",
         [inputs_hash, exposure_id])
+
+    # F-WIPE W1: report assignment members whose semantic identity did not
+    # survive the rebuild. Flows through persist_analysis! (the tx returns the
+    # closure's value) up to analyze_exposure!'s return for route consumption.
+    dropped_assignment_phases
 end
 
 function get_peaks_for_exposure(db::SQLite.DB, exposure_id::Int)
@@ -820,9 +911,18 @@ end
 
 """
     analyze_exposure!(db, exposure_id, analysis_dir; trace_known_unchanged=false)
+        -> NamedTuple{(:dropped_assignment_phases,)}
 
 Load the .dat file for `exposure_id`, run findpeaks + indexpeaks,
 auto-group results, and persist everything to the DB.
+
+Returns `(dropped_assignment_phases = Vector{String},)` — the phases of
+assignment members whose semantic identity (phase + basis) failed to
+re-attach across the index rebuild (F-WIPE W1). Per-member: phases may
+repeat when several members of one phase drop (consumers aggregate).
+Empty on every skip path.
+Curation routes thread it into the SSE `post_state` (`assignment_dropped`);
+CLI/pipeline callers may ignore the return.
 
 Hash-guarded: findpeaks is skipped when `trace_hash` matches the persisted
 value AND auto_peaks already exist. indexpeaks is skipped when
@@ -879,7 +979,7 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
         indexpeaks_skipped = (stored_inputs_hash == new_inputs_hash) && (indices_count > 0)
         if indexpeaks_skipped
             # Fast-path no-op: skip the durable analyze_run row (M0.4 already drops the SSE frame). The hashes prove no-op-ness; durable counting offers no load-bearing value here.
-            return
+            return (dropped_assignment_phases = String[],)
         end
     end
 
@@ -923,6 +1023,9 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
     # other in-tx bindings (`eff`, `new_inputs_hash`, `indexpeaks_skipped`)
     # stay closure-local because they're only read inside the same closure.
     local event_result, payload, post_state
+    # F-WIPE W1: persist_analysis! returns the assignment members it had to
+    # drop; stays empty on the indexpeaks-skipped path (no rebuild, no wipe).
+    dropped_assignment_phases = String[]
     event_req = req === nothing ? _system_request() : req
 
     # _DB_WRITE_LOCK (#122): serialize this multi-step write against any other
@@ -957,8 +1060,9 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
             # `persist_analysis!` writes both the index/group rows AND the
             # `analysis_inputs_hash` / per-index `inputs_hash` markers atomically
             # (issue #34 Bug 3). No follow-up UPDATEs needed here.
-            persist_analysis!(db, exposure_id, q, I, peaks_result_for_persist,
-                              candidates, group, eff)
+            dropped_assignment_phases =
+                persist_analysis!(db, exposure_id, q, I, peaks_result_for_persist,
+                                  candidates, group, eff)
         end
 
         duration_ms = round(Int, (time() - t0) * 1000)
@@ -971,7 +1075,18 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
         post_state = Dict{Symbol, Any}(
             :analysis_inputs_hash => new_inputs_hash,
             :indices              => _serialized_indices_for_broadcast(db, exposure_id),
+            # F-WIPE W1: the assignment envelope (same `_assignment_post_state`
+            # serializer as the assignment_* frames) rides on analyze_run frames
+            # too — the wipe/re-attach above replaced every auto member's index
+            # id, and the frontend's envelope-absent-means-do-not-touch rule
+            # would otherwise strand cached members on the dead ids. Covers the
+            # non-deferred (CLI / experiment-wide analyze) broadcast path; the
+            # manual exposure-analyze route rebuilds its own envelope via
+            # `_enrich_curation_post_state`.
+            :assignment           => _assignment_post_state(_assignment_body(db, exposure_id)),
         )
+        isempty(dropped_assignment_phases) ||
+            (post_state[:assignment_dropped] = dropped_assignment_phases)
         payload = Dict{Symbol, Any}(
             :trace_hash_before     => stored_trace_hash,
             :trace_hash_after      => new_trace_hash,
@@ -1007,7 +1122,7 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
         _maybe_broadcast_event!(db, event_result, "analyze_run",
                                 "exposure", exposure_id, payload, post_state)
     end
-    nothing
+    (dropped_assignment_phases = dropped_assignment_phases,)
 end
 
 """

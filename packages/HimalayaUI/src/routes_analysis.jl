@@ -28,6 +28,17 @@ function _assignment_body(db::SQLite.DB, exposure_id::Int)
 end
 
 """
+    _assignment_post_state(b) -> Dict
+
+The `{state, members}` envelope carried under `post_state[:assignment]` by the
+assignment_* SSE frames. Shared with `_enrich_curation_post_state`
+(routes_peaks.jl) so peak-route frames serialize the assignment in exactly the
+same shape — one serializer, not two.
+"""
+_assignment_post_state(b::AbstractDict) =
+    Dict(:state => b[:state], :members => b[:members])
+
+"""
     predicted_q_for_phase(phase_name, basis) -> Vector{Float64}
 
 Return predicted q positions (basis × normalized phase ratios) for a phase
@@ -180,8 +191,7 @@ function register_analysis_routes!()
             # has NO top-level `indices` key — that is what lets the frontend's
             # CurationPostState cast bail harmlessly for assignment frames.
             b = _assignment_body(db, id)
-            post_state = Dict(:assignment =>
-                Dict(:state => b[:state], :members => b[:members]))
+            post_state = Dict(:assignment => _assignment_post_state(b))
             _enqueue_broadcast_from_result!(result, "assignment_set_state", "exposure", id;
                 post_state = post_state)
             b[:event_id]    = result.event_id
@@ -220,8 +230,7 @@ function register_analysis_routes!()
                 payload     = Dict(:index_id => index_id))
             b = _assignment_body(db, id)
             _enqueue_broadcast_from_result!(result, "assignment_add", "exposure", id;
-                post_state = Dict(:assignment =>
-                    Dict(:state => b[:state], :members => b[:members])))
+                post_state = Dict(:assignment => _assignment_post_state(b)))
             b[:event_id]    = result.event_id
             b[:view_row_id] = result.view_row_id
             HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(b))
@@ -238,8 +247,7 @@ function register_analysis_routes!()
                 payload     = Dict(:index_id => index_id))
             b = _assignment_body(db, id)
             _enqueue_broadcast_from_result!(result, "assignment_remove", "exposure", id;
-                post_state = Dict(:assignment =>
-                    Dict(:state => b[:state], :members => b[:members])))
+                post_state = Dict(:assignment => _assignment_post_state(b)))
             b[:event_id]    = result.event_id
             b[:view_row_id] = result.view_row_id
             HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(b))
