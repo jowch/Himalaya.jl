@@ -45,6 +45,28 @@ describe("<FlagButton>", () => {
     expect(screen.getByTestId("flag-button").getAttribute("title")).not.toMatch(/re-open/i);
   });
 
+  describe("skip-affordance discovery (SC-SKIPDISC)", () => {
+    it("the resting (ok) state exposes a persistent visible affordance, not hover-only", () => {
+      render(<FlagButton value="1 : 0.25" />);
+      // Semantic pin: the control declares its affordance is visible at rest
+      // (a standing dotted underline), so first-time users can FIND the skip
+      // without hovering blindly. jsdom cannot compute Tailwind styles, so the
+      // contract is carried as a data attribute the component must honor.
+      expect(screen.getByTestId("flag-button")).toHaveAttribute(
+        "data-affordance",
+        "persistent",
+      );
+    });
+
+    it("the flagged state keeps the same affordance contract", () => {
+      render(<FlagButton value="1 : 0.25" flagged />);
+      expect(screen.getByTestId("flag-button")).toHaveAttribute(
+        "data-affordance",
+        "persistent",
+      );
+    });
+  });
+
   it("fires onClick", () => {
     const onClick = vi.fn();
     render(<FlagButton value="1 : 0" flagged onClick={onClick} />);

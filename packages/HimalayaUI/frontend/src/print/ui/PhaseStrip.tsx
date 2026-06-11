@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { phaseColor } from "../../phases";
 
 /**
@@ -12,6 +13,19 @@ import { phaseColor } from "../../phases";
  * mini-waterfall's UNINDEXED_COLOR). The "throughout vs transition" caption is
  * derived from the COUNT OF DISTINCT indexed phases (the truthful rule): a
  * non-monotone strip like [Pn3m, Lamellar, Pn3m] reads as a transition.
+ *
+ * Caption truthfulness (SC-PREVCLAIM): "throughout" may only claim what every
+ * cell shows. A single-phase strip with unindexed gaps (null / form_factor /
+ * null-state cells) carries the coverage fraction instead ("Pn3m in 1 of 3"),
+ * and single-phase coexistence is named, not erased ("Im3m + Lamellar in
+ * 1 of 3"; transition captions keep their bare "A → B" shape — partners
+ * there live in the segment aria/titles).
+ * "Throughout" survives a coexistence strip only when every cell shows the
+ * identical story (same phase, same partners) — otherwise the fraction form is
+ * used even at full coverage ("in 3 of 3"), because the partner is present
+ * somewhere but not everywhere and either bare claim would overstate.
+ * Transition captions keep their "A → B" shape and append the same fraction
+ * when coverage is partial.
  *
  * Per-segment `role="img"` + `aria-label`/`title` carry the phase name as the
  * accessible second channel (colour is never the sole signal — see phases.ts);
@@ -106,6 +120,31 @@ export function PhaseStrip({
   const first = indexed.length > 0 ? indexed[0]! : null;
   const last = indexed.length > 0 ? indexed[indexed.length - 1]! : null;
   const distinct = new Set(indexed);
+  // Coverage honesty (SC-PREVCLAIM): the caption may not say more than the
+  // cells show. `partial` → the fraction form replaces / accompanies the claim.
+  const total = segments.length;
+  const partial = indexed.length < total;
+  // Distinct coexisting partners beyond each cell's dominant phase, in
+  // appearance order — a coexistence strip never captions the dominant alone.
+  const partners: string[] = [];
+  for (const seg of segments) {
+    if (seg.phase === null) continue;
+    for (const p of seg.coexistWith ?? []) {
+      if (p !== seg.phase && !partners.includes(p)) partners.push(p);
+    }
+  }
+  // "Throughout" with partners requires every cell to tell the identical
+  // story (same phase, same partner SET — sorted, so partner order cannot
+  // fake non-uniformity) — see the header note.
+  const segStory = (s: PhaseSegment): string =>
+    `${s.phase}|${[...(s.coexistWith ?? [])].sort().join("+")}`;
+  const uniform =
+    total > 0 && segments.every((s) => segStory(s) === segStory(segments[0]!));
+  const fraction = (
+    <span className="text-ink-soft">
+      in {indexed.length} of {total}
+    </span>
+  );
 
   return (
     <div className={cx(vertical && "h-full", className)} data-size={size} data-orientation={orientation}>
@@ -174,13 +213,31 @@ export function PhaseStrip({
             <span className="font-semibold" style={{ color: phaseColor(last) }}>
               {last}
             </span>
+            {partial && fraction}
           </>
         ) : (
           <>
             <span className="font-semibold" style={{ color: phaseColor(first) }}>
               {first}
             </span>
-            <span className="text-ink-soft">throughout</span>
+            {/* Coexistence marker: "+" is decorative, sr says "with" (the
+                same pattern as the transition arrow's sr-only "to"). */}
+            {partners.map((p) => (
+              <Fragment key={p}>
+                <span className="text-ink-faint" aria-hidden="true">
+                  +
+                </span>
+                <span className="sr-only">with</span>
+                <span className="font-semibold" style={{ color: phaseColor(p) }}>
+                  {p}
+                </span>
+              </Fragment>
+            ))}
+            {!partial && (partners.length === 0 || uniform) ? (
+              <span className="text-ink-soft">throughout</span>
+            ) : (
+              fraction
+            )}
           </>
         )}
       </div>

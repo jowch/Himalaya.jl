@@ -746,7 +746,9 @@ export function SeriesScopingPage(): JSX.Element {
                 <>
                   Himalaya grouped <strong>{rows.length} samples</strong> by their{" "}
                   <strong>{keyLabel}</strong>, read from the sample names. Confirm the reads and build.
-                  Skip any it misread.
+                  {/* SC-SKIPDISC: name the gesture, not just the possibility —
+                      the skip toggle lives on the value itself. */}{" "}
+                  Click a value to skip a misread.
                 </>
               }
               orderedBy={keyLabel}

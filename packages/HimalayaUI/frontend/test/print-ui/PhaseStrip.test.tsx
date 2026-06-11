@@ -107,6 +107,130 @@ describe("<PhaseStrip> assistive-tech exposure", () => {
   });
 });
 
+describe("<PhaseStrip> caption truthfulness (SC-PREVCLAIM)", () => {
+  it("full coverage + one phase + no coexistence → '<phase> throughout' (unchanged)", () => {
+    render(
+      <PhaseStrip
+        segments={segs({ phase: "Pn3m" }, { phase: "Pn3m" }, { phase: "Pn3m" })}
+      />,
+    );
+    const cap = screen.getByTestId("ps-cap");
+    expect(cap).toHaveTextContent(/Pn3m\s*throughout/);
+    expect(cap).not.toHaveTextContent(/\bof\b/);
+  });
+
+  it("partial coverage + one phase → carries the fraction, never 'throughout'", () => {
+    render(
+      <PhaseStrip
+        segments={segs({ phase: "Pn3m" }, { phase: null }, { phase: null })}
+      />,
+    );
+    const cap = screen.getByTestId("ps-cap");
+    expect(cap).toHaveTextContent(/Pn3m\s*in 1 of 3/);
+    expect(cap).not.toHaveTextContent(/throughout/i);
+  });
+
+  it("form_factor and null-state cells count as uncovered in the fraction", () => {
+    render(
+      <PhaseStrip
+        segments={segs(
+          { phase: "Im3m" },
+          { phase: null, state: "form_factor" },
+          { phase: null, state: "null" },
+        )}
+      />,
+    );
+    expect(screen.getByTestId("ps-cap")).toHaveTextContent(/in 1 of 3/);
+  });
+
+  it("SC-PREVCLAIM repro: one coexistence cell of three never reads 'throughout'", () => {
+    // The lying caption was "Im3m throughout" for [Im3m+Lamellar, null, null].
+    render(
+      <PhaseStrip
+        segments={segs(
+          { phase: "Im3m", coexistWith: ["Lamellar"] },
+          { phase: null },
+          { phase: null },
+        )}
+      />,
+    );
+    const cap = screen.getByTestId("ps-cap");
+    expect(cap).toHaveTextContent("Im3m");
+    expect(cap).toHaveTextContent("Lamellar");
+    expect(cap).toHaveTextContent(/in 1 of 3/);
+    expect(cap).not.toHaveTextContent(/throughout/i);
+  });
+
+  it("uniform coexistence in every cell → 'A + B throughout' (the pair IS throughout)", () => {
+    render(
+      <PhaseStrip
+        segments={segs(
+          { phase: "Im3m", coexistWith: ["Lamellar"] },
+          { phase: "Im3m", coexistWith: ["Lamellar"] },
+        )}
+      />,
+    );
+    const cap = screen.getByTestId("ps-cap");
+    expect(cap).toHaveTextContent("Im3m");
+    expect(cap).toHaveTextContent("Lamellar");
+    expect(cap).toHaveTextContent(/throughout/);
+  });
+
+  it("non-uniform coexistence (some cells pure) → fraction, not 'throughout'", () => {
+    // Lamellar is NOT throughout here, so the caption may not claim it is.
+    render(
+      <PhaseStrip
+        segments={segs(
+          { phase: "Im3m", coexistWith: ["Lamellar"] },
+          { phase: "Im3m" },
+          { phase: "Im3m" },
+        )}
+      />,
+    );
+    const cap = screen.getByTestId("ps-cap");
+    expect(cap).toHaveTextContent("Lamellar");
+    expect(cap).toHaveTextContent(/in 3 of 3/);
+    expect(cap).not.toHaveTextContent(/throughout/i);
+  });
+
+  it("full-coverage transition keeps its shape, with no fraction noise", () => {
+    render(
+      <PhaseStrip segments={segs({ phase: "Pn3m" }, { phase: "Lamellar" })} />,
+    );
+    const cap = screen.getByTestId("ps-cap");
+    expect(cap).toHaveTextContent("→");
+    expect(cap).not.toHaveTextContent(/\bof\b/);
+  });
+
+  it("transition with unindexed gaps appends the fraction softly", () => {
+    render(
+      <PhaseStrip
+        segments={segs({ phase: "Pn3m" }, { phase: null }, { phase: "Lamellar" })}
+      />,
+    );
+    const cap = screen.getByTestId("ps-cap");
+    expect(cap).toHaveTextContent("→");
+    expect(cap).toHaveTextContent(/in 2 of 3/);
+  });
+
+  it("the coexistence '+' glyph is decorative with sr 'with' (parity with '→'/'to')", () => {
+    render(
+      <PhaseStrip
+        segments={segs(
+          { phase: "Im3m", coexistWith: ["Lamellar"] },
+          { phase: null },
+        )}
+      />,
+    );
+    const cap = screen.getByTestId("ps-cap");
+    const plus = cap.querySelector('[aria-hidden="true"]');
+    expect(plus).not.toBeNull();
+    expect(plus).toHaveTextContent("+");
+    const withWord = within(cap).getByText("with");
+    expect(withWord).not.toHaveAttribute("aria-hidden");
+  });
+});
+
 describe("<PhaseStrip> coexistWith empty/null", () => {
   it("treats an empty coexistWith array as single-phase", () => {
     render(

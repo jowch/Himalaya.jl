@@ -20,8 +20,14 @@ export interface FlagButtonProps {
  * - **flagged** — the user skipped this read from the batch write; the accent
  *   look (accent value, dashed underline, "▸ skipped" caption) marks the
  *   exclusion. Clicking restores the read.
- * - **ok** (default) — the read will be committed; ink value with a dotted
- *   affordance that firms up on hover. Clicking skips the read.
+ * - **ok** (default) — the read will be committed; ink value with a standing
+ *   faint dotted underline that firms up on hover. Clicking skips the read.
+ *
+ * Discovery (SC-SKIPDISC): the underline is PERSISTENT, not hover-only — the
+ * skip toggle must be findable without hovering blindly. The contract is
+ * exposed as `data-affordance="persistent"` (jsdom can't compute Tailwind
+ * styles, so tests pin the attribute, not the class). Keyboard users get the
+ * house focus-visible accent outline (same tokens as the reorder grip).
  *
  * The `flagged` prop name and the `data-state="ok"/"flagged"` values are KEPT
  * as stable API/e2e keys (ScopeSampleRow's row-wash keys off the same name) —
@@ -35,11 +41,13 @@ export function FlagButton({ value, flagged, onClick, className }: FlagButtonPro
       type="button"
       data-testid="flag-button"
       data-state={flagged ? "flagged" : "ok"}
+      data-affordance="persistent"
       aria-pressed={flagged === true}
       onClick={onClick}
       title={flagged ? "Restore this read" : "Skip this read"}
       className={cx(
         "group/fb block text-right font-mono cursor-pointer min-w-[92px] flex-shrink-0",
+        "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
         flagged ? "text-accent" : "text-ink",
         className,
       )}
@@ -50,7 +58,7 @@ export function FlagButton({ value, flagged, onClick, className }: FlagButtonPro
           "text-data font-bold border-b pb-px",
           flagged
             ? "border-dashed border-accent"
-            : "border-dotted border-transparent group-hover/fb:border-hair-strong",
+            : "border-dotted border-hair group-hover/fb:border-hair-strong",
         )}
       >
         {value}

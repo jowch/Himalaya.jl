@@ -242,6 +242,15 @@ describe("SeriesScopingPage", () => {
     expect(screen.getAllByTestId("scope-sample-row")).toHaveLength(2);
   });
 
+  it("names the skip gesture in the intro copy (SC-SKIPDISC)", () => {
+    renderPage();
+    // The skip toggle is otherwise invisible until hover; the intro must tell
+    // a first-time user HOW, not just that skipping exists.
+    expect(
+      screen.getByText(/click a value to skip a misread/i),
+    ).toBeInTheDocument();
+  });
+
   it("surfaces a corpus-load error distinctly (not as an empty state)", () => {
     tagsState = { data: [], isLoading: false, isError: true };
     renderPage();
