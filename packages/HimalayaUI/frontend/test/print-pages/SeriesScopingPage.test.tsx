@@ -649,6 +649,90 @@ describe("SeriesScopingPage", () => {
     expect(banner.textContent).not.toMatch(/were saved/i);
   });
 
+  it("SC-POLISH2: Confirm & build reads Building… with aria-busy while the scope→create chain runs", () => {
+    const { rerender } = renderPage();
+    fireEvent.click(screen.getByRole("button", { name: /confirm & build/i }));
+    // Op A is in flight → the control tells the truth: progressive register +
+    // aria-busy, still disabled (no double-submit).
+    act(() => rerender());
+    const busy = screen.getByRole("button", { name: /building…/i });
+    expect(busy).toHaveAttribute("aria-busy", "true");
+    expect(busy).toBeDisabled();
+    expect(screen.queryByRole("button", { name: /confirm & build/i })).not.toBeInTheDocument();
+
+    // Op A lands; the gap before Op B settles is part of the chain → still busy.
+    scopeState = { ...scopeState, isSuccess: true };
+    act(() => rerender());
+    expect(createMutate).toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: /building…/i })).toHaveAttribute(
+      "aria-busy",
+      "true",
+    );
+  });
+
+  it("SC-POLISH2: the busy register reverts when Op A fails (truthful-error exit, retry re-armed)", () => {
+    const { rerender } = renderPage();
+    fireEvent.click(screen.getByRole("button", { name: /confirm & build/i }));
+    act(() => rerender());
+    expect(screen.getByRole("button", { name: /building…/i })).toBeInTheDocument();
+
+    // The tag write FAILS. The render that surfaces the error banner must
+    // already show the resting register — the stage ref resets in an effect
+    // that triggers no re-render of its own.
+    scopeState = { ...scopeState, error: new Error("boom") };
+    act(() => rerender());
+    expect(screen.getByTestId("scoping-error-banner")).toBeInTheDocument();
+    const resting = screen.getByRole("button", { name: /confirm & build/i });
+    expect(resting).not.toHaveAttribute("aria-busy");
+    expect(resting).not.toBeDisabled();
+    expect(screen.queryByRole("button", { name: /building…/i })).not.toBeInTheDocument();
+  });
+
+  it("SC-POLISH2: the busy register reverts when Op B fails (tags written, create missing)", () => {
+    const { rerender } = renderPage();
+    fireEvent.click(screen.getByRole("button", { name: /confirm & build/i }));
+    scopeState = { ...scopeState, isSuccess: true };
+    act(() => rerender());
+    expect(createMutate).toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: /building…/i })).toBeInTheDocument();
+
+    createState = { ...createState, error: new Error("boom") };
+    act(() => rerender());
+    expect(screen.getByTestId("scoping-error-banner").textContent).toMatch(
+      /the ordering tags were saved/i,
+    );
+    const resting = screen.getByRole("button", { name: /confirm & build/i });
+    expect(resting).not.toHaveAttribute("aria-busy");
+    expect(screen.queryByRole("button", { name: /building…/i })).not.toBeInTheDocument();
+  });
+
+  it("SC-POLISH2: the cold-path foot button carries the same busy register through the same chain", () => {
+    tagsState = { data: [], isLoading: false, isError: false };
+    pickerState = {
+      data: [pickerRow(sample(1, "A", []), 37), pickerRow(sample(2, "B", []), 65)],
+      isLoading: false,
+      isError: false,
+    };
+    const { rerender } = renderPage([1, 2]);
+    fireEvent.change(screen.getByTestId("cold-key-input"), { target: { value: "dose" } });
+    const valueInputs = screen.getAllByTestId("cold-assign-row");
+    fireEvent.change(valueInputs[0]!.querySelector("input")!, { target: { value: "10" } });
+    fireEvent.change(valueInputs[1]!.querySelector("input")!, { target: { value: "20" } });
+    fireEvent.click(screen.getByRole("button", { name: /confirm & build/i }));
+
+    act(() => rerender());
+    const busy = screen.getByRole("button", { name: /building…/i });
+    expect(busy).toHaveAttribute("aria-busy", "true");
+    expect(busy).toBeDisabled();
+
+    // Op A fails → reverts to the resting register, re-armed for a retry.
+    scopeState = { ...scopeState, error: new Error("boom") };
+    act(() => rerender());
+    const resting = screen.getByRole("button", { name: /confirm & build/i });
+    expect(resting).not.toHaveAttribute("aria-busy");
+    expect(resting).not.toBeDisabled();
+  });
+
   it("renders the ordered-by control as a dropdown when ≥2 ordering variables exist", () => {
     seedTwoKeys();
     renderPage();

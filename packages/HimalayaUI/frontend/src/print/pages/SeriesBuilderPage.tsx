@@ -295,7 +295,23 @@ export function SeriesBuilderPage(): JSX.Element {
     discardDraft();
   };
 
-  const confirmBusy = save.isPending || commit.isPending || stage.current !== "idle";
+  // Busy = the chain is in flight, derived from the SAME stage/mutation
+  // sources the chain effects read (never a parallel flag). Each stage clause
+  // carries its own truthful-exit term (the error that ends that stage) so the
+  // busy register reverts IN THE SAME RENDER the failure surfaces — the exits
+  // flip the stage REF in an effect, which triggers no re-render of its own,
+  // so a plain `stage.current !== "idle"` would leave a lying "Confirming…"
+  // stuck next to the error notice until some unrelated render.
+  const confirmBusy =
+    save.isPending ||
+    commit.isPending ||
+    // The saving clause also exits when the series query's error PRE-DATES
+    // the save settling: in that render the ref still reads "saving" (the
+    // effects flip it to awaiting-fresh -> idle without re-rendering), so
+    // the awaiting-fresh clause below never gets to apply its exit.
+    (stage.current === "saving" && save.error == null && !(save.isSuccess && seriesQ.isError)) ||
+    (stage.current === "awaiting-fresh" && !seriesQ.isError) ||
+    (stage.current === "committing" && commit.error == null);
   const chainError = save.error || commit.error;
 
   return (
@@ -550,6 +566,7 @@ function BuilderBody({
       <BuilderRail
         grouping={groupingSummary(series)}
         {...(liveDraft && !confirmBusy && confirmReady ? { onConfirm } : {})}
+        confirmBusy={confirmBusy}
         {...(liveDraft ? {} : { onAdjust: ensureDraft })}
         // copy-doesn't-lie: the rail's default WYSIWYG caption is false
         // mid-draft, so a live draft swaps in the honest variant. Precision:

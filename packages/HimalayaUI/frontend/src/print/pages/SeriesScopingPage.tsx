@@ -85,6 +85,7 @@ function ColdAssignSection({
   onValueChange,
   canBuildNow,
   onBuild,
+  buildBusy,
   intro,
 }: {
   rows: ColdAssignRow[];
@@ -93,6 +94,10 @@ function ColdAssignSection({
   onValueChange: (sampleId: number, value: string) => void;
   canBuildNow: boolean;
   onBuild: () => void;
+  /** The scope→create chain is in flight: the foot button flips to the
+   *  progressive register ("Building…") with `aria-busy`, disabled (no
+   *  double-submit). Same contract as ScopePlate's buildBusy. */
+  buildBusy: boolean;
   /** Pass-through to ColdAssignPanel: undefined keeps the default cold-corpus
    *  intro; an explicit null suppresses it (custom mode, where that copy
    *  would be false). */
@@ -126,10 +131,11 @@ function ColdAssignSection({
         </div>
         <Button
           variant="solid"
-          {...(!canBuildNow ? { disabled: true } : {})}
+          {...(!canBuildNow || buildBusy ? { disabled: true } : {})}
+          {...(buildBusy ? { "aria-busy": true } : {})}
           onClick={onBuild}
         >
-          Confirm &amp; build →
+          {buildBusy ? "Building…" : <>Confirm &amp; build →</>}
         </Button>
       </div>
     </>
@@ -578,6 +584,21 @@ export function SeriesScopingPage(): JSX.Element {
     if (scopeSeries.error || createSeries.error) stage.current = "idle";
   }, [scopeSeries.error, createSeries.error]);
 
+  // Busy = the chain is in flight, derived from the SAME stage/mutation
+  // sources the chain effects read (never a parallel flag). Each stage clause
+  // carries its own truthful-exit term (the error that ends that stage) so the
+  // busy register reverts IN THE SAME RENDER the failure banner surfaces — the
+  // error exit flips the stage REF in an effect, which triggers no re-render
+  // of its own, so a plain `stage.current !== "idle"` would leave a lying
+  // "Building…" stuck next to the banner. Scoping the error term per stage
+  // also keeps a STALE createSeries.error from a prior attempt (see
+  // chainErrorCopy) from suppressing busy during a retry's tagging phase.
+  const buildBusy =
+    scopeSeries.isPending ||
+    createSeries.isPending ||
+    (stage.current === "tagging" && scopeSeries.error == null) ||
+    (stage.current === "creating" && createSeries.error == null);
+
   // Chain-failure banner copy, differentiated by WHICH op failed — the two
   // modes leave different data committed and the banner must not lie:
   //   Op A failed → no tags from THIS attempt, no series. (Deliberately not
@@ -689,6 +710,7 @@ export function SeriesScopingPage(): JSX.Element {
                     onValueChange={onColdValueChange}
                     canBuildNow={canColdBuildNow}
                     onBuild={handleBuild}
+                    buildBusy={buildBusy}
                   />
                 </div>
               </Card>
@@ -750,6 +772,7 @@ export function SeriesScopingPage(): JSX.Element {
                   onValueChange={onColdValueChange}
                   canBuildNow={canColdBuildNow}
                   onBuild={handleBuild}
+                  buildBusy={buildBusy}
                   intro={null}
                 />
               </div>
@@ -882,6 +905,7 @@ export function SeriesScopingPage(): JSX.Element {
                 </>
               }
               {...(!canBuild ? { buildDisabled: true } : {})}
+              buildBusy={buildBusy}
               onBuild={handleBuild}
             />
           )}

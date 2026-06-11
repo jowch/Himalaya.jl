@@ -11,6 +11,14 @@ export interface BuilderRailProps {
   grouping: ReactNode;
   onConfirm?: () => void;
   /**
+   * The Save→Commit chain is in flight: the Confirm action flips to the
+   * progressive register ("Confirming…") with `aria-busy`, still disabled —
+   * the control states WHY it is inert instead of silently sitting dead.
+   * The page derives this from the same stage/isPending sources that gate
+   * the chain, so the label reverts on both terminal paths.
+   */
+  confirmBusy?: boolean;
+  /**
    * The "Adjust" entry into draft state. Omit it (e.g. while a draft is already
    * live) and the affordance is NOT rendered — re-running the idempotent
    * ensureDraft is a no-op, and controls-don't-lie says we don't show it.
@@ -65,6 +73,7 @@ export interface BuilderRailProps {
 export function BuilderRail({
   grouping,
   onConfirm,
+  confirmBusy,
   onAdjust,
   orderedBy,
   orderNote,
@@ -102,7 +111,11 @@ export function BuilderRail({
         variant="compose"
         title="Auto-grouped"
         actions={[
-          { label: "Confirm series", ...(onConfirm ? { onClick: onConfirm } : {}) },
+          {
+            label: confirmBusy ? "Confirming…" : "Confirm series",
+            ...(onConfirm ? { onClick: onConfirm } : {}),
+            ...(confirmBusy ? { busy: true } : {}),
+          },
           // "Adjust" is the entry into draft state; once a draft is live the page
           // withholds onAdjust and the affordance is dropped (not rendered inert),
           // since re-running ensureDraft would be a redundant no-op.

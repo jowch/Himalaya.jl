@@ -4,6 +4,10 @@ export interface AutoGroupAction {
   label: string;
   onClick?: () => void;
   muted?: boolean;
+  /** The action's own chain is in flight: disabled + `aria-busy="true"` (no
+   *  double-submit). The caller flips `label` to the progressive register
+   *  ("Confirming…") so the control states its reason for being inert. */
+  busy?: boolean;
 }
 
 export interface AutoGroupProps {
@@ -68,15 +72,18 @@ export function AutoGroup({
             // controls-don't-lie: an action with no `onClick` is inert, so it
             // renders visibly + behaviourally disabled (faint, no underline-on-
             // hover, `disabled` + `aria-disabled`) rather than as a live accent
-            // link that does nothing.
-            const inert = action.onClick === undefined;
+            // link that does nothing. A busy action is likewise inert (its
+            // chain is already running) and additionally says so via aria-busy.
+            const busy = action.busy === true;
+            const inert = action.onClick === undefined || busy;
             return (
               <button
                 key={action.label}
                 type="button"
-                {...(action.onClick ? { onClick: action.onClick } : {})}
+                {...(action.onClick && !busy ? { onClick: action.onClick } : {})}
                 disabled={inert}
                 aria-disabled={inert || undefined}
+                aria-busy={busy || undefined}
                 className={
                   inert
                     ? "text-sm font-semibold text-ink-soft cursor-not-allowed"

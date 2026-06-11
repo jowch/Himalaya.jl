@@ -31,6 +31,13 @@ export interface ScopePlateProps {
   footState: { kind: "warn" | "ready"; text: string };
   footNote: ReactNode;
   buildDisabled?: boolean;
+  /**
+   * The scope→create chain is in flight: the foot button flips to the
+   * progressive register ("Building…") with `aria-busy`, disabled (no
+   * double-submit). The page derives this from the same stage/isPending
+   * sources that gate the chain, so the label reverts on both terminal paths.
+   */
+  buildBusy?: boolean;
   onBuild?: () => void;
   /** PLACEMENT-ONLY. */
   className?: string;
@@ -66,6 +73,7 @@ export function ScopePlate({
   footState,
   footNote,
   buildDisabled,
+  buildBusy,
   onBuild,
   className,
 }: ScopePlateProps): JSX.Element {
@@ -155,10 +163,11 @@ export function ScopePlate({
         </div>
         <Button
           variant="solid"
-          {...(buildDisabled ? { disabled: true } : {})}
-          {...(onBuild ? { onClick: onBuild } : {})}
+          {...(buildDisabled || buildBusy ? { disabled: true } : {})}
+          {...(buildBusy ? { "aria-busy": true } : {})}
+          {...(onBuild && !buildBusy ? { onClick: onBuild } : {})}
         >
-          Confirm & build →
+          {buildBusy ? "Building…" : "Confirm & build →"}
         </Button>
       </div>
     </Card>
