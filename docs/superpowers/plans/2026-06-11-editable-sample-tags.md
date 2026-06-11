@@ -14,6 +14,36 @@
 
 ---
 
+## Review-driven corrections (3 reviewers, folded 2026-06-11 — READ BEFORE EXECUTING)
+
+All three plan reviewers returned READY-WITH-FIXES (no architectural blocker). Apply these alongside each task:
+
+**Exact test-file paths** (the plan's generic placeholders resolved):
+- T3 + T10 backend tests → `packages/HimalayaUI/test/test_routes_samples.jl` (existing tag-route tests at ~3-54; batch tests at ~114-296). Bare-`SQLite.DB()` harness: `db = SQLite.DB(); HimalayaUI.create_schema!(db); …; with_test_server(db) do port, base`. Every new `@testset` opens its own `with_test_server`. Build headers inline `["Content-Type"=>"application/json","X-Username"=>"alice"]` — **there is no `ct` variable** (the plan's test snippets use `ct`; define it or inline). Seed samples/tags via `HimalayaUI.create_sample!` etc.; all `$sid/$T/$A/$B/$S/$X` placeholders must be real seeded ids.
+- T6 backend test → `packages/HimalayaUI/test/test_picker_routes.jl` (corpus test ~150-193). This file uses the `mktempdir()` + `_setup_analyzed_exposure(tmp)` + `with_test_server(ctx.db)` harness — match the file's local convention, not the bare-DB one.
+- T1 → `test/print-pages/loupeAdapters.test.ts` — **rewrite/remove the existing `describe("toLoupeTags / findSampleTagId", …)` block (~125-138)**: deleting `findSampleTagId` without fixing that block breaks the build.
+- T2 → `test/print-pages/LoupePage.test.tsx` (already mocks `useRemoveCorpusSampleTag` → `removeTagMutate`; reuse it as the spy).
+- T5 → new `test/queue/editTag.test.ts` **and** add an `edit_tag` arm assertion to `test/queue/mutatorRegistry.test.ts` (both `resolveMutator` sampleId-only and `resolveMutatorForEvent`).
+- T6 frontend → `test/proposeOrdering.test.ts`.
+
+**T2 delete-wiring is deeper than written (BIG):** the loupe tags render through `LoupeSidePanel` → `<TagList>` → `<TagPill>` → `<Chip>`, NOT a per-pill loop in `LoupeSidePanel`. `TagList`'s `onRemove(t)` passes a `Tag`, and `Chip`'s removable variant hardcodes `aria-label="Remove"`. To make removal id-exact AND name the tag, T2 must: add a `LoupeTag`-aware path through `TagList`/`TagPill` that carries `id` and a computed per-tag remove label, and thread a `removeLabel` prop into `TagPill`→`Chip` (Chip/TagPill/TagList are in `src/print/ui/**`, design-guard-exempt). Sequence: T1 (adapter) → this threading → id-exact `onRemove(id)`.
+
+**Backend code fixes:**
+- T10: **hoist the `exp_id` SELECT to the top of the `for t in entries` loop body** (all three branches use it; today it's computed mid-loop after the INSERT). Ensure all three branches fall through to ONE `push!(created, …)` using the resolved `tag_id`/`value` so the batch response contract (one entry per input row) is preserved — read the current `created` builder first.
+- T6: the experiment-scoped sibling query is JOINed and aliased — write `SELECT t.key, t.value, COUNT(DISTINCT t.sample_id) AS count … WHERE s.experiment_id = ? GROUP BY t.key, t.value`. Add `:count => Int(r.count)` to BOTH routes' JSON comprehensions.
+- T3: a spec wrinkle — spec §Testing's "round-trip parity" line is **superseded** by §Architecture-#2 (sample_tags is a base table, not a rebuilt view); the plan's user_actions test is correct. **Strengthen** it to also assert no view-write + the broadcast fires (not just `+1` row).
+
+**Test-coverage fixes:**
+- **T5 contract test (false-green risk — the documented SSE-wins-partial trap):** the single `onMutate` test is insufficient. Add own-op SSE-confirmation (`synthesizeFromSse` resolves a synthesized partial) and foreign-event replay assertions, and treat it as the **pair** of the backend `apply_event!` test (six-layer rule).
+- **T7 (TagSuggest) and T8 (ManageTagsModal) are too coarse** — split each into 2-3 red→green→commit sub-tasks: T7a "combobox + listbox ARIA + keyboard nav", T7b "counts + create-as-typed"; T8a "shell + rows + edit/delete wiring", T8b "add-row + duplicate-key rejection + focus-restore-to-trigger + `lib/announce`". Add the currently-missing tests for `onRemove`, focus-restore-on-close (ModalShell does NOT provide it — the modal self-manages it), the live-announce text, and the create-as-typed keyboard path.
+- T10: add a batch idempotency-replay test (same `client_op_id` → no new rows/events) and confirm the duplicate-`sample_id`-in-batch guard still holds.
+
+**Design-guard:** `TagSuggest.tsx` is in `src/print/ui/**` (guard-exempt — may author appearance). `ManageTagsModal.tsx` is in `src/print/components/` (**scanned** — token-only classes; no `text-[…]`/`rounded-[…]`/raw color, mirror `CustomIndexModal.tsx`).
+
+**Naming:** the spec says `useEditSampleTag`/`editSampleTagMutator`; the plan (authoritative) uses `useEditCorpusSampleTag`/`editCorpusSampleTagMutator` consistently. T9 must instantiate `const editTag = useEditCorpusSampleTag(sample.id)` (the plan implies but doesn't write it). `synthesizeFromSse`'s hardcoded `source:"manual"` is a faint-marker-only inaccuracy for a scoping-edited tag — acceptable, comment it.
+
+**Confirmed correct (no change):** `findSampleTagId` has no caller outside the loupe (safe to delete); `resolveMutator` tri-scope routes a sampleId-only `edit_tag` to the corpus mutator; `applyRemoteToCache` `case "edit_tag":` added to the `add_tag`/`remove_tag` block inherits the right 3 invalidations; all Task-5 imports are real; `proposeOrdering` genuinely ignores `count`; `announce`, `ModalShell`/`ModalHead`/`ModalFooter`, `TagEditor.commit()` all exist as used.
+
 ## File structure
 
 **Slice 1 — id-exact delete (frontend only):**
@@ -418,10 +448,15 @@ export const editCorpusSampleTagMutator: Mutator<
   // id is stable across the edit, so the optimistic row already matches the
   // server row — no placeholder reconciliation needed (unlike add).
   onSuccess: () => {},
-  synthesizeFromSse: (payload) => ({
-    id: payload.tag_id as number, key: payload.key as string,
-    value: payload.value as string, source: "manual",
-  }),
+  // CORRECTED SIGNATURE (matches types.ts:215 + addSampleTagMutator.synthesizeFromSse,
+  // trivial.ts:159): two args (remote, base); payload lives at remote.payload;
+  // guard the missing field and spread ...base.
+  synthesizeFromSse: (remote, base) => {
+    const p = remote.payload as Record<string, unknown>;
+    if (p.tag_id === undefined) return undefined;
+    return { ...base, id: p.tag_id as number, key: p.key as string,
+             value: p.value as string, source: "manual" };
+  },
 };
 ```
 
@@ -440,14 +475,17 @@ export const editCorpusSampleTagMutator: Mutator<
     case "edit_tag": {
 ```
 
-- [ ] **Step 6: the hook** in `src/queries.ts` (mirror `useRemoveCorpusSampleTag`, sampleId-only scope, an `inner.mutate` wrapper packaging `{tagId, key, value}`):
+- [ ] **Step 6: the hook** in `src/queries.ts`. `useQueueMutation` takes **positional** `(mutator, scope)` args (NOT a `{kind}` object) — mirror `useRemoveCorpusSampleTag` exactly (read it at `src/queries.ts:605`), pulling `username`/`clientId` from `useAppState` the same way it does:
 
 ```ts
 export function useEditCorpusSampleTag(sampleId: number) {
-  const inner = useQueueMutation<EditCorpusSampleTagInput, EditCorpusSampleTagScope, SampleTag>({ kind: "edit_tag", sampleId });
+  const username = useAppState((s) => s.username);
+  const inner = useQueueMutation(editCorpusSampleTagMutator, { sampleId, username, clientId: CLIENT_ID });
   return { ...inner, mutate: (a: { tagId: number; key: string; value: string }) => inner.mutate(a) };
 }
 ```
+
+(Use whatever `username`/`clientId` source `useRemoveCorpusSampleTag` uses — copy its exact scope construction so routing through `resolveMutator` is identical.)
 
 - [ ] **Step 7: Run the queue test + tsc + commit**
 
