@@ -37,4 +37,20 @@ describe("applyRemoteToCache — add_tag(sample) scoping fan-out", () => {
     expect(inv).not.toHaveBeenCalledWith({ queryKey: ["corpus-sample-tags"] });
     expect(inv).not.toHaveBeenCalledWith({ queryKey: ["corpus-picker-samples"] });
   });
+
+  it("select_exposure invalidates the picker projection (the builder's plate resolution source)", () => {
+    const qc = new QueryClient();
+    const inv = vi.spyOn(qc, "invalidateQueries");
+    const remote: SseEvent = {
+      id: 3, kind: "select_exposure", entity_type: "exposure", entity_id: 7,
+      actor: "x", client_id: "y", client_op_id: "z",
+      ts: "2026-05-14T10:00:00Z",
+      payload: { sample_id: 10 },
+    };
+    applyRemoteToCache(remote, qc);
+    expect(inv).toHaveBeenCalledWith({ queryKey: ["sample", 10, "exposures"] });
+    // indexing_exposure_id derives from selection; a foreign re-selection must
+    // refresh the projection the builder's Confirm resolves its plate through.
+    expect(inv).toHaveBeenCalledWith({ queryKey: ["corpus-picker-samples"] });
+  });
 });

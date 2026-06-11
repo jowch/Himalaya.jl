@@ -394,10 +394,10 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
     expect(qc.getQueryData<Exposure>(queryKeys.exposure(5))!.status).toBe("rejected");
   });
 
-  it("select_exposure invalidates the parent sample's exposure list", () => {
-    let invalidated: unknown = null;
+  it("select_exposure invalidates the exposure list AND the picker projection", () => {
+    const invalidated: unknown[] = [];
     qc.invalidateQueries = ((arg: { queryKey: unknown }) => {
-      invalidated = arg.queryKey; return Promise.resolve();
+      invalidated.push(arg.queryKey); return Promise.resolve();
     }) as typeof qc.invalidateQueries;
     // Mirrors routes_exposures.jl PATCH /select: payload is {sample_id}.
     const evt: SseEvent = {
@@ -405,7 +405,12 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
       payload: { sample_id: 1 },
     };
     applyRemoteToCache(evt, qc);
-    expect(invalidated).toEqual(queryKeys.exposures(1));
+    expect(invalidated).toContainEqual(queryKeys.exposures(1));
+    // indexing_exposure_id derives from selection; the builder's Confirm
+    // resolves its plate through the picker projection (BU-RECIPENOOP), so a
+    // foreign re-selection must refresh it or Confirm commits the PREVIOUS
+    // representative exposure.
+    expect(invalidated).toContainEqual(queryKeys.corpusPickerSamples);
   });
 
   // -------------------------------------------------------------------------
