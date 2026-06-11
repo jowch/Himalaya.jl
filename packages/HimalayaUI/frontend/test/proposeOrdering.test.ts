@@ -103,4 +103,18 @@ describe("proposeOrdering", () => {
       proposeOrdering(corpusTags, samples),
     );
   });
+
+  it("ranks ordering keys by number of distinct values, ignoring the sample count field", () => {
+    // keyA has 3 distinct (key,value) pairs in the corpus (count=1 each).
+    // keyB has 1 distinct pair but a very high sample count (99).
+    // proposeOrdering ranks by distinct-value frequency, NOT by count — keyA wins.
+    const pairs = [
+      { key: "keyA", value: "1", count: 1 },
+      { key: "keyA", value: "2", count: 1 },
+      { key: "keyA", value: "3", count: 1 },
+      { key: "keyB", value: "x", count: 99 },
+    ] as SampleTagPair[];
+    const samples = [row(1, "s1", [{ key: "keyA", value: "1" }])];
+    expect(proposeOrdering(pairs, samples).orderingKey).toBe("keyA");
+  });
 });

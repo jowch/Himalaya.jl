@@ -713,10 +713,15 @@ export const postComparisonMessage = (
 // ─── Picker / scoping shared types ──────────────────────────────────────────
 
 /** Per-pair shape returned by `GET /api/sample-tags` (corpus) and
- *  the experiment-scoped `/api/experiments/:eid/sample-tags`. */
+ *  the experiment-scoped `/api/experiments/:eid/sample-tags`.
+ *  `count` is the number of distinct samples carrying this (key, value) pair —
+ *  used by the Manage-tags modal to rank suggestions by frequency.
+ *  proposeOrdering (scoping) ignores this field and ranks by distinct-value
+ *  count instead. */
 export interface SampleTagPair {
   key: string;
   value: string;
+  count?: number;
 }
 
 /** Per-row shape returned by `GET /api/experiments/:eid/picker-samples`

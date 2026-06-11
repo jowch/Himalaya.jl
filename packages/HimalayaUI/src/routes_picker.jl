@@ -60,33 +60,35 @@ function register_picker_routes!()
 
     @get "/api/experiments/{eid}/sample-tags" function(req::HTTP.Request, eid::Int)
         db = current_db()
-        # Distinct (key, value) pairs joined through samples → experiment.
+        # Per-(key, value) sample count joined through samples → experiment.
         # No need to validate the experiment id — an unknown id naturally
         # produces an empty list, which is the right answer for the picker.
         rows = Tables.rowtable(DBInterface.execute(db,
-            """SELECT DISTINCT t.key, t.value
+            """SELECT t.key, t.value, COUNT(DISTINCT t.sample_id) AS count
                FROM sample_tags t
                JOIN samples s ON s.id = t.sample_id
                WHERE s.experiment_id = ?
+               GROUP BY t.key, t.value
                ORDER BY t.key, t.value""", [eid]))
 
-        out = [Dict(:key => String(r.key), :value => String(r.value)) for r in rows]
+        out = [Dict(:key => String(r.key), :value => String(r.value), :count => Int(r.count)) for r in rows]
         HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(out))
     end
 
     @get "/api/sample-tags" function(req::HTTP.Request)
         db = current_db()
-        # Corpus-wide sibling of the experiment-scoped route above: every
-        # distinct (key, value) tag across the whole database, with no
-        # experiment filter — so no JOIN to `samples` is needed. DISTINCT
-        # collapses on the (key, value) pair, matching the per-experiment
-        # route's contract.
+        # Per-(key, value) sample count across the whole corpus, with no
+        # experiment filter. COUNT(DISTINCT sample_id) gives the number of
+        # samples carrying each (key, value) pair — used by the Manage-tags
+        # modal to rank suggestions by frequency. proposeOrdering (scoping)
+        # ranks by distinct-value count instead and ignores this field.
         rows = Tables.rowtable(DBInterface.execute(db,
-            """SELECT DISTINCT key, value
+            """SELECT key, value, COUNT(DISTINCT sample_id) AS count
                FROM sample_tags
+               GROUP BY key, value
                ORDER BY key, value"""))
 
-        out = [Dict(:key => String(r.key), :value => String(r.value)) for r in rows]
+        out = [Dict(:key => String(r.key), :value => String(r.value), :count => Int(r.count)) for r in rows]
         HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(out))
     end
 
