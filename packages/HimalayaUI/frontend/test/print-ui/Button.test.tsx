@@ -59,6 +59,20 @@ describe("<Button> ghostInverse variant", () => {
   });
 });
 
+describe("<Button> success variant", () => {
+  it("carries data-variant=success and renders its label (the constructive Keep verb)", () => {
+    render(<Button variant="success">Keep</Button>);
+    const b = screen.getByRole("button", { name: "Keep" });
+    expect(b.getAttribute("data-variant")).toBe("success");
+  });
+  it("fires onClick", () => {
+    const onClick = vi.fn();
+    render(<Button variant="success" onClick={onClick}>Keep</Button>);
+    fireEvent.click(screen.getByRole("button", { name: "Keep" }));
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("<Button> disabled state", () => {
   it("forwards the disabled attribute (gated actions)", () => {
     render(<Button variant="solid" disabled>Confirm & build</Button>);

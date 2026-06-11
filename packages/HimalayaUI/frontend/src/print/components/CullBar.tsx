@@ -1,5 +1,5 @@
 /**
- * CullBar — floating batch-reject action bar.
+ * CullBar — floating batch-verdict action bar (Drop / Keep / Restore).
  *
  * Presentational contract: NO local state. `count`, `show`, and all handlers
  * are props. The parent page owns selection state. (The ref + layout effect
@@ -35,6 +35,7 @@ export interface CullBarProps {
    *  Default false. */
   show?: boolean;
   onReject?: () => void;   // "Drop" (accent)
+  onKeep?: () => void;     // "Keep" (success — constructive, never a second accent)
   onRestore?: () => void;  // "Restore" (ghostInverse)
   onClear?: () => void;    // "Clear" (ghostInverse)
   /** PLACEMENT-ONLY, appended last. */
@@ -45,6 +46,7 @@ export function CullBar({
   count,
   show = false,
   onReject,
+  onKeep,
   onRestore,
   onClear,
   className,
@@ -71,6 +73,9 @@ export function CullBar({
       </span>
       <Button variant="accent" onClick={onReject}>
         Drop<span className="font-mono text-xs opacity-60 ml-1">X</span>
+      </Button>
+      <Button variant="success" onClick={onKeep}>
+        Keep<span className="font-mono text-xs opacity-60 ml-1">K</span>
       </Button>
       <Button variant="ghostInverse" onClick={onRestore}>
         Restore

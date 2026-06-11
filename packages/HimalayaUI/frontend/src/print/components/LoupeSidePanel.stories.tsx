@@ -30,11 +30,32 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const Kept: Story = {
+/** No verdict yet (SA-SCREENED tri-state). */
+export const Unscreened: Story = {
   args: {
     dropped: false,
     isRepresentative: false,
     onToggleDrop: () => {},
+    onToggleKeep: () => {},
+    onSetRepresentative: () => {},
+    onAddTag: () => {},
+    onRemoveTag: () => {},
+  },
+  render: (args) => (
+    <div className="bg-paper p-5 w-[300px]">
+      <LoupeSidePanel {...args} />
+    </div>
+  ),
+};
+
+/** Explicitly accepted via the Keep verb. */
+export const Kept: Story = {
+  args: {
+    dropped: false,
+    kept: true,
+    isRepresentative: false,
+    onToggleDrop: () => {},
+    onToggleKeep: () => {},
     onSetRepresentative: () => {},
     onAddTag: () => {},
     onRemoveTag: () => {},
@@ -51,6 +72,7 @@ export const DroppedRepresentative: Story = {
     dropped: true,
     isRepresentative: true,
     onToggleDrop: () => {},
+    onToggleKeep: () => {},
     onSetRepresentative: () => {},
     onAddTag: () => {},
     onRemoveTag: () => {},
@@ -63,17 +85,21 @@ export const DroppedRepresentative: Story = {
 };
 
 function InteractivePanel(): JSX.Element {
-  const [dropped, setDropped] = useState(false);
+  // Tri-state verdict mirroring the LoupePage keyboard semantics:
+  // X toggles rejected/null, K toggles accepted/null, last verb wins.
+  const [status, setStatus] = useState<"accepted" | "rejected" | null>(null);
   const [isRep, setIsRep] = useState(false);
   const [tags, setTags] = useState<Tag[]>(mockTags);
   return (
     <div className="bg-paper p-5 w-[300px]">
       <LoupeSidePanel
         meta={mockMeta}
-        dropped={dropped}
+        dropped={status === "rejected"}
+        kept={status === "accepted"}
         isRepresentative={isRep}
         tags={tags}
-        onToggleDrop={() => setDropped((d) => !d)}
+        onToggleDrop={() => setStatus((s) => (s === "rejected" ? null : "rejected"))}
+        onToggleKeep={() => setStatus((s) => (s === "accepted" ? null : "accepted"))}
         onSetRepresentative={() => setIsRep(true)}
         onAddTag={(t) => setTags((prev) => [...prev, t])}
         onRemoveTag={(t) =>

@@ -25,6 +25,25 @@ it("derives kept/total/dropped/screened/tags/phase from a sample + exposures", (
   expect(m.phase).toBeNull();
 });
 
+// SA-SCREENED: "Kept" on the sheet means EXPLICITLY accepted — the same truth
+// the loupe caption and the hero metric tell. An unscreened (null) frame is
+// neither kept nor dropped.
+it("a null-status frame counts neither kept nor dropped; accepted counts kept", () => {
+  const sample = {
+    id: 9, name: "JC009", display_name: null, notes: null,
+    q_units: "nm^-1", tags: [], phase: null,
+  } as any;
+  const exposures = [
+    { id: 101, status: "accepted", selected: true, image_path: null, image_version: "" },
+    { id: 102, status: null, selected: false, image_path: null, image_version: "" },
+    { id: 103, status: "rejected", selected: false, image_path: null, image_version: "" },
+  ] as any;
+  const m = toSampleRowModel(sample, exposures);
+  expect(m.total).toBe(3);
+  expect(m.kept).toBe(1);    // only the accepted frame
+  expect(m.dropped).toBe(1); // only the rejected frame — null is NOT dropped
+});
+
 it("treats undefined exposures as not-yet-loaded (empty derivation)", () => {
   const sample = {
     id: 9,

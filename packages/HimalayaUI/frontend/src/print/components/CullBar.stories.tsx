@@ -19,6 +19,7 @@ export const Selected: Story = {
     count: 3,
     show: true,
     onReject: () => {},
+    onKeep: () => {},
     onRestore: () => {},
     onClear: () => {},
   },
@@ -59,6 +60,7 @@ function InteractiveCullBar(): JSX.Element {
         count={count}
         show={count > 0}
         onReject={() => setCount(0)}
+        onKeep={() => setCount(0)}
         onRestore={() => {}}
         onClear={() => setCount(0)}
       />

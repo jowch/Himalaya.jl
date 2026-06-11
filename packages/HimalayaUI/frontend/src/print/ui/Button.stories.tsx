@@ -13,6 +13,7 @@ type Story = StoryObj<typeof meta>;
 export const Ghost: Story = { args: { variant: "ghost" } };
 export const Solid: Story = { args: { variant: "solid" } };
 export const Accent: Story = { args: { variant: "accent" } };
+export const Success: Story = { args: { variant: "success", children: "Keep" } };
 export const Danger: Story = { args: { variant: "danger", children: "Delete sample" } };
 export const Outline: Story = { args: { variant: "outline", children: "Drop" } };
 export const Armed: Story = { args: { variant: "ghost", armed: true, children: "+ Peak" } };

@@ -34,6 +34,29 @@ describe("LoupeSidePanel", () => {
     expect(onToggleDrop).toHaveBeenCalledOnce();
   });
 
+  it("threads the keep state and wires the keep toggle (SA-SCREENED)", async () => {
+    const onToggleKeep = vi.fn();
+    setup({ kept: true, onToggleKeep });
+    // kept=true → the Verdict reads "Kept" and the keep toggle reads Restore.
+    expect(screen.getByText("Kept")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Restore" }));
+    expect(onToggleKeep).toHaveBeenCalledOnce();
+  });
+
+  it("offers Keep on an unscreened exposure", async () => {
+    const onToggleKeep = vi.fn();
+    setup({ onToggleKeep });
+    expect(screen.getByText("Unscreened")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Keep" }));
+    expect(onToggleKeep).toHaveBeenCalledOnce();
+  });
+
+  it("documents K alongside X in the default key legend", () => {
+    setup();
+    expect(screen.getByText("drop / restore")).toBeInTheDocument();
+    expect(screen.getByText("keep / restore")).toBeInTheDocument();
+  });
+
   it("wires set-representative", async () => {
     const onSetRepresentative = vi.fn();
     setup({ onSetRepresentative });

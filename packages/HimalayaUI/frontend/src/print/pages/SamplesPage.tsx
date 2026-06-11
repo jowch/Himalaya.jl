@@ -143,29 +143,32 @@ export function SamplesPage(): JSX.Element {
     });
   }
 
-  function batchSet(status: "rejected" | null): void {
+  function batchSet(status: "accepted" | "rejected" | null): void {
     const n = selected.size;
     for (const id of selected) {
       const sampleId = ownerOf.get(id);
       if (sampleId !== undefined) batch.mutate({ sampleId, exposureId: id, status });
     }
-    // Consequential, batch-scale change → visible toast. Drop and its symmetric
-    // restore both announce so the action and its undo are equally legible.
+    // Consequential, batch-scale change → visible toast. Drop, Keep and the
+    // symmetric restore all announce so each action and its undo are equally
+    // legible. Restore sends null unconditionally: it clears BOTH verdicts.
     if (n > 0) {
-      const verb = status === "rejected" ? "dropped" : "restored";
+      const verb =
+        status === "rejected" ? "dropped" : status === "accepted" ? "kept" : "restored";
       showToast(`${n} frame${n === 1 ? "" : "s"} ${verb}`, "success");
     }
     setSelected(new Set());
     anchorRef.current = null;
   }
 
-  // ── keyboard: X drops, Esc clears (only meaningful with a selection) ─────────
+  // ── keyboard: X drops, K keeps, Esc clears (only with a selection) ──────────
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent): void {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (suppressGlobalKeys(e)) return;
       if (selected.size === 0) return;
       if (e.key === "x" || e.key === "X") batchSet("rejected");
+      else if (e.key === "k" || e.key === "K") batchSet("accepted");
       else if (e.key === "Escape") {
         setSelected(new Set());
         anchorRef.current = null;
@@ -283,6 +286,7 @@ export function SamplesPage(): JSX.Element {
             { keyLabel: "click", description: "select a frame" },
             { keyLabel: "⇧ click", description: "extend the range" },
             { keyLabel: "X", description: "drop the selected frames" },
+            { keyLabel: "K", description: "keep the selected frames" },
             { keyLabel: "double-click", description: "open the loupe" },
             { keyLabel: "Esc", description: "clear" },
           ]}
@@ -294,6 +298,7 @@ export function SamplesPage(): JSX.Element {
         count={selected.size}
         show={selected.size > 0}
         onReject={() => batchSet("rejected")}
+        onKeep={() => batchSet("accepted")}
         onRestore={() => batchSet(null)}
         onClear={() => {
           setSelected(new Set());

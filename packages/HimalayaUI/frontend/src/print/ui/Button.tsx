@@ -1,6 +1,6 @@
 import type { ButtonHTMLAttributes } from "react";
 
-export type ButtonVariant = "solid" | "accent" | "ghost" | "danger" | "outline" | "ghostInverse";
+export type ButtonVariant = "solid" | "accent" | "success" | "ghost" | "danger" | "outline" | "ghostInverse";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
@@ -16,6 +16,12 @@ const variantClass: Record<ButtonVariant, string> = {
     "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
   accent:
     "bg-accent border border-accent text-paper hover:brightness-110 " +
+    "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
+  // Constructive primary (the Keep verb): sage-filled sibling of `accent`,
+  // legible on light AND dark (bg-ink) surfaces. Status semantics only —
+  // sage is the design system's success hue (DESIGN.md T-4), never decoration.
+  success:
+    "bg-success border border-success text-paper hover:brightness-110 " +
     "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
   ghost:
     "text-ink-soft hover:text-ink hover:bg-paper-sunk border border-transparent " +

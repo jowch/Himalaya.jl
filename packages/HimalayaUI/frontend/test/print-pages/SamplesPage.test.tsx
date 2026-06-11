@@ -157,6 +157,89 @@ describe("SamplesPage", () => {
     });
   });
 
+  it("CullBar Keep calls the batch mutator with status accepted (SA-SCREENED)", () => {
+    renderAt("/samples?beamtime=1");
+    const thumbs = screen.getAllByTestId("thumbnail");
+    fireEvent.click(thumbs[0]!);
+    fireEvent.click(screen.getByRole("button", { name: /Keep/ }));
+    expect(batchMutate).toHaveBeenCalledWith({
+      sampleId: 1,
+      exposureId: 100,
+      status: "accepted",
+    });
+    // Keep clears the selection, same as Drop.
+    expect(screen.getByTestId("cull-bar")).toHaveAttribute("data-show", "false");
+  });
+
+  it("CullBar Restore sends status null even for already-accepted frames", () => {
+    renderAt("/samples?beamtime=1");
+    // Fixture exposure 100 is status "accepted" — Restore must still null it.
+    fireEvent.click(screen.getAllByTestId("thumbnail")[0]!);
+    fireEvent.click(screen.getByRole("button", { name: /Restore/ }));
+    expect(batchMutate).toHaveBeenCalledWith({
+      sampleId: 1,
+      exposureId: 100,
+      status: null,
+    });
+  });
+
+  it("K keeps the selection, announces a count toast, and clears it", () => {
+    const toast = vi.fn();
+    setToastImpl(toast);
+    try {
+      renderAt("/samples?beamtime=1");
+      fireEvent.click(screen.getAllByTestId("thumbnail")[0]!);
+      fireEvent.keyDown(window, { key: "k" });
+      expect(batchMutate).toHaveBeenCalledWith({
+        sampleId: 1,
+        exposureId: 100,
+        status: "accepted",
+      });
+      expect(toast).toHaveBeenCalledWith("1 frame kept", "success");
+      expect(screen.getByTestId("cull-bar")).toHaveAttribute("data-show", "false");
+    } finally {
+      setToastImpl(null);
+    }
+  });
+
+  it("the keyboard legend documents K next to X", () => {
+    renderAt("/samples?beamtime=1");
+    const legend = screen.getByTestId("kb-legend");
+    expect(within(legend).getByText("keep the selected frames")).toBeInTheDocument();
+    expect(within(legend).getByText("drop the selected frames")).toBeInTheDocument();
+  });
+
+  it("K from a contenteditable target does not batch-keep", () => {
+    renderAt("/samples?beamtime=1");
+    fireEvent.click(screen.getAllByTestId("thumbnail")[0]!);
+    const editor = document.createElement("div");
+    editor.setAttribute("contenteditable", "true");
+    document.body.appendChild(editor);
+    try {
+      fireEvent.keyDown(editor, { key: "k" });
+      expect(batchMutate).not.toHaveBeenCalled();
+      expect(screen.getByTestId("cull-bar")).toHaveAttribute("data-show", "true");
+    } finally {
+      editor.remove();
+    }
+  });
+
+  it("an open modal dialog suppresses K (selection survives, no batch mutate)", () => {
+    renderAt("/samples?beamtime=1");
+    fireEvent.click(screen.getAllByTestId("thumbnail")[0]!);
+    const dialog = document.createElement("div");
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
+    document.body.appendChild(dialog);
+    try {
+      fireEvent.keyDown(window, { key: "k" });
+      expect(batchMutate).not.toHaveBeenCalled();
+      expect(screen.getByTestId("cull-bar")).toHaveAttribute("data-show", "true");
+    } finally {
+      dialog.remove();
+    }
+  });
+
   it("X drops the selection and Escape clears it", () => {
     renderAt("/samples?beamtime=1");
     const thumbs = screen.getAllByTestId("thumbnail");

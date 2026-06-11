@@ -40,7 +40,7 @@ const FIXTURE_EXPOSURE = {
 const LOUPE_FIXTURE = (
   <div className="grid grid-cols-[minmax(0,1fr)_286px] gap-7">
     <div className="min-w-0">
-      <BigFrame src={null} caption="frame 1 of 1 · kept" />
+      <BigFrame src={null} caption="frame 1 of 1 · kept" accepted />
       <ThumbnailGallery
         exposures={[{ id: 0, src: null, frameNo: 1 }]}
         selectedId={0}
@@ -52,6 +52,7 @@ const LOUPE_FIXTURE = (
     <LoupeSidePanel
       meta={toMetaEntries(FIXTURE_EXPOSURE, [FIXTURE_EXPOSURE])}
       dropped={false}
+      kept
       isRepresentative={false}
       tags={[]}
     />
@@ -105,6 +106,18 @@ export function LoupePage(): JSX.Element {
     });
     // Consequential single-frame status change → visible toast.
     showToast(dropping ? "Frame dropped" : "Frame restored", "success");
+  }, [activeExposure, setStatus]);
+
+  // The Keep verb (SA-SCREENED): K toggles accepted ↔ null. On a rejected
+  // frame, K accepts directly — last verb wins, no trip through unscreened.
+  const handleKeepToggle = useCallback(() => {
+    if (!activeExposure) return;
+    const keeping = activeExposure.status !== "accepted";
+    setStatus.mutate({
+      exposureId: activeExposure.id,
+      status: keeping ? "accepted" : null,
+    });
+    showToast(keeping ? "Frame kept" : "Frame restored", "success");
   }, [activeExposure, setStatus]);
 
   const handleSetRepresentative = useCallback(() => {
@@ -161,12 +174,13 @@ export function LoupePage(): JSX.Element {
       if (e.key === "ArrowLeft") flip(-1);
       else if (e.key === "ArrowRight") flip(1);
       else if (e.key === "x" || e.key === "X") handleDropToggle();
+      else if (e.key === "k" || e.key === "K") handleKeepToggle();
       else if (e.key === "r" || e.key === "R") handleSetRepresentative();
       else if (e.key === "Escape") goBack();
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [flip, handleDropToggle, handleSetRepresentative, goBack]);
+  }, [flip, handleDropToggle, handleKeepToggle, handleSetRepresentative, goBack]);
 
   if (!corpusQ.isLoading && !sample) {
     return (
@@ -189,6 +203,9 @@ export function LoupePage(): JSX.Element {
   }
 
   const isDropped = activeExposure?.status === "rejected";
+  const isKept = activeExposure?.status === "accepted";
+  // Honest tri-state caption: a null status is unscreened, never "kept".
+  const verdictWord = isDropped ? "dropped" : isKept ? "kept" : "unscreened";
   // Sample-level truth, not frame-level: the backend's Index-stage resolution
   // never consults status, so a dropped representative still carries forward.
   const representativeDropped = exposures.some(
@@ -215,8 +232,9 @@ export function LoupePage(): JSX.Element {
                 <div className="min-w-0">
                   <BigFrame
                     src={buildExposureImageUrl(activeExposure)}
-                    caption={`frame ${frameIndex + 1} of ${exposures.length} · ${isDropped ? "dropped" : "kept"}`}
+                    caption={`frame ${frameIndex + 1} of ${exposures.length} · ${verdictWord}`}
                     rejected={isDropped}
+                    accepted={!!isKept}
                   />
                   <ThumbnailGallery
                     exposures={toGalleryExposures(exposures)}
@@ -230,10 +248,12 @@ export function LoupePage(): JSX.Element {
                 <LoupeSidePanel
                   meta={toMetaEntries(activeExposure, exposures)}
                   dropped={!!isDropped}
+                  kept={!!isKept}
                   isRepresentative={activeExposure.selected}
                   representativeDropped={representativeDropped}
                   tags={toLoupeTags(sample.tags)}
                   onToggleDrop={handleDropToggle}
+                  onToggleKeep={handleKeepToggle}
                   onSetRepresentative={handleSetRepresentative}
                   onAddTag={handleAddTag}
                   onRemoveTag={handleRemoveTag}

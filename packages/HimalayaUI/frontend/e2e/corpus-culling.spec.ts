@@ -96,6 +96,36 @@ test("cull: rejecting a selected exposure via X dims its thumbnail and PATCHes s
   await expect(page.getByTestId("cull-bar")).toHaveAttribute("data-show", "false");
 });
 
+// SA-SCREENED: the Keep verb. Diligent screening of CLEAN samples needs an
+// explicit accept — select a frame, press K (the CullBar "Keep" button drives
+// the same path), the status PATCHes to "accepted" and the bar hides.
+test("keep: selecting a frame and pressing K PATCHes status accepted and hides the bar", async ({ page }) => {
+  let patchedBody: unknown = null;
+  await mockCorpus(page);
+  await page.route("**/api/exposures/1/status", async (route) => {
+    patchedBody = route.request().postDataJSON();
+    await route.fulfill({
+      status: 200, contentType: "application/json",
+      body: JSON.stringify({ id: 1, status: "accepted" }),
+    });
+  });
+
+  await page.goto("/samples");
+  const row = page.getByTestId("sample-table-row").first();
+  await expect(row).toBeVisible();
+
+  await row.getByTestId("thumbnail").nth(0).click();
+  const cullBar = page.getByTestId("cull-bar");
+  await expect(cullBar).toHaveAttribute("data-show", "true");
+  await expect(cullBar.getByRole("button", { name: /Keep/ })).toBeVisible();
+
+  await page.keyboard.press("k");
+
+  await expect.poll(() => patchedBody).toMatchObject({ status: "accepted" });
+  // Keep clears the selection → the cull bar hides.
+  await expect(cullBar).toHaveAttribute("data-show", "false");
+});
+
 test("batch-reject: multi-select then reject PATCHes each selected exposure", async ({ page }) => {
   // Click two thumb bodies to add them to the page-global selection, then hit
   // the CullBar "Drop" button. Each selected exposure fires a status PATCH.

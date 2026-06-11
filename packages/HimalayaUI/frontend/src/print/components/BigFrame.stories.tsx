@@ -10,10 +10,20 @@ const meta: Meta<typeof BigFrame> = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const Kept: Story = {
+/** No verdict yet — no pill (SA-SCREENED tri-state). */
+export const Unscreened: Story = {
   render: () => (
     <div className="bg-paper p-6 w-[520px]">
       <BigFrame src={thumb37} caption="frame 37 · 0.40 s" />
+    </div>
+  ),
+};
+
+/** Explicitly accepted — the constructive "Kept" pill, no dim. */
+export const Kept: Story = {
+  render: () => (
+    <div className="bg-paper p-6 w-[520px]">
+      <BigFrame src={thumb37} caption="frame 37 · 0.40 s" accepted />
     </div>
   ),
 };

@@ -95,6 +95,79 @@ describe("LoupePage", () => {
     expect(setStatusMutate).toHaveBeenCalledWith({ exposureId: 1, status: "rejected" });
   });
 
+  it("K marks an unscreened active frame accepted (SA-SCREENED)", () => {
+    state.exposures = [exp({ id: 1, selected: true, status: null })];
+    renderAt(42);
+    fireEvent.keyDown(window, { key: "k" });
+    expect(setStatusMutate).toHaveBeenCalledWith({ exposureId: 1, status: "accepted" });
+  });
+
+  it("K on an accepted frame restores it to unscreened (toggle)", () => {
+    renderAt(42); // fixture frame 1 is status "accepted"
+    fireEvent.keyDown(window, { key: "k" });
+    expect(setStatusMutate).toHaveBeenCalledWith({ exposureId: 1, status: null });
+  });
+
+  it("K on a rejected frame sets accepted directly: last verb wins, no trip through null", () => {
+    renderAt(42);
+    fireEvent.keyDown(window, { key: "ArrowRight" }); // frame 2 is rejected
+    fireEvent.keyDown(window, { key: "k" });
+    expect(setStatusMutate).toHaveBeenCalledWith({ exposureId: 2, status: "accepted" });
+  });
+
+  it("X on an accepted frame sets rejected directly: last verb wins", () => {
+    renderAt(42); // fixture frame 1 is status "accepted"
+    fireEvent.keyDown(window, { key: "x" });
+    expect(setStatusMutate).toHaveBeenCalledWith({ exposureId: 1, status: "rejected" });
+  });
+
+  it("K keep announces a toast; K on an accepted frame announces restore", () => {
+    const toast = vi.fn();
+    setToastImpl(toast);
+    try {
+      state.exposures = [exp({ id: 1, selected: true, status: null })];
+      renderAt(42);
+      fireEvent.keyDown(window, { key: "k" });
+      expect(toast).toHaveBeenCalledWith("Frame kept", "success");
+    } finally {
+      setToastImpl(null);
+    }
+  });
+
+  it("K restore (accepted → null) announces 'Frame restored'", () => {
+    const toast = vi.fn();
+    setToastImpl(toast);
+    try {
+      renderAt(42); // frame 1 accepted
+      fireEvent.keyDown(window, { key: "k" });
+      expect(toast).toHaveBeenCalledWith("Frame restored", "success");
+    } finally {
+      setToastImpl(null);
+    }
+  });
+
+  it("the Kept pill shows on an accepted frame; the Dropped pill on a rejected one", () => {
+    const { container } = renderAt(42); // frame 1 accepted, frame 2 rejected
+    expect(container.querySelector('[data-role="kept-tag"]')).toBeInTheDocument();
+    expect(container.querySelector('[data-role="dropped-tag"]')).not.toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    expect(container.querySelector('[data-role="kept-tag"]')).not.toBeInTheDocument();
+    expect(container.querySelector('[data-role="dropped-tag"]')).toBeInTheDocument();
+  });
+
+  it("the frame caption reads the tri-state verdict word honestly", () => {
+    state.exposures = [exp({ id: 1, selected: true, status: null })];
+    const { container } = renderAt(42);
+    expect(container.querySelector('[data-role="frame-caption"]')).toHaveTextContent(
+      "unscreened",
+    );
+  });
+
+  it("the loupe key legend documents K", () => {
+    renderAt(42);
+    expect(screen.getByText("keep / restore")).toBeInTheDocument();
+  });
+
   it("R sets the representative when the active frame is NOT it", () => {
     renderAt(42);
     // Flip off the representative (frame 1) onto frame 2 first.
@@ -270,6 +343,9 @@ describe("LoupePage", () => {
     expect(setStatusMutate).not.toHaveBeenCalled();
     fireEvent.keyDown(window, { key: "x", ctrlKey: true });
     fireEvent.keyDown(window, { key: "r", altKey: true });
+    // ⌘K belongs to the command palette / browser, never the keep verb.
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
     expect(setStatusMutate).not.toHaveBeenCalled();
     expect(selectMutate).not.toHaveBeenCalled();
   });
@@ -284,6 +360,7 @@ describe("LoupePage", () => {
     try {
       fireEvent.keyDown(inner, { key: "x" });
       fireEvent.keyDown(inner, { key: "r" });
+      fireEvent.keyDown(inner, { key: "k" });
       expect(setStatusMutate).not.toHaveBeenCalled();
       expect(selectMutate).not.toHaveBeenCalled();
     } finally {

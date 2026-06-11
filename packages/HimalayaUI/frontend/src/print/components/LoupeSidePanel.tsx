@@ -10,9 +10,11 @@ function cx(...parts: Array<string | false | null | undefined>): string {
 export interface LoupeSidePanelProps {
   /** "This exposure" metadata rows. */
   meta: MetaEntry[];
-  /** Verdict state + toggle. */
+  /** Verdict state + toggles (tri-state: dropped / kept / unscreened). */
   dropped: boolean;
+  kept?: boolean;
   onToggleDrop?: () => void;
+  onToggleKeep?: () => void;
   /** Representative state + setter. */
   isRepresentative: boolean;
   /** The sample's representative exposure (any frame) is dropped. */
@@ -31,6 +33,7 @@ export interface LoupeSidePanelProps {
 export const LOUPE_KEYS: Shortcut[] = [
   { keyLabel: "← →", description: "flip frames" },
   { keyLabel: "X", description: "drop / restore" },
+  { keyLabel: "K", description: "keep / restore" },
   { keyLabel: "R", description: "set representative" },
   { keyLabel: "Esc", description: "back to the sheet" },
 ];
@@ -38,7 +41,9 @@ export const LOUPE_KEYS: Shortcut[] = [
 export function LoupeSidePanel({
   meta,
   dropped,
+  kept,
   onToggleDrop,
+  onToggleKeep,
   isRepresentative,
   representativeDropped,
   onSetRepresentative,
@@ -64,7 +69,9 @@ export function LoupeSidePanel({
       {/* Block 2: Verdict */}
       <Verdict
         dropped={dropped}
+        {...(kept !== undefined ? { kept } : {})}
         {...(onToggleDrop ? { onToggle: onToggleDrop } : {})}
+        {...(onToggleKeep ? { onToggleKeep } : {})}
       />
 
       {/* Block 3: RepresentativeBox */}

@@ -24,20 +24,31 @@ describe("CullBar", () => {
     expect(screen.getByTestId("cull-bar")).toHaveAttribute("data-show", "false");
   });
 
-  it("wires reject, restore, and clear", async () => {
-    const onReject = vi.fn(), onRestore = vi.fn(), onClear = vi.fn();
-    render(<CullBar count={2} show onReject={onReject} onRestore={onRestore} onClear={onClear} />);
+  it("wires reject, keep, restore, and clear", async () => {
+    const onReject = vi.fn(), onKeep = vi.fn(), onRestore = vi.fn(), onClear = vi.fn();
+    render(<CullBar count={2} show onReject={onReject} onKeep={onKeep} onRestore={onRestore} onClear={onClear} />);
     await userEvent.click(screen.getByRole("button", { name: /drop/i }));
+    await userEvent.click(screen.getByRole("button", { name: /keep/i }));
     await userEvent.click(screen.getByRole("button", { name: /restore/i }));
     await userEvent.click(screen.getByRole("button", { name: /clear/i }));
     expect(onReject).toHaveBeenCalledOnce();
+    expect(onKeep).toHaveBeenCalledOnce();
     expect(onRestore).toHaveBeenCalledOnce();
     expect(onClear).toHaveBeenCalledOnce();
   });
 
-  it("uses the accent reject button and ghostInverse for restore/clear", () => {
+  it("Keep carries the K key hint (matching Drop's X hint)", () => {
+    render(<CullBar count={2} show />);
+    const keep = screen.getByRole("button", { name: /keep/i });
+    expect(keep.textContent).toContain("K");
+    const drop = screen.getByRole("button", { name: /drop/i });
+    expect(drop.textContent).toContain("X");
+  });
+
+  it("uses the accent reject button, a constructive (non-accent) Keep, and ghostInverse for restore/clear", () => {
     render(<CullBar count={1} show />);
     expect(screen.getByRole("button", { name: /drop/i }).getAttribute("data-variant")).toBe("accent");
+    expect(screen.getByRole("button", { name: /keep/i }).getAttribute("data-variant")).toBe("success");
     expect(screen.getByRole("button", { name: /restore/i }).getAttribute("data-variant")).toBe("ghostInverse");
     expect(screen.getByRole("button", { name: /clear/i }).getAttribute("data-variant")).toBe("ghostInverse");
   });
