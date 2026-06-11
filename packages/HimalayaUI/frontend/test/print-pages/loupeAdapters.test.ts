@@ -6,7 +6,6 @@ import {
   toGalleryExposures,
   toMetaEntries,
   toLoupeTags,
-  findSampleTagId,
 } from "../../src/print/pages/loupeAdapters";
 
 function exp(over: Partial<Exposure>): Exposure {
@@ -122,17 +121,25 @@ describe("toMetaEntries", () => {
   });
 });
 
-describe("toLoupeTags / findSampleTagId", () => {
-  const tags: SampleTag[] = [
-    { id: 100, key: "LL37", value: "", source: "user" },
-    { id: 101, key: "temp", value: "37C", source: "user" },
-  ];
-  it("maps SampleTag -> Tag, omitting empty value (exactOptionalPropertyTypes)", () => {
-    expect(toLoupeTags(tags)).toEqual([{ key: "LL37" }, { key: "temp", value: "37C" }]);
+describe("toLoupeTags (LO-TAGDUP)", () => {
+  it("carries the tag id and source so byte-identical duplicates are distinguishable", () => {
+    const tags: SampleTag[] = [
+      { id: 3, key: "dose", value: "10", source: "manual" },
+      { id: 7, key: "dose", value: "10", source: "scoping" },
+    ];
+    const out = toLoupeTags(tags);
+    expect(out).toEqual([
+      { id: 3, key: "dose", value: "10", source: "manual" },
+      { id: 7, key: "dose", value: "10", source: "scoping" },
+    ]);
+    // The two pills are now distinguishable by id even though key+value match.
+    expect(out[0]!.id).not.toBe(out[1]!.id);
   });
-  it("finds the tag id by key+value for removal", () => {
-    expect(findSampleTagId(tags, { key: "temp", value: "37C" })).toBe(101);
-    expect(findSampleTagId(tags, { key: "LL37" })).toBe(100);
-    expect(findSampleTagId(tags, { key: "missing" })).toBeUndefined();
+
+  it("omits an empty value (keeps the exactOptionalPropertyTypes contract)", () => {
+    const out = toLoupeTags([{ id: 1, key: "k", value: "", source: "manual" }]);
+    // value key is OMITTED (not set to undefined) per exactOptionalPropertyTypes.
+    expect(out[0]).toEqual({ id: 1, key: "k", source: "manual" });
+    expect("value" in out[0]!).toBe(false);
   });
 });

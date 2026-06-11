@@ -2,6 +2,15 @@ import type { Exposure, SampleTag } from "../../api";
 import type { GalleryExposure } from "../components/ThumbnailGallery";
 import type { MetaEntry, Tag } from "../ui";
 
+/** Loupe-local tag view-model: the ui `Tag` ({key, value?}) plus the backend
+ *  identity (`id`) and provenance (`source`). The `id` is what makes two
+ *  byte-identical pills (manual dose=10 + scoping dose=10) individually
+ *  addressable for removal/edit — `ui/tag.ts` is deliberately NOT widened. */
+export interface LoupeTag extends Tag {
+  id: number;
+  source: string;
+}
+
 /** Default exposure when the loupe opens: representative → first accepted → first. */
 export function defaultExposureId(exposures: Exposure[]): number | undefined {
   const representative = exposures.find((e) => e.selected);
@@ -80,13 +89,14 @@ export function toMetaEntries(active: Exposure, exposures: Exposure[]): MetaEntr
   return entries;
 }
 
-/** SampleTag[] → greenfield Tag[]; omit empty value (exactOptionalPropertyTypes). */
-export function toLoupeTags(tags: SampleTag[]): Tag[] {
-  return tags.map((t) => (t.value ? { key: t.key, value: t.value } : { key: t.key }));
-}
-
-/** Resolve a greenfield Tag back to its SampleTag id for removal (key+value match). */
-export function findSampleTagId(tags: SampleTag[], tag: Tag): number | undefined {
-  const want = tag.value ?? "";
-  return tags.find((t) => t.key === tag.key && (t.value ?? "") === want)?.id;
+/** SampleTag[] → LoupeTag[]; omit empty value (exactOptionalPropertyTypes).
+ *  Each tag carries its backend `id` and `source` so two byte-identical pills
+ *  (e.g. manual dose=10 + scoping dose=10) are individually addressable for
+ *  removal — see LO-TAGDUP. */
+export function toLoupeTags(tags: SampleTag[]): LoupeTag[] {
+  return tags.map((t): LoupeTag =>
+    t.value
+      ? { id: t.id, key: t.key, value: t.value, source: t.source }
+      : { id: t.id, key: t.key, source: t.source },
+  );
 }

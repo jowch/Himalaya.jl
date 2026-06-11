@@ -21,7 +21,8 @@ it("derives kept/total/dropped/screened/tags/phase from a sample + exposures", (
   expect(m.total).toBe(2);
   expect(m.dropped).toBe(1);
   expect(m.exposures).toHaveLength(2);
-  expect(m.tags).toEqual([{ key: "LL37" }]);
+  // toLoupeTags (shared with the loupe) carries id+source; empty value omitted.
+  expect(m.tags).toEqual([{ id: 1, key: "LL37", source: "manual" }]);
   expect(m.phase).toBeNull();
 });
 

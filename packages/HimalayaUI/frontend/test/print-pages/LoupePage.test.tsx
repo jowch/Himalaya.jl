@@ -466,12 +466,34 @@ describe("LoupePage", () => {
     expect(screen.getByTestId("sheet")).toBeInTheDocument();
   });
 
-  it("removing a sample tag resolves its id via key+value", () => {
+  it("removing a sample tag calls removeTag with the tag's exact id (LO-TAGDUP)", () => {
+    // beforeEach seeds sample 42 with one tag: id:100, key:"LL37", value:"" (key-only)
     renderAt(42);
     const panel = screen.getByTestId("loupe-side-panel");
-    const removeBtn = within(panel).getByRole("button", { name: "Remove" });
+    // The remove button for a key-only tag has aria-label "Remove LL37"
+    const removeBtn = within(panel).getByRole("button", { name: /remove ll37/i });
     fireEvent.click(removeBtn);
     expect(removeTagMutate).toHaveBeenCalledWith(100);
+  });
+
+  it("removing the second of two byte-identical dose pills deletes tag id 7, not id 3 (LO-TAGDUP)", async () => {
+    state.samples = [{
+      id: 42, experiment_id: 1, name: "JC042", display_name: "JC042 — LL37",
+      notes: null, q_units: "A-1",
+      tags: [
+        { id: 3, key: "dose", value: "10", source: "manual" },
+        { id: 7, key: "dose", value: "10", source: "scoping" },
+      ],
+    }];
+    renderAt(42);
+    const panel = screen.getByTestId("loupe-side-panel");
+    const removes = within(panel).getAllByRole("button", { name: /remove dose 10/i });
+    // There are two "Remove dose 10" buttons — one per duplicate pill
+    expect(removes).toHaveLength(2);
+    // Click the second one (id 7, the scoping twin)
+    fireEvent.click(removes[1]!);
+    expect(removeTagMutate).toHaveBeenCalledWith(7);
+    expect(removeTagMutate).not.toHaveBeenCalledWith(3);
   });
 
   it("shows not-found when the sample is missing", () => {

@@ -14,6 +14,10 @@ interface ChipProps {
   active?: boolean;
   onClick?: () => void;
   onRemove?: () => void;
+  /** Accessible label for the remove button (default `"Remove"`). Thread a
+   *  per-tag value such as `"Remove dose 10"` so duplicate pills are
+   *  individually named for assistive technology — see LO-TAGDUP. */
+  removeLabel?: string;
   /** Overrides the root element's `data-testid` (default `"chip"`). Lets the
    *  specialized chips that compose this base preserve their own contract
    *  (FilterChip → "filter-chip", FacetChip → "facet-chip", TagPill → "tag-pill"). */
@@ -57,6 +61,7 @@ export function Chip({
   active = false,
   onClick,
   onRemove,
+  removeLabel = "Remove",
   testId = "chip",
   className = "",
 }: ChipProps): JSX.Element {
@@ -85,7 +90,7 @@ export function Chip({
             pill's own non-interactive text is allowed and intended. */}
         <button
           type="button"
-          aria-label="Remove"
+          aria-label={removeLabel}
           onClick={onRemove}
           className="inline-flex h-6 w-6 shrink-0 items-center justify-center -mx-2 -my-1 text-ink-faint hover:text-ink focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-0 focus-visible:outline-accent rounded-sm"
         >

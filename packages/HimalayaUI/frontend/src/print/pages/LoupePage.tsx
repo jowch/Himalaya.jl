@@ -26,7 +26,6 @@ import {
   toGalleryExposures,
   toMetaEntries,
   toLoupeTags,
-  findSampleTagId,
 } from "./loupeAdapters";
 
 // Boneyard fixture — a real render with mock props so the headless capture CLI
@@ -178,11 +177,9 @@ export function LoupePage(): JSX.Element {
     addTag.mutate({ key: t.key, value: t.value ?? "" });
   }, [addTag]);
 
-  const handleRemoveTag = useCallback((t: Tag) => {
-    if (!sample) return;
-    const id = findSampleTagId(sample.tags, t);
-    if (id !== undefined) removeTag.mutate(id); // optimistic-add w/o id → no-op (ledger risk)
-  }, [removeTag, sample]);
+  const handleRemoveTag = useCallback((tagId: number) => {
+    removeTag.mutate(tagId);
+  }, [removeTag]);
 
   const flip = useCallback((delta: number) => {
     if (activeId === undefined || exposures.length === 0) return;

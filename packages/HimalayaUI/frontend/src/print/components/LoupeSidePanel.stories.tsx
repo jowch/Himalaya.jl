@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { LoupeSidePanel } from "./LoupeSidePanel";
-import type { Tag } from "../ui";
+import type { LoupeTag } from "../pages/loupeAdapters";
 
 const mockMeta = [
   { key: "frame", value: "65" },
@@ -10,10 +10,10 @@ const mockMeta = [
   { key: "energy", value: "12.4 keV" },
 ];
 
-const mockTags: Tag[] = [
-  { key: "LL37" },
-  { key: "temp", value: "37C" },
-  { key: "buffer", value: "PBS" },
+const mockTags: LoupeTag[] = [
+  { id: 1, key: "LL37", source: "manual" },
+  { id: 2, key: "temp", value: "37C", source: "manual" },
+  { id: 3, key: "buffer", value: "PBS", source: "manual" },
 ];
 
 const meta = {
@@ -89,7 +89,7 @@ function InteractivePanel(): JSX.Element {
   // X toggles rejected/null, K toggles accepted/null, last verb wins.
   const [status, setStatus] = useState<"accepted" | "rejected" | null>(null);
   const [isRep, setIsRep] = useState(false);
-  const [tags, setTags] = useState<Tag[]>(mockTags);
+  const [tags, setTags] = useState<LoupeTag[]>(mockTags);
   return (
     <div className="bg-paper p-5 w-[300px]">
       <LoupeSidePanel
@@ -101,12 +101,8 @@ function InteractivePanel(): JSX.Element {
         onToggleDrop={() => setStatus((s) => (s === "rejected" ? null : "rejected"))}
         onToggleKeep={() => setStatus((s) => (s === "accepted" ? null : "accepted"))}
         onSetRepresentative={() => setIsRep(true)}
-        onAddTag={(t) => setTags((prev) => [...prev, t])}
-        onRemoveTag={(t) =>
-          setTags((prev) =>
-            prev.filter((x) => !(x.key === t.key && x.value === t.value)),
-          )
-        }
+        onAddTag={(t) => setTags((prev) => [...prev, { id: Date.now(), key: t.key, source: "manual", ...(t.value !== undefined ? { value: t.value } : {}) }])}
+        onRemoveTag={(id) => setTags((prev) => prev.filter((x) => x.id !== id))}
       />
     </div>
   );

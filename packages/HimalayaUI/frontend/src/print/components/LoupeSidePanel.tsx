@@ -1,5 +1,6 @@
 import { Kicker, MetaList, TagList, KbLegend } from "../ui";
 import type { MetaEntry, Tag, Shortcut } from "../ui";
+import type { LoupeTag } from "../pages/loupeAdapters";
 import { Verdict } from "./Verdict";
 import { RepresentativeBox } from "./RepresentativeBox";
 
@@ -20,10 +21,12 @@ export interface LoupeSidePanelProps {
   /** The sample's representative exposure (any frame) is dropped. */
   representativeDropped?: boolean;
   onSetRepresentative?: () => void;
-  /** Sample tags + edit handlers. */
-  tags: Tag[];
+  /** Sample tags + edit handlers. Accepts `LoupeTag[]` (carries `id`) for the
+   *  id-exact remove path (LO-TAGDUP), or plain `Tag[]` for read-only contexts. */
+  tags: LoupeTag[] | Tag[];
   onAddTag?: (t: Tag) => void;
-  onRemoveTag?: (t: Tag) => void;
+  /** Id-exact remove: called with the tag's `id` (LO-TAGDUP fix). */
+  onRemoveTag?: (id: number) => void;
   /** Key legend — defaults to the canonical loupe keys. */
   shortcuts?: Shortcut[];
   /** PLACEMENT ONLY. */
@@ -91,7 +94,7 @@ export function LoupeSidePanel({
           editable
           persistentAdd
           {...(onAddTag ? { onAdd: onAddTag } : {})}
-          {...(onRemoveTag ? { onRemove: onRemoveTag } : {})}
+          {...(onRemoveTag ? { onRemoveById: onRemoveTag } : {})}
         />
       </div>
 

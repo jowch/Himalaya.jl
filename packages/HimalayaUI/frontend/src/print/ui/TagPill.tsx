@@ -5,6 +5,10 @@ import type { Tag } from "./tag";
 interface TagPillProps {
   tag: Tag;
   onRemove?: () => void;
+  /** Accessible label for the remove button (default `"Remove"`). Pass a
+   *  per-tag string such as `"Remove dose 10"` to make duplicate pills
+   *  individually named for assistive technology — see LO-TAGDUP. */
+  removeLabel?: string;
   /** Size axis, forwarded to the base Chip. Defaults to `"sm"` — tags are dense. */
   size?: ChipSize;
   className?: string;
@@ -21,6 +25,7 @@ interface TagPillProps {
 export function TagPill({
   tag,
   onRemove,
+  removeLabel,
   size = "sm",
   className = "",
 }: TagPillProps): JSX.Element {
@@ -44,6 +49,7 @@ export function TagPill({
       size={size}
       testId="tag-pill"
       {...(onRemove ? { onRemove } : {})}
+      {...(removeLabel !== undefined ? { removeLabel } : {})}
       className={className}
     >
       {content}
