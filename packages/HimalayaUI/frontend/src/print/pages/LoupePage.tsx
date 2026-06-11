@@ -15,6 +15,7 @@ import { EmptyState, Button } from "../ui";
 import { announce } from "../../lib/announce";
 import { suppressGlobalKeys } from "../../lib/keys";
 import { showToast } from "../../lib/toast";
+import { isValidationError } from "../../lib/queue/errors";
 import { BigFrame } from "../components/BigFrame";
 import { ThumbnailGallery } from "../components/ThumbnailGallery";
 import { LoupeSidePanel } from "../components/LoupeSidePanel";
@@ -58,6 +59,19 @@ const LOUPE_FIXTURE = (
     />
   </div>
 );
+
+/**
+ * Terminal save failure for the loupe's status verbs. The queue layer already
+ * toasts 4xx validation failures (buildValidationMessage) — re-toasting here
+ * would double up, so those are skipped. Infrastructure failures (5xx/network)
+ * retry behind the Saving banner, but once the retry policy exhausts the
+ * mutation settles as error, the banner disappears and the optimistic change
+ * rolls back — without this toast that rollback would be silent.
+ */
+function notifySaveFailed(err: unknown): void {
+  if (isValidationError(err)) return;
+  showToast("Couldn't save the change. It was rolled back.", "error");
+}
 
 /**
  * LoupePage (greenfield) — the sample loupe at /samples/loupe/:sampleId.
@@ -118,12 +132,17 @@ export function LoupePage(): JSX.Element {
   const handleDropToggle = useCallback(() => {
     if (!activeExposure) return;
     const dropping = activeExposure.status !== "rejected";
-    setStatus.mutate({
-      exposureId: activeExposure.id,
-      status: dropping ? "rejected" : null,
-    });
-    // Consequential single-frame status change → visible toast.
-    showToast(dropping ? "Frame dropped" : "Frame restored", "success");
+    setStatus.mutate(
+      { exposureId: activeExposure.id, status: dropping ? "rejected" : null },
+      {
+        // Consequential single-frame status change → visible toast, fired on
+        // CONFIRMATION (HTTP or own-op SSE), never optimistically: a premature
+        // "Frame dropped" would lie if the save later failed and rolled back.
+        onSuccess: () =>
+          showToast(dropping ? "Frame dropped" : "Frame restored", "success"),
+        onError: notifySaveFailed,
+      },
+    );
   }, [activeExposure, setStatus]);
 
   // The Keep verb (SA-SCREENED): K toggles accepted ↔ null. On a rejected
@@ -131,11 +150,14 @@ export function LoupePage(): JSX.Element {
   const handleKeepToggle = useCallback(() => {
     if (!activeExposure) return;
     const keeping = activeExposure.status !== "accepted";
-    setStatus.mutate({
-      exposureId: activeExposure.id,
-      status: keeping ? "accepted" : null,
-    });
-    showToast(keeping ? "Frame kept" : "Frame restored", "success");
+    setStatus.mutate(
+      { exposureId: activeExposure.id, status: keeping ? "accepted" : null },
+      {
+        onSuccess: () =>
+          showToast(keeping ? "Frame kept" : "Frame restored", "success"),
+        onError: notifySaveFailed,
+      },
+    );
   }, [activeExposure, setStatus]);
 
   const handleSetRepresentative = useCallback(() => {
@@ -146,8 +168,10 @@ export function LoupePage(): JSX.Element {
       announce("Already the representative frame");
       return;
     }
-    setRepresentative.mutate(activeExposure.id);
-    showToast("Set as the representative frame", "success");
+    setRepresentative.mutate(activeExposure.id, {
+      onSuccess: () => showToast("Set as the representative frame", "success"),
+      onError: notifySaveFailed,
+    });
   }, [activeExposure, setRepresentative]);
 
   const handleAddTag = useCallback((t: Tag) => {

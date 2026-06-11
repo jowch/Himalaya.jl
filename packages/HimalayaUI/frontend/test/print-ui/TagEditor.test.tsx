@@ -36,6 +36,37 @@ describe("<TagEditor>", () => {
     expect(onCommit).not.toHaveBeenCalled();
   });
 
+  it("rejects an empty-key Add honestly: aria-invalid on the key field + inline error text", () => {
+    const onCommit = vi.fn();
+    render(<TagEditor onCommit={onCommit} />);
+    // Quiet until the user actually tries to commit.
+    expect(screen.queryByTestId("tag-editor-error")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    expect(onCommit).not.toHaveBeenCalled();
+    const keyInput = screen.getByPlaceholderText("key");
+    expect(keyInput).toHaveAttribute("aria-invalid", "true");
+    const error = screen.getByTestId("tag-editor-error");
+    expect(error).toHaveTextContent("Enter a key first.");
+    // The error is programmatically tied to the field, not just adjacent.
+    expect(keyInput).toHaveAttribute("aria-describedby", error.getAttribute("id"));
+  });
+
+  it("Enter with an empty key raises the same inline error", () => {
+    render(<TagEditor onCommit={() => {}} />);
+    fireEvent.keyDown(screen.getByPlaceholderText("key"), { key: "Enter" });
+    expect(screen.getByTestId("tag-editor-error")).toBeInTheDocument();
+  });
+
+  it("typing a key clears the error", () => {
+    render(<TagEditor onCommit={() => {}} />);
+    const keyInput = screen.getByPlaceholderText("key");
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    expect(screen.getByTestId("tag-editor-error")).toBeInTheDocument();
+    fireEvent.change(keyInput, { target: { value: "l" } });
+    expect(screen.queryByTestId("tag-editor-error")).toBeNull();
+    expect(keyInput).not.toHaveAttribute("aria-invalid");
+  });
+
   it("calls onCancel on Escape", () => {
     const onCancel = vi.fn();
     render(<TagEditor onCommit={() => {}} onCancel={onCancel} />);

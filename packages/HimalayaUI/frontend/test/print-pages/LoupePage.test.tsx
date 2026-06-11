@@ -76,6 +76,14 @@ function renderAt(sampleId: number, search = "") {
   );
 }
 
+/** Per-call mutate callbacks ({ onSuccess, onError }) captured by the mocks.
+ *  Tests drive confirmation/failure explicitly — the toast contract is
+ *  "announce on CONFIRMATION", never optimistically at mutate() time. */
+type MutateCbs = { onSuccess?: (r: unknown) => void; onError?: (e: unknown) => void };
+function lastCbs(mock: ReturnType<typeof vi.fn>): MutateCbs {
+  return (mock.mock.calls.at(-1)?.[1] ?? {}) as MutateCbs;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   state.samples = [{
@@ -148,54 +156,58 @@ describe("LoupePage", () => {
   it("drop toggle mutates status to rejected for the active exposure", () => {
     renderAt(42);
     fireEvent.keyDown(window, { key: "x" });
-    expect(setStatusMutate).toHaveBeenCalledWith({ exposureId: 1, status: "rejected" });
+    expect(setStatusMutate).toHaveBeenCalledWith({ exposureId: 1, status: "rejected" }, expect.anything());
   });
 
   it("K marks an unscreened active frame accepted (SA-SCREENED)", () => {
     state.exposures = [exp({ id: 1, selected: true, status: null })];
     renderAt(42);
     fireEvent.keyDown(window, { key: "k" });
-    expect(setStatusMutate).toHaveBeenCalledWith({ exposureId: 1, status: "accepted" });
+    expect(setStatusMutate).toHaveBeenCalledWith({ exposureId: 1, status: "accepted" }, expect.anything());
   });
 
   it("K on an accepted frame restores it to unscreened (toggle)", () => {
     renderAt(42); // fixture frame 1 is status "accepted"
     fireEvent.keyDown(window, { key: "k" });
-    expect(setStatusMutate).toHaveBeenCalledWith({ exposureId: 1, status: null });
+    expect(setStatusMutate).toHaveBeenCalledWith({ exposureId: 1, status: null }, expect.anything());
   });
 
   it("K on a rejected frame sets accepted directly: last verb wins, no trip through null", () => {
     renderAt(42);
     fireEvent.keyDown(window, { key: "ArrowRight" }); // frame 2 is rejected
     fireEvent.keyDown(window, { key: "k" });
-    expect(setStatusMutate).toHaveBeenCalledWith({ exposureId: 2, status: "accepted" });
+    expect(setStatusMutate).toHaveBeenCalledWith({ exposureId: 2, status: "accepted" }, expect.anything());
   });
 
   it("X on an accepted frame sets rejected directly: last verb wins", () => {
     renderAt(42); // fixture frame 1 is status "accepted"
     fireEvent.keyDown(window, { key: "x" });
-    expect(setStatusMutate).toHaveBeenCalledWith({ exposureId: 1, status: "rejected" });
+    expect(setStatusMutate).toHaveBeenCalledWith({ exposureId: 1, status: "rejected" }, expect.anything());
   });
 
-  it("K keep announces a toast; K on an accepted frame announces restore", () => {
+  it("K keep announces a toast ON CONFIRMATION, not before", () => {
     const toast = vi.fn();
     setToastImpl(toast);
     try {
       state.exposures = [exp({ id: 1, selected: true, status: null })];
       renderAt(42);
       fireEvent.keyDown(window, { key: "k" });
+      // No premature success claim while the save is still in flight.
+      expect(toast).not.toHaveBeenCalled();
+      lastCbs(setStatusMutate).onSuccess?.({});
       expect(toast).toHaveBeenCalledWith("Frame kept", "success");
     } finally {
       setToastImpl(null);
     }
   });
 
-  it("K restore (accepted → null) announces 'Frame restored'", () => {
+  it("K restore (accepted → null) announces 'Frame restored' on confirmation", () => {
     const toast = vi.fn();
     setToastImpl(toast);
     try {
       renderAt(42); // frame 1 accepted
       fireEvent.keyDown(window, { key: "k" });
+      lastCbs(setStatusMutate).onSuccess?.({});
       expect(toast).toHaveBeenCalledWith("Frame restored", "success");
     } finally {
       setToastImpl(null);
@@ -229,7 +241,7 @@ describe("LoupePage", () => {
     // Flip off the representative (frame 1) onto frame 2 first.
     fireEvent.keyDown(window, { key: "ArrowRight" });
     fireEvent.keyDown(window, { key: "r" });
-    expect(selectMutate).toHaveBeenCalledWith(2);
+    expect(selectMutate).toHaveBeenCalledWith(2, expect.anything());
   });
 
   it("R on the current representative is a no-op: no mutation, SR announce, no success toast (LO-REPLIES)", () => {
@@ -256,29 +268,117 @@ describe("LoupePage", () => {
     expect(screen.getByTestId("big-frame")).toHaveAttribute("data-rejected", "true");
   });
 
-  it("X drop announces a status toast (consequential → visible)", () => {
+  it("X drop announces the success toast on CONFIRMATION, never before the save", () => {
     const toast = vi.fn();
     setToastImpl(toast);
     try {
       renderAt(42);
       fireEvent.keyDown(window, { key: "x" });
+      // The save is still pending — claiming "Frame dropped" here would lie.
+      expect(toast).not.toHaveBeenCalled();
+      lastCbs(setStatusMutate).onSuccess?.({});
       expect(toast).toHaveBeenCalledWith("Frame dropped", "success");
     } finally {
       setToastImpl(null);
     }
   });
 
-  it("R set-representative announces a toast (when it actually sets)", () => {
+  it("X drop terminal infrastructure failure surfaces an error toast (no silent rollback)", () => {
+    const toast = vi.fn();
+    setToastImpl(toast);
+    try {
+      renderAt(42);
+      fireEvent.keyDown(window, { key: "x" });
+      // No status on the error → network/5xx class, retries exhausted.
+      lastCbs(setStatusMutate).onError?.(new TypeError("fetch failed"));
+      expect(toast).toHaveBeenCalledTimes(1);
+      expect(toast).toHaveBeenCalledWith(
+        "Couldn't save the change. It was rolled back.",
+        "error",
+      );
+    } finally {
+      setToastImpl(null);
+    }
+  });
+
+  it("X drop 4xx failure does NOT double-toast: the queue layer owns the validation toast", () => {
+    const toast = vi.fn();
+    setToastImpl(toast);
+    try {
+      renderAt(42);
+      fireEvent.keyDown(window, { key: "x" });
+      lastCbs(setStatusMutate).onError?.(
+        Object.assign(new Error("422"), { status: 422 }),
+      );
+      expect(toast).not.toHaveBeenCalled();
+    } finally {
+      setToastImpl(null);
+    }
+  });
+
+  it("R set-representative announces a toast on confirmation (when it actually sets)", () => {
     const toast = vi.fn();
     setToastImpl(toast);
     try {
       renderAt(42);
       fireEvent.keyDown(window, { key: "ArrowRight" });
       fireEvent.keyDown(window, { key: "r" });
+      expect(toast).not.toHaveBeenCalled();
+      lastCbs(selectMutate).onSuccess?.({});
       expect(toast).toHaveBeenCalledWith("Set as the representative frame", "success");
     } finally {
       setToastImpl(null);
     }
+  });
+
+  it("R set-representative terminal failure surfaces an error toast", () => {
+    const toast = vi.fn();
+    setToastImpl(toast);
+    try {
+      renderAt(42);
+      fireEvent.keyDown(window, { key: "ArrowRight" });
+      fireEvent.keyDown(window, { key: "r" });
+      lastCbs(selectMutate).onError?.(new TypeError("fetch failed"));
+      expect(toast).toHaveBeenCalledWith(
+        "Couldn't save the change. It was rolled back.",
+        "error",
+      );
+    } finally {
+      setToastImpl(null);
+    }
+  });
+
+  it("the side panel omits the dead integration/collected placeholder rows (controls-don't-lie)", () => {
+    renderAt(42);
+    const panel = screen.getByTestId("loupe-side-panel");
+    expect(within(panel).getByText("frame")).toBeInTheDocument();
+    expect(within(panel).queryByText("integration")).toBeNull();
+    expect(within(panel).queryByText("collected")).toBeNull();
+  });
+
+  it("a dropped frame with a rejection_reason tag shows the reason; other frames do not", () => {
+    state.exposures = [
+      exp({ id: 1, selected: true }),
+      exp({
+        id: 2,
+        status: "rejected",
+        tags: [{ id: 9, key: "rejection_reason", value: "beam flare", source: "manual" }],
+      }),
+    ];
+    renderAt(42, "?exposure=2");
+    const panel = screen.getByTestId("loupe-side-panel");
+    expect(within(panel).getByText("reason")).toBeInTheDocument();
+    expect(within(panel).getByText("beam flare")).toBeInTheDocument();
+    // Flip to the kept frame — the reason row belongs to the dropped frame only.
+    fireEvent.keyDown(window, { key: "ArrowLeft" });
+    expect(within(panel).queryByText("reason")).toBeNull();
+    expect(within(panel).queryByText("beam flare")).toBeNull();
+  });
+
+  it("a dropped frame WITHOUT a rejection_reason tag shows no reason row", () => {
+    renderAt(42, "?exposure=2"); // fixture frame 2 is rejected, tagless
+    const panel = screen.getByTestId("loupe-side-panel");
+    expect(within(panel).queryByText("reason")).toBeNull();
   });
 
   it("rep-dropped sample shows the warning regardless of the active frame (LO-REPDROP)", () => {

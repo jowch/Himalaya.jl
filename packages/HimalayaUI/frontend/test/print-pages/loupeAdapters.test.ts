@@ -64,12 +64,60 @@ describe("toGalleryExposures", () => {
 });
 
 describe("toMetaEntries", () => {
-  it("builds frame position + the deferred-field placeholders, no signal row", () => {
+  it("builds the frame position and OMITS the integration/collected rows (no API fields, controls-don't-lie)", () => {
     const exposures = [exp({ id: 1 }), exp({ id: 2 }), exp({ id: 3 })];
     expect(toMetaEntries(exposures[1]!, exposures)).toEqual([
       { key: "frame", value: "2 of 3" },
-      { key: "integration", value: "—" },
-      { key: "collected", value: "—" },
+    ]);
+  });
+
+  it("shows the rejection reason row on a dropped frame that carries a rejection_reason tag", () => {
+    const dropped = exp({
+      id: 2,
+      status: "rejected",
+      tags: [{ id: 9, key: "rejection_reason", value: "beam flare", source: "manual" }],
+    });
+    expect(toMetaEntries(dropped, [exp({ id: 1 }), dropped])).toEqual([
+      { key: "frame", value: "2 of 2" },
+      { key: "reason", value: "beam flare" },
+    ]);
+  });
+
+  it("joins multiple rejection_reason tags", () => {
+    const dropped = exp({
+      id: 1,
+      status: "rejected",
+      tags: [
+        { id: 9, key: "rejection_reason", value: "flare", source: "manual" },
+        { id: 10, key: "rejection_reason", value: "no signal", source: "manual" },
+      ],
+    });
+    expect(toMetaEntries(dropped, [dropped])).toEqual([
+      { key: "frame", value: "1 of 1" },
+      { key: "reason", value: "flare; no signal" },
+    ]);
+  });
+
+  it("no reason row on a dropped frame without the tag, with an empty-value tag, or on a kept frame carrying one", () => {
+    const droppedBare = exp({ id: 1, status: "rejected" });
+    expect(toMetaEntries(droppedBare, [droppedBare])).toEqual([
+      { key: "frame", value: "1 of 1" },
+    ]);
+    const droppedEmpty = exp({
+      id: 1,
+      status: "rejected",
+      tags: [{ id: 9, key: "rejection_reason", value: "  ", source: "manual" }],
+    });
+    expect(toMetaEntries(droppedEmpty, [droppedEmpty])).toEqual([
+      { key: "frame", value: "1 of 1" },
+    ]);
+    const kept = exp({
+      id: 1,
+      status: "accepted",
+      tags: [{ id: 9, key: "rejection_reason", value: "stale", source: "manual" }],
+    });
+    expect(toMetaEntries(kept, [kept])).toEqual([
+      { key: "frame", value: "1 of 1" },
     ]);
   });
 });

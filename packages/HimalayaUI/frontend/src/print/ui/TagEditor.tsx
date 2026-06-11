@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { Input } from "./Input";
 import { Button } from "./Button";
@@ -26,6 +26,12 @@ export interface TagEditorProps {
  *  `value` key at all). `knownKeys`, when present, render as `Chip variant="add"`
  *  suggestions that fill the key field.
  *
+ *  Committing with an EMPTY key is rejected honestly, not silently: the key
+ *  field flips `aria-invalid` (via Input's `invalid` border) and a quiet
+ *  inline error appears, tied to the field by `aria-describedby`. The error
+ *  clears as soon as a key is typed. Validation lives here because the
+ *  primitive owns commit.
+ *
  *  C — focus/hover/disabled flow through the composed Input/Button primitives.
  *  F — appearance lives in those primitives; this component contributes
  *  placement-only layout (`inline-flex`, gaps). */
@@ -37,14 +43,26 @@ export function TagEditor({
 }: TagEditorProps): JSX.Element {
   const [key, setKey] = useState("");
   const [value, setValue] = useState("");
+  const [keyMissing, setKeyMissing] = useState(false);
+  const errorId = useId();
 
   const commit = (): void => {
     const k = key.trim();
-    if (!k) return;
+    if (!k) {
+      // Honest rejection: an empty-key Add is invalid input, never a silent no-op.
+      setKeyMissing(true);
+      return;
+    }
     const v = value.trim();
     onCommit({ key: k, ...(v ? { value: v } : {}) });
     setKey("");
     setValue("");
+    setKeyMissing(false);
+  };
+
+  const onKeyChange = (v: string): void => {
+    setKey(v);
+    if (keyMissing && v.trim() !== "") setKeyMissing(false);
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>): void => {
@@ -64,10 +82,12 @@ export function TagEditor({
     >
       <Input
         value={key}
-        onValueChange={setKey}
+        onValueChange={onKeyChange}
         placeholder="key"
         inputSize="sm"
         onKeyDown={onKeyDown}
+        invalid={keyMissing}
+        {...(keyMissing ? { "aria-describedby": errorId } : {})}
       />
       <Input
         value={value}
@@ -79,10 +99,20 @@ export function TagEditor({
       <Button variant="solid" onClick={commit}>
         Add
       </Button>
+      {keyMissing ? (
+        <span
+          id={errorId}
+          role="alert"
+          data-testid="tag-editor-error"
+          className="text-caption text-error"
+        >
+          Enter a key first.
+        </span>
+      ) : null}
       {knownKeys && knownKeys.length > 0 ? (
         <span className="inline-flex items-center gap-1">
           {knownKeys.map((kk) => (
-            <Chip key={kk} variant="add" onClick={() => setKey(kk)}>
+            <Chip key={kk} variant="add" onClick={() => onKeyChange(kk)}>
               {kk}
             </Chip>
           ))}

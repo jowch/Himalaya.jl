@@ -646,7 +646,10 @@ export function useSelectExposure(sampleId: number) {
   const inner = useQueueMutation(selectExposureMutator, { sampleId, username, clientId: CLIENT_ID });
   return {
     ...inner,
-    mutate: (exposureId: number) => inner.mutate({ exposureId }),
+    // Threads the optional per-call callbacks through so consumers can toast
+    // on confirmation / terminal failure (see MutateCallbacks).
+    mutate: (exposureId: number, callbacks?: Parameters<typeof inner.mutate>[1]) =>
+      inner.mutate({ exposureId }, callbacks),
   };
 }
 
