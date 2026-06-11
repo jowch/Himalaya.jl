@@ -5,7 +5,9 @@ export interface FolioHeaderProps {
   kicker: string;
   title: string;
   subtitle?: ReactNode;
-  count: number;
+  /** Pass `null` while the count is unavailable (loading or error) to render
+   *  the em-dash missing-value placeholder instead of a premature numeral. */
+  count: number | null;
   countLabel: string;
   /** PLACEMENT-ONLY. Appended last to the root. */
   className?: string;
@@ -33,7 +35,15 @@ export function FolioHeader({
         {subtitle && <p className="text-body text-ink-soft mt-2 max-w-[60ch]">{subtitle}</p>}
       </div>
       <div className="shrink-0 text-right">
-        <div data-testid="folio-count" className="text-headline-lg text-ink leading-none">{count}</div>
+        <div
+          data-testid="folio-count"
+          className="text-headline-lg text-ink leading-none"
+          {...(count === null
+            ? { role: "img", "aria-label": "series count unavailable" }
+            : {})}
+        >
+          {count === null ? "—" : count}
+        </div>
         <div className="text-caption text-ink-soft uppercase mt-0.5">{countLabel}</div>
       </div>
     </div>

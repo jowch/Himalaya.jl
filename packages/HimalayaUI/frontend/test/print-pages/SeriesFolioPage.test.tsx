@@ -21,6 +21,8 @@ const state = {
   loading: false,
   error: false,
   fetching: false,
+  detailError: false,
+  tracesError: false,
 };
 
 // Per-card hook spies (FOL-N+1): record the id each mount passes so tests can
@@ -42,15 +44,17 @@ vi.mock("../../src/queries", () => ({
   useSeries: (id: number | undefined) => {
     seriesSpy(id);
     return {
-      data: id !== undefined ? state.seriesById.get(id) : undefined,
+      data: id !== undefined && !state.detailError ? state.seriesById.get(id) : undefined,
       isLoading: state.loading,
+      isError: state.detailError,
     };
   },
   useSeriesTraces: (id: number | undefined) => {
     tracesSpy(id);
     return {
-      data: {},
+      data: state.tracesError ? undefined : {},
       isLoading: false,
+      isError: state.tracesError,
     };
   },
 }));
@@ -153,6 +157,8 @@ function seed(): void {
   state.loading = false;
   state.error = false;
   state.fetching = false;
+  state.detailError = false;
+  state.tracesError = false;
 }
 
 function renderPage() {
@@ -422,5 +428,63 @@ describe("SeriesFolioPage loading skeleton (FOL-BONES)", () => {
     expect(screen.getByTestId("folio-bones-fallback")).toBeInTheDocument();
     expect(screen.queryByText("Loading series…")).toBeNull();
     expect(screen.queryAllByTestId("series-card")).toHaveLength(0);
+  });
+});
+
+describe("SeriesFolioPage FOL-HONEST-DERIVED: figureState wiring", () => {
+  it("detail-error on a near card → card shows card-figure-error / honest copy, NOT 'No clear phase'", () => {
+    // JSDOM has no IntersectionObserver → all cards are near immediately (fail-open).
+    state.detailError = true;
+    renderPage();
+    // All cards should now show the error figure state
+    const cards = screen.getAllByTestId("series-card");
+    expect(cards.length).toBeGreaterThan(0);
+    // card-figure-error appears on every card since detail is errored for all
+    expect(screen.getAllByTestId("card-figure-error").length).toBeGreaterThan(0);
+    // Each card shows honest text — use getAllByText since 3 cards all show it
+    expect(screen.getAllByText("Couldn't load this figure").length).toBeGreaterThan(0);
+    // The false "No clear phase" caption must NOT appear anywhere
+    expect(screen.queryByText("No clear phase")).not.toBeInTheDocument();
+  });
+
+  it("detail-error card still renders chrome (title, fig label, meta) from list summary", () => {
+    state.detailError = true;
+    renderPage();
+    // Chrome is derived from the healthy list summary and must persist
+    expect(screen.getByText("LL37 titration lipid 1-2")).toBeInTheDocument();
+    expect(screen.getByText("Fig. 1")).toBeInTheDocument();
+  });
+
+  it("traces-error on a near card → card shows card-figure-error / honest copy, NOT 'No clear phase'", () => {
+    state.tracesError = true;
+    renderPage();
+    expect(screen.getAllByTestId("card-figure-error").length).toBeGreaterThan(0);
+    // Each card shows honest text — multiple cards, use getAllByText
+    expect(screen.getAllByText("Couldn't load this figure").length).toBeGreaterThan(0);
+    expect(screen.queryByText("No clear phase")).not.toBeInTheDocument();
+  });
+
+  it("header shows '—' (not '0') while the list is loading", () => {
+    state.loading = true;
+    renderPage();
+    // The Skeleton renders fallback when loading, but the header is OUTSIDE the
+    // Skeleton component — it always renders. Count must show '—', not '0'.
+    const countEl = screen.getByTestId("folio-count");
+    expect(countEl).toHaveTextContent("—");
+    expect(countEl).not.toHaveTextContent("0");
+  });
+
+  it("header shows '—' (not '0') in the list-error branch", () => {
+    state.error = true;
+    renderPage();
+    // The error branch renders FolioHeader — it must use null, not 0.
+    const countEl = screen.getByTestId("folio-count");
+    expect(countEl).toHaveTextContent("—");
+    expect(countEl).not.toHaveTextContent("0");
+  });
+
+  it("normal load with 3 series: count still shows '3' (regression guard)", () => {
+    renderPage();
+    expect(screen.getByTestId("folio-count")).toHaveTextContent("3");
   });
 });

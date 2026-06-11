@@ -208,6 +208,81 @@ describe("<SeriesCard> onClick", () => {
   });
 });
 
+describe("<SeriesCard> figureState prop (FOL-HONEST-DERIVED)", () => {
+  it("default (no figureState) → card-figure present, PhaseStrip present", () => {
+    render(<SeriesCard {...BASE_PROPS} />);
+    expect(screen.getByTestId("card-figure")).toBeInTheDocument();
+    // PhaseStrip renders its ps-cap testid
+    expect(screen.getByTestId("ps-cap")).toBeInTheDocument();
+  });
+
+  it("figureState='ready' → card-figure present, PhaseStrip present", () => {
+    render(<SeriesCard {...BASE_PROPS} figureState="ready" />);
+    expect(screen.getByTestId("card-figure")).toBeInTheDocument();
+    expect(screen.getByTestId("ps-cap")).toBeInTheDocument();
+  });
+
+  it("figureState='ready' → data-figure-state='ready' on root card", () => {
+    render(<SeriesCard {...BASE_PROPS} figureState="ready" />);
+    expect(screen.getByTestId("series-card")).toHaveAttribute("data-figure-state", "ready");
+  });
+
+  it("figureState='pending' → card-figure-pending present, no card-figure, no PhaseStrip", () => {
+    render(<SeriesCard {...BASE_PROPS} figureState="pending" />);
+    expect(screen.getByTestId("card-figure-pending")).toBeInTheDocument();
+    expect(screen.queryByTestId("card-figure")).not.toBeInTheDocument();
+    // PhaseStrip must NOT render — ps-cap is its telltale
+    expect(screen.queryByTestId("ps-cap")).not.toBeInTheDocument();
+  });
+
+  it("figureState='pending' → no 'No clear phase' text", () => {
+    render(<SeriesCard {...BASE_PROPS} figureState="pending" segments={[]} />);
+    expect(screen.queryByText("No clear phase")).not.toBeInTheDocument();
+  });
+
+  it("figureState='pending' → chrome (title, figLabel, meta) still present", () => {
+    render(<SeriesCard {...BASE_PROPS} figureState="pending" />);
+    expect(screen.getByText("LL37 titration of lipid 1-2")).toBeInTheDocument();
+    expect(screen.getByText("Fig. 1")).toBeInTheDocument();
+    expect(screen.getByText("3 samples")).toBeInTheDocument();
+  });
+
+  it("figureState='pending' → data-figure-state='pending' on root card", () => {
+    render(<SeriesCard {...BASE_PROPS} figureState="pending" />);
+    expect(screen.getByTestId("series-card")).toHaveAttribute("data-figure-state", "pending");
+  });
+
+  it("figureState='error' → card-figure-error present with honest text, no card-figure, no PhaseStrip", () => {
+    render(<SeriesCard {...BASE_PROPS} figureState="error" />);
+    expect(screen.getByTestId("card-figure-error")).toBeInTheDocument();
+    expect(screen.getByText("Couldn't load this figure")).toBeInTheDocument();
+    expect(screen.queryByTestId("card-figure")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("ps-cap")).not.toBeInTheDocument();
+  });
+
+  it("figureState='error' → no 'No clear phase' text", () => {
+    render(<SeriesCard {...BASE_PROPS} figureState="error" segments={[]} />);
+    expect(screen.queryByText("No clear phase")).not.toBeInTheDocument();
+  });
+
+  it("figureState='error' → chrome (title, figLabel, meta) still present", () => {
+    render(<SeriesCard {...BASE_PROPS} figureState="error" />);
+    expect(screen.getByText("LL37 titration of lipid 1-2")).toBeInTheDocument();
+    expect(screen.getByText("Fig. 1")).toBeInTheDocument();
+    expect(screen.getByText("3 samples")).toBeInTheDocument();
+  });
+
+  it("figureState='error' → data-figure-state='error' on root card", () => {
+    render(<SeriesCard {...BASE_PROPS} figureState="error" />);
+    expect(screen.getByTestId("series-card")).toHaveAttribute("data-figure-state", "error");
+  });
+
+  it("default figureState (omitted) → data-figure-state='ready' on root card", () => {
+    render(<SeriesCard {...BASE_PROPS} />);
+    expect(screen.getByTestId("series-card")).toHaveAttribute("data-figure-state", "ready");
+  });
+});
+
 describe("<SeriesCard> footer", () => {
   it("renders editedLabel in the footer", () => {
     render(<SeriesCard {...BASE_PROPS} />);

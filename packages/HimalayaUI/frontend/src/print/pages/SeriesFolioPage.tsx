@@ -116,11 +116,23 @@ function FolioCard({
   const rows = toWaterfallRows(members, tracesQ.data ?? {});
   const segments = membersToSegments(members);
   const chrome = toCardChrome(summary, figNumber, now);
+
+  // FOL-HONEST-DERIVED: compute figure readiness so the card never renders
+  // "No clear phase" (an affirmative false scientific claim) while detail/traces
+  // are loading or have errored.
+  const figureState: "ready" | "pending" | "error" =
+    detail.isError || tracesQ.isError
+      ? "error"
+      : detail.data !== undefined && tracesQ.data !== undefined
+        ? "ready"
+        : "pending";
+
   return (
     <div ref={ref}>
       <SeriesCard
         rows={rows}
         segments={segments}
+        figureState={figureState}
         {...chrome}
         onClick={onOpen}
       />
@@ -185,7 +197,7 @@ export function SeriesFolioPage(): JSX.Element {
         <FolioHeader
           kicker="Folio"
           title="Saved series"
-          count={0}
+          count={null}
           countLabel="series in the folio"
           className="mb-5"
         />
@@ -213,7 +225,7 @@ export function SeriesFolioPage(): JSX.Element {
         kicker="Folio"
         title="Saved series"
         subtitle="Every comparison you've built, across all beamtimes. Pick one up where you left off, or select samples on the contact sheet to start a new one."
-        count={summaries.length}
+        count={listQ.isLoading ? null : summaries.length}
         countLabel="series in the folio"
         className="mb-5"
       />

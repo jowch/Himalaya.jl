@@ -30,6 +30,34 @@ describe("<FolioHeader>", () => {
   });
 });
 
+describe("<FolioHeader> nullable count (FOL-HONEST-DERIVED)", () => {
+  it("count={null} renders the em-dash placeholder, not '0'", () => {
+    render(<FolioHeader kicker="Folio" title="Saved series" count={null} countLabel="series in the folio" />);
+    const countEl = screen.getByTestId("folio-count");
+    expect(countEl).toHaveTextContent("—");
+    expect(countEl).not.toHaveTextContent("0");
+  });
+
+  it("count={null} exposes the placeholder via the house role=img + label pattern (reliably announced, unlike a bare aria-label on a roleless div)", () => {
+    render(<FolioHeader kicker="Folio" title="Saved series" count={null} countLabel="series in the folio" />);
+    const countEl = screen.getByTestId("folio-count");
+    expect(countEl).toHaveAttribute("role", "img");
+    expect(countEl).toHaveAttribute("aria-label", "series count unavailable");
+  });
+
+  it("count={0} still renders '0' (a genuine empty folio stays honest)", () => {
+    render(<FolioHeader kicker="Folio" title="Saved series" count={0} countLabel="series in the folio" />);
+    const countEl = screen.getByTestId("folio-count");
+    expect(countEl).toHaveTextContent("0");
+    expect(countEl).not.toHaveTextContent("—");
+  });
+
+  it("count={0} does NOT render the aria-label (0 is a real value)", () => {
+    render(<FolioHeader kicker="Folio" title="Saved series" count={0} countLabel="series in the folio" />);
+    expect(screen.getByTestId("folio-count")).not.toHaveAttribute("aria-label");
+  });
+});
+
 describe("<FolioHeader> subtitle", () => {
   it("renders the subtitle when passed", () => {
     render(

@@ -30,6 +30,11 @@ export interface SeriesCardProps {
   notice?: { tone: "new"; count: number } | { tone: "draft" };
   /** Dashed border + dimmed figure (mockup .card.is-draft). */
   draft?: boolean;
+  /** Controls what the figure region renders.
+   *  - `"ready"` (default): CardFigure + PhaseStrip (normal path).
+   *  - `"pending"`: skeleton bone; strip suppressed (no false "No clear phase").
+   *  - `"error"`: honest note; strip suppressed. */
+  figureState?: "ready" | "pending" | "error";
   onClick?: () => void;
   /** PLACEMENT-ONLY, appended last. */
   className?: string;
@@ -56,6 +61,7 @@ export function SeriesCard({
   author,
   notice,
   draft = false,
+  figureState = "ready",
   onClick,
   className,
 }: SeriesCardProps): JSX.Element {
@@ -72,6 +78,7 @@ export function SeriesCard({
       interactive={onClick !== undefined}
       data-testid="series-card"
       data-draft={draft ? "true" : "false"}
+      data-figure-state={figureState}
       {...(onClick ? { onClick } : {})}
       className={cx("overflow-hidden", className)}
     >
@@ -82,7 +89,22 @@ export function SeriesCard({
           draft && "opacity-60",
         )}
       >
-        <CardFigure rows={rows} />
+        {figureState === "ready" && <CardFigure rows={rows} />}
+        {figureState === "pending" && (
+          <div
+            data-testid="card-figure-pending"
+            className="h-28 rounded-md bg-paper-sunk"
+            aria-hidden="true"
+          />
+        )}
+        {figureState === "error" && (
+          <div
+            data-testid="card-figure-error"
+            className="h-28 flex items-center justify-center text-caption text-ink-soft"
+          >
+            Couldn&apos;t load this figure
+          </div>
+        )}
       </div>
 
       {/* Card body */}
@@ -134,8 +156,9 @@ export function SeriesCard({
           )}
         </div>
 
-        {/* Phase strip */}
-        <PhaseStrip segments={segments} className="mt-3" />
+        {/* Phase strip — suppressed when figure is not ready to avoid the false
+            "No clear phase" affirmative claim (FOL-HONEST-DERIVED). */}
+        {figureState === "ready" && <PhaseStrip segments={segments} className="mt-3" />}
 
         {/* Footer */}
         <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-hair text-caption text-ink-soft">
