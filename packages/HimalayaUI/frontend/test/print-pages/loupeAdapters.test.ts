@@ -48,13 +48,18 @@ describe("buildExposureImageUrl", () => {
 });
 
 describe("toGalleryExposures", () => {
-  it("maps id/src(thumb)/frameNo/rejected/representative", () => {
+  it("maps id/src(thumb)/frameNo/rejected/kept/representative", () => {
     const out = toGalleryExposures([
       exp({ id: 10, selected: true, status: "accepted" }),
       exp({ id: 11, status: "rejected" }),
     ]);
-    expect(out[0]).toEqual({ id: 10, src: "/api/exposures/10/image?thumb=1&v=v9", frameNo: 1, representative: true, rejected: false });
-    expect(out[1]).toEqual({ id: 11, src: "/api/exposures/11/image?thumb=1&v=v9", frameNo: 2, representative: false, rejected: true });
+    expect(out[0]).toEqual({ id: 10, src: "/api/exposures/10/image?thumb=1&v=v9", frameNo: 1, representative: true, rejected: false, kept: true });
+    expect(out[1]).toEqual({ id: 11, src: "/api/exposures/11/image?thumb=1&v=v9", frameNo: 2, representative: false, rejected: true, kept: false });
+  });
+
+  it("keeps the SA-SCREENED tri-state: an unscreened (null) frame is neither kept nor rejected", () => {
+    const out = toGalleryExposures([exp({ id: 12, status: null })]);
+    expect(out[0]).toMatchObject({ kept: false, rejected: false });
   });
 });
 

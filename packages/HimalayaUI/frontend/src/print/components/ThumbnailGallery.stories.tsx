@@ -6,13 +6,24 @@ import thumb66 from "../fixtures/thumbs/66.png?url";
 import thumb67 from "../fixtures/thumbs/67.png?url";
 import thumb93 from "../fixtures/thumbs/93.png?url";
 
-const EXPOSURES: GalleryExposure[] = [
-  { id: 37, src: thumb37, frameNo: "37", representative: true },
-  { id: 65, src: thumb65, frameNo: "65" },
-  { id: 66, src: thumb66, frameNo: "66", rejected: true },
-  { id: 67, src: thumb67, frameNo: "67" },
-  { id: 93, src: thumb93, frameNo: "93" },
-];
+// Status-shaped fixtures, derived the same way the pages derive (SA-SCREENED
+// tri-state: kept = accepted, rejected = rejected, null = unscreened/neither).
+const FIXTURES = [
+  { id: 37, src: thumb37, frameNo: "37", representative: true, status: "accepted" },
+  { id: 65, src: thumb65, frameNo: "65", representative: false, status: "accepted" },
+  { id: 66, src: thumb66, frameNo: "66", representative: false, status: "rejected" },
+  { id: 67, src: thumb67, frameNo: "67", representative: false, status: null },
+  { id: 93, src: thumb93, frameNo: "93", representative: false, status: null },
+] as const;
+
+const EXPOSURES: GalleryExposure[] = FIXTURES.map((f) => ({
+  id: f.id,
+  src: f.src,
+  frameNo: f.frameNo,
+  representative: f.representative,
+  rejected: f.status === "rejected",
+  kept: f.status === "accepted",
+}));
 
 const meta = {
   title: "components/ThumbnailGallery",
@@ -25,7 +36,8 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** Default sheet strip — horizontal scroll, one representative, one rejected. */
+/** Default sheet strip — horizontal scroll: two kept (one of them the
+ *  representative), one rejected, two unscreened (no marker at all). */
 export const Sheet: Story = {};
 
 /** Loupe strip — larger thumbnails, centered row. */
@@ -45,7 +57,7 @@ const MANY_EXPOSURES: GalleryExposure[] = Array.from(
     id: 100 + i,
     src: SRC_CYCLE[i % SRC_CYCLE.length]!,
     frameNo: String(100 + i),
-    ...(i === 0 ? { representative: true } : {}),
+    ...(i === 0 ? { representative: true, kept: true } : {}),
     ...(i === 3 ? { rejected: true } : {}),
   }),
 );

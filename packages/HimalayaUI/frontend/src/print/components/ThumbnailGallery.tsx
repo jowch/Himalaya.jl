@@ -6,6 +6,9 @@ export interface GalleryExposure {
   frameNo?: string | number;
   representative?: boolean;
   rejected?: boolean;
+  /** Screened-in (status "accepted"); unscreened (null status) frames omit
+   *  BOTH kept and rejected — the SA-SCREENED tri-state. */
+  kept?: boolean;
 }
 
 export interface ThumbnailGalleryProps {
@@ -58,6 +61,7 @@ export function ThumbnailGallery({
           {...(exposure.frameNo != null ? { frameNo: exposure.frameNo } : {})}
           {...(exposure.representative != null ? { representative: exposure.representative } : {})}
           {...(exposure.rejected != null ? { rejected: exposure.rejected } : {})}
+          {...(exposure.kept != null ? { kept: exposure.kept } : {})}
           selected={selectedId === exposure.id || (selectedIds?.has(exposure.id) ?? false)}
           size={size}
           {...(onSelect ? { onClick: () => onSelect(exposure.id) } : {})}

@@ -74,6 +74,51 @@ describe("<Thumbnail> representative marker", () => {
   });
 });
 
+describe("<Thumbnail> kept (screened-in) channel — LO-KEPTSTRIP", () => {
+  it("includes 'kept' in data-state and renders [data-role='thumb-kept'] when kept=true", () => {
+    const { container } = render(<Thumbnail src={null} frameNo={65} kept />);
+    const state = screen.getByTestId("thumbnail").getAttribute("data-state") ?? "";
+    expect(state.split(" ")).toContain("kept");
+    expect(container.querySelector("[data-role='thumb-kept']")).toBeInTheDocument();
+  });
+
+  it("names a kept frame 'Frame N, kept'", () => {
+    render(<Thumbnail src={null} frameNo={65} kept />);
+    expect(screen.getByRole("button", { name: "Frame 65, kept" })).toBeInTheDocument();
+  });
+
+  it("kept + representative shows BOTH markers and names 'Frame N, representative, kept'", () => {
+    const { container } = render(<Thumbnail src={null} frameNo={65} representative kept />);
+    expect(container.querySelector("[data-role='thumb-rep']")).toBeInTheDocument();
+    expect(container.querySelector("[data-role='thumb-kept']")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Frame 65, representative, kept" }),
+    ).toBeInTheDocument();
+  });
+
+  it("rejected wins over kept: reads dropped, NOT kept, and shows no kept marker", () => {
+    const { container } = render(<Thumbnail src={null} frameNo={65} rejected kept />);
+    expect(
+      screen.getByRole("button", { name: "Frame 65, dropped" }),
+    ).toBeInTheDocument();
+    expect(container.querySelector("[data-role='thumb-kept']")).not.toBeInTheDocument();
+    const state = screen.getByTestId("thumbnail").getAttribute("data-state") ?? "";
+    expect(state.split(" ")).not.toContain("kept");
+  });
+
+  it("an unscreened frame (no kept flag) stays data-state 'normal' with no kept marker", () => {
+    const { container } = render(<Thumbnail src={null} frameNo={65} />);
+    expect(screen.getByTestId("thumbnail")).toHaveAttribute("data-state", "normal");
+    expect(container.querySelector("[data-role='thumb-kept']")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Frame 65" })).toBeInTheDocument();
+  });
+
+  it("does NOT render [data-role='thumb-kept'] when kept=false", () => {
+    const { container } = render(<Thumbnail src={null} kept={false} />);
+    expect(container.querySelector("[data-role='thumb-kept']")).not.toBeInTheDocument();
+  });
+});
+
 describe("<Thumbnail> reject overlay", () => {
   it("renders [data-testid='reject-overlay'] when rejected=true", () => {
     render(<Thumbnail src={null} rejected />);

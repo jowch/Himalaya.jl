@@ -69,6 +69,7 @@ function LoupeView(): JSX.Element {
       src: f.src,
       frameNo: f.frameNo,
       rejected: verdicts[f.id] === "rejected",
+      kept: verdicts[f.id] === "accepted",
       representative: repId === f.id,
     })),
     [verdicts, repId],

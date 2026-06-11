@@ -42,7 +42,7 @@ const LOUPE_FIXTURE = (
     <div className="min-w-0">
       <BigFrame src={null} caption="frame 1 of 1 · kept" accepted />
       <ThumbnailGallery
-        exposures={[{ id: 0, src: null, frameNo: 1 }]}
+        exposures={[{ id: 0, src: null, frameNo: 1, kept: true }]}
         selectedId={0}
         size="lg"
         align="center"

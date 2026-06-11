@@ -281,6 +281,23 @@ describe("LoupePage", () => {
     }
   });
 
+  it("filmstrip marks kept on accepted frames ONLY (LO-KEPTSTRIP tri-state)", () => {
+    state.exposures = [
+      exp({ id: 1, selected: true, status: "accepted" }),
+      exp({ id: 2, status: "rejected" }),
+      exp({ id: 3, status: null }), // unscreened — neither kept nor dropped
+    ];
+    renderAt(42);
+    expect(
+      screen.getByRole("button", { name: "Frame 1, representative, kept" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Frame 2, dropped" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Frame 3" })).toBeInTheDocument();
+    const thumbs = screen.getAllByTestId("thumbnail");
+    // The unscreened thumb stays "normal" — the regression this pin exists for.
+    expect(thumbs[2]).toHaveAttribute("data-state", "normal");
+  });
+
   it("Escape navigates back to the sheet", () => {
     renderAt(42);
     fireEvent.keyDown(window, { key: "Escape" });

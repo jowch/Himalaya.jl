@@ -9,13 +9,26 @@ import thumb66 from "../fixtures/thumbs/66.png?url";
 import thumb67 from "../fixtures/thumbs/67.png?url";
 import thumb93 from "../fixtures/thumbs/93.png?url";
 
+// Status-shaped fixtures: strip flags and count cells derive from one truth
+// (the pages derive both from exposure status via toGalleryExposures).
+// kept 4 / total 5 / dropped 1.
 const EXPOSURES: GalleryExposure[] = [
-  { id: 37, src: thumb37, frameNo: "37", representative: true },
-  { id: 65, src: thumb65, frameNo: "65" },
+  { id: 37, src: thumb37, frameNo: "37", representative: true, kept: true },
+  { id: 65, src: thumb65, frameNo: "65", kept: true },
   { id: 66, src: thumb66, frameNo: "66", rejected: true },
-  { id: 67, src: thumb67, frameNo: "67" },
-  { id: 93, src: thumb93, frameNo: "93" },
+  { id: 67, src: thumb67, frameNo: "67", kept: true },
+  { id: 93, src: thumb93, frameNo: "93", kept: true },
 ];
+
+const EXPOSURES_ALL_KEPT: GalleryExposure[] = EXPOSURES.map((e) => ({
+  ...e,
+  rejected: false,
+  kept: true,
+}));
+
+const EXPOSURES_UNSCREENED: GalleryExposure[] = EXPOSURES.slice(0, 3).map(
+  (e) => ({ ...e, rejected: false, kept: false }),
+);
 
 const TAGS: Tag[] = [{ key: "LL37" }, { key: "temperature", value: "37C" }];
 
@@ -51,7 +64,7 @@ export const Sheet: Story = {
           sampleId="s-002"
           screened
           phase="Im3m"
-          exposures={EXPOSURES}
+          exposures={EXPOSURES_ALL_KEPT}
           kept={5}
           total={5}
           dropped={0}
@@ -62,10 +75,10 @@ export const Sheet: Story = {
           sampleId="s-003"
           screened={false}
           phase={null}
-          exposures={EXPOSURES}
-          kept={2}
+          exposures={EXPOSURES_UNSCREENED}
+          kept={0}
           total={3}
-          dropped={1}
+          dropped={0}
           tags={[]}
         />
         <SampleTableRow
@@ -73,8 +86,8 @@ export const Sheet: Story = {
           sampleId="s-004"
           screened={false}
           phase="Ia3d"
-          exposures={EXPOSURES}
-          kept={3}
+          exposures={EXPOSURES_UNSCREENED}
+          kept={0}
           total={3}
           dropped={0}
           tags={[{ key: "lipid", value: "DOPC" }]}

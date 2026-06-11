@@ -28,7 +28,10 @@ export function buildExposureImageUrl(
   return `/api/exposures/${exposure.id}/image${qs ? `?${qs}` : ""}`;
 }
 
-/** Map the per-sample exposure list to the filmstrip view-model. */
+/** Map the per-sample exposure list to the filmstrip view-model. The SA-SCREENED
+ *  tri-state holds: kept means EXPLICITLY accepted (the same truth as the loupe
+ *  caption and the contact-sheet Kept count); a null status is unscreened —
+ *  neither kept nor rejected. */
 export function toGalleryExposures(exposures: Exposure[]): GalleryExposure[] {
   return exposures.map((e, i) => ({
     id: e.id,
@@ -36,6 +39,7 @@ export function toGalleryExposures(exposures: Exposure[]): GalleryExposure[] {
     frameNo: i + 1,
     representative: e.selected,
     rejected: e.status === "rejected",
+    kept: e.status === "accepted",
   }));
 }
 

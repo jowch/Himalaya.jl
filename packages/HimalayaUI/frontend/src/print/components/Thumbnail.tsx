@@ -9,6 +9,11 @@ export interface ThumbnailProps {
   frameNo?: string | number;
   representative?: boolean;
   rejected?: boolean;
+  /** Screened-in (exposure status "accepted"). Tri-state semantics (SA-SCREENED):
+   *  kept and rejected are EXPLICIT verdicts; an unscreened (null-status) frame
+   *  is neither — so omit both flags rather than smearing it into either side.
+   *  If both are passed, rejected wins and kept is ignored. */
+  kept?: boolean;
   selected?: boolean;
   /** `"xs"` → 30px (dense Focus exposure strip); `"sm"` → 62px (contact-sheet strip); `"lg"` → 70px (loupe strip). */
   size?: "xs" | "sm" | "lg";
@@ -29,11 +34,13 @@ function buildDataState(props: {
   selected?: boolean;
   rejected?: boolean;
   representative?: boolean;
+  kept?: boolean;
 }): string {
   const tokens: string[] = [];
   if (props.selected) tokens.push("selected");
   if (props.rejected) tokens.push("rejected");
   if (props.representative) tokens.push("representative");
+  if (props.kept) tokens.push("kept");
   if (tokens.length === 0) tokens.push("normal");
   return tokens.join(" ");
 }
@@ -43,6 +50,7 @@ export function Thumbnail({
   frameNo,
   representative = false,
   rejected = false,
+  kept = false,
   selected = false,
   size = "sm",
   onClick,
@@ -51,15 +59,19 @@ export function Thumbnail({
   className,
 }: ThumbnailProps): JSX.Element {
   const px = SIZE_PX[size];
-  const dataState = buildDataState({ selected, rejected, representative });
+  // A frame is never kept AND dropped — rejected wins so the two channels
+  // can't contradict each other if a caller passes both.
+  const showKept = kept && !rejected;
+  const dataState = buildDataState({ selected, rejected, representative, kept: showKept });
 
   // Accessible name: "Frame N" (or "Exposure" when unnumbered), with state
-  // suffixes for the visual markers (representative dot / reject overlay) so a
-  // screen-reader hears what a sighted user sees. Selection is conveyed via
-  // aria-pressed (a toggle role), not folded into the label.
+  // suffixes for the visual markers (representative dot / reject overlay /
+  // kept dot) so a screen-reader hears what a sighted user sees. Selection is
+  // conveyed via aria-pressed (a toggle role), not folded into the label.
   let ariaLabel = frameNo != null ? `Frame ${frameNo}` : "Exposure";
   if (representative) ariaLabel += ", representative";
   if (rejected) ariaLabel += ", dropped";
+  if (showKept) ariaLabel += ", kept";
 
   return (
     <button
@@ -96,6 +108,14 @@ export function Thumbnail({
       {representative && (
         <span data-role="thumb-rep" className="absolute top-0.5 right-0.5 flex">
           <Dot tone="accent" size="md" bordered aria-hidden="true" />
+        </span>
+      )}
+
+      {/* Kept (screened-in) marker — top-LEFT so a representative-and-kept
+          frame shows both corners (bottom-left belongs to the frame number). */}
+      {showKept && (
+        <span data-role="thumb-kept" className="absolute top-0.5 left-0.5 flex">
+          <Dot tone="success" size="md" bordered aria-hidden="true" />
         </span>
       )}
 

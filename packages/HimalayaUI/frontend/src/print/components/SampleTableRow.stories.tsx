@@ -8,13 +8,47 @@ import thumb66 from "../fixtures/thumbs/66.png?url";
 import thumb67 from "../fixtures/thumbs/67.png?url";
 import thumb93 from "../fixtures/thumbs/93.png?url";
 
+// Status-shaped fixtures: the strip's kept/rejected flags and the row's count
+// cells must tell the same story the real pages derive together from exposure
+// status (toGalleryExposures / toSampleRowModel).
+type FrameStatus = "accepted" | "rejected" | null;
+
+function expo(
+  id: number,
+  src: string,
+  status: FrameStatus,
+  representative = false,
+): GalleryExposure {
+  return {
+    id,
+    src,
+    frameNo: String(id),
+    representative,
+    rejected: status === "rejected",
+    kept: status === "accepted",
+  };
+}
+
+// kept 4 / total 5 / dropped 1 — matches the meta count cells.
 const EXPOSURES: GalleryExposure[] = [
-  { id: 37, src: thumb37, frameNo: "37", representative: true },
-  { id: 65, src: thumb65, frameNo: "65" },
-  { id: 66, src: thumb66, frameNo: "66", rejected: true },
-  { id: 67, src: thumb67, frameNo: "67" },
-  { id: 93, src: thumb93, frameNo: "93" },
+  expo(37, thumb37, "accepted", true),
+  expo(65, thumb65, "accepted"),
+  expo(66, thumb66, "rejected"),
+  expo(67, thumb67, "accepted"),
+  expo(93, thumb93, "accepted"),
 ];
+
+const EXPOSURES_ALL_KEPT: GalleryExposure[] = EXPOSURES.map((e) => ({
+  ...e,
+  rejected: false,
+  kept: true,
+}));
+
+const EXPOSURES_UNSCREENED: GalleryExposure[] = EXPOSURES.map((e) => ({
+  ...e,
+  rejected: false,
+  kept: false,
+}));
 
 const TAGS: Tag[] = [{ key: "LL37" }, { key: "temperature", value: "37C" }];
 
@@ -43,12 +77,15 @@ export const Indexed: Story = {
   },
 };
 
-/** Not indexed and NOT screened — shows the resting tint + "Not indexed". */
+/** Not indexed and NOT screened — resting tint + "Not indexed"; every frame
+ *  unscreened, so the strip shows no kept dots and the count cell says 0. */
 export const Unindexed: Story = {
   args: {
     screened: false,
     phase: null,
-    dropped: 1,
+    exposures: EXPOSURES_UNSCREENED,
+    kept: 0,
+    dropped: 0,
   },
 };
 
@@ -57,6 +94,7 @@ export const AllKept: Story = {
   args: {
     screened: true,
     phase: "Im3m",
+    exposures: EXPOSURES_ALL_KEPT,
     kept: 5,
     total: 5,
     dropped: 0,
@@ -69,6 +107,7 @@ const STACK_ROWS = [
     sampleId: "s-001",
     screened: true,
     phase: "Pn3m" as const,
+    exposures: EXPOSURES,
     kept: 4,
     total: 5,
     dropped: 1,
@@ -78,6 +117,7 @@ const STACK_ROWS = [
     sampleId: "s-002",
     screened: true,
     phase: "Im3m" as const,
+    exposures: EXPOSURES_ALL_KEPT,
     kept: 5,
     total: 5,
     dropped: 0,
@@ -87,31 +127,34 @@ const STACK_ROWS = [
     sampleId: "s-003",
     screened: false,
     phase: null,
-    kept: 2,
+    exposures: EXPOSURES_UNSCREENED.slice(0, 3),
+    kept: 0,
     total: 3,
-    dropped: 1,
+    dropped: 0,
   },
   {
     name: "MO + PEG",
     sampleId: "s-004",
     screened: false,
     phase: "Ia3d" as const,
-    kept: 3,
+    exposures: EXPOSURES_UNSCREENED.slice(0, 3),
+    kept: 0,
     total: 3,
     dropped: 0,
   },
 ];
 
 const SRC_CYCLE = [thumb37, thumb65, thumb66, thumb67, thumb93];
+// kept 10 / total 12 / dropped 2 — matches the Overflowing count cells.
 const MANY_EXPOSURES: GalleryExposure[] = Array.from(
   { length: 12 },
-  (_, i): GalleryExposure => ({
-    id: 200 + i,
-    src: SRC_CYCLE[i % SRC_CYCLE.length]!,
-    frameNo: String(200 + i),
-    ...(i === 0 ? { representative: true } : {}),
-    ...(i === 4 ? { rejected: true } : {}),
-  }),
+  (_, i): GalleryExposure =>
+    expo(
+      200 + i,
+      SRC_CYCLE[i % SRC_CYCLE.length]!,
+      i === 4 || i === 7 ? "rejected" : "accepted",
+      i === 0,
+    ),
 );
 
 const MANY_TAGS: Tag[] = [
@@ -169,7 +212,7 @@ export const Stack: Story = {
           sampleId={row.sampleId}
           screened={row.screened}
           phase={row.phase}
-          exposures={EXPOSURES}
+          exposures={row.exposures}
           kept={row.kept}
           total={row.total}
           dropped={row.dropped}
