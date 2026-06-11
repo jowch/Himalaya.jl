@@ -12,9 +12,10 @@ import { test, expect, type Page } from "@playwright/test";
 //   • The FIRST recipe edit (title edit OR add-sample) silently STARTS a draft
 //     → "Confirm series" becomes ENABLED + a Cancel button appears.
 //   • "Confirm series" = a Save→Commit CHAIN: PATCH /api/series/:id (save,
-//     re-resolves the plate) THEN, on its success, POST /api/series/:id/commit
-//     (commit) with the members from the SAVE RESPONSE. After commit success the
-//     page returns to read state (no navigation).
+//     persists the RECIPE) THEN, on its success, POST /api/series/:id/commit
+//     with the plate RESOLVED FROM THE SAVED RECIPE (recipe samples → picker
+//     indexing exposures; the PATCH does not rebuild members — BU-RECIPENOOP).
+//     After commit success the page returns to read state (no navigation).
 //   • There is NO separate Save button and NO conflict modal (409 relaxed to
 //     last-write-wins — Plan 6a).
 //   • Cancel discards the draft with no request.
@@ -45,9 +46,10 @@ const SERIES = {
   samples: [{ id: 1, series_id: 5, sample_id: 10, position: 0, pinned: false, excluded: false }],
 };
 
-// The plate re-resolved by a successful save. A DIFFERENT member exposure id
-// (202) proves the commit body carries the SAVE-RESPONSE members, not the stale
-// committed plate.
+// The series returned by a successful save: the RECIPE now carries BOTH
+// samples (10 and the added 20) while the cached members still hold only one
+// row — the dev-DB BU-RECIPENOOP shape. The commit body must be resolved from
+// the recipe (samples 10, 20 → exposures 101, 202), not echo these members.
 const SAVED_MEMBER = { ...MEMBER, id: 2, exposure_id: 202, display_order: 0 };
 const SAVED_SERIES = {
   ...SERIES, content_hash: "h2", title: "LL37 titration v2",
@@ -89,6 +91,14 @@ async function mockCore(page: Page): Promise<void> {
   // Corpus sample list — the add-sample select's option source.
   await page.route("**/api/samples", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(CORPUS) }));
+  // Corpus picker projection — the Confirm chain's sample→exposure resolution
+  // source (BU-RECIPENOOP). Without it Confirm stays gated (disabled).
+  await page.route("**/api/picker-samples", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json",
+      body: JSON.stringify([
+        { sample: CORPUS[0], indexing_exposure_id: 101, all_exposures: [] },
+        { sample: CORPUS[1], indexing_exposure_id: 202, all_exposures: [] },
+      ]) }));
   // SSE endpoint — drain immediately so the multiplayer EventSource doesn't
   // hang the page (see e2e/AGENTS.md + the sibling series specs).
   await page.route("**/api/events", (r) =>
@@ -151,8 +161,9 @@ test.describe("series builder — greenfield DOM", () => {
     const order: string[] = [];
     let patchSeen = false;
 
-    // Override GET/PATCH on /api/series/5. PATCH returns the re-resolved full
-    // Series (members carry exposure_id 202 — the commit body must echo it).
+    // Override GET/PATCH on /api/series/5. PATCH returns the saved full Series:
+    // its RECIPE holds samples 10 + 20 while its members hold only exposure 202
+    // — the commit body must be resolved from the recipe, not echo the members.
     await page.route("**/api/series/5", async (route) => {
       const req = route.request();
       if (req.method() === "PATCH") {
@@ -188,9 +199,11 @@ test.describe("series builder — greenfield DOM", () => {
     await expect.poll(() => commitBody, { timeout: 3000 }).not.toBeNull();
     // ORDER assertion (load-bearing): PATCH strictly precedes POST.
     expect(order).toEqual(["PATCH", "POST"]);
-    // Provenance: the commit body carries the SAVE-RESPONSE members (exposure 202),
-    // not the stale committed plate (exposure 101).
-    expect(commitBody!.members!.map((m) => m.exposure_id)).toEqual([202]);
+    // Provenance (BU-RECIPENOOP): the commit body is the plate RESOLVED FROM
+    // THE SAVED RECIPE — sample 10 → exposure 101 AND the added sample 20 →
+    // exposure 202 — not an echo of the save response's stale single-member
+    // plate ([202]) and not the old committed plate ([101]).
+    expect(commitBody!.members!.map((m) => m.exposure_id)).toEqual([101, 202]);
 
     // After commit success the page returns to read state: Confirm DISABLED, no Cancel.
     await expect(page.getByRole("button", { name: /confirm series/i })).toBeDisabled();

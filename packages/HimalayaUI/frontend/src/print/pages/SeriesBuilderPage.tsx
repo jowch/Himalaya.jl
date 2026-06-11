@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { Skeleton } from "boneyard-js/react";
 import { PageFrame } from "../components/PageFrame";
@@ -11,6 +11,7 @@ import {
   useSeries,
   useSeriesTraces,
   useCorpusSamples,
+  useCorpusPickerSamples,
   useSaveSeries,
   useCommitSeriesPlate,
 } from "../../queries";
@@ -27,7 +28,7 @@ import {
   recipeRowView,
 } from "./builderAdapters";
 import { buildSeriesSaveBody } from "../../lib/series/buildSeriesSaveBody";
-import { buildSeriesCommitBody } from "../../lib/series/buildSeriesCommitBody";
+import { buildPlateFromRecipe } from "../../lib/series/buildPlateFromRecipe";
 import { buildMultiTraceExportSpec } from "../../lib/figure-export/adapters/multiTraceAdapter";
 import { ExportButton } from "../components/ExportButton";
 import { useFigureExport } from "../components/useFigureExport";
@@ -63,6 +64,25 @@ export function SeriesBuilderPage(): JSX.Element {
   const seriesQ = useSeries(Number.isFinite(id) ? id : undefined);
   const tracesQ = useSeriesTraces(Number.isFinite(id) ? id : undefined);
   const corpusQ = useCorpusSamples();
+  // Sample → indexing-exposure resolution source for the Confirm chain's
+  // recipe→plate step (BU-RECIPENOOP). Loaded WITH the page (not lazily at
+  // Confirm) so the resolution map is ready by Confirm time — lazy loading
+  // would stall the chain on a fetch the user never sees. Cost: one corpus
+  // GET /api/picker-samples per builder visit, shared (same query key) with
+  // the scoping worksheet's picker.
+  const pickerQ = useCorpusPickerSamples();
+  // sample.id → indexing_exposure_id (the scoping page's resolution
+  // precedent). The picker's indexing_exposure_id encodes the SAME
+  // representative-exposure rule the backend's create-path resolver uses
+  // (highest-id selected, else highest-id, else null).
+  const exposureBySample = useMemo(() => {
+    const m = new Map<number, number | null>();
+    for (const r of pickerQ.data ?? []) m.set(r.sample.id, r.indexing_exposure_id);
+    return m;
+  }, [pickerQ.data]);
+  // Confirm is gated on the picker having LOADED: without it every sample is
+  // "unresolvable" and Confirm would honestly have to publish an empty plate.
+  const resolverReady = pickerQ.data !== undefined;
 
   // ── Draft (lazy) + view-pref state ──────────────────────────────────────
   const draft = useAppState((s) => s.seriesDraft);
@@ -93,6 +113,15 @@ export function SeriesBuilderPage(): JSX.Element {
   // server's latest projection holds (LWW — the commit route itself is
   // last-write-wins; conflict UI cancelled by decision).
   const watermark = useRef(0);
+  // Confirm-time snapshot of the sample→exposure resolution map. The chain
+  // reads THIS ref (not pickerQ directly) so a picker refetch/error mid-chain
+  // cannot stall or skew the commit step — the recipe being saved was drafted
+  // against exactly this resolution state.
+  const resolveRef = useRef<Map<number, number | null>>(new Map());
+  // How many recipe samples the LAST commit left off the plate (no resolvable
+  // exposure). Read by the commit-success effect so the terminal toast tells
+  // the truth instead of announcing a clean "Series confirmed".
+  const leftOutRef = useRef(0);
 
   const series = seriesQ.data;
   // The active draft only counts when it targets THIS series.
@@ -107,20 +136,26 @@ export function SeriesBuilderPage(): JSX.Element {
   // the gate would let a stale isSuccess re-fire the commit on the next
   // unrelated re-render.
   //
-  // Save landed → commit the FRESH plate from the SERIES QUERY CACHE, never the
-  // stale draft and never `save.data`. Under the queue's SSE-wins race the
-  // own-op SSE confirmation resolves `save.data` as the synthesized PARTIAL
-  // ({id}, no members/state — saveSeriesMutator.synthesizeFromSse), so gating
-  // the commit on isFullSeries(save.data) stalls the chain on live backends
+  // Save landed → resolve the plate FROM THE FRESH RECIPE in the SERIES QUERY
+  // CACHE, never from the stale draft and never from `save.data`. Under the
+  // queue's SSE-wins race the own-op SSE confirmation resolves `save.data` as
+  // the synthesized PARTIAL ({id}, no members/state —
+  // saveSeriesMutator.synthesizeFromSse), so gating the commit on
+  // isFullSeries(save.data) stalls the chain on live backends
   // (P0 BU-CONFIRMSTALL). The cache is the one source that is correct on BOTH
   // race outcomes: the mutator's onSuccess either setQueryData's the full HTTP
   // response or invalidates the key so TanStack refetches the canonical
   // projection — either way the series key gets a full Series and its
-  // dataUpdatedAt advances past the Confirm-time watermark. The cache is also
-  // the only holder of server-resolved SeriesMember[] (exposure_ids included)
-  // that buildSeriesCommitBody builds from — the local draft is a sample-level
-  // recipe, not resolved members (the body itself is positional; member ids
-  // are stripped on the wire).
+  // dataUpdatedAt advances past the Confirm-time watermark.
+  //
+  // COMMIT BODY (P0 BU-RECIPENOOP): the PATCH persists the recipe but does NOT
+  // rebuild `series_members` from it, and POST /commit takes members verbatim
+  // from the body — so committing `fresh.members` re-publishes the OLD plate
+  // byte-for-byte (reorders never surface; an added sample never becomes a
+  // member). buildPlateFromRecipe resolves `fresh.samples` (the just-saved,
+  // position-ordered recipe) into the plate: each sample → its indexing
+  // exposure (Confirm-time snapshot in resolveRef), display props carried over
+  // from the old member with the same exposure_id, new members server-default.
   //
   // Single transition effect: "saving" + save.isSuccess → "awaiting-fresh";
   // "awaiting-fresh" + fresh full series in cache → "committing" + mutate.
@@ -135,7 +170,13 @@ export function SeriesBuilderPage(): JSX.Element {
     if (fresh === undefined || !api.isFullSeries(fresh)) return;
     if (seriesQ.dataUpdatedAt <= watermark.current) return;
     stage.current = "committing";
-    commit.mutate({ id, ...buildSeriesCommitBody(fresh.members) });
+    const { members, unresolvedSampleIds } = buildPlateFromRecipe(
+      fresh.samples,
+      fresh.members,
+      (sampleId) => resolveRef.current.get(sampleId),
+    );
+    leftOutRef.current = unresolvedSampleIds.length;
+    commit.mutate({ id, members });
   }, [save.isSuccess, seriesQ.data, seriesQ.dataUpdatedAt, id, commit]);
 
   // Stall exit: the refetch we are awaiting ERRORED (useSeries has retry:
@@ -156,7 +197,20 @@ export function SeriesBuilderPage(): JSX.Element {
     stage.current = "idle";
     discardDraft();
     // Consequential terminal success of the Save→Commit chain → visible toast.
-    showToast("Series confirmed", "success");
+    // Honest variant when the plate resolution had to leave samples out
+    // (BU-RECIPENOOP policy: commit the resolvable members, SAY what was
+    // dropped — a sample with no exposure has nothing renderable to plate,
+    // matching the backend create-path resolver, so blocking the whole commit
+    // would dead-end the series instead).
+    const leftOut = leftOutRef.current;
+    showToast(
+      leftOut === 0
+        ? "Series confirmed"
+        : leftOut === 1
+          ? "Confirmed. 1 sample has no usable exposure and was left out."
+          : `Confirmed. ${leftOut} samples have no usable exposure and were left out.`,
+      "success",
+    );
   }, [commit.isSuccess, discardDraft]);
 
   // Either error → reset so the user can retry. Stage-ref guarded like its
@@ -211,7 +265,12 @@ export function SeriesBuilderPage(): JSX.Element {
   };
 
   const onConfirm = (): void => {
-    if (!liveDraft || stage.current !== "idle") return;
+    // `resolverReady` mirrors the rail's disabled gate: without the picker
+    // projection every recipe sample is "unresolvable" and the chain would
+    // publish an empty plate.
+    if (!liveDraft || stage.current !== "idle" || !resolverReady) return;
+    // Snapshot the resolution map for the whole chain (see resolveRef).
+    resolveRef.current = exposureBySample;
     // Watermark BEFORE the save fires: any cache update at or before this
     // instant predates the save and must not be committed.
     watermark.current = seriesQ.dataUpdatedAt;
@@ -258,6 +317,9 @@ export function SeriesBuilderPage(): JSX.Element {
           onConfirm={onConfirm}
           onCancel={onCancel}
           confirmBusy={confirmBusy}
+          confirmReady={resolverReady}
+          resolverError={pickerQ.isError}
+          resolverLoading={!resolverReady && !pickerQ.isError}
           chainError={chainError}
         />
       )}
@@ -288,6 +350,13 @@ interface BuilderBodyProps {
   onConfirm: () => void;
   onCancel: () => void;
   confirmBusy: boolean;
+  /** Picker projection loaded — the recipe→plate resolution source is ready.
+   *  Confirm stays disabled until then (an unresolvable recipe would commit
+   *  an empty plate). */
+  confirmReady: boolean;
+  /** Picker projection FAILED — Confirm can never become ready this session. */
+  resolverError: boolean;
+  resolverLoading: boolean;
   chainError: unknown;
 }
 
@@ -314,6 +383,9 @@ function BuilderBody({
   onConfirm,
   onCancel,
   confirmBusy,
+  confirmReady,
+  resolverError,
+  resolverLoading,
   chainError,
 }: BuilderBodyProps): JSX.Element {
   // Render model: the figure plate ALWAYS shows the committed plate (members);
@@ -464,7 +536,7 @@ function BuilderBody({
       </div>
       <BuilderRail
         grouping={groupingSummary(series)}
-        {...(liveDraft && !confirmBusy ? { onConfirm } : {})}
+        {...(liveDraft && !confirmBusy && confirmReady ? { onConfirm } : {})}
         {...(liveDraft ? {} : { onAdjust: ensureDraft })}
         // copy-doesn't-lie: the rail's default WYSIWYG caption is false
         // mid-draft, so a live draft swaps in the honest variant. Precision:
@@ -484,6 +556,21 @@ function BuilderBody({
               {chainError != null && (
                 <div role="alert" className="text-caption text-error">
                   Couldn't confirm the series. Try again.
+                </div>
+              )}
+              {/* Truthful disabled-Confirm explanation: the resolution source
+                  failed to load, so the recipe cannot be turned into a plate
+                  this session. Only shown mid-draft, where Confirm matters. */}
+              {resolverError && liveDraft != null && (
+                <div role="alert" className="text-caption text-error">
+                  Couldn't load exposure data, so the series can't be confirmed. Reload the page to retry.
+                </div>
+              )}
+              {/* While the resolution source is still loading, the gated
+                  Confirm states its reason instead of sitting mute. */}
+              {resolverLoading && liveDraft != null && (
+                <div className="text-caption text-ink-soft">
+                  Loading exposure data…
                 </div>
               )}
               {tracesSlot}

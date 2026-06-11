@@ -19,6 +19,13 @@ function emptyMut(): MutResult {
   return { mutate: vi.fn(), isSuccess: false, isPending: false, data: undefined, error: null, reset: vi.fn() };
 }
 
+// Minimal corpus-picker row: the page reads ONLY sample.id +
+// indexing_exposure_id (the recipe→plate resolution source, BU-RECIPENOOP).
+type PickerRow = { sample: { id: number }; indexing_exposure_id: number | null };
+function pickerRow(sampleId: number, exposureId: number | null): PickerRow {
+  return { sample: { id: sampleId }, indexing_exposure_id: exposureId };
+}
+
 const state = {
   seriesById: new Map<number, Series>(),
   // Mirrors the TanStack query's dataUpdatedAt for the series key. The page's
@@ -28,6 +35,10 @@ const state = {
   seriesUpdatedAt: 1000,
   traces: {} as Record<number, Trace>,
   corpus: [] as CorpusSample[],
+  // Corpus picker projection (sample → indexing exposure). `undefined`
+  // simulates a not-yet-loaded picker (Confirm must stay gated).
+  picker: undefined as PickerRow[] | undefined,
+  pickerError: false,
   loading: false,
   error: false,
   save: emptyMut(),
@@ -43,6 +54,11 @@ vi.mock("../../src/queries", () => ({
   }),
   useSeriesTraces: (_id: number | undefined) => ({ data: state.traces, isLoading: false }),
   useCorpusSamples: () => ({ data: state.corpus, isLoading: false, isError: false }),
+  useCorpusPickerSamples: () => ({
+    data: state.picker,
+    isLoading: state.picker === undefined && !state.pickerError,
+    isError: state.pickerError,
+  }),
   useSaveSeries: () => state.save,
   useCommitSeriesPlate: () => state.commit,
 }));
@@ -163,6 +179,10 @@ beforeEach(() => {
   state.seriesUpdatedAt = 1000;
   state.traces = {};
   state.corpus = [corpusSample(1, "A"), corpusSample(2, "B"), corpusSample(3, "C")];
+  // Default resolution map mirrors the member() fixture (exposure_id == the
+  // sample's id) so recipe [sample 1, sample 2] resolves to exposures [1, 2].
+  state.picker = [pickerRow(1, 1), pickerRow(2, 2), pickerRow(3, 3)];
+  state.pickerError = false;
   state.loading = false;
   state.error = false;
   state.save = emptyMut();
@@ -316,7 +336,7 @@ describe("SeriesBuilderPage", () => {
     expect(state.commit.mutate).not.toHaveBeenCalled();
   });
 
-  it("Confirm chain: save THEN commit (members from the save response) THEN discard draft", () => {
+  it("Confirm chain: save THEN commit (plate resolved from the saved RECIPE) THEN discard draft", () => {
     const { rerender } = renderPage();
     // Start a draft.
     fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "Edited" } });
@@ -334,8 +354,11 @@ describe("SeriesBuilderPage", () => {
     // Commit not yet fired.
     expect(state.commit.mutate).not.toHaveBeenCalled();
 
-    // Flip save to success with a FRESH server response whose members differ
-    // from the stale draft plate (different exposure ids prove provenance).
+    // Flip save to success with a FRESH server response. Its CACHED members
+    // (exposure 7, 8) deliberately differ from the picker resolution of its
+    // recipe (samples 1, 2 → exposures 1, 2): the commit body following the
+    // RECIPE proves provenance (BU-RECIPENOOP — the PATCH does not rebuild
+    // members, so the cached plate is exactly what must NOT be re-posted).
     // HTTP-wins path: saveSeriesMutator.onSuccess setQueryData's the full
     // response into the series cache, bumping dataUpdatedAt — simulate that
     // cache write alongside the mutation flip (the page commits from the
@@ -349,11 +372,12 @@ describe("SeriesBuilderPage", () => {
     state.seriesUpdatedAt = 2000;
     act(() => rerender());
 
-    // Commit fired with the SAVE RESPONSE members (display_order 7,8), not 1,2.
+    // Commit fired with the plate resolved from the saved RECIPE (samples 1, 2
+    // → exposures 1, 2), not the stale cached members (7, 8).
     expect(state.commit.mutate).toHaveBeenCalledTimes(1);
     const commitArg = state.commit.mutate.mock.calls[0]![0] as { id: number; members: Array<{ exposure_id: number }> };
     expect(commitArg.id).toBe(10);
-    expect(commitArg.members.map((m) => m.exposure_id).sort()).toEqual([7, 8]);
+    expect(commitArg.members.map((m) => m.exposure_id)).toEqual([1, 2]);
 
     // Flip commit to success → draft discarded, stay on the page.
     state.commit = { ...state.commit, isSuccess: true };
@@ -413,12 +437,13 @@ describe("SeriesBuilderPage", () => {
       state.seriesUpdatedAt = 2000;
       act(() => rerender());
 
-      // Commit fired with the FRESH cache members (the cache is the only
-      // holder of server-resolved SeriesMember[] the commit body builds from).
+      // Commit fired with the plate resolved from the FRESH cache's RECIPE
+      // (samples 1, 2 → picker exposures 1, 2) — not from the cached members
+      // (7, 8), which the PATCH never rebuilds (BU-RECIPENOOP).
       expect(state.commit.mutate).toHaveBeenCalledTimes(1);
       const commitArg = state.commit.mutate.mock.calls[0]![0] as { id: number; members: Array<{ exposure_id: number }> };
       expect(commitArg.id).toBe(10);
-      expect(commitArg.members.map((m) => m.exposure_id).sort()).toEqual([7, 8]);
+      expect(commitArg.members.map((m) => m.exposure_id)).toEqual([1, 2]);
 
       // Commit success → draft discarded + terminal toast (chain completes).
       state.commit = { ...state.commit, isSuccess: true };
@@ -482,6 +507,132 @@ describe("SeriesBuilderPage", () => {
 
     // No premature commit from stale data.
     expect(state.commit.mutate).not.toHaveBeenCalled();
+  });
+
+  // ── P0 BU-RECIPENOOP: the commit body is the plate RESOLVED FROM THE SAVED
+  // RECIPE (fresh.samples + picker), never the cached members the PATCH does
+  // not rebuild. ──────────────────────────────────────────────────────────────
+
+  /** Drive a full Confirm → fresh-cache cycle and return the commit body's
+   *  members plus the rerender handle (for toast/terminal assertions). */
+  function runConfirmChain(fresh: Series): {
+    members: Array<{ exposure_id: number; display_order: number } & Record<string, unknown>>;
+    rerender: () => void;
+  } {
+    const { rerender } = renderPage();
+    fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "Edited" } });
+    fireEvent.click(screen.getByRole("button", { name: /confirm series/i }));
+    expect(state.save.mutate).toHaveBeenCalledTimes(1);
+    // Save lands; the fresh full series (recipe just saved, members stale)
+    // reaches the cache past the watermark.
+    state.save = { ...state.save, isSuccess: true, data: fresh };
+    state.seriesById.set(10, fresh);
+    state.seriesUpdatedAt = 2000;
+    act(() => rerender());
+    expect(state.commit.mutate).toHaveBeenCalledTimes(1);
+    const arg = state.commit.mutate.mock.calls[0]![0] as {
+      members: Array<{ exposure_id: number; display_order: number } & Record<string, unknown>>;
+    };
+    return { members: arg.members, rerender };
+  }
+
+  it("BU-RECIPENOOP repro: a saved REORDER reaches the commit body in recipe order, not the stale plate order", () => {
+    // The PATCH persisted recipe [sample 2, sample 1]; the cached members
+    // still carry the OLD order (exposure 1 then 2). The old code posted the
+    // members verbatim → byte-identical old plate; the fix follows the recipe.
+    const fresh = baseSeries({
+      title: "Edited",
+      samples: [seriesSample(102, 2, 0), seriesSample(101, 1, 1)],
+      members: [member(1, { band_height: 2.5 }), member(2)],
+    });
+    const { members } = runConfirmChain(fresh);
+    expect(members.map((m) => m.exposure_id)).toEqual([2, 1]);
+    expect(members.map((m) => m.display_order)).toEqual([0, 1]);
+  });
+
+  it("BU-RECIPENOOP repro: an ADDED sample (3 recipe rows, 2 old members) becomes a third member with defaults + resolved exposure", () => {
+    const fresh = baseSeries({
+      title: "Edited",
+      samples: [seriesSample(101, 1, 0), seriesSample(102, 2, 1), seriesSample(103, 3, 2)],
+      members: [member(1), member(2)],
+    });
+    const { members } = runConfirmChain(fresh);
+    expect(members.map((m) => m.exposure_id)).toEqual([1, 2, 3]);
+    // The new member sends identity only; the commit route fills the same
+    // defaults the scoping create path gets (band_height 1.0, y_offset 0,
+    // normalization "none") and computes the snapshot server-side.
+    expect(Object.keys(members[2]!).sort()).toEqual(["display_order", "exposure_id"]);
+  });
+
+  it("BU-RECIPENOOP: a REMOVED sample's member drops from the commit body", () => {
+    const fresh = baseSeries({
+      title: "Edited",
+      samples: [seriesSample(102, 2, 0)],
+      members: [member(1), member(2)],
+    });
+    const { members } = runConfirmChain(fresh);
+    expect(members.map((m) => m.exposure_id)).toEqual([2]);
+  });
+
+  it("BU-RECIPENOOP carry-over: an old member's label_override/band_height survive a reorder", () => {
+    const fresh = baseSeries({
+      title: "Edited",
+      samples: [seriesSample(102, 2, 0), seriesSample(101, 1, 1)],
+      members: [member(1, { label_override: "ratio 1:50", band_height: 2.5 }), member(2)],
+    });
+    const { members } = runConfirmChain(fresh);
+    // Exposure 1 moved to display slot 1 but kept its display props.
+    const moved = members.find((m) => m.exposure_id === 1)!;
+    expect(moved.display_order).toBe(1);
+    expect(moved.label_override).toBe("ratio 1:50");
+    expect(moved.band_height).toBe(2.5);
+  });
+
+  it("BU-RECIPENOOP policy: an unresolvable sample is left out and the terminal toast says so honestly", () => {
+    const toast = vi.fn();
+    setToastImpl(toast);
+    try {
+      // Sample 3 has NO usable exposure (picker resolves it to null).
+      state.picker = [pickerRow(1, 1), pickerRow(2, 2), pickerRow(3, null)];
+      const fresh = baseSeries({
+        title: "Edited",
+        samples: [seriesSample(101, 1, 0), seriesSample(102, 2, 1), seriesSample(103, 3, 2)],
+        members: [member(1), member(2)],
+      });
+      const { members, rerender } = runConfirmChain(fresh);
+      // The resolvable members still commit (blocking would dead-end the
+      // series; the backend create path skips such samples the same way).
+      expect(members.map((m) => m.exposure_id)).toEqual([1, 2]);
+      state.commit = { ...state.commit, isSuccess: true };
+      act(() => rerender());
+      // The toast must not announce a clean confirm over a partial plate.
+      expect(toast).toHaveBeenCalledWith(
+        "Confirmed. 1 sample has no usable exposure and was left out.",
+        "success",
+      );
+    } finally {
+      setToastImpl(null);
+    }
+  });
+
+  it("BU-RECIPENOOP gate: Confirm stays DISABLED until the picker (resolution source) has loaded", () => {
+    state.picker = undefined; // picker still in flight
+    renderPage();
+    fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "Edited" } });
+    // Draft is live, but the recipe cannot be resolved yet → Confirm gated.
+    const confirm = screen.getByRole("button", { name: /confirm series/i });
+    expect(confirm).toBeDisabled();
+    fireEvent.click(confirm);
+    expect(state.save.mutate).not.toHaveBeenCalled();
+  });
+
+  it("BU-RECIPENOOP gate: a picker LOAD ERROR surfaces a truthful alert beside the disabled Confirm", () => {
+    state.picker = undefined;
+    state.pickerError = true;
+    renderPage();
+    fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "Edited" } });
+    expect(screen.getByRole("button", { name: /confirm series/i })).toBeDisabled();
+    expect(screen.getByText(/couldn't load exposure data/i)).toBeInTheDocument();
   });
 
   it("confirm success announces a 'Series confirmed' toast", () => {
