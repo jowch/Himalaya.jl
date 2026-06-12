@@ -93,29 +93,44 @@ export function TagEditor({
   };
 
   return (
+    // TAG-ERR-LAYOUT: a column — the controls wrap on one row, the validation
+    // error renders as its own full-width line BELOW them (in the error token).
+    // Previously the error sat inside the inline controls row and got squeezed
+    // into the leftover ~40px, stacking one word per line at the 286px rail.
     <div
       data-testid="tag-editor"
-      className={cx("inline-flex items-center gap-1.5", className)}
+      className={cx("flex flex-col gap-1 items-start", className)}
     >
-      <Input
-        value={key}
-        onValueChange={onKeyChange}
-        placeholder="key"
-        inputSize="sm"
-        onKeyDown={onKeyDown}
-        invalid={keyMissing || keyDuplicate}
-        {...((keyMissing || keyDuplicate) ? { "aria-describedby": errorId } : {})}
-      />
-      <Input
-        value={value}
-        onValueChange={setValue}
-        placeholder="value (optional)"
-        inputSize="sm"
-        onKeyDown={onKeyDown}
-      />
-      <Button variant="solid" onClick={commit}>
-        Add
-      </Button>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <Input
+          value={key}
+          onValueChange={onKeyChange}
+          placeholder="key"
+          inputSize="sm"
+          onKeyDown={onKeyDown}
+          invalid={keyMissing || keyDuplicate}
+          {...((keyMissing || keyDuplicate) ? { "aria-describedby": errorId } : {})}
+        />
+        <Input
+          value={value}
+          onValueChange={setValue}
+          placeholder="value (optional)"
+          inputSize="sm"
+          onKeyDown={onKeyDown}
+        />
+        <Button variant="solid" onClick={commit}>
+          Add
+        </Button>
+        {knownKeys && knownKeys.length > 0 ? (
+          <span className="inline-flex items-center gap-1">
+            {knownKeys.map((kk) => (
+              <Chip key={kk} variant="add" onClick={() => onKeyChange(kk)}>
+                {kk}
+              </Chip>
+            ))}
+          </span>
+        ) : null}
+      </div>
       {keyMissing ? (
         <span
           id={errorId}
@@ -133,15 +148,6 @@ export function TagEditor({
           className="text-caption text-error"
         >
           This sample already has a tag with that key.
-        </span>
-      ) : null}
-      {knownKeys && knownKeys.length > 0 ? (
-        <span className="inline-flex items-center gap-1">
-          {knownKeys.map((kk) => (
-            <Chip key={kk} variant="add" onClick={() => onKeyChange(kk)}>
-              {kk}
-            </Chip>
-          ))}
         </span>
       ) : null}
     </div>
