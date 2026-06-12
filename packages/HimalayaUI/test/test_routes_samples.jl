@@ -111,6 +111,37 @@ end
     end
 end
 
+@testset "POST /api/samples/:id/tags rejects a duplicate key with 409" begin
+    # Single-valued-key invariant (TAG-DEDUP-MODEL): a second add of an
+    # already-present key is a clean 409, not an unhandled 500 from the unique
+    # index — and writes nothing. A distinct op_id (not a retry) so the
+    # idempotency cache doesn't replay the first response.
+    db = SQLite.DB()
+    HimalayaUI.create_schema!(db)
+    exp_id = HimalayaUI.init_experiment!(db; path="/tdup409", data_dir="/tdup409/d",
+                                             analysis_dir="/tdup409/a")
+    s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
+
+    with_test_server(db) do port, base
+        hdrs = ["Content-Type" => "application/json", "X-Username" => "alice"]
+        r1 = HTTP.post("$base/api/samples/$s_id/tags";
+            body=JSON3.write(Dict(:key => "dose", :value => "10")), headers=hdrs)
+        @test r1.status == 201
+
+        # Same key, different value, fresh op_id → collision.
+        r2 = HTTP.post("$base/api/samples/$s_id/tags";
+            body=JSON3.write(Dict(:key => "dose", :value => "20")), headers=hdrs,
+            status_exception=false)
+        @test r2.status == 409
+
+        # Still exactly one dose row, original value untouched; no add_tag twin.
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT value FROM sample_tags WHERE sample_id = ? AND key = 'dose'", [s_id]))
+        @test length(rows) == 1
+        @test String(rows[1].value) == "10"
+    end
+end
+
 @testset "POST /api/samples/tags/batch inserts N tags in one transaction" begin
     db = SQLite.DB()
     HimalayaUI.create_schema!(db)

@@ -141,6 +141,19 @@ function register_samples_routes!()
         value  = String(body.value)
         source = haskey(body, :source) ? String(body.source) : "manual"
         return with_idempotency(db, req) do
+            # Single-valued-key invariant (TAG-DEDUP-MODEL): a sample carries at
+            # most one tag per key, enforced by the sample_tags_unique_key index.
+            # Guard the collision here with a clean 409 — a bare INSERT would hit
+            # the index and surface as an unhandled 500. Mirrors the PATCH route's
+            # key-collision handling; the frontend TagEditor validates client-side,
+            # so this is the server-side backstop.
+            coll = Tables.rowtable(DBInterface.execute(db,
+                "SELECT 1 FROM sample_tags WHERE sample_id = ? AND key = ?",
+                [id, key]))
+            isempty(coll) || return HTTP.Response(409,
+                ["Content-Type" => "application/json"],
+                JSON3.write(Dict(:error => "sample already has a '$key' tag")))
+
             res   = DBInterface.execute(db,
                 "INSERT INTO sample_tags (sample_id, key, value, source)
                  VALUES (?, ?, ?, ?)",

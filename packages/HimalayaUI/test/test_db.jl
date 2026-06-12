@@ -1560,6 +1560,87 @@ end
     end
 end
 
+@testset "migrate_sample_tags_unique_key!" begin
+    @testset "clean DB: index exists" begin
+        mktempdir() do tmp
+            db = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+            try
+                rows = Tables.rowtable(DBInterface.execute(db,
+                    "SELECT name FROM sqlite_master WHERE type='index' AND name='sample_tags_unique_key'"))
+                @test length(rows) == 1
+            finally
+                close(db)
+            end
+        end
+    end
+
+    @testset "idempotent re-run: no-op" begin
+        mktempdir() do tmp
+            db = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+            try
+                HimalayaUI.migrate_sample_tags_unique_key!(db)
+                rows = Tables.rowtable(DBInterface.execute(db,
+                    "SELECT name FROM sqlite_master WHERE type='index' AND name='sample_tags_unique_key'"))
+                @test length(rows) == 1
+            finally
+                close(db)
+            end
+        end
+    end
+
+    @testset "synthetic duplicates: oldest wins, rest deleted, warn, index created" begin
+        mktempdir() do tmp
+            db = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+            try
+                # Drop the index so we can synthesize duplicates and re-run.
+                DBInterface.execute(db, "DROP INDEX IF EXISTS sample_tags_unique_key")
+
+                eid = let res = DBInterface.execute(db,
+                          "INSERT INTO experiments (name, path, data_dir, analysis_dir) VALUES ('e','/p','/d','/a')")
+                    Int(DBInterface.lastrowid(res))
+                end
+                sid = let res = DBInterface.execute(db,
+                          "INSERT INTO samples (experiment_id, name) VALUES (?, 'S1')", [eid])
+                    Int(DBInterface.lastrowid(res))
+                end
+                # A manual dose row, then an identical scoping twin (the bug).
+                DBInterface.execute(db,
+                    "INSERT INTO sample_tags (sample_id, key, value, source) VALUES (?, 'dose', '10', 'manual')", [sid])
+                keep = Int(DBInterface.lastrowid(DBInterface.execute(db, "SELECT last_insert_rowid()")))
+                DBInterface.execute(db,
+                    "INSERT INTO sample_tags (sample_id, key, value, source) VALUES (?, 'dose', '10', 'scoping')", [sid])
+                # A distinct key (temp) must be left untouched.
+                DBInterface.execute(db,
+                    "INSERT INTO sample_tags (sample_id, key, value, source) VALUES (?, 'temp', '25', 'manual')", [sid])
+
+                @test_logs (:warn, r"Removed duplicate sample tag"i) min_level=Logging.Warn match_mode=:any begin
+                    HimalayaUI.migrate_sample_tags_unique_key!(db)
+                end
+
+                # Exactly one dose row survives: the oldest (manual) wins.
+                dose = Tables.rowtable(DBInterface.execute(db,
+                    "SELECT id, source FROM sample_tags WHERE sample_id = ? AND key = 'dose'", [sid]))
+                @test length(dose) == 1
+                @test dose[1].id == keep
+                @test String(dose[1].source) == "manual"
+                # The distinct key is preserved.
+                temp = Tables.rowtable(DBInterface.execute(db,
+                    "SELECT COUNT(*) AS c FROM sample_tags WHERE sample_id = ? AND key = 'temp'", [sid]))
+                @test temp[1].c == 1
+
+                # Index back in place; a fresh duplicate insert is now rejected.
+                idx = Tables.rowtable(DBInterface.execute(db,
+                    "SELECT name FROM sqlite_master WHERE type='index' AND name='sample_tags_unique_key'"))
+                @test length(idx) == 1
+                @test_throws Exception DBInterface.execute(db,
+                    "INSERT INTO sample_tags (sample_id, key, value, source) VALUES (?, 'dose', '99', 'manual')", [sid])
+            finally
+                close(db)
+            end
+        end
+    end
+end
+
 @testset "open_db chmods owned DB file to 0664" begin
     # SQLite creates files at 0644 (hardcoded in os_unix.c, ignores umask).
     # open_db chmods to 0664 so other curators in the shared group can
