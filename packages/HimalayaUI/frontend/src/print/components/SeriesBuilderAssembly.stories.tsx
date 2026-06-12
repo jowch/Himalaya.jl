@@ -120,6 +120,7 @@ function SeriesBuilderView(): JSX.Element {
               offset={offset}
               onOffsetChange={setOffset}
               traces={traces}
+              reorderable
               onCollapse={() => setCollapsed(true)}
             />
           </div>

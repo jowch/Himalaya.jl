@@ -117,4 +117,17 @@ describe("<BuilderRail>", () => {
     fireEvent.change(screen.getByTestId("slider"), { target: { value: "0.8" } });
     expect(onOffsetChange).toHaveBeenCalled();
   });
+
+  // ── Traces section label tells the truth about reorderability ─────────────
+  it("by default the Traces section makes NO drag-to-reorder promise (read mode)", () => {
+    // The read-mode traces slot is a non-reorderable MemberList; the section
+    // label must not instruct a drag that does nothing (copy-doesn't-lie).
+    render(<BuilderRail {...base} />);
+    expect(screen.getByText("Traces")).toBeInTheDocument();
+    expect(screen.queryByText(/drag to reorder/i)).toBeNull();
+  });
+  it("when reorderable, the Traces section label states 'drag to reorder' (draft mode)", () => {
+    render(<BuilderRail {...base} reorderable />);
+    expect(screen.getByText("Traces · drag to reorder")).toBeInTheDocument();
+  });
 });

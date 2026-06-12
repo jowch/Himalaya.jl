@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Skeleton } from "boneyard-js/react";
 import { PageFrame } from "../components/PageFrame";
@@ -7,6 +7,7 @@ import { BuilderRail } from "../components/BuilderRail";
 import { MemberList } from "../components/MemberList";
 import { IconButton, Button, EmptyState, Input, GripHandle } from "../ui";
 import { useDragReorder } from "../components/useDragReorder";
+import type { DragItemProps } from "../components/useDragReorder";
 import {
   useSeries,
   useSeriesTraces,
@@ -579,6 +580,9 @@ function BuilderBody({
             }
           : {})}
         orderedBy={series.ordering_variable ?? "—"}
+        // Honest section label: rows are only reorderable in draft mode (the
+        // editable RecipeEditor); the read-mode MemberList cannot be dragged.
+        reorderable={liveDraft != null}
         offset={offset}
         onOffsetChange={onOffsetChange}
         traces={
@@ -696,51 +700,115 @@ function RecipeEditor({
           { id: row.id, series_id: 0, sample_id: row.sample_id, position: row.position, pinned: row.pinned, excluded: row.excluded },
           sampleNameById,
         );
-        const dprops = dragItemProps(i);
-        const edge = dropEdge(i);
         return (
-          <div
+          <RecipeRow
             key={row.id}
-            data-testid="builder-recipe-row"
-            {...dprops}
-            className={`group relative cursor-grab flex items-center gap-2 px-2 py-1.5 rounded border border-transparent hover:bg-plate${dprops["data-dragging"] ? " opacity-50" : ""}`}
-          >
-            {edge && (
-              <span
-                aria-hidden="true"
-                className={`pointer-events-none absolute left-0 right-0 z-10 h-0.5 rounded-full bg-accent ${edge === "top" ? "-top-px" : "-bottom-px"}`}
-              />
-            )}
-            <GripHandle />
-            <span className="flex-1 min-w-0 truncate text-meta text-ink">{view.name}</span>
-            <IconButton
-              label="Move up"
-              tone="ghost"
-              data-testid="builder-recipe-up"
-              disabled={i === 0}
-              onClick={() => reorderVisual(i, i - 1)}
-            >
-              &#9650;
-            </IconButton>
-            <IconButton
-              label="Move down"
-              tone="ghost"
-              data-testid="builder-recipe-down"
-              disabled={i === visual.length - 1}
-              onClick={() => reorderVisual(i, i + 1)}
-            >
-              &#9660;
-            </IconButton>
-            <IconButton
-              label="Remove sample"
-              tone="ghost"
-              dismiss
-              data-testid="builder-recipe-remove"
-              onClick={() => onRemove(row.id)}
-            />
-          </div>
+            name={view.name}
+            index={i}
+            count={visual.length}
+            dragItemProps={dragItemProps(i)}
+            dropEdge={dropEdge(i)}
+            onMove={reorderVisual}
+            onRemove={() => onRemove(row.id)}
+          />
         );
       })}
+    </div>
+  );
+}
+
+// ── One editable recipe row — owns the focus-retention dance ────────────────
+// When a keyboard user activates "Move up"/"Move down" and the move lands the
+// row at an extreme, the button they pressed self-disables and can no longer
+// hold focus → focus would fall to <body> (WCAG 2.4.3 failure). Mirroring the
+// RepresentativeBox LO-REPDROP precedent: a ref flag is set ONLY by THIS row's
+// own move activation and consumed in a useLayoutEffect (before paint, no focus
+// flash). If the move was ours and the just-activated direction is now
+// disabled, focus redirects to the sibling move button (still actionable). A
+// re-render from a foreign cause (another row's reorder, SSE) never sets the
+// flag, so it never yanks focus.
+function RecipeRow({
+  name,
+  index,
+  count,
+  dragItemProps,
+  dropEdge,
+  onMove,
+  onRemove,
+}: {
+  name: import("react").ReactNode;
+  index: number;
+  count: number;
+  dragItemProps: DragItemProps;
+  dropEdge: "top" | "bottom" | null;
+  onMove: (fromV: number, toV: number) => void;
+  onRemove: () => void;
+}): JSX.Element {
+  const upRef = useRef<HTMLButtonElement>(null);
+  const downRef = useRef<HTMLButtonElement>(null);
+  // null = no pending self-move; otherwise the direction the user just pressed.
+  const pendingDir = useRef<"up" | "down" | null>(null);
+  const atTop = index === 0;
+  const atBottom = index === count - 1;
+
+  useLayoutEffect(() => {
+    const dir = pendingDir.current;
+    pendingDir.current = null; // consume — the flag lives one transition
+    if (!dir) return;
+    // The pressed direction self-disabled at the extreme → move focus to the
+    // sibling that is still actionable. Otherwise the pressed button still
+    // holds focus and nothing should move.
+    if (dir === "up" && atTop) downRef.current?.focus();
+    else if (dir === "down" && atBottom) upRef.current?.focus();
+  }, [index, atTop, atBottom]);
+
+  return (
+    <div
+      data-testid="builder-recipe-row"
+      {...dragItemProps}
+      className={`group relative cursor-grab flex items-center gap-2 px-2 py-1.5 rounded border border-transparent hover:bg-plate${dragItemProps["data-dragging"] ? " opacity-50" : ""}`}
+    >
+      {dropEdge && (
+        <span
+          aria-hidden="true"
+          className={`pointer-events-none absolute left-0 right-0 z-10 h-0.5 rounded-full bg-accent ${dropEdge === "top" ? "-top-px" : "-bottom-px"}`}
+        />
+      )}
+      <GripHandle />
+      <span className="flex-1 min-w-0 truncate text-meta text-ink">{name}</span>
+      <IconButton
+        ref={upRef}
+        label="Move up"
+        tone="ghost"
+        data-testid="builder-recipe-up"
+        disabled={atTop}
+        onClick={() => {
+          pendingDir.current = "up";
+          onMove(index, index - 1);
+        }}
+      >
+        &#9650;
+      </IconButton>
+      <IconButton
+        ref={downRef}
+        label="Move down"
+        tone="ghost"
+        data-testid="builder-recipe-down"
+        disabled={atBottom}
+        onClick={() => {
+          pendingDir.current = "down";
+          onMove(index, index + 1);
+        }}
+      >
+        &#9660;
+      </IconButton>
+      <IconButton
+        label="Remove sample"
+        tone="ghost"
+        dismiss
+        data-testid="builder-recipe-remove"
+        onClick={onRemove}
+      />
     </div>
   );
 }

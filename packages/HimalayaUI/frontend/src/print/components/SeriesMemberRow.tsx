@@ -36,7 +36,7 @@ export function SeriesMemberRow({
       {...(hot ? { "data-hot": "true" } : {})}
       onMouseEnter={onHover}
       onMouseLeave={onLeave}
-      className={`flex items-center gap-[9px] px-[9px] py-[7px] rounded cursor-pointer border ${hot ? "bg-plate border-hair" : "border-transparent hover:bg-plate"}${className ? ` ${className}` : ""}`}
+      className={`flex items-center gap-[9px] px-[9px] py-[7px] rounded border ${hot ? "bg-plate border-hair" : "border-transparent hover:bg-plate"}${className ? ` ${className}` : ""}`}
     >
       {formFactor ? (
         <Swatch phase="" empty size="md" shape="circle" />

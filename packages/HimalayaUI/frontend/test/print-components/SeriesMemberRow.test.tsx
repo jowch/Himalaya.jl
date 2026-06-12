@@ -44,4 +44,21 @@ describe("SeriesMemberRow", () => {
     expect(onHover).toHaveBeenCalledTimes(1);
     expect(onLeave).toHaveBeenCalledTimes(1);
   });
+
+  it("does NOT signal a click affordance — hover is its only behavior (honesty)", () => {
+    // The row's only affordance is hover-highlighting the synced plate row; it
+    // has no click action, so it must present as a non-interactive element (no
+    // button role, not in the tab order) rather than lie about being clickable.
+    // Pin the semantic contract, not the cursor utility.
+    const onHover = vi.fn();
+    const { getByTestId } = render(
+      <SeriesMemberRow phases={["Pn3m"]} variableValue="1:0" dataLine="x" onHover={onHover} />,
+    );
+    const row = getByTestId("series-member-row");
+    expect(row.tagName).toBe("DIV");
+    expect(row).not.toHaveAttribute("role");
+    expect(row).not.toHaveAttribute("tabindex");
+    fireEvent.mouseEnter(row);
+    expect(onHover).toHaveBeenCalledTimes(1);
+  });
 });

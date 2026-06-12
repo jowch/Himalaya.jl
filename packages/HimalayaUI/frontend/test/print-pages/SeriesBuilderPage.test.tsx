@@ -1007,6 +1007,85 @@ describe("SeriesBuilderPage", () => {
     expect(useAppState.getState().seriesDraft!.recipe.map((r) => r.sample_id)).toEqual([1, 3, 2]);
   });
 
+  // ── BU-MOVEFOCUS: a move that self-disables a button keeps focus (WCAG 2.4.3) ──
+
+  it("BU-MOVEFOCUS: moving a row to the TOP redirects focus from the now-disabled 'Move up' to its 'Move down' (not <body>)", () => {
+    // Visual order mirrors the plate: recipe [A,B,C] renders [C,B,A]. Press
+    // 'Move up' on visual row 1 (B) → B reaches the top, its 'Move up'
+    // disables. A keyboard user must not be dumped onto document.body; focus
+    // moves to B's still-actionable sibling, 'Move down'.
+    state.seriesById = new Map([[10, baseSeries({
+      samples: [seriesSample(101, 1, 0), seriesSample(102, 2, 1), seriesSample(103, 3, 2)],
+    })]]);
+    renderPage();
+    fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "x" } });
+    let rows = screen.getAllByTestId("builder-recipe-row");
+    // Visual [C, B, A]; move B (visual index 1) up.
+    const bUp = within(rows[1]!).getByTestId("builder-recipe-up");
+    act(() => bUp.focus());
+    fireEvent.click(bUp);
+    // Recipe [A,B,C] → [A,C,B]; B is now the top visual row.
+    rows = screen.getAllByTestId("builder-recipe-row");
+    expect(rows[0]).toHaveTextContent("B");
+    const bUpNow = within(rows[0]!).getByTestId("builder-recipe-up");
+    const bDownNow = within(rows[0]!).getByTestId("builder-recipe-down");
+    expect(bUpNow).toBeDisabled();
+    expect(document.activeElement).toBe(bDownNow);
+    expect(document.activeElement).not.toBe(document.body);
+  });
+
+  it("BU-MOVEFOCUS: moving a row to the BOTTOM redirects focus from the now-disabled 'Move down' to its 'Move up' (not <body>)", () => {
+    // Symmetric bottom case: press 'Move down' on visual row 1 (B) → B reaches
+    // the bottom, its 'Move down' disables, focus moves to 'Move up'.
+    state.seriesById = new Map([[10, baseSeries({
+      samples: [seriesSample(101, 1, 0), seriesSample(102, 2, 1), seriesSample(103, 3, 2)],
+    })]]);
+    renderPage();
+    fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "x" } });
+    let rows = screen.getAllByTestId("builder-recipe-row");
+    // Visual [C, B, A]; move B (visual index 1) down.
+    const bDown = within(rows[1]!).getByTestId("builder-recipe-down");
+    act(() => bDown.focus());
+    fireEvent.click(bDown);
+    // Recipe [A,B,C] → [B,A,C]; visual order becomes [C,A,B]; B is now bottom.
+    rows = screen.getAllByTestId("builder-recipe-row");
+    expect(rows[2]).toHaveTextContent("B");
+    const bUpNow = within(rows[2]!).getByTestId("builder-recipe-up");
+    const bDownNow = within(rows[2]!).getByTestId("builder-recipe-down");
+    expect(bDownNow).toBeDisabled();
+    expect(document.activeElement).toBe(bUpNow);
+    expect(document.activeElement).not.toBe(document.body);
+  });
+
+  it("BU-MOVEFOCUS: a non-extreme move does NOT steal focus to a sibling (focus stays on the activated 'Move up')", () => {
+    // Four rows so a move can land mid-stack; the just-activated button stays
+    // actionable, so the focus-redirect must NOT fire — the row keeps focus on
+    // the button the user pressed.
+    state.seriesById = new Map([[10, baseSeries({
+      samples: [
+        seriesSample(101, 1, 0), seriesSample(102, 2, 1),
+        seriesSample(103, 3, 2), seriesSample(104, 4, 3),
+      ],
+    })]]);
+    state.corpus = [corpusSample(1, "A"), corpusSample(2, "B"), corpusSample(3, "C"), corpusSample(4, "D")];
+    state.picker = [pickerRow(1, 1), pickerRow(2, 2), pickerRow(3, 3), pickerRow(4, 4)];
+    renderPage();
+    fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "x" } });
+    let rows = screen.getAllByTestId("builder-recipe-row");
+    // Visual [D, C, B, A]; move C (visual index 1) up to visual index 0... that
+    // WOULD be an extreme. Instead move B (visual index 2) up to index 1 — a
+    // non-extreme landing, so 'Move up' stays enabled and keeps focus.
+    const bUp = within(rows[2]!).getByTestId("builder-recipe-up");
+    act(() => bUp.focus());
+    fireEvent.click(bUp);
+    rows = screen.getAllByTestId("builder-recipe-row");
+    // B moved up one visual slot → now visual index 1.
+    expect(rows[1]).toHaveTextContent("B");
+    const bUpNow = within(rows[1]!).getByTestId("builder-recipe-up");
+    expect(bUpNow).not.toBeDisabled();
+    expect(document.activeElement).toBe(bUpNow);
+  });
+
   // ── BU-TOGGLELIE: the annotation toggles drive the PLATE ──────────────────
 
   // Traces covering the member anchors (q = 0.051 / 0.052) so glyphs render.

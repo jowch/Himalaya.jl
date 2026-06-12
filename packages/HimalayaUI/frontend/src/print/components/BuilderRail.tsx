@@ -33,6 +33,13 @@ export interface BuilderRailProps {
   offset: number;
   onOffsetChange: (v: number) => void;
   traces: ReactNode;
+  /**
+   * The traces slot is the editable recipe (draft mode), whose rows reorder via
+   * drag + the ▲▼ buttons. Only then does the section label make the
+   * "drag to reorder" promise — in read mode the slot is a static MemberList and
+   * the instruction would lie (copy-doesn't-lie). Defaults to false (read mode).
+   */
+  reorderable?: boolean;
   onAddSample?: () => void;
   onCollapse?: () => void;
   /**
@@ -83,6 +90,7 @@ export function BuilderRail({
   offset,
   onOffsetChange,
   traces,
+  reorderable = false,
   onAddSample,
   onCollapse,
   caption,
@@ -152,7 +160,9 @@ export function BuilderRail({
         />
       </RailSection>
 
-      <RailSection label="Traces · drag to reorder">
+      {/* copy-doesn't-lie: only the draft (reorderable) traces slot can be
+          dragged, so only then does the label make the reorder promise. */}
+      <RailSection label={reorderable ? "Traces · drag to reorder" : "Traces"}>
         <div className="flex flex-col gap-0.5">{traces}</div>
       </RailSection>
 
