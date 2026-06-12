@@ -8,6 +8,14 @@ export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 
   value: string;
   onValueChange: (v: string) => void;
   inputSize?: "sm" | "md";
+  /**
+   * "field" (default): the recessed plate well below. "title": a plate/figure
+   * title that is editable in place — Newsreader serif display ink with NO box,
+   * just a dotted underline that firms to the accent on focus. The DESIGN.md
+   * "confident ink, re-openable (not a permanent open field)" idiom, shared with
+   * the scoping plate's title. Serif-Means-Title: only use for an actual title.
+   */
+  variant?: "field" | "title";
   /** Adornment slot, e.g. a search magnifier svg. */
   leading?: ReactNode;
   /** Adornment slot, e.g. a clear button or unit suffix. */
@@ -47,19 +55,28 @@ export function Input({
   trailing,
   invalid = false,
   mono = false,
+  variant = "field",
   testId,
   inputRef,
   className = "",
   ...rest
 }: InputProps): JSX.Element {
+  const isTitle = variant === "title";
   return (
     <div
       data-testid={testId ?? "input"}
+      data-variant={isTitle ? "title" : undefined}
       data-invalid={invalid ? "true" : undefined}
       className={cx(
-        "inline-flex items-center gap-2 bg-plate border rounded-sm transition-colors focus-within:border-accent",
-        invalid ? "border-error" : "border-hair-strong",
-        sizeClass[inputSize],
+        "inline-flex items-center gap-2 transition-colors",
+        isTitle
+          // Title: no well, no box — a dotted underline that firms to the
+          // accent on focus (confident ink, re-openable; Serif-Means-Title).
+          ? cx("border-b border-dotted pb-px focus-within:border-accent",
+              invalid ? "border-error" : "border-hair-strong")
+          : cx("bg-plate border rounded-sm focus-within:border-accent",
+              invalid ? "border-error" : "border-hair-strong",
+              sizeClass[inputSize]),
         className,
       )}
     >
@@ -69,7 +86,11 @@ export function Input({
         value={value}
         onChange={(e) => onValueChange(e.target.value)}
         aria-invalid={invalid || undefined}
-        className={cx("flex-1 bg-transparent border-none outline-none text-base text-ink placeholder:text-ink-soft min-w-0", mono && "font-mono")}
+        className={cx(
+          "flex-1 bg-transparent border-none outline-none placeholder:text-ink-soft min-w-0",
+          isTitle ? "text-display text-ink" : "text-base text-ink",
+          mono && "font-mono",
+        )}
         {...rest}
       />
       {trailing}

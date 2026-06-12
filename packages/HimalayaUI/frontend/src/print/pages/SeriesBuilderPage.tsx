@@ -657,9 +657,14 @@ function AnnotationToggleRow({
 }
 
 // ── Plate title — inline-editable (starts a draft on first edit) ───────────
+// BU-TITLE-FIELD: the figure's name is a TITLE, not a form field. The `title`
+// variant renders it as Newsreader serif display ink with a dotted underline
+// that firms on focus (confident ink, re-openable) — matching the scoping
+// plate's title idiom — instead of a permanent bordered sans-serif input box.
 function PlateTitle({ value, onChange }: { value: string; onChange: (v: string) => void }): JSX.Element {
   return (
     <Input
+      variant="title"
       testId="builder-title-input"
       aria-label="Series title"
       value={value}
