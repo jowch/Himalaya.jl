@@ -807,11 +807,15 @@ function RecipeRow({
       >
         &#9660;
       </IconButton>
+      {/* BU-EMPTYREMOVE: a series keeps at least one member — the last row's
+          Remove is disabled (with a reason) so a draft can't be emptied to zero
+          and then "saved" as an empty series. */}
       <IconButton
-        label="Remove sample"
+        label={count === 1 ? "Remove sample (a series keeps at least one member)" : "Remove sample"}
         tone="ghost"
         dismiss
         data-testid="builder-recipe-remove"
+        disabled={count === 1}
         onClick={onRemove}
       />
     </div>

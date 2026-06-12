@@ -830,6 +830,22 @@ describe("SeriesBuilderPage", () => {
     expect(useAppState.getState().seriesDraft!.recipe.length).toBe(before - 1);
   });
 
+  it("BU-EMPTYREMOVE: the last member's Remove is disabled (a series keeps ≥1)", () => {
+    renderPage();
+    fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "x" } });
+    // Remove rows until one remains; the final Remove must be inert so the
+    // draft can never be emptied to zero and "saved" as an empty series.
+    let removers = screen.getAllByTestId("builder-recipe-remove");
+    while (removers.length > 1) {
+      const enabled = removers.find((b) => !(b as HTMLButtonElement).disabled);
+      expect(enabled).toBeTruthy();
+      fireEvent.click(enabled!);
+      removers = screen.getAllByTestId("builder-recipe-remove");
+    }
+    expect(useAppState.getState().seriesDraft!.recipe.length).toBe(1);
+    expect(removers[0]).toBeDisabled();
+  });
+
   it("reordering a recipe row mutates the draft order", () => {
     renderPage();
     fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "x" } });
