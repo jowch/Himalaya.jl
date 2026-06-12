@@ -348,11 +348,18 @@ export function FocusPage(): JSX.Element {
   // other (with zero peaks, "Every peak is unindexed" / "Check a candidate
   // below" would both be lies — the real next action is marking peaks).
   const peaksEmpty = peaks.length === 0;
+  // FO-ALLEXCLUDED-CAPTION: peaks exist but every one is excluded → there is
+  // nothing indexable, which is NOT the same as "candidates were tried and none
+  // fit". Give it its own honest copy (and keep the candidate-list line below in
+  // lockstep) so the cart never implies a failed search over an empty input.
+  const allExcluded = !peaksEmpty && peaks.every((p) => p.excluded);
   const cartEmpty = peaksEmpty
     ? "No peaks marked. Find peaks on the trace to start indexing."
-    : candidatePool.length === 0 && speculatives.length === 0
-      ? "No phase assigned. No candidate fits these peaks. Try a custom index."
-      : undefined; // candidates exist → AssignmentCart's default copy is correct
+    : allExcluded
+      ? "All peaks are excluded. Restore a peak, or add one, to index."
+      : candidatePool.length === 0 && speculatives.length === 0
+        ? "No phase assigned. No candidate fits these peaks. Try a custom index."
+        : undefined; // candidates exist → AssignmentCart's default copy is correct
 
   function phaseMeta(ix: IndexEntry): string {
     const lattice =
@@ -418,7 +425,9 @@ export function FocusPage(): JSX.Element {
         <HintText>
           {peaksEmpty
             ? "Candidates appear once peaks are marked."
-            : "No candidate indexings."}
+            : allExcluded
+              ? "Candidates appear once a peak is restored."
+              : "No candidate indexings."}
         </HintText>
       ) : (
         candidatePool.map((ix) => candidateRow(ix))

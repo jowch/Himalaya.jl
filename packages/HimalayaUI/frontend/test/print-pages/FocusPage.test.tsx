@@ -486,6 +486,25 @@ describe("FocusPage", () => {
     expect(screen.getByText("No candidate indexings.")).toBeInTheDocument();
   });
 
+  it("peaks all excluded: cart names the exclusion, not a failed candidate search (FO-ALLEXCLUDED-CAPTION)", () => {
+    state.peaks = [
+      { id: 1, exposure_id: 7, q: 0.2, intensity: 40, prominence: 10, sharpness: 2, source: "auto", excluded: true },
+      { id: 2, exposure_id: 7, q: 0.3, intensity: 20, prominence: 8, sharpness: 1.5, source: "auto", excluded: true },
+    ];
+    state.indices = [];
+    state.assignment = { exposure_id: 7, state: "indexed", members: [] };
+    renderAt(42);
+    // Distinct, honest copy — peaks exist but none are indexable.
+    expect(screen.getByTestId("assignment-empty")).toHaveTextContent(
+      "All peaks are excluded. Restore a peak, or add one, to index.",
+    );
+    // NOT the no-candidate-fits message (which implies candidates were tried and failed).
+    expect(screen.queryByText(/No candidate fits these peaks/)).toBeNull();
+    // The candidate list agrees with the same reason (they must never contradict).
+    expect(screen.getByText("Candidates appear once a peak is restored.")).toBeInTheDocument();
+    expect(screen.queryByText("No candidate indexings.")).toBeNull();
+  });
+
   it("candidates exist: the cart keeps its default empty copy (F3 unchanged branch)", () => {
     state.assignment = { exposure_id: 7, state: "indexed", members: [] };
     renderAt(42);
