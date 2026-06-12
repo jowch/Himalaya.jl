@@ -71,7 +71,7 @@ export function LoupeSidePanel({
     >
       {/* Block 1: This exposure */}
       <div>
-        <Kicker tone="soft" as="h3" className="mb-2">
+        <Kicker tone="soft" as="h2" className="mb-2">
           This exposure
         </Kicker>
         <MetaList entries={meta} />
@@ -95,7 +95,7 @@ export function LoupeSidePanel({
       {/* Block 4: Sample tags */}
       <div>
         <div className="flex items-center justify-between mb-2">
-          <Kicker tone="soft" as="h3">
+          <Kicker tone="soft" as="h2">
             Sample tags
           </Kicker>
           {onManageTags && (
@@ -122,7 +122,7 @@ export function LoupeSidePanel({
 
       {/* Block 5: Keys */}
       <div>
-        <Kicker tone="soft" as="h3" className="mb-2">
+        <Kicker tone="soft" as="h2" className="mb-2">
           Keys
         </Kicker>
         <KbLegend shortcuts={shortcuts} className="flex-col gap-1" />
