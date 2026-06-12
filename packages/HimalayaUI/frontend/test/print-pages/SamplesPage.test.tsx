@@ -393,6 +393,29 @@ describe("SamplesPage", () => {
     expect(screen.getByTestId("focus-route")).toBeInTheDocument();
   });
 
+  it("a confirmed zero-exposure sample shows 'No exposures' and no Index door (SA-ZEROEXP)", () => {
+    // Sample 1 (Buffer) resolved with an EMPTY exposure list; sample 2 still has frames.
+    state.byId = new Map<number, Exposure[]>([
+      [1, []],
+      [2, [exp({ id: 200, sample_id: 2 })]],
+    ]);
+    renderAt("/samples?beamtime=1");
+    // No dead Index door into an empty Focus workspace.
+    expect(screen.queryByRole("button", { name: /index buffer/i })).toBeNull();
+    // A clear terminal status instead.
+    expect(screen.getByText("No exposures")).toBeInTheDocument();
+  });
+
+  it("a still-loading sample (exposures not yet fetched) keeps its Index door — no premature 'No exposures' (SA-ZEROEXP)", () => {
+    // Sample 1 absent from byId = exposures undefined = not loaded yet.
+    state.byId = new Map<number, Exposure[]>([
+      [2, [exp({ id: 200, sample_id: 2 })]],
+    ]);
+    renderAt("/samples?beamtime=1");
+    expect(screen.getByRole("button", { name: /index buffer/i })).toBeInTheDocument();
+    expect(screen.queryByText("No exposures")).toBeNull();
+  });
+
   it("clicking a sample name opens the loupe at that sample", () => {
     renderAt("/samples?beamtime=1");
     fireEvent.click(screen.getByRole("button", { name: "Buffer" }));

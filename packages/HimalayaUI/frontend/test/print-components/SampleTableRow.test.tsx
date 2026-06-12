@@ -203,6 +203,38 @@ describe("<SampleTableRow> nav seams", () => {
     render(<SampleTableRow {...baseProps} phase={null} />);
     expect(screen.queryByRole("button", { name: /index/i })).toBeNull();
   });
+
+  it("a confirmed zero-exposure sample suppresses the Index door and reads 'No exposures' (SA-ZEROEXP)", () => {
+    const onOpenFocus = vi.fn();
+    // noExposures (exposures loaded AND empty) — the page still wires
+    // onOpenFocus, but the dead door must not render.
+    render(
+      <SampleTableRow
+        {...baseProps}
+        exposures={[]}
+        kept={0}
+        total={0}
+        noExposures
+        phase={null}
+        onOpenFocus={onOpenFocus}
+      />,
+    );
+    // No live Index door into an empty Focus workspace.
+    expect(screen.queryByRole("button", { name: /index/i })).toBeNull();
+    // A clear terminal status instead of the "Not indexed" invitation.
+    expect(screen.getByText("No exposures")).toBeInTheDocument();
+    expect(screen.queryByText("Not indexed")).toBeNull();
+  });
+
+  it("total 0 WITHOUT noExposures (exposures still loading) keeps the live Index door — no false empty signal", () => {
+    const onOpenFocus = vi.fn();
+    render(
+      <SampleTableRow {...baseProps} exposures={[]} kept={0} total={0} phase={null} onOpenFocus={onOpenFocus} />,
+    );
+    // Door is still live (the sample isn't confirmed empty yet).
+    expect(screen.getByRole("button", { name: /index/i })).toBeInTheDocument();
+    expect(screen.queryByText("No exposures")).toBeNull();
+  });
 });
 
 // ---------------------------------------------------------------------------

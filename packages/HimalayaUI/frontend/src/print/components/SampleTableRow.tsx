@@ -24,6 +24,12 @@ export interface SampleTableRowProps {
   kept: number;
   total: number;
   dropped?: number;
+  /** The sample's exposures are LOADED and empty (SA-ZEROEXP) — there is nothing
+   *  to index. Renders a terminal "No exposures" status and suppresses the Focus
+   *  door even when `onOpenFocus` is wired. Supplied by the page only once the
+   *  exposure fetch has resolved empty (never inferred from `total === 0`, which
+   *  is also true mid-load). Default false. */
+  noExposures?: boolean;
   tags: Tag[];
   onAddTag?: (t: Tag) => void;
   onRemoveTag?: (t: Tag) => void;
@@ -171,6 +177,7 @@ export function SampleTableRow({
   kept,
   total,
   dropped,
+  noExposures = false,
   tags,
   onAddTag,
   onRemoveTag,
@@ -186,6 +193,14 @@ export function SampleTableRow({
 }: SampleTableRowProps): JSX.Element {
   const restTint = screened ? "" : " bg-paper-sunk";
   const hasCheckbox = onCheck !== undefined;
+  // SA-ZEROEXP: a sample CONFIRMED to have zero exposures has nothing to index,
+  // so the status cell is NOT a Focus door — it reads a terminal "No exposures"
+  // status instead of a live door into an empty workspace, and the door is
+  // suppressed even when the page wires onOpenFocus. `noExposures` is supplied by
+  // the page (exposures loaded AND empty); it must NOT be inferred from
+  // `total === 0`, which is also true while a sample's exposures are still
+  // loading — that would flash the empty status across the whole sheet mid-load.
+  const isDoor = onOpenFocus != null && !noExposures;
   // Sticky identity cells (SheetTable owns the scroller; rows own the frozen
   // cells). The opaque background must mirror the row's own surface — bg-plate
   // for screened rows (transparent over the Card plate), bg-paper-sunk for the
@@ -369,10 +384,10 @@ export function SampleTableRow({
         <div
           role={cellRole}
           className={CELL}
-          {...(roving && !onOpenFocus ? { onMouseDown: activatePointer(COL_STATUS) } : {})}
-          {...(roving && !onOpenFocus ? { tabIndex: tab(COL_STATUS), ref: cellRef(COL_STATUS) as React.Ref<HTMLDivElement> } : {})}
+          {...(roving && !isDoor ? { onMouseDown: activatePointer(COL_STATUS) } : {})}
+          {...(roving && !isDoor ? { tabIndex: tab(COL_STATUS), ref: cellRef(COL_STATUS) as React.Ref<HTMLDivElement> } : {})}
         >
-          {onOpenFocus ? (
+          {isDoor ? (
             <button
               type="button"
               onClick={onOpenFocus}
@@ -385,7 +400,10 @@ export function SampleTableRow({
               <StatusCell {...(phase !== undefined ? { phase } : {})} />
             </button>
           ) : (
-            <StatusCell {...(phase !== undefined ? { phase } : {})} />
+            <StatusCell
+              {...(phase !== undefined ? { phase } : {})}
+              {...(noExposures ? { noExposures: true } : {})}
+            />
           )}
         </div>
       </div>

@@ -390,7 +390,12 @@ export function SamplesPage(): JSX.Element {
               }
             >
               {sortedSamples.map((s, i) => {
-                const m = toSampleRowModel(s, corpusExposures.byId.get(s.id));
+                const loadedExposures = corpusExposures.byId.get(s.id);
+                const m = toSampleRowModel(s, loadedExposures);
+                // SA-ZEROEXP: distinguish a CONFIRMED-empty sample (query resolved
+                // with []) from one still loading (undefined). Only the former
+                // gets the terminal "No exposures" status + suppressed door.
+                const noExposures = loadedExposures !== undefined && loadedExposures.length === 0;
                 return (
                   <SampleTableRow
                     key={s.id}
@@ -402,6 +407,7 @@ export function SamplesPage(): JSX.Element {
                     kept={m.kept}
                     total={m.total}
                     dropped={m.dropped}
+                    noExposures={noExposures}
                     tags={m.tags}
                     {...(m.phase !== undefined ? { phase: m.phase } : {})}
                     checked={checkedSamples.has(s.id)}

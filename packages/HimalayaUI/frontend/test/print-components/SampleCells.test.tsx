@@ -169,3 +169,19 @@ describe("<StatusCell> unset states", () => {
     expect(container.querySelector("[data-tone='muted']")).toBeInTheDocument();
   });
 });
+
+describe("<StatusCell> noExposures (SA-ZEROEXP)", () => {
+  it("reads 'No exposures' (not 'Not indexed') and carries its own data-role", () => {
+    const { container } = render(<StatusCell phase={null} noExposures />);
+    const el = container.querySelector("[data-role='status-no-exposures']");
+    expect(el).toBeInTheDocument();
+    expect(el).toHaveTextContent("No exposures");
+    expect(container.querySelector("[data-role='status-unset']")).not.toBeInTheDocument();
+  });
+
+  it("takes precedence over a phase (an empty sample can't carry a phase)", () => {
+    render(<StatusCell phase="Pn3m" noExposures />);
+    expect(screen.getByText("No exposures")).toBeInTheDocument();
+    expect(screen.queryByTestId("phase-chip")).not.toBeInTheDocument();
+  });
+});
