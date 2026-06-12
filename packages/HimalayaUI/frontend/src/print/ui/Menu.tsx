@@ -10,10 +10,14 @@ import type { ReactNode, KeyboardEvent } from "react";
  * appearance (the `.card` plate + menuitem hover/focus/active recipe); the
  * consumer's `className` is PLACEMENT-ONLY and lands LAST.
  *
- * Semantics: `role="menu"` with `role="menuitem"` children. Keyboard model
- * mirrors SegmentedControl's radiogroup roving focus — refs array + `.focus()`
- * on ArrowUp/Down — plus Escape -> onClose. A click selects then closes.
- * Renders nothing when `!open`.
+ * Semantics: `role="menu"` container. Each option is a `role="menuitem"`
+ * (action menus: export, nav) OR a `role="menuitemradio"` with `aria-checked`
+ * (VALUE-SELECTOR menus — those given an `activeValue`, e.g. the ordering
+ * dropdown). The radio role tells assistive tech WHICH option is the current
+ * value; a plain menuitem cannot. The `role="menu"` container validly holds
+ * either. Keyboard model mirrors SegmentedControl's radiogroup roving focus —
+ * refs array + `.focus()` on ArrowUp/Down — plus Escape -> onClose. A click
+ * selects then closes. Renders nothing when `!open`.
  *
  * APG menu-button: opening the menu moves DOM focus INTO it — to the active
  * item when `activeValue` names an enabled option, else the first enabled
@@ -94,6 +98,11 @@ export function Menu<T extends string>({
 
   if (!open) return null;
 
+  // A value-selector menu (the consumer passes an activeValue) marks the
+  // current option with role=menuitemradio + aria-checked; an action menu
+  // (no activeValue: export, nav) keeps the bare menuitem with no checked state.
+  const isValueSelector = activeValue !== undefined;
+
   const move = (delta: number, from: number): void => {
     const n = options.length;
     if (n === 0) return;
@@ -144,9 +153,10 @@ export function Menu<T extends string>({
             ref={(el) => {
               itemRefs.current[idx] = el;
             }}
-            role="menuitem"
+            role={isValueSelector ? "menuitemradio" : "menuitem"}
             type="button"
             disabled={o.disabled}
+            {...(isValueSelector ? { "aria-checked": active } : {})}
             data-value={o.value}
             data-active={active ? "true" : undefined}
             onClick={() => {

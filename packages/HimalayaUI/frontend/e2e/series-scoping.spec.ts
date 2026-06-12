@@ -222,9 +222,11 @@ test.describe("series scoping — greenfield DOM", () => {
 
     await expect(page.getByTestId("scoping-page")).toBeVisible();
 
-    // Open the ordering dropdown and pick the sentinel last entry.
+    // Open the ordering dropdown and pick the sentinel last entry. The ordering
+    // menu is a value-selector, so its options are menuitemradio (the current
+    // variable carries aria-checked) rather than plain menuitem.
     await page.getByTestId("order-field").click();
-    await page.getByRole("menuitem", { name: "Define your own…" }).click();
+    await page.getByRole("menuitemradio", { name: "Define your own…" }).click();
 
     // The warm worksheet is replaced by the custom assign card, seeded with
     // the two current members (values empty).

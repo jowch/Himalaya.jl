@@ -69,7 +69,13 @@ const SCOPING_FIXTURE = (
   </div>
 );
 
-type HistoryEntry = { type: "flag"; id: number; prev: boolean; label: string };
+// Undo history (⌘Z / the plate's "Undo last change"). Both worksheet edit
+// gestures push a typed entry so each is recoverable — skip and reorder reach
+// parity (no asymmetric freedom): a `flag` entry restores one member's skip
+// state; a `reorder` entry restores the WHOLE prior display order.
+type HistoryEntry =
+  | { type: "flag"; id: number; prev: boolean; label: string }
+  | { type: "reorder"; prevOrder: number[]; label: string };
 
 /**
  * ColdAssignSection: the shared assign body (ColdAssignPanel + the gated
@@ -317,10 +323,24 @@ export function SeriesScopingPage(): JSX.Element {
   // Display-only manual reorder (scope decision #5): rewrites `order` + the
   // preview; never touches the written (key,value) payload. `applyReorder` is
   // the SINGLE order mutation — the pointer (drag) and keyboard (grip-button
-  // arrows) paths both converge on it.
+  // arrows) paths both converge on it, so recording the undo entry HERE covers
+  // both. A no-op move (boundary press, identical indices) must not push a dead
+  // history entry — `reorder` returns an equal-content array, so compare and
+  // bail. The change-detection + both setState calls live OUTSIDE any updater:
+  // pushing `setHistory` from inside the `setOrder` updater would be an impure
+  // updater that StrictMode double-invokes (a single reorder would mint two
+  // history entries). `order` from the render closure is the pre-mutation array,
+  // captured for the undo restore.
   const applyReorder = useCallback(
-    (from: number, to: number): void => setOrder((o) => reorder(o, from, to)),
-    [],
+    (from: number, to: number): void => {
+      const next = reorder(order, from, to);
+      const changed =
+        next.length !== order.length || next.some((id, i) => id !== order[i]);
+      if (!changed) return;
+      setHistory((h) => [...h, { type: "reorder", prevOrder: order, label: "reorder" }]);
+      setOrder(next);
+    },
+    [order],
   );
   const { dragItemProps, dropEdge } = useDragReorder(applyReorder);
 
@@ -407,7 +427,12 @@ export function SeriesScopingPage(): JSX.Element {
     setHistory((h) => {
       const e = h[h.length - 1];
       if (!e) return h;
-      setRows((cur) => cur.map((r) => (r.sampleId === e.id ? { ...r, flagged: e.prev } : r)));
+      if (e.type === "flag") {
+        setRows((cur) => cur.map((r) => (r.sampleId === e.id ? { ...r, flagged: e.prev } : r)));
+      } else {
+        // reorder: restore the whole prior display order.
+        setOrder(e.prevOrder);
+      }
       return h.slice(0, -1);
     });
   }, []);
@@ -484,6 +509,16 @@ export function SeriesScopingPage(): JSX.Element {
 
   const skippedCount = rows.filter((r) => r.flagged).length;
   const keptCount = rows.filter(isKept).length;
+
+  // SC-COUNTHONEST: the count caption must not claim "low to high" once the user
+  // has manually reordered (drag or keyboard). The canonical default IS the
+  // value-sorted `seededOrder`; while the live `order` still equals it the
+  // ordering is genuinely low→high, otherwise it is a custom order. Compared by
+  // content (same ids, same positions) so a reseed that produces an equal array
+  // still reads as the default. (Lengths can differ transiently mid-reseed.)
+  const isCanonicalOrder =
+    order.length === seededOrder.length && order.every((id, i) => id === seededOrder[i]);
+  const orderCaption = `${rows.length} samples · ${isCanonicalOrder ? "low to high" : "custom order"}`;
   const footState = buildFootState(keptCount, skippedCount);
   const canBuild = canScopeBuild(rows, proposal.orderingKey);
   const lastLabel = history.length ? history[history.length - 1]!.label : undefined;
@@ -754,6 +789,7 @@ export function SeriesScopingPage(): JSX.Element {
               <Field
                 testId="order-field"
                 srLabel="Ordered by"
+                menuLabel="Ordered by"
                 value={DEFINE_YOUR_OWN}
                 options={orderOptions}
                 onSelect={onOrderSelect}
@@ -793,7 +829,7 @@ export function SeriesScopingPage(): JSX.Element {
               orderOptions={orderOptions}
               onOrderSelect={onOrderSelect}
               orderNote="Read from the sample names. Switch the ordering variable above, or define your own."
-              count={`${rows.length} samples · low to high`}
+              count={orderCaption}
               {...(history.length
                 ? { onUndo: undo, ...(lastLabel ? { undoLabel: `Step back: ${lastLabel}` } : {}) }
                 : {})}

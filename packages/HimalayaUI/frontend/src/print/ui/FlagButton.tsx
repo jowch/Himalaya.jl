@@ -42,11 +42,15 @@ export function FlagButton({ value, flagged, onClick, className }: FlagButtonPro
       data-testid="flag-button"
       data-state={flagged ? "flagged" : "ok"}
       data-affordance="persistent"
+      data-hit-area="24"
       aria-pressed={flagged === true}
       onClick={onClick}
       title={flagged ? "Restore this read" : "Skip this read"}
+      // min-h-[24px] meets the WCAG 2.5.8 target floor without changing the
+      // glyph: the value text + optional "skipped" caption already stack inside,
+      // and a single-line ok-state value needs the floor to clear 24px tall.
       className={cx(
-        "group/fb block text-right font-mono cursor-pointer min-w-[92px] flex-shrink-0",
+        "group/fb block text-right font-mono cursor-pointer min-w-[92px] min-h-[24px] flex-shrink-0",
         "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
         flagged ? "text-accent" : "text-ink",
         className,
@@ -66,7 +70,7 @@ export function FlagButton({ value, flagged, onClick, className }: FlagButtonPro
       {flagged && (
         <span
           aria-hidden="true"
-          className="block text-[9px] font-bold uppercase tracking-wide text-accent mt-0.5"
+          className="block text-caption font-bold uppercase tracking-wide text-accent mt-0.5"
         >
           ▸ skipped
         </span>

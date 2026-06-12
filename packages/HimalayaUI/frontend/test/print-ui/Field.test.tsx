@@ -43,7 +43,8 @@ describe("<Field>", () => {
     expect(screen.queryByTestId("menu")).toBeNull();          // closed initially
     fireEvent.click(screen.getByTestId("field"));
     expect(screen.getByTestId("menu")).toBeInTheDocument();    // opens
-    fireEvent.click(screen.getByRole("menuitem", { name: "Dose" }));
+    // Field always passes activeValue → value-selector menu (menuitemradio).
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Dose" }));
     expect(onSelect).toHaveBeenCalledWith("Dose");
     expect(screen.queryByTestId("menu")).toBeNull();          // closes on select
   });
@@ -65,7 +66,7 @@ describe("<Field>", () => {
       trigger.focus();
       fireEvent.keyDown(trigger, { key: "ArrowDown" });
       expect(screen.getByTestId("menu")).toBeInTheDocument();
-      expect(document.activeElement).toBe(screen.getByRole("menuitem", { name: "Dose" }));
+      expect(document.activeElement).toBe(screen.getByRole("menuitemradio", { name: "Dose" }));
     });
 
     it("ArrowUp on the closed trigger opens and focuses the LAST item", () => {
@@ -73,13 +74,13 @@ describe("<Field>", () => {
       trigger.focus();
       fireEvent.keyDown(trigger, { key: "ArrowUp" });
       expect(screen.getByTestId("menu")).toBeInTheDocument();
-      expect(document.activeElement).toBe(screen.getByRole("menuitem", { name: "Mass" }));
+      expect(document.activeElement).toBe(screen.getByRole("menuitemradio", { name: "Mass" }));
     });
 
     it("opening by click also moves focus into the menu (APG)", () => {
       const trigger = setup();
       fireEvent.click(trigger);
-      expect(document.activeElement).toBe(screen.getByRole("menuitem", { name: "Dose" }));
+      expect(document.activeElement).toBe(screen.getByRole("menuitemradio", { name: "Dose" }));
     });
 
     it("Escape on the trigger while open closes; focus stays on the trigger", () => {
@@ -103,7 +104,7 @@ describe("<Field>", () => {
     it("selecting an item closes and returns focus to the trigger", () => {
       const trigger = setup();
       fireEvent.click(trigger);
-      fireEvent.click(screen.getByRole("menuitem", { name: "Mass" }));
+      fireEvent.click(screen.getByRole("menuitemradio", { name: "Mass" }));
       expect(screen.queryByTestId("menu")).toBeNull();
       expect(document.activeElement).toBe(trigger);
     });

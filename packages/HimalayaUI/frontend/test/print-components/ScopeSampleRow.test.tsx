@@ -93,5 +93,27 @@ describe("<ScopeSampleRow>", () => {
       expect(screen.queryByRole("button", { name: /reorder/i })).toBeNull();
       expect(screen.getByTestId("grip-handle")).toBeInTheDocument();
     });
+
+    it("the reorder grip declares a >=24px hit area (WCAG 2.5.8)", () => {
+      render(
+        <ScopeSampleRow name="Lipid A" sampleId="smp_01" trace={TRACE} value="1 : 0" onMoveBy={() => {}} />,
+      );
+      // jsdom cannot compute Tailwind box sizes, so the padded-hit-area contract
+      // is carried as a data attribute (Checkbox precedent).
+      expect(
+        screen.getByRole("button", { name: /^reorder Lipid A$/i }),
+      ).toHaveAttribute("data-hit-area", "24");
+    });
+
+    it("surfaces the arrow-key reorder shortcut to sighted keyboard users (tooltip)", () => {
+      render(
+        <ScopeSampleRow name="Lipid A" sampleId="smp_01" trace={TRACE} value="1 : 0" onMoveBy={() => {}} />,
+      );
+      // The shortcut is otherwise only in aria-keyshortcuts (AT-only); a visible
+      // title makes it discoverable.
+      const grip = screen.getByRole("button", { name: /^reorder Lipid A$/i });
+      expect(grip.getAttribute("title")).toMatch(/↑ ↓/);
+      expect(grip).toHaveAttribute("aria-keyshortcuts", "ArrowUp ArrowDown");
+    });
   });
 });

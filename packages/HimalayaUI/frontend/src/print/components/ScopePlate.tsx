@@ -100,6 +100,7 @@ export function ScopePlate({
       <Field
         testId="order-field"
         srLabel="Ordered by"
+        menuLabel="Ordered by"
         value={orderedBy}
         {...(orderOptions
           ? { options: orderOptions, ...(onOrderSelect ? { onSelect: onOrderSelect } : {}) }

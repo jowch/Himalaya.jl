@@ -61,6 +61,29 @@ describe("<ScopePlate>", () => {
       screen.getByRole("button", { name: /ordered by\s+LL37 : lipid ratio/i }),
     ).toBeInTheDocument();
   });
+  it("names the ordering dropdown 'Ordered by' so it is not the generic menu default, with checked option", () => {
+    render(
+      <ScopePlate
+        {...base}
+        orderOptions={[
+          { value: "LL37 : lipid ratio", label: "LL37 : lipid ratio" },
+          { value: "Time", label: "Time" },
+        ]}
+        onOrderSelect={() => {}}
+        footState={{ kind: "ready", text: "ready" }}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("order-field"));
+    // The menu's accessible name is the ordering label, not "Choose an option".
+    expect(screen.getByRole("menu", { name: "Ordered by" })).toBeInTheDocument();
+    // Value-selector → radios; the current value is aria-checked.
+    expect(
+      screen.getByRole("menuitemradio", { name: "LL37 : lipid ratio" }).getAttribute("aria-checked"),
+    ).toBe("true");
+    expect(screen.getByRole("menuitemradio", { name: "Time" }).getAttribute("aria-checked")).toBe(
+      "false",
+    );
+  });
   it("omits the preview section entirely when there are no segments (every member skipped)", () => {
     // A zero-segment PhaseStrip would still paint an empty bar + the
     // "No clear phase" caption — a visible artifact previewing nothing. The

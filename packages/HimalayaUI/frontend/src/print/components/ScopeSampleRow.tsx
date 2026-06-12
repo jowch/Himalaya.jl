@@ -72,6 +72,7 @@ export function ScopeSampleRow({
         <button
           type="button"
           aria-keyshortcuts="ArrowUp ArrowDown"
+          data-hit-area="24"
           onKeyDown={(e) => {
             // Modified arrows stay native (Cmd+ArrowDown = macOS scroll-to-end,
             // Alt+Arrow = word-nav): hijacking those would be its own trap.
@@ -84,7 +85,16 @@ export function ScopeSampleRow({
               onMoveBy(1);
             }
           }}
-          className="flex-shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          // Padding grows the hit box to >=24x24 (WCAG 2.5.8) while the matching
+          // negative margin cancels it in layout so the glyph and row geometry
+          // are unchanged (Checkbox precedent). The glyph is only ~9px wide, so
+          // the horizontal padding is px-2 (-> ~25px) while py-1.5 covers height;
+          // a symmetric p-1.5 would have left the width at ~21px. inline-flex
+          // keeps the padded box centred on the glyph. title surfaces the
+          // arrow-key reorder to sighted keyboard users (the shortcut is
+          // otherwise only in aria-keyshortcuts).
+          title="Drag to reorder, or focus and use ↑ ↓"
+          className="inline-flex items-center justify-center flex-shrink-0 py-1.5 -my-1.5 px-2 -mx-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
         >
           <span className="sr-only">Reorder {name}</span>
           <GripHandle />

@@ -745,17 +745,17 @@ describe("SeriesScopingPage", () => {
     seedTwoKeys();
     renderPage();
     fireEvent.click(screen.getByTestId("order-field"));
-    expect(screen.getByRole("menuitem", { name: "ratio" })).toBeInTheDocument();
-    expect(screen.getByRole("menuitem", { name: "temp" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitemradio", { name: "ratio" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitemradio", { name: "temp" })).toBeInTheDocument();
     // Both corpus keys plus the always-present "Define your own…" sentinel.
-    expect(screen.getAllByRole("menuitem")).toHaveLength(3);
+    expect(screen.getAllByRole("menuitemradio")).toHaveLength(3);
   });
 
   it("lists Define your own… as the last dropdown option", () => {
     seedTwoKeys();
     renderPage();
     fireEvent.click(screen.getByTestId("order-field"));
-    const items = screen.getAllByRole("menuitem").map((m) => m.textContent);
+    const items = screen.getAllByRole("menuitemradio").map((m) => m.textContent);
     expect(items[items.length - 1]).toBe("Define your own…");
   });
 
@@ -772,7 +772,7 @@ describe("SeriesScopingPage", () => {
 
     // Switch the ordering variable to "temp".
     fireEvent.click(screen.getByTestId("order-field"));
-    fireEvent.click(screen.getByRole("menuitem", { name: "temp" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "temp" }));
 
     // The members now read their "temp" values.
     values = screen.getAllByTestId("flag-button").map((b) => b.textContent ?? "");
@@ -790,7 +790,7 @@ describe("SeriesScopingPage", () => {
     const field = screen.getByTestId("order-field");
     expect(field).toHaveAttribute("aria-haspopup", "menu");
     fireEvent.click(field);
-    const items = screen.getAllByRole("menuitem").map((m) => m.textContent);
+    const items = screen.getAllByRole("menuitemradio").map((m) => m.textContent);
     expect(items).toEqual(["ratio", "Define your own…"]);
   });
 
@@ -798,7 +798,7 @@ describe("SeriesScopingPage", () => {
     seedTwoKeys();
     renderPage();
     fireEvent.click(screen.getByTestId("order-field"));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Define your own…" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Define your own…" }));
 
     // The warm worksheet is replaced by the custom card in the same slot.
     expect(screen.getByTestId("custom-scope-plate")).toBeInTheDocument();
@@ -822,7 +822,7 @@ describe("SeriesScopingPage", () => {
     seedTwoKeys();
     renderPage();
     fireEvent.click(screen.getByTestId("order-field"));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Define your own…" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Define your own…" }));
     expect(screen.getByTestId("custom-scope-plate")).toBeInTheDocument();
     // The default cold-corpus paragraph would be false here and is redundant
     // with the card's own caption, so it must not render.
@@ -857,7 +857,7 @@ describe("SeriesScopingPage", () => {
     };
     renderPage();
     fireEvent.click(screen.getByTestId("order-field"));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Define your own…" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Define your own…" }));
     expect(screen.getByTestId("custom-scope-plate")).toBeInTheDocument();
     expect(screen.queryAllByTestId("cold-assign-row")).toHaveLength(0);
     fireEvent.change(screen.getByTestId("cold-key-input"), { target: { value: "dose" } });
@@ -868,7 +868,7 @@ describe("SeriesScopingPage", () => {
     seedTwoKeys();
     const { rerender } = renderPage();
     fireEvent.click(screen.getByTestId("order-field"));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Define your own…" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Define your own…" }));
 
     // Gate closed until the key and every value are filled.
     expect(screen.getByRole("button", { name: /confirm & build/i })).toBeDisabled();
@@ -1011,12 +1011,12 @@ describe("SeriesScopingPage", () => {
     seedTwoKeys();
     renderPage();
     fireEvent.click(screen.getByTestId("order-field"));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Define your own…" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Define your own…" }));
     expect(screen.getByTestId("custom-scope-plate")).toBeInTheDocument();
 
     // The custom card's order field is the escape hatch back to a proposed key.
     fireEvent.click(screen.getByTestId("order-field"));
-    fireEvent.click(screen.getByRole("menuitem", { name: "temp" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "temp" }));
 
     expect(screen.queryByTestId("custom-scope-plate")).toBeNull();
     const values = screen.getAllByTestId("flag-button").map((b) => b.textContent ?? "");
@@ -1112,7 +1112,7 @@ describe("SeriesScopingPage", () => {
       seedDisjointKeyCorpus();
       renderPage([4, 5]);
       fireEvent.click(screen.getByTestId("order-field"));
-      const items = screen.getAllByRole("menuitem").map((m) => m.textContent);
+      const items = screen.getAllByRole("menuitemradio").map((m) => m.textContent);
       expect(items).toEqual(["temp", "Define your own…"]);
     });
 
@@ -1125,7 +1125,7 @@ describe("SeriesScopingPage", () => {
       expect(screen.getAllByTestId("scope-sample-row")).toHaveLength(2);
       expect(screen.getAllByTestId("scope-candidate")).toHaveLength(2);
       fireEvent.click(screen.getByTestId("order-field"));
-      fireEvent.click(screen.getByRole("menuitem", { name: "Define your own…" }));
+      fireEvent.click(screen.getByRole("menuitemradio", { name: "Define your own…" }));
       const rows = screen.getAllByTestId("cold-assign-row");
       expect(rows).toHaveLength(4);
       expect(rows[0]!.textContent).toContain("A");
@@ -1140,7 +1140,7 @@ describe("SeriesScopingPage", () => {
       seedManyLoose();
       renderPage();
       fireEvent.click(screen.getByTestId("order-field"));
-      fireEvent.click(screen.getByRole("menuitem", { name: "Define your own…" }));
+      fireEvent.click(screen.getByRole("menuitemradio", { name: "Define your own…" }));
       expect(screen.getAllByTestId("cold-assign-row")).toHaveLength(2);
     });
   });
@@ -1200,7 +1200,7 @@ describe("SeriesScopingPage", () => {
       seedTwoKeys();
       renderPage();
       fireEvent.click(screen.getByTestId("order-field"));
-      fireEvent.click(screen.getByRole("menuitem", { name: "Define your own…" }));
+      fireEvent.click(screen.getByRole("menuitemradio", { name: "Define your own…" }));
       // The identity block is unchanged (pinned elsewhere too: placeholder h1 +
       // suppressed cold-corpus intro); here the level structure is the pin.
       expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Series by …");
@@ -1304,6 +1304,98 @@ describe("SeriesScopingPage", () => {
       expect(first).toMatch(/A is already first\./);
       expect(second).toMatch(/A is already first\./);
       expect(second).not.toBe(first);
+    });
+  });
+
+  // SC-COUNTHONEST: the count caption must not keep claiming "low to high" once
+  // the order is no longer the value-sorted default (the controls-don't-lie law).
+  describe("count caption honesty after reorder", () => {
+    it("reads 'low to high' while the order is the canonical value-sorted default", () => {
+      seed3();
+      renderPage();
+      expect(screen.getByText(/3 samples · low to high/i)).toBeInTheDocument();
+      expect(screen.queryByText(/custom order/i)).toBeNull();
+    });
+
+    it("flips to 'custom order' after a manual reorder diverges from the default", () => {
+      seed3();
+      renderPage();
+      fireEvent.keyDown(screen.getByRole("button", { name: /^reorder B$/i }), { key: "ArrowUp" });
+      expect(screen.getByText(/3 samples · custom order/i)).toBeInTheDocument();
+      expect(screen.queryByText(/low to high/i)).toBeNull();
+    });
+
+    it("returns to 'low to high' when the order is restored to the default", () => {
+      seed3();
+      renderPage();
+      // Move B up, then back down — the order is the default again.
+      fireEvent.keyDown(screen.getByRole("button", { name: /^reorder B$/i }), { key: "ArrowUp" });
+      expect(screen.getByText(/custom order/i)).toBeInTheDocument();
+      fireEvent.keyDown(screen.getByRole("button", { name: /^reorder B$/i }), { key: "ArrowDown" });
+      expect(screen.getByText(/3 samples · low to high/i)).toBeInTheDocument();
+    });
+  });
+
+  // SC-REORDERUNDO: a manual reorder is recoverable through the SAME undo path
+  // (⌘Z + the plate's "Undo last change") that a skip is — no asymmetric freedom.
+  describe("reorder undo (parity with skip)", () => {
+    function renderedNames(): string[] {
+      return screen
+        .getAllByTestId("scope-sample-row")
+        .map((r) => within(r).getByText(/^(A|B|C)$/).textContent ?? "");
+    }
+
+    it("⌘Z restores the prior display order after a reorder", () => {
+      seed3();
+      renderPage();
+      expect(renderedNames()).toEqual(["A", "B", "C"]);
+      fireEvent.keyDown(screen.getByRole("button", { name: /^reorder B$/i }), { key: "ArrowUp" });
+      expect(renderedNames()).toEqual(["B", "A", "C"]);
+      const notPrevented = fireEvent.keyDown(window, { key: "z", metaKey: true });
+      expect(notPrevented).toBe(false);
+      expect(renderedNames()).toEqual(["A", "B", "C"]);
+      // And the caption is honest again.
+      expect(screen.getByText(/3 samples · low to high/i)).toBeInTheDocument();
+    });
+
+    it("the plate's Undo affordance appears after a reorder and is labelled for it", () => {
+      seed3();
+      renderPage();
+      // No edit yet → no Undo.
+      expect(screen.queryByRole("button", { name: /undo/i })).toBeNull();
+      fireEvent.keyDown(screen.getByRole("button", { name: /^reorder B$/i }), { key: "ArrowUp" });
+      const undoBtn = screen.getByRole("button", { name: /undo last change/i });
+      // Honest label for the reorder case (title attr; see ScopePlate undoLabel).
+      expect(undoBtn.getAttribute("title")).toBe("Step back: reorder");
+      // Clicking it restores the default order.
+      fireEvent.click(undoBtn);
+      expect(renderedNames()).toEqual(["A", "B", "C"]);
+    });
+
+    it("a boundary (no-op) reorder records no undo entry", () => {
+      seed3();
+      renderPage();
+      // ArrowUp on the first row cannot move it — no history pushed, no Undo.
+      fireEvent.keyDown(screen.getByRole("button", { name: /^reorder A$/i }), { key: "ArrowUp" });
+      expect(screen.queryByRole("button", { name: /undo/i })).toBeNull();
+      expect(screen.getByText(/3 samples · low to high/i)).toBeInTheDocument();
+    });
+
+    it("undo unwinds reorder and skip independently, last-in-first-out", () => {
+      seed3();
+      renderPage();
+      // 1) reorder B up, 2) skip A (now at position 2).
+      fireEvent.keyDown(screen.getByRole("button", { name: /^reorder B$/i }), { key: "ArrowUp" });
+      expect(renderedNames()).toEqual(["B", "A", "C"]);
+      fireEvent.click(screen.getAllByTestId("flag-button")[1]!); // A
+      expect(screen.getByText(/2 values ready to commit · 1 skipped/i)).toBeInTheDocument();
+      // First ⌘Z steps the SKIP back (LIFO).
+      fireEvent.keyDown(window, { key: "z", metaKey: true });
+      expect(screen.getByText(/3 values ready to commit/i)).toBeInTheDocument();
+      expect(renderedNames()).toEqual(["B", "A", "C"]); // order still reordered
+      // Second ⌘Z steps the REORDER back.
+      fireEvent.keyDown(window, { key: "z", metaKey: true });
+      expect(renderedNames()).toEqual(["A", "B", "C"]);
     });
   });
 });

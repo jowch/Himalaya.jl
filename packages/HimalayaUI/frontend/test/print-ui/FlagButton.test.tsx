@@ -73,4 +73,11 @@ describe("<FlagButton>", () => {
     fireEvent.click(screen.getByTestId("flag-button"));
     expect(onClick).toHaveBeenCalledOnce();
   });
+
+  it("declares a >=24px hit area (WCAG 2.5.8)", () => {
+    // jsdom cannot compute the Tailwind min-h box, so the target-size contract
+    // is carried as a data attribute (Checkbox / reorder-grip precedent).
+    render(<FlagButton value="1 : 0.25" />);
+    expect(screen.getByTestId("flag-button")).toHaveAttribute("data-hit-area", "24");
+  });
 });
