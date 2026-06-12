@@ -252,6 +252,41 @@ describe("LoupePage", () => {
     }
   });
 
+  it("dropping the LAST kept frame names the consequence + reversal, not a bland 'Frame dropped' (LO-LASTFRAME-NOGUARD)", () => {
+    const toast = vi.fn();
+    setToastImpl(toast);
+    try {
+      // Default fixture: frame 1 accepted (the ONLY non-rejected frame), frame 2 rejected.
+      renderAt(42);
+      fireEvent.keyDown(window, { key: "x" }); // drop frame 1 — the last kept frame
+      lastCbs(setStatusMutate).onSuccess?.({});
+      expect(toast).toHaveBeenCalledWith(
+        "Last kept frame dropped. This sample now has no kept frame; press X to restore it.",
+        "warning",
+      );
+    } finally {
+      setToastImpl(null);
+    }
+  });
+
+  it("dropping a frame that is NOT the last kept one keeps the plain 'Frame dropped' toast", () => {
+    const toast = vi.fn();
+    setToastImpl(toast);
+    try {
+      // Two kept frames — dropping one still leaves another, so no consequence copy.
+      state.exposures = [
+        exp({ id: 1, selected: true, status: "accepted" }),
+        exp({ id: 2, status: "accepted" }),
+      ];
+      renderAt(42);
+      fireEvent.keyDown(window, { key: "x" }); // drop frame 1; frame 2 stays kept
+      lastCbs(setStatusMutate).onSuccess?.({});
+      expect(toast).toHaveBeenCalledWith("Frame dropped", "success");
+    } finally {
+      setToastImpl(null);
+    }
+  });
+
   it("the Kept pill shows on an accepted frame; the Dropped pill on a rejected one", () => {
     const { container } = renderAt(42); // frame 1 accepted, frame 2 rejected
     expect(container.querySelector('[data-role="kept-tag"]')).toBeInTheDocument();
@@ -310,6 +345,12 @@ describe("LoupePage", () => {
     const toast = vi.fn();
     setToastImpl(toast);
     try {
+      // Two kept frames so this exercises the PLAIN drop path (not the
+      // last-kept-frame consequence copy, covered by its own test).
+      state.exposures = [
+        exp({ id: 1, selected: true, status: "accepted" }),
+        exp({ id: 2, status: "accepted" }),
+      ];
       renderAt(42);
       fireEvent.keyDown(window, { key: "x" });
       // The save is still pending — claiming "Frame dropped" here would lie.

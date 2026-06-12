@@ -184,6 +184,13 @@ export function LoupePage(): JSX.Element {
   const handleDropToggle = useCallback(() => {
     if (!activeExposure) return;
     const dropping = activeExposure.status !== "rejected";
+    // LO-LASTFRAME-NOGUARD: dropping the ONLY non-rejected frame leaves the
+    // sample with no kept frame at all — a consequential edge the bland "Frame
+    // dropped" copy hid. The action stays reversible (X toggles it back), so
+    // name both the consequence and the reversal gesture rather than guarding
+    // it outright (a sample legitimately may end up all-rejected).
+    const lastKept =
+      dropping && exposures.filter((e) => e.status !== "rejected").length === 1;
     setStatus.mutate(
       { exposureId: activeExposure.id, status: dropping ? "rejected" : null },
       {
@@ -191,11 +198,18 @@ export function LoupePage(): JSX.Element {
         // CONFIRMATION (HTTP or own-op SSE), never optimistically: a premature
         // "Frame dropped" would lie if the save later failed and rolled back.
         onSuccess: () =>
-          showToast(dropping ? "Frame dropped" : "Frame restored", "success"),
+          showToast(
+            dropping
+              ? lastKept
+                ? "Last kept frame dropped. This sample now has no kept frame; press X to restore it."
+                : "Frame dropped"
+              : "Frame restored",
+            lastKept ? "warning" : "success",
+          ),
         onError: notifySaveFailed,
       },
     );
-  }, [activeExposure, setStatus]);
+  }, [activeExposure, exposures, setStatus]);
 
   // The Keep verb (SA-SCREENED): K toggles accepted ↔ null. On a rejected
   // frame, K accepts directly — last verb wins, no trip through unscreened.
