@@ -1,3 +1,4 @@
+import { useId } from "react";
 import type { ReactNode } from "react";
 
 export type ChipVariant = "static" | "removable" | "add" | "toggle" | "trigger";
@@ -26,6 +27,12 @@ interface ChipProps {
    *  to explain a filter's meaning; omitted ⇒ no `title` attribute (existing
    *  consumers stay byte-identical). */
   title?: string;
+  /** Optional explanatory description (the `toggle` variant only). Rendered as a
+   *  visually-hidden span wired via `aria-describedby` so keyboard/SR users hear
+   *  the explanation on focus while the accessible NAME stays the label.
+   *  Complements `title` (the mouse-only affordance). Omitted ⇒ no
+   *  `aria-describedby`/sr-only span (existing consumers stay byte-identical). */
+  description?: string;
   className?: string;
 }
 
@@ -68,8 +75,12 @@ export function Chip({
   removeLabel = "Remove",
   testId = "chip",
   title,
+  description,
   className = "",
 }: ChipProps): JSX.Element {
+  // Stable id for the optional sr-only description (toggle variant). useId is
+  // SSR-safe and collision-free across multiple chips on the page.
+  const descId = useId();
   if (variant === "removable") {
     return (
       <span
@@ -128,27 +139,38 @@ export function Chip({
 
   if (variant === "toggle") {
     return (
-      <button
-        type="button"
-        data-testid={testId}
-        data-variant="toggle"
-        data-size={size}
-        aria-pressed={active}
-        data-active={active ? "true" : "false"}
-        {...(title !== undefined ? { title } : {})}
-        onClick={onClick}
-        className={cx(
-          pillBase,
-          sizeClass[size],
-          "border focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
-          active
-            ? "bg-ink text-paper border-ink"
-            : "bg-plate text-ink-soft border-hair-strong hover:border-ink-faint",
-          className,
+      <>
+        <button
+          type="button"
+          data-testid={testId}
+          data-variant="toggle"
+          data-size={size}
+          aria-pressed={active}
+          data-active={active ? "true" : "false"}
+          {...(title !== undefined ? { title } : {})}
+          {...(description !== undefined ? { "aria-describedby": descId } : {})}
+          onClick={onClick}
+          className={cx(
+            pillBase,
+            sizeClass[size],
+            "border focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
+            active
+              ? "bg-ink text-paper border-ink"
+              : "bg-plate text-ink-soft border-hair-strong hover:border-ink-faint",
+            className,
+          )}
+        >
+          {children}
+        </button>
+        {/* Visually-hidden description: keyboard/SR users hear it on focus
+            (aria-describedby), the accessible NAME stays the label. `sr-only`
+            is the house clip-rect helper — layout-neutral, not appearance. */}
+        {description !== undefined && (
+          <span id={descId} className="sr-only">
+            {description}
+          </span>
         )}
-      >
-        {children}
-      </button>
+      </>
     );
   }
 

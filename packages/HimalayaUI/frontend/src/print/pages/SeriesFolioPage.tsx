@@ -172,7 +172,10 @@ function NewSeriesTile({ onClick }: { onClick: () => void }): JSX.Element {
         +
       </span>
       <span className="text-caption font-semibold">New series</span>
-      <span className="text-caption text-ink-faint">
+      {/* F-CONTRAST: small INFORMATIONAL text (not a decorative kicker) must
+          ride a darker token — ink-soft (~6.8:1 on the plate) clears AA-normal;
+          ink-faint (~3.29:1) would fail it. */}
+      <span className="text-caption text-ink-soft">
         Start from the contact sheet
       </span>
     </Card>
@@ -300,12 +303,14 @@ export function SeriesFolioPage(): JSX.Element {
           <FilterChip
             label="Has transition"
             title="Series whose members span more than one phase"
+            description="Series whose members span more than one phase"
             active={controls.filter === "transition"}
             onClick={() => setFilter("transition")}
           />
           <FilterChip
             label="Cross-experiment"
             title="Series whose members span more than one experiment"
+            description="Series whose members span more than one experiment"
             active={controls.filter === "cross"}
             onClick={() => setFilter("cross")}
           />

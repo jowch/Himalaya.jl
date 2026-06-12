@@ -59,4 +59,30 @@ describe("FilterChip", () => {
     render(<FilterChip label="Coexistence" active={false} onClick={() => {}} />);
     expect(screen.getByTestId("filter-chip")).not.toHaveAttribute("title");
   });
+
+  it("exposes an optional description to AT via aria-describedby + a visually-hidden span, keeping the NAME the label (FIX 2)", () => {
+    render(
+      <FilterChip
+        label="Has transition"
+        active={false}
+        onClick={() => {}}
+        description="Series whose members span more than one phase"
+      />,
+    );
+    // Accessible NAME stays the label (the description must NOT bleed into it).
+    const chip = screen.getByRole("button", { name: "Has transition" });
+    // The description is wired and reachable.
+    const descId = chip.getAttribute("aria-describedby");
+    expect(descId).toBeTruthy();
+    const desc = document.getElementById(descId!);
+    expect(desc).not.toBeNull();
+    expect(desc).toHaveTextContent("Series whose members span more than one phase");
+    // The description carrier is visually hidden, not laid out as visible text.
+    expect(desc).toHaveClass("sr-only");
+  });
+
+  it("omits aria-describedby when no description is given (byte-identical default)", () => {
+    render(<FilterChip label="Coexistence" active={false} onClick={() => {}} />);
+    expect(screen.getByTestId("filter-chip")).not.toHaveAttribute("aria-describedby");
+  });
 });

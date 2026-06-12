@@ -444,6 +444,19 @@ describe("SeriesFolioPage flexibility pass (F2/F3/F4)", () => {
     expect(transition).toHaveAttribute("title", "Series whose members span more than one phase");
     expect(cross).toHaveAttribute("title", "Series whose members span more than one experiment");
   });
+
+  it("the filter-chip explanation is also reachable by keyboard/SR via aria-describedby (FIX 2)", () => {
+    renderPage();
+    // Accessible NAME is the label only (description must not bleed in).
+    const transition = screen.getByRole("button", { name: "Has transition" });
+    const cross = screen.getByRole("button", { name: "Cross-experiment" });
+    const tDesc = document.getElementById(transition.getAttribute("aria-describedby")!);
+    const cDesc = document.getElementById(cross.getAttribute("aria-describedby")!);
+    expect(tDesc).toHaveTextContent("Series whose members span more than one phase");
+    expect(cDesc).toHaveTextContent("Series whose members span more than one experiment");
+    expect(tDesc).toHaveClass("sr-only");
+    expect(cDesc).toHaveClass("sr-only");
+  });
 });
 
 describe("SeriesFolioPage stable fig numbers (FOL-FIGNUM)", () => {

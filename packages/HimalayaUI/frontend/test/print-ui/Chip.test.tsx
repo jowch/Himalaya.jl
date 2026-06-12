@@ -161,6 +161,26 @@ describe("<Chip> toggle", () => {
     fireEvent.click(screen.getByTestId("chip"));
     expect(onClick).toHaveBeenCalledTimes(1);
   });
+
+  it("an optional description wires aria-describedby to an sr-only span; the NAME stays the label (FIX 2)", () => {
+    render(
+      <Chip variant="toggle" description="Spans more than one phase">
+        Has transition
+      </Chip>,
+    );
+    const el = screen.getByRole("button", { name: "Has transition" });
+    const descId = el.getAttribute("aria-describedby");
+    expect(descId).toBeTruthy();
+    const desc = document.getElementById(descId!);
+    expect(desc).toHaveTextContent("Spans more than one phase");
+    expect(desc).toHaveClass("sr-only");
+  });
+
+  it("no description ⇒ no aria-describedby and no sr-only span (byte-identical default)", () => {
+    render(<Chip variant="toggle">Has transition</Chip>);
+    expect(screen.getByTestId("chip")).not.toHaveAttribute("aria-describedby");
+    expect(document.querySelector(".sr-only")).toBeNull();
+  });
 });
 
 describe("<Chip> trigger", () => {

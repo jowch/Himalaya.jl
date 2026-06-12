@@ -10,6 +10,11 @@ interface FilterChipProps {
   /** Optional native tooltip explaining what the filter selects (hover/focus).
    *  Omitted ⇒ no `title` (existing consumers stay byte-identical). */
   title?: string;
+  /** Optional explanation made available to keyboard/SR users via a
+   *  visually-hidden `aria-describedby` target (the accessible NAME stays the
+   *  label). Pair with `title` for the mouse affordance. Omitted ⇒ no
+   *  description (existing consumers stay byte-identical). */
+  description?: string;
   className?: string;
 }
 
@@ -24,6 +29,7 @@ export function FilterChip({
   onClick,
   size = "md",
   title,
+  description,
   className = "",
 }: FilterChipProps): JSX.Element {
   return (
@@ -34,6 +40,7 @@ export function FilterChip({
       active={active}
       onClick={onClick}
       {...(title !== undefined ? { title } : {})}
+      {...(description !== undefined ? { description } : {})}
       className={className}
     >
       {label}
