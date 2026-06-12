@@ -34,6 +34,12 @@ export interface CustomIndexModalProps {
    *  consumer can set the lattice for the first reflection to land on it. */
   onSelectObserved?: (q: number) => void;
   fit: CustomIndexFit;
+  /** Disables the "Add to assignment" action — set when the lattice parameter is
+   *  empty, non-finite, or out of the symmetry's range, so a bad value can never
+   *  round-trip to a server 400 (mirrors the trace q-add field's `disabled`). */
+  addDisabled?: boolean;
+  /** Flags the lattice number field `aria-invalid` to explain a disabled Add. */
+  paramInvalid?: boolean;
   className?: string;
 }
 
@@ -42,7 +48,7 @@ export function CustomIndexModal(props: CustomIndexModalProps): JSX.Element | nu
     open, onClose, onCancel, onAdd,
     symmetries, symmetry, onSymmetryChange,
     paramName, paramValue, paramMin, paramMax, paramStep, onParamChange, unit = "Å",
-    previewSeries, observed, onSelectObserved, fit, className,
+    previewSeries, observed, onSelectObserved, fit, addDisabled, paramInvalid, className,
   } = props;
 
   return (
@@ -75,6 +81,7 @@ export function CustomIndexModal(props: CustomIndexModalProps): JSX.Element | nu
             {...(paramStep !== undefined ? { step: paramStep } : {})}
             onValueChange={onParamChange}
             unit={unit}
+            invalid={paramInvalid ?? false}
           />
         </ModalFieldRow>
 
@@ -102,7 +109,7 @@ export function CustomIndexModal(props: CustomIndexModalProps): JSX.Element | nu
         actions={
           <>
             <Button variant="outline" onClick={onCancel}>Cancel</Button>
-            <Button variant="accent" onClick={onAdd}>Add to assignment</Button>
+            <Button variant="accent" onClick={onAdd} disabled={addDisabled ?? false}>Add to assignment</Button>
           </>
         }
       />

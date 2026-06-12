@@ -51,6 +51,24 @@ describe("CustomIndexModal", () => {
     );
     expect(queryByText("Custom index")).toBeNull();
   });
+  it("disables Add when addDisabled is set (out-of-range / empty param) and never fires onAdd", () => {
+    const onAdd = vi.fn();
+    const { getByText } = render(
+      <CustomIndexModal {...base} addDisabled onClose={() => {}} onCancel={() => {}} onAdd={onAdd}
+        onSymmetryChange={() => {}} onParamChange={() => {}} />,
+    );
+    const add = getByText("Add to assignment") as HTMLButtonElement;
+    expect(add.disabled).toBe(true);
+    fireEvent.click(add);
+    expect(onAdd).not.toHaveBeenCalled();
+  });
+  it("second-channels paramInvalid onto the lattice number field (aria-invalid)", () => {
+    const { getByLabelText } = render(
+      <CustomIndexModal {...base} paramInvalid onClose={() => {}} onCancel={() => {}} onAdd={() => {}}
+        onSymmetryChange={() => {}} onParamChange={() => {}} />,
+    );
+    expect(getByLabelText("lattice parameter value").getAttribute("aria-invalid")).toBe("true");
+  });
   it("wires the actions", () => {
     const onAdd = vi.fn(), onCancel = vi.fn(), onSymmetryChange = vi.fn();
     const { getByText } = render(

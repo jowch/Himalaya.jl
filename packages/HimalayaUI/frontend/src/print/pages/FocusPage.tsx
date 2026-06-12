@@ -271,6 +271,16 @@ export function FocusPage(): JSX.Element {
     observedQs,
   );
 
+  // Client-side validation of the lattice parameter, mirroring the trace q-add
+  // field: an empty / non-finite / out-of-range value disables "Add to
+  // assignment" so it never round-trips to a backend 400. (FO-PARAM-VALIDATION)
+  const customParamNum = Number(customParam);
+  const customParamValid =
+    customParam.trim() !== "" &&
+    Number.isFinite(customParamNum) &&
+    customParamNum >= customMeta.min &&
+    customParamNum <= customMeta.max;
+
   const isLoading =
     corpusQ.isLoading ||
     (activeExposureId !== undefined && (traceQ.isLoading || peaksQ.isLoading));
@@ -316,6 +326,7 @@ export function FocusPage(): JSX.Element {
 
   // ── custom-index helper ──────────────────────────────────────────────────────
   function commitCustom(): void {
+    if (!customParamValid) return; // defense in depth; the Add button is disabled too
     commitCustomIndex.mutate(customSym, basisFor(customSym, Number(customParam)));
     setCustomOpen(false);
     // Consequential: a custom hypothesis was added to the call → visible toast.
@@ -434,6 +445,8 @@ export function FocusPage(): JSX.Element {
         previewSeries={previewSeries}
         observed={observedQs}
         fit={fit}
+        addDisabled={!customParamValid}
+        paramInvalid={customParam.trim() !== "" && !customParamValid}
         onAdd={commitCustom}
         onCancel={() => setCustomOpen(false)}
         onClose={() => setCustomOpen(false)}

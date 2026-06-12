@@ -13,6 +13,10 @@ export interface LatticeParamControlProps {
   unit?: string;
   /** a11y name for the slider + number field. */
   label?: string;
+  /** Second-channel an out-of-range / non-finite value: flags the number field
+   *  `aria-invalid` (red border) so a disabled Add button is explained at the
+   *  field, mirroring the trace q-add field. */
+  invalid?: boolean;
   className?: string;
 }
 
@@ -28,6 +32,7 @@ export function LatticeParamControl({
   onValueChange,
   unit = "Å",
   label = "lattice parameter",
+  invalid = false,
   className,
 }: LatticeParamControlProps): JSX.Element {
   return (
@@ -50,6 +55,7 @@ export function LatticeParamControl({
         onValueChange={onValueChange}
         min={min}
         max={max}
+        invalid={invalid}
         {...(step !== undefined ? { step } : {})}
         aria-label={`${label} value`}
         className="w-16 shrink-0"
