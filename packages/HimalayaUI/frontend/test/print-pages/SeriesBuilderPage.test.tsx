@@ -34,6 +34,8 @@ const state = {
   // when they simulate the queue's onSuccess (setQueryData / invalidate→refetch).
   seriesUpdatedAt: 1000,
   traces: {} as Record<number, Trace>,
+  tracesLoading: false,
+  tracesError: false,
   corpus: [] as CorpusSample[],
   // Corpus picker projection (sample → indexing exposure). `undefined`
   // simulates a not-yet-loaded picker (Confirm must stay gated).
@@ -52,7 +54,11 @@ vi.mock("../../src/queries", () => ({
     isError: state.error,
     dataUpdatedAt: state.seriesUpdatedAt,
   }),
-  useSeriesTraces: (_id: number | undefined) => ({ data: state.traces, isLoading: false }),
+  useSeriesTraces: (_id: number | undefined) => ({
+    data: state.traces,
+    isLoading: state.tracesLoading,
+    isError: state.tracesError,
+  }),
   useCorpusSamples: () => ({ data: state.corpus, isLoading: false, isError: false }),
   useCorpusPickerSamples: () => ({
     data: state.picker,
@@ -178,6 +184,8 @@ beforeEach(() => {
   state.seriesById = new Map([[10, baseSeries()]]);
   state.seriesUpdatedAt = 1000;
   state.traces = {};
+  state.tracesLoading = false;
+  state.tracesError = false;
   state.corpus = [corpusSample(1, "A"), corpusSample(2, "B"), corpusSample(3, "C")];
   // Default resolution map mirrors the member() fixture (exposure_id == the
   // sample's id) so recipe [sample 1, sample 2] resolves to exposures [1, 2].
@@ -976,6 +984,40 @@ describe("SeriesBuilderPage", () => {
     renderPage();
     expect(screen.getAllByTestId("series-member-row")).toHaveLength(2);
     expect(screen.getByTestId("export-menu-trigger")).toBeDisabled();
+  });
+
+  // BU-EXPORT-EMPTYALLOWED: a disabled Export names WHY, distinguishing the
+  // three causes the WYSIWYG gate folds together.
+  it("a disabled Export reads 'no trace data' when members have empty traces (settled)", () => {
+    renderPage(); // beforeEach: empty traces, not loading, not error
+    expect(screen.getByTestId("export-disabled-reason")).toHaveTextContent(
+      "This series has no trace data to export.",
+    );
+  });
+
+  it("a disabled Export reads 'still loading' while traces are loading", () => {
+    state.tracesLoading = true;
+    renderPage();
+    expect(screen.getByTestId("export-disabled-reason")).toHaveTextContent(
+      "Traces are still loading.",
+    );
+  });
+
+  it("a disabled Export reads 'couldn't load' when the trace fetch errored", () => {
+    state.tracesError = true;
+    renderPage();
+    expect(screen.getByTestId("export-disabled-reason")).toHaveTextContent(
+      "Traces couldn't load, so there's nothing to export.",
+    );
+  });
+
+  it("an ENABLED Export (traces present) shows no disabled-reason", () => {
+    state.traces = {
+      1: { q: [0.05, 0.06], I: [10, 9], sigma: [1, 1] },
+      2: { q: [0.05, 0.06], I: [8, 7], sigma: [1, 1] },
+    };
+    renderPage();
+    expect(screen.queryByTestId("export-disabled-reason")).toBeNull();
   });
 
   // ── BU-INVERT: the rail mirrors the plate's vertical order ────────────────

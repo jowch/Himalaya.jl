@@ -347,6 +347,8 @@ export function SeriesBuilderPage(): JSX.Element {
         <BuilderBody
           series={series}
           tracesById={tracesQ.data ?? {}}
+          tracesLoading={tracesQ.isLoading}
+          tracesError={tracesQ.isError}
           corpus={corpusQ.data ?? []}
           liveDraft={liveDraft}
           offset={offset}
@@ -380,6 +382,9 @@ export function SeriesBuilderPage(): JSX.Element {
 interface BuilderBodyProps {
   series: Series;
   tracesById: Record<number, api.Trace>;
+  /** Trace fetch state — lets a disabled Export name its reason (BU-EXPORT-EMPTYALLOWED). */
+  tracesLoading: boolean;
+  tracesError: boolean;
   corpus: api.CorpusSample[];
   liveDraft: ReturnType<typeof useAppState.getState>["seriesDraft"];
   offset: number;
@@ -413,6 +418,8 @@ interface BuilderBodyProps {
 function BuilderBody({
   series,
   tracesById,
+  tracesLoading,
+  tracesError,
   corpus,
   liveDraft,
   offset,
@@ -444,6 +451,18 @@ function BuilderBody({
   // committed members; the draft drives only the title + the editable rail.
   const members: SeriesMember[] = series.members;
   const rows = toWaterfallRows(members, tracesById);
+  // BU-EXPORT-EMPTYALLOWED: Export is WYSIWYG-gated — disabled when no trace
+  // carries data — but a bare-disabled button can't say WHY. Distinguish the
+  // three causes the predicate folds together so the disabled state names its
+  // reason (no-data vs loading vs error) instead of going silently dead.
+  const exportDisabled = !rows.some((r) => r.trace.q.length > 0);
+  const exportDisabledReason = !exportDisabled
+    ? undefined
+    : tracesLoading
+      ? "Traces are still loading."
+      : tracesError
+        ? "Traces couldn't load, so there's nothing to export."
+        : "This series has no trace data to export.";
   // MemberList contract: rows in DISPLAY order top-down, but the waterfall
   // paints display order bottom-up — reverse so the rail's top row is the
   // plate's top trace (membersToMemberData returns a fresh array; in-place
@@ -578,7 +597,8 @@ function BuilderBody({
               <ExportButton
                 {...fx}
                 ariaContext="series figure"
-                disabled={!rows.some((r) => r.trace.q.length > 0)}
+                disabled={exportDisabled}
+                {...(exportDisabledReason ? { disabledReason: exportDisabledReason } : {})}
               />
             }
           />

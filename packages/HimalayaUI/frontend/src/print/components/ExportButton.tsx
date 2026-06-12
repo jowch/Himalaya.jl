@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { Button, IconButton, Menu } from "../ui";
 
@@ -23,6 +23,11 @@ export interface ExportButtonProps {
   pending?: boolean;
   /** Page-level gate (data not ready). ORs into every action. */
   disabled?: boolean;
+  /** Why the button is disabled — when present (and `disabled`), a quiet caption
+   *  renders beside the group and is wired to both actions via aria-describedby,
+   *  so a disabled Export states its reason (no-data vs loading vs error) rather
+   *  than going silently dead. Ignored when not disabled. */
+  disabledReason?: string;
   /** Fills aria-labels: "Copy {ariaContext} to clipboard". */
   ariaContext: string;
   /** PLACEMENT ONLY. */
@@ -52,9 +57,12 @@ export function ExportButton({
   pngDisabled = false,
   pending = false,
   disabled = false,
+  disabledReason,
   ariaContext,
   className,
 }: ExportButtonProps): JSX.Element {
+  const reasonId = useId();
+  const showReason = disabled && !!disabledReason;
   const [open, setOpen] = useState(false);
   // Where Menu's mount effect puts focus on open: "first" (click/ArrowDown)
   // or "last" (ArrowUp). APG menu-button.
@@ -125,14 +133,25 @@ export function ExportButton({
     <span
       ref={wrapRef}
       data-testid="export-button"
-      className={cx("relative inline-flex", className)}
+      className={cx("relative inline-flex items-center gap-2", className)}
     >
+      {showReason && (
+        <span
+          id={reasonId}
+          role="note"
+          data-testid="export-disabled-reason"
+          className="text-caption text-ink-soft"
+        >
+          {disabledReason}
+        </span>
+      )}
       <span className="inline-flex items-stretch border border-hair-strong rounded overflow-hidden">
         <Button
           variant="ghost"
           data-testid="export-copy"
           aria-label={`Copy ${ariaContext} to clipboard`}
           disabled={copyOff}
+          {...(showReason ? { "aria-describedby": reasonId } : {})}
           onClick={onCopy}
         >
           Copy
@@ -145,6 +164,7 @@ export function ExportButton({
           aria-haspopup="menu"
           aria-expanded={open}
           disabled={disabled || pending}
+          {...(showReason ? { "aria-describedby": reasonId } : {})}
           onClick={() => {
             setMenuFocus("first"); // click-open focuses the first enabled item
             setOpen((o) => !o);

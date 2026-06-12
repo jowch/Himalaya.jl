@@ -69,6 +69,27 @@ describe("ExportButton", () => {
     expect(screen.getByRole("button", { name: /download formats/i })).toBeDisabled();
   });
 
+  it("a disabled Export states its reason and ties both actions to it (BU-EXPORT-EMPTYALLOWED)", () => {
+    setup({ disabled: true, disabledReason: "Traces are still loading." });
+    const reason = screen.getByTestId("export-disabled-reason");
+    expect(reason).toHaveTextContent("Traces are still loading.");
+    expect(reason).toHaveAttribute("role", "note");
+    // Both actions point at the reason for assistive tech.
+    expect(screen.getByTestId("export-copy")).toHaveAttribute("aria-describedby", reason.id);
+    expect(screen.getByTestId("export-menu-trigger")).toHaveAttribute("aria-describedby", reason.id);
+  });
+
+  it("does NOT render a reason while enabled, even if disabledReason is passed", () => {
+    setup({ disabled: false, disabledReason: "should not show" });
+    expect(screen.queryByTestId("export-disabled-reason")).toBeNull();
+    expect(screen.getByTestId("export-copy")).not.toHaveAttribute("aria-describedby");
+  });
+
+  it("a disabled Export with no reason renders no reason node (back-compat)", () => {
+    setup({ disabled: true });
+    expect(screen.queryByTestId("export-disabled-reason")).toBeNull();
+  });
+
   it("Escape closes the open menu", () => {
     setup();
     fireEvent.click(screen.getByRole("button", { name: /download formats/i }));
