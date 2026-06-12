@@ -325,15 +325,26 @@
                       line-height: 1.4; font-weight: 600; }
 
   /* Icon-only buttons keep a compact visible box but expand the pointer/touch
-     target to >=44px (WCAG 2.5.5) via a centered overlay, so dense chip rows
-     do not balloon. The overlay is transparent and pointer-events:auto so it
-     forwards clicks to the button. */
+     target via a centered overlay, so dense chip rows do not balloon. The
+     overlay is transparent and pointer-events:auto so it forwards clicks to the
+     button.
+
+     Width is capped at 24px (the WCAG 2.5.8 AA target-size floor) rather than
+     44px (the 2.5.5 AAA touch goal): in a dense horizontal cluster the buttons
+     sit ~27px center-to-center, so a 44px overlay reaches ~22px past its centre,
+     well past the ~13.5px midpoint, and the later sibling's overlay paints over
+     the earlier button's half (a real pointer mis-map -- clicking one button
+     fired its neighbour). At 24px the overlay reaches only 12px from centre, so
+     it never crosses the midpoint and each button wins its closer half. We keep
+     the height generous (44px) because vertical clusters are spaced wide enough
+     that the same overlap does not occur. Net: AA-2.5.8 met by size, AAA-2.5.5
+     traded away horizontally to stop the cannibalisation. */
   .icon-button::before {
     content: "";
     position: absolute;
     top: 50%;
     left: 50%;
-    width: 44px;
+    width: 24px;
     height: 44px;
     transform: translate(-50%, -50%);
   }
