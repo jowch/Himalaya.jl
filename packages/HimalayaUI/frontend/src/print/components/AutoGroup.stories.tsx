@@ -15,9 +15,9 @@ export const Summary: Story = {
     children: (
       <>
         You selected <strong className="text-ink font-semibold">6 samples</strong> on the
-        contact sheet. Himalaya grouped them from their names and read the order from the{" "}
-        <strong className="text-ink font-semibold">LL37 : lipid ratio</strong> — six ratios
-        parsed; click any value to skip that read from the write.
+        contact sheet. Himalaya grouped them by their stored{" "}
+        <strong className="text-ink font-semibold">LL37 : lipid ratio</strong> value. Click any
+        value to skip that sample from the write.
       </>
     ),
   },

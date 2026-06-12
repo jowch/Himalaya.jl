@@ -247,7 +247,7 @@ describe("SeriesScopingPage", () => {
     // The skip toggle is otherwise invisible until hover; the intro must tell
     // a first-time user HOW, not just that skipping exists.
     expect(
-      screen.getByText(/click a value to skip a misread/i),
+      screen.getByText(/click a value to skip that sample/i),
     ).toBeInTheDocument();
   });
 

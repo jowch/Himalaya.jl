@@ -8,7 +8,7 @@ const base = {
   seriesName: "LL37 titration of lipid 1-2",
   grouping: <>You selected <strong>6 samples</strong>.</>,
   orderedBy: "LL37 : lipid ratio",
-  orderNote: "Read from the sample names.",
+  orderNote: "Each value is the sample's stored ratio tag.",
   count: "6 samples · low to high",
   rows: <div data-testid="rows-slot" />,
   candidates: <div data-testid="cands-slot" />,
@@ -22,7 +22,7 @@ describe("<ScopePlate>", () => {
     expect(screen.getByText("LL37 titration of lipid 1-2")).toBeInTheDocument();
     expect(screen.getByText(/New series/i)).toBeInTheDocument();
     expect(screen.getByTestId("order-field")).toHaveTextContent("LL37 : lipid ratio");
-    expect(screen.getByText("Read from the sample names.")).toBeInTheDocument();
+    expect(screen.getByText("Each value is the sample's stored ratio tag.")).toBeInTheDocument();
     expect(screen.getByText("6 samples · low to high")).toBeInTheDocument();
     expect(screen.getByTestId("rows-slot")).toBeInTheDocument();
     expect(screen.getByTestId("cands-slot")).toBeInTheDocument();

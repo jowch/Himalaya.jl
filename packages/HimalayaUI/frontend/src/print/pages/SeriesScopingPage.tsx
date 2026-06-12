@@ -821,17 +821,19 @@ export function SeriesScopingPage(): JSX.Element {
               seriesName={`Series by ${keyLabel}`}
               grouping={
                 <>
-                  Himalaya grouped <strong>{rows.length} samples</strong> by their{" "}
-                  <strong>{keyLabel}</strong>, read from the sample names. Confirm the reads and build.
+                  Himalaya grouped <strong>{rows.length} samples</strong> by their stored{" "}
+                  <strong>{keyLabel}</strong> value. Confirm the order and build.
                   {/* SC-SKIPDISC: name the gesture, not just the possibility —
-                      the skip toggle lives on the value itself. */}{" "}
-                  Click a value to skip a misread.
+                      the skip toggle lives on the value itself.
+                      SC-PROVREAD: the value is a stored tag (possibly
+                      hand-entered), not necessarily parsed from the name. */}{" "}
+                  Click a value to skip that sample.
                 </>
               }
               orderedBy={keyLabel}
               orderOptions={orderOptions}
               onOrderSelect={onOrderSelect}
-              orderNote="Read from the sample names. Switch the ordering variable above, or define your own."
+              orderNote={`Each value is the sample's stored ${keyLabel} tag. Switch the ordering variable above, or define your own.`}
               count={orderCaption}
               {...(history.length
                 ? { onUndo: undo, ...(lastLabel ? { undoLabel: `Step back: ${lastLabel}` } : {}) }

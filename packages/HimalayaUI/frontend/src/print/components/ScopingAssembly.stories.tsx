@@ -169,15 +169,15 @@ function ScopingView(): JSX.Element {
         seriesName="LL37 titration of lipid 1-2"
         grouping={
           <>
-            You selected <strong>{n} samples</strong> on the contact sheet. Himalaya grouped them from
-            their names and read the order from the <strong>LL37 : lipid ratio</strong>. Click a value
-            to skip that read from the write — one starts skipped here to show the exclusion look.
+            You selected <strong>{n} samples</strong> on the contact sheet. Himalaya grouped them by
+            their stored <strong>LL37 : lipid ratio</strong> value. Click a value to skip that sample
+            from the write; one starts skipped here to show the exclusion look.
           </>
         }
         orderedBy={orderedBy}
         orderOptions={ORDER_OPTIONS}
         onOrderSelect={setOrderedBy}
-        orderNote="Read from the sample names. Change it to time, dose, temperature, or define your own."
+        orderNote="Each value is the sample's stored ratio tag. Change it to time, dose, temperature, or define your own."
         count={`${n} samples · low to high`}
         {...(history.length ? { onUndo: undo, ...(lastLabel ? { undoLabel: `Step back: ${lastLabel}` } : {}) } : {})}
         rows={sorted.map((s, i) => {
