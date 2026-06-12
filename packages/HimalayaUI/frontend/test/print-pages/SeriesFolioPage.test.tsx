@@ -216,6 +216,15 @@ describe("SeriesFolioPage", () => {
     expect(screen.getAllByTestId("series-card")).toHaveLength(3);
   });
 
+  it("shows a visible 'Sort' label left of the sort control, aria-hidden so SR isn't double-announced (FOL-SORT)", () => {
+    renderPage();
+    const label = screen.getByText("Sort");
+    expect(label).toBeInTheDocument();
+    expect(label).toHaveAttribute("aria-hidden", "true");
+    // The control still names itself for screen readers.
+    expect(screen.getByLabelText("Sort series")).toBeInTheDocument();
+  });
+
   it("search input narrows the visible cards", () => {
     renderPage();
     // SearchInput's data-testid is on the wrapper div; the actual <input> is inside.

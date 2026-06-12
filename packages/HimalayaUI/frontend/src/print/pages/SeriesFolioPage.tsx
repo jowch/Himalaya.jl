@@ -14,6 +14,7 @@ import {
   Button,
   IconButton,
   Card,
+  Kicker,
 } from "../ui";
 import type { SegmentOption } from "../ui";
 import { useSeriesList, useSeries, useSeriesTraces } from "../../queries";
@@ -332,6 +333,13 @@ export function SeriesFolioPage(): JSX.Element {
             {isFiltered ? `Showing ${shown} of ${total}` : `${total} series`}
           </span>
         )}
+        {/* FOL-SORT: the visible "SORT" label the mockup carries left of the
+            control (matches the column-header kicker idiom). aria-hidden because
+            the SegmentedControl already names itself "Sort series" for SR; this
+            is the sighted-user affordance only, no double-announce. */}
+        <Kicker tone="soft" as="span" aria-hidden="true">
+          Sort
+        </Kicker>
         <SegmentedControl
           aria-label="Sort series"
           options={SORT_OPTIONS}
