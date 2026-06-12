@@ -17,7 +17,10 @@ const Y_HEADROOM = 0.12; // match WaterfallChart's per-box headroom
  *  non-DOM tests, where ResizeObserver is a no-op stub). */
 const DEFAULT_WIDTH = 340;
 
-const UNINDEXED_COLOR = "var(--color-ink-faint)";
+// BU-TRACE-DIM: unassigned traces on the folio mini-waterfall read at full
+// strength at rest (present ink-soft, not the stuck-hover-looking ink-faint),
+// matching the builder plate.
+const UNINDEXED_COLOR = "var(--color-ink-soft)";
 
 export interface CardFigureProps {
   /** Rows low→high (display order); rendered bottom-up. */

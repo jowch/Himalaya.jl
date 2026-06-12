@@ -180,13 +180,15 @@ describe("TracePlot", () => {
       expect(line.getAttribute("stroke")).toBe(phaseColor("Ia3d"));
     });
 
-    it("falls back to ink-faint for a null-phase trace", () => {
+    it("falls back to the present ink-soft neutral for a null-phase trace (BU-TRACE-DIM)", () => {
+      // Unassigned traces read at full strength at rest, not the washed-out
+      // ink-faint that looked like a stuck hover-dim next to phase colors.
       const { container } = render(
         <TracePlot trace={{ ...singleModel, phase: null }} height={200} />,
       );
       const paths = container.querySelectorAll('[data-role="trace-line"] path');
       const line = paths[paths.length - 1] as SVGPathElement;
-      expect(line.getAttribute("stroke")).toBe("var(--color-ink-faint)");
+      expect(line.getAttribute("stroke")).toBe("var(--color-ink-soft)");
     });
   });
 

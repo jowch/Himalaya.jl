@@ -77,7 +77,12 @@ export interface TracePlotProps {
   figureLabel?: string;
 }
 
-const UNINDEXED_COLOR = "var(--color-ink-faint)";
+// BU-TRACE-DIM: unassigned (form-factor / unindexed) traces read at FULL visual
+// strength at rest — a present neutral (ink-soft), NOT ink-faint, which looked
+// like a stuck hover-dim next to the phase-colored traces. De-emphasis is
+// reserved for an explicit hover/focus (the waterfall row's opacity gate), and
+// clears completely on mouse-out.
+const UNINDEXED_COLOR = "var(--color-ink-soft)";
 
 interface PlotState {
   projection: Projection;
