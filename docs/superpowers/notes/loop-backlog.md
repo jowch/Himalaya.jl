@@ -148,7 +148,7 @@ A second pass over **all six surfaces** (Jonathan: "broad review of all of the s
 
 | id | opportunity | command | sev | status | notes |
 |---|---|---|---|---|---|
-| FOL-SORT | visible "SORT" label missing left of segmented control (mockup series-folio.html:326) | typeset | P2 | todo | |
+| FOL-SORT | visible "SORT" label missing left of segmented control (mockup series-folio.html:326) | typeset | P2 | **done `4aba6d8`** | FIXED: "Sort" Kicker (uppercase) left of the control, aria-hidden so SR keeps the control's own "Sort series" name (no double-announce). New test; live-verified on /series. Build + vitest 2811 green. |
 | FOL-MISC | search input unlabeled (P2, WCAG 3.3.2) + no on-page new-series CTA + indistinguishable empty drafts | harden+craft+clarify | P2 | todo | ✓W1 ✓re-score (accname rests on placeholder fallback) |
 
 ### SeriesScopingPage
