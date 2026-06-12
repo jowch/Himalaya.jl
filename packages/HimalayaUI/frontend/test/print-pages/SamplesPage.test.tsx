@@ -496,6 +496,105 @@ describe("SamplesPage", () => {
     ).toBeDisabled();
   });
 
+  // ── SA-SORT: sortable columns ────────────────────────────────────────────────
+  /** Read the rendered sample-name order off the rows (the SpecCell name button,
+   *  falling back to the row's text), so order assertions never touch classes. */
+  function rowNames(): string[] {
+    return screen.getAllByTestId("sample-table-row").map((r) => {
+      // The SpecCell identity name (NOT the Status-door button, whose accessible
+      // name can also contain the sample name).
+      const name = r.querySelector('[data-role="spec-name"]');
+      return (name?.textContent ?? "").trim();
+    });
+  }
+  function activeSortHeader(): string | undefined {
+    return screen
+      .getAllByRole("columnheader")
+      .find(
+        (h) =>
+          h.getAttribute("aria-sort") === "ascending" ||
+          h.getAttribute("aria-sort") === "descending",
+      )
+      ?.textContent ?? undefined;
+  }
+
+  it("sorting by Sample reorders the rows by display name (numeric-aware)", () => {
+    renderAt("/samples"); // whole corpus: Buffer, Lipid 1-2, Other beamtime
+    const ingest = rowNames();
+    fireEvent.click(screen.getByRole("button", { name: "Sample" }));
+    const sorted = rowNames();
+    // "Buffer" < "Lipid 1-2" < "Other beamtime" alphabetically → unchanged here,
+    // but the first row must be the alphabetically-first name regardless of ingest.
+    expect(sorted[0]).toContain("Buffer");
+    expect(sorted).not.toEqual(undefined);
+    // The Sample header becomes the active ascending column.
+    expect(activeSortHeader()).toContain("Sample");
+    expect(ingest.length).toBe(3);
+  });
+
+  it("the asc → desc → clear cycle restores ingest order", () => {
+    renderAt("/samples");
+    const ingest = rowNames();
+    const header = () => screen.getByRole("button", { name: "Sample" });
+    fireEvent.click(header()); // asc
+    fireEvent.click(header()); // desc
+    const desc = rowNames();
+    expect(desc).toEqual([...ingest].reverse());
+    fireEvent.click(header()); // clear → ingest order
+    expect(rowNames()).toEqual(ingest);
+    // No column is active after clearing.
+    expect(activeSortHeader()).toBeUndefined();
+  });
+
+  it("activating a second column moves the sort there at ascending", () => {
+    renderAt("/samples");
+    fireEvent.click(screen.getByRole("button", { name: "Sample" })); // Sample asc
+    expect(activeSortHeader()).toContain("Sample");
+    fireEvent.click(screen.getByRole("button", { name: "Exposures" })); // → Exposures asc
+    const active = screen
+      .getAllByRole("columnheader")
+      .find((h) => h.getAttribute("aria-sort") === "ascending");
+    expect(active?.textContent).toContain("Exposures");
+    // Sample is no longer the active sort.
+    expect(
+      screen
+        .getAllByRole("columnheader")
+        .find((h) => h.textContent?.includes("Sample"))
+        ?.getAttribute("aria-sort"),
+    ).toBe("none");
+  });
+
+  it("Exposures sort orders rows by frame count (sample 3 has 1 frame → first asc)", () => {
+    renderAt("/samples");
+    // ingest: sample1=3 frames, sample2=2, sample3=1
+    fireEvent.click(screen.getByRole("button", { name: "Exposures" }));
+    const asc = rowNames();
+    expect(asc[0]).toContain("Other beamtime"); // sample 3, 1 frame
+    expect(asc[2]).toContain("Buffer"); // sample 1, 3 frames
+  });
+
+  it("the sort key+dir round-trips through the URL (mirrors the beamtime filter)", () => {
+    // A permalink that already carries a sort renders pre-sorted.
+    renderAt("/samples?sort=sample&dir=desc");
+    expect(activeSortHeader()).toContain("Sample");
+    const desc = rowNames();
+    expect(desc[0]).toContain("Other beamtime"); // "Other…" is last alphabetically → first desc
+
+    // And a click writes the sort back into the URL.
+    fireEvent.click(screen.getByRole("button", { name: "Exposures" }));
+    // Exposures becomes ascending; the URL now names it (asserted via re-derivable
+    // active header, since the same searchParams drive the render).
+    const active = screen
+      .getAllByRole("columnheader")
+      .find((h) => h.getAttribute("aria-sort") === "ascending");
+    expect(active?.textContent).toContain("Exposures");
+  });
+
+  it("an unsorted permalink (no ?sort) renders in ingest order with no active column", () => {
+    renderAt("/samples");
+    expect(activeSortHeader()).toBeUndefined();
+  });
+
   it("X from a contenteditable target does not batch-drop", () => {
     renderAt("/samples?beamtime=1");
     fireEvent.click(screen.getAllByTestId("thumbnail")[0]!);

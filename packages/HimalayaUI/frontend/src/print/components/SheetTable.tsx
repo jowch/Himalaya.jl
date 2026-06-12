@@ -1,10 +1,18 @@
 import React from "react";
 import type { ReactNode } from "react";
-import { Card, Kicker } from "../ui";
+import { Card, Kicker, ColumnSortButton } from "../ui";
+import type { ColumnSortDir } from "../ui";
 import { sampleTableCols, CHECKBOX_TRACK_PX } from "./SampleTableRow";
 
 function cx(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(" ");
+}
+
+/** The page-owned sort the header reflects. `key` is one of the four sortable
+ *  column keys (or null = ingest order); `dir` only matters when key is set. */
+export interface SheetSort {
+  key: string | null;
+  dir: ColumnSortDir;
 }
 
 export interface SheetTableProps {
@@ -16,9 +24,20 @@ export interface SheetTableProps {
    *  CHECKBOX_TRACK_PX wide so the header stays aligned with rows that render
    *  their own checkbox column. */
   checkboxColumn?: boolean;
+  /** Current sort, reflected into the columnheaders' `aria-sort` + the active
+   *  column's caret. Only consulted when `onSort` is also provided. */
+  sort?: SheetSort;
+  /** When provided, the four data headers (Sample / Exposures / Kept / Status)
+   *  render as sortable buttons that call this with the clicked column key; the
+   *  page owns the toggle cycle. When ABSENT, the static kicker headers render
+   *  (other consumers stay byte-compatible). Tags is never sortable. */
+  onSort?: (key: SortColumnKey) => void;
   /** PLACEMENT-ONLY, appended last. */
   className?: string;
 }
+
+/** The four sortable column keys, in header order (Tags is excluded). */
+export type SortColumnKey = "sample" | "exposures" | "kept" | "status";
 
 /**
  * The contact-sheet samples table: an elevated Card plate containing an
@@ -67,6 +86,8 @@ export function SheetTable({
   children,
   empty,
   checkboxColumn,
+  sort,
+  onSort,
   className,
 }: SheetTableProps): JSX.Element {
   const isEmpty = React.Children.count(children) === 0;
@@ -74,6 +95,13 @@ export function SheetTable({
   // The sticky offset for the Sample column derives from the SAME constant as
   // the checkbox grid track, so track width and frozen offset cannot diverge.
   const sampleLeft = checkboxColumn ? CHECKBOX_TRACK_PX : 0;
+
+  // aria-sort for a sortable column: "ascending"/"descending" on the active
+  // column, "none" on the other sortable headers. Only set when sorting is on.
+  const ariaSortFor = (key: SortColumnKey): "ascending" | "descending" | "none" =>
+    sort?.key === key ? (sort.dir === "asc" ? "ascending" : "descending") : "none";
+  const activeDir = (key: SortColumnKey): ColumnSortDir | undefined =>
+    sort?.key === key ? sort.dir : undefined;
 
   return (
     <Card
@@ -105,15 +133,54 @@ export function SheetTable({
               <div
                 role="columnheader"
                 data-sticky="true"
+                {...(onSort ? { "aria-sort": ariaSortFor("sample") } : {})}
                 className="sticky z-10 bg-paper-sunk border-r border-hair-strong"
                 style={{ left: sampleLeft }}
               >
-                <Kicker tone="soft" className="px-4 py-2.5">Sample</Kicker>
+                {onSort ? (
+                  <ColumnSortButton
+                    label="Sample"
+                    active={activeDir("sample")}
+                    onClick={() => onSort("sample")}
+                  />
+                ) : (
+                  <Kicker tone="soft" className="px-4 py-2.5">Sample</Kicker>
+                )}
               </div>
-              <Kicker tone="soft" role="columnheader" className="px-4 py-2.5">Exposures</Kicker>
-              <Kicker tone="soft" role="columnheader" className="px-4 py-2.5">Kept</Kicker>
-              <Kicker tone="soft" role="columnheader" className="px-4 py-2.5">Tags</Kicker>
-              <Kicker tone="soft" role="columnheader" className="px-4 py-2.5">Status</Kicker>
+              {onSort ? (
+                <>
+                  <div role="columnheader" aria-sort={ariaSortFor("exposures")}>
+                    <ColumnSortButton
+                      label="Exposures"
+                      active={activeDir("exposures")}
+                      onClick={() => onSort("exposures")}
+                    />
+                  </div>
+                  <div role="columnheader" aria-sort={ariaSortFor("kept")}>
+                    <ColumnSortButton
+                      label="Kept"
+                      active={activeDir("kept")}
+                      onClick={() => onSort("kept")}
+                    />
+                  </div>
+                  {/* Tags is multi-valued → never sortable: a plain label, no aria-sort. */}
+                  <Kicker tone="soft" role="columnheader" className="px-4 py-2.5">Tags</Kicker>
+                  <div role="columnheader" aria-sort={ariaSortFor("status")}>
+                    <ColumnSortButton
+                      label="Status"
+                      active={activeDir("status")}
+                      onClick={() => onSort("status")}
+                    />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <Kicker tone="soft" role="columnheader" className="px-4 py-2.5">Exposures</Kicker>
+                  <Kicker tone="soft" role="columnheader" className="px-4 py-2.5">Kept</Kicker>
+                  <Kicker tone="soft" role="columnheader" className="px-4 py-2.5">Tags</Kicker>
+                  <Kicker tone="soft" role="columnheader" className="px-4 py-2.5">Status</Kicker>
+                </>
+              )}
             </div>
           </div>
 

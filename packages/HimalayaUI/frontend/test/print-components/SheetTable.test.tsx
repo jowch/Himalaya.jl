@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { describe, it, expect, vi } from "vitest";
+import { render, screen, within, fireEvent } from "@testing-library/react";
 import { SheetTable } from "../../src/print/components/SheetTable";
 import { SampleTableRow } from "../../src/print/components/SampleTableRow";
 
@@ -115,6 +115,83 @@ describe("SheetTable a11y semantics (WCAG 1.3.1 / 4.1.2)", () => {
     screen.getAllByRole("row").forEach((r) => {
       expect(r.parentElement?.getAttribute("role")).toBe("rowgroup");
     });
+  });
+});
+
+describe("SheetTable sortable columns (SA-SORT, WAI-ARIA sortable table)", () => {
+  function getHeader(name: string): HTMLElement {
+    return screen
+      .getAllByRole("columnheader")
+      .find((h) => within(h).queryByRole("button", { name })) ?? screen
+      .getAllByRole("columnheader")
+      .find((h) => h.textContent?.includes(name))!;
+  }
+
+  it("renders the four data headers as sortable buttons when onSort is given", () => {
+    render(
+      <SheetTable checkboxColumn onSort={() => {}} sort={{ key: null, dir: "asc" }}>
+        {[checkRow("a")]}
+      </SheetTable>,
+    );
+    for (const label of ["Sample", "Exposures", "Kept", "Status"]) {
+      expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
+    }
+    // Tags stays a non-button label (multi-valued → not sortable).
+    expect(screen.queryByRole("button", { name: "Tags" })).toBeNull();
+  });
+
+  it("clicking a sortable header calls onSort with that column key", () => {
+    const onSort = vi.fn();
+    render(
+      <SheetTable checkboxColumn onSort={onSort} sort={{ key: null, dir: "asc" }}>
+        {[checkRow("a")]}
+      </SheetTable>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Exposures" }));
+    expect(onSort).toHaveBeenCalledWith("exposures");
+    fireEvent.click(screen.getByRole("button", { name: "Kept" }));
+    expect(onSort).toHaveBeenCalledWith("kept");
+  });
+
+  it("aria-sort reflects the active column's direction; other sortable headers are 'none'", () => {
+    render(
+      <SheetTable checkboxColumn onSort={() => {}} sort={{ key: "sample", dir: "desc" }}>
+        {[checkRow("a")]}
+      </SheetTable>,
+    );
+    expect(getHeader("Sample")).toHaveAttribute("aria-sort", "descending");
+    for (const label of ["Exposures", "Kept", "Status"]) {
+      expect(getHeader(label)).toHaveAttribute("aria-sort", "none");
+    }
+  });
+
+  it("ascending renders aria-sort='ascending' on the active column only", () => {
+    render(
+      <SheetTable checkboxColumn onSort={() => {}} sort={{ key: "kept", dir: "asc" }}>
+        {[checkRow("a")]}
+      </SheetTable>,
+    );
+    expect(getHeader("Kept")).toHaveAttribute("aria-sort", "ascending");
+    expect(getHeader("Sample")).toHaveAttribute("aria-sort", "none");
+  });
+
+  it("non-sortable columns (checkbox, Tags) carry NO aria-sort", () => {
+    render(
+      <SheetTable checkboxColumn onSort={() => {}} sort={{ key: "sample", dir: "asc" }}>
+        {[checkRow("a")]}
+      </SheetTable>,
+    );
+    expect(screen.getAllByRole("columnheader")[0]).not.toHaveAttribute("aria-sort"); // checkbox
+    expect(getHeader("Tags")).not.toHaveAttribute("aria-sort");
+  });
+
+  it("the static-header fallback still renders when onSort is absent (other consumers unchanged)", () => {
+    render(<SheetTable>{[row("a")]}</SheetTable>);
+    // No sort buttons; the labels remain plain kicker text.
+    expect(screen.queryByRole("button", { name: "Sample" })).toBeNull();
+    screen
+      .getAllByRole("columnheader")
+      .forEach((h) => expect(h).not.toHaveAttribute("aria-sort"));
   });
 });
 

@@ -21,6 +21,15 @@ import {
 import { suppressGlobalKeys } from "../../lib/keys";
 import { showToast } from "../../lib/toast";
 import { toSampleRowModel } from "./samplesAdapters";
+import {
+  sortSampleRows,
+  nextSortState,
+  isSortableKey,
+  type SortKey,
+  type SortDir,
+  type SortableKey,
+} from "../../lib/sample/sortSamples";
+import { sampleDisplayName } from "../../lib/sample/displayName";
 
 // Boneyard fixture — a static skeleton shaped to the SheetTable rows region so
 // the headless capture CLI measures the contact-sheet body. Four placeholder
@@ -116,6 +125,46 @@ export function SamplesPage(): JSX.Element {
   const corpusExposures = useCorpusExposures(filtered);
   const { screened, total } = useScreenedProgress(filtered);
   const batch = useSetExposureStatusBatch();
+
+  // ── sort (SA-SORT, page-owned, URL-persisted) ───────────────────────────────
+  // The sort key+dir live in the address the SAME way the beamtime filter does
+  // (useSearchParams), so a sorted view is a shareable permalink. An unknown /
+  // absent ?sort falls back to null = ingest order; ?dir defaults to asc.
+  const sortKeyParam = searchParams.get("sort");
+  const sortKey: SortKey =
+    sortKeyParam && isSortableKey(sortKeyParam) ? sortKeyParam : null;
+  const sortDir: SortDir = searchParams.get("dir") === "desc" ? "desc" : "asc";
+  const sort = { key: sortKey, dir: sortDir };
+
+  function applySort(key: SortableKey): void {
+    const next = nextSortState(sort, key);
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      if (next.key === null) {
+        params.delete("sort");
+        params.delete("dir");
+      } else {
+        params.set("sort", next.key);
+        params.set("dir", next.dir);
+      }
+      return params;
+    });
+  }
+
+  // Apply the stable sort to the FILTERED list before it becomes rows. The
+  // exposures/kept accessors read the same per-sample exposure rows the row
+  // adapter does, so the column you sort by is exactly the column you see.
+  const sortedSamples = useMemo(() => {
+    if (sortKey === null) return filtered;
+    return sortSampleRows(filtered, { key: sortKey, dir: sortDir }, {
+      name: (s) => sampleDisplayName(s),
+      exposures: (s) => (corpusExposures.byId.get(s.id) ?? []).length,
+      kept: (s) =>
+        (corpusExposures.byId.get(s.id) ?? []).filter((e) => e.status === "accepted")
+          .length,
+      phase: (s) => s.phase,
+    });
+  }, [filtered, sortKey, sortDir, corpusExposures.byId]);
 
   // ── selection state (page-owned) ────────────────────────────────────────────
   // Exposure-grain cull selection (drives CullBar → Drop/Restore).
@@ -311,6 +360,8 @@ export function SamplesPage(): JSX.Element {
           >
             <SheetTable
               checkboxColumn
+              sort={sort}
+              onSort={applySort}
               empty={
                 <div className="p-10 text-center text-ink-soft">
                   No samples{" "}
@@ -319,7 +370,7 @@ export function SamplesPage(): JSX.Element {
                 </div>
               }
             >
-              {filtered.map((s) => {
+              {sortedSamples.map((s) => {
                 const m = toSampleRowModel(s, corpusExposures.byId.get(s.id));
                 return (
                   <SampleTableRow
