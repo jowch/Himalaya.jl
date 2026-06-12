@@ -58,6 +58,32 @@ describe("PlotFrame", () => {
     expect(spy).toHaveBeenCalled();
   });
 
+  it("names the svg as a graphic when svgRole/svgLabel are given (WCAG 1.1.1)", () => {
+    const { container } = render(
+      <PlotFrame
+        height={200}
+        margins={margins}
+        width={400}
+        data-testid="frame"
+        svgRole="img"
+        svgLabel="Integration trace: intensity vs q"
+        render={() => null}
+      />,
+    );
+    const svg = container.querySelector("svg")!;
+    expect(svg.getAttribute("role")).toBe("img");
+    expect(svg.getAttribute("aria-label")).toBe("Integration trace: intensity vs q");
+  });
+
+  it("leaves the svg nameless when svgRole/svgLabel are omitted (existing consumers byte-identical)", () => {
+    const { container } = render(
+      <PlotFrame height={200} margins={margins} width={400} render={() => null} />,
+    );
+    const svg = container.querySelector("svg")!;
+    expect(svg.getAttribute("role")).toBeNull();
+    expect(svg.getAttribute("aria-label")).toBeNull();
+  });
+
   it("calls onPointerLeave when pointer leaves the container div", () => {
     const leaveSpy = vi.fn();
     const { container } = render(

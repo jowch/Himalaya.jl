@@ -163,7 +163,7 @@ export function SegmentedControl<T extends string>({
             onClick={() => onChange(opt.value)}
             onKeyDown={(e) => onKeyDown(e, idx)}
             className={cx(
-              "seg-segment transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
+              "seg-segment whitespace-nowrap transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
               sizeClass[size],
               segmentBaseClass[variant],
               active

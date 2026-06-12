@@ -1,8 +1,9 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Card, Button, HintText, Input, SegmentedControl } from "../ui";
 import { PlateHeader } from "./PlateHeader";
 import { ToolBar } from "./ToolBar";
 import { TracePlot, type TraceModel, type TracePlotInteraction } from "../plot/TracePlot";
+import type { PeakFocusRequest } from "../plot/marks/PlotPeaks";
 
 function cx(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(" ");
@@ -43,6 +44,10 @@ export interface TracePlateProps {
   onHoverQ?: (q: number | undefined) => void;
   /** When non-empty, peaks NOT in this set dim to neutral → forwarded to TracePlot. */
   highlightPeakIds?: ReadonlySet<number>;
+  /** One-shot keyboard-focus re-anchor after a destructive peak edit (WCAG
+   *  2.4.3) → forwarded to TracePlot. The consumer computes the surviving peak
+   *  id at activation time and bumps the nonce. */
+  focusRequest?: PeakFocusRequest;
   /** Plot height in px. Default 360. */
   plotHeight?: number;
   /** Extra toolbar actions rendered after the built-in controls (e.g. figure export). */
@@ -66,6 +71,7 @@ export function TracePlate({
   hoveredQ,
   onHoverQ,
   highlightPeakIds,
+  focusRequest,
   plotHeight = 360,
   actions,
   className,
@@ -95,6 +101,14 @@ export function TracePlate({
   // ── armed add-at-q (keyboard parity for click-empty-space-adds) ────────────
   // Validate against the trace's q extent: a peak outside the measured window
   // would be unanchorable, so Add stays disabled there.
+  // Focus-re-anchor fallback target: when a destructive peak edit leaves no
+  // surviving mark to take focus, the plot layer calls onFocusFallback and we
+  // park focus on the "+ Peak" button (the keyboard user's last stable handle).
+  const addPeakButtonRef = useRef<HTMLButtonElement | null>(null);
+  const onFocusFallback = useCallback(() => {
+    addPeakButtonRef.current?.focus();
+  }, []);
+
   const [qText, setQText] = useState("");
   let qMin = Infinity;
   let qMax = -Infinity;
@@ -184,13 +198,23 @@ export function TracePlate({
             </Button>
           )}
           {onToggleAddPeak && (
-            <Button armed={addPeakArmed} onClick={onToggleAddPeak}>
+            <Button ref={addPeakButtonRef} armed={addPeakArmed} onClick={onToggleAddPeak}>
               + Peak
             </Button>
           )}
           {actions}
         </ToolBar>
       </PlateHeader>
+      {/* Disarmed discoverability cue (H10): when editing is available but not
+          armed, a first-timer has no signal that peaks are interactive. A quiet
+          one-liner points at the affordance. Shown ONLY while disarmed and only
+          when the edit toggle exists; never alongside the armed legend. Rides
+          ink-soft (AA) — it is informational small text, not decorative. */}
+      {!addPeakArmed && onToggleAddPeak && (
+        <p data-testid="peak-edit-cue" className="mt-2 text-meta text-ink-soft">
+          Arm + Peak to edit peaks.
+        </p>
+      )}
       {/* Armed-only edit legend: only the WIRED pointer verbs, plus the
           keyboard add path. Hidden while disarmed — the plot is read-only
           then and a standing instruction would lie. */}
@@ -249,6 +273,8 @@ export function TracePlate({
         {...(hoveredQ !== undefined ? { hoveredQ } : {})}
         {...(onHoverQ !== undefined ? { onHoverQ } : {})}
         {...(highlightPeakIds !== undefined ? { highlightPeakIds } : {})}
+        {...(focusRequest !== undefined ? { focusRequest, onFocusFallback } : {})}
+        figureLabel="Integration trace: intensity vs q"
         paperColor="var(--color-plate)"
         data-testid="trace-plate-plot"
         className="mt-2"

@@ -1,6 +1,18 @@
+import { useLayoutEffect, useRef } from "react";
 import { type Projection } from "../projection";
 import { PeakGlyph } from "../../ui/PeakGlyph";
 import { peakGlyph } from "../../ui/peakMark";
+
+/** A one-shot request to move keyboard focus onto a specific peak mark. The
+ *  `nonce` lets the consumer re-fire even when the same id repeats (e.g. two
+ *  removes in a row that both land focus on the same surviving neighbour).
+ *  `id: null` (or an id whose mark no longer exists) means "no peak survived" —
+ *  the layer calls `onFocusFallback` so the consumer can park focus elsewhere
+ *  (the "+ Peak" toolbar button). */
+export interface PeakFocusRequest {
+  id: number | null;
+  nonce: number;
+}
 
 export interface PlotPeak {
   id: number;
@@ -35,6 +47,14 @@ export interface PlotPeaksProps {
   onPeakActivate?: (id: number, altKey: boolean) => void;
   /** When non-empty, peaks NOT in this set (and not hot) fade to neutral gray. */
   highlightPeakIds?: ReadonlySet<number>;
+  /** One-shot keyboard-focus re-anchor (WCAG 2.4.3). After a destructive edit
+   *  unmounts the activated mark, the consumer requests focus on the nearest
+   *  surviving peak by id; this layer moves focus to its `<g data-peak-id>` once
+   *  per nonce. Only meaningful while editing is armed (focusable marks). */
+  focusRequest?: PeakFocusRequest;
+  /** Called once per focusRequest nonce when no surviving mark can take focus
+   *  (id is null, or its mark is gone). The consumer parks focus elsewhere. */
+  onFocusFallback?: () => void;
 }
 
 export function PlotPeaks({
@@ -46,10 +66,35 @@ export function PlotPeaks({
   onPeakFocus,
   onPeakActivate,
   highlightPeakIds,
+  focusRequest,
+  onFocusFallback,
 }: PlotPeaksProps): JSX.Element {
   const { x, y } = projection;
+
+  // Consume the focus request once per nonce: after the re-render that dropped
+  // the removed mark, move focus onto the surviving peak's <g>. Keyed on the
+  // nonce so a foreign/SSE re-render (which leaves the nonce untouched) never
+  // re-steals focus — the same wantFocus-ref discipline RepresentativeBox and
+  // the Builder RecipeRow use. Layout effect so the move happens before paint.
+  const rootRef = useRef<SVGGElement | null>(null);
+  const lastNonce = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    if (!focusRequest) return;
+    if (lastNonce.current === focusRequest.nonce) return;
+    lastNonce.current = focusRequest.nonce;
+    const root = rootRef.current;
+    const target =
+      root && focusRequest.id != null
+        ? root.querySelector<SVGGElement>(
+            `g[data-peak-id="${focusRequest.id}"]`,
+          )
+        : null;
+    if (target) target.focus();
+    else onFocusFallback?.();
+  }, [focusRequest, onFocusFallback]);
+
   return (
-    <g data-role="plot-peaks">
+    <g data-role="plot-peaks" ref={rootRef}>
       {peaks.map((p) => {
         if (p.id < 0) return null;
         const px = x.to(p.q);
@@ -104,6 +149,9 @@ export function PlotPeaks({
         return (
           <g
             key={p.id}
+            // The wrapper carries data-peak-id (mirroring the inner glyph) so
+            // the focus-re-anchor layer effect can find the survivor by id.
+            data-peak-id={p.id}
             {...focusAttrs}
             {...activateAttrs}
             {...(dimmed ? { "data-dimmed": "true" } : {})}

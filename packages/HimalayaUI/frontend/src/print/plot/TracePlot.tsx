@@ -8,7 +8,7 @@ import {
 } from "./projection";
 import { Axis } from "./Axis";
 import { TraceLine } from "./marks/TraceLine";
-import { PlotPeaks, type PlotPeak } from "./marks/PlotPeaks";
+import { PlotPeaks, type PlotPeak, type PeakFocusRequest } from "./marks/PlotPeaks";
 import { PlotLabels } from "./marks/PlotLabels";
 import { hitTestPeaks, zoomXDomain, PEAK_HIT_PX } from "./interaction";
 import { phaseColor } from "../../phases";
@@ -65,6 +65,16 @@ export interface TracePlotProps {
   /** Incoming hot q from another panel: light the peak matching this q (within
    *  the hit tolerance). The cross-panel q-link sink. */
   hoveredQ?: number;
+  /** One-shot keyboard-focus re-anchor after a destructive peak edit (WCAG
+   *  2.4.3). Forwarded to PlotPeaks. */
+  focusRequest?: PeakFocusRequest;
+  /** Called when a focusRequest has no surviving mark to land on. Forwarded to
+   *  PlotPeaks; the consumer parks focus elsewhere (e.g. "+ Peak" button). */
+  onFocusFallback?: () => void;
+  /** Accessible name for the trace figure svg (WCAG 1.1.1). Without it the svg
+   *  surfaces as a nameless img in the a11y tree. Forwarded to PlotFrame as
+   *  role="img" + aria-label. */
+  figureLabel?: string;
 }
 
 const UNINDEXED_COLOR = "var(--color-ink-faint)";
@@ -100,6 +110,9 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
     yHeadroom = 0,
     onHoverQ,
     hoveredQ,
+    focusRequest,
+    onFocusFallback,
+    figureLabel,
   } = props;
 
   const layers = { peaks: true, labels: false, band: true, ...(show ?? {}) };
@@ -212,6 +225,7 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
       {...(width !== undefined ? { width } : {})}
       {...(className ? { className } : {})}
       {...(testid ? { "data-testid": testid } : {})}
+      {...(figureLabel ? { svgRole: "img", svgLabel: figureLabel } : {})}
       {...(interaction
         ? {
             onWheelPx: handleWheelPx,
@@ -331,6 +345,8 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
                       : {})
                   }
                   {...(highlightPeakIds ? { highlightPeakIds } : {})}
+                  {...(focusRequest ? { focusRequest } : {})}
+                  {...(onFocusFallback ? { onFocusFallback } : {})}
                 />
               );
             })() : null}

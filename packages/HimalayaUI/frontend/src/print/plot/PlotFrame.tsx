@@ -24,6 +24,11 @@ export interface PlotFrameProps {
   defaultWidth?: number;
   className?: string;
   "data-testid"?: string;
+  /** Accessible role for the svg (e.g. "img"), so a figure svg announces as a
+   *  named graphic in the a11y tree instead of a nameless img (WCAG 1.1.1). */
+  svgRole?: string;
+  /** Accessible name paired with `svgRole`. */
+  svgLabel?: string;
   /** Container-relative pixel gestures. q-translation happens in the caller. */
   onWheelPx?: (deltaY: number, px: number, py: number) => void;
   onClickPx?: (px: number, py: number, altKey: boolean) => void;
@@ -42,6 +47,8 @@ export function PlotFrame({
   defaultWidth = 640,
   className,
   "data-testid": testid,
+  svgRole,
+  svgLabel,
   onWheelPx,
   onClickPx,
   onDoubleClickPx,
@@ -110,6 +117,8 @@ export function PlotFrame({
         height={height}
         viewBox={`0 0 ${w} ${height}`}
         data-testid={testid}
+        {...(svgRole ? { role: svgRole } : {})}
+        {...(svgLabel ? { "aria-label": svgLabel } : {})}
         onClick={handleClick}
         {...(onDoubleClickPx ? { onDoubleClick: onDoubleClickPx } : {})}
       >

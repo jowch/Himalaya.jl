@@ -243,6 +243,80 @@ describe("PlotPeaks", () => {
     expect(peakG?.getAttribute("role")).toBeNull();
   });
 
+  describe("focusRequest — keyboard re-anchor after a destructive edit", () => {
+    it("the focusable wrapper <g> carries data-peak-id so the survivor can be found", () => {
+      const { container } = render(
+        <svg>
+          <PlotPeaks
+            peaks={[{ id: 7, q: 0.2, intensity: 20, source: "auto" }]}
+            projection={proj}
+            color="var(--color-accent)"
+            onPeakActivate={vi.fn()}
+          />
+        </svg>,
+      );
+      const wrapper = container.querySelector(
+        '[data-role="plot-peaks"] > g[data-peak-id="7"]',
+      );
+      expect(wrapper).toBeTruthy();
+      expect(wrapper!.getAttribute("role")).toBe("button");
+    });
+
+    it("calls onFocusFallback once when the requested id has no surviving mark", () => {
+      const fallback = vi.fn();
+      const { rerender } = render(
+        <svg>
+          <PlotPeaks
+            peaks={[{ id: 1, q: 0.2, intensity: 20, source: "auto" }]}
+            projection={proj}
+            color="var(--color-accent)"
+            onPeakActivate={vi.fn()}
+            onFocusFallback={fallback}
+          />
+        </svg>,
+      );
+      // A request for an absent id (no survivor) → fallback fires exactly once.
+      rerender(
+        <svg>
+          <PlotPeaks
+            peaks={[{ id: 1, q: 0.2, intensity: 20, source: "auto" }]}
+            projection={proj}
+            color="var(--color-accent)"
+            onPeakActivate={vi.fn()}
+            onFocusFallback={fallback}
+            focusRequest={{ id: null, nonce: 1 }}
+          />
+        </svg>,
+      );
+      expect(fallback).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not re-fire the same nonce (idempotent per request)", () => {
+      const fallback = vi.fn();
+      const tree = (nonce: number) => (
+        <svg>
+          <PlotPeaks
+            peaks={[{ id: 1, q: 0.2, intensity: 20, source: "auto" }]}
+            projection={proj}
+            color="var(--color-accent)"
+            onPeakActivate={vi.fn()}
+            onFocusFallback={fallback}
+            focusRequest={{ id: null, nonce }}
+          />
+        </svg>
+      );
+      const { rerender } = render(tree(1));
+      expect(fallback).toHaveBeenCalledTimes(1);
+      // An unrelated re-render with the SAME nonce must not re-fire (a foreign
+      // SSE re-render never steals focus).
+      rerender(tree(1));
+      expect(fallback).toHaveBeenCalledTimes(1);
+      // A NEW nonce fires again.
+      rerender(tree(2));
+      expect(fallback).toHaveBeenCalledTimes(2);
+    });
+  });
+
   describe("highlightPeakIds — index/phase highlight", () => {
     const peaks3: PlotPeak[] = [
       { id: 1, q: 0.13, source: "auto", intensity: 10 },

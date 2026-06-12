@@ -1,4 +1,5 @@
 import { render, screen, fireEvent, within } from "@testing-library/react";
+import { describe, it, expect, vi } from "vitest";
 import { TracePlate } from "../../src/print/components/TracePlate";
 import type { TraceModel } from "../../src/print/plot/TracePlot";
 
@@ -116,6 +117,40 @@ describe("TracePlate", () => {
     onHoverQ.mockClear();
     fireEvent.focus(peakG);
     expect(onHoverQ).toHaveBeenCalledWith(0.05);
+  });
+
+  it("names the trace figure svg so it is not a nameless img in the a11y tree (WCAG 1.1.1)", () => {
+    const { container } = render(<TracePlate {...base} />);
+    const svg = container.querySelector('svg[data-testid="trace-plate-plot"]')!;
+    expect(svg.getAttribute("role")).toBe("img");
+    expect(svg.getAttribute("aria-label")).toBe("Integration trace: intensity vs q");
+  });
+
+  // ── H10: disarmed discoverability cue ────────────────────────────────────────
+
+  it("shows the disarmed discoverability cue when the edit toggle is wired and not armed", () => {
+    render(<TracePlate {...base} onToggleAddPeak={() => {}} />);
+    expect(screen.getByTestId("peak-edit-cue").textContent).toBe(
+      "Arm + Peak to edit peaks.",
+    );
+  });
+
+  it("hides the disarmed cue once armed (never both the cue and the armed legend)", () => {
+    render(
+      <TracePlate
+        {...base}
+        addPeakArmed
+        onToggleAddPeak={() => {}}
+        interaction={{ onXDomain: () => {}, onAddPeak: () => {}, onClickPeak: () => {} }}
+      />,
+    );
+    expect(screen.queryByTestId("peak-edit-cue")).toBeNull();
+    expect(screen.getByTestId("peak-edit-hint")).toBeInTheDocument();
+  });
+
+  it("omits the disarmed cue when no edit affordance exists (no onToggleAddPeak)", () => {
+    render(<TracePlate {...base} />);
+    expect(screen.queryByTestId("peak-edit-cue")).toBeNull();
   });
 
   it("renders a node passed as actions inside the plate", () => {

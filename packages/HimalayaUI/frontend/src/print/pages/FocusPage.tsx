@@ -1,11 +1,12 @@
-import { useMemo, useState, useCallback } from "react";
+import { useMemo, useState, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Skeleton } from "boneyard-js/react";
 import { TracePlate } from "../components/TracePlate";
 import { DetectorPanel } from "../components/DetectorPanel";
 import { ThumbnailGallery } from "../components/ThumbnailGallery";
 import { CombsPanel, type CombView } from "../components/CombsPanel";
-import type { PlotPeak } from "../plot/marks/PlotPeaks";
+import type { PlotPeak, PeakFocusRequest } from "../plot/marks/PlotPeaks";
+import { nextFocusPeakId } from "../plot/peakFocusOrder";
 import { AssignmentRail } from "../components/AssignmentRail";
 import { AssignmentCart } from "../components/AssignmentCart";
 import { PhaseBlock } from "../components/PhaseBlock";
@@ -164,6 +165,21 @@ export function FocusPage(): JSX.Element {
   const [hoveredQ, setHoveredQ] = useState<number | undefined>(undefined);
   const [combView, setCombView] = useState<CombView>("comb");
   const [previewIndexId, setPreviewIndexId] = useState<number | undefined>(undefined);
+
+  // ── keyboard focus re-anchor after a destructive peak edit (WCAG 2.4.3) ──────
+  // Removing a peak via the keyboard unmounts its mark; without this, focus
+  // falls to <body>. On a remove we compute the surviving neighbour (q-order)
+  // and bump a nonce-keyed request; TracePlate → TracePlot → PlotPeaks consumes
+  // it in a layout effect AFTER the re-render and moves focus to that mark. The
+  // nonce ref drives a NEW request each time so two removes onto the same
+  // survivor still re-fire; a foreign/SSE re-render leaves the nonce alone, so
+  // it never steals focus. Null survivor → focus the "+ Peak" button instead.
+  const [focusRequest, setFocusRequest] = useState<PeakFocusRequest | undefined>(undefined);
+  const focusNonce = useRef(0);
+  const requestPeakFocus = useCallback((id: number | null) => {
+    focusNonce.current += 1;
+    setFocusRequest({ id, nonce: focusNonce.current });
+  }, []);
 
   // custom-index modal
   const [customOpen, setCustomOpen] = useState(false);
@@ -468,6 +484,7 @@ export function FocusPage(): JSX.Element {
               {...(hoveredQ !== undefined ? { hoveredQ } : {})}
               onHoverQ={setHoveredQ}
               {...(highlight !== undefined ? { highlightPeakIds: highlight } : {})}
+              {...(focusRequest !== undefined ? { focusRequest } : {})}
               interaction={{
                 onXDomain: setXDomain,
                 onAddPeak: (q) => {
@@ -476,9 +493,15 @@ export function FocusPage(): JSX.Element {
                 },
                 onClickPeak: (id, alt) => {
                   if (alt) {
+                    // Exclude restyles the mark in place (it does NOT unmount),
+                    // so focus stays put — no re-anchor request.
                     setPeakExcluded.mutate({ peakId: id, excluded: true });
                     announce("Peak excluded");
                   } else {
+                    // Remove unmounts the activated mark → re-anchor focus to the
+                    // surviving q-neighbour (or the "+ Peak" button via fallback
+                    // when none survive). Computed from the pre-removal list.
+                    requestPeakFocus(nextFocusPeakId(peaks, id));
                     removePeak.mutate(id);
                     announce("Peak removed");
                   }
