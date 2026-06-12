@@ -405,12 +405,14 @@ export function SamplesPage(): JSX.Element {
         <KbLegend
           className="mt-4"
           shortcuts={[
+            { keyLabel: "↑ ↓ ← →", description: "move between cells" },
+            { keyLabel: "Enter", description: "open, sort a header, or enter a cell" },
             { keyLabel: "click", description: "select a frame" },
             { keyLabel: "⇧ click", description: "extend the range" },
             { keyLabel: "X", description: "drop the selected frames" },
             { keyLabel: "K", description: "keep the selected frames" },
             { keyLabel: "double-click", description: "open the loupe" },
-            { keyLabel: "Esc", description: "clear" },
+            { keyLabel: "Esc", description: "exit a cell or clear" },
             { keyLabel: "⌘K", description: "find a sample" },
           ]}
         />

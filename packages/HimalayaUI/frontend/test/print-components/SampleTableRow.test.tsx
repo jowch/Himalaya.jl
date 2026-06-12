@@ -1,5 +1,6 @@
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
+import { useLayoutEffect } from "react";
 import type { ReactNode } from "react";
 import { SampleTableRow } from "../../src/print/components/SampleTableRow";
 import type { GalleryExposure } from "../../src/print/components/ThumbnailGallery";
@@ -319,5 +320,42 @@ describe("<SampleTableRow> roving grid wiring", () => {
     screen.getAllByTestId("thumbnail").forEach((t) => {
       expect(t).toHaveAttribute("tabindex", "-1");
     });
+  });
+
+  it("in interaction mode the FIRST THUMBNAIL (not the scroller) is the tabindex=0 widget", () => {
+    // BUG-D-followup regression: the gallery's overflow-x-auto scroller carries a
+    // component-level tabIndex=-1 and PRECEDES its thumbnail buttons. The
+    // inertness selector must NOT include `[tabindex]`, else the scroller becomes
+    // the "first widget" and interaction-mode Enter promotes the empty scroller
+    // to tabIndex=0 (focus lands on nothing). It must land on Frame 1.
+    function InteractionHarness({ children }: { children: ReactNode }) {
+      const grid = useRovingGrid({ rows: 3, cols: 6, interactionCols: new Set([2, 4]) });
+      // Enter interaction at the Exposures cell of row 1 once, on mount.
+      useLayoutEffect(() => {
+        grid.enterInteraction(1, 2);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, []);
+      return <RovingGridProvider value={grid}>{children}</RovingGridProvider>;
+    }
+    render(
+      <InteractionHarness>
+        <SampleTableRow
+          {...rovingProps}
+          rowIndex={1}
+          phase={null}
+          exposures={[
+            { id: 1, src: null, frameNo: "1" },
+            { id: 2, src: null, frameNo: "2" },
+          ]}
+        />
+      </InteractionHarness>,
+    );
+    const thumbs = screen.getAllByTestId("thumbnail");
+    // The scroller (gallery root) keeps its component-level -1 — never promoted.
+    expect(screen.getByTestId("thumbnail-gallery")).toHaveAttribute("tabindex", "-1");
+    // The first thumbnail button is the single tabindex=0 (the focus-first target).
+    expect(thumbs[0]).toHaveAttribute("tabindex", "0");
+    // The rest are reachable via Tab (tabindex attribute removed → element default).
+    expect(thumbs[1]).not.toHaveAttribute("tabindex");
   });
 });

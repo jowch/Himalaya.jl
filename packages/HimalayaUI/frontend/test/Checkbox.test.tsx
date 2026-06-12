@@ -41,4 +41,13 @@ describe("Checkbox", () => {
     await user.click(screen.getByRole("checkbox", { name: "select sample" }));
     expect(onChange).not.toHaveBeenCalled();
   });
+
+  it("declares an enlarged hit area (WCAG 2.5.8) without growing the 13px disc", () => {
+    // The interactive span is padded out to a >=24x24 tap target (p-1.5 around
+    // the 13px disc) with a cancelling negative margin so layout is unchanged.
+    // jsdom has no layout, so assert the semantic marker, not pixel geometry.
+    render(<Checkbox aria-label="select sample" />);
+    const cb = screen.getByRole("checkbox", { name: "select sample" });
+    expect(cb).toHaveAttribute("data-hit-area", "24");
+  });
 });

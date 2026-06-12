@@ -131,8 +131,15 @@ function useMultiWidgetInertness(
     if (!roving) return;
     const el = ref.current;
     if (el === null) return;
+    // Deliberately NO `[tabindex]` in this selector: the gallery's overflow-x-auto
+    // scroller carries a component-level tabIndex=-1 (BUG D — opt it out of
+    // Chrome's auto Tab-stop) and PRECEDES its thumbnail buttons in document
+    // order. Including `[tabindex]` made the scroller the first match, so
+    // interaction-mode Enter promoted the empty SCROLLER to tabIndex=0 instead of
+    // Frame 1. The cell's real focusables are all <button> (thumbnails / tag
+    // controls), so this selector still covers them; the scroller keeps its -1.
     const focusables = el.querySelectorAll<HTMLElement>(
-      "button, input, a, select, textarea, [tabindex]",
+      "button, input, a, select, textarea",
     );
     focusables.forEach((f, i) => {
       if (interactionActive) {
