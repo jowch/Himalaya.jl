@@ -1307,6 +1307,44 @@ describe("SeriesScopingPage", () => {
     });
   });
 
+  // SC-TAGORDER: Op A (the tag write) must consume the SAME displayed/reordered
+  // member order as Op B (the series position-create), so the recipe order and
+  // the tag-write order never diverge. Pre-fix the tags came from the
+  // never-reordered proposal `rows`; the fix routes both through `sorted`.
+  describe("tag-write order follows the displayed order (SC-TAGORDER)", () => {
+    it("writes the ordering tags in the reordered display order, matching the series positions", () => {
+      seed3();
+      const { rerender } = renderPage();
+      // Default low→high display order is A, B, C (ids 1, 2, 3).
+      // ArrowUp on C's grip → displayed order A, C, B (ids 1, 3, 2).
+      fireEvent.keyDown(screen.getByRole("button", { name: /^reorder C$/i }), { key: "ArrowUp" });
+      fireEvent.click(screen.getByRole("button", { name: /confirm & build/i }));
+      // Op A tags follow the DISPLAYED order (exact array), not the proposal order.
+      expect(scopeMutate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          key: "ratio",
+          tags: [
+            { sampleId: 1, value: "1 : 0" },
+            { sampleId: 3, value: "1 : 1" },
+            { sampleId: 2, value: "1 : 0.5" },
+          ],
+        }),
+      );
+      // Op B positions follow the same order — write order and recipe agree.
+      scopeState = { mutate: scopeMutate, isSuccess: true, error: null, data: undefined };
+      act(() => rerender());
+      expect(createMutate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          samples: [
+            { sample_id: 1, position: 0 },
+            { sample_id: 3, position: 1 },
+            { sample_id: 2, position: 2 },
+          ],
+        }),
+      );
+    });
+  });
+
   // SC-COUNTHONEST: the count caption must not keep claiming "low to high" once
   // the order is no longer the value-sorted default (the controls-don't-lie law).
   describe("count caption honesty after reorder", () => {

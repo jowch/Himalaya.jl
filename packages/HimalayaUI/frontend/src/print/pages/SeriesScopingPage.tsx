@@ -580,7 +580,10 @@ export function SeriesScopingPage(): JSX.Element {
         ordering_variable: proposal.orderingKey,
       };
       stage.current = "tagging";
-      scopeSeries.mutate({ key: proposal.orderingKey, tags: buildScopePayload(rows) });
+      // SC-TAGORDER: write tags from the SAME displayed/reordered set as the
+      // position-create above (`sorted`, which buildScopePayload re-filters by
+      // isKept → keptInOrder), so tag-write order and series position agree.
+      scopeSeries.mutate({ key: proposal.orderingKey, tags: buildScopePayload(sorted) });
     }
   };
 
