@@ -29,6 +29,7 @@ import {
   recipeRowView,
 } from "./builderAdapters";
 import { buildSeriesSaveBody } from "../../lib/series/buildSeriesSaveBody";
+import { isSeriesDraftDirty } from "../../lib/series/isSeriesDraftDirty";
 import { buildPlateFromRecipe } from "../../lib/series/buildPlateFromRecipe";
 import { buildMultiTraceExportSpec } from "../../lib/figure-export/adapters/multiTraceAdapter";
 import { ExportButton } from "../components/ExportButton";
@@ -128,6 +129,25 @@ export function SeriesBuilderPage(): JSX.Element {
   const series = seriesQ.data;
   // The active draft only counts when it targets THIS series.
   const liveDraft = draft !== null && series !== undefined && draft.id === series.id ? draft : null;
+
+  // BU-NAVAWAY-DRAFT: warn before the tab is closed / reloaded while a draft
+  // carries UNSAVED CHANGES. In-app route changes keep the draft alive (it
+  // lives in the Zustand store + sessionStorage, recoverable on return), so
+  // they need no guard; tab close is the one path that discards the per-tab
+  // sessionStorage draft for good. The guard arms only when the draft actually
+  // differs from the saved series (controls-don't-lie), never on a pristine
+  // fork. `useBlocker` would cover in-app nav too but requires a data router;
+  // the app uses <BrowserRouter>, so beforeunload is the available, honest lever.
+  const draftDirty = liveDraft !== null && series !== undefined && isSeriesDraftDirty(liveDraft, series);
+  useEffect(() => {
+    if (!draftDirty) return;
+    const handler = (e: BeforeUnloadEvent): void => {
+      e.preventDefault();
+      e.returnValue = ""; // legacy Chrome/Firefox: a non-empty value arms the prompt
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [draftDirty]);
 
   // LOAD-BEARING: the page never calls save.reset()/commit.reset(). A lingering
   // save.isSuccess/commit.isSuccess === true between Confirm runs is INERT

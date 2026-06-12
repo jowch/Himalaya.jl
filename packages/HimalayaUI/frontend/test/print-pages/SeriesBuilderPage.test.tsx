@@ -336,6 +336,27 @@ describe("SeriesBuilderPage", () => {
     expect(state.commit.mutate).not.toHaveBeenCalled();
   });
 
+  it("arms a beforeunload guard while the draft has unsaved changes, disarms on cancel (BU-NAVAWAY-DRAFT)", () => {
+    renderPage();
+    // Pristine read-state (no draft): closing the tab is not guarded.
+    const clean = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(clean);
+    expect(clean.defaultPrevented).toBe(false);
+
+    // A real unsaved change (title edit) arms the guard — the handler
+    // preventDefault()s, which is what triggers the browser's leave prompt.
+    fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "Edited" } });
+    const dirty = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(dirty);
+    expect(dirty.defaultPrevented).toBe(true);
+
+    // Cancel discards the draft → the guard disarms (no false prompt on a clean exit).
+    fireEvent.click(screen.getByRole("button", { name: /^cancel$/i }));
+    const afterCancel = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(afterCancel);
+    expect(afterCancel.defaultPrevented).toBe(false);
+  });
+
   it("Confirm chain: save THEN commit (plate resolved from the saved RECIPE) THEN discard draft", () => {
     const { rerender } = renderPage();
     // Start a draft.
