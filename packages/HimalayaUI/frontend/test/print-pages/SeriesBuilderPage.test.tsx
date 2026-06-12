@@ -884,6 +884,39 @@ describe("SeriesBuilderPage", () => {
     expect(useAppState.getState().seriesDraft!.recipe[1]!.sample_id).toBe(firstSampleId);
   });
 
+  it("each recipe row shows the figure trace's label so it cross-references the plate (BU-NAMES)", () => {
+    renderPage();
+    fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "x" } });
+    const rows = screen.getAllByTestId("builder-recipe-row");
+    expect(rows).toHaveLength(2);
+    // The figure (committed members) labels traces by memberRowLabel — here the
+    // members carry label_override "ratio N". The recipe rows must echo that same
+    // token (not just the sample name) so a row maps to its plate trace. Visual
+    // order is reversed (plate-top first): sample 2 row, then sample 1 row.
+    const figureLabels = rows.map(
+      (r) => within(r).queryByTestId("builder-recipe-figure-label")?.textContent,
+    );
+    expect(figureLabels).toEqual(["ratio 2", "ratio 1"]);
+    // The sample name is still the primary label (not replaced by the token).
+    expect(within(rows[0]!).getByText("B")).toBeInTheDocument();
+    expect(within(rows[1]!).getByText("A")).toBeInTheDocument();
+  });
+
+  it("a draft-only sample not yet in the committed plate carries NO figure label (BU-NAMES)", () => {
+    renderPage();
+    fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "x" } });
+    // Add sample 3 (picker resolves it to exposure 3, but no committed member has
+    // exposure 3, so there is no plate trace to reference yet).
+    fireEvent.change(screen.getByLabelText(/add a sample/i), { target: { value: "3" } });
+    const rows = screen.getAllByTestId("builder-recipe-row");
+    // The newly-added sample sits at recipe position 2 → visual row 0 (top).
+    const newRow = rows[0]!;
+    expect(within(newRow).getByText("C")).toBeInTheDocument();
+    expect(
+      within(newRow).queryByTestId("builder-recipe-figure-label"),
+    ).toBeNull();
+  });
+
   it("each recipe row is draggable and carries a grip handle (label tells the truth)", () => {
     renderPage();
     fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "x" } });

@@ -130,6 +130,27 @@ export function SeriesBuilderPage(): JSX.Element {
   // The active draft only counts when it targets THIS series.
   const liveDraft = draft !== null && series !== undefined && draft.id === series.id ? draft : null;
 
+  // BU-NAMES: one shared identity token across the builder's member views. The
+  // figure plate + reading list label a trace by its exposure (memberRowLabel:
+  // label_override, else "exp <id>"); the editable recipe rail labels by SAMPLE
+  // name. So in edit mode the recipe ("LL2") and the figure ("exp 42") can't be
+  // cross-referenced. Resolve each recipe sample to its committed member's
+  // figure label (sample → indexing exposure → member) and surface it as a muted
+  // suffix on the row. A draft-only sample not yet in the committed plate has no
+  // figure trace, so it gets no token (the lookup misses).
+  const figureLabelBySample = useMemo(() => {
+    const out = new Map<number, string>();
+    const labelByExposure = new Map(
+      (series?.members ?? []).map((m) => [m.exposure_id, memberRowLabel(m)]),
+    );
+    for (const [sampleId, exposureId] of exposureBySample) {
+      if (exposureId == null) continue;
+      const lab = labelByExposure.get(exposureId);
+      if (lab) out.set(sampleId, lab);
+    }
+    return out;
+  }, [series?.members, exposureBySample]);
+
   // BU-NAVAWAY-DRAFT: warn before the tab is closed / reloaded while a draft
   // carries UNSAVED CHANGES. In-app route changes keep the draft alive (it
   // lives in the Zustand store + sessionStorage, recoverable on return), so
@@ -373,6 +394,7 @@ export function SeriesBuilderPage(): JSX.Element {
           resolverError={pickerQ.isError}
           resolverLoading={!resolverReady && !pickerQ.isError}
           chainError={chainError}
+          figureLabelBySample={figureLabelBySample}
         />
       )}
     </Skeleton>
@@ -413,6 +435,9 @@ interface BuilderBodyProps {
   resolverError: boolean;
   resolverLoading: boolean;
   chainError: unknown;
+  /** BU-NAMES: recipe sample id → the figure trace's label (memberRowLabel),
+   *  shown as a muted suffix so a recipe row cross-references its figure trace. */
+  figureLabelBySample: Map<number, string>;
 }
 
 function BuilderBody({
@@ -444,6 +469,7 @@ function BuilderBody({
   resolverError,
   resolverLoading,
   chainError,
+  figureLabelBySample,
 }: BuilderBodyProps): JSX.Element {
   // Render model: the figure plate ALWAYS shows the committed plate (members);
   // a draft edits the recipe (membership/title), which only re-resolves the
@@ -511,6 +537,7 @@ function BuilderBody({
     <RecipeEditor
       recipe={liveDraft.recipe}
       sampleNameById={sampleNameMap(corpus)}
+      figureLabelBySample={figureLabelBySample}
       onRemove={onRemoveSample}
       onReorder={onReorderSample}
     />
@@ -718,11 +745,13 @@ function PlateTitle({ value, onChange }: { value: string; onChange: (v: string) 
 function RecipeEditor({
   recipe,
   sampleNameById,
+  figureLabelBySample,
   onRemove,
   onReorder,
 }: {
   recipe: import("../../lib/series/seriesDraft").SeriesRecipeRow[];
   sampleNameById: Record<number, string>;
+  figureLabelBySample: Map<number, string>;
   onRemove: (rowId: number) => void;
   onReorder: (from: number, to: number) => void;
 }): JSX.Element {
@@ -745,10 +774,12 @@ function RecipeEditor({
           { id: row.id, series_id: 0, sample_id: row.sample_id, position: row.position, pinned: row.pinned, excluded: row.excluded },
           sampleNameById,
         );
+        const figureLabel = figureLabelBySample.get(row.sample_id);
         return (
           <RecipeRow
             key={row.id}
             name={view.name}
+            {...(figureLabel !== undefined ? { figureLabel } : {})}
             index={i}
             count={visual.length}
             dragItemProps={dragItemProps(i)}
@@ -774,6 +805,7 @@ function RecipeEditor({
 // flag, so it never yanks focus.
 function RecipeRow({
   name,
+  figureLabel,
   index,
   count,
   dragItemProps,
@@ -782,6 +814,9 @@ function RecipeRow({
   onRemove,
 }: {
   name: import("react").ReactNode;
+  /** BU-NAMES: the figure trace's label for this sample (e.g. "exp 42"), shown
+   *  muted after the name so the row cross-references its plate trace. */
+  figureLabel?: string;
   index: number;
   count: number;
   dragItemProps: DragItemProps;
@@ -821,6 +856,14 @@ function RecipeRow({
       )}
       <GripHandle />
       <span className="flex-1 min-w-0 truncate text-meta text-ink">{name}</span>
+      {figureLabel !== undefined && (
+        <span
+          data-testid="builder-recipe-figure-label"
+          className="flex-shrink-0 text-caption text-ink-soft tabular-nums"
+        >
+          {figureLabel}
+        </span>
+      )}
       <IconButton
         ref={upRef}
         label="Move up"
