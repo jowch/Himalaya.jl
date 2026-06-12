@@ -348,6 +348,75 @@ describe("TracePlate", () => {
     expect(onToggleAddPeak).toHaveBeenCalledTimes(1);
   });
 
+  it("Escape-disarm re-anchors focus to '+ Peak' when a peak mark held focus (WCAG 2.4.3)", () => {
+    // FO-FOCUSRETURN: disarming strips every mark's tabIndex/role, so an Escape
+    // exit while a mark holds keyboard focus would drop focus to <body>. The
+    // handler re-anchors to the "+ Peak" button -- the keyboard user's stable
+    // handle -- before the disarm re-render makes the mark inert.
+    const { container } = render(
+      <TracePlate
+        {...base}
+        addPeakArmed
+        onToggleAddPeak={() => {}}
+        interaction={{ onXDomain: () => {}, onAddPeak: () => {}, onClickPeak: () => {} }}
+      />,
+    );
+    const mark = container.querySelector(
+      '[data-role="plot-peaks"] [role="button"]',
+    ) as HTMLElement;
+    expect(mark).toBeTruthy();
+    // Resolve the toolbar button via raw DOM: RTL's accessible-name engine trips
+    // (reads `.name` of undefined) when it has to compute a role for the SVG
+    // <g role="button"> peak marks, so getByRole/getByText cannot be used here.
+    const addPeakBtn = [...container.querySelectorAll("button")].find(
+      (b) => b.textContent?.trim() === "+ Peak",
+    ) as HTMLElement;
+    expect(addPeakBtn).toBeTruthy();
+    mark.focus();
+    expect(document.activeElement).toBe(mark);
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(document.activeElement).toBe(addPeakBtn);
+  });
+
+  it("Escape-disarm re-anchors focus from the add-at-q field to '+ Peak' (WCAG 2.4.3)", () => {
+    // The add-at-q field is armed-only and unmounts on disarm, so an Escape exit
+    // while it holds focus would also drop to <body>. (No onClickPeak here, so
+    // no SVG role=button marks exist to trip the accessible-name engine.)
+    render(
+      <TracePlate
+        {...base}
+        addPeakArmed
+        onToggleAddPeak={() => {}}
+        interaction={{ onXDomain: () => {}, onAddPeak: () => {} }}
+      />,
+    );
+    const input = screen.getByLabelText("q value for new peak");
+    input.focus();
+    expect(document.activeElement).toBe(input);
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "+ Peak" }),
+    );
+  });
+
+  it("Escape-disarm leaves focus alone when no peak mark held it (no yank)", () => {
+    // The re-anchor is scoped to the about-to-go-inert marks: pressing Escape
+    // with focus already on the "+ Peak" button (or elsewhere off the plot)
+    // must not be hijacked.
+    render(
+      <TracePlate
+        {...base}
+        addPeakArmed
+        onToggleAddPeak={() => {}}
+        interaction={{ onXDomain: () => {}, onAddPeak: () => {} }}
+      />,
+    );
+    const addPeakBtn = screen.getByText("+ Peak").closest("button")!;
+    addPeakBtn.focus();
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(document.activeElement).toBe(addPeakBtn);
+  });
+
   it("Escape while disarmed does nothing (no spurious re-arm toggle)", () => {
     const onToggleAddPeak = vi.fn();
     render(

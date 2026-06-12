@@ -153,7 +153,18 @@ export function TracePlate({
       if (e.key !== "Escape") return;
       if (e.defaultPrevented) return;
       if (document.querySelector('[role="dialog"][aria-modal="true"]') !== null) return;
+      // WCAG 2.4.3 (FO-FOCUSRETURN): disarming strips every peak mark's
+      // tabIndex/role and unmounts the add-at-q field, so an Escape exit while
+      // one of those armed-only controls holds focus would drop focus to <body>.
+      // Re-anchor to the "+ Peak" button — the keyboard user's stable handle —
+      // in that case. Focus already on the toolbar button, or off the plate, is
+      // left alone (no yank).
+      const ae = document.activeElement;
+      const onVanishingControl =
+        ae?.closest('[data-role="plot-peaks"]') != null ||
+        ae?.getAttribute("aria-label") === "q value for new peak";
       onToggleAddPeak();
+      if (onVanishingControl) addPeakButtonRef.current?.focus();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
