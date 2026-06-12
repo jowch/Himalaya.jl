@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { CardFigure } from "../waterfall/CardFigure";
-import { Card, PhaseStrip, NoticePill } from "../ui";
+import { Card, PhaseStrip, NoticePill, Button } from "../ui";
 import type { PhaseSegment } from "../ui";
 import type { WaterfallRow } from "../waterfall/waterfallModel";
 
@@ -35,6 +35,11 @@ export interface SeriesCardProps {
    *  - `"pending"`: skeleton bone; strip suppressed (no false "No clear phase").
    *  - `"error"`: honest note; strip suppressed. */
   figureState?: "ready" | "pending" | "error";
+  /** Optional retry handler for the `"error"` figure tile (F4). When provided,
+   *  the error tile shows a "Try again" control that re-triggers this card's
+   *  figure fetch — no full-page reload. Omitted ⇒ no control (the tile stays
+   *  the honest note only; existing consumers stay byte-identical). */
+  onRetryFigure?: () => void;
   onClick?: () => void;
   /** PLACEMENT-ONLY, appended last. */
   className?: string;
@@ -62,6 +67,7 @@ export function SeriesCard({
   notice,
   draft = false,
   figureState = "ready",
+  onRetryFigure,
   onClick,
   className,
 }: SeriesCardProps): JSX.Element {
@@ -100,9 +106,22 @@ export function SeriesCard({
         {figureState === "error" && (
           <div
             data-testid="card-figure-error"
-            className="h-28 flex items-center justify-center text-caption text-ink-soft"
+            className="h-28 flex flex-col items-center justify-center gap-1.5 text-caption text-ink-soft"
           >
-            Couldn&apos;t load this figure
+            <span>Couldn&apos;t load this figure</span>
+            {onRetryFigure !== undefined && (
+              // stopPropagation: the retry must not also fire the card's
+              // whole-card navigation (the article onClick door).
+              <Button
+                variant="outline"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRetryFigure();
+                }}
+              >
+                Try again
+              </Button>
+            )}
           </div>
         )}
       </div>

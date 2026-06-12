@@ -12,6 +12,8 @@ import {
   SegmentedControl,
   EmptyState,
   Button,
+  IconButton,
+  Card,
 } from "../ui";
 import type { SegmentOption } from "../ui";
 import { useSeriesList, useSeries, useSeriesTraces } from "../../queries";
@@ -20,6 +22,7 @@ import {
   filterSort,
   folioControlsFromParams,
   writeFolioControlsToParams,
+  defaultDirForSort,
 } from "../../lib/series/folioFilter";
 import type { FolioControls, FolioFilter, FolioSort } from "../../lib/series/folioFilter";
 import { membersToSegments, stableFigNumbers, toCardChrome } from "./folioAdapters";
@@ -127,16 +130,52 @@ function FolioCard({
         ? "ready"
         : "pending";
 
+  // F4 — per-card figure retry: re-run whichever of the two figure queries
+  // errored (both, harmlessly, if both did) so the error tile recovers without
+  // a full page reload. Only wired when the tile is actually in the error state.
+  function retryFigure(): void {
+    if (detail.isError) void detail.refetch();
+    if (tracesQ.isError) void tracesQ.refetch();
+  }
+
   return (
     <div ref={ref}>
       <SeriesCard
         rows={rows}
         segments={segments}
         figureState={figureState}
+        {...(figureState === "error" ? { onRetryFigure: retryFigure } : {})}
         {...chrome}
         onClick={onOpen}
       />
     </div>
+  );
+}
+
+// ── New-series ghost tile (F3; page glue, like FolioCard) ─────────────────────
+// A dashed-outline tile sitting at the end of the wall: it doubles as a
+// discoverable "start a new series" door AND fills a sparse wall so a 1–2 card
+// folio never reads as broken. The dashed look is the Card `draft` variant (the
+// single source of the dashed-recipe appearance) — no inline appearance utils.
+// New series begin on the scoping worksheet at /series/new.
+function NewSeriesTile({ onClick }: { onClick: () => void }): JSX.Element {
+  return (
+    <Card
+      as="button"
+      draft
+      interactive
+      onClick={onClick}
+      data-testid="new-series-tile"
+      className="w-full min-h-44 flex flex-col items-center justify-center gap-1 px-4 py-8 text-ink-soft hover:text-ink"
+    >
+      <span className="text-headline" aria-hidden="true">
+        +
+      </span>
+      <span className="text-caption font-semibold">New series</span>
+      <span className="text-caption text-ink-faint">
+        Start from the contact sheet
+      </span>
+    </Card>
   );
 }
 
@@ -178,6 +217,21 @@ export function SeriesFolioPage(): JSX.Element {
   }
 
   const visible = filterSort(summaries, controls);
+
+  // Live "Showing N of M" feedback (F2): drives off the already-computed
+  // filtered length vs the raw list length so the count never disagrees with
+  // the wall. Suppressed while loading (the header count already shows "—").
+  const total = summaries.length;
+  const shown = visible.length;
+  const isFiltered = shown !== total;
+
+  // Sort direction (F2): the effective direction is the explicit `dir` or the
+  // sort's natural default. The toggle flips it; the URL only carries `dir`
+  // when it differs from that default (handled by the codec).
+  const dir = controls.dir ?? defaultDirForSort(controls.sort);
+  function toggleDir(): void {
+    updateControls({ dir: dir === "asc" ? "desc" : "asc" });
+  }
 
   // Stable fig numbers (FOL-FIGNUM): computed over the WHOLE committed corpus,
   // not the filtered view — a card keeps its number under every sort/filter.
@@ -245,22 +299,50 @@ export function SeriesFolioPage(): JSX.Element {
           />
           <FilterChip
             label="Has transition"
+            title="Series whose members span more than one phase"
             active={controls.filter === "transition"}
             onClick={() => setFilter("transition")}
           />
           <FilterChip
             label="Cross-experiment"
+            title="Series whose members span more than one experiment"
             active={controls.filter === "cross"}
             onClick={() => setFilter("cross")}
           />
         </div>
         <div className="flex-1" />
+        {/* Live result count (F2): a quiet, polite running tally so the wall's
+            size is legible without counting cards. Reads "N series" at rest and
+            "Showing N of M" once a search/filter narrows the corpus. Hidden
+            while the list is loading (the header count carries the "—"). */}
+        {!listQ.isLoading && (
+          <span
+            data-testid="folio-result-count"
+            className="text-caption text-ink-soft tabular-nums"
+            role="status"
+            aria-live="polite"
+          >
+            {isFiltered ? `Showing ${shown} of ${total}` : `${total} series`}
+          </span>
+        )}
         <SegmentedControl
           aria-label="Sort series"
           options={SORT_OPTIONS}
           value={controls.sort}
           onChange={(v) => updateControls({ sort: v })}
         />
+        {/* Direction toggle (F2): flips the active sort between its natural
+            order and the reverse. aria-pressed reflects the reversed state;
+            the label states the direction the press will MOVE to. */}
+        <IconButton
+          label={dir === "asc" ? "Sort descending" : "Sort ascending"}
+          aria-pressed={dir === "asc"}
+          data-testid="folio-sort-dir"
+          data-dir={dir}
+          onClick={toggleDir}
+        >
+          <span aria-hidden="true">{dir === "asc" ? "↑" : "↓"}</span>
+        </IconButton>
       </div>
 
       {/* ── Gallery ───────────────────────────────────────────────────── */}
@@ -306,15 +388,29 @@ export function SeriesFolioPage(): JSX.Element {
             )
           }
         >
-          {visible.map((s) => (
-            <FolioCard
-              key={s.id}
-              summary={s}
-              figNumber={figNumbers.get(s.id) ?? 0}
-              now={now}
-              onOpen={() => navigate(`/series/${s.id}`)}
-            />
-          ))}
+          {/* The new-series ghost tile rides the END of the wall, but ONLY when
+              cards are showing: when nothing matches (or nothing is saved), the
+              Gallery's honest empty state must win. The tile is folded INTO the
+              card array (not rendered as a trailing `&&` sibling) so an empty
+              `visible` leaves Gallery with zero children — a sibling `false`
+              would count as a child and suppress the empty state. */}
+          {visible.length > 0
+            ? [
+                ...visible.map((s) => (
+                  <FolioCard
+                    key={s.id}
+                    summary={s}
+                    figNumber={figNumbers.get(s.id) ?? 0}
+                    now={now}
+                    onOpen={() => navigate(`/series/${s.id}`)}
+                  />
+                )),
+                <NewSeriesTile
+                  key="new-series-tile"
+                  onClick={() => navigate("/series/new")}
+                />,
+              ]
+            : null}
         </Gallery>
       </Skeleton>
     </PageFrame>

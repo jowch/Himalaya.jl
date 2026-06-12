@@ -281,6 +281,35 @@ describe("<SeriesCard> figureState prop (FOL-HONEST-DERIVED)", () => {
     render(<SeriesCard {...BASE_PROPS} />);
     expect(screen.getByTestId("series-card")).toHaveAttribute("data-figure-state", "ready");
   });
+
+  it("figureState='error' with onRetryFigure → a 'Try again' control that fires the retry (F4)", () => {
+    const onRetryFigure = vi.fn();
+    render(<SeriesCard {...BASE_PROPS} figureState="error" onRetryFigure={onRetryFigure} />);
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(onRetryFigure).toHaveBeenCalledOnce();
+  });
+
+  it("the retry control does NOT also fire the card's onClick (stopPropagation)", () => {
+    const onRetryFigure = vi.fn();
+    const onClick = vi.fn();
+    render(
+      <SeriesCard
+        {...BASE_PROPS}
+        figureState="error"
+        onRetryFigure={onRetryFigure}
+        onClick={onClick}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(onRetryFigure).toHaveBeenCalledOnce();
+    expect(onClick).not.toHaveBeenCalled();
+  });
+
+  it("figureState='error' WITHOUT onRetryFigure → honest note only, no retry control", () => {
+    render(<SeriesCard {...BASE_PROPS} figureState="error" />);
+    expect(screen.getByText("Couldn't load this figure")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+  });
 });
 
 describe("<SeriesCard> footer", () => {

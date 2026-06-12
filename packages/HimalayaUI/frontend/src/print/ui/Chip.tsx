@@ -22,6 +22,10 @@ interface ChipProps {
    *  specialized chips that compose this base preserve their own contract
    *  (FilterChip → "filter-chip", FacetChip → "facet-chip", TagPill → "tag-pill"). */
   testId?: string;
+  /** Optional native tooltip text (hover/focus). Used by the `toggle` variant
+   *  to explain a filter's meaning; omitted ⇒ no `title` attribute (existing
+   *  consumers stay byte-identical). */
+  title?: string;
   className?: string;
 }
 
@@ -63,6 +67,7 @@ export function Chip({
   onRemove,
   removeLabel = "Remove",
   testId = "chip",
+  title,
   className = "",
 }: ChipProps): JSX.Element {
   if (variant === "removable") {
@@ -130,6 +135,7 @@ export function Chip({
         data-size={size}
         aria-pressed={active}
         data-active={active ? "true" : "false"}
+        {...(title !== undefined ? { title } : {})}
         onClick={onClick}
         className={cx(
           pillBase,

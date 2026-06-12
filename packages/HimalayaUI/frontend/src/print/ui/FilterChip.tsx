@@ -7,6 +7,9 @@ interface FilterChipProps {
   onClick: () => void;
   /** Size axis, forwarded to the base Chip. Defaults to `"md"` (text-sm). */
   size?: ChipSize;
+  /** Optional native tooltip explaining what the filter selects (hover/focus).
+   *  Omitted ⇒ no `title` (existing consumers stay byte-identical). */
+  title?: string;
   className?: string;
 }
 
@@ -20,6 +23,7 @@ export function FilterChip({
   active,
   onClick,
   size = "md",
+  title,
   className = "",
 }: FilterChipProps): JSX.Element {
   return (
@@ -29,6 +33,7 @@ export function FilterChip({
       testId="filter-chip"
       active={active}
       onClick={onClick}
+      {...(title !== undefined ? { title } : {})}
       className={className}
     >
       {label}

@@ -45,10 +45,20 @@ export function Gallery({
   // Breakpoints: 1 col (default) → 2 col (sm ≥ 640px) → 3 col (lg ≥ 1024px).
   // Each child is wrapped in break-inside-avoid + mb-5 so cards don't split
   // across columns and the bottom gutter matches the column gap.
+  //
+  // Sparse-wall reflow: cap the effective column count to the number of cards.
+  // The full 3-column wall assumes a dense corpus; with 1–2 cards the surplus
+  // columns stay empty and the wall reads as broken (everything piled left).
+  // Capping `lg:columns-N` (and `sm:columns-N`) to the card count keeps a small
+  // corpus balanced — a 2-card folio fills 2 columns, not 1-of-3.
+  const count = React.Children.count(children);
+  const colClass = columnClassFor(count);
+
   return (
     <div
       data-testid="gallery"
-      className={cx("columns-1 sm:columns-2 lg:columns-3 gap-5", className)}
+      data-columns={Math.min(count, 3)}
+      className={cx(colClass, "gap-5", className)}
     >
       {React.Children.map(children, (child, i) => (
         <div key={i} className="break-inside-avoid mb-5">
@@ -57,4 +67,14 @@ export function Gallery({
       ))}
     </div>
   );
+}
+
+/** Responsive column track classes, capped to the card count so a sparse wall
+ *  stays balanced. 1 card → single column at every width; 2 cards → up to 2;
+ *  3+ cards → the full 1→2→3 ladder. Static class strings (no interpolation) so
+ *  Tailwind's content scan keeps each utility. */
+function columnClassFor(count: number): string {
+  if (count <= 1) return "columns-1";
+  if (count === 2) return "columns-1 sm:columns-2";
+  return "columns-1 sm:columns-2 lg:columns-3";
 }

@@ -51,6 +51,44 @@ describe("<Gallery> with children", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Sparse-wall column cap (F3): the effective column count is capped to the
+// number of cards so a 1–2 card wall stays balanced (data-columns reflects it).
+// ---------------------------------------------------------------------------
+
+describe("<Gallery> sparse-wall column cap", () => {
+  it("a single card caps the wall to one column (data-columns=1)", () => {
+    render(
+      <Gallery>
+        <StubCard id={1} />
+      </Gallery>,
+    );
+    expect(screen.getByTestId("gallery")).toHaveAttribute("data-columns", "1");
+  });
+
+  it("two cards cap the wall to two columns (data-columns=2)", () => {
+    render(
+      <Gallery>
+        <StubCard id={1} />
+        <StubCard id={2} />
+      </Gallery>,
+    );
+    expect(screen.getByTestId("gallery")).toHaveAttribute("data-columns", "2");
+  });
+
+  it("three or more cards use the full three-column wall (data-columns=3)", () => {
+    render(
+      <Gallery>
+        <StubCard id={1} />
+        <StubCard id={2} />
+        <StubCard id={3} />
+        <StubCard id={4} />
+      </Gallery>,
+    );
+    expect(screen.getByTestId("gallery")).toHaveAttribute("data-columns", "3");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Empty state: children + empty prop
 // ---------------------------------------------------------------------------
 

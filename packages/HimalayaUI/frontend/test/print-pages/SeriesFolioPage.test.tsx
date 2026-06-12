@@ -28,9 +28,11 @@ const state = {
 // Per-card hook spies (FOL-N+1): record the id each mount passes so tests can
 // pin that off-viewport cards pass `undefined` (the enabled:false gate — no
 // detail/trace fetch) until they near the viewport.
-const { seriesSpy, tracesSpy } = vi.hoisted(() => ({
+const { seriesSpy, tracesSpy, detailRefetch, tracesRefetch } = vi.hoisted(() => ({
   seriesSpy: vi.fn<(id: number | undefined) => void>(),
   tracesSpy: vi.fn<(id: number | undefined) => void>(),
+  detailRefetch: vi.fn(),
+  tracesRefetch: vi.fn(),
 }));
 
 vi.mock("../../src/queries", () => ({
@@ -47,6 +49,7 @@ vi.mock("../../src/queries", () => ({
       data: id !== undefined && !state.detailError ? state.seriesById.get(id) : undefined,
       isLoading: state.loading,
       isError: state.detailError,
+      refetch: detailRefetch,
     };
   },
   useSeriesTraces: (id: number | undefined) => {
@@ -55,6 +58,7 @@ vi.mock("../../src/queries", () => ({
       data: state.tracesError ? undefined : {},
       isLoading: false,
       isError: state.tracesError,
+      refetch: tracesRefetch,
     };
   },
 }));
@@ -216,9 +220,27 @@ describe("SeriesFolioPage", () => {
     renderPage();
     // SearchInput's data-testid is on the wrapper div; the actual <input> is inside.
     const input = screen.getByRole("textbox");
-    fireEvent.change(input, { target: { value: "LL37" } });
-    // Only "LL37 titration lipid 1-2" matches
+    // "titration" appears only in series 1's title (the seed's default
+    // ordering_variable "LL37 : lipid ratio" carries "LL37" across all three,
+    // so a title-unique token is the clean single-match probe under the
+    // broadened search haystack — F1).
+    fireEvent.change(input, { target: { value: "titration" } });
     expect(screen.getAllByTestId("series-card")).toHaveLength(1);
+  });
+
+  it("broadened search matches a member-phase token, not just the title (F1)", () => {
+    state.summaries = [
+      summary({ id: 1, title: "Cubic run", member_phases: ["Pn3m", "Im3m"] }),
+      summary({ id: 2, title: "Flat run", member_phases: ["Lamellar"] }),
+    ];
+    state.seriesById = new Map([
+      [1, seriesDetail(1, [member({ id: 10, series_id: 1, exposure_id: 1 })])],
+      [2, seriesDetail(2, [member({ id: 20, series_id: 2, exposure_id: 2 })])],
+    ]);
+    renderPage();
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Im3m" } });
+    expect(screen.getAllByTestId("series-card")).toHaveLength(1);
+    expect(screen.getByText("Cubic run")).toBeInTheDocument();
   });
 
   it("Has transition filter drops single-phase series", () => {
@@ -344,6 +366,83 @@ describe("SeriesFolioPage", () => {
     renderPage();
     const block = screen.getByTestId("empty-state");
     expect(within(block).getByRole("button", { name: "Try again" })).toBeDisabled();
+  });
+});
+
+describe("SeriesFolioPage flexibility pass (F2/F3/F4)", () => {
+  it("renders a live result count: 'N series' at rest", () => {
+    renderPage();
+    expect(screen.getByTestId("folio-result-count")).toHaveTextContent("3 series");
+  });
+
+  it("the live count switches to 'Showing N of M' once a search narrows the wall", () => {
+    renderPage();
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "titration" } });
+    expect(screen.getByTestId("folio-result-count")).toHaveTextContent("Showing 1 of 3");
+  });
+
+  it("the sort-direction toggle flips the active sort (size: largest ⇄ smallest first)", () => {
+    state.summaries = [
+      summary({ id: 1, title: "Small", member_count: 2 }),
+      summary({ id: 2, title: "Big", member_count: 9 }),
+    ];
+    state.seriesById = new Map([
+      [1, seriesDetail(1, [member({ id: 10, series_id: 1, exposure_id: 1 })])],
+      [2, seriesDetail(2, [member({ id: 20, series_id: 2, exposure_id: 2 })])],
+    ]);
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Largest" }));
+    // Default (desc): Big first.
+    let cards = screen.getAllByTestId("series-card");
+    expect(within(cards[0]!).getByText("Big")).toBeInTheDocument();
+    // Flip to ascending → Small first.
+    fireEvent.click(screen.getByTestId("folio-sort-dir"));
+    cards = screen.getAllByTestId("series-card");
+    expect(within(cards[0]!).getByText("Small")).toBeInTheDocument();
+  });
+
+  it("the direction toggle reflects state via aria-pressed (pressed == ascending)", () => {
+    renderPage();
+    // Default sort 'recent' → desc; toggle not pressed.
+    const toggle = screen.getByTestId("folio-sort-dir");
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(toggle);
+    expect(screen.getByTestId("folio-sort-dir")).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("renders the new-series ghost tile at the end of a non-empty wall, linking to /series/new", () => {
+    renderPage();
+    const tile = screen.getByTestId("new-series-tile");
+    expect(tile).toBeInTheDocument();
+    fireEvent.click(tile);
+    expect(navigateSpy).toHaveBeenCalledWith("/series/new");
+  });
+
+  it("the ghost tile is NOT shown when no cards match (the empty state wins)", () => {
+    renderPage();
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "xxxxxxxxxnotaseriesname" },
+    });
+    expect(screen.queryByTestId("new-series-tile")).toBeNull();
+    expect(screen.getByTestId("gallery-empty")).toBeInTheDocument();
+  });
+
+  it("a figure-error card offers a per-card retry that re-runs the figure fetch (F4)", () => {
+    state.detailError = true;
+    renderPage();
+    // JSDOM has no IntersectionObserver → cards are near → error tiles render.
+    const retry = screen.getAllByRole("button", { name: "Try again" })[0]!;
+    fireEvent.click(retry);
+    expect(detailRefetch).toHaveBeenCalled();
+  });
+
+  it("the filter chips carry an explanatory tooltip (F5)", () => {
+    renderPage();
+    const chips = screen.getAllByTestId("filter-chip");
+    const transition = chips.find((c) => c.textContent === "Has transition")!;
+    const cross = chips.find((c) => c.textContent === "Cross-experiment")!;
+    expect(transition).toHaveAttribute("title", "Series whose members span more than one phase");
+    expect(cross).toHaveAttribute("title", "Series whose members span more than one experiment");
   });
 });
 

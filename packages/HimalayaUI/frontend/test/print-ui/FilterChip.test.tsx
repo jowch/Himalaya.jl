@@ -39,4 +39,24 @@ describe("FilterChip", () => {
     fireEvent.click(screen.getByTestId("filter-chip"));
     expect(onClick).toHaveBeenCalledTimes(1);
   });
+
+  it("threads an optional title tooltip onto the chip (F5)", () => {
+    render(
+      <FilterChip
+        label="Coexistence"
+        active={false}
+        onClick={() => {}}
+        title="Series whose members span more than one phase"
+      />,
+    );
+    expect(screen.getByTestId("filter-chip")).toHaveAttribute(
+      "title",
+      "Series whose members span more than one phase",
+    );
+  });
+
+  it("omits the title attribute when no tooltip is given (byte-identical default)", () => {
+    render(<FilterChip label="Coexistence" active={false} onClick={() => {}} />);
+    expect(screen.getByTestId("filter-chip")).not.toHaveAttribute("title");
+  });
 });
