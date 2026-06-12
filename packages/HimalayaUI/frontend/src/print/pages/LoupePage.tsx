@@ -268,8 +268,11 @@ export function LoupePage(): JSX.Element {
 
   const goBack = useCallback(() => {
     const beamtime = searchParams.get("beamtime");
-    navigate(beamtime ? `/samples?beamtime=${beamtime}` : "/samples");
-  }, [navigate, searchParams]);
+    // LO-FOCUSRET (WCAG 2.4.3): carry the originating sample id back so the
+    // sheet restores focus to that row instead of dropping it to <body>.
+    const opts = hasValidId ? { state: { focusSampleId: sampleId } } : undefined;
+    navigate(beamtime ? `/samples?beamtime=${beamtime}` : "/samples", opts);
+  }, [navigate, searchParams, hasValidId, sampleId]);
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent): void {

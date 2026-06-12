@@ -46,6 +46,10 @@ export interface SheetTableProps {
   /** Number of data rows — required when `roving` is on so the grid dims are
    *  correct (header row 0 + dataRows). Defaults to the slotted child count. */
   dataRowCount?: number;
+  /** 1-based DATA row to focus once on mount (LO-FOCUSRET return-focus from the
+   *  loupe). Only honoured under `roving`; the Sample cell of that row receives
+   *  focus. Absent → ordinary mount, no focus stolen. */
+  focusOnMountRow?: number;
   /** PLACEMENT-ONLY, appended last. */
   className?: string;
 }
@@ -119,6 +123,7 @@ export function SheetTable({
   onSort,
   roving,
   dataRowCount,
+  focusOnMountRow,
   className,
 }: SheetTableProps): JSX.Element {
   const childCount = React.Children.count(children);
@@ -136,6 +141,15 @@ export function SheetTable({
     rows: 1 + rovingDataRows,
     cols: GRID_COLS,
     interactionCols: INTERACTION_COLS,
+    // Return-focus seed (LO-FOCUSRET): when the page asks to focus a specific
+    // data row on mount, seed it as the grid's initial active cell and focus it
+    // once. Gated on `roving` — only the roving grid registers focusable cells.
+    ...(roving && focusOnMountRow !== undefined
+      ? {
+          initialCoord: { row: focusOnMountRow, col: 1 },
+          autoFocusInitial: true,
+        }
+      : {}),
   });
   const rv = roving ? grid : null;
 

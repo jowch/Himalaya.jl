@@ -104,6 +104,11 @@ export interface UseRovingGridOptions {
    *  (the first naturally-focusable cell; the checkbox at col 0 only exists when
    *  a checkbox column is present, and Sample is the row identity). */
   initialCoord?: GridCoord;
+  /** When true, focus the `initialCoord` cell ONCE on mount. Used for
+   *  return-focus from a sub-page (LO-FOCUSRET: loupe → sheet restores focus to
+   *  the originating row). Default off so ordinary page mounts never steal
+   *  focus from wherever the user was. */
+  autoFocusInitial?: boolean;
 }
 
 /**
@@ -112,7 +117,7 @@ export interface UseRovingGridOptions {
  * reads its tabindex / registers its element / reports clicks by (row,col).
  */
 export function useRovingGrid(opts: UseRovingGridOptions): RovingGridValue {
-  const { rows, cols, interactionCols, initialCoord } = opts;
+  const { rows, cols, interactionCols, initialCoord, autoFocusInitial } = opts;
   // Plain default — do NOT clamp at init: SheetTable mounts during the loading
   // window with rows:1 (header only), so a once-only clamp would pin {1,1}→{0,1}
   // (header) and never recover when the data rows arrive (a regression that put
@@ -248,6 +253,18 @@ export function useRovingGrid(opts: UseRovingGridOptions): RovingGridValue {
     },
     [activeCoord, dims, interactionCoord, interactionCols, enterInteraction, exitInteraction],
   );
+
+  // LO-FOCUSRET return-focus: when the page seeds an initialCoord for a return
+  // from a sub-page (loupe → sheet), arm wantFocus ONCE on mount so the focus
+  // effect below lands focus on that cell. Runs before the focus effect (effect
+  // order = declaration order), so wantFocus is set by the time it reads it.
+  // Off by default (ordinary mounts pass autoFocusInitial=false) so a normal
+  // page load never yanks focus.
+  useLayoutEffect(() => {
+    if (autoFocusInitial) wantFocus.current = true;
+    // mount-only one-shot — autoFocusInitial is mount-stable per page visit
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Focus the active cell's element — but ONLY after a user-driven change
   // (wantFocus). Re-applying nothing here is fine; tabindexes are re-applied by

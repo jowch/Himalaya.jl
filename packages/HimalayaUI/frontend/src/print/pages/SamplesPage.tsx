@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { Skeleton } from "boneyard-js/react";
 import { PageFrame } from "../components/PageFrame";
 import { SheetTable } from "../components/SheetTable";
@@ -165,6 +165,26 @@ export function SamplesPage(): JSX.Element {
       phase: (s) => s.phase,
     });
   }, [filtered, sortKey, sortDir, corpusExposures.byId]);
+
+  // ── return-focus from the loupe (LO-FOCUSRET, WCAG 2.4.3) ────────────────────
+  // The loupe Escape/back navigation carries the originating sample id in router
+  // state. On this remount we resolve it to its (1-based) row in the CURRENT
+  // sort and hand SheetTable a one-shot focus target so focus lands back on that
+  // row's Sample cell instead of <body>. Captured once on mount: a later sort or
+  // SSE re-render must not re-yank focus (SheetTable's seed is itself one-shot,
+  // but pinning the row index here keeps it stable against a re-sort too).
+  const location = useLocation();
+  const focusOnMountRowRef = useRef<number | undefined>(undefined);
+  const focusSeedConsumed = useRef(false);
+  if (!focusSeedConsumed.current) {
+    focusSeedConsumed.current = true;
+    const st = location.state as { focusSampleId?: number } | null;
+    if (st?.focusSampleId != null) {
+      const idx = sortedSamples.findIndex((s) => s.id === st.focusSampleId);
+      if (idx >= 0) focusOnMountRowRef.current = idx + 1;
+    }
+  }
+  const focusOnMountRow = focusOnMountRowRef.current;
 
   // ── selection state (page-owned) ────────────────────────────────────────────
   // Exposure-grain cull selection (drives CullBar → Drop/Restore).
@@ -379,6 +399,7 @@ export function SamplesPage(): JSX.Element {
               checkboxColumn
               roving
               dataRowCount={sortedSamples.length}
+              {...(focusOnMountRow !== undefined ? { focusOnMountRow } : {})}
               sort={sort}
               onSort={applySort}
               empty={

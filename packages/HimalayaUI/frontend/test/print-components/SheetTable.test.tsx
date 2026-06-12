@@ -310,6 +310,47 @@ describe("SheetTable roving data grid (SA-ROVING)", () => {
     });
   });
 
+  it("focusOnMountRow lands focus on that data row's Sample cell on mount (LO-FOCUSRET)", () => {
+    render(
+      <SheetTable
+        checkboxColumn
+        roving
+        dataRowCount={3}
+        focusOnMountRow={2}
+        onSort={() => {}}
+        sort={{ key: null, dir: "asc" }}
+      >
+        {[gridRow("a", 1), gridRow("b", 2), gridRow("c", 3)]}
+      </SheetTable>,
+    );
+    const bodyRows = screen
+      .getAllByRole("row")
+      .filter((r) => within(r).queryAllByRole("columnheader").length === 0);
+    expect(bodyRows).toHaveLength(3);
+    // Focus restored to the SECOND data row (row "b"), not <body> or row 1.
+    expect(document.activeElement).not.toBe(document.body);
+    expect(bodyRows[1]!.contains(document.activeElement)).toBe(true);
+    expect(bodyRows[0]!.contains(document.activeElement)).toBe(false);
+    // And it is the active (tabindex=0) Sample gridcell of that row.
+    const active = document.activeElement as HTMLElement;
+    expect(active.getAttribute("tabindex")).toBe("0");
+  });
+
+  it("without focusOnMountRow an ordinary mount steals no focus", () => {
+    render(
+      <SheetTable
+        checkboxColumn
+        roving
+        dataRowCount={2}
+        onSort={() => {}}
+        sort={{ key: null, dir: "asc" }}
+      >
+        {[gridRow("a", 1), gridRow("b", 2)]}
+      </SheetTable>,
+    );
+    expect(document.activeElement).toBe(document.body);
+  });
+
   it("has EXACTLY one element with tabindex=0 in the grid at rest", () => {
     const { container } = renderGrid();
     const grid = screen.getByRole("grid", { name: "Samples" });
