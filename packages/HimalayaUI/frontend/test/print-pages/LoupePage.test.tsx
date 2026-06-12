@@ -145,6 +145,34 @@ describe("LoupePage", () => {
     expect(screen.queryByTestId("loupe-not-found")).toBeNull();
   });
 
+  it("re-selects a valid frame when the active one vanishes — never falsely 'no exposures' (LO-STALEACTIVEID)", () => {
+    // Open on the representative (id 1), flip to the rejected frame (id 2), then
+    // simulate another user dropping frame 2 via SSE (the exposure list loses
+    // id 2). The loupe must heal to a valid frame, never strand on the gone id
+    // and show the genuinely-frameless empty state while a frame still exists.
+    // A FRESH element each render: a referentially-identical root element would
+    // let React bail out of reconciling, so the SSE list change wouldn't apply.
+    const tree = () => (
+      <MemoryRouter initialEntries={["/samples/loupe/42"]}>
+        <Routes>
+          <Route path="/samples/loupe/:sampleId" element={<LoupePage />} />
+        </Routes>
+      </MemoryRouter>
+    );
+    const { rerender } = render(tree());
+    fireEvent.keyDown(window, { key: "ArrowRight" }); // → frame 2 (rejected)
+    expect(screen.getByTestId("big-frame")).toHaveAttribute("data-rejected", "true");
+
+    // SSE drop: frame 2 is gone from this sample's exposures.
+    state.exposures = [exp({ id: 1, selected: true })];
+    rerender(tree());
+
+    // No false empty state, and it healed to the surviving default frame.
+    expect(screen.queryByText(/no exposures/i)).toBeNull();
+    expect(screen.getByTestId("big-frame")).toBeInTheDocument();
+    expect(screen.getByTestId("big-frame")).not.toHaveAttribute("data-rejected");
+  });
+
   it("a malformed ?exposure is ignored (default frame, no error)", () => {
     const { container } = renderAt(42, "?exposure=abc");
     expect(container.querySelector('[data-role="frame-caption"]')).toHaveTextContent(

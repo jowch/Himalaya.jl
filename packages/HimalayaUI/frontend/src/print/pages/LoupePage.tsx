@@ -112,18 +112,33 @@ export function LoupePage(): JSX.Element {
     exposureParam !== null && /^\d+$/.test(exposureParam)
       ? Number(exposureParam)
       : undefined;
+  // LO-STALEACTIVEID: heal a selection that is unset OR no longer present. The
+  // second case fires when another user drops the shown frame via SSE — without
+  // it `activeExposure` resolves undefined and the page falsely claims "no
+  // exposures" while frames still exist. The URL ?exposure= param seeds the
+  // INITIAL selection only (activeId === undefined); a vanished-frame heal goes
+  // straight to the computed default, never back to the stale permalink seed.
+  const activeStillPresent = activeId !== undefined && exposures.some((e) => e.id === activeId);
   useEffect(() => {
-    if (activeId !== undefined) return;
-    const requested =
-      requestedId !== undefined && exposures.some((e) => e.id === requestedId)
+    if (activeStillPresent) return;
+    const seed =
+      activeId === undefined && requestedId !== undefined && exposures.some((e) => e.id === requestedId)
         ? requestedId
-        : undefined;
-    const initial = requested ?? computedDefault;
-    if (initial !== undefined) setActiveId(initial);
-  }, [activeId, computedDefault, exposures, requestedId]);
-  const activeExposure = exposures.find((e) => e.id === activeId);
+        : computedDefault;
+    if (seed !== undefined && seed !== activeId) setActiveId(seed);
+  }, [activeStillPresent, activeId, computedDefault, exposures, requestedId]);
+  // Resolve the rendered frame resiliently so the one paint before the heal
+  // effect runs shows the surviving default, not the empty state. When the list
+  // is non-empty `computedDefault` is always a real id, so `activeExposure` is
+  // defined whenever a frame exists — the empty state is reserved for the
+  // genuinely-frameless case (exposures.length === 0).
+  const activeExposure =
+    exposures.find((e) => e.id === activeId) ??
+    exposures.find((e) => e.id === computedDefault);
 
-  const frameIndex = exposures.findIndex((e) => e.id === activeId);
+  const frameIndex = activeExposure
+    ? exposures.findIndex((e) => e.id === activeExposure.id)
+    : -1;
   const exposurePosition =
     frameIndex >= 0 ? `exposure ${frameIndex + 1} of ${exposures.length}` : "—";
 
@@ -316,7 +331,7 @@ export function LoupePage(): JSX.Element {
                   />
                   <ThumbnailGallery
                     exposures={toGalleryExposures(exposures)}
-                    {...(activeId !== undefined ? { selectedId: activeId } : {})}
+                    {...(activeExposure ? { selectedId: activeExposure.id } : {})}
                     onSelect={selectFrame}
                     size="lg"
                     align="center"
