@@ -439,8 +439,12 @@ describe("SeriesFolioPage flexibility pass (F2/F3/F4)", () => {
   it("the filter chips carry an explanatory tooltip (F5)", () => {
     renderPage();
     const chips = screen.getAllByTestId("filter-chip");
+    const all = chips.find((c) => c.textContent === "All")!;
     const transition = chips.find((c) => c.textContent === "Has transition")!;
     const cross = chips.find((c) => c.textContent === "Cross-experiment")!;
+    // FOL-ALLCHIP-TOOLTIP: the "All" chip is no longer the one chip without an
+    // explanation — every filter chip carries a tooltip.
+    expect(all).toHaveAttribute("title", "Every saved series, no filter applied");
     expect(transition).toHaveAttribute("title", "Series whose members span more than one phase");
     expect(cross).toHaveAttribute("title", "Series whose members span more than one experiment");
   });
@@ -448,12 +452,16 @@ describe("SeriesFolioPage flexibility pass (F2/F3/F4)", () => {
   it("the filter-chip explanation is also reachable by keyboard/SR via aria-describedby (FIX 2)", () => {
     renderPage();
     // Accessible NAME is the label only (description must not bleed in).
+    const all = screen.getByRole("button", { name: "All" });
     const transition = screen.getByRole("button", { name: "Has transition" });
     const cross = screen.getByRole("button", { name: "Cross-experiment" });
+    const aDesc = document.getElementById(all.getAttribute("aria-describedby")!);
     const tDesc = document.getElementById(transition.getAttribute("aria-describedby")!);
     const cDesc = document.getElementById(cross.getAttribute("aria-describedby")!);
+    expect(aDesc).toHaveTextContent("Every saved series, no filter applied");
     expect(tDesc).toHaveTextContent("Series whose members span more than one phase");
     expect(cDesc).toHaveTextContent("Series whose members span more than one experiment");
+    expect(aDesc).toHaveClass("sr-only");
     expect(tDesc).toHaveClass("sr-only");
     expect(cDesc).toHaveClass("sr-only");
   });

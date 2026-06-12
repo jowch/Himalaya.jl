@@ -297,6 +297,8 @@ export function SeriesFolioPage(): JSX.Element {
         <div className="flex gap-1.5">
           <FilterChip
             label="All"
+            title="Every saved series, no filter applied"
+            description="Every saved series, no filter applied"
             active={controls.filter === "all"}
             onClick={() => setFilter("all")}
           />
