@@ -96,6 +96,43 @@ describe("<TagSuggest>", () => {
     expect(screen.queryByTestId("tag-suggest-count")).toBeNull();
   });
 
+  it("gives each count a discoverable meaning (title + aria-label), not a bare number (TAG-MODAL-ZORDER)", () => {
+    render(
+      <TagSuggest label="Tag key" mode="key" value="" options={OPTIONS} onCommit={() => {}} />,
+    );
+    fireEvent.focus(input());
+    const counts = screen.getAllByTestId("tag-suggest-count");
+    expect(counts[0]).toHaveAttribute("title", "used on 5 samples");
+    expect(counts[0]).toHaveAttribute("aria-label", "used on 5 samples");
+    // Singular for a count of one.
+    expect(counts[2]).toHaveAttribute("title", "used on 1 sample");
+  });
+
+  // ── Invalid (known-duplicate key) suppresses the popover ─────────────────────
+
+  it("suppresses the suggestion listbox while invalid, so it can't overlap the dup-key error (TAG-MODAL-ZORDER)", () => {
+    render(
+      <TagSuggest label="Tag key" mode="key" value="dose" options={OPTIONS} onCommit={() => {}} invalid />,
+    );
+    fireEvent.focus(input());
+    // No popover paints over the error directly below the row.
+    expect(screen.queryByRole("listbox")).toBeNull();
+    // And the combobox honestly reports itself collapsed.
+    expect(input()).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("restores the listbox once the field is no longer invalid (key edited away from the collision)", () => {
+    const { rerender } = render(
+      <TagSuggest label="Tag key" mode="key" value="dose" options={OPTIONS} onCommit={() => {}} invalid />,
+    );
+    fireEvent.focus(input());
+    expect(screen.queryByRole("listbox")).toBeNull();
+    rerender(
+      <TagSuggest label="Tag key" mode="key" value="dose" options={OPTIONS} onCommit={() => {}} />,
+    );
+    expect(screen.getByRole("listbox")).toBeInTheDocument();
+  });
+
   // ── Create-as-typed ─────────────────────────────────────────────────────────
 
   it("shows a create-as-typed option when the text matches no option exactly", () => {

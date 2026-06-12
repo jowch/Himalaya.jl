@@ -166,10 +166,22 @@ export function TagSuggest({
     }, 150);
   };
 
+  // TAG-MODAL-ZORDER: suppress the suggestion listbox once the field is invalid
+  // (a known-duplicate key). The listbox is an absolute z-30 popover that would
+  // otherwise paint over the inline "already has that key" error directly below
+  // the row — and re-suggesting existing keys is pointless when the typed key
+  // already collides. The error is the one thing to read here, so it wins the space.
+  const listVisible = open && totalItems > 0 && !invalid;
+
   const activeOptionId =
-    open && activeIdx !== null
+    listVisible && activeIdx !== null
       ? `${optionIdPrefix}-opt-${activeIdx}`
       : undefined;
+
+  // The count is a corpus-wide usage frequency (how many samples carry this key,
+  // or this key=value). Make that discoverable rather than a bare number.
+  const countTitle = (n: number): string =>
+    `used on ${n} ${n === 1 ? "sample" : "samples"}`;
 
   return (
     <div
@@ -194,14 +206,14 @@ export function TagSuggest({
         aria-label={label}
         // Combobox ARIA
         role="combobox"
-        aria-expanded={open && totalItems > 0}
+        aria-expanded={listVisible}
         aria-controls={listboxId}
         aria-autocomplete="list"
         {...(activeOptionId ? { "aria-activedescendant": activeOptionId } : {})}
         {...(ariaDescribedBy ? { "aria-describedby": ariaDescribedBy } : {})}
         inputRef={inputRef}
       />
-      {open && totalItems > 0 && (
+      {listVisible && (
         <div
           id={listboxId}
           role="listbox"
@@ -237,6 +249,8 @@ export function TagSuggest({
                 {opt.count !== undefined && (
                   <span
                     data-testid="tag-suggest-count"
+                    title={countTitle(opt.count)}
+                    aria-label={countTitle(opt.count)}
                     className={cx(
                       "ml-3 text-xs tabular-nums",
                       faint ? "text-ink-faint" : "text-ink-soft",
