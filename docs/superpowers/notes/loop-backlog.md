@@ -172,7 +172,7 @@ A second pass over **all six surfaces** (Jonathan: "broad review of all of the s
 |---|---|---|---|---|---|
 | BU-PROGRESS | confirm chain no visible progress + generic causeless error copy | clarify | P2 | todo | → F-LIVE/F-ERRSILENT |
 | BU-PICKER | add-sample is a ~130-option flat native select, duplicate display names, no search/grouping | clarify | P2 | todo | ✓re-score 2026-06-10 |
-| BU-NAMES | same member labeled three ways across one screen (figure "exp 42" / read list "Im3m · exp 6" / draft recipe sample name) | clarify | P2 | todo | ✓re-score 2026-06-10 |
+| BU-NAMES | same member labeled three ways across one screen (figure "exp 42" / read list "Im3m · exp 6" / draft recipe sample name) | clarify | P2 | **done `dcd43cc`** | ✓re-score 2026-06-10. FIXED: each recipe row now shows the figure trace's token (memberRowLabel: "exp N" / label_override) as a muted suffix after the sample name, so recipe ↔ figure ↔ reading share ONE identity anchor. Bridge = sample → picker exposure → member (members are exposure-keyed, no sample_id), built outer + threaded BuilderBody→RecipeEditor→RecipeRow; no export-register change. Draft-only samples (not yet committed) get no token. 2 new tests. Live-verified /series/2: "LL37 Only · exp 20" etc. matching plate tokens. Build + vitest 2810 green. |
 | BU-POLISH3 | re-score P3 cluster: inert read-state "Confirm series" styled like active "Adjust" · waterfall q-readout pointer-only + unnamed trace img · no help on offset/ticks/scale · no unsaved-draft navigate-away guard | craft+harden | P3 | todo | ✓re-score 2026-06-10 |
 
 ### FocusPage
