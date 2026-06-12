@@ -109,8 +109,8 @@ function SeriesBuilderView(): JSX.Element {
             <BuilderRail
               grouping={
                 <>
-                  Himalaya read <strong>6 samples</strong> as one series from their
-                  names, ordered by <strong>LL37 : lipid ratio</strong>.
+                  <strong>6 samples</strong>, ordered by{" "}
+                  <strong>LL37 : lipid ratio</strong>.
                 </>
               }
               orderedBy={orderedBy}

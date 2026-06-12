@@ -198,13 +198,13 @@ describe("SeriesBuilderPage", () => {
     expect((screen.getByLabelText(/series title/i) as HTMLInputElement).value).toBe("LL37 ratio series");
     // MemberList rows for the committed members.
     expect(screen.getAllByTestId("series-member-row")).toHaveLength(2);
-    // Read state: "Adjust" is the live entry point; no Cancel (no draft).
-    expect(screen.getByRole("button", { name: /adjust/i })).toBeInTheDocument();
+    // Read state: "Edit" is the live entry point; no Cancel (no draft).
+    expect(screen.getByRole("button", { name: /^edit$/i })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^cancel$/i })).toBeNull();
     expect(useAppState.getState().seriesDraft).toBeNull();
-    // controls-don't-lie: the rail's baked "Confirm series" is visibly DISABLED
+    // controls-don't-lie: the rail's baked "Save changes" is visibly DISABLED
     // in read state (no live draft → no onConfirm), not a live accent button.
-    const confirm = screen.getByRole("button", { name: /confirm series/i });
+    const confirm = screen.getByRole("button", { name: /save changes/i });
     expect(confirm).toBeDisabled();
     // And clicking it does not fire the save chain.
     fireEvent.click(confirm);
@@ -281,15 +281,15 @@ describe("SeriesBuilderPage", () => {
     expect(screen.getAllByRole("button", { name: /linear q/i })).toHaveLength(1);
   });
 
-  it("with a draft live, 'Adjust' is hidden (redundant no-op), Confirm+Cancel remain", () => {
+  it("with a draft live, 'Edit' is hidden (redundant no-op), Save changes+Cancel remain", () => {
     renderPage();
-    // Read state: Adjust present.
-    expect(screen.getByRole("button", { name: /adjust/i })).toBeInTheDocument();
+    // Read state: Edit present.
+    expect(screen.getByRole("button", { name: /^edit$/i })).toBeInTheDocument();
     // Start a draft.
     fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "x" } });
-    // Item 2: Adjust withheld; Confirm enabled + Cancel present.
-    expect(screen.queryByRole("button", { name: /adjust/i })).toBeNull();
-    expect(screen.getByRole("button", { name: /confirm series/i })).not.toBeDisabled();
+    // Item 2: Edit withheld; Save changes enabled + Cancel present.
+    expect(screen.queryByRole("button", { name: /^edit$/i })).toBeNull();
+    expect(screen.getByRole("button", { name: /save changes/i })).not.toBeDisabled();
     expect(screen.getByRole("button", { name: /^cancel$/i })).toBeInTheDocument();
   });
 
@@ -341,10 +341,10 @@ describe("SeriesBuilderPage", () => {
     // Start a draft.
     fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "Edited" } });
     const draft = useAppState.getState().seriesDraft!;
-    // With a live draft the rail's "Confirm series" is now ENABLED.
-    const confirm = screen.getByRole("button", { name: /confirm series/i });
+    // With a live draft the rail's "Save changes" is now ENABLED.
+    const confirm = screen.getByRole("button", { name: /save changes/i });
     expect(confirm).not.toBeDisabled();
-    // Click Confirm series.
+    // Click Save changes.
     fireEvent.click(confirm);
     // save.mutate called with buildSeriesSaveBody(draft) + id.
     expect(state.save.mutate).toHaveBeenCalledTimes(1);
@@ -393,7 +393,7 @@ describe("SeriesBuilderPage", () => {
     // conversely stall. Two renders, one assertion each.
     const { rerender } = renderPage();
     fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "Edited" } });
-    fireEvent.click(screen.getByRole("button", { name: /confirm series/i }));
+    fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
 
     // Render N: cache already fresh, mutation still pending.
     const savedSeries = baseSeries({ title: "Edited", members: [member(7), member(8)] });
@@ -421,7 +421,7 @@ describe("SeriesBuilderPage", () => {
     try {
       const { rerender } = renderPage();
       fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "Edited" } });
-      fireEvent.click(screen.getByRole("button", { name: /confirm series/i }));
+      fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
       expect(state.save.mutate).toHaveBeenCalledTimes(1);
 
       // SSE wins the race: save.data is the memberless partial shape.
@@ -461,7 +461,7 @@ describe("SeriesBuilderPage", () => {
     try {
       const { rerender } = renderPage();
       fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "Edited" } });
-      fireEvent.click(screen.getByRole("button", { name: /confirm series/i }));
+      fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
 
       // SSE-wins partial → the chain is awaiting the cache refetch…
       state.save = { ...state.save, isSuccess: true, data: { id: 10 } };
@@ -483,7 +483,7 @@ describe("SeriesBuilderPage", () => {
       // Query recovers → Confirm is re-enabled and re-fires the save chain.
       state.error = false;
       act(() => rerender());
-      const confirm = screen.getByRole("button", { name: /confirm series/i });
+      const confirm = screen.getByRole("button", { name: /save changes/i });
       expect(confirm).not.toBeDisabled();
       fireEvent.click(confirm);
       expect(state.save.mutate).toHaveBeenCalledTimes(2);
@@ -492,25 +492,25 @@ describe("SeriesBuilderPage", () => {
     }
   });
 
-  it("BU-PROGRESS: while the Confirm chain runs the rail control reads Confirming… with aria-busy, still disabled", () => {
+  it("BU-PROGRESS: while the Confirm chain runs the rail control reads saving… with aria-busy, still disabled", () => {
     const { rerender } = renderPage();
     fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "Edited" } });
-    fireEvent.click(screen.getByRole("button", { name: /confirm series/i }));
+    fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
 
     // The save is in flight → the control tells the truth: progressive
     // register + aria-busy, and no live control (no double-submit).
     state.save = { ...state.save, isPending: true };
     act(() => rerender());
-    const busyBtn = screen.getByRole("button", { name: /confirming…/i });
+    const busyBtn = screen.getByRole("button", { name: /saving…/i });
     expect(busyBtn).toHaveAttribute("aria-busy", "true");
     expect(busyBtn).toBeDisabled();
-    expect(screen.queryByRole("button", { name: /confirm series/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /save changes/i })).not.toBeInTheDocument();
 
     // The awaiting-fresh GAP (save settled, commit not yet fired because the
     // cache is still stale) is part of the chain → still busy.
     state.save = { ...state.save, isPending: false, isSuccess: true, data: { id: 10 } };
     act(() => rerender());
-    expect(screen.getByRole("button", { name: /confirming…/i })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: /saving…/i })).toHaveAttribute(
       "aria-busy",
       "true",
     );
@@ -519,7 +519,7 @@ describe("SeriesBuilderPage", () => {
   it("BU-PROGRESS: the busy register reverts to the resting label after commit success", () => {
     const { rerender } = renderPage();
     fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "Edited" } });
-    fireEvent.click(screen.getByRole("button", { name: /confirm series/i }));
+    fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
 
     // Save lands + fresh cache → commit fires (the chain is mid-flight).
     const savedSeries = baseSeries({ title: "Edited" });
@@ -528,15 +528,15 @@ describe("SeriesBuilderPage", () => {
     state.seriesUpdatedAt = 2000;
     act(() => rerender());
     expect(state.commit.mutate).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole("button", { name: /confirming…/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /saving…/i })).toBeInTheDocument();
 
     // Commit success → draft discarded, the control reverts to the resting
     // register with no aria-busy.
     state.commit = { ...state.commit, isSuccess: true };
     act(() => rerender());
-    const resting = screen.getByRole("button", { name: /confirm series/i });
+    const resting = screen.getByRole("button", { name: /save changes/i });
     expect(resting).not.toHaveAttribute("aria-busy");
-    expect(screen.queryByRole("button", { name: /confirming…/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /saving…/i })).not.toBeInTheDocument();
   });
 
   it("BU-PROGRESS: the busy register reverts on the stall-exit error (chain reset, Confirm re-armed at rest)", () => {
@@ -545,12 +545,12 @@ describe("SeriesBuilderPage", () => {
     try {
       const { rerender } = renderPage();
       fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "Edited" } });
-      fireEvent.click(screen.getByRole("button", { name: /confirm series/i }));
+      fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
 
       // SSE-wins partial → awaiting the cache refetch: busy.
       state.save = { ...state.save, isSuccess: true, data: { id: 10 } };
       act(() => rerender());
-      expect(screen.getByRole("button", { name: /confirming…/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /saving…/i })).toBeInTheDocument();
 
       // The refetch ERRORS (stall exit) and then recovers → the control is
       // back at rest: resting label, no aria-busy, enabled for the retry.
@@ -558,22 +558,22 @@ describe("SeriesBuilderPage", () => {
       act(() => rerender());
       state.error = false;
       act(() => rerender());
-      const resting = screen.getByRole("button", { name: /confirm series/i });
+      const resting = screen.getByRole("button", { name: /save changes/i });
       expect(resting).not.toHaveAttribute("aria-busy");
       expect(resting).not.toBeDisabled();
-      expect(screen.queryByRole("button", { name: /confirming…/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /saving…/i })).not.toBeInTheDocument();
     } finally {
       setToastImpl(null);
     }
   });
 
-  it("BU-PROGRESS: a series-query error PRE-DATING the save settle does not stick Confirming… (saving-clause exit)", () => {
+  it("BU-PROGRESS: a series-query error PRE-DATING the save settle does not stick saving… (saving-clause exit)", () => {
     const toast = vi.fn();
     setToastImpl(toast);
     try {
       const { rerender } = renderPage();
       fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "Edited" } });
-      fireEvent.click(screen.getByRole("button", { name: /confirm series/i }));
+      fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
 
       // The series query errors FIRST (stage ref still "saving")...
       state.error = true;
@@ -586,36 +586,36 @@ describe("SeriesBuilderPage", () => {
       act(() => rerender());
       // The page-level error branch (BU-BADID) replaces the body entirely
       // whenever the series query errors, so no rail — and therefore no
-      // stuck Confirming… — can render in any seriesQ.isError state. The
+      // stuck saving… — can render in any seriesQ.isError state. The
       // saving-clause exit term keeps the DERIVATION truthful regardless.
-      expect(screen.queryByRole("button", { name: /confirming…/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /saving…/i })).not.toBeInTheDocument();
       expect(screen.getByText(/couldn't load this series/i)).toBeInTheDocument();
     } finally {
       setToastImpl(null);
     }
   });
 
-  it("BU-PROGRESS: the busy register reverts IN THE SAME RENDER a save error surfaces (no stuck Confirming…)", () => {
+  it("BU-PROGRESS: the busy register reverts IN THE SAME RENDER a save error surfaces (no stuck saving…)", () => {
     const toast = vi.fn();
     setToastImpl(toast);
     try {
       const { rerender } = renderPage();
       fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "Edited" } });
-      fireEvent.click(screen.getByRole("button", { name: /confirm series/i }));
+      fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
       state.save = { ...state.save, isPending: true };
       act(() => rerender());
-      expect(screen.getByRole("button", { name: /confirming…/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /saving…/i })).toBeInTheDocument();
 
       // The save FAILS. The render that surfaces the role=alert must already
       // show the resting register — the stage ref resets in an effect that
       // triggers no re-render of its own, so a derivation lagging one render
-      // would leave a lying "Confirming…" next to the failure notice.
+      // would leave a lying "saving…" next to the failure notice.
       state.save = { ...state.save, isPending: false, error: new Error("boom") };
       act(() => rerender());
       expect(screen.getByRole("alert").textContent).toMatch(/couldn't confirm/i);
-      const resting = screen.getByRole("button", { name: /confirm series/i });
+      const resting = screen.getByRole("button", { name: /save changes/i });
       expect(resting).not.toHaveAttribute("aria-busy");
-      expect(screen.queryByRole("button", { name: /confirming…/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /saving…/i })).not.toBeInTheDocument();
     } finally {
       setToastImpl(null);
     }
@@ -624,7 +624,7 @@ describe("SeriesBuilderPage", () => {
   it("stale-cache guard: a series query older than the Confirm watermark does NOT trigger the commit", () => {
     const { rerender } = renderPage();
     fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "Edited" } });
-    fireEvent.click(screen.getByRole("button", { name: /confirm series/i }));
+    fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
 
     // Save lands (SSE-wins partial), but the cache still holds the PRE-save
     // series: dataUpdatedAt has not advanced past the Confirm-time watermark.
@@ -650,7 +650,7 @@ describe("SeriesBuilderPage", () => {
   } {
     const { rerender } = renderPage();
     fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "Edited" } });
-    fireEvent.click(screen.getByRole("button", { name: /confirm series/i }));
+    fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
     expect(state.save.mutate).toHaveBeenCalledTimes(1);
     // Save lands; the fresh full series (recipe just saved, members stale)
     // reaches the cache past the watermark.
@@ -749,7 +749,7 @@ describe("SeriesBuilderPage", () => {
     renderPage();
     fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "Edited" } });
     // Draft is live, but the recipe cannot be resolved yet → Confirm gated.
-    const confirm = screen.getByRole("button", { name: /confirm series/i });
+    const confirm = screen.getByRole("button", { name: /save changes/i });
     expect(confirm).toBeDisabled();
     fireEvent.click(confirm);
     expect(state.save.mutate).not.toHaveBeenCalled();
@@ -760,7 +760,7 @@ describe("SeriesBuilderPage", () => {
     state.pickerError = true;
     renderPage();
     fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "Edited" } });
-    expect(screen.getByRole("button", { name: /confirm series/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /save changes/i })).toBeDisabled();
     expect(screen.getByText(/couldn't load exposure data/i)).toBeInTheDocument();
   });
 
@@ -770,7 +770,7 @@ describe("SeriesBuilderPage", () => {
     try {
       const { rerender } = renderPage();
       fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "Edited" } });
-      fireEvent.click(screen.getByRole("button", { name: /confirm series/i }));
+      fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
       const savedSeries = baseSeries({ title: "Edited" });
       state.save = { ...state.save, isSuccess: true, data: savedSeries };
       // Simulate the mutator's HTTP-wins setQueryData (cache delivers fresh).
@@ -793,7 +793,7 @@ describe("SeriesBuilderPage", () => {
       fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "x" } });
       // Click Confirm so the chain is in-flight (stage != "idle"); only then is
       // the stage-guarded error effect armed.
-      fireEvent.click(screen.getByRole("button", { name: /confirm series/i }));
+      fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
       state.commit = { ...state.commit, error: new Error("boom") };
       act(() => rerender());
       expect(toast).toHaveBeenCalledWith(expect.stringMatching(/confirm/i), "error");
@@ -808,7 +808,7 @@ describe("SeriesBuilderPage", () => {
     try {
       const { rerender } = renderPage();
       fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "x" } });
-      fireEvent.click(screen.getByRole("button", { name: /confirm series/i }));
+      fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
       // Both errors land in the same render cycle.
       state.save = { ...state.save, error: new Error("s") };
       state.commit = { ...state.commit, error: new Error("c") };

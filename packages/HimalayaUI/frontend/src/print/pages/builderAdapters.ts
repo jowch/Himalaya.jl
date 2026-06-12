@@ -111,14 +111,19 @@ export function addableSamples(
 // ── groupingSummary ───────────────────────────────────────────────────────────
 
 /**
- * AutoGroup body copy for the compose variant.
- * Tone mirrors the Storybook Compose story:
- *   "Himalaya read N samples as one series, ordered by <variable>."
- * When `ordering_variable` is null the ordering clause is omitted.
+ * Neutral grouping summary for the builder's compose card:
+ *   "N samples, ordered by <variable>."  (ordering clause omitted when null).
+ *
+ * BU-AUTOGROUP-STALE: this is a USER-OWNED, already-saved series, NOT a machine
+ * suggestion — the copy states the series' shape without the retired "Himalaya
+ * read … as one series" auto-grouping claim (which told the user the series was
+ * machine-grouped and still needed confirming). In draft mode the caller passes
+ * the live recipe length as `count` so the summary tracks edits instead of the
+ * stale committed member count.
  */
-export function groupingSummary(series: Series): string {
-  const n = series.samples.length;
-  const base = `Himalaya read ${n} sample${n === 1 ? "" : "s"} as one series`;
+export function groupingSummary(series: Series, count?: number): string {
+  const n = count ?? series.samples.length;
+  const base = `${n} sample${n === 1 ? "" : "s"}`;
   if (series.ordering_variable) {
     return `${base}, ordered by ${series.ordering_variable}.`;
   }

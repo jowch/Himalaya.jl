@@ -11,15 +11,15 @@ export interface BuilderRailProps {
   grouping: ReactNode;
   onConfirm?: () => void;
   /**
-   * The Save→Commit chain is in flight: the Confirm action flips to the
-   * progressive register ("Confirming…") with `aria-busy`, still disabled —
-   * the control states WHY it is inert instead of silently sitting dead.
-   * The page derives this from the same stage/isPending sources that gate
-   * the chain, so the label reverts on both terminal paths.
+   * The Save→Commit chain is in flight: the "Save changes" action flips to the
+   * progressive register ("Saving…") with `aria-busy`, still disabled — the
+   * control states WHY it is inert instead of silently sitting dead. The page
+   * derives this from the same stage/isPending sources that gate the chain, so
+   * the label reverts on both terminal paths.
    */
   confirmBusy?: boolean;
   /**
-   * The "Adjust" entry into draft state. Omit it (e.g. while a draft is already
+   * The "Edit" entry into draft state. Omit it (e.g. while a draft is already
    * live) and the affordance is NOT rendered — re-running the idempotent
    * ensureDraft is a no-op, and controls-don't-lie says we don't show it.
    */
@@ -115,19 +115,22 @@ export function BuilderRail({
         )}
       </div>
 
+      {/* BU-AUTOGROUP-STALE: this series is user-owned and already saved, so the
+          card carries NO "Auto-grouped" title and real verbs — "Save changes"
+          for committing a draft (not "Confirm series", which implied the series
+          wasn't real yet) and "Edit" for entering draft state (not "Adjust"). */}
       <AutoGroup
         variant="compose"
-        title="Auto-grouped"
         actions={[
           {
-            label: confirmBusy ? "Confirming…" : "Confirm series",
+            label: confirmBusy ? "Saving…" : "Save changes",
             ...(onConfirm ? { onClick: onConfirm } : {}),
             ...(confirmBusy ? { busy: true } : {}),
           },
-          // "Adjust" is the entry into draft state; once a draft is live the page
+          // "Edit" is the entry into draft state; once a draft is live the page
           // withholds onAdjust and the affordance is dropped (not rendered inert),
           // since re-running ensureDraft would be a redundant no-op.
-          ...(onAdjust ? [{ label: "Adjust", muted: true, onClick: onAdjust }] : []),
+          ...(onAdjust ? [{ label: "Edit", muted: true, onClick: onAdjust }] : []),
         ]}
       >
         {grouping}

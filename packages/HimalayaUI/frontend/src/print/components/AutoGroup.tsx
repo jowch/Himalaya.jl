@@ -13,7 +13,7 @@ export interface AutoGroupAction {
 export interface AutoGroupProps {
   /** "summary" (recessed, scoping) | "compose" (plate bg, builder). Default "summary". */
   variant?: "summary" | "compose";
-  /** Optional bold title (the compose variant's "Auto-grouped"). */
+  /** Optional bold title shown above the body (when a caller needs a heading). */
   title?: string;
   /** Body copy — ReactNode so the caller can embed <strong> emphasis. */
   children: ReactNode;

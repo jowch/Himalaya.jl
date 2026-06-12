@@ -23,17 +23,18 @@ export const Summary: Story = {
   },
 };
 
+// The builder's compose card as actually used (BU-AUTOGROUP-STALE): no
+// "Auto-grouped" title — this is a user-owned saved series, not a machine
+// suggestion — a neutral grouping body, and real verbs (Save changes / Edit).
 export const Compose: Story = {
   args: {
     variant: "compose",
-    title: "Auto-grouped",
     children: (
       <>
-        Himalaya read <strong className="text-ink font-semibold">6 samples</strong> as one
-        series from their names, ordered by{" "}
+        <strong className="text-ink font-semibold">6 samples</strong>, ordered by{" "}
         <strong className="text-ink font-semibold">LL37 : lipid ratio</strong>.
       </>
     ),
-    actions: [{ label: "Confirm series" }, { label: "Adjust", muted: true }],
+    actions: [{ label: "Save changes" }, { label: "Edit", muted: true }],
   },
 };

@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from "vitest";
 import { BuilderRail } from "../../src/print/components/BuilderRail";
 
 const base = {
-  grouping: <>Himalaya read <strong>6 samples</strong> as one series.</>,
+  grouping: <><strong>6 samples</strong>, ordered by LL37 : lipid ratio.</>,
   orderedBy: "LL37 : lipid ratio",
   offset: 1.2,
   onOffsetChange: () => {},
@@ -15,7 +15,11 @@ describe("<BuilderRail>", () => {
     render(<BuilderRail {...base} />);
     expect(screen.getByTestId("builder-rail")).toBeInTheDocument();
     expect(screen.getByText("Compose")).toBeInTheDocument();
-    expect(screen.getByText("Auto-grouped")).toBeInTheDocument();
+    // BU-AUTOGROUP-STALE: the card carries NO "Auto-grouped" title (this is a
+    // user-owned saved series, not a machine suggestion) — just the grouping
+    // summary body inside the autogroup card.
+    expect(screen.queryByText("Auto-grouped")).toBeNull();
+    expect(screen.getByTestId("auto-group")).toHaveTextContent(/6 samples, ordered by/);
     expect(screen.getByTestId("field")).toHaveTextContent("LL37 : lipid ratio");
     expect(screen.getByTestId("slider")).toBeInTheDocument();
     expect(screen.getByTestId("traces-slot")).toBeInTheDocument();
@@ -84,15 +88,18 @@ describe("<BuilderRail>", () => {
       screen.getByRole("button", { name: /ordering variable\s+LL37 : lipid ratio/i }),
     ).toBeInTheDocument();
   });
-  it("renders the Adjust action when onAdjust is provided (read state)", () => {
+  it("renders the Edit action when onAdjust is provided (read state)", () => {
     render(<BuilderRail {...base} onAdjust={() => {}} />);
-    expect(screen.getByRole("button", { name: /adjust/i })).toBeInTheDocument();
-  });
-  it("OMITS the Adjust action when onAdjust is withheld (draft live)", () => {
-    // controls-don't-lie: a live draft withholds onAdjust → no redundant Adjust.
-    render(<BuilderRail {...base} onConfirm={() => {}} />);
+    expect(screen.getByRole("button", { name: /^edit$/i })).toBeInTheDocument();
+    // BU-AUTOGROUP-STALE: real verbs, not "Adjust"/"Confirm series".
     expect(screen.queryByRole("button", { name: /adjust/i })).toBeNull();
-    expect(screen.getByRole("button", { name: /confirm series/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /confirm series/i })).toBeNull();
+  });
+  it("OMITS the Edit action when onAdjust is withheld (draft live), shows Save changes", () => {
+    // controls-don't-lie: a live draft withholds onAdjust → no redundant Edit.
+    render(<BuilderRail {...base} onConfirm={() => {}} />);
+    expect(screen.queryByRole("button", { name: /^edit$/i })).toBeNull();
+    expect(screen.getByRole("button", { name: /save changes/i })).toBeInTheDocument();
   });
   it("renders the default WYSIWYG foot caption when the caption prop is omitted", () => {
     render(<BuilderRail {...base} />);

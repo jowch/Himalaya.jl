@@ -565,7 +565,7 @@ function BuilderBody({
         </div>
       </div>
       <BuilderRail
-        grouping={groupingSummary(series)}
+        grouping={groupingSummary(series, liveDraft ? liveDraft.recipe.length : undefined)}
         {...(liveDraft && !confirmBusy && confirmReady ? { onConfirm } : {})}
         confirmBusy={confirmBusy}
         {...(liveDraft ? {} : { onAdjust: ensureDraft })}
