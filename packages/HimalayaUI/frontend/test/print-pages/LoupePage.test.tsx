@@ -122,6 +122,13 @@ describe("LoupePage", () => {
     expect(screen.getByTestId("big-frame")).not.toHaveAttribute("data-rejected");
   });
 
+  it("the header subtitle speaks 'frame', not 'exposure' (LO-TERM consistency)", () => {
+    const { container } = renderAt(42);
+    const sub = container.querySelector('[data-role="plate-subtitle"]');
+    expect(sub?.textContent).toMatch(/frame \d+ of \d+/);
+    expect(sub?.textContent).not.toMatch(/exposure/i);
+  });
+
   it("?exposure opens the loupe AT that frame (SA-F2)", () => {
     // Exposure 2 is the rejected, NON-default frame — landing on it proves the
     // param won over the representative default.

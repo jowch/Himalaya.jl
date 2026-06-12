@@ -43,7 +43,7 @@ export function Verdict({
     ? "Restore to clear the call."
     : isKept
       ? "Drop or restore to change the call."
-      : "Keep or drop to screen this exposure.";
+      : "Keep or drop to screen this frame."; // LO-TERM: "frame", not "exposure"
   const tone = dropped ? "accent" : isKept ? "success" : "neutral";
 
   return (

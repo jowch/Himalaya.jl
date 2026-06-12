@@ -139,8 +139,11 @@ export function LoupePage(): JSX.Element {
   const frameIndex = activeExposure
     ? exposures.findIndex((e) => e.id === activeExposure.id)
     : -1;
+  // LO-TERM: one word for a single detector image across the loupe — "frame"
+  // (the BigFrame caption, toasts, and meta keys all say frame); never mix in
+  // "exposure" on the same screen.
   const exposurePosition =
-    frameIndex >= 0 ? `exposure ${frameIndex + 1} of ${exposures.length}` : "—";
+    frameIndex >= 0 ? `frame ${frameIndex + 1} of ${exposures.length}` : "—";
 
   const setStatus = useSetExposureStatus(hasValidId ? sampleId : 0);
   const setRepresentative = useSelectExposure(hasValidId ? sampleId : 0);

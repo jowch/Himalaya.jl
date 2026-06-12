@@ -16,7 +16,7 @@ describe("<Verdict> unscreened state (neither dropped nor kept)", () => {
   it("shows the honest unscreened hint", () => {
     render(<Verdict dropped={false} />);
     expect(
-      screen.getByText("Keep or drop to screen this exposure.")
+      screen.getByText("Keep or drop to screen this frame.")
     ).toBeInTheDocument();
   });
 
@@ -89,7 +89,7 @@ describe("<Verdict> hint override", () => {
     render(<Verdict dropped={false} hint="Custom hint text." />);
     expect(screen.getByText("Custom hint text.")).toBeInTheDocument();
     expect(
-      screen.queryByText("Keep or drop to screen this exposure.")
+      screen.queryByText("Keep or drop to screen this frame.")
     ).not.toBeInTheDocument();
   });
 });

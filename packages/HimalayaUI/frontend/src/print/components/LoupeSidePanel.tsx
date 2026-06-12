@@ -69,10 +69,10 @@ export function LoupeSidePanel({
       data-testid="loupe-side-panel"
       className={cx("flex flex-col gap-[18px]", className)}
     >
-      {/* Block 1: This exposure */}
+      {/* Block 1: This frame (LO-TERM: the loupe says "frame", not "exposure") */}
       <div>
         <Kicker tone="soft" as="h2" className="mb-2">
-          This exposure
+          This frame
         </Kicker>
         <MetaList entries={meta} />
       </div>

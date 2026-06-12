@@ -19,7 +19,10 @@ describe("LoupeSidePanel", () => {
   it("renders the section headers + composed leaves", () => {
     setup();
     expect(screen.getByTestId("loupe-side-panel")).toBeInTheDocument();
-    expect(screen.getByText("This exposure")).toBeInTheDocument();
+    // LO-TERM: the loupe speaks ONE word for a single detector image — "frame"
+    // (matching the BigFrame caption, toasts, and meta keys); not "exposure".
+    expect(screen.getByText("This frame")).toBeInTheDocument();
+    expect(screen.queryByText("This exposure")).toBeNull();
     expect(screen.getByText("Sample tags")).toBeInTheDocument();
     expect(screen.getByText("Keys")).toBeInTheDocument();
     expect(screen.getByTestId("meta-list")).toBeInTheDocument();

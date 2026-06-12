@@ -15,7 +15,7 @@ describe("<RepresentativeBox> not representative", () => {
     render(<RepresentativeBox isRepresentative={false} />);
     expect(
       screen.getByText(
-        "One exposure per sample carries forward to the Index stage. Pick the cleanest, strongest frame."
+        "One frame per sample carries forward to the Index stage. Pick the cleanest, strongest frame."
       )
     ).toBeInTheDocument();
   });
@@ -62,7 +62,7 @@ describe("<RepresentativeBox> is representative", () => {
     render(<RepresentativeBox isRepresentative={true} />);
     expect(
       screen.getByText(
-        "One exposure per sample carries forward to the Index stage. Pick the cleanest, strongest frame."
+        "One frame per sample carries forward to the Index stage. Pick the cleanest, strongest frame."
       )
     ).toBeInTheDocument();
   });
@@ -78,7 +78,7 @@ describe("<RepresentativeBox> children override", () => {
     expect(screen.getByText("Custom body text here.")).toBeInTheDocument();
     expect(
       screen.queryByText(
-        "One exposure per sample carries forward to the Index stage. Pick the cleanest, strongest frame."
+        "One frame per sample carries forward to the Index stage. Pick the cleanest, strongest frame."
       )
     ).not.toBeInTheDocument();
   });

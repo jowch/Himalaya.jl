@@ -67,7 +67,7 @@ export function RepresentativeBox({
 
         <p className="text-caption text-ink-soft mt-1">
           {children ??
-            "One exposure per sample carries forward to the Index stage. Pick the cleanest, strongest frame."}
+            "One frame per sample carries forward to the Index stage. Pick the cleanest, strongest frame."}
         </p>
 
         {representativeDropped && (

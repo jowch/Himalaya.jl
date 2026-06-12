@@ -35,7 +35,9 @@ export function PlateHeader({
         )}
         <TitleTag className="text-display">{title}</TitleTag>
         {subtitle && (
-          <div className="text-data text-ink-soft mt-1">{subtitle}</div>
+          <div data-role="plate-subtitle" className="text-data text-ink-soft mt-1">
+            {subtitle}
+          </div>
         )}
       </div>
       {children && <div>{children}</div>}
