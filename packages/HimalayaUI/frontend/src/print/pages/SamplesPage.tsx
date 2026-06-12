@@ -360,6 +360,8 @@ export function SamplesPage(): JSX.Element {
           >
             <SheetTable
               checkboxColumn
+              roving
+              dataRowCount={sortedSamples.length}
               sort={sort}
               onSort={applySort}
               empty={
@@ -370,11 +372,12 @@ export function SamplesPage(): JSX.Element {
                 </div>
               }
             >
-              {sortedSamples.map((s) => {
+              {sortedSamples.map((s, i) => {
                 const m = toSampleRowModel(s, corpusExposures.byId.get(s.id));
                 return (
                   <SampleTableRow
                     key={s.id}
+                    rowIndex={i + 1}
                     name={m.name}
                     sampleId={m.sampleId}
                     screened={m.screened}

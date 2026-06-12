@@ -1,3 +1,4 @@
+import { forwardRef } from "react";
 import type { HTMLAttributes } from "react";
 
 export type KickerTone = "accent" | "faint" | "soft";
@@ -28,15 +29,15 @@ const toneClass: Record<KickerTone, string> = {
   soft: "text-kicker-soft",
 };
 
-export function Kicker({
-  tone = "faint",
-  as: Tag = "div",
-  className = "",
-  children,
-  ...props
-}: KickerProps): JSX.Element {
+/** Forwards its ref to the rendered element so a roving grid can register a
+ *  zero-widget header cell (the Tags label) as a roving cell and focus it. */
+export const Kicker = forwardRef<HTMLElement, KickerProps>(function Kicker(
+  { tone = "faint", as: Tag = "div", className = "", children, ...props },
+  ref,
+): JSX.Element {
   return (
     <Tag
+      ref={ref as React.Ref<never>}
       data-tone={tone}
       className={`text-kicker ${toneClass[tone]} ${className}`}
       {...props}
@@ -44,4 +45,4 @@ export function Kicker({
       {children}
     </Tag>
   );
-}
+});

@@ -52,6 +52,15 @@ export function ThumbnailGallery({
       data-testid="thumbnail-gallery"
       data-size={size}
       data-align={align}
+      // Scrollable containers (overflow-x-auto) are auto-added to the sequential
+      // Tab order by Chrome/blink (so a sighted keyboard user can scroll them) —
+      // EVEN without a tabindex. An explicit tabindex=-1 opts this scroller OUT
+      // of that auto Tab-stop. It does NOT affect children (the thumbnail buttons
+      // stay tabbable in the Samples grid's interaction mode), and keyboard
+      // scroll-into-view is preserved. Without this, Tab from the Samples grid's
+      // single active cell would stop on the next overflowing gallery scroller
+      // and never exit the grid (SA-ROVING BUG D).
+      tabIndex={-1}
       className={`${baseClass}${className ? ` ${className}` : ""}`}
     >
       {exposures.map((exposure) => (

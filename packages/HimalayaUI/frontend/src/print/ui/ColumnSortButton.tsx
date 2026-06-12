@@ -1,3 +1,4 @@
+import { forwardRef } from "react";
 import type { ButtonHTMLAttributes } from "react";
 
 export type ColumnSortDir = "asc" | "desc";
@@ -26,18 +27,18 @@ export interface ColumnSortButtonProps
  *
  * The focus ring is `outline` (not a box-shadow ring) so it is never clipped by
  * the sticky header's own `overflow`/stacking — outline paints outside the box.
+ *
+ * Forwards its ref to the underlying `<button>` so the Samples roving grid can
+ * register a sortable header as a roving cell and move focus to it.
  */
-export function ColumnSortButton({
-  label,
-  active,
-  className = "",
-  ...props
-}: ColumnSortButtonProps): JSX.Element {
+export const ColumnSortButton = forwardRef<HTMLButtonElement, ColumnSortButtonProps>(
+  function ColumnSortButton({ label, active, className = "", ...props }, ref): JSX.Element {
   // ▲ ascending, ▼ descending. Only the active column shows a caret.
   const caret = active === "asc" ? "▲" : active === "desc" ? "▼" : null;
 
   return (
     <button
+      ref={ref}
       type="button"
       data-sort-button="true"
       data-active={active ?? "none"}
@@ -62,4 +63,4 @@ export function ColumnSortButton({
       </span>
     </button>
   );
-}
+});

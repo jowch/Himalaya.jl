@@ -1,8 +1,21 @@
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
+import type { ReactNode } from "react";
 import { SampleTableRow } from "../../src/print/components/SampleTableRow";
 import type { GalleryExposure } from "../../src/print/components/ThumbnailGallery";
 import type { Tag } from "../../src/print/ui/tag";
+import {
+  useRovingGrid,
+  RovingGridProvider,
+} from "../../src/lib/grid/useRovingGrid";
+
+/** Wrap a row in a LIVE roving-grid context (the grid is "on") so the row's
+ *  gridcell roles + roving tabindex wiring are exercised. Mirrors how SheetTable
+ *  supplies the provider; multi-widget cols Exposures(2) + Tags(4). */
+function RovingHarness({ children, rows = 3 }: { children: ReactNode; rows?: number }) {
+  const grid = useRovingGrid({ rows, cols: 6, interactionCols: new Set([2, 4]) });
+  return <RovingGridProvider value={grid}>{children}</RovingGridProvider>;
+}
 
 const EXPOSURES: GalleryExposure[] = [
   { id: 37, src: null, frameNo: "37", representative: true },
@@ -188,5 +201,123 @@ describe("<SampleTableRow> nav seams", () => {
   it("status cell is NOT a button when onOpenFocus is absent", () => {
     render(<SampleTableRow {...baseProps} phase={null} />);
     expect(screen.queryByRole("button", { name: /index/i })).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Roving data grid (SA-ROVING)
+// ---------------------------------------------------------------------------
+
+const rovingProps = {
+  ...baseProps,
+  rowIndex: 1,
+  onCheck: () => {},
+  onOpenLoupe: () => {},
+  onOpenFocus: () => {},
+};
+
+describe("<SampleTableRow> roving grid wiring", () => {
+  it("renders gridcell roles (not cell) when inside a roving context with a rowIndex", () => {
+    render(
+      <RovingHarness>
+        <SampleTableRow {...rovingProps} phase={null} />
+      </RovingHarness>,
+    );
+    const row = screen.getByRole("row");
+    expect(within(row).getAllByRole("gridcell")).toHaveLength(6);
+    expect(within(row).queryAllByRole("cell")).toHaveLength(0);
+  });
+
+  it("renders role=cell (unchanged) when OUTSIDE a roving context, even with a rowIndex", () => {
+    render(<SampleTableRow {...rovingProps} phase={null} />);
+    const row = screen.getByRole("row");
+    // Inert context default → tabIndexFor undefined → static path.
+    expect(within(row).getAllByRole("cell")).toHaveLength(6);
+    expect(within(row).queryAllByRole("gridcell")).toHaveLength(0);
+  });
+
+  it("the active (first) row exposes exactly one tabindex=0 widget; the rest are -1", () => {
+    render(
+      <RovingHarness>
+        <SampleTableRow {...rovingProps} phase={null} />
+      </RovingHarness>,
+    );
+    const row = screen.getByRole("row");
+    const tabbable = row.querySelectorAll('[tabindex="0"]');
+    expect(tabbable).toHaveLength(1);
+    // Default active cell is the Sample widget (col 1).
+    expect(tabbable[0]).toHaveAttribute("data-role", "spec-name");
+  });
+
+  it("a NON-active row (rowIndex 2) has no tabindex=0 widget", () => {
+    render(
+      <RovingHarness>
+        <SampleTableRow {...rovingProps} rowIndex={2} phase={null} />
+      </RovingHarness>,
+    );
+    const row = screen.getByRole("row");
+    expect(row.querySelectorAll('[tabindex="0"]')).toHaveLength(0);
+  });
+
+  it("clicking a thumbnail STILL bubbles onSelectExposure under roving (pointer parity)", () => {
+    const onSelectExposure = vi.fn();
+    render(
+      <RovingHarness>
+        <SampleTableRow {...rovingProps} phase={null} onSelectExposure={onSelectExposure} />
+      </RovingHarness>,
+    );
+    fireEvent.click(screen.getAllByTestId("thumbnail")[0]);
+    expect(onSelectExposure).toHaveBeenCalledWith(1);
+  });
+
+  it("the Focus-door button still fires onOpenFocus under roving (pointer parity)", () => {
+    const onOpenFocus = vi.fn();
+    render(
+      <RovingHarness>
+        <SampleTableRow {...rovingProps} phase={null} onOpenFocus={onOpenFocus} />
+      </RovingHarness>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /index/i }));
+    expect(onOpenFocus).toHaveBeenCalled();
+  });
+
+  it("mousedown on a cell makes it the active roving cell (pointer parity, BUG D model)", () => {
+    // Pointer parity is now wired on mousedown (not onFocus / onClick): pressing
+    // on the Kept cell (col 3) moves the single tabindex=0 to that gridcell. We
+    // assert the OBSERVABLE roving STATE shift (tabindex), not live focus — the
+    // no-focus-yank / Tab-out behavior is the render-verify / e2e gate.
+    render(
+      <RovingHarness>
+        <SampleTableRow {...rovingProps} phase={null} />
+      </RovingHarness>,
+    );
+    const row = screen.getByRole("row");
+    const cells = within(row).getAllByRole("gridcell");
+    // 6 cells: checkbox(0) Sample(1) Exposures(2) Kept(3) Tags(4) Status(5).
+    const keptCell = cells[3];
+    fireEvent.mouseDown(keptCell);
+    expect(keptCell).toHaveAttribute("tabindex", "0");
+    // The Sample widget (was active) is no longer the tab stop.
+    expect(within(row).getByText("POPC").closest("button")).toHaveAttribute("tabindex", "-1");
+  });
+
+  it("multi-widget cell descendants are made inert (tabindex=-1) in nav mode", () => {
+    render(
+      <RovingHarness>
+        <SampleTableRow
+          {...rovingProps}
+          rowIndex={2}
+          phase={null}
+          exposures={[
+            { id: 1, src: null, frameNo: "1" },
+            { id: 2, src: null, frameNo: "2" },
+          ]}
+        />
+      </RovingHarness>,
+    );
+    // The two thumbnails (gallery cell focusables) must not be extra tab stops.
+    screen.getAllByTestId("thumbnail").forEach((t) => {
+      expect(t).toHaveAttribute("tabindex", "-1");
+    });
   });
 });

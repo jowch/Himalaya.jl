@@ -1,3 +1,4 @@
+import { forwardRef } from "react";
 import type { HTMLAttributes } from "react";
 import { CheckCircle } from "./CheckCircle";
 
@@ -12,6 +13,11 @@ export interface CheckboxProps extends Omit<HTMLAttributes<HTMLSpanElement>, "on
   onChange?: (checked: boolean) => void;
   /** Accessible name — required when no visible label wraps this. */
   "aria-label"?: string;
+  /** Override the roving tabindex. When provided, replaces the default
+   *  `disabled ? -1 : 0` (used by the Samples roving grid so the checkbox is
+   *  the cell's single tab stop only when its cell is active). Absent →
+   *  unchanged. */
+  tabIndex?: number;
   /** PLACEMENT-ONLY. */
   className?: string;
 }
@@ -35,14 +41,18 @@ export interface CheckboxProps extends Omit<HTMLAttributes<HTMLSpanElement>, "on
  * Appearance lives entirely in CheckCircle (token-driven); the wrapper carries
  * only placement + interaction classes — no inline colour literals here.
  */
-export function Checkbox({
-  checked = false,
-  indeterminate = false,
-  disabled = false,
-  onChange,
-  className,
-  ...rest
-}: CheckboxProps): JSX.Element {
+export const Checkbox = forwardRef<HTMLSpanElement, CheckboxProps>(function Checkbox(
+  {
+    checked = false,
+    indeterminate = false,
+    disabled = false,
+    onChange,
+    tabIndex,
+    className,
+    ...rest
+  },
+  ref,
+): JSX.Element {
   const isChecked = !indeterminate && checked;
   const ariaChecked: "true" | "false" | "mixed" = indeterminate
     ? "mixed"
@@ -56,10 +66,11 @@ export function Checkbox({
 
   return (
     <span
+      ref={ref}
       role="checkbox"
       aria-checked={ariaChecked}
       aria-disabled={disabled || undefined}
-      tabIndex={disabled ? -1 : 0}
+      tabIndex={tabIndex ?? (disabled ? -1 : 0)}
       data-checked={isChecked ? "true" : "false"}
       data-indeterminate={indeterminate ? "true" : undefined}
       onClick={activate}
@@ -80,4 +91,4 @@ export function Checkbox({
       <CheckCircle checked={isChecked} decorative />
     </span>
   );
-}
+});
