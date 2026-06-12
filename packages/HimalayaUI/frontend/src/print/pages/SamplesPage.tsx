@@ -185,6 +185,19 @@ export function SamplesPage(): JSX.Element {
     });
   }
 
+  // SA-STALESELECT: a beamtime-filter change re-scopes the visible corpus, so a
+  // working selection from the prior scope is no longer on screen to act on or
+  // uncheck. Carrying it forward made the CullBar/ComposeBar counts, the cull
+  // toast receipt, and the "+ New series" carry lie about what's actionable
+  // (e.g. "1 sample" with no visible row, or a drop toast counting frames whose
+  // sample left the filter). Clear both grains whenever the scope changes; on
+  // mount this is a no-op (both sets start empty).
+  useEffect(() => {
+    setSelected(new Set());
+    setCheckedSamples(new Set());
+    anchorRef.current = null;
+  }, [beamtime]);
+
   useEffect(() => {
     function onShiftDown(e: KeyboardEvent): void {
       if (e.key === "Shift") shiftRef.current = true;
@@ -233,11 +246,15 @@ export function SamplesPage(): JSX.Element {
   }
 
   function batchSet(status: "accepted" | "rejected" | null): void {
-    const n = selected.size;
-    for (const id of selected) {
-      const sampleId = ownerOf.get(id);
-      if (sampleId !== undefined) batch.mutate({ sampleId, exposureId: id, status });
+    // SA-STALESELECT: only act on exposures still in the visible scope (an owner
+    // resolves in `ownerOf`, which is built from `filtered`). The toast then
+    // counts what was actually mutated, never the raw selection size — a
+    // destructive action must never claim a larger drop/keep count than it made.
+    const targets = [...selected].filter((id) => ownerOf.has(id));
+    for (const id of targets) {
+      batch.mutate({ sampleId: ownerOf.get(id)!, exposureId: id, status });
     }
+    const n = targets.length;
     // Consequential, batch-scale change → visible toast. Drop, Keep and the
     // symmetric restore all announce so each action and its undo are equally
     // legible. Restore sends null unconditionally: it clears BOTH verdicts.
@@ -246,7 +263,7 @@ export function SamplesPage(): JSX.Element {
         status === "rejected" ? "dropped" : status === "accepted" ? "kept" : "restored";
       // SA-F3: the receipt matches the bar's promise — a cross-sample batch
       // discloses its spread with the same suffix, under the same predicate.
-      const spread = selectionSpread(selected, ownerOf);
+      const spread = selectionSpread(new Set(targets), ownerOf);
       const suffix = spread > 1 ? ` across ${spread} samples` : "";
       showToast(`${n} frame${n === 1 ? "" : "s"} ${verb}${suffix}`, "success");
     }
