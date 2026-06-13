@@ -818,6 +818,23 @@ describe("SeriesScopingPage", () => {
     expect(banner.textContent).not.toMatch(/were saved/i);
   });
 
+  it("SC-RETRYBANNER: suppresses the stale chain-failure banner while a retry is in flight", () => {
+    // A prior Op-B failure leaves the failure banner (and its "try again" copy)
+    // standing.
+    createState = { mutate: createMutate, isSuccess: false, error: new Error("stale"), data: undefined };
+    const { rerender } = renderPage();
+    expect(screen.getByTestId("scoping-error-banner")).toBeInTheDocument();
+
+    // The user retries: Confirm & build re-fires the chain. createSeries.error is
+    // still set (a vi.fn mutate changes no state), so the only thing that can
+    // hide the banner is the in-flight gate — the stale banner must not keep
+    // shouting next to the "Building…" control.
+    fireEvent.click(screen.getByRole("button", { name: /confirm & build/i }));
+    act(() => rerender());
+    expect(screen.getByRole("button", { name: /building…/i })).toBeInTheDocument();
+    expect(screen.queryByTestId("scoping-error-banner")).toBeNull();
+  });
+
   it("SC-POLISH2: Confirm & build reads Building… with aria-busy while the scope→create chain runs", () => {
     const { rerender } = renderPage();
     fireEvent.click(screen.getByRole("button", { name: /confirm & build/i }));

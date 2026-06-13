@@ -755,6 +755,14 @@ export function SeriesScopingPage(): JSX.Element {
       ? "The ordering tags were saved, but the series was not created. Try Confirm & build again."
       : null;
 
+  // SC-RETRYBANNER: once a retry is in flight, suppress the prior failure banner
+  // (and its "try again" copy) — it would otherwise keep shouting next to the
+  // "Building…" control. A stale createSeries.error in particular lingers through
+  // the retry's tagging phase (handleBuild only clears scopeSeries.error), so
+  // gate on the SAME single in-flight truth the busy button reads. On resolution
+  // the banner returns only if a FRESH error surfaces.
+  const showErrorBanner = chainErrorCopy !== null && !buildBusy;
+
   // ── State 1: corpus load failed (distinct from an empty result). ──────────
   if (isError) {
     return (
@@ -791,7 +799,7 @@ export function SeriesScopingPage(): JSX.Element {
             (tag write) failure means no series and no tags from this attempt; an
             Op-B (create) failure means the tags ARE committed — the copy admits
             it. Op A wins precedence because a stale create error can linger. */}
-        {chainErrorCopy !== null ? (
+        {showErrorBanner ? (
           <div
             data-testid="scoping-error-banner"
             role="alert"
