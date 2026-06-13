@@ -447,6 +447,16 @@ describe("SamplesPage", () => {
     );
   });
 
+  it("Shift+Enter on a thumbnail opens the loupe AT that frame — keyboard parity for double-click (SA-THUMBKEY)", () => {
+    renderAt("/samples?beamtime=1");
+    const thumbs = screen.getAllByTestId("thumbnail");
+    fireEvent.keyDown(thumbs[1]!, { key: "Enter", shiftKey: true });
+    expect(screen.getByTestId("loupe-route")).toHaveAttribute(
+      "data-search",
+      "?beamtime=1&exposure=101",
+    );
+  });
+
   it("a name-click loupe opening carries no exposure param (default frame)", () => {
     renderAt("/samples?beamtime=1");
     fireEvent.click(screen.getByRole("button", { name: "Buffer" }));

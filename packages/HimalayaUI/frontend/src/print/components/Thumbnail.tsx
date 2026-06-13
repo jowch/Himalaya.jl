@@ -85,6 +85,20 @@ export function Thumbnail({
       {...(onClick ? { "aria-pressed": selected } : {})}
       onClick={onClick}
       {...(onDoubleClick ? { onDoubleClick } : {})}
+      // SA-THUMBKEY: keyboard parity for the double-click→loupe activate. Plain
+      // Enter stays the button's native click (select-toggle); Shift+Enter opens
+      // the loupe AT this frame. preventDefault stops the default Enter-click so
+      // the same keystroke can't ALSO toggle the selection.
+      {...(onDoubleClick
+        ? {
+            onKeyDown: (e: React.KeyboardEvent) => {
+              if (e.key === "Enter" && e.shiftKey) {
+                e.preventDefault();
+                onDoubleClick();
+              }
+            },
+          }
+        : {})}
       title={title}
       style={{ width: px, height: px }}
       className={`group relative inline-block flex-shrink-0 overflow-hidden rounded-sm bg-frame-edge border border-frame-edge p-0 cursor-pointer${className ? ` ${className}` : ""}`}

@@ -482,6 +482,7 @@ export function SamplesPage(): JSX.Element {
             { keyLabel: "X", description: "drop the selected frames" },
             { keyLabel: "K", description: "keep the selected frames" },
             { keyLabel: "double-click", description: "open the loupe" },
+            { keyLabel: "⇧ Enter", description: "open the loupe at a frame" },
             { keyLabel: "Esc", description: "exit a cell or clear" },
             { keyLabel: "⌘K", description: "find a sample" },
           ]}

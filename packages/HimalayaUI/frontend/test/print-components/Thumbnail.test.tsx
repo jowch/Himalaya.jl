@@ -26,6 +26,20 @@ describe("<Thumbnail> root element", () => {
     render(<Thumbnail src={null} size="lg" />);
     expect(screen.getByTestId("thumbnail")).toHaveAttribute("data-size", "lg");
   });
+
+  it("Shift+Enter activates the thumbnail (opens the loupe at this frame) — SA-THUMBKEY", () => {
+    const onDoubleClick = vi.fn();
+    render(<Thumbnail src={null} onClick={() => {}} onDoubleClick={onDoubleClick} />);
+    fireEvent.keyDown(screen.getByTestId("thumbnail"), { key: "Enter", shiftKey: true });
+    expect(onDoubleClick).toHaveBeenCalledOnce();
+  });
+
+  it("plain Enter does NOT activate the loupe (it stays the native select-toggle)", () => {
+    const onDoubleClick = vi.fn();
+    render(<Thumbnail src={null} onClick={() => {}} onDoubleClick={onDoubleClick} />);
+    fireEvent.keyDown(screen.getByTestId("thumbnail"), { key: "Enter" });
+    expect(onDoubleClick).not.toHaveBeenCalled();
+  });
 });
 
 describe("<Thumbnail> frameNo", () => {
