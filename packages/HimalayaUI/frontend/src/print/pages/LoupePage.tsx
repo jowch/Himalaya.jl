@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { PageFrame } from "../components/PageFrame";
 import { Skeleton } from "boneyard-js/react";
 import {
@@ -277,6 +277,49 @@ export function LoupePage(): JSX.Element {
     navigate(beamtime ? `/samples?beamtime=${beamtime}` : "/samples", opts);
   }, [navigate, searchParams, hasValidId, sampleId]);
 
+  // ── LO-NEXT: prev/next-SAMPLE navigation ──────────────────────────────────
+  // Culling N samples should not cost N sheet round-trips. The sheet hands its
+  // visible, sorted+filtered sample order through router state when it opens
+  // the loupe; we walk THAT list so prev/next match exactly what the user saw.
+  // A direct URL (permalink, no state) falls back to the beamtime-scoped corpus
+  // order, which also matches the sheet's default (ingest order).
+  const location = useLocation();
+  const beamtimeParam = searchParams.get("beamtime");
+  const beamtime =
+    beamtimeParam !== null && /^\d+$/.test(beamtimeParam)
+      ? Number(beamtimeParam)
+      : undefined;
+  const orderedSampleIds = useMemo(() => {
+    const st = location.state as { sampleOrder?: number[] } | null;
+    if (st?.sampleOrder && st.sampleOrder.includes(sampleId)) return st.sampleOrder;
+    const all = corpusQ.data ?? [];
+    const scoped =
+      beamtime === undefined
+        ? all
+        : all.filter((s) => s.experiment_id === beamtime);
+    return scoped.map((s) => s.id);
+  }, [location.state, corpusQ.data, beamtime, sampleId]);
+  const sampleIndex = orderedSampleIds.indexOf(sampleId);
+  const prevSampleId =
+    sampleIndex > 0 ? orderedSampleIds[sampleIndex - 1] : undefined;
+  const nextSampleId =
+    sampleIndex >= 0 && sampleIndex < orderedSampleIds.length - 1
+      ? orderedSampleIds[sampleIndex + 1]
+      : undefined;
+  const gotoSample = useCallback(
+    (id: number): void => {
+      const params = new URLSearchParams();
+      if (beamtime !== undefined) params.set("beamtime", String(beamtime));
+      const qs = params.toString();
+      // Carry the SAME order forward (so the next step still has the list) and
+      // drop ?exposure= so each sample opens at its own default frame.
+      navigate(`/samples/loupe/${id}${qs ? `?${qs}` : ""}`, {
+        state: { sampleOrder: orderedSampleIds },
+      });
+    },
+    [navigate, beamtime, orderedSampleIds],
+  );
+
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent): void {
       // Modifier chords belong to the browser (⌘R reload, ⌘X cut) — never to
@@ -288,11 +331,25 @@ export function LoupePage(): JSX.Element {
       else if (e.key === "x" || e.key === "X") handleDropToggle();
       else if (e.key === "k" || e.key === "K") handleKeepToggle();
       else if (e.key === "r" || e.key === "R") handleSetRepresentative();
-      else if (e.key === "Escape") goBack();
+      // LO-NEXT: brackets step SAMPLES (arrows already step frames).
+      else if (e.key === "[") {
+        if (prevSampleId !== undefined) gotoSample(prevSampleId);
+      } else if (e.key === "]") {
+        if (nextSampleId !== undefined) gotoSample(nextSampleId);
+      } else if (e.key === "Escape") goBack();
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [flip, handleDropToggle, handleKeepToggle, handleSetRepresentative, goBack]);
+  }, [
+    flip,
+    handleDropToggle,
+    handleKeepToggle,
+    handleSetRepresentative,
+    goBack,
+    prevSampleId,
+    nextSampleId,
+    gotoSample,
+  ]);
 
   if (!corpusQ.isLoading && !sample) {
     return (
@@ -327,9 +384,43 @@ export function LoupePage(): JSX.Element {
   return (
     <PageFrame width="loupe" className="px-8 py-7">
       <div data-testid="loupe-page">
-        <button data-testid="loupe-back" onClick={goBack} className="mb-3.5 text-sm font-semibold text-print-accent hover:underline">
-          ← Back to the sheet
-        </button>
+        <div className="mb-3.5 flex items-center justify-between gap-3">
+          <button data-testid="loupe-back" onClick={goBack} className="text-sm font-semibold text-print-accent hover:underline">
+            ← Back to the sheet
+          </button>
+          {/* LO-NEXT: step through the sheet's samples without round-tripping.
+              Shown only when more than one sample is in the walk and the current
+              one is in it. */}
+          {sampleIndex >= 0 && orderedSampleIds.length > 1 && (
+            <div data-testid="loupe-sample-nav" className="flex items-center gap-1.5">
+              <Button
+                variant="ghost"
+                data-testid="loupe-prev-sample"
+                aria-label="Previous sample"
+                disabled={prevSampleId === undefined}
+                {...(prevSampleId !== undefined
+                  ? { onClick: () => gotoSample(prevSampleId) }
+                  : {})}
+              >
+                ‹ Prev<span className="font-mono text-xs opacity-60 ml-1">[</span>
+              </Button>
+              <span className="text-caption text-ink-soft tabular-nums px-1" data-testid="loupe-sample-position">
+                {sampleIndex + 1} / {orderedSampleIds.length}
+              </span>
+              <Button
+                variant="ghost"
+                data-testid="loupe-next-sample"
+                aria-label="Next sample"
+                disabled={nextSampleId === undefined}
+                {...(nextSampleId !== undefined
+                  ? { onClick: () => gotoSample(nextSampleId) }
+                  : {})}
+              >
+                Next ›<span className="font-mono text-xs opacity-60 ml-1">]</span>
+              </Button>
+            </div>
+          )}
+        </div>
         <PlateHeader
           as="h1"
           title={sample?.display_name ?? sample?.name ?? "—"}

@@ -167,6 +167,15 @@ export function SamplesPage(): JSX.Element {
     });
   }, [filtered, sortKey, sortDir, corpusExposures.byId]);
 
+  // LO-NEXT: hand the loupe the exact visible order (sorted + beamtime-filtered)
+  // through router state, so its prev/next walk matches what's on screen. (The
+  // "exposures"/"kept" sorts can't be reconstructed from the loupe's data, so
+  // passing the resolved id list is the honest source.)
+  const sampleOrder = useMemo(
+    () => sortedSamples.map((s) => s.id),
+    [sortedSamples],
+  );
+
   // ── return-focus from the loupe (LO-FOCUSRET, WCAG 2.4.3) ────────────────────
   // The loupe Escape/back navigation carries the originating sample id in router
   // state. On this remount we resolve it to its (1-based) row in the CURRENT
@@ -448,8 +457,12 @@ export function SamplesPage(): JSX.Element {
                     onCheck={() => toggleSampleCheck(s.id)}
                     selectedExposureIds={selected}
                     onSelectExposure={(id) => toggleSelect(s.id, id)}
-                    onActivateExposure={(id) => navigate(loupeHref(s.id, id))}
-                    onOpenLoupe={() => navigate(loupeHref(s.id))}
+                    onActivateExposure={(id) =>
+                      navigate(loupeHref(s.id, id), { state: { sampleOrder } })
+                    }
+                    onOpenLoupe={() =>
+                      navigate(loupeHref(s.id), { state: { sampleOrder } })
+                    }
                     onOpenFocus={() => navigate(`/sample/${s.id}`)}
                   />
                 );

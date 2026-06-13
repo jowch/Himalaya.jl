@@ -57,12 +57,43 @@ function exp(over: Partial<Exposure>): Exposure {
  *  rewrites the URL while flipping frames" (SA-F2 read-once contract). */
 function LocationProbe(): JSX.Element {
   const loc = useLocation();
-  return <div data-testid="loc-probe" data-search={loc.search} />;
+  return (
+    <div
+      data-testid="loc-probe"
+      data-search={loc.search}
+      data-pathname={loc.pathname}
+    />
+  );
 }
 
 function renderAt(sampleId: number, search = "") {
   return render(
     <MemoryRouter initialEntries={[`/samples/loupe/${sampleId}${search}`]}>
+      <Routes>
+        <Route
+          path="/samples/loupe/:sampleId"
+          element={
+            <>
+              <LoupePage />
+              <LocationProbe />
+            </>
+          }
+        />
+        <Route path="/samples" element={<div data-testid="sheet">sheet</div>} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
+/** Render the loupe with a router-state sample order (LO-NEXT), as the contact
+ *  sheet hands it over. */
+function renderWithOrder(sampleId: number, order: number[], search = "") {
+  return render(
+    <MemoryRouter
+      initialEntries={[
+        { pathname: `/samples/loupe/${sampleId}`, search, state: { sampleOrder: order } },
+      ]}
+    >
       <Routes>
         <Route
           path="/samples/loupe/:sampleId"
@@ -671,5 +702,78 @@ describe("LoupePage", () => {
     } finally {
       dialog.remove();
     }
+  });
+});
+
+describe("LoupePage · LO-NEXT sample navigation", () => {
+  const THREE = [
+    { id: 10, experiment_id: 1, name: "S10", display_name: "Sample 10", notes: null, q_units: "A-1", tags: [] },
+    { id: 11, experiment_id: 1, name: "S11", display_name: "Sample 11", notes: null, q_units: "A-1", tags: [] },
+    { id: 12, experiment_id: 1, name: "S12", display_name: "Sample 12", notes: null, q_units: "A-1", tags: [] },
+  ];
+  beforeEach(() => {
+    state.samples = THREE;
+    state.exposures = [exp({ id: 1, selected: true })];
+  });
+
+  it("shows the position + enabled prev/next for a >1 sample walk handed over by the sheet", () => {
+    renderWithOrder(11, [10, 11, 12]);
+    expect(screen.getByTestId("loupe-sample-nav")).toBeInTheDocument();
+    expect(screen.getByTestId("loupe-sample-position")).toHaveTextContent("2 / 3");
+    expect(screen.getByTestId("loupe-prev-sample")).not.toBeDisabled();
+    expect(screen.getByTestId("loupe-next-sample")).not.toBeDisabled();
+  });
+
+  it("Next walks to the next sample in the handed-over order", () => {
+    renderWithOrder(11, [10, 11, 12]);
+    fireEvent.click(screen.getByTestId("loupe-next-sample"));
+    expect(screen.getByTestId("loc-probe")).toHaveAttribute("data-pathname", "/samples/loupe/12");
+  });
+
+  it("Prev walks to the previous sample in the handed-over order", () => {
+    renderWithOrder(11, [10, 11, 12]);
+    fireEvent.click(screen.getByTestId("loupe-prev-sample"));
+    expect(screen.getByTestId("loc-probe")).toHaveAttribute("data-pathname", "/samples/loupe/10");
+  });
+
+  it("disables Prev on the first sample", () => {
+    renderWithOrder(10, [10, 11, 12]);
+    expect(screen.getByTestId("loupe-prev-sample")).toBeDisabled();
+    expect(screen.getByTestId("loupe-next-sample")).not.toBeDisabled();
+  });
+
+  it("disables Next on the last sample", () => {
+    renderWithOrder(12, [10, 11, 12]);
+    expect(screen.getByTestId("loupe-next-sample")).toBeDisabled();
+    expect(screen.getByTestId("loupe-prev-sample")).not.toBeDisabled();
+  });
+
+  it("']' steps to the next sample, '[' steps to the previous (arrows still flip frames)", () => {
+    renderWithOrder(11, [10, 11, 12]);
+    fireEvent.keyDown(window, { key: "]" });
+    expect(screen.getByTestId("loc-probe")).toHaveAttribute("data-pathname", "/samples/loupe/12");
+  });
+
+  it("'[' steps to the previous sample", () => {
+    renderWithOrder(11, [10, 11, 12]);
+    fireEvent.keyDown(window, { key: "[" });
+    expect(screen.getByTestId("loc-probe")).toHaveAttribute("data-pathname", "/samples/loupe/10");
+  });
+
+  it("renders no sample-nav when the walk holds a single sample", () => {
+    renderWithOrder(11, [11]);
+    expect(screen.queryByTestId("loupe-sample-nav")).not.toBeInTheDocument();
+  });
+
+  it("falls back to the beamtime-scoped corpus order on a direct URL (no router state)", () => {
+    renderAt(11);
+    expect(screen.getByTestId("loupe-sample-position")).toHaveTextContent("2 / 3");
+    fireEvent.click(screen.getByTestId("loupe-next-sample"));
+    expect(screen.getByTestId("loc-probe")).toHaveAttribute("data-pathname", "/samples/loupe/12");
+  });
+
+  it("documents the [ ] sample-step keys in the loupe legend", () => {
+    renderWithOrder(11, [10, 11, 12]);
+    expect(screen.getByText("prev / next sample")).toBeInTheDocument();
   });
 });

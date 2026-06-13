@@ -41,6 +41,7 @@ export interface LoupeSidePanelProps {
 
 export const LOUPE_KEYS: Shortcut[] = [
   { keyLabel: "← →", description: "flip frames" },
+  { keyLabel: "[ ]", description: "prev / next sample" },
   { keyLabel: "X", description: "drop / restore" },
   { keyLabel: "K", description: "keep / restore" },
   { keyLabel: "R", description: "set representative" },
