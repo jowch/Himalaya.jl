@@ -13,7 +13,7 @@ import {
   useCorpusSampleTags,
 } from "../../queries";
 import type { Tag } from "../ui";
-import { EmptyState, Button } from "../ui";
+import { EmptyState, Button, KbKey } from "../ui";
 import { announce } from "../../lib/announce";
 import { showToast } from "../../lib/toast";
 import { useShortcuts } from "../shell/useShortcuts";
@@ -402,7 +402,7 @@ export function LoupePage(): JSX.Element {
                   ? { onClick: () => gotoSample(prevSampleId) }
                   : {})}
               >
-                ‹ Prev<span className="font-mono text-xs opacity-60 ml-1">[</span>
+                ‹ Prev<KbKey className="ml-1.5">[</KbKey>
               </Button>
               <span className="text-caption text-ink-soft tabular-nums px-1" data-testid="loupe-sample-position">
                 {sampleIndex + 1} / {orderedSampleIds.length}
@@ -416,7 +416,7 @@ export function LoupePage(): JSX.Element {
                   ? { onClick: () => gotoSample(nextSampleId) }
                   : {})}
               >
-                Next ›<span className="font-mono text-xs opacity-60 ml-1">]</span>
+                Next ›<KbKey className="ml-1.5">]</KbKey>
               </Button>
             </div>
           )}

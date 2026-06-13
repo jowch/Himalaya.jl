@@ -21,7 +21,7 @@
  */
 
 import { useLayoutEffect, useRef } from "react";
-import { Button } from "../ui";
+import { Button, KbKey } from "../ui";
 
 function cx(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(" ");
@@ -91,16 +91,16 @@ export function CullBar({
         )}
       </span>
       <Button variant="accent" onClick={onReject}>
-        Drop<span className="font-mono text-xs opacity-60 ml-1">X</span>
+        Drop<KbKey className="ml-1.5">X</KbKey>
       </Button>
       <Button variant="success" onClick={onKeep}>
-        Keep<span className="font-mono text-xs opacity-60 ml-1">K</span>
+        Keep<KbKey className="ml-1.5">K</KbKey>
       </Button>
       <Button variant="ghostInverse" onClick={onRestore}>
         Restore
       </Button>
       <Button variant="ghostInverse" onClick={onClear}>
-        Clear<span className="font-mono text-xs opacity-60 ml-1">Esc</span>
+        Clear<KbKey className="ml-1.5">Esc</KbKey>
       </Button>
     </div>
   );
