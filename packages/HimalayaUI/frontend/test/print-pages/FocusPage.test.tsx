@@ -168,6 +168,17 @@ describe("FocusPage", () => {
     expect(screen.getByTestId("combs-panel")).toBeInTheDocument();
   });
 
+  it("the candidate-rail note is the distilled one-sentence guide (DI-FOCUSNOTE)", () => {
+    renderAt(42);
+    // Distilled to the single load-bearing fact (a sample can be multiphasic),
+    // dropping the dense second swap/coexist sentence.
+    expect(
+      screen.getByText(/A sample can be multiphasic, so check every phase that fits\./),
+    ).toBeInTheDocument();
+    // the old run-on second sentence is gone
+    expect(screen.queryByText(/Candidates that explain the same peaks swap/)).toBeNull();
+  });
+
   it("toggling a candidate row fires useAddAssignmentPhase().mutate(indexId)", () => {
     renderAt(42);
     // Lamellar (id 2) is NOT in the active set → its CandidateRow toggles it on.

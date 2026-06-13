@@ -117,7 +117,7 @@ const FOCUS_FIXTURE = (
           <CandidateRow phase="Im3m" score={0.61} why="explains 3 peaks" />
         </CandidateList>
       }
-      candidatesNote="Check every phase that is present; a sample can hold more than one."
+      candidatesNote="A sample can be multiphasic, so check every phase that fits."
     />
   </div>
 );
@@ -599,7 +599,7 @@ export function FocusPage(): JSX.Element {
               assignmentCount={activeIndices.length || undefined}
               assignment={cart}
               candidates={candidates}
-              candidatesNote="Check every phase that is present; a sample can hold more than one. Candidates that explain the same peaks swap; independent phases coexist."
+              candidatesNote="A sample can be multiphasic, so check every phase that fits."
             />
           )}
         </div>
