@@ -77,10 +77,34 @@ describe("suppressGlobalKeys — open modal dialog", () => {
     expect(probe(window)).toBe(true);
   });
 
-  it("does NOT suppress for a non-modal role=dialog (no aria-modal)", () => {
+  it("does NOT suppress a target OUTSIDE a non-modal role=dialog (the page stays live)", () => {
+    // A non-modal popover does NOT make the rest of the page inert, so a button
+    // that is NOT inside it keeps its page shortcuts (unlike the aria-modal case).
     const dialog = mount("div");
     dialog.setAttribute("role", "dialog");
     expect(probe(mount("button"))).toBe(false);
+  });
+});
+
+describe("suppressGlobalKeys — focus inside an open non-modal popover (LO-POPKEY)", () => {
+  // An open popover owns the keyboard while focus is inside it: page shortcuts
+  // (loupe X/R, sheet X) must not fire through a non-input control sitting in
+  // the popover. This is target-scoped, not document-level — the popover is not
+  // inert to the rest of the page, only its own subtree captures keys.
+  it("suppresses when the target is INSIDE a non-modal role=dialog popover", () => {
+    const pop = mount("div");
+    pop.setAttribute("role", "dialog"); // the Popover primitive: role=dialog, no aria-modal
+    const btn = document.createElement("button");
+    pop.appendChild(btn);
+    expect(probe(btn)).toBe(true);
+  });
+
+  it("suppresses when the target is INSIDE a [data-keys-trap] inline editor (the tag editor)", () => {
+    const editor = mount("div");
+    editor.setAttribute("data-keys-trap", "");
+    const btn = document.createElement("button");
+    editor.appendChild(btn);
+    expect(probe(btn)).toBe(true);
   });
 });
 

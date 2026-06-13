@@ -8,7 +8,16 @@
  *    SELECT, or inside a contenteditable region. Single letters and chords
  *    like ⌘Z belong to the editing surface there, never to the page.
  *
- * 2. A modal dialog is open ANYWHERE in the document:
+ * 2. The event target is inside an open NON-modal popover — a
+ *    `[role="dialog"]` panel (what the Popover primitive emits) or a
+ *    `[data-keys-trap]` inline editor (the tag editor). An open popover owns
+ *    the keyboard while focus is inside it, so a single-letter page shortcut
+ *    must not fire through a non-input control (a button/chip) sitting in the
+ *    popover (LO-POPKEY). This is `target.closest(…)`, NOT document-level: a
+ *    non-modal popover does not make the rest of the page inert, so shortcuts
+ *    stay live everywhere OUTSIDE the popover's own subtree.
+ *
+ * 3. A modal dialog is open ANYWHERE in the document:
  *    `[role="dialog"][aria-modal="true"]` (what ModalShell emits).
  *    This is deliberately a document-level check, not `target.closest(…)`:
  *    `aria-modal="true"` declares everything outside the dialog inert, so
@@ -45,6 +54,11 @@ export function suppressGlobalKeys(e: KeyboardEvent): boolean {
     if (editableHost !== null && editableHost.getAttribute("contenteditable") !== "false") {
       return true;
     }
+    // An open non-modal popover (Popover primitive `[role="dialog"]`) or inline
+    // editor (`[data-keys-trap]`, e.g. the tag editor) owns the keyboard while
+    // focus is inside it — page shortcuts must not fire through a button/chip
+    // sitting in it (LO-POPKEY). Target-scoped: the page stays live outside.
+    if (t.closest('[role="dialog"], [data-keys-trap]') !== null) return true;
   }
   return document.querySelector('[role="dialog"][aria-modal="true"]') !== null;
 }
