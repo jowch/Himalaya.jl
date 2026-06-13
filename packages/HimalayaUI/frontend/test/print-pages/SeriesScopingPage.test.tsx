@@ -398,6 +398,20 @@ describe("SeriesScopingPage", () => {
     expect(within(candidate).getByText("Ia3d")).toBeInTheDocument();
   });
 
+  it("SC-PROV: the header count acknowledges a skip so it reconciles with the foot (no silent divergence)", () => {
+    seed3();
+    renderPage();
+    // Baseline: 3 members, none skipped — the count caption is the plain total.
+    expect(screen.getByText(/3 samples · low to high/i)).toBeInTheDocument();
+    // Skip B → the foot reads "2 values ready to commit · 1 skipped". The header
+    // count must not silently stay "3 samples" with no acknowledgement (the
+    // reader would have to reconcile 3 vs 2 themselves) — it annotates the skip
+    // so 3 total = 2 committed + 1 skipped is visible on both ends.
+    fireEvent.click(screen.getAllByTestId("flag-button")[1]!);
+    expect(screen.getByText(/2 values ready to commit · 1 skipped/i)).toBeInTheDocument();
+    expect(screen.getByText(/3 samples \(1 skipped\) · low to high/i)).toBeInTheDocument();
+  });
+
   it("skipping a member excludes it from the write but does not block the build", () => {
     seed3();
     renderPage();

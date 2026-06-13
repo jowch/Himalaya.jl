@@ -584,7 +584,11 @@ export function SeriesScopingPage(): JSX.Element {
   // still reads as the default. (Lengths can differ transiently mid-reseed.)
   const isCanonicalOrder =
     order.length === seededOrder.length && order.every((id, i) => id === seededOrder[i]);
-  const orderCaption = `${rows.length} samples · ${isCanonicalOrder ? "low to high" : "custom order"}`;
+  // SC-PROV: when some reads are skipped, the total-count caption ("N samples")
+  // and the foot ("M values ready · K skipped") differ by the skip count. Annotate
+  // the skip inline so the two reconcile (N total = M committed + K skipped) instead
+  // of silently diverging — the reader shouldn't have to do the subtraction.
+  const orderCaption = `${rows.length} samples${skippedCount > 0 ? ` (${skippedCount} skipped)` : ""} · ${isCanonicalOrder ? "low to high" : "custom order"}`;
   const footState = buildFootState(keptCount, skippedCount);
   const canBuild = canScopeBuild(rows, proposal.orderingKey);
   const lastLabel = history.length ? history[history.length - 1]!.label : undefined;
