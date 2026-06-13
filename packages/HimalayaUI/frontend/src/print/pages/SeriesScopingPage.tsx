@@ -93,6 +93,7 @@ function ColdAssignSection({
   onBuild,
   buildBusy,
   intro,
+  discardSlot,
 }: {
   rows: ColdAssignRow[];
   variableKey: string;
@@ -100,6 +101,8 @@ function ColdAssignSection({
   onValueChange: (sampleId: number, value: string) => void;
   canBuildNow: boolean;
   onBuild: () => void;
+  /** Discard affordance, placed left of "Confirm & build" (SC-POLISH2). */
+  discardSlot?: ReactNode;
   /** The scope→create chain is in flight: the foot button flips to the
    *  progressive register ("Building…") with `aria-busy`, disabled (no
    *  double-submit). Same contract as ScopePlate's buildBusy. */
@@ -135,14 +138,17 @@ function ColdAssignSection({
             already knows.
           </div>
         </div>
-        <Button
-          variant="solid"
-          {...(!canBuildNow || buildBusy ? { disabled: true } : {})}
-          {...(buildBusy ? { "aria-busy": true } : {})}
-          onClick={onBuild}
-        >
-          {buildBusy ? "Building…" : <>Confirm &amp; build →</>}
-        </Button>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {discardSlot}
+          <Button
+            variant="solid"
+            {...(!canBuildNow || buildBusy ? { disabled: true } : {})}
+            {...(buildBusy ? { "aria-busy": true } : {})}
+            onClick={onBuild}
+          >
+            {buildBusy ? "Building…" : <>Confirm &amp; build →</>}
+          </Button>
+        </div>
       </div>
     </>
   );
@@ -305,6 +311,10 @@ export function SeriesScopingPage(): JSX.Element {
   // ── Cold path (no variable proposable FROM THE SEED, user arrived with one) ──
   const [coldKey, setColdKey] = useState("");
   const [coldRows, setColdRows] = useState<ColdAssignRow[]>([]);
+  // SC-POLISH2: a two-step guard so Discard never destroys in-progress work
+  // silently. The first click on a dirty worksheet arms this inline confirm;
+  // a clean worksheet discards immediately (nothing to lose).
+  const [confirmingDiscard, setConfirmingDiscard] = useState(false);
   // Seed cold rows once when the page loads into the cold path.
   useEffect(() => {
     if (!isLoading && proposal.orderingKey === undefined && seed !== null && rows.length === 0) {
@@ -523,6 +533,41 @@ export function SeriesScopingPage(): JSX.Element {
   const canBuild = canScopeBuild(rows, proposal.orderingKey);
   const lastLabel = history.length ? history[history.length - 1]!.label : undefined;
 
+  // SC-POLISH2: Discard moved from the page top into each plate foot beside
+  // "Confirm & build", and guarded against silently destroying in-progress
+  // work. "Work" = any warm gesture recorded in history (reorder/skip) OR a
+  // typed cold/custom value. A clean worksheet skips the confirm.
+  const hasUnsavedWork =
+    history.length > 0 || coldRows.some((r) => (r.value ?? "").trim() !== "");
+  const onDiscardClick = (): void => {
+    if (hasUnsavedWork) setConfirmingDiscard(true);
+    else navigate("/series");
+  };
+  const discardControl = confirmingDiscard ? (
+    <span
+      data-testid="scoping-discard-confirm"
+      className="flex items-center gap-2"
+      role="group"
+      aria-label="Confirm discard"
+    >
+      <span className="text-caption text-ink-soft">Discard your work?</span>
+      <Button variant="ghost" onClick={() => setConfirmingDiscard(false)}>
+        Keep editing
+      </Button>
+      <Button
+        variant="ghost"
+        data-testid="scoping-discard-yes"
+        onClick={() => navigate("/series")}
+      >
+        Discard
+      </Button>
+    </span>
+  ) : (
+    <Button variant="ghost" data-testid="scoping-discard" onClick={onDiscardClick}>
+      Discard
+    </Button>
+  );
+
   // Cold-corpus build gate (controls-don't-lie: enabled only once the user has
   // named the variable AND filled in every sample's value).
   const canColdBuildNow = canColdBuild(coldKey, coldRows);
@@ -669,17 +714,9 @@ export function SeriesScopingPage(): JSX.Element {
   return (
     <PageFrame width="scoping" className="px-10 py-10">
       <div data-testid="scoping-page">
-        {/* Discard (mockup top-right, outside the plate). */}
-        <div className="flex items-center justify-end pb-3">
-          <button
-            type="button"
-            data-testid="scoping-discard"
-            onClick={() => navigate("/series")}
-            className="px-1 py-1.5 text-caption font-semibold text-ink-soft hover:text-ink"
-          >
-            Discard
-          </button>
-        </div>
+        {/* Discard now lives in each plate foot beside "Confirm & build"
+            (SC-POLISH2), with a confirm-before-destroy guard — see
+            `discardControl`. */}
 
         {/* SC-KBD: keyboard-reorder live region. Persistent (never conditional)
             so screen readers track its text mutations; sr-only is the project's
@@ -749,6 +786,7 @@ export function SeriesScopingPage(): JSX.Element {
                     canBuildNow={canColdBuildNow}
                     onBuild={handleBuild}
                     buildBusy={buildBusy}
+                    discardSlot={discardControl}
                   />
                 </div>
               </Card>
@@ -813,6 +851,7 @@ export function SeriesScopingPage(): JSX.Element {
                   onBuild={handleBuild}
                   buildBusy={buildBusy}
                   intro={null}
+                  discardSlot={discardControl}
                 />
               </div>
             </Card>
@@ -963,6 +1002,7 @@ export function SeriesScopingPage(): JSX.Element {
               {...(!canBuild ? { buildDisabled: true } : {})}
               buildBusy={buildBusy}
               onBuild={handleBuild}
+              discardSlot={discardControl}
             />
           )}
         </Skeleton>

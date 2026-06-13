@@ -39,6 +39,11 @@ export interface ScopePlateProps {
    */
   buildBusy?: boolean;
   onBuild?: () => void;
+  /** Discard affordance, placed in the foot's action cluster immediately left
+   *  of "Confirm & build" (SC-POLISH2). A ReactNode slot so the page owns the
+   *  control AND its confirm-before-destroy state; ScopePlate only positions it.
+   *  Omit it and no discard control renders. */
+  discardSlot?: ReactNode;
   /** PLACEMENT-ONLY. */
   className?: string;
 }
@@ -75,6 +80,7 @@ export function ScopePlate({
   buildDisabled,
   buildBusy,
   onBuild,
+  discardSlot,
   className,
 }: ScopePlateProps): JSX.Element {
   return (
@@ -172,14 +178,17 @@ export function ScopePlate({
           </div>
           <div className="text-caption text-ink-soft max-w-[42ch]">{footNote}</div>
         </div>
-        <Button
-          variant="solid"
-          {...(buildDisabled || buildBusy ? { disabled: true } : {})}
-          {...(buildBusy ? { "aria-busy": true } : {})}
-          {...(onBuild && !buildBusy ? { onClick: onBuild } : {})}
-        >
-          {buildBusy ? "Building…" : "Confirm & build →"}
-        </Button>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {discardSlot}
+          <Button
+            variant="solid"
+            {...(buildDisabled || buildBusy ? { disabled: true } : {})}
+            {...(buildBusy ? { "aria-busy": true } : {})}
+            {...(onBuild && !buildBusy ? { onClick: onBuild } : {})}
+          >
+            {buildBusy ? "Building…" : "Confirm & build →"}
+          </Button>
+        </div>
       </div>
     </Card>
   );

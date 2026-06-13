@@ -422,6 +422,42 @@ describe("SeriesScopingPage", () => {
     );
   });
 
+  it("Discard sits in the plate foot beside Confirm & build, not at the page top (SC-POLISH2)", () => {
+    seed3();
+    renderPage();
+    const discard = screen.getByTestId("scoping-discard");
+    const build = screen.getByRole("button", { name: /confirm & build/i });
+    // Same foot action cluster → they share a parent.
+    expect(discard.parentElement).toBe(build.parentElement);
+  });
+
+  it("Discard on a clean worksheet leaves immediately with no confirm (SC-POLISH2)", () => {
+    seed3();
+    renderPage();
+    fireEvent.click(screen.getByTestId("scoping-discard"));
+    expect(navigateSpy).toHaveBeenCalledWith("/series");
+    expect(screen.queryByTestId("scoping-discard-confirm")).not.toBeInTheDocument();
+  });
+
+  it("Discard after an edit asks first and never destroys the work until confirmed (SC-POLISH2)", () => {
+    seed3();
+    renderPage();
+    // Dirty the worksheet: skip a member (pushes a history entry).
+    fireEvent.click(screen.getAllByTestId("flag-button")[1]!);
+    // Discard now arms an inline confirm — no navigation yet.
+    fireEvent.click(screen.getByTestId("scoping-discard"));
+    expect(screen.getByTestId("scoping-discard-confirm")).toBeInTheDocument();
+    expect(navigateSpy).not.toHaveBeenCalledWith("/series");
+    // "Keep editing" backs out, work intact.
+    fireEvent.click(screen.getByRole("button", { name: /keep editing/i }));
+    expect(screen.queryByTestId("scoping-discard-confirm")).not.toBeInTheDocument();
+    expect(navigateSpy).not.toHaveBeenCalledWith("/series");
+    // Re-arm and confirm → only now does it leave.
+    fireEvent.click(screen.getByTestId("scoping-discard"));
+    fireEvent.click(screen.getByTestId("scoping-discard-yes"));
+    expect(navigateSpy).toHaveBeenCalledWith("/series");
+  });
+
   it("disables build when every member is skipped, and re-enables on unskip", () => {
     renderPage();
     const flagButtons = screen.getAllByTestId("flag-button");
