@@ -61,8 +61,10 @@ export function ComposeBar({
       data-testid="compose-bar"
       data-show={show ? "true" : "false"}
       className={cx(
-        "fixed left-1/2 bottom-20 -translate-x-1/2 z-50 flex items-center gap-1 bg-ink text-paper rounded-md shadow-lg pl-4 pr-2 py-[7px] transition-opacity",
-        show ? "opacity-100" : "opacity-0 pointer-events-none",
+        // AN-MOTION: rise + fade in/out (the bar no longer snaps). The
+        // centering -translate-x-1/2 composes with the animated translate-y.
+        "fixed left-1/2 bottom-20 -translate-x-1/2 z-50 flex items-center gap-1 bg-ink text-paper rounded-md shadow-lg pl-4 pr-2 py-[7px] transition duration-300 ease-out",
+        show ? "opacity-100 translate-y-0" : "opacity-0 translate-y-3 pointer-events-none",
         className,
       )}
     >

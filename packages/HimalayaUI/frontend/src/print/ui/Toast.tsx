@@ -103,7 +103,7 @@ export function ToastContainer(): JSX.Element {
           role={t.kind === "error" || t.kind === "warning" ? "alert" : "status"}
           aria-live={t.kind === "error" || t.kind === "warning" ? "assertive" : "polite"}
           className={
-            "pointer-events-auto flex items-start gap-2 rounded-md border border-hair " +
+            "anim-toast-in pointer-events-auto flex items-start gap-2 rounded-md border border-hair " +
             "bg-plate text-ink px-3 py-2 shadow-lg text-body min-w-[220px] max-w-[360px]"
           }
         >

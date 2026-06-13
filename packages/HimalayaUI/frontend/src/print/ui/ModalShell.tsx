@@ -102,7 +102,7 @@ export function ModalShell({
           {...ariaProps}
           className={cx(
             "fixed right-0 top-14 bottom-0 z-50 w-[300px] max-w-[85vw] overflow-y-auto",
-            "bg-plate border-l border-hair-strong shadow-2xl",
+            "bg-plate border-l border-hair-strong shadow-2xl anim-drawer-in",
             className,
           )}
         >
@@ -133,7 +133,7 @@ export function ModalShell({
         {...ariaProps}
         className={cx(
           sizeClass[size],
-          "bg-plate border border-hair-strong rounded-md shadow-2xl anim-pal-scale",
+          "bg-plate border border-hair-strong rounded-md shadow-2xl anim-modal-in",
           "flex flex-col overflow-hidden",
           className,
         )}

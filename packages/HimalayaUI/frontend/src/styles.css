@@ -242,6 +242,33 @@
     animation: overlay-fade-in 140ms ease both;
   }
 
+  /*
+   * AN-MOTION (expressive entrances) — the app's transient surfaces enter with
+   * a livelier, more "designed" motion instead of snapping. The back-ease
+   * `cubic-bezier(.34,1.26,.64,1)` carries a SINGLE small overshoot (≈3%) that
+   * reads as a gentle spring — NOT an elastic multi-oscillation (design law:
+   * no bounce/elastic). Drawer/scrim use a pure strong ease-out (a sliding
+   * panel overshooting looks like a glitch). All are one-shot mount entrances;
+   * the `prefers-reduced-motion: reduce` block below near-zeros them. The
+   * smaller `.anim-pal-scale` stays the snappy popover/dropdown entry — these
+   * are for the bigger, more consequential surfaces (modals, toasts).
+   */
+  @keyframes modal-in {
+    from { opacity: 0; transform: translateY(10px) scale(0.94); }
+    to   { opacity: 1; transform: none; }
+  }
+  @keyframes toast-in {
+    from { opacity: 0; transform: translateX(18px) scale(0.96); }
+    to   { opacity: 1; transform: none; }
+  }
+  @keyframes drawer-in {
+    from { opacity: 0.4; transform: translateX(28px); }
+    to   { opacity: 1;   transform: none; }
+  }
+  .anim-modal-in  { animation: modal-in  240ms cubic-bezier(0.34, 1.26, 0.64, 1) both; }
+  .anim-toast-in  { animation: toast-in  240ms cubic-bezier(0.34, 1.26, 0.64, 1) both; }
+  .anim-drawer-in { animation: drawer-in 260ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+
   /* State taxonomy — focus-visible (DESIGN.md): every bespoke button/link gets
      the keyboard-only accent ring by default. Primitives that refine it (ghost
      1px, etc.) win via the utilities layer — but layer override is PER-PROPERTY:
