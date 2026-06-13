@@ -1,8 +1,5 @@
 import { Routes, Route, Navigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
 import { useAppState } from "../../state";
-import { queryKeys } from "../../queries";
-import * as api from "../../api";
 import { useGlobalShortcuts } from "../../hooks/useGlobalShortcuts";
 import { CorpusShell } from "./CorpusShell";
 import { SamplesPage } from "../pages/SamplesPage";
@@ -59,32 +56,16 @@ function PageBody(): JSX.Element {
  * under them and races the redirect.
  */
 export function AppRoutes(): JSX.Element {
-  const experimentId = useAppState((s) => s.activeExperimentId);
-
   // R0a (#221): the theme-class effect is gone. "The Print" is the single
   // identity defined statically in styles.css `@theme`; there is no
   // `theme-light` class to toggle on <html>.
 
   // Global keyboard shortcuts — hoisted above the shell so they work app-wide.
-  // The `,`/`.` sample step needs this per-experiment samples list only on the
-  // CORPUS surfaces (store-driven branch); on the focus route (/sample/:id) it
-  // derives the active sample's experiment-siblings from the corpus cache via
-  // useExperimentSiblings (F5 — the shared derivation behind the topbar
-  // stepper), so it works there even when activeExperimentId was never set.
-  // They fire under the corpus shell (e.g. on /samples). #160 (contact sheet)
-  // should be aware of this when landing — shortcuts may need guarding there.
-  //
-  // Gated on an active experiment via `useQuery` directly — `useSamples`
-  // exposes no `enabled` option, and without the gate this fires GET
-  // /api/samples?experiment=0 on every cold mount before an experiment is picked.
-  const samplesQuery = useQuery({
-    queryKey: queryKeys.samples(experimentId),
-    queryFn: () => api.listSamples(experimentId as number),
-    enabled: experimentId !== undefined,
-  });
-  useGlobalShortcuts(
-    experimentId === undefined ? undefined : samplesQuery.data,
-  );
+  // KEYS-LIB step 2: this now binds only the find/jump chord (`/`, `⌘K`); the
+  // sample step `[`/`]` and every other gesture are surface-owned through the
+  // shortcut library (print/shell/shortcuts.ts), so the per-experiment samples
+  // list this used to thread for the old `,`/`.` stepper is no longer needed.
+  useGlobalShortcuts();
 
   return (
     <Routes>

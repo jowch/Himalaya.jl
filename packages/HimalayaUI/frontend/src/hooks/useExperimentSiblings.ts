@@ -9,13 +9,13 @@ import {
 /**
  * useExperimentSiblings — the live wiring of `deriveExperimentSiblings`:
  * corpus cache (TanStack) × active sample (Zustand). F5: shared by the topbar
- * sample stepper AND the `,`/`.` focus-route shortcut so both step through the
- * identical sibling list. Deliberately does NOT depend on `activeExperimentId`
- * (only the NavModal picker / recoverFromStaleUrl write that) — the experiment
- * scope comes from the active sample's own `experiment_id`.
+ * sample stepper AND the Focus `[`/`]` sample step (FocusPage, via useShortcuts)
+ * so both step through the identical sibling list. Deliberately does NOT depend
+ * on `activeExperimentId` (only the NavModal picker / recoverFromStaleUrl write
+ * that) — the experiment scope comes from the active sample's own `experiment_id`.
  *
- * Memoized so effect consumers (useGlobalShortcuts) re-subscribe only when the
- * corpus list or the active sample actually changes.
+ * Memoized so effect consumers re-subscribe only when the corpus list or the
+ * active sample actually changes.
  */
 export function useExperimentSiblings(): ExperimentSiblings {
   const corpusQ = useCorpusSamples();

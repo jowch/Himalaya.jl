@@ -32,8 +32,6 @@ function sample(id: number, experiment_id = 1): Sample {
     notes: null, tags: [], q_units: "A-1" } as Sample;
 }
 
-// The corpus list the focus-route step derives its siblings from (F5): same
-// rows as the per-experiment list, in corpus order, as CorpusSample.
 function corpusOf(...samples: Sample[]): CorpusSample[] {
   return samples as CorpusSample[];
 }
@@ -44,41 +42,39 @@ function clientWithCorpus(corpus: CorpusSample[]): QueryClient {
   return client;
 }
 
-// Renders the hook alongside a pathname probe so a test can observe whether the
-// ,/. shortcut navigated the URL (focus route) vs. only set store state.
-function Harness({ samples }: { samples: Sample[] | undefined }): JSX.Element {
-  useGlobalShortcuts(samples);
+// Renders the hook alongside a pathname probe so a test can observe whether a
+// key navigated the URL (focus route) vs. only set store state.
+function Harness(): JSX.Element {
+  useGlobalShortcuts();
   const loc = useLocation();
   return <div data-testid="pathname">{loc.pathname}</div>;
 }
 
 // I5.1 (#182): the dual-nav `activePage` model + its ArrowLeft/Right page-tab
-// step are deleted. The arrow keys are no longer bound by useGlobalShortcuts,
-// so corpus surfaces (e.g. the loupe at /samples/loupe/:id) own them outright.
-// These tests guard against a regression that re-binds them globally.
+// step are deleted. The arrow keys are not bound by useGlobalShortcuts, so
+// surfaces (Loupe frames, Focus exposures) own them outright via the shortcut
+// library. These tests guard against a regression that re-binds them globally.
 describe("useGlobalShortcuts — arrow keys are unbound (no page-tab step)", () => {
   beforeEach(() => {
     useAppState.setState({ activeSampleId: undefined });
   });
 
-  it("does not mutate any nav state on a corpus route (loupe owns the arrows)", () => {
+  it("does not mutate any nav state on a corpus route (the surface owns the arrows)", () => {
     const before = useAppState.getState();
-    renderHook(() => useGlobalShortcuts(undefined), {
+    renderHook(() => useGlobalShortcuts(), {
       wrapper: wrapperAt("/samples/loupe/7"),
     });
     fireEvent.keyDown(document.body, { key: "ArrowRight" });
     fireEvent.keyDown(document.body, { key: "ArrowLeft" });
     const after = useAppState.getState();
-    // The hook must not touch the active ids on an arrow press.
     expect(after.activeSampleId).toBe(before.activeSampleId);
     expect(after.activeExperimentId).toBe(before.activeExperimentId);
   });
 
   it("is a no-op on a non-corpus route too (no global arrow binding remains)", () => {
-    renderHook(() => useGlobalShortcuts(undefined), {
+    renderHook(() => useGlobalShortcuts(), {
       wrapper: wrapperAt("/totally/unknown"),
     });
-    // Should neither throw nor mutate state.
     expect(() => {
       fireEvent.keyDown(document.body, { key: "ArrowRight" });
       fireEvent.keyDown(document.body, { key: "ArrowLeft" });
@@ -86,163 +82,85 @@ describe("useGlobalShortcuts — arrow keys are unbound (no page-tab step)", () 
   });
 
   // R0a (#221): the `T` theme-toggle shortcut is retired with the dark theme.
-  // Pressing T must no longer mutate any store state (no `theme` field exists).
   it("does not bind T (theme toggle retired with the dark theme)", () => {
-    renderHook(() => useGlobalShortcuts(undefined), {
+    renderHook(() => useGlobalShortcuts(), {
       wrapper: wrapperAt("/samples"),
     });
     const before = useAppState.getState();
-    expect("theme" in (before as Record<string, unknown>)).toBe(false);
+    expect("theme" in (before as unknown as Record<string, unknown>)).toBe(false);
     expect(() => {
       fireEvent.keyDown(document.body, { key: "T" });
       fireEvent.keyDown(document.body, { key: "t" });
     }).not.toThrow();
-    // No store mutation from T.
     expect(useAppState.getState().activeSampleId).toBe(before.activeSampleId);
   });
 });
 
-// F5: on the focus route the step derives the active sample's
-// experiment-siblings from the CORPUS cache (the same shared derivation the
-// topbar stepper uses) — NOT from the `samplesInExperiment` parameter, which
-// is undefined whenever `activeExperimentId` was never set (direct visit /
-// door entry; only the NavModal picker and recoverFromStaleUrl write it).
-describe("useGlobalShortcuts — ,/. sample step (focus route, corpus-derived)", () => {
+// KEYS-LIB step 2: `,`/`.` is RETIRED as the sample stepper. `[`/`]` is now the
+// one sample-step gesture, owned by the surfaces that have it (Loupe, Focus) via
+// the shortcut library — NOT by this global hook. useGlobalShortcuts keeps only
+// the find/nav-modal chord. These tests pin that `,`/`.` (and `[`/`]`) do
+// nothing here: the focus-route case SEEDS the corpus so the retired code path
+// WOULD have navigated — proving the binding is gone, not merely dormant.
+describe("useGlobalShortcuts — ,/. sample step is retired (page owns [ ])", () => {
   const CORPUS = corpusOf(sample(10), sample(11), sample(12), sample(90, 2));
 
   beforeEach(() => {
     useAppState.setState({ activeSampleId: 11 });
   });
 
-  it("navigates to the next sibling URL on '.' from /sample/:id with NO samplesInExperiment", () => {
-    render(<Harness samples={undefined} />, {
+  it("does not navigate on '.' from /sample/:id even with a seeded corpus", () => {
+    render(<Harness />, {
       wrapper: wrapperAt("/sample/11", clientWithCorpus(CORPUS)),
     });
     fireEvent.keyDown(document.body, { key: "." });
-    expect(screen.getByTestId("pathname")).toHaveTextContent("/sample/12");
-  });
-
-  it("navigates to the previous sibling URL on ',' from /sample/:id with NO samplesInExperiment", () => {
-    render(<Harness samples={undefined} />, {
-      wrapper: wrapperAt("/sample/11", clientWithCorpus(CORPUS)),
-    });
-    fireEvent.keyDown(document.body, { key: "," });
-    expect(screen.getByTestId("pathname")).toHaveTextContent("/sample/10");
-  });
-
-  it("steps only within the active sample's experiment (corpus order, no cross-experiment leak)", () => {
-    useAppState.setState({ activeSampleId: 12 });
-    render(<Harness samples={undefined} />, {
-      wrapper: wrapperAt("/sample/12", clientWithCorpus(CORPUS)),
-    });
-    // sample 12 is the last of experiment 1; sample 90 (experiment 2) follows
-    // it in corpus order but is NOT a sibling — the step must not wrap or leak.
-    fireEvent.keyDown(document.body, { key: "." });
-    expect(screen.getByTestId("pathname")).toHaveTextContent("/sample/12");
-  });
-
-  it("does not wrap past the first sample on the focus route", () => {
-    useAppState.setState({ activeSampleId: 10 });
-    render(<Harness samples={undefined} />, {
-      wrapper: wrapperAt("/sample/10", clientWithCorpus(CORPUS)),
-    });
-    fireEvent.keyDown(document.body, { key: "," });
-    expect(screen.getByTestId("pathname")).toHaveTextContent("/sample/10");
-  });
-
-  it("no-ops gracefully when the corpus cache is cold", () => {
-    render(<Harness samples={undefined} />, {
-      wrapper: wrapperAt("/sample/11", makeClient()),
-    });
-    expect(() => {
-      fireEvent.keyDown(document.body, { key: "." });
-      fireEvent.keyDown(document.body, { key: "," });
-    }).not.toThrow();
     expect(screen.getByTestId("pathname")).toHaveTextContent("/sample/11");
   });
 
-  it("no-ops gracefully when the active sample is unknown to the corpus", () => {
-    useAppState.setState({ activeSampleId: 99999 });
-    render(<Harness samples={undefined} />, {
-      wrapper: wrapperAt("/sample/99999", clientWithCorpus(CORPUS)),
-    });
-    fireEvent.keyDown(document.body, { key: "." });
-    expect(screen.getByTestId("pathname")).toHaveTextContent("/sample/99999");
-  });
-
-  it("F-STALEURL: bogus /sample/:id URL with a stale VALID store sample -> '.' no-ops", () => {
-    // Mid-session navigation to /sample/99999 never seeds the store, so the
-    // previous valid activeSampleId (11) survives. The topbar hides its
-    // stepper via resolveRouteSampleStatus; the shortcut must gate on the
-    // SAME predicate — otherwise it would invisibly step relative to a sample
-    // the URL does not show, out of a "Sample not found" page.
-    useAppState.setState({ activeSampleId: 11 });
-    render(<Harness samples={undefined} />, {
-      wrapper: wrapperAt("/sample/99999", clientWithCorpus(CORPUS)),
-    });
-    fireEvent.keyDown(document.body, { key: "." });
-    expect(screen.getByTestId("pathname")).toHaveTextContent("/sample/99999");
-    fireEvent.keyDown(document.body, { key: "," });
-    expect(screen.getByTestId("pathname")).toHaveTextContent("/sample/99999");
-  });
-
-  it("F-STALEURL: non-numeric /sample/:id with a stale valid store sample -> '.' no-ops", () => {
-    useAppState.setState({ activeSampleId: 11 });
-    render(<Harness samples={undefined} />, {
-      wrapper: wrapperAt("/sample/not-a-number", clientWithCorpus(CORPUS)),
-    });
-    fireEvent.keyDown(document.body, { key: "." });
-    expect(screen.getByTestId("pathname")).toHaveTextContent("/sample/not-a-number");
-  });
-
-  it("ignores the samplesInExperiment parameter on the focus route (corpus wins)", () => {
-    // A stale per-experiment list (e.g. from a previously-picked experiment)
-    // must not drive the focus-route step — the corpus-derived siblings do.
-    const staleOtherExperiment = [sample(90, 2), sample(91, 2)];
-    render(<Harness samples={staleOtherExperiment} />, {
+  it("does not navigate on ',' from /sample/:id even with a seeded corpus", () => {
+    render(<Harness />, {
       wrapper: wrapperAt("/sample/11", clientWithCorpus(CORPUS)),
     });
-    fireEvent.keyDown(document.body, { key: "." });
-    expect(screen.getByTestId("pathname")).toHaveTextContent("/sample/12");
-  });
-});
-
-// Corpus surfaces keep the store-driven, samplesInExperiment-parameterized step.
-describe("useGlobalShortcuts — ,/. sample step (corpus surfaces, store-driven)", () => {
-  const SAMPLES = [sample(10), sample(11), sample(12)];
-
-  beforeEach(() => {
-    useAppState.setState({ activeSampleId: 11 });
-  });
-
-  it("on a corpus route, '.' sets store state without navigating", () => {
-    render(<Harness samples={SAMPLES} />, { wrapper: wrapperAt("/samples") });
-    fireEvent.keyDown(document.body, { key: "." });
-    // Store advanced, URL unchanged (corpus surfaces are store-driven).
-    expect(useAppState.getState().activeSampleId).toBe(12);
-    expect(screen.getByTestId("pathname")).toHaveTextContent("/samples");
-  });
-
-  it("on a corpus route, ',' steps the store back without navigating", () => {
-    render(<Harness samples={SAMPLES} />, { wrapper: wrapperAt("/samples") });
     fireEvent.keyDown(document.body, { key: "," });
-    expect(useAppState.getState().activeSampleId).toBe(10);
-    expect(screen.getByTestId("pathname")).toHaveTextContent("/samples");
+    expect(screen.getByTestId("pathname")).toHaveTextContent("/sample/11");
+  });
+
+  it("does not change the active sample on a corpus route via '.' or ','", () => {
+    render(<Harness />, { wrapper: wrapperAt("/samples", clientWithCorpus(CORPUS)) });
+    fireEvent.keyDown(document.body, { key: "." });
+    fireEvent.keyDown(document.body, { key: "," });
+    expect(useAppState.getState().activeSampleId).toBe(11);
+  });
+
+  it("does not bind [ or ] globally (the sample step is page-owned, not global)", () => {
+    render(<Harness />, {
+      wrapper: wrapperAt("/sample/11", clientWithCorpus(CORPUS)),
+    });
+    fireEvent.keyDown(document.body, { key: "[" });
+    fireEvent.keyDown(document.body, { key: "]" });
+    // No navigation and no store step from the global hook.
+    expect(screen.getByTestId("pathname")).toHaveTextContent("/sample/11");
+    expect(useAppState.getState().activeSampleId).toBe(11);
   });
 });
 
-// LO-KEYD: the shared suppressGlobalKeys guard must NOT swallow modifier
-// chords — ⌘K is the one binding here that REQUIRES metaKey to pass through.
-describe("useGlobalShortcuts — ⌘K passes the suppression guard", () => {
+// The find/jump chord is the ONE binding useGlobalShortcuts keeps. LO-KEYD: the
+// shared suppressGlobalKeys guard must NOT swallow modifier chords — ⌘K is the
+// one binding here that REQUIRES metaKey to pass through.
+describe("useGlobalShortcuts — find/nav-modal chord (⌘K and /)", () => {
   beforeEach(() => {
     useAppState.setState({ navModalOpen: false, activeExperimentId: undefined });
   });
 
   it("opens the nav modal on ⌘K from a non-editing target", () => {
-    renderHook(() => useGlobalShortcuts(undefined), {
-      wrapper: wrapperAt("/samples"),
-    });
+    renderHook(() => useGlobalShortcuts(), { wrapper: wrapperAt("/samples") });
     fireEvent.keyDown(document.body, { key: "k", metaKey: true });
+    expect(useAppState.getState().navModalOpen).toBe(true);
+  });
+
+  it("opens the nav modal on '/' from a non-editing target", () => {
+    renderHook(() => useGlobalShortcuts(), { wrapper: wrapperAt("/samples") });
+    fireEvent.keyDown(document.body, { key: "/" });
     expect(useAppState.getState().navModalOpen).toBe(true);
   });
 });
