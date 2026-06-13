@@ -185,3 +185,26 @@ describe("<StatusCell> noExposures (SA-ZEROEXP)", () => {
     expect(screen.queryByTestId("phase-chip")).not.toBeInTheDocument();
   });
 });
+
+describe("<StatusCell> door invite (SA-RESCORE3 F9)", () => {
+  it("an unindexed DOOR reads as an 'Index' invitation, not a dead 'Not indexed' status", () => {
+    const { container } = render(<StatusCell phase={null} door />);
+    const invite = container.querySelector("[data-role='status-index-invite']");
+    expect(invite).toBeInTheDocument();
+    expect(invite).toHaveTextContent("Index");
+    // The passive status must not also render — the door affords its action.
+    expect(container.querySelector("[data-role='status-unset']")).not.toBeInTheDocument();
+  });
+
+  it("a non-door unindexed cell keeps the passive 'Not indexed' status (no false invite)", () => {
+    const { container } = render(<StatusCell phase={null} />);
+    expect(container.querySelector("[data-role='status-unset']")).toBeInTheDocument();
+    expect(container.querySelector("[data-role='status-index-invite']")).not.toBeInTheDocument();
+  });
+
+  it("an indexed door keeps the PhaseChip (already an obvious open affordance)", () => {
+    render(<StatusCell phase="Pn3m" door />);
+    expect(screen.getByTestId("phase-chip")).toBeInTheDocument();
+    expect(screen.queryByText(/^Index$/)).not.toBeInTheDocument();
+  });
+});

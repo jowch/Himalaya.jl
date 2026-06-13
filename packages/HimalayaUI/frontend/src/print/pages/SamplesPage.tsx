@@ -489,6 +489,11 @@ export function SamplesPage(): JSX.Element {
         )}
 
         {/* ── Footer keyboard legend ────────────────────────────────────────── */}
+        {/* SA-RESCORE3 F11: the legend documents cell navigation / selection —
+            meaningless under an empty, errored, or unknown-beamtime table (all
+            of which leave sortedSamples empty). Render it only when there are
+            rows to drive. */}
+        {sortedSamples.length > 0 && (
         <KbLegend
           className="mt-4"
           shortcuts={[
@@ -504,6 +509,7 @@ export function SamplesPage(): JSX.Element {
             { keyLabel: "⌘K", description: "find a sample" },
           ]}
         />
+        )}
       </div>
 
       {/* ── Floating cull bar (page root) ─────────────────────────────────────── */}

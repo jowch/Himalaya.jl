@@ -113,17 +113,35 @@ export function Thumbnail({
 
       {/* Frame-number label */}
       {frameNo != null && (
-        <span
-          data-role="thumb-fno"
-          className={`absolute left-1 bottom-0.5 font-mono text-frame-tag text-xs${rejected ? " opacity-50" : " opacity-80"}`}
-        >
-          {frameNo}
-        </span>
+        <>
+          {/* SA-RESCORE3 F10: a soft bottom scrim so the mono frame number stays
+              legible over BRIGHT/busy detector content. The mockup assumed
+              uniform-dark frames (no scrim); real frames can be bright enough to
+              wash out the light caption. Gradient up from the frame-edge token
+              (the window backing) — token-based, no raw literal. */}
+          <span
+            aria-hidden="true"
+            data-role="thumb-fno-scrim"
+            className="pointer-events-none absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-frame-edge/85 to-transparent"
+          />
+          <span
+            data-role="thumb-fno"
+            className={`absolute left-1 bottom-0.5 font-mono text-frame-tag text-xs${rejected ? " opacity-50" : " opacity-80"}`}
+          >
+            {frameNo}
+          </span>
+        </>
       )}
 
-      {/* Representative marker */}
+      {/* Representative marker. SA-RESCORE3 F8: the meaning lived only in the
+          button's aria-label (SR-only); a sighted mouse user saw an unexplained
+          dot. A `title` surfaces it on hover too. */}
       {representative && (
-        <span data-role="thumb-rep" className="absolute top-0.5 right-0.5 flex">
+        <span
+          data-role="thumb-rep"
+          title="Representative exposure"
+          className="absolute top-0.5 right-0.5 flex"
+        >
           <Dot tone="accent" size="md" bordered aria-hidden="true" />
         </span>
       )}
@@ -131,7 +149,11 @@ export function Thumbnail({
       {/* Kept (screened-in) marker — top-LEFT so a representative-and-kept
           frame shows both corners (bottom-left belongs to the frame number). */}
       {showKept && (
-        <span data-role="thumb-kept" className="absolute top-0.5 left-0.5 flex">
+        <span
+          data-role="thumb-kept"
+          title="Kept (screened in)"
+          className="absolute top-0.5 left-0.5 flex"
+        >
           <Dot tone="success" size="md" bordered aria-hidden="true" />
         </span>
       )}

@@ -65,6 +65,30 @@ describe("<Thumbnail> frameNo", () => {
     const fno = screen.getByText("0");
     expect(fno).toHaveAttribute("data-role", "thumb-fno");
   });
+
+  it("pairs the frame number with a legibility scrim over busy frames (SA-RESCORE3 F10)", () => {
+    const { container } = render(<Thumbnail src={null} frameNo={65} />);
+    expect(container.querySelector("[data-role='thumb-fno-scrim']")).toBeInTheDocument();
+  });
+
+  it("renders no scrim when there is no frame number", () => {
+    const { container } = render(<Thumbnail src={null} />);
+    expect(container.querySelector("[data-role='thumb-fno-scrim']")).not.toBeInTheDocument();
+  });
+});
+
+describe("<Thumbnail> marker meaning (SA-RESCORE3 F8)", () => {
+  it("the representative marker carries a hover title naming its meaning (not aria-label only)", () => {
+    const { container } = render(<Thumbnail src={null} representative />);
+    const rep = container.querySelector("[data-role='thumb-rep']");
+    expect(rep).toHaveAttribute("title", "Representative exposure");
+  });
+
+  it("the kept marker carries a hover title naming its meaning", () => {
+    const { container } = render(<Thumbnail src={null} kept />);
+    const keptMarker = container.querySelector("[data-role='thumb-kept']");
+    expect(keptMarker).toHaveAttribute("title", "Kept (screened in)");
+  });
 });
 
 describe("<Thumbnail> rejected dimming", () => {

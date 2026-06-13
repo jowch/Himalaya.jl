@@ -397,7 +397,7 @@ export function SampleTableRow({
                 ? { tabIndex: tab(COL_STATUS) ?? -1, ref: cellRef(COL_STATUS) as React.Ref<HTMLButtonElement>, onMouseDown: activatePointer(COL_STATUS) }
                 : {})}
             >
-              <StatusCell {...(phase !== undefined ? { phase } : {})} />
+              <StatusCell door {...(phase !== undefined ? { phase } : {})} />
             </button>
           ) : (
             <StatusCell

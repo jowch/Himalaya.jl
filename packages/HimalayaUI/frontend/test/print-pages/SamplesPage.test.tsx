@@ -537,6 +537,15 @@ describe("SamplesPage", () => {
     expect(corpusRefetch).toHaveBeenCalled();
   });
 
+  it("SA-RESCORE3 F11: the keyboard legend is hidden when there are no rows to navigate", () => {
+    state.samples = [];
+    state.byId = new Map();
+    renderAt("/samples");
+    // The cell-navigation legend is meaningless under an empty table — suppress it.
+    expect(screen.getByTestId("sheet-empty")).toBeInTheDocument();
+    expect(screen.queryByTestId("kb-legend")).toBeNull();
+  });
+
   it("error state renders an EmptyState with a retry control wired to refetch (SA-RETRY)", () => {
     state.error = true;
     renderAt("/samples");
