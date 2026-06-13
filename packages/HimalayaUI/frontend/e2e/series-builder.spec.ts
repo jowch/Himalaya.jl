@@ -7,11 +7,12 @@ import { test, expect, type Page } from "@playwright/test";
 // The greenfield page is a LAZY-DRAFT surface on a single always-"Compose"
 // screen:
 //   • Opening /series/:id renders the committed series READ-ONLY. The rail's
-//     "Confirm series" button is present but DISABLED (no live draft → no
-//     onConfirm), and "Adjust" is the entry point.
+//     "Save changes" button is present but DISABLED (no live draft → no
+//     onConfirm), and "Edit" is the entry point. (BU-AUTOGROUP-STALE renamed the
+//     verbs from the old "Confirm series" / "Adjust".)
 //   • The FIRST recipe edit (title edit OR add-sample) silently STARTS a draft
-//     → "Confirm series" becomes ENABLED + a Cancel button appears.
-//   • "Confirm series" = a Save→Commit CHAIN: PATCH /api/series/:id (save,
+//     → "Save changes" becomes ENABLED + a Cancel button appears.
+//   • "Save changes" = a Save→Commit CHAIN: PATCH /api/series/:id (save,
 //     persists the RECIPE) THEN, on its success, POST /api/series/:id/commit
 //     with the plate RESOLVED FROM THE SAVED RECIPE (recipe samples → picker
 //     indexing exposures; the PATCH does not rebuild members — BU-RECIPENOOP).
@@ -22,8 +23,8 @@ import { test, expect, type Page } from "@playwright/test";
 //
 // Selectors are taken verbatim from the component test
 // (test/print-pages/SeriesBuilderPage.test.tsx): series-plate, series-member-row,
-// builder-add-sample-select, aria-label="Series title", role=button names
-// "Confirm series" / "Adjust" / "Cancel".
+// builder-add-sample (+ add-opt-<id>), aria-label="Series title", role=button names
+// "Save changes" / "Edit" / "Cancel".
 
 const MEMBER = {
   id: 1, series_id: 5, exposure_id: 101, display_order: 0,
@@ -126,11 +127,11 @@ test.describe("series builder — greenfield DOM", () => {
     await expect(page.getByTestId("series-plate")).toBeVisible();
     // The committed title surfaces in the editable plate-title field.
     await expect(page.getByLabel(/series title/i)).toHaveValue("LL37 titration");
-    // Read state: "Adjust" is the live entry point; no Cancel (no draft).
-    await expect(page.getByRole("button", { name: /adjust/i })).toBeVisible();
+    // Read state: "Edit" is the live entry point; no Cancel (no draft).
+    await expect(page.getByRole("button", { name: /^edit$/i })).toBeVisible();
     await expect(page.getByRole("button", { name: /^cancel$/i })).toHaveCount(0);
     // controls-don't-lie: "Confirm series" is present but DISABLED in read state.
-    await expect(page.getByRole("button", { name: /confirm series/i })).toBeDisabled();
+    await expect(page.getByRole("button", { name: /save changes/i })).toBeDisabled();
     // No separate Save button and no conflict modal in the read-state DOM.
     await expect(page.getByRole("button", { name: /^save$/i })).toHaveCount(0);
     await expect(page.getByTestId("conflict-modal")).toHaveCount(0);
@@ -141,13 +142,16 @@ test.describe("series builder — greenfield DOM", () => {
     await seedState(page);
     await page.goto("/series/5");
 
-    await expect(page.getByRole("button", { name: /confirm series/i })).toBeDisabled();
+    await expect(page.getByRole("button", { name: /save changes/i })).toBeDisabled();
 
-    // Add the only addable corpus sample (id 20 — sample 10 is already in the recipe).
-    await page.getByTestId("builder-add-sample-select").selectOption("20");
+    // Add the only addable corpus sample (id 20 — sample 10 is already in the
+    // recipe). The add affordance is a search-first picker: open it, then pick
+    // the option (builder-add-sample trigger → add-opt-<sampleId>).
+    await page.getByTestId("builder-add-sample").click();
+    await page.getByTestId("add-opt-20").click();
 
     // The draft is now live: Confirm enables, Cancel appears, an editable recipe row renders.
-    await expect(page.getByRole("button", { name: /confirm series/i })).toBeEnabled();
+    await expect(page.getByRole("button", { name: /save changes/i })).toBeEnabled();
     await expect(page.getByRole("button", { name: /^cancel$/i })).toBeVisible();
     await expect(page.getByTestId("builder-recipe-row")).toHaveCount(2);
   });
@@ -189,7 +193,7 @@ test.describe("series builder — greenfield DOM", () => {
 
     // Start a draft via a title edit, then Confirm.
     await page.getByLabel(/series title/i).fill("LL37 titration v2");
-    const confirm = page.getByRole("button", { name: /confirm series/i });
+    const confirm = page.getByRole("button", { name: /save changes/i });
     await expect(confirm).toBeEnabled();
     await confirm.click();
 
@@ -206,7 +210,7 @@ test.describe("series builder — greenfield DOM", () => {
     expect(commitBody!.members!.map((m) => m.exposure_id)).toEqual([101, 202]);
 
     // After commit success the page returns to read state: Confirm DISABLED, no Cancel.
-    await expect(page.getByRole("button", { name: /confirm series/i })).toBeDisabled();
+    await expect(page.getByRole("button", { name: /save changes/i })).toBeDisabled();
     await expect(page.getByRole("button", { name: /^cancel$/i })).toHaveCount(0);
   });
 
@@ -236,11 +240,11 @@ test.describe("series builder — greenfield DOM", () => {
 
     // Start a draft, then cancel it.
     await page.getByLabel(/series title/i).fill("scratch edit");
-    await expect(page.getByRole("button", { name: /confirm series/i })).toBeEnabled();
+    await expect(page.getByRole("button", { name: /save changes/i })).toBeEnabled();
     await page.getByRole("button", { name: /^cancel$/i }).click();
 
     // Back to read state, with no request fired.
-    await expect(page.getByRole("button", { name: /confirm series/i })).toBeDisabled();
+    await expect(page.getByRole("button", { name: /save changes/i })).toBeDisabled();
     await expect(page.getByRole("button", { name: /^cancel$/i })).toHaveCount(0);
     expect(patched).toBe(false);
     expect(committed).toBe(false);
@@ -257,7 +261,7 @@ test.describe("series builder — greenfield DOM", () => {
 
     // Draft state — still no Save button, still no conflict modal.
     await page.getByLabel(/series title/i).fill("x");
-    await expect(page.getByRole("button", { name: /confirm series/i })).toBeEnabled();
+    await expect(page.getByRole("button", { name: /save changes/i })).toBeEnabled();
     await expect(page.getByRole("button", { name: /^save$/i })).toHaveCount(0);
     await expect(page.getByTestId("conflict-modal")).toHaveCount(0);
   });

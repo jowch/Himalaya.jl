@@ -110,12 +110,15 @@ test.describe("series scoping — greenfield DOM", () => {
     await expect(page.getByTestId("scope-candidates")).toBeVisible();
     await expect(page.getByTestId("scope-candidate")).toHaveCount(1);
 
-    // Candidate ROWS carry NO control at all (Option A: candidates are
-    // discovery-only; any button on a row would imply an add path). The only
-    // button in the section is the note's contact-sheet navigation control.
-    await expect(
-      page.getByTestId("scope-candidate").getByRole("button"),
-    ).toHaveCount(0);
+    // SCOPE-LOOSEADD: a loose candidate is actionable — it offers a value field
+    // plus an "Add to series" button, GATED (disabled) until a value is named so
+    // a value-less add can never commit value:"" (controls-don't-lie). The note
+    // still carries the contact-sheet door for the hidden remainder.
+    const addToSeries = page
+      .getByTestId("scope-candidate")
+      .getByRole("button", { name: /add to series/i });
+    await expect(addToSeries).toBeVisible();
+    await expect(addToSeries).toBeDisabled();
     await expect(
       page.getByTestId("scope-candidates-note").getByRole("button", { name: /open the contact sheet/i }),
     ).toBeVisible();
