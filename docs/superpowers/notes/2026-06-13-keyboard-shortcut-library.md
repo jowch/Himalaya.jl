@@ -82,3 +82,45 @@ supplies only the steps it has; the gesture is always `Esc`.
 5. **Builder**: `⌘Z` undo.
 6. **Samples**: legend hint for `x`/`k` when nothing is selected.
 7. Migrate Loupe/Samples ad-hoc handlers onto `useShortcuts` (consolidation).
+
+## Progress / RESUME HERE (2026-06-13, branch `greenfield-ui-rebuild`)
+
+Implemented so far (each its own commit, full gate green at each):
+- **Step 1 — foundation**: `6a97005`. `shortcuts.ts` registry + `useShortcuts`
+  (incl. the `false`-return DECLINE convention for the Esc ladder).
+- **Step 3 — Focus two-axis model**: `329c93c` (built before steps 4-6 per
+  Jonathan's ordering). `[`/`]` sample · `←`/`→` exposure · `↑`/`↓` candidate
+  preview (page-level `previewIndexId` + a neutral `previewed` ring on Card) ·
+  `Esc` ladder (modal → TracePlate disarm → clear preview → back to /samples) ·
+  stepper `aria-keyshortcuts`. **LIVE-VERIFY STILL PENDING** — Playwright MCP was
+  down when this landed; feel the whole model in the browser first thing.
+- **Step 2 — retire `,`/`.`**: `7eec3f2`. `useGlobalShortcuts` is now find/jump
+  (`/`, `⌘K`) ONLY; sample step is page-owned (`[`/`]` on Loupe/Focus); the
+  contact sheet uses ARIA grid roving. Param + dead route machinery removed.
+
+Key finding that resizes the remaining work — the impeccable polish loop
+(`cac7438`) already built most of the old "step 4 Scoping" item:
+- Scoping ALREADY has the visible **Undo** control (plate `onUndo` +
+  `Step back: <label>`), `⌘Z` (pure StrictMode-safe history), AND
+  keyboard-accessible reorder via **▲▼ Move up/Move down** buttons
+  (`onMoveBy → moveRow`, with live-region announcements). So **B6 is done**.
+- Builder likewise has ▲▼ Move up/Move down buttons (keyboard-accessible) but
+  NO `⌘Z` and NO `Alt+↑/↓`.
+
+So the genuinely-remaining keyboard work is just:
+- **`Alt+↑/↓` reorder power-gesture** mirroring the ▲▼ buttons on BOTH Scoping
+  (`ScopeSampleRow`/`moveRow`) and Builder (`reorderVisual`) — neither has it.
+  Bind via the registry's `reorderUp`/`reorderDown` (`Alt+ArrowUp/Down`).
+- **Builder `⌘Z`/`⌘⇧Z` undo** + a visible Undo control (registry-driven), to
+  match Scoping. Locked decision #3: undo extends to Builder.
+- **Samples**: a `<KbdLegend>` hint for `x`/`k` when nothing is selected.
+- **Consolidation (step 7)**: migrate Loupe + Samples ad-hoc keydown effects onto
+  `useShortcuts`, and add a registry-driven `<KbdLegend>` where each surface shows
+  its keys. (`<KbdLegend>` from step 1 is NOT built yet — defer to here.)
+
+Process for the restarted session: Playwright MCP died mid-session and only a
+session RESTART repopulates the tool index (see memory
+`feedback_playwright_mcp_session_desync`). After restart, verify Playwright is
+callable, then: live-verify the Focus model (`329c93c`) FIRST, then do the four
+items above each as TDD → gate → live-verify → commit. Live-audit harness:
+writable dev-DB copy on backend :8091 / vite :5182 (NEVER prod :8080).
