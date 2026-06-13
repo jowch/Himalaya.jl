@@ -14,9 +14,9 @@ export interface ColdAssignPanelProps {
   onKeyChange: (key: string) => void;
   onValueChange: (sampleId: number, value: string) => void;
   /** The intro paragraph under the kicker. Undefined renders the default
-   *  cold-corpus copy ("These samples share no tag key yet..."); an explicit
-   *  `null` suppresses the paragraph entirely (custom mode, where that copy
-   *  would be false); any other node renders in the same slot and typography. */
+   *  cold-corpus copy ("These samples share no ordering variable yet..."); an
+   *  explicit `null` suppresses the paragraph entirely (custom mode, where that
+   *  copy would be false); any other node renders in the same slot/typography. */
   intro?: ReactNode;
   /** PLACEMENT-ONLY. */
   className?: string;
@@ -47,8 +47,7 @@ export function ColdAssignPanel({
   const introNode =
     intro === undefined ? (
       <>
-        These samples share no tag key yet. Name the variable (e.g. "lipid ratio") and assign each
-        sample's value, then Confirm &amp; build.
+        These samples share no ordering variable yet. Name one and give each a value.
       </>
     ) : (
       intro

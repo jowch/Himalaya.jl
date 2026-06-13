@@ -908,8 +908,8 @@ export function SeriesScopingPage(): JSX.Element {
               </div>
               <div className="mt-6">
                 {/* intro={null}: the default cold-corpus paragraph ("These
-                    samples share no tag key yet...") would be false here, and
-                    the caption above already instructs. */}
+                    samples share no ordering variable yet...") would be false
+                    here, and the caption above already instructs. */}
                 <ColdAssignSection
                   rows={coldRows}
                   variableKey={coldKey}

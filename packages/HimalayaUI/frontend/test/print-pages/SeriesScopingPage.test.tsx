@@ -1042,7 +1042,9 @@ describe("SeriesScopingPage", () => {
     };
     renderPage([1, 2]);
     expect(screen.getByTestId("cold-scope-plate")).toBeInTheDocument();
-    expect(screen.getByText(/these samples share no tag key yet/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/these samples share no ordering variable yet/i),
+    ).toBeInTheDocument();
   });
 
   it("custom mode with zero members keeps Confirm & build disabled even after typing a key", () => {
