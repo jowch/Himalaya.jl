@@ -99,8 +99,9 @@ export function TracePlate({
       };
 
   // ── armed add-at-q (keyboard parity for click-empty-space-adds) ────────────
-  // Validate against the trace's q extent: a peak outside the measured window
-  // would be unanchorable, so Add stays disabled there.
+  // Validate against the q extent the user can act on: a peak outside the
+  // measured trace would be unanchorable, and one outside the visible zoom
+  // window would be invisible (FO-ZOOMEDIT) — Add stays disabled in both cases.
   // Focus-re-anchor fallback target: when a destructive peak edit leaves no
   // surviving mark to take focus, the plot layer calls onFocusFallback and we
   // park focus on the "+ Peak" button (the keyboard user's last stable handle).
@@ -117,12 +118,20 @@ export function TracePlate({
     if (q < qMin) qMin = q;
     if (q > qMax) qMax = q;
   }
+  // FO-ZOOMEDIT: validate the add against the VISIBLE window, not the full
+  // trace extent. When zoomed (`xDomain` is a controlled sub-range), a q that
+  // is in the data but outside the window would add a peak you cannot see until
+  // you zoom out. Clamp the window into the data extent so the bound is never
+  // wider than the measured trace; with no zoom (`xDomain` null/omitted) it is
+  // exactly [qMin, qMax] — unchanged.
+  const addLo = xDomain ? Math.max(qMin, Math.min(xDomain[0], xDomain[1])) : qMin;
+  const addHi = xDomain ? Math.min(qMax, Math.max(xDomain[0], xDomain[1])) : qMax;
   const qParsed = Number(qText);
   const qValid =
     qText.trim() !== "" &&
     Number.isFinite(qParsed) &&
-    qParsed >= qMin &&
-    qParsed <= qMax;
+    qParsed >= addLo &&
+    qParsed <= addHi;
   const onAddPeakAtQ =
     addPeakArmed && interaction ? interaction.onAddPeak : undefined;
 
@@ -252,8 +261,8 @@ export function TracePlate({
                 type="number"
                 inputMode="decimal"
                 step="any"
-                min={qMin}
-                max={qMax}
+                min={addLo}
+                max={addHi}
                 mono
                 inputSize="sm"
                 invalid={qText.trim() !== "" && !qValid}

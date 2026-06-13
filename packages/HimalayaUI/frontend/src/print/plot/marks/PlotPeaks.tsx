@@ -89,7 +89,10 @@ export function PlotPeaks({
             `g[data-peak-id="${focusRequest.id}"]`,
           )
         : null;
-    if (target) target.focus();
+    // A survivor outside the zoom window renders non-focusable (no tabIndex —
+    // FO-ZOOMEDIT), so re-anchoring there would silently drop focus to <body>.
+    // Fall back to the "+ Peak" button in that case, same as a vanished mark.
+    if (target && target.getAttribute("tabindex") === "0") target.focus();
     else onFocusFallback?.();
   }, [focusRequest, onFocusFallback]);
 
@@ -119,6 +122,16 @@ export function PlotPeaks({
           ...(p.excluded ? { excluded: true } : {}),
           ...(p.hot ? { hot: true } : {}),
         });
+        // FO-ZOOMEDIT: a peak whose q falls outside the visible x-window (after
+        // a wheel-zoom) is clipped to invisibility — glyph AND focus ring both
+        // gone. Making it a tabbable role=button would seed an invisible tab
+        // stop (and pointer can't reach it either, so it would break parity).
+        // Detect off-window from the projection's own domain (d3 scales don't
+        // clamp, so x.to(q) lands outside the range) and drop its control role.
+        const xdom = x.domain;
+        const xLo = Math.min(xdom[0], xdom[1]);
+        const xHi = Math.max(xdom[0], xdom[1]);
+        const inWindow = p.q >= xLo && p.q <= xHi;
         // Hover q-link (onPeakFocus) and keyboard editing (onPeakActivate) are
         // independent gates. Only the latter makes the mark a real control —
         // tabIndex/role/name appear with it and vanish when editing disarms.
@@ -128,7 +141,7 @@ export function PlotPeaks({
               onBlur: () => onPeakFocus(null),
             }
           : {};
-        const activateAttrs = onPeakActivate
+        const activateAttrs = onPeakActivate && inWindow
           ? {
               tabIndex: 0,
               role: "button" as const,

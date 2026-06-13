@@ -279,6 +279,34 @@ describe("TracePlate", () => {
     expect(add).toBeDisabled();
   });
 
+  it("armed add-at-q while ZOOMED validates against the visible window, not the full extent (FO-ZOOMEDIT)", () => {
+    // Trace q spans [0.02, 0.2]; zoom the visible window to [0.04, 0.06]. A q of
+    // 0.1 is in the data but OFF-SCREEN — adding it would seed a peak invisible
+    // until zoom-out. The field must only accept q within what is currently
+    // shown.
+    const onAddPeak = vi.fn();
+    render(
+      <TracePlate
+        {...base}
+        addPeakArmed
+        xDomain={[0.04, 0.06]}
+        interaction={{ onXDomain: () => {}, onAddPeak }}
+      />,
+    );
+    const input = screen.getByLabelText("q value for new peak");
+    const add = screen.getByRole("button", { name: "Add peak at q" });
+    // In the data extent but outside the visible window → rejected.
+    fireEvent.change(input, { target: { value: "0.1" } });
+    expect(add).toBeDisabled();
+    fireEvent.click(add);
+    expect(onAddPeak).not.toHaveBeenCalled();
+    // Inside the visible window → accepted.
+    fireEvent.change(input, { target: { value: "0.05" } });
+    expect(add).toBeEnabled();
+    fireEvent.click(add);
+    expect(onAddPeak).toHaveBeenCalledWith(0.05);
+  });
+
   it("onClickPeak only: hint drops the add sentence and the add-at-q field", () => {
     // The hint promises only the wired verbs: with no onAddPeak, "Click the
     // trace to add a peak" would be false, and no field may promise an add

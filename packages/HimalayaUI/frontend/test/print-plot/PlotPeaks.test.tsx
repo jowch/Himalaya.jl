@@ -173,6 +173,36 @@ describe("PlotPeaks", () => {
     expect(peakG!.getAttribute("aria-keyshortcuts")).toBe("Enter Space Alt+Enter");
   });
 
+  it("a peak OUTSIDE the visible x-domain is not focusable even when armed (FO-ZOOMEDIT)", () => {
+    // proj's window is [0.1, 0.3]. A peak at q=0.5 maps off-window: its glyph
+    // and focus ring are clipped (invisible), so an armed role=button/tabindex
+    // would be a phantom tab stop with no visible target. The <g> still renders
+    // (data-peak-id is kept for the focus-re-anchor lookup) but is NOT a control.
+    const { container } = render(
+      <svg>
+        <PlotPeaks
+          peaks={[
+            { id: 1, q: 0.2, intensity: 20, source: "auto" },
+            { id: 2, q: 0.5, intensity: 20, source: "auto" },
+          ]}
+          projection={proj}
+          color="var(--color-accent)"
+          onPeakActivate={vi.fn()}
+        />
+      </svg>,
+    );
+    const inWindow = container.querySelector('g[data-peak-id="1"]');
+    const offWindow = container.querySelector('g[data-peak-id="2"]');
+    // In-window peak is a real, focusable control.
+    expect(inWindow!.getAttribute("tabindex")).toBe("0");
+    expect(inWindow!.getAttribute("role")).toBe("button");
+    // Off-window peak still renders (for re-anchor lookup) but is inert.
+    expect(offWindow).toBeTruthy();
+    expect(offWindow!.getAttribute("tabindex")).toBeNull();
+    expect(offWindow!.getAttribute("role")).toBeNull();
+    expect(offWindow!.getAttribute("aria-label")).toBeNull();
+  });
+
   it("Enter / Space fire onPeakActivate(id, false); Alt+Enter fires (id, true)", () => {
     const spy = vi.fn();
     const { container } = render(
