@@ -352,9 +352,9 @@ export function SamplesPage(): JSX.Element {
             <Kicker tone="accent">Contact sheet</Kicker>
             <h1 className="text-display text-ink">{title}</h1>
             <p className="text-body text-ink-soft mt-2 max-w-[62ch]">
-              Flip the frames and drop the ones with flares or artifacts. Tags
-              are a light, optional note on what each sample is. The ordering
-              variable is named later, when you scope a series.
+              Flip each frame and drop the ones with flares or artifacts. Tags
+              are optional; you name the ordering variable later, when you scope
+              a series.
             </p>
           </div>
           <div className="shrink-0 text-right">
