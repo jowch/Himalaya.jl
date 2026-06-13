@@ -48,6 +48,15 @@ describe("useShortcuts", () => {
     expect(drop).not.toHaveBeenCalled();
   });
 
+  it("a handler returning false DECLINES the key: no preventDefault, event keeps propagating", () => {
+    const decline = vi.fn(() => false as const);
+    render(<Harness bindings={{ dismiss: decline }} />);
+    const e = new KeyboardEvent("keydown", { key: "Escape", cancelable: true });
+    window.dispatchEvent(e);
+    expect(decline).toHaveBeenCalledTimes(1);
+    expect(e.defaultPrevented).toBe(false); // declined → still un-prevented for the next rung
+  });
+
   it("reads the latest handler without re-binding (stable across renders)", () => {
     const first = vi.fn();
     const second = vi.fn();

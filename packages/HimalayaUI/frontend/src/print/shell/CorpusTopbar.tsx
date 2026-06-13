@@ -3,6 +3,7 @@ import { useCorpusSamples, useExperiments } from "../../queries";
 import { resolveRouteSampleStatus } from "../../hooks/useSyncActiveSampleFromRoute";
 import { useExperimentSiblings } from "../../hooks/useExperimentSiblings";
 import { sampleDisplayName } from "../../lib/sample/displayName";
+import { SHORTCUTS } from "./shortcuts";
 import {
   resolveExperimentFilter,
   UNKNOWN_BEAMTIME_LABEL,
@@ -211,6 +212,7 @@ export function CorpusTopbar(): JSX.Element {
     >
       <IconButton
         label="Previous sample"
+        aria-keyshortcuts={SHORTCUTS.prevSample.keys[0]}
         tone="ghost"
         disabled={prevSample === undefined}
         onClick={() => prevSample && navigate(`/sample/${prevSample.id}`)}
@@ -227,6 +229,7 @@ export function CorpusTopbar(): JSX.Element {
       </span>
       <IconButton
         label="Next sample"
+        aria-keyshortcuts={SHORTCUTS.nextSample.keys[0]}
         tone="ghost"
         disabled={nextSample === undefined}
         onClick={() => nextSample && navigate(`/sample/${nextSample.id}`)}

@@ -28,6 +28,25 @@ describe("<Card> padding", () => {
   });
 });
 
+describe("<Card> previewed (arrow cursor)", () => {
+  it("has no data-previewed by default", () => {
+    render(<Card data-testid="c">x</Card>);
+    expect(screen.getByTestId("c").getAttribute("data-previewed")).toBe(null);
+  });
+  it("sets data-previewed='true' when previewed", () => {
+    render(<Card previewed data-testid="c">x</Card>);
+    expect(screen.getByTestId("c").getAttribute("data-previewed")).toBe("true");
+  });
+  it("composes with selected (both rings — in-the-call AND under the cursor)", () => {
+    render(<Card selected previewed data-testid="c">x</Card>);
+    const el = screen.getByTestId("c");
+    expect(el.getAttribute("data-selected")).toBe("true");
+    expect(el.getAttribute("data-previewed")).toBe("true");
+    // both ring styles present in the composed boxShadow
+    expect(el.getAttribute("style")).toMatch(/inset/);
+  });
+});
+
 describe("<Card> selected", () => {
   it("has no data-selected by default", () => {
     render(<Card data-testid="c">x</Card>);

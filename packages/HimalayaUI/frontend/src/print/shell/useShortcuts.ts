@@ -3,7 +3,12 @@ import { matchShortcut } from "./shortcuts";
 import type { ShortcutId } from "./shortcuts";
 import { suppressGlobalKeys } from "../../lib/keys";
 
-export type ShortcutBindings = Partial<Record<ShortcutId, (e: KeyboardEvent) => void>>;
+/** A binding returns nothing when it handles the key (the event is then
+ *  `preventDefault`ed), or `false` to DECLINE it — leaving the event
+ *  un-prevented so another listener (e.g. TracePlate's own Escape-to-disarm,
+ *  the next rung of the Esc ladder) can act on it. */
+export type ShortcutHandler = (e: KeyboardEvent) => void | boolean;
+export type ShortcutBindings = Partial<Record<ShortcutId, ShortcutHandler>>;
 
 /**
  * Bind window-level keyboard shortcuts from the shared registry. The single
@@ -27,8 +32,10 @@ export function useShortcuts(bindings: ShortcutBindings, enabled: boolean = true
       if (id === null) return;
       const handler = ref.current[id];
       if (handler === undefined) return;
-      e.preventDefault();
-      handler(e);
+      // preventDefault only if the handler actually claimed the key. A handler
+      // returning `false` declined it, so the event keeps propagating (and stays
+      // un-prevented) for the next listener / Esc-ladder rung.
+      if (handler(e) !== false) e.preventDefault();
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);

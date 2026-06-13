@@ -38,6 +38,11 @@ type CardOwnProps<T extends CardElement> = {
    *  (non-elevated) variant. Adds `data-selected="true"` for tests and
    *  targeted CSS. */
   selected?: boolean;
+  /** Keyboard/hover "cursor" — the candidate the arrows are pointing at (Focus
+   *  ↑/↓ preview). A neutral inset ink ring, deliberately DISTINCT from the
+   *  accent `selected` ring (previewed ≠ in-the-call). Composes with `selected`
+   *  (both rings show). Adds `data-previewed="true"`. */
+  previewed?: boolean;
   /** Clickable card / door. The quiet house hover affordance — hairline
    *  firming (`hair` → `hair-strong`) + pointer cursor, riding the global
    *  120ms colour transition. NO motion, NO shadow change. Adds
@@ -66,6 +71,7 @@ export function Card<T extends CardElement = "div">({
   draft = false,
   padding,
   selected = false,
+  previewed = false,
   interactive = false,
   className = "",
   children,
@@ -89,19 +95,27 @@ export function Card<T extends CardElement = "div">({
   // The selected ring style is injected inline so it can use CSS custom
   // properties without minting a new Tailwind class outside print/ui.
   // color-mix is allowed here (this file IS design-guard-exempt: src/print/ui/**).
-  const selectedStyle = selected
-    ? {
-        borderColor: "color-mix(in oklab, var(--color-accent) 42%, var(--color-hair))",
-        boxShadow: "inset 0 0 0 1px color-mix(in oklab, var(--color-accent) 20%, transparent)",
-      }
-    : undefined;
+  // Selected (accent) and previewed (neutral ink) rings compose — a candidate can
+  // be both in-the-call AND under the arrow cursor. color-mix is allowed here
+  // (this file IS design-guard-exempt: src/print/ui/**).
+  const ringStyle: { borderColor?: string; boxShadow?: string } = {};
+  if (selected) {
+    ringStyle.borderColor = "color-mix(in oklab, var(--color-accent) 42%, var(--color-hair))";
+    ringStyle.boxShadow = "inset 0 0 0 1px color-mix(in oklab, var(--color-accent) 20%, transparent)";
+  }
+  if (previewed) {
+    const previewRing = "inset 0 0 0 2px color-mix(in oklab, var(--color-ink-soft) 30%, transparent)";
+    ringStyle.boxShadow = ringStyle.boxShadow ? `${ringStyle.boxShadow}, ${previewRing}` : previewRing;
+  }
+  const hasRingStyle = ringStyle.borderColor !== undefined || ringStyle.boxShadow !== undefined;
   const props = {
     className: `${appearance} ${className}`.trim(),
-    ...(selectedStyle ? { style: selectedStyle } : {}),
+    ...(hasRingStyle ? { style: ringStyle } : {}),
     ...(draft ? { "data-draft": "true" } : {}),
     ...(elevated && !draft ? { "data-elevated": "true" } : {}),
     ...(padding ? { "data-padding": padding } : {}),
     ...(selected ? { "data-selected": "true" } : {}),
+    ...(previewed ? { "data-previewed": "true" } : {}),
     ...(interactive ? { "data-interactive": "true" } : {}),
     // Default an explicit button type so a Card-as-button inside a <form> never
     // silently acts as a submit; a consumer-passed `type` (via ...rest) still wins.

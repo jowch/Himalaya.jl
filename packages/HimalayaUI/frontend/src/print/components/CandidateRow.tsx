@@ -18,6 +18,9 @@ export interface CandidateRowProps {
   bonnet?: boolean;
   /** In the assignment cart. */
   selected?: boolean;
+  /** Under the Focus ↑/↓ arrow cursor (the previewed candidate). Distinct from
+   *  `selected`; lights this row's comb on the plot. */
+  previewed?: boolean;
   /** Toggle add/remove. */
   onToggle?: () => void;
   /** PLACEMENT-ONLY. */
@@ -36,6 +39,7 @@ export function CandidateRow({
   why,
   bonnet,
   selected = false,
+  previewed = false,
   onToggle,
   className,
 }: CandidateRowProps): JSX.Element {
@@ -43,6 +47,7 @@ export function CandidateRow({
     <Card
       as="button"
       selected={selected}
+      previewed={previewed}
       aria-pressed={selected}
       aria-label={`${phase}${selected ? ", in assignment" : ""}`}
       className={`w-full flex items-center gap-3 px-3 py-2.5 text-left${className ? ` ${className}` : ""}`}

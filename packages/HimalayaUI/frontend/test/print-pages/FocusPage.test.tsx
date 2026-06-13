@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, within, act } from "@testing-library/react";
-import { MemoryRouter, Routes, Route } from "react-router-dom";
+import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
 import type {
   CorpusSample, Exposure, IndexEntry, Peak, Trace, Assignment,
 } from "../../src/api";
@@ -26,6 +26,9 @@ const state = {
   loading: false,
   activeSampleId: undefined as number | undefined,
   activeExposureId: undefined as number | undefined,
+  // sibling order for the [ ] sample-step shortcut (useExperimentSiblings mock)
+  sibPrev: undefined as { id: number } | undefined,
+  sibNext: undefined as { id: number } | undefined,
 };
 
 // Capture props the q-link triple receives so we can assert the shared wire
@@ -67,7 +70,22 @@ vi.mock("../../src/state", () => ({
       setActiveSample: (id: number | undefined) => {
         state.activeSampleId = id;
       },
+      setActiveExposure: (id: number | undefined) => {
+        state.activeExposureId = id;
+      },
     }),
+}));
+
+// useExperimentSiblings drives the [ ] sample-step shortcut; return the seeded
+// prev/next so the keyboard test can assert navigation without a real corpus order.
+vi.mock("../../src/hooks/useExperimentSiblings", () => ({
+  useExperimentSiblings: () => ({
+    activeSample: state.activeSampleId !== undefined ? { id: state.activeSampleId } : undefined,
+    siblings: [],
+    index: 0,
+    prev: state.sibPrev,
+    next: state.sibNext,
+  }),
 }));
 
 // boneyard Skeleton: render children when not loading.
@@ -139,11 +157,19 @@ function seedFull(): void {
   ];
   state.assignment = { exposure_id: 7, state: "indexed", members: [1] };
   state.loading = false;
+  state.sibPrev = undefined;
+  state.sibNext = undefined;
+}
+
+function LocationProbe() {
+  const loc = useLocation();
+  return <div data-testid="loc" data-path={loc.pathname} />;
 }
 
 function renderAt(sampleId: number | string) {
   return render(
     <MemoryRouter initialEntries={[`/sample/${sampleId}`]}>
+      <LocationProbe />
       <Routes>
         <Route path="/sample/:sampleId" element={<FocusPage />} />
         <Route path="/samples" element={<div data-testid="sheet">sheet</div>} />
@@ -177,6 +203,64 @@ describe("FocusPage", () => {
     ).toBeInTheDocument();
     // the old run-on second sentence is gone
     expect(screen.queryByText(/Candidates that explain the same peaks swap/)).toBeNull();
+  });
+
+  // ── keyboard: the two-axis model (shared shortcut library) ───────────────────
+  describe("keyboard — two-axis model", () => {
+    it("] / [ step the sample (agree with the stepper via useExperimentSiblings)", () => {
+      state.sibNext = { id: 43 };
+      state.sibPrev = { id: 41 };
+      renderAt(42);
+      fireEvent.keyDown(document.body, { key: "]" });
+      expect(screen.getByTestId("loc")).toHaveAttribute("data-path", "/sample/43");
+    });
+
+    it("[ steps to the previous sample", () => {
+      state.sibPrev = { id: 41 };
+      renderAt(42);
+      fireEvent.keyDown(document.body, { key: "[" });
+      expect(screen.getByTestId("loc")).toHaveAttribute("data-path", "/sample/41");
+    });
+
+    it("→ / ← step the active exposure (no wrap)", () => {
+      state.exposures = [exp({ id: 7 }), exp({ id: 8, filename: "JC042-002.dat" })];
+      state.activeExposureId = 7;
+      renderAt(42);
+      fireEvent.keyDown(document.body, { key: "ArrowRight" });
+      expect(state.activeExposureId).toBe(8);
+      fireEvent.keyDown(document.body, { key: "ArrowLeft" });
+      expect(state.activeExposureId).toBe(7);
+    });
+
+    it("↓ / ↑ move the previewed candidate (the arrow cursor), clamped, with a visible marker", () => {
+      renderAt(42);
+      const pn3m = screen.getByRole("button", { name: /Pn3m, in assignment/ });
+      const lam = screen.getByRole("button", { name: /^Lamellar$/ });
+      expect(pn3m).not.toHaveAttribute("data-previewed");
+      fireEvent.keyDown(document.body, { key: "ArrowDown" }); // none → first
+      expect(pn3m).toHaveAttribute("data-previewed", "true");
+      fireEvent.keyDown(document.body, { key: "ArrowDown" }); // first → second
+      expect(lam).toHaveAttribute("data-previewed", "true");
+      expect(pn3m).not.toHaveAttribute("data-previewed");
+      fireEvent.keyDown(document.body, { key: "ArrowDown" }); // clamp at last
+      expect(lam).toHaveAttribute("data-previewed", "true");
+      fireEvent.keyDown(document.body, { key: "ArrowUp" }); // back to first
+      expect(pn3m).toHaveAttribute("data-previewed", "true");
+    });
+
+    it("Escape is a ladder: clear the candidate preview first, THEN back to the sheet", () => {
+      renderAt(42);
+      fireEvent.keyDown(document.body, { key: "ArrowDown" });
+      const pn3m = () => screen.getByRole("button", { name: /Pn3m, in assignment/ });
+      expect(pn3m()).toHaveAttribute("data-previewed", "true");
+      // first Escape clears the preview, does NOT navigate
+      fireEvent.keyDown(document.body, { key: "Escape" });
+      expect(pn3m()).not.toHaveAttribute("data-previewed");
+      expect(screen.getByTestId("loc")).toHaveAttribute("data-path", "/sample/42");
+      // second Escape (no preview) backs out to the sheet
+      fireEvent.keyDown(document.body, { key: "Escape" });
+      expect(screen.getByTestId("loc")).toHaveAttribute("data-path", "/samples");
+    });
   });
 
   it("toggling a candidate row fires useAddAssignmentPhase().mutate(indexId)", () => {

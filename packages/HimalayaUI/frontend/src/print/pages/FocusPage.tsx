@@ -46,6 +46,8 @@ import { useAppState } from "../../state";
 import { useSyncActiveSampleFromRoute } from "../../hooks/useSyncActiveSampleFromRoute";
 import { useAutoPickExposure } from "../../hooks/useAutoPickExposure";
 import { useDocumentTitle } from "../../hooks/useDocumentTitle";
+import { useExperimentSiblings } from "../../hooks/useExperimentSiblings";
+import { useShortcuts } from "../shell/useShortcuts";
 import { deriveActiveIndices } from "../../lib/assignment";
 import { basisFor } from "../../lib/customIndex";
 import { seriesRatio } from "../../lib/seriesRatio";
@@ -155,6 +157,10 @@ export function FocusPage(): JSX.Element {
   const experimentQ = useExperiment(experimentId ?? 0);
   const exposuresQ = useExposures(activeSampleId);
 
+  // Inter-sample order (the SAME derivation the topbar stepper uses) so the
+  // `[`/`]` shortcuts and the stepper always agree.
+  const { prev: prevSibling, next: nextSibling } = useExperimentSiblings();
+
   const traceQ = useTrace(activeExposureId);
   const peaksQ = usePeaks(activeExposureId);
   const indicesQ = useIndices(activeExposureId);
@@ -204,6 +210,10 @@ export function FocusPage(): JSX.Element {
   const assignment = assignmentQ.data;
   const exposures = useMemo(() => exposuresQ.data ?? [], [exposuresQ.data]);
   const activeExposure = exposures.find((e) => e.id === activeExposureId);
+  // The arrow-cursor list for the ↑/↓ candidate preview (speculatives excluded —
+  // they are the custom-index outputs, toggled not previewed). Defined here (above
+  // the not-found early return) so the keyboard handler can close over it.
+  const candidatePool = indices.filter((i) => i.kind !== "speculative");
 
   const activeIndices = useMemo(
     () => deriveActiveIndices(assignment, indices),
@@ -316,6 +326,53 @@ export function FocusPage(): JSX.Element {
   const filenameStem = `${sampleName} ${exposureLabel ?? ""}`.trim();
   const fx = useFigureExport(exportSpec, filenameStem, "trace plot");
 
+  // ── keyboard: the Focus two-axis model (shared shortcut library) ──────────────
+  //   [ ]  = step the SAMPLE      (useExperimentSiblings — agrees with the stepper)
+  //   ← →  = step the EXPOSURE     (detector panel)
+  //   ↑ ↓  = move the previewed CANDIDATE (the keyboard equivalent of mouse-hover;
+  //          lights that candidate's comb via previewIndexId, no commit)
+  //   Esc  = ladder: clear the candidate preview first, else back to the sheet
+  // Clamp (no wrap) mirrors the sample stepper. suppressGlobalKeys (inputs, open
+  // popovers/modals) is honored by useShortcuts.
+  const stepInList = <T,>(list: T[], curIdx: number, dir: 1 | -1): T | undefined => {
+    if (list.length === 0) return undefined;
+    const next = curIdx === -1 ? (dir === 1 ? 0 : list.length - 1) : curIdx + dir;
+    return list[Math.max(0, Math.min(list.length - 1, next))];
+  };
+  useShortcuts({
+    prevSample: () => prevSibling && navigate(`/sample/${prevSibling.id}`),
+    nextSample: () => nextSibling && navigate(`/sample/${nextSibling.id}`),
+    prevExposure: () => {
+      const e = stepInList(exposures, exposures.findIndex((x) => x.id === activeExposureId), -1);
+      if (e) setActiveExposure(e.id);
+    },
+    nextExposure: () => {
+      const e = stepInList(exposures, exposures.findIndex((x) => x.id === activeExposureId), 1);
+      if (e) setActiveExposure(e.id);
+    },
+    prevCandidate: () => {
+      const c = stepInList(candidatePool, candidatePool.findIndex((x) => x.id === previewIndexId), -1);
+      if (c) setPreviewIndexId(c.id);
+    },
+    nextCandidate: () => {
+      const c = stepInList(candidatePool, candidatePool.findIndex((x) => x.id === previewIndexId), 1);
+      if (c) setPreviewIndexId(c.id);
+    },
+    dismiss: () => {
+      // Esc ladder (innermost first). An open modal/popover is already handled
+      // upstream (suppressGlobalKeys). Next rung is the armed "+ Peak" mode,
+      // which TracePlate's own Escape handler disarms — defer to it so a single
+      // Escape doesn't both disarm AND navigate away. Then clear a candidate
+      // preview; only a "nothing left to dismiss" Escape backs out to the sheet.
+      // Return false when armed so the un-prevented Escape reaches TracePlate's
+      // disarm handler (which also re-anchors focus per WCAG 2.4.3).
+      if (addArmed) return false;
+      if (previewIndexId !== undefined) setPreviewIndexId(undefined);
+      else navigate("/samples");
+      return undefined;
+    },
+  });
+
   // ── early states ─────────────────────────────────────────────────────────────
   if (routeStatus === "unknown" || (!corpusQ.isLoading && !corpusSample)) {
     return (
@@ -356,7 +413,6 @@ export function FocusPage(): JSX.Element {
   // modal is the hypothesis tool; the cart's remove (PhaseBlock onRemove) takes
   // a phase back out of the call.
   const speculatives = indices.filter((i) => i.kind === "speculative");
-  const candidatePool = indices.filter((i) => i.kind !== "speculative");
 
   // Single shared predicate: the cart's empty copy AND the candidate-list line
   // both branch on peaksEmpty, so the two texts can never contradict each
@@ -419,6 +475,7 @@ export function FocusPage(): JSX.Element {
           score={ix.score}
           why={`explains ${ix.peaks.length} peaks${selected ? " · in the call" : ""}`}
           selected={selected}
+          previewed={ix.id === previewIndexId}
           {...(ix.bonnet?.consistent ? { bonnet: true } : {})}
           onToggle={() => {
             if (selected) {
