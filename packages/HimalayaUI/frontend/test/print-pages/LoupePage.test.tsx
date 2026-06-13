@@ -635,6 +635,13 @@ describe("LoupePage", () => {
     expect(screen.getByTestId("sheet")).toBeInTheDocument();
   });
 
+  it("not-found exposes its sole heading as an h1, not a level-skipped h2 (FO-NFHEAD)", () => {
+    state.samples = [];
+    renderAt(999);
+    expect(screen.getByRole("heading", { level: 1, name: "Sample not found" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { level: 2, name: "Sample not found" })).toBeNull();
+  });
+
   it("not-found keeps the Escape path back to the sheet", () => {
     state.samples = [];
     renderAt(999);

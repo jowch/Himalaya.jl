@@ -8,6 +8,19 @@ describe("EmptyState", () => {
     expect(screen.getByRole("heading", { name: "No series match" })).toBeTruthy();
   });
 
+  it("defaults the title to an h2 (EmptyState usually nests under a page h1)", () => {
+    render(<EmptyState title="No series match" />);
+    expect(screen.getByRole("heading", { level: 2, name: "No series match" })).toBeTruthy();
+  });
+
+  it("renders the title as an h1 when as=\"h1\" (EmptyState IS the page, e.g. not-found)", () => {
+    // FO-NFHEAD: on a route where EmptyState is the only heading, an h2 leaves
+    // the document with no h1 (a level-skip). The consumer raises it to h1.
+    render(<EmptyState title="Sample not found" as="h1" />);
+    expect(screen.getByRole("heading", { level: 1, name: "Sample not found" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { level: 2 })).toBeNull();
+  });
+
   it("renders the body when provided", () => {
     render(
       <EmptyState

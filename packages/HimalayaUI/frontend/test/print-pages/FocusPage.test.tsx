@@ -386,6 +386,17 @@ describe("FocusPage", () => {
     expect(screen.getByTestId("sheet")).toBeInTheDocument();
   });
 
+  it("not-found exposes its sole heading as an h1, not a level-skipped h2 (FO-NFHEAD)", () => {
+    // The shell carries no h1 and the not-found branch returns before any
+    // TracePlate, so EmptyState's title is the document's only heading — it must
+    // be the top level (WCAG 1.3.1 / no missing h1).
+    state.corpus = [];
+    state.activeSampleId = undefined;
+    renderAt(999);
+    expect(screen.getByRole("heading", { level: 1, name: "Sample not found" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { level: 2, name: "Sample not found" })).toBeNull();
+  });
+
   it("mid-session: a bogus numeric /sample/:id renders not-found, not the previous sample (F-STALEURL)", () => {
     // seedFull leaves activeSampleId at 42 with a warm corpus cache; the URL
     // names a sample that does not exist. Rendering sample 42 under

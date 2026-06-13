@@ -299,6 +299,7 @@ export function SeriesBuilderPage(): JSX.Element {
       <PageFrame width="builder" className="px-8 py-8">
         <div data-testid="builder-not-found">
           <EmptyState
+            as="h1"
             title="Couldn't load this series"
             body="It may have been deleted, the address may be wrong, or the request failed."
             action={

@@ -362,6 +362,7 @@ export function LoupePage(): JSX.Element {
         <div data-testid="loupe-page">
           <div data-testid="loupe-not-found">
             <EmptyState
+              as="h1"
               title="Sample not found"
               body="Nothing in the corpus matches this address."
               action={

@@ -317,6 +317,7 @@ export function FocusPage(): JSX.Element {
       <div className="px-8 py-7">
         <div data-testid="focus-not-found">
           <EmptyState
+            as="h1"
             title="Sample not found"
             body="Nothing in the corpus matches this address."
             action={

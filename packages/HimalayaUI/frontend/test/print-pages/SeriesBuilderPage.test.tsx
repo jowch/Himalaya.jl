@@ -1394,6 +1394,17 @@ describe("SeriesBuilderPage with a non-numeric route id", () => {
     expect(screen.queryByTestId("series-plate")).toBeNull();
   });
 
+  it("not-found exposes its sole heading as an h1, not a level-skipped h2 (FO-NFHEAD)", () => {
+    // The not-found branch returns before the SeriesPlate (whose editable title
+    // is an Input, not a heading), so EmptyState's title is the page's only
+    // heading and must be the top level (WCAG 1.3.1).
+    renderAt("/series/abc");
+    expect(
+      screen.getByRole("heading", { level: 1, name: /couldn't load this series/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { level: 2, name: /couldn't load this series/i })).toBeNull();
+  });
+
   it("the not-found CTA navigates back to the series folio (/series)", () => {
     renderAt("/series/abc");
     fireEvent.click(screen.getByRole("button", { name: /back to the series folio/i }));
