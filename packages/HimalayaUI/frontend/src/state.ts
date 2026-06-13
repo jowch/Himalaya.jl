@@ -206,6 +206,12 @@ export interface AppState {
   removeSeriesSample: (rowId: number) => void;
   /** Move a recipe row from index `from` to index `to`. No-op if no draft. */
   reorderSeriesSample: (from: number, to: number) => void;
+  /**
+   * Replace the whole draft slot (or clear it with `null`). The primitive the
+   * builder's undo/redo restores a prior snapshot through — restoring `null`
+   * steps the first edit back out to read mode.
+   */
+  restoreSeriesDraft: (slot: SeriesDraftSlot) => void;
 
   // Compare-page Phase 9 review-mode UI actions
   /**
@@ -400,6 +406,7 @@ export const useAppState = create<AppState>()(
           setSeriesDraft(fromSeries(series));
         },
         discardSeriesDraft: () => setSeriesDraft(null),
+        restoreSeriesDraft: (slot) => setSeriesDraft(slot),
         setSeriesDraftTitle: (title) => {
           const cur = get().seriesDraft;
           if (cur === null) return;

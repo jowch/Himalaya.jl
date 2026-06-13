@@ -961,6 +961,59 @@ describe("SeriesBuilderPage", () => {
     expect(useAppState.getState().seriesDraft!.recipe[1]!.sample_id).toBe(firstSampleId);
   });
 
+  // BU-UNDO: locked decision #3 — undo (⌘Z) / redo (⌘⇧Z) extend to the Builder,
+  // with a visible registry-driven Undo control, matching the Scoping worksheet.
+  // The structural recipe edits (reorder / add / remove) are recoverable; the
+  // free-text title keeps the field's own native undo.
+  describe("draft undo / redo (BU-UNDO)", () => {
+    /** Enter draft mode, then reorder the top visual row down. Returns the
+     *  sample id that was moved (recipe[0] before the move → recipe[1] after). */
+    function enterDraftAndReorder(): number {
+      fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "x" } });
+      const firstSampleId = useAppState.getState().seriesDraft!.recipe[0]!.sample_id;
+      fireEvent.click(screen.getAllByTestId("builder-recipe-down")[0]!);
+      expect(useAppState.getState().seriesDraft!.recipe[1]!.sample_id).toBe(firstSampleId);
+      return firstSampleId;
+    }
+
+    it("⌘Z reverts the last recipe reorder", () => {
+      renderPage();
+      const moved = enterDraftAndReorder();
+      fireEvent.keyDown(document.body, { key: "z", metaKey: true });
+      expect(useAppState.getState().seriesDraft!.recipe[0]!.sample_id).toBe(moved);
+    });
+
+    it("⌘⇧Z redoes a reverted reorder", () => {
+      renderPage();
+      const moved = enterDraftAndReorder();
+      fireEvent.keyDown(document.body, { key: "z", metaKey: true });
+      expect(useAppState.getState().seriesDraft!.recipe[0]!.sample_id).toBe(moved);
+      fireEvent.keyDown(document.body, { key: "z", metaKey: true, shiftKey: true });
+      expect(useAppState.getState().seriesDraft!.recipe[1]!.sample_id).toBe(moved);
+    });
+
+    it("a visible registry-driven Undo control reverts the last change", () => {
+      renderPage();
+      const moved = enterDraftAndReorder();
+      const undoBtn = screen.getByTestId("builder-undo");
+      // the key hint comes from the shortcut registry (⌘Z), so the control and
+      // the binding can never disagree
+      expect(undoBtn.getAttribute("title") ?? "").toMatch(/⌘Z|Ctrl\+Z/i);
+      fireEvent.click(undoBtn);
+      expect(useAppState.getState().seriesDraft!.recipe[0]!.sample_id).toBe(moved);
+    });
+
+    it("⌘Z while editing the title is the field's native undo, not a recipe revert", () => {
+      renderPage();
+      const moved = enterDraftAndReorder();
+      const title = screen.getByLabelText(/series title/i);
+      title.focus();
+      fireEvent.keyDown(title, { key: "z", metaKey: true });
+      // recipe stays reordered — the page-level undo must not fire from a field
+      expect(useAppState.getState().seriesDraft!.recipe[1]!.sample_id).toBe(moved);
+    });
+  });
+
   it("each recipe row shows the figure trace's label so it cross-references the plate (BU-NAMES)", () => {
     renderPage();
     fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "x" } });

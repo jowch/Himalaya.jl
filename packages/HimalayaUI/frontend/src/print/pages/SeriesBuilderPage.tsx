@@ -9,6 +9,8 @@ import { IconButton, Button, EmptyState, Input, GripHandle } from "../ui";
 import { useDragReorder } from "../components/useDragReorder";
 import type { DragItemProps } from "../components/useDragReorder";
 import { useReorderShortcuts } from "../shell/useReorderShortcuts";
+import { useShortcuts } from "../shell/useShortcuts";
+import { shortcutLabel } from "../shell/shortcuts";
 import {
   useSeries,
   useSeriesTraces,
@@ -106,6 +108,7 @@ export function SeriesBuilderPage(): JSX.Element {
   const addSample = useAppState((s) => s.addSeriesSample);
   const removeSample = useAppState((s) => s.removeSeriesSample);
   const reorderSample = useAppState((s) => s.reorderSeriesSample);
+  const restoreDraft = useAppState((s) => s.restoreSeriesDraft);
   const showPeakTicks = useAppState((s) => s.showPeakTicks);
   const showPeakLabels = useAppState((s) => s.showPeakLabels);
   const setShowPeakTicks = useAppState((s) => s.setShowPeakTicks);
@@ -115,6 +118,40 @@ export function SeriesBuilderPage(): JSX.Element {
   const [offset, setOffset] = useState(1.2);
   const [scale, setScale] = useState<Scale>("log");
   const [hoveredKey, setHoveredKey] = useState<string | undefined>(undefined);
+
+  // ── Draft undo / redo (BU-UNDO, locked decision #3) ─────────────────────
+  // Snapshot-based history of the structural recipe edits (reorder / add /
+  // remove). The free-text title keeps the field's own native undo (⌘Z there is
+  // suppressed by suppressGlobalKeys), so this stack only carries the edits a
+  // field cannot recover. `record()` captures the draft slot BEFORE a mutation;
+  // undoing the very first edit restores `null` (back to read mode). Updaters
+  // stay pure (the snapshot is precomputed) so StrictMode's double-invoke can't
+  // double-push. Declared in the top hooks block — above every early return.
+  type DraftSlot = ReturnType<typeof useAppState.getState>["seriesDraft"];
+  const [undoPast, setUndoPast] = useState<DraftSlot[]>([]);
+  const [undoFuture, setUndoFuture] = useState<DraftSlot[]>([]);
+  const record = (): void => {
+    const snap = useAppState.getState().seriesDraft;
+    setUndoPast((p) => [...p, snap]);
+    setUndoFuture([]);
+  };
+  const undo = (): void => {
+    if (undoPast.length === 0) return;
+    const prev = undoPast[undoPast.length - 1]!;
+    const cur = useAppState.getState().seriesDraft;
+    restoreDraft(prev);
+    setUndoPast(undoPast.slice(0, -1));
+    setUndoFuture([cur, ...undoFuture]);
+  };
+  const redo = (): void => {
+    if (undoFuture.length === 0) return;
+    const next = undoFuture[0]!;
+    const cur = useAppState.getState().seriesDraft;
+    restoreDraft(next);
+    setUndoFuture(undoFuture.slice(1));
+    setUndoPast([...undoPast, cur]);
+  };
+  useShortcuts({ undo, redo });
 
   // ── Confirm chain (Save → await fresh cache → Commit → discard) ─────────
   const save = useSaveSeries();
@@ -329,6 +366,7 @@ export function SeriesBuilderPage(): JSX.Element {
     setTitle(value);
   };
   const onAddSample = (sampleId: number): void => {
+    record();
     ensureDraft();
     addSample(sampleId);
   };
@@ -336,10 +374,12 @@ export function SeriesBuilderPage(): JSX.Element {
   // only rendering under a live draft (layout-enforced). `ensureDraft()` is a
   // no-op when a draft already exists.
   const onRemoveSample = (rowId: number): void => {
+    record();
     ensureDraft();
     removeSample(rowId);
   };
   const onReorderSample = (from: number, to: number): void => {
+    record();
     ensureDraft();
     reorderSample(from, to);
   };
@@ -426,6 +466,8 @@ export function SeriesBuilderPage(): JSX.Element {
           ensureDraft={ensureDraft}
           onConfirm={onConfirm}
           onCancel={onCancel}
+          onUndo={undo}
+          canUndo={undoPast.length > 0}
           confirmBusy={confirmBusy}
           confirmLabel={confirmProgressLabel}
           confirmReady={resolverReady}
@@ -465,6 +507,10 @@ interface BuilderBodyProps {
   ensureDraft: () => void;
   onConfirm: () => void;
   onCancel: () => void;
+  /** Step the last structural recipe edit back (BU-UNDO). */
+  onUndo: () => void;
+  /** Whether there is a recorded edit to undo (drives the visible control). */
+  canUndo: boolean;
   confirmBusy: boolean;
   /** BU-PROGRESS: the step-named busy label for the Save action while the
    *  Save→Commit chain is in flight ("Saving order…" / "Publishing the figure…"
@@ -510,6 +556,8 @@ function BuilderBody({
   ensureDraft,
   onConfirm,
   onCancel,
+  onUndo,
+  canUndo,
   confirmBusy,
   confirmLabel,
   confirmReady,
@@ -737,6 +785,16 @@ function BuilderBody({
               )}
               {liveDraft && (
                 <div className="flex items-center gap-2 pt-1">
+                  {canUndo && (
+                    <Button
+                      variant="ghost"
+                      onClick={onUndo}
+                      data-testid="builder-undo"
+                      title={`Undo last change (${shortcutLabel("undo")})`}
+                    >
+                      ↺ Undo
+                    </Button>
+                  )}
                   <Button variant="ghost" onClick={onCancel}>
                     Cancel
                   </Button>
