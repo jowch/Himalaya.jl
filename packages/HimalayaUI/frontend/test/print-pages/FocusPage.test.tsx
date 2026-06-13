@@ -57,7 +57,11 @@ vi.mock("../../src/queries", () => ({
 // useSyncActiveSampleFromRoute runs REAL here (against the mocked queries and
 // store): the page consumes its route-resolution status, so shimming it would
 // hide the mid-session bogus-URL behaviour (F-STALEURL).
-vi.mock("../../src/hooks/useAutoPickExposure", () => ({
+// Stub only the effect hook (it touches queries + the store); keep the real
+// `acceptableExposures` so the exposure-axis stepper filters rejected frames
+// against the same predicate production uses (FO-EXPSKIP).
+vi.mock("../../src/hooks/useAutoPickExposure", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/hooks/useAutoPickExposure")>()),
   useAutoPickExposure: () => {},
 }));
 
@@ -228,6 +232,32 @@ describe("FocusPage", () => {
       renderAt(42);
       fireEvent.keyDown(document.body, { key: "ArrowRight" });
       expect(state.activeExposureId).toBe(8);
+      fireEvent.keyDown(document.body, { key: "ArrowLeft" });
+      expect(state.activeExposureId).toBe(7);
+    });
+
+    // FO-EXPSKIP: the exposure axis traverses INDEXABLE exposures only — the
+    // same acceptable set useAutoPickExposure pins to. Stepping onto a rejected
+    // (dropped) frame would be reverted by the auto-pick (it yanks any
+    // non-acceptable active exposure to the representative), so a step onto a
+    // dropped frame reads as the axis going dead or jumping to the rep. The
+    // stepper must skip rejected frames so ← / → moves between the frames the
+    // page can actually hold active.
+    it("→ / ← skip rejected (dropped) frames, stepping among acceptable exposures only (FO-EXPSKIP)", () => {
+      state.exposures = [
+        exp({ id: 7 }),
+        exp({ id: 8, filename: "JC042-002.dat", status: "rejected", selected: false }),
+        exp({ id: 9, filename: "JC042-003.dat" }),
+      ];
+      state.activeExposureId = 7;
+      renderAt(42);
+      // → skips the rejected middle frame (8) and lands on the next acceptable (9)
+      fireEvent.keyDown(document.body, { key: "ArrowRight" });
+      expect(state.activeExposureId).toBe(9);
+      // clamp at the last acceptable frame — no wrap, and never onto a rejected one
+      fireEvent.keyDown(document.body, { key: "ArrowRight" });
+      expect(state.activeExposureId).toBe(9);
+      // ← steps back to the first acceptable frame, also skipping the rejected one
       fireEvent.keyDown(document.body, { key: "ArrowLeft" });
       expect(state.activeExposureId).toBe(7);
     });

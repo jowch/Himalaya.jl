@@ -44,7 +44,7 @@ import {
 } from "../../queries";
 import { useAppState } from "../../state";
 import { useSyncActiveSampleFromRoute } from "../../hooks/useSyncActiveSampleFromRoute";
-import { useAutoPickExposure } from "../../hooks/useAutoPickExposure";
+import { useAutoPickExposure, acceptableExposures } from "../../hooks/useAutoPickExposure";
 import { useDocumentTitle } from "../../hooks/useDocumentTitle";
 import { useExperimentSiblings } from "../../hooks/useExperimentSiblings";
 import { useShortcuts } from "../shell/useShortcuts";
@@ -342,12 +342,19 @@ export function FocusPage(): JSX.Element {
   useShortcuts({
     prevSample: () => prevSibling && navigate(`/sample/${prevSibling.id}`),
     nextSample: () => nextSibling && navigate(`/sample/${nextSibling.id}`),
+    // The exposure axis steps among INDEXABLE (acceptable) exposures only. The
+    // full `exposures` list keeps rejected frames so the filmstrip still shows
+    // them, but landing the active exposure on a rejected one is reverted by
+    // useAutoPickExposure (it yanks any non-acceptable pick back to the
+    // representative) — so the stepper must skip them to move predictably.
     prevExposure: () => {
-      const e = stepInList(exposures, exposures.findIndex((x) => x.id === activeExposureId), -1);
+      const pool = acceptableExposures(exposures);
+      const e = stepInList(pool, pool.findIndex((x) => x.id === activeExposureId), -1);
       if (e) setActiveExposure(e.id);
     },
     nextExposure: () => {
-      const e = stepInList(exposures, exposures.findIndex((x) => x.id === activeExposureId), 1);
+      const pool = acceptableExposures(exposures);
+      const e = stepInList(pool, pool.findIndex((x) => x.id === activeExposureId), 1);
       if (e) setActiveExposure(e.id);
     },
     prevCandidate: () => {
