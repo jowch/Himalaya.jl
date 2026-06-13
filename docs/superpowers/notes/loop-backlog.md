@@ -27,6 +27,97 @@ Durable state for the impeccable production-polish **goal** (native `/goal` harn
 
 **Note on faithfulness:** Wave-1 critiques ran a single capable evaluation agent per surface applying the real `critique.md`+`audit.md` rubrics over source + rendered screenshots (desktop 1440 + laptop 1120 for the rail/grid surfaces) + the SAXS `ignore.md`, rather than the two-fully-isolated-subagent design/detect split. The deterministic detector (`impeccable detect --json`) was run centrally on every page source and returned `[]` (zero anti-pattern tells) — that is the Assessment-B half, and it corroborates the 4/4 anti-patterns scores. Re-scores in Wave 4 use the same method for trend comparability.
 
+## ▶▶ Re-review 2026-06-13 — Jonathan-directed full impeccable sweep (GOLD contested)
+
+Jonathan (2026-06-13): *"There are still fit and finish and UI/UX legibility issues. Do a full impeccable review of everything and track discovered items in backlog."* Method: **six parallel design-director subagents**, one per surface, each over a fresh **1440px live full-page screenshot** (saved under `.impeccable/review-2026-06-13/review-{samples,loupe,focus,folio,scoping,builder-read,builder-edit}.png`) + the surface source + `DESIGN.md`, explicitly told to ignore the GOLD label and find what the per-surface scoring missed. Items below are NEW unless tagged `[dup …]` / `[expands …]`. **Contrast ratios are agent estimates — canvas-measure at fix time** (impeccable harness). Nothing fixed yet — this is discovery + tracking per Jonathan's instruction.
+
+**Headline:** the GOLD scoring under-counted **load-bearing low-contrast text**. The dominant theme is `ink-faint` / `Kicker tone="faint"` used for labels that carry meaning — it recurs on ≥4 surfaces and in two places **violates the codebase's own written token rule** (`styles.css:343-351`: a kicker on a sunk surface must use `tone="soft"`). The cross-cutting cluster lifts every surface at once; do it first. Several of these are genuine WCAG-AA text-contrast failures, so by the goal's own `finish_bar` the surfaces were **not actually at GOLD**.
+
+### Cross-cutting (fix once, helps everywhere) — highest leverage
+
+| ID | Sev | What | Where | Fix |
+|---|---|---|---|---|
+| **CC-KICKER-FAINT** | **P1** | `Kicker tone="faint"` (ink-faint) for meaningful labels fails AA. Builder rail ALL section eyebrows (COMPOSE / ORDERING VARIABLE / DISPLAY / TRACES) ≈ **2.92:1 on paper-sunk** — violates `styles.css:343-351`. Samples head "samples screened" kicker ≈3.3:1 on paper — the *table header* was already bumped to `soft`, the head was missed. | `RailSection.tsx:18`, `BuilderRail.tsx:116`, `SamplesPage.tsx:372` | `tone="faint"`→`"soft"` for any kicker that labels content (esp. on sunk surfaces). Grep every `tone="faint"`. |
+| **CC-FIGLABEL-ACCENT** | P1 | Terracotta `kicker-accent` for small uppercase labels ≈4.0:1 on plate — borderline/failing AA AND spends the rare interaction accent on non-interactive text. | Folio `SeriesCard.tsx:133` (FIG. N), `FolioHeader.tsx:33` (FOLIO) | Darken the small-label accent token OR set FIG/FOLIO in `ink-soft`; reserve terracotta for interaction. |
+| **CC-AXIS-TICK** | P1/P2 | Trace-plot axis tick numbers render `ink-faint` ≈3.1:1 (shared `Axis.tsx` `TICK_LABEL_STYLE`). The q-values ARE the data; faintest text on the figure. Hits Focus + Builder (shared component). | `Axis.tsx:12-16` | Promote tick labels to `ink-soft` (the axis *title* already is). |
+| **CC-KBDCAP** | P2 | Inline keyboard hints rendered as low-contrast raw glyphs (Loupe `[`/`]` at `opacity-60` ≈2.2:1) instead of the boxed `KbKey` cap the legend uses. Inconsistent + sub-AA. | `LoupePage.tsx:405,419` | Render inline key hints with the `KbKey` primitive — one cap style everywhere. |
+| **CC-ACCENT-SEMANTIC** | P2 | Terracotta accent for non-interactive emphasis collides with "accent == interactive" (Scoping "lacks the **dose**" keyword sits inches from a real terracotta link; Pn3m amber score-bar reads near-accent). `[expands tracked candidate-accent-key-contrast]` | Scoping `SeriesScopingPage.tsx:1030,1084,1088`; Focus Pn3m ScoreBar | Emphasize with weight/ink, not accent; keep terracotta for genuine controls. |
+| **CC-GRIP-FAINT** | P3 | Drag grip `⋮⋮` at rest = `hair-strong` ≈1.5:1, hover only `ink-faint` (<3:1) → no standing "reorderable" affordance. Scoping + Builder member rows (shared `GripHandle`). | `GripHandle.tsx:34` | Rest `ink-faint`, hover `ink-soft` so the grip is a quiet standing signal. |
+
+### Per-surface NEW findings
+
+**Samples (contact sheet)** — biggest: the Status column reads as four unrelated treatments stacked in one narrow column.
+| ID | Sev | What / Fix |
+|---|---|---|
+| SA-STATUS-COL | P2 | Status column mixes terracotta "Index →" CTA, muted-dot "Not indexed", "No exposures", and phase chips → un-scannable as a column. Give the text states one shared dot+label structure; reserve terracotta for the chevron. |
+| SA-COUNT-DUP | P2 | Head "0 / 31 samples screened" and per-row "2 / 3" Kept fraction share identical visual form but count different things (samples vs frames). Label the Kept *column header* as frames. |
+| SA-CELL-CENTER | P2 | 92px rows vertically center 62px thumbs + 1–2-line names → the identity cell's optical center drifts row-to-row vs the fixed thumbnail strip. Top-align the identity cell so the name baseline is fixed. |
+| SA-FRAMENO | P3 | Frame-number caption `text-xs` mono `opacity-80` over a 1/3-height scrim → only conditionally legible on bright frames. Drop opacity / strengthen scrim. |
+| SA-KBDDUP | P3 | The new cull X/K hint (added this session in `16de6aa`) duplicates X/K already in the 10-row footer legend. Keep the contextual hint, drop X/K from the footer (or vice-versa). |
+| SA-LEGEND-WALL | P3 | Footer legend is a 10-item flat run (Navigate/Select/Cull/Open intermixed). Group into 2–3 labeled clusters or cut low-value entries. |
+| SA-NEEDSREVIEW | P3 | "Needs review" chip shares the id line and is `flex-shrink-0`, so the *id* truncates to fit a *status*. Move the unscreened signal off the id line (onto the row tint). |
+
+**Loupe** — biggest: the detector window (the page's whole job) is capped at 500px in an ~880px column, wasting a third of the width while the filmstrip overhangs it.
+| ID | Sev | What / Fix |
+|---|---|---|
+| LO-BIGFRAME-CAP | P2 | `BigFrame max-w-[500px] mx-auto` floats in an ~880px column → ~190px dead paper each side, detector shrunk to ~57% of available width. Raise/remove the cap (e.g. 720px) or narrow the column. |
+| LO-STRIP-OVERHANG | P2 | Filmstrip (≈615px) overhangs the 499px frame by ~57px each side → parent/child relationship breaks. Wrap BigFrame + gallery in one frame-width container; align strip edges to the frame. |
+| LO-VERDICTHINT | P1 | Verdict hint `text-caption ink-soft` on `paper-sunk` ≈4.01:1 (10.5px). It's the action affordance copy. Bump to `text-ink`. (`Verdict.tsx:57`) |
+| LO-SAMPLEPOS | P1 | "10 / 139" sample-position counter `ink-soft` ≈4.31:1 — the cull-progress orientation readout. Use `text-ink`. (`LoupePage.tsx:407`) |
+| LO-KEPTPILL | P1 | "Kept" pill `text-plate` on `success` ≈4.16:1 (12px bold) — the burned-on verdict glance target; Dropped on accent (4.87) passes. Darken success for on-pill use or bump to ≥14px. (`BigFrame.tsx:60`) |
+| LO-UNSCREENED-DOT | P2 | Unscreened state = a near-invisible neutral grey dot, distinguished from kept/dropped by hue alone. Give it a hollow-ring shape so "pending" reads by shape. |
+| LO-RIGHTVOID | P3 | Suppressed meta block leaves a tall empty band top-right between the "10/139" nav and the Verdict well. Pull sample-nav down atop the side panel, or surface a minimal identity line. |
+| LO-ADDTAG-GHOST | P3 | "+ tag" dashed ghost chip `ink-faint` ≈2.4:1 — an interactive affordance below 3:1, and the only content in an empty tags block. Render at `ink-soft`. `[related LO-TAGPROV]` |
+| LO-MANAGE-BTN | P3 | "Manage" ghost button reads as a second header word (ink-soft, no border/underline). Add a resting affordance or make it an IconButton. |
+
+**Focus** — biggest: the comb panel can't be read as a quantitative figure (one orphan "0.05" x-tick, no q-axis label, combs fill ~65% of the width).
+| ID | Sev | What / Fix |
+|---|---|---|
+| FO-COMB-AXIS | P2 | Comb panel: single unanchored "0.05" tick, no "q (Å⁻¹)" label, combs occupy ~65% width with a dead right third. Share the trace's x-domain + tick set so combs align edge-to-edge with the trace; add the axis label. |
+| FO-DETSTRIP-WALL | P2 | Detector filmstrip = a row of ~9 identical dark squares each stamped with a terracotta ✕ → no per-frame content/label, selected-ring subtle, "3" badge unexplained. Show real thumbnails / exposure labels; reserve ✕ for truly rejected; strengthen the selected ring. |
+| FO-SCOREBAR-SLIVER | P2 | Candidate `ScoreBar size="compact"` = 3.5px × 46px → 0.37 / 0.35 / 0.31 differ by 1–2px, indistinguishable; the ranked-comparison purpose collapses. Widen to ≥80px or drop the bar on candidate rows. |
+| FO-SERIES-COLLIDE | P2 | Assignment cart: "series √2 : 2 : …" line crammed 6px under the full score bar with a trailing ellipsis (ambiguous reflection count). Add breathing room / move the series line above the bar / hover-to-expand. |
+| FO-SUBTITLE-EMDASH | P1 | Literal em-dash in the subtitle ("SSRL April 2026 — 1p7m", from upstream experiment data) violates the no-em-dash rule. Sanitize em-dashes (→ " · " or ":") in subtitle assembly. (`FocusPage.tsx:281-287`) |
+| FO-TOOLBAR-FLAT | P3 | Plot toolbar: view actions (scale, Auto-fit) and edit/export (+ Peak, Copy) share one flat equal-gap row. Add a divider/gap between groups; distinguish the edit-arming "+ Peak". |
+| FO-PEAKCUE-DUP | P3 | "Arm + Peak to edit peaks." standing cue restates the "+ Peak" button and pushes the plot down by ~20px in the default disarmed view. Move to a tooltip / first-session only. |
+| FO-COMB-SCROLL | P3 | Cryptic comb-panel right-edge scroll glyph, no label. Add aria-label + visible affordance, or remove when combs fit. |
+
+**Folio** — biggest: the two cards are near-identical twins → reads as exactly the "identical card grid" the design system forbids; the figure-first promise collapses.
+| ID | Sev | What / Fix |
+|---|---|---|
+| FOL-CARDTWINS | P2 | Both cards = same width/height/layout/footer; mini-waterfalls too small/faint to function as distinct figure thumbnails → DESIGN.md §5 "wall of distinct figures" becomes a SaaS card grid (§1 ban). Make the figure the dominant legible subject; vary card height with member count; demote chrome. |
+| FOL-GHOSTTILE-TALL | P2 | New-series ghost tile matches a full card's height with a fraction of the content → a large vacant box drawing the eye to emptiness. Cap to a compact add affordance (~140px). |
+| FOL-CARDTITLE-AFFORD | P2 | Card title is a `<button>` styled identically to static text; the card is also a door → two overlapping hit targets, no hover signal. Add underline-on-hover / chevron + a visible card hover. |
+| FOL-GHOST-SUBTEXT | P2 | "Start from the contact sheet" — the key wayfinding hint on the empty path — is the smallest text on the page (`text-caption` 10.5px). Bump to `text-body`. |
+| FOL-HEROCOUNT | P3 | The big right-aligned "2 / SERIES IN THE FOLIO" headline numeral is a hero-metric tell (DESIGN.md §1 ban) AND duplicates the "2 series" tally below. Drop the hero numeral. |
+| FOL-CONTROLS-GROUP | P3 | Count + "SORT" + segmented + ↓ arrow all at `gap-3.5` → no grouping; the lone ↓ floats detached from the control it modifies. Tighten SORT↔segmented↔arrow; widen the count separation. `[related UI-ICONOVERLAY]` |
+| FOL-HEADER-GAP | P3 | 60ch subtitle + far-right count → a lonely horizontal gap across the top third. Narrow the header block or let the subtitle run wider. |
+
+**Scoping** — biggest: the candidate ("Himalaya also found") section inverts the hierarchy — excluded rows are heavier + dimmer than the included member rows above them.
+| ID | Sev | What / Fix |
+|---|---|---|
+| SC-CANDBOX-HEAVY | P2 | Candidate rows are fully-boxed with a 4-sided dashed `hair-strong` border (heavier than the borderless member rows) → the excluded/secondary samples draw MORE eye than the included members; also reads as an AI-slop "drop zone." Drop to a single dashed top hairline / `paper-sunk` well. |
+| SC-CANDNAME-DIM | P1 | Candidate name set `ink-soft` (same token as its own caption) → name/caption hierarchy collapses, three stacked dim lines read as one smudge. Promote the name to `text-ink`; let dimming come from the border + sparkline opacity. |
+| SC-VALUE-NOHEAD | P2 | Member value column (0/5/10/20) has no header and sits ~250px below its "Ordered by: dose" control → anonymous integers. Add a faint right-aligned column micro-header on "The series" row. |
+| SC-PENCIL-FAINT | P2 | Edit pencil ✎ is a near-invisible ghost glyph detached from its value, adjacent to the value's *skip* toggle → users click the value expecting edit and accidentally skip. Strengthen on hover, tighten the gap, reveal on row hover/focus. |
+| SC-RIGHTEDGE-RAGGED | P2 | Candidate input+button cluster overruns where member values stop → ragged right gutter, two sections look stitched together. Align edges to one right gutter. |
+| SC-SPARK-FLAT | P3 | Member sparklines render flat/degenerate while candidate sparks show peak structure → members look emptier than candidates. Verify the member trace data vs the `EMPTY_TRACE` fallback. |
+| SC-CAPTION-MONO | P3 | "4 samples · low to high" header caption is set in mono → violates the mono-means-measurement rule (it's descriptive chrome). Use the sans caption face. |
+| SC-STAR-DECOR | P3 | Lone terracotta ★ glyph leading the intro AutoGroup banner = borderline decorative iconography + a second terracotta mark on instructional prose. Drop the star or swap for a meaningful provenance mark. |
+
+**Builder** — biggest: the rail's section eyebrows fail the project's OWN documented AA rule (see CC-KICKER-FAINT).
+| ID | Sev | What / Fix |
+|---|---|---|
+| BU-EDIT-VERB | P1 | The muted "Edit" action (the door into edit mode) is visually identical to AutoGroup's *disabled/inert* style (both `ink-soft`, only `hover:underline` differs) → the primary entry to editing looks dead. Give muted-but-live a resting affordance (dotted underline / ghost border). |
+| BU-MODESHIFT | P2 | Read↔Edit (draft) shift is near-invisible (same bg/borders/geometry) despite a committal unsaved-draft state with a `beforeunload` guard. Give EDIT mode a clear draft affordance (accent frame / "Draft — unsaved" pill on the Compose card). |
+| BU-ORDERING-DASH | P2 | Ordering-variable Field renders a bare "—" in an input-shaped box (no "Not set" word; static in read mode but looks like a clickable empty input). Pass an explicit "Not set" placeholder. |
+| BU-WATERFALL-GAPS | P2 | Waterfall traces float as thin baselines with vast empty vertical bands (offset 1.20× doesn't fill the ~700px plate). Tighten plate height to the trace envelope or raise the default offset. `[Folio mini-waterfalls share the low-amplitude problem]` |
+| BU-REORDER-CRAMP | P2 | Edit-row packs grip + name + `exp N` + ▲ + ▼ + ✕ into ~300px with `gap-2` and no grouping; arrows tiny + self-disable look broken. Separate the data zone from the control trio; group ▲▼✕. `[extends UI-ICONOVERLAY]` |
+| BU-PEAKORD-HALO | P3 | In-plate peak ordinals 1·2·3·4 are thin and merge with gridlines on low-amplitude traces. Add a paper-colored halo behind them. |
+| BU-DISPLAY-THIN | P3 | A whole titled DISPLAY section holds a single offset slider → over-structured/thin. Consider merging the slider into the Traces section header. |
+
+**Tally:** 6 cross-cutting + ~37 per-surface = **~43 fresh items** (4 cross-cutting P1 + several surface P1s are genuine WCAG-AA text-contrast failures — i.e. by the goal's own `finish_bar`, the surfaces were NOT actually at GOLD). The contrast P1s + the two "biggest" layout issues (Loupe detector cap, Focus comb axis) are the highest-leverage. Screenshots retained under `.impeccable/review-2026-06-13/`.
+
 ## Wave status
 
 - [x] **Wave 0 — Foundation refresh** — DONE (`c525c93`). DESIGN.md re-rooted to `src/print/ui`, stale two-theme/grain promises killed, four new sections (State taxonomy / Spacing & density / Motion / Copy & UX writing); PRODUCT.md a11y de-dark-themed + named persona seeded.
