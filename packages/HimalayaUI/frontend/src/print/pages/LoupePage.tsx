@@ -45,7 +45,10 @@ const FIXTURE_EXPOSURE = {
 // skeleton↔real ALIGNMENT INVARIANT — the loading placeholder must use the same
 // template as the loaded render, or the load→loaded transition shifts. One
 // source (a literal Tailwind class string so the JIT scanner still sees it).
-const LOUPE_BODY_GRID = "grid grid-cols-[minmax(0,1fr)_286px] gap-7";
+// LO-MOBILE: below the tablet breakpoint the fixed 286px panel + gap crushed the
+// detector hero to a few px (390px viewport → ~76px hero). Stack to a single
+// column under md; the two-column split holds at tablet width and up.
+const LOUPE_BODY_GRID = "grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_286px] gap-7";
 const LOUPE_FIXTURE = (
   <div className={LOUPE_BODY_GRID}>
     <div className="min-w-0">
