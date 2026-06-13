@@ -36,6 +36,7 @@ import {
 } from "./scopingDerive";
 import { readNewSeriesSeed } from "../../lib/series/newSeriesNav";
 import { suppressGlobalKeys } from "../../lib/keys";
+import { useReorderShortcuts } from "../shell/useReorderShortcuts";
 
 const EMPTY_TRACE: Trace = { q: [], I: [], sigma: [] };
 
@@ -397,6 +398,15 @@ export function SeriesScopingPage(): JSX.Element {
     applyReorder(i, i + delta);
     announceReorder(`Moved ${r.sampleName} to position ${i + delta + 1} of ${sorted.length}.`);
   };
+
+  // Unified Alt+↑/↓ reorder power-gesture (shared registry). Moves the focused
+  // worksheet row from any control inside it, mirroring the grip's own arrows;
+  // moveRow owns the clamp + SR announcement. The keyed row wrapper carries the
+  // data-reorder-index the hook reads.
+  useReorderShortcuts({
+    rowSelector: "[data-reorder-row]",
+    move: (i, delta) => moveRow(i, delta),
+  });
 
   // Routing for the ordering dropdown. The sentinel enters custom mode, seeding
   // the assign rows conditionally on the seed (re-entry deliberately re-seeds:
@@ -952,6 +962,8 @@ export function SeriesScopingPage(): JSX.Element {
                   <div
                     key={r.sampleId}
                     {...dprops}
+                    data-reorder-row
+                    data-reorder-index={i}
                     className={`relative cursor-grab${dprops["data-dragging"] ? " opacity-50" : ""}`}
                   >
                     {edge && (

@@ -945,6 +945,22 @@ describe("SeriesBuilderPage", () => {
     expect(useAppState.getState().seriesDraft!.recipe[1]!.sample_id).toBe(firstSampleId);
   });
 
+  // BU-REORDER-ALT: the unified Alt+↑/↓ reorder power-gesture (shared registry
+  // reorderUp/Down) mirrors clicking the row's ▲▼ buttons, so the same gesture
+  // reorders on the Builder as on the Scoping worksheet.
+  it("Alt+↓ on a recipe row reorders it, mirroring the ▼ Move-down button", () => {
+    renderPage();
+    fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "x" } });
+    const firstSampleId = useAppState.getState().seriesDraft!.recipe[0]!.sample_id;
+    // Alt+ArrowDown fired from a control in the top visual row mirrors clicking
+    // that row's ▼ Move-down.
+    fireEvent.keyDown(screen.getAllByTestId("builder-recipe-down")[0]!, {
+      key: "ArrowDown",
+      altKey: true,
+    });
+    expect(useAppState.getState().seriesDraft!.recipe[1]!.sample_id).toBe(firstSampleId);
+  });
+
   it("each recipe row shows the figure trace's label so it cross-references the plate (BU-NAMES)", () => {
     renderPage();
     fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "x" } });

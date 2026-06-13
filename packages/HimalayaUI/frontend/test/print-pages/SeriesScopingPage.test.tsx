@@ -1441,6 +1441,25 @@ describe("SeriesScopingPage", () => {
       expect(renderedNames()).toEqual(["B", "A", "C"]);
     });
 
+    // SC-KBD-ALT: the unified reorder power-gesture. Alt+↑/↓ moves the focused
+    // row from ANY control inside it (not just the grip), so a keyboard user
+    // editing a row can reorder without first hunting for the grip. Mirrors the
+    // grip arrows; bound through the shared shortcut registry (reorderUp/Down).
+    it("Alt+↑ / Alt+↓ reorder the focused row (the unified power-gesture, fired from inside the row)", () => {
+      seed3();
+      renderPage();
+      expect(renderedNames()).toEqual(["A", "B", "C"]);
+      const gripB = screen.getByRole("button", { name: /^reorder B$/i });
+      fireEvent.keyDown(gripB, { key: "ArrowUp", altKey: true });
+      expect(renderedNames()).toEqual(["B", "A", "C"]);
+      // Alt+↓ from the same row (now at the top) steps it back down.
+      fireEvent.keyDown(screen.getByRole("button", { name: /^reorder B$/i }), {
+        key: "ArrowDown",
+        altKey: true,
+      });
+      expect(renderedNames()).toEqual(["A", "B", "C"]);
+    });
+
     it("announces a successful move with the computed position and count", () => {
       seed3();
       renderPage();

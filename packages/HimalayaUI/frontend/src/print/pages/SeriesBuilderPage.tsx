@@ -8,6 +8,7 @@ import { MemberList } from "../components/MemberList";
 import { IconButton, Button, EmptyState, Input, GripHandle } from "../ui";
 import { useDragReorder } from "../components/useDragReorder";
 import type { DragItemProps } from "../components/useDragReorder";
+import { useReorderShortcuts } from "../shell/useReorderShortcuts";
 import {
   useSeries,
   useSeriesTraces,
@@ -823,6 +824,18 @@ function RecipeEditor({
   const reorderVisual = (fromV: number, toV: number): void =>
     onReorder(toRecipe(fromV), toRecipe(toV));
   const { dragItemProps, dropEdge } = useDragReorder(reorderVisual);
+  // Unified Alt+↑/↓ reorder power-gesture (shared registry). Routes through the
+  // focused row's own ▲▼ Move buttons so their boundary focus-retention dance
+  // (BU-MOVEFOCUS) and disabled-at-extreme guard are reused verbatim.
+  useReorderShortcuts({
+    rowSelector: "[data-reorder-row]",
+    move: (_index, delta, row) => {
+      const btn = row.querySelector<HTMLButtonElement>(
+        delta < 0 ? '[data-testid="builder-recipe-up"]' : '[data-testid="builder-recipe-down"]',
+      );
+      if (btn && !btn.disabled) btn.click();
+    },
+  });
   return (
     <div className="flex flex-col gap-0.5" data-testid="builder-recipe">
       {visual.map((row, i) => {
@@ -901,6 +914,8 @@ function RecipeRow({
   return (
     <div
       data-testid="builder-recipe-row"
+      data-reorder-row
+      data-reorder-index={index}
       {...dragItemProps}
       className={`group relative cursor-grab flex items-center gap-2 px-2 py-1.5 rounded border border-transparent hover:bg-plate${dragItemProps["data-dragging"] ? " opacity-50" : ""}`}
     >
