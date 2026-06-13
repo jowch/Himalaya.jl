@@ -30,6 +30,28 @@ describe("LoupeSidePanel", () => {
     expect(screen.getByTestId("kb-legend")).toBeInTheDocument();
   });
 
+  it("suppresses the 'This frame' block when the only row is the redundant position (LO-EXPSPARSE)", () => {
+    // The position ("N of M") is already shown in the subtitle + BigFrame
+    // caption, so a lone-row block reads as an unfinished section.
+    setup({ meta: [{ key: "frame", value: "1 of 1" }] });
+    expect(screen.queryByText("This frame")).toBeNull();
+    expect(screen.queryByTestId("meta-list")).toBeNull();
+    // The rest of the panel is unaffected.
+    expect(screen.getByText("Sample tags")).toBeInTheDocument();
+  });
+
+  it("shows the 'This frame' block once a second, real row exists (e.g. a rejection reason)", () => {
+    setup({
+      meta: [
+        { key: "frame", value: "2 of 4" },
+        { key: "reason", value: "beam dropout" },
+      ],
+    });
+    expect(screen.getByText("This frame")).toBeInTheDocument();
+    expect(screen.getByTestId("meta-list")).toBeInTheDocument();
+    expect(screen.getByText("beam dropout")).toBeInTheDocument();
+  });
+
   it("reflects kept verdict and wires the drop toggle", async () => {
     const onToggleDrop = vi.fn();
     setup({ onToggleDrop });

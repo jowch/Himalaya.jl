@@ -437,9 +437,13 @@ describe("LoupePage", () => {
   it("the side panel omits the dead integration/collected placeholder rows (controls-don't-lie)", () => {
     renderAt(42);
     const panel = screen.getByTestId("loupe-side-panel");
-    expect(within(panel).getByText("frame")).toBeInTheDocument();
+    // The stubbed placeholder rows are never shown.
     expect(within(panel).queryByText("integration")).toBeNull();
     expect(within(panel).queryByText("collected")).toBeNull();
+    // LO-EXPSPARSE: for a normal (non-rejected) frame the only meta row is the
+    // position, which the subtitle + caption already carry, so the whole "This
+    // frame" block is suppressed rather than rendering a lone redundant row.
+    expect(within(panel).queryByText("This frame")).toBeNull();
   });
 
   it("a dropped frame with a rejection_reason tag shows the reason; other frames do not", () => {

@@ -69,13 +69,21 @@ export function LoupeSidePanel({
       data-testid="loupe-side-panel"
       className={cx("flex flex-col gap-[18px]", className)}
     >
-      {/* Block 1: This frame (LO-TERM: the loupe says "frame", not "exposure") */}
-      <div>
-        <Kicker tone="soft" as="h2" className="mb-2">
-          This frame
-        </Kicker>
-        <MetaList entries={meta} />
-      </div>
+      {/* Block 1: This frame (LO-TERM: the loupe says "frame", not "exposure").
+          LO-EXPSPARSE: the only always-present row is the position ("N of M"),
+          which the header subtitle AND the BigFrame caption already show, so a
+          lone-row block reads as an unfinished section. Render it only once a
+          SECOND, real row exists (e.g. a dropped frame's rejection reason);
+          otherwise suppress the kicker entirely. (Reinstate the always-on block
+          when the API serves integration/collected — see toMetaEntries.) */}
+      {meta.length > 1 && (
+        <div>
+          <Kicker tone="soft" as="h2" className="mb-2">
+            This frame
+          </Kicker>
+          <MetaList entries={meta} />
+        </div>
+      )}
 
       {/* Block 2: Verdict */}
       <Verdict
