@@ -116,4 +116,117 @@ describe("<ScopeSampleRow>", () => {
       expect(grip).toHaveAttribute("aria-keyshortcuts", "ArrowUp ArrowDown");
     });
   });
+
+  describe("value correction (SC-VALUECORRECT)", () => {
+    it("without onEditValue: no edit affordance, value stays a skip toggle only", () => {
+      render(<ScopeSampleRow name="HEPES Only" sampleId="smp_42" trace={TRACE} value="1 : 0.25" />);
+      expect(screen.queryByRole("button", { name: /edit value/i })).toBeNull();
+      expect(screen.getByTestId("flag-button")).toHaveTextContent("1 : 0.25");
+    });
+
+    it("with onEditValue: a pencil 'Edit value for {name}' control renders beside the value", () => {
+      render(
+        <ScopeSampleRow
+          name="HEPES Only"
+          sampleId="smp_42"
+          trace={TRACE}
+          value="1 : 0.25"
+          onEditValue={() => {}}
+        />,
+      );
+      // Skip toggle and the new edit affordance are DISTINCT controls.
+      expect(screen.getByTestId("flag-button")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /^edit value for HEPES Only$/i })).toBeInTheDocument();
+    });
+
+    it("clicking the pencil swaps the value into a focused input and hides the skip toggle", () => {
+      render(
+        <ScopeSampleRow
+          name="HEPES Only"
+          sampleId="smp_42"
+          trace={TRACE}
+          value="1 : 0.25"
+          onEditValue={() => {}}
+        />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: /^edit value for HEPES Only$/i }));
+      const input = screen.getByRole("textbox", { name: /^corrected value for HEPES Only$/i });
+      expect(input).toHaveValue("1 : 0.25");
+      expect(input).toHaveFocus();
+      // While editing, the skip toggle is replaced by the correction field.
+      expect(screen.queryByTestId("flag-button")).toBeNull();
+    });
+
+    it("Enter commits the corrected value and returns to the skip-toggle display", () => {
+      const onEditValue = vi.fn();
+      render(
+        <ScopeSampleRow
+          name="HEPES Only"
+          sampleId="smp_42"
+          trace={TRACE}
+          value="10.25"
+          onEditValue={onEditValue}
+        />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: /^edit value/i }));
+      const input = screen.getByRole("textbox", { name: /corrected value/i });
+      fireEvent.change(input, { target: { value: "1 : 0.25" } });
+      fireEvent.keyDown(input, { key: "Enter" });
+      expect(onEditValue).toHaveBeenCalledTimes(1);
+      expect(onEditValue).toHaveBeenCalledWith("1 : 0.25");
+      // Back to display: the flag toggle returns, the input is gone.
+      expect(screen.getByTestId("flag-button")).toBeInTheDocument();
+      expect(screen.queryByRole("textbox", { name: /corrected value/i })).toBeNull();
+    });
+
+    it("blur commits the corrected value", () => {
+      const onEditValue = vi.fn();
+      render(
+        <ScopeSampleRow name="x" sampleId="smp_1" trace={TRACE} value="10.25" onEditValue={onEditValue} />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: /^edit value/i }));
+      const input = screen.getByRole("textbox", { name: /corrected value/i });
+      fireEvent.change(input, { target: { value: "1 : 0.25" } });
+      fireEvent.blur(input);
+      expect(onEditValue).toHaveBeenCalledTimes(1);
+      expect(onEditValue).toHaveBeenCalledWith("1 : 0.25");
+    });
+
+    it("Escape cancels: onEditValue is not called and the original value is restored", () => {
+      const onEditValue = vi.fn();
+      render(
+        <ScopeSampleRow name="x" sampleId="smp_1" trace={TRACE} value="10.25" onEditValue={onEditValue} />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: /^edit value/i }));
+      const input = screen.getByRole("textbox", { name: /corrected value/i });
+      fireEvent.change(input, { target: { value: "999" } });
+      fireEvent.keyDown(input, { key: "Escape" });
+      expect(onEditValue).not.toHaveBeenCalled();
+      expect(screen.getByTestId("flag-button")).toHaveTextContent("10.25");
+    });
+
+    it("committing an unchanged value does not fire onEditValue (no spurious history)", () => {
+      const onEditValue = vi.fn();
+      render(
+        <ScopeSampleRow name="x" sampleId="smp_1" trace={TRACE} value="1 : 0.25" onEditValue={onEditValue} />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: /^edit value/i }));
+      fireEvent.keyDown(screen.getByRole("textbox", { name: /corrected value/i }), { key: "Enter" });
+      expect(onEditValue).not.toHaveBeenCalled();
+    });
+
+    it("an emptied value is not committed (the write must never carry value:'')", () => {
+      const onEditValue = vi.fn();
+      render(
+        <ScopeSampleRow name="x" sampleId="smp_1" trace={TRACE} value="1 : 0.25" onEditValue={onEditValue} />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: /^edit value/i }));
+      const input = screen.getByRole("textbox", { name: /corrected value/i });
+      fireEvent.change(input, { target: { value: "   " } });
+      fireEvent.keyDown(input, { key: "Enter" });
+      expect(onEditValue).not.toHaveBeenCalled();
+      // Reverts to the original display.
+      expect(screen.getByTestId("flag-button")).toHaveTextContent("1 : 0.25");
+    });
+  });
 });

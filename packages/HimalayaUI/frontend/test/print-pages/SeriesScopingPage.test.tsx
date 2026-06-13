@@ -422,6 +422,41 @@ describe("SeriesScopingPage", () => {
     );
   });
 
+  it("correcting a misread value flows into the tag write (SC-VALUECORRECT)", () => {
+    seed3();
+    renderPage();
+    // Members sort low→high: A(1:0), B(1:0.5), C(1:1). Correct B's read.
+    fireEvent.click(screen.getByRole("button", { name: /^edit value for B$/i }));
+    const input = screen.getByRole("textbox", { name: /^corrected value for B$/i });
+    fireEvent.change(input, { target: { value: "1 : 0.4" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    fireEvent.click(screen.getByRole("button", { name: /confirm & build/i }));
+    expect(scopeMutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        key: "ratio",
+        tags: [
+          { sampleId: 1, value: "1 : 0" },
+          { sampleId: 2, value: "1 : 0.4" },
+          { sampleId: 3, value: "1 : 1" },
+        ],
+      }),
+    );
+  });
+
+  it("⌘Z reverts a value correction (SC-VALUECORRECT — skip/reorder/edit reach undo parity)", () => {
+    seed3();
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: /^edit value for B$/i }));
+    const input = screen.getByRole("textbox", { name: /^corrected value for B$/i });
+    fireEvent.change(input, { target: { value: "9 : 9" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    // B (displayed index 1, value-sorted) now reads the corrected value.
+    expect(screen.getAllByTestId("flag-button")[1]).toHaveTextContent("9 : 9");
+    // Undo restores the original read.
+    fireEvent.keyDown(window, { key: "z", metaKey: true });
+    expect(screen.getAllByTestId("flag-button")[1]).toHaveTextContent("1 : 0.5");
+  });
+
   it("Discard sits in the plate foot beside Confirm & build, not at the page top (SC-POLISH2)", () => {
     seed3();
     renderPage();

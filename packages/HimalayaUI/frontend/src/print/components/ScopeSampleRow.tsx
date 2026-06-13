@@ -1,4 +1,5 @@
-import { FlagButton, GripHandle } from "../ui";
+import { useEffect, useRef, useState } from "react";
+import { FlagButton, GripHandle, IconButton, Input } from "../ui";
 import { Sparkline } from "../plot/Sparkline";
 
 function cx(...parts: Array<string | false | null | undefined>): string {
@@ -27,6 +28,17 @@ export interface ScopeSampleRowProps {
    * announcements (it sees the row's position; this row does not).
    */
   onMoveBy?: (delta: -1 | 1) => void;
+  /**
+   * Inline value correction (SC-VALUECORRECT). When provided, a pencil control
+   * appears beside the skip toggle; clicking it swaps the value into a mono
+   * Input. Commit (Enter / the check button / blur) calls `onEditValue` with the
+   * new value ONLY when it changed AND is non-empty (the write must never carry
+   * `value:""` — same guard as the commit gate's `isKept`); Escape cancels. When
+   * absent the value stays display + skip only (the cold path and the loose
+   * candidate rows have no correctable read). Edit and skip are DISTINCT
+   * affordances — correcting a misread is not the same gesture as dropping it.
+   */
+  onEditValue?: (value: string) => void;
   /** PLACEMENT-ONLY. */
   className?: string;
 }
@@ -52,8 +64,39 @@ export function ScopeSampleRow({
   flagged,
   onToggleFlag,
   onMoveBy,
+  onEditValue,
   className,
 }: ScopeSampleRowProps): JSX.Element {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Focus + select on entering edit so the misread value can be retyped or
+  // corrected without first clicking into the field.
+  useEffect(() => {
+    if (editing) {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+  }, [editing]);
+
+  function startEdit(): void {
+    setDraft(value);
+    setEditing(true);
+  }
+  // Commit only a CHANGED, non-empty value: an unchanged commit must not push a
+  // history entry, and `value:""` would corrupt the sample on the batch write
+  // (the commit gate filters it, but never let it leave this control either).
+  function commit(): void {
+    const next = draft.trim();
+    if (next !== "" && next !== value && onEditValue) onEditValue(next);
+    setEditing(false);
+  }
+  function cancel(): void {
+    setDraft(value);
+    setEditing(false);
+  }
+
   return (
     <div
       data-testid="scope-sample-row"
@@ -107,11 +150,59 @@ export function ScopeSampleRow({
         <div className="text-body font-semibold text-ink">{name}</div>
         <div className="text-caption font-mono text-ink-soft">{sampleId}</div>
       </div>
-      <FlagButton
-        value={value}
-        {...(flagged ? { flagged: true } : {})}
-        {...(onToggleFlag ? { onClick: onToggleFlag } : {})}
-      />
+      {editing ? (
+        /* draggable={false} releases this cluster from the row wrapper's
+           draggable=true (useDragReorder) so the value text stays
+           click-selectable instead of starting a row drag. */
+        <span
+          draggable={false}
+          className="flex items-center gap-1 flex-shrink-0"
+        >
+          <Input
+            inputRef={inputRef}
+            value={draft}
+            onValueChange={setDraft}
+            mono
+            inputSize="sm"
+            aria-label={`Corrected value for ${name}`}
+            testId="value-edit-input"
+            className="w-28"
+            onKeyDown={(e: React.KeyboardEvent) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                commit();
+              } else if (e.key === "Escape") {
+                e.preventDefault();
+                cancel();
+              }
+            }}
+            onBlur={commit}
+          />
+          {/* preventDefault on mousedown keeps focus in the field, so the click
+              commits without the blur firing a redundant first commit. */}
+          <IconButton
+            label={`Save value for ${name}`}
+            tone="accent"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={commit}
+          >
+            ✓
+          </IconButton>
+        </span>
+      ) : (
+        <span className="flex items-center gap-1 flex-shrink-0">
+          <FlagButton
+            value={value}
+            {...(flagged ? { flagged: true } : {})}
+            {...(onToggleFlag ? { onClick: onToggleFlag } : {})}
+          />
+          {onEditValue && (
+            <IconButton label={`Edit value for ${name}`} tone="ghost" onClick={startEdit}>
+              ✎
+            </IconButton>
+          )}
+        </span>
+      )}
     </div>
   );
 }

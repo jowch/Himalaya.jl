@@ -75,7 +75,10 @@ const SCOPING_FIXTURE = (
 // state; a `reorder` entry restores the WHOLE prior display order.
 type HistoryEntry =
   | { type: "flag"; id: number; prev: boolean; label: string }
-  | { type: "reorder"; prevOrder: number[]; label: string };
+  | { type: "reorder"; prevOrder: number[]; label: string }
+  // SC-VALUECORRECT: an inline value correction is recoverable too — `prev` is
+  // the pre-edit read so skip/reorder/edit reach undo parity.
+  | { type: "value"; id: number; prev: string; label: string };
 
 /**
  * ColdAssignSection: the shared assign body (ColdAssignPanel + the gated
@@ -433,12 +436,25 @@ export function SeriesScopingPage(): JSX.Element {
     setRows((cur) => cur.map((r) => (r.sampleId === id ? { ...r, flagged: !r.flagged } : r)));
   };
 
+  // SC-VALUECORRECT: correct a misread auto-read in place. The ScopeSampleRow
+  // control already guards changed + non-empty, but re-check here so a stray
+  // no-op caller can never push an empty history entry. Recorded for Undo/⌘Z.
+  const editValue = (id: number, value: string): void => {
+    const m = rows.find((r) => r.sampleId === id);
+    if (!m || value === m.value) return;
+    setHistory((h) => [...h, { type: "value", id, prev: m.value, label: `smp_${id}` }]);
+    setRows((cur) => cur.map((r) => (r.sampleId === id ? { ...r, value } : r)));
+  };
+
   const undo = useCallback((): void => {
     setHistory((h) => {
       const e = h[h.length - 1];
       if (!e) return h;
       if (e.type === "flag") {
         setRows((cur) => cur.map((r) => (r.sampleId === e.id ? { ...r, flagged: e.prev } : r)));
+      } else if (e.type === "value") {
+        // value: restore the pre-edit read.
+        setRows((cur) => cur.map((r) => (r.sampleId === e.id ? { ...r, value: e.prev } : r)));
       } else {
         // reorder: restore the whole prior display order.
         setOrder(e.prevOrder);
@@ -866,7 +882,7 @@ export function SeriesScopingPage(): JSX.Element {
                       the skip toggle lives on the value itself.
                       SC-PROVREAD: the value is a stored tag (possibly
                       hand-entered), not necessarily parsed from the name. */}{" "}
-                  Click a value to skip that sample.
+                  Click a value to skip that sample, or the pencil to correct a misread.
                 </>
               }
               orderedBy={keyLabel}
@@ -901,6 +917,7 @@ export function SeriesScopingPage(): JSX.Element {
                       {...(r.flagged ? { flagged: true } : {})}
                       onToggleFlag={() => toggleFlag(r.sampleId)}
                       onMoveBy={(delta) => moveRow(i, delta)}
+                      onEditValue={(v) => editValue(r.sampleId, v)}
                     />
                   </div>
                 );
