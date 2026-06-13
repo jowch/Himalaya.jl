@@ -3,6 +3,11 @@ import { describe, it, expect, vi } from "vitest";
 import { TagEditor } from "../../src/print/ui/TagEditor";
 
 describe("<TagEditor>", () => {
+  it("marks its subtree a keyboard island (data-keys-trap) so page shortcuts don't leak through (LO-POPKEY)", () => {
+    render(<TagEditor onCommit={() => {}} />);
+    expect(screen.getByTestId("tag-editor")).toHaveAttribute("data-keys-trap");
+  });
+
   it("commits a key-only tag (no value property) on Enter", () => {
     const onCommit = vi.fn();
     render(<TagEditor onCommit={onCommit} />);
@@ -65,6 +70,18 @@ describe("<TagEditor>", () => {
     fireEvent.change(keyInput, { target: { value: "l" } });
     expect(screen.queryByTestId("tag-editor-error")).toBeNull();
     expect(keyInput).not.toHaveAttribute("aria-invalid");
+  });
+
+  it("renders a visible Cancel button when onCancel is provided; clicking it cancels", () => {
+    const onCancel = vi.fn();
+    render(<TagEditor onCommit={() => {}} onCancel={onCancel} />);
+    fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
+    expect(onCancel).toHaveBeenCalled();
+  });
+
+  it("renders no Cancel button when onCancel is absent (back-compatible)", () => {
+    render(<TagEditor onCommit={() => {}} />);
+    expect(screen.queryByRole("button", { name: /cancel/i })).toBeNull();
   });
 
   it("calls onCancel on Escape", () => {

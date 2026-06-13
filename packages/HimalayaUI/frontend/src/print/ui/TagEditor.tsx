@@ -99,6 +99,10 @@ export function TagEditor({
     // into the leftover ~40px, stacking one word per line at the 286px rail.
     <div
       data-testid="tag-editor"
+      // data-keys-trap: while this inline editor is open, page-level single-key
+      // shortcuts (loupe X/R, sheet X) must not fire through its buttons/chips
+      // — suppressGlobalKeys treats the subtree as a keyboard island (LO-POPKEY).
+      data-keys-trap=""
       className={cx("flex flex-col gap-1 items-start", className)}
     >
       <div className="flex flex-wrap items-center gap-1.5">
@@ -121,6 +125,14 @@ export function TagEditor({
         <Button variant="solid" onClick={commit}>
           Add
         </Button>
+        {onCancel ? (
+          // Visible escape hatch out of the inline add (Escape also cancels, but
+          // a pointer user needs a target). Quiet `ghost` so it sits beside the
+          // solid Add without competing for the eye.
+          <Button variant="ghost" onClick={onCancel}>
+            Cancel
+          </Button>
+        ) : null}
         {knownKeys && knownKeys.length > 0 ? (
           <span className="inline-flex items-center gap-1">
             {knownKeys.map((kk) => (

@@ -162,6 +162,15 @@ export function ManageTagsModal({
     if (addKeyDup) setAddKeyDup(false);
   };
 
+  // Cancel a half-typed add: discard the draft key/value and any pending
+  // duplicate-key error, returning the add row to its empty resting state.
+  const clearAdd = (): void => {
+    setAddKey("");
+    setAddValue("");
+    setAddKeyDup(false);
+  };
+  const addDirty = addKey.trim() !== "" || addValue.trim() !== "";
+
   return (
     <ModalShell
       open={open}
@@ -263,9 +272,23 @@ export function ManageTagsModal({
               onCommit={(v) => setAddValue(v)}
               className="min-w-0 w-full"
             />
-            <Button variant="solid" onClick={handleAdd}>
-              Add
-            </Button>
+            {/* Add anchors the action column (aligns with the × above);
+                Cancel appears to its right only once the row has a draft, so
+                an empty row shows no dead control. */}
+            <div className="flex items-center gap-1.5">
+              <Button variant="solid" onClick={handleAdd}>
+                Add
+              </Button>
+              {addDirty && (
+                <Button
+                  variant="ghost"
+                  onClick={clearAdd}
+                  aria-label="Cancel adding tag"
+                >
+                  Cancel
+                </Button>
+              )}
+            </div>
           </div>
           {addKeyDup && (
             <span

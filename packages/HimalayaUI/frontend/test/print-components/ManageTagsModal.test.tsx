@@ -197,6 +197,39 @@ describe("<ManageTagsModal>", () => {
     expect(onAdd).toHaveBeenCalledWith("dose", "10");
   });
 
+  // ── Add row: cancel a half-typed tag ─────────────────────────────────────────
+
+  it("shows no Cancel control on an empty add row", () => {
+    render(<ManageTagsModal {...baseProps()} />);
+    const addRow = screen.getByTestId("manage-tag-add-row");
+    expect(within(addRow).queryByRole("button", { name: /cancel/i })).toBeNull();
+  });
+
+  it("Cancel clears the half-typed add row (key + value) and does not call onAdd", () => {
+    const onAdd = vi.fn();
+    render(<ManageTagsModal {...baseProps({ onAdd })} />);
+    const addRow = screen.getByTestId("manage-tag-add-row");
+    const [addKeyCombo, addValCombo] = within(addRow).getAllByRole("combobox");
+    fireEvent.change(addKeyCombo!, { target: { value: "dose" } });
+    fireEvent.change(addValCombo!, { target: { value: "10" } });
+    // Cancel appears once there's a draft; clicking it discards the draft.
+    fireEvent.click(within(addRow).getByRole("button", { name: /cancel/i }));
+    expect((addKeyCombo as HTMLInputElement).value).toBe("");
+    expect((addValCombo as HTMLInputElement).value).toBe("");
+    expect(onAdd).not.toHaveBeenCalled();
+  });
+
+  it("Cancel clears a pending duplicate-key error on the add row", () => {
+    render(<ManageTagsModal {...baseProps()} />);
+    const addRow = screen.getByTestId("manage-tag-add-row");
+    const addKeyCombo = within(addRow).getAllByRole("combobox")[0]!;
+    fireEvent.change(addKeyCombo, { target: { value: "lipid" } }); // already exists
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+    fireEvent.click(within(addRow).getByRole("button", { name: /cancel/i }));
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   // ── Focus restore on close ────────────────────────────────────────────────────
 
   it("restores focus to triggerRef.current when closed", () => {
