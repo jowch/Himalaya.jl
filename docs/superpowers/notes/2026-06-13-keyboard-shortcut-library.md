@@ -83,44 +83,51 @@ supplies only the steps it has; the gesture is always `Esc`.
 6. **Samples**: legend hint for `x`/`k` when nothing is selected.
 7. Migrate Loupe/Samples ad-hoc handlers onto `useShortcuts` (consolidation).
 
-## Progress / RESUME HERE (2026-06-13, branch `greenfield-ui-rebuild`)
+## Progress / DONE (2026-06-13, branch `greenfield-ui-rebuild`)
 
-Implemented so far (each its own commit, full gate green at each):
-- **Step 1 — foundation**: `6a97005`. `shortcuts.ts` registry + `useShortcuts`
-  (incl. the `false`-return DECLINE convention for the Esc ladder).
-- **Step 3 — Focus two-axis model**: `329c93c` (built before steps 4-6 per
-  Jonathan's ordering). `[`/`]` sample · `←`/`→` exposure · `↑`/`↓` candidate
-  preview (page-level `previewIndexId` + a neutral `previewed` ring on Card) ·
-  `Esc` ladder (modal → TracePlate disarm → clear preview → back to /samples) ·
-  stepper `aria-keyshortcuts`. **LIVE-VERIFY STILL PENDING** — Playwright MCP was
-  down when this landed; feel the whole model in the browser first thing.
-- **Step 2 — retire `,`/`.`**: `7eec3f2`. `useGlobalShortcuts` is now find/jump
-  (`/`, `⌘K`) ONLY; sample step is page-owned (`[`/`]` on Loupe/Focus); the
-  contact sheet uses ARIA grid roving. Param + dead route machinery removed.
+The unified keyboard shortcut library is **COMPLETE**. Every surface now keys off
+the one `shortcuts.ts` registry via `useShortcuts`; no ad-hoc window keydown
+handler remains on Loupe/Samples/Focus. Branch STAYS UNMERGED (awaiting Jonathan).
 
-Key finding that resizes the remaining work — the impeccable polish loop
-(`cac7438`) already built most of the old "step 4 Scoping" item:
-- Scoping ALREADY has the visible **Undo** control (plate `onUndo` +
-  `Step back: <label>`), `⌘Z` (pure StrictMode-safe history), AND
-  keyboard-accessible reorder via **▲▼ Move up/Move down** buttons
-  (`onMoveBy → moveRow`, with live-region announcements). So **B6 is done**.
-- Builder likewise has ▲▼ Move up/Move down buttons (keyboard-accessible) but
-  NO `⌘Z` and NO `Alt+↑/↓`.
+Foundation + earlier steps (prior session): `6a97005` (registry + `useShortcuts`
+with the `false`-return DECLINE convention), `329c93c` (Focus two-axis model),
+`7eec3f2` (retire `,`/`.`; `[`/`]` is the only sample stepper).
 
-So the genuinely-remaining keyboard work is just:
-- **`Alt+↑/↓` reorder power-gesture** mirroring the ▲▼ buttons on BOTH Scoping
-  (`ScopeSampleRow`/`moveRow`) and Builder (`reorderVisual`) — neither has it.
-  Bind via the registry's `reorderUp`/`reorderDown` (`Alt+ArrowUp/Down`).
-- **Builder `⌘Z`/`⌘⇧Z` undo** + a visible Undo control (registry-driven), to
-  match Scoping. Locked decision #3: undo extends to Builder.
-- **Samples**: a `<KbdLegend>` hint for `x`/`k` when nothing is selected.
-- **Consolidation (step 7)**: migrate Loupe + Samples ad-hoc keydown effects onto
-  `useShortcuts`, and add a registry-driven `<KbdLegend>` where each surface shows
-  its keys. (`<KbdLegend>` from step 1 is NOT built yet — defer to here.)
+This session (each its own commit, full gate green at each — build + vitest):
+- **`c017d5d` — Focus exposure-axis fix (FO-EXPSKIP).** Live-verify of `329c93c`
+  surfaced a real defect: `←`/`→` walked the FULL exposure list, but
+  `useAutoPickExposure` only holds an *acceptable* exposure, so stepping onto a
+  dropped frame bounced the active exposure to the representative (axis looked
+  dead when the rep was flanked by dropped frames, e.g. sample 10). Fix: the
+  stepper traverses `acceptableExposures(exposures)`. (Loupe `←`/`→` deliberately
+  still walks ALL frames — it's the screening surface.)
+- **`01a6c8b` — Alt+↑/↓ reorder power-gesture (Scoping + Builder).** New shared
+  `useReorderShortcuts` hook resolves the focused row via a
+  `data-reorder-row`/`data-reorder-index` attribute and calls the surface's
+  existing move (Scoping `moveRow`; Builder routes through the row's own ▲▼
+  buttons, reusing their BU-MOVEFOCUS boundary dance). Declines when focus isn't
+  in a row.
+- **`b5c7299` — Builder ⌘Z/⌘⇧Z undo + visible Undo control (BU-UNDO).**
+  Snapshot-based history of the structural recipe edits (reorder/add/remove);
+  title keeps native field undo. New `restoreSeriesDraft(slot)` store primitive.
+  Hooks live in the top hooks block (above every early return — a misplacement
+  here first tripped "rendered fewer hooks"). Visible "↺ Undo" beside Cancel,
+  key hint read from the registry.
+- **`16de6aa` — Samples X/K cull hint + registry-driven `<KbdLegend>`
+  (SA-CULLHINT).** `<KbdLegend ids=[…]>` (shell/) derives caps + descriptions
+  from `SHORTCUTS`, delegating appearance to the `KbLegend` ui primitive (now
+  with an optional `testId` so legends can coexist). A "Select frames, then
+  [X] Drop [K] Keep" hint shows only while nothing is selected.
+- **`1f2a8ec` — Loupe + Samples keydown migrated onto `useShortcuts`; Loupe gets
+  a registry-driven legend.** Curated to screen verbs (X/K/R) + sample steps
+  ([ ]); frame arrows omitted because their registry label says "exposure"
+  (LO-TERM keeps the loupe speaking "frame").
 
-Process for the restarted session: Playwright MCP died mid-session and only a
-session RESTART repopulates the tool index (see memory
-`feedback_playwright_mcp_session_desync`). After restart, verify Playwright is
-callable, then: live-verify the Focus model (`329c93c`) FIRST, then do the four
-items above each as TDD → gate → live-verify → commit. Live-audit harness:
-writable dev-DB copy on backend :8091 / vite :5182 (NEVER prod :8080).
+All five commits live-verified in a real browser (Playwright MCP, dev-DB copy on
+backend :8091 / vite :5182 — NEVER prod :8080), and corpus-culling e2e (12 specs)
+re-run green in real Chromium after the keydown migration. Last gate: build +
+2942 vitest green at `1f2a8ec`.
+
+Residual / not done (intentional): the cross-surface redo inconsistency — Scoping
+still maps `⌘⇧Z` to undo (no redo) while Builder now has real redo. Unifying
+Scoping's redo was out of scope for this pass.
