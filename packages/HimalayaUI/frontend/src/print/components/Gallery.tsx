@@ -60,8 +60,17 @@ export function Gallery({
       data-columns={Math.min(count, 3)}
       className={cx(colClass, "gap-5", className)}
     >
-      {React.Children.map(children, (child, i) => (
-        <div key={i} className="break-inside-avoid mb-5">
+      {/* FOL-RESCORE5: the wrapper key must follow the CHILD, not its position.
+          With a positional key={i} a re-sort kept the wrapper in place and
+          remounted the (differently-keyed) card inside it — re-running its
+          figure fetches and dropping its state on every sort/filter. toArray
+          assigns each child a stable key derived from its own key (the series
+          id), so the wrapper moves with the card and the subtree is preserved. */}
+      {React.Children.toArray(children).map((child, i) => (
+        <div
+          key={(React.isValidElement(child) && child.key) || i}
+          className="break-inside-avoid mb-5"
+        >
           {child}
         </div>
       ))}

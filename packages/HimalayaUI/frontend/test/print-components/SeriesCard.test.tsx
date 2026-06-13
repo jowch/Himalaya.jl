@@ -70,6 +70,20 @@ describe("<SeriesCard> renders text content", () => {
     expect(screen.getByText("3 samples")).toBeInTheDocument();
   });
 
+  it("FOL-RESCORE3: the footer ends at the edit label when there is no author (no dangling '·')", () => {
+    const { container } = render(<SeriesCard {...BASE_PROPS} author="" />);
+    const footerRight = container.querySelector(".border-t")?.lastElementChild;
+    // "edited 2 days ago" with no trailing " · " separator.
+    expect(footerRight?.textContent).toBe("edited 2 days ago");
+    expect(footerRight?.textContent).not.toMatch(/·\s*$/);
+  });
+
+  it("FOL-RESCORE3: still shows '· author' when an author is present", () => {
+    const { container } = render(<SeriesCard {...BASE_PROPS} author="JC" />);
+    const footerRight = container.querySelector(".border-t")?.lastElementChild;
+    expect(footerRight?.textContent).toBe("edited 2 days ago · JC");
+  });
+
   it("DROPS the clause for a whitespace-only variable", () => {
     render(<SeriesCard {...BASE_PROPS} variable="   " />);
     expect(screen.queryByText(/\bby\b/)).toBeNull();

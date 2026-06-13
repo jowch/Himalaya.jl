@@ -1,6 +1,34 @@
 import { render, screen } from "@testing-library/react";
 import { describe, it, expect } from "vitest";
+import { useEffect } from "react";
 import { Gallery } from "../../src/print/components/Gallery";
+
+describe("<Gallery> reorder identity (FOL-RESCORE5)", () => {
+  it("preserves card identity across a re-sort (wrapper key follows the child, not its position)", () => {
+    let mounts = 0;
+    function Counted({ id }: { id: number }) {
+      useEffect(() => {
+        mounts += 1;
+      }, []);
+      return <div data-testid={`counted-${id}`} />;
+    }
+    const { rerender } = render(
+      <Gallery>
+        {[<Counted key="a" id={1} />, <Counted key="b" id={2} />]}
+      </Gallery>,
+    );
+    expect(mounts).toBe(2);
+    // Re-sort: swap the two cards. With positional wrapper keys the children
+    // would remount in place (mounts -> 4); with child-derived keys the whole
+    // wrapper moves and the card subtree is preserved (mounts stays 2).
+    rerender(
+      <Gallery>
+        {[<Counted key="b" id={2} />, <Counted key="a" id={1} />]}
+      </Gallery>,
+    );
+    expect(mounts).toBe(2);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // Helpers

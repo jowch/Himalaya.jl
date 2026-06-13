@@ -184,8 +184,14 @@ export function SeriesCard({
           <span>{provenance}</span>
           <span>
             edited <b className="text-ink-soft font-semibold">{editedLabel}</b>
-            {" · "}
-            <b className="text-ink-soft font-semibold">{author}</b>
+            {/* FOL-RESCORE3: drop the "· author" clause when there is no author,
+                so the line never trails a dangling separator. */}
+            {author ? (
+              <>
+                {" · "}
+                <b className="text-ink-soft font-semibold">{author}</b>
+              </>
+            ) : null}
           </span>
         </div>
       </div>
