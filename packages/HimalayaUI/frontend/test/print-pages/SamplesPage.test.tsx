@@ -60,6 +60,7 @@ vi.mock("../../src/print/detector/DetectorImage", () => ({
 
 import { SamplesPage } from "../../src/print/pages/SamplesPage";
 import { setToastImpl } from "../../src/lib/toast";
+import { useFloatingDock } from "../../src/print/shell/floatingDock";
 
 // ── fixtures ──────────────────────────────────────────────────────────────────
 function corpus(over: Partial<CorpusSample> = {}): CorpusSample {
@@ -149,6 +150,19 @@ describe("SamplesPage", () => {
     const bar = screen.getByTestId("cull-bar");
     expect(bar).toHaveAttribute("data-show", "true");
     expect(within(bar).getByText("1")).toBeInTheDocument();
+  });
+
+  it("publishes the floating-dock lane as occupied while a selection bar shows, and frees it on unmount (LA-COLLIDE)", () => {
+    const { unmount } = renderAt("/samples?beamtime=1");
+    // No selection → lane is free, banner stays centred.
+    expect(useFloatingDock.getState().centerLaneOccupied).toBe(false);
+    // Selecting a frame raises the CullBar → the dock lane is now occupied.
+    fireEvent.click(screen.getAllByTestId("thumbnail")[0]!);
+    expect(screen.getByTestId("cull-bar")).toHaveAttribute("data-show", "true");
+    expect(useFloatingDock.getState().centerLaneOccupied).toBe(true);
+    // Leaving the page must release the lane (else the banner stays cornered).
+    unmount();
+    expect(useFloatingDock.getState().centerLaneOccupied).toBe(false);
   });
 
   it("CullBar Drop calls the batch mutator with the selected exposure", () => {

@@ -14,6 +14,7 @@ import {
   useSetExposureStatusBatch,
 } from "../../queries";
 import { navigateToNewSeries } from "../../lib/series/newSeriesNav";
+import { useFloatingDock } from "../shell/floatingDock";
 import {
   resolveExperimentFilter,
   UNKNOWN_BEAMTIME_LABEL,
@@ -217,6 +218,18 @@ export function SamplesPage(): JSX.Element {
     setCheckedSamples(new Set());
     anchorRef.current = null;
   }, [beamtime]);
+
+  // LA-COLLIDE: the CullBar / ComposeBar are opaque, fixed, bottom-centre and
+  // sit above the global InfrastructureBanner's z-index — so while either shows
+  // it would paint over a "Saving…" banner. Publish the dock-lane occupancy so
+  // the banner steps aside to a corner; release it on unmount so leaving the
+  // sheet recentres the banner.
+  const setCenterLaneOccupied = useFloatingDock((s) => s.setCenterLaneOccupied);
+  const dockLaneOccupied = selected.size > 0 || checkedSamples.size > 0;
+  useEffect(() => {
+    setCenterLaneOccupied(dockLaneOccupied);
+    return () => setCenterLaneOccupied(false);
+  }, [dockLaneOccupied, setCenterLaneOccupied]);
 
   useEffect(() => {
     function onShiftDown(e: KeyboardEvent): void {

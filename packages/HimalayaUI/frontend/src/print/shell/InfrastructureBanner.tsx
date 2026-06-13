@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutationState } from "@tanstack/react-query";
+import { useFloatingDock } from "./floatingDock";
 
 const SHOW_THRESHOLD_MS = 500;
 const STUCK_THRESHOLD_MS = 30000;
@@ -13,6 +14,12 @@ const STUCK_THRESHOLD_MS = 30000;
  */
 export function InfrastructureBanner(): JSX.Element | null {
   const [, setTick] = useState(0);
+
+  // LA-COLLIDE: when a page mounts an opaque bottom-centre action bar
+  // (CullBar / ComposeBar), it claims this same lane at a higher z and would
+  // paint over the banner. Step aside to the bottom-right corner (free) while
+  // the lane is occupied; otherwise stay centred where the banner reads best.
+  const centerLaneOccupied = useFloatingDock((s) => s.centerLaneOccupied);
 
   const pendingSubmittedAts = useMutationState({
     filters: { status: "pending" },
@@ -47,9 +54,13 @@ export function InfrastructureBanner(): JSX.Element | null {
     <div
       data-testid="infrastructure-banner"
       data-state={stateAttr}
+      data-dock={centerLaneOccupied ? "aside" : "center"}
       role="status"
       className={
-        "fixed left-1/2 -translate-x-1/2 bottom-4 z-40 flex items-center gap-3 " +
+        "fixed bottom-4 z-40 flex items-center gap-3 " +
+        (centerLaneOccupied
+          ? "right-4 "
+          : "left-1/2 -translate-x-1/2 ") +
         "rounded-md border border-hair bg-plate text-ink px-4 py-2 shadow-lg text-body"
       }
     >
