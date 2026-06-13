@@ -294,6 +294,7 @@ export function SeriesFolioPage(): JSX.Element {
           value={controls.search}
           onChange={(v) => updateControls({ search: v })}
           placeholder="Search series…"
+          ariaLabel="Search series"
         />
         <div className="flex gap-1.5">
           <FilterChip

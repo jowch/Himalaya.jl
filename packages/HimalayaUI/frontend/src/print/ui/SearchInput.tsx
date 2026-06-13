@@ -5,6 +5,10 @@ interface SearchInputProps {
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
+  /** Accessible name for the field. A placeholder is NOT a reliable label
+   *  (WCAG 3.3.2 — it vanishes on input and is only a last-resort accname),
+   *  so callers pass an explicit label that wins over the placeholder. */
+  ariaLabel?: string;
   className?: string;
 }
 
@@ -56,6 +60,7 @@ export function SearchInput({
   value,
   onChange,
   placeholder,
+  ariaLabel,
   className,
 }: SearchInputProps): JSX.Element {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -77,6 +82,7 @@ export function SearchInput({
       testId="search-input"
       value={value}
       onValueChange={onChange}
+      {...(ariaLabel !== undefined ? { "aria-label": ariaLabel } : {})}
       {...(placeholder !== undefined ? { placeholder } : {})}
       className={className ?? ""}
       leading={<MagnifierSvg />}

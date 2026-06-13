@@ -237,6 +237,17 @@ describe("SeriesFolioPage", () => {
     expect(screen.getAllByTestId("series-card")).toHaveLength(1);
   });
 
+  it("the search field carries a real accessible name, not the disappearing placeholder (FOL-MISC / WCAG 3.3.2)", () => {
+    renderPage();
+    // The accname must come from an explicit label, NOT the placeholder
+    // "Search series…" (which vanishes once the user types). Assert the exact
+    // aria-label string with no ellipsis — passes only when a real label wins
+    // over the placeholder fallback.
+    expect(
+      screen.getByRole("textbox", { name: "Search series" }),
+    ).toBeInTheDocument();
+  });
+
   it("broadened search matches a member-phase token, not just the title (F1)", () => {
     state.summaries = [
       summary({ id: 1, title: "Cubic run", member_phases: ["Pn3m", "Im3m"] }),
