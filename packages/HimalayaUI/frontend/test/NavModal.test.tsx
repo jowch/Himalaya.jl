@@ -85,6 +85,16 @@ describe("<NavModal>", () => {
     expect(screen.getByText("APS Apr 2026")).toBeInTheDocument();
   });
 
+  it("gives each full-bleed result row the inset focus ring so the scroll list can't clip it (UI-RINGCLIP)", async () => {
+    useAppState.setState({ navModalOpen: true, navModalStep: "experiment" });
+    renderModal();
+    await screen.findByText("SSRL May 2026");
+    expect(screen.getByTestId("nav-item-experiment-1")).toHaveAttribute(
+      "data-focus-ring",
+      "inset",
+    );
+  });
+
   it("filters experiments by query", async () => {
     const user = userEvent.setup();
     useAppState.setState({ navModalOpen: true, navModalStep: "experiment" });

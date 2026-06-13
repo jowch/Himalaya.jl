@@ -255,6 +255,17 @@
     outline: 2px solid var(--color-accent);
     outline-offset: 2px;
   }
+
+  /* UI-RINGCLIP: the default ring sits 2px OUTSIDE the box (4px reach), which an
+     overflow scrollport clips at its edges — the NavModal result list (overflow-y
+     clips x → left/right) and the ThumbnailGallery filmstrip (overflow-x clips y →
+     top/bottom). Elements that live full-bleed inside such a scroller opt into an
+     INSET ring (drawn 2px inside the box, on top of content) so the accent ring is
+     whole in any scrollport, with no layout change and no loss of the full-bleed
+     row/thumb. Same 2px accent stroke — only the offset flips. */
+  [data-focus-ring="inset"]:focus-visible {
+    outline-offset: -2px;
+  }
 }
 
 /*

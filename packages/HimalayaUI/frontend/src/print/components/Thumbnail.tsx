@@ -78,6 +78,9 @@ export function Thumbnail({
       data-testid="thumbnail"
       data-state={dataState}
       data-size={size}
+      // UI-RINGCLIP: inset the keyboard focus ring so the gallery's
+      // overflow-x-auto (which clips the y-axis) can't crop its top/bottom.
+      data-focus-ring="inset"
       aria-label={ariaLabel}
       {...(onClick ? { "aria-pressed": selected } : {})}
       onClick={onClick}

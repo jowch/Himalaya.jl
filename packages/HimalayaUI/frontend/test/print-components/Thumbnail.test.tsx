@@ -14,6 +14,14 @@ describe("<Thumbnail> root element", () => {
     expect(screen.getByTestId("thumbnail")).toHaveAttribute("data-size", "sm");
   });
 
+  it("opts into the inset focus ring so the gallery's overflow can't clip it (UI-RINGCLIP)", () => {
+    render(<Thumbnail src={null} />);
+    expect(screen.getByTestId("thumbnail")).toHaveAttribute(
+      "data-focus-ring",
+      "inset",
+    );
+  });
+
   it("sets data-size='lg' when size='lg'", () => {
     render(<Thumbnail src={null} size="lg" />);
     expect(screen.getByTestId("thumbnail")).toHaveAttribute("data-size", "lg");

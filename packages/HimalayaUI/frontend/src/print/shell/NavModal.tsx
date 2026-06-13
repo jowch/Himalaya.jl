@@ -324,6 +324,9 @@ export function NavModal(): JSX.Element | null {
                     type="button"
                     data-testid={`nav-item-${step}-${item.id}`}
                     data-selected={idx === selIdx || undefined}
+                    // UI-RINGCLIP: full-bleed row in an overflow-y-auto list —
+                    // inset the focus ring so its left/right edges aren't clipped.
+                    data-focus-ring="inset"
                     onMouseEnter={() => setSelIdx(idx)}
                     onClick={() => {
                       if (step === "experiment") commitExperiment(item.id);
@@ -356,6 +359,7 @@ export function NavModal(): JSX.Element | null {
                           type="button"
                           data-testid={`nav-item-corpus-sample-${s.id}`}
                           data-selected={idx === selIdx || undefined}
+                          data-focus-ring="inset"
                           onMouseEnter={() => setSelIdx(idx)}
                           onClick={() => commitDirectSample(s)}
                           className={
