@@ -19,6 +19,7 @@ import {
 } from "../../queries";
 import { AddSamplePicker } from "../components/AddSamplePicker";
 import { useAppState } from "../../state";
+import { useDocumentTitle } from "../../hooks/useDocumentTitle";
 import * as api from "../../api";
 import type { Series, SeriesMember } from "../../api";
 import { toWaterfallRows, waterfallQDomain } from "../waterfall/waterfallModel";
@@ -90,6 +91,11 @@ export function SeriesBuilderPage(): JSX.Element {
   // Confirm is gated on the picker having LOADED: without it every sample is
   // "unresolvable" and Confirm would honestly have to publish an empty plate.
   const resolverReady = pickerQ.data !== undefined;
+
+  // BU-RESCORE3 N3: name the browser tab after the series (was the static
+  // "Himalaya"). Committed title — nullish while loading falls back to the app
+  // name. Hooks-safe here: above every early return.
+  useDocumentTitle(seriesQ.data?.title ?? null);
 
   // ── Draft (lazy) + view-pref state ──────────────────────────────────────
   const draft = useAppState((s) => s.seriesDraft);
