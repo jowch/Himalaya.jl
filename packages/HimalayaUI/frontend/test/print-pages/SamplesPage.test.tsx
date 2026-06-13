@@ -520,6 +520,23 @@ describe("SamplesPage", () => {
     expect(screen.getByTestId("sheet-empty")).toBeInTheDocument();
   });
 
+  it("ON-EMPTY: the empty corpus is a real door (EmptyState + reload), not a bare dead-end", () => {
+    state.samples = [];
+    state.byId = new Map();
+    renderAt("/samples");
+    const block = screen.getByTestId("sheet-empty");
+    // A real EmptyState, consistent with the error / unknown-beamtime states —
+    // a title + a body that names how samples appear, not a lone sentence.
+    expect(within(block).getByTestId("empty-state")).toBeInTheDocument();
+    expect(
+      within(block).getByRole("heading", { name: /no samples yet/i }),
+    ).toBeInTheDocument();
+    // A way forward: reload once an experiment has been ingested/analyzed
+    // (mirrors the error state's control, wired to the same refetch).
+    fireEvent.click(within(block).getByRole("button", { name: /reload the corpus/i }));
+    expect(corpusRefetch).toHaveBeenCalled();
+  });
+
   it("error state renders an EmptyState with a retry control wired to refetch (SA-RETRY)", () => {
     state.error = true;
     renderAt("/samples");

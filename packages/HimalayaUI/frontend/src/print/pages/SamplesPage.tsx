@@ -425,11 +425,28 @@ export function SamplesPage(): JSX.Element {
               sort={sort}
               onSort={applySort}
               empty={
-                <div className="p-10 text-center text-ink-soft">
-                  No samples{" "}
-                  {beamtime === undefined ? "in the corpus" : "in this beamtime"}{" "}
-                  yet.
-                </div>
+                // ON-EMPTY: a real door, consistent with the error /
+                // unknown-beamtime states. The corpus is populated by ingesting
+                // and analyzing an experiment (CLI — there is no in-app upload),
+                // so the body names that path and the action reloads once it has
+                // run, rather than dead-ending on a lone sentence.
+                <EmptyState
+                  title={
+                    beamtime === undefined
+                      ? "No samples yet"
+                      : "No samples in this beamtime yet"
+                  }
+                  body="Samples appear after an experiment is ingested and analyzed. If you just added data, reload to pull it in."
+                  action={
+                    <Button
+                      variant="outline"
+                      disabled={corpusQuery.isFetching}
+                      onClick={() => void corpusQuery.refetch()}
+                    >
+                      Reload the corpus
+                    </Button>
+                  }
+                />
               }
             >
               {sortedSamples.map((s, i) => {
