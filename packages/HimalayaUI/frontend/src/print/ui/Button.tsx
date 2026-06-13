@@ -49,7 +49,7 @@ const armedClass =
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
   {
     variant = "ghost",
-    armed = false,
+    armed,
     className = "",
     children,
     ...props
@@ -61,7 +61,12 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       ref={ref}
       data-variant={variant}
       data-armed={armed ? "true" : undefined}
-      aria-pressed={armed ? true : undefined}
+      // FO-RESCORE2 F12: a toggle button (one that passes `armed`) must keep
+      // aria-pressed in BOTH states — render "false" when off, not drop the
+      // attribute (APG toggle pattern). `armed` undefined → a non-toggle button,
+      // which carries no aria-pressed at all. So bind the raw value: undefined
+      // omits the attribute, false renders "false", true renders "true".
+      aria-pressed={armed}
       className={`text-meta font-semibold whitespace-nowrap rounded-md px-2.5 py-1 transition-colors disabled:opacity-45 disabled:cursor-not-allowed ${armed ? armedClass : variantClass[variant]} ${className}`}
       {...props}
     >

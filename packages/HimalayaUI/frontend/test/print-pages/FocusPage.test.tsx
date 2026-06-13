@@ -361,7 +361,9 @@ describe("FocusPage", () => {
     expect(addPeakBtn).toHaveAttribute("aria-pressed", "true");
     // Escape #2: no dialog left — this one disarms.
     fireEvent.keyDown(document.body, { key: "Escape" });
-    expect(addPeakBtn).not.toHaveAttribute("aria-pressed");
+    // FO-RESCORE2 F12: the disarmed toggle reads aria-pressed="false" (not
+    // dropped) — a toggle button keeps the attribute in both states.
+    expect(addPeakBtn).toHaveAttribute("aria-pressed", "false");
   });
 
   it("not-found: no corpus sample for the id", () => {

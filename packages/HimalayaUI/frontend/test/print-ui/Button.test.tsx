@@ -15,6 +15,15 @@ describe("<Button> armed state", () => {
     expect(b.getAttribute("data-armed")).toBe("true");
     expect(b.getAttribute("aria-pressed")).toBe("true");
   });
+  it("a toggle button keeps aria-pressed='false' when disarmed (FO-RESCORE2 F12)", () => {
+    // armed={false} means a toggle in its OFF state — the attribute must read
+    // "false", not vanish (which would read as a plain non-toggle button to AT).
+    render(<Button armed={false}>+ Peak</Button>);
+    const b = screen.getByRole("button", { name: "+ Peak" });
+    expect(b.getAttribute("aria-pressed")).toBe("false");
+    // ...but a non-toggle (no armed prop) still carries no aria-pressed at all.
+    expect(b.getAttribute("data-armed")).toBe(null);
+  });
   it("keeps the variant data-attr when armed", () => {
     render(<Button variant="ghost" armed>x</Button>);
     expect(screen.getByRole("button").getAttribute("data-variant")).toBe("ghost");

@@ -145,7 +145,10 @@ export function PlotPeaks({
           ? {
               tabIndex: 0,
               role: "button" as const,
-              "aria-label": `Peak at q = ${p.q.toFixed(4)}`,
+              // FO-RESCORE2 F11: name the peak's PROVENANCE (auto-found vs the
+              // user's manual add) and excluded state — it was glyph-only before,
+              // invisible to a screen-reader user editing peaks.
+              "aria-label": `${p.source === "manual" ? "Manual" : "Auto"} peak at q = ${p.q.toFixed(4)}${p.excluded ? " (excluded)" : ""}`,
               "aria-keyshortcuts": "Enter Space Alt+Enter",
               onKeyDown: (e: React.KeyboardEvent<SVGGElement>) => {
                 if (e.key !== "Enter" && e.key !== " ") return;

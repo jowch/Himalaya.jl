@@ -169,8 +169,28 @@ describe("PlotPeaks", () => {
     expect(peakG).toBeTruthy();
     expect(peakG!.getAttribute("tabindex")).toBe("0");
     expect(peakG!.getAttribute("role")).toBe("button");
-    expect(peakG!.getAttribute("aria-label")).toBe("Peak at q = 0.2000");
+    // FO-RESCORE2 F11: the label names provenance (Auto vs Manual).
+    expect(peakG!.getAttribute("aria-label")).toBe("Auto peak at q = 0.2000");
     expect(peakG!.getAttribute("aria-keyshortcuts")).toBe("Enter Space Alt+Enter");
+  });
+
+  it("names peak provenance and excluded state in the aria-label (FO-RESCORE2 F11)", () => {
+    const { container } = render(
+      <svg>
+        <PlotPeaks
+          peaks={[
+            { id: 1, q: 0.18, intensity: 20, source: "manual" },
+            { id: 2, q: 0.24, intensity: 20, source: "auto", excluded: true },
+          ]}
+          projection={proj}
+          color="var(--color-accent)"
+          onPeakActivate={vi.fn()}
+        />
+      </svg>,
+    );
+    const gs = container.querySelectorAll('[data-role="plot-peaks"] > g');
+    expect(gs[0]!.getAttribute("aria-label")).toBe("Manual peak at q = 0.1800");
+    expect(gs[1]!.getAttribute("aria-label")).toBe("Auto peak at q = 0.2400 (excluded)");
   });
 
   it("a peak OUTSIDE the visible x-domain is not focusable even when armed (FO-ZOOMEDIT)", () => {

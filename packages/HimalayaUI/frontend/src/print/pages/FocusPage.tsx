@@ -45,6 +45,7 @@ import {
 import { useAppState } from "../../state";
 import { useSyncActiveSampleFromRoute } from "../../hooks/useSyncActiveSampleFromRoute";
 import { useAutoPickExposure } from "../../hooks/useAutoPickExposure";
+import { useDocumentTitle } from "../../hooks/useDocumentTitle";
 import { deriveActiveIndices } from "../../lib/assignment";
 import { basisFor } from "../../lib/customIndex";
 import { seriesRatio } from "../../lib/seriesRatio";
@@ -263,6 +264,10 @@ export function FocusPage(): JSX.Element {
     : null;
   const sampleName =
     corpusSample?.display_name ?? corpusSample?.name ?? "—";
+  // FO-RESCORE2 F14: name the browser tab after the sample (was static
+  // "Himalaya"). Raw name (null while loading) so the placeholder "—" never
+  // leaks into the tab. Hooks-safe: above the not-found early return.
+  useDocumentTitle(corpusSample?.display_name ?? corpusSample?.name ?? null);
   const subtitle = [
     corpusSample?.name,
     experimentQ.data?.name,

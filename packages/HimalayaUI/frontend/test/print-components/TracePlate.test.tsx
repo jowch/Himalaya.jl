@@ -220,7 +220,7 @@ describe("TracePlate", () => {
     const mark = container.querySelector('[data-role="plot-peaks"] [role="button"]');
     expect(mark).toBeTruthy();
     expect(mark!.getAttribute("tabindex")).toBe("0");
-    expect(mark!.getAttribute("aria-label")).toBe("Peak at q = 0.0500");
+    expect(mark!.getAttribute("aria-label")).toBe("Auto peak at q = 0.0500");
   });
 
   it("armed: Enter on a peak mark removes it; Alt+Enter excludes it", () => {
