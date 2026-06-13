@@ -13,9 +13,11 @@ import {
   useSeriesTraces,
   useCorpusSamples,
   useCorpusPickerSamples,
+  useExperiments,
   useSaveSeries,
   useCommitSeriesPlate,
 } from "../../queries";
+import { AddSamplePicker } from "../components/AddSamplePicker";
 import { useAppState } from "../../state";
 import * as api from "../../api";
 import type { Series, SeriesMember } from "../../api";
@@ -67,6 +69,8 @@ export function SeriesBuilderPage(): JSX.Element {
   const seriesQ = useSeries(Number.isFinite(id) ? id : undefined);
   const tracesQ = useSeriesTraces(Number.isFinite(id) ? id : undefined);
   const corpusQ = useCorpusSamples();
+  // Experiments power the add-sample picker's group headers (BU-PICKER).
+  const experimentsQ = useExperiments();
   // Sample → indexing-exposure resolution source for the Confirm chain's
   // recipe→plate step (BU-RECIPENOOP). Loaded WITH the page (not lazily at
   // Confirm) so the resolution map is ready by Confirm time — lazy loading
@@ -395,6 +399,7 @@ export function SeriesBuilderPage(): JSX.Element {
           tracesLoading={tracesQ.isLoading}
           tracesError={tracesQ.isError}
           corpus={corpusQ.data ?? []}
+          experiments={experimentsQ.data ?? []}
           liveDraft={liveDraft}
           offset={offset}
           onOffsetChange={setOffset}
@@ -433,6 +438,7 @@ interface BuilderBodyProps {
   tracesLoading: boolean;
   tracesError: boolean;
   corpus: api.CorpusSample[];
+  experiments: api.Experiment[];
   liveDraft: ReturnType<typeof useAppState.getState>["seriesDraft"];
   offset: number;
   onOffsetChange: (v: number) => void;
@@ -477,6 +483,7 @@ function BuilderBody({
   tracesLoading,
   tracesError,
   corpus,
+  experiments,
   liveDraft,
   offset,
   onOffsetChange,
@@ -709,7 +716,11 @@ function BuilderBody({
               )}
               {tracesSlot}
               {addable.length > 0 && (
-                <AddSampleSelect options={addable} onAdd={onAddSample} />
+                <AddSamplePicker
+                  options={addable}
+                  experiments={experiments}
+                  onAdd={onAddSample}
+                />
               )}
               {liveDraft && (
                 <div className="flex items-center gap-2 pt-1">
@@ -935,35 +946,6 @@ function RecipeRow({
         onClick={onRemove}
       />
     </div>
-  );
-}
-
-// ── Add-sample native select (addable corpus samples) ──────────────────────
-function AddSampleSelect({
-  options,
-  onAdd,
-}: {
-  options: api.CorpusSample[];
-  onAdd: (sampleId: number) => void;
-}): JSX.Element {
-  return (
-    <select
-      data-testid="builder-add-sample-select"
-      aria-label="Add a sample to the series"
-      className="w-full border border-hair-strong bg-plate rounded px-3 py-2 text-meta text-ink"
-      value=""
-      onChange={(e) => {
-        const v = Number(e.target.value);
-        if (Number.isFinite(v) && v > 0) onAdd(v);
-      }}
-    >
-      <option value="">+ Add sample…</option>
-      {options.map((s) => (
-        <option key={s.id} value={s.id}>
-          {s.display_name ?? s.name}
-        </option>
-      ))}
-    </select>
   );
 }
 

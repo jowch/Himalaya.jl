@@ -1,8 +1,23 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
+import { useRef } from "react";
 import { Popover } from "../../src/print/ui/Popover";
 
 describe("<Popover>", () => {
+  it("focuses initialFocusRef instead of the panel when provided (search-first)", () => {
+    function Harness(): JSX.Element {
+      const ref = useRef<HTMLInputElement>(null);
+      return (
+        <Popover trigger={<button>open</button>} label="Search" initialFocusRef={ref}>
+          <input ref={ref} data-testid="inner-input" aria-label="search" />
+        </Popover>
+      );
+    }
+    render(<Harness />);
+    fireEvent.click(screen.getByRole("button", { name: "open" }));
+    expect(screen.getByTestId("inner-input")).toHaveFocus();
+  });
+
   it("is closed by default — no panel, trigger collapsed", () => {
     render(
       <Popover trigger={<button>open</button>} label="Details">

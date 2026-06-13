@@ -1,5 +1,5 @@
 import { cloneElement, useEffect, useId, useRef, useState } from "react";
-import type { KeyboardEvent, ReactElement, ReactNode } from "react";
+import type { KeyboardEvent, ReactElement, ReactNode, RefObject } from "react";
 
 export interface PopoverProps {
   /** The trigger element. Cloned to wire click + aria. Must be a single
@@ -11,6 +11,12 @@ export interface PopoverProps {
   side?: "top" | "bottom";
   /** Accessible name for the popover dialog. */
   label?: string;
+  /** Element to focus when the popover opens, instead of the panel itself.
+   *  For a search-first popover (e.g. a combobox), point this at the inner
+   *  input so keyboard users can type immediately. The element mounts with the
+   *  panel, so its ref is set by the time the open effect runs. Falls back to
+   *  the panel when absent (the default). */
+  initialFocusRef?: RefObject<HTMLElement | null>;
   /** PLACEMENT-ONLY on the popover panel. */
   className?: string;
 }
@@ -40,6 +46,7 @@ export function Popover({
   children,
   side = "bottom",
   label,
+  initialFocusRef,
   className = "",
 }: PopoverProps): JSX.Element {
   const panelId = useId();
@@ -62,10 +69,11 @@ export function Popover({
   }, [open]);
 
   // Move focus into the panel when it opens, so keyboard users land on the
-  // revealed content (and Escape has a focused target).
+  // revealed content (and Escape has a focused target). A search-first popover
+  // can redirect that focus to its input via `initialFocusRef`.
   useEffect(() => {
-    if (open) panelRef.current?.focus();
-  }, [open]);
+    if (open) (initialFocusRef?.current ?? panelRef.current)?.focus();
+  }, [open, initialFocusRef]);
 
   const close = (): void => {
     setOpen(false);

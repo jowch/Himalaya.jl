@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, act, within, waitFor } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { Series, SeriesMember, SeriesSample, CorpusSample, Trace } from "../../src/api";
+import type { Series, SeriesMember, SeriesSample, CorpusSample, Trace, Experiment } from "../../src/api";
 import { useAppState } from "../../src/state";
 
 // ── mock data plane ──────────────────────────────────────────────────────────
@@ -37,6 +37,7 @@ const state = {
   tracesLoading: false,
   tracesError: false,
   corpus: [] as CorpusSample[],
+  experiments: [] as Experiment[],
   // Corpus picker projection (sample → indexing exposure). `undefined`
   // simulates a not-yet-loaded picker (Confirm must stay gated).
   picker: undefined as PickerRow[] | undefined,
@@ -65,6 +66,7 @@ vi.mock("../../src/queries", () => ({
     isLoading: state.picker === undefined && !state.pickerError,
     isError: state.pickerError,
   }),
+  useExperiments: () => ({ data: state.experiments }),
   useSaveSeries: () => state.save,
   useCommitSeriesPlate: () => state.commit,
 }));
@@ -260,11 +262,12 @@ describe("SeriesBuilderPage", () => {
     expect(draft!.title).toBe("New title");
   });
 
-  it("adding a sample STARTS a draft and appends the recipe row", () => {
+  it("adding a sample via the picker STARTS a draft and appends the recipe row (BU-PICKER)", () => {
     renderPage();
-    // Add sample C (id 3), the only corpus sample not already in the recipe.
-    const select = screen.getByTestId("builder-add-sample-select") as HTMLSelectElement;
-    fireEvent.change(select, { target: { value: "3" } });
+    // Open the search-first picker, then add sample C (id 3) — the only corpus
+    // sample not already in the recipe.
+    fireEvent.click(screen.getByTestId("builder-add-sample"));
+    fireEvent.click(screen.getByTestId("add-opt-3"));
     const draft = useAppState.getState().seriesDraft;
     expect(draft).not.toBeNull();
     expect(draft!.recipe.map((r) => r.sample_id)).toContain(3);
@@ -951,7 +954,8 @@ describe("SeriesBuilderPage", () => {
     fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "x" } });
     // Add sample 3 (picker resolves it to exposure 3, but no committed member has
     // exposure 3, so there is no plate trace to reference yet).
-    fireEvent.change(screen.getByLabelText(/add a sample/i), { target: { value: "3" } });
+    fireEvent.click(screen.getByTestId("builder-add-sample"));
+    fireEvent.click(screen.getByTestId("add-opt-3"));
     const rows = screen.getAllByTestId("builder-recipe-row");
     // The newly-added sample sits at recipe position 2 → visual row 0 (top).
     const newRow = rows[0]!;
