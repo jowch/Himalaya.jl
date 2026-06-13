@@ -108,6 +108,15 @@ export function SeriesBuilderPage(): JSX.Element {
   // ── Confirm chain (Save → await fresh cache → Commit → discard) ─────────
   const save = useSaveSeries();
   const commit = useCommitSeriesPlate();
+  // BU-PROGRESS (F-ERRSILENT): name the FAILED STEP so a chain failure isn't a
+  // generic dead-end. A save failure means nothing was published; a commit
+  // failure means the order saved but the figure didn't rebuild — different
+  // recovery, different words. Shared by the inline alert + the assertive toast.
+  const chainErrorMessage = save.error
+    ? "Couldn't save your changes. Check your connection and try Confirm again."
+    : commit.error
+      ? "Your order was saved, but publishing the figure failed. Try Confirm again."
+      : null;
   const stage = useRef<"idle" | "saving" | "awaiting-fresh" | "committing">("idle");
   // Confirm-time snapshot of the series query's dataUpdatedAt. The commit only
   // fires once the cache holds a series NEWER than this watermark. That is a
@@ -266,8 +275,12 @@ export function SeriesBuilderPage(): JSX.Element {
     if (save.error || commit.error) {
       stage.current = "idle";
       // The rail already shows a role=alert div; also surface it assertively as
-      // a toast so the failure reaches a user whose focus is elsewhere.
-      showToast("Couldn't confirm the series. Try again.", "error");
+      // a toast so the failure reaches a user whose focus is elsewhere. Same
+      // cause-named copy (BU-PROGRESS) so the two channels never disagree.
+      showToast(
+        chainErrorMessage ?? "Couldn't confirm the series. Try again.",
+        "error",
+      );
     }
   }, [save.error, commit.error]);
 
@@ -354,7 +367,18 @@ export function SeriesBuilderPage(): JSX.Element {
     (stage.current === "saving" && save.error == null && !(save.isSuccess && seriesQ.isError)) ||
     (stage.current === "awaiting-fresh" && !seriesQ.isError) ||
     (stage.current === "committing" && commit.error == null);
-  const chainError = save.error || commit.error;
+  // BU-PROGRESS: the Save→await→Commit chain is multi-step, but the user only
+  // saw a single static "Saving…". Name the CURRENT step from the same reactive
+  // mutation states so the label advances visibly across the chain (a stuck
+  // process looks different from a working one). The awaiting-fresh gap (cache
+  // refetch between save success and commit) reads "Confirming…".
+  const confirmProgressLabel = !confirmBusy
+    ? undefined
+    : save.isPending
+      ? "Saving order…"
+      : commit.isPending
+        ? "Publishing the figure…"
+        : "Confirming…";
 
   return (
     <Skeleton
@@ -390,10 +414,11 @@ export function SeriesBuilderPage(): JSX.Element {
           onConfirm={onConfirm}
           onCancel={onCancel}
           confirmBusy={confirmBusy}
+          confirmLabel={confirmProgressLabel}
           confirmReady={resolverReady}
           resolverError={pickerQ.isError}
           resolverLoading={!resolverReady && !pickerQ.isError}
-          chainError={chainError}
+          chainErrorMessage={chainErrorMessage}
           figureLabelBySample={figureLabelBySample}
         />
       )}
@@ -427,6 +452,10 @@ interface BuilderBodyProps {
   onConfirm: () => void;
   onCancel: () => void;
   confirmBusy: boolean;
+  /** BU-PROGRESS: the step-named busy label for the Save action while the
+   *  Save→Commit chain is in flight ("Saving order…" / "Publishing the figure…"
+   *  / "Confirming…"). Undefined when not busy. */
+  confirmLabel: string | undefined;
   /** Picker projection loaded — the recipe→plate resolution source is ready.
    *  Confirm stays disabled until then (an unresolvable recipe would commit
    *  an empty plate). */
@@ -434,7 +463,9 @@ interface BuilderBodyProps {
   /** Picker projection FAILED — Confirm can never become ready this session. */
   resolverError: boolean;
   resolverLoading: boolean;
-  chainError: unknown;
+  /** BU-PROGRESS: cause-named chain-failure copy, or null when no failure.
+   *  Distinguishes a save-step from a commit-step failure. */
+  chainErrorMessage: string | null;
   /** BU-NAMES: recipe sample id → the figure trace's label (memberRowLabel),
    *  shown as a muted suffix so a recipe row cross-references its figure trace. */
   figureLabelBySample: Map<number, string>;
@@ -465,10 +496,11 @@ function BuilderBody({
   onConfirm,
   onCancel,
   confirmBusy,
+  confirmLabel,
   confirmReady,
   resolverError,
   resolverLoading,
-  chainError,
+  chainErrorMessage,
   figureLabelBySample,
 }: BuilderBodyProps): JSX.Element {
   // Render model: the figure plate ALWAYS shows the committed plate (members);
@@ -635,6 +667,7 @@ function BuilderBody({
         grouping={groupingSummary(series, liveDraft ? liveDraft.recipe.length : undefined)}
         {...(liveDraft && !confirmBusy && confirmReady ? { onConfirm } : {})}
         confirmBusy={confirmBusy}
+        {...(confirmLabel !== undefined ? { confirmLabel } : {})}
         {...(liveDraft ? {} : { onAdjust: ensureDraft })}
         // copy-doesn't-lie: the rail's default WYSIWYG caption is false
         // mid-draft, so a live draft swaps in the honest variant. Precision:
@@ -654,9 +687,9 @@ function BuilderBody({
         onOffsetChange={onOffsetChange}
         traces={
             <div className="flex flex-col gap-2">
-              {chainError != null && (
+              {chainErrorMessage != null && (
                 <div role="alert" className="text-caption text-error">
-                  Couldn't confirm the series. Try again.
+                  {chainErrorMessage}
                 </div>
               )}
               {/* Truthful disabled-Confirm explanation: the resolution source

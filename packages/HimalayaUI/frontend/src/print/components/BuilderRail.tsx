@@ -19,6 +19,13 @@ export interface BuilderRailProps {
    */
   confirmBusy?: boolean;
   /**
+   * BU-PROGRESS: the step-named busy label while the Save→Commit chain runs
+   * ("Saving order…" / "Publishing the figure…" / "Confirming…"). When busy and
+   * present it replaces the generic "Saving…" so the action shows visible
+   * progress through the multi-step chain. Falls back to "Saving…".
+   */
+  confirmLabel?: string;
+  /**
    * The "Edit" entry into draft state. Omit it (e.g. while a draft is already
    * live) and the affordance is NOT rendered — re-running the idempotent
    * ensureDraft is a no-op, and controls-don't-lie says we don't show it.
@@ -81,6 +88,7 @@ export function BuilderRail({
   grouping,
   onConfirm,
   confirmBusy,
+  confirmLabel,
   onAdjust,
   orderedBy,
   orderNote,
@@ -123,7 +131,7 @@ export function BuilderRail({
         variant="compose"
         actions={[
           {
-            label: confirmBusy ? "Saving…" : "Save changes",
+            label: confirmBusy ? (confirmLabel ?? "Saving…") : "Save changes",
             ...(onConfirm ? { onClick: onConfirm } : {}),
             ...(confirmBusy ? { busy: true } : {}),
           },
