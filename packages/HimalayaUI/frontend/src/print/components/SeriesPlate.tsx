@@ -14,6 +14,9 @@ export type SeriesScale = "log" | "lin";
 export interface SeriesPlateProps {
   kicker?: ReactNode;
   title: ReactNode;
+  /** Plain-text heading for when `title` is an interactive control (e.g. the
+   *  editable builder title). Forwarded to PlateHeader; see its `headingText`. */
+  headingText?: string;
   subtitle?: ReactNode;
   /** Member rows low→high (rendered bottom-up by WaterfallChart). */
   rows: WaterfallRow[];
@@ -44,7 +47,7 @@ export interface SeriesPlateProps {
 }
 
 export function SeriesPlate({
-  kicker, title, subtitle, rows, offsetScale, scale, onScaleChange,
+  kicker, title, headingText, subtitle, rows, offsetScale, scale, onScaleChange,
   showPeakTicks, showPeakLabels,
   hoveredKey, onHoverRow, hoveredQ, onHoverQ,
   legendPhases, footHint, footNote, actions, className,
@@ -52,7 +55,13 @@ export function SeriesPlate({
   const hasFoot = (legendPhases && legendPhases.length > 0) || footHint != null || footNote != null;
   return (
     <Card as="section" elevated data-testid="series-plate" className={cx("px-6 pt-5 pb-[18px]", className)}>
-      <PlateHeader kicker={kicker} title={title} subtitle={subtitle} as="h1">
+      <PlateHeader
+        kicker={kicker}
+        title={title}
+        {...(headingText !== undefined ? { headingText } : {})}
+        subtitle={subtitle}
+        as="h1"
+      >
         <ToolBar>
           <SegmentedControl
             options={[{ value: "log", label: "log q" }, { value: "lin", label: "linear q" }]}

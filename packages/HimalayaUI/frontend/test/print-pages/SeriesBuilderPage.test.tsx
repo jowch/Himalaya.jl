@@ -221,6 +221,20 @@ describe("SeriesBuilderPage", () => {
     expect(state.save.mutate).not.toHaveBeenCalled();
   });
 
+  it("normal page exposes the series title as a real h1, not an interactive control nested in a heading (BU-NOHEAD)", () => {
+    renderPage();
+    // The built-series page's sole top-level heading is the series title, so it
+    // is reachable by heading navigation (WCAG 1.3.1 / 2.4.6). Previously the
+    // only <h1> WRAPPED the editable Input, so its accessible name was empty and
+    // an interactive control was nested inside a heading.
+    expect(
+      screen.getByRole("heading", { level: 1, name: "LL37 ratio series" }),
+    ).toBeInTheDocument();
+    // The editable title field stays a distinct control, NOT a heading
+    // descendant — correcting the interactive-inside-heading anti-pattern.
+    expect(screen.getByLabelText(/series title/i).closest("h1")).toBeNull();
+  });
+
   it("lays out as a full-height work·rail grid (rail is a direct grid child, mirrors Focus)", () => {
     renderPage();
     // Item 1: the success body is the full-bleed [work 1fr · rail] grid (no

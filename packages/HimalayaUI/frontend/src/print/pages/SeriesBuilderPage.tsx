@@ -623,6 +623,11 @@ function BuilderBody({
             title={
               <PlateTitle value={effectiveTitle} onChange={onEditTitle} />
             }
+            // BU-NOHEAD: the visible title is an editable Input, so the real
+            // page heading is this plain text (rendered sr-only by PlateHeader).
+            // Fall back to the input's own placeholder for an untitled draft so
+            // the heading is never empty.
+            headingText={effectiveTitle || "Untitled series"}
             // Honest state: the plate keeps rendering the COMMITTED members
             // mid-draft (lazy-draft render model) while the title above it
             // updates live — say so, precisely: only membership/order lag.

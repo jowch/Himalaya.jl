@@ -65,4 +65,20 @@ describe("<PlateHeader>", () => {
     render(<PlateHeader title="Lipid 1‑2 + LL37 1:0.5" />);
     expect(screen.queryByRole("button", { name: "Export" })).not.toBeInTheDocument();
   });
+
+  it("uses headingText for the heading and keeps an interactive title out of the heading (BU-NOHEAD)", () => {
+    render(
+      <PlateHeader
+        as="h1"
+        headingText="LL37 ratio series"
+        title={<input aria-label="Series title" defaultValue="LL37 ratio series" />}
+      />
+    );
+    // The named heading comes from headingText, not the interactive control.
+    expect(
+      screen.getByRole("heading", { level: 1, name: "LL37 ratio series" })
+    ).toBeInTheDocument();
+    // The control renders, but NOT as a descendant of the heading.
+    expect(screen.getByLabelText("Series title").closest("h1")).toBeNull();
+  });
 });
