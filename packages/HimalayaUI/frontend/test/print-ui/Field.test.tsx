@@ -101,6 +101,27 @@ describe("<Field>", () => {
       expect(document.activeElement).toBe(trigger);
     });
 
+    it("focus leaving the widget (Tab away) closes the menu (UI-MENUTAB)", () => {
+      const trigger = setup();
+      fireEvent.click(trigger);
+      expect(screen.getByTestId("menu")).toBeInTheDocument();
+      // APG: Tab closes the menu. jsdom does not move focus on Tab; model the
+      // focusout to an element OUTSIDE the field widget (real Tab is e2e).
+      fireEvent.focusOut(screen.getByRole("menuitemradio", { name: "Dose" }), {
+        relatedTarget: document.body,
+      });
+      expect(screen.queryByTestId("menu")).toBeNull();
+    });
+
+    it("focus moving to the trigger (inside the widget) keeps the menu open (no toggle-reopen)", () => {
+      const trigger = setup();
+      fireEvent.click(trigger);
+      fireEvent.focusOut(screen.getByRole("menuitemradio", { name: "Dose" }), {
+        relatedTarget: trigger,
+      });
+      expect(screen.getByTestId("menu")).toBeInTheDocument();
+    });
+
     it("selecting an item closes and returns focus to the trigger", () => {
       const trigger = setup();
       fireEvent.click(trigger);

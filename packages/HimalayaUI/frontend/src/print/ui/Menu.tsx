@@ -155,6 +155,13 @@ export function Menu<T extends string>({
             }}
             role={isValueSelector ? "menuitemradio" : "menuitem"}
             type="button"
+            // UI-MENUTAB — the menu is a single tab stop (APG menu pattern):
+            // items are NOT in the tab order, so one Tab from a focused item
+            // leaves the whole popup instead of walking item-to-item, which
+            // lets the owner's focus-out handler close it (APG: Tab closes the
+            // menu). Focus still moves here via the open effect + arrow nav
+            // (imperative .focus(), unaffected by tabIndex).
+            tabIndex={-1}
             disabled={o.disabled}
             {...(isValueSelector ? { "aria-checked": active } : {})}
             data-value={o.value}

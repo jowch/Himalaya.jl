@@ -176,4 +176,29 @@ describe("ExportButton", () => {
     fireEvent.pointerDown(document.body);
     expect(screen.queryByRole("menu", { name: /download formats/i })).toBeNull();
   });
+
+  it("focus leaving the widget (Tab away) closes the open menu (UI-MENUTAB)", () => {
+    setup();
+    fireEvent.click(screen.getByRole("button", { name: /download formats/i }));
+    expect(screen.getByRole("menu", { name: /download formats/i })).toBeInTheDocument();
+    // APG: Tab closes the menu. jsdom does not move focus on Tab, so model the
+    // focusout whose relatedTarget is an element OUTSIDE the export widget
+    // (real Tab is covered by e2e). focusOut bubbles to the wrapper's onBlur.
+    fireEvent.focusOut(screen.getByRole("menuitem", { name: /download as png/i }), {
+      relatedTarget: document.body,
+    });
+    expect(screen.queryByRole("menu", { name: /download formats/i })).toBeNull();
+  });
+
+  it("focus moving to the trigger (inside the widget) keeps the menu open (no toggle-reopen)", () => {
+    // The regression close-on-blur would introduce if scoped to the menu alone:
+    // focus → trigger would close, then the trigger's toggle onClick reopens.
+    // Scoping the close to the whole widget (wrapRef) keeps focus-to-trigger in.
+    setup();
+    fireEvent.click(screen.getByRole("button", { name: /download formats/i }));
+    fireEvent.focusOut(screen.getByRole("menuitem", { name: /download as png/i }), {
+      relatedTarget: screen.getByTestId("export-menu-trigger"),
+    });
+    expect(screen.getByRole("menu", { name: /download formats/i })).toBeInTheDocument();
+  });
 });

@@ -168,7 +168,21 @@ export function Field({
   if (!isDropdown) return trigger;
 
   return (
-    <span ref={wrapRef} className={cx("relative inline-block w-full", className)}>
+    <span
+      ref={wrapRef}
+      // UI-MENUTAB — APG menu-button: Tab (Shift+Tab) closes the menu. Mirror
+      // the outside-pointerdown close on the FOCUS axis — when focus leaves the
+      // whole widget (relatedTarget outside wrapRef, or null) close it. Focus
+      // moving to the trigger or between items stays inside wrapRef, so a
+      // toggle-click never closes-then-reopens. Plain setOpen (no refocus): the
+      // user is already on their way out.
+      onBlur={(e) => {
+        if (wrapRef.current && !wrapRef.current.contains(e.relatedTarget as Node | null)) {
+          setOpen(false);
+        }
+      }}
+      className={cx("relative inline-block w-full", className)}
+    >
       {trigger}
       <Menu<string>
         open={open}

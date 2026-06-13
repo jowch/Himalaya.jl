@@ -133,6 +133,17 @@ export function ExportButton({
     <span
       ref={wrapRef}
       data-testid="export-button"
+      // UI-MENUTAB — APG menu-button: Tab (Shift+Tab) closes the menu and lets
+      // focus proceed. Mirror the outside-pointerdown close on the FOCUS axis:
+      // when focus leaves the whole widget (relatedTarget outside wrapRef, or
+      // null), close. Focus moving to the trigger or between items stays inside
+      // wrapRef, so a toggle-click never closes-then-reopens. Plain setOpen
+      // (no refocus) — the user is already leaving.
+      onBlur={(e) => {
+        if (wrapRef.current && !wrapRef.current.contains(e.relatedTarget as Node | null)) {
+          setOpen(false);
+        }
+      }}
       className={cx("relative inline-flex items-center gap-2", className)}
     >
       {showReason && (

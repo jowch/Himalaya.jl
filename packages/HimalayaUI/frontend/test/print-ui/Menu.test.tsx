@@ -165,6 +165,19 @@ describe("<Menu>", () => {
     });
   });
 
+  it("menu items are a single tab stop: each carries tabIndex=-1 (UI-MENUTAB)", () => {
+    // APG menu pattern — the popup is reached via the trigger + arrow keys, not
+    // by tabbing through items. Keeping items out of the tab order means one Tab
+    // from a focused item leaves the whole menu, letting the owner's focus-out
+    // handler close it instead of walking item-to-item.
+    render(
+      <Menu aria-label="fruit" open options={opts} onSelect={() => {}} onClose={() => {}} />,
+    );
+    for (const item of screen.getAllByRole("menuitem")) {
+      expect(item).toHaveAttribute("tabindex", "-1");
+    }
+  });
+
   it("the active option has data-active=true", () => {
     render(
       <Menu
