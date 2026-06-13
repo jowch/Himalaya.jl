@@ -380,6 +380,24 @@ describe("SeriesScopingPage", () => {
     expect(within(candidate).getByText("smp_42")).toBeInTheDocument();
   });
 
+  it("names each loose candidate's phase as text, not by sparkline colour alone (SC-MISC / WCAG 1.4.1)", () => {
+    // The candidate's only phase channel was the aria-hidden sparkline hue —
+    // invisible to a colour-blind or screen-reader user. Its phase must also
+    // read as TEXT in the row.
+    phaseByExposure = { 100: "Ia3d" };
+    pickerState = {
+      data: [
+        pickerRow(sample(5, "Member", [tag("ratio", "1 : 0")]), 37),
+        pickerRow(sample(42, "Loose one", []), 100),
+      ],
+      isLoading: false,
+      isError: false,
+    };
+    renderPage();
+    const candidate = screen.getByTestId("scope-candidate");
+    expect(within(candidate).getByText("Ia3d")).toBeInTheDocument();
+  });
+
   it("skipping a member excludes it from the write but does not block the build", () => {
     seed3();
     renderPage();

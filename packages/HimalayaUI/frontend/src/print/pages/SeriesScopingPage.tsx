@@ -7,7 +7,7 @@ import { ScopePlate } from "../components/ScopePlate";
 import { ScopeSampleRow } from "../components/ScopeSampleRow";
 import { useDragReorder, reorder } from "../components/useDragReorder";
 import { Sparkline } from "../plot/Sparkline";
-import { EmptyState, Button, Card, Dot, Field, Kicker } from "../ui";
+import { EmptyState, Button, Card, Dot, Field, Kicker, PhaseChip } from "../ui";
 import { ColdAssignPanel } from "../components/ColdAssignPanel";
 import type { SampleTagPair, Trace } from "../../api";
 import {
@@ -910,6 +910,21 @@ export function SeriesScopingPage(): JSX.Element {
                             <strong className="text-accent font-semibold">{keyLabel}</strong>
                           </div>
                         </div>
+                        {/* SC-MISC (WCAG 1.4.1): the candidate's phase was a
+                            colour-only signal on the aria-hidden sparkline.
+                            Loose candidates never reach the preview strip that
+                            labels member phases, so name the phase here as text
+                            (PhaseChip's always-on second channel survives
+                            grayscale + reaches a screen reader). Omitted when the
+                            candidate is unindexed (no phase to name). */}
+                        {phaseBySample.get(c.sampleId) != null && (
+                          <PhaseChip
+                            phase={phaseBySample.get(c.sampleId)!}
+                            variant="tint"
+                            size="sm"
+                            className="flex-shrink-0"
+                          />
+                        )}
                       </div>
                     ))}
                     <div data-testid="scope-candidates-note" className="text-caption text-ink-soft pt-1">
