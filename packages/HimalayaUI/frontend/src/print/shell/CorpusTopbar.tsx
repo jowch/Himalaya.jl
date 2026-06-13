@@ -176,7 +176,13 @@ export function CorpusTopbar(): JSX.Element {
       // raw string would display "all experiments" over a filtered corpus.
       value={filter.id !== undefined ? String(filter.id) : ""}
       onChange={handlePick}
-      className="rounded-full border border-hair-strong bg-plate px-2.5 py-1
+      // TOP-CHIPMOBILE: below the tablet breakpoint the wordmark + stage tabs
+      // push this chip's start to ~x=253, so its natural ~177px width spills past
+      // a 390px viewport. Cap + truncate ONLY below `sm` (min-w-0 lets it shrink
+      // in the flex row); at sm+ it is uncapped so full experiment names show on
+      // the desktop target. Mobile is not the target viewport (desktop tool).
+      className="min-w-0 max-w-28 truncate sm:max-w-none
+                 rounded-full border border-hair-strong bg-plate px-2.5 py-1
                  text-xs font-semibold text-ink"
     >
       <option value="">Beamtime, all experiments</option>
