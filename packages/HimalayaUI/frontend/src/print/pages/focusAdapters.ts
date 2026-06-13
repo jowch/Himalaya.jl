@@ -216,10 +216,11 @@ export function toDetectorRings(
 // lamellar. We anchor on `predicted_q[0]` (== basis, the q₁ slope; see
 // customIndex.basisFor) and the first allowed reflection's N (n1), then solve
 // the q-law per order:
-//   lamellar:  N = round(n1 · q/q0)         (q ∝ N)
-//   cubic/hex: N = round(n1 · (q/q0)²)      (q ∝ √N ⇒ N = N1·(q/q0)²)
-// For a genuinely-unknown symmetry (Square/Fm3m/Fd3m ∉ SYMS) we fall back to an
-// honest order-index label ("√?·i") and never throw.
+//   lamellar:       N = round(n1 · q/q0)     (q ∝ N)
+//   cubic/hex/square: N = round(n1 · (q/q0)²) (q ∝ √N ⇒ N = N1·(q/q0)²)
+// All eight canonical phases are now in SYMS (Square is kind "square", q ∝ √N
+// like cubic), so each labels via the q-law branch. The order-index fallback
+// ("√?·i") only fires for a symmetry genuinely absent from SYMS, and never throws.
 function labelTeeth(phase: string, predictedQ: number[]): string[] {
   const spec = SYMS[phase];
   if (!spec || predictedQ.length === 0) {
@@ -301,10 +302,12 @@ export function toCombSeries(
 
 // ── custom-index modal picker + live preview/fit ─────────────────────────────
 
-/** Picker metadata for the custom-index modal, derived from `SYMS`. Order +
- *  membership mirror the modal's `SYM_OPTIONS` (cubic Pn3m/Im3m/Ia3d, then
- *  Lamellar, Hexagonal). The lattice slider step is 1 and the unit is Å (the
- *  modal hardcodes both); `paramName` is the SymmetrySpec `param` ("a"/"d"). */
+/** Picker metadata for the custom-index modal, derived from `SYMS`. All eight
+ *  canonical phases are offered (F13): the three cubics Pn3m/Im3m/Ia3d, then the
+ *  inverse-micellar cubics Fm3m/Fd3m, then Lamellar, Hexagonal, and the 2D
+ *  Square — cubics grouped first, low-dimensional phases last. The lattice
+ *  slider step is 1 and the unit is Å (the modal hardcodes both); `paramName`
+ *  is the SymmetrySpec `param` ("a"/"d"). */
 export const CUSTOM_SYMS: ReadonlyArray<{
   name: string;
   paramName: string;
@@ -312,7 +315,7 @@ export const CUSTOM_SYMS: ReadonlyArray<{
   min: number;
   max: number;
   step?: number;
-}> = (["Pn3m", "Im3m", "Ia3d", "Lamellar", "Hexagonal"] as const).map((name) => {
+}> = (["Pn3m", "Im3m", "Ia3d", "Fm3m", "Fd3m", "Lamellar", "Hexagonal", "Square"] as const).map((name) => {
   const s = SYMS[name]!;
   return { name, paramName: s.param, unit: "Å", min: s.min, max: s.max, step: 1 };
 });

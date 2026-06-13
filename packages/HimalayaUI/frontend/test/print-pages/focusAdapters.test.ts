@@ -507,7 +507,9 @@ describe("toCombSeries", () => {
 describe("CUSTOM_SYMS", () => {
   it("exposes one entry per modal symmetry with picker metadata derived from SYMS", () => {
     const names = CUSTOM_SYMS.map((s) => s.name);
-    expect(names).toEqual(["Pn3m", "Im3m", "Ia3d", "Lamellar", "Hexagonal"]);
+    expect(names).toEqual([
+      "Pn3m", "Im3m", "Ia3d", "Fm3m", "Fd3m", "Lamellar", "Hexagonal", "Square",
+    ]);
     const pn3m = CUSTOM_SYMS.find((s) => s.name === "Pn3m")!;
     expect(pn3m.min).toBe(SYMS.Pn3m!.min);
     expect(pn3m.max).toBe(SYMS.Pn3m!.max);
