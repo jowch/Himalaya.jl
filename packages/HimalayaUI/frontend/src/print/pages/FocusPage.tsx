@@ -66,8 +66,17 @@ const FIXTURE_TRACE = {
   peaks: [] as PlotPeak[],
   phase: null,
 };
+// EX-SPACING: the focus page grids are skeleton↔real ALIGNMENT INVARIANTS — the
+// loading placeholder (FOCUS_FIXTURE) must use the SAME templates as the loaded
+// render or the load→loaded transition shifts. One source each (literal Tailwind
+// class strings so the JIT scanner still sees them).
+//   - work column + 350px Notes/phase rail
+//   - the detector / combs two-up split below the trace plate
+const FOCUS_PAGE_GRID = "grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_350px]";
+const FOCUS_SPLIT_GRID =
+  "grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]";
 const FOCUS_FIXTURE = (
-  <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_350px]">
+  <div className={FOCUS_PAGE_GRID}>
     {/* work column */}
     <div className="min-w-0 px-8 pt-7 pb-13">
       <div className="mx-auto flex min-w-0 max-w-[1180px] flex-col gap-[18px]">
@@ -81,7 +90,7 @@ const FOCUS_FIXTURE = (
           onAutoFit={() => {}}
           onToggleAddPeak={() => {}}
         />
-        <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <div className={FOCUS_SPLIT_GRID}>
           <DetectorPanel src={null} />
           <div className="hidden lg:flex min-h-0 flex-col">
             <CombsPanel
@@ -487,7 +496,7 @@ export function FocusPage(): JSX.Element {
       >
         <div
           data-testid="focus-workspace"
-          className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_350px]"
+          className={FOCUS_PAGE_GRID}
         >
           {/* work column — full-bleed; inner content capped at 1180px (mockup .work / .work-inner) */}
           <div className="min-w-0 px-8 pt-7 pb-13">
@@ -540,7 +549,7 @@ export function FocusPage(): JSX.Element {
                 />
               }
             />
-            <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+            <div className={FOCUS_SPLIT_GRID}>
               <DetectorPanel
                 src={detectorSrc}
                 rings={rings}

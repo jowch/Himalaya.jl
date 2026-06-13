@@ -41,8 +41,13 @@ const FIXTURE_EXPOSURE = {
   image_version: "", tags: [], sources: [],
   trace_hash: null, analysis_inputs_hash: null,
 };
+// EX-SPACING: the loupe body grid (detector hero + 286px side panel) is a
+// skeleton↔real ALIGNMENT INVARIANT — the loading placeholder must use the same
+// template as the loaded render, or the load→loaded transition shifts. One
+// source (a literal Tailwind class string so the JIT scanner still sees it).
+const LOUPE_BODY_GRID = "grid grid-cols-[minmax(0,1fr)_286px] gap-7";
 const LOUPE_FIXTURE = (
-  <div className="grid grid-cols-[minmax(0,1fr)_286px] gap-7">
+  <div className={LOUPE_BODY_GRID}>
     <div className="min-w-0">
       <BigFrame src={null} caption="frame 1 of 1 · kept" accepted />
       <ThumbnailGallery
@@ -430,7 +435,7 @@ export function LoupePage(): JSX.Element {
         <Skeleton name="loupe" className="block" loading={isLoading} stagger={50} transition={200}
           fixture={LOUPE_FIXTURE}
           fallback={<div data-testid="loupe-skeleton" className="p-8 text-sm italic text-ink-soft">Loading sample…</div>}>
-          <div className="grid grid-cols-[minmax(0,1fr)_286px] gap-7">
+          <div className={LOUPE_BODY_GRID}>
             {sample && activeExposure ? (
               <>
                 <div className="min-w-0">
