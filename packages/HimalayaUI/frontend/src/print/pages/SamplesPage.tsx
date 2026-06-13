@@ -5,7 +5,8 @@ import { PageFrame } from "../components/PageFrame";
 import { SheetTable } from "../components/SheetTable";
 import { SampleTableRow } from "../components/SampleTableRow";
 import { CullBar } from "../components/CullBar";
-import { Kicker, KbLegend, ProgressBar, ComposeBar, EmptyState, Button } from "../ui";
+import { Kicker, KbLegend, ProgressBar, ComposeBar, EmptyState, Button, HintText } from "../ui";
+import { KbdLegend } from "../shell/KbdLegend";
 import {
   useCorpusSamples,
   useCorpusExposures,
@@ -371,6 +372,17 @@ export function SamplesPage(): JSX.Element {
             />
           </div>
         </div>
+
+        {/* SA-CULLHINT: a contextual, registry-driven teaching hint for the
+            X/K cull gesture — shown only while nothing is selected. Once frames
+            are selected the floating CullBar shows the real Drop/Keep buttons,
+            so the hint retires (no duplicate affordance). */}
+        {selected.size === 0 && sortedSamples.length > 0 && (
+          <div className="mb-4 flex items-center gap-2">
+            <HintText>Select frames, then</HintText>
+            <KbdLegend ids={["drop", "keep"]} testId="samples-cull-hint" />
+          </div>
+        )}
 
         {/* ── Table ─────────────────────────────────────────────────────────── */}
         {corpusQuery.isError ? (

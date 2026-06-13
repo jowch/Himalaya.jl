@@ -8,6 +8,9 @@ export interface Shortcut {
 interface KbLegendProps {
   shortcuts: Shortcut[];
   className?: string;
+  /** Test id for the row. Defaults to "kb-legend"; override when more than one
+   *  legend coexists on a surface (e.g. a contextual hint + a footer reference). */
+  testId?: string;
 }
 
 function cx(...parts: Array<string | false | null | undefined>): string {
@@ -23,10 +26,10 @@ function cx(...parts: Array<string | false | null | undefined>): string {
  *
  *  Voice (checklist E): key caps are mono via KbKey (measured/literal tokens);
  *  descriptions are sans prose chrome — the two correct, distinct voices. */
-export function KbLegend({ shortcuts, className = "" }: KbLegendProps): JSX.Element {
+export function KbLegend({ shortcuts, className = "", testId = "kb-legend" }: KbLegendProps): JSX.Element {
   return (
     <div
-      data-testid="kb-legend"
+      data-testid={testId}
       className={cx("flex flex-wrap gap-5 text-sm text-ink-soft", className)}
     >
       {shortcuts.map((s) => (

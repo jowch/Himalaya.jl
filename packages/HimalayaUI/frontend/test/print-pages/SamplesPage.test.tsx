@@ -230,6 +230,19 @@ describe("SamplesPage", () => {
     expect(within(legend).getByText("drop the selected frames")).toBeInTheDocument();
   });
 
+  it("hints the X/K cull gesture (registry-driven) until a selection exists (SA-CULLHINT)", () => {
+    renderAt("/samples?beamtime=1");
+    const hint = screen.getByTestId("samples-cull-hint");
+    const caps = within(hint).getAllByTestId("kbkey").map((k) => k.textContent);
+    // key caps come straight from the shortcut registry (drop=X, keep=K)
+    expect(caps).toContain("X");
+    expect(caps).toContain("K");
+    // once frames are selected the CullBar's real Drop/Keep buttons take over,
+    // so the teaching hint retires (no duplicate affordance)
+    fireEvent.click(screen.getAllByTestId("thumbnail")[0]!);
+    expect(screen.queryByTestId("samples-cull-hint")).toBeNull();
+  });
+
   it("the keyboard legend advertises the ⌘K finder (SA-F4)", () => {
     renderAt("/samples?beamtime=1");
     const legend = screen.getByTestId("kb-legend");
