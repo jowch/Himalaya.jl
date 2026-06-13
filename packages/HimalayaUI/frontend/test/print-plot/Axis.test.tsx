@@ -21,6 +21,21 @@ describe("Axis", () => {
     expect(texts.length).toBe(labelled.length);
   });
 
+  it("paints tick labels in ink-soft, the AA-normal data tone (CC-AXIS-TICK)", () => {
+    // The q-values ARE the data; at 10.5px they are small text and must clear
+    // AA-normal (4.5:1). ink-faint (3.16:1) is AA-large/non-text only, so tick
+    // numbers must use ink-soft.
+    const a = makeAxis([0.01, 1], [0, 300], "log");
+    const { container } = render(
+      <svg>
+        <Axis axis={a} orientation="bottom" plotWidth={300} plotHeight={150} />
+      </svg>,
+    );
+    const tick = container.querySelector('[data-role="axis-bottom"] text') as SVGTextElement;
+    expect(tick).toBeTruthy();
+    expect(tick.style.fill).toBe("var(--color-ink-soft)");
+  });
+
   it("renders a label when provided (left)", () => {
     const a = makeAxis([1, 1000], [150, 0], "log");
     const { container } = render(

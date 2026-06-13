@@ -902,7 +902,7 @@ export function SeriesScopingPage(): JSX.Element {
               <h1 className="text-display text-ink mt-1.5">
                 Series by {coldKey.trim() || "…"}
               </h1>
-              <Kicker as="h2" tone="faint" className="mt-5 mb-2">
+              <Kicker as="h2" tone="soft" className="mt-5 mb-2">
                 Ordered by
               </Kicker>
               <Field

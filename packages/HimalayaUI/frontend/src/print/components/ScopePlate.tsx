@@ -110,7 +110,7 @@ export function ScopePlate({
         {grouping}
       </AutoGroup>
 
-      <Kicker as="h2" tone="faint" className="mt-5 mb-2">
+      <Kicker as="h2" tone="soft" className="mt-5 mb-2">
         Ordered by
       </Kicker>
       <Field
@@ -127,7 +127,7 @@ export function ScopePlate({
       <div className="text-caption text-ink-soft mt-1.5">{orderNote}</div>
 
       <div className="flex items-baseline justify-between mt-6 mb-1">
-        <Kicker as="h2" tone="faint">The series</Kicker>
+        <Kicker as="h2" tone="soft">The series</Kicker>
         <div className="flex items-baseline gap-3.5">
           {onUndo ? (
             <button
@@ -146,7 +146,7 @@ export function ScopePlate({
       <div className="[&>*:last-child]:border-b-0">{rows}</div>
 
       <div className="mt-5 pt-4 border-t border-hair">
-        <Kicker as="h2" tone="faint" className="mb-2.5">
+        <Kicker as="h2" tone="soft" className="mb-2.5">
           Himalaya also found
         </Kicker>
         {candidates}
@@ -158,7 +158,7 @@ export function ScopePlate({
           state already says "Keep at least one value to build". */}
       {preview.length > 0 ? (
         <div className="mt-5">
-          <Kicker as="h2" tone="faint" className="mb-2">
+          <Kicker as="h2" tone="soft" className="mb-2">
             Preview · phase across the series
           </Kicker>
           <PhaseStrip segments={preview} size="sm" />

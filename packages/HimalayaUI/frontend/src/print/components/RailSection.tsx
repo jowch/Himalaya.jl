@@ -17,7 +17,7 @@ export function RailSection({ label, count, note, children, className }: RailSec
   return (
     <div data-testid="rail-section" className={cx("flex flex-col gap-2.5", className)}>
       <div data-testid="rail-section-head" className="flex items-baseline justify-between">
-        <Kicker tone="faint">
+        <Kicker tone="soft">
           {label}
           {count != null && <span className="text-ink-soft"> {count}</span>}
         </Kicker>

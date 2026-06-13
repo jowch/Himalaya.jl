@@ -21,7 +21,7 @@ export function PanelHeader({ label, children, className }: PanelHeaderProps): J
       data-testid="panel-header"
       className={cx("flex items-center justify-between gap-2.5 mb-3", className)}
     >
-      <Kicker tone="faint" className="flex-shrink-0">{label}</Kicker>
+      <Kicker tone="soft" className="flex-shrink-0">{label}</Kicker>
       {children != null && (
         // min-w-0 lets a scrollable tools child (e.g. an overflow-x-auto
         // ThumbnailGallery) shrink + scroll IN PLACE rather than widen the header.

@@ -315,7 +315,7 @@ function TutorialStep({
       onKeyDown={onKeyDown}
       className="p-7 flex flex-col gap-4 outline-0"
     >
-      <Kicker tone="faint">Welcome · {slideIdx + 1} of {TUTORIAL_SLIDES.length}</Kicker>
+      <Kicker tone="soft">Welcome · {slideIdx + 1} of {TUTORIAL_SLIDES.length}</Kicker>
       <h2 className="text-lg font-semibold text-ink">{slide.title}</h2>
       <p className="text-ink-soft text-base leading-relaxed">{slide.body}</p>
       <div className="flex items-center justify-between pt-2">

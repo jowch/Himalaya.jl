@@ -113,7 +113,7 @@ export function BuilderRail({
       )}
     >
       <div className="flex items-center justify-between">
-        <Kicker tone="faint">Compose</Kicker>
+        <Kicker tone="soft">Compose</Kicker>
         {/* controls-don't-lie: no onCollapse means no collapse behavior exists,
             so the affordance is dropped; the Kicker sits flush-left on its own. */}
         {onCollapse && (

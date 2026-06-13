@@ -12,7 +12,9 @@ export interface AxisProps {
 const TICK_LABEL_STYLE: React.CSSProperties = {
   fontFamily: "var(--font-mono)",
   fontSize: 10.5,
-  fill: "var(--color-ink-faint)",
+  // The q-values ARE the data — small text, so AA-normal (4.5:1) applies.
+  // ink-soft (>=6:1 on every surface) clears it; ink-faint (3.16:1) would not.
+  fill: "var(--color-ink-soft)",
 };
 
 const AXIS_TITLE_STYLE: React.CSSProperties = {

@@ -369,7 +369,7 @@ export function SamplesPage(): JSX.Element {
               {screened}
               <b className="font-medium text-ink-soft"> / {total}</b>
             </div>
-            <Kicker tone="faint" className="mt-0.5">samples screened</Kicker>
+            <Kicker tone="soft" className="mt-0.5">samples screened</Kicker>
             <ProgressBar
               value={screened}
               total={total}
