@@ -15,8 +15,9 @@ import {
 import type { Tag } from "../ui";
 import { EmptyState, Button } from "../ui";
 import { announce } from "../../lib/announce";
-import { suppressGlobalKeys } from "../../lib/keys";
 import { showToast } from "../../lib/toast";
+import { useShortcuts } from "../shell/useShortcuts";
+import { KbdLegend } from "../shell/KbdLegend";
 import { isValidationError } from "../../lib/queue/errors";
 import { BigFrame } from "../components/BigFrame";
 import { ThumbnailGallery } from "../components/ThumbnailGallery";
@@ -328,36 +329,26 @@ export function LoupePage(): JSX.Element {
     [navigate, beamtime, orderedSampleIds],
   );
 
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent): void {
-      // Modifier chords belong to the browser (⌘R reload, ⌘X cut) — never to
-      // the page. The typing/modal suppression is the shared helper.
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
-      if (suppressGlobalKeys(e)) return;
-      if (e.key === "ArrowLeft") flip(-1);
-      else if (e.key === "ArrowRight") flip(1);
-      else if (e.key === "x" || e.key === "X") handleDropToggle();
-      else if (e.key === "k" || e.key === "K") handleKeepToggle();
-      else if (e.key === "r" || e.key === "R") handleSetRepresentative();
-      // LO-NEXT: brackets step SAMPLES (arrows already step frames).
-      else if (e.key === "[") {
-        if (prevSampleId !== undefined) gotoSample(prevSampleId);
-      } else if (e.key === "]") {
-        if (nextSampleId !== undefined) gotoSample(nextSampleId);
-      } else if (e.key === "Escape") goBack();
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [
-    flip,
-    handleDropToggle,
-    handleKeepToggle,
-    handleSetRepresentative,
-    goBack,
-    prevSampleId,
-    nextSampleId,
-    gotoSample,
-  ]);
+  // Loupe keyboard, via the shared shortcut library. The vocabulary nests:
+  // ← → step the FRAME, [ ] step the SAMPLE; x/k/r screen the active frame;
+  // Esc backs out to the sheet. Modifier chords (⌘R reload, ⌘X cut) never match
+  // the registry's bare combos, and typing/modal suppression is handled inside
+  // useShortcuts — so the per-key guards the old ad-hoc handler spelled out are
+  // now owned uniformly by the library.
+  useShortcuts({
+    prevExposure: () => flip(-1),
+    nextExposure: () => flip(1),
+    drop: () => handleDropToggle(),
+    keep: () => handleKeepToggle(),
+    representative: () => handleSetRepresentative(),
+    prevSample: () => {
+      if (prevSampleId !== undefined) gotoSample(prevSampleId);
+    },
+    nextSample: () => {
+      if (nextSampleId !== undefined) gotoSample(nextSampleId);
+    },
+    dismiss: () => goBack(),
+  });
 
   if (!corpusQ.isLoading && !sample) {
     return (
@@ -456,6 +447,16 @@ export function LoupePage(): JSX.Element {
                     size="lg"
                     align="center"
                     className="mt-3"
+                  />
+                  {/* LO-KBDLEGEND: a registry-driven key legend so the loupe's
+                      shortcuts are discoverable on the surface itself. Curated to
+                      the screen verbs + sample steps; the frame arrows are
+                      conventional and their registry label says "exposure"
+                      (LO-TERM keeps the loupe speaking "frame"). */}
+                  <KbdLegend
+                    ids={["drop", "keep", "representative", "prevSample", "nextSample"]}
+                    testId="loupe-kbd-legend"
+                    className="mt-4"
                   />
                 </div>
                 <LoupeSidePanel

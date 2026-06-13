@@ -20,7 +20,7 @@ import {
   resolveExperimentFilter,
   UNKNOWN_BEAMTIME_LABEL,
 } from "../../lib/experimentFilter";
-import { suppressGlobalKeys } from "../../lib/keys";
+import { useShortcuts } from "../shell/useShortcuts";
 import { showToast } from "../../lib/toast";
 import { toSampleRowModel } from "./samplesAdapters";
 import {
@@ -314,23 +314,29 @@ export function SamplesPage(): JSX.Element {
     anchorRef.current = null;
   }
 
-  // ── keyboard: X drops, K keeps, Esc clears (only with a selection) ──────────
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent): void {
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
-      if (suppressGlobalKeys(e)) return;
-      if (selected.size === 0) return;
-      if (e.key === "x" || e.key === "X") batchSet("rejected");
-      else if (e.key === "k" || e.key === "K") batchSet("accepted");
-      else if (e.key === "Escape") {
-        setSelected(new Set());
-        anchorRef.current = null;
-      }
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected, ownerOf]);
+  // ── keyboard: X drops, K keeps, Esc clears — via the shared shortcut library,
+  //    only while there is a selection to act on. The handlers DECLINE (return
+  //    false) on an empty selection, so x/k stay inert and Esc falls through to
+  //    the grid's own "exit cell". Modifier chords never match the registry's
+  //    bare combos; typing/modal suppression lives inside useShortcuts.
+  useShortcuts({
+    drop: () => {
+      if (selected.size === 0) return false;
+      batchSet("rejected");
+      return undefined;
+    },
+    keep: () => {
+      if (selected.size === 0) return false;
+      batchSet("accepted");
+      return undefined;
+    },
+    dismiss: () => {
+      if (selected.size === 0) return false;
+      setSelected(new Set());
+      anchorRef.current = null;
+      return undefined;
+    },
+  });
 
   // SA-F2: a double-clicked frame carries its exposure id into the loupe via
   // ?exposure= so the loupe opens AT that frame. A search param (not router

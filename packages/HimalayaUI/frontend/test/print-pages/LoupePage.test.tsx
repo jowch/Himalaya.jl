@@ -141,6 +141,16 @@ describe("LoupePage", () => {
     expect(screen.getByTestId("loupe-side-panel")).toBeInTheDocument();
   });
 
+  it("advertises the screen + sample-step shortcuts in a registry-driven legend (LO-KBDLEGEND)", () => {
+    renderAt(42);
+    const legend = screen.getByTestId("loupe-kbd-legend");
+    const caps = within(legend).getAllByTestId("kbkey").map((k) => k.textContent);
+    // the screen verbs (X/K/R) + sample steps ([ ]) come straight from the registry
+    expect(caps).toEqual(expect.arrayContaining(["X", "K", "R", "[", "]"]));
+    // LO-TERM: the loupe speaks "frame", so no "exposure"-worded entry leaks in
+    expect(legend.textContent ?? "").not.toMatch(/exposure/i);
+  });
+
   it("sample title renders as h1 — the document outline has a top-level anchor (LO-NOH1)", () => {
     renderAt(42);
     // WCAG 1.3.1 / 2.4.6: the loupe has no outer h1 from a shell, so PlateHeader
