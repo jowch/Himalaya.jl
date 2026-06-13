@@ -81,13 +81,23 @@ export function ScopePlate({
     <Card elevated className={cx("w-full max-w-[760px] px-8 pt-7 pb-6", className)}>
       <Kicker tone="accent">New series</Kicker>
 
+      {/* SC-POLISH2 (controls-don't-lie): the dotted-underline is the editable
+          idiom. Render it ONLY when an edit handler is wired — otherwise the
+          title is plain ink, so the affordance never promises an edit the page
+          can't deliver. (The scoping worksheet's title is auto-derived and not
+          yet editable; the builder edits its title through PlateTitle.) */}
       <h1 className="text-display text-ink mt-1.5">
-        <span
-          className="border-b border-dotted border-hair-strong pb-px"
-          {...(onEditTitle ? { onClick: onEditTitle } : {})}
-        >
-          {seriesName}
-        </span>
+        {onEditTitle ? (
+          <span
+            data-editable="true"
+            className="border-b border-dotted border-hair-strong pb-px cursor-text"
+            onClick={onEditTitle}
+          >
+            {seriesName}
+          </span>
+        ) : (
+          <span>{seriesName}</span>
+        )}
       </h1>
 
       <AutoGroup variant="summary" className="mt-4">

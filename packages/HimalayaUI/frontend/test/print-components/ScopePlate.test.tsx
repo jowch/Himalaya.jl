@@ -28,6 +28,28 @@ describe("<ScopePlate>", () => {
     expect(screen.getByTestId("cands-slot")).toBeInTheDocument();
     expect(screen.getAllByTestId("ps-seg").length).toBe(2);
   });
+  it("does NOT dress the title as editable when no edit handler is wired (SC-POLISH2 controls-don't-lie)", () => {
+    render(<ScopePlate {...base} footState={{ kind: "ready", text: "ready" }} />);
+    const title = screen.getByText("LL37 titration of lipid 1-2");
+    // No onEditTitle → plain ink, never the dotted-underline editable idiom.
+    expect(title).not.toHaveAttribute("data-editable");
+  });
+
+  it("dresses the title as editable and wires the click ONLY when onEditTitle is given", () => {
+    const onEditTitle = vi.fn();
+    render(
+      <ScopePlate
+        {...base}
+        onEditTitle={onEditTitle}
+        footState={{ kind: "ready", text: "ready" }}
+      />,
+    );
+    const title = screen.getByText("LL37 titration of lipid 1-2");
+    expect(title).toHaveAttribute("data-editable", "true");
+    fireEvent.click(title);
+    expect(onEditTitle).toHaveBeenCalledOnce();
+  });
+
   it("exposes a sound heading tree with a populated preview: one h1 (series name) + four h2 section labels (the Preview h2 is conditional on segments)", () => {
     render(<ScopePlate {...base} footState={{ kind: "ready", text: "ready" }} />);
     // The series name is the single level-1 heading.
