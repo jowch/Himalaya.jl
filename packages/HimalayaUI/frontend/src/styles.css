@@ -111,8 +111,11 @@
   --text-xl:    19px;
   /* Serif display step (R0a, #221). Newsreader hero/figure/sample title — the
      plate's name (DESIGN.md typography `display`). Set via the `.text-display`
-     role below, not by inlining `text-display`. */
-  --text-display: 27px;
+     role below, not by inlining `text-display`. Restored to the mockup's 31px
+     hero size (TY-DISPLAY): the greenfield shell set this conservatively at 27px,
+     a step quieter than series-folio.html:113 (31px) / sample-table.html:128
+     (30px). Deliberate, render-verified bump per DESIGN.md §3 Fixed-Scale Rule. */
+  --text-display: 31px;
   /* Loupe-plate headline step (R2-T9). Newsreader serif at the sample-table
      mockup's `.loupe-head h2` size (26px). Set via the `.text-headline-lg`
      role below — DESIGN.md §3 Fixed-Scale Rule forbids inline 26px size literals. */

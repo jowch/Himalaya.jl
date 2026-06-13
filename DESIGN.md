@@ -28,7 +28,7 @@ colors:
 typography:
   display:
     fontFamily: "Newsreader, Georgia, ui-serif, serif"
-    fontSize: "27px"
+    fontSize: "31px"
     fontWeight: 500
     lineHeight: 1.15
     letterSpacing: "normal"
@@ -203,7 +203,7 @@ Eight semantic data colours, one per liquid-crystalline phase, used for index/pe
 **Character.** Three voices, each a signal: serif = this is a title on a plate; sans = this is chrome/prose; monospace = this is a measurement (q, score, lattice, Miller indices, series ratio).
 
 ### Hierarchy
-- **Display** (Newsreader 500, ~27px): the figure/sample/series hero title. The plate's name.
+- **Display** (Newsreader 500, ~31px): the figure/sample/series hero title. The plate's name.
 - **Headline** (Newsreader 500, 19px): section-level serif titles (folio, scoping).
 - **Title** (Plus Jakarta Sans 600, 15px): card titles, primary inputs.
 - **Body** (400, 13px): the readable default.
@@ -214,7 +214,7 @@ Eight semantic data colours, one per liquid-crystalline phase, used for index/pe
 ### Named rules
 **The Serif-Means-Title Rule.** Newsreader is for titles on a plate (sample name, figure title, card title, the progress numeral). Never set prose or chrome in serif.
 **The Monospace-Means-Measurement Rule.** Mono is for values produced by the instrument. Never for prose.
-**The Fixed-Scale Rule.** Extend the scale in `styles.css` as a reviewed change; never inline a one-off `text-[Npx]`. (Enforced: `scripts/check-design.mjs` fails the build on any inline `text-[…]` outside `src/print/ui/**`.) The display step is one such extension point: it currently sits at 27px, and whether the hero wants a larger step is a deliberate, render-verified decision, made by editing the `--text-display` token, never by inlining a size.
+**The Fixed-Scale Rule.** Extend the scale in `styles.css` as a reviewed change; never inline a one-off `text-[Npx]`. (Enforced: `scripts/check-design.mjs` fails the build on any inline `text-[…]` outside `src/print/ui/**`.) The display step is one such extension point: it sits at 31px (restored to the mockup hero size from the greenfield shell's conservative 27px — TY-DISPLAY), a deliberate, render-verified decision made by editing the `--text-display` token, never by inlining a size.
 
 ## 4. Elevation
 
