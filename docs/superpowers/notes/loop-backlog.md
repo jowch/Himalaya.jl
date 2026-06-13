@@ -149,7 +149,7 @@ A second pass over **all six surfaces** (Jonathan: "broad review of all of the s
 | id | opportunity | command | sev | status | notes |
 |---|---|---|---|---|---|
 | FOL-SORT | visible "SORT" label missing left of segmented control (mockup series-folio.html:326) | typeset | P2 | **done `4aba6d8`** | FIXED: "Sort" Kicker (uppercase) left of the control, aria-hidden so SR keeps the control's own "Sort series" name (no double-announce). New test; live-verified on /series. Build + vitest 2811 green. |
-| FOL-MISC | search input unlabeled (P2, WCAG 3.3.2) + no on-page new-series CTA + indistinguishable empty drafts | harden+craft+clarify | P2 | todo | ✓W1 ✓re-score (accname rests on placeholder fallback) |
+| FOL-MISC | search input unlabeled (P2, WCAG 3.3.2) + no on-page new-series CTA + indistinguishable empty drafts | harden+craft+clarify | P2 | **done `323b159`** | FIXED (search label): SearchInput had no accname passthrough → its name rested on the disappearing placeholder "Search series…". Added an `ariaLabel` prop (forwarded to the inner input's `aria-label`, which beats the placeholder) and pass "Search series" from the folio (the only SearchInput consumer). New test asserts the searchbox accname is exactly "Search series" (no ellipsis) so it passes only when a real label wins. Live-verified on /series. The other two bundled parts were already closed by the time of the re-score: the on-page new-series CTA is the F3 `NewSeriesTile` (dashed door → /series/new at the wall's end), and the empty / filtered-empty states each render an honest `EmptyState` door — no indistinguishable empty drafts. Build + full vitest 2817 green. |
 
 ### SeriesScopingPage
 
