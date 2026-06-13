@@ -7,7 +7,7 @@ import { ScopePlate } from "../components/ScopePlate";
 import { ScopeSampleRow } from "../components/ScopeSampleRow";
 import { useDragReorder, reorder } from "../components/useDragReorder";
 import { Sparkline } from "../plot/Sparkline";
-import { EmptyState, Button, Card, Dot, Field, Kicker, PhaseChip } from "../ui";
+import { EmptyState, Button, Card, Dot, Field, Input, Kicker, PhaseChip } from "../ui";
 import { ColdAssignPanel } from "../components/ColdAssignPanel";
 import type { SampleTagPair, Trace } from "../../api";
 import {
@@ -78,7 +78,12 @@ type HistoryEntry =
   | { type: "reorder"; prevOrder: number[]; label: string }
   // SC-VALUECORRECT: an inline value correction is recoverable too — `prev` is
   // the pre-edit read so skip/reorder/edit reach undo parity.
-  | { type: "value"; id: number; prev: string; label: string };
+  | { type: "value"; id: number; prev: string; label: string }
+  // SCOPE-LOOSEADD: pulling a loose candidate into the members is recoverable —
+  // `prevLoose` is the original value-less candidate so undo restores it whole
+  // to the loose list (carried in the entry so undo needs no live `rows` read,
+  // keeping every history updater pure — no StrictMode double-apply).
+  | { type: "add"; id: number; prevLoose: OrderingRow; label: string };
 
 /**
  * ColdAssignSection: the shared assign body (ColdAssignPanel + the gated
@@ -446,6 +451,34 @@ export function SeriesScopingPage(): JSX.Element {
     setRows((cur) => cur.map((r) => (r.sampleId === id ? { ...r, value } : r)));
   };
 
+  // SCOPE-LOOSEADD: per-loose-candidate draft of the value the user is naming.
+  // A loose candidate lacks a value for the ordering key, so naming one is the
+  // act that makes it committable — the inline value field is the labelling
+  // gesture the "Himalaya also found" section used to lack.
+  const [looseDraft, setLooseDraft] = useState<Record<number, string>>({});
+  // Pull a loose candidate into the members WITH the named value. The caller
+  // (the Add button / Enter) only fires with a non-empty value; re-check here so
+  // a stray no-op can never seat a `value:""` member. The candidate becomes a
+  // real, included, unflagged member; its id joins the display order at the end.
+  const addLoose = (id: number, value: string): void => {
+    const v = value.trim();
+    if (v === "") return;
+    const c = loose.find((r) => r.sampleId === id);
+    if (!c) return;
+    setHistory((h) => [...h, { type: "add", id, prevLoose: c, label: `smp_${id}` }]);
+    setLoose((cur) => cur.filter((r) => r.sampleId !== id));
+    // include:true is load-bearing — loose matches carry include:false, and the
+    // commit gate (isKept) drops a non-included row, so a spread that kept the
+    // candidate's false would seat a member that silently never commits.
+    setRows((cur) => [...cur, { ...c, value: v, flagged: false, include: true }]);
+    setOrder((cur) => [...cur, id]);
+    setLooseDraft((d) => {
+      const next = { ...d };
+      delete next[id];
+      return next;
+    });
+  };
+
   const undo = useCallback((): void => {
     setHistory((h) => {
       const e = h[h.length - 1];
@@ -455,6 +488,13 @@ export function SeriesScopingPage(): JSX.Element {
       } else if (e.type === "value") {
         // value: restore the pre-edit read.
         setRows((cur) => cur.map((r) => (r.sampleId === e.id ? { ...r, value: e.prev } : r)));
+      } else if (e.type === "add") {
+        // add: drop the seated member + its order slot, restore the candidate to
+        // the FRONT of the loose pool — undo should pop it back where you grabbed
+        // it (visible above the preview cap), not bury it past the hidden tail.
+        setRows((cur) => cur.filter((r) => r.sampleId !== e.id));
+        setOrder((cur) => cur.filter((oid) => oid !== e.id));
+        setLoose((cur) => [e.prevLoose, ...cur]);
       } else {
         // reorder: restore the whole prior display order.
         setOrder(e.prevOrder);
@@ -924,14 +964,14 @@ export function SeriesScopingPage(): JSX.Element {
               })}
               candidates={
                 loose.length ? (
-                  /* Informational discovery only (Option A): loose matches carry
-                     no value for this key, so they CANNOT be committed — there is
-                     no add action. A plain sparkline + name + why list, not the
-                     ScopeCandidateRow composite (whose "+ Add to series" button
-                     always renders; a dead button would lie). Capped to a few
-                     exemplars (SCOPE_CANDIDATE_PREVIEW_COUNT); the section note
-                     below owns the remainder count + the tag instruction once,
-                     instead of repeating it per row. */
+                  /* SCOPE-LOOSEADD: loose matches lack a value for this key, so
+                     each row now lets you NAME one and pull the sample in (the
+                     same labelling gesture the cold path uses). The add is gated
+                     on a non-empty value, so it never lies or seats a value:""
+                     member. Capped to a few exemplars
+                     (SCOPE_CANDIDATE_PREVIEW_COUNT); the section note below owns
+                     the remainder count + the contact-sheet door for reaching the
+                     hidden ones. */
                   <div data-testid="scope-candidates" className="space-y-2">
                     {visibleLoose.map((c) => (
                       <div
@@ -981,6 +1021,36 @@ export function SeriesScopingPage(): JSX.Element {
                             className="flex-shrink-0"
                           />
                         )}
+                        {/* SCOPE-LOOSEADD: name the missing value, then pull the
+                            candidate into the series. Add is gated on a non-empty
+                            value — a value-less add would seat a value:"" member
+                            the build gate drops (controls-don't-lie). Enter in
+                            the field is the same commit. */}
+                        <Input
+                          value={looseDraft[c.sampleId] ?? ""}
+                          onValueChange={(v) =>
+                            setLooseDraft((d) => ({ ...d, [c.sampleId]: v }))
+                          }
+                          placeholder={`${keyLabel}…`}
+                          aria-label={`Value for ${c.sampleName}`}
+                          inputSize="sm"
+                          mono
+                          className="w-24 flex-shrink-0"
+                          onKeyDown={(e: React.KeyboardEvent) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              addLoose(c.sampleId, looseDraft[c.sampleId] ?? "");
+                            }
+                          }}
+                        />
+                        <Button
+                          variant="outline"
+                          className="flex-shrink-0"
+                          disabled={(looseDraft[c.sampleId] ?? "").trim() === ""}
+                          onClick={() => addLoose(c.sampleId, looseDraft[c.sampleId] ?? "")}
+                        >
+                          + Add to series
+                        </Button>
                       </div>
                     ))}
                     <div data-testid="scope-candidates-note" className="text-caption text-ink-soft pt-1">

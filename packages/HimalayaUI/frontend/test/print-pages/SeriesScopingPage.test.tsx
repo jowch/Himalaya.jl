@@ -457,6 +457,81 @@ describe("SeriesScopingPage", () => {
     expect(screen.getAllByTestId("flag-button")[1]).toHaveTextContent("1 : 0.5");
   });
 
+  describe("loose candidates are actionable (SCOPE-LOOSEADD)", () => {
+    it("each visible loose candidate offers a value field + an Add gated on a value", () => {
+      seedManyLoose();
+      renderPage();
+      // 3 render (the preview cap); each Add is inert until a value is named —
+      // a value-less add would commit value:"" (controls-don't-lie).
+      const adds = screen.getAllByRole("button", { name: /add to series/i });
+      expect(adds).toHaveLength(3);
+      adds.forEach((b) => expect(b).toBeDisabled());
+    });
+
+    it("naming a value enables Add; adding moves the candidate into the members", () => {
+      seedManyLoose();
+      renderPage();
+      expect(screen.getAllByTestId("scope-sample-row")).toHaveLength(2);
+      const valueFieldFor = (n: string) =>
+        screen.queryByRole("textbox", { name: new RegExp(`^value for ${n}$`, "i") });
+      const cand = screen.getAllByTestId("scope-candidate")[0]!;
+      const input = within(cand).getByRole("textbox", { name: /^value for L1$/i });
+      const add = within(cand).getByRole("button", { name: /add to series/i });
+      expect(add).toBeDisabled();
+      fireEvent.change(input, { target: { value: "2 : 1" } });
+      expect(add).not.toBeDisabled();
+      fireEvent.click(add);
+      // L1 is now a member, and gone from the candidate list (the cap refills
+      // from the hidden remainder, so the visible COUNT stays 3 — assert on L1).
+      expect(screen.getAllByTestId("scope-sample-row")).toHaveLength(3);
+      expect(valueFieldFor("L1")).toBeNull();
+    });
+
+    it("an added candidate's named value flows into the tag write", () => {
+      seedManyLoose();
+      renderPage();
+      const cand = screen.getAllByTestId("scope-candidate")[0]!;
+      fireEvent.change(within(cand).getByRole("textbox", { name: /^value for L1$/i }), {
+        target: { value: "2 : 1" },
+      });
+      fireEvent.click(within(cand).getByRole("button", { name: /add to series/i }));
+      expect(screen.getAllByTestId("scope-sample-row")).toHaveLength(3);
+      fireEvent.click(screen.getByRole("button", { name: /confirm & build/i }));
+      expect(scopeMutate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          key: "ratio",
+          tags: expect.arrayContaining([{ sampleId: 11, value: "2 : 1" }]),
+        }),
+      );
+    });
+
+    it("Enter in the value field adds the candidate", () => {
+      seedManyLoose();
+      renderPage();
+      const cand = screen.getAllByTestId("scope-candidate")[0]!;
+      const input = within(cand).getByRole("textbox", { name: /^value for L1$/i });
+      fireEvent.change(input, { target: { value: "9" } });
+      fireEvent.keyDown(input, { key: "Enter" });
+      expect(screen.getAllByTestId("scope-sample-row")).toHaveLength(3);
+    });
+
+    it("⌘Z removes a freshly added candidate, returning it to the loose list", () => {
+      seedManyLoose();
+      renderPage();
+      const cand = screen.getAllByTestId("scope-candidate")[0]!;
+      fireEvent.change(within(cand).getByRole("textbox", { name: /^value for L1$/i }), {
+        target: { value: "9" },
+      });
+      fireEvent.click(within(cand).getByRole("button", { name: /add to series/i }));
+      expect(screen.getAllByTestId("scope-sample-row")).toHaveLength(3);
+      expect(screen.queryByRole("textbox", { name: /^value for L1$/i })).toBeNull();
+      fireEvent.keyDown(window, { key: "z", metaKey: true });
+      // L1 is back among the members-less candidates; the member count drops.
+      expect(screen.getAllByTestId("scope-sample-row")).toHaveLength(2);
+      expect(screen.getByRole("textbox", { name: /^value for L1$/i })).toBeInTheDocument();
+    });
+  });
+
   it("Discard sits in the plate foot beside Confirm & build, not at the page top (SC-POLISH2)", () => {
     seed3();
     renderPage();
@@ -601,12 +676,17 @@ describe("SeriesScopingPage", () => {
     renderPage();
     // One member (A), one candidate (B).
     expect(screen.getAllByTestId("scope-sample-row")).toHaveLength(1);
-    expect(screen.getByTestId("scope-candidate")).toBeInTheDocument();
-    // No "+ Add to series" control anywhere.
-    expect(screen.queryByRole("button", { name: /add to series/i })).toBeNull();
-    expect(screen.queryByText(/add to series/i)).toBeNull();
-    // The member count is unchanged (no way to fold a candidate in).
-    expect(screen.getAllByTestId("scope-sample-row")).toHaveLength(1);
+    const cand = screen.getByTestId("scope-candidate");
+    // SCOPE-LOOSEADD: the candidate is actionable — a value field + an Add that
+    // stays inert until a value is named (a value-less add can't commit).
+    expect(within(cand).getByRole("textbox", { name: /^value for B$/i })).toBeInTheDocument();
+    expect(within(cand).getByRole("button", { name: /add to series/i })).toBeDisabled();
+    // Naming a value folds B into the members.
+    fireEvent.change(within(cand).getByRole("textbox", { name: /^value for B$/i }), {
+      target: { value: "1 : 2" },
+    });
+    fireEvent.click(within(cand).getByRole("button", { name: /add to series/i }));
+    expect(screen.getAllByTestId("scope-sample-row")).toHaveLength(2);
   });
 
   it("shows the no-ordering-variable empty state with a contact-sheet CTA on a cold corpus", () => {
