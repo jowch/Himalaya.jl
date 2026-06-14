@@ -15,8 +15,10 @@ import { CustomIndexModal } from "../components/CustomIndexModal";
 import { HintText, EmptyState, Button } from "../ui";
 import { ExportButton } from "../components/ExportButton";
 import { useFigureExport } from "../components/useFigureExport";
-import { buildCleanFigureSvg } from "../export/cleanFigureSvg";
+import { buildCleanFigureSvg, type FigureTraceKey } from "../export/cleanFigureSvg";
 import { buildFocusFigureRow } from "../export/focusFigureRow";
+import { phaseSegment } from "../export/seriesFigureKeys";
+import { phaseHex } from "../export/traceColors";
 import { waterfallQDomain } from "../waterfall/waterfallModel";
 import {
   toTraceModel,
@@ -352,6 +354,26 @@ export function FocusPage(): JSX.Element {
   );
   const figureTitle = [sampleName, exposureLabel].filter(Boolean).join(" · ");
 
+  // The single-trace figure's KEY (legend): the trace's phase colour + every
+  // active-assignment phase with its lattice a/d and, for cubics, κ. Coexisting
+  // phases each get a segment (equal billing). The label is empty — the title
+  // already carries sample · exposure, so the key reads as a phase/a/κ legend.
+  const figureKey = useMemo<FigureTraceKey>(() => {
+    const qUnits = experimentQ.data?.q_units;
+    const seen = new Set<string>();
+    const segments = [];
+    for (const ix of activeIndices) {
+      if (seen.has(ix.phase)) continue;
+      seen.add(ix.phase);
+      segments.push(phaseSegment(ix.phase, ix.lattice_d, qUnits));
+    }
+    const key: FigureTraceKey = { color: phaseHex(phase), label: "", segments };
+    if (segments.length === 0) {
+      key.note = assignment?.state === "form_factor" ? "form factor (no Bragg)" : "unindexed";
+    }
+    return key;
+  }, [activeIndices, phase, experimentQ.data, assignment?.state]);
+
   // Descriptive, product-tagged stem (buildFilename slugifies it): e.g.
   // "himalaya-trace-jc042-frame-1-2026-06-13.svg".
   const filenameStem = `himalaya-trace-${sampleName} ${exposureLabel ?? ""}`.trim();
@@ -359,13 +381,14 @@ export function FocusPage(): JSX.Element {
     () =>
       buildCleanFigureSvg({
         rows: [figureRow],
+        traceKeys: [figureKey],
         title: figureTitle || "Trace",
         footer: experimentQ.data?.name ?? "",
         xType: scale === "log" ? "log" : "linear",
         qDomain: xDomain ?? waterfallQDomain([figureRow]),
         showPeakLabels: true,
       }),
-    [figureRow, figureTitle, experimentQ.data, scale, xDomain],
+    [figureRow, figureKey, figureTitle, experimentQ.data, scale, xDomain],
   );
   const fx = useFigureExport(renderSvg, filenameStem, "trace plot");
 

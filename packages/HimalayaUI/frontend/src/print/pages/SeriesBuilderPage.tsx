@@ -36,7 +36,8 @@ import {
 import { buildSeriesSaveBody } from "../../lib/series/buildSeriesSaveBody";
 import { isSeriesDraftDirty } from "../../lib/series/isSeriesDraftDirty";
 import { buildPlateFromRecipe } from "../../lib/series/buildPlateFromRecipe";
-import { buildCleanFigureSvg } from "../export/cleanFigureSvg";
+import { buildCleanFigureSvg, type FigureTraceKey } from "../export/cleanFigureSvg";
+import { buildSeriesFigureKeys } from "../export/seriesFigureKeys";
 import { ExportButton } from "../components/ExportButton";
 import { useFigureExport } from "../components/useFigureExport";
 import { showToast } from "../../lib/toast";
@@ -206,6 +207,39 @@ export function SeriesBuilderPage(): JSX.Element {
     }
     return out;
   }, [series?.members, exposureBySample]);
+
+  // Export-figure per-trace key entries (BU-NAMES figure): the figure labels each
+  // trace by SAMPLE name (not "exp <id>") and carries its phase·a·κ. Resolve
+  // exposure → sample name (every exposure a sample owns maps to its name, so a
+  // member on a non-indexing exposure still resolves) and the q-units (Å/nm, for
+  // the lattice + κ units) from the first resolvable member's experiment.
+  const figureTraceKeys = useMemo<FigureTraceKey[]>(() => {
+    const members = series?.members ?? [];
+    const nameByExposure = new Map<number, string>();
+    const expByExposure = new Map<number, number>();
+    for (const r of pickerQ.data ?? []) {
+      const nm = r.sample.display_name ?? r.sample.name ?? `Sample ${r.sample.id}`;
+      if (r.indexing_exposure_id != null) {
+        nameByExposure.set(r.indexing_exposure_id, nm);
+        expByExposure.set(r.indexing_exposure_id, r.sample.experiment_id);
+      }
+      for (const e of r.all_exposures ?? []) {
+        nameByExposure.set(e.id, nm);
+        expByExposure.set(e.id, r.sample.experiment_id);
+      }
+    }
+    const qByExp = new Map((experimentsQ.data ?? []).map((e) => [e.id, e.q_units]));
+    let qUnits: string | null = null;
+    for (const mem of members) {
+      const expId = mem.exposure_id != null ? expByExposure.get(mem.exposure_id) : undefined;
+      if (expId != null && qByExp.has(expId)) { qUnits = qByExp.get(expId)!; break; }
+    }
+    return buildSeriesFigureKeys(members, {
+      sampleNameForExposure: (id) => (id != null ? nameByExposure.get(id) ?? null : null),
+      fallbackLabel: memberRowLabel,
+      qUnits,
+    });
+  }, [series?.members, pickerQ.data, experimentsQ.data]);
 
   // BU-NAVAWAY-DRAFT: warn before the tab is closed / reloaded while a draft
   // carries UNSAVED CHANGES. In-app route changes keep the draft alive (it
@@ -489,6 +523,7 @@ export function SeriesBuilderPage(): JSX.Element {
           resolverLoading={!resolverReady && !pickerQ.isError}
           chainErrorMessage={chainErrorMessage}
           figureLabelBySample={figureLabelBySample}
+          figureTraceKeys={figureTraceKeys}
         />
       )}
     </Skeleton>
@@ -543,6 +578,10 @@ interface BuilderBodyProps {
   /** BU-NAMES: recipe sample id → the figure trace's label (memberRowLabel),
    *  shown as a muted suffix so a recipe row cross-references its figure trace. */
   figureLabelBySample: Map<number, string>;
+  /** Per-trace export-figure key entries (sample name + phase·a·κ + categorical
+   *  colour), parallel to the committed members. Built in the outer component
+   *  (which holds the picker + experiment data) and threaded into renderSvg. */
+  figureTraceKeys: FigureTraceKey[];
 }
 
 function BuilderBody({
@@ -579,6 +618,7 @@ function BuilderBody({
   resolverLoading,
   chainErrorMessage,
   figureLabelBySample,
+  figureTraceKeys,
 }: BuilderBodyProps): JSX.Element {
   // Render model: the figure plate ALWAYS shows the committed plate (members);
   // a draft edits the recipe (membership/title), which only re-resolves the
@@ -618,12 +658,14 @@ function BuilderBody({
   // plate composes, through the SAME greenfield axis math (makeAxis/axisTicks) —
   // see cleanFigureSvg. It reads the plate's own sources: the waterfall `rows`,
   // the padded q-domain, the log/linear toggle, the offset slider, the
-  // annotation flags. Only the SKIN differs (clean Arial / white / framed
-  // journal idiom vs. The Print).
+  // annotation flags. The export DIVERGES on identity by design: distinguishable
+  // per-trace colours + a sample/phase/a/κ key block (traceKeys), vs the plate's
+  // phase-coloured traces. Only the SKIN + that key differ.
   const renderSvg = useCallback(
     () =>
       buildCleanFigureSvg({
         rows,
+        traceKeys: figureTraceKeys,
         title: effectiveTitle,
         footer: "q normalized · intensity offset for clarity",
         xType: scale === "log" ? "log" : "linear",
@@ -632,7 +674,7 @@ function BuilderBody({
         showPeakLabels,
         qDomain: waterfallQDomain(rows),
       }),
-    [rows, effectiveTitle, scale, offset, showPeakTicks, showPeakLabels],
+    [rows, figureTraceKeys, effectiveTitle, scale, offset, showPeakTicks, showPeakLabels],
   );
   // Descriptive, product-tagged stem (buildFilename slugifies it): e.g.
   // "himalaya-ll37-titration-2026-06-13.svg". The series title is itself the

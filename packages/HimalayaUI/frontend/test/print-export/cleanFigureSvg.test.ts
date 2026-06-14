@@ -76,21 +76,52 @@ describe("buildCleanFigureSvg", () => {
     expect(noPeaks).not.toMatch(/d="M[^"]*Z" fill="#007d53"/);
   });
 
-  it("renders a phase legend (one entry per distinct phase, unphased spelled out)", () => {
+  it("traceKeys: colours each trace by its KEY colour (not phase) + draws a swatch", () => {
     const svg = buildCleanFigureSvg({
-      rows: [row({ phase: "Im3m" }), row({ key: "b", phase: null, anchors: [] })],
+      rows: [row({ phase: "Im3m" })], // phase would be #007d53, but key wins
+      traceKeys: [
+        { color: "#b44c38", label: "HEPES 37 °C", segments: [{ phase: "Im3m", detail: "a = 252 Å · κ = 1.70×10⁻⁴ Å⁻²" }] },
+      ],
       ...BASE,
     });
-    expect(svg).toContain(">Im3m</text>");
-    expect(svg).toContain(">unphased / unbound</text>");
+    // trace stroke is the categorical key colour, NOT the Im3m phase hex
+    expect(svg).toContain('stroke="#b44c38"');
+    expect(svg).not.toContain('stroke="#007d53"');
+    // a colour swatch in the key block
+    expect(svg).toMatch(/<rect[^>]*fill="#b44c38"/);
   });
 
-  it("honours the q-domain and renders a row label per trace", () => {
+  it("traceKeys: a key entry carries the sample label + phase + lattice/κ detail", () => {
     const svg = buildCleanFigureSvg({
-      rows: [row({ label: "exp 20" }), row({ key: "b", label: "exp 6" })],
+      rows: [row()],
+      traceKeys: [
+        { color: "#b44c38", label: "HEPES 37 °C", segments: [{ phase: "Im3m", detail: "a = 252 Å · κ = 1.70×10⁻⁴ Å⁻²" }] },
+      ],
       ...BASE,
     });
-    expect(svg).toContain(">exp 20</text>");
-    expect(svg).toContain(">exp 6</text>");
+    expect(svg).toContain(">HEPES 37 °C</text>");
+    expect(svg).toContain(">Im3m</tspan>");
+    expect(svg).toContain("a = 252 Å · κ = 1.70×10⁻⁴ Å⁻²");
+  });
+
+  it("traceKeys: coexistence lists every phase; a phaseless trace shows its note", () => {
+    const svg = buildCleanFigureSvg({
+      rows: [row({ phase: "Im3m" }), row({ key: "b", phase: null, anchors: [] })],
+      traceKeys: [
+        {
+          color: "#b44c38",
+          label: "50 °C",
+          segments: [
+            { phase: "Im3m", detail: "a = 255 Å" },
+            { phase: "Pn3m", detail: "a = 198 Å" },
+          ],
+        },
+        { color: "#8a8f9c", label: "60 °C", segments: [], note: "form factor (no Bragg)" },
+      ],
+      ...BASE,
+    });
+    expect(svg).toContain(">Im3m</tspan>");
+    expect(svg).toContain(">Pn3m</tspan>"); // coexisting phase listed too
+    expect(svg).toContain(">form factor (no Bragg)</text>");
   });
 });

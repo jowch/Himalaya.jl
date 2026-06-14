@@ -1,37 +1,53 @@
-// cleanFigureSvg.ts — build the exported series figure as a standalone SVG
-// string, using the SAME greenfield d3 axis math (makeAxis/axisTicks) that the
+// cleanFigureSvg.ts — build the exported figure as a standalone SVG string,
+// using the SAME greenfield d3 axis math (makeAxis/axisTicks) that the
 // on-screen WaterfallChart uses. This is the export idiom: a plain, framed
 // GraphPad/journal figure (white ground, Arial, literal hex, L-shaped black
-// axes) — deliberately NOT "The Print" branding. It renders the SAME data the
-// plate composes (traces, indexed-peak anchors, phase colours, offset, q-scale).
+// axes) — deliberately NOT "The Print" branding.
+//
+// Identity vs colour (the export's deliberate divergence from the plate): a
+// trace is named in the KEY BLOCK below the plot (swatch + sample + each phase
+// with its lattice a/d and, for bicontinuous cubics, κ). Colour identifies the
+// TRACE, not the phase — the series walks a distinguishable categorical palette
+// so multiple traces (possibly sharing a phase, or coexisting) stay separable,
+// and phase is carried as text. The single-trace Focus figure passes one
+// phase-coloured key, so its key block reads as the phase + lattice legend.
 import type { WaterfallRow } from "../waterfall/waterfallModel";
 import { makeAxis, axisTicks } from "../plot/projection";
 import { waterfallQDomain } from "../waterfall/waterfallModel";
+import { phaseHex } from "./traceColors";
 
 const ARIAL = "Arial, Helvetica, sans-serif";
 const INK = "#111111";
 const INK_MUTED = "#666666";
-const TRACE_FALLBACK = "#777777";
 
-/** Phase → literal sRGB hex, converted from phases.ts PHASE_PALETTE (OKLCH) so
- *  the export hue matches the on-screen trace colour. The export idiom is plain
- *  hex (no var(--…) / no OKLCH — the file is a self-contained figure). */
-const PHASE_HEX: Record<string, string> = {
-  Pn3m: "#b65b00",
-  Im3m: "#007d53",
-  Ia3d: "#7555a8",
-  Fm3m: "#b54952",
-  Fd3m: "#855095",
-  Hexagonal: "#a44b79",
-  Lamellar: "#375fb9",
-  Square: "#548126",
-};
+/** One phase a trace carries, pre-formatted for the key block. `detail` is the
+ *  ready-to-render lattice (+ κ) string, e.g. "a = 252 Å · κ = 1.70×10⁻⁴ Å⁻²";
+ *  empty when no lattice is known. */
+export interface FigureKeySegment {
+  phase: string;
+  detail: string;
+}
+
+/** One trace's key-block entry: a colour swatch, a primary label (sample name;
+ *  empty on the single-trace figure, where the title already carries it), and
+ *  the phases it carries. `note` covers the phaseless states (e.g. "unindexed",
+ *  "form factor (no Bragg)"). */
+export interface FigureTraceKey {
+  color: string;
+  label: string;
+  segments: FigureKeySegment[];
+  note?: string;
+}
 
 export interface CleanFigureInput {
   /** Rows low→high (display order); rendered bottom-up, mirroring the plate. */
   rows: WaterfallRow[];
   title: string;
   footer: string;
+  /** Per-trace key entries, parallel to `rows` (same index). When present, a
+   *  trace is coloured by its key colour and the key block replaces the phase
+   *  legend. When absent, traces fall back to phase colour (legacy path). */
+  traceKeys?: FigureTraceKey[];
   /** q-axis scale, mirroring the plate's log/linear toggle. Default "log". */
   xType?: "log" | "linear";
   /** Plate trace-offset: scales the inter-row separation. Default 1. */
@@ -45,18 +61,45 @@ export interface CleanFigureInput {
 }
 
 // Default vertical slot per trace. With the 480px default width and the fixed
-// margins below, three traces land at ~480×888 — a narrow ~1.85:1 PORTRAIT (a
-// landscape waterfall squished the traces flat). The figure grows taller with
-// each trace (more rows ⇒ more portrait), which suits a stacked waterfall.
+// margins below, three traces land at a narrow ~1.85:1 PORTRAIT (a landscape
+// waterfall squished the traces flat); the figure grows taller with each trace.
 const PER_ROW_H = 248;
 const BOTTOM_GAP = 14;
-
-function phaseHex(phase: string | null): string {
-  return (phase != null && PHASE_HEX[phase]) || TRACE_FALLBACK;
-}
+// Key-block line metrics.
+const KEY_HEADER_H = 18;
+const KEY_SUBLINE_H = 16;
+const KEY_TOP_PAD = 20; // gap between the x-axis title and the first key row
+const FOOTNOTE_H = 22;
+const AXIS_FOOT_H = 40; // tick labels + x-axis title below the baseline
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/** Flatten one trace key into its rendered lines. The header line carries the
+ *  swatch; with a label it leads, otherwise the first phase segment rides the
+ *  header (the single-trace legend register). */
+interface KeyLine { swatch: boolean; phase: string; text: string; muted: boolean }
+function keyLines(k: FigureTraceKey): KeyLine[] {
+  const segLine = (s: FigureKeySegment): Omit<KeyLine, "swatch"> => ({
+    phase: s.phase,
+    text: s.detail,
+    muted: false,
+  });
+  const lines: KeyLine[] = [];
+  if (k.label) {
+    lines.push({ swatch: true, phase: "", text: k.label, muted: false });
+    for (const s of k.segments) lines.push({ swatch: false, ...segLine(s) });
+    if (k.segments.length === 0 && k.note) {
+      lines.push({ swatch: false, phase: "", text: k.note, muted: true });
+    }
+  } else if (k.segments.length > 0) {
+    lines.push({ swatch: true, ...segLine(k.segments[0]!) });
+    for (const s of k.segments.slice(1)) lines.push({ swatch: false, ...segLine(s) });
+  } else {
+    lines.push({ swatch: true, phase: "", text: k.note ?? "", muted: true });
+  }
+  return lines;
 }
 
 /** Build the export figure as a standalone `<svg>` markup string. */
@@ -65,16 +108,40 @@ export function buildCleanFigureSvg(input: CleanFigureInput): string {
     rows,
     title,
     footer,
+    traceKeys,
     xType = "log",
     offsetScale = 1,
     showPeakTicks = true,
     showPeakLabels = false,
   } = input;
   const width = input.width ?? 480; // narrow portrait (see PER_ROW_H)
-  // Bottom margin stacks four rows below the axis: tick labels, x-axis title,
-  // the phase legend, and the footnote — each on its own line so they never
-  // collide (the legend used to overprint the x-axis title).
-  const m = { l: 56, r: 70, t: 34, b: 96 };
+
+  // Resolve each trace's colour: key colour when present, else phase hue.
+  const colorOf = (i: number, row: WaterfallRow): string =>
+    traceKeys?.[i]?.color ?? phaseHex(row.phase);
+
+  // Lay out the key block first — its height grows with trace + phase count, so
+  // it sizes the bottom margin (and thus the figure height). Rendered TOP trace
+  // first (reverse of display order) so the key's vertical order matches the
+  // bottom-up stacked plot — the eye reads the top key row against the top trace.
+  const keyGroups = (traceKeys ?? [])
+    .map((k) => ({ color: k.color, lines: keyLines(k) }))
+    .reverse();
+  const keyBlockH =
+    keyGroups.length > 0
+      ? KEY_TOP_PAD + keyGroups.length * 4 /* inter-entry gap */ +
+        keyGroups.reduce(
+          (s, g) => s + KEY_HEADER_H + Math.max(0, g.lines.length - 1) * KEY_SUBLINE_H,
+          0,
+        )
+      : 0;
+
+  const m = {
+    l: 58,
+    r: 26, // no right gutter — traces are named in the key block
+    t: 36,
+    b: AXIS_FOOT_H + keyBlockH + FOOTNOTE_H,
+  };
   const height =
     input.height ?? m.t + m.b + BOTTOM_GAP + Math.max(1, rows.length) * PER_ROW_H;
   const pw = width - m.l - m.r;
@@ -88,25 +155,26 @@ export function buildCleanFigureSvg(input: CleanFigureInput): string {
   const ticks = axisTicks(x);
 
   // Band geometry mirrors WaterfallChart: bottom-up (row 0 at the bottom),
-  // bandHeight-weighted, the inter-row STEP scaled by the offset, then fit to
-  // the panel so the stack always fills it.
+  // bandHeight-weighted, the inter-row STEP scaled by the offset, fit to panel.
   const stackH = ph - BOTTOM_GAP;
   const totalWeight = rows.reduce((s, r) => s + Math.max(0, r.bandHeight), 0) || rows.length;
   let cumulative = 0;
   let natural = 0;
-  const nat = [...rows].reverse().map((row) => {
-    const h = (Math.max(0, row.bandHeight) / totalWeight) * stackH;
-    const top = cumulative + row.yOffset;
-    cumulative += h * scale;
-    natural = Math.max(natural, top + h);
-    return { row, top, h };
-  });
+  const nat = rows
+    .map((row, idx) => ({ row, idx }))
+    .reverse()
+    .map(({ row, idx }) => {
+      const h = (Math.max(0, row.bandHeight) / totalWeight) * stackH;
+      const top = cumulative + row.yOffset;
+      cumulative += h * scale;
+      natural = Math.max(natural, top + h);
+      return { row, idx, top, h };
+    });
   const fit = natural > 0 ? stackH / natural : 1;
-  // bandTop/bandBottom in absolute SVG y. Bottom gap lifts row 0 off the axis.
-  const bands = nat.map(({ row, top, h }) => {
+  const bands = nat.map(({ row, idx, top, h }) => {
     const bandTop = m.t + top * fit;
     const bandBottom = bandTop + h * fit;
-    return { row, bandTop, bandBottom };
+    return { row, idx, bandTop, bandBottom };
   });
 
   const parts: string[] = [];
@@ -118,7 +186,7 @@ export function buildCleanFigureSvg(input: CleanFigureInput): string {
 
   // Title (top-left, like a figure caption header).
   parts.push(
-    `<text x="${m.l}" y="22" font-size="15" font-weight="700" fill="${INK}">${esc(title)}</text>`,
+    `<text x="${m.l}" y="24" font-size="16.5" font-weight="700" fill="${INK}">${esc(title)}</text>`,
   );
 
   // L-shaped black axes.
@@ -138,29 +206,29 @@ export function buildCleanFigureSvg(input: CleanFigureInput): string {
     );
     if (t.kind !== "minor") {
       parts.push(
-        `<text x="${px.toFixed(1)}" y="${baseY + 17}" text-anchor="middle" font-size="10" fill="${INK}">${t.value.toFixed(2)}</text>`,
+        `<text x="${px.toFixed(1)}" y="${baseY + 18}" text-anchor="middle" font-size="11.5" fill="${INK}">${t.value.toFixed(2)}</text>`,
       );
     }
   }
 
   // Axis titles.
   parts.push(
-    `<text x="${m.l + pw / 2}" y="${baseY + 34}" text-anchor="middle" font-size="11.5" font-weight="700" fill="${INK}">q (Å⁻¹)</text>`,
+    `<text x="${m.l + pw / 2}" y="${baseY + 36}" text-anchor="middle" font-size="13" font-weight="700" fill="${INK}">q (Å⁻¹)</text>`,
   );
   const yMid = m.t + ph / 2;
   parts.push(
-    `<text x="16" y="${yMid}" text-anchor="middle" font-size="11.5" font-weight="700" fill="${INK}" transform="rotate(-90 16 ${yMid})">Intensity (a.u.) + offset</text>`,
+    `<text x="16" y="${yMid}" text-anchor="middle" font-size="13" font-weight="700" fill="${INK}" transform="rotate(-90 16 ${yMid})">Intensity (a.u.) + offset</text>`,
   );
 
-  // Traces (log-intensity per band) + peak glyphs + per-row labels.
-  for (const { row, bandTop, bandBottom } of bands) {
+  // Traces (log-intensity per band) + peak glyphs.
+  for (const { row, idx, bandTop, bandBottom } of bands) {
     const bandH = Math.max(1, bandBottom - bandTop);
-    const color = phaseHex(row.phase);
+    const color = colorOf(idx, row);
     const { q, I } = row.trace;
 
     // Per-row log-intensity mapping: map log10(I) ∈ [logMin, logMax] → y ∈
-    // [bandBottom, bandTop] (low at bottom).
-    // Hoisted to row scope so the peak markers ride the SAME curve as the trace.
+    // [bandBottom, bandTop] (low at bottom). Hoisted so peak markers ride the
+    // SAME curve as the trace.
     let minI = Infinity;
     let maxI = -Infinity;
     for (const v of I) {
@@ -190,61 +258,59 @@ export function buildCleanFigureSvg(input: CleanFigureInput): string {
     }
 
     // Peak anchors — ordinal-numbered (1..n by ascending q). Each marker rides
-    // the trace: a small downward triangle pointing at the curve at the peak's
-    // intensity, with the ordinal above it. (Was a detached row pinned to the
-    // band top, which read as floating, broken markers.)
+    // the trace: a small downward triangle pointing at the curve, in the trace
+    // colour (we don't attribute a peak to a phase under coexistence).
     if (showPeakTicks && hasLog && row.anchors.length > 0) {
       const sorted = [...row.anchors].filter((a) => inDomain(a.q)).sort((a, b) => a.q - b.q);
       sorted.forEach((a, i) => {
         const px = x.to(a.q);
-        const cy = yOf(a.intensity ?? 0); // y on the curve at this peak
-        const tip = cy - 4; // apex sits 4px above the curve, pointing down at it
+        const cy = yOf(a.intensity ?? 0);
+        const tip = cy - 4;
         const top = tip - 5;
         parts.push(
           `<path d="M${(px - 3.2).toFixed(1)} ${top.toFixed(1)} L${(px + 3.2).toFixed(1)} ${top.toFixed(1)} L${px.toFixed(1)} ${tip.toFixed(1)} Z" fill="${color}"/>`,
         );
         if (showPeakLabels) {
           parts.push(
-            `<text x="${px.toFixed(1)}" y="${(top - 2).toFixed(1)}" text-anchor="middle" font-size="9" fill="${color}">${i + 1}</text>`,
+            `<text x="${px.toFixed(1)}" y="${(top - 2).toFixed(1)}" text-anchor="middle" font-size="9.5" fill="${color}">${i + 1}</text>`,
           );
         }
       });
     }
-
-    // Per-row label in the right gutter, at the band's vertical centre.
-    parts.push(
-      `<text x="${m.l + pw + 6}" y="${(bandTop + bandH * 0.5).toFixed(1)}" font-size="10" fill="${INK}" dominant-baseline="middle">${esc(row.label)}</text>`,
-    );
   }
 
-  // Phase legend (distinct phases present), centred under the axis title.
-  const legendPhases: string[] = [];
-  for (const r of rows) {
-    const p = r.phase ?? "unphased";
-    if (!legendPhases.includes(p)) legendPhases.push(p);
-  }
-  if (legendPhases.length > 0) {
-    const legendY = baseY + 58;
-    // Size each item from the RENDERED label (not the phase key — "unphased"
-    // displays as the longer "unphased / unbound"), so items can't overlap.
-    const GAP = 18;
-    const items = legendPhases.map((p) => {
-      const label = p === "unphased" ? "unphased / unbound" : p;
-      const hex = p === "unphased" ? TRACE_FALLBACK : phaseHex(p);
-      return { label, hex, w: 16 + label.length * 6.1 };
-    });
-    const totalW = items.reduce((s, it) => s + it.w + GAP, 0) - GAP;
-    let cx = Math.max(m.l, (width - totalW) / 2);
-    for (const it of items) {
-      parts.push(`<rect x="${cx.toFixed(1)}" y="${legendY - 8}" width="10" height="10" fill="${it.hex}"/>`);
-      parts.push(`<text x="${(cx + 15).toFixed(1)}" y="${legendY}" font-size="10" fill="${INK}">${esc(it.label)}</text>`);
-      cx += it.w + GAP;
+  // ── Key block (replaces the phase legend + per-row gutter labels) ──────────
+  if (keyGroups.length > 0) {
+    let ky = baseY + AXIS_FOOT_H + KEY_TOP_PAD;
+    for (const g of keyGroups) {
+      g.lines.forEach((ln, li) => {
+        const isHeader = li === 0;
+        if (ln.swatch) {
+          parts.push(
+            `<rect x="${m.l}" y="${(ky - 9).toFixed(1)}" width="11" height="11" rx="1.5" fill="${g.color}"/>`,
+          );
+        }
+        const tx = m.l + 18;
+        const fill = ln.muted ? INK_MUTED : INK;
+        if (ln.phase) {
+          // "<Phase>   <detail>" — phase name in bold, lattice/κ detail regular.
+          parts.push(
+            `<text x="${tx}" y="${ky.toFixed(1)}" font-size="11.5" fill="${fill}"><tspan font-weight="700">${esc(ln.phase)}</tspan>${ln.text ? `  ${esc(ln.text)}` : ""}</text>`,
+          );
+        } else {
+          parts.push(
+            `<text x="${tx}" y="${ky.toFixed(1)}" font-size="11.5" font-weight="${isHeader ? 700 : 400}" fill="${fill}">${esc(ln.text)}</text>`,
+          );
+        }
+        ky += isHeader ? KEY_HEADER_H : KEY_SUBLINE_H;
+      });
+      ky += 4; // inter-entry gap
     }
   }
 
-  // Footnote, centred under the legend.
+  // Footnote, at the very bottom.
   parts.push(
-    `<text x="${(width / 2).toFixed(1)}" y="${baseY + 80}" text-anchor="middle" font-size="10" fill="${INK_MUTED}">${esc(footer)}</text>`,
+    `<text x="${(width / 2).toFixed(1)}" y="${(height - 8).toFixed(1)}" text-anchor="middle" font-size="10.5" fill="${INK_MUTED}">${esc(footer)}</text>`,
   );
 
   parts.push("</svg>");
