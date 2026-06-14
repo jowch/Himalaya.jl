@@ -141,12 +141,16 @@ describe("LoupePage", () => {
     expect(screen.getByTestId("loupe-side-panel")).toBeInTheDocument();
   });
 
-  it("advertises the screen + sample-step shortcuts in a registry-driven legend (LO-KBDLEGEND)", () => {
+  it("advertises only the loupe-unique screen verbs in the bottom legend (LO-KBDLEGEND)", () => {
     renderAt(42);
     const legend = screen.getByTestId("loupe-kbd-legend");
     const caps = within(legend).getAllByTestId("kbkey").map((k) => k.textContent);
-    // the screen verbs (X/K/R) + sample steps ([ ]) come straight from the registry
-    expect(caps).toEqual(expect.arrayContaining(["X", "K", "R", "[", "]"]));
+    // the screen verbs (X/K/R) come straight from the registry
+    expect(caps).toEqual(expect.arrayContaining(["X", "K", "R"]));
+    // LO-STEPDEDUP: the sample steps ([ ]) are advertised by the shared
+    // SampleStepper's tooltips in the TopBar now, so they don't repeat here.
+    expect(caps).not.toContain("[");
+    expect(caps).not.toContain("]");
     // LO-TERM: the loupe speaks "frame", so no "exposure"-worded entry leaks in
     expect(legend.textContent ?? "").not.toMatch(/exposure/i);
   });

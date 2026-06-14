@@ -425,11 +425,13 @@ export function LoupePage(): JSX.Element {
                   />
                   {/* LO-KBDLEGEND: a registry-driven key legend so the loupe's
                       shortcuts are discoverable on the surface itself. Curated to
-                      the screen verbs + sample steps; the frame arrows are
-                      conventional and their registry label says "exposure"
-                      (LO-TERM keeps the loupe speaking "frame"). */}
+                      the screen verbs ALONE — the frame arrows are conventional
+                      (and their registry label says "exposure", which LO-TERM
+                      keeps off the loupe), and the sample steps ([ ]) are
+                      advertised by the shared SampleStepper's tooltips in the
+                      TopBar (LO-STEPDEDUP), so repeating them here is redundant. */}
                   <KbdLegend
-                    ids={["drop", "keep", "representative", "prevSample", "nextSample"]}
+                    ids={["drop", "keep", "representative"]}
                     testId="loupe-kbd-legend"
                     className="mt-4"
                   />
