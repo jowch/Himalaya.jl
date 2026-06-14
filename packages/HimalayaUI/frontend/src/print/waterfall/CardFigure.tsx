@@ -10,7 +10,10 @@ const PAD_L = 14;
 const PAD_R = 14;
 const PAD_T = 12;
 const PAD_B = 12;
-const STEP_Y = 31;
+// FOL-CARDTWINS: taller trace bands make the mini-waterfall the dominant,
+// legible subject of the card (a "wall of distinct figures", not a chrome-led
+// card grid). Height still scales with member count (rows.length * STEP_Y).
+const STEP_Y = 40;
 const Y_HEADROOM = 0.12; // match WaterfallChart's per-box headroom
 
 /** Mockup reference width — used until the container is measured (and in

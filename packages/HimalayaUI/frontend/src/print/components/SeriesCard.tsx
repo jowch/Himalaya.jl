@@ -153,7 +153,7 @@ export function SeriesCard({
                 e.stopPropagation();
                 onClick();
               }}
-              className="text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              className="text-left underline decoration-transparent underline-offset-2 transition-colors hover:decoration-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             >
               {title}
             </button>

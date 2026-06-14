@@ -167,16 +167,19 @@ function NewSeriesTile({ onClick }: { onClick: () => void }): JSX.Element {
       interactive
       onClick={onClick}
       data-testid="new-series-tile"
-      className="w-full min-h-44 flex flex-col items-center justify-center gap-1 px-4 py-8 text-ink-soft hover:text-ink"
+      // FOL-GHOSTTILE-TALL: self-start so the add affordance keeps its own
+      // compact height instead of stretching to match a full series card (a
+      // large vacant box drawing the eye to emptiness).
+      className="w-full self-start flex flex-col items-center justify-center gap-1.5 px-4 py-7 text-ink-soft hover:text-ink"
     >
       <span className="text-headline" aria-hidden="true">
         +
       </span>
-      <span className="text-caption font-semibold">New series</span>
-      {/* F-CONTRAST: small INFORMATIONAL text (not a decorative kicker) must
-          ride a darker token — ink-soft (~6.8:1 on the plate) clears AA-normal;
-          ink-faint (~3.29:1) would fail it. */}
-      <span className="text-caption text-ink-soft">
+      {/* FOL-GHOST-SUBTEXT: this is the key wayfinding on the empty path, so it
+          rides text-body (not the page's smallest caption). Hierarchy comes from
+          weight + ink on the label vs ink-soft on the helper, at one size. */}
+      <span className="text-body font-semibold text-ink">New series</span>
+      <span className="text-body text-ink-soft">
         Start from the contact sheet
       </span>
     </Card>
@@ -334,31 +337,35 @@ export function SeriesFolioPage(): JSX.Element {
             {isFiltered ? `Showing ${shown} of ${total}` : `${total} series`}
           </span>
         )}
-        {/* FOL-SORT: the visible "SORT" label the mockup carries left of the
-            control (matches the column-header kicker idiom). aria-hidden because
-            the SegmentedControl already names itself "Sort series" for SR; this
-            is the sighted-user affordance only, no double-announce. */}
-        <Kicker tone="soft" as="span" aria-hidden="true">
-          Sort
-        </Kicker>
-        <SegmentedControl
-          aria-label="Sort series"
-          options={SORT_OPTIONS}
-          value={controls.sort}
-          onChange={(v) => updateControls({ sort: v })}
-        />
-        {/* Direction toggle (F2): flips the active sort between its natural
-            order and the reverse. aria-pressed reflects the reversed state;
-            the label states the direction the press will MOVE to. */}
-        <IconButton
-          label={dir === "asc" ? "Sort descending" : "Sort ascending"}
-          aria-pressed={dir === "asc"}
-          data-testid="folio-sort-dir"
-          data-dir={dir}
-          onClick={toggleDir}
-        >
-          <span aria-hidden="true">{dir === "asc" ? "↑" : "↓"}</span>
-        </IconButton>
+        {/* FOL-CONTROLS-GROUP: the sort controls (label + segmented + direction)
+            are ONE tight cluster so the direction arrow reads as modifying the
+            segmented control beside it, not as a lone floating glyph; the outer
+            gap-3.5 keeps the result count visibly separate from this group.
+            FOL-SORT: the "Sort" label is the sighted-user affordance (aria-hidden;
+            the SegmentedControl already names itself "Sort series" for SR). */}
+        <div className="flex items-center gap-2">
+          <Kicker tone="soft" as="span" aria-hidden="true">
+            Sort
+          </Kicker>
+          <SegmentedControl
+            aria-label="Sort series"
+            options={SORT_OPTIONS}
+            value={controls.sort}
+            onChange={(v) => updateControls({ sort: v })}
+          />
+          {/* Direction toggle (F2): flips the active sort between its natural
+              order and the reverse. aria-pressed reflects the reversed state;
+              the label states the direction the press will MOVE to. */}
+          <IconButton
+            label={dir === "asc" ? "Sort descending" : "Sort ascending"}
+            aria-pressed={dir === "asc"}
+            data-testid="folio-sort-dir"
+            data-dir={dir}
+            onClick={toggleDir}
+          >
+            <span aria-hidden="true">{dir === "asc" ? "↑" : "↓"}</span>
+          </IconButton>
+        </div>
       </div>
 
       {/* ── Gallery ───────────────────────────────────────────────────── */}
