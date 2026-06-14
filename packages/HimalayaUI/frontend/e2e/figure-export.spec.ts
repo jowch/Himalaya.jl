@@ -98,11 +98,11 @@ test.describe("Figure export — focus workspace TraceViewer (#181)", () => {
   // Greenfield ExportButton (src/print/components/ExportButton.tsx) is a split
   // button: a primary "Copy" + a "▾" chevron (IconButton label "Download
   // formats") that opens a Menu with "Download as PNG" / "Download as SVG"
-  // menuitems. The download filename stem is the sample/exposure label (FocusPage
-  // `filenameStem`), suffixed with `-YYYY-MM-DD.{ext}` by buildFilename — there is
-  // no "himalaya-trace-" prefix on the greenfield surface, so we assert the
-  // date-stamped extension contract rather than the retired hard-coded prefix.
-  test("Download → PNG via chevron menu lands a date-stamped .png", async ({ page }) => {
+  // menuitems. The download filename is a descriptive, product-tagged, slug-safe
+  // stem ("himalaya-trace-<sample>-<frame>") + "-YYYY-MM-DD.{ext}" (buildFilename
+  // slugifies). We assert the full descriptive contract — the prefix, the
+  // date stamp, and a clean trailing extension.
+  test("Download → PNG via chevron menu lands a descriptive, date-stamped .png", async ({ page }) => {
     await mockApi(page);
     await seedState(page);
     await page.goto("/sample/10");
@@ -116,10 +116,10 @@ test.describe("Figure export — focus workspace TraceViewer (#181)", () => {
     await pngRow.click();
     const download = await downloadPromise;
 
-    expect(download.suggestedFilename()).toMatch(/-\d{4}-\d{2}-\d{2}\.png$/);
+    expect(download.suggestedFilename()).toMatch(/^himalaya-trace-.+-\d{4}-\d{2}-\d{2}\.png$/);
   });
 
-  test("Download → SVG via chevron menu lands a date-stamped .svg", async ({ page }) => {
+  test("Download → SVG via chevron menu lands a descriptive, date-stamped .svg", async ({ page }) => {
     await mockApi(page);
     await seedState(page);
     await page.goto("/sample/10");
@@ -132,6 +132,6 @@ test.describe("Figure export — focus workspace TraceViewer (#181)", () => {
     await svgRow.click();
     const download = await downloadPromise;
 
-    expect(download.suggestedFilename()).toMatch(/-\d{4}-\d{2}-\d{2}\.svg$/);
+    expect(download.suggestedFilename()).toMatch(/^himalaya-trace-.+-\d{4}-\d{2}-\d{2}\.svg$/);
   });
 });

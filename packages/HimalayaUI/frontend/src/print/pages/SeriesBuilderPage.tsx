@@ -639,7 +639,10 @@ function BuilderBody({
       }),
     [members, rows, tracesById, effectiveTitle, showPeakTicks, showPeakLabels, scale, offset],
   );
-  const fx = useFigureExport(exportSpec, effectiveTitle, "series figure");
+  // Descriptive, product-tagged stem (buildFilename slugifies it): e.g.
+  // "himalaya-ll37-titration-2026-06-13.svg". The series title is itself the
+  // descriptor (the default is "Series by <var>"), so no redundant "series-".
+  const fx = useFigureExport(exportSpec, `himalaya-${effectiveTitle}`, "series figure");
 
   // ── Traces slot — read MemberList, or the editable recipe in draft ──────
   const tracesSlot = liveDraft ? (

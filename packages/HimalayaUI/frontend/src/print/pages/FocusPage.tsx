@@ -343,7 +343,9 @@ export function FocusPage(): JSX.Element {
     ...(experimentQ.data?.q_units ? { qUnits: experimentQ.data.q_units } : {}),
   }), [traceQ.data, peaks, activeIndices, experimentQ.data, sampleName, exposureLabel, xDomain, scale]);
 
-  const filenameStem = `${sampleName} ${exposureLabel ?? ""}`.trim();
+  // Descriptive, product-tagged stem (buildFilename slugifies it): e.g.
+  // "himalaya-trace-jc042-frame-1-2026-06-13.svg".
+  const filenameStem = `himalaya-trace-${sampleName} ${exposureLabel ?? ""}`.trim();
   const fx = useFigureExport(exportSpec, filenameStem, "trace plot");
 
   // ── keyboard: the Focus two-axis model (shared shortcut library) ──────────────
