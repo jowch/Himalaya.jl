@@ -28,6 +28,25 @@ function dim(svg: string, attr: "width" | "height", fallback: number): number {
   return m ? Number(m[1]) : fallback;
 }
 
+/**
+ * Rewrite the root `<svg>` width/height to target PIXELS while preserving its
+ * point `viewBox`, so the browser rasterizes the VECTOR at full resolution.
+ * Drawing a point-sized SVG onto a larger canvas instead bitmap-scales the small
+ * raster (blurry); resizing the SVG itself keeps the lines crisp. Exported for a
+ * focused unit test (the canvas path needs a real browser).
+ */
+export function svgScaledToPixels(svg: string, pxW: number, pxH: number): string {
+  const w = dim(svg, "width", 0);
+  const h = dim(svg, "height", 0);
+  let out = svg;
+  if (!/<svg[^>]*\bviewBox=/.test(out) && w > 0 && h > 0) {
+    out = out.replace(/<svg\b/, `<svg viewBox="0 0 ${w} ${h}"`);
+  }
+  out = out.replace(/(<svg\b[^>]*?\b)width="[^"]*"/, `$1width="${pxW}"`);
+  out = out.replace(/(<svg\b[^>]*?\b)height="[^"]*"/, `$1height="${pxH}"`);
+  return out;
+}
+
 /** Target raster density for the PNG export. The SVG authors its geometry in
  *  points (72/inch) at the figure's true physical size, so the canvas scale is
  *  dpi/72 — 216 DPI (scale = 3×) upscales the compact point layout to a crisp
@@ -42,17 +61,19 @@ export const EXPORT_PNG_DPI = 216;
  */
 export async function svgStringToPng(svg: string, dpi = EXPORT_PNG_DPI): Promise<Blob> {
   const scale = dpi / 72;
-  const w = dim(svg, "width", 800);
-  const h = dim(svg, "height", 600);
-  const url = URL.createObjectURL(svgStringToBlob(svg));
+  const pxW = Math.round(dim(svg, "width", 800) * scale);
+  const pxH = Math.round(dim(svg, "height", 600) * scale);
+  // Upscale the VECTOR (resize the <svg> to target px, keep its point viewBox)
+  // so it rasterizes crisp; then draw 1:1 — no canvas bitmap-scaling (which blurs).
+  const url = URL.createObjectURL(svgStringToBlob(svgScaledToPixels(svg, pxW, pxH)));
   try {
     const img = new Image();
     img.src = url;
     await img.decode();
-    const off = new OffscreenCanvas(w * scale, h * scale);
+    const off = new OffscreenCanvas(pxW, pxH);
     const ctx = off.getContext("2d");
     if (!ctx) throw new Error("OffscreenCanvas 2d context unavailable");
-    ctx.drawImage(img, 0, 0, off.width, off.height);
+    ctx.drawImage(img, 0, 0);
     return await off.convertToBlob({ type: "image/png" });
   } finally {
     URL.revokeObjectURL(url);

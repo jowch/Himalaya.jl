@@ -40,21 +40,24 @@ const FS_DETAIL = 8; // lattice + κ detail / note
 const FS_FOOT = 7;
 const FS_ORD = 6.5; // peak ordinal labels
 
-// Vertical packing, in points.
-const AMP = 74; // amplitude of the tallest band (peak-to-floor of one trace)
-const STEP_BASE = 37; // baseline-to-baseline step (< AMP ⇒ overlap, ~50%)
-const STACK_GAP = 4; // lift row 0 off the x-axis
-const TOP_HEAD = 4; // headroom above the tallest trace
+// Vertical packing, in points. A generous amplitude with a step ~75% of it
+// keeps the plot PANEL portrait (taller than wide) with only a MILD overlap of
+// each trace's tall low-q head into the trace above — enough to use the space,
+// not so much that peak labels collide with the trace below.
+const AMP = 82; // amplitude of the tallest band (peak-to-floor of one trace)
+const STEP_BASE = 62; // baseline-to-baseline step (< AMP ⇒ ~25% overlap)
+const STACK_GAP = 6; // lift row 0 off the x-axis
+const TOP_HEAD = 6; // headroom above the tallest trace
 
 // Key block + footnote metrics, in points.
-const KEY_HEADER_H = 11.5;
-const KEY_SUBLINE_H = 9.5;
-const KEY_TOP_PAD = 9; // gap below the x-axis title to the first key row
-const KEY_ENTRY_GAP = 2.5;
+const KEY_HEADER_H = 12;
+const KEY_SUBLINE_H = 10.5;
+const KEY_TOP_PAD = 13; // gap below the x-axis title to the first key row
+const KEY_ENTRY_GAP = 4;
 const KEY_SWATCH = 8;
 const KEY_INDENT = 13; // text inset from the swatch
-const FOOTNOTE_H = 13;
-const AXIS_FOOT_H = 24; // tick labels + x-axis title below the baseline
+const FOOTNOTE_H = 14;
+const AXIS_FOOT_H = 26; // tick labels + x-axis title below the baseline
 
 const MIN_WIDTH = 132; // ~1.85 in — figure never narrower than this
 const CHAR_W = 0.52; // Arial average advance, as a fraction of font size
@@ -172,7 +175,7 @@ export function buildCleanFigureSvg(input: CleanFigureInput): string {
   const m = {
     l: 38,
     r: 8, // no right gutter — traces are named in the key block
-    t: 18,
+    t: 20,
     b: AXIS_FOOT_H + keyBlockH + FOOTNOTE_H,
   };
 
