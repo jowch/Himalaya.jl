@@ -3,7 +3,6 @@ import { describe, it, expect } from "vitest";
 import { makeProjection } from "../../src/print/plot/projection";
 import {
   PlotLabels,
-  dodgeX,
   type PlotLabelsProps,
 } from "../../src/print/plot/marks/PlotLabels";
 import { type PlotPeak } from "../../src/print/plot/marks/PlotPeaks";
@@ -87,19 +86,15 @@ describe("PlotLabels", () => {
   });
 
   // ── 3a-4 ── dodge: two close peaks get distinct x positions ---------------
-  it("dodges two close peaks to distinct x positions", () => {
-    // With 1:1 mapping, q=100 → px=100, q=105 → px=105 (5px apart).
-    // labelWidthPx=30 → they must be pushed apart.
+  it("dodges two close peaks to distinct x positions (by their measured width)", () => {
+    // With 1:1 mapping, q=100 → px=100, q=105 → px=105 (5px apart). Single-char
+    // labels are narrow, so they push apart by their measured width + gap — far
+    // less than the old fixed 30px (the over-aggressive dodge this replaces).
     const peaks: PlotPeak[] = [
       { id: 1, q: 100, source: "auto", intensity: 10, label: "A" },
       { id: 2, q: 105, source: "auto", intensity: 10, label: "B" },
     ];
-    const { container } = wrap({
-      peaks,
-      projection: proj,
-      color,
-      labelWidthPx: 30,
-    });
+    const { container } = wrap({ peaks, projection: proj, color });
     const texts = container.querySelectorAll('[data-role="peak-label"]');
     expect(texts.length).toBe(2);
     const xs = Array.from(texts).map((t) =>
@@ -107,8 +102,9 @@ describe("PlotLabels", () => {
     );
     expect(xs[0]).not.toBeNaN();
     expect(xs[1]).not.toBeNaN();
-    // The two x-positions must differ by at least labelWidthPx.
-    expect(Math.abs(xs[1]! - xs[0]!)).toBeGreaterThanOrEqual(29.9);
+    const gap = Math.abs(xs[1]! - xs[0]!);
+    expect(gap).toBeGreaterThan(5); // pushed apart from their natural 5px
+    expect(gap).toBeLessThan(30); // but far less than the old uniform width
   });
 
   // ── highlightPeakIds — label dimming ---------------------------------------
@@ -175,32 +171,6 @@ describe("PlotLabels", () => {
     });
   });
 
-  // ── dodgeX unit tests -------------------------------------------------------
-  describe("dodgeX (pure helper)", () => {
-    it("returns identity when positions are far apart", () => {
-      const xs = [0, 100, 200];
-      const result = dodgeX(xs, 30);
-      expect(result).toEqual(xs);
-    });
-
-    it("pushes apart and recenters two overlapping positions", () => {
-      // Two positions at px 100 and 105, labelWidthPx=30
-      const xs = [100, 105];
-      const result = dodgeX(xs, 30);
-      expect(result.length).toBe(2);
-      // After dodge the gap must be >= 30
-      expect(result[1]! - result[0]!).toBeGreaterThanOrEqual(30 - 1e-9);
-      // Recentered: mean of result should equal mean of input (102.5)
-      const mean = (result[0]! + result[1]!) / 2;
-      expect(mean).toBeCloseTo(102.5, 5);
-    });
-
-    it("handles a single element (no-op)", () => {
-      expect(dodgeX([50], 30)).toEqual([50]);
-    });
-
-    it("handles empty array", () => {
-      expect(dodgeX([], 30)).toEqual([]);
-    });
-  });
+  // dodgeX's pure unit tests live in print-plot/labelDodge.test.ts (the
+  // width-aware signature).
 });

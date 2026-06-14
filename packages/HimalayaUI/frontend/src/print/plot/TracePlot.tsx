@@ -345,6 +345,19 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
                 band={layers.band}
                 color={neutralLine || !trace.phase ? UNINDEXED_COLOR : phaseColor(trace.phase)}
               />
+              {/* Label connectors render BEFORE the markers so a leader tucks
+                  UNDER its peak marker (the marker paints on top). The text pass
+                  is below, after the markers, so labels stay legible. */}
+              {layers.labels ? (
+                <PlotLabels
+                  part="connectors"
+                  peaks={trace.peaks}
+                  projection={projection}
+                  color={trace.phase ? phaseColor(trace.phase) : UNINDEXED_COLOR}
+                  baselineI={yExtent[0]}
+                  {...(highlightPeakIds ? { highlightPeakIds } : {})}
+                />
+              ) : null}
               {layers.peaks ? (() => {
               const peaksWithHover = effectiveHoverId == null
                 ? trace.peaks
@@ -374,6 +387,7 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
             })() : null}
               {layers.labels ? (
                 <PlotLabels
+                  part="text"
                   peaks={trace.peaks}
                   projection={projection}
                   color={trace.phase ? phaseColor(trace.phase) : UNINDEXED_COLOR}

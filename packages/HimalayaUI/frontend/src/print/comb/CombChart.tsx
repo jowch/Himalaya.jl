@@ -126,7 +126,13 @@ function renderRow(
     .map((t, j) => ({ j, px: ctx.x.to(t.q) }))
     .filter((e) => row.series.teeth[e.j]!.observed && Number.isFinite(e.px))
     .sort((a, b) => a.px - b.px);
-  const dodged = dodgeX(observed.map((e) => e.px), LABEL_MIN_GAP);
+  // Uniform half-widths preserve the comb's center-to-center LABEL_MIN_GAP under
+  // the width-aware dodgeX (the per-label measuring is a trace-plot refinement).
+  const dodged = dodgeX(
+    observed.map((e) => e.px),
+    observed.map(() => LABEL_MIN_GAP / 2),
+    0,
+  );
   const labelXByIndex = new Map<number, number>();
   observed.forEach((e, k) => labelXByIndex.set(e.j, dodged[k]!));
   return (
