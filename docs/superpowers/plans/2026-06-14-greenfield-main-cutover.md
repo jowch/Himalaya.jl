@@ -36,6 +36,8 @@ correctness fix**, landed as a **merge-commit**:
 
 ## Decisions
 
+*(All confirmed by Jonathan, 2026-06-14.)*
+
 - **Merge strategy: merge-commit (`--no-ff`).** The branch evolved both the
   frontend and the Julia backend/data-model; the backend migration history
   (`confirmed_index` semantic shift, rebuild-not-log-derivable pre-Plan-A
@@ -112,19 +114,18 @@ correctness fix**, landed as a **merge-commit**:
   `contact-sheet.bones.json` modified and `graphify-out/` untracked. Stage only
   cutover files by name. No `git add -A` (standing mandate).
 
-## Open questions (need a human decision before/at execution)
+## Open questions
 
-1. **Confirm the promotion is intended** (vs. some other plan for `PrintApp`). Git
-   shows `src/print/App.tsx` last touched 2026-06-10 (em-dash sweep), still a stub
-   — the "pages-assembly plan" that was meant to do this promotion never ran.
-2. **Boneyard in `print/main.tsx`:** carry the registry import + `configureBoneyard`
-   defaults, or intentionally drop? (Recommend: carry — skeleton loading is live.)
-3. **Backend dead routes:** grep `routes_*.jl` for a retired `/groups` endpoint or
-   `@`-mention handler before claiming none remain (`routes_analysis.jl` comment
-   hints at residue). Out of scope for the cutover edit, but worth confirming.
-4. **`routes_export.jl` `active_group_kind`:** still consumed by the greenfield
-   frontend, or a dead payload field? If unconsumed → future-deprecation candidate,
-   not this cutover.
+1. ~~**Confirm the promotion is intended.**~~ **RESOLVED (Jonathan, 2026-06-14):**
+   the promotion was simply never finished — no special reason. The Print IS the
+   app; proceed.
+2. ~~**Boneyard in `print/main.tsx`:** carry or drop?~~ **RESOLVED:** carry the
+   registry import + `configureBoneyard` defaults (skeleton loading is live).
+3. **Backend dead routes** (retired `/groups`, `@`-mention handlers) — **UNDER
+   SURVEY** (`greenfield-cutover-survey`, run `w70n20q1o`); evidence-based study
+   pending.
+4. **`routes_export.jl` `active_group_kind` consumption** — **UNDER SURVEY** (same
+   workflow). If unconsumed → future-deprecation candidate, not this cutover.
 
 ## Folded-in fix (from the session code review, `fix-then-ship`)
 
