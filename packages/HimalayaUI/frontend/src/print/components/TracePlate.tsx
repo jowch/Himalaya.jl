@@ -217,6 +217,16 @@ export function TracePlate({
               Auto-fit
             </Button>
           )}
+          {/* FO-TOOLBAR-FLAT: split the view controls (scale, Auto-fit) from the
+              edit/export controls (+ Peak, Copy) with a hairline so the flat
+              equal-gap run reads as two intents. Hidden when it would orphan an
+              edge (no edit/export actions present). */}
+          {(onToggleAddPeak || actions) && (
+            <span
+              aria-hidden="true"
+              className="self-stretch w-px bg-hair-strong my-0.5 mx-0.5"
+            />
+          )}
           {onToggleAddPeak && (
             <Button ref={addPeakButtonRef} armed={addPeakArmed} onClick={onToggleAddPeak}>
               + Peak

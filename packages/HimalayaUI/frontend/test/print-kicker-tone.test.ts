@@ -49,7 +49,9 @@ describe("kicker tone law — src/print content labels", () => {
       readFileSync(file, "utf8")
         .split("\n")
         .forEach((line, i) => {
-          if (line.includes('tone="faint"')) {
+          // Both forms: the Kicker primitive's `tone="faint"` AND a raw
+          // `text-kicker-faint` utility hand-applied to a content label.
+          if (line.includes('tone="faint"') || line.includes("text-kicker-faint")) {
             const ref = `${relative(PRINT_ROOT, file)}:${i + 1}`;
             if (!ALLOWLIST.has(ref)) offenders.push(`${ref}: ${line.trim()}`);
           }

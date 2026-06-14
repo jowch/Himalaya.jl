@@ -310,6 +310,25 @@ export function FocusPage(): JSX.Element {
     corpusQ.isLoading ||
     (activeExposureId !== undefined && (traceQ.isLoading || peaksQ.isLoading));
 
+  // FO-COMB-AXIS: the q-domain the comb shares with the trace. A manual zoom
+  // (`xDomain`) wins; otherwise the trace auto-fits to its data extent, so the
+  // comb mirrors that positive-q extent. Keeps the comb's axis ticks + reflection
+  // positions in the same q-space the trace shows above it.
+  const combSharedDomain = useMemo<[number, number] | null>(() => {
+    if (xDomain) return xDomain;
+    const qs = traceQ.data?.q;
+    if (!qs || qs.length === 0) return null;
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const q of qs) {
+      if (q > 0) {
+        if (q < lo) lo = q;
+        if (q > hi) hi = q;
+      }
+    }
+    return Number.isFinite(lo) && hi > lo ? [lo, hi] : null;
+  }, [xDomain, traceQ.data]);
+
   // ── figure export ─────────────────────────────────────────────────────────────
   const exportSpec = useCallback((): ExportSpec => buildTraceExportSpec({
     trace: traceQ.data ?? EMPTY_TRACE,
@@ -644,6 +663,7 @@ export function FocusPage(): JSX.Element {
                   leftover={combLeftover}
                   view={combView}
                   onViewChange={setCombView}
+                  {...(combSharedDomain ? { qDomain: combSharedDomain } : {})}
                   {...(hoveredQ !== undefined ? { hoveredQ } : {})}
                   onHoverQ={setHoveredQ}
                 />

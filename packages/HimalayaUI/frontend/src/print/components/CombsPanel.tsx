@@ -22,6 +22,9 @@ export interface CombsPanelProps {
   /** Incoming q-link from the trace/detector. */
   hoveredQ?: number;
   onHoverQ?: (q?: number) => void;
+  /** FO-COMB-AXIS: the trace's q-domain, so the comb axis spans the same
+   *  q-range as the trace (shared ticks + true reflection positions). */
+  qDomain?: [number, number];
   /** Section label override. By default the label derives from `view`:
    *  "Reflections · comb" / "Reflections · indexing space". */
   label?: ReactNode;
@@ -36,6 +39,7 @@ export function CombsPanel({
   onViewChange,
   hoveredQ,
   onHoverQ,
+  qDomain,
   label,
   className,
 }: CombsPanelProps): JSX.Element {
@@ -68,7 +72,7 @@ export function CombsPanel({
       </PanelHeader>
       <div data-testid="combs-body" className="flex-1 min-h-0 overflow-hidden">
         {view === "comb" ? (
-          <CombChart assigned={assigned} leftover={leftover} {...hover} />
+          <CombChart assigned={assigned} leftover={leftover} {...(qDomain ? { xDomain: qDomain } : {})} {...hover} />
         ) : (
           <ResidualChart assigned={assigned} {...hover} />
         )}

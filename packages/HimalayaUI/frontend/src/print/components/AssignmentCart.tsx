@@ -46,7 +46,7 @@ export function AssignmentCart({
           {count > 1 && (
             <div
               data-testid="coexistence-tag"
-              className="text-kicker text-kicker-faint px-4 pt-2.5"
+              className="text-kicker text-kicker-soft px-4 pt-2.5"
             >
               Coexistence · {count} phases
             </div>

@@ -45,8 +45,10 @@ export function PhaseBlock({
       <div className="text-data text-ink-soft mt-1">{meta}</div>
       <ScoreBar value={score} phase={phase} size="bar" className="mt-2" />
       {series != null && (
-        <div className="text-caption text-ink-soft mt-1.5">
-          series <b className="text-ink-soft font-semibold font-mono">{series}</b>
+        // FO-SERIES-COLLIDE: give the reflection-ratio line room to breathe
+        // below the score bar (was crammed 6px under it).
+        <div className="text-caption text-ink-soft mt-3">
+          series <b className="text-ink font-semibold font-mono">{series}</b>
         </div>
       )}
     </div>

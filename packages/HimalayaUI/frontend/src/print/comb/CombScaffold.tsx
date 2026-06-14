@@ -1,10 +1,11 @@
 import { type ReactNode } from "react";
 import { makeAxis, axisTicks, type Axis1D } from "../plot/projection";
+import { formatAxis } from "../../lib/plot/formatAxis";
 
 export const GUTTER_W = 96;
 export const ROW_H = 48;
 export const TOP_PAD = 10;
-export const AXIS_H = 28;
+export const AXIS_H = 44; // tick numbers + the "q (Å⁻¹)" axis title below them
 export const PLOT_PAD_X = 14;
 export const MIN_PX_PER_DECADE = 240;
 export const MIN_PLOT_W = 320;
@@ -36,11 +37,6 @@ interface Props {
   maxWidth?: number;
   ariaLabel: string;
   children: (ctx: ScaffoldCtx) => ReactNode;
-}
-
-/** Compact q tick label: 0.05, 0.1, 0.12, 0.2 … */
-function formatTick(q: number): string {
-  return String(Number(q.toPrecision(2)));
 }
 
 export function CombScaffold({ rows, xDomain, maxWidth, ariaLabel, children }: Props): JSX.Element {
@@ -90,8 +86,16 @@ export function CombScaffold({ rows, xDomain, maxWidth, ariaLabel, children }: P
         ))}
       </div>
 
-      {/* Scrollable q-pane. */}
-      <div className="overflow-x-auto" style={{ maxWidth: maxW - GUTTER_W }}>
+      {/* Scrollable q-pane. FO-COMB-SCROLL: when the q-axis is wider than the
+          pane it scrolls horizontally; label it and make it keyboard-focusable
+          so the affordance is not a cryptic unlabelled scrollbar. */}
+      <div
+        className="overflow-x-auto"
+        style={{ maxWidth: maxW - GUTTER_W }}
+        tabIndex={0}
+        role="group"
+        aria-label="Reflection comb q-axis, scroll horizontally"
+      >
         <svg width={svgW} height={svgH} role="img" aria-label={ariaLabel} data-plot-w={plotW}>
           {ticks.map((t, i) => {
             const px = x.to(t.value);
@@ -103,16 +107,33 @@ export function CombScaffold({ rows, xDomain, maxWidth, ariaLabel, children }: P
                   opacity={t.kind === "major" ? 0.9 : 0.5}
                 />
                 {t.kind !== "minor" ? (
+                  // FO-COMB-AXIS / CC-AXIS-TICK: the q-values are the data, so the
+                  // tick numbers read at ink-soft (AA), not the faint axis tone.
                   <text
                     x={px} y={rowsBottom + 16} textAnchor="middle"
-                    className="font-mono" fontSize={9.5} fill="var(--color-ink-faint)"
+                    className="font-mono" fontSize={9.5} fill="var(--color-ink-soft)"
                   >
-                    {formatTick(t.value)}
+                    {formatAxis(t.value)}
                   </text>
                 ) : null}
               </g>
             );
           })}
+          {/* FO-COMB-AXIS: name the axis so the comb reads as a quantitative
+              figure (it shares the trace's q-domain, so a q here is the same q
+              there). Centred under the plot area. */}
+          <text
+            data-role="comb-axis-title"
+            x={PLOT_PAD_X + plotW / 2}
+            y={rowsBottom + 36}
+            textAnchor="middle"
+            className="font-sans"
+            fontSize={11}
+            fontWeight={600}
+            fill="var(--color-ink-soft)"
+          >
+            q (Å⁻¹)
+          </text>
           {rows.map((r, i) => (
             <line
               key={i}

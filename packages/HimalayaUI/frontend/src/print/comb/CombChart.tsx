@@ -12,13 +12,18 @@ interface Props {
   hoveredQ?: number;
   /** Fired on glyph enter (q) / leave (undefined). Omit → inert glyphs. */
   onHoverQ?: (q?: number) => void;
+  /** FO-COMB-AXIS: the trace's q-domain. When given, the comb spans the same
+   *  q-range as the trace above it (proper multi-tick axis + true reflection
+   *  positions) instead of a domain derived only from the reflections present.
+   *  Falls back to `combQDomain(rows)` for standalone/story use. */
+  xDomain?: [number, number];
   maxWidth?: number;
   className?: string;
 }
 
-export function CombChart({ assigned, hovered, leftover, hoveredQ, onHoverQ, maxWidth, className }: Props): JSX.Element {
+export function CombChart({ assigned, hovered, leftover, hoveredQ, onHoverQ, xDomain: xDomainProp, maxWidth, className }: Props): JSX.Element {
   const rows = assembleRows(assigned, hovered, leftover);
-  const xDomain = combQDomain(rows);
+  const xDomain = xDomainProp ?? combQDomain(rows);
   const scaffoldRows: ScaffoldRow[] = rows.map(rowToGutter);
   return (
     <div className={className}>
