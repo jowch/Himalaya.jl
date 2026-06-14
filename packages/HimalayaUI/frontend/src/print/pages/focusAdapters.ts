@@ -10,6 +10,7 @@
 import type { Peak, IndexEntry, Trace } from "../../api";
 import { phaseColor } from "../../phases";
 import type { TraceModel } from "../plot/TracePlot";
+import { traceIntensityAt } from "../../lib/plot/traceIntensity";
 import type { PlotPeak } from "../plot/marks/PlotPeaks";
 import type { RingInput } from "../detector/detectorGeometry";
 import type { CombSeries, CombTooth } from "../comb/combModel";
@@ -31,25 +32,6 @@ function spanTol(qs: number[]): number {
 }
 
 // ── trace peaks ───────────────────────────────────────────────────────────────
-
-/**
- * Trace intensity at `q` via nearest-sample lookup — restores the legacy
- * TraceViewer `interpolateI`. Manually-added ("curation") peaks come back from
- * the backend with `intensity: null` (routes_peaks.jl stores them with no
- * metrics computed yet). Without anchoring, `PlotPeaks` drops an
- * intensity-less glyph to `baselineI` and it renders flat on the axis. We pin
- * it to the curve instead. Returns `null` for an empty trace (no curve to read).
- */
-function traceIntensityAt(q: number, trace: Trace): number | null {
-  const qs = trace.q;
-  if (qs.length === 0) return null;
-  let nearest = 0;
-  for (let i = 1; i < qs.length; i++) {
-    if (Math.abs(qs[i]! - q) < Math.abs(qs[nearest]! - q)) nearest = i;
-  }
-  const iv = trace.I[nearest];
-  return iv != null && Number.isFinite(iv) ? iv : null;
-}
 
 /**
  * Observed `Peak[]` → trace `PlotPeak[]`; `phase` drives the trace colour

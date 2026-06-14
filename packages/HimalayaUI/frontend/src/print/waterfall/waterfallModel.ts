@@ -1,4 +1,5 @@
 import type { SeriesMember, Trace, AssignmentState } from "../../api";
+import { traceIntensityAt } from "../../lib/plot/traceIntensity";
 import {
   dominantPhase,
   indexedAnchorPeaks,
@@ -49,10 +50,15 @@ export function toWaterfallRows(
 
     // indexedAnchorPeaks is the shared annotated-peak predicate (also drives
     // the export's peak marks) — indexed anchors only, ascending q.
+    // Anchor every bead to the curve. A manually-added peak has no measured
+    // intensity (`null`) — without this it would drop to the row baseline
+    // (PlotPeaks `intensity ?? baselineI`) and render flat on the floor instead
+    // of on its trace. Mirrors the Focus `toTraceModel` adapter via the shared
+    // `traceIntensityAt`.
     const anchors: WaterfallAnchor[] = indexedAnchorPeaks(member).map((p) => ({
       id: p.id,
       q: p.q,
-      intensity: p.intensity,
+      intensity: p.intensity != null ? p.intensity : traceIntensityAt(p.q, trace),
       phase,
     }));
 

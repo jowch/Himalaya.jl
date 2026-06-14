@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { toWaterfallRows, waterfallQDomain } from "../../src/print/waterfall/waterfallModel";
 import { realMembers, formFactorMember, unindexedMember } from "../../src/print/fixtures/realSeriesMembers";
 import { realTraces } from "../../src/print/fixtures/realTraces";
+import { traceIntensityAt } from "../../src/lib/plot/traceIntensity";
 
 describe("toWaterfallRows", () => {
   it("returns one row per member, preserving display order", () => {
@@ -23,6 +24,29 @@ describe("toWaterfallRows", () => {
     for (const a of rows[0]!.anchors) expect(a.q).toBe(byId.get(a.id));
     const iById = new Map(realMembers[0]!.snapshot!.effective_peaks.map((p) => [p.id, p.intensity]));
     for (const a of rows[0]!.anchors) expect(a.intensity).toBe(iById.get(a.id));
+  });
+
+  it("anchors a null-intensity (manual) peak to the trace curve, not the baseline", () => {
+    // A manually-added curation peak has no measured intensity (null). Reproduce
+    // by nulling one confirmed peak's intensity; its bead must land on the curve
+    // (traceIntensityAt), never drop to the baseline (the PlotPeaks fallback).
+    const m = realMembers[0]!;
+    const snap = m.snapshot!;
+    const targetId = snap.confirmed_index!.peak_ids[0]!;
+    const member = {
+      ...m,
+      snapshot: {
+        ...snap,
+        effective_peaks: snap.effective_peaks.map((p) =>
+          p.id === targetId ? { ...p, intensity: null } : p,
+        ),
+      },
+    };
+    const rows = toWaterfallRows([member], realTraces);
+    const anchor = rows[0]!.anchors.find((a) => a.id === targetId)!;
+    expect(anchor).toBeTruthy();
+    expect(anchor.intensity).not.toBeNull();
+    expect(anchor.intensity).toBe(traceIntensityAt(anchor.q, rows[0]!.trace));
   });
 
   it("yields zero anchors and a null phase for a form-factor member", () => {
