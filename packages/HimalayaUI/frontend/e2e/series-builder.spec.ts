@@ -4,14 +4,15 @@ import { test, expect, type Page } from "@playwright/test";
 // MemberList). The legacy DOM (recipe-title / recipe-add-sample / recipe-save /
 // recipe-commit / recipe-cancel + the commit-409 conflict modal) is GONE.
 //
-// The greenfield page is a LAZY-DRAFT surface on a single always-"Compose"
-// screen:
-//   • Opening /series/:id renders the committed series READ-ONLY. The rail
-//     shows a single "Edit" door (BU-EDIT-BUTTON); the commit verbs are NOT in
-//     the read-state DOM. (The old disabled-"Save changes" in read mode + the
-//     "N samples" compose card were removed — they read as broken/redundant.)
-//   • The FIRST recipe edit (title edit OR add-sample, or pressing Edit) silently
-//     STARTS a draft → "Save changes" (ENABLED) + a Cancel button appear.
+// The greenfield page is an EXPLICIT edit-mode surface on a single "Compose"
+// screen (BU-EDITMODE):
+//   • Opening /series/:id renders the committed series READ-ONLY: a static title
+//     heading, a static member list, and a single footer "Edit" door. The commit
+//     verbs and the editing affordances (title input, add-sample picker, reorder
+//     controls) are NOT in the read-state DOM — read mode is genuinely read-only.
+//   • Pressing "Edit" enters edit mode → a live draft starts, the title becomes
+//     editable, the add-sample picker + reorder controls appear, and the footer
+//     swaps to "Save changes" (ENABLED) + "Cancel".
 //   • "Save changes" = a Save→Commit CHAIN: PATCH /api/series/:id (save,
 //     persists the RECIPE) THEN, on its success, POST /api/series/:id/commit
 //     with the plate RESOLVED FROM THE SAVED RECIPE (recipe samples → picker
@@ -125,8 +126,12 @@ test.describe("series builder — greenfield DOM", () => {
 
     // The committed plate renders.
     await expect(page.getByTestId("series-plate")).toBeVisible();
-    // The committed title surfaces in the editable plate-title field.
-    await expect(page.getByLabel(/series title/i)).toHaveValue("LL37 titration");
+    // BU-EDITMODE: the committed title is a STATIC heading in read mode (no
+    // editable input — typing can no longer silently start a draft).
+    await expect(
+      page.getByRole("heading", { level: 1, name: "LL37 titration" }),
+    ).toBeVisible();
+    await expect(page.getByLabel(/series title/i)).toHaveCount(0);
     // BU-EDIT-BUTTON: read state is a single "Edit" door — the commit verbs
     // (Save changes / Cancel) belong to draft mode, so neither shows here.
     await expect(page.getByRole("button", { name: /^edit$/i })).toBeVisible();
@@ -137,24 +142,26 @@ test.describe("series builder — greenfield DOM", () => {
     await expect(page.getByTestId("conflict-modal")).toHaveCount(0);
   });
 
-  test("adding a sample STARTS a draft → Save changes appears ENABLED + Cancel appears", async ({ page }) => {
+  test("Edit unlocks edit mode (Save changes + Cancel + the add-sample picker); adding a sample appends a recipe row", async ({ page }) => {
     await mockCore(page);
     await seedState(page);
     await page.goto("/series/5");
 
-    // Read state: no Save changes, just the Edit door.
+    // Read state: read-only — no Save changes, no add-sample picker, just Edit.
     await expect(page.getByRole("button", { name: /save changes/i })).toHaveCount(0);
+    await expect(page.getByTestId("builder-add-sample")).toHaveCount(0);
     await expect(page.getByRole("button", { name: /^edit$/i })).toBeVisible();
+
+    // Edit unlocks edit mode: Save changes (enabled) + Cancel + the add picker.
+    await page.getByRole("button", { name: /^edit$/i }).click();
+    await expect(page.getByRole("button", { name: /save changes/i })).toBeEnabled();
+    await expect(page.getByRole("button", { name: /^cancel$/i })).toBeVisible();
 
     // Add the only addable corpus sample (id 20 — sample 10 is already in the
     // recipe). The add affordance is a search-first picker: open it, then pick
     // the option (builder-add-sample trigger → add-opt-<sampleId>).
     await page.getByTestId("builder-add-sample").click();
     await page.getByTestId("add-opt-20").click();
-
-    // The draft is now live: Confirm enables, Cancel appears, an editable recipe row renders.
-    await expect(page.getByRole("button", { name: /save changes/i })).toBeEnabled();
-    await expect(page.getByRole("button", { name: /^cancel$/i })).toBeVisible();
     await expect(page.getByTestId("builder-recipe-row")).toHaveCount(2);
   });
 
@@ -193,8 +200,8 @@ test.describe("series builder — greenfield DOM", () => {
 
     await page.goto("/series/5");
 
-    // Start a draft via a title edit, then Confirm.
-    await page.getByLabel(/series title/i).fill("LL37 titration v2");
+    // Enter edit mode (BU-EDITMODE: Edit is the sole draft entry), then Confirm.
+    await page.getByRole("button", { name: /^edit$/i }).click();
     const confirm = page.getByRole("button", { name: /save changes/i });
     await expect(confirm).toBeEnabled();
     await confirm.click();
@@ -242,8 +249,8 @@ test.describe("series builder — greenfield DOM", () => {
 
     await page.goto("/series/5");
 
-    // Start a draft, then cancel it.
-    await page.getByLabel(/series title/i).fill("scratch edit");
+    // Enter edit mode, then cancel it.
+    await page.getByRole("button", { name: /^edit$/i }).click();
     await expect(page.getByRole("button", { name: /save changes/i })).toBeEnabled();
     await page.getByRole("button", { name: /^cancel$/i }).click();
 
@@ -264,8 +271,8 @@ test.describe("series builder — greenfield DOM", () => {
     await expect(page.getByRole("button", { name: /^save$/i })).toHaveCount(0);
     await expect(page.getByTestId("conflict-modal")).toHaveCount(0);
 
-    // Draft state — still no Save button, still no conflict modal.
-    await page.getByLabel(/series title/i).fill("x");
+    // Draft state (entered via Edit) — still no Save button, still no conflict modal.
+    await page.getByRole("button", { name: /^edit$/i }).click();
     await expect(page.getByRole("button", { name: /save changes/i })).toBeEnabled();
     await expect(page.getByRole("button", { name: /^save$/i })).toHaveCount(0);
     await expect(page.getByTestId("conflict-modal")).toHaveCount(0);

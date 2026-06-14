@@ -693,14 +693,21 @@ function BuilderBody({
         <div className="mx-auto w-full max-w-[1180px]">
           <SeriesPlate
             kicker="Series"
+            // BU-EDITMODE: the title is only editable in edit mode. Read mode
+            // shows it as a static serif heading (typing can no longer silently
+            // start a draft); a live draft swaps in the inline-editable PlateTitle.
             title={
-              <PlateTitle value={effectiveTitle} onChange={onEditTitle} />
+              liveDraft ? (
+                <PlateTitle value={effectiveTitle} onChange={onEditTitle} />
+              ) : (
+                effectiveTitle || "Untitled series"
+              )
             }
-            // BU-NOHEAD: the visible title is an editable Input, so the real
-            // page heading is this plain text (rendered sr-only by PlateHeader).
-            // Fall back to the input's own placeholder for an untitled draft so
-            // the heading is never empty.
-            headingText={effectiveTitle || "Untitled series"}
+            // BU-NOHEAD: in edit mode the visible title is an editable Input, so
+            // the real page heading is this plain text (rendered sr-only by
+            // PlateHeader). In read mode the static title IS the heading, so no
+            // headingText is passed (PlateHeader renders the title text as <h1>).
+            {...(liveDraft ? { headingText: effectiveTitle || "Untitled series" } : {})}
             // Honest state: the plate keeps rendering the COMMITTED members
             // mid-draft (lazy-draft render model) while the title above it
             // updates live — say so, precisely: only membership/order lag.
@@ -764,10 +771,6 @@ function BuilderBody({
                 "Membership and order on the plate are from the last confirmed figure. Confirm the series to publish your edits.",
             }
           : {})}
-        // BU-ORDERING-DASH: empty (not a literal "—") so the Field shows its
-        // explicit "Not set" placeholder rather than a bare dash in an
-        // input-shaped box.
-        orderedBy={series.ordering_variable ?? ""}
         // Honest section label: rows are only reorderable in draft mode (the
         // editable RecipeEditor); the read-mode MemberList cannot be dragged.
         reorderable={liveDraft != null}
@@ -796,7 +799,10 @@ function BuilderBody({
                 </div>
               )}
               {tracesSlot}
-              {addable.length > 0 && (
+              {/* BU-EDITMODE: adding samples is an edit, so the picker only
+                  shows under a live draft — read mode has no edit affordance, so
+                  the Edit door is the sole way in (a real mode toggle). */}
+              {liveDraft && addable.length > 0 && (
                 <AddSamplePicker
                   options={addable}
                   experiments={experiments}

@@ -3,28 +3,26 @@ import { describe, it, expect, vi } from "vitest";
 import { BuilderRail } from "../../src/print/components/BuilderRail";
 
 const base = {
-  orderedBy: "LL37 : lipid ratio",
   offset: 1.2,
   onOffsetChange: () => {},
   traces: <div data-testid="traces-slot" />,
 };
 
 describe("<BuilderRail>", () => {
-  it("renders the compose head, field, display controls, and traces slot", () => {
+  it("renders the compose head, display controls, and traces slot", () => {
     render(<BuilderRail {...base} />);
     expect(screen.getByTestId("builder-rail")).toBeInTheDocument();
     expect(screen.getByText("Compose")).toBeInTheDocument();
-    expect(screen.getByTestId("field")).toHaveTextContent("LL37 : lipid ratio");
     expect(screen.getByTestId("slider")).toBeInTheDocument();
     expect(screen.getByTestId("traces-slot")).toBeInTheDocument();
   });
-  it("ditches the grouping-summary card (BU-EDIT-BUTTON): no auto-group, no 'N samples' summary", () => {
-    // The "N samples, ordered by …" compose card was redundant with the
-    // Ordering-variable field + the Traces list and confused the edit flow.
-    // It is gone; the rail leads with the action buttons instead.
+  it("drops the ordering-variable field (set during scoping, not editable here)", () => {
+    // BU-EDITMODE: the ordering variable is read-only in the builder, so a static
+    // field only added chrome — it was removed, along with the old grouping card.
     render(<BuilderRail {...base} onAdjust={() => {}} />);
+    expect(screen.queryByTestId("field")).toBeNull();
+    expect(screen.queryByText(/ordering variable/i)).toBeNull();
     expect(screen.queryByTestId("auto-group")).toBeNull();
-    expect(screen.queryByText(/samples, ordered by/i)).toBeNull();
   });
   it("does NOT render 'Copy as PNG' (figure export lives on the plate head)", () => {
     // Same single-contextual-control reasoning as the q-scale toggle: the
@@ -64,43 +62,16 @@ describe("<BuilderRail>", () => {
     expect(screen.queryByRole("button", { name: /log q/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /linear q/i })).toBeNull();
   });
-  it("names the static ordering field with its label so it is not a bare value (WCAG 4.1.2)", () => {
-    // The builder page passes neither orderOptions nor onChangeOrder, so the
-    // Field renders in static mode; its readable text must still compose
-    // "Ordering variable {value}" and never drop the value.
-    render(<BuilderRail {...base} />);
-    expect(screen.getByTestId("field")).toHaveTextContent(
-      /Ordering variable\s+LL37 : lipid ratio/,
-    );
-  });
-  it("names the dropdown ordering field with label + value (WCAG 4.1.2)", () => {
-    render(
-      <BuilderRail
-        {...base}
-        orderOptions={[
-          { value: "LL37 : lipid ratio", label: "LL37 : lipid ratio" },
-          { value: "Time", label: "Time" },
-        ]}
-        onOrderSelect={() => {}}
-      />,
-    );
-    // With options the field is a real dropdown trigger button; its accessible
-    // name must read label + value, not just the value.
-    expect(
-      screen.getByRole("button", { name: /ordering variable\s+LL37 : lipid ratio/i }),
-    ).toBeInTheDocument();
-  });
-  it("renders the Edit action when onAdjust is provided (read state)", () => {
+  it("renders the Edit action in the footer when onAdjust is provided (read state)", () => {
     render(<BuilderRail {...base} onAdjust={() => {}} />);
     expect(screen.getByRole("button", { name: /^edit$/i })).toBeInTheDocument();
-    // BU-AUTOGROUP-STALE: real verbs, not "Adjust"/"Confirm series".
+    // Real verbs, not "Adjust"/"Confirm series".
     expect(screen.queryByRole("button", { name: /adjust/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /confirm series/i })).toBeNull();
   });
   it("OMITS the Edit action when onAdjust is withheld (draft live), shows Save changes + Cancel as buttons", () => {
     // controls-don't-lie: a live draft withholds onAdjust → no redundant Edit.
-    // BU-DRAFT-ACTIONS: a live draft (reorderable) presents Save changes + Cancel
-    // as a proper button row, not a card link + a buried ghost Cancel.
+    // A live draft (reorderable) presents Save changes + Cancel as a button row.
     render(<BuilderRail {...base} reorderable onConfirm={() => {}} onCancel={() => {}} />);
     expect(screen.queryByRole("button", { name: /^edit$/i })).toBeNull();
     expect(screen.getByTestId("builder-save")).toBeInTheDocument();

@@ -181,6 +181,13 @@ function resetDraft(): void {
   act(() => useAppState.getState().discardSeriesDraft());
 }
 
+// BU-EDITMODE: read mode is read-only — drafts start by clicking the footer
+// "Edit" door, not by typing in the (now static) title. This replaces the old
+// "type in the title to lazily start a draft" idiom across the suite.
+function startEdit(): void {
+  fireEvent.click(screen.getByRole("button", { name: /^edit$/i }));
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   state.seriesById = new Map([[10, baseSeries()]]);
@@ -204,8 +211,12 @@ describe("SeriesBuilderPage", () => {
   it("renders the committed read-state: plate title + member rows, no draft, Edit door (no Save/Cancel)", () => {
     renderPage();
     expect(screen.getByTestId("series-plate")).toBeInTheDocument();
-    // Title surfaces in the editable plate-title field.
-    expect((screen.getByLabelText(/series title/i) as HTMLInputElement).value).toBe("LL37 ratio series");
+    // BU-EDITMODE: read mode shows the title as a STATIC heading, not an editable
+    // input — typing can no longer silently start a draft.
+    expect(
+      screen.getByRole("heading", { level: 1, name: "LL37 ratio series" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText(/series title/i)).toBeNull();
     // MemberList rows for the committed members.
     expect(screen.getAllByTestId("series-member-row")).toHaveLength(2);
     // BU-EDIT-BUTTON: read state is a single "Edit" door — the commit verbs
@@ -219,17 +230,20 @@ describe("SeriesBuilderPage", () => {
     expect(state.save.mutate).not.toHaveBeenCalled();
   });
 
-  it("normal page exposes the series title as a real h1, not an interactive control nested in a heading (BU-NOHEAD)", () => {
+  it("normal page exposes the series title as a real h1 (BU-NOHEAD)", () => {
     renderPage();
     // The built-series page's sole top-level heading is the series title, so it
-    // is reachable by heading navigation (WCAG 1.3.1 / 2.4.6). Previously the
-    // only <h1> WRAPPED the editable Input, so its accessible name was empty and
-    // an interactive control was nested inside a heading.
+    // is reachable by heading navigation (WCAG 1.3.1 / 2.4.6). In read mode the
+    // title is static text rendered directly AS the <h1> (no interactive control
+    // nested in the heading); in edit mode the editable Input rides a plain
+    // wrapper with an sr-only <h1> carrying the same text (PlateHeader contract).
     expect(
       screen.getByRole("heading", { level: 1, name: "LL37 ratio series" }),
     ).toBeInTheDocument();
-    // The editable title field stays a distinct control, NOT a heading
-    // descendant — correcting the interactive-inside-heading anti-pattern.
+    // Read mode has no interactive title control at all.
+    expect(screen.queryByLabelText(/series title/i)).toBeNull();
+    // Enter edit mode → the editable field appears, NOT nested in the heading.
+    startEdit();
     expect(screen.getByLabelText(/series title/i).closest("h1")).toBeNull();
   });
 
@@ -246,14 +260,12 @@ describe("SeriesBuilderPage", () => {
     expect(rail.parentElement).toBe(workspace);
   });
 
-  it("read-state ordering-variable Field is static read-only (no interactive trigger)", () => {
+  it("does NOT render an ordering-variable field (set during scoping, not editable here)", () => {
     renderPage();
-    const field = screen.getByTestId("field");
-    // controls-don't-lie: nothing wires an order-variable list, so the Field is
-    // a plain read-only value — not a clickable dropdown trigger.
-    expect(field.tagName).not.toBe("BUTTON");
-    expect(field).not.toHaveTextContent("▾");
-    expect(field).toHaveTextContent("ratio");
+    // BU-EDITMODE: the ordering variable is read-only in the builder, so the
+    // static field was dropped (it only added chrome).
+    expect(screen.queryByTestId("field")).toBeNull();
+    expect(screen.queryByText(/ordering variable/i)).toBeNull();
   });
 
   it("surfaces a load error distinctly (no plate)", () => {
@@ -264,20 +276,28 @@ describe("SeriesBuilderPage", () => {
     expect(screen.queryByTestId("series-plate")).toBeNull();
   });
 
-  it("editing the title STARTS a draft and reflects the edit", () => {
+  it("the title is NOT editable in read mode; Edit unlocks it, then editing reflects (BU-EDITMODE)", () => {
     renderPage();
+    // Read mode: no editable title control, and no draft exists.
+    expect(screen.queryByLabelText(/series title/i)).toBeNull();
+    expect(useAppState.getState().seriesDraft).toBeNull();
+    // Edit unlocks the field (and starts the draft).
+    startEdit();
+    expect(useAppState.getState().seriesDraft).not.toBeNull();
     const titleInput = screen.getByLabelText(/series title/i) as HTMLInputElement;
     fireEvent.change(titleInput, { target: { value: "New title" } });
     const draft = useAppState.getState().seriesDraft;
-    expect(draft).not.toBeNull();
     expect(draft!.id).toBe(10);
     expect(draft!.title).toBe("New title");
   });
 
-  it("adding a sample via the picker STARTS a draft and appends the recipe row (BU-PICKER)", () => {
+  it("the add-sample picker is an EDIT affordance, gated behind Edit (BU-PICKER, BU-EDITMODE)", () => {
     renderPage();
-    // Open the search-first picker, then add sample C (id 3) — the only corpus
-    // sample not already in the recipe.
+    // Read mode is read-only: no add-sample control.
+    expect(screen.queryByTestId("builder-add-sample")).toBeNull();
+    // Enter edit mode, then the picker appears; add sample C (id 3) — the only
+    // corpus sample not already in the recipe — and it appends the recipe row.
+    startEdit();
     fireEvent.click(screen.getByTestId("builder-add-sample"));
     fireEvent.click(screen.getByTestId("add-opt-3"));
     const draft = useAppState.getState().seriesDraft;
@@ -309,7 +329,7 @@ describe("SeriesBuilderPage", () => {
     // Read state: Edit present.
     expect(screen.getByRole("button", { name: /^edit$/i })).toBeInTheDocument();
     // Start a draft.
-    fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "x" } });
+    startEdit();
     // Item 2: Edit withheld; Save changes enabled + Cancel present.
     expect(screen.queryByRole("button", { name: /^edit$/i })).toBeNull();
     expect(screen.getByRole("button", { name: /save changes/i })).not.toBeDisabled();
@@ -332,7 +352,7 @@ describe("SeriesBuilderPage", () => {
   it("draft state: the plate carries the lazy-draft notice and the rail caption stops claiming WYSIWYG", () => {
     renderPage();
     // Start a draft (title edit is the lazy-draft entry).
-    fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "x" } });
+    startEdit();
     // Honest state: the plate says membership/order edits are not on it yet.
     expect(
       screen.getByText(
@@ -351,7 +371,7 @@ describe("SeriesBuilderPage", () => {
   it("Cancel discards the draft with NO request", () => {
     renderPage();
     // Start a draft via the title edit.
-    fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "x" } });
+    startEdit();
     expect(useAppState.getState().seriesDraft).not.toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /^cancel$/i }));
     expect(useAppState.getState().seriesDraft).toBeNull();
@@ -368,7 +388,10 @@ describe("SeriesBuilderPage", () => {
 
     // A real unsaved change (title edit) arms the guard — the handler
     // preventDefault()s, which is what triggers the browser's leave prompt.
-    fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "Edited" } });
+    // (Entering edit mode alone is a pristine fork, NOT dirty, so it does not arm
+    // the guard — only an actual edit does.)
+    startEdit();
+    fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "Edited title" } });
     const dirty = new Event("beforeunload", { cancelable: true });
     window.dispatchEvent(dirty);
     expect(dirty.defaultPrevented).toBe(true);
@@ -383,7 +406,7 @@ describe("SeriesBuilderPage", () => {
   it("Confirm chain: save THEN commit (plate resolved from the saved RECIPE) THEN discard draft", () => {
     const { rerender } = renderPage();
     // Start a draft.
-    fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "Edited" } });
+    startEdit();
     const draft = useAppState.getState().seriesDraft!;
     // With a live draft the rail's "Save changes" is now ENABLED.
     const confirm = screen.getByRole("button", { name: /save changes/i });
@@ -432,7 +455,7 @@ describe("SeriesBuilderPage", () => {
   it("the confirm action names the CURRENT chain step (visible progress), not a static 'Saving…' (BU-PROGRESS)", () => {
     const { rerender } = renderPage();
     // Enter a draft so the chain is live.
-    fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "Edited" } });
+    startEdit();
     // Phase 1 — the recipe save is in flight.
     state.save = { ...emptyMut(), isPending: true };
     act(() => rerender());
@@ -450,7 +473,7 @@ describe("SeriesBuilderPage", () => {
 
   it("a save-step failure and a commit-step failure show DIFFERENT, cause-named errors (BU-PROGRESS / F-ERRSILENT)", () => {
     const { rerender } = renderPage();
-    fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "Edited" } });
+    startEdit();
     // The save (recipe persist) failed → nothing was published.
     state.save = { ...emptyMut(), error: new Error("save boom") };
     act(() => rerender());
@@ -472,7 +495,7 @@ describe("SeriesBuilderPage", () => {
     // the save settled; a split effect keyed only on dataUpdatedAt would
     // conversely stall. Two renders, one assertion each.
     const { rerender } = renderPage();
-    fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "Edited" } });
+    startEdit();
     fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
 
     // Render N: cache already fresh, mutation still pending.
@@ -500,7 +523,7 @@ describe("SeriesBuilderPage", () => {
     setToastImpl(toast);
     try {
       const { rerender } = renderPage();
-      fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "Edited" } });
+      startEdit();
       fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
       expect(state.save.mutate).toHaveBeenCalledTimes(1);
 
@@ -540,7 +563,7 @@ describe("SeriesBuilderPage", () => {
     setToastImpl(toast);
     try {
       const { rerender } = renderPage();
-      fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "Edited" } });
+      startEdit();
       fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
 
       // SSE-wins partial → the chain is awaiting the cache refetch…
@@ -574,7 +597,7 @@ describe("SeriesBuilderPage", () => {
 
   it("BU-PROGRESS: while the Confirm chain runs the rail control names the live step with aria-busy, still disabled", () => {
     const { rerender } = renderPage();
-    fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "Edited" } });
+    startEdit();
     fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
 
     // The save is in flight → the control tells the truth: the step-named
@@ -598,7 +621,7 @@ describe("SeriesBuilderPage", () => {
 
   it("BU-PROGRESS: the busy register clears after commit success (back to the Edit door)", () => {
     const { rerender } = renderPage();
-    fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "Edited" } });
+    startEdit();
     fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
 
     // Save lands + fresh cache → commit fires (the chain is mid-flight).
@@ -627,7 +650,7 @@ describe("SeriesBuilderPage", () => {
     setToastImpl(toast);
     try {
       const { rerender } = renderPage();
-      fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "Edited" } });
+      startEdit();
       fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
 
       // SSE-wins partial → awaiting the cache refetch: busy ("Confirming…").
@@ -657,7 +680,7 @@ describe("SeriesBuilderPage", () => {
     setToastImpl(toast);
     try {
       const { rerender } = renderPage();
-      fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "Edited" } });
+      startEdit();
       fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
 
       // The series query errors FIRST (stage ref still "saving")...
@@ -687,7 +710,7 @@ describe("SeriesBuilderPage", () => {
     setToastImpl(toast);
     try {
       const { rerender } = renderPage();
-      fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "Edited" } });
+      startEdit();
       fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
       state.save = { ...state.save, isPending: true };
       act(() => rerender());
@@ -712,7 +735,7 @@ describe("SeriesBuilderPage", () => {
 
   it("stale-cache guard: a series query older than the Confirm watermark does NOT trigger the commit", () => {
     const { rerender } = renderPage();
-    fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "Edited" } });
+    startEdit();
     fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
 
     // Save lands (SSE-wins partial), but the cache still holds the PRE-save
@@ -738,7 +761,7 @@ describe("SeriesBuilderPage", () => {
     rerender: () => void;
   } {
     const { rerender } = renderPage();
-    fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "Edited" } });
+    startEdit();
     fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
     expect(state.save.mutate).toHaveBeenCalledTimes(1);
     // Save lands; the fresh full series (recipe just saved, members stale)
@@ -836,7 +859,7 @@ describe("SeriesBuilderPage", () => {
   it("BU-RECIPENOOP gate: Confirm stays DISABLED until the picker (resolution source) has loaded", () => {
     state.picker = undefined; // picker still in flight
     renderPage();
-    fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "Edited" } });
+    startEdit();
     // Draft is live, but the recipe cannot be resolved yet → Confirm gated.
     const confirm = screen.getByRole("button", { name: /save changes/i });
     expect(confirm).toBeDisabled();
@@ -848,7 +871,7 @@ describe("SeriesBuilderPage", () => {
     state.picker = undefined;
     state.pickerError = true;
     renderPage();
-    fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "Edited" } });
+    startEdit();
     expect(screen.getByRole("button", { name: /save changes/i })).toBeDisabled();
     expect(screen.getByText(/couldn't load exposure data/i)).toBeInTheDocument();
   });
@@ -858,7 +881,7 @@ describe("SeriesBuilderPage", () => {
     setToastImpl(toast);
     try {
       const { rerender } = renderPage();
-      fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "Edited" } });
+      startEdit();
       fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
       const savedSeries = baseSeries({ title: "Edited" });
       state.save = { ...state.save, isSuccess: true, data: savedSeries };
@@ -879,7 +902,7 @@ describe("SeriesBuilderPage", () => {
     setToastImpl(toast);
     try {
       const { rerender } = renderPage();
-      fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "x" } });
+      startEdit();
       // Click Confirm so the chain is in-flight (stage != "idle"); only then is
       // the stage-guarded error effect armed.
       fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
@@ -896,7 +919,7 @@ describe("SeriesBuilderPage", () => {
     setToastImpl(toast);
     try {
       const { rerender } = renderPage();
-      fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "x" } });
+      startEdit();
       fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
       // Both errors land in the same render cycle.
       state.save = { ...state.save, error: new Error("s") };
@@ -912,7 +935,7 @@ describe("SeriesBuilderPage", () => {
   it("removing a recipe row mutates the draft", () => {
     renderPage();
     // Start a draft.
-    fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "x" } });
+    startEdit();
     const before = useAppState.getState().seriesDraft!.recipe.length;
     const dismissers = screen.getAllByTestId("builder-recipe-remove");
     fireEvent.click(dismissers[0]!);
@@ -921,7 +944,7 @@ describe("SeriesBuilderPage", () => {
 
   it("BU-EMPTYREMOVE: the last member's Remove is disabled (a series keeps ≥1)", () => {
     renderPage();
-    fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "x" } });
+    startEdit();
     // Remove rows until one remains; the final Remove must be inert so the
     // draft can never be emptied to zero and "saved" as an empty series.
     let removers = screen.getAllByTestId("builder-recipe-remove");
@@ -937,7 +960,7 @@ describe("SeriesBuilderPage", () => {
 
   it("reordering a recipe row mutates the draft order", () => {
     renderPage();
-    fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "x" } });
+    startEdit();
     const firstSampleId = useAppState.getState().seriesDraft!.recipe[0]!.sample_id;
     // Move first row down.
     fireEvent.click(screen.getAllByTestId("builder-recipe-down")[0]!);
@@ -949,7 +972,7 @@ describe("SeriesBuilderPage", () => {
   // reorders on the Builder as on the Scoping worksheet.
   it("Alt+↓ on a recipe row reorders it, mirroring the ▼ Move-down button", () => {
     renderPage();
-    fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "x" } });
+    startEdit();
     const firstSampleId = useAppState.getState().seriesDraft!.recipe[0]!.sample_id;
     // Alt+ArrowDown fired from a control in the top visual row mirrors clicking
     // that row's ▼ Move-down.
@@ -968,7 +991,7 @@ describe("SeriesBuilderPage", () => {
     /** Enter draft mode, then reorder the top visual row down. Returns the
      *  sample id that was moved (recipe[0] before the move → recipe[1] after). */
     function enterDraftAndReorder(): number {
-      fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "x" } });
+      startEdit();
       const firstSampleId = useAppState.getState().seriesDraft!.recipe[0]!.sample_id;
       fireEvent.click(screen.getAllByTestId("builder-recipe-down")[0]!);
       expect(useAppState.getState().seriesDraft!.recipe[1]!.sample_id).toBe(firstSampleId);
@@ -1027,7 +1050,7 @@ describe("SeriesBuilderPage", () => {
       fireEvent.click(screen.getByRole("button", { name: /^cancel$/i }));
       expect(useAppState.getState().seriesDraft).toBeNull();
       // Re-enter a fresh draft on the SAME series (committed order).
-      fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "y" } });
+      startEdit();
       const freshOrder = useAppState
         .getState()
         .seriesDraft!.recipe.map((r) => r.sample_id);
@@ -1041,7 +1064,7 @@ describe("SeriesBuilderPage", () => {
 
   it("each recipe row shows the figure trace's label so it cross-references the plate (BU-NAMES)", () => {
     renderPage();
-    fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "x" } });
+    startEdit();
     const rows = screen.getAllByTestId("builder-recipe-row");
     expect(rows).toHaveLength(2);
     // The figure (committed members) labels traces by memberRowLabel — here the
@@ -1059,7 +1082,7 @@ describe("SeriesBuilderPage", () => {
 
   it("a draft-only sample not yet in the committed plate carries NO figure label (BU-NAMES)", () => {
     renderPage();
-    fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "x" } });
+    startEdit();
     // Add sample 3 (picker resolves it to exposure 3, but no committed member has
     // exposure 3, so there is no plate trace to reference yet).
     fireEvent.click(screen.getByTestId("builder-add-sample"));
@@ -1075,7 +1098,7 @@ describe("SeriesBuilderPage", () => {
 
   it("each recipe row is draggable and carries a grip handle (label tells the truth)", () => {
     renderPage();
-    fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "x" } });
+    startEdit();
     const rows = screen.getAllByTestId("builder-recipe-row");
     expect(rows.length).toBeGreaterThan(1);
     for (const row of rows) {
@@ -1086,7 +1109,7 @@ describe("SeriesBuilderPage", () => {
 
   it("dragging row 1 onto row 0 reorders the draft recipe (additive to the ▲▼ buttons)", () => {
     renderPage();
-    fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "x" } });
+    startEdit();
     const secondSampleId = useAppState.getState().seriesDraft!.recipe[1]!.sample_id;
     const rows = screen.getAllByTestId("builder-recipe-row");
     // Native HTML5 drag: grab row index 1, drop it on row index 0.
@@ -1245,7 +1268,7 @@ describe("SeriesBuilderPage", () => {
       samples: [seriesSample(101, 1, 0), seriesSample(102, 2, 1), seriesSample(103, 3, 2)],
     })]]);
     renderPage();
-    fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "x" } });
+    startEdit();
     const rows = screen.getAllByTestId("builder-recipe-row");
     // Visual order mirrors the plate: recipe position 2 (sample C) on top.
     expect(rows[0]).toHaveTextContent("C");
@@ -1264,7 +1287,7 @@ describe("SeriesBuilderPage", () => {
       samples: [seriesSample(101, 1, 0), seriesSample(102, 2, 1), seriesSample(103, 3, 2)],
     })]]);
     renderPage();
-    fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "x" } });
+    startEdit();
     const rows = screen.getAllByTestId("builder-recipe-row");
     const dataTransfer = { effectAllowed: "", dropEffect: "", setData: vi.fn(), getData: vi.fn() };
     // Visual rows are [C, B, A]; drag B (visual 1) onto C (visual 0) = move B
@@ -1286,7 +1309,7 @@ describe("SeriesBuilderPage", () => {
       samples: [seriesSample(101, 1, 0), seriesSample(102, 2, 1), seriesSample(103, 3, 2)],
     })]]);
     renderPage();
-    fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "x" } });
+    startEdit();
     let rows = screen.getAllByTestId("builder-recipe-row");
     // Visual [C, B, A]; move B (visual index 1) up.
     const bUp = within(rows[1]!).getByTestId("builder-recipe-up");
@@ -1309,7 +1332,7 @@ describe("SeriesBuilderPage", () => {
       samples: [seriesSample(101, 1, 0), seriesSample(102, 2, 1), seriesSample(103, 3, 2)],
     })]]);
     renderPage();
-    fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "x" } });
+    startEdit();
     let rows = screen.getAllByTestId("builder-recipe-row");
     // Visual [C, B, A]; move B (visual index 1) down.
     const bDown = within(rows[1]!).getByTestId("builder-recipe-down");
@@ -1338,7 +1361,7 @@ describe("SeriesBuilderPage", () => {
     state.corpus = [corpusSample(1, "A"), corpusSample(2, "B"), corpusSample(3, "C"), corpusSample(4, "D")];
     state.picker = [pickerRow(1, 1), pickerRow(2, 2), pickerRow(3, 3), pickerRow(4, 4)];
     renderPage();
-    fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "x" } });
+    startEdit();
     let rows = screen.getAllByTestId("builder-recipe-row");
     // Visual [D, C, B, A]; move C (visual index 1) up to visual index 0... that
     // WOULD be an extreme. Instead move B (visual index 2) up to index 1 — a
@@ -1463,7 +1486,7 @@ describe("SeriesBuilderPage", () => {
 
   it("shows a commit-error notice (role=alert) on commit failure", () => {
     const { rerender } = renderPage();
-    fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "x" } });
+    startEdit();
     state.commit = { ...state.commit, error: new Error("boom") };
     act(() => rerender());
     const alert = screen.getByRole("alert");

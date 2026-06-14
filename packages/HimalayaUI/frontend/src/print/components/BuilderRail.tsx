@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Button, IconButton, Kicker, Slider, Field, NoticePill } from "../ui";
+import { Button, IconButton, Kicker, Slider, NoticePill } from "../ui";
 import { RailSection } from "./RailSection";
 
 function cx(...parts: Array<string | false | null | undefined>): string {
@@ -24,40 +24,30 @@ export interface BuilderRailProps {
    */
   confirmLabel?: string;
   /**
-   * The "Edit" entry into draft state. Omit it (e.g. while a draft is already
-   * live) and the affordance is NOT rendered — re-running the idempotent
-   * ensureDraft is a no-op, and controls-don't-lie says we don't show it.
+   * The "Edit" entry into edit mode. Read mode shows ONLY this; while a draft is
+   * live it is withheld and the Save changes / Cancel pair shows instead.
    */
   onAdjust?: () => void;
   /**
-   * Discard the live draft (the "Cancel" verb). Present only in draft mode; it
-   * pairs with "Save changes" as a proper primary/secondary BUTTON row, not a
-   * link action buried under the recipe (BU-DRAFT-ACTIONS).
+   * Discard the live draft (the "Cancel" verb). Present only in edit mode; it
+   * pairs with "Save changes" in the footer's primary/secondary button row.
    */
   onCancel?: () => void;
-  orderedBy: string;
-  orderNote?: ReactNode;
-  onChangeOrder?: () => void;
-  /** Ordering-variable options → makes the field a real dropdown. */
-  orderOptions?: ReadonlyArray<{ value: string; label: ReactNode }>;
-  onOrderSelect?: (value: string) => void;
   offset: number;
   onOffsetChange: (v: number) => void;
   traces: ReactNode;
   /**
-   * The traces slot is the editable recipe (draft mode), whose rows reorder via
-   * drag + the ▲▼ buttons. Only then does the section label make the
-   * "drag to reorder" promise — in read mode the slot is a static MemberList and
-   * the instruction would lie (copy-doesn't-lie). Defaults to false (read mode).
+   * Edit-mode flag (a live draft). It drives the "Unsaved draft" marker, the
+   * "drag to reorder" Traces label (the read-mode MemberList cannot be dragged,
+   * so the promise would lie), and which footer action pair shows.
    */
   reorderable?: boolean;
   onAddSample?: () => void;
   onCollapse?: () => void;
   /**
-   * Foot caption. The default asserts WYSIWYG ("The plate above is the figure
-   * as it will export…") — a read-state truth. A page in a state where that is
-   * NOT true (e.g. mid-draft, when recipe edits haven't re-resolved the plate
-   * yet) MUST override it with an honest variant (copy-doesn't-lie).
+   * Footer caption. The default asserts WYSIWYG ("The plate above is the figure
+   * as it will export…") — a read-state truth. Mid-draft (when recipe edits have
+   * not re-resolved the plate yet) the page overrides it with an honest variant.
    */
   caption?: ReactNode;
   /** PLACEMENT-ONLY. Width is page-owned (the assembly sets it). */
@@ -65,28 +55,26 @@ export interface BuilderRailProps {
 }
 
 /**
- * BuilderRail — the series-builder "Compose" editing rail (mockup `.rail`).
+ * BuilderRail — the series-builder "Compose" panel.
  *
- * Presentational contract (Batch 7/9/10/11/12): holds NO local state. offset /
- * scale / the trace rows (the `traces` slot) / every handler are PROPS; the
- * SeriesBuilderAssembly page owns the real state and the figure↔rail link.
+ * Two-zone layout: a scrolling content column (Display + Traces) over a pinned
+ * footer that holds the WYSIWYG caption and the mode-switch actions. Read mode
+ * is genuinely read-only — the only affordance is the footer "Edit" door;
+ * editing the title, reordering, and adding samples all live behind it (a real
+ * mode toggle, not a lazy auto-draft). A live draft swaps the footer to the
+ * Save changes / Cancel pair and unlocks the editable recipe in the traces slot.
+ *
+ * Presentational contract: holds NO local state. offset / the trace rows (the
+ * `traces` slot) / every handler are PROPS; SeriesBuilderPage owns the state and
+ * the figure↔rail link.
  *
  * LOAD-BEARING OMISSIONS ("controls don't lie"): the mockup's Representation
  * section (Waterfall/Heatmap) and the "Track reflections" toggle drive renderers
- * that are out-of-scope / deferred (HeatmapChart out-of-scope; TrackingLine
- * deferred — same call as Batch 9 SeriesPlate). Both are OMITTED; the Display
- * section keeps only the offset slider — the log/linear q-scale toggle lives on
- * the plate (a single contextual control, not a redundant rail+plate pair).
- * Figure export likewise lives on the PLATE head (`SeriesPlate`'s `actions`
- * slot, the ExportButton split button) — the rail-foot "Copy as PNG" was
- * removed for the same single-contextual-control reason.
- *
- * CONDITIONAL AFFORDANCES (same pattern as onAdjust): the "Collapse rail"
- * IconButton renders only when onCollapse is passed (the live builder page has
- * no collapse behavior yet), and the "+ Add sample" Button renders only when
- * onAddSample is passed (the page's real add path is the native select in the
- * traces slot); the foot row itself is conditional on onAddSample — when it is
- * absent, no foot row renders at all.
+ * that are out-of-scope / deferred, so they are omitted. The Display section
+ * keeps only the offset slider — the log/linear q-scale toggle and figure export
+ * live on the PLATE (single contextual controls, not redundant rail+plate pairs).
+ * The Ordering-variable readout was dropped: it is set during scoping and is not
+ * editable here, so a static field only added chrome.
  */
 export function BuilderRail({
   onConfirm,
@@ -94,11 +82,6 @@ export function BuilderRail({
   confirmLabel,
   onAdjust,
   onCancel,
-  orderedBy,
-  orderNote,
-  onChangeOrder,
-  orderOptions,
-  onOrderSelect,
   offset,
   onOffsetChange,
   traces,
@@ -112,113 +95,93 @@ export function BuilderRail({
     <aside
       data-testid="builder-rail"
       className={cx(
-        "flex flex-col gap-5 bg-paper-sunk border-l border-hair px-5 pt-4 pb-7 overflow-y-auto",
+        "flex flex-col bg-paper-sunk border-l border-hair",
         className,
       )}
     >
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <Kicker tone="soft">Compose</Kicker>
-          {/* BU-MODESHIFT: draft (edit) mode is otherwise near-invisible against
-              read mode (same bg/borders/geometry), so the editing state carries
-              a standing "Unsaved draft" marker on the Compose header. `reorderable`
-              is the draft signal (only a draft's traces reorder). */}
-          {reorderable && <NoticePill tone="draft">Unsaved draft</NoticePill>}
+      {/* Scrolling content: header + the view/edit sections. */}
+      <div className="flex flex-col gap-5 px-5 pt-4 pb-6 overflow-y-auto grow">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <Kicker tone="soft">Compose</Kicker>
+            {/* BU-MODESHIFT: edit mode is otherwise near-invisible against read
+                mode (same surface/geometry), so it carries a standing "Unsaved
+                draft" marker. `reorderable` is the edit-mode signal. */}
+            {reorderable && <NoticePill tone="draft">Unsaved draft</NoticePill>}
+          </div>
+          {/* controls-don't-lie: no onCollapse means no collapse behavior. */}
+          {onCollapse && (
+            <IconButton label="Collapse rail" tone="ghost" onClick={onCollapse}>
+              &#8250;
+            </IconButton>
+          )}
         </div>
-        {/* controls-don't-lie: no onCollapse means no collapse behavior exists,
-            so the affordance is dropped; the Kicker sits flush-left on its own. */}
-        {onCollapse && (
-          <IconButton label="Collapse rail" tone="ghost" onClick={onCollapse}>
-            &#8250;
-          </IconButton>
+
+        {/* DISPLAY holds the Trace-offset slider only — a view control, live in
+            both modes (it never edits the series). */}
+        <RailSection label="Display">
+          <Slider
+            label="Trace offset"
+            valueDisplay={`${offset.toFixed(2)}×`}
+            value={offset}
+            min={0.4}
+            max={1.4}
+            step={0.05}
+            onChange={onOffsetChange}
+          />
+        </RailSection>
+
+        {/* copy-doesn't-lie: only the draft (reorderable) traces slot can be
+            dragged, so only then does the label make the reorder promise. */}
+        <RailSection label={reorderable ? "Traces · drag to reorder" : "Traces"}>
+          <div className="flex flex-col gap-0.5">{traces}</div>
+        </RailSection>
+
+        {/* controls-don't-lie: the live page adds samples through the picker in
+            the traces slot, so this rail-foot add path only renders when wired. */}
+        {onAddSample && (
+          <Button variant="outline" className="w-full" onClick={onAddSample}>
+            + Add sample
+          </Button>
         )}
       </div>
 
-      {/* BU-EDIT-BUTTON: the edit + commit verbs are plain buttons, not a
-          summary card with buried link actions (the old "N samples / Save changes"
-          card was redundant with the Ordering-variable field + the Traces list,
-          and a disabled Save in read mode read as broken). The two modes are
-          mutually exclusive: read mode shows the single "Edit" door; a live draft
-          (reorderable) shows the Save changes (accent primary) + Cancel pair.
-          "Save changes" states its busy reason while the Save→Commit chain runs
-          and disables when the chain isn't ready. */}
-      {reorderable ? (
-        <div className="flex gap-2">
-          <Button
-            variant="accent"
-            className="flex-1"
-            data-testid="builder-save"
-            disabled={onConfirm === undefined}
-            {...(onConfirm ? { onClick: onConfirm } : {})}
-            {...(confirmBusy ? { "aria-busy": true } : {})}
-          >
-            {confirmBusy ? (confirmLabel ?? "Saving…") : "Save changes"}
-          </Button>
-          {onCancel && (
-            <Button variant="outline" data-testid="builder-cancel" onClick={onCancel}>
-              Cancel
+      {/* Pinned footer: the WYSIWYG caption and the mode-switch actions. A live
+          draft (reorderable) shows Save changes (accent) + Cancel; read mode shows
+          the single Edit door — the only editing entry point. */}
+      <div className="border-t border-hair px-5 py-4 flex flex-col gap-3">
+        <p className="text-caption text-ink-soft leading-relaxed">
+          {caption ??
+            "The plate above is the figure as it will export. What you compose is what you publish."}
+        </p>
+        {reorderable ? (
+          <div className="flex gap-2">
+            <Button
+              variant="accent"
+              className="flex-1"
+              data-testid="builder-save"
+              disabled={onConfirm === undefined}
+              {...(onConfirm ? { onClick: onConfirm } : {})}
+              {...(confirmBusy ? { "aria-busy": true } : {})}
+            >
+              {confirmBusy ? (confirmLabel ?? "Saving…") : "Save changes"}
             </Button>
-          )}
-        </div>
-      ) : onAdjust ? (
-        <Button
-          variant="outline"
-          className="w-full"
-          data-testid="builder-edit"
-          onClick={onAdjust}
-        >
-          Edit
-        </Button>
-      ) : null}
-
-      <RailSection label="Ordering variable" {...(orderNote != null ? { note: orderNote } : {})}>
-        <Field
-          srLabel="Ordering variable"
-          value={orderedBy}
-          placeholder="Not set"
-          {...(orderOptions
-            ? { options: orderOptions, ...(onOrderSelect ? { onSelect: onOrderSelect } : {}) }
-            : onChangeOrder
-              ? { onClick: onChangeOrder }
-              : {})}
-        />
-      </RailSection>
-
-      {/* DISPLAY holds the Trace-offset slider only. The log/linear-q scale
-          toggle lives on the PLATE (contextual to the figure that exports) —
-          a single q-scale control, not a redundant pair. */}
-      <RailSection label="Display">
-        <Slider
-          label="Trace offset"
-          valueDisplay={`${offset.toFixed(2)}×`}
-          value={offset}
-          min={0.4}
-          max={1.4}
-          step={0.05}
-          onChange={onOffsetChange}
-        />
-      </RailSection>
-
-      {/* copy-doesn't-lie: only the draft (reorderable) traces slot can be
-          dragged, so only then does the label make the reorder promise. */}
-      <RailSection label={reorderable ? "Traces · drag to reorder" : "Traces"}>
-        <div className="flex flex-col gap-0.5">{traces}</div>
-      </RailSection>
-
-      {/* controls-don't-lie: the live page adds samples through the native
-          select in the traces slot, so the foot row only renders when a rail
-          add path (onAddSample) actually exists. */}
-      {onAddSample && (
-        <div className="flex gap-2">
-          <Button variant="outline" className="flex-1" onClick={onAddSample}>
-            + Add sample
+            {onCancel && (
+              <Button variant="outline" data-testid="builder-cancel" onClick={onCancel}>
+                Cancel
+              </Button>
+            )}
+          </div>
+        ) : onAdjust ? (
+          <Button
+            variant="outline"
+            className="w-full"
+            data-testid="builder-edit"
+            onClick={onAdjust}
+          >
+            Edit
           </Button>
-        </div>
-      )}
-
-      <div className="text-caption text-ink-soft leading-relaxed">
-        {caption ??
-          "The plate above is the figure as it will export. What you compose is what you publish."}
+        ) : null}
       </div>
     </aside>
   );
