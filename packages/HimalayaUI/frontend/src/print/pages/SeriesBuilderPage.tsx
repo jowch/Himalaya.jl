@@ -295,6 +295,10 @@ export function SeriesBuilderPage(): JSX.Element {
     if (stage.current !== "committing" || !commit.isSuccess) return;
     stage.current = "idle";
     discardDraft();
+    // BU-MODESWITCH-LEAK: same as Cancel — the committed draft is gone, so its
+    // undo/redo history must not survive into the next edit of this series.
+    setUndoPast([]);
+    setUndoFuture([]);
     // Consequential terminal success of the Save→Commit chain → visible toast.
     // Honest variant when the plate resolution had to leave samples out
     // (BU-RECIPENOOP policy: commit the resolvable members, SAY what was
@@ -399,6 +403,11 @@ export function SeriesBuilderPage(): JSX.Element {
   const onCancel = (): void => {
     stage.current = "idle";
     discardDraft();
+    // BU-MODESWITCH-LEAK: the undo/redo history is scoped to the draft we are
+    // discarding. Drop it so the NEXT draft on this series doesn't inherit a
+    // stale stack (a stray ⌘Z/⌘⇧Z restoring an edit from the cancelled session).
+    setUndoPast([]);
+    setUndoFuture([]);
   };
 
   // Busy = the chain is in flight, derived from the SAME stage/mutation

@@ -1011,6 +1011,32 @@ describe("SeriesBuilderPage", () => {
       // recipe stays reordered — the page-level undo must not fire from a field
       expect(useAppState.getState().seriesDraft!.recipe[1]!.sample_id).toBe(moved);
     });
+
+    // BU-MODESWITCH-LEAK: the undo/redo history is scoped to the LIVE draft, so
+    // discarding the draft (Cancel, or the Confirm chain's terminal discard) must
+    // also drop the history. Otherwise the next draft on the same series inherits
+    // the cancelled draft's stack and a stray ⌘Z/⌘⇧Z restores an edit the user
+    // never made this session (a leaky read↔draft mode switch).
+    it("a cancelled draft's redo history does NOT leak into the next draft", () => {
+      renderPage();
+      const moved = enterDraftAndReorder(); // recipe [2,1]; moved id now at recipe[1]
+      // Undo the reorder → recipe [1,2]; this builds a redo future ([2,1]).
+      fireEvent.keyDown(document.body, { key: "z", metaKey: true });
+      expect(useAppState.getState().seriesDraft!.recipe[0]!.sample_id).toBe(moved);
+      // Cancel the whole draft.
+      fireEvent.click(screen.getByRole("button", { name: /^cancel$/i }));
+      expect(useAppState.getState().seriesDraft).toBeNull();
+      // Re-enter a fresh draft on the SAME series (committed order).
+      fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "y" } });
+      const freshOrder = useAppState
+        .getState()
+        .seriesDraft!.recipe.map((r) => r.sample_id);
+      // The stale redo belongs to the cancelled draft — it must be a no-op.
+      fireEvent.keyDown(document.body, { key: "z", metaKey: true, shiftKey: true });
+      expect(
+        useAppState.getState().seriesDraft!.recipe.map((r) => r.sample_id),
+      ).toEqual(freshOrder);
+    });
   });
 
   it("each recipe row shows the figure trace's label so it cross-references the plate (BU-NAMES)", () => {

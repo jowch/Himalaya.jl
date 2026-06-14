@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate, useParams } from "react-router-dom";
 import { useAppState } from "../../state";
 import { useGlobalShortcuts } from "../../hooks/useGlobalShortcuts";
 import { CorpusShell } from "./CorpusShell";
@@ -55,6 +55,23 @@ function PageBody(): JSX.Element {
  * `/index*`, `/compare*`) sit outside the layout route so no chrome mounts
  * under them and races the redirect.
  */
+/**
+ * SeriesBuilderRoute — keys the builder on its `:id` so each series mounts a
+ * fresh instance.
+ *
+ * BU-MODESWITCH-LEAK: the builder holds id-scoped LOCAL state (the view
+ * offset/scale, the draft undo/redo stacks, the Confirm-chain refs). React
+ * reuses the same element instance across `/series/:id` param changes, so
+ * without a per-id key those bleed from one series into the next (series 2's
+ * view offset and undo history showing up on series 1). The global draft slot is
+ * intentionally recoverable on return; this only resets the ephemeral per-visit
+ * state that should never have crossed a series boundary.
+ */
+function SeriesBuilderRoute(): JSX.Element {
+  const { id } = useParams<{ id: string }>();
+  return <SeriesBuilderPage key={id} />;
+}
+
 export function AppRoutes(): JSX.Element {
   // R0a (#221): the theme-class effect is gone. "The Print" is the single
   // identity defined statically in styles.css `@theme`; there is no
@@ -80,8 +97,9 @@ export function AppRoutes(): JSX.Element {
             scoping sample_tags, then lands on the folio. Static /series/new
             ranks above the dynamic /series/:id (react-router v6 specificity). */}
         <Route path="/series/new" element={<SeriesScopingPage />} />
-        {/* I3.5a (#175): series builder — read-only visual surface. */}
-        <Route path="/series/:id" element={<SeriesBuilderPage />} />
+        {/* I3.5a (#175): series builder — read-only visual surface. Keyed on
+            :id (SeriesBuilderRoute) so per-series visits don't leak local state. */}
+        <Route path="/series/:id" element={<SeriesBuilderRoute />} />
         {/* I1.7 (#163): Inspect retired. Old /inspect* deep-links land on the
             contact sheet. Splat covers /inspect, /inspect/:exp, /inspect/:exp/:sample. */}
         <Route path="/inspect/*" element={<Navigate to="/samples" replace />} />
