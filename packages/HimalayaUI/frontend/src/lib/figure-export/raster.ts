@@ -19,13 +19,19 @@ function dim(svg: string, attr: "width" | "height", fallback: number): number {
   return m ? Number(m[1]) : fallback;
 }
 
+/** Target raster density for the PNG export. The SVG authors its geometry in
+ *  user units treated as points (72/inch), so the canvas scale is dpi/72 — 150
+ *  DPI (scale ≈ 2.08) gives a crisp figure for slides and print. */
+export const EXPORT_PNG_DPI = 150;
+
 /**
- * Render an SVG string to a 2× DPI PNG blob: SVG → blob URL → Image decode →
- * OffscreenCanvas drawImage → convertToBlob. `URL.revokeObjectURL` runs in a
- * `finally` so a thrown render still cleans up. JSDOM lacks these canvas APIs —
- * the full path is covered by the Playwright E2E.
+ * Render an SVG string to a PNG blob at EXPORT_PNG_DPI: SVG → blob URL → Image
+ * decode → OffscreenCanvas drawImage → convertToBlob. `URL.revokeObjectURL` runs
+ * in a `finally` so a thrown render still cleans up. JSDOM lacks these canvas
+ * APIs — the full path is covered by the Playwright E2E.
  */
-export async function svgStringToPng(svg: string, scale = 2): Promise<Blob> {
+export async function svgStringToPng(svg: string, dpi = EXPORT_PNG_DPI): Promise<Blob> {
+  const scale = dpi / 72;
   const w = dim(svg, "width", 800);
   const h = dim(svg, "height", 600);
   const url = URL.createObjectURL(svgStringToBlob(svg));

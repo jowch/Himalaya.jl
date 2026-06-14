@@ -156,6 +156,7 @@ export function buildCleanFigureSvg(input: CleanFigureInput): string {
 
     // Per-row log-intensity mapping (matches multiTraceExportMarks): map
     // log10(I) ∈ [logMin, logMax] → y ∈ [bandBottom, bandTop] (low at bottom).
+    // Hoisted to row scope so the peak markers ride the SAME curve as the trace.
     let minI = Infinity;
     let maxI = -Infinity;
     for (const v of I) {
@@ -164,18 +165,19 @@ export function buildCleanFigureSvg(input: CleanFigureInput): string {
         if (v > maxI) maxI = v;
       }
     }
-    if (maxI > 0) {
-      const logMin = Math.log10(minI);
-      const logRange = Math.max(1e-6, Math.log10(maxI) - logMin);
+    const hasLog = maxI > 0;
+    const logMin = hasLog ? Math.log10(minI) : 0;
+    const logRange = hasLog ? Math.max(1e-6, Math.log10(maxI) - logMin) : 1;
+    const yOf = (v: number): number =>
+      bandBottom - (((v > 0 ? Math.log10(v) : logMin) - logMin) / logRange) * bandH;
+
+    if (hasLog) {
       let d = "";
       let started = false;
       for (let k = 0; k < q.length; k++) {
         const qk = q[k]!;
         if (!inDomain(qk)) continue;
-        const v = I[k] ?? 0;
-        const li = v > 0 ? Math.log10(v) : logMin;
-        const py = bandBottom - ((li - logMin) / logRange) * bandH;
-        d += `${started ? "L" : "M"}${x.to(qk).toFixed(1)} ${py.toFixed(1)} `;
+        d += `${started ? "L" : "M"}${x.to(qk).toFixed(1)} ${yOf(I[k] ?? 0).toFixed(1)} `;
         started = true;
       }
       if (d) {
@@ -183,19 +185,23 @@ export function buildCleanFigureSvg(input: CleanFigureInput): string {
       }
     }
 
-    // Peak anchors — ordinal-numbered (1..n by ascending q), a small filled
-    // triangle just above the band top; ordinal label above when enabled.
-    if (showPeakTicks && row.anchors.length > 0) {
+    // Peak anchors — ordinal-numbered (1..n by ascending q). Each marker rides
+    // the trace: a small downward triangle pointing at the curve at the peak's
+    // intensity, with the ordinal above it. (Was a detached row pinned to the
+    // band top, which read as floating, broken markers.)
+    if (showPeakTicks && hasLog && row.anchors.length > 0) {
       const sorted = [...row.anchors].filter((a) => inDomain(a.q)).sort((a, b) => a.q - b.q);
       sorted.forEach((a, i) => {
         const px = x.to(a.q);
-        const ty = bandTop - 2;
+        const cy = yOf(a.intensity ?? 0); // y on the curve at this peak
+        const tip = cy - 4; // apex sits 4px above the curve, pointing down at it
+        const top = tip - 5;
         parts.push(
-          `<path d="M${(px - 3).toFixed(1)} ${ty.toFixed(1)} L${(px + 3).toFixed(1)} ${ty.toFixed(1)} L${px.toFixed(1)} ${(ty - 5).toFixed(1)} Z" fill="${color}"/>`,
+          `<path d="M${(px - 3.2).toFixed(1)} ${top.toFixed(1)} L${(px + 3.2).toFixed(1)} ${top.toFixed(1)} L${px.toFixed(1)} ${tip.toFixed(1)} Z" fill="${color}"/>`,
         );
         if (showPeakLabels) {
           parts.push(
-            `<text x="${px.toFixed(1)}" y="${(ty - 7).toFixed(1)}" text-anchor="middle" font-size="9" fill="${color}">${i + 1}</text>`,
+            `<text x="${px.toFixed(1)}" y="${(top - 2).toFixed(1)}" text-anchor="middle" font-size="9" fill="${color}">${i + 1}</text>`,
           );
         }
       });
