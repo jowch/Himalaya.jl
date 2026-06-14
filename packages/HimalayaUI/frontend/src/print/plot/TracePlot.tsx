@@ -134,6 +134,12 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
   const stateRef = useRef<PlotState | null>(null);
 
   const [hoverId, setHoverId] = useState<number | null>(null);
+  // The plot-relative x pixel of the hover crosshair: snapped to a peak's x when
+  // one is within tolerance, else the free cursor x. null = not over the body.
+  // Drives a vertical q-leader line + readout in EVERY mode, so a peak's q is
+  // legible on hover even where no marker is (and tuning a new peak's q is
+  // visual). Separate from hoverId so the line shows off-peak too.
+  const [hoverPx, setHoverPx] = useState<number | null>(null);
   // Unique clip-path id (multiple TracePlots coexist — e.g. the waterfall stack).
   // useId() returns colon-wrapped ids; strip them so url(#…) resolves.
   const clipId = `trace-clip-${useId().replace(/:/g, "")}`;
@@ -156,14 +162,20 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
     const plotPy = py - s.dims.margins.top;
     if (plotPx < 0 || plotPx > s.dims.plotWidth || plotPy < 0 || plotPy > s.dims.plotHeight) {
       setHoverId(null);
+      setHoverPx(null);
       return;
     }
     const tol = s.interaction.hitTolerancePx ?? PEAK_HIT_PX;
     const hit = hitTestPeaks(s.peaks, plotPx, (q) => s.projection.x.to(q), tol);
     setHoverId(hit ? hit.id : null);
+    // Snap the crosshair to the peak's x when one is hit, else track the cursor.
+    setHoverPx(hit ? s.projection.x.to(hit.q) : plotPx);
   }, []);
 
-  const handlePointerLeave = useCallback(() => setHoverId(null), []);
+  const handlePointerLeave = useCallback(() => {
+    setHoverId(null);
+    setHoverPx(null);
+  }, []);
 
   const handleWheelPx = useCallback((deltaY: number, px: number) => {
     const s = stateRef.current;
@@ -366,27 +378,53 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
               ) : null}
             </g>
             {overlay ? overlay(ctx) : null}
-            {/* C5: q-readout chip — anchored to axis bottom, on top of all other layers.
-                Motion is instant (no CSS transition), which is inherently reduced-motion-safe.
-                A 90ms opacity fade on enter/leave is intentionally deferred. */}
+            {/* Hover crosshair + q-readout chip — anchored to axis bottom, on top
+                of all other layers. A SNAPPED peak (local hover or incoming
+                q-link) reports its exact q and draws its own phase-coloured hot
+                line via PlotPeaks; OFF a peak, a neutral dashed leader line
+                tracks the free cursor so the q is legible anywhere on the trace
+                and tuning a new peak's q is visual. The line marks the q (x)
+                axis only — never an intensity readout. Motion is instant
+                (reduced-motion-safe). */}
             {(() => {
-              // Gate the readout on the peaks layer: with peaks hidden there is
-              // no glyph to anchor it to, so a floating chip would be dishonest.
-              const hovered = effectiveHoverId == null || !layers.peaks
-                ? null
-                : trace.peaks.find((p) => p.id === effectiveHoverId) ?? null;
-              if (!hovered) return null;
-              const qx = projection.x.to(hovered.q);
+              const snapped = effectiveHoverId != null && layers.peaks
+                ? trace.peaks.find((p) => p.id === effectiveHoverId) ?? null
+                : null;
+              let qx: number;
+              let q: number;
+              let showLine: boolean;
+              if (snapped) {
+                qx = projection.x.to(snapped.q);
+                q = snapped.q;
+                showLine = false; // the peak's own hot q-line already drops here
+              } else if (hoverPx != null) {
+                qx = hoverPx;
+                q = projection.x.invert(hoverPx);
+                showLine = true;
+              } else {
+                return null;
+              }
+              if (!Number.isFinite(q) || q <= 0) return null;
               const baseY = dims.plotHeight;
               const w = 46, h = 16;
               return (
-                <g data-role="q-readout" transform={`translate(${qx},${baseY})`}>
-                  <rect x={-w / 2} y={6} width={w} height={h} rx={3}
-                    fill="var(--color-plate)" stroke="var(--color-hair-strong)" strokeWidth={1} />
-                  <text x={0} y={6 + h / 2} dy="0.32em" textAnchor="middle"
-                    style={{ fontFamily: "var(--font-mono)", fontSize: 10.5, fill: "var(--color-ink)" }}>
-                    {hovered.q.toFixed(3)}
-                  </text>
+                <g data-role="q-crosshair" transform={`translate(${qx},0)`}>
+                  {showLine ? (
+                    <line
+                      data-role="q-crosshair-line"
+                      x1={0} y1={0} x2={0} y2={baseY}
+                      stroke="var(--color-ink-soft)" strokeWidth={1}
+                      strokeDasharray="3 3" opacity={0.55}
+                    />
+                  ) : null}
+                  <g data-role="q-readout" transform={`translate(0,${baseY})`}>
+                    <rect x={-w / 2} y={6} width={w} height={h} rx={3}
+                      fill="var(--color-plate)" stroke="var(--color-hair-strong)" strokeWidth={1} />
+                    <text x={0} y={6 + h / 2} dy="0.32em" textAnchor="middle"
+                      style={{ fontFamily: "var(--font-mono)", fontSize: 10.5, fill: "var(--color-ink)" }}>
+                      {q.toFixed(3)}
+                    </text>
+                  </g>
                 </g>
               );
             })()}
