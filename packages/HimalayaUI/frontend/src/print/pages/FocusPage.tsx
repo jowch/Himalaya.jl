@@ -15,9 +15,9 @@ import { CustomIndexModal } from "../components/CustomIndexModal";
 import { HintText, EmptyState, Button } from "../ui";
 import { ExportButton } from "../components/ExportButton";
 import { useFigureExport } from "../components/useFigureExport";
-import { buildTraceExportSpec } from "../../lib/figure-export/adapters/traceAdapter";
-import { buildExportSvg } from "../../lib/figure-export/renderer";
-import type { ExportSpec } from "../../lib/figure-export/types";
+import { buildCleanFigureSvg } from "../export/cleanFigureSvg";
+import { buildFocusFigureRow } from "../export/focusFigureRow";
+import { waterfallQDomain } from "../waterfall/waterfallModel";
 import {
   toTraceModel,
   losingPeakIds,
@@ -331,29 +331,41 @@ export function FocusPage(): JSX.Element {
   }, [xDomain, traceQ.data]);
 
   // ── figure export ─────────────────────────────────────────────────────────────
-  const exportSpec = useCallback((): ExportSpec => buildTraceExportSpec({
-    trace: traceQ.data ?? EMPTY_TRACE,
-    peaks,
-    activeGroupIndices: activeIndices,
-    experimentName: experimentQ.data?.name ?? "",
-    sampleName,
-    exposureLabel: exposureLabel ?? "",
-    xDomain,
-    yDomain: null,
-    xType: scale === "log" ? "log" : "linear",
-    ...(experimentQ.data?.q_units ? { qUnits: experimentQ.data.q_units } : {}),
-  }), [traceQ.data, peaks, activeIndices, experimentQ.data, sampleName, exposureLabel, xDomain, scale]);
+  // The single-trace Focus figure renders through the SAME greenfield builder as
+  // the series waterfall (buildCleanFigureSvg): build the one assignment row, then
+  // render it in the clean export skin. WYSIWYG holds — it reads the live trace,
+  // the active assignment's claimed peaks, the assigned phase, and the log/linear
+  // toggle. (Was the legacy Observable Plot renderer, now fully retired.)
+  const figureRow = useMemo(
+    () =>
+      buildFocusFigureRow({
+        trace: traceQ.data ?? EMPTY_TRACE,
+        peaks,
+        activeIndices,
+        phase,
+        // No right-gutter row label on a single-trace figure: the title already
+        // carries sample · exposure, so a gutter dup just clips against the
+        // margin. (The gutter earns its keep only in the multi-row waterfall.)
+        label: "",
+      }),
+    [traceQ.data, peaks, activeIndices, phase],
+  );
+  const figureTitle = [sampleName, exposureLabel].filter(Boolean).join(" · ");
 
   // Descriptive, product-tagged stem (buildFilename slugifies it): e.g.
   // "himalaya-trace-jc042-frame-1-2026-06-13.svg".
   const filenameStem = `himalaya-trace-${sampleName} ${exposureLabel ?? ""}`.trim();
-  // INTERIM (export-engine migration): the single-trace focus export still goes
-  // through the legacy Observable Plot renderer, serialized to the SVG-string
-  // contract the hook now takes. Migrating it onto the greenfield builder is a
-  // follow-up (the series multi-trace export already renders via cleanFigureSvg).
   const renderSvg = useCallback(
-    () => new XMLSerializer().serializeToString(buildExportSvg(exportSpec())),
-    [exportSpec],
+    () =>
+      buildCleanFigureSvg({
+        rows: [figureRow],
+        title: figureTitle || "Trace",
+        footer: experimentQ.data?.name ?? "",
+        xType: scale === "log" ? "log" : "linear",
+        qDomain: xDomain ?? waterfallQDomain([figureRow]),
+        showPeakLabels: true,
+      }),
+    [figureRow, figureTitle, experimentQ.data, scale, xDomain],
   );
   const fx = useFigureExport(renderSvg, filenameStem, "trace plot");
 
