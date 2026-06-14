@@ -308,6 +308,20 @@ describe("FocusPage", () => {
     expect(removeAssignMutate).toHaveBeenCalledWith(1);
   });
 
+  it("hovering a candidate lights its claimed peaks on the trace and dims the rest", () => {
+    // Lamellar (index id 2) claims peak_id 2 only; Pn3m (id 1) claims peak 1.
+    // Hovering Lamellar must highlight peak 2 and dim peak 1 — the restored
+    // candidate-hover preview (now keyed on the candidate's CLAIM, so it works
+    // even with an empty durable assignment post auto-group removal).
+    const { container } = renderAt(42);
+    const lam = screen.getByRole("button", { name: /Lamellar/ });
+    fireEvent.mouseEnter(lam.parentElement!); // the onMouseEnter preview wrapper
+    const g1 = container.querySelector('[data-role="plot-peaks"] g[data-peak-id="1"]');
+    const g2 = container.querySelector('[data-role="plot-peaks"] g[data-peak-id="2"]');
+    expect(g1?.getAttribute("data-dimmed")).toBe("true"); // not claimed → dim
+    expect(g2?.getAttribute("data-dimmed")).toBeNull(); // claimed → stays lit
+  });
+
   it("does not render the legacy '+ Add speculative' affordance (custom-index is the hypothesis tool)", () => {
     renderAt(42);
     expect(screen.queryByTestId("add-speculative-button")).toBeNull();

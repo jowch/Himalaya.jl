@@ -24,13 +24,12 @@ import { waterfallQDomain } from "../waterfall/waterfallModel";
 import {
   toTraceModel,
   peakClickAction,
-  losingPeakIds,
-  complementPeakIds,
   toDetectorRings,
   toCombSeries,
   CUSTOM_SYMS,
   customIndexPreview,
 } from "./focusAdapters";
+import { phaseColor } from "../../phases";
 import { buildExposureImageUrl, toGalleryExposures } from "./loupeAdapters";
 import {
   useCorpusSamples,
@@ -240,24 +239,29 @@ export function FocusPage(): JSX.Element {
       ? activeIndices[0]!.phase
       : null;
 
-  const traceModel = useMemo(
-    () => toTraceModel(traceQ.data ?? EMPTY_TRACE, peaks, phase),
-    [traceQ.data, peaks, phase],
+  // Candidate-hover preview: light up the peaks the hovered candidate CLAIMS.
+  // Those peaks recolour to the candidate's phase hue (a preview of "pick this
+  // and these become this phase") while every other peak dims, so you can read
+  // at a glance which peaks a candidate's score is built on. Replaces the old
+  // active-phase "losing peak" dim, which went dark once the durable assignment
+  // stopped auto-seeding (no active phase → nothing to lose → nothing lit).
+  const previewIx = indices.find((i) => i.id === previewIndexId);
+  const previewClaim = useMemo(
+    () => (previewIx ? new Set(previewIx.peaks.map((p) => p.peak_id)) : undefined),
+    [previewIx],
   );
 
-  // Candidate-hover preview → losing-peak dim. The hovered candidate's claimed
-  // peaks would orphan some active-phase peaks; those "losing" peaks dim while
-  // the rest stay highlighted (TracePlot KEEPS the complement set).
-  const previewIx = indices.find((i) => i.id === previewIndexId);
-  const highlight = useMemo(() => {
-    if (!previewIx) return undefined;
-    const losing = losingPeakIds(previewIx, activeIndices);
-    if (losing.size === 0) return undefined;
-    return complementPeakIds(
-      peaks.map((p) => p.id),
-      losing,
-    );
-  }, [previewIx, activeIndices, peaks]);
+  const traceModel = useMemo(() => {
+    const base = toTraceModel(traceQ.data ?? EMPTY_TRACE, peaks, phase);
+    if (!previewIx || !previewClaim) return base;
+    const pc = phaseColor(previewIx.phase);
+    return {
+      ...base,
+      peaks: base.peaks.map((p) =>
+        previewClaim.has(p.id) ? { ...p, color: pc } : p,
+      ),
+    };
+  }, [traceQ.data, peaks, phase, previewIx, previewClaim]);
 
   // Rings + their caption phases come from ONE adapter walk: `phases` names
   // only the phases that actually emitted a ring on this frame, so the caption
@@ -676,7 +680,7 @@ export function FocusPage(): JSX.Element {
               xDomain={xDomain}
               {...(hoveredQ !== undefined ? { hoveredQ } : {})}
               onHoverQ={setHoveredQ}
-              {...(highlight !== undefined ? { highlightPeakIds: highlight } : {})}
+              {...(previewClaim !== undefined ? { highlightPeakIds: previewClaim } : {})}
               {...(focusRequest !== undefined ? { focusRequest } : {})}
               interaction={{
                 onXDomain: setXDomain,
