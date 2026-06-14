@@ -190,14 +190,24 @@ export function ScopeSampleRow({
           </IconButton>
         </span>
       ) : (
-        <span className="flex items-center gap-1 flex-shrink-0">
+        // SC-PENCIL-FAINT: widen the gap so the edit pencil is not crowded
+        // against the value's skip toggle (a fat-finger skip when the user meant
+        // to edit). The pencil is a quiet secondary affordance: hidden at rest,
+        // revealed on row hover OR when it takes keyboard focus, so it reads as
+        // a clear "correct this value" control rather than a permanent faint glyph.
+        <span className="flex items-center gap-2.5 flex-shrink-0">
           <FlagButton
             value={value}
             {...(flagged ? { flagged: true } : {})}
             {...(onToggleFlag ? { onClick: onToggleFlag } : {})}
           />
           {onEditValue && (
-            <IconButton label={`Edit value for ${name}`} tone="ghost" onClick={startEdit}>
+            <IconButton
+              label={`Edit value for ${name}`}
+              tone="ghost"
+              onClick={startEdit}
+              className="opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+            >
               ✎
             </IconButton>
           )}

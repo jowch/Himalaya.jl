@@ -139,8 +139,17 @@ export function ScopePlate({
               ↺ Undo last change
             </button>
           ) : null}
-          <span className="text-caption font-mono text-ink-soft">{count}</span>
+          {/* SC-CAPTION-MONO: the count is descriptive chrome, not a measured
+              value, so it reads in the sans caption face, not mono. */}
+          <span className="text-caption text-ink-soft">{count}</span>
         </div>
+      </div>
+
+      {/* SC-VALUE-NOHEAD: name the right-hand value column so the 0/5/10/20
+          integers are not anonymous. Right-padded to clear the flag+pencil
+          control cluster so the label sits over the values, not the controls. */}
+      <div className="flex justify-end pr-9 mb-1.5">
+        <span className="text-caption uppercase tracking-wide text-ink-soft">{orderedBy}</span>
       </div>
 
       <div className="[&>*:last-child]:border-b-0">{rows}</div>

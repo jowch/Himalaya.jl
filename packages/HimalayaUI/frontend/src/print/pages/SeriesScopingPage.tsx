@@ -996,12 +996,17 @@ export function SeriesScopingPage(): JSX.Element {
                      (SCOPE_CANDIDATE_PREVIEW_COUNT); the section note below owns
                      the remainder count + the contact-sheet door for reaching the
                      hidden ones. */
-                  <div data-testid="scope-candidates" className="space-y-2">
+                  <div data-testid="scope-candidates">
                     {visibleLoose.map((c) => (
                       <div
                         key={c.sampleId}
                         data-testid="scope-candidate"
-                        className="flex items-center gap-3 px-2 py-2.5 border border-dashed border-hair-strong rounded"
+                        // SC-CANDBOX-HEAVY: a single dashed TOP hairline per row
+                        // (not a full 4-sided rounded box) so the excluded
+                        // candidates read as a quiet ledger BELOW the series, not
+                        // as drop-zone boxes heavier than the borderless members
+                        // above them. The dash still marks "not yet in the series".
+                        className="flex items-center gap-3 px-2 py-2.5 border-t border-dashed border-hair"
                       >
                         <Sparkline
                           trace={traceBySample.get(c.sampleId) ?? EMPTY_TRACE}
