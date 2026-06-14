@@ -107,8 +107,19 @@ export function PlotPeaks({
         const px = x.to(p.q);
         if (!Number.isFinite(px)) return null;
         const iVal = p.intensity ?? baselineI;
-        const py =
+        const rawPy =
           iVal != null && Number.isFinite(iVal) ? y.to(iVal) : y.range[0];
+        // FO-CLIPMARK: a peak taller than the visible ceiling (e.g. sample 15's
+        // low-q first order) maps ABOVE the plot top, so its lifted apex lands
+        // in the dead top margin — where the glyph is off-screen and a pointer
+        // click is ignored (TracePlot guards plotPy < 0), making the peak
+        // un-disable-able by clicking its marker. Clamp the apex DOWN so the
+        // whole glyph stays inside the plot body, clickable at the top edge; the
+        // q-line still drops to the baseline at the true q. yTop = the plot top
+        // in pixel space; the triangle body rises `MARKER_LIFT + glyphH` above
+        // the marker `py`, so that is the minimum py the body can sit at.
+        const yTop = Math.min(y.range[0], y.range[1]);
+        const py = Math.max(rawPy, yTop + MARKER_LIFT + 4 * 1.75);
         const hl = highlightPeakIds;
         const dimmed = !!hl && hl.size > 0 && !hl.has(p.id) && !p.hot; // hot wins over dim
         const c = dimmed ? "var(--color-ink-faint)" : (p.color ?? color);

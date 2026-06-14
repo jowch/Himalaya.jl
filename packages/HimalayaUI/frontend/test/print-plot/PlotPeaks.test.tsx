@@ -28,6 +28,29 @@ describe("PlotPeaks", () => {
     ).toBe(1);
   });
 
+  it("clamps a peak taller than the ceiling into the plot body (FO-CLIPMARK)", () => {
+    // intensity 100000 maps far above the yDomain top (30) → without clamping
+    // the glyph apex lands above the plot top (negative y), in the dead margin
+    // where pointer clicks are ignored. The clamp keeps the whole glyph at
+    // y >= 0 so the marker stays visible and clickable at the top edge.
+    const { container } = render(
+      <svg>
+        <PlotPeaks
+          peaks={[{ id: 1, q: 0.2, intensity: 100000, source: "auto" }]}
+          projection={proj}
+          color="var(--color-accent)"
+        />
+      </svg>,
+    );
+    const poly = container.querySelector('[data-role="peak-glyph"] polygon')!;
+    const ys = (poly.getAttribute("points") ?? "")
+      .trim()
+      .split(/\s+/)
+      .map((pt) => Number(pt.split(",")[1]));
+    expect(Math.min(...ys)).toBeGreaterThanOrEqual(0); // no vertex above the top
+    expect(Math.max(...ys)).toBeLessThanOrEqual(200); // within plotHeight
+  });
+
   it("draws a q-link line only for hot peaks", () => {
     const { container, rerender } = render(
       <svg>
