@@ -1,6 +1,9 @@
 import { useCallback, useRef, useState } from "react";
-import type { ExportSpec } from "../../lib/figure-export/types";
-import { buildExportPng, buildExportSvg, canExportPng } from "../../lib/figure-export/renderer";
+import {
+  canRasterizePng,
+  svgStringToBlob,
+  svgStringToPng,
+} from "../../lib/figure-export/raster";
 import { canCopyPngToClipboard, copyPngToClipboard } from "../../lib/figure-export/clipboard";
 import { downloadBlob } from "../../lib/figure-export/download";
 import { buildFilename } from "../../lib/figure-export/filename";
@@ -16,13 +19,13 @@ export interface UseFigureExport {
 }
 
 /**
- * The figure-export logic hook — the ONLY consumer of `lib/figure-export/*`.
- * `spec` is a thunk evaluated at click time so it captures fresh state. The
- * clean scientific styling lives in the engine adapter that builds the
- * `ExportSpec`; this hook is style-agnostic.
+ * The figure-export logic hook. `renderSvg` is a thunk evaluated at click time
+ * so it captures fresh state; it returns the export figure as a standalone SVG
+ * markup string (the greenfield CleanFigure builder). This hook is style- and
+ * engine-agnostic: it blobs the string for SVG, and rasterizes it for PNG.
  */
 export function useFigureExport(
-  spec: () => ExportSpec,
+  renderSvg: () => string,
   filenameStem: string,
   ariaContext: string,
 ): UseFigureExport {
@@ -53,30 +56,28 @@ export function useFigureExport(
 
   const onCopy = useCallback(() => {
     void run(async () => {
-      const blob = await buildExportPng(spec());
+      const blob = await svgStringToPng(renderSvg());
       await copyPngToClipboard(blob);
       showToast(`Copied ${ariaContext} to clipboard`, "success");
     }, "Couldn't copy figure. Try Download instead.");
-  }, [run, spec, ariaContext]);
+  }, [run, renderSvg, ariaContext]);
 
   const onDownloadPng = useCallback(() => {
     void run(async () => {
-      const blob = await buildExportPng(spec());
+      const blob = await svgStringToPng(renderSvg());
       downloadBlob(blob, buildFilename(filenameStem, "png"));
     }, "Couldn't render figure for download.");
-  }, [run, spec, filenameStem]);
+  }, [run, renderSvg, filenameStem]);
 
   const onDownloadSvg = useCallback(() => {
     void run(() => {
-      const svg = buildExportSvg(spec());
-      const xml = new XMLSerializer().serializeToString(svg);
-      const blob = new Blob([xml], { type: "image/svg+xml" });
+      const blob = svgStringToBlob(renderSvg());
       downloadBlob(blob, buildFilename(filenameStem, "svg"));
     }, "Couldn't render figure for download.");
-  }, [run, spec, filenameStem]);
+  }, [run, renderSvg, filenameStem]);
 
   const canCopy = canCopyPngToClipboard();
-  const canPng = canExportPng();
+  const canPng = canRasterizePng();
   return {
     onCopy,
     onDownloadPng,

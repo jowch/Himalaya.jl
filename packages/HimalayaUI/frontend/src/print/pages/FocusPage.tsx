@@ -16,6 +16,7 @@ import { HintText, EmptyState, Button } from "../ui";
 import { ExportButton } from "../components/ExportButton";
 import { useFigureExport } from "../components/useFigureExport";
 import { buildTraceExportSpec } from "../../lib/figure-export/adapters/traceAdapter";
+import { buildExportSvg } from "../../lib/figure-export/renderer";
 import type { ExportSpec } from "../../lib/figure-export/types";
 import {
   toTraceModel,
@@ -346,7 +347,15 @@ export function FocusPage(): JSX.Element {
   // Descriptive, product-tagged stem (buildFilename slugifies it): e.g.
   // "himalaya-trace-jc042-frame-1-2026-06-13.svg".
   const filenameStem = `himalaya-trace-${sampleName} ${exposureLabel ?? ""}`.trim();
-  const fx = useFigureExport(exportSpec, filenameStem, "trace plot");
+  // INTERIM (export-engine migration): the single-trace focus export still goes
+  // through the legacy Observable Plot renderer, serialized to the SVG-string
+  // contract the hook now takes. Migrating it onto the greenfield builder is a
+  // follow-up (the series multi-trace export already renders via cleanFigureSvg).
+  const renderSvg = useCallback(
+    () => new XMLSerializer().serializeToString(buildExportSvg(exportSpec())),
+    [exportSpec],
+  );
+  const fx = useFigureExport(renderSvg, filenameStem, "trace plot");
 
   // ── keyboard: the Focus two-axis model (shared shortcut library) ──────────────
   //   [ ]  = step the SAMPLE      (useExperimentSiblings — agrees with the stepper)

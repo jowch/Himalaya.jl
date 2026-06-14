@@ -36,7 +36,7 @@ import {
 import { buildSeriesSaveBody } from "../../lib/series/buildSeriesSaveBody";
 import { isSeriesDraftDirty } from "../../lib/series/isSeriesDraftDirty";
 import { buildPlateFromRecipe } from "../../lib/series/buildPlateFromRecipe";
-import { buildMultiTraceExportSpec } from "../../lib/figure-export/adapters/multiTraceAdapter";
+import { buildCleanFigureSvg } from "../export/cleanFigureSvg";
 import { ExportButton } from "../components/ExportButton";
 import { useFigureExport } from "../components/useFigureExport";
 import { showToast } from "../../lib/toast";
@@ -614,35 +614,30 @@ function BuilderBody({
   const effectiveTitle = liveDraft ? liveDraft.title : series.title;
 
   // ── Figure export (plate-head ExportButton, wired via useFigureExport) ───
-  // WYSIWYG contract (BU-EXPORTDIVERGE): the plate footnote promises "what
-  // you compose is what you publish", so every axis the plate renders flows
-  // into the spec from the SAME sources the plate reads — phase identity
-  // (byPhase via the shared memberRead.dominantPhase predicate), the plate's
-  // padded q-domain, the log/linear toggle, the offset slider, the annotation
-  // flags, and the plate's row-label register. Publication furniture (title
-  // block, white background, margins) is the only sanctioned delta.
-  const exportSpec = useCallback(
-    (): import("../../lib/figure-export/types").ExportSpec =>
-      buildMultiTraceExportSpec({
-        members,
-        traces: new Map(Object.entries(tracesById).map(([k, v]) => [Number(k), v])),
-        comparisonTitle: effectiveTitle,
-        xDomain: waterfallQDomain(rows),
-        showPeakTicks,
-        showPeakLabels,
-        groupingMode: "byPhase",
-        sampleIdFor: () => null,
-        displayLabelByMemberId: new Map(members.map((m) => [m.id, memberRowLabel(m)])),
+  // WYSIWYG contract (BU-EXPORTDIVERGE): the export renders the SAME data the
+  // plate composes, through the SAME greenfield axis math (makeAxis/axisTicks) —
+  // see cleanFigureSvg. It reads the plate's own sources: the waterfall `rows`,
+  // the padded q-domain, the log/linear toggle, the offset slider, the
+  // annotation flags. Only the SKIN differs (clean Arial / white / framed
+  // journal idiom vs. The Print).
+  const renderSvg = useCallback(
+    () =>
+      buildCleanFigureSvg({
+        rows,
+        title: effectiveTitle,
+        footer: "q normalized · intensity offset for clarity",
         xType: scale === "log" ? "log" : "linear",
         offsetScale: offset,
-        preset: "clean",
+        showPeakTicks,
+        showPeakLabels,
+        qDomain: waterfallQDomain(rows),
       }),
-    [members, rows, tracesById, effectiveTitle, showPeakTicks, showPeakLabels, scale, offset],
+    [rows, effectiveTitle, scale, offset, showPeakTicks, showPeakLabels],
   );
   // Descriptive, product-tagged stem (buildFilename slugifies it): e.g.
   // "himalaya-ll37-titration-2026-06-13.svg". The series title is itself the
   // descriptor (the default is "Series by <var>"), so no redundant "series-".
-  const fx = useFigureExport(exportSpec, `himalaya-${effectiveTitle}`, "series figure");
+  const fx = useFigureExport(renderSvg, `himalaya-${effectiveTitle}`, "series figure");
 
   // ── Traces slot — read MemberList, or the editable recipe in draft ──────
   const tracesSlot = liveDraft ? (

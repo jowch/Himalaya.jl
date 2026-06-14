@@ -76,18 +76,17 @@ vi.mock("../../src/queries", () => ({
 // Zustand flags that drive the plate annotations reach the export call.
 // Only evaluated at export-click time, so the mock is inert everywhere else.
 const { specSpy } = vi.hoisted(() => ({
-  // A minimally render-viable spec (title included — renderer reads
-  // spec.title.primary) so the export path under test completes on the
-  // success branch, not via the renderer's error toast.
-  specSpy: vi.fn((_args: Record<string, unknown>) => ({
-    width: 10,
-    height: 10,
-    marks: [],
-    title: { primary: "spec under test" },
-  })),
+  // The series export now renders via the greenfield CleanFigure SVG builder.
+  // The spy returns a minimal standalone SVG string so the download path
+  // completes on the success branch; the tests assert the CleanFigureInput it
+  // receives (the plate's own flags/scale/offset/domain).
+  specSpy: vi.fn(
+    (_input: Record<string, unknown>) =>
+      '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"></svg>',
+  ),
 }));
-vi.mock("../../src/lib/figure-export/adapters/multiTraceAdapter", () => ({
-  buildMultiTraceExportSpec: specSpy,
+vi.mock("../../src/print/export/cleanFigureSvg", () => ({
+  buildCleanFigureSvg: specSpy,
 }));
 
 // boneyard Skeleton: render children when not loading.
@@ -1421,7 +1420,7 @@ describe("SeriesBuilderPage", () => {
     }
   });
 
-  it("BU-TOGGLELIE single source: the export spec is built from the SAME flags that drive the plate", async () => {
+  it("BU-TOGGLELIE single source: the export figure is built from the SAME flags that drive the plate", async () => {
     loadTraces();
     renderPage();
     // JSDOM has no URL.createObjectURL; stub it so the download path completes
@@ -1449,7 +1448,7 @@ describe("SeriesBuilderPage", () => {
     }
   });
 
-  it("BU-EXPORTDIVERGE: the export spec carries the plate's grouping/scale/offset/domain/label register", async () => {
+  it("BU-EXPORTDIVERGE: the export figure carries the plate's scale/offset/domain/label register", async () => {
     loadTraces();
     renderPage();
     const createObjectURL = vi.fn(() => "blob:test");
@@ -1459,23 +1458,19 @@ describe("SeriesBuilderPage", () => {
     fireEvent.click(screen.getByTestId("export-menu-trigger"));
     fireEvent.click(screen.getByRole("menuitem", { name: /download as svg/i }));
     await waitFor(() => expect(specSpy).toHaveBeenCalled());
-    const args = specSpy.mock.calls.at(-1)![0] as Record<string, unknown>;
-    // The plate footnote promises WYSIWYG — every axis the plate renders
-    // flows into the spec from the same sources the plate reads.
-    expect(args).toMatchObject({
-      groupingMode: "byPhase",
-      xType: "log",
-      offsetScale: 1.2,
-      preset: "clean",
-    });
-    // Label register: the plate's (label_override ?? "exp N"), per member.
-    const labels = args.displayLabelByMemberId as Map<number, string>;
-    expect(labels.get(1)).toBe("ratio 1");
-    expect(labels.get(2)).toBe("ratio 2");
-    // The plate's padded q-domain, not the old hardcoded null.
-    expect(Array.isArray(args.xDomain)).toBe(true);
+    const input = specSpy.mock.calls.at(-1)![0] as Record<string, unknown>;
+    // The plate footnote promises WYSIWYG — every axis the plate renders flows
+    // into the figure from the same sources the plate reads.
+    expect(input).toMatchObject({ xType: "log", offsetScale: 1.2 });
+    // The plate's padded q-domain (array), not a hardcoded null.
+    expect(Array.isArray(input.qDomain)).toBe(true);
+    // Label register: the rows carry the plate's (label_override ?? "exp N").
+    const rows = input.rows as Array<{ label: string }>;
+    const labels = rows.map((r) => r.label);
+    expect(labels).toContain("ratio 1");
+    expect(labels).toContain("ratio 2");
 
-    // Flip the plate to linear q and export again — the spec follows.
+    // Flip the plate to linear q and export again — the figure follows.
     fireEvent.click(screen.getByRole("button", { name: /linear q/i }));
     fireEvent.click(screen.getByTestId("export-menu-trigger"));
     fireEvent.click(screen.getByRole("menuitem", { name: /download as svg/i }));
