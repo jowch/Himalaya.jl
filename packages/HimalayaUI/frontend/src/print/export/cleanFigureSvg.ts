@@ -31,36 +31,50 @@ const ARIAL = "Arial, Helvetica, sans-serif";
 const INK = "#111111";
 const INK_MUTED = "#666666";
 
-// Font sizes, in points.
-const FS_TITLE = 12;
-const FS_AXIS = 10.5;
-const FS_TICK = 8;
-const FS_KEY = 8; // sample name (bold) / phase name
-const FS_DETAIL = 7.5; // lattice + κ detail / note
-const FS_FOOT = 7;
-const FS_ORD = 6.5; // peak ordinal labels
+// Global scale. Everything below is authored in points (72 pt/in); S lifts the
+// whole figure — FONTS AND GEOMETRY together, so the proportions are preserved —
+// until the smallest font (the peak ordinal) lands at 8 pt. Bump S to grow the
+// figure uniformly.
+const S = 8 / 6.5; // ⇒ the 6.5-base ordinal renders at 8 pt (the minimum)
 
-// Vertical packing, in points. A generous amplitude with a step ~75% of it
-// keeps the plot PANEL portrait (taller than wide) with only a MILD overlap of
-// each trace's tall low-q head into the trace above — enough to use the space,
-// not so much that peak labels collide with the trace below.
-const AMP = 82; // amplitude of the tallest band (peak-to-floor of one trace)
-const STEP_BASE = 62; // baseline-to-baseline step (< AMP ⇒ ~25% overlap)
-const STACK_GAP = 6; // lift row 0 off the x-axis
-const TOP_HEAD = 6; // headroom above the tallest trace
+// Font sizes, in points (base × S). Minimum is FS_ORD = 8.
+const FS_TITLE = 12 * S;
+const FS_AXIS = 10.5 * S;
+const FS_TICK = 8 * S;
+const FS_KEY = 8 * S; // sample name (bold) / phase name
+const FS_DETAIL = 7.5 * S; // lattice + κ detail / note
+const FS_FOOT = 7 * S;
+const FS_ORD = 6.5 * S; // peak ordinal labels — the minimum, = 8 pt
 
-// Key block + footnote metrics, in points.
-const KEY_HEADER_H = 12;
-const KEY_SUBLINE_H = 10.5;
-const KEY_TOP_PAD = 13; // gap below the x-axis title to the first key row
-const KEY_ENTRY_GAP = 4;
-const KEY_SWATCH = 8;
-const KEY_INDENT = 11; // text inset from the swatch
-const FOOTNOTE_H = 14;
-const AXIS_FOOT_H = 26; // tick labels + x-axis title below the baseline
+// Stroke widths, in points (base × S).
+const SW_AXIS = 1 * S;
+const SW_TICK = 0.8 * S;
+const SW_TRACE = 1.2 * S;
 
-const MIN_WIDTH = 132; // ~1.85 in — figure never narrower than this
-const CHAR_W = 0.5; // Arial average advance, as a fraction of font size
+// Vertical packing, in points (base × S). A generous amplitude with a step
+// ~75% of it keeps the plot PANEL portrait with only a MILD overlap of each
+// trace's tall low-q head into the trace above.
+const AMP = 82 * S; // amplitude of the tallest band (peak-to-floor of one trace)
+const STEP_BASE = 62 * S; // baseline-to-baseline step (< AMP ⇒ ~25% overlap)
+const STACK_GAP = 6 * S; // lift row 0 off the x-axis
+const TOP_HEAD = 6 * S; // headroom above the tallest trace
+// Keep the plot PANEL at least this much taller than wide. When the natural
+// stack is shorter (few traces — especially ONE), the stack scales up to fill a
+// portrait panel rather than sitting short and landscape.
+const MIN_PANEL_ASPECT = 1.2;
+
+// Key block + footnote metrics, in points (base × S).
+const KEY_HEADER_H = 12 * S;
+const KEY_SUBLINE_H = 10.5 * S;
+const KEY_TOP_PAD = 13 * S; // gap below the x-axis title to the first key row
+const KEY_ENTRY_GAP = 4 * S;
+const KEY_SWATCH = 8 * S;
+const KEY_INDENT = 11 * S; // text inset from the swatch
+const FOOTNOTE_H = 14 * S;
+const AXIS_FOOT_H = 26 * S; // tick labels + x-axis title below the baseline
+
+const MIN_WIDTH = 132 * S; // figure never narrower than this
+const CHAR_W = 0.5; // Arial average advance, as a fraction of font size (ratio)
 
 /** One phase a trace carries, pre-formatted for the key block. `detail` is the
  *  ready-to-render lattice (+ κ) string, e.g. "a = 252 Å · κ = 1.70×10⁻⁴ Å⁻²";
@@ -177,9 +191,9 @@ export function buildCleanFigureSvg(input: CleanFigureInput): string {
   const m = {
     // Tight left margin: the y-axis has NO tick labels (intensity is a.u.), so
     // only the rotated y-title sits here — keep it close to the spine.
-    l: 20,
-    r: 8, // no right gutter — traces are named in the key block
-    t: 20,
+    l: 20 * S,
+    r: 8 * S, // no right gutter — traces are named in the key block
+    t: 20 * S,
     b: AXIS_FOOT_H + keyBlockH + FOOTNOTE_H,
   };
 
@@ -193,21 +207,27 @@ export function buildCleanFigureSvg(input: CleanFigureInput): string {
   const titleW = m.l + title.length * FS_TITLE * CHAR_W;
   const width = input.width ?? Math.ceil(Math.max(MIN_WIDTH, keyW + m.r, titleW + m.r));
 
+  const pw = width - m.l - m.r;
+
   // ── Vertical geometry: fixed amplitude + smaller step (overlap), NOT fit ────
   const maxBand = Math.max(1e-6, ...rows.map((r) => Math.max(0, r.bandHeight)));
   const ampOf = (r: WaterfallRow): number =>
     rows.length === 0 ? AMP : (Math.max(0, r.bandHeight) / maxBand) * AMP;
-  const step = clamp(STEP_BASE * Math.max(0.1, offsetScale), 18, AMP * 1.6);
-  // Trace i (0 = bottom): its band rises `STACK_GAP + i*step` above the axis,
-  // up to its amplitude. The plot height is the tallest trace's reach.
-  const ph =
-    Math.max(
-      AMP,
-      ...rows.map((r, i) => STACK_GAP + i * step + ampOf(r)),
-    ) + TOP_HEAD;
+  const step = clamp(STEP_BASE * Math.max(0.1, offsetScale), 18 * S, AMP * 1.6);
+  // Trace i (0 = bottom): its band rises `STACK_GAP + i*step` above the axis, up
+  // to its amplitude. `naturalExtent` is the tallest trace's reach. Then enforce
+  // a minimum panel aspect: when the natural stack is shorter than a portrait
+  // panel (few traces — especially ONE), scale the stack up by `fill` to fill
+  // the taller panel (amp + step scale together, so the overlap ratio holds).
+  const naturalExtent = Math.max(
+    AMP,
+    ...rows.map((r, i) => STACK_GAP + i * step + ampOf(r)),
+  );
+  const targetExtent = Math.max(naturalExtent, pw * MIN_PANEL_ASPECT - TOP_HEAD);
+  const fill = naturalExtent > 0 ? targetExtent / naturalExtent : 1;
+  const ph = targetExtent + TOP_HEAD;
 
   const height = input.height ?? m.t + ph + m.b;
-  const pw = width - m.l - m.r;
   const baseY = m.t + ph;
 
   const qDomain = input.qDomain ?? waterfallQDomain(rows);
@@ -216,8 +236,8 @@ export function buildCleanFigureSvg(input: CleanFigureInput): string {
   const ticks = axisTicks(x);
 
   const bands = rows.map((row, idx) => {
-    const bandBottom = baseY - STACK_GAP - idx * step;
-    return { row, idx, bandTop: bandBottom - ampOf(row), bandBottom };
+    const bandBottom = baseY - (STACK_GAP + idx * step) * fill;
+    return { row, idx, bandTop: bandBottom - ampOf(row) * fill, bandBottom };
   });
 
   const parts: string[] = [];
@@ -229,15 +249,15 @@ export function buildCleanFigureSvg(input: CleanFigureInput): string {
 
   // Title (top-left, like a figure caption header).
   parts.push(
-    `<text x="${m.l}" y="15" font-size="${FS_TITLE}" font-weight="700" fill="${INK}">${esc(title)}</text>`,
+    `<text x="${m.l}" y="${(15 * S).toFixed(1)}" font-size="${FS_TITLE}" font-weight="700" fill="${INK}">${esc(title)}</text>`,
   );
 
   // L-shaped black axes.
   parts.push(
-    `<line x1="${m.l}" y1="${baseY}" x2="${m.l + pw}" y2="${baseY}" stroke="${INK}" stroke-width="1"/>`,
+    `<line x1="${m.l}" y1="${baseY}" x2="${m.l + pw}" y2="${baseY}" stroke="${INK}" stroke-width="${SW_AXIS}"/>`,
   );
   parts.push(
-    `<line x1="${m.l}" y1="${m.t}" x2="${m.l}" y2="${baseY}" stroke="${INK}" stroke-width="1"/>`,
+    `<line x1="${m.l}" y1="${m.t}" x2="${m.l}" y2="${baseY}" stroke="${INK}" stroke-width="${SW_AXIS}"/>`,
   );
 
   // X ticks + labels (labels only on non-minor ticks).
@@ -245,22 +265,23 @@ export function buildCleanFigureSvg(input: CleanFigureInput): string {
     if (!inDomain(t.value)) continue;
     const px = x.to(t.value);
     parts.push(
-      `<line x1="${px.toFixed(1)}" y1="${baseY}" x2="${px.toFixed(1)}" y2="${baseY + 3.5}" stroke="${INK}" stroke-width="0.8"/>`,
+      `<line x1="${px.toFixed(1)}" y1="${baseY}" x2="${px.toFixed(1)}" y2="${(baseY + 3.5 * S).toFixed(1)}" stroke="${INK}" stroke-width="${SW_TICK}"/>`,
     );
     if (t.kind !== "minor") {
       parts.push(
-        `<text x="${px.toFixed(1)}" y="${baseY + 13}" text-anchor="middle" font-size="${FS_TICK}" fill="${INK}">${t.value.toFixed(2)}</text>`,
+        `<text x="${px.toFixed(1)}" y="${(baseY + 13 * S).toFixed(1)}" text-anchor="middle" font-size="${FS_TICK}" fill="${INK}">${t.value.toFixed(2)}</text>`,
       );
     }
   }
 
   // Axis titles.
   parts.push(
-    `<text x="${m.l + pw / 2}" y="${baseY + 25}" text-anchor="middle" font-size="${FS_AXIS}" font-weight="700" fill="${INK}">q (Å⁻¹)</text>`,
+    `<text x="${m.l + pw / 2}" y="${(baseY + 25 * S).toFixed(1)}" text-anchor="middle" font-size="${FS_AXIS}" font-weight="700" fill="${INK}">q (Å⁻¹)</text>`,
   );
   const yMid = m.t + ph / 2;
+  const yTitleX = 9 * S;
   parts.push(
-    `<text x="9" y="${yMid}" text-anchor="middle" font-size="${FS_AXIS}" font-weight="700" fill="${INK}" transform="rotate(-90 9 ${yMid})">Intensity (a.u.) + offset</text>`,
+    `<text x="${yTitleX.toFixed(1)}" y="${yMid}" text-anchor="middle" font-size="${FS_AXIS}" font-weight="700" fill="${INK}" transform="rotate(-90 ${yTitleX.toFixed(1)} ${yMid})">Intensity (a.u.) + offset</text>`,
   );
 
   // Traces (log-intensity per band) + peak glyphs.
@@ -296,7 +317,7 @@ export function buildCleanFigureSvg(input: CleanFigureInput): string {
         started = true;
       }
       if (d) {
-        parts.push(`<path d="${d.trim()}" fill="none" stroke="${color}" stroke-width="1.2" data-phase="${row.phase ?? "none"}"/>`);
+        parts.push(`<path d="${d.trim()}" fill="none" stroke="${color}" stroke-width="${SW_TRACE}" data-phase="${row.phase ?? "none"}"/>`);
       }
     }
 
@@ -307,14 +328,15 @@ export function buildCleanFigureSvg(input: CleanFigureInput): string {
       sorted.forEach((a, i) => {
         const px = x.to(a.q);
         const cy = yOf(a.intensity ?? 0);
-        const tip = cy - 2.5;
-        const top = tip - 3.5;
+        const tip = cy - 2.5 * S;
+        const top = tip - 3.5 * S;
+        const hw = 2.2 * S; // glyph half-width
         parts.push(
-          `<path d="M${(px - 2.2).toFixed(1)} ${top.toFixed(1)} L${(px + 2.2).toFixed(1)} ${top.toFixed(1)} L${px.toFixed(1)} ${tip.toFixed(1)} Z" fill="${color}"/>`,
+          `<path d="M${(px - hw).toFixed(1)} ${top.toFixed(1)} L${(px + hw).toFixed(1)} ${top.toFixed(1)} L${px.toFixed(1)} ${tip.toFixed(1)} Z" fill="${color}"/>`,
         );
         if (showPeakLabels) {
           parts.push(
-            `<text x="${px.toFixed(1)}" y="${(top - 1.5).toFixed(1)}" text-anchor="middle" font-size="${FS_ORD}" fill="${color}">${i + 1}</text>`,
+            `<text x="${px.toFixed(1)}" y="${(top - 1.5 * S).toFixed(1)}" text-anchor="middle" font-size="${FS_ORD}" fill="${color}">${i + 1}</text>`,
           );
         }
       });
@@ -329,7 +351,7 @@ export function buildCleanFigureSvg(input: CleanFigureInput): string {
         const isHeader = li === 0;
         if (ln.swatch) {
           parts.push(
-            `<rect x="${m.l}" y="${(ky - KEY_SWATCH + 0.5).toFixed(1)}" width="${KEY_SWATCH}" height="${KEY_SWATCH}" rx="1" fill="${g.color}"/>`,
+            `<rect x="${m.l}" y="${(ky - KEY_SWATCH + 0.5 * S).toFixed(1)}" width="${KEY_SWATCH.toFixed(1)}" height="${KEY_SWATCH.toFixed(1)}" rx="${(1 * S).toFixed(1)}" fill="${g.color}"/>`,
           );
         }
         const tx = m.l + KEY_INDENT;
@@ -352,7 +374,7 @@ export function buildCleanFigureSvg(input: CleanFigureInput): string {
 
   // Footnote, at the very bottom.
   parts.push(
-    `<text x="${(width / 2).toFixed(1)}" y="${(height - 5).toFixed(1)}" text-anchor="middle" font-size="${FS_FOOT}" fill="${INK_MUTED}">${esc(footer)}</text>`,
+    `<text x="${(width / 2).toFixed(1)}" y="${(height - 5 * S).toFixed(1)}" text-anchor="middle" font-size="${FS_FOOT}" fill="${INK_MUTED}">${esc(footer)}</text>`,
   );
 
   parts.push("</svg>");
