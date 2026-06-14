@@ -187,16 +187,26 @@ describe("TracePlate", () => {
 
   const HINT_RX = /Click the trace to add a peak/;
 
-  it("hides the add-at-q field when '+ Peak' is not armed (only the tooltip carries guidance)", () => {
-    render(
+  it("renders no inline edit text (guidance is in the tooltip) — even armed", () => {
+    const { rerender } = render(
       <TracePlate
         {...base}
         onToggleAddPeak={() => {}}
         interaction={{ onXDomain: () => {}, onAddPeak: () => {}, onClickPeak: () => {} }}
       />,
     );
+    // The retired add-at-q field never renders; no standing hint text either.
     expect(screen.queryByTestId("add-peak-at-q")).toBeNull();
-    // No standing hint text in the layout — it lives in the (closed) tooltip.
+    expect(screen.queryByText(HINT_RX)).toBeNull();
+    rerender(
+      <TracePlate
+        {...base}
+        addPeakArmed
+        onToggleAddPeak={() => {}}
+        interaction={{ onXDomain: () => {}, onAddPeak: () => {}, onClickPeak: () => {} }}
+      />,
+    );
+    expect(screen.queryByTestId("add-peak-at-q")).toBeNull(); // gone even armed
     expect(screen.queryByText(HINT_RX)).toBeNull();
   });
 
@@ -212,8 +222,6 @@ describe("TracePlate", () => {
     expect(openPeakTip().textContent).toBe(
       "Click the trace to add a peak. Click a peak to remove it; auto peaks toggle off instead. Esc exits.",
     );
-    // The add-at-q field IS still inline while armed (keyboard parity).
-    expect(screen.getByTestId("add-peak-at-q")).toBeInTheDocument();
   });
 
   it("unarmed peak marks are read-only: no role, no tabindex", () => {
@@ -263,73 +271,9 @@ describe("TracePlate", () => {
     expect(onClickPeak).toHaveBeenLastCalledWith(0);
   });
 
-  it("armed add-at-q: typing a q inside the trace domain and submitting fires onAddPeak(q)", () => {
-    const onAddPeak = vi.fn();
-    render(
-      <TracePlate
-        {...base}
-        addPeakArmed
-        interaction={{ onXDomain: () => {}, onAddPeak }}
-      />,
-    );
-    const input = screen.getByLabelText("q value for new peak");
-    fireEvent.change(input, { target: { value: "0.07" } });
-    const add = screen.getByRole("button", { name: "Add peak at q" });
-    expect(add).toBeEnabled();
-    fireEvent.click(add);
-    expect(onAddPeak).toHaveBeenCalledTimes(1);
-    expect(onAddPeak).toHaveBeenCalledWith(0.07);
-  });
-
-  it("armed add-at-q: a q outside the trace domain disables Add and never fires", () => {
-    // model trace q spans [0.02, 0.2]
-    const onAddPeak = vi.fn();
-    render(
-      <TracePlate
-        {...base}
-        addPeakArmed
-        interaction={{ onXDomain: () => {}, onAddPeak }}
-      />,
-    );
-    const input = screen.getByLabelText("q value for new peak");
-    const add = screen.getByRole("button", { name: "Add peak at q" });
-    // Empty → disabled.
-    expect(add).toBeDisabled();
-    fireEvent.change(input, { target: { value: "0.5" } });
-    expect(add).toBeDisabled();
-    fireEvent.click(add);
-    expect(onAddPeak).not.toHaveBeenCalled();
-    fireEvent.change(input, { target: { value: "0.001" } });
-    expect(add).toBeDisabled();
-  });
-
-  it("armed add-at-q while ZOOMED validates against the visible window, not the full extent (FO-ZOOMEDIT)", () => {
-    // Trace q spans [0.02, 0.2]; zoom the visible window to [0.04, 0.06]. A q of
-    // 0.1 is in the data but OFF-SCREEN — adding it would seed a peak invisible
-    // until zoom-out. The field must only accept q within what is currently
-    // shown.
-    const onAddPeak = vi.fn();
-    render(
-      <TracePlate
-        {...base}
-        addPeakArmed
-        xDomain={[0.04, 0.06]}
-        interaction={{ onXDomain: () => {}, onAddPeak }}
-      />,
-    );
-    const input = screen.getByLabelText("q value for new peak");
-    const add = screen.getByRole("button", { name: "Add peak at q" });
-    // In the data extent but outside the visible window → rejected.
-    fireEvent.change(input, { target: { value: "0.1" } });
-    expect(add).toBeDisabled();
-    fireEvent.click(add);
-    expect(onAddPeak).not.toHaveBeenCalled();
-    // Inside the visible window → accepted.
-    fireEvent.change(input, { target: { value: "0.05" } });
-    expect(add).toBeEnabled();
-    fireEvent.click(add);
-    expect(onAddPeak).toHaveBeenCalledWith(0.05);
-  });
+  // The armed add-at-q field was removed (it shifted the layout on arm and was
+  // a crutch); the only add path is clicking the trace. Its keyboard/validation
+  // tests went with it.
 
   it("onClickPeak only: tooltip drops the add verb, and no add-at-q field", () => {
     // The tooltip promises only the wired verbs: with no onAddPeak, "Click the
@@ -349,7 +293,7 @@ describe("TracePlate", () => {
     expect(screen.queryByTestId("add-peak-at-q")).toBeNull();
   });
 
-  it("onAddPeak only: tooltip drops the remove verb; add-at-q field present", () => {
+  it("onAddPeak only: tooltip drops the remove verb", () => {
     // Worse than false: without onClickPeak wired, TracePlot's click handler
     // falls through to onAddPeak on a peak hit, so "Click a peak to remove it"
     // would actually duplicate-add. The tooltip must not promise it.
@@ -364,21 +308,6 @@ describe("TracePlate", () => {
     const tip = openPeakTip().textContent ?? "";
     expect(tip).toContain("Click the trace to add a peak");
     expect(tip).not.toMatch(/remove|toggle off/);
-    expect(screen.getByTestId("add-peak-at-q")).toBeInTheDocument();
-  });
-
-  it("clears a typed-but-unsubmitted q when the plate disarms", () => {
-    const interaction = { onXDomain: () => {}, onAddPeak: () => {} };
-    const { rerender } = render(
-      <TracePlate {...base} addPeakArmed interaction={interaction} />,
-    );
-    const input = screen.getByLabelText("q value for new peak");
-    fireEvent.change(input, { target: { value: "0.07" } });
-    expect(input).toHaveValue(0.07);
-    // Disarm, then re-arm: the stale draft must not reappear.
-    rerender(<TracePlate {...base} interaction={interaction} />);
-    rerender(<TracePlate {...base} addPeakArmed interaction={interaction} />);
-    expect(screen.getByLabelText("q value for new peak")).toHaveValue(null);
   });
 
   // ── F7: Escape disarms the armed + Peak mode ─────────────────────────────────
@@ -428,27 +357,6 @@ describe("TracePlate", () => {
     expect(document.activeElement).toBe(mark);
     fireEvent.keyDown(document.body, { key: "Escape" });
     expect(document.activeElement).toBe(addPeakBtn);
-  });
-
-  it("Escape-disarm re-anchors focus from the add-at-q field to '+ Peak' (WCAG 2.4.3)", () => {
-    // The add-at-q field is armed-only and unmounts on disarm, so an Escape exit
-    // while it holds focus would also drop to <body>. (No onClickPeak here, so
-    // no SVG role=button marks exist to trip the accessible-name engine.)
-    render(
-      <TracePlate
-        {...base}
-        addPeakArmed
-        onToggleAddPeak={() => {}}
-        interaction={{ onXDomain: () => {}, onAddPeak: () => {} }}
-      />,
-    );
-    const input = screen.getByLabelText("q value for new peak");
-    input.focus();
-    expect(document.activeElement).toBe(input);
-    fireEvent.keyDown(document.body, { key: "Escape" });
-    expect(document.activeElement).toBe(
-      screen.getByRole("button", { name: "+ Peak" }),
-    );
   });
 
   it("Escape-disarm leaves focus alone when no peak mark held it (no yank)", () => {
@@ -522,21 +430,6 @@ describe("TracePlate", () => {
       document.removeEventListener("keydown", consume);
     }
     expect(onToggleAddPeak).not.toHaveBeenCalled();
-  });
-
-  it("Escape inside the add-at-q input disarms (the input has no local Escape behavior)", () => {
-    const onToggleAddPeak = vi.fn();
-    render(
-      <TracePlate
-        {...base}
-        addPeakArmed
-        onToggleAddPeak={onToggleAddPeak}
-        interaction={{ onXDomain: () => {}, onAddPeak: () => {} }}
-      />,
-    );
-    const input = screen.getByLabelText("q value for new peak");
-    fireEvent.keyDown(input, { key: "Escape" });
-    expect(onToggleAddPeak).toHaveBeenCalledTimes(1);
   });
 
   it("the armed tooltip names the Esc exit when the toggle is wired", () => {

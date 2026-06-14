@@ -59,6 +59,10 @@ export interface TracePlotProps {
   /** Multiply the y-domain top by (1 + yHeadroom) so peaks keep headroom below
    *  the ceiling — used by the stacked waterfall. Default 0 (no change). */
   yHeadroom?: number;
+  /** Paint the trace LINE in the neutral (gray) colour regardless of phase.
+   *  The peak markers/labels keep their phase colour — only the curve degrades
+   *  to neutral. Keeps an arbitrary coexistence-phase hue off the trace. */
+  neutralLine?: boolean;
   /** Emitted when the USER hovers a peak (internal hover only — frame hit-test
    *  or glyph focus). The cross-panel q-link source. */
   onHoverQ?: (q: number | undefined) => void;
@@ -113,6 +117,7 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
     show,
     highlightPeakIds,
     yHeadroom = 0,
+    neutralLine = false,
     onHoverQ,
     hoveredQ,
     focusRequest,
@@ -338,7 +343,7 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
                 trace={trace.trace}
                 projection={projection}
                 band={layers.band}
-                color={trace.phase ? phaseColor(trace.phase) : UNINDEXED_COLOR}
+                color={neutralLine || !trace.phase ? UNINDEXED_COLOR : phaseColor(trace.phase)}
               />
               {layers.peaks ? (() => {
               const peaksWithHover = effectiveHoverId == null

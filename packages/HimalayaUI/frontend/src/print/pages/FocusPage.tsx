@@ -56,7 +56,7 @@ import { useShortcuts } from "../shell/useShortcuts";
 import { deriveActiveIndices } from "../../lib/assignment";
 import { sanitizeDashes } from "../../lib/copy";
 import { basisFor } from "../../lib/customIndex";
-import { seriesRatio } from "../../lib/seriesRatio";
+import { seriesRatio, ratioTerm } from "../../lib/seriesRatio";
 import { announce } from "../../lib/announce";
 import { showToast } from "../../lib/toast";
 import type { Trace, IndexEntry } from "../../api";
@@ -255,11 +255,21 @@ export function FocusPage(): JSX.Element {
     const base = toTraceModel(traceQ.data ?? EMPTY_TRACE, peaks, phase);
     if (!previewIx || !previewClaim) return base;
     const pc = phaseColor(previewIx.phase);
+    // Label each claimed peak with its ratio term (√2, √3, 2 …) so the hover
+    // draws the eye to WHICH peaks the candidate is built on — the recolour
+    // alone is too subtle on small markers.
+    const labelByPeak = new Map<number, string>();
+    for (const pr of previewIx.peaks) {
+      const t = ratioTerm(previewIx.phase, pr.ratio_position);
+      if (t) labelByPeak.set(pr.peak_id, t);
+    }
     return {
       ...base,
-      peaks: base.peaks.map((p) =>
-        previewClaim.has(p.id) ? { ...p, color: pc } : p,
-      ),
+      peaks: base.peaks.map((p) => {
+        if (!previewClaim.has(p.id)) return p;
+        const label = labelByPeak.get(p.id);
+        return { ...p, color: pc, ...(label ? { label } : {}) };
+      }),
     };
   }, [traceQ.data, peaks, phase, previewIx, previewClaim]);
 
@@ -674,6 +684,14 @@ export function FocusPage(): JSX.Element {
               trace={traceModel}
               scale={scale}
               onScaleChange={setScale}
+              // The Focus curve stays neutral gray (an assignment hue on the
+              // trace is arbitrary under coexistence); only the peak markers and
+              // their hover labels carry phase colour. Headroom lifts the
+              // ceiling so the tallest peak's marker clears the curve. Ratio
+              // labels show only while previewing a candidate.
+              neutralLine
+              yHeadroom={0.4}
+              showPeakLabels={previewClaim !== undefined}
               addPeakArmed={addArmed}
               onToggleAddPeak={() => setAddArmed((v) => !v)}
               onAutoFit={() => setXDomain(null)}

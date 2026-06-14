@@ -314,12 +314,17 @@ describe("FocusPage", () => {
     // candidate-hover preview (now keyed on the candidate's CLAIM, so it works
     // even with an empty durable assignment post auto-group removal).
     const { container } = renderAt(42);
+    // No ratio labels at rest (the labels layer is hover-only).
+    expect(container.querySelector('[data-role="plot-labels"] [data-role="peak-label"]')).toBeNull();
     const lam = screen.getByRole("button", { name: /Lamellar/ });
     fireEvent.mouseEnter(lam.parentElement!); // the onMouseEnter preview wrapper
     const g1 = container.querySelector('[data-role="plot-peaks"] g[data-peak-id="1"]');
     const g2 = container.querySelector('[data-role="plot-peaks"] g[data-peak-id="2"]');
     expect(g1?.getAttribute("data-dimmed")).toBe("true"); // not claimed → dim
     expect(g2?.getAttribute("data-dimmed")).toBeNull(); // claimed → stays lit
+    // The claimed peak now carries its ratio label (Lamellar pos 1 → "1").
+    const labels = [...container.querySelectorAll('[data-role="plot-labels"] [data-role="peak-label"]')];
+    expect(labels.map((l) => l.textContent)).toContain("1");
   });
 
   it("does not render the legacy '+ Add speculative' affordance (custom-index is the hypothesis tool)", () => {
@@ -467,24 +472,6 @@ describe("FocusPage", () => {
       fireEvent.click(screen.getByText("+ Peak"));
       const svg = container.querySelector('svg[data-testid="trace-plate-plot"]')!;
       fireEvent.click(svg, { clientX: 300, clientY: 150 });
-      expect(announce.mock.calls[0]?.[0]).toBe("Peak added");
-    } finally {
-      setAnnounceImpl(null);
-    }
-  });
-
-  it("arming '+ Peak' then adding via the q field fires useAddPeak().mutate(q) and announces", () => {
-    const announce = vi.fn();
-    setAnnounceImpl(announce);
-    try {
-      renderAt(42);
-      fireEvent.click(screen.getByText("+ Peak"));
-      // The keyboard parity for click-empty-space-adds: type a q, press Add.
-      const input = screen.getByLabelText("q value for new peak");
-      fireEvent.change(input, { target: { value: "0.15" } });
-      fireEvent.click(screen.getByRole("button", { name: "Add peak at q" }));
-      expect(addPeakMutate).toHaveBeenCalledTimes(1);
-      expect(addPeakMutate).toHaveBeenCalledWith(0.15);
       expect(announce.mock.calls[0]?.[0]).toBe("Peak added");
     } finally {
       setAnnounceImpl(null);

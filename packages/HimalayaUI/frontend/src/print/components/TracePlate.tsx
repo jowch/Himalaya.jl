@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { Card, Button, Input, SegmentedControl, Tooltip } from "../ui";
+import { useCallback, useEffect, useRef, type ReactNode } from "react";
+import { Card, Button, SegmentedControl, Tooltip } from "../ui";
 import { PlateHeader } from "./PlateHeader";
 import { ToolBar } from "./ToolBar";
 import { TracePlot, type TraceModel, type TracePlotInteraction } from "../plot/TracePlot";
@@ -50,6 +50,16 @@ export interface TracePlateProps {
   focusRequest?: PeakFocusRequest;
   /** Plot height in px. Default 360. */
   plotHeight?: number;
+  /** Forwarded y-headroom: expands the y-domain top so the tallest peak's
+   *  marker clears the ceiling instead of clamping onto the trace. */
+  yHeadroom?: number;
+  /** Render the trace LINE in the neutral (gray) colour regardless of phase;
+   *  the peak markers keep their phase colour. Keeps an arbitrary
+   *  coexistence-phase hue off the curve. */
+  neutralLine?: boolean;
+  /** Show the peak-label layer (the per-peak ratio labels, e.g. on candidate
+   *  hover). Labels are carried on each PlotPeak's `label`. */
+  showPeakLabels?: boolean;
   /** Extra toolbar actions rendered after the built-in controls (e.g. figure export). */
   actions?: ReactNode;
   /** PLACEMENT-ONLY. */
@@ -73,6 +83,9 @@ export function TracePlate({
   highlightPeakIds,
   focusRequest,
   plotHeight = 360,
+  yHeadroom,
+  neutralLine = false,
+  showPeakLabels = false,
   actions,
   className,
 }: TracePlateProps): JSX.Element {
@@ -98,10 +111,6 @@ export function TracePlate({
           : {}),
       };
 
-  // ── armed add-at-q (keyboard parity for click-empty-space-adds) ────────────
-  // Validate against the q extent the user can act on: a peak outside the
-  // measured trace would be unanchorable, and one outside the visible zoom
-  // window would be invisible (FO-ZOOMEDIT) — Add stays disabled in both cases.
   // Focus-re-anchor fallback target: when a destructive peak edit leaves no
   // surviving mark to take focus, the plot layer calls onFocusFallback and we
   // park focus on the "+ Peak" button (the keyboard user's last stable handle).
@@ -109,37 +118,6 @@ export function TracePlate({
   const onFocusFallback = useCallback(() => {
     addPeakButtonRef.current?.focus();
   }, []);
-
-  const [qText, setQText] = useState("");
-  let qMin = Infinity;
-  let qMax = -Infinity;
-  for (const q of trace.trace.q) {
-    if (!Number.isFinite(q)) continue;
-    if (q < qMin) qMin = q;
-    if (q > qMax) qMax = q;
-  }
-  // FO-ZOOMEDIT: validate the add against the VISIBLE window, not the full
-  // trace extent. When zoomed (`xDomain` is a controlled sub-range), a q that
-  // is in the data but outside the window would add a peak you cannot see until
-  // you zoom out. Clamp the window into the data extent so the bound is never
-  // wider than the measured trace; with no zoom (`xDomain` null/omitted) it is
-  // exactly [qMin, qMax] — unchanged.
-  const addLo = xDomain ? Math.max(qMin, Math.min(xDomain[0], xDomain[1])) : qMin;
-  const addHi = xDomain ? Math.min(qMax, Math.max(xDomain[0], xDomain[1])) : qMax;
-  const qParsed = Number(qText);
-  const qValid =
-    qText.trim() !== "" &&
-    Number.isFinite(qParsed) &&
-    qParsed >= addLo &&
-    qParsed <= addHi;
-  const onAddPeakAtQ =
-    addPeakArmed && interaction ? interaction.onAddPeak : undefined;
-
-  // A typed-but-unsubmitted q must not survive a disarm/re-arm round trip —
-  // it would reappear as stale state. Clear it whenever the plate disarms.
-  useEffect(() => {
-    if (!addPeakArmed) setQText("");
-  }, [addPeakArmed]);
 
   // ── F7: Escape disarms the armed mode (the keyboard exit) ──────────────────
   // Precedence: an OPEN MODAL DIALOG wins — ModalShell owns Escape-to-close
@@ -151,8 +129,6 @@ export function TracePlate({
   // time this fires — DOM presence alone misses the closing press (jsdom's
   // synchronous dispatch hides this). The DOM check stays for open dialogs
   // that keep Escape inert (closeOnEsc=false, parent-owned Escape). The
-  // add-at-q Input has no local Escape behavior, so Escape there falls
-  // through to the disarm (whose effect above also clears the draft q).
   // suppressGlobalKeys is deliberately NOT used here: it suppresses ALL
   // typing contexts, which would make Escape inert exactly where the armed
   // mode parks the focus.
@@ -163,15 +139,12 @@ export function TracePlate({
       if (e.defaultPrevented) return;
       if (document.querySelector('[role="dialog"][aria-modal="true"]') !== null) return;
       // WCAG 2.4.3 (FO-FOCUSRETURN): disarming strips every peak mark's
-      // tabIndex/role and unmounts the add-at-q field, so an Escape exit while
-      // one of those armed-only controls holds focus would drop focus to <body>.
-      // Re-anchor to the "+ Peak" button — the keyboard user's stable handle —
-      // in that case. Focus already on the toolbar button, or off the plate, is
-      // left alone (no yank).
+      // tabIndex/role, so an Escape exit while a peak mark holds focus would
+      // drop focus to <body>. Re-anchor to the "+ Peak" button — the keyboard
+      // user's stable handle — in that case. Focus already on the toolbar
+      // button, or off the plate, is left alone (no yank).
       const ae = document.activeElement;
-      const onVanishingControl =
-        ae?.closest('[data-role="plot-peaks"]') != null ||
-        ae?.getAttribute("aria-label") === "q value for new peak";
+      const onVanishingControl = ae?.closest('[data-role="plot-peaks"]') != null;
       onToggleAddPeak();
       if (onVanishingControl) addPeakButtonRef.current?.focus();
     };
@@ -256,48 +229,6 @@ export function TracePlate({
           {actions}
         </ToolBar>
       </PlateHeader>
-      {/* Armed-only add-at-q field: the keyboard parity for click-empty-space
-          adds (a11y). The verb GUIDANCE now lives in the "+ Peak" tooltip, so
-          only this compact control remains inline — and only while armed. */}
-      {addPeakArmed && onAddPeakAtQ && (
-        <div className="mt-2 flex justify-end">
-          <form
-            data-testid="add-peak-at-q"
-            className="flex shrink-0 items-center gap-1.5"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (!qValid) return;
-              onAddPeakAtQ(qParsed);
-              setQText("");
-            }}
-          >
-            <Input
-              value={qText}
-              onValueChange={setQText}
-              type="number"
-              inputMode="decimal"
-              step="any"
-              min={addLo}
-              max={addHi}
-              mono
-              inputSize="sm"
-              invalid={qText.trim() !== "" && !qValid}
-              aria-label="q value for new peak"
-              placeholder="q"
-              testId="add-peak-q-input"
-              className="w-24"
-            />
-            <Button
-              type="submit"
-              variant="outline"
-              disabled={!qValid}
-              aria-label="Add peak at q"
-            >
-              Add
-            </Button>
-          </form>
-        </div>
-      )}
       <TracePlot
         trace={trace}
         height={plotHeight}
@@ -309,6 +240,9 @@ export function TracePlate({
         {...(onHoverQ !== undefined ? { onHoverQ } : {})}
         {...(highlightPeakIds !== undefined ? { highlightPeakIds } : {})}
         {...(focusRequest !== undefined ? { focusRequest, onFocusFallback } : {})}
+        {...(yHeadroom !== undefined ? { yHeadroom } : {})}
+        {...(neutralLine ? { neutralLine: true } : {})}
+        {...(showPeakLabels ? { show: { labels: true } } : {})}
         figureLabel="Integration trace: intensity vs q"
         paperColor="var(--color-plate)"
         data-testid="trace-plate-plot"
