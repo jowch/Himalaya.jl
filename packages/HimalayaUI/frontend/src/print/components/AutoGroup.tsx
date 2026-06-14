@@ -88,7 +88,13 @@ export function AutoGroup({
                   inert
                     ? "text-sm font-semibold text-ink-soft cursor-not-allowed"
                     : action.muted
-                      ? "text-sm font-semibold text-ink-soft hover:underline"
+                      ? // BU-EDIT-VERB: a muted-but-LIVE action (the "Edit" door)
+                        // must not read as the inert/disabled state, which is also
+                        // ink-soft with no rest affordance. A standing dotted
+                        // underline marks it interactive-but-secondary; it firms to
+                        // a solid underline on hover. (Accent actions don't need it
+                        // — their colour already signals "interactive".)
+                        "text-sm font-semibold text-ink-soft underline decoration-dotted underline-offset-2 hover:decoration-solid"
                       : "text-sm font-semibold text-print-accent hover:underline"
                 }
               >
