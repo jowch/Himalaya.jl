@@ -24,6 +24,7 @@ interface Props {
 export function CombChart({ assigned, hovered, leftover, hoveredQ, onHoverQ, xDomain: xDomainProp, maxWidth, className }: Props): JSX.Element {
   const rows = assembleRows(assigned, hovered, leftover);
   const xDomain = xDomainProp ?? combQDomain(rows);
+  const focusQRange = reflectionQExtent(rows);
   const scaffoldRows: ScaffoldRow[] = rows.map(rowToGutter);
   return (
     <div className={className}>
@@ -31,12 +32,36 @@ export function CombChart({ assigned, hovered, leftover, hoveredQ, onHoverQ, xDo
         rows={scaffoldRows}
         xDomain={xDomain}
         ariaLabel="reflection comb"
+        {...(focusQRange ? { focusQRange } : {})}
         {...(maxWidth !== undefined ? { maxWidth } : {})}
       >
         {(ctx) => rows.map((row, i) => renderRow(row, i, ctx, hoveredQ, onHoverQ))}
       </CombScaffold>
     </div>
   );
+}
+
+/** The q-extent of the OBSERVED reflections (solid teeth + leftover rings), so
+ *  the scaffold can default-scroll the pane to where the peaks actually are
+ *  instead of the low-q beam dropoff. Falls back to ALL teeth when a row has only
+ *  predicted-absent carets; `undefined` when there is nothing to scroll to. */
+export function reflectionQExtent(rows: CombRow[]): [number, number] | undefined {
+  const observed: number[] = [];
+  const all: number[] = [];
+  for (const row of rows) {
+    if (row.kind === "leftover") {
+      observed.push(...row.qs);
+      all.push(...row.qs);
+    } else {
+      for (const t of row.series.teeth) {
+        all.push(t.q);
+        if (t.observed) observed.push(t.q);
+      }
+    }
+  }
+  const qs = observed.length > 0 ? observed : all;
+  if (qs.length === 0) return undefined;
+  return [Math.min(...qs), Math.max(...qs)];
 }
 
 function rowToGutter(row: CombRow): ScaffoldRow {

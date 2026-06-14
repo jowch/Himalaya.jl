@@ -1,7 +1,7 @@
 import { render, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
-import { CombChart } from "../../src/print/comb/CombChart";
-import type { CombSeries } from "../../src/print/comb/combModel";
+import { CombChart, reflectionQExtent } from "../../src/print/comb/CombChart";
+import type { CombSeries, CombRow } from "../../src/print/comb/combModel";
 
 const PN3M: CombSeries = {
   phase: "Pn3m",
@@ -69,5 +69,41 @@ describe("CombChart", () => {
   it("enforces the min plot width at a narrow maxWidth (pane scrolls)", () => {
     const { container } = render(<CombChart assigned={[PN3M]} leftover={[]} maxWidth={320} />);
     expect(Number(container.querySelector("svg")!.getAttribute("data-plot-w"))).toBeGreaterThanOrEqual(320);
+  });
+
+  it("default-scrolls the q-pane to the reflections, not the left/beam edge (FO-COMBSCROLL-PEAKS)", () => {
+    // A wide trace-linked domain → the comb overflows and would otherwise open at
+    // scrollLeft 0 (the low-q beam dropoff). It must scroll right to the peaks.
+    const { container } = render(
+      <CombChart assigned={[PN3M]} leftover={[0.2]} xDomain={[0.005, 0.3]} />,
+    );
+    const pane = container.querySelector('[role="group"]') as HTMLDivElement;
+    expect(pane).toBeTruthy();
+    expect(pane.scrollLeft).toBeGreaterThan(0);
+  });
+});
+
+describe("reflectionQExtent", () => {
+  it("spans observed teeth + leftover rings, excluding predicted-absent carets", () => {
+    const rows: CombRow[] = [
+      { kind: "assigned", series: PN3M }, // observed 0.0712, 0.0872; absent 0.1126
+      { kind: "leftover", qs: [0.2] },
+    ];
+    expect(reflectionQExtent(rows)).toEqual([0.0712, 0.2]);
+  });
+
+  it("falls back to all teeth when a row has only predicted-absent carets", () => {
+    const absentOnly: CombSeries = {
+      ...PN3M,
+      teeth: [
+        { q: 0.11, label: "a", observed: false },
+        { q: 0.15, label: "b", observed: false },
+      ],
+    };
+    expect(reflectionQExtent([{ kind: "assigned", series: absentOnly }])).toEqual([0.11, 0.15]);
+  });
+
+  it("returns undefined when there is nothing to scroll to", () => {
+    expect(reflectionQExtent([])).toBeUndefined();
   });
 });

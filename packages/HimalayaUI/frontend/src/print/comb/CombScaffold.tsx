@@ -1,6 +1,10 @@
-import { type ReactNode } from "react";
+import { type ReactNode, useLayoutEffect, useRef } from "react";
 import { makeAxis, axisTicks, type Axis1D } from "../plot/projection";
 import { formatAxis } from "../../lib/plot/formatAxis";
+
+/** Low-q lead-in (px) kept visible before the first reflection when the comb is
+ *  scrolled to the peaks, so the first tooth isn't flush against the gutter. */
+const FOCUS_LEAD_IN = 40;
 
 export const GUTTER_W = 96;
 export const ROW_H = 48;
@@ -34,12 +38,17 @@ export interface ScaffoldCtx {
 interface Props {
   rows: ScaffoldRow[];
   xDomain: [number, number];
+  /** q-extent of the reflections. When the pane overflows, it default-scrolls to
+   *  show these (centred if they fit, else the first reflection near the left)
+   *  instead of the low-q beam dropoff. Runs on mount + when this/the domain/width
+   *  change — never on hover or after a manual scroll (none change these deps). */
+  focusQRange?: [number, number];
   maxWidth?: number;
   ariaLabel: string;
   children: (ctx: ScaffoldCtx) => ReactNode;
 }
 
-export function CombScaffold({ rows, xDomain, maxWidth, ariaLabel, children }: Props): JSX.Element {
+export function CombScaffold({ rows, xDomain, focusQRange, maxWidth, ariaLabel, children }: Props): JSX.Element {
   const maxW = maxWidth ?? DEFAULT_MAX_W;
   const [lo, hi] = xDomain;
   // Always log. Floor the plot width so √N teeth never crowd below legibility;
@@ -59,6 +68,33 @@ export function CombScaffold({ rows, xDomain, maxWidth, ariaLabel, children }: P
     rowCount: rows.length, baselineY, rowsBottom,
   };
   const ticks = axisTicks(x, 6);
+
+  // FO-COMBSCROLL-PEAKS: default-scroll the q-pane to the reflections so the panel
+  // opens on the peaks, not the low-q beam dropoff (which reads as empty until the
+  // user discovers they can scroll). Deps are PRIMITIVES (the focus q's, the plot
+  // width, the domain) so this fires on mount and when the content/geometry change
+  // — never on hover (no dep changes) or after a manual scroll (scrolling fires no
+  // render). x.to is pure given lo/hi/plotW, so omitting `x` from deps is safe.
+  const paneRef = useRef<HTMLDivElement>(null);
+  const focusLo = focusQRange?.[0];
+  const focusHi = focusQRange?.[1];
+  useLayoutEffect(() => {
+    const pane = paneRef.current;
+    if (!pane || focusLo === undefined || focusHi === undefined) return;
+    const xFirst = x.to(focusLo);
+    const xLast = x.to(focusHi);
+    if (!Number.isFinite(xFirst) || !Number.isFinite(xLast)) return;
+    const paneW = pane.clientWidth;
+    const span = xLast - xFirst;
+    // Centre the reflections when they fit; otherwise put the first one near the
+    // left so the comb reads from its start.
+    const target =
+      span <= paneW - 2 * FOCUS_LEAD_IN
+        ? (xFirst + xLast) / 2 - paneW / 2
+        : xFirst - FOCUS_LEAD_IN;
+    pane.scrollLeft = Math.max(0, target);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusLo, focusHi, plotW, lo, hi]);
 
   return (
     <div className="flex items-stretch" style={{ maxWidth: maxW }} data-testid="comb-scaffold">
@@ -90,6 +126,7 @@ export function CombScaffold({ rows, xDomain, maxWidth, ariaLabel, children }: P
           pane it scrolls horizontally; label it and make it keyboard-focusable
           so the affordance is not a cryptic unlabelled scrollbar. */}
       <div
+        ref={paneRef}
         className="overflow-x-auto"
         style={{ maxWidth: maxW - GUTTER_W }}
         tabIndex={0}
