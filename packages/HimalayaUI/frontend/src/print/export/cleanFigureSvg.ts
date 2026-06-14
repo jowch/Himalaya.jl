@@ -44,7 +44,11 @@ export interface CleanFigureInput {
   height?: number;
 }
 
-const PER_ROW_H = 96; // default vertical slot per trace (drives default height)
+// Default vertical slot per trace. With the 480px default width and the fixed
+// margins below, three traces land at ~480×888 — a narrow ~1.85:1 PORTRAIT (a
+// landscape waterfall squished the traces flat). The figure grows taller with
+// each trace (more rows ⇒ more portrait), which suits a stacked waterfall.
+const PER_ROW_H = 248;
 const BOTTOM_GAP = 14;
 
 function phaseHex(phase: string | null): string {
@@ -66,7 +70,7 @@ export function buildCleanFigureSvg(input: CleanFigureInput): string {
     showPeakTicks = true,
     showPeakLabels = false,
   } = input;
-  const width = input.width ?? 760;
+  const width = input.width ?? 480; // narrow portrait (see PER_ROW_H)
   // Bottom margin stacks four rows below the axis: tick labels, x-axis title,
   // the phase legend, and the footnote — each on its own line so they never
   // collide (the legend used to overprint the x-axis title).
