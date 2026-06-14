@@ -11,6 +11,7 @@ import { AssignmentRail } from "../components/AssignmentRail";
 import { AssignmentCart } from "../components/AssignmentCart";
 import { PhaseBlock } from "../components/PhaseBlock";
 import { CandidateRow, CandidateList } from "../components/CandidateRow";
+import { FormFactorRow } from "../components/FormFactorRow";
 import { CustomIndexModal } from "../components/CustomIndexModal";
 import { HintText, EmptyState, Button } from "../ui";
 import { ExportButton } from "../components/ExportButton";
@@ -44,6 +45,7 @@ import {
   useSetPeakExcluded,
   useAddAssignmentPhase,
   useRemoveAssignmentPhase,
+  useSetAssignmentState,
   useCommitCustomIndex,
 } from "../../queries";
 import { useAppState } from "../../state";
@@ -177,6 +179,7 @@ export function FocusPage(): JSX.Element {
   const setPeakExcluded = useSetPeakExcluded(activeExposureId ?? 0);
   const addAssignmentPhase = useAddAssignmentPhase(activeExposureId ?? 0);
   const removeAssignmentPhase = useRemoveAssignmentPhase(activeExposureId ?? 0);
+  const setAssignmentState = useSetAssignmentState(activeExposureId ?? 0);
   const commitCustomIndex = useCommitCustomIndex(activeExposureId ?? 0);
 
   // ── page-owned state ─────────────────────────────────────────────────────────
@@ -565,21 +568,43 @@ export function FocusPage(): JSX.Element {
     );
   }
 
+  // The form-factor declaration ("no Bragg peaks to index") is the honest
+  // alternative to indexing — it only makes sense while nothing is in the call,
+  // so it is hidden the moment a phase is confirmed (it would otherwise clear
+  // that phase on the next click). It rides the foot of the candidate list so
+  // declaring it is the same one-check gesture as picking a phase, but a
+  // hairline sets it apart because it is not a phase. Checking a phase candidate
+  // flips the assignment back to `indexed` (the add mutator), so the two are
+  // mutually exclusive without any extra wiring here.
+  const isFormFactor = assignment?.state === "form_factor";
   const candidates = (
-    <CandidateList>
-      {candidatePool.length === 0 ? (
-        <HintText>
-          {peaksEmpty
-            ? "Candidates appear once peaks are marked."
-            : allExcluded
-              ? "Candidates appear once a peak is restored."
-              : "No candidate indexings."}
-        </HintText>
-      ) : (
-        candidatePool.map((ix) => candidateRow(ix))
+    <>
+      <CandidateList>
+        {candidatePool.length === 0 ? (
+          <HintText>
+            {peaksEmpty
+              ? "Candidates appear once peaks are marked."
+              : allExcluded
+                ? "Candidates appear once a peak is restored."
+                : "No candidate indexings."}
+          </HintText>
+        ) : (
+          candidatePool.map((ix) => candidateRow(ix))
+        )}
+        {speculatives.map((ix) => candidateRow(ix))}
+      </CandidateList>
+      {activeIndices.length === 0 && (
+        <div className="mt-3 border-t border-hair pt-3">
+          <FormFactorRow
+            selected={isFormFactor}
+            onToggle={() => {
+              setAssignmentState.mutate(isFormFactor ? "null" : "form_factor");
+              announce(isFormFactor ? "Form factor cleared" : "Marked as form factor");
+            }}
+          />
+        </div>
       )}
-      {speculatives.map((ix) => candidateRow(ix))}
-    </CandidateList>
+    </>
   );
 
   // ── modals (mounted regardless of layout branch) ─────────────────────────────

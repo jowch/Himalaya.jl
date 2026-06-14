@@ -314,6 +314,46 @@ describe("FocusPage", () => {
     expect(screen.queryByText("+ Add speculative")).toBeNull();
   });
 
+  describe("form-factor declaration", () => {
+    it("shows the form-factor row when the call is empty; marking it sets state + announces", () => {
+      state.assignment = { exposure_id: 7, state: "indexed", members: [] };
+      const announce = vi.fn();
+      setAnnounceImpl(announce);
+      try {
+        renderAt(42);
+        const row = screen.getByTestId("form-factor-row");
+        expect(row).toHaveAttribute("aria-pressed", "false");
+        fireEvent.click(row);
+        expect(setAssignStateMutate).toHaveBeenCalledWith("form_factor");
+        expect(announce.mock.calls.at(-1)?.[0]).toBe("Marked as form factor");
+      } finally {
+        setAnnounceImpl(null);
+      }
+    });
+
+    it("reflects an existing form-factor declaration and clears it to unindexed (null)", () => {
+      state.assignment = { exposure_id: 7, state: "form_factor", members: [] };
+      const announce = vi.fn();
+      setAnnounceImpl(announce);
+      try {
+        renderAt(42);
+        const row = screen.getByTestId("form-factor-row");
+        expect(row).toHaveAttribute("aria-pressed", "true");
+        fireEvent.click(row);
+        expect(setAssignStateMutate).toHaveBeenCalledWith("null");
+        expect(announce.mock.calls.at(-1)?.[0]).toBe("Form factor cleared");
+      } finally {
+        setAnnounceImpl(null);
+      }
+    });
+
+    it("hides the form-factor row once a phase is in the call (mutually exclusive with indexing)", () => {
+      state.assignment = { exposure_id: 7, state: "indexed", members: [1] };
+      renderAt(42);
+      expect(screen.queryByTestId("form-factor-row")).toBeNull();
+    });
+  });
+
   it("arming '+ Peak' then clicking the trace fires useAddPeak().mutate(q)", () => {
     const { container } = renderAt(42);
     const addPeakBtn = screen.getByText("+ Peak");
