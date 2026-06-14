@@ -61,12 +61,20 @@ correctness fix**, landed as a **merge-commit**:
   (`./print/shell` → `./shell`, `./lib/queue` → `../lib/queue`, etc.). Drop the
   "Foundation placeholder" docstring.
 - `src/print/main.tsx` — carry the boneyard `import './bones/registry'` +
-  `configureBoneyard` defaults from `src/main.tsx` (or drop deliberately — bones
-  drives skeleton loading). QueryClient + ErrorBoundary wrappers already match.
+  `configureBoneyard({...})` block from `src/main.tsx:4,25-30` (QueryClient +
+  ErrorBoundary + `#print-root` already match). **⚠ verified build-gate coupling:**
+  that block authors raw `oklch()` literals, and `check-design.mjs:42` allowlists
+  bare `"main.tsx"` while `isExcluded()` does NOT exempt `print/main.tsx` — so the
+  carried block fails `lint:design` (which gates `npm run build`) unless the
+  allowlist entry is renamed (see EDIT → `check-design.mjs`).
 
 ### EDIT
 - `packages/HimalayaUI/src/server.jl:70` — `index.html` → `print.html` (**P0 prod
   fix**; the SPA fallback throws today on the absent file).
+- `packages/HimalayaUI/frontend/scripts/check-design.mjs:42` — rename the
+  `COLOR_AUTHORING_ALLOWLIST` entry `"main.tsx"` → `"print/main.tsx"` so the carried
+  `configureBoneyard` oklch literals don't fail `lint:design`. **Required** for the
+  build gate to pass after the boneyard carry (survey-found, verified).
 - `test/smoke.test.tsx` — `import { App } from '../src/App'` →
   `import { PrintApp as App } from '../src/print/App'`. Becomes the real coverage
   of the production root.
@@ -121,11 +129,37 @@ correctness fix**, landed as a **merge-commit**:
    app; proceed.
 2. ~~**Boneyard in `print/main.tsx`:** carry or drop?~~ **RESOLVED:** carry the
    registry import + `configureBoneyard` defaults (skeleton loading is live).
-3. **Backend dead routes** (retired `/groups`, `@`-mention handlers) — **UNDER
-   SURVEY** (`greenfield-cutover-survey`, run `w70n20q1o`); evidence-based study
-   pending.
-4. **`routes_export.jl` `active_group_kind` consumption** — **UNDER SURVEY** (same
-   workflow). If unconsumed → future-deprecation candidate, not this cutover.
+3. ~~**Backend dead routes**~~ **RESOLVED (survey `w70n20q1o`):** NO backend route
+   is removable — all 12 `register_*_routes!()` are wired; the retired `/groups`
+   and the entire `/api/comparisons/*` surface are **genuinely absent** (no handler,
+   no `routes_comparisons.jl`), not orphaned. Only doc residue (stale comment at
+   `routes_analysis.jl:206`). The removable residue is **frontend-side** (`api.ts`
+   `/api/comparisons/*` client functions, zero `print/` consumers) — a connected
+   cluster (api + queries hooks + queue mutators + `mutatorRegistry` arms),
+   **out of cutover scope → follow-up cleanup.**
+4. ~~**`active_group_kind` consumption**~~ **RESOLVED:** NOT consumed by any
+   frontend code (`routes_export.jl:28,50,91` has zero frontend callers; the export
+   route itself is unused by the UI). KEEP the field/route — future-deprecation
+   candidate, not this cutover.
+
+## Survey findings (run `w70n20q1o`, 2026-06-14) — `promotion_ready: true`
+
+Full evidence-cited study: `docs/superpowers/notes/2026-06-14-greenfield-cutover-survey.md`.
+The promotion is mechanically specified end-to-end (13 imports + 4 effects + the
+6-element JSX fragment; exact import-path deltas; `#print-root` already aligned;
+do NOT re-add a conflict modal/bridge or a `useAppState` import to App.tsx — that
+claim broke under scrutiny). New items folded in above: the `check-design.mjs`
+allowlist rename (verified build-gate fix). Standing follow-ups / pre-flight:
+
+- **Follow-up (post-cutover):** excise the frontend `/api/comparisons/*` orphan
+  cluster (api + hooks + mutators + registry arms). Not this PR.
+- **Pre-flight, human/ops (not codebase-answerable):** does any external CI/deploy
+  script expect `dist/index.html` by name? Does any external tool parse the
+  `/api/experiments/{id}/export` JSON (the `active_group_kind` field)? Confirm
+  before merge.
+- **Gate-decided:** the Vite dev-root after `index.html` deletion (thin-`index.html`
+  re-export fallback only if `npm run e2e` fails on `/`); `print/App.tsx` styles.css
+  import redundancy (the `main.tsx`-level import already covers it).
 
 ## Folded-in fix (from the session code review, `fix-then-ship`)
 
@@ -145,7 +179,9 @@ correctness fix**, landed as a **merge-commit**:
 
 0. Pre-flight: working tree clean except intended cutover changes; no `git add -A`.
 1. **Promote** `src/App.tsx` body → `PrintApp`; fix import paths; keep `PrintApp` name.
-2. **Reconcile** `src/print/main.tsx` (boneyard registry/defaults).
+2. **Reconcile** `src/print/main.tsx` (carry boneyard registry import +
+   `configureBoneyard` block) **and rename `check-design.mjs:42` allowlist
+   `"main.tsx"` → `"print/main.tsx"`** in the same commit (else `lint:design` fails).
 3. **Tests:** repoint `smoke.test.tsx` + `print-shell.test.tsx`; `npm test` green
    (esp. `test/queue/**`).
 4. **Fold in** the `addArmed`/`xDomain` reset fix + its regression test.
