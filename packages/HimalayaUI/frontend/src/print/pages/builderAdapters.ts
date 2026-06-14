@@ -1,7 +1,7 @@
 // builderAdapters.ts — pure view-model adapters for the Series Builder page.
 // No React, no side effects. Maps API shapes → composite prop shapes.
 
-import type { SeriesMember, SeriesSample, Series, CorpusSample } from "../../api";
+import type { SeriesMember, SeriesSample, CorpusSample } from "../../api";
 import type { MemberDatum } from "../components/MemberList";
 import { dominantPhase } from "../waterfall/waterfallModel";
 
@@ -106,28 +106,6 @@ export function addableSamples(
 ): CorpusSample[] {
   const alreadyIn = new Set(draftRecipe.map((r) => r.sample_id));
   return corpusSamples.filter((s) => !alreadyIn.has(s.id));
-}
-
-// ── groupingSummary ───────────────────────────────────────────────────────────
-
-/**
- * Neutral grouping summary for the builder's compose card:
- *   "N samples, ordered by <variable>."  (ordering clause omitted when null).
- *
- * BU-AUTOGROUP-STALE: this is a USER-OWNED, already-saved series, NOT a machine
- * suggestion — the copy states the series' shape without the retired "Himalaya
- * read … as one series" auto-grouping claim (which told the user the series was
- * machine-grouped and still needed confirming). In draft mode the caller passes
- * the live recipe length as `count` so the summary tracks edits instead of the
- * stale committed member count.
- */
-export function groupingSummary(series: Series, count?: number): string {
-  const n = count ?? series.samples.length;
-  const base = `${n} sample${n === 1 ? "" : "s"}`;
-  if (series.ordering_variable) {
-    return `${base}, ordered by ${series.ordering_variable}.`;
-  }
-  return `${base}.`;
 }
 
 // ── legendPhasesOf ────────────────────────────────────────────────────────────

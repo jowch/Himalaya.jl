@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 import { Button, IconButton, Kicker, Slider, Field, NoticePill } from "../ui";
-import { AutoGroup } from "./AutoGroup";
 import { RailSection } from "./RailSection";
 
 function cx(...parts: Array<string | false | null | undefined>): string {
@@ -8,7 +7,6 @@ function cx(...parts: Array<string | false | null | undefined>): string {
 }
 
 export interface BuilderRailProps {
-  grouping: ReactNode;
   onConfirm?: () => void;
   /**
    * The Save→Commit chain is in flight: the "Save changes" action flips to the
@@ -91,7 +89,6 @@ export interface BuilderRailProps {
  * absent, no foot row renders at all.
  */
 export function BuilderRail({
-  grouping,
   onConfirm,
   confirmBusy,
   confirmLabel,
@@ -137,33 +134,15 @@ export function BuilderRail({
         )}
       </div>
 
-      {/* BU-AUTOGROUP-STALE: this series is user-owned and already saved, so the
-          card carries NO "Auto-grouped" title. READ mode keeps the controls-don't-
-          lie pair — a DISABLED "Save changes" (the affordance exists; nothing to
-          save until you edit) + the muted "Edit" door. In DRAFT mode the card
-          drops its link actions: the commit/discard decision renders as a proper
-          primary/secondary BUTTON row below (BU-DRAFT-ACTIONS) instead of a link
-          in a card plus a footnote-styled Cancel. */}
-      <AutoGroup
-        variant="compose"
-        actions={
-          onAdjust
-            ? [
-                // READ mode: Save is inert (no onClick) until a draft exists; Edit
-                // is the live entry into draft state.
-                { label: "Save changes" },
-                { label: "Edit", muted: true, onClick: onAdjust },
-              ]
-            : []
-        }
-      >
-        {grouping}
-      </AutoGroup>
-
-      {/* BU-DRAFT-ACTIONS: the live-draft commit/discard pair as real buttons.
-          "Save changes" is the primary (accent); it states its busy reason while
-          the Save→Commit chain runs and disables when the chain isn't ready. */}
-      {reorderable && (
+      {/* BU-EDIT-BUTTON: the edit + commit verbs are plain buttons, not a
+          summary card with buried link actions (the old "N samples / Save changes"
+          card was redundant with the Ordering-variable field + the Traces list,
+          and a disabled Save in read mode read as broken). The two modes are
+          mutually exclusive: read mode shows the single "Edit" door; a live draft
+          (reorderable) shows the Save changes (accent primary) + Cancel pair.
+          "Save changes" states its busy reason while the Save→Commit chain runs
+          and disables when the chain isn't ready. */}
+      {reorderable ? (
         <div className="flex gap-2">
           <Button
             variant="accent"
@@ -181,7 +160,16 @@ export function BuilderRail({
             </Button>
           )}
         </div>
-      )}
+      ) : onAdjust ? (
+        <Button
+          variant="outline"
+          className="w-full"
+          data-testid="builder-edit"
+          onClick={onAdjust}
+        >
+          Edit
+        </Button>
+      ) : null}
 
       <RailSection label="Ordering variable" {...(orderNote != null ? { note: orderNote } : {})}>
         <Field

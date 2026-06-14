@@ -3,7 +3,6 @@ import { describe, it, expect, vi } from "vitest";
 import { BuilderRail } from "../../src/print/components/BuilderRail";
 
 const base = {
-  grouping: <><strong>6 samples</strong>, ordered by LL37 : lipid ratio.</>,
   orderedBy: "LL37 : lipid ratio",
   offset: 1.2,
   onOffsetChange: () => {},
@@ -11,18 +10,21 @@ const base = {
 };
 
 describe("<BuilderRail>", () => {
-  it("renders the compose head, autogroup, field, display controls, and traces slot", () => {
+  it("renders the compose head, field, display controls, and traces slot", () => {
     render(<BuilderRail {...base} />);
     expect(screen.getByTestId("builder-rail")).toBeInTheDocument();
     expect(screen.getByText("Compose")).toBeInTheDocument();
-    // BU-AUTOGROUP-STALE: the card carries NO "Auto-grouped" title (this is a
-    // user-owned saved series, not a machine suggestion) — just the grouping
-    // summary body inside the autogroup card.
-    expect(screen.queryByText("Auto-grouped")).toBeNull();
-    expect(screen.getByTestId("auto-group")).toHaveTextContent(/6 samples, ordered by/);
     expect(screen.getByTestId("field")).toHaveTextContent("LL37 : lipid ratio");
     expect(screen.getByTestId("slider")).toBeInTheDocument();
     expect(screen.getByTestId("traces-slot")).toBeInTheDocument();
+  });
+  it("ditches the grouping-summary card (BU-EDIT-BUTTON): no auto-group, no 'N samples' summary", () => {
+    // The "N samples, ordered by …" compose card was redundant with the
+    // Ordering-variable field + the Traces list and confused the edit flow.
+    // It is gone; the rail leads with the action buttons instead.
+    render(<BuilderRail {...base} onAdjust={() => {}} />);
+    expect(screen.queryByTestId("auto-group")).toBeNull();
+    expect(screen.queryByText(/samples, ordered by/i)).toBeNull();
   });
   it("does NOT render 'Copy as PNG' (figure export lives on the plate head)", () => {
     // Same single-contextual-control reasoning as the q-scale toggle: the

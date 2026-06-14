@@ -1,10 +1,9 @@
 import { describe, it, expect } from "vitest";
-import type { SeriesMember, SeriesSample, Series, CorpusSample } from "../../src/api";
+import type { SeriesMember, SeriesSample, CorpusSample } from "../../src/api";
 import {
   membersToMemberData,
   recipeRowView,
   addableSamples,
-  groupingSummary,
   legendPhasesOf,
 } from "../../src/print/pages/builderAdapters";
 
@@ -85,30 +84,6 @@ function corpusSample(id: number, name: string): CorpusSample {
     notes: null,
     tags: [],
     q_units: "Å⁻¹",
-  };
-}
-
-function baseSeries(overrides: Partial<Series> = {}): Series {
-  return {
-    id: 10,
-    title: "LL37 ratio series",
-    description: null,
-    content_hash: "abc",
-    created_by: null,
-    created_at: null,
-    updated_at: null,
-    forked_from_id: null,
-    forked_at_hash: null,
-    forked_from_title: null,
-    view_grouping_mode: null,
-    view_show_peak_ticks: null,
-    view_show_peak_labels: null,
-    ordering_variable: "LL37 : lipid ratio",
-    order_rule: "ascending",
-    state: "committed",
-    members: [],
-    samples: [],
-    ...overrides,
   };
 }
 
@@ -243,31 +218,6 @@ describe("addableSamples", () => {
     const corpus = [corpusSample(1, "A")];
     const draft: SeriesSample[] = [seriesSample(10, 1, 1)];
     expect(addableSamples(corpus, draft)).toHaveLength(0);
-  });
-});
-
-// ── groupingSummary ───────────────────────────────────────────────────────────
-
-describe("groupingSummary", () => {
-  it("includes sample count and ordering variable", () => {
-    const s = baseSeries({ samples: [seriesSample(1, 1, 1), seriesSample(2, 2, 2)], ordering_variable: "LL37 : lipid ratio" });
-    const text = groupingSummary(s);
-    expect(text).toContain("2");
-    expect(text).toContain("LL37 : lipid ratio");
-  });
-
-  it("uses member_count proxy (samples.length) for count", () => {
-    const s = baseSeries({ samples: [seriesSample(1, 1, 1), seriesSample(2, 2, 2), seriesSample(3, 3, 3)] });
-    const text = groupingSummary(s);
-    expect(text).toContain("3");
-  });
-
-  it("omits ordering variable phrase when ordering_variable is null", () => {
-    const s = baseSeries({ samples: [seriesSample(1, 1, 1)], ordering_variable: null });
-    const text = groupingSummary(s);
-    // Should still produce a string with the count
-    expect(typeof text).toBe("string");
-    expect(text).toContain("1");
   });
 });
 

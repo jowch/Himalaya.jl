@@ -201,23 +201,21 @@ beforeEach(() => {
 });
 
 describe("SeriesBuilderPage", () => {
-  it("renders the committed read-state: plate title + member rows, no draft, Confirm inert (no Cancel)", () => {
+  it("renders the committed read-state: plate title + member rows, no draft, Edit door (no Save/Cancel)", () => {
     renderPage();
     expect(screen.getByTestId("series-plate")).toBeInTheDocument();
     // Title surfaces in the editable plate-title field.
     expect((screen.getByLabelText(/series title/i) as HTMLInputElement).value).toBe("LL37 ratio series");
     // MemberList rows for the committed members.
     expect(screen.getAllByTestId("series-member-row")).toHaveLength(2);
-    // Read state: "Edit" is the live entry point; no Cancel (no draft).
+    // BU-EDIT-BUTTON: read state is a single "Edit" door — the commit verbs
+    // (Save changes / Cancel) belong to draft mode, so neither shows here. The
+    // old disabled-"Save changes" in read mode read as a broken control and is
+    // gone.
     expect(screen.getByRole("button", { name: /^edit$/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /save changes/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /^cancel$/i })).toBeNull();
     expect(useAppState.getState().seriesDraft).toBeNull();
-    // controls-don't-lie: the rail's baked "Save changes" is visibly DISABLED
-    // in read state (no live draft → no onConfirm), not a live accent button.
-    const confirm = screen.getByRole("button", { name: /save changes/i });
-    expect(confirm).toBeDisabled();
-    // And clicking it does not fire the save chain.
-    fireEvent.click(confirm);
     expect(state.save.mutate).not.toHaveBeenCalled();
   });
 
@@ -598,7 +596,7 @@ describe("SeriesBuilderPage", () => {
     );
   });
 
-  it("BU-PROGRESS: the busy register reverts to the resting label after commit success", () => {
+  it("BU-PROGRESS: the busy register clears after commit success (back to the Edit door)", () => {
     const { rerender } = renderPage();
     fireEvent.change(screen.getByLabelText(/series title/i), { target: { value: "Edited" } });
     fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
@@ -612,12 +610,13 @@ describe("SeriesBuilderPage", () => {
     expect(state.commit.mutate).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("button", { name: /confirming/i })).toBeInTheDocument();
 
-    // Commit success → draft discarded, the control reverts to the resting
-    // register with no aria-busy.
+    // Commit success → draft discarded, the page returns to read state: the
+    // single "Edit" door is back, and no busy-register label lingers (and there
+    // is no "Save changes" in read mode at all — BU-EDIT-BUTTON).
     state.commit = { ...state.commit, isSuccess: true };
     act(() => rerender());
-    const resting = screen.getByRole("button", { name: /save changes/i });
-    expect(resting).not.toHaveAttribute("aria-busy");
+    expect(screen.getByRole("button", { name: /^edit$/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /save changes/i })).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /saving order|confirming|publishing/i }),
     ).not.toBeInTheDocument();

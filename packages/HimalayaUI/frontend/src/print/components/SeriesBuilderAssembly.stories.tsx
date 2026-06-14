@@ -107,12 +107,6 @@ function SeriesBuilderView(): JSX.Element {
         {!collapsed && (
           <div className="w-[336px] shrink-0">
             <BuilderRail
-              grouping={
-                <>
-                  <strong>6 samples</strong>, ordered by{" "}
-                  <strong>LL37 : lipid ratio</strong>.
-                </>
-              }
               orderedBy={orderedBy}
               orderOptions={ORDER_OPTIONS}
               onOrderSelect={setOrderedBy}

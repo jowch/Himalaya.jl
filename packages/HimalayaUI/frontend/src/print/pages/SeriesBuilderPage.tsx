@@ -29,7 +29,6 @@ import { toWaterfallRows, waterfallQDomain } from "../waterfall/waterfallModel";
 import { memberRowLabel } from "../../lib/series/memberRead";
 import {
   membersToMemberData,
-  groupingSummary,
   legendPhasesOf,
   addableSamples,
   recipeRowView,
@@ -742,7 +741,6 @@ function BuilderBody({
         </div>
       </div>
       <BuilderRail
-        grouping={groupingSummary(series, liveDraft ? liveDraft.recipe.length : undefined)}
         {...(liveDraft && !confirmBusy && confirmReady ? { onConfirm } : {})}
         confirmBusy={confirmBusy}
         {...(confirmLabel !== undefined ? { confirmLabel } : {})}

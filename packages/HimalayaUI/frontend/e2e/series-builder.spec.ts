@@ -6,12 +6,12 @@ import { test, expect, type Page } from "@playwright/test";
 //
 // The greenfield page is a LAZY-DRAFT surface on a single always-"Compose"
 // screen:
-//   • Opening /series/:id renders the committed series READ-ONLY. The rail's
-//     "Save changes" button is present but DISABLED (no live draft → no
-//     onConfirm), and "Edit" is the entry point. (BU-AUTOGROUP-STALE renamed the
-//     verbs from the old "Confirm series" / "Adjust".)
-//   • The FIRST recipe edit (title edit OR add-sample) silently STARTS a draft
-//     → "Save changes" becomes ENABLED + a Cancel button appears.
+//   • Opening /series/:id renders the committed series READ-ONLY. The rail
+//     shows a single "Edit" door (BU-EDIT-BUTTON); the commit verbs are NOT in
+//     the read-state DOM. (The old disabled-"Save changes" in read mode + the
+//     "N samples" compose card were removed — they read as broken/redundant.)
+//   • The FIRST recipe edit (title edit OR add-sample, or pressing Edit) silently
+//     STARTS a draft → "Save changes" (ENABLED) + a Cancel button appear.
 //   • "Save changes" = a Save→Commit CHAIN: PATCH /api/series/:id (save,
 //     persists the RECIPE) THEN, on its success, POST /api/series/:id/commit
 //     with the plate RESOLVED FROM THE SAVED RECIPE (recipe samples → picker
@@ -118,7 +118,7 @@ async function seedState(page: Page): Promise<void> {
 }
 
 test.describe("series builder — greenfield DOM", () => {
-  test("opening /series/:id renders the committed series read-only; Confirm series is DISABLED", async ({ page }) => {
+  test("opening /series/:id renders the committed series read-only; only the Edit door shows", async ({ page }) => {
     await mockCore(page);
     await seedState(page);
     await page.goto("/series/5");
@@ -127,22 +127,24 @@ test.describe("series builder — greenfield DOM", () => {
     await expect(page.getByTestId("series-plate")).toBeVisible();
     // The committed title surfaces in the editable plate-title field.
     await expect(page.getByLabel(/series title/i)).toHaveValue("LL37 titration");
-    // Read state: "Edit" is the live entry point; no Cancel (no draft).
+    // BU-EDIT-BUTTON: read state is a single "Edit" door — the commit verbs
+    // (Save changes / Cancel) belong to draft mode, so neither shows here.
     await expect(page.getByRole("button", { name: /^edit$/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /save changes/i })).toHaveCount(0);
     await expect(page.getByRole("button", { name: /^cancel$/i })).toHaveCount(0);
-    // controls-don't-lie: "Confirm series" is present but DISABLED in read state.
-    await expect(page.getByRole("button", { name: /save changes/i })).toBeDisabled();
     // No separate Save button and no conflict modal in the read-state DOM.
     await expect(page.getByRole("button", { name: /^save$/i })).toHaveCount(0);
     await expect(page.getByTestId("conflict-modal")).toHaveCount(0);
   });
 
-  test("adding a sample STARTS a draft → Confirm series becomes ENABLED + Cancel appears", async ({ page }) => {
+  test("adding a sample STARTS a draft → Save changes appears ENABLED + Cancel appears", async ({ page }) => {
     await mockCore(page);
     await seedState(page);
     await page.goto("/series/5");
 
-    await expect(page.getByRole("button", { name: /save changes/i })).toBeDisabled();
+    // Read state: no Save changes, just the Edit door.
+    await expect(page.getByRole("button", { name: /save changes/i })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^edit$/i })).toBeVisible();
 
     // Add the only addable corpus sample (id 20 — sample 10 is already in the
     // recipe). The add affordance is a search-first picker: open it, then pick
@@ -209,8 +211,10 @@ test.describe("series builder — greenfield DOM", () => {
     // plate ([202]) and not the old committed plate ([101]).
     expect(commitBody!.members!.map((m) => m.exposure_id)).toEqual([101, 202]);
 
-    // After commit success the page returns to read state: Confirm DISABLED, no Cancel.
-    await expect(page.getByRole("button", { name: /save changes/i })).toBeDisabled();
+    // After commit success the page returns to read state: Save changes gone,
+    // the Edit door is back, no Cancel.
+    await expect(page.getByRole("button", { name: /save changes/i })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^edit$/i })).toBeVisible();
     await expect(page.getByRole("button", { name: /^cancel$/i })).toHaveCount(0);
   });
 
@@ -244,7 +248,8 @@ test.describe("series builder — greenfield DOM", () => {
     await page.getByRole("button", { name: /^cancel$/i }).click();
 
     // Back to read state, with no request fired.
-    await expect(page.getByRole("button", { name: /save changes/i })).toBeDisabled();
+    await expect(page.getByRole("button", { name: /save changes/i })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^edit$/i })).toBeVisible();
     await expect(page.getByRole("button", { name: /^cancel$/i })).toHaveCount(0);
     expect(patched).toBe(false);
     expect(committed).toBe(false);
