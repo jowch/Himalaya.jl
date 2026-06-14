@@ -153,14 +153,16 @@ function renderRow(
                 <circle data-role="tooth-ring" cx={px} cy={apexY} r={8} fill="none" stroke={color} strokeWidth={1.4} opacity={0.6} />
               ) : null}
               {shifted ? (
+                // A thin leader that stops a couple px SHORT of the tooth cap (no
+                // contact with the pin) and rises to just under the dodged label.
                 <line
                   data-role="tooth-leader"
                   x1={px}
-                  y1={apexY - 1}
+                  y1={apexY - 4.5}
                   x2={labelX}
-                  y2={apexY - 8}
+                  y2={apexY - 8.5}
                   stroke="var(--color-hair-strong)"
-                  strokeWidth={1}
+                  strokeWidth={0.75}
                 />
               ) : null}
               {/* paint-order halo (plate) lifts the ratio off the stems/leaders
