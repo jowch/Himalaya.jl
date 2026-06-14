@@ -519,8 +519,9 @@ export function SamplesPage(): JSX.Element {
             { keyLabel: "Enter", description: "open, sort a header, or enter a cell" },
             { keyLabel: "click", description: "select a frame" },
             { keyLabel: "⇧ click", description: "extend the range" },
-            { keyLabel: "X", description: "drop the selected frames" },
-            { keyLabel: "K", description: "keep the selected frames" },
+            // SA-KBDDUP: X/K (drop/keep) live in the contextual cull hint above
+            // the table (shown while nothing is selected) and on the CullBar once
+            // frames are selected; not repeated here to keep the legend shorter.
             { keyLabel: "double-click", description: "open the loupe" },
             { keyLabel: "⇧ Enter", description: "open the loupe at a frame" },
             { keyLabel: "Esc", description: "exit a cell or clear" },

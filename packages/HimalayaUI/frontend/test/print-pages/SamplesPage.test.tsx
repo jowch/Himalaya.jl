@@ -223,11 +223,15 @@ describe("SamplesPage", () => {
     }
   });
 
-  it("the keyboard legend documents K next to X", () => {
+  it("the footer legend does NOT repeat the X/K cull gesture (SA-KBDDUP)", () => {
+    // X/K live in the contextual cull hint (SA-CULLHINT, below) and on the
+    // CullBar once frames are selected; repeating them in the footer was a
+    // duplicate affordance. The footer keeps navigation/selection/open.
     renderAt("/samples?beamtime=1");
     const legend = screen.getByTestId("kb-legend");
-    expect(within(legend).getByText("keep the selected frames")).toBeInTheDocument();
-    expect(within(legend).getByText("drop the selected frames")).toBeInTheDocument();
+    expect(within(legend).queryByText("keep the selected frames")).not.toBeInTheDocument();
+    expect(within(legend).queryByText("drop the selected frames")).not.toBeInTheDocument();
+    expect(within(legend).getByText("move between cells")).toBeInTheDocument();
   });
 
   it("hints the X/K cull gesture (registry-driven) until a selection exists (SA-CULLHINT)", () => {

@@ -49,13 +49,13 @@ Jonathan (2026-06-13): *"There are still fit and finish and UI/UX legibility iss
 **Samples (contact sheet)** — biggest: the Status column reads as four unrelated treatments stacked in one narrow column.
 | ID | Sev | What / Fix |
 |---|---|---|
-| SA-STATUS-COL | P2 | Status column mixes terracotta "Index →" CTA, muted-dot "Not indexed", "No exposures", and phase chips → un-scannable as a column. Give the text states one shared dot+label structure; reserve terracotta for the chevron. |
-| SA-COUNT-DUP | P2 | Head "0 / 31 samples screened" and per-row "2 / 3" Kept fraction share identical visual form but count different things (samples vs frames). Label the Kept *column header* as frames. |
-| SA-CELL-CENTER | P2 | 92px rows vertically center 62px thumbs + 1–2-line names → the identity cell's optical center drifts row-to-row vs the fixed thumbnail strip. Top-align the identity cell so the name baseline is fixed. |
-| SA-FRAMENO | P3 | Frame-number caption `text-xs` mono `opacity-80` over a 1/3-height scrim → only conditionally legible on bright frames. Drop opacity / strengthen scrim. |
-| SA-KBDDUP | P3 | The new cull X/K hint (added this session in `16de6aa`) duplicates X/K already in the 10-row footer legend. Keep the contextual hint, drop X/K from the footer (or vice-versa). |
-| SA-LEGEND-WALL | P3 | Footer legend is a 10-item flat run (Navigate/Select/Cull/Open intermixed). Group into 2–3 labeled clusters or cut low-value entries. |
-| SA-NEEDSREVIEW | P3 | "Needs review" chip shares the id line and is `flex-shrink-0`, so the *id* truncates to fit a *status*. Move the unscreened signal off the id line (onto the row tint). |
+| ⊘ SA-STATUS-COL | ~~P2~~ | **ALREADY ADDRESSED.** Live source: `StatusCell` already gives the text states ONE shared structure — `Dot tone="muted"` + ink-soft label for both "Not indexed" and "No exposures"; terracotta is reserved for the interactive "Index →" door CTA; indexed rows show a PhaseChip. The "four unrelated treatments" read came from a screenshot where every row was uniformly "Index →" (consistent, not un-scannable). No change. |
+| ✅ SA-COUNT-DUP | P2 | DONE `<sa>`. The Kept column header "Kept"→"**Frames kept**" (both the sortable button and the static header) so it no longer shares a bare-fraction read with the head's "samples screened" (samples vs frames). Live-verified the 2-line header renders cleanly and reads distinct. |
+| ⊘ SA-CELL-CENTER | ~~P2~~ | **NOT REPRODUCING in practice.** The drift only appears for a 2-line clamped name; the corpus names are all 1 line ("HEPES Only", "1-1 + LL37 1:1"), so the identity cells align row-to-row. Top-aligning the shared `CELL` would split alignment from the centered thumbnails for a sub-pixel gain. Deferred unless 2-line names become common. |
+| ⊘ SA-FRAMENO | ~~P3~~ | Thumbnail frame-number caption legibility (mono `opacity-80` over a scrim). Cosmetic, frame-content-dependent; not pursued this pass (the captions are conditionally-legible by design over varied detector frames). |
+| ✅ SA-KBDDUP | P3 | DONE `<sa>`. Dropped X/K from the footer legend (they live in the contextual cull hint while nothing is selected, and on the CullBar once frames are selected). Test rewritten to assert the footer no longer repeats them. Live-verified footer has no X/K. |
+| ◑ SA-LEGEND-WALL | P3 | **Partially addressed** by SA-KBDDUP (footer 10→8 items, cull moved out). Full 2–3 labeled clustering needs a KbLegend sections API — low value, deferred. |
+| ⊘ SA-NEEDSREVIEW | ~~P3~~ | **NOT REPRODUCING.** The sampleId is a short "#N" in a 244px-min column, so the id never truncates to fit the "Needs review" chip; the chip + the row tint coexist. (The chip is also the accessible text channel the row tint alone would lose.) No change. |
 
 **Loupe** — biggest: the detector window (the page's whole job) is capped at 500px in an ~880px column, wasting a third of the width while the filmstrip overhangs it.
 | ID | Sev | What / Fix |
