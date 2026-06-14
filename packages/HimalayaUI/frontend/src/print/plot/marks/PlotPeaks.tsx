@@ -3,6 +3,10 @@ import { type Projection } from "../projection";
 import { PeakGlyph } from "../../ui/PeakGlyph";
 import { peakGlyph } from "../../ui/peakMark";
 
+/** Vertical clearance (px) between the trace and the peak marker's apex so the
+ *  glyph's outline floats just above the curve instead of overlapping it. */
+const MARKER_LIFT = 3;
+
 /** A one-shot request to move keyboard focus onto a specific peak mark. The
  *  `nonce` lets the consumer re-fire even when the same id repeats (e.g. two
  *  removes in a row that both land focus on the same surviving neighbour).
@@ -174,12 +178,13 @@ export function PlotPeaks({
             style={{ color: c }}
           >
             {p.hot ? (
-              // Drop a guide DOWN from the marker to the axis baseline (where
-              // the q-readout chip sits) — it no longer runs through the mark.
+              // Drop a guide DOWN from the (lifted) marker apex to the axis
+              // baseline (where the q-readout chip sits) — it no longer runs
+              // through the mark.
               <line
                 data-role="peak-qline"
                 x1={px}
-                y1={py}
+                y1={py - MARKER_LIFT}
                 x2={px}
                 y2={y.range[0]}
                 stroke="currentColor"
@@ -190,7 +195,9 @@ export function PlotPeaks({
             <PeakGlyph
               descriptor={descriptor}
               x={px}
-              y={py}
+              // Lift the apex a few px off the curve so the glyph outline doesn't
+              // overlap the trace line.
+              y={py - MARKER_LIFT}
               dataPeakId={p.id}
               {...(paperColor ? { haloStroke: paperColor } : {})}
             />
