@@ -733,36 +733,19 @@ describe("LoupePage · LO-NEXT sample navigation", () => {
     state.exposures = [exp({ id: 1, selected: true })];
   });
 
-  it("shows the position + enabled prev/next for a >1 sample walk handed over by the sheet", () => {
-    renderWithOrder(11, [10, 11, 12]);
-    expect(screen.getByTestId("loupe-sample-nav")).toBeInTheDocument();
-    expect(screen.getByTestId("loupe-sample-position")).toHaveTextContent("2 / 3");
-    expect(screen.getByTestId("loupe-prev-sample")).not.toBeDisabled();
-    expect(screen.getByTestId("loupe-next-sample")).not.toBeDisabled();
-  });
-
-  it("Next walks to the next sample in the handed-over order", () => {
-    renderWithOrder(11, [10, 11, 12]);
-    fireEvent.click(screen.getByTestId("loupe-next-sample"));
-    expect(screen.getByTestId("loc-probe")).toHaveAttribute("data-pathname", "/samples/loupe/12");
-  });
-
-  it("Prev walks to the previous sample in the handed-over order", () => {
-    renderWithOrder(11, [10, 11, 12]);
-    fireEvent.click(screen.getByTestId("loupe-prev-sample"));
+  // The VISUAL stepper now lives in the TopBar (CorpusTopbar's SampleStepper);
+  // see CorpusTopbar.test. The loupe page keeps the `[`/`]` keyboard nav, which
+  // shares resolveSampleOrder with the topbar so the two can't disagree.
+  it("'[' is a no-op on the first sample of the walk", () => {
+    renderWithOrder(10, [10, 11, 12]);
+    fireEvent.keyDown(window, { key: "[" });
     expect(screen.getByTestId("loc-probe")).toHaveAttribute("data-pathname", "/samples/loupe/10");
   });
 
-  it("disables Prev on the first sample", () => {
-    renderWithOrder(10, [10, 11, 12]);
-    expect(screen.getByTestId("loupe-prev-sample")).toBeDisabled();
-    expect(screen.getByTestId("loupe-next-sample")).not.toBeDisabled();
-  });
-
-  it("disables Next on the last sample", () => {
+  it("']' is a no-op on the last sample of the walk", () => {
     renderWithOrder(12, [10, 11, 12]);
-    expect(screen.getByTestId("loupe-next-sample")).toBeDisabled();
-    expect(screen.getByTestId("loupe-prev-sample")).not.toBeDisabled();
+    fireEvent.keyDown(window, { key: "]" });
+    expect(screen.getByTestId("loc-probe")).toHaveAttribute("data-pathname", "/samples/loupe/12");
   });
 
   it("']' steps to the next sample, '[' steps to the previous (arrows still flip frames)", () => {
@@ -777,15 +760,9 @@ describe("LoupePage · LO-NEXT sample navigation", () => {
     expect(screen.getByTestId("loc-probe")).toHaveAttribute("data-pathname", "/samples/loupe/10");
   });
 
-  it("renders no sample-nav when the walk holds a single sample", () => {
-    renderWithOrder(11, [11]);
-    expect(screen.queryByTestId("loupe-sample-nav")).not.toBeInTheDocument();
-  });
-
   it("falls back to the beamtime-scoped corpus order on a direct URL (no router state)", () => {
     renderAt(11);
-    expect(screen.getByTestId("loupe-sample-position")).toHaveTextContent("2 / 3");
-    fireEvent.click(screen.getByTestId("loupe-next-sample"));
+    fireEvent.keyDown(window, { key: "]" });
     expect(screen.getByTestId("loc-probe")).toHaveAttribute("data-pathname", "/samples/loupe/12");
   });
 

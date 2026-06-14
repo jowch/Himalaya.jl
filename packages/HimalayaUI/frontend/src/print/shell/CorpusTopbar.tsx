@@ -3,6 +3,8 @@ import { useCorpusSamples, useExperiments } from "../../queries";
 import { resolveRouteSampleStatus } from "../../hooks/useSyncActiveSampleFromRoute";
 import { useExperimentSiblings } from "../../hooks/useExperimentSiblings";
 import { sampleDisplayName } from "../../lib/sample/displayName";
+import { resolveSampleOrder, sampleNeighbors } from "../../lib/sample/sampleOrder";
+import { SampleStepper } from "./SampleStepper";
 import { SHORTCUTS } from "./shortcuts";
 import {
   resolveExperimentFilter,
@@ -10,8 +12,6 @@ import {
 } from "../../lib/experimentFilter";
 import { TopBar } from "../ui/TopBar";
 import { Wordmark } from "../ui/Wordmark";
-import { Kicker } from "../ui/Kicker";
-import { IconButton } from "../ui/IconButton";
 
 interface Stage {
   id: "samples" | "series";
@@ -48,7 +48,8 @@ const STAGES: readonly Stage[] = [
  */
 export function CorpusTopbar(): JSX.Element {
   const [searchParams, setSearchParams] = useSearchParams();
-  const { pathname } = useLocation();
+  const location = useLocation();
+  const { pathname } = location;
   const navigate = useNavigate();
   const experimentsQuery = useExperiments();
 
@@ -202,41 +203,59 @@ export function CorpusTopbar(): JSX.Element {
     </select>
   ) : null;
 
+  const prevKey = SHORTCUTS.prevSample.keys[0]!;
+  const nextKey = SHORTCUTS.nextSample.keys[0]!;
+
   // ── F-13: per-sample stepper — the focus surface's primary inter-sample nav,
   // shown in the TopBar rightSlot. URL-routed so the one-way route→store sync
-  // stays intact.
-  const stepper = showStepper ? (
-    <div
-      data-testid="sample-stepper"
-      className="flex items-center gap-2 text-ink"
-    >
-      <IconButton
-        label="Previous sample"
-        aria-keyshortcuts={SHORTCUTS.prevSample.keys[0]}
-        tone="ghost"
-        disabled={prevSample === undefined}
-        onClick={() => prevSample && navigate(`/sample/${prevSample.id}`)}
-        data-testid="sample-stepper-prev"
-      >{"‹"}</IconButton>
-      <span className="flex flex-col items-end leading-tight">
-        <span className="text-xs font-semibold text-ink">
-          {sampleDisplayName(activeSample!)}
-        </span>
-        {/* F6: "sample N of M" is small INFORMATIONAL text — under the
-            F-CONTRAST roles it rides ink-soft (AA-normal); faint is
-            decorative-only (3.16:1 on paper at 11.5px fails AA). */}
-        <Kicker as="span" tone="soft">sample {stepIdx + 1} of {siblings.length}</Kicker>
-      </span>
-      <IconButton
-        label="Next sample"
-        aria-keyshortcuts={SHORTCUTS.nextSample.keys[0]}
-        tone="ghost"
-        disabled={nextSample === undefined}
-        onClick={() => nextSample && navigate(`/sample/${nextSample.id}`)}
-        data-testid="sample-stepper-next"
-      >{"›"}</IconButton>
-    </div>
+  // stays intact. Steps the active sample's experiment-siblings.
+  const focusStepper = showStepper ? (
+    <SampleStepper
+      name={sampleDisplayName(activeSample!)}
+      index={stepIdx}
+      total={siblings.length}
+      {...(prevSample ? { onPrev: () => navigate(`/sample/${prevSample.id}`) } : {})}
+      {...(nextSample ? { onNext: () => navigate(`/sample/${nextSample.id}`) } : {})}
+      prevKey={prevKey}
+      nextKey={nextKey}
+    />
   ) : null;
+
+  // The SAME stepper on the Loupe (same component + location), stepping the
+  // contact-sheet order the loupe was opened with (shared resolveSampleOrder, so
+  // it never disagrees with the loupe page's own `[`/`]` keyboard nav).
+  const loupeMatch = useMatch("/samples/loupe/:sampleId");
+  const loupeSampleId = loupeMatch ? Number(loupeMatch.params.sampleId) : undefined;
+  const beamtimeParam = searchParams.get("beamtime");
+  const beamtimeNum =
+    beamtimeParam !== null && /^\d+$/.test(beamtimeParam) ? Number(beamtimeParam) : undefined;
+  const loupeStepper = (() => {
+    if (loupeSampleId === undefined || Number.isNaN(loupeSampleId)) return null;
+    const corpus = corpusQ.data ?? [];
+    const sample = corpus.find((s) => s.id === loupeSampleId);
+    if (sample === undefined) return null;
+    const sampleOrderState = (location.state as { sampleOrder?: number[] } | null)?.sampleOrder;
+    const ordered = resolveSampleOrder(corpus, beamtimeNum, loupeSampleId, sampleOrderState);
+    const { index, prevId, nextId } = sampleNeighbors(ordered, loupeSampleId);
+    if (index < 0 || ordered.length <= 1) return null;
+    const goto = (id: number): void => {
+      const params = new URLSearchParams();
+      if (beamtimeNum !== undefined) params.set("beamtime", String(beamtimeNum));
+      const qs = params.toString();
+      navigate(`/samples/loupe/${id}${qs ? `?${qs}` : ""}`, { state: { sampleOrder: ordered } });
+    };
+    return (
+      <SampleStepper
+        name={sampleDisplayName(sample)}
+        index={index}
+        total={ordered.length}
+        {...(prevId !== undefined ? { onPrev: () => goto(prevId) } : {})}
+        {...(nextId !== undefined ? { onNext: () => goto(nextId) } : {})}
+        prevKey={prevKey}
+        nextKey={nextKey}
+      />
+    );
+  })();
 
   // Compose from the print TopBar slot-shell (wordmark → children → spacer →
   // rightSlot). The shell owns the bar appearance (h-14, hairline, paper, the
@@ -246,7 +265,7 @@ export function CorpusTopbar(): JSX.Element {
     <TopBar
       data-testid="corpus-topbar"
       wordmark={wordmark}
-      rightSlot={stepper}
+      rightSlot={focusStepper ?? loupeStepper}
     >
       {stageTabs}
       {beamtimeChip}

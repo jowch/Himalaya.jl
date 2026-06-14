@@ -212,3 +212,32 @@ describe("CorpusTopbar — focus affordances (F-13/F-14/F-12)", () => {
     expect(screen.queryByTestId("notes-toggle")).toBeNull();
   });
 });
+
+describe("CorpusTopbar — the SAME sample stepper on the Loupe route", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    localStorage.clear();
+    useAppState.setState({ activeSampleId: undefined, activeExposureId: undefined });
+  });
+
+  it("renders the stepper on /samples/loupe/:id (corpus order, no router state)", async () => {
+    mockFetch();
+    renderAt("/samples/loupe/2");
+    const stepper = await screen.findByTestId("sample-stepper");
+    // No beamtime → whole corpus [1,2,3,9]; sample 2 is index 1 → "sample 2 of 4".
+    expect(stepper).toHaveTextContent("sample 2 of 4");
+    expect(stepper).toHaveTextContent("Lipid B");
+  });
+
+  it("the ‹ › steps the loupe (navigates to the sibling's loupe) + carries the [ ] tooltips", async () => {
+    mockFetch();
+    renderAt("/samples/loupe/2");
+    await screen.findByTestId("sample-stepper");
+    expect(screen.getByTestId("sample-stepper-prev")).toHaveAttribute("title", "Previous sample ([)");
+    expect(screen.getByTestId("sample-stepper-next")).toHaveAttribute("title", "Next sample (])");
+    fireEvent.click(screen.getByTestId("sample-stepper-next"));
+    await waitFor(() =>
+      expect(screen.getByTestId("loc")).toHaveTextContent("/samples/loupe/3"),
+    );
+  });
+});

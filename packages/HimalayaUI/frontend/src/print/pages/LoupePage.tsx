@@ -13,7 +13,8 @@ import {
   useCorpusSampleTags,
 } from "../../queries";
 import type { Tag } from "../ui";
-import { EmptyState, Button, KbKey } from "../ui";
+import { EmptyState, Button } from "../ui";
+import { resolveSampleOrder, sampleNeighbors } from "../../lib/sample/sampleOrder";
 import { announce } from "../../lib/announce";
 import { showToast } from "../../lib/toast";
 import { useShortcuts } from "../shell/useShortcuts";
@@ -298,23 +299,22 @@ export function LoupePage(): JSX.Element {
     beamtimeParam !== null && /^\d+$/.test(beamtimeParam)
       ? Number(beamtimeParam)
       : undefined;
-  const orderedSampleIds = useMemo(() => {
-    const st = location.state as { sampleOrder?: number[] } | null;
-    if (st?.sampleOrder && st.sampleOrder.includes(sampleId)) return st.sampleOrder;
-    const all = corpusQ.data ?? [];
-    const scoped =
-      beamtime === undefined
-        ? all
-        : all.filter((s) => s.experiment_id === beamtime);
-    return scoped.map((s) => s.id);
-  }, [location.state, corpusQ.data, beamtime, sampleId]);
-  const sampleIndex = orderedSampleIds.indexOf(sampleId);
-  const prevSampleId =
-    sampleIndex > 0 ? orderedSampleIds[sampleIndex - 1] : undefined;
-  const nextSampleId =
-    sampleIndex >= 0 && sampleIndex < orderedSampleIds.length - 1
-      ? orderedSampleIds[sampleIndex + 1]
-      : undefined;
+  // Shared with the CorpusTopbar sample stepper (resolveSampleOrder), so the
+  // topbar's ‹ › and the loupe's own `[`/`]` keyboard nav always agree.
+  const orderedSampleIds = useMemo(
+    () =>
+      resolveSampleOrder(
+        corpusQ.data ?? [],
+        beamtime,
+        sampleId,
+        (location.state as { sampleOrder?: number[] } | null)?.sampleOrder,
+      ),
+    [location.state, corpusQ.data, beamtime, sampleId],
+  );
+  const { prevId: prevSampleId, nextId: nextSampleId } = sampleNeighbors(
+    orderedSampleIds,
+    sampleId,
+  );
   const gotoSample = useCallback(
     (id: number): void => {
       const params = new URLSearchParams();
@@ -384,42 +384,13 @@ export function LoupePage(): JSX.Element {
   return (
     <PageFrame width="loupe" className="px-8 py-7">
       <div data-testid="loupe-page">
-        <div className="mb-3.5 flex items-center justify-between gap-3">
+        {/* The inter-sample stepper lives in the TopBar (the SAME SampleStepper
+            the Focus workspace uses, same location); the loupe's own `[`/`]`
+            keyboard nav still steps via gotoSample, sharing resolveSampleOrder. */}
+        <div className="mb-3.5 flex items-center gap-3">
           <button data-testid="loupe-back" onClick={goBack} className="text-sm font-semibold text-print-accent hover:underline">
             ← Back to the sheet
           </button>
-          {/* LO-NEXT: step through the sheet's samples without round-tripping.
-              Shown only when more than one sample is in the walk and the current
-              one is in it. */}
-          {sampleIndex >= 0 && orderedSampleIds.length > 1 && (
-            <div data-testid="loupe-sample-nav" className="flex items-center gap-1.5">
-              <Button
-                variant="ghost"
-                data-testid="loupe-prev-sample"
-                aria-label="Previous sample"
-                disabled={prevSampleId === undefined}
-                {...(prevSampleId !== undefined
-                  ? { onClick: () => gotoSample(prevSampleId) }
-                  : {})}
-              >
-                ‹ Prev<KbKey className="ml-1.5">[</KbKey>
-              </Button>
-              <span className="text-caption text-ink-soft tabular-nums px-1" data-testid="loupe-sample-position">
-                {sampleIndex + 1} / {orderedSampleIds.length}
-              </span>
-              <Button
-                variant="ghost"
-                data-testid="loupe-next-sample"
-                aria-label="Next sample"
-                disabled={nextSampleId === undefined}
-                {...(nextSampleId !== undefined
-                  ? { onClick: () => gotoSample(nextSampleId) }
-                  : {})}
-              >
-                Next ›<KbKey className="ml-1.5">]</KbKey>
-              </Button>
-            </div>
-          )}
         </div>
         <PlateHeader
           as="h1"
