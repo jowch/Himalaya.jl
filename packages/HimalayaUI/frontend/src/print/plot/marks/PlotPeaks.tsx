@@ -7,6 +7,11 @@ import { peakGlyph } from "../../ui/peakMark";
  *  glyph's outline floats just above the curve instead of overlapping it. */
 const MARKER_LIFT = 3;
 
+/** Radius for an excluded (hollow) peak glyph. A hollow outline reads larger
+ *  than a filled glyph of the same radius, so the disabled mark is drawn a
+ *  touch smaller than the live `DEFAULT_R` (4) to match their visual mass. */
+const EXCLUDED_R = 3.25;
+
 /** A one-shot request to move keyboard focus onto a specific peak mark. The
  *  `nonce` lets the consumer re-fire even when the same id repeats (e.g. two
  *  removes in a row that both land focus on the same surviving neighbour).
@@ -134,7 +139,11 @@ export function PlotPeaks({
           source: p.source,
           color: "currentColor",
           ...(p.predictedAbsent ? { predictedAbsent: true } : {}),
-          ...(p.excluded ? { excluded: true } : {}),
+          // An excluded peak is a HOLLOW outline; at the same radius a hollow
+          // glyph reads visually larger than a filled one, so it looked oversized
+          // next to the live markers. Render it a touch smaller so the disabled
+          // mark matches the active markers' visual mass (EXCLUDED_R).
+          ...(p.excluded ? { excluded: true, r: EXCLUDED_R } : {}),
           ...(p.hot ? { hot: true } : {}),
         });
         // FO-ZOOMEDIT: a peak whose q falls outside the visible x-window (after
