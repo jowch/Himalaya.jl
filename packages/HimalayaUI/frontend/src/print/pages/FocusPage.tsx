@@ -49,6 +49,7 @@ import { useDocumentTitle } from "../../hooks/useDocumentTitle";
 import { useExperimentSiblings } from "../../hooks/useExperimentSiblings";
 import { useShortcuts } from "../shell/useShortcuts";
 import { deriveActiveIndices } from "../../lib/assignment";
+import { sanitizeDashes } from "../../lib/copy";
 import { basisFor } from "../../lib/customIndex";
 import { seriesRatio } from "../../lib/seriesRatio";
 import { announce } from "../../lib/announce";
@@ -278,13 +279,13 @@ export function FocusPage(): JSX.Element {
   // "Himalaya"). Raw name (null while loading) so the placeholder "—" never
   // leaks into the tab. Hooks-safe: above the not-found early return.
   useDocumentTitle(corpusSample?.display_name ?? corpusSample?.name ?? null);
-  const subtitle = [
-    corpusSample?.name,
-    experimentQ.data?.name,
-    exposureLabel,
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  // sanitizeDashes: upstream experiment/sample names may carry em dashes that
+  // no source-level guard can catch (FO-SUBTITLE-EMDASH). Fold them out.
+  const subtitle = sanitizeDashes(
+    [corpusSample?.name, experimentQ.data?.name, exposureLabel]
+      .filter(Boolean)
+      .join(" · "),
+  );
 
   // custom-index live preview
   const customMeta = CUSTOM_SYMS.find((s) => s.name === customSym) ?? CUSTOM_SYMS[0]!;
