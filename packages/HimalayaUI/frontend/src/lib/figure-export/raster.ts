@@ -29,9 +29,10 @@ function dim(svg: string, attr: "width" | "height", fallback: number): number {
 }
 
 /** Target raster density for the PNG export. The SVG authors its geometry in
- *  user units treated as points (72/inch), so the canvas scale is dpi/72 — 150
- *  DPI (scale ≈ 2.08) gives a crisp figure for slides and print. */
-export const EXPORT_PNG_DPI = 150;
+ *  points (72/inch) at the figure's true physical size, so the canvas scale is
+ *  dpi/72 — 216 DPI (scale = 3×) upscales the compact point layout to a crisp
+ *  raster for slides and print, while the SVG download stays the true size. */
+export const EXPORT_PNG_DPI = 216;
 
 /**
  * Render an SVG string to a PNG blob at EXPORT_PNG_DPI: SVG → blob URL → Image
