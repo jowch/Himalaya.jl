@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { makeClient } from "./test-utils";
 import {
   useAutoPickExposure, acceptableExposures, noUsableExposureState,
+  resolveActiveExposure,
 } from "../src/hooks/useAutoPickExposure";
 import { useAppState } from "../src/state";
 import type { Exposure } from "../src/api";
@@ -36,6 +37,43 @@ beforeEach(() => {
       status: 200, headers: { "Content-Type": "application/json" },
     }),
   );
+});
+
+describe("resolveActiveExposure (render-time exposure resolution)", () => {
+  const accepted = EXPOSURES as Exposure[]; // id 101 is the flagged rep
+
+  it("returns undefined while exposures are unknown (still fetching) → skeleton holds", () => {
+    expect(resolveActiveExposure(undefined, undefined)).toBeUndefined();
+    // a stale id from another sample cannot resolve against unknown exposures
+    expect(resolveActiveExposure(999, undefined)).toBeUndefined();
+  });
+
+  it("keeps a valid current pick (never clobbers a deliberate switch)", () => {
+    expect(resolveActiveExposure(102, accepted)).toBe(102);
+  });
+
+  it("adopts the flagged representative for a cold/undefined or stale pick", () => {
+    expect(resolveActiveExposure(undefined, accepted)).toBe(101);
+    expect(resolveActiveExposure(999, accepted)).toBe(101); // stale → rep
+  });
+
+  it("falls back to the first acceptable when none is flagged", () => {
+    const noFlag = accepted.map((e) => ({ ...e, selected: false }));
+    expect(resolveActiveExposure(undefined, noFlag)).toBe(100);
+  });
+
+  it("skips rejected exposures (a pick on a rejected frame re-resolves to the rep)", () => {
+    const repRejected = accepted.map((e) =>
+      e.id === 102 ? { ...e, status: "rejected" as const } : e,
+    );
+    expect(resolveActiveExposure(102, repRejected)).toBe(101); // 102 rejected → rep
+  });
+
+  it("returns undefined when no exposure is usable (loaded, all rejected/none)", () => {
+    expect(resolveActiveExposure(undefined, [])).toBeUndefined();
+    const allRejected = accepted.map((e) => ({ ...e, status: "rejected" as const }));
+    expect(resolveActiveExposure(101, allRejected)).toBeUndefined();
+  });
 });
 
 describe("useAutoPickExposure", () => {

@@ -49,7 +49,7 @@ import {
 } from "../../queries";
 import { useAppState } from "../../state";
 import { useSyncActiveSampleFromRoute } from "../../hooks/useSyncActiveSampleFromRoute";
-import { useAutoPickExposure, acceptableExposures } from "../../hooks/useAutoPickExposure";
+import { useAutoPickExposure, acceptableExposures, noUsableExposureState, resolveActiveExposure } from "../../hooks/useAutoPickExposure";
 import { useDocumentTitle } from "../../hooks/useDocumentTitle";
 import { useExperimentSiblings } from "../../hooks/useExperimentSiblings";
 import { useShortcuts } from "../shell/useShortcuts";
@@ -148,7 +148,7 @@ export function FocusPage(): JSX.Element {
   // sample. routeStatus "unknown" forces the not-found branch instead.
   const routeStatus = useSyncActiveSampleFromRoute();
   const activeSampleId = useAppState((s) => s.activeSampleId);
-  const activeExposureId = useAppState((s) => s.activeExposureId);
+  const storedExposureId = useAppState((s) => s.activeExposureId);
   const setActiveExposure = useAppState((s) => s.setActiveExposure);
   useAutoPickExposure(activeSampleId);
 
@@ -162,6 +162,18 @@ export function FocusPage(): JSX.Element {
 
   const experimentQ = useExperiment(experimentId ?? 0);
   const exposuresQ = useExposures(activeSampleId);
+
+  // FO-NAV-SKELETON: resolve the active exposure at RENDER time, not just in
+  // useAutoPickExposure's post-paint effect. A sample switch clears the stored
+  // id (the setActiveSample cascade); reading it raw would leave a one-render
+  // gap where activeExposureId is undefined even when the new sample's exposures
+  // are already cached — and that gap trips the skeleton's transition fade on
+  // cached back-and-forth. Resolving here means a cached navigation keys the
+  // trace/peaks queries to their (warm) data in the same frame, so the skeleton
+  // only ever shows when data is genuinely absent. The effect still runs to
+  // persist this id to the store for the exposure stepper and deliberate
+  // switches; render reads the derived value so it never lags the store.
+  const activeExposureId = resolveActiveExposure(storedExposureId, exposuresQ.data);
 
   // Inter-sample order (the SAME derivation the topbar stepper uses) so the
   // `[`/`]` shortcuts and the stepper always agree.
@@ -327,8 +339,21 @@ export function FocusPage(): JSX.Element {
     customParamNum >= customMeta.min &&
     customParamNum <= customMeta.max;
 
+  // FO-NAV-SKELETON: a sample switch ([ ]) clears activeExposureId (the
+  // setActiveSample cascade) BEFORE the new sample's exposures round-trip and
+  // useAutoPickExposure re-seeds it. In that window the trace/peaks queries are
+  // disabled, so gating purely on `traceQ.isLoading` behind the
+  // `activeExposureId !== undefined` guard read false and flashed empty panels
+  // before the boneyard appeared. Treat the whole exposure-resolution window as
+  // loading: we're still resolving WHICH exposure to show whenever there's no
+  // active exposure AND the sample isn't confirmed to have zero usable ones
+  // (that case is the honest "no exposures" empty state, not a skeleton). The
+  // window ends when an exposure resolves (→ the trace/peaks check takes over).
+  const { noUsable: noUsableExposure } = noUsableExposureState(exposuresQ.data);
+  const resolvingExposure = activeExposureId === undefined && !noUsableExposure;
   const isLoading =
     corpusQ.isLoading ||
+    resolvingExposure ||
     (activeExposureId !== undefined && (traceQ.isLoading || peaksQ.isLoading));
 
   // FO-COMB-AXIS: the q-domain the comb shares with the trace. A manual zoom
@@ -484,8 +509,11 @@ export function FocusPage(): JSX.Element {
     );
   }
 
-  const noExposure =
-    !exposuresQ.isLoading && activeExposureId === undefined;
+  // The honest empty state: the sample's exposures have RESOLVED to zero usable
+  // ones (loaded, all rejected or none) — not the transient resolving window
+  // where activeExposureId is momentarily undefined but acceptable exposures
+  // exist (that window is the skeleton's, gated by `resolvingExposure` above).
+  const noExposure = noUsableExposure;
 
   // ── custom-index helper ──────────────────────────────────────────────────────
   function commitCustom(): void {

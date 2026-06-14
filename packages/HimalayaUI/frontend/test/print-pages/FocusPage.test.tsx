@@ -18,7 +18,7 @@ const commitCustomMutate = vi.fn();
 const state = {
   corpus: [] as CorpusSample[],
   samples: [] as CorpusSample[],
-  exposures: [] as Exposure[],
+  exposures: [] as Exposure[] | undefined,
   trace: undefined as Trace | undefined,
   peaks: [] as Peak[],
   indices: [] as IndexEntry[],
@@ -40,7 +40,7 @@ vi.mock("../../src/queries", () => ({
   useSamples: () => ({ data: state.samples, isLoading: state.loading }),
   useExperiment: () => ({ data: { id: 1, name: "BL-19", q_units: "A-1" } }),
   useExposures: () => ({ data: state.exposures, isLoading: state.loading }),
-  useExposure: () => ({ data: state.exposures.find((e) => e.id === state.activeExposureId) }),
+  useExposure: () => ({ data: state.exposures?.find((e) => e.id === state.activeExposureId) }),
   useTrace: () => ({ data: state.trace, isLoading: state.loading }),
   usePeaks: () => ({ data: state.peaks, isLoading: state.loading }),
   useIndices: () => ({ data: state.indices, isLoading: state.loading }),
@@ -92,9 +92,16 @@ vi.mock("../../src/hooks/useExperimentSiblings", () => ({
   }),
 }));
 
-// boneyard Skeleton: render children when not loading.
+// boneyard Skeleton: surface the `loading` gate as a data attribute so tests
+// can assert WHEN the skeleton holds (the real component swaps children for
+// bones; here we keep children mounted and just expose the flag). data-loading
+// lets the FO-NAV-SKELETON regression check the exposure-resolution window.
 vi.mock("boneyard-js/react", () => ({
-  Skeleton: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  Skeleton: ({ children, loading }: { children: React.ReactNode; loading?: boolean }) => (
+    <div data-testid="focus-skeleton-gate" data-loading={loading ? "true" : "false"}>
+      {children}
+    </div>
+  ),
 }));
 
 // DetectorImage touches fetch / createImageBitmap (absent in JSDOM).
@@ -623,6 +630,61 @@ describe("FocusPage", () => {
     state.trace = undefined;
     renderAt(42);
     expect(screen.getByText(/no exposures/i)).toBeInTheDocument();
+    // The genuine empty state is NOT a loading state: a sample with zero usable
+    // exposures must settle to the "no exposures" panel, not hold the skeleton.
+    expect(screen.getByTestId("focus-skeleton-gate")).toHaveAttribute(
+      "data-loading",
+      "false",
+    );
+  });
+
+  // FO-NAV-SKELETON: switching samples ([ ]) clears activeExposureId before the
+  // new sample's exposures round-trip. The OLD skeleton gate only checked
+  // traceQ/peaksQ behind an `activeExposureId !== undefined` guard, so during
+  // that window it read false and flashed empty panels before the boneyard
+  // appeared. The gate must hold the skeleton across the whole exposure-
+  // resolution window.
+  it("holds the skeleton while the sample's exposures are still loading (no empty flash)", () => {
+    state.activeSampleId = 42;
+    state.activeExposureId = undefined; // cleared by the sample switch
+    state.corpus = [corpus()];
+    state.exposures = undefined; // still fetching → which exposure is unknown
+    state.trace = undefined;
+    state.peaks = [];
+    state.loading = false; // isolate the resolvingExposure branch from corpus
+    renderAt(42);
+    expect(screen.getByTestId("focus-skeleton-gate")).toHaveAttribute(
+      "data-loading",
+      "true",
+    );
+    // and it must NOT have fallen through to the genuine "no exposures" panel
+    expect(screen.queryByText(/no exposures/i)).toBeNull();
+  });
+
+  // The caching win: navigating onto a sample whose exposures AND trace are
+  // already cached must resolve to real content in the same render — even though
+  // the STORED activeExposureId is momentarily undefined (the page resolves the
+  // representative at render time via resolveActiveExposure). No skeleton.
+  it("shows cached content instantly when the stored exposure id is undefined but exposures+trace are warm", () => {
+    seedFull();
+    state.activeExposureId = undefined; // store not yet re-seeded after a switch
+    // exposures (id 7, selected) + trace + peaks are all cached from seedFull
+    renderAt(42);
+    expect(screen.getByTestId("focus-skeleton-gate")).toHaveAttribute(
+      "data-loading",
+      "false",
+    );
+    // and the workspace actually resolved to the cached exposure's content
+    expect(screen.getByTestId("trace-plate")).toBeInTheDocument();
+  });
+
+  it("settles the skeleton once the active exposure resolves and its trace is in hand", () => {
+    seedFull(); // activeExposureId 7, trace + peaks present, loading false
+    renderAt(42);
+    expect(screen.getByTestId("focus-skeleton-gate")).toHaveAttribute(
+      "data-loading",
+      "false",
+    );
   });
 
   it("does not render a stale-index banner (peak edits auto-reanalyze server-side)", () => {
