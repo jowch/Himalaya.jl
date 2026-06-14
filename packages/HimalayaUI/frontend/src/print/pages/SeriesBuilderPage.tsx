@@ -435,7 +435,13 @@ export function SeriesBuilderPage(): JSX.Element {
   return (
     <Skeleton
       name="series-builder"
-      className="block"
+      // Full-height flex column so the builder grid stretches to the bottom of the
+      // page even when its content is shorter than the viewport. `min-h-full`
+      // fills `main`; `flex flex-col` makes this a flex container — boneyard wraps
+      // children in `display:contents`, which UNWRAPS in a flex parent, so the grid
+      // becomes a direct flex item and can `grow` to fill (a plain `min-h-full` on
+      // the grid can't, because % height won't resolve through a contents box).
+      className="flex flex-col min-h-full"
       loading={seriesQ.isLoading || series === undefined}
       fixture={BUILDER_FIXTURE}
       fallback={<div className="p-8 text-sm text-ink-soft">Loading series…</div>}
@@ -668,7 +674,11 @@ function BuilderBody({
   return (
     <div
       data-testid="builder-workspace"
-      className="grid min-h-full grid-cols-1 lg:grid-cols-[minmax(0,1fr)_336px]"
+      // `grow` (flex-grow): as a flex item of the Skeleton's flex-col wrapper this
+      // fills the page height so the rail reaches the bottom; `min-h-full` is the
+      // fallback when no flex parent is present (stories/tests). It is still a grid
+      // for its own [work · rail] columns.
+      className="grid grow min-h-full grid-cols-1 lg:grid-cols-[minmax(0,1fr)_336px]"
     >
       {/* work column — full-bleed; inner content capped at the builder width */}
       <div className="min-w-0 px-6 py-6">
