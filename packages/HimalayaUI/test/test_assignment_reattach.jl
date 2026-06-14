@@ -3,15 +3,16 @@
 # `assignment_members.index_id` carries ON DELETE CASCADE, and persist_analysis!
 # deletes every kind='auto' index on each reanalysis — so without a semantic
 # snapshot/re-attach (mirroring the custom-group block), every auto assignment
-# member silently vanished and seed_assignment_if_absent! then REPLACED a
-# curated assignment with the fresh machine picks. These tests pin the fixed
-# contract:
+# member would silently vanish across a reanalysis. These tests pin the
+# re-attach contract. Auto-grouping is NOT a durable concept: a fresh analyze
+# leaves the assignment EMPTY, so the curated before-state is set up explicitly
+# (a human accepting the auto picks) via `_fwipe_curate_all_auto!`.
 #   a) a curated all-auto assignment re-attaches by phase + nearest basis;
 #   b) a mixed speculative+auto assignment keeps the speculative member
 #      untouched, re-attaches the auto member, and is never re-seeded;
 #   c) a member whose identity fails to re-attach is DROPPED — the assignment
 #      stays EMPTY (announced via dropped_assignment_phases, no re-seed);
-#   d) a fresh exposure with no members still seeds from the auto selection;
+#   d) a fresh exposure is NOT seeded from the auto selection — it reads empty;
 #   e) peak-route SSE frames carry post_state.assignment ({state, members},
 #      same shape as the assignment_* frames) + assignment_dropped when the
 #      drop case fires.
@@ -30,7 +31,9 @@ end
 
 const _FWIPE_DAT = joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat")
 
-"""Analyzed-exposure fixture: real trace, one analyze run (seeds the assignment)."""
+"""Analyzed-exposure fixture: real trace, one analyze run. The durable assignment
+starts EMPTY (a fresh analyze no longer seeds it) — re-attach tests call
+`_fwipe_curate_all_auto!` to establish a curated before-state."""
 function _fwipe_setup(tmp)
     analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
     mkpath(analysis_dir)
@@ -48,6 +51,23 @@ _fwipe_members(db, e_id) = Tables.rowtable(DBInterface.execute(db, """
     SELECT m.index_id, i.phase, i.basis, i.kind
     FROM assignment_members m JOIN indices i ON i.id = m.index_id
     WHERE m.exposure_id = ? ORDER BY m.index_id""", [e_id]))
+
+# A fresh analyze no longer seeds the durable assignment (auto-grouping is not a
+# durable concept). The re-attach tests need a CURATED before-state, so they
+# simulate a human accepting the auto selection: copy the active auto
+# index_group's members into assignment_members. This is exactly what the
+# retired seed did, but now it is the test setting up curation explicitly.
+function _fwipe_curate_all_auto!(db, e_id)
+    DBInterface.execute(db,
+        "INSERT OR IGNORE INTO assignments (exposure_id, state) VALUES (?, 'indexed')", [e_id])
+    DBInterface.execute(db, """
+        INSERT OR IGNORE INTO assignment_members (exposure_id, index_id)
+        SELECT ?, m.index_id
+        FROM index_group_members m JOIN index_groups g ON g.id = m.group_id
+        WHERE g.exposure_id = ? AND g.kind = 'auto' AND g.active = 1""",
+        [e_id, e_id])
+    nothing
+end
 
 # In-process SSE capture (same pattern as test_idempotency_replay_invariant.jl's
 # _capture_sse_during; distinct name so both files can coexist under runtests).
@@ -152,8 +172,8 @@ _fwipe_empty_pr()  = (q = Float64[], indices = Int[],
 
             HimalayaUI.persist_analysis!(db, e_id, q, I, pr, candidates, group, eff)
 
-            # Seeded from the auto selection; curate by assigning EVERY candidate
-            # (the realistic assignment_add flow, by direct insert).
+            # Curate by assigning EVERY candidate (the realistic assignment_add
+            # flow, by direct insert) — the analyze itself seeds nothing now.
             for r in Tables.rowtable(DBInterface.execute(db,
                     "SELECT id FROM indices WHERE exposure_id = ? AND kind = 'auto'", [e_id]))
                 DBInterface.execute(db,
@@ -233,6 +253,7 @@ _fwipe_empty_pr()  = (q = Float64[], indices = Int[],
         mktempdir() do tmp
             ctx = _fwipe_setup(tmp)
             db, e_id, dir = ctx.db, ctx.e_id, ctx.analysis_dir
+            _fwipe_curate_all_auto!(db, e_id)   # the analyze no longer seeds
 
             before = _fwipe_members(db, e_id)
             @test !isempty(before)
@@ -270,6 +291,7 @@ _fwipe_empty_pr()  = (q = Float64[], indices = Int[],
         mktempdir() do tmp
             ctx = _fwipe_setup(tmp)
             db, e_id, dir = ctx.db, ctx.e_id, ctx.analysis_dir
+            _fwipe_curate_all_auto!(db, e_id)   # the analyze no longer seeds
 
             before = _fwipe_members(db, e_id)
             @test !isempty(before)
@@ -295,21 +317,25 @@ _fwipe_empty_pr()  = (q = Float64[], indices = Int[],
         end
     end
 
-    @testset "F-WIPE d: fresh exposure with no members — seeding behavior unchanged" begin
+    @testset "F-WIPE d: a fresh analyze does NOT seed the assignment (auto-grouping is not durable)" begin
         mktempdir() do tmp
             ctx = _fwipe_setup(tmp)
             db, e_id = ctx.db, ctx.e_id
 
-            # First analyze of a member-less exposure seeds from the auto selection.
+            # The auto index_group is still computed (it backs the legacy export
+            # and orders the candidate list)…
             gid = Int(first(Tables.rowtable(DBInterface.execute(db,
                 "SELECT id FROM index_groups WHERE exposure_id = ? AND kind = 'auto'",
                 [e_id]))).id)
             auto_sel = sort(Int[Int(r.index_id) for r in Tables.rowtable(DBInterface.execute(db,
                 "SELECT index_id FROM index_group_members WHERE group_id = ?", [gid]))])
-            seeded = [Int(r.index_id) for r in _fwipe_members(db, e_id)]
-            @test !isempty(seeded)
-            @test seeded == auto_sel
+            @test !isempty(auto_sel)
+            # …but the durable assignment is EMPTY: the analyze seeds nothing.
+            @test isempty(_fwipe_members(db, e_id))
+            # _assignment_body still defaults a member-less, row-less exposure to
+            # state="indexed" with zero members (a "call in progress").
             @test HimalayaUI._assignment_body(db, e_id)[:state] == "indexed"
+            @test HimalayaUI._assignment_body(db, e_id)[:members] == Int[]
         end
     end
 
@@ -318,6 +344,7 @@ _fwipe_empty_pr()  = (q = Float64[], indices = Int[],
             mktempdir() do tmp
                 ctx = _fwipe_setup(tmp)
                 db, e_id = ctx.db, ctx.e_id
+                _fwipe_curate_all_auto!(db, e_id)   # the analyze no longer seeds
 
                 # A manual peak the route can DELETE (direct insert is fine in tests;
                 # the route's reanalyze recomputes from the curation tables).
@@ -354,6 +381,7 @@ _fwipe_empty_pr()  = (q = Float64[], indices = Int[],
             mktempdir() do tmp
                 ctx = _fwipe_setup(tmp)
                 db, e_id = ctx.db, ctx.e_id
+                _fwipe_curate_all_auto!(db, e_id)   # the analyze no longer seeds
 
                 before_phases = sort(String[String(r.phase) for r in _fwipe_members(db, e_id)])
                 @test !isempty(before_phases)
@@ -396,6 +424,7 @@ _fwipe_empty_pr()  = (q = Float64[], indices = Int[],
             mktempdir() do tmp
                 ctx = _fwipe_setup(tmp)
                 db, e_id = ctx.db, ctx.e_id
+                _fwipe_curate_all_auto!(db, e_id)   # the analyze no longer seeds
 
                 # Change the inputs hash so the reanalyze is NOT a no-op.
                 DBInterface.execute(db,
@@ -429,6 +458,7 @@ _fwipe_empty_pr()  = (q = Float64[], indices = Int[],
             mktempdir() do tmp
                 ctx = _fwipe_setup(tmp)
                 db, e_id = ctx.db, ctx.e_id
+                _fwipe_curate_all_auto!(db, e_id)   # the analyze no longer seeds
 
                 before_phases = sort(String[String(r.phase) for r in _fwipe_members(db, e_id)])
                 @test !isempty(before_phases)
@@ -491,6 +521,7 @@ _fwipe_empty_pr()  = (q = Float64[], indices = Int[],
         mktempdir() do tmp
             ctx = _fwipe_setup(tmp)
             db, e_id, dir = ctx.db, ctx.e_id, ctx.analysis_dir
+            _fwipe_curate_all_auto!(db, e_id)   # the analyze no longer seeds
 
             DBInterface.execute(db,
                 "INSERT INTO peak_curations (exposure_id, kind, q) VALUES (?, 'add', 0.123)",

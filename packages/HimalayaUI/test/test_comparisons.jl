@@ -209,15 +209,21 @@ end
                                             filename="cubic_tot")
             # D-10: confirmed_index is the highest-scored member of the durable
             # assignment, NOT the legacy active custom group, and there is NO R²
-            # gate. seed_assignment_if_absent! seeds the assignment (state
-            # indexed) from the auto group during analyze, so an analyzed
-            # exposure has a confirmed_index by default — the top-scored member.
+            # gate. A fresh analyze NO LONGER seeds the assignment (auto-grouping
+            # is not a durable concept), so an analyzed-but-uncurated exposure
+            # has a NULL confirmed_index until a human checks a candidate.
+            @test HimalayaUI.compute_member_snapshot(
+                ctx.db, ctx.exposure_id)[:confirmed_index] === nothing
+
+            # Check the top-scored auto candidate explicitly → it becomes the
+            # confirmed_index (highest-scored member, no R² gate).
             top = first(Tables.rowtable(DBInterface.execute(ctx.db,
-                """SELECT i.id FROM assignment_members m
-                   JOIN indices i ON i.id = m.index_id
-                   WHERE m.exposure_id = ?
-                   ORDER BY i.score DESC NULLS LAST, i.id ASC LIMIT 1""",
+                """SELECT id FROM indices WHERE exposure_id = ?
+                   ORDER BY score DESC NULLS LAST, id ASC LIMIT 1""",
                 [ctx.exposure_id])))
+            DBInterface.execute(ctx.db,
+                "INSERT INTO assignment_members (exposure_id, index_id) VALUES (?, ?)",
+                [ctx.exposure_id, Int(top.id)])
             snap = HimalayaUI.compute_member_snapshot(ctx.db, ctx.exposure_id)
             @test snap[:confirmed_index] !== nothing
             ci = snap[:confirmed_index]

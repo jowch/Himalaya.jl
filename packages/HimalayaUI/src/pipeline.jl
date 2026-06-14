@@ -5,36 +5,6 @@ using JSON3
 using HTTP: HTTP, Request
 
 """
-    seed_assignment_if_absent!(db, exposure_id, index_db_ids)
-
-Seed the durable assignment from the auto-indexing selection, but only when the
-exposure has no assignment members yet. Creates the `assignments` row
-(state='indexed') and inserts `index_db_ids` as members.
-
-The members-empty check here is NOT sufficient on its own during reanalysis:
-`assignment_members.index_id` carries FK `ON DELETE CASCADE`, so by the time
-`_persist_analysis_inner!` reaches this call the auto-index wipe has already
-emptied a previously-curated assignment (F-WIPE W1). The caller therefore
-gates this on its pre-wipe `had_assignment_members` snapshot — seed only an
-exposure that genuinely had no members; a curated assignment gets a semantic
-re-attach instead, and stays empty (announced) if nothing re-attaches.
-"""
-function seed_assignment_if_absent!(db::SQLite.DB, exposure_id::Integer, index_db_ids)
-    DBInterface.execute(db,
-        "INSERT OR IGNORE INTO assignments (exposure_id, state) VALUES (?, 'indexed')",
-        [Int(exposure_id)])
-    has_members = !isempty(Tables.rowtable(DBInterface.execute(db,
-        "SELECT 1 FROM assignment_members WHERE exposure_id = ? LIMIT 1", [Int(exposure_id)])))
-    has_members && return nothing
-    for db_id in index_db_ids
-        DBInterface.execute(db,
-            "INSERT OR IGNORE INTO assignment_members (exposure_id, index_id) VALUES (?, ?)",
-            [Int(exposure_id), Int(db_id)])
-    end
-    nothing
-end
-
-"""
     auto_group(indices, eff) -> Vector{<:Index}
     auto_group(indices)       -> Vector{<:Index}
 
@@ -587,27 +557,30 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
     group_db_id = Int(DBInterface.lastrowid(res))
 
     group_set = Set(group_indices)
-    auto_member_db_ids = Int[]
     for (ci, idx) in enumerate(candidates)
         idx in group_set || continue
         db_id = candidate_to_db_id[ci]
-        push!(auto_member_db_ids, db_id)
         DBInterface.execute(db,
             "INSERT INTO index_group_members (group_id, index_id) VALUES (?, ?)",
             [group_db_id, db_id])
     end
 
-    # Plan A + F-WIPE W1: seed the durable assignment from the auto selection
-    # (reuse the db_ids the auto-group loop just collected — no parallel
-    # recompute) ONLY when the exposure had no assignment members before the
-    # wipe above. seed_assignment_if_absent! alone is not enough — by the time
-    # it runs, the ON DELETE CASCADE has already emptied a previously-curated
-    # assignment, so seeding here would silently replace user curation with
-    # machine picks. A curated assignment instead gets its auto members
-    # re-attached by semantic identity; identities that fail to re-attach are
-    # returned as `dropped_assignment_phases` (announced, not papered over).
-    # Must run BEFORE the custom re-attach block so a seed comes from the auto
-    # group only.
+    # Auto-grouping is NOT a durable concept: a fresh analyze leaves the
+    # assignment EMPTY (the sample reads as unindexed until a human checks a
+    # candidate). The auto selection still computes — it populates the auto
+    # `index_groups` row the legacy export reads, and it scores/orders the
+    # candidate list — but it no longer SEEDS the durable assignment cart.
+    # Earlier this seeded the cart with the whole non-overlapping auto group, so
+    # every sample opened with phases already "in the call"; that machine guess
+    # masquerading as a human call is exactly what we dropped.
+    #
+    # The one case that still writes members here is REANALYSIS of an exposure a
+    # human had already curated: the auto-index wipe above (ON DELETE CASCADE)
+    # just emptied those rows, so we re-attach them by semantic identity from the
+    # pre-wipe `had_assignment_members` snapshot. Identities that fail to
+    # re-attach are returned as `dropped_assignment_phases` (announced, not
+    # papered over). A never-curated exposure (no prior members) gets nothing —
+    # no seed, no row.
     dropped_assignment_phases = String[]
     if had_assignment_members
         # Re-attach assignment members by phase + nearest basis within
@@ -651,8 +624,6 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
                 push!(dropped_assignment_phases, phase)
             end
         end
-    else
-        seed_assignment_if_absent!(db, exposure_id, auto_member_db_ids)
     end
 
     # ── Re-attach custom-group members by semantic identity ────────────────

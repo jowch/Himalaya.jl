@@ -1052,11 +1052,15 @@ this is a data backfill, not a user action.
 
 `active=1` matches WITHOUT a kind filter, by design: this captures both
 user-confirmed (active custom) groups AND the auto group of a never-confirmed
-exposure — converging migrated DBs with `seed_assignment_if_absent!`'s
-new-model default (every analyzed exposure defaults to state='indexed' + auto
-members). Consequence to be aware of: after upgrade, an analyzed-but-never-
-confirmed exposure reports a non-null `confirmed_index` (the auto guess) where
-the legacy `kind='custom'` snapshot reported `nothing`.
+exposure. This is a one-time HISTORICAL backfill — it preserves what a
+pre-Plan-A DB already displayed at the moment of upgrade. NOTE: it deliberately
+DIVERGES from current analyze behavior. A fresh analyze no longer seeds the
+assignment from the auto group (auto-grouping is not a durable concept — see
+`_persist_analysis_inner!`), so new exposures read as unindexed until a human
+curates them; only legacy upgrades carry the auto guess forward. Consequence to
+be aware of: after upgrade, an analyzed-but-never-confirmed legacy exposure
+reports a non-null `confirmed_index` (the auto guess) where the legacy
+`kind='custom'` snapshot reported `nothing`.
 
 LOG-DERIVABILITY CAVEAT (load-bearing for disaster recovery): this backfill is
 the ONLY record of a pre-Plan-A confirmation's membership — those exposures have
