@@ -71,6 +71,44 @@ describe("CombChart", () => {
     expect(Number(container.querySelector("svg")!.getAttribute("data-plot-w"))).toBeGreaterThanOrEqual(320);
   });
 
+  it("dodges dense reflection labels apart with leader lines (FO-COMBLABEL-DODGE)", () => {
+    // Three teeth packed into a tiny q-window → their centred labels would
+    // overlap. They must dodge to >= the min gap and grow leader lines.
+    const dense: CombSeries = {
+      phase: "Im3m",
+      color: "oklch(0.5 0.1 200)",
+      teeth: [
+        { q: 0.1, label: "√2", observed: true },
+        { q: 0.101, label: "√4", observed: true },
+        { q: 0.102, label: "√6", observed: true },
+      ],
+    };
+    // Wide domain so the tight q-window maps to a tight pixel window (overlap).
+    const { container } = render(<CombChart assigned={[dense]} leftover={[]} xDomain={[0.005, 0.3]} />);
+    const xs = [...container.querySelectorAll('[data-role="tooth-mlabel"]')]
+      .map((l) => Number(l.getAttribute("x")))
+      .sort((a, b) => a - b);
+    expect(xs.length).toBe(3);
+    for (let i = 1; i < xs.length; i++) {
+      expect(xs[i]! - xs[i - 1]!).toBeGreaterThanOrEqual(19.5); // ~LABEL_MIN_GAP
+    }
+    // shifted labels grow a leader back to their tooth
+    expect(container.querySelectorAll('[data-role="tooth-leader"]').length).toBeGreaterThan(0);
+  });
+
+  it("does NOT draw leaders when the reflections are well separated", () => {
+    const sparse: CombSeries = {
+      phase: "Lamellar",
+      color: "oklch(0.5 0.1 60)",
+      teeth: [
+        { q: 0.05, label: "1", observed: true },
+        { q: 0.2, label: "2", observed: true },
+      ],
+    };
+    const { container } = render(<CombChart assigned={[sparse]} leftover={[]} maxWidth={760} />);
+    expect(container.querySelectorAll('[data-role="tooth-leader"]').length).toBe(0);
+  });
+
   it("default-scrolls the q-pane to the reflections, not the left/beam edge (FO-COMBSCROLL-PEAKS)", () => {
     // A wide trace-linked domain → the comb overflows and would otherwise open at
     // scrollLeft 0 (the low-q beam dropoff). It must scroll right to the peaks.

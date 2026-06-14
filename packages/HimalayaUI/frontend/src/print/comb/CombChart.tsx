@@ -1,8 +1,12 @@
 import { CombScaffold, type ScaffoldRow, type ScaffoldCtx } from "./CombScaffold";
+import { dodgeX } from "../plot/marks/PlotLabels";
 import { assembleRows, combQDomain, type CombSeries, type CombRow } from "./combModel";
 
 const TOL = 1e-6;
 const LEFTOVER_COLOR = "var(--color-ink-faint)";
+/** Min horizontal gap (px) between adjacent reflection-ratio labels before they
+ *  dodge apart (with a leader line back to the tooth). */
+const LABEL_MIN_GAP = 20;
 
 interface Props {
   assigned: CombSeries[];
@@ -112,13 +116,28 @@ function renderRow(
   }
 
   const { color } = row.series;
+  // FO-COMBLABEL-DODGE: spread the observed reflection-ratio labels so a dense
+  // comb doesn't render them on top of each other; a leader line ties each
+  // shifted label back to its tooth. Dodge is per-row (each phase independent),
+  // computed left→right over the observed teeth's pixel x (reuses the trace
+  // plot's `dodgeX`).
+  const observedApexY = y0 - toothH;
+  const observed = row.series.teeth
+    .map((t, j) => ({ j, px: ctx.x.to(t.q) }))
+    .filter((e) => row.series.teeth[e.j]!.observed && Number.isFinite(e.px))
+    .sort((a, b) => a.px - b.px);
+  const dodged = dodgeX(observed.map((e) => e.px), LABEL_MIN_GAP);
+  const labelXByIndex = new Map<number, number>();
+  observed.forEach((e, k) => labelXByIndex.set(e.j, dodged[k]!));
   return (
     <g key={i} data-role="comb-row" data-row-kind={row.kind}>
       {row.series.teeth.map((t, j) => {
         const px = ctx.x.to(t.q);
         const hot = isHot(t.q);
         if (t.observed) {
-          const apexY = y0 - toothH;
+          const apexY = observedApexY;
+          const labelX = labelXByIndex.get(j) ?? px;
+          const shifted = Math.abs(labelX - px) > 0.5;
           return (
             <g
               key={j}
@@ -133,9 +152,29 @@ function renderRow(
               {hot ? (
                 <circle data-role="tooth-ring" cx={px} cy={apexY} r={8} fill="none" stroke={color} strokeWidth={1.4} opacity={0.6} />
               ) : null}
+              {shifted ? (
+                <line
+                  data-role="tooth-leader"
+                  x1={px}
+                  y1={apexY - 1}
+                  x2={labelX}
+                  y2={apexY - 8}
+                  stroke="var(--color-hair-strong)"
+                  strokeWidth={1}
+                />
+              ) : null}
+              {/* paint-order halo (plate) lifts the ratio off the stems/leaders
+                  when the labels are spread over a dense comb. */}
               <text
-                data-role="tooth-mlabel" x={px} y={apexY - 7} textAnchor="middle"
-                className="font-mono" fontSize={9.5} fontWeight={700} fill={color}
+                data-role="tooth-mlabel" x={labelX} y={apexY - 9} textAnchor="middle"
+                className="font-mono" fontSize={9.5} fontWeight={700}
+                style={{
+                  fill: color,
+                  paintOrder: "stroke",
+                  stroke: "var(--color-plate)",
+                  strokeWidth: 3,
+                  strokeLinejoin: "round",
+                }}
               >
                 {t.label}
               </text>
