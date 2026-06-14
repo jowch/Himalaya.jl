@@ -1,13 +1,5 @@
-import { describe, it, expect, vi } from "vitest";
-import { peakGlyph, peakMark } from "../src/print/ui/peakMark";
-
-// Plot is mocked so peakMark's Plot.dot call returns an inspectable stub. The
-// builder only needs Plot.dot here; the marks themselves are opaque to these
-// tests (we assert on the geometry descriptor, which is the single source of
-// truth for both overlay + legend).
-vi.mock("@observablehq/plot", () => ({
-  dot: vi.fn((rows: unknown, opts: unknown) => ({ _kind: "dot", rows, opts })),
-}));
+import { describe, it, expect } from "vitest";
+import { peakGlyph } from "../src/print/ui/peakMark";
 
 const PHASE = "oklch(0.570 0.150 58)"; // a resolved phase colour (Pn3m amber)
 
@@ -79,42 +71,5 @@ describe("peakGlyph — §5.1 encoding atoms", () => {
     const g = peakGlyph({ source: "manual", color: PHASE });
     expect(g.shape).toBe("diamond");
     expect(g.fill).not.toMatch(/340/); // the retired magenta hue
-  });
-});
-
-describe("peakMark — Observable Plot Markish", () => {
-  it("builds a Plot.dot mark from resolved-colour rows", async () => {
-    const Plot = await import("@observablehq/plot");
-    const mark = peakMark([
-      { q: 0.1, y: 10, color: PHASE, source: "auto" },
-      { q: 0.2, y: 8, color: PHASE, source: "manual" },
-    ]);
-    expect(Plot.dot).toHaveBeenCalled();
-    expect(mark).toBeTruthy();
-  });
-
-  it("symbol accessor maps manual→diamond, auto→triangle", async () => {
-    const Plot = await import("@observablehq/plot");
-    (Plot.dot as ReturnType<typeof vi.fn>).mockClear();
-    peakMark([{ q: 0.1, y: 10, color: PHASE, source: "auto" }]);
-    const opts = (Plot.dot as ReturnType<typeof vi.fn>).mock.calls.at(-1)![1] as {
-      symbol: (d: unknown) => string;
-      fill: (d: unknown) => string;
-    };
-    expect(opts.symbol({ source: "manual" })).toBe("diamond");
-    expect(opts.symbol({ source: "auto" })).toBe("triangle");
-  });
-
-  it("fill accessor returns 'none' for excluded / optimistic / predictedAbsent", async () => {
-    const Plot = await import("@observablehq/plot");
-    (Plot.dot as ReturnType<typeof vi.fn>).mockClear();
-    peakMark([{ q: 0.1, y: 10, color: PHASE, source: "auto" }]);
-    const opts = (Plot.dot as ReturnType<typeof vi.fn>).mock.calls.at(-1)![1] as {
-      fill: (d: unknown) => string;
-    };
-    expect(opts.fill({ color: PHASE, source: "auto" })).toBe(PHASE);
-    expect(opts.fill({ color: PHASE, source: "auto", excluded: true })).toBe("none");
-    expect(opts.fill({ color: PHASE, source: "manual", optimistic: true })).toBe("none");
-    expect(opts.fill({ color: PHASE, source: "auto", predictedAbsent: true })).toBe("none");
   });
 });

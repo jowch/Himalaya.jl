@@ -1,13 +1,22 @@
 // raster.ts — turn a standalone SVG markup string into a downloadable blob / PNG.
-// The export engine now produces SVG markup directly (the greenfield CleanFigure
+// The export engine produces SVG markup directly (the greenfield cleanFigureSvg
 // builder), so the download path is engine-agnostic: blob it for SVG, or
-// rasterize it through an OffscreenCanvas for a 2× PNG.
-import { canExportPng } from "./renderer";
+// rasterize it through an OffscreenCanvas for a high-DPI PNG.
 
-/** Whether the 2× PNG rasterization pipeline is available (OffscreenCanvas +
- *  convertToBlob + Image). A plain function (not a re-export) so it is spyable. */
+/**
+ * Whether the PNG rasterization pipeline is available (OffscreenCanvas +
+ * convertToBlob + Image). The Save/Copy buttons use it to disable themselves on
+ * browsers lacking the pipeline, so the user never clicks into a guaranteed
+ * failure. Mirrors `canCopyPngToClipboard()` in clipboard.ts.
+ */
 export function canRasterizePng(): boolean {
-  return canExportPng();
+  if (typeof OffscreenCanvas === "undefined") return false;
+  // convertToBlob landed alongside OffscreenCanvas in evergreen browsers but is
+  // missing on some Safari versions where OffscreenCanvas exists.
+  const proto = (OffscreenCanvas as unknown as { prototype?: { convertToBlob?: unknown } }).prototype;
+  if (!proto || typeof proto.convertToBlob !== "function") return false;
+  if (typeof Image === "undefined") return false;
+  return true;
 }
 
 export function svgStringToBlob(svg: string): Blob {

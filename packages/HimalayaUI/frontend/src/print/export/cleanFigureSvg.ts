@@ -158,8 +158,8 @@ export function buildCleanFigureSvg(input: CleanFigureInput): string {
     const color = phaseHex(row.phase);
     const { q, I } = row.trace;
 
-    // Per-row log-intensity mapping (matches multiTraceExportMarks): map
-    // log10(I) ∈ [logMin, logMax] → y ∈ [bandBottom, bandTop] (low at bottom).
+    // Per-row log-intensity mapping: map log10(I) ∈ [logMin, logMax] → y ∈
+    // [bandBottom, bandTop] (low at bottom).
     // Hoisted to row scope so the peak markers ride the SAME curve as the trace.
     let minI = Infinity;
     let maxI = -Infinity;
