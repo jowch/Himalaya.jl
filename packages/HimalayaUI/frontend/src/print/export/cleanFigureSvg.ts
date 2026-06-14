@@ -317,7 +317,11 @@ export function buildCleanFigureSvg(input: CleanFigureInput): string {
         started = true;
       }
       if (d) {
-        parts.push(`<path d="${d.trim()}" fill="none" stroke="${color}" stroke-width="${SW_TRACE}" data-phase="${row.phase ?? "none"}"/>`);
+        // Round joins/caps soften the sharp miter spikes a noisy polyline makes
+        // at every vertex; geometricPrecision asks the rasterizer to favour a
+        // smooth curve over crisp edges. Both are render-only — the data is
+        // untouched.
+        parts.push(`<path d="${d.trim()}" fill="none" stroke="${color}" stroke-width="${SW_TRACE}" stroke-linejoin="round" stroke-linecap="round" shape-rendering="geometricPrecision" data-phase="${row.phase ?? "none"}"/>`);
       }
     }
 
