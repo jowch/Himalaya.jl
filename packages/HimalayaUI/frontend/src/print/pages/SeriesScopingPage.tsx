@@ -1033,7 +1033,7 @@ export function SeriesScopingPage(): JSX.Element {
                           </div>
                           <div className="text-caption text-ink-soft">
                             lacks the{" "}
-                            <strong className="text-accent font-semibold">{keyLabel}</strong>
+                            <strong className="text-ink font-semibold">{keyLabel}</strong>
                           </div>
                         </div>
                         {/* SC-MISC (WCAG 1.4.1): the candidate's phase was a
@@ -1087,11 +1087,11 @@ export function SeriesScopingPage(): JSX.Element {
                       {hiddenLooseCount > 0 ? (
                         <>
                           …and {hiddenLooseCount} more lack{hiddenLooseCount === 1 ? "s" : ""} the{" "}
-                          <strong className="text-accent font-semibold">{keyLabel}</strong>.{" "}
+                          <strong className="text-ink font-semibold">{keyLabel}</strong>.{" "}
                         </>
                       ) : null}
                       Tag a sample with the{" "}
-                      <strong className="text-accent font-semibold">{keyLabel}</strong> on the
+                      <strong className="text-ink font-semibold">{keyLabel}</strong> on the
                       contact sheet if it belongs here.{" "}
                       <button
                         type="button"
