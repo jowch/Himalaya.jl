@@ -49,9 +49,11 @@ export function svgScaledToPixels(svg: string, pxW: number, pxH: number): string
 
 /** Target raster density for the PNG export. The SVG authors its geometry in
  *  points (72/inch) at the figure's true physical size, so the canvas scale is
- *  dpi/72 — 216 DPI (scale = 3×) upscales the compact point layout to a crisp
- *  raster for slides and print, while the SVG download stays the true size. */
-export const EXPORT_PNG_DPI = 216;
+ *  dpi/72. 300 DPI (≈4.2×) is the print/journal standard — the compact point
+ *  layout is small, so even 300 DPI stays a modest file, and the extra pixels
+ *  make thin lines read crisp (3× still looked soft). The SVG download stays
+ *  the true physical size. */
+export const EXPORT_PNG_DPI = 300;
 
 /**
  * Render an SVG string to a PNG blob at EXPORT_PNG_DPI: SVG → blob URL → Image

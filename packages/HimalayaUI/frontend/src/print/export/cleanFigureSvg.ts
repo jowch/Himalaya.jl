@@ -35,8 +35,8 @@ const INK_MUTED = "#666666";
 const FS_TITLE = 12;
 const FS_AXIS = 10.5;
 const FS_TICK = 8;
-const FS_KEY = 8.5; // sample name / phase name (bold)
-const FS_DETAIL = 8; // lattice + κ detail / note
+const FS_KEY = 8; // sample name (bold) / phase name
+const FS_DETAIL = 7.5; // lattice + κ detail / note
 const FS_FOOT = 7;
 const FS_ORD = 6.5; // peak ordinal labels
 
@@ -55,12 +55,12 @@ const KEY_SUBLINE_H = 10.5;
 const KEY_TOP_PAD = 13; // gap below the x-axis title to the first key row
 const KEY_ENTRY_GAP = 4;
 const KEY_SWATCH = 8;
-const KEY_INDENT = 13; // text inset from the swatch
+const KEY_INDENT = 11; // text inset from the swatch
 const FOOTNOTE_H = 14;
 const AXIS_FOOT_H = 26; // tick labels + x-axis title below the baseline
 
 const MIN_WIDTH = 132; // ~1.85 in — figure never narrower than this
-const CHAR_W = 0.52; // Arial average advance, as a fraction of font size
+const CHAR_W = 0.5; // Arial average advance, as a fraction of font size
 
 /** One phase a trace carries, pre-formatted for the key block. `detail` is the
  *  ready-to-render lattice (+ κ) string, e.g. "a = 252 Å · κ = 1.70×10⁻⁴ Å⁻²";
@@ -135,10 +135,12 @@ function keyLines(k: FigureTraceKey): KeyLine[] {
   return lines;
 }
 
-/** Estimate a rendered key line's text width (points). */
+/** Estimate a rendered key line's text width (points). Phase lines (the widest,
+ *  carrying the "a = … · κ = … Å⁻²" detail) render at FS_DETAIL; a swatch label
+ *  / note at FS_KEY. */
 function keyLineWidth(ln: KeyLine): number {
-  const full = ln.phase ? `${ln.phase}  ${ln.text}` : ln.text;
-  return full.length * FS_KEY * CHAR_W;
+  if (ln.phase) return `${ln.phase}  ${ln.text}`.length * FS_DETAIL * CHAR_W;
+  return ln.text.length * FS_KEY * CHAR_W;
 }
 
 /** Build the export figure as a standalone `<svg>` markup string. */
@@ -173,7 +175,9 @@ export function buildCleanFigureSvg(input: CleanFigureInput): string {
       : 0;
 
   const m = {
-    l: 38,
+    // Tight left margin: the y-axis has NO tick labels (intensity is a.u.), so
+    // only the rotated y-title sits here — keep it close to the spine.
+    l: 20,
     r: 8, // no right gutter — traces are named in the key block
     t: 20,
     b: AXIS_FOOT_H + keyBlockH + FOOTNOTE_H,
@@ -256,7 +260,7 @@ export function buildCleanFigureSvg(input: CleanFigureInput): string {
   );
   const yMid = m.t + ph / 2;
   parts.push(
-    `<text x="11" y="${yMid}" text-anchor="middle" font-size="${FS_AXIS}" font-weight="700" fill="${INK}" transform="rotate(-90 11 ${yMid})">Intensity (a.u.) + offset</text>`,
+    `<text x="9" y="${yMid}" text-anchor="middle" font-size="${FS_AXIS}" font-weight="700" fill="${INK}" transform="rotate(-90 9 ${yMid})">Intensity (a.u.) + offset</text>`,
   );
 
   // Traces (log-intensity per band) + peak glyphs.

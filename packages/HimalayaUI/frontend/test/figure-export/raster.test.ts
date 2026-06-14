@@ -23,7 +23,8 @@ describe("svgScaledToPixels", () => {
     expect(out).toContain('viewBox="0 0 50 40"');
   });
 
-  it("the export DPI upscales 3x (216/72)", () => {
-    expect(EXPORT_PNG_DPI / 72).toBe(3);
+  it("the export DPI is print-grade (300, ≥4× the 72pt authoring grid)", () => {
+    expect(EXPORT_PNG_DPI).toBe(300);
+    expect(EXPORT_PNG_DPI / 72).toBeGreaterThanOrEqual(3);
   });
 });
