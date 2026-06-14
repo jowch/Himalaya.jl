@@ -22,6 +22,7 @@ import { phaseHex } from "../export/traceColors";
 import { waterfallQDomain } from "../waterfall/waterfallModel";
 import {
   toTraceModel,
+  peakClickAction,
   losingPeakIds,
   complementPeakIds,
   toDetectorRings,
@@ -658,16 +659,20 @@ export function FocusPage(): JSX.Element {
                   addPeak.mutate(q);
                   announce("Peak added");
                 },
-                onClickPeak: (id, alt) => {
-                  if (alt) {
-                    // Exclude restyles the mark in place (it does NOT unmount),
-                    // so focus stays put — no re-anchor request.
-                    setPeakExcluded.mutate({ peakId: id, excluded: true });
-                    announce("Peak excluded");
+                onClickPeak: (id) => {
+                  // Provenance decides the verb (peakClickAction): an auto peak
+                  // is the indexer's — a click toggles its excluded flag (disable
+                  // / restore), which restyles the mark in place WITHOUT
+                  // unmounting it, so focus stays put. A manual peak is the
+                  // user's — a click removes it, unmounting the activated mark, so
+                  // re-anchor focus to the surviving q-neighbour (computed from
+                  // the pre-removal list; "+ Peak" button via fallback if none).
+                  const action = peakClickAction(peaks, id);
+                  if (!action) return;
+                  if (action.kind === "toggle-exclude") {
+                    setPeakExcluded.mutate({ peakId: id, excluded: action.excluded });
+                    announce(action.excluded ? "Auto peak disabled" : "Auto peak restored");
                   } else {
-                    // Remove unmounts the activated mark → re-anchor focus to the
-                    // surviving q-neighbour (or the "+ Peak" button via fallback
-                    // when none survive). Computed from the pre-removal list.
                     requestPeakFocus(nextFocusPeakId(peaks, id));
                     removePeak.mutate(id);
                     announce("Peak removed");

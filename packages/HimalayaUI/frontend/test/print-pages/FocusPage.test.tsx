@@ -437,19 +437,56 @@ describe("FocusPage", () => {
     }
   });
 
-  it("arming '+ Peak' then pressing Enter on a focused peak mark removes it and announces", () => {
+  it("arming '+ Peak' then Enter on an AUTO peak disables it (toggle exclude), not remove", () => {
     const announce = vi.fn();
     setAnnounceImpl(announce);
     try {
-      const { container } = renderAt(42);
+      renderAt(42); // default fixture peak id 1 is source:"auto"
       fireEvent.click(screen.getByText("+ Peak"));
-      const mark = container.querySelector('[data-role="plot-peaks"] [role="button"]')!;
-      expect(mark).toBeTruthy();
+      const mark = screen.getByRole("button", { name: /Auto peak at q = 0\.2000/ });
       fireEvent.keyDown(mark, { key: "Enter" });
-      expect(removePeakMutate).toHaveBeenCalledWith(1);
-      expect(announce.mock.calls[0]?.[0]).toBe("Peak removed");
-      fireEvent.keyDown(mark, { key: "Enter", altKey: true });
+      // Auto peaks belong to the indexer — a click disables (excludes) them,
+      // it does NOT remove them (the old plain-click=remove failed on auto).
       expect(setPeakExclMutate).toHaveBeenCalledWith({ peakId: 1, excluded: true });
+      expect(removePeakMutate).not.toHaveBeenCalled();
+      expect(announce.mock.calls.at(-1)?.[0]).toBe("Auto peak disabled");
+    } finally {
+      setAnnounceImpl(null);
+    }
+  });
+
+  it("Enter on an already-disabled AUTO peak restores it", () => {
+    const announce = vi.fn();
+    setAnnounceImpl(announce);
+    state.peaks = [
+      { id: 1, exposure_id: 7, q: 0.2, intensity: 40, prominence: 10, sharpness: 2, source: "auto", excluded: true },
+    ];
+    try {
+      renderAt(42);
+      fireEvent.click(screen.getByText("+ Peak"));
+      const mark = screen.getByRole("button", { name: /Auto peak at q = 0\.2000 \(excluded\)/ });
+      fireEvent.keyDown(mark, { key: "Enter" });
+      expect(setPeakExclMutate).toHaveBeenCalledWith({ peakId: 1, excluded: false });
+      expect(announce.mock.calls.at(-1)?.[0]).toBe("Auto peak restored");
+    } finally {
+      setAnnounceImpl(null);
+    }
+  });
+
+  it("arming '+ Peak' then Enter on a MANUAL peak removes it and announces", () => {
+    const announce = vi.fn();
+    setAnnounceImpl(announce);
+    state.peaks = [
+      { id: 5, exposure_id: 7, q: 0.2, intensity: 40, prominence: null, sharpness: null, source: "manual", excluded: false },
+    ];
+    try {
+      renderAt(42);
+      fireEvent.click(screen.getByText("+ Peak"));
+      const mark = screen.getByRole("button", { name: /Manual peak at q = 0\.2000/ });
+      fireEvent.keyDown(mark, { key: "Enter" });
+      expect(removePeakMutate).toHaveBeenCalledWith(5);
+      expect(setPeakExclMutate).not.toHaveBeenCalled();
+      expect(announce.mock.calls.at(-1)?.[0]).toBe("Peak removed");
     } finally {
       setAnnounceImpl(null);
     }

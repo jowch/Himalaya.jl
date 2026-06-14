@@ -48,7 +48,7 @@ export interface PlotPeaksProps {
    *  altKey=false (remove); Alt+Enter activates with altKey=true (exclude).
    *  Omit it while editing is disarmed so read-only marks stay roleless — an
    *  inert focusable control would lie. */
-  onPeakActivate?: (id: number, altKey: boolean) => void;
+  onPeakActivate?: (id: number) => void;
   /** When non-empty, peaks NOT in this set (and not hot) fade to neutral gray. */
   highlightPeakIds?: ReadonlySet<number>;
   /** One-shot keyboard-focus re-anchor (WCAG 2.4.3). After a destructive edit
@@ -153,16 +153,17 @@ export function PlotPeaks({
               // user's manual add) and excluded state — it was glyph-only before,
               // invisible to a screen-reader user editing peaks.
               "aria-label": `${p.source === "manual" ? "Manual" : "Auto"} peak at q = ${p.q.toFixed(4)}${p.excluded ? " (excluded)" : ""}`,
-              "aria-keyshortcuts": "Enter Space Alt+Enter",
+              "aria-keyshortcuts": "Enter Space",
               onKeyDown: (e: React.KeyboardEvent<SVGGElement>) => {
                 if (e.key !== "Enter" && e.key !== " ") return;
                 // Holding the key must not machine-gun mutations.
                 if (e.repeat) return;
                 // preventDefault so Space doesn't scroll the page.
                 e.preventDefault();
-                // Alt modifies Enter only — the advertised shortcuts are
-                // "Enter Space Alt+Enter"; Alt+Space stays a plain remove.
-                onPeakActivate(p.id, e.altKey && e.key === "Enter");
+                // Activation is a single verb now — the peak's provenance
+                // decides the outcome downstream (auto toggles off, manual
+                // removes), so there is no modifier to thread.
+                onPeakActivate(p.id);
               },
             }
           : {};

@@ -71,6 +71,34 @@ export function toTraceModel(
   };
 }
 
+// ── armed-edit peak click routing ────────────────────────────────────────────
+
+/** What a click on a peak mark does, resolved from the peak's provenance. */
+export type PeakClickAction =
+  | { kind: "remove" }
+  | { kind: "toggle-exclude"; excluded: boolean };
+
+/**
+ * Source-aware routing for a click on a peak in the armed trace editor.
+ *
+ * Auto peaks belong to the indexer — they are NOT deletable (the backend
+ * rejects a remove on a `source:"auto"` peak), so a click toggles their
+ * `excluded` flag: disable a spurious detection (it restyles struck-through in
+ * place, still visible) or restore it. Manual (curation) peaks are user-authored
+ * and a click removes them outright. This replaces the old plain-click=remove /
+ * alt-click=exclude split, which left auto peaks un-disable-able by a plain
+ * click. Returns null for an unknown id (a stale mark mid-reconcile).
+ */
+export function peakClickAction(
+  peaks: ReadonlyArray<{ id: number; source: string; excluded: boolean }>,
+  id: number,
+): PeakClickAction | null {
+  const p = peaks.find((pk) => pk.id === id);
+  if (!p) return null;
+  if (p.source === "auto") return { kind: "toggle-exclude", excluded: !p.excluded };
+  return { kind: "remove" };
+}
+
 // ── losing / complement peak sets (PlotCard.tsx 250-263, verbatim) ───────────
 
 /**

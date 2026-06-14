@@ -9,6 +9,7 @@ import {
 import { phaseColor } from "../../src/phases";
 import {
   toTraceModel,
+  peakClickAction,
   losingPeakIds,
   complementPeakIds,
   toDetectorRings,
@@ -25,6 +26,28 @@ function peak(over: Partial<Peak>): Peak {
     sharpness: null, source: "auto", excluded: false, ...over,
   };
 }
+
+describe("peakClickAction", () => {
+  const auto = peak({ id: 7, source: "auto", excluded: false });
+  const autoExcluded = peak({ id: 8, source: "auto", excluded: true });
+  const manual = peak({ id: 9, source: "manual", excluded: false });
+
+  it("a click on an auto peak toggles it excluded (disable a live one)", () => {
+    expect(peakClickAction([auto, manual], 7)).toEqual({ kind: "toggle-exclude", excluded: true });
+  });
+
+  it("a click on an already-excluded auto peak restores it", () => {
+    expect(peakClickAction([autoExcluded], 8)).toEqual({ kind: "toggle-exclude", excluded: false });
+  });
+
+  it("a click on a manual peak removes it", () => {
+    expect(peakClickAction([auto, manual], 9)).toEqual({ kind: "remove" });
+  });
+
+  it("returns null for an unknown id (stale mark mid-reconcile)", () => {
+    expect(peakClickAction([auto, manual], 999)).toBeNull();
+  });
+});
 
 function ref(over: Partial<IndexPeakRef>): IndexPeakRef {
   return { peak_id: 1, ratio_position: 1, residual: 0, q_observed: 0.1, ...over };

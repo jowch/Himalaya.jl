@@ -179,7 +179,7 @@ describe("TracePlate", () => {
     expect(screen.queryByTestId("add-peak-at-q")).toBeNull();
   });
 
-  it("shows the three-verb edit hint while armed", () => {
+  it("shows the add + provenance-split click hint while armed", () => {
     render(
       <TracePlate
         {...base}
@@ -189,7 +189,7 @@ describe("TracePlate", () => {
     );
     expect(
       screen.getByText(
-        "Click the trace to add a peak. Click a peak to remove it. Alt-click excludes it from indexing.",
+        "Click the trace to add a peak. Click a peak to remove it; auto peaks toggle off instead.",
       ),
     ).toBeInTheDocument();
   });
@@ -223,7 +223,7 @@ describe("TracePlate", () => {
     expect(mark!.getAttribute("aria-label")).toBe("Auto peak at q = 0.0500");
   });
 
-  it("armed: Enter on a peak mark removes it; Alt+Enter excludes it", () => {
+  it("armed: Enter (or Alt+Enter) on a peak mark activates it with just the id", () => {
     const onClickPeak = vi.fn();
     const { container } = render(
       <TracePlate
@@ -234,9 +234,11 @@ describe("TracePlate", () => {
     );
     const mark = container.querySelector('[data-role="plot-peaks"] [role="button"]')!;
     fireEvent.keyDown(mark, { key: "Enter" });
-    expect(onClickPeak).toHaveBeenLastCalledWith(0, false);
+    expect(onClickPeak).toHaveBeenLastCalledWith(0);
+    // Alt is retired: it no longer routes a distinct verb. The page decides
+    // remove-vs-disable from the peak's provenance, not a modifier.
     fireEvent.keyDown(mark, { key: "Enter", altKey: true });
-    expect(onClickPeak).toHaveBeenLastCalledWith(0, true);
+    expect(onClickPeak).toHaveBeenLastCalledWith(0);
   });
 
   it("armed add-at-q: typing a q inside the trace domain and submitting fires onAddPeak(q)", () => {
@@ -320,7 +322,7 @@ describe("TracePlate", () => {
     );
     const hint = screen.getByTestId("peak-edit-hint");
     expect(hint.textContent).toBe(
-      "Click a peak to remove it. Alt-click excludes it from indexing.",
+      "Click a peak to remove it; auto peaks toggle off instead.",
     );
     expect(screen.queryByText(HINT_RX)).toBeNull();
     expect(screen.queryByTestId("add-peak-at-q")).toBeNull();

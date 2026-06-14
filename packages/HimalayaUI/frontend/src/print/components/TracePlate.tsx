@@ -183,13 +183,16 @@ export function TracePlate({
   // onAddPeak the add sentence would be false, and with no onClickPeak the
   // remove sentence would be worse than false (TracePlot's click handler
   // falls through to onAddPeak on a peak hit, so "remove" would duplicate-add).
+  // The click verb is provenance-split downstream (a manual peak removes, an
+  // auto peak toggles off) — TracePlate cannot see a peak's source, so the
+  // sentence names both outcomes generically rather than lying about one.
   // "Esc exits." needs the toggle handler — that is what Escape disarms through.
   const hintSentences = [
     ...(interaction && interaction.onAddPeak
       ? ["Click the trace to add a peak."]
       : []),
     ...(interaction && interaction.onClickPeak
-      ? ["Click a peak to remove it.", "Alt-click excludes it from indexing."]
+      ? ["Click a peak to remove it; auto peaks toggle off instead."]
       : []),
     ...(onToggleAddPeak ? ["Esc exits."] : []),
   ];

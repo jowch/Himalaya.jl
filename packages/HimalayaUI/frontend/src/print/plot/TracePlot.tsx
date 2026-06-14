@@ -29,7 +29,7 @@ export interface PlotContext {
 export interface TracePlotInteraction {
   onXDomain: (d: [number, number] | null) => void;
   onAddPeak?: (q: number) => void;
-  onClickPeak?: (peakId: number, altKey: boolean) => void;
+  onClickPeak?: (peakId: number) => void;
   onReset?: () => void;
   hitTolerancePx?: number;
 }
@@ -181,7 +181,7 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
   }, []);
 
   const handleClickPx = useCallback(
-    (px: number, py: number, altKey: boolean) => {
+    (px: number, py: number) => {
       const s = stateRef.current;
       if (!s || !s.interaction) return;
       const plotPx = px - s.dims.margins.left;
@@ -208,7 +208,7 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
         tol,
       );
       if (hit && s.interaction.onClickPeak) {
-        s.interaction.onClickPeak(hit.id, altKey);
+        s.interaction.onClickPeak(hit.id);
       } else if (s.interaction.onAddPeak) {
         s.interaction.onAddPeak(q);
       }

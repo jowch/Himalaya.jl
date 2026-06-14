@@ -61,12 +61,14 @@ function HeroDemo() {
               ...ps,
               { id: Math.max(0, ...ps.map((p) => p.id)) + 1, q, source: "manual" },
             ]),
-          onClickPeak: (id, alt) =>
-            setPeaks((ps) =>
-              alt
-                ? ps.map((p) => (p.id === id ? { ...p, excluded: !p.excluded } : p))
-                : ps.filter((p) => p.id !== id),
-            ),
+          onClickPeak: (id) =>
+            setPeaks((ps) => {
+              const p = ps.find((pk) => pk.id === id);
+              // Mirror production: auto peaks toggle off, manual peaks remove.
+              return p && p.source === "auto"
+                ? ps.map((pk) => (pk.id === id ? { ...pk, excluded: !pk.excluded } : pk))
+                : ps.filter((pk) => pk.id !== id);
+            }),
         }}
       />
     </div>

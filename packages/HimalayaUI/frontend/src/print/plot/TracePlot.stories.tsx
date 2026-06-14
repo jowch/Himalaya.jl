@@ -44,7 +44,7 @@ export const Hero: Story = {
     interaction: {
       onXDomain: (d) => console.log("xDomain", d),
       onAddPeak: (q) => console.log("addPeak", q),
-      onClickPeak: (id, alt) => console.log("clickPeak", id, alt),
+      onClickPeak: (id) => console.log("clickPeak", id),
     },
     paperColor: "var(--color-paper)",
   },

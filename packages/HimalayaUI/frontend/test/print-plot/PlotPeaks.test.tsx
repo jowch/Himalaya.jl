@@ -171,7 +171,7 @@ describe("PlotPeaks", () => {
     expect(peakG!.getAttribute("role")).toBe("button");
     // FO-RESCORE2 F11: the label names provenance (Auto vs Manual).
     expect(peakG!.getAttribute("aria-label")).toBe("Auto peak at q = 0.2000");
-    expect(peakG!.getAttribute("aria-keyshortcuts")).toBe("Enter Space Alt+Enter");
+    expect(peakG!.getAttribute("aria-keyshortcuts")).toBe("Enter Space");
   });
 
   it("names peak provenance and excluded state in the aria-label (FO-RESCORE2 F11)", () => {
@@ -223,7 +223,7 @@ describe("PlotPeaks", () => {
     expect(offWindow!.getAttribute("aria-label")).toBeNull();
   });
 
-  it("Enter / Space fire onPeakActivate(id, false); Alt+Enter fires (id, true)", () => {
+  it("Enter / Space fire onPeakActivate(id); activation carries no modifier (alt retired)", () => {
     const spy = vi.fn();
     const { container } = render(
       <svg>
@@ -236,15 +236,15 @@ describe("PlotPeaks", () => {
       </svg>,
     );
     const peakG = container.querySelector('[data-role="plot-peaks"] > g')!;
-    // Enter = remove. fireEvent returns false when default was prevented.
+    // Enter activates. fireEvent returns false when default was prevented.
     expect(fireEvent.keyDown(peakG, { key: "Enter" })).toBe(false);
-    expect(spy).toHaveBeenLastCalledWith(7, false);
-    // Space = remove (and must preventDefault so the page does not scroll).
+    expect(spy).toHaveBeenLastCalledWith(7);
+    // Space activates (and must preventDefault so the page does not scroll).
     expect(fireEvent.keyDown(peakG, { key: " " })).toBe(false);
-    expect(spy).toHaveBeenLastCalledWith(7, false);
-    // Alt+Enter = exclude.
+    expect(spy).toHaveBeenLastCalledWith(7);
+    // Alt is retired: Alt+Enter is a plain activation, no second argument.
     fireEvent.keyDown(peakG, { key: "Enter", altKey: true });
-    expect(spy).toHaveBeenLastCalledWith(7, true);
+    expect(spy).toHaveBeenLastCalledWith(7);
     expect(spy).toHaveBeenCalledTimes(3);
     // Unrelated keys are ignored.
     fireEvent.keyDown(peakG, { key: "a" });
@@ -252,10 +252,6 @@ describe("PlotPeaks", () => {
     // Key-repeat must not machine-gun mutations.
     fireEvent.keyDown(peakG, { key: "Enter", repeat: true });
     expect(spy).toHaveBeenCalledTimes(3);
-    // Alt modifies Enter only — Alt+Space stays a plain remove (the
-    // advertised shortcuts are "Enter Space Alt+Enter").
-    fireEvent.keyDown(peakG, { key: " ", altKey: true });
-    expect(spy).toHaveBeenLastCalledWith(7, false);
   });
 
   it("calls onPeakFocus(id) on focus and onPeakFocus(null) on blur", () => {
