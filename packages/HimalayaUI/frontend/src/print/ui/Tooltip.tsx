@@ -8,6 +8,9 @@ interface TooltipProps {
   children: ReactElement;
   /** Which side of the trigger the tip sits on. Default `"top"`. */
   side?: "top" | "bottom";
+  /** Allow the caption to wrap (capped width) instead of a single nowrap strip.
+   *  For multi-clause guidance that would otherwise overflow the viewport. */
+  multiline?: boolean;
   /** Placement-only consumer override on the tip span (closed-look contract). */
   className?: string;
 }
@@ -31,6 +34,7 @@ export function Tooltip({
   label,
   children,
   side = "top",
+  multiline = false,
   className = "",
 }: TooltipProps): JSX.Element {
   const id = useId();
@@ -59,7 +63,8 @@ export function Tooltip({
           data-testid="tooltip"
           data-side={side}
           className={cx(
-            "pointer-events-none absolute z-30 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-sm px-2 py-1 text-xs",
+            "pointer-events-none absolute z-30 left-1/2 -translate-x-1/2 rounded-sm px-2 py-1 text-xs",
+            multiline ? "w-max max-w-[15rem] whitespace-normal text-left leading-snug" : "whitespace-nowrap",
             side === "top" ? "bottom-full mb-1" : "top-full mt-1",
             className,
           )}

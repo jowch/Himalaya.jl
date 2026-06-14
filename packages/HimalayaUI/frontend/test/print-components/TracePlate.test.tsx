@@ -128,14 +128,26 @@ describe("TracePlate", () => {
 
   // ── H10: disarmed discoverability cue ────────────────────────────────────────
 
-  it("shows the disarmed discoverability cue when the edit toggle is wired and not armed", () => {
-    render(<TracePlate {...base} onToggleAddPeak={() => {}} />);
-    expect(screen.getByTestId("peak-edit-cue").textContent).toBe(
-      "Arm + Peak to edit peaks.",
+  // The peak-edit guidance now lives in a hover/focus tooltip on the "+ Peak"
+  // button (it no longer pushes the plot down with a standing block of text).
+  function openPeakTip(): HTMLElement {
+    const btn = screen.getByRole("button", { name: "+ Peak" });
+    fireEvent.mouseEnter(btn.parentElement!); // the Tooltip wrapper span
+    return screen.getByTestId("tooltip");
+  }
+
+  it("the '+ Peak' tooltip leads with the arm step when disarmed", () => {
+    render(
+      <TracePlate
+        {...base}
+        onToggleAddPeak={() => {}}
+        interaction={{ onXDomain: () => {}, onAddPeak: () => {}, onClickPeak: () => {} }}
+      />,
     );
+    expect(openPeakTip().textContent).toContain("Arm to edit peaks");
   });
 
-  it("hides the disarmed cue once armed (never both the cue and the armed legend)", () => {
+  it("the '+ Peak' tooltip drops the arm step once armed (just the live verbs)", () => {
     render(
       <TracePlate
         {...base}
@@ -144,13 +156,20 @@ describe("TracePlate", () => {
         interaction={{ onXDomain: () => {}, onAddPeak: () => {}, onClickPeak: () => {} }}
       />,
     );
-    expect(screen.queryByTestId("peak-edit-cue")).toBeNull();
-    expect(screen.getByTestId("peak-edit-hint")).toBeInTheDocument();
+    const tip = openPeakTip().textContent ?? "";
+    expect(tip).not.toContain("Arm to edit peaks");
+    expect(tip).toContain("Click the trace to add a peak");
   });
 
-  it("omits the disarmed cue when no edit affordance exists (no onToggleAddPeak)", () => {
-    render(<TracePlate {...base} />);
+  it("no standing cue text is rendered (the guidance is in the closed tooltip)", () => {
+    render(<TracePlate {...base} onToggleAddPeak={() => {}} interaction={{ onXDomain: () => {}, onAddPeak: () => {} }} />);
     expect(screen.queryByTestId("peak-edit-cue")).toBeNull();
+    expect(screen.queryByTestId("tooltip")).toBeNull(); // closed until hover/focus
+  });
+
+  it("renders no '+ Peak' affordance when onToggleAddPeak is absent", () => {
+    render(<TracePlate {...base} />);
+    expect(screen.queryByRole("button", { name: "+ Peak" })).toBeNull();
   });
 
   it("renders a node passed as actions inside the plate", () => {
@@ -168,30 +187,33 @@ describe("TracePlate", () => {
 
   const HINT_RX = /Click the trace to add a peak/;
 
-  it("hides the edit hint (and the add-at-q field) when '+ Peak' is not armed", () => {
+  it("hides the add-at-q field when '+ Peak' is not armed (only the tooltip carries guidance)", () => {
     render(
       <TracePlate
         {...base}
+        onToggleAddPeak={() => {}}
         interaction={{ onXDomain: () => {}, onAddPeak: () => {}, onClickPeak: () => {} }}
       />,
     );
-    expect(screen.queryByText(HINT_RX)).toBeNull();
     expect(screen.queryByTestId("add-peak-at-q")).toBeNull();
+    // No standing hint text in the layout — it lives in the (closed) tooltip.
+    expect(screen.queryByText(HINT_RX)).toBeNull();
   });
 
-  it("shows the add + provenance-split click hint while armed", () => {
+  it("the armed tooltip names the add + provenance-split click verbs", () => {
     render(
       <TracePlate
         {...base}
         addPeakArmed
+        onToggleAddPeak={() => {}}
         interaction={{ onXDomain: () => {}, onAddPeak: () => {}, onClickPeak: () => {} }}
       />,
     );
-    expect(
-      screen.getByText(
-        "Click the trace to add a peak. Click a peak to remove it; auto peaks toggle off instead.",
-      ),
-    ).toBeInTheDocument();
+    expect(openPeakTip().textContent).toBe(
+      "Click the trace to add a peak. Click a peak to remove it; auto peaks toggle off instead. Esc exits.",
+    );
+    // The add-at-q field IS still inline while armed (keyboard parity).
+    expect(screen.getByTestId("add-peak-at-q")).toBeInTheDocument();
   });
 
   it("unarmed peak marks are read-only: no role, no tabindex", () => {
@@ -309,39 +331,39 @@ describe("TracePlate", () => {
     expect(onAddPeak).toHaveBeenCalledWith(0.05);
   });
 
-  it("onClickPeak only: hint drops the add sentence and the add-at-q field", () => {
-    // The hint promises only the wired verbs: with no onAddPeak, "Click the
+  it("onClickPeak only: tooltip drops the add verb, and no add-at-q field", () => {
+    // The tooltip promises only the wired verbs: with no onAddPeak, "Click the
     // trace to add a peak" would be false, and no field may promise an add
     // path the plate cannot deliver.
     render(
       <TracePlate
         {...base}
         addPeakArmed
+        onToggleAddPeak={() => {}}
         interaction={{ onXDomain: () => {}, onClickPeak: () => {} }}
       />,
     );
-    const hint = screen.getByTestId("peak-edit-hint");
-    expect(hint.textContent).toBe(
-      "Click a peak to remove it; auto peaks toggle off instead.",
+    expect(openPeakTip().textContent).toBe(
+      "Click a peak to remove it; auto peaks toggle off instead. Esc exits.",
     );
-    expect(screen.queryByText(HINT_RX)).toBeNull();
     expect(screen.queryByTestId("add-peak-at-q")).toBeNull();
   });
 
-  it("onAddPeak only: hint drops the remove/exclude sentences", () => {
+  it("onAddPeak only: tooltip drops the remove verb; add-at-q field present", () => {
     // Worse than false: without onClickPeak wired, TracePlot's click handler
     // falls through to onAddPeak on a peak hit, so "Click a peak to remove it"
-    // would actually duplicate-add. The hint must not promise it.
+    // would actually duplicate-add. The tooltip must not promise it.
     render(
       <TracePlate
         {...base}
         addPeakArmed
+        onToggleAddPeak={() => {}}
         interaction={{ onXDomain: () => {}, onAddPeak: () => {} }}
       />,
     );
-    const hint = screen.getByTestId("peak-edit-hint");
-    expect(within(hint).getByText(HINT_RX)).toBeInTheDocument();
-    expect(hint.textContent).not.toMatch(/remove|excludes/);
+    const tip = openPeakTip().textContent ?? "";
+    expect(tip).toContain("Click the trace to add a peak");
+    expect(tip).not.toMatch(/remove|toggle off/);
     expect(screen.getByTestId("add-peak-at-q")).toBeInTheDocument();
   });
 
@@ -517,7 +539,7 @@ describe("TracePlate", () => {
     expect(onToggleAddPeak).toHaveBeenCalledTimes(1);
   });
 
-  it("armed hint names the Esc exit when the toggle is wired", () => {
+  it("the armed tooltip names the Esc exit when the toggle is wired", () => {
     render(
       <TracePlate
         {...base}
@@ -526,11 +548,10 @@ describe("TracePlate", () => {
         interaction={{ onXDomain: () => {}, onAddPeak: () => {}, onClickPeak: () => {} }}
       />,
     );
-    const hint = screen.getByTestId("peak-edit-hint");
-    expect(hint.textContent).toContain("Esc exits.");
+    expect(openPeakTip().textContent).toContain("Esc exits.");
   });
 
-  it("armed hint omits the Esc sentence when no onToggleAddPeak is wired (controls don't lie)", () => {
+  it("no '+ Peak' affordance (hence no Esc guidance) when onToggleAddPeak is absent (controls don't lie)", () => {
     render(
       <TracePlate
         {...base}
@@ -538,8 +559,8 @@ describe("TracePlate", () => {
         interaction={{ onXDomain: () => {}, onAddPeak: () => {}, onClickPeak: () => {} }}
       />,
     );
-    const hint = screen.getByTestId("peak-edit-hint");
-    expect(hint.textContent).not.toContain("Esc exits.");
+    expect(screen.queryByRole("button", { name: "+ Peak" })).toBeNull();
+    expect(screen.queryByTestId("tooltip")).toBeNull();
   });
 
   // highlightPeakIds forwarding: a peak NOT in the set dims (data-dimmed=true).

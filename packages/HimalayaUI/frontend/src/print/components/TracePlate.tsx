@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { Card, Button, HintText, Input, SegmentedControl } from "../ui";
+import { Card, Button, Input, SegmentedControl, Tooltip } from "../ui";
 import { PlateHeader } from "./PlateHeader";
 import { ToolBar } from "./ToolBar";
 import { TracePlot, type TraceModel, type TracePlotInteraction } from "../plot/TracePlot";
@@ -196,6 +196,14 @@ export function TracePlate({
       : []),
     ...(onToggleAddPeak ? ["Esc exits."] : []),
   ];
+  // The guidance lives in a hover/focus tooltip on the "+ Peak" button instead
+  // of a standing block of text that pushed the plot down (it was the same copy
+  // in both states). Disarmed, it leads with the arm step; armed, it is just the
+  // live verbs. Empty when no verbs are wired (the tooltip is then suppressed).
+  const editTip =
+    hintSentences.length === 0
+      ? ""
+      : (addPeakArmed ? "" : "Arm to edit peaks: ") + hintSentences.join(" ");
 
   return (
     <Card
@@ -230,70 +238,64 @@ export function TracePlate({
               className="self-stretch w-px bg-hair-strong my-0.5 mx-0.5"
             />
           )}
-          {onToggleAddPeak && (
-            <Button ref={addPeakButtonRef} armed={addPeakArmed} onClick={onToggleAddPeak}>
-              + Peak
-            </Button>
-          )}
+          {onToggleAddPeak &&
+            (editTip ? (
+              // Guidance rides a hover/focus tooltip on the button — it no longer
+              // pushes the plot down with a standing block of text. (Our own
+              // instant dark tooltip, not the slow browser-native title.)
+              <Tooltip label={editTip} side="bottom" multiline>
+                <Button ref={addPeakButtonRef} armed={addPeakArmed} onClick={onToggleAddPeak}>
+                  + Peak
+                </Button>
+              </Tooltip>
+            ) : (
+              <Button ref={addPeakButtonRef} armed={addPeakArmed} onClick={onToggleAddPeak}>
+                + Peak
+              </Button>
+            ))}
           {actions}
         </ToolBar>
       </PlateHeader>
-      {/* Disarmed discoverability cue (H10): when editing is available but not
-          armed, a first-timer has no signal that peaks are interactive. A quiet
-          one-liner points at the affordance. Shown ONLY while disarmed and only
-          when the edit toggle exists; never alongside the armed legend. Rides
-          ink-soft (AA) — it is informational small text, not decorative. */}
-      {!addPeakArmed && onToggleAddPeak && (
-        <p data-testid="peak-edit-cue" className="mt-2 text-meta text-ink-soft">
-          Arm + Peak to edit peaks.
-        </p>
-      )}
-      {/* Armed-only edit legend: only the WIRED pointer verbs, plus the
-          keyboard add path. Hidden while disarmed — the plot is read-only
-          then and a standing instruction would lie. */}
-      {addPeakArmed && hintSentences.length > 0 && (
-        <div
-          data-testid="peak-edit-hint"
-          className="mt-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5"
-        >
-          <HintText className="min-w-0">{hintSentences.join(" ")}</HintText>
-          {onAddPeakAtQ && (
-            <form
-              data-testid="add-peak-at-q"
-              className="flex shrink-0 items-center gap-1.5"
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (!qValid) return;
-                onAddPeakAtQ(qParsed);
-                setQText("");
-              }}
+      {/* Armed-only add-at-q field: the keyboard parity for click-empty-space
+          adds (a11y). The verb GUIDANCE now lives in the "+ Peak" tooltip, so
+          only this compact control remains inline — and only while armed. */}
+      {addPeakArmed && onAddPeakAtQ && (
+        <div className="mt-2 flex justify-end">
+          <form
+            data-testid="add-peak-at-q"
+            className="flex shrink-0 items-center gap-1.5"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!qValid) return;
+              onAddPeakAtQ(qParsed);
+              setQText("");
+            }}
+          >
+            <Input
+              value={qText}
+              onValueChange={setQText}
+              type="number"
+              inputMode="decimal"
+              step="any"
+              min={addLo}
+              max={addHi}
+              mono
+              inputSize="sm"
+              invalid={qText.trim() !== "" && !qValid}
+              aria-label="q value for new peak"
+              placeholder="q"
+              testId="add-peak-q-input"
+              className="w-24"
+            />
+            <Button
+              type="submit"
+              variant="outline"
+              disabled={!qValid}
+              aria-label="Add peak at q"
             >
-              <Input
-                value={qText}
-                onValueChange={setQText}
-                type="number"
-                inputMode="decimal"
-                step="any"
-                min={addLo}
-                max={addHi}
-                mono
-                inputSize="sm"
-                invalid={qText.trim() !== "" && !qValid}
-                aria-label="q value for new peak"
-                placeholder="q"
-                testId="add-peak-q-input"
-                className="w-24"
-              />
-              <Button
-                type="submit"
-                variant="outline"
-                disabled={!qValid}
-                aria-label="Add peak at q"
-              >
-                Add
-              </Button>
-            </form>
-          )}
+              Add
+            </Button>
+          </form>
         </div>
       )}
       <TracePlot
