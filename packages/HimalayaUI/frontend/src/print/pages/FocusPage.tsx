@@ -648,11 +648,16 @@ export function FocusPage(): JSX.Element {
                 onHoverQ={setHoveredQ}
                 tools={
                   exposures.length > 0 ? (
+                    // FO-DETSTRIP-WALL: render at "sm" (62px), not "xs" (30px) —
+                    // at 30px the detector content was an indistinguishable dark
+                    // square, the frame-number label ate a third of the tile, and
+                    // the selected ring read as a hairline. 62px shows real
+                    // per-frame content + a legible frame label + a clear ring.
                     <ThumbnailGallery
                       exposures={toGalleryExposures(exposures)}
                       {...(activeExposureId !== undefined ? { selectedId: activeExposureId } : {})}
                       onSelect={setActiveExposure}
-                      size="xs"
+                      size="sm"
                     />
                   ) : undefined
                 }

@@ -81,7 +81,7 @@ Jonathan (2026-06-13): *"There are still fit and finish and UI/UX legibility iss
 | ✅ FO-TOOLBAR-FLAT | P3 | DONE `33147cc`. Added a hairline divider in the ToolBar between the view controls (scale, Auto-fit) and the edit/export controls (+ Peak, Copy). Live-verified the divider renders. |
 | ⊘ FO-PEAKCUE-DUP | ~~P3~~ | **KEPT by design.** "Arm + Peak to edit peaks." is a deliberate H10 discoverability cue: AA `ink-soft` text, shown ONLY while disarmed, never beside the armed legend. Removing it for ~20px would regress a11y/discoverability (a tooltip-only hint is worse for touch + SR) for a P3. The duplication IS the affordance. |
 | ✅ FO-COMB-SCROLL | P3 | DONE `33147cc`. The comb's scrollable q-pane is now `role="group"` + `tabIndex=0` + an aria-label ("Reflection comb q-axis, scroll horizontally"), so the horizontal-scroll affordance is labelled and keyboard-reachable instead of a cryptic bare scrollbar. |
-| ⏳ FO-DETSTRIP-WALL | P2 | DEFERRED to a follow-up (detector filmstrip is a larger DetectorPanel change). Row of identical dark squares each stamped with ✕; show real thumbnails / exposure labels, reserve ✕ for rejected, strengthen the selected ring. |
+| ✅ FO-DETSTRIP-WALL | P2 | DONE `<plot>`. The Focus exposure filmstrip rendered at `size="xs"` (30px) — at that size the detector content was an indistinguishable dark square, the frame-number label ate a third of the tile, and the ring read as a hairline. Bumped to `size="sm"` (62px): real per-frame detector content + a legible frame label + a clear selected ring are now visible. (The "wall of ✕" premise was a culled-sample artifact — ✕ was already reserved for truly-rejected frames; sample 5 shows 6 normal / 1 rejected / 1 representative. The "3 badge" was the frame number, now legible.) Live-verified. |
 
 **Folio** — biggest: the two cards are near-identical twins → reads as exactly the "identical card grid" the design system forbids; the figure-first promise collapses.
 | ID | Sev | What / Fix |
@@ -118,6 +118,12 @@ Jonathan (2026-06-13): *"There are still fit and finish and UI/UX legibility iss
 | ⊘ BU-DISPLAY-THIN | ~~P3~~ | **KEPT.** DISPLAY is a clean display-settings section (the trace-offset slider; the q-scale toggle deliberately lives on the plate). Merging the slider into the Traces section would conflate a display setting with the membership/order editor — two different intents. A single-control titled section is clearer than that mix; not a defect. |
 
 **Tally:** 6 cross-cutting + ~37 per-surface = **~43 fresh items** (4 cross-cutting P1 + several surface P1s are genuine WCAG-AA text-contrast failures — i.e. by the goal's own `finish_bar`, the surfaces were NOT actually at GOLD). The contrast P1s + the two "biggest" layout issues (Loupe detector cap, Focus comb axis) are the highest-leverage. Screenshots retained under `.impeccable/review-2026-06-13/`.
+
+### Jonathan-reported plot bugs (2026-06-13, outside the re-review)
+| ID | Sev | What / Fix |
+|---|---|---|
+| ✅ PEAK-BASELINE | **bug** | DONE `e010c11`. Manual ("curation") peaks come back with `intensity:null`; the **waterfall** model passed it straight through, so PlotPeaks dropped the bead to the row baseline — peaks rendered flat on the floor (visible on the dev series, members 6 & 8). `toWaterfallRows` now anchors null intensities to the curve via the shared `lib/plot/traceIntensity` (same fix Focus's `toTraceModel` already had); covers the builder/read waterfall AND the folio mini-waterfalls. New test. Live-verified members 6 & 8 now cluster all peaks on the trace. |
+| ✅ PEAK-MARKER-OVERLAP | **polish** | DONE `2b7335e`. The downward-triangle glyph's apex was drawn AT the trace point, so its outline overlapped the curve (~2px, the stroke bridging it). Added a 3px `MARKER_LIFT` to the apex (+ the hot q-line start). Live-measured apex now clears the trace ~5px. On-screen only (the export's Observable-Plot symbol is centred on the point, no overlap). |
 
 ## Wave status
 
