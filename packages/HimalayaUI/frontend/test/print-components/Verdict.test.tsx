@@ -30,9 +30,11 @@ describe("<Verdict> unscreened state (neither dropped nor kept)", () => {
     expect(onToggle).toHaveBeenCalledTimes(1);
   });
 
-  it("status Dot has data-tone=neutral when unscreened", () => {
+  it("status Dot is the hollow 'muted' ring when unscreened (LO-UNSCREENED-DOT: pending reads by shape)", () => {
     const { container } = render(<Verdict dropped={false} />);
-    expect(container.querySelector("[data-tone='neutral']")).toBeInTheDocument();
+    expect(container.querySelector("[data-tone='muted']")).toBeInTheDocument();
+    // the filled accent/success tones are reserved for screened verdicts
+    expect(container.querySelector("[data-tone='neutral']")).not.toBeInTheDocument();
   });
 });
 

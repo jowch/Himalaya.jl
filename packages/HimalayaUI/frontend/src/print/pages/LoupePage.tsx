@@ -433,7 +433,11 @@ export function LoupePage(): JSX.Element {
           <div className={LOUPE_BODY_GRID}>
             {sample && activeExposure ? (
               <>
-                <div className="min-w-0">
+                {/* LO-STRIP-OVERHANG: cap the whole detector stack (frame +
+                    filmstrip + legend) at the frame's max width and centre it, so
+                    the filmstrip aligns to the frame edges instead of overhanging
+                    it by ~a hundred px each side. */}
+                <div className="min-w-0 w-full max-w-[640px] mx-auto">
                   <BigFrame
                     src={buildExposureImageUrl(activeExposure)}
                     caption={`frame ${frameIndex + 1} of ${exposures.length} · ${verdictWord}`}

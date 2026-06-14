@@ -44,7 +44,11 @@ export function Verdict({
     : isKept
       ? "Drop or restore to change the call."
       : "Keep or drop to screen this frame."; // LO-TERM: "frame", not "exposure"
-  const tone = dropped ? "accent" : isKept ? "success" : "neutral";
+  // LO-UNSCREENED-DOT: the unscreened state reads by SHAPE, not hue alone — a
+  // hollow `muted` ring (vs the filled accent/success dots) signals "pending"
+  // even in grayscale, instead of a near-invisible filled neutral dot. (The
+  // "Unscreened" word is the primary channel; the ring reinforces it.)
+  const tone = dropped ? "accent" : isKept ? "success" : "muted";
 
   return (
     <div

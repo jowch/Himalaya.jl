@@ -60,15 +60,15 @@ Jonathan (2026-06-13): *"There are still fit and finish and UI/UX legibility iss
 **Loupe** — biggest: the detector window (the page's whole job) is capped at 500px in an ~880px column, wasting a third of the width while the filmstrip overhangs it.
 | ID | Sev | What / Fix |
 |---|---|---|
-| LO-BIGFRAME-CAP | P2 | `BigFrame max-w-[500px] mx-auto` floats in an ~880px column → ~190px dead paper each side, detector shrunk to ~57% of available width. Raise/remove the cap (e.g. 720px) or narrow the column. |
-| LO-STRIP-OVERHANG | P2 | Filmstrip (≈615px) overhangs the 499px frame by ~57px each side → parent/child relationship breaks. Wrap BigFrame + gallery in one frame-width container; align strip edges to the frame. |
+| ✅ LO-BIGFRAME-CAP | P2 | DONE `<lo>`. `BigFrame max-w-[500px]`→`max-w-[640px]`; the detector now fills the ~722px hero column (was ~69%, now ~89%). Live-verified frame width 640px. |
+| ✅ LO-STRIP-OVERHANG | P2 | DONE `<lo>`. Wrapped the whole detector stack (frame + filmstrip + legend) in one `max-w-[640px] mx-auto` container so the strip aligns to the frame instead of overhanging. Live-verified strip and frame edges match exactly (0px L/R diff). |
 | ⊘ LO-VERDICTHINT | ~~P1~~ | **REFUTED.** The estimate "4.01:1" is wrong: `ink-soft` on `paper-sunk` measures **6.0:1** (contrast-tokens guard). Verdict isn't even on the Loupe page (Focus phase-rail component); where it lives the hint clears AA. No fix. |
 | ⊘ LO-SAMPLEPOS | ~~P1~~ | **REFUTED.** Live-measured the "2 / 139" counter at **6.49:1** — `ink-soft` clears AA-normal everywhere. The "4.31:1" estimate was wrong. No fix. |
 | ⊘ LO-KEPTPILL | ~~P1~~ | **REFUTED.** Live-measured the "Kept" pill (`text-plate` on `bg-success`) at **5.04:1** (matches the symmetric `success`/`plate` = 5.03 in the token guard) — clears AA-normal. The "4.16:1" estimate was wrong. No fix. |
-| LO-UNSCREENED-DOT | P2 | Unscreened state = a near-invisible neutral grey dot, distinguished from kept/dropped by hue alone. Give it a hollow-ring shape so "pending" reads by shape. |
-| LO-RIGHTVOID | P3 | Suppressed meta block leaves a tall empty band top-right between the "10/139" nav and the Verdict well. Pull sample-nav down atop the side panel, or surface a minimal identity line. |
-| LO-ADDTAG-GHOST | P3 | "+ tag" dashed ghost chip `ink-faint` ≈2.4:1 — an interactive affordance below 3:1, and the only content in an empty tags block. Render at `ink-soft`. `[related LO-TAGPROV]` |
-| LO-MANAGE-BTN | P3 | "Manage" ghost button reads as a second header word (ink-soft, no border/underline). Add a resting affordance or make it an IconButton. |
+| ✅ LO-UNSCREENED-DOT | P2 | DONE `<lo>`. Verdict's unscreened dot tone `neutral` (filled near-invisible grey)→`muted` (the Dot primitive's existing HOLLOW ring), so "pending" reads by SHAPE vs the filled accent/success verdicts (survives grayscale). NB the "Unscreened" word is already the primary text channel, so this was reinforcement, not a strict 1.4.1 fix. Test updated. |
+| ⊘ LO-RIGHTVOID | ~~P3~~ | **NOT REPRODUCING** post LO-BIGFRAME-CAP. The Verdict sits at the TOP of the side-panel column (Block 1 "This frame" is intentionally suppressed when sparse, per LO-EXPSPARSE), so there is no tall top void; the side panel being shorter than the now-640px detector leaves ordinary bottom whitespace, which is fine. No fix. |
+| ⊘ LO-ADDTAG-GHOST | ~~P3~~ | **REFUTED.** The Chip `add` variant text is `text-ink-soft`, not `ink-faint`; live-measured the "+ tag" invite at **6.75:1** (passes). The "2.4:1" estimate was wrong. No fix. |
+| ⊘ LO-MANAGE-BTN | ~~P3~~ | **KEPT.** "Manage" is `Button variant="ghost"` — the design system's standard secondary-action treatment (live 6.75:1, has hover feedback), used consistently elsewhere (plot toolbar, panel actions). Adding a bespoke resting affordance here only would be inconsistent; a global ghost-variant change is out of scope for a P3. |
 
 **Focus** — biggest: the comb panel can't be read as a quantitative figure (one orphan "0.05" x-tick, no q-axis label, combs fill ~65% of the width).
 | ID | Sev | What / Fix |

@@ -36,7 +36,11 @@ export function BigFrame({
       data-testid="big-frame"
       data-rejected={rejected ? "true" : undefined}
       className={cx(
-        "relative aspect-square rounded overflow-hidden bg-frame-edge border border-frame-edge max-w-[500px] mx-auto",
+        // LO-BIGFRAME-CAP: the detector window is the loupe's whole job, so it
+        // fills the hero column up to 640px (was 500px, which wasted ~a third of
+        // the ~720px column). mx-auto centres it; the LoupePage caps the whole
+        // frame+filmstrip stack at the same width so the strip aligns to the frame.
+        "relative aspect-square rounded overflow-hidden bg-frame-edge border border-frame-edge max-w-[640px] mx-auto",
         className,
       )}
     >
