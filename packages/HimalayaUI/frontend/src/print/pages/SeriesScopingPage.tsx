@@ -1018,7 +1018,13 @@ export function SeriesScopingPage(): JSX.Element {
                               also out of the series. Inline (not stacked) so
                               the dimmed row stays two lines tall. */}
                           <div className="flex items-center gap-2 min-w-0">
-                            <span className="text-meta font-semibold text-ink-soft">
+                            {/* SC-CANDNAME-DIM: the name is the row's primary
+                                identifier, so it reads at text-ink (out-ranking
+                                its own smp_/why metadata). The candidate stays
+                                visibly secondary via the smaller text-meta size,
+                                the dashed border, and the dimmed sparkline, not
+                                by dimming the name's colour to match its caption. */}
+                            <span className="text-meta font-semibold text-ink">
                               {c.sampleName}
                             </span>
                             <span className="text-caption font-mono text-ink-soft">

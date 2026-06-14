@@ -48,7 +48,9 @@ export function ScopeCandidateRow({
       />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="text-meta font-semibold text-ink-soft">{name}</span>
+          {/* SC-CANDNAME-DIM: name at text-ink (primary identifier); the row's
+              secondary status comes from the dashed border + dimmed sparkline. */}
+          <span className="text-meta font-semibold text-ink">{name}</span>
           {sampleId != null && (
             <span className="text-caption font-mono text-ink-soft">{sampleId}</span>
           )}
