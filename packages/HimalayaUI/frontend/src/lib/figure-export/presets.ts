@@ -13,13 +13,6 @@ export const EXPORT_MARGIN = {
   left: 60,
 } as const;
 
-/** Plot title font metrics. */
-export const TITLE_FONT_PRIMARY = "600 16px ui-sans-serif, system-ui, sans-serif";
-export const TITLE_FONT_SECONDARY = "400 12px ui-sans-serif, system-ui, sans-serif";
-
-/** Body / legend font (also applied via Plot's `style`). */
-export const BODY_FONT = "400 12px ui-sans-serif, system-ui, sans-serif";
-
 /** Trace + peak stroke widths — wider than on-screen for printability. */
 export const TRACE_STROKE_PX = 1.75;
 export const PREDICTED_Q_STROKE_PX = 1.5;

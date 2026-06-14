@@ -3,13 +3,26 @@ import * as Plot from "@observablehq/plot";
 import type { ExportSpec, LegendRow } from "./types";
 import {
   EXPORT_MARGIN,
-  TITLE_FONT_PRIMARY,
-  TITLE_FONT_SECONDARY,
-  BODY_FONT,
   LIGHT_PALETTE,
 } from "./presets";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
+
+/** Fallback sans stack when a spec doesn't pin a family (clean preset pins Arial). */
+const EXPORT_SANS = "Arial, Helvetica, system-ui, sans-serif";
+
+/**
+ * Set the three SVG font presentation attributes explicitly. The CSS `font`
+ * shorthand is NOT a valid SVG presentation attribute (it is silently ignored),
+ * so text authored with `setAttribute("font", "600 16px …")` falls back to the
+ * UA default size AND, with no family, the default serif — the export's old
+ * "sloppy" look. Always set family/size/weight as their own attributes.
+ */
+function applyFont(el: SVGElement, family: string, sizePx: number, weight: number): void {
+  el.setAttribute("font-family", family);
+  el.setAttribute("font-size", String(sizePx));
+  el.setAttribute("font-weight", String(weight));
+}
 
 /**
  * Layout the export SVG: white background, primary + secondary title,
@@ -35,13 +48,15 @@ export function buildExportSvg(spec: ExportSpec): SVGSVGElement {
   bg.setAttribute("fill", LIGHT_PALETTE.background);
   svg.appendChild(bg);
 
+  // One resolved family for every hand-drawn text element (clean preset → Arial).
+  const family = spec.fontFamily ?? EXPORT_SANS;
+
   // Title block (primary + secondary).
   const titleY = 24;
   const primary = document.createElementNS(SVG_NS, "text");
   primary.setAttribute("x", String(EXPORT_MARGIN.left));
   primary.setAttribute("y", String(titleY));
-  primary.setAttribute("font", TITLE_FONT_PRIMARY);
-  if (spec.fontFamily) primary.setAttribute("font-family", spec.fontFamily);
+  applyFont(primary, family, 16, 600);
   primary.setAttribute("fill", LIGHT_PALETTE.text);
   primary.textContent = spec.title.primary;
   svg.appendChild(primary);
@@ -50,7 +65,7 @@ export function buildExportSvg(spec: ExportSpec): SVGSVGElement {
     const secondary = document.createElementNS(SVG_NS, "text");
     secondary.setAttribute("x", String(EXPORT_MARGIN.left));
     secondary.setAttribute("y", String(titleY + 18));
-    secondary.setAttribute("font", TITLE_FONT_SECONDARY);
+    applyFont(secondary, family, 12, 400);
     secondary.setAttribute("fill", LIGHT_PALETTE.textMuted);
     secondary.textContent = spec.title.secondary;
     svg.appendChild(secondary);
@@ -62,21 +77,25 @@ export function buildExportSvg(spec: ExportSpec): SVGSVGElement {
     style: {
       background: "transparent",
       color: LIGHT_PALETTE.text,
-      fontFamily: spec.fontFamily ?? BODY_FONT,
+      // A real family, not a CSS `font` shorthand — Plot writes this straight to
+      // the body's font-family (the clean preset pins Arial).
+      fontFamily: spec.fontFamily ?? EXPORT_SANS,
     },
     ...spec.plot,
   });
-  const plotG = document.createElementNS(SVG_NS, "g");
-  // Position the plot below the title block.
-  const plotX = EXPORT_MARGIN.left;
-  const plotY = EXPORT_MARGIN.top;
-  plotG.setAttribute("transform", `translate(${plotX}, ${plotY})`);
-  // Move all children of the inner SVG into the group, dropping the inner
-  // <svg> wrapper itself (we are nesting inside our outer SVG).
-  while (plotEl.firstChild) {
-    plotG.appendChild(plotEl.firstChild);
-  }
-  svg.appendChild(plotG);
+  // Position the plot below the title block. NEST the Plot <svg> directly — do
+  // NOT unwrap its children into a <g>. Observable Plot scopes its generated
+  // <style> to a `:where(.plot-XXXX)` class on its ROOT <svg>; discarding that
+  // root orphans every scoped rule (font-family included) and the body falls
+  // back to the UA default serif. A nested <svg x y> keeps the class, the
+  // <style> block, and the inline styles self-contained and correctly placed.
+  plotEl.setAttribute("x", String(EXPORT_MARGIN.left));
+  plotEl.setAttribute("y", String(EXPORT_MARGIN.top));
+  // A nested <svg> clips to its viewport by default; Plot draws the x-axis tick
+  // labels a few px BELOW its height box, so they would be cut. `overflow:visible`
+  // renders them (like the old unwrapping <g>) while keeping the scoped styles.
+  plotEl.setAttribute("overflow", "visible");
+  svg.appendChild(plotEl);
 
   // Legend rows (beneath the plot, inside the bottom margin).
   if (spec.legend && spec.legend.rows.length > 0) {
@@ -85,7 +104,7 @@ export function buildExportSvg(spec: ExportSpec): SVGSVGElement {
     legendG.setAttribute("transform", `translate(${EXPORT_MARGIN.left}, ${legendY})`);
     let cursorX = 0;
     for (const row of spec.legend.rows) {
-      const item = renderLegendItem(row, cursorX);
+      const item = renderLegendItem(row, cursorX, family);
       legendG.appendChild(item.group);
       cursorX += item.width + 16;
     }
@@ -98,8 +117,7 @@ export function buildExportSvg(spec: ExportSpec): SVGSVGElement {
     foot.setAttribute("x", String(spec.width / 2));
     foot.setAttribute("y", String(spec.height - 10));
     foot.setAttribute("text-anchor", "middle");
-    foot.setAttribute("font", TITLE_FONT_SECONDARY);
-    if (spec.fontFamily) foot.setAttribute("font-family", spec.fontFamily);
+    applyFont(foot, family, 12, 400);
     foot.setAttribute("fill", LIGHT_PALETTE.textMuted);
     foot.textContent = spec.footnote;
     svg.appendChild(foot);
@@ -108,7 +126,7 @@ export function buildExportSvg(spec: ExportSpec): SVGSVGElement {
   return svg;
 }
 
-function renderLegendItem(row: LegendRow, x: number): { group: SVGGElement; width: number } {
+function renderLegendItem(row: LegendRow, x: number, family: string): { group: SVGGElement; width: number } {
   const g = document.createElementNS(SVG_NS, "g");
   g.setAttribute("transform", `translate(${x}, 0)`);
 
@@ -134,7 +152,7 @@ function renderLegendItem(row: LegendRow, x: number): { group: SVGGElement; widt
   const text = document.createElementNS(SVG_NS, "text");
   text.setAttribute("x", "16");
   text.setAttribute("y", "0");
-  text.setAttribute("font", BODY_FONT);
+  applyFont(text, family, 12, 400);
   text.setAttribute("fill", LIGHT_PALETTE.text);
   text.textContent = row.label;
   g.appendChild(text);
