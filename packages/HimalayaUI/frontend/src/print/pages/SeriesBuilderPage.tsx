@@ -747,7 +747,10 @@ function BuilderBody({
                 "Membership and order on the plate are from the last confirmed figure. Confirm the series to publish your edits.",
             }
           : {})}
-        orderedBy={series.ordering_variable ?? "—"}
+        // BU-ORDERING-DASH: empty (not a literal "—") so the Field shows its
+        // explicit "Not set" placeholder rather than a bare dash in an
+        // input-shaped box.
+        orderedBy={series.ordering_variable ?? ""}
         // Honest section label: rows are only reorderable in draft mode (the
         // editable RecipeEditor); the read-mode MemberList cannot be dragged.
         reorderable={liveDraft != null}
@@ -993,43 +996,49 @@ function RecipeRow({
           {figureLabel}
         </span>
       )}
-      <IconButton
-        ref={upRef}
-        label="Move up"
-        tone="ghost"
-        data-testid="builder-recipe-up"
-        disabled={atTop}
-        onClick={() => {
-          pendingDir.current = "up";
-          onMove(index, index - 1);
-        }}
-      >
-        &#9650;
-      </IconButton>
-      <IconButton
-        ref={downRef}
-        label="Move down"
-        tone="ghost"
-        data-testid="builder-recipe-down"
-        disabled={atBottom}
-        onClick={() => {
-          pendingDir.current = "down";
-          onMove(index, index + 1);
-        }}
-      >
-        &#9660;
-      </IconButton>
-      {/* BU-EMPTYREMOVE: a series keeps at least one member — the last row's
-          Remove is disabled (with a reason) so a draft can't be emptied to zero
-          and then "saved" as an empty series. */}
-      <IconButton
-        label={count === 1 ? "Remove sample (a series keeps at least one member)" : "Remove sample"}
-        tone="ghost"
-        dismiss
-        data-testid="builder-recipe-remove"
-        disabled={count === 1}
-        onClick={onRemove}
-      />
+      {/* BU-REORDER-CRAMP: the reorder/remove controls are ONE tight cluster
+          (gap-0.5), set off from the data zone (grip / name / exp) by a left
+          hairline + padding, so the ▲▼✕ trio reads as a control group rather than
+          jostling the name in a flat equal-gap run. */}
+      <div className="flex items-center gap-0.5 flex-shrink-0 ml-1 pl-2 border-l border-hair">
+        <IconButton
+          ref={upRef}
+          label="Move up"
+          tone="ghost"
+          data-testid="builder-recipe-up"
+          disabled={atTop}
+          onClick={() => {
+            pendingDir.current = "up";
+            onMove(index, index - 1);
+          }}
+        >
+          &#9650;
+        </IconButton>
+        <IconButton
+          ref={downRef}
+          label="Move down"
+          tone="ghost"
+          data-testid="builder-recipe-down"
+          disabled={atBottom}
+          onClick={() => {
+            pendingDir.current = "down";
+            onMove(index, index + 1);
+          }}
+        >
+          &#9660;
+        </IconButton>
+        {/* BU-EMPTYREMOVE: a series keeps at least one member — the last row's
+            Remove is disabled (with a reason) so a draft can't be emptied to zero
+            and then "saved" as an empty series. */}
+        <IconButton
+          label={count === 1 ? "Remove sample (a series keeps at least one member)" : "Remove sample"}
+          tone="ghost"
+          dismiss
+          data-testid="builder-recipe-remove"
+          disabled={count === 1}
+          onClick={onRemove}
+        />
+      </div>
     </div>
   );
 }

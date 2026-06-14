@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Button, IconButton, Kicker, Slider, Field } from "../ui";
+import { Button, IconButton, Kicker, Slider, Field, NoticePill } from "../ui";
 import { AutoGroup } from "./AutoGroup";
 import { RailSection } from "./RailSection";
 
@@ -113,7 +113,14 @@ export function BuilderRail({
       )}
     >
       <div className="flex items-center justify-between">
-        <Kicker tone="soft">Compose</Kicker>
+        <div className="flex items-center gap-2.5">
+          <Kicker tone="soft">Compose</Kicker>
+          {/* BU-MODESHIFT: draft (edit) mode is otherwise near-invisible against
+              read mode (same bg/borders/geometry), so the editing state carries
+              a standing "Unsaved draft" marker on the Compose header. `reorderable`
+              is the draft signal (only a draft's traces reorder). */}
+          {reorderable && <NoticePill tone="draft">Unsaved draft</NoticePill>}
+        </div>
         {/* controls-don't-lie: no onCollapse means no collapse behavior exists,
             so the affordance is dropped; the Kicker sits flush-left on its own. */}
         {onCollapse && (
@@ -148,6 +155,7 @@ export function BuilderRail({
         <Field
           srLabel="Ordering variable"
           value={orderedBy}
+          placeholder="Not set"
           {...(orderOptions
             ? { options: orderOptions, ...(onOrderSelect ? { onSelect: onOrderSelect } : {}) }
             : onChangeOrder

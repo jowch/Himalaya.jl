@@ -147,12 +147,19 @@ export function PlotLabels({
               // so the dim (and its release) eases instead of snapping —
               // matching the PlotPeaks glyph treatment. Reduced motion is
               // handled by the global near-zero rule.
+              // BU-PEAKORD-HALO: a plate-colour halo (stroke painted UNDER the
+              // fill via paint-order) lifts the ordinal off the gridlines on
+              // low-amplitude traces, where it would otherwise merge with them.
               style={{
                 fontFamily: "var(--font-mono)",
                 fontSize: 11,
                 fontWeight: 700,
                 color: e.color,
                 fill: "currentColor",
+                paintOrder: "stroke",
+                stroke: "var(--color-plate)",
+                strokeWidth: 3,
+                strokeLinejoin: "round",
               }}
             >
               {e.label}
