@@ -15,6 +15,9 @@ export interface SampleRowModel {
   dropped: number;
   tags: Tag[];
   phase: string | null | undefined;
+  /** The representative exposure is declared form_factor → the status cell reads
+   *  "Form factor" instead of "Not indexed". */
+  formFactor: boolean;
 }
 
 /** CorpusSample + its (possibly unloaded) exposures → SampleTableRow props.
@@ -43,5 +46,6 @@ export function toSampleRowModel(
     dropped,
     tags: toLoupeTags(sample.tags),
     phase: sample.phase,
+    formFactor: sample.assignment_state === "form_factor",
   };
 }

@@ -488,6 +488,7 @@ export function SamplesPage(): JSX.Element {
                     noExposures={noExposures}
                     tags={m.tags}
                     {...(m.phase !== undefined ? { phase: m.phase } : {})}
+                    {...(m.formFactor ? { formFactor: true } : {})}
                     checked={checkedSamples.has(s.id)}
                     onCheck={() => toggleSampleCheck(s.id)}
                     selectedExposureIds={selected}

@@ -34,6 +34,9 @@ export interface SampleTableRowProps {
   onAddTag?: (t: Tag) => void;
   onRemoveTag?: (t: Tag) => void;
   phase?: string | null;
+  /** The representative exposure is declared form_factor → the status cell reads
+   *  "Form factor" rather than the phase chip or the "Not indexed" invite. */
+  formFactor?: boolean;
   /** When set, the sample name in the SpecCell becomes a button that opens the
    *  loupe view for this sample. */
   onOpenLoupe?: () => void;
@@ -182,6 +185,7 @@ export function SampleTableRow({
   onAddTag,
   onRemoveTag,
   phase,
+  formFactor = false,
   onOpenLoupe,
   onOpenFocus,
   onActivateExposure,
@@ -397,11 +401,12 @@ export function SampleTableRow({
                 ? { tabIndex: tab(COL_STATUS) ?? -1, ref: cellRef(COL_STATUS) as React.Ref<HTMLButtonElement>, onMouseDown: activatePointer(COL_STATUS) }
                 : {})}
             >
-              <StatusCell door {...(phase !== undefined ? { phase } : {})} />
+              <StatusCell door {...(phase !== undefined ? { phase } : {})} {...(formFactor ? { formFactor: true } : {})} />
             </button>
           ) : (
             <StatusCell
               {...(phase !== undefined ? { phase } : {})}
+              {...(formFactor ? { formFactor: true } : {})}
               {...(noExposures ? { noExposures: true } : {})}
             />
           )}

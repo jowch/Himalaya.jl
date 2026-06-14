@@ -50,6 +50,12 @@ export interface CorpusSample extends Sample {
   q_units: string;
   screened?: boolean;
   phase?: string | null;
+  /** The representative exposure's durable assignment state (selected=1 else
+   *  highest-id). Drives the contact-sheet status: `form_factor` shows a
+   *  distinct "Form factor" status, `indexed` with a `phase` shows the chip,
+   *  everything else reads "Not indexed". Absent on older payloads → treated as
+   *  unindexed. */
+  assignment_state?: AssignmentState;
 }
 
 export class ApiError extends Error {

@@ -3,6 +3,13 @@ import { PhaseChip } from "../ui/PhaseChip";
 
 export interface StatusCellProps {
   phase?: string | null;
+  /** The representative exposure's durable assignment is `form_factor` (a real
+   *  trace with no Bragg peaks to index). It carries no phase, but it is a
+   *  DELIBERATE classification — distinct from an un-triaged "Not indexed"
+   *  sample — so it gets its own terminal status rather than reading as
+   *  unindexed (which would imply pending work). Outranks the door invite for
+   *  the same reason; yields only to `noExposures`. */
+  formFactor?: boolean;
   /** The sample has zero exposures: there is nothing to index, so the cell reads
    *  a terminal "No exposures" status instead of the "Not indexed" invitation
    *  (which would imply an action the empty sample can't take). SA-ZEROEXP. */
@@ -17,7 +24,7 @@ export interface StatusCellProps {
   className?: string;
 }
 
-export function StatusCell({ phase, noExposures = false, door = false, className }: StatusCellProps): JSX.Element {
+export function StatusCell({ phase, formFactor = false, noExposures = false, door = false, className }: StatusCellProps): JSX.Element {
   const hasPhase = typeof phase === "string" && phase.length > 0;
 
   return (
@@ -32,6 +39,11 @@ export function StatusCell({ phase, noExposures = false, door = false, className
         </span>
       ) : hasPhase ? (
         <PhaseChip phase={phase as string} />
+      ) : formFactor ? (
+        <span data-role="status-form-factor" className="text-ink-soft text-xs whitespace-nowrap">
+          <Dot tone="neutral" size="xs" className="mr-1.5 align-middle" />
+          Form factor
+        </span>
       ) : door ? (
         <span data-role="status-index-invite" className="text-accent text-xs font-semibold whitespace-nowrap">
           Index

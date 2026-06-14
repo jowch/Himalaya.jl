@@ -24,6 +24,16 @@ it("derives kept/total/dropped/screened/tags/phase from a sample + exposures", (
   // toLoupeTags (shared with the loupe) carries id+source; empty value omitted.
   expect(m.tags).toEqual([{ id: 1, key: "LL37", source: "manual" }]);
   expect(m.phase).toBeNull();
+  expect(m.formFactor).toBe(false); // no assignment_state → not form factor
+});
+
+it("flags formFactor when the representative exposure's assignment_state is form_factor", () => {
+  const base = { id: 9, experiment_id: 1, name: "JC009", display_name: null,
+    notes: null, q_units: "A-1", tags: [], phase: null } as any;
+  expect(toSampleRowModel({ ...base, assignment_state: "form_factor" }, []).formFactor).toBe(true);
+  expect(toSampleRowModel({ ...base, assignment_state: "indexed" }, []).formFactor).toBe(false);
+  expect(toSampleRowModel({ ...base, assignment_state: "null" }, []).formFactor).toBe(false);
+  expect(toSampleRowModel(base, []).formFactor).toBe(false); // absent → false
 });
 
 // SA-SCREENED: "Kept" on the sheet means EXPLICITLY accepted — the same truth

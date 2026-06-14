@@ -69,6 +69,64 @@ function register_samples_routes!()
             end
         end
 
+        # Per-sample indexing rollup (the R1/#224 contact-sheet seam). Each
+        # sample's status comes from its REPRESENTATIVE exposure — highest-id
+        # `selected=1`, else highest-id — the same exposure the picker/series
+        # index against. Exposures of one sample legitimately disagree (the beam
+        # may miss the ordered phase on some frames; a miss reads like form
+        # factor), so the representative is a faithful one-line summary rather
+        # than a lossy aggregate. We surface that exposure's durable assignment:
+        # its dominant (top-scored) confirmed phase when `indexed`, the
+        # `form_factor` declaration distinctly, else unindexed. Three bulk
+        # queries, no per-sample N+1 (mirrors picker_samples).
+        rep_by_sample = Dict{Int, Int}()
+        state_by_exp  = Dict{Int, String}()
+        phase_by_exp  = Dict{Int, String}()
+        if !isempty(samples)
+            sids = [Int(sm.id) for sm in samples]
+            ph   = join(fill("?", length(sids)), ",")
+            grouped_exps = Dict{Int, Vector{NamedTuple}}()
+            for e in Tables.rowtable(DBInterface.execute(db,
+                    "SELECT id, sample_id, selected FROM exposures
+                     WHERE sample_id IN ($ph) ORDER BY sample_id ASC, id ASC", sids))
+                push!(get!(grouped_exps, Int(e.sample_id), NamedTuple[]), e)
+            end
+            for (sid, exps) in grouped_exps
+                rep = nothing
+                for e in Iterators.reverse(exps)   # highest-id selected wins
+                    if e.selected != 0
+                        rep = Int(e.id); break
+                    end
+                end
+                rep === nothing && (rep = Int(last(exps).id))   # else highest-id
+                rep_by_sample[sid] = rep
+            end
+
+            rep_ids = collect(values(rep_by_sample))
+            if !isempty(rep_ids)
+                rp = join(fill("?", length(rep_ids)), ",")
+                for r in Tables.rowtable(DBInterface.execute(db,
+                        "SELECT exposure_id, state FROM assignments
+                         WHERE exposure_id IN ($rp)", rep_ids))
+                    state_by_exp[Int(r.exposure_id)] = String(r.state)
+                end
+                # Dominant phase: the top-scored assigned index's phase per
+                # exposure (mirrors compute_member_snapshot's confirmed_index).
+                best_score = Dict{Int, Float64}()
+                for r in Tables.rowtable(DBInterface.execute(db,
+                        "SELECT m.exposure_id AS eid, i.phase AS phase, i.score AS score
+                         FROM assignment_members m JOIN indices i ON i.id = m.index_id
+                         WHERE m.exposure_id IN ($rp)", rep_ids))
+                    eid = Int(r.eid)
+                    sc  = r.score === missing ? -Inf : Float64(r.score)
+                    if !haskey(best_score, eid) || sc > best_score[eid]
+                        best_score[eid]  = sc
+                        phase_by_exp[eid] = String(r.phase)
+                    end
+                end
+            end
+        end
+
         out = map(samples) do sm
             d          = row_to_json(sm)
             d[:tags]   = get(tags_by_sample, Int(sm.id), Any[])
@@ -76,6 +134,13 @@ function register_samples_routes!()
             # (e.g. a future ON DELETE SET NULL) rather than throwing in Int().
             d[:q_units] = ismissing(sm.experiment_id) ? "A-1" :
                 get(qunits_by_exp, Int(sm.experiment_id), "A-1")
+            rep = get(rep_by_sample, Int(sm.id), nothing)
+            if rep !== nothing
+                state = get(state_by_exp, rep, "indexed")
+                d[:assignment_state] = state
+                # Phase only when actually indexed; form_factor/null carry none.
+                d[:phase] = state == "indexed" ? get(phase_by_exp, rep, nothing) : nothing
+            end
             d
         end
         HTTP.Response(200, ["Content-Type" => "application/json"],

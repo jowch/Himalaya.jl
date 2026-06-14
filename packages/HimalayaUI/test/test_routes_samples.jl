@@ -53,6 +53,49 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
     end
 end
 
+@testset "GET /api/samples: per-sample indexing rollup (representative exposure)" begin
+    db = SQLite.DB()
+    HimalayaUI.create_schema!(db)
+    exp_id = HimalayaUI.init_experiment!(db; path="/t", data_dir="/t/d", analysis_dir="/t/a")
+
+    # Sample A — INDEXED. Two exposures; the LOWER-id one is selected=1, so it is
+    # the representative (proves selected wins over highest-id). Its assignment
+    # carries Pn3m (score 0.9) + Lamellar (0.4) → dominant phase = Pn3m.
+    sA  = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="A")
+    eA1 = HimalayaUI.create_exposure!(db; sample_id=sA, filename="a1")
+    HimalayaUI.create_exposure!(db; sample_id=sA, filename="a2")   # higher id, NOT selected
+    DBInterface.execute(db, "UPDATE exposures SET selected = 1 WHERE id = ?", [eA1])
+    rPn = DBInterface.execute(db,
+        "INSERT INTO indices (exposure_id, phase, basis, score) VALUES (?, 'Pn3m', 0.1, 0.9)", [eA1])
+    idPn = Int(DBInterface.lastrowid(rPn))
+    rLam = DBInterface.execute(db,
+        "INSERT INTO indices (exposure_id, phase, basis, score) VALUES (?, 'Lamellar', 0.1, 0.4)", [eA1])
+    idLam = Int(DBInterface.lastrowid(rLam))
+    DBInterface.execute(db, "INSERT INTO assignment_members (exposure_id, index_id) VALUES (?, ?)", [eA1, idPn])
+    DBInterface.execute(db, "INSERT INTO assignment_members (exposure_id, index_id) VALUES (?, ?)", [eA1, idLam])
+
+    # Sample B — FORM FACTOR. Representative exposure declared form_factor.
+    sB = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="B")
+    eB = HimalayaUI.create_exposure!(db; sample_id=sB, filename="b1")
+    DBInterface.execute(db, "INSERT INTO assignments (exposure_id, state) VALUES (?, 'form_factor')", [eB])
+
+    # Sample C — UNINDEXED. Representative exposure, no assignment row.
+    sC = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="C")
+    HimalayaUI.create_exposure!(db; sample_id=sC, filename="c1")
+
+    with_test_server(db) do port, base
+        list   = JSON3.read(String(HTTP.get("$base/api/samples").body))
+        byname = Dict(String(s.name) => s for s in list)
+
+        @test byname["A"].assignment_state == "indexed"
+        @test byname["A"].phase == "Pn3m"        # top-scored member of the SELECTED rep
+        @test byname["B"].assignment_state == "form_factor"
+        @test byname["B"].phase === nothing      # form factor carries no phase
+        @test byname["C"].assignment_state == "indexed"  # default (no members)
+        @test byname["C"].phase === nothing      # unindexed
+    end
+end
+
 @testset "PATCH /api/samples/:id rejects name (now immutable), accepts display_name" begin
     db = SQLite.DB()
     HimalayaUI.create_schema!(db)

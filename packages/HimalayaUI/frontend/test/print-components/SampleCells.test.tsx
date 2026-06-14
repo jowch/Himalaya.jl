@@ -186,6 +186,28 @@ describe("<StatusCell> noExposures (SA-ZEROEXP)", () => {
   });
 });
 
+describe("<StatusCell> form factor (representative exposure declared form_factor)", () => {
+  it("renders a distinct 'Form factor' status, not 'Not indexed'", () => {
+    const { container } = render(<StatusCell phase={null} formFactor />);
+    const el = container.querySelector("[data-role='status-form-factor']");
+    expect(el).toBeInTheDocument();
+    expect(el).toHaveTextContent("Form factor");
+    expect(container.querySelector("[data-role='status-unset']")).not.toBeInTheDocument();
+  });
+
+  it("takes precedence over the door invite (a classified sample is not an 'Index' invitation)", () => {
+    const { container } = render(<StatusCell phase={null} formFactor door />);
+    expect(container.querySelector("[data-role='status-form-factor']")).toBeInTheDocument();
+    expect(container.querySelector("[data-role='status-index-invite']")).not.toBeInTheDocument();
+  });
+
+  it("yields to noExposures (an empty sample can't be form factor)", () => {
+    const { container } = render(<StatusCell phase={null} formFactor noExposures />);
+    expect(container.querySelector("[data-role='status-no-exposures']")).toBeInTheDocument();
+    expect(container.querySelector("[data-role='status-form-factor']")).not.toBeInTheDocument();
+  });
+});
+
 describe("<StatusCell> door invite (SA-RESCORE3 F9)", () => {
   it("an unindexed DOOR reads as an 'Index' invitation, not a dead 'Not indexed' status", () => {
     const { container } = render(<StatusCell phase={null} door />);
