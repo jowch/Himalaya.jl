@@ -104,7 +104,7 @@ export interface AppState {
   // grep-verified (non-test) consumers:
   //   - `showPeakTicks` / `showPeakLabels` (+ setters): `SeriesBuilderPage.tsx`,
   //     `AnnotationToggles`, `MultiTracePlot`, `MemberTraceLayer`, and the
-  //     figure-export adapters/marks.
+  //     `cleanFigureSvg` export builder (via the page's renderSvg thunk).
   //   - `activeDraft` + `updateMember` / `reorderMembers` / `resizeBands` /
   //     `setDraftViewGroupingMode` / `highlightedCompareMemberId` (+ setter):
   //     the shared render components the series builder mounts (`MemberMetaRow`,

@@ -16,7 +16,7 @@ React 18 + Vite + TypeScript strict + TailwindCSS 4. TanStack Query for server s
 | App shell + routing | `print/shell/` | `CorpusShell`, `CorpusTopbar`, `AppRoutes`, `IndexSlugRedirect`, `StaleUrlPage`, `ResolvingFallback`, `OnboardingFlow`, `NavModal`, `InfrastructureBanner`. See [print/shell/AGENTS.md](print/shell/AGENTS.md) |
 | Composites | `print/components/` | Page-composing components (rails, plates, panels, rows, modals) built from the `ui/` primitives |
 | UI primitives | `print/ui/` | Closed-look design-system primitives (Button, Card, SegmentedControl, PhaseChip, PhaseStrip, ModalShell, Kicker, IconButton, ScoreBar, Dot, ToastContainer, HintText, …). Appearance lives here; consumer `className` is placement-only. See "Design system" below. |
-| Render layers | `print/{plot,detector,comb,waterfall,export}/` | Appearance-authoring render layers (trace-plot engine, detector image, comb/residual, waterfall, figure-export marks) — excluded from the `lint:design` appearance guard |
+| Render layers | `print/{plot,detector,comb,waterfall,export}/` | Appearance-authoring render layers (trace-plot engine, detector image, comb/residual, waterfall, the `cleanFigureSvg` figure builder) — excluded from the `lint:design` appearance guard |
 | Pages | `print/pages/` | `SamplesPage`, `LoupePage`, `FocusPage`, `SeriesFolioPage`, `SeriesScopingPage`, `SeriesBuilderPage` (all under the single `CorpusShell`; legacy Index/Inspect/Compare pages + `AppShell` retired) |
 | Hooks | `hooks/` | `useFocusTrap`, `useGlobalShortcuts`, `useStateFromUrl`, … |
 | Library | `lib/` | URL helpers, plot helpers, comparison helpers, figure export |
@@ -60,7 +60,7 @@ This is **mechanically enforced** (2026-05-29 extraction). `scripts/check-design
 - raw colour literal (`oklch(` / `rgba(` / quoted `#hex`) → a `--color-*` token utility
 - side-stripe `border-l/r` > 1px → a full border + a leading icon/word instead
 
-Only the colour-AUTHORING files are exempt (rules #3/#5 share an allowlist: `phases.ts`, `lib/comparison/coloring.ts`, `lib/figure-export/**`, `MemberHeatmapLayer.tsx`, `DetectorImage.tsx`, `FocusDetectorPanel.tsx`, `main.tsx`). Need a colour anywhere else → add a `--color-*` token to `@theme`, then use the utility. Visual reference: `docs/design-system.html`; full system: root `DESIGN.md`.
+Only the colour-AUTHORING files are exempt (rules #3/#5 share an allowlist: `phases.ts`, `lib/comparison/coloring.ts`, `lib/figure-export/**`, the `print/{plot,detector,comb,waterfall,export}/` render-layer prefixes, `main.tsx`). Need a colour anywhere else → add a `--color-*` token to `@theme`, then use the utility. Visual reference: `docs/design-system.html`; full system: root `DESIGN.md`.
 
 ## Skeleton loading via boneyard-js
 

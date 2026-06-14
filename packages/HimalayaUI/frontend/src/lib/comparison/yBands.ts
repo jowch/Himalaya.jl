@@ -1,7 +1,8 @@
-// yBands.ts — pure y-band layout math shared between the on-screen plot
-// (MultiTracePlot, MemberMetaGutter) and the export mark builder
-// (lib/figure-export/marks/multiTraceExportMarks). Lives in lib/ so the
-// figure-export module doesn't have to reach into components/.
+// yBands.ts — pure y-band layout math for the on-screen multi-trace plot
+// (MultiTracePlot, MemberMetaGutter). Lives in lib/ so the layout math stays
+// presentation-free. (The export figure, cleanFigureSvg, computes its own band
+// geometry; the former Observable Plot export mark that also consumed this was
+// retired.)
 //
 // Originally lived in MultiTracePlot.tsx; extracted as part of issue #93's
 // follow-up to close the layering smell flagged in PR #99 review.
