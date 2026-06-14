@@ -736,7 +736,7 @@ function BuilderBody({
         {...(liveDraft && !confirmBusy && confirmReady ? { onConfirm } : {})}
         confirmBusy={confirmBusy}
         {...(confirmLabel !== undefined ? { confirmLabel } : {})}
-        {...(liveDraft ? {} : { onAdjust: ensureDraft })}
+        {...(liveDraft ? { onCancel } : { onAdjust: ensureDraft })}
         // copy-doesn't-lie: the rail's default WYSIWYG caption is false
         // mid-draft, so a live draft swaps in the honest variant. Precision:
         // only membership/order on the plate are stale — the draft title and
@@ -786,20 +786,18 @@ function BuilderBody({
                   onAdd={onAddSample}
                 />
               )}
-              {liveDraft && (
+              {/* Undo is a contextual recipe-edit affordance, kept beside the
+                  rows; the draft's commit/discard pair (Save changes / Cancel)
+                  are the proper buttons in the rail's compose block, not here. */}
+              {liveDraft && canUndo && (
                 <div className="flex items-center gap-2 pt-1">
-                  {canUndo && (
-                    <Button
-                      variant="ghost"
-                      onClick={onUndo}
-                      data-testid="builder-undo"
-                      title={`Undo last change (${shortcutLabel("undo")})`}
-                    >
-                      ↺ Undo
-                    </Button>
-                  )}
-                  <Button variant="ghost" onClick={onCancel}>
-                    Cancel
+                  <Button
+                    variant="ghost"
+                    onClick={onUndo}
+                    data-testid="builder-undo"
+                    title={`Undo last change (${shortcutLabel("undo")})`}
+                  >
+                    ↺ Undo
                   </Button>
                 </div>
               )}

@@ -31,6 +31,12 @@ export interface BuilderRailProps {
    * ensureDraft is a no-op, and controls-don't-lie says we don't show it.
    */
   onAdjust?: () => void;
+  /**
+   * Discard the live draft (the "Cancel" verb). Present only in draft mode; it
+   * pairs with "Save changes" as a proper primary/secondary BUTTON row, not a
+   * link action buried under the recipe (BU-DRAFT-ACTIONS).
+   */
+  onCancel?: () => void;
   orderedBy: string;
   orderNote?: ReactNode;
   onChangeOrder?: () => void;
@@ -90,6 +96,7 @@ export function BuilderRail({
   confirmBusy,
   confirmLabel,
   onAdjust,
+  onCancel,
   orderedBy,
   orderNote,
   onChangeOrder,
@@ -131,25 +138,50 @@ export function BuilderRail({
       </div>
 
       {/* BU-AUTOGROUP-STALE: this series is user-owned and already saved, so the
-          card carries NO "Auto-grouped" title and real verbs — "Save changes"
-          for committing a draft (not "Confirm series", which implied the series
-          wasn't real yet) and "Edit" for entering draft state (not "Adjust"). */}
+          card carries NO "Auto-grouped" title. READ mode keeps the controls-don't-
+          lie pair — a DISABLED "Save changes" (the affordance exists; nothing to
+          save until you edit) + the muted "Edit" door. In DRAFT mode the card
+          drops its link actions: the commit/discard decision renders as a proper
+          primary/secondary BUTTON row below (BU-DRAFT-ACTIONS) instead of a link
+          in a card plus a footnote-styled Cancel. */}
       <AutoGroup
         variant="compose"
-        actions={[
-          {
-            label: confirmBusy ? (confirmLabel ?? "Saving…") : "Save changes",
-            ...(onConfirm ? { onClick: onConfirm } : {}),
-            ...(confirmBusy ? { busy: true } : {}),
-          },
-          // "Edit" is the entry into draft state; once a draft is live the page
-          // withholds onAdjust and the affordance is dropped (not rendered inert),
-          // since re-running ensureDraft would be a redundant no-op.
-          ...(onAdjust ? [{ label: "Edit", muted: true, onClick: onAdjust }] : []),
-        ]}
+        actions={
+          onAdjust
+            ? [
+                // READ mode: Save is inert (no onClick) until a draft exists; Edit
+                // is the live entry into draft state.
+                { label: "Save changes" },
+                { label: "Edit", muted: true, onClick: onAdjust },
+              ]
+            : []
+        }
       >
         {grouping}
       </AutoGroup>
+
+      {/* BU-DRAFT-ACTIONS: the live-draft commit/discard pair as real buttons.
+          "Save changes" is the primary (accent); it states its busy reason while
+          the Save→Commit chain runs and disables when the chain isn't ready. */}
+      {reorderable && (
+        <div className="flex gap-2">
+          <Button
+            variant="accent"
+            className="flex-1"
+            data-testid="builder-save"
+            disabled={onConfirm === undefined}
+            {...(onConfirm ? { onClick: onConfirm } : {})}
+            {...(confirmBusy ? { "aria-busy": true } : {})}
+          >
+            {confirmBusy ? (confirmLabel ?? "Saving…") : "Save changes"}
+          </Button>
+          {onCancel && (
+            <Button variant="outline" data-testid="builder-cancel" onClick={onCancel}>
+              Cancel
+            </Button>
+          )}
+        </div>
+      )}
 
       <RailSection label="Ordering variable" {...(orderNote != null ? { note: orderNote } : {})}>
         <Field

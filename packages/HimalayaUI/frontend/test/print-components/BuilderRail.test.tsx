@@ -95,11 +95,15 @@ describe("<BuilderRail>", () => {
     expect(screen.queryByRole("button", { name: /adjust/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /confirm series/i })).toBeNull();
   });
-  it("OMITS the Edit action when onAdjust is withheld (draft live), shows Save changes", () => {
+  it("OMITS the Edit action when onAdjust is withheld (draft live), shows Save changes + Cancel as buttons", () => {
     // controls-don't-lie: a live draft withholds onAdjust → no redundant Edit.
-    render(<BuilderRail {...base} onConfirm={() => {}} />);
+    // BU-DRAFT-ACTIONS: a live draft (reorderable) presents Save changes + Cancel
+    // as a proper button row, not a card link + a buried ghost Cancel.
+    render(<BuilderRail {...base} reorderable onConfirm={() => {}} onCancel={() => {}} />);
     expect(screen.queryByRole("button", { name: /^edit$/i })).toBeNull();
-    expect(screen.getByRole("button", { name: /save changes/i })).toBeInTheDocument();
+    expect(screen.getByTestId("builder-save")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /save changes/i })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /^cancel$/i })).toBeInTheDocument();
   });
   it("renders the default WYSIWYG foot caption when the caption prop is omitted", () => {
     render(<BuilderRail {...base} />);
