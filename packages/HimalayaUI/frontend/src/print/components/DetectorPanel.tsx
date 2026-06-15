@@ -34,6 +34,13 @@ export interface DetectorPanelProps {
    *  the contained image fills it with no letterbox (rings register), and corrects
    *  the ring y-radius so they stay round. Default 1 (square). */
   imageAspect?: number;
+  /** Display orientation, forwarded to DetectorRings so the overlay rotates in
+   *  lockstep with a landscape-rotated canvas. */
+  orient?: "portrait" | "landscape";
+  /** Raw detector pixel size from the image headers (notify-only). */
+  onRawSize?: (w: number, h: number) => void;
+  /** Display-orientation transition (notify-only). */
+  onOrient?: (o: "portrait" | "landscape") => void;
   /** Distinct phases of the displayed rings, in rail order. Non-empty →
    *  a visible caption under the frame (PhaseChips + "rings: this frame's
    *  indexing") naming the ring identity in text — the second channel for the
@@ -61,6 +68,9 @@ export function DetectorPanel({
   calibration,
   beamCenter,
   imageAspect,
+  orient,
+  onRawSize,
+  onOrient,
   hoveredQ,
   onHoverQ,
   hint,
@@ -98,12 +108,15 @@ export function DetectorPanel({
           size="full"
           className="h-full w-full"
           {...(lutVariant !== undefined ? { lutVariant } : {})}
+          {...(onRawSize !== undefined ? { onRawSize } : {})}
+          {...(onOrient !== undefined ? { onOrient } : {})}
         />
         {placed && center && (
           <DetectorRings
             beamCenter={center}
             rings={placed.rings}
             imageAspect={aspect}
+            {...(orient !== undefined ? { orient } : {})}
             {...(hoveredQ !== undefined ? { hoveredQ } : {})}
             {...(onHoverQ !== undefined ? { onHoverQ } : {})}
           />

@@ -16,7 +16,9 @@ import {
   toCombSeries,
   customIndexPreview,
   CUSTOM_SYMS,
+  buildDetectorCalibration,
 } from "../../src/print/pages/focusAdapters";
+import type { Experiment } from "../../src/api";
 
 // ── fixtures ────────────────────────────────────────────────────────────────
 
@@ -591,5 +593,47 @@ describe("customIndexPreview", () => {
     const { previewSeries, fit } = customIndexPreview("Nonsense", 200, [0.1]);
     expect(previewSeries.teeth).toEqual([]);
     expect(fit).toEqual({ landed: 0, total: 0 });
+  });
+});
+
+// ── buildDetectorCalibration ──────────────────────────────────────────────────
+
+function makeExp(over: Partial<Experiment> = {}): Experiment {
+  return {
+    id: 1, name: "E", path: "/p", data_dir: "d", analysis_dir: "a",
+    manifest_path: null, created_at: "", q_units: "A-1",
+    beam_center_x: 420.791, beam_center_y: 838.83, pixel_size_um: 172,
+    energy_kev: 12, flight_path_m: 2.5, ...over,
+  };
+}
+
+describe("buildDetectorCalibration", () => {
+  it("builds a full calibration with µm→mm and m→mm conversions", () => {
+    const cal = buildDetectorCalibration(makeExp(), { w: 1475, h: 1679 });
+    expect(cal).toEqual({
+      beamCenterPx: { x: 420.791, y: 838.83 },
+      imageSizePx: { w: 1475, h: 1679 },
+      sampleDistanceMm: 2500,
+      pixelSizeMm: 0.172,
+      energyKeV: 12,
+    });
+  });
+
+  it("returns null when rawSize is missing", () => {
+    expect(buildDetectorCalibration(makeExp(), null)).toBeNull();
+  });
+
+  it("returns null when experiment is undefined", () => {
+    expect(buildDetectorCalibration(undefined, { w: 100, h: 100 })).toBeNull();
+  });
+
+  it.each(["beam_center_x", "beam_center_y", "pixel_size_um", "energy_kev", "flight_path_m"] as const)(
+    "returns null when %s is null", (field) => {
+      expect(buildDetectorCalibration(makeExp({ [field]: null }), { w: 100, h: 100 })).toBeNull();
+    });
+
+  it("returns null for non-positive or non-finite dims", () => {
+    expect(buildDetectorCalibration(makeExp(), { w: 0, h: 100 })).toBeNull();
+    expect(buildDetectorCalibration(makeExp(), { w: NaN, h: 100 })).toBeNull();
   });
 });

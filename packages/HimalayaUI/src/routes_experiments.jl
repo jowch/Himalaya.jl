@@ -1,30 +1,52 @@
 using HTTP, JSON3, DBInterface, Tables, Oxygen
 
 """
-    _q_units_from_config(cfg_text) -> String
+    _beamline_from_config(cfg_text) -> NamedTuple
 
-Extract `beamline.q_units` from an experiment's stored config TOML.
+Extract the render-only `[beamline]` fields from an experiment's stored config
+TOML: `q_units` (String, default "A-1") and `beam_center_x`, `beam_center_y`,
+`pixel_size_um` (each `Float64` or `nothing`). A bare integer in the TOML is
+coerced to `Float64` to match the REAL-column behaviour of energy_kev.
 
-Accepts anything (a `String`, `missing`, `nothing`): a non-string, an empty
-string, or malformed TOML all fall back to the ASCII default `"A-1"` — the UI
-prettifies that to "Å⁻¹". Defensive by design: one experiment's malformed
-config must never 500 a list endpoint.
+Defensive by design: a non-string, empty, malformed, or non-numeric value all
+fall back to the all-default tuple — one experiment's bad config must never 500
+a list endpoint. The numeric coercion lives INSIDE the try so a value like
+`beam_center_x = "oops"` throws into the fallback rather than out of the route.
 """
-function _q_units_from_config(cfg_text)::String
+function _beamline_from_config(cfg_text)
+    default = (q_units = "A-1", beam_center_x = nothing,
+               beam_center_y = nothing, pixel_size_um = nothing)
     if cfg_text isa AbstractString && !isempty(cfg_text)
         try
             bl = get(TOML.parse(cfg_text), "beamline", Dict())
-            return get(bl, "q_units", "A-1")
+            num(k) = (v = get(bl, k, nothing); v === nothing ? nothing : Float64(v))
+            # Guard the q_units String contract: a non-string TOML value (e.g.
+            # `q_units = 5`) would otherwise satisfy the NamedTuple but throw at
+            # the shim's `::String` annotation — OUTSIDE this try — and 500 the
+            # samples list route. Coerce to the default here so the docstring's
+            # "never 500 a list endpoint" holds for q_units too.
+            qu = get(bl, "q_units", "A-1")
+            return (q_units       = qu isa AbstractString ? qu : "A-1",
+                    beam_center_x = num("beam_center_x"),
+                    beam_center_y = num("beam_center_y"),
+                    pixel_size_um = num("pixel_size_um"))
         catch
-            return "A-1"
+            return default
         end
     end
-    return "A-1"
+    return default
 end
 
+# Back-compat shim: routes_samples.jl still calls this for its per-sample q_units.
+_q_units_from_config(cfg_text)::String = _beamline_from_config(cfg_text).q_units
+
 function _experiment_row_to_json(row::NamedTuple)
-    d = row_to_json(row)
-    d[:q_units] = _q_units_from_config(get(d, :config, nothing))
+    d  = row_to_json(row)
+    bl = _beamline_from_config(get(d, :config, nothing))
+    d[:q_units]       = bl.q_units
+    d[:beam_center_x] = bl.beam_center_x
+    d[:beam_center_y] = bl.beam_center_y
+    d[:pixel_size_um] = bl.pixel_size_um
     d
 end
 

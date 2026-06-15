@@ -14,6 +14,11 @@ export interface Experiment {
   manifest_path: string | null;
   created_at: string;
   q_units: string | null;
+  beam_center_x: number | null;
+  beam_center_y: number | null;
+  pixel_size_um: number | null;
+  energy_kev: number | null;
+  flight_path_m: number | null;
 }
 
 export interface SampleTag {

@@ -20,6 +20,14 @@ manifest    = "manifest.csv"
 # energy_kev    = 12.0    # X-ray photon energy in keV
 # flight_path_m =  1.5    # sample-to-detector distance in metres
 # q_units       = "A-1"  # axis label units (ASCII; UI prettifies to Å⁻¹). Alternatives: "nm-1", "1/A"
+#
+# Beam center (detector pixels, origin BOTTOM-LEFT, y-up) + pixel pitch enable
+# physically-correct q-rings on the Focus page. All five beamline values
+# (energy_kev, flight_path_m, beam_center_x, beam_center_y, pixel_size_um) must
+# be set; omit any and the rings fall back to a centered, decorative overlay.
+# beam_center_x = 420.791
+# beam_center_y = 838.83
+# pixel_size_um = 172.0   # detector pixel pitch in microns (e.g. Pilatus 172)
 
 [manifest]
 delimiter      = "\t"      # column separator

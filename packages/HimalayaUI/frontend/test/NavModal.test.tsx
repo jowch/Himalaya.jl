@@ -29,8 +29,8 @@ function renderModal() {
 }
 
 const EXPERIMENTS: api.Experiment[] = [
-  { id: 1, name: "SSRL May 2026", path: "/data/ssrl_2026_05", data_dir: "/data/ssrl_2026_05/data", analysis_dir: "/data/ssrl_2026_05/analysis", manifest_path: null, created_at: "2026-05-01" },
-  { id: 2, name: "APS Apr 2026",  path: "/data/aps_2026_04",  data_dir: "/data/aps_2026_04/data",  analysis_dir: "/data/aps_2026_04/analysis",  manifest_path: null, created_at: "2026-04-15" },
+  { id: 1, name: "SSRL May 2026", path: "/data/ssrl_2026_05", data_dir: "/data/ssrl_2026_05/data", analysis_dir: "/data/ssrl_2026_05/analysis", manifest_path: null, created_at: "2026-05-01", q_units: null, beam_center_x: null, beam_center_y: null, pixel_size_um: null, energy_kev: null, flight_path_m: null },
+  { id: 2, name: "APS Apr 2026",  path: "/data/aps_2026_04",  data_dir: "/data/aps_2026_04/data",  analysis_dir: "/data/aps_2026_04/analysis",  manifest_path: null, created_at: "2026-04-15", q_units: null, beam_center_x: null, beam_center_y: null, pixel_size_um: null, energy_kev: null, flight_path_m: null },
 ];
 
 const SAMPLES_EXP1: api.Sample[] = [

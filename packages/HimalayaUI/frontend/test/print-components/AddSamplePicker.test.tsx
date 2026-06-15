@@ -24,6 +24,11 @@ function exp(id: number, name: string): Experiment {
     manifest_path: null,
     created_at: "2026-01-01",
     q_units: "A^-1",
+    beam_center_x: null,
+    beam_center_y: null,
+    pixel_size_um: null,
+    energy_kev: null,
+    flight_path_m: null,
   } as Experiment;
 }
 

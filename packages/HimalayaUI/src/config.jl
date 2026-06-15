@@ -11,7 +11,7 @@ beamline parameters.
 
 Supported TOML sections:
 - `[experiment]`: name, description, manifest (relative path to manifest CSV)
-- `[beamline]`: energy_kev, flight_path_m
+- `[beamline]`: energy_kev, flight_path_m, q_units, beam_center_x, beam_center_y, pixel_size_um
 - `[manifest]`: delimiter, skip_rows, header_row, sample_id, name, display_name,
   filenames, notes_sample, notes_exposure (each column = Int index or String header name).
   `header_row = 0` is the sentinel for "no header row; columns are positional".
@@ -27,6 +27,9 @@ struct ExperimentConfig
     energy_kev         ::Union{Float64,Nothing}
     flight_path_m      ::Union{Float64,Nothing}
     q_units            ::String
+    beam_center_x      ::Union{Float64,Nothing}
+    beam_center_y      ::Union{Float64,Nothing}
+    pixel_size_um      ::Union{Float64,Nothing}
     # [manifest]
     delimiter          ::String
     skip_rows          ::Int
@@ -107,6 +110,9 @@ function _build_config(d::AbstractDict)::ExperimentConfig
         get(bl,  "energy_kev",    nothing),
         get(bl,  "flight_path_m", nothing),
         get(bl,  "q_units",       "A-1"),
+        get(bl,  "beam_center_x", nothing),
+        get(bl,  "beam_center_y", nothing),
+        get(bl,  "pixel_size_um", nothing),
         get(mf,  "delimiter",      "\t"),
         get(mf,  "skip_rows",      1),
         get(mf,  "header_row",     0),
@@ -268,6 +274,9 @@ function config_to_toml(cfg::ExperimentConfig)::String
     beamline = Dict{String,Any}()
     cfg.energy_kev    !== nothing && (beamline["energy_kev"]    = cfg.energy_kev)
     cfg.flight_path_m !== nothing && (beamline["flight_path_m"] = cfg.flight_path_m)
+    cfg.beam_center_x !== nothing && (beamline["beam_center_x"] = cfg.beam_center_x)
+    cfg.beam_center_y !== nothing && (beamline["beam_center_y"] = cfg.beam_center_y)
+    cfg.pixel_size_um !== nothing && (beamline["pixel_size_um"] = cfg.pixel_size_um)
     beamline["q_units"] = cfg.q_units
     d = Dict(
         "experiment" => Dict(
