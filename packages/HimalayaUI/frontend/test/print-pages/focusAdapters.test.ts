@@ -604,7 +604,7 @@ function makeExp(over: Partial<Experiment> = {}): Experiment {
     manifest_path: null, created_at: "", q_units: "A-1",
     beam_center_x: 420.791, beam_center_y: 838.83, pixel_size_um: 172,
     energy_kev: 12, flight_path_m: 2.5, ...over,
-  } as Experiment;
+  };
 }
 
 describe("buildDetectorCalibration", () => {

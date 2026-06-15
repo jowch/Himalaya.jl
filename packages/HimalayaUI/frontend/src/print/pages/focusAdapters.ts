@@ -7,8 +7,7 @@
 // latticeForFirstOrderOnPeak). The legacy React components this ports the
 // presentation-free logic out of are cited inline.
 
-import type { Peak, IndexEntry, Trace } from "../../api";
-import type { Experiment } from "../../api";
+import type { Peak, IndexEntry, Trace, Experiment } from "../../api";
 import { phaseColor } from "../../phases";
 import type { TraceModel } from "../plot/TracePlot";
 import { traceIntensityAt } from "../../lib/plot/traceIntensity";
