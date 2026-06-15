@@ -8,9 +8,10 @@ const TINY_PNG =
 beforeEach(() => {
   global.fetch = vi.fn().mockResolvedValue({
     ok: true,
+    headers: { get: (k: string) => (k === "X-Image-Width" ? "2048" : k === "X-Image-Height" ? "1024" : null) },
     blob: () => Promise.resolve(new Blob(
       [Uint8Array.from(atob(TINY_PNG), (c) => c.charCodeAt(0))], { type: "image/png" })),
-  } as Response);
+  } as unknown as Response);
   global.createImageBitmap = vi.fn().mockResolvedValue({ width: 1, height: 1, close: vi.fn() } as unknown as ImageBitmap);
   const mockOffscreen = {
     getContext: () => ({ drawImage: vi.fn(), getImageData: () => ({ data: new Uint8ClampedArray(4) }) }),
@@ -134,4 +135,21 @@ test("U-3 regression: a full frame still rotates under the same wide geometry", 
   } finally {
     restore();
   }
+});
+
+test("reports raw image size from X-Image-Width/Height headers", async () => {
+  const onRawSize = vi.fn();
+  render(<DetectorImage src="/x.png" size="full" onRawSize={onRawSize} />);
+  await waitFor(() => expect(onRawSize).toHaveBeenCalledWith(2048, 1024));
+});
+
+test("a headerless response does not call onRawSize and does not throw", async () => {
+  global.fetch = vi.fn().mockResolvedValue({
+    ok: true,
+    blob: () => Promise.resolve(new Blob([new Uint8Array(0)], { type: "image/png" })),
+  } as unknown as Response);
+  const onRawSize = vi.fn();
+  render(<DetectorImage src="/x.png" size="full" onRawSize={onRawSize} />);
+  await waitFor(() => expect(screen.getByRole("img", { hidden: true })).toBeInTheDocument());
+  expect(onRawSize).not.toHaveBeenCalled();
 });

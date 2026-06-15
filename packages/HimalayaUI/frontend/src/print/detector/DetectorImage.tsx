@@ -12,11 +12,15 @@ interface Props {
    *  overlay owns all the colour; "warm" is the saturated beauty ramp. */
   lutVariant?: DetectorLutVariant;
   className?: string;
+  /** Raw detector pixel size from X-Image-Width/Height headers (notify-only). */
+  onRawSize?: (w: number, h: number) => void;
+  /** Display orientation, fired only on a true transition (notify-only). */
+  onOrient?: (o: "portrait" | "landscape") => void;
 }
 
 interface Layout { orient: "portrait" | "landscape"; caps: { maxW: number; maxH: number } | null }
 
-export function DetectorImage({ src, size, lutVariant = "neutral", className }: Props): JSX.Element {
+export function DetectorImage({ src, size, lutVariant = "neutral", className, onRawSize, onOrient }: Props): JSX.Element {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [layout, setLayout] = useState<Layout>({ orient: "portrait", caps: null });
@@ -24,17 +28,30 @@ export function DetectorImage({ src, size, lutVariant = "neutral", className }: 
     () => size === "full" || typeof window === "undefined" ||
       typeof window.IntersectionObserver !== "function",
   );
+  const onRawSizeRef = useRef(onRawSize); onRawSizeRef.current = onRawSize;
+  const onOrientRef = useRef(onOrient); onOrientRef.current = onOrient;
+  const rawSizeRef = useRef<{ w: number; h: number } | null>(null);
+  const prevOrientRef = useRef<"portrait" | "landscape">("portrait");
 
   const evaluateOrient = useCallback(() => {
     const wrapper = wrapperRef.current, canvas = canvasRef.current;
     if (!wrapper || !canvas || !canvas.width || !canvas.height) return;
-    if (size === "thumb") { setLayout({ orient: "portrait", caps: null }); return; }
-    const cw = wrapper.clientWidth, ch = wrapper.clientHeight;
-    if (cw === 0 || ch === 0) return;
-    setLayout(decideOrient({
-      containerW: cw, containerH: ch, imageW: canvas.width, imageH: canvas.height,
-      viewportW: typeof window !== "undefined" ? window.innerWidth : 0,
-    }));
+    let next: Layout;
+    if (size === "thumb") {
+      next = { orient: "portrait", caps: null };
+    } else {
+      const cw = wrapper.clientWidth, ch = wrapper.clientHeight;
+      if (cw === 0 || ch === 0) return;
+      next = decideOrient({
+        containerW: cw, containerH: ch, imageW: canvas.width, imageH: canvas.height,
+        viewportW: typeof window !== "undefined" ? window.innerWidth : 0,
+      });
+    }
+    setLayout(next);
+    if (prevOrientRef.current !== next.orient) {
+      prevOrientRef.current = next.orient;
+      onOrientRef.current?.(next.orient);
+    }
   }, [size]);
 
   const renderImage = useCallback(async () => {
@@ -42,6 +59,13 @@ export function DetectorImage({ src, size, lutVariant = "neutral", className }: 
     if (!canvas || !src || !hasIntersected) return;
     const res = await fetch(src);
     if (!res.ok) return;
+    const rw = Number(res.headers?.get?.("X-Image-Width"));
+    const rh = Number(res.headers?.get?.("X-Image-Height"));
+    if (Number.isFinite(rw) && Number.isFinite(rh) && rw > 0 && rh > 0 &&
+        (rawSizeRef.current?.w !== rw || rawSizeRef.current?.h !== rh)) {
+      rawSizeRef.current = { w: rw, h: rh };
+      onRawSizeRef.current?.(rw, rh);
+    }
     const bitmap = await createImageBitmap(await res.blob());
     const { width, height } = bitmap;
     const off = new OffscreenCanvas(width, height);
