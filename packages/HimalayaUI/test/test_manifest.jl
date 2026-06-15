@@ -87,6 +87,7 @@ const MANIFEST_MULTIRANGE_QUOTED = """
     cfg = HimalayaUI.ExperimentConfig(
         "x", "", "manifest.csv",
         nothing, nothing, "A-1",
+        nothing, nothing, nothing,   # beam_center_x/y, pixel_size_um
         ",", 1, 0,
         1, 2, 3, 9, 10, 11,
         "data", "analysis", "simple",
@@ -118,6 +119,7 @@ end
     cfg = HimalayaUI.ExperimentConfig(
         "x", "", "manifest.csv",
         nothing, nothing, "A-1",
+        nothing, nothing, nothing,   # beam_center_x/y, pixel_size_um
         ",", 0, 1,
         "#", "Sample", "Name", "Filename(s)",
         "Notes (Sample)", "Notes (Exposure)",
