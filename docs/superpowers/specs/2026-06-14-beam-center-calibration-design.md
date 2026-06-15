@@ -51,11 +51,43 @@ fallback) — no regression for existing experiments.
   following the **`q_units` precedent** (`_q_units_from_config`), not the
   `energy_kev`/`flight_path_m` mirror-column precedent. They are never
   queried, only rendered.
-- **Image dimensions come from the loaded image**, not config or a new
-  backend endpoint. The `size="full"` detector route returns the
-  native-resolution PNG (no resize), so the displayed image's
-  `naturalWidth/naturalHeight` equals the raw detector pixel space —
-  the same coordinate space the beam center is expressed in.
+- **Raw detector dimensions come from the image-route response headers**,
+  not config and not the displayed bitmap. Two facts force this:
+  - `DetectorImage` does **not** use an `<img>` element — it `fetch`es the
+    PNG, decodes it with `createImageBitmap`, applies a LUT on an
+    offscreen canvas, and paints a `<canvas>` (DetectorImage.tsx). There
+    is no `naturalWidth`/`onLoad`; the decoded bitmap's `width/height` is
+    the only client-side size.
+  - The `size="full"` route **downscales** the rendered PNG to ≤ 1536px
+    max-side (`resize_to_fit(img, 1536)`, issue #260). So the displayed
+    bitmap is **not** raw detector resolution for any detector larger than
+    1536px. The beam center is in *raw* detector pixels, and the q→radius
+    conversion also divides by the raw width, so both need the **raw**
+    dimensions — using the resized bitmap size would inflate the center
+    offset and every radius by `1/scale`.
+  - `resize_to_fit` scales uniformly, so the displayed bitmap's *aspect*
+    is still correct (used for the frame box and the ring y-correction);
+    only its absolute size is wrong.
+  - Fix: the image route emits `X-Image-Width` / `X-Image-Height` headers
+    carrying the **pre-resize** raster size (`size(img)` before
+    `resize_to_fit`). `DetectorImage` reads them off the `fetch` response
+    it already makes and surfaces them via callback. Normalized fractions
+    (beam center, radii) are scale-invariant, so computing them against
+    the raw size renders correctly on the downscaled display.
+- **Landscape auto-rotation must be handled.** `DetectorImage` rotates the
+  canvas 90° for wide containers (`decideOrient`, gated to viewport ≥
+  1400px when `containerAspect > imageAspect × 1.25`). `DetectorRings`
+  already accepts an `orient` prop and rotates the SVG in lockstep, but
+  `DetectorPanel` never passes it — invisible today only because centered
+  concentric circles are rotation-invariant. An **off-center** beam would
+  desync rings from the image. Two-part fix:
+  - Pass the real `imageAspect` (see below) so the frame box matches the
+    image aspect; then `containerAspect ≈ imageAspect`, the rotation
+    predicate is false, and rotation does not trigger for the detector
+    panel.
+  - Defensively surface `orient` from `DetectorImage` and pass it to
+    `DetectorRings` so the overlay stays registered even if a future
+    layout does trigger rotation.
 
 ## Config schema — `[beamline]`
 
@@ -98,6 +130,16 @@ centered fallback exactly as it does today.
   must never 500 a list endpoint — missing/garbage values resolve to
   `q_units = "A-1"` and `nothing` for the numeric fields.
 
+### 2b. Image route — `packages/HimalayaUI/src/routes_exposures.jl`
+
+The full-image branch loads the raster (`img = load_and_lognormalize(path)`)
+and then downscales it (`resize_to_fit(img, 1536)`). Capture the
+**pre-resize** dimensions (`h, w = size(img)`) and emit them as response
+headers `X-Image-Width => w`, `X-Image-Height => h` alongside the existing
+`X-Image-Version`. These are the raw detector pixel dimensions the beam
+center is expressed in. (Thumbnail branch unaffected — it never carries a
+ring overlay.)
+
 ### 3. Frontend types — `packages/HimalayaUI/frontend/src/api.ts`
 
 Add to `interface Experiment` (all `number | null`):
@@ -110,40 +152,52 @@ currently untyped.)
 ```ts
 buildDetectorCalibration(
   experiment: Experiment | undefined,
-  naturalSize: { w: number; h: number } | null,
+  rawSize: { w: number; h: number } | null,
 ): DetectorCalibration | null
 ```
 
-- Returns `null` if `experiment`, `naturalSize`, or **any** of the four
-  ingredients is missing/null.
+- `rawSize` is the **raw** detector pixel size from the image headers
+  (§2b/§5), used as `imageSizePx`. Returns `null` if `experiment`,
+  `rawSize`, or **any** of the four ingredients is missing/null.
 - Unit conversions: `sampleDistanceMm = flight_path_m * 1000`,
   `pixelSizeMm = pixel_size_um / 1000`.
-- Maps `beam_center_x/y` → `beamCenterPx`, `naturalSize` → `imageSizePx`,
+- Maps `beam_center_x/y` → `beamCenterPx`, `rawSize` → `imageSizePx`,
   `energy_kev` → `energyKeV`.
 
 This is the unit-tested seam; all arithmetic and null-guarding lives here,
 not in the component.
 
-### 5. Image dimensions — `DetectorImage` / `DetectorPanel`
+### 5. Image dimensions + orientation — `DetectorImage` / `DetectorPanel`
 
-- `DetectorImage`: add optional `onNaturalSize?: (w: number, h: number) =>
-  void`, fired from the `<img>` `onLoad` using
-  `naturalWidth/naturalHeight`.
-- `DetectorPanel`: forward `onNaturalSize` to `DetectorImage` (placement
-  contract unaffected; it is a data callback, not appearance).
+- `DetectorImage` (canvas renderer, no `<img>`): in `renderImage`, after
+  the `fetch`, read `res.headers.get("X-Image-Width" / "X-Image-Height")`
+  (the **raw** pre-resize size) and report it via a new optional
+  `onRawSize?: (w: number, h: number) => void`. Also report orientation
+  via a new optional `onOrient?: (o: "portrait" | "landscape") => void`,
+  fired whenever `layout.orient` changes (it is already computed by
+  `decideOrient`/`evaluateOrient`).
+- `DetectorPanel`: forward both callbacks to `DetectorImage`, and pass the
+  reported `orient` through to `DetectorRings` (the existing `orient` prop,
+  currently never supplied). These are data callbacks / a render hint, not
+  appearance — placement contract unaffected.
 
 ### 6. Focus page — `FocusPage.tsx`
 
-- Hold detector natural size in state, set via the `onNaturalSize`
-  callback.
+- Hold detector `rawSize` (and `orient`) in state, set via the callbacks.
 - Build `calibration = buildDetectorCalibration(experimentQ.data,
-  naturalSize)` and pass it to `DetectorPanel`.
-- Derive `imageAspect = naturalSize ? w / h : undefined` and pass it —
-  a bonus fix for the current hardcoded-square assumption (non-square
-  detectors render correctly).
-- First paint (image not yet loaded) → `naturalSize` null → calibration
-  null → centered fallback, then rings snap into place when the image
-  loads. This is the intended, documented transient.
+  rawSize)` and pass it to `DetectorPanel`.
+- Derive and pass `imageAspect = rawSize ? w / h : undefined`. This is
+  **required for registration**, not cosmetic: the SVG ring overlay
+  stretches its `0 0 1 1` viewBox over the whole frame via
+  `preserveAspectRatio="none"`. With the default square frame, a
+  non-square image is letterboxed inside it (object-fit contain) while the
+  rings stretch to the square — they would not register. Matching the
+  frame aspect to the image makes the canvas fill the frame edge-to-edge
+  so normalized ring coords map to image coords. (It also suppresses the
+  landscape rotation, per Decisions.)
+- First paint (image not yet decoded) → `rawSize` null → calibration null
+  → centered fallback; rings snap into place once the image decodes and
+  the header size arrives. This is the intended, documented transient.
 
 ### 7. Template + docs
 
@@ -160,11 +214,13 @@ experiment.toml [beamline]
   → config.jl (ExperimentConfig)              ← round-trip preserved
   → experiments.config blob (DB)
   → _beamline_from_config (routes_experiments) → experiment JSON
-  → useExperiment() / api.ts Experiment
-  → buildDetectorCalibration(exp, naturalSize) ← pure, unit-tested
-  → DetectorPanel calibration prop
+  → useExperiment() / api.ts Experiment ─┐
+                                          ├→ buildDetectorCalibration(exp, rawSize)  ← pure, unit-tested
+  image route X-Image-Width/Height ──────┘     (rawSize = raw detector px, from headers)
+  (raw px, pre-resize)
+  → DetectorPanel calibration + orient props
   → buildRingPlacements + qToImageRadius        (existing engine)
-  → DetectorRings on the Focus page
+  → DetectorRings on the Focus page (rotates in lockstep via orient)
 ```
 
 ## Testing (TDD, six-layer contract)
@@ -175,10 +231,15 @@ experiment.toml [beamline]
 - **route** (`test/test_routes_experiments.jl` or peer):
   `_experiment_row_to_json` surfaces `beam_center_x/y` + `pixel_size_um`
   from a config blob; malformed/empty blob falls back without throwing.
+- **image route** (`test/test_routes_image.jl`): the full-image response
+  carries `X-Image-Width`/`X-Image-Height` equal to the raw raster size
+  (assert against a known-size fixture larger than 1536px so the
+  pre-resize capture is exercised, not just the no-op path).
 - **frontend** (Vitest): `buildDetectorCalibration` — full calibration
-  produced correctly (incl. µm→mm and m→mm conversions); each missing
-  ingredient (and missing `naturalSize`) → `null`. Engine geometry is
-  already covered by `detectorGeometry.test.ts`.
+  produced correctly (incl. µm→mm and m→mm conversions, and `imageSizePx`
+  taken from the raw header size); each missing ingredient (and missing
+  `rawSize`) → `null`. Engine geometry is already covered by
+  `detectorGeometry.test.ts`.
 - **live render verification**: serve a real experiment with a known beam
   center and confirm the rings center on the beamstop and a known-q ring
   lands on the corresponding diffraction radius. Confirms the bottom-left
