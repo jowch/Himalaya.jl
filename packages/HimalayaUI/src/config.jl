@@ -11,7 +11,7 @@ beamline parameters.
 
 Supported TOML sections:
 - `[experiment]`: name, description, manifest (relative path to manifest CSV)
-- `[beamline]`: energy_kev, flight_path_m
+- `[beamline]`: energy_kev, flight_path_m, q_units, beam_center_x, beam_center_y, pixel_size_um
 - `[manifest]`: delimiter, skip_rows, header_row, sample_id, name, display_name,
   filenames, notes_sample, notes_exposure (each column = Int index or String header name).
   `header_row = 0` is the sentinel for "no header row; columns are positional".
