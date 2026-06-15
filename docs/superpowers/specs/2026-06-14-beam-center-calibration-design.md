@@ -117,7 +117,14 @@ centered fallback exactly as it does today.
   `get(bl, "beam_center_x", nothing)` etc.
 - `config_to_toml`: write each into the `beamline` dict only when
   `!== nothing` (omit-when-unset, exactly like `energy_kev` /
-  `flight_path_m`), so a round-trip preserves `nothing`.
+  `flight_path_m`), so a round-trip preserves `nothing`. **This is the
+  persistence path, not just a test concern:** `init` and
+  `_reingest_inner!` (cli.jl) store `config_to_toml(cfg)` — the
+  *re-serialized* blob, never the raw file text. Because there is no
+  mirror column, if `config_to_toml` fails to write a populated field,
+  reingest **silently strips the beam center with no trace**. The
+  config round-trip test (see Testing) must assert the *populated* case
+  survives, not only absent→`nothing`.
 
 ### 2. Backend route — `packages/HimalayaUI/src/routes_experiments.jl`
 
@@ -128,17 +135,37 @@ centered fallback exactly as it does today.
   `energy_kev` / `flight_path_m` already ride along via `SELECT *`.
 - Keep the defensive contract: a non-string, empty, or malformed config
   must never 500 a list endpoint — missing/garbage values resolve to
-  `q_units = "A-1"` and `nothing` for the numeric fields.
+  `q_units = "A-1"` and `nothing` for the numeric fields. **The numeric
+  coercion must live inside the single `try`/`catch`:** coerce each field
+  to `Float64` (a bare `beam_center_x = 420` parses as `Int64`, and the
+  JSON should be a float to match the `REAL`-column behaviour of
+  `energy_kev`/`flight_path_m`), with `x === nothing ? nothing :
+  Float64(x)`. A non-numeric garbage value (`beam_center_x = "oops"`)
+  then throws *inside* the try and falls back to the all-default tuple,
+  rather than 500-ing the list endpoint. Placing the coercion outside the
+  try would break the contract.
 
 ### 2b. Image route — `packages/HimalayaUI/src/routes_exposures.jl`
 
 The full-image branch loads the raster (`img = load_and_lognormalize(path)`)
 and then downscales it (`resize_to_fit(img, 1536)`). Capture the
-**pre-resize** dimensions (`h, w = size(img)`) and emit them as response
-headers `X-Image-Width => w`, `X-Image-Height => h` alongside the existing
+**pre-resize** dimensions (`h, w = size(img)` — Julia `size` is
+`(rows, cols) = (height, width)`) and emit them as response headers
+`X-Image-Width => w`, `X-Image-Height => h` alongside the existing
 `X-Image-Version`. These are the raw detector pixel dimensions the beam
-center is expressed in. (Thumbnail branch unaffected — it never carries a
-ring overlay.)
+center is expressed in.
+
+- **Full branch only.** `bytes` is assigned in two branches (thumb vs
+  full); the raw dims exist only in the full branch. The thumb branch is
+  unaffected — it never carries a ring overlay. The frontend must tolerate
+  the headers' absence (→ centered fallback), never assume them.
+- `load_and_lognormalize` applies **no transpose/rotation** (verified), so
+  `size(img)` is the native TIFF raster orientation — consistent with the
+  displayed canvas.
+- The response is `Cache-Control: immutable` + `?v=<token>` URL-keyed, so
+  the new headers ride the cached PNG on repeat loads (they are stable per
+  raster — fine). The frontend must not assume a fresh network round-trip
+  delivers them each time.
 
 ### 3. Frontend types — `packages/HimalayaUI/frontend/src/api.ts`
 
@@ -159,23 +186,44 @@ buildDetectorCalibration(
 - `rawSize` is the **raw** detector pixel size from the image headers
   (§2b/§5), used as `imageSizePx`. Returns `null` if `experiment`,
   `rawSize`, or **any** of the four ingredients is missing/null.
+- **Finite/positive guard.** Because `qToImageRadius` and
+  `buildRingPlacements` divide by `imageSizePx.w`/`.h`, a header that
+  parses to `0`/`NaN` (`Number("")` → `NaN`) would yield `NaN`/`Infinity`
+  radii and silently render broken rings. Reject with `null` unless
+  `Number.isFinite` holds for all five numeric inputs **and**
+  `rawSize.w > 0 && rawSize.h > 0`. This is part of the helper contract,
+  tested.
 - Unit conversions: `sampleDistanceMm = flight_path_m * 1000`,
   `pixelSizeMm = pixel_size_um / 1000`.
 - Maps `beam_center_x/y` → `beamCenterPx`, `rawSize` → `imageSizePx`,
   `energy_kev` → `energyKeV`.
 
 This is the unit-tested seam; all arithmetic and null-guarding lives here,
-not in the component.
+not in the component. Co-locate it with `toDetectorRings` (the other
+ring-feeding adapter) in `focusAdapters.ts`.
 
 ### 5. Image dimensions + orientation — `DetectorImage` / `DetectorPanel`
 
 - `DetectorImage` (canvas renderer, no `<img>`): in `renderImage`, after
-  the `fetch`, read `res.headers.get("X-Image-Width" / "X-Image-Height")`
-  (the **raw** pre-resize size) and report it via a new optional
-  `onRawSize?: (w: number, h: number) => void`. Also report orientation
-  via a new optional `onOrient?: (o: "portrait" | "landscape") => void`,
-  fired whenever `layout.orient` changes (it is already computed by
-  `decideOrient`/`evaluateOrient`).
+  the `fetch`, read the **raw** pre-resize size via
+  `res.headers?.get?.("X-Image-Width" / "X-Image-Height")` — **defensive
+  optional chaining is required**: the existing `DetectorImage` test mocks
+  return `{ ok, blob }` with no `headers`, and a headerless/older cached
+  response must degrade to the centered fallback, not throw. Report it via
+  a new optional `onRawSize?: (w, h) => void`. Also report orientation via
+  a new optional `onOrient?: (o: "portrait" | "landscape") => void`.
+- **Callback-loop hazards (load-bearing):**
+  - `onRawSize`/`onOrient` must be **excluded** from `renderImage`'s and
+    `evaluateOrient`'s `useCallback`/effect dep arrays — they are
+    notify-only outputs, not render inputs. Including them (with inline
+    arrows from the parent) re-fires the fetch/orient effects every render
+    → refetch/setState loop.
+  - `onOrient` must fire only on a true **transition** (diff against a
+    `useRef` of the previous orient), not on every `evaluateOrient` —
+    `evaluateOrient` runs on every ResizeObserver tick and calls
+    `setLayout` with a fresh object even when `orient` is unchanged, so an
+    undiffed callback storms the parent during any resize.
+  - `onRawSize` should likewise only fire when `w`/`h` actually change.
 - `DetectorPanel`: forward both callbacks to `DetectorImage`, and pass the
   reported `orient` through to `DetectorRings` (the existing `orient` prop,
   currently never supplied). These are data callbacks / a render hint, not
@@ -186,18 +234,36 @@ not in the component.
 - Hold detector `rawSize` (and `orient`) in state, set via the callbacks.
 - Build `calibration = buildDetectorCalibration(experimentQ.data,
   rawSize)` and pass it to `DetectorPanel`.
-- Derive and pass `imageAspect = rawSize ? w / h : undefined`. This is
-  **required for registration**, not cosmetic: the SVG ring overlay
-  stretches its `0 0 1 1` viewBox over the whole frame via
+- Derive and pass `imageAspect = rawSize ? rawSize.w / rawSize.h :
+  undefined`. **Source it from the raw header dims, never from the decoded
+  canvas/bitmap** — `resize_to_fit` floors to integers, so a bitmap-derived
+  aspect drifts sub-pixel from the true raw aspect; keep this an explicit
+  invariant. This is **required for registration**, not cosmetic: the SVG
+  ring overlay stretches its `0 0 1 1` viewBox over the whole frame via
   `preserveAspectRatio="none"`. With the default square frame, a
   non-square image is letterboxed inside it (object-fit contain) while the
   rings stretch to the square — they would not register. Matching the
   frame aspect to the image makes the canvas fill the frame edge-to-edge
   so normalized ring coords map to image coords. (It also suppresses the
   landscape rotation, per Decisions.)
-- First paint (image not yet decoded) → `rawSize` null → calibration null
-  → centered fallback; rings snap into place once the image decodes and
-  the header size arrives. This is the intended, documented transient.
+- **Two coupled first-paint transients, both benign and intended:**
+  - Before headers arrive, `rawSize` is null → calibration null → centered
+    fallback rings; once the header size arrives, the calibrated rings snap
+    into place.
+  - In the same pre-header window `imageAspect` is `undefined` → the frame
+    is square → a non-square image is letterboxed and the *decorative*
+    fallback rings are knowingly **not** registered to it (they stretch to
+    the square frame). When `rawSize` lands the frame reshapes
+    square→true-aspect (one reflow of the bounded frame box) and everything
+    registers. The "registration is correct" guarantee applies only
+    *after* headers arrive; the pre-header fallback rings are decorative by
+    design, so this is acceptable.
+  - There is also a ≤2-frame window where `evaluateOrient` can report
+    `landscape` against the still-square frame (viewport ≥1400px, wide
+    column) while calibration is still null; centered rings are
+    rotation-invariant so it is invisible, and the `imageAspect` reshape
+    then forces `portrait`. Confirm no flicker-rotate in the render-verify
+    step at ≥1400px with a wide detector column.
 
 ### 7. Template + docs
 
@@ -238,12 +304,24 @@ experiment.toml [beamline]
 - **frontend** (Vitest): `buildDetectorCalibration` — full calibration
   produced correctly (incl. µm→mm and m→mm conversions, and `imageSizePx`
   taken from the raw header size); each missing ingredient (and missing
-  `rawSize`) → `null`. Engine geometry is already covered by
-  `detectorGeometry.test.ts`.
+  `rawSize`) → `null`; non-finite / zero / negative `rawSize` or numeric
+  config → `null` (the finite/positive guard). Engine geometry is already
+  covered by `detectorGeometry.test.ts`.
+- **frontend regression**: the existing `DetectorImage.test.tsx` `fetch`
+  mocks have **no `headers`** — they must grow a `headers: { get: () =>
+  null }` stub (or the source's optional chaining keeps them green).
+  Re-run the full `DetectorImage`/`DetectorPanel` suites; the new
+  callbacks must not perturb the canvas-render / LUT / object-fit / orient
+  cases.
 - **live render verification**: serve a real experiment with a known beam
   center and confirm the rings center on the beamstop and a known-q ring
   lands on the corresponding diffraction radius. Confirms the bottom-left
-  convention; reveals a vertical flip if the assumption is wrong.
+  convention. **Two independent sources can produce a vertical-mirror
+  symptom** — disambiguate them: (a) the bottom-left vs top-left beam
+  convention (a one-line flip in `buildRingPlacements`), and (b) a
+  beamline that writes bottom-up TIFFs so the *image itself* is flipped
+  relative to the beam coordinate space. Also verify at viewport ≥1400px
+  with a wide detector column that no flicker-rotate occurs on first paint.
 
 ## Out of scope
 
