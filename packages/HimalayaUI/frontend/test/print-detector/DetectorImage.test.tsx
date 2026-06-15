@@ -153,3 +153,17 @@ test("a headerless response does not call onRawSize and does not throw", async (
   await waitFor(() => expect(screen.getByRole("img", { hidden: true })).toBeInTheDocument());
   expect(onRawSize).not.toHaveBeenCalled();
 });
+
+test("headers present but missing the keys (get→null) does not call onRawSize", async () => {
+  // Exercises the `Number(null) === 0` branch of the dual guard (>0), distinct
+  // from the no-headers-object branch above.
+  global.fetch = vi.fn().mockResolvedValue({
+    ok: true,
+    headers: { get: () => null },
+    blob: () => Promise.resolve(new Blob([new Uint8Array(0)], { type: "image/png" })),
+  } as unknown as Response);
+  const onRawSize = vi.fn();
+  render(<DetectorImage src="/x.png" size="full" onRawSize={onRawSize} />);
+  await waitFor(() => expect(screen.getByRole("img", { hidden: true })).toBeInTheDocument());
+  expect(onRawSize).not.toHaveBeenCalled();
+});
