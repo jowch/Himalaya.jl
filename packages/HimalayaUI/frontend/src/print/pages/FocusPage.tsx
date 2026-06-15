@@ -26,6 +26,7 @@ import {
   peakClickAction,
   toDetectorRings,
   toCombSeries,
+  buildDetectorCalibration,
   CUSTOM_SYMS,
   customIndexPreview,
 } from "./focusAdapters";
@@ -162,6 +163,23 @@ export function FocusPage(): JSX.Element {
 
   const experimentQ = useExperiment(experimentId ?? 0);
   const exposuresQ = useExposures(activeSampleId);
+
+  // ── detector beam-center calibration ──────────────────────────────────────────
+  // The raw detector pixel dims + display orientation are reported by
+  // DetectorImage after the async canvas fetch resolves the image-route headers
+  // (Task 5/6). Hold them here so the calibration recomputes when either the
+  // experiment beamline params or the raw size change. `imageAspect` MUST derive
+  // from the RAW header dims (not a decoded-bitmap size) so the overlay aspect is
+  // the true detector aspect. Until a frame loads, rawSize is null → calibration
+  // is null → the DetectorPanel centered fallback.
+  const [rawSize, setRawSize] = useState<{ w: number; h: number } | null>(null);
+  const [detOrient, setDetOrient] = useState<"portrait" | "landscape">("portrait");
+  const handleRawSize = useCallback(
+    (w: number, h: number) => setRawSize((p) => (p?.w === w && p?.h === h ? p : { w, h })),
+    [],
+  );
+  const calibration = buildDetectorCalibration(experimentQ.data, rawSize);
+  const imageAspect = rawSize ? rawSize.w / rawSize.h : undefined;
 
   // FO-NAV-SKELETON: resolve the active exposure at RENDER time, not just in
   // useAutoPickExposure's post-paint effect. A sample switch clears the stored
@@ -786,6 +804,11 @@ export function FocusPage(): JSX.Element {
                 src={detectorSrc}
                 rings={rings}
                 ringPhases={ringPhases}
+                orient={detOrient}
+                onRawSize={handleRawSize}
+                onOrient={setDetOrient}
+                {...(calibration ? { calibration } : {})}
+                {...(imageAspect !== undefined ? { imageAspect } : {})}
                 {...(hoveredQ !== undefined ? { hoveredQ } : {})}
                 onHoverQ={setHoveredQ}
                 tools={
