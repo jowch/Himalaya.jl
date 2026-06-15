@@ -242,22 +242,31 @@ describe("FocusPage", () => {
     // zoom window) would survive a sample switch — the first click on the next
     // sample's trace would silently mutate ITS peaks. The arm must reset on the
     // sample change.
-    it("resets the '+ Peak' arm when the active sample changes (no silent cross-sample edits)", () => {
+    it("resets per-sample interaction state (arm + candidate preview) when the active sample changes (FO-NAV-STATE)", () => {
       seedFull();
       state.corpus = [corpus(), corpus({ id: 43, name: "JC043" })];
       const view = renderAt(42);
+      // Arm "+ Peak" AND preview a candidate.
       fireEvent.click(screen.getByText("+ Peak"));
       expect(screen.getByText("+ Peak")).toHaveAttribute("aria-pressed", "true");
+      fireEvent.keyDown(document.body, { key: "ArrowDown" }); // preview first candidate
+      expect(
+        screen.getByRole("button", { name: /Pn3m, in assignment/ }),
+      ).toHaveAttribute("data-previewed", "true");
       // A [ / ] step changes activeSampleId WITHOUT remounting FocusPage. In
       // production Zustand re-renders on that change; the mocked store is
       // non-reactive, so drive the sample change + re-render the SAME tree
       // (FocusPage is reused, not remounted — its useState survives). The reset
-      // effect keyed on activeSampleId must clear the arm.
+      // effect keyed on activeSampleId must clear the arm, the zoom, AND the
+      // candidate preview (a stale preview would otherwise eat the first Escape).
       act(() => {
         state.activeSampleId = 43;
       });
       view.rerender(focusTreeAt(42));
       expect(screen.getByText("+ Peak")).toHaveAttribute("aria-pressed", "false");
+      expect(
+        screen.getByRole("button", { name: /Pn3m, in assignment/ }),
+      ).not.toHaveAttribute("data-previewed");
     });
 
     it("→ / ← step the active exposure (no wrap)", () => {

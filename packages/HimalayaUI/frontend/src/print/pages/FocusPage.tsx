@@ -205,12 +205,16 @@ export function FocusPage(): JSX.Element {
   // (React Router reuses the routed element for the new :sampleId), so
   // page-owned interaction state would survive a sample switch. Reset the
   // per-sample bits whenever the active sample changes: the "+ Peak" arm (else
-  // the first click on the next sample's trace silently mutates ITS peaks) and
-  // the manual zoom window (else the next trace can render outside a stale
-  // x-domain). scale / combView are sticky preferences and intentionally persist.
+  // the first click on the next sample's trace silently mutates ITS peaks), the
+  // manual zoom window (else the next trace can render outside a stale x-domain),
+  // and the candidate preview (else the stale previewIndexId — which renders
+  // nothing, since the old index id never re-matches — still makes the Esc ladder
+  // eat the first Escape as a no-op clear instead of backing out to the sheet).
+  // scale / combView are sticky preferences and intentionally persist.
   useEffect(() => {
     setAddArmed(false);
     setXDomain(null);
+    setPreviewIndexId(undefined);
   }, [activeSampleId]);
 
   // ── keyboard focus re-anchor after a destructive peak edit (WCAG 2.4.3) ──────
