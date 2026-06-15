@@ -26,8 +26,7 @@ import { resolveMutatorForEvent } from "../../src/lib/queue/mutatorRegistry";
 import type { SseEvent } from "../../src/lib/queue/types";
 import { remoteForeignEvent } from "./helpers";
 import type {
-  Peak, Exposure, Sample, SampleMessage,
-  ComparisonMessage, ComparisonSummary, Assignment,
+  Peak, Exposure, Sample, SampleMessage, Assignment,
 } from "../../src/api";
 import { queryKeys } from "../../src/queries";
 
@@ -530,114 +529,6 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
     ]);
   });
 
-  // -------------------------------------------------------------------------
-  // Compare page events (Phase 3). Three kinds:
-  // - comparison_created  → invalidate comparison + members + listings
-  // - comparison_submitted → invalidate same set (rebuilds full state)
-  // - comparison_deleted  → REMOVE (not invalidate) entity + filter listings
-  // - post_message (entity_type=comparison_message) → comparison thread cache
-  // -------------------------------------------------------------------------
-
-  it("comparison_created invalidates comparison(id), comparisonMembers(id), and listings", () => {
-    const invalidatedKeys: unknown[] = [];
-    const orig = qc.invalidateQueries.bind(qc);
-    qc.invalidateQueries = ((arg: { queryKey: unknown }) => {
-      invalidatedKeys.push(arg.queryKey); return orig(arg);
-    }) as typeof qc.invalidateQueries;
-    const evt: SseEvent = {
-      id: 99, kind: "comparison_created", entity_type: "comparison", entity_id: 42,
-      payload: { title: "X", members: [] },
-    };
-    applyRemoteToCache(evt, qc);
-    expect(invalidatedKeys).toEqual([
-      queryKeys.comparison(42),
-      queryKeys.comparisonMembers(42),
-      ["comparisons"],  // prefix invalidation hits all listing scopes
-    ]);
-  });
-
-  it("comparison_submitted invalidates comparison(id), comparisonMembers(id), and listings", () => {
-    const invalidatedKeys: unknown[] = [];
-    const orig = qc.invalidateQueries.bind(qc);
-    qc.invalidateQueries = ((arg: { queryKey: unknown }) => {
-      invalidatedKeys.push(arg.queryKey); return orig(arg);
-    }) as typeof qc.invalidateQueries;
-    const evt: SseEvent = {
-      id: 99, kind: "comparison_submitted", entity_type: "comparison", entity_id: 42,
-      payload: { title: "X edited", members: [] },
-    };
-    applyRemoteToCache(evt, qc);
-    expect(invalidatedKeys).toEqual([
-      queryKeys.comparison(42),
-      queryKeys.comparisonMembers(42),
-      ["comparisons"],
-    ]);
-  });
-
-  it("comparison_deleted removes entity caches (NOT invalidates) and filters listings", () => {
-    qc.setQueryData(queryKeys.comparison(42), { id: 42 });
-    qc.setQueryData(queryKeys.comparisonMembers(42), []);
-    qc.setQueryData(queryKeys.comparisonMessages(42), []);
-    qc.setQueryData(queryKeys.comparisonForks(42), []);
-    qc.setQueryData<ComparisonSummary[]>(queryKeys.comparisons("all"), [
-      { id: 42, title: "doomed", description: null, content_hash: "h",
-        created_by: 1, created_at: null, updated_at: null,
-        forked_from_id: null, forked_at_hash: null,
-        view_grouping_mode: null, view_show_peak_ticks: null, view_show_peak_labels: null,
-        last_event_at: null, author_username: null, member_count: 0,
-        member_phases: [], member_phase_count: 0, has_stale_members: false },
-      { id: 99, title: "kept", description: null, content_hash: "h",
-        created_by: 1, created_at: null, updated_at: null,
-        forked_from_id: null, forked_at_hash: null,
-        view_grouping_mode: null, view_show_peak_ticks: null, view_show_peak_labels: null,
-        last_event_at: null, author_username: null, member_count: 0,
-        member_phases: [], member_phase_count: 0, has_stale_members: false },
-    ]);
-    let invalidated = false;
-    const orig = qc.invalidateQueries.bind(qc);
-    qc.invalidateQueries = ((arg: { queryKey: unknown }) => {
-      invalidated = true; return orig(arg);
-    }) as typeof qc.invalidateQueries;
-
-    const evt: SseEvent = {
-      id: 99, kind: "comparison_deleted", entity_type: "comparison", entity_id: 42,
-      payload: { id: 42 },
-    };
-    applyRemoteToCache(evt, qc);
-
-    // Entity caches REMOVED, not invalidated
-    expect(invalidated).toBe(false);
-    expect(qc.getQueryState(queryKeys.comparison(42))).toBeUndefined();
-    expect(qc.getQueryState(queryKeys.comparisonMembers(42))).toBeUndefined();
-    expect(qc.getQueryState(queryKeys.comparisonMessages(42))).toBeUndefined();
-    expect(qc.getQueryState(queryKeys.comparisonForks(42))).toBeUndefined();
-    // Listing filtered (id pruned, others retained)
-    const listing = qc.getQueryData<ComparisonSummary[]>(queryKeys.comparisons("all"))!;
-    expect(listing.map((c) => c.id)).toEqual([99]);
-  });
-
-  it("post_message with entity_type=comparison_message routes to comparisonMessages cache", () => {
-    qc.setQueryData<ComparisonMessage[]>(queryKeys.comparisonMessages(42), []);
-    const evt: SseEvent = {
-      id: 99, kind: "post_message", entity_type: "comparison_message", entity_id: 200,
-      payload: {
-        id: 200, comparison_id: 42, author_id: 3, author: "alice",
-        body: "hi cmp", created_at: "2026-05-06T12:00:00Z",
-      },
-    };
-    applyRemoteToCache(evt, qc);
-    const msgs = qc.getQueryData<ComparisonMessage[]>(queryKeys.comparisonMessages(42))!;
-    expect(msgs).toHaveLength(1);
-    expect(msgs[0]!.id).toBe(200);
-    expect(msgs[0]!.body).toBe("hi cmp");
-    // Idempotency: replay must not double-insert
-    applyRemoteToCache(evt, qc);
-    expect(qc.getQueryData<ComparisonMessage[]>(queryKeys.comparisonMessages(42))!)
-      .toHaveLength(1);
-    // And the sample messages cache is untouched (no cross-thread pollution)
-    expect(qc.getQueryData(queryKeys.messages(42))).toBeUndefined();
-  });
-
   it("post_message with entity_type=sample_message still routes to sample messages cache", () => {
     // Regression: extending the dispatch must not break the legacy path.
     qc.setQueryData<SampleMessage[]>(queryKeys.messages(10), []);
@@ -682,9 +573,6 @@ describe("synthesizeFromSse coverage (resolveMutatorForEvent contract)", () => {
     { kind: "peak_added",           entity_type: "exposure",   entity_id: 5,  payload: { peak_curation_id: 99, q: 0.123 } },
     { kind: "add_tag",              entity_type: "sample",     entity_id: 5,  payload: { tag_id: 7, key: "tag", value: "v" } },
     { kind: "add_tag",              entity_type: "exposure",   entity_id: 5,  payload: { tag_id: 7, key: "tag", value: "v" } },
-    { kind: "comparison_created",   entity_type: "comparison", entity_id: 11, payload: { title: "T" } },
-    { kind: "comparison_submitted", entity_type: "comparison", entity_id: 11, payload: { title: "T" } },
-    { kind: "comparison_deleted",   entity_type: "comparison", entity_id: 11, payload: {} },
     { kind: "peak_excluded",        entity_type: "exposure",   entity_id: 5,  payload: { auto_peak_id: 1, q: 0.1 } },
     { kind: "peak_unexcluded",      entity_type: "exposure",   entity_id: 5,  payload: { auto_peak_id: 1, q: 0.1 } },
   ];
@@ -734,7 +622,7 @@ describe("synthesizeFromSse coverage (resolveMutatorForEvent contract)", () => {
   //          synthesizeFromSse to the owning mutator.
   //   (b.ii) Active mutators whose SSE payload IS the cache row shape, so
   //          the generic fallback already produces the correct shape
-  //          (post_message ×2 — payload IS SampleMessage / ComparisonMessage).
+  //          (post_message — payload IS SampleMessage).
   //   (b.iii) Active mutators whose onSuccess relies on the `looksFull`
   //          detector to invalidate when the synth shape is incomplete
   //          (createSpeculative, both indexGroup variants, deleteIndex).
@@ -750,7 +638,6 @@ describe("synthesizeFromSse coverage (resolveMutatorForEvent contract)", () => {
     { kind: "remove_tag",          entity_type: "exposure"           },
     // (b.ii) payload IS cache-row shape
     { kind: "post_message",        entity_type: "sample_message"     },
-    { kind: "post_message",        entity_type: "comparison_message" },
     // (b.iii) looksFull-handled or hash-only effects
     { kind: "analyze_run",         entity_type: "exposure"           },
     { kind: "peak_removed",        entity_type: "exposure"           },

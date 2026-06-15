@@ -1,10 +1,8 @@
 import { useMemo, useRef } from "react";
-import { useQuery, useQueries, useMutation, useQueryClient } from "@tanstack/react-query";
-import { authOpts } from "./lib/authOpts";
+import { useQuery, useQueries } from "@tanstack/react-query";
 import * as api from "./api";
 import { useAppState } from "./state";
 import { getClientId } from "./lib/clientId";
-import { newClientOpId } from "./lib/clientOpId";
 import { useQueueMutation } from "./lib/queue/useQueueMutation";
 import { isSampleScreened } from "./lib/sample/screened";
 import {
@@ -17,7 +15,6 @@ import {
   addExposureTagMutator,
   removeExposureTagMutator,
   postSampleMessageMutator,
-  postComparisonMessageMutator,
   setExposureStatusMutator,
   selectExposureMutator,
 } from "./lib/queue/mutators/trivial";
@@ -35,8 +32,6 @@ import {
 } from "./lib/queue/mutators/assignment";
 import { customIndexMutator } from "./lib/queue/mutators/customIndex";
 import { reanalyzeExposureMutator } from "./lib/queue/mutators/reanalyzeExposure";
-import { saveComparisonMutator } from "./lib/queue/mutators/saveComparison";
-import { deleteComparisonMutator } from "./lib/queue/mutators/deleteComparison";
 import { scopeSeriesMutator } from "./lib/queue/mutators/scopeSeries";
 import { createSeriesMutator } from "./lib/queue/mutators/createSeries";
 import { saveSeriesMutator } from "./lib/queue/mutators/saveSeries";
@@ -81,24 +76,10 @@ export const queryKeys = {
   index:    (id: number | undefined) => ["index-entity", id ?? "none"] as const,
   exposure: (id: number | undefined) => ["exposure-entity", id ?? "none"] as const,
   sample:   (id: number | undefined) => ["sample-entity", id ?? "none"] as const,
-  // Compare page (Plan §Phase 3). Listing key is parameterized by scope —
-  // pass "all" for the global listing, an experimentId for the per-experiment
-  // listing. Membership-derived listings can change in either direction when
-  // ANY exposure-touching event lands, so the SSE handler invalidates both
-  // forms with a prefix `["comparisons"]` invalidation.
-  comparisons:        (scope: number | "all") => ["comparisons", scope] as const,
-  comparison:         (id: number | undefined) =>
-    ["comparison", id ?? "none"] as const,
-  comparisonMembers:  (id: number | undefined) =>
-    ["comparison", id ?? "none", "members"] as const,
-  comparisonForks:    (id: number | undefined) =>
-    ["comparison", id ?? "none", "forks"] as const,
-  comparisonMessages: (id: number | undefined) =>
-    ["comparison", id ?? "none", "messages"] as const,
   // Series (#166/#167/#168). Detail root `["series", id]`, listing root
   // `["series-list"]` — distinct roots so a listing invalidation never
-  // clobbers a detail entry (mirrors the comparison/comparisons split). Read
-  // hooks (useSeriesList / useSeries) — see below (I3.3).
+  // clobbers a detail entry. Read hooks (useSeriesList / useSeries) — see
+  // below (I3.3).
   series:     (id: number | undefined) => ["series", id ?? "none"] as const,
   // Nested under the series-detail prefix on purpose — `queryKeys.series(id)`
   // invalidations (rename / member reorder / commit / SSE replay) prefix-match
@@ -114,9 +95,6 @@ export const queryKeys = {
   // refreshes the /series/new proposal.
   corpusSampleTags:    ["corpus-sample-tags"] as const,
   corpusPickerSamples: ["corpus-picker-samples"] as const,
-  // Phase 13 — comparison pins, scoped per-user via the X-Username header
-  // (no userId in the key — the cache row is implicitly per-tab/per-username).
-  comparisonPins: ["comparison-pins"] as const,
   // Corpus-wide sample listing (redesign Phase 1, #156). Distinct
   // ["corpus", ...] namespace so corpus add_tag (#159) patches and
   // invalidations never collide with the per-experiment
@@ -727,42 +705,6 @@ export function useSampleById(id: number | undefined) {
   });
 }
 
-// ─── Comparisons (Plan §Phase 4, Task 4.1 Step 2/3) ────────────────────────
-
-/**
- * List comparisons for the given scope.
- * - scope = experiment id → `/api/experiments/:eid/comparisons`
- * - scope = "all"         → `/api/comparisons`
- *
- * Returns the same `ComparisonSummary[]` shape from both routes so the
- * sidebar doesn't have to branch on scope.
- */
-export function useComparisons(scope: number | "all") {
-  return useQuery({
-    queryKey: queryKeys.comparisons(scope),
-    queryFn: () => scope === "all"
-      ? api.listComparisons()
-      : api.listExperimentComparisons(scope),
-  });
-}
-
-export function useComparison(id: number | undefined) {
-  return useQuery({
-    queryKey: queryKeys.comparison(id),
-    queryFn: () => api.getComparison(id as number),
-    enabled: id !== undefined,
-    retry: false,
-  });
-}
-
-export function useComparisonForks(id: number | undefined) {
-  return useQuery({
-    queryKey: queryKeys.comparisonForks(id),
-    queryFn: () => api.getComparisonForks(id as number),
-    enabled: id !== undefined,
-  });
-}
-
 /**
  * Corpus-wide series listing — every saved series across all experiments,
  * sorted by recency (backend `last_event_at DESC`). Backs the series folio
@@ -860,8 +802,8 @@ export function useSeries(id: number | undefined) {
     queryKey: queryKeys.series(id),
     queryFn: () => api.getSeries(id as number),
     enabled: id !== undefined,
-    // Parity with useComparison (above): a missing/draft series should error
-    // fast rather than retry 3× — the I3.5a builder reuses this.
+    // A missing/draft series should error fast rather than retry 3× — the
+    // I3.5a builder reuses this.
     retry: false,
   });
 }
@@ -877,93 +819,3 @@ export function useSeriesTraces(seriesId: number | undefined) {
   });
 }
 
-export function useComparisonMessages(id: number | undefined) {
-  return useQuery({
-    queryKey: queryKeys.comparisonMessages(id),
-    queryFn: () => api.listComparisonMessages(id as number),
-    enabled: id !== undefined,
-  });
-}
-
-/**
- * Posts a chat message to the comparison thread. Mirrors
- * `usePostSampleMessage` — the registry discriminates by the presence of
- * `comparisonId` in the payload (vs `sampleId`) to select the right mutator.
- */
-export function usePostComparisonMessage(comparisonId: number) {
-  const username = useAppState((s) => s.username);
-  const inner = useQueueMutation(
-    postComparisonMessageMutator,
-    { comparisonId, username, clientId: CLIENT_ID },
-  );
-  return {
-    ...inner,
-    mutate: (body: string) => inner.mutate({ body }),
-  };
-}
-
-export function useSaveComparison() {
-  const username = useAppState((s) => s.username);
-  // Compare is retired (#177); this mutator stays registered only for
-  // foreign-event replay. A 409 still surfaces a typed `ConflictError` on
-  // `useMutation.error` (and toast suppression lives in useQueueMutation's
-  // onError), but there is no longer a conflict surface that reads it.
-  return useQueueMutation(
-    saveComparisonMutator,
-    { username, clientId: CLIENT_ID },
-  );
-}
-
-export function useDeleteComparison() {
-  const username = useAppState((s) => s.username);
-  return useQueueMutation(
-    deleteComparisonMutator,
-    { username, clientId: CLIENT_ID },
-  );
-}
-
-// ─── Comparison pins (Plan §Phase 13, Task 13.2) ───────────────────────────
-//
-// Pin/unpin are trivial idempotent state toggles that don't go through
-// `useQueueMutation` (no cross-tab SSE, no `client_op_id` keying — the
-// backend uses plain `INSERT OR REPLACE` / `DELETE` with no event-log
-// emit). Plain `useMutation` + `invalidateQueries` is the cleanest fit.
-//
-// The cache key (`queryKeys.comparisonPins`) is global per-tab; if the
-// user changes their X-Username mid-session, a manual invalidation is
-// needed (out of scope — the username flow already requires a logout
-// → re-onboarding round trip).
-
-/** List of comparison ids the current user has pinned (most-recent first). */
-export function useComparisonPins() {
-  const username = useAppState((s) => s.username);
-  return useQuery({
-    queryKey: queryKeys.comparisonPins,
-    queryFn: () => api.listComparisonPins(authOpts(username, CLIENT_ID)),
-    enabled: username !== undefined,
-  });
-}
-
-export function usePinComparison() {
-  const qc = useQueryClient();
-  const username = useAppState((s) => s.username);
-  return useMutation({
-    // Mint clientOpId per call (not per hook mount) so retries reuse one
-    // idempotency key — without it, a network-blip retry would write a
-    // duplicate `comparison_pinned` row in user_actions even though the
-    // view-table state is already correct.
-    mutationFn: (id: number) =>
-      api.pinComparison(id, authOpts(username, CLIENT_ID, newClientOpId())),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.comparisonPins }),
-  });
-}
-
-export function useUnpinComparison() {
-  const qc = useQueryClient();
-  const username = useAppState((s) => s.username);
-  return useMutation({
-    mutationFn: (id: number) =>
-      api.unpinComparison(id, authOpts(username, CLIENT_ID, newClientOpId())),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.comparisonPins }),
-  });
-}

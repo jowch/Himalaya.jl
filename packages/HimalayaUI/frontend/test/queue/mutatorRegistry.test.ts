@@ -11,7 +11,6 @@ import {
   editCorpusSampleTagMutator,
   updateSampleMutator,
   postSampleMessageMutator,
-  postComparisonMessageMutator,
   setExposureStatusMutator,
   selectExposureMutator,
 } from "../../src/lib/queue/mutators/trivial";
@@ -24,8 +23,6 @@ import {
 import { deleteIndexMutator } from "../../src/lib/queue/mutators/indexGroup";
 import { createSpeculativeMutator } from "../../src/lib/queue/mutators/createSpeculative";
 import { reanalyzeExposureMutator } from "../../src/lib/queue/mutators/reanalyzeExposure";
-import { saveComparisonMutator } from "../../src/lib/queue/mutators/saveComparison";
-import { deleteComparisonMutator } from "../../src/lib/queue/mutators/deleteComparison";
 
 describe("resolveMutator", () => {
   it("dispatches add_tag based on payload experimentId presence", () => {
@@ -175,16 +172,6 @@ describe("resolveMutatorForEvent", () => {
 
   it("splits post_message by entity_type (wire-string entity types)", () => {
     expect(resolveMutatorForEvent("post_message", "sample_message"))    .toBe(postSampleMessageMutator);
-    expect(resolveMutatorForEvent("post_message", "comparison_message")).toBe(postComparisonMessageMutator);
-  });
-
-  it("routes both comparison_created and comparison_submitted to saveComparison", () => {
-    expect(resolveMutatorForEvent("comparison_created",   "comparison")).toBe(saveComparisonMutator);
-    expect(resolveMutatorForEvent("comparison_submitted", "comparison")).toBe(saveComparisonMutator);
-  });
-
-  it("routes comparison_deleted to deleteComparison", () => {
-    expect(resolveMutatorForEvent("comparison_deleted", "comparison")).toBe(deleteComparisonMutator);
   });
 
   it("routes analyze_run to reanalyzeExposure", () => {
@@ -209,15 +196,11 @@ describe("resolveMutator ↔ resolveMutatorForEvent consistency", () => {
     { mutator: deleteIndexMutator,      eventKind: "speculative_deleted", entityType: "exposure"   },
     { mutator: createSpeculativeMutator, eventKind: "speculative_created", entityType: "exposure"  },
     { mutator: reanalyzeExposureMutator, eventKind: "analyze_run",        entityType: "exposure"   },
-    { mutator: saveComparisonMutator,   eventKind: "comparison_created",  entityType: "comparison" },
-    { mutator: saveComparisonMutator,   eventKind: "comparison_submitted", entityType: "comparison" },
-    { mutator: deleteComparisonMutator, eventKind: "comparison_deleted",  entityType: "comparison" },
     { mutator: addSampleTagMutator,     eventKind: "add_tag",             entityType: "sample"     },
     { mutator: addExposureTagMutator,   eventKind: "add_tag",             entityType: "exposure"   },
     { mutator: removeSampleTagMutator,  eventKind: "remove_tag",          entityType: "sample"     },
     { mutator: removeExposureTagMutator, eventKind: "remove_tag",         entityType: "exposure"   },
     { mutator: postSampleMessageMutator, eventKind: "post_message",       entityType: "sample_message"     },
-    { mutator: postComparisonMessageMutator, eventKind: "post_message",   entityType: "comparison_message" },
     { mutator: updateSampleMutator,     eventKind: "update_sample",       entityType: "sample"     },
     { mutator: setExposureStatusMutator, eventKind: "set_exposure_status", entityType: "exposure"  },
     { mutator: selectExposureMutator,   eventKind: "select_exposure",     entityType: "exposure"   },

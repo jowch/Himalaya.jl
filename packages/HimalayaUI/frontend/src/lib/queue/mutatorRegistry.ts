@@ -9,7 +9,6 @@ import {
   removeCorpusSampleTagMutator,
   editCorpusSampleTagMutator,
   postSampleMessageMutator,
-  postComparisonMessageMutator,
   setExposureStatusMutator,
   selectExposureMutator,
 } from "./mutators/trivial";
@@ -22,8 +21,6 @@ import {
 import { deleteIndexMutator } from "./mutators/indexGroup";
 import { createSpeculativeMutator } from "./mutators/createSpeculative";
 import { reanalyzeExposureMutator } from "./mutators/reanalyzeExposure";
-import { saveComparisonMutator } from "./mutators/saveComparison";
-import { deleteComparisonMutator } from "./mutators/deleteComparison";
 import { saveSeriesMutator } from "./mutators/saveSeries";
 import { deleteSeriesMutator } from "./mutators/deleteSeries";
 import { commitSeriesPlateMutator } from "./mutators/commitSeriesPlate";
@@ -64,7 +61,7 @@ export function resolveMutator(
   const p = op.payload as
     | {
         experimentId?: number; sampleId?: number;
-        exposureId?: number; comparisonId?: number;
+        exposureId?: number;
         tags?: unknown;
       }
     | undefined;
@@ -96,9 +93,7 @@ export function resolveMutator(
       // sampleId-only scope routes here, mirroring the corpus add_tag/remove_tag fallthrough.
       return editCorpusSampleTagMutator;
     case "post_message":
-      return p?.comparisonId !== undefined
-        ? postComparisonMessageMutator
-        : postSampleMessageMutator;
+      return postSampleMessageMutator;
     case "set_exposure_status":
       return setExposureStatusMutator;
     case "select_exposure":
@@ -119,10 +114,6 @@ export function resolveMutator(
       return undefined; // server-driven; no outbound op of this kind
     case "reanalyze_exposure":
       return reanalyzeExposureMutator;
-    case "comparison_save":
-      return saveComparisonMutator;
-    case "comparison_delete":
-      return deleteComparisonMutator;
     case "series_save":
       return saveSeriesMutator;
     case "series_delete":
@@ -166,10 +157,6 @@ export function resolveMutatorForEvent(
     // event-kind speculative_deleted is the SSE counterpart of op-kind delete_index
     case "speculative_deleted": return deleteIndexMutator;
     case "analyze_run":         return reanalyzeExposureMutator;
-    case "comparison_created":
-    case "comparison_submitted":
-      return saveComparisonMutator;
-    case "comparison_deleted":  return deleteComparisonMutator;
     case "series_created":
     case "series_recipe_updated":
       return saveSeriesMutator;
@@ -207,15 +194,12 @@ export function resolveMutatorForEvent(
       // edit_tag is sample-scoped only. The corpus mutator owns synthesizeFromSse.
       return editCorpusSampleTagMutator;
     case "post_message":
-      // entity_type is the wire string ("sample_message" / "comparison_message"),
-      // matching applyRemoteToCache.ts's discriminator. Default the
-      // unknown branch to sample (mirroring applyRemoteToCache's default).
-      return entityType === "comparison_message"
-        ? postComparisonMessageMutator
-        : postSampleMessageMutator;
-    // Event kinds with no queue mutator fall through here. This includes
-    // invalidate-only foreign events like comparison_pinned / comparison_unpinned
-    // (handled entirely by applyRemoteToCache — no optimistic outbound op exists).
+      // Only the sample-message thread remains; the comparison-message variant
+      // was retired with the Compare page. `entityType` ("sample_message") is
+      // not discriminated on, but the param is kept for arm-shape parity.
+      return postSampleMessageMutator;
+    // Event kinds with no queue mutator fall through here (handled entirely by
+    // applyRemoteToCache — no optimistic outbound op exists).
     // replayCoordinator treats undefined as "use the generic {...base,...payload} shape".
     default:
       return undefined;

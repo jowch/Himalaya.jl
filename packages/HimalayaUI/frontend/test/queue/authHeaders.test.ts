@@ -31,8 +31,6 @@ import {
 } from "../../src/lib/queue/mutators/assignment";
 import { customIndexMutator } from "../../src/lib/queue/mutators/customIndex";
 import { reanalyzeExposureMutator } from "../../src/lib/queue/mutators/reanalyzeExposure";
-import { saveComparisonMutator } from "../../src/lib/queue/mutators/saveComparison";
-import { deleteComparisonMutator } from "../../src/lib/queue/mutators/deleteComparison";
 import {
   updateSampleMutator,
   addSampleTagMutator, removeSampleTagMutator,
@@ -245,22 +243,6 @@ const SPECS: Spec[] = [
       { ...FLAT_BASE, kind: "select_exposure",
         payload: { exposureId: 6 },
         sampleId: 1, exposureId: 6 } as any,
-      new AbortController().signal),
-  },
-  // Compare page mutators (Phase 3). Both must carry the same audit +
-  // idempotency headers as every other mutator.
-  {
-    name: "saveComparison",
-    run: (qc) => saveComparisonMutator.request(
-      { ...FLAT_BASE, kind: "comparison_save", payload: {},
-        title: "X", description: null, members: [] } as any,
-      new AbortController().signal),
-  },
-  {
-    name: "deleteComparison",
-    run: (qc) => deleteComparisonMutator.request(
-      { ...FLAT_BASE, kind: "comparison_delete", payload: { id: 42 },
-        id: 42 } as any,
       new AbortController().signal),
   },
 ];

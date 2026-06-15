@@ -1,5 +1,5 @@
 import type { QueryClient } from "@tanstack/react-query";
-import type { Assignment, Comparison, Series } from "../../api";
+import type { Assignment, Series } from "../../api";
 
 // ---------------------------------------------------------------------------
 // Optimistic-id invariant
@@ -42,16 +42,9 @@ export type OpKind =
   | "post_message" | "update_sample"
   | "reanalyze_exposure"
   | "delete_index"
-  // Compare page (Plan §Phase 3). One queue mutator handles both create
-  // (`POST /api/comparisons`) and submit (`POST /api/comparisons/:id/submit`)
-  // — `payload.id` discriminates. The wire-side event names
-  // (`comparison_created`, `comparison_submitted`) diverge from the OpKind
-  // because a single user gesture (Save) can map to either event.
-  // `comparison_delete` maps 1:1 with `comparison_deleted`.
-  | "comparison_save" | "comparison_delete"
   // Series (#166/#167/#168). `series_save` covers create (POST /api/series)
-  // AND recipe edit (PATCH /api/series/:id) — `payload.id` discriminates,
-  // mirroring `comparison_save`. `series_commit` → `series_plate_committed`.
+  // AND recipe edit (PATCH /api/series/:id) — `payload.id` discriminates.
+  // `series_commit` → `series_plate_committed`.
   // `series_delete` → `series_deleted`.
   | "series_save" | "series_commit" | "series_delete"
   // Focus surface (Plan D). The assignment cart's 3 mutators map 1:1 to the
@@ -145,10 +138,10 @@ export interface AssignmentPostState {
  *
  * Optional `post_state` carries an enriched snapshot for replay-without-
  * refetch. Its shape depends on `kind`: curation events (peak_*, analyze_run)
- * carry a `CurationPostState`; comparison events (comparison_created /
- * comparison_submitted) carry the full `Comparison` projection — the same
- * shape `fetch_comparison_with_members` / `GET /api/comparisons/:id` returns
- * (per Compare UX A-5 Step 5b). Consumers narrow by `kind` and cast.
+ * carry a `CurationPostState`; the series-commit event
+ * (`series_plate_committed`) carries the full `Series` projection — the same
+ * shape `fetch_series_with_plate` / `GET /api/series/:id` returns. Consumers
+ * narrow by `kind` and cast.
  */
 export interface SseEvent {
   id: number;
@@ -160,7 +153,7 @@ export interface SseEvent {
   client_op_id?: string | null;
   ts?: string;
   payload?: unknown;
-  post_state?: CurationPostState | AssignmentPostState | Comparison | Series;
+  post_state?: CurationPostState | AssignmentPostState | Series;
 }
 
 /**

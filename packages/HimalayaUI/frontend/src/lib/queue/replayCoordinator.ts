@@ -135,10 +135,10 @@ export function handleRemoteEvent(
  *       mutator and the fallback stops handling them.
  *
  *   (b) Active mutators whose SSE payload already matches the cache row
- *       shape — post_message (sample + comparison). The SSE frame carries
- *       `{id, body, author_id, author, created_at, sample_id|comparison_id}`
- *       which IS the cache row shape; no shape massaging needed, so the
- *       generic `{...base, ...payload}` suffices without a per-mutator synth.
+ *       shape — post_message (sample). The SSE frame carries
+ *       `{id, body, author_id, author, created_at, sample_id}` which IS the
+ *       cache row shape; no shape massaging needed, so the generic
+ *       `{...base, ...payload}` suffices without a per-mutator synth.
  *
  * Ordering note: `applyPostStateOnly(remote)` runs BEFORE the deferred is
  * resolved with this synth (see handleRemoteEvent). That ordering keeps the
@@ -157,7 +157,7 @@ function synthesizeResponseFromSse(remote: SseEvent): unknown {
     event_id: remote.id,
     client_op_id: remote.client_op_id,
     // Only curation-frame post_state carries analysis_inputs_hash; a
-    // comparison-frame post_state (a Comparison projection) has none, so the
+    // series-commit post_state (a Series projection) has none, so the
     // cast-then-optional-chain correctly yields undefined there.
     analysis_inputs_hash: (remote.post_state as CurationPostState | undefined)
       ?.analysis_inputs_hash,

@@ -1,7 +1,7 @@
 /**
  * saveSeries mutator (#166). One mutator handles BOTH create and recipe edit;
  * `payload.id` discriminates — absent ⇒ create (POST /api/series), present ⇒
- * recipe edit (PATCH /api/series/:id). Mirrors `saveComparison`.
+ * recipe edit (PATCH /api/series/:id).
  *
  * No optimistic write — the builder UI (I3.5b) shows the local draft; this
  * mutator's job is the server round-trip + cache reconciliation. `onSuccess`
