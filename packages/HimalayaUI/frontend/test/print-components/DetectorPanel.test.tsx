@@ -126,7 +126,9 @@ describe("DetectorPanel", () => {
     expect(rings.getAttribute("data-orient")).toBe("landscape");
   });
 
-  test("forwards onRawSize/onOrient to DetectorImage (props accepted, no crash)", () => {
+  // Smoke guard only: the real onRawSize/onOrient forwarding is verified at the
+  // DetectorImage source layer (JSDOM can't drive the canvas notify path here).
+  test("accepts onRawSize/onOrient props and mounts without crashing", () => {
     const onRawSize = vi.fn(); const onOrient = vi.fn();
     expect(() =>
       render(<DetectorPanel src="/x.png" onRawSize={onRawSize} onOrient={onOrient} />),
