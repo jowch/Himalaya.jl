@@ -45,8 +45,13 @@ Remaining src/components files after A–D: AppRoutes, CorpusShell, CorpusTopbar
 15. `git rm` the now-empty `src/components/` (should be nothing left). Update `check-design.mjs` import-boundary + exclude comments (`src/components/**` no longer exists; the guard's `components/` checks become dead — simplify or leave inert, but update the stale path references in `COLOR_AUTHORING_ALLOW`/comments).
 Gate: tsc 0 · lint:design 0 · `npm test` · orchestrator runs full `npm test` + `npm run e2e` + `npm run build` + a live smoke render.
 
+> **Superseded 2026-06-15 (cutover):** `src/App.tsx`/`src/main.tsx` (the legacy
+> composition root + entry) were removed; the real app body was promoted into
+> `src/print/App.tsx` (`PrintApp`), with `index.html → src/print/main.tsx` the sole
+> entry. See `docs/superpowers/plans/2026-06-14-greenfield-main-cutover.md`.
+
 ## Acceptance
-- `src/components/` no longer exists; the entire frontend is under `src/print/` (+ `src/App.tsx`, `src/lib/`, `src/state.ts`, `src/queries.ts`, `src/api.ts`, `src/hooks/`).
+- `src/components/` no longer exists; the entire frontend is under `src/print/` (+ `src/lib/`, `src/state.ts`, `src/queries.ts`, `src/api.ts`, `src/hooks/`, the `PrintApp` root).
 - tsc 0 · lint:design 0 · full `npm test` green · `npm run e2e` 35/3/0 · build 0.
 - Live smoke: every page still renders (shell, samples, focus, folio, builder, loupe) with 0 console errors.
 - `check-design.mjs` has no stale path references; `lint:design` still guards appearance + the import boundary (now within print/).

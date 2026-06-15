@@ -138,6 +138,7 @@ Module-specific conventions and anti-patterns live in the AGENTS.md file nearest
 
 ## Current state
 
+- **Greenfield cutover (2026-06-15, branch `worktree-greenfield-ui-rebuild`, UNMERGED):** "The Print" is the sole app. The real app was promoted into `src/print/App.tsx` (`PrintApp`); `index.html → src/print/main.tsx` is the single entry (mounts `#app`); the legacy `src/App.tsx`/`src/main.tsx`/`print.html` were removed. `npm run build` now emits `dist/index.html` containing the real app (it previously built a stub). Plan: `docs/superpowers/plans/2026-06-14-greenfield-main-cutover.md`.
 - Core Himalaya: `v0.5.1` on `main` — v2 peak-finding (persistence + sharpness + kneedle).
 - HimalayaUI — Plans 1–8 + Focus/Index workspace + Inspect page + Series (folio/scoping/builder) + experiment-config system + skeleton loading + multiplayer + instrumentation foundation + mutation queue + slug permalinks + figure export + functional-redesign sweep (M1–M3) + component-library extraction (enforced design system) complete:
   - **Backend:** transactional SQLite pipeline (incl. `_reingest_inner!`), FK enforcement, REST API (Oxygen.jl), CLI (`config new/list`, `init`, `analyze`, `reingest`, `show`, `serve`), TIFF→PNG image route with Q0f31-aware lognormalize, env-driven deployment.

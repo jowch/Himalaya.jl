@@ -6,8 +6,8 @@ React 18 + Vite + TypeScript strict + TailwindCSS 4. TanStack Query for server s
 
 | Task | Location | Notes |
 |------|----------|-------|
-| App entry | `main.tsx` | `StrictMode > ErrorBoundary > QueryClientProvider > App` |
-| App shell | `App.tsx` | Composition root; Zustand selectors + TanStack Query |
+| App entry | `print/main.tsx` | `index.html → print/main.tsx`; `StrictMode > ErrorBoundary > QueryClientProvider > BrowserRouter > PrintApp`; mounts `#app` |
+| App shell | `print/App.tsx` (`PrintApp`) | Composition root: `AppRoutes` + SSE + mutation-queue effects + shell siblings |
 | Server state | `queries.ts` | TanStack Query hooks; `authOpts(username)` helper |
 | API layer | `api.ts` | Fetch wrappers; AuthOpts per-call for mutations |
 | Client state | `state.ts` | Zustand store — **use named actions only** |
@@ -60,7 +60,7 @@ This is **mechanically enforced** (2026-05-29 extraction). `scripts/check-design
 - raw colour literal (`oklch(` / `rgba(` / quoted `#hex`) → a `--color-*` token utility
 - side-stripe `border-l/r` > 1px → a full border + a leading icon/word instead
 
-Only the colour-AUTHORING files are exempt (rules #3/#5 share an allowlist: `phases.ts`, `lib/comparison/coloring.ts`, `lib/figure-export/**`, the `print/{plot,detector,comb,waterfall,export}/` render-layer prefixes, `main.tsx`). Need a colour anywhere else → add a `--color-*` token to `@theme`, then use the utility. Visual reference: `docs/design-system.html`; full system: root `DESIGN.md`.
+Only the colour-AUTHORING files are exempt (rules #3/#5 share an allowlist: `phases.ts`, `lib/comparison/coloring.ts`, `lib/figure-export/**`, the `print/{plot,detector,comb,waterfall,export}/` render-layer prefixes, `print/main.tsx`). Need a colour anywhere else → add a `--color-*` token to `@theme`, then use the utility. Visual reference: `docs/design-system.html`; full system: root `DESIGN.md`.
 
 ## Skeleton loading via boneyard-js
 
