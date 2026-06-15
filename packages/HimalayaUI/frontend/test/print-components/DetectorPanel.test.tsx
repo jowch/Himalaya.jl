@@ -1,5 +1,24 @@
 import { render, screen, fireEvent, within } from "@testing-library/react";
+import { vi, beforeEach } from "vitest";
 import { DetectorPanel } from "../../src/print/components/DetectorPanel";
+
+const TINY_PNG =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwADhQGAWjR9awAAAABJRU5ErkJggg==";
+
+beforeEach(() => {
+  global.fetch = vi.fn().mockResolvedValue({
+    ok: true,
+    headers: { get: (k: string) => (k === "X-Image-Width" ? "2048" : k === "X-Image-Height" ? "1024" : null) },
+    blob: () => Promise.resolve(new Blob(
+      [Uint8Array.from(atob(TINY_PNG), (c) => c.charCodeAt(0))], { type: "image/png" })),
+  } as unknown as Response);
+  global.createImageBitmap = vi.fn().mockResolvedValue({ width: 1, height: 1, close: vi.fn() } as unknown as ImageBitmap);
+  const mockOffscreen = {
+    getContext: () => ({ drawImage: vi.fn(), getImageData: () => ({ data: new Uint8ClampedArray(4) }) }),
+  };
+  // @ts-expect-error JSDOM stub
+  global.OffscreenCanvas = vi.fn().mockImplementation(() => mockOffscreen);
+});
 
 const RINGS = [
   { q: 0.045, color: "var(--color-pn3m)" },
@@ -99,5 +118,18 @@ describe("DetectorPanel", () => {
     const hit = container.querySelector('[data-role="ring-hit"]');
     fireEvent.mouseEnter(hit!);
     expect(onHoverQ).toHaveBeenCalledWith(0.045);
+  });
+
+  test("passes orient through to DetectorRings", async () => {
+    render(<DetectorPanel src="/x.png" rings={[0.1, 0.2]} orient="landscape" />);
+    const rings = await screen.findByTestId("detector-rings");
+    expect(rings.getAttribute("data-orient")).toBe("landscape");
+  });
+
+  test("forwards onRawSize/onOrient to DetectorImage (props accepted, no crash)", () => {
+    const onRawSize = vi.fn(); const onOrient = vi.fn();
+    expect(() =>
+      render(<DetectorPanel src="/x.png" onRawSize={onRawSize} onOrient={onOrient} />),
+    ).not.toThrow();
   });
 });
