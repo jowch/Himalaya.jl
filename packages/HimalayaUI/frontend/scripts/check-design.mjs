@@ -39,7 +39,8 @@ const COLOR_AUTHORING_ALLOWLIST = new Set([
   "lib/comparison/coloring.ts",
   // MemberHeatmapLayer/CrossTraceTrackingLayer author phase color; they now live under
   // src/print/export/ and are covered by that prefix's isExcluded() exemption — no entry needed.
-  "main.tsx",
+  // print/main.tsx authors the configureBoneyard oklch skeleton defaults (the sole entry).
+  "print/main.tsx",
 ]);
 // figure-export/** is allowlisted by prefix (the whole export palette dir).
 const COLOR_AUTHORING_ALLOW_PREFIXES = ["lib/figure-export/"];
