@@ -1,207 +1,191 @@
 # Greenfield → main cutover plan
 
-**Date:** 2026-06-14
-**Branch:** `greenfield-ui-rebuild` (stays UNMERGED until Jonathan's explicit go-ahead)
-**Status:** PLAN — not yet executed. Produced from the `greenfield-cutover-inventory`
-review workflow; the load-bearing claims were independently verified against live
-source (see "Evidence").
+**Date:** 2026-06-14 (revised 2026-06-15 after red-team `w5brxg3pj`)
+**Branch:** `worktree-greenfield-ui-rebuild` (stays UNMERGED until Jonathan's go-ahead)
+**Status:** PLAN, de-risked — red-team verdict **go-with-fixes**, fixes folded in below.
+Load-bearing claims independently verified against live source (see "Evidence").
 
 ---
 
 ## TL;DR
 
-The cutover is **not** "delete dead code." It is a **promotion plus a production
-correctness fix**, landed as a **merge-commit**:
+The cutover is a **promotion**, landed as a **merge-commit**. The production build
+entry `PrintApp` (`src/print/App.tsx`) is a **15-line stub**; the real app
+(`AppRoutes` + SSE + mutation queue) lives in `src/App.tsx`, reachable only from
+the legacy `index.html → src/main.tsx`. So `npm run build` ships a blank page
+today. The fix:
 
-1. The production build (`print.html → src/print/main.tsx → PrintApp`) currently
-   compiles a **15-line placeholder stub**. The real app lives in `src/App.tsx`,
-   reachable only from the *un-built* legacy `index.html → src/main.tsx` entry.
-2. Therefore `npm run build` ships a blank page, and `server.jl` already serves a
-   `dist/index.html` the build never emits. **Merging as-is would ship a stub to
-   production.** Everything works today only because dev/e2e run Vite, which
-   serves `index.html` (the real app) by path.
-3. The fix is to **move the real app body into `PrintApp`**, point the backend at
-   `print.html`, then delete the now-truly-dead legacy entry — with the build +
-   e2e gate proving the bundle contains the real app, not the stub.
+1. **Promote** the real app body into `PrintApp`.
+2. Make **`index.html` the single greenfield entry** (repoint its script to
+   `/src/print/main.tsx`, keep `#app`), and **delete `print.html`** + the legacy
+   `src/main.tsx` + `src/App.tsx`.
+3. Gate on build + e2e + backend suite proving the bundle is the real app, not the
+   stub.
 
-## Evidence (verified this session)
+**Why `index.html`-canonical (not `print.html`):** the backend static-serve
+(`server.jl:70`), the SPA-fallback test (`test_spa_fallback.jl`), the CSS height
+rule (`styles.css:134 #app`), and the Vite dev-root all already assume
+`index.html`. Keeping it as the entry makes all four work unchanged;
+`print.html`-canonical fought all four (red-team `w5brxg3pj`). `print.html` was
+rebuild-era scaffolding.
+
+## Evidence (verified)
 
 | Claim | Status | Evidence |
 |---|---|---|
 | `PrintApp` (`src/print/App.tsx`) is a 15-line stub | **VERIFIED** | renders only `<main data-testid="print-shell"><h1>The Print · greenfield shell</h1></main>` |
-| `src/App.tsx` is the real app, legacy-entry-only | **VERIFIED** | imports `AppRoutes` + `EventSource('/api/events')` + queue `attachPersistence`/`rehydrate` + shell siblings; reachable only via `index.html → src/main.tsx` |
-| `server.jl:70` serves `dist/index.html`; build emits only `dist/print.html` | **VERIFIED** | `dist/` contains `print.html` + `assets/` only; `server.jl:70` reads `joinpath(dist_dir, "index.html")` |
-| `lib/queue/**` is LIVE (mislabeled "dead" by reachability-from-stub) | **VERIFIED** | imported by `src/App.tsx` (the real app) and ~15 `test/queue/**` specs |
-| Backend `index_groups`/`migrate_assignments!` are migration-load-bearing | per inventory (high-confidence) | not personally re-verified; cutover does **not** touch them — verify before any future removal |
+| `src/App.tsx` is the real app, legacy-entry-only | **VERIFIED** | imports `AppRoutes` + `EventSource('/api/events')` + queue `attachPersistence`/`rehydrate` + shell siblings |
+| `index.html` mounts `#app` via `/src/main.tsx`; `print.html` mounts `#print-root` via `/src/print/main.tsx` | **VERIFIED** | both files read |
+| `styles.css:134` height chain keys on `#app` | **VERIFIED** | `html, body, #app { height: 100%; }` — so the entry MUST mount `#app` or the app collapses to 0px |
+| `server.jl:70` + `test_spa_fallback.jl:17` both use `index.html` | **VERIFIED** | server reads `joinpath(dist_dir,"index.html")`; test writes `dist/index.html` and asserts it is served |
+| `lib/queue/**` is LIVE | **VERIFIED** | imported by `src/App.tsx` (the real app) + ~15 `test/queue/**` specs |
+| Backend `index_groups`/`migrate_assignments!`/`active_group_kind` are KEEP | per survey `w70n20q1o` (high) | migration-load-bearing / unconsumed-but-public; cutover does NOT touch them |
 
-## Decisions
+## Decisions (confirmed by Jonathan)
 
-*(All confirmed by Jonathan, 2026-06-14.)*
-
-- **Merge strategy: merge-commit (`--no-ff`).** The branch evolved both the
-  frontend and the Julia backend/data-model; the backend migration history
-  (`confirmed_index` semantic shift, rebuild-not-log-derivable pre-Plan-A
-  confirmations) is disaster-recovery-load-bearing and must stay bisectable.
-  Squash would destroy it; a fresh-from-main branch would discard real history.
-- **Entry strategy: single entry (`print.html` canonical).** Promote `PrintApp`,
-  delete the legacy `index.html`/`src/main.tsx`/`src/App.tsx`, and resolve the
-  Vite dev-root via config so the dual-entry trap can't recur. (If the e2e
-  dev-root gate fails on the missing `index.html`, fall back to a thin
-  `index.html` that re-exports `src/print/main.tsx` — but single-entry is the goal.)
+- **Merge strategy: merge-commit (`--no-ff`).** The branch evolved frontend AND the
+  Julia backend/data-model; the backend migration history is disaster-recovery
+  load-bearing and must stay bisectable. Not squash, not fresh-from-main.
+- **Entry strategy: single entry — `index.html` canonical** (flipped 2026-06-15
+  after the red-team showed `print.html`-canonical fights the serve/test/CSS/dev-root
+  stack). One html (`index.html`), one main (`src/print/main.tsx`), one app
+  (`PrintApp`).
 
 ## Manifest
 
-### PROMOTE (the load-bearing edit)
-- `src/print/App.tsx` — replace the stub `PrintApp` body with `src/App.tsx`'s body:
+### PROMOTE (the load-bearing edits)
+- **`src/print/App.tsx`** — replace the stub body with `src/App.tsx`'s body:
   `AppRoutes` + `OnboardingFlow` + `NavModal` + `ToastContainer`/`LiveRegion` +
   `InfrastructureBanner`, plus the 4 effects (DEV-gated `exposeTestHelpers`;
   `EventSource('/api/events')` `curation` → `handleRemoteEvent`;
-  `attachPersistence`; `rehydrate` with dropped/failed toasts). Keep the export
-  name `PrintApp`. Fix relative import paths for the new location
-  (`./print/shell` → `./shell`, `./lib/queue` → `../lib/queue`, etc.). Drop the
-  "Foundation placeholder" docstring.
-- `src/print/main.tsx` — carry the boneyard `import './bones/registry'` +
-  `configureBoneyard({...})` block from `src/main.tsx:4,25-30` (QueryClient +
-  ErrorBoundary + `#print-root` already match). **⚠ verified build-gate coupling:**
-  that block authors raw `oklch()` literals, and `check-design.mjs:42` allowlists
-  bare `"main.tsx"` while `isExcluded()` does NOT exempt `print/main.tsx` — so the
-  carried block fails `lint:design` (which gates `npm run build`) unless the
-  allowlist entry is renamed (see EDIT → `check-design.mjs`).
+  `attachPersistence`; `rehydrate` w/ dropped/failed toasts) + the 6-element JSX
+  fragment. Keep the export name `PrintApp`. Drop the "Foundation placeholder"
+  docstring. **Mirror `src/App.tsx` exactly** — do NOT add a conflict
+  modal/bridge or a `useAppState` import (that red-team claim broke under scrutiny).
+  Import-path deltas from the new `src/print/` location (verified):
+  `./print/shell/*` → `./shell/*`; `./print/ui` → `./ui`; `./lib/queue/*` →
+  `../lib/queue/*`; `./lib/toast` → `../lib/toast`; `./styles.css` is already
+  loaded by `src/print/main.tsx:1` (omit it here — no double import).
+- **`src/print/main.tsx`** — three edits: (a) **mount `#app`** (not `#print-root`),
+  so the `styles.css #app` height chain holds; (b) carry the boneyard
+  `configureBoneyard({...})` block from `src/main.tsx:25-30`; (c) carry the registry
+  import but **rewrite the path** `import "./bones/registry"` → `"../bones/registry"`
+  (registry lives at `src/bones/`, not `src/print/bones/`). QueryClient / StrictMode /
+  BrowserRouter / ErrorBoundary wrappers already match `src/main.tsx`.
 
 ### EDIT
-- `packages/HimalayaUI/src/server.jl:70` — `index.html` → `print.html` (**P0 prod
-  fix**; the SPA fallback throws today on the absent file).
-- `packages/HimalayaUI/frontend/scripts/check-design.mjs:42` — rename the
-  `COLOR_AUTHORING_ALLOWLIST` entry `"main.tsx"` → `"print/main.tsx"` so the carried
-  `configureBoneyard` oklch literals don't fail `lint:design`. **Required** for the
-  build gate to pass after the boneyard carry (survey-found, verified).
-- `test/smoke.test.tsx` — `import { App } from '../src/App'` →
-  `import { PrintApp as App } from '../src/print/App'`. Becomes the real coverage
-  of the production root.
-- `test/print-shell.test.tsx` — currently asserts the *stub* `print-shell`
-  landmark; re-point to the real shell or fold into `smoke.test.tsx`.
-- `vite.config.ts` — delete the now-false "index.html left for dev reference"
-  comment; note `print.html` is the sole entry. `rollupOptions.input` unchanged.
-- `playwright.config.ts` — confirm Vite serves `print.html` at `/` after the
-  delete (dev-root gate).
-- `src/AGENTS.md`, `docs/superpowers/plans/2026-06-09-frontend-full-migration.md`,
-  `CLAUDE.md` — reflect `PrintApp` as the sole production root.
+- **`index.html`** — repoint `<script src="/src/main.tsx">` → `"/src/print/main.tsx"`.
+  Keep `<div id="app">`. (Optionally update `<title>` to "Himalaya · The Print".)
+- **`vite.config.ts`** — remove the `rollupOptions.input = { print: ... }` override
+  so Vite uses the default `index.html` entry (build → `dist/index.html`); delete the
+  stale "index.html left for dev reference until cutover" comment.
+- **`packages/HimalayaUI/frontend/scripts/check-design.mjs:42`** — rename
+  `COLOR_AUTHORING_ALLOWLIST` entry `"main.tsx"` → `"print/main.tsx"` (the carried
+  `configureBoneyard` oklch literals fail `lint:design` otherwise; `print/main.tsx`
+  is not covered by any `isExcluded()` prefix). **Same commit as the boneyard carry.**
+- **`test/smoke.test.tsx`** — `import { App } from '../src/App'` →
+  `import { PrintApp as App } from '../src/print/App'`. Becomes the real coverage of
+  the production root.
+- **`test/print-shell.test.tsx`** — its only assertion is the stub `print-shell`
+  landmark, which vanishes with promotion. The promoted `PrintApp` calls
+  `useQueryClient()` + renders `<AppRoutes>` (`<Routes>`/`useParams`), so a bare
+  `render(<PrintApp/>)` throws. **DELETE it** (coverage moves to the repointed
+  `smoke.test.tsx`, which already wraps in providers + `MemoryRouter`), or rewrite
+  with `renderWithProviders` + a Router. Do NOT just swap the testid string.
+- **Docs:** `src/AGENTS.md` (`:9` entry ref `main.tsx`→`print/main.tsx`/`PrintApp`;
+  `:63` design-guard allowlist ref `main.tsx`→`print/main.tsx`),
+  `docs/superpowers/plans/2026-06-09-frontend-full-migration.md` (mark the
+  pages-assembly promotion DONE), `CLAUDE.md` (one-line cutover note).
 
-### DELETE (only AFTER the promotion + gate)
-- `index.html`, `src/main.tsx`, `src/App.tsx`.
-- `test/ErrorBoundary.test.tsx` — **KEEP** (ErrorBoundary survives; the map's
-  "delete" was on the false legacy-only premise).
+### DELETE (only AFTER promotion + the build/e2e gate)
+- `print.html`, `src/main.tsx`, `src/App.tsx`.
+- **KEEP** `test/ErrorBoundary.test.tsx` (ErrorBoundary survives; the inventory's
+  "delete" was on a false legacy-only premise).
 
-### KEEP (unconditional)
-- All of `src/print/**` (the greenfield UI, incl. `shell/AppRoutes.tsx`).
-- `src/api.ts`, `src/queries.ts`, `src/state.ts`, `src/phases.ts`, `src/styles.css`,
-  `src/ErrorBoundary.tsx`, all of `src/hooks/**` and `src/lib/**`
-  (**incl. `lib/queue/**` — LIVE**).
-- The entire Julia backend, incl. `index_groups` schema, `migrate_assignments!`,
-  `seed_assignment_if_absent!`, `persist_analysis!` re-attachment. The only
-  backend edit is `server.jl:70`. Add clarifying comments to
-  `migrate_assignments!` (disaster-recovery warning) but DO NOT delete any
-  backend file or table — removing the shadowed `persist_analysis!` auto-group
-  write is a multi-release deprecation, not this cutover.
+### KEEP unchanged (red-team-confirmed — these all assume `index.html`)
+- `packages/HimalayaUI/src/server.jl:70` — stays `index.html`. **No edit.**
+- `packages/HimalayaUI/test/test_spa_fallback.jl` — stays `index.html`. **No edit.**
+- `src/styles.css:134` — stays `#app`. **No edit.**
+- All of `src/print/**`, `src/api.ts`/`queries.ts`/`state.ts`/`phases.ts`/`styles.css`/
+  `ErrorBoundary.tsx`, `src/hooks/**`, `src/lib/**` (incl. **`lib/queue/**` — LIVE**).
+- The entire Julia backend incl. `index_groups`, `migrate_assignments!`,
+  `seed_assignment_if_absent!`, `persist_analysis!` re-attachment, `active_group_kind`.
+  DO NOT delete any backend file/table (the shadowed auto-group write is a
+  multi-release deprecation, not this cutover). Optional: add a disaster-recovery
+  note to the `migrate_assignments!` docstring.
 
-## Risks
+## Risks (post-flip)
 
-- **P0 — shipping a stub:** merging/building without the promotion serves a blank
-  page; e2e won't catch it (it runs Vite dev). Gate: confirm the built bundle
-  contains real-app strings / its size jumps.
-- **P0 — backend static serve:** `server.jl:70` reads a non-existent
-  `index.html`; deep-link/refresh on any route 500s in prod today. The
-  `print.html` edit is mandatory.
-- **P1 — Vite dev-root after `index.html` delete:** `/` may not resolve a document.
-  Gate on `npm run e2e`; mitigate with a thin `index.html` re-export if needed.
-- **P1 — losing SSE/queue:** do NOT delete `lib/queue/**` or `test/queue/**`
-  (LIVE; mislabeled by reachability-from-stub).
-- **P2 — boneyard drift:** reconcile the `bones/registry` import + defaults when
-  deleting `src/main.tsx`, or skeleton loading regresses.
-- **P2 — staging hygiene:** working tree has `bones/registry.ts`,
+- **P0 — shipping a stub:** if the promotion is incomplete, the build serves a blank
+  page. Gate: after `npm run build`, grep `dist/assets/*.js` for a real-app marker
+  (e.g. an `AppRoutes` route path / `OnboardingFlow`) AND run the e2e + backend
+  static-serve suites. (Under `index.html`-canonical, dev and build both route
+  through the promoted `PrintApp`, so a green e2e on the dev server + a real-app
+  bundle grep together close this.)
+- **P1 — `lib/queue/**` is LIVE:** never delete it or `test/queue/**`.
+- **P2 — staging hygiene:** working tree has `bones/registry.ts` +
   `contact-sheet.bones.json` modified and `graphify-out/` untracked. Stage only
-  cutover files by name. No `git add -A` (standing mandate).
+  cutover files **by name**. No `git add -A`.
+- *(Dissolved by the flip: backend static-serve edit, `test_spa_fallback` break,
+  `#print-root` height collapse, Vite dev-root failure — all moot now that
+  `index.html`/`#app` stays the entry.)*
 
-## Open questions
+## Resolved questions / out-of-scope
 
-1. ~~**Confirm the promotion is intended.**~~ **RESOLVED (Jonathan, 2026-06-14):**
-   the promotion was simply never finished — no special reason. The Print IS the
-   app; proceed.
-2. ~~**Boneyard in `print/main.tsx`:** carry or drop?~~ **RESOLVED:** carry the
-   registry import + `configureBoneyard` defaults (skeleton loading is live).
-3. ~~**Backend dead routes**~~ **RESOLVED (survey `w70n20q1o`):** NO backend route
-   is removable — all 12 `register_*_routes!()` are wired; the retired `/groups`
-   and the entire `/api/comparisons/*` surface are **genuinely absent** (no handler,
-   no `routes_comparisons.jl`), not orphaned. Only doc residue (stale comment at
-   `routes_analysis.jl:206`). The removable residue is **frontend-side** (`api.ts`
-   `/api/comparisons/*` client functions, zero `print/` consumers) — a connected
-   cluster (api + queries hooks + queue mutators + `mutatorRegistry` arms),
-   **out of cutover scope → follow-up cleanup.**
-4. ~~**`active_group_kind` consumption**~~ **RESOLVED:** NOT consumed by any
-   frontend code (`routes_export.jl:28,50,91` has zero frontend callers; the export
-   route itself is unused by the UI). KEEP the field/route — future-deprecation
-   candidate, not this cutover.
-
-## Survey findings (run `w70n20q1o`, 2026-06-14) — `promotion_ready: true`
-
-Full evidence-cited study: `docs/superpowers/notes/2026-06-14-greenfield-cutover-survey.md`.
-The promotion is mechanically specified end-to-end (13 imports + 4 effects + the
-6-element JSX fragment; exact import-path deltas; `#print-root` already aligned;
-do NOT re-add a conflict modal/bridge or a `useAppState` import to App.tsx — that
-claim broke under scrutiny). New items folded in above: the `check-design.mjs`
-allowlist rename (verified build-gate fix). Standing follow-ups / pre-flight:
-
-- **Follow-up (post-cutover):** excise the frontend `/api/comparisons/*` orphan
-  cluster (api + hooks + mutators + registry arms). Not this PR.
+- **Backend routes:** nothing removable; `/groups` + `/api/comparisons/*` are
+  genuinely absent (survey `w70n20q1o`). The dead `/api/comparisons/*` *frontend*
+  client cluster (api + hooks + queue mutators + registry arms, zero `print/`
+  consumers) is a **post-cutover follow-up**, not this PR.
+- **`active_group_kind`:** unconsumed by the frontend; KEEP (future-deprecation).
 - **Pre-flight, human/ops (not codebase-answerable):** does any external CI/deploy
-  script expect `dist/index.html` by name? Does any external tool parse the
-  `/api/experiments/{id}/export` JSON (the `active_group_kind` field)? Confirm
-  before merge.
-- **Gate-decided:** the Vite dev-root after `index.html` deletion (thin-`index.html`
-  re-export fallback only if `npm run e2e` fails on `/`); `print/App.tsx` styles.css
-  import redundancy (the `main.tsx`-level import already covers it).
+  script expect a build artifact by name? (We now emit `dist/index.html`, the
+  conventional name — lower risk than `print.html` would have been.) Does any
+  external tool parse the `/api/experiments/{id}/export` JSON? Confirm before merge.
 
-## Folded-in fix (from the session code review, `fix-then-ship`)
+## Folded-in fix (session review `w93ybassx`, `fix-then-ship`)
 
-- **P1 — `addArmed`/`xDomain` leak across same-route sample navigation**
-  (`FocusPage.tsx:198-199`). React Router does not remount FocusPage on `[`/`]`
-  steps, so the "+ Peak" arm and the zoom window survive a sample switch — the
-  first click on the next sample silently mutates *its* peaks. Fix: one effect
-  keyed on `activeSampleId` resetting both (`setAddArmed(false); setXDomain(null)`),
-  plus a navigate-then-assert regression test. (Same "page state survives
-  same-route nav" family as the boneyard fix.) Land on the cutover branch.
-- Non-blocking from the same review (defer or fold opportunistically): `dodgeX`
-  right-edge clamp (P3, do NOT re-add the global recenter — minimal dodging was a
-  deliberate request); `routes_samples.jl` rollup `ORDER BY` tie-break to match
-  `comparisons.jl` (P3, determinism).
+- **P1 — `addArmed`/`xDomain` leak across same-route sample nav** (`FocusPage.tsx:198-199`).
+  React Router doesn't remount FocusPage on `[`/`]` steps, so the "+ Peak" arm + the
+  zoom window survive a sample switch — the first click on the next sample silently
+  mutates *its* peaks. Fix: one effect keyed on `activeSampleId` resetting both
+  (`setAddArmed(false); setXDomain(null)`) + a navigate-then-assert regression test.
+- Non-blocking (defer): `dodgeX` right-edge clamp (P3 — do NOT re-add the global
+  recenter); `routes_samples.jl` rollup `ORDER BY` tie-break (P3).
 
 ## Ordered execution steps
 
-0. Pre-flight: working tree clean except intended cutover changes; no `git add -A`.
-1. **Promote** `src/App.tsx` body → `PrintApp`; fix import paths; keep `PrintApp` name.
-2. **Reconcile** `src/print/main.tsx` (carry boneyard registry import +
-   `configureBoneyard` block) **and rename `check-design.mjs:42` allowlist
-   `"main.tsx"` → `"print/main.tsx"`** in the same commit (else `lint:design` fails).
-3. **Tests:** repoint `smoke.test.tsx` + `print-shell.test.tsx`; `npm test` green
-   (esp. `test/queue/**`).
-4. **Fold in** the `addArmed`/`xDomain` reset fix + its regression test.
-5. **Delete** `src/App.tsx`, `src/main.tsx`, `index.html`. Clean any stray `.js`
-   shadows (`tsc --noEmit -p tsconfig.build.json`, not an emitting build).
-6. **Build gate:** `npm run build` — confirm `dist/print.html` + a bundle that now
-   contains the **real app** (size jump / AppRoutes-derived string), not the stub.
-7. **Backend:** `server.jl:70` `index.html` → `print.html`; add the
-   `migrate_assignments!` disaster-recovery docstring note. No table/file deletes.
-8. **Docs:** `vite.config.ts` comment, `src/AGENTS.md`, the frontend-migration
-   plan, `CLAUDE.md`.
-9. **e2e gate:** `npm run e2e` (mocked) — the load-bearing check that `/` still
-   resolves a working app after the `index.html` delete AND that routing/SSE/queue
-   work through `PrintApp`.
+0. **Pre-flight:** confirm `git branch --show-current` = `worktree-greenfield-ui-rebuild`;
+   working tree clean except intended changes. Stage by name; no `git add -A`.
+1. **Promote** `src/App.tsx` body → `PrintApp` (path deltas above; omit `styles.css`
+   import; no conflict modal / `useAppState`).
+2. **Reconcile `src/print/main.tsx`** (mount `#app`; carry `configureBoneyard`;
+   `import "../bones/registry"`) **and rename `check-design.mjs:42`
+   `"main.tsx"`→`"print/main.tsx"`** in the same commit (else `lint:design` fails).
+3. **Repoint `index.html`** script → `/src/print/main.tsx`; drop the `vite.config.ts`
+   `rollupOptions.input` override + stale comment.
+4. **Tests:** repoint `smoke.test.tsx`; **delete** (or provider-rewrite)
+   `print-shell.test.tsx`. `npm test` green (esp. `test/queue/**`).
+5. **Fold in** the `addArmed`/`xDomain` reset fix + its regression test.
+6. **Delete** `print.html`, `src/main.tsx`, `src/App.tsx`. Verify no stray `.js`
+   shadows (`find src -name '*.js'` → empty; the build uses `--noEmit`, which can't
+   emit — the hazard is an emitting `tsc`, not present here).
+7. **Build gate:** `npm run build` (lint:design + `tsc --noEmit` + vite) → emits
+   `dist/index.html`; grep `dist/assets` for a real-app marker (NOT the stub `<h1>`).
+8. **Docs:** `vite.config.ts` comment, `src/AGENTS.md:9,63`, the frontend-migration
+   plan, `CLAUDE.md`. (No `server.jl` edit under `index.html`-canonical.)
+9. **e2e gate:** `npm run e2e` (mocked) — `/` resolves the app; routing/SSE/queue work
+   through `PrintApp`. This is the load-bearing dev-server check.
 10. **Backend suite:** `julia --project=packages/HimalayaUI` HimalayaUI tests (slow;
-    capture + grep) — confirm the static-serve change is sound.
-11. **Commit** promotion + deletes + backend edit as focused commits (Co-Authored-By
-    trailer). Push.
-12. **Open the PR** into `main` via `gh`: call out (a) frontend+backend cutover,
-    (b) the `PrintApp` promotion, (c) the `server.jl` prod-serve fix, (d) merge via
-    **merge-commit** to preserve backend migration history.
-13. **STOP.** Do not merge — branch stays unmerged pending Jonathan's go-ahead;
-    when given, merge `--no-ff`.
+    capture + grep) — incl. `test_spa_fallback.jl` (still `index.html`, should pass
+    untouched).
+11. **Commit** as focused commits (Co-Authored-By trailer). Push.
+12. **Open the PR** into `main` via `gh`: call out the `PrintApp` promotion, the
+    `index.html`-canonical single-entry, the folded-in `addArmed` fix, and **merge via
+    merge-commit** to preserve backend migration history.
+13. **STOP.** Do not merge — branch stays unmerged pending Jonathan's go-ahead; when
+    given, merge `--no-ff`.
+
+**Rollback:** if any gate (7/9/10) goes red, the deletes (step 6) haven't been
+committed yet — `git restore` the working tree (or `git reset --hard` to pre-cutover
+HEAD on this unmerged branch) and re-run. Commit the deletes only after all gates are
+green.
