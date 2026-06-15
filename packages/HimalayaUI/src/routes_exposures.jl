@@ -55,6 +55,7 @@ function register_exposures_routes!()
         # identical to the header the client already cached against.
         vtoken = image_version_token(ip)
 
+        raw_w = 0; raw_h = 0
         bytes = if is_thumb
             # Thumb path: downscale-before-lognormalize (issue #261, H.1) behind a
             # disk cache keyed on `image_version_token`. `ensure_thumb_cached`
@@ -66,11 +67,14 @@ function register_exposures_routes!()
             ensure_thumb_cached(db, id, path; token = vtoken)
         else
             # Full path: run the percentile-clip math at full resolution (the
-            # science-quality view), THEN cap the rendered raster at 1536px
-            # max-side (issue #260, G) so the loupe/focus big frame ships a
-            # sub-MB PNG instead of a multi-MB native-resolution one. `resize_to_fit`
-            # no-ops when the detector is already <= 1536px.
+            # science-quality view), capture the RAW dims (the beam center's
+            # coordinate space) BEFORE the 1536 display cap, THEN cap the
+            # rendered raster at 1536px max-side (issue #260, G) so the
+            # loupe/focus big frame ships a sub-MB PNG instead of a multi-MB
+            # native-resolution one. `resize_to_fit` no-ops when the detector is
+            # already <= 1536px.
             img = load_and_lognormalize(path)
+            raw_h, raw_w = size(img)          # Julia size = (rows, cols) = (h, w)
             img = resize_to_fit(img, 1536)
             encode_png(img)
         end
@@ -79,11 +83,17 @@ function register_exposures_routes!()
         # URL itself is the cache key. We can mark responses immutable and
         # cache them aggressively — when the underlying TIFF or our
         # processing code changes, the token (and therefore the URL) changes.
-        HTTP.Response(200,
-            ["Content-Type"    => "image/png",
-             "Cache-Control"   => "private, max-age=31536000, immutable",
-             "X-Image-Version" => vtoken],
-            bytes)
+        hdrs = ["Content-Type"    => "image/png",
+                "Cache-Control"   => "private, max-age=31536000, immutable",
+                "X-Image-Version" => vtoken]
+        if !is_thumb
+            # Raw detector pixel dims for the q-ring overlay calibration. Full
+            # branch only — the thumb never carries rings. Frontend tolerates
+            # their absence (→ centered fallback).
+            push!(hdrs, "X-Image-Width"  => string(raw_w))
+            push!(hdrs, "X-Image-Height" => string(raw_h))
+        end
+        HTTP.Response(200, hdrs, bytes)
     end
 
     @patch "/api/exposures/{id}/status" function(req::HTTP.Request, id::Int)

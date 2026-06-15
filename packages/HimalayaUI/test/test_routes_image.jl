@@ -81,3 +81,33 @@ end
 
     rm(big_path; force=true); rm(small_path; force=true)
 end
+
+@testset "full image emits raw X-Image-Width/Height; thumb does not" begin
+    big_path = tempname() * ".tiff"
+    save(big_path, Gray.(rand(Float32, 2048, 2048)))      # > 1536 → resized for display
+    rect_path = tempname() * ".tiff"
+    save(rect_path, Gray.(rand(Float32, 400, 600)))        # (rows=400, cols=600) → W=600, H=400
+
+    db = SQLite.DB()
+    HimalayaUI.create_schema!(db); HimalayaUI.migrate_schema!(db)
+    exp  = HimalayaUI.create_experiment!(db; path="/tmp", data_dir="/tmp", analysis_dir="/tmp")
+    samp = HimalayaUI.create_sample!(db; experiment_id=exp)
+    big  = HimalayaUI.create_exposure!(db; sample_id=samp, image_path=big_path)
+    rect = HimalayaUI.create_exposure!(db; sample_id=samp, image_path=rect_path)
+
+    with_test_server(db) do port, base
+        rb = HTTP.get("$base/api/exposures/$big/image")
+        h  = Dict(rb.headers)
+        @test h["X-Image-Width"]  == "2048"   # RAW, not the <=1536 displayed size
+        @test h["X-Image-Height"] == "2048"
+
+        rr = HTTP.get("$base/api/exposures/$rect/image")
+        hr = Dict(rr.headers)
+        @test hr["X-Image-Width"]  == "600"   # cols
+        @test hr["X-Image-Height"] == "400"   # rows
+
+        rt = HTTP.get("$base/api/exposures/$big/image?thumb=1")
+        @test !haskey(Dict(rt.headers), "X-Image-Width")
+    end
+    rm(big_path; force=true); rm(rect_path; force=true)
+end
