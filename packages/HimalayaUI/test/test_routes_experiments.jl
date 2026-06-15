@@ -230,5 +230,13 @@ end
         rl = HTTP.get("$base/api/experiments"; status_exception=false)
         @test rl.status == 200
         @test JSON3.read(String(rl.body))[1].beam_center_x === nothing
+
+        # A non-string q_units must not 500 the list route either (the shim's
+        # ::String contract is upheld by coercing to the default).
+        DBInterface.execute(db, "UPDATE experiments SET config = ? WHERE id = ?",
+            ["[beamline]\nq_units = 5\n", exp_id])
+        rq = HTTP.get("$base/api/experiments"; status_exception=false)
+        @test rq.status == 200
+        @test JSON3.read(String(rq.body))[1].q_units == "A-1"
     end
 end

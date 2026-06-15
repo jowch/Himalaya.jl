@@ -20,7 +20,13 @@ function _beamline_from_config(cfg_text)
         try
             bl = get(TOML.parse(cfg_text), "beamline", Dict())
             num(k) = (v = get(bl, k, nothing); v === nothing ? nothing : Float64(v))
-            return (q_units       = get(bl, "q_units", "A-1"),
+            # Guard the q_units String contract: a non-string TOML value (e.g.
+            # `q_units = 5`) would otherwise satisfy the NamedTuple but throw at
+            # the shim's `::String` annotation — OUTSIDE this try — and 500 the
+            # samples list route. Coerce to the default here so the docstring's
+            # "never 500 a list endpoint" holds for q_units too.
+            qu = get(bl, "q_units", "A-1")
+            return (q_units       = qu isa AbstractString ? qu : "A-1",
                     beam_center_x = num("beam_center_x"),
                     beam_center_y = num("beam_center_y"),
                     pixel_size_um = num("pixel_size_um"))
