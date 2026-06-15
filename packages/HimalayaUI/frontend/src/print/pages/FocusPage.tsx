@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback, useRef } from "react";
+import { useMemo, useState, useCallback, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Skeleton } from "boneyard-js/react";
 import { TracePlate } from "../components/TracePlate";
@@ -200,6 +200,18 @@ export function FocusPage(): JSX.Element {
   const [hoveredQ, setHoveredQ] = useState<number | undefined>(undefined);
   const [combView, setCombView] = useState<CombView>("comb");
   const [previewIndexId, setPreviewIndexId] = useState<number | undefined>(undefined);
+
+  // FO-NAV-STATE: FocusPage is NOT remounted on a same-route [ / ] sample step
+  // (React Router reuses the routed element for the new :sampleId), so
+  // page-owned interaction state would survive a sample switch. Reset the
+  // per-sample bits whenever the active sample changes: the "+ Peak" arm (else
+  // the first click on the next sample's trace silently mutates ITS peaks) and
+  // the manual zoom window (else the next trace can render outside a stale
+  // x-domain). scale / combView are sticky preferences and intentionally persist.
+  useEffect(() => {
+    setAddArmed(false);
+    setXDomain(null);
+  }, [activeSampleId]);
 
   // ── keyboard focus re-anchor after a destructive peak edit (WCAG 2.4.3) ──────
   // Removing a peak via the keyboard unmounts its mark; without this, focus

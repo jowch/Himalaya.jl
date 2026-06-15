@@ -177,16 +177,20 @@ function LocationProbe() {
   return <div data-testid="loc" data-path={loc.pathname} />;
 }
 
-function renderAt(sampleId: number | string) {
-  return render(
+function focusTreeAt(sampleId: number | string) {
+  return (
     <MemoryRouter initialEntries={[`/sample/${sampleId}`]}>
       <LocationProbe />
       <Routes>
         <Route path="/sample/:sampleId" element={<FocusPage />} />
         <Route path="/samples" element={<div data-testid="sheet">sheet</div>} />
       </Routes>
-    </MemoryRouter>,
+    </MemoryRouter>
   );
+}
+
+function renderAt(sampleId: number | string) {
+  return render(focusTreeAt(sampleId));
 }
 
 beforeEach(() => {
@@ -231,6 +235,29 @@ describe("FocusPage", () => {
       renderAt(42);
       fireEvent.keyDown(document.body, { key: "[" });
       expect(screen.getByTestId("loc")).toHaveAttribute("data-path", "/sample/41");
+    });
+
+    // FO-NAV-STATE: React Router does NOT remount FocusPage on a same-route
+    // /sample/:id step, so page-owned interaction state (the "+ Peak" arm, the
+    // zoom window) would survive a sample switch — the first click on the next
+    // sample's trace would silently mutate ITS peaks. The arm must reset on the
+    // sample change.
+    it("resets the '+ Peak' arm when the active sample changes (no silent cross-sample edits)", () => {
+      seedFull();
+      state.corpus = [corpus(), corpus({ id: 43, name: "JC043" })];
+      const view = renderAt(42);
+      fireEvent.click(screen.getByText("+ Peak"));
+      expect(screen.getByText("+ Peak")).toHaveAttribute("aria-pressed", "true");
+      // A [ / ] step changes activeSampleId WITHOUT remounting FocusPage. In
+      // production Zustand re-renders on that change; the mocked store is
+      // non-reactive, so drive the sample change + re-render the SAME tree
+      // (FocusPage is reused, not remounted — its useState survives). The reset
+      // effect keyed on activeSampleId must clear the arm.
+      act(() => {
+        state.activeSampleId = 43;
+      });
+      view.rerender(focusTreeAt(42));
+      expect(screen.getByText("+ Peak")).toHaveAttribute("aria-pressed", "false");
     });
 
     it("→ / ← step the active exposure (no wrap)", () => {
