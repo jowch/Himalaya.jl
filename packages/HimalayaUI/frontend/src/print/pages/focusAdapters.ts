@@ -8,11 +8,12 @@
 // presentation-free logic out of are cited inline.
 
 import type { Peak, IndexEntry, Trace } from "../../api";
+import type { Experiment } from "../../api";
 import { phaseColor } from "../../phases";
 import type { TraceModel } from "../plot/TracePlot";
 import { traceIntensityAt } from "../../lib/plot/traceIntensity";
 import type { PlotPeak } from "../plot/marks/PlotPeaks";
-import type { RingInput } from "../detector/detectorGeometry";
+import type { RingInput, DetectorCalibration } from "../detector/detectorGeometry";
 import type { CombSeries, CombTooth } from "../comb/combModel";
 import {
   SYMS,
@@ -208,6 +209,35 @@ export function toDetectorRings(
     if (!claimedPeakIds.has(p.id)) rings.push({ q: p.q });
   }
   return { rings, phases };
+}
+
+// ── detector calibration ─────────────────────────────────────────────────────
+
+/**
+ * Experiment beamline params + the RAW detector pixel size (from the image
+ * route's X-Image-Width/Height headers) → a DetectorCalibration for the
+ * geometry engine. Returns null unless ALL ingredients are present and finite
+ * (a 0/NaN dim or null field would yield NaN/Infinity radii); null → the
+ * DetectorPanel centered fallback. Pure + unit-tested; all the arithmetic and
+ * guarding lives here, not in the component.
+ */
+export function buildDetectorCalibration(
+  experiment: Experiment | undefined,
+  rawSize: { w: number; h: number } | null,
+): DetectorCalibration | null {
+  if (!experiment || !rawSize) return null;
+  const { beam_center_x, beam_center_y, pixel_size_um, energy_kev, flight_path_m } = experiment;
+  const ok = (n: number | null): n is number => n !== null && Number.isFinite(n);
+  if (!ok(beam_center_x) || !ok(beam_center_y) || !ok(pixel_size_um) ||
+      !ok(energy_kev) || !ok(flight_path_m)) return null;
+  if (!(rawSize.w > 0) || !(rawSize.h > 0)) return null;
+  return {
+    beamCenterPx: { x: beam_center_x, y: beam_center_y },
+    imageSizePx: { w: rawSize.w, h: rawSize.h },
+    sampleDistanceMm: flight_path_m * 1000,
+    pixelSizeMm: pixel_size_um / 1000,
+    energyKeV: energy_kev,
+  };
 }
 
 // ── comb series (CombPanel.tsx) ──────────────────────────────────────────────
