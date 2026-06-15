@@ -211,12 +211,18 @@ In `packages/HimalayaUI/test/test_routes_experiments.jl`, the `@testset "experim
         @test body.beam_center_y == 838.83
         @test body.pixel_size_um == 172.0   # bare int coerced to Float64
 
-        # Garbage numeric value must not 500 the route — falls back to null.
+        # Garbage numeric value must not 500 — on the single route OR the list
+        # route (the spec's primary protected case: one bad config in a loop
+        # must not break the whole list).
         DBInterface.execute(db, "UPDATE experiments SET config = ? WHERE id = ?",
             ["[beamline]\nbeam_center_x = \"oops\"\n", exp_id])
         r = HTTP.get("$base/api/experiments/$exp_id"; status_exception=false)
         @test r.status == 200
         @test JSON3.read(String(r.body)).beam_center_x === nothing
+
+        rl = HTTP.get("$base/api/experiments"; status_exception=false)
+        @test rl.status == 200
+        @test JSON3.read(String(rl.body))[1].beam_center_x === nothing
     end
 end
 ```
@@ -519,15 +525,27 @@ export function buildDetectorCalibration(
 }
 ```
 
-- [ ] **Step 5: Run test to verify it passes**
+- [ ] **Step 5: Audit existing `Experiment` literals (exactOptionalPropertyTypes)**
+
+Adding five now-required fields to `interface Experiment` will make any test/mock that constructs an `Experiment` object literal fail `tsc`. Find them and add the five fields (or cast):
+
+```bash
+grep -rn "as Experiment\|: Experiment" packages/HimalayaUI/frontend/test packages/HimalayaUI/frontend/src | grep -v "Experiment\[\]\|CorpusSample\|focusAdapters"
+```
+
+For each hit that builds a literal, add `beam_center_x: null, beam_center_y: null, pixel_size_um: null, energy_kev: null, flight_path_m: null` (the `null` defaults are correct — uncalibrated). Run `npx tsc --noEmit -p tsconfig.json` to confirm zero errors before Step 6.
+
+- [ ] **Step 6: Run test to verify it passes**
 
 Run (from `packages/HimalayaUI/frontend/`): `npm test -- focusAdapters`
 Expected: PASS (all cases).
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add packages/HimalayaUI/frontend/src/api.ts packages/HimalayaUI/frontend/src/print/pages/focusAdapters.ts packages/HimalayaUI/frontend/test/print-pages/focusAdapters.test.ts
+# plus any test files updated in Step 5:
+git add <any Experiment-literal test files touched>
 git commit -m "feat(focus): add buildDetectorCalibration + Experiment beamline fields"
 ```
 
@@ -689,7 +707,7 @@ test("forwards onRawSize/onOrient to DetectorImage (props accepted, no crash)", 
 });
 ```
 
-(If `DetectorPanel.test.tsx` does not already mock `fetch`/`createImageBitmap`, copy the `beforeEach` mock block from `DetectorImage.test.tsx` — including the `headers.get` stub — so the canvas renderer resolves.)
+**Required first:** `DetectorPanel.test.tsx` currently has **no** `fetch`/`createImageBitmap`/`OffscreenCanvas` mock (every existing test uses `src={null}`). These new tests render with `src="/x.png"`, which drives `DetectorImage`'s real `fetch`. Copy the entire `beforeEach` mock block from `DetectorImage.test.tsx` — **including the `headers.get` stub** (Task 5 Step 1) — into `DetectorPanel.test.tsx` and add `import { vi, beforeEach } from "vitest"` if not present. This is mandatory, not optional, or the fetch rejects unhandled.
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -807,7 +825,7 @@ In the main `DetectorPanel` JSX (the one with `src={detectorSrc}`, ~L785), add t
               />
 ```
 
-(Leave the `tools={…}` block exactly as it is — only add the new props.)
+**Do not rewrite the `<DetectorPanel>` element.** The live `tools={…}` block (FocusPage.tsx ~L791-805) is ~15 lines (the `ThumbnailGallery`). Surgically *insert* the five new prop lines before the existing `tools=` line — do not block-replace the element, or you risk deleting the gallery. `imageAspect` reaches both the frame box (`style={{aspectRatio}}`) and the ring y-correction via DetectorPanel's single `aspect` local — passing it once is enough.
 
 - [ ] **Step 4: Typecheck + existing suite**
 
@@ -902,8 +920,11 @@ Run (from `packages/HimalayaUI/frontend/`):
 npm test
 npm run build        # tsc --noEmit + vite build
 npm run lint:design  # design-system guard (new props are data/geometry, not appearance)
+npm run e2e          # Playwright (mocked) — regression: existing specs must stay green
 ```
 Expected: all green. The new `onRawSize`/`onOrient`/`orient`/`calibration`/`imageAspect` props are data callbacks + geometry and must not trip `lint:design`.
+
+**E2E scope note:** `npm run e2e` here is a *regression* check (the mocked suite must not break). A new automated E2E asserting calibrated ring placement (rings NOT at the 0.5/0.5 centered fallback) is **deferred** — the mocked Playwright harness has no detector-image server path that delivers `X-Image-Width/Height` headers to drive real geometry, so ring placement is validated by the manual live render in Step 3 (the integration layer for this feature). Note this deferral in the PR description.
 
 - [ ] **Step 2: Full Julia suite (capture once)**
 
@@ -922,20 +943,23 @@ Serve a real experiment that has a known beam center in its `experiment.toml`, o
 
 **Disambiguate a vertical-mirror symptom** if rings look flipped: (a) wrong beam convention → flip is a one-line change in `buildRingPlacements` (`y = 1 - …`); (b) the beamline writes bottom-up TIFFs so the *image* is flipped relative to the beam space. Confirm which before "fixing".
 
-- [ ] **Step 4: Final commit (if any verification tweaks)**
+- [ ] **Step 4: Final commit (only if a verification tweak was needed)**
+
+If the live render revealed a convention flip or a test needed adjusting, stage **only the specific files you changed** (never `git add -A` — staging untracked scratch is forbidden in this repo):
 
 ```bash
-git add -A
-git commit -m "test: full-suite + live-render verification for beam-center calibration"
+git add <the specific file(s) you changed>
+git commit -m "fix: <what the live-render verification required>"
 ```
 
-(Only if a convention flip or test tweak was needed; otherwise nothing to commit.)
+(If everything verified clean, there is nothing to commit.)
 
 ---
 
 ## Self-Review notes (author)
 
-- **Spec coverage:** §1→T1, §2→T2, §2b→T3, §3→T4, §4→T4, §5→T5, §6(panel)→T6, §6(page)→T7, §7→T8, Testing+live→T1–T3/T4/T9. All spec sections mapped.
+- **Spec coverage:** §1→T1, §2→T2, §2b→T3, §3 (api.ts types)→T4 Step 3, §4 (helper)→T4, §5 (DetectorImage)→T5, §5 (DetectorPanel)→T6, §6 (FocusPage)→T7, §7→T8, Testing+live→T1–T3/T4/T9. All spec sections mapped.
+- **PR-review checkpoints (no automated assertion, verify in review/live):** (1) `imageAspect` is derived from `rawSize` (raw header dims), never the floored decoded bitmap — spec §6 invariant; (2) `onOrient` fires only on a true transition (not on every ResizeObserver tick) — confirm via the `prevOrientRef` diff; (3) ring placement is calibrated, not centered, when all five beamline values are present — live render (T9).
 - **Type consistency:** `buildDetectorCalibration(experiment, rawSize)` signature identical in T4 (def) and T7 (call); `DetectorCalibration` field names (`beamCenterPx`, `imageSizePx`, `sampleDistanceMm`, `pixelSizeMm`, `energyKeV`) match `detectorGeometry.ts`; `onRawSize(w,h)`/`onOrient(o)` identical across T5/T6/T7; `X-Image-Width`/`X-Image-Height` header names identical in T3 (emit) and T5 (read).
 - **Known judgment call:** T7 has no jsdom unit test by design (the calibration is gated on an async canvas fetch + header read; the pure logic is covered in T4, behavior in T9 live verify). Flagged explicitly rather than writing an over-mocked test.
 - **No-removal note:** `_q_units_from_config` is retained (delegating shim) because `routes_samples.jl:53` still calls it.
