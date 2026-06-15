@@ -102,12 +102,23 @@ image       = "{name}.tiff"           # how to find the raw image
 
 | Field | Purpose |
 |-------|---------|
-| `energy_kev` | Beam energy in keV. Used for q-calibration (future). |
-| `flight_path_m` | Sample-to-detector distance in metres. Used for q-calibration (future). |
+| `energy_kev` | Beam energy in keV. Used for q-ring radii (q-calibration). |
+| `flight_path_m` | Sample-to-detector distance in metres. Used for q-ring radii. |
+| `beam_center_x` | Beam center column, in **detector pixels, origin bottom-left** (y-up). |
+| `beam_center_y` | Beam center row, in **detector pixels, origin bottom-left** (y-up). |
+| `pixel_size_um` | Detector pixel pitch in microns (e.g. Pilatus 172, Eiger 75). |
 
-These are stored as first-class columns in the DB so future queries
-(e.g. "show me all experiments at 12 keV") don't need to parse the
-TOML blob.
+The Focus page draws physically-correct, beam-centered q-rings only when **all
+five** beamline values are present (`energy_kev`, `flight_path_m`,
+`beam_center_x`, `beam_center_y`, `pixel_size_um`). Omit any and the rings fall
+back to a centered, decorative overlay — no error. Beam center and pixel size
+are render-only: they live in the config blob, are surfaced on the experiment
+API, and (unlike `energy_kev`/`flight_path_m`) are not mirrored to queryable DB
+columns.
+
+`energy_kev` and `flight_path_m` are stored as first-class columns in the DB so
+future queries (e.g. "show me all experiments at 12 keV") don't need to parse
+the TOML blob.
 
 ### `[manifest]`
 
