@@ -90,6 +90,11 @@ function register_exposures_routes!()
             # Raw detector pixel dims for the q-ring overlay calibration. Full
             # branch only — the thumb never carries rings. Frontend tolerates
             # their absence (→ centered fallback).
+            # NOTE: custom response headers the frontend reads via `headers.get()`
+            # (DetectorImage.tsx). Fine same-origin (prod serves the SPA; the Vite
+            # dev proxy preserves them). If the API is ever served cross-origin, add
+            # `Access-Control-Expose-Headers: X-Image-Width, X-Image-Height` — without
+            # it the browser silently strips them and the rings fall back to centered.
             push!(hdrs, "X-Image-Width"  => string(raw_w))
             push!(hdrs, "X-Image-Height" => string(raw_h))
         end
